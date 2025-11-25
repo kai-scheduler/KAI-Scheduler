@@ -111,6 +111,7 @@ func (su *defaultStatusUpdater) updatePodGroup(
 				// Don't retry this update if the resource version is outdated - The status update cannot be updated with the given object.
 				// If a pod group status update is required (e.g. a scheduling condition) a new status update with an updated object
 				//  will be enqueued in the next scheduling cycle.
+				su.inFlightPodGroups.Delete(key)
 				return
 			}
 		}
