@@ -69,6 +69,9 @@ func Run(opts *Options, clientConfig *rest.Config, ctx context.Context) error {
 	}
 
 	if opts.EnableWebhook {
+		// Set the quota validation flag
+		v2.SetEnableQuotaValidation(opts.EnableQuotaValidation)
+		
 		if err = (&v2.Queue{}).SetupWebhookWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create webhook for queue v2", "webhook", "Queue")
 			return nil

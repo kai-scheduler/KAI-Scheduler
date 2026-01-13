@@ -23,11 +23,13 @@ type QueueValidator interface {
 
 type queueValidator struct {
 	kubeClient client.Client
+	enableQuotaValidation bool
 }
 
-func NewQueueValidator(kubeClient client.Client) QueueValidator {
+func NewQueueValidator(kubeClient client.Client, enableQuotaValidation bool) QueueValidator {
 	return &queueValidator{
 		kubeClient: kubeClient,
+		enableQuotaValidation: enableQuotaValidation,
 	}
 }
 
@@ -42,8 +44,8 @@ func (v *queueValidator) ValidateCreate(ctx context.Context, obj runtime.Object)
 		return []string{missingResourcesError}, fmt.Errorf(missingResourcesError)
 	}
 
-	// Validate parent-child CPU quota relationship
-	if queue.Spec.ParentQueue != "" {
+	// Validate parent-child CPU quota relationship if enabled
+	if v.enableQuotaValidation && queue.Spec.ParentQueue != "" {
 		return v.validateParentChildQuota(ctx, queue)
 	}
 
@@ -68,8 +70,8 @@ func (v *queueValidator) ValidateUpdate(ctx context.Context, oldObj, newObj runt
 
 	var warnings admission.Warnings
 
-	// Validate parent-child CPU quota relationship if parent exists
-	if newQueue.Spec.ParentQueue != "" {
+	// Validate parent-child CPU quota relationship if enabled and parent exists
+	if v.enableQuotaValidation && newQueue.Spec.ParentQueue != "" {
 		parentWarnings, err := v.validateParentChildQuota(ctx, newQueue)
 		if err != nil {
 			return parentWarnings, err
@@ -77,8 +79,8 @@ func (v *queueValidator) ValidateUpdate(ctx context.Context, oldObj, newObj runt
 		warnings = append(warnings, parentWarnings...)
 	}
 
-	// If this queue has children, validate that new quota >= sum of children quotas
-	if len(oldQueue.Status.ChildQueues) > 0 {
+	// If enabled and this queue has children, validate that new quota >= sum of children quotas
+	if v.enableQuotaValidation && len(oldQueue.Status.ChildQueues) > 0 {
 		childWarnings, err := v.validateChildrenQuotaSum(ctx, newQueue)
 		if err != nil {
 			return childWarnings, err
@@ -124,8 +126,8 @@ func (v *queueValidator) validateParentChildQuota(ctx context.Context, childQueu
 	parentCPU := parentQueue.Spec.Resources.CPU.Quota
 	
 	if childCPU > parentCPU {
-		return nil, fmt.Errorf("child queue CPU quota (%.0f) exceeds parent queue %s CPU quota (%.0f)", 
-			childCPU, parentQueue.Name, parentCPU)
+		warnings = append(warnings, fmt.Sprintf("child queue CPU quota (%.0f) exceeds parent queue %s CPU quota (%.0f) - over-provisioning detected", 
+			childCPU, parentQueue.Name, parentCPU))
 	}
 
 	// Calculate sum of all children's CPU quotas
@@ -147,21 +149,21 @@ func (v *queueValidator) validateParentChildQuota(ctx context.Context, childQueu
 		}
 	}
 
-	// Validate total children CPU quotas <= parent CPU quota
+	// Check if total children CPU quotas exceed parent CPU quota
 	if totalChildrenCPU > parentCPU {
-		warnings = append(warnings, fmt.Sprintf("total children CPU quota (%.0f) exceeds parent queue %s CPU quota (%.0f) - this may cause pod scheduling failures", 
+		warnings = append(warnings, fmt.Sprintf("total children CPU quota (%.0f) exceeds parent queue %s CPU quota (%.0f) - over-provisioning detected", 
 			totalChildrenCPU, parentQueue.Name, parentCPU))
 	}
 
-	// Also validate GPU and Memory quotas
+	// Also check GPU and Memory quotas
 	if childQueue.Spec.Resources.GPU.Quota > parentQueue.Spec.Resources.GPU.Quota {
-		return nil, fmt.Errorf("child queue GPU quota (%.2f) exceeds parent queue %s GPU quota (%.2f)", 
-			childQueue.Spec.Resources.GPU.Quota, parentQueue.Name, parentQueue.Spec.Resources.GPU.Quota)
+		warnings = append(warnings, fmt.Sprintf("child queue GPU quota (%.2f) exceeds parent queue %s GPU quota (%.2f) - over-provisioning detected", 
+			childQueue.Spec.Resources.GPU.Quota, parentQueue.Name, parentQueue.Spec.Resources.GPU.Quota))
 	}
 
 	if childQueue.Spec.Resources.Memory.Quota > parentQueue.Spec.Resources.Memory.Quota {
-		return nil, fmt.Errorf("child queue Memory quota (%.0f) exceeds parent queue %s Memory quota (%.0f)", 
-			childQueue.Spec.Resources.Memory.Quota, parentQueue.Name, parentQueue.Spec.Resources.Memory.Quota)
+		warnings = append(warnings, fmt.Sprintf("child queue Memory quota (%.0f) exceeds parent queue %s Memory quota (%.0f) - over-provisioning detected", 
+			childQueue.Spec.Resources.Memory.Quota, parentQueue.Name, parentQueue.Spec.Resources.Memory.Quota))
 	}
 
 	return warnings, nil
@@ -193,25 +195,25 @@ func (v *queueValidator) validateChildrenQuotaSum(ctx context.Context, parentQue
 			
 			// Check if individual child exceeds parent
 			if child.Spec.Resources.CPU.Quota > parentQueue.Spec.Resources.CPU.Quota {
-				warnings = append(warnings, fmt.Sprintf("child queue %s CPU quota (%.0f) exceeds parent CPU quota (%.0f)", 
+				warnings = append(warnings, fmt.Sprintf("child queue %s CPU quota (%.0f) exceeds parent CPU quota (%.0f) - over-provisioning detected", 
 					childName, child.Spec.Resources.CPU.Quota, parentQueue.Spec.Resources.CPU.Quota))
 			}
 		}
 	}
 
-	// Validate total children quotas don't exceed parent
+	// Check if total children quotas exceed parent
 	if totalChildrenCPU > parentQueue.Spec.Resources.CPU.Quota {
-		warnings = append(warnings, fmt.Sprintf("total children CPU quota (%.0f) exceeds parent CPU quota (%.0f) - this may cause pod scheduling failures", 
+		warnings = append(warnings, fmt.Sprintf("total children CPU quota (%.0f) exceeds parent CPU quota (%.0f) - over-provisioning detected", 
 			totalChildrenCPU, parentQueue.Spec.Resources.CPU.Quota))
 	}
 
 	if totalChildrenGPU > parentQueue.Spec.Resources.GPU.Quota {
-		warnings = append(warnings, fmt.Sprintf("total children GPU quota (%.2f) exceeds parent GPU quota (%.2f) - this may cause pod scheduling failures", 
+		warnings = append(warnings, fmt.Sprintf("total children GPU quota (%.2f) exceeds parent GPU quota (%.2f) - over-provisioning detected", 
 			totalChildrenGPU, parentQueue.Spec.Resources.GPU.Quota))
 	}
 
 	if totalChildrenMemory > parentQueue.Spec.Resources.Memory.Quota {
-		warnings = append(warnings, fmt.Sprintf("total children Memory quota (%.0f) exceeds parent Memory quota (%.0f) - this may cause pod scheduling failures", 
+		warnings = append(warnings, fmt.Sprintf("total children Memory quota (%.0f) exceeds parent Memory quota (%.0f) - over-provisioning detected", 
 			totalChildrenMemory, parentQueue.Spec.Resources.Memory.Quota))
 	}
 

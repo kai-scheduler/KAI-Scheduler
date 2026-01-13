@@ -13,48 +13,16 @@ var queuelog = logf.Log.WithName("queue-resource")
 
 const missingResourcesError = "resources must be specified"
 
+var enableQuotaValidation bool
+
+// SetEnableQuotaValidation sets the quota validation flag
+func SetEnableQuotaValidation(enabled bool) {
+	enableQuotaValidation = enabled
+}
+
 func (r *Queue) SetupWebhookWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewWebhookManagedBy(mgr).
 		For(r).
-		WithValidator(NewQueueValidator(mgr.GetClient())).
+		WithValidator(NewQueueValidator(mgr.GetClient(), enableQuotaValidation)).
 		Complete()
 }
-
-// TODO: Remove after QueueValidator is fully integrated
-// func (_ *Queue) ValidateCreate(_ context.Context, obj runtime.Object) (admission.Warnings, error) {
-// 	queue, ok := obj.(*Queue)
-// 	if !ok {
-// 		return nil, fmt.Errorf("expected a Queue but got a %T", obj)
-// 	}
-// 	queuelog.Info("validate create", "name", queue.Name)
-
-// 	if queue.Spec.Resources == nil {
-// 		return []string{missingResourcesError}, fmt.Errorf(missingResourcesError)
-// 	}
-// 	return nil, nil
-// }
-
-// ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
-// TODO: Remove after QueueValidator is fully integrated
-// func (_ *Queue) ValidateUpdate(_ context.Context, _ runtime.Object, newObj runtime.Object) (admission.Warnings, error) {
-// 	queue, ok := newObj.(*Queue)
-// 	if !ok {
-// 		return nil, fmt.Errorf("expected a Queue but got a %T", newObj)
-// 	}
-// 	queuelog.Info("validate update", "name", queue.Name)
-
-// 	if queue.Spec.Resources == nil {
-// 		return []string{missingResourcesError}, fmt.Errorf(missingResourcesError)
-// 	}
-// 	return nil, nil
-// }
-
-// TODO: Remove after QueueValidator is fully integrated
-// func (_ *Queue) ValidateDelete(_ context.Context, obj runtime.Object) (admission.Warnings, error) {
-// 	queue, ok := obj.(*Queue)
-// 	if !ok {
-// 		return nil, fmt.Errorf("expected a Queue but got a %T", obj)
-// 	}
-// 	queuelog.Info("validate delete", "name", queue.Name)
-// 	return nil, nil
-// }
