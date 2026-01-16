@@ -22,6 +22,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/admission/webhook/queuehooks"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/queuecontroller/controllers"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/queuecontroller/metrics"
 	// +kubebuilder:scaffold:imports
@@ -69,10 +70,10 @@ func Run(opts *Options, clientConfig *rest.Config, ctx context.Context) error {
 	}
 
 	if opts.EnableWebhook {
-		// Set the quota validation flag
-		v2.SetEnableQuotaValidation(opts.EnableQuotaValidation)
-		
-		if err = (&v2.Queue{}).SetupWebhookWithManager(mgr); err != nil {
+		if err = ctrl.NewWebhookManagedBy(mgr).
+			For(&v2.Queue{}).
+			WithValidator(queuehooks.NewQueueValidator(mgr.GetClient(), opts.EnableQuotaValidation)).
+			Complete(); err != nil {
 			setupLog.Error(err, "unable to create webhook for queue v2", "webhook", "Queue")
 			return nil
 		}
