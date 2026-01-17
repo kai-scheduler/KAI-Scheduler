@@ -32,7 +32,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Added support for Kubeflow Trainer v2 TrainJob workloads via skipTopOwner grouper pattern
 - Added `binder.cdiEnabled` Helm value to allow explicit override of CDI auto-detection for environments without ClusterPolicy
 - Added metric for tracking evicted pods in pod groups, including nodepool, eviction action, and gang size
-- Added queue validation webhook to queuecontroller with optional quota validation for parent-child relationships
+- Added queue validation webhook to queuecontroller with optional quota validation for parent-child relationships [AdheipSingh](https://github.com/AdheipSingh)
 - Block scheduling of pods with shared (non-template) DRA GPU claims that lack a queue label or have a mismatched queue label [gshaibi](https://github.com/gshaibi)
 - Added the option to disable prometheus service monitor creation [#810](https://github.com/NVIDIA/KAI-Scheduler/pull/810) [itsomri](https://github.com/itsomri)
 - Fixed prometheus instance deprecation - ensure single instance [#779](https://github.com/NVIDIA/KAI-Scheduler/pull/779) [itsomri](https://github.com/itsomri)
