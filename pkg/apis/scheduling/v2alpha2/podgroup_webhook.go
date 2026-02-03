@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -67,6 +68,9 @@ func (_ *PodGroup) ValidateDelete(ctx context.Context, obj runtime.Object) (admi
 func validateSubGroups(subGroups []SubGroup) error {
 	subGroupMap := map[string]*SubGroup{}
 	for _, subGroup := range subGroups {
+		if err := validateSubGroupName(subGroup.Name); err != nil {
+			return err
+		}
 		if subGroupMap[subGroup.Name] != nil {
 			return fmt.Errorf("duplicate subgroup name %s", subGroup.Name)
 		}
@@ -85,6 +89,16 @@ func validateSubGroups(subGroups []SubGroup) error {
 
 	if detectCycle(subGroupMap, childrenByParent) {
 		return errors.New("cycle detected in subgroups")
+	}
+	return nil
+}
+
+func validateSubGroupName(name string) error {
+	if name == "" {
+		return nil
+	}
+	if strings.ToLower(name) != name {
+		return fmt.Errorf("subgroup name %q must be lowercase", name)
 	}
 	return nil
 }
