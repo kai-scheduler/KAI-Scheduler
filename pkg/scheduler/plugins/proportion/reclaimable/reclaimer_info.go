@@ -12,6 +12,7 @@ type ReclaimerInfo struct {
 	Name              string
 	Namespace         string
 	Queue             common_info.QueueID
-	RequiredResources *resource_info.Resource
+	RequiredResources resource_info.ResourceVector
+	VectorMap         *resource_info.ResourceVectorMap
 	IsPreemptable     bool
 }

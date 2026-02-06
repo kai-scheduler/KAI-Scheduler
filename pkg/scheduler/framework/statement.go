@@ -262,7 +262,7 @@ func (s *Statement) Pipeline(task *pod_info.PodInfo, hostname string, updateTask
 	}
 
 	log.InfraLogger.V(6).Infof("After pipelined Task <%v/%v> to Node <%v>: idle <%v>, used <%v>, releasing <%v>",
-		task.Namespace, task.Name, node.Name, node.Idle, node.Used, node.Releasing)
+		task.Namespace, task.Name, node.Name, node.IdleVector, node.UsedVector, node.ReleasingVector)
 
 	for _, eh := range s.ssn.eventHandlers {
 		if eh.AllocateFunc != nil {
@@ -320,7 +320,7 @@ func (s *Statement) Allocate(task *pod_info.PodInfo, hostname string) error {
 		}
 		log.InfraLogger.V(5).Infof(
 			"After allocated Task <%v/%v> to Node <%v>: idle <%v>, used <%v>, releasing <%v>",
-			task.Namespace, task.Name, node.Name, node.Idle, node.Used, node.Releasing)
+			task.Namespace, task.Name, node.Name, node.IdleVector, node.UsedVector, node.ReleasingVector)
 	} else {
 		log.InfraLogger.Errorf("Failed to find Node <%s> in Session <%s> index when binding.",
 			hostname, s.sessionID)

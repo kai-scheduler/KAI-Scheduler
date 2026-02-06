@@ -8,6 +8,7 @@ import (
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 )
 
@@ -55,6 +56,13 @@ func (t *topologyPlugin) preJobAllocationFn(_ *podgroup_info.PodGroupInfo) {
 }
 
 func (t *topologyPlugin) initializeTopologyTree(topologies []*kaiv1alpha1.Topology, nodes map[string]*node_info.NodeInfo) {
+	// Get VectorMap from any node (all share the same map)
+	var sharedVectorMap *resource_info.ResourceVectorMap
+	for _, nodeInfo := range nodes {
+		sharedVectorMap = nodeInfo.VectorMap
+		break
+	}
+
 	for _, topology := range topologies {
 		topologyTree := &Info{
 			Name: topology.Name,
@@ -64,6 +72,7 @@ func (t *topologyPlugin) initializeTopologyTree(topologies []*kaiv1alpha1.Topolo
 				},
 			},
 			TopologyResource: topology,
+			VectorMap:        sharedVectorMap,
 		}
 
 		for _, nodeInfo := range nodes {

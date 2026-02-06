@@ -137,7 +137,7 @@ func allocateTask(ssn *framework.Session, stmt *framework.Statement, nodes []*no
 	}
 
 	log.InfraLogger.V(6).Infof("Looking for best node for task - Task: <%s/%s>, init requested: <%v>.",
-		task.Namespace, task.Name, task.ResReq)
+		task.Namespace, task.Name, task.ResReqVector)
 
 	orderedNodes := ssn.OrderedNodesByTask(nodes, task)
 	for _, node := range orderedNodes {
@@ -175,7 +175,7 @@ func allocateTaskToNode(ssn *framework.Session, stmt *framework.Statement, task 
 
 func bindTaskToNode(ssn *framework.Session, stmt *framework.Statement, task *pod_info.PodInfo, node *node_info.NodeInfo) bool {
 	log.InfraLogger.V(6).Infof("Binding Task <%v/%v> to node <%v>, requires: %v GPUs",
-		task.Namespace, task.Name, node.Name, task.ResReq)
+		task.Namespace, task.Name, node.Name, task.ResReqVector)
 
 	if err := stmt.Allocate(task, node.Name); err != nil {
 		log.InfraLogger.Errorf("Failed to bind Task %v on %v in Session %v, err: %v", task.UID, node.Name, ssn.ID, err)
@@ -186,7 +186,7 @@ func bindTaskToNode(ssn *framework.Session, stmt *framework.Statement, task *pod
 
 func pipelineTaskToNode(ssn *framework.Session, stmt *framework.Statement, task *pod_info.PodInfo, node *node_info.NodeInfo, updateTasksIfExistsOnNode bool) bool {
 	log.InfraLogger.V(6).Infof("Pipelining Task <%v/%v> to node <%v> requires: %v GPUs",
-		task.Namespace, task.Name, node.Name, task.ResReq)
+		task.Namespace, task.Name, node.Name, task.ResReqVector)
 
 	if err := stmt.Pipeline(task, node.Name, updateTasksIfExistsOnNode); err != nil {
 		log.InfraLogger.V(6).Infof("Failed to pipeline Task %v on %v in Session %v", task.UID, node.Name, ssn.ID)

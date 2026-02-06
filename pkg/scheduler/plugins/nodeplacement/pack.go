@@ -22,7 +22,7 @@ func (pp *nodePlacementPlugin) nodeResourcePack(resourceName v1.ResourceName) ap
 		podAllocationRange := pp.podAllocatableRange[string(task.UID)]
 		currentNodeNonAllocated := node.NonAllocatedResource(resourceName)
 
-		nodeOverall := node.Allocatable.Get(resourceName)
+		nodeOverall := node.AllocatableVector.Get(node.VectorMap.GetIndex(string(resourceName)))
 		score := getScoreOfCurrentNode(podAllocationRange.minAllocatable, podAllocationRange.maxAllocatable,
 			currentNodeNonAllocated, nodeOverall)
 		log.InfraLogger.V(7).Infof("Estimating Task: <%v/%v> Job: <%v> for node: <%s> "+
@@ -69,7 +69,7 @@ func getMinMaxPerNode(resourceName v1.ResourceName, nodes []*node_info.NodeInfo)
 	for _, node := range nodes {
 		current := node.NonAllocatedResource(resourceName)
 		// We don't want to consider nodes with none of that resource type
-		if node.Allocatable.Get(resourceName) == 0 {
+		if node.AllocatableVector.Get(node.VectorMap.GetIndex(string(resourceName))) == 0 {
 			continue
 		}
 

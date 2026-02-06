@@ -83,9 +83,10 @@ type PodInfo struct {
 	ResReq           *resource_info.ResourceRequirements
 	AcceptedResource *resource_info.ResourceRequirements
 
-	// Vector representation of ResReq
-	ResReqVector resource_info.ResourceVector
-	VectorMap    *resource_info.ResourceVectorMap
+	// Vector representation of ResReq and AcceptedResource
+	ResReqVector           resource_info.ResourceVector
+	AcceptedResourceVector resource_info.ResourceVector
+	VectorMap              *resource_info.ResourceVectorMap
 
 	schedulingConstraintsSignature common_info.SchedulingConstraintsSignature
 
@@ -198,6 +199,7 @@ func NewTaskInfoWithBindRequest(pod *v1.Pod, bindRequest *bindrequest_info.BindR
 		ResReq:                         initResreq,
 		AcceptedResource:               resource_info.EmptyResourceRequirements(),
 		ResReqVector:                   initResreq.ToVector(vectorMap),
+		AcceptedResourceVector:         resource_info.NewResourceVector(vectorMap),
 		VectorMap:                      vectorMap,
 		GPUGroups:                      []string{},
 		ResourceRequestType:            RequestTypeRegular,
@@ -259,6 +261,7 @@ func resourceClaimInfoFromPodClaims(draPodClaims []*resourceapi.ResourceClaim, p
 func (pi *PodInfo) SetVectorMap(vectorMap *resource_info.ResourceVectorMap) {
 	pi.VectorMap = vectorMap
 	pi.ResReqVector = pi.ResReq.ToVector(vectorMap)
+	pi.AcceptedResourceVector = pi.AcceptedResource.ToVector(vectorMap)
 }
 
 func (pi *PodInfo) Clone() *PodInfo {
@@ -267,28 +270,33 @@ func (pi *PodInfo) Clone() *PodInfo {
 	if pi.ResReqVector != nil {
 		resReqVectorClone = pi.ResReqVector.Clone()
 	}
+	var acceptedResourceVectorClone resource_info.ResourceVector
+	if pi.AcceptedResourceVector != nil {
+		acceptedResourceVectorClone = pi.AcceptedResourceVector.Clone()
+	}
 
 	return &PodInfo{
-		UID:                  pi.UID,
-		Job:                  pi.Job,
-		Name:                 pi.Name,
-		Namespace:            pi.Namespace,
-		SubGroupName:         pi.SubGroupName,
-		NodeName:             pi.NodeName,
-		Status:               pi.Status,
-		Pod:                  pi.Pod,
-		ResReq:               pi.ResReq.Clone(),
-		AcceptedResource:     pi.AcceptedResource.Clone(),
-		ResReqVector:         resReqVectorClone,
-		VectorMap:            pi.VectorMap,
-		GPUGroups:            pi.GPUGroups,
-		ResourceClaimInfo:    pi.ResourceClaimInfo.Clone(),
-		ResourceRequestType:  pi.ResourceRequestType,
-		ResourceReceivedType: pi.ResourceReceivedType,
-		IsVirtualStatus:      pi.IsVirtualStatus,
-		IsLegacyMIGtask:      pi.IsLegacyMIGtask,
-		storageClaims:        pi.storageClaims,
-		ownedStorageClaims:   pi.ownedStorageClaims,
+		UID:                    pi.UID,
+		Job:                    pi.Job,
+		Name:                   pi.Name,
+		Namespace:              pi.Namespace,
+		SubGroupName:           pi.SubGroupName,
+		NodeName:               pi.NodeName,
+		Status:                 pi.Status,
+		Pod:                    pi.Pod,
+		ResReq:                 pi.ResReq.Clone(),
+		AcceptedResource:       pi.AcceptedResource.Clone(),
+		ResReqVector:           resReqVectorClone,
+		AcceptedResourceVector: acceptedResourceVectorClone,
+		VectorMap:              pi.VectorMap,
+		GPUGroups:              pi.GPUGroups,
+		ResourceClaimInfo:      pi.ResourceClaimInfo.Clone(),
+		ResourceRequestType:    pi.ResourceRequestType,
+		ResourceReceivedType:   pi.ResourceReceivedType,
+		IsVirtualStatus:        pi.IsVirtualStatus,
+		IsLegacyMIGtask:        pi.IsLegacyMIGtask,
+		storageClaims:          pi.storageClaims,
+		ownedStorageClaims:     pi.ownedStorageClaims,
 	}
 }
 

@@ -21,6 +21,9 @@ import (
 )
 
 var _ = Describe("Capacity Policy Check", func() {
+	var (
+		testVectorMap = resource_info.NewResourceVectorMap()
+	)
 	Describe("IsJobOverQueueCapacity", func() {
 		Context("max allowed", func() {
 			tests := map[string]struct {
@@ -80,12 +83,14 @@ var _ = Describe("Capacity Policy Check", func() {
 							podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil).
 								WithPodInfos(map[common_info.PodID]*pod_info.PodInfo{
 									"task-a": {
-										UID:       "task-a",
-										Job:       "job-a",
-										Name:      "task-a",
-										Namespace: "team-a",
-										Status:    pod_status.Pending,
-										ResReq:    resource_info.NewResourceRequirementsWithGpus(1),
+										UID:          "task-a",
+										Job:          "job-a",
+										Name:         "task-a",
+										Namespace:    "team-a",
+										Status:       pod_status.Pending,
+										ResReq:       resource_info.NewResourceRequirementsWithGpus(1),
+										ResReqVector: resource_info.NewResourceRequirementsWithGpus(1).ToVector(testVectorMap),
+										VectorMap:    testVectorMap,
 									},
 								}),
 						},
@@ -143,12 +148,14 @@ var _ = Describe("Capacity Policy Check", func() {
 							podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil).
 								WithPodInfos(map[common_info.PodID]*pod_info.PodInfo{
 									"task-a": {
-										UID:       "task-a",
-										Job:       "job-a",
-										Name:      "task-a",
-										Namespace: "team-a",
-										Status:    pod_status.Pending,
-										ResReq:    resource_info.NewResourceRequirementsWithGpus(1),
+										UID:          "task-a",
+										Job:          "job-a",
+										Name:         "task-a",
+										Namespace:    "team-a",
+										Status:       pod_status.Pending,
+										ResReq:       resource_info.NewResourceRequirementsWithGpus(1),
+										ResReqVector: resource_info.NewResourceRequirementsWithGpus(1).ToVector(testVectorMap),
+										VectorMap:    testVectorMap,
 									},
 								}),
 						},
@@ -231,12 +238,14 @@ var _ = Describe("Capacity Policy Check", func() {
 							podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil).
 								WithPodInfos(map[common_info.PodID]*pod_info.PodInfo{
 									"task-a": {
-										UID:       "task-a",
-										Job:       "job-a",
-										Name:      "task-a",
-										Namespace: "team-a",
-										Status:    pod_status.Pending,
-										ResReq:    resource_info.NewResourceRequirementsWithGpus(1),
+										UID:          "task-a",
+										Job:          "job-a",
+										Name:         "task-a",
+										Namespace:    "team-a",
+										Status:       pod_status.Pending,
+										ResReq:       resource_info.NewResourceRequirementsWithGpus(1),
+										ResReqVector: resource_info.NewResourceRequirementsWithGpus(1).ToVector(testVectorMap),
+										VectorMap:    testVectorMap,
 									},
 								}),
 						},
@@ -298,12 +307,14 @@ var _ = Describe("Capacity Policy Check", func() {
 							podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil).
 								WithPodInfos(map[common_info.PodID]*pod_info.PodInfo{
 									"task-a": {
-										UID:       "task-a",
-										Job:       "job-a",
-										Name:      "task-a",
-										Namespace: "team-a",
-										Status:    pod_status.Pending,
-										ResReq:    resource_info.NewResourceRequirementsWithGpus(1),
+										UID:          "task-a",
+										Job:          "job-a",
+										Name:         "task-a",
+										Namespace:    "team-a",
+										Status:       pod_status.Pending,
+										ResReq:       resource_info.NewResourceRequirementsWithGpus(1),
+										ResReqVector: resource_info.NewResourceRequirementsWithGpus(1).ToVector(testVectorMap),
+										VectorMap:    testVectorMap,
 									},
 								}),
 						},
@@ -389,12 +400,14 @@ var _ = Describe("Capacity Policy Check", func() {
 							podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil).
 								WithPodInfos(map[common_info.PodID]*pod_info.PodInfo{
 									"task-a": {
-										UID:       "task-a",
-										Job:       "job-a",
-										Name:      "task-a",
-										Namespace: "team-a",
-										Status:    pod_status.Pending,
-										ResReq:    resource_info.NewResourceRequirementsWithGpus(1),
+										UID:          "task-a",
+										Job:          "job-a",
+										Name:         "task-a",
+										Namespace:    "team-a",
+										Status:       pod_status.Pending,
+										ResReq:       resource_info.NewResourceRequirementsWithGpus(1),
+										ResReqVector: resource_info.NewResourceRequirementsWithGpus(1).ToVector(testVectorMap),
+										VectorMap:    testVectorMap,
 									},
 								}),
 						},
@@ -456,12 +469,14 @@ var _ = Describe("Capacity Policy Check", func() {
 							podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil).
 								WithPodInfos(map[common_info.PodID]*pod_info.PodInfo{
 									"task-a": {
-										UID:       "task-a",
-										Job:       "job-a",
-										Name:      "task-a",
-										Namespace: "team-a",
-										Status:    pod_status.Pending,
-										ResReq:    resource_info.NewResourceRequirementsWithGpus(1),
+										UID:          "task-a",
+										Job:          "job-a",
+										Name:         "task-a",
+										Namespace:    "team-a",
+										Status:       pod_status.Pending,
+										ResReq:       resource_info.NewResourceRequirementsWithGpus(1),
+										ResReqVector: resource_info.NewResourceRequirementsWithGpus(1).ToVector(testVectorMap),
+										VectorMap:    testVectorMap,
 									},
 								}),
 						},
@@ -548,12 +563,14 @@ var _ = Describe("Capacity Policy Check", func() {
 							podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil).
 								WithPodInfos(map[common_info.PodID]*pod_info.PodInfo{
 									"task-a": {
-										UID:       "task-a",
-										Job:       "job-a",
-										Name:      "task-a",
-										Namespace: "team-a",
-										Status:    pod_status.Pending,
-										ResReq:    resource_info.NewResourceRequirements(0, 1000, 0),
+										UID:          "task-a",
+										Job:          "job-a",
+										Name:         "task-a",
+										Namespace:    "team-a",
+										Status:       pod_status.Pending,
+										ResReq:       resource_info.NewResourceRequirements(0, 1000, 0),
+										ResReqVector: resource_info.NewResourceRequirements(0, 1000, 0).ToVector(testVectorMap),
+										VectorMap:    testVectorMap,
 									},
 								}),
 						},
@@ -618,12 +635,14 @@ var _ = Describe("Capacity Policy Check", func() {
 							podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil).
 								WithPodInfos(map[common_info.PodID]*pod_info.PodInfo{
 									"task-a": {
-										UID:       "task-a",
-										Job:       "job-a",
-										Name:      "task-a",
-										Namespace: "team-a",
-										Status:    pod_status.Pending,
-										ResReq:    resource_info.NewResourceRequirements(0, 1000, 0),
+										UID:          "task-a",
+										Job:          "job-a",
+										Name:         "task-a",
+										Namespace:    "team-a",
+										Status:       pod_status.Pending,
+										ResReq:       resource_info.NewResourceRequirements(0, 1000, 0),
+										ResReqVector: resource_info.NewResourceRequirements(0, 1000, 0).ToVector(testVectorMap),
+										VectorMap:    testVectorMap,
 									},
 								}),
 						},
@@ -688,12 +707,14 @@ var _ = Describe("Capacity Policy Check", func() {
 							podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil).
 								WithPodInfos(map[common_info.PodID]*pod_info.PodInfo{
 									"task-a": {
-										UID:       "task-a",
-										Job:       "job-a",
-										Name:      "task-a",
-										Namespace: "team-a",
-										Status:    pod_status.Pending,
-										ResReq:    resource_info.NewResourceRequirements(0, 1000, 0),
+										UID:          "task-a",
+										Job:          "job-a",
+										Name:         "task-a",
+										Namespace:    "team-a",
+										Status:       pod_status.Pending,
+										ResReq:       resource_info.NewResourceRequirements(0, 1000, 0),
+										ResReqVector: resource_info.NewResourceRequirements(0, 1000, 0).ToVector(testVectorMap),
+										VectorMap:    testVectorMap,
 									},
 								}),
 						},
@@ -758,12 +779,14 @@ var _ = Describe("Capacity Policy Check", func() {
 							podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil).
 								WithPodInfos(map[common_info.PodID]*pod_info.PodInfo{
 									"task-a": {
-										UID:       "task-a",
-										Job:       "job-a",
-										Name:      "task-a",
-										Namespace: "team-a",
-										Status:    pod_status.Pending,
-										ResReq:    resource_info.NewResourceRequirements(0, 1000, 0),
+										UID:          "task-a",
+										Job:          "job-a",
+										Name:         "task-a",
+										Namespace:    "team-a",
+										Status:       pod_status.Pending,
+										ResReq:       resource_info.NewResourceRequirements(0, 1000, 0),
+										ResReqVector: resource_info.NewResourceRequirements(0, 1000, 0).ToVector(testVectorMap),
+										VectorMap:    testVectorMap,
 									},
 								}),
 						},
@@ -831,12 +854,14 @@ var _ = Describe("Capacity Policy Check", func() {
 							podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil).
 								WithPodInfos(map[common_info.PodID]*pod_info.PodInfo{
 									"task-a": {
-										UID:       "task-a",
-										Job:       "job-a",
-										Name:      "task-a",
-										Namespace: "team-a",
-										Status:    pod_status.Pending,
-										ResReq:    resource_info.NewResourceRequirements(0, 500, 0),
+										UID:          "task-a",
+										Job:          "job-a",
+										Name:         "task-a",
+										Namespace:    "team-a",
+										Status:       pod_status.Pending,
+										ResReq:       resource_info.NewResourceRequirements(0, 500, 0),
+										ResReqVector: resource_info.NewResourceRequirements(0, 500, 0).ToVector(testVectorMap),
+										VectorMap:    testVectorMap,
 									},
 								}),
 						},
@@ -904,12 +929,14 @@ var _ = Describe("Capacity Policy Check", func() {
 							podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil).
 								WithPodInfos(map[common_info.PodID]*pod_info.PodInfo{
 									"task-a": {
-										UID:       "task-a",
-										Job:       "job-a",
-										Name:      "task-a",
-										Namespace: "team-a",
-										Status:    pod_status.Pending,
-										ResReq:    resource_info.NewResourceRequirements(0, 1100, 0),
+										UID:          "task-a",
+										Job:          "job-a",
+										Name:         "task-a",
+										Namespace:    "team-a",
+										Status:       pod_status.Pending,
+										ResReq:       resource_info.NewResourceRequirements(0, 1100, 0),
+										ResReqVector: resource_info.NewResourceRequirements(0, 1100, 0).ToVector(testVectorMap),
+										VectorMap:    testVectorMap,
 									},
 								}),
 						},
@@ -977,12 +1004,14 @@ var _ = Describe("Capacity Policy Check", func() {
 							podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil).
 								WithPodInfos(map[common_info.PodID]*pod_info.PodInfo{
 									"task-a": {
-										UID:       "task-a",
-										Job:       "job-a",
-										Name:      "task-a",
-										Namespace: "team-a",
-										Status:    pod_status.Pending,
-										ResReq:    resource_info.NewResourceRequirements(0, 500, 0),
+										UID:          "task-a",
+										Job:          "job-a",
+										Name:         "task-a",
+										Namespace:    "team-a",
+										Status:       pod_status.Pending,
+										ResReq:       resource_info.NewResourceRequirements(0, 500, 0),
+										ResReqVector: resource_info.NewResourceRequirements(0, 500, 0).ToVector(testVectorMap),
+										VectorMap:    testVectorMap,
 									},
 								}),
 						},
@@ -1050,12 +1079,14 @@ var _ = Describe("Capacity Policy Check", func() {
 							podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil).
 								WithPodInfos(map[common_info.PodID]*pod_info.PodInfo{
 									"task-a": {
-										UID:       "task-a",
-										Job:       "job-a",
-										Name:      "task-a",
-										Namespace: "team-a",
-										Status:    pod_status.Pending,
-										ResReq:    resource_info.NewResourceRequirements(0, 1100, 0),
+										UID:          "task-a",
+										Job:          "job-a",
+										Name:         "task-a",
+										Namespace:    "team-a",
+										Status:       pod_status.Pending,
+										ResReq:       resource_info.NewResourceRequirements(0, 1100, 0),
+										ResReqVector: resource_info.NewResourceRequirements(0, 1100, 0).ToVector(testVectorMap),
+										VectorMap:    testVectorMap,
 									},
 								}),
 						},

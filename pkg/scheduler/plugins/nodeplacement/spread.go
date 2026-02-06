@@ -19,7 +19,7 @@ func nodeResourceSpread(resourceName v1.ResourceName) api.NodeOrderFn {
 		if resourceName == resource_info.GPUResourceName {
 			resourceCount = float64(node.GetNumberOfGPUsInNode())
 		} else {
-			resourceCount = node.Allocatable.Get(resourceName)
+			resourceCount = node.AllocatableVector.Get(node.VectorMap.GetIndex(string(resourceName)))
 		}
 
 		if resourceCount == 0 {

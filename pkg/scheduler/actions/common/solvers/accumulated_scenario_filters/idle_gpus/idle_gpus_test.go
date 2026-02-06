@@ -25,6 +25,8 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 )
 
+var testVectorMap = resource_info.NewResourceVectorMap()
+
 func Test_orderedInsert(t *testing.T) {
 	type args[T cmp.Ordered] struct {
 		array   []T
@@ -232,6 +234,8 @@ func TestAccumulatedIdleGpus_updateWithVictim(t *testing.T) {
 							2, 0,
 						),
 					},
+					AcceptedResourceVector: resource_info.NewResourceVectorWithValues(0, 0, 2, testVectorMap),
+					VectorMap:              testVectorMap,
 				},
 				minIdleGpusRelevant: "n2",
 			},
@@ -255,6 +259,8 @@ func TestAccumulatedIdleGpus_updateWithVictim(t *testing.T) {
 							2, 0,
 						),
 					},
+					AcceptedResourceVector: resource_info.NewResourceVectorWithValues(0, 0, 2, testVectorMap),
+					VectorMap:              testVectorMap,
 				},
 				minIdleGpusRelevant: "n2",
 			},
@@ -278,6 +284,8 @@ func TestAccumulatedIdleGpus_updateWithVictim(t *testing.T) {
 							2, 0,
 						),
 					},
+					AcceptedResourceVector: resource_info.NewResourceVectorWithValues(0, 0, 2, testVectorMap),
+					VectorMap:              testVectorMap,
 				},
 				minIdleGpusRelevant: "n4",
 			},

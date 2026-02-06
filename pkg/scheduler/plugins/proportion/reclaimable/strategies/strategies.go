@@ -16,14 +16,15 @@ type GuaranteeDeservedQuotaStrategy struct{}
 var strategies = []ReclaimStrategy{&MaintainFairShareStrategy{}, &GuaranteeDeservedQuotaStrategy{}}
 
 func FitsReclaimStrategy(
-	reclaimerResources *resource_info.Resource,
+	reclaimerResources resource_info.ResourceVector,
+	vectorMap *resource_info.ResourceVectorMap,
 	reclaimerQueue *rs.QueueAttributes,
 	reclaimeeQueue *rs.QueueAttributes,
 	reclaimeeRemainingShare rs.ResourceQuantities,
 ) bool {
 	for _, strategy := range strategies {
 		if strategy.Reclaimable(
-			reclaimerResources, reclaimerQueue, reclaimeeQueue,
+			reclaimerResources, vectorMap, reclaimerQueue, reclaimeeQueue,
 			reclaimeeRemainingShare,
 		) {
 			return true
@@ -34,13 +35,15 @@ func FitsReclaimStrategy(
 
 type ReclaimStrategy interface {
 	Reclaimable(
-		reclaimerResources *resource_info.Resource, reclaimerQueue *rs.QueueAttributes,
+		reclaimerResources resource_info.ResourceVector, vectorMap *resource_info.ResourceVectorMap,
+		reclaimerQueue *rs.QueueAttributes,
 		reclaimeeQueue *rs.QueueAttributes, reclaimeeRemainingShare rs.ResourceQuantities,
 	) bool
 }
 
 func (mfss *MaintainFairShareStrategy) Reclaimable(
-	_ *resource_info.Resource,
+	_ resource_info.ResourceVector,
+	_ *resource_info.ResourceVectorMap,
 	reclaimerQueue *rs.QueueAttributes,
 	reclaimeeQueue *rs.QueueAttributes,
 	reclaimeeRemainingShare rs.ResourceQuantities) bool {
@@ -56,7 +59,8 @@ func (mfss *MaintainFairShareStrategy) Reclaimable(
 }
 
 func (gdqs *GuaranteeDeservedQuotaStrategy) Reclaimable(
-	reclaimerResources *resource_info.Resource,
+	reclaimerResources resource_info.ResourceVector,
+	vectorMap *resource_info.ResourceVectorMap,
 	reclaimerQueue *rs.QueueAttributes,
 	reclaimeeQueue *rs.QueueAttributes,
 	reclaimeeRemainingShare rs.ResourceQuantities) bool {
@@ -71,7 +75,7 @@ func (gdqs *GuaranteeDeservedQuotaStrategy) Reclaimable(
 		reclaimerQueue.GetDeservedShare(), reclaimerQueue.GetFairShare())
 
 	// reclaimer has to be under (or equal) deserved quota in all resources (cpu, mem, gpu)
-	if reclaimerWillGoOverQuota(reclaimerResources, reclaimerQueue) {
+	if reclaimerWillGoOverQuota(reclaimerResources, vectorMap, reclaimerQueue) {
 		return false
 	}
 
@@ -83,9 +87,9 @@ func (gdqs *GuaranteeDeservedQuotaStrategy) Reclaimable(
 	return true
 }
 
-func reclaimerWillGoOverQuota(reclaimerResources *resource_info.Resource, reclaimerQueue *rs.QueueAttributes) bool {
+func reclaimerWillGoOverQuota(reclaimerResources resource_info.ResourceVector, vectorMap *resource_info.ResourceVectorMap, reclaimerQueue *rs.QueueAttributes) bool {
 	reclaimerRequestedQuota := reclaimerQueue.GetAllocatedShare()
-	reclaimerRequestedQuota.Add(utils.QuantifyResource(reclaimerResources))
+	reclaimerRequestedQuota.Add(utils.QuantifyVector(reclaimerResources, vectorMap))
 
 	return !reclaimerRequestedQuota.LessEqual(reclaimerQueue.GetDeservedShare())
 }

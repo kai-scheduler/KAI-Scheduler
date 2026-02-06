@@ -78,6 +78,16 @@ var (
 	allNodeNames = append(gpuNodeNames, cpuNode.Name)
 )
 
+func init() {
+	vectorMap := resource_info.NewResourceVectorMap()
+	vectorMap.AddResource("nvidia.com/mig-1g.10gb")
+	for _, node := range allNodes {
+		node.VectorMap = vectorMap
+		node.IdleVector = node.Idle.ToVector(vectorMap)
+		node.ReleasingVector = node.Releasing.ToVector(vectorMap)
+	}
+}
+
 func TestFeasibleNodes(t *testing.T) {
 	tests := []struct {
 		name              string

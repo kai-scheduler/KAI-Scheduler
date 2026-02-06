@@ -65,10 +65,15 @@ var _ = Describe("NodeSpread", func() {
 				},
 			}
 
+			vectorMap := resource_info.NewResourceVectorMap()
+
 			for _, c := range cases {
 				task := &pod_info.PodInfo{
 					ResReq: resource_info.NewResourceRequirementsWithGpus(1),
 				}
+
+				idle := resource_info.NewResource(0, 0, c.nonAllocated)
+				releasing := resource_info.EmptyResource()
 
 				node := &node_info.NodeInfo{
 					Node: &corev1.Node{
@@ -78,8 +83,11 @@ var _ = Describe("NodeSpread", func() {
 							},
 						},
 					},
-					Idle:      resource_info.NewResource(0, 0, c.nonAllocated),
-					Releasing: resource_info.EmptyResource(),
+					Idle:            idle,
+					IdleVector:      idle.ToVector(vectorMap),
+					Releasing:       releasing,
+					ReleasingVector: releasing.ToVector(vectorMap),
+					VectorMap:       vectorMap,
 				}
 
 				plugin := nodeplacement.New(map[string]string{
@@ -100,11 +108,19 @@ var _ = Describe("NodeSpread", func() {
 					ResReq: resource_info.NewResourceRequirements(0, 1, 0),
 				}
 
+				idle2 := resource_info.NewResource(c.nonAllocated, 0, 0)
+				allocatable := resource_info.NewResource(float64(c.gpuCount), 0, 0)
+				releasing2 := resource_info.EmptyResource()
+
 				node = &node_info.NodeInfo{
-					Node:        &corev1.Node{},
-					Idle:        resource_info.NewResource(c.nonAllocated, 0, 0),
-					Allocatable: resource_info.NewResource(float64(c.gpuCount), 0, 0),
-					Releasing:   resource_info.EmptyResource(),
+					Node:              &corev1.Node{},
+					Idle:              idle2,
+					IdleVector:        idle2.ToVector(vectorMap),
+					Allocatable:       allocatable,
+					AllocatableVector: allocatable.ToVector(vectorMap),
+					Releasing:         releasing2,
+					ReleasingVector:   releasing2.ToVector(vectorMap),
+					VectorMap:         vectorMap,
 				}
 
 				actual, err = nof(task, node)

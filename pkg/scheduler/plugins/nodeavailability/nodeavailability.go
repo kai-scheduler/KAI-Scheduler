@@ -4,6 +4,7 @@
 package nodeavailability
 
 import (
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
@@ -32,10 +33,11 @@ func (pp *nodeAvailabilityPlugin) nodeOrderFn(task *pod_info.PodInfo, node *node
 		score = scores.Availability
 	}
 
+	gpuIdx := node.VectorMap.GetIndex(commonconstants.GpuResource)
 	log.InfraLogger.V(7).Infof(
 		"Estimating Task: <%v/%v> Job: <%v> for node: <%s> that has <%f> idle GPUs and <%f> releasing GPUs and <%f> allocated GPUs. Score: %f",
-		task.Namespace, task.Name, task.Job, node.Name, node.Idle.GPUs(), node.Releasing.GPUs(),
-		node.Used.GPUs(), score)
+		task.Namespace, task.Name, task.Job, node.Name, node.IdleVector.Get(gpuIdx), node.ReleasingVector.Get(gpuIdx),
+		node.UsedVector.Get(gpuIdx), score)
 	return score, nil
 }
 

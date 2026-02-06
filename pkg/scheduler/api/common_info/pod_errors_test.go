@@ -42,6 +42,7 @@ func TestFitErrors_Error(t *testing.T) {
 }
 
 func TestNewFitErrorInsufficientResource(t *testing.T) {
+	vectorMap := resource_info.NewResourceVectorMap()
 	type args struct {
 		name              string
 		namespace         string
@@ -188,8 +189,10 @@ func TestNewFitErrorInsufficientResource(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			usedVector := tt.args.usedResource.ToVector(vectorMap)
+			capacityVector := tt.args.capacityResource.ToVector(vectorMap)
 			if got := NewFitErrorInsufficientResource(tt.args.name, tt.args.namespace, tt.args.nodeName,
-				tt.args.resourceRequested, tt.args.usedResource, tt.args.capacityResource, tt.args.capacityGpuMemory,
+				tt.args.resourceRequested, usedVector, capacityVector, vectorMap, tt.args.capacityGpuMemory,
 				tt.args.gangSchedulingJob, tt.args.suffix); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("NewFitErrorInsufficientResource() = %v, want %v", got, tt.want)
 			}

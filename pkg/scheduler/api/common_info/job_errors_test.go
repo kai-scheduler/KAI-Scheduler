@@ -14,6 +14,14 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 )
 
+var errorsTestVectorMap *resource_info.ResourceVectorMap
+
+func init() {
+	errorsTestVectorMap = resource_info.NewResourceVectorMap()
+	errorsTestVectorMap.AddResource("nvidia.com/mig-1g.5gb")
+	errorsTestVectorMap.AddResource("custom.io/res")
+}
+
 func TestJobFitErrorsToDetailedMessage(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -304,8 +312,8 @@ func TestNewTopologyInsufficientResourcesError(t *testing.T) {
 		subGroupName      string
 		namespace         string
 		domainID          string
-		resourceRequested *resource_info.Resource
-		availableResource *resource_info.Resource
+		resourceRequested resource_info.ResourceVector
+		availableResource resource_info.ResourceVector
 	}
 	tests := []struct {
 		name string
@@ -319,8 +327,8 @@ func TestNewTopologyInsufficientResourcesError(t *testing.T) {
 				subGroupName:      "subgroup1",
 				namespace:         "namespace1",
 				domainID:          "domain1",
-				resourceRequested: BuildResource("1500m", "1M"),
-				availableResource: BuildResource("1000m", "2M"),
+				resourceRequested: BuildResource("1500m", "1M").ToVector(errorsTestVectorMap),
+				availableResource: BuildResource("1000m", "2M").ToVector(errorsTestVectorMap),
 			},
 			want: &TopologyFitError{
 				JobFitErrorBase: JobFitErrorBase{
@@ -341,8 +349,8 @@ func TestNewTopologyInsufficientResourcesError(t *testing.T) {
 				subGroupName:      "subgroup1",
 				namespace:         "namespace1",
 				domainID:          "domain1",
-				resourceRequested: BuildResource("1000m", "3M"),
-				availableResource: BuildResource("2000m", "2M"),
+				resourceRequested: BuildResource("1000m", "3M").ToVector(errorsTestVectorMap),
+				availableResource: BuildResource("2000m", "2M").ToVector(errorsTestVectorMap),
 			},
 			want: &TopologyFitError{
 				JobFitErrorBase: JobFitErrorBase{
@@ -363,8 +371,8 @@ func TestNewTopologyInsufficientResourcesError(t *testing.T) {
 				subGroupName:      "subgroup1",
 				namespace:         "namespace1",
 				domainID:          "domain1",
-				resourceRequested: BuildResourceWithGpu("1000m", "1M", "2", "1"),
-				availableResource: BuildResourceWithGpu("2000m", "2M", "1", "110"),
+				resourceRequested: BuildResourceWithGpu("1000m", "1M", "2", "1").ToVector(errorsTestVectorMap),
+				availableResource: BuildResourceWithGpu("2000m", "2M", "1", "110").ToVector(errorsTestVectorMap),
 			},
 			want: &TopologyFitError{
 				JobFitErrorBase: JobFitErrorBase{
@@ -387,10 +395,10 @@ func TestNewTopologyInsufficientResourcesError(t *testing.T) {
 				domainID:     "domain1",
 				resourceRequested: resource_info.ResourceFromResourceList(
 					BuildResourceListWithMig("1000m", "1M", "nvidia.com/mig-1g.5gb", "nvidia.com/mig-1g.5gb"),
-				),
+				).ToVector(errorsTestVectorMap),
 				availableResource: resource_info.ResourceFromResourceList(
 					BuildResourceListWithMig("2000m", "2M", "nvidia.com/mig-1g.5gb"),
-				),
+				).ToVector(errorsTestVectorMap),
 			},
 			want: &TopologyFitError{
 				JobFitErrorBase: JobFitErrorBase{
@@ -398,13 +406,10 @@ func TestNewTopologyInsufficientResourcesError(t *testing.T) {
 					jobName:      "job1",
 					subGroupName: "subgroup1",
 					reason:       UnschedulableWorkloadReason,
-					// MIG resources appear twice: once in MigResources() and once in ScalarResources()
 					messages: []string{
 						"node-group(s) didn't have enough of mig profile: nvidia.com/mig-1g.5gb",
-						"node-group(s) didn't have enough resources: nvidia.com/mig-1g.5gb",
 					},
 					detailedMessages: []string{
-						"domain1 didn't have enough resource: nvidia.com/mig-1g.5gb, requested: 2, available: 1",
 						"domain1 didn't have enough resource: nvidia.com/mig-1g.5gb, requested: 2, available: 1",
 					},
 				},
@@ -424,14 +429,14 @@ func TestNewTopologyInsufficientResourcesError(t *testing.T) {
 						v1.ResourceMemory:                resource.MustParse("1M"),
 						v1.ResourceName("custom.io/res"): resource.MustParse("5"),
 					},
-				),
+				).ToVector(errorsTestVectorMap),
 				availableResource: resource_info.ResourceFromResourceList(
 					v1.ResourceList{
 						v1.ResourceCPU:                   resource.MustParse("2000m"),
 						v1.ResourceMemory:                resource.MustParse("2M"),
 						v1.ResourceName("custom.io/res"): resource.MustParse("3"),
 					},
-				),
+				).ToVector(errorsTestVectorMap),
 			},
 			want: &TopologyFitError{
 				JobFitErrorBase: JobFitErrorBase{
@@ -452,8 +457,8 @@ func TestNewTopologyInsufficientResourcesError(t *testing.T) {
 				subGroupName:      "subgroup1",
 				namespace:         "namespace1",
 				domainID:          "domain1",
-				resourceRequested: BuildResourceWithGpu("2000m", "3M", "2", "1"),
-				availableResource: BuildResourceWithGpu("1000m", "2M", "1", "110"),
+				resourceRequested: BuildResourceWithGpu("2000m", "3M", "2", "1").ToVector(errorsTestVectorMap),
+				availableResource: BuildResourceWithGpu("1000m", "2M", "1", "110").ToVector(errorsTestVectorMap),
 			},
 			want: &TopologyFitError{
 				JobFitErrorBase: JobFitErrorBase{
@@ -462,14 +467,14 @@ func TestNewTopologyInsufficientResourcesError(t *testing.T) {
 					subGroupName: "subgroup1",
 					reason:       UnschedulableWorkloadReason,
 					messages: []string{
-						"node-group(s) didn't have enough resources: GPUs",
 						"node-group(s) didn't have enough resources: CPU cores",
 						"node-group(s) didn't have enough resources: memory",
+						"node-group(s) didn't have enough resources: GPUs",
 					},
 					detailedMessages: []string{
-						"domain1 didn't have enough resource: GPUs, requested: 2, available: 1",
 						"domain1 didn't have enough resources: CPU cores, requested: 2, available: 1",
 						"domain1 didn't have enough resources: memory, requested: 0.003, available: 0.002",
+						"domain1 didn't have enough resource: GPUs, requested: 2, available: 1",
 					},
 				},
 				nodesGroupName: "domain1",
@@ -485,6 +490,7 @@ func TestNewTopologyInsufficientResourcesError(t *testing.T) {
 				tt.args.domainID,
 				tt.args.resourceRequested,
 				tt.args.availableResource,
+				errorsTestVectorMap,
 			)
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("NewTopologyInsufficientResourcesError() = %v, want %v", got, tt.want)

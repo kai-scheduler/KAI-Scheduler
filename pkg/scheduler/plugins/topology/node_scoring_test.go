@@ -257,9 +257,10 @@ func TestCalculateNodeScores(t *testing.T) {
 }
 
 func TestSortTree(t *testing.T) {
+	vectorMap := resource_info.NewResourceVectorMap()
 	tests := []struct {
 		name           string
-		tasksResources *resource_info.Resource
+		tasksResources resource_info.ResourceVector
 		setupTree      func() *DomainInfo
 		maxDepthLevel  DomainLevel
 		expectedOrder  []DomainID
@@ -276,14 +277,14 @@ func TestSortTree(t *testing.T) {
 		},
 		{
 			name:           "empty max depth level",
-			tasksResources: resource_info.NewResource(0, 0, 1),
+			tasksResources: resource_info.NewResourceVectorWithValues(0, 0, 1, vectorMap),
 			setupTree: func() *DomainInfo {
 				return &DomainInfo{
 					ID:    "zone1",
 					Level: "zone",
 					Children: []*DomainInfo{
-						{ID: "rack1", Level: "rack", IdleOrReleasingResources: resource_info.NewResource(0, 0, 1)},
-						{ID: "rack2", Level: "rack", IdleOrReleasingResources: resource_info.NewResource(0, 0, 1)},
+						{ID: "rack1", Level: "rack", IdleOrReleasingVector: resource_info.NewResourceVectorWithValues(0, 0, 1, vectorMap)},
+						{ID: "rack2", Level: "rack", IdleOrReleasingVector: resource_info.NewResourceVectorWithValues(0, 0, 1, vectorMap)},
 					},
 				}
 			},
@@ -292,15 +293,15 @@ func TestSortTree(t *testing.T) {
 		},
 		{
 			name:           "sort single level - gpus",
-			tasksResources: resource_info.NewResource(0, 0, 1),
+			tasksResources: resource_info.NewResourceVectorWithValues(0, 0, 1, vectorMap),
 			setupTree: func() *DomainInfo {
 				return &DomainInfo{
 					ID:    "zone1",
 					Level: "zone",
 					Children: []*DomainInfo{
-						{ID: "rack3", Level: "rack", IdleOrReleasingResources: resource_info.NewResource(0, 0, 5)},
-						{ID: "rack1", Level: "rack", IdleOrReleasingResources: resource_info.NewResource(0, 0, 2)},
-						{ID: "rack2", Level: "rack", IdleOrReleasingResources: resource_info.NewResource(0, 0, 8)},
+						{ID: "rack3", Level: "rack", IdleOrReleasingVector: resource_info.NewResourceVectorWithValues(0, 0, 5, vectorMap)},
+						{ID: "rack1", Level: "rack", IdleOrReleasingVector: resource_info.NewResourceVectorWithValues(0, 0, 2, vectorMap)},
+						{ID: "rack2", Level: "rack", IdleOrReleasingVector: resource_info.NewResourceVectorWithValues(0, 0, 8, vectorMap)},
 					},
 				}
 			},
@@ -310,15 +311,15 @@ func TestSortTree(t *testing.T) {
 		},
 		{
 			name:           "sort single level - cpu",
-			tasksResources: resource_info.NewResource(1000, 0, 0),
+			tasksResources: resource_info.NewResourceVectorWithValues(1000, 0, 0, vectorMap),
 			setupTree: func() *DomainInfo {
 				return &DomainInfo{
 					ID:    "zone1",
 					Level: "zone",
 					Children: []*DomainInfo{
-						{ID: "rack3", Level: "rack", IdleOrReleasingResources: resource_info.NewResource(5000, 0, 0)},
-						{ID: "rack1", Level: "rack", IdleOrReleasingResources: resource_info.NewResource(2000, 0, 0)},
-						{ID: "rack2", Level: "rack", IdleOrReleasingResources: resource_info.NewResource(8000, 0, 0)},
+						{ID: "rack3", Level: "rack", IdleOrReleasingVector: resource_info.NewResourceVectorWithValues(5000, 0, 0, vectorMap)},
+						{ID: "rack1", Level: "rack", IdleOrReleasingVector: resource_info.NewResourceVectorWithValues(2000, 0, 0, vectorMap)},
+						{ID: "rack2", Level: "rack", IdleOrReleasingVector: resource_info.NewResourceVectorWithValues(8000, 0, 0, vectorMap)},
 					},
 				}
 			},
@@ -328,15 +329,15 @@ func TestSortTree(t *testing.T) {
 		},
 		{
 			name:           "sort single level - several dominant resources",
-			tasksResources: resource_info.NewResource(1000, 0, 1),
+			tasksResources: resource_info.NewResourceVectorWithValues(1000, 0, 1, vectorMap),
 			setupTree: func() *DomainInfo {
 				return &DomainInfo{
 					ID:    "zone1",
 					Level: "zone",
 					Children: []*DomainInfo{
-						{ID: "rack3", Level: "rack", AllocatablePods: 5, IdleOrReleasingResources: resource_info.NewResource(100000, 0, 5)},
-						{ID: "rack1", Level: "rack", AllocatablePods: 2, IdleOrReleasingResources: resource_info.NewResource(2000, 0, 4)},
-						{ID: "rack2", Level: "rack", AllocatablePods: 8, IdleOrReleasingResources: resource_info.NewResource(100000, 0, 8)},
+						{ID: "rack3", Level: "rack", AllocatablePods: 5, IdleOrReleasingVector: resource_info.NewResourceVectorWithValues(100000, 0, 5, vectorMap)},
+						{ID: "rack1", Level: "rack", AllocatablePods: 2, IdleOrReleasingVector: resource_info.NewResourceVectorWithValues(2000, 0, 4, vectorMap)},
+						{ID: "rack2", Level: "rack", AllocatablePods: 8, IdleOrReleasingVector: resource_info.NewResourceVectorWithValues(100000, 0, 8, vectorMap)},
 					},
 				}
 			},
@@ -346,30 +347,30 @@ func TestSortTree(t *testing.T) {
 		},
 		{
 			name:           "sort stops at max depth level",
-			tasksResources: resource_info.NewResource(0, 0, 1),
+			tasksResources: resource_info.NewResourceVectorWithValues(0, 0, 1, vectorMap),
 			setupTree: func() *DomainInfo {
 				return &DomainInfo{
 					ID:    "region1",
 					Level: "region",
 					Children: []*DomainInfo{
 						{
-							ID:                       "zone2",
-							Level:                    "zone",
-							AllocatablePods:          10,
-							IdleOrReleasingResources: resource_info.NewResource(0, 0, 10),
+							ID:                    "zone2",
+							Level:                 "zone",
+							AllocatablePods:       10,
+							IdleOrReleasingVector: resource_info.NewResourceVectorWithValues(0, 0, 10, vectorMap),
 							Children: []*DomainInfo{
-								{ID: "rack4", Level: "rack", AllocatablePods: 3, IdleOrReleasingResources: resource_info.NewResource(0, 0, 3)},
-								{ID: "rack3", Level: "rack", AllocatablePods: 7, IdleOrReleasingResources: resource_info.NewResource(0, 0, 7)},
+								{ID: "rack4", Level: "rack", AllocatablePods: 3, IdleOrReleasingVector: resource_info.NewResourceVectorWithValues(0, 0, 3, vectorMap)},
+								{ID: "rack3", Level: "rack", AllocatablePods: 7, IdleOrReleasingVector: resource_info.NewResourceVectorWithValues(0, 0, 7, vectorMap)},
 							},
 						},
 						{
-							ID:                       "zone1",
-							Level:                    "zone",
-							AllocatablePods:          5,
-							IdleOrReleasingResources: resource_info.NewResource(0, 0, 5),
+							ID:                    "zone1",
+							Level:                 "zone",
+							AllocatablePods:       5,
+							IdleOrReleasingVector: resource_info.NewResourceVectorWithValues(0, 0, 5, vectorMap),
 							Children: []*DomainInfo{
-								{ID: "rack2", Level: "rack", AllocatablePods: 1, IdleOrReleasingResources: resource_info.NewResource(0, 0, 1)},
-								{ID: "rack1", Level: "rack", AllocatablePods: 4, IdleOrReleasingResources: resource_info.NewResource(0, 0, 4)},
+								{ID: "rack2", Level: "rack", AllocatablePods: 1, IdleOrReleasingVector: resource_info.NewResourceVectorWithValues(0, 0, 1, vectorMap)},
+								{ID: "rack1", Level: "rack", AllocatablePods: 4, IdleOrReleasingVector: resource_info.NewResourceVectorWithValues(0, 0, 4, vectorMap)},
 							},
 						},
 					},
@@ -381,30 +382,30 @@ func TestSortTree(t *testing.T) {
 		},
 		{
 			name:           "sort nested hierarchy to rack level",
-			tasksResources: resource_info.NewResource(0, 0, 1),
+			tasksResources: resource_info.NewResourceVectorWithValues(0, 0, 1, vectorMap),
 			setupTree: func() *DomainInfo {
 				return &DomainInfo{
 					ID:    "region1",
 					Level: "region",
 					Children: []*DomainInfo{
 						{
-							ID:                       "zone1",
-							Level:                    "zone",
-							AllocatablePods:          15,
-							IdleOrReleasingResources: resource_info.NewResource(0, 0, 15),
+							ID:                    "zone1",
+							Level:                 "zone",
+							AllocatablePods:       15,
+							IdleOrReleasingVector: resource_info.NewResourceVectorWithValues(0, 0, 15, vectorMap),
 							Children: []*DomainInfo{
-								{ID: "rack2", Level: "rack", AllocatablePods: 10, IdleOrReleasingResources: resource_info.NewResource(0, 0, 10)},
-								{ID: "rack1", Level: "rack", AllocatablePods: 5, IdleOrReleasingResources: resource_info.NewResource(0, 0, 5)},
+								{ID: "rack2", Level: "rack", AllocatablePods: 10, IdleOrReleasingVector: resource_info.NewResourceVectorWithValues(0, 0, 10, vectorMap)},
+								{ID: "rack1", Level: "rack", AllocatablePods: 5, IdleOrReleasingVector: resource_info.NewResourceVectorWithValues(0, 0, 5, vectorMap)},
 							},
 						},
 						{
-							ID:                       "zone2",
-							Level:                    "zone",
-							AllocatablePods:          8,
-							IdleOrReleasingResources: resource_info.NewResource(0, 0, 8),
+							ID:                    "zone2",
+							Level:                 "zone",
+							AllocatablePods:       8,
+							IdleOrReleasingVector: resource_info.NewResourceVectorWithValues(0, 0, 8, vectorMap),
 							Children: []*DomainInfo{
-								{ID: "rack4", Level: "rack", AllocatablePods: 3, IdleOrReleasingResources: resource_info.NewResource(0, 0, 3)},
-								{ID: "rack3", Level: "rack", AllocatablePods: 5, IdleOrReleasingResources: resource_info.NewResource(0, 0, 5)},
+								{ID: "rack4", Level: "rack", AllocatablePods: 3, IdleOrReleasingVector: resource_info.NewResourceVectorWithValues(0, 0, 3, vectorMap)},
+								{ID: "rack3", Level: "rack", AllocatablePods: 5, IdleOrReleasingVector: resource_info.NewResourceVectorWithValues(0, 0, 5, vectorMap)},
 							},
 						},
 					},
@@ -416,15 +417,15 @@ func TestSortTree(t *testing.T) {
 		},
 		{
 			name:           "stable sort - same allocatable pods maintain order",
-			tasksResources: resource_info.NewResource(0, 0, 1),
+			tasksResources: resource_info.NewResourceVectorWithValues(0, 0, 1, vectorMap),
 			setupTree: func() *DomainInfo {
 				return &DomainInfo{
 					ID:    "zone1",
 					Level: "zone",
 					Children: []*DomainInfo{
-						{ID: "rack1", Level: "rack", AllocatablePods: 5, IdleOrReleasingResources: resource_info.NewResource(0, 0, 5)},
-						{ID: "rack2", Level: "rack", AllocatablePods: 5, IdleOrReleasingResources: resource_info.NewResource(0, 0, 5)},
-						{ID: "rack3", Level: "rack", AllocatablePods: 5, IdleOrReleasingResources: resource_info.NewResource(0, 0, 5)},
+						{ID: "rack1", Level: "rack", AllocatablePods: 5, IdleOrReleasingVector: resource_info.NewResourceVectorWithValues(0, 0, 5, vectorMap)},
+						{ID: "rack2", Level: "rack", AllocatablePods: 5, IdleOrReleasingVector: resource_info.NewResourceVectorWithValues(0, 0, 5, vectorMap)},
+						{ID: "rack3", Level: "rack", AllocatablePods: 5, IdleOrReleasingVector: resource_info.NewResourceVectorWithValues(0, 0, 5, vectorMap)},
 					},
 				}
 			},
@@ -461,29 +462,30 @@ func TestSortTree(t *testing.T) {
 
 func TestSortTree_NestedSorting(t *testing.T) {
 	// Test that both parent and child levels are sorted when maxDepth is deep enough
-	tasksResources := resource_info.NewResource(0, 0, 1)
+	vectorMap := resource_info.NewResourceVectorMap()
+	tasksResources := resource_info.NewResourceVectorWithValues(0, 0, 1, vectorMap)
 	root := &DomainInfo{
 		ID:    "region1",
 		Level: "region",
 		Children: []*DomainInfo{
 			{
-				ID:                       "zone2",
-				Level:                    "zone",
-				AllocatablePods:          10,
-				IdleOrReleasingResources: resource_info.NewResource(0, 0, 10),
+				ID:                    "zone2",
+				Level:                 "zone",
+				AllocatablePods:       10,
+				IdleOrReleasingVector: resource_info.NewResourceVectorWithValues(0, 0, 10, vectorMap),
 				Children: []*DomainInfo{
-					{ID: "rack4", Level: "rack", AllocatablePods: 7, IdleOrReleasingResources: resource_info.NewResource(0, 0, 7)},
-					{ID: "rack3", Level: "rack", AllocatablePods: 3, IdleOrReleasingResources: resource_info.NewResource(0, 0, 3)},
+					{ID: "rack4", Level: "rack", AllocatablePods: 7, IdleOrReleasingVector: resource_info.NewResourceVectorWithValues(0, 0, 7, vectorMap)},
+					{ID: "rack3", Level: "rack", AllocatablePods: 3, IdleOrReleasingVector: resource_info.NewResourceVectorWithValues(0, 0, 3, vectorMap)},
 				},
 			},
 			{
-				ID:                       "zone1",
-				Level:                    "zone",
-				AllocatablePods:          5,
-				IdleOrReleasingResources: resource_info.NewResource(0, 0, 5),
+				ID:                    "zone1",
+				Level:                 "zone",
+				AllocatablePods:       5,
+				IdleOrReleasingVector: resource_info.NewResourceVectorWithValues(0, 0, 5, vectorMap),
 				Children: []*DomainInfo{
-					{ID: "rack2", Level: "rack", AllocatablePods: 4, IdleOrReleasingResources: resource_info.NewResource(0, 0, 4)},
-					{ID: "rack1", Level: "rack", AllocatablePods: 1, IdleOrReleasingResources: resource_info.NewResource(0, 0, 1)},
+					{ID: "rack2", Level: "rack", AllocatablePods: 4, IdleOrReleasingVector: resource_info.NewResourceVectorWithValues(0, 0, 4, vectorMap)},
+					{ID: "rack1", Level: "rack", AllocatablePods: 1, IdleOrReleasingVector: resource_info.NewResourceVectorWithValues(0, 0, 1, vectorMap)},
 				},
 			},
 		},

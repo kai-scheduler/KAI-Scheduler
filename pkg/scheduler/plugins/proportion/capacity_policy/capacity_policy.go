@@ -11,6 +11,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	rs "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/utils"
 )
 
 type capacityCheckFn func(requestedShare rs.ResourceQuantities, job *podgroup_info.PodGroupInfo) *api.SchedulableResult
@@ -76,9 +77,10 @@ func (cp *CapacityPolicy) isJobOverCapacity(requestedShare rs.ResourceQuantities
 func getRequiredQuota(tasksToAllocate []*pod_info.PodInfo) *podgroup_info.JobRequirement {
 	quota := podgroup_info.JobRequirement{}
 	for _, pod := range tasksToAllocate {
-		quota.GPU += pod.ResReq.GetGpusQuota()
-		quota.MilliCPU += pod.ResReq.Cpu()
-		quota.Memory += pod.ResReq.Memory()
+		quantities := utils.QuantifyVector(pod.ResReqVector, pod.VectorMap)
+		quota.GPU += quantities[rs.GpuResource]
+		quota.MilliCPU += quantities[rs.CpuResource]
+		quota.Memory += quantities[rs.MemoryResource]
 	}
 	return &quota
 }

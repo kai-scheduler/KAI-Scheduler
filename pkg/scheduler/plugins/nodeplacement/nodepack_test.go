@@ -221,6 +221,7 @@ func buildSingleTestParams(testMetadata testTopologyMetadata) (*framework.Sessio
 		idleResources := resources_fake.BuildResourceList(nil, nil,
 			&nodeMetadata.nodeIdleGPUs, nil)
 		nodeInfo.Idle = resource_info.ResourceFromResourceList(*idleResources)
+		nodeInfo.IdleVector = nodeInfo.Idle.ToVector(vectorMap)
 		nodeInfoMap[nodeName] = nodeInfo
 	}
 
