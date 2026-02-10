@@ -530,16 +530,17 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 			name           string
 			isRestrictNode bool
 			node           *node_info.NodeInfo
+			allocatable    *resource_info.Resource
 			want           rs.ResourceQuantities
 		}{
 			{
 				name:           "cpu + memory node",
 				isRestrictNode: true,
 				node: &node_info.NodeInfo{
-					Name:        "n1",
-					Node:        &v1.Node{},
-					Allocatable: common_info.BuildResource("8000m", "10G"),
+					Name: "n1",
+					Node: &v1.Node{},
 				},
+				allocatable: common_info.BuildResource("8000m", "10G"),
 				want: rs.ResourceQuantities{
 					rs.CpuResource:    8000,
 					rs.MemoryResource: 10000000000,
@@ -558,10 +559,10 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 							},
 						},
 					},
-					Allocatable: resource_info.ResourceFromResourceList(
-						common_info.BuildResourceListWithGPU("8000m", "10G", "2"),
-					),
 				},
+				allocatable: resource_info.ResourceFromResourceList(
+					common_info.BuildResourceListWithGPU("8000m", "10G", "2"),
+				),
 				want: rs.ResourceQuantities{
 					rs.CpuResource:    8000,
 					rs.MemoryResource: 10000000000,
@@ -580,10 +581,10 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 							},
 						},
 					},
-					Allocatable: resource_info.ResourceFromResourceList(
-						common_info.BuildResourceListWithMig("8000m", "10G", "nvidia.com/mig-1g.5gb"),
-					),
 				},
+				allocatable: resource_info.ResourceFromResourceList(
+					common_info.BuildResourceListWithMig("8000m", "10G", "nvidia.com/mig-1g.5gb"),
+				),
 				want: rs.ResourceQuantities{
 					rs.CpuResource:    8000,
 					rs.MemoryResource: 10000000000,
@@ -596,10 +597,10 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 				node: &node_info.NodeInfo{
 					Name: "n1",
 					Node: &v1.Node{},
-					Allocatable: resource_info.ResourceFromResourceList(v1.ResourceList{
-						"A": resource.MustParse("4"),
-					}),
 				},
+				allocatable: resource_info.ResourceFromResourceList(v1.ResourceList{
+					"A": resource.MustParse("4"),
+				}),
 				want: rs.ResourceQuantities{
 					rs.CpuResource:    0,
 					rs.MemoryResource: 0,
@@ -609,10 +610,10 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 			{
 				name:           "Count out resources for non-related pods",
 				isRestrictNode: true,
+				allocatable:    common_info.BuildResource("8000m", "10G"),
 				node: &node_info.NodeInfo{
-					Name:        "n1",
-					Node:        &v1.Node{},
-					Allocatable: common_info.BuildResource("8000m", "10G"),
+					Name: "n1",
+					Node: &v1.Node{},
 					PodInfos: map[common_info.PodID]*pod_info.PodInfo{
 						"1": {
 							Pod: &v1.Pod{
@@ -647,10 +648,10 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 			{
 				name:           "Count out resources for non-related pods - consider reservation pods",
 				isRestrictNode: true,
+				allocatable:    common_info.BuildResource("8000m", "10G"),
 				node: &node_info.NodeInfo{
-					Name:        "n1",
-					Node:        &v1.Node{},
-					Allocatable: common_info.BuildResource("8000m", "10G"),
+					Name: "n1",
+					Node: &v1.Node{},
 					PodInfos: map[common_info.PodID]*pod_info.PodInfo{
 						"1": {
 							Pod: &v1.Pod{
@@ -699,10 +700,10 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 			{
 				name:           "Count out resources for non-related pods - consider scaler pods",
 				isRestrictNode: true,
+				allocatable:    common_info.BuildResource("8000m", "10G"),
 				node: &node_info.NodeInfo{
-					Name:        "n1",
-					Node:        &v1.Node{},
-					Allocatable: common_info.BuildResource("8000m", "10G"),
+					Name: "n1",
+					Node: &v1.Node{},
 					PodInfos: map[common_info.PodID]*pod_info.PodInfo{
 						"1": {
 							Pod: &v1.Pod{
@@ -751,10 +752,10 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 			{
 				name:           "Do not count out resources for non-related pods if non active",
 				isRestrictNode: true,
+				allocatable:    common_info.BuildResource("8000m", "10G"),
 				node: &node_info.NodeInfo{
-					Name:        "n1",
-					Node:        &v1.Node{},
-					Allocatable: common_info.BuildResource("8000m", "10G"),
+					Name: "n1",
+					Node: &v1.Node{},
 					PodInfos: map[common_info.PodID]*pod_info.PodInfo{
 						"2": {
 							Pod: &v1.Pod{
@@ -809,11 +810,15 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 					},
 					"1", nil)
 				vectorMap := resource_info.NewResourceVectorMap()
-				for rName := range testData.node.Allocatable.ScalarResources() {
-					vectorMap.AddResource(rName)
+				if testData.allocatable != nil {
+					for rName := range testData.allocatable.ScalarResources() {
+						vectorMap.AddResource(rName)
+					}
 				}
 				testData.node.VectorMap = vectorMap
-				testData.node.AllocatableVector = testData.node.Allocatable.ToVector(vectorMap)
+				if testData.allocatable != nil {
+					testData.node.AllocatableVector = testData.allocatable.ToVector(vectorMap)
+				}
 				if got := getNodeResources(session, testData.node); !reflect.DeepEqual(got, testData.want) {
 					Fail(fmt.Sprintf("getNodeResources() = %v, want %v", got, testData.want))
 				}

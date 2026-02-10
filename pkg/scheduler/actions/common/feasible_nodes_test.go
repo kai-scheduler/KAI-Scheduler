@@ -19,33 +19,23 @@ import (
 
 var (
 	cpuNode = &node_info.NodeInfo{
-		Name:      "cpu-node",
-		Idle:      resource_info.NewResource(1000, 2000, 0),
-		Releasing: resource_info.EmptyResource(),
+		Name: "cpu-node",
 	}
 	idleGPUNode = &node_info.NodeInfo{
-		Name:      "idle-gpu-node",
-		Idle:      resource_info.NewResource(0, 0, 1),
-		Releasing: resource_info.EmptyResource(),
+		Name: "idle-gpu-node",
 	}
 	releasingGPUNode = &node_info.NodeInfo{
-		Name:      "releasing-gpu-node",
-		Idle:      resource_info.EmptyResource(),
-		Releasing: resource_info.NewResource(0, 0, 1),
+		Name: "releasing-gpu-node",
 	}
 	idleFractionNode = &node_info.NodeInfo{
 		Name:                   "idle-fraction-node",
-		Idle:                   resource_info.NewResource(0, 0, 0),
 		MemoryOfEveryGpuOnNode: 200,
 		GpuSharingNodeInfo: node_info.GpuSharingNodeInfo{
 			AllocatedSharedGPUsMemory: map[string]int64{"abc": 100},
 		},
-		Releasing: resource_info.EmptyResource(),
 	}
 	releasingFractionNode = &node_info.NodeInfo{
 		Name:                   "releasing-fraction-node",
-		Idle:                   resource_info.EmptyResource(),
-		Releasing:              resource_info.NewResource(0, 0, 0),
 		MemoryOfEveryGpuOnNode: 200,
 		GpuSharingNodeInfo: node_info.GpuSharingNodeInfo{
 			ReleasingSharedGPUsMemory: map[string]int64{"abc": 100},
@@ -53,15 +43,9 @@ var (
 	}
 	idleMIGNode = &node_info.NodeInfo{
 		Name: "idle-mig-node",
-		Idle: resource_info.ResourceFromResourceList(
-			v1.ResourceList{"nvidia.com/mig-1g.10gb": resource.MustParse("1")}),
-		Releasing: resource_info.EmptyResource(),
 	}
 	releasingMIGNode = &node_info.NodeInfo{
 		Name: "releasing-mig-node",
-		Idle: resource_info.EmptyResource(),
-		Releasing: resource_info.ResourceFromResourceList(
-			v1.ResourceList{"nvidia.com/mig-1g.10gb": resource.MustParse("1")}),
 	}
 
 	allNodes = []*node_info.NodeInfo{
@@ -81,11 +65,37 @@ var (
 func init() {
 	vectorMap := resource_info.NewResourceVectorMap()
 	vectorMap.AddResource("nvidia.com/mig-1g.10gb")
-	for _, node := range allNodes {
-		node.VectorMap = vectorMap
-		node.IdleVector = node.Idle.ToVector(vectorMap)
-		node.ReleasingVector = node.Releasing.ToVector(vectorMap)
-	}
+
+	cpuNode.VectorMap = vectorMap
+	cpuNode.IdleVector = resource_info.NewResourceVectorWithValues(1000, 2000, 0, vectorMap)
+	cpuNode.ReleasingVector = resource_info.NewResourceVector(vectorMap)
+
+	idleGPUNode.VectorMap = vectorMap
+	idleGPUNode.IdleVector = resource_info.NewResourceVectorWithValues(0, 0, 1, vectorMap)
+	idleGPUNode.ReleasingVector = resource_info.NewResourceVector(vectorMap)
+
+	releasingGPUNode.VectorMap = vectorMap
+	releasingGPUNode.IdleVector = resource_info.NewResourceVector(vectorMap)
+	releasingGPUNode.ReleasingVector = resource_info.NewResourceVectorWithValues(0, 0, 1, vectorMap)
+
+	idleFractionNode.VectorMap = vectorMap
+	idleFractionNode.IdleVector = resource_info.NewResourceVector(vectorMap)
+	idleFractionNode.ReleasingVector = resource_info.NewResourceVector(vectorMap)
+
+	releasingFractionNode.VectorMap = vectorMap
+	releasingFractionNode.IdleVector = resource_info.NewResourceVector(vectorMap)
+	releasingFractionNode.ReleasingVector = resource_info.NewResourceVector(vectorMap)
+
+	migIdleVec := resource_info.ResourceFromResourceList(
+		v1.ResourceList{"nvidia.com/mig-1g.10gb": resource.MustParse("1")}).ToVector(vectorMap)
+
+	idleMIGNode.VectorMap = vectorMap
+	idleMIGNode.IdleVector = migIdleVec
+	idleMIGNode.ReleasingVector = resource_info.NewResourceVector(vectorMap)
+
+	releasingMIGNode.VectorMap = vectorMap
+	releasingMIGNode.IdleVector = resource_info.NewResourceVector(vectorMap)
+	releasingMIGNode.ReleasingVector = migIdleVec.Clone()
 }
 
 func TestFeasibleNodes(t *testing.T) {

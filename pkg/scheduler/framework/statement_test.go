@@ -151,7 +151,7 @@ func TestStatement_Evict_Unevict(t *testing.T) {
 
 			actualNodeInfo := extractNodeAssertedInfo(nodesInfoMap[actualTask.NodeName])
 			originalNodeInfo.assertEqual(t, actualNodeInfo)
-			assert.Equal(t, tt.expected.usedGpuOnNode, actualNodeInfo.used.GPUs())
+			assert.Equal(t, tt.expected.usedGpuOnNode, actualNodeInfo.used.Get(actualNodeInfo.vectorMap.GetIndex("gpu")))
 		})
 	}
 }
@@ -686,11 +686,11 @@ func TestStatement_Pipeline_Unpipeline(t *testing.T) {
 			if pipelinedTask.NodeName != "" {
 				pipelinedFromNodeInfo := extractNodeAssertedInfo(nodesInfoMap[pipelinedTask.NodeName])
 				originalPipelinedNodeInfo.assertEqual(t, pipelinedFromNodeInfo)
-				assert.Equal(t, tt.expected.usedGpuOnPipelineOriginNode, originalPipelinedNodeInfo.used.GPUs())
+				assert.Equal(t, tt.expected.usedGpuOnPipelineOriginNode, originalPipelinedNodeInfo.used.Get(originalPipelinedNodeInfo.vectorMap.GetIndex("gpu")))
 			}
 			pipelinedToNodeInfo := extractNodeAssertedInfo(nodesInfoMap[tt.args.nodeToPipeline])
 			originalPipelinedToNodeInfo.assertEqual(t, pipelinedToNodeInfo)
-			assert.Equal(t, tt.expected.usedGpuOnPipelinedNode, originalPipelinedToNodeInfo.used.GPUs())
+			assert.Equal(t, tt.expected.usedGpuOnPipelinedNode, originalPipelinedToNodeInfo.used.Get(originalPipelinedToNodeInfo.vectorMap.GetIndex("gpu")))
 		})
 	}
 }
@@ -1061,7 +1061,7 @@ func TestStatement_Allocate_Unallocate(t *testing.T) {
 
 			actualNodeInfo := extractNodeAssertedInfo(nodesInfoMap[tt.args.nodeToPipeline])
 			originalNodeInfo.assertEqual(t, actualNodeInfo)
-			assert.Equal(t, tt.expected.usedOnNode.GPUs(), actualNodeInfo.used.GPUs())
+			assert.Equal(t, tt.expected.usedOnNode.GPUs(), actualNodeInfo.used.Get(actualNodeInfo.vectorMap.GetIndex("gpu")))
 		})
 	}
 }

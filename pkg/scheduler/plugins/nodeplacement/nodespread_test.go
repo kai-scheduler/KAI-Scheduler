@@ -83,9 +83,7 @@ var _ = Describe("NodeSpread", func() {
 							},
 						},
 					},
-					Idle:            idle,
 					IdleVector:      idle.ToVector(vectorMap),
-					Releasing:       releasing,
 					ReleasingVector: releasing.ToVector(vectorMap),
 					VectorMap:       vectorMap,
 				}
@@ -114,11 +112,8 @@ var _ = Describe("NodeSpread", func() {
 
 				node = &node_info.NodeInfo{
 					Node:              &corev1.Node{},
-					Idle:              idle2,
 					IdleVector:        idle2.ToVector(vectorMap),
-					Allocatable:       allocatable,
 					AllocatableVector: allocatable.ToVector(vectorMap),
-					Releasing:         releasing2,
 					ReleasingVector:   releasing2.ToVector(vectorMap),
 					VectorMap:         vectorMap,
 				}

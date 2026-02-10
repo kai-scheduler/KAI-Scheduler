@@ -89,7 +89,7 @@ func (ci ClusterInfo) String() string {
 		str = str + "Nodes:\n"
 		for _, n := range ci.Nodes {
 			str = str + fmt.Sprintf("\t %s: idle(%v) used(%v) allocatable(%v) pods(%d)\n",
-				n.Name, n.Idle, n.Used, n.Allocatable, len(n.PodInfos))
+				n.Name, n.IdleVector, n.UsedVector, n.AllocatableVector, len(n.PodInfos))
 
 			i := 0
 			for _, p := range n.PodInfos {

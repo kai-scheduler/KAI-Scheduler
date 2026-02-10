@@ -36,7 +36,6 @@ import (
 	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_affinity"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
@@ -268,9 +267,15 @@ func TestSnapshotNodes(t *testing.T) {
 		commonconstants.PodGroupAnnotationForPod: "pg-1",
 	}
 	exampleMIGPodWithPG.Spec.Containers[0].Resources.Requests["nvidia.com/mig-1g.5gb"] = resource.MustParse("2")
+	type expectedNodeData struct {
+		Name      string
+		Idle      *resource_info.Resource
+		Used      *resource_info.Resource
+		Releasing *resource_info.Resource
+	}
 	tests := map[string]struct {
 		objs          []runtime.Object
-		resultNodes   []*node_info.NodeInfo
+		resultNodes   []expectedNodeData
 		resultPodsLen int
 		nodePoolName  string
 	}{
@@ -289,7 +294,7 @@ func TestSnapshotNodes(t *testing.T) {
 				},
 				examplePod,
 			},
-			resultNodes: []*node_info.NodeInfo{
+			resultNodes: []expectedNodeData{
 				{
 					Name: "node-1",
 					Idle: resource_info.ResourceFromResourceList(
@@ -330,7 +335,7 @@ func TestSnapshotNodes(t *testing.T) {
 				},
 				newCompletedPod(examplePod),
 			},
-			resultNodes: []*node_info.NodeInfo{
+			resultNodes: []expectedNodeData{
 				{
 					Name: "node-1",
 					Idle: resource_info.ResourceFromResourceList(
@@ -388,7 +393,7 @@ func TestSnapshotNodes(t *testing.T) {
 				newPodOnNode(examplePod, "node-1"),
 				newPodOnNode(examplePod, "node-2"),
 			},
-			resultNodes: []*node_info.NodeInfo{
+			resultNodes: []expectedNodeData{
 				{
 					Name: "node-1",
 					Idle: resource_info.ResourceFromResourceList(
@@ -432,7 +437,7 @@ func TestSnapshotNodes(t *testing.T) {
 				exampleMIGPod,
 				exampleMIGPodWithPG,
 			},
-			resultNodes: []*node_info.NodeInfo{
+			resultNodes: []expectedNodeData{
 				{
 					Name: "node-1",
 					Idle: resource_info.ResourceFromResourceList(
@@ -492,9 +497,10 @@ func TestSnapshotNodes(t *testing.T) {
 			assert.Equal(t, test.resultPodsLen, len(pods))
 
 			for _, expectedNode := range test.resultNodes {
-				assert.Equal(t, expectedNode.Idle, nodes[expectedNode.Name].Idle, "Expected idle resources to be equal")
-				assert.Equal(t, expectedNode.Used, nodes[expectedNode.Name].Used, "Expected used resources to be equal")
-				assert.Equal(t, expectedNode.Releasing, nodes[expectedNode.Name].Releasing, "Expected releasing resources to be equal")
+				actualNode := nodes[expectedNode.Name]
+				assert.Equal(t, expectedNode.Idle.ToVector(vectorMap), actualNode.IdleVector, "Expected idle resources to be equal")
+				assert.Equal(t, expectedNode.Used.ToVector(vectorMap), actualNode.UsedVector, "Expected used resources to be equal")
+				assert.Equal(t, expectedNode.Releasing.ToVector(vectorMap), actualNode.ReleasingVector, "Expected releasing resources to be equal")
 			}
 		})
 	}
@@ -949,7 +955,8 @@ func TestBindRequests(t *testing.T) {
 		assert.Equal(t, assertedPods, expectedPodAsserts)
 
 		for _, node := range snapshot.Nodes {
-			assert.Equal(t, float64(test.resultNodes[node.Name].MilliValue()), node.Idle.Cpu())
+			cpuIdx := node.VectorMap.GetIndex(corev1.ResourceCPU)
+			assert.Equal(t, float64(test.resultNodes[node.Name].MilliValue()), node.IdleVector.Get(cpuIdx))
 		}
 	}
 }
@@ -2522,8 +2529,8 @@ func TestSnapshotNodesWithDRAGPUs(t *testing.T) {
 			for nodeName, expectedGPUs := range test.expectedDRAGPUs {
 				nodeInfo, found := nodes[nodeName]
 				assert.True(t, found, "Node %s not found", nodeName)
-				// Check total GPUs (DRA GPUs are merged into Allocatable)
-				actualGPUs := nodeInfo.Allocatable.GPUs()
+				// Check total GPUs (DRA GPUs are merged into AllocatableVector)
+				actualGPUs := nodeInfo.AllocatableVector.Get(vectorMap.GetIndex("gpu"))
 				assert.Equal(t, expectedGPUs, actualGPUs, "GPUs mismatch for node %s", nodeName)
 				expectedFlag := test.hasDRAGPUs[nodeName]
 				assert.Equal(t, expectedFlag, nodeInfo.HasDRAGPUs, "HasDRAGPUs mismatch for node %s", nodeName)

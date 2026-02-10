@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	v1 "k8s.io/api/core/v1"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
@@ -18,19 +19,20 @@ import (
 )
 
 type nodeAssertedInfo struct {
-	idle                        *resource_info.Resource
-	used                        *resource_info.Resource
-	allocatable                 *resource_info.Resource
-	releasing                   *resource_info.Resource
+	idle                        resource_info.ResourceVector
+	used                        resource_info.ResourceVector
+	allocatable                 resource_info.ResourceVector
+	releasing                   resource_info.ResourceVector
+	vectorMap                   *resource_info.ResourceVectorMap
 	accessibleStorageCapacities map[common_info.StorageClassID][]*storagecapacity.StorageCapacityInfo
 	gpuSharingNodeInfo          *node_info.GpuSharingNodeInfo
 }
 
 func (nri *nodeAssertedInfo) assertEqual(t *testing.T, nriRight *nodeAssertedInfo) {
-	assert.Equal(t, *(nri.idle), *(nriRight.idle))
-	assert.Equal(t, *(nri.used), *(nriRight.used))
-	assert.Equal(t, *(nri.allocatable), *(nriRight.allocatable))
-	assert.Equal(t, *(nri.releasing), *(nriRight.releasing))
+	assert.Equal(t, nri.idle, nriRight.idle)
+	assert.Equal(t, nri.used, nriRight.used)
+	assert.Equal(t, nri.allocatable, nriRight.allocatable)
+	assert.Equal(t, nri.releasing, nriRight.releasing)
 	assert.Equal(t, nri.accessibleStorageCapacities, nriRight.accessibleStorageCapacities)
 	assert.Equal(t, nri.gpuSharingNodeInfo.ReleasingSharedGPUs, nriRight.gpuSharingNodeInfo.ReleasingSharedGPUs)
 	assert.Equal(t, nri.gpuSharingNodeInfo.UsedSharedGPUsMemory, nriRight.gpuSharingNodeInfo.UsedSharedGPUsMemory)
@@ -66,13 +68,17 @@ func validateEvictedFromNode(t *testing.T,
 	taskResources *resource_info.ResourceRequirements) {
 	if originalNodeAssertData != nil {
 		actualNode := extractNodeAssertedInfo(nodeInfo)
+		vm := actualNode.vectorMap
+		gpuIdx := vm.GetIndex("gpu")
+		cpuIdx := vm.GetIndex(v1.ResourceCPU)
+		memIdx := vm.GetIndex(v1.ResourceMemory)
 
-		assert.Equal(t, originalNodeAssertData.releasing.GPUs(),
-			actualNode.releasing.GPUs()-taskResources.GPUs())
-		assert.Equal(t, originalNodeAssertData.releasing.Memory(),
-			actualNode.releasing.Memory()-taskResources.Memory())
-		assert.Equal(t, originalNodeAssertData.releasing.Cpu(),
-			actualNode.releasing.Cpu()-taskResources.Cpu())
+		assert.Equal(t, originalNodeAssertData.releasing.Get(gpuIdx),
+			actualNode.releasing.Get(gpuIdx)-taskResources.GPUs())
+		assert.Equal(t, originalNodeAssertData.releasing.Get(memIdx),
+			actualNode.releasing.Get(memIdx)-taskResources.Memory())
+		assert.Equal(t, originalNodeAssertData.releasing.Get(cpuIdx),
+			actualNode.releasing.Get(cpuIdx)-taskResources.Cpu())
 
 		assert.Equal(t, originalNodeAssertData.used, actualNode.used)
 		assert.Equal(t, originalNodeAssertData.idle, actualNode.idle)
@@ -139,13 +145,17 @@ func validatePipelinedToNode(t *testing.T,
 	nodeInfo *node_info.NodeInfo, targetNodeOriginalData *nodeAssertedInfo,
 	taskResources *resource_info.ResourceRequirements) {
 	actualNode := extractNodeAssertedInfo(nodeInfo)
+	vm := actualNode.vectorMap
+	gpuIdx := vm.GetIndex("gpu")
+	cpuIdx := vm.GetIndex(v1.ResourceCPU)
+	memIdx := vm.GetIndex(v1.ResourceMemory)
 
-	assert.Equal(t, targetNodeOriginalData.used.GPUs(),
-		actualNode.used.GPUs()-taskResources.GPUs())
-	assert.Equal(t, targetNodeOriginalData.used.Memory(),
-		actualNode.used.Memory()-taskResources.Memory())
-	assert.Equal(t, targetNodeOriginalData.used.Cpu(),
-		actualNode.used.Cpu()-taskResources.Cpu())
+	assert.Equal(t, targetNodeOriginalData.used.Get(gpuIdx),
+		actualNode.used.Get(gpuIdx)-taskResources.GPUs())
+	assert.Equal(t, targetNodeOriginalData.used.Get(memIdx),
+		actualNode.used.Get(memIdx)-taskResources.Memory())
+	assert.Equal(t, targetNodeOriginalData.used.Get(cpuIdx),
+		actualNode.used.Get(cpuIdx)-taskResources.Cpu())
 
 	assert.Equal(t, targetNodeOriginalData.idle, actualNode.idle)
 }
@@ -179,24 +189,29 @@ func validateAllocatedToNode(t *testing.T,
 	nodeInfo *node_info.NodeInfo, targetNodeOriginalData *nodeAssertedInfo,
 	taskResources *resource_info.ResourceRequirements) {
 	actualNode := extractNodeAssertedInfo(nodeInfo)
+	vm := actualNode.vectorMap
+	gpuIdx := vm.GetIndex("gpu")
+	cpuIdx := vm.GetIndex(v1.ResourceCPU)
+	memIdx := vm.GetIndex(v1.ResourceMemory)
 
-	assert.Equal(t, targetNodeOriginalData.idle.GPUs(), actualNode.idle.GPUs()+taskResources.GPUs())
-	assert.Equal(t, targetNodeOriginalData.idle.Memory(), actualNode.idle.Memory()+taskResources.Memory())
-	assert.Equal(t, targetNodeOriginalData.idle.Cpu(), actualNode.idle.Cpu()+taskResources.Cpu())
+	assert.Equal(t, targetNodeOriginalData.idle.Get(gpuIdx), actualNode.idle.Get(gpuIdx)+taskResources.GPUs())
+	assert.Equal(t, targetNodeOriginalData.idle.Get(memIdx), actualNode.idle.Get(memIdx)+taskResources.Memory())
+	assert.Equal(t, targetNodeOriginalData.idle.Get(cpuIdx), actualNode.idle.Get(cpuIdx)+taskResources.Cpu())
 
-	assert.Equal(t, targetNodeOriginalData.used.GPUs(), actualNode.used.GPUs()-taskResources.GPUs())
-	assert.Equal(t, targetNodeOriginalData.used.Memory(), actualNode.used.Memory()-taskResources.Memory())
-	assert.Equal(t, targetNodeOriginalData.used.Cpu(), actualNode.used.Cpu()-taskResources.Cpu())
+	assert.Equal(t, targetNodeOriginalData.used.Get(gpuIdx), actualNode.used.Get(gpuIdx)-taskResources.GPUs())
+	assert.Equal(t, targetNodeOriginalData.used.Get(memIdx), actualNode.used.Get(memIdx)-taskResources.Memory())
+	assert.Equal(t, targetNodeOriginalData.used.Get(cpuIdx), actualNode.used.Get(cpuIdx)-taskResources.Cpu())
 
 	assert.Equal(t, targetNodeOriginalData.releasing, actualNode.releasing)
 }
 
 func extractNodeAssertedInfo(nodeInfo *node_info.NodeInfo) *nodeAssertedInfo {
 	assertedInfo := nodeAssertedInfo{}
-	assertedInfo.idle = nodeInfo.Idle.Clone()
-	assertedInfo.used = nodeInfo.Used.Clone()
-	assertedInfo.allocatable = nodeInfo.Allocatable.Clone()
-	assertedInfo.releasing = nodeInfo.Releasing.Clone()
+	assertedInfo.idle = nodeInfo.IdleVector.Clone()
+	assertedInfo.used = nodeInfo.UsedVector.Clone()
+	assertedInfo.allocatable = nodeInfo.AllocatableVector.Clone()
+	assertedInfo.releasing = nodeInfo.ReleasingVector.Clone()
+	assertedInfo.vectorMap = nodeInfo.VectorMap
 
 	assertedInfo.accessibleStorageCapacities =
 		map[common_info.StorageClassID][]*storagecapacity.StorageCapacityInfo{}

@@ -303,12 +303,13 @@ func MatchExpectedAndRealTasks(t *testing.T, testNumber int, testMetadata TestTo
 			t.Errorf("Test number: %d, name: %v, has failed. Couldn't find node: %v for expected nodes resources.", testNumber, testMetadata.Name, nodeName)
 		}
 
-		if nodeExpectedResources.ReleasingGPUs != ssnNode.Releasing.GPUs() {
-			t.Errorf("Test number: %d, name: %v, has failed. Node name: %v, actual Releasing GPUs: %v, was expecting Releasing GPUs: %v", testNumber, testMetadata.Name, nodeName, ssnNode.Releasing.GPUs(), nodeExpectedResources.ReleasingGPUs)
+		gpuIdx := ssnNode.VectorMap.GetIndex("gpu")
+		if nodeExpectedResources.ReleasingGPUs != ssnNode.ReleasingVector.Get(gpuIdx) {
+			t.Errorf("Test number: %d, name: %v, has failed. Node name: %v, actual Releasing GPUs: %v, was expecting Releasing GPUs: %v", testNumber, testMetadata.Name, nodeName, ssnNode.ReleasingVector.Get(gpuIdx), nodeExpectedResources.ReleasingGPUs)
 		}
 
-		if nodeExpectedResources.IdleGPUs != ssnNode.Idle.GPUs() {
-			t.Errorf("Test number: %d, name: %v, has failed. Node name: %v, actual Idle GPUs: %v, was expecting Idle GPUs: %v", testNumber, testMetadata.Name, nodeName, ssnNode.Idle.GPUs(), nodeExpectedResources.IdleGPUs)
+		if nodeExpectedResources.IdleGPUs != ssnNode.IdleVector.Get(gpuIdx) {
+			t.Errorf("Test number: %d, name: %v, has failed. Node name: %v, actual Idle GPUs: %v, was expecting Idle GPUs: %v", testNumber, testMetadata.Name, nodeName, ssnNode.IdleVector.Get(gpuIdx), nodeExpectedResources.IdleGPUs)
 		}
 	}
 }

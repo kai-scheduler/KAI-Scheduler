@@ -64,7 +64,7 @@ func RunAddRemovePodsWithStorageTests(t *testing.T, tests []AddRemovePodsTestWit
 				_ = ni.RemoveTask(pod)
 			}
 
-			setNodeInfoVectors(test.expected, test.vectorMap)
+			test.expected.VectorMap = test.vectorMap
 
 			var errors []error
 			if !nodeInfoEqual(t, test.expected, ni) {
@@ -114,13 +114,11 @@ func TestNodeInfoStorage_AddPod(t *testing.T) {
 	expectedStorageCapacity := storageCapacity.Clone()
 
 	node1ExpectedNodeInfo := &NodeInfo{
-		Name:                   "n1",
-		Node:                   node1,
-		Idle:                   common_info.BuildResourceWithGpu("7000m", "9G", "0", "109"),
-		Used:                   common_info.BuildResourceWithGpu("1000m", "1G", "0", "1"),
-		Releasing:              resource_info.EmptyResource(),
-		Allocatable:            common_info.BuildResourceWithGpu("8000m", "10G", "0", "110"),
-		PodInfos:               map[common_info.PodID]*pod_info.PodInfo{},
+		Name: "n1",
+		Node: node1,
+		PodInfos: map[common_info.PodID]*pod_info.PodInfo{
+			pod1Info.UID: pod1Info,
+		},
 		LegacyMIGTasks:         map[common_info.PodID]string{},
 		MemoryOfEveryGpuOnNode: DefaultGpuMemory,
 		GpuSharingNodeInfo:     *newGpuSharingNodeInfo(),
@@ -129,8 +127,18 @@ func TestNodeInfoStorage_AddPod(t *testing.T) {
 			storageCapacity.StorageClass: {expectedStorageCapacity},
 		},
 	}
-	node1ExpectedNodeInfo.setAcceptedResources(pod1Info)
-	node1ExpectedNodeInfo.PodInfos[pod1Info.UID] = pod1Info.Clone()
+	node1ExpectedNodeInfo.VectorMap = vectorMap
+	node1ExpectedNodeInfo.AllocatableVector = common_info.BuildResource("8000m", "10G").ToVector(vectorMap)
+	node1ExpectedNodeInfo.IdleVector = common_info.BuildResource("7000m", "9G").ToVector(vectorMap)
+	node1ExpectedNodeInfo.UsedVector = common_info.BuildResource("1000m", "1G").ToVector(vectorMap)
+	node1ExpectedNodeInfo.ReleasingVector = resource_info.EmptyResource().ToVector(vectorMap)
+	podsIdx := vectorMap.GetIndex(v1.ResourcePods)
+	node1ExpectedNodeInfo.AllocatableVector.Set(podsIdx, 110)
+	node1ExpectedNodeInfo.IdleVector.Set(podsIdx, 109)
+	node1ExpectedNodeInfo.UsedVector.Set(podsIdx, 1)
+	for _, podInfo := range node1ExpectedNodeInfo.PodInfos {
+		node1ExpectedNodeInfo.setAcceptedResources(podInfo)
+	}
 
 	tests := []AddRemovePodsTestWithStorage{
 		{
