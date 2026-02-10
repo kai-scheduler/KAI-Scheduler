@@ -259,7 +259,9 @@ func TestVictimQueue_PopNextJob(t *testing.T) {
 							},
 						},
 					},
-					Allocated: resource_info.NewResource(1000, 1024, 1),
+					Allocated:       resource_info.NewResource(1000, 1024, 1),
+					VectorMap:       testVectorMap,
+					AllocatedVector: resource_info.NewResource(1000, 1024, 1).ToVector(testVectorMap),
 				},
 				"q2j1": {
 					Name:     "q2j1",
@@ -279,7 +281,9 @@ func TestVictimQueue_PopNextJob(t *testing.T) {
 							},
 						},
 					},
-					Allocated: resource_info.NewResource(1000, 1024, 1),
+					Allocated:       resource_info.NewResource(1000, 1024, 1),
+					VectorMap:       testVectorMap,
+					AllocatedVector: resource_info.NewResource(1000, 1024, 1).ToVector(testVectorMap),
 				},
 				"q2j2": {
 					Name:     "q2j2",

@@ -99,7 +99,7 @@ func (alloc *preemptAction) Execute(ssn *framework.Session) {
 func attemptToPreemptForPreemptor(
 	ssn *framework.Session, preemptor *podgroup_info.PodGroupInfo,
 ) (bool, *framework.Statement, []string) {
-	resReq := podgroup_info.GetTasksToAllocateInitResource(preemptor, ssn.PodSetOrderFn, ssn.TaskOrderFn, false, ssn.ClusterInfo.MinNodeGPUMemory)
+	resReq := podgroup_info.GetTasksToAllocateInitResourceVector(preemptor, ssn.PodSetOrderFn, ssn.TaskOrderFn, false, ssn.ClusterInfo.MinNodeGPUMemory)
 	log.InfraLogger.V(3).Infof(
 		"Attempting to preempt for job: <%v/%v>, priority: <%v>, queue: <%v>, resources: <%v>",
 		preemptor.Namespace, preemptor.Name, preemptor.Priority, preemptor.Queue, resReq)

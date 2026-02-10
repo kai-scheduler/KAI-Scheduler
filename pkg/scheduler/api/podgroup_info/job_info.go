@@ -96,10 +96,11 @@ type PodGroupInfo struct {
 	schedulingConstraintsSignature common_info.SchedulingConstraintsSignature
 
 	// inner cache
-	tasksToAllocate             []*pod_info.PodInfo
-	tasksToAllocateInitResource *resource_info.Resource
-	PodStatusIndex              map[pod_status.PodStatus]pod_info.PodsMap
-	activeAllocatedCount        *int
+	tasksToAllocate                   []*pod_info.PodInfo
+	tasksToAllocateInitResource       *resource_info.Resource
+	tasksToAllocateInitResourceVector resource_info.ResourceVector
+	PodStatusIndex                    map[pod_status.PodStatus]pod_info.PodsMap
+	activeAllocatedCount              *int
 }
 
 func NewPodGroupInfo(uid common_info.PodGroupID, tasks ...*pod_info.PodInfo) *PodGroupInfo {
@@ -244,9 +245,7 @@ func (pgi *PodGroupInfo) AddTaskInfo(ti *pod_info.PodInfo) {
 
 	if pod_status.AllocatedStatus(ti.Status) {
 		pgi.Allocated.AddResourceRequirements(ti.ResReq)
-		if len(pgi.AllocatedVector) > 0 && len(ti.ResReqVector) > 0 {
-			pgi.AllocatedVector.Add(ti.ResReqVector)
-		}
+		pgi.AllocatedVector.Add(ti.ResReqVector)
 	}
 }
 
@@ -281,6 +280,7 @@ func (pgi *PodGroupInfo) deleteTaskIndex(ti *pod_info.PodInfo) {
 func (pgi *PodGroupInfo) invalidateTasksCache() {
 	pgi.tasksToAllocate = nil
 	pgi.tasksToAllocateInitResource = nil
+	pgi.tasksToAllocateInitResourceVector = nil
 }
 
 func (pgi *PodGroupInfo) GetActiveAllocatedTasksCount() int {
@@ -315,9 +315,7 @@ func (pgi *PodGroupInfo) resetTaskState(ti *pod_info.PodInfo) error {
 
 	if pod_status.AllocatedStatus(task.Status) {
 		pgi.Allocated.SubResourceRequirements(task.ResReq)
-		if len(pgi.AllocatedVector) > 0 && len(task.ResReqVector) > 0 {
-			pgi.AllocatedVector.Sub(task.ResReqVector)
-		}
+		pgi.AllocatedVector.Sub(task.ResReqVector)
 	}
 
 	pgi.deleteTaskIndex(ti)
@@ -375,10 +373,11 @@ func (pgi *PodGroupInfo) GetNumGatedTasks() int {
 }
 
 func (pgi *PodGroupInfo) GetAliveTasksRequestedGPUs() float64 {
+	gpuIdx := pgi.VectorMap.GetIndex("gpu")
 	tasksTotalRequestedGPUs := float64(0)
 	for _, task := range pgi.GetAllPodsMap() {
 		if pod_status.IsAliveStatus(task.Status) {
-			tasksTotalRequestedGPUs += task.ResReq.GPUs()
+			tasksTotalRequestedGPUs += task.ResReqVector.Get(gpuIdx)
 		}
 	}
 
@@ -394,6 +393,16 @@ func (pgi *PodGroupInfo) GetTasksActiveAllocatedReqResource() *resource_info.Res
 	}
 
 	return tasksTotalRequestedResource
+}
+
+func (pgi *PodGroupInfo) GetTasksActiveAllocatedReqResourceVector() resource_info.ResourceVector {
+	result := resource_info.NewResourceVector(pgi.VectorMap)
+	for _, task := range pgi.GetAllPodsMap() {
+		if pod_status.IsActiveAllocatedStatus(task.Status) {
+			result.Add(task.ResReqVector)
+		}
+	}
+	return result
 }
 
 func (pgi *PodGroupInfo) IsReadyForScheduling() bool {
