@@ -143,6 +143,7 @@ func createPodInfoWithMultipleGPUs() *PodInfo {
 	}
 
 	podInfo := NewTaskInfo(pod, nil, resource_info.NewResourceVectorMap())
-	podInfo.AcceptedResource = podInfo.ResReq.Clone()
+	podInfo.AcceptedGpuRequirement = *podInfo.GpuRequirement.Clone()
+	podInfo.AcceptedResourceVector = podInfo.ResReqVector.Clone()
 	return podInfo
 }

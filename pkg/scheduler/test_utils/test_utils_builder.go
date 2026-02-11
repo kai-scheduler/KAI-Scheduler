@@ -53,6 +53,7 @@ func CreateFakeSession(schedulerConfig *TestSessionConfig,
 	createCacheMockIfNotExists bool,
 	topologies []*kaiv1alpha1.Topology,
 	clusterPodAffinityInfo *cache.K8sClusterPodAffinityInfo,
+	vectorMap *resource_info.ResourceVectorMap,
 ) *framework.Session {
 	ssn := framework.Session{
 		Config: &conf.SchedulerConfiguration{
@@ -63,12 +64,13 @@ func CreateFakeSession(schedulerConfig *TestSessionConfig,
 			},
 		},
 		ClusterInfo: &api.ClusterInfo{
-			Nodes:            nodesInfoMap,
-			Queues:           queueInfoMap,
-			PodGroupInfos:    jobInfoMap,
-			ResourceClaims:   getResourceClaims(testMetadata),
-			Topologies:       topologies,
-			MinNodeGPUMemory: node_info.DefaultGpuMemory,
+			Nodes:             nodesInfoMap,
+			Queues:            queueInfoMap,
+			PodGroupInfos:     jobInfoMap,
+			ResourceClaims:    getResourceClaims(testMetadata),
+			Topologies:        topologies,
+			MinNodeGPUMemory:  node_info.DefaultGpuMemory,
+			ResourceVectorMap: vectorMap,
 		},
 		SchedulerParams: conf.SchedulerParams{
 			QueueLabelKey: constants.DefaultQueueLabel,
@@ -285,7 +287,7 @@ func BuildSession(testMetadata TestTopologyBasic, controller *Controller) *frame
 		testMetadata.Mocks.Cache == nil
 
 	return CreateFakeSession(&schedulerConfig, nodesInfoMap, jobsInfoMap, queueInfoMap, testMetadata,
-		controller, createCacheMockIfNotExists, testMetadata.Topologies, clusterPodAffinityInfo)
+		controller, createCacheMockIfNotExists, testMetadata.Topologies, clusterPodAffinityInfo, vectorMap)
 }
 
 func mergeQueues(queuesMaps ...map[common_info.QueueID]*queue_info.QueueInfo) map[common_info.QueueID]*queue_info.QueueInfo {

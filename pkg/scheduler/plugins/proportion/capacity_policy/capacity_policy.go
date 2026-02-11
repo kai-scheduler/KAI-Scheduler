@@ -4,6 +4,7 @@
 package capacity_policy
 
 import (
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
@@ -12,6 +13,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	rs "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/utils"
+	v1 "k8s.io/api/core/v1"
 )
 
 type capacityCheckFn func(requestedShare rs.ResourceQuantities, job *podgroup_info.PodGroupInfo) *api.SchedulableResult
@@ -26,11 +28,7 @@ func New(queues map[common_info.QueueID]*rs.QueueAttributes) *CapacityPolicy {
 
 func (cp *CapacityPolicy) IsJobOverQueueCapacity(job *podgroup_info.PodGroupInfo,
 	tasksToAllocate []*pod_info.PodInfo) *api.SchedulableResult {
-	requiredQuota := getRequiredQuota(tasksToAllocate)
-	requestedShareQuantities := rs.NewResourceQuantities(
-		requiredQuota.MilliCPU,
-		requiredQuota.Memory,
-		requiredQuota.GPU)
+	requestedShareQuantities := getRequiredQuota(tasksToAllocate)
 
 	checkFns := []capacityCheckFn{cp.resultsOverLimit, cp.resultsWithNonPreemptibleOverQuota}
 	return cp.isJobOverCapacity(requestedShareQuantities, job, checkFns)
@@ -39,11 +37,7 @@ func (cp *CapacityPolicy) IsJobOverQueueCapacity(job *podgroup_info.PodGroupInfo
 func (cp *CapacityPolicy) IsNonPreemptibleJobOverQuota(job *podgroup_info.PodGroupInfo,
 	tasksToAllocate []*pod_info.PodInfo) *api.SchedulableResult {
 
-	requiredQuota := getRequiredQuota(tasksToAllocate)
-	requestedShareQuantities := rs.NewResourceQuantities(
-		requiredQuota.MilliCPU,
-		requiredQuota.Memory,
-		requiredQuota.GPU)
+	requestedShareQuantities := getRequiredQuota(tasksToAllocate)
 
 	checkFns := []capacityCheckFn{cp.resultsWithNonPreemptibleOverQuota}
 	return cp.isJobOverCapacity(requestedShareQuantities, job, checkFns)
@@ -53,9 +47,9 @@ func (cp *CapacityPolicy) IsTaskAllocationOnNodeOverCapacity(task *pod_info.PodI
 	node *node_info.NodeInfo) *api.SchedulableResult {
 	requiredInitQuota := node.GetRequiredInitQuota(task)
 	requestedShare := rs.NewResourceQuantities(
-		requiredInitQuota.MilliCPU,
-		requiredInitQuota.Memory,
-		requiredInitQuota.GPU)
+		requiredInitQuota[node.VectorMap.GetIndex(v1.ResourceCPU)],
+		requiredInitQuota[node.VectorMap.GetIndex(v1.ResourceMemory)],
+		requiredInitQuota[node.VectorMap.GetIndex(constants.GpuResource)])
 
 	checkFns := []capacityCheckFn{cp.resultsOverLimit, cp.resultsWithNonPreemptibleOverQuota}
 	return cp.isJobOverCapacity(requestedShare, job, checkFns)
@@ -74,13 +68,13 @@ func (cp *CapacityPolicy) isJobOverCapacity(requestedShare rs.ResourceQuantities
 	return Schedulable()
 }
 
-func getRequiredQuota(tasksToAllocate []*pod_info.PodInfo) *podgroup_info.JobRequirement {
-	quota := podgroup_info.JobRequirement{}
+func getRequiredQuota(tasksToAllocate []*pod_info.PodInfo) rs.ResourceQuantities {
+	quota := rs.EmptyResourceQuantities()
 	for _, pod := range tasksToAllocate {
 		quantities := utils.QuantifyVector(pod.ResReqVector, pod.VectorMap)
-		quota.GPU += quantities[rs.GpuResource]
-		quota.MilliCPU += quantities[rs.CpuResource]
-		quota.Memory += quantities[rs.MemoryResource]
+		quota[rs.GpuResource] += quantities[rs.GpuResource]
+		quota[rs.CpuResource] += quantities[rs.CpuResource]
+		quota[rs.MemoryResource] += quantities[rs.MemoryResource]
 	}
-	return &quota
+	return quota
 }

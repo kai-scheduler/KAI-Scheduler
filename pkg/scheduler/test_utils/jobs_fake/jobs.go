@@ -89,7 +89,7 @@ func BuildJobsAndTasksMaps(Jobs []*TestJobBasic, vectorMap *resource_info.Resour
 		job.Preemptibility = pg.CalculatePreemptibility(job.Preemptibility, job.Priority)
 
 		jobInfo := BuildJobInfo(
-			jobName, job.Namespace, jobUID, jobAllocatedResource, job.RootSubGroupSet, taskInfos,
+			jobName, job.Namespace, jobUID, job.RootSubGroupSet, taskInfos,
 			job.Priority, job.Preemptibility, queueUID, jobCreationTime, job.StaleDuration, vectorMap,
 		)
 		jobsInfoMap[common_info.PodGroupID(job.Name)] = jobInfo
@@ -99,7 +99,7 @@ func BuildJobsAndTasksMaps(Jobs []*TestJobBasic, vectorMap *resource_info.Resour
 }
 
 func BuildJobInfo(
-	name, namespace string, uid common_info.PodGroupID, allocatedResource *resource_info.Resource,
+	name, namespace string, uid common_info.PodGroupID,
 	rootSubGroupSet *subgroup_info.SubGroupSet, taskInfos []*pod_info.PodInfo,
 	priority int32, preemptibility enginev2alpha2.Preemptibility, queueUID common_info.QueueID,
 	jobCreationTime time.Time, staleDuration *time.Duration, vectorMap *resource_info.ResourceVectorMap,
@@ -134,12 +134,18 @@ func BuildJobInfo(
 		}
 	}
 
+	allocatedVector := resource_info.NewResourceVector(vectorMap)
+	for _, taskInfo := range taskInfos {
+		if pod_status.AllocatedStatus(taskInfo.Status) {
+			allocatedVector.Add(taskInfo.ResReqVector)
+		}
+	}
+
 	result := &podgroup_info.PodGroupInfo{
 		UID:             uid,
 		Name:            name,
 		Namespace:       namespace,
-		Allocated:       allocatedResource,
-		AllocatedVector: allocatedResource.ToVector(vectorMap),
+		AllocatedVector: allocatedVector,
 		VectorMap:       vectorMap,
 		PodStatusIndex:  taskStatusIndex,
 		Priority:        priority,

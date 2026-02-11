@@ -60,10 +60,10 @@ func GetTasksToAllocateRequestedGPUs(
 	tasksTotalRequestedGPUs := float64(0)
 	tasksTotalRequestedGpuMemory := int64(0)
 	for _, task := range GetTasksToAllocate(podGroupInfo, subGroupOrderFn, taskOrderFn, isRealAllocation) {
-		tasksTotalRequestedGPUs += task.ResReq.GPUs()
-		tasksTotalRequestedGpuMemory += task.ResReq.GpuMemory()
+		tasksTotalRequestedGPUs += task.GpuRequirement.GPUs()
+		tasksTotalRequestedGpuMemory += task.GpuRequirement.GpuMemory()
 
-		for _, draGpuCount := range task.ResReq.GpuResourceRequirement.DraGpuCounts() {
+		for _, draGpuCount := range task.GpuRequirement.DraGpuCounts() {
 			tasksTotalRequestedGPUs += float64(draGpuCount)
 			// Currently, we do not support DRA gpu memory requests.
 			// DRA gpu requests that have memory constraints (e.g. 2 gpus, each with at least 32GB) are supported by adding the device count (e.g. 2) to the total requested GPUs.
@@ -71,7 +71,7 @@ func GetTasksToAllocateRequestedGPUs(
 			tasksTotalRequestedGpuMemory += 0
 		}
 
-		for migResource, quant := range task.ResReq.MigResources() {
+		for migResource, quant := range task.GpuRequirement.MigResources() {
 			gpuPortion, mem, err := resources.ExtractGpuAndMemoryFromMigResourceName(migResource.String())
 			if err != nil {
 				log.InfraLogger.Errorf("failed to evaluate device portion for resource %v: %v", migResource, err)
@@ -83,33 +83,6 @@ func GetTasksToAllocateRequestedGPUs(
 	}
 
 	return tasksTotalRequestedGPUs, tasksTotalRequestedGpuMemory
-}
-
-func GetTasksToAllocateInitResource(
-	podGroupInfo *PodGroupInfo, subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn,
-	isRealAllocation bool, minNodeGPUMemory int64,
-) *resource_info.Resource {
-	if podGroupInfo == nil {
-		return resource_info.EmptyResource()
-	}
-	if podGroupInfo.tasksToAllocateInitResource != nil {
-		return podGroupInfo.tasksToAllocateInitResource
-	}
-
-	tasksTotalRequestedResource := resource_info.EmptyResource()
-	for _, task := range GetTasksToAllocate(podGroupInfo, subGroupOrderFn, taskOrderFn, isRealAllocation) {
-		if task.ShouldAllocate(isRealAllocation) {
-			tasksTotalRequestedResource.AddResourceRequirements(task.ResReq)
-			if task.IsMemoryRequest() && minNodeGPUMemory > 0 {
-				additionalGpuFraction := float64(task.ResReq.GpuResourceRequirement.GetNumOfGpuDevices()) *
-					(float64(task.ResReq.GpuMemory()) / float64(minNodeGPUMemory))
-				tasksTotalRequestedResource.AddGPUs(additionalGpuFraction)
-			}
-		}
-	}
-
-	podGroupInfo.tasksToAllocateInitResource = tasksTotalRequestedResource
-	return tasksTotalRequestedResource
 }
 
 func GetTasksToAllocateInitResourceVector(
@@ -129,8 +102,8 @@ func GetTasksToAllocateInitResourceVector(
 		if task.ShouldAllocate(isRealAllocation) {
 			result.Add(task.ResReqVector)
 			if task.IsMemoryRequest() && minNodeGPUMemory > 0 {
-				additionalGpuFraction := float64(task.ResReq.GpuResourceRequirement.GetNumOfGpuDevices()) *
-					(float64(task.ResReq.GpuMemory()) / float64(minNodeGPUMemory))
+				additionalGpuFraction := float64(task.GpuRequirement.GetNumOfGpuDevices()) *
+					(float64(task.GpuRequirement.GpuMemory()) / float64(minNodeGPUMemory))
 				result.Set(gpuIdx, result.Get(gpuIdx)+additionalGpuFraction)
 			}
 		}

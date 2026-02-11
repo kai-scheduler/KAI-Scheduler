@@ -220,36 +220,12 @@ func Test_GetTasksToAllocateRequestedGPUs(t *testing.T) {
 	pg := NewPodGroupInfo("test-podgroup")
 	pg.GetSubGroups()[DefaultSubGroup].SetMinAvailable(1)
 	task := simpleTask("p1", "", pod_status.Pending)
-	// manually set up a fake ResReq that returns 2 for GPUs and 1000 for GpuMemory
-	task.ResReq = resource_info.NewResourceRequirements(2, 1000, 2000)
+	// manually set up a fake GpuRequirement that returns 2 for GPUs
+	task.GpuRequirement = *resource_info.NewGpuResourceRequirementWithGpus(2, 0)
 	pg.AddTaskInfo(task)
 	gpus, _ := GetTasksToAllocateRequestedGPUs(pg, subGroupOrderFn, tasksOrderFn, true)
 	if gpus != 2 {
 		t.Errorf("expected gpus=2, got %v", gpus)
-	}
-}
-
-func Test_GetTasksToAllocateInitResource(t *testing.T) {
-	pg := NewPodGroupInfo("ri")
-	// Nil case
-	res := GetTasksToAllocateInitResource(nil, subGroupOrderFn, tasksOrderFn, true, 0)
-	if !res.IsEmpty() {
-		t.Error("empty resource expected for nil pg")
-	}
-
-	pg.GetSubGroups()[DefaultSubGroup].SetMinAvailable(1)
-	task := simpleTask("p", "", pod_status.Pending)
-	task.ResReq = resource_info.NewResourceRequirements(0, 5000, 0)
-	pg.AddTaskInfo(task)
-	resource := GetTasksToAllocateInitResource(pg, subGroupOrderFn, tasksOrderFn, true, 0)
-	cpu := resource.BaseResource.Get(v1.ResourceCPU)
-	if cpu != 5000 {
-		t.Fatalf("want cpu=5, got %v", cpu)
-	}
-	// Memoization/second call should return r
-	newResource := GetTasksToAllocateInitResource(pg, subGroupOrderFn, tasksOrderFn, true, 0)
-	if newResource != resource {
-		t.Error("cached resource pointer mismatch")
 	}
 }
 
@@ -265,14 +241,16 @@ func Test_GetTasksToAllocateInitResourceVector(t *testing.T) {
 	pg.GetSubGroups()[DefaultSubGroup].SetMinAvailable(2)
 
 	task1 := simpleTask("p1", "", pod_status.Pending)
-	task1.ResReq = resource_info.NewResourceRequirements(1, 2000, 4000)
-	task1.ResReqVector = task1.ResReq.ToVector(vectorMap)
+	req1 := resource_info.NewResourceRequirements(1, 2000, 4000)
+	task1.GpuRequirement = req1.GpuResourceRequirement
+	task1.ResReqVector = req1.ToVector(vectorMap)
 	task1.VectorMap = vectorMap
 	pg.AddTaskInfo(task1)
 
 	task2 := simpleTask("p2", "", pod_status.Pending)
-	task2.ResReq = resource_info.NewResourceRequirements(2, 3000, 5000)
-	task2.ResReqVector = task2.ResReq.ToVector(vectorMap)
+	req2 := resource_info.NewResourceRequirements(2, 3000, 5000)
+	task2.GpuRequirement = req2.GpuResourceRequirement
+	task2.ResReqVector = req2.ToVector(vectorMap)
 	task2.VectorMap = vectorMap
 	pg.AddTaskInfo(task2)
 

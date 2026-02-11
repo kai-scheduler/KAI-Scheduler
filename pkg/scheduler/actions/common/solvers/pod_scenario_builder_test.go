@@ -310,7 +310,7 @@ func initializeSession(jobsCount, tasksPerJob int) (*framework.Session, []*pod_i
 		queueName := fmt.Sprintf("team-%d", jobID)
 		newJob, jobTasks := createJobWithTasks(tasksPerJob, jobID, queueName, v1.PodRunning, []v1.ResourceRequirements{requireOneGPU()})
 		jobs = append(jobs, newJob)
-		allocatedVector := newJob.Allocated.ToVector(vectorMap)
+		allocatedVector := newJob.AllocatedVector.Clone()
 		node.AllocatableVector.Add(allocatedVector)
 		node.IdleVector.Add(allocatedVector)
 		_ = node.AddTasksToNode(jobTasks, map[common_info.PodID]*pod_info.PodInfo{})

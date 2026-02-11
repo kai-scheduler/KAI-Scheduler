@@ -7,491 +7,202 @@ import (
 	"testing"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 )
 
 func TestJobOrderFn(t *testing.T) {
-	type args struct {
-		l     interface{}
-		lPods []*pod_info.PodInfo
-		r     interface{}
-		rPods []*pod_info.PodInfo
-	}
+	running := &tasks_fake.TestTaskBasic{State: pod_status.Running}
+
 	tests := []struct {
 		name string
-		args args
+		l    *jobs_fake.TestJobBasic
+		r    *jobs_fake.TestJobBasic
 		want int
 	}{
 		{
 			name: "no pods",
-			args: args{
-				l: &podgroup_info.PodGroupInfo{
-					PodSets: map[string]*subgroup_info.PodSet{
-						podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 0, nil).
-							WithPodInfos(map[common_info.PodID]*pod_info.PodInfo{}),
-					},
-					PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{},
-					Allocated:      resource_info.EmptyResource(),
-				},
-				lPods: []*pod_info.PodInfo{},
-				r: &podgroup_info.PodGroupInfo{
-					PodSets: map[string]*subgroup_info.PodSet{
-						podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 0, nil).
-							WithPodInfos(map[common_info.PodID]*pod_info.PodInfo{}),
-					},
-					PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{},
-					Allocated:      resource_info.EmptyResource(),
-				},
-				rPods: []*pod_info.PodInfo{},
+			l: &jobs_fake.TestJobBasic{
+				Name:            "job-l",
+				RootSubGroupSet: jobs_fake.DefaultSubGroup(0),
+			},
+			r: &jobs_fake.TestJobBasic{
+				Name:            "job-r",
+				RootSubGroupSet: jobs_fake.DefaultSubGroup(0),
 			},
 			want: 0,
 		},
 		{
 			name: "running single pod",
-			args: args{
-				l: &podgroup_info.PodGroupInfo{
-					PodSets: map[string]*subgroup_info.PodSet{
-						podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil),
-					},
-					PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{},
-					Allocated:      resource_info.EmptyResource(),
-				},
-				lPods: []*pod_info.PodInfo{
-					{
-						UID:    "pod-a-1",
-						Name:   "pod-a-1",
-						Status: pod_status.Running,
-						ResReq: resource_info.EmptyResourceRequirements(),
-					},
-				},
-				r: &podgroup_info.PodGroupInfo{
-					PodSets: map[string]*subgroup_info.PodSet{
-						podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil),
-					},
-					PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{},
-					Allocated:      resource_info.EmptyResource(),
-				},
-				rPods: []*pod_info.PodInfo{
-					{
-						UID:    "pod-a-2",
-						Name:   "pod-a-2",
-						Status: pod_status.Running,
-						ResReq: resource_info.EmptyResourceRequirements(),
-					},
-				},
+			l: &jobs_fake.TestJobBasic{
+				Name:            "job-l",
+				RootSubGroupSet: jobs_fake.DefaultSubGroup(1),
+				Tasks:           []*tasks_fake.TestTaskBasic{running},
+			},
+			r: &jobs_fake.TestJobBasic{
+				Name:            "job-r",
+				RootSubGroupSet: jobs_fake.DefaultSubGroup(1),
+				Tasks:           []*tasks_fake.TestTaskBasic{running},
 			},
 			want: 0,
 		},
 		{
 			name: "allocated pod counts as allocated",
-			args: args{
-				l: &podgroup_info.PodGroupInfo{
-					PodSets: map[string]*subgroup_info.PodSet{
-						podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil),
-					},
-					PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{},
-					Allocated:      resource_info.EmptyResource(),
+			l: &jobs_fake.TestJobBasic{
+				Name:            "job-l",
+				RootSubGroupSet: jobs_fake.DefaultSubGroup(1),
+				Tasks: []*tasks_fake.TestTaskBasic{
+					{State: pod_status.Allocated},
 				},
-				lPods: []*pod_info.PodInfo{
-					{
-						UID:    "pod-a-1",
-						Name:   "pod-a-1",
-						Status: pod_status.Allocated,
-						ResReq: resource_info.EmptyResourceRequirements(),
-					},
-				},
-				r: &podgroup_info.PodGroupInfo{
-					PodSets: map[string]*subgroup_info.PodSet{
-						podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil),
-					},
-					PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{},
-					Allocated:      resource_info.EmptyResource(),
-				},
-				rPods: []*pod_info.PodInfo{
-					{
-						UID:    "pod-a-2",
-						Name:   "pod-a-2",
-						Status: pod_status.Running,
-						ResReq: resource_info.EmptyResourceRequirements(),
-					},
-				},
+			},
+			r: &jobs_fake.TestJobBasic{
+				Name:            "job-r",
+				RootSubGroupSet: jobs_fake.DefaultSubGroup(1),
+				Tasks:           []*tasks_fake.TestTaskBasic{running},
 			},
 			want: 0,
 		},
 		{
 			name: "bound pod counts as allocated",
-			args: args{
-				l: &podgroup_info.PodGroupInfo{
-					PodSets: map[string]*subgroup_info.PodSet{
-						podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil),
-					},
-					PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{},
-					Allocated:      resource_info.EmptyResource(),
+			l: &jobs_fake.TestJobBasic{
+				Name:            "job-l",
+				RootSubGroupSet: jobs_fake.DefaultSubGroup(1),
+				Tasks: []*tasks_fake.TestTaskBasic{
+					{State: pod_status.Bound},
 				},
-				lPods: []*pod_info.PodInfo{
-					{
-						UID:    "pod-a-1",
-						Name:   "pod-a-1",
-						Status: pod_status.Bound,
-						ResReq: resource_info.EmptyResourceRequirements(),
-					},
-				},
-				r: &podgroup_info.PodGroupInfo{
-					PodSets: map[string]*subgroup_info.PodSet{
-						podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil),
-					},
-					PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{},
-					Allocated:      resource_info.EmptyResource(),
-				},
-				rPods: []*pod_info.PodInfo{
-					{
-						UID:    "pod-a-2",
-						Name:   "pod-a-2",
-						Status: pod_status.Running,
-						ResReq: resource_info.EmptyResourceRequirements(),
-					},
-				},
+			},
+			r: &jobs_fake.TestJobBasic{
+				Name:            "job-r",
+				RootSubGroupSet: jobs_fake.DefaultSubGroup(1),
+				Tasks:           []*tasks_fake.TestTaskBasic{running},
 			},
 			want: 0,
 		},
 		{
 			name: "releasing pod doesn't count as allocated",
-			args: args{
-				l: &podgroup_info.PodGroupInfo{
-					PodSets: map[string]*subgroup_info.PodSet{
-						podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil),
-					},
-					PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{},
-					Allocated:      resource_info.EmptyResource(),
+			l: &jobs_fake.TestJobBasic{
+				Name:            "job-l",
+				RootSubGroupSet: jobs_fake.DefaultSubGroup(1),
+				Tasks: []*tasks_fake.TestTaskBasic{
+					{State: pod_status.Releasing},
 				},
-				lPods: []*pod_info.PodInfo{
-					{
-						UID:    "pod-a-1",
-						Name:   "pod-a-1",
-						Status: pod_status.Releasing,
-						ResReq: resource_info.EmptyResourceRequirements(),
-					},
-				},
-				r: &podgroup_info.PodGroupInfo{
-					PodSets: map[string]*subgroup_info.PodSet{
-						podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil),
-					},
-					PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{},
-					Allocated:      resource_info.EmptyResource(),
-				},
-				rPods: []*pod_info.PodInfo{
-					{
-						UID:    "pod-a-2",
-						Name:   "pod-a-2",
-						Status: pod_status.Running,
-						ResReq: resource_info.EmptyResourceRequirements(),
-					},
-				},
+			},
+			r: &jobs_fake.TestJobBasic{
+				Name:            "job-r",
+				RootSubGroupSet: jobs_fake.DefaultSubGroup(1),
+				Tasks:           []*tasks_fake.TestTaskBasic{running},
 			},
 			want: -1,
 		},
 		{
 			name: "pod group with min pods against pod group with no pods",
-			args: args{
-				l: &podgroup_info.PodGroupInfo{
-					PodSets: map[string]*subgroup_info.PodSet{
-						podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil),
-					},
-					PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{},
-					Allocated:      resource_info.EmptyResource(),
-				},
-				lPods: []*pod_info.PodInfo{
-					{
-						UID:    "pod-a-1",
-						Name:   "pod-a-1",
-						Status: pod_status.Running,
-						ResReq: resource_info.EmptyResourceRequirements(),
-					},
-				},
-				r: &podgroup_info.PodGroupInfo{
-					PodSets: map[string]*subgroup_info.PodSet{
-						podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil),
-					},
-				},
-				rPods: []*pod_info.PodInfo{},
+			l: &jobs_fake.TestJobBasic{
+				Name:            "job-l",
+				RootSubGroupSet: jobs_fake.DefaultSubGroup(1),
+				Tasks:           []*tasks_fake.TestTaskBasic{running},
+			},
+			r: &jobs_fake.TestJobBasic{
+				Name:            "job-r",
+				RootSubGroupSet: jobs_fake.DefaultSubGroup(1),
 			},
 			want: 1,
 		},
 		{
 			name: "pod group with less then min pods against pod group with min pods",
-			args: args{
-				l: &podgroup_info.PodGroupInfo{
-					PodSets: map[string]*subgroup_info.PodSet{
-						podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 2, nil),
-					},
-					PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{},
-					Allocated:      resource_info.EmptyResource(),
-				},
-				lPods: []*pod_info.PodInfo{
-					{
-						UID:    "pod-a-1",
-						Name:   "pod-a-1",
-						Status: pod_status.Running,
-						ResReq: resource_info.EmptyResourceRequirements(),
-					},
-				},
-				r: &podgroup_info.PodGroupInfo{
-					PodSets: map[string]*subgroup_info.PodSet{
-						podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 2, nil),
-					},
-					PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{},
-					Allocated:      resource_info.EmptyResource(),
-				},
-				rPods: []*pod_info.PodInfo{
-					{
-						UID:    "pod-a-2",
-						Name:   "pod-a-2",
-						Status: pod_status.Running,
-						ResReq: resource_info.EmptyResourceRequirements(),
-					},
-					{
-						UID:    "pod-b-2",
-						Name:   "pod-b-2",
-						Status: pod_status.Running,
-						ResReq: resource_info.EmptyResourceRequirements(),
-					},
-				},
+			l: &jobs_fake.TestJobBasic{
+				Name:            "job-l",
+				RootSubGroupSet: jobs_fake.DefaultSubGroup(2),
+				Tasks:           []*tasks_fake.TestTaskBasic{running},
+			},
+			r: &jobs_fake.TestJobBasic{
+				Name:            "job-r",
+				RootSubGroupSet: jobs_fake.DefaultSubGroup(2),
+				Tasks:           []*tasks_fake.TestTaskBasic{running, running},
 			},
 			want: -1,
 		},
 		{
 			name: "pod group with less then min pods against pod group with more than min pods",
-			args: args{
-				l: &podgroup_info.PodGroupInfo{
-					PodSets: map[string]*subgroup_info.PodSet{
-						podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 2, nil),
-					},
-					PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{},
-					Allocated:      resource_info.EmptyResource(),
-				},
-				lPods: []*pod_info.PodInfo{
-					{
-						UID:    "pod-a-1",
-						Name:   "pod-a-1",
-						Status: pod_status.Running,
-						ResReq: resource_info.EmptyResourceRequirements(),
-					},
-				},
-				r: &podgroup_info.PodGroupInfo{
-					PodSets: map[string]*subgroup_info.PodSet{
-						podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 2, nil),
-					},
-					PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{},
-					Allocated:      resource_info.EmptyResource(),
-				},
-				rPods: []*pod_info.PodInfo{
-					{
-						UID:    "pod-a-2",
-						Name:   "pod-a-2",
-						Status: pod_status.Running,
-						ResReq: resource_info.EmptyResourceRequirements(),
-					},
-					{
-						UID:    "pod-b-2",
-						Name:   "pod-b-2",
-						Status: pod_status.Running,
-						ResReq: resource_info.EmptyResourceRequirements(),
-					},
-					{
-						UID:    "pod-b-3",
-						Name:   "pod-b-3",
-						Status: pod_status.Running,
-						ResReq: resource_info.EmptyResourceRequirements(),
-					},
-				},
+			l: &jobs_fake.TestJobBasic{
+				Name:            "job-l",
+				RootSubGroupSet: jobs_fake.DefaultSubGroup(2),
+				Tasks:           []*tasks_fake.TestTaskBasic{running},
+			},
+			r: &jobs_fake.TestJobBasic{
+				Name:            "job-r",
+				RootSubGroupSet: jobs_fake.DefaultSubGroup(2),
+				Tasks:           []*tasks_fake.TestTaskBasic{running, running, running},
 			},
 			want: -1,
 		},
 		{
 			name: "pod group with min pods against pod group with more than min pods",
-			args: args{
-				l: &podgroup_info.PodGroupInfo{
-					PodSets: map[string]*subgroup_info.PodSet{
-						podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil),
-					},
-					PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{},
-					Allocated:      resource_info.EmptyResource(),
-				},
-				lPods: []*pod_info.PodInfo{
-					{
-						UID:    "pod-a-1",
-						Name:   "pod-a-1",
-						Status: pod_status.Running,
-						ResReq: resource_info.EmptyResourceRequirements(),
-					},
-				},
-				r: &podgroup_info.PodGroupInfo{
-					PodSets: map[string]*subgroup_info.PodSet{
-						podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil),
-					},
-					PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{},
-					Allocated:      resource_info.EmptyResource(),
-				},
-				rPods: []*pod_info.PodInfo{
-					{
-						UID:    "pod-a-2",
-						Name:   "pod-a-2",
-						Status: pod_status.Running,
-						ResReq: resource_info.EmptyResourceRequirements(),
-					},
-					{
-						UID:    "pod-b-2",
-						Name:   "pod-b-2",
-						Status: pod_status.Running,
-						ResReq: resource_info.EmptyResourceRequirements(),
-					},
-				},
+			l: &jobs_fake.TestJobBasic{
+				Name:            "job-l",
+				RootSubGroupSet: jobs_fake.DefaultSubGroup(1),
+				Tasks:           []*tasks_fake.TestTaskBasic{running},
+			},
+			r: &jobs_fake.TestJobBasic{
+				Name:            "job-r",
+				RootSubGroupSet: jobs_fake.DefaultSubGroup(1),
+				Tasks:           []*tasks_fake.TestTaskBasic{running, running},
 			},
 			want: -1,
 		},
 		{
 			name: "pod group with min pods against pod group with less than min pods",
-			args: args{
-				l: &podgroup_info.PodGroupInfo{
-					PodSets: map[string]*subgroup_info.PodSet{
-						podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil),
-					},
-					PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{},
-					Allocated:      resource_info.EmptyResource(),
-				},
-				lPods: []*pod_info.PodInfo{
-					{
-						UID:    "pod-a-1",
-						Name:   "pod-a-1",
-						Status: pod_status.Running,
-						ResReq: resource_info.EmptyResourceRequirements(),
-					},
-				},
-				r: &podgroup_info.PodGroupInfo{
-					PodSets: map[string]*subgroup_info.PodSet{
-						podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 3, nil),
-					},
-					PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{},
-					Allocated:      resource_info.EmptyResource(),
-				},
-				rPods: []*pod_info.PodInfo{
-					{
-						UID:    "pod-a-2",
-						Name:   "pod-a-2",
-						Status: pod_status.Running,
-						ResReq: resource_info.EmptyResourceRequirements(),
-					},
-					{
-						UID:    "pod-b-2",
-						Name:   "pod-b-2",
-						Status: pod_status.Running,
-						ResReq: resource_info.EmptyResourceRequirements(),
-					},
-				},
+			l: &jobs_fake.TestJobBasic{
+				Name:            "job-l",
+				RootSubGroupSet: jobs_fake.DefaultSubGroup(1),
+				Tasks:           []*tasks_fake.TestTaskBasic{running},
+			},
+			r: &jobs_fake.TestJobBasic{
+				Name:            "job-r",
+				RootSubGroupSet: jobs_fake.DefaultSubGroup(3),
+				Tasks:           []*tasks_fake.TestTaskBasic{running, running},
 			},
 			want: 1,
 		},
 		{
 			name: "pod group with more than min pods against pod group with min pods",
-			args: args{
-				l: &podgroup_info.PodGroupInfo{
-					PodSets: map[string]*subgroup_info.PodSet{
-						podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil),
-					},
-					PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{},
-					Allocated:      resource_info.EmptyResource(),
-				},
-				lPods: []*pod_info.PodInfo{
-					{
-						UID:    "pod-a-1",
-						Name:   "pod-a-1",
-						Status: pod_status.Running,
-						ResReq: resource_info.EmptyResourceRequirements(),
-					},
-					{
-						UID:    "pod-a-2",
-						Name:   "pod-a-2",
-						Status: pod_status.Running,
-						ResReq: resource_info.EmptyResourceRequirements(),
-					},
-				},
-				r: &podgroup_info.PodGroupInfo{
-					PodSets: map[string]*subgroup_info.PodSet{
-						podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil),
-					},
-					PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{},
-					Allocated:      resource_info.EmptyResource(),
-				},
-				rPods: []*pod_info.PodInfo{
-					{
-						UID:    "pod-a-2",
-						Name:   "pod-a-2",
-						Status: pod_status.Running,
-						ResReq: resource_info.EmptyResourceRequirements(),
-					},
-				},
+			l: &jobs_fake.TestJobBasic{
+				Name:            "job-l",
+				RootSubGroupSet: jobs_fake.DefaultSubGroup(1),
+				Tasks:           []*tasks_fake.TestTaskBasic{running, running},
+			},
+			r: &jobs_fake.TestJobBasic{
+				Name:            "job-r",
+				RootSubGroupSet: jobs_fake.DefaultSubGroup(1),
+				Tasks:           []*tasks_fake.TestTaskBasic{running},
 			},
 			want: 1,
 		},
 		{
 			name: "pod group with more than min pods against pod group with less than min pods",
-			args: args{
-				l: &podgroup_info.PodGroupInfo{
-					PodSets: map[string]*subgroup_info.PodSet{
-						podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil),
-					},
-					PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{},
-					Allocated:      resource_info.EmptyResource(),
-				},
-				lPods: []*pod_info.PodInfo{
-					{
-						UID:    "pod-a-1",
-						Name:   "pod-a-1",
-						Status: pod_status.Running,
-						ResReq: resource_info.EmptyResourceRequirements(),
-					},
-					{
-						UID:    "pod-a-2",
-						Name:   "pod-a-2",
-						Status: pod_status.Running,
-						ResReq: resource_info.EmptyResourceRequirements(),
-					},
-				},
-				r: &podgroup_info.PodGroupInfo{
-					PodSets: map[string]*subgroup_info.PodSet{
-						podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil),
-					},
-					PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{},
-					Allocated:      resource_info.EmptyResource(),
-				},
-				rPods: []*pod_info.PodInfo{
-					{
-						UID:    "pod-a-2",
-						Name:   "pod-a-2",
-						Status: pod_status.Running,
-						ResReq: resource_info.EmptyResourceRequirements(),
-					},
-				},
+			l: &jobs_fake.TestJobBasic{
+				Name:            "job-l",
+				RootSubGroupSet: jobs_fake.DefaultSubGroup(1),
+				Tasks:           []*tasks_fake.TestTaskBasic{running, running},
+			},
+			r: &jobs_fake.TestJobBasic{
+				Name:            "job-r",
+				RootSubGroupSet: jobs_fake.DefaultSubGroup(1),
+				Tasks:           []*tasks_fake.TestTaskBasic{running},
 			},
 			want: 1,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.args.l.(*podgroup_info.PodGroupInfo).GetActiveAllocatedTasksCount()
-			for _, pod := range tt.args.lPods {
-				tt.args.l.(*podgroup_info.PodGroupInfo).AddTaskInfo(pod)
-			}
-			tt.args.r.(*podgroup_info.PodGroupInfo).GetActiveAllocatedTasksCount()
-			for _, pod := range tt.args.rPods {
-				tt.args.r.(*podgroup_info.PodGroupInfo).AddTaskInfo(pod)
-			}
-			if got := JobOrderFn(tt.args.l, tt.args.r); got != tt.want {
+			vectorMap := resource_info.NewResourceVectorMap()
+			jobsMap, _, _ := jobs_fake.BuildJobsAndTasksMaps(
+				[]*jobs_fake.TestJobBasic{tt.l, tt.r}, vectorMap)
+			lJob := jobsMap[common_info.PodGroupID(tt.l.Name)]
+			rJob := jobsMap[common_info.PodGroupID(tt.r.Name)]
+			if got := JobOrderFn(lJob, rJob); got != tt.want {
 				t.Errorf("JobOrderFn() = %v, want %v", got, tt.want)
 			}
 		})

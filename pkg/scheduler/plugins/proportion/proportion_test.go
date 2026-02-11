@@ -622,7 +622,6 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 								},
 							},
 							Status:       pod_status.Running,
-							ResReq:       common_info.BuildResourceRequirements("2", "2G"),
 							ResReqVector: common_info.BuildResourceRequirements("2", "2G").ToVector(testVectorMap),
 							VectorMap:    testVectorMap,
 						},
@@ -633,7 +632,6 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 								},
 							},
 							Status:       pod_status.Running,
-							ResReq:       common_info.BuildResourceRequirements("1", "1G"),
 							ResReqVector: common_info.BuildResourceRequirements("1", "1G").ToVector(testVectorMap),
 							VectorMap:    testVectorMap,
 						},
@@ -660,7 +658,6 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 								},
 							},
 							Status:       pod_status.Running,
-							ResReq:       common_info.BuildResourceRequirements("2", "2G"),
 							ResReqVector: common_info.BuildResourceRequirements("2", "2G").ToVector(testVectorMap),
 							VectorMap:    testVectorMap,
 						},
@@ -671,7 +668,6 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 								},
 							},
 							Status:       pod_status.Running,
-							ResReq:       common_info.BuildResourceRequirements("1", "1G"),
 							ResReqVector: common_info.BuildResourceRequirements("1", "1G").ToVector(testVectorMap),
 							VectorMap:    testVectorMap,
 						},
@@ -685,7 +681,6 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 								},
 							},
 							Status:       pod_status.Running,
-							ResReq:       common_info.BuildResourceRequirements("1", "1G"),
 							ResReqVector: common_info.BuildResourceRequirements("1", "1G").ToVector(testVectorMap),
 							VectorMap:    testVectorMap,
 						},
@@ -712,7 +707,6 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 								},
 							},
 							Status:       pod_status.Running,
-							ResReq:       common_info.BuildResourceRequirements("2", "2G"),
 							ResReqVector: common_info.BuildResourceRequirements("2", "2G").ToVector(testVectorMap),
 							VectorMap:    testVectorMap,
 						},
@@ -723,7 +717,6 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 								},
 							},
 							Status:       pod_status.Running,
-							ResReq:       common_info.BuildResourceRequirements("1", "1G"),
 							ResReqVector: common_info.BuildResourceRequirements("1", "1G").ToVector(testVectorMap),
 							VectorMap:    testVectorMap,
 						},
@@ -737,7 +730,6 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 								},
 							},
 							Status:       pod_status.Running,
-							ResReq:       common_info.BuildResourceRequirements("1", "1G"),
 							ResReqVector: common_info.BuildResourceRequirements("1", "1G").ToVector(testVectorMap),
 							VectorMap:    testVectorMap,
 						},
@@ -764,7 +756,6 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 								},
 							},
 							Status: pod_status.Pending,
-							ResReq: common_info.BuildResourceRequirements("1", "1G"),
 						},
 						"3": {
 							Pod: &v1.Pod{
@@ -773,7 +764,6 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 								},
 							},
 							Status: pod_status.Succeeded,
-							ResReq: common_info.BuildResourceRequirements("1", "1G"),
 						},
 						"4": {
 							Pod: &v1.Pod{
@@ -782,7 +772,6 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 								},
 							},
 							Status: pod_status.Deleted,
-							ResReq: common_info.BuildResourceRequirements("1", "1G"),
 						},
 					},
 				},
@@ -846,7 +835,6 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 				Tasks: []*pod_info.PodInfo{
 					{
 						Status:                 pod_status.Pending,
-						AcceptedResource:       common_info.BuildResourceRequirements("1", "1Gi"),
 						AcceptedResourceVector: common_info.BuildResourceRequirements("1", "1Gi").ToVector(testVectorMap),
 						VectorMap:              testVectorMap,
 					},
@@ -878,19 +866,16 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 				Tasks: []*pod_info.PodInfo{
 					{
 						Status:                 pod_status.Pending,
-						AcceptedResource:       common_info.BuildResourceRequirements("1", "1Gi"),
 						AcceptedResourceVector: common_info.BuildResourceRequirements("1", "1Gi").ToVector(testVectorMap),
 						VectorMap:              testVectorMap,
 					},
 					{
 						Status:                 pod_status.Pending,
-						AcceptedResource:       common_info.BuildResourceRequirements("1", "1Gi"),
 						AcceptedResourceVector: common_info.BuildResourceRequirements("1", "1Gi").ToVector(testVectorMap),
 						VectorMap:              testVectorMap,
 					},
 					{
 						Status:                 pod_status.Pending,
-						AcceptedResource:       common_info.BuildResourceRequirements("1", "1Gi"),
 						AcceptedResourceVector: common_info.BuildResourceRequirements("1", "1Gi").ToVector(testVectorMap),
 						VectorMap:              testVectorMap,
 					},
@@ -924,13 +909,11 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 				Tasks: []*pod_info.PodInfo{
 					{
 						Status:                 pod_status.Pending,
-						AcceptedResource:       common_info.BuildResourceRequirements("1", "1Gi"),
 						AcceptedResourceVector: common_info.BuildResourceRequirements("1", "1Gi").ToVector(testVectorMap),
 						VectorMap:              testVectorMap,
 					},
 					{
 						Status:                 pod_status.Pending,
-						AcceptedResource:       common_info.BuildResourceRequirements("1", "1Gi"),
 						AcceptedResourceVector: common_info.BuildResourceRequirements("1", "1Gi").ToVector(testVectorMap),
 						VectorMap:              testVectorMap,
 					},
@@ -961,13 +944,11 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 				Tasks: []*pod_info.PodInfo{
 					{
 						Status:                 pod_status.Pending,
-						AcceptedResource:       common_info.BuildResourceRequirements("1", "1Gi"),
 						AcceptedResourceVector: common_info.BuildResourceRequirements("1", "1Gi").ToVector(testVectorMap),
 						VectorMap:              testVectorMap,
 					},
 					{
 						Status:                 pod_status.Pending,
-						AcceptedResource:       common_info.BuildResourceRequirements("1", "1Gi"),
 						AcceptedResourceVector: common_info.BuildResourceRequirements("1", "1Gi").ToVector(testVectorMap),
 						VectorMap:              testVectorMap,
 					},

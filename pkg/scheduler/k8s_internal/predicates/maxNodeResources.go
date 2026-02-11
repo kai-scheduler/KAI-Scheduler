@@ -115,7 +115,7 @@ func (mnr *MaxNodeResourcesPredicate) buildUnschedulableMessage(podInfo *pod_inf
 	messageBuilder := strings.Builder{}
 
 	messageBuilder.WriteString(fmt.Sprintf("The pod %s/%s requires %s. ", podInfo.Namespace, podInfo.Name,
-		podInfo.ResReq.DetailedString()))
+		resource_info.DetailedResourceString(podInfo.ResReqVector, &podInfo.GpuRequirement, podInfo.VectorMap)))
 	if resourceQuantity == 0 {
 		messageBuilder.WriteString(fmt.Sprintf("No node in the %s node-pool has %s resources",
 			mnr.schedulerShardName, resourcesName))

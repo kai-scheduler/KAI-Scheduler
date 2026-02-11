@@ -4,10 +4,13 @@
 package capacity_policy
 
 import (
+	v1 "k8s.io/api/core/v1"
+
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	rs "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/utils"
@@ -80,11 +83,11 @@ func getNonPreemptibleJobOverQuotaError(queueAttributes *rs.QueueAttributes, req
 	exceedingResourceName rs.ResourceName) string {
 	deserved := queueAttributes.GetDeservedShare()[exceedingResourceName]
 	allocatedNonPreemptible := queueAttributes.GetAllocatedNonPreemptible()[exceedingResourceName]
-	jobReq := podgroup_info.JobRequirement{
-		GPU:      requestedQuota[rs.GpuResource],
-		MilliCPU: requestedQuota[rs.CpuResource],
-		Memory:   requestedQuota[rs.MemoryResource],
-	}
+	vectorMap := resource_info.NewResourceVectorMap()
+	vec := resource_info.NewResourceVector(vectorMap)
+	vec.Set(vectorMap.GetIndex("gpu"), requestedQuota[rs.GpuResource])
+	vec.Set(vectorMap.GetIndex(v1.ResourceCPU), requestedQuota[rs.CpuResource])
+	vec.Set(vectorMap.GetIndex(v1.ResourceMemory), requestedQuota[rs.MemoryResource])
 	return api.GetBuildOverCapacityMessageForQueue(queueAttributes.Name, string(exceedingResourceName), deserved,
-		allocatedNonPreemptible, &jobReq)
+		allocatedNonPreemptible, vec, vectorMap)
 }
