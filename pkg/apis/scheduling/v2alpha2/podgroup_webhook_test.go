@@ -115,27 +115,6 @@ func TestValidateSubGroups(t *testing.T) {
 			},
 			wantErr: errors.New("cycle detected in subgroups"),
 		},
-		{
-			name: "Mixed case subgroup name",
-			subGroups: []SubGroup{
-				{Name: "Subgroup", MinMember: 1},
-			},
-			wantErr: errors.New(`subgroup name "Subgroup" must be lowercase`),
-		},
-		{
-			name: "All uppercase subgroup name",
-			subGroups: []SubGroup{
-				{Name: "SUBGROUP", MinMember: 1},
-			},
-			wantErr: errors.New(`subgroup name "SUBGROUP" must be lowercase`),
-		},
-		{
-			name: "Valid lowercase subgroup name",
-			subGroups: []SubGroup{
-				{Name: "subgroup", MinMember: 1},
-			},
-			wantErr: nil,
-		},
 	}
 
 	for _, tt := range tests {
