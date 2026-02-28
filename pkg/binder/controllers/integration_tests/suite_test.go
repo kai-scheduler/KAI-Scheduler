@@ -53,6 +53,7 @@ var cfg *rest.Config
 var k8sClient client.Client
 var testEnv *envtest.Environment
 var k8sManager ctrl.Manager
+var rrs resourcereservation.Interface
 
 func TestAPIs(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -116,7 +117,7 @@ var _ = BeforeSuite(func() {
 	clientWithWatch, err := client.NewWithWatch(cfg, client.Options{})
 	Expect(err).NotTo(HaveOccurred())
 
-	rrs := resourcereservation.NewService(false, clientWithWatch, "", 40*time.Second,
+	rrs = resourcereservation.NewService(false, clientWithWatch, "", 40*time.Second,
 		resourceReservationNameSpace, resourceReservationServiceAccount, resourceReservationAppLabelValue, scalingPodsNamespace, constants.DefaultRuntimeClassName,
 		nil) // nil podResources to use defaults
 	podBinder := binding.NewBinder(k8sManager.GetClient(), rrs, binderPlugins)
