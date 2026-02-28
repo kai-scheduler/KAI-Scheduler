@@ -22,6 +22,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
@@ -31,6 +32,13 @@ const (
 	resourceReservationAppLabelValue  = resourceReservationNameSpace
 	scalingPodsNamespace              = "kai-scale-adjust"
 )
+
+var testScheme = func() *runtime.Scheme {
+	s := runtime.NewScheme()
+	_ = v1.AddToScheme(s)
+	_ = schedulingv1alpha2.AddToScheme(s)
+	return s
+}()
 
 func TestResourceReservation(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -323,8 +331,7 @@ var _ = Describe("ResourceReservationService", func() {
 				if testData.reservationPod != nil {
 					podsInCluster = append(podsInCluster, testData.reservationPod)
 				}
-				clientWithObjs := fake.NewClientBuilder().WithRuntimeObjects(podsInCluster...).
-					WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
+				clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).WithRuntimeObjects(podsInCluster...).WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
 				fakeClient := interceptor.NewClient(clientWithObjs, testData.clientInterceptFuncs)
 				rsc := initializeTestService(fakeClient)
 
@@ -391,7 +398,7 @@ var _ = Describe("ResourceReservationService", func() {
 			testName := testName
 			testData := testData
 			It(testName, func() {
-				clientWithObjs := fake.NewClientBuilder().WithRuntimeObjects(testData.podsInCluster...).Build()
+				clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).WithRuntimeObjects(testData.podsInCluster...).Build()
 				fakeClient := interceptor.NewClient(clientWithObjs, testData.clientInterceptFuncs)
 				rsc := initializeTestService(fakeClient)
 
@@ -604,8 +611,7 @@ var _ = Describe("ResourceReservationService", func() {
 			testName := testName
 			testData := testData
 			It(testName, func() {
-				clientWithObjs := fake.NewClientBuilder().WithRuntimeObjects(testData.podsInCluster...).
-					WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
+				clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).WithRuntimeObjects(testData.podsInCluster...).WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
 				fakeClient := interceptor.NewClient(clientWithObjs, testData.clientInterceptFuncs)
 				rsc := initializeTestService(fakeClient)
 
@@ -863,8 +869,7 @@ var _ = Describe("ResourceReservationService", func() {
 			testName := testName
 			testData := testData
 			It(testName, func() {
-				clientWithObjs := fake.NewClientBuilder().WithRuntimeObjects(testData.podsInCluster...).
-					WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
+				clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).WithRuntimeObjects(testData.podsInCluster...).WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
 				fakeClient := interceptor.NewClient(clientWithObjs, testData.clientInterceptFuncs)
 				rsc := initializeTestService(fakeClient)
 
@@ -891,7 +896,7 @@ var _ = Describe("ResourceReservationService", func() {
 				appLabelValue:       "kai-reservation",
 				serviceAccountName:  "kai-sa",
 				reservationPodImage: "nvidia/kai-reservation:latest",
-				kubeClient:          fake.NewClientBuilder().Build(),
+				kubeClient:          fake.NewClientBuilder().WithScheme(testScheme).Build(),
 				runtimeClassName:    customRuntime,
 			}
 
@@ -1070,7 +1075,7 @@ var _ = Describe("ResourceReservationService", func() {
 			testData := testData
 			It(testName, func() {
 				podsInCluster := []runtime.Object{testData.pod}
-				clientWithObjs := fake.NewClientBuilder().WithRuntimeObjects(podsInCluster...).Build()
+				clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).WithRuntimeObjects(podsInCluster...).Build()
 				fakeClient := interceptor.NewClient(clientWithObjs, testData.clientInterceptFuncs)
 				rsc := initializeTestService(fakeClient)
 
@@ -1100,7 +1105,7 @@ var _ = Describe("ResourceReservationService", func() {
 				appLabelValue:       "kai-reservation",
 				serviceAccountName:  "kai-sa",
 				reservationPodImage: "test-image:latest",
-				kubeClient:          fake.NewClientBuilder().Build(),
+				kubeClient:          fake.NewClientBuilder().WithScheme(testScheme).Build(),
 				runtimeClassName:    "nvidia",
 				podResources: &v1.ResourceRequirements{
 					Requests: v1.ResourceList{
@@ -1140,7 +1145,7 @@ var _ = Describe("ResourceReservationService", func() {
 				appLabelValue:       "kai-reservation",
 				serviceAccountName:  "kai-sa",
 				reservationPodImage: "test-image:latest",
-				kubeClient:          fake.NewClientBuilder().Build(),
+				kubeClient:          fake.NewClientBuilder().WithScheme(testScheme).Build(),
 				runtimeClassName:    "nvidia",
 				podResources:        nil,
 				scalingPodNamespace: scalingPodsNamespace,
@@ -1176,7 +1181,7 @@ var _ = Describe("ResourceReservationService", func() {
 				appLabelValue:       "kai-reservation",
 				serviceAccountName:  "kai-sa",
 				reservationPodImage: "test-image:latest",
-				kubeClient:          fake.NewClientBuilder().Build(),
+				kubeClient:          fake.NewClientBuilder().WithScheme(testScheme).Build(),
 				runtimeClassName:    "nvidia",
 				podResources: &v1.ResourceRequirements{
 					Requests: v1.ResourceList{
@@ -1214,7 +1219,7 @@ var _ = Describe("ResourceReservationService", func() {
 				appLabelValue:       "kai-reservation",
 				serviceAccountName:  "kai-sa",
 				reservationPodImage: "test-image:latest",
-				kubeClient:          fake.NewClientBuilder().Build(),
+				kubeClient:          fake.NewClientBuilder().WithScheme(testScheme).Build(),
 				runtimeClassName:    "nvidia",
 				podResources: &v1.ResourceRequirements{
 					Requests: v1.ResourceList{
@@ -1308,3 +1313,182 @@ func (w *FakeWatchPodClosed) ResultChan() <-chan watch.Event {
 func exampleMockWatchPodClosed() watch.Interface {
 	return &FakeWatchPodClosed{}
 }
+
+var _ = Describe("Race condition: reservation pod deleted during concurrent binding", func() {
+	const (
+		nodeName = "node-1"
+		gpuGroup = "gpu-group"
+	)
+	var (
+		groupLabels = map[string]string{
+			constants.GPUGroup: gpuGroup,
+		}
+		reservationPod = &v1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "gpu-reservation-node-1-abcde",
+				Namespace: resourceReservationNameSpace,
+				Labels:    groupLabels,
+			},
+			Spec: v1.PodSpec{
+				NodeName: nodeName,
+			},
+			Status: v1.PodStatus{
+				Phase: v1.PodRunning,
+			},
+		}
+	)
+
+	Context("SyncForGpuGroup with stale cache - no fraction pods visible", func() {
+		It("should preserve reservation pod when an active BindRequest exists for the gpu group", func() {
+			activeBindRequest := &schedulingv1alpha2.BindRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "bind-request-1",
+					Namespace: "team-a",
+				},
+				Spec: schedulingv1alpha2.BindRequestSpec{
+					PodName:           "fraction-pod-1",
+					SelectedNode:      nodeName,
+					SelectedGPUGroups: []string{gpuGroup},
+				},
+				Status: schedulingv1alpha2.BindRequestStatus{
+					Phase: schedulingv1alpha2.BindRequestPhasePending,
+				},
+			}
+
+			clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).
+				WithRuntimeObjects(reservationPod.DeepCopy(), activeBindRequest).
+				WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
+			rsc := initializeTestService(clientWithObjs)
+
+			err := rsc.SyncForGpuGroup(context.TODO(), gpuGroup)
+			Expect(err).To(Succeed())
+
+			pods := &v1.PodList{}
+			err = clientWithObjs.List(context.Background(), pods)
+			Expect(err).To(Succeed())
+			Expect(len(pods.Items)).To(Equal(1),
+				"Reservation pod should be preserved when an active BindRequest exists")
+		})
+
+		It("should delete reservation pod when no active BindRequests exist", func() {
+			clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).WithRuntimeObjects(reservationPod.DeepCopy()).WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
+			rsc := initializeTestService(clientWithObjs)
+
+			err := rsc.SyncForGpuGroup(context.TODO(), gpuGroup)
+			Expect(err).To(Succeed())
+
+			pods := &v1.PodList{}
+			err = clientWithObjs.List(context.Background(), pods)
+			Expect(err).To(Succeed())
+			Expect(len(pods.Items)).To(Equal(0),
+				"Reservation pod should be deleted when no active BindRequests exist")
+		})
+
+		It("should delete reservation pod when only succeeded BindRequests exist", func() {
+			succeededBindRequest := &schedulingv1alpha2.BindRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "bind-request-done",
+					Namespace: "team-a",
+				},
+				Spec: schedulingv1alpha2.BindRequestSpec{
+					PodName:           "fraction-pod-1",
+					SelectedNode:      nodeName,
+					SelectedGPUGroups: []string{gpuGroup},
+				},
+				Status: schedulingv1alpha2.BindRequestStatus{
+					Phase: schedulingv1alpha2.BindRequestPhaseSucceeded,
+				},
+			}
+
+			clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).
+				WithRuntimeObjects(reservationPod.DeepCopy(), succeededBindRequest).
+				WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
+			rsc := initializeTestService(clientWithObjs)
+
+			err := rsc.SyncForGpuGroup(context.TODO(), gpuGroup)
+			Expect(err).To(Succeed())
+
+			pods := &v1.PodList{}
+			err = clientWithObjs.List(context.Background(), pods)
+			Expect(err).To(Succeed())
+			Expect(len(pods.Items)).To(Equal(0),
+				"Reservation pod should be deleted when only terminal BindRequests exist")
+		})
+
+		It("should delete reservation pod when only failed BindRequests exist", func() {
+			failedBindRequest := &schedulingv1alpha2.BindRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "bind-request-failed",
+					Namespace: "team-a",
+				},
+				Spec: schedulingv1alpha2.BindRequestSpec{
+					PodName:           "fraction-pod-1",
+					SelectedNode:      nodeName,
+					SelectedGPUGroups: []string{gpuGroup},
+				},
+				Status: schedulingv1alpha2.BindRequestStatus{
+					Phase: schedulingv1alpha2.BindRequestPhaseFailed,
+				},
+			}
+
+			clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).
+				WithRuntimeObjects(reservationPod.DeepCopy(), failedBindRequest).
+				WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
+			rsc := initializeTestService(clientWithObjs)
+
+			err := rsc.SyncForGpuGroup(context.TODO(), gpuGroup)
+			Expect(err).To(Succeed())
+
+			pods := &v1.PodList{}
+			err = clientWithObjs.List(context.Background(), pods)
+			Expect(err).To(Succeed())
+			Expect(len(pods.Items)).To(Equal(0),
+				"Reservation pod should be deleted when only terminal BindRequests exist")
+		})
+
+		It("should preserve reservation pod when BindRequest for different group is active but one for this group is active too", func() {
+			activeBindRequestOtherGroup := &schedulingv1alpha2.BindRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "bind-request-other",
+					Namespace: "team-a",
+				},
+				Spec: schedulingv1alpha2.BindRequestSpec{
+					PodName:           "other-pod",
+					SelectedNode:      nodeName,
+					SelectedGPUGroups: []string{"other-group"},
+				},
+				Status: schedulingv1alpha2.BindRequestStatus{
+					Phase: schedulingv1alpha2.BindRequestPhasePending,
+				},
+			}
+			activeBindRequest := &schedulingv1alpha2.BindRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "bind-request-1",
+					Namespace: "team-a",
+				},
+				Spec: schedulingv1alpha2.BindRequestSpec{
+					PodName:           "fraction-pod-1",
+					SelectedNode:      nodeName,
+					SelectedGPUGroups: []string{gpuGroup},
+				},
+				Status: schedulingv1alpha2.BindRequestStatus{
+					Phase: schedulingv1alpha2.BindRequestPhasePending,
+				},
+			}
+
+			clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).
+				WithRuntimeObjects(reservationPod.DeepCopy(), activeBindRequestOtherGroup, activeBindRequest).
+				WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
+			rsc := initializeTestService(clientWithObjs)
+
+			err := rsc.SyncForGpuGroup(context.TODO(), gpuGroup)
+			Expect(err).To(Succeed())
+
+			pods := &v1.PodList{}
+			err = clientWithObjs.List(context.Background(), pods)
+			Expect(err).To(Succeed())
+			Expect(len(pods.Items)).To(Equal(1),
+				"Reservation pod should be preserved when an active BindRequest exists")
+		})
+	})
+})
