@@ -93,7 +93,7 @@ var _ = Describe("Priority Preemption", Ordered, func() {
 
 	Context("Dynamic Resources", func() {
 		var (
-			deviceClassName = "gpu.example.com"
+			deviceClassName = constant.GPUDeviceClassName
 			namespace       string
 		)
 
@@ -106,7 +106,7 @@ var _ = Describe("Priority Preemption", Ordered, func() {
 			capacity.CleanupResourceClaims(ctx, testCtx.KubeClientset, namespace)
 		})
 
-		It("Preempts a pod based on DRA contention", func(ctx context.Context) {
+		It("Preempts a pod based on DRA contention - dra template claims", func(ctx context.Context) {
 			nodeName := ""
 			devices := 0
 			nodesMap := capacity.ListDevicesByNode(testCtx.KubeClientset, deviceClassName)

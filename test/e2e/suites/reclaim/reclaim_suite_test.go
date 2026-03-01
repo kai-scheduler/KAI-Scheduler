@@ -14,6 +14,7 @@ import (
 )
 
 var _ = DescribeHierarchyLevelFairnessSpecs()
+var _ = DescribeReclaimDRASpecs()
 var _ = DescribeReclaimDistributedSpecs()
 
 func TestReclaim(t *testing.T) {
