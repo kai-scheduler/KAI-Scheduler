@@ -29,8 +29,8 @@ func (_ *PodGroup) ValidateCreate(ctx context.Context, obj runtime.Object) (admi
 	}
 	logger.Info("validate create", "namespace", podGroup.Namespace, "name", podGroup.Name)
 
-	if err := validateSubGroups(podGroup.Spec.SubGroups); err != nil {
-		logger.Info("Subgroups validation failed",
+	if err := validatePodGroupSpec(&podGroup.Spec); err != nil {
+		logger.Info("PodGroup spec validation failed",
 			"namespace", podGroup.Namespace, "name", podGroup.Name, "error", err)
 		return nil, err
 	}
@@ -46,8 +46,8 @@ func (_ *PodGroup) ValidateUpdate(ctx context.Context, _ runtime.Object, newObj 
 	}
 	logger.Info("validate update", "namespace", podGroup.Namespace, "name", podGroup.Name)
 
-	if err := validateSubGroups(podGroup.Spec.SubGroups); err != nil {
-		logger.Info("Subgroups validation failed",
+	if err := validatePodGroupSpec(&podGroup.Spec); err != nil {
+		logger.Info("PodGroup spec validation failed",
 			"namespace", podGroup.Namespace, "name", podGroup.Name, "error", err)
 		return nil, err
 	}
@@ -64,13 +64,38 @@ func (_ *PodGroup) ValidateDelete(ctx context.Context, obj runtime.Object) (admi
 	return nil, nil
 }
 
+// validatePodGroupSpec validates the PodGroup spec including top-level minMember/minSubGroup
+// mutual exclusivity and subgroup structural rules.
+func validatePodGroupSpec(spec *PodGroupSpec) error {
+	if spec.MinMember > 0 && spec.MinSubGroup != nil {
+		return errors.New("minMember and minSubGroup are mutually exclusive")
+	}
+
+	if err := validateSubGroups(spec.SubGroups); err != nil {
+		return err
+	}
+
+	if spec.MinSubGroup != nil {
+		if *spec.MinSubGroup <= 0 {
+			return errors.New("minSubGroup must be greater than 0")
+		}
+		rootCount := countRootSubGroups(spec.SubGroups)
+		if int(*spec.MinSubGroup) > rootCount {
+			return fmt.Errorf("minSubGroup (%d) exceeds the number of direct child SubGroups (%d)", *spec.MinSubGroup, rootCount)
+		}
+	}
+
+	return nil
+}
+
 func validateSubGroups(subGroups []SubGroup) error {
 	subGroupMap := map[string]*SubGroup{}
-	for _, subGroup := range subGroups {
+	for i := range subGroups {
+		subGroup := &subGroups[i]
 		if subGroupMap[subGroup.Name] != nil {
 			return fmt.Errorf("duplicate subgroup name %s", subGroup.Name)
 		}
-		subGroupMap[subGroup.Name] = &subGroup
+		subGroupMap[subGroup.Name] = subGroup
 	}
 
 	if err := validateParent(subGroupMap); err != nil {
@@ -80,7 +105,69 @@ func validateSubGroups(subGroups []SubGroup) error {
 	if detectCycle(subGroupMap) {
 		return errors.New("cycle detected in subgroups")
 	}
+
+	childrenMap := buildChildrenMap(subGroupMap)
+
+	for _, subGroup := range subGroupMap {
+		if err := validateSubGroupMinFields(subGroup, childrenMap); err != nil {
+			return err
+		}
+	}
+
 	return nil
+}
+
+// validateSubGroupMinFields checks mutual exclusivity and structural rules for minMember/minSubGroup
+// on a single SubGroup.
+func validateSubGroupMinFields(subGroup *SubGroup, childrenMap map[string][]string) error {
+	if subGroup.MinMember > 0 && subGroup.MinSubGroup != nil {
+		return fmt.Errorf("subgroup %q: minMember and minSubGroup are mutually exclusive", subGroup.Name)
+	}
+
+	children := childrenMap[subGroup.Name]
+	isLeaf := len(children) == 0
+
+	if isLeaf && subGroup.MinSubGroup != nil {
+		return fmt.Errorf("subgroup %q: minSubGroup cannot be set on a leaf SubGroup (no child SubGroups)", subGroup.Name)
+	}
+
+	if !isLeaf && subGroup.MinMember > 0 {
+		return fmt.Errorf("subgroup %q: minMember cannot be set on a mid-level SubGroup (has child SubGroups); use minSubGroup instead", subGroup.Name)
+	}
+
+	if subGroup.MinSubGroup != nil {
+		if *subGroup.MinSubGroup <= 0 {
+			return fmt.Errorf("subgroup %q: minSubGroup must be greater than 0", subGroup.Name)
+		}
+		if int(*subGroup.MinSubGroup) > len(children) {
+			return fmt.Errorf("subgroup %q: minSubGroup (%d) exceeds the number of direct child SubGroups (%d)",
+				subGroup.Name, *subGroup.MinSubGroup, len(children))
+		}
+	}
+
+	return nil
+}
+
+// buildChildrenMap returns a map from parent name to list of child SubGroup names.
+func buildChildrenMap(subGroupMap map[string]*SubGroup) map[string][]string {
+	childrenMap := map[string][]string{}
+	for _, sg := range subGroupMap {
+		if sg.Parent != nil {
+			childrenMap[*sg.Parent] = append(childrenMap[*sg.Parent], sg.Name)
+		}
+	}
+	return childrenMap
+}
+
+// countRootSubGroups returns the number of SubGroups with no parent (direct children of the PodGroup).
+func countRootSubGroups(subGroups []SubGroup) int {
+	count := 0
+	for _, sg := range subGroups {
+		if sg.Parent == nil {
+			count++
+		}
+	}
+	return count
 }
 
 func validateParent(subGroupMap map[string]*SubGroup) error {

@@ -34,8 +34,15 @@ import (
 type PodGroupSpec struct {
 	// MinMember defines the minimal number of members to run the PodGroup;
 	// if there are not enough resources to start all required members, the scheduler will not start anyone.
+	// Mutually exclusive with MinSubGroup.
 	// +kubebuilder:validation:Minimum=1
 	MinMember int32 `json:"minMember,omitempty" protobuf:"bytes,1,opt,name=minMember"`
+
+	// MinSubGroup defines the minimal number of direct child SubGroups required for this PodGroup to be schedulable.
+	// Only applicable when SubGroups are defined.
+	// Mutually exclusive with MinMember.
+	// +optional
+	MinSubGroup *int32 `json:"minSubGroup,omitempty"`
 
 	// Queue defines the queue to allocate resource for PodGroup; if queue does not exist,
 	// the PodGroup will not be scheduled.
@@ -114,8 +121,15 @@ type SubGroup struct {
 
 	// MinMember defines the minimal number of members to run this SubGroup;
 	// if there are not enough resources to start all required members, the scheduler will not start anyone.
+	// Mutually exclusive with MinSubGroup.
 	// +kubebuilder:validation:Minimum=1
 	MinMember int32 `json:"minMember,omitempty"`
+
+	// MinSubGroup defines the minimal number of direct child SubGroups required for this SubGroup to be schedulable.
+	// Only applicable when this SubGroup has child SubGroups.
+	// Mutually exclusive with MinMember.
+	// +optional
+	MinSubGroup *int32 `json:"minSubGroup,omitempty"`
 
 	// Parent is an optional attribute that specifies the name of the parent SubGroup
 	// +kubebuilder:validation:Optional
@@ -375,7 +389,7 @@ type TopologyConstraint struct {
 	RequiredTopologyLevel string `json:"requiredTopologyLevel,omitempty"`
 
 	// Topology specifies the name of the topology CRD that defines the
-	// physical layout to use for this constraint. This allows for supporting
+	// physical layout to use for this technology. This allows for supporting
 	// multiple different topology configurations in the same cluster.
 	Topology string `json:"topology,omitempty"`
 }
