@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -110,8 +111,14 @@ func validateSubGroups(subGroups []SubGroup) error {
 
 	childrenMap := buildChildrenMap(subGroupMap)
 
-	for _, subGroup := range subGroupMap {
-		if err := validateSubGroupMinFields(subGroup, childrenMap); err != nil {
+	// Sort SubGroup names for deterministic error reporting across API calls.
+	subGroupNames := make([]string, 0, len(subGroupMap))
+	for name := range subGroupMap {
+		subGroupNames = append(subGroupNames, name)
+	}
+	sort.Strings(subGroupNames)
+	for _, name := range subGroupNames {
+		if err := validateSubGroupMinFields(subGroupMap[name], childrenMap); err != nil {
 			return err
 		}
 	}

@@ -145,6 +145,21 @@ func TestValidateSubGroups(t *testing.T) {
 			wantErr: nil,
 		},
 		{
+			name: "Invalid: minSubGroup = 0 on SubGroup with children",
+			subGroups: []SubGroup{
+				{Name: "parent", MinSubGroup: ptr.To(int32(0))},
+				{Name: "child-1", Parent: ptr.To("parent"), MinMember: 4},
+			},
+			wantErr: errors.New(`subgroup "parent": minSubGroup must be greater than 0`),
+		},
+		{
+			name: "Invalid: minSubGroup = 0 on leaf SubGroup",
+			subGroups: []SubGroup{
+				{Name: "A", MinSubGroup: ptr.To(int32(0))},
+			},
+			wantErr: errors.New(`subgroup "A": minSubGroup cannot be set on a leaf SubGroup (no child SubGroups)`),
+		},
+		{
 			name: "Valid: 2-level hierarchy with minSubGroup at both levels",
 			subGroups: []SubGroup{
 				{Name: "decode", MinSubGroup: ptr.To(int32(2))},
@@ -270,6 +285,17 @@ func TestValidatePodGroupSpec(t *testing.T) {
 				MinSubGroup: ptr.To(int32(1)),
 			},
 			wantErr: errors.New("minSubGroup (1) exceeds the number of direct child SubGroups (0)"),
+		},
+		{
+			name: "Invalid: minSubGroup = 0 on PodGroup",
+			spec: PodGroupSpec{
+				MinSubGroup: ptr.To(int32(0)),
+				SubGroups: []SubGroup{
+					{Name: "A", MinMember: 4},
+					{Name: "B", MinMember: 4},
+				},
+			},
+			wantErr: errors.New("minSubGroup must be greater than 0"),
 		},
 	}
 

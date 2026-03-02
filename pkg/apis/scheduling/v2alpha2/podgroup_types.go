@@ -42,6 +42,7 @@ type PodGroupSpec struct {
 	// Only applicable when SubGroups are defined.
 	// Mutually exclusive with MinMember.
 	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:Minimum=1
 	MinSubGroup *int32 `json:"minSubGroup,omitempty"`
 
 	// Queue defines the queue to allocate resource for PodGroup; if queue does not exist,
@@ -129,6 +130,7 @@ type SubGroup struct {
 	// Only applicable when this SubGroup has child SubGroups.
 	// Mutually exclusive with MinMember.
 	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:Minimum=1
 	MinSubGroup *int32 `json:"minSubGroup,omitempty"`
 
 	// Parent is an optional attribute that specifies the name of the parent SubGroup

@@ -74,6 +74,7 @@ spec:
                   Only applicable when SubGroups are defined.
                   Mutually exclusive with MinMember.
                 format: int32
+                minimum: 1
                 type: integer
               parallelism:
                 description: The number of pods which will try to run at any instant.
@@ -126,6 +127,7 @@ spec:
                         Only applicable when this SubGroup has child SubGroups.
                         Mutually exclusive with MinMember.
                       format: int32
+                      minimum: 1
                       type: integer
                     name:
                       description: Name uniquely identifies the SubGroup within the
