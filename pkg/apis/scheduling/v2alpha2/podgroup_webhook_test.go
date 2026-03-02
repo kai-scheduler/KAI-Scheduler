@@ -19,8 +19,8 @@ func TestValidateSubGroups(t *testing.T) {
 		{
 			name: "Valid DAG single root",
 			subGroups: []SubGroup{
-				{Name: "A", MinMember: 1},
-				{Name: "B", Parent: ptr.To("A"), MinMember: 1},
+				{Name: "A", MinSubGroup: ptr.To(int32(1))},
+				{Name: "B", Parent: ptr.To("A"), MinSubGroup: ptr.To(int32(1))},
 				{Name: "C", Parent: ptr.To("B"), MinMember: 1},
 			},
 			wantErr: nil,
@@ -28,8 +28,8 @@ func TestValidateSubGroups(t *testing.T) {
 		{
 			name: "Valid DAG multiple roots",
 			subGroups: []SubGroup{
-				{Name: "A", MinMember: 1},
-				{Name: "B", MinMember: 1},
+				{Name: "A", MinSubGroup: ptr.To(int32(1))},
+				{Name: "B", MinSubGroup: ptr.To(int32(1))},
 				{Name: "C", Parent: ptr.To("A"), MinMember: 1},
 				{Name: "D", Parent: ptr.To("B"), MinMember: 1},
 			},
