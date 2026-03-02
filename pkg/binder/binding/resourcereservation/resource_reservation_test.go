@@ -50,6 +50,11 @@ func nodeNameIndexer(rawObj runtimeClient.Object) []string {
 	return []string{pod.Spec.NodeName}
 }
 
+func selectedGPUGroupsIndexer(rawObj runtimeClient.Object) []string {
+	br := rawObj.(*schedulingv1alpha2.BindRequest)
+	return br.Spec.SelectedGPUGroups
+}
+
 func initializeTestService(
 	client runtimeClient.WithWatch,
 ) *service {
@@ -331,7 +336,7 @@ var _ = Describe("ResourceReservationService", func() {
 				if testData.reservationPod != nil {
 					podsInCluster = append(podsInCluster, testData.reservationPod)
 				}
-				clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).WithRuntimeObjects(podsInCluster...).WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
+				clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).WithRuntimeObjects(podsInCluster...).WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).WithIndex(&schedulingv1alpha2.BindRequest{}, "spec.selectedGPUGroups", selectedGPUGroupsIndexer).Build()
 				fakeClient := interceptor.NewClient(clientWithObjs, testData.clientInterceptFuncs)
 				rsc := initializeTestService(fakeClient)
 
@@ -398,7 +403,7 @@ var _ = Describe("ResourceReservationService", func() {
 			testName := testName
 			testData := testData
 			It(testName, func() {
-				clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).WithRuntimeObjects(testData.podsInCluster...).Build()
+				clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).WithRuntimeObjects(testData.podsInCluster...).WithIndex(&schedulingv1alpha2.BindRequest{}, "spec.selectedGPUGroups", selectedGPUGroupsIndexer).Build()
 				fakeClient := interceptor.NewClient(clientWithObjs, testData.clientInterceptFuncs)
 				rsc := initializeTestService(fakeClient)
 
@@ -611,7 +616,7 @@ var _ = Describe("ResourceReservationService", func() {
 			testName := testName
 			testData := testData
 			It(testName, func() {
-				clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).WithRuntimeObjects(testData.podsInCluster...).WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
+				clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).WithRuntimeObjects(testData.podsInCluster...).WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).WithIndex(&schedulingv1alpha2.BindRequest{}, "spec.selectedGPUGroups", selectedGPUGroupsIndexer).Build()
 				fakeClient := interceptor.NewClient(clientWithObjs, testData.clientInterceptFuncs)
 				rsc := initializeTestService(fakeClient)
 
@@ -869,7 +874,7 @@ var _ = Describe("ResourceReservationService", func() {
 			testName := testName
 			testData := testData
 			It(testName, func() {
-				clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).WithRuntimeObjects(testData.podsInCluster...).WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
+				clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).WithRuntimeObjects(testData.podsInCluster...).WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).WithIndex(&schedulingv1alpha2.BindRequest{}, "spec.selectedGPUGroups", selectedGPUGroupsIndexer).Build()
 				fakeClient := interceptor.NewClient(clientWithObjs, testData.clientInterceptFuncs)
 				rsc := initializeTestService(fakeClient)
 
@@ -1357,7 +1362,8 @@ var _ = Describe("Race condition: reservation pod deleted during concurrent bind
 
 			clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).
 				WithRuntimeObjects(reservationPod.DeepCopy(), activeBindRequest).
-				WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
+				WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).
+				WithIndex(&schedulingv1alpha2.BindRequest{}, "spec.selectedGPUGroups", selectedGPUGroupsIndexer).Build()
 			rsc := initializeTestService(clientWithObjs)
 
 			err := rsc.SyncForGpuGroup(context.TODO(), gpuGroup)
@@ -1371,7 +1377,7 @@ var _ = Describe("Race condition: reservation pod deleted during concurrent bind
 		})
 
 		It("should delete reservation pod when no active BindRequests exist", func() {
-			clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).WithRuntimeObjects(reservationPod.DeepCopy()).WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
+			clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).WithRuntimeObjects(reservationPod.DeepCopy()).WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).WithIndex(&schedulingv1alpha2.BindRequest{}, "spec.selectedGPUGroups", selectedGPUGroupsIndexer).Build()
 			rsc := initializeTestService(clientWithObjs)
 
 			err := rsc.SyncForGpuGroup(context.TODO(), gpuGroup)
@@ -1402,7 +1408,8 @@ var _ = Describe("Race condition: reservation pod deleted during concurrent bind
 
 			clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).
 				WithRuntimeObjects(reservationPod.DeepCopy(), succeededBindRequest).
-				WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
+				WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).
+				WithIndex(&schedulingv1alpha2.BindRequest{}, "spec.selectedGPUGroups", selectedGPUGroupsIndexer).Build()
 			rsc := initializeTestService(clientWithObjs)
 
 			err := rsc.SyncForGpuGroup(context.TODO(), gpuGroup)
@@ -1433,7 +1440,8 @@ var _ = Describe("Race condition: reservation pod deleted during concurrent bind
 
 			clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).
 				WithRuntimeObjects(reservationPod.DeepCopy(), failedBindRequest).
-				WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
+				WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).
+				WithIndex(&schedulingv1alpha2.BindRequest{}, "spec.selectedGPUGroups", selectedGPUGroupsIndexer).Build()
 			rsc := initializeTestService(clientWithObjs)
 
 			err := rsc.SyncForGpuGroup(context.TODO(), gpuGroup)
@@ -1478,7 +1486,8 @@ var _ = Describe("Race condition: reservation pod deleted during concurrent bind
 
 			clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).
 				WithRuntimeObjects(reservationPod.DeepCopy(), activeBindRequestOtherGroup, activeBindRequest).
-				WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
+				WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).
+				WithIndex(&schedulingv1alpha2.BindRequest{}, "spec.selectedGPUGroups", selectedGPUGroupsIndexer).Build()
 			rsc := initializeTestService(clientWithObjs)
 
 			err := rsc.SyncForGpuGroup(context.TODO(), gpuGroup)

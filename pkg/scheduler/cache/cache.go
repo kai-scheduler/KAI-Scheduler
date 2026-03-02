@@ -22,6 +22,7 @@ package cache
 import (
 	"context"
 	"fmt"
+	"maps"
 	"sync"
 	"time"
 
@@ -292,10 +293,7 @@ func (sc *SchedulerCache) createBindRequest(podInfo *pod_info.PodInfo, nodeName 
 		"selected-node": nodeName,
 	}
 
-	// Merge with node pool params labels
-	for k, v := range sc.schedulingNodePoolParams.GetLabels() {
-		labels[k] = v
-	}
+	maps.Copy(labels, sc.schedulingNodePoolParams.GetLabels())
 
 	bindRequest := &schedulingv1alpha2.BindRequest{
 		ObjectMeta: metav1.ObjectMeta{

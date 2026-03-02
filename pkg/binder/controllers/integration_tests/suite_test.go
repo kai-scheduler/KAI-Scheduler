@@ -96,6 +96,15 @@ var _ = BeforeSuite(func() {
 	})
 	Expect(err).ToNot(HaveOccurred())
 
+	err = k8sManager.GetFieldIndexer().IndexField(
+		context.Background(), &schedulingv1alpha2.BindRequest{}, "spec.selectedGPUGroups",
+		func(obj client.Object) []string {
+			br := obj.(*schedulingv1alpha2.BindRequest)
+			return br.Spec.SelectedGPUGroups
+		},
+	)
+	Expect(err).NotTo(HaveOccurred())
+
 	params := &controllers.ReconcilerParams{
 		MaxConcurrentReconciles:     1,
 		RateLimiterBaseDelaySeconds: 1,

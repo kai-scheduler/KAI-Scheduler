@@ -225,7 +225,9 @@ func (rsc *service) syncForPods(ctx context.Context, pods []*v1.Pod, gpuGroupToS
 // informer cache has not yet propagated GPU group labels on recently-bound fraction pods.
 func (rsc *service) hasActiveBindRequestsForGpuGroup(ctx context.Context, gpuGroup string) (bool, error) {
 	bindRequestList := &schedulingv1alpha2.BindRequestList{}
-	if err := rsc.kubeClient.List(ctx, bindRequestList); err != nil {
+	if err := rsc.kubeClient.List(ctx, bindRequestList,
+		client.MatchingFields{"spec.selectedGPUGroups": gpuGroup},
+	); err != nil {
 		return false, fmt.Errorf("failed to list BindRequests: %w", err)
 	}
 
@@ -234,9 +236,7 @@ func (rsc *service) hasActiveBindRequestsForGpuGroup(ctx context.Context, gpuGro
 			br.Status.Phase == schedulingv1alpha2.BindRequestPhaseFailed {
 			continue
 		}
-		if slices.Contains(br.Spec.SelectedGPUGroups, gpuGroup) {
-			return true, nil
-		}
+		return true, nil
 	}
 	return false, nil
 }

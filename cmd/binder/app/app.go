@@ -223,5 +223,16 @@ func createIndexesForResourceReservation(mgr manager.Manager) error {
 		return err
 	}
 
+	if err := mgr.GetFieldIndexer().IndexField(
+		context.Background(), &schedulingv1alpha2.BindRequest{}, "spec.selectedGPUGroups",
+		func(obj client.Object) []string {
+			br := obj.(*schedulingv1alpha2.BindRequest)
+			return br.Spec.SelectedGPUGroups
+		},
+	); err != nil {
+		setupLog.Error(err, "failed to create index for spec.selectedGPUGroups")
+		return err
+	}
+
 	return nil
 }
