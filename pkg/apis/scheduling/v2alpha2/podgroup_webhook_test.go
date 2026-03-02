@@ -275,8 +275,8 @@ func TestValidatePodGroupSpec(t *testing.T) {
 			wantErr: errors.New(`subgroup "leaf": minSubGroup cannot be set on a leaf SubGroup (no child SubGroups)`),
 		},
 		{
-			name: "Valid: no subgroups, no minMember, no minSubGroup",
-			spec: PodGroupSpec{},
+			name:    "Valid: no subgroups, no minMember, no minSubGroup",
+			spec:    PodGroupSpec{},
 			wantErr: nil,
 		},
 		{

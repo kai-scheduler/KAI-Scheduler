@@ -157,8 +157,10 @@ spec:
                         topology:
                           description: |-
                             Topology specifies the name of the topology CRD that defines the
-                            physical layout to use for this constraint. This allows for supporting
-                            multiple different topology configurations in the same cluster.
+                            physical layout to use for this topology tree. This allows for supporting
+                            multiple different topology configurations in the same cluster,
+                            where PreferredTopologyLevel and RequiredTopologyLevel refer to levels
+                            within the named topology hierarchy.
                           type: string
                       type: object
                   required:
@@ -184,8 +186,10 @@ spec:
                   topology:
                     description: |-
                       Topology specifies the name of the topology CRD that defines the
-                      physical layout to use for this constraint. This allows for supporting
-                      multiple different topology configurations in the same cluster.
+                      physical layout to use for this topology tree. This allows for supporting
+                      multiple different topology configurations in the same cluster,
+                      where PreferredTopologyLevel and RequiredTopologyLevel refer to levels
+                      within the named topology hierarchy.
                     type: string
                 type: object
             type: object
