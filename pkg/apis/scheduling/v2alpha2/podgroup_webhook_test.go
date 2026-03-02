@@ -219,7 +219,7 @@ func TestValidatePodGroupSpec(t *testing.T) {
 					{Name: "C", MinMember: 8},
 				},
 			},
-			wantErr: errors.New("minMember and minSubGroup are mutually exclusive"),
+			wantErr: errors.New("minMember and minSubGroup are mutually exclusive: set minMember (24) to schedule a fixed number of pods, or set minSubGroup to require a minimum number of child SubGroups, but not both"),
 		},
 		{
 			name: "Invalid: minSubGroup exceeds root subgroup count",

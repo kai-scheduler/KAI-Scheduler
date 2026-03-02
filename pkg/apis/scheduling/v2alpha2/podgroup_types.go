@@ -41,7 +41,7 @@ type PodGroupSpec struct {
 	// MinSubGroup defines the minimal number of direct child SubGroups required for this PodGroup to be schedulable.
 	// Only applicable when SubGroups are defined.
 	// Mutually exclusive with MinMember.
-	// +optional
+	// +kubebuilder:validation:Optional
 	MinSubGroup *int32 `json:"minSubGroup,omitempty"`
 
 	// Queue defines the queue to allocate resource for PodGroup; if queue does not exist,
@@ -128,7 +128,7 @@ type SubGroup struct {
 	// MinSubGroup defines the minimal number of direct child SubGroups required for this SubGroup to be schedulable.
 	// Only applicable when this SubGroup has child SubGroups.
 	// Mutually exclusive with MinMember.
-	// +optional
+	// +kubebuilder:validation:Optional
 	MinSubGroup *int32 `json:"minSubGroup,omitempty"`
 
 	// Parent is an optional attribute that specifies the name of the parent SubGroup
@@ -389,7 +389,9 @@ type TopologyConstraint struct {
 	RequiredTopologyLevel string `json:"requiredTopologyLevel,omitempty"`
 
 	// Topology specifies the name of the topology CRD that defines the
-	// physical layout to use for this technology. This allows for supporting
-	// multiple different topology configurations in the same cluster.
+	// physical layout to use for this topology tree. This allows for supporting
+	// multiple different topology configurations in the same cluster,
+	// where PreferredTopologyLevel and RequiredTopologyLevel refer to levels
+	// within the named topology hierarchy.
 	Topology string `json:"topology,omitempty"`
 }

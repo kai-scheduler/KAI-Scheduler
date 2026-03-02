@@ -68,7 +68,9 @@ func (_ *PodGroup) ValidateDelete(ctx context.Context, obj runtime.Object) (admi
 // mutual exclusivity and subgroup structural rules.
 func validatePodGroupSpec(spec *PodGroupSpec) error {
 	if spec.MinMember > 0 && spec.MinSubGroup != nil {
-		return errors.New("minMember and minSubGroup are mutually exclusive")
+		return fmt.Errorf("minMember and minSubGroup are mutually exclusive: "+
+			"set minMember (%d) to schedule a fixed number of pods, or set minSubGroup to require a minimum number of child SubGroups, but not both",
+			spec.MinMember)
 	}
 
 	if err := validateSubGroups(spec.SubGroups); err != nil {
