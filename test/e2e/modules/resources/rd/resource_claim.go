@@ -43,21 +43,22 @@ func CreateResourceClaim(namespace, queueName, deviceClassName string, deviceCou
 }
 
 func CreateResourceClaimTemplate(namespace, queueName, deviceClassName string, deviceCount int) *resourceapi.ResourceClaimTemplate {
+	cfg := testconfig.GetConfig()
 	return &resourceapi.ResourceClaimTemplate{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        utils.GenerateRandomK8sName(10),
 			Namespace:   namespace,
 			Annotations: map[string]string{},
 			Labels: map[string]string{
-				constants.AppLabelName:      "engine-e2e",
-				constants.DefaultQueueLabel: queueName,
+				constants.AppLabelName: "engine-e2e",
+				cfg.QueueLabelKey:      queueName,
 			},
 		},
 		Spec: resourceapi.ResourceClaimTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
 				Labels: map[string]string{
-					constants.AppLabelName:      "engine-e2e",
-					constants.DefaultQueueLabel: queueName,
+					constants.AppLabelName: "engine-e2e",
+					cfg.QueueLabelKey:      queueName,
 				},
 			},
 			Spec: resourceapi.ResourceClaimSpec{

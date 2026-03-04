@@ -212,13 +212,33 @@ func getWorkerAnnotationValue(pod *v1.Pod, workerTemplate map[string]interface{}
 
 // getSegmentationPolicy resolves the sub-group segmentation policy from the LWS spec.
 // The segment size is read first from spec.leaderWorkerTemplate.subGroupPolicy.subGroupSize,
-// then falls back to the kai.scheduler/segment-size annotation on the LWS object.
+// then falls back to the kai.scheduler/segment-size annotation on the LWS object,
+// and finally to the kai.scheduler/segment-size annotation on the workerTemplate.
 
 // The policy type, which defines if the leader pod will be included in a subgroup under the segments or sits in a separate subgroup,
 // is read from subGroupPolicyType and defaults to LeaderWorker when not specified.
 //
 // Returns nil when no segment size is defined (segmentation disabled).
 func getSegmentationPolicy(lwsJob *unstructured.Unstructured, replicasSize int) (*lws.SubGroupPolicy, error) {
+	segmentSize, err := getSegmentSize(lwsJob, replicasSize)
+	if err != nil || segmentSize == nil {
+		return nil, err
+	}
+	policyStr, found, err := unstructured.NestedString(lwsJob.Object, "spec", "leaderWorkerTemplate", "subGroupPolicy", "subGroupPolicyType")
+	if err != nil {
+		return nil, err
+	}
+	policy := lws.SubGroupPolicyTypeLeaderWorker
+	if found {
+		policy = lws.SubGroupPolicyType(policyStr)
+	}
+	return &lws.SubGroupPolicy{
+		SubGroupSize: segmentSize,
+		Type:         ptr.To(lws.SubGroupPolicyType(policy)),
+	}, nil
+}
+
+func getSegmentSize(lwsJob *unstructured.Unstructured, replicasSize int) (*int32, error) {
 	segmentSizeInt64, foundSegmentDefinition, err := unstructured.NestedInt64(lwsJob.Object, "spec", "leaderWorkerTemplate", "subGroupPolicy",
 		"subGroupSize")
 	if err != nil {
@@ -236,26 +256,26 @@ func getSegmentationPolicy(lwsJob *unstructured.Unstructured, replicasSize int) 
 		}
 	}
 	if !foundSegmentDefinition {
+		if segmentSizeStr, found, _ := unstructured.NestedString(lwsJob.Object, "spec", "leaderWorkerTemplate", "workerTemplate",
+			"metadata", "annotations", constants.SegmentSizeKey); found {
+			if segmentSize, err = strconv.Atoi(segmentSizeStr); err == nil {
+				foundSegmentDefinition = true
+			} else {
+				return nil, fmt.Errorf("invalid segment size annotation %s in workerTemplate of LWS %s/%s: %w",
+					segmentSizeStr, lwsJob.GetNamespace(), lwsJob.GetName(), err)
+			}
+		}
+	}
+	if !foundSegmentDefinition {
 		return nil, nil
 	}
 	if segmentSize <= 1 {
 		return nil, fmt.Errorf("segmentSize %d is not valid. It must be greater than 1", segmentSize)
 	}
-	policyStr, found, err := unstructured.NestedString(lwsJob.Object, "spec", "leaderWorkerTemplate", "subGroupPolicy", "subGroupPolicyType")
-	if err != nil {
-		return nil, err
-	}
-	policy := lws.SubGroupPolicyTypeLeaderWorker
-	if found {
-		policy = lws.SubGroupPolicyType(policyStr)
-	}
 	if segmentSize > replicasSize {
 		return nil, fmt.Errorf("segmentSize %d is greater than replicasSize %d", segmentSize, replicasSize)
 	}
-	return &lws.SubGroupPolicy{
-		SubGroupSize: ptr.To(int32(segmentSize)),
-		Type:         ptr.To(lws.SubGroupPolicyType(policy)),
-	}, nil
+	return ptr.To(int32(segmentSize)), nil
 }
 
 func buildSubGroupsWithoutSegmentation(replicasSize int, pod *v1.Pod) []*podgroup.SubGroupMetadata {

@@ -22,9 +22,9 @@ import (
 
 	v2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
 	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/constant"
 	testcontext "github.com/NVIDIA/KAI-scheduler/test/e2e/modules/context"
 	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/queue"
+	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/testconfig"
 	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/utils"
 	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/wait"
 
@@ -161,7 +161,7 @@ func setKnativeGangAndWait(ctx context.Context, testCtx *testcontext.TestContext
 		podGrouperPod := &v1.PodList{}
 		err := testCtx.ControllerClient.List(
 			ctx, podGrouperPod,
-			client.InNamespace(constant.SystemPodsNamespace), client.MatchingLabels{"app": "podgrouper"},
+			client.InNamespace(testconfig.GetConfig().SystemPodsNamespace), client.MatchingLabels{"app": "podgrouper"},
 		)
 		g.Expect(err).NotTo(HaveOccurred())
 		g.Expect(len(podGrouperPod.Items)).To(Equal(1))

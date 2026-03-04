@@ -77,20 +77,21 @@ func CreateV2beta1Object(namespace, queueName string) *v2beta1.MPIJob {
 }
 
 func getPodTemplate(queueName, matchLabelValue string) corev1.PodTemplateSpec {
+	cfg := testconfig.GetConfig()
 	return corev1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: map[string]string{
-				constants.AppLabelName:               matchLabelValue,
-				testconfig.GetConfig().QueueLabelKey: queueName,
+				constants.AppLabelName: matchLabelValue,
+				cfg.QueueLabelKey:      queueName,
 			},
 		},
 		Spec: corev1.PodSpec{
 			RestartPolicy:                 corev1.RestartPolicyNever,
-			SchedulerName:                 testconfig.GetConfig().SchedulerName,
+			SchedulerName:                 cfg.SchedulerName,
 			TerminationGracePeriodSeconds: pointer.Int64(0),
 			Containers: []corev1.Container{
 				{
-					Image: "ubuntu",
+					Image: cfg.ContainerImage,
 					Name:  "ubuntu-container",
 					Args: []string{
 						"sleep",

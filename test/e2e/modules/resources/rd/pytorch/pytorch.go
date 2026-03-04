@@ -70,20 +70,21 @@ func CreateWorkerOnlyObject(namespace, queueName string, replicas int32) *traini
 }
 
 func GetPodTemplate(queueName, matchLabelValue string) corev1.PodTemplateSpec {
+	cfg := testconfig.GetConfig()
 	return corev1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: map[string]string{
-				constants.AppLabelName:               matchLabelValue,
-				testconfig.GetConfig().QueueLabelKey: queueName,
+				constants.AppLabelName: matchLabelValue,
+				cfg.QueueLabelKey:      queueName,
 			},
 		},
 		Spec: corev1.PodSpec{
 			RestartPolicy:                 corev1.RestartPolicyNever,
-			SchedulerName:                 constant.SchedulerName,
+			SchedulerName:                 cfg.SchedulerName,
 			TerminationGracePeriodSeconds: pointer.Int64(0),
 			Containers: []corev1.Container{
 				{
-					Image: "ubuntu",
+					Image: cfg.ContainerImage,
 					Name:  "pytorch",
 					Args: []string{
 						"sleep",

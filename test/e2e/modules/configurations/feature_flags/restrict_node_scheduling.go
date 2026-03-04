@@ -8,10 +8,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
 	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/configurations"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/constant"
 	testContext "github.com/NVIDIA/KAI-scheduler/test/e2e/modules/context"
+	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/testconfig"
 	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/wait"
 	"k8s.io/utils/ptr"
 )
@@ -26,6 +25,7 @@ func SetRestrictNodeScheduling(
 	if err := configurations.SetShardArg(ctx, testCtx, "default", "restrict-node-scheduling", targetValue); err != nil {
 		return err
 	}
-	wait.WaitForDeploymentPodsRunning(ctx, testCtx.ControllerClient, constant.SchedulerDeploymentName, constants.DefaultKAINamespace)
+	cfg := testconfig.GetConfig()
+	wait.WaitForDeploymentPodsRunning(ctx, testCtx.ControllerClient, cfg.SchedulerDeploymentName, cfg.SystemPodsNamespace)
 	return nil
 }

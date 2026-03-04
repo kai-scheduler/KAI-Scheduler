@@ -528,3 +528,57 @@ func TestBuildSubGroups_Segmentation_TopologyBothPlacementKeys_LeaderExcluded(t 
 	assert.Equal(t, topology, subGroups[2].TopologyConstraints)
 	assert.Empty(t, subGroups[2].PodsReferences)
 }
+
+// TestBuildSubGroups_SegmentSizeFromWorkerTemplateAnnotation covers the third fallback
+// where segment size is read from the workerTemplate metadata annotations
+// (no subGroupPolicy, no LWS-level annotation). Topology constraints are also sourced
+// from the same workerTemplate annotations.
+// replicasSize=5, segmentSize=2 → divisible ((5-1)%2=0), LeaderWorker policy.
+// Worker pod at worker-index=1 lands in segment 0.
+// Pods: segment-0={leader,w1,w2}=3, segment-1={w3,w4}=2. Total=5.
+func TestBuildSubGroups_SegmentSizeFromWorkerTemplateAnnotation(t *testing.T) {
+	lwsJob := lwsOwner("lws-seg", "LeaderCreated", 5, nil, nil, nil)
+	lwsJob.SetAnnotations(map[string]string{
+		constants.TopologyKey: "rack",
+	})
+	err := unstructured.SetNestedStringMap(lwsJob.Object, map[string]string{
+		constants.SegmentSizeKey:                       "2",
+		constants.SegmentTopologyRequiredPlacementKey:  "rack-unit",
+		constants.SegmentTopologyPreferredPlacementKey: "node",
+	}, "spec", "leaderWorkerTemplate", "workerTemplate", "metadata", "annotations")
+	assert.NoError(t, err)
+	pod := makeLwsPod("lws-seg-0-1", "1")
+	grouper := NewLwsGrouper(defaultgrouper.NewDefaultGrouper("", "", fake.NewFakeClient()))
+
+	subGroups, err := grouper.buildSubGroups(lwsJob, pod, 5)
+	assert.NoError(t, err)
+	assert.Len(t, subGroups, 4) // segment-0, segment-1, leader, workers
+
+	expectedTopology := &podgroup.TopologyConstraintMetadata{
+		Topology:               "rack",
+		RequiredTopologyLevel:  "rack-unit",
+		PreferredTopologyLevel: "node",
+	}
+
+	seg0 := findSubGroupByName(subGroups, "segment-0")
+	assert.NotNil(t, seg0)
+	assert.Equal(t, int32(3), seg0.MinAvailable) // segmentSize(2) + leader(1)
+	assert.Equal(t, expectedTopology, seg0.TopologyConstraints)
+
+	seg1 := findSubGroupByName(subGroups, "segment-1")
+	assert.NotNil(t, seg1)
+	assert.Equal(t, int32(2), seg1.MinAvailable)
+	assert.Equal(t, expectedTopology, seg1.TopologyConstraints)
+
+	leaderSG := findSubGroupByName(subGroups, leaderSubGroupName)
+	assert.NotNil(t, leaderSG)
+	assert.Equal(t, int32(1), leaderSG.MinAvailable)
+	assert.Nil(t, leaderSG.TopologyConstraints)
+	assert.Empty(t, leaderSG.PodsReferences)
+
+	workersSG := findSubGroupByName(subGroups, workersSubGroupName)
+	assert.NotNil(t, workersSG)
+	assert.Equal(t, int32(2), workersSG.MinAvailable) // 3 - 1
+	assert.Nil(t, workersSG.TopologyConstraints)
+	assert.Equal(t, []string{"lws-seg-0-1"}, workersSG.PodsReferences)
+}

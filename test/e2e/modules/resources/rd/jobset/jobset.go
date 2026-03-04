@@ -12,7 +12,6 @@ import (
 	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 
 	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/constant"
 	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/testconfig"
 )
 
@@ -40,7 +39,7 @@ func CreateUnequalCompletionJobSetObject(name, namespace, queueName string, para
 							Template: corev1.PodTemplateSpec{
 								Spec: corev1.PodSpec{
 									RestartPolicy: corev1.RestartPolicyNever,
-									SchedulerName: constant.SchedulerName,
+									SchedulerName: testconfig.GetConfig().SchedulerName,
 									Containers: []corev1.Container{
 										{
 											Name:  "worker",
@@ -106,7 +105,7 @@ func CreateObjectWithStartupPolicy(name, namespace, queueName, startupPolicyOrde
 							Template: corev1.PodTemplateSpec{
 								Spec: corev1.PodSpec{
 									RestartPolicy: corev1.RestartPolicyNever,
-									SchedulerName: constant.SchedulerName,
+									SchedulerName: testconfig.GetConfig().SchedulerName,
 									Containers: []corev1.Container{
 										{
 											Name:  "job1",
@@ -140,7 +139,7 @@ func CreateObjectWithStartupPolicy(name, namespace, queueName, startupPolicyOrde
 							Template: corev1.PodTemplateSpec{
 								Spec: corev1.PodSpec{
 									RestartPolicy: corev1.RestartPolicyNever,
-									SchedulerName: constant.SchedulerName,
+									SchedulerName: testconfig.GetConfig().SchedulerName,
 									Containers: []corev1.Container{
 										{
 											Name:  "job2",
@@ -199,11 +198,11 @@ func CreateObjectWithHighParallelism(name, namespace, queueName string) *jobsetv
 							Template: corev1.PodTemplateSpec{
 								Spec: corev1.PodSpec{
 									RestartPolicy: corev1.RestartPolicyNever,
-									SchedulerName: constant.SchedulerName,
+									SchedulerName: testconfig.GetConfig().SchedulerName,
 									Containers: []corev1.Container{
 										{
 											Name:  "worker",
-											Image: "ubuntu",
+											Image: testconfig.GetConfig().ContainerImage,
 											Command: []string{
 												"sleep",
 												"3600",
@@ -261,11 +260,11 @@ func CreateObjectWithMultipleReplicatedJobs(name, namespace, queueName string) *
 							Template: corev1.PodTemplateSpec{
 								Spec: corev1.PodSpec{
 									RestartPolicy: corev1.RestartPolicyNever,
-									SchedulerName: constant.SchedulerName,
+									SchedulerName: testconfig.GetConfig().SchedulerName,
 									Containers: []corev1.Container{
 										{
 											Name:  "coordinator",
-											Image: "ubuntu",
+											Image: testconfig.GetConfig().ContainerImage,
 											Command: []string{
 												"sleep",
 												"3600",
@@ -288,11 +287,11 @@ func CreateObjectWithMultipleReplicatedJobs(name, namespace, queueName string) *
 							Template: corev1.PodTemplateSpec{
 								Spec: corev1.PodSpec{
 									RestartPolicy: corev1.RestartPolicyNever,
-									SchedulerName: constant.SchedulerName,
+									SchedulerName: testconfig.GetConfig().SchedulerName,
 									Containers: []corev1.Container{
 										{
 											Name:  "worker",
-											Image: "ubuntu",
+											Image: testconfig.GetConfig().ContainerImage,
 											Command: []string{
 												"sleep",
 												"3600",
@@ -347,11 +346,11 @@ func CreateObjectWithDefaultParallelism(name, namespace, queueName string) *jobs
 							Template: corev1.PodTemplateSpec{
 								Spec: corev1.PodSpec{
 									RestartPolicy: corev1.RestartPolicyNever,
-									SchedulerName: constant.SchedulerName,
+									SchedulerName: testconfig.GetConfig().SchedulerName,
 									Containers: []corev1.Container{
 										{
 											Name:  "single",
-											Image: "ubuntu",
+											Image: testconfig.GetConfig().ContainerImage,
 											Command: []string{
 												"sleep",
 												"3600",

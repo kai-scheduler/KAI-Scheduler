@@ -12,6 +12,7 @@ import (
 	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
 	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd"
+	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/testconfig"
 	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/wait"
 	v1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
@@ -280,8 +281,8 @@ var _ = Describe("Schedule pod with dynamic resource request", Ordered, func() {
 						Name:      podGroupName,
 						Namespace: namespace,
 						Labels: map[string]string{
-							constants.AppLabelName:      "engine-e2e",
-							constants.DefaultQueueLabel: testCtx.Queues[0].Name,
+							constants.AppLabelName:               "engine-e2e",
+							testconfig.GetConfig().QueueLabelKey: testCtx.Queues[0].Name,
 						},
 					},
 					Spec: v2alpha2.PodGroupSpec{
