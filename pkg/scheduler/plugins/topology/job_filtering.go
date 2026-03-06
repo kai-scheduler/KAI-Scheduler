@@ -84,7 +84,7 @@ func (t *topologyPlugin) subSetNodesFn(
 	if maxDepthLevel == "" {
 		maxDepthLevel = requiredLevel
 	}
-	sortTreeFromRoot(tasks, domain, maxDepthLevel)
+	sortTreeFromRoot(tasks, domain, maxDepthLevel, topologyTree.VectorMap)
 	if preferredLevel != "" {
 		t.subGroupNodeScores[subGroup.GetName()] = calculateNodeScores(domain, preferredLevel)
 	}
@@ -226,22 +226,25 @@ func calcNodeAccommodation(jobAllocationMetaData *jobAllocationMetaData, node *n
 
 	// For fractional GPU requests, include remaining capacity from partially-used GPU devices.
 	// IdleVector counts whole GPU slots; partially-used devices appear as 0 whole GPUs.
-	// Adding fractional remainings gives a better estimate for topology domain filtering.
-	// Note: this treats devices as a pool (may overcount multi-device requests), but
-	// overestimation is acceptable for topology pre-filtering since binding checks are exact.
+	// This uses AllocatedSharedGPUsMemory (committed) minus ReleasingSharedGPUsMemory (being freed)
+	// to compute per-device available capacity, then sums fractions into nonAllocated.
+	// Treats devices as a pool (may overcount multi-device requests), but overestimation
+	// is acceptable for topology pre-filtering since binding checks are exact.
 	gpuIdx := node.VectorMap.GetIndex(constants.GpuResource)
-	gpuRequest := maxPodVector.Get(gpuIdx)
-	if gpuIdx >= 0 && gpuRequest > 0 && gpuRequest < 1 && node.MemoryOfEveryGpuOnNode > 0 {
-		for gpuGroup, usedMemory := range node.UsedSharedGPUsMemory {
-			if usedMemory <= 0 {
-				continue
-			}
-			allocated := node.AllocatedSharedGPUsMemory[gpuGroup]
-			releasing := node.ReleasingSharedGPUsMemory[gpuGroup]
-			availableMemory := node.MemoryOfEveryGpuOnNode - allocated + releasing
-			if availableMemory > 0 {
-				remaining := float64(availableMemory) / float64(node.MemoryOfEveryGpuOnNode)
-				nonAllocated.Set(gpuIdx, nonAllocated.Get(gpuIdx)+remaining)
+	if gpuIdx >= 0 && node.MemoryOfEveryGpuOnNode > 0 {
+		gpuRequest := maxPodVector.Get(gpuIdx)
+		if gpuRequest > 0 && gpuRequest < 1 {
+			for gpuGroup, usedMemory := range node.UsedSharedGPUsMemory {
+				if usedMemory <= 0 {
+					continue
+				}
+				allocated := node.AllocatedSharedGPUsMemory[gpuGroup]
+				releasing := node.ReleasingSharedGPUsMemory[gpuGroup]
+				availableMemory := node.MemoryOfEveryGpuOnNode - allocated + releasing
+				if availableMemory > 0 {
+					remaining := float64(availableMemory) / float64(node.MemoryOfEveryGpuOnNode)
+					nonAllocated.Set(gpuIdx, nonAllocated.Get(gpuIdx)+remaining)
+				}
 			}
 		}
 	}
@@ -376,7 +379,7 @@ func checkJobDomainFit(job *podgroup_info.PodGroupInfo, subGroup *subgroup_info.
 		return nil
 	}
 
-	if getJobRatioToFreeResources(tasksResources, domain) > maxAllocatableTasksRatio {
+	if getJobRatioToFreeResources(tasksResources, domain, vectorMap) > maxAllocatableTasksRatio {
 		err := common_info.NewTopologyInsufficientResourcesError(
 			job.Name, subGroup.GetName(), job.Namespace, string(domain.ID), tasksResources, domain.IdleOrReleasingVector, vectorMap)
 		return err
@@ -450,7 +453,8 @@ func (*topologyPlugin) treeAllocatableCleanup(topologyTree *Info) {
 	}
 }
 
-func sortTreeFromRoot(tasks []*pod_info.PodInfo, root *DomainInfo, maxDepthLevel DomainLevel) {
+func sortTreeFromRoot(tasks []*pod_info.PodInfo, root *DomainInfo, maxDepthLevel DomainLevel,
+	vectorMap *resource_info.ResourceVectorMap) {
 	var tasksResources resource_info.ResourceVector
 	for _, task := range tasks {
 		if tasksResources == nil {
@@ -460,21 +464,22 @@ func sortTreeFromRoot(tasks []*pod_info.PodInfo, root *DomainInfo, maxDepthLevel
 		}
 	}
 
-	sortTree(tasksResources, root, maxDepthLevel)
+	sortTree(tasksResources, root, maxDepthLevel, vectorMap)
 }
 
 // sortTree recursively sorts the topology tree for bin-packing behavior.
 // Domains are sorted by AllocatablePods (ascending) to prioritize filling domains
 // with fewer available resources first, implementing a bin-packing strategy.
 // Within domains with equal AllocatablePods, sorts by ID for deterministic ordering.
-func sortTree(tasksResources resource_info.ResourceVector, root *DomainInfo, maxDepthLevel DomainLevel) {
+func sortTree(tasksResources resource_info.ResourceVector, root *DomainInfo, maxDepthLevel DomainLevel,
+	vectorMap *resource_info.ResourceVectorMap) {
 	if root == nil || maxDepthLevel == "" {
 		return
 	}
 
 	domainRatiosCache := make(map[DomainID]float64, len(root.Children))
 	for _, child := range root.Children {
-		domainRatiosCache[child.ID] = getJobRatioToFreeResources(tasksResources, child)
+		domainRatiosCache[child.ID] = getJobRatioToFreeResources(tasksResources, child, vectorMap)
 	}
 
 	slices.SortFunc(root.Children, func(i, j *DomainInfo) int {
@@ -491,14 +496,15 @@ func sortTree(tasksResources resource_info.ResourceVector, root *DomainInfo, max
 	}
 
 	for _, child := range root.Children {
-		sortTree(tasksResources, child, maxDepthLevel)
+		sortTree(tasksResources, child, maxDepthLevel, vectorMap)
 	}
 }
 
 // Returns a max ratio for all tasks resources to the free resources in the domain.
 // The higher the ratio, the more "packed" the domain will be after the job is allocated.
 // If the ratio is higher then 1, the domain will not be able to allocate the job.
-func getJobRatioToFreeResources(tasksResources resource_info.ResourceVector, domain *DomainInfo) float64 {
+func getJobRatioToFreeResources(tasksResources resource_info.ResourceVector, domain *DomainInfo,
+	vectorMap *resource_info.ResourceVectorMap) float64 {
 	dominantResourceRatio := 0.0
 
 	emptyVec := make(resource_info.ResourceVector, len(tasksResources))
@@ -506,7 +512,7 @@ func getJobRatioToFreeResources(tasksResources resource_info.ResourceVector, dom
 		return dominantResourceRatio
 	}
 
-	podsIdx := resource_info.NewResourceVectorMap().GetIndex(string(v1.ResourcePods))
+	podsIdx := vectorMap.GetIndex(string(v1.ResourcePods))
 	for i := 0; i < len(tasksResources); i++ {
 		taskVal := tasksResources.Get(i)
 		if taskVal <= 0 {
