@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -222,6 +223,28 @@ func calcNodeAccommodation(jobAllocationMetaData *jobAllocationMetaData, node *n
 
 	nonAllocated := node.IdleVector.Clone()
 	nonAllocated.Add(node.ReleasingVector)
+
+	// For fractional GPU requests, include remaining capacity from partially-used GPU devices.
+	// IdleVector counts whole GPU slots; partially-used devices appear as 0 whole GPUs.
+	// Adding fractional remainings gives a better estimate for topology domain filtering.
+	// Note: this treats devices as a pool (may overcount multi-device requests), but
+	// overestimation is acceptable for topology pre-filtering since binding checks are exact.
+	gpuIdx := node.VectorMap.GetIndex(constants.GpuResource)
+	gpuRequest := maxPodVector.Get(gpuIdx)
+	if gpuIdx >= 0 && gpuRequest > 0 && gpuRequest < 1 && node.MemoryOfEveryGpuOnNode > 0 {
+		for gpuGroup, usedMemory := range node.UsedSharedGPUsMemory {
+			if usedMemory <= 0 {
+				continue
+			}
+			allocated := node.AllocatedSharedGPUsMemory[gpuGroup]
+			releasing := node.ReleasingSharedGPUsMemory[gpuGroup]
+			availableMemory := node.MemoryOfEveryGpuOnNode - allocated + releasing
+			if availableMemory > 0 {
+				remaining := float64(availableMemory) / float64(node.MemoryOfEveryGpuOnNode)
+				nonAllocated.Set(gpuIdx, nonAllocated.Get(gpuIdx)+remaining)
+			}
+		}
+	}
 
 	if !maxPodVector.LessEqual(nonAllocated) {
 		return 0
