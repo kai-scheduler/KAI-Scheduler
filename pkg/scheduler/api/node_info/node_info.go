@@ -393,14 +393,15 @@ func (ni *NodeInfo) isTaskAllocatableOnNonAllocatedResources(
 
 func (ni *NodeInfo) lessEqualVectorsExcludingGPU(a, b resource_info.ResourceVector) bool {
 	gpuIdx := ni.VectorMap.GetIndex(commonconstants.GpuResource)
-	savedA := a.Get(gpuIdx)
-	savedB := b.Get(gpuIdx)
-	a.Set(gpuIdx, 0)
-	b.Set(gpuIdx, 0)
-	result := a.LessEqual(b)
-	a.Set(gpuIdx, savedA)
-	b.Set(gpuIdx, savedB)
-	return result
+	for i := 0; i < len(a); i++ {
+		if i == gpuIdx {
+			continue
+		}
+		if a.Get(i) > b.Get(i) {
+			return false
+		}
+	}
+	return true
 }
 
 func (ni *NodeInfo) AddTask(task *pod_info.PodInfo) error {
@@ -508,7 +509,7 @@ func (ni *NodeInfo) addTaskResources(task *pod_info.PodInfo) {
 		ni.IdleVector.Sub(resourcesToTrackVector)
 	}
 
-	ni.addSharedTaskResources(task)
+	ni.addSharedGPUTaskResources(task)
 
 	log.InfraLogger.V(8).Infof("Added podsInfo: <%v/%v>, status: <%v>, node: <%+v>",
 		task.Namespace, task.Name, task.Status, ni)

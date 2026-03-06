@@ -71,7 +71,7 @@ func getAcceptedTaskResourceWithoutSharedGPU(task *pod_info.PodInfo) *resource_i
 	return requestedResourceWithoutSharedGPU
 }
 
-func (ni *NodeInfo) addSharedTaskResources(task *pod_info.PodInfo) {
+func (ni *NodeInfo) addSharedGPUTaskResources(task *pod_info.PodInfo) {
 	if !task.IsSharedGPUAllocation() {
 		return
 	}
@@ -80,14 +80,14 @@ func (ni *NodeInfo) addSharedTaskResources(task *pod_info.PodInfo) {
 		task.Namespace, task.Name, task.Status, ni)
 
 	for _, gpuGroup := range task.GPUGroups {
-		ni.addSharedTaskResourcesPerPodGroup(task, gpuGroup)
+		ni.addSharedGPUTaskResourcesPerPodGroup(task, gpuGroup)
 	}
 
 	log.InfraLogger.V(8).Infof("Added shared podsInfo: <%v/%v>, status: <%v>, node: <%+v>",
 		task.Namespace, task.Name, task.Status, ni)
 }
 
-func (ni *NodeInfo) addSharedTaskResourcesPerPodGroup(task *pod_info.PodInfo, gpuGroup string) {
+func (ni *NodeInfo) addSharedGPUTaskResourcesPerPodGroup(task *pod_info.PodInfo, gpuGroup string) {
 	log.InfraLogger.V(7).Infof(
 		"About to add shared podsInfo: <%v/%v>, gpuGroup: <%v> "+
 			"releasingSharedGPU: <%v> AllocatedSharedGPUsMemory <%v>, UsedSharedGPUsMemory: <%v>",

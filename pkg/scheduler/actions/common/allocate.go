@@ -174,7 +174,7 @@ func allocateTaskToNode(ssn *framework.Session, stmt *framework.Statement, task 
 }
 
 func bindTaskToNode(ssn *framework.Session, stmt *framework.Statement, task *pod_info.PodInfo, node *node_info.NodeInfo) bool {
-	log.InfraLogger.V(6).Infof("Binding Task <%v/%v> to node <%v>, requires: %v GPUs",
+	log.InfraLogger.V(6).Infof("Binding Task <%v/%v> to node <%v>, requires resources: %v",
 		task.Namespace, task.Name, node.Name, task.ResReqVector)
 
 	if err := stmt.Allocate(task, node.Name); err != nil {
@@ -185,7 +185,7 @@ func bindTaskToNode(ssn *framework.Session, stmt *framework.Statement, task *pod
 }
 
 func pipelineTaskToNode(ssn *framework.Session, stmt *framework.Statement, task *pod_info.PodInfo, node *node_info.NodeInfo, updateTasksIfExistsOnNode bool) bool {
-	log.InfraLogger.V(6).Infof("Pipelining Task <%v/%v> to node <%v> requires: %v GPUs",
+	log.InfraLogger.V(6).Infof("Pipelining Task <%v/%v> to node <%v>, requires resources: %v",
 		task.Namespace, task.Name, node.Name, task.ResReqVector)
 
 	if err := stmt.Pipeline(task, node.Name, updateTasksIfExistsOnNode); err != nil {
