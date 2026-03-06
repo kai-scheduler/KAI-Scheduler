@@ -1381,6 +1381,118 @@ func TestTopologyPlugin_calcTreeAllocatable(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "fractional GPU - all devices partially allocated, remaining capacity accommodates pods",
+			job: &jobs_fake.TestJobBasic{
+				Name:                "pending-job",
+				RequiredGPUsPerTask: 0.4,
+				Tasks: []*tasks_fake.TestTaskBasic{
+					{State: pod_status.Pending},
+					{State: pod_status.Pending},
+				},
+			},
+			allocatedPodGroups: []*jobs_fake.TestJobBasic{
+				{
+					Name:                "running-job",
+					RequiredGPUsPerTask: 0.5,
+					Tasks: []*tasks_fake.TestTaskBasic{
+						{State: pod_status.Running, NodeName: "node-1", GPUGroups: []string{"GPU-0"}},
+						{State: pod_status.Running, NodeName: "node-1", GPUGroups: []string{"GPU-1"}},
+					},
+				},
+			},
+			nodes: map[string]nodes_fake.TestNodeBasic{
+				"node-1": {
+					GPUs:       2,
+					GPUMemory:  1000,
+					MaxTaskNum: ptr.To(100),
+				},
+			},
+			nodesToDomains: map[string]DomainID{
+				"node-1": "rack1.zone1",
+			},
+			setupTopologyTree: twoRacksOneZoneTree,
+			domainParent: map[DomainID]DomainID{
+				"rack1.zone1": "zone1",
+				"rack2.zone1": "zone1",
+			},
+			domainLevel: map[DomainID]DomainLevel{
+				"zone1": "zone",
+			},
+			expectedMaxAllocatablePods: 2,
+			expectedDomains: map[DomainID]*DomainInfo{
+				"rack1.zone1": {
+					ID:              "rack1.zone1",
+					Level:           "rack",
+					AllocatablePods: 2,
+				},
+				"rack2.zone1": {
+					ID:              "rack2.zone1",
+					Level:           "rack",
+					AllocatablePods: 0,
+				},
+				"zone1": {
+					ID:              "zone1",
+					Level:           "zone",
+					AllocatablePods: 2,
+				},
+			},
+		},
+		{
+			name: "fractional GPU - single partially-used device with remaining capacity",
+			job: &jobs_fake.TestJobBasic{
+				Name:                "pending-job",
+				RequiredGPUsPerTask: 0.4,
+				Tasks: []*tasks_fake.TestTaskBasic{
+					{State: pod_status.Pending},
+				},
+			},
+			allocatedPodGroups: []*jobs_fake.TestJobBasic{
+				{
+					Name:                "running-job",
+					RequiredGPUsPerTask: 0.5,
+					Tasks: []*tasks_fake.TestTaskBasic{
+						{State: pod_status.Running, NodeName: "node-1", GPUGroups: []string{"GPU-0"}},
+					},
+				},
+			},
+			nodes: map[string]nodes_fake.TestNodeBasic{
+				"node-1": {
+					GPUs:       1,
+					GPUMemory:  1000,
+					MaxTaskNum: ptr.To(100),
+				},
+			},
+			nodesToDomains: map[string]DomainID{
+				"node-1": "rack1.zone1",
+			},
+			setupTopologyTree: twoRacksOneZoneTree,
+			domainParent: map[DomainID]DomainID{
+				"rack1.zone1": "zone1",
+				"rack2.zone1": "zone1",
+			},
+			domainLevel: map[DomainID]DomainLevel{
+				"zone1": "zone",
+			},
+			expectedMaxAllocatablePods: 1,
+			expectedDomains: map[DomainID]*DomainInfo{
+				"rack1.zone1": {
+					ID:              "rack1.zone1",
+					Level:           "rack",
+					AllocatablePods: 1,
+				},
+				"rack2.zone1": {
+					ID:              "rack2.zone1",
+					Level:           "rack",
+					AllocatablePods: 0,
+				},
+				"zone1": {
+					ID:              "zone1",
+					Level:           "zone",
+					AllocatablePods: 1,
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
