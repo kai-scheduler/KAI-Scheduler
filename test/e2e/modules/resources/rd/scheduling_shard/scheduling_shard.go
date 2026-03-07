@@ -12,9 +12,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/wait"
+	kaiv1 "github.com/kai-scheduler/kai-scheduler/pkg/apis/kai/v1"
+	"github.com/kai-scheduler/kai-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/kai-scheduler/test/e2e/modules/wait"
 )
 
 func CreateShardForLabeledNodes(

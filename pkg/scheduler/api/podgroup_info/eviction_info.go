@@ -4,11 +4,11 @@
 package podgroup_info
 
 import (
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/scheduler_util"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/scheduler_util"
 )
 
 func GetTasksToEvict(job *PodGroupInfo, subGroupOrderFn, taskOrderFn common_info.LessFn) ([]*pod_info.PodInfo, bool) {

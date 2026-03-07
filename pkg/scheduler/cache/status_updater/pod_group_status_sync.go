@@ -6,9 +6,9 @@ package status_updater
 import (
 	"strconv"
 
-	enginev2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/utils"
+	enginev2alpha2 "github.com/kai-scheduler/kai-scheduler/pkg/apis/scheduling/v2alpha2"
+	commonconstants "github.com/kai-scheduler/kai-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/utils"
 )
 
 type podGroupStatusSyncResult string

@@ -12,13 +12,13 @@ import (
 
 	"github.com/spf13/pflag"
 
-	"github.com/NVIDIA/KAI-scheduler/cmd/scheduler/app/options"
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
-	kaiprometheus "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/prometheus"
-	kaiv1qc "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/queue_controller"
-	kaiv1scheduler "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/scheduler"
-	usagedbapi "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/kai-scheduler/cmd/scheduler/app/options"
+	kaiv1 "github.com/kai-scheduler/kai-scheduler/pkg/apis/kai/v1"
+	kaiprometheus "github.com/kai-scheduler/kai-scheduler/pkg/apis/kai/v1/prometheus"
+	kaiv1qc "github.com/kai-scheduler/kai-scheduler/pkg/apis/kai/v1/queue_controller"
+	kaiv1scheduler "github.com/kai-scheduler/kai-scheduler/pkg/apis/kai/v1/scheduler"
+	usagedbapi "github.com/kai-scheduler/kai-scheduler/pkg/scheduler/cache/usagedb/api"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/conf"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

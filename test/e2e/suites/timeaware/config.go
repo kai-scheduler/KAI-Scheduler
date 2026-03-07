@@ -10,11 +10,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
-	kaiprometheus "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/prometheus"
-	usagedbapi "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/configurations"
-	testcontext "github.com/NVIDIA/KAI-scheduler/test/e2e/modules/context"
+	kaiv1 "github.com/kai-scheduler/kai-scheduler/pkg/apis/kai/v1"
+	kaiprometheus "github.com/kai-scheduler/kai-scheduler/pkg/apis/kai/v1/prometheus"
+	usagedbapi "github.com/kai-scheduler/kai-scheduler/pkg/scheduler/cache/usagedb/api"
+	"github.com/kai-scheduler/kai-scheduler/test/e2e/modules/configurations"
+	testcontext "github.com/kai-scheduler/kai-scheduler/test/e2e/modules/context"
 )
 
 // timeAwareConfig holds configuration for time-aware fairness tests

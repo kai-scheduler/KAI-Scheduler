@@ -83,7 +83,7 @@ jobs:
         with:
           coverage-artifact-name: "code-coverage"
           coverage-file-name: "coverage.out"
-          root-package: "github.com/NVIDIA/KAI-scheduler"
+          root-package: "github.com/kai-scheduler/kai-scheduler"
           github-baseline-workflow-ref: update-coverage-badge.yaml
           skip-comment: true
       - name: Save coverage report to file
@@ -297,7 +297,7 @@ jobs:
           UPGRADE_FROM_VERSION: ${{ steps.resolve_version.outputs.upgrade_from }}
         run: |
           echo "Installing kai-scheduler $UPGRADE_FROM_VERSION from OCI registry..."
-          helm upgrade -i kai-scheduler oci://ghcr.io/nvidia/kai-scheduler/kai-scheduler -n kai-scheduler --create-namespace \
+          helm upgrade -i kai-scheduler oci://ghcr.io/kai-scheduler/kai-scheduler/kai-scheduler -n kai-scheduler --create-namespace \
             --set "global.gpuSharing=true" --wait --version "$UPGRADE_FROM_VERSION"
           kubectl create clusterrole pods-patcher --verb=patch --resource=pods
           kubectl create rolebinding fake-status-updater --clusterrole=pods-patcher --serviceaccount=gpu-operator:status-updater -n kai-resource-reservation

@@ -8,10 +8,10 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/topology_info"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/topology_info"
 )
 
 type PodSet struct {

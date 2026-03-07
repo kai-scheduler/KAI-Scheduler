@@ -8,10 +8,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/queue_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/metrics"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/queue_info"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/cache/usagedb/api"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/metrics"
 )
 
 var defaultFetchInterval = 1 * time.Minute

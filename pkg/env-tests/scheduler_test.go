@@ -21,14 +21,14 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	kaiv1alpha1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1alpha1"
-	kaiv1alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	schedulingv2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	schedulingv2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/env-tests/dynamicresource"
-	"github.com/NVIDIA/KAI-scheduler/pkg/env-tests/scheduler"
-	"github.com/NVIDIA/KAI-scheduler/pkg/env-tests/utils"
+	kaiv1alpha1 "github.com/kai-scheduler/kai-scheduler/pkg/apis/kai/v1alpha1"
+	kaiv1alpha2 "github.com/kai-scheduler/kai-scheduler/pkg/apis/scheduling/v1alpha2"
+	schedulingv2 "github.com/kai-scheduler/kai-scheduler/pkg/apis/scheduling/v2"
+	schedulingv2alpha2 "github.com/kai-scheduler/kai-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/kai-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/kai-scheduler/pkg/env-tests/dynamicresource"
+	"github.com/kai-scheduler/kai-scheduler/pkg/env-tests/scheduler"
+	"github.com/kai-scheduler/kai-scheduler/pkg/env-tests/utils"
 )
 
 var _ = Describe("Scheduler", Ordered, func() {

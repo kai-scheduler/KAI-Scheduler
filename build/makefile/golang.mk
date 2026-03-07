@@ -35,7 +35,7 @@ GIT_VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo 
 GIT_TREE_STATE := $(shell if git diff-index --quiet HEAD -- 2>/dev/null; then echo "clean"; else echo "dirty"; fi)
 
 ## Go Build Flags
-VERSION_PKG := github.com/NVIDIA/KAI-scheduler/pkg/scheduler/version
+VERSION_PKG := github.com/kai-scheduler/kai-scheduler/pkg/scheduler/version
 LDFLAGS := -X '$(VERSION_PKG).buildDate=$(BUILD_DATE)' \
            -X '$(VERSION_PKG).gitCommit=$(GIT_COMMIT)' \
            -X '$(VERSION_PKG).gitVersion=$(GIT_VERSION)' \

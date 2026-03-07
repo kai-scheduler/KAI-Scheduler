@@ -6,8 +6,8 @@ package runtimeenforcement
 import (
 	"testing"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned/scheme"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/kai-scheduler/pkg/apis/client/clientset/versioned/scheme"
+	"github.com/kai-scheduler/kai-scheduler/pkg/common/constants"
 	ocpconf "github.com/openshift/api/config/v1"
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"

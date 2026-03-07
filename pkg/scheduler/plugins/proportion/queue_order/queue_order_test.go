@@ -8,14 +8,14 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/subgrouporder"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/taskorder"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/plugins/proportion/resource_share"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/plugins/subgrouporder"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/plugins/taskorder"
 )
 
 type testMetadata struct {

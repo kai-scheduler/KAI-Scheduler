@@ -25,12 +25,12 @@ import (
 	"k8s.io/client-go/kubernetes"
 	k8sframework "k8s.io/kubernetes/pkg/scheduler/framework"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/eviction_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/cluster_info/data_lister"
-	k8splugins "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_internal/plugins"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/eviction_info"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/cache/cluster_info/data_lister"
+	k8splugins "github.com/kai-scheduler/kai-scheduler/pkg/scheduler/k8s_internal/plugins"
 )
 
 type Cache interface {

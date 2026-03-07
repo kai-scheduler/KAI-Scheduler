@@ -16,17 +16,17 @@ import (
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes/fake"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_affinity"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/cluster_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	k8splugins "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_internal/plugins"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/scores"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/pod_affinity"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/cache"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/cache/cluster_info"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/framework"
+	k8splugins "github.com/kai-scheduler/kai-scheduler/pkg/scheduler/k8s_internal/plugins"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/plugins/scores"
 )
 
 type testInput struct {

@@ -12,8 +12,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	enginev1alpha1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
-	test_utils "github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/common/test_utils"
+	enginev1alpha1 "github.com/kai-scheduler/kai-scheduler/pkg/apis/kai/v1"
+	test_utils "github.com/kai-scheduler/kai-scheduler/pkg/operator/operands/common/test_utils"
 
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/utils/ptr"

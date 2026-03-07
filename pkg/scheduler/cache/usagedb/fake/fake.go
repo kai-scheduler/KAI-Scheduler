@@ -6,8 +6,8 @@ package fake
 import (
 	"sync"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/queue_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/queue_info"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/cache/usagedb/api"
 )
 
 type FakeClient struct {

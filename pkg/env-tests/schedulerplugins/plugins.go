@@ -6,9 +6,9 @@ package schedulerplugins
 import (
 	"sync"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/framework"
 )
 
 var plugin *FairnessTrackerPlugin

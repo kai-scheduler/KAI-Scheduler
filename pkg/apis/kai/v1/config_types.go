@@ -4,16 +4,16 @@
 package v1
 
 import (
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/admission"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/binder"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/common"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/node_scale_adjuster"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/pod_group_controller"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/pod_grouper"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/prometheus"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/queue_controller"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/scheduler"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/kai-scheduler/pkg/apis/kai/v1/admission"
+	"github.com/kai-scheduler/kai-scheduler/pkg/apis/kai/v1/binder"
+	"github.com/kai-scheduler/kai-scheduler/pkg/apis/kai/v1/common"
+	"github.com/kai-scheduler/kai-scheduler/pkg/apis/kai/v1/node_scale_adjuster"
+	"github.com/kai-scheduler/kai-scheduler/pkg/apis/kai/v1/pod_group_controller"
+	"github.com/kai-scheduler/kai-scheduler/pkg/apis/kai/v1/pod_grouper"
+	"github.com/kai-scheduler/kai-scheduler/pkg/apis/kai/v1/prometheus"
+	"github.com/kai-scheduler/kai-scheduler/pkg/apis/kai/v1/queue_controller"
+	"github.com/kai-scheduler/kai-scheduler/pkg/apis/kai/v1/scheduler"
+	"github.com/kai-scheduler/kai-scheduler/pkg/common/constants"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )

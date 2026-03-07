@@ -21,15 +21,15 @@ import (
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	"k8s.io/client-go/kubernetes/fake"
 
-	kaischedulerfake "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned/fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf_util"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/metrics"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/snapshot"
+	kaischedulerfake "github.com/kai-scheduler/kai-scheduler/pkg/apis/client/clientset/versioned/fake"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/actions"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/cache"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/conf_util"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/metrics"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/plugins"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/plugins/snapshot"
 )
 
 func main() {

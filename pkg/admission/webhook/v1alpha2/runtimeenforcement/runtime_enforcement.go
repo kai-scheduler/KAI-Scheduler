@@ -7,8 +7,8 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/binding/resourcereservation"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/resources"
+	"github.com/kai-scheduler/kai-scheduler/pkg/binder/binding/resourcereservation"
+	"github.com/kai-scheduler/kai-scheduler/pkg/common/resources"
 )
 
 type RuntimeEnforcement struct {

@@ -10,8 +10,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/topology_info"
+	"github.com/kai-scheduler/kai-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/topology_info"
 )
 
 type wantGroup struct {

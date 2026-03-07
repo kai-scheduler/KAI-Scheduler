@@ -15,7 +15,7 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/kai-scheduler/pkg/common/constants"
 )
 
 func CreatePersistentVolumeObject(name string, path string) *v1.PersistentVolume {

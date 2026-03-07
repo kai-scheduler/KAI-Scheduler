@@ -10,10 +10,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 
-	kaiClient "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned"
-	v2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/testconfig"
+	kaiClient "github.com/kai-scheduler/kai-scheduler/pkg/apis/client/clientset/versioned"
+	v2 "github.com/kai-scheduler/kai-scheduler/pkg/apis/scheduling/v2"
+	"github.com/kai-scheduler/kai-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/kai-scheduler/test/e2e/modules/testconfig"
 )
 
 func Create(kaiClientset *kaiClient.Clientset, ctx context.Context, queue *v2.Queue,

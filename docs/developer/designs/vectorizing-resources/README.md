@@ -15,7 +15,7 @@ The goal is to improve scheduler performance at scale (2000+ nodes) by accelerat
 
 Current scheduler performance degrades significantly with cluster scale:
 
-- **Scale test performance**: Full scheduling cycles take 3-4 minutes for 1000 nodes, 20+ minutes for 1000+ nodes for some test cases (observed in the [scale test cluster](https://github.com/NVIDIA/KAI-Scheduler/tree/main/test/e2e/scale))
+- **Scale test performance**: Full scheduling cycles take 3-4 minutes for 1000 nodes, 20+ minutes for 1000+ nodes for some test cases (observed in the [scale test cluster](https://github.com/kai-scheduler/kai-scheduler/tree/main/test/e2e/scale))
 - **Bottleneck**: Node ordering functions dominate during allocation simulations (filtering scenarios)
 - **Root cause**: Resource comparisons iterate over individual nodes and resources in sequence; no bulk operations
 

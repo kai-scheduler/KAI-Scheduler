@@ -12,12 +12,12 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
-	v2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	testcontext "github.com/NVIDIA/KAI-scheduler/test/e2e/modules/context"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/queue"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/utils"
+	v2 "github.com/kai-scheduler/kai-scheduler/pkg/apis/scheduling/v2"
+	"github.com/kai-scheduler/kai-scheduler/pkg/common/constants"
+	testcontext "github.com/kai-scheduler/kai-scheduler/test/e2e/modules/context"
+	"github.com/kai-scheduler/kai-scheduler/test/e2e/modules/resources/rd"
+	"github.com/kai-scheduler/kai-scheduler/test/e2e/modules/resources/rd/queue"
+	"github.com/kai-scheduler/kai-scheduler/test/e2e/modules/utils"
 )
 
 func CreatePod(ctx context.Context, testCtx *testcontext.TestContext, q *v2.Queue, gpus float64) *v1.Pod {

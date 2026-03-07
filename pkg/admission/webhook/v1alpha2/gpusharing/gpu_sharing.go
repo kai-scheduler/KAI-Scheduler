@@ -9,11 +9,11 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/common/gpusharingconfigmap"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/resources"
+	"github.com/kai-scheduler/kai-scheduler/pkg/binder/common/gpusharingconfigmap"
+	"github.com/kai-scheduler/kai-scheduler/pkg/common/resources"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/common"
-	gpurequesthandler "github.com/NVIDIA/KAI-scheduler/pkg/binder/plugins/gpusharing/gpu-request"
+	"github.com/kai-scheduler/kai-scheduler/pkg/binder/common"
+	gpurequesthandler "github.com/kai-scheduler/kai-scheduler/pkg/binder/plugins/gpusharing/gpu-request"
 )
 
 const (

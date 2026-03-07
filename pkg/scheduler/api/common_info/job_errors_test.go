@@ -10,8 +10,8 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
-	enginev2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
+	enginev2alpha2 "github.com/kai-scheduler/kai-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/resource_info"
 )
 
 func TestJobFitErrorsToDetailedMessage(t *testing.T) {

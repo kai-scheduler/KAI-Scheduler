@@ -11,8 +11,8 @@ import (
 	ksf "k8s.io/kube-scheduler/framework"
 	k8sframework "k8s.io/kubernetes/pkg/scheduler/framework"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_internal"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/k8s_internal"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/log"
 )
 
 func predicateRequired(_ *v1.Pod) bool {

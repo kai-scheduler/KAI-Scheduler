@@ -13,15 +13,15 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	v2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	testcontext "github.com/NVIDIA/KAI-scheduler/test/e2e/modules/context"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/capacity"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/pod_group"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/queue"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/utils"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/wait"
+	v2 "github.com/kai-scheduler/kai-scheduler/pkg/apis/scheduling/v2"
+	"github.com/kai-scheduler/kai-scheduler/pkg/apis/scheduling/v2alpha2"
+	testcontext "github.com/kai-scheduler/kai-scheduler/test/e2e/modules/context"
+	"github.com/kai-scheduler/kai-scheduler/test/e2e/modules/resources/capacity"
+	"github.com/kai-scheduler/kai-scheduler/test/e2e/modules/resources/rd"
+	"github.com/kai-scheduler/kai-scheduler/test/e2e/modules/resources/rd/pod_group"
+	"github.com/kai-scheduler/kai-scheduler/test/e2e/modules/resources/rd/queue"
+	"github.com/kai-scheduler/kai-scheduler/test/e2e/modules/utils"
+	"github.com/kai-scheduler/kai-scheduler/test/e2e/modules/wait"
 )
 
 var _ = Describe("N-Level Queue Hierarchy", Ordered, func() {

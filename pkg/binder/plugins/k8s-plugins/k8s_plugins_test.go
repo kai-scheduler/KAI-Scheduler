@@ -14,8 +14,8 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/plugins/k8s-plugins/common"
-	MockK8sPluigns "github.com/NVIDIA/KAI-scheduler/pkg/binder/plugins/k8s-plugins/common/mock"
+	"github.com/kai-scheduler/kai-scheduler/pkg/binder/plugins/k8s-plugins/common"
+	MockK8sPluigns "github.com/kai-scheduler/kai-scheduler/pkg/binder/plugins/k8s-plugins/common/mock"
 )
 
 func TestPlugins(t *testing.T) {

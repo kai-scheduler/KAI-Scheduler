@@ -339,7 +339,7 @@ spec:
 To ensure a controlled and backward-compatible rollout of PodGroup SubGroups with fine-grained scheduling, the following phased development plan is proposed:
 
 ### Phase 1: API Definition and Validation
-- Extend the PodGroup [CRD](https://github.com/NVIDIA/KAI-Scheduler/blob/main/pkg/apis/scheduling/v2alpha2/podgroup_types.go) to support SubGroups with name and minMember.
+- Extend the PodGroup [CRD](https://github.com/kai-scheduler/kai-scheduler/blob/main/pkg/apis/scheduling/v2alpha2/podgroup_types.go) to support SubGroups with name and minMember.
 - (Optional) Implement optional validation to ensure:
     - Unique SubGroup names within a PodGroup.
     - minMember consistency with global level.

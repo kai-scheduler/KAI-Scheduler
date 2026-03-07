@@ -6,13 +6,13 @@ package consolidation_test
 import (
 	"testing"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/integration_tests/integration_tests_utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/actions/integration_tests/integration_tests_utils"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/constants"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/test_utils"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/test_utils/jobs_fake"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/test_utils/nodes_fake"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/test_utils/tasks_fake"
 )
 
 func TestConsolidateGangIntegrationTest(t *testing.T) {

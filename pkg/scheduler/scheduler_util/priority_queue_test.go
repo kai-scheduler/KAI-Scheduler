@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/common_info"
 )
 
 func TestPriorityQueue_PushAndPop(t *testing.T) {

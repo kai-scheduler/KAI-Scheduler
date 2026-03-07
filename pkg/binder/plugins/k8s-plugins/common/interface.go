@@ -11,7 +11,7 @@ import (
 	ksf "k8s.io/kube-scheduler/framework"
 	k8sframework "k8s.io/kubernetes/pkg/scheduler/framework"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	"github.com/kai-scheduler/kai-scheduler/pkg/apis/scheduling/v1alpha2"
 )
 
 func NewState() ksf.CycleState {

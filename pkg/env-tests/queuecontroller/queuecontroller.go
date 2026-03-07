@@ -10,7 +10,7 @@ import (
 
 	"k8s.io/client-go/rest"
 
-	"github.com/NVIDIA/KAI-scheduler/cmd/queuecontroller/app"
+	"github.com/kai-scheduler/kai-scheduler/cmd/queuecontroller/app"
 )
 
 func RunQueueController(cfg *rest.Config, ctx context.Context) error {

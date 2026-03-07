@@ -17,15 +17,15 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
-	kaiv1alpha1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1alpha1"
-	v2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	kubeAiSchedulerV2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	kaiv1 "github.com/kai-scheduler/kai-scheduler/pkg/apis/kai/v1"
+	kaiv1alpha1 "github.com/kai-scheduler/kai-scheduler/pkg/apis/kai/v1alpha1"
+	v2 "github.com/kai-scheduler/kai-scheduler/pkg/apis/scheduling/v2"
+	"github.com/kai-scheduler/kai-scheduler/pkg/apis/scheduling/v2alpha2"
+	kubeAiSchedulerV2alpha2 "github.com/kai-scheduler/kai-scheduler/pkg/apis/scheduling/v2alpha2"
 
 	kwokopv1beta1 "github.com/run-ai/kwok-operator/api/v1beta1"
 
-	kubeAiSchedClient "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned"
+	kubeAiSchedClient "github.com/kai-scheduler/kai-scheduler/pkg/apis/client/clientset/versioned"
 )
 
 var kubeConfig *rest.Config

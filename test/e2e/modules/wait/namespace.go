@@ -13,7 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/watch"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/wait/watcher"
+	"github.com/kai-scheduler/kai-scheduler/test/e2e/modules/wait/watcher"
 )
 
 // ForNamespacesToBeDeleted waits for all specified namespaces to be deleted (not exist in the cluster).

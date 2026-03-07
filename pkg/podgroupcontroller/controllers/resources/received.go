@@ -6,7 +6,7 @@ package resources
 import (
 	"context"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/kai-scheduler/pkg/common/constants"
 
 	v1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"

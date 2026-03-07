@@ -7,10 +7,10 @@ package feature_flags
 import (
 	"context"
 
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/configurations"
-	testcontext "github.com/NVIDIA/KAI-scheduler/test/e2e/modules/context"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/testconfig"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/wait"
+	"github.com/kai-scheduler/kai-scheduler/test/e2e/modules/configurations"
+	testcontext "github.com/kai-scheduler/kai-scheduler/test/e2e/modules/context"
+	"github.com/kai-scheduler/kai-scheduler/test/e2e/modules/testconfig"
+	"github.com/kai-scheduler/kai-scheduler/test/e2e/modules/wait"
 	"k8s.io/utils/ptr"
 )
 

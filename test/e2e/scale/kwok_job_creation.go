@@ -14,13 +14,13 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	v1 "k8s.io/api/core/v1"
 
-	v2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	testcontext "github.com/NVIDIA/KAI-scheduler/test/e2e/modules/context"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/pod_group"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/queue"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/utils"
+	v2 "github.com/kai-scheduler/kai-scheduler/pkg/apis/scheduling/v2"
+	"github.com/kai-scheduler/kai-scheduler/pkg/apis/scheduling/v2alpha2"
+	testcontext "github.com/kai-scheduler/kai-scheduler/test/e2e/modules/context"
+	"github.com/kai-scheduler/kai-scheduler/test/e2e/modules/resources/rd"
+	"github.com/kai-scheduler/kai-scheduler/test/e2e/modules/resources/rd/pod_group"
+	"github.com/kai-scheduler/kai-scheduler/test/e2e/modules/resources/rd/queue"
+	"github.com/kai-scheduler/kai-scheduler/test/e2e/modules/utils"
 )
 
 func createJobObjectForKwok(

@@ -20,11 +20,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgroup"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper"
-	pluginshub "github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/hub"
+	"github.com/kai-scheduler/kai-scheduler/pkg/podgrouper/podgroup"
+	"github.com/kai-scheduler/kai-scheduler/pkg/podgrouper/podgrouper"
+	pluginshub "github.com/kai-scheduler/kai-scheduler/pkg/podgrouper/podgrouper/hub"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/kai-scheduler/pkg/common/constants"
 )
 
 const (

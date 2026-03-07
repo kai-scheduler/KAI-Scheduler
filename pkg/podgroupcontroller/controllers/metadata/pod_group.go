@@ -6,7 +6,7 @@ package metadata
 import (
 	v1 "k8s.io/api/core/v1"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgroupcontroller/controllers/resources"
+	"github.com/kai-scheduler/kai-scheduler/pkg/podgroupcontroller/controllers/resources"
 )
 
 type PodGroupMetadata struct {

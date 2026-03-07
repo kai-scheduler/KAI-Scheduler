@@ -30,16 +30,16 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
-	kubeaischedulerver "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned"
-	schedcache "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/usagedb"
-	api "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
-	usagedbapi "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf_util"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/metrics"
+	kubeaischedulerver "github.com/kai-scheduler/kai-scheduler/pkg/apis/client/clientset/versioned"
+	schedcache "github.com/kai-scheduler/kai-scheduler/pkg/scheduler/cache"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/cache/usagedb"
+	api "github.com/kai-scheduler/kai-scheduler/pkg/scheduler/cache/usagedb/api"
+	usagedbapi "github.com/kai-scheduler/kai-scheduler/pkg/scheduler/cache/usagedb/api"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/conf_util"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/metrics"
 )
 
 type Scheduler struct {

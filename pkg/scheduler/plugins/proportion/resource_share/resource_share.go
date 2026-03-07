@@ -6,7 +6,7 @@ package resource_share
 import (
 	"math"
 
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	commonconstants "github.com/kai-scheduler/kai-scheduler/pkg/common/constants"
 )
 
 type ResourceShare struct {

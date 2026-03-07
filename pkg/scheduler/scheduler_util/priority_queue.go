@@ -22,7 +22,7 @@ package scheduler_util
 import (
 	"container/heap"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/common_info"
 )
 
 const QueueCapacityInfinite = -1

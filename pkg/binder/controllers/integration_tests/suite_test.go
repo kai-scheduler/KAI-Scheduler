@@ -15,7 +15,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/NVIDIA/KAI-scheduler/cmd/binder/app"
+	"github.com/kai-scheduler/kai-scheduler/cmd/binder/app"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -26,14 +26,14 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	schedulingv1alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	schedulingv1alpha2 "github.com/kai-scheduler/kai-scheduler/pkg/apis/scheduling/v1alpha2"
+	"github.com/kai-scheduler/kai-scheduler/pkg/common/constants"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/binding"
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/binding/resourcereservation"
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/controllers"
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/plugins"
-	k8s_plugins "github.com/NVIDIA/KAI-scheduler/pkg/binder/plugins/k8s-plugins"
+	"github.com/kai-scheduler/kai-scheduler/pkg/binder/binding"
+	"github.com/kai-scheduler/kai-scheduler/pkg/binder/binding/resourcereservation"
+	"github.com/kai-scheduler/kai-scheduler/pkg/binder/controllers"
+	"github.com/kai-scheduler/kai-scheduler/pkg/binder/plugins"
+	k8s_plugins "github.com/kai-scheduler/kai-scheduler/pkg/binder/plugins/k8s-plugins"
 	// +kubebuilder:scaffold:imports
 )
 

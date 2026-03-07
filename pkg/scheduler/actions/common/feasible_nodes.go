@@ -4,8 +4,8 @@
 package common
 
 import (
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/podgroup_info"
 )
 
 func FeasibleNodesForJob(allNodes []*node_info.NodeInfo, job *podgroup_info.PodGroupInfo) []*node_info.NodeInfo {

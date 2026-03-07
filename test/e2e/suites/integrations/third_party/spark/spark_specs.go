@@ -14,12 +14,12 @@ import (
 	. "github.com/onsi/gomega"
 	"golang.org/x/exp/maps"
 
-	v2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	testcontext "github.com/NVIDIA/KAI-scheduler/test/e2e/modules/context"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/queue"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/utils"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/wait"
+	v2 "github.com/kai-scheduler/kai-scheduler/pkg/apis/scheduling/v2"
+	testcontext "github.com/kai-scheduler/kai-scheduler/test/e2e/modules/context"
+	"github.com/kai-scheduler/kai-scheduler/test/e2e/modules/resources/rd"
+	"github.com/kai-scheduler/kai-scheduler/test/e2e/modules/resources/rd/queue"
+	"github.com/kai-scheduler/kai-scheduler/test/e2e/modules/utils"
+	"github.com/kai-scheduler/kai-scheduler/test/e2e/modules/wait"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

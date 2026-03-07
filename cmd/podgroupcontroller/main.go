@@ -12,7 +12,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	"github.com/NVIDIA/KAI-scheduler/cmd/podgroupcontroller/app"
+	"github.com/kai-scheduler/kai-scheduler/cmd/podgroupcontroller/app"
 )
 
 func main() {

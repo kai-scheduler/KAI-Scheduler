@@ -4,7 +4,7 @@
 package queue_info
 
 import (
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/common_info"
 	v1 "k8s.io/api/core/v1"
 )
 

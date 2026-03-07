@@ -22,7 +22,7 @@ kube::codegen::gen_client \
   --boilerplate ${SDK_HACK_DIR}/boilerplate.go.kb.txt \
   --with-watch \
   --output-dir ${SDK_HACK_DIR}/../pkg/apis/client \
-  --output-pkg github.com/NVIDIA/KAI-scheduler/pkg/apis/client \
+  --output-pkg github.com/kai-scheduler/kai-scheduler/pkg/apis/client \
   ${SDK_HACK_DIR}/../pkg/apis
 
 rm -f generate-dep.go && go mod tidy

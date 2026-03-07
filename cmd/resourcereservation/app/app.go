@@ -18,9 +18,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/resourcereservation/discovery"
-	"github.com/NVIDIA/KAI-scheduler/pkg/resourcereservation/patcher"
-	"github.com/NVIDIA/KAI-scheduler/pkg/resourcereservation/poddetails"
+	"github.com/kai-scheduler/kai-scheduler/pkg/resourcereservation/discovery"
+	"github.com/kai-scheduler/kai-scheduler/pkg/resourcereservation/patcher"
+	"github.com/kai-scheduler/kai-scheduler/pkg/resourcereservation/poddetails"
 )
 
 var (

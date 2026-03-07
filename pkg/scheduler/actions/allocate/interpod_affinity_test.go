@@ -8,13 +8,13 @@ import (
 
 	. "go.uber.org/mock/gomock"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/allocate"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/integration_tests/integration_tests_utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/actions/allocate"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/actions/integration_tests/integration_tests_utils"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/test_utils"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/test_utils/jobs_fake"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/test_utils/nodes_fake"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/test_utils/tasks_fake"
 )
 
 func TestInterpodAffinityPredicate(t *testing.T) {

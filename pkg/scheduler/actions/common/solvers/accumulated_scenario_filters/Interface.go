@@ -3,7 +3,7 @@
 
 package accumulated_scenario_filters
 
-import "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
+import "github.com/kai-scheduler/kai-scheduler/pkg/scheduler/actions/common/solvers/scenario"
 
 type Interface interface {
 	Name() string

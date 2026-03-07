@@ -13,7 +13,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/admission/plugins"
+	"github.com/kai-scheduler/kai-scheduler/pkg/admission/plugins"
 )
 
 // log is for logging in this package.

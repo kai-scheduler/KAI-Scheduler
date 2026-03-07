@@ -14,10 +14,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
-	kaiv1admission "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/admission"
-	kaiv1common "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/common"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/common/test_utils"
+	kaiv1 "github.com/kai-scheduler/kai-scheduler/pkg/apis/kai/v1"
+	kaiv1admission "github.com/kai-scheduler/kai-scheduler/pkg/apis/kai/v1/admission"
+	kaiv1common "github.com/kai-scheduler/kai-scheduler/pkg/apis/kai/v1/common"
+	"github.com/kai-scheduler/kai-scheduler/pkg/operator/operands/common/test_utils"
 
 	admissionv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"

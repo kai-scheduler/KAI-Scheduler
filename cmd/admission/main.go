@@ -8,11 +8,11 @@ import (
 
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	"github.com/NVIDIA/KAI-scheduler/cmd/admission/app"
+	"github.com/kai-scheduler/kai-scheduler/cmd/admission/app"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/admission/plugins"
-	"github.com/NVIDIA/KAI-scheduler/pkg/admission/webhook/v1alpha2/gpusharing"
-	"github.com/NVIDIA/KAI-scheduler/pkg/admission/webhook/v1alpha2/runtimeenforcement"
+	"github.com/kai-scheduler/kai-scheduler/pkg/admission/plugins"
+	"github.com/kai-scheduler/kai-scheduler/pkg/admission/webhook/v1alpha2/gpusharing"
+	"github.com/kai-scheduler/kai-scheduler/pkg/admission/webhook/v1alpha2/runtimeenforcement"
 )
 
 var (

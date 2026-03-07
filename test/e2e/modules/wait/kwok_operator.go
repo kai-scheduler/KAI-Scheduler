@@ -14,8 +14,8 @@ import (
 
 	kwokopv1beta1 "github.com/run-ai/kwok-operator/api/v1beta1"
 
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/constant"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/wait/watcher"
+	"github.com/kai-scheduler/kai-scheduler/test/e2e/modules/constant"
+	"github.com/kai-scheduler/kai-scheduler/test/e2e/modules/wait/watcher"
 )
 
 func ForKWOKOperatorNodePool(

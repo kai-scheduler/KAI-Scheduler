@@ -4,7 +4,7 @@
 package api
 
 import (
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/queue_info"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/queue_info"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 

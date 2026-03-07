@@ -1,6 +1,6 @@
 # Dynamic Resource Allocation (DRA)
 
-KAI Scheduler supports DRA through its [Binder controller](https://github.com/NVIDIA/KAI-Scheduler/blob/main/docs/developer/binder.md#binder) for handling resourceclaims. The scheduler and binder communicate through a custom resource called `BindRequest`. When the scheduler decides where a pod should run, it creates a BindRequest object that contains:
+KAI Scheduler supports DRA through its [Binder controller](https://github.com/kai-scheduler/kai-scheduler/blob/main/docs/developer/binder.md#binder) for handling resourceclaims. The scheduler and binder communicate through a custom resource called `BindRequest`. When the scheduler decides where a pod should run, it creates a BindRequest object that contains:
 
 - The pod to be scheduled
 - The selected node

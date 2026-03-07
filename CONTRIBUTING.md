@@ -106,7 +106,7 @@ Each pull request should meet the following requirements:
 
 ## Getting Help
 Need support or have a question? We're here to help:
-- Report issues or ask questions by [opening an issue on GitHub](https://github.com/NVIDIA/KAI-Scheduler/issues).
+- Report issues or ask questions by [opening an issue on GitHub](https://github.com/kai-scheduler/kai-scheduler/issues).
 - Join the conversation in the [#batch-wg](https://cloud-native.slack.com/archives/C02Q5DFF3MM) Slack channel to connect with the community and contributors.
 
 ## License

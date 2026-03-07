@@ -6,7 +6,7 @@ package operands
 import (
 	"context"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
+	kaiv1 "github.com/kai-scheduler/kai-scheduler/pkg/apis/kai/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 

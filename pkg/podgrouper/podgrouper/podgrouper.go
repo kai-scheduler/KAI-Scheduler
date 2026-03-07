@@ -17,8 +17,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgroup"
-	pluginshub "github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/hub"
+	"github.com/kai-scheduler/kai-scheduler/pkg/podgrouper/podgroup"
+	pluginshub "github.com/kai-scheduler/kai-scheduler/pkg/podgrouper/podgrouper/hub"
 )
 
 type Interface interface {

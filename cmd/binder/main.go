@@ -13,10 +13,10 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	"github.com/NVIDIA/KAI-scheduler/cmd/binder/app"
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/plugins"
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/plugins/gpusharing"
-	k8s_plugins "github.com/NVIDIA/KAI-scheduler/pkg/binder/plugins/k8s-plugins"
+	"github.com/kai-scheduler/kai-scheduler/cmd/binder/app"
+	"github.com/kai-scheduler/kai-scheduler/pkg/binder/plugins"
+	"github.com/kai-scheduler/kai-scheduler/pkg/binder/plugins/gpusharing"
+	k8s_plugins "github.com/kai-scheduler/kai-scheduler/pkg/binder/plugins/k8s-plugins"
 )
 
 var (

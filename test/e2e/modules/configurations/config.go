@@ -8,9 +8,9 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	testcontext "github.com/NVIDIA/KAI-scheduler/test/e2e/modules/context"
+	kaiv1 "github.com/kai-scheduler/kai-scheduler/pkg/apis/kai/v1"
+	"github.com/kai-scheduler/kai-scheduler/pkg/common/constants"
+	testcontext "github.com/kai-scheduler/kai-scheduler/test/e2e/modules/context"
 )
 
 func PatchKAIConfig(ctx context.Context, testCtx *testcontext.TestContext, update func(*kaiv1.Config)) error {

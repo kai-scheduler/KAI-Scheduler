@@ -64,13 +64,13 @@ resolve_upgrade_from_version() {
             return
         fi
         local previous_minor="${major}.$((minor - 1))"
-        curl -sf "https://api.github.com/repos/NVIDIA/KAI-Scheduler/releases?per_page=100" | \
+        curl -sf "https://api.github.com/repos/kai-scheduler/kai-scheduler/releases?per_page=100" | \
             jq -r '.[].tag_name' | \
             grep -E "^v${previous_minor}\.[0-9]+$" | \
             sort -V | tail -1
     else
         # Main/other branch: upgrade from the latest release
-        curl -sf "https://api.github.com/repos/NVIDIA/KAI-Scheduler/releases?per_page=100" | \
+        curl -sf "https://api.github.com/repos/kai-scheduler/kai-scheduler/releases?per_page=100" | \
             jq -r '.[].tag_name' | \
             grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | \
             sort -V | tail -1

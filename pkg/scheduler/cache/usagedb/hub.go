@@ -9,10 +9,10 @@ import (
 	"os"
 	"slices"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/usagedb/fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/usagedb/prometheus"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/cache/usagedb/api"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/cache/usagedb/fake"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/cache/usagedb/prometheus"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/log"
 )
 
 type GetClientFn func(connectionString string, usageParams *api.UsageParams) (api.Interface, error)

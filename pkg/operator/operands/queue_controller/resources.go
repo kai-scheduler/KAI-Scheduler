@@ -7,10 +7,10 @@ import (
 	"context"
 	"fmt"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	generate "github.com/NVIDIA/KAI-scheduler/pkg/operator/cert-utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/common"
+	kaiv1 "github.com/kai-scheduler/kai-scheduler/pkg/apis/kai/v1"
+	"github.com/kai-scheduler/kai-scheduler/pkg/common/constants"
+	generate "github.com/kai-scheduler/kai-scheduler/pkg/operator/cert-utils"
+	"github.com/kai-scheduler/kai-scheduler/pkg/operator/operands/common"
 
 	admissionv1 "k8s.io/api/admissionregistration/v1"
 	v1 "k8s.io/api/core/v1"

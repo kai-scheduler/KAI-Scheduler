@@ -19,9 +19,9 @@ import (
 	k8splfeature "k8s.io/kubernetes/pkg/scheduler/framework/plugins/feature"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	plugins "github.com/NVIDIA/KAI-scheduler/pkg/binder/plugins/k8s-plugins/common"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/resources"
+	"github.com/kai-scheduler/kai-scheduler/pkg/apis/scheduling/v1alpha2"
+	plugins "github.com/kai-scheduler/kai-scheduler/pkg/binder/plugins/k8s-plugins/common"
+	"github.com/kai-scheduler/kai-scheduler/pkg/common/resources"
 )
 
 type dynamicResourcesPlugin struct {

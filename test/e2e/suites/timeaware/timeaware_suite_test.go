@@ -15,15 +15,15 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/configurations"
-	e2econstant "github.com/NVIDIA/KAI-scheduler/test/e2e/modules/constant"
-	testcontext "github.com/NVIDIA/KAI-scheduler/test/e2e/modules/context"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/crd"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/scheduling_shard"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/utils"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/wait"
+	kaiv1 "github.com/kai-scheduler/kai-scheduler/pkg/apis/kai/v1"
+	"github.com/kai-scheduler/kai-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/kai-scheduler/test/e2e/modules/configurations"
+	e2econstant "github.com/kai-scheduler/kai-scheduler/test/e2e/modules/constant"
+	testcontext "github.com/kai-scheduler/kai-scheduler/test/e2e/modules/context"
+	"github.com/kai-scheduler/kai-scheduler/test/e2e/modules/resources/rd/crd"
+	"github.com/kai-scheduler/kai-scheduler/test/e2e/modules/resources/rd/scheduling_shard"
+	"github.com/kai-scheduler/kai-scheduler/test/e2e/modules/utils"
+	"github.com/kai-scheduler/kai-scheduler/test/e2e/modules/wait"
 )
 
 const (
@@ -112,7 +112,7 @@ var _ = BeforeSuite(func(ctx context.Context) {
 	err = wait.ForRolloutRestartDeployment(ctx, testCtx.ControllerClient, e2econstant.SystemPodsNamespace, e2econstant.SchedulerDeploymentName)
 	Expect(err).NotTo(HaveOccurred(), "Failed waiting for scheduler rollout restart")
 
-	// TODO: Uncomment this when KAI operator triggers reconciliation on Prometheus changes properly (https://github.com/NVIDIA/KAI-Scheduler/issues/877)
+	// TODO: Uncomment this when KAI operator triggers reconciliation on Prometheus changes properly (https://github.com/kai-scheduler/kai-scheduler/issues/877)
 	// By("Waiting for KAI config status to be healthy (operator reconciled)")
 	// wait.ForKAIConfigStatusOK(ctx, testCtx.ControllerClient)
 

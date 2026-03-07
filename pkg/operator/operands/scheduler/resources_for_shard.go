@@ -19,12 +19,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
-	"github.com/NVIDIA/KAI-scheduler/cmd/scheduler/app/options"
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
-	kaiConfigUtils "github.com/NVIDIA/KAI-scheduler/pkg/operator/config"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/common"
-	usagedbapi "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/kai-scheduler/cmd/scheduler/app/options"
+	kaiv1 "github.com/kai-scheduler/kai-scheduler/pkg/apis/kai/v1"
+	kaiConfigUtils "github.com/kai-scheduler/kai-scheduler/pkg/operator/config"
+	"github.com/kai-scheduler/kai-scheduler/pkg/operator/operands/common"
+	usagedbapi "github.com/kai-scheduler/kai-scheduler/pkg/scheduler/cache/usagedb/api"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/conf"
 )
 
 const (

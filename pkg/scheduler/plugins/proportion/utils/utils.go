@@ -4,8 +4,8 @@
 package utils
 
 import (
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	rs "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
+	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/resource_info"
+	rs "github.com/kai-scheduler/kai-scheduler/pkg/scheduler/plugins/proportion/resource_share"
 )
 
 func QuantifyResource(resource *resource_info.Resource) rs.ResourceQuantities {

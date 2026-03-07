@@ -11,8 +11,8 @@ import (
 	"k8s.io/utils/pointer"
 	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/testconfig"
+	"github.com/kai-scheduler/kai-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/kai-scheduler/test/e2e/modules/testconfig"
 )
 
 // CreateUnequalCompletionJobSetObject creates a JobSet with a single replicatedJob

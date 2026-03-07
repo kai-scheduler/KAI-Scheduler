@@ -15,7 +15,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
 
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/wait/watcher"
+	"github.com/kai-scheduler/kai-scheduler/test/e2e/modules/wait/watcher"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/watch"

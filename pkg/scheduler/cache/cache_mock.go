@@ -12,12 +12,12 @@ package cache
 import (
 	reflect "reflect"
 
-	api "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	eviction_info "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/eviction_info"
-	pod_info "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	podgroup_info "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	data_lister "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/cluster_info/data_lister"
-	plugins "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_internal/plugins"
+	api "github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api"
+	eviction_info "github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/eviction_info"
+	pod_info "github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/pod_info"
+	podgroup_info "github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/podgroup_info"
+	data_lister "github.com/kai-scheduler/kai-scheduler/pkg/scheduler/cache/cluster_info/data_lister"
+	plugins "github.com/kai-scheduler/kai-scheduler/pkg/scheduler/k8s_internal/plugins"
 	gomock "go.uber.org/mock/gomock"
 	v1 "k8s.io/api/core/v1"
 	informers "k8s.io/client-go/informers"

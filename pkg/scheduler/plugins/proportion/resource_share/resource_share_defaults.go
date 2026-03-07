@@ -8,8 +8,8 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	consts "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	common_info "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
+	consts "github.com/kai-scheduler/kai-scheduler/pkg/common/constants"
+	common_info "github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/common_info"
 	"knative.dev/pkg/ptr"
 )
 

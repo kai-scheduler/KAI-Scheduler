@@ -16,12 +16,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	v2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/queuecontroller/common"
-	"github.com/NVIDIA/KAI-scheduler/pkg/queuecontroller/controllers/childqueues_updater"
-	"github.com/NVIDIA/KAI-scheduler/pkg/queuecontroller/controllers/resource_updater"
-	"github.com/NVIDIA/KAI-scheduler/pkg/queuecontroller/metrics"
+	v2 "github.com/kai-scheduler/kai-scheduler/pkg/apis/scheduling/v2"
+	"github.com/kai-scheduler/kai-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/kai-scheduler/pkg/queuecontroller/common"
+	"github.com/kai-scheduler/kai-scheduler/pkg/queuecontroller/controllers/childqueues_updater"
+	"github.com/kai-scheduler/kai-scheduler/pkg/queuecontroller/controllers/resource_updater"
+	"github.com/kai-scheduler/kai-scheduler/pkg/queuecontroller/metrics"
 )
 
 // QueueReconciler reconciles a Queue object
