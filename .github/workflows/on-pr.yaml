@@ -35,6 +35,24 @@ jobs:
               - '**'
               - '!**/*.md'
               - '!docs/**'
+
+  fossa-validate:
+    name: FOSSA license check
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    env:
+      # push-only token, intentional; see https://github.com/fossa-contrib/fossa-action?tab=readme-ov-file#push-only-api-token
+      FOSSA_API_KEY: 577e3d21c48454822ae8ea496209a505 # This is a push-only token that is safe to be exposed.
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Run FOSSA analysis and validate status
+        uses: fossa-contrib/fossa-action@v3.0.1
+        with:
+          fossa-api-key: ${{ env.FOSSA_API_KEY }}
+          skip-test: false
+
   validate-and-test:
     needs: [ check-build-and-test-required ]
     if: needs.check-build-and-test-required.outputs.code == 'true'

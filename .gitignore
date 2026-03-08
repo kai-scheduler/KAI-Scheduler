@@ -3,6 +3,7 @@ bin/
 .idea/
 charts/
 cover.out
+.fossa.yaml
 .DS_Store
 coverage/
 *.test
