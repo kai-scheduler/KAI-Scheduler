@@ -4,15 +4,15 @@
 package utils
 
 import (
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/queue_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/scheduler_util"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/api/queue_info"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/scheduler_util"
 )
 
 func GetVictimsQueue(

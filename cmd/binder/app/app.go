@@ -25,14 +25,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	schedulingv1alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	draversionawareclient "github.com/NVIDIA/KAI-scheduler/pkg/common/resources/dra_version_aware_client"
+	schedulingv1alpha2 "github.com/kai-scheduler/KAI-Scheduler/pkg/apis/scheduling/v1alpha2"
+	draversionawareclient "github.com/kai-scheduler/KAI-Scheduler/pkg/common/resources/dra_version_aware_client"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/binding"
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/binding/resourcereservation"
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/controllers"
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/plugins"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/binder/binding"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/binder/binding/resourcereservation"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/binder/controllers"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/binder/plugins"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/common/constants"
 )
 
 var (

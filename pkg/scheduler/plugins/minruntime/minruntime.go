@@ -7,12 +7,12 @@ import (
 	"slices"
 	"time"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/queue_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/api/queue_info"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/log"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 

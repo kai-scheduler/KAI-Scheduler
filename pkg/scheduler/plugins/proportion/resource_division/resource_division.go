@@ -9,13 +9,13 @@ import (
 
 	"golang.org/x/exp/maps"
 
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/metrics"
-	rs "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/scheduler_util"
+	commonconstants "github.com/kai-scheduler/KAI-Scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/metrics"
+	rs "github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/plugins/proportion/resource_share"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/scheduler_util"
 )
 
 type remainingRequestedResource struct {

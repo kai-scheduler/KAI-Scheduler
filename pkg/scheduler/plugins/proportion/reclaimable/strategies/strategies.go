@@ -4,10 +4,10 @@
 package strategies
 
 import (
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	rs "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/proportion/utils"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/log"
+	rs "github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/plugins/proportion/resource_share"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/plugins/proportion/utils"
 )
 
 type MaintainFairShareStrategy struct{}

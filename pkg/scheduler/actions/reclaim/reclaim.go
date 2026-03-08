@@ -22,15 +22,15 @@ package reclaim
 import (
 	"golang.org/x/exp/maps"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/common"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/common/solvers"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/metrics"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/scheduler_util"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/actions/common"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/actions/common/solvers"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/actions/utils"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/metrics"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/scheduler_util"
 )
 
 type reclaimAction struct {

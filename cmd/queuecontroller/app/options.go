@@ -6,8 +6,8 @@ package app
 import (
 	"flag"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	kaiflags "github.com/NVIDIA/KAI-scheduler/pkg/common/flags"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/common/constants"
+	kaiflags "github.com/kai-scheduler/KAI-Scheduler/pkg/common/flags"
 )
 
 const (

@@ -12,8 +12,8 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/storageclaim_info"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/api/storageclaim_info"
 )
 
 func schedulingConstraintsSignature(pod *v1.Pod, storageClaims map[storageclaim_info.Key]*storageclaim_info.StorageClaimInfo) common_info.SchedulingConstraintsSignature {

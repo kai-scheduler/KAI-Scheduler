@@ -29,12 +29,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/controller/status_reconciler"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/deployable"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/known_types"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/scheduler"
+	kaiv1 "github.com/kai-scheduler/KAI-Scheduler/pkg/apis/kai/v1"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/operator/controller/status_reconciler"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/operator/operands"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/operator/operands/deployable"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/operator/operands/known_types"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/operator/operands/scheduler"
 )
 
 func OperandsForShard(shard *kaiv1.SchedulingShard) []operands.Operand {
