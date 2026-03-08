@@ -7,8 +7,8 @@ package admission
 import (
 	"k8s.io/utils/ptr"
 
-	"github.com/kai-scheduler/kai-scheduler/pkg/apis/kai/v1/common"
-	"github.com/kai-scheduler/kai-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
 const (

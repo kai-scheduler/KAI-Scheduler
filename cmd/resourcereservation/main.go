@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/kai-scheduler/kai-scheduler/cmd/resourcereservation/app"
+	"github.com/kai-scheduler/KAI-scheduler/cmd/resourcereservation/app"
 )
 
 func main() {

@@ -7,7 +7,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/kai-scheduler/kai-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )

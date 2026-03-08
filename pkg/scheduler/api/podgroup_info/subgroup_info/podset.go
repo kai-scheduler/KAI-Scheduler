@@ -8,10 +8,10 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/common_info"
-	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/topology_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/topology_info"
 )
 
 type PodSet struct {

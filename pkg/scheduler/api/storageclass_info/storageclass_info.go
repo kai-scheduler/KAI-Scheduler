@@ -4,7 +4,7 @@
 package storageclass_info
 
 import (
-	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 )
 
 type StorageClassInfo struct {

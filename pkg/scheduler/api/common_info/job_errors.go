@@ -10,8 +10,8 @@ import (
 	"strings"
 
 	"github.com/dustin/go-humanize"
-	enginev2alpha2 "github.com/kai-scheduler/kai-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/resource_info"
+	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 )
 
 const (

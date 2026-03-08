@@ -12,17 +12,17 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api"
-	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/node_info"
-	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/cache"
-	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/cache/cluster_info"
-	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/framework"
-	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/plugins/resourcetype"
-	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/plugins/scores"
-	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/test_utils/nodes_fake"
-	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/test_utils/resources_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/cluster_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/resourcetype"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/scores"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/resources_fake"
 )
 
 func TestResourceTypePlugin(t *testing.T) {

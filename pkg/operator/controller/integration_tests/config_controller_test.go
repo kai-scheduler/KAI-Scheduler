@@ -7,9 +7,9 @@ import (
 	"context"
 	"os"
 
-	kaiv1 "github.com/kai-scheduler/kai-scheduler/pkg/apis/kai/v1"
-	kaiv1binder "github.com/kai-scheduler/kai-scheduler/pkg/apis/kai/v1/binder"
-	"github.com/kai-scheduler/kai-scheduler/pkg/common/constants"
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	kaiv1binder "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/binder"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -21,7 +21,7 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	v1common "github.com/kai-scheduler/kai-scheduler/pkg/apis/kai/v1/common"
+	v1common "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
 )
 
 const (

@@ -19,16 +19,16 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	v2 "github.com/kai-scheduler/kai-scheduler/pkg/apis/scheduling/v2"
-	"github.com/kai-scheduler/kai-scheduler/pkg/common/constants"
-	"github.com/kai-scheduler/kai-scheduler/test/e2e/modules/configurations/feature_flags"
-	"github.com/kai-scheduler/kai-scheduler/test/e2e/modules/constant/labels"
-	testContext "github.com/kai-scheduler/kai-scheduler/test/e2e/modules/context"
-	"github.com/kai-scheduler/kai-scheduler/test/e2e/modules/resources/capacity"
-	"github.com/kai-scheduler/kai-scheduler/test/e2e/modules/resources/rd"
-	"github.com/kai-scheduler/kai-scheduler/test/e2e/modules/resources/rd/queue"
-	"github.com/kai-scheduler/kai-scheduler/test/e2e/modules/utils"
-	"github.com/kai-scheduler/kai-scheduler/test/e2e/modules/wait"
+	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/configurations/feature_flags"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/constant/labels"
+	testContext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/capacity"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/utils"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
 )
 
 const (

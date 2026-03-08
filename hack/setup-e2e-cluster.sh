@@ -105,7 +105,7 @@ if [ -z "$PACKAGE_VERSION" ]; then
         GIT_REV=$(git rev-parse --short HEAD | sed 's/^0*//')
         PACKAGE_VERSION=0.0.0-$GIT_REV
     else
-        PACKAGE_VERSION=$(curl -s https://api.github.com/repos/kai-scheduler/kai-scheduler/releases/latest | jq -r .tag_name)
+        PACKAGE_VERSION=$(curl -s https://api.github.com/repos/kai-scheduler/KAI-scheduler/releases/latest | jq -r .tag_name)
         if [ -z "$PACKAGE_VERSION" ] || [ "$PACKAGE_VERSION" = "null" ]; then
             echo "Failed to resolve latest release. Falling back to commit-based version."
             GIT_REV=$(git rev-parse --short HEAD | sed 's/^0*//')

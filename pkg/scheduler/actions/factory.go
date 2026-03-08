@@ -20,12 +20,12 @@ limitations under the License.
 package actions
 
 import (
-	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/actions/allocate"
-	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/actions/consolidation"
-	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/actions/preempt"
-	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/actions/reclaim"
-	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/actions/stalegangeviction"
-	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/allocate"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/consolidation"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/preempt"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/stalegangeviction"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 )
 
 func InitDefaultActions() {

@@ -10,7 +10,7 @@ SPDX-License-Identifier: Apache-2.0
 package scheduler
 
 import (
-	"github.com/kai-scheduler/kai-scheduler/pkg/apis/kai/v1/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
 	v1 "k8s.io/api/core/v1"
 )
 

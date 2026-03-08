@@ -7,8 +7,8 @@ import (
 	"flag"
 	"strings"
 
-	"github.com/kai-scheduler/kai-scheduler/pkg/common/constants"
-	controllers "github.com/kai-scheduler/kai-scheduler/pkg/podgrouper"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	controllers "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper"
 )
 
 type Options struct {

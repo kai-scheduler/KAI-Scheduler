@@ -10,11 +10,11 @@ import (
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	vpav1 "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 
-	"github.com/kai-scheduler/kai-scheduler/cmd/operator/config"
-	kaiv1 "github.com/kai-scheduler/kai-scheduler/pkg/apis/kai/v1"
-	kaiv1alpha1 "github.com/kai-scheduler/kai-scheduler/pkg/apis/kai/v1alpha1"
-	"github.com/kai-scheduler/kai-scheduler/pkg/operator/controller"
-	"github.com/kai-scheduler/kai-scheduler/pkg/operator/operands"
+	"github.com/kai-scheduler/KAI-scheduler/cmd/operator/config"
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/controller"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"sigs.k8s.io/controller-runtime/pkg/manager"

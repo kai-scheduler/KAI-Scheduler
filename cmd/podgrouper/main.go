@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/kai-scheduler/kai-scheduler/cmd/podgrouper/app"
+	"github.com/kai-scheduler/KAI-scheduler/cmd/podgrouper/app"
 )
 
 func main() {

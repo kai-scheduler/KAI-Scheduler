@@ -4,8 +4,8 @@
 package resource_share
 
 import (
-	commonconstants "github.com/kai-scheduler/kai-scheduler/pkg/common/constants"
-	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/resource_info"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 )
 
 const (

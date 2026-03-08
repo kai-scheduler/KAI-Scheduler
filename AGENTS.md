@@ -104,7 +104,7 @@ import (
     "sigs.k8s.io/controller-runtime/pkg/client"
 
     // 3. Internal packages
-    "github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api"
+    "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 )
 ```
 

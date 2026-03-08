@@ -8,8 +8,8 @@ import (
 
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	"github.com/kai-scheduler/kai-scheduler/cmd/operator/app"
-	"github.com/kai-scheduler/kai-scheduler/pkg/operator/controller"
+	"github.com/kai-scheduler/KAI-scheduler/cmd/operator/app"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/controller"
 )
 
 var (

@@ -8,8 +8,8 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 
-	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/common_info"
-	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 )
 
 func TestIsTaskAllocatable_Mig(t *testing.T) {

@@ -13,8 +13,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/kai-scheduler/kai-scheduler/pkg/common/constants"
-	"github.com/kai-scheduler/kai-scheduler/test/e2e/modules/testconfig"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/testconfig"
 )
 
 func CreateNamespaceObject(name, queueName string) *corev1.Namespace {

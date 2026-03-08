@@ -6,7 +6,7 @@ package api
 import (
 	"testing"
 
-	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )

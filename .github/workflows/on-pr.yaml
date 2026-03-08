@@ -83,7 +83,7 @@ jobs:
         with:
           coverage-artifact-name: "code-coverage"
           coverage-file-name: "coverage.out"
-          root-package: "github.com/kai-scheduler/kai-scheduler"
+          root-package: "github.com/kai-scheduler/KAI-scheduler"
           github-baseline-workflow-ref: update-coverage-badge.yaml
           skip-comment: true
       - name: Save coverage report to file

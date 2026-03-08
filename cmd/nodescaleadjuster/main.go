@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/kai-scheduler/kai-scheduler/cmd/nodescaleadjuster/app"
+	"github.com/kai-scheduler/KAI-scheduler/cmd/nodescaleadjuster/app"
 )
 
 func main() {

@@ -9,10 +9,10 @@ import (
 
 	"golang.org/x/exp/maps"
 
-	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/kai-scheduler/kai-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 )
 
 type GpuSharingNodeInfo struct {
