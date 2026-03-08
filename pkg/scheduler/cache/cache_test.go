@@ -42,11 +42,11 @@ import (
 	"k8s.io/kubernetes/pkg/features"
 	"k8s.io/utils/ptr"
 
-	kubeaischedulerfake "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned/fake"
-	fakeschedulingv1alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned/typed/scheduling/v1alpha2/fake"
-	schedulingv1alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
+	kubeaischedulerfake "github.com/kai-scheduler/KAI-Scheduler/pkg/apis/client/clientset/versioned/fake"
+	fakeschedulingv1alpha2 "github.com/kai-scheduler/KAI-Scheduler/pkg/apis/client/clientset/versioned/typed/scheduling/v1alpha2/fake"
+	schedulingv1alpha2 "github.com/kai-scheduler/KAI-Scheduler/pkg/apis/scheduling/v1alpha2"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/conf"
 )
 
 func TestCache(t *testing.T) {

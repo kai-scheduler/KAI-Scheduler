@@ -6,15 +6,15 @@ package consolidation
 import (
 	"golang.org/x/exp/maps"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/common"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/common/solvers"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/metrics"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/actions/common"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/actions/common/solvers"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/actions/utils"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/metrics"
 )
 
 const noConsolidationPreempteesRestrcition = -1

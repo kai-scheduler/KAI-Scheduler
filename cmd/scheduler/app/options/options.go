@@ -25,8 +25,8 @@ import (
 	"github.com/spf13/pflag"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/log"
 )
 
 const (

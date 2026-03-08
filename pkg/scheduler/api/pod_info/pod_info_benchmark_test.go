@@ -26,8 +26,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/api/common_info"
 )
 
 func BenchmarkPodInfoClone_Minimal(b *testing.B) {
