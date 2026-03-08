@@ -57,7 +57,7 @@ jobs:
             echo "::error::Repository variable SCALE_TESTS_S3_URL is not set."
             exit 1
           fi
-          sed -i "s|__S3_BASE_URL__|${S3_URL}|g" docs/scale-tests/index.html
+          sed -i "s|__S3_BASE_URL__|${S3_URL}|g" docs/scale-tests/app.js
 
       - name: Deploy to gh-pages branch
         uses: peaceiris/actions-gh-pages@v4
