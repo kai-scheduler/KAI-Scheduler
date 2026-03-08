@@ -97,6 +97,14 @@ var _ = BeforeSuite(func() {
 	Expect(err).ToNot(HaveOccurred())
 
 	err = k8sManager.GetFieldIndexer().IndexField(
+		context.Background(), &corev1.Pod{}, "spec.nodeName",
+		func(obj client.Object) []string {
+			return []string{obj.(*corev1.Pod).Spec.NodeName}
+		},
+	)
+	Expect(err).NotTo(HaveOccurred())
+
+	err = k8sManager.GetFieldIndexer().IndexField(
 		context.Background(), &schedulingv1alpha2.BindRequest{}, "spec.selectedGPUGroups",
 		func(obj client.Object) []string {
 			br := obj.(*schedulingv1alpha2.BindRequest)
@@ -123,7 +131,12 @@ var _ = BeforeSuite(func() {
 	k8sPlugins, err := k8s_plugins.New(kubeClient, informerFactory, int64(options.VolumeBindingTimeoutSeconds))
 	Expect(err).NotTo(HaveOccurred())
 	binderPlugins.RegisterPlugin(k8sPlugins)
-	clientWithWatch, err := client.NewWithWatch(cfg, client.Options{})
+	clientWithWatch, err := client.NewWithWatch(cfg, client.Options{
+		Scheme: scheme.Scheme,
+		Cache: &client.CacheOptions{
+			Reader: k8sManager.GetCache(),
+		},
+	})
 	Expect(err).NotTo(HaveOccurred())
 
 	rrs = resourcereservation.NewService(false, clientWithWatch, "", 40*time.Second,
@@ -148,6 +161,8 @@ var _ = BeforeSuite(func() {
 		err = k8sManager.Start(testContext)
 		Expect(err).ToNot(HaveOccurred())
 	}()
+
+	Expect(k8sManager.GetCache().WaitForCacheSync(testContext)).To(BeTrue())
 })
 
 var _ = AfterSuite(func() {
