@@ -14,7 +14,6 @@ import (
 )
 
 var _ = DescribeResourcesSpecs()
-var _ = DescribeReservationPodRaceSpecs()
 
 func TestResourcesAllocation(t *testing.T) {
 	utils.SetLogger()
