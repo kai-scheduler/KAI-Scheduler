@@ -123,7 +123,7 @@ func TestPodSchedulingConstraintsSignature(t *testing.T) {
 	}
 	key := podInfo.GetSchedulingConstraintsSignature()
 
-	assert.Equal(t, common_info.SchedulingConstraintsSignature("2725d472f13106084b1f64bada8871d17ad60397107940045fb4d59119d7525c"), key)
+	assert.Equal(t, common_info.SchedulingConstraintsSignature("6b58b34a1ca5d08254aaab7c8705a822bd824322b2547d2c64824cde270c2312"), key)
 }
 
 func TestPodSchedulingConstraintsSignature_NodeSelector(t *testing.T) {
