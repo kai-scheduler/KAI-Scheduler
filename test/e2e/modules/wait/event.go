@@ -13,8 +13,8 @@ import (
 	"k8s.io/apimachinery/pkg/watch"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/pod_group"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/wait/watcher"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/pod_group"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait/watcher"
 )
 
 type checkEventCondition func(event *v1.Event) bool

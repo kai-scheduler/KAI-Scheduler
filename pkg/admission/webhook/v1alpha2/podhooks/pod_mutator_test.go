@@ -19,7 +19,7 @@ package podhooks
 import (
 	"testing"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/admission/plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/admission/plugins"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"

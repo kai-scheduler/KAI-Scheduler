@@ -14,11 +14,11 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/common"
-	kaiv1common "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/common"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/pod_grouper"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
+	kaiv1common "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/pod_grouper"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
 func TestBuildArgsList(t *testing.T) {

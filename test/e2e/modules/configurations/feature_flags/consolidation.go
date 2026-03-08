@@ -7,8 +7,8 @@ import (
 	"context"
 	"strconv"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
-	testContext "github.com/NVIDIA/KAI-scheduler/test/e2e/modules/context"
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	testContext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
 )
 
 const defaultShardName = "default"

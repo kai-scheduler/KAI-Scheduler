@@ -7,7 +7,7 @@ import (
 	"context"
 	"flag"
 
-	admissionhooks "github.com/NVIDIA/KAI-scheduler/pkg/admission/webhook/v1alpha2/podhooks"
+	admissionhooks "github.com/kai-scheduler/KAI-scheduler/pkg/admission/webhook/v1alpha2/podhooks"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -28,10 +28,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	schedulingv1alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 
-	admissionplugins "github.com/NVIDIA/KAI-scheduler/pkg/admission/plugins"
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/controllers"
+	admissionplugins "github.com/kai-scheduler/KAI-scheduler/pkg/admission/plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/controllers"
 )
 
 var (

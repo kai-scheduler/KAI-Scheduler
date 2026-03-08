@@ -12,9 +12,9 @@ import (
 	"k8s.io/client-go/kubernetes"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	e2econstant "github.com/NVIDIA/KAI-scheduler/test/e2e/modules/constant"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	e2econstant "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/constant"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/utils"
 )
 
 func CreatePreemptibleAndNonPriorityClass(ctx context.Context, client *kubernetes.Clientset) (string, string, error) {

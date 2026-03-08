@@ -4,7 +4,7 @@
 package app
 
 import (
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/spf13/pflag"
 
 	utilfeature "k8s.io/apiserver/pkg/util/feature"

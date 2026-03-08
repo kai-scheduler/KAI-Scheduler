@@ -15,9 +15,9 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/admission"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/admission"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 

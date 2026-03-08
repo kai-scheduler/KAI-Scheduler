@@ -14,7 +14,7 @@ import (
 	. "github.com/onsi/gomega"
 	"k8s.io/utils/ptr"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/env-tests/timeaware"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/env-tests/timeaware"
 )
 
 var _ = Describe("Time Aware Fairness", Ordered, func() {
