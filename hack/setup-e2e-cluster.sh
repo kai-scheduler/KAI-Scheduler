@@ -115,7 +115,7 @@ if [ "$LOCAL_IMAGES_BUILD" = "true" ]; then
     rm -rf ./charts/kai-scheduler-$PACKAGE_VERSION.tgz
     cd ${REPO_ROOT}/hack
 else
-    helm upgrade -i kai-scheduler oci://ghcr.io/kai-scheduler/KAI-scheduler/kai-scheduler -n kai-scheduler --create-namespace \
+    helm upgrade -i kai-scheduler oci://ghcr.io/kai-scheduler/kai-scheduler/kai-scheduler -n kai-scheduler --create-namespace \
         --set "global.gpuSharing=true" --wait --version "$PACKAGE_VERSION"
 fi
 

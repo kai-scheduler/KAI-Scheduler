@@ -75,7 +75,7 @@ Locate the latest release version in [releases](https://github.com/kai-scheduler
 Run the following command after replacing `<VERSION>` with the desired release version:
 
 ```sh
-helm upgrade -i kai-scheduler oci://ghcr.io/kai-scheduler/KAI-scheduler/kai-scheduler -n kai-scheduler --create-namespace --version <VERSION>
+helm upgrade -i kai-scheduler oci://ghcr.io/kai-scheduler/kai-scheduler/kai-scheduler -n kai-scheduler --create-namespace --version <VERSION>
 ```
 
 #### Build from Source

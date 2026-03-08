@@ -26,7 +26,7 @@ import (
 
 const (
 	githubRoot = "../../../../"
-	repository = "ghcr.io/kai-scheduler/KAI-scheduler"
+	repository = "ghcr.io/kai-scheduler/kai-scheduler"
 	tag        = "latest"
 )
 
