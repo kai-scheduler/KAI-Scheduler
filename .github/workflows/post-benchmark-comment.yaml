@@ -38,7 +38,7 @@ jobs:
         run: echo "number=$(cat pr_number.txt)" >> $GITHUB_OUTPUT
 
       - name: Find existing benchmark comment
-        uses: peter-evans/find-comment@v3
+        uses: peter-evans/find-comment@v4
         id: find-comment
         with:
           issue-number: ${{ steps.pr.outputs.number }}
