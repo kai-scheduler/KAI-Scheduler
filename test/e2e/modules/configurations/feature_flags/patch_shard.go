@@ -6,7 +6,7 @@ package feature_flags
 import (
 	"context"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -14,10 +14,10 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/configurations"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/constant"
-	testContext "github.com/NVIDIA/KAI-scheduler/test/e2e/modules/context"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/wait"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/configurations"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/constant"
+	testContext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
 )
 
 type patchCallback func(shard *kaiv1.SchedulingShard)

@@ -20,18 +20,18 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/kubernetes/pkg/features"
 
-	kubeAiSchedulerInfo "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/informers/externalversions"
-	scheudlinglistv1alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/listers/scheduling/v1alpha2"
-	schedlistv2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/listers/scheduling/v2"
-	schedlist2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/listers/scheduling/v2alpha2"
-	schedulingv1alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	enginev2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	enginev2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/queue_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/usagedb"
+	kubeAiSchedulerInfo "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/informers/externalversions"
+	scheudlinglistv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/listers/scheduling/v1alpha2"
+	schedlistv2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/listers/scheduling/v2"
+	schedlist2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/listers/scheduling/v2alpha2"
+	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	enginev2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb"
 
-	kaiv1alpha1Listers "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/listers/kai/v1alpha1"
-	kaiv1alpha1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1alpha1"
+	kaiv1alpha1Listers "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/listers/kai/v1alpha1"
+	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
 )
 
 type k8sLister struct {

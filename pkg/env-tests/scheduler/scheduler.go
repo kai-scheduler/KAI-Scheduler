@@ -7,14 +7,14 @@ import (
 	"github.com/spf13/pflag"
 	"k8s.io/client-go/rest"
 
-	"github.com/NVIDIA/KAI-scheduler/cmd/scheduler/app"
-	"github.com/NVIDIA/KAI-scheduler/cmd/scheduler/app/options"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf_util"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins"
+	"github.com/kai-scheduler/KAI-scheduler/cmd/scheduler/app"
+	"github.com/kai-scheduler/KAI-scheduler/cmd/scheduler/app/options"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf_util"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins"
 )
 
 var loggerInitiated = false

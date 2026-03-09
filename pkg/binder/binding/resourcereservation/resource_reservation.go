@@ -23,9 +23,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/binding/resourcereservation/group_mutex"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/resources"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding/resourcereservation/group_mutex"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 )
 
 type Interface interface {

@@ -14,9 +14,9 @@ import (
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/nodescaleadjuster/consts"
-	testutils "github.com/NVIDIA/KAI-scheduler/pkg/nodescaleadjuster/test-utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/nodescaleadjuster/consts"
+	testutils "github.com/kai-scheduler/KAI-scheduler/pkg/nodescaleadjuster/test-utils"
 )
 
 func TestCreateScalingPod(t *testing.T) {

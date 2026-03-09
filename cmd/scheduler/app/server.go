@@ -44,16 +44,16 @@ import (
 	"k8s.io/client-go/tools/record"
 	clientconfig "sigs.k8s.io/controller-runtime/pkg/client/config"
 
-	"github.com/NVIDIA/KAI-scheduler/cmd/scheduler/app/options"
-	"github.com/NVIDIA/KAI-scheduler/cmd/scheduler/profiling"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf_util"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/metrics"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/version"
+	"github.com/kai-scheduler/KAI-scheduler/cmd/scheduler/app/options"
+	"github.com/kai-scheduler/KAI-scheduler/cmd/scheduler/profiling"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf_util"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/version"
 )
 
 const (

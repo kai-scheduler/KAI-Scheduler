@@ -18,13 +18,13 @@ import (
 	k8splfeature "k8s.io/kubernetes/pkg/scheduler/framework/plugins/feature"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/k8s_utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/k8s_utils"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/plugins/k8s-plugins/common"
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/plugins/k8s-plugins/dynamicresources"
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/plugins/k8s-plugins/volumebinding"
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/plugins/state"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/k8s-plugins/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/k8s-plugins/dynamicresources"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/k8s-plugins/volumebinding"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/state"
 )
 
 type K8sPlugins struct {
