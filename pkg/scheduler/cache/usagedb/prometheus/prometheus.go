@@ -8,12 +8,12 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/aptible/supercronic/cronexpr"
 	commonconstants "github.com/kai-scheduler/KAI-Scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/api/queue_info"
 	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/cache/usagedb/api"
 	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/log"
-	"github.com/aptible/supercronic/cronexpr"
 	promapi "github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
