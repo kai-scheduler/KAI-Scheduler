@@ -9,9 +9,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/dustin/go-humanize"
 	enginev2alpha2 "github.com/kai-scheduler/KAI-Scheduler/pkg/apis/scheduling/v2alpha2"
 	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/api/resource_info"
-	"github.com/dustin/go-humanize"
 )
 
 const (
