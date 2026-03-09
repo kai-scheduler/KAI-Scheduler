@@ -376,7 +376,7 @@ func InitTestingInfrastructure() {
 	if *SchedulerVerbosity != "" {
 		verbosity, err := strconv.Atoi(*SchedulerVerbosity)
 		if err == nil {
-			if err := log.InitLoggers(verbosity); err != nil {
+			if err := log.InitLoggers(verbosity, false); err != nil {
 				fmt.Printf("Failed to initialize loggers: %v", err)
 			}
 		}

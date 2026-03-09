@@ -21,7 +21,7 @@ var loggerInitiated = false
 
 func RunScheduler(cfg *rest.Config, schedulerConf *conf.SchedulerConfiguration, stopCh chan struct{}) error {
 	if !loggerInitiated {
-		err := log.InitLoggers(0)
+		err := log.InitLoggers(0, false)
 		if err != nil {
 			return err
 		}

@@ -104,6 +104,7 @@ type sessionIDEncoder struct {
 	zapcore.Encoder
 	sessionID  string
 	actionName string
+	jsonLog    bool
 }
 
 func (enc *sessionIDEncoder) EncodeEntry(entry zapcore.Entry, fields []zapcore.Field) (*buffer.Buffer, error) {
@@ -131,15 +132,25 @@ func (enc *sessionIDEncoder) EncodeEntry(entry zapcore.Entry, fields []zapcore.F
 func (enc *sessionIDEncoder) Clone() zapcore.Encoder {
 	return &sessionIDEncoder{
 		Encoder: enc.Encoder.Clone(),
+		jsonLog: enc.jsonLog,
 	}
 }
 
 func (enc *sessionIDEncoder) AddString(key, value string) {
-	if key == sessionIDField {
-		enc.sessionID = wrapTextWithColor(value)
-	} else if key == actionField {
-		enc.actionName = wrapTextWithColor(value)
-	} else {
+	switch key {
+	case sessionIDField:
+		if enc.jsonLog {
+			enc.sessionID = value
+		} else {
+			enc.sessionID = wrapTextWithColor(value)
+		}
+	case actionField:
+		if enc.jsonLog {
+			enc.actionName = value
+		} else {
+			enc.actionName = wrapTextWithColor(value)
+		}
+	default:
 		enc.Encoder.AddString(key, value)
 	}
 }
@@ -158,10 +169,11 @@ func hash(s string) uint32 {
 	return h.Sum32() % 8
 }
 
-func InitLoggers(logLevel int) error {
+func InitLoggers(logLevel int, jsonLog bool) error {
 	if err := zap.RegisterEncoder("sessionID", func(cfg zapcore.EncoderConfig) (zapcore.Encoder, error) {
 		return &sessionIDEncoder{
 			Encoder: zapcore.NewConsoleEncoder(cfg),
+			jsonLog: jsonLog,
 		}, nil
 	}); err != nil {
 		return err
@@ -171,7 +183,11 @@ func InitLoggers(logLevel int) error {
 	baseLoggerConfig.Encoding = "sessionID"
 	baseLoggerConfig.DisableStacktrace = true
 	baseLoggerConfig.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
-	baseLoggerConfig.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
+	if jsonLog {
+		baseLoggerConfig.EncoderConfig.EncodeLevel = zapcore.CapitalLevelEncoder
+	} else {
+		baseLoggerConfig.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
+	}
 
 	baseLogger, err := baseLoggerConfig.Build()
 	if err != nil {

@@ -70,3 +70,17 @@ spec:
 ```
 
 - [Scheduling Shards](./scheduling-shards.md) - Advanced cluster partitioning
+
+## Logging
+
+By default all KAI services use development-mode logging with colored, human-readable console
+output. This is optimized for reading logs directly from pods via `kubectl logs`.
+
+### Production Mode (JSON Logging)
+
+For log aggregation platforms where single-line structured logs and
+parseable log levels are needed, enable JSON logging via the Helm value:
+
+```bash
+helm install kai-scheduler kai-scheduler --set global.jsonLog=true
+```

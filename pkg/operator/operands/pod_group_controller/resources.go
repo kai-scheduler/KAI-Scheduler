@@ -47,7 +47,8 @@ func (p *PodGroupController) deploymentForKAIConfig(
 	}
 
 	deployment.Spec.Replicas = config.Replicas
-	deployment.Spec.Template.Spec.Containers[0].Args = buildArgsList(config, *kaiConfig.Spec.Global.SchedulerName)
+	deployment.Spec.Template.Spec.Containers[0].Args = buildArgsList(config, *kaiConfig.Spec.Global.SchedulerName,
+		kaiConfig.Spec.Global.JSONLog != nil && *kaiConfig.Spec.Global.JSONLog)
 	deployment.Spec.Template.Spec.Containers[0].VolumeMounts = []v1.VolumeMount{
 		{
 			Name:      "cert",
@@ -219,7 +220,7 @@ func (p *PodGroupController) webhookClientConfig(namespace, path string, cabundl
 	}
 }
 
-func buildArgsList(config *pod_group_controller.PodGroupController, schedulerName string) []string {
+func buildArgsList(config *pod_group_controller.PodGroupController, schedulerName string, jsonLog bool) []string {
 	args := []string{
 		"--scheduler-name", schedulerName,
 	}
@@ -232,6 +233,10 @@ func buildArgsList(config *pod_group_controller.PodGroupController, schedulerNam
 
 	if config.Replicas != nil && *config.Replicas > 1 {
 		args = append(args, "--leader-elect")
+	}
+
+	if jsonLog {
+		args = append(args, "--zap-devel=false")
 	}
 
 	return args

@@ -276,5 +276,9 @@ func buildArgsList(kaiConfig *kaiv1.Config) []string {
 
 	common.AddK8sClientConfigToArgs(config.Service.K8sClientConfig, args)
 
+	if kaiConfig.Spec.Global.JSONLog != nil && *kaiConfig.Spec.Global.JSONLog {
+		args = append(args, "--zap-devel=false")
+	}
+
 	return args
 }

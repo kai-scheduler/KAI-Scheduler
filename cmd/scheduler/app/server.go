@@ -138,7 +138,7 @@ func setupProfiling(so *options.ServerOption) {
 }
 
 func setupLogging(so *options.ServerOption) error {
-	if err := log.InitLoggers(so.Verbosity); err != nil {
+	if err := log.InitLoggers(so.Verbosity, so.JSONLog); err != nil {
 		return err
 	}
 

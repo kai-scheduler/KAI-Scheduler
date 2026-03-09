@@ -33,7 +33,8 @@ func deploymentForKAIConfig(
 		return nil, err
 	}
 
-	deployment.Spec.Template.Spec.Containers[0].Args = argsForKAIConfig(kaiConfig.Spec.NodeScaleAdjuster, *kaiConfig.Spec.Global.SchedulerName)
+	deployment.Spec.Template.Spec.Containers[0].Args = argsForKAIConfig(kaiConfig.Spec.NodeScaleAdjuster, *kaiConfig.Spec.Global.SchedulerName,
+		kaiConfig.Spec.Global.JSONLog != nil && *kaiConfig.Spec.Global.JSONLog)
 
 	return deployment, nil
 }
@@ -76,7 +77,7 @@ func scalingPodServiceAccountForKAIConfig(
 	return sa, err
 }
 
-func argsForKAIConfig(config *node_scale_adjuster.NodeScaleAdjuster, schedulerName string) []string {
+func argsForKAIConfig(config *node_scale_adjuster.NodeScaleAdjuster, schedulerName string, jsonLog bool) []string {
 	args := []string{
 		"--scheduler-name", schedulerName,
 	}
@@ -96,6 +97,10 @@ func argsForKAIConfig(config *node_scale_adjuster.NodeScaleAdjuster, schedulerNa
 	if config.Args.GPUMemoryToFractionRatio != nil {
 		args = append(args, "--gpu-memory-to-fraction-ratio",
 			fmt.Sprintf("%f", *config.Args.GPUMemoryToFractionRatio))
+	}
+
+	if jsonLog {
+		args = append(args, "--zap-devel=false")
 	}
 
 	return args

@@ -77,6 +77,8 @@ type ServerOption struct {
 	QueueLabelKey                     string
 	Namspace                          string
 
+	JSONLog bool
+
 	QPS   int
 	Burst int
 }
@@ -111,6 +113,7 @@ func (s *ServerOption) AddFlags(fs *pflag.FlagSet) {
 	fs.IntVar(&s.PyroscopeMutexProfilerRate, "pyroscope-mutex-profiler-rate", DefaultPyroscopeMutexProfilerRate, "Mutex Profiler rate")
 	fs.IntVar(&s.PyroscopeBlockProfilerRate, "pyroscope-block-profiler-rate", DefaultPyroscopeBlockProfilerRate, "Block Profiler rate")
 	fs.IntVar(&s.Verbosity, "v", defaultVerbosityLevel, "Verbosity level")
+	fs.BoolVar(&s.JSONLog, "log-json", false, "Output logs without ANSI color codes for log aggregation platforms")
 	fs.IntVar(&s.MaxNumberConsolidationPreemptees, "max-consolidation-preemptees", defaultMaxConsolidationPreemptees, "Maximum number of consolidation preemptees. Defaults to 16")
 	fs.IntVar(&s.QPS, "qps", 50, "Queries per second to the K8s API server")
 	fs.IntVar(&s.Burst, "burst", 300, "Burst to the K8s API server")

@@ -16,6 +16,7 @@ global:
   tolerations: []
   namespaceLabelSelector: {}
   podLabelSelector: {}
+  jsonLog: false
   resourceReservation:
     namespace: kai-resource-reservation
     serviceAccount: kai-resource-reservation

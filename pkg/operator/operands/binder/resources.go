@@ -259,6 +259,10 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1binder.Binder, fakeGPU 
 		args = append(args, []string{"--burst", fmt.Sprintf("%d", *config.Service.K8sClientConfig.Burst)}...)
 	}
 
+	if kaiConfig.Spec.Global.JSONLog != nil && *kaiConfig.Spec.Global.JSONLog {
+		args = append(args, "--zap-devel=false")
+	}
+
 	if config.ResourceReservation.RuntimeClassName != nil && len(*config.ResourceReservation.RuntimeClassName) > 0 {
 		args = append(args, []string{fmt.Sprintf("--runtime-class-name=%s", *config.ResourceReservation.RuntimeClassName)}...)
 	}

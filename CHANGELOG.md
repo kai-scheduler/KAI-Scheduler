@@ -78,6 +78,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Removed the constraint that prohibited direct nesting of subgroups alongside podsets within the same subgroupset.
 - Fixed plugin server (snapshot and job-order endpoints) listening on all interfaces by binding to localhost only.
 - Removed redundant `connection` field from `GlobalConfig` in favor of `Prometheus.ExternalPrometheusUrl` for external Prometheus URL configuration
+- Added `global.jsonLog` Helm value to enable JSON-formatted logging for use with log aggregation platforms
 
 ## [v0.12.0] - 2025-12-24
 

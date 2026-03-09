@@ -283,6 +283,10 @@ func buildArgsList(
 		args = append(args, "--leader-elect=true")
 	}
 
+	if kaiConfig.Spec.Global.JSONLog != nil && *kaiConfig.Spec.Global.JSONLog {
+		args = append(args, "--log-json")
+	}
+
 	return args, nil
 }
 

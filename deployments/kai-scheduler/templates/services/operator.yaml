@@ -34,6 +34,9 @@ spec:
           - --qps={{ .Values.operator.qps | default 50 }}
           - --burst={{ .Values.operator.burst | default 300 }}
           - --namespace={{ .Release.Namespace }}
+          {{- if .Values.global.jsonLog }}
+          - --zap-devel=false
+          {{- end }}
         env:
         - name: WATCH_NAMESPACE
           value: {{ .Release.Namespace }}

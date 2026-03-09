@@ -43,7 +43,7 @@ func main() {
 		return
 	}
 
-	if err := log.InitLoggers(int(*verbosity)); err != nil {
+	if err := log.InitLoggers(int(*verbosity), false); err != nil {
 		fmt.Printf("Failed to initialize logger: %v", err)
 		return
 	}

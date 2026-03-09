@@ -71,6 +71,10 @@ type GlobalConfig struct {
 	// PodLabelSelector filters pods for webhooks and pod grouper
 	// +kubebuilder:validation:Optional
 	PodLabelSelector map[string]string `json:"podLabelSelector,omitempty"`
+
+	// JSONLog switches all services to JSON-formatted logging
+	// +kubebuilder:validation:Optional
+	JSONLog *bool `json:"jsonLog,omitempty"`
 }
 
 func (g *GlobalConfig) SetDefaultWhereNeeded() {
@@ -103,6 +107,7 @@ func (g *GlobalConfig) SetDefaultWhereNeeded() {
 	}
 
 	g.RequireDefaultPodAntiAffinityTerm = common.SetDefault(g.RequireDefaultPodAntiAffinityTerm, ptr.To(false))
+	g.JSONLog = common.SetDefault(g.JSONLog, ptr.To(false))
 }
 
 func (g *GlobalConfig) GetSecurityContext() *v1.SecurityContext {
