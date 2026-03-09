@@ -13,7 +13,7 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	kaicommon "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/common"
+	kaicommon "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
 )
 
 var _ = Describe("BuildVPA", func() {

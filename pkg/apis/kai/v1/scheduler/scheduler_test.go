@@ -15,7 +15,7 @@ import (
 	vpav1 "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 	"k8s.io/utils/ptr"
 
-	kaicommon "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/common"
+	kaicommon "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
 )
 
 func TestScheduler(t *testing.T) {
