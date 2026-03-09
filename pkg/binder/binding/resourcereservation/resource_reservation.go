@@ -46,17 +46,19 @@ const (
 )
 
 type service struct {
-	fakeGPuNodes        bool
-	kubeClient          client.WithWatch
-	reservationPodImage string
-	allocationTimeout   time.Duration
-	gpuGroupMutex       *group_mutex.GroupMutex
-	namespace           string
-	serviceAccountName  string
-	appLabelValue       string
-	scalingPodNamespace string
-	runtimeClassName    string
-	podResources        *v1.ResourceRequirements
+	fakeGPuNodes             bool
+	kubeClient               client.WithWatch
+	reservationPodImage      string
+	allocationTimeout        time.Duration
+	gpuGroupMutex            *group_mutex.GroupMutex
+	namespace                string
+	serviceAccountName       string
+	appLabelValue            string
+	scalingPodNamespace      string
+	runtimeClassName         string
+	podResources             *v1.ResourceRequirements
+	podSecurityContext       *v1.PodSecurityContext
+	containerSecurityContext *v1.SecurityContext
 }
 
 func NewService(
@@ -70,19 +72,23 @@ func NewService(
 	scalingPodNamespace string,
 	runtimeClassName string,
 	podResources *v1.ResourceRequirements,
+	podSecurityContext *v1.PodSecurityContext,
+	containerSecurityContext *v1.SecurityContext,
 ) *service {
 	return &service{
-		fakeGPuNodes:        fakeGPuNodes,
-		kubeClient:          kubeClient,
-		reservationPodImage: reservationPodImage,
-		allocationTimeout:   allocationTimeout,
-		gpuGroupMutex:       group_mutex.NewGroupMutex(),
-		namespace:           namespace,
-		serviceAccountName:  serviceAccountName,
-		appLabelValue:       appLabelValue,
-		scalingPodNamespace: scalingPodNamespace,
-		runtimeClassName:    runtimeClassName,
-		podResources:        podResources,
+		fakeGPuNodes:             fakeGPuNodes,
+		kubeClient:               kubeClient,
+		reservationPodImage:      reservationPodImage,
+		allocationTimeout:        allocationTimeout,
+		gpuGroupMutex:            group_mutex.NewGroupMutex(),
+		namespace:                namespace,
+		serviceAccountName:       serviceAccountName,
+		appLabelValue:            appLabelValue,
+		scalingPodNamespace:      scalingPodNamespace,
+		runtimeClassName:         runtimeClassName,
+		podResources:             podResources,
+		podSecurityContext:       podSecurityContext,
+		containerSecurityContext: containerSecurityContext,
 	}
 }
 
@@ -500,6 +506,7 @@ func (rsc *service) createResourceReservationPod(
 				}
 				return &rsc.runtimeClassName
 			}(),
+			SecurityContext:    rsc.podSecurityContext,
 			ServiceAccountName: rsc.serviceAccountName,
 			Containers: []v1.Container{
 				{
@@ -507,6 +514,7 @@ func (rsc *service) createResourceReservationPod(
 					Image:           rsc.reservationPodImage,
 					ImagePullPolicy: v1.PullIfNotPresent,
 					Resources:       resources,
+					SecurityContext: rsc.containerSecurityContext,
 					Env: []v1.EnvVar{
 						{
 							Name: "POD_NAME",

@@ -275,5 +275,19 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1binder.Binder, fakeGPU 
 		}
 	}
 
+	if config.ResourceReservation.PodSecurityContext != nil {
+		secCtxJSON, err := json.Marshal(config.ResourceReservation.PodSecurityContext)
+		if err == nil {
+			args = append(args, []string{"--resource-reservation-pod-security-context", string(secCtxJSON)}...)
+		}
+	}
+
+	if config.ResourceReservation.ContainerSecurityContext != nil {
+		secCtxJSON, err := json.Marshal(config.ResourceReservation.ContainerSecurityContext)
+		if err == nil {
+			args = append(args, []string{"--resource-reservation-container-security-context", string(secCtxJSON)}...)
+		}
+	}
+
 	return args
 }

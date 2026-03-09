@@ -115,11 +115,29 @@ func New(options *Options, config *rest.Config) (*App, error) {
 		}
 	}
 
+	var podSecurityContext *corev1.PodSecurityContext
+	if options.ResourceReservationPodSecurityContextJSON != "" {
+		podSecurityContext = &corev1.PodSecurityContext{}
+		if err := json.Unmarshal([]byte(options.ResourceReservationPodSecurityContextJSON), podSecurityContext); err != nil {
+			setupLog.Error(err, "failed to unmarshal resource reservation pod security context")
+			return nil, fmt.Errorf("failed to unmarshal resource reservation pod security context: %w", err)
+		}
+	}
+
+	var containerSecurityContext *corev1.SecurityContext
+	if options.ResourceReservationContainerSecurityJSON != "" {
+		containerSecurityContext = &corev1.SecurityContext{}
+		if err := json.Unmarshal([]byte(options.ResourceReservationContainerSecurityJSON), containerSecurityContext); err != nil {
+			setupLog.Error(err, "failed to unmarshal resource reservation container security context")
+			return nil, fmt.Errorf("failed to unmarshal resource reservation container security context: %w", err)
+		}
+	}
+
 	rrs := resourcereservation.NewService(options.FakeGPUNodes, clientWithWatch, options.ResourceReservationPodImage,
 		time.Duration(options.ResourceReservationAllocationTimeout)*time.Second,
 		options.ResourceReservationNamespace, options.ResourceReservationServiceAccount,
 		options.ResourceReservationAppLabel, options.ScalingPodNamespace, options.RuntimeClassName,
-		podResources)
+		podResources, podSecurityContext, containerSecurityContext)
 
 	reconcilerParams := &controllers.ReconcilerParams{
 		MaxConcurrentReconciles:     options.MaxConcurrentReconciles,

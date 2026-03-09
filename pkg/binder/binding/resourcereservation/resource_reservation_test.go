@@ -47,7 +47,7 @@ func initializeTestService(
 ) *service {
 	service := NewService(false, client, "", 40*time.Millisecond,
 		resourceReservationNameSpace, resourceReservationServiceAccount, resourceReservationAppLabelValue, scalingPodsNamespace, constants.DefaultRuntimeClassName,
-		nil) // nil podResources to use defaults
+		nil, nil, nil)
 
 	return service
 }
@@ -1091,6 +1091,84 @@ var _ = Describe("ResourceReservationService", func() {
 				}
 			})
 		}
+	})
+
+	Context("createResourceReservationPod with security context", func() {
+		It("should create pod with configured security contexts", func() {
+			runAsUser := int64(1001)
+			runAsGroup := int64(1001)
+			runAsNonRoot := true
+			allowPrivilegeEscalation := false
+			readOnlyRootFilesystem := true
+
+			rsc := &service{
+				namespace:           "kai-resource-reservation",
+				appLabelValue:       "kai-reservation",
+				serviceAccountName:  "kai-sa",
+				reservationPodImage: "test-image:latest",
+				kubeClient:          fake.NewClientBuilder().Build(),
+				runtimeClassName:    "nvidia",
+				podSecurityContext: &v1.PodSecurityContext{
+					RunAsUser:    &runAsUser,
+					RunAsGroup:   &runAsGroup,
+					RunAsNonRoot: &runAsNonRoot,
+				},
+				containerSecurityContext: &v1.SecurityContext{
+					AllowPrivilegeEscalation: &allowPrivilegeEscalation,
+					ReadOnlyRootFilesystem:   &readOnlyRootFilesystem,
+					Capabilities: &v1.Capabilities{
+						Drop: []v1.Capability{"ALL"},
+					},
+				},
+			}
+
+			resources := v1.ResourceRequirements{
+				Limits: v1.ResourceList{
+					"nvidia.com/gpu": resource.MustParse("1"),
+				},
+			}
+
+			pod, err := rsc.createResourceReservationPod("test-node", "test-group", "test-pod", resources)
+			Expect(err).To(BeNil())
+			Expect(pod).NotTo(BeNil())
+
+			Expect(pod.Spec.SecurityContext).NotTo(BeNil())
+			Expect(*pod.Spec.SecurityContext.RunAsUser).To(Equal(int64(1001)))
+			Expect(*pod.Spec.SecurityContext.RunAsGroup).To(Equal(int64(1001)))
+			Expect(*pod.Spec.SecurityContext.RunAsNonRoot).To(BeTrue())
+
+			container := pod.Spec.Containers[0]
+			Expect(container.SecurityContext).NotTo(BeNil())
+			Expect(*container.SecurityContext.AllowPrivilegeEscalation).To(BeFalse())
+			Expect(*container.SecurityContext.ReadOnlyRootFilesystem).To(BeTrue())
+			Expect(container.SecurityContext.Capabilities.Drop).To(ContainElement(v1.Capability("ALL")))
+		})
+
+		It("should create pod without security context when not configured", func() {
+			rsc := &service{
+				namespace:                "kai-resource-reservation",
+				appLabelValue:            "kai-reservation",
+				serviceAccountName:       "kai-sa",
+				reservationPodImage:      "test-image:latest",
+				kubeClient:               fake.NewClientBuilder().Build(),
+				runtimeClassName:         "nvidia",
+				podSecurityContext:       nil,
+				containerSecurityContext: nil,
+			}
+
+			resources := v1.ResourceRequirements{
+				Limits: v1.ResourceList{
+					"nvidia.com/gpu": resource.MustParse("1"),
+				},
+			}
+
+			pod, err := rsc.createResourceReservationPod("test-node", "test-group", "test-pod", resources)
+			Expect(err).To(BeNil())
+			Expect(pod).NotTo(BeNil())
+
+			Expect(pod.Spec.SecurityContext).To(BeNil())
+			Expect(pod.Spec.Containers[0].SecurityContext).To(BeNil())
+		})
 	})
 
 	Context("createGPUReservationPod with resource configuration", func() {
