@@ -120,7 +120,7 @@ if [ "$LOCAL_IMAGES_BUILD" = "true" ]; then
     make build DOCKER_REPO_BASE=localhost:30100 VERSION=$PACKAGE_VERSION
 
     # Start port-forward to local registry
-    kubectl port-forward -n kube-registry --address 0.0.0.0 deploy/registry 30100:5000 &
+    kubectl port-forward -n kube-registry deploy/registry 30100:5000 &
     PORT_FORWARD_PID=$!
     trap "kill $PORT_FORWARD_PID 2>/dev/null || true" EXIT
     sleep 2
@@ -128,7 +128,7 @@ if [ "$LOCAL_IMAGES_BUILD" = "true" ]; then
     # Push images to local registry
     echo "Pushing images to local registry..."
     for image in $(docker images --format '{{.Repository}}:{{.Tag}}' | grep $PACKAGE_VERSION); do
-        kind load docker-image --name e2e-kai-scheduler $image
+        docker push $image
     done
 
     # Package and install helm chart
