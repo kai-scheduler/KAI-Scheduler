@@ -166,7 +166,7 @@ func (s *Statement) unevict(
 	}
 	reclaimee.GPUGroups = previousGpuGroups
 	reclaimee.IsVirtualStatus = previousIsVirtualStatus
-	reclaimee.ResourceClaimInfo = previousResourceClaimInfo
+	reclaimee.ResourceClaimInfo = previousResourceClaimInfo.Clone()
 
 	// Update task in node.
 	if node != nil {
@@ -450,7 +450,7 @@ func (s *Statement) unpipeline(
 	hostname := task.NodeName
 	task.NodeName = previousNode
 	task.GPUGroups = previousGpuGroups
-	task.ResourceClaimInfo = previousResourceClaimInfo
+	task.ResourceClaimInfo = previousResourceClaimInfo.Clone()
 	task.IsVirtualStatus = previousIsVirtualStatus
 
 	if node, found := s.ssn.ClusterInfo.Nodes[hostname]; found {
