@@ -16,10 +16,10 @@ import (
 
 	"github.com/ray-project/kuberay/ray-operator/controllers/ray/utils"
 
-	schedulingv2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgroup"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
+	schedulingv2alpha2 "github.com/kai-scheduler/KAI-Scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/podgrouper/podgroup"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/podgrouper/podgrouper/plugins/constants"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
 )
 
 var logger = log.FromContext(context.Background())

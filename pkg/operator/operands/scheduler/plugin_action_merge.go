@@ -7,8 +7,8 @@ import (
 	"cmp"
 	"slices"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
+	kaiv1 "github.com/kai-scheduler/KAI-Scheduler/pkg/apis/kai/v1"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/conf"
 )
 
 func resolvePlugins(plugins map[string]kaiv1.PluginConfig) []conf.PluginOption {

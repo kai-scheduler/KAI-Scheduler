@@ -1,4 +1,4 @@
-module github.com/NVIDIA/KAI-scheduler
+module github.com/kai-scheduler/KAI-Scheduler
 
 go 1.24.4
 
@@ -50,6 +50,7 @@ require (
 	k8s.io/cli-runtime v0.34.1
 	k8s.io/client-go v0.34.3
 	k8s.io/cluster-bootstrap v0.34.1
+	k8s.io/code-generator v0.34.3
 	k8s.io/component-base v0.34.3
 	k8s.io/component-helpers v0.34.1
 	k8s.io/cri-client v0.34.1
@@ -180,6 +181,7 @@ require (
 	golang.org/x/text v0.31.0 // indirect
 	golang.org/x/time v0.12.0 // indirect
 	golang.org/x/tools v0.38.0 // indirect
+	golang.org/x/tools/go/expect v0.1.1-deprecated // indirect
 	google.golang.org/genproto v0.0.0-20250303144028-a0af3efb3deb // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250303144028-a0af3efb3deb // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250313205543-e70fdf4c4cb4 // indirect
@@ -190,6 +192,7 @@ require (
 	k8s.io/controller-manager v0.34.1 // indirect
 	k8s.io/cri-api v0.34.1 // indirect
 	k8s.io/csi-translation-lib v0.34.1 // indirect
+	k8s.io/gengo/v2 v2.0.0-20250820003526-c297c0c1eb9d // indirect
 	k8s.io/kube-openapi v0.0.0-20250814151709-d7b6acb124c3 // indirect
 	k8s.io/kubelet v0.34.1 // indirect
 	knative.dev/networking v0.0.0-20250117155906-67d1c274ba6a // indirect

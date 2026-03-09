@@ -4,11 +4,11 @@
 package topology
 
 import (
-	kaiv1alpha1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1alpha1"
+	kaiv1alpha1 "github.com/kai-scheduler/KAI-Scheduler/pkg/apis/kai/v1alpha1"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/framework"
 )
 
 const (

@@ -6,13 +6,13 @@ package elastic
 import (
 	"testing"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/framework"
 )
 
 func TestJobOrderFn(t *testing.T) {

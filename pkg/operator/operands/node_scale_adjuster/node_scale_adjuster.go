@@ -8,8 +8,8 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/common"
+	kaiv1 "github.com/kai-scheduler/KAI-Scheduler/pkg/apis/kai/v1"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/operator/operands/common"
 )
 
 type NodeScaleAdjuster struct {

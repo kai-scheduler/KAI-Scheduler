@@ -6,9 +6,9 @@ package podgroup_test
 import (
 	"testing"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	pg "github.com/NVIDIA/KAI-scheduler/pkg/common/podgroup"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/constants"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/apis/scheduling/v2alpha2"
+	pg "github.com/kai-scheduler/KAI-Scheduler/pkg/common/podgroup"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/constants"
 	"github.com/stretchr/testify/assert"
 )
 

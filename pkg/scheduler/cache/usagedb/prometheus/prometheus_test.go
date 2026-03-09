@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/cache/usagedb/api"
 	"github.com/aptible/supercronic/cronexpr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

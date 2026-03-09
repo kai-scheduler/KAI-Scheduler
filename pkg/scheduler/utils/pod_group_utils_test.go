@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"k8s.io/utils/pointer"
 
-	enginev2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	enginev2alpha2 "github.com/kai-scheduler/KAI-Scheduler/pkg/apis/scheduling/v2alpha2"
+	commonconstants "github.com/kai-scheduler/KAI-Scheduler/pkg/common/constants"
 )
 
 func TestGetSchedulingBackoffValue(t *testing.T) {
