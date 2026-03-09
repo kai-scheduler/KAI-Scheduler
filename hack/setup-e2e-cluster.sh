@@ -61,7 +61,7 @@ kubectl wait --for=condition=available --timeout=60s deployment/registry -n kube
 
 # Install the fake-gpu-operator to provide fake GPU resources for the e2e tests
 helm upgrade -i gpu-operator oci://ghcr.io/run-ai/fake-gpu-operator/fake-gpu-operator --namespace gpu-operator --create-namespace \
-    --version 0.0.71 --values ${REPO_ROOT}/hack/fake-gpu-operator-values.yaml --wait
+    --version 0.0.74 --values ${REPO_ROOT}/hack/fake-gpu-operator-values.yaml --wait
 
 # Deploy Prometheus Operator
 echo "Deploying Prometheus Operator..."
@@ -120,7 +120,7 @@ if [ "$LOCAL_IMAGES_BUILD" = "true" ]; then
     make build DOCKER_REPO_BASE=localhost:30100 VERSION=$PACKAGE_VERSION
 
     # Start port-forward to local registry
-    kubectl port-forward -n kube-registry deploy/registry 30100:5000 &
+    kubectl port-forward -n kube-registry --address 0.0.0.0 deploy/registry 30100:5000 &
     PORT_FORWARD_PID=$!
     trap "kill $PORT_FORWARD_PID 2>/dev/null || true" EXIT
     sleep 2
@@ -128,7 +128,7 @@ if [ "$LOCAL_IMAGES_BUILD" = "true" ]; then
     # Push images to local registry
     echo "Pushing images to local registry..."
     for image in $(docker images --format '{{.Repository}}:{{.Tag}}' | grep $PACKAGE_VERSION); do
-        docker push $image
+        kind load docker-image --name e2e-kai-scheduler $image
     done
 
     # Package and install helm chart
