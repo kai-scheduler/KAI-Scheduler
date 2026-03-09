@@ -19,6 +19,7 @@ import (
 
 	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgroup"
 	pluginshub "github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/hub"
+	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/grouper"
 )
 
 type Interface interface {
@@ -77,10 +78,9 @@ func (pg *podGrouper) GetPodOwners(ctx context.Context, pod *v1.Pod) (
 
 func (pg *podGrouper) GetPGMetadata(ctx context.Context, pod *v1.Pod, topOwner *unstructured.Unstructured, allOwners []*metav1.PartialObjectMetadata) (*podgroup.Metadata, error) {
 	logger := log.FromContext(ctx)
-	ownerKind := metav1.GroupVersionKind(topOwner.GroupVersionKind())
-	plugin := pg.pluginsHub.GetPodGrouperPlugin(ownerKind)
+	plugin := pg.selectPluginForOwners(topOwner, allOwners)
 	logger.V(1).Info(fmt.Sprintf("Using %v plugin for pod.", plugin.Name()),
-		"pod", fmt.Sprintf("%s/%s", pod.Namespace, pod.Name), "topOwner", topOwner)
+		"pod", fmt.Sprintf("%s/%s", pod.Namespace, pod.Name), "topOwner", topOwner.GroupVersionKind())
 	return plugin.GetPodGroupMetadata(topOwner, pod, allOwners...)
 }
 
@@ -183,4 +183,32 @@ func (pg *podGrouper) handleGetOwnerError(
 	}
 	return nil, fmt.Errorf("failed to find %s: <%s/%s>, uid: <%v>: %w",
 		owner.Kind, pod.Namespace, owner.Name, owner.UID, err)
+}
+
+func (pg *podGrouper) selectPluginForOwners(
+	topOwner *unstructured.Unstructured,
+	allOwners []*metav1.PartialObjectMetadata,
+) grouper.Grouper {
+	hub, ok := pg.pluginsHub.(*pluginshub.DefaultPluginsHub)
+	if !ok {
+		return pg.pluginsHub.GetPodGrouperPlugin(metav1.GroupVersionKind{})
+	}
+
+	defaultPlugin := hub.GetDefaultPlugin()
+
+	// Build ownerGVKs in top-down order
+	ownerGVKs := make([]metav1.GroupVersionKind, 0, len(allOwners)+1)
+	ownerGVKs = append(ownerGVKs, metav1.GroupVersionKind(topOwner.GroupVersionKind()))
+
+	for i := len(allOwners) - 1; i >= 0; i-- {
+		ownerGVKs = append(ownerGVKs, metav1.GroupVersionKind(allOwners[i].GroupVersionKind()))
+	}
+
+	for _, gvk := range ownerGVKs {
+		plugin := pg.pluginsHub.GetPodGrouperPlugin(gvk)
+		if plugin != defaultPlugin {
+			return plugin
+		}
+	}
+	return defaultPlugin
 }

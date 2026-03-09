@@ -374,3 +374,87 @@ func compareMetadata(expected, got *podgroup.Metadata) error {
 
 	return err
 }
+
+func TestPodGrouper_OwnerChainFallback_UsesIntermediatePlugin(t *testing.T) {
+	scheme := runtime.NewScheme()
+	assert.NoError(t, v1.AddToScheme(scheme))
+
+	// Create a real batch/v1 Job object
+	job := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"apiVersion": "batch/v1",
+			"kind":       "Job",
+			"metadata": map[string]interface{}{
+				"name":      "job-owner",
+				"namespace": "namespace",
+				"uid":       "uid-job",
+			},
+			"spec": map[string]interface{}{
+				"template": map[string]interface{}{
+					"spec": map[string]interface{}{},
+				},
+			},
+		},
+	}
+
+	// Simulate a JobSet-like top owner as an unstructured object
+	jobSet := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"kind":       "JobSet",
+			"apiVersion": "jobset.x-k8s.io/v1alpha2",
+			"metadata": map[string]interface{}{
+				"name":      "jobset-owner",
+				"namespace": "namespace",
+			},
+		},
+	}
+	testPod := &v1.Pod{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pod-with-owner-chain",
+			Namespace: "namespace",
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: "batch/v1",
+					Kind:       "Job",
+					Name:       "job-owner",
+					UID:        "uid-job",
+				},
+			},
+		},
+	}
+
+	client := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithRuntimeObjects(
+			job,
+			jobSet,
+			testPod,
+		).
+		Build()
+
+	pluginsHub := pluginshub.NewDefaultPluginsHub(
+		client,
+		false, // searchForLegacyPodGroups
+		true,  // gangScheduleKnative
+		queueLabelKey,
+		nodePoolLabelKey,
+		"",
+		"",
+	)
+
+	pg := podgrouper.NewPodgrouper(client, client, pluginsHub)
+
+	topOwner, owners, err := pg.GetPodOwners(context.Background(), testPod)
+	assert.NoError(t, err)
+
+	assert.Contains(t, []string{"JobSet", "Job"}, topOwner.GetKind())
+
+	metadata, err := pg.GetPGMetadata(context.Background(), testPod, topOwner, owners)
+	assert.NoError(t, err)
+	assert.Equal(t, "Job", metadata.Owner.Kind)
+	assert.Equal(t, "batch/v1", metadata.Owner.APIVersion)
+}
