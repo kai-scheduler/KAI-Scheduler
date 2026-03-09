@@ -11,8 +11,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 
-	enginev2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
+	enginev2 "github.com/kai-scheduler/KAI-Scheduler/pkg/apis/scheduling/v2"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/api/common_info"
 )
 
 func TestNewQueueInfo(t *testing.T) {

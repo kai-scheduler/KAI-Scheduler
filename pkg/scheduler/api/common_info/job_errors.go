@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"strings"
 
-	enginev2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
+	enginev2alpha2 "github.com/kai-scheduler/KAI-Scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/api/resource_info"
 	"github.com/dustin/go-humanize"
 )
 

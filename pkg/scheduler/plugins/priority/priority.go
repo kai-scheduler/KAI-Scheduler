@@ -20,8 +20,8 @@ limitations under the License.
 package priority
 
 import (
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/framework"
 )
 
 type priorityPlugin struct{}

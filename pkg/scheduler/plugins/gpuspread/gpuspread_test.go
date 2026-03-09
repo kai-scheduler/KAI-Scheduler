@@ -12,8 +12,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/api/pod_info"
 )
 
 const fakeNodeName = "node"

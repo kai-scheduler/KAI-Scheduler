@@ -30,21 +30,21 @@ import (
 
 	nvidiav1 "github.com/NVIDIA/gpu-operator/api/nvidia/v1"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
+	kaiv1 "github.com/kai-scheduler/KAI-Scheduler/pkg/apis/kai/v1"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/controller/status_reconciler"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/admission"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/binder"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/common"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/deployable"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/known_types"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/node_scale_adjuster"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/pod_group_controller"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/pod_grouper"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/prometheus"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/queue_controller"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/scheduler"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/operator/controller/status_reconciler"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/operator/operands"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/operator/operands/admission"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/operator/operands/binder"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/operator/operands/common"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/operator/operands/deployable"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/operator/operands/known_types"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/operator/operands/node_scale_adjuster"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/operator/operands/pod_group_controller"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/operator/operands/pod_grouper"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/operator/operands/prometheus"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/operator/operands/queue_controller"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/operator/operands/scheduler"
 )
 
 var ConfigReconcilerOperands = []operands.Operand{

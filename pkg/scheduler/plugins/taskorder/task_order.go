@@ -6,9 +6,9 @@ package taskorder
 import (
 	"strconv"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/constants/labels"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/constants/labels"
+	"github.com/kai-scheduler/KAI-Scheduler/pkg/scheduler/framework"
 )
 
 type taskOrderPlugin struct{}
