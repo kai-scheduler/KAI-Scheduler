@@ -105,13 +105,12 @@ func (s *Statement) Evict(reclaimeeTask *pod_info.PodInfo, message string,
 
 	s.operations = append(s.operations,
 		evictOperation{
-			taskInfo:                  reclaimeeTask,
-			previousStatus:            previousStatus,
-			previousNode:              node,
-			previousGpuGroups:         previousGpuGroup,
-			previousResourceClaimInfo: previousResourceClaimInfo,
-			message:                   message,
-			evictionMetadata:          evictionMetadata,
+			taskInfo:          reclaimeeTask,
+			previousStatus:    previousStatus,
+			previousNode:      node,
+			previousGpuGroups: previousGpuGroup,
+			message:           message,
+			evictionMetadata:  evictionMetadata,
 			reverseOperation: func() error {
 				return s.unevict(reclaimeeTask, previousStatus, node, previousGpuGroup, previousResourceClaimInfo, previousIsVirtualStatus)
 			},

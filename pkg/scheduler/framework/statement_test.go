@@ -9,9 +9,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
+	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
+	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -1279,4 +1282,313 @@ func TestStatement_Allocate_Undo_Undo(t *testing.T) {
 				dataBeforeEvict.task.ResReq)
 		})
 	}
+}
+
+func newMockAllocation(device string) *resourceapi.AllocationResult {
+	return &resourceapi.AllocationResult{
+		Devices: resourceapi.DeviceAllocationResult{
+			Results: []resourceapi.DeviceRequestAllocationResult{
+				{Request: "req0", Driver: "gpu.example.com", Pool: "pool0", Device: device},
+			},
+		},
+	}
+}
+
+// TestStatement_Evict_Undo_Undo_DRA_ResourceClaimInfo verifies that the
+// evict → undo → undo (re-evict) sequence does not corrupt the
+// ResourceClaimInfo captured by the original evict's reverse closure.
+//
+// The bug: unevict aliases previousResourceClaimInfo onto the task, then
+// AllocateFunc replaces entries in that map. A subsequent re-eviction's
+// DeallocateFunc mutates those entries through the pointer, silently
+// corrupting the original closure's snapshot.
+func TestStatement_Evict_Undo_Undo_DRA_ResourceClaimInfo(t *testing.T) {
+	clusterTopology := nodes_fake.TestClusterTopology{
+		Jobs: []*jobs_fake.TestJobBasic{
+			{
+				Name:                "running_job0",
+				RequiredGPUsPerTask: 1,
+				QueueName:           "queue0",
+				Priority:            constants.PriorityTrainNumber,
+				Tasks: []*tasks_fake.TestTaskBasic{
+					{
+						State:    pod_status.Running,
+						NodeName: "node0",
+					},
+				},
+			},
+		},
+		Nodes: map[string]nodes_fake.TestNodeBasic{
+			"node0": {GPUs: 2},
+		},
+	}
+
+	vectorMap := resource_info.NewResourceVectorMap()
+	jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(clusterTopology.Jobs, vectorMap)
+	nodesInfoMap := nodes_fake.BuildNodesInfoMap(clusterTopology.Nodes, tasksToNodeMap, nil, vectorMap)
+	task := jobsInfoMap["running_job0"].GetAllPodsMap()["running_job0-0"]
+
+	task.ResourceClaimInfo = bindrequest_info.ResourceClaimInfo{
+		"claim1": &schedulingv1alpha2.ResourceClaimAllocation{
+			Name:       "claim1",
+			Allocation: newMockAllocation("gpu-0"),
+		},
+	}
+
+	ssn := &Session{
+		ClusterInfo: &api.ClusterInfo{
+			PodGroupInfos: jobsInfoMap,
+			Nodes:         nodesInfoMap,
+		},
+	}
+
+	// Simulate DRA plugin event handlers.
+	// DeallocateFunc: nils Allocation through the pointer (like deallocateResourceClaim).
+	// AllocateFunc: only recovers from memory when existing Allocation is non-nil
+	// (like allocateResourceClaim line 291). Without a real DRA allocator, a nil
+	// existing allocation means the claim stays unallocated — exposing the corruption.
+	ssn.AddEventHandler(&EventHandler{
+		DeallocateFunc: func(event *Event) {
+			for _, claimInfo := range event.Task.ResourceClaimInfo {
+				if claimInfo != nil {
+					claimInfo.Allocation = nil
+				}
+			}
+		},
+		AllocateFunc: func(event *Event) {
+			for name, claimInfo := range event.Task.ResourceClaimInfo {
+				if claimInfo != nil && claimInfo.Allocation != nil {
+					event.Task.ResourceClaimInfo[name] = &schedulingv1alpha2.ResourceClaimAllocation{
+						Name:       name,
+						Allocation: newMockAllocation("gpu-0"),
+					}
+				}
+			}
+		},
+	})
+
+	s := &Statement{
+		operations: []Operation{},
+		ssn:        ssn,
+		sessionID:  "1234",
+	}
+
+	// Evict (op[0])
+	err := s.Evict(task, "message", eviction_info.EvictionMetadata{
+		Action:           "action",
+		EvictionGangSize: 1,
+	})
+	assert.NoError(t, err)
+
+	// Undo evict (op[1]) — unevict aliases previousRCI onto task, AllocateFunc replaces entries
+	err = s.undoOperation(0)
+	assert.NoError(t, err)
+
+	// Undo the undo (op[2], op[3]) — re-evict. DeallocateFunc corrupts the original closure's RCI.
+	err = s.undoOperation(1)
+	assert.NoError(t, err)
+
+	// Undo the original evict again (op[0] is valid). revOp_0 runs unevict with the now-corrupted
+	// previousResourceClaimInfo. AllocateFunc sees nil Allocation and cannot recover from memory.
+	err = s.undoOperation(0)
+	assert.NoError(t, err)
+
+	for name, claim := range task.ResourceClaimInfo {
+		assert.NotNilf(t, claim, "ResourceClaimInfo[%s] should not be nil", name)
+		if claim != nil {
+			assert.NotNilf(t, claim.Allocation,
+				"ResourceClaimInfo[%s].Allocation should not be nil after evict/undo/undo roundtrip", name)
+		}
+	}
+}
+
+// TestStatement_Pipeline_Undo_Undo_DRA_ResourceClaimInfo verifies that the
+// pipeline → undo → undo (re-pipeline) sequence preserves the original
+// ResourceClaimInfo in the pipeline closure, not stale data from a later
+// AllocateFunc call.
+//
+// Without the Clone fix in unpipeline, DeallocateFunc corrupts previousRCI
+// through pointer aliasing, and a subsequent AllocateFunc overwrites the
+// entries — so the closure silently loses the original allocation data.
+func TestStatement_Pipeline_Undo_Undo_DRA_ResourceClaimInfo(t *testing.T) {
+	clusterTopology := nodes_fake.TestClusterTopology{
+		Jobs: []*jobs_fake.TestJobBasic{
+			{
+				Name:                "pending_job0",
+				RequiredGPUsPerTask: 1,
+				QueueName:           "queue0",
+				Priority:            constants.PriorityTrainNumber,
+				Tasks: []*tasks_fake.TestTaskBasic{
+					{
+						State: pod_status.Pending,
+					},
+				},
+			},
+		},
+		Nodes: map[string]nodes_fake.TestNodeBasic{
+			"node0": {GPUs: 2},
+		},
+	}
+
+	vectorMap := resource_info.NewResourceVectorMap()
+	jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(clusterTopology.Jobs, vectorMap)
+	nodesInfoMap := nodes_fake.BuildNodesInfoMap(clusterTopology.Nodes, tasksToNodeMap, nil, vectorMap)
+	task := jobsInfoMap["pending_job0"].GetAllPodsMap()["pending_job0-0"]
+
+	task.ResourceClaimInfo = bindrequest_info.ResourceClaimInfo{
+		"claim1": &schedulingv1alpha2.ResourceClaimAllocation{
+			Name:       "claim1",
+			Allocation: newMockAllocation("original-gpu"),
+		},
+	}
+
+	ssn := &Session{
+		ClusterInfo: &api.ClusterInfo{
+			PodGroupInfos: jobsInfoMap,
+			Nodes:         nodesInfoMap,
+		},
+	}
+
+	// Track the device name seen by DeallocateFunc on every call. After the
+	// final unpipeline the restored RCI should carry the original allocation
+	// ("original-gpu"), not a stale one injected by a later AllocateFunc.
+	var lastDeallocatedDevice string
+	ssn.AddEventHandler(&EventHandler{
+		DeallocateFunc: func(event *Event) {
+			for _, claimInfo := range event.Task.ResourceClaimInfo {
+				if claimInfo != nil {
+					if claimInfo.Allocation != nil && len(claimInfo.Allocation.Devices.Results) > 0 {
+						lastDeallocatedDevice = claimInfo.Allocation.Devices.Results[0].Device
+					}
+					claimInfo.Allocation = nil
+				}
+			}
+		},
+		AllocateFunc: func(event *Event) {
+			for name := range event.Task.ResourceClaimInfo {
+				event.Task.ResourceClaimInfo[name] = &schedulingv1alpha2.ResourceClaimAllocation{
+					Name:       name,
+					Allocation: newMockAllocation("fresh-gpu"),
+				}
+			}
+		},
+	})
+
+	s := &Statement{
+		operations: []Operation{},
+		ssn:        ssn,
+		sessionID:  "1234",
+	}
+
+	// Pipeline (op[0])
+	err := s.Pipeline(task, "node0", true)
+	assert.NoError(t, err)
+
+	// Undo pipeline (op[1]) — unpipeline restores RCI, DeallocateFunc nils allocations
+	err = s.undoOperation(0)
+	assert.NoError(t, err)
+
+	// Undo the undo (op[2], op[3]) — re-pipeline. AllocateFunc replaces entries.
+	err = s.undoOperation(1)
+	assert.NoError(t, err)
+
+	// Undo the original pipeline again (op[0] is valid). unpipeline should restore
+	// from the original previousRCI ("original-gpu"), not the re-pipeline's data.
+	lastDeallocatedDevice = ""
+	err = s.undoOperation(0)
+	assert.NoError(t, err)
+
+	assert.Equal(t, "original-gpu", lastDeallocatedDevice,
+		"unpipeline should restore the original allocation, not a stale one from a later AllocateFunc")
+}
+
+// TestStatement_Allocate_Undo_Undo_DRA_ResourceClaimInfo verifies that DRA
+// resource claims survive an allocate → undo → undo (re-allocate) cycle.
+// Unlike evict/pipeline, allocate does not capture previousResourceClaimInfo
+// in a closure, so there is no aliasing bug — this test guards against
+// regressions in the allocate/unallocate event-handler interaction.
+func TestStatement_Allocate_Undo_Undo_DRA_ResourceClaimInfo(t *testing.T) {
+	clusterTopology := nodes_fake.TestClusterTopology{
+		Jobs: []*jobs_fake.TestJobBasic{
+			{
+				Name:                "pending_job0",
+				RequiredGPUsPerTask: 1,
+				QueueName:           "queue0",
+				Priority:            constants.PriorityTrainNumber,
+				Tasks: []*tasks_fake.TestTaskBasic{
+					{
+						State: pod_status.Pending,
+					},
+				},
+			},
+		},
+		Nodes: map[string]nodes_fake.TestNodeBasic{
+			"node0": {GPUs: 2},
+		},
+	}
+
+	vectorMap := resource_info.NewResourceVectorMap()
+	jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(clusterTopology.Jobs, vectorMap)
+	nodesInfoMap := nodes_fake.BuildNodesInfoMap(clusterTopology.Nodes, tasksToNodeMap, nil, vectorMap)
+	task := jobsInfoMap["pending_job0"].GetAllPodsMap()["pending_job0-0"]
+
+	task.ResourceClaimInfo = bindrequest_info.ResourceClaimInfo{
+		"claim1": &schedulingv1alpha2.ResourceClaimAllocation{
+			Name:       "claim1",
+			Allocation: newMockAllocation("gpu-0"),
+		},
+	}
+
+	ssn := &Session{
+		ClusterInfo: &api.ClusterInfo{
+			PodGroupInfos: jobsInfoMap,
+			Nodes:         nodesInfoMap,
+		},
+	}
+
+	ssn.AddEventHandler(&EventHandler{
+		DeallocateFunc: func(event *Event) {
+			for _, claimInfo := range event.Task.ResourceClaimInfo {
+				if claimInfo != nil {
+					claimInfo.Allocation = nil
+				}
+			}
+		},
+		AllocateFunc: func(event *Event) {
+			for name := range event.Task.ResourceClaimInfo {
+				event.Task.ResourceClaimInfo[name] = &schedulingv1alpha2.ResourceClaimAllocation{
+					Name:       name,
+					Allocation: newMockAllocation("gpu-0"),
+				}
+			}
+		},
+	})
+
+	s := &Statement{
+		operations: []Operation{},
+		ssn:        ssn,
+		sessionID:  "1234",
+	}
+
+	// Allocate (op[0]) — AllocateFunc sets claims
+	err := s.Allocate(task, "node0")
+	assert.NoError(t, err)
+	for name, claim := range task.ResourceClaimInfo {
+		assert.NotNilf(t, claim.Allocation,
+			"ResourceClaimInfo[%s].Allocation should not be nil after allocate", name)
+	}
+
+	// Undo allocate (op[1]) — unallocate calls DeallocateFunc
+	err = s.undoOperation(0)
+	assert.NoError(t, err)
+	for name, claim := range task.ResourceClaimInfo {
+		assert.Nilf(t, claim.Allocation,
+			"ResourceClaimInfo[%s].Allocation should be nil after unallocate", name)
+	}
+
+	// Undo the undo (op[2], op[3]) — re-allocate, AllocateFunc sets claims again.
+	// allocateOperation stores task.Clone() as taskInfo, so the redo operates on
+	// the clone; verify the sequence completes without errors.
+	err = s.undoOperation(1)
+	assert.NoError(t, err)
 }
