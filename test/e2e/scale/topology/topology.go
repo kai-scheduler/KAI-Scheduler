@@ -52,7 +52,7 @@ func GenerateTopology(levels []TopologyLevel, name string) kaiv1alpha1.Topology 
 	}
 }
 
-func GenerateNodePools(levels []TopologyLevel, nodesPerLeaf int, extraLabels map[string]string) []kwok.NodePool {
+func GenerateNodePools(levels []TopologyLevel, nodesPerLeaf int, gpusPerNode int, extraLabels map[string]string) []kwok.NodePool {
 	var nodePools []kwok.NodePool
 
 	// Build all possible values for each level
@@ -75,7 +75,7 @@ func GenerateNodePools(levels []TopologyLevel, nodesPerLeaf int, extraLabels map
 			labels[levels[i].Name] = value
 		}
 		name := strings.Join(combination, "-")
-		np := generateNodePool(labels, name, nodesPerLeaf)
+		np := generateNodePool(labels, name, nodesPerLeaf, gpusPerNode)
 		nodePools = append(nodePools, np)
 	}
 
@@ -119,9 +119,11 @@ func cartesian(allCombinations [][]string) [][]string {
 	return product
 }
 
-func generateNodePool(labels map[string]string, name string, nodeCount int) kwok.NodePool {
+func generateNodePool(labels map[string]string, name string, nodeCount int, gpusPerNode int) kwok.NodePool {
 	labels["run.ai/simulated-gpu-node-pool"] = "default"
 	labels["type"] = "kwok"
+
+	gpuQuantity := resource.MustParse(fmt.Sprintf("%d", gpusPerNode))
 
 	return kwok.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
@@ -136,14 +138,16 @@ func generateNodePool(labels map[string]string, name string, nodeCount int) kwok
 				},
 				Status: corev1.NodeStatus{
 					Allocatable: corev1.ResourceList{
-						corev1.ResourceCPU:    resource.MustParse("32"),
-						corev1.ResourceMemory: resource.MustParse("256Gi"),
-						corev1.ResourcePods:   resource.MustParse("110"),
+						corev1.ResourceCPU:              resource.MustParse("32"),
+						corev1.ResourceMemory:           resource.MustParse("256Gi"),
+						corev1.ResourcePods:             resource.MustParse("110"),
+						corev1.ResourceName("nvidia.com/gpu"): gpuQuantity,
 					},
 					Capacity: corev1.ResourceList{
-						corev1.ResourceCPU:    resource.MustParse("32"),
-						corev1.ResourceMemory: resource.MustParse("256Gi"),
-						corev1.ResourcePods:   resource.MustParse("110"),
+						corev1.ResourceCPU:              resource.MustParse("32"),
+						corev1.ResourceMemory:           resource.MustParse("256Gi"),
+						corev1.ResourcePods:             resource.MustParse("110"),
+						corev1.ResourceName("nvidia.com/gpu"): gpuQuantity,
 					},
 					NodeInfo: corev1.NodeSystemInfo{
 						Architecture:     "amd64",

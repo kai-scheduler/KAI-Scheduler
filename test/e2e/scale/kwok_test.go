@@ -178,7 +178,7 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 			clusterTopology = topology.GenerateTopology(topologyLevels, topologyName)
 			Expect(testCtx.ControllerClient.Create(ctx, &clusterTopology)).To(Succeed())
 
-			topologyNodePools = topology.GenerateNodePools(topologyLevels, nodesPerDomain, map[string]string{"test": "topology-e2e"})
+			topologyNodePools = topology.GenerateNodePools(topologyLevels, nodesPerDomain, gpusPerNode, map[string]string{"test": "topology-e2e"})
 			var wg sync.WaitGroup
 			for _, nodePool := range topologyNodePools {
 				wg.Add(1)
@@ -196,7 +196,7 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 			GinkgoLogr.Info("Time to create and wait for topology node pools", "duration", duration)
 
 			startTime = time.Now()
-			wait.ForAtLeastNNodes(ctx, testCtx.ControllerClient, map[string]string{"test": "topology-e2e"}, len(topologyNodePools))
+			wait.ForAtLeastNNodes(ctx, testCtx.ControllerClient, map[string]string{"test": "topology-e2e"}, totalNodes)
 			duration = time.Since(startTime)
 			GinkgoLogr.Info("Time to wait for topology nodes to be ready", "duration", duration)
 		})
@@ -352,12 +352,14 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 
 			Context("Reclaim", func() {
 				BeforeAll(func(ctx context.Context) {
+					Expect(testCtx.ControllerClient.Get(ctx, runtimeClient.ObjectKeyFromObject(sanityTestQueue), sanityTestQueue)).To(Succeed())
+					base := sanityTestQueue.DeepCopy()
 					sanityTestQueue.Spec.Resources.GPU = v2.QueueResource{
 						Quota:           0,
 						OverQuotaWeight: 0,
 						Limit:           -1,
 					}
-					Expect(testCtx.ControllerClient.Patch(ctx, sanityTestQueue, runtimeClient.MergeFrom(&v2.Queue{}))).To(Succeed())
+					Expect(testCtx.ControllerClient.Patch(ctx, sanityTestQueue, runtimeClient.MergeFrom(base))).To(Succeed())
 
 					reclaimSingleGPUJobsQueue = queue.CreateQueueObject("reclaim-single-"+utils.GenerateRandomK8sName(10), parentQueue.Name)
 					testCtx.AddQueues(ctx, []*v2.Queue{reclaimSingleGPUJobsQueue})

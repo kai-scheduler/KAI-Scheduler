@@ -30,7 +30,7 @@ const (
 	kwokNodeAnnotationVal = "fake"
 
 	operationAttemptsRetries = 10
-	retryInterval            = 100 * time.Microsecond
+	retryInterval            = 100 * time.Millisecond
 )
 
 var (

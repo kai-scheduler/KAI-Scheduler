@@ -70,7 +70,11 @@ func writeTestResults(testName string, success bool, data interface{}) error {
 		}
 	}
 
-	previousData.Status = suiteResult
+	if !success {
+		previousData.Status = "failure"
+	} else if previousData.Status == "" {
+		previousData.Status = "success"
+	}
 	if testName != "" {
 		previousData.Tests = append(previousData.Tests, testResult)
 	}
