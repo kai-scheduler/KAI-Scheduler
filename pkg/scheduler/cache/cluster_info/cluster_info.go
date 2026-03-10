@@ -283,9 +283,16 @@ func (c *ClusterInfo) populateDRAGPUs(nodes map[string]*node_info.NodeInfo) {
 		if draGPUCount > 0 {
 			log.InfraLogger.V(6).Infof("Node %s has %d DRA GPUs from ResourceSlices", nodeName, draGPUCount)
 			if nodeInfo.Allocatable.GPUs() > 0 {
-				log.InfraLogger.Warningf("Node %s has both device-plugin GPUs and DRA GPUs", nodeName)
+				// Dual-mode node: same physical GPUs are advertised by both device-plugin
+				// and DRA. Skip AddDRAGPUs to avoid double-counting the GPU capacity.
+				// Device-plugin accounting is already correct; just record both modes.
+				log.InfraLogger.Warningf("Node %s has both device-plugin GPUs (%v) and DRA GPUs (%d); using device-plugin accounting",
+					nodeName, nodeInfo.Allocatable.GPUs(), draGPUCount)
+				nodeInfo.HasDevicePluginGPUs = true
+			} else {
+				// DRA-only node: add DRA GPUs to the allocatable pool.
+				nodeInfo.AddDRAGPUs(float64(draGPUCount))
 			}
-			nodeInfo.AddDRAGPUs(float64(draGPUCount))
 			nodeInfo.HasDRAGPUs = true
 		}
 	}

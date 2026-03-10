@@ -1353,6 +1353,20 @@ func TestPredicateByNodeResourcesType_DRA(t *testing.T) {
 			expectError: false,
 			errorMsg:    "",
 		},
+		"Device-plugin GPU request on dual-mode node (both device-plugin and DRA)": {
+			nodeInfo: &NodeInfo{
+				Name:                "dual-mode-node",
+				HasDRAGPUs:          true,
+				HasDevicePluginGPUs: true,
+				Allocatable:         common_info.BuildResourceWithGpu("1000m", "1G", "4", "110"),
+				Node: &v1.Node{
+					ObjectMeta: metav1.ObjectMeta{Name: "dual-mode-node", Labels: map[string]string{}},
+				},
+			},
+			task:        createPod("default", "gpu-pod", podCreationOptions{GPUs: 1}),
+			expectError: false,
+			errorMsg:    "",
+		},
 	}
 
 	for testName, testData := range tests {

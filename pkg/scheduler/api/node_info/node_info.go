@@ -98,6 +98,9 @@ type NodeInfo struct {
 
 	// HasDRAGPUs indicates GPUs were added via DRA ResourceSlices. Temporary fix - remove when device-plugin pods are supported on DRA nodes.
 	HasDRAGPUs bool
+	// HasDevicePluginGPUs indicates the node has GPUs advertised via the device-plugin (nvidia.com/gpu in allocatable).
+	// Used together with HasDRAGPUs to identify dual-mode nodes that support both device-plugin and DRA GPU requests.
+	HasDevicePluginGPUs bool
 
 	PodAffinityInfo pod_affinity.NodePodAffinityInfo
 
@@ -324,8 +327,9 @@ func (ni *NodeInfo) PredicateByNodeResourcesType(task *pod_info.PodInfo) error {
 	}
 
 	// Temporary fix: Reject device-plugin GPU requests on DRA-only nodes.
-	// Remove when device-plugin pods are supported on DRA nodes.
-	if task.ResReq.GPUs() > 0 && ni.HasDRAGPUs {
+	// Allow device-plugin requests on dual-mode nodes (both device-plugin and DRA GPUs).
+	// Remove when device-plugin pods are fully supported on DRA nodes.
+	if task.ResReq.GPUs() > 0 && ni.HasDRAGPUs && !ni.HasDevicePluginGPUs {
 		log.InfraLogger.V(4).Infof("Task %s/%s rejected on node %s: device-plugin GPU request on DRA-only node",
 			task.Namespace, task.Name, ni.Name)
 		return common_info.NewFitError(task.Name, task.Namespace, ni.Name,

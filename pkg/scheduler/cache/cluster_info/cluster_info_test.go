@@ -2410,10 +2410,11 @@ func newPodOnNode(pod *corev1.Pod, nodeName string) *corev1.Pod {
 
 func TestSnapshotNodesWithDRAGPUs(t *testing.T) {
 	tests := map[string]struct {
-		nodes           []*corev1.Node
-		resourceSlices  []*resourceapi.ResourceSlice
-		expectedDRAGPUs map[string]float64
-		hasDRAGPUs      map[string]bool
+		nodes               []*corev1.Node
+		resourceSlices      []*resourceapi.ResourceSlice
+		expectedDRAGPUs     map[string]float64
+		hasDRAGPUs          map[string]bool
+		hasDevicePluginGPUs map[string]bool
 	}{
 		"Single node with DRA GPUs": {
 			nodes: []*corev1.Node{
@@ -2456,6 +2457,26 @@ func TestSnapshotNodesWithDRAGPUs(t *testing.T) {
 			resourceSlices:  []*resourceapi.ResourceSlice{},
 			expectedDRAGPUs: map[string]float64{"node-1": 0},
 			hasDRAGPUs:      map[string]bool{"node-1": false},
+		},
+		"Dual-mode node with device-plugin and DRA GPUs": {
+			nodes: []*corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "node-1"},
+					Status: corev1.NodeStatus{
+						Allocatable: corev1.ResourceList{
+							"nvidia.com/gpu": resource.MustParse("8"),
+						},
+					},
+				},
+			},
+			resourceSlices: []*resourceapi.ResourceSlice{
+				createTestResourceSlice("slice-1", "node-1", "nvidia.com/gpu", 8),
+			},
+			// Device-plugin GPUs should NOT be double-counted with DRA GPUs.
+			// The same physical GPUs are advertised by both; use device-plugin accounting only.
+			expectedDRAGPUs:     map[string]float64{"node-1": 8},
+			hasDRAGPUs:          map[string]bool{"node-1": true},
+			hasDevicePluginGPUs: map[string]bool{"node-1": true},
 		},
 		"Two device classes on same node": {
 			nodes: []*corev1.Node{
@@ -2515,6 +2536,10 @@ func TestSnapshotNodesWithDRAGPUs(t *testing.T) {
 				assert.Equal(t, expectedGPUs, actualGPUs, "GPUs mismatch for node %s", nodeName)
 				expectedFlag := test.hasDRAGPUs[nodeName]
 				assert.Equal(t, expectedFlag, nodeInfo.HasDRAGPUs, "HasDRAGPUs mismatch for node %s", nodeName)
+				if test.hasDevicePluginGPUs != nil {
+					expectedDP := test.hasDevicePluginGPUs[nodeName]
+					assert.Equal(t, expectedDP, nodeInfo.HasDevicePluginGPUs, "HasDevicePluginGPUs mismatch for node %s", nodeName)
+				}
 			}
 		})
 	}
