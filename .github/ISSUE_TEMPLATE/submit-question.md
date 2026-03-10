@@ -1,6 +1,6 @@
 ---
 name: Submit question
-about: Ask a general question about KAI Scheduler
+about: Ask a general question about KAI-Scheduler
 title: "[QST]"
 labels: "? - Needs Triage, question"
 assignees: ''
