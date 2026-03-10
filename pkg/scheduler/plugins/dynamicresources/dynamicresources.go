@@ -295,8 +295,12 @@ func (drap *draPlugin) allocateResourceClaim(task *pod_info.PodInfo, podClaim *v
 		}
 
 		result, err := allocator.Allocate(context.Background(), node, []*resourceapi.ResourceClaim{claim})
-		if err != nil || result == nil {
+		if err != nil {
 			return fmt.Errorf("failed to allocate resources: %v", err)
+
+		}
+		if result == nil {
+			return fmt.Errorf("failed to allocate resources: no allocation result")
 		}
 
 		claim.Status.Allocation = &result[0]
