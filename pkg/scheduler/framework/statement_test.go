@@ -1297,11 +1297,6 @@ func newMockAllocation(device string) *resourceapi.AllocationResult {
 // TestStatement_Evict_Undo_Undo_DRA_ResourceClaimInfo verifies that the
 // evict → undo → undo (re-evict) sequence does not corrupt the
 // ResourceClaimInfo captured by the original evict's reverse closure.
-//
-// The bug: unevict aliases previousResourceClaimInfo onto the task, then
-// AllocateFunc replaces entries in that map. A subsequent re-eviction's
-// DeallocateFunc mutates those entries through the pointer, silently
-// corrupting the original closure's snapshot.
 func TestStatement_Evict_Undo_Undo_DRA_ResourceClaimInfo(t *testing.T) {
 	clusterTopology := nodes_fake.TestClusterTopology{
 		Jobs: []*jobs_fake.TestJobBasic{
@@ -1406,10 +1401,6 @@ func TestStatement_Evict_Undo_Undo_DRA_ResourceClaimInfo(t *testing.T) {
 // pipeline → undo → undo (re-pipeline) sequence preserves the original
 // ResourceClaimInfo in the pipeline closure, not stale data from a later
 // AllocateFunc call.
-//
-// Without the Clone fix in unpipeline, DeallocateFunc corrupts previousRCI
-// through pointer aliasing, and a subsequent AllocateFunc overwrites the
-// entries — so the closure silently loses the original allocation data.
 func TestStatement_Pipeline_Undo_Undo_DRA_ResourceClaimInfo(t *testing.T) {
 	clusterTopology := nodes_fake.TestClusterTopology{
 		Jobs: []*jobs_fake.TestJobBasic{
