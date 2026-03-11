@@ -14,7 +14,7 @@ permissions:
   packages: write
 
 env:
-  DOCKER_REGISTRY: "ghcr.io/nvidia/kai-scheduler"
+  DOCKER_REGISTRY: "ghcr.io/kai-scheduler/kai-scheduler"
 
 jobs:
   build-and-push:
