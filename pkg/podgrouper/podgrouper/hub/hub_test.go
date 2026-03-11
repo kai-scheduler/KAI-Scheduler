@@ -28,12 +28,12 @@ var _ = Describe("SupportedTypes", func() {
 	Context("Exact Match Tests", func() {
 		var (
 			kubeClient client.Client
-			hub        *PluginsHub
+			hub        *DefaultPluginsHub
 		)
 
 		BeforeEach(func() {
 			kubeClient = fake.NewFakeClient()
-			hub = NewPluginsHub(
+			hub = NewDefaultPluginsHub(
 				kubeClient, false, false, queueLabelKey, nodePoolLabelKey, "", "",
 			)
 		})
@@ -49,6 +49,16 @@ var _ = Describe("SupportedTypes", func() {
 			Expect(plugin.Name()).To(BeEquivalentTo("TensorFlow Grouper"))
 		})
 
+		It("should return plugin for exact GVK match - HasMatchingPlugin function", func() {
+			gvk := metav1.GroupVersionKind{
+				Group:   "kubeflow.org",
+				Version: "v1",
+				Kind:    "TFJob",
+			}
+			hasPlugin := hub.HasMatchingPlugin(gvk)
+			Expect(hasPlugin).To(BeTrue())
+		})
+
 		It("should return default plugin for non-existent GVK", func() {
 			gvk := metav1.GroupVersionKind{
 				Group:   "non-existent-group",
@@ -59,17 +69,38 @@ var _ = Describe("SupportedTypes", func() {
 			Expect(plugin).NotTo(BeNil())
 			Expect(plugin.Name()).To(BeEquivalentTo("Default Grouper"))
 		})
+
+		It("non-existent GVK - HasMatchingPlugin returns false", func() {
+			gvk := metav1.GroupVersionKind{
+				Group:   "non-existent-group",
+				Version: "v1",
+				Kind:    "NonExistentKind",
+			}
+			hasPlugin := hub.HasMatchingPlugin(gvk)
+			Expect(hasPlugin).To(BeFalse())
+		})
+
+		It("should return skipTopOwner plugin for TrainJob", func() {
+			gvk := metav1.GroupVersionKind{
+				Group:   "trainer.kubeflow.org",
+				Version: "v1alpha1",
+				Kind:    "TrainJob",
+			}
+			plugin := hub.GetPodGrouperPlugin(gvk)
+			Expect(plugin).NotTo(BeNil())
+			Expect(plugin.Name()).To(BeEquivalentTo("SkipTopOwner Grouper"))
+		})
 	})
 
 	Context("Wildcard Version Tests", func() {
 		var (
 			kubeClient client.Client
-			hub        *PluginsHub
+			hub        *DefaultPluginsHub
 		)
 
 		BeforeEach(func() {
 			kubeClient = fake.NewFakeClient()
-			hub = NewPluginsHub(
+			hub = NewDefaultPluginsHub(
 				kubeClient, false, false, queueLabelKey, nodePoolLabelKey, "", "",
 			)
 		})

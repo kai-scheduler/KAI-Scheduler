@@ -4,7 +4,7 @@
 package v1alpha2
 
 import (
-	"k8s.io/api/resource/v1beta1"
+	v1 "k8s.io/api/resource/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -37,7 +37,7 @@ type ReceivedGPU struct {
 	// Count is the amount of GPUs devices that were received
 	Count int `json:"count,omitempty"`
 
-	// This is the portion size that the pod will receive from each connected gpu device
+	// This is the portion size that the pod will receive from each connected GPU device
 	// This is a serialized float that should be written as a decimal point number.
 	Portion string `json:"portion,omitempty"`
 }
@@ -47,7 +47,7 @@ type ResourceClaimAllocation struct {
 	Name string `json:"name,omitempty"`
 
 	// Allocation is the desired allocation of the resource claim
-	Allocation *v1beta1.AllocationResult `json:"allocation,omitempty"`
+	Allocation *v1.AllocationResult `json:"allocation,omitempty"`
 }
 
 const (

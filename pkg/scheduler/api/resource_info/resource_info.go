@@ -1,3 +1,19 @@
+/*
+Copyright 2017 The Kubernetes Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 // Copyright 2025 NVIDIA CORPORATION
 // SPDX-License-Identifier: Apache-2.0
 
@@ -5,13 +21,14 @@ package resource_info
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	v1 "k8s.io/api/core/v1"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info/resources"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_internal"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info/resources"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 )
 
 type Resource struct {
@@ -36,6 +53,9 @@ func NewResource(milliCPU float64, memory float64, gpus float64) *Resource {
 func ResourceFromResourceList(rList v1.ResourceList) *Resource {
 	r := EmptyResource()
 	for rName, rQuant := range rList {
+		if rQuant.IsZero() {
+			continue
+		}
 		switch rName {
 		case v1.ResourceCPU:
 			r.milliCpu += float64(rQuant.MilliValue())
@@ -43,10 +63,14 @@ func ResourceFromResourceList(rList v1.ResourceList) *Resource {
 			r.memory += float64(rQuant.Value())
 		case GPUResourceName, amdGpuResourceName:
 			r.gpus += float64(rQuant.Value())
+		case v1.ResourcePods:
+			r.scalarResources[rName] += rQuant.Value()
 		default:
 			if IsMigResource(rName) {
 				r.scalarResources[rName] += rQuant.Value()
-			} else if k8s_internal.IsScalarResourceName(rName) || rName == v1.ResourceEphemeralStorage || rName == v1.ResourceStorage {
+			} else if rName == v1.ResourceEphemeralStorage || rName == v1.ResourceStorage {
+				r.scalarResources[rName] += rQuant.Value()
+			} else if k8s_internal.IsScalarResourceName(rName) {
 				r.scalarResources[rName] += rQuant.MilliValue()
 			}
 		}
@@ -118,8 +142,14 @@ func (r *Resource) DetailedString() string {
 }
 
 func (r *Resource) AddResourceRequirements(req *ResourceRequirements) {
+	if req == nil {
+		return
+	}
 	r.BaseResource.Add(&req.BaseResource)
 	r.gpus += req.GPUs()
+	for _, rQuant := range req.draGpuCounts {
+		r.gpus += float64(rQuant)
+	}
 	for migProfile, migCount := range req.MigResources() {
 		r.BaseResource.scalarResources[migProfile] += migCount
 	}
@@ -128,6 +158,9 @@ func (r *Resource) AddResourceRequirements(req *ResourceRequirements) {
 func (r *Resource) SubResourceRequirements(req *ResourceRequirements) {
 	r.BaseResource.Sub(&req.BaseResource)
 	r.gpus -= req.GPUs()
+	for _, rQuant := range req.draGpuCounts {
+		r.gpus -= float64(rQuant)
+	}
 	for migProfile, migCount := range req.MigResources() {
 		r.BaseResource.scalarResources[migProfile] -= migCount
 	}
@@ -137,8 +170,12 @@ func (r *Resource) GPUs() float64 {
 	return r.gpus
 }
 
-func (r *Resource) GetSumGPUs() float64 {
-	var totalMigGPUs float64
+func (r *Resource) ExtendedResourceGpusAsString() string {
+	return strconv.FormatFloat(r.gpus, 'g', 3, 64)
+}
+
+func (r *Resource) GetTotalGPURequest() float64 {
+	var totalGpusQuota float64
 	for resourceName, quant := range r.ScalarResources() {
 		if !IsMigResource(resourceName) {
 			continue
@@ -149,10 +186,11 @@ func (r *Resource) GetSumGPUs() float64 {
 			continue
 		}
 
-		totalMigGPUs += float64(gpuPortion) * float64(quant)
+		totalGpusQuota += float64(gpuPortion) * float64(quant)
 	}
+	totalGpusQuota += r.gpus
 
-	return totalMigGPUs + r.gpus
+	return totalGpusQuota
 }
 
 func (r *Resource) SetGPUs(gpus float64) {
@@ -165,6 +203,16 @@ func (r *Resource) AddGPUs(addGpus float64) {
 
 func (r *Resource) SubGPUs(subGpus float64) {
 	r.gpus -= subGpus
+}
+
+func (r *Resource) MigResources() map[v1.ResourceName]int64 {
+	migResources := make(map[v1.ResourceName]int64)
+	for name, quant := range r.scalarResources {
+		if IsMigResource(name) {
+			migResources[name] = quant
+		}
+	}
+	return migResources
 }
 
 func StringResourceArray(ra []*Resource) string {

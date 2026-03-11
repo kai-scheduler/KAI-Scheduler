@@ -16,21 +16,34 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 
 # Space seperated list of services to build by default
 # SERVICE_NAMES := service1 service2 service3
-SERVICE_NAMES := podgrouper scheduler binder webhookmanager resourcereservation snapshot-tool scalingpod nodescaleadjuster podgroupcontroller queuecontroller
+SERVICE_NAMES := podgrouper scheduler binder resourcereservation snapshot-tool scalingpod nodescaleadjuster podgroupcontroller queuecontroller fairshare-simulator admission operator time-based-fairshare-simulator
+
+# Kubernetes manifest files that require Kubernetes copyright header (space-separated)
+K8S_COPYRIGHTED_MANIFEST_FILES := deployments/kai-scheduler/crds/kai.scheduler_topologies.yaml
 
 
 lint: fmt-go vet-go lint-go
 .PHONY: lint
 
+.PHONY: test-chart
+test-chart:
+	@echo "Running tests for Helm chart: kai-scheduler"
+	docker run -t --rm -v ./deployments/kai-scheduler:/apps helmunittest/helm-unittest:3.17.2-0.8.1 . -f 'tests/**/*_test.yaml'
+
 .PHONY: test
-test: envtest-docker-go
+test: test-chart envtest-docker-go
 
 .PHONY: build
 build: $(SERVICE_NAMES)
+	$(MAKE) docker-build-crd-upgrader
 
 $(SERVICE_NAMES):
 	$(MAKE) build-go SERVICE_NAME=$@
 	$(MAKE) docker-build-generic SERVICE_NAME=$@
+
+.PHONY: push
+push: $(SERVICE_NAMES)
+	docker push $(DOCKER_REPO_BASE)/crd-upgrader:$(VERSION)
 
 .PHONY: validate
 validate: generate manifests clients gen-license generate-mocks lint
@@ -65,14 +78,13 @@ manifests: controller-gen kustomize ## Generate ClusterRole and CustomResourceDe
 	$(CONTROLLER_GEN) rbac:roleName=kai-node-scale-adjuster,headerFile="./hack/boilerplate.yaml.txt" paths="./pkg/nodescaleadjuster/..." paths="./cmd/nodescaleadjuster/..." output:stdout > deployments/kai-scheduler/templates/rbac/nodescaleadjuster.yaml
 	$(CONTROLLER_GEN) rbac:roleName=kai-podgroup-controller,headerFile="./hack/boilerplate.yaml.txt" paths="./pkg/podgroupcontroller/..." paths="./cmd/podgroupcontroller/..." output:stdout > deployments/kai-scheduler/templates/rbac/podgroupcontroller.yaml
 	$(CONTROLLER_GEN) rbac:roleName=queuecontroller,headerFile="./hack/boilerplate.yaml.txt" paths="./pkg/queuecontroller/..." paths="./cmd/queuecontroller/..." output:stdout > deployments/kai-scheduler/templates/rbac/queuecontroller.yaml
+	$(CONTROLLER_GEN) rbac:roleName=kai-admission,headerFile="./hack/boilerplate.yaml.txt" paths="./pkg/admission/..." paths="./cmd/admission/..." output:stdout > deployments/kai-scheduler/templates/rbac/admission.yaml
+	$(CONTROLLER_GEN) rbac:roleName=kai-operator,headerFile="./hack/boilerplate.yaml.txt" paths="./pkg/operator/..." paths="./cmd/operator/..." output:stdout > deployments/kai-scheduler/templates/rbac/operator.yaml
 
-	$(CONTROLLER_GEN) rbac:roleName=kai-webhookmanager,headerFile="./hack/boilerplate.yaml.txt" paths="./pkg/webhookmanager/..." paths="./cmd/webhookmanager/..." output:stdout > deployments/kustomization/webhookmanager-clusterrole/resource.yaml
-	$(KUSTOMIZE) build deployments/kustomization/webhookmanager-clusterrole >  deployments/kai-scheduler/templates/rbac/webhookmanager.yaml
-	rm -rf deployments/kustomization/webhookmanager-clusterrole/resource.yaml
-
-	$(CONTROLLER_GEN) webhook:headerFile="./hack/boilerplate.yaml.txt" paths="./cmd/binder/..." output:stdout > deployments/kustomization/binder-webhook/resource.yaml
-	$(KUSTOMIZE) build deployments/kustomization/binder-webhook >  deployments/kai-scheduler/templates/binder-webhook.yaml
-	rm -rf deployments/kustomization/binder-webhook/resource.yaml
+	# Add Kubernetes copyright to files derived from Kubernetes projects
+	@for f in $(K8S_COPYRIGHTED_MANIFEST_FILES); do \
+		cat ./hack/boilerplate.yaml.kb.txt $$f > $$f.tmp && mv $$f.tmp $$f; \
+	done
 
 	$(MAKE) gen-license
 
@@ -101,3 +113,28 @@ KUSTOMIZE_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/kubernetes-sigs/k
 kustomize: $(KUSTOMIZE)
 $(KUSTOMIZE): $(LOCALBIN)
 	test -s $(LOCALBIN)/kustomize || { curl -Ss $(KUSTOMIZE_INSTALL_SCRIPT) --output install_kustomize.sh && bash install_kustomize.sh $(subst v,,$(KUSTOMIZE_VERSION)) $(LOCALBIN); rm install_kustomize.sh; }
+
+# Benchmark targets
+BENCHSTAT ?= $(LOCALBIN)/benchstat
+BENCH_OUTPUT ?= benchmark-results.txt
+
+.PHONY: benchstat
+benchstat: $(BENCHSTAT)
+$(BENCHSTAT): $(LOCALBIN)
+	test -s $(LOCALBIN)/benchstat || GOBIN=$(LOCALBIN) go install golang.org/x/perf/cmd/benchstat@latest
+
+.PHONY: benchmark
+benchmark: envtest ## Run benchmarks and output results (use BENCH_OUTPUT=file.txt to customize output)
+	@echo "Running benchmarks..."
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path --bin-dir $(LOCALBIN))" \
+	go test -bench=. -benchmem -count=6 -run=^$$ ./pkg/scheduler/actions/... | tee $(BENCH_OUTPUT)
+
+.PHONY: benchmark-docker
+benchmark-docker: builder gocache ## Run benchmarks in Docker
+	@echo "Running benchmarks in Docker..."
+	${DOCKER_GO_COMMAND} make benchmark
+
+.PHONY: benchmark-compare
+benchmark-compare: benchstat ## Compare benchmark results (requires baseline.txt and benchmark-results.txt)
+	@echo "Comparing benchmarks..."
+	$(BENCHSTAT) baseline.txt benchmark-results.txt

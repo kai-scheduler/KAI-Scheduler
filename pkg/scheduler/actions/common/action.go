@@ -8,15 +8,15 @@ import (
 
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/eviction_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/scheduler_util"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/scheduler_util"
 )
 
 func EvictAllPreemptees(ssn *framework.Session, preempteeTasks []*pod_info.PodInfo,
@@ -60,7 +60,7 @@ func GetJobsToAllocate(ssn *framework.Session, preempteeTasks []*pod_info.PodInf
 	preemptor *podgroup_info.PodGroupInfo) *utils.JobsOrderByQueues {
 	allJobsToAllocate := utils.GetAllPendingJobs(ssn)
 	for _, task := range preempteeTasks {
-		preempteeJob := ssn.PodGroupInfos[task.Job]
+		preempteeJob := ssn.ClusterInfo.PodGroupInfos[task.Job]
 		allJobsToAllocate[preempteeJob.UID] = preempteeJob
 	}
 	// add preemptor to allJobsToAllocate if it's not there
@@ -83,7 +83,7 @@ func TryToVirtuallyAllocatePreemptorAndGetVictims(
 
 	potentialVictimsMap := make(map[common_info.PodGroupID]*podgroup_info.PodGroupInfo)
 	for _, task := range preempteeTasks {
-		job := ssn.PodGroupInfos[task.Job]
+		job := ssn.ClusterInfo.PodGroupInfos[task.Job]
 		potentialVictimsMap[job.UID] = job
 	}
 
@@ -94,13 +94,14 @@ func TryToVirtuallyAllocatePreemptorAndGetVictims(
 		}
 
 		resReq := podgroup_info.GetTasksToAllocateInitResource(
-			jobToAllocate, ssn.TaskOrderFn, false)
+			jobToAllocate, ssn.PodSetOrderFn, ssn.TaskOrderFn, false, ssn.ClusterInfo.MinNodeGPUMemory)
 		log.InfraLogger.V(6).Infof("Trying to pipeline job: <%s/%s>. resources required: %v",
 			jobToAllocate.Namespace, jobToAllocate.Name, resReq)
 
 		if jobToAllocate.UID != preemptor.UID {
 			if !AllocateJob(ssn, stmt, nodes, jobToAllocate, true) {
-				tasksToAllocate := podgroup_info.GetTasksToAllocate(jobToAllocate, ssn.TaskOrderFn, false)
+				tasksToAllocate := podgroup_info.GetTasksToAllocate(jobToAllocate, ssn.PodSetOrderFn,
+					ssn.TaskOrderFn, false)
 				newVictims = append(newVictims, tasksToAllocate...)
 			}
 			continue

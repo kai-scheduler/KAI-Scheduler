@@ -11,19 +11,24 @@ import (
 	"io"
 	"time"
 
+	. "github.com/onsi/gomega"
+
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/utils/ptr"
 
 	v1 "k8s.io/api/core/v1"
+	resourceapi "k8s.io/api/resource/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	v2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/constant"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/queue"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/utils"
+	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/constant"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/testconfig"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/utils"
 )
 
 const (
@@ -128,6 +133,7 @@ func CreatePod(ctx context.Context, client *kubernetes.Clientset, pod *v1.Pod) (
 }
 
 func CreatePodObject(podQueue *v2.Queue, resources v1.ResourceRequirements) *v1.Pod {
+	cfg := testconfig.GetConfig()
 	namespace := queue.GetConnectedNamespaceToQueue(podQueue)
 	pod := &v1.Pod{
 		TypeMeta: metav1.TypeMeta{
@@ -140,13 +146,13 @@ func CreatePodObject(podQueue *v2.Queue, resources v1.ResourceRequirements) *v1.
 			Annotations: map[string]string{},
 			Labels: map[string]string{
 				constants.AppLabelName: "engine-e2e",
-				"kai.scheduler/queue":  podQueue.Name,
+				cfg.QueueLabelKey:      podQueue.Name,
 			},
 		},
 		Spec: v1.PodSpec{
 			Containers: []v1.Container{
 				{
-					Image: "ubuntu",
+					Image: cfg.ContainerImage,
 					Name:  "ubuntu-container",
 					Args: []string{
 						"sleep",
@@ -158,7 +164,7 @@ func CreatePodObject(podQueue *v2.Queue, resources v1.ResourceRequirements) *v1.
 				},
 			},
 			TerminationGracePeriodSeconds: ptr.To(int64(0)),
-			SchedulerName:                 constant.SchedulerName,
+			SchedulerName:                 cfg.SchedulerName,
 			Tolerations: []v1.Toleration{
 				{
 					Key:      "nvidia.com/gpu",
@@ -177,6 +183,60 @@ func CreatePodWithPodGroupReference(queue *v2.Queue, podGroupName string,
 	pod := CreatePodObject(queue, resources)
 	pod.Annotations[PodGroupLabelName] = podGroupName
 	pod.Labels[PodGroupLabelName] = podGroupName
+	return pod
+}
+
+func CreatePodWithGpuClaim(ctx context.Context, client *kubernetes.Clientset, controllerClient runtimeClient.Client, q *v2.Queue, namespace string, deviceCount int, extraPodSpec func(*v1.Pod)) *v1.Pod {
+	return createPodWithGpuClaim(ctx, client, controllerClient, q, namespace, deviceCount, extraPodSpec)
+}
+
+func CreatePodWithGpuClaimAndPodGroup(ctx context.Context, client *kubernetes.Clientset, controllerClient runtimeClient.Client, q *v2.Queue, namespace string, deviceCount int, podGroupName string) *v1.Pod {
+	setPodGroup := func(pod *v1.Pod) {
+		if podGroupName != "" {
+			pod.Annotations[PodGroupLabelName] = podGroupName
+			pod.Labels[PodGroupLabelName] = podGroupName
+		}
+	}
+	return createPodWithGpuClaim(ctx, client, controllerClient, q, namespace, deviceCount, setPodGroup)
+}
+
+func createPodWithGpuClaim(ctx context.Context, client *kubernetes.Clientset, controllerClient runtimeClient.Client, q *v2.Queue, namespace string, deviceCount int, extraPodSpec func(*v1.Pod)) *v1.Pod {
+	claim := CreateResourceClaim(namespace, q.Name, constant.GPUDeviceClassName, deviceCount)
+	claim, err := client.ResourceV1().ResourceClaims(namespace).Create(ctx, claim, metav1.CreateOptions{})
+	Expect(err).To(Succeed())
+
+	Eventually(func() error {
+		claimObj := &resourceapi.ResourceClaim{}
+		return controllerClient.Get(ctx, types.NamespacedName{Namespace: namespace, Name: claim.Name}, claimObj)
+	}).Should(Succeed(), "ResourceClaim should be accessible via controller client")
+
+	claimName := "gpu-claim"
+	pod := CreatePodObject(q, v1.ResourceRequirements{
+		Claims: []v1.ResourceClaim{
+			{Name: claimName, Request: claimName},
+		},
+	})
+	pod.Spec.ResourceClaims = []v1.PodResourceClaim{{
+		Name:              claimName,
+		ResourceClaimName: ptr.To(claim.Name),
+	}}
+	if extraPodSpec != nil {
+		extraPodSpec(pod)
+	}
+	pod, err = CreatePod(ctx, client, pod)
+	Expect(err).To(Succeed())
+
+	claim, err = client.ResourceV1().ResourceClaims(namespace).Get(ctx, claim.Name, metav1.GetOptions{})
+	Expect(err).To(Succeed())
+	claim.OwnerReferences = []metav1.OwnerReference{{
+		APIVersion: "v1",
+		Kind:       "Pod",
+		Name:       pod.Name,
+		UID:        pod.UID,
+	}}
+	_, err = client.ResourceV1().ResourceClaims(namespace).Update(ctx, claim, metav1.UpdateOptions{})
+	Expect(err).To(Succeed())
+
 	return pod
 }
 

@@ -14,9 +14,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgroup"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/kubeflow"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/kubeflow"
 )
 
 const (
@@ -92,7 +92,7 @@ func TestLauncherPodExists(t *testing.T) {
 			_ = v1.AddToScheme(scheme)
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(tt.existingPods...).Build()
 
-			defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey)
+			defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, fakeClient)
 			kubeFlowGrouper := kubeflow.NewKubeflowDistributedGrouper(defaultGrouper)
 			mg := NewMpiGrouper(fakeClient, kubeFlowGrouper)
 			topOwner := &unstructured.Unstructured{
@@ -213,7 +213,7 @@ func TestHandleDelayedLauncherPolicy(t *testing.T) {
 			_ = v1.AddToScheme(scheme)
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(tt.existingPods...).Build()
 
-			defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey)
+			defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, fakeClient)
 			kubeFlowGrouper := kubeflow.NewKubeflowDistributedGrouper(defaultGrouper)
 			mg := NewMpiGrouper(fakeClient, kubeFlowGrouper)
 			gp := &podgroup.Metadata{
@@ -395,7 +395,7 @@ func TestGetPodGroupMetadata(t *testing.T) {
 			_ = v1.AddToScheme(scheme)
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(tt.existingPods...).Build()
 
-			defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey)
+			defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, fakeClient)
 			kubeFlowGrouper := kubeflow.NewKubeflowDistributedGrouper(defaultGrouper)
 			mg := NewMpiGrouper(fakeClient, kubeFlowGrouper)
 			metadata, err := mg.GetPodGroupMetadata(tt.topOwner, tt.pod)

@@ -56,15 +56,15 @@ func (sl *schedulerLogger) V(lvl int) *zap.SugaredLogger {
 }
 
 func (sl *schedulerLogger) Warningf(t string, vars ...interface{}) {
-	sl.getLogger().Warnf(t, vars...)
+	sl.getLogger().Desugar().WithOptions(zap.AddCallerSkip(1)).Sugar().Warnf(t, vars...)
 }
 
 func (sl *schedulerLogger) Errorf(t string, vars ...interface{}) {
-	sl.getLogger().Errorf(t, vars...)
+	sl.getLogger().Desugar().WithOptions(zap.AddCallerSkip(1)).Sugar().Errorf(t, vars...)
 }
 
 func (sl *schedulerLogger) Fatalf(t string, vars ...interface{}) {
-	sl.getLogger().Fatalf(t, vars...)
+	sl.getLogger().Desugar().WithOptions(zap.AddCallerSkip(1)).Sugar().Fatalf(t, vars...)
 }
 
 func (sl *schedulerLogger) Sync() error {

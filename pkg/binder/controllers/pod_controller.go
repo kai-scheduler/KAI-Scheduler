@@ -19,8 +19,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/binding/resourcereservation"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/resources"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding/resourcereservation"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 )
 
 // PodReconciler reconciles a Pod object
@@ -63,6 +63,7 @@ func (r *PodReconciler) SetupWithManager(
 				time.Duration(params.RateLimiterBaseDelaySeconds)*time.Second,
 				time.Duration(params.RateLimiterMaxDelaySeconds)*time.Second,
 			),
+			SkipNameValidation: &[]bool{true}[0],
 		}).
 		Owns(&corev1.ConfigMap{}).
 		Complete(r)

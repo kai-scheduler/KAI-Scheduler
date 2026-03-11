@@ -11,8 +11,9 @@ import (
 	v1 "k8s.io/api/core/v1"
 	v12 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
 )
 
 const (
@@ -50,7 +51,7 @@ func TestGetPodGroupMetadata(t *testing.T) {
 	}
 	pod := &v1.Pod{}
 
-	defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey)
+	defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, fake.NewFakeClient())
 	grouper := NewKubeflowDistributedGrouper(defaultGrouper)
 	podGroupMetadata, err := grouper.GetPodGroupMetadata(owner, pod,
 		"xReplicaSpecs", []string{"Master"})
@@ -98,7 +99,7 @@ func TestGetPodGroupMetadataOnQueueFromOwner(t *testing.T) {
 	}
 	pod := &v1.Pod{}
 
-	defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey)
+	defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, fake.NewFakeClient())
 	grouper := NewKubeflowDistributedGrouper(defaultGrouper)
 	podGroupMetadata, err := grouper.GetPodGroupMetadata(owner, pod,
 		"xReplicaSpecs", []string{"Master"})
@@ -147,7 +148,7 @@ func TestGetPodGroupMetadataRunPolicy(t *testing.T) {
 		},
 	}
 
-	defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey)
+	defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, fake.NewFakeClient())
 	grouper := NewKubeflowDistributedGrouper(defaultGrouper)
 	podGroupMetadata, err := grouper.GetPodGroupMetadata(owner, pod, "xReplicaSpecs", []string{"Master"})
 
@@ -189,7 +190,7 @@ func TestGetPodGroupMetadata_NoPods(t *testing.T) {
 		},
 	}
 
-	defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey)
+	defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, fake.NewFakeClient())
 	grouper := NewKubeflowDistributedGrouper(defaultGrouper)
 	_, err := grouper.GetPodGroupMetadata(owner, pod, "xReplicaSpecs", []string{"Master"})
 
@@ -230,7 +231,7 @@ func TestGetPodGroupMetadata_NoMastersAllowed(t *testing.T) {
 		},
 	}
 
-	defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey)
+	defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, fake.NewFakeClient())
 	grouper := NewKubeflowDistributedGrouper(defaultGrouper)
 	podGroupMetadata, err := grouper.GetPodGroupMetadata(owner, pod,
 		"xReplicaSpecs", []string{})
@@ -273,7 +274,7 @@ func TestGetPodGroupMetadata_NoMastersForbiden(t *testing.T) {
 		},
 	}
 
-	defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey)
+	defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, fake.NewFakeClient())
 	grouper := NewKubeflowDistributedGrouper(defaultGrouper)
 	_, err := grouper.GetPodGroupMetadata(owner, pod,
 		"xReplicaSpecs", []string{"Master"})

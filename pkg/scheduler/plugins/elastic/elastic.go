@@ -4,17 +4,14 @@
 package elastic
 
 import (
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 )
 
-type elasticPlugin struct {
-	// Arguments given for the plugin
-	pluginArguments map[string]string
-}
+type elasticPlugin struct{}
 
-func New(arguments map[string]string) framework.Plugin {
-	return &elasticPlugin{pluginArguments: arguments}
+func New(_ framework.PluginArguments) framework.Plugin {
+	return &elasticPlugin{}
 }
 
 func (pp *elasticPlugin) Name() string {
@@ -29,28 +26,42 @@ func JobOrderFn(l, r interface{}) int {
 	lv := l.(*podgroup_info.PodGroupInfo)
 	rv := r.(*podgroup_info.PodGroupInfo)
 
-	lvAllocatedCount := int32(lv.GetActiveAllocatedTasksCount())
-	rvAllocatedCount := int32(rv.GetActiveAllocatedTasksCount())
+	lvBelowMinAvailable, lvAboveMinAvailable, lvExactlyAtMinAvailable := minAvailableState(lv)
+	rvBelowMinAvailable, rvAboveMinAvailable, rvExactlyAtMinAvailable := minAvailableState(rv)
 
-	if lvAllocatedCount < lv.MinAvailable && rvAllocatedCount >= rv.MinAvailable {
+	if lvBelowMinAvailable && !rvBelowMinAvailable {
 		return -1
 	}
 
-	if lvAllocatedCount == lv.MinAvailable && rvAllocatedCount > rv.MinAvailable {
+	if lvExactlyAtMinAvailable && rvAboveMinAvailable {
 		return -1
 	}
 
-	if lvAllocatedCount >= lv.MinAvailable && rvAllocatedCount < rv.MinAvailable {
+	if !lvBelowMinAvailable && rvBelowMinAvailable {
 		return 1
 	}
 
-	if lvAllocatedCount > lv.MinAvailable && rvAllocatedCount == rv.MinAvailable {
+	if lvAboveMinAvailable && rvExactlyAtMinAvailable {
 		return 1
 	}
 
 	// TODO: consider the number of extra pods for elastic jobs?
 
 	return 0
+}
+
+func minAvailableState(pgi *podgroup_info.PodGroupInfo) (bool, bool, bool) {
+	exactlyAtMinAvailable := true
+	for _, subGroup := range pgi.GetSubGroups() {
+		numAllocatedTasks := int32(subGroup.GetNumActiveAllocatedTasks())
+		if numAllocatedTasks < subGroup.GetMinAvailable() {
+			return true, false, false
+		}
+		if numAllocatedTasks > subGroup.GetMinAvailable() {
+			exactlyAtMinAvailable = false
+		}
+	}
+	return false, !exactlyAtMinAvailable, exactlyAtMinAvailable
 }
 
 func (pp *elasticPlugin) OnSessionClose(_ *framework.Session) {}

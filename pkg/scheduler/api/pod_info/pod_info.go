@@ -1,3 +1,19 @@
+/*
+Copyright 2019 The Kubernetes Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 // Copyright 2025 NVIDIA CORPORATION
 // SPDX-License-Identifier: Apache-2.0
 
@@ -9,16 +25,19 @@ import (
 	"strings"
 
 	v1 "k8s.io/api/core/v1"
+	resourceapi "k8s.io/api/resource/v1"
+	"k8s.io/apimachinery/pkg/types"
 	clientcache "k8s.io/client-go/tools/cache"
 
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/resources"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/storageclaim_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
+	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/storageclaim_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 )
 
 const (
@@ -55,12 +74,18 @@ type PodInfo struct {
 	Name      string
 	Namespace string
 
+	SubGroupName string
+
 	ResourceRequestType  ResourceRequestType
 	ResourceReceivedType ResourceReceivedType
 
 	// ResReq are the minimal resources that needed to launch a pod. (includes init containers resources)
 	ResReq           *resource_info.ResourceRequirements
 	AcceptedResource *resource_info.ResourceRequirements
+
+	// Vector representation of ResReq
+	ResReqVector resource_info.ResourceVector
+	VectorMap    *resource_info.ResourceVectorMap
 
 	schedulingConstraintsSignature common_info.SchedulingConstraintsSignature
 
@@ -142,11 +167,11 @@ func (pi *PodInfo) UpsertStorageClaim(claimInfo *storageclaim_info.StorageClaimI
 	pi.storageClaims[claimInfo.Key] = claimInfo
 }
 
-func NewTaskInfo(pod *v1.Pod) *PodInfo {
-	return NewTaskInfoWithBindRequest(pod, nil)
+func NewTaskInfo(pod *v1.Pod, draPodClaims []*resourceapi.ResourceClaim, vectorMap *resource_info.ResourceVectorMap) *PodInfo {
+	return NewTaskInfoWithBindRequest(pod, nil, draPodClaims, vectorMap)
 }
 
-func NewTaskInfoWithBindRequest(pod *v1.Pod, bindRequest *bindrequest_info.BindRequestInfo) *PodInfo {
+func NewTaskInfoWithBindRequest(pod *v1.Pod, bindRequest *bindrequest_info.BindRequestInfo, draPodClaims []*resourceapi.ResourceClaim, vectorMap *resource_info.ResourceVectorMap) *PodInfo {
 	initResreq := getPodResourceRequest(pod)
 
 	nodeName := pod.Spec.NodeName
@@ -154,11 +179,17 @@ func NewTaskInfoWithBindRequest(pod *v1.Pod, bindRequest *bindrequest_info.BindR
 		nodeName = bindRequest.BindRequest.Spec.SelectedNode
 	}
 
+	resourceClaimInfo, err := resourceClaimInfoFromPodClaims(draPodClaims, pod, bindRequest)
+	if err != nil {
+		log.InfraLogger.Errorf("PodInfo ctor failure - failed to calculate resource claim info for pod %s/%s: %v", pod.Namespace, pod.Name, err)
+	}
+
 	podInfo := &PodInfo{
 		UID:                            common_info.PodID(pod.UID),
 		Job:                            getPodGroupID(pod),
 		Name:                           pod.Name,
 		Namespace:                      pod.Namespace,
+		SubGroupName:                   pod.Labels[commonconstants.SubGroupLabelKey],
 		NodeName:                       nodeName,
 		Status:                         getTaskStatus(pod, bindRequest),
 		IsVirtualStatus:                false,
@@ -166,30 +197,90 @@ func NewTaskInfoWithBindRequest(pod *v1.Pod, bindRequest *bindrequest_info.BindR
 		Pod:                            pod,
 		ResReq:                         initResreq,
 		AcceptedResource:               resource_info.EmptyResourceRequirements(),
+		ResReqVector:                   initResreq.ToVector(vectorMap),
+		VectorMap:                      vectorMap,
 		GPUGroups:                      []string{},
 		ResourceRequestType:            RequestTypeRegular,
 		ResourceReceivedType:           ReceivedTypeNone,
 		BindRequest:                    bindRequest,
+		ResourceClaimInfo:              resourceClaimInfo,
 		schedulingConstraintsSignature: "",
 		storageClaims:                  map[storageclaim_info.Key]*storageclaim_info.StorageClaimInfo{},
 		ownedStorageClaims:             map[storageclaim_info.Key]*storageclaim_info.StorageClaimInfo{},
 	}
 
-	podInfo.updatePodAdditionalFields(bindRequest)
+	podInfo.updatePodAdditionalFields(bindRequest, draPodClaims...)
+
 	return podInfo
 }
 
+func resourceClaimInfoFromPodClaims(draPodClaims []*resourceapi.ResourceClaim, pod *v1.Pod, bindRequest *bindrequest_info.BindRequestInfo) (bindrequest_info.ResourceClaimInfo, error) {
+	resourceClaimInfo := make(bindrequest_info.ResourceClaimInfo)
+
+	bindingRequestClaimUpdates := make(map[string]*schedulingv1alpha2.ResourceClaimAllocation)
+	if bindRequest != nil {
+		for _, claimAllocation := range bindRequest.BindRequest.Spec.ResourceClaimAllocations {
+			bindingRequestClaimUpdates[claimAllocation.Name] = &schedulingv1alpha2.ResourceClaimAllocation{
+				Name:       claimAllocation.Name,
+				Allocation: claimAllocation.Allocation.DeepCopy(),
+			}
+		}
+	}
+
+	draPodClaimsMap := resource_info.ResourceClaimSliceToMap(draPodClaims)
+	for _, podClaim := range pod.Spec.ResourceClaims {
+		claimName, err := resources.GetResourceClaimName(pod, &podClaim)
+		if err != nil {
+			if podClaim.ResourceClaimTemplateName != nil {
+				continue // The dra controller might not have created the claim yet - this is a valid state. The will fail on the dra plugin.
+			}
+			return resourceClaimInfo, fmt.Errorf("PodInfo ctor failure - failed to get resource claim name for pod %s/%s, claim %s: %v", pod.Namespace, pod.Name, podClaim.Name, err)
+		}
+		claim, found := draPodClaimsMap[types.NamespacedName{Namespace: pod.Namespace, Name: claimName}.String()]
+		if !found || claim == nil {
+			if podClaim.ResourceClaimTemplateName != nil {
+				continue // The dra controller might not have created the claim yet - this is a valid state. The will fail on the dra plugin.
+			}
+			return resourceClaimInfo, fmt.Errorf("PodInfo ctor failure - failed to get claim from draPodClaimsMap for pod %s/%s, claim %s", pod.Namespace, pod.Name, podClaim.Name)
+		}
+		resourceClaimInfo[podClaim.Name] = &schedulingv1alpha2.ResourceClaimAllocation{
+			Name:       podClaim.Name,
+			Allocation: claim.Status.Allocation,
+		}
+
+		// If a binding claim already exists, assume this is the allocation that will happen for the pod
+		if claimUpdate, found := bindingRequestClaimUpdates[podClaim.Name]; found {
+			resourceClaimInfo[podClaim.Name].Allocation = claimUpdate.Allocation
+		}
+	}
+	return resourceClaimInfo, nil
+}
+
+func (pi *PodInfo) SetVectorMap(vectorMap *resource_info.ResourceVectorMap) {
+	pi.VectorMap = vectorMap
+	pi.ResReqVector = pi.ResReq.ToVector(vectorMap)
+}
+
 func (pi *PodInfo) Clone() *PodInfo {
+	// TODO - remove this
+	var resReqVectorClone resource_info.ResourceVector
+	if pi.ResReqVector != nil {
+		resReqVectorClone = pi.ResReqVector.Clone()
+	}
+
 	return &PodInfo{
 		UID:                  pi.UID,
 		Job:                  pi.Job,
 		Name:                 pi.Name,
 		Namespace:            pi.Namespace,
+		SubGroupName:         pi.SubGroupName,
 		NodeName:             pi.NodeName,
 		Status:               pi.Status,
 		Pod:                  pi.Pod,
 		ResReq:               pi.ResReq.Clone(),
 		AcceptedResource:     pi.AcceptedResource.Clone(),
+		ResReqVector:         resReqVectorClone,
+		VectorMap:            pi.VectorMap,
 		GPUGroups:            pi.GPUGroups,
 		ResourceClaimInfo:    pi.ResourceClaimInfo.Clone(),
 		ResourceRequestType:  pi.ResourceRequestType,
@@ -251,7 +342,8 @@ func (pi *PodInfo) IsCPUOnlyRequest() bool {
 }
 
 func (pi *PodInfo) IsRequireAnyKindOfGPU() bool {
-	return pi.ResReq.GPUs() > 0 || pi.IsMemoryRequest() || pi.IsMigProfileRequest()
+	return pi.ResReq.GPUs() > 0 || pi.ResReq.GpuResourceRequirement.GetDraGpusCount() > 0 ||
+		pi.IsMemoryRequest() || pi.IsMigProfileRequest()
 }
 
 func (pi *PodInfo) GetSchedulingConstraintsSignature() common_info.SchedulingConstraintsSignature {
@@ -289,6 +381,13 @@ func getPodResourceRequest(pod *v1.Pod) *resource_info.ResourceRequirements {
 				pod.Namespace, pod.Name, err.Error())
 		}
 	}
+
+	if pod.Spec.Overhead != nil {
+		overheadReq := resource_info.RequirementsFromResourceList(pod.Spec.Overhead)
+		result.Add(&overheadReq.BaseResource)
+	}
+
+	result.ScalarResources()[resource_info.PodsResourceName] = 1
 
 	return result
 }
@@ -345,11 +444,7 @@ func getTaskStatus(pod *v1.Pod, bindRequest *bindrequest_info.BindRequestInfo) p
 	return pod_status.Unknown
 }
 
-func (pi *PodInfo) updatePodAdditionalFields(bindRequest *bindrequest_info.BindRequestInfo) {
-	if len(pi.Job) == 0 {
-		return
-	}
-
+func (pi *PodInfo) updatePodAdditionalFields(bindRequest *bindrequest_info.BindRequestInfo, draPodClaims ...*resourceapi.ResourceClaim) {
 	if bindRequest != nil && len(bindRequest.BindRequest.Spec.SelectedGPUGroups) > 0 {
 		pi.GPUGroups = bindRequest.BindRequest.Spec.SelectedGPUGroups
 	} else {
@@ -390,10 +485,16 @@ func (pi *PodInfo) updatePodAdditionalFields(bindRequest *bindrequest_info.BindR
 		}
 	}
 
+	if len(draPodClaims) > 0 {
+		draGpus := resources.ExtractDRAGPUResourcesFromClaims(draPodClaims)
+		pi.ResReq.GpuResourceRequirement.SetDraGpus(draGpus)
+	}
+
 	pi.updateLegacyMigResourceRequestFromAnnotations()
 	if len(pi.ResReq.MigResources()) > 0 {
 		pi.ResourceRequestType = RequestTypeMigInstance
 	}
+	pi.ResReqVector = pi.ResReq.ToVector(pi.VectorMap)
 }
 
 // updateLegacyMigResourceRequestFromAnnotations updates the mig resource request of legacy MIG pods

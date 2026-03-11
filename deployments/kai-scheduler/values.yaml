@@ -3,121 +3,214 @@
 
 global:
   registry: registry/local/kai-scheduler
+  tag: ""
+  imagePullPolicy: IfNotPresent
   securityContext: {}
   imagePullSecrets: []
+  leaderElection: false
   gpuSharing: false
   clusterAutoscaling: false
   nodeSelector: {}
   affinity: {}
+  requireDefaultPodAntiAffinityTerm: false
   tolerations: []
+  namespaceLabelSelector: {}
+  podLabelSelector: {}
+  vpa:
+    enabled: false
+    updatePolicy:
+      updateMode: InPlaceOrRecreate
+      minReplicas: 1
+    resourcePolicy:
+      containerPolicies:
+        - containerName: "*"
+          minAllowed:
+            cpu: 50m
+            memory: 500Mi
+          maxAllowed:
+            cpu: 2
+            memory: 5Gi
   resourceReservation:
     namespace: kai-resource-reservation
     serviceAccount: kai-resource-reservation
     appLabel: kai-resource-reservation
 
+operator:
+  image:
+    name: operator
+    pullPolicy: IfNotPresent
+    # tag: ""  # Optional: Override global.tag or Chart.AppVersion
+  replicaCount: 1
+  metricsBindAddress: ":8080"
+  probeBindAddress: ":8081"
+  qps: 50
+  burst: 300
 
 podgrouper:
   image:
     name: podgrouper
     pullPolicy: IfNotPresent
-  additionalArgs: []
-  resources:
-    limits:
-      cpu: "500m"
-      memory: "256Mi"
-    requests:
-      cpu: "250m"
-      memory: "128Mi"
+    # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   queueLabelKey: "kai.scheduler/queue"
+  affinity: {}
 
 podgroupcontroller:
   image:
     name: podgroupcontroller
     pullPolicy: IfNotPresent
-  additionalArgs: []
-  resources:
-    limits:
-      cpu: "500m"
-      memory: "256Mi"
-    requests:
-      cpu: "250m"
-      memory: "128Mi"
-
+    # tag: ""  # Optional: Override global.tag or Chart.AppVersion
+  affinity: {}
 binder:
   name: binder
   image:
     name: binder
     pullPolicy: IfNotPresent
+    # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   resourceReservationImage:
     name: resourcereservation
-  certSecretName: binder-webhook-tls-secret
-  additionalArgs: []
+    pullPolicy: IfNotPresent
+    # tag: ""  # Optional: Override global.tag or Chart.AppVersion
+  # resourceReservationPodResources specifies CPU and memory resource requests and limits
+  # for GPU reservation pods created by the binder.
+  # If not specified, Kubernetes default behavior will be used (no explicit limits/requests for CPU/Memory).
+  # Example:
+  # resourceReservationPodResources:
+  #   requests:
+  #     cpu: 1m
+  #     memory: 10Mi
+  #   limits:
+  #     cpu: 50m
+  #     memory: 100Mi
   ports:
-    webhookPort: 9443
     metricsPort: 8080
-    probePort: 8081
-  resources:
-    limits:
-      cpu: "500m"
-      memory: "256Mi"
-    requests:
-      cpu: "250m"
-      memory: "128Mi"
-  cdi: false
-
+  affinity: {}
 scheduler:
   image:
     name: scheduler
     pullPolicy: IfNotPresent
-  additionalArgs: []
+    # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   placementStrategy: binpack
   ports:
     metricsPort: 8080
-  resources:
-    limits:
-      cpu: "500m"
-      memory: "256Mi"
-    requests:
-      cpu: "250m"
-      memory: "128Mi"
-
-webhookmanager:
-  image:
-    name: webhookmanager
-    pullPolicy: IfNotPresent
-  resources:
-    limits:
-      cpu: "500m"
-      memory: "256Mi"
-    requests:
-      cpu: "250m"
-      memory: "128Mi"
-
-nodescaleadjuster:
-  image:
-    name: nodescaleadjuster
-    pullPolicy: IfNotPresent
-  scalingPodImage:
-    name: scalingpod
-  additionalArgs: []
-  resources:
-    limits:
-      cpu: "500m"
-      memory: "256Mi"
-    requests:
-      cpu: "250m"
-      memory: "128Mi"
+  # plugins allows overriding or adding custom scheduler plugins
+  # Built-in plugins can be disabled, reordered, or have their arguments changed.
+  # New plugins can be added by specifying a name not in the default set.
+  # Example:
+  # plugins:
+  #   elastic:
+  #     enabled: false
+  #   predicates:
+  #     priority: 50
+  #   proportion:
+  #     arguments:
+  #       kValue: "2.0"
+  #   mycustomplugin:
+  #     priority: 1050
+  #     arguments:
+  #       key: value
+  plugins: {}
+  # actions allows overriding or adding custom scheduler actions
+  # Built-in actions can be disabled or reordered.
+  # New actions can be added by specifying a name not in the default set.
+  # Example:
+  # actions:
+  #   consolidation:
+  #     enabled: false
+  #   allocate:
+  #     priority: 600
+  #   mycustomaction:
+  #     priority: 150
+  actions: {}
 
 queuecontroller:
   image:
     name: queuecontroller
     pullPolicy: IfNotPresent
-  additionalArgs: []
+    # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   certSecretName: queuecontroller-webhook-tls-secret
-  resources:
-    limits:
-      cpu: "500m"
-      memory: "256Mi"
-    requests:
-      cpu: "250m"
-      memory: "128Mi"
+  affinity: {}
+
+admission:
+  name: kai-admission
+  image:
+    name: admission
+    pullPolicy: IfNotPresent
+    # tag: ""  # Optional: Override global.tag or Chart.AppVersion
+  certSecretName: admission-webhook-tls-secret
+  ports:
+    webhookPort: 9443
+    metricsPort: 8080
+    probePort: 8081
+  cdi: false
+  gpuPodRuntimeClassName: nvidia
+  affinity: {}
+
+nodescaleadjuster:
+  image:
+    name: nodescaleadjuster
+    pullPolicy: IfNotPresent
+    # tag: ""  # Optional: Override global.tag or Chart.AppVersion
+  scalingPodImage:
+    name: scalingpod
+    pullPolicy: IfNotPresent
+    # tag: ""  # Optional: Override global.tag or Chart.AppVersion
+  scalingPodNamespace: kai-scale-adjust
+  affinity: {}
+
+crdupgrader:
+  image:
+    name: crd-upgrader
+    pullPolicy: IfNotPresent
+    # tag: ""  # Optional: Override global.tag or Chart.AppVersion
+
+topologyMigration:
+  # Enable migration of Kueue Topology CRs to KAI Topology CRs
+  # When enabled, a pre-install/pre-upgrade hook will:
+  # 1. Check if Kueue Topology CRD exists
+  # 2. Copy existing Kueue Topologies to KAI Topologies with the same spec
+  # The migrated topologies will have an annotation indicating they were migrated
+  enabled: true
+  image:
+    name: crd-upgrader
+    pullPolicy: IfNotPresent
+    # tag: ""  # Optional: Override global.tag or Chart.AppVersion
+
+postCleanup:
+  enabled: true
+  image:
+    # using crd-upgrader image for kubectl availability
+    name: crd-upgrader
+    pullPolicy: IfNotPresent
+    # tag: ""  # Optional: Override global.tag or Chart.AppVersion
+  serviceAccountName: post-delete-cleanup
+
+defaultQueue:
+  createDefaultQueue: true
+  parentName: default-parent-queue
+  childName: default-queue
+  parentResources:
+    cpu:
+      quota: 0
+      limit: -1
+      overQuotaWeight: 1
+    gpu:
+      quota: 0
+      limit: -1
+      overQuotaWeight: 1
+    memory:
+      quota: 0
+      limit: -1
+      overQuotaWeight: 1
+  childResources:
+    cpu:
+      quota: 0
+      limit: -1
+      overQuotaWeight: 1
+    gpu:
+      quota: 0
+      limit: -1
+      overQuotaWeight: 1
+    memory:
+      quota: 0
+      limit: -1
+      overQuotaWeight: 1

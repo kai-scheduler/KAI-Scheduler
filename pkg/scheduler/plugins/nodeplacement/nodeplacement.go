@@ -6,12 +6,12 @@ package nodeplacement
 import (
 	v1 "k8s.io/api/core/v1"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 )
 
 type allocationRange struct {
@@ -20,7 +20,7 @@ type allocationRange struct {
 
 type nodePlacementPlugin struct {
 	// Arguments given for the plugin
-	pluginArguments map[string]string
+	pluginArguments framework.PluginArguments
 	gpuPreOrderFn   api.NodePreOrderFn
 	cpuPreOrderFn   api.NodePreOrderFn
 	gpuTaskScoreFn  api.NodeOrderFn
@@ -30,14 +30,20 @@ type nodePlacementPlugin struct {
 }
 
 // New function returns nodePlacementPlugin object
-func New(arguments map[string]string) framework.Plugin {
+func New(arguments framework.PluginArguments) framework.Plugin {
+	// Create a mutable copy to set defaults
+	args := make(framework.PluginArguments)
+	for k, v := range arguments {
+		args[k] = v
+	}
+
 	for _, jobType := range []string{constants.GPUResource, constants.CPUResource} {
-		if _, found := arguments[jobType]; !found {
-			arguments[jobType] = constants.BinpackStrategy
+		if _, found := args[jobType]; !found {
+			args[jobType] = constants.BinpackStrategy
 		}
 	}
 
-	return &nodePlacementPlugin{pluginArguments: arguments}
+	return &nodePlacementPlugin{pluginArguments: args}
 }
 
 func (pp *nodePlacementPlugin) Name() string {

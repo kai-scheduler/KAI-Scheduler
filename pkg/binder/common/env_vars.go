@@ -26,12 +26,12 @@ func AddDirectEnvVarsConfigMapSource(container *v1.Container, directEnvVarsMapNa
 }
 
 func AddEnvVarToContainer(container *v1.Container, envVar v1.EnvVar) {
-	for i, env := range container.Env {
-		if env.Name == envVar.Name {
-			container.Env[i].Value = envVar.Value
-			return
+	var envVars []v1.EnvVar
+
+	for _, existingEnv := range container.Env {
+		if existingEnv.Name != envVar.Name {
+			envVars = append(envVars, existingEnv)
 		}
 	}
-
-	container.Env = append(container.Env, envVar)
+	container.Env = append(envVars, envVar)
 }

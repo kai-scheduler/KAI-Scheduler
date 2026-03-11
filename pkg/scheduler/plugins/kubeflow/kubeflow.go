@@ -6,8 +6,8 @@ package kubeflow
 import (
 	"k8s.io/kubernetes/pkg/util/slice"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 )
 
 const (
@@ -18,13 +18,10 @@ var (
 	masterRoleValues = []string{"master", "launcher"}
 )
 
-type kubeflowPlugin struct {
-	// Arguments given for the plugin
-	pluginArguments map[string]string
-}
+type kubeflowPlugin struct{}
 
-func New(arguments map[string]string) framework.Plugin {
-	return &kubeflowPlugin{pluginArguments: arguments}
+func New(_ framework.PluginArguments) framework.Plugin {
+	return &kubeflowPlugin{}
 }
 
 func (pp *kubeflowPlugin) Name() string {

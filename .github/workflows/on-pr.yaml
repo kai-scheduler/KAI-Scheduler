@@ -5,23 +5,60 @@ name: KAI Scheduler - Pull Request
 on:
   pull_request:
     types: [opened, reopened, synchronize]
+  merge_group:
+    types: [checks_requested]
 
 concurrency:
-  group: ${{ github.head_ref || github.ref || github.run_id }}
+  group: ${{ github.event_name == 'merge_group' && github.ref || github.head_ref || github.run_id }}
   cancel-in-progress: true
 
 jobs:
+  check-build-and-test-required:
+    name: Check if build and test are required
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Check changed files
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          predicate-quantifier: "every"
+          filters: |
+            docs:
+              - '**/*.md'
+              - 'docs/**'
+            code:
+              - '**'
+              - '!**/*.md'
+              - '!docs/**'
   validate-and-test:
+    needs: [ check-build-and-test-required ]
+    if: needs.check-build-and-test-required.outputs.code == 'true'
     name: Validate & Test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+
+      - name: Cache Go build cache (Docker-mounted)
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cache/go-build-docker-gocache
+            ~/.cache/go-build-docker-gopath
+          key: go-docker-${{ runner.os }}-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            go-docker-${{ runner.os }}-
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23.4'
+          go-version: '1.24.4'
+          cache: true
 
       - name: Run validation
         run: make validate
@@ -38,14 +75,15 @@ jobs:
   code-coverage-report:
     name: Code Coverage Report
     runs-on: ubuntu-latest
-    needs: validate-and-test
+    needs: [ validate-and-test, check-build-and-test-required ]
+    if: github.event_name != 'merge_group' && needs.check-build-and-test-required.outputs.code == 'true' && github.base_ref == 'main'
     steps:
       - uses: fgrosse/go-coverage-report@8c1d1a09864211d258937b1b1a5b849f7e4f2682
         id: coverage_reporter
         with:
           coverage-artifact-name: "code-coverage"
           coverage-file-name: "coverage.out"
-          root-package: "github.com/NVIDIA/KAI-scheduler"
+          root-package: "github.com/kai-scheduler/KAI-scheduler"
           github-baseline-workflow-ref: update-coverage-badge.yaml
           skip-comment: true
       - name: Save coverage report to file
@@ -66,102 +104,207 @@ jobs:
           path: pr_number.txt
 
   build:
+    needs: [ check-build-and-test-required ]
+    if: needs.check-build-and-test-required.outputs.code == 'true'
     name: Build
     runs-on: ubuntu-latest
     outputs:
       package_version: ${{ steps.package_version.outputs.PACKAGE_VERSION }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Extract package version
         id: package_version
         run: |
-          PACKAGE_VERSION=0.0.0-$(git rev-parse --short HEAD)
+          GIT_REV=$(git rev-parse --short HEAD | sed 's/^0*//')
+          PACKAGE_VERSION=0.0.0-$GIT_REV
           echo "PACKAGE_VERSION=$PACKAGE_VERSION" >> $GITHUB_ENV
           echo "PACKAGE_VERSION=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
           echo $PACKAGE_VERSION
 
+      - name: Cache Go build cache (Docker-mounted)
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cache/go-build-docker-gocache
+            ~/.cache/go-build-docker-gopath
+          key: go-docker-${{ runner.os }}-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            go-docker-${{ runner.os }}-
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23.4'
+          go-version: '1.24.4'
+          cache: true
+
+      - name: Move Docker Data to /mnt
+        run: |
+          sudo systemctl stop docker
+          sudo mkdir -p /mnt/docker-data
+          echo '{"data-root": "/mnt/docker-data"}' | sudo tee /etc/docker/daemon.json
+          sudo systemctl start docker
+          docker info | grep "Docker Root Dir"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Create image cache directory
-        run: mkdir images
+        run: |
+          sudo mkdir -p /mnt/images
+          sudo chown -R $USER:$USER /mnt/images
 
       - name: Cache for docker images and helm chart
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
-          path: images
+          path: /mnt/images
           key:  images-${{ github.sha }}
 
       - name: Build docker images
         run: |
-          make build DOCKER_BUILDX_ADDITIONAL_ARGS=--load VERSION=$PACKAGE_VERSION
-          docker save $(docker images --format '{{.Repository}}:{{.Tag}}' | grep $PACKAGE_VERSION) | gzip > images/docker_images.tgz
+          make build DOCKER_BUILDX_ADDITIONAL_ARGS="--load --cache-from type=gha --cache-to type=gha,mode=max" VERSION=$PACKAGE_VERSION
+          docker save $(docker images --format '{{.Repository}}:{{.Tag}}' | grep $PACKAGE_VERSION) | gzip > /mnt/images/docker_images.tgz
 
       - name: Build helm chart
         run: |
           helm package ./deployments/kai-scheduler -d ./charts --app-version $PACKAGE_VERSION --version $PACKAGE_VERSION
-          cp charts/kai-scheduler-$PACKAGE_VERSION.tgz images/
+          cp charts/kai-scheduler-$PACKAGE_VERSION.tgz /mnt/images/
 
-
+  skip-build-and-test-message:
+    name: Skip Build and Test Message
+    needs: [ check-build-and-test-required ]
+    if: needs.check-build-and-test-required.outputs.code != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip message
+        run: |
+          echo "Skipping build and test since only documentation files (.md or docs/) were changed."
 
   e2e-tests:
     name: Run E2E Tests
-    needs: [ build ]
+    needs: [ build, check-build-and-test-required ]
+    if: needs.check-build-and-test-required.outputs.code == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      actions: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
-      - name: Cache restore
-        uses: actions/cache/restore@v4
+      - name: Setup e2e cluster
+        uses: ./.github/actions/setup-e2e-cluster
         with:
-          path: images
-          key:  images-${{ github.sha }}
+          package_version: ${{ needs.build.outputs.package_version }}
 
-      - name: Create k8s Kind Cluster
-        uses: helm/kind-action@v1.10.0
-        with:
-          cluster_name: kind
-          version: v0.26.0
-          config: ./hack/e2e-kind-config.yaml
+      - name: Delete restored cache
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh cache delete "images-${{ github.sha }}" --repo ${{ github.repository }}
 
-      - name: Load docker images to kind
-        working-directory: images
+      - name: Install KAI-scheduler
         env:
           PACKAGE_VERSION: ${{ needs.build.outputs.package_version }}
         run: |
-          docker load < docker_images.tgz
-          for image in $(docker images --format '{{.Repository}}:{{.Tag}}' | grep $PACKAGE_VERSION); do
-            kind load docker-image $image --name kind
-          done
-
-      - name: Deploy fake gpu operator
-        run: |
-          helm upgrade -i gpu-operator oci://ghcr.io/run-ai/fake-gpu-operator/fake-gpu-operator --namespace gpu-operator --create-namespace \
-              --version 0.0.62 --values ./hack/fake-gpu-operator-values.yaml --wait
-
-      - name: install KAI-scheduler
-        env:
-          PACKAGE_VERSION: ${{ needs.build.outputs.package_version }}
-        run: |
-          helm upgrade -i kai-scheduler ./images/kai-scheduler-$PACKAGE_VERSION.tgz -n kai-scheduler --create-namespace \
-            --set "global.gpuSharing=true" --debug --wait
-      - name: Set up Go
-        uses: actions/setup-go@v2
-        with:
-          go-version: 1.22
-
-      - name: Install ginkgo
-        run: |
-          go install github.com/onsi/ginkgo/v2/ginkgo@v2.19.0
+          helm upgrade -i kai-scheduler /mnt/images/kai-scheduler-$PACKAGE_VERSION.tgz -n kai-scheduler --create-namespace \
+            --set "global.gpuSharing=true" --set "global.registry=localhost:30100" --debug --wait
+          kubectl create clusterrole pods-patcher --verb=patch --resource=pods
+          kubectl create rolebinding fake-status-updater --clusterrole=pods-patcher --serviceaccount=gpu-operator:status-updater -n kai-resource-reservation
 
       - name: Run e2e tests
         run: |
-          ginkgo -r --keep-going --randomize-all --randomize-suites --trace -vv ./test/e2e/suites --label-filter '!autoscale', '!scale'
+          ginkgo -r --keep-going --randomize-all --randomize-suites --trace -vv --label-filter '!autoscale && !scale && !upgrade' --output-dir=. --json-report=e2e-report.json ./test/e2e/suites
+          echo ""
+          echo "=== Skipped Tests ==="
+          jq -r '.[].SpecReports[] | select(.State == "skipped") | ([.ContainerHierarchyTexts[], .LeafNodeText] | join(" > "))' e2e-report.json 2>/dev/null || echo "No skipped tests found"
+
+      - name: Uninstall KAI-scheduler
+        run: |
+          helm uninstall kai-scheduler -n kai-scheduler
+          echo "Waiting up to 60 seconds for pods to terminate..."
+          EXCLUDED_PODS="prometheus"
+          for i in {1..12}; do
+            EXCLUDE_PATTERN=$(echo "$EXCLUDED_PODS" | tr ' ' '|')
+            NON_TERM=$(kubectl get pods -n kai-scheduler --no-headers 2>/dev/null | grep -v Terminating | grep -vE "$EXCLUDE_PATTERN" | wc -l)
+            if [ "$NON_TERM" -eq 0 ]; then
+              echo "Only Terminating pods remain or no pods left (excluding: $EXCLUDED_PODS). Safe to proceed."
+              exit 0
+            fi
+            echo "Found $NON_TERM non-terminating pods (excluding: $EXCLUDED_PODS)... waiting (attempt $i/12)"
+            sleep 5
+          done
+          echo "Pods did not terminate within 60 seconds. Uninstall incomplete."
+          exit 1
+
+  e2e-upgrade-tests:
+    name: Run E2E Upgrade Tests
+    needs: [ build, check-build-and-test-required ]
+    if: needs.check-build-and-test-required.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Resolve upgrade-from version
+        id: resolve_version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TARGET_BRANCH="${{ github.base_ref }}"
+          if [[ "$TARGET_BRANCH" =~ v([0-9]+)\.([0-9]+) ]]; then
+            # Version branch: upgrade from the latest release of the previous minor
+            MAJOR="${BASH_REMATCH[1]}"
+            MINOR="${BASH_REMATCH[2]}"
+            if [ "$MINOR" -eq 0 ]; then
+              echo "No previous minor version exists. Skipping upgrade tests."
+              echo "skip=true" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            PREV_MINOR="${MAJOR}.$((MINOR - 1))"
+            UPGRADE_FROM=$(gh release list --limit 200 --json tagName -q '.[].tagName' | grep -E "^v${PREV_MINOR}\.[0-9]+$" | sort -V | tail -1)
+            if [ -z "$UPGRADE_FROM" ]; then
+              echo "No release found for v${PREV_MINOR}.x. Skipping upgrade tests."
+              echo "skip=true" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+          else
+            # Main branch: upgrade from the latest release
+            UPGRADE_FROM=$(gh release list --limit 200 --json tagName -q '.[].tagName' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+            if [ -z "$UPGRADE_FROM" ]; then
+              echo "No releases found. Skipping upgrade tests."
+              echo "skip=true" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+          fi
+
+          echo "Upgrading from $UPGRADE_FROM"
+          echo "upgrade_from=$UPGRADE_FROM" >> $GITHUB_OUTPUT
+          echo "skip=false" >> $GITHUB_OUTPUT
+
+      - name: Setup e2e cluster
+        if: steps.resolve_version.outputs.skip != 'true'
+        uses: ./.github/actions/setup-e2e-cluster
+        with:
+          package_version: ${{ needs.build.outputs.package_version }}
+
+      - name: Install previous version of KAI-scheduler
+        if: steps.resolve_version.outputs.skip != 'true'
+        env:
+          UPGRADE_FROM_VERSION: ${{ steps.resolve_version.outputs.upgrade_from }}
+        run: |
+          echo "Installing kai-scheduler $UPGRADE_FROM_VERSION from OCI registry..."
+          helm upgrade -i kai-scheduler oci://ghcr.io/kai-scheduler/kai-scheduler/kai-scheduler -n kai-scheduler --create-namespace \
+            --set "global.gpuSharing=true" --wait --version "$UPGRADE_FROM_VERSION"
+          kubectl create clusterrole pods-patcher --verb=patch --resource=pods
+          kubectl create rolebinding fake-status-updater --clusterrole=pods-patcher --serviceaccount=gpu-operator:status-updater -n kai-resource-reservation
+
+      - name: Run upgrade e2e tests
+        if: steps.resolve_version.outputs.skip != 'true'
+        env:
+          UPGRADE_CHART_PATH: /mnt/images/kai-scheduler-${{ needs.build.outputs.package_version }}.tgz
+        run: |
+          ginkgo -r --keep-going --trace -vv --label-filter 'upgrade' --output-dir=. --json-report=e2e-upgrade-report.json ./test/e2e/suites/upgrade

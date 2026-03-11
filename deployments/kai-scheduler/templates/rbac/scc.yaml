@@ -1,0 +1,137 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+{{- if (lookup "apiextensions.k8s.io/v1" "CustomResourceDefinition" "" "clusterversions.config.openshift.io") }}
+kind: SecurityContextConstraints
+apiVersion: security.openshift.io/v1
+metadata:
+  name: kai-system
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-1"
+    "helm.sh/hook-delete-policy": before-hook-creation
+allowHostDirVolumePlugin: false
+allowHostIPC: false
+allowHostNetwork: false
+allowHostPID: false
+allowHostPorts: false
+allowPrivilegeEscalation: true
+allowPrivilegedContainer: false
+allowedCapabilities: null
+defaultAddCapabilities: null
+fsGroup:
+  type: RunAsAny
+groups: []
+priority: 1
+readOnlyRootFilesystem: false
+requiredDropCapabilities: null
+runAsUser:
+  type: MustRunAs
+  uid: 10000
+seLinuxContext:
+  type: MustRunAs
+supplementalGroups:
+  type: RunAsAny
+users:
+- system:serviceaccount:{{ .Release.Namespace }}:admission
+- system:serviceaccount:{{ .Release.Namespace }}:binder
+- system:serviceaccount:{{ .Release.Namespace }}:kai-operator
+- system:serviceaccount:{{ .Release.Namespace }}:pod-grouper
+- system:serviceaccount:{{ .Release.Namespace }}:podgroup-controller
+- system:serviceaccount:{{ .Release.Namespace }}:queue-controller
+- system:serviceaccount:{{ .Release.Namespace }}:scheduler
+- system:serviceaccount:{{ .Release.Namespace }}:node-scale-adjuster
+- system:serviceaccount:{{ .Release.Namespace }}:kai-scheduler-crd-manager
+- system:serviceaccount:{{ .Release.Namespace }}:kai-topology-migration
+volumes:
+- awsElasticBlockStore
+- azureDisk
+- azureFile
+- cephFS
+- cinder
+- configMap
+- csi
+- downwardAPI
+- emptyDir
+- ephemeral
+- fc
+- flexVolume
+- flocker
+- gcePersistentDisk
+- gitRepo
+- glusterfs
+- iscsi
+- nfs
+- persistentVolumeClaim
+- photonPersistentDisk
+- portworxVolume
+- projected
+- quobyte
+- rbd
+- scaleIO
+- secret
+- storageOS
+- vsphere
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kai-system-scc
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-1"
+    "helm.sh/hook-delete-policy": before-hook-creation
+rules:
+  - apiGroups:
+      - security.openshift.io
+    resourceNames:
+      - kai-system
+    resources:
+      - securitycontextconstraints
+    verbs:
+      - use
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kai-system-scc
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-1"
+    "helm.sh/hook-delete-policy": before-hook-creation
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kai-system-scc
+subjects:
+  - kind: ServiceAccount
+    name: admission
+    namespace: {{ .Release.Namespace }}
+  - kind: ServiceAccount
+    name: binder
+    namespace: {{ .Release.Namespace }}
+  - kind: ServiceAccount
+    name: kai-operator
+    namespace: {{ .Release.Namespace }}
+  - kind: ServiceAccount
+    name: pod-grouper
+    namespace: {{ .Release.Namespace }}
+  - kind: ServiceAccount
+    name: podgroup-controller
+    namespace: {{ .Release.Namespace }}
+  - kind: ServiceAccount
+    name: queue-controller
+    namespace: {{ .Release.Namespace }}
+  - kind: ServiceAccount
+    name: scheduler
+    namespace: {{ .Release.Namespace }}
+  - kind: ServiceAccount
+    name: node-scale-adjuster
+    namespace: {{ .Release.Namespace }}
+  - kind: ServiceAccount
+    name: kai-scheduler-crd-manager
+    namespace: {{ .Release.Namespace }}
+  - kind: ServiceAccount
+    name: kai-topology-migration
+    namespace: {{ .Release.Namespace }}
+{{- end }}

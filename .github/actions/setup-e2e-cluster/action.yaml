@@ -1,0 +1,100 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+name: Setup E2E Cluster
+description: Sets up a Kind cluster with prerequisites for e2e testing
+
+inputs:
+  package_version:
+    description: Package version for loading images
+    required: true
+  github_token:
+    description: GitHub token for cache operations
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Move Docker Data to /mnt
+      shell: bash
+      run: |
+        sudo systemctl stop docker
+        sudo mkdir -p /mnt/docker-data
+        echo '{"data-root": "/mnt/docker-data"}' | sudo tee /etc/docker/daemon.json
+        sudo systemctl start docker
+        docker info | grep "Docker Root Dir"
+
+    - name: Create images directory
+      shell: bash
+      run: |
+        sudo mkdir -p /mnt/images
+        sudo chown -R $USER:$USER /mnt/images
+
+    - name: Cache restore
+      uses: actions/cache/restore@v5
+      with:
+        path: /mnt/images
+        key: images-${{ github.sha }}
+
+    - name: Create k8s Kind Cluster
+      uses: helm/kind-action@v1.13.0
+      with:
+        cluster_name: kind
+        version: v0.31.0
+        config: ./hack/e2e-kind-config.yaml
+
+    - name: Deploy image registry
+      shell: bash
+      run: |
+        kubectl apply -f ./hack/local_registry.yaml
+        kubectl wait --for=condition=available --timeout=60s deployment/registry -n kube-registry
+
+    - name: Load docker images to registry
+      shell: bash
+      env:
+        PACKAGE_VERSION: ${{ inputs.package_version }}
+      run: |
+        kubectl port-forward -n kube-registry deploy/registry 5000:5000 &
+        docker load < /mnt/images/docker_images.tgz
+        for image in $(docker images --format '{{.Repository}}:{{.Tag}}' | grep $PACKAGE_VERSION); do
+          new_image=$(echo "$image" | sed -E 's|.*/([^/]+:[^/]+)$|localhost:5000/\1|')
+          docker tag $image $new_image
+          docker push $new_image
+        done
+
+    - name: Deploy fake gpu operator
+      shell: bash
+      run: |
+        helm upgrade -i gpu-operator oci://ghcr.io/run-ai/fake-gpu-operator/fake-gpu-operator --namespace gpu-operator --create-namespace \
+            --version 0.0.71 --values ./hack/fake-gpu-operator-values.yaml --wait
+
+    - name: Deploy Prometheus Operator
+      shell: bash
+      run: |
+        helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update
+        helm repo update prometheus-community
+        helm install prometheus prometheus-community/kube-prometheus-stack --namespace monitoring --create-namespace \
+        --set "alertmanager.enabled=false" \
+        --set "grafana.enabled=false" \
+        --set "prometheus.enabled=false" \
+        --wait
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.24.4'
+        cache: true
+
+    - name: Install ginkgo
+      shell: bash
+      run: |
+        go install github.com/onsi/ginkgo/v2/ginkgo@v2.25.3
+
+    - name: Delete images from disk
+      shell: bash
+      env:
+        PACKAGE_VERSION: ${{ inputs.package_version }}
+      run: |
+        docker images --format '{{.Repository}}:{{.Tag}}' | grep $PACKAGE_VERSION | xargs docker rmi -f
+        sudo rm -rf /mnt/images/docker_images.tgz

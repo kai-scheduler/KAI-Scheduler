@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"strings"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -18,12 +17,18 @@ import (
 )
 
 const (
-	GPUSharingConfigMap         = "runai-sh-gpu"
-	DesiredConfigMapPrefixKey   = "runai/shared-gpu-configmap"
-	maxVolumeNameLength         = 63
-	configMapNameNumRandomChars = 7
-	configMapNameExtraChars     = configMapNameNumRandomChars + 6
+	gpuSharingConfigMapAnnotation = "runai/shared-gpu-configmap"
+	gpuSharingConfigMap           = "shared-gpu"
+	maxVolumeNameLength           = 63
+	configMapNameNumRandomChars   = 7
+	configMapNameExtraChars       = configMapNameNumRandomChars + 6
 )
+
+type PodContainerRef struct {
+	Container *v1.Container
+	Index     int
+	Type      ContainerType
+}
 
 func UpsertJobConfigMap(ctx context.Context,
 	kubeClient client.Client, pod *v1.Pod, configMapName string, data map[string]string) (err error) {
@@ -106,18 +111,17 @@ func patchConfigMap(
 	return nil
 }
 
-func SetGpuCapabilitiesConfigMapName(pod *v1.Pod, containerIndex int, containerType ContainerType) string {
-	namePrefix, found := pod.Annotations[DesiredConfigMapPrefixKey]
+func SetGpuCapabilitiesConfigMapName(pod *v1.Pod, containerRef *PodContainerRef) string {
+	namePrefix, found := pod.Annotations[gpuSharingConfigMapAnnotation]
 	if !found {
-		namePrefix = generateConfigMapNamePrefix(pod, containerIndex)
+		namePrefix = generateConfigMapNamePrefix(pod, containerRef.Index)
 		setConfigMapNameAnnotation(pod, namePrefix)
 	}
-	containerIndexStr := strconv.Itoa(containerIndex)
-	if containerType == InitContainer {
+	containerIndexStr := strconv.Itoa(containerRef.Index)
+	if containerRef.Type == InitContainer {
 		containerIndexStr = "i" + containerIndexStr
 	}
 	capabilitiesConfigMapName := fmt.Sprintf("%s-%s", namePrefix, containerIndexStr)
-
 	return capabilitiesConfigMapName
 }
 
@@ -128,7 +132,7 @@ func generateConfigMapNamePrefix(pod *v1.Pod, containerIndex int) string {
 	}
 	// volume name is the `${configMapName}-vol` and should be up to 63 bytes long,
 	// 4 for "-vol" , 7 random chars, and 2 hyphens - 13 in total
-	maxBaseNameLength := (maxVolumeNameLength - configMapNameExtraChars) - len(GPUSharingConfigMap)
+	maxBaseNameLength := (maxVolumeNameLength - configMapNameExtraChars) - len(gpuSharingConfigMap)
 	// also remove from the max length for "-{containerIndex}" or "-i{initContainerIndex}" in the name
 	maxBaseNameLength = maxBaseNameLength - len(strconv.Itoa(containerIndex)) - 1
 	// also allow for appending "-evar" in case of envFrom config map
@@ -137,16 +141,16 @@ func generateConfigMapNamePrefix(pod *v1.Pod, containerIndex int) string {
 		baseName = baseName[:maxBaseNameLength]
 	}
 	return fmt.Sprintf("%v-%v-%v", baseName,
-		utilrand.String(configMapNameNumRandomChars), GPUSharingConfigMap)
+		utilrand.String(configMapNameNumRandomChars), gpuSharingConfigMap)
 }
 
-func ExtractCapabilitiesConfigMapName(pod *v1.Pod, containerIndex int, containerType ContainerType) (string, error) {
-	containerIndexStr := strconv.Itoa(containerIndex)
-	if containerType == InitContainer {
+func ExtractCapabilitiesConfigMapName(pod *v1.Pod, containerRef *PodContainerRef) (string, error) {
+	containerIndexStr := strconv.Itoa(containerRef.Index)
+	if containerRef.Type == InitContainer {
 		containerIndexStr = "i" + containerIndexStr
 	}
 
-	namePrefix, found := pod.Annotations[DesiredConfigMapPrefixKey]
+	namePrefix, found := pod.Annotations[gpuSharingConfigMapAnnotation]
 	if !found {
 		return "", fmt.Errorf("no desired configmap name found in pod %s/%s annotations", pod.Namespace, pod.Name)
 	}
@@ -154,67 +158,19 @@ func ExtractCapabilitiesConfigMapName(pod *v1.Pod, containerIndex int, container
 	return capabilitiesConfigMapName, nil
 }
 
-func ExtractDirectEnvVarsConfigMapName(pod *v1.Pod, containerIndex int, containerType ContainerType) (string, error) {
-	configNameBase, err := ExtractCapabilitiesConfigMapName(pod, containerIndex, containerType)
+func ExtractDirectEnvVarsConfigMapName(pod *v1.Pod, containerRef *PodContainerRef) (string, error) {
+	configNameBase, err := ExtractCapabilitiesConfigMapName(pod, containerRef)
 	if err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("%s-evar", configNameBase), nil
 }
 
-func HandleBCPod(ctx context.Context, kubeClient client.Client, pod *v1.Pod) (string, error) {
-	logger := log.FromContext(ctx)
-	desiredConfigMapName, err := GetDesiredConfigMapNameBC(pod)
-	if err != nil {
-		return "", err
-	}
-	logger.Info("Desired configmap name for backwards compatibility pod",
-		"namespace", pod.Namespace, "name", pod.Name, "configMapName", desiredConfigMapName)
-	err = UpdateBCPod(ctx, kubeClient, pod, desiredConfigMapName)
-	return desiredConfigMapName, err
-}
-
-func GetDesiredConfigMapNameBC(pod *v1.Pod) (string, error) {
-	cmName := ""
-	for _, volume := range pod.Spec.Volumes {
-		if volume.ConfigMap == nil {
-			continue
-		}
-
-		possibleCmName := volume.ConfigMap.LocalObjectReference.Name
-		if strings.HasSuffix(possibleCmName, GPUSharingConfigMap) {
-			if cmName != "" {
-				return "", fmt.Errorf("multiple desired gpu sharing configmap volumes detected for backwards "+
-					"compatibility pod %s/%s", pod.Namespace, pod.Name)
-			}
-			cmName = possibleCmName
-		}
-	}
-
-	if cmName == "" {
-		return "", fmt.Errorf("no desired gpu sharing configmap volume detected for backwards compatibility pod "+
-			"%s/%s", pod.Namespace, pod.Name)
-	}
-
-	return cmName, nil
-}
-
-func UpdateBCPod(ctx context.Context, kubeClient client.Client, pod *v1.Pod, desiredConfigMapName string) error {
-	updatedPod := pod.DeepCopy()
-	setConfigMapNameAnnotation(updatedPod, desiredConfigMapName)
-	err := kubeClient.Patch(ctx, updatedPod, client.MergeFrom(pod))
-	if err != nil {
-		return fmt.Errorf("failed to update pod %v/%v with desired configmap name %v, error: %v",
-			pod.Namespace, pod.Name, desiredConfigMapName, err)
-	}
-	return nil
-}
-
 func setConfigMapNameAnnotation(pod *v1.Pod, name string) {
 	if pod.Annotations == nil {
 		pod.Annotations = map[string]string{}
 	}
-	pod.Annotations[DesiredConfigMapPrefixKey] = name
+	pod.Annotations[gpuSharingConfigMapAnnotation] = name
 }
 
 // ownerReferencesDifferent compares two OwnerReferences and returns true if they are not the same
@@ -253,12 +209,4 @@ func compareObjectOwners(lOwners, rOwners []metav1.OwnerReference) (bool, string
 	}
 
 	return different, reason
-}
-
-func AddDataConfigField(data map[string]string, key, value string) {
-	if foundValue, found := data[key]; !found || len(foundValue) == 0 {
-		data[key] = value
-	} else {
-		data[key] += fmt.Sprintf("\n%v", value)
-	}
 }

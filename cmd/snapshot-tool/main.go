@@ -12,27 +12,31 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"runtime/pprof"
 	"syscall"
 	"time"
 
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	version "k8s.io/apimachinery/pkg/version"
+	fakediscovery "k8s.io/client-go/discovery/fake"
 	"k8s.io/client-go/kubernetes/fake"
 
-	kaischedulerfake "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned/fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf_util"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/metrics"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/snapshot"
+	kaischedulerfake "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf_util"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/snapshot"
 )
 
 func main() {
 	fs := flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 	verbosity := fs.Int("verbosity", 4, "logging verbosity")
 	filename := fs.String("filename", "", "location of the zipped JSON file")
+	cpuprofile := fs.String("cpuprofile", "", "write cpu profile to file")
 	_ = fs.Parse(os.Args[1:])
 	if filename == nil || len(*filename) == 0 {
 		fs.Usage()
@@ -59,7 +63,7 @@ func main() {
 	actions.InitDefaultActions()
 	plugins.InitDefaultPlugins()
 
-	kubeClient, kaiClient := loadClientsWithSnapshot(snapshot.RawObjects)
+	kubeClient, kaiClient := loadClientsWithSnapshot(snapshot.RawObjects, snapshot.Discovery)
 
 	schedulerCacheParams := &cache.SchedulerCacheParams{
 		KubeClient:                  kubeClient,
@@ -70,15 +74,28 @@ func main() {
 		DetailedFitErrors:           snapshot.SchedulerParams.DetailedFitErrors,
 		ScheduleCSIStorage:          snapshot.SchedulerParams.ScheduleCSIStorage,
 		FullHierarchyFairness:       snapshot.SchedulerParams.FullHierarchyFairness,
-		NodeLevelScheduler:          snapshot.SchedulerParams.NodeLevelScheduler,
 		AllowConsolidatingReclaim:   snapshot.SchedulerParams.AllowConsolidatingReclaim,
 		NumOfStatusRecordingWorkers: snapshot.SchedulerParams.NumOfStatusRecordingWorkers,
+		DiscoveryClient:             kubeClient.Discovery(),
 	}
 
 	schedulerCache := cache.New(schedulerCacheParams)
 	stopCh := make(chan struct{})
 	schedulerCache.Run(stopCh)
 	schedulerCache.WaitForCacheSync(stopCh)
+
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			log.InfraLogger.Fatalf("Failed to create CPU profile file: %v", err)
+		}
+		err = pprof.StartCPUProfile(f)
+		if err != nil {
+			log.InfraLogger.Fatalf("Failed to start CPU profile: %v", err)
+		}
+
+		defer pprof.StopCPUProfile()
+	}
 
 	ssn, err := framework.OpenSession(
 		schedulerCache, snapshot.Config, snapshot.SchedulerParams, "", &http.ServeMux{},
@@ -126,9 +143,10 @@ func loadSnapshot(filename string) (*snapshot.Snapshot, error) {
 	return nil, os.ErrNotExist
 }
 
-func loadClientsWithSnapshot(rawObjects *snapshot.RawKubernetesObjects) (*fake.Clientset, *kaischedulerfake.Clientset) {
+func loadClientsWithSnapshot(rawObjects *snapshot.RawKubernetesObjects, discoverySnapshot *snapshot.DiscoverySnapshot) (*fake.Clientset, *kaischedulerfake.Clientset) {
 	kubeClient := fake.NewSimpleClientset()
 	kaiClient := kaischedulerfake.NewSimpleClientset()
+	applyDiscoverySnapshot(kubeClient, discoverySnapshot)
 
 	for _, pod := range rawObjects.Pods {
 		_, err := kubeClient.CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, v1.CreateOptions{})
@@ -162,13 +180,6 @@ func loadClientsWithSnapshot(rawObjects *snapshot.RawKubernetesObjects) (*fake.C
 		_, err := kaiClient.SchedulingV2().Queues(queue.Namespace).Create(context.TODO(), queue, v1.CreateOptions{})
 		if err != nil {
 			log.InfraLogger.Errorf("Failed to create queue: %v", err)
-		}
-	}
-
-	for _, podDisruptionBudget := range rawObjects.PodDisruptionBudgets {
-		_, err := kubeClient.PolicyV1().PodDisruptionBudgets(podDisruptionBudget.Namespace).Create(context.TODO(), podDisruptionBudget, v1.CreateOptions{})
-		if err != nil {
-			log.InfraLogger.Errorf("Failed to create pod disruption budget: %v", err)
 		}
 	}
 
@@ -214,26 +225,54 @@ func loadClientsWithSnapshot(rawObjects *snapshot.RawKubernetesObjects) (*fake.C
 		}
 	}
 
+	for _, topology := range rawObjects.Topologies {
+		_, err := kaiClient.KaiV1alpha1().Topologies().Create(context.TODO(), topology, v1.CreateOptions{})
+		if err != nil {
+			log.InfraLogger.Errorf("Failed to create topology: %v", err)
+		}
+	}
+
 	for _, resourceClaim := range rawObjects.ResourceClaims {
-		_, err := kubeClient.ResourceV1beta1().ResourceClaims(resourceClaim.Namespace).Create(context.TODO(), resourceClaim, v1.CreateOptions{})
+		_, err := kubeClient.ResourceV1().ResourceClaims(resourceClaim.Namespace).Create(context.TODO(), resourceClaim, v1.CreateOptions{})
 		if err != nil {
 			log.InfraLogger.Errorf("Failed to create resource claim: %v", err)
 		}
 	}
 
 	for _, resourceSlice := range rawObjects.ResourceSlices {
-		_, err := kubeClient.ResourceV1beta1().ResourceSlices().Create(context.TODO(), resourceSlice, v1.CreateOptions{})
+		_, err := kubeClient.ResourceV1().ResourceSlices().Create(context.TODO(), resourceSlice, v1.CreateOptions{})
 		if err != nil {
 			log.InfraLogger.Errorf("Failed to create resource slice: %v", err)
 		}
 	}
 
 	for _, deviceClass := range rawObjects.DeviceClasses {
-		_, err := kubeClient.ResourceV1beta1().DeviceClasses().Create(context.TODO(), deviceClass, v1.CreateOptions{})
+		_, err := kubeClient.ResourceV1().DeviceClasses().Create(context.TODO(), deviceClass, v1.CreateOptions{})
 		if err != nil {
 			log.InfraLogger.Errorf("Failed to create device class: %v", err)
 		}
 	}
 
 	return kubeClient, kaiClient
+}
+
+func applyDiscoverySnapshot(kubeClient *fake.Clientset, discoverySnapshot *snapshot.DiscoverySnapshot) {
+	if kubeClient == nil || discoverySnapshot == nil {
+		return
+	}
+
+	fakeDiscoveryClient, ok := kubeClient.Discovery().(*fakediscovery.FakeDiscovery)
+	if !ok {
+		return
+	}
+
+	if discoverySnapshot.ServerVersion != nil {
+		fakeDiscoveryClient.FakedServerVersion = &version.Info{
+			Major: discoverySnapshot.ServerVersion.Major,
+			Minor: discoverySnapshot.ServerVersion.Minor,
+		}
+	}
+	if discoverySnapshot.Resources != nil {
+		kubeClient.Resources = discoverySnapshot.Resources
+	}
 }

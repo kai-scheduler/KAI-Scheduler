@@ -7,35 +7,40 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/aml"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/cronjobs"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/deployment"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/grouper"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/job"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/knative"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/kubeflow"
-	jaxplugin "github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/kubeflow/jax"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/kubeflow/mpi"
-	notebookplugin "github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/kubeflow/notebook"
-	pytorchplugin "github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/kubeflow/pytorch"
-	tensorflowlugin "github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/kubeflow/tensorflow"
-	xgboostplugin "github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/kubeflow/xgboost"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/podjob"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/ray"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/runaijob"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/skiptopowner"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/spark"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/spotrequest"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/aml"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/cronjobs"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/deployment"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/grouper"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/grove"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/job"
+	jobsetplugin "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/jobset"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/knative"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/kubeflow"
+	jaxplugin "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/kubeflow/jax"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/kubeflow/mpi"
+	notebookplugin "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/kubeflow/notebook"
+	pytorchplugin "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/kubeflow/pytorch"
+	tensorflowlugin "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/kubeflow/tensorflow"
+	xgboostplugin "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/kubeflow/xgboost"
+	leader_worker_set "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/leaderworkerset"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/podjob"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/ray"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/runaijob"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/skiptopowner"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/spark"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/spotrequest"
 )
 
 const (
-	apiGroupArgo            = "argoproj.io"
-	apiGroupRunai           = "run.ai"
-	kindTrainingWorkload    = "TrainingWorkload"
-	kindInteractiveWorkload = "InteractiveWorkload"
-	kindDistributedWorkload = "DistributedWorkload"
-	kindInferenceWorkload   = "InferenceWorkload"
+	apiGroupArgo                     = "argoproj.io"
+	apiGroupRunai                    = "run.ai"
+	apiGroupTrainer                  = "trainer.kubeflow.org"
+	kindTrainingWorkload             = "TrainingWorkload"
+	kindInteractiveWorkload          = "InteractiveWorkload"
+	kindDistributedWorkload          = "DistributedWorkload"
+	kindInferenceWorkload            = "InferenceWorkload"
+	kindDistributedInferenceWorkload = "DistributedInferenceWorkload"
 )
 
 // +kubebuilder:rbac:groups=apps,resources=replicasets;statefulsets,verbs=get;list;watch
@@ -50,14 +55,20 @@ const (
 // +kubebuilder:rbac:groups=argoproj.io,resources=workflows/finalizers,verbs=patch;update;create
 // +kubebuilder:rbac:groups=tekton.dev,resources=pipelineruns;taskruns,verbs=get;list;watch
 // +kubebuilder:rbac:groups=tekton.dev,resources=pipelineruns/finalizers;taskruns/finalizers,verbs=patch;update;create
-// +kubebuilder:rbac:groups=run.ai,resources=trainingworkloads;interactiveworkloads;distributedworkloads;inferenceworkloads,verbs=get;list;watch
+// +kubebuilder:rbac:groups=run.ai,resources=trainingworkloads;interactiveworkloads;distributedworkloads;inferenceworkloads;distributedinferenceworkloads,verbs=get;list;watch
+// +kubebuilder:rbac:groups=trainer.kubeflow.org,resources=trainjobs,verbs=get;list;watch
+// +kubebuilder:rbac:groups=trainer.kubeflow.org,resources=trainjobs/finalizers,verbs=patch;update;create
 
-type PluginsHub struct {
+type DefaultPluginsHub struct {
 	defaultPlugin *defaultgrouper.DefaultGrouper
 	customPlugins map[metav1.GroupVersionKind]grouper.Grouper
 }
 
-func (ph *PluginsHub) GetPodGrouperPlugin(gvk metav1.GroupVersionKind) grouper.Grouper {
+type PluginsHub interface {
+	GetPodGrouperPlugin(gvk metav1.GroupVersionKind) grouper.Grouper
+}
+
+func (ph *DefaultPluginsHub) GetPodGrouperPlugin(gvk metav1.GroupVersionKind) grouper.Grouper {
 	if f, found := ph.customPlugins[gvk]; found {
 		return f
 	}
@@ -70,11 +81,28 @@ func (ph *PluginsHub) GetPodGrouperPlugin(gvk metav1.GroupVersionKind) grouper.G
 	return ph.defaultPlugin
 }
 
-func NewPluginsHub(kubeClient client.Client, searchForLegacyPodGroups,
+func (ph *DefaultPluginsHub) GetDefaultPlugin() grouper.Grouper {
+	return ph.defaultPlugin
+}
+
+func (ph *DefaultPluginsHub) HasMatchingPlugin(gvk metav1.GroupVersionKind) bool {
+	if _, found := ph.customPlugins[gvk]; found {
+		return true
+	}
+
+	// search using wildcard version
+	gvk.Version = "*"
+	if _, found := ph.customPlugins[gvk]; found {
+		return true
+	}
+	return false
+}
+
+func NewDefaultPluginsHub(kubeClient client.Client, searchForLegacyPodGroups,
 	gangScheduleKnative bool, queueLabelKey, nodePoolLabelKey string,
-	defaultPrioritiesConfigMapName, defaultPrioritiesConfigMapNamespace string) *PluginsHub {
-	defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey)
-	defaultGrouper.SetDefaultPrioritiesConfigMapParams(defaultPrioritiesConfigMapName, defaultPrioritiesConfigMapNamespace, kubeClient)
+	defaultConfigPerTypeConfigMapName, defaultConfigPerTypeConfigMapNamespace string) *DefaultPluginsHub {
+	defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, kubeClient)
+	defaultGrouper.SetDefaultConfigPerTypeConfigMapParams(defaultConfigPerTypeConfigMapName, defaultConfigPerTypeConfigMapNamespace)
 
 	kubeFlowDistributedGrouper := kubeflow.NewKubeflowDistributedGrouper(defaultGrouper)
 	mpiGrouper := mpi.NewMpiGrouper(kubeClient, kubeFlowDistributedGrouper)
@@ -86,6 +114,9 @@ func NewPluginsHub(kubeClient client.Client, searchForLegacyPodGroups,
 
 	sparkGrouper := spark.NewSparkGrouper(defaultGrouper)
 	podJobGrouper := podjob.NewPodJobGrouper(defaultGrouper, sparkGrouper)
+
+	groveGrouper := grove.NewGroveGrouper(kubeClient, defaultGrouper)
+	jobSetGrouper := jobsetplugin.NewJobSetGrouper(defaultGrouper)
 
 	table := map[metav1.GroupVersionKind]grouper.Grouper{
 		{
@@ -238,6 +269,26 @@ func NewPluginsHub(kubeClient client.Client, searchForLegacyPodGroups,
 			Version: "v1",
 			Kind:    "SPOTRequest",
 		}: spotrequest.NewSpotRequestGrouper(defaultGrouper),
+		{
+			Group:   "leaderworkerset.x-k8s.io",
+			Version: "v1",
+			Kind:    "LeaderWorkerSet",
+		}: leader_worker_set.NewLwsGrouper(defaultGrouper),
+		{
+			Group:   "jobset.x-k8s.io",
+			Version: "v1alpha2",
+			Kind:    "JobSet",
+		}: jobSetGrouper,
+		{
+			Group:   "grove.io",
+			Version: "v1alpha1",
+			Kind:    "PodGangSet",
+		}: groveGrouper,
+		{
+			Group:   "grove.io",
+			Version: "v1alpha1",
+			Kind:    "PodCliqueSet",
+		}: groveGrouper,
 	}
 
 	skipTopOwnerGrouper := skiptopowner.NewSkipTopOwnerGrouper(kubeClient, defaultGrouper, table)
@@ -247,7 +298,13 @@ func NewPluginsHub(kubeClient client.Client, searchForLegacyPodGroups,
 		Kind:    "Workflow",
 	}] = skipTopOwnerGrouper
 
-	for _, kind := range []string{kindInferenceWorkload, kindTrainingWorkload, kindDistributedWorkload, kindInteractiveWorkload} {
+	for _, kind := range []string{
+		kindInferenceWorkload,
+		kindTrainingWorkload,
+		kindDistributedWorkload,
+		kindInteractiveWorkload,
+		kindDistributedInferenceWorkload,
+	} {
 		table[metav1.GroupVersionKind{
 			Group:   apiGroupRunai,
 			Version: "*",
@@ -255,7 +312,21 @@ func NewPluginsHub(kubeClient client.Client, searchForLegacyPodGroups,
 		}] = skipTopOwnerGrouper
 	}
 
-	return &PluginsHub{
+	// TrainJob (Kubeflow Trainer v2) wraps a JobSet; skip TrainJob and delegate to JobSet grouper
+	table[metav1.GroupVersionKind{
+		Group:   apiGroupTrainer,
+		Version: "v1alpha1",
+		Kind:    "TrainJob",
+	}] = skipTopOwnerGrouper
+
+	// Dynamo uses Grove Grouper and needs to propagate metadata from DynamoGraphDeployment to PodGang and PodClique.
+	table[metav1.GroupVersionKind{
+		Group:   "nvidia.com",
+		Version: "v1alpha1",
+		Kind:    "DynamoGraphDeployment",
+	}] = skipTopOwnerGrouper
+
+	return &DefaultPluginsHub{
 		defaultPlugin: defaultGrouper,
 		customPlugins: table,
 	}

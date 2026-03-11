@@ -1,0 +1,47 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+{{- if and .Values.defaultQueue.createDefaultQueue .Release.IsInstall }}
+apiVersion: scheduling.run.ai/v2
+kind: Queue
+metadata:
+    name: {{ .Values.defaultQueue.parentName }}
+    annotations:
+        helm.sh/resource-policy: keep
+spec:
+    resources:
+        cpu:
+            quota: {{ .Values.defaultQueue.parentResources.cpu.quota }}
+            limit: {{ .Values.defaultQueue.parentResources.cpu.limit }}
+            overQuotaWeight: {{ .Values.defaultQueue.parentResources.cpu.overQuotaWeight }}
+        gpu:
+            quota: {{ .Values.defaultQueue.parentResources.gpu.quota }}
+            limit: {{ .Values.defaultQueue.parentResources.gpu.limit }}
+            overQuotaWeight: {{ .Values.defaultQueue.parentResources.gpu.overQuotaWeight }}
+        memory:
+            quota: {{ .Values.defaultQueue.parentResources.memory.quota }}
+            limit: {{ .Values.defaultQueue.parentResources.memory.limit }}
+            overQuotaWeight: {{ .Values.defaultQueue.parentResources.memory.overQuotaWeight }}
+---
+apiVersion: scheduling.run.ai/v2
+kind: Queue
+metadata:
+    name: {{ .Values.defaultQueue.childName }}
+    annotations:
+        helm.sh/resource-policy: keep
+spec:
+    parentQueue: {{ .Values.defaultQueue.parentName }}
+    resources:
+        cpu:
+            quota: {{ .Values.defaultQueue.childResources.cpu.quota }}
+            limit: {{ .Values.defaultQueue.childResources.cpu.limit }}
+            overQuotaWeight: {{ .Values.defaultQueue.childResources.cpu.overQuotaWeight }}
+        gpu:
+            quota: {{ .Values.defaultQueue.childResources.gpu.quota }}
+            limit: {{ .Values.defaultQueue.childResources.gpu.limit }}
+            overQuotaWeight: {{ .Values.defaultQueue.childResources.gpu.overQuotaWeight }}
+        memory:
+            quota: {{ .Values.defaultQueue.childResources.memory.quota }}
+            limit: {{ .Values.defaultQueue.childResources.memory.limit }}
+            overQuotaWeight: {{ .Values.defaultQueue.childResources.memory.overQuotaWeight }}
+{{- end }}

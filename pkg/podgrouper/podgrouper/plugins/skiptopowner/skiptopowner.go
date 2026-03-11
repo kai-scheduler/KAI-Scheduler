@@ -6,7 +6,6 @@ package skiptopowner
 import (
 	"context"
 	"fmt"
-	"maps"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -14,9 +13,9 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgroup"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/grouper"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/grouper"
 )
 
 type skipTopOwnerGrouper struct {
@@ -56,12 +55,44 @@ func (sk *skipTopOwnerGrouper) GetPodGroupMetadata(
 		return nil, fmt.Errorf("failed to get last owner: %w", err)
 	}
 
+	// propagate labels down chain
+	sk.propagateMetadataDownChain(lastOwner, skippedOwner)
+
+	return sk.getSupportedTypePGMetadata(lastOwner, pod, otherOwners[:len(otherOwners)-1]...)
+}
+
+func (*skipTopOwnerGrouper) propagateMetadataDownChain(lastOwner *unstructured.Unstructured, skippedOwner *unstructured.Unstructured) {
 	if lastOwner.GetLabels() == nil {
 		lastOwner.SetLabels(skippedOwner.GetLabels())
 	} else {
-		maps.Copy(lastOwner.GetLabels(), skippedOwner.GetLabels())
+		for k, v := range skippedOwner.GetLabels() {
+			if _, exists := lastOwner.GetLabels()[k]; exists {
+				continue
+			}
+			labels := lastOwner.GetLabels()
+			if labels == nil {
+				labels = make(map[string]string)
+			}
+			labels[k] = v
+			lastOwner.SetLabels(labels)
+		}
 	}
-	return sk.getSupportedTypePGMetadata(lastOwner, pod, otherOwners[:len(otherOwners)-1]...)
+	// propagate annotations down chain
+	if lastOwner.GetAnnotations() == nil {
+		lastOwner.SetAnnotations(skippedOwner.GetAnnotations())
+	} else {
+		for k, v := range skippedOwner.GetAnnotations() {
+			if _, exists := lastOwner.GetAnnotations()[k]; exists {
+				continue
+			}
+			annotations := lastOwner.GetAnnotations()
+			if annotations == nil {
+				annotations = make(map[string]string)
+			}
+			annotations[k] = v
+			lastOwner.SetAnnotations(annotations)
+		}
+	}
 }
 
 func (sk *skipTopOwnerGrouper) getSupportedTypePGMetadata(

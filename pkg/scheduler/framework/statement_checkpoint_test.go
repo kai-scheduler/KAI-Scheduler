@@ -8,15 +8,17 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/eviction_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
 )
 
 type testFunction func(ssn *Session, stmt *Statement)
@@ -30,7 +32,7 @@ func TestStatement_Checkpoint(t *testing.T) {
 		{
 			name: "rollback evict",
 			fn: func(ssn *Session, stmt *Statement) {
-				err := stmt.Evict(ssn.PodGroupInfos["running_job0"].PodInfos["running_job0-0"], "evicting task",
+				err := stmt.Evict(ssn.ClusterInfo.PodGroupInfos["running_job0"].GetAllPodsMap()["running_job0-0"], "evicting task",
 					eviction_info.EvictionMetadata{
 						Action:           "action",
 						EvictionGangSize: 1,
@@ -41,30 +43,30 @@ func TestStatement_Checkpoint(t *testing.T) {
 		{
 			name: "rollback allocate",
 			fn: func(ssn *Session, stmt *Statement) {
-				err := stmt.Allocate(ssn.PodGroupInfos["pending_job0"].PodInfos["pending_job0-0"], "node0")
+				err := stmt.Allocate(ssn.ClusterInfo.PodGroupInfos["pending_job0"].GetAllPodsMap()["pending_job0-0"], "node0")
 				assert.Nil(t, err)
 			},
 		},
 		{
 			name: "rollback pipeline updateIfNeeded true",
 			fn: func(ssn *Session, stmt *Statement) {
-				err := stmt.Pipeline(ssn.PodGroupInfos["pending_job0"].PodInfos["pending_job0-0"], "node0", true)
+				err := stmt.Pipeline(ssn.ClusterInfo.PodGroupInfos["pending_job0"].GetAllPodsMap()["pending_job0-0"], "node0", true)
 				assert.Nil(t, err)
 			},
 		},
 		{
 			name: "rollback pipeline updateIfNeeded false",
 			fn: func(ssn *Session, stmt *Statement) {
-				err := stmt.Pipeline(ssn.PodGroupInfos["pending_job0"].PodInfos["pending_job0-0"], "node0", false)
+				err := stmt.Pipeline(ssn.ClusterInfo.PodGroupInfos["pending_job0"].GetAllPodsMap()["pending_job0-0"], "node0", false)
 				assert.Nil(t, err)
 			},
 		},
 		{
 			name: "rollback allocate evict",
 			fn: func(ssn *Session, stmt *Statement) {
-				err := stmt.Allocate(ssn.PodGroupInfos["pending_job0"].PodInfos["pending_job0-0"], "node0")
+				err := stmt.Allocate(ssn.ClusterInfo.PodGroupInfos["pending_job0"].GetAllPodsMap()["pending_job0-0"], "node0")
 				assert.Nil(t, err)
-				err = stmt.Evict(ssn.PodGroupInfos["pending_job0"].PodInfos["pending_job0-0"], "evicting task",
+				err = stmt.Evict(ssn.ClusterInfo.PodGroupInfos["pending_job0"].GetAllPodsMap()["pending_job0-0"], "evicting task",
 					eviction_info.EvictionMetadata{
 						Action:           "action",
 						EvictionGangSize: 1,
@@ -75,9 +77,9 @@ func TestStatement_Checkpoint(t *testing.T) {
 		{
 			name: "rollback pipeline evict",
 			fn: func(ssn *Session, stmt *Statement) {
-				err := stmt.Pipeline(ssn.PodGroupInfos["pending_job0"].PodInfos["pending_job0-0"], "node0", true)
+				err := stmt.Pipeline(ssn.ClusterInfo.PodGroupInfos["pending_job0"].GetAllPodsMap()["pending_job0-0"], "node0", true)
 				assert.Nil(t, err)
-				err = stmt.Evict(ssn.PodGroupInfos["pending_job0"].PodInfos["pending_job0-0"], "evicting task",
+				err = stmt.Evict(ssn.ClusterInfo.PodGroupInfos["pending_job0"].GetAllPodsMap()["pending_job0-0"], "evicting task",
 					eviction_info.EvictionMetadata{
 						Action:           "action",
 						EvictionGangSize: 1,
@@ -88,22 +90,22 @@ func TestStatement_Checkpoint(t *testing.T) {
 		{
 			name: "rollback evict pipeline",
 			fn: func(ssn *Session, stmt *Statement) {
-				err := stmt.Evict(ssn.PodGroupInfos["running_job0"].PodInfos["running_job0-0"], "evicting task",
+				err := stmt.Evict(ssn.ClusterInfo.PodGroupInfos["running_job0"].GetAllPodsMap()["running_job0-0"], "evicting task",
 					eviction_info.EvictionMetadata{
 						Action:           "action",
 						EvictionGangSize: 1,
 					})
 				assert.Nil(t, err)
-				err = stmt.Pipeline(ssn.PodGroupInfos["running_job0"].PodInfos["running_job0-0"], "node0", true)
+				err = stmt.Pipeline(ssn.ClusterInfo.PodGroupInfos["running_job0"].GetAllPodsMap()["running_job0-0"], "node0", true)
 				assert.Nil(t, err)
 			},
 		},
 		{
 			name: "rollback pipeline evict update false",
 			fn: func(ssn *Session, stmt *Statement) {
-				err := stmt.Pipeline(ssn.PodGroupInfos["pending_job0"].PodInfos["pending_job0-0"], "node0", false)
+				err := stmt.Pipeline(ssn.ClusterInfo.PodGroupInfos["pending_job0"].GetAllPodsMap()["pending_job0-0"], "node0", false)
 				assert.Nil(t, err)
-				err = stmt.Evict(ssn.PodGroupInfos["pending_job0"].PodInfos["pending_job0-0"], "evicting task",
+				err = stmt.Evict(ssn.ClusterInfo.PodGroupInfos["pending_job0"].GetAllPodsMap()["pending_job0-0"], "evicting task",
 					eviction_info.EvictionMetadata{
 						Action:           "action",
 						EvictionGangSize: 1,
@@ -114,27 +116,27 @@ func TestStatement_Checkpoint(t *testing.T) {
 		{
 			name: "rollback evict pipeline update false",
 			fn: func(ssn *Session, stmt *Statement) {
-				err := stmt.Evict(ssn.PodGroupInfos["running_job0"].PodInfos["running_job0-0"], "evicting task",
+				err := stmt.Evict(ssn.ClusterInfo.PodGroupInfos["running_job0"].GetAllPodsMap()["running_job0-0"], "evicting task",
 					eviction_info.EvictionMetadata{
 						Action:           "action",
 						EvictionGangSize: 1,
 					})
 				assert.Nil(t, err)
-				err = stmt.Pipeline(ssn.PodGroupInfos["running_job0"].PodInfos["running_job0-0"], "node0", false)
+				err = stmt.Pipeline(ssn.ClusterInfo.PodGroupInfos["running_job0"].GetAllPodsMap()["running_job0-0"], "node0", false)
 				assert.Nil(t, err)
 			},
 		},
 		{
 			name: "rollback evict checkpoint pipeline update false",
 			fn: func(ssn *Session, stmt *Statement) {
-				err := stmt.Evict(ssn.PodGroupInfos["running_job0"].PodInfos["running_job0-0"], "evicting task",
+				err := stmt.Evict(ssn.ClusterInfo.PodGroupInfos["running_job0"].GetAllPodsMap()["running_job0-0"], "evicting task",
 					eviction_info.EvictionMetadata{
 						Action:           "action",
 						EvictionGangSize: 1,
 					})
 				assert.Nil(t, err)
 				cp := stmt.Checkpoint()
-				err = stmt.Pipeline(ssn.PodGroupInfos["running_job0"].PodInfos["running_job0-0"], "node0", false)
+				err = stmt.Pipeline(ssn.ClusterInfo.PodGroupInfos["running_job0"].GetAllPodsMap()["running_job0-0"], "node0", false)
 				assert.Nil(t, err)
 				err = stmt.Rollback(cp)
 				assert.Nil(t, err)
@@ -144,13 +146,13 @@ func TestStatement_Checkpoint(t *testing.T) {
 		{
 			name: "rollback illegal evict allocate",
 			fn: func(ssn *Session, stmt *Statement) {
-				err := stmt.Evict(ssn.PodGroupInfos["running_job0"].PodInfos["running_job0-0"], "evicting task",
+				err := stmt.Evict(ssn.ClusterInfo.PodGroupInfos["running_job0"].GetAllPodsMap()["running_job0-0"], "evicting task",
 					eviction_info.EvictionMetadata{
 						Action:           "action",
 						EvictionGangSize: 1,
 					})
 				assert.Nil(t, err)
-				err = stmt.Allocate(ssn.PodGroupInfos["running_job0"].PodInfos["running_job0-0"], "node0")
+				err = stmt.Allocate(ssn.ClusterInfo.PodGroupInfos["running_job0"].GetAllPodsMap()["running_job0-0"], "node0")
 				assert.Error(t, err)
 			},
 		},
@@ -192,16 +194,19 @@ func TestStatement_Checkpoint(t *testing.T) {
 				},
 			},
 		}
-		jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(clusterTopology.Jobs)
-		nodesInfoMap := nodes_fake.BuildNodesInfoMap(clusterTopology.Nodes, tasksToNodeMap)
-		ssn := &Session{}
-		ssn.PodGroupInfos = jobsInfoMap
-		ssn.Nodes = nodesInfoMap
+		vectorMap := resource_info.NewResourceVectorMap()
+		jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(clusterTopology.Jobs, vectorMap)
+		nodesInfoMap := nodes_fake.BuildNodesInfoMap(clusterTopology.Nodes, tasksToNodeMap, nil, vectorMap)
+		ssn := &Session{
+			ClusterInfo: &api.ClusterInfo{},
+		}
+		ssn.ClusterInfo.PodGroupInfos = jobsInfoMap
+		ssn.ClusterInfo.Nodes = nodesInfoMap
 
 		s := &Statement{
 			operations: []Operation{},
 			ssn:        ssn,
-			sessionUID: "1234",
+			sessionID:  "1234",
 		}
 
 		originalJobs, originalNodes := extractSessionAssertedData(ssn)
@@ -220,13 +225,13 @@ func extractSessionAssertedData(ssn *Session) (
 	jobs map[common_info.PodGroupID]*podgroup_info.PodGroupInfo,
 	nodes map[string]*nodeAssertedInfo,
 ) {
-	jobs = make(map[common_info.PodGroupID]*podgroup_info.PodGroupInfo, len(ssn.PodGroupInfos))
-	for id, job := range ssn.PodGroupInfos {
+	jobs = make(map[common_info.PodGroupID]*podgroup_info.PodGroupInfo, len(ssn.ClusterInfo.PodGroupInfos))
+	for id, job := range ssn.ClusterInfo.PodGroupInfos {
 		jobs[id] = job.Clone()
 	}
 
-	nodes = make(map[string]*nodeAssertedInfo, len(ssn.Nodes))
-	for name, node := range ssn.Nodes {
+	nodes = make(map[string]*nodeAssertedInfo, len(ssn.ClusterInfo.Nodes))
+	for name, node := range ssn.ClusterInfo.Nodes {
 		nodes[name] = extractNodeAssertedInfo(node)
 	}
 
@@ -240,8 +245,8 @@ func assertEqualSessionData(t *testing.T,
 	for id, job := range jobs {
 		originalJob := originalJobs[id]
 		assert.Equal(t, *originalJob.Allocated, *job.Allocated)
-		for name, actualTask := range job.PodInfos {
-			originalTask := originalJob.PodInfos[name]
+		for name, actualTask := range job.GetAllPodsMap() {
+			originalTask := originalJob.GetAllPodsMap()[name]
 			assert.Equal(t, actualTask.NodeName, originalTask.NodeName)
 			assert.Equal(t, originalTask.Status, actualTask.Status)
 			assert.EqualValues(t, *actualTask.ResReq, *originalTask.ResReq)

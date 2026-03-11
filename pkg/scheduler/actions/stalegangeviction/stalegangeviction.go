@@ -6,13 +6,13 @@ package stalegangeviction
 import (
 	"time"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/eviction_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 )
 
 type staleGangEviction struct {
@@ -29,8 +29,8 @@ func (action *staleGangEviction) Name() framework.ActionType {
 func (action *staleGangEviction) Execute(ssn *framework.Session) {
 	log.InfraLogger.V(2).Infof("Enter StaleGangEviction ...")
 	defer log.InfraLogger.V(2).Infof("Leaving StaleGangEviction ...")
-	for _, job := range ssn.PodGroupInfos {
-		if job.IsPodGroupStale() {
+	for _, job := range ssn.ClusterInfo.PodGroupInfos {
+		if job.IsStale() {
 			handleStaleJob(ssn, job)
 		} else {
 			handleNonStaleJob(job)
@@ -57,7 +57,7 @@ func handleStaleJob(ssn *framework.Session, job *podgroup_info.PodGroupInfo) {
 	job.StalenessInfo.Stale = true
 
 	var tasksToEvict []*pod_info.PodInfo
-	for _, task := range job.PodInfos {
+	for _, task := range job.GetAllPodsMap() {
 		if pod_status.IsActiveAllocatedStatus(task.Status) {
 			tasksToEvict = append(tasksToEvict, task)
 		} else {
@@ -71,7 +71,7 @@ func handleStaleJob(ssn *framework.Session, job *podgroup_info.PodGroupInfo) {
 		Preemptor:        nil,
 	}
 	for _, task := range tasksToEvict {
-		reason := api.GetGangEvictionMessage(task.Namespace, task.Name, job.MinAvailable)
+		reason := api.GetGangEvictionMessage(task, job)
 		if err := ssn.Evict(task, reason, evictionMetadata); err != nil {
 			log.InfraLogger.Errorf("Failed to evict task: <%s/%s> of job <%s> err: %v",
 				task.Namespace, task.Name, job.Name, err)

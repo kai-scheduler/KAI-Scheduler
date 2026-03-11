@@ -18,11 +18,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgroup"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
 )
 
 const (
@@ -110,7 +110,7 @@ func (g *KnativeGrouper) getPodGroupFromRevision(revision *unstructured.Unstruct
 	return &podgroup.Metadata{
 		Annotations:       g.CalcPodGroupAnnotations(revision, pod),
 		Labels:            g.CalcPodGroupLabels(revision, pod),
-		PriorityClassName: constants.InferencePriorityClass,
+		PriorityClassName: g.CalcPodGroupPriorityClass(revision, pod, constants.InferencePriorityClass),
 		Queue:             g.CalcPodGroupQueue(revision, pod),
 		Namespace:         revision.GetNamespace(),
 		Name:              calcPodGroupName(revision),

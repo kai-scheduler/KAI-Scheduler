@@ -1,0 +1,28 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+featureGates:
+  DynamicResourceAllocation: true
+nodes:
+- role: control-plane
+  kubeadmConfigPatches:
+  - |
+    kind: ClusterConfiguration
+    apiServer:
+        extraArgs:
+          runtime-config: "resource.k8s.io/v1beta1=true"
+  image: kindest/node:v1.32.0
+- role: worker
+  image: kindest/node:v1.32.0
+  labels:
+    run.ai/simulated-gpu-node-pool: default
+- role: worker
+  image: kindest/node:v1.32.0
+  labels:
+    run.ai/simulated-gpu-node-pool: default
+- role: worker
+  image: kindest/node:v1.32.0
+  labels:
+    run.ai/simulated-gpu-node-pool: default

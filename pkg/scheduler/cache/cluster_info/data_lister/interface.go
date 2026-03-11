@@ -5,13 +5,15 @@ package data_lister
 
 import (
 	v1 "k8s.io/api/core/v1"
-	policyv1 "k8s.io/api/policy/v1"
+	resourceapi "k8s.io/api/resource/v1"
 	scheduling "k8s.io/api/scheduling/v1"
 	storage "k8s.io/api/storage/v1"
 
-	schedulingv1alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	schedulingv2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	schedulingv2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
+	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	schedulingv2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	schedulingv2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
 )
 
 type DataLister interface {
@@ -19,7 +21,6 @@ type DataLister interface {
 	ListPodGroups() ([]*schedulingv2alpha2.PodGroup, error)
 	ListNodes() ([]*v1.Node, error)
 	ListQueues() ([]*schedulingv2.Queue, error)
-	ListPodDisruptionBudgets() ([]*policyv1.PodDisruptionBudget, error)
 	ListPriorityClasses() ([]*scheduling.PriorityClass, error)
 	GetPriorityClassByName(name string) (*scheduling.PriorityClass, error)
 	ListPodByIndex(index, value string) ([]interface{}, error)
@@ -29,4 +30,9 @@ type DataLister interface {
 	ListCSIDrivers() ([]*storage.CSIDriver, error)
 	ListBindRequests() ([]*schedulingv1alpha2.BindRequest, error)
 	ListConfigMaps() ([]*v1.ConfigMap, error)
+	ListTopologies() ([]*kaiv1alpha1.Topology, error)
+	ListResourceUsage() (*queue_info.ClusterUsage, error)
+	// ListResourceSlicesByNode returns ResourceSlices grouped by node name.
+	ListResourceSlicesByNode() (map[string][]*resourceapi.ResourceSlice, error)
+	ListResourceClaims() ([]*resourceapi.ResourceClaim, error)
 }

@@ -10,10 +10,11 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 )
 
 var (
@@ -87,11 +88,15 @@ func TestFeasibleNodes(t *testing.T) {
 		{
 			name: "no nodes",
 			job: &podgroup_info.PodGroupInfo{
-				PodInfos: pod_info.PodsMap{
-					"pod1": &pod_info.PodInfo{
-						ResourceRequestType: pod_info.RequestTypeRegular,
-						ResReq:              resource_info.NewResourceRequirementsWithGpus(1),
-					},
+				PodSets: map[string]*subgroup_info.PodSet{
+					podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil).
+						WithPodInfos(pod_info.PodsMap{
+							"pod1": &pod_info.PodInfo{
+								UID:                 "pod1",
+								ResourceRequestType: pod_info.RequestTypeRegular,
+								ResReq:              resource_info.NewResourceRequirementsWithGpus(1),
+							},
+						}),
 				},
 			},
 			nodes:             []*node_info.NodeInfo{},
@@ -100,11 +105,15 @@ func TestFeasibleNodes(t *testing.T) {
 		{
 			name: "CPU only job",
 			job: &podgroup_info.PodGroupInfo{
-				PodInfos: pod_info.PodsMap{
-					"pod1": &pod_info.PodInfo{
-						ResourceRequestType: pod_info.RequestTypeRegular,
-						ResReq:              resource_info.NewResourceRequirements(0, 1000, 0),
-					},
+				PodSets: map[string]*subgroup_info.PodSet{
+					podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil).
+						WithPodInfos(pod_info.PodsMap{
+							"pod1": &pod_info.PodInfo{
+								UID:                 "pod1",
+								ResourceRequestType: pod_info.RequestTypeRegular,
+								ResReq:              resource_info.NewResourceRequirements(0, 1000, 0),
+							},
+						}),
 				},
 			},
 			nodes:             allNodes,
@@ -113,13 +122,17 @@ func TestFeasibleNodes(t *testing.T) {
 		{
 			name: "whole GPU job",
 			job: &podgroup_info.PodGroupInfo{
-				PodInfos: pod_info.PodsMap{
-					"pod1": &pod_info.PodInfo{
-						ResourceRequestType: pod_info.RequestTypeRegular,
-						ResReq: &resource_info.ResourceRequirements{
-							GpuResourceRequirement: *resource_info.NewGpuResourceRequirementWithGpus(2, 0),
-						},
-					},
+				PodSets: map[string]*subgroup_info.PodSet{
+					podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil).
+						WithPodInfos(pod_info.PodsMap{
+							"pod1": &pod_info.PodInfo{
+								UID:                 "pod1",
+								ResourceRequestType: pod_info.RequestTypeRegular,
+								ResReq: &resource_info.ResourceRequirements{
+									GpuResourceRequirement: *resource_info.NewGpuResourceRequirementWithGpus(2, 0),
+								},
+							},
+						}),
 				},
 			},
 			nodes:             allNodes,
@@ -128,18 +141,23 @@ func TestFeasibleNodes(t *testing.T) {
 		{
 			name: "distributed whole GPU job",
 			job: &podgroup_info.PodGroupInfo{
-				PodInfos: pod_info.PodsMap{
-					"pod1": &pod_info.PodInfo{
-						ResourceRequestType: pod_info.RequestTypeRegular,
-						ResReq: &resource_info.ResourceRequirements{
-							GpuResourceRequirement: *resource_info.NewGpuResourceRequirementWithGpus(2, 0),
-						},
-					},
-					"pod2": &pod_info.PodInfo{
-						ResReq: &resource_info.ResourceRequirements{
-							GpuResourceRequirement: *resource_info.NewGpuResourceRequirementWithGpus(2, 0),
-						},
-					},
+				PodSets: map[string]*subgroup_info.PodSet{
+					podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 2, nil).
+						WithPodInfos(pod_info.PodsMap{
+							"pod1": &pod_info.PodInfo{
+								UID:                 "pod1",
+								ResourceRequestType: pod_info.RequestTypeRegular,
+								ResReq: &resource_info.ResourceRequirements{
+									GpuResourceRequirement: *resource_info.NewGpuResourceRequirementWithGpus(2, 0),
+								},
+							},
+							"pod2": &pod_info.PodInfo{
+								UID: "pod2",
+								ResReq: &resource_info.ResourceRequirements{
+									GpuResourceRequirement: *resource_info.NewGpuResourceRequirementWithGpus(2, 0),
+								},
+							},
+						}),
 				},
 			},
 			nodes:             allNodes,
@@ -148,16 +166,21 @@ func TestFeasibleNodes(t *testing.T) {
 		{
 			name: "Mixed requests (whole GPU and CPU pods)",
 			job: &podgroup_info.PodGroupInfo{
-				PodInfos: pod_info.PodsMap{
-					"pod1": &pod_info.PodInfo{
-						ResourceRequestType: pod_info.RequestTypeRegular,
-						ResReq: &resource_info.ResourceRequirements{
-							GpuResourceRequirement: *resource_info.NewGpuResourceRequirementWithGpus(2, 0),
-						},
-					},
-					"pod2": &pod_info.PodInfo{
-						ResReq: resource_info.NewResourceRequirements(0, 1000, 2000),
-					},
+				PodSets: map[string]*subgroup_info.PodSet{
+					podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 2, nil).
+						WithPodInfos(pod_info.PodsMap{
+							"pod1": &pod_info.PodInfo{
+								UID:                 "pod1",
+								ResourceRequestType: pod_info.RequestTypeRegular,
+								ResReq: &resource_info.ResourceRequirements{
+									GpuResourceRequirement: *resource_info.NewGpuResourceRequirementWithGpus(2, 0),
+								},
+							},
+							"pod2": &pod_info.PodInfo{
+								UID:    "pod2",
+								ResReq: resource_info.NewResourceRequirements(0, 1000, 2000),
+							},
+						}),
 				},
 			},
 			nodes:             allNodes,
@@ -166,13 +189,17 @@ func TestFeasibleNodes(t *testing.T) {
 		{
 			name: "Fraction GPU job",
 			job: &podgroup_info.PodGroupInfo{
-				PodInfos: pod_info.PodsMap{
-					"pod1": &pod_info.PodInfo{
-						ResourceRequestType: pod_info.RequestTypeFraction,
-						ResReq: &resource_info.ResourceRequirements{
-							GpuResourceRequirement: *resource_info.NewGpuResourceRequirementWithGpus(0.5, 0),
-						},
-					},
+				PodSets: map[string]*subgroup_info.PodSet{
+					podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil).
+						WithPodInfos(pod_info.PodsMap{
+							"pod1": &pod_info.PodInfo{
+								UID:                 "pod1",
+								ResourceRequestType: pod_info.RequestTypeFraction,
+								ResReq: &resource_info.ResourceRequirements{
+									GpuResourceRequirement: *resource_info.NewGpuResourceRequirementWithGpus(0.5, 0),
+								},
+							},
+						}),
 				},
 			},
 			nodes:             allNodes,
@@ -181,14 +208,18 @@ func TestFeasibleNodes(t *testing.T) {
 		{
 			name: "GPU Memory job",
 			job: &podgroup_info.PodGroupInfo{
-				PodInfos: pod_info.PodsMap{
-					"pod1": &pod_info.PodInfo{
-						ResourceRequestType: pod_info.RequestTypeGpuMemory,
-						ResReq: &resource_info.ResourceRequirements{
-							GpuResourceRequirement: *resource_info.NewGpuResourceRequirementWithGpus(
-								0, 500),
-						},
-					},
+				PodSets: map[string]*subgroup_info.PodSet{
+					podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil).
+						WithPodInfos(pod_info.PodsMap{
+							"pod1": &pod_info.PodInfo{
+								UID:                 "pod1",
+								ResourceRequestType: pod_info.RequestTypeGpuMemory,
+								ResReq: &resource_info.ResourceRequirements{
+									GpuResourceRequirement: *resource_info.NewGpuResourceRequirementWithGpus(
+										0, 500),
+								},
+							},
+						}),
 				},
 			},
 			nodes:             allNodes,
@@ -197,17 +228,21 @@ func TestFeasibleNodes(t *testing.T) {
 		{
 			name: "MIG job",
 			job: &podgroup_info.PodGroupInfo{
-				PodInfos: pod_info.PodsMap{
-					"pod1": &pod_info.PodInfo{
-						ResourceRequestType: pod_info.RequestTypeMigInstance,
-						ResReq: &resource_info.ResourceRequirements{
-							GpuResourceRequirement: *resource_info.NewGpuResourceRequirementWithMig(
-								map[v1.ResourceName]int64{
-									"nvidia.com/mig-1g.10gb": 1,
+				PodSets: map[string]*subgroup_info.PodSet{
+					podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil).
+						WithPodInfos(pod_info.PodsMap{
+							"pod1": &pod_info.PodInfo{
+								UID:                 "pod1",
+								ResourceRequestType: pod_info.RequestTypeMigInstance,
+								ResReq: &resource_info.ResourceRequirements{
+									GpuResourceRequirement: *resource_info.NewGpuResourceRequirementWithMig(
+										map[v1.ResourceName]int64{
+											"nvidia.com/mig-1g.10gb": 1,
+										},
+									),
 								},
-							),
-						},
-					},
+							},
+						}),
 				},
 			},
 			nodes:             allNodes,

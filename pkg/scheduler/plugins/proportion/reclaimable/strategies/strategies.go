@@ -4,10 +4,10 @@
 package strategies
 
 import (
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	rs "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/proportion/utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	rs "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/utils"
 )
 
 type MaintainFairShareStrategy struct{}
@@ -46,11 +46,11 @@ func (mfss *MaintainFairShareStrategy) Reclaimable(
 	reclaimeeRemainingShare rs.ResourceQuantities) bool {
 	// This strategy allows to reclaim if reclaimee is currently over allowed fair share
 
-	log.InfraLogger.V(6).Infof("Checking if reclaim is possible for reclaimer <%v> and reclaimee <%v> in order "+
-		"to maintain fair share. Reclaimee requested: <%v>, deserved: <%v>, fairShare: <%v>, "+
-		"reclaimeeRemainingShare: <%v>",
-		reclaimerQueue.Name, reclaimeeQueue.Name, reclaimeeQueue.GetRequestableShare().String(), reclaimeeQueue.GetDeservedShare().String(),
-		reclaimeeQueue.GetFairShare().String(), reclaimeeRemainingShare.String())
+	log.InfraLogger.V(6).Infof("Checking if reclaim is possible for reclaimer <%s> and reclaimee <%s> in order "+
+		"to maintain fair share. Reclaimee requested: <%s>, deserved: <%s>, fairShare: <%s>, "+
+		"reclaimeeRemainingShare: <%s>",
+		reclaimerQueue.Name, reclaimeeQueue.Name, reclaimeeQueue.GetRequestableShare(), reclaimeeQueue.GetDeservedShare(),
+		reclaimeeQueue.GetFairShare(), reclaimeeRemainingShare)
 
 	return !reclaimeeRemainingShare.LessEqual(reclaimeeQueue.GetAllocatableShare())
 }
@@ -62,13 +62,13 @@ func (gdqs *GuaranteeDeservedQuotaStrategy) Reclaimable(
 	reclaimeeRemainingShare rs.ResourceQuantities) bool {
 	// This strategy allows to reclaim if reclaimer is under deserved quota ("starved") and reclaimer is above quota
 
-	log.InfraLogger.V(6).Infof("Checking if reclaim is possible for reclaimer <%v> and reclaimee <%v> in order to "+
+	log.InfraLogger.V(6).Infof("Checking if reclaim is possible for reclaimer <%s> and reclaimee <%s> in order to "+
 		"Guarantee deserved quota. "+
-		"Reclaimee requested: <%v>, deserved: <%v>, fairShare: <%v>, reclaimeeRemainingShare: <%v> "+
-		"Reclaimer requested: <%v>, deserved: <%v>, fairShare: <%v>",
-		reclaimerQueue.Name, reclaimeeQueue.Name, reclaimeeQueue.GetRequestableShare().String(), reclaimeeQueue.GetDeservedShare().String(),
-		reclaimeeQueue.GetFairShare().String(), reclaimeeRemainingShare.String(), reclaimerQueue.GetRequestableShare().String(),
-		reclaimerQueue.GetDeservedShare().String(), reclaimerQueue.GetFairShare().String())
+		"Reclaimee requested: <%s>, deserved: <%s>, fairShare: <%s>, reclaimeeRemainingShare: <%s> "+
+		"Reclaimer requested: <%s>, deserved: <%s>, fairShare: <%s>",
+		reclaimerQueue.Name, reclaimeeQueue.Name, reclaimeeQueue.GetRequestableShare(), reclaimeeQueue.GetDeservedShare(),
+		reclaimeeQueue.GetFairShare(), reclaimeeRemainingShare, reclaimerQueue.GetRequestableShare(),
+		reclaimerQueue.GetDeservedShare(), reclaimerQueue.GetFairShare())
 
 	// reclaimer has to be under (or equal) deserved quota in all resources (cpu, mem, gpu)
 	if reclaimerWillGoOverQuota(reclaimerResources, reclaimerQueue) {

@@ -4,24 +4,23 @@
 package capacity_policy
 
 import (
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	rs "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	rs "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
 )
 
 type capacityCheckFn func(requestedShare rs.ResourceQuantities, job *podgroup_info.PodGroupInfo) *api.SchedulableResult
 
 type CapacityPolicy struct {
-	queues                 map[common_info.QueueID]*rs.QueueAttributes
-	isInferencePreemptible bool
+	queues map[common_info.QueueID]*rs.QueueAttributes
 }
 
-func New(queues map[common_info.QueueID]*rs.QueueAttributes, isInferencePreemptible bool) *CapacityPolicy {
-	return &CapacityPolicy{queues, isInferencePreemptible}
+func New(queues map[common_info.QueueID]*rs.QueueAttributes) *CapacityPolicy {
+	return &CapacityPolicy{queues}
 }
 
 func (cp *CapacityPolicy) IsJobOverQueueCapacity(job *podgroup_info.PodGroupInfo,
@@ -77,7 +76,7 @@ func (cp *CapacityPolicy) isJobOverCapacity(requestedShare rs.ResourceQuantities
 func getRequiredQuota(tasksToAllocate []*pod_info.PodInfo) *podgroup_info.JobRequirement {
 	quota := podgroup_info.JobRequirement{}
 	for _, pod := range tasksToAllocate {
-		quota.GPU += pod.ResReq.GetSumGPUs()
+		quota.GPU += pod.ResReq.GetGpusQuota()
 		quota.MilliCPU += pod.ResReq.Cpu()
 		quota.Memory += pod.ResReq.Memory()
 	}

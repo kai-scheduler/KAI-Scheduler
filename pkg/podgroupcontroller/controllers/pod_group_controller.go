@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/go-logr/logr"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -21,8 +20,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgroupcontroller/controllers/cluster_relations"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgroupcontroller/controllers/cluster_relations"
 )
 
 const (
@@ -47,6 +46,7 @@ type PodGroupReconciler struct {
 // +kubebuilder:rbac:groups="scheduling.k8s.io",resources=priorityclasses,verbs=get;list;watch
 // +kubebuilder:rbac:groups="scheduling.run.ai",resources=podgroups,verbs=get;list;watch
 // +kubebuilder:rbac:groups="scheduling.run.ai",resources=podgroups/status,verbs=get;list;watch;update;patch
+// +kubebuilder:rbac:groups="resource.k8s.io",resources=resourceclaims,verbs=get;list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -60,7 +60,8 @@ func (r *PodGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	podGroup, err := r.getPodGroupObject(ctx, req)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return handleReconcilePodGroup(logger, req)
+			logger.Info(fmt.Sprintf("PodGroup %v not found, it might have been deleted.", req))
+			return ctrl.Result{}, nil
 		} else {
 			logger.Error(err, fmt.Sprintf("Failed to get pod group for request %s/%s", req.Namespace, req.Name))
 			return ctrl.Result{}, err
@@ -71,7 +72,7 @@ func (r *PodGroupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *PodGroupReconciler) SetupWithManager(mgr ctrl.Manager, configs Configs) error {
+func (r *PodGroupReconciler) SetupWithManager(mgr ctrl.Manager, configs Configs, skipNameValidation bool) error {
 	r.config = configs
 
 	err := mgr.GetFieldIndexer().IndexField(
@@ -89,6 +90,7 @@ func (r *PodGroupReconciler) SetupWithManager(mgr ctrl.Manager, configs Configs)
 				MaxConcurrentReconciles: r.config.MaxConcurrentReconciles,
 				RateLimiter: workqueue.NewTypedItemExponentialFailureRateLimiter[ctrl.Request](
 					rateLimiterBaseDelay, rateLimiterMaxDelay),
+				SkipNameValidation: &skipNameValidation,
 			}).
 		Complete(r)
 }
@@ -119,9 +121,4 @@ func mapPodEventToPodGroup(ctx context.Context, p client.Object) []reconcile.Req
 			NamespacedName: types.NamespacedName{Name: mappedPodGroupName, Namespace: p.GetNamespace()},
 		},
 	}
-}
-
-func handleReconcilePodGroup(logger logr.Logger, req ctrl.Request) (ctrl.Result, error) {
-	logger.Info(fmt.Sprintf("PodGroup %v not found, it might have been deleted.", req))
-	return ctrl.Result{}, nil
 }

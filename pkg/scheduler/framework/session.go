@@ -1,3 +1,19 @@
+/*
+Copyright 2018 The Kubernetes Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 // Copyright 2025 NVIDIA CORPORATION
 // SPDX-License-Identifier: Apache-2.0
 
@@ -11,42 +27,41 @@ import (
 	"time"
 
 	"k8s.io/apimachinery/pkg/types"
+	ksf "k8s.io/kube-scheduler/framework"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/configmap_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/eviction_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/queue_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_internal"
-	k8splugins "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_internal/plugins"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/metrics"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/scheduler_util"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal"
+	k8splugins "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal/plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/scheduler_util"
 )
 
 var server *PluginServer
 
 type Session struct {
-	UID   types.UID
+	ID    string
 	Cache cache.Cache
 
-	PodGroupInfos map[common_info.PodGroupID]*podgroup_info.PodGroupInfo
-	Nodes         map[string]*node_info.NodeInfo
-	Queues        map[common_info.QueueID]*queue_info.QueueInfo
-	ConfigMaps    map[common_info.ConfigMapID]*configmap_info.ConfigMapInfo
+	ClusterInfo *api.ClusterInfo
 
 	GpuOrderFns                           []api.GpuOrderFn
 	NodePreOrderFns                       []api.NodePreOrderFn
 	NodeOrderFns                          []api.NodeOrderFn
-	TaskOrderFns                          []common_info.CompareFn
 	JobOrderFns                           []common_info.CompareFn
-	QueueOrderFns                         []CompareQueueFn
+	PodSetOrderFns                        []common_info.CompareFn
+	SubGroupSetOrderFns                   []common_info.CompareFn
+	TaskOrderFns                          []common_info.CompareFn
+	QueueOrderFns                         []api.CompareQueueFn
 	CanReclaimResourcesFns                []api.CanReclaimResourcesFn
 	ReclaimVictimFilterFns                []api.VictimFilterFn
 	PreemptVictimFilterFns                []api.VictimFilterFn
@@ -59,8 +74,11 @@ type Session struct {
 	IsNonPreemptibleJobOverQueueQuotaFns  []api.IsJobOverCapacityFn
 	IsJobOverCapacityFns                  []api.IsJobOverCapacityFn
 	IsTaskAllocationOnNodeOverCapacityFns []api.IsTaskAllocationOverCapacityFn
+	SubsetNodesFns                        []api.SubsetNodesFn
 	PrePredicateFns                       []api.PrePredicateFn
 	PredicateFns                          []api.PredicateFn
+	BindRequestMutateFns                  []api.BindRequestMutateFn
+	PreJobAllocationFns                   []api.PreJobAllocationFn
 
 	Config          *conf.SchedulerConfiguration
 	plugins         map[string]Plugin
@@ -68,27 +86,31 @@ type Session struct {
 	SchedulerParams conf.SchedulerParams
 	mux             *http.ServeMux
 
-	k8sPodState map[types.UID]k8s_internal.SessionState
+	k8sResourceStateCache sync.Map
 }
 
 func (ssn *Session) Statement() *Statement {
-	return &Statement{ssn: ssn, sessionUID: ssn.UID}
+	return &Statement{ssn: ssn, sessionID: ssn.ID}
 }
 
-func (ssn *Session) GetK8sStateForPod(uid types.UID) k8s_internal.SessionState {
-	if ssn.k8sPodState == nil {
-		ssn.k8sPodState = make(map[types.UID]k8s_internal.SessionState)
+func (ssn *Session) GetSessionStateForResource(uid types.UID) k8s_internal.SessionState {
+	state, _ := ssn.k8sResourceStateCache.LoadOrStore(uid, k8s_internal.NewSessionState())
+	return state.(k8s_internal.SessionState)
+}
+
+func (ssn *Session) GetNodes() []ksf.NodeInfo {
+	nodes, err := ssn.Cache.SnapshotSharedLister().List()
+	if err != nil {
+		log.InfraLogger.Errorf("Failed to list nodes: ", err)
+		return nil
 	}
-	state, found := ssn.k8sPodState[uid]
-	if found {
-		return state
-	}
-	ssn.k8sPodState[uid] = k8s_internal.NewSessionState()
-	return ssn.k8sPodState[uid]
+
+	return nodes
 }
 
 func (ssn *Session) BindPod(pod *pod_info.PodInfo) error {
-	if err := ssn.Cache.Bind(pod, pod.NodeName); err != nil {
+	bindRequestAnnotations := ssn.MutateBindRequestAnnotations(pod, pod.NodeName)
+	if err := ssn.Cache.Bind(pod, pod.NodeName, bindRequestAnnotations); err != nil {
 		return err
 	}
 
@@ -103,7 +125,7 @@ func (ssn *Session) BindPod(pod *pod_info.PodInfo) error {
 }
 
 func (ssn *Session) Evict(pod *pod_info.PodInfo, message string, evictionMetadata eviction_info.EvictionMetadata) error {
-	podGroup, found := ssn.PodGroupInfos[pod.Job]
+	podGroup, found := ssn.ClusterInfo.PodGroupInfos[pod.Job]
 	if !found {
 		return fmt.Errorf("could not evict pod <%v/%v> without podGroup. podGroupId: <%v>",
 			pod.Namespace, pod.Name, pod.Job)
@@ -177,12 +199,12 @@ func (ssn *Session) sortGPUs(filteredGPUs []string, pod *pod_info.PodInfo, node 
 }
 
 func (ssn *Session) FittingNode(task *pod_info.PodInfo, node *node_info.NodeInfo, writeFittingDelta bool) bool {
-	var fitErrors *common_info.FitErrors
+	var fitErrors *common_info.TasksFitErrors
 	if writeFittingDelta {
 		fitErrors = common_info.NewFitErrors()
 	}
 
-	job := ssn.PodGroupInfos[task.Job]
+	job := ssn.ClusterInfo.PodGroupInfos[task.Job]
 
 	log.InfraLogger.V(6).Infof("Checking if task <%v/%v> is allocatable on node <%v>: <%v> vs. <%v>",
 		task.Namespace, task.Name, node.Name, task.ResReq, node.Idle)
@@ -190,7 +212,7 @@ func (ssn *Session) FittingNode(task *pod_info.PodInfo, node *node_info.NodeInfo
 	if !allocatable {
 		if fitError != nil && writeFittingDelta {
 			fitErrors.SetNodeError(node.Name, fitError)
-			job.SetTaskFitError(task, fitErrors)
+			job.AddTaskFitErrors(task, fitErrors)
 		}
 		return false
 	}
@@ -202,7 +224,7 @@ func (ssn *Session) FittingNode(task *pod_info.PodInfo, node *node_info.NodeInfo
 			task.Namespace, task.Name, node.Name, err)
 		if writeFittingDelta {
 			fitErrors.SetNodeError(node.Name, err)
-			job.SetTaskFitError(task, fitErrors)
+			job.AddTaskFitErrors(task, fitErrors)
 		}
 		return false
 	}
@@ -242,9 +264,9 @@ func (ssn *Session) OrderedNodesByTask(nodes []*node_info.NodeInfo, task *pod_in
 }
 
 func (ssn *Session) isTaskAllocatableOnNode(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo,
-	node *node_info.NodeInfo, writeFittingDelta bool) (bool, *common_info.FitError) {
+	node *node_info.NodeInfo, writeFittingDelta bool) (bool, *common_info.TasksFitError) {
 	allocatable := true
-	var fitError *common_info.FitError = nil
+	var fitError *common_info.TasksFitError = nil
 
 	if !node.IsTaskAllocatableOnReleasingOrIdle(task) {
 		allocatable = false
@@ -253,7 +275,7 @@ func (ssn *Session) isTaskAllocatableOnNode(task *pod_info.PodInfo, job *podgrou
 			task.Namespace, task.Name, task.ResReq, node.Name, node.Releasing, node.Idle)
 		if writeFittingDelta {
 			if taskAllocatable := node.IsTaskAllocatable(task); !taskAllocatable {
-				fitError = node.FittingError(task, len(job.PodInfos) > 1)
+				fitError = node.FittingError(task, len(job.GetAllPodsMap()) > 1)
 			}
 		}
 	}
@@ -261,13 +283,13 @@ func (ssn *Session) isTaskAllocatableOnNode(task *pod_info.PodInfo, job *podgrou
 }
 
 func (ssn *Session) String() string {
-	msg := fmt.Sprintf("Session %v: \n", ssn.UID)
+	msg := fmt.Sprintf("Session %v: \n", ssn.ID)
 
-	for _, job := range ssn.PodGroupInfos {
+	for _, job := range ssn.ClusterInfo.PodGroupInfos {
 		msg = fmt.Sprintf("%s%v\n", msg, job)
 	}
 
-	for _, node := range ssn.Nodes {
+	for _, node := range ssn.ClusterInfo.Nodes {
 		msg = fmt.Sprintf("%s%v\n", msg, node)
 	}
 
@@ -276,7 +298,7 @@ func (ssn *Session) String() string {
 }
 
 func (ssn *Session) updatePodOnNode(pod *pod_info.PodInfo) error {
-	node, found := ssn.Nodes[pod.NodeName]
+	node, found := ssn.ClusterInfo.Nodes[pod.NodeName]
 	if !found {
 		log.InfraLogger.Errorf("Failed to find node: %v", pod.NodeName)
 		return fmt.Errorf("node doesnt exist on cluster")
@@ -284,49 +306,49 @@ func (ssn *Session) updatePodOnNode(pod *pod_info.PodInfo) error {
 	err := node.UpdateTask(pod)
 	if err != nil {
 		log.InfraLogger.Errorf("Failed to update task <%v/%v> in Session <%v>: %v",
-			pod.Namespace, pod.Name, ssn.UID, err)
+			pod.Namespace, pod.Name, ssn.ID, err)
 	}
 	return err
 }
 
 func (ssn *Session) updatePodOnSession(pod *pod_info.PodInfo, status pod_status.PodStatus) error {
-	job, found := ssn.PodGroupInfos[pod.Job]
+	job, found := ssn.ClusterInfo.PodGroupInfos[pod.Job]
 	if !found {
 		log.InfraLogger.Errorf("Failed to found Job <%s> in Session <%s> index when binding.",
-			pod.Job, ssn.UID)
+			pod.Job, ssn.ID)
 		return fmt.Errorf("failed to find job %s", pod.Job)
 	}
 
 	err := job.UpdateTaskStatus(pod, status)
 	if err != nil {
 		log.InfraLogger.Errorf("Failed to update task <%v/%v> status to %v in Session <%v>: %v",
-			pod.Namespace, pod.Name, status, ssn.UID, err)
+			pod.Namespace, pod.Name, status, ssn.ID, err)
 	}
 	return err
 }
 
 func (ssn *Session) clear() {
-	ssn.PodGroupInfos = nil
-	ssn.Nodes = nil
+	ssn.ClusterInfo.PodGroupInfos = nil
+	ssn.ClusterInfo.Nodes = nil
 	ssn.plugins = nil
 	ssn.eventHandlers = nil
 	ssn.TaskOrderFns = nil
+	ssn.PodSetOrderFns = nil
+	ssn.SubGroupSetOrderFns = nil
 	ssn.JobOrderFns = nil
 }
 
-func openSession(cache cache.Cache, sessionId types.UID, schedulerParams conf.SchedulerParams, mux *http.ServeMux) (*Session, error) {
+func openSession(cache cache.Cache, sessionId string, schedulerParams conf.SchedulerParams, mux *http.ServeMux) (*Session, error) {
 	ssn := &Session{
-		UID:   sessionId,
+		ID:    sessionId,
 		Cache: cache,
 
-		PodGroupInfos: map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{},
-		Nodes:         map[string]*node_info.NodeInfo{},
-		Queues:        map[common_info.QueueID]*queue_info.QueueInfo{},
+		ClusterInfo: &api.ClusterInfo{},
 
-		plugins:         map[string]Plugin{},
-		SchedulerParams: schedulerParams,
-		mux:             mux,
-		k8sPodState:     map[types.UID]k8s_internal.SessionState{},
+		plugins:               map[string]Plugin{},
+		SchedulerParams:       schedulerParams,
+		mux:                   mux,
+		k8sResourceStateCache: sync.Map{},
 	}
 
 	log.InfraLogger.V(2).Infof("Taking cluster snapshot ...")
@@ -335,23 +357,20 @@ func openSession(cache cache.Cache, sessionId types.UID, schedulerParams conf.Sc
 		return nil, err
 	}
 
-	ssn.PodGroupInfos = snapshot.PodGroupInfos
-	ssn.Nodes = snapshot.Nodes
-	ssn.Queues = snapshot.Queues
-	ssn.ConfigMaps = snapshot.ConfigMaps
+	ssn.ClusterInfo = snapshot
 
 	log.InfraLogger.V(2).Infof("Session %v with <%d> Jobs, <%d> Queues and <%d> Nodes",
-		ssn.UID, len(ssn.PodGroupInfos), len(ssn.Queues), len(ssn.Nodes))
+		ssn.ID, len(ssn.ClusterInfo.PodGroupInfos), len(ssn.ClusterInfo.Queues), len(ssn.ClusterInfo.Nodes))
 
 	return ssn, nil
 }
 
 func closeSession(ssn *Session) {
 	log.InfraLogger.V(6).Infof("Close Session %v with <%d> Jobs and <%d> Queues",
-		ssn.UID, len(ssn.PodGroupInfos), len(ssn.Queues))
+		ssn.ID, len(ssn.ClusterInfo.PodGroupInfos), len(ssn.ClusterInfo.Queues))
 
 	// Push all jobs for status update into the channel
-	for _, job := range ssn.PodGroupInfos {
+	for _, job := range ssn.ClusterInfo.PodGroupInfos {
 		if err := ssn.Cache.RecordJobStatusEvent(job); err != nil {
 			log.InfraLogger.Errorf("Failed to record job status event for job <%s>: %v", job.Name, err)
 		}
@@ -361,7 +380,7 @@ func closeSession(ssn *Session) {
 	stopCh := make(chan struct{})
 	ssn.Cache.WaitForWorkers(stopCh)
 
-	log.InfraLogger.V(6).Infof("Done updating job statuses for session: %v", ssn.UID)
+	log.InfraLogger.V(6).Infof("Done updating job statuses for session: %v", ssn.ID)
 }
 
 func (ssn *Session) GetMaxNumberConsolidationPreemptees() int {
@@ -370,15 +389,6 @@ func (ssn *Session) GetMaxNumberConsolidationPreemptees() int {
 
 func (ssn *Session) OverrideMaxNumberConsolidationPreemptees(maxPreemptees int) {
 	ssn.SchedulerParams.MaxNumberConsolidationPreemptees = maxPreemptees
-}
-
-func (ssn *Session) IsInferencePreemptible() bool {
-	return ssn.SchedulerParams.IsInferencePreemptible
-}
-
-// OverrideInferencePreemptible overrides the value returned by IsInferencePreemptible. Use for testing purposes.
-func (ssn *Session) OverrideInferencePreemptible(isInferencePreemptible bool) {
-	ssn.SchedulerParams.IsInferencePreemptible = isInferencePreemptible
 }
 
 func (ssn *Session) UseSchedulingSignatures() bool {
@@ -395,7 +405,7 @@ func (ssn *Session) GetJobsDepth(action ActionType) int {
 
 func (ssn *Session) CountLeafQueues() int {
 	cnt := 0
-	for _, queue := range ssn.Queues {
+	for _, queue := range ssn.ClusterInfo.Queues {
 		if queue.IsLeafQueue() {
 			cnt++
 		}
@@ -442,6 +452,15 @@ func (ssn *Session) OverrideSchedulerName(name string) {
 
 func (ssn *Session) InternalK8sPlugins() *k8splugins.K8sPlugins {
 	return ssn.Cache.InternalK8sPlugins()
+}
+
+// ResourceVectorMap returns the shared vector index map for this scheduling cycle.
+// All vectors created during this cycle use the same map for consistent indexing.
+func (ssn *Session) ResourceVectorMap() *resource_info.ResourceVectorMap {
+	if ssn.ClusterInfo == nil {
+		return resource_info.NewResourceVectorMap()
+	}
+	return ssn.ClusterInfo.ResourceVectorMap
 }
 
 func sortNodesByScore(nodeScores map[float64][]*node_info.NodeInfo) []*node_info.NodeInfo {

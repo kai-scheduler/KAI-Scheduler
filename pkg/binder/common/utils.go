@@ -4,7 +4,7 @@
 package common
 
 import (
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 )
 
 func IsSharedGPUAllocation(bindRequest *v1alpha2.BindRequest) bool {

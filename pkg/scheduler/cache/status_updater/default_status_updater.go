@@ -18,16 +18,17 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/record"
 
-	kubeaischedulerver "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned"
-	enginev2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/eviction_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_internal"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/utils"
+	kai "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned"
+	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/utils"
 )
 
 const (
@@ -57,7 +58,7 @@ type inflightUpdate struct {
 
 type defaultStatusUpdater struct {
 	kubeClient        kubernetes.Interface
-	kubeaischedClient kubeaischedulerver.Interface
+	kaiClient         kai.Interface
 	recorder          record.EventRecorder
 	detailedFitErrors bool
 	nodePoolLabelKey  string
@@ -77,7 +78,7 @@ type defaultStatusUpdater struct {
 
 func New(
 	kubeClient kubernetes.Interface,
-	kubeaischedClient kubeaischedulerver.Interface,
+	kaiClient kai.Interface,
 	recorder record.EventRecorder,
 	numberOfWorkers int,
 	detailedFitErrors bool,
@@ -85,7 +86,7 @@ func New(
 ) *defaultStatusUpdater {
 	return &defaultStatusUpdater{
 		kubeClient:        kubeClient,
-		kubeaischedClient: kubeaischedClient,
+		kaiClient:         kaiClient,
 		recorder:          recorder,
 		detailedFitErrors: detailedFitErrors,
 		nodePoolLabelKey:  nodePoolLabelKey,
@@ -98,7 +99,9 @@ func New(
 }
 
 func (su *defaultStatusUpdater) Evicted(
-	evictedPodGroup *enginev2alpha2.PodGroup, evictionMetadata eviction_info.EvictionMetadata, message string,
+	evictedPodGroup *enginev2alpha2.PodGroup,
+	evictionMetadata eviction_info.EvictionMetadata,
+	message string,
 ) {
 	evictionEventMetadata := map[string]string{
 		evictionGangSize:  strconv.Itoa(evictionMetadata.EvictionGangSize),
@@ -112,6 +115,16 @@ func (su *defaultStatusUpdater) Evicted(
 
 	su.recorder.AnnotatedEventf(evictedPodGroup, evictionEventMetadata, v1.EventTypeNormal, "Evict",
 		message)
+
+	nodepool := utils.GetNodePoolNameFromLabels(evictedPodGroup.Labels, su.nodePoolLabelKey)
+	metrics.RecordPodGroupEvictedPods(
+		evictedPodGroup.Name,
+		evictedPodGroup.Namespace,
+		string(evictedPodGroup.UID),
+		nodepool,
+		evictionMetadata.Action,
+		evictionMetadata.EvictionGangSize,
+	)
 }
 
 // +kubebuilder:rbac:groups="",resources=pods,verbs=update;patch
@@ -241,15 +254,42 @@ func (su *defaultStatusUpdater) markTaskUnschedulable(pod *v1.Pod, message strin
 }
 
 func (su *defaultStatusUpdater) recordStaleJobEvent(job *podgroup_info.PodGroupInfo) {
-	su.recorder.Eventf(job.PodGroup, v1.EventTypeNormal, "StaleJob",
-		fmt.Sprintf("Job is stale. %d pods are active, minMember is %d",
-			job.GetNumActiveUsedTasks(), job.MinAvailable))
+	subGroupMessages := ""
+
+	totalActivePods := 0
+	totalMinAvailable := int32(0)
+	for _, subGroup := range job.GetSubGroups() {
+		activeTasks := subGroup.GetNumActiveUsedTasks()
+		minAvailable := subGroup.GetMinAvailable()
+		totalActivePods += activeTasks
+		totalMinAvailable += minAvailable
+
+		if !subGroup.IsGangSatisfied() && subGroup.GetName() != podgroup_info.DefaultSubGroup {
+			subGroupMessages += fmt.Sprintf(", subGroup %s minMember is %d and %d pods are active",
+				subGroup.GetName(), minAvailable, activeTasks)
+		}
+	}
+
+	message := fmt.Sprintf("Job is stale. %d pods are active, minMember is %d", totalActivePods, totalMinAvailable) + subGroupMessages
+
+	su.recorder.Eventf(job.PodGroup, v1.EventTypeNormal, "StaleJob", message)
 }
 
 func (su *defaultStatusUpdater) recordJobNotReadyEvent(job *podgroup_info.PodGroupInfo) {
-	su.recorder.Eventf(job.PodGroup, v1.EventTypeNormal, "NotReady",
-		fmt.Sprintf("Job is not ready for scheduling. Waiting for %d pods, currently %d exist, %d are gated",
-			job.MinAvailable, job.GetNumAliveTasks(), job.GetNumGatedTasks()))
+	message := fmt.Sprintf("Job is not ready for scheduling.")
+	for _, subGroup := range job.GetSubGroups() {
+		if !subGroup.IsReadyForScheduling() {
+			if subGroup.GetName() == podgroup_info.DefaultSubGroup {
+				message = message + fmt.Sprintf(" Waiting for %d pods, currently %d exist, %d are gated",
+					subGroup.GetMinAvailable(), subGroup.GetNumAliveTasks(), subGroup.GetNumGatedTasks())
+			} else {
+				message += fmt.Sprintf(" Waiting for %d pods for SubGroup %s, currently %d exist, %d are gated.",
+					subGroup.GetMinAvailable(), subGroup.GetName(), subGroup.GetNumAliveTasks(), subGroup.GetNumGatedTasks())
+			}
+		}
+	}
+
+	su.recorder.Eventf(job.PodGroup, v1.EventTypeNormal, "NotReady", message)
 }
 
 func (su *defaultStatusUpdater) markPodGroupUnschedulable(job *podgroup_info.PodGroupInfo, message string) bool {
@@ -259,13 +299,19 @@ func (su *defaultStatusUpdater) markPodGroupUnschedulable(job *podgroup_info.Pod
 		// Don't update podgroup condition if there are any allocated pods (RUN-20673)
 		return false
 	}
+
+	unschedulableExplanations := make([]enginev2alpha2.UnschedulableExplanation, 0, len(job.JobFitErrors))
+	for _, jobFitError := range job.JobFitErrors {
+		unschedulableExplanations = append(unschedulableExplanations, jobFitError.ToUnschedulableExplanation())
+	}
+
 	return su.updatePodGroupSchedulingCondition(job.PodGroup, &enginev2alpha2.SchedulingCondition{
 		Type:     enginev2alpha2.UnschedulableOnNodePool,
 		NodePool: utils.GetNodePoolNameFromLabels(job.PodGroup.Labels, su.nodePoolLabelKey),
 		Reason:   enginev2alpha2.PodGroupReasonUnschedulable,
 		Message:  message,
 		Status:   v1.ConditionTrue,
-		Reasons:  job.JobFitErrors,
+		Reasons:  unschedulableExplanations,
 	})
 }
 
@@ -303,7 +349,7 @@ func (su *defaultStatusUpdater) recordUnschedulablePodsEvents(job *podgroup_info
 	var errs []error
 	for _, taskInfo := range job.PodStatusIndex[pod_status.Pending] {
 		msg := common_info.DefaultPodError
-		fitError := job.NodesFitErrors[taskInfo.UID]
+		fitError := job.TasksFitErrors[taskInfo.UID]
 		if fitError != nil {
 			msg = fitError.Error()
 
@@ -313,7 +359,7 @@ func (su *defaultStatusUpdater) recordUnschedulablePodsEvents(job *podgroup_info
 				log.InfraLogger.V(6).Infof("Full fit error: %s", fitError.DetailedError())
 			}
 		} else if len(job.JobFitErrors) > 0 {
-			msg = fmt.Sprintf("%s", job.JobFitErrors)
+			msg = fmt.Sprintf("%s", common_info.JobFitErrorsToMessage(job.JobFitErrors))
 		}
 
 		msg = su.addNodePoolPrefixIfNeeded(job, msg)
@@ -348,10 +394,16 @@ func (su *defaultStatusUpdater) updatePodGroupAnnotations(job *podgroup_info.Pod
 }
 
 func (su *defaultStatusUpdater) recordUnschedulablePodGroup(job *podgroup_info.PodGroupInfo) bool {
-	msg := common_info.DefaultPodgroupError
+	var msg string
+	msg = common_info.JobFitErrorsToMessage(job.JobFitErrors)
+	if su.detailedFitErrors {
+		msg = common_info.JobFitErrorsToDetailedMessage(job.JobFitErrors)
+	} else {
+		log.InfraLogger.V(6).Infof("Full job fit error: %s", common_info.JobFitErrorsToDetailedMessage(job.JobFitErrors))
+	}
 
-	if len(job.JobFitErrors) > 0 {
-		msg = fmt.Sprintf("%s", job.JobFitErrors)
+	if len(msg) == 0 {
+		msg = string(common_info.DefaultPodgroupError)
 	}
 
 	msg = su.addNodePoolPrefixIfNeeded(job, msg)

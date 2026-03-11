@@ -6,12 +6,13 @@ kind: Pod
 metadata:
   name: gpu-sharing
   labels:
-    kai.scheduler/queue: test
+    kai.scheduler/queue: default-queue
   annotations:
     gpu-memory: "2000" # in Mib
 spec:
   schedulerName: kai-scheduler
   containers:
-    - name: ubuntu
-      image: ubuntu
-      args: ["sleep", "infinity"]
+    - name: gpu-workload
+      image: nvidia/cuda:13.0.2-base-ubi8
+      command: ["nvidia-smi"]
+      args: ["-L"]

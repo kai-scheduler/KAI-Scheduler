@@ -15,7 +15,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/NVIDIA/KAI-scheduler/cmd/binder/app"
+	"github.com/kai-scheduler/KAI-scheduler/cmd/binder/app"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -26,14 +26,14 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	schedulingv1alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/binding"
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/binding/resourcereservation"
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/controllers"
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/plugins"
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/plugins/gpusharing"
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/plugins/k8s-plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding/resourcereservation"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/controllers"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins"
+	k8s_plugins "github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/k8s-plugins"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -66,7 +66,9 @@ var _ = BeforeSuite(func() {
 
 	By("bootstrapping test environment")
 	testEnv = &envtest.Environment{
-		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "..", "deployments", "kai-scheduler", "crds")},
+		CRDDirectoryPaths: []string{
+			filepath.Join("..", "..", "..", "..", "deployments", "kai-scheduler", "crds"),
+		},
 		ErrorIfCRDPathMissing: true,
 	}
 
@@ -113,11 +115,10 @@ var _ = BeforeSuite(func() {
 	binderPlugins.RegisterPlugin(k8sPlugins)
 	clientWithWatch, err := client.NewWithWatch(cfg, client.Options{})
 	Expect(err).NotTo(HaveOccurred())
-	gpuSharingPlugin := gpusharing.New(clientWithWatch, options.GpuCdiEnabled, options.GPUSharingEnabled)
-	binderPlugins.RegisterPlugin(gpuSharingPlugin)
 
 	rrs := resourcereservation.NewService(false, clientWithWatch, "", 40*time.Second,
-		resourceReservationNameSpace, resourceReservationServiceAccount, resourceReservationAppLabelValue, scalingPodsNamespace)
+		resourceReservationNameSpace, resourceReservationServiceAccount, resourceReservationAppLabelValue, scalingPodsNamespace, constants.DefaultRuntimeClassName,
+		nil) // nil podResources to use defaults
 	podBinder := binding.NewBinder(k8sManager.GetClient(), rrs, binderPlugins)
 
 	err = controllers.NewBindRequestReconciler(

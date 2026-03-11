@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	v1 "k8s.io/api/core/v1"
-	resourceapi "k8s.io/api/resource/v1beta1"
+	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/rand"
 )
@@ -71,6 +71,12 @@ type TestResourceClaim struct {
 
 	Namespace string
 
+	// Labels are the labels to apply to the ResourceClaim.
+	// This is useful for testing shared claims that require queue labels.
+	//
+	// +optional
+	Labels map[string]string `json:"labels,omitempty"`
+
 	// DeviceClassName references a specific DeviceClass, which can define
 	// additional configuration and selectors to be inherited by this
 	// request.
@@ -93,32 +99,7 @@ type TestResourceClaim struct {
 	// +oneOf=AllocationMode
 	Count int64 `json:"count,omitempty" protobuf:"bytes,5,opt,name=count"`
 
-	// ReservedFor indicates which entities are currently allowed to use
-	// the claim. A Pod which references a ResourceClaim which is not
-	// reserved for that Pod will not be started. A claim that is in
-	// use or might be in use because it has been reserved must not get
-	// deallocated.
-	//
-	// In a cluster with multiple scheduler instances, two pods might get
-	// scheduled concurrently by different schedulers. When they reference
-	// the same ResourceClaim which already has reached its maximum number
-	// of consumers, only one pod can be scheduled.
-	//
-	// Both schedulers try to add their pod to the claim.status.reservedFor
-	// field, but only the update that reaches the API server first gets
-	// stored. The other one fails with an error and the scheduler
-	// which issued it knows that it must put the pod back into the queue,
-	// waiting for the ResourceClaim to become usable again.
-	//
-	// There can be at most 32 such reservations. This may get increased in
-	// the future, but not reduced.
-	//
-	// +optional
-	// +listType=map
-	// +listMapKey=uid
-	// +patchStrategy=merge
-	// +patchMergeKey=uid
-	ReservedFor []resourceapi.ResourceClaimConsumerReference `json:"reservedFor,omitempty" protobuf:"bytes,6,opt,name=reservedFor"`
+	ClaimStatus *resourceapi.ResourceClaimStatus `json:"claimStatus,omitempty" protobuf:"bytes,7,opt,name=claimStatus"`
 }
 
 func RandomReservedForReferences(numReferences int) []resourceapi.ResourceClaimConsumerReference {

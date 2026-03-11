@@ -1,0 +1,46 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+name: Validate PR Title
+
+on:
+  pull_request:
+    types: [opened, edited, reopened]
+  merge_group:
+    types: [checks_requested]
+
+jobs:
+  validate-pr-title:
+    name: Validate PR Title
+    runs-on: ubuntu-latest
+    steps:
+      # For merge queue: PR title was already validated, just succeed
+      - name: Skip validation for merge queue
+        if: github.event_name == 'merge_group'
+        run: echo "PR title was already validated before entering merge queue"
+
+      - uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6
+        if: github.event_name == 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          scopes: |
+            scheduler
+            binder
+            podgrouper
+            admission
+            operator
+            queue-controller
+            pod-group-controller
+            resource-reservation
+            chart
+            api
+            node-scale-adjuster
+            ci
+            release
+            docs
+            deps
+          requireScope: false
+          ignoreLabels: |
+            bot
+            ignore-semantic-pull-request

@@ -6,15 +6,18 @@ package solvers
 import (
 	"golang.org/x/exp/slices"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters"
-	solverscenario "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/metrics"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters"
+	idle_gpus_filter "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/node_affinities"
+	solverscenario "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
 )
 
 type PodAccumulatedScenarioBuilder struct {
@@ -29,23 +32,37 @@ type PodAccumulatedScenarioBuilder struct {
 
 func NewPodAccumulatedScenarioBuilder(
 	session *framework.Session, pendingJob *podgroup_info.PodGroupInfo, recordedVictimsJobs []*podgroup_info.PodGroupInfo,
-	victimsJobsQueue *utils.JobsOrderByQueues,
+	victimsJobsQueue *utils.JobsOrderByQueues, feasibleNodes map[string]*node_info.NodeInfo,
 ) *PodAccumulatedScenarioBuilder {
 
 	var scenario *solverscenario.ByNodeScenario = nil
 	recordedVictimsTasks := make(map[common_info.PodID]*pod_info.PodInfo)
-	tasksToAllocate := podgroup_info.GetTasksToAllocate(pendingJob, session.TaskOrderFn, false)
+	tasksToAllocate := podgroup_info.GetTasksToAllocate(pendingJob, session.PodSetOrderFn, session.TaskOrderFn, false)
 	if len(tasksToAllocate) != 0 {
 		scenario = solverscenario.NewByNodeScenario(session, pendingJob, pendingJob, nil, recordedVictimsJobs)
 		for _, job := range recordedVictimsJobs {
-			for podId, podInfo := range job.PodInfos {
+			for podId, podInfo := range job.GetAllPodsMap() {
 				recordedVictimsTasks[podId] = podInfo
 			}
 		}
 	}
 
 	var scenarioFilters []accumulated_scenario_filters.Interface
-	idleGpusScenarioFilter := accumulated_scenario_filters.NewIdleGpusFilter(scenario, session.Nodes)
+
+	// Filter scenario if it has any pods with node affinities that cannot be satisfied by the available nodes for allocation
+	nodeSelectorFilter := node_affinities.NewNodeAffinitiesFilter(scenario, feasibleNodes, session)
+	if nodeSelectorFilter != nil {
+		scenarioFilters = append(scenarioFilters, nodeSelectorFilter)
+	}
+
+	// Basic topology-aware gpu capacity filter
+	topologyAwareFilter := idle_gpus_filter.NewTopologyAwareIdleGpusFilter(scenario, session.ClusterInfo.Nodes)
+	if topologyAwareFilter != nil {
+		scenarioFilters = append(scenarioFilters, topologyAwareFilter)
+	}
+
+	// Full cluster-level idle GPUs filter
+	idleGpusScenarioFilter := idle_gpus_filter.NewIdleGpusFilter(scenario, session.ClusterInfo.Nodes)
 	if idleGpusScenarioFilter != nil {
 		scenarioFilters = append(scenarioFilters, idleGpusScenarioFilter)
 	}
@@ -76,7 +93,7 @@ func (asb *PodAccumulatedScenarioBuilder) addNextPotentialVictims() bool {
 	nextVictimJob := asb.victimsJobsQueue.PopNextJob()
 
 	potentialVictimTasks, jobHasMoreTasks := podgroup_info.GetTasksToEvict(
-		nextVictimJob, asb.session.TaskOrderFn,
+		nextVictimJob, asb.session.PodSetOrderFn, asb.session.TaskOrderFn,
 	)
 
 	// Jump over recorded victims in potential victims generation
@@ -86,7 +103,7 @@ func (asb *PodAccumulatedScenarioBuilder) addNextPotentialVictims() bool {
 			// we still want to evaluate the job again if there are tasks
 			// that are not recorded victims yet, like elastic jobs
 			var remainingTasks []*pod_info.PodInfo
-			for _, task := range nextVictimJob.PodInfos {
+			for _, task := range nextVictimJob.GetAllPodsMap() {
 				if _, ok := asb.recordedVictimsTasks[task.UID]; !ok {
 					remainingTasks = append(remainingTasks, task)
 				}
@@ -101,7 +118,7 @@ func (asb *PodAccumulatedScenarioBuilder) addNextPotentialVictims() bool {
 
 	if jobHasMoreTasks {
 		var remainingTasks []*pod_info.PodInfo
-		for _, task := range nextVictimJob.PodInfos {
+		for _, task := range nextVictimJob.GetAllPodsMap() {
 			if !slices.Contains(potentialVictimTasks, task) {
 				remainingTasks = append(remainingTasks, task)
 			}

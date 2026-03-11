@@ -1,0 +1,58 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# Example configuration for Time-Aware Fairness Simulator
+# This is a simple 2-queue scenario demonstrating basic usage
+
+# Number of simulation cycles to run (each cycle is ~10ms)
+Cycles: 100
+
+# Window size for usage tracking (in seconds)
+WindowSize: 10
+
+# Half-life period for exponential decay (in seconds, 0 = disabled)
+HalfLifePeriod: 5
+
+# K-value for fairness calculation (higher = more aggressive correction)
+KValue: 1.0
+
+# Node configuration - defines the cluster resources
+Nodes:
+  - GPUs: 8       # Each node has 8 GPUs
+    Count: 1      # We have 1 such node
+
+# Queue definitions - hierarchical structure
+Queues:
+  # Top-level department queue
+  - Name: default
+    Parent: ""              # Empty parent means this is a department
+    Priority: 100           # Default priority
+    DeservedGPUs: 0.0       # No base quota
+    Weight: 1.0             # Default weight for over-quota sharing
+  
+  # Child queue 1
+  - Name: team-a
+    Parent: default
+    Priority: 100
+    DeservedGPUs: 0.0
+    Weight: 1.0
+  
+  # Child queue 2
+  - Name: team-b
+    Parent: default
+    Priority: 100
+    DeservedGPUs: 0.0
+    Weight: 1.0
+
+# Job submissions - what workloads each queue will submit
+Jobs:
+  team-a:
+    GPUs: 4         # Each pod requests 4 GPUs
+    NumPods: 1      # 1 pod per job
+    NumJobs: 50     # Submit 50 jobs total
+  
+  team-b:
+    GPUs: 4         # Each pod requests 4 GPUs
+    NumPods: 1      # 1 pod per job
+    NumJobs: 50     # Submit 50 jobs total
+

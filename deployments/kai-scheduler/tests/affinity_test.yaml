@@ -1,0 +1,654 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+suite: test affinity configurations
+templates:
+  - kai-config.yaml
+  - services/operator.yaml
+tests:
+  - it: should not render affinity when global.affinity is empty object
+    templates:
+      - kai-config.yaml
+    set:
+      global.affinity: {}
+    asserts:
+      - notExists:
+          path: spec.global.affinity
+
+  - it: should not render affinity when global.affinity is null
+    templates:
+      - kai-config.yaml
+    set:
+      global.affinity: null
+    asserts:
+      - notExists:
+          path: spec.global.affinity
+
+  - it: should render affinity when global.affinity has node affinity
+    templates:
+      - kai-config.yaml
+    set:
+      global.affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/os
+                operator: In
+                values:
+                - linux
+    asserts:
+      - exists:
+          path: spec.global.affinity
+      - equal:
+          path: spec.global.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key
+          value: kubernetes.io/os
+      - equal:
+          path: spec.global.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].operator
+          value: In
+      - contains:
+          path: spec.global.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].values
+          content: linux
+
+  - it: should render affinity when global.affinity has pod anti-affinity
+    templates:
+      - kai-config.yaml
+    set:
+      global.affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app: kai-scheduler
+            topologyKey: kubernetes.io/hostname
+    asserts:
+      - exists:
+          path: spec.global.affinity
+      - equal:
+          path: spec.global.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].labelSelector.matchLabels.app
+          value: kai-scheduler
+      - equal:
+          path: spec.global.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].topologyKey
+          value: kubernetes.io/hostname
+
+  - it: should render complex global affinity configuration
+    templates:
+      - kai-config.yaml
+    set:
+      global.affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: node-type
+                operator: In
+                values:
+                - gpu
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 50
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  component: scheduler
+              topologyKey: failure-domain.beta.kubernetes.io/zone
+    asserts:
+      - exists:
+          path: spec.global.affinity
+      - equal:
+          path: spec.global.affinity.nodeAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].weight
+          value: 100
+      - equal:
+          path: spec.global.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].weight
+          value: 50
+
+  # ======================================
+  # Service-Level Affinity Tests
+  # ======================================
+  # Binder service affinity tests
+  - it: should not render binder affinity when empty
+    templates:
+      - kai-config.yaml
+    set:
+      binder.affinity: {}
+    asserts:
+      - notExists:
+          path: spec.binder.service.affinity
+
+  - it: should render binder affinity when configured
+    templates:
+      - kai-config.yaml
+    set:
+      binder.affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: component
+                operator: In
+                values:
+                - binder
+    asserts:
+      - exists:
+          path: spec.binder.service.affinity
+      - equal:
+          path: spec.binder.service.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key
+          value: component
+
+  # PodGroupController service affinity tests
+  - it: should not render podgroupcontroller affinity when empty
+    templates:
+      - kai-config.yaml
+    set:
+      podgroupcontroller.affinity: {}
+    asserts:
+      - notExists:
+          path: spec.podGroupController.service.affinity
+
+  - it: should render podgroupcontroller affinity when configured
+    templates:
+      - kai-config.yaml
+    set:
+      podgroupcontroller.affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                component: podgroupcontroller
+            topologyKey: kubernetes.io/hostname
+    asserts:
+      - exists:
+          path: spec.podGroupController.service.affinity
+      - equal:
+          path: spec.podGroupController.service.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].labelSelector.matchLabels.component
+          value: podgroupcontroller
+
+  # QueueController service affinity tests
+  - it: should not render queuecontroller affinity when empty
+    templates:
+      - kai-config.yaml
+    set:
+      queuecontroller.affinity: {}
+    asserts:
+      - notExists:
+          path: spec.queueController.service.affinity
+
+  - it: should render queuecontroller affinity when configured
+    templates:
+      - kai-config.yaml
+    set:
+      queuecontroller.affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 80
+            preference:
+              matchExpressions:
+              - key: workload-type
+                operator: In
+                values:
+                - queue-controller
+    asserts:
+      - exists:
+          path: spec.queueController.service.affinity
+      - equal:
+          path: spec.queueController.service.affinity.nodeAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].weight
+          value: 80
+
+  # Admission service affinity tests
+  - it: should not render admission affinity when empty
+    templates:
+      - kai-config.yaml
+    set:
+      admission.affinity: {}
+    asserts:
+      - notExists:
+          path: spec.admission.service.affinity
+
+  - it: should render admission affinity when configured
+    templates:
+      - kai-config.yaml
+    set:
+      admission.affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: kai-admission
+              topologyKey: failure-domain.beta.kubernetes.io/zone
+    asserts:
+      - exists:
+          path: spec.admission.service.affinity
+      - equal:
+          path: spec.admission.service.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].weight
+          value: 100
+
+  # NodeScaleAdjuster service affinity tests
+  - it: should not render nodescaleadjuster affinity when empty
+    templates:
+      - kai-config.yaml
+    set:
+      nodescaleadjuster.affinity: {}
+    asserts:
+      - notExists:
+          path: spec.nodeScaleAdjuster.service.affinity
+
+  - it: should render nodescaleadjuster affinity when configured
+    templates:
+      - kai-config.yaml
+    set:
+      nodescaleadjuster.affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node.kubernetes.io/instance-type
+                operator: NotIn
+                values:
+                - spot
+    asserts:
+      - exists:
+          path: spec.nodeScaleAdjuster.service.affinity
+      - equal:
+          path: spec.nodeScaleAdjuster.service.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].operator
+          value: NotIn
+
+  # Scheduler service affinity tests
+  - it: should not render scheduler affinity when empty
+    templates:
+      - kai-config.yaml
+    set:
+      scheduler.affinity: {}
+    asserts:
+      - notExists:
+          path: spec.scheduler.service.affinity
+
+  - it: should render scheduler affinity when configured
+    templates:
+      - kai-config.yaml
+    set:
+      scheduler.affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/arch
+                operator: In
+                values:
+                - amd64
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                component: scheduler
+            topologyKey: kubernetes.io/hostname
+    asserts:
+      - exists:
+          path: spec.scheduler.service.affinity
+      - equal:
+          path: spec.scheduler.service.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key
+          value: kubernetes.io/arch
+      - equal:
+          path: spec.scheduler.service.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].topologyKey
+          value: kubernetes.io/hostname
+
+  # Multiple services with affinity
+  - it: should render affinity for multiple services when configured
+    templates:
+      - kai-config.yaml
+    set:
+      binder.affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: service
+                operator: In
+                values:
+                - binder
+      scheduler.affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: service
+                operator: In
+                values:
+                - scheduler
+    asserts:
+      - exists:
+          path: spec.binder.service.affinity
+      - exists:
+          path: spec.scheduler.service.affinity
+      - equal:
+          path: spec.binder.service.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].values[0]
+          value: binder
+      - equal:
+          path: spec.scheduler.service.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].values[0]
+          value: scheduler
+
+  # ======================================
+  # Operator Deployment Affinity Tests  
+  # ======================================
+  - it: should not render affinity in operator deployment when global.affinity is empty
+    templates:
+      - services/operator.yaml
+    set:
+      global.affinity: {}
+    asserts:
+      - notExists:
+          path: spec.template.spec.affinity
+
+  - it: should not render affinity in operator deployment when global.affinity is null
+    templates:
+      - services/operator.yaml
+    set:
+      global.affinity: null
+    asserts:
+      - notExists:
+          path: spec.template.spec.affinity
+
+  - it: should render affinity in operator deployment when global.affinity has node affinity
+    templates:
+      - services/operator.yaml
+    set:
+      global.affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/os
+                operator: In
+                values:
+                - linux
+    asserts:
+      - exists:
+          path: spec.template.spec.affinity
+      - equal:
+          path: spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key
+          value: kubernetes.io/os
+      - equal:
+          path: spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].operator
+          value: In
+      - contains:
+          path: spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].values
+          content: linux
+
+  - it: should render affinity in operator deployment when global.affinity has pod anti-affinity
+    templates:
+      - services/operator.yaml
+    set:
+      global.affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: kai-operator
+            topologyKey: kubernetes.io/hostname
+    asserts:
+      - exists:
+          path: spec.template.spec.affinity
+      - equal:
+          path: spec.template.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].labelSelector.matchLabels["app.kubernetes.io/name"]
+          value: kai-operator
+      - equal:
+          path: spec.template.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].topologyKey
+          value: kubernetes.io/hostname
+
+  - it: should render complex affinity in operator deployment
+    templates:
+      - services/operator.yaml
+    set:
+      global.affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 50
+            preference:
+              matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+          - weight: 80
+            preference:
+              matchExpressions:
+              - key: instance-family
+                operator: In
+                values:
+                - compute-optimized
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: kai-operator
+              topologyKey: failure-domain.beta.kubernetes.io/zone
+    asserts:
+      - exists:
+          path: spec.template.spec.affinity
+      - equal:
+          path: spec.template.spec.affinity.nodeAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].weight
+          value: 50
+      - equal:
+          path: spec.template.spec.affinity.nodeAffinity.preferredDuringSchedulingIgnoredDuringExecution[1].weight
+          value: 80
+      - equal:
+          path: spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].weight
+          value: 100
+      - equal:
+          path: spec.template.spec.affinity.nodeAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].preference.matchExpressions[0].operator
+          value: DoesNotExist
+      - equal:
+          path: spec.template.spec.affinity.nodeAffinity.preferredDuringSchedulingIgnoredDuringExecution[1].preference.matchExpressions[0].values[0]
+          value: compute-optimized
+
+  - it: should render both affinity and other pod spec fields correctly
+    templates:
+      - services/operator.yaml
+    set:
+      global.affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/arch
+                operator: In
+                values:
+                - amd64
+      global.tolerations:
+        - key: "dedicated"
+          operator: "Equal"
+          value: "kai-scheduler"
+          effect: "NoSchedule"
+      global.nodeSelector:
+        node-role.kubernetes.io/worker: "true"
+    asserts:
+      - exists:
+          path: spec.template.spec.affinity
+      - exists:
+          path: spec.template.spec.tolerations
+      - exists:
+          path: spec.template.spec.nodeSelector
+      - equal:
+          path: spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key
+          value: kubernetes.io/arch
+      - equal:
+          path: spec.template.spec.tolerations[0].key
+          value: dedicated
+      - equal:
+          path: spec.template.spec.nodeSelector["node-role.kubernetes.io/worker"]
+          value: "true"
+
+  # ======================================
+  # Edge Cases and Special Configurations
+  # ======================================
+  # Test requireDefaultPodAntiAffinityTerm feature
+  - it: should not render requireDefaultPodAntiAffinityTerm when false
+    templates:
+      - kai-config.yaml
+    set:
+      global.requireDefaultPodAntiAffinityTerm: false
+    asserts:
+      - notExists:
+          path: spec.global.requireDefaultPodAntiAffinityTerm
+
+  - it: should render requireDefaultPodAntiAffinityTerm when true
+    templates:
+      - kai-config.yaml
+    set:
+      global.requireDefaultPodAntiAffinityTerm: true
+    asserts:
+      - exists:
+          path: spec.global.requireDefaultPodAntiAffinityTerm
+      - equal:
+          path: spec.global.requireDefaultPodAntiAffinityTerm
+          value: true
+
+  # Test combination of global affinity and requireDefaultPodAntiAffinityTerm
+  - it: should render both global affinity and requireDefaultPodAntiAffinityTerm
+    templates:
+      - kai-config.yaml
+    set:
+      global.affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/os
+                operator: In
+                values:
+                - linux
+      global.requireDefaultPodAntiAffinityTerm: true
+    asserts:
+      - exists:
+          path: spec.global.affinity
+      - exists:
+          path: spec.global.requireDefaultPodAntiAffinityTerm
+      - equal:
+          path: spec.global.requireDefaultPodAntiAffinityTerm
+          value: true
+      - equal:
+          path: spec.global.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key
+          value: kubernetes.io/os
+
+  # Test affinity with special values and edge cases
+  - it: should handle affinity with empty values array
+    templates:
+      - kai-config.yaml
+    set:
+      global.affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/os
+                operator: Exists
+    asserts:
+      - exists:
+          path: spec.global.affinity
+      - equal:
+          path: spec.global.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].operator
+          value: Exists
+
+  - it: should handle affinity with multiple topology keys
+    templates:
+      - kai-config.yaml
+    set:
+      binder.affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app: binder
+            topologyKey: kubernetes.io/hostname
+          - labelSelector:
+              matchLabels:
+                app: binder
+            topologyKey: failure-domain.beta.kubernetes.io/zone
+    asserts:
+      - exists:
+          path: spec.binder.service.affinity
+      - equal:
+          path: spec.binder.service.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].topologyKey
+          value: kubernetes.io/hostname
+      - equal:
+          path: spec.binder.service.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[1].topologyKey
+          value: failure-domain.beta.kubernetes.io/zone
+
+  # Test mixed required and preferred affinities
+  - it: should handle mixed required and preferred affinities
+    templates:
+      - kai-config.yaml
+    set:
+      scheduler.affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/arch
+                operator: In
+                values:
+                - amd64
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 80
+            preference:
+              matchExpressions:
+              - key: instance-type
+                operator: In
+                values:
+                - c5.large
+                - c5.xlarge
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                component: scheduler
+            topologyKey: kubernetes.io/hostname
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 50
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  component: scheduler
+              topologyKey: failure-domain.beta.kubernetes.io/zone
+    asserts:
+      - exists:
+          path: spec.scheduler.service.affinity
+      - equal:
+          path: spec.scheduler.service.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].operator
+          value: In
+      - equal:
+          path: spec.scheduler.service.affinity.nodeAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].weight
+          value: 80
+      - equal:
+          path: spec.scheduler.service.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].topologyKey
+          value: kubernetes.io/hostname
+      - equal:
+          path: spec.scheduler.service.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].weight
+          value: 50
+
+  # Test that empty string values don't break anything  
+  - it: should handle affinity with empty string in values
+    templates:
+      - kai-config.yaml
+    set:
+      admission.affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/os
+                operator: In
+                values:
+                - ""
+                - linux
+    asserts:
+      - exists:
+          path: spec.admission.service.affinity
+      - contains:
+          path: spec.admission.service.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].values
+          content: ""
+      - contains:
+          path: spec.admission.service.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].values
+          content: linux

@@ -10,7 +10,7 @@ SPDX-License-Identifier: Apache-2.0
 package v1alpha2
 
 import (
-	"k8s.io/api/resource/v1beta1"
+	"k8s.io/api/resource/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 )
 
@@ -145,7 +145,7 @@ func (in *ResourceClaimAllocation) DeepCopyInto(out *ResourceClaimAllocation) {
 	*out = *in
 	if in.Allocation != nil {
 		in, out := &in.Allocation, &out.Allocation
-		*out = new(v1beta1.AllocationResult)
+		*out = new(v1.AllocationResult)
 		(*in).DeepCopyInto(*out)
 	}
 }

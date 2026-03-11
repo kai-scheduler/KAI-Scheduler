@@ -1,3 +1,19 @@
+/*
+Copyright 2018 The Kubernetes Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 // Copyright 2025 NVIDIA CORPORATION
 // SPDX-License-Identifier: Apache-2.0
 
@@ -35,6 +51,11 @@ var (
 	queueFairShareCPU           *prometheus.GaugeVec
 	queueFairShareMemory        *prometheus.GaugeVec
 	queueFairShareGPU           *prometheus.GaugeVec
+	queueCPUUsage               *prometheus.GaugeVec
+	queueMemoryUsage            *prometheus.GaugeVec
+	queueGPUUsage               *prometheus.GaugeVec
+	usageQueryLatency           *prometheus.HistogramVec
+	podGroupEvictedPodsTotal    *prometheus.CounterVec
 )
 
 func init() {
@@ -152,6 +173,40 @@ func InitMetrics(namespace string) {
 			Name:      "queue_fair_share_gpu",
 			Help:      "GPU Fair share of queue, as a gauge. Values in GPU devices",
 		}, []string{"queue_name"})
+
+	queueCPUUsage = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "queue_cpu_usage",
+			Help:      "CPU usage of queue, as a gauge. Units depend on UsageDB configuration",
+		}, []string{"queue_name"})
+	queueMemoryUsage = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "queue_memory_usage",
+			Help:      "Memory usage of queue, as a gauge. Units depend on UsageDB configuration",
+		}, []string{"queue_name"})
+	queueGPUUsage = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "queue_gpu_usage",
+			Help:      "GPU usage of queue, as a gauge. Units depend on UsageDB configuration",
+		}, []string{"queue_name"})
+
+	usageQueryLatency = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: namespace,
+			Name:      "usage_query_latency_milliseconds",
+			Help:      "Usage database query latency histogram in milliseconds",
+			Buckets:   prometheus.ExponentialBuckets(5, 2, 10),
+		}, []string{})
+
+	podGroupEvictedPodsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Name:      "pod_group_evicted_pods_total",
+			Help:      "Total number of pods evicted per pod group",
+		}, []string{"podgroup", "namespace", "uid", "nodepool", "action"})
 }
 
 // UpdateOpenSessionDuration updates latency for open session, including all plugins
@@ -226,9 +281,31 @@ func ResetQueueFairShare() {
 	queueFairShareGPU.Reset()
 }
 
+// UpdateQueueUsage updates usage of queue for a resource
+func UpdateQueueUsage(queueName string, cpu, memory, gpu float64) {
+	queueCPUUsage.WithLabelValues(queueName).Set(cpu)
+	queueMemoryUsage.WithLabelValues(queueName).Set(memory)
+	queueGPUUsage.WithLabelValues(queueName).Set(gpu)
+}
+
+func ResetQueueUsage() {
+	queueCPUUsage.Reset()
+	queueMemoryUsage.Reset()
+	queueGPUUsage.Reset()
+}
+
+func UpdateUsageQueryLatency(latency time.Duration) {
+	usageQueryLatency.WithLabelValues().Observe(float64(latency.Milliseconds()))
+}
+
 // RegisterPreemptionAttempts records number of attempts for preemption
 func RegisterPreemptionAttempts() {
 	preemptionAttempts.Inc()
+}
+
+// RecordPodGroupEvictedPods records the number of pods evicted for a pod group
+func RecordPodGroupEvictedPods(name, namespace, uid, nodepool, action string, count int) {
+	podGroupEvictedPodsTotal.WithLabelValues(name, namespace, uid, nodepool, action).Add(float64(count))
 }
 
 // Duration get the time since specified start

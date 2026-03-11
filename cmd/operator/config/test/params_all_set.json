@@ -1,0 +1,4 @@
+{
+  "affinity": {"nodeAffinity":{"requiredDuringSchedulingIgnoredDuringExecution":{"nodeSelectorTerms":[{"matchExpressions":[{"key":"node-role.kubernetes.io/test","operator":"Exists"}]}]}}},
+  "tolerations": [{"effect":"NoExecute","key":"key-1","operator":"Exists","tolerationSeconds":22}, {"effect":"NoExecute","key":"key-2","operator":"Exists","tolerationSeconds":22}]
+}

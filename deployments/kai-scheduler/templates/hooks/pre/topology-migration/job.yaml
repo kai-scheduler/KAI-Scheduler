@@ -1,0 +1,71 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+{{- if .Values.topologyMigration.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: topology-migration
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "4"
+    "helm.sh/hook-delete-policy": hook-succeeded,before-hook-creation
+spec:
+  template:
+    metadata:
+      {{- if (lookup "apiextensions.k8s.io/v1" "CustomResourceDefinition" "" "clusterversions.config.openshift.io") }}
+      annotations:
+        openshift.io/scc: kai-system
+      {{- else }}
+      labels:
+        app: topology-migration
+      {{- end }}
+    spec:
+      serviceAccountName: kai-topology-migration
+      {{- if (lookup "apiextensions.k8s.io/v1" "CustomResourceDefinition" "" "clusterversions.config.openshift.io") }}
+      securityContext:
+        runAsUser: 10000
+        runAsNonRoot: true
+        fsGroup: 10000
+      {{- end }}
+      containers:
+      - name: migration
+        image: "{{ .Values.global.registry }}/{{ .Values.topologyMigration.image.name }}:{{ .Values.topologyMigration.image.tag | default .Values.global.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.topologyMigration.image.pullPolicy }}
+        {{- if (lookup "apiextensions.k8s.io/v1" "CustomResourceDefinition" "" "clusterversions.config.openshift.io") }}
+        securityContext:
+          runAsUser: 10000
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        {{- else if .Values.global.securityContext }}
+        securityContext:
+          {{- toYaml .Values.global.securityContext | nindent 10 }}
+        {{- end }}
+        command: ["/bin/bash", "/scripts/migrate-topologies.sh"]
+        volumeMounts:
+        - name: migration-script
+          mountPath: /scripts
+      volumes:
+      - name: migration-script
+        configMap:
+          name: topology-migration-script
+          defaultMode: 0755
+      restartPolicy: OnFailure
+      {{- if .Values.global.nodeSelector }}
+      nodeSelector:
+        {{- toYaml .Values.global.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- if .Values.global.affinity }}
+      affinity:
+        {{- toYaml .Values.global.affinity | nindent 8 }}
+      {{- end }}
+      {{- if .Values.global.tolerations }}
+      tolerations:
+        {{- toYaml .Values.global.tolerations | nindent 8 }}
+      {{- end }}
+{{- end }}
+

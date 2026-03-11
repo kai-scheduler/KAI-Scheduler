@@ -1,7 +1,0 @@
-# Copyright 2025 NVIDIA CORPORATION
-# SPDX-License-Identifier: Apache-2.0
-
-{{ include "kai-scheduler.preInstallWebhookJob" (dict "jobName" "binder-pre-install-job" "serviceName" "binder" "secretName" .Values.binder.certSecretName "weight" "0" "Values" .Values "Chart" .Chart "Release" .Release) }}
-
----
-{{ include "kai-scheduler.preInstallWebhookJob" (dict "jobName" "queuecontroller-pre-install-job" "serviceName" "queuecontroller" "secretName" .Values.queuecontroller.certSecretName "weight" "1" "Values" .Values "Chart" .Chart "Release" .Release) }}

@@ -13,8 +13,8 @@ import (
 	context "context"
 	reflect "reflect"
 
-	v1alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	state "github.com/NVIDIA/KAI-scheduler/pkg/binder/plugins/state"
+	v1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	state "github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/state"
 	gomock "go.uber.org/mock/gomock"
 	v1 "k8s.io/api/core/v1"
 )
@@ -41,20 +41,6 @@ func NewMockPlugin(ctrl *gomock.Controller) *MockPlugin {
 // EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockPlugin) EXPECT() *MockPluginMockRecorder {
 	return m.recorder
-}
-
-// Mutate mocks base method.
-func (m *MockPlugin) Mutate(arg0 *v1.Pod) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Mutate", arg0)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// Mutate indicates an expected call of Mutate.
-func (mr *MockPluginMockRecorder) Mutate(arg0 any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Mutate", reflect.TypeOf((*MockPlugin)(nil).Mutate), arg0)
 }
 
 // Name mocks base method.
@@ -97,16 +83,16 @@ func (mr *MockPluginMockRecorder) PreBind(ctx, pod, node, bindRequest, state any
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PreBind", reflect.TypeOf((*MockPlugin)(nil).PreBind), ctx, pod, node, bindRequest, state)
 }
 
-// Validate mocks base method.
-func (m *MockPlugin) Validate(arg0 *v1.Pod) error {
+// Rollback mocks base method.
+func (m *MockPlugin) Rollback(ctx context.Context, pod *v1.Pod, node *v1.Node, bindRequest *v1alpha2.BindRequest, state *state.BindingState) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Validate", arg0)
+	ret := m.ctrl.Call(m, "Rollback", ctx, pod, node, bindRequest, state)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
-// Validate indicates an expected call of Validate.
-func (mr *MockPluginMockRecorder) Validate(arg0 any) *gomock.Call {
+// Rollback indicates an expected call of Rollback.
+func (mr *MockPluginMockRecorder) Rollback(ctx, pod, node, bindRequest, state any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Validate", reflect.TypeOf((*MockPlugin)(nil).Validate), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Rollback", reflect.TypeOf((*MockPlugin)(nil).Rollback), ctx, pod, node, bindRequest, state)
 }

@@ -18,11 +18,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgroup"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper"
+	pluginshub "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/hub"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
 const (
@@ -50,13 +52,17 @@ type Configs struct {
 	SchedulerName            string
 	SchedulingQueueLabelKey  string
 
-	DefaultPrioritiesConfigMapName      string
-	DefaultPrioritiesConfigMapNamespace string
+	PodLabelSelector       map[string]string
+	NamespaceLabelSelector map[string]string
+
+	DefaultConfigPerTypeConfigMapName      string
+	DefaultConfigPerTypeConfigMapNamespace string
 }
 
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=pods,verbs=create;update;patch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch;update;get;list;watch
+// +kubebuilder:rbac:groups="scheduling.k8s.io",resources=priorityclasses,verbs=get;list;watch
 // +kubebuilder:rbac:groups="scheduling.run.ai",resources=podgroups,verbs=create;update;patch;get;list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
@@ -69,7 +75,7 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	err := r.Client.Get(ctx, types.NamespacedName{Namespace: req.Namespace, Name: req.Name}, &pod)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			logger.V(1).Info(fmt.Sprintf("Pod %s/%s not found, was probably deleted", pod.Namespace, pod.Name))
+			logger.V(1).Info(fmt.Sprintf("Pod %s/%s not found, was probably deleted", req.Namespace, req.Name))
 			return ctrl.Result{}, nil
 		}
 
@@ -90,12 +96,16 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		}
 	}()
 
-	if isOrphanPodWithPodGroup(ctx, &pod) {
+	if isOrphanPodWithPodGroup(&pod) {
 		return ctrl.Result{}, nil
 	}
 
 	topOwner, allOwners, err := r.podGrouper.GetPodOwners(ctx, &pod)
 	if err != nil {
+		if pod.DeletionTimestamp != nil {
+			logger.V(1).Info(fmt.Sprintf("Pod %s/%s is being deleted, it's ok if the owner is not available", pod.Namespace, pod.Name))
+			return ctrl.Result{}, nil
+		}
 		logger.V(1).Error(err, "Failed to find pod top owner", req.Namespace, req.Name)
 		return ctrl.Result{}, err
 	}
@@ -116,9 +126,9 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		return ctrl.Result{}, err
 	}
 
-	err = r.addPodGroupAnnotationToPod(ctx, &pod, metadata.Name, string(metadata.Owner.UID))
+	err = r.assignPodToGroupAndSubGroup(ctx, &pod, metadata)
 	if err != nil {
-		logger.V(1).Error(err, "Failed to update pod with podgroup annotation", "pod", pod)
+		logger.V(1).Error(err, "Failed to assign pod to group and subgroup", "pod", pod)
 		return ctrl.Result{}, err
 	}
 
@@ -126,21 +136,20 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *PodReconciler) SetupWithManager(mgr ctrl.Manager, configs Configs) error {
+func (r *PodReconciler) SetupWithManager(mgr ctrl.Manager, configs Configs, pluginsHub pluginshub.PluginsHub) error {
 	clientWithoutCache, err := client.New(mgr.GetConfig(), client.Options{Cache: nil})
 	if err != nil {
 		return err
 	}
 
-	r.podGrouper = podgrouper.NewPodgrouper(mgr.GetClient(), clientWithoutCache, configs.SearchForLegacyPodGroups,
-		configs.KnativeGangSchedule, configs.SchedulingQueueLabelKey, configs.NodePoolLabelKey,
-		configs.DefaultPrioritiesConfigMapName, configs.DefaultPrioritiesConfigMapNamespace)
+	r.podGrouper = podgrouper.NewPodgrouper(mgr.GetClient(), clientWithoutCache, pluginsHub)
 	r.PodGroupHandler = podgroup.NewHandler(mgr.GetClient(), configs.NodePoolLabelKey, configs.SchedulingQueueLabelKey)
 	r.configs = configs
 	r.eventRecorder = mgr.GetEventRecorderFor(controllerName)
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1.Pod{}).
+		WithEventFilter(predicate.NewPredicateFuncs(eventFilterFn(mgr.GetClient(), configs))).
 		WithOptions(
 			controller.Options{
 				MaxConcurrentReconciles: r.configs.MaxConcurrentReconciles,
@@ -150,21 +159,37 @@ func (r *PodReconciler) SetupWithManager(mgr ctrl.Manager, configs Configs) erro
 		Complete(r)
 }
 
-func (r *PodReconciler) addPodGroupAnnotationToPod(ctx context.Context, pod *v1.Pod, podGroup, jobID string) error {
+func (r *PodReconciler) assignPodToGroupAndSubGroup(ctx context.Context, pod *v1.Pod, metadata *podgroup.Metadata) error {
 	logger := log.FromContext(ctx)
-	if len(pod.Annotations) == 0 {
-		pod.Annotations = map[string]string{}
+
+	currentPG := pod.Annotations[constants.PodGroupAnnotationForPod]
+	currentSubGroup := pod.Labels[constants.SubGroupLabelKey]
+
+	expectedSubGroup := ""
+	if sg := metadata.FindSubGroupForPod(pod.Namespace, pod.Name); sg != nil {
+		expectedSubGroup = sg.Name
 	}
 
-	value, found := pod.Annotations[constants.PodGroupAnnotationForPod]
-	if found && value == podGroup {
+	if currentPG == metadata.Name && currentSubGroup == expectedSubGroup {
 		return nil
 	}
-	logger.V(1).Info("Reconciling podgroup annotation for pod", "pod",
-		fmt.Sprintf("%s/%s", pod.Namespace, pod.Name), "old", value, "new", podGroup)
+
+	logger.V(1).Info("Assigning pod to group and subgroup", "pod",
+		fmt.Sprintf("%s/%s", pod.Namespace, pod.Name),
+		"oldPodGroup", currentPG, "newPodGroup", metadata.Name,
+		"oldSubGroup", currentSubGroup, "newSubGroup", expectedSubGroup)
 
 	newPod := pod.DeepCopy()
-	newPod.Annotations[constants.PodGroupAnnotationForPod] = podGroup
+	if newPod.Annotations == nil {
+		newPod.Annotations = map[string]string{}
+	}
+	if newPod.Labels == nil {
+		newPod.Labels = map[string]string{}
+	}
+	newPod.Annotations[constants.PodGroupAnnotationForPod] = metadata.Name
+	if expectedSubGroup != "" {
+		newPod.Labels[constants.SubGroupLabelKey] = expectedSubGroup
+	}
 
 	return r.Client.Patch(ctx, newPod, client.MergeFrom(pod))
 }
@@ -187,14 +212,34 @@ func addNodePoolLabel(metadata *podgroup.Metadata, pod *v1.Pod, nodePoolKey stri
 	}
 }
 
-func isOrphanPodWithPodGroup(ctx context.Context, pod *v1.Pod) bool {
-	logger := log.FromContext(ctx)
-	podGroupName, foundPGAnnotation := pod.Annotations[constants.PodGroupAnnotationForPod]
-	if foundPGAnnotation && pod.OwnerReferences == nil {
-		logger.V(1).Error(fmt.Errorf("orphan pod detected"), "Detected pod with no owner but with podgroup annotation",
-			"pod", fmt.Sprintf("%s/%s", pod.Namespace, pod.Name), "podgroup", podGroupName)
-		return true
-	}
+func isOrphanPodWithPodGroup(pod *v1.Pod) bool {
+	_, foundPGAnnotation := pod.Annotations[constants.PodGroupAnnotationForPod]
+	return foundPGAnnotation && pod.OwnerReferences == nil
+}
 
-	return false
+// +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch
+
+func eventFilterFn(k8sClient client.Client, configs Configs) func(obj client.Object) bool {
+	return func(obj client.Object) bool {
+		if len(configs.NamespaceLabelSelector) == 0 {
+			return true
+		}
+		pod := obj.(*v1.Pod)
+		namespace := &v1.Namespace{}
+		if err := k8sClient.Get(context.TODO(),
+			types.NamespacedName{Name: pod.Namespace},
+			namespace,
+		); err != nil {
+			return false
+		}
+		return labelsMatch(namespace.Labels, configs.NamespaceLabelSelector)
+	}
+}
+func labelsMatch(labels, selector map[string]string) bool {
+	for key, val := range selector {
+		if labelVal, found := labels[key]; !found || labelVal != val {
+			return false
+		}
+	}
+	return true
 }

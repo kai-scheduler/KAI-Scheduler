@@ -11,13 +11,12 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/watch"
-	"k8s.io/client-go/kubernetes"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/constant"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/wait/watcher"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/testconfig"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait/watcher"
 )
 
 func ForKaiComponentPod(
@@ -25,7 +24,7 @@ func ForKaiComponentPod(
 	appLabelComponentName string, condition checkCondition,
 ) {
 	pw := watcher.NewGenericWatcher[v1.PodList](client, watcher.CheckCondition(condition),
-		runtimeClient.InNamespace(constant.SystemPodsNamespace),
+		runtimeClient.InNamespace(testconfig.GetConfig().SystemPodsNamespace),
 		runtimeClient.MatchingLabels{constants.AppLabelName: appLabelComponentName})
 
 	if !watcher.ForEvent(ctx, client, pw) {
@@ -47,21 +46,4 @@ func ForRunningSystemComponentEvent(ctx context.Context, client runtimeClient.Wi
 		return rd.IsPodRunning(objPod)
 	}
 	ForKaiComponentPod(ctx, client, appLabelComponentName, runningCondition)
-}
-
-func PatchSystemDeploymentFeatureFlags(
-	ctx context.Context,
-	kubeClientset kubernetes.Interface,
-	controllerClient runtimeClient.WithWatch,
-	namespace string,
-	deploymentName string,
-	containerName string,
-	featureFlagsUpdater ArgsUpdater,
-) error {
-	err := patchDeploymentArgs(ctx, kubeClientset, namespace, deploymentName, containerName, featureFlagsUpdater)
-	if err != nil {
-		return fmt.Errorf("failed to patch deployment %s: %w", deploymentName, err)
-	}
-	WaitForDeploymentPodsRunning(ctx, controllerClient, deploymentName, namespace)
-	return nil
 }

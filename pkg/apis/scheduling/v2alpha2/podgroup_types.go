@@ -1,9 +1,26 @@
+/*
+Copyright 2017 The Kubernetes Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 // Copyright 2025 NVIDIA CORPORATION
 // SPDX-License-Identifier: Apache-2.0
 
 package v2alpha2
 
 import (
+	"fmt"
 	"strings"
 
 	v1 "k8s.io/api/core/v1"
@@ -15,9 +32,9 @@ import (
 
 // PodGroupSpec defines the desired state of PodGroup
 type PodGroupSpec struct {
-	// MinMember defines the minimal number of members/tasks to run the pod group;
-	// if there's not enough resources to start all tasks, the scheduler
-	// will not start anyone.
+	// MinMember defines the minimal number of members to run the PodGroup;
+	// if there are not enough resources to start all required members, the scheduler will not start anyone.
+	// +kubebuilder:validation:Minimum=1
 	MinMember int32 `json:"minMember,omitempty" protobuf:"bytes,1,opt,name=minMember"`
 
 	// Queue defines the queue to allocate resource for PodGroup; if queue does not exist,
@@ -33,6 +50,10 @@ type PodGroupSpec struct {
 	// +optional
 	PriorityClassName string `json:"priorityClassName,omitempty" protobuf:"bytes,3,opt,name=priorityClassName"`
 
+	// Preemptibility determines if this PodGroup can be preempted by higher priority workloads.
+	// When unspecified, preemptibility is determined by the PriorityClass value - values below 100 are considered preemptible.
+	Preemptibility Preemptibility `json:"preemptibility,omitempty" protobuf:"bytes,4,opt,name=preemptibility"`
+
 	// The number of pods which will try to run at any instant.
 	Parallelism int32 `json:"parallelism,omitempty" protobuf:"bytes,4,opt,name=parallelism"`
 
@@ -47,6 +68,61 @@ type PodGroupSpec struct {
 
 	// The number of scheduling cycles to try before marking the pod group as UnschedulableOnNodePool. Currently only supporting -1 and 1
 	SchedulingBackoff *int32 `json:"schedulingBackoff,omitempty" protobuf:"bytes,8,opt,name=schedulingBackoff"`
+
+	// TopologyConstraint defines the topology constraints for this PodGroup
+	TopologyConstraint TopologyConstraint `json:"topologyConstraint,omitempty"`
+
+	// SubGroups defines finer-grained subsets of pods within the PodGroup with individual scheduling constraints
+	SubGroups []SubGroup `json:"subGroups,omitempty"`
+}
+
+// Preemptibility defines whether this PodGroup can be preempted
+//
+// Supported values are:
+// - `preemptible` - PodGroup can be preempted by higher-priority workloads
+// - `non-preemptible` - PodGroup runs to completion once scheduled
+//
+// Defaults to priority-based preemptibility determination (preemptible if priority < 100)
+//
+// +kubebuilder:validation:Enum=preemptible;non-preemptible
+// +optional
+type Preemptibility string
+
+const (
+	Preemptible    Preemptibility = "preemptible"
+	NonPreemptible Preemptibility = "non-preemptible"
+)
+
+func ParsePreemptibility(value string) (Preemptibility, error) {
+	switch value {
+	case string(Preemptible):
+		return Preemptible, nil
+	case string(NonPreemptible):
+		return NonPreemptible, nil
+	case "":
+		// Empty value is valid and represents the default priority-based preemptibility
+		return "", nil
+	default:
+		return "", fmt.Errorf("invalid preemptibility value: %s", value)
+	}
+}
+
+type SubGroup struct {
+	// Name uniquely identifies the SubGroup within the PodGroup.
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+
+	// MinMember defines the minimal number of members to run this SubGroup;
+	// if there are not enough resources to start all required members, the scheduler will not start anyone.
+	// +kubebuilder:validation:Minimum=1
+	MinMember int32 `json:"minMember,omitempty"`
+
+	// Parent is an optional attribute that specifies the name of the parent SubGroup
+	// +kubebuilder:validation:Optional
+	Parent *string `json:"parent,omitempty"`
+
+	// TopologyConstraint defines the topology constraints for this SubGroup
+	TopologyConstraint *TopologyConstraint `json:"topologyConstraint,omitempty"`
 }
 
 // PodGroupStatus defines the observed state of PodGroup
@@ -267,6 +343,9 @@ const (
 
 	// OverLimit means that the pod group is not schedulable because scheduling it would exceed the queue's limits.
 	OverLimit UnschedulableReason = "OverLimit"
+
+	// QueueDoesNotExist means the pod group references a queue that doesn't exist or has no parent queue.
+	QueueDoesNotExist UnschedulableReason = "QueueDoesNotExist"
 )
 
 func (e UnschedulableExplanations) String() string {
@@ -282,4 +361,21 @@ func (e UnschedulableExplanations) String() string {
 
 func init() {
 	SchemeBuilder.Register(&PodGroup{}, &PodGroupList{})
+}
+
+type TopologyConstraint struct {
+	// PreferredTopologyLevel defines the preferred level in the topology hierarchy
+	// that this constraint applies to (e.g., "rack", "zone", "datacenter").
+	// Jobs will be scheduled to maintain locality at this level when possible.
+	PreferredTopologyLevel string `json:"preferredTopologyLevel,omitempty"`
+
+	// RequiredTopologyLevel defines the maximal level in the topology hierarchy
+	// that all pods must be scheduled within.
+	// If set, all pods of the job must be scheduled within a single domain at this level.
+	RequiredTopologyLevel string `json:"requiredTopologyLevel,omitempty"`
+
+	// Topology specifies the name of the topology CRD that defines the
+	// physical layout to use for this constraint. This allows for supporting
+	// multiple different topology configurations in the same cluster.
+	Topology string `json:"topology,omitempty"`
 }

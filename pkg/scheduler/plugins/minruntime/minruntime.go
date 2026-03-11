@@ -7,12 +7,12 @@ import (
 	"slices"
 	"time"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/queue_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -36,20 +36,20 @@ type minruntimePlugin struct {
 	resolver *resolver
 }
 
-func parseMinRuntime(arguments map[string]string, minRuntimeConfig string) metav1.Duration {
-	minRuntime := arguments[minRuntimeConfig]
-	if len(minRuntime) == 0 {
+func parseMinRuntime(arguments framework.PluginArguments, minRuntimeConfig string) metav1.Duration {
+	minRuntime, err := arguments.GetDuration(minRuntimeConfig, 0*time.Second)
+	if err != nil {
+		log.InfraLogger.Errorf("Failed to parse %v as duration: %v, using default value 0s", minRuntimeConfig, err)
 		return metav1.Duration{Duration: 0 * time.Second}
 	}
-	duration, err := time.ParseDuration(minRuntime)
-	if err != nil {
-		log.InfraLogger.Errorf("Failed to parse %v (%v): %v, using default value 0s", minRuntimeConfig, minRuntime, err)
-		duration = 0 * time.Second
+	if minRuntime < 0 {
+		log.InfraLogger.Errorf("Parsed %v (%v) is negative, using default value 0s", minRuntimeConfig, minRuntime)
+		return metav1.Duration{Duration: 0 * time.Second}
 	}
-	return metav1.Duration{Duration: duration}
+	return metav1.Duration{Duration: minRuntime}
 }
 
-func New(arguments map[string]string) framework.Plugin {
+func New(arguments framework.PluginArguments) framework.Plugin {
 	plugin := &minruntimePlugin{}
 
 	plugin.defaultReclaimMinRuntime = parseMinRuntime(arguments, defaultReclaimMinRuntimeConfig)
@@ -80,7 +80,7 @@ func (mr *minruntimePlugin) OnSessionOpen(ssn *framework.Session) {
 	ssn.AddPreemptVictimFilterFn(mr.preemptFilterFn)
 	ssn.AddReclaimScenarioValidatorFn(mr.reclaimScenarioValidatorFn)
 	ssn.AddPreemptScenarioValidatorFn(mr.preemptScenarioValidatorFn)
-	mr.queues = ssn.Queues
+	mr.queues = ssn.ClusterInfo.Queues
 	mr.preemptProtectionCache = make(map[common_info.PodGroupID]bool)
 	mr.reclaimProtectionCache = make(map[common_info.PodGroupID]map[common_info.PodGroupID]bool)
 	mr.resolver = NewResolver(mr.queues, mr.defaultPreemptMinRuntime, mr.defaultReclaimMinRuntime)
@@ -119,9 +119,8 @@ func (mr *minruntimePlugin) reclaimScenarioValidatorFn(scenario api.ScenarioInfo
 		if !protected {
 			continue
 		}
-		numVictimTasks := int32(len(victimInfo.Tasks))
-		currentlyRunning := victimInfo.Job.GetActivelyRunningTasksCount()
-		if victimInfo.Job.MinAvailable > currentlyRunning-numVictimTasks {
+
+		if !validVictimForMinAvailable(victimInfo) {
 			return false
 		}
 	}
@@ -138,9 +137,8 @@ func (mr *minruntimePlugin) preemptScenarioValidatorFn(scenario api.ScenarioInfo
 		if !protected {
 			continue
 		}
-		numVictimTasks := int32(len(victimInfo.Tasks))
-		currentlyRunning := victimInfo.Job.GetActivelyRunningTasksCount()
-		if victimInfo.Job.MinAvailable > currentlyRunning-numVictimTasks {
+
+		if !validVictimForMinAvailable(victimInfo) {
 			return false
 		}
 	}
@@ -204,4 +202,28 @@ func (mr *minruntimePlugin) cacheReclaimProtection(pendingJob *podgroup_info.Pod
 		mr.reclaimProtectionCache[pendingJob.UID] = make(map[common_info.PodGroupID]bool)
 	}
 	mr.reclaimProtectionCache[pendingJob.UID][victim.UID] = protected
+}
+
+func validVictimForMinAvailable(victimInfo *api.VictimInfo) bool {
+	numVictimTasksPerSubGroup := map[string]int32{}
+	for _, task := range victimInfo.Tasks {
+		subGroupName := podgroup_info.DefaultSubGroup
+		if task.SubGroupName != "" {
+			subGroupName = task.SubGroupName
+		}
+		numVictimTasksPerSubGroup[subGroupName]++
+	}
+
+	numCurrentlyRunningSubGroup := map[string]int32{}
+	for subGroupName := range numVictimTasksPerSubGroup {
+		numCurrentlyRunningSubGroup[subGroupName] = int32(victimInfo.Job.GetSubGroups()[subGroupName].GetNumActiveUsedTasks())
+	}
+
+	for subGroupName, numVictims := range numVictimTasksPerSubGroup {
+		subGroupCurrentlyRunning := numCurrentlyRunningSubGroup[subGroupName]
+		if victimInfo.Job.GetSubGroups()[subGroupName].GetMinAvailable() > subGroupCurrentlyRunning-numVictims {
+			return false
+		}
+	}
+	return true
 }

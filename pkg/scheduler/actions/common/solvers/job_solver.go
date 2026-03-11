@@ -7,13 +7,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/metrics"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
 )
 
 type GenerateVictimsQueue func() *utils.JobsOrderByQueues
@@ -51,7 +51,7 @@ func (s *JobSolver) Solve(
 
 	var statement *framework.Statement
 	var pendingTasks []*pod_info.PodInfo
-	tasksToAllocate := podgroup_info.GetTasksToAllocate(pendingJob, ssn.TaskOrderFn, false)
+	tasksToAllocate := podgroup_info.GetTasksToAllocate(pendingJob, ssn.PodSetOrderFn, ssn.TaskOrderFn, false)
 	for _, nextTaskToSolve := range tasksToAllocate {
 		nextTasksToSolve := []*pod_info.PodInfo{nextTaskToSolve}
 		pendingTasks = append(pendingTasks, nextTasksToSolve...)
@@ -62,7 +62,7 @@ func (s *JobSolver) Solve(
 		if result == nil || !result.solved {
 			log.InfraLogger.V(5).Infof("No solution found for %d tasks out of %d tasks to allocate for %s",
 				len(pendingTasks), len(tasksToAllocate), pendingJob.Name)
-			continue
+			break
 		}
 
 		if !satisfactorySolution && result.statement != nil {
@@ -80,7 +80,7 @@ func (s *JobSolver) Solve(
 	}
 
 	numActiveTasks := pendingJob.GetNumActiveUsedTasks()
-	jobSolved := numActiveTasks >= int(pendingJob.MinAvailable)
+	jobSolved := pendingJob.IsGangSatisfied()
 	if originalNumActiveTasks >= numActiveTasks {
 		jobSolved = false
 	}
@@ -89,25 +89,24 @@ func (s *JobSolver) Solve(
 }
 
 func (s *JobSolver) solvePartialJob(ssn *framework.Session, state *solvingState, partialPendingJob *podgroup_info.PodGroupInfo) *solutionResult {
-	scenarioBuilder := NewPodAccumulatedScenarioBuilder(
-		ssn, partialPendingJob, state.recordedVictimsJobs, s.generateVictimsQueue())
-
 	feasibleNodeMap := map[string]*node_info.NodeInfo{}
 	for _, node := range s.feasibleNodes {
 		feasibleNodeMap[node.Name] = node
 	}
-	// recorded victim jobs nodes
 	for _, task := range state.recordedVictimsTasks {
-		node := ssn.Nodes[task.NodeName]
+		node := ssn.ClusterInfo.Nodes[task.NodeName]
 		feasibleNodeMap[task.NodeName] = node
 	}
+
+	scenarioBuilder := NewPodAccumulatedScenarioBuilder(
+		ssn, partialPendingJob, state.recordedVictimsJobs, s.generateVictimsQueue(), feasibleNodeMap)
 
 	for scenarioToSolve := scenarioBuilder.GetValidScenario(); scenarioToSolve != nil; scenarioToSolve =
 		scenarioBuilder.GetNextScenario() {
 		scenarioSolver := newByPodSolver(feasibleNodeMap, s.solutionValidator, ssn.AllowConsolidatingReclaim(),
 			s.actionType)
 
-		log.InfraLogger.V(5).Infof("Trying to solve scenario: %s", scenarioToSolve.String())
+		log.InfraLogger.V(5).Infof("Trying to solve scenario: %s", scenarioToSolve)
 		metrics.IncScenarioSimulatedByAction()
 
 		result := scenarioSolver.solve(ssn, scenarioToSolve)
@@ -122,7 +121,25 @@ func (s *JobSolver) solvePartialJob(ssn *framework.Session, state *solvingState,
 func getPartialJobRepresentative(
 	job *podgroup_info.PodGroupInfo, pendingTasks []*pod_info.PodInfo) *podgroup_info.PodGroupInfo {
 	jobRepresentative := job.CloneWithTasks(pendingTasks)
-	jobRepresentative.MinAvailable = int32(len(pendingTasks))
+	subGroupsMinAvailable := map[string]int{}
+	for _, pendingTask := range pendingTasks {
+		if _, found := jobRepresentative.GetSubGroups()[pendingTask.SubGroupName]; found {
+			subGroupsMinAvailable[pendingTask.SubGroupName] += 1
+		} else {
+			subGroupsMinAvailable[podgroup_info.DefaultSubGroup] += 1
+		}
+	}
+	for subGroupName, minAvailable := range subGroupsMinAvailable {
+		subGroup, found := jobRepresentative.GetSubGroups()[subGroupName]
+		if !found {
+			log.InfraLogger.V(2).Warnf("Couldn't find SubGroup with name %s for job %s",
+				subGroupName, job.NamespacedName,
+			)
+			continue
+		}
+		subGroup.SetMinAvailable(int32(minAvailable))
+	}
+
 	return jobRepresentative
 }
 

@@ -6,15 +6,15 @@ package consolidation
 import (
 	"golang.org/x/exp/maps"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/common"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/common/solvers"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/metrics"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
 )
 
 const noConsolidationPreempteesRestrcition = -1
@@ -44,7 +44,7 @@ func (alloc *consolidationAction) Execute(ssn *framework.Session) {
 		FilterNonPreemptible: true,
 		MaxJobsQueueDepth:    ssn.GetJobsDepth(framework.Consolidation),
 	})
-	jobsOrderByQueues.InitializeWithJobs(ssn.PodGroupInfos)
+	jobsOrderByQueues.InitializeWithJobs(ssn.ClusterInfo.PodGroupInfos)
 
 	log.InfraLogger.V(2).Infof("There are <%d> PodGroupInfos and <%d> Queues in total for scheduling",
 		jobsOrderByQueues.Len(), ssn.CountLeafQueues())
@@ -79,7 +79,7 @@ func (alloc *consolidationAction) Execute(ssn *framework.Session) {
 
 func attemptToConsolidateForPreemptor(
 	ssn *framework.Session, job *podgroup_info.PodGroupInfo) (bool, *framework.Statement) {
-	resReq := podgroup_info.GetTasksToAllocateInitResource(job, ssn.TaskOrderFn, false)
+	resReq := podgroup_info.GetTasksToAllocateInitResource(job, ssn.PodSetOrderFn, ssn.TaskOrderFn, false, ssn.ClusterInfo.MinNodeGPUMemory)
 	log.InfraLogger.V(3).Infof(
 		"Attempting to consolidate running jobs in order to make room for job: <%s/%s>, resources: <%v>",
 		job.Namespace, job.Name, resReq)
@@ -95,7 +95,7 @@ func attemptToConsolidateForPreemptor(
 
 func attemptToConsolidatePreemptor(
 	ssn *framework.Session, preemptor *podgroup_info.PodGroupInfo) (bool, *framework.Statement) {
-	feasibleNodes := common.FeasibleNodesForJob(maps.Values(ssn.Nodes), preemptor)
+	feasibleNodes := common.FeasibleNodesForJob(maps.Values(ssn.ClusterInfo.Nodes), preemptor)
 	solver := solvers.NewJobsSolver(
 		feasibleNodes,
 		allPodsReallocated,
@@ -117,11 +117,9 @@ func attemptToConsolidatePreemptor(
 
 func allPodsReallocated(scenario api.ScenarioInfo) bool {
 	for _, victim := range scenario.GetVictims() {
-		for _, job := range victim.RepresentativeJobs {
-			for _, task := range job.PodInfos {
-				if task.Status == pod_status.Releasing {
-					return false
-				}
+		for _, task := range victim.Tasks {
+			if task.Status == pod_status.Releasing {
+				return false
 			}
 		}
 	}
@@ -137,7 +135,7 @@ func buildPreemptibleFilterFunc(preemptor *podgroup_info.PodGroupInfo, maxPreemp
 	preempteeJobsCounter := 0
 
 	return func(job *podgroup_info.PodGroupInfo) bool {
-		if !job.IsPreemptibleJob(false) {
+		if !job.IsPreemptibleJob() {
 			return false
 		}
 

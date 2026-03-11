@@ -4,337 +4,343 @@
 package utils
 
 import (
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/queue_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/scheduler_util"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/scheduler_util"
 )
 
-type jobsQueueMetadata struct {
-	jobsInQueue            *scheduler_util.PriorityQueue
-	shouldUpdateQueueShare bool
-	departmentId           common_info.QueueID
+// queueNode represents a node in the queue hierarchy tree.
+// Each node contains either child queue nodes (for non-leaf queues) or jobs (for leaf queues).
+// This structure supports n-level queue hierarchies.
+type queueNode struct {
+	queue        *queue_info.QueueInfo
+	children     *scheduler_util.PriorityQueue // Contains *queueNode (for non-leaf) or *PodGroupInfo (for leaf)
+	needsReorder bool
+	parent       *queueNode // nil for root-level nodes
+	isLeaf       bool       // true if children contains jobs, false if it contains queue nodes
 }
 
-type departmentMetadata struct {
-	queuesPriorityQueue    *scheduler_util.PriorityQueue
-	shouldUpdateQueueShare bool
-}
-
+// JobsOrderByQueues manages job ordering across an n-level queue hierarchy.
+// The hierarchy is represented as a tree of queueNode objects.
 type JobsOrderByQueues struct {
-	activeDepartments                *scheduler_util.PriorityQueue
-	queueIdToQueueMetadata           map[common_info.QueueID]*jobsQueueMetadata
-	departmentIdToDepartmentMetadata map[common_info.QueueID]*departmentMetadata
-	ssn                              *framework.Session
-	jobsOrderInitOptions             JobsOrderInitOptions
-	queuePopsMap                     map[common_info.QueueID][]*podgroup_info.PodGroupInfo
+	ssn     *framework.Session
+	options JobsOrderInitOptions
+
+	rootNodes  *scheduler_util.PriorityQueue      // Top-level queue nodes (nodes with no parent)
+	queueNodes map[common_info.QueueID]*queueNode // All queue nodes by ID for quick lookup
+
+	poppedJobsByQueue map[common_info.QueueID][]*podgroup_info.PodGroupInfo
 }
 
 func NewJobsOrderByQueues(ssn *framework.Session, options JobsOrderInitOptions) JobsOrderByQueues {
 	return JobsOrderByQueues{
-		ssn:                              ssn,
-		queueIdToQueueMetadata:           map[common_info.QueueID]*jobsQueueMetadata{},
-		departmentIdToDepartmentMetadata: map[common_info.QueueID]*departmentMetadata{},
-		jobsOrderInitOptions:             options,
-		queuePopsMap:                     map[common_info.QueueID][]*podgroup_info.PodGroupInfo{},
+		ssn:               ssn,
+		options:           options,
+		queueNodes:        map[common_info.QueueID]*queueNode{},
+		poppedJobsByQueue: map[common_info.QueueID][]*podgroup_info.PodGroupInfo{},
 	}
 }
 
-func (jobsOrder *JobsOrderByQueues) IsEmpty() bool {
-	return jobsOrder.activeDepartments == nil || jobsOrder.activeDepartments.Empty()
+func (jo *JobsOrderByQueues) IsEmpty() bool {
+	return jo.rootNodes == nil || jo.rootNodes.Empty()
 }
 
-func (jobsOrder *JobsOrderByQueues) Len() int {
-	l := 0
-	for _, metadata := range jobsOrder.queueIdToQueueMetadata {
-		l += metadata.jobsInQueue.Len()
-	}
-	return l
-}
-
-func (jobsOrder *JobsOrderByQueues) PopNextJob() *podgroup_info.PodGroupInfo {
-	if jobsOrder.IsEmpty() {
-		log.InfraLogger.V(7).Infof("No active departments")
-		return nil
-	}
-
-	department := jobsOrder.getNextDepartment()
-	if department == nil {
-		return nil
-	}
-
-	queue := jobsOrder.getNextQueue(department)
-	if queue == nil {
-		return nil
-	}
-
-	job := jobsOrder.queueIdToQueueMetadata[queue.UID].jobsInQueue.Pop().(*podgroup_info.PodGroupInfo)
-	if jobsOrder.jobsOrderInitOptions.VictimQueue {
-		if _, found := jobsOrder.queuePopsMap[queue.UID]; !found {
-			jobsOrder.queuePopsMap[queue.UID] = []*podgroup_info.PodGroupInfo{}
+func (jo *JobsOrderByQueues) Len() int {
+	count := 0
+	for _, node := range jo.queueNodes {
+		if node.isLeaf {
+			count += node.children.Len()
 		}
-		jobsOrder.queuePopsMap[queue.UID] = append(jobsOrder.queuePopsMap[queue.UID], job)
+	}
+	return count
+}
+
+func (jo *JobsOrderByQueues) PopNextJob() *podgroup_info.PodGroupInfo {
+	if jo.IsEmpty() {
+		log.InfraLogger.V(7).Infof("No active queues")
+		return nil
 	}
 
-	jobsOrder.handleJobPopOutOfQueue(queue, department)
-	jobsOrder.handleJobPopOutOfDepartment(department)
+	log.InfraLogger.V(7).Infof("PopNextJob: rootNodes.Len()=%d, queueNodes count=%d",
+		jo.rootNodes.Len(), len(jo.queueNodes))
+
+	// Traverse down the tree to find the best leaf node
+	leafNode := jo.traverseToLeaf(jo.rootNodes)
+	if leafNode == nil {
+		log.InfraLogger.V(7).Warnf("PopNextJob: traverseToLeaf returned nil")
+		return nil
+	}
+
+	// Pop the job from the leaf
+	job := leafNode.children.Pop().(*podgroup_info.PodGroupInfo)
+
+	if jo.options.VictimQueue {
+		jo.poppedJobsByQueue[leafNode.queue.UID] = append(jo.poppedJobsByQueue[leafNode.queue.UID], job)
+	}
+
+	// Handle cleanup and bubble up needsReorder
+	jo.handlePopFromNode(leafNode)
 
 	log.InfraLogger.V(7).Infof("Popped job: %v", job.Name)
 	return job
 }
 
-func (jobsOrder *JobsOrderByQueues) PushJob(job *podgroup_info.PodGroupInfo) {
-	queue := jobsOrder.ssn.Queues[job.Queue]
-	department := jobsOrder.ssn.Queues[queue.ParentQueue]
+func (jo *JobsOrderByQueues) PushJob(job *podgroup_info.PodGroupInfo) {
+	leafQueueInfo := jo.ssn.ClusterInfo.Queues[job.Queue]
 
-	if _, found := jobsOrder.departmentIdToDepartmentMetadata[department.UID]; !found {
-		jobsOrder.initializePriorityQueueForDepartment(department, jobsOrder.jobsOrderInitOptions.VictimQueue)
-		jobsOrder.activeDepartments.Push(department)
-	}
-	if _, found := jobsOrder.queueIdToQueueMetadata[job.Queue]; !found {
-		jobsOrder.initializePriorityQueue(job, jobsOrder.jobsOrderInitOptions.VictimQueue)
-		jobsOrder.departmentIdToDepartmentMetadata[department.UID].queuesPriorityQueue.Push(queue)
-	}
-
-	jobsOrder.queueIdToQueueMetadata[job.Queue].jobsInQueue.Push(job)
-
-	jobsOrder.queueIdToQueueMetadata[queue.UID].shouldUpdateQueueShare = true
-	jobsOrder.departmentIdToDepartmentMetadata[department.UID].shouldUpdateQueueShare = true
-
-	log.InfraLogger.V(7).Infof("Pushed job: %v for queue %v, department %v", job.Name, queue.Name,
-		department.Name)
-}
-
-func (jobsOrder *JobsOrderByQueues) handleJobPopOutOfDepartment(department *queue_info.QueueInfo) {
-	if jobsOrder.departmentIdToDepartmentMetadata[department.UID].queuesPriorityQueue.Len() == 0 {
-		jobsOrder.activeDepartments.Pop()
-		delete(jobsOrder.departmentIdToDepartmentMetadata, department.UID)
+	if !leafQueueInfo.IsLeafQueue() {
+		log.InfraLogger.V(7).Warnf("PushJob: job <%v> is targeting a non-leaf queue <%v>", job.Name, leafQueueInfo.Name)
 		return
 	}
 
-	jobsOrder.departmentIdToDepartmentMetadata[department.UID].shouldUpdateQueueShare = true
+	// Check if leaf node already exists
+	leafNode, found := jo.queueNodes[job.Queue]
+	needsLinking := !found
+
+	if needsLinking {
+		leafNode = jo.createLeafNode(leafQueueInfo)
+		jo.queueNodes[job.Queue] = leafNode
+	}
+
+	// Push job first (before linking) so ordering comparisons have valid data
+	leafNode.children.Push(job)
+
+	// Only link the tree if this is a new node
+	if needsLinking {
+		jo.ensureAncestorChainForPush(leafNode, leafQueueInfo)
+	}
+
+	// Mark ancestors for reordering
+	jo.markAncestorsForReorder(leafNode)
+
+	log.InfraLogger.V(7).Infof("Pushed job: %v for queue %v", job.Name, leafQueueInfo.Name)
 }
 
-func (jobsOrder *JobsOrderByQueues) handleJobPopOutOfQueue(queue, department *queue_info.QueueInfo) {
-	if jobsOrder.queueIdToQueueMetadata[queue.UID].jobsInQueue.Len() == 0 {
-		jobsOrder.departmentIdToDepartmentMetadata[department.UID].queuesPriorityQueue.Pop()
-		delete(jobsOrder.queueIdToQueueMetadata, queue.UID)
+// isRootQueue returns true if the queue has no parent (is at the root level).
+func (jo *JobsOrderByQueues) isRootQueue(queue *queue_info.QueueInfo) bool {
+	return queue.ParentQueue == ""
+}
+
+// ensureRootNodesInitialized ensures the rootNodes priority queue is initialized.
+func (jo *JobsOrderByQueues) ensureRootNodesInitialized() {
+	if jo.rootNodes == nil {
+		jo.rootNodes = scheduler_util.NewPriorityQueue(
+			jo.buildNodeOrderFn(jo.options.VictimQueue),
+			scheduler_util.QueueCapacityInfinite)
+	}
+}
+
+// ensureAncestorChainForPush creates all ancestor nodes for a node up to the root.
+// Used by PushJob to build the tree dynamically.
+func (jo *JobsOrderByQueues) ensureAncestorChainForPush(childNode *queueNode, childQueue *queue_info.QueueInfo) {
+	if jo.isRootQueue(childQueue) {
+		// Child is at root level - add to rootNodes if not already there.
+		// The parent==nil check prevents duplicate additions: if parent is already set,
+		// this node was already added to rootNodes in a previous call.
+		if childNode.parent == nil {
+			jo.ensureRootNodesInitialized()
+			jo.rootNodes.Push(childNode)
+		}
 		return
 	}
 
-	jobsOrder.queueIdToQueueMetadata[queue.UID].shouldUpdateQueueShare = true
-}
-
-func (jobsOrder *JobsOrderByQueues) getNextQueue(department *queue_info.QueueInfo) *queue_info.QueueInfo {
-	queue := jobsOrder.departmentIdToDepartmentMetadata[department.UID].queuesPriorityQueue.Peek().(*queue_info.QueueInfo)
-	if jobsOrder.queueIdToQueueMetadata[queue.UID].shouldUpdateQueueShare {
-		jobsOrder.updateTopQueueShare(queue, department)
-		return jobsOrder.getNextQueue(department)
+	parentQueueInfo, parentExists := jo.ssn.ClusterInfo.Queues[childQueue.ParentQueue]
+	if !parentExists {
+		log.InfraLogger.V(7).Warnf("Queue's parent doesn't exist. Queue: <%v>, Parent: <%v>",
+			childQueue.Name, childQueue.ParentQueue)
+		return
 	}
 
-	if jobsOrder.queueIdToQueueMetadata[queue.UID].jobsInQueue.Len() == 0 {
-		log.InfraLogger.V(7).Warnf("Queue: <%v> is active, yet no jobs in queue", queue.Name)
+	// Get or create parent node
+	parentNode := jo.queueNodes[parentQueueInfo.UID]
+	parentNodeIsNew := parentNode == nil
+	if parentNodeIsNew {
+		parentNode = jo.createNonLeafNode(parentQueueInfo)
+		jo.queueNodes[parentQueueInfo.UID] = parentNode
+	}
+
+	// Link child to parent if not already linked
+	if childNode.parent == nil {
+		childNode.parent = parentNode
+		parentNode.children.Push(childNode)
+	}
+
+	// Only recurse up the ancestor chain if we created a new parent node.
+	// If the parent already existed, it's already linked to its ancestors.
+	if parentNodeIsNew {
+		jo.ensureAncestorChainForPush(parentNode, parentQueueInfo)
+	}
+}
+
+// traverseToLeaf recursively traverses from a priority queue of nodes down to the best leaf node.
+func (jo *JobsOrderByQueues) traverseToLeaf(pq *scheduler_util.PriorityQueue) *queueNode {
+	node := jo.getNextNode(pq)
+	if node == nil {
 		return nil
 	}
 
-	log.InfraLogger.V(7).Infof("Get queue: %v", queue.Name)
-	return queue
-}
-
-func (jobsOrder *JobsOrderByQueues) updateTopQueueShare(topQueue *queue_info.QueueInfo, department *queue_info.QueueInfo) {
-	jobsOrder.departmentIdToDepartmentMetadata[department.UID].queuesPriorityQueue.Fix(0)
-	jobsOrder.queueIdToQueueMetadata[topQueue.UID].shouldUpdateQueueShare = false
-}
-
-func (jobsOrder *JobsOrderByQueues) getNextDepartment() *queue_info.QueueInfo {
-	department := jobsOrder.activeDepartments.Peek().(*queue_info.QueueInfo)
-	if jobsOrder.departmentIdToDepartmentMetadata[department.UID].shouldUpdateQueueShare {
-		jobsOrder.updateTopDepartmentShare(department)
-		return jobsOrder.getNextDepartment()
+	if node.isLeaf {
+		return node
 	}
-	if jobsOrder.departmentIdToDepartmentMetadata[department.UID].queuesPriorityQueue.Empty() {
-		log.InfraLogger.V(7).Warnf("Department: <%v> is active, yet no queues in department", department.Name)
+
+	// Recurse into children
+	return jo.traverseToLeaf(node.children)
+}
+
+// getNextNode retrieves the next node from a priority queue, handling reordering as needed.
+func (jo *JobsOrderByQueues) getNextNode(pq *scheduler_util.PriorityQueue) *queueNode {
+	if pq.Empty() {
 		return nil
 	}
 
-	log.InfraLogger.V(7).Infof("Popped department: %v", department.Name)
-	return department
-}
+	node := pq.Peek().(*queueNode)
 
-func (jobsOrder *JobsOrderByQueues) updateTopDepartmentShare(topDepartment *queue_info.QueueInfo) {
-	jobsOrder.activeDepartments.Fix(0)
-	jobsOrder.departmentIdToDepartmentMetadata[topDepartment.UID].shouldUpdateQueueShare = false
-}
-
-// addJobToQueue adds `job` to the jobs queue, creating that job's queue in the jobs order if needed
-func (jobsOrder *JobsOrderByQueues) addJobToQueue(job *podgroup_info.PodGroupInfo, reverseOrder bool) {
-	if _, found := jobsOrder.queueIdToQueueMetadata[job.Queue]; !found {
-		jobsOrder.initializePriorityQueue(job, reverseOrder)
+	if node.needsReorder {
+		pq.Fix(0)
+		node.needsReorder = false
+		return jo.getNextNode(pq)
 	}
-	jobsOrder.queueIdToQueueMetadata[job.Queue].jobsInQueue.Push(job)
+
+	if node.children.Empty() {
+		// This should never happen as we prune empty nodes from the tree on handlePopFromNode.
+		log.InfraLogger.V(7).Warnf("Queue node <%v> is active but has no children", node.queue.Name)
+		return nil
+	}
+
+	log.InfraLogger.V(7).Infof("Selected queue: %v (isLeaf=%v)", node.queue.Name, node.isLeaf)
+	return node
 }
 
-func (jobsOrder *JobsOrderByQueues) initializePriorityQueueForDepartment(department *queue_info.QueueInfo,
-	reverseOrder bool) {
-	jobsOrder.departmentIdToDepartmentMetadata[department.UID] = &departmentMetadata{
-		queuesPriorityQueue: scheduler_util.NewPriorityQueue(
-			jobsOrder.buildFuncOrderBetweenQueuesWithJobs(jobsOrder.queueIdToQueueMetadata, reverseOrder),
+// handlePopFromNode handles cleanup after popping a job from a leaf node.
+// If the node becomes empty, it's removed from its parent. Otherwise, ancestors are marked for reorder.
+func (jo *JobsOrderByQueues) handlePopFromNode(node *queueNode) {
+	if node.children.Len() == 0 {
+		// Remove this node from its parent
+		jo.removeNodeFromParent(node)
+		delete(jo.queueNodes, node.queue.UID)
+
+		// If parent is now empty, recursively clean up
+		if node.parent != nil {
+			jo.handlePopFromNode(node.parent)
+		}
+		return
+	}
+
+	jo.markAncestorsForReorder(node)
+}
+
+// removeNodeFromParent removes a node from its parent's children priority queue.
+// this assumes the node requested for removal is at the top of its parent's priority queue.
+func (jo *JobsOrderByQueues) removeNodeFromParent(node *queueNode) {
+	if node.parent != nil {
+		node.parent.children.Pop()
+	} else {
+		jo.rootNodes.Pop()
+	}
+}
+
+// markAncestorsForReorder marks all ancestors of a node (including itself) as needing reorder.
+func (jo *JobsOrderByQueues) markAncestorsForReorder(node *queueNode) {
+	for current := node; current != nil; current = current.parent {
+		current.needsReorder = true
+	}
+}
+
+// createLeafNode creates a new leaf node that will contain jobs.
+func (jo *JobsOrderByQueues) createLeafNode(queue *queue_info.QueueInfo) *queueNode {
+	return &queueNode{
+		queue: queue,
+		children: scheduler_util.NewPriorityQueue(func(l, r interface{}) bool {
+			if jo.options.VictimQueue {
+				return !jo.ssn.JobOrderFn(l, r)
+			}
+			return jo.ssn.JobOrderFn(l, r)
+		}, jo.options.MaxJobsQueueDepth),
+		isLeaf: true,
+	}
+}
+
+// createNonLeafNode creates a new non-leaf node that will contain child queue nodes.
+func (jo *JobsOrderByQueues) createNonLeafNode(queue *queue_info.QueueInfo) *queueNode {
+	return &queueNode{
+		queue: queue,
+		children: scheduler_util.NewPriorityQueue(
+			jo.buildNodeOrderFn(jo.options.VictimQueue),
 			scheduler_util.QueueCapacityInfinite,
 		),
+		isLeaf: false,
 	}
 }
 
-func (jobsOrder *JobsOrderByQueues) initializePriorityQueue(job *podgroup_info.PodGroupInfo, reverseOrder bool) {
-	queue := jobsOrder.ssn.Queues[job.Queue]
-	jobsOrder.queueIdToQueueMetadata[job.Queue] = &jobsQueueMetadata{
-		jobsInQueue: scheduler_util.NewPriorityQueue(func(l, r interface{}) bool {
-			if reverseOrder {
-				return !jobsOrder.ssn.JobOrderFn(l, r)
-			}
-			return jobsOrder.ssn.JobOrderFn(l, r)
-		}, jobsOrder.jobsOrderInitOptions.MaxJobsQueueDepth),
-		departmentId: queue.ParentQueue,
-	}
-}
-
-func (jobsOrder *JobsOrderByQueues) buildActiveJobOrderPriorityQueues(reverseOrder bool) {
-	jobsOrder.departmentIdToDepartmentMetadata = map[common_info.QueueID]*departmentMetadata{}
-	for _, queue := range jobsOrder.ssn.Queues {
-		if _, found := jobsOrder.queueIdToQueueMetadata[queue.UID]; !found || jobsOrder.queueIdToQueueMetadata[queue.UID].jobsInQueue.Len() == 0 {
-			log.InfraLogger.V(7).Infof("Skipping queue <%s> because no jobs in it", queue.Name)
-			continue
-		}
-
-		if _, found := jobsOrder.ssn.Queues[queue.ParentQueue]; !found {
-			log.InfraLogger.V(7).Warnf("Queue's department doesn't exist. Queue: <%v>, Department: <%v>",
-				queue.Name, queue.ParentQueue)
-			continue
-		}
-
-		if _, found := jobsOrder.departmentIdToDepartmentMetadata[queue.ParentQueue]; !found {
-			log.InfraLogger.V(7).Infof("Adding Department <%s> ", queue.ParentQueue)
-			jobsOrder.departmentIdToDepartmentMetadata[queue.ParentQueue] = &departmentMetadata{}
-			jobsOrder.departmentIdToDepartmentMetadata[queue.ParentQueue].queuesPriorityQueue =
-				scheduler_util.NewPriorityQueue(
-					jobsOrder.buildFuncOrderBetweenQueuesWithJobs(jobsOrder.queueIdToQueueMetadata, reverseOrder),
-					scheduler_util.QueueCapacityInfinite,
-				)
-		}
-
-		jobsOrder.departmentIdToDepartmentMetadata[queue.ParentQueue].queuesPriorityQueue.Push(queue)
-		log.InfraLogger.V(7).Infof("Pushed queue to department's queue priority queue, department name: <%v>, queue name: <%v>, number of active jobs in queue: <%v>, reverseOrder: <%v>",
-			queue.ParentQueue, queue.Name, jobsOrder.queueIdToQueueMetadata[queue.UID].jobsInQueue.Len(), reverseOrder)
-	}
-
-	log.InfraLogger.V(7).Infof("Building departments, reverse order: <%v>", reverseOrder)
-	jobsOrder.activeDepartments = scheduler_util.NewPriorityQueue(
-		jobsOrder.buildFuncOrderBetweenDepartmentsWithJobs(reverseOrder),
-		scheduler_util.QueueCapacityInfinite)
-	for departmentUID := range jobsOrder.departmentIdToDepartmentMetadata {
-		log.InfraLogger.V(7).Infof("active Department <%s> ", departmentUID)
-		jobsOrder.activeDepartments.Push(jobsOrder.ssn.Queues[departmentUID])
-	}
-}
-
-func (jobsOrder *JobsOrderByQueues) buildFuncOrderBetweenQueuesWithJobs(jobsQueueMetadataPerQueue map[common_info.QueueID]*jobsQueueMetadata, reverseOrder bool) func(interface{}, interface{}) bool {
-	return func(lQ, rQ interface{}) bool {
-		lQueue := lQ.(*queue_info.QueueInfo)
-		rQueue := rQ.(*queue_info.QueueInfo)
-
-		if _, found := jobsQueueMetadataPerQueue[lQueue.UID]; !found || jobsQueueMetadataPerQueue[lQueue.UID].jobsInQueue.Len() == 0 {
-			log.InfraLogger.V(7).Infof("Queue: %v, has no pending jobs", lQueue.Name)
-			return !reverseOrder // When r has higher priority, return true
-		}
-
-		if _, found := jobsQueueMetadataPerQueue[rQueue.UID]; !found || jobsQueueMetadataPerQueue[rQueue.UID].jobsInQueue.Len() == 0 {
-			log.InfraLogger.V(7).Infof("Queue: %v, has no pending jobs", rQueue.Name)
-			return reverseOrder // When l has higher priority, return false
-		}
-
-		var lPending, rPending *podgroup_info.PodGroupInfo
-		if !jobsOrder.jobsOrderInitOptions.VictimQueue {
-			lPending = jobsQueueMetadataPerQueue[lQueue.UID].jobsInQueue.Pop().(*podgroup_info.PodGroupInfo)
-			jobsQueueMetadataPerQueue[lQueue.UID].jobsInQueue.Push(lPending)
-			rPending = jobsQueueMetadataPerQueue[rQueue.UID].jobsInQueue.Pop().(*podgroup_info.PodGroupInfo)
-			jobsQueueMetadataPerQueue[rQueue.UID].jobsInQueue.Push(rPending)
-		}
-
-		var lVictims, rVictims []*podgroup_info.PodGroupInfo
-		if jobsOrder.jobsOrderInitOptions.VictimQueue {
-			var lPoppedJobs []*podgroup_info.PodGroupInfo
-			if len(jobsOrder.queuePopsMap[lQueue.UID]) > 0 {
-				lPoppedJobs = append(lPoppedJobs, jobsOrder.queuePopsMap[lQueue.UID]...)
-			}
-			lVictims = append(lPoppedJobs, jobsQueueMetadataPerQueue[lQueue.UID].jobsInQueue.Pop().(*podgroup_info.PodGroupInfo))
-			jobsQueueMetadataPerQueue[lQueue.UID].jobsInQueue.Push(lVictims[len(lVictims)-1])
-
-			var rPoppedJobs []*podgroup_info.PodGroupInfo
-			if len(jobsOrder.queuePopsMap[rQueue.UID]) > 0 {
-				rPoppedJobs = append(rPoppedJobs, jobsOrder.queuePopsMap[rQueue.UID]...)
-			}
-			rVictims = append(rPoppedJobs, jobsQueueMetadataPerQueue[rQueue.UID].jobsInQueue.Pop().(*podgroup_info.PodGroupInfo))
-			jobsQueueMetadataPerQueue[rQueue.UID].jobsInQueue.Push(rVictims[len(rVictims)-1])
-		}
-
-		if reverseOrder {
-			return !jobsOrder.ssn.QueueOrderFn(lQueue, rQueue, lPending, rPending, lVictims, rVictims)
-		}
-
-		return jobsOrder.ssn.QueueOrderFn(lQueue, rQueue, lPending, rPending, lVictims, rVictims)
-	}
-}
-
-func (jobsOrder *JobsOrderByQueues) buildFuncOrderBetweenDepartmentsWithJobs(reverseOrder bool) func(interface{}, interface{}) bool {
+// buildNodeOrderFn creates a comparison function for ordering queue nodes.
+// It compares nodes based on their best descendant job (recursively for non-leaf nodes).
+func (jo *JobsOrderByQueues) buildNodeOrderFn(reverseOrder bool) func(interface{}, interface{}) bool {
 	return func(l, r interface{}) bool {
-		lDepartment := l.(*queue_info.QueueInfo)
-		rDepartment := r.(*queue_info.QueueInfo)
+		lNode := l.(*queueNode)
+		rNode := r.(*queueNode)
 
-		if jobsOrder.departmentIdToDepartmentMetadata[lDepartment.UID].queuesPriorityQueue.Empty() {
-			return !reverseOrder // When r has higher priority, return true
+		if lNode.children.Empty() {
+			log.InfraLogger.V(7).Infof("Queue node %v has no children", lNode.queue.Name)
+			return !reverseOrder
 		}
 
-		if jobsOrder.departmentIdToDepartmentMetadata[rDepartment.UID].queuesPriorityQueue.Empty() {
-			return reverseOrder // When l has higher priority, return false
-		}
-		lBestQueue := jobsOrder.departmentIdToDepartmentMetadata[lDepartment.UID].queuesPriorityQueue.Pop().(*queue_info.QueueInfo)
-		rBestQueue := jobsOrder.departmentIdToDepartmentMetadata[rDepartment.UID].queuesPriorityQueue.Pop().(*queue_info.QueueInfo)
-
-		lJobsInQueue := jobsOrder.queueIdToQueueMetadata[lBestQueue.UID].jobsInQueue
-		rJobsInQueue := jobsOrder.queueIdToQueueMetadata[rBestQueue.UID].jobsInQueue
-
-		var lPending, rPending *podgroup_info.PodGroupInfo
-		if !jobsOrder.jobsOrderInitOptions.VictimQueue {
-			lPending = lJobsInQueue.Pop().(*podgroup_info.PodGroupInfo)
-			lJobsInQueue.Push(lPending)
-			rPending = rJobsInQueue.Pop().(*podgroup_info.PodGroupInfo)
-			rJobsInQueue.Push(rPending)
+		if rNode.children.Empty() {
+			log.InfraLogger.V(7).Infof("Queue node %v has no children", rNode.queue.Name)
+			return reverseOrder
 		}
 
-		var lVictims, rVictims []*podgroup_info.PodGroupInfo
-		if jobsOrder.jobsOrderInitOptions.VictimQueue {
-			var lPoppedJobs []*podgroup_info.PodGroupInfo
-			if len(jobsOrder.queuePopsMap[lBestQueue.UID]) > 0 {
-				lPoppedJobs = append(lPoppedJobs, jobsOrder.queuePopsMap[lBestQueue.UID]...)
-			}
-			lVictims = append(lPoppedJobs, lJobsInQueue.Pop().(*podgroup_info.PodGroupInfo))
-			lJobsInQueue.Push(lVictims[len(lVictims)-1])
+		// Get the best job from each subtree for comparison
+		lPending, lVictims := jo.getBestJobFromNode(lNode)
+		rPending, rVictims := jo.getBestJobFromNode(rNode)
 
-			var rPoppedJobs []*podgroup_info.PodGroupInfo
-			if len(jobsOrder.queuePopsMap[rBestQueue.UID]) > 0 {
-				rPoppedJobs = append(rPoppedJobs, jobsOrder.queuePopsMap[rBestQueue.UID]...)
-			}
-			rVictims = append(rPoppedJobs, rJobsInQueue.Pop().(*podgroup_info.PodGroupInfo))
-			rJobsInQueue.Push(rVictims[len(rVictims)-1])
-		}
-		jobsOrder.departmentIdToDepartmentMetadata[lDepartment.UID].queuesPriorityQueue.Push(lBestQueue)
-		jobsOrder.departmentIdToDepartmentMetadata[rDepartment.UID].queuesPriorityQueue.Push(rBestQueue)
-
+		result := jo.ssn.QueueOrderFn(lNode.queue, rNode.queue, lPending, rPending, lVictims, rVictims)
 		if reverseOrder {
-			return !jobsOrder.ssn.QueueOrderFn(lDepartment, rDepartment, lPending, rPending, lVictims, rVictims)
+			return !result
 		}
-
-		return jobsOrder.ssn.QueueOrderFn(lDepartment, rDepartment, lPending, rPending, lVictims, rVictims)
+		return result
 	}
+}
+
+// getBestJobFromNode recursively finds the best job in a node's subtree.
+// Returns (pending, victims) where exactly one is populated based on VictimQueue option.
+func (jo *JobsOrderByQueues) getBestJobFromNode(node *queueNode) (*podgroup_info.PodGroupInfo, []*podgroup_info.PodGroupInfo) {
+	if node.isLeaf {
+		return jo.extractJobsForComparison(node.queue.UID, node)
+	}
+
+	// For non-leaf nodes, get the best child and recurse
+	bestChild := node.children.Peek().(*queueNode)
+	return jo.getBestJobFromNode(bestChild)
+}
+
+// extractJobsForComparison extracts the pending job or victims from a leaf node for comparison.
+func (jo *JobsOrderByQueues) extractJobsForComparison(
+	queueID common_info.QueueID,
+	node *queueNode,
+) (*podgroup_info.PodGroupInfo, []*podgroup_info.PodGroupInfo) {
+	if node.children.Empty() {
+		log.InfraLogger.V(7).Warnf("extractJobsForComparison: node %v has no children", node.queue.Name)
+		return nil, nil
+	}
+
+	if jo.options.VictimQueue {
+		return nil, jo.getVictimsForQueue(queueID, node)
+	}
+
+	pending := node.children.Peek().(*podgroup_info.PodGroupInfo)
+	return pending, nil
+}
+
+// getVictimsForQueue returns all popped jobs plus the next job in queue for victim ordering.
+func (jo *JobsOrderByQueues) getVictimsForQueue(queueID common_info.QueueID, node *queueNode) []*podgroup_info.PodGroupInfo {
+	victims := jo.poppedJobsByQueue[queueID]
+	if node.children.Empty() {
+		log.InfraLogger.V(7).Warnf("getVictimsForQueue: node %v has no children", node.queue.Name)
+		return victims
+	}
+	nextJob := node.children.Peek().(*podgroup_info.PodGroupInfo)
+	return append(victims, nextJob)
 }

@@ -9,18 +9,22 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
+	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/eviction_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
+	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 )
 
 func TestStatement_Evict_Unevict(t *testing.T) {
@@ -106,19 +110,22 @@ func TestStatement_Evict_Unevict(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(tt.testMetadata.Jobs)
-			nodesInfoMap := nodes_fake.BuildNodesInfoMap(tt.testMetadata.Nodes, tasksToNodeMap)
-			ssn := &Session{}
-			ssn.PodGroupInfos = jobsInfoMap
-			ssn.Nodes = nodesInfoMap
+			vectorMap := resource_info.NewResourceVectorMap()
+			jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(tt.testMetadata.Jobs, vectorMap)
+			nodesInfoMap := nodes_fake.BuildNodesInfoMap(tt.testMetadata.Nodes, tasksToNodeMap, nil, vectorMap)
+			ssn := &Session{
+				ClusterInfo: &api.ClusterInfo{},
+			}
+			ssn.ClusterInfo.PodGroupInfos = jobsInfoMap
+			ssn.ClusterInfo.Nodes = nodesInfoMap
 
 			s := &Statement{
 				operations: []Operation{},
 				ssn:        ssn,
-				sessionUID: "1234",
+				sessionID:  "1234",
 			}
 
-			originalTask := jobsInfoMap[tt.args.jobName].PodInfos[tt.args.podName].Clone()
+			originalTask := jobsInfoMap[tt.args.jobName].GetAllPodsMap()[tt.args.podName].Clone()
 			originalJob := jobsInfoMap[tt.args.jobName].Clone()
 			originalNodeInfo := extractNodeAssertedInfo(nodesInfoMap[originalTask.NodeName])
 
@@ -132,13 +139,13 @@ func TestStatement_Evict_Unevict(t *testing.T) {
 				t.Errorf("unevict() error = %v", err)
 			}
 
-			actualTask := ssn.PodGroupInfos[tt.args.jobName].PodInfos[tt.args.podName]
+			actualTask := ssn.ClusterInfo.PodGroupInfos[tt.args.jobName].GetAllPodsMap()[tt.args.podName]
 			assert.Equal(t, actualTask.NodeName, originalTask.NodeName)
 			assert.Equal(t, actualTask.Status, originalTask.Status)
 			assert.Equal(t, *actualTask.ResReq, *originalTask.ResReq)
 			assert.Equal(t, actualTask.GPUGroups, originalTask.GPUGroups)
 
-			actualJob := ssn.PodGroupInfos[tt.args.jobName]
+			actualJob := ssn.ClusterInfo.PodGroupInfos[tt.args.jobName]
 			assert.Equal(t, *originalJob.Allocated, *actualJob.Allocated)
 			assert.Equal(t, tt.expected.jobGpuAllocation, actualJob.Allocated.GPUs())
 
@@ -242,11 +249,13 @@ func TestStatement_Evict(t *testing.T) {
 				jobAllocation: resource_info.ResourceFromResourceList(
 					v1.ResourceList{
 						"nvidia.com/gpu": resource.MustParse("1"),
+						"pods":           resource.MustParse("1"),
 					},
 				),
 				usedOnNode: resource_info.ResourceFromResourceList(
 					v1.ResourceList{
 						"nvidia.com/gpu": resource.MustParse("1"),
+						"pods":           resource.MustParse("1"),
 					},
 				),
 			},
@@ -254,17 +263,20 @@ func TestStatement_Evict(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(tt.testMetadata.Jobs)
-			nodesInfoMap := nodes_fake.BuildNodesInfoMap(tt.testMetadata.Nodes, tasksToNodeMap)
-			task := jobsInfoMap[tt.args.jobName].PodInfos[tt.args.podName]
+			vectorMap := resource_info.NewResourceVectorMap()
+			jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(tt.testMetadata.Jobs, vectorMap)
+			nodesInfoMap := nodes_fake.BuildNodesInfoMap(tt.testMetadata.Nodes, tasksToNodeMap, nil, vectorMap)
+			task := jobsInfoMap[tt.args.jobName].GetAllPodsMap()[tt.args.podName]
 
 			s := &Statement{
 				operations: []Operation{},
 				ssn: &Session{
-					PodGroupInfos: jobsInfoMap,
-					Nodes:         nodesInfoMap,
+					ClusterInfo: &api.ClusterInfo{
+						PodGroupInfos: jobsInfoMap,
+						Nodes:         nodesInfoMap,
+					},
 				},
-				sessionUID: "1234",
+				sessionID: "1234",
 			}
 
 			dataBeforeEvict := originalState{
@@ -400,17 +412,20 @@ func TestStatement_Evict_Undo_Undo(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(tt.testMetadata.Jobs)
-			nodesInfoMap := nodes_fake.BuildNodesInfoMap(tt.testMetadata.Nodes, tasksToNodeMap)
-			task := jobsInfoMap[tt.args.jobName].PodInfos[tt.args.podName]
+			vectorMap := resource_info.NewResourceVectorMap()
+			jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(tt.testMetadata.Jobs, vectorMap)
+			nodesInfoMap := nodes_fake.BuildNodesInfoMap(tt.testMetadata.Nodes, tasksToNodeMap, nil, vectorMap)
+			task := jobsInfoMap[tt.args.jobName].GetAllPodsMap()[tt.args.podName]
 
 			s := &Statement{
 				operations: []Operation{},
 				ssn: &Session{
-					PodGroupInfos: jobsInfoMap,
-					Nodes:         nodesInfoMap,
+					ClusterInfo: &api.ClusterInfo{
+						PodGroupInfos: jobsInfoMap,
+						Nodes:         nodesInfoMap,
+					},
 				},
-				sessionUID: "1234",
+				sessionID: "1234",
 			}
 
 			dataBeforeEvict := originalState{
@@ -625,19 +640,22 @@ func TestStatement_Pipeline_Unpipeline(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(tt.testMetadata.Jobs)
-			nodesInfoMap := nodes_fake.BuildNodesInfoMap(tt.testMetadata.Nodes, tasksToNodeMap)
-			ssn := &Session{}
-			ssn.PodGroupInfos = jobsInfoMap
-			ssn.Nodes = nodesInfoMap
+			vectorMap := resource_info.NewResourceVectorMap()
+			jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(tt.testMetadata.Jobs, vectorMap)
+			nodesInfoMap := nodes_fake.BuildNodesInfoMap(tt.testMetadata.Nodes, tasksToNodeMap, nil, vectorMap)
+			ssn := &Session{
+				ClusterInfo: &api.ClusterInfo{},
+			}
+			ssn.ClusterInfo.PodGroupInfos = jobsInfoMap
+			ssn.ClusterInfo.Nodes = nodesInfoMap
 
 			s := &Statement{
 				operations: []Operation{},
 				ssn:        ssn,
-				sessionUID: "1234",
+				sessionID:  "1234",
 			}
 
-			pipelinedTask := jobsInfoMap[tt.args.jobName].PodInfos[tt.args.podName]
+			pipelinedTask := jobsInfoMap[tt.args.jobName].GetAllPodsMap()[tt.args.podName]
 
 			originalPipelineJob := jobsInfoMap[tt.args.jobName].Clone()
 			originalPipelineTask := pipelinedTask.Clone()
@@ -655,13 +673,13 @@ func TestStatement_Pipeline_Unpipeline(t *testing.T) {
 				t.Errorf("unpipeline() error = %v", err)
 			}
 
-			actualTask := ssn.PodGroupInfos[tt.args.jobName].PodInfos[tt.args.podName]
+			actualTask := ssn.ClusterInfo.PodGroupInfos[tt.args.jobName].GetAllPodsMap()[tt.args.podName]
 			assert.Equal(t, actualTask.NodeName, originalPipelineTask.NodeName)
 			assert.Equal(t, actualTask.Status, originalPipelineTask.Status)
 			assert.Equal(t, *actualTask.ResReq, *originalPipelineTask.ResReq)
 			assert.Equal(t, actualTask.GPUGroups, originalPipelineTask.GPUGroups)
 
-			actualPipelinedJob := ssn.PodGroupInfos[tt.args.jobName]
+			actualPipelinedJob := ssn.ClusterInfo.PodGroupInfos[tt.args.jobName]
 			assert.Equal(t, *originalPipelineJob.Allocated, *actualPipelinedJob.Allocated)
 			assert.Equal(t, tt.expected.jobGpuAllocated, actualPipelinedJob.Allocated.GPUs())
 
@@ -758,17 +776,20 @@ func TestStatement_Pipeline(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(tt.testMetadata.Jobs)
-			nodesInfoMap := nodes_fake.BuildNodesInfoMap(tt.testMetadata.Nodes, tasksToNodeMap)
-			pipelinedTask := jobsInfoMap[tt.args.jobName].PodInfos[tt.args.podName]
+			vectorMap := resource_info.NewResourceVectorMap()
+			jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(tt.testMetadata.Jobs, vectorMap)
+			nodesInfoMap := nodes_fake.BuildNodesInfoMap(tt.testMetadata.Nodes, tasksToNodeMap, nil, vectorMap)
+			pipelinedTask := jobsInfoMap[tt.args.jobName].GetAllPodsMap()[tt.args.podName]
 
 			s := &Statement{
 				operations: []Operation{},
 				ssn: &Session{
-					PodGroupInfos: jobsInfoMap,
-					Nodes:         nodesInfoMap,
+					ClusterInfo: &api.ClusterInfo{
+						PodGroupInfos: jobsInfoMap,
+						Nodes:         nodesInfoMap,
+					},
 				},
-				sessionUID: "1234",
+				sessionID: "1234",
 			}
 
 			dataBeforeEvict := originalState{
@@ -884,17 +905,20 @@ func TestStatement_Pipeline_Undo_Undo(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(tt.testMetadata.Jobs)
-			nodesInfoMap := nodes_fake.BuildNodesInfoMap(tt.testMetadata.Nodes, tasksToNodeMap)
-			pipelinedTask := jobsInfoMap[tt.args.jobName].PodInfos[tt.args.podName]
+			vectorMap := resource_info.NewResourceVectorMap()
+			jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(tt.testMetadata.Jobs, vectorMap)
+			nodesInfoMap := nodes_fake.BuildNodesInfoMap(tt.testMetadata.Nodes, tasksToNodeMap, nil, vectorMap)
+			pipelinedTask := jobsInfoMap[tt.args.jobName].GetAllPodsMap()[tt.args.podName]
 
 			s := &Statement{
 				operations: []Operation{},
 				ssn: &Session{
-					PodGroupInfos: jobsInfoMap,
-					Nodes:         nodesInfoMap,
+					ClusterInfo: &api.ClusterInfo{
+						PodGroupInfos: jobsInfoMap,
+						Nodes:         nodesInfoMap,
+					},
 				},
-				sessionUID: "1234",
+				sessionID: "1234",
 			}
 
 			dataBeforeEvict := originalState{
@@ -995,19 +1019,22 @@ func TestStatement_Allocate_Unallocate(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(tt.testMetadata.Jobs)
-			nodesInfoMap := nodes_fake.BuildNodesInfoMap(tt.testMetadata.Nodes, tasksToNodeMap)
-			ssn := &Session{}
-			ssn.PodGroupInfos = jobsInfoMap
-			ssn.Nodes = nodesInfoMap
+			vectorMap := resource_info.NewResourceVectorMap()
+			jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(tt.testMetadata.Jobs, vectorMap)
+			nodesInfoMap := nodes_fake.BuildNodesInfoMap(tt.testMetadata.Nodes, tasksToNodeMap, nil, vectorMap)
+			ssn := &Session{
+				ClusterInfo: &api.ClusterInfo{},
+			}
+			ssn.ClusterInfo.PodGroupInfos = jobsInfoMap
+			ssn.ClusterInfo.Nodes = nodesInfoMap
 
 			s := &Statement{
 				operations: []Operation{},
 				ssn:        ssn,
-				sessionUID: "1234",
+				sessionID:  "1234",
 			}
 
-			allocateTask := jobsInfoMap[tt.args.jobName].PodInfos[tt.args.podName]
+			allocateTask := jobsInfoMap[tt.args.jobName].GetAllPodsMap()[tt.args.podName]
 
 			originalAllocateJob := jobsInfoMap[tt.args.jobName].Clone()
 			originalAllocateTask := allocateTask.Clone()
@@ -1022,13 +1049,13 @@ func TestStatement_Allocate_Unallocate(t *testing.T) {
 				}
 			}
 
-			actualAllocatedTask := ssn.PodGroupInfos[tt.args.jobName].PodInfos[tt.args.podName]
+			actualAllocatedTask := ssn.ClusterInfo.PodGroupInfos[tt.args.jobName].GetAllPodsMap()[tt.args.podName]
 			assert.Equal(t, actualAllocatedTask.NodeName, originalAllocateTask.NodeName)
 			assert.Equal(t, actualAllocatedTask.Status, originalAllocateTask.Status)
 			assert.Equal(t, *actualAllocatedTask.ResReq, *originalAllocateTask.ResReq)
 			assert.Equal(t, actualAllocatedTask.GPUGroups, originalAllocateTask.GPUGroups)
 
-			actualAllocatedJob := ssn.PodGroupInfos[tt.args.jobName]
+			actualAllocatedJob := ssn.ClusterInfo.PodGroupInfos[tt.args.jobName]
 			assert.Equal(t, *originalAllocateJob.Allocated, *actualAllocatedJob.Allocated)
 			assert.Equal(t, tt.expected.jobAllocated.GPUs(), actualAllocatedJob.Allocated.GPUs())
 
@@ -1104,17 +1131,20 @@ func TestStatement_Allocate(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(tt.testMetadata.Jobs)
-			nodesInfoMap := nodes_fake.BuildNodesInfoMap(tt.testMetadata.Nodes, tasksToNodeMap)
-			allocatedTask := jobsInfoMap[tt.args.jobName].PodInfos[tt.args.podName]
+			vectorMap := resource_info.NewResourceVectorMap()
+			jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(tt.testMetadata.Jobs, vectorMap)
+			nodesInfoMap := nodes_fake.BuildNodesInfoMap(tt.testMetadata.Nodes, tasksToNodeMap, nil, vectorMap)
+			allocatedTask := jobsInfoMap[tt.args.jobName].GetAllPodsMap()[tt.args.podName]
 
 			s := &Statement{
 				operations: []Operation{},
 				ssn: &Session{
-					PodGroupInfos: jobsInfoMap,
-					Nodes:         nodesInfoMap,
+					ClusterInfo: &api.ClusterInfo{
+						PodGroupInfos: jobsInfoMap,
+						Nodes:         nodesInfoMap,
+					},
 				},
-				sessionUID: "1234",
+				sessionID: "1234",
 			}
 
 			dataBeforeEvict := originalState{
@@ -1207,17 +1237,20 @@ func TestStatement_Allocate_Undo_Undo(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(tt.testMetadata.Jobs)
-			nodesInfoMap := nodes_fake.BuildNodesInfoMap(tt.testMetadata.Nodes, tasksToNodeMap)
-			allocatedTask := jobsInfoMap[tt.args.jobName].PodInfos[tt.args.podName]
+			vectorMap := resource_info.NewResourceVectorMap()
+			jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(tt.testMetadata.Jobs, vectorMap)
+			nodesInfoMap := nodes_fake.BuildNodesInfoMap(tt.testMetadata.Nodes, tasksToNodeMap, nil, vectorMap)
+			allocatedTask := jobsInfoMap[tt.args.jobName].GetAllPodsMap()[tt.args.podName]
 
 			s := &Statement{
 				operations: []Operation{},
 				ssn: &Session{
-					PodGroupInfos: jobsInfoMap,
-					Nodes:         nodesInfoMap,
+					ClusterInfo: &api.ClusterInfo{
+						PodGroupInfos: jobsInfoMap,
+						Nodes:         nodesInfoMap,
+					},
 				},
-				sessionUID: "1234",
+				sessionID: "1234",
 			}
 
 			dataBeforeEvict := originalState{
@@ -1249,4 +1282,304 @@ func TestStatement_Allocate_Undo_Undo(t *testing.T) {
 				dataBeforeEvict.task.ResReq)
 		})
 	}
+}
+
+func newMockAllocation(device string) *resourceapi.AllocationResult {
+	return &resourceapi.AllocationResult{
+		Devices: resourceapi.DeviceAllocationResult{
+			Results: []resourceapi.DeviceRequestAllocationResult{
+				{Request: "req0", Driver: "gpu.example.com", Pool: "pool0", Device: device},
+			},
+		},
+	}
+}
+
+// TestStatement_Evict_Undo_Undo_DRA_ResourceClaimInfo verifies that the
+// evict → undo → undo (re-evict) sequence does not corrupt the
+// ResourceClaimInfo captured by the original evict's reverse closure.
+func TestStatement_Evict_Undo_Undo_DRA_ResourceClaimInfo(t *testing.T) {
+	clusterTopology := nodes_fake.TestClusterTopology{
+		Jobs: []*jobs_fake.TestJobBasic{
+			{
+				Name:                "running_job0",
+				RequiredGPUsPerTask: 1,
+				QueueName:           "queue0",
+				Priority:            constants.PriorityTrainNumber,
+				Tasks: []*tasks_fake.TestTaskBasic{
+					{
+						State:    pod_status.Running,
+						NodeName: "node0",
+					},
+				},
+			},
+		},
+		Nodes: map[string]nodes_fake.TestNodeBasic{
+			"node0": {GPUs: 2},
+		},
+	}
+
+	vectorMap := resource_info.NewResourceVectorMap()
+	jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(clusterTopology.Jobs, vectorMap)
+	nodesInfoMap := nodes_fake.BuildNodesInfoMap(clusterTopology.Nodes, tasksToNodeMap, nil, vectorMap)
+	task := jobsInfoMap["running_job0"].GetAllPodsMap()["running_job0-0"]
+
+	task.ResourceClaimInfo = bindrequest_info.ResourceClaimInfo{
+		"claim1": &schedulingv1alpha2.ResourceClaimAllocation{
+			Name:       "claim1",
+			Allocation: newMockAllocation("gpu-0"),
+		},
+	}
+
+	ssn := &Session{
+		ClusterInfo: &api.ClusterInfo{
+			PodGroupInfos: jobsInfoMap,
+			Nodes:         nodesInfoMap,
+		},
+	}
+
+	// Simulate DRA plugin event handlers.
+	// DeallocateFunc: nils Allocation through the pointer (like deallocateResourceClaim).
+	// AllocateFunc: only recovers from memory when existing Allocation is non-nil
+	// (like allocateResourceClaim line 291). Without a real DRA allocator, a nil
+	// existing allocation means the claim stays unallocated — exposing the corruption.
+	ssn.AddEventHandler(&EventHandler{
+		DeallocateFunc: func(event *Event) {
+			for _, claimInfo := range event.Task.ResourceClaimInfo {
+				if claimInfo != nil {
+					claimInfo.Allocation = nil
+				}
+			}
+		},
+		AllocateFunc: func(event *Event) {
+			for name, claimInfo := range event.Task.ResourceClaimInfo {
+				if claimInfo != nil && claimInfo.Allocation != nil {
+					event.Task.ResourceClaimInfo[name] = &schedulingv1alpha2.ResourceClaimAllocation{
+						Name:       name,
+						Allocation: newMockAllocation("gpu-0"),
+					}
+				}
+			}
+		},
+	})
+
+	s := &Statement{
+		operations: []Operation{},
+		ssn:        ssn,
+		sessionID:  "1234",
+	}
+
+	// Evict (op[0])
+	err := s.Evict(task, "message", eviction_info.EvictionMetadata{
+		Action:           "action",
+		EvictionGangSize: 1,
+	})
+	assert.NoError(t, err)
+
+	// Undo evict (op[1]) — unevict aliases previousRCI onto task, AllocateFunc replaces entries
+	err = s.undoOperation(0)
+	assert.NoError(t, err)
+
+	// Undo the undo (op[2], op[3]) — re-evict. DeallocateFunc corrupts the original closure's RCI.
+	err = s.undoOperation(1)
+	assert.NoError(t, err)
+
+	// Undo the original evict again (op[0] is valid). revOp_0 runs unevict with the now-corrupted
+	// previousResourceClaimInfo. AllocateFunc sees nil Allocation and cannot recover from memory.
+	err = s.undoOperation(0)
+	assert.NoError(t, err)
+
+	for name, claim := range task.ResourceClaimInfo {
+		assert.NotNilf(t, claim, "ResourceClaimInfo[%s] should not be nil", name)
+		if claim != nil {
+			assert.NotNilf(t, claim.Allocation,
+				"ResourceClaimInfo[%s].Allocation should not be nil after evict/undo/undo roundtrip", name)
+		}
+	}
+}
+
+// TestStatement_Pipeline_Undo_Undo_DRA_ResourceClaimInfo verifies that the
+// pipeline → undo → undo (re-pipeline) sequence preserves the original
+// ResourceClaimInfo in the pipeline closure, not stale data from a later
+// AllocateFunc call.
+func TestStatement_Pipeline_Undo_Undo_DRA_ResourceClaimInfo(t *testing.T) {
+	clusterTopology := nodes_fake.TestClusterTopology{
+		Jobs: []*jobs_fake.TestJobBasic{
+			{
+				Name:                "pending_job0",
+				RequiredGPUsPerTask: 1,
+				QueueName:           "queue0",
+				Priority:            constants.PriorityTrainNumber,
+				Tasks: []*tasks_fake.TestTaskBasic{
+					{
+						State: pod_status.Pending,
+					},
+				},
+			},
+		},
+		Nodes: map[string]nodes_fake.TestNodeBasic{
+			"node0": {GPUs: 2},
+		},
+	}
+
+	vectorMap := resource_info.NewResourceVectorMap()
+	jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(clusterTopology.Jobs, vectorMap)
+	nodesInfoMap := nodes_fake.BuildNodesInfoMap(clusterTopology.Nodes, tasksToNodeMap, nil, vectorMap)
+	task := jobsInfoMap["pending_job0"].GetAllPodsMap()["pending_job0-0"]
+
+	task.ResourceClaimInfo = bindrequest_info.ResourceClaimInfo{
+		"claim1": &schedulingv1alpha2.ResourceClaimAllocation{
+			Name:       "claim1",
+			Allocation: newMockAllocation("original-gpu"),
+		},
+	}
+
+	ssn := &Session{
+		ClusterInfo: &api.ClusterInfo{
+			PodGroupInfos: jobsInfoMap,
+			Nodes:         nodesInfoMap,
+		},
+	}
+
+	// Track the device name seen by DeallocateFunc on every call. After the
+	// final unpipeline the restored RCI should carry the original allocation
+	// ("original-gpu"), not a stale one injected by a later AllocateFunc.
+	var lastDeallocatedDevice string
+	ssn.AddEventHandler(&EventHandler{
+		DeallocateFunc: func(event *Event) {
+			for _, claimInfo := range event.Task.ResourceClaimInfo {
+				if claimInfo != nil {
+					if claimInfo.Allocation != nil && len(claimInfo.Allocation.Devices.Results) > 0 {
+						lastDeallocatedDevice = claimInfo.Allocation.Devices.Results[0].Device
+					}
+					claimInfo.Allocation = nil
+				}
+			}
+		},
+		AllocateFunc: func(event *Event) {
+			for name := range event.Task.ResourceClaimInfo {
+				event.Task.ResourceClaimInfo[name] = &schedulingv1alpha2.ResourceClaimAllocation{
+					Name:       name,
+					Allocation: newMockAllocation("fresh-gpu"),
+				}
+			}
+		},
+	})
+
+	s := &Statement{
+		operations: []Operation{},
+		ssn:        ssn,
+		sessionID:  "1234",
+	}
+
+	// Pipeline (op[0])
+	err := s.Pipeline(task, "node0", true)
+	assert.NoError(t, err)
+
+	// Undo pipeline (op[1]) — unpipeline restores RCI, DeallocateFunc nils allocations
+	err = s.undoOperation(0)
+	assert.NoError(t, err)
+
+	// Undo the undo (op[2], op[3]) — re-pipeline. AllocateFunc replaces entries.
+	err = s.undoOperation(1)
+	assert.NoError(t, err)
+
+	// Undo the original pipeline again (op[0] is valid). unpipeline should restore
+	// from the original previousRCI ("original-gpu"), not the re-pipeline's data.
+	lastDeallocatedDevice = ""
+	err = s.undoOperation(0)
+	assert.NoError(t, err)
+
+	assert.Equal(t, "original-gpu", lastDeallocatedDevice,
+		"unpipeline should restore the original allocation, not a stale one from a later AllocateFunc")
+}
+
+// TestStatement_Allocate_Undo_Undo_DRA_ResourceClaimInfo verifies that DRA
+// resource claims survive an allocate → undo → undo (re-allocate) cycle.
+// Unlike evict/pipeline, allocate does not capture previousResourceClaimInfo
+// in a closure, so there is no aliasing bug — this test guards against
+// regressions in the allocate/unallocate event-handler interaction.
+func TestStatement_Allocate_Undo_Undo_DRA_ResourceClaimInfo(t *testing.T) {
+	clusterTopology := nodes_fake.TestClusterTopology{
+		Jobs: []*jobs_fake.TestJobBasic{
+			{
+				Name:                "pending_job0",
+				RequiredGPUsPerTask: 1,
+				QueueName:           "queue0",
+				Priority:            constants.PriorityTrainNumber,
+				Tasks: []*tasks_fake.TestTaskBasic{
+					{
+						State: pod_status.Pending,
+					},
+				},
+			},
+		},
+		Nodes: map[string]nodes_fake.TestNodeBasic{
+			"node0": {GPUs: 2},
+		},
+	}
+
+	vectorMap := resource_info.NewResourceVectorMap()
+	jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(clusterTopology.Jobs, vectorMap)
+	nodesInfoMap := nodes_fake.BuildNodesInfoMap(clusterTopology.Nodes, tasksToNodeMap, nil, vectorMap)
+	task := jobsInfoMap["pending_job0"].GetAllPodsMap()["pending_job0-0"]
+
+	task.ResourceClaimInfo = bindrequest_info.ResourceClaimInfo{
+		"claim1": &schedulingv1alpha2.ResourceClaimAllocation{
+			Name:       "claim1",
+			Allocation: newMockAllocation("gpu-0"),
+		},
+	}
+
+	ssn := &Session{
+		ClusterInfo: &api.ClusterInfo{
+			PodGroupInfos: jobsInfoMap,
+			Nodes:         nodesInfoMap,
+		},
+	}
+
+	ssn.AddEventHandler(&EventHandler{
+		DeallocateFunc: func(event *Event) {
+			for _, claimInfo := range event.Task.ResourceClaimInfo {
+				if claimInfo != nil {
+					claimInfo.Allocation = nil
+				}
+			}
+		},
+		AllocateFunc: func(event *Event) {
+			for name := range event.Task.ResourceClaimInfo {
+				event.Task.ResourceClaimInfo[name] = &schedulingv1alpha2.ResourceClaimAllocation{
+					Name:       name,
+					Allocation: newMockAllocation("gpu-0"),
+				}
+			}
+		},
+	})
+
+	s := &Statement{
+		operations: []Operation{},
+		ssn:        ssn,
+		sessionID:  "1234",
+	}
+
+	// Allocate (op[0]) — AllocateFunc sets claims
+	err := s.Allocate(task, "node0")
+	assert.NoError(t, err)
+	for name, claim := range task.ResourceClaimInfo {
+		assert.NotNilf(t, claim.Allocation,
+			"ResourceClaimInfo[%s].Allocation should not be nil after allocate", name)
+	}
+
+	// Undo allocate (op[1]) — unallocate calls DeallocateFunc
+	err = s.undoOperation(0)
+	assert.NoError(t, err)
+	for name, claim := range task.ResourceClaimInfo {
+		assert.Nilf(t, claim.Allocation,
+			"ResourceClaimInfo[%s].Allocation should be nil after unallocate", name)
+	}
+
+	// Undo the undo (op[2], op[3]) — re-allocate, AllocateFunc sets claims again.
+	// allocateOperation stores task.Clone() as taskInfo, so the redo operates on
+	// the clone; verify the sequence completes without errors.
+	err = s.undoOperation(1)
+	assert.NoError(t, err)
 }

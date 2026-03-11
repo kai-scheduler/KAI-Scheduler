@@ -1,3 +1,19 @@
+/*
+Copyright 2017 The Kubernetes Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 // Copyright 2025 NVIDIA CORPORATION
 // SPDX-License-Identifier: Apache-2.0
 
@@ -12,10 +28,9 @@ import (
 	"go.uber.org/multierr"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/rand"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -23,26 +38,30 @@ import (
 	"k8s.io/client-go/tools/record"
 	k8sframework "k8s.io/kubernetes/pkg/scheduler/framework"
 
-	kubeaischedulerver "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned"
-	kubeaischedulerschema "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned/scheme"
-	kubeaischedulerinfo "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/informers/externalversions"
-	enginelisters "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/listers/scheduling/v2alpha2"
-	schedulingv1alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	enginev2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/eviction_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/cluster_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/cluster_info/data_lister"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/evictor"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/status_updater"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/constants/status"
-	k8splugins "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_internal/plugins"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/metrics"
+	kubeaischedulerver "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned"
+	kubeaischedulerschema "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/scheme"
+	kubeaischedulerinfo "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/informers/externalversions"
+	enginelisters "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/listers/scheduling/v2alpha2"
+	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	featuregates "github.com/kai-scheduler/KAI-scheduler/pkg/common/feature_gates"
+	draversionawareclient "github.com/kai-scheduler/KAI-scheduler/pkg/common/resources/dra_version_aware_client"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/cluster_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/cluster_info/data_lister"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/evictor"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/status_updater"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb"
+	usageapi "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants/status"
+	k8splugins "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal/plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
 )
 
 func init() {
@@ -64,12 +83,15 @@ type SchedulerCacheParams struct {
 	RestrictNodeScheduling      bool
 	KubeClient                  kubernetes.Interface
 	KAISchedulerClient          kubeaischedulerver.Interface
+	UsageDBParams               *usageapi.UsageParams
+	UsageDBClient               usageapi.Interface
 	DetailedFitErrors           bool
 	ScheduleCSIStorage          bool
 	FullHierarchyFairness       bool
-	NodeLevelScheduler          bool
 	AllowConsolidatingReclaim   bool
 	NumOfStatusRecordingWorkers int
+	UpdatePodEvictionCondition  bool
+	DiscoveryClient             discovery.DiscoveryInterface
 }
 
 type SchedulerCache struct {
@@ -81,6 +103,7 @@ type SchedulerCache struct {
 	podLister                      listv1.PodLister
 	podGroupLister                 enginelisters.PodGroupLister
 	clusterInfo                    *cluster_info.ClusterInfo
+	usageLister                    *usagedb.UsageLister
 
 	schedulingNodePoolParams *conf.SchedulingNodePoolParams
 
@@ -104,7 +127,7 @@ func newSchedulerCache(schedulerCacheParams *SchedulerCacheParams) *SchedulerCac
 		detailedFitErrors:        schedulerCacheParams.DetailedFitErrors,
 		scheduleCSIStorage:       schedulerCacheParams.ScheduleCSIStorage,
 		fullHierarchyFairness:    schedulerCacheParams.FullHierarchyFairness,
-		kubeClient:               schedulerCacheParams.KubeClient,
+		kubeClient:               draversionawareclient.NewDRAAwareClient(schedulerCacheParams.KubeClient),
 		kubeAiSchedulerClient:    schedulerCacheParams.KAISchedulerClient,
 	}
 
@@ -118,7 +141,7 @@ func newSchedulerCache(schedulerCacheParams *SchedulerCacheParams) *SchedulerCac
 	broadcaster.StartRecordingToSink(&corev1.EventSinkImpl{Interface: sc.kubeClient.CoreV1().Events("")})
 	recorder := broadcaster.NewRecorder(kubeaischedulerschema.Scheme, v1.EventSource{Component: schedulerName})
 
-	sc.Evictor = evictor.New(sc.kubeClient)
+	sc.Evictor = evictor.New(sc.kubeClient, schedulerCacheParams.UpdatePodEvictionCondition)
 
 	sc.StatusUpdater = status_updater.New(
 		sc.kubeClient, sc.kubeAiSchedulerClient, recorder, schedulerCacheParams.NumOfStatusRecordingWorkers,
@@ -128,12 +151,22 @@ func newSchedulerCache(schedulerCacheParams *SchedulerCacheParams) *SchedulerCac
 	sc.informerFactory = informers.NewSharedInformerFactory(sc.kubeClient, 0)
 	sc.kubeAiSchedulerInformerFactory = kubeaischedulerinfo.NewSharedInformerFactory(sc.kubeAiSchedulerClient, 0)
 
+	if err := featuregates.SetDRAFeatureGate(schedulerCacheParams.DiscoveryClient); err != nil {
+		log.InfraLogger.Warningf("Failed to set DRA feature gate: ", err)
+	}
 	sc.internalPlugins = k8splugins.InitializeInternalPlugins(sc.kubeClient, sc.informerFactory, sc.SnapshotSharedLister())
 
 	sc.podLister = sc.informerFactory.Core().V1().Pods().Lister()
 	sc.podGroupLister = sc.kubeAiSchedulerInformerFactory.Scheduling().V2alpha2().PodGroups().Lister()
 
-	clusterInfo, err := cluster_info.New(sc.informerFactory, sc.kubeAiSchedulerInformerFactory, sc.schedulingNodePoolParams,
+	if schedulerCacheParams.UsageDBClient != nil {
+		sc.usageLister = usagedb.NewUsageLister(schedulerCacheParams.UsageDBClient,
+			&schedulerCacheParams.UsageDBParams.FetchInterval.Duration,
+			&schedulerCacheParams.UsageDBParams.StalenessPeriod.Duration,
+			&schedulerCacheParams.UsageDBParams.WaitTimeout.Duration)
+	}
+
+	clusterInfo, err := cluster_info.New(sc.informerFactory, sc.kubeAiSchedulerInformerFactory, sc.usageLister, sc.schedulingNodePoolParams,
 		sc.restrictNodeScheduling, &sc.K8sClusterPodAffinityInfo, sc.scheduleCSIStorage, sc.fullHierarchyFairness, sc.StatusUpdater)
 
 	if err != nil {
@@ -165,11 +198,19 @@ func (sc *SchedulerCache) Run(stopCh <-chan struct{}) {
 	sc.informerFactory.Start(stopCh)
 	sc.kubeAiSchedulerInformerFactory.Start(stopCh)
 	sc.StatusUpdater.Run(stopCh)
+
+	if sc.usageLister != nil {
+		sc.usageLister.Start(stopCh)
+	}
 }
 
 func (sc *SchedulerCache) WaitForCacheSync(stopCh <-chan struct{}) {
 	sc.informerFactory.WaitForCacheSync(stopCh)
 	sc.kubeAiSchedulerInformerFactory.WaitForCacheSync(stopCh)
+
+	if sc.usageLister != nil {
+		sc.usageLister.WaitForCacheSync(stopCh)
+	}
 }
 
 func (sc *SchedulerCache) Evict(evictedPod *v1.Pod, evictedPodGroup *podgroup_info.PodGroupInfo,
@@ -203,7 +244,7 @@ func (sc *SchedulerCache) evict(evictedPod *v1.Pod, evictedPodGroup *enginev2alp
 
 		log.InfraLogger.V(6).Infof("Evicting pod %v/%v, reason: %v, message: %v",
 			evictedPod.Namespace, evictedPod.Name, status.Preempted, message)
-		err := sc.Evictor.Evict(evictedPod)
+		err := sc.Evictor.Evict(evictedPod, message)
 		if err != nil {
 			log.InfraLogger.Errorf("Failed to evict pod: %v/%v, error: %v", evictedPod.Namespace, evictedPod.Name, err)
 		}
@@ -223,7 +264,7 @@ func (sc *SchedulerCache) WaitForWorkers(stopCh <-chan struct{}) {
 }
 
 // Bind binds task to the target host.
-func (sc *SchedulerCache) Bind(taskInfo *pod_info.PodInfo, hostname string) error {
+func (sc *SchedulerCache) Bind(taskInfo *pod_info.PodInfo, hostname string, bindRequestAnnotations map[string]string) error {
 	startTime := time.Now()
 	defer metrics.UpdateTaskBindDuration(startTime)
 	sc.StatusUpdater.PreBind(taskInfo.Pod)
@@ -231,7 +272,7 @@ func (sc *SchedulerCache) Bind(taskInfo *pod_info.PodInfo, hostname string) erro
 	log.InfraLogger.V(3).Infof(
 		"Creating bind request for task <%v/%v> to node <%v> gpuGroup: <%v>, requires: <%v> GPUs",
 		taskInfo.Namespace, taskInfo.Name, hostname, taskInfo.GPUGroups, taskInfo.ResReq)
-	if bindRequestError := sc.createBindRequest(taskInfo, hostname); bindRequestError != nil {
+	if bindRequestError := sc.createBindRequest(taskInfo, hostname, bindRequestAnnotations); bindRequestError != nil {
 		return sc.StatusUpdater.Bound(taskInfo.Pod, hostname, bindRequestError, sc.getNodPoolName())
 	}
 
@@ -246,23 +287,28 @@ func (sc *SchedulerCache) Bind(taskInfo *pod_info.PodInfo, hostname string) erro
 // +kubebuilder:rbac:groups="scheduling.run.ai",resources=bindrequests,verbs=create;update;patch
 // +kubebuilder:rbac:groups="",resources=pods/finalizers,verbs=create;delete;update;patch;get;list
 
-func (sc *SchedulerCache) createBindRequest(podInfo *pod_info.PodInfo, nodeName string) error {
+func (sc *SchedulerCache) createBindRequest(podInfo *pod_info.PodInfo, nodeName string, bindRequestAnnotations map[string]string) error {
+	labels := map[string]string{
+		"selected-node": nodeName,
+	}
+
+	// Merge with node pool params labels
+	for k, v := range sc.schedulingNodePoolParams.GetLabels() {
+		labels[k] = v
+	}
+
 	bindRequest := &schedulingv1alpha2.BindRequest{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("%s-%s", podInfo.Pod.Name, rand.String(10)),
+			Name:      podInfo.Pod.Name,
 			Namespace: podInfo.Namespace,
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion: "v1",
-					Kind:       "Pod",
-					Name:       podInfo.Pod.Name,
-					UID:        podInfo.Pod.UID,
-				},
-			},
-			Labels: map[string]string{
-				"pod-name":      podInfo.Pod.Name,
-				"selected-node": nodeName,
-			},
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: "v1",
+				Kind:       "Pod",
+				Name:       podInfo.Pod.Name,
+				UID:        podInfo.Pod.UID,
+			}},
+			Annotations: bindRequestAnnotations,
+			Labels:      labels,
 		},
 		Spec: schedulingv1alpha2.BindRequestSpec{
 			PodName:              podInfo.Name,
@@ -273,11 +319,9 @@ func (sc *SchedulerCache) createBindRequest(podInfo *pod_info.PodInfo, nodeName 
 				Count:   int(podInfo.AcceptedResource.GetNumOfGpuDevices()),
 				Portion: fmt.Sprintf("%.2f", podInfo.AcceptedResource.GpuFractionalPortion()),
 			},
-			ResourceClaimAllocations: podInfo.ResourceClaimInfo,
+			ResourceClaimAllocations: podInfo.ResourceClaimInfo.ToSlice(),
 		},
 	}
-
-	bindRequest.Labels = labels.Merge(bindRequest.Labels, sc.schedulingNodePoolParams.GetLabels())
 
 	_, err := sc.kubeAiSchedulerClient.SchedulingV1alpha2().BindRequests(
 		podInfo.Namespace).Create(context.TODO(), bindRequest, metav1.CreateOptions{})
@@ -393,5 +437,5 @@ func (sc *SchedulerCache) GetDataLister() data_lister.DataLister {
 		log.InfraLogger.Errorf("Failed to get label selector: %v", err)
 		return nil
 	}
-	return data_lister.New(sc.informerFactory, sc.kubeAiSchedulerInformerFactory, selector)
+	return data_lister.New(sc.informerFactory, sc.kubeAiSchedulerInformerFactory, sc.usageLister, selector)
 }

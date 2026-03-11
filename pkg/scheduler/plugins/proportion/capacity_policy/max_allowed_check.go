@@ -4,13 +4,13 @@
 package capacity_policy
 
 import (
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	rs "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/proportion/utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	rs "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/utils"
 )
 
 func (cp *CapacityPolicy) resultsOverLimit(requestedShare rs.ResourceQuantities,
@@ -21,7 +21,7 @@ func (cp *CapacityPolicy) resultsOverLimit(requestedShare rs.ResourceQuantities,
 		if overLimit {
 			request := utils.ResourceRequirementsFromQuantities(requestedShare).ToResourceList()
 			requestedNonPreemptible := resource_info.EmptyResourceRequirements().ToResourceList()
-			if !job.IsPreemptibleJob(cp.isInferencePreemptible) {
+			if !job.IsPreemptibleJob() {
 				requestedNonPreemptible = request.DeepCopy()
 			}
 

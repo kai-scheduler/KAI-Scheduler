@@ -17,9 +17,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgroupcontroller/controllers/cluster_relations"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgroupcontroller/controllers/cluster_relations"
 )
 
 func Test_handlePodGroupStatus(t *testing.T) {
@@ -76,8 +76,7 @@ func Test_handlePodGroupStatus(t *testing.T) {
 				[]client.Object{
 					&schedulingv1.PriorityClass{
 						ObjectMeta: metav1.ObjectMeta{
-							Name:      "c1",
-							Namespace: "n1",
+							Name: "c1",
 						},
 						Value: 75,
 					},
@@ -137,8 +136,7 @@ func Test_handlePodGroupStatus(t *testing.T) {
 				[]client.Object{
 					&schedulingv1.PriorityClass{
 						ObjectMeta: metav1.ObjectMeta{
-							Name:      "c1",
-							Namespace: "n1",
+							Name: "c1",
 						},
 						Value: 75,
 					},
@@ -205,15 +203,13 @@ func Test_handlePodGroupStatus(t *testing.T) {
 				[]client.Object{
 					&schedulingv1.PriorityClass{
 						ObjectMeta: metav1.ObjectMeta{
-							Name:      "c1",
-							Namespace: "n1",
+							Name: "c1",
 						},
 						Value: 75,
 					},
 					&schedulingv1.PriorityClass{
 						ObjectMeta: metav1.ObjectMeta{
-							Name:      "c2",
-							Namespace: "n1",
+							Name: "c2",
 						},
 						Value: 100,
 					},
@@ -273,15 +269,13 @@ func Test_handlePodGroupStatus(t *testing.T) {
 				[]client.Object{
 					&schedulingv1.PriorityClass{
 						ObjectMeta: metav1.ObjectMeta{
-							Name:      "c1",
-							Namespace: "n1",
+							Name: "c1",
 						},
 						Value: 75,
 					},
 					&schedulingv1.PriorityClass{
 						ObjectMeta: metav1.ObjectMeta{
-							Name:      "c2",
-							Namespace: "n1",
+							Name: "c2",
 						},
 						Value: 100,
 					},
@@ -346,15 +340,13 @@ func Test_handlePodGroupStatus(t *testing.T) {
 				[]client.Object{
 					&schedulingv1.PriorityClass{
 						ObjectMeta: metav1.ObjectMeta{
-							Name:      "c1",
-							Namespace: "n1",
+							Name: "c1",
 						},
 						Value: 75,
 					},
 					&schedulingv1.PriorityClass{
 						ObjectMeta: metav1.ObjectMeta{
-							Name:      "c2",
-							Namespace: "n1",
+							Name: "c2",
 						},
 						Value: 100,
 					},
@@ -423,15 +415,13 @@ func Test_handlePodGroupStatus(t *testing.T) {
 				[]client.Object{
 					&schedulingv1.PriorityClass{
 						ObjectMeta: metav1.ObjectMeta{
-							Name:      "c1",
-							Namespace: "n1",
+							Name: "c1",
 						},
 						Value: 75,
 					},
 					&schedulingv1.PriorityClass{
 						ObjectMeta: metav1.ObjectMeta{
-							Name:      "c2",
-							Namespace: "n1",
+							Name: "c2",
 						},
 						Value: 100,
 					},
@@ -494,15 +484,13 @@ func Test_handlePodGroupStatus(t *testing.T) {
 				[]client.Object{
 					&schedulingv1.PriorityClass{
 						ObjectMeta: metav1.ObjectMeta{
-							Name:      "c1",
-							Namespace: "n1",
+							Name: "c1",
 						},
 						Value: 75,
 					},
 					&schedulingv1.PriorityClass{
 						ObjectMeta: metav1.ObjectMeta{
-							Name:      "c2",
-							Namespace: "n1",
+							Name: "c2",
 						},
 						Value: 100,
 					},
@@ -565,15 +553,13 @@ func Test_handlePodGroupStatus(t *testing.T) {
 				[]client.Object{
 					&schedulingv1.PriorityClass{
 						ObjectMeta: metav1.ObjectMeta{
-							Name:      "c1",
-							Namespace: "n1",
+							Name: "c1",
 						},
 						Value: 75,
 					},
 					&schedulingv1.PriorityClass{
 						ObjectMeta: metav1.ObjectMeta{
-							Name:      "c2",
-							Namespace: "n1",
+							Name: "c2",
 						},
 						Value: 100,
 					},
@@ -636,8 +622,7 @@ func Test_handlePodGroupStatus(t *testing.T) {
 				[]client.Object{
 					&schedulingv1.PriorityClass{
 						ObjectMeta: metav1.ObjectMeta{
-							Name:      "c1",
-							Namespace: "n1",
+							Name: "c1",
 						},
 						Value: 75,
 					},
@@ -718,8 +703,7 @@ func Test_handlePodGroupStatus(t *testing.T) {
 				[]client.Object{
 					&schedulingv1.PriorityClass{
 						ObjectMeta: metav1.ObjectMeta{
-							Name:      "c1",
-							Namespace: "n1",
+							Name: "c1",
 						},
 						Value: 75,
 					},

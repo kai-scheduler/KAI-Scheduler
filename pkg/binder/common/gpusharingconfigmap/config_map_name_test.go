@@ -26,6 +26,11 @@ func TestGetDesiredConfigMapName(t *testing.T) {
 						"runai-job-name": "job1",
 					},
 				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{},
+					},
+				},
 			},
 			containerIndex:       0,
 			desiredConfigMapName: "",
@@ -35,9 +40,26 @@ func TestGetDesiredConfigMapName(t *testing.T) {
 			pod: &v1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						DesiredConfigMapPrefixKey: "config-map-name",
+						gpuSharingConfigMapAnnotation: "config-map-name",
 					},
 				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{},
+						{},
+					},
+					Volumes: []v1.Volume{
+						{
+							Name: "config-map-vol",
+							VolumeSource: v1.VolumeSource{
+								ConfigMap: &v1.ConfigMapVolumeSource{
+									LocalObjectReference: v1.LocalObjectReference{
+										Name: "config-map-name-1",
+									},
+								},
+							},
+						},
+					}},
 			},
 			containerIndex:       1,
 			desiredConfigMapName: "config-map-name-1",
@@ -46,7 +68,12 @@ func TestGetDesiredConfigMapName(t *testing.T) {
 	}
 	tests = []configMapNameTest{tests[1]}
 	for _, test := range tests {
-		configMapName, err := ExtractCapabilitiesConfigMapName(test.pod, test.containerIndex, RegularContainer)
+		containerRef := &PodContainerRef{
+			Container: &test.pod.Spec.Containers[test.containerIndex],
+			Index:     test.containerIndex,
+			Type:      RegularContainer,
+		}
+		configMapName, err := ExtractCapabilitiesConfigMapName(test.pod, containerRef)
 		if test.expectedError && err == nil {
 			t.Errorf("Expected error but got none")
 		}

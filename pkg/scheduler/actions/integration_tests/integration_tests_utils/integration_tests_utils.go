@@ -10,16 +10,16 @@ import (
 
 	. "go.uber.org/mock/gomock"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/allocate"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/consolidation"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/preempt"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/reclaim"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/stalegangeviction"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/allocate"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/consolidation"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/preempt"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/stalegangeviction"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils"
 )
 
 type TestTopologyMetadata struct {
@@ -50,11 +50,25 @@ func RunTests(t *testing.T, testsMetadata []TestTopologyMetadata) {
 
 func RunTest(t *testing.T, testMetadata TestTopologyMetadata, testNumber int, controller *Controller) {
 	t.Logf("Running test number: %v, test name: %v", testNumber, testMetadata.TestTopologyBasic.Name)
-	ssn := test_utils.BuildSession(testMetadata.TestTopologyBasic, controller)
+	var ssn *framework.Session
 
 	runRoundsUntilMatch(testMetadata, controller, &ssn)
+	ssn = prepareSessionForMatch(ssn, testMetadata, controller)
 	test_utils.MatchExpectedAndRealTasks(t, testNumber, testMetadata.TestTopologyBasic, ssn)
 	runRoundsAfterAndMatch(t, testMetadata, controller, ssn, testNumber)
+}
+
+// prepare session for match by rebuilding the session while preserving the podgroup errors
+func prepareSessionForMatch(ssn *framework.Session, testMetadata TestTopologyMetadata, controller *Controller) *framework.Session {
+	jobFitErrors := make(map[string][]common_info.JobFitError)
+	for jobId, job := range ssn.ClusterInfo.PodGroupInfos {
+		jobFitErrors[string(jobId)] = job.JobFitErrors
+	}
+	ssn = test_utils.BuildSession(testMetadata.TestTopologyBasic, controller)
+	for jobId, job := range ssn.ClusterInfo.PodGroupInfos {
+		job.JobFitErrors = jobFitErrors[string(jobId)]
+	}
+	return ssn
 }
 
 func runRoundsAfterAndMatch(t *testing.T, testMetadata TestTopologyMetadata, controller *Controller, ssn *framework.Session, testNumber int) {
@@ -80,6 +94,7 @@ func runRoundsUntilMatch(testMetadata TestTopologyMetadata, controller *Controll
 }
 
 func runSchedulerOneRound(testMetadata *TestTopologyMetadata, controller *Controller, ssn **framework.Session) {
+	*ssn = test_utils.BuildSession(testMetadata.TestTopologyBasic, controller)
 	for _, action := range schedulerActions {
 		log.InfraLogger.SetAction(string(action.Name()))
 		action.Execute(*ssn)
@@ -87,9 +102,9 @@ func runSchedulerOneRound(testMetadata *TestTopologyMetadata, controller *Contro
 
 	for _, jobMetadata := range testMetadata.Jobs {
 		jobId := common_info.PodGroupID(jobMetadata.Name)
-		job := (*ssn).PodGroupInfos[jobId]
+		job := (*ssn).ClusterInfo.PodGroupInfos[jobId]
 		for taskId, taskMetadata := range jobMetadata.Tasks {
-			task := job.PodInfos[common_info.PodID(fmt.Sprintf("%s-%d", jobId, taskId))]
+			task := job.GetAllPodsMap()[common_info.PodID(fmt.Sprintf("%s-%d", jobId, taskId))]
 			switch task.Status {
 			case pod_status.Releasing:
 				if jobMetadata.DeleteJobInTest {
@@ -118,8 +133,21 @@ func runSchedulerOneRound(testMetadata *TestTopologyMetadata, controller *Contro
 
 		}
 	}
+	if len(testMetadata.TestDRAObjects.ResourceClaims) > 0 {
+		draManager := (*ssn).InternalK8sPlugins().FrameworkHandle.SharedDRAManager()
+		for _, claim := range testMetadata.TestDRAObjects.ResourceClaims {
+			clusterClaim, err := draManager.ResourceClaims().Get(claim.Namespace, claim.Name)
+			if err != nil {
+				log.InfraLogger.Errorf("Failed to get resource claim %s: %v", claim.Name, err)
+				continue
+			}
+			clusterClaimStatus := clusterClaim.Status
+			if clusterClaimStatus.Allocation != nil || clusterClaimStatus.ReservedFor != nil || clusterClaimStatus.Devices != nil {
+				claim.ClaimStatus = clusterClaimStatus.DeepCopy()
+			}
+		}
+	}
 
-	*ssn = test_utils.BuildSession(testMetadata.TestTopologyBasic, controller)
 }
 
 func SetSchedulerActions() {

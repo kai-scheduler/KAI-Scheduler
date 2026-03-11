@@ -14,16 +14,17 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgroupcontroller/controllers/cluster_relations"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgroupcontroller/controllers/metadata"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgroupcontroller/controllers/patcher"
-	utilities "github.com/NVIDIA/KAI-scheduler/pkg/podgroupcontroller/utilities/pod-group"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgroupcontroller/controllers/cluster_relations"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgroupcontroller/controllers/metadata"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgroupcontroller/controllers/patcher"
+	utilities "github.com/kai-scheduler/KAI-scheduler/pkg/podgroupcontroller/utilities/pod-group"
 )
 
 func (r *PodGroupReconciler) handlePodGroupStatus(ctx context.Context, podGroup *v2alpha2.PodGroup) (
 	ctrl.Result, error) {
 
+	logger := log.FromContext(ctx)
 	relatedPods, err := cluster_relations.GetAllPodsOfPodGroup(ctx, podGroup, r.Client)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get pods from podGroup <%s/%s>. Error: %w",
@@ -37,10 +38,10 @@ func (r *PodGroupReconciler) handlePodGroupStatus(ctx context.Context, podGroup 
 
 	err = r.updateStatusIfNecessary(ctx, podGroup, podGroupMetadata)
 	if err != nil {
-		return ctrl.Result{}, err
+		logger.Error(err, fmt.Sprintf("Failed to update podgroup %s/%s with metadata",
+			podGroup.Namespace, podGroup.Name))
 	}
-
-	return ctrl.Result{}, nil
+	return ctrl.Result{}, err
 }
 
 func (r *PodGroupReconciler) updateStatusIfNecessary(
@@ -55,13 +56,7 @@ func (r *PodGroupReconciler) updateStatusIfNecessary(
 	logger.Info(fmt.Sprintf("Updated status for podgroup %s/%s with metadata %v",
 		podGroup.Namespace, podGroup.Name, podGroupMetadata))
 	err := patcher.UpdatePodGroupStatus(ctx, podGroup, podGroupMetadata, r.Client)
-	if err != nil {
-		logger.Error(err, fmt.Sprintf("Failed to update podgroup %s/%s with metadata",
-			podGroup.Namespace, podGroup.Name))
-		return err
-	}
-
-	return nil
+	return client.IgnoreNotFound(err)
 }
 
 func (r *PodGroupReconciler) calculatePodGroupMetadata(

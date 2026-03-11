@@ -1,3 +1,19 @@
+/*
+Copyright 2017 The Kubernetes Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 // Copyright 2025 NVIDIA CORPORATION
 // SPDX-License-Identifier: Apache-2.0
 
@@ -8,29 +24,33 @@ import (
 
 	"github.com/pkg/errors"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/meta"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
 
-	kubeAiSchedulerinfo "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/informers/externalversions"
-	enginev2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/configmap_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_affinity"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/queue_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/cluster_info/data_lister"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/status_updater"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/utils"
+	kubeAiSchedulerinfo "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/informers/externalversions"
+	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
+	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	pg "github.com/kai-scheduler/KAI-scheduler/pkg/common/podgroup"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/configmap_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_affinity"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/cluster_info/data_lister"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/status_updater"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/utils"
 )
 
 type ClusterInfo struct {
@@ -42,6 +62,7 @@ type ClusterInfo struct {
 	includeCSIStorageObjects bool
 	nodePoolSelector         labels.Selector
 	fairnessLevelType        FairnessLevelType
+	collectUsageData         bool
 }
 
 type FairnessLevelType string
@@ -49,11 +70,14 @@ type FairnessLevelType string
 const (
 	FullFairness         FairnessLevelType = "fullFairness"
 	ProjectLevelFairness FairnessLevelType = "projectLevelFairness"
+
+	noNodeName = ""
 )
 
 func New(
 	informerFactory informers.SharedInformerFactory,
 	kubeAiSchedulerInformerFactory kubeAiSchedulerinfo.SharedInformerFactory,
+	usageLister *usagedb.UsageLister,
 	nodePoolParams *conf.SchedulingNodePoolParams,
 	restrictNodeScheduling bool,
 	clusterPodAffinityInfo pod_affinity.ClusterPodAffinityInfo,
@@ -79,7 +103,7 @@ func New(
 	}
 
 	return &ClusterInfo{
-		dataLister:               data_lister.New(informerFactory, kubeAiSchedulerInformerFactory, nodePoolSelector),
+		dataLister:               data_lister.New(informerFactory, kubeAiSchedulerInformerFactory, usageLister, nodePoolSelector),
 		nodePoolParams:           nodePoolParams,
 		restrictNodeScheduling:   restrictNodeScheduling,
 		clusterPodAffinityInfo:   clusterPodAffinityInfo,
@@ -87,6 +111,7 @@ func New(
 		nodePoolSelector:         nodePoolSelector,
 		fairnessLevelType:        fairnessLevelType,
 		podGroupSync:             podGroupSync,
+		collectUsageData:         usageLister != nil,
 	}, nil
 }
 
@@ -103,38 +128,58 @@ func (c *ClusterInfo) Snapshot() (*api.ClusterInfo, error) {
 		return nil, fmt.Errorf("error snapshotting pods: %w", err)
 	}
 
-	snapshot.Nodes, err = c.snapshotNodes(c.clusterPodAffinityInfo)
+	snapshot.ResourceVectorMap = resource_info.NewResourceVectorMap()
+
+	snapshot.Nodes, snapshot.MinNodeGPUMemory, err = c.snapshotNodes(c.clusterPodAffinityInfo, snapshot.ResourceVectorMap)
 	if err != nil {
-		err = errors.WithStack(fmt.Errorf("error snapshotting nodes: %c", err))
+		err = errors.WithStack(fmt.Errorf("error snapshotting nodes: %w", err))
 		return nil, err
 	}
-
+	snapshot.ResourceClaims, err = c.dataLister.ListResourceClaims()
+	if err != nil {
+		err = errors.WithStack(fmt.Errorf("error listing resource claims: %w", err))
+		return nil, err
+	}
 	snapshot.BindRequests, snapshot.BindRequestsForDeletedNodes, err = c.snapshotBindRequests(snapshot.Nodes)
 	if err != nil {
-		err = errors.WithStack(fmt.Errorf("error snapshotting bind requests: %c", err))
+		err = errors.WithStack(fmt.Errorf("error snapshotting bind requests: %w", err))
 		return nil, err
 	}
 
-	snapshot.Pods, err = c.addTasksToNodes(allPods, existingPods, snapshot.Nodes, snapshot.BindRequests)
+	snapshot.Pods, err = c.addTasksToNodes(allPods, existingPods, snapshot.Nodes, snapshot.BindRequests, snapshot.ResourceClaims, snapshot.ResourceVectorMap)
 	if err != nil {
-		err = errors.WithStack(fmt.Errorf("error adding tasks to nodes: %c", err))
+		err = errors.WithStack(fmt.Errorf("error adding tasks to nodes: %w", err))
 		return nil, err
 	}
 
 	queues, err := c.snapshotQueues()
 	if err != nil {
-		err = errors.WithStack(fmt.Errorf("error snapshotting queues: %c", err))
+		err = errors.WithStack(fmt.Errorf("error snapshotting queues: %w", err))
 		return nil, err
 	}
 	UpdateQueueHierarchy(queues)
 	snapshot.Queues = queues
 
-	snapshot.PodGroupInfos, err = c.snapshotPodGroups(snapshot.Queues, existingPods)
+	usage, usageErr := c.snapshotQueueResourceUsage()
+	if usageErr != nil {
+		log.InfraLogger.V(2).Warnf("error snapshotting queue resource usage: %v", usageErr)
+	}
+	if usage == nil {
+		usage = queue_info.NewClusterUsage()
+	}
+	snapshot.QueueResourceUsage = *usage
+
+	snapshot.PodGroupInfos, err = c.snapshotPodGroups(snapshot.Queues, existingPods, snapshot.ResourceVectorMap)
 	if err != nil {
 		return nil, err
 	}
 
 	snapshot.ConfigMaps, err = c.snapshotConfigMaps()
+	if err != nil {
+		return nil, err
+	}
+
+	snapshot.Topologies, err = c.snapshotTopologies()
 	if err != nil {
 		return nil, err
 	}
@@ -184,29 +229,74 @@ func (c *ClusterInfo) Snapshot() (*api.ClusterInfo, error) {
 
 func (c *ClusterInfo) snapshotNodes(
 	clusterPodAffinityInfo pod_affinity.ClusterPodAffinityInfo,
-) (map[string]*node_info.NodeInfo, error) {
+	vectorMap *resource_info.ResourceVectorMap,
+) (nodesMap map[string]*node_info.NodeInfo, minimalNodeGPUMemory int64, err error) {
 	nodes, err := c.dataLister.ListNodes()
 	if err != nil {
-		return nil, fmt.Errorf("error listing nodes: %c", err)
+		return nil, 0, fmt.Errorf("error listing nodes: %w", err)
 	}
 	if c.restrictNodeScheduling {
 		nodes = filterUnmarkedNodes(nodes)
 	}
 
+	var minGPUMemory int64 = node_info.DefaultGpuMemory
+
 	resultNodes := map[string]*node_info.NodeInfo{}
 	for _, node := range nodes {
+		vectorMap.AddResourceList(node.Status.Allocatable)
+
 		podAffinityInfo := NewK8sNodePodAffinityInfo(node, clusterPodAffinityInfo)
-		resultNodes[node.Name] = node_info.NewNodeInfo(node, podAffinityInfo)
+		resultNodes[node.Name] = node_info.NewNodeInfo(node, podAffinityInfo, vectorMap)
+		nodeGPUMemory := resultNodes[node.Name].MemoryOfEveryGpuOnNode
+		if nodeGPUMemory > node_info.DefaultGpuMemory {
+			minGPUMemory = min(minGPUMemory, resultNodes[node.Name].MemoryOfEveryGpuOnNode)
+		}
 	}
 
-	return resultNodes, nil
+	c.populateDRAGPUs(resultNodes)
+	return resultNodes, minGPUMemory, nil
+}
+
+// populateDRAGPUs counts GPUs from DRA ResourceSlices for nodes that don't have extended resources.
+func (c *ClusterInfo) populateDRAGPUs(nodes map[string]*node_info.NodeInfo) {
+	slicesByNode, err := c.dataLister.ListResourceSlicesByNode()
+	if err != nil {
+		log.InfraLogger.V(6).Infof("Failed to list ResourceSlices for DRA GPU counting: %v", err)
+		return
+	}
+
+	if len(slicesByNode) == 0 {
+		return
+	}
+
+	for nodeName, nodeInfo := range nodes {
+		var draGPUCount int64
+
+		// Count GPUs from node-specific slices
+		for _, slice := range slicesByNode[nodeName] {
+			if !resources.IsGPUDeviceClass(slice.Spec.Driver) {
+				continue
+			}
+			draGPUCount += int64(len(slice.Spec.Devices))
+		}
+
+		if draGPUCount > 0 {
+			log.InfraLogger.V(6).Infof("Node %s has %d DRA GPUs from ResourceSlices", nodeName, draGPUCount)
+			if nodeInfo.Allocatable.GPUs() > 0 {
+				log.InfraLogger.Warningf("Node %s has both device-plugin GPUs and DRA GPUs", nodeName)
+			}
+			nodeInfo.AddDRAGPUs(float64(draGPUCount))
+			nodeInfo.HasDRAGPUs = true
+		}
+	}
 }
 
 func (c *ClusterInfo) addTasksToNodes(allPods []*v1.Pod, existingPodsMap map[common_info.PodID]*pod_info.PodInfo,
-	nodes map[string]*node_info.NodeInfo, bindRequests bindrequest_info.BindRequestMap) (
+	nodes map[string]*node_info.NodeInfo, bindRequests bindrequest_info.BindRequestMap,
+	draResourceClaims []*resourceapi.ResourceClaim, vectorMap *resource_info.ResourceVectorMap) (
 	[]*v1.Pod, error) {
 
-	nodePodInfosMap, nodeReservationPodInfosMap, err := c.getNodeToPodInfosMap(allPods, bindRequests)
+	nodePodInfosMap, nodeReservationPodInfosMap, err := c.getNodeToPodInfosMap(allPods, bindRequests, draResourceClaims, vectorMap)
 	if err != nil {
 		return nil, err
 	}
@@ -227,6 +317,11 @@ func (c *ClusterInfo) addTasksToNodes(allPods []*v1.Pod, existingPodsMap map[com
 		}
 		log.InfraLogger.V(6).Infof("Node: %v, indexed %d pods: %v", node.Name, len(node.PodInfos), podNames)
 	}
+
+	// Add generated podInfos to existingPodsMap
+	for _, podInfo := range nodePodInfosMap[noNodeName] {
+		existingPodsMap[podInfo.UID] = podInfo
+	}
 	return resultPods, nil
 }
 
@@ -234,7 +329,7 @@ func (c *ClusterInfo) snapshotBindRequests(nodes map[string]*node_info.NodeInfo)
 	bindrequest_info.BindRequestMap, []*bindrequest_info.BindRequestInfo, error) {
 	bindRequests, err := c.dataLister.ListBindRequests()
 	if err != nil {
-		return nil, nil, fmt.Errorf("error listing bind requests: %c", err)
+		return nil, nil, fmt.Errorf("error listing bind requests: %w", err)
 	}
 
 	result := bindrequest_info.BindRequestMap{}
@@ -256,6 +351,7 @@ func (c *ClusterInfo) snapshotBindRequests(nodes map[string]*node_info.NodeInfo)
 func (c *ClusterInfo) snapshotPodGroups(
 	existingQueues map[common_info.QueueID]*queue_info.QueueInfo,
 	existingPods map[common_info.PodID]*pod_info.PodInfo,
+	vectorMap *resource_info.ResourceVectorMap,
 ) (map[common_info.PodGroupID]*podgroup_info.PodGroupInfo, error) {
 	defaultPriority, err := getDefaultPriority(c.dataLister)
 	if err != nil {
@@ -265,9 +361,14 @@ func (c *ClusterInfo) snapshotPodGroups(
 
 	podGroups, err := c.dataLister.ListPodGroups()
 	if err != nil {
-		err = errors.WithStack(fmt.Errorf("error listing podgroups: %c", err))
+		err = errors.WithStack(fmt.Errorf("error listing podgroups: %w", err))
 		return nil, err
 	}
+
+	for i := range podGroups {
+		podGroups[i] = podGroups[i].DeepCopy()
+	}
+
 	if c.podGroupSync != nil {
 		c.podGroupSync.SyncPodGroupsWithPendingUpdates(podGroups)
 	}
@@ -276,22 +377,17 @@ func (c *ClusterInfo) snapshotPodGroups(
 	result := map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{}
 	for _, podGroup := range podGroups {
 		podGroupID := common_info.PodGroupID(podGroup.Name)
-		podGroupInfo := podgroup_info.NewPodGroupInfo(podGroupID)
+		podGroupInfo := podgroup_info.NewPodGroupInfoWithVectorMap(podGroupID, vectorMap)
 
-		if _, found := existingQueues[common_info.QueueID(podGroup.Spec.Queue)]; !found {
-			log.InfraLogger.V(7).Infof("The Queue <%v> of podgroup <%v/%v> does not exist, ignore it.",
-				podGroup.Spec.Queue, podGroup.Namespace, podGroup.Name)
-			continue
+		if err := validatePodgroupQueue(existingQueues, podGroup); err != nil {
+			log.InfraLogger.V(7).Infof("Queue validation failed for podgroup <%s/%s>: %v",
+				podGroup.Namespace, podGroup.Name, err)
+			podGroupInfo.AddSimpleJobFitError(enginev2alpha2.QueueDoesNotExist, err.Error())
+		} else {
+			c.setPodGroupPriorityAndPreemptibility(podGroupInfo, podGroup, defaultPriority)
 		}
 
-		if podGroupInfo.MinAvailable == 0 {
-			podGroupInfo.MinAvailable = 1
-		}
-
-		podGroupInfo.Priority = getPodGroupPriority(podGroup, defaultPriority, c.dataLister)
-		log.InfraLogger.V(7).Infof("The priority of job <%s/%s> is <%s/%d>", podGroup.Namespace, podGroup.Name,
-			podGroup.Spec.PriorityClassName, podGroupInfo.Priority)
-
+		c.setPodGroupWithIndex(podGroup, podGroupInfo)
 		rawPods, err := c.dataLister.ListPodByIndex(podByPodGroupIndexerName, podGroup.Name)
 		if err != nil {
 			log.InfraLogger.Errorf("failed to get indexed pods: %s", err)
@@ -300,26 +396,43 @@ func (c *ClusterInfo) snapshotPodGroups(
 		for _, rawPod := range rawPods {
 			pod, ok := rawPod.(*v1.Pod)
 			if !ok {
-				log.InfraLogger.Errorf("Snapshot podGroups: Error getting pod from rawPod: %c", rawPod)
+				log.InfraLogger.Errorf("Snapshot podGroups: Error getting pod from rawPod: %v", rawPod)
 			}
-			podInfo := c.getPodInfo(pod, existingPods)
+			podInfo := c.getPodInfo(pod, existingPods, vectorMap)
 			podGroupInfo.AddTaskInfo(podInfo)
 		}
 
-		c.setPodGroupWithIndex(podGroup, podGroupInfo)
 		result[common_info.PodGroupID(podGroup.Name)] = podGroupInfo
-	}
-
-	err = c.updatePodDisruptionBudgets(result)
-	if err != nil {
-		return nil, err
 	}
 
 	return result, nil
 }
 
+func validatePodgroupQueue(existingQueues map[common_info.QueueID]*queue_info.QueueInfo, podGroup *enginev2alpha2.PodGroup) error {
+	_, queueExists := existingQueues[common_info.QueueID(podGroup.Spec.Queue)]
+	if !queueExists {
+		return fmt.Errorf("Queue '%s' does not exist", podGroup.Spec.Queue)
+	}
+	return nil
+}
+
+func (c *ClusterInfo) setPodGroupPriorityAndPreemptibility(
+	podGroupInfo *podgroup_info.PodGroupInfo,
+	podGroup *enginev2alpha2.PodGroup,
+	defaultPriority int32,
+) {
+	podGroupInfo.Priority = getPodGroupPriority(podGroup, defaultPriority, c.dataLister)
+	log.InfraLogger.V(7).Infof("The priority of job <%s/%s> is <%s/%d>",
+		podGroup.Namespace, podGroup.Name, podGroup.Spec.PriorityClassName, podGroupInfo.Priority)
+
+	podGroupInfo.Preemptibility = pg.CalculatePreemptibility(podGroup.Spec.Preemptibility, podGroupInfo.Priority)
+	log.InfraLogger.V(7).Infof("The preemptibility of job <%s/%s> is <%s>",
+		podGroup.Namespace, podGroup.Name, podGroupInfo.Preemptibility)
+}
+
 func (c *ClusterInfo) getPodInfo(
 	pod *v1.Pod, existingPods map[common_info.PodID]*pod_info.PodInfo,
+	vectorMap *resource_info.ResourceVectorMap,
 ) *pod_info.PodInfo {
 	var podInfo *pod_info.PodInfo
 	log.InfraLogger.V(6).Infof("Looking for pod %s/%s/%s in existing pods", pod.Namespace, pod.Name,
@@ -329,40 +442,32 @@ func (c *ClusterInfo) getPodInfo(
 	if !found {
 		log.InfraLogger.V(6).Infof("Pod %s/%s/%s not found in existing pods, adding", pod.Namespace,
 			pod.Name, pod.UID)
-		podInfo = pod_info.NewTaskInfo(pod)
+		podInfo = pod_info.NewTaskInfo(pod, nil, vectorMap)
 		existingPods[common_info.PodID(pod.UID)] = podInfo
 	}
 	return podInfo
-}
-
-func (c *ClusterInfo) updatePodDisruptionBudgets(podGroups map[common_info.PodGroupID]*podgroup_info.PodGroupInfo) error {
-	pdbs, err := c.dataLister.ListPodDisruptionBudgets()
-	if err != nil {
-		return err
-	}
-	for _, pdb := range pdbs {
-		podGroupId := common_info.PodGroupID(getController(pdb))
-		podGroup, found := podGroups[podGroupId]
-		if !found {
-			continue
-		}
-		podGroup.SetPDB(pdb)
-	}
-
-	return nil
 }
 
 func (c *ClusterInfo) setPodGroupWithIndex(podGroup *enginev2alpha2.PodGroup, podGroupInfo *podgroup_info.PodGroupInfo) {
 	podGroupInfo.SetPodGroup(podGroup)
 }
 
-func (c *ClusterInfo) getNodeToPodInfosMap(allPods []*v1.Pod, bindRequests bindrequest_info.BindRequestMap) (
+func (c *ClusterInfo) getNodeToPodInfosMap(allPods []*v1.Pod, bindRequests bindrequest_info.BindRequestMap,
+	draResourceClaims []*resourceapi.ResourceClaim, vectorMap *resource_info.ResourceVectorMap) (
 	map[string][]*pod_info.PodInfo, map[string][]*pod_info.PodInfo, error) {
 	nodePodInfosMap := map[string][]*pod_info.PodInfo{}
 	nodeReservationPodInfosMap := map[string][]*pod_info.PodInfo{}
+	draClaimMap := resource_info.ResourceClaimSliceToMap(draResourceClaims)
+	podsToClaimsMap := resource_info.CalcClaimsToPodsBaseMap(draClaimMap)
+
 	for _, pod := range allPods {
+		for _, container := range append(pod.Spec.InitContainers, pod.Spec.Containers...) {
+			vectorMap.AddResourceList(container.Resources.Requests)
+		}
+
 		podBindRequest := bindRequests.GetBindRequestForPod(pod)
-		podInfo := pod_info.NewTaskInfoWithBindRequest(pod.DeepCopy(), podBindRequest)
+		draPodClaims := resource_info.GetDraPodClaims(pod, draClaimMap, podsToClaimsMap)
+		podInfo := pod_info.NewTaskInfoWithBindRequest(pod, podBindRequest, draPodClaims, vectorMap)
 
 		if pod_info.IsResourceReservationTask(podInfo.Pod) {
 			podInfos := nodeReservationPodInfosMap[podInfo.NodeName]
@@ -392,11 +497,19 @@ func (c *ClusterInfo) snapshotConfigMaps() (map[common_info.ConfigMapID]*configm
 	return result, nil
 }
 
+func (c *ClusterInfo) snapshotTopologies() ([]*kaiv1alpha1.Topology, error) {
+	topologies, err := c.dataLister.ListTopologies()
+	if err != nil {
+		return nil, fmt.Errorf("error listing topologies: %w", err)
+	}
+	return topologies, nil
+}
+
 func getDefaultPriority(dataLister data_lister.DataLister) (int32, error) {
-	defaultPriority, found := int32(50), false
+	defaultPriority, found := int32(constants.DefaultPodGroupPriority), false
 	priorityClasses, err := dataLister.ListPriorityClasses()
 	if err != nil {
-		err = errors.WithStack(fmt.Errorf("error listing priorityclasses: %c", err))
+		err = errors.WithStack(fmt.Errorf("error listing priorityclasses: %w", err))
 		return 0, err
 	}
 
@@ -475,18 +588,4 @@ func (c *ClusterInfo) isPodGroupUpForScheduler(podGroup *enginev2alpha2.PodGroup
 	}
 
 	return false
-}
-
-func getController(obj interface{}) types.UID {
-	accessor, err := meta.Accessor(obj)
-	if err != nil {
-		return ""
-	}
-
-	controllerRef := metav1.GetControllerOf(accessor)
-	if controllerRef != nil {
-		return controllerRef.UID
-	}
-
-	return ""
 }

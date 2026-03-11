@@ -10,14 +10,14 @@ import (
 	"gopkg.in/h2non/gock.v1"
 	"k8s.io/utils/pointer"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/integration_tests/integration_tests_utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/reclaim"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/integration_tests_utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 )
 
 func TestHandleElasticReclaim(t *testing.T) {
@@ -48,6 +48,7 @@ func getTestsElasticMetadata() []integration_tests_utils.TestTopologyMetadata {
 						RequiredGPUsPerTask: 1,
 						Priority:            constants.PriorityTrainNumber,
 						QueueName:           "queue0",
+						RootSubGroupSet:     jobs_fake.DefaultSubGroup(1),
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								NodeName: "node0",
@@ -58,7 +59,6 @@ func getTestsElasticMetadata() []integration_tests_utils.TestTopologyMetadata {
 								State:    pod_status.Running,
 							},
 						},
-						MinAvailable: pointer.Int32(1),
 					},
 					{
 						Name:                "pending-job",
@@ -129,6 +129,7 @@ func getTestsElasticMetadata() []integration_tests_utils.TestTopologyMetadata {
 						RequiredGPUsPerTask: 1,
 						Priority:            constants.PriorityTrainNumber,
 						QueueName:           "queue0",
+						RootSubGroupSet:     jobs_fake.DefaultSubGroup(1),
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								NodeName: "node0",
@@ -147,7 +148,6 @@ func getTestsElasticMetadata() []integration_tests_utils.TestTopologyMetadata {
 								State:    pod_status.Running,
 							},
 						},
-						MinAvailable: pointer.Int32(1),
 					},
 					{
 						Name:                "pending-job",
@@ -229,6 +229,7 @@ func getTestsElasticMetadata() []integration_tests_utils.TestTopologyMetadata {
 						RequiredGPUsPerTask: 1,
 						Priority:            constants.PriorityTrainNumber,
 						QueueName:           "queue0",
+						RootSubGroupSet:     jobs_fake.DefaultSubGroup(1),
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								NodeName: "node0",
@@ -241,14 +242,13 @@ func getTestsElasticMetadata() []integration_tests_utils.TestTopologyMetadata {
 								Priority: pointer.Int(1),
 							},
 						},
-						MinAvailable: pointer.Int32(1),
 					},
 					{
 						Name:                "pending-job",
 						RequiredGPUsPerTask: 1,
 						Priority:            constants.PriorityTrainNumber,
 						QueueName:           "queue1",
-						MinAvailable:        pointer.Int32(1),
+						RootSubGroupSet:     jobs_fake.DefaultSubGroup(1),
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								State:    pod_status.Pending,
@@ -330,6 +330,7 @@ func getTestsElasticMetadata() []integration_tests_utils.TestTopologyMetadata {
 						RequiredGPUsPerTask: 1,
 						Priority:            constants.PriorityTrainNumber,
 						QueueName:           "queue0",
+						RootSubGroupSet:     jobs_fake.DefaultSubGroup(1),
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								NodeName: "node0",
@@ -340,7 +341,6 @@ func getTestsElasticMetadata() []integration_tests_utils.TestTopologyMetadata {
 								State:    pod_status.Running,
 							},
 						},
-						MinAvailable: pointer.Int32(1),
 					},
 					{
 						Name:                "pending-job",
@@ -409,6 +409,7 @@ func getTestsElasticMetadata() []integration_tests_utils.TestTopologyMetadata {
 						RequiredGPUsPerTask: 1,
 						Priority:            constants.PriorityTrainNumber,
 						QueueName:           "queue0",
+						RootSubGroupSet:     jobs_fake.DefaultSubGroup(1),
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								NodeName: "node0",
@@ -419,7 +420,6 @@ func getTestsElasticMetadata() []integration_tests_utils.TestTopologyMetadata {
 								State:    pod_status.Running,
 							},
 						},
-						MinAvailable: pointer.Int32(1),
 					},
 					{
 						Name:                "running-job1",
@@ -507,6 +507,7 @@ func getTestsElasticMetadata() []integration_tests_utils.TestTopologyMetadata {
 						RequiredGPUsPerTask: 1,
 						Priority:            constants.PriorityTrainNumber,
 						QueueName:           "queue0",
+						RootSubGroupSet:     jobs_fake.DefaultSubGroup(1),
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								NodeName: "node0",
@@ -517,13 +518,13 @@ func getTestsElasticMetadata() []integration_tests_utils.TestTopologyMetadata {
 								State:    pod_status.Running,
 							},
 						},
-						MinAvailable: pointer.Int32(1),
 					},
 					{
 						Name:                "running-job1",
 						RequiredGPUsPerTask: 1,
 						Priority:            constants.PriorityTrainNumber,
 						QueueName:           "queue0",
+						RootSubGroupSet:     jobs_fake.DefaultSubGroup(1),
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								NodeName: "node0",
@@ -534,7 +535,6 @@ func getTestsElasticMetadata() []integration_tests_utils.TestTopologyMetadata {
 								State:    pod_status.Running,
 							},
 						},
-						MinAvailable: pointer.Int32(1),
 					},
 					{
 						Name:                "pending-job",
@@ -616,6 +616,7 @@ func getTestsElasticMetadata() []integration_tests_utils.TestTopologyMetadata {
 						RequiredGPUsPerTask: 1,
 						Priority:            constants.PriorityTrainNumber,
 						QueueName:           "queue0",
+						RootSubGroupSet:     jobs_fake.DefaultSubGroup(1),
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								NodeName: "node0",
@@ -626,7 +627,6 @@ func getTestsElasticMetadata() []integration_tests_utils.TestTopologyMetadata {
 								State:    pod_status.Running,
 							},
 						},
-						MinAvailable: pointer.Int32(1),
 					},
 					{
 						Name:                "running-job1",
@@ -726,6 +726,7 @@ func getTestsElasticMetadata() []integration_tests_utils.TestTopologyMetadata {
 						RequiredGPUsPerTask: 1,
 						Priority:            constants.PriorityTrainNumber,
 						QueueName:           "queue1",
+						RootSubGroupSet:     jobs_fake.DefaultSubGroup(1),
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								NodeName: "node0",
@@ -736,7 +737,6 @@ func getTestsElasticMetadata() []integration_tests_utils.TestTopologyMetadata {
 								State:    pod_status.Pending,
 							},
 						},
-						MinAvailable: pointer.Int32(1),
 					},
 				},
 				Nodes: map[string]nodes_fake.TestNodeBasic{
@@ -794,6 +794,7 @@ func getTestsElasticMetadata() []integration_tests_utils.TestTopologyMetadata {
 						RequiredGPUsPerTask: 1,
 						Priority:            constants.PriorityTrainNumber,
 						QueueName:           "queue0",
+						RootSubGroupSet:     jobs_fake.DefaultSubGroup(1),
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								NodeName: "node0",
@@ -804,13 +805,13 @@ func getTestsElasticMetadata() []integration_tests_utils.TestTopologyMetadata {
 								State:    pod_status.Running,
 							},
 						},
-						MinAvailable: pointer.Int32(1),
 					},
 					{
 						Name:                "pending-job",
 						RequiredGPUsPerTask: 1,
 						Priority:            constants.PriorityTrainNumber,
 						QueueName:           "queue1",
+						RootSubGroupSet:     jobs_fake.DefaultSubGroup(1),
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								NodeName: "node0",
@@ -821,7 +822,6 @@ func getTestsElasticMetadata() []integration_tests_utils.TestTopologyMetadata {
 								State:    pod_status.Pending,
 							},
 						},
-						MinAvailable: pointer.Int32(1),
 					},
 				},
 				Nodes: map[string]nodes_fake.TestNodeBasic{
@@ -885,6 +885,7 @@ func getTestsElasticMetadata() []integration_tests_utils.TestTopologyMetadata {
 						RequiredGPUsPerTask: 0,
 						Priority:            constants.PriorityTrainNumber,
 						QueueName:           "queue0",
+						RootSubGroupSet:     jobs_fake.DefaultSubGroup(1),
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								NodeName: "node0",
@@ -899,13 +900,13 @@ func getTestsElasticMetadata() []integration_tests_utils.TestTopologyMetadata {
 								State:    pod_status.Running,
 							},
 						},
-						MinAvailable: pointer.Int32(1),
 					},
 					{
 						Name:                "pending-job",
 						RequiredGPUsPerTask: 0,
 						Priority:            constants.PriorityTrainNumber,
 						QueueName:           "queue1",
+						RootSubGroupSet:     jobs_fake.DefaultSubGroup(1),
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								NodeName: "node0",
@@ -918,7 +919,6 @@ func getTestsElasticMetadata() []integration_tests_utils.TestTopologyMetadata {
 								State: pod_status.Pending,
 							},
 						},
-						MinAvailable: pointer.Int32(1),
 					},
 				},
 				Nodes: map[string]nodes_fake.TestNodeBasic{
@@ -1001,7 +1001,7 @@ func getTestsElasticMetadata() []integration_tests_utils.TestTopologyMetadata {
 						RequiredGPUsPerTask: 1,
 						Priority:            constants.PriorityTrainNumber,
 						QueueName:           "queue2",
-						MinAvailable:        pointer.Int32(2),
+						RootSubGroupSet:     jobs_fake.DefaultSubGroup(2),
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								NodeName: "node0",
@@ -1022,7 +1022,6 @@ func getTestsElasticMetadata() []integration_tests_utils.TestTopologyMetadata {
 						RequiredGPUsPerTask: 2,
 						Priority:            constants.PriorityTrainNumber,
 						QueueName:           "queue0",
-						MinAvailable:        pointer.Int32(1),
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								State: pod_status.Pending,

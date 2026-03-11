@@ -6,7 +6,7 @@ kind: Pod
 metadata:
   name: train-pod
   labels:
-    kai.scheduler/queue: test
+    kai.scheduler/queue: default-queue
     priorityClassName: train
 spec:
   schedulerName: kai-scheduler

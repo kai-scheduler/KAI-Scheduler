@@ -7,7 +7,7 @@ metadata:
   name: kai-queuecontroller
 subjects:
 - kind: ServiceAccount
-  name: queuecontroller
+  name: queue-controller
   namespace: {{ .Release.Namespace }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io

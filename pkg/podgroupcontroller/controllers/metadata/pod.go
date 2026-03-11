@@ -11,7 +11,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgroupcontroller/controllers/resources"
+	commonresources "github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgroupcontroller/controllers/resources"
 )
 
 type PodMetadata struct {
@@ -24,7 +25,7 @@ func GetPodMetadata(ctx context.Context, pod *v1.Pod, kubeClient client.Client) 
 
 	requestedResources := v1.ResourceList{}
 	if isActivePod(pod) {
-		requestedResources, err = calculateRequestedResources(pod)
+		requestedResources, err = calculateRequestedResources(ctx, pod, kubeClient)
 		if err != nil {
 			return nil, err
 		}
@@ -80,10 +81,17 @@ func calculatedAllocatedResources(ctx context.Context, pod *v1.Pod, kubeClient c
 	}
 	allocatedResources = resources.SumResources(allocatedResources, gpuSharingReceivedResources)
 
+	// Extract DRA GPU resources for allocated (only allocated pods)
+	draGPUAllocated, err := commonresources.ExtractDRAGPUResources(ctx, pod, kubeClient)
+	if err != nil {
+		return nil, err
+	}
+	allocatedResources = resources.SumResources(allocatedResources, draGPUAllocated)
+
 	return allocatedResources, nil
 }
 
-func calculateRequestedResources(pod *v1.Pod) (v1.ResourceList, error) {
+func calculateRequestedResources(ctx context.Context, pod *v1.Pod, kubeClient client.Client) (v1.ResourceList, error) {
 	requestedResources := v1.ResourceList{}
 	for _, container := range pod.Spec.Containers {
 		requestedResources = resources.SumResources(requestedResources, container.Resources.Requests)
@@ -93,5 +101,13 @@ func calculateRequestedResources(pod *v1.Pod) (v1.ResourceList, error) {
 		return nil, err
 	}
 	requestedResources = resources.SumResources(requestedResources, gpuSharingRequestedResources)
+
+	// Extract DRA GPU resources for requested (all active pods)
+	draGPURequested, err := commonresources.ExtractDRAGPUResources(ctx, pod, kubeClient)
+	if err != nil {
+		return nil, err
+	}
+	requestedResources = resources.SumResources(requestedResources, draGPURequested)
+
 	return requestedResources, nil
 }

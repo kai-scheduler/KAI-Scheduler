@@ -1,0 +1,106 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# Two-Queue Oscillation Example - Sample Jobs
+#
+# These jobs demonstrate time-aware fairness by requesting all GPUs in the cluster.
+# With multiple jobs pending in each queue, the scheduler will oscillate
+# resource allocation based on historical usage.
+#
+# Usage:
+#   kubectl create namespace workloads
+#   kubectl apply -f jobs.yaml -n workloads
+#
+# To create multiple jobs for testing, run:
+#   for i in {1..5}; do
+#     cat jobs.yaml | sed "s/training-job/training-job-$i/g" | kubectl apply -f -
+#   done
+
+---
+# Team A's training job - requests 8 GPUs
+apiVersion: v1
+kind: Pod
+metadata:
+  name: team-a-training-job
+  labels:
+    kai.scheduler/queue: team-a
+    app: training
+    team: team-a
+spec:
+  schedulerName: kai-scheduler
+  restartPolicy: Never
+  containers:
+    - name: training
+      image: ubuntu
+      command: ["bash", "-c"]
+      # Simulate a training job that runs for 10 minutes
+      args:
+        - |
+          echo "Team A training job started"
+          echo "Allocated GPUs: $NVIDIA_VISIBLE_DEVICES"
+          # Simulate training work
+          sleep 600
+          echo "Team A training job completed"
+      resources:
+        limits:
+          nvidia.com/gpu: "8"    # Request 8 GPUs (adjust based on your cluster)
+        requests:
+          cpu: "1"
+          memory: "4Gi"
+---
+# Team B's training job - requests 8 GPUs
+apiVersion: v1
+kind: Pod
+metadata:
+  name: team-b-training-job
+  labels:
+    kai.scheduler/queue: team-b
+    app: training
+    team: team-b
+spec:
+  schedulerName: kai-scheduler
+  restartPolicy: Never
+  containers:
+    - name: training
+      image: ubuntu
+      command: ["bash", "-c"]
+      # Simulate a training job that runs for 10 minutes
+      args:
+        - |
+          echo "Team B training job started"
+          echo "Allocated GPUs: $NVIDIA_VISIBLE_DEVICES"
+          # Simulate training work
+          sleep 600
+          echo "Team B training job completed"
+      resources:
+        limits:
+          nvidia.com/gpu: "8"    # Request 8 GPUs (adjust based on your cluster)
+        requests:
+          cpu: "1"
+          memory: "4Gi"
+---
+# Alternative: Large job that requires entire cluster (16 GPUs)
+# Uncomment to test with full-cluster jobs
+#
+# apiVersion: v1
+# kind: Pod
+# metadata:
+#   name: team-a-large-training
+#   labels:
+#     kai.scheduler/queue: team-a
+#     app: large-training
+# spec:
+#   schedulerName: kai-scheduler
+#   restartPolicy: Never
+#   containers:
+#     - name: training
+#       image: ubuntu
+#       command: ["bash", "-c"]
+#       args: ["echo 'Large training started'; sleep 3600; echo 'Done'"]
+#       resources:
+#         limits:
+#           nvidia.com/gpu: "16"   # Requires entire 16-GPU cluster
+#         requests:
+#           cpu: "2"
+#           memory: "8Gi"
+

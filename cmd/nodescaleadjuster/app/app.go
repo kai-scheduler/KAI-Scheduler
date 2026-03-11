@@ -16,10 +16,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/nodescaleadjuster/consts"
-	"github.com/NVIDIA/KAI-scheduler/pkg/nodescaleadjuster/controller"
-	"github.com/NVIDIA/KAI-scheduler/pkg/nodescaleadjuster/scale_adjuster"
-	"github.com/NVIDIA/KAI-scheduler/pkg/nodescaleadjuster/scaler"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/nodescaleadjuster/consts"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/nodescaleadjuster/controller"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/nodescaleadjuster/scale_adjuster"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/nodescaleadjuster/scaler"
 )
 
 var (
@@ -32,6 +32,10 @@ func init() {
 	utilruntime.Must(v1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
+
+// +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch;update
 
 func Run() error {
 	options := NewOptions()
@@ -48,8 +52,13 @@ func Run() error {
 	log.Println("Node scale adjuster started")
 
 	clientConfig := ctrl.GetConfigOrDie()
+	clientConfig.QPS = float32(options.Qps)
+	clientConfig.Burst = options.Burst
+
 	mgr, err := ctrl.NewManager(clientConfig, ctrl.Options{
-		Scheme: scheme,
+		Scheme:           scheme,
+		LeaderElection:   options.EnableLeaderElection,
+		LeaderElectionID: "7n7h49uc.kai.scheduler",
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")

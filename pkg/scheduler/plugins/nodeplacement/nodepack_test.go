@@ -11,17 +11,18 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/cluster_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/nodeplacement"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/scores"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/resources_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/cluster_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/nodeplacement"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/scores"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/resources_fake"
 )
 
 type testNodeMetaData = struct {
@@ -212,7 +213,11 @@ func buildSingleTestParams(testMetadata testTopologyMetadata) (*framework.Sessio
 		node := nodes_fake.BuildNode(nodeName, nodeResource, nodeResource)
 		clusterPodAffinityInfo := cache.NewK8sClusterPodAffinityInfo()
 		podAffinityInfo := cluster_info.NewK8sNodePodAffinityInfo(node, clusterPodAffinityInfo)
-		nodeInfo := node_info.NewNodeInfo(node, podAffinityInfo)
+		vectorMap := resource_info.NewResourceVectorMap()
+		for resourceName := range node.Status.Allocatable {
+			vectorMap.AddResource(string(resourceName))
+		}
+		nodeInfo := node_info.NewNodeInfo(node, podAffinityInfo, vectorMap)
 		idleResources := resources_fake.BuildResourceList(nil, nil,
 			&nodeMetadata.nodeIdleGPUs, nil)
 		nodeInfo.Idle = resource_info.ResourceFromResourceList(*idleResources)
@@ -234,13 +239,13 @@ func testScoresOfCurrentTopology(t *testing.T, testNumber int, testName string, 
 	nodePackPlugin.OnSessionOpen(ssn)
 
 	var nodes []*node_info.NodeInfo
-	for _, node := range ssn.Nodes {
+	for _, node := range ssn.ClusterInfo.Nodes {
 		nodes = append(nodes, node)
 	}
 
 	ssn.NodePreOrderFn(task, nodes)
 
-	for _, node := range ssn.Nodes {
+	for _, node := range ssn.ClusterInfo.Nodes {
 		score, err := ssn.NodeOrderFn(task, node)
 		if err != nil {
 			t.Errorf("Test number: %d (%s) has failed! Node: %v, Unexpected error has occurred: %v",
@@ -256,7 +261,9 @@ func testScoresOfCurrentTopology(t *testing.T, testNumber int, testName string, 
 
 func createFakeTestSession(nodes map[string]*node_info.NodeInfo) *framework.Session {
 	return &framework.Session{
-		Nodes: nodes,
+		ClusterInfo: &api.ClusterInfo{
+			Nodes: nodes,
+		},
 	}
 }
 
@@ -276,5 +283,5 @@ func createFakeTask(taskName string) *pod_info.PodInfo {
 				},
 			},
 		},
-	})
+	}, nil, resource_info.NewResourceVectorMap())
 }

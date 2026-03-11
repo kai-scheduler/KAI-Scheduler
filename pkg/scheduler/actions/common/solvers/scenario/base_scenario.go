@@ -6,11 +6,11 @@ package scenario
 import (
 	"strings"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 )
 
 var _ api.ScenarioInfo = &BaseScenario{}
@@ -44,7 +44,7 @@ func NewBaseScenario(
 		victimsJobsTaskGroups: make(map[common_info.PodGroupID][]*podgroup_info.PodGroupInfo),
 	}
 
-	for _, task := range pendingTasksAsJob.PodInfos {
+	for _, task := range pendingTasksAsJob.GetAllPodsMap() {
 		s.pendingTasks = append(s.pendingTasks, task)
 	}
 	for _, task := range victimsTasks {
@@ -53,7 +53,7 @@ func NewBaseScenario(
 	for index, recordedVictimJob := range recordedVictimsJobs {
 		s.recordedVictimsJobs[index] = recordedVictimJob
 		var tasks []*pod_info.PodInfo
-		for _, podInfo := range recordedVictimJob.PodInfos {
+		for _, podInfo := range recordedVictimJob.GetAllPodsMap() {
 			tasks = append(tasks, podInfo)
 		}
 		s.appendTasksAsVictimJob(tasks)
@@ -75,7 +75,7 @@ func (s *BaseScenario) RecordedVictimsTasks() []*pod_info.PodInfo {
 
 	var recordedVictimsTasks []*pod_info.PodInfo
 	for _, victimJob := range s.recordedVictimsJobs {
-		for _, podInfo := range victimJob.PodInfos {
+		for _, podInfo := range victimJob.GetAllPodsMap() {
 			recordedVictimsTasks = append(recordedVictimsTasks, podInfo)
 		}
 	}
@@ -114,26 +114,22 @@ func (s *BaseScenario) appendTasksAsVictimJob(tasks []*pod_info.PodInfo) {
 	s.victimsJobsTaskGroups[job.UID] = append(s.victimsJobsTaskGroups[job.UID], job)
 
 	victimTasks := make([]*pod_info.PodInfo, 0)
-	victimJobs := make([]*podgroup_info.PodGroupInfo, 0)
 	victim, found := s.victims[job.UID]
 	if found {
 		victimTasks = victim.Tasks
-		victimJobs = victim.RepresentativeJobs
 	}
 	victimTasks = append(victimTasks, tasks...)
-	victimJobs = append(victimJobs, job)
 
 	s.victims[job.UID] = &api.VictimInfo{
-		Job:                originalJob,
-		RepresentativeJobs: victimJobs,
-		Tasks:              victimTasks,
+		Job:   originalJob,
+		Tasks: victimTasks,
 	}
 }
 
 func (s *BaseScenario) GetVictimJobRepresentativeById(victimPodInfo *pod_info.PodInfo) *podgroup_info.PodGroupInfo {
 	jobsWithMatchingId := s.victimsJobsTaskGroups[victimPodInfo.Job]
 	for _, jobRepresentative := range jobsWithMatchingId {
-		for _, podFromRepresentative := range jobRepresentative.PodInfos {
+		for _, podFromRepresentative := range jobRepresentative.GetAllPodsMap() {
 			if victimPodInfo.UID == podFromRepresentative.UID {
 				return jobRepresentative
 			}
@@ -172,7 +168,7 @@ func (s *BaseScenario) String() string {
 }
 
 func (s *BaseScenario) getJobForTask(task *pod_info.PodInfo) *podgroup_info.PodGroupInfo {
-	return s.session.PodGroupInfos[task.Job]
+	return s.session.ClusterInfo.PodGroupInfos[task.Job]
 }
 
 func (s *BaseScenario) GetPreemptor() *podgroup_info.PodGroupInfo {
@@ -180,5 +176,11 @@ func (s *BaseScenario) GetPreemptor() *podgroup_info.PodGroupInfo {
 }
 
 func (s *BaseScenario) GetVictims() map[common_info.PodGroupID]*api.VictimInfo {
+	for _, victim := range s.victims {
+		for i, task := range victim.Tasks {
+			ogTask := s.getJobForTask(task).GetAllPodsMap()[task.UID]
+			victim.Tasks[i] = ogTask
+		}
+	}
 	return s.victims
 }

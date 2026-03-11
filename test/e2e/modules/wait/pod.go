@@ -7,6 +7,7 @@ package wait
 import (
 	"context"
 	"fmt"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	v1 "k8s.io/api/core/v1"
@@ -14,13 +15,12 @@ import (
 	"k8s.io/apimachinery/pkg/watch"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/wait/watcher"
-)
-
-const (
-	resourceReservationNamespace = "kai-resource-reservation"
+	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/constant"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/testconfig"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait/watcher"
 )
 
 type checkCondition func(watch.Event) bool
@@ -96,11 +96,22 @@ func ForPodSucceededOrError(ctx context.Context, client runtimeClient.WithWatch,
 	}
 }
 
+func ForPodSucceeded(ctx context.Context, client runtimeClient.WithWatch, pod *v1.Pod) {
+	pw := watcher.NewPodsWatcher(client, podEventCheck(rd.IsPodSucceeded), pod.Namespace, []*v1.Pod{pod}, 1)
+	if !watcher.ForEvent(ctx, client, pw) {
+		Fail(fmt.Sprintf("Failed to wait for pod %s/%s to finish (success or error)", pod.Namespace, pod.Name))
+	}
+}
+
 func ForAtLeastOnePodCreation(ctx context.Context, client runtimeClient.WithWatch, selector metav1.LabelSelector) {
 	ForAtLeastNPodCreation(ctx, client, selector, 1)
 }
 
 func ForAtLeastNPodCreation(ctx context.Context, client runtimeClient.WithWatch, selector metav1.LabelSelector, n int) {
+	labelSelector, err := metav1.LabelSelectorAsSelector(&selector)
+	if err != nil {
+		Fail(fmt.Sprintf("Failed to convert label selector: %v", err))
+	}
 	condition := func(event watch.Event) bool {
 		podsListObj, ok := event.Object.(*v1.PodList)
 		if !ok {
@@ -108,7 +119,7 @@ func ForAtLeastNPodCreation(ctx context.Context, client runtimeClient.WithWatch,
 		}
 		return len(podsListObj.Items) >= n
 	}
-	pw := watcher.NewGenericWatcher[v1.PodList](client, condition, runtimeClient.MatchingLabels(selector.MatchLabels))
+	pw := watcher.NewGenericWatcher[v1.PodList](client, condition, runtimeClient.MatchingLabelsSelector{Selector: labelSelector})
 	if !watcher.ForEvent(ctx, client, pw) {
 		Fail(fmt.Sprintf("Failed to watch for %d pods creation with selector <%v>", n, selector))
 	}
@@ -145,9 +156,23 @@ func ForPodsToBeDeleted(ctx context.Context, client runtimeClient.WithWatch, lis
 }
 
 func ForNoE2EPods(ctx context.Context, client runtimeClient.WithWatch) {
-	ForPodsToBeDeleted(ctx, client, runtimeClient.MatchingLabels{constants.AppLabelName: "engine-e2e"})
+	ForPodsToBeDeleted(ctx, client, runtimeClient.MatchingLabels{constant.AppLabelName: "engine-e2e"})
 }
 
 func ForNoReservationPods(ctx context.Context, client runtimeClient.WithWatch) {
-	ForPodsToBeDeleted(ctx, client, runtimeClient.InNamespace(resourceReservationNamespace))
+	ForPodsToBeDeleted(ctx, client, runtimeClient.InNamespace(testconfig.GetConfig().ReservationNamespace))
+}
+
+func ForPodCountInNamespace(ctx context.Context, client runtimeClient.WithWatch, q *v2.Queue, expectedPodCount int, waitTime time.Duration) {
+	condition := func(event watch.Event) bool {
+		podsListObj, ok := event.Object.(*v1.PodList)
+		if !ok {
+			return false
+		}
+		return len(podsListObj.Items) == expectedPodCount
+	}
+	pw := watcher.NewGenericWatcher[v1.PodList](client, condition, runtimeClient.InNamespace(queue.GetConnectedNamespaceToQueue(q)))
+	if !watcher.ForEventCustomTimeout(ctx, client, pw, waitTime) {
+		Fail(fmt.Sprintf("Failed to wait for %d pods in queue %s", expectedPodCount, q.Name))
+	}
 }

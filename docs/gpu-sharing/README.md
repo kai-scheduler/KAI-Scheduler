@@ -18,6 +18,11 @@ GPU sharing is disabled by default. To enable it, add the following flag to the 
 --set "global.gpuSharing=true"
 ```
 
+### Runtime Class Configuration
+KAI Scheduler's binder component creates reservation pods that require access to the GPU devices. These pods must run on a container runtime that can provide NVML support. By default, KAI Scheduler uses the `nvidia` Runtime Class, which is typically configured by the NVIDIA device plugin.
+
+To specify a custom Runtime Class, use the `--set "binder.resourceReservation.runtimeClassName={className}"` flag during installation, or set an empty string to disable adding `runtimeClassName` to these pods.
+
 ### GPU Sharing Pod
 To submit a pod that can share a GPU device, run this command:
 ```
@@ -37,3 +42,18 @@ kubectl apply -f gpu-memory.yaml
 In the gpu-memory.yaml file, the pod includes a `gpu-memory` annotation with a value of 2000 (in Mib), meaning:
 * The pod is allowed to consume up to 2000 Mib of a GPU device memory
 * The remaining GPU device memory can be shared with other pods in the cluster
+
+### GPU Fraction with Non-Default Container
+By default, GPU fraction allocation is applied to the first container (index 0) in the pod. However, you can specify a different container to receive the GPU allocation using the `gpu-fraction-container-name` annotation.
+
+#### Specific Container
+To allocate GPU fraction to a specific container in a multi-container pod:
+```
+kubectl apply -f gpu-sharing-non-default-container.yaml
+```
+
+In the gpu-sharing-non-default-container.yaml file, the pod includes:
+* `gpu-fraction: "0.5"` - Requests half of a GPU device memory
+* `gpu-fraction-container-name: "gpu-workload"` - Specifies that the container named "gpu-workload" should receive the GPU allocation instead of the default first container
+
+This is useful for pods with sidecar containers where only one specific container needs GPU access. This works the same for init and regular containers.

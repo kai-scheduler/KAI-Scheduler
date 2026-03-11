@@ -11,9 +11,10 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 )
 
 func Test_getNodePreferableGpuForSharing(t *testing.T) {
@@ -38,20 +39,28 @@ func Test_getNodePreferableGpuForSharing(t *testing.T) {
 			name: "one whole gpu",
 			args: args{
 				fittingGPUsOnNode: []string{pod_info.WholeGpuIndicator},
-				node: node_info.NewNodeInfo(&v1.Node{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:        "n1",
-						Annotations: map[string]string{},
-					},
-					Spec: v1.NodeSpec{},
-					Status: v1.NodeStatus{
-						Allocatable: map[v1.ResourceName]resource.Quantity{
-							v1.ResourceCPU:    resource.MustParse("4"),
-							v1.ResourceMemory: resource.MustParse("10G"),
-							"nvidia.com/gpu":  resource.MustParse("1"),
+				node: func() *node_info.NodeInfo {
+					n := &v1.Node{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:        "n1",
+							Annotations: map[string]string{},
 						},
-					},
-				}, nil),
+						Spec: v1.NodeSpec{},
+						Status: v1.NodeStatus{
+							Allocatable: map[v1.ResourceName]resource.Quantity{
+								v1.ResourceCPU:    resource.MustParse("4"),
+								v1.ResourceMemory: resource.MustParse("10G"),
+								"nvidia.com/gpu":  resource.MustParse("1"),
+								v1.ResourcePods:   resource.MustParse("110"),
+							},
+						},
+					}
+					vectorMap := resource_info.NewResourceVectorMap()
+					for resourceName := range n.Status.Allocatable {
+						vectorMap.AddResource(string(resourceName))
+					}
+					return node_info.NewNodeInfo(n, nil, vectorMap)
+				}(),
 				nodeSharingInfo: nil,
 				pod: pod_info.NewTaskInfo(&v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
@@ -70,7 +79,7 @@ func Test_getNodePreferableGpuForSharing(t *testing.T) {
 							},
 						},
 					},
-				}),
+				}, nil, resource_info.NewResourceVectorMap()),
 				isPipelineOnly: false,
 			},
 			want: want{
@@ -83,20 +92,28 @@ func Test_getNodePreferableGpuForSharing(t *testing.T) {
 			name: "one fraction gpu - one gpu free on node",
 			args: args{
 				fittingGPUsOnNode: []string{pod_info.WholeGpuIndicator},
-				node: node_info.NewNodeInfo(&v1.Node{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:        "n1",
-						Annotations: map[string]string{},
-					},
-					Spec: v1.NodeSpec{},
-					Status: v1.NodeStatus{
-						Allocatable: map[v1.ResourceName]resource.Quantity{
-							v1.ResourceCPU:    resource.MustParse("4"),
-							v1.ResourceMemory: resource.MustParse("10G"),
-							"nvidia.com/gpu":  resource.MustParse("1"),
+				node: func() *node_info.NodeInfo {
+					n := &v1.Node{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:        "n1",
+							Annotations: map[string]string{},
 						},
-					},
-				}, nil),
+						Spec: v1.NodeSpec{},
+						Status: v1.NodeStatus{
+							Allocatable: map[v1.ResourceName]resource.Quantity{
+								v1.ResourceCPU:    resource.MustParse("4"),
+								v1.ResourceMemory: resource.MustParse("10G"),
+								"nvidia.com/gpu":  resource.MustParse("1"),
+								v1.ResourcePods:   resource.MustParse("110"),
+							},
+						},
+					}
+					vectorMap := resource_info.NewResourceVectorMap()
+					for resourceName := range n.Status.Allocatable {
+						vectorMap.AddResource(string(resourceName))
+					}
+					return node_info.NewNodeInfo(n, nil, vectorMap)
+				}(),
 				nodeSharingInfo: nil,
 				pod: pod_info.NewTaskInfo(&v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
@@ -113,7 +130,7 @@ func Test_getNodePreferableGpuForSharing(t *testing.T) {
 							},
 						},
 					},
-				}),
+				}, nil, resource_info.NewResourceVectorMap()),
 				isPipelineOnly: false,
 			},
 			want: want{
@@ -126,20 +143,28 @@ func Test_getNodePreferableGpuForSharing(t *testing.T) {
 			name: "one fraction gpu - half gpu free on node",
 			args: args{
 				fittingGPUsOnNode: []string{"0", pod_info.WholeGpuIndicator},
-				node: node_info.NewNodeInfo(&v1.Node{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:        "n1",
-						Annotations: map[string]string{},
-					},
-					Spec: v1.NodeSpec{},
-					Status: v1.NodeStatus{
-						Allocatable: map[v1.ResourceName]resource.Quantity{
-							v1.ResourceCPU:    resource.MustParse("4"),
-							v1.ResourceMemory: resource.MustParse("10G"),
-							"nvidia.com/gpu":  resource.MustParse("2"),
+				node: func() *node_info.NodeInfo {
+					n := &v1.Node{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:        "n1",
+							Annotations: map[string]string{},
 						},
-					},
-				}, nil),
+						Spec: v1.NodeSpec{},
+						Status: v1.NodeStatus{
+							Allocatable: map[v1.ResourceName]resource.Quantity{
+								v1.ResourceCPU:    resource.MustParse("4"),
+								v1.ResourceMemory: resource.MustParse("10G"),
+								"nvidia.com/gpu":  resource.MustParse("2"),
+								v1.ResourcePods:   resource.MustParse("110"),
+							},
+						},
+					}
+					vectorMap := resource_info.NewResourceVectorMap()
+					for resourceName := range n.Status.Allocatable {
+						vectorMap.AddResource(string(resourceName))
+					}
+					return node_info.NewNodeInfo(n, nil, vectorMap)
+				}(),
 				nodeSharingInfo: func() *node_info.GpuSharingNodeInfo {
 					sharingMaps := &node_info.GpuSharingNodeInfo{
 						ReleasingSharedGPUs:       make(map[string]bool),
@@ -168,7 +193,7 @@ func Test_getNodePreferableGpuForSharing(t *testing.T) {
 							},
 						},
 					},
-				}),
+				}, nil, resource_info.NewResourceVectorMap()),
 				isPipelineOnly: false,
 			},
 			want: want{
@@ -181,20 +206,28 @@ func Test_getNodePreferableGpuForSharing(t *testing.T) {
 			name: "multi fraction gpu - one gpu free on node",
 			args: args{
 				fittingGPUsOnNode: []string{"0", pod_info.WholeGpuIndicator, pod_info.WholeGpuIndicator},
-				node: node_info.NewNodeInfo(&v1.Node{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:        "n1",
-						Annotations: map[string]string{},
-					},
-					Spec: v1.NodeSpec{},
-					Status: v1.NodeStatus{
-						Allocatable: map[v1.ResourceName]resource.Quantity{
-							v1.ResourceCPU:    resource.MustParse("4"),
-							v1.ResourceMemory: resource.MustParse("10G"),
-							"nvidia.com/gpu":  resource.MustParse("3"),
+				node: func() *node_info.NodeInfo {
+					n := &v1.Node{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:        "n1",
+							Annotations: map[string]string{},
 						},
-					},
-				}, nil),
+						Spec: v1.NodeSpec{},
+						Status: v1.NodeStatus{
+							Allocatable: map[v1.ResourceName]resource.Quantity{
+								v1.ResourceCPU:    resource.MustParse("4"),
+								v1.ResourceMemory: resource.MustParse("10G"),
+								"nvidia.com/gpu":  resource.MustParse("3"),
+								v1.ResourcePods:   resource.MustParse("110"),
+							},
+						},
+					}
+					vectorMap := resource_info.NewResourceVectorMap()
+					for resourceName := range n.Status.Allocatable {
+						vectorMap.AddResource(string(resourceName))
+					}
+					return node_info.NewNodeInfo(n, nil, vectorMap)
+				}(),
 				nodeSharingInfo: func() *node_info.GpuSharingNodeInfo {
 					sharingMaps := &node_info.GpuSharingNodeInfo{
 						ReleasingSharedGPUs:       make(map[string]bool),
@@ -224,7 +257,7 @@ func Test_getNodePreferableGpuForSharing(t *testing.T) {
 							},
 						},
 					},
-				}),
+				}, nil, resource_info.NewResourceVectorMap()),
 				isPipelineOnly: false,
 			},
 			want: want{
@@ -236,7 +269,7 @@ func Test_getNodePreferableGpuForSharing(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gpusForSharing := getNodePreferableGpuForSharing(
+			gpusForSharing := GetNodePreferableGpuForSharing(
 				tt.args.fittingGPUsOnNode, tt.args.node, tt.args.pod, tt.args.isPipelineOnly)
 
 			if gpusForSharing == nil {

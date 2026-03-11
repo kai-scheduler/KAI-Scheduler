@@ -1,3 +1,19 @@
+/*
+Copyright 2018 The Kubernetes Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 // Copyright 2025 NVIDIA CORPORATION
 // SPDX-License-Identifier: Apache-2.0
 
@@ -8,10 +24,10 @@ import (
 	"io/ioutil"
 	"strings"
 
-	"gopkg.in/yaml.v2"
+	"sigs.k8s.io/yaml"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 )
 
 /*
@@ -31,6 +47,7 @@ tiers:
   - name: gpusharingorder
   - name: gpupack
   - name: resourcetype
+  - name: subgrouporder
   - name: taskorder
   - name: nominatednode
   - name: dynamicresources
@@ -39,6 +56,8 @@ tiers:
       cpu: binpack
       gpu: binpack
   - name: minruntime
+  - name: topology
+  - name: snapshot
 `
 
 func ResolveConfigurationFromFile(confPath string) (*conf.SchedulerConfiguration, error) {
@@ -47,7 +66,7 @@ func ResolveConfigurationFromFile(confPath string) (*conf.SchedulerConfiguration
 		return nil, err
 	}
 
-	defaultConfig, err := loadSchedulerConf(defaultSchedulerConf)
+	defaultConfig, err := GetDefaultSchedulerConf()
 	if err != nil {
 		return nil, err
 	}
@@ -85,6 +104,10 @@ func GetActionsFromConfig(conf *conf.SchedulerConfiguration) ([]framework.Action
 		}
 	}
 	return actions, nil
+}
+
+func GetDefaultSchedulerConf() (*conf.SchedulerConfiguration, error) {
+	return loadSchedulerConf(defaultSchedulerConf)
 }
 
 func loadSchedulerConf(confStr string) (*conf.SchedulerConfiguration, error) {

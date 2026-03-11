@@ -6,18 +6,15 @@ package taskorder
 import (
 	"strconv"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/constants/labels"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants/labels"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 )
 
-type taskOrderPlugin struct {
-	// Arguments given for the plugin
-	pluginArguments map[string]string
-}
+type taskOrderPlugin struct{}
 
-func New(arguments map[string]string) framework.Plugin {
-	return &taskOrderPlugin{pluginArguments: arguments}
+func New(_ framework.PluginArguments) framework.Plugin {
+	return &taskOrderPlugin{}
 }
 
 func (pp *taskOrderPlugin) Name() string {

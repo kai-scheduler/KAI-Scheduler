@@ -1,0 +1,82 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kai-operator
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: kai-operator
+spec:
+  replicas: {{ .Values.operator.replicaCount }}
+  selector:
+    matchLabels:
+      app: kai-operator
+  template:
+    metadata:
+      labels:
+        app: kai-operator
+    spec:
+      serviceAccountName: kai-operator
+      containers:
+      - name: operator
+        image: {{ .Values.global.registry }}/{{ .Values.operator.image.name }}:{{ .Values.operator.image.tag | default .Values.global.tag | default .Chart.AppVersion }}
+        imagePullPolicy: {{ .Values.operator.image.pullPolicy }}
+        {{- with .Values.operator.resources }}
+        resources:
+          {{- toYaml . | nindent 12 }}
+        {{- end }}
+        args:
+          - --metrics-bind-address={{ .Values.operator.metricsBindAddress | default ":8080" }}
+          - --health-probe-bind-address={{ .Values.operator.probeBindAddress | default ":8081" }}
+          - --leader-elect={{ .Values.global.leaderElection | default false }}
+          - --qps={{ .Values.operator.qps | default 50 }}
+          - --burst={{ .Values.operator.burst | default 300 }}
+          - --namespace={{ .Release.Namespace }}
+        env:
+        - name: WATCH_NAMESPACE
+          value: {{ .Release.Namespace }}
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: OPERATOR_NAME
+          value: "kai-operator"
+        - name: MS_REPOSITORY
+          value: {{ .Values.global.registry }}
+        - name: MS_TAG
+          value: {{ .Values.operator.image.tag | default .Values.global.tag | default .Chart.AppVersion }}
+        ports:
+        - containerPort: 8080
+          name: metrics
+        - containerPort: 8081
+          name: probe
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+      {{- if .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml .Values.global.imagePullSecrets | nindent 8 }}
+      {{- end }}
+      {{- if .Values.global.affinity }}
+      affinity:
+        {{- toYaml .Values.global.affinity | nindent 8 }}
+      {{- end }}
+      {{- if .Values.global.tolerations }}
+      tolerations:
+        {{- toYaml .Values.global.tolerations | nindent 8 }}
+      {{- end }}
+      {{- if .Values.global.nodeSelector }}
+      nodeSelector:
+        {{- toYaml .Values.global.nodeSelector | nindent 8 }}
+      {{- end }}

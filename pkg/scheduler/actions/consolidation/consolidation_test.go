@@ -7,17 +7,21 @@ import (
 	"fmt"
 	"testing"
 
+	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
 	. "go.uber.org/mock/gomock"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/consolidation"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/integration_tests/integration_tests_utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/consolidation"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/integration_tests_utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/topology_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 )
 
 func TestConsolidation(t *testing.T) {
@@ -393,9 +397,9 @@ func getTestsMetadata() []integration_tests_utils.TestTopologyMetadata {
 					{
 						Name:                "pending_job1",
 						RequiredGPUsPerTask: 3,
-						MinAvailable:        ptr.To(int32(1)),
 						Priority:            constants.PriorityTrainNumber,
 						QueueName:           "queue0",
+						RootSubGroupSet:     jobs_fake.DefaultSubGroup(1),
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								State: pod_status.Pending,
@@ -1221,6 +1225,7 @@ func getTestsMetadata() []integration_tests_utils.TestTopologyMetadata {
 						RequiredGPUsPerTask: 2,
 						Priority:            constants.PriorityTrainNumber,
 						QueueName:           "queue0",
+						RootSubGroupSet:     jobs_fake.DefaultSubGroup(1),
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								NodeName: "node0",
@@ -1231,7 +1236,6 @@ func getTestsMetadata() []integration_tests_utils.TestTopologyMetadata {
 								State:    pod_status.Running,
 							},
 						},
-						MinAvailable: ptr.To(int32(1)),
 					},
 					{
 						Name:                "pending_job0",
@@ -1293,6 +1297,7 @@ func getTestsMetadata() []integration_tests_utils.TestTopologyMetadata {
 						RequiredGPUsPerTask: 2,
 						Priority:            constants.PriorityTrainNumber,
 						QueueName:           "queue0",
+						RootSubGroupSet:     jobs_fake.DefaultSubGroup(1),
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								NodeName: "node0",
@@ -1307,7 +1312,6 @@ func getTestsMetadata() []integration_tests_utils.TestTopologyMetadata {
 								State:    pod_status.Running,
 							},
 						},
-						MinAvailable: ptr.To(int32(1)),
 					},
 					{
 						Name:                "pending_job0",
@@ -1372,6 +1376,7 @@ func getTestsMetadata() []integration_tests_utils.TestTopologyMetadata {
 						RequiredGPUsPerTask: 1,
 						Priority:            constants.PriorityTrainNumber,
 						QueueName:           "queue0",
+						RootSubGroupSet:     jobs_fake.DefaultSubGroup(1),
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								NodeName: "node0",
@@ -1390,13 +1395,13 @@ func getTestsMetadata() []integration_tests_utils.TestTopologyMetadata {
 								State:    pod_status.Running,
 							},
 						},
-						MinAvailable: ptr.To(int32(1)),
 					},
 					{
 						Name:                "running_job1",
 						RequiredGPUsPerTask: 3,
 						Priority:            constants.PriorityTrainNumber,
 						QueueName:           "queue0",
+						RootSubGroupSet:     jobs_fake.DefaultSubGroup(1),
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								NodeName: "node1",
@@ -1406,7 +1411,6 @@ func getTestsMetadata() []integration_tests_utils.TestTopologyMetadata {
 								State: pod_status.Pending,
 							},
 						},
-						MinAvailable: ptr.To(int32(1)),
 					},
 				},
 				Nodes: map[string]nodes_fake.TestNodeBasic{
@@ -1937,6 +1941,134 @@ func getTestsMetadata() []integration_tests_utils.TestTopologyMetadata {
 					CacheRequirements: &test_utils.CacheMocking{},
 				},
 			},
+		},
+		{
+			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Name: "Required topology with multiple levels - job pipelined as no available rack can be found unless consolidate",
+				Topologies: []*kaiv1alpha1.Topology{
+					{
+						ObjectMeta: v1.ObjectMeta{
+							Name: "cluster-topology",
+						},
+						Spec: kaiv1alpha1.TopologySpec{
+							Levels: []kaiv1alpha1.TopologyLevel{
+								{
+									NodeLabel: "k8s.io/rack",
+								},
+							},
+						},
+					},
+				},
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:                "running_job0",
+						RequiredGPUsPerTask: 1,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "queue0",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								State:    pod_status.Running,
+								NodeName: "node0",
+							},
+						},
+					},
+					{
+						Name:                "running_job1",
+						RequiredGPUsPerTask: 1,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "queue0",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								State:    pod_status.Running,
+								NodeName: "node1",
+							},
+						},
+					},
+					{
+						Name:                "pending_job0",
+						RequiredGPUsPerTask: 1,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "queue0",
+						RootSubGroupSet: subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName,
+							&topology_info.TopologyConstraintInfo{
+								Topology:      "cluster-topology",
+								RequiredLevel: "k8s.io/rack",
+							},
+						),
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								State: pod_status.Pending,
+							},
+							{
+								State: pod_status.Pending,
+							},
+						},
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node0": {
+						GPUs: 2,
+						Labels: map[string]string{
+							"k8s.io/rack": "rack1",
+						},
+					},
+					"node1": {
+						GPUs: 2,
+						Labels: map[string]string{
+							"k8s.io/rack": "rack2",
+						},
+					},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{
+						Name:               "queue0",
+						ParentQueue:        "department-a",
+						DeservedGPUs:       4,
+						GPUOverQuotaWeight: 1,
+						MaxAllowedGPUs:     4,
+					},
+				},
+				Departments: []test_utils.TestDepartmentBasic{
+					{
+						Name:         "department-a",
+						DeservedGPUs: 4,
+					},
+				},
+				TaskExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"running_job0-0": {
+						NodeName:             "node0",
+						GPUsRequired:         1,
+						Status:               pod_status.Running,
+						DontValidateGPUGroup: true,
+					},
+					"running_job1-0": {
+						GPUsRequired:         1,
+						NodeName:             "node0",
+						Status:               pod_status.Pipelined,
+						DontValidateGPUGroup: true,
+					},
+					"pending_job0-0": {
+						GPUsRequired:         1,
+						NodeName:             "node1",
+						Status:               pod_status.Pipelined,
+						DontValidateGPUGroup: true,
+					},
+					"pending_job0-1": {
+						GPUsRequired:         1,
+						NodeName:             "node1",
+						Status:               pod_status.Pipelined,
+						DontValidateGPUGroup: true,
+					},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{
+						NumberOfCacheBinds:      3,
+						NumberOfCacheEvictions:  1,
+						NumberOfPipelineActions: 3,
+					},
+				},
+			},
+			RoundsUntilMatch: 1,
 		},
 	}
 }

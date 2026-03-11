@@ -15,15 +15,19 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
+	resourcev1beta1 "k8s.io/api/resource/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	version "k8s.io/apimachinery/pkg/version"
+	fakediscovery "k8s.io/client-go/discovery/fake"
 	"k8s.io/client-go/kubernetes/fake"
 
-	kubeaischedulerver "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned/fake"
-	enginev2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	enginev2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
+	kubeaischedulerver "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/fake"
+	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
+	enginev2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 )
 
 const (
@@ -34,6 +38,14 @@ const (
 func TestSnapshotPlugin(t *testing.T) {
 	fakeKubeClient := fake.NewSimpleClientset()
 	fakeKubeAISchedulerClient := kubeaischedulerver.NewSimpleClientset()
+	fakeDiscoveryClient := fakeKubeClient.Discovery().(*fakediscovery.FakeDiscovery)
+	fakeDiscoveryClient.FakedServerVersion = &version.Info{
+		Major: "1",
+		Minor: "32+",
+	}
+	fakeKubeClient.Resources = append(fakeKubeClient.Resources, &metav1.APIResourceList{
+		GroupVersion: resourcev1beta1.SchemeGroupVersion.String(),
+	})
 
 	testPod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -117,6 +129,12 @@ func TestSnapshotPlugin(t *testing.T) {
 		},
 	}
 
+	testTopology := &kaiv1alpha1.Topology{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-topology",
+		},
+	}
+
 	schedulerConfig := &conf.SchedulerConfiguration{
 		Actions: "allocate",
 		Tiers: []conf.Tier{
@@ -147,8 +165,8 @@ func TestSnapshotPlugin(t *testing.T) {
 		DetailedFitErrors:           false,
 		ScheduleCSIStorage:          false,
 		FullHierarchyFairness:       true,
-		NodeLevelScheduler:          false,
 		NumOfStatusRecordingWorkers: 1,
+		DiscoveryClient:             fakeKubeClient.Discovery(),
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -166,6 +184,9 @@ func TestSnapshotPlugin(t *testing.T) {
 	assert.NoError(t, err)
 
 	_, err = fakeKubeAISchedulerClient.SchedulingV2alpha2().PodGroups("default").Create(ctx, testPodGroup, metav1.CreateOptions{})
+	assert.NoError(t, err)
+
+	_, err = fakeKubeAISchedulerClient.KaiV1alpha1().Topologies().Create(ctx, testTopology, metav1.CreateOptions{})
 	assert.NoError(t, err)
 
 	schedulerCache.Run(ctx.Done())
@@ -235,4 +256,15 @@ func TestSnapshotPlugin(t *testing.T) {
 		assert.Equal(t, testPodGroup.Name, snapshot.RawObjects.PodGroups[0].Name)
 		assert.Equal(t, testPodGroup.Namespace, snapshot.RawObjects.PodGroups[0].Namespace)
 	}
+
+	assert.Len(t, snapshot.RawObjects.Topologies, 1)
+	if len(snapshot.RawObjects.Topologies) > 0 {
+		assert.Equal(t, testTopology.Name, snapshot.RawObjects.Topologies[0].Name)
+	}
+
+	assert.NotNil(t, snapshot.Discovery)
+	assert.Equal(t, "1", snapshot.Discovery.ServerVersion.Major)
+	assert.Equal(t, "32+", snapshot.Discovery.ServerVersion.Minor)
+	assert.Len(t, snapshot.Discovery.Resources, 1)
+	assert.Equal(t, resourcev1beta1.SchemeGroupVersion.String(), snapshot.Discovery.Resources[0].GroupVersion)
 }

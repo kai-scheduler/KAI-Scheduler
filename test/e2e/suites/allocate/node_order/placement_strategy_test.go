@@ -14,25 +14,23 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	v2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/configurations/feature_flags"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/constant"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/constant/labels"
-	testcontext "github.com/NVIDIA/KAI-scheduler/test/e2e/modules/context"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/capacity"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/queue"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/utils"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/wait"
+	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/configurations/feature_flags"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/constant"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/constant/labels"
+	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/capacity"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/utils"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
 )
 
 const (
 	binPackingPluginName = "binpack"
-	spreadingPluginName  = "spread"
-	defaultPluginName    = binPackingPluginName
-
-	gpuIndexEnvVarName = "NVIDIA_VISIBLE_DEVICES"
+	SpreadingPluginName  = "spread"
+	DefaultPluginName    = binPackingPluginName
 )
 
 var _ = Describe("Placement strategy", Label(labels.Operated), Ordered, func() {
@@ -74,7 +72,7 @@ var _ = Describe("Placement strategy", Label(labels.Operated), Ordered, func() {
 		})
 
 		AfterAll(func(ctx context.Context) {
-			if err := feature_flags.SetPlacementStrategy(ctx, testCtx, defaultPluginName); err != nil {
+			if err := feature_flags.SetPlacementStrategy(ctx, testCtx, DefaultPluginName); err != nil {
 				Fail(fmt.Sprintf("Failed to patch scheduler config with default plugin: %v", err))
 			}
 		})
@@ -82,7 +80,7 @@ var _ = Describe("Placement strategy", Label(labels.Operated), Ordered, func() {
 		It("Schedule on same node", func(ctx context.Context) {
 			pod1 := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{
 				Limits: map[v1.ResourceName]resource.Quantity{
-					constants.GpuResource: resource.MustParse("1"),
+					constants.NvidiaGpuResource: resource.MustParse("1"),
 				},
 			})
 			pod1, err := rd.CreatePod(ctx, testCtx.KubeClientset, pod1)
@@ -90,7 +88,7 @@ var _ = Describe("Placement strategy", Label(labels.Operated), Ordered, func() {
 
 			pod2 := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{
 				Limits: map[v1.ResourceName]resource.Quantity{
-					constants.GpuResource: resource.MustParse("1"),
+					constants.NvidiaGpuResource: resource.MustParse("1"),
 				},
 			})
 			pod2, err = rd.CreatePod(ctx, testCtx.KubeClientset, pod2)
@@ -141,13 +139,13 @@ var _ = Describe("Placement strategy", Label(labels.Operated), Ordered, func() {
 
 	Context("Spreading", func() {
 		BeforeAll(func(ctx context.Context) {
-			if err := feature_flags.SetPlacementStrategy(ctx, testCtx, spreadingPluginName); err != nil {
+			if err := feature_flags.SetPlacementStrategy(ctx, testCtx, SpreadingPluginName); err != nil {
 				Fail(fmt.Sprintf("Failed to patch scheduler config with spreading plugin: %v", err))
 			}
 		})
 
 		AfterAll(func(ctx context.Context) {
-			if err := feature_flags.SetPlacementStrategy(ctx, testCtx, defaultPluginName); err != nil {
+			if err := feature_flags.SetPlacementStrategy(ctx, testCtx, DefaultPluginName); err != nil {
 				Fail(fmt.Sprintf("Failed to patch scheduler config with default plugin: %v", err))
 			}
 		})
@@ -155,7 +153,7 @@ var _ = Describe("Placement strategy", Label(labels.Operated), Ordered, func() {
 		It("Schedule on different nodes", func(ctx context.Context) {
 			pod1 := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{
 				Limits: map[v1.ResourceName]resource.Quantity{
-					constants.GpuResource: resource.MustParse("1"),
+					constants.NvidiaGpuResource: resource.MustParse("1"),
 				},
 			})
 			pod1, err := rd.CreatePod(ctx, testCtx.KubeClientset, pod1)
@@ -163,7 +161,7 @@ var _ = Describe("Placement strategy", Label(labels.Operated), Ordered, func() {
 
 			pod2 := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{
 				Limits: map[v1.ResourceName]resource.Quantity{
-					constants.GpuResource: resource.MustParse("1"),
+					constants.NvidiaGpuResource: resource.MustParse("1"),
 				},
 			})
 			pod2, err = rd.CreatePod(ctx, testCtx.KubeClientset, pod2)
@@ -262,7 +260,7 @@ func getGpuIndexOfScheduledFractionPod(ctx context.Context, testCtx *testcontext
 	pod *v1.Pod) (string, error) {
 	for _, container := range pod.Spec.Containers {
 		for _, env := range container.Env {
-			if env.Name == gpuIndexEnvVarName {
+			if env.Name == constants.NvidiaVisibleDevices {
 				configMapName := env.ValueFrom.ConfigMapKeyRef.Name
 				wait.ForConfigMapCreation(ctx, testCtx.ControllerClient, pod.Namespace, configMapName)
 				cm, err := testCtx.KubeClientset.CoreV1().ConfigMaps(pod.Namespace).
@@ -274,5 +272,5 @@ func getGpuIndexOfScheduledFractionPod(ctx context.Context, testCtx *testcontext
 			}
 		}
 	}
-	return "", fmt.Errorf("could not find %s env var in pod", gpuIndexEnvVarName)
+	return "", fmt.Errorf("could not find %s env var in pod", constants.NvidiaVisibleDevices)
 }

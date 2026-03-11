@@ -1,0 +1,42 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: scheduling.run.ai/v2
+kind: Queue
+metadata:
+  name: default-parent-queue
+spec:
+  resources:
+    cpu:
+      limit: -1
+      overQuotaWeight: 1
+      quota: 0
+    gpu:
+      limit: -1
+      overQuotaWeight: 1
+      quota: 0
+    memory:
+      limit: -1
+      overQuotaWeight: 1
+      quota: 0
+---
+apiVersion: scheduling.run.ai/v2
+kind: Queue
+metadata:
+  name: default-queue
+spec:
+  parentQueue: default-parent-queue
+  resources:
+    cpu:
+      limit: -1
+      overQuotaWeight: 1
+      quota: 0
+    gpu:
+      limit: -1
+      overQuotaWeight: 1
+      quota: 0
+    memory:
+      limit: -1
+      overQuotaWeight: 1
+      quota: 0
+

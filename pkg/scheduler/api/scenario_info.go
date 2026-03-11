@@ -4,9 +4,9 @@
 package api
 
 import (
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 )
 
 type ScenarioInfo interface {
@@ -17,8 +17,6 @@ type ScenarioInfo interface {
 type VictimInfo struct {
 	// Job is the original job that is being evicted, as it exists in the session
 	Job *podgroup_info.PodGroupInfo
-	// RepresentativeJob is a partial representation of the job that is being evicted. To be deprecated.
-	RepresentativeJobs []*podgroup_info.PodGroupInfo
-	// Tasks is the list of tasks that are being evicted.
+	// Tasks is the list of tasks that are being evicted, as they exist in the session
 	Tasks []*pod_info.PodInfo
 }

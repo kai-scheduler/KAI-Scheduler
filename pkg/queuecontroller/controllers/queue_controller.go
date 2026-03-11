@@ -11,15 +11,17 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/queuecontroller/common"
-	"github.com/NVIDIA/KAI-scheduler/pkg/queuecontroller/controllers/childqueues_updater"
-	"github.com/NVIDIA/KAI-scheduler/pkg/queuecontroller/controllers/resource_updater"
+	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/queuecontroller/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/queuecontroller/controllers/childqueues_updater"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/queuecontroller/controllers/resource_updater"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/queuecontroller/metrics"
 )
 
 // QueueReconciler reconciles a Queue object
@@ -54,7 +56,12 @@ func (r *QueueReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	queue := &v2.Queue{}
 	err := r.Get(ctx, req.NamespacedName, queue)
 	if err != nil {
-		return ctrl.Result{}, err
+		ignoreNotFoundErr := client.IgnoreNotFound(err)
+		if ignoreNotFoundErr == nil {
+			// If the queue is not found, reset its metrics
+			metrics.ResetQueueMetrics(req.Name)
+		}
+		return ctrl.Result{}, ignoreNotFoundErr
 	}
 	originalQueue := queue.DeepCopy()
 
@@ -73,20 +80,27 @@ func (r *QueueReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return ctrl.Result{}, fmt.Errorf("failed to patch status for queue %s, error: %v", queue.Name, err)
 	}
 
+	metrics.SetQueueMetrics(queue)
+
 	return ctrl.Result{}, err
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *QueueReconciler) SetupWithManager(mgr ctrl.Manager, queueLabelKey string) error {
+func (r *QueueReconciler) SetupWithManager(mgr ctrl.Manager, skipNameValidation bool) error {
 	err := mgr.GetFieldIndexer().IndexField(context.Background(), &v2.Queue{}, common.ParentQueueIndexName,
 		indexQueueByParent)
 	if err != nil {
-		return fmt.Errorf("failed to setup queue parent indexer: %v", err)
+		return fmt.Errorf("failed to setup queue parent indexer: %w", err)
+	}
+
+	err = mgr.GetFieldIndexer().IndexField(context.Background(), &v2alpha2.PodGroup{}, common.PodGroupQueueIndexName,
+		indexPodGroupByQueue)
+	if err != nil {
+		return fmt.Errorf("failed to setup podgroup queue indexer: %w", err)
 	}
 
 	r.resourceUpdater = resource_updater.ResourceUpdater{
-		Client:        r.Client,
-		QueueLabelKey: queueLabelKey,
+		Client: r.Client,
 	}
 	r.childQueuesUpdater = childqueues_updater.ChildQueuesUpdater{
 		Client: r.Client,
@@ -98,6 +112,10 @@ func (r *QueueReconciler) SetupWithManager(mgr ctrl.Manager, queueLabelKey strin
 			handler.EnqueueRequestsFromMapFunc(enqueueQueue)).
 		Watches(&v2alpha2.PodGroup{},
 			handler.EnqueueRequestsFromMapFunc(enqueuePodGroup)).
+		WithOptions(
+			controller.Options{
+				SkipNameValidation: &skipNameValidation,
+			}).
 		Complete(r)
 }
 
@@ -107,6 +125,14 @@ func indexQueueByParent(object client.Object) []string {
 		return []string{}
 	}
 	return []string{queue.Spec.ParentQueue}
+}
+
+func indexPodGroupByQueue(object client.Object) []string {
+	pg := object.(*v2alpha2.PodGroup)
+	if pg.Spec.Queue == "" {
+		return []string{}
+	}
+	return []string{pg.Spec.Queue}
 }
 
 func enqueueQueue(_ context.Context, q client.Object) []reconcile.Request {

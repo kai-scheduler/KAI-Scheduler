@@ -8,18 +8,18 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/api/resource/v1beta1"
+	resourceapi "k8s.io/api/resource/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 func TestUpsertReservedFor(t *testing.T) {
 	type data struct {
 		name  string
 		pod   *v1.Pod
-		claim v1beta1.ResourceClaim
+		claim resourceapi.ResourceClaim
 
-		expected []v1beta1.ResourceClaimConsumerReference
+		expected []resourceapi.ResourceClaimConsumerReference
 	}
 
 	tests := []data{
@@ -31,9 +31,9 @@ func TestUpsertReservedFor(t *testing.T) {
 					UID:  "uid1",
 				},
 			},
-			claim: v1beta1.ResourceClaim{},
+			claim: resourceapi.ResourceClaim{},
 
-			expected: []v1beta1.ResourceClaimConsumerReference{
+			expected: []resourceapi.ResourceClaimConsumerReference{
 				{
 					APIGroup: "",
 					Resource: "pods",
@@ -50,9 +50,9 @@ func TestUpsertReservedFor(t *testing.T) {
 					UID:  "uid1",
 				},
 			},
-			claim: v1beta1.ResourceClaim{
-				Status: v1beta1.ResourceClaimStatus{
-					ReservedFor: []v1beta1.ResourceClaimConsumerReference{
+			claim: resourceapi.ResourceClaim{
+				Status: resourceapi.ResourceClaimStatus{
+					ReservedFor: []resourceapi.ResourceClaimConsumerReference{
 						{
 							APIGroup: "",
 							Resource: "pods",
@@ -62,7 +62,7 @@ func TestUpsertReservedFor(t *testing.T) {
 					},
 				},
 			},
-			expected: []v1beta1.ResourceClaimConsumerReference{
+			expected: []resourceapi.ResourceClaimConsumerReference{
 				{
 					APIGroup: "",
 					Resource: "pods",
@@ -85,9 +85,9 @@ func TestUpsertReservedFor(t *testing.T) {
 					UID:  "uid1",
 				},
 			},
-			claim: v1beta1.ResourceClaim{
-				Status: v1beta1.ResourceClaimStatus{
-					ReservedFor: []v1beta1.ResourceClaimConsumerReference{
+			claim: resourceapi.ResourceClaim{
+				Status: resourceapi.ResourceClaimStatus{
+					ReservedFor: []resourceapi.ResourceClaimConsumerReference{
 						{
 							APIGroup: "",
 							Resource: "pods",
@@ -97,7 +97,7 @@ func TestUpsertReservedFor(t *testing.T) {
 					},
 				},
 			},
-			expected: []v1beta1.ResourceClaimConsumerReference{
+			expected: []resourceapi.ResourceClaimConsumerReference{
 				{
 					APIGroup: "",
 					Resource: "pods",
@@ -120,9 +120,9 @@ func TestRemoveReservedFor(t *testing.T) {
 	type data struct {
 		name  string
 		pod   *v1.Pod
-		claim v1beta1.ResourceClaim
+		claim resourceapi.ResourceClaim
 
-		expected []v1beta1.ResourceClaimConsumerReference
+		expected []resourceapi.ResourceClaimConsumerReference
 	}
 
 	tests := []data{
@@ -134,9 +134,9 @@ func TestRemoveReservedFor(t *testing.T) {
 					UID:  "uid1",
 				},
 			},
-			claim: v1beta1.ResourceClaim{},
+			claim: resourceapi.ResourceClaim{},
 
-			expected: []v1beta1.ResourceClaimConsumerReference{},
+			expected: []resourceapi.ResourceClaimConsumerReference{},
 		},
 		{
 			name: "claim with existing reference",
@@ -146,9 +146,9 @@ func TestRemoveReservedFor(t *testing.T) {
 					UID:  "uid1",
 				},
 			},
-			claim: v1beta1.ResourceClaim{
-				Status: v1beta1.ResourceClaimStatus{
-					ReservedFor: []v1beta1.ResourceClaimConsumerReference{
+			claim: resourceapi.ResourceClaim{
+				Status: resourceapi.ResourceClaimStatus{
+					ReservedFor: []resourceapi.ResourceClaimConsumerReference{
 						{
 							APIGroup: "",
 							Resource: "pods",
@@ -158,7 +158,7 @@ func TestRemoveReservedFor(t *testing.T) {
 					},
 				},
 			},
-			expected: []v1beta1.ResourceClaimConsumerReference{
+			expected: []resourceapi.ResourceClaimConsumerReference{
 				{
 					APIGroup: "",
 					Resource: "pods",
@@ -175,9 +175,9 @@ func TestRemoveReservedFor(t *testing.T) {
 					UID:  "uid1",
 				},
 			},
-			claim: v1beta1.ResourceClaim{
-				Status: v1beta1.ResourceClaimStatus{
-					ReservedFor: []v1beta1.ResourceClaimConsumerReference{
+			claim: resourceapi.ResourceClaim{
+				Status: resourceapi.ResourceClaimStatus{
+					ReservedFor: []resourceapi.ResourceClaimConsumerReference{
 						{
 							APIGroup: "",
 							Resource: "pods",
@@ -187,7 +187,7 @@ func TestRemoveReservedFor(t *testing.T) {
 					},
 				},
 			},
-			expected: []v1beta1.ResourceClaimConsumerReference{},
+			expected: []resourceapi.ResourceClaimConsumerReference{},
 		},
 		{
 			name: "claim with existing identical reference",
@@ -197,9 +197,9 @@ func TestRemoveReservedFor(t *testing.T) {
 					UID:  "uid1",
 				},
 			},
-			claim: v1beta1.ResourceClaim{
-				Status: v1beta1.ResourceClaimStatus{
-					ReservedFor: []v1beta1.ResourceClaimConsumerReference{
+			claim: resourceapi.ResourceClaim{
+				Status: resourceapi.ResourceClaimStatus{
+					ReservedFor: []resourceapi.ResourceClaimConsumerReference{
 						{
 							APIGroup: "",
 							Resource: "pods",
@@ -215,7 +215,7 @@ func TestRemoveReservedFor(t *testing.T) {
 					},
 				},
 			},
-			expected: []v1beta1.ResourceClaimConsumerReference{
+			expected: []resourceapi.ResourceClaimConsumerReference{
 				{
 					APIGroup: "",
 					Resource: "pods",
@@ -250,7 +250,7 @@ func TestGetResourceClaimName(t *testing.T) {
 			pod:  v1.Pod{},
 			claim: v1.PodResourceClaim{
 				Name:              "claim1",
-				ResourceClaimName: pointer.String("claim1"),
+				ResourceClaimName: ptr.To("claim1"),
 			},
 			expected:    "claim1",
 			expectedErr: false,
@@ -262,14 +262,14 @@ func TestGetResourceClaimName(t *testing.T) {
 					ResourceClaimStatuses: []v1.PodResourceClaimStatus{
 						{
 							Name:              "claim1",
-							ResourceClaimName: pointer.String("claimFromTemplate"),
+							ResourceClaimName: ptr.To("claimFromTemplate"),
 						},
 					},
 				},
 			},
 			claim: v1.PodResourceClaim{
 				Name:                      "claim1",
-				ResourceClaimTemplateName: pointer.String("claim1"),
+				ResourceClaimTemplateName: ptr.To("claim1"),
 			},
 			expected:    "claimFromTemplate",
 			expectedErr: false,
@@ -281,14 +281,14 @@ func TestGetResourceClaimName(t *testing.T) {
 					ResourceClaimStatuses: []v1.PodResourceClaimStatus{
 						{
 							Name:              "another-claim",
-							ResourceClaimName: pointer.String("claimFromTemplate"),
+							ResourceClaimName: ptr.To("claimFromTemplate"),
 						},
 					},
 				},
 			},
 			claim: v1.PodResourceClaim{
 				Name:                      "claim1",
-				ResourceClaimTemplateName: pointer.String("claim1"),
+				ResourceClaimTemplateName: ptr.To("claim1"),
 			},
 			expected:    "",
 			expectedErr: true,
@@ -300,7 +300,7 @@ func TestGetResourceClaimName(t *testing.T) {
 					ResourceClaimStatuses: []v1.PodResourceClaimStatus{
 						{
 							Name:              "another-claim",
-							ResourceClaimName: pointer.String("claimFromTemplate"),
+							ResourceClaimName: ptr.To("claimFromTemplate"),
 						},
 					},
 				},

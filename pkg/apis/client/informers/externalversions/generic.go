@@ -1,4 +1,20 @@
 /*
+Copyright The Kubernetes Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+/*
 Copyright 2025 NVIDIA CORPORATION
 SPDX-License-Identifier: Apache-2.0
 */
@@ -9,9 +25,10 @@ package externalversions
 import (
 	fmt "fmt"
 
-	v1alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	v2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	v2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	v1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
+	v1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	v2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	cache "k8s.io/client-go/tools/cache"
 )
@@ -42,7 +59,11 @@ func (f *genericInformer) Lister() cache.GenericLister {
 // TODO extend this to unknown resources with a client pool
 func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource) (GenericInformer, error) {
 	switch resource {
-	// Group=scheduling.run.ai, Version=v1alpha2
+	// Group=kai, Version=v1alpha1
+	case v1alpha1.SchemeGroupVersion.WithResource("topologies"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Kai().V1alpha1().Topologies().Informer()}, nil
+
+		// Group=scheduling.run.ai, Version=v1alpha2
 	case v1alpha2.SchemeGroupVersion.WithResource("bindrequests"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Scheduling().V1alpha2().BindRequests().Informer()}, nil
 

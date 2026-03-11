@@ -17,17 +17,15 @@ USER 65532:65532
 
 ENTRYPOINT ["/go/bin/dlv", "exec", "--headless", "-l", ":10000", "--api-version=2", "/workspace/app", "--"]
 
-FROM registry.access.redhat.com/ubi9/ubi-minimal AS prod
+FROM nvcr.io/nvidia/distroless/go:v3.2.1 AS prod
 ARG TARGETARCH
 ARG SERVICE_NAME
 ENV TARGETARCH=$TARGETARCH
 ENV SERVICE_NAME=$SERVICE_NAME
 
 WORKDIR /workspace
-ADD bin/$SERVICE_NAME-$TARGETARCH app
-ADD NOTICE .
-
-RUN chgrp -R 0 /workspace && chmod -R g=u /workspace
+COPY --chmod=0755 --chown=65532:0 bin/$SERVICE_NAME-$TARGETARCH app
+COPY --chmod=0644 --chown=65532:0 NOTICE .
 
 USER 65532:65532
 

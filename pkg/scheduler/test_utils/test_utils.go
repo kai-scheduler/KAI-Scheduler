@@ -18,19 +18,21 @@ import (
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes/fake"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	k8splugins "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_internal/plugins"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/dra_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
+	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
+
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	k8splugins "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal/plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/dra_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
 )
 
 var SchedulerVerbosity = flag.String("vv", "", "Scheduler's verbosity")
@@ -39,15 +41,17 @@ type TestTopologyBasic struct {
 	Name string
 	Jobs []*jobs_fake.TestJobBasic
 
-	Nodes                  map[string]nodes_fake.TestNodeBasic
-	Queues                 []TestQueueBasic
-	Departments            []TestDepartmentBasic
-	JobExpectedResults     map[string]TestExpectedResultBasic
-	TaskExpectedResults    map[string]TestExpectedResultBasic
-	ExpectedNodesResources map[string]TestExpectedNodesResources
-	Mocks                  *TestMock
+	Nodes                    map[string]nodes_fake.TestNodeBasic
+	Queues                   []TestQueueBasic
+	Departments              []TestDepartmentBasic
+	DisableDefaultDepartment bool // When true, allows n-level queue hierarchies using only the Queues field
+	JobExpectedResults       map[string]TestExpectedResultBasic
+	TaskExpectedResults      map[string]TestExpectedResultBasic
+	ExpectedNodesResources   map[string]TestExpectedNodesResources
+	Mocks                    *TestMock
 
 	dra_fake.TestDRAObjects
+	Topologies []*kaiv1alpha1.Topology
 }
 
 type TestMock struct {
@@ -108,6 +112,7 @@ type TestExpectedResultBasic struct {
 	GPUGroups                   []string
 	DontValidateGPUGroup        bool
 	LastStartTimestampOlderThan *time.Duration
+	ExpectedErrorMessage        string
 }
 
 type TestExpectedNodesResources struct {
@@ -121,22 +126,22 @@ func MatchExpectedAndRealTasks(t *testing.T, testNumber int, testMetadata TestTo
 
 	for jobName, jobExpectedResult := range testMetadata.JobExpectedResults {
 		var sumOfJobRequestedGPU, sumOfJobRequestedMillisCpu, sumOfJobRequestedMemory, sumOfAcceptedGpus float64
-		job, found := ssn.PodGroupInfos[common_info.PodGroupID(jobName)]
+		job, found := ssn.ClusterInfo.PodGroupInfos[common_info.PodGroupID(jobName)]
 		if !found {
-			t.Errorf("Test number: %d, name: %v, has failed. Couldn't find job: %v for expected tasks.", testNumber, testMetadata.Name, jobName)
+			t.Errorf("Test number: %d, name: %s, has failed. Couldn't find job: %s for expected tasks.", testNumber, testMetadata.Name, jobName)
 		}
-		for _, taskInfo := range ssn.PodGroupInfos[common_info.PodGroupID(jobName)].PodInfos {
+		for _, taskInfo := range ssn.ClusterInfo.PodGroupInfos[common_info.PodGroupID(jobName)].GetAllPodsMap() {
 
 			if taskInfo.Status != jobExpectedResult.Status {
-				t.Errorf("Test number: %d, name: %v, has failed. Task name: %v, actual uses status: %v, was expecting status: %v", testNumber, testMetadata.Name, taskInfo.Name, taskInfo.Status, jobExpectedResult.Status.String())
+				t.Errorf("Test number: %d, name: %s, has failed. Task name: %s, actual uses status: %s, was expecting status: %s", testNumber, testMetadata.Name, taskInfo.Name, taskInfo.Status, jobExpectedResult.Status)
 				if jobExpectedResult.Status == pod_status.Running {
 					t.Errorf("%v", job.JobFitErrors)
-					t.Errorf("%v", job.NodesFitErrors)
+					t.Errorf("%v", job.TasksFitErrors)
 				}
 			}
 
 			if len(jobExpectedResult.NodeName) > 0 && taskInfo.NodeName != jobExpectedResult.NodeName {
-				t.Errorf("Test number: %d, name: %v, has failed. Task name: %v, actual uses node: %v, was expecting node: %v", testNumber, testMetadata.Name, taskInfo.Name, taskInfo.NodeName, jobExpectedResult.NodeName)
+				t.Errorf("Test number: %d, name: %s, has failed. Task name: %s, actual uses node: %s, was expecting node: %s", testNumber, testMetadata.Name, taskInfo.Name, taskInfo.NodeName, jobExpectedResult.NodeName)
 			}
 
 			sumOfJobRequestedGPU += taskInfo.ResReq.GPUs()
@@ -192,11 +197,24 @@ func MatchExpectedAndRealTasks(t *testing.T, testNumber int, testMetadata TestTo
 		if jobExpectedResult.MemoryRequired != 0 && sumOfJobRequestedMemory != jobExpectedResult.MemoryRequired {
 			t.Errorf("Test number: %d, name: %v, has failed. Task name: %v, actual uses Memory: %v, was expecting Memory: %v", testNumber, testMetadata.Name, jobName, sumOfJobRequestedMemory, jobExpectedResult.MemoryRequired)
 		}
+
+		// Validate expected error message for jobs that didn't get allocated
+		if len(jobExpectedResult.ExpectedErrorMessage) > 0 {
+			if len(job.JobFitErrors) == 0 {
+				t.Errorf("Test number: %d, name: %s, has failed. Job: %s expected error message but got no fit errors", testNumber, testMetadata.Name, jobName)
+			} else {
+				actualErrorMessage := common_info.JobFitErrorsToDetailedMessage(job.JobFitErrors)
+				if actualErrorMessage != jobExpectedResult.ExpectedErrorMessage {
+					t.Errorf("Test number: %d, name: %s, has failed. Job: %s\nExpected error message:\n%s\nActual error message:\n%s",
+						testNumber, testMetadata.Name, jobName, jobExpectedResult.ExpectedErrorMessage, actualErrorMessage)
+				}
+			}
+		}
 	}
 
 	if len(testMetadata.TaskExpectedResults) > 0 {
-		for jobId, job := range ssn.PodGroupInfos {
-			for taskId, task := range ssn.PodGroupInfos[jobId].PodInfos {
+		for jobId, job := range ssn.ClusterInfo.PodGroupInfos {
+			for taskId, task := range ssn.ClusterInfo.PodGroupInfos[jobId].GetAllPodsMap() {
 				taskExpectedResult, found := testMetadata.TaskExpectedResults[string(taskId)]
 				if !found {
 					continue
@@ -282,7 +300,7 @@ func MatchExpectedAndRealTasks(t *testing.T, testNumber int, testMetadata TestTo
 	}
 
 	for nodeName, nodeExpectedResources := range testMetadata.ExpectedNodesResources {
-		ssnNode, found := ssn.Nodes[nodeName]
+		ssnNode, found := ssn.ClusterInfo.Nodes[nodeName]
 		if !found {
 			t.Errorf("Test number: %d, name: %v, has failed. Couldn't find node: %v for expected nodes resources.", testNumber, testMetadata.Name, nodeName)
 		}
@@ -297,7 +315,10 @@ func MatchExpectedAndRealTasks(t *testing.T, testNumber int, testMetadata TestTo
 	}
 }
 
-func GetTestCacheMock(controller *Controller, testMocks *TestMock, additionalObjects []runtime.Object) *cache.MockCache {
+func GetTestCacheMock(
+	controller *Controller, testMocks *TestMock, additionalObjects []runtime.Object,
+	clusterPodAffinityInfo *cache.K8sClusterPodAffinityInfo,
+) *cache.MockCache {
 	cacheMock := cache.NewMockCache(controller)
 	cacheRequirements := &CacheMocking{}
 	if testMocks != nil {
@@ -305,7 +326,7 @@ func GetTestCacheMock(controller *Controller, testMocks *TestMock, additionalObj
 	}
 
 	if cacheRequirements.NumberOfCacheBinds != 0 {
-		cacheMock.EXPECT().Bind(Any(), Any()).Return(nil).MaxTimes(cacheRequirements.NumberOfCacheBinds)
+		cacheMock.EXPECT().Bind(Any(), Any(), Any()).Return(nil).MaxTimes(cacheRequirements.NumberOfCacheBinds)
 	}
 
 	fakeClient := fake.NewSimpleClientset(additionalObjects...)
@@ -313,16 +334,16 @@ func GetTestCacheMock(controller *Controller, testMocks *TestMock, additionalObj
 
 	informerFactory := informers.NewSharedInformerFactory(cacheMock.KubeClient(), 0)
 
-	informerFactory.Resource().V1beta1().ResourceClaims().Informer()
-	informerFactory.Resource().V1beta1().ResourceSlices().Informer()
-	informerFactory.Resource().V1beta1().DeviceClasses().Informer()
+	informerFactory.Resource().V1().ResourceClaims().Informer()
+	informerFactory.Resource().V1().ResourceSlices().Informer()
+	informerFactory.Resource().V1().DeviceClasses().Informer()
 
 	ctx := context.Background()
 	informerFactory.Start(ctx.Done())
 	informerFactory.WaitForCacheSync(ctx.Done())
 
 	cacheMock.EXPECT().KubeInformerFactory().AnyTimes().Return(informerFactory)
-	cacheMock.EXPECT().SnapshotSharedLister().AnyTimes().Return(cache.NewK8sClusterPodAffinityInfo())
+	cacheMock.EXPECT().SnapshotSharedLister().AnyTimes().Return(clusterPodAffinityInfo)
 
 	k8sPlugins := k8splugins.InitializeInternalPlugins(
 		cacheMock.KubeClient(), cacheMock.KubeInformerFactory(), cacheMock.SnapshotSharedLister(),

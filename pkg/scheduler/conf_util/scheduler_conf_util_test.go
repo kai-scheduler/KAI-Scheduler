@@ -8,11 +8,11 @@ import (
 	"reflect"
 	"testing"
 
-	"gopkg.in/yaml.v2"
+	"sigs.k8s.io/yaml"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins"
 )
 
 func TestResolveConfigurationFromFile(t *testing.T) {
@@ -53,8 +53,7 @@ func TestResolveConfigurationFromFile(t *testing.T) {
 					{
 						Plugins: []conf.PluginOption{
 							{
-								Name:      "n1",
-								Arguments: map[string]string{},
+								Name: "n1",
 							},
 						},
 					},
@@ -87,13 +86,11 @@ func TestResolveConfigurationFromFile(t *testing.T) {
 					{
 						Plugins: []conf.PluginOption{
 							{
-								Name:      "n1",
-								Arguments: map[string]string{},
+								Name: "n1",
 							},
 						},
 					},
 				},
-				QueueDepthPerAction: nil,
 			},
 			wantErr: false,
 		},
@@ -134,7 +131,21 @@ func TestResolveConfigurationFromFile(t *testing.T) {
 				return
 			}
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("ResolveConfigurationFromFile() got = %v, want %v", got, tt.want)
+				t.Errorf("ResolveConfigurationFromFile() got: \n%+v, want: \n%+v", *got, *tt.want)
+				t.Errorf("Actions equal: %v", got.Actions == tt.want.Actions)
+				t.Errorf("Tiers equal: %v", reflect.DeepEqual(got.Tiers, tt.want.Tiers))
+				t.Errorf("QueueDepthPerAction equal: %v", reflect.DeepEqual(got.QueueDepthPerAction, tt.want.QueueDepthPerAction))
+				t.Errorf("UsageDBConfig equal: %v", reflect.DeepEqual(got.UsageDBConfig, tt.want.UsageDBConfig))
+				if len(got.Tiers) > 0 && len(tt.want.Tiers) > 0 {
+					t.Errorf("First tier plugins equal: %v", reflect.DeepEqual(got.Tiers[0].Plugins, tt.want.Tiers[0].Plugins))
+					if len(got.Tiers[0].Plugins) > 0 && len(tt.want.Tiers[0].Plugins) > 0 {
+						t.Errorf("First plugin Arguments: got=%v (nil=%v), want=%v (nil=%v)",
+							got.Tiers[0].Plugins[0].Arguments,
+							got.Tiers[0].Plugins[0].Arguments == nil,
+							tt.want.Tiers[0].Plugins[0].Arguments,
+							tt.want.Tiers[0].Plugins[0].Arguments == nil)
+					}
+				}
 			}
 		})
 	}

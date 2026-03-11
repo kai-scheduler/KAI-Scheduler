@@ -1,3 +1,19 @@
+/*
+Copyright 2017 The Kubernetes Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 // Copyright 2025 NVIDIA CORPORATION
 // SPDX-License-Identifier: Apache-2.0
 
@@ -11,24 +27,24 @@ import (
 	"golang.org/x/exp/maps"
 	"golang.org/x/exp/slices"
 	v1 "k8s.io/api/core/v1"
-	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
-	enginev2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
+	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 )
 
 const (
 	OverCapacity        = "OverCapacity"
 	PodSchedulingErrors = "PodSchedulingErrors"
+	DefaultSubGroup     = "default"
 )
 
 type JobRequirement struct {
@@ -55,25 +71,25 @@ type PodGroupInfo struct {
 
 	Queue common_info.QueueID
 
-	Priority int32
+	Priority       int32
+	Preemptibility enginev2alpha2.Preemptibility
 
-	MinAvailable int32
-
-	JobFitErrors   enginev2alpha2.UnschedulableExplanations
-	NodesFitErrors map[common_info.PodID]*common_info.FitErrors
-
-	// All tasks of the Job.
-	PodInfos pod_info.PodsMap
+	JobFitErrors   []common_info.JobFitError
+	TasksFitErrors map[common_info.PodID]*common_info.TasksFitErrors
 
 	Allocated *resource_info.Resource
+
+	// Vector representation of Allocated
+	AllocatedVector resource_info.ResourceVector
+	VectorMap       *resource_info.ResourceVectorMap
 
 	CreationTimestamp  metav1.Time
 	LastStartTimestamp *time.Time
 	PodGroup           *enginev2alpha2.PodGroup
 	PodGroupUID        types.UID
 
-	// TODO(k82cn): keep backward compatibility, removed it when v1alpha1 finalized.
-	PDB *policyv1.PodDisruptionBudget
+	RootSubGroupSet *subgroup_info.SubGroupSet
+	PodSets         map[string]*subgroup_info.PodSet
 
 	StalenessInfo
 
@@ -87,21 +103,30 @@ type PodGroupInfo struct {
 }
 
 func NewPodGroupInfo(uid common_info.PodGroupID, tasks ...*pod_info.PodInfo) *PodGroupInfo {
-	podGroupInfo := &PodGroupInfo{
-		UID:          uid,
-		MinAvailable: 0,
-		Allocated:    resource_info.EmptyResource(),
+	return NewPodGroupInfoWithVectorMap(uid, resource_info.NewResourceVectorMap(), tasks...)
+}
 
-		JobFitErrors:   make(enginev2alpha2.UnschedulableExplanations, 0),
-		NodesFitErrors: make(map[common_info.PodID]*common_info.FitErrors),
+func NewPodGroupInfoWithVectorMap(uid common_info.PodGroupID, vectorMap *resource_info.ResourceVectorMap, tasks ...*pod_info.PodInfo) *PodGroupInfo {
+	defaultSubGroupSet := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+	defaultSubGroupSet.AddPodSet(subgroup_info.NewPodSet(DefaultSubGroup, 1, nil))
+
+	podGroupInfo := &PodGroupInfo{
+		UID:             uid,
+		Allocated:       resource_info.EmptyResource(),
+		AllocatedVector: resource_info.NewResourceVector(vectorMap),
+		VectorMap:       vectorMap,
+
+		JobFitErrors:   make([]common_info.JobFitError, 0),
+		TasksFitErrors: make(map[common_info.PodID]*common_info.TasksFitErrors),
 
 		PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{},
-		PodInfos:       pod_info.PodsMap{},
 
 		StalenessInfo: StalenessInfo{
 			TimeStamp: nil,
 			Stale:     false,
 		},
+		RootSubGroupSet: defaultSubGroupSet,
+		PodSets:         defaultSubGroupSet.GetAllPodSets(),
 
 		LastStartTimestamp:   nil,
 		activeAllocatedCount: ptr.To(0),
@@ -114,34 +139,46 @@ func NewPodGroupInfo(uid common_info.PodGroupID, tasks ...*pod_info.PodInfo) *Po
 	return podGroupInfo
 }
 
-func (podGroupInfo *PodGroupInfo) IsPreemptibleJob(isInferencePreemptible bool) bool {
-	if isInferencePreemptible {
-		if podGroupInfo.Priority == constants.PriorityInferenceNumber {
-			return true
+func (pgi *PodGroupInfo) GetAllPodsMap() pod_info.PodsMap {
+	allPods := pod_info.PodsMap{}
+	for _, subGroup := range pgi.PodSets {
+		for podId, podInfo := range subGroup.GetPodInfos() {
+			allPods[podId] = podInfo
 		}
 	}
-
-	return podGroupInfo.Priority < constants.PriorityBuildNumber
+	return allPods
 }
 
-func (podGroupInfo *PodGroupInfo) SetPodGroup(pg *enginev2alpha2.PodGroup) {
-	podGroupInfo.Name = pg.Name
-	podGroupInfo.Namespace = pg.Namespace
-	podGroupInfo.NamespacedName = fmt.Sprintf("%s/%s", podGroupInfo.Namespace, podGroupInfo.Name)
-	podGroupInfo.MinAvailable = pg.Spec.MinMember
-	podGroupInfo.Queue = common_info.QueueID(pg.Spec.Queue)
-	podGroupInfo.CreationTimestamp = pg.GetCreationTimestamp()
-	podGroupInfo.PodGroup = pg
-	podGroupInfo.PodGroupUID = pg.UID
+func (pgi *PodGroupInfo) GetSubGroups() map[string]*subgroup_info.PodSet {
+	return pgi.PodSets
+}
+
+func (pgi *PodGroupInfo) IsPreemptibleJob() bool {
+	return pgi.Preemptibility == enginev2alpha2.Preemptible
+}
+
+func (pgi *PodGroupInfo) SetPodGroup(pg *enginev2alpha2.PodGroup) {
+	pgi.Name = pg.Name
+	pgi.Namespace = pg.Namespace
+	pgi.NamespacedName = fmt.Sprintf("%s/%s", pgi.Namespace, pgi.Name)
+	pgi.Queue = common_info.QueueID(pg.Spec.Queue)
+	pgi.CreationTimestamp = pg.GetCreationTimestamp()
+	pgi.PodGroup = pg
+	pgi.PodGroupUID = pg.UID
+	err := pgi.setSubGroups(pg)
+	if err != nil {
+		log.InfraLogger.V(7).Warnf("Failed to set subgroups for podgroup <%s> err: %v",
+			pg.Namespace, pg.Name)
+	}
 
 	if pg.Annotations[commonconstants.StalePodgroupTimeStamp] != "" {
 		staleTimeStamp, err := time.Parse(time.RFC3339, pg.Annotations[commonconstants.StalePodgroupTimeStamp])
 		if err != nil {
 			log.InfraLogger.V(7).Warnf("Failed to parse stale timestamp for podgroup <%s> err: %v",
-				podGroupInfo.NamespacedName, err)
+				pgi.NamespacedName, err)
 		} else {
-			podGroupInfo.StalenessInfo.TimeStamp = &staleTimeStamp
-			podGroupInfo.StalenessInfo.Stale = true
+			pgi.StalenessInfo.TimeStamp = &staleTimeStamp
+			pgi.StalenessInfo.Stale = true
 		}
 	}
 
@@ -149,99 +186,119 @@ func (podGroupInfo *PodGroupInfo) SetPodGroup(pg *enginev2alpha2.PodGroup) {
 		startTime, err := time.Parse(time.RFC3339, pg.Annotations[commonconstants.LastStartTimeStamp])
 		if err != nil {
 			log.InfraLogger.V(7).Warnf("Failed to parse start timestamp for podgroup <%s> err: %v",
-				podGroupInfo.NamespacedName, err)
+				pgi.NamespacedName, err)
 		} else {
-			podGroupInfo.LastStartTimestamp = &startTime
+			pgi.LastStartTimestamp = &startTime
 		}
 	}
 
 	log.InfraLogger.V(7).Infof(
-		"SetPodGroup. podGroupName=<%s>, PodGroupUID=<%s> podGroupInfo.PodGroupIndex=<%d>",
-		podGroupInfo.Name, podGroupInfo.PodGroupUID)
+		"SetPodGroup. podGroupName=<%s>, PodGroupUID=<%s> pgi.PodGroupIndex=<%d>",
+		pgi.Name, pgi.PodGroupUID)
 }
 
-func (podGroupInfo *PodGroupInfo) SetPDB(pdb *policyv1.PodDisruptionBudget) {
-	podGroupInfo.Name = pdb.Name
-	if pdb.Spec.MinAvailable != nil {
-		podGroupInfo.MinAvailable = pdb.Spec.MinAvailable.IntVal
+func (pgi *PodGroupInfo) setSubGroups(podGroup *enginev2alpha2.PodGroup) error {
+	rootSubGroupSet, err := subgroup_info.FromPodGroup(podGroup)
+	if err != nil {
+		return err
 	}
-	podGroupInfo.Namespace = pdb.Namespace
-
-	podGroupInfo.CreationTimestamp = pdb.GetCreationTimestamp()
-	podGroupInfo.PDB = pdb
+	pgi.RootSubGroupSet = rootSubGroupSet
+	podSets := rootSubGroupSet.GetAllPodSets()
+	if len(podSets) > 0 {
+		pgi.PodSets = podSets
+	} else {
+		if defaultPodSet, found := pgi.PodSets[DefaultSubGroup]; found {
+			defaultPodSet.SetMinAvailable(max(podGroup.Spec.MinMember, 1))
+			rootSubGroupSet.AddPodSet(defaultPodSet)
+		}
+	}
+	return nil
 }
 
-func (podGroupInfo *PodGroupInfo) addTaskIndex(ti *pod_info.PodInfo) {
-	if _, found := podGroupInfo.PodStatusIndex[ti.Status]; !found {
-		podGroupInfo.PodStatusIndex[ti.Status] = pod_info.PodsMap{}
+func (pgi *PodGroupInfo) addTaskIndex(ti *pod_info.PodInfo) {
+	if _, found := pgi.PodStatusIndex[ti.Status]; !found {
+		pgi.PodStatusIndex[ti.Status] = pod_info.PodsMap{}
 	}
 
-	podGroupInfo.PodStatusIndex[ti.Status][ti.UID] = ti
+	pgi.PodStatusIndex[ti.Status][ti.UID] = ti
 	if pod_status.IsActiveAllocatedStatus(ti.Status) {
-		podGroupInfo.activeAllocatedCount = ptr.To(*podGroupInfo.activeAllocatedCount + 1)
+		pgi.activeAllocatedCount = ptr.To(*pgi.activeAllocatedCount + 1)
 	}
 
-	podGroupInfo.invalidateTasksCache()
+	pgi.invalidateTasksCache()
 }
 
-func (podGroupInfo *PodGroupInfo) AddTaskInfo(ti *pod_info.PodInfo) {
-	podGroupInfo.PodInfos[ti.UID] = ti
-	podGroupInfo.addTaskIndex(ti)
+func (pgi *PodGroupInfo) AddTaskInfo(ti *pod_info.PodInfo) {
+	taskSubGroupName := DefaultSubGroup
+	if ti.SubGroupName != "" {
+		taskSubGroupName = ti.SubGroupName
+	}
+	podSet, found := pgi.PodSets[taskSubGroupName]
+	if !found {
+		log.InfraLogger.Warningf("AddTaskInfo for task <%s/%s> of podGroup: <%s/%s>: SubGroup not found <%s>", ti.Namespace, ti.Name, pgi.Namespace, pgi.Name, taskSubGroupName)
+		return
+	}
+
+	podSet.AssignTask(ti)
+	pgi.addTaskIndex(ti)
 
 	if pod_status.AllocatedStatus(ti.Status) {
-		podGroupInfo.Allocated.AddResourceRequirements(ti.ResReq)
+		pgi.Allocated.AddResourceRequirements(ti.ResReq)
+		if len(pgi.AllocatedVector) > 0 && len(ti.ResReqVector) > 0 {
+			pgi.AllocatedVector.Add(ti.ResReqVector)
+		}
 	}
 }
 
-func (podGroupInfo *PodGroupInfo) UpdateTaskStatus(task *pod_info.PodInfo, status pod_status.PodStatus) error {
-	// Remove the task from the task list firstly
-	if err := podGroupInfo.DeleteTaskInfo(task); err != nil {
+func (pgi *PodGroupInfo) UpdateTaskStatus(task *pod_info.PodInfo, status pod_status.PodStatus) error {
+	// Reset the task state
+	if err := pgi.resetTaskState(task); err != nil {
 		return err
 	}
 
 	// Update task's status to the target status
 	task.Status = status
-	podGroupInfo.AddTaskInfo(task)
+	pgi.AddTaskInfo(task)
 
 	return nil
 }
 
-func (podGroupInfo *PodGroupInfo) deleteTaskIndex(ti *pod_info.PodInfo) {
-	if tasks, found := podGroupInfo.PodStatusIndex[ti.Status]; found {
+func (pgi *PodGroupInfo) deleteTaskIndex(ti *pod_info.PodInfo) {
+	if tasks, found := pgi.PodStatusIndex[ti.Status]; found {
 		delete(tasks, ti.UID)
 		if pod_status.IsActiveAllocatedStatus(ti.Status) {
-			podGroupInfo.activeAllocatedCount = ptr.To(*podGroupInfo.activeAllocatedCount - 1)
+			pgi.activeAllocatedCount = ptr.To(*pgi.activeAllocatedCount - 1)
 		}
 
 		if len(tasks) == 0 {
-			delete(podGroupInfo.PodStatusIndex, ti.Status)
+			delete(pgi.PodStatusIndex, ti.Status)
 		}
 
-		podGroupInfo.invalidateTasksCache()
+		pgi.invalidateTasksCache()
 	}
 }
 
-func (podGroupInfo *PodGroupInfo) invalidateTasksCache() {
-	podGroupInfo.tasksToAllocate = nil
-	podGroupInfo.tasksToAllocateInitResource = nil
+func (pgi *PodGroupInfo) invalidateTasksCache() {
+	pgi.tasksToAllocate = nil
+	pgi.tasksToAllocateInitResource = nil
 }
 
-func (podGroupInfo *PodGroupInfo) GetActiveAllocatedTasksCount() int {
-	if podGroupInfo.activeAllocatedCount == nil {
+func (pgi *PodGroupInfo) GetActiveAllocatedTasksCount() int {
+	if pgi.activeAllocatedCount == nil {
 		var taskCount int
-		for _, task := range podGroupInfo.PodInfos {
+		for _, task := range pgi.GetAllPodsMap() {
 			if pod_status.IsActiveAllocatedStatus(task.Status) {
 				taskCount++
 			}
 		}
-		podGroupInfo.activeAllocatedCount = ptr.To(taskCount)
+		pgi.activeAllocatedCount = ptr.To(taskCount)
 	}
-	return *podGroupInfo.activeAllocatedCount
+	return *pgi.activeAllocatedCount
 }
 
-func (podGroupInfo *PodGroupInfo) GetActivelyRunningTasksCount() int32 {
+func (pgi *PodGroupInfo) GetActivelyRunningTasksCount() int32 {
 	tasksCount := int32(0)
-	for _, task := range podGroupInfo.PodInfos {
+	for _, task := range pgi.GetAllPodsMap() {
 		if pod_status.IsActiveUsedStatus(task.Status) {
 			tasksCount += 1
 		}
@@ -249,28 +306,28 @@ func (podGroupInfo *PodGroupInfo) GetActivelyRunningTasksCount() int32 {
 	return tasksCount
 }
 
-func (podGroupInfo *PodGroupInfo) DeleteTaskInfo(ti *pod_info.PodInfo) error {
-	task, found := podGroupInfo.PodInfos[ti.UID]
+func (pgi *PodGroupInfo) resetTaskState(ti *pod_info.PodInfo) error {
+	task, found := pgi.GetAllPodsMap()[ti.UID]
 	if !found {
 		return fmt.Errorf("failed to find task <%v/%v> in job <%v>",
-			ti.Namespace, ti.Name, podGroupInfo.NamespacedName)
+			ti.Namespace, ti.Name, pgi.NamespacedName)
 	}
 
 	if pod_status.AllocatedStatus(task.Status) {
-		podGroupInfo.Allocated.SubResourceRequirements(task.ResReq)
+		pgi.Allocated.SubResourceRequirements(task.ResReq)
+		if len(pgi.AllocatedVector) > 0 && len(task.ResReqVector) > 0 {
+			pgi.AllocatedVector.Sub(task.ResReqVector)
+		}
 	}
 
-	podGroupInfo.deleteTaskIndex(ti)
-	taskClone := task.Clone()
-	taskClone.Status = pod_status.Deleted
-	podGroupInfo.PodInfos[taskClone.UID] = taskClone
+	pgi.deleteTaskIndex(ti)
 	return nil
 
 }
 
-func (podGroupInfo *PodGroupInfo) GetNumAliveTasks() int {
+func (pgi *PodGroupInfo) GetNumAliveTasks() int {
 	numTasks := 0
-	for _, task := range podGroupInfo.PodInfos {
+	for _, task := range pgi.GetAllPodsMap() {
 		if pod_status.IsAliveStatus(task.Status) {
 			numTasks += 1
 		}
@@ -278,9 +335,9 @@ func (podGroupInfo *PodGroupInfo) GetNumAliveTasks() int {
 	return numTasks
 }
 
-func (podGroupInfo *PodGroupInfo) GetNumActiveUsedTasks() int {
+func (pgi *PodGroupInfo) GetNumActiveUsedTasks() int {
 	numTasks := 0
-	for _, task := range podGroupInfo.PodInfos {
+	for _, task := range pgi.GetAllPodsMap() {
 		if pod_status.IsActiveUsedStatus(task.Status) {
 			numTasks += 1
 		}
@@ -288,9 +345,9 @@ func (podGroupInfo *PodGroupInfo) GetNumActiveUsedTasks() int {
 	return numTasks
 }
 
-func (podGroupInfo *PodGroupInfo) GetNumAllocatedTasks() int {
+func (pgi *PodGroupInfo) GetNumAllocatedTasks() int {
 	numTasks := 0
-	for _, task := range podGroupInfo.PodInfos {
+	for _, task := range pgi.GetAllPodsMap() {
 		if pod_status.AllocatedStatus(task.Status) {
 			numTasks++
 		}
@@ -298,9 +355,9 @@ func (podGroupInfo *PodGroupInfo) GetNumAllocatedTasks() int {
 	return numTasks
 }
 
-func (podGroupInfo *PodGroupInfo) GetPendingTasks() []*pod_info.PodInfo {
+func (pgi *PodGroupInfo) GetPendingTasks() []*pod_info.PodInfo {
 	var pendingTasks []*pod_info.PodInfo
-	for _, task := range podGroupInfo.PodInfos {
+	for _, task := range pgi.GetAllPodsMap() {
 		if task.Status == pod_status.Pending {
 			pendingTasks = append(pendingTasks, task)
 		}
@@ -309,17 +366,17 @@ func (podGroupInfo *PodGroupInfo) GetPendingTasks() []*pod_info.PodInfo {
 
 }
 
-func (podGroupInfo *PodGroupInfo) GetNumPendingTasks() int {
-	return len(podGroupInfo.PodStatusIndex[pod_status.Pending])
+func (pgi *PodGroupInfo) GetNumPendingTasks() int {
+	return len(pgi.PodStatusIndex[pod_status.Pending])
 }
 
-func (podGroupInfo *PodGroupInfo) GetNumGatedTasks() int {
-	return len(podGroupInfo.PodStatusIndex[pod_status.Gated])
+func (pgi *PodGroupInfo) GetNumGatedTasks() int {
+	return len(pgi.PodStatusIndex[pod_status.Gated])
 }
 
-func (podGroupInfo *PodGroupInfo) GetAliveTasksRequestedGPUs() float64 {
+func (pgi *PodGroupInfo) GetAliveTasksRequestedGPUs() float64 {
 	tasksTotalRequestedGPUs := float64(0)
-	for _, task := range podGroupInfo.PodInfos {
+	for _, task := range pgi.GetAllPodsMap() {
 		if pod_status.IsAliveStatus(task.Status) {
 			tasksTotalRequestedGPUs += task.ResReq.GPUs()
 		}
@@ -328,9 +385,9 @@ func (podGroupInfo *PodGroupInfo) GetAliveTasksRequestedGPUs() float64 {
 	return tasksTotalRequestedGPUs
 }
 
-func (podGroupInfo *PodGroupInfo) GetTasksActiveAllocatedReqResource() *resource_info.Resource {
+func (pgi *PodGroupInfo) GetTasksActiveAllocatedReqResource() *resource_info.Resource {
 	tasksTotalRequestedResource := resource_info.EmptyResource()
-	for _, task := range podGroupInfo.PodInfos {
+	for _, task := range pgi.GetAllPodsMap() {
 		if pod_status.IsActiveAllocatedStatus(task.Status) {
 			tasksTotalRequestedResource.AddResourceRequirements(task.ResReq)
 		}
@@ -339,69 +396,111 @@ func (podGroupInfo *PodGroupInfo) GetTasksActiveAllocatedReqResource() *resource
 	return tasksTotalRequestedResource
 }
 
-func (podGroupInfo *PodGroupInfo) IsReadyForScheduling() bool {
-	validTasks := podGroupInfo.GetNumAliveTasks() - podGroupInfo.GetNumGatedTasks()
-	return int32(validTasks) >= podGroupInfo.MinAvailable
+func (pgi *PodGroupInfo) IsReadyForScheduling() bool {
+	for _, podSet := range pgi.PodSets {
+		if !podSet.IsReadyForScheduling() {
+			return false
+		}
+	}
+	return true
 }
 
-func (podGroupInfo *PodGroupInfo) IsElastic() bool {
-	return podGroupInfo.MinAvailable < int32(len(podGroupInfo.PodInfos))
+func (pgi *PodGroupInfo) IsElastic() bool {
+	for _, podSet := range pgi.PodSets {
+		if podSet.IsElastic() {
+			return true
+		}
+	}
+	return false
 }
 
-func (podGroupInfo *PodGroupInfo) IsPodGroupStale() bool {
-	if podGroupInfo.PodStatusIndex[pod_status.Succeeded] != nil {
+func (pgi *PodGroupInfo) IsStale() bool {
+	if pgi.PodStatusIndex[pod_status.Succeeded] != nil {
 		return false
 	}
 
-	activeUsedTasks := int32(podGroupInfo.GetNumActiveUsedTasks())
-	return activeUsedTasks > 0 && activeUsedTasks < podGroupInfo.MinAvailable
-}
-
-func (podGroupInfo *PodGroupInfo) ShouldPipelineJob() bool {
-	hasPipelinedTask := false
-	activeAllocatedTasksCount := 0
-	for _, task := range podGroupInfo.PodInfos {
-		if task.Status == pod_status.Pipelined {
-			log.InfraLogger.V(7).Infof("task: <%v/%v> was pipelined to node: <%v>",
-				task.Namespace, task.Name, task.NodeName)
-			hasPipelinedTask = true
-		} else if pod_status.IsActiveAllocatedStatus(task.Status) {
-			activeAllocatedTasksCount += 1
+	totalActivePods := pgi.GetNumActiveUsedTasks()
+	if totalActivePods == 0 {
+		return false
+	}
+	for _, podSet := range pgi.PodSets {
+		if !podSet.IsGangSatisfied() {
+			return true
 		}
 	}
-	// If the job has already MinAvailable tasks active allocated (but not pipelined),
-	//  then we shouldn't convert non-pipelined tasks to pipeline.
-	return hasPipelinedTask && activeAllocatedTasksCount < int(podGroupInfo.MinAvailable)
+	return false
 }
 
-func (podGroupInfo *PodGroupInfo) Clone() *PodGroupInfo {
-	return podGroupInfo.CloneWithTasks(maps.Values(podGroupInfo.PodInfos))
+func (pgi *PodGroupInfo) IsGangSatisfied() bool {
+	for _, podSet := range pgi.PodSets {
+		if !podSet.IsGangSatisfied() {
+			return false
+		}
+	}
+	return true
 }
 
-func (podGroupInfo *PodGroupInfo) CloneWithTasks(tasks []*pod_info.PodInfo) *PodGroupInfo {
+func (pgi *PodGroupInfo) ShouldPipelineJob() bool {
+	for _, podSet := range pgi.PodSets {
+		hasPipelinedTask := false
+		activeAllocatedTasksCount := 0
+		for _, task := range podSet.GetPodInfos() {
+			if task.Status == pod_status.Pipelined {
+				log.InfraLogger.V(7).Infof("task: <%v/%v> was pipelined to node: <%v>",
+					task.Namespace, task.Name, task.NodeName)
+				hasPipelinedTask = true
+			} else if pod_status.IsActiveAllocatedStatus(task.Status) {
+				activeAllocatedTasksCount += 1
+			}
+		}
+
+		if hasPipelinedTask && activeAllocatedTasksCount < int(podSet.GetMinAvailable()) {
+			log.InfraLogger.V(7).Infof("Subgroup: <%v/%v> has pipelined tasks, and not enough allocated pods for minAvailable <%v>. Pipeline all.",
+				pgi.UID, podSet.GetName(), podSet.GetMinAvailable())
+			return true
+		}
+	}
+	return false
+}
+
+func (pgi *PodGroupInfo) Clone() *PodGroupInfo {
+	return pgi.CloneWithTasks(maps.Values(pgi.GetAllPodsMap()))
+}
+
+// SetVectorMap sets the vector map and reinitializes AllocatedVector.
+// Use this for deferred initialization when vectorMap is not available at construction time.
+func (pgi *PodGroupInfo) SetVectorMap(vectorMap *resource_info.ResourceVectorMap) {
+	pgi.VectorMap = vectorMap
+	pgi.AllocatedVector = pgi.Allocated.ToVector(vectorMap)
+}
+
+func (pgi *PodGroupInfo) CloneWithTasks(tasks []*pod_info.PodInfo) *PodGroupInfo {
 	info := &PodGroupInfo{
-		UID:       podGroupInfo.UID,
-		Name:      podGroupInfo.Name,
-		Namespace: podGroupInfo.Namespace,
-		Queue:     podGroupInfo.Queue,
-		Priority:  podGroupInfo.Priority,
+		UID:            pgi.UID,
+		Name:           pgi.Name,
+		Namespace:      pgi.Namespace,
+		Queue:          pgi.Queue,
+		Priority:       pgi.Priority,
+		Preemptibility: pgi.Preemptibility,
 
-		MinAvailable: podGroupInfo.MinAvailable,
-		Allocated:    resource_info.EmptyResource(),
+		Allocated:       resource_info.EmptyResource(),
+		AllocatedVector: resource_info.NewResourceVector(pgi.VectorMap),
+		VectorMap:       pgi.VectorMap,
 
-		JobFitErrors:   make(enginev2alpha2.UnschedulableExplanations, 0),
-		NodesFitErrors: make(map[common_info.PodID]*common_info.FitErrors),
+		JobFitErrors:   make([]common_info.JobFitError, 0),
+		TasksFitErrors: make(map[common_info.PodID]*common_info.TasksFitErrors),
 
-		PDB:         podGroupInfo.PDB,
-		PodGroup:    podGroupInfo.PodGroup,
-		PodGroupUID: podGroupInfo.PodGroupUID,
+		PodGroup:    pgi.PodGroup,
+		PodGroupUID: pgi.PodGroupUID,
 
 		PodStatusIndex:       map[pod_status.PodStatus]pod_info.PodsMap{},
-		PodInfos:             pod_info.PodsMap{},
 		activeAllocatedCount: ptr.To(0),
 	}
 
-	podGroupInfo.CreationTimestamp.DeepCopyInto(&info.CreationTimestamp)
+	pgi.CreationTimestamp.DeepCopyInto(&info.CreationTimestamp)
+
+	info.RootSubGroupSet = pgi.RootSubGroupSet.Clone()
+	info.PodSets = info.RootSubGroupSet.GetAllPodSets()
 
 	for _, task := range tasks {
 		info.AddTaskInfo(task.Clone())
@@ -410,59 +509,57 @@ func (podGroupInfo *PodGroupInfo) CloneWithTasks(tasks []*pod_info.PodInfo) *Pod
 	return info
 }
 
-func (podGroupInfo PodGroupInfo) String() string {
+func (pgi *PodGroupInfo) String() string {
 	res := ""
 
+	for _, podSet := range pgi.PodSets {
+		res = res + fmt.Sprintf("\t\t subGroup %s: minAvailable(%v)\n",
+			podSet.GetName(), podSet.GetMinAvailable())
+	}
+
 	i := 0
-	for _, task := range podGroupInfo.PodInfos {
-		res = res + fmt.Sprintf("\n\t %d: %v", i, task)
+	for _, task := range pgi.GetAllPodsMap() {
+		res = res + fmt.Sprintf("\n\t task %d: %v", i, task)
 		i++
 	}
 
-	return fmt.Sprintf("Job (%v): namespace %v (%v), name %v, minAvailable %d, podGroup %+v",
-		podGroupInfo.UID, podGroupInfo.Namespace, podGroupInfo.Queue, podGroupInfo.Name, podGroupInfo.MinAvailable, podGroupInfo.PodGroup) + res
+	return fmt.Sprintf("Job (%v): namespace %v (%v), name %v, podGroup %+v",
+		pgi.UID, pgi.Namespace, pgi.Queue, pgi.Name, pgi.PodGroup) + res
 }
 
-func (podGroupInfo *PodGroupInfo) SetTaskFitError(task *pod_info.PodInfo, fitErrors *common_info.FitErrors) {
-	existingFitErrors, found := podGroupInfo.NodesFitErrors[task.UID]
+func (pgi *PodGroupInfo) AddTaskFitErrors(task *pod_info.PodInfo, fitErrors *common_info.TasksFitErrors) {
+	existingFitErrors, found := pgi.TasksFitErrors[task.UID]
 	if found {
 		existingFitErrors.AddNodeErrors(fitErrors)
 	} else {
-		podGroupInfo.NodesFitErrors[task.UID] = fitErrors
+		pgi.TasksFitErrors[task.UID] = fitErrors
 	}
 }
 
-func (podGroupInfo *PodGroupInfo) SetJobFitError(reason enginev2alpha2.UnschedulableReason, message string, details *enginev2alpha2.UnschedulableExplanationDetails) {
-	podGroupInfo.JobFitErrors = append(podGroupInfo.JobFitErrors, enginev2alpha2.UnschedulableExplanation{
-		Reason:  reason,
-		Message: message,
-		Details: details,
-	})
+func (pgi *PodGroupInfo) AddSimpleJobFitError(reason enginev2alpha2.UnschedulableReason, message string) {
+	pgi.AddJobFitError(common_info.NewJobFitError(pgi.Name, DefaultSubGroup, pgi.Namespace, reason, []string{message}))
 }
 
-func (podGroupInfo *PodGroupInfo) GetSchedulingConstraintsSignature() common_info.SchedulingConstraintsSignature {
-	if podGroupInfo.schedulingConstraintsSignature != "" {
-		return podGroupInfo.schedulingConstraintsSignature
+func (pgi *PodGroupInfo) AddJobFitError(err common_info.JobFitError) {
+	pgi.JobFitErrors = append(pgi.JobFitErrors, err)
+}
+
+func (pgi *PodGroupInfo) GetSchedulingConstraintsSignature() common_info.SchedulingConstraintsSignature {
+	if pgi.schedulingConstraintsSignature == "" {
+		pgi.schedulingConstraintsSignature = pgi.generateSchedulingConstraintsSignature()
 	}
 
-	key := podGroupInfo.generateSchedulingConstraintsSignature()
-
-	podGroupInfo.schedulingConstraintsSignature = key
-	return key
+	return pgi.schedulingConstraintsSignature
 }
 
-func (podGroupInfo *PodGroupInfo) generateSchedulingConstraintsSignature() common_info.SchedulingConstraintsSignature {
+func (pgi *PodGroupInfo) generateSchedulingConstraintsSignature() common_info.SchedulingConstraintsSignature {
 	hash := sha256.New()
 	var signatures []common_info.SchedulingConstraintsSignature
 
-	for _, pod := range podGroupInfo.PodInfos {
-		if pod_status.IsActiveAllocatedStatus(pod.Status) {
-			continue
-		}
-
-		key := pod.GetSchedulingConstraintsSignature()
-		signatures = append(signatures, key)
+	for _, podSet := range pgi.PodSets {
+		signatures = append(signatures, podSet.GetSchedulingConstraintsSignature())
 	}
+
 	slices.Sort(signatures)
 
 	for _, signature := range signatures {

@@ -6,55 +6,34 @@ package gpurequesthandler
 import (
 	"fmt"
 	"strconv"
-	"strings"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
 func ValidateGpuRequests(pod *v1.Pod) error {
-	containerIndex := getGpuSharingContainerIndex(pod.Labels, pod.Spec.Containers)
-	container := pod.Spec.Containers[containerIndex]
-
 	gpuFractionFromAnnotation, hasGpuFractionAnnotation := pod.Annotations[constants.GpuFraction]
 	gpuMemoryFromAnnotation, hasGpuMemoryAnnotation := pod.Annotations[constants.GpuMemory]
 	gpuFractionsCountFromAnnotation, hasGpuFractionsCount := pod.Annotations[constants.GpuFractionsNumDevices]
-	_, hasGpuLimitAnnotation := pod.Annotations[constants.GpuLimit]
+
 	mpsFromAnnotation, hasMpsAnnotation := pod.Annotations[constants.MpsAnnotation]
-	_, hasGpuResourceRequest := container.Resources.Requests[constants.GpuResource]
-	gpuLimitQuantity, hasGpuResourceLimit := container.Resources.Limits[constants.GpuResource]
 
-	wholeGPULimit, hasWholeGPULimit := getWholeGpuLimit(hasGpuResourceLimit, gpuLimitQuantity)
-	if hasWholeGPULimit && wholeGPULimit < 0 {
-		return fmt.Errorf("GPU resource limit cannot be negative")
-	}
+	wholeGPULimit := getFirstGPULimit(pod)
+	hasWholeGPULimit := wholeGPULimit != nil
 
-	isFractional := isFractionalRequest(hasGpuResourceLimit, gpuLimitQuantity, hasGpuFractionAnnotation,
-		hasGpuMemoryAnnotation)
+	isFractional := hasGpuFractionAnnotation || hasGpuMemoryAnnotation
 
 	if !isFractional && hasMpsAnnotation && mpsFromAnnotation == "true" {
 		return fmt.Errorf("MPS is only supported with GPU fraction request")
 	}
 
-	if hasGpuFractionAnnotation && hasGpuResourceLimit {
+	if hasGpuFractionAnnotation && hasWholeGPULimit {
 		return fmt.Errorf("cannot have both GPU fraction request and whole GPU resource request/limit")
 	}
 
-	if hasGpuResourceRequest && !hasGpuResourceLimit {
-		return fmt.Errorf("GPU is not not listed in resource limits")
-	}
-
-	if hasGpuLimitAnnotation && !isFractional {
-		return fmt.Errorf("cannot have GPU limit annotation without GPU fraction request")
-	}
-
-	if hasGpuResourceLimit && !isGpuFractionValid(hasWholeGPULimit, gpuLimitQuantity) {
-		return fmt.Errorf("GPU resource limit annotation cannot be larger than 1")
-	}
-
-	if hasGpuMemoryAnnotation && (hasGpuFractionAnnotation || hasGpuResourceLimit) {
+	if hasGpuMemoryAnnotation && (hasGpuFractionAnnotation || hasWholeGPULimit) {
 		return fmt.Errorf("cannot request both GPU and GPU memory")
 	}
 
@@ -80,41 +59,6 @@ func ValidateGpuRequests(pod *v1.Pod) error {
 	}
 
 	return nil
-}
-
-func getGpuSharingContainerIndex(labels map[string]string, containers []v1.Container) int {
-	if len(containers) == 1 {
-		return 0
-	}
-
-	for label := range labels {
-		if strings.HasPrefix(label, "pipelines.kubeflow.org") {
-			return 1
-		}
-	}
-
-	return 0
-}
-
-func isFractionalRequest(hasGpuResourceLimit bool, gpuResourceLimit resource.Quantity,
-	hasGpuFractionAnnotation bool, hasGpuMemoryAnnotation bool) bool {
-	_, hasWholeGpuLimit := getWholeGpuLimit(hasGpuResourceLimit, gpuResourceLimit)
-	hasFractionalGPULimit := hasGpuResourceLimit && !hasWholeGpuLimit
-	isFractional := hasGpuFractionAnnotation || hasGpuMemoryAnnotation || hasFractionalGPULimit
-	return isFractional
-}
-
-func isGpuFractionValid(hasWholeGPULimit bool, gpuLimitQuantity resource.Quantity) bool {
-	return hasWholeGPULimit || gpuLimitQuantity.MilliValue() <= 1000
-}
-
-func getWholeGpuLimit(hasGpuResourceLimit bool, gpuResourceLimit resource.Quantity) (int64, bool) {
-	var wholeGPULimit int64
-	var hasWholeGPULimit bool
-	if hasGpuResourceLimit {
-		wholeGPULimit, hasWholeGPULimit = gpuResourceLimit.AsInt64()
-	}
-	return wholeGPULimit, hasWholeGPULimit
 }
 
 func validateMemoryAnnotation(hasGpuMemoryAnnotation bool, gpuMemoryFromAnnotation string) error {
@@ -147,6 +91,17 @@ func validateMultiFractionRequest(hasGpuFractionsCount bool, gpuFractionsCountFr
 	fractionsCount, err := strconv.ParseUint(gpuFractionsCountFromAnnotation, 10, 64)
 	if err != nil || fractionsCount == 0 {
 		return fmt.Errorf("fraction count annotation value must be a positive integer greater than 0")
+	}
+	return nil
+}
+
+// getFirstGPULimit gets the first GPU limit from the pod.Containers or pod.InitContainers.
+func getFirstGPULimit(pod *v1.Pod) *resource.Quantity {
+	containers := append(pod.Spec.Containers, pod.Spec.InitContainers...)
+	for _, container := range containers {
+		if limit, ok := container.Resources.Limits[constants.NvidiaGpuResource]; ok {
+			return &limit
+		}
 	}
 	return nil
 }

@@ -15,14 +15,18 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 
-	rrmock "github.com/NVIDIA/KAI-scheduler/pkg/binder/binding/resourcereservation/mock"
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/common"
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/plugins"
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/plugins/gpusharing"
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/test_utils"
+	rrmock "github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding/resourcereservation/mock"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins"
+	bindinggpusharing "github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/gpusharing"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/test_utils"
+)
+
+const (
+	gpuSharingConfigMapAnnotation = "runai/shared-gpu-configmap"
 )
 
 func TestBind(t *testing.T) {
@@ -30,6 +34,26 @@ func TestBind(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: "my-ns",
 			Name:      "my-pod",
+			Annotations: map[string]string{
+				gpuSharingConfigMapAnnotation: "my-configmap-shared-gpu",
+			},
+		},
+		Spec: v1.PodSpec{
+			Containers: []v1.Container{
+				{},
+			},
+			Volumes: []v1.Volume{
+				{
+					Name: "my-configmap-vol",
+					VolumeSource: v1.VolumeSource{
+						ConfigMap: &v1.ConfigMapVolumeSource{
+							LocalObjectReference: v1.LocalObjectReference{
+								Name: "my-configmap-shared-gpu-0",
+							},
+						},
+					},
+				},
+			},
 		},
 	}
 	kubeObjects := []runtime.Object{
@@ -47,8 +71,8 @@ func TestBind(t *testing.T) {
 	kubeClient := fake.NewClientBuilder().WithRuntimeObjects(kubeObjects...).WithInterceptorFuncs(test_utils.EmptyBind).Build()
 
 	binderPlugins := plugins.New()
-	gpuSharingPlugin := gpusharing.New(kubeClient, false, true)
-	binderPlugins.RegisterPlugin(gpuSharingPlugin)
+	bindingGpuSharingPlugin := bindinggpusharing.New(kubeClient, false)
+	binderPlugins.RegisterPlugin(bindingGpuSharingPlugin)
 
 	binder := NewBinder(kubeClient, rrs, binderPlugins)
 
@@ -74,31 +98,46 @@ func TestBindApplyResourceReceivedType(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: "my-ns",
 			Name:      "my-pod",
+			Annotations: map[string]string{
+				gpuSharingConfigMapAnnotation: "my-config",
+			},
 		},
 		Spec: v1.PodSpec{
 			Containers: []v1.Container{
 				{
 					Env: []v1.EnvVar{
 						{
-							Name: common.NvidiaVisibleDevices,
+							Name: constants.NvidiaVisibleDevices,
 							ValueFrom: &v1.EnvVarSource{
 								ConfigMapKeyRef: &v1.ConfigMapKeySelector{
-									Key: common.VisibleDevices,
+									Key: constants.NvidiaVisibleDevices,
 									LocalObjectReference: v1.LocalObjectReference{
-										Name: "my-config",
+										Name: "my-config-0",
 									},
 								},
 							},
 						},
 						{
-							Name: common.NumOfGpusEnvVar,
+							Name: common.GPUPortion,
 							ValueFrom: &v1.EnvVarSource{
 								ConfigMapKeyRef: &v1.ConfigMapKeySelector{
-									Key: common.NumOfGpusEnvVar,
+									Key: common.GPUPortion,
 									LocalObjectReference: v1.LocalObjectReference{
-										Name: "my-config",
+										Name: "my-config-0",
 									},
 								},
+							},
+						},
+					},
+				},
+			},
+			Volumes: []v1.Volume{
+				{
+					Name: "my-configmap-vol",
+					VolumeSource: v1.VolumeSource{
+						ConfigMap: &v1.ConfigMapVolumeSource{
+							LocalObjectReference: v1.LocalObjectReference{
+								Name: "my-config-0",
 							},
 						},
 					},
@@ -120,7 +159,10 @@ func TestBindApplyResourceReceivedType(t *testing.T) {
 			SelectedNode:         "my-node",
 			ReceivedResourceType: common.ReceivedTypeFraction,
 			SelectedGPUGroups:    []string{"group1"},
-			ReceivedGPU:          &v1alpha2.ReceivedGPU{Count: 1, Portion: "1"},
+			ReceivedGPU: &v1alpha2.ReceivedGPU{
+				Count:   1,
+				Portion: "1",
+			},
 		},
 	}
 
@@ -133,8 +175,8 @@ func TestBindApplyResourceReceivedType(t *testing.T) {
 	kubeClient := fake.NewClientBuilder().WithRuntimeObjects(kubeObjects...).WithInterceptorFuncs(test_utils.EmptyBind).Build()
 
 	binderPlugins := plugins.New()
-	gpuSharingPlugin := gpusharing.New(kubeClient, false, true)
-	binderPlugins.RegisterPlugin(gpuSharingPlugin)
+	bindingGpuSharingPlugin := bindinggpusharing.New(kubeClient, false)
+	binderPlugins.RegisterPlugin(bindingGpuSharingPlugin)
 
 	binder := NewBinder(kubeClient, rrs, binderPlugins)
 
@@ -180,8 +222,8 @@ func TestBindFail(t *testing.T) {
 	kubeClient := fake.NewClientBuilder().WithRuntimeObjects(kubeObjects...).WithInterceptorFuncs(test_utils.EmptyBind).Build()
 
 	binderPlugins := plugins.New()
-	gpuSharingPlugin := gpusharing.New(kubeClient, false, true)
-	binderPlugins.RegisterPlugin(gpuSharingPlugin)
+	bindingGpuSharingPlugin := bindinggpusharing.New(kubeClient, false)
+	binderPlugins.RegisterPlugin(bindingGpuSharingPlugin)
 
 	binder := NewBinder(kubeClient, rrs, binderPlugins)
 

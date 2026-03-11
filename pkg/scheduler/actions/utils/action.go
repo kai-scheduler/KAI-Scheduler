@@ -4,15 +4,15 @@
 package utils
 
 import (
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/queue_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/scheduler_util"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/scheduler_util"
 )
 
 func GetVictimsQueue(
@@ -20,14 +20,14 @@ func GetVictimsQueue(
 	filter func(*podgroup_info.PodGroupInfo) bool) *JobsOrderByQueues {
 	preemptees := map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{}
 
-	for _, job := range ssn.PodGroupInfos {
+	for _, job := range ssn.ClusterInfo.PodGroupInfos {
 		atLeastOneAlivePod := false
-		for _, task := range job.PodInfos {
+		for _, task := range job.GetAllPodsMap() {
 			if !pod_status.IsAliveStatus(task.Status) {
 				continue
 			}
 			if task.NodeName != "" {
-				if _, found := ssn.Nodes[task.NodeName]; !found {
+				if _, found := ssn.ClusterInfo.Nodes[task.NodeName]; !found {
 					log.InfraLogger.Errorf("Failed to find node for task: <%v,%v> ", task.Namespace, task.Name)
 					continue
 				}
@@ -56,16 +56,16 @@ func GetMessageOfEviction(ssn *framework.Session, actionType framework.ActionTyp
 		return api.GetConsolidateMessage(preempteeTask)
 
 	case framework.Reclaim:
-		preempteeJob, found := ssn.PodGroupInfos[preempteeTask.Job]
+		preempteeJob, found := ssn.ClusterInfo.PodGroupInfos[preempteeTask.Job]
 		if !found {
 			log.InfraLogger.Errorf(
 				"Failed to get preemptee job for task: <%s/%s>", preempteeTask.Namespace, preempteeTask.Name)
 			return ""
 		}
-		reclaimerQueue := ssn.Queues[preemptorJob.Queue]
-		reclaimerParentQueue := ssn.Queues[reclaimerQueue.ParentQueue]
-		reclaimeeQueue := ssn.Queues[preempteeJob.Queue]
-		reclaimeeParentQueue := ssn.Queues[reclaimeeQueue.ParentQueue]
+		reclaimerQueue := ssn.ClusterInfo.Queues[preemptorJob.Queue]
+		reclaimerParentQueue := ssn.ClusterInfo.Queues[reclaimerQueue.ParentQueue]
+		reclaimeeQueue := ssn.ClusterInfo.Queues[preempteeJob.Queue]
+		reclaimeeParentQueue := ssn.ClusterInfo.Queues[reclaimeeQueue.ParentQueue]
 
 		msg := api.GetReclaimMessage(preempteeTask, preemptorJob)
 
@@ -120,7 +120,7 @@ func getReclaimMessageQueuesDetails(ssn *framework.Session, reclaimeeTask *pod_i
 
 func GetAllPendingJobs(ssn *framework.Session) map[common_info.PodGroupID]*podgroup_info.PodGroupInfo {
 	pendingJobs := map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{}
-	for _, job := range ssn.PodGroupInfos {
+	for _, job := range ssn.ClusterInfo.PodGroupInfos {
 		if len(job.PodStatusIndex[pod_status.Pending]) > 0 {
 			pendingJobs[job.UID] = job
 		}
@@ -130,9 +130,9 @@ func GetAllPendingJobs(ssn *framework.Session) map[common_info.PodGroupID]*podgr
 
 func IsEnoughGPUsAllocatableForJob(job *podgroup_info.PodGroupInfo, ssn *framework.Session, isRealAllocation bool) bool {
 	sumOfAllAllocatableGPUs, sumOfAllAllocatableGPUsMemory := getSumOfAvailableGPUs(ssn)
-	requestedGPUs, requestedGpuMemory := podgroup_info.GetTasksToAllocateRequestedGPUs(job, ssn.TaskOrderFn,
-		isRealAllocation)
-	resReq := podgroup_info.GetTasksToAllocateInitResource(job, ssn.TaskOrderFn, isRealAllocation)
+	requestedGPUs, requestedGpuMemory := podgroup_info.GetTasksToAllocateRequestedGPUs(job, ssn.PodSetOrderFn,
+		ssn.TaskOrderFn, isRealAllocation)
+	resReq := podgroup_info.GetTasksToAllocateInitResource(job, ssn.PodSetOrderFn, ssn.TaskOrderFn, isRealAllocation, ssn.ClusterInfo.MinNodeGPUMemory)
 	log.InfraLogger.V(7).Infof(
 		"Task: <%v/%v> resources requires: <%v>, sumOfAllAllocatableGPUs: <%v, %v mb>",
 		job.Namespace, job.Name, resReq, sumOfAllAllocatableGPUs, sumOfAllAllocatableGPUsMemory)
@@ -142,7 +142,7 @@ func IsEnoughGPUsAllocatableForJob(job *podgroup_info.PodGroupInfo, ssn *framewo
 func getSumOfAvailableGPUs(ssn *framework.Session) (float64, int64) {
 	sumOfAllAllocatableGPUs := float64(0)
 	sumOfAllAllocatableGPUsMemory := int64(0)
-	for _, node := range ssn.Nodes {
+	for _, node := range ssn.ClusterInfo.Nodes {
 		if !scheduler_util.ValidateIsNodeReady(node.Node) {
 			continue
 		}

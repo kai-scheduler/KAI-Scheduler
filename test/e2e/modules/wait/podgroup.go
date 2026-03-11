@@ -9,26 +9,35 @@ import (
 	"time"
 
 	. "github.com/onsi/gomega"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/watch"
-	"k8s.io/client-go/kubernetes"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	kaiClient "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
+
+func WaitForPodGroupToExist(
+	ctx context.Context,
+	client runtimeClient.WithWatch,
+	namespace, name string,
+) {
+	var lastErr error
+	Eventually(func(g Gomega) bool {
+		var podGroup v2alpha2.PodGroup
+		lastErr = client.Get(ctx, runtimeClient.ObjectKey{Name: name, Namespace: namespace}, &podGroup)
+		return lastErr == nil
+	}).WithPolling(time.Second).WithTimeout(time.Minute).Should(BeTrue(), "Failed to find PodGroup", namespace, name, lastErr)
+}
 
 func WaitForPodGroupsToBeReady(
 	ctx context.Context,
-	kubeClientset *kubernetes.Clientset,
-	kaiClientset *kaiClient.Clientset,
 	controllerClient runtimeClient.WithWatch,
 	namespace string,
 	numPodGroups int) {
 	Eventually(func(g Gomega) {
-		podGroups, err := kaiClientset.SchedulingV2alpha2().PodGroups(namespace).List(
-			ctx, metav1.ListOptions{},
-		)
+		var podGroups v2alpha2.PodGroupList
+		err := controllerClient.List(ctx, &podGroups, runtimeClient.InNamespace(namespace))
 		g.Expect(err).To(Succeed())
 		g.Expect(len(podGroups.Items)).To(Equal(numPodGroups),
 			"Couldn't find podgroups for the pods")
@@ -36,7 +45,8 @@ func WaitForPodGroupsToBeReady(
 
 	// wait for pods to be connected to the pod groups
 	ForPodsWithCondition(ctx, controllerClient, func(watch.Event) bool {
-		pods, err := kubeClientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
+		var pods v1.PodList
+		err := controllerClient.List(ctx, &pods, runtimeClient.InNamespace(namespace))
 		Expect(err).To(Succeed())
 		connectedPodsCounter := 0
 		for _, pod := range pods.Items {

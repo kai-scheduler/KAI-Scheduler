@@ -1,0 +1,86 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# Two-Queue Oscillation - Simulation Configuration
+#
+# This configuration file is for use with the time-based-fairshare-simulator tool.
+# It simulates the oscillation behavior between two competing queues.
+#
+# Usage:
+#   # Build the simulator (from repo root)
+#   make time-based-fairshare-simulator
+#
+#   # Run simulation
+#   ./bin/time-based-fairshare-simulator-amd64 \
+#     -input examples/time-based-fairshare/two-queue-oscillation/simulation-config.yaml \
+#     -output simulation_results.csv
+#
+#   # Analyze results with Python
+#   cd cmd/time-based-fairshare-simulator/examples
+#   pip install -r requirements.txt
+#   python plot_simple.py ../../../simulation_results.csv
+
+# Number of simulation cycles to run
+# Each cycle represents ~10ms of simulated time
+# 1024 cycles ≈ 10 seconds of simulated scheduler behavior
+Cycles: 1024
+
+# Window size for usage tracking (in seconds)
+# Usage within this window affects fair-share calculations
+# 256 cycles at 10ms/cycle ≈ 2.56 seconds
+WindowSize: 256
+
+# Half-life period for exponential decay (in seconds)
+# Usage decays exponentially with this half-life
+# 128 cycles ≈ 1.28 seconds half-life
+# Set to 0 to disable decay (all usage within window counts equally)
+HalfLifePeriod: 128
+
+# K-value for fairness calculation
+# Higher values = more aggressive correction based on historical usage
+# null uses the default value of 1.0
+KValue: 1.0
+
+# Cluster configuration
+# Simulates a single node with 16 GPUs
+Nodes:
+  - GPUs: 16        # GPUs per node
+    Count: 1        # Number of nodes
+
+# Queue hierarchy
+# Parent queue with two leaf queues
+Queues:
+  # Parent (department) queue
+  - Name: training-department
+    Parent: ""              # Empty = top-level queue
+    Priority: 100
+    DeservedGPUs: 0.0       # No guaranteed quota
+    Weight: 1.0
+  
+  # Team A - leaf queue
+  - Name: team-a
+    Parent: training-department
+    Priority: 100
+    DeservedGPUs: 0.0       # No guaranteed quota - pure over-quota competition
+    Weight: 1.0             # Equal weight with team-b
+  
+  # Team B - leaf queue
+  - Name: team-b
+    Parent: training-department
+    Priority: 100
+    DeservedGPUs: 0.0       # No guaranteed quota - pure over-quota competition
+    Weight: 1.0             # Equal weight with team-a
+
+# Jobs to submit for each queue
+# Each queue submits jobs that require all 16 GPUs
+Jobs:
+  team-a:
+    GPUs: 16          # Each job needs entire cluster
+    NumPods: 1        # Single-pod jobs
+    NumJobs: 100      # Submit 100 jobs (ensures continuous backlog)
+  
+  team-b:
+    GPUs: 16          # Each job needs entire cluster
+    NumPods: 1        # Single-pod jobs
+    NumJobs: 100      # Submit 100 jobs (ensures continuous backlog)
+

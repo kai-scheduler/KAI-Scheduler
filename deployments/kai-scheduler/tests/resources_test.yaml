@@ -1,0 +1,447 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+suite: test service resources configuration
+templates:
+  - kai-config.yaml
+tests:
+  # ======================================
+  # Binder Resources Tests
+  # ======================================
+  - it: should not render binder resources when not configured
+    set:
+      binder.resources: {}
+    asserts:
+      - notExists:
+          path: spec.binder.service.resources
+
+  - it: should not render binder resources when undefined
+    asserts:
+      - notExists:
+          path: spec.binder.service.resources
+
+  - it: should render binder resources with requests only
+    set:
+      binder.resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+    asserts:
+      - exists:
+          path: spec.binder.service.resources
+      - equal:
+          path: spec.binder.service.resources.requests.cpu
+          value: 100m
+      - equal:
+          path: spec.binder.service.resources.requests.memory
+          value: 128Mi
+      - notExists:
+          path: spec.binder.service.resources.limits
+
+  - it: should render binder resources with limits only
+    set:
+      binder.resources:
+        limits:
+          cpu: 500m
+          memory: 512Mi
+    asserts:
+      - exists:
+          path: spec.binder.service.resources
+      - equal:
+          path: spec.binder.service.resources.limits.cpu
+          value: 500m
+      - equal:
+          path: spec.binder.service.resources.limits.memory
+          value: 512Mi
+      - notExists:
+          path: spec.binder.service.resources.requests
+
+  - it: should render binder resources with both requests and limits
+    set:
+      binder.resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: 1
+          memory: 1Gi
+    asserts:
+      - exists:
+          path: spec.binder.service.resources
+      - equal:
+          path: spec.binder.service.resources.requests.cpu
+          value: 100m
+      - equal:
+          path: spec.binder.service.resources.requests.memory
+          value: 128Mi
+      - equal:
+          path: spec.binder.service.resources.limits.cpu
+          value: 1
+      - equal:
+          path: spec.binder.service.resources.limits.memory
+          value: 1Gi
+
+  # ======================================
+  # PodGroupController Resources Tests
+  # ======================================
+  - it: should not render podgroupcontroller resources when not configured
+    asserts:
+      - notExists:
+          path: spec.podGroupController.service.resources
+
+  - it: should render podgroupcontroller resources when configured
+    set:
+      podgroupcontroller.resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+    asserts:
+      - exists:
+          path: spec.podGroupController.service.resources
+      - equal:
+          path: spec.podGroupController.service.resources.requests.cpu
+          value: 50m
+      - equal:
+          path: spec.podGroupController.service.resources.requests.memory
+          value: 64Mi
+      - equal:
+          path: spec.podGroupController.service.resources.limits.cpu
+          value: 200m
+      - equal:
+          path: spec.podGroupController.service.resources.limits.memory
+          value: 256Mi
+
+  # ======================================
+  # QueueController Resources Tests
+  # ======================================
+  - it: should not render queuecontroller resources when not configured
+    asserts:
+      - notExists:
+          path: spec.queueController.service.resources
+
+  - it: should render queuecontroller resources when configured
+    set:
+      queuecontroller.resources:
+        requests:
+          cpu: 75m
+          memory: 96Mi
+        limits:
+          cpu: 300m
+          memory: 384Mi
+    asserts:
+      - exists:
+          path: spec.queueController.service.resources
+      - equal:
+          path: spec.queueController.service.resources.requests.cpu
+          value: 75m
+      - equal:
+          path: spec.queueController.service.resources.requests.memory
+          value: 96Mi
+      - equal:
+          path: spec.queueController.service.resources.limits.cpu
+          value: 300m
+      - equal:
+          path: spec.queueController.service.resources.limits.memory
+          value: 384Mi
+
+  # ======================================
+  # Admission Resources Tests
+  # ======================================
+  - it: should not render admission resources when not configured
+    asserts:
+      - notExists:
+          path: spec.admission.service.resources
+
+  - it: should render admission resources when configured
+    set:
+      admission.resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: 500m
+          memory: 512Mi
+    asserts:
+      - exists:
+          path: spec.admission.service.resources
+      - equal:
+          path: spec.admission.service.resources.requests.cpu
+          value: 100m
+      - equal:
+          path: spec.admission.service.resources.requests.memory
+          value: 128Mi
+      - equal:
+          path: spec.admission.service.resources.limits.cpu
+          value: 500m
+      - equal:
+          path: spec.admission.service.resources.limits.memory
+          value: 512Mi
+
+  # ======================================
+  # NodeScaleAdjuster Resources Tests
+  # ======================================
+  - it: should not render nodescaleadjuster resources when not configured
+    asserts:
+      - notExists:
+          path: spec.nodeScaleAdjuster.service.resources
+
+  - it: should render nodescaleadjuster resources when configured
+    set:
+      nodescaleadjuster.resources:
+        requests:
+          cpu: 25m
+          memory: 32Mi
+        limits:
+          cpu: 100m
+          memory: 128Mi
+    asserts:
+      - exists:
+          path: spec.nodeScaleAdjuster.service.resources
+      - equal:
+          path: spec.nodeScaleAdjuster.service.resources.requests.cpu
+          value: 25m
+      - equal:
+          path: spec.nodeScaleAdjuster.service.resources.requests.memory
+          value: 32Mi
+      - equal:
+          path: spec.nodeScaleAdjuster.service.resources.limits.cpu
+          value: 100m
+      - equal:
+          path: spec.nodeScaleAdjuster.service.resources.limits.memory
+          value: 128Mi
+
+  # ======================================
+  # Scheduler Resources Tests
+  # ======================================
+  - it: should not render scheduler resources when not configured
+    asserts:
+      - notExists:
+          path: spec.scheduler.service.resources
+
+  - it: should render scheduler resources when configured
+    set:
+      scheduler.resources:
+        requests:
+          cpu: 200m
+          memory: 256Mi
+        limits:
+          cpu: 1
+          memory: 1Gi
+    asserts:
+      - exists:
+          path: spec.scheduler.service.resources
+      - equal:
+          path: spec.scheduler.service.resources.requests.cpu
+          value: 200m
+      - equal:
+          path: spec.scheduler.service.resources.requests.memory
+          value: 256Mi
+      - equal:
+          path: spec.scheduler.service.resources.limits.cpu
+          value: 1
+      - equal:
+          path: spec.scheduler.service.resources.limits.memory
+          value: 1Gi
+
+  # ======================================
+  # Complex Resource Configurations
+  # ======================================
+  - it: should render resources with GPU and custom resource types
+    set:
+      binder.resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+          nvidia.com/gpu: "1"
+        limits:
+          cpu: 500m
+          memory: 512Mi
+          nvidia.com/gpu: "1"
+          ephemeral-storage: 2Gi
+    asserts:
+      - exists:
+          path: spec.binder.service.resources
+      - equal:
+          path: spec.binder.service.resources.requests.cpu
+          value: 100m
+      - equal:
+          path: spec.binder.service.resources.requests.memory
+          value: 128Mi
+      - equal:
+          path: spec.binder.service.resources.requests["nvidia.com/gpu"]
+          value: "1"
+      - equal:
+          path: spec.binder.service.resources.limits.cpu
+          value: 500m
+      - equal:
+          path: spec.binder.service.resources.limits.memory
+          value: 512Mi
+      - equal:
+          path: spec.binder.service.resources.limits["nvidia.com/gpu"]
+          value: "1"
+      - equal:
+          path: spec.binder.service.resources.limits.ephemeral-storage
+          value: 2Gi
+
+  - it: should render resources with fractional CPU values
+    set:
+      scheduler.resources:
+        requests:
+          cpu: "0.5"
+          memory: 256Mi
+        limits:
+          cpu: "2.5"
+          memory: 2Gi
+    asserts:
+      - exists:
+          path: spec.scheduler.service.resources
+      - equal:
+          path: spec.scheduler.service.resources.requests.cpu
+          value: "0.5"
+      - equal:
+          path: spec.scheduler.service.resources.requests.memory
+          value: 256Mi
+      - equal:
+          path: spec.scheduler.service.resources.limits.cpu
+          value: "2.5"
+      - equal:
+          path: spec.scheduler.service.resources.limits.memory
+          value: 2Gi
+
+  - it: should render resources with various memory units
+    set:
+      admission.resources:
+        requests:
+          cpu: 100m
+          memory: 134217728  # 128Mi in bytes
+        limits:
+          cpu: 500m
+          memory: 1073741824  # 1Gi in bytes
+    asserts:
+      - exists:
+          path: spec.admission.service.resources
+      - equal:
+          path: spec.admission.service.resources.requests.cpu
+          value: 100m
+      - equal:
+          path: spec.admission.service.resources.requests.memory
+          value: 134217728
+      - equal:
+          path: spec.admission.service.resources.limits.cpu
+          value: 500m
+      - equal:
+          path: spec.admission.service.resources.limits.memory
+          value: 1073741824
+
+  # ======================================
+  # Multiple Services with Resources
+  # ======================================
+  - it: should render resources for multiple services when configured
+    set:
+      binder.resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+      scheduler.resources:
+        requests:
+          cpu: 200m
+          memory: 256Mi
+      admission.resources:
+        limits:
+          cpu: 500m
+          memory: 512Mi
+    asserts:
+      - exists:
+          path: spec.binder.service.resources
+      - exists:
+          path: spec.scheduler.service.resources
+      - exists:
+          path: spec.admission.service.resources
+      - equal:
+          path: spec.binder.service.resources.requests.cpu
+          value: 100m
+      - equal:
+          path: spec.scheduler.service.resources.requests.cpu
+          value: 200m
+      - equal:
+          path: spec.admission.service.resources.limits.cpu
+          value: 500m
+      - notExists:
+          path: spec.podGroupController.service.resources
+      - notExists:
+          path: spec.queueController.service.resources
+      - notExists:
+          path: spec.nodeScaleAdjuster.service.resources
+
+  # ======================================
+  # Edge Cases and Special Values
+  # ======================================
+  - it: should handle zero values in resources
+    set:
+      binder.resources:
+        requests:
+          cpu: "0"
+          memory: "0"
+    asserts:
+      - exists:
+          path: spec.binder.service.resources
+      - equal:
+          path: spec.binder.service.resources.requests.cpu
+          value: "0"
+      - equal:
+          path: spec.binder.service.resources.requests.memory
+          value: "0"
+
+  - it: should handle string and numeric resource values
+    set:
+      scheduler.resources:
+        requests:
+          cpu: "100m"  # string
+          memory: 128  # number
+        limits:
+          cpu: 1      # number
+          memory: "1Gi"  # string
+    asserts:
+      - exists:
+          path: spec.scheduler.service.resources
+      - equal:
+          path: spec.scheduler.service.resources.requests.cpu
+          value: "100m"
+      - equal:
+          path: spec.scheduler.service.resources.requests.memory
+          value: 128
+      - equal:
+          path: spec.scheduler.service.resources.limits.cpu
+          value: 1
+      - equal:
+          path: spec.scheduler.service.resources.limits.memory
+          value: "1Gi"
+
+  - it: should handle custom resource names with special characters
+    set:
+      admission.resources:
+        requests:
+          cpu: 100m
+          example.com/custom-resource: "2"
+          intel.com/sriov_netdevice: "1"
+        limits:
+          example.com/custom-resource: "4"
+          intel.com/sriov_netdevice: "2"
+    asserts:
+      - exists:
+          path: spec.admission.service.resources
+      - equal:
+          path: spec.admission.service.resources.requests["example.com/custom-resource"]
+          value: "2"
+      - equal:
+          path: spec.admission.service.resources.requests["intel.com/sriov_netdevice"]
+          value: "1"
+      - equal:
+          path: spec.admission.service.resources.limits["example.com/custom-resource"]
+          value: "4"
+      - equal:
+          path: spec.admission.service.resources.limits["intel.com/sriov_netdevice"]
+          value: "2"

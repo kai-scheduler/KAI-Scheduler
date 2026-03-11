@@ -6,8 +6,8 @@ package ray
 import (
 	"k8s.io/kubernetes/pkg/util/slice"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 )
 
 const (
@@ -18,13 +18,10 @@ var (
 	masterRoleValues = []string{"head"}
 )
 
-type rayPlugin struct {
-	// Arguments given for the plugin
-	pluginArguments map[string]string
-}
+type rayPlugin struct{}
 
-func New(arguments map[string]string) framework.Plugin {
-	return &rayPlugin{pluginArguments: arguments}
+func New(_ framework.PluginArguments) framework.Plugin {
+	return &rayPlugin{}
 }
 
 func (pp *rayPlugin) Name() string {

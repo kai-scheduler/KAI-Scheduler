@@ -5,39 +5,50 @@ package app
 
 import (
 	"flag"
+
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
 type Options struct {
-	MetricsAddr             string
-	EnableLeaderElection    bool
-	ProbeAddr               string
-	Qps                     int
-	Burst                   int
-	MaxConcurrentReconciles int
-	LogLevel                int
-	SchedulerName           string
+	MetricsAddr                  string
+	EnableLeaderElection         bool
+	SkipControllerNameValidation bool // Set true for env tests
+	ProbeAddr                    string
+	Qps                          int
+	Burst                        int
+	MaxConcurrentReconciles      int
+	LogLevel                     int
+	SchedulerName                string
+	EnablePodGroupWebhook        bool
 }
 
-func InitOptions() *Options {
+func InitOptions(fs *flag.FlagSet) *Options {
 	options := &Options{}
 
-	flag.StringVar(&options.MetricsAddr, "metrics-bind-address", ":8080",
+	if fs == nil {
+		fs = flag.CommandLine
+	}
+
+	fs.StringVar(&options.MetricsAddr, "metrics-bind-address", ":8080",
 		"The address the metric endpoint binds to.")
-	flag.StringVar(&options.ProbeAddr, "health-probe-bind-address", ":8081",
+	fs.StringVar(&options.ProbeAddr, "health-probe-bind-address", ":8081",
 		"The address the probe endpoint binds to.")
-	flag.BoolVar(&options.EnableLeaderElection, "leader-elect", false,
+	fs.BoolVar(&options.EnableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
-	flag.IntVar(&options.Qps, "qps", 50,
+	fs.BoolVar(&options.SkipControllerNameValidation, "skip-controller-name-validation", false, "Skip controller name validation.")
+	fs.IntVar(&options.Qps, "qps", 50,
 		"Queries per second to the K8s API server")
-	flag.IntVar(&options.Burst, "burst", 300,
+	fs.IntVar(&options.Burst, "burst", 300,
 		"Burst to the K8s API server")
-	flag.IntVar(&options.MaxConcurrentReconciles, "max-concurrent-reconciles", 10,
+	fs.IntVar(&options.MaxConcurrentReconciles, "max-concurrent-reconciles", 10,
 		"Max concurrent reconciles")
-	flag.IntVar(&options.LogLevel, "log-level", 3,
+	fs.IntVar(&options.LogLevel, "log-level", 3,
 		"Log level")
-	flag.StringVar(&options.SchedulerName, "scheduler-name", "kai-scheduler",
+	fs.StringVar(&options.SchedulerName, "scheduler-name", constants.DefaultSchedulerName,
 		"The name of the scheduler used to schedule pod groups")
+	fs.BoolVar(&options.EnablePodGroupWebhook, "enable-podgroup-webhook", true,
+		"Enable podgroup webhook")
 
 	return options
 }

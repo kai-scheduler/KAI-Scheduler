@@ -15,13 +15,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 
-	rrmock "github.com/NVIDIA/KAI-scheduler/pkg/binder/binding/resourcereservation/mock"
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/common"
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/plugins"
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/plugins/gpusharing"
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/test_utils"
+	rrmock "github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding/resourcereservation/mock"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins"
+	bindinggpusharing "github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/gpusharing"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/test_utils"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -37,16 +38,19 @@ var happyFlowObjectsBc = []runtime.Object{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: "my-ns",
 			Name:      "my-pod",
+			Annotations: map[string]string{
+				gpuSharingConfigMapAnnotation: "my-configmap-shared-gpu",
+			},
 		},
 		Spec: v1.PodSpec{
 			Containers: []v1.Container{{
 				Env: []v1.EnvVar{
 					{
-						Name: common.NumOfGpusEnvVar,
+						Name: constants.NvidiaVisibleDevices,
 						ValueFrom: &v1.EnvVarSource{
 							ConfigMapKeyRef: &v1.ConfigMapKeySelector{
 								LocalObjectReference: v1.LocalObjectReference{
-									Name: "my-configmap-runai-sh-gpu",
+									Name: "my-configmap-shared-gpu-0",
 								},
 							},
 						},
@@ -58,7 +62,7 @@ var happyFlowObjectsBc = []runtime.Object{
 					VolumeSource: v1.VolumeSource{
 						ConfigMap: &v1.ConfigMapVolumeSource{
 							LocalObjectReference: v1.LocalObjectReference{
-								Name: "my-configmap-runai-sh-gpu",
+								Name: "my-configmap-shared-gpu-0",
 							},
 						},
 					},
@@ -82,18 +86,14 @@ var happyFlowObjects = []runtime.Object{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: "my-ns",
 			Name:      "my-pod",
+			Annotations: map[string]string{
+				gpuSharingConfigMapAnnotation: "my-configmap-shared-gpu",
+			},
 		},
 		Spec: v1.PodSpec{
 			Containers: []v1.Container{
 				{
-					VolumeMounts: []v1.VolumeMount{
-						{
-							MountPath: "/etc/ld.so.preload",
-							Name:      "my-configmap-vol",
-							SubPath:   "ld.so.preload-key",
-							ReadOnly:  true,
-						},
-					},
+					Name: "my-container",
 				},
 			},
 			Volumes: []v1.Volume{
@@ -102,7 +102,7 @@ var happyFlowObjects = []runtime.Object{
 					VolumeSource: v1.VolumeSource{
 						ConfigMap: &v1.ConfigMapVolumeSource{
 							LocalObjectReference: v1.LocalObjectReference{
-								Name: "my-configmap-runai-sh-gpu",
+								Name: "my-configmap-shared-gpu-0",
 							},
 						},
 					},
@@ -176,8 +176,8 @@ var _ = Describe("FractionBinder", func() {
 					testData.kubeObjects...).WithInterceptorFuncs(testData.clientInterceptFuncs).Build()
 
 				binderPlugins := plugins.New()
-				gpuSharingPlugin := gpusharing.New(fakeClient, false, true)
-				binderPlugins.RegisterPlugin(gpuSharingPlugin)
+				bindingGpuSharingPlugin := bindinggpusharing.New(fakeClient, false)
+				binderPlugins.RegisterPlugin(bindingGpuSharingPlugin)
 
 				testedBinder := NewBinder(fakeClient, rrs, binderPlugins)
 
@@ -209,7 +209,7 @@ var _ = Describe("FractionBinder", func() {
 
 				configMap := &v1.ConfigMap{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      "my-configmap-runai-sh-gpu",
+						Name:      "my-configmap-shared-gpu-0",
 						Namespace: "my-ns",
 					},
 				}
@@ -217,8 +217,9 @@ var _ = Describe("FractionBinder", func() {
 				if err := fakeClient.Get(context.TODO(), client.ObjectKeyFromObject(configMap), configMap); err != nil {
 					Fail(fmt.Sprintf("Failed to read configmap: %v", err))
 				} else {
-					Expect(configMap.Data[common.VisibleDevices]).To(Equal(testData.gpuIndexByGroupIndex))
-					Expect(configMap.Data[common.NumOfGpusEnvVar]).To(Equal("0.5"))
+					Expect(configMap.Data[constants.NvidiaVisibleDevices]).To(Equal(testData.gpuIndexByGroupIndex))
+					Expect(configMap.Data[common.NumOfGpusEnvVarBC]).To(Equal("0.5"))
+					Expect(configMap.Data[common.GPUPortion]).To(Equal("0.5"))
 				}
 			})
 		}
@@ -237,8 +238,8 @@ var _ = Describe("FractionBinder", func() {
 			happyFlowObjects...).WithInterceptorFuncs(clientInterceptFuncs).Build()
 
 		binderPlugins := plugins.New()
-		gpuSharingPlugin := gpusharing.New(fakeClient, false, true)
-		binderPlugins.RegisterPlugin(gpuSharingPlugin)
+		bindingGpuSharingPlugin := bindinggpusharing.New(fakeClient, false)
+		binderPlugins.RegisterPlugin(bindingGpuSharingPlugin)
 
 		testedBinder := NewBinder(fakeClient, rrs, binderPlugins)
 

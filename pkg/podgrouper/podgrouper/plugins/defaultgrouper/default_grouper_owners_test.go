@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 const (
@@ -57,7 +58,7 @@ func TestGetPodGroupMetadata_KubeflowPipelineScheduledWorkflow(t *testing.T) {
 	}
 	pod := &v1.Pod{}
 
-	defaultGrouper := NewDefaultGrouper(queueLabelKey, nodePoolLabelKey)
+	defaultGrouper := NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, fake.NewFakeClient())
 	podGroupMetadata, err := defaultGrouper.GetPodGroupMetadata(owner, pod)
 
 	assert.Nil(t, err)
@@ -129,7 +130,7 @@ func TestGetPodGroupMetadata_ArgoWorkflow(t *testing.T) {
 	}
 	pod := &v1.Pod{}
 
-	defaultGrouper := NewDefaultGrouper(queueLabelKey, nodePoolLabelKey)
+	defaultGrouper := NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, fake.NewFakeClient())
 	podGroupMetadata, err := defaultGrouper.GetPodGroupMetadata(owner, pod)
 
 	assert.Nil(t, err)
@@ -198,7 +199,7 @@ func TestGetPodGroupMetadata_Tekton_TaskRun(t *testing.T) {
 	}
 	pod := &v1.Pod{}
 
-	defaultGrouper := NewDefaultGrouper(queueLabelKey, nodePoolLabelKey)
+	defaultGrouper := NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, fake.NewFakeClient())
 	podGroupMetadata, err := defaultGrouper.GetPodGroupMetadata(owner, pod)
 
 	assert.Nil(t, err)
@@ -296,7 +297,7 @@ func TestGetPodGroupMetadata_Tekton_PipelineRun(t *testing.T) {
 	}
 	pod := &v1.Pod{}
 
-	defaultGrouper := NewDefaultGrouper(queueLabelKey, nodePoolLabelKey)
+	defaultGrouper := NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, fake.NewFakeClient())
 	podGroupMetadata, err := defaultGrouper.GetPodGroupMetadata(owner, pod)
 
 	assert.Nil(t, err)

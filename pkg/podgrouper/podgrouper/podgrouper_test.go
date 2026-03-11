@@ -18,8 +18,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgroup"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper"
+	commonconsts "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper"
+	pluginshub "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/hub"
 )
 
 const (
@@ -119,8 +121,9 @@ func TestNewPodgrouper(t *testing.T) {
 	resources := append(nativeK8sTestResources, testResources...)
 	client := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(resources...).Build()
 
-	grouper := podgrouper.NewPodgrouper(client, client, false, true,
+	pluginsHub := pluginshub.NewDefaultPluginsHub(client, false, true,
 		queueLabelKey, nodePoolLabelKey, "", "")
+	grouper := podgrouper.NewPodgrouper(client, client, pluginsHub)
 
 	topOwner, owners, err := grouper.GetPodOwners(context.Background(), &pod)
 	assert.Nil(t, err)
@@ -185,7 +188,7 @@ func Test_Podgrouper_Full_Flow(t *testing.T) {
 			},
 			expectedMetadata: &podgroup.Metadata{
 				Annotations: map[string]string{
-					"run.ai/top-owner-metadata": `name: pod-job
+					commonconsts.TopOwnerMetadataKey: `name: pod-job
 uid: ""
 group: ""
 version: v1
@@ -270,7 +273,7 @@ kind: Pod
 			},
 			expectedMetadata: &podgroup.Metadata{
 				Annotations: map[string]string{
-					"run.ai/top-owner-metadata": `name: argo-pod
+					commonconsts.TopOwnerMetadataKey: `name: argo-pod
 uid: uid-pod
 group: ""
 version: v1
@@ -312,7 +315,7 @@ kind: Pod
 					gangScheduleKnative:      true,
 				}
 			}
-			grouper := podgrouper.NewPodgrouper(client, client,
+			pluginsHub := pluginshub.NewDefaultPluginsHub(client,
 				tt.podGrouperOptions.searchForLegacyPodGroups,
 				tt.podGrouperOptions.gangScheduleKnative,
 				queueLabelKey,
@@ -320,6 +323,7 @@ kind: Pod
 				"",
 				"",
 			)
+			grouper := podgrouper.NewPodgrouper(client, client, pluginsHub)
 
 			topOwner, owners, err := grouper.GetPodOwners(context.Background(), tt.reconciledPod)
 			assert.Nil(t, err)

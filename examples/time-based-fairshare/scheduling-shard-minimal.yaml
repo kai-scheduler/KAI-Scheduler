@@ -1,0 +1,28 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# Minimal configuration to enable time-aware fairness
+#
+# Prerequisites:
+#   1. Enable Prometheus in KAI config first:
+#      kubectl patch config kai-config --type merge -p '{"spec":{"prometheus":{"enabled":true}}}'
+#
+#   2. Wait for Prometheus to be ready:
+#      kubectl get pod -n kai-scheduler prometheus-prometheus-0
+#
+# Apply this configuration:
+#   kubectl apply -f scheduling-shard-minimal.yaml
+#
+# Or patch an existing shard:
+#   kubectl patch schedulingshard default --type merge -p '{"spec":{"usageDBConfig":{"clientType":"prometheus"}}}'
+
+apiVersion: kai.scheduler/v1
+kind: SchedulingShard
+metadata:
+  name: default
+spec:
+  # Enable time-aware fairness by connecting to Prometheus
+  usageDBConfig:
+    clientType: prometheus
+    # Connection string is auto-populated from kai-config when using managed Prometheus
+

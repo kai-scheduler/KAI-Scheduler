@@ -1,4 +1,4 @@
-# Scheduler Plugin Mechanism Documentation
+# Scheduler Plugin Mechanism
 
 ## Overview
 The scheduler uses a plugin-based architecture that allows extending its functionality through various extension points. The core mechanism is built around `Session` object that maintains the scheduling context and plugin-registered callbacks.
@@ -177,7 +177,7 @@ func (sp *SpotInstancePlugin) OnSessionOpen(ssn *Session) {
 	// Register predicate to prevent non-preemptible pods on spot instances
 	ssn.AddPredicateFn(func(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo) error {
 		// Ignore preemptible jobs
-        if job.IsPreemptibleJob(ssn.IsInferencePreemptible()) {
+        if job.IsPreemptibleJob() {
 			return nil
 		}
 

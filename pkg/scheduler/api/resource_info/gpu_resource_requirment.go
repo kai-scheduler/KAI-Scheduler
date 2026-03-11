@@ -6,13 +6,14 @@ package resource_info
 import (
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 
 	"golang.org/x/exp/maps"
 	v1 "k8s.io/api/core/v1"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info/resources"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info/resources"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 )
 
 const (
@@ -26,6 +27,7 @@ type GpuResourceRequirement struct {
 	count        int64
 	portion      float64
 	gpuMemory    int64
+	draGpuCounts map[string]int64
 	migResources map[v1.ResourceName]int64
 }
 
@@ -34,6 +36,7 @@ func NewGpuResourceRequirement() *GpuResourceRequirement {
 		count:        0,
 		portion:      0,
 		gpuMemory:    0,
+		draGpuCounts: make(map[string]int64),
 		migResources: make(map[v1.ResourceName]int64),
 	}
 }
@@ -43,6 +46,7 @@ func NewGpuResourceRequirementWithGpus(gpus float64, gpuMemory int64) *GpuResour
 		count:        0,
 		portion:      gpus,
 		gpuMemory:    gpuMemory,
+		draGpuCounts: make(map[string]int64),
 		migResources: make(map[v1.ResourceName]int64),
 	}
 	if gpus >= wholeGpuPortion {
@@ -59,6 +63,7 @@ func NewGpuResourceRequirementWithMultiFraction(count int64, portion float64, gp
 		count:        count,
 		portion:      portion,
 		gpuMemory:    gpuMemory,
+		draGpuCounts: make(map[string]int64),
 		migResources: make(map[v1.ResourceName]int64),
 	}
 	return gResource
@@ -69,13 +74,26 @@ func NewGpuResourceRequirementWithMig(migResources map[v1.ResourceName]int64) *G
 		count:        0,
 		portion:      0,
 		gpuMemory:    0,
+		draGpuCounts: make(map[string]int64),
 		migResources: migResources,
 	}
 }
 
+func (g *GpuResourceRequirement) SetDraGpus(draGpus map[string]int64) {
+	g.draGpuCounts = make(map[string]int64, len(draGpus))
+	for deviceClassName, count := range draGpus {
+		g.draGpuCounts[deviceClassName] += count
+	}
+}
+
 func (g *GpuResourceRequirement) IsEmpty() bool {
-	if getNonMigGpus(g.portion, g.count) > minGPUs {
+	if getExtendedResourceGpus(g.portion, g.count) > minGPUs {
 		return false
+	}
+	for _, rQuant := range g.draGpuCounts {
+		if rQuant > 0 {
+			return false
+		}
 	}
 	for _, rQuant := range g.migResources {
 		if rQuant > 0 {
@@ -90,6 +108,7 @@ func (g *GpuResourceRequirement) Clone() *GpuResourceRequirement {
 		count:        g.count,
 		portion:      g.portion,
 		gpuMemory:    g.gpuMemory,
+		draGpuCounts: maps.Clone(g.draGpuCounts),
 		migResources: maps.Clone(g.migResources),
 	}
 }
@@ -98,11 +117,15 @@ func (g *GpuResourceRequirement) SetMaxResource(gg *GpuResourceRequirement) erro
 	if g.portion != 0 && gg.portion != 0 && g.portion != gg.portion {
 		return fmt.Errorf("cannot calculate max resource for GpuResourceRequirements with different fractional portions. %v vs %v", g.portion, gg.portion)
 	}
-	if getNonMigGpus(gg.portion, gg.count) > getNonMigGpus(g.portion, g.count) {
+	if getExtendedResourceGpus(gg.portion, gg.count) > getExtendedResourceGpus(g.portion, g.count) {
 		g.count = gg.count
 		g.portion = gg.portion
 	}
-
+	for name, ggQuant := range gg.draGpuCounts {
+		if gQuant, found := g.draGpuCounts[name]; !found || ggQuant > gQuant {
+			g.draGpuCounts[name] = ggQuant
+		}
+	}
 	for name, ggQuant := range gg.migResources {
 		if gQuant, found := g.migResources[name]; !found || ggQuant > gQuant {
 			g.migResources[name] = ggQuant
@@ -128,8 +151,9 @@ func (g *GpuResourceRequirement) LessEqual(gg *GpuResourceRequirement) bool {
 	return true
 }
 
-func (g *GpuResourceRequirement) GetSumGPUs() float64 {
-	var totalMigGPUs float64
+// GetGpusQuota returns the total number of gpus requested by the pod. It includes whole gpus, fractional gpus, gpu dra claims and the MIG gpus.
+func (g *GpuResourceRequirement) GetGpusQuota() float64 {
+	var totalGpusQuota float64
 	for migResource, quant := range g.migResources {
 		gpuPortion, _, err := resources.ExtractGpuAndMemoryFromMigResourceName(migResource.String())
 		if err != nil {
@@ -137,10 +161,26 @@ func (g *GpuResourceRequirement) GetSumGPUs() float64 {
 			continue
 		}
 
-		totalMigGPUs += float64(gpuPortion) * float64(quant)
+		totalGpusQuota += float64(gpuPortion) * float64(quant)
 	}
+	for _, count := range g.draGpuCounts {
+		totalGpusQuota += float64(count)
+	}
+	totalGpusQuota += getExtendedResourceGpus(g.portion, g.count)
 
-	return totalMigGPUs + getNonMigGpus(g.portion, g.count)
+	return totalGpusQuota
+}
+
+func (g *GpuResourceRequirement) DraGpuCounts() map[string]int64 {
+	return g.draGpuCounts
+}
+
+func (g *GpuResourceRequirement) GetDraGpusCount() int64 {
+	count := int64(0)
+	for _, singleClaimCount := range g.draGpuCounts {
+		count += singleClaimCount
+	}
+	return count
 }
 
 func (g *GpuResourceRequirement) MigResources() map[v1.ResourceName]int64 {
@@ -156,7 +196,7 @@ func (g *GpuResourceRequirement) GpuMemory() int64 {
 }
 
 func (g *GpuResourceRequirement) GPUs() float64 {
-	return getNonMigGpus(g.portion, g.count)
+	return getExtendedResourceGpus(g.portion, g.count)
 }
 
 func (g *GpuResourceRequirement) GetNumOfGpuDevices() int64 {
@@ -174,7 +214,20 @@ func (g *GpuResourceRequirement) IsFractionalRequest() bool {
 	return g.count > 0 && g.portion < wholeGpuPortion
 }
 
-func getNonMigGpus(portion float64, count int64) float64 {
+func (g *GpuResourceRequirement) GpusAsString() string {
+	var requestedGpuString string
+	if g.IsFractionalRequest() && g.GetNumOfGpuDevices() > 1 {
+		requestedGpuString = fmt.Sprintf("%d X %s", g.GetNumOfGpuDevices(),
+			strconv.FormatFloat(g.GpuFractionalPortion(), 'g', 3, 64))
+	} else if len(g.draGpuCounts) > 0 {
+		requestedGpuString = strconv.FormatFloat(float64(g.GetDraGpusCount()), 'g', 3, 64) + " as DRA gpu claims "
+	} else {
+		requestedGpuString = strconv.FormatFloat(g.GPUs(), 'g', 3, 64)
+	}
+	return requestedGpuString
+}
+
+func getExtendedResourceGpus(portion float64, count int64) float64 {
 	// use fixed-point arithmetic to avoid floating point errors
 	portionAsDecimals := int64(math.Round(portion * gpuPortionsAsDecimalsRoundingFactor))
 	return float64(portionAsDecimals*count) / gpuPortionsAsDecimalsRoundingFactor

@@ -8,5 +8,5 @@ import (
 )
 
 type Interface interface {
-	Evict(pod *v1.Pod) error
+	Evict(pod *v1.Pod, message string) error
 }

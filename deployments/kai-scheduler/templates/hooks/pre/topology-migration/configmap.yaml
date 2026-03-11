@@ -1,0 +1,18 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+{{- if .Values.topologyMigration.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: topology-migration-script
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "3"
+    "helm.sh/hook-delete-policy": hook-succeeded,before-hook-creation
+data:
+  migrate-topologies.sh: |
+{{ .Files.Get "scripts/migrate-topologies.sh" | indent 4 }}
+{{- end }}
+

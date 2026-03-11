@@ -1,0 +1,43 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+name: KAI Scheduler - Mark stale issues
+
+on:
+  schedule:
+    - cron: "0 0 * * *" # runs once a day at midnight UTC
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Run in dry-run mode (no labels/comments applied)"
+        required: false
+        default: "false"
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Run stale action
+        uses: actions/stale@v10
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+          # Apply only to issues, not PRs
+          days-before-stale: 90 # 3 months
+          days-before-close: -1 # don't auto-close
+          stale-issue-label: "stale"
+          stale-issue-message: >
+            Issue has been open for over 3 months with no activity.
+            It’s being marked as stale.
+            Please update if it’s still relevant.
+
+          # Optional: exclude some labels if needed
+          only-labels: "" # leave empty to include all
+
+          # Debug-only mode (acts as a dry run)
+          debug-only: ${{ github.event.inputs.dry_run }}
+
+      - name: Log dry-run status
+        run: |
+          echo "Dry-run mode: ${{ github.event.inputs.dry_run }}"

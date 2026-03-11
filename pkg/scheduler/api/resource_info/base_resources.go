@@ -9,7 +9,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
 const (
@@ -55,6 +55,9 @@ func (r *BaseResource) Add(other *BaseResource) {
 	r.memory += other.memory
 	for rName, rrValue := range other.scalarResources {
 		r.scalarResources[rName] += rrValue
+		if r.scalarResources[rName] == 0 {
+			delete(r.scalarResources, rName)
+		}
 	}
 }
 
@@ -63,6 +66,9 @@ func (r *BaseResource) Sub(other *BaseResource) {
 	r.memory -= other.memory
 	for rName, rrValue := range other.scalarResources {
 		r.scalarResources[rName] -= rrValue
+		if r.scalarResources[rName] == 0 {
+			delete(r.scalarResources, rName)
+		}
 	}
 }
 

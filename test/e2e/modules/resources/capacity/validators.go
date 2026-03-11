@@ -14,9 +14,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	gpuoperatordiscovery "github.com/NVIDIA/KAI-scheduler/pkg/common/gpu_operator_discovery"
 )
 
 func SkipIfInsufficientClusterResources(clientset kubernetes.Interface, resourceRequest *ResourceList) {
@@ -29,8 +26,8 @@ func SkipIfInsufficientClusterResources(clientset kubernetes.Interface, resource
 		ginkgo.Skip(
 			fmt.Sprintf(
 				"The current cluster doesn't have enough resources to run the test. "+
-					"Requested resources: %v. Cluster resources: %v",
-				resourceRequest.String(), clusterMetrics.String(),
+					"Requested resources: %s. Cluster resources: %s",
+				resourceRequest, clusterMetrics,
 			),
 		)
 	}
@@ -72,15 +69,6 @@ func SkipIfNonHomogeneousGpuCounts(clientset kubernetes.Interface) int {
 	}
 
 	return maps.Keys(gpuCounts)[0]
-}
-
-func SkipIfCDIEnabled(ctx context.Context, client client.Client) {
-	cdiEnabled, err := gpuoperatordiscovery.IsCdiEnabled(ctx, client)
-	gomega.Expect(err).NotTo(gomega.HaveOccurred(), "Failed to check if CDI is enabled")
-
-	if cdiEnabled {
-		ginkgo.Skip("CDI is enabled")
-	}
 }
 
 func SkipIfCSIDriverIsMissing(ctx context.Context, client kubernetes.Interface, name string) {

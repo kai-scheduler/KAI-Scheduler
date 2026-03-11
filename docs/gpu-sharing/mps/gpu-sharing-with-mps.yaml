@@ -6,15 +6,16 @@ kind: Pod
 metadata:
   name: gpu-sharing-with-mps
   labels:
-    kai.scheduler/queue: test
+    kai.scheduler/queue: default-queue
   annotations:
     gpu-fraction: "0.5"
 spec:
   schedulerName: kai-scheduler
   containers:
-    - name: ubuntu
-      image: ubuntu
-      args: ["sleep", "infinity"]
+    - name: gpu-workload
+      image: nvidia/cuda:13.0.2-base-ubi8
+      command: ["nvidia-smi"]
+      args: ["-L"]
       volumeMounts:
         - name: mps
           mountPath: /tmp/nvidia-mps

@@ -14,7 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
 func Test_extractReceivedResources(t *testing.T) {
@@ -67,7 +67,7 @@ func Test_extractReceivedResources(t *testing.T) {
 				},
 				&v1.Node{},
 			},
-			v1.ResourceList{gpuFractionResourceName: resource.MustParse("0.4")},
+			v1.ResourceList{constants.NvidiaGpuResource: resource.MustParse("0.4")},
 			false,
 		},
 	}

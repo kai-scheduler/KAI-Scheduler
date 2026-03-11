@@ -37,9 +37,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	v2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
+
+	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/queuecontroller/metrics"
 )
 
 const (
@@ -67,7 +72,9 @@ var _ = BeforeSuite(func() {
 
 	By("bootstrapping test environment")
 	testEnv = &envtest.Environment{
-		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "deployments", "kai-scheduler", "crds")},
+		CRDDirectoryPaths: []string{
+			filepath.Join("..", "..", "..", "deployments", "kai-scheduler", "crds"),
+		},
 		ErrorIfCRDPathMissing: true,
 	}
 
@@ -103,9 +110,17 @@ var _ = Describe("QueueController", Ordered, func() {
 	BeforeAll(func() {
 		ctx, cancel = context.WithCancel(context.Background())
 
+		metrics.InitMetrics("testns",
+			map[string]string{"priority": "queue_priority", "some-other-label": "some_other_label"},
+			map[string]string{"priority": "normal"},
+		)
+
 		var err error
 		mgr, err = ctrl.NewManager(cfg, ctrl.Options{
 			Scheme: scheme.Scheme,
+			Metrics: metricsserver.Options{
+				BindAddress: "0",
+			},
 		})
 		Expect(err).ToNot(HaveOccurred())
 
@@ -114,12 +129,13 @@ var _ = Describe("QueueController", Ordered, func() {
 			Scheme: mgr.GetScheme(),
 		}
 
-		err = controller.SetupWithManager(mgr, "kai.scheduler/queue")
+		err = controller.SetupWithManager(mgr, false)
 		Expect(err).ToNot(HaveOccurred())
 
 		managerDone = make(chan struct{})
 		go func() {
 			defer close(managerDone)
+			defer GinkgoRecover()
 			err := mgr.Start(ctx)
 			Expect(err).ToNot(HaveOccurred())
 		}()
@@ -131,6 +147,12 @@ var _ = Describe("QueueController", Ordered, func() {
 	})
 
 	Context("When managing child queues", func() {
+		AfterAll(func() {
+			deleteQueue(ctx, k8sClient, "child-queue-1")
+			deleteQueue(ctx, k8sClient, "child-queue-2")
+			deleteQueue(ctx, k8sClient, "parent-queue")
+		})
+
 		It("Should update parent queue's childQueues field", func() {
 			parentQueue := &v2.Queue{
 				ObjectMeta: metav1.ObjectMeta{
@@ -172,6 +194,10 @@ var _ = Describe("QueueController", Ordered, func() {
 	})
 
 	Context("When managing pod groups", func() {
+		AfterAll(func() {
+			deleteQueue(ctx, k8sClient, "resource-queue")
+		})
+
 		It("Should update queue status with pod group resources", func() {
 			queue := &v2.Queue{
 				ObjectMeta: metav1.ObjectMeta{
@@ -276,8 +302,82 @@ var _ = Describe("QueueController", Ordered, func() {
 				q.Expect(updatedQueue.Status.Requested["cpu"]).To(Equal(resource.MustParse("5")))
 				q.Expect(updatedQueue.Status.Requested["memory"]).To(Equal(resource.MustParse("10Gi")))
 				q.Expect(updatedQueue.Status.Requested["nvidia.com/gpu"]).To(Equal(resource.MustParse("2")))
+
+				labels := []string{"resource-queue", "normal", ""}
+				expectMetricValue(q, metrics.GetQueueAllocatedGPUsMetric(), labels, 2)
+				expectMetricValue(q, metrics.GetQueueAllocatedCPUMetric(), labels, 5)
+				expectMetricValue(q, metrics.GetQueueAllocatedMemoryMetric(), labels, 10737418240)
 				return true
 			}, timeout, interval).Should(BeTrue())
 		})
 	})
+
+	Context("When setting queue metrics", func() {
+		AfterAll(func() {
+			deleteQueue(ctx, k8sClient, "test-queue")
+		})
+
+		It("should set metrics for a queue with resources", func() {
+			queue := &v2.Queue{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "test-queue",
+					Labels: map[string]string{"priority": "high"},
+				},
+				Spec: v2.QueueSpec{
+					Resources: &v2.QueueResources{
+						GPU:    v2.QueueResource{Quota: 2},
+						CPU:    v2.QueueResource{Quota: 2000},
+						Memory: v2.QueueResource{Quota: 4},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, queue)).Should(Succeed())
+
+			labels := []string{"test-queue", "high", ""}
+
+			Eventually(func(q gomega.Gomega) {
+				expectMetricValue(q, metrics.GetQueueInfoMetric(), labels, 1)
+				expectMetricValue(q, metrics.GetQueueDeservedGPUsMetric(), labels, 2)
+				expectMetricValue(q, metrics.GetQueueQuotaCPUMetric(), labels, 2)
+				expectMetricValue(q, metrics.GetQueueQuotaMemoryMetric(), labels, 4000000)
+			}, timeout, interval).Should(Succeed())
+
+			// delete the queue and expect metrics to be deleted
+			Expect(k8sClient.Delete(ctx, queue)).Should(Succeed())
+
+			Eventually(func(q gomega.Gomega) {
+				gathered := testutil.CollectAndCount(metrics.GetQueueInfoMetric())
+				q.Expect(gathered).To(Equal(0))
+				gathered = testutil.CollectAndCount(metrics.GetQueueDeservedGPUsMetric())
+				q.Expect(gathered).To(Equal(0))
+				gathered = testutil.CollectAndCount(metrics.GetQueueQuotaCPUMetric())
+				q.Expect(gathered).To(Equal(0))
+				gathered = testutil.CollectAndCount(metrics.GetQueueQuotaMemoryMetric())
+				q.Expect(gathered).To(Equal(0))
+				gathered = testutil.CollectAndCount(metrics.GetQueueAllocatedGPUsMetric())
+				q.Expect(gathered).To(Equal(0))
+				gathered = testutil.CollectAndCount(metrics.GetQueueAllocatedCPUMetric())
+				q.Expect(gathered).To(Equal(0))
+				gathered = testutil.CollectAndCount(metrics.GetQueueAllocatedMemoryMetric())
+				q.Expect(gathered).To(Equal(0))
+			}, timeout, interval).Should(Succeed())
+		})
+	})
 })
+
+func expectMetricValue(q gomega.Gomega, gauge *prometheus.GaugeVec, labels []string, expected float64) {
+	metricGauge, err := gauge.GetMetricWithLabelValues(labels...)
+	q.ExpectWithOffset(1, err).To(BeNil())
+	q.ExpectWithOffset(1, metricGauge).ToNot(BeNil())
+	q.ExpectWithOffset(1, testutil.ToFloat64(metricGauge)).To(BeEquivalentTo(expected))
+}
+
+func deleteQueue(ctx context.Context, k8sClient client.Client, queueName string) {
+	queueObj := &v2.Queue{}
+	err := k8sClient.Get(ctx, types.NamespacedName{Name: queueName}, queueObj)
+	if err != nil {
+		return
+	}
+
+	_ = k8sClient.Delete(ctx, queueObj)
+}

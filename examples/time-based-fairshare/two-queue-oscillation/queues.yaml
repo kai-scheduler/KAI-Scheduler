@@ -1,0 +1,82 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# Two-Queue Oscillation Example - Queue Configuration
+#
+# This creates a simple hierarchy:
+#   training-department (parent)
+#   ├── team-a (leaf)
+#   └── team-b (leaf)
+#
+# Both leaf queues have:
+#   - No guaranteed quota (quota: 0)
+#   - Equal over-quota weight (overQuotaWeight: 1)
+#   - No limits (limit: -1)
+#
+# With time-aware fairness enabled, jobs from these queues will
+# oscillate access to cluster resources based on historical usage.
+
+apiVersion: scheduling.run.ai/v2
+kind: Queue
+metadata:
+  name: training-department
+spec:
+  displayName: "Training Department"
+  resources:
+    gpu:
+      quota: 0              # No guaranteed GPUs at department level
+      overQuotaWeight: 1
+      limit: -1             # No limit
+    cpu:
+      quota: 0
+      overQuotaWeight: 1
+      limit: -1
+    memory:
+      quota: 0
+      overQuotaWeight: 1
+      limit: -1
+---
+apiVersion: scheduling.run.ai/v2
+kind: Queue
+metadata:
+  name: team-a
+spec:
+  displayName: "Team A"
+  parentQueue: training-department
+  priority: 100             # Same priority as team-b
+  resources:
+    gpu:
+      quota: 0              # No guaranteed GPUs - relies on over-quota
+      overQuotaWeight: 1    # Equal weight with team-b
+      limit: -1             # Can use all available GPUs
+    cpu:
+      quota: 0
+      overQuotaWeight: 1
+      limit: -1
+    memory:
+      quota: 0
+      overQuotaWeight: 1
+      limit: -1
+---
+apiVersion: scheduling.run.ai/v2
+kind: Queue
+metadata:
+  name: team-b
+spec:
+  displayName: "Team B"
+  parentQueue: training-department
+  priority: 100             # Same priority as team-a
+  resources:
+    gpu:
+      quota: 0              # No guaranteed GPUs - relies on over-quota
+      overQuotaWeight: 1    # Equal weight with team-a
+      limit: -1             # Can use all available GPUs
+    cpu:
+      quota: 0
+      overQuotaWeight: 1
+      limit: -1
+    memory:
+      quota: 0
+      overQuotaWeight: 1
+      limit: -1
+

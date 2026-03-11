@@ -14,6 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
@@ -21,7 +22,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
 const (
@@ -45,7 +46,8 @@ func initializeTestService(
 	client runtimeClient.WithWatch,
 ) *service {
 	service := NewService(false, client, "", 40*time.Millisecond,
-		resourceReservationNameSpace, resourceReservationServiceAccount, resourceReservationAppLabelValue, scalingPodsNamespace)
+		resourceReservationNameSpace, resourceReservationServiceAccount, resourceReservationAppLabelValue, scalingPodsNamespace, constants.DefaultRuntimeClassName,
+		nil) // nil podResources to use defaults
 
 	return service
 }
@@ -88,6 +90,7 @@ var _ = Describe("ResourceReservationService", func() {
 			Status: runningStatus,
 		}
 	)
+
 	Context("ReserveGpuDevice", func() {
 		for testName, testData := range map[string]struct {
 			reservationPod        *v1.Pod
@@ -264,6 +267,15 @@ var _ = Describe("ResourceReservationService", func() {
 				clientInterceptFuncs: interceptor.Funcs{
 					Watch: func(ctx context.Context, client runtimeClient.WithWatch, obj runtimeClient.ObjectList, opts ...runtimeClient.ListOption) (watch.Interface, error) {
 						return nil, fmt.Errorf("failed to watch")
+					},
+				},
+				expectedGPUIndex:      unknownGpuIndicator,
+				expectedErrorContains: "failed waiting for GPU reservation pod to allocate",
+			},
+			"watch channel closed": {
+				clientInterceptFuncs: interceptor.Funcs{
+					Watch: func(ctx context.Context, client runtimeClient.WithWatch, obj runtimeClient.ObjectList, opts ...runtimeClient.ListOption) (watch.Interface, error) {
+						return exampleMockWatchPodClosed(), nil
 					},
 				},
 				expectedGPUIndex:      unknownGpuIndicator,
@@ -870,6 +882,370 @@ var _ = Describe("ResourceReservationService", func() {
 			})
 		}
 	})
+
+	Context("createResourceReservationPod", func() {
+		It("should create a pod with the correct RuntimeClassName and metadata", func() {
+			customRuntime := "custom-runtime"
+			rsc := &service{
+				namespace:           "kai-resource-reservation",
+				appLabelValue:       "kai-reservation",
+				serviceAccountName:  "kai-sa",
+				reservationPodImage: "nvidia/kai-reservation:latest",
+				kubeClient:          fake.NewClientBuilder().Build(),
+				runtimeClassName:    customRuntime,
+			}
+
+			resources := v1.ResourceRequirements{
+				Limits: v1.ResourceList{
+					"nvidia.com/gpu": resource.MustParse("1"),
+				},
+			}
+
+			podName := "reservation-test"
+			gpuGroup := "test-group"
+			nodeName := "node-test"
+
+			pod, err := rsc.createResourceReservationPod(nodeName, gpuGroup, podName, resources)
+			Expect(err).To(BeNil())
+			Expect(pod).NotTo(BeNil())
+
+			// Check metadata
+			Expect(pod.Name).To(Equal(podName))
+			Expect(pod.Namespace).To(Equal("kai-resource-reservation"))
+			Expect(pod.Labels[constants.AppLabelName]).To(Equal("kai-reservation"))
+			Expect(pod.Labels[constants.GPUGroup]).To(Equal(gpuGroup))
+
+			// PodSpec checks
+			Expect(pod.Spec.NodeName).To(Equal(nodeName))
+			Expect(pod.Spec.RuntimeClassName).NotTo(BeNil())
+			if pod.Spec.RuntimeClassName != nil {
+				Expect(*pod.Spec.RuntimeClassName).To(Equal(customRuntime))
+			}
+			Expect(pod.Spec.ServiceAccountName).To(Equal("kai-sa"))
+
+			// Check container
+			Expect(len(pod.Spec.Containers)).To(Equal(1))
+			container := pod.Spec.Containers[0]
+			Expect(container.Name).To(Equal("resource-reservation"))
+			Expect(container.Image).To(Equal("nvidia/kai-reservation:latest"))
+			Expect(container.ImagePullPolicy).To(Equal(v1.PullIfNotPresent))
+			Expect(container.Resources).To(Equal(resources))
+
+			// Check env vars
+			podNameEnv := v1.EnvVar{
+				Name: "POD_NAME",
+				ValueFrom: &v1.EnvVarSource{
+					FieldRef: &v1.ObjectFieldSelector{
+						FieldPath: "metadata.name",
+					},
+				},
+			}
+			podNamespaceEnv := v1.EnvVar{
+				Name: "POD_NAMESPACE",
+				ValueFrom: &v1.EnvVarSource{
+					FieldRef: &v1.ObjectFieldSelector{
+						FieldPath: "metadata.namespace",
+					},
+				},
+			}
+			Expect(container.Env).To(ContainElement(Equal(podNameEnv)))
+			Expect(container.Env).To(ContainElement(Equal(podNamespaceEnv)))
+		})
+	})
+
+	Context("RemovePodGpuGroupsConnection", func() {
+		for testName, testData := range map[string]struct {
+			pod                   *v1.Pod
+			clientInterceptFuncs  interceptor.Funcs
+			expectedLabels        map[string]string
+			expectedErrorContains string
+		}{
+			"pod with no multi-gpu-group labels": {
+				pod: &v1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "job-1-0-0",
+						Namespace: "my-ns",
+						Labels: map[string]string{
+							"app":              "test",
+							constants.GPUGroup: gpuGroup,
+						},
+					},
+				},
+				expectedLabels: map[string]string{
+					"app": "test",
+				},
+			},
+			"pod with one multi-gpu-group label": {
+				pod: &v1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "job-1-0-0",
+						Namespace: "my-ns",
+						Labels: map[string]string{
+							"app": "test",
+							constants.MultiGpuGroupLabelPrefix + gpuGroup: gpuGroup,
+						},
+					},
+				},
+				expectedLabels: map[string]string{
+					"app": "test",
+				},
+			},
+			"pod with multiple multi-gpu-group labels": {
+				pod: &v1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "job-1-0-0",
+						Namespace: "my-ns",
+						Labels: map[string]string{
+							"app": "test",
+							constants.MultiGpuGroupLabelPrefix + gpuGroup:  gpuGroup,
+							constants.MultiGpuGroupLabelPrefix + gpuGroup2: gpuGroup2,
+						},
+					},
+				},
+				expectedLabels: map[string]string{
+					"app": "test",
+				},
+			},
+			"pod with mixed labels - only removes multi-gpu-group labels": {
+				pod: &v1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "job-1-0-0",
+						Namespace: "my-ns",
+						Labels: map[string]string{
+							"app":              "test",
+							constants.GPUGroup: gpuGroup,
+							"other-label":      "value",
+							constants.MultiGpuGroupLabelPrefix + gpuGroup:  gpuGroup,
+							constants.MultiGpuGroupLabelPrefix + gpuGroup2: gpuGroup2,
+						},
+					},
+				},
+				expectedLabels: map[string]string{
+					"app":         "test",
+					"other-label": "value",
+				},
+			},
+			"pod with nil labels": {
+				pod: &v1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "job-1-0-0",
+						Namespace: "my-ns",
+						Labels:    nil,
+					},
+				},
+				expectedLabels: nil,
+			},
+			"pod with no gpu-group labels": {
+				pod: &v1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "job-1-0-0",
+						Namespace: "my-ns",
+						Labels: map[string]string{
+							"app": "test",
+						},
+					},
+				},
+				expectedLabels: map[string]string{
+					"app": "test",
+				},
+			},
+			"patch fails": {
+				pod: &v1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "job-1-0-0",
+						Namespace: "my-ns",
+						Labels: map[string]string{
+							constants.MultiGpuGroupLabelPrefix + gpuGroup: gpuGroup,
+						},
+					},
+				},
+				clientInterceptFuncs: interceptor.Funcs{
+					Patch: func(ctx context.Context, client runtimeClient.WithWatch, obj runtimeClient.Object, patch runtimeClient.Patch, opts ...runtimeClient.PatchOption) error {
+						return fmt.Errorf("failed to patch pod")
+					},
+				},
+				expectedErrorContains: "failed to patch pod",
+			},
+		} {
+			testData := testData
+			It(testName, func() {
+				podsInCluster := []runtime.Object{testData.pod}
+				clientWithObjs := fake.NewClientBuilder().WithRuntimeObjects(podsInCluster...).Build()
+				fakeClient := interceptor.NewClient(clientWithObjs, testData.clientInterceptFuncs)
+				rsc := initializeTestService(fakeClient)
+
+				err := rsc.RemovePodGpuGroupsConnection(context.TODO(), testData.pod)
+				if testData.expectedErrorContains == "" {
+					Expect(err).To(BeNil())
+					// Fetch the pod from the fake client to verify labels were updated
+					updatedPod := &v1.Pod{}
+					err = clientWithObjs.Get(context.Background(), runtimeClient.ObjectKey{
+						Name:      testData.pod.Name,
+						Namespace: testData.pod.Namespace,
+					}, updatedPod)
+					Expect(err).To(Succeed())
+					Expect(updatedPod.Labels).To(Equal(testData.expectedLabels))
+				} else {
+					Expect(err).NotTo(BeNil())
+					Expect(err.Error()).To(ContainSubstring(testData.expectedErrorContains))
+				}
+			})
+		}
+	})
+
+	Context("createGPUReservationPod with resource configuration", func() {
+		It("should create pod with configured CPU and memory resources", func() {
+			rsc := &service{
+				namespace:           "kai-resource-reservation",
+				appLabelValue:       "kai-reservation",
+				serviceAccountName:  "kai-sa",
+				reservationPodImage: "test-image:latest",
+				kubeClient:          fake.NewClientBuilder().Build(),
+				runtimeClassName:    "nvidia",
+				podResources: &v1.ResourceRequirements{
+					Requests: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse("2m"),
+						v1.ResourceMemory: resource.MustParse("20Mi"),
+					},
+					Limits: v1.ResourceList{
+						v1.ResourceCPU:    resource.MustParse("100m"),
+						v1.ResourceMemory: resource.MustParse("200Mi"),
+					},
+				},
+				scalingPodNamespace: scalingPodsNamespace,
+			}
+
+			pod, err := rsc.createGPUReservationPod(context.TODO(), "test-node", "test-gpu-group")
+			Expect(err).To(BeNil())
+			Expect(pod).NotTo(BeNil())
+
+			container := pod.Spec.Containers[0]
+
+			// Verify CPU requests and limits
+			Expect(container.Resources.Requests[v1.ResourceCPU]).To(Equal(resource.MustParse("2m")))
+			Expect(container.Resources.Requests[v1.ResourceMemory]).To(Equal(resource.MustParse("20Mi")))
+			Expect(container.Resources.Limits[v1.ResourceCPU]).To(Equal(resource.MustParse("100m")))
+			Expect(container.Resources.Limits[v1.ResourceMemory]).To(Equal(resource.MustParse("200Mi")))
+
+			// Verify GPU resource is still set
+			gpuRequest := container.Resources.Requests[constants.NvidiaGpuResource]
+			gpuLimit := container.Resources.Limits[constants.NvidiaGpuResource]
+			Expect(gpuRequest.Value()).To(Equal(int64(1)))
+			Expect(gpuLimit.Value()).To(Equal(int64(1)))
+		})
+
+		It("should create pod without CPU/Memory resources when not configured", func() {
+			rsc := &service{
+				namespace:           "kai-resource-reservation",
+				appLabelValue:       "kai-reservation",
+				serviceAccountName:  "kai-sa",
+				reservationPodImage: "test-image:latest",
+				kubeClient:          fake.NewClientBuilder().Build(),
+				runtimeClassName:    "nvidia",
+				podResources:        nil,
+				scalingPodNamespace: scalingPodsNamespace,
+			}
+
+			pod, err := rsc.createGPUReservationPod(context.TODO(), "test-node", "test-gpu-group")
+			Expect(err).To(BeNil())
+			Expect(pod).NotTo(BeNil())
+
+			container := pod.Spec.Containers[0]
+
+			// Verify CPU and Memory are NOT set
+			_, cpuRequestExists := container.Resources.Requests[v1.ResourceCPU]
+			_, memRequestExists := container.Resources.Requests[v1.ResourceMemory]
+			_, cpuLimitExists := container.Resources.Limits[v1.ResourceCPU]
+			_, memLimitExists := container.Resources.Limits[v1.ResourceMemory]
+
+			Expect(cpuRequestExists).To(BeFalse())
+			Expect(memRequestExists).To(BeFalse())
+			Expect(cpuLimitExists).To(BeFalse())
+			Expect(memLimitExists).To(BeFalse())
+
+			// Verify GPU resource is still set
+			gpuRequest := container.Resources.Requests[constants.NvidiaGpuResource]
+			gpuLimit := container.Resources.Limits[constants.NvidiaGpuResource]
+			Expect(gpuRequest.Value()).To(Equal(int64(1)))
+			Expect(gpuLimit.Value()).To(Equal(int64(1)))
+		})
+
+		It("should create pod with only CPU resources when only CPU is configured", func() {
+			rsc := &service{
+				namespace:           "kai-resource-reservation",
+				appLabelValue:       "kai-reservation",
+				serviceAccountName:  "kai-sa",
+				reservationPodImage: "test-image:latest",
+				kubeClient:          fake.NewClientBuilder().Build(),
+				runtimeClassName:    "nvidia",
+				podResources: &v1.ResourceRequirements{
+					Requests: v1.ResourceList{
+						v1.ResourceCPU: resource.MustParse("5m"),
+					},
+					Limits: v1.ResourceList{
+						v1.ResourceCPU: resource.MustParse("50m"),
+					},
+				},
+				scalingPodNamespace: scalingPodsNamespace,
+			}
+
+			pod, err := rsc.createGPUReservationPod(context.TODO(), "test-node", "test-gpu-group")
+			Expect(err).To(BeNil())
+			Expect(pod).NotTo(BeNil())
+
+			container := pod.Spec.Containers[0]
+
+			// Verify CPU is set
+			Expect(container.Resources.Requests[v1.ResourceCPU]).To(Equal(resource.MustParse("5m")))
+			Expect(container.Resources.Limits[v1.ResourceCPU]).To(Equal(resource.MustParse("50m")))
+
+			// Verify Memory is NOT set
+			_, memRequestExists := container.Resources.Requests[v1.ResourceMemory]
+			_, memLimitExists := container.Resources.Limits[v1.ResourceMemory]
+			Expect(memRequestExists).To(BeFalse())
+			Expect(memLimitExists).To(BeFalse())
+		})
+
+		It("should not allow GPU resources to be overridden by podResources", func() {
+			// This test ensures that even if podResources contains GPU configuration,
+			// it won't override the GPU resource value set by the service
+			rsc := &service{
+				namespace:           "kai-resource-reservation",
+				appLabelValue:       "kai-reservation",
+				serviceAccountName:  "kai-sa",
+				reservationPodImage: "test-image:latest",
+				kubeClient:          fake.NewClientBuilder().Build(),
+				runtimeClassName:    "nvidia",
+				podResources: &v1.ResourceRequirements{
+					Requests: v1.ResourceList{
+						v1.ResourceCPU:              resource.MustParse("10m"),
+						constants.NvidiaGpuResource: resource.MustParse("999"), // This should be ignored
+					},
+					Limits: v1.ResourceList{
+						v1.ResourceCPU:              resource.MustParse("100m"),
+						constants.NvidiaGpuResource: resource.MustParse("999"), // This should be ignored
+					},
+				},
+				scalingPodNamespace: scalingPodsNamespace,
+			}
+
+			pod, err := rsc.createGPUReservationPod(context.TODO(), "test-node", "test-gpu-group")
+			Expect(err).To(BeNil())
+			Expect(pod).NotTo(BeNil())
+
+			container := pod.Spec.Containers[0]
+
+			// Verify CPU resources from podResources are set
+			Expect(container.Resources.Requests[v1.ResourceCPU]).To(Equal(resource.MustParse("10m")))
+			Expect(container.Resources.Limits[v1.ResourceCPU]).To(Equal(resource.MustParse("100m")))
+
+			// Verify GPU resources are NOT overridden - should always be 1
+			gpuRequest := container.Resources.Requests[constants.NvidiaGpuResource]
+			gpuLimit := container.Resources.Limits[constants.NvidiaGpuResource]
+			Expect(gpuRequest.Value()).To(Equal(int64(1)), "GPU request should be 1, not overridden by podResources")
+			Expect(gpuLimit.Value()).To(Equal(int64(1)), "GPU limit should be 1, not overridden by podResources")
+		})
+	})
 })
 
 type FakeWatchPod struct {
@@ -910,4 +1286,25 @@ func exampleMockWatchPod(gpuIndex string, delay time.Duration) watch.Interface {
 			},
 		},
 	}
+}
+
+// FakeWatchPodClosed simulates a watch that closes its channel immediately
+type FakeWatchPodClosed struct {
+	channel chan watch.Event
+}
+
+func (w *FakeWatchPodClosed) Stop() {
+	// No-op
+}
+
+func (w *FakeWatchPodClosed) ResultChan() <-chan watch.Event {
+	if w.channel == nil {
+		w.channel = make(chan watch.Event)
+		close(w.channel) // Close immediately to simulate channel close
+	}
+	return w.channel
+}
+
+func exampleMockWatchPodClosed() watch.Interface {
+	return &FakeWatchPodClosed{}
 }

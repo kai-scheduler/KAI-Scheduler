@@ -17,8 +17,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgroup"
-	pluginshub "github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/hub"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
+	pluginshub "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/hub"
 )
 
 type Interface interface {
@@ -29,7 +29,7 @@ type Interface interface {
 
 type podGrouper struct {
 	client     client.Client
-	pluginsHub *pluginshub.PluginsHub
+	pluginsHub pluginshub.PluginsHub
 
 	// For runtime client with cache enabled, GET/LIST calls create an informer/watch for the specified object.
 	// Unfortunetly, this is true even if the GET call fails with an RBAC error. The created listener will panic and the reconciler crashes.
@@ -41,16 +41,11 @@ type podGrouper struct {
 
 type GetPodGroupMetadataFunc func(topOwner *unstructured.Unstructured, pod *v1.Pod, otherOwners ...*metav1.PartialObjectMetadata) (*podgroup.Metadata, error)
 
-func NewPodgrouper(client client.Client, clientWithoutCache client.Client, searchForLegacyPodGroups,
-	gangScheduleKnative bool, queueLabelKey, nodePoolLabelKey string,
-	defaultPrioritiesConfigMapName, defaultPrioritiesConfigMapNamespace string) *podGrouper {
+func NewPodgrouper(client client.Client, clientWithoutCache client.Client, pluginsHub pluginshub.PluginsHub) *podGrouper {
 	podGrouper := &podGrouper{
 		client:             client,
 		clientWithoutCache: clientWithoutCache,
-		pluginsHub: pluginshub.NewPluginsHub(
-			client, searchForLegacyPodGroups, gangScheduleKnative, queueLabelKey, nodePoolLabelKey,
-			defaultPrioritiesConfigMapName, defaultPrioritiesConfigMapNamespace,
-		),
+		pluginsHub:         pluginsHub,
 	}
 
 	return podGrouper

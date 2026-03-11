@@ -8,14 +8,15 @@ import (
 
 	"k8s.io/utils/pointer"
 
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/integration_tests/integration_tests_utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
+
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/integration_tests_utils"
 )
 
 func TestAllocateIntegrationTest(t *testing.T) {
@@ -1069,6 +1070,182 @@ func getAllocateTestsMetadata() []integration_tests_utils.TestTopologyMetadata {
 					"pending_job1": {
 						GPUsRequired: 1,
 						Status:       pod_status.Pending,
+					},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{
+						NumberOfCacheBinds: 2,
+					},
+				},
+			},
+			RoundsUntilMatch: 1,
+		},
+		// N-level queue hierarchy tests (using DisableDefaultDepartment)
+		{
+			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Name: "single level queue hierarchy - allocate job",
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:                "pending_job0",
+						RequiredGPUsPerTask: 1,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "root-queue",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								State: pod_status.Pending,
+							},
+						},
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node0": {
+						GPUs: 2,
+					},
+				},
+				DisableDefaultDepartment: true,
+				Queues: []test_utils.TestQueueBasic{
+					{
+						Name:         "root-queue",
+						DeservedGPUs: 2,
+					},
+				},
+				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"pending_job0": {
+						NodeName:     "node0",
+						GPUsRequired: 1,
+						Status:       pod_status.Running,
+					},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{
+						NumberOfCacheBinds: 1,
+					},
+				},
+			},
+			RoundsUntilMatch: 1,
+		},
+		{
+			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Name: "three level queue hierarchy - allocate jobs across teams",
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:                "job_team1",
+						RequiredGPUsPerTask: 1,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "team1",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								State: pod_status.Pending,
+							},
+						},
+					},
+					{
+						Name:                "job_team2",
+						RequiredGPUsPerTask: 1,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "team2",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								State: pod_status.Pending,
+							},
+						},
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node0": {
+						GPUs: 4,
+					},
+				},
+				DisableDefaultDepartment: true,
+				Queues: []test_utils.TestQueueBasic{
+					{
+						Name:         "org",
+						DeservedGPUs: 4,
+					},
+					{
+						Name:         "dept1",
+						ParentQueue:  "org",
+						DeservedGPUs: 2,
+					},
+					{
+						Name:         "team1",
+						ParentQueue:  "dept1",
+						DeservedGPUs: 1,
+					},
+					{
+						Name:         "team2",
+						ParentQueue:  "dept1",
+						DeservedGPUs: 1,
+					},
+				},
+				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"job_team1": {
+						NodeName:     "node0",
+						GPUsRequired: 1,
+						Status:       pod_status.Running,
+					},
+					"job_team2": {
+						NodeName:     "node0",
+						GPUsRequired: 1,
+						Status:       pod_status.Running,
+					},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{
+						NumberOfCacheBinds: 2,
+					},
+				},
+			},
+			RoundsUntilMatch: 1,
+		},
+		{
+			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Name: "four level queue hierarchy - allocate job at deepest level",
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:                "deep_job",
+						RequiredGPUsPerTask: 2,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "project",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								State: pod_status.Pending,
+							},
+						},
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node0": {
+						GPUs: 4,
+					},
+				},
+				DisableDefaultDepartment: true,
+				Queues: []test_utils.TestQueueBasic{
+					{
+						Name:         "company",
+						DeservedGPUs: 10,
+					},
+					{
+						Name:         "division",
+						ParentQueue:  "company",
+						DeservedGPUs: 5,
+					},
+					{
+						Name:         "department",
+						ParentQueue:  "division",
+						DeservedGPUs: 3,
+					},
+					{
+						Name:         "project",
+						ParentQueue:  "department",
+						DeservedGPUs: 2,
+					},
+				},
+				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"deep_job": {
+						NodeName:     "node0",
+						GPUsRequired: 2,
+						Status:       pod_status.Running,
 					},
 				},
 				Mocks: &test_utils.TestMock{

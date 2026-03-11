@@ -1,0 +1,35 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+Cycles: 1024
+HalfLifePeriod: 128
+Jobs:
+  test-queue1:
+    GPUs: 16
+    NumJobs: 100
+    NumPods: 1
+  test-queue2:
+    GPUs: 16
+    NumJobs: 100
+    NumPods: 1
+KValue: null
+Nodes:
+- Count: 1
+  GPUs: 16
+Queues:
+- DeservedGPUs: null
+  Name: test-department
+  Parent: ""
+  Priority: null
+  Weight: null
+- DeservedGPUs: null
+  Name: test-queue1
+  Parent: test-department
+  Priority: null
+  Weight: null
+- DeservedGPUs: null
+  Name: test-queue2
+  Parent: test-department
+  Priority: null
+  Weight: null
+WindowSize: 256
