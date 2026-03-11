@@ -32,7 +32,7 @@ require (
 	github.com/xyproto/randomstring v1.2.0
 	go.uber.org/mock v0.6.0
 	go.uber.org/multierr v1.11.0
-	go.uber.org/zap v1.27.0
+	go.uber.org/zap v1.27.1
 	golang.org/x/exp v0.0.0-20250305212735-054e65f0b394
 	golang.org/x/mod v0.32.0
 	gomodules.xyz/jsonpatch/v2 v2.5.0
