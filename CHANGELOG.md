@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Allow configuration of plugins/actions from helm [#1026](https://github.com/NVIDIA/KAI-Scheduler/pull/1026)
+
 ## [v0.12.13] - 2026-02-17
 ### Added
 - Added `plugins` and `actions` fields to SchedulingShard spec, allowing per-shard customization of scheduler plugin/action enablement, priority, and arguments [#966](https://github.com/NVIDIA/KAI-Scheduler/pull/966) [gshaibi](https://github.com/gshaibi)
