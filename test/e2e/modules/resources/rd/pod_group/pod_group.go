@@ -20,6 +20,7 @@ import (
 	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
 	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd"
 	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/queue"
+	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/testconfig"
 )
 
 const (
@@ -37,7 +38,8 @@ func Create(namespace, name, queue string) *v2alpha2.PodGroup {
 			Namespace:   namespace,
 			Annotations: map[string]string{},
 			Labels: map[string]string{
-				constants.AppLabelName: "engine-e2e",
+				constants.AppLabelName:               "engine-e2e",
+				testconfig.GetConfig().QueueLabelKey: queue,
 			},
 		},
 		Spec: v2alpha2.PodGroupSpec{

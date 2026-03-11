@@ -20,6 +20,7 @@ import (
 	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd"
 	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/pod_group"
 	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/queue"
+	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/testconfig"
 	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/wait"
 )
 
@@ -88,7 +89,7 @@ func (tc *TestContext) TestContextCleanup(ctx context.Context) {
 	wait.ForNoReservationPods(ctx, tc.ControllerClient)
 
 	wait.ForRunningSystemComponentEvent(ctx, tc.ControllerClient, "binder")
-	wait.ForRunningSystemComponentEvent(ctx, tc.ControllerClient, "kai-scheduler-default")
+	wait.ForRunningSystemComponentEvent(ctx, tc.ControllerClient, testconfig.GetConfig().SchedulerDeploymentName)
 }
 
 func (tc *TestContext) ClusterCleanup(ctx context.Context) {

@@ -289,7 +289,6 @@ func (sc *SchedulerCache) Bind(taskInfo *pod_info.PodInfo, hostname string, bind
 
 func (sc *SchedulerCache) createBindRequest(podInfo *pod_info.PodInfo, nodeName string, bindRequestAnnotations map[string]string) error {
 	labels := map[string]string{
-		"pod-name":      podInfo.Pod.Name,
 		"selected-node": nodeName,
 	}
 

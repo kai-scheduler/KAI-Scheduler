@@ -175,7 +175,7 @@ func parseGroveSubGroup(
 	if !found {
 		return nil, fmt.Errorf("missing required 'podReferences' field")
 	}
-	var pods []*types.NamespacedName
+	var pods []string
 	for podIndex, podRef := range podReferences {
 		reference, ok := podRef.(map[string]interface{})
 		if !ok {
@@ -187,7 +187,7 @@ func parseGroveSubGroup(
 			return nil, fmt.Errorf("failed to parse spec.podgroups[%d].podreferences[%d] from PodGang %s/%s. Err: %w",
 				pgIndex, podIndex, namespace, podGangName, err)
 		}
-		pods = append(pods, namespacedName)
+		pods = append(pods, namespacedName.Name)
 	}
 
 	return &podgroup.SubGroupMetadata{

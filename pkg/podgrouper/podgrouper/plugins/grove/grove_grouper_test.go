@@ -204,10 +204,8 @@ func TestParseGroveSubGroup_Success(t *testing.T) {
 	assert.Equal(t, "mysubgroup", subgroup.Name)
 	assert.Equal(t, int32(2), subgroup.MinAvailable)
 	assert.Equal(t, 2, len(subgroup.PodsReferences))
-	assert.Equal(t, "a", subgroup.PodsReferences[0].Name)
-	assert.Equal(t, "ns", subgroup.PodsReferences[0].Namespace)
-	assert.Equal(t, "b", subgroup.PodsReferences[1].Name)
-	assert.Equal(t, "ns", subgroup.PodsReferences[1].Namespace)
+	assert.Equal(t, "a", subgroup.PodsReferences[0])
+	assert.Equal(t, "b", subgroup.PodsReferences[1])
 }
 
 func TestParseGroveSubGroup_MissingFields(t *testing.T) {

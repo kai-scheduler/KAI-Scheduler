@@ -435,6 +435,251 @@ tiers:
 			expectedErr: true,
 		},
 		{
+			name: "plugin disable: elastic disabled via override",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Scheduler: &kaiv1scheduler.Scheduler{
+						Replicas: ptr.To(int32(1)),
+					},
+				},
+			},
+			shard: &kaiv1.SchedulingShard{
+				Spec: kaiv1.SchedulingShardSpec{
+					PlacementStrategy: &kaiv1.PlacementStrategy{
+						GPU: ptr.To(binpackStrategy),
+						CPU: ptr.To(binpackStrategy),
+					},
+					Plugins: map[string]kaiv1.PluginConfig{
+						"elastic": {Enabled: ptr.To(false)},
+					},
+				},
+			},
+			expected: map[string]string{
+				"config.yaml": `actions: allocate,consolidation,reclaim,preempt,stalegangeviction
+tiers:
+- plugins:
+  - name: predicates
+  - name: proportion
+  - name: priority
+  - name: nodeavailability
+  - name: resourcetype
+  - name: podaffinity
+  - name: kubeflow
+  - name: ray
+  - name: subgrouporder
+  - name: taskorder
+  - name: nominatednode
+  - name: dynamicresources
+  - name: minruntime
+  - name: topology
+  - name: snapshot
+  - name: gpupack
+  - name: nodeplacement
+    arguments:
+      cpu: binpack
+      gpu: binpack
+  - name: gpusharingorder`,
+			},
+		},
+		{
+			name: "action disable: consolidation disabled via override",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Scheduler: &kaiv1scheduler.Scheduler{
+						Replicas: ptr.To(int32(1)),
+					},
+				},
+			},
+			shard: &kaiv1.SchedulingShard{
+				Spec: kaiv1.SchedulingShardSpec{
+					PlacementStrategy: &kaiv1.PlacementStrategy{
+						GPU: ptr.To(binpackStrategy),
+						CPU: ptr.To(binpackStrategy),
+					},
+					Actions: map[string]kaiv1.ActionConfig{
+						"consolidation": {Enabled: ptr.To(false)},
+					},
+				},
+			},
+			expected: map[string]string{
+				"config.yaml": `actions: allocate,reclaim,preempt,stalegangeviction
+tiers:
+- plugins:
+  - name: predicates
+  - name: proportion
+  - name: priority
+  - name: nodeavailability
+  - name: resourcetype
+  - name: podaffinity
+  - name: elastic
+  - name: kubeflow
+  - name: ray
+  - name: subgrouporder
+  - name: taskorder
+  - name: nominatednode
+  - name: dynamicresources
+  - name: minruntime
+  - name: topology
+  - name: snapshot
+  - name: gpupack
+  - name: nodeplacement
+    arguments:
+      cpu: binpack
+      gpu: binpack
+  - name: gpusharingorder`,
+			},
+		},
+		{
+			name: "plugin argument override: user kValue overrides spec kValue",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Scheduler: &kaiv1scheduler.Scheduler{
+						Replicas: ptr.To(int32(1)),
+					},
+				},
+			},
+			shard: &kaiv1.SchedulingShard{
+				Spec: kaiv1.SchedulingShardSpec{
+					PlacementStrategy: &kaiv1.PlacementStrategy{
+						GPU: ptr.To(binpackStrategy),
+						CPU: ptr.To(binpackStrategy),
+					},
+					KValue: ptr.To(1.5),
+					Plugins: map[string]kaiv1.PluginConfig{
+						"proportion": {Arguments: map[string]string{"kValue": "3.0"}},
+					},
+				},
+			},
+			expected: map[string]string{
+				"config.yaml": `actions: allocate,consolidation,reclaim,preempt,stalegangeviction
+tiers:
+- plugins:
+  - name: predicates
+  - name: proportion
+    arguments:
+      kValue: "3.0"
+  - name: priority
+  - name: nodeavailability
+  - name: resourcetype
+  - name: podaffinity
+  - name: elastic
+  - name: kubeflow
+  - name: ray
+  - name: subgrouporder
+  - name: taskorder
+  - name: nominatednode
+  - name: dynamicresources
+  - name: minruntime
+  - name: topology
+  - name: snapshot
+  - name: gpupack
+  - name: nodeplacement
+    arguments:
+      cpu: binpack
+      gpu: binpack
+  - name: gpusharingorder`,
+			},
+		},
+		{
+			name: "custom plugin: added via override with priority and arguments",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Scheduler: &kaiv1scheduler.Scheduler{
+						Replicas: ptr.To(int32(1)),
+					},
+				},
+			},
+			shard: &kaiv1.SchedulingShard{
+				Spec: kaiv1.SchedulingShardSpec{
+					PlacementStrategy: &kaiv1.PlacementStrategy{
+						GPU: ptr.To(binpackStrategy),
+						CPU: ptr.To(binpackStrategy),
+					},
+					Plugins: map[string]kaiv1.PluginConfig{
+						"myplugin": {Priority: ptr.To(1050), Arguments: map[string]string{"key": "val"}},
+					},
+				},
+			},
+			expected: map[string]string{
+				"config.yaml": `actions: allocate,consolidation,reclaim,preempt,stalegangeviction
+tiers:
+- plugins:
+  - name: predicates
+  - name: proportion
+  - name: priority
+  - name: nodeavailability
+  - name: resourcetype
+  - name: podaffinity
+  - name: elastic
+  - name: kubeflow
+  - name: ray
+  - name: myplugin
+    arguments:
+      key: val
+  - name: subgrouporder
+  - name: taskorder
+  - name: nominatednode
+  - name: dynamicresources
+  - name: minruntime
+  - name: topology
+  - name: snapshot
+  - name: gpupack
+  - name: nodeplacement
+    arguments:
+      cpu: binpack
+      gpu: binpack
+  - name: gpusharingorder`,
+			},
+		},
+		{
+			name: "spread nodes with pack devices via plugin override",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Scheduler: &kaiv1scheduler.Scheduler{
+						Replicas: ptr.To(int32(1)),
+					},
+				},
+			},
+			shard: &kaiv1.SchedulingShard{
+				Spec: kaiv1.SchedulingShardSpec{
+					PlacementStrategy: &kaiv1.PlacementStrategy{
+						GPU: ptr.To(spreadStrategy),
+						CPU: ptr.To(binpackStrategy),
+					},
+					Plugins: map[string]kaiv1.PluginConfig{
+						"gpuspread": {Enabled: ptr.To(false)},
+						"gpupack":   {Enabled: ptr.To(true)},
+					},
+				},
+			},
+			expected: map[string]string{
+				"config.yaml": `actions: allocate,reclaim,preempt,stalegangeviction
+tiers:
+- plugins:
+  - name: predicates
+  - name: proportion
+  - name: priority
+  - name: nodeavailability
+  - name: resourcetype
+  - name: podaffinity
+  - name: elastic
+  - name: kubeflow
+  - name: ray
+  - name: subgrouporder
+  - name: taskorder
+  - name: nominatednode
+  - name: dynamicresources
+  - name: minruntime
+  - name: topology
+  - name: snapshot
+  - name: gpupack
+  - name: nodeplacement
+    arguments:
+      cpu: binpack
+      gpu: spread`,
+			},
+		},
+		{
 			name: "usage DB configuration",
 			config: &kaiv1.Config{
 				Spec: kaiv1.ConfigSpec{},

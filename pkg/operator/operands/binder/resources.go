@@ -48,9 +48,14 @@ func (b *Binder) deploymentForKAIConfig(
 		return nil, err
 	}
 
-	cdiEnabled, err := isCdiEnabled(ctx, runtimeClient)
-	if err != nil {
-		return nil, err
+	var cdiEnabled bool
+	if config.CDIEnabled != nil {
+		cdiEnabled = *config.CDIEnabled
+	} else {
+		cdiEnabled, err = isCdiEnabled(ctx, runtimeClient)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	deployment.Spec.Strategy.Type = appsv1.RecreateDeploymentStrategyType

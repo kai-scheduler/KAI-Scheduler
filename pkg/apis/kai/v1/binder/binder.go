@@ -42,6 +42,11 @@ type Binder struct {
 
 	// MetricsPort specifies the metrics service port
 	MetricsPort *int `json:"metricsPort,omitempty"`
+
+	// CDIEnabled Specifies if the gpu device plugin uses the cdi devices api to set gpu devices to the pods
+	// leave empty if unsure to let the operator auto detect using ClusterPolicy (nvidia gpu-operator only)
+	// +kubebuilder:validation:Optional
+	CDIEnabled *bool `json:"cdiEnabled,omitempty"`
 }
 
 func (b *Binder) SetDefaultsWhereNeeded(replicaCount *int32) {
@@ -76,7 +81,6 @@ func (b *Binder) SetDefaultsWhereNeeded(replicaCount *int32) {
 
 	b.ProbePort = common.SetDefault(b.ProbePort, ptr.To(8081))
 	b.MetricsPort = common.SetDefault(b.MetricsPort, ptr.To(8080))
-
 }
 
 type ResourceReservation struct {

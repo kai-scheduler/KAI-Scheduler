@@ -23,6 +23,7 @@ import (
 	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
 	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/constant"
 	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/queue"
+	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/testconfig"
 	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/utils"
 )
 
@@ -128,6 +129,7 @@ func CreatePod(ctx context.Context, client *kubernetes.Clientset, pod *v1.Pod) (
 }
 
 func CreatePodObject(podQueue *v2.Queue, resources v1.ResourceRequirements) *v1.Pod {
+	cfg := testconfig.GetConfig()
 	namespace := queue.GetConnectedNamespaceToQueue(podQueue)
 	pod := &v1.Pod{
 		TypeMeta: metav1.TypeMeta{
@@ -140,13 +142,13 @@ func CreatePodObject(podQueue *v2.Queue, resources v1.ResourceRequirements) *v1.
 			Annotations: map[string]string{},
 			Labels: map[string]string{
 				constants.AppLabelName: "engine-e2e",
-				"kai.scheduler/queue":  podQueue.Name,
+				cfg.QueueLabelKey:      podQueue.Name,
 			},
 		},
 		Spec: v1.PodSpec{
 			Containers: []v1.Container{
 				{
-					Image: "ubuntu",
+					Image: cfg.ContainerImage,
 					Name:  "ubuntu-container",
 					Args: []string{
 						"sleep",
@@ -158,7 +160,7 @@ func CreatePodObject(podQueue *v2.Queue, resources v1.ResourceRequirements) *v1.
 				},
 			},
 			TerminationGracePeriodSeconds: ptr.To(int64(0)),
-			SchedulerName:                 constant.SchedulerName,
+			SchedulerName:                 cfg.SchedulerName,
 			Tolerations: []v1.Toleration{
 				{
 					Key:      "nvidia.com/gpu",

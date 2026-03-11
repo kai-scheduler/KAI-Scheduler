@@ -30,6 +30,11 @@ func (p *RuntimeEnforcement) Validate(pod *v1.Pod) error {
 }
 
 func (p *RuntimeEnforcement) Mutate(pod *v1.Pod) error {
+	// Skip runtimeClassName injection entirely when configured with empty string
+	if p.gpuPodRuntimeClassName == "" {
+		return nil
+	}
+
 	// in order to no collide with custom reservation pods runtimeClass
 	if resourcereservation.IsGPUReservationPod(pod) {
 		return nil

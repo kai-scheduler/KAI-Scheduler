@@ -126,64 +126,11 @@ func (s *SchedulerForShard) configMapForShard(
 		Kind:       "ConfigMap",
 		APIVersion: "v1",
 	}
-	placementArguments := calculatePlacementArguments(shard.Spec.PlacementStrategy)
 	innerConfig := conf.SchedulerConfiguration{}
 
-	actions := []string{"allocate"}
-	if placementArguments[gpuResource] != spreadStrategy && placementArguments[cpuResource] != spreadStrategy {
-		actions = append(actions, "consolidation")
-	}
-	actions = append(actions, []string{"reclaim", "preempt", "stalegangeviction"}...)
-
+	innerConfig.Tiers = []conf.Tier{{Plugins: resolvePlugins(shard.Spec.Plugins)}}
+	actions := resolveActions(shard.Spec.Actions)
 	innerConfig.Actions = strings.Join(actions, ", ")
-
-	var proportionArgs map[string]string
-	if shard.Spec.KValue != nil {
-		proportionArgs = map[string]string{
-			"kValue": strconv.FormatFloat(*shard.Spec.KValue, 'f', -1, 64),
-		}
-	}
-
-	innerConfig.Tiers = []conf.Tier{
-		{
-			Plugins: []conf.PluginOption{
-				{Name: "predicates"},
-				{Name: "proportion", Arguments: proportionArgs},
-				{Name: "priority"},
-				{Name: "nodeavailability"},
-				{Name: "resourcetype"},
-				{Name: "podaffinity"},
-				{Name: "elastic"},
-				{Name: "kubeflow"},
-				{Name: "ray"},
-				{Name: "subgrouporder"},
-				{Name: "taskorder"},
-				{Name: "nominatednode"},
-				{Name: "dynamicresources"},
-				{Name: "minruntime"},
-				{Name: "topology"},
-				{Name: "snapshot"},
-			},
-		},
-	}
-
-	innerConfig.Tiers[0].Plugins = append(
-		innerConfig.Tiers[0].Plugins,
-		conf.PluginOption{Name: fmt.Sprintf("gpu%s", strings.Replace(placementArguments[gpuResource], "bin", "", 1))},
-		conf.PluginOption{
-			Name:      "nodeplacement",
-			Arguments: placementArguments,
-		},
-	)
-
-	if placementArguments[gpuResource] == binpackStrategy {
-		innerConfig.Tiers[0].Plugins = append(
-			innerConfig.Tiers[0].Plugins,
-			conf.PluginOption{Name: "gpusharingorder"},
-		)
-	}
-
-	addMinRuntimePluginIfNeeded(&innerConfig.Tiers[0].Plugins, shard.Spec.MinRuntime)
 
 	if len(shard.Spec.QueueDepthPerAction) > 0 {
 		if err = validateJobDepthMap(shard, innerConfig, actions); err != nil {
@@ -336,31 +283,6 @@ func buildArgsList(
 	}
 
 	return args, nil
-}
-
-func calculatePlacementArguments(placementStrategy *kaiv1.PlacementStrategy) map[string]string {
-	return map[string]string{
-		gpuResource: *placementStrategy.GPU, cpuResource: *placementStrategy.CPU,
-	}
-}
-
-func addMinRuntimePluginIfNeeded(plugins *[]conf.PluginOption, minRuntime *kaiv1.MinRuntime) {
-	if minRuntime == nil || (minRuntime.PreemptMinRuntime == nil && minRuntime.ReclaimMinRuntime == nil) {
-		return
-	}
-
-	minRuntimeArgs := make(map[string]string)
-
-	if minRuntime.PreemptMinRuntime != nil {
-		minRuntimeArgs["defaultPreemptMinRuntime"] = *minRuntime.PreemptMinRuntime
-	}
-	if minRuntime.ReclaimMinRuntime != nil {
-		minRuntimeArgs["defaultReclaimMinRuntime"] = *minRuntime.ReclaimMinRuntime
-	}
-
-	minRuntimePlugin := conf.PluginOption{Name: "minruntime", Arguments: minRuntimeArgs}
-
-	*plugins = append(*plugins, minRuntimePlugin)
 }
 
 func configMapName(config *kaiv1.Config, shard *kaiv1.SchedulingShard) string {

@@ -1116,6 +1116,11 @@ spec:
               binder:
                 description: Binder specifies configuration for the binder
                 properties:
+                  cdiEnabled:
+                    description: |-
+                      CDIEnabled Specifies if the gpu device plugin uses the cdi devices api to set gpu devices to the pods
+                      leave empty if unsure to let the operator auto detect using ClusterPolicy (nvidia gpu-operator only)
+                    type: boolean
                   maxConcurrentReconciles:
                     description: MaxConcurrentReconciles is the maximum number of
                       concurrent reconciles for both pods and BindRequests

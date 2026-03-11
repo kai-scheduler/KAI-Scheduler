@@ -6,14 +6,13 @@ package podgroup
 import (
 	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 )
 
 type SubGroupMetadata struct {
 	Name           string
 	MinAvailable   int32
 	Parent         *string
-	PodsReferences []*types.NamespacedName
+	PodsReferences []string
 }
 
 type Metadata struct {

@@ -257,7 +257,6 @@ func (q *QueueController) webhookClientConfig(namespace, path string, cabundle [
 func buildArgsList(kaiConfig *kaiv1.Config) []string {
 	config := kaiConfig.Spec.QueueController
 	args := []string{
-		"--queue-label-key", *kaiConfig.Spec.Global.QueueLabelKey,
 		"--metrics-listen-address", fmt.Sprintf(":%d", *config.ControllerService.Metrics.Port),
 	}
 	if config.Replicas != nil && *config.Replicas > 1 {

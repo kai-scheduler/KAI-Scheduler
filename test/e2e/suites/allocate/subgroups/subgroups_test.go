@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/util/retry"
 
 	v2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
 	schedulingv2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
@@ -112,12 +113,16 @@ var _ = Describe("Allocation scenario with subgroups", Ordered, func() {
 		}
 
 		// impose quota limit on queue to ensure that PodGroups will be scheduled before testing
-		queue, err := testCtx.KubeAiSchedClientset.SchedulingV2().Queues("").Get(ctx, testCtx.Queues[0].Name, metav1.GetOptions{})
-		Expect(err).To(Succeed())
-
-		queue.Spec.Resources.GPU.Quota = 0
-		queue.Spec.Resources.GPU.Limit = 0
-		_, err = testCtx.KubeAiSchedClientset.SchedulingV2().Queues("").Update(ctx, queue, metav1.UpdateOptions{})
+		err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			queue, err := testCtx.KubeAiSchedClientset.SchedulingV2().Queues("").Get(ctx, testCtx.Queues[0].Name, metav1.GetOptions{})
+			if err != nil {
+				return err
+			}
+			queue.Spec.Resources.GPU.Quota = 0
+			queue.Spec.Resources.GPU.Limit = 0
+			_, err = testCtx.KubeAiSchedClientset.SchedulingV2().Queues("").Update(ctx, queue, metav1.UpdateOptions{})
+			return err
+		})
 		Expect(err).To(Succeed())
 
 		_, err = testCtx.KubeAiSchedClientset.SchedulingV2alpha2().PodGroups(namespace).Create(ctx,
@@ -128,12 +133,16 @@ var _ = Describe("Allocation scenario with subgroups", Ordered, func() {
 		Expect(err).To(Succeed())
 
 		// remove quota limit
-		queue, err = testCtx.KubeAiSchedClientset.SchedulingV2().Queues("").Get(ctx, testCtx.Queues[0].Name, metav1.GetOptions{})
-		Expect(err).To(Succeed())
-
-		queue.Spec.Resources.GPU.Quota = -1
-		queue.Spec.Resources.GPU.Limit = -1
-		queue, err = testCtx.KubeAiSchedClientset.SchedulingV2().Queues("").Update(ctx, queue, metav1.UpdateOptions{})
+		err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			queue, getErr := testCtx.KubeAiSchedClientset.SchedulingV2().Queues("").Get(ctx, testCtx.Queues[0].Name, metav1.GetOptions{})
+			if getErr != nil {
+				return getErr
+			}
+			queue.Spec.Resources.GPU.Quota = -1
+			queue.Spec.Resources.GPU.Limit = -1
+			_, updateErr := testCtx.KubeAiSchedClientset.SchedulingV2().Queues("").Update(ctx, queue, metav1.UpdateOptions{})
+			return updateErr
+		})
 		Expect(err).To(Succeed())
 
 		wait.ForAtLeastNPodsScheduled(ctx, testCtx.ControllerClient, namespace, pg1SubGroup1Pods, 1)

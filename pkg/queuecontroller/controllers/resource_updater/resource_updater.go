@@ -18,7 +18,6 @@ import (
 
 type ResourceUpdater struct {
 	client.Client
-	QueueLabelKey string
 }
 
 func (ru *ResourceUpdater) UpdateQueue(ctx context.Context, queue *v2.Queue) error {
@@ -60,12 +59,10 @@ func (ru *ResourceUpdater) sumChildQueueResources(ctx context.Context, queue *v2
 }
 
 func (ru *ResourceUpdater) sumPodGroupsResources(ctx context.Context, queue *v2.Queue) error {
-	listOption := client.MatchingLabels{
-		ru.QueueLabelKey: queue.Name,
-	}
-
 	queuePodGroups := v2alpha2.PodGroupList{}
-	err := ru.Client.List(ctx, &queuePodGroups, listOption)
+	err := ru.Client.List(ctx, &queuePodGroups, client.MatchingFields{
+		common.PodGroupQueueIndexName: queue.Name,
+	})
 	if err != nil {
 		return err
 	}

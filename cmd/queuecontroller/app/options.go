@@ -16,7 +16,6 @@ const (
 
 type Options struct {
 	EnableLeaderElection         bool
-	SchedulingQueueLabelKey      string
 	EnableWebhook                bool
 	SkipControllerNameValidation bool // Set true for env tests
 
@@ -34,7 +33,6 @@ func InitOptions(fs *flag.FlagSet) *Options {
 	o := &Options{}
 
 	fs.BoolVar(&o.EnableLeaderElection, "leader-elect", false, "Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.")
-	fs.StringVar(&o.SchedulingQueueLabelKey, "queue-label-key", constants.DefaultQueueLabel, "Scheduling queue label key name.")
 	fs.BoolVar(&o.EnableWebhook, "enable-webhook", true, "Enable webhook for controller manager.")
 	fs.BoolVar(&o.SkipControllerNameValidation, "skip-controller-name-validation", false, "Skip controller name validation.")
 	fs.StringVar(&o.MetricsAddress, "metrics-listen-address", defaultMetricsAddress, "The address the metrics endpoint binds to.")

@@ -14,8 +14,8 @@ import (
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/constant"
 	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd"
+	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/testconfig"
 	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/wait/watcher"
 )
 
@@ -24,7 +24,7 @@ func ForKaiComponentPod(
 	appLabelComponentName string, condition checkCondition,
 ) {
 	pw := watcher.NewGenericWatcher[v1.PodList](client, watcher.CheckCondition(condition),
-		runtimeClient.InNamespace(constant.SystemPodsNamespace),
+		runtimeClient.InNamespace(testconfig.GetConfig().SystemPodsNamespace),
 		runtimeClient.MatchingLabels{constants.AppLabelName: appLabelComponentName})
 
 	if !watcher.ForEvent(ctx, client, pw) {

@@ -28,6 +28,7 @@ const (
 	ConditionTypeDeployed          ConditionType = "Deployed"
 	ConditionTypeAvailable         ConditionType = "Available"
 	ConditionDependenciesFulfilled ConditionType = "DependenciesFulfilled"
+	ConditionTypeReady             ConditionType = "Ready"
 )
 
 type ConditionReason string
@@ -36,6 +37,9 @@ const (
 	Deployed                   ConditionReason = "deployed"
 	Available                  ConditionReason = "available"
 	Reconciled                 ConditionReason = "reconciled"
+	Reconciling                ConditionReason = "reconciling"
+	Ready                      ConditionReason = "ready"
+	NotReady                   ConditionReason = "not_ready"
 	DependenciesFulfilled      ConditionReason = "dependencies_fulfilled"
 	DependenciesMissing        ConditionReason = "dependencies_missing"
 	PrometheusConnected        ConditionReason = "prometheus_connected"

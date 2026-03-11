@@ -34,7 +34,7 @@ func NewHandler(client client.Client, nodePoolKey string, queueLabelKey string) 
 func (h *Handler) ApplyToCluster(ctx context.Context, pgMetadata Metadata) error {
 	newPodGroup := h.createPodGroupForMetadata(pgMetadata)
 
-	err := h.assignPodsToSubGroup(ctx, pgMetadata.SubGroups)
+	err := h.assignPodsToSubGroup(ctx, pgMetadata)
 	if err != nil {
 		return fmt.Errorf("error assigning pods to subgroup: %v", err)
 	}
@@ -131,11 +131,11 @@ func (h *Handler) createPodGroupForMetadata(podGroupMetadata Metadata) *scheduli
 	return pg
 }
 
-func (h *Handler) assignPodsToSubGroup(ctx context.Context, subGroups []*SubGroupMetadata) error {
-	for _, subGroup := range subGroups {
-		for _, podRef := range subGroup.PodsReferences {
+func (h *Handler) assignPodsToSubGroup(ctx context.Context, podGroupMetadata Metadata) error {
+	for _, subGroup := range podGroupMetadata.SubGroups {
+		for _, podName := range subGroup.PodsReferences {
 			pod := &v1.Pod{}
-			err := h.client.Get(ctx, *podRef, pod)
+			err := h.client.Get(ctx, types.NamespacedName{Namespace: podGroupMetadata.Namespace, Name: podName}, pod)
 			if err != nil {
 				return err
 			}

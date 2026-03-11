@@ -59,6 +59,8 @@ spec:
     reclaimMinRuntime: "5m"
 ```
 
+For customizing which plugins and actions run in a shard (disabling, reordering, overriding arguments), see [Scheduler Config Customization](./scheduler-config-customization.md).
+
 ## Node Preparation
 
 ### Labeling Nodes

@@ -67,6 +67,9 @@ spec:
       podResources:
         {{- toYaml .Values.binder.resourceReservationPodResources | nindent 8 }}
       {{- end }}
+    {{- if hasKey .Values.binder "cdiEnabled" }}
+    cdiEnabled: {{ .Values.binder.cdiEnabled }}
+    {{- end }}
 
   podGroupController:
     service:

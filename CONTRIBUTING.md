@@ -32,6 +32,7 @@ Help us keep the docs clear and useful by fixing typos, updating outdated inform
 - Make Changes – Keep your commits small, focused, and well-documented. For detailed build and test instructions, refer to [Building from Source](docs/developer/building-from-source.md).
 - Log Changes – For behavior-affecting changes (features, fixes, API changes), update the [changelog](CHANGELOG.md) file under the "Unreleased" section. Follow the format at [keepachangelog.com](https://keepachangelog.com/en/1.1.0/). Skip logging internal changes like refactoring or tests. CI checks for changelog updates; add the `skip-changelog` label to your PR to skip if your change doesn't require a changelog entry.
 - Submit a PR – Open a pull request and reference any relevant issues or discussions.
+- Approval Policy – PRs from external contributors require approval from 2 trusted reviewers (organization members or collaborators) before merging.
 - Coverage - Please look at the coverage change details and create unit tests, integration tests or end-to-end tests to cover new functionality or changes.
 
 ### PR Title Guidelines

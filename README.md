@@ -67,6 +67,7 @@ When `gpu-operator` <v25.10.0 is installed, the following flag should be added t
 ```
 --set admission.gpuPodRuntimeClassName=null
 ```
+If CDI is enabled also add `--set binder.cdiEnabled=true`.
 
 ## Support & Breaking changes
 For details on our release lifecycle, LTS versions, and supported releases, see the [Support Policy](SUPPORT.md).

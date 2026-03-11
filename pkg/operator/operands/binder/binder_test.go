@@ -164,6 +164,35 @@ var _ = Describe("Binder", func() {
 					Expect(deploymentT).NotTo(BeNil())
 					Expect((*deploymentT).Spec.Template.Spec.Containers[0].Args).To(ContainElement("--cdi-enabled=false"))
 				})
+
+				It("uses explicit CDIEnabled=true from config, ignoring ClusterPolicy", func(ctx context.Context) {
+					clusterPolicy.Spec.CDI.Default = ptr.To(false)
+					Expect(fakeKubeClient.Create(ctx, clusterPolicy)).To(Succeed())
+
+					kaiConfig.Spec.Binder.CDIEnabled = ptr.To(true)
+
+					objects, err := b.DesiredState(ctx, fakeKubeClient, kaiConfig)
+					Expect(err).To(BeNil())
+
+					deploymentT := test_utils.FindTypeInObjects[*appsv1.Deployment](objects)
+					Expect(deploymentT).NotTo(BeNil())
+					Expect((*deploymentT).Spec.Template.Spec.Containers[0].Args).To(ContainElement("--cdi-enabled=true"))
+				})
+
+				It("uses explicit CDIEnabled=false from config, ignoring ClusterPolicy", func(ctx context.Context) {
+					clusterPolicy.Spec.CDI.Enabled = ptr.To(true)
+					clusterPolicy.Spec.CDI.Default = ptr.To(true)
+					Expect(fakeKubeClient.Create(ctx, clusterPolicy)).To(Succeed())
+
+					kaiConfig.Spec.Binder.CDIEnabled = ptr.To(false)
+
+					objects, err := b.DesiredState(ctx, fakeKubeClient, kaiConfig)
+					Expect(err).To(BeNil())
+
+					deploymentT := test_utils.FindTypeInObjects[*appsv1.Deployment](objects)
+					Expect(deploymentT).NotTo(BeNil())
+					Expect((*deploymentT).Spec.Template.Spec.Containers[0].Args).To(ContainElement("--cdi-enabled=false"))
+				})
 			})
 		})
 

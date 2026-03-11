@@ -7,6 +7,7 @@ package wait
 import (
 	"context"
 	"fmt"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	v1 "k8s.io/api/core/v1"
@@ -14,13 +15,12 @@ import (
 	"k8s.io/apimachinery/pkg/watch"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	v2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
 	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
 	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd"
+	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/queue"
+	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/testconfig"
 	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/wait/watcher"
-)
-
-const (
-	resourceReservationNamespace = "kai-resource-reservation"
 )
 
 type checkCondition func(watch.Event) bool
@@ -153,5 +153,19 @@ func ForNoE2EPods(ctx context.Context, client runtimeClient.WithWatch) {
 }
 
 func ForNoReservationPods(ctx context.Context, client runtimeClient.WithWatch) {
-	ForPodsToBeDeleted(ctx, client, runtimeClient.InNamespace(resourceReservationNamespace))
+	ForPodsToBeDeleted(ctx, client, runtimeClient.InNamespace(testconfig.GetConfig().ReservationNamespace))
+}
+
+func ForPodCountInNamespace(ctx context.Context, client runtimeClient.WithWatch, q *v2.Queue, expectedPodCount int, waitTime time.Duration) {
+	condition := func(event watch.Event) bool {
+		podsListObj, ok := event.Object.(*v1.PodList)
+		if !ok {
+			return false
+		}
+		return len(podsListObj.Items) == expectedPodCount
+	}
+	pw := watcher.NewGenericWatcher[v1.PodList](client, condition, runtimeClient.InNamespace(queue.GetConnectedNamespaceToQueue(q)))
+	if !watcher.ForEventCustomTimeout(ctx, client, pw, waitTime) {
+		Fail(fmt.Sprintf("Failed to wait for %d pods in queue %s", expectedPodCount, q.Name))
+	}
 }

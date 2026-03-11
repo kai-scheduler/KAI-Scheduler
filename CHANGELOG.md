@@ -4,12 +4,42 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [v0.12.17] - 2026-03-04
+### Fixed
+- Fixed admission webhook to skip runtimeClassName injection when gpuPodRuntimeClassName is empty [#1035](https://github.com/NVIDIA/KAI-Scheduler/pull/1035)
+
+## [v0.12.16] - 2026-03-02
+### Fixed
+- Fixed operator status conditions to be kstatus-compatible for Helm 4 `--wait` support: added `Ready` condition and fixed `Reconciling` condition to properly transition to false after reconciliation completes [#1060](https://github.com/NVIDIA/KAI-Scheduler/pull/1060)
+
+## [v0.12.15] - 2026-02-25
+### Fixed
+- Fixed a bug where queue status did not reflect its podgroups resources correctly [#1049](https://github.com/NVIDIA/KAI-Scheduler/pull/1049)
+- Fixed topology-migration helm hook failing on OpenShift due to missing `kai-topology-migration` service account in the `kai-system` SCC [#1050](https://github.com/NVIDIA/KAI-Scheduler/pull/1050)
+
+## [v0.12.14] - 2026-02-18
+### Added
+- Allow configuration of plugins/actions from helm [#1026](https://github.com/NVIDIA/KAI-Scheduler/pull/1026) [itsomri](https://github.com/itsomri)
+
+## [v0.12.13] - 2026-02-17
+### Added
+- Added `plugins` and `actions` fields to SchedulingShard spec, allowing per-shard customization of scheduler plugin/action enablement, priority, and arguments [#966](https://github.com/NVIDIA/KAI-Scheduler/pull/966) [gshaibi](https://github.com/gshaibi)
+
+## [v0.12.12] - 2026-02-12
+### Fixed
+- Fixed a bug in ray gang scheduling where not all worker groups' minMember would be respected [#962](https://github.com/NVIDIA/KAI-Scheduler/pull/962) [itsomri](https://github.com/itsomri)
+- Fixed plugin server (snapshot and job-order endpoints) listening on all interfaces by binding to localhost only.
+
+## [v0.12.11] - 2026-02-03
+### Fixed
+- Added `binder.cdiEnabled` Helm value to allow explicit override of CDI auto-detection for environments without ClusterPolicy fixing compatibility issues in Openshift
 
 ## [v0.12.9] - 2026-01-21
 
 ### Fixed
+- Fixed a bug where queue status did not reflect its podgroups resources correctly [#1049](https://github.com/NVIDIA/KAI-Scheduler/pull/1049)
 - ClusterPolicy CDI parsing for gpu-operator > v25.10.0
+- Fixed missing `repository`, `tag`, and `pullPolicy` fields in `resourceReservationImage` section of kai-config Helm template [#895](https://github.com/NVIDIA/KAI-Scheduler/pull/895) [dttung2905](https://github.com/dttung2905)
 
 ## [v0.12.8] - 2026-01-20
 

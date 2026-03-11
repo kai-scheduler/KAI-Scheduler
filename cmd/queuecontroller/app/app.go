@@ -78,7 +78,7 @@ func Run(opts *Options, clientConfig *rest.Config, ctx context.Context) error {
 	if err = (&controllers.QueueReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr, opts.SchedulingQueueLabelKey, opts.SkipControllerNameValidation); err != nil {
+	}).SetupWithManager(mgr, opts.SkipControllerNameValidation); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Queue")
 		return nil
 	}
