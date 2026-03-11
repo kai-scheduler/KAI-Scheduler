@@ -283,8 +283,7 @@ func (ni *NodeInfo) FittingError(task *pod_info.PodInfo, isGangTask bool) *commo
 	enoughResources := ni.lessEqualTaskToNodeResources(task, ni.IdleVector)
 	if !enoughResources {
 		totalUsedVector := ni.UsedVector.Clone()
-		gpuIdx := ni.VectorMap.GetIndex(commonconstants.GpuResource)
-		totalUsedVector.Set(gpuIdx, totalUsedVector.Get(gpuIdx)+float64(ni.getNumberOfUsedSharedGPUs()))
+		totalUsedVector.Set(resource_info.GPUIndex, totalUsedVector.Get(resource_info.GPUIndex)+float64(ni.getNumberOfUsedSharedGPUs()))
 		totalCapabilityVector := ni.AllocatableVector.Clone()
 
 		requestedResources := task.ResReq.Clone()
@@ -381,8 +380,7 @@ func (ni *NodeInfo) isTaskAllocatableOnNonAllocatedResources(
 	if !ni.isValidGpuPortion(task.ResReq) {
 		return false
 	}
-	gpuIdx := ni.VectorMap.GetIndex(commonconstants.GpuResource)
-	nodeIdleOrReleasingWholeGpus := int64(math.Floor(nodeNonAllocatedVector.Get(gpuIdx)))
+	nodeIdleOrReleasingWholeGpus := int64(math.Floor(nodeNonAllocatedVector.Get(resource_info.GPUIndex)))
 	nodeNonAllocatedResourcesMatchingSharedGpus := ni.fractionTaskGpusAllocatableDeviceCount(task)
 	if nodeIdleOrReleasingWholeGpus+nodeNonAllocatedResourcesMatchingSharedGpus >= task.ResReq.GetNumOfGpuDevices() {
 		return true
@@ -392,9 +390,8 @@ func (ni *NodeInfo) isTaskAllocatableOnNonAllocatedResources(
 }
 
 func (ni *NodeInfo) lessEqualVectorsExcludingGPU(a, b resource_info.ResourceVector) bool {
-	gpuIdx := ni.VectorMap.GetIndex(commonconstants.GpuResource)
 	for i := 0; i < len(a); i++ {
-		if i == gpuIdx {
+		if i == resource_info.GPUIndex {
 			continue
 		}
 		if a.Get(i) > b.Get(i) {
@@ -488,8 +485,7 @@ func (ni *NodeInfo) addTaskResources(task *pod_info.PodInfo) {
 	if pod_info.IsResourceReservationTask(task.Pod) {
 		// Reservation pod: track all resources except GPUs
 		resourcesToTrack.SetGPUs(0)
-		gpuIdx := ni.VectorMap.GetIndex(commonconstants.GpuResource)
-		resourcesToTrackVector.Set(gpuIdx, 0)
+		resourcesToTrackVector.Set(resource_info.GPUIndex, 0)
 	}
 
 	ni.Used.Add(resourcesToTrack)
@@ -546,8 +542,7 @@ func (ni *NodeInfo) removeTaskResources(task *pod_info.PodInfo) {
 	if pod_info.IsResourceReservationTask(task.Pod) {
 		// Reservation pod: untrack all resources except GPUs
 		resourcesToTrack.SetGPUs(0)
-		gpuIdx := ni.VectorMap.GetIndex(commonconstants.GpuResource)
-		resourcesToTrackVector.Set(gpuIdx, 0)
+		resourcesToTrackVector.Set(resource_info.GPUIndex, 0)
 	}
 
 	ni.Used.Sub(resourcesToTrack)
@@ -614,8 +609,7 @@ func (ni *NodeInfo) String() string {
 
 func (ni *NodeInfo) GetSumOfIdleGPUs() (float64, int64) {
 	sumOfSharedGPUs, sumOfSharedGPUsMemory := ni.getSumOfAvailableSharedGPUs()
-	gpuIdx := ni.VectorMap.GetIndex(commonconstants.GpuResource)
-	idleGPUs := ni.IdleVector.Get(gpuIdx)
+	idleGPUs := ni.IdleVector.Get(resource_info.GPUIndex)
 
 	for i := range ni.VectorMap.Len() {
 		name := ni.VectorMap.ResourceAt(i)
@@ -635,8 +629,7 @@ func (ni *NodeInfo) GetSumOfIdleGPUs() (float64, int64) {
 
 func (ni *NodeInfo) GetSumOfReleasingGPUs() (float64, int64) {
 	sumOfSharedGPUs, sumOfSharedGPUsMemory := ni.getSumOfReleasingSharedGPUs()
-	gpuIdx := ni.VectorMap.GetIndex(commonconstants.GpuResource)
-	releasingGPUs := ni.ReleasingVector.Get(gpuIdx)
+	releasingGPUs := ni.ReleasingVector.Get(resource_info.GPUIndex)
 
 	for i := range ni.VectorMap.Len() {
 		name := ni.VectorMap.ResourceAt(i)
@@ -672,8 +665,7 @@ func (ni *NodeInfo) GetNumberOfGPUsInNode() int64 {
 	numberOfGPUs, err := ni.getNodeGpuCountLabelValue()
 	if err != nil {
 		log.InfraLogger.V(6).Infof("Node: <%v> had no annotations of nvidia.com/gpu.count", ni.Name)
-		gpuIdx := ni.VectorMap.GetIndex(commonconstants.GpuResource)
-		return int64(ni.AllocatableVector.Get(gpuIdx))
+		return int64(ni.AllocatableVector.Get(resource_info.GPUIndex))
 	}
 	return int64(numberOfGPUs)
 }
@@ -726,8 +718,7 @@ func (ni *NodeInfo) IsCPUOnlyNode() bool {
 	if ni.IsMIGEnabled() {
 		return false
 	}
-	gpuIdx := ni.VectorMap.GetIndex(commonconstants.GpuResource)
-	return ni.AllocatableVector.Get(gpuIdx) <= 0 && !ni.HasDRAGPUs
+	return ni.AllocatableVector.Get(resource_info.GPUIndex) <= 0 && !ni.HasDRAGPUs
 }
 
 func (ni *NodeInfo) IsMIGEnabled() bool {
@@ -821,9 +812,6 @@ func (ni *NodeInfo) AddDRAGPUs(draGPUs float64) {
 	ni.Allocatable.AddGPUs(draGPUs)
 	ni.Idle.AddGPUs(draGPUs)
 
-	gpuIdx := ni.VectorMap.GetIndex(commonconstants.NvidiaGpuResource)
-	if gpuIdx >= 0 {
-		ni.AllocatableVector.Set(gpuIdx, ni.AllocatableVector.Get(gpuIdx)+draGPUs)
-		ni.IdleVector.Set(gpuIdx, ni.IdleVector.Get(gpuIdx)+draGPUs)
-	}
+	ni.AllocatableVector.Set(resource_info.GPUIndex, ni.AllocatableVector.Get(resource_info.GPUIndex)+draGPUs)
+	ni.IdleVector.Set(resource_info.GPUIndex, ni.IdleVector.Get(resource_info.GPUIndex)+draGPUs)
 }

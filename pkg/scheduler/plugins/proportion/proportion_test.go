@@ -853,7 +853,7 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 			// Should return resources for the single task that exists
 			Expect(len(result)).To(Equal(1))
 			Expect(result[0]).ToNot(BeNil())
-			Expect(result[0].Get(testVectorMap.GetIndex("cpu"))).To(Equal(1000.0))
+			Expect(result[0].Get(resource_info.CPUIndex)).To(Equal(1000.0))
 		})
 
 		It("should correctly split elastic and core tasks when MinAvailable is less than task count", func() {
@@ -898,7 +898,7 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 			Expect(len(result)).To(Equal(3))
 			for _, res := range result {
 				Expect(res).ToNot(BeNil())
-				Expect(res.Get(testVectorMap.GetIndex("cpu"))).To(Equal(1000.0))
+				Expect(res.Get(resource_info.CPUIndex)).To(Equal(1000.0))
 			}
 		})
 
@@ -937,7 +937,7 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 			// Should return 1 resource for all core tasks (no elastic tasks)
 			Expect(len(result)).To(Equal(1))
 			Expect(result[0]).ToNot(BeNil())
-			Expect(result[0].Get(testVectorMap.GetIndex("cpu"))).To(Equal(2000.0)) // Combined resources
+			Expect(result[0].Get(resource_info.CPUIndex)).To(Equal(2000.0)) // Combined resources
 		})
 
 		It("should handle zero MinAvailable", func() {
@@ -975,7 +975,7 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 			Expect(len(result)).To(Equal(2))
 			for _, res := range result {
 				Expect(res).ToNot(BeNil())
-				Expect(res.Get(testVectorMap.GetIndex("cpu"))).To(Equal(1000.0))
+				Expect(res.Get(resource_info.CPUIndex)).To(Equal(1000.0))
 			}
 		})
 	})

@@ -19,6 +19,15 @@ type ResourceVectorMap struct {
 	namesToIndex  map[string]int
 }
 
+// Core resource indices in vectors created by NewResourceVectorMap.
+// These indices are fixed because NewResourceVectorMap always adds core resources first.
+const (
+	CPUIndex    = 0
+	MemoryIndex = 1
+	GPUIndex    = 2
+	PodsIndex   = 3
+)
+
 // NewResourceVectorMap creates a new ResourceVectorMap initialized with base resources.
 func NewResourceVectorMap() *ResourceVectorMap {
 	result := &ResourceVectorMap{
@@ -41,25 +50,16 @@ func NewResourceVector(indexMap *ResourceVectorMap) ResourceVector {
 
 func NewSingleGpuVector(indexMap *ResourceVectorMap) ResourceVector {
 	vec := NewResourceVector(indexMap)
-	gpuIdx := indexMap.GetIndex(constants.GpuResource)
-	if gpuIdx >= 0 {
-		vec.Set(gpuIdx, 1)
-	}
+	vec.Set(GPUIndex, 1)
 	return vec
 }
 
 // NewResourceVectorWithValues is a convenience function for tests only.
 func NewResourceVectorWithValues(milliCPU, memory, gpus float64, indexMap *ResourceVectorMap) ResourceVector {
 	vec := NewResourceVector(indexMap)
-	cpuIdx := indexMap.GetIndex(string(v1.ResourceCPU))
-	memIdx := indexMap.GetIndex(string(v1.ResourceMemory))
-	gpuIdx := indexMap.GetIndex(constants.GpuResource)
-	if cpuIdx < 0 || memIdx < 0 || gpuIdx < 0 {
-		panic("resource vector map missing core resource indexes")
-	}
-	vec.Set(cpuIdx, milliCPU)
-	vec.Set(memIdx, memory)
-	vec.Set(gpuIdx, gpus)
+	vec.Set(CPUIndex, milliCPU)
+	vec.Set(MemoryIndex, memory)
+	vec.Set(GPUIndex, gpus)
 	return vec
 }
 
@@ -203,9 +203,9 @@ func normalizeResourceName(resourceName string) string {
 func (r *Resource) ToVector(indexMap *ResourceVectorMap) ResourceVector {
 	vec := NewResourceVector(indexMap)
 
-	vec.Set(indexMap.GetIndex(string(v1.ResourceCPU)), r.milliCpu)
-	vec.Set(indexMap.GetIndex(string(v1.ResourceMemory)), r.memory)
-	vec.Set(indexMap.GetIndex(constants.GpuResource), r.gpus)
+	vec.Set(CPUIndex, r.milliCpu)
+	vec.Set(MemoryIndex, r.memory)
+	vec.Set(GPUIndex, r.gpus)
 
 	for name, val := range r.scalarResources {
 		if idx := indexMap.GetIndex(string(name)); idx >= 0 {
@@ -217,17 +217,17 @@ func (r *Resource) ToVector(indexMap *ResourceVectorMap) ResourceVector {
 }
 
 func (r *Resource) FromVector(vec ResourceVector, indexMap *ResourceVectorMap) {
-	r.milliCpu = vec.Get(indexMap.GetIndex(string(v1.ResourceCPU)))
-	r.memory = vec.Get(indexMap.GetIndex(string(v1.ResourceMemory)))
-	r.gpus = vec.Get(indexMap.GetIndex(constants.GpuResource))
+	r.milliCpu = vec.Get(CPUIndex)
+	r.memory = vec.Get(MemoryIndex)
+	r.gpus = vec.Get(GPUIndex)
 }
 
 func (r *ResourceRequirements) ToVector(indexMap *ResourceVectorMap) ResourceVector {
 	vec := NewResourceVector(indexMap)
 
-	vec.Set(indexMap.GetIndex(string(v1.ResourceCPU)), r.milliCpu)
-	vec.Set(indexMap.GetIndex(string(v1.ResourceMemory)), r.memory)
-	vec.Set(indexMap.GetIndex(constants.GpuResource), r.GPUs()+float64(r.GetDraGpusCount()))
+	vec.Set(CPUIndex, r.milliCpu)
+	vec.Set(MemoryIndex, r.memory)
+	vec.Set(GPUIndex, r.GPUs()+float64(r.GetDraGpusCount()))
 
 	for name, val := range r.scalarResources {
 		if idx := indexMap.GetIndex(string(name)); idx >= 0 {
@@ -245,10 +245,10 @@ func (r *ResourceRequirements) ToVector(indexMap *ResourceVectorMap) ResourceVec
 }
 
 func (r *ResourceRequirements) FromVector(vec ResourceVector, indexMap *ResourceVectorMap) {
-	r.milliCpu = vec.Get(indexMap.GetIndex(string(v1.ResourceCPU)))
-	r.memory = vec.Get(indexMap.GetIndex(string(v1.ResourceMemory)))
+	r.milliCpu = vec.Get(CPUIndex)
+	r.memory = vec.Get(MemoryIndex)
 
-	gpuVal := vec.Get(indexMap.GetIndex(constants.GpuResource))
+	gpuVal := vec.Get(GPUIndex)
 	if gpuVal >= 1 {
 		r.GpuResourceRequirement = *NewGpuResourceRequirementWithGpus(gpuVal, 0)
 	} else if gpuVal > 0 {
@@ -276,15 +276,12 @@ func (v ResourceVector) IsZero() bool {
 }
 
 func DetailedResourceString(vec ResourceVector, gpuReq *GpuResourceRequirement, m *ResourceVectorMap) string {
-	cpuIdx := m.GetIndex(string(v1.ResourceCPU))
-	memIdx := m.GetIndex(string(v1.ResourceMemory))
-
 	messageBuilder := strings.Builder{}
 	messageBuilder.WriteString(fmt.Sprintf(
 		"GPU: %s, CPU: %s (cores), memory: %s (GB)",
 		HumanizeResource(gpuReq.GetGpusQuota(), 1),
-		HumanizeResource(vec.Get(cpuIdx), MilliCPUToCores),
-		HumanizeResource(vec.Get(memIdx), MemoryToGB),
+		HumanizeResource(vec.Get(CPUIndex), MilliCPUToCores),
+		HumanizeResource(vec.Get(MemoryIndex), MemoryToGB),
 	))
 
 	for i := 0; i < m.Len(); i++ {

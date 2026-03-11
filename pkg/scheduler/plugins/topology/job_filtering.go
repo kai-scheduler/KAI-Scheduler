@@ -10,7 +10,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -212,11 +211,8 @@ func calcSubTreeFreeResources(domain *DomainInfo) resource_info.ResourceVector {
 func calcNodeAccommodation(jobAllocationMetaData *jobAllocationMetaData, node *node_info.NodeInfo) int {
 	maxPodVector := jobAllocationMetaData.maxPodResources.ToVector(node.VectorMap)
 
-	podsIdx := node.VectorMap.GetIndex(string(v1.ResourcePods))
 	onePodOnlyVector := resource_info.NewResourceVector(node.VectorMap)
-	if podsIdx >= 0 {
-		onePodOnlyVector.Set(podsIdx, 1)
-	}
+	onePodOnlyVector.Set(resource_info.PodsIndex, 1)
 	if maxPodVector.LessEqual(onePodOnlyVector) {
 		return len(jobAllocationMetaData.tasksToAllocate)
 	}
@@ -230,9 +226,8 @@ func calcNodeAccommodation(jobAllocationMetaData *jobAllocationMetaData, node *n
 	// to compute per-device available capacity, then sums fractions into nonAllocated.
 	// Treats devices as a pool (may overcount multi-device requests), but overestimation
 	// is acceptable for topology pre-filtering since binding checks are exact.
-	gpuIdx := node.VectorMap.GetIndex(constants.GpuResource)
-	if gpuIdx >= 0 && node.MemoryOfEveryGpuOnNode > 0 {
-		gpuRequest := maxPodVector.Get(gpuIdx)
+	if node.MemoryOfEveryGpuOnNode > 0 {
+		gpuRequest := maxPodVector.Get(resource_info.GPUIndex)
 		if gpuRequest > 0 && gpuRequest < 1 {
 			for gpuGroup, usedMemory := range node.UsedSharedGPUsMemory {
 				if usedMemory <= 0 {
@@ -243,7 +238,7 @@ func calcNodeAccommodation(jobAllocationMetaData *jobAllocationMetaData, node *n
 				availableMemory := node.MemoryOfEveryGpuOnNode - allocated + releasing
 				if availableMemory > 0 {
 					remaining := float64(availableMemory) / float64(node.MemoryOfEveryGpuOnNode)
-					nonAllocated.Set(gpuIdx, nonAllocated.Get(gpuIdx)+remaining)
+					nonAllocated.Set(resource_info.GPUIndex, nonAllocated.Get(resource_info.GPUIndex)+remaining)
 				}
 			}
 		}
@@ -512,13 +507,12 @@ func getJobRatioToFreeResources(tasksResources resource_info.ResourceVector, dom
 		return dominantResourceRatio
 	}
 
-	podsIdx := vectorMap.GetIndex(string(v1.ResourcePods))
 	for i := 0; i < len(tasksResources); i++ {
 		taskVal := tasksResources.Get(i)
 		if taskVal <= 0 {
 			continue
 		}
-		if i == podsIdx {
+		if i == resource_info.PodsIndex {
 			continue
 		}
 		var resourceRatio float64

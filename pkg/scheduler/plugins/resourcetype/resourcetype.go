@@ -4,10 +4,10 @@
 package resourcetype
 
 import (
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/scores"
@@ -34,10 +34,9 @@ func (pp *resourceType) nodeOrderFn() api.NodeOrderFn {
 		if isCPUOnlyTask && node.IsCPUOnlyNode() {
 			score = scores.ResourceType
 		}
-		gpuIdx := node.VectorMap.GetIndex(commonconstants.GpuResource)
 		log.InfraLogger.V(7).Infof(
 			"Task %s requests GPU: %t. On node with %f total allocatable GPU. Score: %f",
-			task.Name, !isCPUOnlyTask, node.AllocatableVector.Get(gpuIdx), score)
+			task.Name, !isCPUOnlyTask, node.AllocatableVector.Get(resource_info.GPUIndex), score)
 		return score, nil
 	}
 }

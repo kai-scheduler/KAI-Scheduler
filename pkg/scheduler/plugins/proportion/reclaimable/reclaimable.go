@@ -16,7 +16,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/reclaimable/strategies"
 	rs "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/utils"
-	v1 "k8s.io/api/core/v1"
 )
 
 type Reclaimable struct {
@@ -268,24 +267,20 @@ func (r *Reclaimable) getHierarchyPath(
 
 func getInvolvedResourcesNames(resources []resource_info.ResourceVector, vectorMap *resource_info.ResourceVectorMap) map[rs.ResourceName]any {
 	involvedResources := map[rs.ResourceName]any{}
-	cpuIdx := vectorMap.GetIndex(string(v1.ResourceCPU))
-	memIdx := vectorMap.GetIndex(string(v1.ResourceMemory))
-	gpuIdx := vectorMap.GetIndex(commonconstants.GpuResource)
-
 	for _, vec := range resources {
 		if vec == nil {
 			continue
 		}
 
-		if vec.Get(cpuIdx) > 0 {
+		if vec.Get(resource_info.CPUIndex) > 0 {
 			involvedResources[rs.CpuResource] = struct{}{}
 		}
 
-		if vec.Get(memIdx) > 0 {
+		if vec.Get(resource_info.MemoryIndex) > 0 {
 			involvedResources[rs.MemoryResource] = struct{}{}
 		}
 
-		if vec.Get(gpuIdx) > 0 {
+		if vec.Get(resource_info.GPUIndex) > 0 {
 			involvedResources[rs.GpuResource] = struct{}{}
 		}
 	}

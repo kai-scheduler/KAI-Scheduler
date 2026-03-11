@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/dustin/go-humanize"
-	v1 "k8s.io/api/core/v1"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal"
@@ -68,10 +67,6 @@ func NewFitErrorInsufficientResource(
 	availableVector := capacityVector.Clone()
 	availableVector.Sub(usedVector)
 
-	gpuIdx := vectorMap.GetIndex(resource_info.GPUResourceName)
-	cpuIdx := vectorMap.GetIndex(string(v1.ResourceCPU))
-	memIdx := vectorMap.GetIndex(string(v1.ResourceMemory))
-
 	var shortMessages []string
 	var detailedMessages []string
 
@@ -93,13 +88,13 @@ func NewFitErrorInsufficientResource(
 		}
 	} else {
 		requestedGPUs := resourceRequested.GPUs()
-		availableGPUs := availableVector.Get(gpuIdx)
+		availableGPUs := availableVector.Get(resource_info.GPUIndex)
 		if requestedGPUs > availableGPUs {
 			detailedMessages = append(detailedMessages, k8s_internal.NewInsufficientResourceError(
 				"GPUs",
 				resourceRequested.GpusAsString(),
-				strconv.FormatFloat(usedVector.Get(gpuIdx), 'g', 3, 64),
-				strconv.FormatFloat(capacityVector.Get(gpuIdx), 'g', 3, 64),
+				strconv.FormatFloat(usedVector.Get(resource_info.GPUIndex), 'g', 3, 64),
+				strconv.FormatFloat(capacityVector.Get(resource_info.GPUIndex), 'g', 3, 64),
 				gangSchedulingJob))
 			shortMessages = append(shortMessages, "node(s) didn't have enough resources: GPUs")
 		}
@@ -112,23 +107,23 @@ func NewFitErrorInsufficientResource(
 	}
 
 	requestedCPUs := int64(resourceRequested.Cpu())
-	availableCPUs := int64(availableVector.Get(cpuIdx))
+	availableCPUs := int64(availableVector.Get(resource_info.CPUIndex))
 	if requestedCPUs > availableCPUs {
 		detailedMessages = append(detailedMessages, k8s_internal.NewInsufficientResourceError(
 			"CPU cores",
 			humanize.FtoaWithDigits(resourceRequested.Cpu()/resource_info.MilliCPUToCores, 3),
-			humanize.FtoaWithDigits(usedVector.Get(cpuIdx)/resource_info.MilliCPUToCores, 3),
-			humanize.FtoaWithDigits(capacityVector.Get(cpuIdx)/resource_info.MilliCPUToCores, 3),
+			humanize.FtoaWithDigits(usedVector.Get(resource_info.CPUIndex)/resource_info.MilliCPUToCores, 3),
+			humanize.FtoaWithDigits(capacityVector.Get(resource_info.CPUIndex)/resource_info.MilliCPUToCores, 3),
 			gangSchedulingJob))
 		shortMessages = append(shortMessages, "node(s) didn't have enough resources: CPU cores")
 	}
 
-	if resourceRequested.Memory() > availableVector.Get(memIdx) {
+	if resourceRequested.Memory() > availableVector.Get(resource_info.MemoryIndex) {
 		detailedMessages = append(detailedMessages, k8s_internal.NewInsufficientResourceError(
 			"memory",
 			humanize.FtoaWithDigits(resourceRequested.Memory()/resource_info.MemoryToGB, 3),
-			humanize.FtoaWithDigits(usedVector.Get(memIdx)/resource_info.MemoryToGB, 3),
-			humanize.FtoaWithDigits(capacityVector.Get(memIdx)/resource_info.MemoryToGB, 3),
+			humanize.FtoaWithDigits(usedVector.Get(resource_info.MemoryIndex)/resource_info.MemoryToGB, 3),
+			humanize.FtoaWithDigits(capacityVector.Get(resource_info.MemoryIndex)/resource_info.MemoryToGB, 3),
 			gangSchedulingJob))
 		shortMessages = append(shortMessages, "node(s) didn't have enough resources: memory")
 	}

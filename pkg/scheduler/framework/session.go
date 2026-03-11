@@ -29,7 +29,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ksf "k8s.io/kube-scheduler/framework"
 
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
@@ -175,9 +174,8 @@ func filterGpusByEnoughResources(node *node_info.NodeInfo, pod *pod_info.PodInfo
 			filteredGPUs = append(filteredGPUs, gpuIdx)
 		}
 	}
-	gpuIdx := node.VectorMap.GetIndex(commonconstants.GpuResource)
-	idleGPUs := node.IdleVector.Get(gpuIdx)
-	releasingGPUs := node.ReleasingVector.Get(gpuIdx)
+	idleGPUs := node.IdleVector.Get(resource_info.GPUIndex)
+	releasingGPUs := node.ReleasingVector.Get(resource_info.GPUIndex)
 	if idleGPUs > 0 || releasingGPUs > 0 {
 		for range int(idleGPUs) + int(releasingGPUs) {
 			filteredGPUs = append(filteredGPUs, pod_info.WholeGpuIndicator)
