@@ -150,14 +150,14 @@ func NewTopologyInsufficientResourcesError(
 	var detailedMessages []string
 
 	for i := 0; i < vectorMap.Len(); i++ {
-		resourceName := vectorMap.ResourceAt(i)
+		resourceName := v1.ResourceName(vectorMap.ResourceAt(i))
 		requested := resourceRequested.Get(i)
 		available := availableResource.Get(i)
 		if requested <= available {
 			continue
 		}
 
-		if resource_info.IsMigResource(v1.ResourceName(resourceName)) {
+		if resource_info.IsMigResource(resourceName) {
 			detailedMessages = append(detailedMessages,
 				fmt.Sprintf("%s didn't have enough resource: %s, requested: %d, available: %d",
 					domainID, resourceName, int64(requested), int64(available)))
@@ -170,14 +170,14 @@ func NewTopologyInsufficientResourcesError(
 				strconv.FormatFloat(available, 'g', 3, 64),
 			))
 			shortMessages = append(shortMessages, "node-group(s) didn't have enough resources: GPUs")
-		} else if resourceName == string(v1.ResourceCPU) {
+		} else if resourceName == v1.ResourceCPU {
 			detailedMessages = append(detailedMessages, fmt.Sprintf("%s didn't have enough resources: CPU cores, requested: %s, available: %s",
 				domainID,
 				humanize.FtoaWithDigits(requested/resource_info.MilliCPUToCores, 3),
 				humanize.FtoaWithDigits(available/resource_info.MilliCPUToCores, 3),
 			))
 			shortMessages = append(shortMessages, "node-group(s) didn't have enough resources: CPU cores")
-		} else if resourceName == string(v1.ResourceMemory) {
+		} else if resourceName == v1.ResourceMemory {
 			detailedMessages = append(detailedMessages, fmt.Sprintf("%s didn't have enough resources: memory, requested: %s, available: %s",
 				domainID,
 				humanize.FtoaWithDigits(requested/resource_info.MemoryToGB, 3),
