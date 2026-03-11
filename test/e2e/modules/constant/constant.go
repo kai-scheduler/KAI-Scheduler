@@ -18,4 +18,6 @@ const (
 	SchedulerContainerName  = "scheduler"
 	AppLabelName            = "app"
 	KaiReservationNamespace = "kai-resource-reservation"
+
+	GPUDeviceClassName = "gpu.nvidia.com"
 )
