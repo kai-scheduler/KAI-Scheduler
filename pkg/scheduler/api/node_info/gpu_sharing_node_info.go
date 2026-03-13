@@ -303,6 +303,28 @@ func (ni *NodeInfo) isSharedGpuMarkedAsReleasing(gpuGroup string) bool {
 	return found && isReleasing
 }
 
+// AvailableSharedGPUFractions returns the total available GPU capacity from partially-used
+// shared GPU devices, expressed as a fraction of whole GPUs. Each device's remaining memory
+// is converted to a fraction of the device's total memory.
+func (ni *NodeInfo) AvailableSharedGPUFractions() float64 {
+	if ni.MemoryOfEveryGpuOnNode <= 0 {
+		return 0
+	}
+	total := 0.0
+	for gpuGroup, usedMemory := range ni.UsedSharedGPUsMemory {
+		if usedMemory <= 0 {
+			continue
+		}
+		allocated := ni.AllocatedSharedGPUsMemory[gpuGroup]
+		releasing := ni.ReleasingSharedGPUsMemory[gpuGroup]
+		availableMemory := ni.MemoryOfEveryGpuOnNode - allocated + releasing
+		if availableMemory > 0 {
+			total += float64(availableMemory) / float64(ni.MemoryOfEveryGpuOnNode)
+		}
+	}
+	return total
+}
+
 func (ni *NodeInfo) markSharedGpuAsReleasing(gpuGroup string) {
 	ni.ReleasingSharedGPUs[gpuGroup] = true
 }

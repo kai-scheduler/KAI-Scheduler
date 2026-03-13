@@ -220,28 +220,15 @@ func calcNodeAccommodation(jobAllocationMetaData *jobAllocationMetaData, node *n
 	nonAllocated := node.IdleVector.Clone()
 	nonAllocated.Add(node.ReleasingVector)
 
-	// For fractional GPU requests, include remaining capacity from partially-used GPU devices.
-	// IdleVector counts whole GPU slots; partially-used devices appear as 0 whole GPUs.
-	// This uses AllocatedSharedGPUsMemory (committed) minus ReleasingSharedGPUsMemory (being freed)
-	// to compute per-device available capacity, then sums fractions into nonAllocated.
-	// Treats devices as a pool (may overcount multi-device requests), but overestimation
-	// is acceptable for topology pre-filtering since binding checks are exact.
-	if node.MemoryOfEveryGpuOnNode > 0 {
-		gpuRequest := maxPodVector.Get(resource_info.GPUIndex)
-		if gpuRequest > 0 && gpuRequest < 1 {
-			for gpuGroup, usedMemory := range node.UsedSharedGPUsMemory {
-				if usedMemory <= 0 {
-					continue
-				}
-				allocated := node.AllocatedSharedGPUsMemory[gpuGroup]
-				releasing := node.ReleasingSharedGPUsMemory[gpuGroup]
-				availableMemory := node.MemoryOfEveryGpuOnNode - allocated + releasing
-				if availableMemory > 0 {
-					remaining := float64(availableMemory) / float64(node.MemoryOfEveryGpuOnNode)
-					nonAllocated.Set(resource_info.GPUIndex, nonAllocated.Get(resource_info.GPUIndex)+remaining)
-				}
-			}
-		}
+	// Approximate available GPUs for topology pre-filtering. A job may request multiple
+	// fractions or whole GPUs, and accounting for fragmentation precisely is not worth it
+	// here — the goal is to quickly identify which topology domains could possibly fit
+	// the job. Sum all available fractions from partially-used devices together with idle
+	// whole GPUs and compare against the total requested GPUs. This may overcount
+	// multi-device requests, but overestimation is acceptable since binding checks are exact.
+	gpuRequest := maxPodVector.Get(resource_info.GPUIndex)
+	if gpuRequest > 0 && gpuRequest < 1 {
+		nonAllocated.Set(resource_info.GPUIndex, nonAllocated.Get(resource_info.GPUIndex)+node.AvailableSharedGPUFractions())
 	}
 
 	if !maxPodVector.LessEqual(nonAllocated) {
