@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info/resources"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
@@ -263,6 +264,22 @@ func (v ResourceVector) SetMax(other ResourceVector) {
 			v[i] = other[i]
 		}
 	}
+}
+
+func (v ResourceVector) TotalGPUs(indexMap *ResourceVectorMap) float64 {
+	total := v.Get(GPUIndex)
+	for i := range indexMap.Len() {
+		name := indexMap.ResourceAt(i)
+		if !IsMigResource(name) {
+			continue
+		}
+		gpuPortion, _, err := resources.ExtractGpuAndMemoryFromMigResourceName(string(name))
+		if err != nil {
+			continue
+		}
+		total += float64(gpuPortion) * v.Get(i)
+	}
+	return total
 }
 
 func (v ResourceVector) IsZero() bool {

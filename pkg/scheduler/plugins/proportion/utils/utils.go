@@ -4,9 +4,7 @@
 package utils
 
 import (
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	rs "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
 )
 
@@ -19,20 +17,7 @@ func QuantifyResourceRequirements(resource *resource_info.ResourceRequirements) 
 }
 
 func QuantifyVector(vec resource_info.ResourceVector, vectorMap *resource_info.ResourceVectorMap) rs.ResourceQuantities {
-	totalGPUs := vec.Get(resource_info.GPUIndex)
-	for i := range vectorMap.Len() {
-		name := vectorMap.ResourceAt(i)
-		if !resource_info.IsMigResource(name) {
-			continue
-		}
-		gpuPortion, _, err := resources.ExtractGpuAndMemoryFromMigResourceName(string(name))
-		if err != nil {
-			log.InfraLogger.Errorf("Failed to get device portion from %v", name)
-			continue
-		}
-		totalGPUs += float64(gpuPortion) * vec.Get(i)
-	}
-	return rs.NewResourceQuantities(vec.Get(resource_info.CPUIndex), vec.Get(resource_info.MemoryIndex), totalGPUs)
+	return rs.NewResourceQuantities(vec.Get(resource_info.CPUIndex), vec.Get(resource_info.MemoryIndex), vec.TotalGPUs(vectorMap))
 }
 
 func ResourceRequirementsFromQuantities(quantities rs.ResourceQuantities) *resource_info.ResourceRequirements {

@@ -31,7 +31,6 @@ import (
 
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_affinity"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
@@ -609,41 +608,13 @@ func (ni *NodeInfo) String() string {
 
 func (ni *NodeInfo) GetSumOfIdleGPUs() (float64, int64) {
 	sumOfSharedGPUs, sumOfSharedGPUsMemory := ni.getSumOfAvailableSharedGPUs()
-	idleGPUs := ni.IdleVector.Get(resource_info.GPUIndex)
-
-	for i := range ni.VectorMap.Len() {
-		name := ni.VectorMap.ResourceAt(i)
-		if !isMigResource(name) {
-			continue
-		}
-		gpuPortion, _, err := resources.ExtractGpuAndMemoryFromMigResourceName(string(name))
-		if err != nil {
-			log.InfraLogger.Errorf("failed to evaluate device portion for resource %v: %v", name, err)
-			continue
-		}
-		idleGPUs += float64(int64(gpuPortion) * int64(ni.IdleVector.Get(i)))
-	}
-
+	idleGPUs := ni.IdleVector.TotalGPUs(ni.VectorMap)
 	return sumOfSharedGPUs + idleGPUs, sumOfSharedGPUsMemory + (int64(idleGPUs) * ni.MemoryOfEveryGpuOnNode)
 }
 
 func (ni *NodeInfo) GetSumOfReleasingGPUs() (float64, int64) {
 	sumOfSharedGPUs, sumOfSharedGPUsMemory := ni.getSumOfReleasingSharedGPUs()
-	releasingGPUs := ni.ReleasingVector.Get(resource_info.GPUIndex)
-
-	for i := range ni.VectorMap.Len() {
-		name := ni.VectorMap.ResourceAt(i)
-		if !isMigResource(name) {
-			continue
-		}
-		gpuPortion, _, err := resources.ExtractGpuAndMemoryFromMigResourceName(string(name))
-		if err != nil {
-			log.InfraLogger.Errorf("failed to evaluate device portion for resource %v: %v", name, err)
-			continue
-		}
-		releasingGPUs += float64(int64(gpuPortion) * int64(ni.ReleasingVector.Get(i)))
-	}
-
+	releasingGPUs := ni.ReleasingVector.TotalGPUs(ni.VectorMap)
 	return sumOfSharedGPUs + releasingGPUs, sumOfSharedGPUsMemory + (int64(releasingGPUs) * ni.MemoryOfEveryGpuOnNode)
 }
 
