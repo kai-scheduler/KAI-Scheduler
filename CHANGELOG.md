@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Fixed
+
+- Updated resource enumeration logic to exclude resources with count of 0. [#1120](https://github.com/NVIDIA/KAI-Scheduler/issues/1120)
 - Fixed plugin server (snapshot and job-order endpoints) listening on all interfaces by binding to localhost only.
 
 ## [v0.4.18] - 2026-01-25
