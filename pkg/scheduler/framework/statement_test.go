@@ -1309,9 +1309,8 @@ func TestStatement_Evict_Undo_Undo_DRA_ResourceClaimInfo(t *testing.T) {
 		},
 	}
 
-	vectorMap := resource_info.NewResourceVectorMap()
-	jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(clusterTopology.Jobs, vectorMap)
-	nodesInfoMap := nodes_fake.BuildNodesInfoMap(clusterTopology.Nodes, tasksToNodeMap, nil, vectorMap)
+	jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(clusterTopology.Jobs)
+	nodesInfoMap := nodes_fake.BuildNodesInfoMap(clusterTopology.Nodes, tasksToNodeMap, nil)
 	task := jobsInfoMap["running_job0"].GetAllPodsMap()["running_job0-0"]
 
 	task.ResourceClaimInfo = bindrequest_info.ResourceClaimInfo{
@@ -1412,9 +1411,8 @@ func TestStatement_Pipeline_Undo_Undo_DRA_ResourceClaimInfo(t *testing.T) {
 		},
 	}
 
-	vectorMap := resource_info.NewResourceVectorMap()
-	jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(clusterTopology.Jobs, vectorMap)
-	nodesInfoMap := nodes_fake.BuildNodesInfoMap(clusterTopology.Nodes, tasksToNodeMap, nil, vectorMap)
+	jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(clusterTopology.Jobs)
+	nodesInfoMap := nodes_fake.BuildNodesInfoMap(clusterTopology.Nodes, tasksToNodeMap, nil)
 	task := jobsInfoMap["pending_job0"].GetAllPodsMap()["pending_job0-0"]
 
 	task.ResourceClaimInfo = bindrequest_info.ResourceClaimInfo{
@@ -1509,9 +1507,8 @@ func TestStatement_Allocate_Undo_Undo_DRA_ResourceClaimInfo(t *testing.T) {
 		},
 	}
 
-	vectorMap := resource_info.NewResourceVectorMap()
-	jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(clusterTopology.Jobs, vectorMap)
-	nodesInfoMap := nodes_fake.BuildNodesInfoMap(clusterTopology.Nodes, tasksToNodeMap, nil, vectorMap)
+	jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(clusterTopology.Jobs)
+	nodesInfoMap := nodes_fake.BuildNodesInfoMap(clusterTopology.Nodes, tasksToNodeMap, nil)
 	task := jobsInfoMap["pending_job0"].GetAllPodsMap()["pending_job0-0"]
 
 	task.ResourceClaimInfo = bindrequest_info.ResourceClaimInfo{
