@@ -37,7 +37,7 @@ jobs:
           cache: true
 
       - name: Install benchstat
-        run: go install golang.org/x/perf/cmd/benchstat@latest
+        run: go install golang.org/x/perf/cmd/benchstat@v0.0.0-20260209182753-b57e4e371b65
 
       - name: Download envtest binaries
         run: |
