@@ -15,8 +15,8 @@ import (
 type ResourceVector []float64
 
 type ResourceVectorMap struct {
-	resourceNames []string
-	namesToIndex  map[string]int
+	resourceNames []v1.ResourceName
+	namesToIndex  map[v1.ResourceName]int
 }
 
 // Core resource indices in vectors created by NewResourceVectorMap.
@@ -31,12 +31,12 @@ const (
 // NewResourceVectorMap creates a new ResourceVectorMap initialized with base resources.
 func NewResourceVectorMap() *ResourceVectorMap {
 	result := &ResourceVectorMap{
-		resourceNames: []string{},
-		namesToIndex:  make(map[string]int),
+		resourceNames: []v1.ResourceName{},
+		namesToIndex:  make(map[v1.ResourceName]int),
 	}
 
 	// Add core resources first to ensure consistent ordering
-	coreResources := []string{string(v1.ResourceCPU), string(v1.ResourceMemory), constants.GpuResource, string(v1.ResourcePods)}
+	coreResources := []v1.ResourceName{v1.ResourceCPU, v1.ResourceMemory, v1.ResourceName(constants.GpuResource), v1.ResourcePods}
 	for _, resourceName := range coreResources {
 		result.AddResource(resourceName)
 	}
@@ -67,8 +67,7 @@ func NewResourceVectorFromResourceList(resourceList v1.ResourceList, indexMap *R
 	vec := NewResourceVector(indexMap)
 
 	for resourceName, rQuant := range resourceList {
-		normalizedName := normalizeResourceName(string(resourceName))
-		idx := indexMap.GetIndex(normalizedName)
+		idx := indexMap.GetIndex(resourceName)
 		if idx >= 0 {
 			vec[idx] += convertResourceToFloat64(resourceName, rQuant)
 		}
@@ -140,15 +139,15 @@ func (v ResourceVector) Set(index int, value float64) {
 	}
 }
 
-func (m *ResourceVectorMap) GetIndex(resourceName string) int {
-	resourceName = normalizeResourceName(resourceName)
-	if idx, exists := m.namesToIndex[resourceName]; exists {
+func (m *ResourceVectorMap) GetIndex(resourceName v1.ResourceName) int {
+	normalized := normalizeResourceName(resourceName)
+	if idx, exists := m.namesToIndex[normalized]; exists {
 		return idx
 	}
 	return -1
 }
 
-func (m *ResourceVectorMap) AddResource(resourceName string) {
+func (m *ResourceVectorMap) AddResource(resourceName v1.ResourceName) {
 	resourceName = normalizeResourceName(resourceName)
 	if _, exists := m.namesToIndex[resourceName]; exists {
 		return
@@ -159,7 +158,7 @@ func (m *ResourceVectorMap) AddResource(resourceName string) {
 
 func (m *ResourceVectorMap) AddResourceList(resourceList v1.ResourceList) {
 	for resourceName := range resourceList {
-		m.AddResource(string(resourceName))
+		m.AddResource(resourceName)
 	}
 }
 
@@ -167,7 +166,7 @@ func (m *ResourceVectorMap) Len() int {
 	return len(m.resourceNames)
 }
 
-func (m *ResourceVectorMap) ResourceAt(index int) string {
+func (m *ResourceVectorMap) ResourceAt(index int) v1.ResourceName {
 	if index < 0 || index >= len(m.resourceNames) {
 		return ""
 	}
@@ -189,13 +188,13 @@ func convertResourceToFloat64(rName v1.ResourceName, rQuant resource.Quantity) f
 	return float64(rQuant.Value())
 }
 
-func isGpuResource(resourceName string) bool {
-	return strings.HasSuffix(resourceName, constants.GpuResource)
+func isGpuResource(resourceName v1.ResourceName) bool {
+	return strings.HasSuffix(string(resourceName), constants.GpuResource)
 }
 
-func normalizeResourceName(resourceName string) string {
+func normalizeResourceName(resourceName v1.ResourceName) v1.ResourceName {
 	if isGpuResource(resourceName) {
-		return constants.GpuResource
+		return v1.ResourceName(constants.GpuResource)
 	}
 	return resourceName
 }
@@ -208,7 +207,7 @@ func (r *Resource) ToVector(indexMap *ResourceVectorMap) ResourceVector {
 	vec.Set(GPUIndex, r.gpus)
 
 	for name, val := range r.scalarResources {
-		if idx := indexMap.GetIndex(string(name)); idx >= 0 {
+		if idx := indexMap.GetIndex(name); idx >= 0 {
 			vec.Set(idx, float64(val))
 		}
 	}
@@ -230,13 +229,13 @@ func (r *ResourceRequirements) ToVector(indexMap *ResourceVectorMap) ResourceVec
 	vec.Set(GPUIndex, r.GPUs()+float64(r.GetDraGpusCount()))
 
 	for name, val := range r.scalarResources {
-		if idx := indexMap.GetIndex(string(name)); idx >= 0 {
+		if idx := indexMap.GetIndex(name); idx >= 0 {
 			vec.Set(idx, float64(val))
 		}
 	}
 
 	for name, val := range r.MigResources() {
-		if idx := indexMap.GetIndex(string(name)); idx >= 0 {
+		if idx := indexMap.GetIndex(name); idx >= 0 {
 			vec.Set(idx, float64(val))
 		}
 	}
@@ -286,18 +285,17 @@ func DetailedResourceString(vec ResourceVector, gpuReq *GpuResourceRequirement, 
 
 	for i := 0; i < m.Len(); i++ {
 		name := m.ResourceAt(i)
-		if name == string(v1.ResourceCPU) || name == string(v1.ResourceMemory) || name == constants.GpuResource {
+		if name == v1.ResourceCPU || name == v1.ResourceMemory || name == v1.ResourceName(constants.GpuResource) {
 			continue
 		}
-		if IsMigResource(v1.ResourceName(name)) {
+		if IsMigResource(name) {
 			continue
 		}
 		val := vec.Get(i)
 		if val == 0 {
 			continue
 		}
-		rName := v1.ResourceName(name)
-		if rName == v1.ResourceEphemeralStorage || rName == v1.ResourceStorage {
+		if name == v1.ResourceEphemeralStorage || name == v1.ResourceStorage {
 			val = val / MemoryToGB
 			messageBuilder.WriteString(fmt.Sprintf(", %s: %s (GB)", name, HumanizeResource(val, 1)))
 		} else {
@@ -310,8 +308,8 @@ func DetailedResourceString(vec ResourceVector, gpuReq *GpuResourceRequirement, 
 	return messageBuilder.String()
 }
 
-func (v ResourceVector) ToResourceQuantities(indexMap *ResourceVectorMap) map[string]float64 {
-	result := make(map[string]float64, indexMap.Len())
+func (v ResourceVector) ToResourceQuantities(indexMap *ResourceVectorMap) map[v1.ResourceName]float64 {
+	result := make(map[v1.ResourceName]float64, indexMap.Len())
 	for i := 0; i < indexMap.Len(); i++ {
 		name := indexMap.ResourceAt(i)
 		result[name] = v.Get(i)

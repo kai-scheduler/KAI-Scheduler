@@ -90,7 +90,7 @@ func createFakeNode(nodeName string, idleGpu int) *node_info.NodeInfo {
 	podAffinityInfo := cluster_info.NewK8sNodePodAffinityInfo(node, clusterPodAffinityInfo)
 	vectorMap := resource_info.NewResourceVectorMap()
 	for resourceName := range node.Status.Allocatable {
-		vectorMap.AddResource(string(resourceName))
+		vectorMap.AddResource(resourceName)
 	}
 	return node_info.NewNodeInfo(node, podAffinityInfo, vectorMap)
 }

@@ -135,7 +135,7 @@ func createFakeNode(nodeName string, capacityGPU int, migProfiles map[v1.Resourc
 	podAffinityInfo := cluster_info.NewK8sNodePodAffinityInfo(node, clusterPodAffinityInfo)
 	vectorMap := resource_info.NewResourceVectorMap()
 	for resourceName := range node.Status.Allocatable {
-		vectorMap.AddResource(string(resourceName))
+		vectorMap.AddResource(resourceName)
 	}
 	return node_info.NewNodeInfo(node, podAffinityInfo, vectorMap)
 }
@@ -149,7 +149,7 @@ func createFakeNodeWithDRA(nodeName string, draGPUs int) *node_info.NodeInfo {
 	podAffinityInfo := cluster_info.NewK8sNodePodAffinityInfo(node, clusterPodAffinityInfo)
 	vectorMap := resource_info.NewResourceVectorMap()
 	for resourceName := range node.Status.Allocatable {
-		vectorMap.AddResource(string(resourceName))
+		vectorMap.AddResource(resourceName)
 	}
 	ni := node_info.NewNodeInfo(node, podAffinityInfo, vectorMap)
 	ni.HasDRAGPUs = true

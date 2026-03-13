@@ -376,7 +376,7 @@ func buildNodeInfoFromK8sNode(k8sNode *v1.Node, ctrl *gomock.Controller) *node_i
 	mockPodAffinity.EXPECT().RemovePod(gomock.Any()).Times(0)
 	vectorMap := resource_info.NewResourceVectorMap()
 	for resourceName := range k8sNode.Status.Allocatable {
-		vectorMap.AddResource(string(resourceName))
+		vectorMap.AddResource(resourceName)
 	}
 	return node_info.NewNodeInfo(k8sNode, mockPodAffinity, vectorMap)
 }

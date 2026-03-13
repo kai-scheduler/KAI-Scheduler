@@ -810,7 +810,7 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 					"1", nil)
 				vectorMap := resource_info.NewResourceVectorMap()
 				for rName := range testData.node.Allocatable.ScalarResources() {
-					vectorMap.AddResource(string(rName))
+					vectorMap.AddResource(rName)
 				}
 				testData.node.VectorMap = vectorMap
 				testData.node.AllocatableVector = testData.node.Allocatable.ToVector(vectorMap)

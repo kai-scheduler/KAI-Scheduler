@@ -57,7 +57,7 @@ func Test_getNodePreferableGpuForSharing(t *testing.T) {
 					}
 					vectorMap := resource_info.NewResourceVectorMap()
 					for resourceName := range n.Status.Allocatable {
-						vectorMap.AddResource(string(resourceName))
+						vectorMap.AddResource(resourceName)
 					}
 					return node_info.NewNodeInfo(n, nil, vectorMap)
 				}(),
@@ -110,7 +110,7 @@ func Test_getNodePreferableGpuForSharing(t *testing.T) {
 					}
 					vectorMap := resource_info.NewResourceVectorMap()
 					for resourceName := range n.Status.Allocatable {
-						vectorMap.AddResource(string(resourceName))
+						vectorMap.AddResource(resourceName)
 					}
 					return node_info.NewNodeInfo(n, nil, vectorMap)
 				}(),
@@ -161,7 +161,7 @@ func Test_getNodePreferableGpuForSharing(t *testing.T) {
 					}
 					vectorMap := resource_info.NewResourceVectorMap()
 					for resourceName := range n.Status.Allocatable {
-						vectorMap.AddResource(string(resourceName))
+						vectorMap.AddResource(resourceName)
 					}
 					return node_info.NewNodeInfo(n, nil, vectorMap)
 				}(),
@@ -224,7 +224,7 @@ func Test_getNodePreferableGpuForSharing(t *testing.T) {
 					}
 					vectorMap := resource_info.NewResourceVectorMap()
 					for resourceName := range n.Status.Allocatable {
-						vectorMap.AddResource(string(resourceName))
+						vectorMap.AddResource(resourceName)
 					}
 					return node_info.NewNodeInfo(n, nil, vectorMap)
 				}(),

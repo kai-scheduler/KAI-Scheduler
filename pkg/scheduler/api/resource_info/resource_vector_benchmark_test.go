@@ -6,6 +6,8 @@ package resource_info
 import (
 	"fmt"
 	"testing"
+
+	v1 "k8s.io/api/core/v1"
 )
 
 func BenchmarkResourceVectorLessEqual(b *testing.B) {
@@ -22,11 +24,11 @@ func BenchmarkResourceVectorLessEqual(b *testing.B) {
 	for _, bm := range benchmarks {
 		b.Run(bm.name, func(b *testing.B) {
 			indexMap := ResourceVectorMap{
-				resourceNames: make([]string, 0, bm.size),
-				namesToIndex:  make(map[string]int, bm.size),
+				resourceNames: make([]v1.ResourceName, 0, bm.size),
+				namesToIndex:  make(map[v1.ResourceName]int, bm.size),
 			}
 			for i := 0; i < bm.size; i++ {
-				indexMap.AddResource(fmt.Sprintf("resource-%d", i))
+				indexMap.AddResource(v1.ResourceName(fmt.Sprintf("resource-%d", i)))
 			}
 
 			vec1 := NewResourceVector(&indexMap)
@@ -58,11 +60,11 @@ func BenchmarkResourceVectorAdd(b *testing.B) {
 	for _, bm := range benchmarks {
 		b.Run(bm.name, func(b *testing.B) {
 			indexMap := ResourceVectorMap{
-				resourceNames: make([]string, 0, bm.size),
-				namesToIndex:  make(map[string]int, bm.size),
+				resourceNames: make([]v1.ResourceName, 0, bm.size),
+				namesToIndex:  make(map[v1.ResourceName]int, bm.size),
 			}
 			for i := 0; i < bm.size; i++ {
-				indexMap.AddResource(fmt.Sprintf("resource-%d", i))
+				indexMap.AddResource(v1.ResourceName(fmt.Sprintf("resource-%d", i)))
 			}
 
 			vec1 := NewResourceVector(&indexMap)
@@ -95,11 +97,11 @@ func BenchmarkResourceVectorSub(b *testing.B) {
 	for _, bm := range benchmarks {
 		b.Run(bm.name, func(b *testing.B) {
 			indexMap := ResourceVectorMap{
-				resourceNames: make([]string, 0, bm.size),
-				namesToIndex:  make(map[string]int, bm.size),
+				resourceNames: make([]v1.ResourceName, 0, bm.size),
+				namesToIndex:  make(map[v1.ResourceName]int, bm.size),
 			}
 			for i := 0; i < bm.size; i++ {
-				indexMap.AddResource(fmt.Sprintf("resource-%d", i))
+				indexMap.AddResource(v1.ResourceName(fmt.Sprintf("resource-%d", i)))
 			}
 
 			vec1 := NewResourceVector(&indexMap)

@@ -166,7 +166,7 @@ func (ni *NodeInfo) nonAllocatedVector() resource_info.ResourceVector {
 }
 
 func (ni *NodeInfo) NonAllocatedResource(resourceType v1.ResourceName) float64 {
-	idx := ni.VectorMap.GetIndex(string(resourceType))
+	idx := ni.VectorMap.GetIndex(resourceType)
 	if idx < 0 {
 		return 0
 	}
@@ -616,7 +616,7 @@ func (ni *NodeInfo) GetSumOfIdleGPUs() (float64, int64) {
 		if !isMigResource(name) {
 			continue
 		}
-		gpuPortion, _, err := resources.ExtractGpuAndMemoryFromMigResourceName(name)
+		gpuPortion, _, err := resources.ExtractGpuAndMemoryFromMigResourceName(string(name))
 		if err != nil {
 			log.InfraLogger.Errorf("failed to evaluate device portion for resource %v: %v", name, err)
 			continue
@@ -636,7 +636,7 @@ func (ni *NodeInfo) GetSumOfReleasingGPUs() (float64, int64) {
 		if !isMigResource(name) {
 			continue
 		}
-		gpuPortion, _, err := resources.ExtractGpuAndMemoryFromMigResourceName(name)
+		gpuPortion, _, err := resources.ExtractGpuAndMemoryFromMigResourceName(string(name))
 		if err != nil {
 			log.InfraLogger.Errorf("failed to evaluate device portion for resource %v: %v", name, err)
 			continue
@@ -798,8 +798,8 @@ func (ni *NodeInfo) lessEqualTaskToNodeResources(
 	return task.ResReqVector.LessEqual(nodeResourcesVector)
 }
 
-func isMigResource(rName string) bool {
-	return strings.HasPrefix(rName, migResourcePrefix)
+func isMigResource(rName v1.ResourceName) bool {
+	return strings.HasPrefix(string(rName), migResourcePrefix)
 }
 
 // AddDRAGPUs adds DRA-based GPU capacity from ResourceSlices to this node's GPU pool.

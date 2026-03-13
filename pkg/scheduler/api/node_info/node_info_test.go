@@ -160,7 +160,7 @@ func setNodeInfoVectors(ni *NodeInfo, vectorMap *resource_info.ResourceVectorMap
 func testVectorMapFromNode(node *v1.Node) *resource_info.ResourceVectorMap {
 	vectorMap := resource_info.NewResourceVectorMap()
 	for resourceName := range node.Status.Allocatable {
-		vectorMap.AddResource(string(resourceName))
+		vectorMap.AddResource(resourceName)
 	}
 	return vectorMap
 }
@@ -840,11 +840,11 @@ func runAllocatableTest(
 	vectorMap := testVectorMapFromNode(testData.node)
 	for _, podResources := range testData.podsResources {
 		for resourceName := range podResources {
-			vectorMap.AddResource(string(resourceName))
+			vectorMap.AddResource(resourceName)
 		}
 	}
 	for resourceName := range testData.podResourcesToAllocate {
-		vectorMap.AddResource(string(resourceName))
+		vectorMap.AddResource(resourceName)
 	}
 	ni := NewNodeInfo(testData.node, nodePodAffinityInfo, vectorMap)
 	for ind, podResouces := range testData.podsResources {
@@ -1312,7 +1312,7 @@ func Test_isMigResource(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := isMigResource(tt.rName); got != tt.want {
+			if got := isMigResource(v1.ResourceName(tt.rName)); got != tt.want {
 				t.Errorf("isMigResource() = %v, want %v", got, tt.want)
 			}
 		})

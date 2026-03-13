@@ -72,7 +72,7 @@ func NewFitErrorInsufficientResource(
 
 	if len(resourceRequested.MigResources()) > 0 {
 		for migProfile, quant := range resourceRequested.MigResources() {
-			migIdx := vectorMap.GetIndex(string(migProfile))
+			migIdx := vectorMap.GetIndex(migProfile)
 			availableMigProfilesQuant := int64(availableVector.Get(migIdx))
 			capacityMigProfilesQuant := int64(capacityVector.Get(migIdx))
 			if availableMigProfilesQuant < quant {
@@ -129,7 +129,7 @@ func NewFitErrorInsufficientResource(
 	}
 
 	for requestedResourceName, requestedResourceQuant := range resourceRequested.ScalarResources() {
-		scalarIdx := vectorMap.GetIndex(string(requestedResourceName))
+		scalarIdx := vectorMap.GetIndex(requestedResourceName)
 		availableResourceQuant := int64(availableVector.Get(scalarIdx))
 		capacityResourceQuant := int64(capacityVector.Get(scalarIdx))
 		if availableResourceQuant < requestedResourceQuant {

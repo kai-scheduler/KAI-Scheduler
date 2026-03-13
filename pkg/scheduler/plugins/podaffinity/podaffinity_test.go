@@ -182,7 +182,7 @@ func testPodPreferredAffinity(testData testInput, clusterAffinityInfo pod_affini
 	vectorMap := resource_info.NewResourceVectorMap()
 	for _, nodeResource := range nodeResources {
 		for resourceName := range nodeResource {
-			vectorMap.AddResource(string(resourceName))
+			vectorMap.AddResource(resourceName)
 		}
 	}
 

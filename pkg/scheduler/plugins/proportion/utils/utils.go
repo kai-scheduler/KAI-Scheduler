@@ -4,8 +4,6 @@
 package utils
 
 import (
-	v1 "k8s.io/api/core/v1"
-
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
@@ -24,10 +22,10 @@ func QuantifyVector(vec resource_info.ResourceVector, vectorMap *resource_info.R
 	totalGPUs := vec.Get(resource_info.GPUIndex)
 	for i := range vectorMap.Len() {
 		name := vectorMap.ResourceAt(i)
-		if !resource_info.IsMigResource(v1.ResourceName(name)) {
+		if !resource_info.IsMigResource(name) {
 			continue
 		}
-		gpuPortion, _, err := resources.ExtractGpuAndMemoryFromMigResourceName(name)
+		gpuPortion, _, err := resources.ExtractGpuAndMemoryFromMigResourceName(string(name))
 		if err != nil {
 			log.InfraLogger.Errorf("Failed to get device portion from %v", name)
 			continue
