@@ -183,6 +183,11 @@ func BuildDepartmentInfoMap(testMetadata TestTopologyBasic) map[common_info.Queu
 		if department.MaxAllowedGPUs != 0 {
 			maxAllowedGpus = department.MaxAllowedGPUs
 		}
+		GPUOverQuotaWeight := float64(department.DeservedGPUs)
+		if department.GPUOverQuotaWeight != nil {
+			GPUOverQuotaWeight = *department.GPUOverQuotaWeight
+		}
+
 		departmentResource := enginev2.Queue{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:              department.Name,
@@ -190,11 +195,12 @@ func BuildDepartmentInfoMap(testMetadata TestTopologyBasic) map[common_info.Queu
 				CreationTimestamp: metav1.Time{Time: time.Now().Add(time.Minute * time.Duration(departmentIndex))},
 			},
 			Spec: enginev2.QueueSpec{
+				Priority: department.Priority,
 				Resources: &enginev2.QueueResources{
 					GPU: enginev2.QueueResource{
 						Quota:           department.DeservedGPUs,
 						Limit:           maxAllowedGpus,
-						OverQuotaWeight: department.DeservedGPUs,
+						OverQuotaWeight: GPUOverQuotaWeight,
 					},
 					CPU: enginev2.QueueResource{
 						Quota:           common_info.NoMaxAllowedResource,

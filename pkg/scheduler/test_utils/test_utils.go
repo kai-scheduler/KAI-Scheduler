@@ -88,11 +88,13 @@ type TestQueueBasic struct {
 }
 
 type TestDepartmentBasic struct {
-	Name             string
-	DeservedGPUs     float64
-	MaxAllowedGPUs   float64
-	MaxAllowedCPUs   *float64
-	MaxAllowedMemory *float64
+	Name               string
+	DeservedGPUs       float64
+	GPUOverQuotaWeight *float64
+	MaxAllowedGPUs     float64
+	MaxAllowedCPUs     *float64
+	MaxAllowedMemory   *float64
+	Priority           *int
 }
 
 type TestSessionConfig struct {

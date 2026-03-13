@@ -8,6 +8,7 @@ import (
 
 	"gopkg.in/h2non/gock.v1"
 	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/integration_tests_utils"
@@ -999,6 +1000,114 @@ func getReclaimTestsMetadata() []integration_tests_utils.TestTopologyMetadata {
 					"pending_job0": {
 						NodeName:     "node0",
 						GPUsRequired: 1,
+						Status:       pod_status.Running,
+					},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{
+						NumberOfCacheBinds:      1,
+						NumberOfCacheEvictions:  1,
+						NumberOfPipelineActions: 1,
+					},
+				},
+			},
+		},
+		{
+			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Name: "one nod,e 8 gpus, 3 departments with different priorities (high, medium low, which will be the default value +3, +2, +1) and each department will have 1 queue. the high priority department will have a quota of 6 GPUs and its queue of 4, all other departments and queues have quota of 0 but no limit. there are two running jobs in the medium and low queues that request 4 GPUs each and one pending job in the high priority queue which also requires 4 GPUs",
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:                "medium_queue_running_job",
+						RequiredGPUsPerTask: 4,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "medium_queue",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								NodeName: "node0",
+								State:    pod_status.Running,
+							},
+						},
+					},
+					{
+						Name:                "low_queue_running_job",
+						RequiredGPUsPerTask: 4,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "low_queue",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								NodeName: "node0",
+								State:    pod_status.Running,
+							},
+						},
+					},
+					{
+						Name:                "high_queue_pending_job",
+						RequiredGPUsPerTask: 4,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "high_queue",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								State: pod_status.Pending,
+							},
+						},
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node0": {
+						GPUs: 8,
+					},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{
+						Name:               "high_queue",
+						DeservedGPUs:       4,
+						GPUOverQuotaWeight: 4,
+						ParentQueue:        "high_department",
+					},
+					{
+						Name:               "medium_queue",
+						DeservedGPUs:       0,
+						GPUOverQuotaWeight: 2,
+						ParentQueue:        "medium_department",
+					},
+					{
+						Name:               "low_queue",
+						DeservedGPUs:       0,
+						GPUOverQuotaWeight: 1,
+						ParentQueue:        "low_department",
+					},
+				},
+				Departments: []test_utils.TestDepartmentBasic{
+					{
+						Name:               "low_department",
+						DeservedGPUs:       0,
+						GPUOverQuotaWeight: ptr.To(float64(3)),
+						Priority:           pointer.Int(commonconstants.DefaultQueuePriority + 1),
+					},
+					{
+						Name:               "medium_department",
+						DeservedGPUs:       0,
+						GPUOverQuotaWeight: ptr.To(float64(3)),
+						Priority:           pointer.Int(commonconstants.DefaultQueuePriority + 2),
+					},
+					{
+						Name:         "high_department",
+						DeservedGPUs: 6,
+						Priority:     pointer.Int(commonconstants.DefaultQueuePriority + 3),
+					},
+				},
+				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"medium_queue_running_job": {
+						GPUsRequired: 4,
+						Status:       pod_status.Running,
+					},
+					"low_queue_running_job": {
+						GPUsRequired: 4,
+						Status:       pod_status.Pending,
+					},
+					"high_queue_pending_job": {
+						NodeName:     "node0",
+						GPUsRequired: 4,
 						Status:       pod_status.Running,
 					},
 				},
