@@ -138,6 +138,12 @@ func (rsc *service) SyncForGpuGroup(ctx context.Context, gpuGroup string) error 
 }
 
 func (rsc *service) syncForGpuGroupWithLock(ctx context.Context, gpuGroup string) error {
+	logger := log.FromContext(ctx)
+	if gpuGroup == "" {
+		// Skip empty GPU groups
+		logger.Info("Skipping sync for empty GPU group")
+		return nil
+	}
 	podsList := &v1.PodList{}
 	err := rsc.kubeClient.List(ctx, podsList,
 		client.MatchingLabels{constants.GPUGroup: gpuGroup},
