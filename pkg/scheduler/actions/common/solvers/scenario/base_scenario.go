@@ -26,7 +26,8 @@ type BaseScenario struct {
 	recordedVictimsTasks  []*pod_info.PodInfo
 
 	// Deprecated: Use preemptor instead
-	victimsJobsTaskGroups map[common_info.PodGroupID][]*podgroup_info.PodGroupInfo
+	victimsJobsTaskGroups   map[common_info.PodGroupID][]*podgroup_info.PodGroupInfo
+	taskToJobRepresentative map[common_info.PodID]*podgroup_info.PodGroupInfo
 }
 
 func NewBaseScenario(
@@ -34,14 +35,15 @@ func NewBaseScenario(
 	recordedVictimsJobs []*podgroup_info.PodGroupInfo,
 ) *BaseScenario {
 	s := &BaseScenario{
-		session:               session,
-		preemptor:             originalJob,
-		victims:               make(map[common_info.PodGroupID]*api.VictimInfo),
-		pendingTasks:          make([]*pod_info.PodInfo, 0),
-		potentialVictimsTasks: make([]*pod_info.PodInfo, 0),
-		recordedVictimsJobs:   make([]*podgroup_info.PodGroupInfo, len(recordedVictimsJobs)),
-		recordedVictimsTasks:  nil,
-		victimsJobsTaskGroups: make(map[common_info.PodGroupID][]*podgroup_info.PodGroupInfo),
+		session:                 session,
+		preemptor:               originalJob,
+		victims:                 make(map[common_info.PodGroupID]*api.VictimInfo),
+		pendingTasks:            make([]*pod_info.PodInfo, 0),
+		potentialVictimsTasks:   make([]*pod_info.PodInfo, 0),
+		recordedVictimsJobs:     make([]*podgroup_info.PodGroupInfo, len(recordedVictimsJobs)),
+		recordedVictimsTasks:    nil,
+		victimsJobsTaskGroups:   make(map[common_info.PodGroupID][]*podgroup_info.PodGroupInfo),
+		taskToJobRepresentative: make(map[common_info.PodID]*podgroup_info.PodGroupInfo),
 	}
 
 	for _, task := range pendingTasksAsJob.GetAllPodsMap() {
@@ -113,6 +115,10 @@ func (s *BaseScenario) appendTasksAsVictimJob(tasks []*pod_info.PodInfo) {
 
 	s.victimsJobsTaskGroups[job.UID] = append(s.victimsJobsTaskGroups[job.UID], job)
 
+	for _, task := range tasks {
+		s.taskToJobRepresentative[task.UID] = job
+	}
+
 	victimTasks := make([]*pod_info.PodInfo, 0)
 	victim, found := s.victims[job.UID]
 	if found {
@@ -127,15 +133,7 @@ func (s *BaseScenario) appendTasksAsVictimJob(tasks []*pod_info.PodInfo) {
 }
 
 func (s *BaseScenario) GetVictimJobRepresentativeById(victimPodInfo *pod_info.PodInfo) *podgroup_info.PodGroupInfo {
-	jobsWithMatchingId := s.victimsJobsTaskGroups[victimPodInfo.Job]
-	for _, jobRepresentative := range jobsWithMatchingId {
-		for _, podFromRepresentative := range jobRepresentative.GetAllPodsMap() {
-			if victimPodInfo.UID == podFromRepresentative.UID {
-				return jobRepresentative
-			}
-		}
-	}
-	return nil
+	return s.taskToJobRepresentative[victimPodInfo.UID]
 }
 
 func (s *BaseScenario) String() string {
