@@ -1,0 +1,38 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: "kubeflow.org/v1"
+kind: "JAXJob"
+metadata:
+  name: "jax-dist-mnist"
+  labels:
+    kai.scheduler/queue: default-queue
+spec:
+  jaxReplicaSpecs:
+    Worker:
+      replicas: 4
+      restartPolicy: OnFailure
+      template:
+        spec:
+          schedulerName: kai-scheduler
+          containers:
+            - name: jax
+              image: docker.io/kubeflow/jax-mnist:latest
+              ports:
+                - containerPort: 6666
+                  name: jaxjob-port
+              env:
+                - name: JAX_COORDINATOR_PORT
+                  value: "6666"
+                - name: JAX_NUM_PROCESSES
+                  value: "4"
+              args:
+                - "--num-epochs=10"
+                - "--batch-size=128"
+                - "--learning-rate=0.001"
+              resources:
+                requests:
+                  cpu: "1"
+                  memory: "2Gi"
+                limits:
+                  nvidia.com/gpu: "1"

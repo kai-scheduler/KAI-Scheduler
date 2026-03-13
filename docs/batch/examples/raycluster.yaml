@@ -1,0 +1,43 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: ray.io/v1
+kind: RayCluster
+metadata:
+  name: raycluster-sample
+  labels:
+    kai.scheduler/queue: default-queue
+spec:
+  rayVersion: '2.46.0'
+  headGroupSpec:
+    rayStartParams:
+      dashboard-host: '0.0.0.0'
+    template:
+      spec:
+        schedulerName: kai-scheduler
+        containers:
+        - name: ray-head
+          image: rayproject/ray:2.46.0
+          resources:
+            limits:
+              cpu: "2"
+              memory: "4Gi"
+            requests:
+              cpu: "1"
+              memory: "2Gi"
+  workerGroupSpecs:
+  - replicas: 3
+    groupName: gpu-workers
+    rayStartParams: {}
+    template:
+      spec:
+        schedulerName: kai-scheduler
+        containers:
+        - name: ray-worker
+          image: rayproject/ray:2.46.0
+          resources:
+            limits:
+              nvidia.com/gpu: "1"
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
