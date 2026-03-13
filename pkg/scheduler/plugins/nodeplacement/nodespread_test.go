@@ -112,5 +112,78 @@ var _ = Describe("NodeSpread", func() {
 				Expect(actual).To(Equal(c.expected))
 			}
 		})
+
+		It("should account for shared GPU consumption when scoring", func() {
+			// Node with 2 GPUs, one GPU has 0.5 allocated (50 of 100 memory)
+			// Expected: (1 idle whole GPU + 0.5 available on shared) / 2 total = 0.75
+			nodeWithShared := &node_info.NodeInfo{
+				Node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-with-shared",
+						Labels: map[string]string{
+							node_info.GpuCountLabel: "2",
+						},
+					},
+				},
+				Idle:                   resource_info.NewResource(0, 0, 1), // 1 whole idle GPU
+				Releasing:              resource_info.EmptyResource(),
+				MemoryOfEveryGpuOnNode: 100,
+				GpuSharingNodeInfo: node_info.GpuSharingNodeInfo{
+					ReleasingSharedGPUs:       map[string]bool{},
+					UsedSharedGPUsMemory:      map[string]int64{"gpu-0": 50},
+					ReleasingSharedGPUsMemory: map[string]int64{},
+					AllocatedSharedGPUsMemory: map[string]int64{"gpu-0": 50},
+				},
+			}
+
+			// Node with 2 GPUs, completely empty
+			// Expected: 2 / 2 = 1.0
+			nodeEmpty := &node_info.NodeInfo{
+				Node: &corev1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-empty",
+						Labels: map[string]string{
+							node_info.GpuCountLabel: "2",
+						},
+					},
+				},
+				Idle:                   resource_info.NewResource(0, 0, 2), // 2 whole idle GPUs
+				Releasing:              resource_info.EmptyResource(),
+				MemoryOfEveryGpuOnNode: 100,
+				GpuSharingNodeInfo: node_info.GpuSharingNodeInfo{
+					ReleasingSharedGPUs:       map[string]bool{},
+					UsedSharedGPUsMemory:      map[string]int64{},
+					ReleasingSharedGPUsMemory: map[string]int64{},
+					AllocatedSharedGPUsMemory: map[string]int64{},
+				},
+			}
+
+			task := &pod_info.PodInfo{
+				ResReq: resource_info.NewResourceRequirementsWithGpus(1),
+			}
+
+			nodes := map[string]*node_info.NodeInfo{
+				nodeWithShared.Name: nodeWithShared,
+				nodeEmpty.Name:      nodeEmpty,
+			}
+			plugin := nodeplacement.New(map[string]string{
+				constants.GPUResource: constants.SpreadStrategy,
+				constants.CPUResource: constants.SpreadStrategy,
+			})
+			ssn := createFakeTestSession(nodes)
+			plugin.OnSessionOpen(ssn)
+			nof := ssn.NodeOrderFns[len(ssn.NodeOrderFns)-1]
+
+			sharedScore, err := nof(task, nodeWithShared)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(sharedScore).To(Equal(0.75))
+
+			emptyScore, err := nof(task, nodeEmpty)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(emptyScore).To(Equal(1.0))
+
+			// The empty node should score higher (more available), ensuring spread
+			Expect(emptyScore).To(BeNumerically(">", sharedScore))
+		})
 	})
 })

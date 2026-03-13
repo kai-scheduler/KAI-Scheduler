@@ -16,17 +16,24 @@ import (
 func nodeResourceSpread(resourceName v1.ResourceName) api.NodeOrderFn {
 	return func(task *pod_info.PodInfo, node *node_info.NodeInfo) (float64, error) {
 		var resourceCount float64
+		var nonAllocated float64
+
 		if resourceName == resource_info.GPUResourceName {
 			resourceCount = float64(node.GetNumberOfGPUsInNode())
+			if resourceCount == 0 {
+				return 0, nil
+			}
+			idleGPUs, _ := node.GetSumOfIdleGPUs()
+			releasingGPUs, _ := node.GetSumOfReleasingGPUs()
+			nonAllocated = idleGPUs + releasingGPUs
 		} else {
 			resourceCount = node.Allocatable.Get(resourceName)
+			if resourceCount == 0 {
+				return 0, nil
+			}
+			nonAllocated = node.NonAllocatedResource(resourceName)
 		}
 
-		if resourceCount == 0 {
-			return 0, nil
-		}
-
-		nonAllocated := node.NonAllocatedResource(resourceName)
 		score := nonAllocated / resourceCount
 		log.InfraLogger.V(7).Infof("Estimating Task: <%v/%v> Job: <%v> for node: <%s> "+
 			"that has <%.2f/%f> non allocated %v. Score: %f",

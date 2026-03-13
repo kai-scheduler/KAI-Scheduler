@@ -1642,3 +1642,154 @@ func getFractionalGPUTestsMetadata() []integration_tests_utils.TestTopologyMetad
 		},
 	}
 }
+
+// TestFillNodeSpreadStrategyPackGPUs reproduces the E2E fill_node_test scenario:
+// 2 nodes (2 GPUs each), 4 pending pods (0.5 GPU each), spread across nodes + pack GPUs.
+// With spread strategy, pods should alternate across nodes. With gpupack, pods on the
+// same node should share a single GPU. Expected: 2 pods per node, 1 reservation per node.
+func TestFillNodeSpreadStrategyPackGPUs(t *testing.T) {
+	test_utils.InitTestingInfrastructure()
+	controller := NewController(t)
+	defer controller.Finish()
+	defer gock.Off()
+
+	testsMetadata := getFillNodeSpreadPackTestsMetadata()
+	for testNumber, testMetadata := range testsMetadata {
+		t.Logf("Running test %d: %s", testNumber, testMetadata.TestTopologyBasic.Name)
+
+		ssn := test_utils.BuildSession(testMetadata.TestTopologyBasic, controller)
+		allocateAction := allocate.New()
+		allocateAction.Execute(ssn)
+
+		test_utils.MatchExpectedAndRealTasks(t, testNumber, testMetadata.TestTopologyBasic, ssn)
+
+		// Additionally verify GPU packing: count distinct GPU groups per node
+		reservationsByNode := map[string]map[string]bool{}
+		for _, job := range ssn.ClusterInfo.PodGroupInfos {
+			for _, task := range job.GetAllPodsMap() {
+				if task.NodeName == "" {
+					continue
+				}
+				if reservationsByNode[task.NodeName] == nil {
+					reservationsByNode[task.NodeName] = map[string]bool{}
+				}
+				for _, gpuGroup := range task.GPUGroups {
+					reservationsByNode[task.NodeName][gpuGroup] = true
+				}
+			}
+		}
+
+		for nodeName, gpuGroups := range reservationsByNode {
+			if len(gpuGroups) != 1 {
+				t.Errorf("Test %d: %s - expected 1 GPU group on node %s (pack behavior), got %d: %v",
+					testNumber, testMetadata.TestTopologyBasic.Name, nodeName, len(gpuGroups), gpuGroups)
+			}
+		}
+	}
+}
+
+func getFillNodeSpreadPackTestsMetadata() []integration_tests_utils.TestTopologyMetadata {
+	return []integration_tests_utils.TestTopologyMetadata{
+		{
+			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Name: "E2E fill_node reproduction: 4 pending pods, spread nodes, pack GPUs - all from empty state",
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:                "pending_job0",
+						Priority:            constants.PriorityBuildNumber,
+						QueueName:           "queue0",
+						RequiredGPUsPerTask: 0.5,
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{State: pod_status.Pending},
+						},
+					},
+					{
+						Name:                "pending_job1",
+						Priority:            constants.PriorityBuildNumber,
+						QueueName:           "queue0",
+						RequiredGPUsPerTask: 0.5,
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{State: pod_status.Pending},
+						},
+					},
+					{
+						Name:                "pending_job2",
+						Priority:            constants.PriorityBuildNumber,
+						QueueName:           "queue0",
+						RequiredGPUsPerTask: 0.5,
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{State: pod_status.Pending},
+						},
+					},
+					{
+						Name:                "pending_job3",
+						Priority:            constants.PriorityBuildNumber,
+						QueueName:           "queue0",
+						RequiredGPUsPerTask: 0.5,
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{State: pod_status.Pending},
+						},
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node0": {GPUs: 2},
+					"node1": {GPUs: 2},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{
+						Name:         "queue0",
+						DeservedGPUs: 4,
+					},
+				},
+				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"pending_job0": {
+						GPUsRequired:         0.5,
+						Status:               pod_status.Binding,
+						DontValidateGPUGroup: true,
+					},
+					"pending_job1": {
+						GPUsRequired:         0.5,
+						Status:               pod_status.Binding,
+						DontValidateGPUGroup: true,
+					},
+					"pending_job2": {
+						GPUsRequired:         0.5,
+						Status:               pod_status.Binding,
+						DontValidateGPUGroup: true,
+					},
+					"pending_job3": {
+						GPUsRequired:         0.5,
+						Status:               pod_status.Binding,
+						DontValidateGPUGroup: true,
+					},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{
+						NumberOfCacheBinds: 5,
+					},
+					SchedulerConf: &conf.SchedulerConfiguration{
+						Actions: "allocate",
+						Tiers: []conf.Tier{
+							{
+								Plugins: []conf.PluginOption{
+									{
+										Name: "nodeplacement",
+										Arguments: map[string]string{
+											constants.GPUResource: constants.SpreadStrategy,
+											constants.CPUResource: constants.SpreadStrategy,
+										},
+									},
+									{Name: "gpupack"},
+									{Name: "proportion"},
+									{Name: "priority"},
+									{Name: "nodeavailability"},
+									{Name: "resourcetype"},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}

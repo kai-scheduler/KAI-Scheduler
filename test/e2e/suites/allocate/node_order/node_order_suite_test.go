@@ -15,6 +15,7 @@ import (
 
 var _ = DescribeAffinitySpecs()
 var _ = DescribeResourceTypeSpecs()
+var _ = DescribeFillNodeSpecs()
 
 func TestNodeOrder(t *testing.T) {
 	utils.SetLogger()
