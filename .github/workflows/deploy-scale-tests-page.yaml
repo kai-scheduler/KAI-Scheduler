@@ -1,0 +1,68 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# Deploys the scale tests results dashboard to GitHub Pages.
+#
+# One-time repository setup required:
+#   1. Settings → Pages → Source: "Deploy from a branch"
+#      Branch: gh-pages / (root)
+#   2. Settings → Variables → New repository variable:
+#        Name:  SCALE_TESTS_S3_URL
+#        Value: https://my-bucket.s3.amazonaws.com  (base URL of the S3 bucket)
+#
+# The page fetches ${SCALE_TESTS_S3_URL}/public/manifest.json at runtime.
+#
+# S3 bucket layout (maintained by the private CI pipeline):
+#   public/manifest.json                   — index of all runs
+#   public/<run-id>/report.json            — ginkgo --json-report output for that run
+#
+# manifest.json format:
+#   {
+#     "runs": [
+#       { "timestamp": "2024-01-15T10:00:00Z", "path": "public/<run-id>/report.json" }
+#     ]
+#   }
+
+name: Deploy Scale Tests Dashboard
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/scale-tests/**"
+      - ".github/workflows/deploy-scale-tests-page.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to GitHub Pages
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Inject S3 base URL
+        env:
+          S3_URL: ${{ vars.SCALE_TESTS_S3_URL }}
+        run: |
+          if [ -z "$S3_URL" ]; then
+            echo "::error::Repository variable SCALE_TESTS_S3_URL is not set."
+            exit 1
+          fi
+          sed -i "s|__S3_BASE_URL__|${S3_URL}|g" docs/scale-tests/app.js
+
+      - name: Deploy to gh-pages branch
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: docs/scale-tests
+          publish_branch: gh-pages
+          force_orphan: true

@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<!--
+ Copyright 2026 NVIDIA CORPORATION
+ SPDX-License-Identifier: Apache-2.0
+-->
+<!--
+  Scale Tests Dashboard — KAI Scheduler
+  Fetches ginkgo --json-report results from an S3 bucket and renders them client-side.
+
+  S3 manifest expected at: ${S3_BASE_URL}/public/manifest.json
+  Format:
+    {
+      "runs": [
+        { "timestamp": "2024-01-15T10:00:00Z", "path": "public/<run-id>/report.json" }
+      ]
+    }
+
+  Each report.json is the standard ginkgo v2 --json-report output (array of Report objects).
+
+  The placeholder __S3_BASE_URL__ in app.js is replaced by the deploy workflow using the
+  SCALE_TESTS_S3_URL repository variable.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KAI Scheduler — Scale Tests</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ── Page header ─────────────────────────────────────────────────────── -->
+<header class="page-header">
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"
+          stroke="#58a6ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+  <h1>KAI Scheduler — Scale Tests</h1>
+  <div class="header-stats" id="header-stats" aria-live="polite"></div>
+</header>
+
+<!-- ── Controls ────────────────────────────────────────────────────────── -->
+<div class="controls">
+  <div class="search-wrap">
+    <svg class="search-icon" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+      <path fill="var(--muted)" d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398l3.85 3.85a1 1 0 0 0 1.415-1.415l-3.868-3.833zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/>
+    </svg>
+    <input class="search" id="search" type="search" placeholder="Search tests, labels, output, failure messages…" autocomplete="off">
+  </div>
+
+  <div class="sep" aria-hidden="true"></div>
+  <span class="ctrl-label">Sort</span>
+  <div class="btn-group" role="group" aria-label="Sort order">
+    <button class="active" data-sort="time">Time</button>
+    <button data-sort="name">Name</button>
+    <button data-sort="status">Status</button>
+  </div>
+  <div class="btn-group">
+    <button id="sort-dir" title="Toggle sort direction">▼</button>
+  </div>
+
+  <div class="sep" aria-hidden="true"></div>
+  <div class="filter-group" role="group" aria-label="Filter by status">
+    <button class="filter-pill pass active" id="fp-pass" aria-pressed="true"><span class="dot"></span>Passed</button>
+    <button class="filter-pill fail active" id="fp-fail" aria-pressed="true"><span class="dot"></span>Failed</button>
+    <button class="filter-pill skip active" id="fp-skip" aria-pressed="true"><span class="dot"></span>Skipped</button>
+  </div>
+</div>
+
+<!-- ── Summary strip ───────────────────────────────────────────────────── -->
+<div class="summary" id="summary" aria-live="polite">Loading…</div>
+
+<!-- ── Run list ────────────────────────────────────────────────────────── -->
+<main id="main">
+  <div class="msg"><div class="spinner"></div><br>Fetching scale test results…</div>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
