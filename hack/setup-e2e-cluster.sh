@@ -55,7 +55,7 @@ kubectl wait --for=condition=available --timeout=60s deployment/registry -n kube
 
 # Install the fake-gpu-operator to provide fake GPU resources for the e2e tests
 helm upgrade -i gpu-operator oci://ghcr.io/run-ai/fake-gpu-operator/fake-gpu-operator --namespace gpu-operator --create-namespace \
-    --version 0.0.71 --values ${REPO_ROOT}/hack/fake-gpu-operator-values.yaml --wait
+    --version 0.0.74 --values ${REPO_ROOT}/hack/fake-gpu-operator-values.yaml --wait
 
 # Deploy Prometheus Operator
 echo "Deploying Prometheus Operator..."
