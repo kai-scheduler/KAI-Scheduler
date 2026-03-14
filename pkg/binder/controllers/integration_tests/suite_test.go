@@ -53,6 +53,7 @@ var cfg *rest.Config
 var k8sClient client.Client
 var testEnv *envtest.Environment
 var k8sManager ctrl.Manager
+var rrs resourcereservation.Interface
 
 func TestAPIs(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -95,6 +96,23 @@ var _ = BeforeSuite(func() {
 	})
 	Expect(err).ToNot(HaveOccurred())
 
+	err = k8sManager.GetFieldIndexer().IndexField(
+		context.Background(), &corev1.Pod{}, "spec.nodeName",
+		func(obj client.Object) []string {
+			return []string{obj.(*corev1.Pod).Spec.NodeName}
+		},
+	)
+	Expect(err).NotTo(HaveOccurred())
+
+	err = k8sManager.GetFieldIndexer().IndexField(
+		context.Background(), &schedulingv1alpha2.BindRequest{}, "spec.selectedGPUGroups",
+		func(obj client.Object) []string {
+			br := obj.(*schedulingv1alpha2.BindRequest)
+			return br.Spec.SelectedGPUGroups
+		},
+	)
+	Expect(err).NotTo(HaveOccurred())
+
 	params := &controllers.ReconcilerParams{
 		MaxConcurrentReconciles:     1,
 		RateLimiterBaseDelaySeconds: 1,
@@ -113,10 +131,15 @@ var _ = BeforeSuite(func() {
 	k8sPlugins, err := k8s_plugins.New(kubeClient, informerFactory, int64(options.VolumeBindingTimeoutSeconds))
 	Expect(err).NotTo(HaveOccurred())
 	binderPlugins.RegisterPlugin(k8sPlugins)
-	clientWithWatch, err := client.NewWithWatch(cfg, client.Options{})
+	clientWithWatch, err := client.NewWithWatch(cfg, client.Options{
+		Scheme: scheme.Scheme,
+		Cache: &client.CacheOptions{
+			Reader: k8sManager.GetCache(),
+		},
+	})
 	Expect(err).NotTo(HaveOccurred())
 
-	rrs := resourcereservation.NewService(false, clientWithWatch, "", 40*time.Second,
+	rrs = resourcereservation.NewService(false, clientWithWatch, "", 40*time.Second,
 		resourceReservationNameSpace, resourceReservationServiceAccount, resourceReservationAppLabelValue, scalingPodsNamespace, constants.DefaultRuntimeClassName,
 		nil) // nil podResources to use defaults
 	podBinder := binding.NewBinder(k8sManager.GetClient(), rrs, binderPlugins)
@@ -138,6 +161,8 @@ var _ = BeforeSuite(func() {
 		err = k8sManager.Start(testContext)
 		Expect(err).ToNot(HaveOccurred())
 	}()
+
+	Expect(k8sManager.GetCache().WaitForCacheSync(testContext)).To(BeTrue())
 })
 
 var _ = AfterSuite(func() {
