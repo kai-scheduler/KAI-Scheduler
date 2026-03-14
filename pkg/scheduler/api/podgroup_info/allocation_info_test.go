@@ -253,6 +253,56 @@ func Test_GetTasksToAllocateInitResource(t *testing.T) {
 	}
 }
 
+func Test_GetTasksToAllocateInitResourceVector(t *testing.T) {
+	// Nil case
+	res := GetTasksToAllocateInitResourceVector(nil, subGroupOrderFn, tasksOrderFn, true, 0)
+	if res != nil {
+		t.Error("nil expected for nil pg")
+	}
+
+	vectorMap := resource_info.NewResourceVectorMap()
+	pg := NewPodGroupInfoWithVectorMap("ri-vec", vectorMap)
+	pg.GetSubGroups()[DefaultSubGroup].SetMinAvailable(2)
+
+	task1 := simpleTask("p1", "", pod_status.Pending)
+	task1.ResReq = resource_info.NewResourceRequirements(1, 2000, 4000)
+	task1.ResReqVector = task1.ResReq.ToVector(vectorMap)
+	task1.VectorMap = vectorMap
+	pg.AddTaskInfo(task1)
+
+	task2 := simpleTask("p2", "", pod_status.Pending)
+	task2.ResReq = resource_info.NewResourceRequirements(2, 3000, 5000)
+	task2.ResReqVector = task2.ResReq.ToVector(vectorMap)
+	task2.VectorMap = vectorMap
+	pg.AddTaskInfo(task2)
+
+	vec := GetTasksToAllocateInitResourceVector(pg, subGroupOrderFn, tasksOrderFn, true, 0)
+	cpuIdx := vectorMap.GetIndex(v1.ResourceCPU)
+	memIdx := vectorMap.GetIndex(v1.ResourceMemory)
+	gpuIdx := vectorMap.GetIndex("gpu")
+
+	if vec.Get(cpuIdx) != 5000 {
+		t.Errorf("want cpu=5000, got %v", vec.Get(cpuIdx))
+	}
+	if vec.Get(memIdx) != 9000 {
+		t.Errorf("want mem=9000, got %v", vec.Get(memIdx))
+	}
+	if vec.Get(gpuIdx) != 3 {
+		t.Errorf("want gpu=3, got %v", vec.Get(gpuIdx))
+	}
+
+	// Caching: second call should return same slice
+	vec2 := GetTasksToAllocateInitResourceVector(pg, subGroupOrderFn, tasksOrderFn, true, 0)
+	if len(vec) != len(vec2) {
+		t.Fatal("cached vector length mismatch")
+	}
+	for i := range vec {
+		if vec[i] != vec2[i] {
+			t.Errorf("cached vector mismatch at index %d: %v != %v", i, vec[i], vec2[i])
+		}
+	}
+}
+
 func Test_getTasksFromQueue(t *testing.T) {
 	type testCase struct {
 		name        string

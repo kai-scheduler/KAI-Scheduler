@@ -79,7 +79,7 @@ func (alloc *allocateAction) Execute(ssn *framework.Session) {
 func attemptToAllocateJob(ssn *framework.Session, stmt *framework.Statement, job *podgroup_info.PodGroupInfo) (allocated, pipelined bool) {
 	queue := ssn.ClusterInfo.Queues[job.Queue]
 
-	resReq := podgroup_info.GetTasksToAllocateInitResource(job, ssn.PodSetOrderFn, ssn.TaskOrderFn, true, ssn.ClusterInfo.MinNodeGPUMemory)
+	resReq := podgroup_info.GetTasksToAllocateInitResourceVector(job, ssn.PodSetOrderFn, ssn.TaskOrderFn, true, ssn.ClusterInfo.MinNodeGPUMemory)
 	log.InfraLogger.V(3).Infof("Attempting to allocate job: <%v/%v> of queue <%v>, resources: <%v>",
 		job.Namespace, job.Name, queue.Name, resReq)
 

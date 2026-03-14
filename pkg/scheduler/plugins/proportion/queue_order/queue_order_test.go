@@ -29,25 +29,34 @@ type testMetadata struct {
 	minNodeGPUMemory int64
 }
 
+var testVectorMap = resource_info.NewResourceVectorMap()
+
 func createGpuMemoryTask(name string, numDevices int64, gpuMemory int64) *pod_info.PodInfo {
+	resReq := &resource_info.ResourceRequirements{
+		GpuResourceRequirement: *resource_info.NewGpuResourceRequirementWithMultiFraction(numDevices, 0, gpuMemory),
+	}
 	task := &pod_info.PodInfo{
 		Name:                name,
 		Status:              pod_status.Pending,
 		SubGroupName:        podgroup_info.DefaultSubGroup,
 		ResourceRequestType: pod_info.RequestTypeGpuMemory,
-		ResReq: &resource_info.ResourceRequirements{
-			GpuResourceRequirement: *resource_info.NewGpuResourceRequirementWithMultiFraction(numDevices, 0, gpuMemory),
-		},
+		ResReq:              resReq,
+		ResReqVector:        resReq.ToVector(testVectorMap),
+		VectorMap:           testVectorMap,
 	}
 	return task
 }
 
 func createPodGroupWithGpuMemoryTask(name string, numDevices int64, gpuMemory int64) *podgroup_info.PodGroupInfo {
-	pg := podgroup_info.NewPodGroupInfo(common_info.PodGroupID(name))
+	pg := podgroup_info.NewPodGroupInfoWithVectorMap(common_info.PodGroupID(name), testVectorMap)
 	pg.GetSubGroups()[podgroup_info.DefaultSubGroup].SetMinAvailable(1)
 	task := createGpuMemoryTask("task-"+name, numDevices, gpuMemory)
 	pg.AddTaskInfo(task)
 	return pg
+}
+
+func emptyPodGroup(name string) *podgroup_info.PodGroupInfo {
+	return podgroup_info.NewPodGroupInfoWithVectorMap(common_info.PodGroupID(name), testVectorMap)
 }
 
 func TestGetQueueOrderResult(t *testing.T) {
@@ -86,8 +95,8 @@ func TestGetQueueOrderResult(t *testing.T) {
 					},
 				},
 			},
-			lJobInfo:       &podgroup_info.PodGroupInfo{},
-			rJobInfo:       &podgroup_info.PodGroupInfo{},
+			lJobInfo:       emptyPodGroup("lJob"),
+			rJobInfo:       emptyPodGroup("rJob"),
 			expectedResult: rQueuePrioritized,
 		},
 		{
@@ -126,8 +135,8 @@ func TestGetQueueOrderResult(t *testing.T) {
 					},
 				},
 			},
-			lJobInfo:       &podgroup_info.PodGroupInfo{},
-			rJobInfo:       &podgroup_info.PodGroupInfo{},
+			lJobInfo:       emptyPodGroup("lJob"),
+			rJobInfo:       emptyPodGroup("rJob"),
 			expectedResult: rQueuePrioritized,
 		},
 		{
@@ -166,8 +175,8 @@ func TestGetQueueOrderResult(t *testing.T) {
 					},
 				},
 			},
-			lJobInfo:       &podgroup_info.PodGroupInfo{},
-			rJobInfo:       &podgroup_info.PodGroupInfo{},
+			lJobInfo:       emptyPodGroup("lJob"),
+			rJobInfo:       emptyPodGroup("rJob"),
 			expectedResult: lQueuePrioritized,
 		},
 		{
@@ -206,8 +215,8 @@ func TestGetQueueOrderResult(t *testing.T) {
 					},
 				},
 			},
-			lJobInfo:       &podgroup_info.PodGroupInfo{},
-			rJobInfo:       &podgroup_info.PodGroupInfo{},
+			lJobInfo:       emptyPodGroup("lJob"),
+			rJobInfo:       emptyPodGroup("rJob"),
 			expectedResult: lQueuePrioritized,
 		},
 		{

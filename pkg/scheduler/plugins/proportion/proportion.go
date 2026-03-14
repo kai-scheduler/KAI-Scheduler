@@ -296,14 +296,12 @@ func (pp *proportionPlugin) createQueueAttributes(ssn *framework.Session) {
 }
 
 func (pp *proportionPlugin) buildReclaimerInfo(reclaimer *podgroup_info.PodGroupInfo, minNodeGPUMemory int64) *rec.ReclaimerInfo {
-	initResource := podgroup_info.GetTasksToAllocateInitResource(
-		reclaimer, pp.subGroupOrderFn, pp.taskOrderFunc, false, minNodeGPUMemory)
 	return &rec.ReclaimerInfo{
 		Name:              reclaimer.Name,
 		Namespace:         reclaimer.Namespace,
 		Queue:             reclaimer.Queue,
 		IsPreemptable:     reclaimer.IsPreemptibleJob(),
-		RequiredResources: initResource.ToVector(reclaimer.VectorMap),
+		RequiredResources: podgroup_info.GetTasksToAllocateInitResourceVector(reclaimer, pp.subGroupOrderFn, pp.taskOrderFunc, false, minNodeGPUMemory),
 		VectorMap:         reclaimer.VectorMap,
 	}
 }

@@ -112,6 +112,34 @@ func GetTasksToAllocateInitResource(
 	return tasksTotalRequestedResource
 }
 
+func GetTasksToAllocateInitResourceVector(
+	podGroupInfo *PodGroupInfo, subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn,
+	isRealAllocation bool, minNodeGPUMemory int64,
+) resource_info.ResourceVector {
+	if podGroupInfo == nil {
+		return nil
+	}
+	if podGroupInfo.tasksToAllocateInitResourceVector != nil {
+		return podGroupInfo.tasksToAllocateInitResourceVector
+	}
+
+	result := resource_info.NewResourceVector(podGroupInfo.VectorMap)
+	gpuIdx := podGroupInfo.VectorMap.GetIndex("gpu")
+	for _, task := range GetTasksToAllocate(podGroupInfo, subGroupOrderFn, taskOrderFn, isRealAllocation) {
+		if task.ShouldAllocate(isRealAllocation) {
+			result.Add(task.ResReqVector)
+			if task.IsMemoryRequest() && minNodeGPUMemory > 0 {
+				additionalGpuFraction := float64(task.ResReq.GpuResourceRequirement.GetNumOfGpuDevices()) *
+					(float64(task.ResReq.GpuMemory()) / float64(minNodeGPUMemory))
+				result.Set(gpuIdx, result.Get(gpuIdx)+additionalGpuFraction)
+			}
+		}
+	}
+
+	podGroupInfo.tasksToAllocateInitResourceVector = result
+	return result
+}
+
 func getTasksPriorityQueue(
 	subGroup *subgroup_info.PodSet, taskOrderFn common_info.LessFn, isRealAllocation bool,
 ) *scheduler_util.PriorityQueue {
