@@ -19,9 +19,11 @@ import (
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	version "k8s.io/apimachinery/pkg/version"
 	fakediscovery "k8s.io/client-go/discovery/fake"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 
 	kaischedulerfake "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/fake"
+	draversionawareclient "github.com/kai-scheduler/KAI-scheduler/pkg/common/resources/dra_version_aware_client"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf_util"
@@ -143,9 +145,13 @@ func loadSnapshot(filename string) (*snapshot.Snapshot, error) {
 	return nil, os.ErrNotExist
 }
 
-func loadClientsWithSnapshot(rawObjects *snapshot.RawKubernetesObjects, discoverySnapshot *snapshot.DiscoverySnapshot) (*fake.Clientset, *kaischedulerfake.Clientset) {
+func loadClientsWithSnapshot(rawObjects *snapshot.RawKubernetesObjects, discoverySnapshot *snapshot.DiscoverySnapshot) (kubernetes.Interface, *kaischedulerfake.Clientset) {
 	kubeClient := fake.NewSimpleClientset()
 	kaiClient := kaischedulerfake.NewSimpleClientset()
+
+	if discoverySnapshot == nil {
+		discoverySnapshot = synthesizeDiscoveryFromSnapshot(rawObjects)
+	}
 	applyDiscoverySnapshot(kubeClient, discoverySnapshot)
 
 	for _, pod := range rawObjects.Pods {
@@ -232,28 +238,54 @@ func loadClientsWithSnapshot(rawObjects *snapshot.RawKubernetesObjects, discover
 		}
 	}
 
+	draClient := draversionawareclient.NewDRAAwareClient(kubeClient)
+
 	for _, resourceClaim := range rawObjects.ResourceClaims {
-		_, err := kubeClient.ResourceV1().ResourceClaims(resourceClaim.Namespace).Create(context.TODO(), resourceClaim, v1.CreateOptions{})
+		_, err := draClient.ResourceV1().ResourceClaims(resourceClaim.Namespace).Create(context.TODO(), resourceClaim, v1.CreateOptions{})
 		if err != nil {
 			log.InfraLogger.Errorf("Failed to create resource claim: %v", err)
 		}
 	}
 
 	for _, resourceSlice := range rawObjects.ResourceSlices {
-		_, err := kubeClient.ResourceV1().ResourceSlices().Create(context.TODO(), resourceSlice, v1.CreateOptions{})
+		_, err := draClient.ResourceV1().ResourceSlices().Create(context.TODO(), resourceSlice, v1.CreateOptions{})
 		if err != nil {
 			log.InfraLogger.Errorf("Failed to create resource slice: %v", err)
 		}
 	}
 
 	for _, deviceClass := range rawObjects.DeviceClasses {
-		_, err := kubeClient.ResourceV1().DeviceClasses().Create(context.TODO(), deviceClass, v1.CreateOptions{})
+		_, err := draClient.ResourceV1().DeviceClasses().Create(context.TODO(), deviceClass, v1.CreateOptions{})
 		if err != nil {
 			log.InfraLogger.Errorf("Failed to create device class: %v", err)
 		}
 	}
 
-	return kubeClient, kaiClient
+	return draClient, kaiClient
+}
+
+func synthesizeDiscoveryFromSnapshot(rawObjects *snapshot.RawKubernetesObjects) *snapshot.DiscoverySnapshot {
+	hasDRAResources := len(rawObjects.ResourceClaims) > 0 ||
+		len(rawObjects.ResourceSlices) > 0 ||
+		len(rawObjects.DeviceClasses) > 0
+	if !hasDRAResources {
+		return nil
+	}
+
+	log.InfraLogger.V(2).Infof("Synthesizing discovery data from snapshot DRA resources")
+	return &snapshot.DiscoverySnapshot{
+		ServerVersion: &version.Info{Major: "1", Minor: "32"},
+		Resources: []*v1.APIResourceList{
+			{
+				GroupVersion: "resource.k8s.io/v1",
+				APIResources: []v1.APIResource{
+					{Name: "resourceclaims", Kind: "ResourceClaim", Namespaced: true},
+					{Name: "resourceslices", Kind: "ResourceSlice"},
+					{Name: "deviceclasses", Kind: "DeviceClass"},
+				},
+			},
+		},
+	}
 }
 
 func applyDiscoverySnapshot(kubeClient *fake.Clientset, discoverySnapshot *snapshot.DiscoverySnapshot) {
