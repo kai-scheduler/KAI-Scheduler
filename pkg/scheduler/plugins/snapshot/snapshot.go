@@ -159,25 +159,9 @@ func (sp *snapshotPlugin) serveSnapshot(writer http.ResponseWriter, request *htt
 		rawObjects.Topologies = []*kaiv1alpha1.Topology{}
 	}
 
-	fwork := sp.session.InternalK8sPlugins().FrameworkHandle
-
-	rawObjects.ResourceClaims, err = fwork.SharedDRAManager().ResourceClaims().List()
-	if err != nil {
-		log.InfraLogger.Errorf("Error getting raw resource claims: %v", err)
-		rawObjects.ResourceClaims = []*resourceapi.ResourceClaim{}
-	}
-
-	rawObjects.ResourceSlices, err = fwork.SharedDRAManager().ResourceSlices().ListWithDeviceTaintRules()
-	if err != nil {
-		log.InfraLogger.Errorf("Error getting raw resource slices: %v", err)
-		rawObjects.ResourceSlices = []*resourceapi.ResourceSlice{}
-	}
-
-	rawObjects.DeviceClasses, err = fwork.SharedDRAManager().DeviceClasses().List()
-	if err != nil {
-		log.InfraLogger.Errorf("Error getting raw device classes: %v", err)
-		rawObjects.DeviceClasses = []*resourceapi.DeviceClass{}
-	}
+	rawObjects.ResourceClaims = sp.session.ClusterInfo.ResourceClaims
+	rawObjects.ResourceSlices = sp.session.ClusterInfo.ResourceSlices
+	rawObjects.DeviceClasses = sp.session.ClusterInfo.DeviceClasses
 
 	discoverySnapshot := &DiscoverySnapshot{}
 	discoveryClient := sp.session.Cache.KubeClient().Discovery()

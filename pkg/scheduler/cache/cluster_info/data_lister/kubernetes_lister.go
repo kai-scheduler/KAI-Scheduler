@@ -55,6 +55,7 @@ type k8sLister struct {
 
 	resourceSliceLister resourcev1.ResourceSliceLister
 	resourceClaimLister resourcev1.ResourceClaimLister
+	deviceClassLister   resourcev1.DeviceClassLister
 
 	partitionSelector labels.Selector
 }
@@ -92,6 +93,7 @@ func New(
 	if featureutil.DefaultMutableFeatureGate.Enabled(features.DynamicResourceAllocation) {
 		lister.resourceSliceLister = informerFactory.Resource().V1().ResourceSlices().Lister()
 		lister.resourceClaimLister = informerFactory.Resource().V1().ResourceClaims().Lister()
+		lister.deviceClassLister = informerFactory.Resource().V1().DeviceClasses().Lister()
 	}
 
 	return lister
@@ -216,4 +218,18 @@ func (k *k8sLister) ListResourceClaims() ([]*resourceapi.ResourceClaim, error) {
 		return nil, nil
 	}
 	return k.resourceClaimLister.List(labels.Everything())
+}
+
+func (k *k8sLister) ListResourceSlices() ([]*resourceapi.ResourceSlice, error) {
+	if k.resourceSliceLister == nil {
+		return nil, nil
+	}
+	return k.resourceSliceLister.List(labels.Everything())
+}
+
+func (k *k8sLister) ListDeviceClasses() ([]*resourceapi.DeviceClass, error) {
+	if k.deviceClassLister == nil {
+		return nil, nil
+	}
+	return k.deviceClassLister.List(labels.Everything())
 }
