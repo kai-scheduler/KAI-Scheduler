@@ -10,9 +10,9 @@ set -e
 CLUSTER_NAME=${CLUSTER_NAME:-e2e-kai-scheduler}
 
 REPO_ROOT=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )/..
-KIND_CONFIG=${REPO_ROOT}/hack/e2e-kind-config.yaml
+KIND_CONFIG=${REPO_ROOT}/hack/e2e-kind-config-1-32.yaml
 
-: ${KIND_K8S_TAG:="v1.34.0"}
+: ${KIND_K8S_TAG:="v1.32.3"}
 : ${KIND_IMAGE:="kindest/node:${KIND_K8S_TAG}"}
 
 # Parse named parameters

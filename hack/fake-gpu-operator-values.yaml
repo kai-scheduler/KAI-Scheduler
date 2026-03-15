@@ -21,4 +21,4 @@ statusUpdater:
   disableNodeLabeling: true
 
 draPlugin:
-  enabled: true
+  enabled: false
