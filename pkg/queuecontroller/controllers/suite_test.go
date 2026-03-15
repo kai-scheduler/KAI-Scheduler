@@ -42,9 +42,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
-	v2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/queuecontroller/metrics"
+	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/queuecontroller/metrics"
 )
 
 const (
@@ -129,7 +129,7 @@ var _ = Describe("QueueController", Ordered, func() {
 			Scheme: mgr.GetScheme(),
 		}
 
-		err = controller.SetupWithManager(mgr, "kai.scheduler/queue", false)
+		err = controller.SetupWithManager(mgr, false)
 		Expect(err).ToNot(HaveOccurred())
 
 		managerDone = make(chan struct{})

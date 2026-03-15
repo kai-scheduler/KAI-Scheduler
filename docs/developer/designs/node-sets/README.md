@@ -8,7 +8,7 @@ Topology aware scheduling is a good example of such requirement - Attempting to 
 In this document we introduce a new concept of `NodeSet` which is a set of nodes the scheduler attempt to schedule a job over. 
 
 ## Motivation
-Current implementation of topology scheduling is limited to a single domain attempt. This means that when a workload required to be scheduled with topology constraint the plugin searches for a capable domain (without certainty the job is schedulable over) and try to allocate the job over. If the attempt fails, it will not look for a different domain capable to schedule this [workload](https://github.com/NVIDIA/KAI-Scheduler/tree/main/docs/developer/designs/topology-awareness#stage-2-simulation-based-evaluation).
+Current implementation of topology scheduling is limited to a single domain attempt. This means that when a workload required to be scheduled with topology constraint the plugin searches for a capable domain (without certainty the job is schedulable over) and try to allocate the job over. If the attempt fails, it will not look for a different domain capable to schedule this [workload](https://github.com/kai-scheduler/KAI-scheduler/tree/main/docs/developer/designs/topology-awareness#stage-2-simulation-based-evaluation).
 
 The uncertainty comes from the fact that the topology plugin can only have a best effort decision, as it does not aware of all scheduling constraints, such as NodeAffinity, NodeSelector, PVC, etc...
 

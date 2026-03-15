@@ -6,13 +6,13 @@ package podgroup_info
 import (
 	"math"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info/resources"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/scheduler_util"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info/resources"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/scheduler_util"
 )
 
 func HasTasksToAllocate(podGroupInfo *PodGroupInfo, isRealAllocation bool) bool {
@@ -62,6 +62,14 @@ func GetTasksToAllocateRequestedGPUs(
 	for _, task := range GetTasksToAllocate(podGroupInfo, subGroupOrderFn, taskOrderFn, isRealAllocation) {
 		tasksTotalRequestedGPUs += task.ResReq.GPUs()
 		tasksTotalRequestedGpuMemory += task.ResReq.GpuMemory()
+
+		for _, draGpuCount := range task.ResReq.GpuResourceRequirement.DraGpuCounts() {
+			tasksTotalRequestedGPUs += float64(draGpuCount)
+			// Currently, we do not support DRA gpu memory requests.
+			// DRA gpu requests that have memory constraints (e.g. 2 gpus, each with at least 32GB) are supported by adding the device count (e.g. 2) to the total requested GPUs.
+			// This is calculated in the same way that whole gpus are added to the total requested GPUs.
+			tasksTotalRequestedGpuMemory += 0
+		}
 
 		for migResource, quant := range task.ResReq.MigResources() {
 			gpuPortion, mem, err := resources.ExtractGpuAndMemoryFromMigResourceName(migResource.String())

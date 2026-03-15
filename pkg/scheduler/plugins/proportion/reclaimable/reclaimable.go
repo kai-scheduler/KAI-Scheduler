@@ -4,16 +4,18 @@
 package reclaimable
 
 import (
+	"fmt"
 	"maps"
 	"math"
+	"strings"
 
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/proportion/reclaimable/strategies"
-	rs "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/proportion/utils"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/reclaimable/strategies"
+	rs "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/utils"
 )
 
 type Reclaimable struct {
@@ -31,7 +33,7 @@ func (r *Reclaimable) CanReclaimResources(
 	reclaimer *ReclaimerInfo,
 ) bool {
 	reclaimerQueue := queues[reclaimer.Queue]
-	requestedResources := utils.QuantifyResource(reclaimer.RequiredResources)
+	requestedResources := utils.QuantifyVector(reclaimer.RequiredResources, reclaimer.VectorMap)
 
 	allocatedResources := reclaimerQueue.GetAllocatedShare()
 	allocatedResources.Add(requestedResources)
@@ -55,7 +57,7 @@ func (r *Reclaimable) CanReclaimResources(
 func (r *Reclaimable) Reclaimable(
 	queues map[common_info.QueueID]*rs.QueueAttributes,
 	reclaimer *ReclaimerInfo,
-	reclaimeeResourcesByQueue map[common_info.QueueID][]*resource_info.Resource,
+	reclaimeeResourcesByQueue map[common_info.QueueID][]resource_info.ResourceVector,
 ) bool {
 	reclaimable, reclaimedQueuesRemainingResources, involvedResources :=
 		r.reclaimResourcesFromReclaimees(queues, reclaimer, reclaimeeResourcesByQueue)
@@ -68,7 +70,7 @@ func (r *Reclaimable) Reclaimable(
 func (r *Reclaimable) reclaimResourcesFromReclaimees(
 	queues map[common_info.QueueID]*rs.QueueAttributes,
 	reclaimer *ReclaimerInfo,
-	reclaimeesResourcesByQueue map[common_info.QueueID][]*resource_info.Resource,
+	reclaimeesResourcesByQueue map[common_info.QueueID][]resource_info.ResourceVector,
 ) (
 	bool, map[common_info.QueueID]rs.ResourceQuantities, map[common_info.QueueID]map[rs.ResourceName]any,
 ) {
@@ -77,7 +79,7 @@ func (r *Reclaimable) reclaimResourcesFromReclaimees(
 	for reclaimeeQueueID, reclaimeeQueueReclaimedResources := range reclaimeesResourcesByQueue {
 		reclaimerQueue, reclaimeeQueue := r.getLeveledQueues(queues, reclaimer.Queue, reclaimeeQueueID)
 
-		involvedResourcesByQueue[reclaimeeQueueID] = getInvolvedResourcesNames(reclaimeeQueueReclaimedResources)
+		involvedResourcesByQueue[reclaimeeQueueID] = getInvolvedResourcesNames(reclaimeeQueueReclaimedResources, reclaimer.VectorMap)
 
 		if _, found := remainingResourcesMap[reclaimeeQueue.UID]; !found {
 			remainingResourcesMap[reclaimeeQueue.UID] = queues[reclaimeeQueue.UID].GetAllocatedShare()
@@ -85,17 +87,17 @@ func (r *Reclaimable) reclaimResourcesFromReclaimees(
 		remainingResources := remainingResourcesMap[reclaimeeQueue.UID]
 
 		for _, reclaimeeResources := range reclaimeeQueueReclaimedResources {
-			if !strategies.FitsReclaimStrategy(reclaimer.RequiredResources, reclaimerQueue, reclaimeeQueue,
+			if !strategies.FitsReclaimStrategy(reclaimer.RequiredResources, reclaimer.VectorMap, reclaimerQueue, reclaimeeQueue,
 				remainingResources) {
 				log.InfraLogger.V(7).Infof("queue <%s>，shouldn't be reclaimed, for %s resources"+
 					" remaining reosurces: <%s>, deserved: <%s>, fairShare: <%s>",
-					reclaimeeQueue.Name, resource_info.StringResourceArray(reclaimeeQueueReclaimedResources),
+					reclaimeeQueue.Name, stringVectorArray(reclaimeeQueueReclaimedResources, reclaimer.VectorMap),
 					remainingResources, reclaimeeQueue.GetDeservedShare(),
 					reclaimeeQueue.GetFairShare())
 				return false, nil, nil
 			}
 
-			r.subtractReclaimedResources(queues, remainingResourcesMap, reclaimeeQueueID, reclaimeeResources, involvedResourcesByQueue)
+			r.subtractReclaimedResources(queues, remainingResourcesMap, reclaimeeQueueID, reclaimeeResources, reclaimer.VectorMap, involvedResourcesByQueue)
 		}
 	}
 
@@ -106,7 +108,8 @@ func (r *Reclaimable) subtractReclaimedResources(
 	queues map[common_info.QueueID]*rs.QueueAttributes,
 	remainingResourcesMap map[common_info.QueueID]rs.ResourceQuantities,
 	reclaimeeQueueID common_info.QueueID,
-	reclaimedResources *resource_info.Resource,
+	reclaimedResources resource_info.ResourceVector,
+	vectorMap *resource_info.ResourceVectorMap,
 	involvedResourcesByQueue map[common_info.QueueID]map[rs.ResourceName]any,
 ) {
 	for queue, ok := queues[reclaimeeQueueID]; ok; queue, ok = queues[queue.ParentQueue] {
@@ -115,7 +118,7 @@ func (r *Reclaimable) subtractReclaimedResources(
 		}
 
 		remainingResources := remainingResourcesMap[queue.UID]
-		activeAllocatedQuota := utils.QuantifyResource(reclaimedResources)
+		activeAllocatedQuota := utils.QuantifyVector(reclaimedResources, vectorMap)
 		remainingResources.Sub(activeAllocatedQuota)
 
 		_, found := involvedResourcesByQueue[queue.UID]
@@ -134,8 +137,8 @@ func (r *Reclaimable) reclaimingQueuesRemainWithinBoundaries(
 	involvedResourcesByQueue map[common_info.QueueID]map[rs.ResourceName]any,
 ) bool {
 
-	requestedQuota := utils.QuantifyResource(reclaimer.RequiredResources)
-	reclaimerInvolvedResources := getInvolvedResourcesNames([]*resource_info.Resource{reclaimer.RequiredResources})
+	requestedQuota := utils.QuantifyVector(reclaimer.RequiredResources, reclaimer.VectorMap)
+	reclaimerInvolvedResources := getInvolvedResourcesNames([]resource_info.ResourceVector{reclaimer.RequiredResources}, reclaimer.VectorMap)
 
 	for reclaimingQueue, found := queues[reclaimer.Queue]; found; reclaimingQueue, found = queues[reclaimingQueue.ParentQueue] {
 		remainingResources, foundRemaining := remainingResourcesMap[reclaimingQueue.UID]
@@ -262,25 +265,36 @@ func (r *Reclaimable) getHierarchyPath(
 	return hierarchyPath
 }
 
-func getInvolvedResourcesNames(resources []*resource_info.Resource) map[rs.ResourceName]any {
+func getInvolvedResourcesNames(resources []resource_info.ResourceVector, vectorMap *resource_info.ResourceVectorMap) map[rs.ResourceName]any {
 	involvedResources := map[rs.ResourceName]any{}
-	for _, resource := range resources {
-		if resource == nil {
+	for _, vec := range resources {
+		if vec == nil {
 			continue
 		}
 
-		if resource.Cpu() > 0 {
+		if vec.Get(resource_info.CPUIndex) > 0 {
 			involvedResources[rs.CpuResource] = struct{}{}
 		}
 
-		if resource.Memory() > 0 {
+		if vec.Get(resource_info.MemoryIndex) > 0 {
 			involvedResources[rs.MemoryResource] = struct{}{}
 		}
 
-		if resource.GPUs() > 0 {
+		if vec.Get(resource_info.GPUIndex) > 0 {
 			involvedResources[rs.GpuResource] = struct{}{}
 		}
 	}
 
 	return involvedResources
+}
+
+func stringVectorArray(vectors []resource_info.ResourceVector, vectorMap *resource_info.ResourceVectorMap) string {
+	if len(vectors) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(vectors))
+	for _, vec := range vectors {
+		parts = append(parts, fmt.Sprintf("%v", utils.QuantifyVector(vec, vectorMap)))
+	}
+	return strings.Join(parts, ",")
 }

@@ -22,8 +22,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgroup"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
 )
 
 type testLogSink struct {
@@ -351,4 +351,154 @@ func TestReconcilePodNotFound(t *testing.T) {
 		"Log should contain correct namespace/name from req, got: %s", logOutput)
 	assert.NotContains(t, logOutput, "Pod / not found",
 		"Log should not contain empty namespace/name pattern")
+}
+
+func TestAssignPodToGroupAndSubGroup(t *testing.T) {
+	tests := []struct {
+		name             string
+		pod              *v1.Pod
+		metadata         *podgroup.Metadata
+		expectedPodGroup string
+		expectedSubGroup string
+		expectPatch      bool
+	}{
+		{
+			name: "assigns podgroup annotation and subgroup label",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "test-pod",
+					Namespace:   "test-ns",
+					Annotations: map[string]string{},
+					Labels:      map[string]string{},
+				},
+			},
+			metadata: &podgroup.Metadata{
+				Name:      "test-pg",
+				Namespace: "test-ns",
+				SubGroups: []*podgroup.SubGroupMetadata{
+					{
+						Name:           "subgroup-1",
+						PodsReferences: []string{"test-pod"},
+					},
+				},
+			},
+			expectedPodGroup: "test-pg",
+			expectedSubGroup: "subgroup-1",
+			expectPatch:      true,
+		},
+		{
+			name: "assigns only podgroup when pod not in subgroup",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "test-pod",
+					Namespace:   "test-ns",
+					Annotations: map[string]string{},
+					Labels:      map[string]string{},
+				},
+			},
+			metadata: &podgroup.Metadata{
+				Name:      "test-pg",
+				Namespace: "test-ns",
+				SubGroups: []*podgroup.SubGroupMetadata{
+					{
+						Name:           "subgroup-1",
+						PodsReferences: []string{"other-pod"},
+					},
+				},
+			},
+			expectedPodGroup: "test-pg",
+			expectedSubGroup: "",
+			expectPatch:      true,
+		},
+		{
+			name: "no patch when already correct",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "test-ns",
+					Annotations: map[string]string{
+						constants.PodGroupAnnotationForPod: "test-pg",
+					},
+					Labels: map[string]string{
+						constants.SubGroupLabelKey: "subgroup-1",
+					},
+				},
+			},
+			metadata: &podgroup.Metadata{
+				Name:      "test-pg",
+				Namespace: "test-ns",
+				SubGroups: []*podgroup.SubGroupMetadata{
+					{
+						Name:           "subgroup-1",
+						PodsReferences: []string{"test-pod"},
+					},
+				},
+			},
+			expectedPodGroup: "test-pg",
+			expectedSubGroup: "subgroup-1",
+			expectPatch:      false,
+		},
+		{
+			name: "handles nil annotations and labels",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "test-ns",
+				},
+			},
+			metadata: &podgroup.Metadata{
+				Name:      "test-pg",
+				Namespace: "test-ns",
+				SubGroups: []*podgroup.SubGroupMetadata{},
+			},
+			expectedPodGroup: "test-pg",
+			expectedSubGroup: "",
+			expectPatch:      true,
+		},
+		{
+			name: "updates when podgroup differs",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "test-ns",
+					Annotations: map[string]string{
+						constants.PodGroupAnnotationForPod: "old-pg",
+					},
+					Labels: map[string]string{},
+				},
+			},
+			metadata: &podgroup.Metadata{
+				Name:      "new-pg",
+				Namespace: "test-ns",
+				SubGroups: []*podgroup.SubGroupMetadata{},
+			},
+			expectedPodGroup: "new-pg",
+			expectedSubGroup: "",
+			expectPatch:      true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var logBuffer bytes.Buffer
+			ctx := log.IntoContext(context.TODO(), logr.New(&testLogSink{buffer: &logBuffer}))
+			fakeClient := fake.NewClientBuilder().WithObjects(tt.pod).Build()
+
+			reconciler := PodReconciler{
+				Client: fakeClient,
+			}
+
+			err := reconciler.assignPodToGroupAndSubGroup(ctx, tt.pod, tt.metadata)
+			assert.NoError(t, err)
+
+			updatedPod := &v1.Pod{}
+			err = fakeClient.Get(ctx, types.NamespacedName{Namespace: tt.pod.Namespace, Name: tt.pod.Name}, updatedPod)
+			assert.NoError(t, err)
+
+			assert.Equal(t, tt.expectedPodGroup, updatedPod.Annotations[constants.PodGroupAnnotationForPod])
+			if tt.expectedSubGroup != "" {
+				assert.Equal(t, tt.expectedSubGroup, updatedPod.Labels[constants.SubGroupLabelKey])
+			}
+		})
+	}
 }

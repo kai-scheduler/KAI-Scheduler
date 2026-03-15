@@ -16,16 +16,17 @@ import (
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes/fake"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_affinity"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/cluster_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	k8splugins "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_internal/plugins"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/scores"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_affinity"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/cluster_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	k8splugins "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal/plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/scores"
 )
 
 type testInput struct {
@@ -84,7 +85,7 @@ var _ = Describe("Preferred Pod Affinity", func() {
 						Name:      "test-pod",
 						Namespace: "test",
 					},
-				}),
+				}, nil, resource_info.NewResourceVectorMap()),
 				expectedScore: 0,
 			},
 			"Not fitting Pod Affinity": {
@@ -116,7 +117,7 @@ var _ = Describe("Preferred Pod Affinity", func() {
 						Name:      "test-pod",
 						Namespace: "test",
 					},
-				}),
+				}, nil, resource_info.NewResourceVectorMap()),
 				expectedScore: 0,
 			},
 			"Matching Pod Affinity": {
@@ -152,7 +153,7 @@ var _ = Describe("Preferred Pod Affinity", func() {
 					Spec: v1.PodSpec{
 						Affinity: exampleAffinity.DeepCopy(),
 					},
-				}),
+				}, nil, resource_info.NewResourceVectorMap()),
 				expectedScore: 2 * 10 * scores.K8sPlugins,
 			},
 		} {
@@ -173,14 +174,26 @@ func testPodPreferredAffinity(testData testInput, clusterAffinityInfo pod_affini
 	kubernetesObjects := make([]runtime.Object, 0, len(testData.nodes)+len(testData.pods))
 	nodeInfos := map[string]*node_info.NodeInfo{}
 
+	// Build shared vectorMap from all nodes first
+	nodeResources := make([]v1.ResourceList, 0, len(testData.nodes))
+	for _, node := range testData.nodes {
+		nodeResources = append(nodeResources, node.Status.Allocatable)
+	}
+	vectorMap := resource_info.NewResourceVectorMap()
+	for _, nodeResource := range nodeResources {
+		for resourceName := range nodeResource {
+			vectorMap.AddResource(resourceName)
+		}
+	}
+
 	for _, node := range testData.nodes {
 		kubernetesObjects = append(kubernetesObjects, node)
 		nodePodAffinityInfo := cluster_info.NewK8sNodePodAffinityInfo(node, clusterAffinityInfo)
-		nodeInfos[node.Name] = node_info.NewNodeInfo(node, nodePodAffinityInfo)
+		nodeInfos[node.Name] = node_info.NewNodeInfo(node, nodePodAffinityInfo, vectorMap)
 	}
 	for _, pod := range testData.pods {
 		kubernetesObjects = append(kubernetesObjects, pod)
-		err := nodeInfos[pod.Spec.NodeName].AddTask(pod_info.NewTaskInfo(pod))
+		err := nodeInfos[pod.Spec.NodeName].AddTask(pod_info.NewTaskInfo(pod, nil, vectorMap))
 		Expect(err).To(Succeed(), "Expected to add task to node")
 	}
 	kubernetesObjects = append(kubernetesObjects, testData.task.Pod)

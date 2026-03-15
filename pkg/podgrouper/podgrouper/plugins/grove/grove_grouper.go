@@ -7,10 +7,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgroup"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -232,7 +232,7 @@ func parseGroveSubGroup(
 	if !found {
 		return nil, fmt.Errorf("missing required 'podReferences' field")
 	}
-	var pods []*types.NamespacedName
+	var pods []string
 	for podIndex, podRef := range podReferences {
 		reference, ok := podRef.(map[string]interface{})
 		if !ok {
@@ -249,7 +249,7 @@ func parseGroveSubGroup(
 			return nil, fmt.Errorf("cross-namespace pod reference not allowed: pod %s/%s cannot be referenced from PodGang in namespace %s",
 				namespacedName.Namespace, namespacedName.Name, namespace)
 		}
-		pods = append(pods, namespacedName)
+		pods = append(pods, namespacedName.Name)
 	}
 	topologyConstraint, err := parseTopologyConstraint(pg, topology, "topologyConstraint", "packConstraint")
 	if err != nil {

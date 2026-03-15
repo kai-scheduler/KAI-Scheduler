@@ -20,7 +20,8 @@ The following versions are currently supported.
 
 | Version | Type | Release Date | End of Support | Status |
 | :--- | :--- | :--- | :--- | :--- |
-| **v0.12** | **LTS** | Dec 2025 | Dec 2026 | **Next Release** |
+| **v0.13** | Standard | Mar 2026 | *Until v0.14* | **Maintenance** |
+| **v0.12** | **LTS** | Dec 2025 | Dec 2026 | **Maintenance** |
 | **v0.10** | Standard | Dec 2025 | *Until v0.12* | **End of Life** |
 | **v0.9** | **LTS** | Sep 2025 | **Sep 2026** | **Maintenance** |
 | **v0.6** | **LTS** | Jun 2025 | **Jun 2026** | **Maintenance** |
@@ -31,4 +32,4 @@ The following versions are currently supported.
 
 ## Reporting Bugs
 
-If you encounter a bug, please [open an issue](https://github.com/NVIDIA/KAI-Scheduler/issues) on GitHub.
+If you encounter a bug, please [open an issue](https://github.com/kai-scheduler/KAI-scheduler/issues) on GitHub.

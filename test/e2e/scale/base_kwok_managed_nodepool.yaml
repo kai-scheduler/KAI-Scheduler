@@ -1,0 +1,47 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: kwok.sigs.run-ai.com/v1beta1
+kind: NodePool
+metadata:
+  labels:
+    app.kubernetes.io/name: nodepool
+    app.kubernetes.io/instance: nodepool-sample
+    app.kubernetes.io/part-of: kwok-operator
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: kwok-operator
+  name: managed-nodepool
+spec:
+  nodeCount: 1
+  nodeTemplate:
+    apiVersion: v1
+    metadata:
+      annotations:
+        node.alpha.kubernetes.io/ttl: "0"
+      labels:
+        kubernetes.io/hostname: kwok-node
+        kubernetes.io/role: agent
+        run.ai/simulated-gpu-node-pool: "default"
+        type: kwok
+    spec: {}
+    status:
+      allocatable:
+        cpu: 32
+        memory: 256Gi
+        pods: 110
+      capacity:
+        cpu: 32
+        memory: 256Gi
+        pods: 110
+      nodeInfo:
+        architecture: amd64
+        bootID: ""
+        containerRuntimeVersion: ""
+        kernelVersion: ""
+        kubeProxyVersion: fake
+        kubeletVersion: fake
+        machineID: ""
+        operatingSystem: linux
+        osImage: ""
+        systemUUID: ""
+      phase: Running

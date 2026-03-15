@@ -4,11 +4,12 @@
 package nodeavailability
 
 import (
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/scores"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/scores"
 )
 
 type nodeAvailabilityPlugin struct{}
@@ -34,8 +35,8 @@ func (pp *nodeAvailabilityPlugin) nodeOrderFn(task *pod_info.PodInfo, node *node
 
 	log.InfraLogger.V(7).Infof(
 		"Estimating Task: <%v/%v> Job: <%v> for node: <%s> that has <%f> idle GPUs and <%f> releasing GPUs and <%f> allocated GPUs. Score: %f",
-		task.Namespace, task.Name, task.Job, node.Name, node.Idle.GPUs(), node.Releasing.GPUs(),
-		node.Used.GPUs(), score)
+		task.Namespace, task.Name, task.Job, node.Name, node.IdleVector.Get(resource_info.GPUIndex), node.ReleasingVector.Get(resource_info.GPUIndex),
+		node.UsedVector.Get(resource_info.GPUIndex), score)
 	return score, nil
 }
 

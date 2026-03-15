@@ -21,14 +21,14 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	kaiv1alpha1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1alpha1"
-	kaiv1alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	schedulingv2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	schedulingv2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/env-tests/dynamicresource"
-	"github.com/NVIDIA/KAI-scheduler/pkg/env-tests/scheduler"
-	"github.com/NVIDIA/KAI-scheduler/pkg/env-tests/utils"
+	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
+	kaiv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	schedulingv2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	schedulingv2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/env-tests/dynamicresource"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/env-tests/scheduler"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/env-tests/utils"
 )
 
 var _ = Describe("Scheduler", Ordered, func() {
@@ -107,7 +107,7 @@ var _ = Describe("Scheduler", Ordered, func() {
 			// Create your pod as before
 			testPod := utils.CreatePodObject(testNamespace.Name, "test-pod", corev1.ResourceRequirements{
 				Limits: corev1.ResourceList{
-					constants.GpuResource: resource.MustParse("1"),
+					constants.NvidiaGpuResource: resource.MustParse("1"),
 				},
 			})
 			Expect(ctrlClient.Create(ctx, testPod)).To(Succeed(), "Failed to create test pod")
@@ -133,11 +133,61 @@ var _ = Describe("Scheduler", Ordered, func() {
 			Expect(len(bindRequests.Items)).To(Equal(1), "Expected 1 bind request", utils.PrettyPrintBindRequestList(bindRequests))
 		})
 
+		It("Should allow optional projected configmap references", func(ctx context.Context) {
+			testPod := utils.CreatePodObject(testNamespace.Name, "test-pod-optional-configmap", corev1.ResourceRequirements{
+				Limits: corev1.ResourceList{
+					constants.NvidiaGpuResource: resource.MustParse("1"),
+				},
+			})
+			testPod.Spec.Containers[0].VolumeMounts = []corev1.VolumeMount{
+				{
+					Name:      "optional-projected-configmap",
+					MountPath: "/etc/optional-configmap",
+				},
+			}
+			testPod.Spec.Volumes = []corev1.Volume{
+				{
+					Name: "optional-projected-configmap",
+					VolumeSource: corev1.VolumeSource{
+						Projected: &corev1.ProjectedVolumeSource{
+							Sources: []corev1.VolumeProjection{
+								{
+									ConfigMap: &corev1.ConfigMapProjection{
+										LocalObjectReference: corev1.LocalObjectReference{Name: "optional-configmap"},
+										Optional:             ptr.To(true),
+									},
+								},
+							},
+						},
+					},
+				},
+			}
+			Expect(ctrlClient.Create(ctx, testPod)).To(Succeed(), "Failed to create test pod")
+
+			podGroupConfig := utils.PodGroupConfig{
+				QueueName:          testQueue.Name,
+				PodgroupName:       "test-podgroup-optional-configmap",
+				MinMember:          1,
+				TopologyConstraint: nil,
+			}
+			err := utils.GroupPods(ctx, ctrlClient, podGroupConfig, []*corev1.Pod{testPod})
+			Expect(err).NotTo(HaveOccurred(), "Failed to group pods")
+
+			err = utils.WaitForPodScheduled(ctx, ctrlClient, testPod.Name, testNamespace.Name, defaultTimeout, interval)
+			Expect(err).NotTo(HaveOccurred(), "Failed to wait for test pod to be scheduled")
+
+			bindRequests := &kaiv1alpha2.BindRequestList{}
+			Expect(ctrlClient.List(ctx, bindRequests, client.InNamespace(testNamespace.Name))).
+				To(Succeed(), "Failed to list bind requests")
+
+			Expect(len(bindRequests.Items)).To(Equal(1), "Expected 1 bind request", utils.PrettyPrintBindRequestList(bindRequests))
+		})
+
 		It("Should respect scheduling gates - simple pod", func(ctx context.Context) {
 			// Create your pod as before
 			testPod := utils.CreatePodObject(testNamespace.Name, "test-pod", corev1.ResourceRequirements{
 				Limits: corev1.ResourceList{
-					constants.GpuResource: resource.MustParse("1"),
+					constants.NvidiaGpuResource: resource.MustParse("1"),
 				},
 			})
 			testPod.Spec.SchedulingGates = []corev1.PodSchedulingGate{
@@ -192,7 +242,7 @@ var _ = Describe("Scheduler", Ordered, func() {
 		It("Should respect scheduling gates - podgroup", func(ctx context.Context) {
 			testPod1 := utils.CreatePodObject(testNamespace.Name, "test-pod-1", corev1.ResourceRequirements{
 				Limits: corev1.ResourceList{
-					constants.GpuResource: resource.MustParse("1"),
+					constants.NvidiaGpuResource: resource.MustParse("1"),
 				},
 			})
 			testPod1.Spec.SchedulingGates = []corev1.PodSchedulingGate{
@@ -204,7 +254,7 @@ var _ = Describe("Scheduler", Ordered, func() {
 
 			testPod2 := utils.CreatePodObject(testNamespace.Name, "test-pod-2", corev1.ResourceRequirements{
 				Limits: corev1.ResourceList{
-					constants.GpuResource: resource.MustParse("1"),
+					constants.NvidiaGpuResource: resource.MustParse("1"),
 				},
 			})
 			testPod2.Spec.SchedulingGates = []corev1.PodSchedulingGate{
@@ -267,7 +317,7 @@ var _ = Describe("Scheduler", Ordered, func() {
 			// Create your pod as before
 			testPod := utils.CreatePodObject(testNamespace.Name, "test-pod", corev1.ResourceRequirements{
 				Limits: corev1.ResourceList{
-					constants.GpuResource: resource.MustParse("999"),
+					constants.NvidiaGpuResource: resource.MustParse("999"),
 				},
 			})
 			Expect(ctrlClient.Create(ctx, testPod)).To(Succeed(), "Failed to create test pod")
@@ -378,18 +428,32 @@ var _ = Describe("Scheduler", Ordered, func() {
 	Context("dynamic resource", Ordered, func() {
 		const (
 			deviceClassName = "gpu.nvidia.com"
-			driverName      = "nvidia"
+			driverName      = "gpu.nvidia.com"
 			deviceNum       = 8
 		)
 
+		var (
+			deviceClass       *resourceapi.DeviceClass
+			nodeResourceSlice *resourceapi.ResourceSlice
+		)
+
 		BeforeAll(func(ctx context.Context) {
-			deviceClass := dynamicresource.CreateDeviceClass(deviceClassName)
+			deviceClass = dynamicresource.CreateDeviceClass(deviceClassName)
 			Expect(ctrlClient.Create(ctx, deviceClass)).To(Succeed(), "Failed to create test device class")
 
-			nodeResourceSlice := dynamicresource.CreateNodeResourceSlice(
+			nodeResourceSlice = dynamicresource.CreateNodeResourceSlice(
 				"test-node-resource-slice", driverName, testNode.Name, deviceNum)
 			Expect(ctrlClient.Create(ctx, nodeResourceSlice)).
 				To(Succeed(), "Failed to create test node resource slice")
+		})
+
+		BeforeEach(func(ctx context.Context) {
+			// Delete the test node and create a new one with no GPUs
+			Expect(ctrlClient.Delete(ctx, testNode)).To(Succeed(), "Failed to delete test node")
+			draGpuNodeConfig := utils.DefaultNodeConfig("test-node")
+			draGpuNodeConfig.GPUs = 0
+			testNode = utils.CreateNodeObject(ctx, ctrlClient, draGpuNodeConfig)
+			Expect(ctrlClient.Create(ctx, testNode)).To(Succeed(), "Failed to create test node")
 		})
 
 		AfterEach(func(ctx context.Context) {
@@ -408,6 +472,14 @@ var _ = Describe("Scheduler", Ordered, func() {
 				&kaiv1alpha2.BindRequestList{},
 			)
 			Expect(err).NotTo(HaveOccurred(), "Failed to wait for test resources to be deleted")
+		})
+
+		AfterAll(func(ctx context.Context) {
+			Expect(ctrlClient.Delete(ctx, nodeResourceSlice)).
+				To(Succeed(), "Failed to delete test node resource slice")
+
+			Expect(ctrlClient.Delete(ctx, deviceClass)).
+				To(Succeed(), "Failed to delete test device class")
 		})
 
 		It("Should create a bind request for the pod with DeviceAllocationModeAll resource claim", func(ctx context.Context) {
@@ -566,7 +638,7 @@ var _ = Describe("Scheduler", Ordered, func() {
 		It("Schedule pods with rack topology constraints", func(ctx context.Context) {
 			// schedule a single gpu pod outside of the topology to try and "pull" the topology constraint workload pods outside of a valid rack
 			binPackingPullPod := utils.CreatePodObject(testNamespace.Name, "bin-packing-pull-pod", corev1.ResourceRequirements{
-				Limits: corev1.ResourceList{constants.GpuResource: resource.MustParse("1")},
+				Limits: corev1.ResourceList{constants.NvidiaGpuResource: resource.MustParse("1")},
 			})
 			binPackingPullPod.Spec.NodeSelector = map[string]string{
 				hostnameLabelKey: "test-node",
@@ -577,10 +649,10 @@ var _ = Describe("Scheduler", Ordered, func() {
 
 			singlePodResourceRequirements := corev1.ResourceRequirements{
 				Limits: corev1.ResourceList{
-					constants.GpuResource: resource.MustParse(fmt.Sprintf("%d", gpusPerNode-1)),
+					constants.NvidiaGpuResource: resource.MustParse(fmt.Sprintf("%d", gpusPerNode-1)),
 				},
 				Requests: corev1.ResourceList{
-					constants.GpuResource: resource.MustParse(fmt.Sprintf("%d", gpusPerNode-1)),
+					constants.NvidiaGpuResource: resource.MustParse(fmt.Sprintf("%d", gpusPerNode-1)),
 				},
 			}
 

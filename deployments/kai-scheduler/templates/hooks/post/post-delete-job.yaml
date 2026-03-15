@@ -5,6 +5,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: post-delete-cleanup
+  namespace: {{ .Release.Namespace }}
   annotations:
     "helm.sh/hook": post-delete
     "helm.sh/hook-delete-policy": hook-succeeded
@@ -26,5 +27,8 @@ spec:
             - |
               echo "Deleting deployments..."
               kubectl -n kai-scheduler delete deployment --all --ignore-not-found=true
+
+              echo "Deleting kai-config..."
+              kubectl delete Config kai-config --ignore-not-found
               echo "Cleanup complete."
 {{- end }}

@@ -12,7 +12,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -166,12 +166,19 @@ tiers:
 		})
 
 		It("Should create different configmap for spread", func(ctx context.Context) {
-			spreadShard := shard.DeepCopy()
-			spreadShard.Spec.PlacementStrategy = &kaiv1.PlacementStrategy{
-				CPU: ptr.To("spread"),
-				GPU: ptr.To("spread"),
+			spreadShard := &kaiv1.SchedulingShard{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "default",
+				},
+				Spec: kaiv1.SchedulingShardSpec{
+					PlacementStrategy: &kaiv1.PlacementStrategy{
+						CPU: ptr.To("spread"),
+						GPU: ptr.To("spread"),
+					},
+				},
 			}
-			s := NewSchedulerForShard(shard)
+			spreadShard.Spec.SetDefaultsWhereNeeded()
+			s := NewSchedulerForShard(spreadShard)
 			cmObj, err := s.configMapForShard(ctx, fakeClient, kaiConfig, spreadShard)
 			cm := cmObj.(*v1.ConfigMap)
 

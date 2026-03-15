@@ -11,10 +11,10 @@ import (
 
 	"k8s.io/client-go/rest"
 
-	"github.com/NVIDIA/KAI-scheduler/cmd/binder/app"
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/plugins"
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/plugins/gpusharing"
-	k8s_plugins "github.com/NVIDIA/KAI-scheduler/pkg/binder/plugins/k8s-plugins"
+	"github.com/kai-scheduler/KAI-scheduler/cmd/binder/app"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/gpusharing"
+	k8s_plugins "github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/k8s-plugins"
 )
 
 func RunBinder(cfg *rest.Config, ctx context.Context) error {

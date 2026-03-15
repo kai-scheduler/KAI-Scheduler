@@ -20,20 +20,25 @@ jobs:
 
     steps:
       - name: Download PR number artifact
-        uses: actions/download-artifact@v6
+        id: download_pr_number
+        continue-on-error: true
+        uses: actions/download-artifact@v7
         with:
           name: pr-number-for-comment
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download coverage report artifact
-        uses: actions/download-artifact@v6
+        id: download_coverage_report
+        continue-on-error: true
+        uses: actions/download-artifact@v7
         with:
           name: coverage-report-for-comment
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Post comment
+        if: steps.download_pr_number.outcome == 'success' && steps.download_coverage_report.outcome == 'success'
         uses: actions/github-script@v8
         with:
           script: |

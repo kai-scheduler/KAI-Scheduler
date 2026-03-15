@@ -10,11 +10,11 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 )
 
 var (
@@ -77,6 +77,16 @@ var (
 	}
 	allNodeNames = append(gpuNodeNames, cpuNode.Name)
 )
+
+func init() {
+	vectorMap := resource_info.NewResourceVectorMap()
+	vectorMap.AddResource("nvidia.com/mig-1g.10gb")
+	for _, node := range allNodes {
+		node.VectorMap = vectorMap
+		node.IdleVector = node.Idle.ToVector(vectorMap)
+		node.ReleasingVector = node.Releasing.ToVector(vectorMap)
+	}
+}
 
 func TestFeasibleNodes(t *testing.T) {
 	tests := []struct {

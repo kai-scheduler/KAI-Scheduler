@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"testing"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -81,7 +81,7 @@ var _ = Describe("Status Controller", func() {
 				if condition.Type == string(kaiv1.ConditionTypeReconciling) &&
 					condition.Status == metav1.ConditionTrue &&
 					condition.ObservedGeneration == kaiConfig.Generation &&
-					condition.Reason == string(kaiv1.Reconciled) {
+					condition.Reason == string(kaiv1.Reconciling) {
 					found = true
 				}
 			}
@@ -118,6 +118,8 @@ var _ = Describe("Status Controller", func() {
 			isAvailable = isAvailable && !isAvailableErr
 			Expect(checkIsDeployed(object.GetConditions())).To(Equal(isDeployed))
 			Expect(checkIsAvailable(object.GetConditions())).To(Equal(isAvailable))
+			Expect(checkIsReady(object.GetConditions())).To(Equal(isAvailable))
+			Expect(checkIsReconciling(object.GetConditions())).To(BeFalse())
 		},
 			Entry("kai config - no errors, all set", func() objectWithConditions { return &KAIConfigWithStatusWrapper{Config: kaiConfig} }, false, true, false, true),
 			Entry("kai config - no errors, deployed not avaialbe", func() objectWithConditions { return &KAIConfigWithStatusWrapper{Config: kaiConfig} }, false, true, false, false),
@@ -150,6 +152,21 @@ func checkIsAvailable(conditions []metav1.Condition) bool {
 	return isAvailableCondition.Status == metav1.ConditionTrue
 }
 
+func checkIsReady(conditions []metav1.Condition) bool {
+	isReadyCondition := getConditionByType(conditions, string(kaiv1.ConditionTypeReady))
+	if isReadyCondition == nil {
+		return false
+	}
+	return isReadyCondition.Status == metav1.ConditionTrue
+}
+
+func checkIsReconciling(conditions []metav1.Condition) bool {
+	isReconcilingCondition := getConditionByType(conditions, string(kaiv1.ConditionTypeReconciling))
+	if isReconcilingCondition == nil {
+		return false
+	}
+	return isReconcilingCondition.Status == metav1.ConditionTrue
+}
 func getConditionByType(conditions []metav1.Condition, conditionType string) *metav1.Condition {
 	for _, condition := range conditions {
 		if condition.Type == conditionType {

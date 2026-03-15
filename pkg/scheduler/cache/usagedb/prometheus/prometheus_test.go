@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
 	"github.com/aptible/supercronic/cronexpr"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

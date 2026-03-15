@@ -15,14 +15,14 @@ import (
 	"k8s.io/utils/ptr"
 	lws "sigs.k8s.io/lws/api/leaderworkerset/v1"
 
-	v2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	v2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	testcontext "github.com/NVIDIA/KAI-scheduler/test/e2e/modules/context"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/crd"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/queue"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/utils"
+	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	v2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/crd"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -58,10 +58,10 @@ var _ = Describe("Leader worker set Integration", Ordered, func() {
 	It("Leader worker set - 2 groups", func(ctx context.Context) {
 		singleGPURequest := v1.ResourceRequirements{
 			Limits: v1.ResourceList{
-				constants.GpuResource: resource.MustParse("1"),
+				constants.NvidiaGpuResource: resource.MustParse("1"),
 			},
 			Requests: v1.ResourceList{
-				constants.GpuResource: resource.MustParse("1"),
+				constants.NvidiaGpuResource: resource.MustParse("1"),
 			},
 		}
 		numOfGroups := 2
@@ -101,10 +101,10 @@ var _ = Describe("Leader worker set Integration", Ordered, func() {
 	It("Leader worker set - handle leader ready before workers startup policy", func(ctx context.Context) {
 		singleGPURequest := v1.ResourceRequirements{
 			Limits: v1.ResourceList{
-				constants.GpuResource: resource.MustParse("1"),
+				constants.NvidiaGpuResource: resource.MustParse("1"),
 			},
 			Requests: v1.ResourceList{
-				constants.GpuResource: resource.MustParse("1"),
+				constants.NvidiaGpuResource: resource.MustParse("1"),
 			},
 		}
 		numOfGroups := 2

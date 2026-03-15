@@ -12,13 +12,13 @@ import (
 
 	"github.com/spf13/pflag"
 
-	"github.com/NVIDIA/KAI-scheduler/cmd/scheduler/app/options"
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
-	kaiprometheus "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/prometheus"
-	kaiv1qc "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/queue_controller"
-	kaiv1scheduler "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/scheduler"
-	usagedbapi "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/cmd/scheduler/app/options"
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	kaiprometheus "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/prometheus"
+	kaiv1qc "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/queue_controller"
+	kaiv1scheduler "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/scheduler"
+	usagedbapi "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -435,6 +435,251 @@ tiers:
 			expectedErr: true,
 		},
 		{
+			name: "plugin disable: elastic disabled via override",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Scheduler: &kaiv1scheduler.Scheduler{
+						Replicas: ptr.To(int32(1)),
+					},
+				},
+			},
+			shard: &kaiv1.SchedulingShard{
+				Spec: kaiv1.SchedulingShardSpec{
+					PlacementStrategy: &kaiv1.PlacementStrategy{
+						GPU: ptr.To(binpackStrategy),
+						CPU: ptr.To(binpackStrategy),
+					},
+					Plugins: map[string]kaiv1.PluginConfig{
+						"elastic": {Enabled: ptr.To(false)},
+					},
+				},
+			},
+			expected: map[string]string{
+				"config.yaml": `actions: allocate,consolidation,reclaim,preempt,stalegangeviction
+tiers:
+- plugins:
+  - name: predicates
+  - name: proportion
+  - name: priority
+  - name: nodeavailability
+  - name: resourcetype
+  - name: podaffinity
+  - name: kubeflow
+  - name: ray
+  - name: subgrouporder
+  - name: taskorder
+  - name: nominatednode
+  - name: dynamicresources
+  - name: minruntime
+  - name: topology
+  - name: snapshot
+  - name: gpupack
+  - name: nodeplacement
+    arguments:
+      cpu: binpack
+      gpu: binpack
+  - name: gpusharingorder`,
+			},
+		},
+		{
+			name: "action disable: consolidation disabled via override",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Scheduler: &kaiv1scheduler.Scheduler{
+						Replicas: ptr.To(int32(1)),
+					},
+				},
+			},
+			shard: &kaiv1.SchedulingShard{
+				Spec: kaiv1.SchedulingShardSpec{
+					PlacementStrategy: &kaiv1.PlacementStrategy{
+						GPU: ptr.To(binpackStrategy),
+						CPU: ptr.To(binpackStrategy),
+					},
+					Actions: map[string]kaiv1.ActionConfig{
+						"consolidation": {Enabled: ptr.To(false)},
+					},
+				},
+			},
+			expected: map[string]string{
+				"config.yaml": `actions: allocate,reclaim,preempt,stalegangeviction
+tiers:
+- plugins:
+  - name: predicates
+  - name: proportion
+  - name: priority
+  - name: nodeavailability
+  - name: resourcetype
+  - name: podaffinity
+  - name: elastic
+  - name: kubeflow
+  - name: ray
+  - name: subgrouporder
+  - name: taskorder
+  - name: nominatednode
+  - name: dynamicresources
+  - name: minruntime
+  - name: topology
+  - name: snapshot
+  - name: gpupack
+  - name: nodeplacement
+    arguments:
+      cpu: binpack
+      gpu: binpack
+  - name: gpusharingorder`,
+			},
+		},
+		{
+			name: "plugin argument override: user kValue overrides spec kValue",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Scheduler: &kaiv1scheduler.Scheduler{
+						Replicas: ptr.To(int32(1)),
+					},
+				},
+			},
+			shard: &kaiv1.SchedulingShard{
+				Spec: kaiv1.SchedulingShardSpec{
+					PlacementStrategy: &kaiv1.PlacementStrategy{
+						GPU: ptr.To(binpackStrategy),
+						CPU: ptr.To(binpackStrategy),
+					},
+					KValue: ptr.To(1.5),
+					Plugins: map[string]kaiv1.PluginConfig{
+						"proportion": {Arguments: map[string]string{"kValue": "3.0"}},
+					},
+				},
+			},
+			expected: map[string]string{
+				"config.yaml": `actions: allocate,consolidation,reclaim,preempt,stalegangeviction
+tiers:
+- plugins:
+  - name: predicates
+  - name: proportion
+    arguments:
+      kValue: "3.0"
+  - name: priority
+  - name: nodeavailability
+  - name: resourcetype
+  - name: podaffinity
+  - name: elastic
+  - name: kubeflow
+  - name: ray
+  - name: subgrouporder
+  - name: taskorder
+  - name: nominatednode
+  - name: dynamicresources
+  - name: minruntime
+  - name: topology
+  - name: snapshot
+  - name: gpupack
+  - name: nodeplacement
+    arguments:
+      cpu: binpack
+      gpu: binpack
+  - name: gpusharingorder`,
+			},
+		},
+		{
+			name: "custom plugin: added via override with priority and arguments",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Scheduler: &kaiv1scheduler.Scheduler{
+						Replicas: ptr.To(int32(1)),
+					},
+				},
+			},
+			shard: &kaiv1.SchedulingShard{
+				Spec: kaiv1.SchedulingShardSpec{
+					PlacementStrategy: &kaiv1.PlacementStrategy{
+						GPU: ptr.To(binpackStrategy),
+						CPU: ptr.To(binpackStrategy),
+					},
+					Plugins: map[string]kaiv1.PluginConfig{
+						"myplugin": {Priority: ptr.To(1050), Arguments: map[string]string{"key": "val"}},
+					},
+				},
+			},
+			expected: map[string]string{
+				"config.yaml": `actions: allocate,consolidation,reclaim,preempt,stalegangeviction
+tiers:
+- plugins:
+  - name: predicates
+  - name: proportion
+  - name: priority
+  - name: nodeavailability
+  - name: resourcetype
+  - name: podaffinity
+  - name: elastic
+  - name: kubeflow
+  - name: ray
+  - name: myplugin
+    arguments:
+      key: val
+  - name: subgrouporder
+  - name: taskorder
+  - name: nominatednode
+  - name: dynamicresources
+  - name: minruntime
+  - name: topology
+  - name: snapshot
+  - name: gpupack
+  - name: nodeplacement
+    arguments:
+      cpu: binpack
+      gpu: binpack
+  - name: gpusharingorder`,
+			},
+		},
+		{
+			name: "spread nodes with pack devices via plugin override",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Scheduler: &kaiv1scheduler.Scheduler{
+						Replicas: ptr.To(int32(1)),
+					},
+				},
+			},
+			shard: &kaiv1.SchedulingShard{
+				Spec: kaiv1.SchedulingShardSpec{
+					PlacementStrategy: &kaiv1.PlacementStrategy{
+						GPU: ptr.To(spreadStrategy),
+						CPU: ptr.To(binpackStrategy),
+					},
+					Plugins: map[string]kaiv1.PluginConfig{
+						"gpuspread": {Enabled: ptr.To(false)},
+						"gpupack":   {Enabled: ptr.To(true)},
+					},
+				},
+			},
+			expected: map[string]string{
+				"config.yaml": `actions: allocate,reclaim,preempt,stalegangeviction
+tiers:
+- plugins:
+  - name: predicates
+  - name: proportion
+  - name: priority
+  - name: nodeavailability
+  - name: resourcetype
+  - name: podaffinity
+  - name: elastic
+  - name: kubeflow
+  - name: ray
+  - name: subgrouporder
+  - name: taskorder
+  - name: nominatednode
+  - name: dynamicresources
+  - name: minruntime
+  - name: topology
+  - name: snapshot
+  - name: gpupack
+  - name: nodeplacement
+    arguments:
+      cpu: binpack
+      gpu: spread`,
+			},
+		},
+		{
 			name: "usage DB configuration",
 			config: &kaiv1.Config{
 				Spec: kaiv1.ConfigSpec{},
@@ -829,10 +1074,8 @@ func TestGetUsageDBConfig(t *testing.T) {
 			kaiConfig: &kaiv1.Config{
 				Spec: kaiv1.ConfigSpec{
 					Namespace: "kai-system",
-					Global: &kaiv1.GlobalConfig{
-						ExternalTSDBConnection: &kaiv1.Connection{
-							URL: ptr.To("http://external-tsdb:9090"),
-						},
+					Prometheus: &kaiprometheus.Prometheus{
+						ExternalPrometheusUrl: ptr.To("http://external-tsdb:9090"),
 					},
 				},
 			},
@@ -856,19 +1099,10 @@ func TestGetUsageDBConfig(t *testing.T) {
 				Spec: kaiv1.ConfigSpec{
 					Namespace:  "kai-system",
 					Prometheus: nil,
-					Global: &kaiv1.GlobalConfig{
-						ExternalTSDBConnection: &kaiv1.Connection{
-							URL: ptr.To("http://external-tsdb:9090"),
-						},
-					},
 				},
 			},
-			expectError: false,
-			validate: func(t *testing.T, result *usagedbapi.UsageDBConfig) {
-				assert.NotNil(t, result)
-				assert.Equal(t, "prometheus", result.ClientType)
-				assert.Equal(t, "http://external-tsdb:9090", result.ConnectionString)
-			},
+			expectError: true,
+			errorMsg:    "prometheus connection string not configured",
 		},
 		{
 			name: "prometheus with prometheus.enabled = false",
@@ -884,57 +1118,6 @@ func TestGetUsageDBConfig(t *testing.T) {
 					Namespace: "kai-system",
 					Prometheus: &kaiprometheus.Prometheus{
 						Enabled: ptr.To(false),
-					},
-					Global: &kaiv1.GlobalConfig{
-						ExternalTSDBConnection: &kaiv1.Connection{
-							URL: ptr.To("http://external-tsdb:9090"),
-						},
-					},
-				},
-			},
-			expectError: false,
-			validate: func(t *testing.T, result *usagedbapi.UsageDBConfig) {
-				assert.NotNil(t, result)
-				assert.Equal(t, "prometheus", result.ClientType)
-				assert.Equal(t, "http://external-tsdb:9090", result.ConnectionString)
-			},
-		},
-		{
-			name: "prometheus with nil external TSDB connection",
-			shard: &kaiv1.SchedulingShard{
-				Spec: kaiv1.SchedulingShardSpec{
-					UsageDBConfig: &usagedbapi.UsageDBConfig{
-						ClientType: "prometheus",
-					},
-				},
-			},
-			kaiConfig: &kaiv1.Config{
-				Spec: kaiv1.ConfigSpec{
-					Namespace: "kai-system",
-					Global: &kaiv1.GlobalConfig{
-						ExternalTSDBConnection: nil,
-					},
-				},
-			},
-			expectError: true,
-			errorMsg:    "prometheus connection string not configured",
-		},
-		{
-			name: "prometheus with nil external TSDB URL",
-			shard: &kaiv1.SchedulingShard{
-				Spec: kaiv1.SchedulingShardSpec{
-					UsageDBConfig: &usagedbapi.UsageDBConfig{
-						ClientType: "prometheus",
-					},
-				},
-			},
-			kaiConfig: &kaiv1.Config{
-				Spec: kaiv1.ConfigSpec{
-					Namespace: "kai-system",
-					Global: &kaiv1.GlobalConfig{
-						ExternalTSDBConnection: &kaiv1.Connection{
-							URL: nil,
-						},
 					},
 				},
 			},
@@ -980,6 +1163,7 @@ func TestGetUsageDBConfig(t *testing.T) {
 				assert.NotNil(t, result.UsageParams)
 				assert.Equal(t, 10*time.Minute, result.UsageParams.HalfLifePeriod.Duration)
 				assert.Equal(t, 20*time.Minute, result.UsageParams.WindowSize.Duration)
+				assert.Equal(t, "http://prometheus:9090", result.ConnectionString)
 			},
 		},
 	}

@@ -1,0 +1,12 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: "en-US"
+
+reviews:
+  auto_review:
+    enabled: false
+  finishing_touches:
+    docstrings:
+      enabled: false

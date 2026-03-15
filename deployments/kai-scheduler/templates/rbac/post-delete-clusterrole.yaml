@@ -19,4 +19,10 @@ rules:
   - get
   - list
   - watch
+- apiGroups:
+  - kai.scheduler
+  resources:
+  - configs
+  verbs:
+  - delete
 {{- end }}

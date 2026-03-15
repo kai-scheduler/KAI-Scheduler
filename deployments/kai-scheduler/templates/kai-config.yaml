@@ -27,6 +27,10 @@ spec:
     {{- if .Values.global.requireDefaultPodAntiAffinityTerm }}
     requireDefaultPodAntiAffinityTerm: true
     {{- end }}
+    {{- if .Values.global.nodeSelector }}
+    nodeSelector:
+      {{- toYaml .Values.global.nodeSelector | nindent 6 }}
+    {{- end }}
     {{- if .Values.global.tolerations }}
     tolerations:
       {{- toYaml .Values.global.tolerations | nindent 6 }}
@@ -39,6 +43,10 @@ spec:
     imagesPullSecret: {{ index .Values.global.imagePullSecrets 0 | default "" }}
     {{- end }}
     replicaCount: {{ .Values.operator.replicaCount | default 1 }}
+    {{- if .Values.global.vpa }}
+    vpa:
+      {{- toYaml .Values.global.vpa | nindent 6 }}
+    {{- end }}
 
   binder:
     service:
@@ -79,6 +87,9 @@ spec:
       podResources:
         {{- toYaml .Values.binder.resourceReservationPodResources | nindent 8 }}
       {{- end }}
+    {{- if hasKey .Values.binder "cdiEnabled" }}
+    cdiEnabled: {{ .Values.binder.cdiEnabled }}
+    {{- end }}
 
   podGrouper:
     service:
@@ -154,7 +165,7 @@ spec:
       targetPort: {{ .Values.admission.ports.webhookPort | default 9443 }}
       probePort: {{ .Values.admission.ports.probePort | default 8081 }}
       metricsPort: {{ .Values.admission.ports.metricsPort | default 8080 }}
-    gpuPodRuntimeClassName: {{ .Values.admission.gpuPodRuntimeClassName | default "nvidia" }}
+    gpuPodRuntimeClassName: {{ .Values.admission.gpuPodRuntimeClassName | quote }}
 
   nodeScaleAdjuster:
     service:

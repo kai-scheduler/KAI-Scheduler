@@ -18,21 +18,43 @@ make vet-go                   # Run go vet
 ```
 
 ### Testing
+#### unit and integration tests
+
+- Test files MUST ALWAYS be in the same directory as code
+- Test files names MUST ALWAYS end in `_test.go`. Example: `resolver_test.go`
+
 ```bash
 make test                     # Run all tests (unit + helm chart tests)
 
 # Run a single test file
-go test -v ./pkg/scheduler/actions/allocate/...
+ginkgo -v ./pkg/scheduler/actions/allocate
 
 # Run a specific test function
-go test -v ./pkg/scheduler/actions/allocate/... -run TestHandleAllocation
+ginkgo -v --focus "TestHandleAllocation" ./pkg/scheduler/actions/allocate
 
 # Run tests with Ginkgo (for integration tests)
-go test -v ./pkg/binder/controllers/integration_tests/... -ginkgo.focus="test name pattern"
+ginkgo -v --focus "test name pattern" ./pkg/binder/controllers/integration_tests
 
 # Run tests with envtest (requires setup-envtest)
 make envtest
 KUBEBUILDER_ASSETS="$(bin/setup-envtest use 1.34.0 -p path --bin-dir bin)" go test ./pkg/... -timeout 30m
+```
+#### E2E tests
+
+E2E tests run against a real Kubernetes using [`kind`](https://kind.sigs.k8s.io/) cluster and are located in `test/e2e/suites/`.
+
+```bash
+# Run locally with Kind (recommended for development)
+./hack/run-e2e-kind.sh                          # Full e2e suite
+./hack/run-e2e-kind.sh --preserve-cluster       # Keep cluster after tests
+./hack/run-e2e-kind.sh --local-images-build     # Build images locally
+
+# Run specific test suites (requires cluster with KAI installed)
+ginkgo -r --randomize-all ./test/e2e/suites/allocate
+ginkgo -r --randomize-all --focus "quota" ./test/e2e/suites
+
+# Run with verbose output and trace
+ginkgo -r --randomize-all --trace -vv ./test/e2e/suites/preempt
 ```
 
 ### Code Generation
@@ -41,7 +63,7 @@ make generate                 # Generate DeepCopy methods
 make manifests                # Generate CRDs and RBAC
 make clients                  # Generate client code
 make generate-mocks           # Generate mock implementations
-make validate                 # Verify generated code is up to date
+make validate                 # Verify generated code is up to date. Also format and vet codebase
 ```
 
 ## Repository Structure
@@ -63,7 +85,7 @@ make validate                 # Verify generated code is up to date
 
 ### Tools (`/cmd/`)
 - `fairshare-simulator` - Simulate fairshare scheduling decisions
-- `time-aware-simulator` - Time-based scheduling simulation
+- `time-based-fairshare-simulator` - Time-based scheduling simulation
 - `snapshot-tool` - Cluster state snapshot utilities
 - `scalingpod` - Helper for scaling pod operations
 
@@ -82,7 +104,7 @@ import (
     "sigs.k8s.io/controller-runtime/pkg/client"
 
     // 3. Internal packages
-    "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
+    "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 )
 ```
 
@@ -130,8 +152,12 @@ PR titles must follow semantic format: `<type>(<scope>): <description>`
 
 **Scopes** (optional): `scheduler`, `binder`, `podgrouper`, `admission`, `operator`, `queue-controller`, `pod-group-controller`, `resource-reservation`, `chart`, `api`, `node-scale-adjuster`, `ci`, `release`, `docs`, `deps`
 
+### PR Description format
+
+When opening a PR, use the template in .github/pull_request_template.md for the PR description
+
 ### Changelog Requirements
-- Update `CHANGELOG.md` for PRs to `main` or version branches (`v*.*`)
+- You must update `CHANGELOG.md` for PRs to `main` or version branches (`v*.*`) for behavior changes: ones that add functionality, fix bugs, change APIs, or introduce significant performance improvements. Not needed for refactors, documentations, tests, and CI changes.
 - Add `skip-changelog` or `dependencies` label to skip this check
 
 ### CI Checks (on-pr.yaml)
@@ -141,4 +167,16 @@ PRs trigger: `make validate` → `make test` → `make build` → E2E tests
 
 ## General Rules
 - Use `git mv` when moving files to preserve history
-- Don't add obvious comments that duplicate the code
+- DO NOT add obvious comments that duplicate the code.
+    - Write comments ONLY when ABSOLUTELY nessessary
+    - Keep Comments short, explicit and concise
+    - DO NOT use `I`, `we` or any other pronoun
+- When performing a major change, run `make validate` after changes
+
+## Philosophy & Design
+
+- Documentation can be found in [`docs`](docs/) folder
+
+- Design documents for major features are in [`docs/developer/designs/`](docs/developer/designs/):
+
+- Usage Examples are in [`examples`](/examples/)

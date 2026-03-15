@@ -23,6 +23,7 @@ import (
 	admissionv1 "k8s.io/api/admissionregistration/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	vpav1 "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -30,21 +31,21 @@ import (
 
 	nvidiav1 "github.com/NVIDIA/gpu-operator/api/nvidia/v1"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/controller/status_reconciler"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/admission"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/binder"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/common"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/deployable"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/known_types"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/node_scale_adjuster"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/pod_group_controller"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/pod_grouper"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/prometheus"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/queue_controller"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/scheduler"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/controller/status_reconciler"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/admission"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/binder"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/deployable"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/known_types"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/node_scale_adjuster"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/pod_group_controller"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/pod_grouper"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/prometheus"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/queue_controller"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/scheduler"
 )
 
 var ConfigReconcilerOperands = []operands.Operand{
@@ -83,6 +84,7 @@ func (r *ConfigReconciler) SetOperands(ops []operands.Operand) {
 // +kubebuilder:rbac:groups="nvidia.com",resources=clusterpolicies,verbs=get;list;watch
 // +kubebuilder:rbac:groups="monitoring.coreos.com",resources=prometheuses;servicemonitors,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="scheduling.run.ai",resources=queues,verbs=get;list;watch
+// +kubebuilder:rbac:groups="autoscaling.k8s.io",resources=verticalpodautoscalers,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -147,6 +149,8 @@ func (r *ConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		known_types.ValidatingWebhookConfigurationFieldInherit)
 	r.deployable.RegisterFieldsInheritFromClusterObjects(&admissionv1.MutatingWebhookConfiguration{},
 		known_types.MutatingWebhookConfigurationFieldInherit)
+	r.deployable.RegisterFieldsInheritFromClusterObjects(&vpav1.VerticalPodAutoscaler{},
+		known_types.VPAFieldInherit)
 	r.StatusReconciler = status_reconciler.New(r.Client, r.deployable)
 
 	builder := ctrl.NewControllerManagedBy(mgr).

@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strings"
 	"time"
 
@@ -22,9 +23,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/binding/resourcereservation/group_mutex"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/resources"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding/resourcereservation/group_mutex"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 )
 
 type Interface interface {
@@ -393,30 +394,21 @@ func (rsc *service) createGPUReservationPod(ctx context.Context, nodeName, gpuGr
 	// Build resource requirements starting with GPU resources
 	resources := v1.ResourceRequirements{
 		Limits: v1.ResourceList{
-			constants.GpuResource: *resource.NewQuantity(numberOfGPUsToReserve, resource.DecimalSI),
+			constants.NvidiaGpuResource: *resource.NewQuantity(numberOfGPUsToReserve, resource.DecimalSI),
 		},
 		Requests: v1.ResourceList{
-			constants.GpuResource: *resource.NewQuantity(numberOfGPUsToReserve, resource.DecimalSI),
+			constants.NvidiaGpuResource: *resource.NewQuantity(numberOfGPUsToReserve, resource.DecimalSI),
 		},
 	}
 
-	// Merge in configured CPU/Memory resources if provided, but skip GPU resources to prevent override
 	if rsc.podResources != nil {
 		if rsc.podResources.Limits != nil {
-			for resourceName, quantity := range rsc.podResources.Limits {
-				// Skip GPU resources - they are already set correctly
-				if resourceName != constants.GpuResource {
-					resources.Limits[resourceName] = quantity
-				}
-			}
+			delete(rsc.podResources.Limits, constants.NvidiaGpuResource)
+			maps.Copy(resources.Limits, rsc.podResources.Limits)
 		}
 		if rsc.podResources.Requests != nil {
-			for resourceName, quantity := range rsc.podResources.Requests {
-				// Skip GPU resources - they are already set correctly
-				if resourceName != constants.GpuResource {
-					resources.Requests[resourceName] = quantity
-				}
-			}
+			delete(rsc.podResources.Requests, constants.NvidiaGpuResource)
+			maps.Copy(resources.Requests, rsc.podResources.Requests)
 		}
 	}
 

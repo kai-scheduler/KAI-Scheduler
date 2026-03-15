@@ -4,27 +4,33 @@
 package utils
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/informers"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/queue_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/elastic"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/priority"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/proportion"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/scheduler_util"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	k8splugins "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal/plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/elastic"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/priority"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/scheduler_util"
+	"k8s.io/client-go/kubernetes/fake"
 )
 
 const (
@@ -33,8 +39,10 @@ const (
 	testPod         = "p1"
 )
 
+var testVectorMap = resource_info.NewResourceVectorMap()
+
 func TestNumericalPriorityWithinSameQueue(t *testing.T) {
-	ssn := newPrioritySession()
+	ssn := newPrioritySession(t)
 
 	ssn.ClusterInfo.Queues = map[common_info.QueueID]*queue_info.QueueInfo{
 		testQueue: {
@@ -204,16 +212,16 @@ func TestVictimQueue_PopNextJob(t *testing.T) {
 					PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{
 						pod_status.Allocated: {
 							"p1": {
-								UID: "p1",
-								AcceptedResource: resource_info.NewResourceRequirements(
-									1,
-									1000,
-									1024,
-								),
+								UID:                    "p1",
+								VectorMap:              testVectorMap,
+								AcceptedResource:       resource_info.NewResourceRequirements(1, 1000, 1024),
+								AcceptedResourceVector: resource_info.NewResourceRequirements(1, 1000, 1024).ToVector(testVectorMap),
 							},
 						},
 					},
-					Allocated: resource_info.NewResource(1000, 1024, 1),
+					Allocated:       resource_info.NewResource(1000, 1024, 1),
+					VectorMap:       testVectorMap,
+					AllocatedVector: resource_info.NewResource(1000, 1024, 1).ToVector(testVectorMap),
 				},
 				"q1j2": {
 					Name:     "q1j2",
@@ -222,16 +230,16 @@ func TestVictimQueue_PopNextJob(t *testing.T) {
 					PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{
 						pod_status.Allocated: {
 							"p1": {
-								UID: "p1",
-								AcceptedResource: resource_info.NewResourceRequirements(
-									1,
-									1000,
-									1024,
-								),
+								UID:                    "p1",
+								VectorMap:              testVectorMap,
+								AcceptedResource:       resource_info.NewResourceRequirements(1, 1000, 1024),
+								AcceptedResourceVector: resource_info.NewResourceRequirements(1, 1000, 1024).ToVector(testVectorMap),
 							},
 						},
 					},
-					Allocated: resource_info.NewResource(1000, 1024, 1),
+					Allocated:       resource_info.NewResource(1000, 1024, 1),
+					VectorMap:       testVectorMap,
+					AllocatedVector: resource_info.NewResource(1000, 1024, 1).ToVector(testVectorMap),
 				},
 				"q1j3": {
 					Name:     "q1j3",
@@ -240,7 +248,9 @@ func TestVictimQueue_PopNextJob(t *testing.T) {
 					PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{
 						pod_status.Allocated: {
 							"p1": {
-								UID: "p1",
+								UID:                    "p1",
+								VectorMap:              testVectorMap,
+								AcceptedResourceVector: resource_info.NewResourceRequirements(1, 1000, 1024).ToVector(testVectorMap),
 								AcceptedResource: resource_info.NewResourceRequirements(
 									1,
 									1000,
@@ -258,7 +268,9 @@ func TestVictimQueue_PopNextJob(t *testing.T) {
 					PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{
 						pod_status.Allocated: {
 							"p1": {
-								UID: "p1",
+								UID:                    "p1",
+								VectorMap:              testVectorMap,
+								AcceptedResourceVector: resource_info.NewResourceRequirements(1, 1000, 1024).ToVector(testVectorMap),
 								AcceptedResource: resource_info.NewResourceRequirements(
 									1,
 									1000,
@@ -276,7 +288,9 @@ func TestVictimQueue_PopNextJob(t *testing.T) {
 					PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{
 						pod_status.Allocated: {
 							"p1": {
-								UID: "p1",
+								UID:                    "p1",
+								VectorMap:              testVectorMap,
+								AcceptedResourceVector: resource_info.NewResourceRequirements(1, 1000, 1024).ToVector(testVectorMap),
 								AcceptedResource: resource_info.NewResourceRequirements(
 									1,
 									1000,
@@ -285,7 +299,9 @@ func TestVictimQueue_PopNextJob(t *testing.T) {
 							},
 						},
 					},
-					Allocated: resource_info.NewResource(1000, 1024, 1),
+					Allocated:       resource_info.NewResource(1000, 1024, 1),
+					VectorMap:       testVectorMap,
+					AllocatedVector: resource_info.NewResource(1000, 1024, 1).ToVector(testVectorMap),
 				},
 				"q2j3": {
 					Name:     "q2j3",
@@ -294,7 +310,9 @@ func TestVictimQueue_PopNextJob(t *testing.T) {
 					PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{
 						pod_status.Allocated: {
 							"p1": {
-								UID: "p1",
+								UID:                    "p1",
+								VectorMap:              testVectorMap,
+								AcceptedResourceVector: resource_info.NewResourceRequirements(1, 1000, 1024).ToVector(testVectorMap),
 								AcceptedResource: resource_info.NewResourceRequirements(
 									1,
 									1000,
@@ -303,7 +321,9 @@ func TestVictimQueue_PopNextJob(t *testing.T) {
 							},
 						},
 					},
-					Allocated: resource_info.NewResource(1000, 1024, 1),
+					Allocated:       resource_info.NewResource(1000, 1024, 1),
+					VectorMap:       testVectorMap,
+					AllocatedVector: resource_info.NewResource(1000, 1024, 1).ToVector(testVectorMap),
 				},
 			},
 			expectedJobNames: []string{"q1j3", "q2j3", "q1j2", "q2j2", "q1j1", "q2j1"},
@@ -311,7 +331,7 @@ func TestVictimQueue_PopNextJob(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ssn := newPrioritySession()
+			ssn := newPrioritySession(t)
 			ssn.ClusterInfo.Queues = tt.queues
 			ssn.ClusterInfo.PodGroupInfos = tt.initJobs
 			proportion.New(map[string]string{}).OnSessionOpen(ssn)
@@ -624,7 +644,7 @@ func TestJobsOrderByQueues_PushJob(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ssn := newPrioritySession()
+			ssn := newPrioritySession(t)
 			ssn.ClusterInfo.Queues = tt.fields.Queues
 
 			jobsOrder := NewJobsOrderByQueues(ssn, tt.fields.options)
@@ -721,7 +741,7 @@ func TestJobsOrderByQueues_RequeueJob(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ssn := newPrioritySession()
+			ssn := newPrioritySession(t)
 			ssn.ClusterInfo.Queues = tt.fields.Queues
 
 			jobsOrder := NewJobsOrderByQueues(ssn, tt.fields.options)
@@ -740,7 +760,7 @@ func TestJobsOrderByQueues_RequeueJob(t *testing.T) {
 
 func TestJobsOrderByQueues_OrphanQueue_AddsJobFitError(t *testing.T) {
 	// Test that jobs in queues with missing parent queues get an error added
-	ssn := newPrioritySession()
+	ssn := newPrioritySession(t)
 
 	// Create a queue with a parent that doesn't exist (orphan queue)
 	orphanQueue := &queue_info.QueueInfo{
@@ -936,7 +956,7 @@ func TestNLevelQueueHierarchy(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			ssn := newPrioritySession()
+			ssn := newPrioritySession(t)
 			ssn.ClusterInfo.Queues = tc.queues
 
 			jobsOrderByQueues := NewJobsOrderByQueues(ssn, JobsOrderInitOptions{
@@ -986,8 +1006,11 @@ func newHierarchyTestJob(name string, priority int32, queue common_info.QueueID)
 	}
 }
 
-func newPrioritySession() *framework.Session {
+func newPrioritySession(t *testing.T) *framework.Session {
+	cacheMock := newCacheMock(t)
+
 	return &framework.Session{
+		Cache:       cacheMock,
 		ClusterInfo: &api.ClusterInfo{},
 		JobOrderFns: []common_info.CompareFn{
 			priority.JobOrderFn,
@@ -1008,9 +1031,36 @@ func newPrioritySession() *framework.Session {
 	}
 }
 
+func newCacheMock(t *testing.T) *cache.MockCache {
+	controller := gomock.NewController(t)
+	cacheMock := cache.NewMockCache(controller)
+
+	fakeClient := fake.NewSimpleClientset()
+	cacheMock.EXPECT().KubeClient().AnyTimes().Return(fakeClient)
+
+	informerFactory := informers.NewSharedInformerFactory(cacheMock.KubeClient(), 0)
+
+	informerFactory.Resource().V1().ResourceClaims().Informer()
+	informerFactory.Resource().V1().ResourceSlices().Informer()
+	informerFactory.Resource().V1().DeviceClasses().Informer()
+
+	ctx := context.Background()
+	informerFactory.Start(ctx.Done())
+	informerFactory.WaitForCacheSync(ctx.Done())
+
+	cacheMock.EXPECT().KubeInformerFactory().AnyTimes().Return(informerFactory)
+	cacheMock.EXPECT().SnapshotSharedLister().AnyTimes().Return(cache.NewK8sClusterPodAffinityInfo())
+
+	k8sPlugins := k8splugins.InitializeInternalPlugins(
+		cacheMock.KubeClient(), cacheMock.KubeInformerFactory(), cacheMock.SnapshotSharedLister(),
+	)
+	cacheMock.EXPECT().InternalK8sPlugins().AnyTimes().Return(k8sPlugins)
+	return cacheMock
+}
+
 func TestVictimQueue_TwoQueuesWithRunningJobs(t *testing.T) {
 	// This test simulates what the pod_scenario_builder_test does
-	ssn := newPrioritySession()
+	ssn := newPrioritySession(t)
 
 	// Setup similar to initializeSession(2, 2)
 	ssn.ClusterInfo.Queues = map[common_info.QueueID]*queue_info.QueueInfo{

@@ -21,10 +21,10 @@ import (
 
 	nvidiav1 "github.com/NVIDIA/gpu-operator/api/nvidia/v1"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
-	kaiv1binder "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/binder"
-	kaiConfigUtils "github.com/NVIDIA/KAI-scheduler/pkg/operator/config"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/common"
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	kaiv1binder "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/binder"
+	kaiConfigUtils "github.com/kai-scheduler/KAI-scheduler/pkg/operator/config"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common"
 )
 
 const (
@@ -48,9 +48,14 @@ func (b *Binder) deploymentForKAIConfig(
 		return nil, err
 	}
 
-	cdiEnabled, err := isCdiEnabled(ctx, runtimeClient)
-	if err != nil {
-		return nil, err
+	var cdiEnabled bool
+	if config.CDIEnabled != nil {
+		cdiEnabled = *config.CDIEnabled
+	} else {
+		cdiEnabled, err = isCdiEnabled(ctx, runtimeClient)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	deployment.Spec.Strategy.Type = appsv1.RecreateDeploymentStrategyType

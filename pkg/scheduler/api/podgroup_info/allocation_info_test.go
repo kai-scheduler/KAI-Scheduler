@@ -10,12 +10,12 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/scheduler_util"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/scheduler_util"
 )
 
 func simpleTask(name string, subGroupName string, status pod_status.PodStatus) *pod_info.PodInfo {
@@ -23,7 +23,7 @@ func simpleTask(name string, subGroupName string, status pod_status.PodStatus) *
 		common_info.BuildResourceList("1", "1G"),
 		nil, nil, nil,
 	)
-	info := pod_info.NewTaskInfo(pod)
+	info := pod_info.NewTaskInfo(pod, nil, resource_info.NewResourceVectorMap())
 	info.Status = status
 	info.SubGroupName = subGroupName
 	return info
@@ -611,7 +611,7 @@ func Test_getNumOfAllocatedTasks(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			pg := NewPodGroupInfo("u1")
 			for i, pod := range tt.args.pods {
-				pi := pod_info.NewTaskInfo(pod)
+				pi := pod_info.NewTaskInfo(pod, nil, resource_info.NewResourceVectorMap())
 				pg.AddTaskInfo(pi)
 
 				if tt.args.overridingStatus != nil {

@@ -7,8 +7,8 @@ import (
 	"context"
 	"fmt"
 
-	v2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -22,8 +22,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/queuecontroller/controllers"
-	"github.com/NVIDIA/KAI-scheduler/pkg/queuecontroller/metrics"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/queuecontroller/controllers"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/queuecontroller/metrics"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -78,7 +78,7 @@ func Run(opts *Options, clientConfig *rest.Config, ctx context.Context) error {
 	if err = (&controllers.QueueReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr, opts.SchedulingQueueLabelKey, opts.SkipControllerNameValidation); err != nil {
+	}).SetupWithManager(mgr, opts.SkipControllerNameValidation); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Queue")
 		return nil
 	}

@@ -8,10 +8,10 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/topology_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/topology_info"
 )
 
 type PodSet struct {
@@ -113,7 +113,10 @@ func (ps *PodSet) WithPodInfos(tasks pod_info.PodsMap) *PodSet {
 
 func (ps *PodSet) IsReadyForScheduling() bool {
 	readyTasks := ps.GetNumAliveTasks() - ps.GetNumGatedTasks()
-	return int32(readyTasks) >= ps.minAvailable
+	if int32(readyTasks) < ps.minAvailable {
+		return false
+	}
+	return true
 }
 
 func (ps *PodSet) IsGangSatisfied() bool {

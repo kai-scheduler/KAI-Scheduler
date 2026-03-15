@@ -14,9 +14,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/nodescaleadjuster/consts"
-	testutils "github.com/NVIDIA/KAI-scheduler/pkg/nodescaleadjuster/test-utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/nodescaleadjuster/consts"
+	testutils "github.com/kai-scheduler/KAI-scheduler/pkg/nodescaleadjuster/test-utils"
 )
 
 const (
@@ -110,7 +110,7 @@ func TestRequestedResources(t *testing.T) {
 	}
 
 	gpuReqRes := resource.MustParse("3")
-	if !requestedResources.Name(constants.GpuResource, resource.DecimalSI).Equal(gpuReqRes) {
+	if !requestedResources.Name(constants.NvidiaGpuResource, resource.DecimalSI).Equal(gpuReqRes) {
 		t.Errorf("Failed to aggregate memory requested resources")
 	}
 

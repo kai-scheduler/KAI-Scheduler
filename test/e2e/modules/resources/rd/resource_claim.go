@@ -5,13 +5,15 @@ SPDX-License-Identifier: Apache-2.0
 package rd
 
 import (
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/testconfig"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/utils"
 	resourceapi "k8s.io/api/resource/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func CreateResourceClaim(namespace, deviceClassName string, deviceCount int) *resourceapi.ResourceClaim {
+func CreateResourceClaim(namespace, queueName, deviceClassName string, deviceCount int) *resourceapi.ResourceClaim {
+	cfg := testconfig.GetConfig()
 	return &resourceapi.ResourceClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        utils.GenerateRandomK8sName(10),
@@ -19,6 +21,7 @@ func CreateResourceClaim(namespace, deviceClassName string, deviceCount int) *re
 			Annotations: map[string]string{},
 			Labels: map[string]string{
 				constants.AppLabelName: "engine-e2e",
+				cfg.QueueLabelKey:      queueName,
 			},
 		},
 		Spec: resourceapi.ResourceClaimSpec{
@@ -39,7 +42,8 @@ func CreateResourceClaim(namespace, deviceClassName string, deviceCount int) *re
 	}
 }
 
-func CreateResourceClaimTemplate(namespace, deviceClassName string, deviceCount int) *resourceapi.ResourceClaimTemplate {
+func CreateResourceClaimTemplate(namespace, queueName, deviceClassName string, deviceCount int) *resourceapi.ResourceClaimTemplate {
+	cfg := testconfig.GetConfig()
 	return &resourceapi.ResourceClaimTemplate{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        utils.GenerateRandomK8sName(10),
@@ -47,12 +51,14 @@ func CreateResourceClaimTemplate(namespace, deviceClassName string, deviceCount 
 			Annotations: map[string]string{},
 			Labels: map[string]string{
 				constants.AppLabelName: "engine-e2e",
+				cfg.QueueLabelKey:      queueName,
 			},
 		},
 		Spec: resourceapi.ResourceClaimTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
 				Labels: map[string]string{
 					constants.AppLabelName: "engine-e2e",
+					cfg.QueueLabelKey:      queueName,
 				},
 			},
 			Spec: resourceapi.ResourceClaimSpec{

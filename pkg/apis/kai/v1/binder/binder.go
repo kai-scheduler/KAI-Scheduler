@@ -7,8 +7,8 @@ package binder
 import (
 	"k8s.io/utils/ptr"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/common"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
@@ -42,9 +42,18 @@ type Binder struct {
 
 	// MetricsPort specifies the metrics service port
 	MetricsPort *int `json:"metricsPort,omitempty"`
+
+	// CDIEnabled Specifies if the gpu device plugin uses the cdi devices api to set gpu devices to the pods
+	// leave empty if unsure to let the operator auto detect using ClusterPolicy (nvidia gpu-operator only)
+	// +kubebuilder:validation:Optional
+	CDIEnabled *bool `json:"cdiEnabled,omitempty"`
+
+	// VPA specifies Vertical Pod Autoscaler configuration for the binder
+	// +kubebuilder:validation:Optional
+	VPA *common.VPASpec `json:"vpa,omitempty"`
 }
 
-func (b *Binder) SetDefaultsWhereNeeded(replicaCount *int32) {
+func (b *Binder) SetDefaultsWhereNeeded(replicaCount *int32, globalVPA *common.VPASpec) {
 	b.Service = common.SetDefault(b.Service, &common.Service{})
 	b.Service.Resources = common.SetDefault(b.Service.Resources, &common.Resources{})
 	if b.Service.Resources.Requests == nil {
@@ -77,6 +86,9 @@ func (b *Binder) SetDefaultsWhereNeeded(replicaCount *int32) {
 	b.ProbePort = common.SetDefault(b.ProbePort, ptr.To(8081))
 	b.MetricsPort = common.SetDefault(b.MetricsPort, ptr.To(8080))
 
+	if b.VPA == nil {
+		b.VPA = globalVPA
+	}
 }
 
 type ResourceReservation struct {

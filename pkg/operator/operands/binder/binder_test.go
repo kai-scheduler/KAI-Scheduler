@@ -15,8 +15,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/common/test_utils"
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common/test_utils"
 
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
@@ -156,6 +156,35 @@ var _ = Describe("Binder", func() {
 					}
 					clusterPolicy.Spec.CDI.Default = ptr.To(false)
 					Expect(fakeKubeClient.Create(ctx, clusterPolicy)).To(Succeed())
+
+					objects, err := b.DesiredState(ctx, fakeKubeClient, kaiConfig)
+					Expect(err).To(BeNil())
+
+					deploymentT := test_utils.FindTypeInObjects[*appsv1.Deployment](objects)
+					Expect(deploymentT).NotTo(BeNil())
+					Expect((*deploymentT).Spec.Template.Spec.Containers[0].Args).To(ContainElement("--cdi-enabled=false"))
+				})
+
+				It("uses explicit CDIEnabled=true from config, ignoring ClusterPolicy", func(ctx context.Context) {
+					clusterPolicy.Spec.CDI.Default = ptr.To(false)
+					Expect(fakeKubeClient.Create(ctx, clusterPolicy)).To(Succeed())
+
+					kaiConfig.Spec.Binder.CDIEnabled = ptr.To(true)
+
+					objects, err := b.DesiredState(ctx, fakeKubeClient, kaiConfig)
+					Expect(err).To(BeNil())
+
+					deploymentT := test_utils.FindTypeInObjects[*appsv1.Deployment](objects)
+					Expect(deploymentT).NotTo(BeNil())
+					Expect((*deploymentT).Spec.Template.Spec.Containers[0].Args).To(ContainElement("--cdi-enabled=true"))
+				})
+
+				It("uses explicit CDIEnabled=false from config, ignoring ClusterPolicy", func(ctx context.Context) {
+					clusterPolicy.Spec.CDI.Enabled = ptr.To(true)
+					clusterPolicy.Spec.CDI.Default = ptr.To(true)
+					Expect(fakeKubeClient.Create(ctx, clusterPolicy)).To(Succeed())
+
+					kaiConfig.Spec.Binder.CDIEnabled = ptr.To(false)
 
 					objects, err := b.DesiredState(ctx, fakeKubeClient, kaiConfig)
 					Expect(err).To(BeNil())

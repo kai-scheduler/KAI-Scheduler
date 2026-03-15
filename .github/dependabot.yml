@@ -12,28 +12,52 @@ updates:
       interval: "weekly"
   # Enable version updates for Go modules
   - package-ecosystem: "gomod"
-    # Look for Go modules in the `root` directory
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      kubernetes:
+        patterns:
+          - "k8s.io/*"
+          - "sigs.k8s.io/*"
   # Enable version updates for Go modules on supported version branches
   - package-ecosystem: "gomod"
     directory: "/"
     target-branch: "v0.12"
     schedule:
       interval: "weekly"
+    groups:
+      kubernetes:
+        patterns:
+          - "k8s.io/*"
+          - "sigs.k8s.io/*"
   - package-ecosystem: "gomod"
     directory: "/"
     target-branch: "v0.9"
     schedule:
       interval: "weekly"
+    groups:
+      kubernetes:
+        patterns:
+          - "k8s.io/*"
+          - "sigs.k8s.io/*"
   - package-ecosystem: "gomod"
     directory: "/"
     target-branch: "v0.6"
     schedule:
       interval: "weekly"
+    groups:
+      kubernetes:
+        patterns:
+          - "k8s.io/*"
+          - "sigs.k8s.io/*"
   - package-ecosystem: "gomod"
     directory: "/"
     target-branch: "v0.4"
     schedule:
       interval: "weekly"
+    groups:
+      kubernetes:
+        patterns:
+          - "k8s.io/*"
+          - "sigs.k8s.io/*"

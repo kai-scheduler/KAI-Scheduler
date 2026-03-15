@@ -5,15 +5,35 @@ kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
 - role: control-plane
+# Device plugin nodes
 - role: worker
   labels:
     run.ai/simulated-gpu-node-pool: default
+    nvidia.com/gpu.deploy.device-plugin: "true"
+    nvidia.com/gpu.memory: 11441
 - role: worker
   labels:
     run.ai/simulated-gpu-node-pool: default
+    nvidia.com/gpu.deploy.device-plugin: "true"
+    nvidia.com/gpu.memory: 11441
 - role: worker
   labels:
     run.ai/simulated-gpu-node-pool: default
+    nvidia.com/gpu.deploy.device-plugin: "true"
+    nvidia.com/gpu.memory: 11441
 - role: worker
   labels:
     run.ai/simulated-gpu-node-pool: default
+    nvidia.com/gpu.deploy.device-plugin: "true"
+    nvidia.com/gpu.memory: 11441
+# DRA nodes
+- role: worker
+  labels:
+    run.ai/simulated-gpu-node-pool: default
+    nvidia.com/gpu.deploy.dra-plugin-gpu: "true"
+- role: worker
+  labels:
+    run.ai/simulated-gpu-node-pool: default
+    nvidia.com/gpu.deploy.dra-plugin-gpu: "true"
+# CPU Node
+- role: worker

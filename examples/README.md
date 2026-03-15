@@ -5,5 +5,5 @@ This directory contains example configurations and YAML files to help you get st
 ## Quick Links
 
 - [Quickstart Examples](quickstart/README.md) - Get started with basic queue and pod setup
-- [Time-Aware Fairness](time-aware-fairness/README.md) - Configure historical usage-based fair scheduling
+- [Time-Based Fairshare](time-based-fairshare/README.md) - Configure historical usage-based fair scheduling
 

@@ -19,4 +19,5 @@ jobs:
       - name: Create backport pull requests
         uses: korthout/backport-action@v3
         with:
+          github_token: ${{ secrets.KAIBOT_TOKEN }}
           pull_title: "${pull_title}"

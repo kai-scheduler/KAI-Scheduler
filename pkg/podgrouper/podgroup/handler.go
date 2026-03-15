@@ -5,16 +5,13 @@ package podgroup
 
 import (
 	"context"
-	"fmt"
 
-	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	schedulingv2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	schedulingv2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 )
 
 type Handler struct {
@@ -34,17 +31,12 @@ func NewHandler(client client.Client, nodePoolKey string, queueLabelKey string) 
 func (h *Handler) ApplyToCluster(ctx context.Context, pgMetadata Metadata) error {
 	newPodGroup := h.createPodGroupForMetadata(pgMetadata)
 
-	err := h.assignPodsToSubGroup(ctx, pgMetadata.SubGroups)
-	if err != nil {
-		return fmt.Errorf("error assigning pods to subgroup: %v", err)
-	}
-
 	oldPodGroup := &schedulingv2alpha2.PodGroup{}
 	key := types.NamespacedName{
 		Namespace: pgMetadata.Namespace,
 		Name:      pgMetadata.Name,
 	}
-	err = h.client.Get(ctx, key, oldPodGroup)
+	err := h.client.Get(ctx, key, oldPodGroup)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			err = h.client.Create(ctx, newPodGroup)
@@ -138,25 +130,4 @@ func (h *Handler) createPodGroupForMetadata(podGroupMetadata Metadata) *scheduli
 	}
 
 	return pg
-}
-
-func (h *Handler) assignPodsToSubGroup(ctx context.Context, subGroups []*SubGroupMetadata) error {
-	for _, subGroup := range subGroups {
-		for _, podRef := range subGroup.PodsReferences {
-			pod := &v1.Pod{}
-			err := h.client.Get(ctx, *podRef, pod)
-			if err != nil {
-				return err
-			}
-
-			labeledPod := pod.DeepCopy()
-			labeledPod.Labels[commonconstants.SubGroupLabelKey] = subGroup.Name
-
-			err = h.client.Patch(ctx, labeledPod, client.MergeFrom(pod))
-			if err != nil {
-				return err
-			}
-		}
-	}
-	return nil
 }

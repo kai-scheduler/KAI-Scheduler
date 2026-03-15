@@ -13,15 +13,16 @@ import (
 	featuregate "k8s.io/component-base/featuregate/testing"
 	"k8s.io/kubernetes/pkg/features"
 
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/integration_tests/integration_tests_utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/dra_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/integration_tests_utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/dra_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 )
 
 func TestDRAAllocation(t *testing.T) {
@@ -69,7 +70,7 @@ func TestDRAAllocation(t *testing.T) {
 					},
 				},
 			},
-			RoundsUntilMatch:   2,
+			RoundsUntilMatch:   1,
 			RoundsAfterMatch:   1,
 			SchedulingDuration: 1 * time.Millisecond,
 		},
@@ -196,7 +197,7 @@ func TestDRAAllocation(t *testing.T) {
 					},
 				},
 			},
-			RoundsUntilMatch:   2,
+			RoundsUntilMatch:   1,
 			RoundsAfterMatch:   1,
 			SchedulingDuration: 1 * time.Millisecond,
 		},
@@ -275,7 +276,7 @@ func TestDRAAllocation(t *testing.T) {
 					},
 				},
 			},
-			RoundsUntilMatch:   2,
+			RoundsUntilMatch:   1,
 			RoundsAfterMatch:   1,
 			SchedulingDuration: 1 * time.Millisecond,
 		},
@@ -371,7 +372,7 @@ func TestDRAAllocation(t *testing.T) {
 					},
 				},
 			},
-			RoundsUntilMatch:   10,
+			RoundsUntilMatch:   1,
 			RoundsAfterMatch:   1,
 			SchedulingDuration: 1 * time.Millisecond,
 		},
@@ -385,10 +386,6 @@ func TestDRAAllocation(t *testing.T) {
 						Priority:  constants.PriorityTrainNumber,
 						QueueName: "queue1",
 						Tasks: []*tasks_fake.TestTaskBasic{
-							{
-								State:              pod_status.Pending,
-								ResourceClaimNames: []string{"claim-0"},
-							},
 							{
 								State:              pod_status.Pending,
 								ResourceClaimNames: []string{"claim-0"},
@@ -415,7 +412,9 @@ func TestDRAAllocation(t *testing.T) {
 							Labels: map[string]string{
 								commonconstants.DefaultQueueLabel: "queue1",
 							},
-							ReservedFor: dra_fake.RandomReservedForReferences(resourceapi.ResourceClaimReservedForMaxSize - 2),
+							ClaimStatus: &resourceapi.ResourceClaimStatus{
+								ReservedFor: dra_fake.RandomReservedForReferences(resourceapi.ResourceClaimReservedForMaxSize - 1),
+							},
 						},
 					},
 				},
@@ -440,7 +439,7 @@ func TestDRAAllocation(t *testing.T) {
 					},
 				},
 			},
-			RoundsUntilMatch:   10,
+			RoundsUntilMatch:   1,
 			RoundsAfterMatch:   1,
 			SchedulingDuration: 1 * time.Millisecond,
 		},
@@ -488,7 +487,9 @@ func TestDRAAllocation(t *testing.T) {
 							Labels: map[string]string{
 								commonconstants.DefaultQueueLabel: "queue1",
 							},
-							ReservedFor: dra_fake.RandomReservedForReferences(resourceapi.ResourceClaimReservedForMaxSize - 2),
+							ClaimStatus: &resourceapi.ResourceClaimStatus{
+								ReservedFor: dra_fake.RandomReservedForReferences(resourceapi.ResourceClaimReservedForMaxSize - 2),
+							},
 						},
 					},
 				},
@@ -510,7 +511,7 @@ func TestDRAAllocation(t *testing.T) {
 					CacheRequirements: &test_utils.CacheMocking{},
 				},
 			},
-			RoundsUntilMatch:   2,
+			RoundsUntilMatch:   1,
 			RoundsAfterMatch:   1,
 			SchedulingDuration: 1 * time.Millisecond,
 		},
@@ -550,7 +551,9 @@ func TestDRAAllocation(t *testing.T) {
 							Labels: map[string]string{
 								commonconstants.DefaultQueueLabel: "queue1",
 							},
-							ReservedFor: dra_fake.RandomReservedForReferences(resourceapi.ResourceClaimReservedForMaxSize),
+							ClaimStatus: &resourceapi.ResourceClaimStatus{
+								ReservedFor: dra_fake.RandomReservedForReferences(resourceapi.ResourceClaimReservedForMaxSize),
+							},
 						},
 					},
 				},
@@ -572,7 +575,7 @@ func TestDRAAllocation(t *testing.T) {
 					CacheRequirements: &test_utils.CacheMocking{},
 				},
 			},
-			RoundsUntilMatch:   2,
+			RoundsUntilMatch:   1,
 			RoundsAfterMatch:   1,
 			SchedulingDuration: 1 * time.Millisecond,
 		},
@@ -631,7 +634,7 @@ func TestDRAAllocation(t *testing.T) {
 					CacheRequirements: &test_utils.CacheMocking{},
 				},
 			},
-			RoundsUntilMatch:   2,
+			RoundsUntilMatch:   1,
 			RoundsAfterMatch:   1,
 			SchedulingDuration: 1 * time.Millisecond,
 		},
@@ -692,7 +695,195 @@ func TestDRAAllocation(t *testing.T) {
 					CacheRequirements: &test_utils.CacheMocking{},
 				},
 			},
-			RoundsUntilMatch:   2,
+			RoundsUntilMatch:   1,
+			RoundsAfterMatch:   1,
+			SchedulingDuration: 1 * time.Millisecond,
+		},
+		{
+			Name: "pod with simple resource claim - requests over quota as non-preemptable",
+			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:           "pending_job0",
+						Namespace:      "test",
+						Preemptibility: v2alpha2.NonPreemptible,
+						QueueName:      "queue1",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								State:              pod_status.Pending,
+								ResourceClaimNames: []string{"claim-0"},
+							},
+						},
+					},
+				},
+				TestDRAObjects: dra_fake.TestDRAObjects{
+					DeviceClasses: []string{"nvidia.com/gpu"},
+					ResourceSlices: []*dra_fake.TestResourceSlice{
+						{
+							Name:            "node0-gpu",
+							DeviceClassName: "nvidia.com/gpu",
+							NodeName:        "node0",
+							Count:           2,
+						},
+					},
+					ResourceClaims: []*dra_fake.TestResourceClaim{
+						{
+							Name:            "claim-0",
+							Namespace:       "test",
+							DeviceClassName: "nvidia.com/gpu",
+							Count:           2,
+							Labels: map[string]string{
+								commonconstants.DefaultQueueLabel: "queue1",
+							},
+						},
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node0": {},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{
+						Name:         "queue1",
+						DeservedGPUs: 1,
+					},
+				},
+				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"pending_job0": {
+						Status: pod_status.Pending,
+					},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{
+						NumberOfCacheBinds: 1,
+					},
+				},
+			},
+			RoundsUntilMatch:   1,
+			RoundsAfterMatch:   1,
+			SchedulingDuration: 1 * time.Millisecond,
+		},
+		{
+			Name: "pod with simple resource claim - requests over limit",
+			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:           "pending_job0",
+						Namespace:      "test",
+						Preemptibility: v2alpha2.Preemptible,
+						QueueName:      "queue1",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								State:              pod_status.Pending,
+								ResourceClaimNames: []string{"claim-0"},
+							},
+						},
+					},
+				},
+				TestDRAObjects: dra_fake.TestDRAObjects{
+					DeviceClasses: []string{"nvidia.com/gpu"},
+					ResourceSlices: []*dra_fake.TestResourceSlice{
+						{
+							Name:            "node0-gpu",
+							DeviceClassName: "nvidia.com/gpu",
+							NodeName:        "node0",
+							Count:           2,
+						},
+					},
+					ResourceClaims: []*dra_fake.TestResourceClaim{
+						{
+							Name:            "claim-0",
+							Namespace:       "test",
+							DeviceClassName: "nvidia.com/gpu",
+							Count:           2,
+							Labels: map[string]string{
+								commonconstants.DefaultQueueLabel: "queue1",
+							},
+						},
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node0": {},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{
+						Name:           "queue1",
+						DeservedGPUs:   1,
+						MaxAllowedGPUs: 1,
+					},
+				},
+				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"pending_job0": {
+						Status: pod_status.Pending,
+					},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{
+						NumberOfCacheBinds: 1,
+					},
+				},
+			},
+			RoundsUntilMatch:   1,
+			RoundsAfterMatch:   1,
+			SchedulingDuration: 1 * time.Millisecond,
+		},
+		{
+			Name: "pod with simple resource claim - non gpu claims doesn't count for gpu limit",
+			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:           "pending_job0",
+						Namespace:      "test",
+						Preemptibility: v2alpha2.Preemptible,
+						QueueName:      "queue1",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								State:              pod_status.Pending,
+								ResourceClaimNames: []string{"claim-0"},
+							},
+						},
+					},
+				},
+				TestDRAObjects: dra_fake.TestDRAObjects{
+					DeviceClasses: []string{"other-device-class"},
+					ResourceSlices: []*dra_fake.TestResourceSlice{
+						{
+							Name:            "node0-gpu",
+							DeviceClassName: "other-device-class",
+							NodeName:        "node0",
+							Count:           2,
+						},
+					},
+					ResourceClaims: []*dra_fake.TestResourceClaim{
+						{
+							Name:            "claim-0",
+							Namespace:       "test",
+							DeviceClassName: "other-device-class",
+							Count:           2,
+						},
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node0": {},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{
+						Name:           "queue1",
+						DeservedGPUs:   1,
+						MaxAllowedGPUs: 1,
+					},
+				},
+				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"pending_job0": {
+						Status: pod_status.Running,
+					},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{
+						NumberOfCacheBinds: 1,
+					},
+				},
+			},
+			RoundsUntilMatch:   1,
 			RoundsAfterMatch:   1,
 			SchedulingDuration: 1 * time.Millisecond,
 		},

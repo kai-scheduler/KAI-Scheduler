@@ -10,16 +10,16 @@ import (
 
 	. "go.uber.org/mock/gomock"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/allocate"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/consolidation"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/preempt"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/reclaim"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/stalegangeviction"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/allocate"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/consolidation"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/preempt"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/stalegangeviction"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils"
 )
 
 type TestTopologyMetadata struct {
@@ -133,6 +133,21 @@ func runSchedulerOneRound(testMetadata *TestTopologyMetadata, controller *Contro
 
 		}
 	}
+	if len(testMetadata.TestDRAObjects.ResourceClaims) > 0 {
+		draManager := (*ssn).InternalK8sPlugins().FrameworkHandle.SharedDRAManager()
+		for _, claim := range testMetadata.TestDRAObjects.ResourceClaims {
+			clusterClaim, err := draManager.ResourceClaims().Get(claim.Namespace, claim.Name)
+			if err != nil {
+				log.InfraLogger.Errorf("Failed to get resource claim %s: %v", claim.Name, err)
+				continue
+			}
+			clusterClaimStatus := clusterClaim.Status
+			if clusterClaimStatus.Allocation != nil || clusterClaimStatus.ReservedFor != nil || clusterClaimStatus.Devices != nil {
+				claim.ClaimStatus = clusterClaimStatus.DeepCopy()
+			}
+		}
+	}
+
 }
 
 func SetSchedulerActions() {

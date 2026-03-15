@@ -21,13 +21,14 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/utils/ptr"
 
-	kubeaischedulerfake "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned/fake"
-	enginev2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	kubeaischedulerfake "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/fake"
+	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 )
 
 type test struct {
@@ -546,7 +547,7 @@ func getPods(pods map[v1.PodPhase][]common_info.PodID) (podsInfos map[common_inf
 				},
 			}
 
-			podInfo := pod_info.NewTaskInfo(pod)
+			podInfo := pod_info.NewTaskInfo(pod, nil, resource_info.NewResourceVectorMap())
 
 			podsInfos[podInfo.UID] = podInfo
 			podsAsObjects = append(podsAsObjects, pod)

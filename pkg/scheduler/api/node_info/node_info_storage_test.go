@@ -15,13 +15,13 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_affinity"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/storagecapacity_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/storageclaim_info"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_affinity"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/storagecapacity_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/storageclaim_info"
 )
 
 type AddRemovePodsTestWithStorage struct {
@@ -32,6 +32,7 @@ type AddRemovePodsTestWithStorage struct {
 	expected                  *NodeInfo
 	storageCapacities         map[common_info.StorageCapacityID]*storagecapacity_info.StorageCapacityInfo
 	expectedStorageCapacities map[common_info.StorageCapacityID]*storagecapacity_info.StorageCapacityInfo
+	vectorMap                 *resource_info.ResourceVectorMap
 }
 
 func capacityInfoEqual(l, r *storagecapacity_info.StorageCapacityInfo) bool {
@@ -46,7 +47,8 @@ func RunAddRemovePodsWithStorageTests(t *testing.T, tests []AddRemovePodsTestWit
 			nodePodAffinityInfo.EXPECT().AddPod(Any()).Times(len(test.pods))
 			nodePodAffinityInfo.EXPECT().RemovePod(Any()).Times(len(test.rmPods))
 
-			ni := NewNodeInfo(test.node, nodePodAffinityInfo)
+			test.vectorMap.AddResourceList(test.node.Status.Allocatable)
+			ni := NewNodeInfo(test.node, nodePodAffinityInfo, test.vectorMap)
 
 			for _, capacity := range test.storageCapacities {
 				if capacity.IsNodeValid(ni.Node.Labels) {
@@ -62,8 +64,10 @@ func RunAddRemovePodsWithStorageTests(t *testing.T, tests []AddRemovePodsTestWit
 				_ = ni.RemoveTask(pod)
 			}
 
+			setNodeInfoVectors(test.expected, test.vectorMap)
+
 			var errors []error
-			if !nodeInfoEqual(ni, test.expected) {
+			if !nodeInfoEqual(t, test.expected, ni) {
 				errors = append(errors, fmt.Errorf("node info %d: \n expected %v, \n got %v \n",
 					i, test.expected, ni))
 			}
@@ -101,33 +105,32 @@ func TestNodeInfoStorage_AddPod(t *testing.T) {
 		common_info.BuildResourceList("2000m", "2G"), []metav1.OwnerReference{},
 		make(map[string]string), podAnnotations)
 
-	pod1Info := pod_info.NewTaskInfo(pod1)
-	pod2Info := pod_info.NewTaskInfo(pod2)
+	vectorMap := resource_info.NewResourceVectorMap()
+	pod1Info := pod_info.NewTaskInfo(pod1, nil, vectorMap)
+	pod2Info := pod_info.NewTaskInfo(pod2, nil, vectorMap)
 
 	storageCapacityRaw := common_info.BuildStorageCapacity("capacity-name", namespace, storageClassName, 100, 100, nil)
 	storageCapacity, _ := storagecapacity_info.NewStorageCapacityInfo(storageCapacityRaw)
 	expectedStorageCapacity := storageCapacity.Clone()
 
 	node1ExpectedNodeInfo := &NodeInfo{
-		Name:        "n1",
-		Node:        node1,
-		Idle:        common_info.BuildResource("7000m", "9G"),
-		Used:        common_info.BuildResource("1000m", "1G"),
-		Releasing:   resource_info.EmptyResource(),
-		Allocatable: common_info.BuildResource("8000m", "10G"),
-		PodInfos: map[common_info.PodID]*pod_info.PodInfo{
-			pod1Info.UID: pod1Info,
-		},
+		Name:                   "n1",
+		Node:                   node1,
+		Idle:                   common_info.BuildResourceWithGpu("7000m", "9G", "0", "109"),
+		Used:                   common_info.BuildResourceWithGpu("1000m", "1G", "0", "1"),
+		Releasing:              resource_info.EmptyResource(),
+		Allocatable:            common_info.BuildResourceWithGpu("8000m", "10G", "0", "110"),
+		PodInfos:               map[common_info.PodID]*pod_info.PodInfo{},
 		LegacyMIGTasks:         map[common_info.PodID]string{},
 		MemoryOfEveryGpuOnNode: DefaultGpuMemory,
 		GpuSharingNodeInfo:     *newGpuSharingNodeInfo(),
+		MaxTaskNum:             110,
 		AccessibleStorageCapacities: map[common_info.StorageClassID][]*storagecapacity_info.StorageCapacityInfo{
 			storageCapacity.StorageClass: {expectedStorageCapacity},
 		},
 	}
-	for _, podInfo := range node1ExpectedNodeInfo.PodInfos {
-		node1ExpectedNodeInfo.setAcceptedResources(podInfo)
-	}
+	node1ExpectedNodeInfo.setAcceptedResources(pod1Info)
+	node1ExpectedNodeInfo.PodInfos[pod1Info.UID] = pod1Info.Clone()
 
 	tests := []AddRemovePodsTestWithStorage{
 		{
@@ -142,6 +145,7 @@ func TestNodeInfoStorage_AddPod(t *testing.T) {
 			expectedStorageCapacities: map[common_info.StorageCapacityID]*storagecapacity_info.StorageCapacityInfo{
 				storageCapacity.UID: storageCapacity.Clone(),
 			},
+			vectorMap: vectorMap,
 		},
 	}
 
@@ -166,7 +170,7 @@ func TestAddTaskStorage(t *testing.T) {
 		StorageClass:    storageClass,
 		ProvisionedPVCs: map[storageclaim_info.Key]*storageclaim_info.StorageClaimInfo{},
 	}
-	podInfo := pod_info.NewTaskInfo(&v1.Pod{})
+	podInfo := pod_info.NewTaskInfo(&v1.Pod{}, nil, resource_info.NewResourceVectorMap())
 	podInfo.UpsertStorageClaim(storageClaim)
 	nodeInfo := &NodeInfo{
 		AccessibleStorageCapacities: map[common_info.StorageClassID][]*storagecapacity_info.StorageCapacityInfo{
@@ -217,7 +221,7 @@ func TestIsTaskStorageAllocatableMissingStorageclass(t *testing.T) {
 	storageCapacityRaw := common_info.BuildStorageCapacity("capacity-name", testNamespace, string(storageClass), 100, 100, nil)
 	storageCapacity, _ := storagecapacity_info.NewStorageCapacityInfo(storageCapacityRaw)
 
-	podInfo := pod_info.NewTaskInfo(&v1.Pod{})
+	podInfo := pod_info.NewTaskInfo(&v1.Pod{}, nil, resource_info.NewResourceVectorMap())
 	podInfo.UpsertStorageClaim(storageClaim)
 	nodeInfo := &NodeInfo{
 		AccessibleStorageCapacities: map[common_info.StorageClassID][]*storagecapacity_info.StorageCapacityInfo{
@@ -260,7 +264,7 @@ func TestIsTaskStorageAllocatableStorageCapacity(t *testing.T) {
 	storageCapacityRaw := common_info.BuildStorageCapacity("capacity-name", testNamespace, string(storageClass), 100, 100, nil)
 	storageCapacity, _ := storagecapacity_info.NewStorageCapacityInfo(storageCapacityRaw)
 
-	podInfo := pod_info.NewTaskInfo(&v1.Pod{})
+	podInfo := pod_info.NewTaskInfo(&v1.Pod{}, nil, resource_info.NewResourceVectorMap())
 	podInfo.UpsertStorageClaim(storageClaim)
 	nodeInfo := &NodeInfo{
 		AccessibleStorageCapacities: map[common_info.StorageClassID][]*storagecapacity_info.StorageCapacityInfo{

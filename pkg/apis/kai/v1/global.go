@@ -7,12 +7,16 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/common"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
 // GlobalConfig defines the global configuration of the system
 type GlobalConfig struct {
+	// VPA defines the default Vertical Pod Autoscaler configuration for all services
+	// +kubebuilder:validation:Optional
+	VPA *common.VPASpec `json:"vpa,omitempty"`
+
 	// Openshift configures the operator to install on Openshift
 	// +kubebuilder:validation:Optional
 	Openshift *bool `json:"openshift,omitempty"`
@@ -34,6 +38,10 @@ type GlobalConfig struct {
 	// ImagePullSecrets defines the container registry additional secret credentials
 	// +kubebuilder:validation:Optional
 	ImagePullSecrets []string `json:"additionalImagePullSecrets,omitempty"`
+
+	// NodeSelector defines node selector for KAI operators & services
+	// +kubebuilder:validation:Optional
+	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
 
 	// Tolerations defines tolerations for KAI operators & services
 	// +kubebuilder:validation:Optional
@@ -67,21 +75,6 @@ type GlobalConfig struct {
 	// PodLabelSelector filters pods for webhooks and pod grouper
 	// +kubebuilder:validation:Optional
 	PodLabelSelector map[string]string `json:"podLabelSelector,omitempty"`
-
-	// Connection defines the connection configuration for TSDB
-	// +kubebuilder:validation:Optional
-	ExternalTSDBConnection *Connection `json:"connection,omitempty"`
-}
-
-// Connection defines the connection configuration for TSDB
-type Connection struct {
-	// URL defines the connection URL for TSDB
-	// +kubebuilder:validation:Optional
-	URL *string `json:"url,omitempty"`
-
-	// AuthSecretName defines the name of the secret containing authentication credentials
-	// +kubebuilder:validation:Optional
-	AuthSecretName *string `json:"authSecretName,omitempty"`
 }
 
 func (g *GlobalConfig) SetDefaultWhereNeeded() {
@@ -112,9 +105,13 @@ func (g *GlobalConfig) SetDefaultWhereNeeded() {
 	if g.PodLabelSelector == nil {
 		g.PodLabelSelector = map[string]string{}
 	}
-	g.ExternalTSDBConnection = common.SetDefault(g.ExternalTSDBConnection, nil)
 
 	g.RequireDefaultPodAntiAffinityTerm = common.SetDefault(g.RequireDefaultPodAntiAffinityTerm, ptr.To(false))
+
+	if g.VPA == nil {
+		g.VPA = &common.VPASpec{}
+	}
+	g.VPA.SetDefaultsWhereNeeded()
 }
 
 func (g *GlobalConfig) GetSecurityContext() *v1.SecurityContext {

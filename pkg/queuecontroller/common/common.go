@@ -4,5 +4,6 @@
 package common
 
 const (
-	ParentQueueIndexName = ".spec.parentQueue"
+	ParentQueueIndexName   = ".spec.parentQueue"
+	PodGroupQueueIndexName = ".spec.queue"
 )

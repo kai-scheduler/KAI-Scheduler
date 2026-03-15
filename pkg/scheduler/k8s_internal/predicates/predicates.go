@@ -14,9 +14,9 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/tainttoleration"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/volumebinding"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_internal"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 )
 
 const (
@@ -143,7 +143,7 @@ func NewSessionPredicates(ssn *framework.Session) k8s_internal.SessionPredicates
 		}
 	}
 
-	mnrPredicate := NewMaxNodeResourcesPredicate(ssn.ClusterInfo.Nodes, ssn.NodePoolName())
+	mnrPredicate := NewMaxNodeResourcesPredicate(ssn.ClusterInfo.Nodes, ssn.ClusterInfo.ResourceClaims, ssn.NodePoolName())
 	predicates[MaxNodePoolResources] = k8s_internal.SessionPredicate{
 		Name:                NodeScheduler,
 		IsPreFilterRequired: mnrPredicate.isPreFilterRequired,

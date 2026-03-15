@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"time"
 
-	kaiv1alpha1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1alpha1"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 
 	. "go.uber.org/mock/gomock"
 	"gopkg.in/yaml.v2"
@@ -20,22 +20,23 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
-	enginev2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	_ "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/queue_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/cluster_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf_util"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
+	enginev2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	_ "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/cluster_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf_util"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
 )
 
 const (
@@ -65,6 +66,7 @@ func CreateFakeSession(schedulerConfig *TestSessionConfig,
 			Nodes:            nodesInfoMap,
 			Queues:           queueInfoMap,
 			PodGroupInfos:    jobInfoMap,
+			ResourceClaims:   getResourceClaims(testMetadata),
 			Topologies:       topologies,
 			MinNodeGPUMemory: node_info.DefaultGpuMemory,
 		},
@@ -265,10 +267,12 @@ func BuildSession(testMetadata TestTopologyBasic, controller *Controller) *frame
 	}
 
 	addDefaultDepartmentIfNeeded(&testMetadata)
-	jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(testMetadata.Jobs)
+
+	vectorMap := resource_info.NewResourceVectorMap()
+	jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(testMetadata.Jobs, vectorMap, getDRAObjects(testMetadata)...)
 
 	clusterPodAffinityInfo := cache.NewK8sClusterPodAffinityInfo()
-	nodesInfoMap := nodes_fake.BuildNodesInfoMap(testMetadata.Nodes, tasksToNodeMap, clusterPodAffinityInfo)
+	nodesInfoMap := nodes_fake.BuildNodesInfoMap(testMetadata.Nodes, tasksToNodeMap, clusterPodAffinityInfo, vectorMap, getDRAObjects(testMetadata)...)
 	queueInfoMap := BuildQueueInfoMap(testMetadata)
 
 	departmentInfoMap := BuildDepartmentInfoMap(testMetadata)
@@ -319,21 +323,63 @@ func addSessionPlugins(ssn *framework.Session, tiers []conf.Tier, cacheMockExist
 
 func getDRAObjects(testMetadata TestTopologyBasic) []runtime.Object {
 	var objects []runtime.Object
-	for _, deviceClass := range testMetadata.DeviceClasses {
-		deviceClassObject := resourceapi.DeviceClass{
+	deviceClasses := getDeviceClasses(testMetadata)
+	for _, deviceClass := range deviceClasses {
+		objects = append(objects, deviceClass)
+	}
+
+	resourceSlices := getResourceSlices(testMetadata)
+	for _, resourceSlice := range resourceSlices {
+		objects = append(objects, resourceSlice)
+	}
+
+	resourceClaims := getResourceClaims(testMetadata)
+	for _, resourceClaim := range resourceClaims {
+		objects = append(objects, resourceClaim)
+	}
+
+	return objects
+}
+
+func getResourceClaims(testMetadata TestTopologyBasic) []*resourceapi.ResourceClaim {
+	var objects []*resourceapi.ResourceClaim
+	for _, resourceClaim := range testMetadata.ResourceClaims {
+		resourceClaimObject := resourceapi.ResourceClaim{
 			TypeMeta: metav1.TypeMeta{
-				Kind:       "DeviceClass",
+				Kind:       "ResourceClaim",
 				APIVersion: "v1",
 			},
 			ObjectMeta: metav1.ObjectMeta{
-				Name:            deviceClass,
+				Name:            resourceClaim.Name,
+				Namespace:       resourceClaim.Namespace,
 				ResourceVersion: "0",
+				Labels:          resourceClaim.Labels,
 			},
-			Spec: resourceapi.DeviceClassSpec{},
+			Spec: resourceapi.ResourceClaimSpec{
+				Devices: resourceapi.DeviceClaim{
+					Requests: []resourceapi.DeviceRequest{
+						{
+							Name: "request",
+							Exactly: &resourceapi.ExactDeviceRequest{
+								DeviceClassName: resourceClaim.DeviceClassName,
+								AllocationMode:  resourceapi.DeviceAllocationModeExactCount,
+								Count:           resourceClaim.Count,
+							},
+						},
+					},
+				},
+			},
 		}
-		objects = append(objects, &deviceClassObject)
+		if resourceClaim.ClaimStatus != nil {
+			resourceClaimObject.Status = *resourceClaim.ClaimStatus
+		}
+		objects = append(objects, &resourceClaimObject)
 	}
+	return objects
+}
 
+func getResourceSlices(testMetadata TestTopologyBasic) []*resourceapi.ResourceSlice {
+	var objects []*resourceapi.ResourceSlice
 	for _, resourceSlice := range testMetadata.ResourceSlices {
 		resourceSliceObject := resourceapi.ResourceSlice{
 			TypeMeta: metav1.TypeMeta{
@@ -369,39 +415,24 @@ func getDRAObjects(testMetadata TestTopologyBasic) []runtime.Object {
 
 		objects = append(objects, &resourceSliceObject)
 	}
+	return objects
+}
 
-	for _, resourceClaim := range testMetadata.ResourceClaims {
-		resourceClaimObject := resourceapi.ResourceClaim{
+func getDeviceClasses(testMetadata TestTopologyBasic) []*resourceapi.DeviceClass {
+	var objects []*resourceapi.DeviceClass
+	for _, deviceClass := range testMetadata.DeviceClasses {
+		deviceClassObject := resourceapi.DeviceClass{
 			TypeMeta: metav1.TypeMeta{
-				Kind:       "ResourceClaim",
+				Kind:       "DeviceClass",
 				APIVersion: "v1",
 			},
 			ObjectMeta: metav1.ObjectMeta{
-				Name:            resourceClaim.Name,
-				Namespace:       resourceClaim.Namespace,
+				Name:            deviceClass,
 				ResourceVersion: "0",
-				Labels:          resourceClaim.Labels,
 			},
-			Spec: resourceapi.ResourceClaimSpec{
-				Devices: resourceapi.DeviceClaim{
-					Requests: []resourceapi.DeviceRequest{
-						{
-							Name: "request",
-							Exactly: &resourceapi.ExactDeviceRequest{
-								DeviceClassName: resourceClaim.DeviceClassName,
-								AllocationMode:  resourceapi.DeviceAllocationModeExactCount,
-								Count:           resourceClaim.Count,
-							},
-						},
-					},
-				},
-			},
-			Status: resourceapi.ResourceClaimStatus{
-				ReservedFor: resourceClaim.ReservedFor,
-			},
+			Spec: resourceapi.DeviceClassSpec{},
 		}
-		objects = append(objects, &resourceClaimObject)
+		objects = append(objects, &deviceClassObject)
 	}
-
 	return objects
 }

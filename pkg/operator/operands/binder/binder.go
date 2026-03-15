@@ -6,8 +6,8 @@ package binder
 import (
 	"context"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/common"
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -45,6 +45,10 @@ func (b *Binder) DesiredState(
 			return nil, err
 		}
 		objects = append(objects, newResources...)
+	}
+
+	if vpa := common.BuildVPAFromObjects(kaiConfig.Spec.Binder.VPA, objects, kaiConfig.Spec.Namespace); vpa != nil {
+		objects = append(objects, vpa)
 	}
 
 	b.lastDesiredState = objects

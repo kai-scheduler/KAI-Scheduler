@@ -9,16 +9,16 @@ import (
 	"fmt"
 	"time"
 
-	v2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	testcontext "github.com/NVIDIA/KAI-scheduler/test/e2e/modules/context"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/capacity"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/pod_group"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/queue"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/utils"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/wait"
+	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/capacity"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/pod_group"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/utils"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/samber/lo"
@@ -73,10 +73,10 @@ var _ = Describe("Time Aware Fairness", Label("timeaware", "nightly"), Ordered, 
 
 		resources := v1.ResourceRequirements{
 			Requests: v1.ResourceList{
-				constants.GpuResource: resource.MustParse("1"),
+				constants.NvidiaGpuResource: resource.MustParse("1"),
 			},
 			Limits: v1.ResourceList{
-				constants.GpuResource: resource.MustParse("1"),
+				constants.NvidiaGpuResource: resource.MustParse("1"),
 			},
 		}
 		_, queueAPods := pod_group.CreateWithPods(
@@ -97,7 +97,7 @@ var _ = Describe("Time Aware Fairness", Label("timeaware", "nightly"), Ordered, 
 		Eventually(func(g Gomega) {
 			updatedQueue, qErr := testCtx.KubeAiSchedClientset.SchedulingV2().Queues("").Get(ctx, queueA.Name, metav1.GetOptions{})
 			g.Expect(qErr).NotTo(HaveOccurred())
-			allocated := updatedQueue.Status.Allocated[constants.GpuResource]
+			allocated := updatedQueue.Status.Allocated[constants.NvidiaGpuResource]
 			g.Expect(allocated.Value()).To(BeNumerically(">=", idleGPUs), "Expected Queue status allocated GPUs to reach full cluster usage")
 		}, prometheusUsageTimeout, 5*time.Second).Should(Succeed())
 

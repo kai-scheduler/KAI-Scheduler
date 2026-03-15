@@ -45,6 +45,7 @@ var _ = Describe("New", func() {
 				Expect(draEnabled).To(Equal(expectDRAFeatureEnabled))
 			},
 			Entry("compatible version (1.32) with resource API should enable DRA", "1", "32", []string{resourcev1beta1.SchemeGroupVersion.String()}, true),
+			Entry("compatible version (1.32+) with resource API should enable DRA", "1", "32+", []string{resourcev1beta1.SchemeGroupVersion.String()}, true),
 			Entry("compatible version (1.32) without resource API should not enable DRA", "1", "32", []string{}, false),
 			Entry("incompatible version (1.25) with resource API should not enable DRA", "1", "25", []string{resourcev1beta1.SchemeGroupVersion.String()}, false),
 			Entry("incompatible version (1.25) without resource API should not enable DRA", "1", "25", []string{}, false),

@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 )
 
 func TestFitErrors_Error(t *testing.T) {
@@ -42,6 +42,7 @@ func TestFitErrors_Error(t *testing.T) {
 }
 
 func TestNewFitErrorInsufficientResource(t *testing.T) {
+	vectorMap := resource_info.NewResourceVectorMap()
 	type args struct {
 		name              string
 		namespace         string
@@ -85,8 +86,8 @@ func TestNewFitErrorInsufficientResource(t *testing.T) {
 				namespace:         "n1",
 				nodeName:          "node1",
 				resourceRequested: resource_info.NewResourceRequirements(2, 500, 1000),
-				usedResource:      BuildResourceWithGpu("500m", "1M", "1"),
-				capacityResource:  BuildResourceWithGpu("1000m", "2M", "2"),
+				usedResource:      BuildResourceWithGpu("500m", "1M", "1", "1"),
+				capacityResource:  BuildResourceWithGpu("1000m", "2M", "2", "110"),
 				capacityGpuMemory: 0,
 				gangSchedulingJob: false,
 			},
@@ -106,7 +107,7 @@ func TestNewFitErrorInsufficientResource(t *testing.T) {
 				nodeName:          "node1",
 				resourceRequested: resource_info.NewResourceRequirements(0.5, 500, 1000),
 				usedResource:      resource_info.NewResource(500, 1000, 1.8),
-				capacityResource:  BuildResourceWithGpu("1000m", "2M", "2"),
+				capacityResource:  BuildResourceWithGpu("1000m", "2M", "2", "110"),
 				capacityGpuMemory: 0,
 				gangSchedulingJob: false,
 			},
@@ -129,7 +130,7 @@ func TestNewFitErrorInsufficientResource(t *testing.T) {
 					GpuResourceRequirement: *resource_info.NewGpuResourceRequirementWithMultiFraction(2, 0.5, 0),
 				},
 				usedResource:      resource_info.NewResource(500, 1000, 1.8),
-				capacityResource:  BuildResourceWithGpu("1000m", "2M", "2"),
+				capacityResource:  BuildResourceWithGpu("1000m", "2M", "2", "110"),
 				capacityGpuMemory: 0,
 				gangSchedulingJob: false,
 			},
@@ -152,7 +153,7 @@ func TestNewFitErrorInsufficientResource(t *testing.T) {
 					GpuResourceRequirement: *resource_info.NewGpuResourceRequirementWithGpus(0, 2000),
 				},
 				usedResource:      resource_info.NewResource(500, 1000, 1.8),
-				capacityResource:  BuildResourceWithGpu("1000m", "2M", "2"),
+				capacityResource:  BuildResourceWithGpu("1000m", "2M", "2", "110"),
 				capacityGpuMemory: 1000,
 				gangSchedulingJob: false,
 			},
@@ -188,8 +189,10 @@ func TestNewFitErrorInsufficientResource(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			usedVector := tt.args.usedResource.ToVector(vectorMap)
+			capacityVector := tt.args.capacityResource.ToVector(vectorMap)
 			if got := NewFitErrorInsufficientResource(tt.args.name, tt.args.namespace, tt.args.nodeName,
-				tt.args.resourceRequested, tt.args.usedResource, tt.args.capacityResource, tt.args.capacityGpuMemory,
+				tt.args.resourceRequested, usedVector, capacityVector, vectorMap, tt.args.capacityGpuMemory,
 				tt.args.gangSchedulingJob, tt.args.suffix); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("NewFitErrorInsufficientResource() = %v, want %v", got, tt.want)
 			}

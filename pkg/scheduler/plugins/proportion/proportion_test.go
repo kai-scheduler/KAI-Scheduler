@@ -16,23 +16,25 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	k8splugins "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_internal/plugins"
-	rs "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	k8splugins "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal/plugins"
+	rs "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
 )
 
 const schedulerName = "kai-scheduler"
+
+var testVectorMap = resource_info.NewResourceVectorMap()
 
 func TestSetFairShare(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -618,8 +620,10 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 									SchedulerName: schedulerName,
 								},
 							},
-							Status: pod_status.Running,
-							ResReq: common_info.BuildResourceRequirements("2", "2G"),
+							Status:       pod_status.Running,
+							ResReq:       common_info.BuildResourceRequirements("2", "2G"),
+							ResReqVector: common_info.BuildResourceRequirements("2", "2G").ToVector(testVectorMap),
+							VectorMap:    testVectorMap,
 						},
 						"2": {
 							Pod: &v1.Pod{
@@ -627,8 +631,10 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 									SchedulerName: "default-scheduler",
 								},
 							},
-							Status: pod_status.Running,
-							ResReq: common_info.BuildResourceRequirements("1", "1G"),
+							Status:       pod_status.Running,
+							ResReq:       common_info.BuildResourceRequirements("1", "1G"),
+							ResReqVector: common_info.BuildResourceRequirements("1", "1G").ToVector(testVectorMap),
+							VectorMap:    testVectorMap,
 						},
 					},
 				},
@@ -652,8 +658,10 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 									SchedulerName: schedulerName,
 								},
 							},
-							Status: pod_status.Running,
-							ResReq: common_info.BuildResourceRequirements("2", "2G"),
+							Status:       pod_status.Running,
+							ResReq:       common_info.BuildResourceRequirements("2", "2G"),
+							ResReqVector: common_info.BuildResourceRequirements("2", "2G").ToVector(testVectorMap),
+							VectorMap:    testVectorMap,
 						},
 						"2": {
 							Pod: &v1.Pod{
@@ -661,8 +669,10 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 									SchedulerName: "default-scheduler",
 								},
 							},
-							Status: pod_status.Running,
-							ResReq: common_info.BuildResourceRequirements("1", "1G"),
+							Status:       pod_status.Running,
+							ResReq:       common_info.BuildResourceRequirements("1", "1G"),
+							ResReqVector: common_info.BuildResourceRequirements("1", "1G").ToVector(testVectorMap),
+							VectorMap:    testVectorMap,
 						},
 						"reservation": {
 							Pod: &v1.Pod{
@@ -673,8 +683,10 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 									SchedulerName: "default-scheduler",
 								},
 							},
-							Status: pod_status.Running,
-							ResReq: common_info.BuildResourceRequirements("1", "1G"),
+							Status:       pod_status.Running,
+							ResReq:       common_info.BuildResourceRequirements("1", "1G"),
+							ResReqVector: common_info.BuildResourceRequirements("1", "1G").ToVector(testVectorMap),
+							VectorMap:    testVectorMap,
 						},
 					},
 				},
@@ -698,8 +710,10 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 									SchedulerName: schedulerName,
 								},
 							},
-							Status: pod_status.Running,
-							ResReq: common_info.BuildResourceRequirements("2", "2G"),
+							Status:       pod_status.Running,
+							ResReq:       common_info.BuildResourceRequirements("2", "2G"),
+							ResReqVector: common_info.BuildResourceRequirements("2", "2G").ToVector(testVectorMap),
+							VectorMap:    testVectorMap,
 						},
 						"2": {
 							Pod: &v1.Pod{
@@ -707,8 +721,10 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 									SchedulerName: "default-scheduler",
 								},
 							},
-							Status: pod_status.Running,
-							ResReq: common_info.BuildResourceRequirements("1", "1G"),
+							Status:       pod_status.Running,
+							ResReq:       common_info.BuildResourceRequirements("1", "1G"),
+							ResReqVector: common_info.BuildResourceRequirements("1", "1G").ToVector(testVectorMap),
+							VectorMap:    testVectorMap,
 						},
 						"scaler": {
 							Pod: &v1.Pod{
@@ -719,8 +735,10 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 									SchedulerName: "default-scheduler",
 								},
 							},
-							Status: pod_status.Running,
-							ResReq: common_info.BuildResourceRequirements("1", "1G"),
+							Status:       pod_status.Running,
+							ResReq:       common_info.BuildResourceRequirements("1", "1G"),
+							ResReqVector: common_info.BuildResourceRequirements("1", "1G").ToVector(testVectorMap),
+							VectorMap:    testVectorMap,
 						},
 					},
 				},
@@ -790,6 +808,12 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 						SchedulerName:           schedulerName,
 					},
 					"1", nil)
+				vectorMap := resource_info.NewResourceVectorMap()
+				for rName := range testData.node.Allocatable.ScalarResources() {
+					vectorMap.AddResource(rName)
+				}
+				testData.node.VectorMap = vectorMap
+				testData.node.AllocatableVector = testData.node.Allocatable.ToVector(vectorMap)
 				if got := getNodeResources(session, testData.node); !reflect.DeepEqual(got, testData.want) {
 					Fail(fmt.Sprintf("getNodeResources() = %v, want %v", got, testData.want))
 				}
@@ -816,8 +840,10 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 				},
 				Tasks: []*pod_info.PodInfo{
 					{
-						Status:           pod_status.Pending,
-						AcceptedResource: common_info.BuildResourceRequirements("1", "1Gi"),
+						Status:                 pod_status.Pending,
+						AcceptedResource:       common_info.BuildResourceRequirements("1", "1Gi"),
+						AcceptedResourceVector: common_info.BuildResourceRequirements("1", "1Gi").ToVector(testVectorMap),
+						VectorMap:              testVectorMap,
 					},
 				},
 			}
@@ -827,7 +853,7 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 			// Should return resources for the single task that exists
 			Expect(len(result)).To(Equal(1))
 			Expect(result[0]).ToNot(BeNil())
-			Expect(result[0].Cpu()).To(Equal(1000.0))
+			Expect(result[0].Get(resource_info.CPUIndex)).To(Equal(1000.0))
 		})
 
 		It("should correctly split elastic and core tasks when MinAvailable is less than task count", func() {
@@ -846,16 +872,22 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 				},
 				Tasks: []*pod_info.PodInfo{
 					{
-						Status:           pod_status.Pending,
-						AcceptedResource: common_info.BuildResourceRequirements("1", "1Gi"),
+						Status:                 pod_status.Pending,
+						AcceptedResource:       common_info.BuildResourceRequirements("1", "1Gi"),
+						AcceptedResourceVector: common_info.BuildResourceRequirements("1", "1Gi").ToVector(testVectorMap),
+						VectorMap:              testVectorMap,
 					},
 					{
-						Status:           pod_status.Pending,
-						AcceptedResource: common_info.BuildResourceRequirements("1", "1Gi"),
+						Status:                 pod_status.Pending,
+						AcceptedResource:       common_info.BuildResourceRequirements("1", "1Gi"),
+						AcceptedResourceVector: common_info.BuildResourceRequirements("1", "1Gi").ToVector(testVectorMap),
+						VectorMap:              testVectorMap,
 					},
 					{
-						Status:           pod_status.Pending,
-						AcceptedResource: common_info.BuildResourceRequirements("1", "1Gi"),
+						Status:                 pod_status.Pending,
+						AcceptedResource:       common_info.BuildResourceRequirements("1", "1Gi"),
+						AcceptedResourceVector: common_info.BuildResourceRequirements("1", "1Gi").ToVector(testVectorMap),
+						VectorMap:              testVectorMap,
 					},
 				},
 			}
@@ -866,7 +898,7 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 			Expect(len(result)).To(Equal(3))
 			for _, res := range result {
 				Expect(res).ToNot(BeNil())
-				Expect(res.Cpu()).To(Equal(1000.0))
+				Expect(res.Get(resource_info.CPUIndex)).To(Equal(1000.0))
 			}
 		})
 
@@ -886,12 +918,16 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 				},
 				Tasks: []*pod_info.PodInfo{
 					{
-						Status:           pod_status.Pending,
-						AcceptedResource: common_info.BuildResourceRequirements("1", "1Gi"),
+						Status:                 pod_status.Pending,
+						AcceptedResource:       common_info.BuildResourceRequirements("1", "1Gi"),
+						AcceptedResourceVector: common_info.BuildResourceRequirements("1", "1Gi").ToVector(testVectorMap),
+						VectorMap:              testVectorMap,
 					},
 					{
-						Status:           pod_status.Pending,
-						AcceptedResource: common_info.BuildResourceRequirements("1", "1Gi"),
+						Status:                 pod_status.Pending,
+						AcceptedResource:       common_info.BuildResourceRequirements("1", "1Gi"),
+						AcceptedResourceVector: common_info.BuildResourceRequirements("1", "1Gi").ToVector(testVectorMap),
+						VectorMap:              testVectorMap,
 					},
 				},
 			}
@@ -901,7 +937,7 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 			// Should return 1 resource for all core tasks (no elastic tasks)
 			Expect(len(result)).To(Equal(1))
 			Expect(result[0]).ToNot(BeNil())
-			Expect(result[0].Cpu()).To(Equal(2000.0)) // Combined resources
+			Expect(result[0].Get(resource_info.CPUIndex)).To(Equal(2000.0)) // Combined resources
 		})
 
 		It("should handle zero MinAvailable", func() {
@@ -919,12 +955,16 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 				},
 				Tasks: []*pod_info.PodInfo{
 					{
-						Status:           pod_status.Pending,
-						AcceptedResource: common_info.BuildResourceRequirements("1", "1Gi"),
+						Status:                 pod_status.Pending,
+						AcceptedResource:       common_info.BuildResourceRequirements("1", "1Gi"),
+						AcceptedResourceVector: common_info.BuildResourceRequirements("1", "1Gi").ToVector(testVectorMap),
+						VectorMap:              testVectorMap,
 					},
 					{
-						Status:           pod_status.Pending,
-						AcceptedResource: common_info.BuildResourceRequirements("1", "1Gi"),
+						Status:                 pod_status.Pending,
+						AcceptedResource:       common_info.BuildResourceRequirements("1", "1Gi"),
+						AcceptedResourceVector: common_info.BuildResourceRequirements("1", "1Gi").ToVector(testVectorMap),
+						VectorMap:              testVectorMap,
 					},
 				},
 			}
@@ -935,7 +975,7 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 			Expect(len(result)).To(Equal(2))
 			for _, res := range result {
 				Expect(res).ToNot(BeNil())
-				Expect(res.Cpu()).To(Equal(1000.0))
+				Expect(res.Get(resource_info.CPUIndex)).To(Equal(1000.0))
 			}
 		})
 	})

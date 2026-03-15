@@ -10,22 +10,31 @@ import (
 
 	"github.com/dustin/go-humanize"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 	ksf "k8s.io/kube-scheduler/framework"
 	k8sframework "k8s.io/kubernetes/pkg/scheduler/framework"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	resourceapi "k8s.io/api/resource/v1"
 )
 
 type MaxNodeResourcesPredicate struct {
 	maxResources       *resource_info.Resource
+	resourceClaimsMap  map[string]*resourceapi.ResourceClaim
+	podsToClaimsMap    map[types.UID]map[types.UID]*resourceapi.ResourceClaim
 	schedulerShardName string
 }
 
-func NewMaxNodeResourcesPredicate(nodesMap map[string]*node_info.NodeInfo, nodePoolName string) *MaxNodeResourcesPredicate {
+func NewMaxNodeResourcesPredicate(nodesMap map[string]*node_info.NodeInfo, resourceClaims []*resourceapi.ResourceClaim, nodePoolName string) *MaxNodeResourcesPredicate {
+	resourceClaimsMap := resource_info.ResourceClaimSliceToMap(resourceClaims)
+	podsToClaimsMap := resource_info.CalcClaimsToPodsBaseMap(resourceClaimsMap)
+
 	predicate := &MaxNodeResourcesPredicate{
 		maxResources:       resource_info.EmptyResource(),
+		resourceClaimsMap:  resourceClaimsMap,
+		podsToClaimsMap:    podsToClaimsMap,
 		schedulerShardName: nodePoolName,
 	}
 
@@ -50,9 +59,11 @@ func (_ *MaxNodeResourcesPredicate) isFilterRequired(_ *v1.Pod) bool {
 func (mnr *MaxNodeResourcesPredicate) PreFilter(_ context.Context, _ ksf.CycleState, pod *v1.Pod, _ []ksf.NodeInfo) (
 	*k8sframework.PreFilterResult, *ksf.Status) {
 
-	podInfo := pod_info.NewTaskInfo(pod)
+	draPodClaims := resource_info.GetDraPodClaims(pod, mnr.resourceClaimsMap, mnr.podsToClaimsMap)
+	podInfo := pod_info.NewTaskInfo(pod, draPodClaims, resource_info.NewResourceVectorMap())
 
-	if podInfo.ResReq.GPUs() > mnr.maxResources.GPUs() {
+	podGpuResources := podInfo.ResReq.GPUs() + float64(podInfo.ResReq.GetDraGpusCount())
+	if podGpuResources > mnr.maxResources.GPUs() {
 		return nil, ksf.NewStatus(ksf.Unschedulable,
 			mnr.buildUnschedulableMessage(podInfo, "GPU", mnr.maxResources.GPUs(), ""))
 	}

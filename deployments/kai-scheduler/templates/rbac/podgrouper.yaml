@@ -380,6 +380,22 @@ rules:
   - patch
   - update
 - apiGroups:
+  - trainer.kubeflow.org
+  resources:
+  - trainjobs
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - trainer.kubeflow.org
+  resources:
+  - trainjobs/finalizers
+  verbs:
+  - create
+  - patch
+  - update
+- apiGroups:
   - workspace.devfile.io
   resources:
   - devworkspaces

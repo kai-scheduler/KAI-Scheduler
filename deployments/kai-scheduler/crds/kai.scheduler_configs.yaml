@@ -1094,6 +1094,138 @@ spec:
                     description: ValidatingWebhookConfigurationName is the name of
                       the ValidatingWebhookConfiguration for the admission service
                     type: string
+                  vpa:
+                    description: VPA specifies Vertical Pod Autoscaler configuration
+                      for the admission service
+                    properties:
+                      enabled:
+                        description: Enabled specifies if VPA should be enabled
+                        type: boolean
+                      resourcePolicy:
+                        description: ResourcePolicy controls how VPA computes recommended
+                          resources for containers
+                        properties:
+                          containerPolicies:
+                            description: Per-container resource policies.
+                            items:
+                              description: |-
+                                ContainerResourcePolicy controls how autoscaler computes the recommended
+                                resources for a specific container.
+                              properties:
+                                containerName:
+                                  description: |-
+                                    Name of the container or DefaultContainerResourcePolicy, in which
+                                    case the policy is used by the containers that don't have their own
+                                    policy specified.
+                                  type: string
+                                controlledResources:
+                                  description: |-
+                                    Specifies the type of recommendations that will be computed
+                                    (and possibly applied) by VPA.
+                                    If not specified, the default of [ResourceCPU, ResourceMemory] will be used.
+                                  items:
+                                    description: ResourceName is the name identifying
+                                      various resources in a ResourceList.
+                                    type: string
+                                  type: array
+                                controlledValues:
+                                  description: |-
+                                    Specifies which resource values should be controlled.
+                                    The default is "RequestsAndLimits".
+                                  enum:
+                                  - RequestsAndLimits
+                                  - RequestsOnly
+                                  type: string
+                                maxAllowed:
+                                  additionalProperties:
+                                    anyOf:
+                                    - type: integer
+                                    - type: string
+                                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                    x-kubernetes-int-or-string: true
+                                  description: |-
+                                    Specifies the maximum amount of resources that will be recommended
+                                    for the container. The default is no maximum.
+                                  type: object
+                                minAllowed:
+                                  additionalProperties:
+                                    anyOf:
+                                    - type: integer
+                                    - type: string
+                                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                    x-kubernetes-int-or-string: true
+                                  description: |-
+                                    Specifies the minimal amount of resources that will be recommended
+                                    for the container. The default is no minimum.
+                                  type: object
+                                mode:
+                                  description: Whether autoscaler is enabled for the
+                                    container. The default is "Auto".
+                                  enum:
+                                  - Auto
+                                  - "Off"
+                                  type: string
+                              type: object
+                            type: array
+                        type: object
+                      updatePolicy:
+                        description: UpdatePolicy controls when and how VPA applies
+                          changes to pod resources
+                        properties:
+                          evictionRequirements:
+                            description: |-
+                              EvictionRequirements is a list of EvictionRequirements that need to
+                              evaluate to true in order for a Pod to be evicted. If more than one
+                              EvictionRequirement is specified, all of them need to be fulfilled to allow eviction.
+                            items:
+                              description: |-
+                                EvictionRequirement defines a single condition which needs to be true in
+                                order to evict a Pod
+                              properties:
+                                changeRequirement:
+                                  description: EvictionChangeRequirement refers to
+                                    the relationship between the new target recommendation
+                                    for a Pod and its current requests, what kind
+                                    of change is necessary for the Pod to be evicted
+                                  enum:
+                                  - TargetHigherThanRequests
+                                  - TargetLowerThanRequests
+                                  type: string
+                                resources:
+                                  description: |-
+                                    Resources is a list of one or more resources that the condition applies
+                                    to. If more than one resource is given, the EvictionRequirement is fulfilled
+                                    if at least one resource meets `changeRequirement`.
+                                  items:
+                                    description: ResourceName is the name identifying
+                                      various resources in a ResourceList.
+                                    type: string
+                                  type: array
+                              required:
+                              - changeRequirement
+                              - resources
+                              type: object
+                            type: array
+                          minReplicas:
+                            description: |-
+                              Minimal number of replicas which need to be alive for Updater to attempt
+                              pod eviction (pending other checks like PDB). Only positive values are
+                              allowed. Overrides global '--min-replicas' flag.
+                            format: int32
+                            type: integer
+                          updateMode:
+                            description: |-
+                              Controls when autoscaler applies changes to the pod resources.
+                              The default is 'Auto'.
+                            enum:
+                            - "Off"
+                            - Initial
+                            - Recreate
+                            - InPlaceOrRecreate
+                            - Auto
+                            type: string
+                        type: object
+                    type: object
                   webhook:
                     description: Webhook defines configuration for the admission service
                     properties:
@@ -1116,6 +1248,11 @@ spec:
               binder:
                 description: Binder specifies configuration for the binder
                 properties:
+                  cdiEnabled:
+                    description: |-
+                      CDIEnabled Specifies if the gpu device plugin uses the cdi devices api to set gpu devices to the pods
+                      leave empty if unsure to let the operator auto detect using ClusterPolicy (nvidia gpu-operator only)
+                    type: boolean
                   maxConcurrentReconciles:
                     description: MaxConcurrentReconciles is the maximum number of
                       concurrent reconciles for both pods and BindRequests
@@ -2260,6 +2397,138 @@ spec:
                     description: VolumeBindingTimeoutSeconds specifies the timeout
                       for volume binding in seconds
                     type: integer
+                  vpa:
+                    description: VPA specifies Vertical Pod Autoscaler configuration
+                      for the binder
+                    properties:
+                      enabled:
+                        description: Enabled specifies if VPA should be enabled
+                        type: boolean
+                      resourcePolicy:
+                        description: ResourcePolicy controls how VPA computes recommended
+                          resources for containers
+                        properties:
+                          containerPolicies:
+                            description: Per-container resource policies.
+                            items:
+                              description: |-
+                                ContainerResourcePolicy controls how autoscaler computes the recommended
+                                resources for a specific container.
+                              properties:
+                                containerName:
+                                  description: |-
+                                    Name of the container or DefaultContainerResourcePolicy, in which
+                                    case the policy is used by the containers that don't have their own
+                                    policy specified.
+                                  type: string
+                                controlledResources:
+                                  description: |-
+                                    Specifies the type of recommendations that will be computed
+                                    (and possibly applied) by VPA.
+                                    If not specified, the default of [ResourceCPU, ResourceMemory] will be used.
+                                  items:
+                                    description: ResourceName is the name identifying
+                                      various resources in a ResourceList.
+                                    type: string
+                                  type: array
+                                controlledValues:
+                                  description: |-
+                                    Specifies which resource values should be controlled.
+                                    The default is "RequestsAndLimits".
+                                  enum:
+                                  - RequestsAndLimits
+                                  - RequestsOnly
+                                  type: string
+                                maxAllowed:
+                                  additionalProperties:
+                                    anyOf:
+                                    - type: integer
+                                    - type: string
+                                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                    x-kubernetes-int-or-string: true
+                                  description: |-
+                                    Specifies the maximum amount of resources that will be recommended
+                                    for the container. The default is no maximum.
+                                  type: object
+                                minAllowed:
+                                  additionalProperties:
+                                    anyOf:
+                                    - type: integer
+                                    - type: string
+                                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                    x-kubernetes-int-or-string: true
+                                  description: |-
+                                    Specifies the minimal amount of resources that will be recommended
+                                    for the container. The default is no minimum.
+                                  type: object
+                                mode:
+                                  description: Whether autoscaler is enabled for the
+                                    container. The default is "Auto".
+                                  enum:
+                                  - Auto
+                                  - "Off"
+                                  type: string
+                              type: object
+                            type: array
+                        type: object
+                      updatePolicy:
+                        description: UpdatePolicy controls when and how VPA applies
+                          changes to pod resources
+                        properties:
+                          evictionRequirements:
+                            description: |-
+                              EvictionRequirements is a list of EvictionRequirements that need to
+                              evaluate to true in order for a Pod to be evicted. If more than one
+                              EvictionRequirement is specified, all of them need to be fulfilled to allow eviction.
+                            items:
+                              description: |-
+                                EvictionRequirement defines a single condition which needs to be true in
+                                order to evict a Pod
+                              properties:
+                                changeRequirement:
+                                  description: EvictionChangeRequirement refers to
+                                    the relationship between the new target recommendation
+                                    for a Pod and its current requests, what kind
+                                    of change is necessary for the Pod to be evicted
+                                  enum:
+                                  - TargetHigherThanRequests
+                                  - TargetLowerThanRequests
+                                  type: string
+                                resources:
+                                  description: |-
+                                    Resources is a list of one or more resources that the condition applies
+                                    to. If more than one resource is given, the EvictionRequirement is fulfilled
+                                    if at least one resource meets `changeRequirement`.
+                                  items:
+                                    description: ResourceName is the name identifying
+                                      various resources in a ResourceList.
+                                    type: string
+                                  type: array
+                              required:
+                              - changeRequirement
+                              - resources
+                              type: object
+                            type: array
+                          minReplicas:
+                            description: |-
+                              Minimal number of replicas which need to be alive for Updater to attempt
+                              pod eviction (pending other checks like PDB). Only positive values are
+                              allowed. Overrides global '--min-replicas' flag.
+                            format: int32
+                            type: integer
+                          updateMode:
+                            description: |-
+                              Controls when autoscaler applies changes to the pod resources.
+                              The default is 'Auto'.
+                            enum:
+                            - "Off"
+                            - Initial
+                            - Recreate
+                            - InPlaceOrRecreate
+                            - Auto
+                            type: string
+                        type: object
+                    type: object
                 type: object
               global:
                 description: Global defined global configuration of the system
@@ -3189,18 +3458,6 @@ spec:
                             x-kubernetes-list-type: atomic
                         type: object
                     type: object
-                  connection:
-                    description: Connection defines the connection configuration for
-                      TSDB
-                    properties:
-                      authSecretName:
-                        description: AuthSecretName defines the name of the secret
-                          containing authentication credentials
-                        type: string
-                      url:
-                        description: URL defines the connection URL for TSDB
-                        type: string
-                    type: object
                   daemonsetsTolerations:
                     description: DaemonsetsTolerations defines additional tolerations
                       for daemonsets in cluster
@@ -3251,6 +3508,12 @@ spec:
                     description: NodePoolLabelKey is the label name by with to filter
                       nodes, pods and other resources that the scheduler is watching
                     type: string
+                  nodeSelector:
+                    additionalProperties:
+                      type: string
+                    description: NodeSelector defines node selector for KAI operators
+                      & services
+                    type: object
                   openshift:
                     description: Openshift configures the operator to install on Openshift
                     type: boolean
@@ -3513,6 +3776,138 @@ spec:
                           type: string
                       type: object
                     type: array
+                  vpa:
+                    description: VPA defines the default Vertical Pod Autoscaler configuration
+                      for all services
+                    properties:
+                      enabled:
+                        description: Enabled specifies if VPA should be enabled
+                        type: boolean
+                      resourcePolicy:
+                        description: ResourcePolicy controls how VPA computes recommended
+                          resources for containers
+                        properties:
+                          containerPolicies:
+                            description: Per-container resource policies.
+                            items:
+                              description: |-
+                                ContainerResourcePolicy controls how autoscaler computes the recommended
+                                resources for a specific container.
+                              properties:
+                                containerName:
+                                  description: |-
+                                    Name of the container or DefaultContainerResourcePolicy, in which
+                                    case the policy is used by the containers that don't have their own
+                                    policy specified.
+                                  type: string
+                                controlledResources:
+                                  description: |-
+                                    Specifies the type of recommendations that will be computed
+                                    (and possibly applied) by VPA.
+                                    If not specified, the default of [ResourceCPU, ResourceMemory] will be used.
+                                  items:
+                                    description: ResourceName is the name identifying
+                                      various resources in a ResourceList.
+                                    type: string
+                                  type: array
+                                controlledValues:
+                                  description: |-
+                                    Specifies which resource values should be controlled.
+                                    The default is "RequestsAndLimits".
+                                  enum:
+                                  - RequestsAndLimits
+                                  - RequestsOnly
+                                  type: string
+                                maxAllowed:
+                                  additionalProperties:
+                                    anyOf:
+                                    - type: integer
+                                    - type: string
+                                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                    x-kubernetes-int-or-string: true
+                                  description: |-
+                                    Specifies the maximum amount of resources that will be recommended
+                                    for the container. The default is no maximum.
+                                  type: object
+                                minAllowed:
+                                  additionalProperties:
+                                    anyOf:
+                                    - type: integer
+                                    - type: string
+                                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                    x-kubernetes-int-or-string: true
+                                  description: |-
+                                    Specifies the minimal amount of resources that will be recommended
+                                    for the container. The default is no minimum.
+                                  type: object
+                                mode:
+                                  description: Whether autoscaler is enabled for the
+                                    container. The default is "Auto".
+                                  enum:
+                                  - Auto
+                                  - "Off"
+                                  type: string
+                              type: object
+                            type: array
+                        type: object
+                      updatePolicy:
+                        description: UpdatePolicy controls when and how VPA applies
+                          changes to pod resources
+                        properties:
+                          evictionRequirements:
+                            description: |-
+                              EvictionRequirements is a list of EvictionRequirements that need to
+                              evaluate to true in order for a Pod to be evicted. If more than one
+                              EvictionRequirement is specified, all of them need to be fulfilled to allow eviction.
+                            items:
+                              description: |-
+                                EvictionRequirement defines a single condition which needs to be true in
+                                order to evict a Pod
+                              properties:
+                                changeRequirement:
+                                  description: EvictionChangeRequirement refers to
+                                    the relationship between the new target recommendation
+                                    for a Pod and its current requests, what kind
+                                    of change is necessary for the Pod to be evicted
+                                  enum:
+                                  - TargetHigherThanRequests
+                                  - TargetLowerThanRequests
+                                  type: string
+                                resources:
+                                  description: |-
+                                    Resources is a list of one or more resources that the condition applies
+                                    to. If more than one resource is given, the EvictionRequirement is fulfilled
+                                    if at least one resource meets `changeRequirement`.
+                                  items:
+                                    description: ResourceName is the name identifying
+                                      various resources in a ResourceList.
+                                    type: string
+                                  type: array
+                              required:
+                              - changeRequirement
+                              - resources
+                              type: object
+                            type: array
+                          minReplicas:
+                            description: |-
+                              Minimal number of replicas which need to be alive for Updater to attempt
+                              pod eviction (pending other checks like PDB). Only positive values are
+                              allowed. Overrides global '--min-replicas' flag.
+                            format: int32
+                            type: integer
+                          updateMode:
+                            description: |-
+                              Controls when autoscaler applies changes to the pod resources.
+                              The default is 'Auto'.
+                            enum:
+                            - "Off"
+                            - Initial
+                            - Recreate
+                            - InPlaceOrRecreate
+                            - Auto
+                            type: string
+                        type: object
+                    type: object
                 type: object
               namespace:
                 description: Namespace is the namespace to create the operands in
@@ -4574,6 +4969,138 @@ spec:
                             type: object
                         type: object
                     type: object
+                  vpa:
+                    description: VPA specifies Vertical Pod Autoscaler configuration
+                      for the node-scale-adjuster
+                    properties:
+                      enabled:
+                        description: Enabled specifies if VPA should be enabled
+                        type: boolean
+                      resourcePolicy:
+                        description: ResourcePolicy controls how VPA computes recommended
+                          resources for containers
+                        properties:
+                          containerPolicies:
+                            description: Per-container resource policies.
+                            items:
+                              description: |-
+                                ContainerResourcePolicy controls how autoscaler computes the recommended
+                                resources for a specific container.
+                              properties:
+                                containerName:
+                                  description: |-
+                                    Name of the container or DefaultContainerResourcePolicy, in which
+                                    case the policy is used by the containers that don't have their own
+                                    policy specified.
+                                  type: string
+                                controlledResources:
+                                  description: |-
+                                    Specifies the type of recommendations that will be computed
+                                    (and possibly applied) by VPA.
+                                    If not specified, the default of [ResourceCPU, ResourceMemory] will be used.
+                                  items:
+                                    description: ResourceName is the name identifying
+                                      various resources in a ResourceList.
+                                    type: string
+                                  type: array
+                                controlledValues:
+                                  description: |-
+                                    Specifies which resource values should be controlled.
+                                    The default is "RequestsAndLimits".
+                                  enum:
+                                  - RequestsAndLimits
+                                  - RequestsOnly
+                                  type: string
+                                maxAllowed:
+                                  additionalProperties:
+                                    anyOf:
+                                    - type: integer
+                                    - type: string
+                                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                    x-kubernetes-int-or-string: true
+                                  description: |-
+                                    Specifies the maximum amount of resources that will be recommended
+                                    for the container. The default is no maximum.
+                                  type: object
+                                minAllowed:
+                                  additionalProperties:
+                                    anyOf:
+                                    - type: integer
+                                    - type: string
+                                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                    x-kubernetes-int-or-string: true
+                                  description: |-
+                                    Specifies the minimal amount of resources that will be recommended
+                                    for the container. The default is no minimum.
+                                  type: object
+                                mode:
+                                  description: Whether autoscaler is enabled for the
+                                    container. The default is "Auto".
+                                  enum:
+                                  - Auto
+                                  - "Off"
+                                  type: string
+                              type: object
+                            type: array
+                        type: object
+                      updatePolicy:
+                        description: UpdatePolicy controls when and how VPA applies
+                          changes to pod resources
+                        properties:
+                          evictionRequirements:
+                            description: |-
+                              EvictionRequirements is a list of EvictionRequirements that need to
+                              evaluate to true in order for a Pod to be evicted. If more than one
+                              EvictionRequirement is specified, all of them need to be fulfilled to allow eviction.
+                            items:
+                              description: |-
+                                EvictionRequirement defines a single condition which needs to be true in
+                                order to evict a Pod
+                              properties:
+                                changeRequirement:
+                                  description: EvictionChangeRequirement refers to
+                                    the relationship between the new target recommendation
+                                    for a Pod and its current requests, what kind
+                                    of change is necessary for the Pod to be evicted
+                                  enum:
+                                  - TargetHigherThanRequests
+                                  - TargetLowerThanRequests
+                                  type: string
+                                resources:
+                                  description: |-
+                                    Resources is a list of one or more resources that the condition applies
+                                    to. If more than one resource is given, the EvictionRequirement is fulfilled
+                                    if at least one resource meets `changeRequirement`.
+                                  items:
+                                    description: ResourceName is the name identifying
+                                      various resources in a ResourceList.
+                                    type: string
+                                  type: array
+                              required:
+                              - changeRequirement
+                              - resources
+                              type: object
+                            type: array
+                          minReplicas:
+                            description: |-
+                              Minimal number of replicas which need to be alive for Updater to attempt
+                              pod eviction (pending other checks like PDB). Only positive values are
+                              allowed. Overrides global '--min-replicas' flag.
+                            format: int32
+                            type: integer
+                          updateMode:
+                            description: |-
+                              Controls when autoscaler applies changes to the pod resources.
+                              The default is 'Auto'.
+                            enum:
+                            - "Off"
+                            - Initial
+                            - Recreate
+                            - InPlaceOrRecreate
+                            - Auto
+                            type: string
+                        type: object
+                    type: object
                 type: object
               podGroupController:
                 description: PodGroupController specifies configuration for the pod-group-controller
@@ -5622,6 +6149,138 @@ spec:
                               otherwise to an implementation-defined value. Requests cannot exceed Limits.
                               More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
                             type: object
+                        type: object
+                    type: object
+                  vpa:
+                    description: VPA specifies Vertical Pod Autoscaler configuration
+                      for the pod group controller
+                    properties:
+                      enabled:
+                        description: Enabled specifies if VPA should be enabled
+                        type: boolean
+                      resourcePolicy:
+                        description: ResourcePolicy controls how VPA computes recommended
+                          resources for containers
+                        properties:
+                          containerPolicies:
+                            description: Per-container resource policies.
+                            items:
+                              description: |-
+                                ContainerResourcePolicy controls how autoscaler computes the recommended
+                                resources for a specific container.
+                              properties:
+                                containerName:
+                                  description: |-
+                                    Name of the container or DefaultContainerResourcePolicy, in which
+                                    case the policy is used by the containers that don't have their own
+                                    policy specified.
+                                  type: string
+                                controlledResources:
+                                  description: |-
+                                    Specifies the type of recommendations that will be computed
+                                    (and possibly applied) by VPA.
+                                    If not specified, the default of [ResourceCPU, ResourceMemory] will be used.
+                                  items:
+                                    description: ResourceName is the name identifying
+                                      various resources in a ResourceList.
+                                    type: string
+                                  type: array
+                                controlledValues:
+                                  description: |-
+                                    Specifies which resource values should be controlled.
+                                    The default is "RequestsAndLimits".
+                                  enum:
+                                  - RequestsAndLimits
+                                  - RequestsOnly
+                                  type: string
+                                maxAllowed:
+                                  additionalProperties:
+                                    anyOf:
+                                    - type: integer
+                                    - type: string
+                                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                    x-kubernetes-int-or-string: true
+                                  description: |-
+                                    Specifies the maximum amount of resources that will be recommended
+                                    for the container. The default is no maximum.
+                                  type: object
+                                minAllowed:
+                                  additionalProperties:
+                                    anyOf:
+                                    - type: integer
+                                    - type: string
+                                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                    x-kubernetes-int-or-string: true
+                                  description: |-
+                                    Specifies the minimal amount of resources that will be recommended
+                                    for the container. The default is no minimum.
+                                  type: object
+                                mode:
+                                  description: Whether autoscaler is enabled for the
+                                    container. The default is "Auto".
+                                  enum:
+                                  - Auto
+                                  - "Off"
+                                  type: string
+                              type: object
+                            type: array
+                        type: object
+                      updatePolicy:
+                        description: UpdatePolicy controls when and how VPA applies
+                          changes to pod resources
+                        properties:
+                          evictionRequirements:
+                            description: |-
+                              EvictionRequirements is a list of EvictionRequirements that need to
+                              evaluate to true in order for a Pod to be evicted. If more than one
+                              EvictionRequirement is specified, all of them need to be fulfilled to allow eviction.
+                            items:
+                              description: |-
+                                EvictionRequirement defines a single condition which needs to be true in
+                                order to evict a Pod
+                              properties:
+                                changeRequirement:
+                                  description: EvictionChangeRequirement refers to
+                                    the relationship between the new target recommendation
+                                    for a Pod and its current requests, what kind
+                                    of change is necessary for the Pod to be evicted
+                                  enum:
+                                  - TargetHigherThanRequests
+                                  - TargetLowerThanRequests
+                                  type: string
+                                resources:
+                                  description: |-
+                                    Resources is a list of one or more resources that the condition applies
+                                    to. If more than one resource is given, the EvictionRequirement is fulfilled
+                                    if at least one resource meets `changeRequirement`.
+                                  items:
+                                    description: ResourceName is the name identifying
+                                      various resources in a ResourceList.
+                                    type: string
+                                  type: array
+                              required:
+                              - changeRequirement
+                              - resources
+                              type: object
+                            type: array
+                          minReplicas:
+                            description: |-
+                              Minimal number of replicas which need to be alive for Updater to attempt
+                              pod eviction (pending other checks like PDB). Only positive values are
+                              allowed. Overrides global '--min-replicas' flag.
+                            format: int32
+                            type: integer
+                          updateMode:
+                            description: |-
+                              Controls when autoscaler applies changes to the pod resources.
+                              The default is 'Auto'.
+                            enum:
+                            - "Off"
+                            - Initial
+                            - Recreate
+                            - InPlaceOrRecreate
+                            - Auto
+                            type: string
                         type: object
                     type: object
                   webhooks:
@@ -6696,6 +7355,138 @@ spec:
                               otherwise to an implementation-defined value. Requests cannot exceed Limits.
                               More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
                             type: object
+                        type: object
+                    type: object
+                  vpa:
+                    description: VPA specifies Vertical Pod Autoscaler configuration
+                      for the pod-grouper
+                    properties:
+                      enabled:
+                        description: Enabled specifies if VPA should be enabled
+                        type: boolean
+                      resourcePolicy:
+                        description: ResourcePolicy controls how VPA computes recommended
+                          resources for containers
+                        properties:
+                          containerPolicies:
+                            description: Per-container resource policies.
+                            items:
+                              description: |-
+                                ContainerResourcePolicy controls how autoscaler computes the recommended
+                                resources for a specific container.
+                              properties:
+                                containerName:
+                                  description: |-
+                                    Name of the container or DefaultContainerResourcePolicy, in which
+                                    case the policy is used by the containers that don't have their own
+                                    policy specified.
+                                  type: string
+                                controlledResources:
+                                  description: |-
+                                    Specifies the type of recommendations that will be computed
+                                    (and possibly applied) by VPA.
+                                    If not specified, the default of [ResourceCPU, ResourceMemory] will be used.
+                                  items:
+                                    description: ResourceName is the name identifying
+                                      various resources in a ResourceList.
+                                    type: string
+                                  type: array
+                                controlledValues:
+                                  description: |-
+                                    Specifies which resource values should be controlled.
+                                    The default is "RequestsAndLimits".
+                                  enum:
+                                  - RequestsAndLimits
+                                  - RequestsOnly
+                                  type: string
+                                maxAllowed:
+                                  additionalProperties:
+                                    anyOf:
+                                    - type: integer
+                                    - type: string
+                                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                    x-kubernetes-int-or-string: true
+                                  description: |-
+                                    Specifies the maximum amount of resources that will be recommended
+                                    for the container. The default is no maximum.
+                                  type: object
+                                minAllowed:
+                                  additionalProperties:
+                                    anyOf:
+                                    - type: integer
+                                    - type: string
+                                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                    x-kubernetes-int-or-string: true
+                                  description: |-
+                                    Specifies the minimal amount of resources that will be recommended
+                                    for the container. The default is no minimum.
+                                  type: object
+                                mode:
+                                  description: Whether autoscaler is enabled for the
+                                    container. The default is "Auto".
+                                  enum:
+                                  - Auto
+                                  - "Off"
+                                  type: string
+                              type: object
+                            type: array
+                        type: object
+                      updatePolicy:
+                        description: UpdatePolicy controls when and how VPA applies
+                          changes to pod resources
+                        properties:
+                          evictionRequirements:
+                            description: |-
+                              EvictionRequirements is a list of EvictionRequirements that need to
+                              evaluate to true in order for a Pod to be evicted. If more than one
+                              EvictionRequirement is specified, all of them need to be fulfilled to allow eviction.
+                            items:
+                              description: |-
+                                EvictionRequirement defines a single condition which needs to be true in
+                                order to evict a Pod
+                              properties:
+                                changeRequirement:
+                                  description: EvictionChangeRequirement refers to
+                                    the relationship between the new target recommendation
+                                    for a Pod and its current requests, what kind
+                                    of change is necessary for the Pod to be evicted
+                                  enum:
+                                  - TargetHigherThanRequests
+                                  - TargetLowerThanRequests
+                                  type: string
+                                resources:
+                                  description: |-
+                                    Resources is a list of one or more resources that the condition applies
+                                    to. If more than one resource is given, the EvictionRequirement is fulfilled
+                                    if at least one resource meets `changeRequirement`.
+                                  items:
+                                    description: ResourceName is the name identifying
+                                      various resources in a ResourceList.
+                                    type: string
+                                  type: array
+                              required:
+                              - changeRequirement
+                              - resources
+                              type: object
+                            type: array
+                          minReplicas:
+                            description: |-
+                              Minimal number of replicas which need to be alive for Updater to attempt
+                              pod eviction (pending other checks like PDB). Only positive values are
+                              allowed. Overrides global '--min-replicas' flag.
+                            format: int32
+                            type: integer
+                          updateMode:
+                            description: |-
+                              Controls when autoscaler applies changes to the pod resources.
+                              The default is 'Auto'.
+                            enum:
+                            - "Off"
+                            - Initial
+                            - Recreate
+                            - InPlaceOrRecreate
+                            - Auto
+                            type: string
                         type: object
                     type: object
                 type: object
@@ -7856,6 +8647,138 @@ spec:
                             type: object
                         type: object
                     type: object
+                  vpa:
+                    description: VPA specifies Vertical Pod Autoscaler configuration
+                      for the queue controller
+                    properties:
+                      enabled:
+                        description: Enabled specifies if VPA should be enabled
+                        type: boolean
+                      resourcePolicy:
+                        description: ResourcePolicy controls how VPA computes recommended
+                          resources for containers
+                        properties:
+                          containerPolicies:
+                            description: Per-container resource policies.
+                            items:
+                              description: |-
+                                ContainerResourcePolicy controls how autoscaler computes the recommended
+                                resources for a specific container.
+                              properties:
+                                containerName:
+                                  description: |-
+                                    Name of the container or DefaultContainerResourcePolicy, in which
+                                    case the policy is used by the containers that don't have their own
+                                    policy specified.
+                                  type: string
+                                controlledResources:
+                                  description: |-
+                                    Specifies the type of recommendations that will be computed
+                                    (and possibly applied) by VPA.
+                                    If not specified, the default of [ResourceCPU, ResourceMemory] will be used.
+                                  items:
+                                    description: ResourceName is the name identifying
+                                      various resources in a ResourceList.
+                                    type: string
+                                  type: array
+                                controlledValues:
+                                  description: |-
+                                    Specifies which resource values should be controlled.
+                                    The default is "RequestsAndLimits".
+                                  enum:
+                                  - RequestsAndLimits
+                                  - RequestsOnly
+                                  type: string
+                                maxAllowed:
+                                  additionalProperties:
+                                    anyOf:
+                                    - type: integer
+                                    - type: string
+                                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                    x-kubernetes-int-or-string: true
+                                  description: |-
+                                    Specifies the maximum amount of resources that will be recommended
+                                    for the container. The default is no maximum.
+                                  type: object
+                                minAllowed:
+                                  additionalProperties:
+                                    anyOf:
+                                    - type: integer
+                                    - type: string
+                                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                    x-kubernetes-int-or-string: true
+                                  description: |-
+                                    Specifies the minimal amount of resources that will be recommended
+                                    for the container. The default is no minimum.
+                                  type: object
+                                mode:
+                                  description: Whether autoscaler is enabled for the
+                                    container. The default is "Auto".
+                                  enum:
+                                  - Auto
+                                  - "Off"
+                                  type: string
+                              type: object
+                            type: array
+                        type: object
+                      updatePolicy:
+                        description: UpdatePolicy controls when and how VPA applies
+                          changes to pod resources
+                        properties:
+                          evictionRequirements:
+                            description: |-
+                              EvictionRequirements is a list of EvictionRequirements that need to
+                              evaluate to true in order for a Pod to be evicted. If more than one
+                              EvictionRequirement is specified, all of them need to be fulfilled to allow eviction.
+                            items:
+                              description: |-
+                                EvictionRequirement defines a single condition which needs to be true in
+                                order to evict a Pod
+                              properties:
+                                changeRequirement:
+                                  description: EvictionChangeRequirement refers to
+                                    the relationship between the new target recommendation
+                                    for a Pod and its current requests, what kind
+                                    of change is necessary for the Pod to be evicted
+                                  enum:
+                                  - TargetHigherThanRequests
+                                  - TargetLowerThanRequests
+                                  type: string
+                                resources:
+                                  description: |-
+                                    Resources is a list of one or more resources that the condition applies
+                                    to. If more than one resource is given, the EvictionRequirement is fulfilled
+                                    if at least one resource meets `changeRequirement`.
+                                  items:
+                                    description: ResourceName is the name identifying
+                                      various resources in a ResourceList.
+                                    type: string
+                                  type: array
+                              required:
+                              - changeRequirement
+                              - resources
+                              type: object
+                            type: array
+                          minReplicas:
+                            description: |-
+                              Minimal number of replicas which need to be alive for Updater to attempt
+                              pod eviction (pending other checks like PDB). Only positive values are
+                              allowed. Overrides global '--min-replicas' flag.
+                            format: int32
+                            type: integer
+                          updateMode:
+                            description: |-
+                              Controls when autoscaler applies changes to the pod resources.
+                              The default is 'Auto'.
+                            enum:
+                            - "Off"
+                            - Initial
+                            - Recreate
+                            - InPlaceOrRecreate
+                            - Auto
+                            type: string
+                        type: object
+                    type: object
                   webhooks:
                     description: Webhooks describes the configuration of the queue
                       controller webhooks
@@ -8914,6 +9837,138 @@ spec:
                               otherwise to an implementation-defined value. Requests cannot exceed Limits.
                               More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
                             type: object
+                        type: object
+                    type: object
+                  vpa:
+                    description: VPA specifies Vertical Pod Autoscaler configuration
+                      for the scheduler
+                    properties:
+                      enabled:
+                        description: Enabled specifies if VPA should be enabled
+                        type: boolean
+                      resourcePolicy:
+                        description: ResourcePolicy controls how VPA computes recommended
+                          resources for containers
+                        properties:
+                          containerPolicies:
+                            description: Per-container resource policies.
+                            items:
+                              description: |-
+                                ContainerResourcePolicy controls how autoscaler computes the recommended
+                                resources for a specific container.
+                              properties:
+                                containerName:
+                                  description: |-
+                                    Name of the container or DefaultContainerResourcePolicy, in which
+                                    case the policy is used by the containers that don't have their own
+                                    policy specified.
+                                  type: string
+                                controlledResources:
+                                  description: |-
+                                    Specifies the type of recommendations that will be computed
+                                    (and possibly applied) by VPA.
+                                    If not specified, the default of [ResourceCPU, ResourceMemory] will be used.
+                                  items:
+                                    description: ResourceName is the name identifying
+                                      various resources in a ResourceList.
+                                    type: string
+                                  type: array
+                                controlledValues:
+                                  description: |-
+                                    Specifies which resource values should be controlled.
+                                    The default is "RequestsAndLimits".
+                                  enum:
+                                  - RequestsAndLimits
+                                  - RequestsOnly
+                                  type: string
+                                maxAllowed:
+                                  additionalProperties:
+                                    anyOf:
+                                    - type: integer
+                                    - type: string
+                                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                    x-kubernetes-int-or-string: true
+                                  description: |-
+                                    Specifies the maximum amount of resources that will be recommended
+                                    for the container. The default is no maximum.
+                                  type: object
+                                minAllowed:
+                                  additionalProperties:
+                                    anyOf:
+                                    - type: integer
+                                    - type: string
+                                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                    x-kubernetes-int-or-string: true
+                                  description: |-
+                                    Specifies the minimal amount of resources that will be recommended
+                                    for the container. The default is no minimum.
+                                  type: object
+                                mode:
+                                  description: Whether autoscaler is enabled for the
+                                    container. The default is "Auto".
+                                  enum:
+                                  - Auto
+                                  - "Off"
+                                  type: string
+                              type: object
+                            type: array
+                        type: object
+                      updatePolicy:
+                        description: UpdatePolicy controls when and how VPA applies
+                          changes to pod resources
+                        properties:
+                          evictionRequirements:
+                            description: |-
+                              EvictionRequirements is a list of EvictionRequirements that need to
+                              evaluate to true in order for a Pod to be evicted. If more than one
+                              EvictionRequirement is specified, all of them need to be fulfilled to allow eviction.
+                            items:
+                              description: |-
+                                EvictionRequirement defines a single condition which needs to be true in
+                                order to evict a Pod
+                              properties:
+                                changeRequirement:
+                                  description: EvictionChangeRequirement refers to
+                                    the relationship between the new target recommendation
+                                    for a Pod and its current requests, what kind
+                                    of change is necessary for the Pod to be evicted
+                                  enum:
+                                  - TargetHigherThanRequests
+                                  - TargetLowerThanRequests
+                                  type: string
+                                resources:
+                                  description: |-
+                                    Resources is a list of one or more resources that the condition applies
+                                    to. If more than one resource is given, the EvictionRequirement is fulfilled
+                                    if at least one resource meets `changeRequirement`.
+                                  items:
+                                    description: ResourceName is the name identifying
+                                      various resources in a ResourceList.
+                                    type: string
+                                  type: array
+                              required:
+                              - changeRequirement
+                              - resources
+                              type: object
+                            type: array
+                          minReplicas:
+                            description: |-
+                              Minimal number of replicas which need to be alive for Updater to attempt
+                              pod eviction (pending other checks like PDB). Only positive values are
+                              allowed. Overrides global '--min-replicas' flag.
+                            format: int32
+                            type: integer
+                          updateMode:
+                            description: |-
+                              Controls when autoscaler applies changes to the pod resources.
+                              The default is 'Auto'.
+                            enum:
+                            - "Off"
+                            - Initial
+                            - Recreate
+                            - InPlaceOrRecreate
+                            - Auto
+                            type: string
                         type: object
                     type: object
                 type: object

@@ -16,6 +16,20 @@ global:
   tolerations: []
   namespaceLabelSelector: {}
   podLabelSelector: {}
+  vpa:
+    enabled: false
+    updatePolicy:
+      updateMode: InPlaceOrRecreate
+      minReplicas: 1
+    resourcePolicy:
+      containerPolicies:
+        - containerName: "*"
+          minAllowed:
+            cpu: 50m
+            memory: 500Mi
+          maxAllowed:
+            cpu: 2
+            memory: 5Gi
   resourceReservation:
     namespace: kai-resource-reservation
     serviceAccount: kai-resource-reservation
@@ -78,6 +92,35 @@ scheduler:
   placementStrategy: binpack
   ports:
     metricsPort: 8080
+  # plugins allows overriding or adding custom scheduler plugins
+  # Built-in plugins can be disabled, reordered, or have their arguments changed.
+  # New plugins can be added by specifying a name not in the default set.
+  # Example:
+  # plugins:
+  #   elastic:
+  #     enabled: false
+  #   predicates:
+  #     priority: 50
+  #   proportion:
+  #     arguments:
+  #       kValue: "2.0"
+  #   mycustomplugin:
+  #     priority: 1050
+  #     arguments:
+  #       key: value
+  plugins: {}
+  # actions allows overriding or adding custom scheduler actions
+  # Built-in actions can be disabled or reordered.
+  # New actions can be added by specifying a name not in the default set.
+  # Example:
+  # actions:
+  #   consolidation:
+  #     enabled: false
+  #   allocate:
+  #     priority: 600
+  #   mycustomaction:
+  #     priority: 150
+  actions: {}
 
 queuecontroller:
   image:

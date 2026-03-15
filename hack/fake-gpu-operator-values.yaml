@@ -16,3 +16,9 @@ topology:
 
 environment:
   resourceReservationNamespace: kai-resource-reservation
+
+statusUpdater:
+  disableNodeLabeling: true
+
+draPlugin:
+  enabled: true

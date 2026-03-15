@@ -4,7 +4,7 @@ KAI Scheduler incorporates topology awareness and schedules workloads with consi
 ## Topological Information
 Topology information is derived from both Kubernetes node labels and the KAI Topology CRD:
 ```yaml
-apiVersion: kai.scheduler/v1
+apiVersion: kai.scheduler/v1alpha1
 kind: Topology
 metadata:
   name: "cluster-topology"

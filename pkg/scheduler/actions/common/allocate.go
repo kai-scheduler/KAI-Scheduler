@@ -7,14 +7,14 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/gpu_sharing"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/gpu_sharing"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 )
 
 func AllocateJob(ssn *framework.Session, stmt *framework.Statement, nodes []*node_info.NodeInfo,
@@ -121,6 +121,10 @@ func allocateTasksOnNodeSet(ssn *framework.Session, stmt *framework.Statement, n
 func allocateTask(ssn *framework.Session, stmt *framework.Statement, nodes []*node_info.NodeInfo,
 	task *pod_info.PodInfo, isPipelineOnly bool) (success bool) {
 	job := ssn.ClusterInfo.PodGroupInfos[task.Job]
+	if job == nil {
+		log.InfraLogger.Errorf("Failed to find job <%s> in session <%s>", task.Job, ssn.ID)
+		return false
+	}
 	err := ssn.PrePredicateFn(task, job)
 	if err != nil {
 		log.InfraLogger.V(6).Infof("pre-predicates failed on task %s/%s. Error: %v",
@@ -133,7 +137,7 @@ func allocateTask(ssn *framework.Session, stmt *framework.Statement, nodes []*no
 	}
 
 	log.InfraLogger.V(6).Infof("Looking for best node for task - Task: <%s/%s>, init requested: <%v>.",
-		task.Namespace, task.Name, task.ResReq)
+		task.Namespace, task.Name, task.ResReqVector)
 
 	orderedNodes := ssn.OrderedNodesByTask(nodes, task)
 	for _, node := range orderedNodes {
@@ -170,8 +174,8 @@ func allocateTaskToNode(ssn *framework.Session, stmt *framework.Statement, task 
 }
 
 func bindTaskToNode(ssn *framework.Session, stmt *framework.Statement, task *pod_info.PodInfo, node *node_info.NodeInfo) bool {
-	log.InfraLogger.V(6).Infof("Binding Task <%v/%v> to node <%v>, requires: %v GPUs",
-		task.Namespace, task.Name, node.Name, task.ResReq)
+	log.InfraLogger.V(6).Infof("Binding Task <%v/%v> to node <%v>, requires resources: %v",
+		task.Namespace, task.Name, node.Name, task.ResReqVector)
 
 	if err := stmt.Allocate(task, node.Name); err != nil {
 		log.InfraLogger.Errorf("Failed to bind Task %v on %v in Session %v, err: %v", task.UID, node.Name, ssn.ID, err)
@@ -181,8 +185,8 @@ func bindTaskToNode(ssn *framework.Session, stmt *framework.Statement, task *pod
 }
 
 func pipelineTaskToNode(ssn *framework.Session, stmt *framework.Statement, task *pod_info.PodInfo, node *node_info.NodeInfo, updateTasksIfExistsOnNode bool) bool {
-	log.InfraLogger.V(6).Infof("Pipelining Task <%v/%v> to node <%v> requires: %v GPUs",
-		task.Namespace, task.Name, node.Name, task.ResReq)
+	log.InfraLogger.V(6).Infof("Pipelining Task <%v/%v> to node <%v>, requires resources: %v",
+		task.Namespace, task.Name, node.Name, task.ResReqVector)
 
 	if err := stmt.Pipeline(task, node.Name, updateTasksIfExistsOnNode); err != nil {
 		log.InfraLogger.V(6).Infof("Failed to pipeline Task %v on %v in Session %v", task.UID, node.Name, ssn.ID)

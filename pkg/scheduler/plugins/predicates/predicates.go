@@ -21,23 +21,26 @@ package predicates
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	ksf "k8s.io/kube-scheduler/framework"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/cluster_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_internal"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_internal/predicates"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/scheduler_util"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/cluster_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/gpu_sharing"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal/predicates"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/scheduler_util"
 )
 
 const (
@@ -89,6 +92,7 @@ type predicatesPlugin struct {
 	storageSchedulingEnabled bool
 
 	skipPredicates SkipPredicates
+	ssn            *framework.Session
 }
 
 func New(_ framework.PluginArguments) framework.Plugin {
@@ -104,6 +108,7 @@ func (pp *predicatesPlugin) OnSessionOpen(ssn *framework.Session) {
 
 	pp.storageSchedulingEnabled = ssn.ScheduleCSIStorage()
 	pp.skipPredicates = SkipPredicates{}
+	pp.ssn = ssn
 
 	ssn.AddPrePredicateFn(func(task *pod_info.PodInfo, _ *podgroup_info.PodGroupInfo) error {
 		return evaluateTaskOnPrePredicate(task, k8sPredicates, pp.skipPredicates)
@@ -202,14 +207,8 @@ func (pp *predicatesPlugin) evaluateTaskOnPredicates(
 				" task: <%v/%v>, node: <%v>", task.Namespace, task.Name, node.Name))
 	}
 
-	podsCountForTask := 1
-	if task.IsSharedGPURequest() {
-		podsCountForTask += 1 // we need to include a *potential* reservation pod for fraction
-	}
-	if len(k8sNodeInfo.Pods)+podsCountForTask > node.MaxTaskNum {
-		log.InfraLogger.V(6).Infof("NodePodNumber predicates Task <%s/%s> on Node <%s> failed",
-			task.Namespace, task.Name, node.Name)
-		return common_info.NewFitError(task.Name, task.Namespace, node.Name, api.NodePodNumberExceeded)
+	if err := pp.checkMaxPodsWithGpuGroupReservation(task, node); err != nil {
+		return err
 	}
 
 	fit, reasons, err := scheduler_util.CheckNodeConditionPredicate(node.Node)
@@ -260,6 +259,71 @@ func (pp *predicatesPlugin) evaluateTaskOnPredicates(
 	}
 
 	return nil
+}
+
+func (pp *predicatesPlugin) checkMaxPodsWithGpuGroupReservation(
+	task *pod_info.PodInfo, node *node_info.NodeInfo) error {
+	availablePods := node.Idle.Get(v1.ResourcePods) + node.Releasing.Get(v1.ResourcePods)
+
+	if !task.IsSharedGPURequest() {
+		if availablePods > 0 {
+			return nil
+		}
+		return common_info.NewFitError(task.Name, task.Namespace, node.Name, api.NodePodNumberExceeded)
+	}
+
+	needsNewGpuGroup := pp.willCreateNewGpuGroup(task, node)
+	if !needsNewGpuGroup {
+		return nil
+	}
+
+	if availablePods < 2 {
+		return common_info.NewFitError(task.Name, task.Namespace, node.Name, api.NodePodNumberExceeded)
+	}
+
+	return nil
+}
+
+// willCreateNewGpuGroup determines if allocating this task will create a new GPU group
+// (and thus require a new reservation pod).
+func (pp *predicatesPlugin) willCreateNewGpuGroup(task *pod_info.PodInfo, node *node_info.NodeInfo) bool {
+	if pp.ssn == nil {
+		return true
+	}
+
+	fittingGPUs := pp.ssn.FittingGPUs(node, task)
+	gpuForSharingImmediate := gpu_sharing.GetNodePreferableGpuForSharing(fittingGPUs, node, task, false)
+
+	if gpuForSharingImmediate != nil && !gpuForSharingImmediate.IsReleasing {
+		return containsNewGpuGroup(gpuForSharingImmediate.Groups)
+	}
+
+	gpuForSharingPipelined := gpu_sharing.GetNodePreferableGpuForSharing(fittingGPUs, node, task, true)
+
+	if gpuForSharingPipelined != nil {
+		return containsNewGpuGroup(gpuForSharingPipelined.Groups)
+	}
+
+	// No GPU assignment possible - conservatively assume new group would be needed
+	return true
+}
+
+// containsNewGpuGroup checks if any of the GPU groups is a newly created one (UUID format).
+func containsNewGpuGroup(groups []string) bool {
+	for _, gpuGroup := range groups {
+		if isNewGpuGroup(gpuGroup) {
+			return true
+		}
+	}
+	return false
+}
+
+// isNewGpuGroup determines if a GPU group ID represents a new group (UUID) vs an existing one (numeric).
+func isNewGpuGroup(gpuGroup string) bool {
+	// New GPU groups are UUIDs (e.g., "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx")
+	// Existing GPU groups are numeric strings ("0", "1", "2", etc.)
+	_, err := strconv.Atoi(gpuGroup)
+	return err != nil // If not a number, it's a UUID = new group
 }
 
 func (pp *predicatesPlugin) OnSessionClose(_ *framework.Session) {}

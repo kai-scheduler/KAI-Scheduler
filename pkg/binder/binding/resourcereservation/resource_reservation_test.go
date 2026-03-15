@@ -22,7 +22,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
 const (
@@ -1128,8 +1128,8 @@ var _ = Describe("ResourceReservationService", func() {
 			Expect(container.Resources.Limits[v1.ResourceMemory]).To(Equal(resource.MustParse("200Mi")))
 
 			// Verify GPU resource is still set
-			gpuRequest := container.Resources.Requests[constants.GpuResource]
-			gpuLimit := container.Resources.Limits[constants.GpuResource]
+			gpuRequest := container.Resources.Requests[constants.NvidiaGpuResource]
+			gpuLimit := container.Resources.Limits[constants.NvidiaGpuResource]
 			Expect(gpuRequest.Value()).To(Equal(int64(1)))
 			Expect(gpuLimit.Value()).To(Equal(int64(1)))
 		})
@@ -1164,8 +1164,8 @@ var _ = Describe("ResourceReservationService", func() {
 			Expect(memLimitExists).To(BeFalse())
 
 			// Verify GPU resource is still set
-			gpuRequest := container.Resources.Requests[constants.GpuResource]
-			gpuLimit := container.Resources.Limits[constants.GpuResource]
+			gpuRequest := container.Resources.Requests[constants.NvidiaGpuResource]
+			gpuLimit := container.Resources.Limits[constants.NvidiaGpuResource]
 			Expect(gpuRequest.Value()).To(Equal(int64(1)))
 			Expect(gpuLimit.Value()).To(Equal(int64(1)))
 		})
@@ -1218,12 +1218,12 @@ var _ = Describe("ResourceReservationService", func() {
 				runtimeClassName:    "nvidia",
 				podResources: &v1.ResourceRequirements{
 					Requests: v1.ResourceList{
-						v1.ResourceCPU:        resource.MustParse("10m"),
-						constants.GpuResource: resource.MustParse("999"), // This should be ignored
+						v1.ResourceCPU:              resource.MustParse("10m"),
+						constants.NvidiaGpuResource: resource.MustParse("999"), // This should be ignored
 					},
 					Limits: v1.ResourceList{
-						v1.ResourceCPU:        resource.MustParse("100m"),
-						constants.GpuResource: resource.MustParse("999"), // This should be ignored
+						v1.ResourceCPU:              resource.MustParse("100m"),
+						constants.NvidiaGpuResource: resource.MustParse("999"), // This should be ignored
 					},
 				},
 				scalingPodNamespace: scalingPodsNamespace,
@@ -1240,8 +1240,8 @@ var _ = Describe("ResourceReservationService", func() {
 			Expect(container.Resources.Limits[v1.ResourceCPU]).To(Equal(resource.MustParse("100m")))
 
 			// Verify GPU resources are NOT overridden - should always be 1
-			gpuRequest := container.Resources.Requests[constants.GpuResource]
-			gpuLimit := container.Resources.Limits[constants.GpuResource]
+			gpuRequest := container.Resources.Requests[constants.NvidiaGpuResource]
+			gpuLimit := container.Resources.Limits[constants.NvidiaGpuResource]
 			Expect(gpuRequest.Value()).To(Equal(int64(1)), "GPU request should be 1, not overridden by podResources")
 			Expect(gpuLimit.Value()).To(Equal(int64(1)), "GPU limit should be 1, not overridden by podResources")
 		})

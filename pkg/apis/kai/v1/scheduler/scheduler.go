@@ -8,7 +8,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
@@ -30,9 +30,13 @@ type Scheduler struct {
 	// Replicas specifies the number of replicas of the scheduler service
 	// +kubebuilder:validation:Optional
 	Replicas *int32 `json:"replicas,omitempty"`
+
+	// VPA specifies Vertical Pod Autoscaler configuration for the scheduler
+	// +kubebuilder:validation:Optional
+	VPA *common.VPASpec `json:"vpa,omitempty"`
 }
 
-func (s *Scheduler) SetDefaultsWhereNeeded(replicaCount *int32) {
+func (s *Scheduler) SetDefaultsWhereNeeded(replicaCount *int32, globalVPA *common.VPASpec) {
 	s.Service = common.SetDefault(s.Service, &common.Service{})
 
 	s.Service.Resources = common.SetDefault(s.Service.Resources, &common.Resources{})
@@ -63,6 +67,13 @@ func (s *Scheduler) SetDefaultsWhereNeeded(replicaCount *int32) {
 	s.SchedulerService.SetDefaultsWhereNeeded()
 
 	s.Replicas = common.SetDefault(s.Replicas, ptr.To(ptr.Deref(replicaCount, 1)))
+
+	if s.VPA == nil {
+		s.VPA = globalVPA
+	}
+	if s.VPA != nil {
+		s.VPA.SetDefaultsWhereNeeded()
+	}
 }
 
 // Service defines configuration for the scheduler service

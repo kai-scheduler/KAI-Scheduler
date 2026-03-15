@@ -10,14 +10,15 @@ import (
 	v13 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/constant"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/testconfig"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/utils"
 )
 
 const ReplicaSetAppLabel = "replicaset-app-name"
 
 func CreateReplicasetObject(namespace, queueName string) *v1.ReplicaSet {
+	cfg := testconfig.GetConfig()
 	matchLabelValue := utils.GenerateRandomK8sName(10)
 
 	return &v1.ReplicaSet{
@@ -42,13 +43,13 @@ func CreateReplicasetObject(namespace, queueName string) *v1.ReplicaSet {
 					Labels: map[string]string{
 						constants.AppLabelName: "engine-e2e",
 						ReplicaSetAppLabel:     matchLabelValue,
-						"kai.scheduler/queue":  queueName,
+						cfg.QueueLabelKey:      queueName,
 					},
 				},
 				Spec: v12.PodSpec{
 					Containers: []v12.Container{
 						{
-							Image: "ubuntu",
+							Image: cfg.ContainerImage,
 							Name:  "ubuntu-container",
 							Args: []string{
 								"sleep",
@@ -58,7 +59,7 @@ func CreateReplicasetObject(namespace, queueName string) *v1.ReplicaSet {
 						},
 					},
 					TerminationGracePeriodSeconds: pointer.Int64(0),
-					SchedulerName:                 constant.SchedulerName,
+					SchedulerName:                 cfg.SchedulerName,
 					Tolerations: []v12.Toleration{
 						{
 							Key:      "nvidia.com/gpu",

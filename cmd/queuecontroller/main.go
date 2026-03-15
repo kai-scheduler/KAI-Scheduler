@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/NVIDIA/KAI-scheduler/cmd/queuecontroller/app"
+	"github.com/kai-scheduler/KAI-scheduler/cmd/queuecontroller/app"
 	"go.uber.org/zap/zapcore"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"

@@ -1,4 +1,5 @@
 bin/
+.claude/
 .idea/
 charts/
 cover.out

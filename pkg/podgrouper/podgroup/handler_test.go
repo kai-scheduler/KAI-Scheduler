@@ -8,10 +8,9 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
-	schedulingv2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	schedulingv2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 )
 
 func Test_createPodGroupForMetadata(t *testing.T) {
@@ -121,19 +120,15 @@ func Test_createPodGroupForMetadata(t *testing.T) {
 				MinAvailable: 10,
 				SubGroups: []*SubGroupMetadata{
 					{
-						Name:         "subgroup-1",
-						MinAvailable: 5,
-						PodsReferences: []*types.NamespacedName{
-							{Namespace: "test-namespace", Name: "pod-1"},
-						},
+						Name:                "subgroup-1",
+						MinAvailable:        5,
+						PodsReferences:      []string{"pod-1"},
 						TopologyConstraints: nil,
 					},
 					{
-						Name:         "subgroup-2",
-						MinAvailable: 5,
-						PodsReferences: []*types.NamespacedName{
-							{Namespace: "test-namespace", Name: "pod-2"},
-						},
+						Name:                "subgroup-2",
+						MinAvailable:        5,
+						PodsReferences:      []string{"pod-2"},
 						TopologyConstraints: nil,
 					},
 				},
