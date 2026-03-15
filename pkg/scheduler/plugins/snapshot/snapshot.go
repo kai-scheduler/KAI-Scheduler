@@ -159,9 +159,23 @@ func (sp *snapshotPlugin) serveSnapshot(writer http.ResponseWriter, request *htt
 		rawObjects.Topologies = []*kaiv1alpha1.Topology{}
 	}
 
-	rawObjects.ResourceClaims = sp.session.ClusterInfo.ResourceClaims
-	rawObjects.ResourceSlices = sp.session.ClusterInfo.ResourceSlices
-	rawObjects.DeviceClasses = sp.session.ClusterInfo.DeviceClasses
+	rawObjects.ResourceClaims, err = dataLister.ListResourceClaims()
+	if err != nil {
+		log.InfraLogger.Errorf("Error getting raw resource claims: %v", err)
+		rawObjects.ResourceClaims = []*resourceapi.ResourceClaim{}
+	}
+
+	rawObjects.ResourceSlices, err = dataLister.ListResourceSlices()
+	if err != nil {
+		log.InfraLogger.Errorf("Error getting raw resource slices: %v", err)
+		rawObjects.ResourceSlices = []*resourceapi.ResourceSlice{}
+	}
+
+	rawObjects.DeviceClasses, err = dataLister.ListDeviceClasses()
+	if err != nil {
+		log.InfraLogger.Errorf("Error getting raw device classes: %v", err)
+		rawObjects.DeviceClasses = []*resourceapi.DeviceClass{}
+	}
 
 	discoverySnapshot := &DiscoverySnapshot{}
 	discoveryClient := sp.session.Cache.KubeClient().Discovery()

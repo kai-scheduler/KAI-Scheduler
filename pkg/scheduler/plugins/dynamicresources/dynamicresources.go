@@ -57,44 +57,28 @@ func (drap *draPlugin) Name() string {
 }
 
 func (drap *draPlugin) OnSessionOpen(ssn *framework.Session) {
-	fwork := ssn.InternalK8sPlugins().FrameworkHandle
-
-	drap.manager = fwork.SharedDRAManager()
-
 	drap.queueLabelKey = ssn.SchedulerParams.QueueLabelKey
+
+	k8sPlugins := ssn.InternalK8sPlugins()
+	if k8sPlugins != nil && k8sPlugins.ResourceSliceTracker != nil {
+		drap.manager = k8s_utils.NewSessionDRAManager(
+			ssn.ClusterInfo.ResourceClaims,
+			k8sPlugins.ResourceSliceTracker,
+			k8sPlugins.InformerFactory,
+		)
+		if fh, ok := k8sPlugins.FrameworkHandle.(*k8s_utils.K8sFramework); ok {
+			fh.SetSharedDRAManager(drap.manager)
+		}
+	}
 
 	ssn.AddEventHandler(&framework.EventHandler{
 		AllocateFunc:   drap.allocateHandlerFn(ssn),
 		DeallocateFunc: drap.deallocateHandlerFn(ssn),
 	})
 
-	// Restore all claims to the informer's version before processing pending claims.
-	// This reconciles any divergent assume-cache state (latestObj ≠ apiObj) that builds
-	// up across sessions: when deallocateResourceClaim calls AssumeClaimAfterAPICall(nil)
-	// at the same ResourceVersion that the binder already confirmed in etcd, the
-	// assume-cache's "newer-version-only" update rule permanently suppresses the informer
-	// re-sync.  As a result onDelete fires with latestObj=nil, removeDevices is a no-op,
-	// and the device stays in allocatedDevices.ids as a ghost.  Restoring at session open
-	// resets latestObj = apiObj so that onDelete always carries the correct allocation.
-	drap.restoreAllClaims()
 	drap.assumePendingClaims(ssn)
 
 	ssn.AddPrePredicateFn(drap.preFilter)
-}
-
-// restoreAllClaims calls AssumedClaimRestore for every claim currently in the assume-cache.
-// This reconciles divergent assume-cache state (latestObj ≠ apiObj) that accumulates
-// across scheduling sessions, preventing ghost device entries in allocatedDevices.ids.
-func (drap *draPlugin) restoreAllClaims() {
-	claims, err := drap.manager.ResourceClaims().List()
-	if err != nil {
-		log.InfraLogger.Errorf("Failed to list resource claims for state reconciliation: %v", err)
-		return
-	}
-	for _, claim := range claims {
-		drap.manager.ResourceClaims().AssumedClaimRestore(claim.Namespace, claim.Name)
-	}
-	log.InfraLogger.V(4).Infof("Restored %d resource claims to informer state", len(claims))
 }
 
 func (drap *draPlugin) assumePendingClaims(ssn *framework.Session) {
