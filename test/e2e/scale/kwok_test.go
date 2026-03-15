@@ -199,6 +199,11 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 			wait.ForAtLeastNNodes(ctx, testCtx.ControllerClient, map[string]string{"test": "topology-e2e"}, len(topologyNodePools))
 			duration = time.Since(startTime)
 			GinkgoLogr.Info("Time to wait for topology nodes to be ready", "duration", duration)
+
+			startTime = time.Now()
+			wait.ForGPUOPeratorUpdateOnKWOKNodes(ctx, testCtx.ControllerClient, totalNodes, gpusPerNode)
+			duration = time.Since(startTime)
+			GinkgoLogr.Info("Time to wait for GPU operator to update topology nodes", "duration", duration)
 		})
 
 		AfterAll(func(ctx context.Context) {
