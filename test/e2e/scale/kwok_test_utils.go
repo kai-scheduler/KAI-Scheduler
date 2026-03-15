@@ -212,7 +212,7 @@ func deleteJobsFromAllNodes(ctx context.Context, testCtx *testcontext.TestContex
 	err := testCtx.ControllerClient.List(ctx, pods,
 		runtimeClient.InNamespace(queue.GetConnectedNamespaceToQueue(testQueue)),
 		runtimeClient.MatchingLabels(map[string]string{
-			"runai/queue": testQueue.Name,
+			testconfig.GetConfig().QueueLabelKey: testQueue.Name,
 		}))
 	Expect(err).NotTo(HaveOccurred())
 
