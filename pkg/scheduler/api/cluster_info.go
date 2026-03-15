@@ -45,6 +45,8 @@ type ClusterInfo struct {
 	PodGroupInfos               map[common_info.PodGroupID]*podgroup_info.PodGroupInfo
 	Nodes                       map[string]*node_info.NodeInfo
 	ResourceClaims              []*resourceapi.ResourceClaim
+	ResourceSlices              []*resourceapi.ResourceSlice
+	DeviceClasses               []*resourceapi.DeviceClass
 	BindRequests                bindrequest_info.BindRequestMap
 	BindRequestsForDeletedNodes []*bindrequest_info.BindRequestInfo
 	Queues                      map[common_info.QueueID]*queue_info.QueueInfo

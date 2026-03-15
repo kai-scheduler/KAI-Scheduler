@@ -140,6 +140,16 @@ func (c *ClusterInfo) Snapshot() (*api.ClusterInfo, error) {
 		err = errors.WithStack(fmt.Errorf("error listing resource claims: %w", err))
 		return nil, err
 	}
+	snapshot.ResourceSlices, err = c.dataLister.ListResourceSlices()
+	if err != nil {
+		err = errors.WithStack(fmt.Errorf("error listing resource slices: %w", err))
+		return nil, err
+	}
+	snapshot.DeviceClasses, err = c.dataLister.ListDeviceClasses()
+	if err != nil {
+		err = errors.WithStack(fmt.Errorf("error listing device classes: %w", err))
+		return nil, err
+	}
 	snapshot.BindRequests, snapshot.BindRequestsForDeletedNodes, err = c.snapshotBindRequests(snapshot.Nodes)
 	if err != nil {
 		err = errors.WithStack(fmt.Errorf("error snapshotting bind requests: %w", err))
