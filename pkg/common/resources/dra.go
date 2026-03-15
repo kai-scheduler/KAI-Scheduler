@@ -10,8 +10,18 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
+	resourceapiv1beta1 "k8s.io/api/resource/v1beta1"
+	resourceapiv1beta2 "k8s.io/api/resource/v1beta2"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/kubernetes"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
+	draclient "k8s.io/dynamic-resource-allocation/client"
+	resourceinstall "k8s.io/kubernetes/pkg/apis/resource/install"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -185,4 +195,145 @@ func countGPUDevicesFromClaim(claim *resourceapi.ResourceClaim) int64 {
 	}
 
 	return totalCount
+}
+
+type DRAVersion int
+
+const (
+	DRADisabled DRAVersion = iota
+	DRAV1Beta1
+	DRAV1Beta2
+	DRAV1
+)
+
+func (v DRAVersion) String() string {
+	switch v {
+	case DRAV1:
+		return "V1"
+	case DRAV1Beta2:
+		return "V1beta2"
+	case DRAV1Beta1:
+		return "V1beta1"
+	case DRADisabled:
+		return "Disabled"
+	default:
+		return "Unknown"
+	}
+}
+
+var draConversionScheme = func() *runtime.Scheme {
+	s := runtime.NewScheme()
+	utilruntime.Must(clientgoscheme.AddToScheme(s))
+	resourceinstall.Install(s)
+	return s
+}()
+
+func NewDRAClient(config *rest.Config) *draclient.Client {
+	kubeClient, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return nil
+	}
+	return draclient.New(kubeClient)
+}
+
+func DetectDRAVersion(draClient *draclient.Client) DRAVersion {
+	if draClient == nil {
+		return DRADisabled
+	}
+
+	// Trigger version detection by making a probe call
+	_, _ = draClient.ResourceClaims("").List(context.Background(), metav1.ListOptions{Limit: 1})
+
+	switch draClient.CurrentAPI() {
+	case "V1":
+		return DRAV1
+	case "V1beta2":
+		return DRAV1Beta2
+	case "V1beta1":
+		return DRAV1Beta1
+	default:
+		return DRADisabled
+	}
+}
+
+func (v DRAVersion) CacheObject() client.Object {
+	switch v {
+	case DRAV1:
+		return &resourceapi.ResourceClaim{}
+	case DRAV1Beta2:
+		return &resourceapiv1beta2.ResourceClaim{}
+	case DRAV1Beta1:
+		return &resourceapiv1beta1.ResourceClaim{}
+	default:
+		return nil
+	}
+}
+
+func FetchPodResourceClaims(
+	ctx context.Context, pod *v1.Pod, kubeClient client.Client, draVersion DRAVersion,
+) ([]*resourceapi.ResourceClaim, error) {
+	if len(pod.Spec.ResourceClaims) == 0 || draVersion == DRADisabled {
+		return nil, nil
+	}
+
+	var claims []*resourceapi.ResourceClaim
+	for _, podClaim := range pod.Spec.ResourceClaims {
+		claimName, err := GetResourceClaimName(pod, &podClaim)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get resource claim name for pod %s/%s, claim %s: %w",
+				pod.Namespace, pod.Name, podClaim.Name, err)
+		}
+
+		key := types.NamespacedName{Namespace: pod.Namespace, Name: claimName}
+		claim, err := fetchResourceClaim(ctx, kubeClient, key, draVersion)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get resource claim %s/%s for pod %s/%s: %w",
+				pod.Namespace, claimName, pod.Namespace, pod.Name, err)
+		}
+		claims = append(claims, claim)
+	}
+	return claims, nil
+}
+
+func fetchResourceClaim(
+	ctx context.Context, kubeClient client.Client, key types.NamespacedName, draVersion DRAVersion,
+) (*resourceapi.ResourceClaim, error) {
+	switch draVersion {
+	case DRAV1:
+		claim := &resourceapi.ResourceClaim{}
+		return claim, kubeClient.Get(ctx, key, claim)
+	case DRAV1Beta2:
+		beta := &resourceapiv1beta2.ResourceClaim{}
+		if err := kubeClient.Get(ctx, key, beta); err != nil {
+			return nil, err
+		}
+		v1Claim := &resourceapi.ResourceClaim{}
+		if err := draConversionScheme.Convert(beta, v1Claim, nil); err != nil {
+			return nil, fmt.Errorf("failed to convert v1beta2 ResourceClaim to v1: %w", err)
+		}
+		return v1Claim, nil
+	case DRAV1Beta1:
+		beta := &resourceapiv1beta1.ResourceClaim{}
+		if err := kubeClient.Get(ctx, key, beta); err != nil {
+			return nil, err
+		}
+		v1Claim := &resourceapi.ResourceClaim{}
+		if err := draConversionScheme.Convert(beta, v1Claim, nil); err != nil {
+			return nil, fmt.Errorf("failed to convert v1beta1 ResourceClaim to v1: %w", err)
+		}
+		return v1Claim, nil
+	default:
+		return nil, fmt.Errorf("unsupported DRA version %d", draVersion)
+	}
+}
+
+func DRAGPUResourceListFromClaims(claims []*resourceapi.ResourceClaim) v1.ResourceList {
+	deviceClassCounts := ExtractDRAGPUResourcesFromClaims(claims)
+	gpuResources := v1.ResourceList{}
+	for deviceClassName, count := range deviceClassCounts {
+		if count > 0 {
+			gpuResources[v1.ResourceName(deviceClassName)] = *resource.NewQuantity(count, resource.DecimalSI)
+		}
+	}
+	return gpuResources
 }

@@ -15,6 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	commonresources "github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgroupcontroller/controllers/cluster_relations"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgroupcontroller/controllers/metadata"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgroupcontroller/controllers/patcher"
@@ -74,7 +75,7 @@ func (r *PodGroupReconciler) calculatePodGroupMetadata(
 	}
 
 	for _, relatedPod := range relatedPods.Items {
-		if err := addPodMetadata(ctx, podGroupMetadata, relatedPod, r.Client); err != nil {
+		if err := addPodMetadata(ctx, podGroupMetadata, relatedPod, r.Client, r.DRAVersion); err != nil {
 			return nil, err
 		}
 	}
@@ -83,11 +84,12 @@ func (r *PodGroupReconciler) calculatePodGroupMetadata(
 }
 
 func addPodMetadata(
-	ctx context.Context, podGroupMetadata *metadata.PodGroupMetadata, pod v1.Pod, kubeclient client.Client,
+	ctx context.Context, podGroupMetadata *metadata.PodGroupMetadata, pod v1.Pod,
+	kubeclient client.Client, draVersion commonresources.DRAVersion,
 ) error {
 	logger := log.FromContext(ctx)
 
-	podMetadata, err := metadata.GetPodMetadata(ctx, &pod, kubeclient)
+	podMetadata, err := metadata.GetPodMetadata(ctx, &pod, kubeclient, draVersion)
 	if err != nil {
 		logger.Error(err, fmt.Sprintf("Failed to calculate metadata for pod %s/%s", pod.Namespace, pod.Name))
 		return err
