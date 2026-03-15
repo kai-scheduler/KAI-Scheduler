@@ -1,0 +1,96 @@
+# SPDX-FileCopyrightText: Copyright (c) 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Bug Report Form
+description: File a bug report
+title: "[BUG]: "
+labels: ["bug"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report!
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: What version of KAI-Scheduler are you running?
+      placeholder: "example: 0.4.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: installation-method
+    attributes:
+      label: Which installation method(s) does this occur on?
+      multiple: true
+      options:
+        - Helm
+        - Manifest
+        - Source
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the bug.
+      description: Also tell us, what did you expect to happen?
+      placeholder: XYZ occured, I expected QRS results
+    validations:
+      required: true
+
+  - type: textarea
+    id: mvr
+    attributes:
+      label: Minimum reproducible example
+      description: Please supply a [minimum reproducible code example](https://matthewrocklin.com/blog/work/2018/02/28/minimal-bug-reports) here
+      render: shell
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: Please paste relevant error and log output here
+      render: shell
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment details
+      description: Please provide relevant environment details
+      value: |
+        - Kubernetes version:
+        - KAI-Scheduler version:
+        - Cloud provider or hardware configuration:
+        - Tools used together with KAI-Scheduler:
+      render: markdown
+
+  - type: textarea
+    id: misc
+    attributes:
+      label: Other/Misc.
+      description: Please enter any other helpful information here.
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Code of Conduct
+      description: By submitting this issue, you agree to follow our [Code of Conduct](https://github.com/kai-scheduler/kai-scheduler/blob/main/CODE_OF_CONDUCT.md)
+      options:
+        - label: I agree to follow KAI-Scheduler's Code of Conduct
+          required: true
+        - label: I have searched the [open bugs](https://github.com/kai-scheduler/kai-scheduler/issues?q=is%3Aopen+is%3Aissue+label%3Abug) and have found no duplicates for this bug report
+          required: true
