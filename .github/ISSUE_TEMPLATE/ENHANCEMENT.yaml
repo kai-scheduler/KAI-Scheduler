@@ -1,0 +1,30 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+name: Enhancement
+description: Suggest an idea for KAI Scheduler
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this KAI Scheduler feature request form!
+  - type: textarea
+    id: feature
+    attributes:
+      label: What you would like to be added?
+      description: |
+        A clear and concise description of what you want to add to KAI Scheduler.
+    validations:
+      required: true
+  - type: textarea
+    id: rationale
+    attributes:
+      label: Why is this needed?
+    validations:
+      required: true
+  - type: markdown
+    attributes:
+      value: Love this feature? Give it a 👍 below
+     
+    

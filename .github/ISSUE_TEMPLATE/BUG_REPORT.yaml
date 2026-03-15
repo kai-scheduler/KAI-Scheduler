@@ -1,0 +1,35 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+name: Bug Report
+description: Tell us about a problem you are experiencing with KAI Scheduler
+labels: ["bug"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: |
+        Please provide as much info as possible. Not doing so may result in your bug not being
+        addressed in a timely manner.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      value: |
+        - Kubernetes version
+        - KAI Scheduler version
+        - Cloud provider or hardware configuration
+        - Tools that you are using KAI together with
+        - Anything else that is relevant
+    validations:
+  - type: markdown
+    attributes:
+      value: Impacted by this bug? Give it a 👍 below
