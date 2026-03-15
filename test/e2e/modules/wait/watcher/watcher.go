@@ -40,7 +40,7 @@ func ForEventCustomTimeout(ctx context.Context, client runtimeClient.WithWatch, 
 	logger := log.FromContext(ctx)
 
 	watcher := eventWatcher.watch(ctx)
-	defer watcher.Stop()
+	defer func() { watcher.Stop() }()
 
 	eventWatcher.sync(ctx)
 	if eventWatcher.satisfied() {
@@ -82,9 +82,10 @@ func ForEventCustomTimeout(ctx context.Context, client runtimeClient.WithWatch, 
 				if eventWatcher.satisfied() {
 					return true
 				}
-				logger.Error(nil, "WaitForEvent watcher channel closed")
-				utils.LogClusterState(client, logger)
-				return false
+				// Watch channel closed (normal K8s server-side timeout); restart
+				watcher.Stop()
+				watcher = eventWatcher.watch(ctx)
+				continue
 			}
 			if event.Type == watch.Error {
 				err := ignoreContextCancelled(event)

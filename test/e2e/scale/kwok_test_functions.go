@@ -25,6 +25,7 @@ import (
 	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/testconfig"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
 )
 
@@ -112,7 +113,7 @@ func fillClusterWithJobs(
 	GinkgoLogr.Info("Waiting for pods creation")
 	wait.ForAtLeastNPodCreation(ctx, testCtx.ControllerClient, metav1.LabelSelector{
 		MatchLabels: map[string]string{
-			"runai/queue": testQueue.Name,
+			testconfig.GetConfig().QueueLabelKey: testQueue.Name,
 		},
 	}, totalNumberOfJobs)
 
