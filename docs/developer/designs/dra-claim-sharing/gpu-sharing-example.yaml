@@ -1,0 +1,74 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+# Originally copied from https://github.com/jgehrcke/k8s-dra-driver-gpu/blob/main/demo/specs/quickstart/gpu-test3.yaml
+
+# One shared, global claim providing access to a GPU
+# Two pods, each asking for access to the shared GPU
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gpu-test3
+
+---
+apiVersion: resource.k8s.io/v1beta1
+kind: ResourceClaim
+metadata:
+  namespace: gpu-test3
+  name: single-gpu
+spec:
+  devices:
+    requests:
+    - name: gpu
+      deviceClassName: gpu.nvidia.com
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: gpu-test3
+  name: pod1
+  labels:
+    app: pod
+spec:
+  containers:
+  - name: ctr
+    image: ubuntu:22.04
+    command: ["bash", "-c"]
+    args: ["nvidia-smi -L; trap 'exit 0' TERM; sleep 9999 & wait"]
+    resources:
+      claims:
+      - name: shared-gpu
+  resourceClaims:
+  - name: shared-gpu
+    resourceClaimName: single-gpu
+  tolerations:
+  - key: "nvidia.com/gpu"
+    operator: "Exists"
+    effect: "NoSchedule"
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: gpu-test3
+  name: pod2
+  labels:
+    app: pod
+spec:
+  containers:
+  - name: ctr
+    image: ubuntu:22.04
+    command: ["bash", "-c"]
+    args: ["nvidia-smi -L; trap 'exit 0' TERM; sleep 9999 & wait"]
+    resources:
+      claims:
+      - name: shared-gpu
+  resourceClaims:
+  - name: shared-gpu
+    resourceClaimName: single-gpu
+  tolerations:
+  - key: "nvidia.com/gpu"
+    operator: "Exists"
+    effect: "NoSchedule"
