@@ -11,7 +11,6 @@ import (
 	. "go.uber.org/mock/gomock"
 	resourceapi "k8s.io/api/resource/v1"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/k8s_utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/allocate"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/consolidation"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/preempt"
@@ -137,15 +136,10 @@ func runSchedulerOneRound(testMetadata *TestTopologyMetadata, controller *Contro
 	}
 	if len(testMetadata.TestDRAObjects.ResourceClaims) > 0 {
 		k8sPlugins := (*ssn).InternalK8sPlugins()
-		if k8sPlugins == nil {
+		if k8sPlugins == nil || k8sPlugins.SessionDRAManager == nil {
 			return
 		}
-		fh, ok := k8sPlugins.FrameworkHandle.(*k8s_utils.K8sFramework)
-		if !ok {
-			return
-		}
-		draManager := fh.SharedDRAManager()
-		claims, err := draManager.ResourceClaims().List()
+		claims, err := k8sPlugins.SessionDRAManager.ResourceClaims().List()
 		if err != nil {
 			log.InfraLogger.Errorf("Failed to list claims from DRA manager: %v", err)
 			return

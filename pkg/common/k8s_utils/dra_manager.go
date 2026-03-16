@@ -18,42 +18,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-// MutableDRAManager is a proxy that delegates to a swappable underlying SharedDRAManager.
-// This allows the k8s internal DRA plugin (which stores the manager at init time) to always
-// use the current session-scoped manager set by the KAI DRA plugin.
-type MutableDRAManager struct {
-	current k8sframework.SharedDRAManager
-}
-
-func NewMutableDRAManager() *MutableDRAManager {
-	return &MutableDRAManager{}
-}
-
-func (m *MutableDRAManager) Set(manager k8sframework.SharedDRAManager) {
-	m.current = manager
-}
-
-func (m *MutableDRAManager) ResourceClaims() k8sframework.ResourceClaimTracker {
-	if m.current == nil {
-		return nil
-	}
-	return m.current.ResourceClaims()
-}
-
-func (m *MutableDRAManager) ResourceSlices() k8sframework.ResourceSliceLister {
-	if m.current == nil {
-		return nil
-	}
-	return m.current.ResourceSlices()
-}
-
-func (m *MutableDRAManager) DeviceClasses() k8sframework.DeviceClassLister {
-	if m.current == nil {
-		return nil
-	}
-	return m.current.DeviceClasses()
-}
-
 // snapshotInformer implements assumecache.Informer by delivering a static set of objects
 // to the registered handler on construction. No further events are delivered afterward,
 // isolating the cache from live informer updates.

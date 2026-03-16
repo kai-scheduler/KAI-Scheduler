@@ -40,11 +40,10 @@ import (
 // This is a stand-in for K8sFramework Handle that kubernetes uses for its plugins.
 // Only the methods needed for the predicate plugins are implemented.
 type K8sFramework struct {
-	kubeClient       kubernetes.Interface
-	informerFactory  informers.SharedInformerFactory
-	nodeInfoLister   k8sframework.NodeInfoLister
-	parallelizer     parallelize.Parallelizer
-	sharedDRAManager *MutableDRAManager
+	kubeClient      kubernetes.Interface
+	informerFactory informers.SharedInformerFactory
+	nodeInfoLister  k8sframework.NodeInfoLister
+	parallelizer    parallelize.Parallelizer
 }
 
 var _ k8sframework.Handle = &K8sFramework{}
@@ -172,11 +171,7 @@ func (f *K8sFramework) Activate(logger klog.Logger, pods map[string]*v1.Pod) {
 }
 
 func (f *K8sFramework) SharedDRAManager() k8sframework.SharedDRAManager {
-	return f.sharedDRAManager
-}
-
-func (f *K8sFramework) SetSharedDRAManager(manager k8sframework.SharedDRAManager) {
-	f.sharedDRAManager.Set(manager)
+	return nil
 }
 
 func (f *K8sFramework) APICacher() k8sframework.APICacher {
@@ -195,10 +190,9 @@ func NewFrameworkHandle(
 ) k8sframework.Handle {
 	metrics.InitMetrics()
 	return &K8sFramework{
-		kubeClient:       client,
-		informerFactory:  informerFactory,
-		nodeInfoLister:   nodeInfoLister,
-		parallelizer:     parallelize.NewParallelizer(parallelize.DefaultParallelism),
-		sharedDRAManager: NewMutableDRAManager(),
+		kubeClient:      client,
+		informerFactory: informerFactory,
+		nodeInfoLister:  nodeInfoLister,
+		parallelizer:    parallelize.NewParallelizer(parallelize.DefaultParallelism),
 	}
 }
