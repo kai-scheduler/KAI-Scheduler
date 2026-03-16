@@ -10,10 +10,7 @@ import (
 	"time"
 )
 
-var (
-	generatedNames     = make(map[string]bool)
-	generatedNamesLock sync.Mutex
-)
+var generatedNames sync.Map
 
 func GenerateRandomK8sName(l int) string {
 	str := "abcdefghijklmnopqrstuvwxyz"
@@ -26,12 +23,8 @@ func GenerateRandomK8sName(l int) string {
 		}
 		name := string(result)
 
-		generatedNamesLock.Lock()
-		if !generatedNames[name] {
-			generatedNames[name] = true
-			generatedNamesLock.Unlock()
+		if _, loaded := generatedNames.LoadOrStore(name, true); !loaded {
 			return name
 		}
-		generatedNamesLock.Unlock()
 	}
 }
