@@ -161,7 +161,7 @@ func runSchedulerOneRound(testMetadata *TestTopologyMetadata, controller *Contro
 				continue
 			}
 			status := clusterClaim.Status
-			if status.Allocation != nil || len(status.ReservedFor) > 0 {
+			if status.Allocation != nil || len(status.ReservedFor) > 0 || len(status.Devices) > 0 {
 				claimMetadata.ClaimStatus = status.DeepCopy()
 			} else {
 				claimMetadata.ClaimStatus = nil
