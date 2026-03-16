@@ -24,6 +24,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Fixed scheduling-constraints signature hashing for `Priority` and container `HostPort` by encoding full `int32` values, preventing byte-truncation collisions and flaky signature tests.
 - Fixed rollback in scheduling simulations with DRA [#1168](https://github.com/NVIDIA/KAI-Scheduler/pull/1168) [itsomri](https://github.com/itsomri)
 - Fixed a potential state corruption in DRA scheduling simulations [#1219](https://github.com/kai-scheduler/KAI-Scheduler/pull/1219) [itsomri](https://github.com/itsomri)
+- Fixed operator reconcile loop caused by status-only updates triggering re-reconciliation. #1229 [cypres](https://github.com/cypres)
 
 ## [v0.13.0] - 2026-03-02
 ### Added
