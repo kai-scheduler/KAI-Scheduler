@@ -218,7 +218,10 @@ func DetectDRAAPIVersion(draClient *draclient.Client) string {
 	if draClient == nil {
 		return ""
 	}
-	_, _ = draClient.ResourceClaims("").List(context.Background(), metav1.ListOptions{Limit: 1})
+	_, err := draClient.ResourceClaims("").List(context.Background(), metav1.ListOptions{Limit: 1})
+	if err != nil {
+		return ""
+	}
 	return draClient.CurrentAPI()
 }
 
