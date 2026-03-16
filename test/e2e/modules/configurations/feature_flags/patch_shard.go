@@ -14,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/configurations"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/constant"
 	testContext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
@@ -43,7 +44,7 @@ func patchShard(
 
 	// These lines are here to workaround shard status issue - RUN-13930:
 	engineConfig := &kaiv1.Config{}
-	Expect(testCtx.ControllerClient.Get(ctx, types.NamespacedName{Name: "engine-config"}, engineConfig)).To(Succeed())
+	Expect(testCtx.ControllerClient.Get(ctx, types.NamespacedName{Name: constants.DefaultKAIConfigSingeltonInstanceName}, engineConfig)).To(Succeed())
 
 	schedulerAppName := "kai-scheduler-" + shardName
 	err = testCtx.ControllerClient.DeleteAllOf(
