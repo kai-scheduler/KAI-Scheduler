@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- Fixed a potential state corruption in DRA scheduling simulations [#1225](https://github.com/kai-scheduler/KAI-Scheduler/pull/1225) [itsomri](https://github.com/itsomri)
+
 ## [v0.13.2] - 2026-03-13
 ### Fixed
 - Fixed rollback in scheduling simulations with DRA [#1168](https://github.com/NVIDIA/KAI-Scheduler/pull/1168) [itsomri](https://github.com/itsomri)

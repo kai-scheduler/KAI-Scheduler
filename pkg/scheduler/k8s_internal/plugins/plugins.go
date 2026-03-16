@@ -8,9 +8,9 @@ import (
 
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
+	resourceslicetracker "k8s.io/dynamic-resource-allocation/resourceslice/tracker"
 	"k8s.io/kubernetes/pkg/scheduler/apis/config"
 	k8sframework "k8s.io/kubernetes/pkg/scheduler/framework"
-	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources"
 	k8splfeature "k8s.io/kubernetes/pkg/scheduler/framework/plugins/feature"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/interpodaffinity"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/nodeaffinity"
@@ -23,15 +23,17 @@ import (
 )
 
 type K8sPlugins struct {
-	FrameworkHandle k8sframework.Handle
-	Features        k8splfeature.Features
+	FrameworkHandle      k8sframework.Handle
+	Features             k8splfeature.Features
+	InformerFactory      informers.SharedInformerFactory
+	ResourceSliceTracker *resourceslicetracker.Tracker
+	SessionDRAManager    k8sframework.SharedDRAManager
 
-	NodePorts        k8sframework.Plugin
-	TaintToleration  k8sframework.Plugin
-	NodeAffinity     k8sframework.Plugin
-	PodAffinity      k8sframework.Plugin
-	VolumeBinding    k8sframework.Plugin
-	DynamicResources k8sframework.Plugin
+	NodePorts       k8sframework.Plugin
+	TaintToleration k8sframework.Plugin
+	NodeAffinity    k8sframework.Plugin
+	PodAffinity     k8sframework.Plugin
+	VolumeBinding   k8sframework.Plugin
 }
 
 func InitializeInternalPlugins(
@@ -44,6 +46,13 @@ func InitializeInternalPlugins(
 		client, informerFactory, nodeInfoLister,
 	)
 	initiatedPlugins.FrameworkHandle = k8sFrameworkHandle
+	initiatedPlugins.InformerFactory = informerFactory
+
+	tracker, err := k8s_utils.StartResourceSliceTracker(informerFactory, client)
+	if err != nil {
+		log.InfraLogger.Errorf("Failed to start resource slice tracker: %v", err)
+	}
+	initiatedPlugins.ResourceSliceTracker = tracker
 
 	features := k8s_utils.GetK8sFeatures()
 	initiatedPlugins.Features = features
@@ -81,14 +90,6 @@ func InitializeInternalPlugins(
 		initiatedPlugins.VolumeBinding = nil
 	} else {
 		initiatedPlugins.VolumeBinding = plugin
-	}
-
-	draArgs := &config.DynamicResourcesArgs{}
-	if plugin, err := dynamicresources.New(context.Background(), draArgs, initiatedPlugins.FrameworkHandle, initiatedPlugins.Features); err != nil {
-		log.InfraLogger.Errorf("Failed to create dynamicresources plugin: %v", err)
-		initiatedPlugins.DynamicResources = nil
-	} else {
-		initiatedPlugins.DynamicResources = plugin
 	}
 
 	return initiatedPlugins

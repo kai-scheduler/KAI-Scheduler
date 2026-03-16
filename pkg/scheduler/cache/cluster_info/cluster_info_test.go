@@ -2123,6 +2123,8 @@ func TestSnapshotWithListerErrors(t *testing.T) {
 					},
 				}, nil)
 				mdl.EXPECT().ListResourceClaims().Return([]*resourceapi.ResourceClaim{}, nil)
+				mdl.EXPECT().ListResourceSlices().Return([]*resourceapi.ResourceSlice{}, nil)
+				mdl.EXPECT().ListDeviceClasses().Return([]*resourceapi.DeviceClass{}, nil)
 				mdl.EXPECT().ListBindRequests().Return([]*schedulingv1alpha2.BindRequest{}, nil)
 				mdl.EXPECT().ListQueues().Return(nil, fmt.Errorf(successErrorMsg))
 			},
@@ -2133,6 +2135,8 @@ func TestSnapshotWithListerErrors(t *testing.T) {
 				mdl.EXPECT().ListResourceSlicesByNode().Return(map[string][]*resourceapi.ResourceSlice{}, nil)
 				mdl.EXPECT().ListPods().Return([]*corev1.Pod{}, nil)
 				mdl.EXPECT().ListResourceClaims().Return([]*resourceapi.ResourceClaim{}, nil)
+				mdl.EXPECT().ListResourceSlices().Return([]*resourceapi.ResourceSlice{}, nil)
+				mdl.EXPECT().ListDeviceClasses().Return([]*resourceapi.DeviceClass{}, nil)
 				mdl.EXPECT().ListBindRequests().Return([]*schedulingv1alpha2.BindRequest{}, nil)
 				mdl.EXPECT().ListQueues().Return(nil, fmt.Errorf(successErrorMsg))
 			},
@@ -2143,6 +2147,8 @@ func TestSnapshotWithListerErrors(t *testing.T) {
 				mdl.EXPECT().ListResourceSlicesByNode().Return(map[string][]*resourceapi.ResourceSlice{}, nil)
 				mdl.EXPECT().ListPods().Return([]*corev1.Pod{}, nil)
 				mdl.EXPECT().ListResourceClaims().Return([]*resourceapi.ResourceClaim{}, nil)
+				mdl.EXPECT().ListResourceSlices().Return([]*resourceapi.ResourceSlice{}, nil)
+				mdl.EXPECT().ListDeviceClasses().Return([]*resourceapi.DeviceClass{}, nil)
 				mdl.EXPECT().ListBindRequests().Return([]*schedulingv1alpha2.BindRequest{}, nil)
 				mdl.EXPECT().ListQueues().Return([]*enginev2.Queue{}, nil)
 				mdl.EXPECT().ListResourceUsage().Return(nil, nil)
@@ -2156,6 +2162,8 @@ func TestSnapshotWithListerErrors(t *testing.T) {
 				mdl.EXPECT().ListResourceSlicesByNode().Return(map[string][]*resourceapi.ResourceSlice{}, nil)
 				mdl.EXPECT().ListPods().Return([]*corev1.Pod{}, nil)
 				mdl.EXPECT().ListResourceClaims().Return([]*resourceapi.ResourceClaim{}, nil)
+				mdl.EXPECT().ListResourceSlices().Return([]*resourceapi.ResourceSlice{}, nil)
+				mdl.EXPECT().ListDeviceClasses().Return([]*resourceapi.DeviceClass{}, nil)
 				mdl.EXPECT().ListBindRequests().Return([]*schedulingv1alpha2.BindRequest{}, nil)
 				mdl.EXPECT().ListQueues().Return([]*enginev2.Queue{}, nil)
 				mdl.EXPECT().ListResourceUsage().Return(nil, nil)
@@ -2168,6 +2176,8 @@ func TestSnapshotWithListerErrors(t *testing.T) {
 				mdl.EXPECT().ListResourceSlicesByNode().Return(map[string][]*resourceapi.ResourceSlice{}, nil)
 				mdl.EXPECT().ListPods().Return([]*corev1.Pod{}, nil)
 				mdl.EXPECT().ListResourceClaims().Return([]*resourceapi.ResourceClaim{}, nil)
+				mdl.EXPECT().ListResourceSlices().Return([]*resourceapi.ResourceSlice{}, nil)
+				mdl.EXPECT().ListDeviceClasses().Return([]*resourceapi.DeviceClass{}, nil)
 				mdl.EXPECT().ListBindRequests().Return([]*schedulingv1alpha2.BindRequest{}, nil)
 				mdl.EXPECT().ListQueues().Return([]*enginev2.Queue{
 					{
@@ -2207,6 +2217,8 @@ func TestSnapshotWithListerErrors(t *testing.T) {
 				mdl.EXPECT().ListNodes().Return([]*corev1.Node{}, nil)
 				mdl.EXPECT().ListResourceSlicesByNode().Return(map[string][]*resourceapi.ResourceSlice{}, nil)
 				mdl.EXPECT().ListResourceClaims().Return([]*resourceapi.ResourceClaim{}, nil)
+				mdl.EXPECT().ListResourceSlices().Return([]*resourceapi.ResourceSlice{}, nil)
+				mdl.EXPECT().ListDeviceClasses().Return([]*resourceapi.DeviceClass{}, nil)
 				mdl.EXPECT().ListBindRequests().Return(nil, fmt.Errorf(successErrorMsg))
 			},
 		},

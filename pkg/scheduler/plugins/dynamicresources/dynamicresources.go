@@ -10,6 +10,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
+	"k8s.io/component-helpers/scheduling/corev1/nodeaffinity"
 	"k8s.io/dynamic-resource-allocation/cel"
 	"k8s.io/dynamic-resource-allocation/structured"
 	k8sframework "k8s.io/kubernetes/pkg/scheduler/framework"
@@ -18,6 +19,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/k8s_utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
@@ -57,44 +59,27 @@ func (drap *draPlugin) Name() string {
 }
 
 func (drap *draPlugin) OnSessionOpen(ssn *framework.Session) {
-	fwork := ssn.InternalK8sPlugins().FrameworkHandle
-
-	drap.manager = fwork.SharedDRAManager()
-
 	drap.queueLabelKey = ssn.SchedulerParams.QueueLabelKey
+
+	k8sPlugins := ssn.InternalK8sPlugins()
+	if k8sPlugins != nil && k8sPlugins.ResourceSliceTracker != nil {
+		drap.manager = k8s_utils.NewSessionDRAManager(
+			ssn.ClusterInfo.ResourceClaims,
+			k8sPlugins.ResourceSliceTracker,
+			k8sPlugins.InformerFactory,
+		)
+		k8sPlugins.SessionDRAManager = drap.manager
+	}
 
 	ssn.AddEventHandler(&framework.EventHandler{
 		AllocateFunc:   drap.allocateHandlerFn(ssn),
 		DeallocateFunc: drap.deallocateHandlerFn(ssn),
 	})
 
-	// Restore all claims to the informer's version before processing pending claims.
-	// This reconciles any divergent assume-cache state (latestObj ≠ apiObj) that builds
-	// up across sessions: when deallocateResourceClaim calls AssumeClaimAfterAPICall(nil)
-	// at the same ResourceVersion that the binder already confirmed in etcd, the
-	// assume-cache's "newer-version-only" update rule permanently suppresses the informer
-	// re-sync.  As a result onDelete fires with latestObj=nil, removeDevices is a no-op,
-	// and the device stays in allocatedDevices.ids as a ghost.  Restoring at session open
-	// resets latestObj = apiObj so that onDelete always carries the correct allocation.
-	drap.restoreAllClaims()
 	drap.assumePendingClaims(ssn)
 
 	ssn.AddPrePredicateFn(drap.preFilter)
-}
-
-// restoreAllClaims calls AssumedClaimRestore for every claim currently in the assume-cache.
-// This reconciles divergent assume-cache state (latestObj ≠ apiObj) that accumulates
-// across scheduling sessions, preventing ghost device entries in allocatedDevices.ids.
-func (drap *draPlugin) restoreAllClaims() {
-	claims, err := drap.manager.ResourceClaims().List()
-	if err != nil {
-		log.InfraLogger.Errorf("Failed to list resource claims for state reconciliation: %v", err)
-		return
-	}
-	for _, claim := range claims {
-		drap.manager.ResourceClaims().AssumedClaimRestore(claim.Namespace, claim.Name)
-	}
-	log.InfraLogger.V(4).Infof("Restored %d resource claims to informer state", len(claims))
+	ssn.AddPredicateFn(drap.filter)
 }
 
 func (drap *draPlugin) assumePendingClaims(ssn *framework.Session) {
@@ -149,7 +134,12 @@ func (drap *draPlugin) assumePendingClaim(claim *schedulingv1alpha2.ResourceClai
 
 func (drap *draPlugin) preFilter(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo) error {
 	pod := task.Pod
-	if !drap.enabled && len(pod.Spec.ResourceClaims) > 0 {
+
+	if len(pod.Spec.ResourceClaims) == 0 {
+		return nil
+	}
+
+	if !drap.enabled {
 		var resourceClaimNames []string
 		for _, claim := range pod.Spec.ResourceClaims {
 			resourceClaimNames = append(resourceClaimNames, claim.Name)
@@ -157,6 +147,11 @@ func (drap *draPlugin) preFilter(task *pod_info.PodInfo, job *podgroup_info.PodG
 		return fmt.Errorf("pod %s/%s cannot be scheduled, it references resource claims <%v> "+
 			"while dynamic resource allocation feature is not enabled in cluster",
 			task.Namespace, task.Name, strings.Join(resourceClaimNames, ", "))
+	}
+
+	if drap.manager == nil {
+		return fmt.Errorf("pod %s/%s has resource claims but DRA manager is not initialized",
+			task.Namespace, task.Name)
 	}
 
 	for _, podClaim := range pod.Spec.ResourceClaims {
@@ -170,6 +165,7 @@ func (drap *draPlugin) preFilter(task *pod_info.PodInfo, job *podgroup_info.PodG
 			return fmt.Errorf("failed to get resource claim %s/%s: %v",
 				pod.Namespace, claimName, err)
 		}
+
 		if len(claim.Status.ReservedFor) >= resourceapi.ResourceClaimReservedForMaxSize {
 			return fmt.Errorf("resource claim %s/%s has reached its maximum number of consumers (%d)",
 				pod.Namespace, claimName, resourceapi.ResourceClaimReservedForMaxSize)
@@ -178,6 +174,92 @@ func (drap *draPlugin) preFilter(task *pod_info.PodInfo, job *podgroup_info.PodG
 		if err := drap.validateSharedGpuClaimQueueLabel(job, &podClaim, claim); err != nil {
 			return fmt.Errorf("pod %s/%s cannot be scheduled: %v", task.Namespace, task.Name, err)
 		}
+
+		if claim.Status.Allocation != nil {
+			continue
+		}
+
+		for _, request := range claim.Spec.Devices.Requests {
+			if request.Exactly == nil {
+				continue
+			}
+			if _, err := drap.manager.DeviceClasses().Get(request.Exactly.DeviceClassName); err != nil {
+				return fmt.Errorf("device class %s does not exist for claim %s/%s request %s",
+					request.Exactly.DeviceClassName, pod.Namespace, claimName, request.Name)
+			}
+		}
+	}
+
+	return nil
+}
+
+func (drap *draPlugin) filter(task *pod_info.PodInfo, _ *podgroup_info.PodGroupInfo, nodeInfo *node_info.NodeInfo) error {
+	pod := task.Pod
+	if len(pod.Spec.ResourceClaims) == 0 || drap.manager == nil {
+		return nil
+	}
+
+	var claimsToAllocate []*resourceapi.ResourceClaim
+	for _, podClaim := range pod.Spec.ResourceClaims {
+		claimName, err := resources.GetResourceClaimName(pod, &podClaim)
+		if err != nil {
+			return err
+		}
+
+		claim, err := drap.manager.ResourceClaims().Get(pod.Namespace, claimName)
+		if err != nil {
+			return fmt.Errorf("failed to get resource claim %s/%s: %v", pod.Namespace, claimName, err)
+		}
+
+		if claim.Status.Allocation != nil {
+			if claim.Status.Allocation.NodeSelector != nil {
+				ns, err := nodeaffinity.NewNodeSelector(claim.Status.Allocation.NodeSelector)
+				if err != nil {
+					return fmt.Errorf("failed to parse node selector for claim %s/%s: %v",
+						pod.Namespace, claimName, err)
+				}
+				if !ns.Match(nodeInfo.Node) {
+					return fmt.Errorf("claim %s/%s node selector does not match node %s",
+						claim.Namespace, claim.Name, nodeInfo.Name)
+				}
+			}
+			continue
+		}
+
+		claimsToAllocate = append(claimsToAllocate, claim)
+	}
+
+	if len(claimsToAllocate) == 0 {
+		return nil
+	}
+
+	allocatedState, err := drap.manager.ResourceClaims().GatherAllocatedState()
+	if err != nil {
+		return fmt.Errorf("failed to gather allocated device state: %v", err)
+	}
+
+	slices, err := drap.manager.ResourceSlices().ListWithDeviceTaintRules()
+	if err != nil {
+		return fmt.Errorf("failed to list resource slices: %v", err)
+	}
+
+	allocator, err := structured.NewAllocator(
+		context.Background(), structured.Features{},
+		*allocatedState,
+		drap.manager.DeviceClasses(),
+		slices,
+		drap.celCache,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create allocator: %v", err)
+	}
+
+	results, err := allocator.Allocate(context.Background(), nodeInfo.Node, claimsToAllocate)
+	if err != nil {
+		return fmt.Errorf("cannot allocate DRA claims on node %s: %v", nodeInfo.Name, err)
+	}
+	if len(results) != len(claimsToAllocate) {
+		return fmt.Errorf("cannot allocate all DRA claims on node %s", nodeInfo.Name)
 	}
 
 	return nil

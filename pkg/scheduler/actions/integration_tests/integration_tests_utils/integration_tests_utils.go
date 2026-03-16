@@ -9,6 +9,7 @@ import (
 	"time"
 
 	. "go.uber.org/mock/gomock"
+	resourceapi "k8s.io/api/resource/v1"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/allocate"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/consolidation"
@@ -134,20 +135,33 @@ func runSchedulerOneRound(testMetadata *TestTopologyMetadata, controller *Contro
 		}
 	}
 	if len(testMetadata.TestDRAObjects.ResourceClaims) > 0 {
-		draManager := (*ssn).InternalK8sPlugins().FrameworkHandle.SharedDRAManager()
-		for _, claim := range testMetadata.TestDRAObjects.ResourceClaims {
-			clusterClaim, err := draManager.ResourceClaims().Get(claim.Namespace, claim.Name)
-			if err != nil {
-				log.InfraLogger.Errorf("Failed to get resource claim %s: %v", claim.Name, err)
+		k8sPlugins := (*ssn).InternalK8sPlugins()
+		if k8sPlugins == nil || k8sPlugins.SessionDRAManager == nil {
+			return
+		}
+		claims, err := k8sPlugins.SessionDRAManager.ResourceClaims().List()
+		if err != nil {
+			log.InfraLogger.Errorf("Failed to list claims from DRA manager: %v", err)
+			return
+		}
+
+		claimByName := make(map[string]*resourceapi.ResourceClaim, len(claims))
+		for _, c := range claims {
+			claimByName[c.Namespace+"/"+c.Name] = c
+		}
+		for _, claimMetadata := range testMetadata.TestDRAObjects.ResourceClaims {
+			clusterClaim, ok := claimByName[claimMetadata.Namespace+"/"+claimMetadata.Name]
+			if !ok {
 				continue
 			}
-			clusterClaimStatus := clusterClaim.Status
-			if clusterClaimStatus.Allocation != nil || clusterClaimStatus.ReservedFor != nil || clusterClaimStatus.Devices != nil {
-				claim.ClaimStatus = clusterClaimStatus.DeepCopy()
+			status := clusterClaim.Status
+			if status.Allocation != nil || len(status.ReservedFor) > 0 || len(status.Devices) > 0 {
+				claimMetadata.ClaimStatus = status.DeepCopy()
+			} else {
+				claimMetadata.ClaimStatus = nil
 			}
 		}
 	}
-
 }
 
 func SetSchedulerActions() {
