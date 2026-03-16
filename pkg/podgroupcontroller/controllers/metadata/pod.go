@@ -22,11 +22,11 @@ type PodMetadata struct {
 }
 
 func GetPodMetadata(
-	ctx context.Context, pod *v1.Pod, kubeClient client.Client, draVersion commonresources.DRAVersion,
+	ctx context.Context, pod *v1.Pod, kubeClient client.Client, draAPIVersion string,
 ) (*PodMetadata, error) {
 	var err error
 
-	draClaims, err := commonresources.FetchPodResourceClaims(ctx, pod, kubeClient, draVersion)
+	draClaims, err := commonresources.FetchPodResourceClaims(ctx, pod, kubeClient, draAPIVersion)
 	if err != nil {
 		return nil, err
 	}

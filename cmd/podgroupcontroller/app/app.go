@@ -56,8 +56,8 @@ func Run(options *Options, config *rest.Config, ctx context.Context) error {
 	config.Burst = options.Burst
 
 	draClient := commonresources.NewDRAClient(config)
-	draVersion := commonresources.DetectDRAVersion(draClient)
-	setupLog.Info("Detected DRA version", "version", draVersion)
+	draAPIVersion := commonresources.DetectDRAAPIVersion(draClient)
+	setupLog.Info("Detected DRA API version", "version", draAPIVersion)
 
 	schedulerSelector := fields.Set{schedulerNameField: options.SchedulerName}.AsSelector()
 	cacheOptions := cache.Options{}
@@ -67,7 +67,7 @@ func Run(options *Options, config *rest.Config, ctx context.Context) error {
 		&schedulingv1.PriorityClass{}: {},
 		&v2alpha2.PodGroup{}:          {},
 	}
-	if cacheObj := draVersion.CacheObject(); cacheObj != nil {
+	if cacheObj := commonresources.DRACacheObject(draAPIVersion); cacheObj != nil {
 		cacheOptions.ByObject[cacheObj] = cache.ByObject{}
 	}
 
@@ -105,9 +105,9 @@ func Run(options *Options, config *rest.Config, ctx context.Context) error {
 		MaxConcurrentReconciles: options.MaxConcurrentReconciles,
 	}
 	if err = (&controllers.PodGroupReconciler{
-		Client:     mgr.GetClient(),
-		Scheme:     mgr.GetScheme(),
-		DRAVersion: draVersion,
+		Client:        mgr.GetClient(),
+		Scheme:        mgr.GetScheme(),
+		DRAAPIVersion: draAPIVersion,
 	}).SetupWithManager(mgr, configs, options.SkipControllerNameValidation); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Pod")
 		return err

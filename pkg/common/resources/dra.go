@@ -197,30 +197,6 @@ func countGPUDevicesFromClaim(claim *resourceapi.ResourceClaim) int64 {
 	return totalCount
 }
 
-type DRAVersion int
-
-const (
-	DRADisabled DRAVersion = iota
-	DRAV1Beta1
-	DRAV1Beta2
-	DRAV1
-)
-
-func (v DRAVersion) String() string {
-	switch v {
-	case DRAV1:
-		return "V1"
-	case DRAV1Beta2:
-		return "V1beta2"
-	case DRAV1Beta1:
-		return "V1beta1"
-	case DRADisabled:
-		return "Disabled"
-	default:
-		return "Unknown"
-	}
-}
-
 var draConversionScheme = func() *runtime.Scheme {
 	s := runtime.NewScheme()
 	utilruntime.Must(clientgoscheme.AddToScheme(s))
@@ -236,33 +212,23 @@ func NewDRAClient(config *rest.Config) *draclient.Client {
 	return draclient.New(kubeClient)
 }
 
-func DetectDRAVersion(draClient *draclient.Client) DRAVersion {
+// DetectDRAAPIVersion triggers DRA version negotiation and returns the detected
+// API version string (e.g. "V1", "V1beta2", "V1beta1") or empty string if DRA is unavailable.
+func DetectDRAAPIVersion(draClient *draclient.Client) string {
 	if draClient == nil {
-		return DRADisabled
+		return ""
 	}
-
-	// Trigger version detection by making a probe call
 	_, _ = draClient.ResourceClaims("").List(context.Background(), metav1.ListOptions{Limit: 1})
-
-	switch draClient.CurrentAPI() {
-	case "V1":
-		return DRAV1
-	case "V1beta2":
-		return DRAV1Beta2
-	case "V1beta1":
-		return DRAV1Beta1
-	default:
-		return DRADisabled
-	}
+	return draClient.CurrentAPI()
 }
 
-func (v DRAVersion) CacheObject() client.Object {
-	switch v {
-	case DRAV1:
+func DRACacheObject(draAPIVersion string) client.Object {
+	switch draAPIVersion {
+	case "V1":
 		return &resourceapi.ResourceClaim{}
-	case DRAV1Beta2:
+	case "V1beta2":
 		return &resourceapiv1beta2.ResourceClaim{}
-	case DRAV1Beta1:
+	case "V1beta1":
 		return &resourceapiv1beta1.ResourceClaim{}
 	default:
 		return nil
@@ -270,9 +236,9 @@ func (v DRAVersion) CacheObject() client.Object {
 }
 
 func FetchPodResourceClaims(
-	ctx context.Context, pod *v1.Pod, kubeClient client.Client, draVersion DRAVersion,
+	ctx context.Context, pod *v1.Pod, kubeClient client.Client, draAPIVersion string,
 ) ([]*resourceapi.ResourceClaim, error) {
-	if len(pod.Spec.ResourceClaims) == 0 || draVersion == DRADisabled {
+	if len(pod.Spec.ResourceClaims) == 0 || draAPIVersion == "" {
 		return nil, nil
 	}
 
@@ -285,7 +251,7 @@ func FetchPodResourceClaims(
 		}
 
 		key := types.NamespacedName{Namespace: pod.Namespace, Name: claimName}
-		claim, err := fetchResourceClaim(ctx, kubeClient, key, draVersion)
+		claim, err := fetchResourceClaim(ctx, kubeClient, key, draAPIVersion)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get resource claim %s/%s for pod %s/%s: %w",
 				pod.Namespace, claimName, pod.Namespace, pod.Name, err)
@@ -296,34 +262,28 @@ func FetchPodResourceClaims(
 }
 
 func fetchResourceClaim(
-	ctx context.Context, kubeClient client.Client, key types.NamespacedName, draVersion DRAVersion,
+	ctx context.Context, kubeClient client.Client, key types.NamespacedName, draAPIVersion string,
 ) (*resourceapi.ResourceClaim, error) {
-	switch draVersion {
-	case DRAV1:
+	switch draAPIVersion {
+	case "V1":
 		claim := &resourceapi.ResourceClaim{}
 		return claim, kubeClient.Get(ctx, key, claim)
-	case DRAV1Beta2:
+	case "V1beta2":
 		beta := &resourceapiv1beta2.ResourceClaim{}
 		if err := kubeClient.Get(ctx, key, beta); err != nil {
 			return nil, err
 		}
 		v1Claim := &resourceapi.ResourceClaim{}
-		if err := draConversionScheme.Convert(beta, v1Claim, nil); err != nil {
-			return nil, fmt.Errorf("failed to convert v1beta2 ResourceClaim to v1: %w", err)
-		}
-		return v1Claim, nil
-	case DRAV1Beta1:
+		return v1Claim, draConversionScheme.Convert(beta, v1Claim, nil)
+	case "V1beta1":
 		beta := &resourceapiv1beta1.ResourceClaim{}
 		if err := kubeClient.Get(ctx, key, beta); err != nil {
 			return nil, err
 		}
 		v1Claim := &resourceapi.ResourceClaim{}
-		if err := draConversionScheme.Convert(beta, v1Claim, nil); err != nil {
-			return nil, fmt.Errorf("failed to convert v1beta1 ResourceClaim to v1: %w", err)
-		}
-		return v1Claim, nil
+		return v1Claim, draConversionScheme.Convert(beta, v1Claim, nil)
 	default:
-		return nil, fmt.Errorf("unsupported DRA version %d", draVersion)
+		return nil, fmt.Errorf("unsupported DRA API version %q", draAPIVersion)
 	}
 }
 

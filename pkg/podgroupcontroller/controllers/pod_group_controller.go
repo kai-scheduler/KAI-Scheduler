@@ -21,7 +21,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	commonresources "github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgroupcontroller/controllers/cluster_relations"
 )
 
@@ -37,9 +36,9 @@ type Configs struct {
 // PodGroupReconciler reconciles a Pod object
 type PodGroupReconciler struct {
 	client.Client
-	Scheme     *runtime.Scheme
-	DRAVersion commonresources.DRAVersion
-	config     Configs
+	Scheme        *runtime.Scheme
+	DRAAPIVersion string
+	config        Configs
 }
 
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
