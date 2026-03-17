@@ -11,7 +11,10 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/topology_info"
 )
 
-const RootSubGroupSetName = ""
+const (
+	RootSubGroupSetName         = ""
+	MinimumSubGroupMinAvailable = 1
+)
 
 func FromPodGroup(podGroup *v2alpha2.PodGroup) (*SubGroupSet, error) {
 	allSubGroups, children, err := mapSubGroupsAndChildren(podGroup)
@@ -74,7 +77,7 @@ func createSubGroupInfos(allSubGroups map[string]*v2alpha2.SubGroup, children ma
 		if hasChildren {
 			subGroupSets[name] = NewSubGroupSet(name, topologyConstrainInfo)
 		} else {
-			podSets[name] = NewPodSet(name, max(subGroup.MinMember, 1), topologyConstrainInfo)
+			podSets[name] = NewPodSet(name, max(subGroup.MinMember, MinimumSubGroupMinAvailable), topologyConstrainInfo)
 		}
 	}
 }
