@@ -49,13 +49,14 @@ This proposal extends the PodGroup CRD and scheduling flow to introduce SubGroup
     - SubGroups enable fine-grained placement and policy specification while maintaining atomicity; partial execution of the workload is not permitted.
 - SubGroup is a logical subset within a PodGroup, enabling scoped placement and scheduling requirements:
   - name: Unique identifier within the parent PodGroup.  
-    minMember: Specifies the minimum number of entities required within the SubGroup to satisfy scheduling constraints. These entities may be pods or child SubGroups.
+    minMember: Specifies the minimum number of entities required within the SubGroup to satisfy scheduling constraints. These entities may be pods or child SubGroups. A value of **0** is allowed: the SubGroup has no required pods (all pods are elastic/opportunistic); the scheduler may schedule them after subgroups with minMember > 0.
   - parent: the name of the parent SubGroup.
   - Pods are assigned to SubGroups with `kai.scheduler/subgroup-name` label, where the value is the name of the respective SubGroup. Pods are assigned to leaf SubGroups only.
 - TopologyConstraints – Provides hierarchical placement control across three levels:
   - A global constraint applied to all pods in the PodGroup when no more specific constraint is defined. 
   - Specific constraints applied to explicitly named SubGroups for targeted placement control. 
   - Shared constraints applied to sets of SubGroups collectively, enabling coordinated placement policies across related SubGroups.
+- **SubGroup ordering** (subgrouporder plugin): When choosing which SubGroup’s pods to schedule next, the scheduler applies the following order. SubGroups that have not yet reached their minAvailable (minMember) are deprioritized relative to those that have. Among SubGroups below minAvailable, no relative priority is applied. SubGroups with **minAvailable = 0** (optional/elastic subgroups) are deprioritized relative to SubGroups with minAvailable > 0; between two SubGroups both with minAvailable = 0, the one with fewer allocated tasks is prioritized. Among SubGroups that are at or above minAvailable, the one with the lower allocation ratio (allocated / minAvailable) is prioritized.
 
 ## API Changes
 To support SubGroups within a PodGroup, the PodGroupSpec API is extended as follows:
