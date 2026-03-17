@@ -25,7 +25,6 @@ const (
 	NodeAffinity           = "NodeAffinity"
 	PodAffinity            = "PodAffinity"
 	VolumeBinding          = "VolumeBinding"
-	DynamicResources       = "DynamicResources"
 	NodeScheduler          = "NodeScheduler"
 	MaxNodePoolResources   = "MaxNodePoolResources"
 	ConfigMap              = "ConfigMap"
@@ -128,18 +127,6 @@ func NewSessionPredicates(ssn *framework.Session) k8s_internal.SessionPredicates
 			PreFilter:           k8s_internal.FitPrePredicateConverter(ssn, ssn, plugin.(*volumebinding.VolumeBinding)),
 			IsFilterRequired:    predicateRequired,
 			Filter:              NewVolumeBindingFilter(ssn, plugin, ssn.ScheduleCSIStorage()),
-		}
-	}
-
-	if plugin := initiatedPlugins.DynamicResources; plugin == nil {
-		predicates[DynamicResources] = emptyPredicate(DynamicResources)
-	} else {
-		predicates[DynamicResources] = k8s_internal.SessionPredicate{
-			Name:                DynamicResources,
-			IsPreFilterRequired: predicateRequired,
-			PreFilter:           k8s_internal.FitPrePredicateConverter(ssn, ssn, plugin.(k8sframework.PreFilterPlugin)),
-			IsFilterRequired:    predicateRequired,
-			Filter:              k8s_internal.FitPredicateConverter(ssn, plugin.(k8sframework.FilterPlugin)),
 		}
 	}
 
