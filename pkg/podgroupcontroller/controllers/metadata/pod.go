@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	v1 "k8s.io/api/core/v1"
+	resourceapi "k8s.io/api/resource/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -20,12 +21,19 @@ type PodMetadata struct {
 	AllocatedResources v1.ResourceList
 }
 
-func GetPodMetadata(ctx context.Context, pod *v1.Pod, kubeClient client.Client) (*PodMetadata, error) {
+func GetPodMetadata(
+	ctx context.Context, pod *v1.Pod, kubeClient client.Client, draAPIVersion string,
+) (*PodMetadata, error) {
 	var err error
+
+	draClaims, err := commonresources.FetchPodResourceClaims(ctx, pod, kubeClient, draAPIVersion)
+	if err != nil {
+		return nil, err
+	}
 
 	requestedResources := v1.ResourceList{}
 	if isActivePod(pod) {
-		requestedResources, err = calculateRequestedResources(ctx, pod, kubeClient)
+		requestedResources, err = calculateRequestedResources(ctx, pod, kubeClient, draClaims)
 		if err != nil {
 			return nil, err
 		}
@@ -33,7 +41,7 @@ func GetPodMetadata(ctx context.Context, pod *v1.Pod, kubeClient client.Client) 
 
 	allocatedResources := v1.ResourceList{}
 	if isAllocatedPod(pod) {
-		allocatedResources, err = calculatedAllocatedResources(ctx, pod, kubeClient)
+		allocatedResources, err = calculatedAllocatedResources(ctx, pod, kubeClient, draClaims)
 		if err != nil {
 			return nil, err
 		}
@@ -65,8 +73,9 @@ func isPodScheduled(pod *v1.Pod) bool {
 	return false
 }
 
-func calculatedAllocatedResources(ctx context.Context, pod *v1.Pod, kubeClient client.Client) (
-	v1.ResourceList, error) {
+func calculatedAllocatedResources(
+	ctx context.Context, pod *v1.Pod, kubeClient client.Client, draClaims []*resourceapi.ResourceClaim,
+) (v1.ResourceList, error) {
 	allocatedResources := v1.ResourceList{}
 	for _, container := range pod.Spec.Containers {
 		allocatedResources = resources.SumResources(allocatedResources, container.Resources.Requests)
@@ -81,17 +90,15 @@ func calculatedAllocatedResources(ctx context.Context, pod *v1.Pod, kubeClient c
 	}
 	allocatedResources = resources.SumResources(allocatedResources, gpuSharingReceivedResources)
 
-	// Extract DRA GPU resources for allocated (only allocated pods)
-	draGPUAllocated, err := commonresources.ExtractDRAGPUResources(ctx, pod, kubeClient)
-	if err != nil {
-		return nil, err
-	}
+	draGPUAllocated := commonresources.DRAGPUResourceListFromClaims(draClaims)
 	allocatedResources = resources.SumResources(allocatedResources, draGPUAllocated)
 
 	return allocatedResources, nil
 }
 
-func calculateRequestedResources(ctx context.Context, pod *v1.Pod, kubeClient client.Client) (v1.ResourceList, error) {
+func calculateRequestedResources(
+	ctx context.Context, pod *v1.Pod, kubeClient client.Client, draClaims []*resourceapi.ResourceClaim,
+) (v1.ResourceList, error) {
 	requestedResources := v1.ResourceList{}
 	for _, container := range pod.Spec.Containers {
 		requestedResources = resources.SumResources(requestedResources, container.Resources.Requests)
@@ -102,11 +109,7 @@ func calculateRequestedResources(ctx context.Context, pod *v1.Pod, kubeClient cl
 	}
 	requestedResources = resources.SumResources(requestedResources, gpuSharingRequestedResources)
 
-	// Extract DRA GPU resources for requested (all active pods)
-	draGPURequested, err := commonresources.ExtractDRAGPUResources(ctx, pod, kubeClient)
-	if err != nil {
-		return nil, err
-	}
+	draGPURequested := commonresources.DRAGPUResourceListFromClaims(draClaims)
 	requestedResources = resources.SumResources(requestedResources, draGPURequested)
 
 	return requestedResources, nil

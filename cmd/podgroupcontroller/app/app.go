@@ -7,6 +7,7 @@ import (
 	"context"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	commonresources "github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgroupcontroller/controllers"
 
 	v1 "k8s.io/api/core/v1"
@@ -54,6 +55,10 @@ func Run(options *Options, config *rest.Config, ctx context.Context) error {
 	config.QPS = float32(options.Qps)
 	config.Burst = options.Burst
 
+	draClient := commonresources.NewDRAClient(config)
+	draAPIVersion := commonresources.DetectDRAAPIVersion(draClient)
+	setupLog.Info("Detected DRA API version", "version", draAPIVersion)
+
 	schedulerSelector := fields.Set{schedulerNameField: options.SchedulerName}.AsSelector()
 	cacheOptions := cache.Options{}
 	cacheOptions.ByObject = map[client.Object]cache.ByObject{
@@ -61,6 +66,9 @@ func Run(options *Options, config *rest.Config, ctx context.Context) error {
 		&v1.Node{}:                    {},
 		&schedulingv1.PriorityClass{}: {},
 		&v2alpha2.PodGroup{}:          {},
+	}
+	if cacheObj := commonresources.DRACacheObject(draAPIVersion); cacheObj != nil {
+		cacheOptions.ByObject[cacheObj] = cache.ByObject{}
 	}
 
 	mgr, err := ctrl.NewManager(config, ctrl.Options{
@@ -97,8 +105,9 @@ func Run(options *Options, config *rest.Config, ctx context.Context) error {
 		MaxConcurrentReconciles: options.MaxConcurrentReconciles,
 	}
 	if err = (&controllers.PodGroupReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:        mgr.GetClient(),
+		Scheme:        mgr.GetScheme(),
+		DRAAPIVersion: draAPIVersion,
 	}).SetupWithManager(mgr, configs, options.SkipControllerNameValidation); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Pod")
 		return err

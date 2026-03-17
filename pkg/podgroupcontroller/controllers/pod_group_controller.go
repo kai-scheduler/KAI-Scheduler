@@ -36,8 +36,9 @@ type Configs struct {
 // PodGroupReconciler reconciles a Pod object
 type PodGroupReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
-	config Configs
+	Scheme        *runtime.Scheme
+	DRAAPIVersion string
+	config        Configs
 }
 
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
