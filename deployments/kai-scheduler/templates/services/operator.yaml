@@ -30,7 +30,7 @@ spec:
         args:
           - --metrics-bind-address={{ .Values.operator.metricsBindAddress | default ":8080" }}
           - --health-probe-bind-address={{ .Values.operator.probeBindAddress | default ":8081" }}
-          - --leader-elect={{ .Values.global.leaderElection | default false }}
+          - --leader-elect={{ or .Values.global.leaderElection (gt (int .Values.operator.replicaCount) 1) }}
           - --qps={{ .Values.operator.qps | default 50 }}
           - --burst={{ .Values.operator.burst | default 300 }}
           - --namespace={{ .Release.Namespace }}
