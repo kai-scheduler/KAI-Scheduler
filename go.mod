@@ -1,6 +1,6 @@
 module github.com/kai-scheduler/KAI-scheduler
 
-go 1.24.4
+go 1.26.1
 
 require (
 	github.com/NVIDIA/go-nvml v0.12.4-1
