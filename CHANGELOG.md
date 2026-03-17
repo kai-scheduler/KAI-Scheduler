@@ -7,22 +7,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Fixed
-- Fixed a potential state corruption in DRA scheduling simulations [#1225](https://github.com/kai-scheduler/KAI-Scheduler/pull/1225) [itsomri](https://github.com/itsomri)
 
-## [v0.13.2] - 2026-03-13
+## [v0.13.2] - 2026-03-17
 ### Fixed
 - Fixed rollback in scheduling simulations with DRA [#1168](https://github.com/NVIDIA/KAI-Scheduler/pull/1168) [itsomri](https://github.com/itsomri)
 - Allow subgroups to have a 0 value for "minAvailable". This means that all pods in this subgroup are "elastic extra pods". [#1216](https://github.com/NVIDIA/KAI-Scheduler/pull/1216) [davidLif](https://github.com/davidLif) 
+- Fixed pod group controller failing to track DRA GPU resources on Kubernetes 1.32-1.33 clusters. [#1214](https://github.com/kai-scheduler/KAI-Scheduler/issues/1214)
+- Fixed a potential state corruption in DRA scheduling simulations [#1225](https://github.com/kai-scheduler/KAI-Scheduler/pull/1225) [itsomri](https://github.com/itsomri)
 
 ## [v0.13.1] - 2026-03-09
 
 ### Fixed
 - Updated resource enumeration logic to exclude resources with count of 0. [#1120](https://github.com/NVIDIA/KAI-Scheduler/issues/1120)
 - Fixed scheduler on k8s < 1.34 with DRA disabled.
-- Fixed pod group controller failing to track DRA GPU resources on Kubernetes 1.32-1.33 clusters. [#1214](https://github.com/kai-scheduler/KAI-Scheduler/issues/1214)
-- Fixed scheduling-constraints signature hashing for `Priority` and container `HostPort` by encoding full `int32` values, preventing byte-truncation collisions and flaky signature tests.
-- Fixed rollback in scheduling simulations with DRA [#1168](https://github.com/NVIDIA/KAI-Scheduler/pull/1168) [itsomri](https://github.com/itsomri)
-- Fixed a potential state corruption in DRA scheduling simulations [#1219](https://github.com/kai-scheduler/KAI-Scheduler/pull/1219) [itsomri](https://github.com/itsomri)
 
 ## [v0.13.0] - 2026-03-02
 ### Added
