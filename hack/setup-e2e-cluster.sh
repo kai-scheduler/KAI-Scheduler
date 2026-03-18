@@ -11,6 +11,7 @@ CLUSTER_NAME=${CLUSTER_NAME:-e2e-kai-scheduler}
 
 REPO_ROOT=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )/..
 KIND_CONFIG=${REPO_ROOT}/hack/e2e-kind-config.yaml
+: ${FEATURE_CONFIG:="default"}
 
 : ${KIND_K8S_TAG:="v1.34.0"}
 : ${KIND_IMAGE:="kindest/node:${KIND_K8S_TAG}"}
@@ -34,11 +35,16 @@ while [[ $# -gt 0 ]]; do
       INSTALL_VPA="true"
       shift
       ;;
+    --feature-config)
+      FEATURE_CONFIG="$2"
+      shift 2
+      ;;
     -h|--help)
-      echo "Usage: $0 [--test-third-party-integrations] [--local-images-build] [--install-vpa]"
+      echo "Usage: $0 [--test-third-party-integrations] [--local-images-build] [--install-vpa] [--feature-config <config>]"
       echo "  --test-third-party-integrations: Install third party operators for compatibility testing"
       echo "  --local-images-build: Build and use local images instead of pulling from registry"
       echo "  --install-vpa: Install Vertical Pod Autoscaler and metrics-server"
+      echo "  --feature-config: Feature configuration for kind cluster generation (default: \"default\")"
       exit 0
       ;;
     *)
@@ -49,10 +55,18 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+GENERATED_KIND_CONFIG=$(mktemp /tmp/kind-config-XXXXXX.yaml)
+${REPO_ROOT}/hack/generate-kind-config.sh \
+    --feature-config "$FEATURE_CONFIG" \
+    --k8s-version "$KIND_K8S_TAG" \
+    --output "$GENERATED_KIND_CONFIG"
+
 kind create cluster \
-    --config ${KIND_CONFIG} \
-    --image ${KIND_IMAGE} \
-    --name $CLUSTER_NAME
+    --config "$GENERATED_KIND_CONFIG" \
+    --image "${KIND_IMAGE}" \
+    --name "$CLUSTER_NAME"
+
+rm -f "$GENERATED_KIND_CONFIG"
 
 # Deploy local image registry
 echo "Deploying local image registry..."
