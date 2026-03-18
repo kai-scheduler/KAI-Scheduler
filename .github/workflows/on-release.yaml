@@ -71,8 +71,6 @@ jobs:
     name: E2E (${{ matrix.k8s_version }}, ${{ matrix.feature_config }})
     needs: build-and-push
     runs-on: ubuntu-latest
-    permissions:
-      actions: write
     strategy:
       fail-fast: false
       matrix:
@@ -105,13 +103,6 @@ jobs:
           package_version: ${{ needs.build-and-push.outputs.package_version }}
           k8s_version: ${{ matrix.k8s_version }}
           feature_config: ${{ matrix.feature_config }}
-
-      - name: Delete restored cache
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh cache delete "images-${{ github.sha }}" --repo ${{ github.repository }}
 
       - name: Install KAI-scheduler
         env:
