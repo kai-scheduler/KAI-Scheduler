@@ -10,7 +10,6 @@ set -e
 CLUSTER_NAME=${CLUSTER_NAME:-e2e-kai-scheduler}
 
 REPO_ROOT=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )/..
-KIND_CONFIG=${REPO_ROOT}/hack/e2e-kind-config.yaml
 : ${FEATURE_CONFIG:="default"}
 
 : ${KIND_K8S_TAG:="v1.34.0"}
@@ -55,7 +54,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-GENERATED_KIND_CONFIG=$(mktemp /tmp/kind-config-XXXXXX.yaml)
+GENERATED_KIND_CONFIG=$(mktemp "${TMPDIR:-/tmp}/kind-config-XXXXXX.yaml")
+trap "rm -f \"$GENERATED_KIND_CONFIG\"" EXIT
 ${REPO_ROOT}/hack/generate-kind-config.sh \
     --feature-config "$FEATURE_CONFIG" \
     --k8s-version "$KIND_K8S_TAG" \
