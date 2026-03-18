@@ -12,6 +12,14 @@ inputs:
     description: GitHub token for cache operations
     required: false
     default: ''
+  k8s_version:
+    description: kindest/node image tag (e.g. v1.34.0)
+    required: false
+    default: 'v1.34.0'
+  feature_config:
+    description: Named feature configuration (default or dra-enabled)
+    required: false
+    default: 'default'
 
 runs:
   using: composite
@@ -37,12 +45,21 @@ runs:
         path: /mnt/images
         key: images-${{ github.sha }}
 
+    - name: Generate kind config
+      shell: bash
+      run: |
+        hack/generate-kind-config.sh \
+          --feature-config "${{ inputs.feature_config }}" \
+          --k8s-version "${{ inputs.k8s_version }}" \
+          --output /tmp/kind-config.yaml
+
     - name: Create k8s Kind Cluster
       uses: helm/kind-action@v1.13.0
       with:
         cluster_name: kind
         version: v0.31.0
-        config: ./hack/e2e-kind-config.yaml
+        config: /tmp/kind-config.yaml
+        node_image: kindest/node:${{ inputs.k8s_version }}
 
     - name: Deploy image registry
       shell: bash
