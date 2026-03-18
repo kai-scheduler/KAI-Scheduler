@@ -79,7 +79,7 @@ jobs:
     needs: [ validate-and-test, check-build-and-test-required ]
     if: github.event_name != 'merge_group' && needs.check-build-and-test-required.outputs.code == 'true' && github.base_ref == 'main'
     steps:
-      - uses: fgrosse/go-coverage-report@8c1d1a09864211d258937b1b1a5b849f7e4f2682
+      - uses: fgrosse/go-coverage-report@cbeb2ab2e32591d690337146ba02a911cc566f3f
         id: coverage_reporter
         with:
           coverage-artifact-name: "code-coverage"
