@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+## [v0.13.1] - 2026-03-18
+
+### Fixed
+- Fixes an issue where the scheduler failed to start on non-dra enabled clusters [#1240](https://github.com/kai-scheduler/KAI-Scheduler/pull/1240) [itsomri](https://github.com/itsomri)
+
 ## [v0.13.2] - 2026-03-17
 ### Fixed
 - Fixed rollback in scheduling simulations with DRA [#1168](https://github.com/NVIDIA/KAI-Scheduler/pull/1168) [itsomri](https://github.com/itsomri)
