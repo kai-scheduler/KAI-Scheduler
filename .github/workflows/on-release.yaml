@@ -14,14 +14,18 @@ jobs:
   build-and-push:
     name: Build & Push
     runs-on: ubuntu-latest
+    outputs:
+      package_version: ${{ steps.package_version.outputs.PACKAGE_VERSION }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
 
       - name: Extract package version
+        id: package_version
         run: |
           PACKAGE_VERSION=${GITHUB_REF_NAME}
           echo "PACKAGE_VERSION=$PACKAGE_VERSION" >> $GITHUB_ENV
+          echo "PACKAGE_VERSION=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
           echo $PACKAGE_VERSION
 
       - name: Set up Go
@@ -32,10 +36,34 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
+      - name: Move Docker Data to /mnt
+        run: |
+          sudo systemctl stop docker
+          sudo mkdir -p /mnt/docker-data
+          echo '{"data-root": "/mnt/docker-data"}' | sudo tee /etc/docker/daemon.json
+          sudo systemctl start docker
+
+      - name: Create image cache directory
+        run: |
+          sudo mkdir -p /mnt/images
+          sudo chown -R $USER:$USER /mnt/images
+
+      - name: Cache for docker images and helm chart
+        uses: actions/cache@v5
+        with:
+          path: /mnt/images
+          key: images-${{ github.sha }}
+
+      - name: Build docker images
+        run: |
+          make build DOCKER_BUILDX_ADDITIONAL_ARGS="--load --cache-from type=gha --cache-to type=gha,mode=max" VERSION=$PACKAGE_VERSION
+          docker save $(docker images --format '{{.Repository}}:{{.Tag}}' | grep $PACKAGE_VERSION) | gzip > /mnt/images/docker_images.tgz
+
       - name: Build helm chart
         run: |
           sed -i 's#registry/local/kai-scheduler#${{ env.DOCKER_REGISTRY }}#' deployments/kai-scheduler/values.yaml
           helm package ./deployments/kai-scheduler -d ./charts --app-version $PACKAGE_VERSION --version $PACKAGE_VERSION
+          cp charts/kai-scheduler-$PACKAGE_VERSION.tgz /mnt/images/
 
       - name: Upload As Release Asset
         uses: softprops/action-gh-release@v2
@@ -43,3 +71,69 @@ jobs:
           files: charts/kai-scheduler-${{ env.PACKAGE_VERSION }}.tgz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  e2e-matrix:
+    name: E2E (${{ matrix.k8s_version }}, ${{ matrix.feature_config }})
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Update with each release to match the current k8s support window (latest 3 minors).
+          # Verify patch versions at https://github.com/kubernetes-sigs/kind/releases
+          - k8s_version: v1.34.0
+            feature_config: default
+          - k8s_version: v1.34.0
+            feature_config: dra-enabled
+          - k8s_version: v1.33.3
+            feature_config: default
+          - k8s_version: v1.33.3
+            feature_config: dra-enabled
+          - k8s_version: v1.32.3
+            feature_config: default
+          - k8s_version: v1.32.3
+            feature_config: dra-enabled
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup e2e cluster
+        uses: ./.github/actions/setup-e2e-cluster
+        with:
+          package_version: ${{ needs.build-and-push.outputs.package_version }}
+          k8s_version: ${{ matrix.k8s_version }}
+          feature_config: ${{ matrix.feature_config }}
+
+      - name: Delete restored cache
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh cache delete "images-${{ github.sha }}" --repo ${{ github.repository }}
+
+      - name: Install KAI-scheduler
+        env:
+          PACKAGE_VERSION: ${{ needs.build-and-push.outputs.package_version }}
+        run: |
+          helm upgrade -i kai-scheduler /mnt/images/kai-scheduler-$PACKAGE_VERSION.tgz -n kai-scheduler --create-namespace \
+            --set "global.gpuSharing=true" --set "global.registry=localhost:30100" --debug --wait
+          kubectl create clusterrole pods-patcher --verb=patch --resource=pods
+          kubectl create rolebinding fake-status-updater --clusterrole=pods-patcher --serviceaccount=gpu-operator:status-updater -n kai-resource-reservation
+
+      - name: Run e2e tests
+        run: |
+          ginkgo -r --keep-going --randomize-all --randomize-suites --trace -vv --label-filter '!autoscale && !scale && !upgrade' --output-dir=. --json-report=e2e-report.json ./test/e2e/suites
+          echo ""
+          echo "=== Skipped Tests ==="
+          jq -r '.[].SpecReports[] | select(.State == "skipped") | ([.ContainerHierarchyTexts[], .LeafNodeText] | join(" > "))' e2e-report.json 2>/dev/null || echo "No skipped tests found"
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report-${{ matrix.k8s_version }}-${{ matrix.feature_config }}
+          path: e2e-report.json
+          if-no-files-found: ignore
