@@ -85,9 +85,9 @@ jobs:
             feature_config: default
           - k8s_version: v1.34.0
             feature_config: default
-          - k8s_version: v1.33.3
+          - k8s_version: v1.33.4
             feature_config: default
-          - k8s_version: v1.33.3
+          - k8s_version: v1.33.4
             feature_config: dra-enabled
           - k8s_version: v1.32.3
             feature_config: default
