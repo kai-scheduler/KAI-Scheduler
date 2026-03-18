@@ -28,11 +28,6 @@ jobs:
           echo "PACKAGE_VERSION=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
           echo $PACKAGE_VERSION
 
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: '1.26.1'
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
@@ -82,12 +77,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Update with each release to match the current k8s support window (latest 3 minors).
+          # Update with each release to match the current k8s support window.
           # Verify patch versions at https://github.com/kubernetes-sigs/kind/releases
-          - k8s_version: v1.34.0
+          # DRA feature config is only relevant for v1.32 (v1beta1) and v1.33 (v1beta2).
+          # v1.34+ has DRA GA; v1.31 predates the DRA beta.
+          - k8s_version: v1.35.0
             feature_config: default
           - k8s_version: v1.34.0
-            feature_config: dra-enabled
+            feature_config: default
           - k8s_version: v1.33.3
             feature_config: default
           - k8s_version: v1.33.3
@@ -96,6 +93,8 @@ jobs:
             feature_config: default
           - k8s_version: v1.32.3
             feature_config: dra-enabled
+          - k8s_version: v1.31.6
+            feature_config: default
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
