@@ -22,7 +22,7 @@ jobs:
       - name: Download PR number artifact
         id: download_pr_number
         continue-on-error: true
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: pr-number-for-comment
           run-id: ${{ github.event.workflow_run.id }}
@@ -31,7 +31,7 @@ jobs:
       - name: Download coverage report artifact
         id: download_coverage_report
         continue-on-error: true
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: coverage-report-for-comment
           run-id: ${{ github.event.workflow_run.id }}
