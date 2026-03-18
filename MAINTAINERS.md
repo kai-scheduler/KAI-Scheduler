@@ -12,3 +12,5 @@ The current Maintainers Group for KAI Scheduler project consists of:
 | Hagay Sharon    | [Hagay-RunAI](https://github.com/Hagay-RunAI)         | NVIDIA      |
 | Sior Meir       | [siormeir](https://github.com/siormeir)               | NVIDIA      |
 | Guy Shaibi      | [gshaibi](https://github.com/gshaibi)                 | NVIDIA      |
+
+
