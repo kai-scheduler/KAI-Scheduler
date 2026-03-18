@@ -26,6 +26,7 @@ import (
 	kwokopv1beta1 "github.com/run-ai/kwok-operator/api/v1beta1"
 
 	kubeAiSchedClient "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned"
+	kwokv1alpha1 "sigs.k8s.io/kwok/pkg/apis/v1alpha1"
 )
 
 var kubeConfig *rest.Config
@@ -75,6 +76,9 @@ func initConnectivity() error {
 		}
 		if err = lws.AddToScheme(controllerClient.Scheme()); err != nil {
 			return fmt.Errorf("failed to add lws to scheme: %w", err)
+		}
+		if err = kwokv1alpha1.AddToScheme(controllerClient.Scheme()); err != nil {
+			return fmt.Errorf("failed to add kwok v1alpha1 to scheme: %w", err)
 		}
 	}
 
