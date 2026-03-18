@@ -105,15 +105,17 @@ func (su *defaultStatusUpdater) updatePodGroup(
 	if statusErr != nil || patchErr != nil {
 
 		if statusErr != nil {
-			log.StatusUpdaterLogger.V(1).Errorf("Failed to update pod group status %s/%s: %v",
-				podGroup.Namespace, podGroup.Name, statusErr)
 			if apierrors.IsConflict(statusErr) {
 				// Don't retry this update if the resource version is outdated - The status update cannot be updated with the given object.
 				// If a pod group status update is required (e.g. a scheduling condition) a new status update with an updated object
 				//  will be enqueued in the next scheduling cycle.
+				log.StatusUpdaterLogger.V(5).Infof("Conflict updating pod group status %s/%s, will retry in next cycle: %v",
+					podGroup.Namespace, podGroup.Name, statusErr)
 				su.inFlightPodGroups.Delete(key)
 				return
 			}
+			log.StatusUpdaterLogger.V(1).Errorf("Failed to update pod group status %s/%s: %v",
+				podGroup.Namespace, podGroup.Name, statusErr)
 		}
 		if patchErr != nil {
 			log.StatusUpdaterLogger.V(1).Errorf("Failed to patch pod group %s/%s: %v",
