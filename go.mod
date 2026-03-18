@@ -5,7 +5,7 @@ go 1.26.1
 require (
 	github.com/NVIDIA/go-nvml v0.12.4-1
 	github.com/NVIDIA/gpu-operator v1.8.3-0.20250724212111-616690d88d86
-	github.com/aptible/supercronic v0.2.33
+	github.com/aptible/supercronic v0.2.44
 	github.com/argoproj/argo-workflows/v3 v3.7.11
 	github.com/dustin/go-humanize v1.0.1
 	github.com/gin-contrib/pprof v1.5.2
@@ -23,7 +23,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.88.0
 	github.com/prometheus/client_golang v1.23.2
-	github.com/prometheus/common v0.67.4
+	github.com/prometheus/common v0.67.5
 	github.com/ray-project/kuberay/ray-operator v1.5.1
 	github.com/run-ai/kwok-operator v0.0.0-20240926063032-05b6364bc7c7
 	github.com/samber/lo v1.47.0
@@ -150,11 +150,11 @@ require (
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
-	github.com/prometheus/procfs v0.19.2 // indirect
+	github.com/prometheus/procfs v0.20.1 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/quic-go/quic-go v0.59.0 // indirect
 	github.com/robfig/cron/v3 v3.0.1 // indirect
-	github.com/sirupsen/logrus v1.9.3 // indirect
+	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/spf13/cobra v1.10.1 // indirect
 	github.com/stoewer/go-strcase v1.3.0 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
