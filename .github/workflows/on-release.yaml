@@ -67,11 +67,13 @@ jobs:
           cp charts/kai-scheduler-$PACKAGE_VERSION.tgz /mnt/images/
 
       - name: Upload As Release Asset
+        if: github.event_name == 'release'
         uses: softprops/action-gh-release@v2
         with:
           files: charts/kai-scheduler-${{ env.PACKAGE_VERSION }}.tgz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
 
   e2e-matrix:
     name: E2E (${{ matrix.k8s_version }}, ${{ matrix.feature_config }})
