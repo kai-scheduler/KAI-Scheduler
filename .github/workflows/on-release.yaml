@@ -6,6 +6,7 @@ on:
   release:
     types:
       - created
+  workflow_dispatch:
 
 env:
   DOCKER_REGISTRY: "ghcr.io/kai-scheduler/kai-scheduler"
@@ -23,7 +24,12 @@ jobs:
       - name: Extract package version
         id: package_version
         run: |
-          PACKAGE_VERSION=${GITHUB_REF_NAME}
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            GIT_REV=$(git rev-parse --short HEAD | sed 's/^0*//')
+            PACKAGE_VERSION=0.0.0-$GIT_REV
+          else
+            PACKAGE_VERSION=${GITHUB_REF_NAME}
+          fi
           echo "PACKAGE_VERSION=$PACKAGE_VERSION" >> $GITHUB_ENV
           echo "PACKAGE_VERSION=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
           echo $PACKAGE_VERSION
