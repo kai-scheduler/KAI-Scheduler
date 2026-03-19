@@ -1,7 +1,7 @@
 # Copyright 2025 NVIDIA CORPORATION
 # SPDX-License-Identifier: Apache-2.0
 
-FROM golang:1.24.0-bullseye AS builder
+FROM golang:1.25.6-bookworm AS builder
 
 RUN apt-get update && apt-get install -y \
     g++-x86-64-linux-gnu \

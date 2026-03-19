@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Update go version to v1.25.6, with appropriate upgrades to the base docker images, linter, and controller generator. [#1284](https://github.com/kai-scheduler/KAI-Scheduler/pull/1284) [davidLif](https://github.com/davidLif)
+
 ### Fixed
 
 - Updated resource enumeration logic to exclude resources with count of 0. [#1120](https://github.com/NVIDIA/KAI-Scheduler/issues/1120)
