@@ -6,9 +6,11 @@ package plugins
 import (
 	"context"
 
+	featureutil "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	resourceslicetracker "k8s.io/dynamic-resource-allocation/resourceslice/tracker"
+	"k8s.io/kubernetes/pkg/features"
 	"k8s.io/kubernetes/pkg/scheduler/apis/config"
 	k8sframework "k8s.io/kubernetes/pkg/scheduler/framework"
 	k8splfeature "k8s.io/kubernetes/pkg/scheduler/framework/plugins/feature"
@@ -48,11 +50,13 @@ func InitializeInternalPlugins(
 	initiatedPlugins.FrameworkHandle = k8sFrameworkHandle
 	initiatedPlugins.InformerFactory = informerFactory
 
-	tracker, err := k8s_utils.StartResourceSliceTracker(informerFactory, client)
-	if err != nil {
-		log.InfraLogger.Errorf("Failed to start resource slice tracker: %v", err)
+	if featureutil.DefaultMutableFeatureGate.Enabled(features.DynamicResourceAllocation) {
+		tracker, err := k8s_utils.StartResourceSliceTracker(informerFactory, client)
+		if err != nil {
+			log.InfraLogger.Errorf("Failed to start resource slice tracker: %v", err)
+		}
+		initiatedPlugins.ResourceSliceTracker = tracker
 	}
-	initiatedPlugins.ResourceSliceTracker = tracker
 
 	features := k8s_utils.GetK8sFeatures()
 	initiatedPlugins.Features = features
