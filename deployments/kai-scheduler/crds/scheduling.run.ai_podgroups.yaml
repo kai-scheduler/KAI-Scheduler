@@ -112,13 +112,17 @@ spec:
                       minimum: 1
                       type: integer
                     name:
-                      description: Name uniquely identifies the SubGroup within the
-                        PodGroup.
+                      description: |-
+                        Name uniquely identifies the SubGroup within the PodGroup.
+                        Must be a valid DNS label (RFC 1123).
                       minLength: 1
+                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                       type: string
                     parent:
-                      description: Parent is an optional attribute that specifies
-                        the name of the parent SubGroup
+                      description: |-
+                        Parent is an optional attribute that specifies the name of the parent SubGroup.
+                        Must be a valid DNS label (RFC 1123).
+                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                       type: string
                     topologyConstraint:
                       description: TopologyConstraint defines the topology constraints
