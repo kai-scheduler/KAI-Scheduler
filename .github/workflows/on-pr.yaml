@@ -21,7 +21,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24.0'
+          go-version: '1.25.6'
 
       - name: Run validation
         run: make validate
@@ -71,7 +71,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24.0'
+          go-version: '1.25.6'
 
       - name: Move Docker Data to /mnt
         run: |
@@ -161,9 +161,9 @@ jobs:
           helm upgrade -i kai-scheduler /mnt/images/kai-scheduler-$PACKAGE_VERSION.tgz -n kai-scheduler --create-namespace \
             --set "global.gpuSharing=true" --debug --wait
       - name: Set up Go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v5
         with:
-          go-version: 1.22
+          go-version: '1.25.6'
 
       - name: Install ginkgo
         run: |
