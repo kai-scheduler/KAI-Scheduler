@@ -11,7 +11,7 @@ on:
 jobs:
   dco-check:
     name: DCO
-    if: github.actor != 'dependabot[bot]' || (github.event_name != 'pull_request' && github.event_name != 'merge_group')
+    if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
