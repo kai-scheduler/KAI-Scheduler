@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Update go version to v1.25.6, With appropriate upgrades to the base docker images, linter, and controller generator.
+
 ### Fixed
 
 ## [v0.13.1] - 2026-03-18
