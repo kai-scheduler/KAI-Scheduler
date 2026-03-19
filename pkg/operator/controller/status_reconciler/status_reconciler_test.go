@@ -57,16 +57,9 @@ var _ = Describe("Status Controller", func() {
 	})
 
 	Describe("updateStartReconcileStatus", func() {
-		It("should set the reconciling condition", func() {
-			fakeDeployable := &fakeDeployable{
-				isDeployed:     true,
-				isDeployedErr:  false,
-				isAvailable:    true,
-				isAvailableErr: false,
-			}
-
+		It("should set Reconciling=True on first reconcile for a generation", func() {
 			statusReconciler := &StatusReconciler{
-				deployable: fakeDeployable,
+				deployable: &fakeDeployable{isDeployed: true, isAvailable: true},
 				Client:     fakeClient,
 			}
 
@@ -76,17 +69,40 @@ var _ = Describe("Status Controller", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(fakeClient.Get(context.TODO(), client.ObjectKeyFromObject(kaiConfig), kaiConfig)).To(Succeed())
-			found := false
-			for _, condition := range kaiConfig.Status.Conditions {
-				if condition.Type == string(kaiv1.ConditionTypeReconciling) &&
-					condition.Status == metav1.ConditionTrue &&
-					condition.ObservedGeneration == kaiConfig.Generation &&
-					condition.Reason == string(kaiv1.Reconciling) {
-					found = true
-				}
+			reconcilingCondition := getConditionByType(kaiConfig.Status.Conditions, string(kaiv1.ConditionTypeReconciling))
+			Expect(reconcilingCondition).NotTo(BeNil())
+			Expect(reconcilingCondition.Status).To(Equal(metav1.ConditionTrue))
+			Expect(reconcilingCondition.Reason).To(Equal(string(kaiv1.Reconciling)))
+		})
+
+		It("should be a no-op when Reconciling condition already exists for the current generation", func() {
+			// Simulate state after a completed reconcile: Reconciling=False is already set.
+			// This is the re-trigger caused by our own status patch.
+			kaiConfig.Status.Conditions = []metav1.Condition{
+				{
+					Type:               string(kaiv1.ConditionTypeReconciling),
+					Status:             metav1.ConditionFalse,
+					Reason:             string(kaiv1.Reconciled),
+					ObservedGeneration: kaiConfig.Generation,
+				},
+			}
+			Expect(fakeClient.Status().Update(context.TODO(), kaiConfig)).To(Succeed())
+
+			statusReconciler := &StatusReconciler{
+				deployable: &fakeDeployable{isDeployed: true, isAvailable: true},
+				Client:     fakeClient,
 			}
 
-			Expect(found).To(BeTrue())
+			err := statusReconciler.UpdateStartReconcileStatus(
+				context.TODO(), &KAIConfigWithStatusWrapper{Config: kaiConfig},
+			)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Condition must remain False — no patch was made, loop is broken.
+			Expect(fakeClient.Get(context.TODO(), client.ObjectKeyFromObject(kaiConfig), kaiConfig)).To(Succeed())
+			reconcilingCondition := getConditionByType(kaiConfig.Status.Conditions, string(kaiv1.ConditionTypeReconciling))
+			Expect(reconcilingCondition).NotTo(BeNil())
+			Expect(reconcilingCondition.Status).To(Equal(metav1.ConditionFalse))
 		})
 	})
 
