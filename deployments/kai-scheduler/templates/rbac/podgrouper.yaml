@@ -10,10 +10,13 @@ rules:
   - ""
   resources:
   - configmaps
-  - namespaces
   verbs:
+  - create
+  - delete
   - get
   - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - ""
@@ -26,6 +29,14 @@ rules:
   - list
   - patch
   - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - namespaces
+  verbs:
+  - get
+  - list
   - watch
 - apiGroups:
   - ""
@@ -109,18 +120,6 @@ rules:
   - coordination.k8s.io
   resources:
   - leases
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ""
-  resources:
-  - configmaps
   verbs:
   - create
   - delete
