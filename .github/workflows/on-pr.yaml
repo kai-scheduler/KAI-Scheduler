@@ -45,7 +45,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24.4'
+          go-version: '1.25.6'
 
       - name: Run validation
         run: make validate
@@ -113,7 +113,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24.4'
+          go-version: '1.25.6'
 
       - name: Move Docker Data to /mnt
         run: |
@@ -222,9 +222,9 @@ jobs:
             --set "global.gpuSharing=true" --set "global.registry=localhost:30100" --debug --wait
       
       - name: Set up Go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v5
         with:
-          go-version: 1.22
+          go-version: '1.25.6'
 
       - name: Install ginkgo
         run: |
