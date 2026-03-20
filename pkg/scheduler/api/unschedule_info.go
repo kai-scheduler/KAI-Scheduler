@@ -30,7 +30,7 @@ func getOverCapacityMessageDetails(queueName, resourceName string, deserved, use
 	case GpuResource:
 		return fmt.Sprintf("Workload requested %v GPUs, but %s quota is %v GPUs, "+
 			"while %v GPUs are already allocated for non-preemptible pods.",
-			requestedResources.Get(vectorMap.GetIndex("gpu")),
+			requestedResources.Get(resource_info.GPUIndex),
 			queueName,
 			resource_info.HumanizeResource(deserved, 1),
 			resource_info.HumanizeResource(used, 1),

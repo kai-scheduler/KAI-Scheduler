@@ -158,7 +158,7 @@ func (r *Resource) AddResourceRequirements(req *ResourceRequirements) {
 func (r *Resource) AddVectorAndGpuReq(vec ResourceVector, vectorMap *ResourceVectorMap, gpuReq *GpuResourceRequirement) {
 	cpuIdx := vectorMap.GetIndex(v1.ResourceCPU)
 	memIdx := vectorMap.GetIndex(v1.ResourceMemory)
-	gpuIdx := vectorMap.GetIndex("gpu")
+	gpuIdx := GPUIndex
 
 	r.milliCpu += vec.Get(cpuIdx)
 	r.memory += vec.Get(memIdx)
@@ -193,7 +193,7 @@ func (r *Resource) SubResourceRequirements(req *ResourceRequirements) {
 func (r *Resource) SubVectorAndGpuReq(vec ResourceVector, vectorMap *ResourceVectorMap, gpuReq *GpuResourceRequirement) {
 	cpuIdx := vectorMap.GetIndex(v1.ResourceCPU)
 	memIdx := vectorMap.GetIndex(v1.ResourceMemory)
-	gpuIdx := vectorMap.GetIndex("gpu")
+	gpuIdx := GPUIndex
 
 	r.milliCpu -= vec.Get(cpuIdx)
 	r.memory -= vec.Get(memIdx)

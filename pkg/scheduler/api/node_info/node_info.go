@@ -687,11 +687,10 @@ func (ni *NodeInfo) GetMigStrategy() MigStrategy {
 
 func (ni *NodeInfo) GetRequiredInitQuota(pi *pod_info.PodInfo) resource_info.ResourceVector {
 	result := pi.ResReqVector.Clone()
-	gpuIdx := ni.VectorMap.GetIndex("gpu")
 	if len(pi.GpuRequirement.MigResources()) != 0 {
-		result.Set(gpuIdx, pi.GpuRequirement.GetGpusQuota())
+		result.Set(resource_info.GPUIndex, pi.GpuRequirement.GetGpusQuota())
 	} else {
-		result.Set(gpuIdx, float64(pi.GpuRequirement.GetNumOfGpuDevices())*ni.getGpuMemoryFractionalOnNode(ni.GetResourceGpuMemory(&pi.GpuRequirement)))
+		result.Set(resource_info.GPUIndex, float64(pi.GpuRequirement.GetNumOfGpuDevices())*ni.getGpuMemoryFractionalOnNode(ni.GetResourceGpuMemory(&pi.GpuRequirement)))
 	}
 	return result
 }
