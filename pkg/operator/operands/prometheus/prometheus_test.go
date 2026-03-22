@@ -1236,8 +1236,8 @@ func getServiceMonitorCRD() *apiextensionsv1.CustomResourceDefinition {
 	return serviceMonitorCRD
 }
 
-func getPrometheusCRD() *metav1.PartialObjectMetadata {
-	prometheusCRD := &metav1.PartialObjectMetadata{
+func getPrometheusCRD() *apiextensionsv1.CustomResourceDefinition {
+	prometheusCRD := &apiextensionsv1.CustomResourceDefinition{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "CustomResourceDefinition",
 			APIVersion: "apiextensions.k8s.io/v1",

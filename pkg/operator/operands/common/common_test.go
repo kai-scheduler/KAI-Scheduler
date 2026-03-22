@@ -5,6 +5,7 @@ package common
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	nvidiav1 "github.com/NVIDIA/gpu-operator/api/nvidia/v1"
@@ -16,12 +17,14 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
 func TestCommon(t *testing.T) {
@@ -34,15 +37,33 @@ var _ = Describe("AllControllersAvailable", func() {
 		DescribeTable(
 			"should check given controller types for availability",
 			func(existingObjects, objectsToCheck []client.Object, expected bool) {
-				runtimeExistingObjects := make([]runtime.Object, len(existingObjects))
-				for i := range existingObjects {
-					runtimeExistingObjects[i] = existingObjects[i]
-				}
-				testScheme := scheme.Scheme
+				// Use a Get interceptor to serve exact copies of existingObjects. The fake
+				// client's tracker runs typed defaulters when storing/retrieving, which
+				// overwrites Status (e.g. UpdatedReplicas) and breaks availability tests.
+				testScheme := runtime.NewScheme()
+				utilruntime.Must(scheme.AddToScheme(testScheme))
 				utilruntime.Must(nvidiav1.AddToScheme(testScheme))
 				utilruntime.Must(monitoringv1.AddToScheme(testScheme))
-				fakeKubeClient := fake.NewClientBuilder().WithScheme(testScheme).
-					WithRuntimeObjects(runtimeExistingObjects...).Build()
+				objectsByKey := make(map[string]client.Object)
+				for _, o := range existingObjects {
+					key := o.GetNamespace() + "/" + o.GetName()
+					objectsByKey[key] = o.DeepCopyObject().(client.Object)
+				}
+				getFromMap := func(ctx context.Context, _ client.WithWatch, key client.ObjectKey, obj client.Object, _ ...client.GetOption) error {
+					stored := objectsByKey[key.Namespace+"/"+key.Name]
+					if stored == nil {
+						return errors.NewNotFound(schema.GroupResource{Group: "apps", Resource: "deployments"}, key.Name)
+					}
+					data, err := json.Marshal(stored)
+					if err != nil {
+						return err
+					}
+					return json.Unmarshal(data, obj)
+				}
+				fakeKubeClient := fake.NewClientBuilder().
+					WithScheme(testScheme).
+					WithInterceptorFuncs(interceptor.Funcs{Get: getFromMap}).
+					Build()
 
 				available, err := AllControllersAvailable(context.Background(), fakeKubeClient, objectsToCheck)
 				if expected && !errors.IsNotFound(err) {

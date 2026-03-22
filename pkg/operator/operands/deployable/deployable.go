@@ -160,11 +160,13 @@ func (d *DeployableOperands) calculateActionsOnObjects(
 	objectsNotToChange := map[string]client.Object{}
 
 	for key, obj := range desiredState {
-		if _, found := currentState[key]; found {
-			d.inheritFieldsFromCurrent(currentState[key], obj)
-			if reflect.DeepEqual(currentState[key], obj) {
+		if currentObj, found := currentState[key]; found {
+			d.inheritFieldsFromCurrent(currentObj, obj)
+			if reflect.DeepEqual(currentObj, obj) {
 				objectsNotToChange[key] = obj
 			} else {
+				// Set ResourceVersion so Update is applied correctly (required by fake client and API server).
+				obj.SetResourceVersion(currentObj.GetResourceVersion())
 				objectsToUpdate[key] = obj
 			}
 		} else {
