@@ -213,8 +213,8 @@ The following validations will be enforced via a Validating Webhook:
 
 ### Mutual Exclusivity
 1. **PodGroup Level**: `minMember` and `minSubGroup` are mutually exclusive
-   - If `minSubGroup` is specified, `minMember` must be 0 or unset
-   - If `minMember` is specified and > 0, `minSubGroup` must be nil
+   - If `minSubGroup` is specified, `minMember` must be -1
+   - If `minMember` is specified and >= 0, `minSubGroup` must be nil
 
 2. **SubGroup Level**: `minMember` and `minSubGroup` are mutually exclusive for each SubGroup
    - Same rules as PodGroup level
