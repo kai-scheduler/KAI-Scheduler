@@ -345,37 +345,69 @@ func runNCCLSimulation(
 	completedPods = 0
 	pendingPods = 0
 
+	// Track stalled progress: exit if no new completions for 5 consecutive polling intervals
+	const maxStallIntervals = 5
+	lastTerminalCount := 0
+	stallCounter := 0
+
 	Eventually(func(g Gomega) bool {
 		queuePods := &v1.PodList{}
 		g.Expect(testCtx.ControllerClient.List(ctx, queuePods,
 			runtimeClient.InNamespace(queue.GetConnectedNamespaceToQueue(testQueue)),
 		)).To(Succeed())
 
-		currentCompletedPods := 0
-		currentPendingPods := 0
-
+		// Build map of all pods in namespace
 		queuePodsByName := map[string]*v1.Pod{}
 		for i := range queuePods.Items {
 			pod := &queuePods.Items[i]
 			queuePodsByName[pod.Name] = pod
-			if pod.Status.Phase == v1.PodPending {
+		}
+
+		// Count terminal and pending pods from testPods only
+		currentTerminalPods := 0
+		currentPendingPods := 0
+
+		for _, pod := range testPods {
+			queuePod, exists := queuePodsByName[pod.Name]
+			if !exists {
+				continue
+			}
+
+			switch queuePod.Status.Phase {
+			case v1.PodSucceeded, v1.PodFailed:
+				currentTerminalPods++
+			case v1.PodPending:
 				currentPendingPods++
 			}
 		}
 
-		for _, pod := range testPods {
-			queuePod, exists := queuePodsByName[pod.Name]
-			if exists && queuePod.Status.Phase == v1.PodSucceeded {
-				currentCompletedPods++
-			}
-		}
-		completedPods = currentCompletedPods
+		completedPods = currentTerminalPods
 		pendingPods = currentPendingPods
 
-		return len(testPods) == completedPods || currentPendingPods == 0
+		// Detect stalled progress
+		if currentTerminalPods == lastTerminalCount {
+			stallCounter++
+		} else {
+			stallCounter = 0
+			lastTerminalCount = currentTerminalPods
+		}
+
+		// Exit when: all test pods are terminal, OR progress has stalled
+		allTerminal := len(testPods) == currentTerminalPods
+		progressStalled := stallCounter >= maxStallIntervals && currentTerminalPods > 0
+
+		if progressStalled {
+			GinkgoLogr.Info("NCCL test progress stalled - exiting early",
+				"terminalPods", currentTerminalPods,
+				"totalPods", len(testPods),
+				"pendingPods", currentPendingPods,
+				"stallIntervals", stallCounter)
+		}
+
+		return allTerminal || progressStalled
 	}, time.Duration(ncclTimeoutMinutes)*time.Minute, podsPollIntervalSeconds*time.Second).Should(BeTrue())
 
-	GinkgoLogr.Info("Finished NCCL test", "completedPods", completedPods, "len(testPods)", len(testPods), "pendingPods", pendingPods)
+	GinkgoLogr.Info("Finished NCCL test", "terminalPods", completedPods, "len(testPods)", len(testPods), "pendingPods", pendingPods)
 
 	testSucceeded = true
 
