@@ -9,9 +9,8 @@ on:
     types: [checks_requested]
 
 jobs:
-  dco-pull-request:
-    name: DCO
-    if: github.event_name == 'pull_request' && github.actor != 'dependabot[bot]'
+  dco-check:
+    name: DCO Check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -23,16 +22,17 @@ jobs:
 
       - name: Run python DCO check
         env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          pip3 install -U dco-check
-          dco-check --verbose
+          echo "GITHUB_EVENT_NAME: $GITHUB_EVENT_NAME"
+          echo "GITHUB_ACTOR: $GITHUB_ACTOR"
+          
+          if [ "$GITHUB_EVENT_NAME" == "merge_group" ]; then
+            echo "Skipping DCO check for merge group"
+            exit 0
+          fi
 
-  dco-merge-queue:
-    name: DCO
-    if: github.event_name == 'merge_group'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Skip DCO for merge queue
-        run: |
-          echo "DCO was already validated before entering merge queue"
+          pip3 install -U dco-check
+          dco-check --verbose --exclude-pattern "dependabot\[bot\]@users\.noreply\.github.com"
+
