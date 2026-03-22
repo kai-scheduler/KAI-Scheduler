@@ -9,9 +9,9 @@ on:
     types: [checks_requested]
 
 jobs:
-  dco-check:
+  dco-pull-request:
     name: DCO
-    if: github.actor != 'dependabot[bot]'
+    if: github.event_name == 'pull_request' && github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -27,3 +27,12 @@ jobs:
         run: |
           pip3 install -U dco-check
           dco-check --verbose
+
+  dco-merge-queue:
+    name: DCO
+    if: github.event_name == 'merge_group'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip DCO for merge queue
+        run: |
+          echo "DCO was already validated before entering merge queue"
