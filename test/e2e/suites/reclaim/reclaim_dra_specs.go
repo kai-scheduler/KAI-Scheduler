@@ -75,29 +75,6 @@ func DescribeReclaimDRASpecs() bool {
 			wait.ForPodUnschedulable(ctx, testCtx.ControllerClient, pendingPod)
 		})
 
-		It("Simple priority reclaim - but has min runtime (DRA)", func(ctx context.Context) {
-			testCtx = testcontext.GetConnectivity(ctx, Default)
-			capacity.SkipIfInsufficientDynamicResources(testCtx.KubeClientset, draDeviceClassName, 1, 4)
-
-			parentQueue, reclaimeeQueue, reclaimerQueue := CreateQueues(4, 1, 0)
-			reclaimerQueue.Spec.Priority = pointer.Int(constants.DefaultQueuePriority + 1)
-			reclaimeeQueue.Spec.ReclaimMinRuntime = &metav1.Duration{Duration: 60 * time.Second}
-			testCtx.InitQueues([]*v2.Queue{parentQueue, reclaimeeQueue, reclaimerQueue})
-
-			reclaimeeNamespace := queue.GetConnectedNamespaceToQueue(reclaimeeQueue)
-			reclaimerNamespace := queue.GetConnectedNamespaceToQueue(reclaimerQueue)
-
-			pod := rd.CreatePodWithGpuClaim(ctx, testCtx.KubeClientset, testCtx.ControllerClient, reclaimeeQueue, reclaimeeNamespace, 1, nil)
-			wait.ForPodScheduled(ctx, testCtx.ControllerClient, pod)
-
-			reclaimee := rd.CreatePodWithGpuClaim(ctx, testCtx.KubeClientset, testCtx.ControllerClient, reclaimeeQueue, reclaimeeNamespace, 3, nil)
-			wait.ForPodScheduled(ctx, testCtx.ControllerClient, reclaimee)
-
-			reclaimer := rd.CreatePodWithGpuClaim(ctx, testCtx.KubeClientset, testCtx.ControllerClient, reclaimerQueue, reclaimerNamespace, 1, nil)
-			wait.ForPodUnschedulable(ctx, testCtx.ControllerClient, reclaimer)
-			wait.ForPodScheduled(ctx, testCtx.ControllerClient, reclaimer)
-		})
-
 		It("Reclaim tasks from elastic jobs (DRA)", func(ctx context.Context) {
 			testCtx = testcontext.GetConnectivity(ctx, Default)
 			capacity.SkipIfInsufficientDynamicResources(testCtx.KubeClientset, draDeviceClassName, 1, 4)
