@@ -23,7 +23,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
-	k8sframework "k8s.io/kubernetes/pkg/scheduler/framework"
+	ksf "k8s.io/kube-scheduler/framework"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
@@ -43,7 +43,7 @@ type Cache interface {
 	TaskPipelined(task *pod_info.PodInfo, message string)
 	KubeClient() kubernetes.Interface
 	KubeInformerFactory() informers.SharedInformerFactory
-	SnapshotSharedLister() k8sframework.NodeInfoLister
+	SnapshotSharedLister() ksf.NodeInfoLister
 	InternalK8sPlugins() *k8splugins.K8sPlugins
 	WaitForWorkers(stopCh <-chan struct{})
 	GetDataLister() data_lister.DataLister

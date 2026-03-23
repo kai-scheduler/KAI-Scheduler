@@ -15,9 +15,8 @@ import (
 )
 
 func (p *PodGroup) SetupWebhookWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewWebhookManagedBy(mgr).
-		For(p).
-		WithValidator(&PodGroup{}).
+	return ctrl.NewWebhookManagedBy(mgr, &PodGroup{}).
+		WithCustomValidator(&PodGroup{}).
 		Complete()
 }
 

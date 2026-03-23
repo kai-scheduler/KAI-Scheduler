@@ -30,7 +30,7 @@ type NodeAffinitiesFilter struct {
 	allNodeInfos       map[string]*k8sframework.NodeInfo
 	feasibleNodes      map[string]*v1.Node
 	processedVictims   map[common_info.PodID]bool
-	nodeAffinityPlugin k8sframework.Plugin
+	nodeAffinityPlugin ksf.Plugin
 }
 
 func NewNodeAffinitiesFilter(
