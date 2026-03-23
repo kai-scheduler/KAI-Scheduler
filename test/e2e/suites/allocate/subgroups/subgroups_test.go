@@ -118,8 +118,8 @@ var _ = Describe("Allocation scenario with subgroups", Ordered, func() {
 			if err != nil {
 				return err
 			}
-			queue.Spec.Resources.GPU.Quota = 0
-			queue.Spec.Resources.GPU.Limit = 0
+			queue.Spec.Resources.CPU.Quota = 0
+			queue.Spec.Resources.CPU.Limit = 0
 			_, err = testCtx.KubeAiSchedClientset.SchedulingV2().Queues("").Update(ctx, queue, metav1.UpdateOptions{})
 			return err
 		})
@@ -138,8 +138,8 @@ var _ = Describe("Allocation scenario with subgroups", Ordered, func() {
 			if getErr != nil {
 				return getErr
 			}
-			queue.Spec.Resources.GPU.Quota = -1
-			queue.Spec.Resources.GPU.Limit = -1
+			queue.Spec.Resources.CPU.Quota = 600
+			queue.Spec.Resources.CPU.Limit = 600
 			_, updateErr := testCtx.KubeAiSchedClientset.SchedulingV2().Queues("").Update(ctx, queue, metav1.UpdateOptions{})
 			return updateErr
 		})
