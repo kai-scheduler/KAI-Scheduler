@@ -1165,6 +1165,22 @@ spec:
                                   - Auto
                                   - "Off"
                                   type: string
+                                oomBumpUpRatio:
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  description: oomBumpUpRatio is the ratio to increase
+                                    memory when OOM is detected.
+                                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                  x-kubernetes-int-or-string: true
+                                oomMinBumpUp:
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  description: oomMinBumpUp is the minimum increase
+                                    in memory when OOM is detected.
+                                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                  x-kubernetes-int-or-string: true
                               type: object
                             type: array
                         type: object
@@ -1216,7 +1232,7 @@ spec:
                           updateMode:
                             description: |-
                               Controls when autoscaler applies changes to the pod resources.
-                              The default is 'Auto'.
+                              The default is 'Recreate'.
                             enum:
                             - "Off"
                             - Initial
@@ -2468,6 +2484,22 @@ spec:
                                   - Auto
                                   - "Off"
                                   type: string
+                                oomBumpUpRatio:
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  description: oomBumpUpRatio is the ratio to increase
+                                    memory when OOM is detected.
+                                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                  x-kubernetes-int-or-string: true
+                                oomMinBumpUp:
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  description: oomMinBumpUp is the minimum increase
+                                    in memory when OOM is detected.
+                                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                  x-kubernetes-int-or-string: true
                               type: object
                             type: array
                         type: object
@@ -2519,7 +2551,7 @@ spec:
                           updateMode:
                             description: |-
                               Controls when autoscaler applies changes to the pod resources.
-                              The default is 'Auto'.
+                              The default is 'Recreate'.
                             enum:
                             - "Off"
                             - Initial
@@ -3479,9 +3511,10 @@ spec:
                         operator:
                           description: |-
                             Operator represents a key's relationship to the value.
-                            Valid operators are Exists and Equal. Defaults to Equal.
+                            Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
                             Exists is equivalent to wildcard for value, so that a pod can
                             tolerate all taints of a particular category.
+                            Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
                           type: string
                         tolerationSeconds:
                           description: |-
@@ -3757,9 +3790,10 @@ spec:
                         operator:
                           description: |-
                             Operator represents a key's relationship to the value.
-                            Valid operators are Exists and Equal. Defaults to Equal.
+                            Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
                             Exists is equivalent to wildcard for value, so that a pod can
                             tolerate all taints of a particular category.
+                            Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
                           type: string
                         tolerationSeconds:
                           description: |-
@@ -3847,6 +3881,22 @@ spec:
                                   - Auto
                                   - "Off"
                                   type: string
+                                oomBumpUpRatio:
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  description: oomBumpUpRatio is the ratio to increase
+                                    memory when OOM is detected.
+                                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                  x-kubernetes-int-or-string: true
+                                oomMinBumpUp:
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  description: oomMinBumpUp is the minimum increase
+                                    in memory when OOM is detected.
+                                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                  x-kubernetes-int-or-string: true
                               type: object
                             type: array
                         type: object
@@ -3898,7 +3948,7 @@ spec:
                           updateMode:
                             description: |-
                               Controls when autoscaler applies changes to the pod resources.
-                              The default is 'Auto'.
+                              The default is 'Recreate'.
                             enum:
                             - "Off"
                             - Initial
@@ -5040,6 +5090,22 @@ spec:
                                   - Auto
                                   - "Off"
                                   type: string
+                                oomBumpUpRatio:
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  description: oomBumpUpRatio is the ratio to increase
+                                    memory when OOM is detected.
+                                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                  x-kubernetes-int-or-string: true
+                                oomMinBumpUp:
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  description: oomMinBumpUp is the minimum increase
+                                    in memory when OOM is detected.
+                                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                  x-kubernetes-int-or-string: true
                               type: object
                             type: array
                         type: object
@@ -5091,7 +5157,7 @@ spec:
                           updateMode:
                             description: |-
                               Controls when autoscaler applies changes to the pod resources.
-                              The default is 'Auto'.
+                              The default is 'Recreate'.
                             enum:
                             - "Off"
                             - Initial
@@ -6222,6 +6288,22 @@ spec:
                                   - Auto
                                   - "Off"
                                   type: string
+                                oomBumpUpRatio:
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  description: oomBumpUpRatio is the ratio to increase
+                                    memory when OOM is detected.
+                                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                  x-kubernetes-int-or-string: true
+                                oomMinBumpUp:
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  description: oomMinBumpUp is the minimum increase
+                                    in memory when OOM is detected.
+                                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                  x-kubernetes-int-or-string: true
                               type: object
                             type: array
                         type: object
@@ -6273,7 +6355,7 @@ spec:
                           updateMode:
                             description: |-
                               Controls when autoscaler applies changes to the pod resources.
-                              The default is 'Auto'.
+                              The default is 'Recreate'.
                             enum:
                             - "Off"
                             - Initial
@@ -7428,6 +7510,22 @@ spec:
                                   - Auto
                                   - "Off"
                                   type: string
+                                oomBumpUpRatio:
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  description: oomBumpUpRatio is the ratio to increase
+                                    memory when OOM is detected.
+                                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                  x-kubernetes-int-or-string: true
+                                oomMinBumpUp:
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  description: oomMinBumpUp is the minimum increase
+                                    in memory when OOM is detected.
+                                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                  x-kubernetes-int-or-string: true
                               type: object
                             type: array
                         type: object
@@ -7479,7 +7577,7 @@ spec:
                           updateMode:
                             description: |-
                               Controls when autoscaler applies changes to the pod resources.
-                              The default is 'Auto'.
+                              The default is 'Recreate'.
                             enum:
                             - "Off"
                             - Initial
@@ -8718,6 +8816,22 @@ spec:
                                   - Auto
                                   - "Off"
                                   type: string
+                                oomBumpUpRatio:
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  description: oomBumpUpRatio is the ratio to increase
+                                    memory when OOM is detected.
+                                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                  x-kubernetes-int-or-string: true
+                                oomMinBumpUp:
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  description: oomMinBumpUp is the minimum increase
+                                    in memory when OOM is detected.
+                                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                  x-kubernetes-int-or-string: true
                               type: object
                             type: array
                         type: object
@@ -8769,7 +8883,7 @@ spec:
                           updateMode:
                             description: |-
                               Controls when autoscaler applies changes to the pod resources.
-                              The default is 'Auto'.
+                              The default is 'Recreate'.
                             enum:
                             - "Off"
                             - Initial
@@ -9910,6 +10024,22 @@ spec:
                                   - Auto
                                   - "Off"
                                   type: string
+                                oomBumpUpRatio:
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  description: oomBumpUpRatio is the ratio to increase
+                                    memory when OOM is detected.
+                                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                  x-kubernetes-int-or-string: true
+                                oomMinBumpUp:
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  description: oomMinBumpUp is the minimum increase
+                                    in memory when OOM is detected.
+                                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                  x-kubernetes-int-or-string: true
                               type: object
                             type: array
                         type: object
@@ -9961,7 +10091,7 @@ spec:
                           updateMode:
                             description: |-
                               Controls when autoscaler applies changes to the pod resources.
-                              The default is 'Auto'.
+                              The default is 'Recreate'.
                             enum:
                             - "Off"
                             - Initial
