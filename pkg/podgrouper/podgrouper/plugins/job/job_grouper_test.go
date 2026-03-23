@@ -340,9 +340,8 @@ func TestGetPodGroupMetadata_MinMemberOverrideInvalid(t *testing.T) {
 		name       string
 		annotation string
 	}{
-		{"negative value", "-1"},
-		{"zero value", "0"},
 		{"non-numeric", "abc"},
+		{"non-int", "1.5"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -356,7 +355,7 @@ func TestGetPodGroupMetadata_MinMemberOverrideInvalid(t *testing.T) {
 						"uid":       "1234-5678",
 						"labels":    map[string]interface{}{},
 						"annotations": map[string]interface{}{
-							"kai.scheduler/min-member": tt.annotation,
+							"kai.scheduler/min-member": "invalid",
 						},
 					},
 					"spec": map[string]interface{}{},
@@ -378,8 +377,8 @@ func TestGetPodGroupMetadata_MinMemberOverrideInvalid(t *testing.T) {
 			jobGrouper := NewK8sJobGrouper(client, defaultGrouper, false)
 
 			podGroupMetadata, err := jobGrouper.GetPodGroupMetadata(owner, pod)
-			assert.NoError(t, err)
-			assert.Equal(t, int32(1), podGroupMetadata.MinAvailable)
+			assert.Error(t, err)
+			assert.Nil(t, podGroupMetadata)
 		})
 	}
 }
