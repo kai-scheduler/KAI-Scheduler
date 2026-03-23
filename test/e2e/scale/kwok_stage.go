@@ -56,7 +56,7 @@ func createPodCompletionStage(
 					"app":        "engine-e2e",
 					"burst-test": "true",
 				},
-				MatchExpressions: []kwokv1alpha1.SelectorRequirement{
+				MatchExpressions: []kwokv1alpha1.MatchExpression{
 					{
 						Key:      ".metadata.deletionTimestamp",
 						Operator: kwokv1alpha1.SelectorOpDoesNotExist,
