@@ -63,7 +63,8 @@ jobs:
         run: |
           echo "## 📊 Performance Benchmark Results" > benchmark-report.md
           echo "" >> benchmark-report.md
-          echo "Comparing **PR** (\`${{ github.head_ref }}\`) vs **main** branch:" >> benchmark-report.md
+          echo "<details>" >> benchmark-report.md
+          echo "<summary>Comparing <b>PR</b> (<code>${{ github.head_ref }}</code>) vs <b>main</b> branch — click to expand</summary>" >> benchmark-report.md
           echo "" >> benchmark-report.md
 
           # Run benchstat and capture output
@@ -96,6 +97,8 @@ jobs:
           echo '```' >> benchmark-report.md
           head -50 main-bench.txt >> benchmark-report.md
           echo '```' >> benchmark-report.md
+          echo "</details>" >> benchmark-report.md
+          echo "" >> benchmark-report.md
           echo "</details>" >> benchmark-report.md
 
           cat benchmark-report.md

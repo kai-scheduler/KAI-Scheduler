@@ -44,14 +44,15 @@ RUNTIME_CONFIG=""
 
 case "$FEATURE_CONFIG" in
   dra-enabled)
-    if [ "$K8S_MINOR" -le 33 ]; then
+    if [ "$K8S_MINOR" -eq 32 ]; then
       ENABLE_DRA_FEATURE_GATE=true
-    fi
-    if [ "$K8S_MINOR" -le 32 ]; then
       RUNTIME_CONFIG="resource.k8s.io/v1beta1=true"
     elif [ "$K8S_MINOR" -eq 33 ]; then
-      RUNTIME_CONFIG="resource.k8s.io/v1beta2=true"
+      ENABLE_DRA_FEATURE_GATE=true
+      RUNTIME_CONFIG="resource.k8s.io/v1beta1=true,resource.k8s.io/v1beta2=true"
     fi
+    # k8s <= 1.31: DRA is alpha only (v1alpha3), no v1beta support
+    # k8s >= 1.34: DRA is GA (v1), feature gate on by default, no runtime-config needed
     ;;
   default|*)
     ;;

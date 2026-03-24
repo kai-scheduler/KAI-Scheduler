@@ -83,8 +83,12 @@ runs:
     - name: Deploy fake gpu operator
       shell: bash
       run: |
+        DRA_PLUGIN_ENABLED="false"
+        if [ "${{ inputs.feature_config }}" = "dra-enabled" ]; then
+          DRA_PLUGIN_ENABLED="true"
+        fi
         helm upgrade -i gpu-operator oci://ghcr.io/run-ai/fake-gpu-operator/fake-gpu-operator --namespace gpu-operator --create-namespace \
-            --version 0.0.71 --values ./hack/fake-gpu-operator-values.yaml --wait
+            --version 0.0.74 --values ./hack/fake-gpu-operator-values.yaml --set "draPlugin.enabled=$DRA_PLUGIN_ENABLED" --wait
 
     - name: Deploy Prometheus Operator
       shell: bash

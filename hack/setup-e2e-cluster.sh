@@ -74,8 +74,12 @@ kubectl apply -f ${REPO_ROOT}/hack/local_registry.yaml
 kubectl wait --for=condition=available --timeout=60s deployment/registry -n kube-registry
 
 # Install the fake-gpu-operator to provide fake GPU resources for the e2e tests
+DRA_PLUGIN_ENABLED="false"
+if [ "$FEATURE_CONFIG" = "dra-enabled" ]; then
+  DRA_PLUGIN_ENABLED="true"
+fi
 helm upgrade -i gpu-operator oci://ghcr.io/run-ai/fake-gpu-operator/fake-gpu-operator --namespace gpu-operator --create-namespace \
-    --version 0.0.74 --values ${REPO_ROOT}/hack/fake-gpu-operator-values.yaml --wait
+    --version 0.0.74 --values ${REPO_ROOT}/hack/fake-gpu-operator-values.yaml --set "draPlugin.enabled=$DRA_PLUGIN_ENABLED" --wait
 
 # Deploy Prometheus Operator
 echo "Deploying Prometheus Operator..."
