@@ -7,23 +7,28 @@ package preempt
 import (
 	"context"
 
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 
-	v2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/constant"
-	testcontext "github.com/NVIDIA/KAI-scheduler/test/e2e/modules/context"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/capacity"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/queue"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/utils"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/wait"
+	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/constant"
+	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/capacity"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/utils"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
 )
+
+var _ = DescribePreemptSpecs()
 
 var _ = Describe("Priority Preemption", Ordered, func() {
 	var (
@@ -86,185 +91,9 @@ var _ = Describe("Priority Preemption", Ordered, func() {
 		testCtx.TestContextCleanup(ctx)
 	})
 
-	It("High preemptible PREEMPTING low preemptible", func(ctx context.Context) {
-		lowPod := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{
-			Limits: map[v1.ResourceName]resource.Quantity{
-				v1.ResourceCPU: resource.MustParse("500m"),
-			},
-		})
-		lowPod.Spec.PriorityClassName = lowPreemptiblePriorityClass
-		_, err := rd.CreatePod(ctx, testCtx.KubeClientset, lowPod)
-		Expect(err).To(Succeed())
-		wait.ForPodScheduled(ctx, testCtx.ControllerClient, lowPod)
-
-		highPod := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{
-			Limits: map[v1.ResourceName]resource.Quantity{
-				v1.ResourceCPU: resource.MustParse("500m"),
-			},
-		})
-		highPod.Spec.PriorityClassName = highPreemptiblePriorityClass
-		_, err = rd.CreatePod(ctx, testCtx.KubeClientset, highPod)
-		Expect(err).To(Succeed())
-		wait.ForPodScheduled(ctx, testCtx.ControllerClient, highPod)
-	})
-
-	It("High non preemptible PREEMPTING low preemptible", func(ctx context.Context) {
-		lowPod := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{
-			Limits: map[v1.ResourceName]resource.Quantity{
-				v1.ResourceCPU: resource.MustParse("500m"),
-			},
-		})
-		lowPod.Spec.PriorityClassName = lowPreemptiblePriorityClass
-		lowPod, err := rd.CreatePod(ctx, testCtx.KubeClientset, lowPod)
-		Expect(err).To(Succeed())
-		wait.ForPodScheduled(ctx, testCtx.ControllerClient, lowPod)
-
-		highPod := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{
-			Limits: map[v1.ResourceName]resource.Quantity{
-				v1.ResourceCPU: resource.MustParse("500m"),
-			},
-		})
-		highPod.Spec.PriorityClassName = highNonPreemptiblePriorityClass
-		highPod, err = rd.CreatePod(ctx, testCtx.KubeClientset, highPod)
-		Expect(err).To(Succeed())
-		wait.ForPodScheduled(ctx, testCtx.ControllerClient, highPod)
-	})
-
-	It("High non preemptible should not preempt low non preemptible ", func(ctx context.Context) {
-		lowPod := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{
-			Limits: map[v1.ResourceName]resource.Quantity{
-				v1.ResourceCPU: resource.MustParse("500m"),
-			},
-		})
-		lowPod.Spec.PriorityClassName = lowNonPreemptiblePriorityClass
-		lowPod, err := rd.CreatePod(ctx, testCtx.KubeClientset, lowPod)
-		Expect(err).To(Succeed())
-		wait.ForPodScheduled(ctx, testCtx.ControllerClient, lowPod)
-
-		highPod := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{
-			Limits: map[v1.ResourceName]resource.Quantity{
-				v1.ResourceCPU: resource.MustParse("500m"),
-			},
-		})
-		highPod.Spec.PriorityClassName = highNonPreemptiblePriorityClass
-		highPod, err = rd.CreatePod(ctx, testCtx.KubeClientset, highPod)
-		Expect(err).To(Succeed())
-		wait.ForPodUnschedulable(ctx, testCtx.ControllerClient, highPod)
-	})
-
-	It("Low preemptible should not preempt high preemptible ", func(ctx context.Context) {
-		highPod := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{
-			Limits: map[v1.ResourceName]resource.Quantity{
-				v1.ResourceCPU: resource.MustParse("500m"),
-			},
-		})
-		highPod.Spec.PriorityClassName = highPreemptiblePriorityClass
-		highPod, err := rd.CreatePod(ctx, testCtx.KubeClientset, highPod)
-		Expect(err).To(Succeed())
-		wait.ForPodScheduled(ctx, testCtx.ControllerClient, highPod)
-
-		lowPod := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{
-			Limits: map[v1.ResourceName]resource.Quantity{
-				v1.ResourceCPU: resource.MustParse("500m"),
-			},
-		})
-		lowPod.Spec.PriorityClassName = lowPreemptiblePriorityClass
-		lowPod, err = rd.CreatePod(ctx, testCtx.KubeClientset, lowPod)
-		Expect(err).To(Succeed())
-		wait.ForPodUnschedulable(ctx, testCtx.ControllerClient, lowPod)
-	})
-
-	It("Low non preemptible should not preempt high non preemptible ", func(ctx context.Context) {
-		highPod := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{
-			Limits: map[v1.ResourceName]resource.Quantity{
-				v1.ResourceCPU: resource.MustParse("500m"),
-			},
-		})
-		highPod.Spec.PriorityClassName = highNonPreemptiblePriorityClass
-		highPod, err := rd.CreatePod(ctx, testCtx.KubeClientset, highPod)
-		Expect(err).To(Succeed())
-		wait.ForPodScheduled(ctx, testCtx.ControllerClient, highPod)
-
-		lowPod := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{
-			Limits: map[v1.ResourceName]resource.Quantity{
-				v1.ResourceCPU: resource.MustParse("500m"),
-			},
-		})
-		lowPod.Spec.PriorityClassName = lowNonPreemptiblePriorityClass
-		lowPod, err = rd.CreatePod(ctx, testCtx.KubeClientset, lowPod)
-		Expect(err).To(Succeed())
-		wait.ForPodUnschedulable(ctx, testCtx.ControllerClient, lowPod)
-	})
-
-	It("Low preemptible should not preempt high non preemptible ", func(ctx context.Context) {
-		highPod := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{
-			Limits: map[v1.ResourceName]resource.Quantity{
-				v1.ResourceCPU: resource.MustParse("500m"),
-			},
-		})
-		highPod.Spec.PriorityClassName = highNonPreemptiblePriorityClass
-		highPod, err := rd.CreatePod(ctx, testCtx.KubeClientset, highPod)
-		Expect(err).To(Succeed())
-		wait.ForPodScheduled(ctx, testCtx.ControllerClient, highPod)
-
-		lowPod := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{
-			Limits: map[v1.ResourceName]resource.Quantity{
-				v1.ResourceCPU: resource.MustParse("500m"),
-			},
-		})
-		lowPod.Spec.PriorityClassName = lowPreemptiblePriorityClass
-		lowPod, err = rd.CreatePod(ctx, testCtx.KubeClientset, lowPod)
-		Expect(err).To(Succeed())
-		wait.ForPodUnschedulable(ctx, testCtx.ControllerClient, lowPod)
-	})
-
-	It("Same priority preemptible should not preempt Same priority preemptible ", func(ctx context.Context) {
-		pod1 := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{
-			Limits: map[v1.ResourceName]resource.Quantity{
-				v1.ResourceCPU: resource.MustParse("500m"),
-			},
-		})
-		pod1.Spec.PriorityClassName = lowPreemptiblePriorityClass
-		pod1, err := rd.CreatePod(ctx, testCtx.KubeClientset, pod1)
-		Expect(err).To(Succeed())
-		wait.ForPodScheduled(ctx, testCtx.ControllerClient, pod1)
-
-		pod2 := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{
-			Limits: map[v1.ResourceName]resource.Quantity{
-				v1.ResourceCPU: resource.MustParse("500m"),
-			},
-		})
-		pod2.Spec.PriorityClassName = lowPreemptiblePriorityClass
-		pod2, err = rd.CreatePod(ctx, testCtx.KubeClientset, pod2)
-		Expect(err).To(Succeed())
-		wait.ForPodUnschedulable(ctx, testCtx.ControllerClient, pod2)
-	})
-
-	It("Same priority non preemptible should not preempt Same priority non preemptible ", func(ctx context.Context) {
-		pod1 := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{
-			Limits: map[v1.ResourceName]resource.Quantity{
-				v1.ResourceCPU: resource.MustParse("500m"),
-			},
-		})
-		pod1.Spec.PriorityClassName = lowNonPreemptiblePriorityClass
-		pod1, err := rd.CreatePod(ctx, testCtx.KubeClientset, pod1)
-		Expect(err).To(Succeed())
-		wait.ForPodScheduled(ctx, testCtx.ControllerClient, pod1)
-
-		pod2 := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{
-			Limits: map[v1.ResourceName]resource.Quantity{
-				v1.ResourceCPU: resource.MustParse("500m"),
-			},
-		})
-		pod2.Spec.PriorityClassName = lowNonPreemptiblePriorityClass
-		pod2, err = rd.CreatePod(ctx, testCtx.KubeClientset, pod2)
-		Expect(err).To(Succeed())
-		wait.ForPodUnschedulable(ctx, testCtx.ControllerClient, pod2)
-	})
-
 	Context("Dynamic Resources", func() {
 		var (
-			deviceClassName = "gpu.example.com"
+			deviceClassName = constant.GPUDeviceClassName
 			namespace       string
 		)
 
@@ -277,7 +106,7 @@ var _ = Describe("Priority Preemption", Ordered, func() {
 			capacity.CleanupResourceClaims(ctx, testCtx.KubeClientset, namespace)
 		})
 
-		It("Preempts a pod based on DRA contention", func(ctx context.Context) {
+		It("Preempts a pod based on DRA contention - dra template claims", func(ctx context.Context) {
 			nodeName := ""
 			devices := 0
 			nodesMap := capacity.ListDevicesByNode(testCtx.KubeClientset, deviceClassName)
@@ -290,8 +119,8 @@ var _ = Describe("Priority Preemption", Ordered, func() {
 			}
 			Expect(nodeName).ToNot(Equal(""), "failed to find a node with multiple devices")
 
-			claimTemplate := rd.CreateResourceClaimTemplate(namespace, deviceClassName, 1)
-			claimTemplate, err := testCtx.KubeClientset.ResourceV1beta1().ResourceClaimTemplates(namespace).Create(ctx, claimTemplate, metav1.CreateOptions{})
+			claimTemplate := rd.CreateResourceClaimTemplate(namespace, testCtx.Queues[0].Name, deviceClassName, 1)
+			claimTemplate, err := testCtx.KubeClientset.ResourceV1().ResourceClaimTemplates(namespace).Create(ctx, claimTemplate, metav1.CreateOptions{})
 			Expect(err).To(BeNil())
 
 			var pods []*v1.Pod
@@ -306,7 +135,7 @@ var _ = Describe("Priority Preemption", Ordered, func() {
 				})
 				pod.Spec.ResourceClaims = []v1.PodResourceClaim{{
 					Name:                      "claim-template",
-					ResourceClaimTemplateName: pointer.String(claimTemplate.Name),
+					ResourceClaimTemplateName: ptr.To(claimTemplate.Name),
 				}}
 
 				pod.Spec.Affinity = &v1.Affinity{
@@ -347,7 +176,7 @@ var _ = Describe("Priority Preemption", Ordered, func() {
 			})
 			unschedulablePod.Spec.ResourceClaims = []v1.PodResourceClaim{{
 				Name:                      "claim-template",
-				ResourceClaimTemplateName: pointer.String(claimTemplate.Name),
+				ResourceClaimTemplateName: ptr.To(claimTemplate.Name),
 			}}
 
 			unschedulablePod.Spec.Affinity = &v1.Affinity{
@@ -385,7 +214,7 @@ var _ = Describe("Priority Preemption", Ordered, func() {
 			})
 			schedulablePod.Spec.ResourceClaims = []v1.PodResourceClaim{{
 				Name:                      "claim-template",
-				ResourceClaimTemplateName: pointer.String(claimTemplate.Name),
+				ResourceClaimTemplateName: ptr.To(claimTemplate.Name),
 			}}
 
 			schedulablePod.Spec.Affinity = &v1.Affinity{
@@ -411,6 +240,86 @@ var _ = Describe("Priority Preemption", Ordered, func() {
 
 			wait.ForPodScheduled(ctx, testCtx.ControllerClient, schedulablePod)
 			wait.ForPodReady(ctx, testCtx.ControllerClient, schedulablePod)
+		})
+	})
+
+	Context("Preemptability-Priority Separation", func() {
+		It("High priority preemptible Pod should be preemptible", func(ctx context.Context) {
+			mediumPriorityPreemptiblePod := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{
+				Limits: map[v1.ResourceName]resource.Quantity{
+					v1.ResourceCPU: resource.MustParse("500m"),
+				},
+			})
+			mediumPriorityPreemptiblePod.Spec.PriorityClassName = lowNonPreemptiblePriorityClass
+			mediumPriorityPreemptiblePod.Labels["kai.scheduler/preemptibility"] = string(v2alpha2.Preemptible)
+			_, err := rd.CreatePod(ctx, testCtx.KubeClientset, mediumPriorityPreemptiblePod)
+			Expect(err).To(Succeed())
+			wait.ForPodScheduled(ctx, testCtx.ControllerClient, mediumPriorityPreemptiblePod)
+
+			createdPod := &v1.Pod{}
+			err = testCtx.ControllerClient.Get(ctx, types.NamespacedName{
+				Name:      mediumPriorityPreemptiblePod.Name,
+				Namespace: mediumPriorityPreemptiblePod.Namespace,
+			}, createdPod)
+			Expect(err).To(Succeed())
+			podGroupName := createdPod.Annotations[constants.PodGroupAnnotationForPod]
+			Expect(podGroupName).To(Not(BeEmpty()))
+			podGroup := &v2alpha2.PodGroup{}
+			err = testCtx.ControllerClient.Get(ctx, types.NamespacedName{
+				Name:      podGroupName,
+				Namespace: mediumPriorityPreemptiblePod.Namespace,
+			}, podGroup)
+			Expect(err).To(Succeed())
+			Expect(podGroup.Spec.Preemptibility).To(Equal(v2alpha2.Preemptible))
+
+			higherPriorityPod := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{
+				Limits: map[v1.ResourceName]resource.Quantity{
+					v1.ResourceCPU: resource.MustParse("500m"),
+				},
+			})
+			higherPriorityPod.Spec.PriorityClassName = highNonPreemptiblePriorityClass
+			_, err = rd.CreatePod(ctx, testCtx.KubeClientset, higherPriorityPod)
+			Expect(err).To(Succeed())
+			wait.ForPodScheduled(ctx, testCtx.ControllerClient, higherPriorityPod)
+		})
+
+		It("Low priority non-preemptible Pod should not be preemptible", func(ctx context.Context) {
+			lowPriorityNonPreemptiblePod := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{
+				Limits: map[v1.ResourceName]resource.Quantity{
+					v1.ResourceCPU: resource.MustParse("500m"),
+				},
+			})
+			lowPriorityNonPreemptiblePod.Spec.PriorityClassName = lowPreemptiblePriorityClass
+			lowPriorityNonPreemptiblePod.Labels["kai.scheduler/preemptibility"] = string(v2alpha2.NonPreemptible)
+			_, err := rd.CreatePod(ctx, testCtx.KubeClientset, lowPriorityNonPreemptiblePod)
+			Expect(err).To(Succeed())
+			wait.ForPodScheduled(ctx, testCtx.ControllerClient, lowPriorityNonPreemptiblePod)
+
+			createdPod := &v1.Pod{}
+			err = testCtx.ControllerClient.Get(ctx, types.NamespacedName{
+				Name:      lowPriorityNonPreemptiblePod.Name,
+				Namespace: lowPriorityNonPreemptiblePod.Namespace,
+			}, createdPod)
+			Expect(err).To(Succeed())
+			podGroupName := createdPod.Annotations[constants.PodGroupAnnotationForPod]
+			Expect(podGroupName).To(Not(BeEmpty()))
+			podGroup := &v2alpha2.PodGroup{}
+			err = testCtx.ControllerClient.Get(ctx, types.NamespacedName{
+				Name:      podGroupName,
+				Namespace: lowPriorityNonPreemptiblePod.Namespace,
+			}, podGroup)
+			Expect(err).To(Succeed())
+			Expect(podGroup.Spec.Preemptibility).To(Equal(v2alpha2.NonPreemptible))
+
+			higherPriorityPod := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{
+				Limits: map[v1.ResourceName]resource.Quantity{
+					v1.ResourceCPU: resource.MustParse("500m"),
+				},
+			})
+			higherPriorityPod.Spec.PriorityClassName = highPreemptiblePriorityClass
+			_, err = rd.CreatePod(ctx, testCtx.KubeClientset, higherPriorityPod)
+			Expect(err).To(Succeed())
+			wait.ForPodUnschedulable(ctx, testCtx.ControllerClient, higherPriorityPod)
 		})
 	})
 })

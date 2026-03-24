@@ -1,7 +1,9 @@
-# Scheduler Actions Framework Documentation
+# Scheduler Actions Framework
 
 ## Overview
-The scheduler uses an action-based system to make scheduling decisions. At a high level, actions generate scenarios, which are simulated and validated before being committed to the cluster. This allows for complex scheduling logic while maintaining consistency and allowing rollback of failed operations, without needlessly interrupting pods.
+The scheduler uses an action-based system to make scheduling decisions. At a high level, actions generate [scenarios](#1-scenarios), which are simulated and validated ([simulation](#2-simulation)) before being committed to the cluster using a [statement](#3-statement). This allows for complex scheduling logic while maintaining consistency and allowing rollback of failed operations, without needlessly interrupting pods.
+
+For an overview of how actions fit into the broader scheduler architecture, see [Scheduler Core Concepts](scheduler-concepts.md).
 
 ## Scheduling Actions
 

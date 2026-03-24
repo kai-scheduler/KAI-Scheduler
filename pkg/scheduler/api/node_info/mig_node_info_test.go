@@ -8,8 +8,8 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 )
 
 func TestIsTaskAllocatable_Mig(t *testing.T) {
@@ -58,7 +58,7 @@ func TestIsTaskAllocatable_Mig(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			runAllocatableTest(
 				t, testData, testName,
-				func(ni *NodeInfo, task *pod_info.PodInfo) (bool, error) {
+				func(ni *NodeInfo, task *pod_info.PodInfo) (bool, *common_info.TasksFitError) {
 					allocatable, err := ni.IsTaskAllocatable(task), ni.FittingError(task, false)
 					return allocatable, err
 				},

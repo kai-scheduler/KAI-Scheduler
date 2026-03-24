@@ -9,10 +9,10 @@ import (
 	"github.com/pkg/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	enginev2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/queue_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
+	enginev2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 )
 
 const (
@@ -51,7 +51,7 @@ func (c *ClusterInfo) getDefaultParentQueue() *queue_info.QueueInfo {
 func (c *ClusterInfo) snapshotQueues() (map[common_info.QueueID]*queue_info.QueueInfo, error) {
 	queues, err := c.dataLister.ListQueues()
 	if err != nil {
-		err = errors.WithStack(fmt.Errorf("error listing queues: %c", err))
+		err = errors.WithStack(fmt.Errorf("error listing queues: %w", err))
 		return nil, err
 	}
 
@@ -75,6 +75,14 @@ func (c *ClusterInfo) snapshotQueues() (map[common_info.QueueID]*queue_info.Queu
 	}
 
 	return result, nil
+}
+
+func (c *ClusterInfo) snapshotQueueResourceUsage() (*queue_info.ClusterUsage, error) {
+	if !c.collectUsageData {
+		return nil, nil
+	}
+
+	return c.dataLister.ListResourceUsage()
 }
 
 // UpdateQueueHierarchy iterates over a map containing multiple levels of queue hierarchies, and updates queues with

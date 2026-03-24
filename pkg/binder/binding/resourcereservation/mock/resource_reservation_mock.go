@@ -41,18 +41,18 @@ func (m *MockInterface) EXPECT() *MockInterfaceMockRecorder {
 	return m.recorder
 }
 
-// RemovePodGpuGroupConnection mocks base method.
-func (m *MockInterface) RemovePodGpuGroupConnection(ctx context.Context, pod *v1.Pod, gpuGroup string) error {
+// RemovePodGpuGroupsConnection mocks base method.
+func (m *MockInterface) RemovePodGpuGroupsConnection(ctx context.Context, pod *v1.Pod) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RemovePodGpuGroupConnection", ctx, pod, gpuGroup)
+	ret := m.ctrl.Call(m, "RemovePodGpuGroupsConnection", ctx, pod)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
-// RemovePodGpuGroupConnection indicates an expected call of RemovePodGpuGroupConnection.
-func (mr *MockInterfaceMockRecorder) RemovePodGpuGroupConnection(ctx, pod, gpuGroup any) *gomock.Call {
+// RemovePodGpuGroupsConnection indicates an expected call of RemovePodGpuGroupsConnection.
+func (mr *MockInterfaceMockRecorder) RemovePodGpuGroupsConnection(ctx, pod any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemovePodGpuGroupConnection", reflect.TypeOf((*MockInterface)(nil).RemovePodGpuGroupConnection), ctx, pod, gpuGroup)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemovePodGpuGroupsConnection", reflect.TypeOf((*MockInterface)(nil).RemovePodGpuGroupsConnection), ctx, pod)
 }
 
 // ReserveGpuDevice mocks base method.

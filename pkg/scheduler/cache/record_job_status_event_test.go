@@ -21,13 +21,14 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/utils/ptr"
 
-	kubeaischedulerfake "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned/fake"
-	enginev2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	kubeaischedulerfake "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/fake"
+	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 )
 
 type test struct {
@@ -274,6 +275,24 @@ func TestRecordJobStatusEvent(t *testing.T) {
 				"pod-2": {"^Node-Pool 'default': OverCapacity: job is over capacity"},
 			},
 		},
+		{
+			name: "queue does not exist error",
+			pods: map[v1.PodPhase][]common_info.PodID{
+				v1.PodPending: {"pod-1"},
+			},
+			nodeErrors:                       map[common_info.PodID]map[string]string{},
+			podErrors:                        map[common_info.PodID]error{},
+			jobErrors:                        newUnschedulabeReasons(map[string]string{string(enginev2alpha2.QueueDoesNotExist): "Queue 'nonexistent-queue' does not exist"}),
+			expectedPodgroupErrorPatterns:    []string{"Queue 'nonexistent-queue' does not exist"},
+			expectedPodgroupConditionReasons: []enginev2alpha2.UnschedulableReason{enginev2alpha2.QueueDoesNotExist},
+			expectedPodgroupEventPatterns:    []string{"Queue 'nonexistent-queue' does not exist"},
+			expectedPodErrorPatterns: map[common_info.PodID][]string{
+				"pod-1": {"Queue 'nonexistent-queue' does not exist"},
+			},
+			expectedPodEventPatterns: map[common_info.PodID][]string{
+				"pod-1": {"Queue 'nonexistent-queue' does not exist"},
+			},
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			var (
@@ -322,6 +341,7 @@ func TestRecordJobStatusEvent(t *testing.T) {
 				DetailedFitErrors:           detailedFitErrors,
 				FullHierarchyFairness:       true,
 				NumOfStatusRecordingWorkers: 4,
+				DiscoveryClient:             kubeClient.Discovery(),
 			})
 
 			stopCh := make(chan struct{})
@@ -338,17 +358,17 @@ func TestRecordJobStatusEvent(t *testing.T) {
 					fitError := common_info.NewFitError(string(podID), "namespace-1", node, msg)
 					fitErrors.SetNodeError(node, fitError)
 				}
-				podGroupInfo.SetTaskFitError(podGroupInfo.PodInfos[podID], fitErrors)
+				podGroupInfo.AddTaskFitErrors(podGroupInfo.GetAllPodsMap()[podID], fitErrors)
 			}
 
 			for podID, err := range tt.podErrors {
 				fitErrors := common_info.NewFitErrors()
 				fitErrors.SetError(err.Error())
-				podGroupInfo.SetTaskFitError(podGroupInfo.PodInfos[podID], fitErrors)
+				podGroupInfo.AddTaskFitErrors(podGroupInfo.GetAllPodsMap()[podID], fitErrors)
 			}
 
 			for _, explanation := range tt.jobErrors {
-				podGroupInfo.SetJobFitError(explanation.Reason, explanation.Message, nil)
+				podGroupInfo.AddSimpleJobFitError(explanation.Reason, explanation.Message)
 			}
 
 			err := cache.RecordJobStatusEvent(podGroupInfo)
@@ -527,7 +547,7 @@ func getPods(pods map[v1.PodPhase][]common_info.PodID) (podsInfos map[common_inf
 				},
 			}
 
-			podInfo := pod_info.NewTaskInfo(pod)
+			podInfo := pod_info.NewTaskInfo(pod, nil, resource_info.NewResourceVectorMap())
 
 			podsInfos[podInfo.UID] = podInfo
 			podsAsObjects = append(podsAsObjects, pod)

@@ -10,15 +10,31 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgroup"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
 )
+
+type AmlGrouper struct {
+	*defaultgrouper.DefaultGrouper
+}
+
+func NewAmlGrouper(defaultGrouper *defaultgrouper.DefaultGrouper) *AmlGrouper {
+	return &AmlGrouper{
+		defaultGrouper,
+	}
+}
+
+func (amlGrouper *AmlGrouper) Name() string {
+	return "AML Grouper"
+}
 
 // +kubebuilder:rbac:groups=amlarc.azureml.com,resources=amljobs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=amlarc.azureml.com,resources=amljobs/finalizers,verbs=patch;update;create
 
-func GetPodGroupMetadata(amlJob *unstructured.Unstructured, pod *v1.Pod, _ ...*metav1.PartialObjectMetadata) (*podgroup.Metadata, error) {
-	podGroupMetadata, err := plugins.GetPodGroupMetadata(amlJob, pod)
+func (amlGrouper *AmlGrouper) GetPodGroupMetadata(
+	amlJob *unstructured.Unstructured, pod *v1.Pod, _ ...*metav1.PartialObjectMetadata,
+) (*podgroup.Metadata, error) {
+	podGroupMetadata, err := amlGrouper.DefaultGrouper.GetPodGroupMetadata(amlJob, pod)
 	if err != nil {
 		return nil, err
 	}

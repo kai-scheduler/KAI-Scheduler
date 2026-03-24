@@ -6,14 +6,20 @@ package spark
 import (
 	"testing"
 
-	"golang.org/x/exp/maps"
-
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
 	"github.com/stretchr/testify/assert"
+	"golang.org/x/exp/maps"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
+)
+
+const (
+	queueLabelKey    = "kai.scheduler/queue"
+	nodePoolLabelKey = "kai.scheduler/node-pool"
 )
 
 func TestIsSparkPod(t *testing.T) {
@@ -23,7 +29,7 @@ func TestIsSparkPod(t *testing.T) {
 			Name:      "pod-1",
 			Namespace: "test_namespace",
 			Labels: map[string]string{
-				"runai/queue": "test_queue",
+				queueLabelKey: "test_queue",
 			},
 			UID: "3",
 		},
@@ -66,8 +72,8 @@ func TestGetPodGroupMetadata(t *testing.T) {
 		Object: rawObjectMap,
 	}
 
-	podGroupMetadata, err := GetPodGroupMetadata(unstructuredPod, pod)
+	grouper := NewSparkGrouper(defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, fake.NewFakeClient()))
+	podGroupMetadata, err := grouper.GetPodGroupMetadata(unstructuredPod, pod)
 	assert.NoError(t, err)
 	assert.Equal(t, "spark-selector", podGroupMetadata.Name)
-	assert.Equal(t, sparkWorkloadKind, podGroupMetadata.Labels[constants.WorkloadKindLabelKey])
 }

@@ -6,7 +6,7 @@ kind: Pod
 metadata:
   name: gpu-pod
   labels:
-    runai/queue: test
+    kai.scheduler/queue: default-queue
 spec:
   schedulerName: kai-scheduler
   containers:

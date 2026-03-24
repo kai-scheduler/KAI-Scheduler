@@ -12,17 +12,17 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/cluster_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/resourcetype"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/scores"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/resources_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/cluster_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/resourcetype"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/scores"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/resources_fake"
 )
 
 func TestResourceTypePlugin(t *testing.T) {
@@ -83,6 +83,18 @@ var _ = Describe("resourceType", func() {
 					score, _ := nodeOrderFn(task, node)
 					Expect(score).To(Equal(0.0))
 				})
+				It("Returns 0 score if task has only DRA GPU requests and node is CPU only", func() {
+					task := createFakeTaskWithDRA("task-1", 2)
+					node := createFakeNode("node-1", 0, map[v1.ResourceName]int{})
+					score, _ := nodeOrderFn(task, node)
+					Expect(score).To(Equal(0.0))
+				})
+				It("Returns 0 score if task is CPU only and node has only DRA GPUs", func() {
+					task := createFakeTask("task-1", 0, 500)
+					node := createFakeNodeWithDRA("node-1", 4)
+					score, _ := nodeOrderFn(task, node)
+					Expect(score).To(Equal(0.0))
+				})
 			})
 		})
 	})
@@ -100,6 +112,20 @@ func createFakeTask(taskName string, gpu float64, cpu float64) *pod_info.PodInfo
 	}
 }
 
+func createFakeTaskWithDRA(taskName string, draGpuCount int64) *pod_info.PodInfo {
+	req := resource_info.EmptyResourceRequirements()
+	req.GpuResourceRequirement.SetDraGpus(map[string]int64{"nvidia.com/gpu": draGpuCount})
+	return &pod_info.PodInfo{
+		Name:   taskName,
+		ResReq: req,
+		Pod: &v1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				CreationTimestamp: metav1.Now(),
+			},
+		},
+	}
+}
+
 func createFakeNode(nodeName string, capacityGPU int, migProfiles map[v1.ResourceName]int) *node_info.NodeInfo {
 	gpuString := fmt.Sprintf("%d", capacityGPU)
 	cpuString := "2000"
@@ -107,7 +133,27 @@ func createFakeNode(nodeName string, capacityGPU int, migProfiles map[v1.Resourc
 	node := nodes_fake.BuildNode(nodeName, nodeResource, nodeResource)
 	clusterPodAffinityInfo := cache.NewK8sClusterPodAffinityInfo()
 	podAffinityInfo := cluster_info.NewK8sNodePodAffinityInfo(node, clusterPodAffinityInfo)
-	return node_info.NewNodeInfo(node, podAffinityInfo)
+	vectorMap := resource_info.NewResourceVectorMap()
+	for resourceName := range node.Status.Allocatable {
+		vectorMap.AddResource(resourceName)
+	}
+	return node_info.NewNodeInfo(node, podAffinityInfo, vectorMap)
+}
+
+func createFakeNodeWithDRA(nodeName string, draGPUs int) *node_info.NodeInfo {
+	gpuString := fmt.Sprintf("%d", draGPUs)
+	cpuString := "2000"
+	nodeResource := resources_fake.BuildResourceList(&cpuString, nil, &gpuString, nil)
+	node := nodes_fake.BuildNode(nodeName, nodeResource, nodeResource)
+	clusterPodAffinityInfo := cache.NewK8sClusterPodAffinityInfo()
+	podAffinityInfo := cluster_info.NewK8sNodePodAffinityInfo(node, clusterPodAffinityInfo)
+	vectorMap := resource_info.NewResourceVectorMap()
+	for resourceName := range node.Status.Allocatable {
+		vectorMap.AddResource(resourceName)
+	}
+	ni := node_info.NewNodeInfo(node, podAffinityInfo, vectorMap)
+	ni.HasDRAGPUs = true
+	return ni
 }
 
 func createResource(gpu float64, cpu float64) *resource_info.ResourceRequirements {

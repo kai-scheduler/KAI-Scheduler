@@ -10,17 +10,17 @@ import (
 	"github.com/stretchr/testify/assert"
 	. "go.uber.org/mock/gomock"
 	"gopkg.in/h2non/gock.v1"
-	resourceapi "k8s.io/api/resource/v1beta1"
+	resourceapi "k8s.io/api/resource/v1"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	featuregate "k8s.io/component-base/featuregate/testing"
 	"k8s.io/kubernetes/pkg/features"
-	"k8s.io/utils/pointer"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/dra_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/dra_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 )
 
 func TestDynamicResourceAllocationPreFilter(t *testing.T) {
@@ -42,9 +42,8 @@ func TestDynamicResourceAllocationPreFilter(t *testing.T) {
 			topology: test_utils.TestTopologyBasic{
 				Jobs: []*jobs_fake.TestJobBasic{
 					{
-						Name:         "job-1",
-						QueueName:    "q-1",
-						MinAvailable: pointer.Int32(1),
+						Name:      "job-1",
+						QueueName: "q-1",
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								Name:               "task-1",
@@ -57,15 +56,14 @@ func TestDynamicResourceAllocationPreFilter(t *testing.T) {
 			},
 		},
 		{
-			name:    "Dynamic Resource Allocation is enabled - with claims",
+			name:    "Dynamic Resource Allocation is enabled - with shared claims with correct queue label",
 			enabled: true,
 			topology: test_utils.TestTopologyBasic{
 				Jobs: []*jobs_fake.TestJobBasic{
 					{
-						Name:         "job-1",
-						Namespace:    "test",
-						QueueName:    "q-1",
-						MinAvailable: pointer.Int32(1),
+						Name:      "job-1",
+						Namespace: "test",
+						QueueName: "q-1",
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								Name:               "task-1",
@@ -97,12 +95,18 @@ func TestDynamicResourceAllocationPreFilter(t *testing.T) {
 							Namespace:       "test",
 							DeviceClassName: "nvidia.com/gpu",
 							Count:           1,
+							Labels: map[string]string{
+								constants.DefaultQueueLabel: "q-1",
+							},
 						},
 						{
 							Name:            "claim-1",
 							Namespace:       "test",
 							DeviceClassName: "nvidia.com/gpu",
 							Count:           1,
+							Labels: map[string]string{
+								constants.DefaultQueueLabel: "q-1",
+							},
 						},
 					},
 				},
@@ -114,10 +118,9 @@ func TestDynamicResourceAllocationPreFilter(t *testing.T) {
 			topology: test_utils.TestTopologyBasic{
 				Jobs: []*jobs_fake.TestJobBasic{
 					{
-						Name:         "job-1",
-						Namespace:    "test",
-						QueueName:    "q-1",
-						MinAvailable: pointer.Int32(1),
+						Name:      "job-1",
+						Namespace: "test",
+						QueueName: "q-1",
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								Name:  "task-1",
@@ -155,10 +158,9 @@ func TestDynamicResourceAllocationPreFilter(t *testing.T) {
 			topology: test_utils.TestTopologyBasic{
 				Jobs: []*jobs_fake.TestJobBasic{
 					{
-						Name:         "job-1",
-						Namespace:    "test",
-						QueueName:    "q-1",
-						MinAvailable: pointer.Int32(1),
+						Name:      "job-1",
+						Namespace: "test",
+						QueueName: "q-1",
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								Name:  "task-1",
@@ -203,10 +205,9 @@ func TestDynamicResourceAllocationPreFilter(t *testing.T) {
 			topology: test_utils.TestTopologyBasic{
 				Jobs: []*jobs_fake.TestJobBasic{
 					{
-						Name:         "job-1",
-						Namespace:    "test",
-						QueueName:    "q-1",
-						MinAvailable: pointer.Int32(1),
+						Name:      "job-1",
+						Namespace: "test",
+						QueueName: "q-1",
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								Name:               "job-1-0",
@@ -224,10 +225,9 @@ func TestDynamicResourceAllocationPreFilter(t *testing.T) {
 			topology: test_utils.TestTopologyBasic{
 				Jobs: []*jobs_fake.TestJobBasic{
 					{
-						Name:         "job-1",
-						Namespace:    "test",
-						QueueName:    "q-1",
-						MinAvailable: pointer.Int32(1),
+						Name:      "job-1",
+						Namespace: "test",
+						QueueName: "q-1",
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								Name:               "job-1-0",
@@ -278,10 +278,9 @@ func TestDynamicResourceAllocationPreFilter(t *testing.T) {
 			topology: test_utils.TestTopologyBasic{
 				Jobs: []*jobs_fake.TestJobBasic{
 					{
-						Name:         "job-1",
-						Namespace:    "test",
-						QueueName:    "q-1",
-						MinAvailable: pointer.Int32(1),
+						Name:      "job-1",
+						Namespace: "test",
+						QueueName: "q-1",
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								Name:  "job-1-0",
@@ -328,10 +327,9 @@ func TestDynamicResourceAllocationPreFilter(t *testing.T) {
 			topology: test_utils.TestTopologyBasic{
 				Jobs: []*jobs_fake.TestJobBasic{
 					{
-						Name:         "job-1",
-						Namespace:    "test",
-						QueueName:    "q-1",
-						MinAvailable: pointer.Int32(1),
+						Name:      "job-1",
+						Namespace: "test",
+						QueueName: "q-1",
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								Name:               "job-1-0",
@@ -363,12 +361,185 @@ func TestDynamicResourceAllocationPreFilter(t *testing.T) {
 							Namespace:       "test",
 							DeviceClassName: "nvidia.com/gpu",
 							Count:           1,
-							ReservedFor:     dra_fake.RandomReservedForReferences(resourceapi.ResourceClaimReservedForMaxSize),
+							Labels: map[string]string{
+								constants.DefaultQueueLabel: "q-1",
+							},
+							ClaimStatus: &resourceapi.ResourceClaimStatus{
+								ReservedFor: dra_fake.RandomReservedForReferences(resourceapi.ResourceClaimReservedForMaxSize),
+							},
 						},
 					},
 				},
 			},
 			err: "resource claim test/claim-0 has reached its maximum number of consumers (256)",
+		},
+		{
+			name:    "Shared claim with no queue label - blocked",
+			enabled: true,
+			topology: test_utils.TestTopologyBasic{
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:      "job-1",
+						Namespace: "test",
+						QueueName: "q-1",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								Name:               "job-1-0",
+								State:              pod_status.Pending,
+								ResourceClaimNames: []string{"claim-no-label"},
+							},
+						},
+					},
+				},
+				TestDRAObjects: dra_fake.TestDRAObjects{
+					DeviceClasses: []string{"nvidia.com/gpu"},
+					ResourceSlices: []*dra_fake.TestResourceSlice{
+						{
+							Name:            "node0-gpu",
+							DeviceClassName: "nvidia.com/gpu",
+							NodeName:        "node0",
+							Count:           1,
+						},
+					},
+					ResourceClaims: []*dra_fake.TestResourceClaim{
+						{
+							Name:            "claim-no-label",
+							Namespace:       "test",
+							DeviceClassName: "nvidia.com/gpu",
+							Count:           1,
+							// No Labels - should fail
+						},
+					},
+				},
+			},
+			err: "pod test/job-1-0 cannot be scheduled: DRA claim claim-no-label is a shared GPU claim but does not have a queue label (kai.scheduler/queue)",
+		},
+		{
+			name:    "Shared claim with wrong queue label - blocked",
+			enabled: true,
+			topology: test_utils.TestTopologyBasic{
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:      "job-1",
+						Namespace: "test",
+						QueueName: "q-1",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								Name:               "job-1-0",
+								State:              pod_status.Pending,
+								ResourceClaimNames: []string{"claim-wrong-queue"},
+							},
+						},
+					},
+				},
+				TestDRAObjects: dra_fake.TestDRAObjects{
+					DeviceClasses: []string{"nvidia.com/gpu"},
+					ResourceSlices: []*dra_fake.TestResourceSlice{
+						{
+							Name:            "node0-gpu",
+							DeviceClassName: "nvidia.com/gpu",
+							NodeName:        "node0",
+							Count:           1,
+						},
+					},
+					ResourceClaims: []*dra_fake.TestResourceClaim{
+						{
+							Name:            "claim-wrong-queue",
+							Namespace:       "test",
+							DeviceClassName: "nvidia.com/gpu",
+							Count:           1,
+							Labels: map[string]string{
+								constants.DefaultQueueLabel: "different-queue",
+							},
+						},
+					},
+				},
+			},
+			err: "pod test/job-1-0 cannot be scheduled: DRA claim claim-wrong-queue is a shared GPU claim with wrong queue label (expected queue: q-1, claim queue label: different-queue)",
+		},
+		{
+			name:    "Template claim without queue label - allowed",
+			enabled: true,
+			topology: test_utils.TestTopologyBasic{
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:      "job-1",
+						Namespace: "test",
+						QueueName: "q-1",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								Name:  "job-1-0",
+								State: pod_status.Pending,
+								ResourceClaimTemplates: map[string]string{
+									"template-0": "claim-from-template",
+								},
+							},
+						},
+					},
+				},
+				TestDRAObjects: dra_fake.TestDRAObjects{
+					DeviceClasses: []string{"nvidia.com/gpu"},
+					ResourceSlices: []*dra_fake.TestResourceSlice{
+						{
+							Name:            "node0-gpu",
+							DeviceClassName: "nvidia.com/gpu",
+							NodeName:        "node0",
+							Count:           1,
+						},
+					},
+					ResourceClaims: []*dra_fake.TestResourceClaim{
+						{
+							Name:            "claim-from-template",
+							Namespace:       "test",
+							DeviceClassName: "nvidia.com/gpu",
+							Count:           1,
+							// No Labels - but template claims should pass
+						},
+					},
+				},
+			},
+			// No error expected - template claims skip queue label validation
+		},
+		{
+			name:    "Non-GPU shared claim without queue label - allowed",
+			enabled: true,
+			topology: test_utils.TestTopologyBasic{
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:      "job-1",
+						Namespace: "test",
+						QueueName: "q-1",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								Name:               "job-1-0",
+								State:              pod_status.Pending,
+								ResourceClaimNames: []string{"non-gpu-claim"},
+							},
+						},
+					},
+				},
+				TestDRAObjects: dra_fake.TestDRAObjects{
+					DeviceClasses: []string{"network.example.com"},
+					ResourceSlices: []*dra_fake.TestResourceSlice{
+						{
+							Name:            "node0-network",
+							DeviceClassName: "network.example.com",
+							NodeName:        "node0",
+							Count:           1,
+						},
+					},
+					ResourceClaims: []*dra_fake.TestResourceClaim{
+						{
+							Name:            "non-gpu-claim",
+							Namespace:       "test",
+							DeviceClassName: "network.example.com",
+							Count:           1,
+							// No Labels - but non-GPU claims should pass
+						},
+					},
+				},
+			},
+			// No error expected - non-GPU claims skip queue label validation
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -381,8 +552,8 @@ func TestDynamicResourceAllocationPreFilter(t *testing.T) {
 
 			time.Sleep(1 * time.Millisecond)
 
-			for _, job := range ssn.PodGroupInfos {
-				for _, task := range job.PodInfos {
+			for _, job := range ssn.ClusterInfo.PodGroupInfos {
+				for _, task := range job.GetAllPodsMap() {
 					if task.Status == pod_status.Pending {
 						err := ssn.PrePredicateFn(task, job)
 						if test.err != "" {

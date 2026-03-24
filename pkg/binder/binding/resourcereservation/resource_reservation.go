@@ -7,22 +7,25 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strings"
 	"time"
 
 	"golang.org/x/exp/slices"
 	v1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/rand"
+	"k8s.io/apimachinery/pkg/watch"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/binding/resourcereservation/group_mutex"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/resources"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding/resourcereservation/group_mutex"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 )
 
 type Interface interface {
@@ -30,22 +33,16 @@ type Interface interface {
 	SyncForNode(ctx context.Context, nodeName string) error
 	SyncForGpuGroup(ctx context.Context, gpuGroup string) error
 	ReserveGpuDevice(ctx context.Context, pod *v1.Pod, nodeName string, gpuGroup string) (string, error)
-	RemovePodGpuGroupConnection(ctx context.Context, pod *v1.Pod, gpuGroup string) error
+	RemovePodGpuGroupsConnection(ctx context.Context, pod *v1.Pod) error
 }
 
 const (
-	resourceReservation                  = "runai-reservation"
-	namespace                            = "runai-reservation"
-	serviceAccountName                   = "runai-reservation"
-	scalingPodsNamespace                 = "runai-scale-adjust"
-	gpuIndexAnnotationName               = "run.ai/reserve_for_gpu_index"
-	numberOfGPUsToReserve                = 1
-	appLabelValue                        = resourceReservation
-	gpuReservationPodPrefix              = resourceReservation + "-gpu"
-	runaiResourceReservationAppLabelName = "app.runai.resource.reservation"
-	reservationPodRandomCharacters       = 5
-	unknownGpuIndicator                  = "-1"
-	nodeIndex                            = "runai-node"
+	resourceReservation            = "resource-reservation"
+	gpuReservationPodPrefix        = "gpu-reservation"
+	gpuIndexAnnotationName         = "run.ai/reserve_for_gpu_index"
+	numberOfGPUsToReserve          = 1
+	reservationPodRandomCharacters = 5
+	unknownGpuIndicator            = "-1"
 )
 
 type service struct {
@@ -54,6 +51,12 @@ type service struct {
 	reservationPodImage string
 	allocationTimeout   time.Duration
 	gpuGroupMutex       *group_mutex.GroupMutex
+	namespace           string
+	serviceAccountName  string
+	appLabelValue       string
+	scalingPodNamespace string
+	runtimeClassName    string
+	podResources        *v1.ResourceRequirements
 }
 
 func NewService(
@@ -61,6 +64,12 @@ func NewService(
 	kubeClient client.WithWatch,
 	reservationPodImage string,
 	allocationTimeout time.Duration,
+	namespace string,
+	serviceAccountName string,
+	appLabelValue string,
+	scalingPodNamespace string,
+	runtimeClassName string,
+	podResources *v1.ResourceRequirements,
 ) *service {
 	return &service{
 		fakeGPuNodes:        fakeGPuNodes,
@@ -68,6 +77,12 @@ func NewService(
 		reservationPodImage: reservationPodImage,
 		allocationTimeout:   allocationTimeout,
 		gpuGroupMutex:       group_mutex.NewGroupMutex(),
+		namespace:           namespace,
+		serviceAccountName:  serviceAccountName,
+		appLabelValue:       appLabelValue,
+		scalingPodNamespace: scalingPodNamespace,
+		runtimeClassName:    runtimeClassName,
+		podResources:        podResources,
 	}
 }
 
@@ -163,7 +178,7 @@ func (rsc *service) syncForPods(ctx context.Context, pods []*v1.Pod, gpuGroupToS
 	fractionPods := map[string][]*v1.Pod{}
 
 	for _, pod := range pods {
-		if pod.Namespace == namespace {
+		if pod.Namespace == rsc.namespace {
 			reservationPods[gpuGroupToSync] = pod
 			continue
 		}
@@ -200,10 +215,11 @@ func (rsc *service) syncForPods(ctx context.Context, pods []*v1.Pod, gpuGroupToS
 }
 
 func (rsc *service) ReserveGpuDevice(ctx context.Context, pod *v1.Pod, nodeName string, gpuGroup string) (string, error) {
+	logger := log.FromContext(ctx)
+
 	rsc.gpuGroupMutex.LockMutexForGroup(gpuGroup)
 	defer rsc.gpuGroupMutex.ReleaseMutex(gpuGroup)
 
-	logger := log.FromContext(ctx)
 	gpuIndex, err := rsc.acquireGPUIndexByGroup(ctx, nodeName, gpuGroup)
 	if err != nil {
 		return unknownGpuIndicator, err
@@ -230,19 +246,14 @@ func (rsc *service) updatePodGPUGroup(
 		"namespace", pod.Namespace, "name", pod.Name, "node", nodeName,
 		"gpu-group", gpuGroup)
 	originalPod := pod.DeepCopy()
-	if pod.Annotations == nil {
-		pod.Annotations = map[string]string{}
+	if pod.Labels == nil {
+		pod.Labels = map[string]string{}
 	}
-	pod.Annotations[nodeIndex] = nodeName
-
 	isMultiFraction, err := resources.IsMultiFraction(pod)
 	if err != nil {
 		return fmt.Errorf(
-			"failed to determine is the pod <%s/%s> is a multi fractional pod while setting gpu group label. %w",
+			"failed to determine if pod <%s/%s> is a multi fractional pod while setting gpu group label. %w",
 			pod.Namespace, pod.Name, err)
-	}
-	if pod.Labels == nil {
-		pod.Labels = map[string]string{}
 	}
 	if isMultiFraction {
 		labelKey, labelValue := resources.GetMultiFractionGpuGroupLabel(gpuGroup)
@@ -259,25 +270,15 @@ func (rsc *service) updatePodGPUGroup(
 	return nil
 }
 
-func (rsc *service) RemovePodGpuGroupConnection(ctx context.Context, pod *v1.Pod, gpuGroup string) error {
-	isMultiFractionalPod, err := resources.IsMultiFraction(pod)
-	if err != nil {
-		return fmt.Errorf("failed to generate a patch for pod gpu-group removal. %w", err)
-	}
-
+func (rsc *service) RemovePodGpuGroupsConnection(ctx context.Context, pod *v1.Pod) error {
 	var patch []map[string]string
-	key := constants.GPUGroup
-	if isMultiFractionalPod {
-		multiGpuGroupLabelKey, _ := resources.GetMultiFractionGpuGroupLabel(gpuGroup)
-		key = strings.Replace(multiGpuGroupLabelKey, "/", "~1", -1)
-	}
-
-	// Create a JSON patch to remove the label
-	patch = []map[string]string{
-		{
-			"op":   "remove",
-			"path": fmt.Sprintf("/metadata/labels/%s", key),
-		},
+	for labelKey := range pod.Labels {
+		if labelKey == constants.GPUGroup || strings.HasPrefix(labelKey, constants.MultiGpuGroupLabelPrefix) {
+			patch = append(patch, map[string]string{
+				"op":   "remove",
+				"path": fmt.Sprintf("/metadata/labels/%s", escapeJSONPointer(labelKey)),
+			})
+		}
 	}
 
 	patchBytes, err := json.Marshal(patch)
@@ -289,6 +290,14 @@ func (rsc *service) RemovePodGpuGroupConnection(ctx context.Context, pod *v1.Pod
 		return err
 	}
 	return nil
+}
+
+// escapeJSONPointer escapes a string for use in a JSON Pointer path (RFC 6901).
+// ~ must be escaped as ~0, and / must be escaped as ~1.
+func escapeJSONPointer(s string) string {
+	s = strings.ReplaceAll(s, "~", "~0")
+	s = strings.ReplaceAll(s, "/", "~1")
+	return s
 }
 
 func (rsc *service) acquireGPUIndexByGroup(ctx context.Context, nodeName, gpuGroup string) (string, error) {
@@ -307,7 +316,7 @@ func (rsc *service) findGPUIndexByGroup(gpuGroup string) (
 ) {
 	pods := &v1.PodList{}
 	err = rsc.kubeClient.List(context.Background(), pods,
-		client.InNamespace(namespace),
+		client.InNamespace(rsc.namespace),
 		client.MatchingLabels{constants.GPUGroup: gpuGroup})
 	if err != nil {
 		return "", err
@@ -340,7 +349,7 @@ func (rsc *service) createGPUReservationPodAndGetIndex(ctx context.Context, node
 			logger.Error(deleteErr, "failed to delete reservation pod", "name", pod.Name)
 		}
 		return unknownGpuIndicator, fmt.Errorf(
-			"failed waiting for GPU reservation pod to allocate: %v/%v", nodeName, pod.Name)
+			"failed waiting for GPU reservation pod to allocate: %v/%v", rsc.namespace, pod.Name)
 	}
 
 	return gpuIndex, err
@@ -372,9 +381,12 @@ func (rsc *service) deleteReservationPod(ctx context.Context, pod *v1.Pod) error
 		client.GracePeriodSeconds(0),
 	)
 	if err != nil {
-		logger.Error(err, "Failed to delete reservation pod", "name", pod.Name)
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to delete reservation pod: %w", err)
+		}
+		logger.Info("Reservation pod not found, skipping deletion", "name", pod.Name)
 	}
-	return client.IgnoreNotFound(err)
+	return nil
 }
 
 func (rsc *service) createGPUReservationPod(ctx context.Context, nodeName, gpuGroup string) (*v1.Pod, error) {
@@ -385,22 +397,37 @@ func (rsc *service) createGPUReservationPod(ctx context.Context, nodeName, gpuGr
 
 	podName := fmt.Sprintf("%s-%s-%s", gpuReservationPodPrefix, nodeName, rand.String(reservationPodRandomCharacters))
 
+	// Build resource requirements starting with GPU resources
 	resources := v1.ResourceRequirements{
 		Limits: v1.ResourceList{
-			constants.GpuResource: *resource.NewQuantity(numberOfGPUsToReserve, resource.DecimalSI),
+			constants.NvidiaGpuResource: *resource.NewQuantity(numberOfGPUsToReserve, resource.DecimalSI),
+		},
+		Requests: v1.ResourceList{
+			constants.NvidiaGpuResource: *resource.NewQuantity(numberOfGPUsToReserve, resource.DecimalSI),
 		},
 	}
 
-	pod, err := rsc.createResourceReservationPod(nodeName, gpuGroup, podName, gpuReservationPodPrefix, resources)
+	if rsc.podResources != nil {
+		if rsc.podResources.Limits != nil {
+			delete(rsc.podResources.Limits, constants.NvidiaGpuResource)
+			maps.Copy(resources.Limits, rsc.podResources.Limits)
+		}
+		if rsc.podResources.Requests != nil {
+			delete(rsc.podResources.Requests, constants.NvidiaGpuResource)
+			maps.Copy(resources.Requests, rsc.podResources.Requests)
+		}
+	}
+
+	pod, err := rsc.createResourceReservationPod(nodeName, gpuGroup, podName, resources)
 	if err != nil {
-		logger.Error(err, "Failed to created GPU reservation pod on node",
-			"nodeName", nodeName, "namespace", namespace, "name", podName)
+		logger.Error(err, "Failed to create GPU reservation pod on node",
+			"nodeName", nodeName, "namespace", rsc.namespace, "name", podName)
 		return nil, err
 	}
 
 	logger.Info(
 		"Successfully created GPU resource reservation pod",
-		"nodeName", nodeName, "namespace", namespace, "name", podName)
+		"nodeName", nodeName, "namespace", rsc.namespace, "name", podName)
 	return pod, nil
 }
 
@@ -411,7 +438,7 @@ func (rsc *service) waitForGPUReservationPodAllocation(
 	pods := &v1.PodList{}
 	watcher, err := rsc.kubeClient.Watch(
 		ctx, pods,
-		client.InNamespace(namespace),
+		client.InNamespace(rsc.namespace),
 		client.MatchingFields{"metadata.name": gpuReservationPodName},
 	)
 	if err != nil {
@@ -423,14 +450,33 @@ func (rsc *service) waitForGPUReservationPodAllocation(
 	timeout := time.After(rsc.allocationTimeout)
 	for {
 		select {
+		case <-ctx.Done():
+			logger.Error(ctx.Err(),
+				"Context done while waiting for GPU reservation pod to be allocated",
+				"nodeName", nodeName, "name", gpuReservationPodName)
+			return unknownGpuIndicator
 		case <-timeout:
 			logger.Error(fmt.Errorf("timeout"),
 				"Reached timeout while waiting for GPU reservation pod to be allocated",
 				"nodeName", nodeName, "name", gpuReservationPodName)
 			return unknownGpuIndicator
-		case event := <-watcher.ResultChan():
-			pod := event.Object.(*v1.Pod)
-			if pod.Annotations[gpuIndexAnnotationName] != "" {
+		case event, ok := <-watcher.ResultChan():
+			if !ok {
+				logger.Error(nil,
+					"GPU reservation pod watch channel closed while waiting for allocation",
+					"nodeName", nodeName, "name", gpuReservationPodName)
+				return unknownGpuIndicator
+			}
+
+			if event.Type == watch.Error {
+				logger.Error(fmt.Errorf("watch error"),
+					"Error event received while waiting for GPU reservation pod allocation",
+					"nodeName", nodeName, "name", gpuReservationPodName, "event", fmt.Sprintf("%v", event.Object))
+				return unknownGpuIndicator
+			}
+
+			pod, ok := event.Object.(*v1.Pod)
+			if pod.Annotations != nil && pod.Annotations[gpuIndexAnnotationName] != "" {
 				return pod.Annotations[gpuIndexAnnotationName]
 			}
 		}
@@ -438,25 +484,29 @@ func (rsc *service) waitForGPUReservationPodAllocation(
 }
 
 func (rsc *service) createResourceReservationPod(
-	nodeName, gpuGroup, podName, appName string,
-	resources v1.ResourceRequirements,
+	nodeName, gpuGroup, podName string, resources v1.ResourceRequirements,
 ) (*v1.Pod, error) {
 	podSpec := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      podName,
-			Namespace: namespace,
+			Namespace: rsc.namespace,
 			Labels: map[string]string{
-				constants.AppLabelName:               appLabelValue,
-				constants.GPUGroup:                   gpuGroup,
-				runaiResourceReservationAppLabelName: appName,
+				constants.AppLabelName: rsc.appLabelValue,
+				constants.GPUGroup:     gpuGroup,
 			},
 			Annotations: map[string]string{
 				karpenterv1.DoNotDisruptAnnotationKey: "true",
 			},
 		},
 		Spec: v1.PodSpec{
-			NodeName:           nodeName,
-			ServiceAccountName: serviceAccountName,
+			NodeName: nodeName,
+			RuntimeClassName: func() *string {
+				if len(rsc.runtimeClassName) == 0 {
+					return nil
+				}
+				return &rsc.runtimeClassName
+			}(),
+			ServiceAccountName: rsc.serviceAccountName,
 			Containers: []v1.Container{
 				{
 					Name:            resourceReservation,
@@ -506,7 +556,7 @@ func (rsc *service) isScalingUp(ctx context.Context) bool {
 	logger := log.FromContext(ctx)
 	pods := &v1.PodList{}
 	err := rsc.kubeClient.List(ctx, pods,
-		client.InNamespace(scalingPodsNamespace),
+		client.InNamespace(rsc.scalingPodNamespace),
 	)
 	if err != nil {
 		logger.Error(err, "Could not list scaling pods")
@@ -524,4 +574,8 @@ func (rsc *service) isScalingUp(ctx context.Context) bool {
 		}
 	}
 	return false
+}
+
+func IsGPUReservationPod(pod *v1.Pod) bool {
+	return strings.HasPrefix(pod.Name, gpuReservationPodPrefix)
 }

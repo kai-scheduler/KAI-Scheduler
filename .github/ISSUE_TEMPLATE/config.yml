@@ -1,0 +1,14 @@
+# SPDX-FileCopyrightText: Copyright (c) 2023 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# GitHub info on config.yml
+# https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/configuring-issue-templates-for-your-repository#configuring-the-template-chooser
+# Set to 'false' if you only want the templates to be used.
+blank_issues_enabled: true
+
+# When using discussions instead of Question issue templates,
+# link that below to have it show up in the 'Submit Issue' page
+contact_links:
+  - name: Ask a Question
+    url: https://github.com/kai-scheduler/kai-scheduler/discussions
+    about: Please ask any questions here.

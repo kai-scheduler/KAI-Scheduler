@@ -1,0 +1,59 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: crd-upgrader
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "2"
+    "helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  template:
+    metadata:
+      {{- if (lookup "apiextensions.k8s.io/v1" "CustomResourceDefinition" "" "clusterversions.config.openshift.io") }}
+      annotations:
+        openshift.io/scc: kai-system
+      {{- else }}
+      labels:
+        app: crd-upgrader
+      {{- end }}
+    spec:
+      serviceAccountName: kai-scheduler-crd-manager
+      {{- if (lookup "apiextensions.k8s.io/v1" "CustomResourceDefinition" "" "clusterversions.config.openshift.io") }}
+      securityContext:
+        runAsUser: 10000
+        runAsNonRoot: true
+        fsGroup: 10000
+      {{- end }}
+      containers:
+      - name: upgrader
+        image: "{{ .Values.global.registry }}/{{ .Values.crdupgrader.image.name }}:{{ .Values.crdupgrader.image.tag | default .Values.global.tag | default .Chart.AppVersion }}"
+        imagePullPolicy: {{ .Values.crdupgrader.image.pullPolicy }}
+        {{- if (lookup "apiextensions.k8s.io/v1" "CustomResourceDefinition" "" "clusterversions.config.openshift.io") }}
+        securityContext:
+          runAsUser: 10000
+          runAsNonRoot: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        {{- else if .Values.global.securityContext }}
+        securityContext:
+          {{- toYaml .Values.global.securityContext | nindent 10 }}
+        {{- end }}
+      restartPolicy: OnFailure
+      {{- if .Values.global.nodeSelector }}
+      nodeSelector:
+        {{- toYaml .Values.global.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- if .Values.global.affinity }}
+      affinity:
+        {{- toYaml .Values.global.affinity | nindent 8 }}
+      {{- end }}
+      {{- if .Values.global.tolerations }}
+      tolerations:
+        {{- toYaml .Values.global.tolerations | nindent 8 }}
+      {{- end }}

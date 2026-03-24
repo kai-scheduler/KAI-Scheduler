@@ -6,7 +6,6 @@ package skiptopowner
 import (
 	"context"
 	"fmt"
-	"maps"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -14,20 +13,28 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgroup"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/grouper"
 )
 
 type skipTopOwnerGrouper struct {
-	client         client.Client
-	supportedTypes map[metav1.GroupVersionKind]plugins.GetPodGroupMetadataFunc
+	client        client.Client
+	defaultPlugin *defaultgrouper.DefaultGrouper
+	customPlugins map[metav1.GroupVersionKind]grouper.Grouper
 }
 
-func NewSkipTopOwnerGrouper(client client.Client, supportedTypes map[metav1.GroupVersionKind]plugins.GetPodGroupMetadataFunc) *skipTopOwnerGrouper {
+func NewSkipTopOwnerGrouper(client client.Client, defaultGrouper *defaultgrouper.DefaultGrouper,
+	customPlugins map[metav1.GroupVersionKind]grouper.Grouper) *skipTopOwnerGrouper {
 	return &skipTopOwnerGrouper{
-		client:         client,
-		supportedTypes: supportedTypes,
+		client:        client,
+		defaultPlugin: defaultGrouper,
+		customPlugins: customPlugins,
 	}
+}
+
+func (sk *skipTopOwnerGrouper) Name() string {
+	return "SkipTopOwner Grouper"
 }
 
 func (sk *skipTopOwnerGrouper) GetPodGroupMetadata(
@@ -48,22 +55,54 @@ func (sk *skipTopOwnerGrouper) GetPodGroupMetadata(
 		return nil, fmt.Errorf("failed to get last owner: %w", err)
 	}
 
+	// propagate labels down chain
+	sk.propagateMetadataDownChain(lastOwner, skippedOwner)
+
+	return sk.getSupportedTypePGMetadata(lastOwner, pod, otherOwners[:len(otherOwners)-1]...)
+}
+
+func (*skipTopOwnerGrouper) propagateMetadataDownChain(lastOwner *unstructured.Unstructured, skippedOwner *unstructured.Unstructured) {
 	if lastOwner.GetLabels() == nil {
 		lastOwner.SetLabels(skippedOwner.GetLabels())
 	} else {
-		maps.Copy(lastOwner.GetLabels(), skippedOwner.GetLabels())
+		for k, v := range skippedOwner.GetLabels() {
+			if _, exists := lastOwner.GetLabels()[k]; exists {
+				continue
+			}
+			labels := lastOwner.GetLabels()
+			if labels == nil {
+				labels = make(map[string]string)
+			}
+			labels[k] = v
+			lastOwner.SetLabels(labels)
+		}
 	}
-	return sk.getSupportedTypePGMetadata(lastOwner, pod, otherOwners[:len(otherOwners)-1]...)
+	// propagate annotations down chain
+	if lastOwner.GetAnnotations() == nil {
+		lastOwner.SetAnnotations(skippedOwner.GetAnnotations())
+	} else {
+		for k, v := range skippedOwner.GetAnnotations() {
+			if _, exists := lastOwner.GetAnnotations()[k]; exists {
+				continue
+			}
+			annotations := lastOwner.GetAnnotations()
+			if annotations == nil {
+				annotations = make(map[string]string)
+			}
+			annotations[k] = v
+			lastOwner.SetAnnotations(annotations)
+		}
+	}
 }
 
 func (sk *skipTopOwnerGrouper) getSupportedTypePGMetadata(
 	lastOwner *unstructured.Unstructured, pod *v1.Pod, otherOwners ...*metav1.PartialObjectMetadata,
 ) (*podgroup.Metadata, error) {
 	ownerKind := metav1.GroupVersionKind(lastOwner.GroupVersionKind())
-	if function, found := sk.supportedTypes[ownerKind]; found {
-		return function(lastOwner, pod, otherOwners...)
+	if grouper, found := sk.customPlugins[ownerKind]; found {
+		return grouper.GetPodGroupMetadata(lastOwner, pod, otherOwners...)
 	}
-	return plugins.GetPodGroupMetadata(lastOwner, pod, otherOwners...)
+	return sk.defaultPlugin.GetPodGroupMetadata(lastOwner, pod, otherOwners...)
 }
 
 func (sk *skipTopOwnerGrouper) getObjectInstance(objectRef *metav1.PartialObjectMetadata) (*unstructured.Unstructured, error) {

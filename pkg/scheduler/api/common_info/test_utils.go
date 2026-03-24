@@ -1,3 +1,19 @@
+/*
+Copyright 2018 The Kubernetes Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 // Copyright 2025 NVIDIA CORPORATION
 // SPDX-License-Identifier: Apache-2.0
 
@@ -12,7 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 )
 
 const FakePogGroupId = "12345678"
@@ -75,6 +91,7 @@ func BuildResourceList(cpu string, memory string) v1.ResourceList {
 	return v1.ResourceList{
 		v1.ResourceCPU:    resource.MustParse(cpu),
 		v1.ResourceMemory: resource.MustParse(memory),
+		v1.ResourcePods:   resource.MustParse("110"),
 	}
 }
 
@@ -86,10 +103,20 @@ func BuildResourceListWithGPU(cpu string, memory string, gpu string) v1.Resource
 	}
 }
 
+func BuildResourceListWithGPUAndPods(cpu string, memory string, gpu string, pods string) v1.ResourceList {
+	return v1.ResourceList{
+		v1.ResourceCPU:                resource.MustParse(cpu),
+		v1.ResourceMemory:             resource.MustParse(memory),
+		resource_info.GPUResourceName: resource.MustParse(gpu),
+		v1.ResourcePods:               resource.MustParse(pods),
+	}
+}
+
 func BuildResourceListWithMig(cpu string, memory string, migProfiles ...string) v1.ResourceList {
 	resources := v1.ResourceList{
 		v1.ResourceCPU:    resource.MustParse(cpu),
 		v1.ResourceMemory: resource.MustParse(memory),
+		v1.ResourcePods:   resource.MustParse("110"),
 	}
 
 	for _, profile := range migProfiles {
@@ -112,7 +139,24 @@ func BuildResource(cpu string, memory string) *resource_info.Resource {
 	})
 }
 
-func BuildResourceWithGpu(cpu string, memory string, gpu string) *resource_info.Resource {
+func BuildResourceWithPods(cpu string, memory string, pods string) *resource_info.Resource {
+	return resource_info.ResourceFromResourceList(v1.ResourceList{
+		v1.ResourceCPU:    resource.MustParse(cpu),
+		v1.ResourceMemory: resource.MustParse(memory),
+		v1.ResourcePods:   resource.MustParse(pods),
+	})
+}
+
+func BuildResourceWithGpu(cpu, memory, gpu, pods string) *resource_info.Resource {
+	return resource_info.ResourceFromResourceList(v1.ResourceList{
+		v1.ResourceCPU:                resource.MustParse(cpu),
+		v1.ResourceMemory:             resource.MustParse(memory),
+		resource_info.GPUResourceName: resource.MustParse(gpu),
+		v1.ResourcePods:               resource.MustParse(pods),
+	})
+}
+
+func BuildResourceWithGpuNoPods(cpu, memory, gpu string) *resource_info.Resource {
 	return resource_info.ResourceFromResourceList(v1.ResourceList{
 		v1.ResourceCPU:                resource.MustParse(cpu),
 		v1.ResourceMemory:             resource.MustParse(memory),

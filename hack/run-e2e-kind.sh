@@ -6,45 +6,63 @@
 CLUSTER_NAME=${CLUSTER_NAME:-e2e-kai-scheduler}
 
 REPO_ROOT=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )/..
-KIND_CONFIG=${REPO_ROOT}/hack/e2e-kind-config.yaml
 GOPATH=${HOME}/go
 GOBIN=${GOPATH}/bin
 
-TEST_THIRD_PARTY_INTEGRATIONS=${1}
-if [ -z "$TEST_THIRD_PARTY_INTEGRATIONS" ]; then
-    echo "TEST_THIRD_PARTY_INTEGRATIONS argument isn't provided, defaulting to false"
-    TEST_THIRD_PARTY_INTEGRATIONS="false"
-fi
+# Parse named parameters
+TEST_THIRD_PARTY_INTEGRATIONS="false"
+LOCAL_IMAGES_BUILD="false"
+PRESERVE_CLUSTER="false"
 
-kind create cluster --config ${KIND_CONFIG} --name $CLUSTER_NAME
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --test-third-party-integrations)
+      TEST_THIRD_PARTY_INTEGRATIONS="true"
+      shift
+      ;;
+    --local-images-build)
+      LOCAL_IMAGES_BUILD="true"
+      shift
+      ;;
+    --preserve-cluster)
+      PRESERVE_CLUSTER="true"
+      shift
+      ;;
+    -h|--help)
+      echo "Usage: $0 [--test-third-party-integrations] [--local-images-build] [--preserve-cluster]"
+      echo "  --test-third-party-integrations: Install third party operators for compatibility testing"
+      echo "  --local-images-build: Build and use local images instead of pulling from registry"
+      echo "  --preserve-cluster: Keep the kind cluster after running the test suite"
+      exit 0
+      ;;
+    *)
+      echo "Unknown option $1"
+      echo "Use --help for usage information"
+      exit 1
+      ;;
+  esac
+done
 
-# Add necessary helm repos
-helm repo add fake-gpu https://runai.jfrog.io/artifactory/api/helm/fake-gpu-operator-charts-prod
-helm repo update
-
-# Install the fake-gpu-operator to provide a fake GPU resources for the e2e tests
-helm upgrade -i gpu-operator fake-gpu/fake-gpu-operator --namespace gpu-operator --create-namespace --version 0.0.53 --set topology.nodePools.default.gpuCount=8
-sleep 10 # Wait for the fake-gpu-operator to start
-
-# install third party operators to check the compatibility with the kai-scheduler
+# Build setup script arguments
+SETUP_ARGS=""
 if [ "$TEST_THIRD_PARTY_INTEGRATIONS" = "true" ]; then
-    ${REPO_ROOT}/hack/third_party_integrations/deploy_ray.sh
-    ${REPO_ROOT}/hack/third_party_integrations/deploy_kubeflow.sh
-    ${REPO_ROOT}/hack/third_party_integrations/deploy_knative.sh
+    SETUP_ARGS="$SETUP_ARGS --test-third-party-integrations"
+fi
+if [ "$LOCAL_IMAGES_BUILD" = "true" ]; then
+    SETUP_ARGS="$SETUP_ARGS --local-images-build"
 fi
 
-PACKAGE_VERSION=0.0.0-$(git rev-parse --short origin/main)
-helm upgrade -i kai-scheduler oci://ghcr.io/nvidia/kai-scheduler/kai-scheduler -n kai-scheduler --create-namespace --set "global.gpuSharing=true" --version "$PACKAGE_VERSION"
-
-# Allow all the pods in the fake-gpu-operator and kai-scheduler to start
-sleep 30
+# Run the cluster setup script
+${REPO_ROOT}/hack/setup-e2e-cluster.sh $SETUP_ARGS
 
 # Install ginkgo if it's not installed
 if [ ! -f ${GOBIN}/ginkgo ]; then
     echo "Installing ginkgo"
-    GOBIN=${GOBIN} go install github.com/onsi/ginkgo/v2/ginkgo@v2.23.3
+    GOBIN=${GOBIN} go install github.com/onsi/ginkgo/v2/ginkgo@v2.25.3
 fi
 
-${GOBIN}/ginkgo -r --keep-going --randomize-all --randomize-suites --trace -vv ${REPO_ROOT}/test/e2e/suites --label-filter '!autoscale', '!scale'
+${GOBIN}/ginkgo -r --keep-going --randomize-all --randomize-suites --label-filter '!autoscale && !scale && !upgrade' --trace -vv ${REPO_ROOT}/test/e2e/suites
 
-kind delete cluster --name $CLUSTER_NAME
+if [ "$PRESERVE_CLUSTER" != "true" ]; then
+    kind delete cluster --name $CLUSTER_NAME
+fi

@@ -6,34 +6,37 @@ package podgroup
 import (
 	"context"
 
-	enginev2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
+	schedulingv2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 )
 
 type Handler struct {
-	client      client.Client
-	nodePoolKey string
+	client        client.Client
+	nodePoolKey   string
+	queueLabelKey string
 }
 
-func NewHandler(client client.Client, nodePoolKey string) *Handler {
-	return &Handler{client: client, nodePoolKey: nodePoolKey}
+func NewHandler(client client.Client, nodePoolKey string, queueLabelKey string) *Handler {
+	return &Handler{
+		client:        client,
+		nodePoolKey:   nodePoolKey,
+		queueLabelKey: queueLabelKey,
+	}
 }
 
 func (h *Handler) ApplyToCluster(ctx context.Context, pgMetadata Metadata) error {
 	newPodGroup := h.createPodGroupForMetadata(pgMetadata)
 
-	var err error
-	oldPodGroup := &enginev2alpha2.PodGroup{}
+	oldPodGroup := &schedulingv2alpha2.PodGroup{}
 	key := types.NamespacedName{
 		Namespace: pgMetadata.Namespace,
 		Name:      pgMetadata.Name,
 	}
-	err = h.client.Get(ctx, key, oldPodGroup)
+	err := h.client.Get(ctx, key, oldPodGroup)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			err = h.client.Create(ctx, newPodGroup)
@@ -56,7 +59,7 @@ func (h *Handler) ApplyToCluster(ctx context.Context, pgMetadata Metadata) error
 	return err
 }
 
-func (h *Handler) ignoreFields(oldPodGroup, newPodGroup *enginev2alpha2.PodGroup) *enginev2alpha2.PodGroup {
+func (h *Handler) ignoreFields(oldPodGroup, newPodGroup *schedulingv2alpha2.PodGroup) *schedulingv2alpha2.PodGroup {
 	// to avoid overriding the fields that the pod-group-assigner is responsible for
 	newPodGroupCopy := newPodGroup.DeepCopy()
 
@@ -74,16 +77,16 @@ func (h *Handler) ignoreFields(oldPodGroup, newPodGroup *enginev2alpha2.PodGroup
 		delete(newPodGroupCopy.Labels, h.nodePoolKey)
 	}
 
-	queueName, found := oldPodGroup.Labels[constants.QueueLabelKey]
+	queueName, found := oldPodGroup.Labels[h.queueLabelKey]
 	if found {
-		newPodGroupCopy.Labels[constants.QueueLabelKey] = queueName
+		newPodGroupCopy.Labels[h.queueLabelKey] = queueName
 	}
 
 	return newPodGroupCopy
 }
 
-func (h *Handler) createPodGroupForMetadata(podGroupMetadata Metadata) *enginev2alpha2.PodGroup {
-	return &enginev2alpha2.PodGroup{
+func (h *Handler) createPodGroupForMetadata(podGroupMetadata Metadata) *schedulingv2alpha2.PodGroup {
+	pg := &schedulingv2alpha2.PodGroup{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        podGroupMetadata.Name,
 			Namespace:   podGroupMetadata.Namespace,
@@ -93,10 +96,38 @@ func (h *Handler) createPodGroupForMetadata(podGroupMetadata Metadata) *enginev2
 				podGroupMetadata.Owner,
 			},
 		},
-		Spec: enginev2alpha2.PodGroupSpec{
+		Spec: schedulingv2alpha2.PodGroupSpec{
 			MinMember:         podGroupMetadata.MinAvailable,
 			Queue:             podGroupMetadata.Queue,
 			PriorityClassName: podGroupMetadata.PriorityClassName,
+			SubGroups:         []schedulingv2alpha2.SubGroup{},
+			Preemptibility:    podGroupMetadata.Preemptibility,
 		},
 	}
+
+	for _, subGroup := range podGroupMetadata.SubGroups {
+		var topologyConstraint *schedulingv2alpha2.TopologyConstraint
+		if subGroup.TopologyConstraints != nil {
+			topologyConstraint = &schedulingv2alpha2.TopologyConstraint{
+				PreferredTopologyLevel: subGroup.TopologyConstraints.PreferredTopologyLevel,
+				RequiredTopologyLevel:  subGroup.TopologyConstraints.RequiredTopologyLevel,
+				Topology:               subGroup.TopologyConstraints.Topology,
+			}
+		}
+		pg.Spec.SubGroups = append(pg.Spec.SubGroups,
+			schedulingv2alpha2.SubGroup{
+				Name:               subGroup.Name,
+				MinMember:          subGroup.MinAvailable,
+				Parent:             subGroup.Parent,
+				TopologyConstraint: topologyConstraint,
+			})
+	}
+
+	pg.Spec.TopologyConstraint = schedulingv2alpha2.TopologyConstraint{
+		PreferredTopologyLevel: podGroupMetadata.PreferredTopologyLevel,
+		RequiredTopologyLevel:  podGroupMetadata.RequiredTopologyLevel,
+		Topology:               podGroupMetadata.Topology,
+	}
+
+	return pg
 }

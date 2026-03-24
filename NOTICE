@@ -1,6 +1,19 @@
-# NOTICE FILE
+# KAI Scheduler
+Copyright Copyright 2025 NVIDIA CORPORATION
 
-This project includes software components licensed under various open-source licenses. The following licenses apply to the components used in this project, which is a part of **Run.ai**:
+This project was originally forked from kube-batch in 2019, therefore it includes core components from kube-batch which are licensed under the Apache License, Version 2.0.
+Copyright (c) The Kubernetes Authors.
+This project includes components derived from kube-batch, originally developed by The Kubernetes Authors.
+
+The `K8sFramework` struct in pkg/common/k8s_utils/framework_handle.go file was originally forked from volcano-sh/volcano, which is licensed under the Apache License, Version 2.0.
+Copyright 2020 The Volcano Authors.
+This file was originally developed by the Volcano Authors.
+
+This project includes components from kueue, which is licensed under the Apache License, Version 2.0.
+Copyright (c) The Kubernetes Authors.
+This project includes components derived from kueue, originally developed by The Kubernetes Authors.
+
+This project also includes software components licensed under various open-source licenses. The following licenses apply to the components used in this project:
 
 ## MIT License
 
@@ -8732,8 +8745,4 @@ zwitch
 Licensed under the MIT License
 Copyright (c) 2016 Titus Wormer <tituswormer@gmail.com>
 Grand Total
-
-This project includes components from kube-batch, which is licensed under the Apache License, Version 2.0.
-Copyright (c) The Kubernetes Authors.
-This project includes components derived from kube-batch, originally developed by The Kubernetes Authors.
 

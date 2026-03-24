@@ -1,0 +1,29 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gpu-sharing-non-default
+  labels:
+    kai.scheduler/queue: default-queue
+  annotations:
+    gpu-fraction: "0.5"
+    # Specify which container should receive the GPU fraction allocation
+    # By default, the first container (index 0) receives the GPU allocation
+    # Use this annotation to specify a different container by name
+    gpu-fraction-container-name: "gpu-workload"
+spec:
+  schedulerName: kai-scheduler
+  containers:
+    - name: sidecar
+      image: busybox
+      args: ["sleep", "infinity"]
+    - name: gpu-workload
+      image: nvidia/cuda:13.0.2-base-ubi8
+      command: ["nvidia-smi"]
+      args: ["-L"]
+    - name: another-sidecar
+      image: busybox
+      args: ["sleep", "infinity"]
+

@@ -1,0 +1,14 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: with-node-selector
+spec:
+  nodeSelector:
+    region: east
+    type: user-node
+  containers:
+    - name: with-node-selector
+      image: k8s.gcr.io/pause:2.0

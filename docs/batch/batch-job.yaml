@@ -11,7 +11,7 @@ spec:
   template:
     metadata:
       labels:
-        runai/queue: test
+        kai.scheduler/queue: default-queue
     spec:
       schedulerName: kai-scheduler
       restartPolicy: OnFailure

@@ -1,0 +1,36 @@
+POST http://localhost:8080/simulate HTTP/1.1
+content-type: application/json
+
+{
+    "totalResource": {
+      "GPU": 100,
+      "CPU": 16000,
+      "Memory": 32000000
+    },
+    "queues": [
+      {
+        "uid": "queue1",
+        "name": "test-queue",
+        "priority": 0,
+        "resourceShare": {
+          "gpu": {
+            "deserved": 10,
+            "request": 100,
+            "overQuotaWeight": 3
+          }
+        }
+      },
+      {
+        "uid": "queue2",
+        "name": "test-queue2",
+        "priority": 0,
+        "resourceShare": {
+          "gpu": {
+            "deserved": 10,
+            "request": 100,
+            "overQuotaWeight": 1
+          }
+        }
+      }
+    ]
+}

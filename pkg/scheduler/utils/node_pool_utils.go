@@ -4,11 +4,11 @@
 package utils
 
 import (
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
-func GetNodePoolNameFromLabels(labels map[string]string) string {
-	nodePoolName, found := labels[commonconstants.NodePoolNameLabel]
+func GetNodePoolNameFromLabels(labels map[string]string, nodePoolLabelKey string) string {
+	nodePoolName, found := labels[nodePoolLabelKey]
 	if !found || nodePoolName == "" {
 		nodePoolName = commonconstants.DefaultNodePoolName
 	}

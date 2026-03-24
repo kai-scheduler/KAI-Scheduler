@@ -1,0 +1,74 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# Full configuration for time-aware fairness using KAI-managed Prometheus
+#
+# Prerequisites:
+#   1. Install Prometheus Operator:
+#      https://prometheus-operator.dev/docs/getting-started/installation/
+#
+#   2. Enable Prometheus in KAI config:
+#      kubectl patch config kai-config --type merge -p '{"spec":{"prometheus":{"enabled":true}}}'
+#
+#   3. Wait for Prometheus to be ready:
+#      kubectl get pod -n kai-scheduler prometheus-prometheus-0
+#
+# Apply this configuration:
+#   kubectl apply -f scheduling-shard-managed-prometheus.yaml
+
+apiVersion: kai.scheduler/v1
+kind: SchedulingShard
+metadata:
+  name: default
+spec:
+  # kValue controls the significance of historical usage in fairness calculations
+  # Higher values = more aggressive correction based on history
+  # Lower values = more weight on over-quota weights
+  # Default: 1.0
+  kValue: 1.0
+  
+  # UsageDB configuration for connecting to Prometheus
+  usageDBConfig:
+    # Client type must be "prometheus"
+    clientType: prometheus
+    
+    # Connection string to the managed Prometheus instance
+    # This is the default URL when using KAI-managed Prometheus
+    # Can be omitted if using managed Prometheus (auto-populated from kai-config)
+    connectionString: http://prometheus-operated.kai-scheduler.svc.cluster.local:9090
+    
+    # Usage parameters for time-aware fairness calculations
+    usageParams:
+      # Time window for fairness calculations
+      # Usage within this window is considered for fair-share calculations
+      # Default: 168h (1 week)
+      windowSize: 168h
+      
+      # Window type for time-series aggregation
+      # Options: sliding, tumbling, cron
+      # - sliding: Rolling window of the last windowSize duration
+      # - tumbling: Non-overlapping fixed windows
+      # - cron: Windows defined by a cron expression
+      # Default: sliding
+      windowType: sliding
+      
+      # Half-life period for exponential time decay
+      # Recent usage is weighted more heavily than older usage
+      # Example: With 1h half-life, usage from 1 hour ago counts as 50% of current usage
+      # Set to 0 or omit to disable decay (all usage within window counts equally)
+      # Default: disabled
+      halfLifePeriod: 1h
+      
+      # How often to fetch usage data from Prometheus
+      # Default: 1m
+      fetchInterval: 1m
+      
+      # Maximum age of usage data before it's considered stale
+      # If data is older than this, the scheduler may wait for fresh data
+      # Default: 5m
+      stalenessPeriod: 5m
+      
+      # Maximum time to wait for fresh usage data at scheduler startup
+      # Default: 1m
+      waitTimeout: 1m
+

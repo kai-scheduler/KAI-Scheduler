@@ -16,14 +16,18 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
-	fake "sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
 )
 
 const (
-	podName     = "my-pod"
-	jobName     = "cron-27958584"
-	jobUID      = types.UID("123456789")
-	cronjobName = "cron"
+	podName          = "my-pod"
+	jobName          = "cron-27958584"
+	jobUID           = types.UID("123456789")
+	cronjobName      = "cron"
+	queueLabelKey    = "kai.scheduler/queue"
+	nodePoolLabelKey = "kai.scheduler/node-pool"
 )
 
 func TestGetPodGroupMetadata(t *testing.T) {
@@ -63,7 +67,7 @@ func TestGetPodGroupMetadata(t *testing.T) {
 	assert.Nil(t, err)
 
 	client := fake.NewClientBuilder().WithScheme(scheme.Scheme).WithRuntimeObjects(job).Build()
-	grouper := NewCronJobGrouper(client)
+	grouper := NewCronJobGrouper(client, defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, client))
 	podGroupMetadata, err := grouper.GetPodGroupMetadata(cronjob, pod)
 
 	assert.Nil(t, err)
@@ -101,7 +105,7 @@ func TestGetPodGroupMetadataJobOwnerNotFound(t *testing.T) {
 	}
 
 	client := fake.NewClientBuilder().WithScheme(scheme.Scheme).WithRuntimeObjects(cronjob).Build()
-	grouper := NewCronJobGrouper(client)
+	grouper := NewCronJobGrouper(client, defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, client))
 	podGroupMetadata, err := grouper.GetPodGroupMetadata(cronjob, pod)
 
 	assert.NotNil(t, err)
@@ -140,7 +144,7 @@ func TestGetPodGroupMetadataJobNotExists(t *testing.T) {
 	assert.Nil(t, err)
 
 	client := fake.NewClientBuilder().WithScheme(scheme.Scheme).WithRuntimeObjects(cronjob).Build()
-	grouper := NewCronJobGrouper(client)
+	grouper := NewCronJobGrouper(client, defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, client))
 	podGroupMetadata, err := grouper.GetPodGroupMetadata(cronjob, pod)
 	assert.NotNil(t, err)
 	assert.Equal(t, fmt.Sprintf("jobs.batch \"%s\" not found", jobName), err.Error())

@@ -54,10 +54,10 @@ var _ = Describe("ResourceRequirements Info internal logic", func() {
 		})
 		It("Other Resources", func() {
 			resourceList := v1.ResourceList{
-				v1.ResourceName("run.ai/test-resource"): resource.MustParse("1"),
+				v1.ResourceName("kai.scheduler/test-resource"): resource.MustParse("1"),
 			}
 			resourceInfo := RequirementsFromResourceList(resourceList)
-			Expect(resourceInfo.Get("run.ai/test-resource")).To(Equal(float64(1000)))
+			Expect(resourceInfo.Get("kai.scheduler/test-resource")).To(Equal(float64(1000)))
 
 			newResourceList := resourceInfo.ToResourceList()
 			compareResourceLists(resourceList, newResourceList)
@@ -73,15 +73,15 @@ var _ = Describe("ResourceRequirements Info internal logic", func() {
 	Context("Clone", func() {
 		It("Cloning all the properties", func() {
 			resourceList := v1.ResourceList{
-				v1.ResourceCPU:                          resource.MustParse("1"),
-				v1.ResourceMemory:                       resource.MustParse("5G"),
-				v1.ResourceName("run.ai/test-resource"): resource.MustParse("1"),
+				v1.ResourceCPU:    resource.MustParse("1"),
+				v1.ResourceMemory: resource.MustParse("5G"),
+				v1.ResourceName("kai.scheduler/test-resource"): resource.MustParse("1"),
 			}
 			resourceInfo := RequirementsFromResourceList(resourceList)
 			clone := resourceInfo.Clone()
 			Expect(clone.Cpu()).To(Equal(float64(1000)))
 			Expect(clone.Memory()).To(Equal(float64(5000000000)))
-			Expect(clone.Get("run.ai/test-resource")).To(Equal(float64(1000)))
+			Expect(clone.Get("kai.scheduler/test-resource")).To(Equal(float64(1000)))
 		})
 	})
 

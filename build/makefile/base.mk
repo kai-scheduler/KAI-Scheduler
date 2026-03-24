@@ -9,6 +9,7 @@ SUCCESS_MESSAGE_HANDLER=(${ECHO_COMMAND} ${GREEN_CONSOLE} "${CONSOLE_PREFIX} Suc
 
 DOCKER_SOCK_PATH=/var/run/docker.sock
 DOCKERFILE_PATH=./Dockerfile
+CRD_UPGRADER_DOCKERFILE_PATH=./deployments/crd-upgrader/Dockerfile
 
 DOCKER_TAG?=0.0.0
 VERSION?=${DOCKER_TAG}
@@ -51,6 +52,10 @@ DOCKER_COMMAND=docker run --rm -w ${DOCKER_WORK_DIR} -v "${PWD}/:/local:z" -u $(
 builder:
 	DOCKER_BUILDKIT=1 docker buildx build -f build/builder/Dockerfile --load -t builder:${GO_IMAGE_VERSION} .
 .PHONY: builder
+
+docker-build-crd-upgrader:
+	$(MAKE) docker-build-generic DOCKERFILE_PATH=${CRD_UPGRADER_DOCKERFILE_PATH} DOCKER_BUILD_ADDITIONAL_ARGS="" SERVICE_NAME="crd-upgrader"
+.PHONY: docker-build-crd-upgrader
 
 docker-build-generic:
 	DOCKER_BUILDKIT=1 docker buildx build ${DOCKER_BUILD_ADDITIONAL_ARGS} --build-arg SERVICE_NAME=${SERVICE_NAME} -f ${DOCKERFILE_PATH} -t ${DOCKER_IMAGE_NAME} ${DOCKER_BUILDX_ADDITIONAL_ARGS} --platform ${DOCKER_BUILD_PLATFORM} .

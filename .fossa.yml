@@ -1,0 +1,8 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+version: 3
+
+project:
+  name: https://github.com/kai-scheduler/KAI-Scheduler
+  team: KAI Scheduler

@@ -8,17 +8,29 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgroup"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/spark"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/spark"
 )
+
+type PodJobGrouper struct {
+	*spark.SparkGrouper
+	*defaultgrouper.DefaultGrouper
+}
+
+func NewPodJobGrouper(defaultGrouper *defaultgrouper.DefaultGrouper, sparkGrouper *spark.SparkGrouper) *PodJobGrouper {
+	return &PodJobGrouper{
+		SparkGrouper:   sparkGrouper,
+		DefaultGrouper: defaultGrouper,
+	}
+}
 
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=pods/finalizers,verbs=update;create;patch
 
-func GetPodGroupMetadata(topOwner *unstructured.Unstructured, pod *v1.Pod, _ ...*metav1.PartialObjectMetadata) (*podgroup.Metadata, error) {
+func (pjg *PodJobGrouper) GetPodGroupMetadata(topOwner *unstructured.Unstructured, pod *v1.Pod, _ ...*metav1.PartialObjectMetadata) (*podgroup.Metadata, error) {
 	if spark.IsSparkPod(pod) {
-		return spark.GetPodGroupMetadata(topOwner, pod)
+		return pjg.SparkGrouper.GetPodGroupMetadata(topOwner, pod)
 	}
-	return plugins.GetPodGroupMetadata(topOwner, pod)
+	return pjg.DefaultGrouper.GetPodGroupMetadata(topOwner, pod)
 }

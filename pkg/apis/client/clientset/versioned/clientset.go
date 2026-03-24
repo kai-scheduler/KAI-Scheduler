@@ -1,4 +1,20 @@
 /*
+Copyright The Kubernetes Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+/*
 Copyright 2025 NVIDIA CORPORATION
 SPDX-License-Identifier: Apache-2.0
 */
@@ -10,9 +26,10 @@ import (
 	fmt "fmt"
 	http "net/http"
 
-	schedulingv1alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned/typed/scheduling/v1alpha2"
-	schedulingv2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned/typed/scheduling/v2"
-	schedulingv2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned/typed/scheduling/v2alpha2"
+	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/typed/kai/v1alpha1"
+	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/typed/scheduling/v1alpha2"
+	schedulingv2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/typed/scheduling/v2"
+	schedulingv2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/typed/scheduling/v2alpha2"
 	discovery "k8s.io/client-go/discovery"
 	rest "k8s.io/client-go/rest"
 	flowcontrol "k8s.io/client-go/util/flowcontrol"
@@ -20,6 +37,7 @@ import (
 
 type Interface interface {
 	Discovery() discovery.DiscoveryInterface
+	KaiV1alpha1() kaiv1alpha1.KaiV1alpha1Interface
 	SchedulingV1alpha2() schedulingv1alpha2.SchedulingV1alpha2Interface
 	SchedulingV2() schedulingv2.SchedulingV2Interface
 	SchedulingV2alpha2() schedulingv2alpha2.SchedulingV2alpha2Interface
@@ -28,9 +46,15 @@ type Interface interface {
 // Clientset contains the clients for groups.
 type Clientset struct {
 	*discovery.DiscoveryClient
+	kaiV1alpha1        *kaiv1alpha1.KaiV1alpha1Client
 	schedulingV1alpha2 *schedulingv1alpha2.SchedulingV1alpha2Client
 	schedulingV2       *schedulingv2.SchedulingV2Client
 	schedulingV2alpha2 *schedulingv2alpha2.SchedulingV2alpha2Client
+}
+
+// KaiV1alpha1 retrieves the KaiV1alpha1Client
+func (c *Clientset) KaiV1alpha1() kaiv1alpha1.KaiV1alpha1Interface {
+	return c.kaiV1alpha1
 }
 
 // SchedulingV1alpha2 retrieves the SchedulingV1alpha2Client
@@ -92,6 +116,10 @@ func NewForConfigAndClient(c *rest.Config, httpClient *http.Client) (*Clientset,
 
 	var cs Clientset
 	var err error
+	cs.kaiV1alpha1, err = kaiv1alpha1.NewForConfigAndClient(&configShallowCopy, httpClient)
+	if err != nil {
+		return nil, err
+	}
 	cs.schedulingV1alpha2, err = schedulingv1alpha2.NewForConfigAndClient(&configShallowCopy, httpClient)
 	if err != nil {
 		return nil, err
@@ -125,6 +153,7 @@ func NewForConfigOrDie(c *rest.Config) *Clientset {
 // New creates a new Clientset for the given RESTClient.
 func New(c rest.Interface) *Clientset {
 	var cs Clientset
+	cs.kaiV1alpha1 = kaiv1alpha1.New(c)
 	cs.schedulingV1alpha2 = schedulingv1alpha2.New(c)
 	cs.schedulingV2 = schedulingv2.New(c)
 	cs.schedulingV2alpha2 = schedulingv2alpha2.New(c)

@@ -10,9 +10,6 @@ import (
 	"testing"
 
 	argov1alpha1 "github.com/argoproj/argo-workflows/v3/pkg/apis/workflow/v1alpha1"
-
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgroup"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/multierr"
 	v1 "k8s.io/api/core/v1"
@@ -20,6 +17,16 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	commonconsts "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper"
+	pluginshub "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/hub"
+)
+
+const (
+	queueLabelKey    = "kai.scheduler/queue"
+	nodePoolLabelKey = "kai.scheduler/node-pool"
 )
 
 var pod = v1.Pod{
@@ -71,7 +78,7 @@ var podJobSpawn = v1.Pod{
 	Status: v1.PodStatus{},
 }
 
-var runaiTestResources = []runtime.Object{
+var testResources = []runtime.Object{
 	&unstructured.Unstructured{
 		Object: map[string]interface{}{
 			"kind":       "RunaiJob",
@@ -111,10 +118,12 @@ func TestNewPodgrouper(t *testing.T) {
 		t.Fail()
 	}
 
-	resources := append(nativeK8sTestResources, runaiTestResources...)
+	resources := append(nativeK8sTestResources, testResources...)
 	client := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(resources...).Build()
 
-	grouper := podgrouper.NewPodgrouper(client, client, false, true)
+	pluginsHub := pluginshub.NewDefaultPluginsHub(client, false, true,
+		queueLabelKey, nodePoolLabelKey, "", "")
+	grouper := podgrouper.NewPodgrouper(client, client, pluginsHub)
 
 	topOwner, owners, err := grouper.GetPodOwners(context.Background(), &pod)
 	assert.Nil(t, err)
@@ -179,8 +188,7 @@ func Test_Podgrouper_Full_Flow(t *testing.T) {
 			},
 			expectedMetadata: &podgroup.Metadata{
 				Annotations: map[string]string{
-					"runai/job-id": "",
-					"run.ai/top-owner-metadata": `name: pod-job
+					commonconsts.TopOwnerMetadataKey: `name: pod-job
 uid: ""
 group: ""
 version: v1
@@ -237,7 +245,7 @@ kind: Pod
 						Namespace: "namespace",
 						UID:       "uid",
 						Labels: map[string]string{
-							"runai/queue": "test",
+							queueLabelKey: "test",
 						},
 					},
 					Spec:   argov1alpha1.WorkflowSpec{},
@@ -265,8 +273,7 @@ kind: Pod
 			},
 			expectedMetadata: &podgroup.Metadata{
 				Annotations: map[string]string{
-					"runai/job-id": "uid-pod",
-					"run.ai/top-owner-metadata": `name: argo-pod
+					commonconsts.TopOwnerMetadataKey: `name: argo-pod
 uid: uid-pod
 group: ""
 version: v1
@@ -274,7 +281,7 @@ kind: Pod
 `,
 				},
 				Labels: map[string]string{
-					"runai/queue": "test",
+					queueLabelKey: "test",
 				},
 				PriorityClassName: "train",
 				Queue:             "test",
@@ -308,10 +315,15 @@ kind: Pod
 					gangScheduleKnative:      true,
 				}
 			}
-			grouper := podgrouper.NewPodgrouper(client, client,
+			pluginsHub := pluginshub.NewDefaultPluginsHub(client,
 				tt.podGrouperOptions.searchForLegacyPodGroups,
 				tt.podGrouperOptions.gangScheduleKnative,
+				queueLabelKey,
+				nodePoolLabelKey,
+				"",
+				"",
 			)
+			grouper := podgrouper.NewPodgrouper(client, client, pluginsHub)
 
 			topOwner, owners, err := grouper.GetPodOwners(context.Background(), tt.reconciledPod)
 			assert.Nil(t, err)

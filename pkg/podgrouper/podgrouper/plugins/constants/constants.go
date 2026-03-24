@@ -4,19 +4,25 @@
 package constants
 
 const (
-	PodGroupNamePrefix = "pg"
-	QueueLabelKey      = "runai/queue"
-	ProjectLabelKey    = "project"
-	PriorityLabelKey   = "priorityClassName"
-	UserLabelKey       = "user"
-	JobIdKey           = "runai/job-id"
+	PodGroupNamePrefix     = "pg"
+	ProjectLabelKey        = "project"
+	PriorityLabelKey       = "priorityClassName"
+	PreemptibilityLabelKey = "kai.scheduler/preemptibility"
+	UserLabelKey           = "user"
 
 	BuildPriorityClass     = "build"
 	TrainPriorityClass     = "train"
 	InferencePriorityClass = "inference"
 
+	DefaultPrioritiesConfigMapTypesKey = "types"
+
 	DefaultQueueName = "default-queue"
 
-	WorkloadKindLabelKey = "run.ai/workload-kind"
-	WorkloadNameLabelKey = "run.ai/workload-name"
+	TopologyKey                   = "kai.scheduler/topology"
+	TopologyRequiredPlacementKey  = "kai.scheduler/topology-required-placement"
+	TopologyPreferredPlacementKey = "kai.scheduler/topology-preferred-placement"
+
+	SegmentSizeKey                       = "kai.scheduler/segment-size"
+	SegmentTopologyRequiredPlacementKey  = "kai.scheduler/segment-topology-required-placement"
+	SegmentTopologyPreferredPlacementKey = "kai.scheduler/segment-topology-preferred-placement"
 )

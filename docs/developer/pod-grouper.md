@@ -94,6 +94,18 @@ For MPI workloads:
 - Infer gang scheduling requirements from  schedulingPolicy.minAvailable, otherwise use all the replicas
 - Use "Train" priority class by default
 
+### JobSet Grouping
+For JobSet workloads:
+- When `startupPolicy.order` is "InOrder" (default):
+  - Creates one PodGroup per replicatedJob to avoid sequencing deadlocks
+  - PodGroup name: `pg-<jobset-name>-<jobset-uid>-<replicatedjob-name>`
+  - MinAvailable: `replicas * min(parallelism, completions if set)`
+- When `startupPolicy.order` is not "InOrder":
+  - Creates a single PodGroup for all replicatedJobs
+  - PodGroup name: `pg-<jobset-name>-<jobset-uid>`
+  - MinAvailable: sum of all replicatedJobs' minAvailable
+- Uses default priority class from DefaultGrouper
+
 ### Pod Grouping
 For pods with no owner, a "Train"-priority PodGroup with MinMember=1 is created.
 
@@ -123,10 +135,27 @@ This structured information helps users and automation systems understand and re
 
 ``` Go
 // CustomJobPodGroupPlugin implements grouping logic for custom job resources
-func CustomJobPodGroupMetadata(topOwner *unstructured.Unstructured, pod *v1.Pod, otherOwners ...*metav1.PartialObjectMetadata) (*podgroup.Metadata, error) {
+
+type CustomJobPodGrouper struct {
+	*defaultgrouper.DefaultGrouper
+}
+
+func NewCustomJobGrouper(defaultGrouper *defaultgrouper.DefaultGrouper) *CustomJobPodGrouper {
+	return &CustomJobPodGrouper{
+		defaultGrouper,
+	}
+}
+
+func (cjg *CustomJobPodGrouper) Name() string {
+	return "Custom Job Grouper"
+}
+
+func (cjg *CustomJobPodGrouper) CustomJobPodGroupMetadata(
+	topOwner *unstructured.Unstructured, pod *v1.Pod, otherOwners ...*metav1.PartialObjectMetadata,
+) (*podgroup.Metadata, error) {
 	// It's useful to use the default implementation to get the default metadata,
 	// and then override the fields that are specific to custom jobs.
-	podGroupMetadata, err := plugins.GetPodGroupMetadata(topOwner, pod)
+	podGroupMetadata, err := cjg.DefaultGrouper.GetPodGroupMetadata(topOwner, pod)
 	if err != nil {
 		return nil, err
 	}
@@ -159,14 +188,15 @@ func CustomJobPodGroupMetadata(topOwner *unstructured.Unstructured, pod *v1.Pod,
 }
 ```
 
-To register your plugin, edit `pkg/podgrouper/podgrouper/supported_types/supported_types.go` and add the following entry to the supportedTypes slice:
+To register your plugin, edit `pkg/podgrouper/podgrouper/hub/hub.go` and add the following entry to the supportedTypes slice:
 ``` Go 
+defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey)
 table := supportedTypes{
     {
         Group:   "example.com",
         Version: "v1",
         Kind:    "CustomJob",
-    }: custom.CustomJobPodGroupMetadata,
+    }: customjob.NewCustomJobGrouper(defaultGrouper),
     ...
 }
 ```

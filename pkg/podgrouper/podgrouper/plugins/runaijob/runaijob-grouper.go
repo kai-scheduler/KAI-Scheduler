@@ -8,24 +8,24 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgroup"
-	defaultpodgrouper "github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
-	"k8s.io/apimachinery/pkg/api/errors"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
 )
 
 type RunaiJobGrouper struct {
 	client                   client.Client
 	searchForLegacyPodGroups bool
+	*defaultgrouper.DefaultGrouper
 }
 
 // +kubebuilder:rbac:groups=run.ai,resources=runaijobs,verbs=get;list;watch
@@ -33,17 +33,23 @@ type RunaiJobGrouper struct {
 
 var logger = log.FromContext(context.Background())
 
-func NewRunaiJobGrouper(client client.Client, searchForLegacyPodGroups bool) *RunaiJobGrouper {
-	return &RunaiJobGrouper{client: client, searchForLegacyPodGroups: searchForLegacyPodGroups}
+func NewRunaiJobGrouper(
+	client client.Client, defaultGrouper *defaultgrouper.DefaultGrouper, searchForLegacyPodGroups bool,
+) *RunaiJobGrouper {
+	return &RunaiJobGrouper{
+		client:                   client,
+		searchForLegacyPodGroups: searchForLegacyPodGroups,
+		DefaultGrouper:           defaultGrouper,
+	}
 }
 
-func (g *RunaiJobGrouper) GetPodGroupMetadata(topOwner *unstructured.Unstructured, pod *v1.Pod, _ ...*metav1.PartialObjectMetadata) (*podgroup.Metadata, error) {
-	podGroupMetadata, err := defaultpodgrouper.GetPodGroupMetadata(topOwner, pod)
+func (rjg *RunaiJobGrouper) GetPodGroupMetadata(topOwner *unstructured.Unstructured, pod *v1.Pod, _ ...*metav1.PartialObjectMetadata) (*podgroup.Metadata, error) {
+	podGroupMetadata, err := rjg.DefaultGrouper.GetPodGroupMetadata(topOwner, pod)
 	if err != nil {
 		return nil, err
 	}
 
-	podGroupMetadata.Name, err = g.calcPodGroupName(topOwner, pod)
+	podGroupMetadata.Name, err = rjg.calcPodGroupName(topOwner, pod)
 	if err != nil {
 		return nil, err
 	}
@@ -51,12 +57,12 @@ func (g *RunaiJobGrouper) GetPodGroupMetadata(topOwner *unstructured.Unstructure
 	return podGroupMetadata, nil
 }
 
-func (g *RunaiJobGrouper) calcPodGroupName(topOwner *unstructured.Unstructured, pod *v1.Pod) (string, error) {
-	if g.searchForLegacyPodGroups {
+func (rjg *RunaiJobGrouper) calcPodGroupName(topOwner *unstructured.Unstructured, pod *v1.Pod) (string, error) {
+	if rjg.searchForLegacyPodGroups {
 		legacyName := calcLegacyName(topOwner, pod)
 		if legacyName != "" {
 			legacyPodGroupObj := &v2alpha2.PodGroup{}
-			err := g.client.Get(context.Background(), types.NamespacedName{Namespace: pod.Namespace, Name: legacyName},
+			err := rjg.client.Get(context.Background(), types.NamespacedName{Namespace: pod.Namespace, Name: legacyName},
 				legacyPodGroupObj)
 			if err == nil {
 				logger.V(1).Info("Using legacy pod-group %s/%s", pod.Namespace, legacyName)

@@ -6,21 +6,19 @@ package solvers
 import (
 	"golang.org/x/exp/maps"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/common"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 )
 
-type SolutionValidator func(
-	pendingJob *podgroup_info.PodGroupInfo,
-	victimJobs []*podgroup_info.PodGroupInfo,
-) bool
+type SolutionValidator func(scenario api.ScenarioInfo) bool
 
 type simulationVictims struct {
 	preemptedVictims []*pod_info.PodInfo
@@ -67,7 +65,7 @@ func (s *byPodSolver) solve(
 ) *solutionResult {
 	statement := session.Statement()
 
-	pendingJob := scenario.PendingJob()
+	pendingJob := scenario.GetPreemptor()
 	nextTaskToFindAllocation := scenario.PendingTasks()[len(scenario.PendingTasks())-1]
 	latestPotentialVictim := scenario.LatestPotentialVictim()
 
@@ -102,7 +100,7 @@ func (s *byPodSolver) solve(
 func (s *byPodSolver) runSimulation(
 	session *framework.Session, scenario *scenario.ByNodeScenario, statement *framework.Statement,
 	victimTasks []*pod_info.PodInfo) *solutionResult {
-	pendingJob := scenario.PendingJob()
+	pendingJob := scenario.GetPreemptor()
 	nextTaskToFindAllocation := scenario.PendingTasks()[len(scenario.PendingTasks())-1]
 
 	successfulSimulation, solutionVictims, err :=
@@ -157,7 +155,7 @@ func (s *byPodSolver) updateFeasibleNodes(ssn *framework.Session, victimTasks []
 		if !found {
 			newFeasibleNodes[potentialVictimTasks.NodeName] = true
 		}
-		s.feasibleNodes[potentialVictimTasks.NodeName] = ssn.Nodes[potentialVictimTasks.NodeName]
+		s.feasibleNodes[potentialVictimTasks.NodeName] = ssn.ClusterInfo.Nodes[potentialVictimTasks.NodeName]
 	}
 	return newFeasibleNodes
 }
@@ -166,7 +164,7 @@ func (s *byPodSolver) evictPotentialVictimsFromNode(
 	session *framework.Session, scenario *scenario.ByNodeScenario, statement *framework.Statement, nodeToTest string,
 ) (*framework.Checkpoint, []*pod_info.PodInfo, error) {
 	recordedVictimsCheckpoint := statement.Checkpoint()
-	pendingJob := scenario.PendingJob()
+	pendingJob := scenario.GetPreemptor()
 
 	potentialVictimsTasks := scenario.VictimsTasksFromNodes([]string{nodeToTest})
 	if err := common.EvictAllPreemptees(session, potentialVictimsTasks, pendingJob, statement, s.actionType); err != nil {
@@ -178,9 +176,6 @@ func (s *byPodSolver) evictPotentialVictimsFromNode(
 func (s *byPodSolver) handleScenarioSolution(
 	scenario *scenario.ByNodeScenario, statement *framework.Statement, solutionVictims *simulationVictims,
 ) *solutionResult {
-
-	pendingJob := scenario.PendingJob()
-
 	victimsTasks := make([]*pod_info.PodInfo, len(solutionVictims.preemptedVictims))
 	for i := 0; i < len(solutionVictims.preemptedVictims); i++ {
 		victimsTasks[i] = solutionVictims.preemptedVictims[i]
@@ -191,7 +186,7 @@ func (s *byPodSolver) handleScenarioSolution(
 	actualVictimJobs := getVictimJobsFromVictimTasks(victimsTasks, scenario)
 
 	if s.solutionValidator != nil {
-		validSolution := s.solutionValidator(pendingJob, actualVictimJobs)
+		validSolution := s.solutionValidator(scenario)
 		if !validSolution {
 			statement.Discard()
 			return &solutionResult{false, nil, nil, nil}
@@ -212,7 +207,7 @@ func getNodesOfJob(pj *podgroup_info.PodGroupInfo) []string {
 	}
 
 	pjNodeNames := map[string]string{}
-	for _, latestPotentialVictimTask := range pj.PodInfos {
+	for _, latestPotentialVictimTask := range pj.GetAllPodsMap() {
 		pjNodeNames[latestPotentialVictimTask.NodeName] = latestPotentialVictimTask.NodeName
 	}
 	return maps.Keys(pjNodeNames)
@@ -220,7 +215,7 @@ func getNodesOfJob(pj *podgroup_info.PodGroupInfo) []string {
 
 func (s *byPodSolver) tryScenarioWithEvictedVictims(ssn *framework.Session, scenario *scenario.ByNodeScenario,
 	statement *framework.Statement, victimTasks []*pod_info.PodInfo) (bool, *simulationVictims, error) {
-	pendingJob := scenario.PendingJob()
+	pendingJob := scenario.GetPreemptor()
 
 	nodes := maps.Values(s.feasibleNodes)
 	jobsToAllocate := common.GetJobsToAllocate(ssn, victimTasks, pendingJob)
@@ -261,7 +256,7 @@ func extractJobsFromTasks(
 		jobAlreadyExists := false
 		if possibleDuplicates, ok := jobs[task.Job]; ok {
 			for _, possibleDuplicate := range possibleDuplicates {
-				for _, podInfo := range possibleDuplicate.PodInfos {
+				for _, podInfo := range possibleDuplicate.GetAllPodsMap() {
 					if podInfo.UID == task.UID {
 						jobAlreadyExists = true
 						break

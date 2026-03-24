@@ -1,3 +1,19 @@
+/*
+Copyright 2017 The Kubernetes Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 // Copyright 2025 NVIDIA CORPORATION
 // SPDX-License-Identifier: Apache-2.0
 
@@ -28,28 +44,30 @@ import (
 	"k8s.io/client-go/tools/record"
 	clientconfig "sigs.k8s.io/controller-runtime/pkg/client/config"
 
-	"github.com/NVIDIA/KAI-scheduler/cmd/scheduler/app/options"
-	"github.com/NVIDIA/KAI-scheduler/cmd/scheduler/profiling"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/metrics"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/version"
+	"github.com/kai-scheduler/KAI-scheduler/cmd/scheduler/app/options"
+	"github.com/kai-scheduler/KAI-scheduler/cmd/scheduler/profiling"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf_util"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/version"
 )
 
 const (
 	leaseDuration = 15 * time.Second
 	renewDeadline = 10 * time.Second
 	retryPeriod   = 5 * time.Second
-
-	lockObjectNamespace = ""
 )
 
 var logFlushFreq = pflag.Duration("log-flush-frequency", 5*time.Second, "Maximum number of seconds between log flushes")
 
 func flushLogs() {
 	if err := log.InfraLogger.Sync(); err != nil &&
-		!errors.Is(err, syscall.ENOTTY) { // https://github.com/uber-go/zap/issues/991#issuecomment-962098428
+		!errors.Is(err, syscall.ENOTTY) && // https://github.com/uber-go/zap/issues/991#issuecomment-962098428
+		!errors.Is(err, syscall.EINVAL) { // https://github.com/uber-go/zap/issues/328
 		fmt.Fprintf(os.Stderr, "failed to flush logs: %v\n", err)
 	}
 }
@@ -64,17 +82,17 @@ func BuildSchedulerParams(opt *options.ServerOption) *conf.SchedulerParams {
 		SchedulerName:                     opt.SchedulerName,
 		RestrictSchedulingNodes:           opt.RestrictSchedulingNodes,
 		PartitionParams:                   schedulingPartitionParams,
-		IsInferencePreemptible:            opt.IsInferencePreemptible,
 		MaxNumberConsolidationPreemptees:  opt.MaxNumberConsolidationPreemptees,
 		ScheduleCSIStorage:                opt.ScheduleCSIStorage,
 		UseSchedulingSignatures:           opt.UseSchedulingSignatures,
 		FullHierarchyFairness:             opt.FullHierarchyFairness,
-		NodeLevelScheduler:                opt.NodeLevelScheduler,
 		AllowConsolidatingReclaim:         opt.AllowConsolidatingReclaim,
 		NumOfStatusRecordingWorkers:       opt.NumOfStatusRecordingWorkers,
 		GlobalDefaultStalenessGracePeriod: opt.GlobalDefaultStalenessGracePeriod,
 		SchedulePeriod:                    opt.SchedulePeriod,
 		DetailedFitErrors:                 opt.DetailedFitErrors,
+		UpdatePodEvictionCondition:        opt.UpdatePodEvictionCondition,
+		QueueLabelKey:                     opt.QueueLabelKey,
 	}
 }
 
@@ -88,7 +106,7 @@ func RunApp() error {
 
 	mux := http.NewServeMux()
 	go func() {
-		_ = http.ListenAndServe(fmt.Sprintf(":%d", so.PluginServerPort), mux)
+		_ = http.ListenAndServe(fmt.Sprintf("127.0.0.1:%d", so.PluginServerPort), mux)
 	}()
 
 	setupProfiling(so)
@@ -97,6 +115,7 @@ func RunApp() error {
 	} else {
 		defer flushLogs()
 	}
+	setConfig(so)
 
 	config := clientconfig.GetConfigOrDie()
 	config.QPS = float32(so.QPS)
@@ -128,14 +147,34 @@ func setupLogging(so *options.ServerOption) error {
 	return nil
 }
 
+func setConfig(so *options.ServerOption) {
+	config := conf.GetConfig()
+	config.ResourceReservationAppLabelValue = so.ResourceReservationAppLabel
+	config.CPUWorkerNodeLabelKey = so.CPUWorkerNodeLabelKey
+	config.GPUWorkerNodeLabelKey = so.GPUWorkerNodeLabelKey
+	config.MIGWorkerNodeLabelKey = so.MIGWorkerNodeLabelKey
+}
+
+// +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
+
 func Run(opt *options.ServerOption, config *restclient.Config, mux *http.ServeMux) error {
 	if opt.PrintVersion {
 		version.PrintVersion()
 	}
 	metrics.InitMetrics(opt.MetricsNamespace)
 
+	actions.InitDefaultActions()
+	plugins.InitDefaultPlugins()
+
+	// Load configuration of scheduler
+	schedConfig, err := conf_util.ResolveConfigurationFromFile(opt.SchedulerConf)
+	if err != nil {
+		return fmt.Errorf("error resolving configuration from file: %v", err)
+	}
+
 	scheduler, err := scheduler.NewScheduler(config,
-		opt.SchedulerConf,
+		schedConfig,
 		BuildSchedulerParams(opt),
 		mux,
 	)
@@ -165,8 +204,12 @@ func Run(opt *options.ServerOption, config *restclient.Config, mux *http.ServeMu
 
 	// Prepare event clients.
 	broadcaster := record.NewBroadcaster()
-	broadcaster.StartRecordingToSink(&corev1.EventSinkImpl{Interface: leaderElectionClient.CoreV1().Events(lockObjectNamespace)})
-	eventRecorder := broadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: opt.SchedulerName})
+	broadcaster.StartRecordingToSink(&corev1.EventSinkImpl{Interface: leaderElectionClient.CoreV1().Events(opt.Namspace)})
+	componentName := opt.SchedulerName
+	if len(opt.NodePoolLabelValue) > 0 {
+		componentName = fmt.Sprintf("%s-%s", opt.SchedulerName, opt.NodePoolLabelValue)
+	}
+	eventRecorder := broadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: componentName})
 
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -176,8 +219,8 @@ func Run(opt *options.ServerOption, config *restclient.Config, mux *http.ServeMu
 	id := hostname + "_" + string(uuid.NewUUID())
 
 	rl, err := resourcelock.New(resourcelock.LeasesResourceLock,
-		lockObjectNamespace,
-		opt.SchedulerName,
+		opt.Namspace,
+		componentName,
 		leaderElectionClient.CoreV1(),
 		leaderElectionClient.CoordinationV1(),
 		resourcelock.ResourceLockConfig{

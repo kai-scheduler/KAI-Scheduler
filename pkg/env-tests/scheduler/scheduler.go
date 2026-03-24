@@ -7,15 +7,19 @@ import (
 	"github.com/spf13/pflag"
 	"k8s.io/client-go/rest"
 
-	"github.com/NVIDIA/KAI-scheduler/cmd/scheduler/app"
-	"github.com/NVIDIA/KAI-scheduler/cmd/scheduler/app/options"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/cmd/scheduler/app"
+	"github.com/kai-scheduler/KAI-scheduler/cmd/scheduler/app/options"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf_util"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins"
 )
 
 var loggerInitiated = false
 
-func RunScheduler(cfg *rest.Config, stopCh chan struct{}) error {
+func RunScheduler(cfg *rest.Config, schedulerConf *conf.SchedulerConfiguration, stopCh chan struct{}) error {
 	if !loggerInitiated {
 		err := log.InitLoggers(0)
 		if err != nil {
@@ -27,8 +31,7 @@ func RunScheduler(cfg *rest.Config, stopCh chan struct{}) error {
 	opt := options.NewServerOption()
 
 	args := []string{
-		"--schedule-period=10ms",
-		"--feature-gates=DynamicResourceAllocation=true",
+		"--schedule-period=1ms",
 	}
 	fs := pflag.NewFlagSet("flags", pflag.ExitOnError)
 	opt.AddFlags(fs)
@@ -37,9 +40,22 @@ func RunScheduler(cfg *rest.Config, stopCh chan struct{}) error {
 		return err
 	}
 
+	opt.PluginServerPort = 8084
+	opt.ListenAddress = ":8085"
+
 	params := app.BuildSchedulerParams(opt)
 
-	s, err := scheduler.NewScheduler(cfg, "", params, nil)
+	actions.InitDefaultActions()
+	plugins.InitDefaultPlugins()
+
+	if schedulerConf == nil {
+		schedulerConf, err = conf_util.GetDefaultSchedulerConf()
+		if err != nil {
+			return err
+		}
+	}
+
+	s, err := scheduler.NewScheduler(cfg, schedulerConf, params, nil)
 	if err != nil {
 		return err
 	}

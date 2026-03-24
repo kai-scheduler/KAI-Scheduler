@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
 	"golang.org/x/exp/maps"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -20,9 +18,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgroup"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
 )
 
 const (
@@ -32,22 +32,28 @@ const (
 
 var logger = log.FromContext(context.Background())
 
-type knativeGrouper struct {
+type KnativeGrouper struct {
 	client       client.Client
 	gangSchedule bool
+	*defaultgrouper.DefaultGrouper
 }
 
-// +kubebuilder:rbac:groups=serving.knative.dev,resources=revisions;configurations;services,verbs=get;list;watch
-// +kubebuilder:rbac:groups=serving.knative.dev,resources=revisions/finalizers;configurations/finalizers;services/finalizers,verbs=patch;update;create
-
-func NewKnativeGrouper(client client.Client, gangSchedule bool) *knativeGrouper {
-	return &knativeGrouper{
-		client:       client,
-		gangSchedule: gangSchedule,
+func NewKnativeGrouper(client client.Client, defaultGrouper *defaultgrouper.DefaultGrouper, gangSchedule bool) *KnativeGrouper {
+	return &KnativeGrouper{
+		client:         client,
+		gangSchedule:   gangSchedule,
+		DefaultGrouper: defaultGrouper,
 	}
 }
 
-func (g *knativeGrouper) GetPodGroupMetadata(_ *unstructured.Unstructured, pod *v1.Pod, _ ...*metav1.PartialObjectMetadata) (*podgroup.Metadata, error) {
+func (g *KnativeGrouper) Name() string {
+	return "KNative Grouper"
+}
+
+// +kubebuilder:rbac:groups=serving.knative.dev,resources=revisions/finalizers;configurations/finalizers;services/finalizers,verbs=patch;update;create
+// +kubebuilder:rbac:groups=serving.knative.dev,resources=revisions;configurations;services,verbs=get;list;watch
+
+func (g *KnativeGrouper) GetPodGroupMetadata(_ *unstructured.Unstructured, pod *v1.Pod, _ ...*metav1.PartialObjectMetadata) (*podgroup.Metadata, error) {
 	revisionName, found := pod.Labels[knativeRevisionLabel]
 	if !found {
 		return nil, fmt.Errorf("revisionName not found for knative service pod %s/%s", pod.GetNamespace(), pod.GetName())
@@ -64,7 +70,7 @@ func (g *knativeGrouper) GetPodGroupMetadata(_ *unstructured.Unstructured, pod *
 	}
 
 	if !g.gangSchedule {
-		return getPodGroupFromPod(rev, pod)
+		return g.getPodGroupFromPod(rev, pod)
 	}
 
 	isBC, err := g.isBCRevision(rev)
@@ -73,13 +79,13 @@ func (g *knativeGrouper) GetPodGroupMetadata(_ *unstructured.Unstructured, pod *
 	}
 
 	if isBC {
-		return getPodGroupFromPod(rev, pod)
+		return g.getPodGroupFromPod(rev, pod)
 	}
 
-	return getPodGroupFromRevision(rev, pod)
+	return g.getPodGroupFromRevision(rev, pod)
 }
 
-func getPodGroupFromRevision(revision *unstructured.Unstructured, pod *v1.Pod) (*podgroup.Metadata, error) {
+func (g *KnativeGrouper) getPodGroupFromRevision(revision *unstructured.Unstructured, pod *v1.Pod) (*podgroup.Metadata, error) {
 	annotations := revision.GetAnnotations()
 	minScale, exists := annotations[knativeMinScaleAnnotation]
 	if !exists {
@@ -102,10 +108,10 @@ func getPodGroupFromRevision(revision *unstructured.Unstructured, pod *v1.Pod) (
 	}
 
 	return &podgroup.Metadata{
-		Annotations:       plugins.CalcPodGroupAnnotations(revision, pod),
-		Labels:            plugins.CalcPodGroupLabels(revision, pod),
-		PriorityClassName: constants.InferencePriorityClass,
-		Queue:             plugins.CalcPodGroupQueue(revision, pod),
+		Annotations:       g.CalcPodGroupAnnotations(revision, pod),
+		Labels:            g.CalcPodGroupLabels(revision, pod),
+		PriorityClassName: g.CalcPodGroupPriorityClass(revision, pod, constants.InferencePriorityClass),
+		Queue:             g.CalcPodGroupQueue(revision, pod),
 		Namespace:         revision.GetNamespace(),
 		Name:              calcPodGroupName(revision),
 		MinAvailable:      int32(minScaleInt),
@@ -113,7 +119,7 @@ func getPodGroupFromRevision(revision *unstructured.Unstructured, pod *v1.Pod) (
 	}, nil
 }
 
-func getPodGroupFromPod(revision *unstructured.Unstructured, pod *v1.Pod) (*podgroup.Metadata, error) {
+func (g *KnativeGrouper) getPodGroupFromPod(revision *unstructured.Unstructured, pod *v1.Pod) (*podgroup.Metadata, error) {
 	ownerRef := &metav1.OwnerReference{
 		APIVersion: pod.APIVersion,
 		Kind:       pod.Kind,
@@ -122,10 +128,10 @@ func getPodGroupFromPod(revision *unstructured.Unstructured, pod *v1.Pod) (*podg
 	}
 
 	return &podgroup.Metadata{
-		Annotations:       plugins.CalcPodGroupAnnotations(revision, pod),
-		Labels:            plugins.CalcPodGroupLabels(revision, pod),
+		Annotations:       g.CalcPodGroupAnnotations(revision, pod),
+		Labels:            g.CalcPodGroupLabels(revision, pod),
 		PriorityClassName: constants.InferencePriorityClass,
-		Queue:             plugins.CalcPodGroupQueue(revision, pod),
+		Queue:             g.CalcPodGroupQueue(revision, pod),
 		Namespace:         pod.GetNamespace(),
 		Name:              calcPodGroupName(pod),
 		MinAvailable:      1,
@@ -138,7 +144,7 @@ func calcPodGroupName(obj metav1.Object) string {
 }
 
 // isBCRevision checks if the revision already has podgroups per pod. In that case, we will maintain this behavior for the revision.
-func (g *knativeGrouper) isBCRevision(revision *unstructured.Unstructured) (bool, error) {
+func (g *KnativeGrouper) isBCRevision(revision *unstructured.Unstructured) (bool, error) {
 	var pods v1.PodList
 	err := g.client.List(context.Background(), &pods, client.InNamespace(revision.GetNamespace()), client.MatchingLabels{
 		knativeRevisionLabel: revision.GetName(),

@@ -9,17 +9,16 @@ import (
 	. "go.uber.org/mock/gomock"
 	"gopkg.in/h2non/gock.v1"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/utils/ptr"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/allocate"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/integration_tests/integration_tests_utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/allocate"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/integration_tests_utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 )
 
 func TestHandleMIGAllocation(t *testing.T) {
@@ -30,6 +29,8 @@ func TestHandleMIGAllocation(t *testing.T) {
 
 	testsMetadata := getMIGTestsMetadata()
 	for testNumber, testMetadata := range testsMetadata {
+		t.Logf("Running test %d: %s", testNumber, testMetadata.TestTopologyBasic.Name)
+
 		ssn := test_utils.BuildSession(testMetadata.TestTopologyBasic, controller)
 		allocateAction := allocate.New()
 		allocateAction.Execute(ssn)
@@ -321,7 +322,6 @@ func getMIGTestsMetadata() []integration_tests_utils.TestTopologyMetadata {
 								State: pod_status.Pending,
 							},
 						},
-						MinAvailable: ptr.To(int32(2)),
 					},
 					{
 						Name:      "pending_job-2",

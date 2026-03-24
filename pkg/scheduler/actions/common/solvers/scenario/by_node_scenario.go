@@ -7,11 +7,14 @@ import (
 	"golang.org/x/exp/maps"
 	"golang.org/x/exp/slices"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 )
+
+var _ api.ScenarioInfo = &ByNodeScenario{}
 
 type ByNodeScenario struct {
 	*BaseScenario
@@ -20,11 +23,11 @@ type ByNodeScenario struct {
 }
 
 func NewByNodeScenario(
-	session *framework.Session, pendingTasksAsJob *podgroup_info.PodGroupInfo,
+	session *framework.Session, originalJob, pendingTasksAsJob *podgroup_info.PodGroupInfo,
 	potentialVictimsTasks []*pod_info.PodInfo, recordedVictimsJobs []*podgroup_info.PodGroupInfo,
 ) *ByNodeScenario {
 
-	simpleScenario := NewBaseScenario(session, pendingTasksAsJob, potentialVictimsTasks, recordedVictimsJobs)
+	simpleScenario := NewBaseScenario(session, originalJob, pendingTasksAsJob, potentialVictimsTasks, recordedVictimsJobs)
 
 	bns := &ByNodeScenario{
 		BaseScenario:               simpleScenario,
@@ -58,7 +61,7 @@ func (bns *ByNodeScenario) VictimsTasksFromNodes(nodeNames []string) []*pod_info
 
 	for _, jobID := range victimsJobs {
 		for _, jobTaskGroup := range bns.victimsJobsTaskGroups[jobID] {
-			tasks = append(tasks, maps.Values(jobTaskGroup.PodInfos)...)
+			tasks = append(tasks, maps.Values(jobTaskGroup.GetAllPodsMap())...)
 		}
 	}
 

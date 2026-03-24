@@ -8,9 +8,10 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 )
 
 type Interface interface {
 	Bind(ctx context.Context, task *v1.Pod, host *v1.Node, bindRequest *v1alpha2.BindRequest) error
+	Rollback(ctx context.Context, task *v1.Pod, host *v1.Node, bindRequest *v1alpha2.BindRequest) error
 }

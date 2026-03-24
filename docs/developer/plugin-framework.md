@@ -1,4 +1,4 @@
-# Scheduler Plugin Mechanism Documentation
+# Scheduler Plugin Mechanism
 
 ## Overview
 The scheduler uses a plugin-based architecture that allows extending its functionality through various extension points. The core mechanism is built around `Session` object that maintains the scheduling context and plugin-registered callbacks.
@@ -163,7 +163,7 @@ type SpotInstancePlugin struct {
 
 func NewSpotInstancePlugin(args map[string]string) Plugin {
 	return &SpotInstancePlugin{
-		spotLabelKey:   "runai.io/instance-type",
+		spotLabelKey:   "kai.scheduler/instance-type",
 		spotLabelValue: "spot",
 		nonSpotScore:   1000, // Non-Spot instances get the score which will rank them higher. For reference on the score used by other plugins, check out scheduler/pkg/plugins/scores/scores.go
 	}
@@ -177,7 +177,7 @@ func (sp *SpotInstancePlugin) OnSessionOpen(ssn *Session) {
 	// Register predicate to prevent non-preemptible pods on spot instances
 	ssn.AddPredicateFn(func(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo) error {
 		// Ignore preemptible jobs
-        if job.IsPreemptibleJob(ssn.IsInferencePreemptible()) {
+        if job.IsPreemptibleJob() {
 			return nil
 		}
 
@@ -213,7 +213,7 @@ func (sp *SpotInstancePlugin) OnSessionClose(ssn *Session) {
 
 ### Usage
 
-1. Label spot instances with `runai.io/instance-type=spot`
+1. Label spot instances with `kai.scheduler/instance-type=spot`
 2. Register the plugin in your scheduler configuration:
 
 ```go
@@ -228,7 +228,7 @@ RegisterPluginBuilder("spot-instance-manager", NewSpotInstancePlugin)
   - Spot instances get a score of 0, making them less preferred for scheduling
   - The scheduler sums scores from all plugins, so regular instances will be preferred over spot instances
 - **Configuration**: 
-  - Uses node labels to identify spot instances (`runai.io/instance-type=spot`)
+  - Uses node labels to identify spot instances (`kai.scheduler/instance-type=spot`)
 
 This plugin helps manage spot instances by:
 - Ensuring only preemptible workloads run on spot instances

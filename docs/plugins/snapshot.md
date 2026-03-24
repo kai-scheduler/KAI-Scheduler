@@ -17,7 +17,6 @@ The snapshot plugin is a framework plugin that provides an HTTP endpoint to capt
   - Queues
   - PodGroups
   - BindRequests
-  - PodDisruptionBudgets
   - PriorityClasses
   - ConfigMaps
   - PersistentVolumeClaims
@@ -28,9 +27,25 @@ The snapshot plugin is a framework plugin that provides an HTTP endpoint to capt
   - ResourceSlices
   - DeviceClasses
 
-### Usage
+### Capturing a Snapshot
 
 The plugin registers an HTTP endpoint `/get-snapshot` that returns a ZIP file containing a JSON snapshot of the cluster state.
+
+To capture a snapshot, port-forward to the scheduler pod and call the endpoint:
+```bash
+kubectl port-forward -n kai-scheduler deployment/kai-scheduler-default 8081 &
+sleep 2
+curl -vv "localhost:8081/get-snapshot" > snapshot.gzip
+```
+
+### Analyzing a Snapshot
+
+Use the snapshot tool to analyze a captured snapshot:
+```bash
+./bin/snapshot-tool-amd64 --filename snapshot.gzip --verbosity 8
+```
+
+See the [Snapshot Tool](#snapshot-tool) section below for more details.
 
 ### Response Format
 
@@ -64,22 +79,22 @@ The snapshot tool is a command-line utility that can load and analyze snapshots 
 ### Usage
 
 ```bash
-snapshot-tool -filename <snapshot-file> [-verbosity <log-level>]
+snapshot-tool --filename <snapshot-file> [--verbosity <log-level>]
 ```
 
 #### Arguments
 
-- `-filename`: Path to the snapshot ZIP file (required)
-- `-verbosity`: Logging verbosity level (default: 4)
+- `--filename`: Path to the snapshot ZIP file (required)
+- `--verbosity`: Logging verbosity level (default: 4)
 
 ### Example
 
 ```bash
 # Load and analyze a snapshot
-snapshot-tool -filename snapshot.zip
+snapshot-tool --filename snapshot.zip
 
 # Load and analyze a snapshot with increased verbosity
-snapshot-tool -filename snapshot.zip -verbosity 5
+snapshot-tool --filename snapshot.zip --verbosity 5
 ```
 
 ## Implementation Details

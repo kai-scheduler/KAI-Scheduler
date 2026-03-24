@@ -15,7 +15,7 @@ import (
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/utils"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/utils"
 )
 
 type Interface interface {
@@ -40,7 +40,7 @@ func ForEventCustomTimeout(ctx context.Context, client runtimeClient.WithWatch, 
 	logger := log.FromContext(ctx)
 
 	watcher := eventWatcher.watch(ctx)
-	defer watcher.Stop()
+	defer func() { watcher.Stop() }()
 
 	eventWatcher.sync(ctx)
 	if eventWatcher.satisfied() {
@@ -76,7 +76,17 @@ func ForEventCustomTimeout(ctx context.Context, client runtimeClient.WithWatch, 
 			if eventWatcher.satisfied() {
 				return true
 			}
-		case event := <-watcher.ResultChan():
+		case event, ok := <-watcher.ResultChan():
+			if !ok {
+				eventWatcher.sync(ctx)
+				if eventWatcher.satisfied() {
+					return true
+				}
+				// Watch channel closed (normal K8s server-side timeout); restart
+				watcher.Stop()
+				watcher = eventWatcher.watch(ctx)
+				continue
+			}
 			if event.Type == watch.Error {
 				err := ignoreContextCancelled(event)
 				if err != nil {

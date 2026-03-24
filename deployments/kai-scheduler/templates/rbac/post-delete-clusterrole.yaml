@@ -1,0 +1,28 @@
+{{- if .Values.postCleanup.enabled }}
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: post-delete-cleanup
+  annotations:
+    "helm.sh/hook": post-delete
+    "helm.sh/hook-delete-policy": hook-succeeded
+rules:
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  verbs:
+  - delete
+  - get
+  - list
+  - watch
+- apiGroups:
+  - kai.scheduler
+  resources:
+  - configs
+  verbs:
+  - delete
+{{- end }}

@@ -11,7 +11,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
 var (
@@ -24,7 +24,50 @@ func RequestsGPUFraction(pod *v1.Pod) bool {
 	return foundFraction || foundGPUMemory
 }
 
+func RequestsWholeGPU(pod *v1.Pod) bool {
+	for _, container := range pod.Spec.Containers {
+		if _, ok := container.Resources.Requests[constants.NvidiaGpuResource]; ok {
+			return true
+		}
+		if _, ok := container.Resources.Limits[constants.NvidiaGpuResource]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func RequestsGPU(pod *v1.Pod) bool {
+	return RequestsGPUFraction(pod) || RequestsWholeGPU(pod)
+}
+
+func GetGPUFraction(pod *v1.Pod) (float64, error) {
+	gpuFractionStr, found := pod.Annotations[constants.GpuFraction]
+	if !found {
+		return 0, fmt.Errorf("GPU fraction annotation not found")
+	}
+	fractionValue, err := strconv.ParseFloat(gpuFractionStr, 64)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse GPU fraction annotation value. err: %s", err)
+	}
+	return fractionValue, nil
+}
+
+func GetGPUMemory(pod *v1.Pod) (int64, error) {
+	gpuMemoryStr, found := pod.Annotations[constants.GpuMemory]
+	if !found {
+		return 0, fmt.Errorf("GPU memory annotation not found")
+	}
+	memValue, err := strconv.ParseInt(gpuMemoryStr, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse GPU memory annotation value. err: %s", err)
+	}
+	return memValue, nil
+}
+
 func GetNumGPUFractionDevices(pod *v1.Pod) (int64, error) {
+	if pod.Annotations == nil {
+		return 0, fractionDevicesAnnotationNotFound
+	}
 	mumDevicesStr, found := pod.Annotations[constants.GpuFractionsNumDevices]
 	if !found {
 		_, foundFraction := pod.Annotations[constants.GpuFraction]

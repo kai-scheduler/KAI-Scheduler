@@ -1,3 +1,19 @@
+/*
+Copyright 2017 The Kubernetes Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 // Copyright 2025 NVIDIA CORPORATION
 // SPDX-License-Identifier: Apache-2.0
 
@@ -8,21 +24,19 @@ import (
 	"testing"
 
 	. "go.uber.org/mock/gomock"
-	v1 "k8s.io/api/core/v1"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/utils/pointer"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/allocate"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/integration_tests/integration_tests_utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/allocate"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/integration_tests_utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 )
 
 func TestHandleAllocation(t *testing.T) {
@@ -31,6 +45,8 @@ func TestHandleAllocation(t *testing.T) {
 	defer controller.Finish()
 	testsMetadata := getTestsMetadata()
 	for testNumber, testMetadata := range testsMetadata {
+		t.Logf("Running test %d: %s", testNumber, testMetadata.TestTopologyBasic.Name)
+
 		ssn := test_utils.BuildSession(testMetadata.TestTopologyBasic, controller)
 		allocateAction := allocate.New()
 		allocateAction.Execute(ssn)
@@ -1450,7 +1466,7 @@ func getTestsMetadata() []integration_tests_utils.TestTopologyMetadata {
 		},
 		{
 			TestTopologyBasic: test_utils.TestTopologyBasic{
-				Name: "Allocate inference over quota",
+				Name: "Attempt to allocate inference over quota",
 				Jobs: []*jobs_fake.TestJobBasic{
 					{
 						Name:                "pending_job0",
@@ -1482,8 +1498,8 @@ func getTestsMetadata() []integration_tests_utils.TestTopologyMetadata {
 				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
 					"pending_job0": {
 						GPUsRequired: 1,
-						Status:       pod_status.Binding,
-						NodeName:     "node0",
+						Status:       pod_status.Pending,
+						NodeName:     "",
 					},
 				},
 				Mocks: &test_utils.TestMock{
@@ -1755,7 +1771,7 @@ func TestHandleElasticJobCommitFailure(t *testing.T) {
 					RequiredGPUsPerTask: 1,
 					Priority:            constants.PriorityTrainNumber,
 					QueueName:           "queue1",
-					MinAvailable:        pointer.Int32(1),
+					RootSubGroupSet:     jobs_fake.DefaultSubGroup(1),
 					Tasks: []*tasks_fake.TestTaskBasic{
 						{
 							State: pod_status.Pending,
@@ -1785,18 +1801,16 @@ func TestHandleElasticJobCommitFailure(t *testing.T) {
 		},
 		controller,
 	)
-	k8s_utils.Helpers = &failingK8sUtils{k8s_utils.Helpers}
+	ssn.Cache = &failingBindCache{Cache: ssn.Cache}
 
 	allocateAction := allocate.New()
 	allocateAction.Execute(ssn)
 }
 
-type failingK8sUtils struct {
-	k8s_utils.Interface
+type failingBindCache struct {
+	cache.Cache
 }
 
-func (f *failingK8sUtils) PatchPodAnnotationsAndLabelsInterface(
-	_ kubernetes.Interface, _ *v1.Pod, _, _ map[string]interface{},
-) error {
+func (f *failingBindCache) Bind(podInfo *pod_info.PodInfo, hostname string, bindRequestAnnotations map[string]string) error {
 	return fmt.Errorf("create pod error")
 }

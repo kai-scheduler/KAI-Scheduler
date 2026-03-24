@@ -14,12 +14,13 @@ import (
 	"k8s.io/client-go/kubernetes"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	runaiClient "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned"
-	v2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/queue"
+	kaiClient "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned"
+	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/testconfig"
 )
 
 const (
@@ -37,7 +38,8 @@ func Create(namespace, name, queue string) *v2alpha2.PodGroup {
 			Namespace:   namespace,
 			Annotations: map[string]string{},
 			Labels: map[string]string{
-				constants.AppLabelName: "engine-e2e",
+				constants.AppLabelName:               "engine-e2e",
+				testconfig.GetConfig().QueueLabelKey: queue,
 			},
 		},
 		Spec: v2alpha2.PodGroupSpec{
@@ -45,7 +47,7 @@ func Create(namespace, name, queue string) *v2alpha2.PodGroup {
 			Queue:     queue,
 		},
 	}
-	return &*podGroup
+	return podGroup
 }
 
 func DeleteAllInNamespace(
@@ -59,15 +61,18 @@ func DeleteAllInNamespace(
 	return runtimeClient.IgnoreNotFound(err)
 }
 
-func CreateWithPods(ctx context.Context, client *kubernetes.Clientset, runaiClient *runaiClient.Clientset,
-	podGroupName string, q *v2.Queue, numPods int, priorityClassName *string,
+func CreateWithPods(ctx context.Context, client *kubernetes.Clientset, kaiClient *kaiClient.Clientset,
+	podGroupName string, q *v2.Queue, numPods int, priorityClassName *string, preemptibility v2alpha2.Preemptibility,
 	requirements v1.ResourceRequirements) (*v2alpha2.PodGroup, []*v1.Pod) {
 	namespace := queue.GetConnectedNamespaceToQueue(q)
 	podGroup := Create(namespace, podGroupName, q.Name)
 	if priorityClassName != nil {
 		podGroup.Spec.PriorityClassName = *priorityClassName
 	}
-	podGroup, err := runaiClient.SchedulingV2alpha2().PodGroups(namespace).Create(ctx, podGroup, metav1.CreateOptions{})
+	if preemptibility != "" {
+		podGroup.Spec.Preemptibility = preemptibility
+	}
+	podGroup, err := kaiClient.SchedulingV2alpha2().PodGroups(namespace).Create(ctx, podGroup, metav1.CreateOptions{})
 	Expect(err).To(Succeed())
 
 	var pods []*v1.Pod
@@ -83,7 +88,7 @@ func IsNotReadyForScheduling(event *v1.Event) bool {
 		return false
 	}
 	match, err := regexp.MatchString(
-		"Job is not ready for scheduling. Waiting for \\d pods, currently \\d existing",
+		"Job is not ready for scheduling. Waiting for \\d+ pods( for SubGroup \\S+)?, currently \\d+ exist, \\d+ are gated",
 		event.Message)
 	Expect(err).To(Succeed())
 	return match

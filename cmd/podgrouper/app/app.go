@@ -5,26 +5,36 @@ package app
 
 import (
 	"flag"
-	kubeAiSchedulerV2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	controllers "github.com/NVIDIA/KAI-scheduler/pkg/podgrouper"
+
 	"go.uber.org/zap/zapcore"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	_ "k8s.io/client-go/plugin/pkg/client/auth"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+
+	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	kubeAiSchedulerV2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	controllers "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper"
+	pluginshub "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/hub"
 	// +kubebuilder:scaffold:imports
 )
 
-const port = 9443
+const (
+	port               = 9443
+	schedulerNameField = "spec.schedulerName"
+)
 
 var (
 	scheme   = runtime.NewScheme()
@@ -39,19 +49,46 @@ func init() {
 	// +kubebuilder:scaffold:scheme
 }
 
+type App struct {
+	Mgr               manager.Manager
+	DefaultPluginsHub *pluginshub.DefaultPluginsHub
+
+	configs    controllers.Configs
+	pluginsHub pluginshub.PluginsHub
+}
+
 func Run() error {
+	app, err := New()
+	if err != nil {
+		return err
+	}
+
+	return app.Run()
+}
+
+func New() (*App, error) {
+	return NewWithScheme(scheme)
+}
+
+func NewWithScheme(mgrScheme *runtime.Scheme) (*App, error) {
 	var opts Options
 	opts.AddFlags(flag.CommandLine)
 
 	initLogger()
 
+	if mgrScheme == nil {
+		mgrScheme = scheme
+	}
+
+	configs := opts.Configs()
 	mgr, err := ctrl.NewManager(getClientConfigOrDie(opts), ctrl.Options{
-		Scheme: scheme,
+		Scheme: mgrScheme,
 		Client: client.Options{
 			Cache: &client.CacheOptions{
 				Unstructured: true,
 			},
 		},
+		Cache: getCacheOptions(configs),
 		Metrics: metricsserver.Options{
 			BindAddress: opts.MetricsAddr,
 		},
@@ -60,7 +97,7 @@ func Run() error {
 		}),
 		HealthProbeBindAddress: opts.ProbeAddr,
 		LeaderElection:         opts.EnableLeaderElection,
-		LeaderElectionID:       "54dff599.run.ai",
+		LeaderElectionID:       "54dff599.kai.scheduler",
 		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
 		// when the Manager ends. This requires the binary to immediately end when the
 		// Manager is stopped, otherwise, this setting is unsafe. Setting this significantly
@@ -74,26 +111,52 @@ func Run() error {
 		// LeaderElectionReleaseOnCancel: true,
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	if err = (&controllers.PodReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr, opts.Configs()); err != nil {
+	defaultPluginsHub := pluginshub.NewDefaultPluginsHub(mgr.GetClient(), configs.SearchForLegacyPodGroups,
+		configs.KnativeGangSchedule, configs.SchedulingQueueLabelKey, configs.NodePoolLabelKey,
+		configs.DefaultConfigPerTypeConfigMapName, configs.DefaultConfigPerTypeConfigMapNamespace)
+
+	app := &App{
+		Mgr:               mgr,
+		DefaultPluginsHub: defaultPluginsHub,
+		configs:           configs,
+		pluginsHub:        nil,
+	}
+	return app, nil
+}
+
+func (app *App) RegisterPlugins(pluginsHub pluginshub.PluginsHub) {
+	app.pluginsHub = pluginsHub
+}
+
+// +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
+
+func (app *App) Run() error {
+	pluginsHub := app.pluginsHub
+	if pluginsHub == nil {
+		pluginsHub = app.DefaultPluginsHub
+	}
+
+	if err := (&controllers.PodReconciler{
+		Client: app.Mgr.GetClient(),
+		Scheme: app.Mgr.GetScheme(),
+	}).SetupWithManager(app.Mgr, app.configs, pluginsHub); err != nil {
 		return err
 	}
 	// +kubebuilder:scaffold:builder
 
-	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
+	if err := app.Mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		return err
 	}
-	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
+	if err := app.Mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
 		return err
 	}
 
 	setupLog.Info("starting manager")
-	return mgr.Start(ctrl.SetupSignalHandler())
+	return app.Mgr.Start(ctrl.SetupSignalHandler())
 }
 
 func initLogger() {
@@ -112,4 +175,29 @@ func getClientConfigOrDie(opts Options) *rest.Config {
 	clientConfig.Burst = opts.Burst
 
 	return clientConfig
+}
+
+func getCacheOptions(configs controllers.Configs) cache.Options {
+	podByObject := cache.ByObject{
+		Field: fields.Set{schedulerNameField: configs.SchedulerName}.AsSelector(),
+	}
+	if len(configs.PodLabelSelector) > 0 {
+		podByObject.Label = labels.Set(configs.PodLabelSelector).AsSelector()
+	}
+
+	cacheOptions := cache.Options{}
+	cacheOptions.ByObject = map[client.Object]cache.ByObject{
+		&corev1.Pod{}: podByObject,
+	}
+
+	// limit configmap cache to the namespace that contains the configmap of default configs for pod groups
+	if configs.DefaultConfigPerTypeConfigMapName != "" && configs.DefaultConfigPerTypeConfigMapNamespace != "" {
+		cacheOptions.ByObject[&corev1.ConfigMap{}] = cache.ByObject{
+			Namespaces: map[string]cache.Config{
+				configs.DefaultConfigPerTypeConfigMapNamespace: {},
+			},
+		}
+	}
+
+	return cacheOptions
 }

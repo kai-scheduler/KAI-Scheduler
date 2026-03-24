@@ -1,3 +1,19 @@
+/*
+Copyright 2017 The Kubernetes Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 // Copyright 2025 NVIDIA CORPORATION
 // SPDX-License-Identifier: Apache-2.0
 
@@ -20,6 +36,14 @@ type QueueSpec struct {
 	// higher priority will be considerd first for allocation, and last for reclaim. When not set, default is 100.
 	// +optional
 	Priority *int `json:"priority,omitempty"`
+
+	// Minimum runtime of a job in queue before it can be preempted.
+	// +optional
+	PreemptMinRuntime *metav1.Duration `json:"preemptMinRuntime,omitempty"`
+
+	// Minimum runtime of a job in queue before it can be reclaimed.
+	// +optional
+	ReclaimMinRuntime *metav1.Duration `json:"reclaimMinRuntime,omitempty"`
 }
 
 // QueueStatus defines the observed state of Queue
@@ -51,6 +75,7 @@ type QueueStatus struct {
 // +genclient
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:storageversion
 // +kubebuilder:resource:scope=Cluster
 // +kubebuilder:printcolumn:name="Priority",type=string,JSONPath=`.spec.priority`
 // +kubebuilder:printcolumn:name="Parent",type=string,JSONPath=`.spec.parentQueue`

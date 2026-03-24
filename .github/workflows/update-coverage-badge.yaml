@@ -1,0 +1,115 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+name: Update Coverage Badge
+
+on:
+  push:
+    branches:
+      - "main"
+
+jobs:
+  update-coverage:
+    name: Update Coverage Badge
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.1'
+
+      - name: Run tests with coverage
+        run: make test
+
+      - name: Archive code coverage results
+        uses: actions/upload-artifact@v7
+        with:
+          name: code-coverage
+          path: coverage/coverage.out
+
+      - name: Calculate coverage percentage
+        id: coverage
+        run: |
+          COVERAGE=$(go tool cover -func=coverage/coverage.out | grep total | grep -Eo '[0-9]+\.[0-9]+')
+          echo "percentage=$COVERAGE" >> $GITHUB_OUTPUT
+          ROUNDED_COVERAGE=$(printf "%.0f" $COVERAGE)
+          echo "rounded=$ROUNDED_COVERAGE" >> $GITHUB_OUTPUT
+          echo "Total coverage: $COVERAGE%"
+          
+          # Determine badge color based on coverage percentage
+          if (( $(echo "$COVERAGE >= 80" | bc -l) )); then
+            echo "color=brightgreen" >> $GITHUB_OUTPUT
+          elif (( $(echo "$COVERAGE >= 70" | bc -l) )); then
+            echo "color=green" >> $GITHUB_OUTPUT
+          elif (( $(echo "$COVERAGE >= 60" | bc -l) )); then
+            echo "color=yellowgreen" >> $GITHUB_OUTPUT
+          elif (( $(echo "$COVERAGE >= 50" | bc -l) )); then
+            echo "color=yellow" >> $GITHUB_OUTPUT
+          elif (( $(echo "$COVERAGE >= 40" | bc -l) )); then
+            echo "color=orange" >> $GITHUB_OUTPUT
+          else
+            echo "color=red" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Coverage Badge SVG
+        id: create_badge
+        run: |
+          mkdir -p temporarybadges
+          # Create SVG badge file
+          cat > temporarybadges/coverage.svg << EOF
+          <svg xmlns="http://www.w3.org/2000/svg" width="106" height="20">
+            <linearGradient id="b" x2="0" y2="100%">
+              <stop offset="0" stop-color="#bbb" stop-opacity=".1"/>
+              <stop offset="1" stop-opacity=".1"/>
+            </linearGradient>
+            <mask id="a">
+              <rect width="106" height="20" rx="3" fill="#fff"/>
+            </mask>
+            <g mask="url(#a)">
+              <path fill="#555" d="M0 0h61v20H0z"/>
+              <path fill="#${{ steps.coverage.outputs.color }}" d="M61 0h45v20H61z"/>
+              <path fill="url(#b)" d="M0 0h106v20H0z"/>
+            </g>
+            <g fill="#fff" text-anchor="middle" font-family="DejaVu Sans,Verdana,Geneva,sans-serif" font-size="11">
+              <text x="30.5" y="15" fill="#010101" fill-opacity=".3">coverage</text>
+              <text x="30.5" y="14">coverage</text>
+              <text x="82.5" y="15" fill="#010101" fill-opacity=".3">${{ steps.coverage.outputs.percentage }}%</text>
+              <text x="82.5" y="14">${{ steps.coverage.outputs.percentage }}%</text>
+            </g>
+          </svg>
+          EOF
+          echo "Created coverage badge SVG"
+
+      - name: Push Badge to Dedicated Branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BADGE_BRANCH="coverage-badge"
+
+          # Setup git
+          git config --local user.email "action@github.com"
+          git config --local user.name "Coverage Badge Action"
+
+          # Try to fetch the badge branch, or create it if it doesn't exist
+          if ! git fetch origin $BADGE_BRANCH; then
+            # Create an orphan branch for the badge
+            git checkout --orphan $BADGE_BRANCH
+            git rm -rf .
+          else
+            git checkout $BADGE_BRANCH
+          fi
+
+          # Copy over just the badge SVG
+          mkdir -p badges
+          cp temporarybadges/coverage.svg badges/
+
+          # Commit and push the badge
+          git add badges/coverage.svg
+          git commit -m "chore: update coverage badge [skip ci]" || echo "No changes to commit"
+          git push origin $BADGE_BRANCH

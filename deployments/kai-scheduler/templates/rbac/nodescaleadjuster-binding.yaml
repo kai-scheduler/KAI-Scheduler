@@ -1,0 +1,15 @@
+# Copyright 2025 NVIDIA CORPORATION
+  # SPDX-License-Identifier: Apache-2.0
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kai-node-scale-adjuster
+subjects:
+  - kind: ServiceAccount
+    name: node-scale-adjuster
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: ClusterRole
+  name: kai-node-scale-adjuster
+  apiGroup: rbac.authorization.k8s.io

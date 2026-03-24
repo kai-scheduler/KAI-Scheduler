@@ -1,3 +1,19 @@
+/*
+Copyright 2018 The Kubernetes Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 // Copyright 2025 NVIDIA CORPORATION
 // SPDX-License-Identifier: Apache-2.0
 
@@ -6,17 +22,15 @@ package reclaim
 import (
 	"golang.org/x/exp/maps"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/common"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/common/solvers"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/reclaimer_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/metrics"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/scheduler_util"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/scheduler_util"
 )
 
 type reclaimAction struct {
@@ -39,7 +53,7 @@ func (ra *reclaimAction) Execute(ssn *framework.Session) {
 		FilterUnready:     true,
 		MaxJobsQueueDepth: ssn.GetJobsDepth(framework.Reclaim),
 	})
-	jobsOrderByQueues.InitializeWithJobs(ssn.PodGroupInfos)
+	jobsOrderByQueues.InitializeWithJobs(ssn.ClusterInfo.PodGroupInfos)
 
 	log.InfraLogger.V(2).Infof("There are <%d> PodGroupInfos and <%d> Queues in total for scheduling",
 		jobsOrderByQueues.Len(), ssn.CountLeafQueues())
@@ -48,9 +62,7 @@ func (ra *reclaimAction) Execute(ssn *framework.Session) {
 
 	for !jobsOrderByQueues.IsEmpty() {
 		job := jobsOrderByQueues.PopNextJob()
-
-		reclaimerInfo := buildReclaimerInfo(ssn, job)
-		if !ssn.CanReclaimResources(reclaimerInfo) {
+		if !ssn.CanReclaimResources(job) {
 			continue
 		}
 
@@ -69,7 +81,7 @@ func (ra *reclaimAction) Execute(ssn *framework.Session) {
 			}
 		}
 		metrics.IncPodgroupsConsideredByAction()
-		succeeded, statement, reclaimeeTasksNames := ra.attemptToReclaimForSpecificJob(ssn, job, reclaimerInfo)
+		succeeded, statement, reclaimeeTasksNames := ra.attemptToReclaimForSpecificJob(ssn, job)
 		if succeeded {
 			metrics.IncPodgroupScheduledByAction()
 			log.InfraLogger.V(3).Infof(
@@ -88,74 +100,43 @@ func (ra *reclaimAction) Execute(ssn *framework.Session) {
 }
 
 func (ra *reclaimAction) attemptToReclaimForSpecificJob(
-	ssn *framework.Session, reclaimer *podgroup_info.PodGroupInfo, reclaimerInfo *reclaimer_info.ReclaimerInfo,
+	ssn *framework.Session, reclaimer *podgroup_info.PodGroupInfo,
 ) (bool, *framework.Statement, []string) {
-	queue := ssn.Queues[reclaimer.Queue]
-	resReq := podgroup_info.GetTasksToAllocateInitResource(reclaimer, ssn.TaskOrderFn, false)
+	queue := ssn.ClusterInfo.Queues[reclaimer.Queue]
+	resReq := podgroup_info.GetTasksToAllocateInitResourceVector(reclaimer, ssn.PodSetOrderFn, ssn.TaskOrderFn, false, ssn.ClusterInfo.MinNodeGPUMemory)
 	log.InfraLogger.V(3).Infof("Attempting to reclaim for job: <%v/%v> of queue <%v>, resources: <%v>",
 		reclaimer.Namespace, reclaimer.Name, queue.Name, resReq)
 
 	ssn.OnJobSolutionStart()
 
-	feasibleNodes := common.FeasibleNodesForJob(maps.Values(ssn.Nodes), reclaimer)
+	feasibleNodes := common.FeasibleNodesForJob(maps.Values(ssn.ClusterInfo.Nodes), reclaimer)
 	solver := solvers.NewJobsSolver(
 		feasibleNodes,
-		reclaimableScenarioCheck(ssn, reclaimerInfo),
-		getOrderedVictimsQueue(ssn, reclaimer.Queue),
+		ssn.ReclaimScenarioValidatorFn,
+		getOrderedVictimsQueue(ssn, reclaimer),
 		framework.Reclaim)
 	return solver.Solve(ssn, reclaimer)
 }
 
-func reclaimableScenarioCheck(ssn *framework.Session,
-	reclaimerInfo *reclaimer_info.ReclaimerInfo) solvers.SolutionValidator {
-	return func(
-		pendingJob *podgroup_info.PodGroupInfo,
-		victimJobs []*podgroup_info.PodGroupInfo) bool {
-		return ssn.Reclaimable(reclaimerInfo, calcVictimResources(victimJobs))
-	}
-}
-
-func buildReclaimerInfo(ssn *framework.Session, reclaimerJob *podgroup_info.PodGroupInfo) *reclaimer_info.ReclaimerInfo {
-	return &reclaimer_info.ReclaimerInfo{
-		Name:          reclaimerJob.Name,
-		Namespace:     reclaimerJob.Namespace,
-		Queue:         reclaimerJob.Queue,
-		IsPreemptable: reclaimerJob.IsPreemptibleJob(ssn.IsInferencePreemptible()),
-		RequiredResources: podgroup_info.GetTasksToAllocateInitResource(
-			reclaimerJob, ssn.TaskOrderFn, false),
-	}
-}
-
-func calcVictimResources(victimJobs []*podgroup_info.PodGroupInfo) map[common_info.QueueID][]*resource_info.Resource {
-	totalVictimsResources := make(map[common_info.QueueID][]*resource_info.Resource)
-	for _, jobTaskGroup := range victimJobs {
-		totalJobResources := resource_info.EmptyResource()
-		for _, task := range jobTaskGroup.PodInfos {
-			totalJobResources.AddResourceRequirements(task.AcceptedResource)
-		}
-
-		totalVictimsResources[jobTaskGroup.Queue] = append(
-			totalVictimsResources[jobTaskGroup.Queue],
-			totalJobResources,
-		)
-	}
-	return totalVictimsResources
-}
-
-func getOrderedVictimsQueue(ssn *framework.Session, evictingQueue common_info.QueueID) solvers.GenerateVictimsQueue {
+func getOrderedVictimsQueue(ssn *framework.Session, reclaimer *podgroup_info.PodGroupInfo) solvers.GenerateVictimsQueue {
 	return func() *utils.JobsOrderByQueues {
 		jobsOrderedByQueue := utils.NewJobsOrderByQueues(ssn, utils.JobsOrderInitOptions{
 			FilterNonPreemptible:     true,
 			FilterNonActiveAllocated: true,
-			ReverseOrder:             true,
+			VictimQueue:              true,
 			MaxJobsQueueDepth:        scheduler_util.QueueCapacityInfinite,
 		})
 		jobs := map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{}
-		for _, job := range ssn.PodGroupInfos {
-			if job.Queue != evictingQueue {
-				jobs[job.UID] = job
+		for _, job := range ssn.ClusterInfo.PodGroupInfos {
+			if job.Queue == reclaimer.Queue {
+				continue
 			}
+			if !ssn.ReclaimVictimFilter(reclaimer, job) {
+				continue
+			}
+			jobs[job.UID] = job
 		}
+
 		jobsOrderedByQueue.InitializeWithJobs(jobs)
 		return &jobsOrderedByQueue
 	}

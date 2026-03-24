@@ -27,11 +27,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/binding"
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/binding/resourcereservation"
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding/resourcereservation"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/common"
 
-	schedulingv1alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 )
 
 const (
@@ -113,7 +113,7 @@ func (r *BindRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		var finalError error
 		if r := recover(); r != nil {
 			finalError = fmt.Errorf("Internal Error: %v\n%s", r, string(debug.Stack()))
-			err = fmt.Errorf("Internal Error: %vs", r)
+			err = fmt.Errorf("Internal Error: %v", r)
 		}
 
 		result, err = r.UpdateStatus(ctx, bindRequest, result, err)
@@ -163,6 +163,11 @@ func (r *BindRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if err != nil {
 		logger.Error(err, "Failed to bind pod to node", "pod", pod.Name, "namespace", pod.Namespace,
 			"node", node.Name)
+
+		if rollbackErr := r.binder.Rollback(ctx, pod, node, bindRequest); rollbackErr != nil {
+			logger.Error(rollbackErr, "Failed to rollback after bind failure", "pod", pod.Name,
+				"namespace", pod.Namespace)
+		}
 	}
 	return result, err
 }
@@ -178,6 +183,7 @@ func (r *BindRequestReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				time.Duration(r.params.RateLimiterBaseDelaySeconds)*time.Second,
 				time.Duration(r.params.RateLimiterMaxDelaySeconds)*time.Second,
 			),
+			SkipNameValidation: &[]bool{true}[0],
 		}).
 		Complete(r)
 }

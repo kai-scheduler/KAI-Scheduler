@@ -6,15 +6,25 @@ package ray
 import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgroup"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
 )
 
-func (rg *RayGrouper) GetPodGroupMetadataForRayService(
+type RayServiceGrouper struct {
+	*RayGrouper
+}
+
+func NewRayServiceGrouper(rayGrouper *RayGrouper) *RayServiceGrouper {
+	return &RayServiceGrouper{
+		RayGrouper: rayGrouper,
+	}
+}
+
+func (rsg *RayServiceGrouper) GetPodGroupMetadata(
 	topOwner *unstructured.Unstructured, pod *v1.Pod, _ ...*metav1.PartialObjectMetadata,
 ) (*podgroup.Metadata, error) {
-	return rg.getPodGroupMetadataWithClusterNamePath(topOwner, pod, [][]string{
+	return rsg.getPodGroupMetadataWithClusterNamePath(topOwner, pod, [][]string{
 		{"status", "activeServiceStatus", "rayClusterName"}, {"status", "pendingServiceStatus", "rayClusterName"},
 	})
 }

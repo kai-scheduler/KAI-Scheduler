@@ -1,0 +1,11 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+global:
+  resourceReservation:
+    namespace: runai-reservation
+    serviceAccount: runai-reservation
+    appLabel: runai-reservation
+
+podgrouper:
+  queueLabelKey: runai/queue

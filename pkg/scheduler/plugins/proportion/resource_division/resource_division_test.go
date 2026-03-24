@@ -9,11 +9,11 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"k8s.io/apimachinery/pkg/apis/meta/v1"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	rs "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	rs "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
 )
 
 func TestProportion(t *testing.T) {
@@ -48,47 +48,47 @@ var _ = Describe("Proportion", func() {
 				}
 			})
 			It("gives requested GPUs - no remaining", func() {
-				remaining := setResourceShare(2, rs.GpuResource, queues)
+				remaining := setResourceShare(2, 0, rs.GpuResource, queues)
 				Expect(remaining).To(Equal(float64(0)))
 				Expect(queues["1"].GPU.FairShare).To(Equal(float64(2)))
 			})
 			It("gives requested GPUs with remaining", func() {
-				remaining := setResourceShare(3, rs.GpuResource, queues)
+				remaining := setResourceShare(3, 0, rs.GpuResource, queues)
 				Expect(remaining).To(Equal(float64(1)))
 				Expect(queues["1"].GPU.FairShare).To(Equal(float64(2)))
 			})
 			It("doesn't give more GPUs than allowed", func() {
 				queues["1"].GPU.MaxAllowed = 2
-				remaining := setResourceShare(3, rs.GpuResource, queues)
+				remaining := setResourceShare(3, 0, rs.GpuResource, queues)
 				Expect(remaining).To(Equal(float64(1)))
 				Expect(queues["1"].GPU.FairShare).To(Equal(float64(2)))
 			})
 			It("gives up to deserved when over subscribed", func() {
-				remaining := setResourceShare(1, rs.GpuResource, queues)
+				remaining := setResourceShare(1, 0, rs.GpuResource, queues)
 				Expect(remaining).To(Equal(float64(0)))
 				Expect(queues["1"].GPU.FairShare).To(Equal(float64(2)))
 			})
 			It("gives up to full quota", func() {
 				queues["1"].GPU.Request = float64(5)
-				remaining := setResourceShare(7, rs.GpuResource, queues)
+				remaining := setResourceShare(7, 0, rs.GpuResource, queues)
 				Expect(remaining).To(Equal(float64(4)))
 				Expect(queues["1"].GPU.FairShare).To(Equal(float64(3)))
 			})
 			It("gives with fraction, if stated in deserved", func() {
 				queues["1"].GPU.Deserved = 1.5
-				remaining := setResourceShare(2, rs.GpuResource, queues)
+				remaining := setResourceShare(2, 0, rs.GpuResource, queues)
 				Expect(remaining).To(Equal(0.5))
 				Expect(queues["1"].GPU.FairShare).To(Equal(1.5))
 			})
 			It("gives with fraction, if stated in request", func() {
 				queues["1"].GPU.Request = 1.5
-				remaining := setResourceShare(2, rs.GpuResource, queues)
+				remaining := setResourceShare(2, 0, rs.GpuResource, queues)
 				Expect(remaining).To(Equal(0.5))
 				Expect(queues["1"].GPU.FairShare).To(Equal(1.5))
 			})
 			It("doesn't give if deserved is zero", func() {
 				queues["1"].GPU.Deserved = float64(0)
-				remaining := setResourceShare(2, rs.GpuResource, queues)
+				remaining := setResourceShare(2, 0, rs.GpuResource, queues)
 				Expect(remaining).To(Equal(float64(2)))
 				Expect(queues["1"].GPU.FairShare).To(Equal(float64(0)))
 			})
@@ -119,55 +119,55 @@ var _ = Describe("Proportion", func() {
 				}
 			})
 			It("gives requested GPUs no remaining", func() {
-				remaining := divideOverQuotaResource(2, queues, rs.GpuResource)
+				remaining := divideOverQuotaResource(2, 0, queues, rs.GpuResource)
 				Expect(remaining).To(Equal(float64(0)))
 				Expect(queues["1"].GPU.FairShare).To(Equal(float64(5)))
 			})
 			It("gives requested GPUs with remaining", func() {
-				remaining := divideOverQuotaResource(3, queues, rs.GpuResource)
+				remaining := divideOverQuotaResource(3, 0, queues, rs.GpuResource)
 				Expect(remaining).To(Equal(float64(1)))
 				Expect(queues["1"].GPU.FairShare).To(Equal(float64(5)))
 			})
 			It("doesn't give more GPUs than allowed", func() {
 				queues["1"].GPU.MaxAllowed = 4
-				remaining := divideOverQuotaResource(2, queues, rs.GpuResource)
+				remaining := divideOverQuotaResource(2, 0, queues, rs.GpuResource)
 				Expect(remaining).To(Equal(float64(1)))
 				Expect(queues["1"].GPU.FairShare).To(Equal(float64(4)))
 			})
 			It("doesn't give when over quota weight is zero", func() {
 				queues["1"].GPU.OverQuotaWeight = 0
-				remaining := divideOverQuotaResource(2, queues, rs.GpuResource)
+				remaining := divideOverQuotaResource(2, 0, queues, rs.GpuResource)
 				Expect(remaining).To(Equal(float64(2)))
 				Expect(queues["1"].GPU.FairShare).To(Equal(float64(3)))
 			})
 			It("gives with fraction if requested", func() {
 				queues["1"].GPU.Request = 4.5
-				remaining := divideOverQuotaResource(2, queues, rs.GpuResource)
+				remaining := divideOverQuotaResource(2, 0, queues, rs.GpuResource)
 				Expect(remaining).To(Equal(0.5))
 				Expect(queues["1"].GPU.FairShare).To(Equal(4.5))
 			})
 			It("gives remainder fraction", func() {
-				remaining := divideOverQuotaResource(0.5, queues, rs.GpuResource)
+				remaining := divideOverQuotaResource(0.5, 0, queues, rs.GpuResource)
 				Expect(remaining).To(Equal(float64(0)))
 				Expect(queues["1"].GPU.FairShare).To(Equal(3.5))
 			})
 			It("gives when deserved is zero", func() {
 				queues["1"].GPU.Deserved = float64(0)
 				queues["1"].GPU.FairShare = float64(0)
-				remaining := divideOverQuotaResource(6, queues, rs.GpuResource)
+				remaining := divideOverQuotaResource(6, 0, queues, rs.GpuResource)
 				Expect(remaining).To(Equal(float64(1)))
 				Expect(queues["1"].GPU.FairShare).To(Equal(float64(5)))
 			})
 			It("doesn't break when there are zero resources to divide", func() {
 				origFairShare := queues["1"].GPU.FairShare
-				remaining := divideOverQuotaResource(0, queues, rs.GpuResource)
+				remaining := divideOverQuotaResource(0, 0, queues, rs.GpuResource)
 				Expect(remaining).To(Equal(float64(0)))
 				Expect(queues["1"].GPU.FairShare).To(Equal(origFairShare))
 			})
 			It("doesn't give when over quota weight is zero", func() {
 				origFairShare := queues["1"].GPU.FairShare
 				queues["1"].GPU.OverQuotaWeight = float64(0)
-				remaining := divideOverQuotaResource(10, queues, rs.GpuResource)
+				remaining := divideOverQuotaResource(10, 0, queues, rs.GpuResource)
 				Expect(remaining).To(Equal(float64(10)))
 				Expect(queues["1"].GPU.FairShare).To(Equal(origFairShare))
 			})
@@ -216,7 +216,7 @@ var _ = Describe("Proportion", func() {
 			It("doesn't give when over quota weight is zero", func() {
 				origFairShare := queues["1"].GPU.FairShare
 				queues["1"].GPU.OverQuotaWeight = float64(0)
-				remaining := divideOverQuotaResource(10, queues, rs.GpuResource)
+				remaining := divideOverQuotaResource(10, 0, queues, rs.GpuResource)
 				Expect(remaining).To(Equal(float64(10)))
 				Expect(queues["1"].GPU.FairShare).To(Equal(origFairShare))
 			})
@@ -286,7 +286,7 @@ var _ = Describe("Proportion", func() {
 					queues[id].Priority = priority
 				}
 
-				remaining := setResourceShare(testData.totalGPUs, rs.GpuResource, queues)
+				remaining := setResourceShare(testData.totalGPUs, 0, rs.GpuResource, queues)
 				Expect(remaining).To(Equal(testData.expectedRemaining), "Expected remaining to equal %.2f, but got %.2f", testData.expectedRemaining, remaining)
 				for uuid, expectedShare := range testData.expectedShare {
 					Expect(queues[uuid].GPU.FairShare).To(Equal(expectedShare), "Expected share for queue %s to equal %.2f, but got %.2f", uuid, expectedShare, queues[uuid].GPU.FairShare)
@@ -462,7 +462,7 @@ var _ = Describe("Proportion", func() {
 				"3": 0,
 			}
 
-			remaining := setResourceShare(5, rs.GpuResource, queues)
+			remaining := setResourceShare(5, 0, rs.GpuResource, queues)
 			Expect(remaining).To(Equal(0.0), "Expected remaining to equal %.2f, but got %.2f", 0, remaining)
 			for uuid, expectedShare := range expectedShare {
 				Expect(queues[uuid].GPU.FairShare).To(Equal(expectedShare), "Expected share for queue %s to equal %.2f, but got %.2f", uuid, expectedShare, queues[uuid].GPU.FairShare)
@@ -496,12 +496,12 @@ var _ = Describe("Proportion", func() {
 				}
 			})
 			It("gives requested CPUs to queue", func() {
-				remaining := setResourceShare(3000, rs.CpuResource, queues)
+				remaining := setResourceShare(3000, 0, rs.CpuResource, queues)
 				Expect(remaining).To(Equal(float64(1000)))
 				Expect(queues["1"].CPU.FairShare).To(Equal(float64(2000)))
 			})
 			It("gives deserved in over subscription", func() {
-				remaining := setResourceShare(1000, rs.CpuResource, queues)
+				remaining := setResourceShare(1000, 0, rs.CpuResource, queues)
 				Expect(remaining).To(Equal(float64(0)))
 				Expect(queues["1"].CPU.FairShare).To(Equal(float64(2000)))
 			})
@@ -549,7 +549,7 @@ var _ = Describe("Proportion", func() {
 			})
 			When("queue 2 has no deserved CPU", func() {
 				It("reclaims all resources of queue 2", func() {
-					remaining := setResourceShare(totalCPUResources, rs.CpuResource, queues)
+					remaining := setResourceShare(totalCPUResources, 0, rs.CpuResource, queues)
 					Expect(remaining).To(Equal(float64(0)))
 					Expect(queues["2"].CPU.FairShare).To(Equal(float64(0)))
 					Expect(queues["1"].CPU.FairShare).To(Equal(totalCPUResources))
@@ -617,7 +617,7 @@ var _ = Describe("Proportion", func() {
 				When("all queues deserve the same fairShare of CPU", func() {
 					When("all queues request more than they deserve", func() {
 						It("all queues get their deserved fairShare - over subscription", func() {
-							remaining := setResourceShare(totalCPUResources, rs.CpuResource, queues)
+							remaining := setResourceShare(totalCPUResources, 0, rs.CpuResource, queues)
 							Expect(remaining).To(Equal(float64(0)))
 							Expect(queues["1"].CPU.FairShare).To(Equal(float64(5000)))
 							Expect(queues["2"].CPU.FairShare).To(Equal(float64(5000)))
@@ -631,7 +631,7 @@ var _ = Describe("Proportion", func() {
 							queues["3"].CPU.Request = 6000
 						})
 						It("all queues get their deserved fairShare - over quota", func() {
-							remaining := setResourceShare(18000, rs.CpuResource, queues)
+							remaining := setResourceShare(18000, 0, rs.CpuResource, queues)
 							Expect(remaining).To(Equal(float64(0)))
 							Expect(queues["1"].CPU.FairShare).To(Equal(float64(6000)))
 							Expect(queues["2"].CPU.FairShare).To(Equal(float64(6000)))
@@ -645,7 +645,7 @@ var _ = Describe("Proportion", func() {
 							queues["3"].CPU.Request = 2000
 						})
 						It("reclaims unneeded resources from an allocated queue to fulfill the unallocated queue", func() {
-							remaining := setResourceShare(totalCPUResources, rs.CpuResource, queues)
+							remaining := setResourceShare(totalCPUResources, 0, rs.CpuResource, queues)
 							Expect(remaining).To(Equal(float64(0)))
 							Expect(queues["1"].CPU.FairShare).To(Equal(float64(6000)))
 							Expect(queues["2"].CPU.FairShare).To(Equal(float64(2000)))
@@ -654,7 +654,7 @@ var _ = Describe("Proportion", func() {
 
 						It("reclaims from both allocated queues to fulfill the last unallocated queue", func() {
 							queues["2"].CPU.Request = 5000
-							remaining := setResourceShare(totalCPUResources, rs.CpuResource, queues)
+							remaining := setResourceShare(totalCPUResources, 0, rs.CpuResource, queues)
 							Expect(remaining).To(Equal(float64(0)))
 							Expect(queues["1"].CPU.FairShare).To(Equal(float64(5000))) // 5000 deserved (requested 7000)
 							Expect(queues["2"].CPU.FairShare).To(Equal(float64(5000))) // 5000 deserved and requested
@@ -669,7 +669,7 @@ var _ = Describe("Proportion", func() {
 							queues["3"].CPU.Request = 2000
 						})
 						It("reclaims unneeded resources from an allocated queue to fulfill the unallocated queue", func() {
-							remaining := setResourceShare(totalCPUResources, rs.CpuResource, queues)
+							remaining := setResourceShare(totalCPUResources, 0, rs.CpuResource, queues)
 							Expect(remaining).To(Equal(float64(0)))
 							Expect(queues["1"].CPU.FairShare).To(Equal(float64(6000))) // 5000 deserved + 100 over quota
 							Expect(queues["2"].CPU.FairShare).To(Equal(float64(2000)))
@@ -687,7 +687,7 @@ var _ = Describe("Proportion", func() {
 
 					When("q1 uses the max allowed CPU and q2 use all the rest as OQ", func() {
 						It("reclaims all resources of queue 2 and allocates allowed resource in queue 3", func() {
-							remaining := setResourceShare(totalCPUResources, rs.CpuResource, queues)
+							remaining := setResourceShare(totalCPUResources, 0, rs.CpuResource, queues)
 							Expect(remaining).To(Equal(float64(0)))
 							Expect(queues["1"].CPU.FairShare).To(Equal(float64(5000)))
 							Expect(queues["2"].CPU.FairShare).To(Equal(float64(0)))
@@ -704,7 +704,7 @@ var _ = Describe("Proportion", func() {
 				When("all queues deserve the same fairShare of CPU", func() {
 					When("all queues request more than they deserve", func() {
 						It("they get deserved and compete on the available resources", func() {
-							remaining := setResourceShare(totalCPUResources, rs.CpuResource, queues)
+							remaining := setResourceShare(totalCPUResources, 0, rs.CpuResource, queues)
 							Expect(remaining).To(Equal(float64(0)))
 							Expect(queues["1"].CPU.FairShare).To(Equal(float64(5000)))
 							Expect(queues["2"].CPU.FairShare).To(Equal(float64(5000)))
@@ -718,7 +718,7 @@ var _ = Describe("Proportion", func() {
 							queues["3"].CPU.Request = 2000
 						})
 						It("reclaims unneeded resources from an allocated queue to fulfill the unallocated queue", func() {
-							remaining := setResourceShare(totalCPUResources, rs.CpuResource, queues)
+							remaining := setResourceShare(totalCPUResources, 0, rs.CpuResource, queues)
 							Expect(remaining).To(Equal(float64(0)))
 							Expect(queues["1"].CPU.FairShare).To(Equal(float64(6000)))
 							Expect(queues["2"].CPU.FairShare).To(Equal(float64(2000)))
@@ -726,7 +726,7 @@ var _ = Describe("Proportion", func() {
 						})
 						It("reclaims from both allocated queues to fulfill the last unallocated queue", func() {
 							queues["2"].CPU.Request = 5000
-							remaining := setResourceShare(totalCPUResources, rs.CpuResource, queues)
+							remaining := setResourceShare(totalCPUResources, 0, rs.CpuResource, queues)
 							Expect(remaining).To(Equal(float64(0)))
 							Expect(queues["1"].CPU.FairShare).To(Equal(float64(5000)))
 							Expect(queues["2"].CPU.FairShare).To(Equal(float64(5000)))
@@ -741,7 +741,7 @@ var _ = Describe("Proportion", func() {
 							queues["3"].CPU.Request = 2000
 						})
 						It("reclaims unneeded resources from an allocated queue to fulfill the unallocated queue", func() {
-							remaining := setResourceShare(totalCPUResources, rs.CpuResource, queues)
+							remaining := setResourceShare(totalCPUResources, 0, rs.CpuResource, queues)
 							Expect(remaining).To(Equal(float64(0)))
 							Expect(queues["1"].CPU.FairShare).To(Equal(float64(6000)))
 							Expect(queues["2"].CPU.FairShare).To(Equal(float64(2000)))
@@ -749,7 +749,7 @@ var _ = Describe("Proportion", func() {
 						})
 						It("reclaims from both allocated queues to fulfill the last unallocated queue", func() {
 							queues["2"].CPU.Request = 5000
-							remaining := setResourceShare(totalCPUResources, rs.CpuResource, queues)
+							remaining := setResourceShare(totalCPUResources, 0, rs.CpuResource, queues)
 							Expect(remaining).To(Equal(float64(0)))
 							Expect(queues["1"].CPU.FairShare).To(Equal(float64(5000)))
 							Expect(queues["2"].CPU.FairShare).To(Equal(float64(5000)))
@@ -771,14 +771,14 @@ var _ = Describe("Proportion", func() {
 							queues["3"].CPU.Request = 10000
 						})
 						It("reclaims all resources of queue 2 and allocates allowed resource in queue 3", func() {
-							remaining := setResourceShare(totalCPUResources, rs.CpuResource, queues)
+							remaining := setResourceShare(totalCPUResources, 0, rs.CpuResource, queues)
 							Expect(remaining).To(Equal(float64(0)))
 							Expect(queues["1"].CPU.FairShare).To(Equal(float64(5000)))
 							Expect(queues["3"].CPU.FairShare).To(Equal(float64(5000)))
 						})
 					})
 					It("reclaims all resources of queue 2 and allocates allowed resource in queue 3", func() {
-						remaining := setResourceShare(totalCPUResources, rs.CpuResource, queues)
+						remaining := setResourceShare(totalCPUResources, 0, rs.CpuResource, queues)
 						Expect(remaining).To(Equal(float64(0)))
 						Expect(queues["1"].CPU.FairShare).To(Equal(float64(5000)))
 						Expect(queues["3"].CPU.FairShare).To(Equal(float64(5000)))
@@ -814,12 +814,12 @@ var _ = Describe("Proportion", func() {
 				}
 			})
 			It("gives requested memory to queue", func() {
-				remaining := setResourceShare(3000, rs.MemoryResource, queues)
+				remaining := setResourceShare(3000, 0, rs.MemoryResource, queues)
 				Expect(remaining).To(Equal(float64(1000)))
 				Expect(queues["1"].Memory.FairShare).To(Equal(float64(2000)))
 			})
 			It("gives deserved in over subscription", func() {
-				remaining := setResourceShare(1000, rs.MemoryResource, queues)
+				remaining := setResourceShare(1000, 0, rs.MemoryResource, queues)
 				Expect(remaining).To(Equal(float64(0)))
 				Expect(queues["1"].Memory.FairShare).To(Equal(float64(2000)))
 			})
@@ -867,7 +867,7 @@ var _ = Describe("Proportion", func() {
 			})
 			When("queue 2 has no deserved memory", func() {
 				It("reclaims all resources of queue 2", func() {
-					remaining := setResourceShare(totalMemoryResources, rs.MemoryResource, queues)
+					remaining := setResourceShare(totalMemoryResources, 0, rs.MemoryResource, queues)
 					Expect(remaining).To(Equal(float64(0)))
 					Expect(queues["2"].Memory.FairShare).To(Equal(float64(0)))
 					Expect(queues["1"].Memory.FairShare).To(Equal(totalMemoryResources))
@@ -935,7 +935,7 @@ var _ = Describe("Proportion", func() {
 				When("all queues deserve the same fairShare of memory", func() {
 					When("all queues request more than they deserve", func() {
 						It("all queues get their deserved fairShare - over subscription", func() {
-							remaining := setResourceShare(totalMemoryResources, rs.MemoryResource, queues)
+							remaining := setResourceShare(totalMemoryResources, 0, rs.MemoryResource, queues)
 							Expect(remaining).To(Equal(float64(0)))
 							Expect(queues["1"].Memory.FairShare).To(Equal(float64(5000)))
 							Expect(queues["2"].Memory.FairShare).To(Equal(float64(5000)))
@@ -949,7 +949,7 @@ var _ = Describe("Proportion", func() {
 							queues["3"].Memory.Request = 6000
 						})
 						It("all queues get their deserved fairShare - over quota", func() {
-							remaining := setResourceShare(18000, rs.MemoryResource, queues)
+							remaining := setResourceShare(18000, 0, rs.MemoryResource, queues)
 							Expect(remaining).To(Equal(float64(0)))
 							Expect(queues["1"].Memory.FairShare).To(Equal(float64(6000)))
 							Expect(queues["2"].Memory.FairShare).To(Equal(float64(6000)))
@@ -963,7 +963,7 @@ var _ = Describe("Proportion", func() {
 							queues["3"].Memory.Request = 2000
 						})
 						It("reclaims unneeded resources from an allocated queue to fulfill the unallocated queue", func() {
-							remaining := setResourceShare(totalMemoryResources, rs.MemoryResource, queues)
+							remaining := setResourceShare(totalMemoryResources, 0, rs.MemoryResource, queues)
 							Expect(remaining).To(Equal(float64(0)))
 							Expect(queues["1"].Memory.FairShare).To(Equal(float64(6000)))
 							Expect(queues["2"].Memory.FairShare).To(Equal(float64(2000)))
@@ -972,7 +972,7 @@ var _ = Describe("Proportion", func() {
 
 						It("reclaims from both allocated queues to fulfill the last unallocated queue", func() {
 							queues["2"].Memory.Request = 5000
-							remaining := setResourceShare(totalMemoryResources, rs.MemoryResource, queues)
+							remaining := setResourceShare(totalMemoryResources, 0, rs.MemoryResource, queues)
 							Expect(remaining).To(Equal(float64(0)))
 							Expect(queues["1"].Memory.FairShare).To(Equal(float64(5000))) // 5000 deserved (requested 7000)
 							Expect(queues["2"].Memory.FairShare).To(Equal(float64(5000))) // 5000 deserved and requested
@@ -987,7 +987,7 @@ var _ = Describe("Proportion", func() {
 							queues["3"].Memory.Request = 2000
 						})
 						It("reclaims unneeded resources from an allocated queue to fulfill the unallocated queue", func() {
-							remaining := setResourceShare(totalMemoryResources, rs.MemoryResource, queues)
+							remaining := setResourceShare(totalMemoryResources, 0, rs.MemoryResource, queues)
 							Expect(remaining).To(Equal(float64(0)))
 							Expect(queues["1"].Memory.FairShare).To(Equal(float64(6000))) // 5000 deserved + 100 over quota
 							Expect(queues["2"].Memory.FairShare).To(Equal(float64(2000)))
@@ -1005,7 +1005,7 @@ var _ = Describe("Proportion", func() {
 
 					When("q1 uses the max allowed memory and q2 use all the rest as OQ", func() {
 						It("reclaims all resources of queue 2 and allocates allowed resource in queue 3", func() {
-							remaining := setResourceShare(totalMemoryResources, rs.MemoryResource, queues)
+							remaining := setResourceShare(totalMemoryResources, 0, rs.MemoryResource, queues)
 							Expect(remaining).To(Equal(float64(0)))
 							Expect(queues["1"].Memory.FairShare).To(Equal(float64(5000)))
 							Expect(queues["2"].Memory.FairShare).To(Equal(float64(0)))
@@ -1022,7 +1022,7 @@ var _ = Describe("Proportion", func() {
 				When("all queues deserve the same fairShare of memory", func() {
 					When("all queues request more than they deserve", func() {
 						It("they get deserved and compete on the available resources", func() {
-							remaining := setResourceShare(totalMemoryResources, rs.MemoryResource, queues)
+							remaining := setResourceShare(totalMemoryResources, 0, rs.MemoryResource, queues)
 							Expect(remaining).To(Equal(float64(0)))
 							Expect(queues["1"].Memory.FairShare).To(Equal(float64(5000)))
 							Expect(queues["2"].Memory.FairShare).To(Equal(float64(5000)))
@@ -1036,7 +1036,7 @@ var _ = Describe("Proportion", func() {
 							queues["3"].Memory.Request = 2000
 						})
 						It("reclaims unneeded resources from an allocated queue to fulfill the unallocated queue", func() {
-							remaining := setResourceShare(totalMemoryResources, rs.MemoryResource, queues)
+							remaining := setResourceShare(totalMemoryResources, 0, rs.MemoryResource, queues)
 							Expect(remaining).To(Equal(float64(0)))
 							Expect(queues["1"].Memory.FairShare).To(Equal(float64(6000)))
 							Expect(queues["2"].Memory.FairShare).To(Equal(float64(2000)))
@@ -1045,7 +1045,7 @@ var _ = Describe("Proportion", func() {
 						It("reclaims from both allocated queues to fulfill the last unallocated queue", func() {
 							queues["2"].Memory.Request = 5000
 
-							remaining := setResourceShare(totalMemoryResources, rs.MemoryResource, queues)
+							remaining := setResourceShare(totalMemoryResources, 0, rs.MemoryResource, queues)
 							Expect(remaining).To(Equal(float64(0)))
 							Expect(queues["1"].Memory.FairShare).To(Equal(float64(5000)))
 							Expect(queues["2"].Memory.FairShare).To(Equal(float64(5000)))
@@ -1060,7 +1060,7 @@ var _ = Describe("Proportion", func() {
 							queues["3"].Memory.Request = 2000
 						})
 						It("reclaims unneeded resources from an allocated queue to fulfill the unallocated queue", func() {
-							remaining := setResourceShare(totalMemoryResources, rs.MemoryResource, queues)
+							remaining := setResourceShare(totalMemoryResources, 0, rs.MemoryResource, queues)
 							Expect(remaining).To(Equal(float64(0)))
 							Expect(queues["1"].Memory.FairShare).To(Equal(float64(6000)))
 							Expect(queues["2"].Memory.FairShare).To(Equal(float64(2000)))
@@ -1069,7 +1069,7 @@ var _ = Describe("Proportion", func() {
 						It("reclaims from both allocated queues to fulfill the last unallocated queue", func() {
 							queues["2"].Memory.Request = 5000
 
-							remaining := setResourceShare(totalMemoryResources, rs.MemoryResource, queues)
+							remaining := setResourceShare(totalMemoryResources, 0, rs.MemoryResource, queues)
 							Expect(remaining).To(Equal(float64(0)))
 							Expect(queues["1"].Memory.FairShare).To(Equal(float64(5000)))
 							Expect(queues["2"].Memory.FairShare).To(Equal(float64(5000)))
@@ -1092,14 +1092,14 @@ var _ = Describe("Proportion", func() {
 						queues["3"].Memory.Request = 10000
 					})
 					It("reclaims all resources of queue 2 and allocates allowed resource in queue 3", func() {
-						remaining := setResourceShare(totalMemoryResources, rs.MemoryResource, queues)
+						remaining := setResourceShare(totalMemoryResources, 0, rs.MemoryResource, queues)
 						Expect(remaining).To(Equal(float64(0)))
 						Expect(queues["1"].Memory.FairShare).To(Equal(float64(5000)))
 						Expect(queues["3"].Memory.FairShare).To(Equal(float64(5000)))
 					})
 				})
 				It("reclaims all resources of queue 2 and allocates allowed resource in queue 3", func() {
-					remaining := setResourceShare(totalMemoryResources, rs.MemoryResource, queues)
+					remaining := setResourceShare(totalMemoryResources, 0, rs.MemoryResource, queues)
 					Expect(remaining).To(Equal(float64(0)))
 					Expect(queues["1"].Memory.FairShare).To(Equal(float64(5000)))
 					Expect(queues["3"].Memory.FairShare).To(Equal(float64(5000)))
@@ -1996,7 +1996,12 @@ var _ = Describe("Proportion", func() {
 					testName := testName
 					testData := testData
 					It(testName, func() {
-						SetResourcesShare(testData.totalResources, testData.queues)
+						for queueName, queue := range testData.queues {
+							if len(queue.UID) == 0 {
+								queue.UID = common_info.QueueID(queueName)
+							}
+						}
+						SetResourcesShare(testData.totalResources, 0, testData.queues)
 						for queueName, queue := range testData.expectedShare {
 							fairShare := queue.GetFairShare()
 							expectedFairShare := testData.queues[queueName].GetFairShare()

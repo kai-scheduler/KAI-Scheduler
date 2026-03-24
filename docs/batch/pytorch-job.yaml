@@ -6,7 +6,7 @@ kind: "PyTorchJob"
 metadata:
   name: "pytorch-dist-mnist-nccl"
   labels:
-    runai/queue: test
+    kai.scheduler/queue: default-queue
 spec:
   pytorchReplicaSpecs:
     Master:

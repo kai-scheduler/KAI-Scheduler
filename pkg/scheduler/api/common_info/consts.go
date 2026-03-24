@@ -5,4 +5,5 @@ package common_info
 
 const (
 	NoMaxAllowedResource = float64(-1)
+	DefaultSubGroupName  = "default"
 )

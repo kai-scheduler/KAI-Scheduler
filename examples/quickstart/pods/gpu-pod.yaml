@@ -1,0 +1,22 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# Example: GPU pod scheduled by KAI Scheduler
+# Prerequisites: NVIDIA GPU-Operator must be installed in the cluster
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gpu-pod
+  labels:
+    kai.scheduler/queue: default-queue   # Required: assigns pod to a queue
+spec:
+  schedulerName: kai-scheduler           # Required: use KAI Scheduler
+  containers:
+    - name: main
+      image: ubuntu
+      command: ["bash", "-c"]
+      args: ["nvidia-smi; trap 'exit 0' TERM; sleep infinity & wait"]
+      resources:
+        limits:
+          nvidia.com/gpu: "1"            # Request 1 GPU
+

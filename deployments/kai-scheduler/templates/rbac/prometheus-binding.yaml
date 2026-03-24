@@ -1,0 +1,16 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kai-prometheus
+subjects:
+  - kind: ServiceAccount
+    name: prometheus
+    namespace: kai-scheduler
+roleRef:
+  kind: ClusterRole
+  name: kai-prometheus
+  apiGroup: rbac.authorization.k8s.io
+

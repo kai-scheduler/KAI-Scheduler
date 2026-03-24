@@ -5,11 +5,11 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: kai-resource-reservation
-  namespace: runai-reservation
+  namespace: {{ .Values.global.resourceReservation.namespace }}
 subjects:
   - kind: ServiceAccount
-    name: runai-reservation
-    namespace: runai-reservation
+    name: {{ .Values.global.resourceReservation.serviceAccount }}
+    namespace: {{ .Values.global.resourceReservation.namespace }}
 roleRef:
   kind: ClusterRole
   name: kai-resource-reservation

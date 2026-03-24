@@ -4,15 +4,15 @@
 package constants
 
 const (
-	// Used for statefulsets that are preemptbile
+	// PriorityInferenceNumber - used for inference workloads that aren't preemptible
 	PriorityInferenceNumber = 125
 
-	// (Build/Interactive)- used for statefulsets that aren't preemptible
+	// PriorityBuildNumber (Build/Interactive) - used for workloads that aren't preemptible
 	PriorityBuildNumber = 100
 
-	// Used for statefulsets that are preemptbile
+	// PriorityInteractivePreemptibleNumber - used for interactive workloads that are preemptible
 	PriorityInteractivePreemptibleNumber = 75
 
-	// Used for batch jobs
+	// PriorityTrainNumber - used for batch jobs and training workloads that are preemptible
 	PriorityTrainNumber = 50
 )

@@ -12,8 +12,8 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgroup"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/kubeflow"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/kubeflow"
 )
 
 const (
@@ -29,14 +29,22 @@ const (
 
 type MpiGrouper struct {
 	client client.Client
+	*kubeflow.KubeflowDistributedGrouper
 }
 
-func NewMpiGrouper(client client.Client) *MpiGrouper {
-	return &MpiGrouper{client: client}
+func NewMpiGrouper(client client.Client, kubeflowGrouper *kubeflow.KubeflowDistributedGrouper) *MpiGrouper {
+	return &MpiGrouper{
+		client:                     client,
+		KubeflowDistributedGrouper: kubeflowGrouper,
+	}
+}
+
+func (mg *MpiGrouper) Name() string {
+	return "MPI Grouper"
 }
 
 func (mg *MpiGrouper) GetPodGroupMetadata(topOwner *unstructured.Unstructured, pod *v1.Pod, _ ...*metav1.PartialObjectMetadata) (*podgroup.Metadata, error) {
-	gp, err := kubeflow.GetPodGroupMetadata(topOwner, pod, ReplicaSpecName, []string{MasterName, WorkerName})
+	gp, err := mg.KubeflowDistributedGrouper.GetPodGroupMetadata(topOwner, pod, ReplicaSpecName, []string{MasterName, WorkerName})
 	if err != nil {
 		return nil, err
 	}

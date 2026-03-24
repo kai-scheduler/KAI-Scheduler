@@ -7,10 +7,12 @@ import (
 	"math"
 	"slices"
 
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
 )
 
 const (
@@ -47,6 +49,10 @@ type QueueResourceShare struct {
 	CPU    ResourceShare
 	Memory ResourceShare
 	GPU    ResourceShare
+
+	// cache
+	lastDeservedShare ResourceQuantities
+	lastFairShare     ResourceQuantities
 }
 type resourceShareMapFunc func(rs *ResourceShare) float64
 
@@ -70,10 +76,13 @@ func (qrs *QueueResourceShare) GetAllocatableShare() ResourceQuantities {
 }
 
 func (qrs *QueueResourceShare) GetFairShare() ResourceQuantities {
-	f := func(rs *ResourceShare) float64 {
-		return rs.FairShare
+	if qrs.lastFairShare == nil {
+		f := func(rs *ResourceShare) float64 {
+			return rs.FairShare
+		}
+		qrs.lastFairShare = qrs.buildResourceQuantities(f)
 	}
-	return qrs.buildResourceQuantities(f)
+	return qrs.lastFairShare
 }
 
 func (qrs *QueueResourceShare) GetAllocatedShare() ResourceQuantities {
@@ -91,10 +100,13 @@ func (qrs *QueueResourceShare) GetAllocatedNonPreemptible() ResourceQuantities {
 }
 
 func (qrs *QueueResourceShare) GetDeservedShare() ResourceQuantities {
-	f := func(rs *ResourceShare) float64 {
-		return rs.Deserved
+	if qrs.lastDeservedShare == nil {
+		f := func(rs *ResourceShare) float64 {
+			return rs.Deserved
+		}
+		qrs.lastDeservedShare = qrs.buildResourceQuantities(f)
 	}
-	return qrs.buildResourceQuantities(f)
+	return qrs.lastDeservedShare
 }
 
 func (qrs *QueueResourceShare) GetMaxAllowedShare() ResourceQuantities {
@@ -156,6 +168,9 @@ func (qrs *QueueResourceShare) GetDominantResourceShare(totalResources ResourceQ
 func (qrs *QueueResourceShare) AddResourceShare(resource ResourceName, amount float64) {
 	resourceShare := qrs.ResourceShare(resource)
 	resourceShare.FairShare += amount
+
+	// invalidate fairshare cache
+	qrs.lastFairShare = nil
 }
 
 func (qrs *QueueResourceShare) SetQuotaResources(resource ResourceName, deserved float64, maxAllowed float64,
@@ -164,4 +179,21 @@ func (qrs *QueueResourceShare) SetQuotaResources(resource ResourceName, deserved
 	resourceShare.Deserved = deserved
 	resourceShare.MaxAllowed = maxAllowed
 	resourceShare.OverQuotaWeight = overQuotaWeight
+
+	// invalidate cache for deserved share
+	qrs.lastDeservedShare = nil
+}
+
+func (qrs *QueueResourceShare) GetResourceUsage() queue_info.QueueUsage {
+	return queue_info.QueueUsage{
+		commonconstants.NvidiaGpuResource: qrs.GPU.Usage,
+		v1.ResourceCPU:                    qrs.CPU.Usage,
+		v1.ResourceMemory:                 qrs.Memory.Usage,
+	}
+}
+
+func (qrs *QueueResourceShare) SetResourceUsage(usage queue_info.QueueUsage) {
+	qrs.GPU.Usage = usage[commonconstants.NvidiaGpuResource]
+	qrs.CPU.Usage = usage[v1.ResourceCPU]
+	qrs.Memory.Usage = usage[v1.ResourceMemory]
 }

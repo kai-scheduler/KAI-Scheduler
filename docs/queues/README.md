@@ -1,67 +1,124 @@
 # Scheduling Queues
-A queue is an object which represents a job queue in the cluster. Queues are an essential scheduling primitive, and can reflect different scheduling guarantees, such as resource quota and priority.
-KAI Scheduler offers several features that make it easier to optimize resource distribution among researchers in a way that maximizes resource fairness between queues.
 
-The following attributes can be applied to any scheduling queue for CPU, memory and GPU resources:
-* Quota: The designated amount of resources allocated to the scheduling queue upon request.
-* Over-Quota Priority: Determines the order in which queues will receive resources that exceed their allocated quota.
-* Over-Quota Weight: Dictates how excess resources are distributed among queues within the same priority level.
-* Limit: The hard cap on the amount of resources a scheduling queue can consume.
+Scheduling queues are the core resource management primitive in KAI Scheduler, providing hierarchical resource allocation with quota guarantees and priority-based distribution.
 
-## Queue Specification
-```
+Only leaf queues (queues with no children) can be used for scheduling jobs. Parent queues serve as organizational units for resource distribution among their child queues.
+
+## Table of Contents
+- [Queue Attributes](#queue-attributes)
+- [API Reference](#api-reference)
+- [Resource Configuration](#resource-configuration)
+- [Examples](#examples)
+
+## Queue Attributes
+
+| Attribute | Description | Units |
+|-----------|-------------|-------|
+| **Quota** | Guaranteed resource allocation | CPU: millicores, Memory: MB, GPU: units |
+| **Over-Quota Priority** | Resource allocation order when exceeding quota | Integer (higher = first) |
+| **Over-Quota Weight** | Resource distribution weight within priority level | Integer |
+| **Limit** | Hard cap on resource consumption | Same as quota |
+
+## API Reference
+
+### Queue Specification
+```yaml
+apiVersion: scheduling.run.ai/v2
+kind: Queue
+metadata:
+  name: example-queue
 spec:
-  displayName: string
-  parentQueue: string
-  priority: integer
-  resources: QueueResources
+  displayName: "Example Queue"           # Optional: logging purposes
+  parentQueue: "parent-queue"            # Optional: hierarchical structure
+  priority: 100                          # Optional: allocation precedence
+  resources:
+    cpu: ResourceQuota
+    memory: ResourceQuota
+    gpu: ResourceQuota
 ```
 
-### Display name (Optional)
-The `displayName` field is used solely for logging purposes. It represents the human-readable name of the queue that appears in scheduler-generated events for pods.
-
-### Parent Queue (Optional)
-The `parentQueue` field defines a hierarchical structure for queues, enabling multi-level resource allocation within the cluster. This allows for more granular and complex resource distribution.
-
-### Priority (Optional)
-The `priority` field determines the queue's precedence when allocating unused resources. Queues with higher priority values receive resources first. Only after fulfilling all higher-priority queues will the scheduler allocate remaining resources to lower-priority queues.
-
-## Queue Resources
-```
-cpu: ResourceQuota
-memory: ResourceQuota
-gpu: ResourceQuota
-```
-
-### CPU
-The `cpu` field defines the quota policy for CPU resources allocated to the queue. CPU limits are measured in millicores (1 CPU = 1000 millicores).
-
-### Memory
-The `memory` field specifies the quota policy for memory allocation within the queue. Memory is measured in megabytes (MB), where 1 MB = 10⁶ bytes.
-
-### GPU
-The `gpu` field sets the quota policy for GPU resources assigned to the queue. GPU usage is measured as units, where 1 represents a full GPU device.
-
-## Resource Quota
-```
-quota: integer
-overQuotaWeight: integer
-limit: integer
+### Resource Quota Structure
+```yaml
+resources:
+  cpu:
+    quota: 2000                          # 2 CPU cores guaranteed
+    overQuotaWeight: 1                   # Distribution weight
+    limit: 4000                          # Max 4 CPU cores
+  memory:
+    quota: 4096                          # 4GB guaranteed
+    overQuotaWeight: 1
+    limit: 8192                          # Max 8GB
+  gpu:
+    quota: 2                             # 2 GPUs guaranteed
+    overQuotaWeight: 1
+    limit: 4                             # Max 4 GPUs
 ```
 
-### Quota (Optional)
-The quota field defines the guaranteed resource allocation for the queue. Jobs within a queue that stays within its quota are protected from being reclaimed.
+## Resource Configuration
 
-For unlimited quota set the value to -1
+### Special Values
+| Field | Value | Behavior |
+|-------|-------|----------|
+| `quota` | `-1` | Unlimited quota |
+| `quota` | `0` or unset | No guaranteed resources (default) |
+| `limit` | `-1` | No limit |
+| `limit` | `0` or unset | No additional resources allowed (default) |
 
-When not set, the default value is 0
+### Resource Units
+- **CPU**: Millicores (1000 = 1 CPU core)
+- **Memory**: Megabytes (MB = 10⁶ bytes)
+- **GPU**: Units (1 = full GPU device)
 
-### Over Quota Weight (Optional)
-The `overQuotaWeight` field determines the queue’s relative weight when distributing unused resources among queues. This ensures fair allocation based on priority.
+## Examples
 
-### Limit (Optional)
-The `limit` field sets a strict upper boundary on resource usage. The scheduler will not assign additional workloads to the queue once this limit is reached.
+### Basic Queue
+```yaml
+apiVersion: scheduling.run.ai/v2
+kind: Queue
+metadata:
+  name: research-team
+spec:
+  displayName: "Research Team"
+  resources:
+    cpu:
+      quota: 1000
+      limit: 2000
+    gpu:
+      quota: 1
+      limit: 2
+```
 
-For disabling the limit set the value to -1
+### Hierarchical Queue 
+```yaml
+apiVersion: scheduling.run.ai/v2
+kind: Queue
+metadata:
+  name: ml-team
+spec:
+  displayName: "ML Team"
+  parentQueue: "research-team"
+  priority: 200
+  resources:
+    cpu:
+      quota: 500
+      overQuotaWeight: 2
+    gpu:
+      quota: 1
+      overQuotaWeight: 1
+```
 
-When not set, the default value is 0
+### Unlimited Queue - default value is -1
+```yaml
+apiVersion: scheduling.run.ai/v2
+kind: Queue
+metadata:
+  name: burst-queue
+spec:
+  resources:
+    cpu:
+      quota: -1                          # Unlimited quota
+      limit: -1                          # No limit
+    gpu:
+      quota: 0                           # No guarantee
+      limit: -1                          # No limit
+```

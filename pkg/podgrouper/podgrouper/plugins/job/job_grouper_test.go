@@ -4,10 +4,13 @@
 package job
 
 import (
-	schedulingv2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"testing"
+
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-	"testing"
+
+	schedulingv2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
 
 	"github.com/stretchr/testify/assert"
 
@@ -15,6 +18,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v12 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+)
+
+const (
+	queueLabelKey    = "kai.scheduler/queue"
+	nodePoolLabelKey = "kai.scheduler/node-pool"
 )
 
 func TestGetPodGroupMetadata_Hpo(t *testing.T) {
@@ -63,10 +71,11 @@ func TestGetPodGroupMetadata_Hpo(t *testing.T) {
 
 	client := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects().Build()
 
-	runaiJobGrouper := NewK8sJobGrouper(client, false)
+	defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, client)
+	jobGrouper := NewK8sJobGrouper(client, defaultGrouper, false)
 
-	podGroupMetadata, err := runaiJobGrouper.GetPodGroupMetadata(owner, pod)
-	podGroupMetadata2, err2 := runaiJobGrouper.GetPodGroupMetadata(owner, pod2)
+	podGroupMetadata, err := jobGrouper.GetPodGroupMetadata(owner, pod)
+	podGroupMetadata2, err2 := jobGrouper.GetPodGroupMetadata(owner, pod2)
 
 	assert.Nil(t, err)
 	assert.Nil(t, err2)
@@ -78,7 +87,7 @@ func TestGetPodGroupMetadata_Hpo(t *testing.T) {
 	assert.Equal(t, "test_version", podGroupMetadata.Owner.APIVersion)
 	assert.Equal(t, "1234-5678", string(podGroupMetadata.Owner.UID))
 	assert.Equal(t, "test_name", podGroupMetadata.Owner.Name)
-	assert.Equal(t, 3, len(podGroupMetadata.Annotations))
+	assert.Equal(t, 2, len(podGroupMetadata.Annotations))
 	assert.Equal(t, 1, len(podGroupMetadata.Labels))
 	assert.Equal(t, "default-queue", podGroupMetadata.Queue)
 	assert.Equal(t, "train", podGroupMetadata.PriorityClassName)
@@ -113,7 +122,7 @@ func TestGetPodGroupMetadata_LegacyPodGroup(t *testing.T) {
 		},
 	}
 
-	var runaiTestResources = []runtime.Object{
+	var testResources = []runtime.Object{
 		&schedulingv2.PodGroup{
 			TypeMeta: metav1.TypeMeta{
 				Kind:       "PodGroup",
@@ -137,11 +146,12 @@ func TestGetPodGroupMetadata_LegacyPodGroup(t *testing.T) {
 		t.Fail()
 	}
 
-	client := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(runaiTestResources...).Build()
+	client := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(testResources...).Build()
 
-	runaiJobGrouper := NewK8sJobGrouper(client, true)
+	defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, client)
+	jobGrouper := NewK8sJobGrouper(client, defaultGrouper, true)
 
-	podGroupMetadata, err := runaiJobGrouper.GetPodGroupMetadata(owner, pod)
+	podGroupMetadata, err := jobGrouper.GetPodGroupMetadata(owner, pod)
 
 	assert.Nil(t, err)
 	assert.Equal(t, "pg-test_name-4kgrb-1234-5678", podGroupMetadata.Name)
@@ -150,7 +160,7 @@ func TestGetPodGroupMetadata_LegacyPodGroup(t *testing.T) {
 	assert.Equal(t, "test_version", podGroupMetadata.Owner.APIVersion)
 	assert.Equal(t, "1234-5678", string(podGroupMetadata.Owner.UID))
 	assert.Equal(t, "test_name", podGroupMetadata.Owner.Name)
-	assert.Equal(t, 3, len(podGroupMetadata.Annotations))
+	assert.Equal(t, 2, len(podGroupMetadata.Annotations))
 	assert.Equal(t, 1, len(podGroupMetadata.Labels))
 	assert.Equal(t, "default-queue", podGroupMetadata.Queue)
 	assert.Equal(t, "train", podGroupMetadata.PriorityClassName)
@@ -185,7 +195,7 @@ func TestGetPodGroupMetadata_LegacyDisabledPodGroup(t *testing.T) {
 		},
 	}
 
-	var runaiTestResources = []runtime.Object{
+	var testResources = []runtime.Object{
 		&schedulingv2.PodGroup{
 			TypeMeta: metav1.TypeMeta{
 				Kind:       "PodGroup",
@@ -209,11 +219,12 @@ func TestGetPodGroupMetadata_LegacyDisabledPodGroup(t *testing.T) {
 		t.Fail()
 	}
 
-	client := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(runaiTestResources...).Build()
+	client := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(testResources...).Build()
 
-	runaiJobGrouper := NewK8sJobGrouper(client, false)
+	defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, client)
+	jobGrouper := NewK8sJobGrouper(client, defaultGrouper, false)
 
-	podGroupMetadata, err := runaiJobGrouper.GetPodGroupMetadata(owner, pod)
+	podGroupMetadata, err := jobGrouper.GetPodGroupMetadata(owner, pod)
 
 	assert.Nil(t, err)
 	assert.Equal(t, "pg-test_name-4kgrb-1234-5678", podGroupMetadata.Name)
@@ -222,7 +233,7 @@ func TestGetPodGroupMetadata_LegacyDisabledPodGroup(t *testing.T) {
 	assert.Equal(t, "test_version", podGroupMetadata.Owner.APIVersion)
 	assert.Equal(t, "1234-5678", string(podGroupMetadata.Owner.UID))
 	assert.Equal(t, "test_name", podGroupMetadata.Owner.Name)
-	assert.Equal(t, 3, len(podGroupMetadata.Annotations))
+	assert.Equal(t, 2, len(podGroupMetadata.Annotations))
 	assert.Equal(t, 1, len(podGroupMetadata.Labels))
 	assert.Equal(t, "default-queue", podGroupMetadata.Queue)
 	assert.Equal(t, "train", podGroupMetadata.PriorityClassName)
@@ -257,7 +268,7 @@ func TestGetPodGroupMetadata_LegacyNotFound(t *testing.T) {
 		},
 	}
 
-	var runaiTestResources = []runtime.Object{}
+	var testResources = []runtime.Object{}
 
 	scheme := runtime.NewScheme()
 	err := schedulingv2.AddToScheme(scheme)
@@ -265,11 +276,12 @@ func TestGetPodGroupMetadata_LegacyNotFound(t *testing.T) {
 		t.Fail()
 	}
 
-	client := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(runaiTestResources...).Build()
+	client := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(testResources...).Build()
 
-	runaiJobGrouper := NewK8sJobGrouper(client, true)
+	defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, client)
+	jobGrouper := NewK8sJobGrouper(client, defaultGrouper, true)
 
-	podGroupMetadata, err := runaiJobGrouper.GetPodGroupMetadata(owner, pod)
+	podGroupMetadata, err := jobGrouper.GetPodGroupMetadata(owner, pod)
 
 	assert.Nil(t, err)
 	assert.Equal(t, "pg-test_name-4kgrb-1234-5678", podGroupMetadata.Name)
@@ -278,7 +290,7 @@ func TestGetPodGroupMetadata_LegacyNotFound(t *testing.T) {
 	assert.Equal(t, "test_version", podGroupMetadata.Owner.APIVersion)
 	assert.Equal(t, "1234-5678", string(podGroupMetadata.Owner.UID))
 	assert.Equal(t, "test_name", podGroupMetadata.Owner.Name)
-	assert.Equal(t, 3, len(podGroupMetadata.Annotations))
+	assert.Equal(t, 2, len(podGroupMetadata.Annotations))
 	assert.Equal(t, 1, len(podGroupMetadata.Labels))
 	assert.Equal(t, "default-queue", podGroupMetadata.Queue)
 	assert.Equal(t, "train", podGroupMetadata.PriorityClassName)
@@ -321,9 +333,10 @@ func TestGetPodGroupMetadata_RegularPodGroup(t *testing.T) {
 
 	client := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects().Build()
 
-	runaiJobGrouper := NewK8sJobGrouper(client, false)
+	defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, client)
+	jobGrouper := NewK8sJobGrouper(client, defaultGrouper, false)
 
-	podGroupMetadata, err := runaiJobGrouper.GetPodGroupMetadata(owner, pod)
+	podGroupMetadata, err := jobGrouper.GetPodGroupMetadata(owner, pod)
 
 	assert.Nil(t, err)
 	assert.Equal(t, "pg-test_name-4kgrb-1234-5678", podGroupMetadata.Name)
@@ -332,7 +345,7 @@ func TestGetPodGroupMetadata_RegularPodGroup(t *testing.T) {
 	assert.Equal(t, "test_version", podGroupMetadata.Owner.APIVersion)
 	assert.Equal(t, "1234-5678", string(podGroupMetadata.Owner.UID))
 	assert.Equal(t, "test_name", podGroupMetadata.Owner.Name)
-	assert.Equal(t, 3, len(podGroupMetadata.Annotations))
+	assert.Equal(t, 2, len(podGroupMetadata.Annotations))
 	assert.Equal(t, 1, len(podGroupMetadata.Labels))
 	assert.Equal(t, "default-queue", podGroupMetadata.Queue)
 	assert.Equal(t, "train", podGroupMetadata.PriorityClassName)

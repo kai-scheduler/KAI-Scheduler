@@ -6,16 +6,19 @@ package feature_flags
 
 import (
 	"context"
-	"fmt"
-	"slices"
-	"strings"
 
-	testContext "github.com/NVIDIA/KAI-scheduler/test/e2e/modules/context"
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/configurations"
+	testContext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/testconfig"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
+	"k8s.io/utils/ptr"
 )
 
 const (
 	binpackStrategy = "binpack"
-	spreadStrategy  = "spread"
+	SpreadStrategy  = "spread"
+	DefaultStrategy = binpackStrategy
 	gpuResource     = "gpu"
 	cpuResource     = "cpu"
 )
@@ -23,38 +26,18 @@ const (
 func SetPlacementStrategy(
 	ctx context.Context, testCtx *testContext.TestContext, strategy string,
 ) error {
-	return updateKaiSchedulerConfigMap(ctx, testCtx, func() (*config, error) {
-		placementArguments := map[string]string{
-			gpuResource: strategy, cpuResource: strategy,
-		}
-
-		innerConfig := config{}
-
-		actions := []string{"allocate"}
-		if placementArguments[gpuResource] != spreadStrategy && placementArguments[cpuResource] != spreadStrategy {
-			actions = append(actions, "consolidation")
-		}
-		actions = append(actions, []string{"reclaim", "preempt", "stalegangeviction"}...)
-
-		innerConfig.Actions = strings.Join(actions, ", ")
-
-		innerConfig.Tiers = slices.Clone(defaultKaiSchedulerPlugins)
-		innerConfig.Tiers[0].Plugins = append(
-			innerConfig.Tiers[0].Plugins,
-			plugin{Name: fmt.Sprintf("gpu%s", strings.Replace(placementArguments[gpuResource], "bin", "", 1))},
-			plugin{
-				Name:      "nodeplacement",
-				Arguments: placementArguments,
-			},
-		)
-
-		if placementArguments[gpuResource] == binpackStrategy {
-			innerConfig.Tiers[0].Plugins = append(
-				innerConfig.Tiers[0].Plugins,
-				plugin{Name: "gpusharingorder"},
-			)
-		}
-
-		return &innerConfig, nil
-	})
+	if err := configurations.PatchSchedulingShard(
+		ctx, testCtx, "default",
+		func(shard *kaiv1.SchedulingShard) {
+			shard.Spec.PlacementStrategy.CPU = ptr.To(strategy)
+			shard.Spec.PlacementStrategy.GPU = ptr.To(strategy)
+		},
+	); err != nil {
+		return err
+	}
+	cfg := testconfig.GetConfig()
+	wait.WaitForDeploymentPodsRunning(
+		ctx, testCtx.ControllerClient, cfg.SchedulerDeploymentName, cfg.SystemPodsNamespace,
+	)
+	return nil
 }

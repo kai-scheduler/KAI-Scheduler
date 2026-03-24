@@ -14,7 +14,7 @@ permissions:
   packages: write
 
 env:
-  DOCKER_REGISTRY: "ghcr.io/nvidia/kai-scheduler"
+  DOCKER_REGISTRY: "ghcr.io/kai-scheduler/kai-scheduler"
 
 jobs:
   build-and-push:
@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v6
 
       - name: Extract package version from tag
         if: startsWith(github.ref, 'refs/tags/')
@@ -39,19 +39,19 @@ jobs:
           echo $PACKAGE_VERSION
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
-          go-version: '1.23.4'
+          go-version: '1.26.1'
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Docker build & push
         run: make build DOCKER_BUILD_PLATFORM=linux/amd64,linux/arm64 DOCKER_REPO_BASE=${{ env.DOCKER_REGISTRY }} VERSION=$PACKAGE_VERSION DOCKER_BUILDX_ADDITIONAL_ARGS=--push

@@ -1,0 +1,24 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: kai.scheduler/v1
+kind: SchedulingShard
+metadata:
+  name: default
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  partitionLabelValue: ""
+  {{- if .Values.scheduler.placementStrategy }}
+  placementStrategy:
+    gpu: {{ .Values.scheduler.placementStrategy }}
+    cpu: {{ .Values.scheduler.placementStrategy }}
+  {{- end }}
+  {{- if .Values.scheduler.plugins }}
+  plugins:
+    {{- toYaml .Values.scheduler.plugins | nindent 4 }}
+  {{- end }}
+  {{- if .Values.scheduler.actions }}
+  actions:
+    {{- toYaml .Values.scheduler.actions | nindent 4 }}
+  {{- end }}

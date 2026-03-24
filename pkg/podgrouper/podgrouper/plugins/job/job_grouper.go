@@ -7,10 +7,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgroup"
-	defaultpodgrouper "github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -18,24 +14,40 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
 )
 
 type K8sJobGrouper struct {
 	client                   client.Client
 	searchForLegacyPodGroups bool
+	*defaultgrouper.DefaultGrouper
+}
+
+var logger = log.FromContext(context.Background())
+
+func NewK8sJobGrouper(
+	client client.Client, defaultGrouper *defaultgrouper.DefaultGrouper, searchForLegacyPodGroups bool,
+) *K8sJobGrouper {
+	return &K8sJobGrouper{
+		client:                   client,
+		searchForLegacyPodGroups: searchForLegacyPodGroups,
+		DefaultGrouper:           defaultGrouper,
+	}
+}
+
+func (g *K8sJobGrouper) Name() string {
+	return "BatchJob Grouper"
 }
 
 // +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=batch,resources=jobs/finalizers,verbs=patch;update;create
 
-var logger = log.FromContext(context.Background())
-
-func NewK8sJobGrouper(client client.Client, searchForLegacyPodGroups bool) *K8sJobGrouper {
-	return &K8sJobGrouper{client: client, searchForLegacyPodGroups: searchForLegacyPodGroups}
-}
-
 func (g *K8sJobGrouper) GetPodGroupMetadata(topOwner *unstructured.Unstructured, pod *v1.Pod, _ ...*metav1.PartialObjectMetadata) (*podgroup.Metadata, error) {
-	podGroupMetadata, err := defaultpodgrouper.GetPodGroupMetadata(topOwner, pod)
+	podGroupMetadata, err := g.DefaultGrouper.GetPodGroupMetadata(topOwner, pod)
 	if err != nil {
 		return nil, err
 	}

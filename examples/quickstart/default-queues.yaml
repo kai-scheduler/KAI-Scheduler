@@ -1,0 +1,45 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# Default queue hierarchy created by KAI Scheduler on installation
+# Top-level parent queue - manages resource distribution for its children
+apiVersion: scheduling.run.ai/v2
+kind: Queue
+metadata:
+  name: default-parent-queue
+spec:
+  resources:
+    cpu:
+      limit: -1            # No limit
+      overQuotaWeight: 1   # Equal weight for over-quota resources
+      quota: 0             # No guaranteed quota
+    gpu:
+      limit: -1
+      overQuotaWeight: 1
+      quota: 0
+    memory:
+      limit: -1
+      overQuotaWeight: 1
+      quota: 0
+---
+# Leaf queue - workloads should reference this queue
+apiVersion: scheduling.run.ai/v2
+kind: Queue
+metadata:
+  name: default-queue
+spec:
+  parentQueue: default-parent-queue
+  resources:
+    cpu:
+      limit: -1
+      overQuotaWeight: 1
+      quota: 0
+    gpu:
+      limit: -1
+      overQuotaWeight: 1
+      quota: 0
+    memory:
+      limit: -1
+      overQuotaWeight: 1
+      quota: 0
+

@@ -10,15 +10,16 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 
-	runaiClient "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned"
-	v2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	kaiClient "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned"
+	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/testconfig"
 )
 
-func Create(runaiClientset *runaiClient.Clientset, ctx context.Context, queue *v2.Queue,
+func Create(kaiClientset *kaiClient.Clientset, ctx context.Context, queue *v2.Queue,
 	opts metav1.CreateOptions) (result *v2.Queue, err error) {
 	result = &v2.Queue{}
-	err = runaiClientset.SchedulingV2().RESTClient().Post().
+	err = kaiClientset.SchedulingV2().RESTClient().Post().
 		Resource("queues").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Body(queue).
@@ -27,9 +28,9 @@ func Create(runaiClientset *runaiClient.Clientset, ctx context.Context, queue *v
 	return result, err
 }
 
-func Delete(runaiClientset *runaiClient.Clientset, ctx context.Context, name string,
+func Delete(kaiClientset *kaiClient.Clientset, ctx context.Context, name string,
 	opts metav1.DeleteOptions) error {
-	return runaiClientset.SchedulingV2().RESTClient().Delete().
+	return kaiClientset.SchedulingV2().RESTClient().Delete().
 		Resource("queues").
 		Name(name).
 		Body(&opts).
@@ -37,8 +38,8 @@ func Delete(runaiClientset *runaiClient.Clientset, ctx context.Context, name str
 		Error()
 }
 
-func GetAllQueues(runaiClientset *runaiClient.Clientset, ctx context.Context) (*v2.QueueList, error) {
-	return runaiClientset.SchedulingV2().Queues("").List(ctx, metav1.ListOptions{})
+func GetAllQueues(kaiClientset *kaiClient.Clientset, ctx context.Context) (*v2.QueueList, error) {
+	return kaiClientset.SchedulingV2().Queues("").List(ctx, metav1.ListOptions{})
 }
 
 func CreateQueueObject(name string, parentQueueName string) *v2.Queue {
@@ -113,12 +114,11 @@ func CreateQueueObjectWithGpuResource(name string, gpuResource v2.QueueResource,
 }
 
 func GetConnectedNamespaceToQueue(q *v2.Queue) string {
-	return "runai-" + q.Name
+	return testconfig.GetConfig().QueueNamespacePrefix + q.Name
 }
 
 func ConnectQueuesWithSharedParent(parentQueue *v2.Queue, childrenQueues ...*v2.Queue) {
 	parentQueue.Spec.ParentQueue = ""
-	parentQueue.Labels["run.ai/department-queue"] = "true"
 
 	for _, childQueue := range childrenQueues {
 		childQueue.Spec.ParentQueue = parentQueue.Name

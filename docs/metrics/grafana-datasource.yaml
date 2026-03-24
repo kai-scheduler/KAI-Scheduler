@@ -1,0 +1,23 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasource-kai-prom
+  namespace: monitoring # Modify according to your Grafana namespace
+  labels:
+    grafana_datasource: "1"
+data:
+  kai-prometheus.yaml: |
+    apiVersion: 1
+    datasources:
+    - name: kai-prometheus
+      type: prometheus
+      access: proxy
+      url: http://prometheus-operated.kai-scheduler.svc:9090 # Modify according to your Prometheus URL
+      isDefault: false
+      editable: true
+      jsonData:
+        httpMethod: POST
+        timeInterval: 30s

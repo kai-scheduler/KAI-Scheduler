@@ -4,10 +4,10 @@
 package queue_order
 
 import (
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	rs "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/proportion/utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	rs "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/utils"
 )
 
 const (
@@ -16,10 +16,25 @@ const (
 	equalPrioritization = 0
 )
 
+func quantifyJobInitResources(
+	jobInfo *podgroup_info.PodGroupInfo,
+	subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn,
+	minNodeGPUMemory int64,
+) rs.ResourceQuantities {
+	if jobInfo == nil {
+		return rs.EmptyResourceQuantities()
+	}
+	return utils.QuantifyVector(
+		podgroup_info.GetTasksToAllocateInitResourceVector(jobInfo, subGroupOrderFn, taskOrderFn, false, minNodeGPUMemory),
+		jobInfo.VectorMap)
+}
+
 func GetQueueOrderResult(
 	lQueue *rs.QueueAttributes, rQueue *rs.QueueAttributes,
-	lJobInfo *podgroup_info.PodGroupInfo, rJobInfo *podgroup_info.PodGroupInfo,
-	taskOrderFn common_info.LessFn, totalResources rs.ResourceQuantities,
+	lJobInfo, rJobInfo *podgroup_info.PodGroupInfo,
+	lVictims, rVictims []*podgroup_info.PodGroupInfo,
+	subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn,
+	totalResources rs.ResourceQuantities, minNodeGPUMemory int64,
 ) int {
 	var result int
 	// queues that are currently utilize more than their fair share will be ordered after queues that are under utilize their fair share (based on api.LessFn)
@@ -30,7 +45,7 @@ func GetQueueOrderResult(
 
 	// queues that are currently utilizing more than their deserved quota will be ordered after queues that are under
 	// their deserved quota, to match GuaranteeDeservedQuotaStrategy (based on api.LessFn)
-	result = prioritizeUnderQuotaWithJob(lQueue, rQueue, lJobInfo, rJobInfo, taskOrderFn)
+	result = prioritizeUnderQuotaWithJob(lQueue, rQueue, lJobInfo, rJobInfo, subGroupOrderFn, taskOrderFn, minNodeGPUMemory)
 	if result != equalPrioritization {
 		return result
 	}
@@ -41,8 +56,15 @@ func GetQueueOrderResult(
 		return result
 	}
 
+	// penalize queues that use resources while having no allocatable share
+	result = penalizeZeroShareWithJob(lQueue, rQueue, lJobInfo, rJobInfo, subGroupOrderFn, taskOrderFn, minNodeGPUMemory)
+	if result != equalPrioritization {
+		return result
+	}
+
 	// queues with higher dominant resource share will be located further in the priority queue
-	result = prioritizeSmallerResourceShare(lQueue, rQueue, lJobInfo, rJobInfo, taskOrderFn, totalResources)
+	result = prioritizeSmallerResourceShare(lQueue, rQueue, lJobInfo, rJobInfo, lVictims, rVictims,
+		subGroupOrderFn, taskOrderFn, totalResources, minNodeGPUMemory)
 	if result != equalPrioritization {
 		return result
 	}
@@ -90,18 +112,15 @@ func prioritizeUnderUtilized(lQueue *rs.QueueAttributes, rQueue *rs.QueueAttribu
 	return equalPrioritization
 }
 
-func prioritizeUnderQuotaWithJob(lQueue, rQueue *rs.QueueAttributes, lJobInfo, rJobInfo *podgroup_info.PodGroupInfo,
-	taskOrderFn common_info.LessFn) int {
+func prioritizeUnderQuotaWithJob(lQueue, rQueue *rs.QueueAttributes,
+	lJobInfo, rJobInfo *podgroup_info.PodGroupInfo,
+	subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn, minNodeGPUMemory int64) int {
 
 	lAllocatedWithJob := lQueue.GetAllocatedShare()
-	lJobRequirements := utils.QuantifyResource(
-		podgroup_info.GetTasksToAllocateInitResource(lJobInfo, taskOrderFn, false))
-	lAllocatedWithJob.Add(lJobRequirements)
+	lAllocatedWithJob.Add(quantifyJobInitResources(lJobInfo, subGroupOrderFn, taskOrderFn, minNodeGPUMemory))
 
 	rAllocatedWithJob := rQueue.GetAllocatedShare()
-	rJobRequirements := utils.QuantifyResource(
-		podgroup_info.GetTasksToAllocateInitResource(rJobInfo, taskOrderFn, false))
-	rAllocatedWithJob.Add(rJobRequirements)
+	rAllocatedWithJob.Add(quantifyJobInitResources(rJobInfo, subGroupOrderFn, taskOrderFn, minNodeGPUMemory))
 
 	lStarved := lAllocatedWithJob.LessEqual(lQueue.GetDeservedShare())
 	rStarved := rAllocatedWithJob.LessEqual(rQueue.GetDeservedShare())
@@ -117,13 +136,63 @@ func prioritizeUnderQuotaWithJob(lQueue, rQueue *rs.QueueAttributes, lJobInfo, r
 	return equalPrioritization
 }
 
+func penalizeZeroShareWithJob(
+	lQueue *rs.QueueAttributes, rQueue *rs.QueueAttributes,
+	lJobInfo, rJobInfo *podgroup_info.PodGroupInfo,
+	subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn, minNodeGPUMemory int64,
+) int {
+	lAllocatedWithJob := lQueue.GetAllocatedShare()
+	lAllocatedWithJob.Add(quantifyJobInitResources(lJobInfo, subGroupOrderFn, taskOrderFn, minNodeGPUMemory))
+
+	rAllocatedWithJob := rQueue.GetAllocatedShare()
+	rAllocatedWithJob.Add(quantifyJobInitResources(rJobInfo, subGroupOrderFn, taskOrderFn, minNodeGPUMemory))
+
+	lQueueViolation := false
+	for _, resource := range rs.AllResources {
+		allocatableShare := lQueue.GetAllocatableShare()[resource]
+		if allocatableShare != 0 {
+			continue
+		}
+
+		allocatedShare := lAllocatedWithJob[resource]
+		if allocatedShare > 0 {
+			lQueueViolation = true
+		}
+	}
+
+	rQueueViolation := false
+	for _, resource := range rs.AllResources {
+		allocatableShare := rQueue.GetAllocatableShare()[resource]
+		if allocatableShare != 0 {
+			continue
+		}
+
+		allocatedShare := rAllocatedWithJob[resource]
+		if allocatedShare > 0 {
+			rQueueViolation = true
+		}
+	}
+
+	if lQueueViolation && !rQueueViolation {
+		return rQueuePrioritized
+	}
+
+	if !lQueueViolation && rQueueViolation {
+		return lQueuePrioritized
+	}
+
+	return equalPrioritization
+}
+
 func prioritizeSmallerResourceShare(
 	lQueue *rs.QueueAttributes, rQueue *rs.QueueAttributes,
-	lJobInfo *podgroup_info.PodGroupInfo, rJobInfo *podgroup_info.PodGroupInfo,
-	taskOrderFn common_info.LessFn, totalResources rs.ResourceQuantities,
+	lJobInfo, rJobInfo *podgroup_info.PodGroupInfo,
+	lVictims, rVictims []*podgroup_info.PodGroupInfo,
+	subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn,
+	totalResources rs.ResourceQuantities, minNodeGPUMemory int64,
 ) int {
-	lShare := calculateDominantResourceShareWithJob(lQueue, lJobInfo, taskOrderFn, totalResources)
-	rShare := calculateDominantResourceShareWithJob(rQueue, rJobInfo, taskOrderFn, totalResources)
+	lShare := calculateDominantResourceShareWithJob(lQueue, lJobInfo, lVictims, subGroupOrderFn, taskOrderFn, totalResources, minNodeGPUMemory)
+	rShare := calculateDominantResourceShareWithJob(rQueue, rJobInfo, rVictims, subGroupOrderFn, taskOrderFn, totalResources, minNodeGPUMemory)
 
 	if lShare < rShare {
 		return lQueuePrioritized
@@ -176,17 +245,26 @@ func prioritizeBasedOnCreationTime(lQueue *rs.QueueAttributes, rQueue *rs.QueueA
 }
 
 func calculateDominantResourceShareWithJob(
-	queueAttributes *rs.QueueAttributes, job *podgroup_info.PodGroupInfo,
-	taskOrderFn common_info.LessFn, totalResources rs.ResourceQuantities,
+	queueAttributes *rs.QueueAttributes, jobInfo *podgroup_info.PodGroupInfo,
+	victims []*podgroup_info.PodGroupInfo,
+	subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn, totalResources rs.ResourceQuantities,
+	minNodeGPUMemory int64,
 ) float64 {
 	allocatedShare := queueAttributes.GetAllocatedShare()
 
-	initResQuantities := utils.QuantifyResource(
-		podgroup_info.GetTasksToAllocateInitResource(job, taskOrderFn, false))
+	initResQuantities := quantifyJobInitResources(jobInfo, subGroupOrderFn, taskOrderFn, minNodeGPUMemory)
 
 	for _, resource := range rs.AllResources {
 		resourceShare := queueAttributes.ResourceShare(resource)
 		resourceShare.Allocated += initResQuantities[resource]
+	}
+
+	for _, victim := range victims {
+		victimQuantities := utils.QuantifyVector(victim.AllocatedVector, victim.VectorMap)
+		for _, resource := range rs.AllResources {
+			resourceShare := queueAttributes.ResourceShare(resource)
+			resourceShare.Allocated -= victimQuantities[resource]
+		}
 	}
 
 	share := queueAttributes.GetDominantResourceShare(totalResources)

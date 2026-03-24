@@ -16,21 +16,25 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	k8splugins "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_internal/plugins"
-	rs "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	k8splugins "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal/plugins"
+	rs "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
 )
 
 const schedulerName = "kai-scheduler"
+
+var testVectorMap = resource_info.NewResourceVectorMap()
 
 func TestSetFairShare(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -526,16 +530,17 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 			name           string
 			isRestrictNode bool
 			node           *node_info.NodeInfo
+			allocatable    *resource_info.Resource
 			want           rs.ResourceQuantities
 		}{
 			{
 				name:           "cpu + memory node",
 				isRestrictNode: true,
 				node: &node_info.NodeInfo{
-					Name:        "n1",
-					Node:        &v1.Node{},
-					Allocatable: common_info.BuildResource("8000m", "10G"),
+					Name: "n1",
+					Node: &v1.Node{},
 				},
+				allocatable: common_info.BuildResource("8000m", "10G"),
 				want: rs.ResourceQuantities{
 					rs.CpuResource:    8000,
 					rs.MemoryResource: 10000000000,
@@ -550,18 +555,40 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 					Node: &v1.Node{
 						ObjectMeta: metav1.ObjectMeta{
 							Labels: map[string]string{
-								node_info.GpuWorkerNode: "true",
+								"node-role.kubernetes.io/gpu-worker": "true",
 							},
 						},
 					},
-					Allocatable: resource_info.ResourceFromResourceList(
-						common_info.BuildResourceListWithGPU("8000m", "10G", "2"),
-					),
 				},
+				allocatable: resource_info.ResourceFromResourceList(
+					common_info.BuildResourceListWithGPU("8000m", "10G", "2"),
+				),
 				want: rs.ResourceQuantities{
 					rs.CpuResource:    8000,
 					rs.MemoryResource: 10000000000,
 					rs.GpuResource:    2,
+				},
+			},
+			{
+				name:           "mig gpu node",
+				isRestrictNode: true,
+				node: &node_info.NodeInfo{
+					Name: "n1",
+					Node: &v1.Node{
+						ObjectMeta: metav1.ObjectMeta{
+							Labels: map[string]string{
+								"node-role.kubernetes.io/gpu-worker": "true",
+							},
+						},
+					},
+				},
+				allocatable: resource_info.ResourceFromResourceList(
+					common_info.BuildResourceListWithMig("8000m", "10G", "nvidia.com/mig-1g.5gb"),
+				),
+				want: rs.ResourceQuantities{
+					rs.CpuResource:    8000,
+					rs.MemoryResource: 10000000000,
+					rs.GpuResource:    1,
 				},
 			},
 			{
@@ -570,10 +597,10 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 				node: &node_info.NodeInfo{
 					Name: "n1",
 					Node: &v1.Node{},
-					Allocatable: resource_info.ResourceFromResourceList(v1.ResourceList{
-						"A": resource.MustParse("4"),
-					}),
 				},
+				allocatable: resource_info.ResourceFromResourceList(v1.ResourceList{
+					"A": resource.MustParse("4"),
+				}),
 				want: rs.ResourceQuantities{
 					rs.CpuResource:    0,
 					rs.MemoryResource: 0,
@@ -583,10 +610,10 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 			{
 				name:           "Count out resources for non-related pods",
 				isRestrictNode: true,
+				allocatable:    common_info.BuildResource("8000m", "10G"),
 				node: &node_info.NodeInfo{
-					Name:        "n1",
-					Node:        &v1.Node{},
-					Allocatable: common_info.BuildResource("8000m", "10G"),
+					Name: "n1",
+					Node: &v1.Node{},
 					PodInfos: map[common_info.PodID]*pod_info.PodInfo{
 						"1": {
 							Pod: &v1.Pod{
@@ -594,8 +621,10 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 									SchedulerName: schedulerName,
 								},
 							},
-							Status: pod_status.Running,
-							ResReq: common_info.BuildResourceRequirements("2", "2G"),
+							Status:       pod_status.Running,
+							ResReq:       common_info.BuildResourceRequirements("2", "2G"),
+							ResReqVector: common_info.BuildResourceRequirements("2", "2G").ToVector(testVectorMap),
+							VectorMap:    testVectorMap,
 						},
 						"2": {
 							Pod: &v1.Pod{
@@ -603,8 +632,10 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 									SchedulerName: "default-scheduler",
 								},
 							},
-							Status: pod_status.Running,
-							ResReq: common_info.BuildResourceRequirements("1", "1G"),
+							Status:       pod_status.Running,
+							ResReq:       common_info.BuildResourceRequirements("1", "1G"),
+							ResReqVector: common_info.BuildResourceRequirements("1", "1G").ToVector(testVectorMap),
+							VectorMap:    testVectorMap,
 						},
 					},
 				},
@@ -617,10 +648,10 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 			{
 				name:           "Count out resources for non-related pods - consider reservation pods",
 				isRestrictNode: true,
+				allocatable:    common_info.BuildResource("8000m", "10G"),
 				node: &node_info.NodeInfo{
-					Name:        "n1",
-					Node:        &v1.Node{},
-					Allocatable: common_info.BuildResource("8000m", "10G"),
+					Name: "n1",
+					Node: &v1.Node{},
 					PodInfos: map[common_info.PodID]*pod_info.PodInfo{
 						"1": {
 							Pod: &v1.Pod{
@@ -628,8 +659,10 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 									SchedulerName: schedulerName,
 								},
 							},
-							Status: pod_status.Running,
-							ResReq: common_info.BuildResourceRequirements("2", "2G"),
+							Status:       pod_status.Running,
+							ResReq:       common_info.BuildResourceRequirements("2", "2G"),
+							ResReqVector: common_info.BuildResourceRequirements("2", "2G").ToVector(testVectorMap),
+							VectorMap:    testVectorMap,
 						},
 						"2": {
 							Pod: &v1.Pod{
@@ -637,20 +670,24 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 									SchedulerName: "default-scheduler",
 								},
 							},
-							Status: pod_status.Running,
-							ResReq: common_info.BuildResourceRequirements("1", "1G"),
+							Status:       pod_status.Running,
+							ResReq:       common_info.BuildResourceRequirements("1", "1G"),
+							ResReqVector: common_info.BuildResourceRequirements("1", "1G").ToVector(testVectorMap),
+							VectorMap:    testVectorMap,
 						},
 						"reservation": {
 							Pod: &v1.Pod{
 								ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{
-									commonconstants.AppLabelName: pod_info.ResourceReservationAppLabelValue,
+									commonconstants.AppLabelName: conf.GetConfig().ResourceReservationAppLabelValue,
 								}},
 								Spec: v1.PodSpec{
 									SchedulerName: "default-scheduler",
 								},
 							},
-							Status: pod_status.Running,
-							ResReq: common_info.BuildResourceRequirements("1", "1G"),
+							Status:       pod_status.Running,
+							ResReq:       common_info.BuildResourceRequirements("1", "1G"),
+							ResReqVector: common_info.BuildResourceRequirements("1", "1G").ToVector(testVectorMap),
+							VectorMap:    testVectorMap,
 						},
 					},
 				},
@@ -663,10 +700,10 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 			{
 				name:           "Count out resources for non-related pods - consider scaler pods",
 				isRestrictNode: true,
+				allocatable:    common_info.BuildResource("8000m", "10G"),
 				node: &node_info.NodeInfo{
-					Name:        "n1",
-					Node:        &v1.Node{},
-					Allocatable: common_info.BuildResource("8000m", "10G"),
+					Name: "n1",
+					Node: &v1.Node{},
 					PodInfos: map[common_info.PodID]*pod_info.PodInfo{
 						"1": {
 							Pod: &v1.Pod{
@@ -674,8 +711,10 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 									SchedulerName: schedulerName,
 								},
 							},
-							Status: pod_status.Running,
-							ResReq: common_info.BuildResourceRequirements("2", "2G"),
+							Status:       pod_status.Running,
+							ResReq:       common_info.BuildResourceRequirements("2", "2G"),
+							ResReqVector: common_info.BuildResourceRequirements("2", "2G").ToVector(testVectorMap),
+							VectorMap:    testVectorMap,
 						},
 						"2": {
 							Pod: &v1.Pod{
@@ -683,20 +722,24 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 									SchedulerName: "default-scheduler",
 								},
 							},
-							Status: pod_status.Running,
-							ResReq: common_info.BuildResourceRequirements("1", "1G"),
+							Status:       pod_status.Running,
+							ResReq:       common_info.BuildResourceRequirements("1", "1G"),
+							ResReqVector: common_info.BuildResourceRequirements("1", "1G").ToVector(testVectorMap),
+							VectorMap:    testVectorMap,
 						},
 						"scaler": {
 							Pod: &v1.Pod{
 								ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{
-									commonconstants.AppLabelName: commonconstants.ScalingPodAppLabelValue,
+									commonconstants.AppLabelName: conf.GetConfig().ScalingPodAppLabelValue,
 								}},
 								Spec: v1.PodSpec{
 									SchedulerName: "default-scheduler",
 								},
 							},
-							Status: pod_status.Running,
-							ResReq: common_info.BuildResourceRequirements("1", "1G"),
+							Status:       pod_status.Running,
+							ResReq:       common_info.BuildResourceRequirements("1", "1G"),
+							ResReqVector: common_info.BuildResourceRequirements("1", "1G").ToVector(testVectorMap),
+							VectorMap:    testVectorMap,
 						},
 					},
 				},
@@ -709,10 +752,10 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 			{
 				name:           "Do not count out resources for non-related pods if non active",
 				isRestrictNode: true,
+				allocatable:    common_info.BuildResource("8000m", "10G"),
 				node: &node_info.NodeInfo{
-					Name:        "n1",
-					Node:        &v1.Node{},
-					Allocatable: common_info.BuildResource("8000m", "10G"),
+					Name: "n1",
+					Node: &v1.Node{},
 					PodInfos: map[common_info.PodID]*pod_info.PodInfo{
 						"2": {
 							Pod: &v1.Pod{
@@ -766,11 +809,218 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 						SchedulerName:           schedulerName,
 					},
 					"1", nil)
+				vectorMap := resource_info.NewResourceVectorMap()
+				if testData.allocatable != nil {
+					for rName := range testData.allocatable.ScalarResources() {
+						vectorMap.AddResource(rName)
+					}
+				}
+				testData.node.VectorMap = vectorMap
+				if testData.allocatable != nil {
+					testData.node.AllocatableVector = testData.allocatable.ToVector(vectorMap)
+				}
 				if got := getNodeResources(session, testData.node); !reflect.DeepEqual(got, testData.want) {
 					Fail(fmt.Sprintf("getNodeResources() = %v, want %v", got, testData.want))
 				}
 			})
 		}
 
+	})
+
+	Context("getVictimResources", func() {
+		It("should handle case where MinAvailable is greater than number of tasks (panic fix)", func() {
+			plugin := &proportionPlugin{
+				allowConsolidatingReclaim: true,
+			}
+
+			// Create a victim with only 1 task but MinAvailable = 2
+			// This should cause a slice bounds panic without the fix
+			victim := &api.VictimInfo{
+				Job: &podgroup_info.PodGroupInfo{
+					PodSets: map[string]*subgroup_info.PodSet{
+						podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(
+							podgroup_info.DefaultSubGroup, 2, nil,
+						),
+					},
+				},
+				Tasks: []*pod_info.PodInfo{
+					{
+						Status:                 pod_status.Pending,
+						AcceptedResource:       common_info.BuildResourceRequirements("1", "1Gi"),
+						AcceptedResourceVector: common_info.BuildResourceRequirements("1", "1Gi").ToVector(testVectorMap),
+						VectorMap:              testVectorMap,
+					},
+				},
+			}
+
+			// This should not panic
+			result := plugin.getVictimResources(victim)
+			// Should return resources for the single task that exists
+			Expect(len(result)).To(Equal(1))
+			Expect(result[0]).ToNot(BeNil())
+			Expect(result[0].Get(resource_info.CPUIndex)).To(Equal(1000.0))
+		})
+
+		It("should correctly split elastic and core tasks when MinAvailable is less than task count", func() {
+			plugin := &proportionPlugin{
+				allowConsolidatingReclaim: true,
+			}
+
+			// Create a victim with 3 tasks but MinAvailable = 1
+			victim := &api.VictimInfo{
+				Job: &podgroup_info.PodGroupInfo{
+					PodSets: map[string]*subgroup_info.PodSet{
+						podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(
+							podgroup_info.DefaultSubGroup, 1, nil,
+						),
+					},
+				},
+				Tasks: []*pod_info.PodInfo{
+					{
+						Status:                 pod_status.Pending,
+						AcceptedResource:       common_info.BuildResourceRequirements("1", "1Gi"),
+						AcceptedResourceVector: common_info.BuildResourceRequirements("1", "1Gi").ToVector(testVectorMap),
+						VectorMap:              testVectorMap,
+					},
+					{
+						Status:                 pod_status.Pending,
+						AcceptedResource:       common_info.BuildResourceRequirements("1", "1Gi"),
+						AcceptedResourceVector: common_info.BuildResourceRequirements("1", "1Gi").ToVector(testVectorMap),
+						VectorMap:              testVectorMap,
+					},
+					{
+						Status:                 pod_status.Pending,
+						AcceptedResource:       common_info.BuildResourceRequirements("1", "1Gi"),
+						AcceptedResourceVector: common_info.BuildResourceRequirements("1", "1Gi").ToVector(testVectorMap),
+						VectorMap:              testVectorMap,
+					},
+				},
+			}
+
+			result := plugin.getVictimResources(victim)
+
+			// Should return 3 resources: 2 elastic tasks + 1 core task group
+			Expect(len(result)).To(Equal(3))
+			for _, res := range result {
+				Expect(res).ToNot(BeNil())
+				Expect(res.Get(resource_info.CPUIndex)).To(Equal(1000.0))
+			}
+		})
+
+		It("should handle case where MinAvailable equals task count", func() {
+			plugin := &proportionPlugin{
+				allowConsolidatingReclaim: true,
+			}
+
+			// Create a victim with 2 tasks and MinAvailable = 2
+			victim := &api.VictimInfo{
+				Job: &podgroup_info.PodGroupInfo{
+					PodSets: map[string]*subgroup_info.PodSet{
+						podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(
+							podgroup_info.DefaultSubGroup, 2, nil,
+						),
+					},
+				},
+				Tasks: []*pod_info.PodInfo{
+					{
+						Status:                 pod_status.Pending,
+						AcceptedResource:       common_info.BuildResourceRequirements("1", "1Gi"),
+						AcceptedResourceVector: common_info.BuildResourceRequirements("1", "1Gi").ToVector(testVectorMap),
+						VectorMap:              testVectorMap,
+					},
+					{
+						Status:                 pod_status.Pending,
+						AcceptedResource:       common_info.BuildResourceRequirements("1", "1Gi"),
+						AcceptedResourceVector: common_info.BuildResourceRequirements("1", "1Gi").ToVector(testVectorMap),
+						VectorMap:              testVectorMap,
+					},
+				},
+			}
+
+			result := plugin.getVictimResources(victim)
+
+			// Should return 1 resource for all core tasks (no elastic tasks)
+			Expect(len(result)).To(Equal(1))
+			Expect(result[0]).ToNot(BeNil())
+			Expect(result[0].Get(resource_info.CPUIndex)).To(Equal(2000.0)) // Combined resources
+		})
+
+		It("should handle zero MinAvailable", func() {
+			plugin := &proportionPlugin{
+				allowConsolidatingReclaim: true,
+			}
+
+			victim := &api.VictimInfo{
+				Job: &podgroup_info.PodGroupInfo{
+					PodSets: map[string]*subgroup_info.PodSet{
+						podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(
+							podgroup_info.DefaultSubGroup, 0, nil,
+						),
+					},
+				},
+				Tasks: []*pod_info.PodInfo{
+					{
+						Status:                 pod_status.Pending,
+						AcceptedResource:       common_info.BuildResourceRequirements("1", "1Gi"),
+						AcceptedResourceVector: common_info.BuildResourceRequirements("1", "1Gi").ToVector(testVectorMap),
+						VectorMap:              testVectorMap,
+					},
+					{
+						Status:                 pod_status.Pending,
+						AcceptedResource:       common_info.BuildResourceRequirements("1", "1Gi"),
+						AcceptedResourceVector: common_info.BuildResourceRequirements("1", "1Gi").ToVector(testVectorMap),
+						VectorMap:              testVectorMap,
+					},
+				},
+			}
+
+			result := plugin.getVictimResources(victim)
+
+			// Should return 2 resources (each task individually as elastic)
+			Expect(len(result)).To(Equal(2))
+			for _, res := range result {
+				Expect(res).ToNot(BeNil())
+				Expect(res.Get(resource_info.CPUIndex)).To(Equal(1000.0))
+			}
+		})
+	})
+})
+
+var _ = Describe("New", func() {
+	Context("Initializing proportion plugin", func() {
+		var args framework.PluginArguments
+
+		BeforeEach(func() {
+			args = framework.PluginArguments{}
+		})
+
+		It("should create plugin with empty state and default multiplier", func() {
+			plugin := New(args).(*proportionPlugin)
+			Expect(plugin).NotTo(BeNil())
+			Expect(plugin.totalResource).To(Equal(rs.EmptyResourceQuantities()))
+			Expect(plugin.queues).To(HaveLen(0))
+			Expect(plugin.pluginArguments).To(Equal(args))
+		})
+
+		It("should handle malformed Saturation Multiplier arg", func() {
+			args := framework.PluginArguments{"relcaimerSaturationMultiplier": "wrong"}
+			plugin := New(args).(*proportionPlugin)
+			Expect(plugin.pluginArguments).To(Equal(args))
+			Expect(plugin.relcaimerSaturationMultiplier).To(Equal(1.0))
+		})
+
+		It("should handle Saturation Multiplier arg", func() {
+			args := framework.PluginArguments{"relcaimerSaturationMultiplier": "1.5"}
+			plugin := New(args).(*proportionPlugin)
+			Expect(plugin.pluginArguments).To(Equal(args))
+			Expect(plugin.relcaimerSaturationMultiplier).To(Equal(1.5))
+		})
+
+		It("should prevent Saturation Multiplier lower than 1", func() {
+			args := framework.PluginArguments{"relcaimerSaturationMultiplier": "0.5"}
+			plugin := New(args).(*proportionPlugin)
+			Expect(plugin.pluginArguments).To(Equal(args))
+			Expect(plugin.relcaimerSaturationMultiplier).To(Equal(1.0))
+		})
 	})
 })

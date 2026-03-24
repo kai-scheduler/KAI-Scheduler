@@ -4,72 +4,44 @@
 package podgroup
 
 import (
-	enginev2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	"reflect"
+
+	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 )
 
-const (
-	pgWorkloadStatus             = "runai-calculated-status"
-	pgRunningPodsAnnotationName  = "runai-running-pods"
-	pgPendingPodsAnnotationName  = "runai-pending-pods"
-	pgUsedNodes                  = "runai-used-nodes"
-	pgRequestedGPUs              = "runai-podgroup-requested-gpus"
-	pgRequestedGPUsMemory        = "runai-podgroup-requested-gpus-memory"
-	pgTotalRequestedGPUs         = "runai-total-requested-gpus"
-	pgTotalRequestedGPUsMemory   = "runai-total-requested-gpus-memory"
-	pgCurrentRequestedGPUs       = "runai-current-requested-gpus"
-	pgCurrentRequestedGPUsMemory = "runai-current-requested-gpus-memory"
-	pgAllocatedGPUs              = "runai-current-allocated-gpus"
-	pgAllocatedGPUsMemory        = "runai-current-allocated-gpus-memory"
-	pgRequestedMigDevices        = "runai-podgroup-requested-mig-devices"
-)
-
-var notToUpdateAnnotations = map[string]bool{
-	pgWorkloadStatus:             true,
-	pgRunningPodsAnnotationName:  true,
-	pgPendingPodsAnnotationName:  true,
-	pgUsedNodes:                  true,
-	pgRequestedGPUs:              true,
-	pgRequestedGPUsMemory:        true,
-	pgTotalRequestedGPUs:         true,
-	pgTotalRequestedGPUsMemory:   true,
-	pgCurrentRequestedGPUs:       true,
-	pgCurrentRequestedGPUsMemory: true,
-	pgAllocatedGPUs:              true,
-	pgAllocatedGPUsMemory:        true,
-	pgRequestedMigDevices:        true,
+func podGroupsEqual(oldPodGroup, newPodGroup *enginev2alpha2.PodGroup) bool {
+	return reflect.DeepEqual(oldPodGroup.Spec, newPodGroup.Spec) &&
+		reflect.DeepEqual(oldPodGroup.OwnerReferences, newPodGroup.OwnerReferences) &&
+		mapsEqualBySourceKeys(newPodGroup.Labels, oldPodGroup.Labels) &&
+		mapsEqualBySourceKeys(newPodGroup.Annotations, oldPodGroup.Annotations)
 }
 
-func podGroupsEqual(leftPodGroup, rightPodGroup *enginev2alpha2.PodGroup) bool {
-	leftPgUpdatableAnnotations := removeBlocklistedKeys(leftPodGroup.Annotations)
-	rightPgUpdatableAnnotations := removeBlocklistedKeys(rightPodGroup.Annotations)
+func mapsEqualBySourceKeys(source, target map[string]string) bool {
+	if source != nil && target == nil {
+		return false
+	}
 
-	return reflect.DeepEqual(leftPodGroup.Spec, rightPodGroup.Spec) &&
-		reflect.DeepEqual(leftPodGroup.OwnerReferences, rightPodGroup.OwnerReferences) &&
-		reflect.DeepEqual(leftPodGroup.Labels, rightPodGroup.Labels) &&
-		reflect.DeepEqual(leftPgUpdatableAnnotations, rightPgUpdatableAnnotations)
+	for key, sourceValue := range source {
+		if targetValue, exists := target[key]; !exists || targetValue != sourceValue {
+			return false
+		}
+	}
+	return true
 }
 
 func updatePodGroup(oldPodGroup, newPodGroup *enginev2alpha2.PodGroup) {
-	oldPodGroup.Annotations = mergeTwoMaps(oldPodGroup.Annotations, removeBlocklistedKeys(newPodGroup.Annotations))
-	oldPodGroup.Labels = newPodGroup.Labels
+	oldPodGroup.Annotations = copyStringMap(newPodGroup.Annotations, oldPodGroup.Annotations)
+	oldPodGroup.Labels = copyStringMap(newPodGroup.Labels, oldPodGroup.Labels)
 	oldPodGroup.Spec = newPodGroup.Spec
 	oldPodGroup.OwnerReferences = newPodGroup.OwnerReferences
 }
 
-func removeBlocklistedKeys(inputAnnotations map[string]string) map[string]string {
-	annotationsToUpdate := map[string]string{}
-	for annotationKey, annotationValue := range inputAnnotations {
-		if !notToUpdateAnnotations[annotationKey] {
-			annotationsToUpdate[annotationKey] = annotationValue
-		}
+func copyStringMap(source map[string]string, target map[string]string) map[string]string {
+	if source != nil && target == nil {
+		target = map[string]string{}
 	}
-	return annotationsToUpdate
-}
-
-func mergeTwoMaps(org map[string]string, toMerge map[string]string) map[string]string {
-	for annotationKey, annotationValue := range toMerge {
-		org[annotationKey] = annotationValue
+	for k, v := range source {
+		target[k] = v
 	}
-	return org
+	return target
 }

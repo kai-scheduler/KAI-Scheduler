@@ -4,5 +4,5 @@
 package labels
 
 const (
-	TaskOrderLabelKey = "run.ai/task-priority"
+	TaskOrderLabelKey = "kai.scheduler/task-priority"
 )

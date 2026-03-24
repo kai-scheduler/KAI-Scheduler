@@ -7,10 +7,9 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
+	schedulingv1 "k8s.io/api/scheduling/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -18,7 +17,15 @@ import (
 	knative "knative.dev/serving/pkg/apis/serving/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
+)
+
+const (
+	queueLabelKey    = "kai.scheduler/queue"
+	nodePoolLabelKey = "kai.scheduler/node-pool"
 )
 
 func TestGetPodGroupMetadata(t *testing.T) {
@@ -41,7 +48,7 @@ func TestGetPodGroupMetadata(t *testing.T) {
 				"template": map[string]interface{}{
 					"metadata": map[string]interface{}{
 						"labels": map[string]interface{}{
-							"runai/queue": "test_queue",
+							queueLabelKey: "test_queue",
 						},
 					},
 					"spec": map[string]interface{}{
@@ -76,7 +83,7 @@ func TestGetPodGroupMetadata(t *testing.T) {
 			Namespace: "test_namespace",
 			Labels: map[string]string{
 				knativeRevisionLabel: "revision",
-				"runai/queue":        "test_queue",
+				queueLabelKey:        "test_queue",
 			},
 			UID: "3",
 		},
@@ -89,9 +96,14 @@ func TestGetPodGroupMetadata(t *testing.T) {
 	assert.Nil(t, err)
 	err = v1.AddToScheme(scheme)
 	assert.Nil(t, err)
+	err = schedulingv1.AddToScheme(scheme)
+	assert.Nil(t, err)
 
-	client := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(rev).Build()
-	grouper := NewKnativeGrouper(client, true)
+	inferencePriorityClass := priorityClassObj(constants.InferencePriorityClass, 1000)
+
+	client := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(rev, inferencePriorityClass).Build()
+	defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, client)
+	grouper := NewKnativeGrouper(client, defaultGrouper, true)
 
 	metadata, err := grouper.GetPodGroupMetadata(service, pod)
 	assert.Nil(t, err)
@@ -120,7 +132,7 @@ func TestGetPodGroupMetadata_MinScale(t *testing.T) {
 				"template": map[string]interface{}{
 					"metadata": map[string]interface{}{
 						"labels": map[string]interface{}{
-							"runai/queue": "test_queue",
+							queueLabelKey: "test_queue",
 						},
 					},
 					"spec": map[string]interface{}{
@@ -158,7 +170,7 @@ func TestGetPodGroupMetadata_MinScale(t *testing.T) {
 			Namespace: "test_namespace",
 			Labels: map[string]string{
 				knativeRevisionLabel: "revision",
-				"runai/queue":        "test_queue",
+				queueLabelKey:        "test_queue",
 			},
 			UID: "3",
 		},
@@ -171,9 +183,14 @@ func TestGetPodGroupMetadata_MinScale(t *testing.T) {
 	assert.Nil(t, err)
 	err = v1.AddToScheme(scheme)
 	assert.Nil(t, err)
+	err = schedulingv1.AddToScheme(scheme)
+	assert.Nil(t, err)
 
-	client := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(rev).Build()
-	grouper := NewKnativeGrouper(client, true)
+	inferencePriorityClass := priorityClassObj(constants.InferencePriorityClass, 1000)
+
+	client := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(rev, inferencePriorityClass).Build()
+	defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, client)
+	grouper := NewKnativeGrouper(client, defaultGrouper, true)
 
 	metadata, err := grouper.GetPodGroupMetadata(service, pod)
 	assert.Nil(t, err)
@@ -195,9 +212,10 @@ func TestGetPodGroupMetadataBackwardsCompatibility(t *testing.T) {
 		revisions             []*knative.Revision
 		pods                  []*v1.Pod
 		podGroups             []*v2alpha2.PodGroup
+		priorityClass         *schedulingv1.PriorityClass
 		expectedError         bool
 		expectedPodGroupName  string
-		expextedPriorityClass *string // defaults to inference
+		expectedPriorityClass *string // defaults to inference
 		expectedMinAvailable  int32
 	}
 
@@ -567,6 +585,78 @@ func TestGetPodGroupMetadataBackwardsCompatibility(t *testing.T) {
 			expectedMinAvailable: 1,
 			expectedPodGroupName: "pg-pod-podUID",
 		},
+		{
+			name: "priority class name set in pod",
+			service: &knative.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      serviceName,
+					Namespace: namespace,
+				},
+			},
+			revisions: []*knative.Revision{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "revision",
+						Namespace: namespace,
+						UID:       "revUID",
+					},
+				},
+			},
+			pods: []*v1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "pod",
+						Namespace: namespace,
+						Labels: map[string]string{
+							knativeRevisionLabel:       "revision",
+							constants.PriorityLabelKey: "very-high",
+						},
+					},
+				},
+			},
+			priorityClass:         priorityClassObj("very-high", 125),
+			expectedError:         false,
+			expectedPodGroupName:  "pg-revision-revUID",
+			expectedMinAvailable:  1,
+			expectedPriorityClass: ptr.To("very-high"),
+		},
+		{
+			name: "priority class name set in top owner",
+			service: &knative.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      serviceName,
+					Namespace: namespace,
+				},
+			},
+			revisions: []*knative.Revision{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "revision",
+						Namespace: namespace,
+						UID:       "revUID",
+						Labels: map[string]string{
+							constants.PriorityLabelKey: "high",
+						},
+					},
+				},
+			},
+			pods: []*v1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "pod",
+						Namespace: namespace,
+						Labels: map[string]string{
+							knativeRevisionLabel: "revision",
+						},
+					},
+				},
+			},
+			priorityClass:         priorityClassObj("high", 100),
+			expectedError:         false,
+			expectedPodGroupName:  "pg-revision-revUID",
+			expectedMinAvailable:  1,
+			expectedPriorityClass: ptr.To("high"),
+		},
 	}
 
 	for _, test := range tests {
@@ -575,6 +665,7 @@ func TestGetPodGroupMetadataBackwardsCompatibility(t *testing.T) {
 			assert.Nil(t, knative.AddToScheme(scheme))
 			assert.Nil(t, v1.AddToScheme(scheme))
 			assert.Nil(t, v2alpha2.AddToScheme(scheme))
+			assert.Nil(t, schedulingv1.AddToScheme(scheme))
 
 			var runtimeObjects []runtime.Object
 			runtimeObjects = append(runtimeObjects, test.service)
@@ -587,6 +678,11 @@ func TestGetPodGroupMetadataBackwardsCompatibility(t *testing.T) {
 			for _, podGroup := range test.podGroups {
 				runtimeObjects = append(runtimeObjects, podGroup)
 			}
+			inferencePriorityClass := priorityClassObj(constants.InferencePriorityClass, 1000)
+			runtimeObjects = append(runtimeObjects, inferencePriorityClass)
+			if test.priorityClass != nil {
+				runtimeObjects = append(runtimeObjects, test.priorityClass)
+			}
 
 			client := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(runtimeObjects...).Build()
 
@@ -594,7 +690,8 @@ func TestGetPodGroupMetadataBackwardsCompatibility(t *testing.T) {
 			if test.gangSchedule != nil {
 				gangSchedule = *test.gangSchedule
 			}
-			grouper := NewKnativeGrouper(client, gangSchedule)
+			defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, client)
+			grouper := NewKnativeGrouper(client, defaultGrouper, gangSchedule)
 
 			unstructuredService, err := runtime.DefaultUnstructuredConverter.ToUnstructured(test.service)
 			assert.Nil(t, err, "failed to convert knative service to unstructured")
@@ -610,12 +707,21 @@ func TestGetPodGroupMetadataBackwardsCompatibility(t *testing.T) {
 				assert.Nil(t, err, "unexpected error")
 				assert.Equal(t, test.expectedPodGroupName, metadata.Name, "unexpected pod group name")
 				expectedPriorityClass := constants.InferencePriorityClass
-				if test.expextedPriorityClass != nil {
-					expectedPriorityClass = *test.expextedPriorityClass
+				if test.expectedPriorityClass != nil {
+					expectedPriorityClass = *test.expectedPriorityClass
 				}
 				assert.Equal(t, expectedPriorityClass, metadata.PriorityClassName, "unexpected priority class")
 				assert.Equal(t, test.expectedMinAvailable, metadata.MinAvailable, "unexpected min available")
 			}
 		})
+	}
+}
+
+func priorityClassObj(name string, value int32) *schedulingv1.PriorityClass {
+	return &schedulingv1.PriorityClass{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+		},
+		Value: value,
 	}
 }

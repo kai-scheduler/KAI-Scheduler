@@ -9,6 +9,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
+)
+
+const (
+	queueLabelKey    = "kai.scheduler/queue"
+	nodePoolLabelKey = "kai.scheduler/node-pool"
 )
 
 func TestGetPodGroupMetadata(t *testing.T) {
@@ -40,14 +48,15 @@ func TestGetPodGroupMetadata(t *testing.T) {
 	}
 	pod := &v1.Pod{}
 
-	podGroupMetadata, err := GetPodGroupMetadata(owner, pod)
+	amlGrouper := NewAmlGrouper(defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, fake.NewFakeClient()))
+	podGroupMetadata, err := amlGrouper.GetPodGroupMetadata(owner, pod)
 
 	assert.Nil(t, err)
 	assert.Equal(t, "test_kind", podGroupMetadata.Owner.Kind)
 	assert.Equal(t, "test_version", podGroupMetadata.Owner.APIVersion)
 	assert.Equal(t, "1", string(podGroupMetadata.Owner.UID))
 	assert.Equal(t, "test_name", podGroupMetadata.Owner.Name)
-	assert.Equal(t, 3, len(podGroupMetadata.Annotations))
+	assert.Equal(t, 2, len(podGroupMetadata.Annotations))
 	assert.Equal(t, 1, len(podGroupMetadata.Labels))
 	assert.Equal(t, "default-queue", podGroupMetadata.Queue)
 	assert.Equal(t, "train", podGroupMetadata.PriorityClassName)
@@ -81,7 +90,8 @@ func TestGetPodGroupMetadataWithoutReplicas(t *testing.T) {
 	}
 	pod := &v1.Pod{}
 
-	_, err := GetPodGroupMetadata(owner, pod)
+	amlGrouper := NewAmlGrouper(defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, fake.NewFakeClient()))
+	_, err := amlGrouper.GetPodGroupMetadata(owner, pod)
 
 	assert.NotNil(t, err)
 }

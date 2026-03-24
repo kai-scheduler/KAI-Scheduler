@@ -1,0 +1,111 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# Configuration for time-aware fairness using an external Prometheus instance
+#
+# Use this configuration when you have an existing Prometheus deployment
+# (e.g., from kube-prometheus-stack) that you want to use for time-aware fairness.
+#
+# Prerequisites:
+#   1. External Prometheus must be accessible from the kai-scheduler namespace
+#   2. ServiceMonitors must be configured to scrape KAI metrics
+#   3. kube-state-metrics must be available for cluster capacity metrics
+#
+# Step 1: Configure KAI to use external Prometheus
+#   kubectl patch config kai-config --type merge -p '{
+#     "spec": {
+#       "prometheus": {
+#         "enabled": true,
+#         "externalPrometheusUrl": "http://prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090"
+#       }
+#     }
+#   }'
+#
+# Step 2: Apply this scheduling shard configuration
+#   kubectl apply -f scheduling-shard-external-prometheus.yaml
+#
+# Step 3: Ensure ServiceMonitors are configured
+#   See docs/metrics/service-monitors.yaml for required ServiceMonitor configurations
+
+apiVersion: kai.scheduler/v1
+kind: SchedulingShard
+metadata:
+  name: default
+spec:
+  # kValue controls fairness correction aggressiveness
+  kValue: 1.0
+  
+  usageDBConfig:
+    clientType: prometheus
+    
+    # URL of your external Prometheus instance
+    # Common patterns:
+    #   - kube-prometheus-stack: http://prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090
+    #   - Prometheus Operator: http://prometheus-operated.<namespace>.svc.cluster.local:9090
+    #   - External: http://<prometheus-host>:9090
+    connectionString: http://prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090
+    
+    # Alternatively, use an environment variable for the connection string
+    # Useful when the URL needs to be configured per-deployment
+    # connectionStringEnvVar: PROMETHEUS_URL
+    
+    usageParams:
+      windowSize: 168h      # 1 week
+      windowType: sliding
+      halfLifePeriod: 2h    # 2 hour half-life for time decay
+      fetchInterval: 1m
+      stalenessPeriod: 5m
+      
+      # Advanced: Override default metric names if your Prometheus uses different metrics
+      # Only needed if you have custom metric names or want to use different metrics
+      # extraParams:
+      #   gpuAllocationMetric: kai_queue_allocated_gpus
+      #   cpuAllocationMetric: kai_queue_allocated_cpu_cores
+      #   memoryAllocationMetric: kai_queue_allocated_memory_bytes
+      #   gpuCapacityMetric: sum(kube_node_status_capacity{resource="nvidia_com_gpu"})
+      #   cpuCapacityMetric: sum(kube_node_status_capacity{resource="cpu"})
+      #   memoryCapacityMetric: sum(kube_node_status_capacity{resource="memory"})
+
+---
+# Optional: ServiceMonitor to ensure KAI metrics are scraped by external Prometheus
+# Apply this if your external Prometheus uses servicemonitor discovery
+# and doesn't already scrape the kai-scheduler namespace
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kai-scheduler
+  namespace: monitoring  # Adjust to your Prometheus namespace
+  labels:
+    # Add labels that match your Prometheus serviceMonitorSelector
+    release: prometheus
+spec:
+  jobLabel: kai-scheduler
+  namespaceSelector:
+    matchNames:
+      - kai-scheduler
+  selector:
+    matchLabels:
+      app: scheduler
+  endpoints:
+    - port: http-metrics
+      interval: 30s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kai-queue-controller
+  namespace: monitoring
+  labels:
+    release: prometheus
+spec:
+  jobLabel: kai-queue-controller
+  namespaceSelector:
+    matchNames:
+      - kai-scheduler
+  selector:
+    matchLabels:
+      app: queue-controller
+  endpoints:
+    - port: metrics
+      interval: 30s
+

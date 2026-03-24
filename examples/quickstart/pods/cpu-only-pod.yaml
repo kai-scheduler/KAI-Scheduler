@@ -1,0 +1,21 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# Example: Simple CPU-only pod scheduled by KAI Scheduler
+apiVersion: v1
+kind: Pod
+metadata:
+  name: cpu-only-pod
+  labels:
+    kai.scheduler/queue: default-queue   # Required: assigns pod to a queue
+spec:
+  schedulerName: kai-scheduler           # Required: use KAI Scheduler
+  containers:
+    - name: main
+      image: ubuntu
+      args: ["sleep", "infinity"]
+      resources:
+        requests:
+          cpu: 100m
+          memory: 250M
+

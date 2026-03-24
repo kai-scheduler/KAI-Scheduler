@@ -6,11 +6,19 @@ package deployment
 import (
 	"testing"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
+)
+
+const (
+	queueLabelKey    = "kai.scheduler/queue"
+	nodePoolLabelKey = "kai.scheduler/node-pool"
 )
 
 func TestGetPodGroupMetadata(t *testing.T) {
@@ -33,7 +41,7 @@ func TestGetPodGroupMetadata(t *testing.T) {
 				"template": map[string]interface{}{
 					"metadata": map[string]interface{}{
 						"labels": map[string]interface{}{
-							"runai/queue": "test_queue",
+							queueLabelKey: "test_queue",
 						},
 					},
 					"spec": map[string]interface{}{
@@ -53,7 +61,7 @@ func TestGetPodGroupMetadata(t *testing.T) {
 			Name:      "pod-1",
 			Namespace: "test_namespace",
 			Labels: map[string]string{
-				"runai/queue": "test_queue",
+				queueLabelKey: "test_queue",
 			},
 			UID: "3",
 		},
@@ -67,7 +75,7 @@ func TestGetPodGroupMetadata(t *testing.T) {
 			Name:      "pod-2",
 			Namespace: "test_namespace",
 			Labels: map[string]string{
-				"runai/queue": "test_queue",
+				queueLabelKey: "test_queue",
 			},
 			UID: "4",
 		},
@@ -75,13 +83,14 @@ func TestGetPodGroupMetadata(t *testing.T) {
 		Status: v1.PodStatus{},
 	}
 
-	metadata, err := GetPodGroupMetadata(deployment, pod1)
+	grouper := NewDeploymentGrouper(defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, fake.NewFakeClient()))
+	metadata, err := grouper.GetPodGroupMetadata(deployment, pod1)
 	assert.Nil(t, err)
 	assert.Equal(t, "pg-pod-1-3", metadata.Name)
 	assert.Equal(t, constants.InferencePriorityClass, metadata.PriorityClassName)
 	assert.Equal(t, "test_queue", metadata.Queue)
 
-	metadata2, err := GetPodGroupMetadata(deployment, pod2)
+	metadata2, err := grouper.GetPodGroupMetadata(deployment, pod2)
 	assert.Nil(t, err)
 	// assert that the second pod got a different podgroup
 	assert.Equal(t, "pg-pod-2-4", metadata2.Name)

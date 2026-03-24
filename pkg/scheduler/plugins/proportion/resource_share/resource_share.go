@@ -6,7 +6,7 @@ package resource_share
 import (
 	"math"
 
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
 type ResourceShare struct {
@@ -17,6 +17,7 @@ type ResourceShare struct {
 	Allocated               float64
 	AllocatedNotPreemptible float64
 	Request                 float64
+	Usage                   float64
 }
 
 func EmptyResource() ResourceShare {
@@ -32,6 +33,7 @@ func (rs *ResourceShare) Clone() *ResourceShare {
 		Allocated:               rs.Allocated,
 		AllocatedNotPreemptible: rs.AllocatedNotPreemptible,
 		Request:                 rs.Request,
+		Usage:                   rs.Usage,
 	}
 }
 
@@ -56,4 +58,8 @@ func (rs *ResourceShare) GetAllocatableShare() float64 {
 		allocatable = math.Min(rs.MaxAllowed, allocatable)
 	}
 	return allocatable
+}
+
+func (rs *ResourceShare) GetUsage() float64 {
+	return rs.Usage
 }

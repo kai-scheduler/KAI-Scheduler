@@ -4,59 +4,112 @@
 package podgroup
 
 import (
-	enginev2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"reflect"
 	"testing"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 )
 
-func Test_mergeTwoMaps(t *testing.T) {
-	type args struct {
-		org     map[string]string
-		toMerge map[string]string
-	}
+func Test_mapsEqualBySourceKeys(t *testing.T) {
 	tests := []struct {
-		name string
-		args args
-		want map[string]string
+		name   string
+		source map[string]string
+		target map[string]string
+		want   bool
 	}{
 		{
-			"Merge empty map",
-			args{
-				map[string]string{"A": "a"},
-				map[string]string{},
-			},
-			map[string]string{"A": "a"},
+			"both nil",
+			nil,
+			nil,
+			true,
 		},
 		{
-			"Merge into empty map",
-			args{
-				map[string]string{},
-				map[string]string{"A": "a"},
-			},
-			map[string]string{"A": "a"},
+			"source nil, target not nil",
+			nil,
+			map[string]string{"key1": "value1"},
+			true,
 		},
 		{
-			"Merge two map - no common keys",
-			args{
-				map[string]string{"B": "b"},
-				map[string]string{"A": "a"},
-			},
-			map[string]string{"A": "a", "B": "b"},
+			"source not nil, target nil",
+			map[string]string{"key1": "value1"},
+			nil,
+			false,
 		},
 		{
-			"Merge two map - override common key",
-			args{
-				map[string]string{"B": "b", "A": "b"},
-				map[string]string{"A": "a"},
-			},
-			map[string]string{"A": "a", "B": "b"},
+			"equal maps",
+			map[string]string{"key1": "value1", "key2": "value2"},
+			map[string]string{"key1": "value1", "key2": "value2"},
+			true,
+		},
+		{
+			"target has extra keys",
+			map[string]string{"key1": "value1"},
+			map[string]string{"key1": "value1", "key2": "value2"},
+			true,
+		},
+		{
+			"different values",
+			map[string]string{"key1": "value1"},
+			map[string]string{"key1": "different"},
+			false,
+		},
+		{
+			"missing key in target",
+			map[string]string{"key1": "value1", "key2": "value2"},
+			map[string]string{"key1": "value1"},
+			false,
 		},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := mergeTwoMaps(tt.args.org, tt.args.toMerge); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("mergeTwoMaps() = %v, want %v", got, tt.want)
+			if got := mapsEqualBySourceKeys(tt.source, tt.target); got != tt.want {
+				t.Errorf("mapsEqualBySourceKeys() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_copyStringMap(t *testing.T) {
+	tests := []struct {
+		name   string
+		source map[string]string
+		target map[string]string
+		expect map[string]string
+	}{
+		{
+			"nil source",
+			nil,
+			map[string]string{"key1": "value1"},
+			map[string]string{"key1": "value1"},
+		},
+		{
+			"nil target",
+			map[string]string{"key1": "value1"},
+			nil,
+			map[string]string{"key1": "value1"},
+		},
+		{
+			"overwrite existing",
+			map[string]string{"key1": "newvalue", "key2": "value2"},
+			map[string]string{"key1": "oldvalue"},
+			map[string]string{"key1": "newvalue", "key2": "value2"},
+		},
+		{
+			"merge maps",
+			map[string]string{"key2": "value2"},
+			map[string]string{"key1": "value1"},
+			map[string]string{"key1": "value1", "key2": "value2"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := copyStringMap(tt.source, tt.target)
+			if !reflect.DeepEqual(result, tt.expect) {
+				t.Errorf("copyStringMap() returned = %v, want %v", result, tt.expect)
 			}
 		})
 	}
@@ -233,46 +286,6 @@ func Test_podGroupsEqual(t *testing.T) {
 			false,
 		},
 		{
-			"Different annotations - blocklisted",
-			args{
-				&enginev2alpha2.PodGroup{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:        "p1",
-						Namespace:   "n1",
-						Annotations: map[string]string{pgWorkloadStatus: "Pending"},
-						Labels:      map[string]string{},
-						OwnerReferences: []metav1.OwnerReference{
-							{
-								Name: "o1",
-								UID:  "81726381762",
-							},
-						},
-					},
-					Spec: enginev2alpha2.PodGroupSpec{
-						MinMember: 1,
-					},
-				},
-				&enginev2alpha2.PodGroup{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:        "p1",
-						Namespace:   "n1",
-						Annotations: map[string]string{pgWorkloadStatus: "Running"},
-						Labels:      map[string]string{},
-						OwnerReferences: []metav1.OwnerReference{
-							{
-								Name: "o1",
-								UID:  "81726381762",
-							},
-						},
-					},
-					Spec: enginev2alpha2.PodGroupSpec{
-						MinMember: 1,
-					},
-				},
-			},
-			true,
-		},
-		{
 			"Different labels",
 			args{
 				&enginev2alpha2.PodGroup{
@@ -317,57 +330,6 @@ func Test_podGroupsEqual(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := podGroupsEqual(tt.args.leftPodGroup, tt.args.rightPodGroup); got != tt.want {
 				t.Errorf("podGroupsEqual() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func Test_removeBlocklistedKeys(t *testing.T) {
-	type args struct {
-		inputAnnotations map[string]string
-	}
-	tests := []struct {
-		name string
-		args args
-		want map[string]string
-	}{
-		{
-			"No blockListed keys",
-			args{
-				map[string]string{
-					"A": "a",
-				},
-			},
-			map[string]string{
-				"A": "a",
-			},
-		},
-		{
-			"Only blockListed keys",
-			args{
-				map[string]string{
-					pgWorkloadStatus:            "Running",
-					pgRunningPodsAnnotationName: "2",
-				},
-			},
-			map[string]string{},
-		},
-		{
-			"Mixed",
-			args{
-				map[string]string{
-					pgWorkloadStatus:            "Running",
-					pgRunningPodsAnnotationName: "2",
-					"NotBlocklisted":            "abkjh",
-				},
-			},
-			map[string]string{"NotBlocklisted": "abkjh"},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := removeBlocklistedKeys(tt.args.inputAnnotations); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("removeBlocklistedKeys() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -614,7 +576,7 @@ func Test_updatePodGroup(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{
 						Name:        "p1",
 						Namespace:   "n1",
-						Annotations: map[string]string{pgWorkloadStatus: "Pending"},
+						Annotations: map[string]string{"workload-status": "Pending"},
 						Labels:      map[string]string{},
 						OwnerReferences: []metav1.OwnerReference{
 							{
@@ -631,7 +593,7 @@ func Test_updatePodGroup(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{
 						Name:        "p1",
 						Namespace:   "n1",
-						Annotations: map[string]string{pgWorkloadStatus: "Running"},
+						Annotations: map[string]string{"workload-status": "Running"},
 						Labels:      map[string]string{},
 						OwnerReferences: []metav1.OwnerReference{
 							{
@@ -649,7 +611,7 @@ func Test_updatePodGroup(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:        "p1",
 					Namespace:   "n1",
-					Annotations: map[string]string{pgWorkloadStatus: "Pending"},
+					Annotations: map[string]string{"workload-status": "Pending"},
 					Labels:      map[string]string{},
 					OwnerReferences: []metav1.OwnerReference{
 						{

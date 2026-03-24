@@ -1,3 +1,19 @@
+/*
+Copyright 2017 The Kubernetes Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 // Copyright 2025 NVIDIA CORPORATION
 // SPDX-License-Identifier: Apache-2.0
 
@@ -6,7 +22,7 @@ package scheduler_util
 import (
 	"container/heap"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 )
 
 const QueueCapacityInfinite = -1
@@ -46,6 +62,18 @@ func (q *PriorityQueue) Pop() interface{} {
 	return heap.Pop(&q.queue)
 }
 
+func (q *PriorityQueue) Peek() interface{} {
+	if q.Len() == 0 {
+		return nil
+	}
+
+	return q.queue.Peek()
+}
+
+func (q *PriorityQueue) Fix(index int) {
+	heap.Fix(&q.queue, index)
+}
+
 func (q *PriorityQueue) Empty() bool {
 	return q.queue.Len() == 0
 }
@@ -79,4 +107,12 @@ func (pq *priorityQueue) Pop() interface{} {
 	item := old[n-1]
 	(*pq).items = old[0 : n-1]
 	return item
+}
+
+func (pq *priorityQueue) Peek() interface{} {
+	if pq.Len() == 0 {
+		return nil
+	}
+
+	return pq.items[0]
 }

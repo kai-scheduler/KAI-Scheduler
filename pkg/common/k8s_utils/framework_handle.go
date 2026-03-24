@@ -1,3 +1,19 @@
+/*
+Copyright 2020 The Volcano Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 // Copyright 2025 NVIDIA CORPORATION
 // SPDX-License-Identifier: Apache-2.0
 
@@ -13,44 +29,24 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/events"
 	"k8s.io/klog/v2"
+	ksf "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/apis/config"
 	k8sframework "k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/parallelize"
-	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources"
 	scheduling "k8s.io/kubernetes/pkg/scheduler/framework/plugins/volumebinding"
 	"k8s.io/kubernetes/pkg/scheduler/metrics"
-	"k8s.io/kubernetes/pkg/scheduler/util/assumecache"
 )
 
 // This is a stand-in for K8sFramework Handle that kubernetes uses for its plugins.
 // Only the methods needed for the predicate plugins are implemented.
 type K8sFramework struct {
-	kubeClient         kubernetes.Interface
-	informerFactory    informers.SharedInformerFactory
-	nodeInfoLister     k8sframework.NodeInfoLister
-	parallelizer       parallelize.Parallelizer
-	resourceClaimCache *assumecache.AssumeCache
-	sharedDRAManager   k8sframework.SharedDRAManager
+	kubeClient      kubernetes.Interface
+	informerFactory informers.SharedInformerFactory
+	nodeInfoLister  k8sframework.NodeInfoLister
+	parallelizer    parallelize.Parallelizer
 }
 
 var _ k8sframework.Handle = &K8sFramework{}
-
-func (f *K8sFramework) SharedDRAManager() k8sframework.SharedDRAManager {
-	if f.resourceClaimCache == nil {
-		rrInformer := f.informerFactory.Resource().V1beta1().ResourceClaims().Informer()
-		f.resourceClaimCache = assumecache.NewAssumeCache(
-			klog.LoggerWithName(klog.Background(), "ResourceClaimCache"),
-			rrInformer, "ResourceClaim", "", nil,
-		)
-	}
-
-	if f.sharedDRAManager == nil {
-		f.sharedDRAManager = dynamicresources.NewDRAManager(
-			context.Background(), f.resourceClaimCache, f.informerFactory,
-		)
-	}
-	return f.sharedDRAManager
-}
 
 type listersWrapper struct {
 	nodeInfoLister k8sframework.NodeInfoLister
@@ -114,7 +110,7 @@ func (f *K8sFramework) EventRecorder() events.EventRecorder {
 	return nil
 }
 
-func (f *K8sFramework) AddNominatedPod(logger klog.Logger, pod *k8sframework.PodInfo, nominatingInfo *k8sframework.NominatingInfo) {
+func (f *K8sFramework) AddNominatedPod(logger klog.Logger, pod ksf.PodInfo, nominatingInfo *k8sframework.NominatingInfo) {
 	panic("implement me")
 }
 
@@ -122,31 +118,31 @@ func (f *K8sFramework) DeleteNominatedPodIfExists(pod *v1.Pod) {
 	panic("implement me")
 }
 
-func (f *K8sFramework) UpdateNominatedPod(logger klog.Logger, oldPod *v1.Pod, newPodInfo *k8sframework.PodInfo) {
+func (f *K8sFramework) UpdateNominatedPod(logger klog.Logger, oldPod *v1.Pod, newPodInfo ksf.PodInfo) {
 	panic("implement me")
 }
 
-func (f *K8sFramework) NominatedPodsForNode(nodeName string) []*k8sframework.PodInfo {
+func (f *K8sFramework) NominatedPodsForNode(nodeName string) []ksf.PodInfo {
 	panic("implement me")
 }
 
-func (f *K8sFramework) RunPreScorePlugins(ctx context.Context, state *k8sframework.CycleState, pod *v1.Pod, infos []*k8sframework.NodeInfo) *k8sframework.Status {
+func (f *K8sFramework) RunPreScorePlugins(ctx context.Context, state ksf.CycleState, pod *v1.Pod, infos []ksf.NodeInfo) *ksf.Status {
 	panic("implement me")
 }
 
-func (f *K8sFramework) RunScorePlugins(ctx context.Context, state *k8sframework.CycleState, pod *v1.Pod, infos []*k8sframework.NodeInfo) ([]k8sframework.NodePluginScores, *k8sframework.Status) {
+func (f *K8sFramework) RunScorePlugins(ctx context.Context, state ksf.CycleState, pod *v1.Pod, infos []ksf.NodeInfo) ([]k8sframework.NodePluginScores, *ksf.Status) {
 	panic("implement me")
 }
 
-func (f *K8sFramework) RunFilterPlugins(ctx context.Context, state *k8sframework.CycleState, pod *v1.Pod, info *k8sframework.NodeInfo) *k8sframework.Status {
+func (f *K8sFramework) RunFilterPlugins(ctx context.Context, state ksf.CycleState, pod *v1.Pod, info ksf.NodeInfo) *ksf.Status {
 	panic("implement me")
 }
 
-func (f *K8sFramework) RunPreFilterExtensionAddPod(ctx context.Context, state *k8sframework.CycleState, podToSchedule *v1.Pod, podInfoToAdd *k8sframework.PodInfo, nodeInfo *k8sframework.NodeInfo) *k8sframework.Status {
+func (f *K8sFramework) RunPreFilterExtensionAddPod(ctx context.Context, state ksf.CycleState, podToSchedule *v1.Pod, podInfoToAdd ksf.PodInfo, nodeInfo ksf.NodeInfo) *ksf.Status {
 	panic("implement me")
 }
 
-func (f *K8sFramework) RunPreFilterExtensionRemovePod(ctx context.Context, state *k8sframework.CycleState, podToSchedule *v1.Pod, podInfoToRemove *k8sframework.PodInfo, nodeInfo *k8sframework.NodeInfo) *k8sframework.Status {
+func (f *K8sFramework) RunPreFilterExtensionRemovePod(ctx context.Context, state ksf.CycleState, podToSchedule *v1.Pod, podInfoToRemove ksf.PodInfo, nodeInfo ksf.NodeInfo) *ksf.Status {
 	panic("implement me")
 }
 
@@ -158,7 +154,7 @@ func (f *K8sFramework) KubeConfig() *rest.Config {
 	panic("implement me")
 }
 
-func (f *K8sFramework) RunFilterPluginsWithNominatedPods(ctx context.Context, state *k8sframework.CycleState, pod *v1.Pod, info *k8sframework.NodeInfo) *k8sframework.Status {
+func (f *K8sFramework) RunFilterPluginsWithNominatedPods(ctx context.Context, state ksf.CycleState, pod *v1.Pod, info ksf.NodeInfo) *ksf.Status {
 	panic("implement me")
 }
 
@@ -171,6 +167,18 @@ func (f *K8sFramework) Parallelizer() parallelize.Parallelizer {
 }
 
 func (f *K8sFramework) Activate(logger klog.Logger, pods map[string]*v1.Pod) {
+	panic("implement me")
+}
+
+func (f *K8sFramework) SharedDRAManager() k8sframework.SharedDRAManager {
+	return nil
+}
+
+func (f *K8sFramework) APICacher() k8sframework.APICacher {
+	panic("implement me")
+}
+
+func (f *K8sFramework) APIDispatcher() ksf.APIDispatcher {
 	panic("implement me")
 }
 

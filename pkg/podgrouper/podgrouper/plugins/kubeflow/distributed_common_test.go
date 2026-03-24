@@ -11,6 +11,14 @@ import (
 	v1 "k8s.io/api/core/v1"
 	v12 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
+)
+
+const (
+	queueLabelKey    = "kai.scheduler/queue"
+	nodePoolLabelKey = "kai.scheduler/node-pool"
 )
 
 func TestGetPodGroupMetadata(t *testing.T) {
@@ -43,7 +51,9 @@ func TestGetPodGroupMetadata(t *testing.T) {
 	}
 	pod := &v1.Pod{}
 
-	podGroupMetadata, err := GetPodGroupMetadata(owner, pod,
+	defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, fake.NewFakeClient())
+	grouper := NewKubeflowDistributedGrouper(defaultGrouper)
+	podGroupMetadata, err := grouper.GetPodGroupMetadata(owner, pod,
 		"xReplicaSpecs", []string{"Master"})
 
 	assert.Nil(t, err)
@@ -51,7 +61,7 @@ func TestGetPodGroupMetadata(t *testing.T) {
 	assert.Equal(t, "test_version", podGroupMetadata.Owner.APIVersion)
 	assert.Equal(t, "1", string(podGroupMetadata.Owner.UID))
 	assert.Equal(t, "test_name", podGroupMetadata.Owner.Name)
-	assert.Equal(t, 3, len(podGroupMetadata.Annotations))
+	assert.Equal(t, 2, len(podGroupMetadata.Annotations))
 	assert.Equal(t, 1, len(podGroupMetadata.Labels))
 	assert.Equal(t, "default-queue", podGroupMetadata.Queue)
 	assert.Equal(t, "train", podGroupMetadata.PriorityClassName)
@@ -69,7 +79,7 @@ func TestGetPodGroupMetadataOnQueueFromOwner(t *testing.T) {
 				"uid":       "1",
 				"labels": map[string]interface{}{
 					"test_label":  "test_value",
-					"runai/queue": "my-queue",
+					queueLabelKey: "my-queue",
 				},
 				"annotations": map[string]interface{}{
 					"test_annotation": "test_value",
@@ -89,7 +99,9 @@ func TestGetPodGroupMetadataOnQueueFromOwner(t *testing.T) {
 	}
 	pod := &v1.Pod{}
 
-	podGroupMetadata, err := GetPodGroupMetadata(owner, pod,
+	defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, fake.NewFakeClient())
+	grouper := NewKubeflowDistributedGrouper(defaultGrouper)
+	podGroupMetadata, err := grouper.GetPodGroupMetadata(owner, pod,
 		"xReplicaSpecs", []string{"Master"})
 
 	assert.Nil(t, err)
@@ -136,7 +148,9 @@ func TestGetPodGroupMetadataRunPolicy(t *testing.T) {
 		},
 	}
 
-	podGroupMetadata, err := GetPodGroupMetadata(owner, pod, "xReplicaSpecs", []string{"Master"})
+	defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, fake.NewFakeClient())
+	grouper := NewKubeflowDistributedGrouper(defaultGrouper)
+	podGroupMetadata, err := grouper.GetPodGroupMetadata(owner, pod, "xReplicaSpecs", []string{"Master"})
 
 	assert.Nil(t, err)
 	assert.Equal(t, int32(5), podGroupMetadata.MinAvailable)
@@ -176,7 +190,9 @@ func TestGetPodGroupMetadata_NoPods(t *testing.T) {
 		},
 	}
 
-	_, err := GetPodGroupMetadata(owner, pod, "xReplicaSpecs", []string{"Master"})
+	defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, fake.NewFakeClient())
+	grouper := NewKubeflowDistributedGrouper(defaultGrouper)
+	_, err := grouper.GetPodGroupMetadata(owner, pod, "xReplicaSpecs", []string{"Master"})
 
 	assert.NotNil(t, err)
 }
@@ -215,7 +231,9 @@ func TestGetPodGroupMetadata_NoMastersAllowed(t *testing.T) {
 		},
 	}
 
-	podGroupMetadata, err := GetPodGroupMetadata(owner, pod,
+	defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, fake.NewFakeClient())
+	grouper := NewKubeflowDistributedGrouper(defaultGrouper)
+	podGroupMetadata, err := grouper.GetPodGroupMetadata(owner, pod,
 		"xReplicaSpecs", []string{})
 
 	assert.Nil(t, err)
@@ -256,7 +274,9 @@ func TestGetPodGroupMetadata_NoMastersForbiden(t *testing.T) {
 		},
 	}
 
-	_, err := GetPodGroupMetadata(owner, pod,
+	defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, fake.NewFakeClient())
+	grouper := NewKubeflowDistributedGrouper(defaultGrouper)
+	_, err := grouper.GetPodGroupMetadata(owner, pod,
 		"xReplicaSpecs", []string{"Master"})
 
 	assert.NotNil(t, err)

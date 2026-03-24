@@ -5,8 +5,8 @@ package status_updater
 
 import (
 	"context"
+	"errors"
 	"strconv"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -15,21 +15,22 @@ import (
 	. "github.com/onsi/gomega"
 
 	v1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/fake"
 	fakecorev1 "k8s.io/client-go/kubernetes/typed/core/v1/fake"
 	faketesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/utils/ptr"
 
-	kubeaischedfake "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned/fake"
-	fakeschedulingv2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned/typed/scheduling/v2alpha2/fake"
-	schedulingv2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/utils"
+	kubeaischedfake "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/fake"
+	fakeschedulingv2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/typed/scheduling/v2alpha2/fake"
+	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+)
+
+const (
+	nodePoolLabelKey = "kai.scheduler/node-pool"
 )
 
 func TestConcurrency(t *testing.T) {
@@ -37,7 +38,7 @@ func TestConcurrency(t *testing.T) {
 	RunSpecs(t, "Status Updater Concurrency Suite")
 }
 
-var _ = Describe("Status Updater Concurrency", func() {
+var _ = Describe("Status Updater Concurrency - large scale: increase queue size", func() {
 	var (
 		kubeClient        *fake.Clientset
 		kubeAiSchedClient *kubeaischedfake.Clientset
@@ -47,203 +48,126 @@ var _ = Describe("Status Updater Concurrency", func() {
 		kubeClient = fake.NewSimpleClientset()
 		kubeAiSchedClient = kubeaischedfake.NewSimpleClientset()
 		recorder := record.NewFakeRecorder(100)
-		statusUpdater = New(kubeClient, kubeAiSchedClient, recorder, 4, false)
+		statusUpdater = New(kubeClient, kubeAiSchedClient, recorder, 4, false,
+			nodePoolLabelKey)
 	})
 
-	Context("Pod Groups Syncing", func() {
-		var (
-			stopCh             chan struct{}
-			finishUpdatesChan  chan struct{}
-			podGroupsOriginals []*schedulingv2alpha2.PodGroup
-			wg                 sync.WaitGroup
-		)
+	It("should increase queue size", func() {
+		wg := sync.WaitGroup{}
+		signalCh := make(chan struct{})
+		kubeClient.CoreV1().(*fakecorev1.FakeCoreV1).PrependReactor("patch", "pods", func(action faketesting.Action) (handled bool, ret runtime.Object, err error) {
+			<-signalCh
+			wg.Done()
+			return true, nil, nil
+		})
+		stopCh := make(chan struct{})
+		statusUpdater.Run(stopCh)
+		defer close(stopCh)
 
-		BeforeEach(func() {
-			wg = sync.WaitGroup{}
-			finishUpdatesChan = make(chan struct{})
-			// wait with pod groups update until signal is given.
-			kubeAiSchedClient.SchedulingV2alpha2().(*fakeschedulingv2alpha2.FakeSchedulingV2alpha2).PrependReactor(
-				"update", "podgroups", func(action faketesting.Action) (handled bool, ret runtime.Object, err error) {
-					<-finishUpdatesChan
-					wg.Done()
-					return false, nil, nil
+		for i := 0; i < 2000; i++ {
+			wg.Add(1)
+			statusUpdater.updatePodCondition(
+				&v1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "pod-" + strconv.Itoa(i),
+						Namespace: "default",
+					},
+				},
+				&v1.PodCondition{
+					Type:   v1.PodScheduled,
+					Status: v1.ConditionTrue,
 				},
 			)
+		}
 
-			stopCh = make(chan struct{})
-			statusUpdater.Run(stopCh)
-
-			numberOfJobs := 10
-			jobs := []*jobs_fake.TestJobBasic{}
-			for i := 0; i < numberOfJobs; i++ {
-				jobs = append(jobs, &jobs_fake.TestJobBasic{
-					Name:         "job-" + strconv.Itoa(i),
-					Namespace:    "default",
-					QueueName:    "queue-1",
-					MinAvailable: ptr.To(int32(1)),
-					Tasks: []*tasks_fake.TestTaskBasic{
-						{
-							Name:  "task-" + strconv.Itoa(i),
-							State: pod_status.Pending,
-						},
-					},
-				})
-			}
-
-			jobInfos, _, _ := jobs_fake.BuildJobsAndTasksMaps(jobs)
-			podGroupsOriginals = []*schedulingv2alpha2.PodGroup{}
-
-			for _, job := range jobInfos {
-				// Can't merge the loops because the fake client is handling concurrency by using a single lock
-				_, err := kubeAiSchedClient.SchedulingV2alpha2().PodGroups(job.Namespace).Create(nil, job.PodGroup, metav1.CreateOptions{})
-				Expect(err).To(Succeed())
-				podGroupsOriginals = append(podGroupsOriginals, job.PodGroup.DeepCopy())
-			}
-
-			for _, job := range jobInfos {
-				wg.Add(1)
-				if jobIndex, _ := strconv.Atoi(strings.Split(job.Name, "-")[0]); jobIndex%2 == 0 {
-					job.StalenessInfo.TimeStamp = ptr.To(time.Now())
-					job.StalenessInfo.Stale = true
-				}
-				Expect(statusUpdater.RecordJobStatusEvent(job)).To(Succeed())
-			}
-		})
-
-		AfterEach(func() {
-			select {
-			case <-finishUpdatesChan:
-			default:
-				close(finishUpdatesChan)
-			}
-			wg.Wait()
-			close(stopCh)
-		})
-
-		It("should update pod groups", func() {
-			// check that the pods groups are now not updated anymore
-			statusUpdater.SyncPodGroupsWithPendingUpdates(podGroupsOriginals)
-			for _, podGroup := range podGroupsOriginals {
-				Expect(podGroup.Status.SchedulingConditions).NotTo(BeEmpty())
-			}
-		})
-
-		It("should NOT clear update cache if update was needed", func() {
-			podGroupsOriginalsCopy := make([]*schedulingv2alpha2.PodGroup, len(podGroupsOriginals))
-			for i := range podGroupsOriginals {
-				podGroupsOriginalsCopy[i] = podGroupsOriginals[i].DeepCopy()
-			}
-			// check that the pod groups are updated with the changes that are not yet applied
-			statusUpdater.SyncPodGroupsWithPendingUpdates(podGroupsOriginalsCopy)
-			for _, podGroup := range podGroupsOriginalsCopy {
-				Expect(podGroup.Status.SchedulingConditions).NotTo(BeEmpty())
-			}
-
-			// check that the pods groups are still updated
-			statusUpdater.SyncPodGroupsWithPendingUpdates(podGroupsOriginals)
-			for _, podGroup := range podGroupsOriginals {
-				Expect(podGroup.Status.SchedulingConditions).NotTo(BeEmpty())
-			}
-		})
-
-		It("should clear update cache after it syncs with pods groups that are updated", func() {
-			close(finishUpdatesChan)
-			wg.Wait()
-
-			podGroupsList, _ := kubeAiSchedClient.SchedulingV2alpha2().PodGroups("default").List(context.TODO(), metav1.ListOptions{})
-			podGroupsFromCluster := make([]*schedulingv2alpha2.PodGroup, 0, len(podGroupsList.Items))
-			for _, podGroup := range podGroupsList.Items {
-				podGroupsFromCluster = append(podGroupsFromCluster, podGroup.DeepCopy())
-			}
-
-			statusUpdater.SyncPodGroupsWithPendingUpdates(podGroupsFromCluster)
-
-			// check that the pods groups are now not updated anymore
-			statusUpdater.SyncPodGroupsWithPendingUpdates(podGroupsOriginals)
-			for _, podGroup := range podGroupsOriginals {
-				Expect(podGroup.Status.SchedulingConditions).To(BeEmpty())
-			}
-		})
-
-		It("should clear pod groups that don't show on sync from inFlight cache", func() {
-			close(finishUpdatesChan)
-			wg.Wait()
-
-			statusUpdater.SyncPodGroupsWithPendingUpdates([]*schedulingv2alpha2.PodGroup{})
-
-			// check that the pods groups are now not updated anymore
-			statusUpdater.SyncPodGroupsWithPendingUpdates(podGroupsOriginals)
-			for _, podGroup := range podGroupsOriginals {
-				Expect(podGroup.Status.SchedulingConditions).To(BeEmpty())
-			}
-		})
-
-		It("should accept newer pod group versions as synced", func() {
-			close(finishUpdatesChan)
-			wg.Wait()
-
-			podGroupsList, _ := kubeAiSchedClient.SchedulingV2alpha2().PodGroups("default").List(context.TODO(), metav1.ListOptions{})
-			podGroupsFromCluster := make([]*schedulingv2alpha2.PodGroup, 0, len(podGroupsList.Items))
-			for _, podGroup := range podGroupsList.Items {
-				podGroupCopy := podGroup.DeepCopy()
-				lastTransitionIdStr := utils.GetLastSchedulingCondition(podGroupCopy).TransitionID
-				lastTransitionId, _ := strconv.Atoi(lastTransitionIdStr)
-				podGroupCopy.Status.SchedulingConditions = append(
-					podGroupCopy.Status.SchedulingConditions,
-					schedulingv2alpha2.SchedulingCondition{
-						Type:               schedulingv2alpha2.UnschedulableOnNodePool,
-						NodePool:           "other",
-						Reason:             "test",
-						Message:            "test",
-						TransitionID:       "0" + strconv.Itoa(lastTransitionId+1),
-						LastTransitionTime: metav1.Now(),
-						Status:             v1.ConditionTrue,
-					},
-				)
-				podGroupsFromCluster = append(podGroupsFromCluster, podGroupCopy)
-			}
-
-			statusUpdater.SyncPodGroupsWithPendingUpdates(podGroupsFromCluster)
-
-			// check that the pods groups are now not updated anymore
-			statusUpdater.SyncPodGroupsWithPendingUpdates(podGroupsOriginals)
-			for _, podGroup := range podGroupsOriginals {
-				Expect(podGroup.Status.SchedulingConditions).To(BeEmpty())
-			}
-		})
+		close(signalCh)
+		wg.Wait()
 	})
 
-	Context("large scale: increase queue size", func() {
-		It("should increase queue size", func() {
-			wg := sync.WaitGroup{}
-			signalCh := make(chan struct{})
-			kubeClient.CoreV1().(*fakecorev1.FakeCoreV1).PrependReactor("patch", "pods", func(action faketesting.Action) (handled bool, ret runtime.Object, err error) {
-				<-signalCh
-				wg.Done()
-				return true, nil, nil
-			})
-			stopCh := make(chan struct{})
-			statusUpdater.Run(stopCh)
-			defer close(stopCh)
+	It("updatePodGroup - No retry after conflict error", func() {
+		updateStatusCalls := 0
+		patchCalls := 0
 
-			for i := 0; i < 2000; i++ {
-				wg.Add(1)
-				statusUpdater.updatePodCondition(
-					&v1.Pod{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      "pod-" + strconv.Itoa(i),
-							Namespace: "default",
-						},
-					},
-					&v1.PodCondition{
-						Type:   v1.PodScheduled,
-						Status: v1.ConditionTrue,
-					},
-				)
-			}
+		// Set up reactor to return conflict error on UpdateStatus calls
+		kubeAiSchedClient.SchedulingV2alpha2().(*fakeschedulingv2alpha2.FakeSchedulingV2alpha2).PrependReactor(
+			"update", "podgroups", func(action faketesting.Action) (handled bool, ret runtime.Object, err error) {
+				if updateAction, ok := action.(faketesting.UpdateAction); ok {
+					if updateAction.GetSubresource() == "status" {
+						updateStatusCalls++
+						// Return a conflict error to simulate resource version mismatch
+						return true, nil, apierrors.NewConflict(
+							schema.GroupResource{Group: "scheduling.run.ai", Resource: "podgroups"},
+							"test-pg",
+							errors.New("the object has been modified; please apply your changes to the latest version"),
+						)
+					}
+				}
+				return false, nil, nil
+			},
+		)
 
-			close(signalCh)
-			wg.Wait()
-		})
+		// Track patch calls separately
+		kubeAiSchedClient.SchedulingV2alpha2().(*fakeschedulingv2alpha2.FakeSchedulingV2alpha2).PrependReactor(
+			"patch", "podgroups", func(action faketesting.Action) (handled bool, ret runtime.Object, err error) {
+				patchCalls++
+				return false, nil, nil
+			},
+		)
+
+		job := &enginev2alpha2.PodGroup{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-pg",
+				Namespace: "test-ns",
+				UID:       "test-uid",
+			},
+			Status: enginev2alpha2.PodGroupStatus{
+				SchedulingConditions: []enginev2alpha2.SchedulingCondition{
+					{
+						TransitionID: "1",
+						Type:         enginev2alpha2.UnschedulableOnNodePool,
+						NodePool:     "test",
+						Reason:       "test",
+						Message:      "test",
+						Status:       v1.ConditionTrue,
+					},
+				},
+			},
+		}
+
+		key := statusUpdater.keyForPodGroupPayload(job.Name, job.Namespace, job.UID)
+		updateData := &inflightUpdate{
+			object:       job,
+			patchData:    nil, // No patch data, only status update
+			updateStatus: true,
+			subResources: nil,
+		}
+
+		// Store the inflight update
+		statusUpdater.inFlightPodGroups.Store(key, updateData)
+
+		statusUpdater.Run(make(chan struct{}))
+
+		// Call updatePodGroup directly
+		ctx := context.Background()
+		statusUpdater.updatePodGroup(ctx, key, updateData)
+
+		// Verify UpdateStatus was called once
+		Expect(updateStatusCalls).To(Equal(1), "UpdateStatus should be called once")
+
+		// Verify Patch was not called (no patchData provided)
+		Expect(patchCalls).To(Equal(0), "Patch should not be called when no patchData is provided")
+
+		// Verify it's not in the applied cache (since the update failed with conflict)
+		_, appliedExists := statusUpdater.appliedPodGroupUpdates.Load(key)
+		Expect(appliedExists).To(BeFalse(), "Update should not be in applied cache after conflict error")
+
+		// The key behavior: Verify the queue is empty (no retry was queued)
+		// When a conflict error occurs, the function returns early without calling pushToUpdateQueue
+		select {
+		case <-statusUpdater.updateQueueOut:
+			Fail("Update queue should be empty - no retry should be queued for conflict errors")
+		case <-time.After(100 * time.Millisecond):
+			// Expected - queue is empty, meaning no retry was scheduled
+		}
 	})
 })

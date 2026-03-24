@@ -4,18 +4,19 @@
 package podaffinity
 
 import (
+	ksf "k8s.io/kube-scheduler/framework"
 	k8sframework "k8s.io/kubernetes/pkg/scheduler/framework"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/cluster_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_internal"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_internal/predicates"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/scores"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/cluster_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal/predicates"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/scores"
 )
 
 type skipOrderFn map[common_info.PodID]bool
@@ -29,14 +30,11 @@ func (sp skipOrderFn) shouldSkip(podID common_info.PodID) bool {
 }
 
 type podAffinityPlugin struct {
-	// Arguments given for the plugin
-	pluginArguments map[string]string
-
 	skipOrderFn skipOrderFn
 }
 
-func New(arguments map[string]string) framework.Plugin {
-	return &podAffinityPlugin{pluginArguments: arguments}
+func New(_ framework.PluginArguments) framework.Plugin {
+	return &podAffinityPlugin{}
 }
 
 func (pp *podAffinityPlugin) Name() string {
@@ -53,7 +51,7 @@ func (pp *podAffinityPlugin) OnSessionOpen(ssn *framework.Session) {
 
 func (pp *podAffinityPlugin) nodePreOrderFn(k8sPlugins *k8s_internal.SessionScoreFns) api.NodePreOrderFn {
 	return func(task *pod_info.PodInfo, fittingNodes []*node_info.NodeInfo) error {
-		var nodes []*k8sframework.NodeInfo
+		var nodes []ksf.NodeInfo
 		for range fittingNodes {
 			nodes = append(nodes, &k8sframework.NodeInfo{})
 		}
