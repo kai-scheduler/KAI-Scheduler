@@ -7,6 +7,7 @@ import (
 	"context"
 
 	v1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -86,19 +87,35 @@ func (su *defaultStatusUpdater) updatePodGroup(
 ) {
 	podGroup := updateData.object.(*enginev2alpha2.PodGroup)
 
-	var err error
+	var statusErr error
+	var patchErr error
 	if updateData.updateStatus {
-		_, err = su.kubeaischedClient.SchedulingV2alpha2().PodGroups(podGroup.Namespace).UpdateStatus(
+		_, statusErr = su.kubeaischedClient.SchedulingV2alpha2().PodGroups(podGroup.Namespace).UpdateStatus(
 			ctx, podGroup, metav1.UpdateOptions{},
 		)
 	}
 	if len(updateData.patchData) > 0 {
-		_, err = su.kubeaischedClient.SchedulingV2alpha2().PodGroups(podGroup.Namespace).Patch(
+		_, patchErr = su.kubeaischedClient.SchedulingV2alpha2().PodGroups(podGroup.Namespace).Patch(
 			ctx, podGroup.Name, types.JSONPatchType, updateData.patchData, metav1.PatchOptions{}, updateData.subResources...,
 		)
 	}
-	if err != nil {
-		log.StatusUpdaterLogger.Errorf("Failed to update pod group %s/%s: %v", podGroup.Namespace, podGroup.Name, err)
+
+	if statusErr != nil || patchErr != nil {
+
+		if statusErr != nil {
+			log.StatusUpdaterLogger.V(1).Errorf("Failed to update pod group status %s/%s: %v",
+				podGroup.Namespace, podGroup.Name, statusErr)
+			if apierrors.IsConflict(statusErr) {
+				// Don't retry this update if the resource version is outdated - The status update cannot be updated with the given object.
+				// If a pod group status update is required (e.g. a scheduling condition) a new status update with an updated object
+				//  will be enqueued in the next scheduling cycle.
+				return
+			}
+		}
+		if patchErr != nil {
+			log.StatusUpdaterLogger.V(1).Errorf("Failed to patch pod group %s/%s: %v",
+				podGroup.Namespace, podGroup.Name, patchErr)
+		}
 	} else {
 		// Move the update to the applied cache
 		su.appliedPodGroupUpdates.Store(key, updateData)
