@@ -5,7 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
-## [v0.6.17] - 2026-03-24
+## [v0.6.18] - 2026-03-24
+
+### Fixed
+
+- fixed podGroup status update loop on conflict[#1313](https://github.com/kai-scheduler/KAI-Scheduler/pull/1313)
+
+## [v0.6.17] - 2026-01-26
 
 ### Changed
 
