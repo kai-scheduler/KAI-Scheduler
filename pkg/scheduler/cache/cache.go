@@ -29,6 +29,7 @@ import (
 	enginelisters "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/listers/scheduling/v2alpha2"
 	schedulingv1alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	enginev2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	draversionawareclient "github.com/NVIDIA/KAI-scheduler/pkg/common/resources/dra_version_aware_client"
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/eviction_info"
@@ -104,7 +105,7 @@ func newSchedulerCache(schedulerCacheParams *SchedulerCacheParams) *SchedulerCac
 		detailedFitErrors:        schedulerCacheParams.DetailedFitErrors,
 		scheduleCSIStorage:       schedulerCacheParams.ScheduleCSIStorage,
 		fullHierarchyFairness:    schedulerCacheParams.FullHierarchyFairness,
-		kubeClient:               schedulerCacheParams.KubeClient,
+		kubeClient:               draversionawareclient.NewDRAAwareClient(schedulerCacheParams.KubeClient),
 		kubeAiSchedulerClient:    schedulerCacheParams.KAISchedulerClient,
 	}
 
@@ -260,7 +261,6 @@ func (sc *SchedulerCache) createBindRequest(podInfo *pod_info.PodInfo, nodeName 
 				},
 			},
 			Labels: map[string]string{
-				"pod-name":      podInfo.Pod.Name,
 				"selected-node": nodeName,
 			},
 		},

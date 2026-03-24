@@ -206,7 +206,7 @@ func (ig *AccumulatedIdleGpus) updateWithVictim(
 	}
 
 	prevMinRelevantValue := ig.nodesNameToIdleGpus[minIdleGpusRelevant]
-	ig.nodesNameToIdleGpus[task.NodeName] += task.ResReq.GPUs()
+	ig.nodesNameToIdleGpus[task.NodeName] += task.AcceptedResource.GPUs()
 
 	if ig.nodesNameToIdleGpus[task.NodeName] > prevMinRelevantValue {
 		ig.maxFreeGpuNodesSorted = orderedInsert(ig.maxFreeGpuNodesSorted, task.NodeName,

@@ -83,7 +83,8 @@ func InitializeInternalPlugins(
 		initiatedPlugins.VolumeBinding = plugin
 	}
 
-	if plugin, err := dynamicresources.New(context.Background(), nil, initiatedPlugins.FrameworkHandle, initiatedPlugins.Features); err != nil {
+	draArgs := &config.DynamicResourcesArgs{}
+	if plugin, err := dynamicresources.New(context.Background(), draArgs, initiatedPlugins.FrameworkHandle, initiatedPlugins.Features); err != nil {
 		log.InfraLogger.Errorf("Failed to create dynamicresources plugin: %v", err)
 		initiatedPlugins.DynamicResources = nil
 	} else {

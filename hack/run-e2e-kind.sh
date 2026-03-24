@@ -10,6 +10,9 @@ KIND_CONFIG=${REPO_ROOT}/hack/e2e-kind-config.yaml
 GOPATH=${HOME}/go
 GOBIN=${GOPATH}/bin
 
+: ${KIND_K8S_TAG:="v1.34.0"}
+: ${KIND_IMAGE:="kindest/node:${KIND_K8S_TAG}"}
+
 # Parse named parameters
 TEST_THIRD_PARTY_INTEGRATIONS="false"
 LOCAL_IMAGES_BUILD="false"
@@ -44,7 +47,10 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-kind create cluster --config ${KIND_CONFIG} --name $CLUSTER_NAME
+kind create cluster \
+    --config ${KIND_CONFIG} \
+    --image ${KIND_IMAGE}\
+    --name $CLUSTER_NAME
 
 # Install the fake-gpu-operator to provide a fake GPU resources for the e2e tests
 helm upgrade -i gpu-operator oci://ghcr.io/run-ai/fake-gpu-operator/fake-gpu-operator --namespace gpu-operator --create-namespace --version 0.0.62 \

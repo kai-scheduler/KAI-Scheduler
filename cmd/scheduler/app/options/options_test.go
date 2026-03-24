@@ -56,15 +56,12 @@ func TestAddFlags(t *testing.T) {
 	}
 
 	if !reflect.DeepEqual(expected, s) {
-		difference := diff.ObjectDiff(expected, s)
+		difference := diff.ObjectGoPrintSideBySide(expected, s)
 		t.Errorf("Got different run options than expected.\nGot: %+v\nExpected: %+v\ndiff: %s", s, expected, difference)
 	}
 
 	// Test that the feature gates are set correctly.
 	if !utilfeature.DefaultFeatureGate.Enabled(features.DynamicResourceAllocation) {
 		t.Errorf("DynamicResourceAllocation feature gate should be enabled")
-	}
-	if utilfeature.DefaultFeatureGate.Enabled(features.VolumeCapacityPriority) {
-		t.Errorf("VolumeCapacityPriority feature gate should be disabled")
 	}
 }

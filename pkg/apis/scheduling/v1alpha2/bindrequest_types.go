@@ -4,7 +4,7 @@
 package v1alpha2
 
 import (
-	"k8s.io/api/resource/v1beta1"
+	v1 "k8s.io/api/resource/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -47,7 +47,7 @@ type ResourceClaimAllocation struct {
 	Name string `json:"name,omitempty"`
 
 	// Allocation is the desired allocation of the resource claim
-	Allocation *v1beta1.AllocationResult `json:"allocation,omitempty"`
+	Allocation *v1.AllocationResult `json:"allocation,omitempty"`
 }
 
 const (

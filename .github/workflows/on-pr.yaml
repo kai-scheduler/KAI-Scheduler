@@ -21,7 +21,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23.4'
+          go-version: '1.25.6'
 
       - name: Run validation
         run: make validate
@@ -71,29 +71,39 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23.4'
+          go-version: '1.25.6'
+
+      - name: Move Docker Data to /mnt
+        run: |
+          sudo systemctl stop docker
+          sudo mkdir -p /mnt/docker-data
+          echo '{"data-root": "/mnt/docker-data"}' | sudo tee /etc/docker/daemon.json
+          sudo systemctl start docker
+          docker info | grep "Docker Root Dir"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Create image cache directory
-        run: mkdir images
+        run: |
+          sudo mkdir -p /mnt/images
+          sudo chown -R $USER:$USER /mnt/images
 
       - name: Cache for docker images and helm chart
         uses: actions/cache@v4
         with:
-          path: images
+          path: /mnt/images
           key:  images-${{ github.sha }}
 
       - name: Build docker images
         run: |
           make build DOCKER_BUILDX_ADDITIONAL_ARGS=--load VERSION=$PACKAGE_VERSION
-          docker save $(docker images --format '{{.Repository}}:{{.Tag}}' | grep $PACKAGE_VERSION) | gzip > images/docker_images.tgz
+          docker save $(docker images --format '{{.Repository}}:{{.Tag}}' | grep $PACKAGE_VERSION) | gzip > /mnt/images/docker_images.tgz
 
       - name: Build helm chart
         run: |
           helm package ./deployments/kai-scheduler -d ./charts --app-version $PACKAGE_VERSION --version $PACKAGE_VERSION
-          cp charts/kai-scheduler-$PACKAGE_VERSION.tgz images/
+          cp charts/kai-scheduler-$PACKAGE_VERSION.tgz /mnt/images/
 
 
   e2e-tests:
@@ -104,25 +114,37 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Move Docker Data to /mnt
+        run: |
+          sudo systemctl stop docker
+          sudo mkdir -p /mnt/docker-data
+          echo '{"data-root": "/mnt/docker-data"}' | sudo tee /etc/docker/daemon.json
+          sudo systemctl start docker
+          docker info | grep "Docker Root Dir"
+      
+      - name: Create images directory
+        run: |
+          sudo mkdir -p /mnt/images
+          sudo chown -R $USER:$USER /mnt/images
+
       - name: Cache restore
         uses: actions/cache/restore@v4
         with:
-          path: images
+          path: /mnt/images
           key:  images-${{ github.sha }}
 
       - name: Create k8s Kind Cluster
         uses: helm/kind-action@v1.10.0
         with:
           cluster_name: kind
-          version: v0.26.0
+          version: v0.30.0
           config: ./hack/e2e-kind-config.yaml
 
       - name: Load docker images to kind
-        working-directory: images
         env:
           PACKAGE_VERSION: ${{ needs.build.outputs.package_version }}
         run: |
-          docker load < docker_images.tgz
+          docker load < /mnt/images/docker_images.tgz
           for image in $(docker images --format '{{.Repository}}:{{.Tag}}' | grep $PACKAGE_VERSION); do
             kind load docker-image $image --name kind
           done
@@ -136,16 +158,23 @@ jobs:
         env:
           PACKAGE_VERSION: ${{ needs.build.outputs.package_version }}
         run: |
-          helm upgrade -i kai-scheduler ./images/kai-scheduler-$PACKAGE_VERSION.tgz -n kai-scheduler --create-namespace \
+          helm upgrade -i kai-scheduler /mnt/images/kai-scheduler-$PACKAGE_VERSION.tgz -n kai-scheduler --create-namespace \
             --set "global.gpuSharing=true" --debug --wait
       - name: Set up Go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v5
         with:
-          go-version: 1.22
+          go-version: '1.25.6'
 
       - name: Install ginkgo
         run: |
           go install github.com/onsi/ginkgo/v2/ginkgo@v2.19.0
+
+      - name: Delete images from disk
+        env:
+          PACKAGE_VERSION: ${{ needs.build.outputs.package_version }}
+        run: |
+          docker images --format '{{.Repository}}:{{.Tag}}' | grep $PACKAGE_VERSION | xargs docker rmi -f
+          sudo rm -rf /mnt/images
 
       - name: Run e2e tests
         run: |

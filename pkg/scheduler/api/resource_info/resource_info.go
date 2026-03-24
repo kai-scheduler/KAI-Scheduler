@@ -36,6 +36,9 @@ func NewResource(milliCPU float64, memory float64, gpus float64) *Resource {
 func ResourceFromResourceList(rList v1.ResourceList) *Resource {
 	r := EmptyResource()
 	for rName, rQuant := range rList {
+		if rQuant.IsZero() {
+			continue
+		}
 		switch rName {
 		case v1.ResourceCPU:
 			r.milliCpu += float64(rQuant.MilliValue())

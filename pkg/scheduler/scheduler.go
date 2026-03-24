@@ -13,6 +13,7 @@ import (
 	"k8s.io/client-go/rest"
 
 	kubeaischedulerver "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned"
+	featuregates "github.com/NVIDIA/KAI-scheduler/pkg/common/feature_gates"
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions"
 	schedcache "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache"
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
@@ -39,6 +40,11 @@ func NewScheduler(
 	mux *http.ServeMux,
 ) (*Scheduler, error) {
 	kubeClient, kubeAiSchedulerClient := newClients(config)
+
+	if err := featuregates.SetDRAFeatureGate(config); err != nil {
+		log.InfraLogger.Errorf("Failed to set DRA feature gate: ", err)
+		return nil, err
+	}
 	schedulerCacheParams := &schedcache.SchedulerCacheParams{
 		KubeClient:                  kubeClient,
 		KAISchedulerClient:          kubeAiSchedulerClient,

@@ -49,6 +49,14 @@ type NodePreOrderFn func(*pod_info.PodInfo, []*node_info.NodeInfo) error
 // OnJobSolutionStartFn is used for notifying on job solution (and scenario simulations) start
 type OnJobSolutionStartFn func()
 
+// CompareQueueFn is used to compare two queues for ordering based on their jobs and victims.
+type CompareQueueFn func(
+	lQ, rQ *queue_info.QueueInfo,
+	lJob, rJob *podgroup_info.PodGroupInfo,
+	lVictims, rVictims []*podgroup_info.PodGroupInfo,
+	minNodeGPUMemory int64,
+) int
+
 type SchedulableResult struct {
 	IsSchedulable bool
 	Reason        v2alpha2.UnschedulableReason

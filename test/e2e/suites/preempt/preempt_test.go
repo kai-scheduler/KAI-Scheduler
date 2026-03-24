@@ -7,7 +7,7 @@ package preempt
 import (
 	"context"
 
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -291,7 +291,7 @@ var _ = Describe("Priority Preemption", Ordered, func() {
 			Expect(nodeName).ToNot(Equal(""), "failed to find a node with multiple devices")
 
 			claimTemplate := rd.CreateResourceClaimTemplate(namespace, deviceClassName, 1)
-			claimTemplate, err := testCtx.KubeClientset.ResourceV1beta1().ResourceClaimTemplates(namespace).Create(ctx, claimTemplate, metav1.CreateOptions{})
+			claimTemplate, err := testCtx.KubeClientset.ResourceV1().ResourceClaimTemplates(namespace).Create(ctx, claimTemplate, metav1.CreateOptions{})
 			Expect(err).To(BeNil())
 
 			var pods []*v1.Pod
@@ -306,7 +306,7 @@ var _ = Describe("Priority Preemption", Ordered, func() {
 				})
 				pod.Spec.ResourceClaims = []v1.PodResourceClaim{{
 					Name:                      "claim-template",
-					ResourceClaimTemplateName: pointer.String(claimTemplate.Name),
+					ResourceClaimTemplateName: ptr.To(claimTemplate.Name),
 				}}
 
 				pod.Spec.Affinity = &v1.Affinity{
@@ -347,7 +347,7 @@ var _ = Describe("Priority Preemption", Ordered, func() {
 			})
 			unschedulablePod.Spec.ResourceClaims = []v1.PodResourceClaim{{
 				Name:                      "claim-template",
-				ResourceClaimTemplateName: pointer.String(claimTemplate.Name),
+				ResourceClaimTemplateName: ptr.To(claimTemplate.Name),
 			}}
 
 			unschedulablePod.Spec.Affinity = &v1.Affinity{
@@ -385,7 +385,7 @@ var _ = Describe("Priority Preemption", Ordered, func() {
 			})
 			schedulablePod.Spec.ResourceClaims = []v1.PodResourceClaim{{
 				Name:                      "claim-template",
-				ResourceClaimTemplateName: pointer.String(claimTemplate.Name),
+				ResourceClaimTemplateName: ptr.To(claimTemplate.Name),
 			}}
 
 			schedulablePod.Spec.Affinity = &v1.Affinity{

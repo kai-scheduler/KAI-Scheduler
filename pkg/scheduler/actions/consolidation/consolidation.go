@@ -79,7 +79,7 @@ func (alloc *consolidationAction) Execute(ssn *framework.Session) {
 
 func attemptToConsolidateForPreemptor(
 	ssn *framework.Session, job *podgroup_info.PodGroupInfo) (bool, *framework.Statement) {
-	resReq := podgroup_info.GetTasksToAllocateInitResource(job, ssn.TaskOrderFn, false)
+	resReq := podgroup_info.GetTasksToAllocateInitResource(job, ssn.TaskOrderFn, false, ssn.MinNodeGPUMemory)
 	log.InfraLogger.V(3).Infof(
 		"Attempting to consolidate running jobs in order to make room for job: <%s/%s>, resources: <%v>",
 		job.Namespace, job.Name, resReq)

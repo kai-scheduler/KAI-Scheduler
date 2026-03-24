@@ -4,6 +4,7 @@
 package podaffinity
 
 import (
+	ksf "k8s.io/kube-scheduler/framework"
 	k8sframework "k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
@@ -53,7 +54,7 @@ func (pp *podAffinityPlugin) OnSessionOpen(ssn *framework.Session) {
 
 func (pp *podAffinityPlugin) nodePreOrderFn(k8sPlugins *k8s_internal.SessionScoreFns) api.NodePreOrderFn {
 	return func(task *pod_info.PodInfo, fittingNodes []*node_info.NodeInfo) error {
-		var nodes []*k8sframework.NodeInfo
+		var nodes []ksf.NodeInfo
 		for range fittingNodes {
 			nodes = append(nodes, &k8sframework.NodeInfo{})
 		}

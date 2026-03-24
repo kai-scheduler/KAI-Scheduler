@@ -14,9 +14,9 @@ import (
 	reflect "reflect"
 
 	v1alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	common "github.com/NVIDIA/KAI-scheduler/pkg/binder/plugins/k8s-plugins/common"
 	gomock "go.uber.org/mock/gomock"
 	v1 "k8s.io/api/core/v1"
+	framework "k8s.io/kube-scheduler/framework"
 )
 
 // MockK8sPlugin is a mock of K8sPlugin interface.
@@ -44,7 +44,7 @@ func (m *MockK8sPlugin) EXPECT() *MockK8sPluginMockRecorder {
 }
 
 // Allocate mocks base method.
-func (m *MockK8sPlugin) Allocate(ctx context.Context, pod *v1.Pod, hostname string, state common.State) error {
+func (m *MockK8sPlugin) Allocate(ctx context.Context, pod *v1.Pod, hostname string, state framework.CycleState) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Allocate", ctx, pod, hostname, state)
 	ret0, _ := ret[0].(error)
@@ -58,7 +58,7 @@ func (mr *MockK8sPluginMockRecorder) Allocate(ctx, pod, hostname, state any) *go
 }
 
 // Bind mocks base method.
-func (m *MockK8sPlugin) Bind(ctx context.Context, pod *v1.Pod, request *v1alpha2.BindRequest, state common.State) error {
+func (m *MockK8sPlugin) Bind(ctx context.Context, pod *v1.Pod, request *v1alpha2.BindRequest, state framework.CycleState) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Bind", ctx, pod, request, state)
 	ret0, _ := ret[0].(error)
@@ -72,7 +72,7 @@ func (mr *MockK8sPluginMockRecorder) Bind(ctx, pod, request, state any) *gomock.
 }
 
 // Filter mocks base method.
-func (m *MockK8sPlugin) Filter(ctx context.Context, pod *v1.Pod, node *v1.Node, state common.State) error {
+func (m *MockK8sPlugin) Filter(ctx context.Context, pod *v1.Pod, node *v1.Node, state framework.CycleState) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Filter", ctx, pod, node, state)
 	ret0, _ := ret[0].(error)
@@ -114,7 +114,7 @@ func (mr *MockK8sPluginMockRecorder) Name() *gomock.Call {
 }
 
 // PostBind mocks base method.
-func (m *MockK8sPlugin) PostBind(ctx context.Context, pod *v1.Pod, hostname string, state common.State) {
+func (m *MockK8sPlugin) PostBind(ctx context.Context, pod *v1.Pod, hostname string, state framework.CycleState) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "PostBind", ctx, pod, hostname, state)
 }
@@ -126,7 +126,7 @@ func (mr *MockK8sPluginMockRecorder) PostBind(ctx, pod, hostname, state any) *go
 }
 
 // PreFilter mocks base method.
-func (m *MockK8sPlugin) PreFilter(ctx context.Context, pod *v1.Pod, state common.State) (error, bool) {
+func (m *MockK8sPlugin) PreFilter(ctx context.Context, pod *v1.Pod, state framework.CycleState) (error, bool) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "PreFilter", ctx, pod, state)
 	ret0, _ := ret[0].(error)
@@ -141,7 +141,7 @@ func (mr *MockK8sPluginMockRecorder) PreFilter(ctx, pod, state any) *gomock.Call
 }
 
 // UnAllocate mocks base method.
-func (m *MockK8sPlugin) UnAllocate(ctx context.Context, pod *v1.Pod, hostname string, state common.State) {
+func (m *MockK8sPlugin) UnAllocate(ctx context.Context, pod *v1.Pod, hostname string, state framework.CycleState) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "UnAllocate", ctx, pod, hostname, state)
 }

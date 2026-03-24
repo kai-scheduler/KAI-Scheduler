@@ -12,7 +12,7 @@ import (
 	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/wait"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	testcontext "github.com/NVIDIA/KAI-scheduler/test/e2e/modules/context"
 	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/capacity"
@@ -60,7 +60,7 @@ var _ = Describe("Schedule pod with dynamic resource request", Ordered, func() {
 
 		It("Allocate simple request", func(ctx context.Context) {
 			claim := rd.CreateResourceClaim(namespace, deviceClassName, 1)
-			claim, err := testCtx.KubeClientset.ResourceV1beta1().ResourceClaims(namespace).Create(ctx, claim, metav1.CreateOptions{})
+			claim, err := testCtx.KubeClientset.ResourceV1().ResourceClaims(namespace).Create(ctx, claim, metav1.CreateOptions{})
 			Expect(err).To(BeNil())
 
 			pod := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{
@@ -73,7 +73,7 @@ var _ = Describe("Schedule pod with dynamic resource request", Ordered, func() {
 			})
 			pod.Spec.ResourceClaims = []v1.PodResourceClaim{{
 				Name:              "claim",
-				ResourceClaimName: pointer.String(claim.Name),
+				ResourceClaimName: ptr.To(claim.Name),
 			}}
 
 			_, err = rd.CreatePod(ctx, testCtx.KubeClientset, pod)
@@ -85,7 +85,7 @@ var _ = Describe("Schedule pod with dynamic resource request", Ordered, func() {
 
 		It("Fails to allocate request with wrong device class", func(ctx context.Context) {
 			claim := rd.CreateResourceClaim(namespace, "fake-device-class", 1)
-			claim, err := testCtx.KubeClientset.ResourceV1beta1().ResourceClaims(namespace).Create(ctx, claim, metav1.CreateOptions{})
+			claim, err := testCtx.KubeClientset.ResourceV1().ResourceClaims(namespace).Create(ctx, claim, metav1.CreateOptions{})
 			Expect(err).To(BeNil())
 
 			pod := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{
@@ -98,7 +98,7 @@ var _ = Describe("Schedule pod with dynamic resource request", Ordered, func() {
 			})
 			pod.Spec.ResourceClaims = []v1.PodResourceClaim{{
 				Name:              "claim",
-				ResourceClaimName: pointer.String(claim.Name),
+				ResourceClaimName: ptr.To(claim.Name),
 			}}
 
 			_, err = rd.CreatePod(ctx, testCtx.KubeClientset, pod)
@@ -121,7 +121,7 @@ var _ = Describe("Schedule pod with dynamic resource request", Ordered, func() {
 			Expect(nodeName).ToNot(Equal(""), "failed to find a node with multiple devices")
 
 			claimTemplate := rd.CreateResourceClaimTemplate(namespace, deviceClassName, 1)
-			claimTemplate, err := testCtx.KubeClientset.ResourceV1beta1().ResourceClaimTemplates(namespace).Create(ctx, claimTemplate, metav1.CreateOptions{})
+			claimTemplate, err := testCtx.KubeClientset.ResourceV1().ResourceClaimTemplates(namespace).Create(ctx, claimTemplate, metav1.CreateOptions{})
 			Expect(err).To(BeNil())
 
 			var pods []*v1.Pod
@@ -136,7 +136,7 @@ var _ = Describe("Schedule pod with dynamic resource request", Ordered, func() {
 				})
 				pod.Spec.ResourceClaims = []v1.PodResourceClaim{{
 					Name:                      "claim-template",
-					ResourceClaimTemplateName: pointer.String(claimTemplate.Name),
+					ResourceClaimTemplateName: ptr.To(claimTemplate.Name),
 				}}
 
 				pod.Spec.Affinity = &v1.Affinity{
@@ -175,7 +175,7 @@ var _ = Describe("Schedule pod with dynamic resource request", Ordered, func() {
 			})
 			unschedulablePod.Spec.ResourceClaims = []v1.PodResourceClaim{{
 				Name:                      "claim-template",
-				ResourceClaimTemplateName: pointer.String(claimTemplate.Name),
+				ResourceClaimTemplateName: ptr.To(claimTemplate.Name),
 			}}
 
 			unschedulablePod.Spec.Affinity = &v1.Affinity{

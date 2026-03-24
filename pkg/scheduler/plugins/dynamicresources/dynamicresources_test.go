@@ -10,11 +10,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	. "go.uber.org/mock/gomock"
 	"gopkg.in/h2non/gock.v1"
-	resourceapi "k8s.io/api/resource/v1beta1"
+	resourceapi "k8s.io/api/resource/v1"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	featuregate "k8s.io/component-base/featuregate/testing"
 	"k8s.io/kubernetes/pkg/features"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils"
@@ -44,7 +44,7 @@ func TestDynamicResourceAllocationPreFilter(t *testing.T) {
 					{
 						Name:         "job-1",
 						QueueName:    "q-1",
-						MinAvailable: pointer.Int32(1),
+						MinAvailable: ptr.To(int32(1)),
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								Name:               "task-1",
@@ -65,7 +65,7 @@ func TestDynamicResourceAllocationPreFilter(t *testing.T) {
 						Name:         "job-1",
 						Namespace:    "test",
 						QueueName:    "q-1",
-						MinAvailable: pointer.Int32(1),
+						MinAvailable: ptr.To(int32(1)),
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								Name:               "task-1",
@@ -117,7 +117,7 @@ func TestDynamicResourceAllocationPreFilter(t *testing.T) {
 						Name:         "job-1",
 						Namespace:    "test",
 						QueueName:    "q-1",
-						MinAvailable: pointer.Int32(1),
+						MinAvailable: ptr.To(int32(1)),
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								Name:  "task-1",
@@ -158,7 +158,7 @@ func TestDynamicResourceAllocationPreFilter(t *testing.T) {
 						Name:         "job-1",
 						Namespace:    "test",
 						QueueName:    "q-1",
-						MinAvailable: pointer.Int32(1),
+						MinAvailable: ptr.To(int32(1)),
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								Name:  "task-1",
@@ -206,7 +206,7 @@ func TestDynamicResourceAllocationPreFilter(t *testing.T) {
 						Name:         "job-1",
 						Namespace:    "test",
 						QueueName:    "q-1",
-						MinAvailable: pointer.Int32(1),
+						MinAvailable: ptr.To(int32(1)),
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								Name:               "job-1-0",
@@ -227,7 +227,7 @@ func TestDynamicResourceAllocationPreFilter(t *testing.T) {
 						Name:         "job-1",
 						Namespace:    "test",
 						QueueName:    "q-1",
-						MinAvailable: pointer.Int32(1),
+						MinAvailable: ptr.To(int32(1)),
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								Name:               "job-1-0",
@@ -281,7 +281,7 @@ func TestDynamicResourceAllocationPreFilter(t *testing.T) {
 						Name:         "job-1",
 						Namespace:    "test",
 						QueueName:    "q-1",
-						MinAvailable: pointer.Int32(1),
+						MinAvailable: ptr.To(int32(1)),
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								Name:  "job-1-0",
@@ -331,7 +331,7 @@ func TestDynamicResourceAllocationPreFilter(t *testing.T) {
 						Name:         "job-1",
 						Namespace:    "test",
 						QueueName:    "q-1",
-						MinAvailable: pointer.Int32(1),
+						MinAvailable: ptr.To(int32(1)),
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								Name:               "job-1-0",

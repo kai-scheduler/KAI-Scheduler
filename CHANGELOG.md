@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Update go version to v1.25.6, with appropriate upgrades to the base docker images, linter, and controller generator. [#1281](https://github.com/kai-scheduler/KAI-Scheduler/pull/1281) [davidLif](https://github.com/davidLif)
+
+### Fixed
+
+- Updated resource enumeration logic to exclude resources with count of 0. [#1120](https://github.com/NVIDIA/KAI-Scheduler/issues/1120)
+- Fixed plugin server (snapshot and job-order endpoints) listening on all interfaces by binding to localhost only.
+
+## [v0.6.16] - 2026-01-07
+
+### Fixed
+- Fixed a bug where the scheduler would not re-try updating podgroup status after failure
+- GPU Memory pods are not reclaimed or consolidated correctly
+- Fixed GPU memory pods Fair Share and Queue Order calculations
+
 ## [v0.6.14] - 2025-08-26
 
 ### Removed

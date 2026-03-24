@@ -629,7 +629,7 @@ func TestPreFilter(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			cmp := NewConfigMapPredicate(test.configMaps)
-			_, status := cmp.PreFilter(context.Background(), nil, test.pod)
+			_, status := cmp.PreFilter(context.Background(), nil, test.pod, nil)
 			isError := status.AsError() != nil
 			if isError != test.expectedError {
 				t.Errorf("Test %s: Expected %t, got %v", test.name, test.expectedError, status)

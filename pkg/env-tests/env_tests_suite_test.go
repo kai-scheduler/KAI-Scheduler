@@ -10,7 +10,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	resourcev1beta1 "k8s.io/api/resource/v1beta1"
+	resourceapi "k8s.io/api/resource/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -63,7 +63,7 @@ var _ = BeforeSuite(func(ctx context.Context) {
 	kaiv2.AddToScheme(scheme.Scheme)
 	kaiv1alpha2.AddToScheme(scheme.Scheme)
 	kaiv2v2alpha2.AddToScheme(scheme.Scheme)
-	resourcev1beta1.AddToScheme(scheme.Scheme)
+	resourceapi.AddToScheme(scheme.Scheme)
 	// +kubebuilder:scaffold:scheme
 
 	ctrlClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})

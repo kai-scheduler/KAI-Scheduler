@@ -1,7 +1,7 @@
 # Copyright 2025 NVIDIA CORPORATION
 # SPDX-License-Identifier: Apache-2.0
 
-FROM golang:1.22 AS debug
+FROM golang:1.25.6 AS debug
 ARG TARGETARCH
 ARG SERVICE_NAME
 ENV TARGETARCH=$TARGETARCH

@@ -1,0 +1,70 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+name: Approval Gatekeeper
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  pull_request_review:
+    types: [submitted, dismissed]
+
+jobs:
+  check-approvals:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify Approval Count
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // 1. Get the PR number and Author Association
+            const prNumber = context.payload.pull_request ? context.payload.pull_request.number : context.payload.issue.number;
+            const { owner, repo } = context.repo;
+
+            const pr = await github.rest.pulls.get({
+              owner,
+              repo,
+              pull_number: prNumber,
+            });
+
+            // Authors with these roles are considered trusted and only
+            // need the standard 1-approval branch protection rule to merge.
+            const trustedRoles = ['OWNER', 'MEMBER', 'COLLABORATOR'];
+            const authorRole = pr.data.author_association;
+            
+            console.log(`PR Author Association: ${authorRole}`);
+
+            // 2. If trusted, pass immediately (relying on the native 1-approval rule)
+            if (trustedRoles.includes(authorRole)) {
+              console.log("Author has a trusted role. Standard approval rules apply.");
+              return;
+            }
+
+            // 3. External contributors require 2 approvals to merge
+            console.log("Author is an external contributor. Enforcing 2 approvals.");
+            
+            const reviews = await github.rest.pulls.listReviews({
+              owner,
+              repo,
+              pull_number: prNumber,
+            });
+
+            // Filter to get the latest review state per trusted user only
+            const latestReviews = {};
+            reviews.data.forEach(review => {
+              if (trustedRoles.includes(review.author_association)) {
+                latestReviews[review.user.id] = review.state;
+              }
+            });
+
+            // Count how many trusted users currently approved
+            const approvalCount = Object.values(latestReviews).filter(state => state === 'APPROVED').length;
+            
+            console.log(`Current Approval Count: ${approvalCount}`);
+
+            // 4. Fail if count is less than 2
+            if (approvalCount < 2) {
+              core.setFailed(`External contributors require 2 approvals to merge. Current: ${approvalCount}`);
+            } else {
+              console.log("Approval requirement met.");
+            }

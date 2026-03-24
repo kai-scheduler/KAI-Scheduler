@@ -10,11 +10,12 @@ import (
 
 	. "go.uber.org/mock/gomock"
 	"gopkg.in/yaml.v2"
-	"k8s.io/api/resource/v1beta1"
+	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/ptr"
 
 	enginev2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
 	_ "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions"
@@ -54,8 +55,9 @@ func CreateFakeSession(schedulerConfig *TestSessionConfig,
 				},
 			},
 		},
-		Queues:        queueInfoMap,
-		PodGroupInfos: jobInfoMap,
+		Queues:           queueInfoMap,
+		PodGroupInfos:    jobInfoMap,
+		MinNodeGPUMemory: node_info.DefaultGpuMemory,
 	}
 	ssn.OverrideInferencePreemptible(isInferencePreemptible)
 	ssn.OverrideMaxNumberConsolidationPreemptees(-1)
@@ -296,50 +298,48 @@ func addSessionPlugins(ssn *framework.Session, tiers []conf.Tier, cacheMockExist
 func getDRAObjects(testMetadata TestTopologyBasic) []runtime.Object {
 	var objects []runtime.Object
 	for _, deviceClass := range testMetadata.DeviceClasses {
-		deviceClassObject := v1beta1.DeviceClass{
+		deviceClassObject := resourceapi.DeviceClass{
 			TypeMeta: metav1.TypeMeta{
 				Kind:       "DeviceClass",
-				APIVersion: "v1beta1",
+				APIVersion: "v1",
 			},
 			ObjectMeta: metav1.ObjectMeta{
 				Name:            deviceClass,
 				ResourceVersion: "0",
 			},
-			Spec: v1beta1.DeviceClassSpec{},
+			Spec: resourceapi.DeviceClassSpec{},
 		}
 		objects = append(objects, &deviceClassObject)
 	}
 
 	for _, resourceSlice := range testMetadata.ResourceSlices {
-		resourceSliceObject := v1beta1.ResourceSlice{
+		resourceSliceObject := resourceapi.ResourceSlice{
 			TypeMeta: metav1.TypeMeta{
 				Kind:       "ResourceSlice",
-				APIVersion: "v1beta1",
+				APIVersion: "v1",
 			},
 			ObjectMeta: metav1.ObjectMeta{
 				Name:            resourceSlice.Name,
 				ResourceVersion: "0",
 			},
-			Spec: v1beta1.ResourceSliceSpec{
+			Spec: resourceapi.ResourceSliceSpec{
 				Driver: "nvidia.com/gpu",
-				Pool: v1beta1.ResourcePool{
+				Pool: resourceapi.ResourcePool{
 					Name:               resourceSlice.NodeName,
 					ResourceSliceCount: int64(len(testMetadata.ResourceSlices)),
 				},
-				NodeName:     resourceSlice.NodeName,
 				NodeSelector: resourceSlice.NodeSelector,
-				AllNodes:     resourceSlice.AllNodes,
+				NodeName:     ptr.To(resourceSlice.NodeName),
+				AllNodes:     ptr.To(resourceSlice.AllNodes),
 			},
 		}
 
-		devices := make([]v1beta1.Device, resourceSlice.Count)
+		devices := make([]resourceapi.Device, resourceSlice.Count)
 		for i := range devices {
 			devices[i].Name = strconv.Itoa(i)
-			devices[i].Basic = &v1beta1.BasicDevice{
-				Capacity: map[v1beta1.QualifiedName]v1beta1.DeviceCapacity{
-					"gpu": {
-						Value: resource.MustParse("1"),
-					},
+			devices[i].Capacity = map[resourceapi.QualifiedName]resourceapi.DeviceCapacity{
+				"gpu": {
+					Value: resource.MustParse("1"),
 				},
 			}
 		}
@@ -349,29 +349,31 @@ func getDRAObjects(testMetadata TestTopologyBasic) []runtime.Object {
 	}
 
 	for _, resourceClaim := range testMetadata.ResourceClaims {
-		resourceClaimObject := v1beta1.ResourceClaim{
+		resourceClaimObject := resourceapi.ResourceClaim{
 			TypeMeta: metav1.TypeMeta{
 				Kind:       "ResourceClaim",
-				APIVersion: "v1beta1",
+				APIVersion: "v1",
 			},
 			ObjectMeta: metav1.ObjectMeta{
 				Name:            resourceClaim.Name,
 				Namespace:       resourceClaim.Namespace,
 				ResourceVersion: "0",
 			},
-			Spec: v1beta1.ResourceClaimSpec{
-				Devices: v1beta1.DeviceClaim{
-					Requests: []v1beta1.DeviceRequest{
+			Spec: resourceapi.ResourceClaimSpec{
+				Devices: resourceapi.DeviceClaim{
+					Requests: []resourceapi.DeviceRequest{
 						{
-							Name:            "request",
-							DeviceClassName: resourceClaim.DeviceClassName,
-							AllocationMode:  v1beta1.DeviceAllocationModeExactCount,
-							Count:           resourceClaim.Count,
+							Name: "request",
+							Exactly: &resourceapi.ExactDeviceRequest{
+								DeviceClassName: resourceClaim.DeviceClassName,
+								AllocationMode:  resourceapi.DeviceAllocationModeExactCount,
+								Count:           resourceClaim.Count,
+							},
 						},
 					},
 				},
 			},
-			Status: v1beta1.ResourceClaimStatus{
+			Status: resourceapi.ResourceClaimStatus{
 				ReservedFor: resourceClaim.ReservedFor,
 			},
 		}

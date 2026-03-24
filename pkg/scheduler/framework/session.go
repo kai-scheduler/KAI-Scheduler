@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"k8s.io/apimachinery/pkg/types"
+	ksf "k8s.io/kube-scheduler/framework"
 
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -36,17 +37,18 @@ type Session struct {
 	UID   types.UID
 	Cache cache.Cache
 
-	PodGroupInfos map[common_info.PodGroupID]*podgroup_info.PodGroupInfo
-	Nodes         map[string]*node_info.NodeInfo
-	Queues        map[common_info.QueueID]*queue_info.QueueInfo
-	ConfigMaps    map[common_info.ConfigMapID]*configmap_info.ConfigMapInfo
+	PodGroupInfos    map[common_info.PodGroupID]*podgroup_info.PodGroupInfo
+	Nodes            map[string]*node_info.NodeInfo
+	Queues           map[common_info.QueueID]*queue_info.QueueInfo
+	ConfigMaps       map[common_info.ConfigMapID]*configmap_info.ConfigMapInfo
+	MinNodeGPUMemory int64
 
 	GpuOrderFns                           []api.GpuOrderFn
 	NodePreOrderFns                       []api.NodePreOrderFn
 	NodeOrderFns                          []api.NodeOrderFn
 	TaskOrderFns                          []common_info.CompareFn
 	JobOrderFns                           []common_info.CompareFn
-	QueueOrderFns                         []CompareQueueFn
+	QueueOrderFns                         []api.CompareQueueFn
 	CanReclaimResourcesFns                []api.CanReclaimResourcesFn
 	ReclaimVictimFilterFns                []api.VictimFilterFn
 	PreemptVictimFilterFns                []api.VictimFilterFn
@@ -85,6 +87,16 @@ func (ssn *Session) GetK8sStateForPod(uid types.UID) k8s_internal.SessionState {
 	}
 	ssn.k8sPodState[uid] = k8s_internal.NewSessionState()
 	return ssn.k8sPodState[uid]
+}
+
+func (ssn *Session) GetNodes() []ksf.NodeInfo {
+	nodes, err := ssn.Cache.SnapshotSharedLister().List()
+	if err != nil {
+		log.InfraLogger.Errorf("Failed to list nodes: ", err)
+		return nil
+	}
+
+	return nodes
 }
 
 func (ssn *Session) BindPod(pod *pod_info.PodInfo) error {
@@ -339,6 +351,7 @@ func openSession(cache cache.Cache, sessionId types.UID, schedulerParams conf.Sc
 	ssn.Nodes = snapshot.Nodes
 	ssn.Queues = snapshot.Queues
 	ssn.ConfigMaps = snapshot.ConfigMaps
+	ssn.MinNodeGPUMemory = snapshot.MinNodeGPUMemory
 
 	log.InfraLogger.V(2).Infof("Session %v with <%d> Jobs, <%d> Queues and <%d> Nodes",
 		ssn.UID, len(ssn.PodGroupInfos), len(ssn.Queues), len(ssn.Nodes))

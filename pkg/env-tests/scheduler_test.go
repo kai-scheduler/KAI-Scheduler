@@ -11,11 +11,13 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/xyproto/randomstring"
+	admissionv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
-	resourcev1beta1 "k8s.io/api/resource/v1beta1"
+	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	kaiv1alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
@@ -84,7 +86,7 @@ var _ = Describe("Scheduler", Ordered, func() {
 			err := DeleteAllInNamespace(ctx, ctrlClient, testNamespace.Name,
 				&corev1.Pod{},
 				&schedulingv2alpha2.PodGroup{},
-				&resourcev1beta1.ResourceClaim{},
+				&resourceapi.ResourceClaim{},
 				&kaiv1alpha2.BindRequest{},
 			)
 			Expect(err).NotTo(HaveOccurred(), "Failed to delete test resources")
@@ -92,7 +94,7 @@ var _ = Describe("Scheduler", Ordered, func() {
 			err = WaitForNoObjectsInNamespace(ctx, ctrlClient, testNamespace.Name, defaultTimeout, interval,
 				&corev1.PodList{},
 				&schedulingv2alpha2.PodGroupList{},
-				&resourcev1beta1.ResourceClaimList{},
+				&resourceapi.ResourceClaimList{},
 				&kaiv1alpha2.BindRequestList{},
 			)
 			Expect(err).NotTo(HaveOccurred(), "Failed to wait for test resources to be deleted")
@@ -240,6 +242,113 @@ var _ = Describe("Scheduler", Ordered, func() {
 			err = WaitForPodScheduled(ctx, ctrlClient, testPod2.Name, testNamespace.Name, defaultTimeout, interval)
 			Expect(err).NotTo(HaveOccurred(), "Failed to wait for test pod to be scheduled")
 		})
+
+		It("Should retry updating podgroup status after failure", func(ctx context.Context) {
+			// Create your pod as before
+			testPod := CreatePodObject(testNamespace.Name, "test-pod", corev1.ResourceRequirements{
+				Limits: corev1.ResourceList{
+					constants.GpuResource: resource.MustParse("999"),
+				},
+			})
+			Expect(ctrlClient.Create(ctx, testPod)).To(Succeed(), "Failed to create test pod")
+
+			// add a webhook to fail updating podgroups
+			webhook := admissionv1.ValidatingWebhookConfiguration{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "fail-podgroup-update",
+					Namespace: testNamespace.Name,
+				},
+				Webhooks: []admissionv1.ValidatingWebhook{
+					{
+						Name: "fail.podgroup.update",
+						Rules: []admissionv1.RuleWithOperations{
+							{
+								Operations: []admissionv1.OperationType{admissionv1.Update},
+								Rule: admissionv1.Rule{
+									APIGroups:   []string{"scheduling.run.ai"},
+									APIVersions: []string{"v2alpha2"},
+									Resources:   []string{"podgroups", "podgroups/status"},
+									Scope:       func() *admissionv1.ScopeType { s := admissionv1.NamespacedScope; return &s }(),
+								},
+							},
+						},
+						TimeoutSeconds: ptr.To(int32(1)),
+						SideEffects:    func() *admissionv1.SideEffectClass { f := admissionv1.SideEffectClassNone; return &f }(),
+						ClientConfig: admissionv1.WebhookClientConfig{
+							Service: &admissionv1.ServiceReference{
+								Name:      "fail-podgroup-update",
+								Namespace: testNamespace.Name,
+								Path:      ptr.To("/validate-scheduling-run-ai-v2alpha2-podgroup"),
+							},
+						},
+						AdmissionReviewVersions: []string{"v1"},
+					},
+				},
+			}
+			Expect(ctrlClient.Create(ctx, &webhook)).To(Succeed(), "Failed to create test webhook")
+			defer func() {
+				// Make sure to delete the webhook even if the test fails
+				_ = ctrlClient.Delete(ctx, &webhook)
+			}()
+
+			err := GroupPods(ctx, ctrlClient, testQueue.Name, "test-podgroup", []*corev1.Pod{testPod}, 1)
+			Expect(err).NotTo(HaveOccurred(), "Failed to group pods")
+
+			// validate that editing the podgroup status fails
+			var podgroup schedulingv2alpha2.PodGroup
+			Expect(ctrlClient.Get(ctx, client.ObjectKey{Name: "test-podgroup", Namespace: testNamespace.Name}, &podgroup)).
+				To(Succeed(), "Failed to get test podgroup")
+			podgroup.Status.Pending = 42
+			err = ctrlClient.Status().Update(ctx, &podgroup)
+			Expect(err).To(HaveOccurred(), "Expected to fail to update podgroup status")
+
+			// Verify that events are published
+			deadlineCtx, deadlineCancel := context.WithTimeout(ctx, defaultTimeout)
+			defer deadlineCancel()
+			err = wait.PollUntilContextTimeout(deadlineCtx, interval, defaultTimeout, true, func(ctx context.Context) (bool, error) {
+				var events corev1.EventList
+				err := ctrlClient.List(ctx, &events, client.InNamespace(testNamespace.Name))
+				if err != nil {
+					return false, err
+				}
+
+				for _, event := range events.Items {
+					if event.InvolvedObject.Kind != "PodGroup" {
+						continue
+					}
+
+					return true, nil
+				}
+
+				return false, nil
+			})
+			Expect(err).NotTo(HaveOccurred(), "Failed to wait for unready podgroup event")
+
+			// Verify that scheduling conditions were not updated
+			Expect(ctrlClient.Get(ctx, client.ObjectKey{Name: "test-podgroup", Namespace: testNamespace.Name}, &podgroup)).
+				To(Succeed(), "Failed to get test podgroup")
+			Expect(len(podgroup.Status.SchedulingConditions)).To(BeZero(), "Expected no scheduling conditions", podgroup.Status.SchedulingConditions)
+
+			// Delete webhook to allow the podgroup status to be updated
+			Expect(ctrlClient.Delete(ctx, &webhook)).To(Succeed(), "Failed to delete test webhook")
+
+			// Verify that the scheduling conditions are updated
+			deadlineCtx, deadlineCancel = context.WithTimeout(ctx, defaultTimeout)
+			defer deadlineCancel()
+			err = wait.PollUntilContextTimeout(deadlineCtx, interval, defaultTimeout, true, func(ctx context.Context) (bool, error) {
+				err := ctrlClient.Get(deadlineCtx, client.ObjectKey{Name: "test-podgroup", Namespace: testNamespace.Name}, &podgroup)
+				if err != nil {
+					return false, err
+				}
+
+				if len(podgroup.Status.SchedulingConditions) > 0 {
+					return true, nil
+				}
+
+				return false, nil
+			})
+			Expect(err).NotTo(HaveOccurred(), "Failed to wait for podgroup scheduling conditions to be updated")
+		})
 	})
 
 	Context("dynamic resource", Ordered, func() {
@@ -263,7 +372,7 @@ var _ = Describe("Scheduler", Ordered, func() {
 			err := DeleteAllInNamespace(ctx, ctrlClient, testNamespace.Name,
 				&corev1.Pod{},
 				&schedulingv2alpha2.PodGroup{},
-				&resourcev1beta1.ResourceClaim{},
+				&resourceapi.ResourceClaim{},
 				&kaiv1alpha2.BindRequest{},
 			)
 			Expect(err).NotTo(HaveOccurred(), "Failed to delete test resources")
@@ -271,7 +380,7 @@ var _ = Describe("Scheduler", Ordered, func() {
 			err = WaitForNoObjectsInNamespace(ctx, ctrlClient, testNamespace.Name, defaultTimeout, interval,
 				&corev1.PodList{},
 				&schedulingv2alpha2.PodGroupList{},
-				&resourcev1beta1.ResourceClaimList{},
+				&resourceapi.ResourceClaimList{},
 				&kaiv1alpha2.BindRequestList{},
 			)
 			Expect(err).NotTo(HaveOccurred(), "Failed to wait for test resources to be deleted")

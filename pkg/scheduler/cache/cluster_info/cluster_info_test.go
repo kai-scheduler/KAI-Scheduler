@@ -378,7 +378,7 @@ func TestSnapshotNodes(t *testing.T) {
 			clusterPodAffinityInfo.EXPECT().AddNode(gomock.Any(), gomock.Any()).AnyTimes()
 
 			allPods, _ := clusterInfo.dataLister.ListPods()
-			nodes, err := clusterInfo.snapshotNodes(clusterPodAffinityInfo)
+			nodes, _, err := clusterInfo.snapshotNodes(clusterPodAffinityInfo)
 			if err != nil {
 				assert.FailNow(t, fmt.Sprintf("SnapshotNode got error in test %s", t.Name()), err)
 			}

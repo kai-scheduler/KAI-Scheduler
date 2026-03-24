@@ -8,6 +8,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	ksf "k8s.io/kube-scheduler/framework"
 	k8sframework "k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_internal"
@@ -19,7 +20,7 @@ func predicateRequired(_ *v1.Pod) bool {
 }
 
 func emptyPredicatePreFilter(predicateName string) k8s_internal.FitPredicatePreFilter {
-	return func(pod *v1.Pod) (sets.Set[string], *k8sframework.Status) {
+	return func(pod *v1.Pod) (sets.Set[string], *ksf.Status) {
 		log.InfraLogger.V(6).Infof(
 			"Checking pod %s/%s empty predicate: %s", pod.Namespace, pod.Name, predicateName)
 		return nil, nil
@@ -27,30 +28,30 @@ func emptyPredicatePreFilter(predicateName string) k8s_internal.FitPredicatePreF
 }
 
 func failingPredicatePreFilter(predicateName string) k8s_internal.FitPredicatePreFilter {
-	return func(pod *v1.Pod) (sets.Set[string], *k8sframework.Status) {
+	return func(pod *v1.Pod) (sets.Set[string], *ksf.Status) {
 		log.InfraLogger.V(6).Infof(
 			"Checking pod %s/%s failed pre predicate: %s", pod.Namespace, pod.Name, predicateName)
-		status := k8sframework.NewStatus(k8sframework.Unschedulable, "reason1", "reason2")
+		status := ksf.NewStatus(ksf.Unschedulable, "reason1", "reason2")
 		status.WithError(fmt.Errorf("failed pre-predicate %s", predicateName))
 		return nil, status
 	}
 }
 
 func failingPredicatePreFilterReasonSameAsError(predicateName string) k8s_internal.FitPredicatePreFilter {
-	return func(pod *v1.Pod) (sets.Set[string], *k8sframework.Status) {
+	return func(pod *v1.Pod) (sets.Set[string], *ksf.Status) {
 		log.InfraLogger.V(6).Infof("Checking pod %s/%s failed pre predicate: %s", pod.Namespace, pod.Name, predicateName)
 		err := fmt.Errorf("failed pre-predicate %s", predicateName)
-		status := k8sframework.NewStatus(k8sframework.Unschedulable, err.Error())
+		status := ksf.NewStatus(ksf.Unschedulable, err.Error())
 		status.WithError(err)
 		return nil, status
 	}
 }
 
 func failingPredicatePreFilterNoReason(predicateName string) k8s_internal.FitPredicatePreFilter {
-	return func(pod *v1.Pod) (sets.Set[string], *k8sframework.Status) {
+	return func(pod *v1.Pod) (sets.Set[string], *ksf.Status) {
 		log.InfraLogger.V(6).Infof("Checking pod %s/%s failed pre predicate: %s",
 			pod.Namespace, pod.Name, predicateName)
-		status := k8sframework.NewStatus(k8sframework.Unschedulable).
+		status := ksf.NewStatus(ksf.Unschedulable).
 			WithError(fmt.Errorf("failed pre-predicate %v", predicateName))
 		return nil, status
 	}

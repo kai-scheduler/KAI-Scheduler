@@ -18,7 +18,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/record"
 
-	kubeaischedulerver "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned"
+	kai "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned"
 	enginev2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -57,7 +57,7 @@ type inflightUpdate struct {
 
 type defaultStatusUpdater struct {
 	kubeClient        kubernetes.Interface
-	kubeaischedClient kubeaischedulerver.Interface
+	kaiClient         kai.Interface
 	recorder          record.EventRecorder
 	detailedFitErrors bool
 	nodePoolLabelKey  string
@@ -77,7 +77,7 @@ type defaultStatusUpdater struct {
 
 func New(
 	kubeClient kubernetes.Interface,
-	kubeaischedClient kubeaischedulerver.Interface,
+	kaiClient kai.Interface,
 	recorder record.EventRecorder,
 	numberOfWorkers int,
 	detailedFitErrors bool,
@@ -85,7 +85,7 @@ func New(
 ) *defaultStatusUpdater {
 	return &defaultStatusUpdater{
 		kubeClient:        kubeClient,
-		kubeaischedClient: kubeaischedClient,
+		kaiClient:         kaiClient,
 		recorder:          recorder,
 		detailedFitErrors: detailedFitErrors,
 		nodePoolLabelKey:  nodePoolLabelKey,

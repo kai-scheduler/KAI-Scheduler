@@ -8,13 +8,13 @@ import (
 
 	"github.com/xyproto/randomstring"
 	corev1 "k8s.io/api/core/v1"
-	resource "k8s.io/api/resource/v1beta1"
+	resourceapi "k8s.io/api/resource/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 )
 
-func CreateDeviceClass(name string) *resource.DeviceClass {
-	deviceClass := resource.DeviceClass{
+func CreateDeviceClass(name string) *resourceapi.DeviceClass {
+	deviceClass := resourceapi.DeviceClass{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 		},
@@ -23,33 +23,31 @@ func CreateDeviceClass(name string) *resource.DeviceClass {
 	return &deviceClass
 }
 
-func CreateNodeResourceSlice(name, driver, nodeName string, deviceCount int) *resource.ResourceSlice {
-	resourceSlice := resource.ResourceSlice{
+func CreateNodeResourceSlice(name, driver, nodeName string, deviceCount int) *resourceapi.ResourceSlice {
+	resourceSlice := resourceapi.ResourceSlice{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 		},
-		Spec: resource.ResourceSliceSpec{
+		Spec: resourceapi.ResourceSliceSpec{
 			Driver: driver,
-			Pool: resource.ResourcePool{
+			Pool: resourceapi.ResourcePool{
 				Generation:         0,
 				ResourceSliceCount: 1,
 				Name:               fmt.Sprintf("%s-%s", driver, nodeName),
 			},
-			NodeName: nodeName,
+			NodeName: ptr.To(nodeName),
 		},
 	}
 
 	for i := range deviceCount {
-		resourceSlice.Spec.Devices = append(resourceSlice.Spec.Devices, resource.Device{
+		resourceSlice.Spec.Devices = append(resourceSlice.Spec.Devices, resourceapi.Device{
 			Name: fmt.Sprintf("%s-%s-%d", driver, nodeName, i),
-			Basic: &resource.BasicDevice{
-				Attributes: map[resource.QualifiedName]resource.DeviceAttribute{
-					"vendor": {
-						StringValue: ptr.To("nvidia"),
-					},
-					"model": {
-						StringValue: ptr.To("A420"),
-					},
+			Attributes: map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
+				"vendor": {
+					StringValue: ptr.To("nvidia"),
+				},
+				"model": {
+					StringValue: ptr.To("A420"),
 				},
 			},
 		})
@@ -67,15 +65,15 @@ type DeviceRequest struct {
 	Count int
 }
 
-func CreateResourceClaim(name, namespace string, requests ...DeviceRequest) *resource.ResourceClaim {
-	resourceClaim := resource.ResourceClaim{
+func CreateResourceClaim(name, namespace string, requests ...DeviceRequest) *resourceapi.ResourceClaim {
+	resourceClaim := resourceapi.ResourceClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
 		},
-		Spec: resource.ResourceClaimSpec{
-			Devices: resource.DeviceClaim{
-				Requests: []resource.DeviceRequest{},
+		Spec: resourceapi.ResourceClaimSpec{
+			Devices: resourceapi.DeviceClaim{
+				Requests: []resourceapi.DeviceRequest{},
 			},
 		},
 	}
@@ -85,16 +83,18 @@ func CreateResourceClaim(name, namespace string, requests ...DeviceRequest) *res
 			request.Name = randomstring.HumanFriendlyEnglishString(10)
 		}
 
-		newRequest := resource.DeviceRequest{
-			Name:            request.Name,
-			DeviceClassName: request.Class,
-			Count:           int64(request.Count),
-			AllocationMode:  resource.DeviceAllocationModeExactCount,
+		newRequest := resourceapi.DeviceRequest{
+			Name: request.Name,
+			Exactly: &resourceapi.ExactDeviceRequest{
+				DeviceClassName: request.Class,
+				Count:           int64(request.Count),
+				AllocationMode:  resourceapi.DeviceAllocationModeExactCount,
+			},
 		}
 
 		if request.Count == -1 {
-			newRequest.AllocationMode = resource.DeviceAllocationModeAll
-			newRequest.Count = 0
+			newRequest.Exactly.AllocationMode = resourceapi.DeviceAllocationModeAll
+			newRequest.Exactly.Count = 0
 		}
 
 		resourceClaim.Spec.Devices.Requests = append(
@@ -106,7 +106,7 @@ func CreateResourceClaim(name, namespace string, requests ...DeviceRequest) *res
 	return &resourceClaim
 }
 
-func UseClaim(pod *corev1.Pod, claim *resource.ResourceClaim) {
+func UseClaim(pod *corev1.Pod, claim *resourceapi.ResourceClaim) {
 	pod.Spec.ResourceClaims = append(pod.Spec.ResourceClaims,
 		corev1.PodResourceClaim{
 			Name:              claim.Name,

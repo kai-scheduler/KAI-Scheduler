@@ -5,6 +5,7 @@ package cache
 
 import (
 	"golang.org/x/exp/maps"
+	ksf "k8s.io/kube-scheduler/framework"
 	k8sframework "k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_affinity"
@@ -12,33 +13,33 @@ import (
 )
 
 type K8sClusterPodAffinityInfo struct {
-	k8sNodes                 map[string]*k8sframework.NodeInfo
-	k8sNodesArr              []*k8sframework.NodeInfo
-	nodesWithPodAffinity     map[string]*k8sframework.NodeInfo
-	nodesWithPodAntiAffinity map[string]*k8sframework.NodeInfo
+	k8sNodes                 map[string]ksf.NodeInfo
+	k8sNodesArr              []ksf.NodeInfo
+	nodesWithPodAffinity     map[string]ksf.NodeInfo
+	nodesWithPodAntiAffinity map[string]ksf.NodeInfo
 }
 
 func NewK8sClusterPodAffinityInfo() *K8sClusterPodAffinityInfo {
 	return &K8sClusterPodAffinityInfo{
-		k8sNodes:                 make(map[string]*k8sframework.NodeInfo),
-		nodesWithPodAffinity:     make(map[string]*k8sframework.NodeInfo),
-		nodesWithPodAntiAffinity: make(map[string]*k8sframework.NodeInfo),
+		k8sNodes:                 make(map[string]ksf.NodeInfo),
+		nodesWithPodAffinity:     make(map[string]ksf.NodeInfo),
+		nodesWithPodAntiAffinity: make(map[string]ksf.NodeInfo),
 	}
 }
 
-func (ci *K8sClusterPodAffinityInfo) List() ([]*k8sframework.NodeInfo, error) {
+func (ci *K8sClusterPodAffinityInfo) List() ([]ksf.NodeInfo, error) {
 	return ci.k8sNodesArr, nil
 }
 
-func (ci *K8sClusterPodAffinityInfo) Get(nodeName string) (*k8sframework.NodeInfo, error) {
+func (ci *K8sClusterPodAffinityInfo) Get(nodeName string) (ksf.NodeInfo, error) {
 	return ci.k8sNodes[nodeName], nil
 }
 
-func (ci *K8sClusterPodAffinityInfo) HavePodsWithAffinityList() ([]*k8sframework.NodeInfo, error) {
+func (ci *K8sClusterPodAffinityInfo) HavePodsWithAffinityList() ([]ksf.NodeInfo, error) {
 	return maps.Values(ci.nodesWithPodAffinity), nil
 }
 
-func (ci *K8sClusterPodAffinityInfo) HavePodsWithRequiredAntiAffinityList() ([]*k8sframework.NodeInfo, error) {
+func (ci *K8sClusterPodAffinityInfo) HavePodsWithRequiredAntiAffinityList() ([]ksf.NodeInfo, error) {
 	return maps.Values(ci.nodesWithPodAntiAffinity), nil
 }
 

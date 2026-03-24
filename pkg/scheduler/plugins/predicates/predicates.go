@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"k8s.io/apimachinery/pkg/util/sets"
-	k8sframework "k8s.io/kubernetes/pkg/scheduler/framework"
+	ksf "k8s.io/kube-scheduler/framework"
 
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -36,7 +36,7 @@ type prePredicateError struct {
 	reasons []string
 }
 
-func newPrePredicateError(name string, Status k8sframework.Status) prePredicateError {
+func newPrePredicateError(name string, Status ksf.Status) prePredicateError {
 	err := Status.AsError()
 	reasons := Status.Reasons()
 	if len(reasons) > 0 {

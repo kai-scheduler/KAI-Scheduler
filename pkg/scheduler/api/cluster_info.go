@@ -34,6 +34,8 @@ type ClusterInfo struct {
 	CSIDrivers                  map[common_info.CSIDriverID]*csidriver_info.CSIDriverInfo
 	StorageClasses              map[common_info.StorageClassID]*storageclass_info.StorageClassInfo
 	ConfigMaps                  map[common_info.ConfigMapID]*configmap_info.ConfigMapInfo
+
+	MinNodeGPUMemory int64
 }
 
 func NewClusterInfo() *ClusterInfo {

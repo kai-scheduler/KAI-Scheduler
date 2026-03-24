@@ -28,7 +28,6 @@ func RunScheduler(cfg *rest.Config, stopCh chan struct{}) error {
 
 	args := []string{
 		"--schedule-period=10ms",
-		"--feature-gates=DynamicResourceAllocation=true",
 	}
 	fs := pflag.NewFlagSet("flags", pflag.ExitOnError)
 	opt.AddFlags(fs)

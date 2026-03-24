@@ -8,7 +8,7 @@ import (
 	"time"
 
 	. "go.uber.org/mock/gomock"
-	resourceapi "k8s.io/api/resource/v1beta1"
+	resourceapi "k8s.io/api/resource/v1"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	featuregate "k8s.io/component-base/featuregate/testing"
 	"k8s.io/kubernetes/pkg/features"

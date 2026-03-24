@@ -12,6 +12,7 @@ import (
 	"k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
+	ksf "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/features"
 	k8sframework "k8s.io/kubernetes/pkg/scheduler/framework"
 	k8splfeature "k8s.io/kubernetes/pkg/scheduler/framework/plugins/feature"
@@ -32,7 +33,7 @@ type K8sPlugins struct {
 }
 
 type PodState struct {
-	states map[string]common.State
+	states map[string]ksf.CycleState
 	skip   map[string]bool
 }
 
@@ -44,7 +45,7 @@ func New(
 	var k8sPlugins []common.K8sPlugin
 	k8sFramework := k8s_utils.NewFrameworkHandle(client, informerFactory, nil)
 	k8sFeatures := k8splfeature.Features{
-		EnableVolumeCapacityPriority:    feature.DefaultFeatureGate.Enabled(features.VolumeCapacityPriority),
+		// EnableVolumeCapacityPriority:    feature.DefaultFeatureGate.Enabled(features.VolumeCapacityPriority),
 		EnableDynamicResourceAllocation: feature.DefaultFeatureGate.Enabled(features.DynamicResourceAllocation),
 	}
 
@@ -82,7 +83,7 @@ func (p *K8sPlugins) Mutate(*v1.Pod) error {
 func (p *K8sPlugins) PreBind(ctx context.Context, pod *v1.Pod, node *v1.Node, request *v1alpha2.BindRequest,
 	_ *state.BindingState) error {
 	podState := &PodState{
-		states: map[string]common.State{},
+		states: map[string]ksf.CycleState{},
 		skip:   map[string]bool{},
 	}
 
@@ -134,7 +135,7 @@ func (p *K8sPlugins) PostBind(ctx context.Context, pod *v1.Pod, node *v1.Node, _
 
 func (p *K8sPlugins) bindPluginWrapper(
 	ctx context.Context, plugin common.K8sPlugin, pod *v1.Pod, node *v1.Node, request *v1alpha2.BindRequest, podState *PodState,
-) (error, common.State) {
+) (error, ksf.CycleState) {
 	state := common.NewState()
 	if !plugin.IsRelevant(pod) {
 		return nil, state

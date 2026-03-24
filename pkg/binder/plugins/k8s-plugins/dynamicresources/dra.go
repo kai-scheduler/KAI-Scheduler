@@ -14,6 +14,7 @@ import (
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/retry"
+	ksf "k8s.io/kube-scheduler/framework"
 	k8sframework "k8s.io/kubernetes/pkg/scheduler/framework"
 	k8splfeature "k8s.io/kubernetes/pkg/scheduler/framework/plugins/feature"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -49,33 +50,33 @@ func (drp *dynamicResourcesPlugin) IsRelevant(pod *corev1.Pod) bool {
 }
 
 // PreFilter fetches pod Resource Claims and writes them to state, checking if the pod can be scheduled
-func (drp *dynamicResourcesPlugin) PreFilter(_ context.Context, _ *corev1.Pod, _ plugins.State) (error, bool) {
+func (drp *dynamicResourcesPlugin) PreFilter(_ context.Context, _ *corev1.Pod, _ ksf.CycleState) (error, bool) {
 	return nil, false
 }
 
 // Filter checks if all of a Pod's Resource Claims can be satisfied by the node
 func (drp *dynamicResourcesPlugin) Filter(
-	_ context.Context, _ *corev1.Pod, _ *corev1.Node, _ plugins.State) error {
+	_ context.Context, _ *corev1.Pod, _ *corev1.Node, _ ksf.CycleState) error {
 	return nil
 }
 
 // Allocate allocates Resource Claims for the task when needed
 func (drp *dynamicResourcesPlugin) Allocate(
-	_ context.Context, _ *corev1.Pod, _ string, _ plugins.State,
+	_ context.Context, _ *corev1.Pod, _ string, _ ksf.CycleState,
 ) error {
 	return nil
 }
 
 // UnAllocate cleans up Resource Claim allocation
 func (drp *dynamicResourcesPlugin) UnAllocate(
-	_ context.Context, _ *corev1.Pod, _ string, _ plugins.State,
+	_ context.Context, _ *corev1.Pod, _ string, _ ksf.CycleState,
 ) {
 	return
 }
 
 // Bind binds Resource Claims to the task according to the allocation status from the bind request
 func (drp *dynamicResourcesPlugin) Bind(
-	parentCtx context.Context, pod *corev1.Pod, request *v1alpha2.BindRequest, _ plugins.State,
+	parentCtx context.Context, pod *corev1.Pod, request *v1alpha2.BindRequest, _ ksf.CycleState,
 ) error {
 	ctx, cancelFn := context.WithTimeout(parentCtx, time.Duration(drp.bindTimeout)*time.Second)
 	defer cancelFn()
@@ -103,7 +104,7 @@ func (drp *dynamicResourcesPlugin) bindResourceClaim(ctx context.Context, desire
 	}
 
 	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		originalClaim, err := drp.client.ResourceV1beta1().ResourceClaims(pod.Namespace).Get(ctx, claimName, v1.GetOptions{})
+		originalClaim, err := drp.client.ResourceV1().ResourceClaims(pod.Namespace).Get(ctx, claimName, v1.GetOptions{})
 		if err != nil {
 			return err
 		}
@@ -114,7 +115,7 @@ func (drp *dynamicResourcesPlugin) bindResourceClaim(ctx context.Context, desire
 			claim.Status.Allocation = desiredStatus.Allocation
 		}
 
-		_, err = drp.client.ResourceV1beta1().ResourceClaims(pod.Namespace).UpdateStatus(ctx, claim, v1.UpdateOptions{})
+		_, err = drp.client.ResourceV1().ResourceClaims(pod.Namespace).UpdateStatus(ctx, claim, v1.UpdateOptions{})
 
 		return err
 	})
@@ -149,7 +150,7 @@ func getClaimName(pod *corev1.Pod, podClaimName string) (string, error) {
 
 // PostBind is called after binding is done to clean up
 func (drp *dynamicResourcesPlugin) PostBind(
-	ctx context.Context, _ *corev1.Pod, _ string, _ plugins.State,
+	ctx context.Context, _ *corev1.Pod, _ string, _ ksf.CycleState,
 ) {
 	logger := log.FromContext(ctx)
 	logger.V(1).Info("dynamicResourcesPlugin.PostBind called - noop")

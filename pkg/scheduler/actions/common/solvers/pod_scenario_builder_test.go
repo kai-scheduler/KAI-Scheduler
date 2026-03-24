@@ -10,6 +10,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"go.uber.org/mock/gomock"
 	"golang.org/x/exp/slices"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -23,6 +24,7 @@ import (
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/utils"
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_affinity"
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/queue_info"
@@ -290,10 +292,23 @@ func initializeSession(jobsCount, tasksPerJob int) (*framework.Session, []*pod_i
 	defaultQueue.ParentQueue = ""
 	queues := []*queue_info.QueueInfo{defaultQueue}
 
-	for jobID := 0; jobID < jobsCount; jobID++ {
+	controller := gomock.NewController(GinkgoT())
+	nodePodAffinityInfo := pod_affinity.NewMockNodePodAffinityInfo(controller)
+	nodePodAffinityInfo.EXPECT().AddPod(gomock.Any()).AnyTimes()
+	nodePodAffinityInfo.EXPECT().RemovePod(gomock.Any()).AnyTimes()
+
+	node := node_info.NewNodeInfo(&v1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node-1",
+		},
+	}, nodePodAffinityInfo)
+	for jobID := range jobsCount {
 		queueName := fmt.Sprintf("team-%d", jobID)
 		newJob, jobTasks := createJobWithTasks(tasksPerJob, jobID, queueName, v1.PodRunning, []v1.ResourceRequirements{requireOneGPU()})
 		jobs = append(jobs, newJob)
+		node.Allocatable.Add(newJob.Allocated)
+		node.Idle.Add(newJob.Allocated)
+		_ = node.AddTasksToNode(jobTasks, map[common_info.PodID]*pod_info.PodInfo{})
 		tasks = append(tasks, jobTasks...)
 		queues = append(queues, createQueue(queueName))
 	}
@@ -312,11 +327,7 @@ func initializeSession(jobsCount, tasksPerJob int) (*framework.Session, []*pod_i
 		PodGroupInfos: podgroup_infos,
 		Queues:        queuesMap,
 		Nodes: map[string]*node_info.NodeInfo{
-			"node-1": node_info.NewNodeInfo(&v1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "node-1",
-				},
-			}, nil),
+			node.Name: node,
 		},
 	}
 	return ssn, tasks

@@ -9,6 +9,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	ksf "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/kubelet/lifecycle"
 	k8sframework "k8s.io/kubernetes/pkg/scheduler/framework"
 )
@@ -48,12 +49,13 @@ func NewInsufficientGpuMemoryCapacity(requested, capacity int64, distributedTask
 /*************** Converters ***************/
 
 func FitPrePredicateConverter(
+	nodeListProvider NodeListProvider,
 	stateProvider SessionStateProvider,
 	nodePreFilter NodePreFilter,
 ) FitPredicatePreFilter {
-	return func(pod *v1.Pod) (sets.Set[string], *k8sframework.Status) {
+	return func(pod *v1.Pod) (sets.Set[string], *ksf.Status) {
 		state := stateProvider.GetK8sStateForPod(pod.UID)
-		result, status := nodePreFilter.PreFilter(context.Background(), state, pod)
+		result, status := nodePreFilter.PreFilter(context.Background(), state, pod, nodeListProvider.GetNodes())
 		if status != nil {
 			return nil, status
 		}
@@ -82,7 +84,7 @@ func PreScorePluginConverter(
 	stateProvider SessionStateProvider,
 	nodeScorer ExtendedNodeScorer,
 ) PreScoreFn {
-	return func(pod *v1.Pod, fittingNodes []*k8sframework.NodeInfo) *k8sframework.Status {
+	return func(pod *v1.Pod, fittingNodes []ksf.NodeInfo) *ksf.Status {
 		state := stateProvider.GetK8sStateForPod(pod.UID)
 		status := nodeScorer.PreScore(context.Background(), state, pod, fittingNodes)
 		return status
@@ -96,13 +98,15 @@ func ScorePluginConverter(
 	return func(pod *v1.Pod, nodeInfo *k8sframework.NodeInfo) (int64, []string, error) {
 		state := stateProvider.GetK8sStateForPod(pod.UID)
 
-		score, result := nodeScorer.Score(context.Background(), state, pod, nodeInfo.Node().Name)
+		score, result := nodeScorer.Score(context.Background(), state, pod, nodeInfo)
 		if result == nil {
 			return score, nil, nil
 		}
 		return 0, result.Reasons(), result.AsError()
 	}
 }
+
+type SessionState ksf.CycleState
 
 func NewSessionState() SessionState {
 	return k8sframework.NewCycleState()
