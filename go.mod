@@ -66,8 +66,8 @@ require (
 	k8s.io/pod-security-admission v0.34.1
 	k8s.io/sample-apiserver v0.34.1
 	k8s.io/utils v0.0.0-20251002143259-bc988d571ff4
-	knative.dev/pkg v0.0.0-20260120122510-4a022ed9999a
-	knative.dev/serving v0.48.1
+	knative.dev/pkg v0.0.0-20260319144603-18c5d580ae64
+	knative.dev/serving v0.48.2
 	sigs.k8s.io/controller-runtime v0.22.3
 	sigs.k8s.io/karpenter v1.2.0
 	sigs.k8s.io/lws v0.7.0
