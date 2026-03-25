@@ -23,7 +23,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Check changed files
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@v4
         id: filter
         with:
           predicate-quantifier: "every"
