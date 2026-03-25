@@ -31,7 +31,7 @@ if [[ -z "$K8S_VERSION" || -z "$OUTPUT" ]]; then
   exit 1
 fi
 
-K8S_MINOR=$(echo "$K8S_VERSION" | grep -oP '(?<=v1\.)\d+')
+K8S_MINOR=$(echo "$K8S_VERSION" | sed -nE 's/^v1\.([0-9]+).*$/\1/p')
 
 if [[ -z "$K8S_MINOR" ]]; then
   echo "Error: could not parse minor version from --k8s-version '$K8S_VERSION'" >&2
