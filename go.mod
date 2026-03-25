@@ -8,7 +8,7 @@ require (
 	github.com/aptible/supercronic v0.2.44
 	github.com/argoproj/argo-workflows/v3 v3.7.11
 	github.com/dustin/go-humanize v1.0.1
-	github.com/gin-contrib/pprof v1.5.2
+	github.com/gin-contrib/pprof v1.5.3
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-logr/logr v1.4.3
 	github.com/go-logr/stdr v1.2.2
