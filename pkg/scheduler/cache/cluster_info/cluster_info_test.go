@@ -1157,11 +1157,11 @@ func TestSnapshotPodGroups(t *testing.T) {
 						SubGroups: []enginev2alpha2.SubGroup{
 							{
 								Name:      "SubGroup-0",
-								MinMember: 1,
+								MinMember: ptr.To(int32(1)),
 							},
 							{
 								Name:      "SubGroup-1",
-								MinMember: 2,
+								MinMember: ptr.To(int32(2)),
 							},
 						},
 					},
@@ -1808,11 +1808,11 @@ func TestPodGroupWithIndexWithSubGroups(t *testing.T) {
 			SubGroups: []enginev2alpha2.SubGroup{
 				{
 					Name:      "sub-a",
-					MinMember: 1,
+					MinMember: ptr.To(int32(1)),
 				},
 				{
 					Name:      "sub-b",
-					MinMember: 2,
+					MinMember: ptr.To(int32(2)),
 				},
 			},
 		},

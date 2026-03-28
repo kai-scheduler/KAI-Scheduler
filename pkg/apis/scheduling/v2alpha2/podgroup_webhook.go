@@ -67,6 +67,9 @@ func (_ *PodGroup) ValidateDelete(ctx context.Context, obj runtime.Object) (admi
 func validateSubGroups(subGroups []SubGroup) error {
 	subGroupMap := map[string]*SubGroup{}
 	for _, subGroup := range subGroups {
+		if subGroup.MinMember == nil {
+			return fmt.Errorf("subgroup %s: minMember is required", subGroup.Name)
+		}
 		if subGroupMap[subGroup.Name] != nil {
 			return fmt.Errorf("duplicate subgroup name %s", subGroup.Name)
 		}

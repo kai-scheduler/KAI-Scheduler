@@ -10,6 +10,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/utils/ptr"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -685,9 +686,9 @@ func TestGetPodGroupMetadata_BackwardsCompatibility_ExistingPodGroupWithSubGroup
 		Spec: schedulingv2alpha2.PodGroupSpec{
 			MinMember: 4,
 			SubGroups: []schedulingv2alpha2.SubGroup{
-				{Name: "headgroup", MinMember: 1},
-				{Name: "worker-group-0", MinMember: 2},
-				{Name: "worker-group-1", MinMember: 1},
+				{Name: "headgroup", MinMember: ptr.To(int32(1))},
+				{Name: "worker-group-0", MinMember: ptr.To(int32(2))},
+				{Name: "worker-group-1", MinMember: ptr.To(int32(1))},
 			},
 		},
 	}
@@ -743,7 +744,7 @@ func TestShouldUseSubGroups_PodGroupExistsWithSubGroups(t *testing.T) {
 		Spec: schedulingv2alpha2.PodGroupSpec{
 			MinMember: 2,
 			SubGroups: []schedulingv2alpha2.SubGroup{
-				{Name: "headgroup", MinMember: 1},
+				{Name: "headgroup", MinMember: ptr.To(int32(1))},
 			},
 		},
 	}

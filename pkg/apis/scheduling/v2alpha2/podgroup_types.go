@@ -114,8 +114,9 @@ type SubGroup struct {
 
 	// MinMember defines the minimal number of members to run this SubGroup;
 	// if there are not enough resources to start all required members, the scheduler will not start anyone.
-	// +kubebuilder:validation:Minimum=1
-	MinMember int32 `json:"minMember,omitempty"`
+	// +kubebuilder:validation:Nullable
+	// +kubebuilder:validation:Minimum=0
+	MinMember *int32 `json:"minMember,omitempty" protobuf:"bytes,2,opt,name=minMember"`
 
 	// Parent is an optional attribute that specifies the name of the parent SubGroup
 	// +kubebuilder:validation:Optional

@@ -7,6 +7,7 @@ import (
 	"context"
 
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/utils/ptr"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -117,7 +118,7 @@ func (h *Handler) createPodGroupForMetadata(podGroupMetadata Metadata) *scheduli
 		pg.Spec.SubGroups = append(pg.Spec.SubGroups,
 			schedulingv2alpha2.SubGroup{
 				Name:               subGroup.Name,
-				MinMember:          subGroup.MinAvailable,
+				MinMember:          ptr.To(subGroup.MinAvailable),
 				Parent:             subGroup.Parent,
 				TopologyConstraint: topologyConstraint,
 			})

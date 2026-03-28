@@ -123,8 +123,8 @@ func TestFromPodGroup_FullTree(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{Namespace: "ns1", Name: "jobA"},
 				Spec: v2alpha2.PodGroupSpec{
 					SubGroups: []v2alpha2.SubGroup{
-						{Name: "sg1", Parent: nil},
-						{Name: "sg2", Parent: ptr.To("sg1"), MinMember: 3},
+						{Name: "sg1", Parent: nil, MinMember: ptr.To(int32(0))},
+						{Name: "sg2", Parent: ptr.To("sg1"), MinMember: ptr.To(int32(3))},
 					},
 				},
 			},
@@ -146,9 +146,9 @@ func TestFromPodGroup_FullTree(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{Namespace: "ns2", Name: "jobB"},
 				Spec: v2alpha2.PodGroupSpec{
 					SubGroups: []v2alpha2.SubGroup{
-						{Name: "rootchild", Parent: nil},
-						{Name: "middle", Parent: ptr.To("rootchild")},
-						{Name: "leaf", Parent: ptr.To("middle"), MinMember: 5},
+						{Name: "rootchild", Parent: nil, MinMember: ptr.To(int32(0))},
+						{Name: "middle", Parent: ptr.To("rootchild"), MinMember: ptr.To(int32(0))},
+						{Name: "leaf", Parent: ptr.To("middle"), MinMember: ptr.To(int32(5))},
 					},
 				},
 			},
@@ -183,7 +183,7 @@ func TestFromPodGroup_FullTree(t *testing.T) {
 						{
 							Name:      "rootchild",
 							Parent:    nil,
-							MinMember: 3,
+							MinMember: ptr.To(int32(3)),
 							TopologyConstraint: &v2alpha2.TopologyConstraint{
 								Topology:              "topology",
 								RequiredTopologyLevel: "rack",
@@ -217,15 +217,15 @@ func TestFromPodGroup_FullTree(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{Namespace: "ns4", Name: "jobD"},
 				Spec: v2alpha2.PodGroupSpec{
 					SubGroups: []v2alpha2.SubGroup{
-						{Name: "rootchild", Parent: nil, TopologyConstraint: &v2alpha2.TopologyConstraint{
+						{Name: "rootchild", Parent: nil, MinMember: ptr.To(int32(0)), TopologyConstraint: &v2alpha2.TopologyConstraint{
 							Topology:               "topology",
 							PreferredTopologyLevel: "zone",
 						}},
-						{Name: "leaf1", Parent: ptr.To("rootchild"), MinMember: 2, TopologyConstraint: &v2alpha2.TopologyConstraint{
+						{Name: "leaf1", Parent: ptr.To("rootchild"), MinMember: ptr.To(int32(2)), TopologyConstraint: &v2alpha2.TopologyConstraint{
 							Topology:              "topology",
 							RequiredTopologyLevel: "rack",
 						}},
-						{Name: "leaf2", Parent: ptr.To("rootchild"), MinMember: 3, TopologyConstraint: &v2alpha2.TopologyConstraint{
+						{Name: "leaf2", Parent: ptr.To("rootchild"), MinMember: ptr.To(int32(3)), TopologyConstraint: &v2alpha2.TopologyConstraint{
 							Topology:              "topology",
 							RequiredTopologyLevel: "host",
 						}},
@@ -283,7 +283,7 @@ func TestFromPodGroup_FullTree(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{Namespace: "ns6", Name: "bad"},
 				Spec: v2alpha2.PodGroupSpec{
 					SubGroups: []v2alpha2.SubGroup{
-						{Name: "sg1", Parent: ptr.To("nonexistent"), MinMember: 2},
+						{Name: "sg1", Parent: ptr.To("nonexistent"), MinMember: ptr.To(int32(2))},
 					},
 				},
 			},
@@ -296,9 +296,9 @@ func TestFromPodGroup_FullTree(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{Namespace: "ns7", Name: "bad"},
 				Spec: v2alpha2.PodGroupSpec{
 					SubGroups: []v2alpha2.SubGroup{
-						{Name: "p1", Parent: nil},
-						{Name: "c1", Parent: ptr.To("p1")},
-						{Name: "c2", Parent: ptr.To("no_such_set"), MinMember: 1},
+						{Name: "p1", Parent: nil, MinMember: ptr.To(int32(0))},
+						{Name: "c1", Parent: ptr.To("p1"), MinMember: ptr.To(int32(1))},
+						{Name: "c2", Parent: ptr.To("no_such_set"), MinMember: ptr.To(int32(1))},
 					},
 				},
 			},
@@ -311,8 +311,8 @@ func TestFromPodGroup_FullTree(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{Namespace: "ns8", Name: "dup"},
 				Spec: v2alpha2.PodGroupSpec{
 					SubGroups: []v2alpha2.SubGroup{
-						{Name: "sg", Parent: nil},
-						{Name: "sg", Parent: ptr.To("sg"), MinMember: 1},
+						{Name: "sg", Parent: nil, MinMember: ptr.To(int32(0))},
+						{Name: "sg", Parent: ptr.To("sg"), MinMember: ptr.To(int32(1))},
 					},
 				},
 			},
@@ -325,9 +325,9 @@ func TestFromPodGroup_FullTree(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{Namespace: "ns-missing", Name: "missingparent"},
 				Spec: v2alpha2.PodGroupSpec{
 					SubGroups: []v2alpha2.SubGroup{
-						{Name: "root", Parent: nil},
-						{Name: "c1", Parent: ptr.To("root")},
-						{Name: "c2", Parent: ptr.To("doesnotexist"), MinMember: 4},
+						{Name: "root", Parent: nil, MinMember: ptr.To(int32(0))},
+						{Name: "c1", Parent: ptr.To("root"), MinMember: ptr.To(int32(0))},
+						{Name: "c2", Parent: ptr.To("doesnotexist"), MinMember: ptr.To(int32(4))},
 					},
 				},
 			},
@@ -340,14 +340,27 @@ func TestFromPodGroup_FullTree(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{Namespace: "ns-intermediate", Name: "missingintermediate"},
 				Spec: v2alpha2.PodGroupSpec{
 					SubGroups: []v2alpha2.SubGroup{
-						{Name: "parent", Parent: nil},
-						{Name: "mid", Parent: ptr.To("no_such_parent")},
-						{Name: "leaf", Parent: ptr.To("mid"), MinMember: 1},
+						{Name: "parent", Parent: nil, MinMember: ptr.To(int32(0))},
+						{Name: "mid", Parent: ptr.To("no_such_parent"), MinMember: ptr.To(int32(0))},
+						{Name: "leaf", Parent: ptr.To("mid"), MinMember: ptr.To(int32(1))},
 					},
 				},
 			},
 			want:    nil,
 			wantErr: "parent subgroup <no_such_parent> of <mid> not found",
+		},
+		{
+			name: "leaf subgroup missing minMember",
+			podGroup: &v2alpha2.PodGroup{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "ns-nil", Name: "leafnil"},
+				Spec: v2alpha2.PodGroupSpec{
+					SubGroups: []v2alpha2.SubGroup{
+						{Name: "only-leaf", Parent: nil},
+					},
+				},
+			},
+			want:    nil,
+			wantErr: "minMember is required",
 		},
 	}
 

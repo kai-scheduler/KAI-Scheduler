@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/utils/ptr"
 	"k8s.io/client-go/util/retry"
 
 	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
@@ -76,8 +77,8 @@ var _ = Describe("Allocation scenario with subgroups", Ordered, func() {
 		podGroup := pod_group.Create(namespace, pgName, testCtx.Queues[0].Name)
 		podGroup.Spec.MinMember = 6
 		podGroup.Spec.SubGroups = []schedulingv2alpha2.SubGroup{
-			{Name: "sub-1", MinMember: 3},
-			{Name: "sub-2", MinMember: 3},
+			{Name: "sub-1", MinMember: ptr.To(int32(3))},
+			{Name: "sub-2", MinMember: ptr.To(int32(3))},
 		}
 		_, err := testCtx.KubeAiSchedClientset.SchedulingV2alpha2().PodGroups(namespace).Create(ctx,
 			podGroup, metav1.CreateOptions{})
@@ -98,8 +99,8 @@ var _ = Describe("Allocation scenario with subgroups", Ordered, func() {
 		pg1 := pod_group.Create(namespace, pg1Name, testCtx.Queues[0].Name)
 		pg1.Spec.MinMember = 2
 		pg1.Spec.SubGroups = []schedulingv2alpha2.SubGroup{
-			{Name: "sub-1", MinMember: 1},
-			{Name: "sub-2", MinMember: 1},
+			{Name: "sub-1", MinMember: ptr.To(int32(1))},
+			{Name: "sub-2", MinMember: ptr.To(int32(1))},
 		}
 
 		pg2Name := utils.GenerateRandomK8sName(10)
@@ -108,8 +109,8 @@ var _ = Describe("Allocation scenario with subgroups", Ordered, func() {
 		pg2 := pod_group.Create(namespace, pg2Name, testCtx.Queues[0].Name)
 		pg2.Spec.MinMember = 2
 		pg2.Spec.SubGroups = []schedulingv2alpha2.SubGroup{
-			{Name: "sub-1", MinMember: 1},
-			{Name: "sub-2", MinMember: 1},
+			{Name: "sub-1", MinMember: ptr.To(int32(1))},
+			{Name: "sub-2", MinMember: ptr.To(int32(1))},
 		}
 
 		// impose quota limit on queue to ensure that PodGroups will be scheduled before testing
@@ -168,8 +169,8 @@ var _ = Describe("Allocation scenario with subgroups", Ordered, func() {
 		pg1 := pod_group.Create(namespace, pg1Name, testCtx.Queues[0].Name)
 		pg1.Spec.MinMember = 4
 		pg1.Spec.SubGroups = []schedulingv2alpha2.SubGroup{
-			{Name: "sub-1", MinMember: 2},
-			{Name: "sub-2", MinMember: 2},
+			{Name: "sub-1", MinMember: ptr.To(int32(2))},
+			{Name: "sub-2", MinMember: ptr.To(int32(2))},
 		}
 		_, err := testCtx.KubeAiSchedClientset.SchedulingV2alpha2().PodGroups(namespace).Create(ctx,
 			pg1, metav1.CreateOptions{})
@@ -184,8 +185,8 @@ var _ = Describe("Allocation scenario with subgroups", Ordered, func() {
 		pg2 := pod_group.Create(namespace, pg2Name, testCtx.Queues[0].Name)
 		pg2.Spec.MinMember = 4
 		pg2.Spec.SubGroups = []schedulingv2alpha2.SubGroup{
-			{Name: "sub-1", MinMember: 2},
-			{Name: "sub-2", MinMember: 2},
+			{Name: "sub-1", MinMember: ptr.To(int32(2))},
+			{Name: "sub-2", MinMember: ptr.To(int32(2))},
 		}
 
 		_, err = testCtx.KubeAiSchedClientset.SchedulingV2alpha2().PodGroups(namespace).Create(ctx,
