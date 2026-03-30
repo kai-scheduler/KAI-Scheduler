@@ -15,7 +15,7 @@ require (
 	github.com/golang/glog v1.2.5
 	github.com/google/go-cmp v0.7.0
 	github.com/grafana/pyroscope-go v1.2.8
-	github.com/kubeflow/mpi-operator v0.6.0
+	github.com/kubeflow/mpi-operator v0.8.0
 	github.com/kubeflow/training-operator v1.9.3
 	github.com/onsi/ginkgo/v2 v2.28.1
 	github.com/onsi/gomega v1.39.1
@@ -35,22 +35,22 @@ require (
 	go.uber.org/multierr v1.11.0
 	go.uber.org/zap v1.27.1
 	golang.org/x/exp v0.0.0-20260112195511-716be5621a96
-	golang.org/x/mod v0.32.0
+	golang.org/x/mod v0.33.0
 	gomodules.xyz/jsonpatch/v2 v2.5.0
 	google.golang.org/grpc v1.79.3
 	gopkg.in/h2non/gock.v1 v1.1.2
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
 	gotest.tools v2.2.0+incompatible
-	k8s.io/api v0.34.3
-	k8s.io/apiextensions-apiserver v0.34.3
-	k8s.io/apimachinery v0.34.3
-	k8s.io/apiserver v0.34.3
+	k8s.io/api v0.35.1
+	k8s.io/apiextensions-apiserver v0.35.0
+	k8s.io/apimachinery v0.35.1
+	k8s.io/apiserver v0.35.1
 	k8s.io/autoscaler/vertical-pod-autoscaler v1.5.1
 	k8s.io/cli-runtime v0.34.1
-	k8s.io/client-go v0.34.3
+	k8s.io/client-go v0.35.1
 	k8s.io/cluster-bootstrap v0.34.1
-	k8s.io/component-base v0.34.3
+	k8s.io/component-base v0.35.1
 	k8s.io/component-helpers v0.34.1
 	k8s.io/cri-client v0.34.1
 	k8s.io/dynamic-resource-allocation v0.34.1
@@ -70,7 +70,7 @@ require (
 	k8s.io/utils v0.0.0-20260108192941-914a6e750570
 	knative.dev/pkg v0.0.0-20260120122510-4a022ed9999a
 	knative.dev/serving v0.48.1
-	sigs.k8s.io/controller-runtime v0.22.3
+	sigs.k8s.io/controller-runtime v0.23.1
 	sigs.k8s.io/jobset v0.10.1
 	sigs.k8s.io/karpenter v1.2.0
 	sigs.k8s.io/kwok v0.6.1
@@ -155,7 +155,7 @@ require (
 	github.com/quic-go/quic-go v0.59.0 // indirect
 	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
-	github.com/spf13/cobra v1.10.1 // indirect
+	github.com/spf13/cobra v1.10.2 // indirect
 	github.com/stoewer/go-strcase v1.3.0 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.3.1 // indirect
@@ -181,8 +181,8 @@ require (
 	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/term v0.40.0 // indirect
 	golang.org/x/text v0.34.0 // indirect
-	golang.org/x/time v0.12.0 // indirect
-	golang.org/x/tools v0.41.0 // indirect
+	golang.org/x/time v0.14.0 // indirect
+	golang.org/x/tools v0.42.0 // indirect
 	google.golang.org/genproto v0.0.0-20250603155806-513f23925822 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260203192932-546029d2fa20 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260128011058-8636f8732409 // indirect
@@ -193,13 +193,13 @@ require (
 	k8s.io/controller-manager v0.34.1 // indirect
 	k8s.io/cri-api v0.34.1 // indirect
 	k8s.io/csi-translation-lib v0.34.1 // indirect
-	k8s.io/kube-openapi v0.0.0-20250814151709-d7b6acb124c3 // indirect
+	k8s.io/kube-openapi v0.0.0-20250910181357-589584f1c912 // indirect
 	k8s.io/kubelet v0.34.1 // indirect
 	knative.dev/networking v0.0.0-20260120131110-a7cdca238a0d // indirect
 	sigs.k8s.io/gateway-api v1.4.0 // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
-	sigs.k8s.io/structured-merge-diff/v6 v6.3.0 // indirect
+	sigs.k8s.io/structured-merge-diff/v6 v6.3.2-0.20260122202528-d9cc6641c482 // indirect
 )
 
 retract (
