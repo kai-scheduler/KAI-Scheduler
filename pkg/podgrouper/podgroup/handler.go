@@ -98,7 +98,7 @@ func (h *Handler) createPodGroupForMetadata(podGroupMetadata Metadata) *scheduli
 			},
 		},
 		Spec: schedulingv2alpha2.PodGroupSpec{
-			MinMember:         podGroupMetadata.MinAvailable,
+			MinMember:         ptr.To(podGroupMetadata.MinAvailable),
 			Queue:             podGroupMetadata.Queue,
 			PriorityClassName: podGroupMetadata.PriorityClassName,
 			SubGroups:         []schedulingv2alpha2.SubGroup{},

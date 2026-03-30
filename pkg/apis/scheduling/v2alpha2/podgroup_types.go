@@ -34,8 +34,9 @@ import (
 type PodGroupSpec struct {
 	// MinMember defines the minimal number of members to run the PodGroup;
 	// if there are not enough resources to start all required members, the scheduler will not start anyone.
+	// +kubebuilder:validation:Nullable
 	// +kubebuilder:validation:Minimum=1
-	MinMember int32 `json:"minMember,omitempty" protobuf:"bytes,1,opt,name=minMember"`
+	MinMember *int32 `json:"minMember,omitempty" protobuf:"bytes,2,opt,name=minMember"`
 
 	// Queue defines the queue to allocate resource for PodGroup; if queue does not exist,
 	// the PodGroup will not be scheduled.
@@ -53,15 +54,6 @@ type PodGroupSpec struct {
 	// Preemptibility determines if this PodGroup can be preempted by higher priority workloads.
 	// When unspecified, preemptibility is determined by the PriorityClass value - values below 100 are considered preemptible.
 	Preemptibility Preemptibility `json:"preemptibility,omitempty" protobuf:"bytes,4,opt,name=preemptibility"`
-
-	// The number of pods which will try to run at any instant.
-	Parallelism int32 `json:"parallelism,omitempty" protobuf:"bytes,4,opt,name=parallelism"`
-
-	// The number of successful pods required for this podgroup to move to 'Successful' phase.
-	Completions int32 `json:"completions,omitempty" protobuf:"bytes,5,opt,name=completions"`
-
-	// The number of failed pods required for this podgroup to move to 'Failed' phase.
-	BackoffLimit int32 `json:"backoffLimit,omitempty" protobuf:"bytes,6,opt,name=backoffLimit"`
 
 	// Should add "Unschedulable" event to the pods or not.
 	MarkUnschedulable *bool `json:"markUnschedulable,omitempty" protobuf:"bytes,7,opt,name=markUnschedulable"`

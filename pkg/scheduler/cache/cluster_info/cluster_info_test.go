@@ -1153,7 +1153,7 @@ func TestSnapshotPodGroups(t *testing.T) {
 					},
 					Spec: enginev2alpha2.PodGroupSpec{
 						Queue:     "queue-0",
-						MinMember: 3,
+						MinMember: ptr.To(int32(3)),
 						SubGroups: []enginev2alpha2.SubGroup{
 							{
 								Name:      "SubGroup-0",
@@ -1783,7 +1783,7 @@ func TestPodGroupWithIndexNoSubGroups(t *testing.T) {
 			UID: "ABC",
 		},
 		Spec: enginev2alpha2.PodGroupSpec{
-			MinMember: 2,
+			MinMember: ptr.To(int32(2)),
 		},
 	}
 	podGroupInfo := podgroup_info.NewPodGroupInfo("MyTest")
@@ -1804,7 +1804,7 @@ func TestPodGroupWithIndexWithSubGroups(t *testing.T) {
 			UID: "ABC",
 		},
 		Spec: enginev2alpha2.PodGroupSpec{
-			MinMember: 3,
+			MinMember: ptr.To(int32(3)),
 			SubGroups: []enginev2alpha2.SubGroup{
 				{
 					Name:      "sub-a",

@@ -192,7 +192,7 @@ var _ = Describe("JobSet integration", Ordered, func() {
 			podGroup := &v2alpha2.PodGroup{}
 			err = testCtx.ControllerClient.Get(ctx, runtimeClient.ObjectKey{Namespace: testNamespace, Name: pgName}, podGroup)
 			Expect(err).To(Succeed())
-			Expect(podGroup.Spec.MinMember).To(Equal(int32(8)))
+			Expect(podGroup.Spec.MinMember).To(Equal(ptr.To(int32(8))))
 		})
 
 		It("should create separate PodGroups for multiple ReplicatedJobs with different parallelism", func(ctx context.Context) {
@@ -228,7 +228,7 @@ var _ = Describe("JobSet integration", Ordered, func() {
 			podGroup := &v2alpha2.PodGroup{}
 			err = testCtx.ControllerClient.Get(ctx, runtimeClient.ObjectKey{Namespace: testNamespace, Name: pgName}, podGroup)
 			Expect(err).To(Succeed())
-			Expect(podGroup.Spec.MinMember).To(Equal(int32(4)))
+			Expect(podGroup.Spec.MinMember).To(Equal(ptr.To(int32(4))))
 		})
 
 		It("should create PodGroup with MinMember=1 for single replica with default parallelism", func(ctx context.Context) {
@@ -253,7 +253,7 @@ var _ = Describe("JobSet integration", Ordered, func() {
 			podGroup := &v2alpha2.PodGroup{}
 			err = testCtx.ControllerClient.Get(ctx, runtimeClient.ObjectKey{Namespace: testNamespace, Name: pgName}, podGroup)
 			Expect(err).To(Succeed())
-			Expect(podGroup.Spec.MinMember).To(Equal(int32(1)))
+			Expect(podGroup.Spec.MinMember).To(Equal(ptr.To(int32(1))))
 		})
 	})
 })

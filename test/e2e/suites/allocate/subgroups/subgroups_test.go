@@ -75,7 +75,7 @@ var _ = Describe("Allocation scenario with subgroups", Ordered, func() {
 
 		namespace := queue.GetConnectedNamespaceToQueue(testCtx.Queues[0])
 		podGroup := pod_group.Create(namespace, pgName, testCtx.Queues[0].Name)
-		podGroup.Spec.MinMember = 6
+		podGroup.Spec.MinMember = ptr.To(int32(6))
 		podGroup.Spec.SubGroups = []schedulingv2alpha2.SubGroup{
 			{Name: "sub-1", MinMember: ptr.To(int32(3))},
 			{Name: "sub-2", MinMember: ptr.To(int32(3))},
@@ -97,7 +97,7 @@ var _ = Describe("Allocation scenario with subgroups", Ordered, func() {
 		pg1SubGroup1Pods := createSubGroupPods(ctx, testCtx.KubeClientset, testCtx.Queues[0], pg1Name, "sub-1", 3)
 		pg1SubGroup2Pods := createSubGroupPods(ctx, testCtx.KubeClientset, testCtx.Queues[0], pg1Name, "sub-2", 3)
 		pg1 := pod_group.Create(namespace, pg1Name, testCtx.Queues[0].Name)
-		pg1.Spec.MinMember = 2
+		pg1.Spec.MinMember = ptr.To(int32(2))
 		pg1.Spec.SubGroups = []schedulingv2alpha2.SubGroup{
 			{Name: "sub-1", MinMember: ptr.To(int32(1))},
 			{Name: "sub-2", MinMember: ptr.To(int32(1))},
@@ -107,7 +107,7 @@ var _ = Describe("Allocation scenario with subgroups", Ordered, func() {
 		pg2SubGroup1Pods := createSubGroupPods(ctx, testCtx.KubeClientset, testCtx.Queues[0], pg2Name, "sub-1", 3)
 		pg2SubGroup2Pods := createSubGroupPods(ctx, testCtx.KubeClientset, testCtx.Queues[0], pg2Name, "sub-2", 3)
 		pg2 := pod_group.Create(namespace, pg2Name, testCtx.Queues[0].Name)
-		pg2.Spec.MinMember = 2
+		pg2.Spec.MinMember = ptr.To(int32(2))
 		pg2.Spec.SubGroups = []schedulingv2alpha2.SubGroup{
 			{Name: "sub-1", MinMember: ptr.To(int32(1))},
 			{Name: "sub-2", MinMember: ptr.To(int32(1))},
@@ -167,7 +167,7 @@ var _ = Describe("Allocation scenario with subgroups", Ordered, func() {
 		pg1SubGroup1Pods := createSubGroupPods(ctx, testCtx.KubeClientset, testCtx.Queues[0], pg1Name, "sub-1", 3)
 		pg1SubGroup2Pods := createSubGroupPods(ctx, testCtx.KubeClientset, testCtx.Queues[0], pg1Name, "sub-2", 3)
 		pg1 := pod_group.Create(namespace, pg1Name, testCtx.Queues[0].Name)
-		pg1.Spec.MinMember = 4
+		pg1.Spec.MinMember = ptr.To(int32(4))
 		pg1.Spec.SubGroups = []schedulingv2alpha2.SubGroup{
 			{Name: "sub-1", MinMember: ptr.To(int32(2))},
 			{Name: "sub-2", MinMember: ptr.To(int32(2))},
@@ -183,7 +183,7 @@ var _ = Describe("Allocation scenario with subgroups", Ordered, func() {
 		pg2SubGroup1Pods := createSubGroupPods(ctx, testCtx.KubeClientset, testCtx.Queues[0], pg2Name, "sub-1", 3)
 		pg2SubGroup2Pods := createSubGroupPods(ctx, testCtx.KubeClientset, testCtx.Queues[0], pg2Name, "sub-2", 3)
 		pg2 := pod_group.Create(namespace, pg2Name, testCtx.Queues[0].Name)
-		pg2.Spec.MinMember = 4
+		pg2.Spec.MinMember = ptr.To(int32(4))
 		pg2.Spec.SubGroups = []schedulingv2alpha2.SubGroup{
 			{Name: "sub-1", MinMember: ptr.To(int32(2))},
 			{Name: "sub-2", MinMember: ptr.To(int32(2))},

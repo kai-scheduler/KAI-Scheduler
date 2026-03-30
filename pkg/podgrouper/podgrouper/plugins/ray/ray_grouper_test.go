@@ -644,7 +644,7 @@ func TestGetPodGroupMetadata_BackwardsCompatibility_ExistingPodGroupWithoutSubGr
 			Namespace: autoScalingRayCluster.GetNamespace(),
 		},
 		Spec: schedulingv2alpha2.PodGroupSpec{
-			MinMember: 4,
+			MinMember: ptr.To(int32(4)),
 			// No SubGroups - legacy format
 		},
 	}
@@ -684,7 +684,7 @@ func TestGetPodGroupMetadata_BackwardsCompatibility_ExistingPodGroupWithSubGroup
 			Namespace: autoScalingRayCluster.GetNamespace(),
 		},
 		Spec: schedulingv2alpha2.PodGroupSpec{
-			MinMember: 4,
+			MinMember: ptr.To(int32(4)),
 			SubGroups: []schedulingv2alpha2.SubGroup{
 				{Name: "headgroup", MinMember: ptr.To(int32(1))},
 				{Name: "worker-group-0", MinMember: ptr.To(int32(2))},
@@ -723,7 +723,7 @@ func TestShouldUseSubGroups_PodGroupExistsWithoutSubGroups(t *testing.T) {
 			Namespace: "test-ns",
 		},
 		Spec: schedulingv2alpha2.PodGroupSpec{
-			MinMember: 2,
+			MinMember: ptr.To(int32(2)),
 		},
 	}
 	client := fake.NewClientBuilder().WithScheme(s).WithRuntimeObjects(existingPodGroup).Build()
@@ -742,7 +742,7 @@ func TestShouldUseSubGroups_PodGroupExistsWithSubGroups(t *testing.T) {
 			Namespace: "test-ns",
 		},
 		Spec: schedulingv2alpha2.PodGroupSpec{
-			MinMember: 2,
+			MinMember: ptr.To(int32(2)),
 			SubGroups: []schedulingv2alpha2.SubGroup{
 				{Name: "headgroup", MinMember: ptr.To(int32(1))},
 			},

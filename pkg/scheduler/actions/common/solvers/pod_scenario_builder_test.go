@@ -16,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/ptr"
 
 	schedulingv2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
 	schedulingv2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
@@ -107,7 +108,7 @@ var _ = Describe("PodAccumulatedScenarioBuilder", func() {
 		It("returns scenario with all tasks in single groups when minAvailable is amount of pods", func() {
 			for _, podGroupInfo := range ssn.ClusterInfo.PodGroupInfos {
 				podGroupInfo.GetSubGroups()[podgroup_info.DefaultSubGroup].SetMinAvailable(int32(len(podGroupInfo.GetAllPodsMap())))
-				podGroupInfo.PodGroup.Spec.MinMember = int32(len(podGroupInfo.GetAllPodsMap()))
+				podGroupInfo.PodGroup.Spec.MinMember = ptr.To(int32(len(podGroupInfo.GetAllPodsMap())))
 			}
 			scenarioBuilder = NewPodAccumulatedScenarioBuilder(ssn, reclaimerJob, []*podgroup_info.PodGroupInfo{},
 				utils.GetVictimsQueue(ssn, nil), ssn.ClusterInfo.Nodes)
@@ -133,7 +134,7 @@ var _ = Describe("PodAccumulatedScenarioBuilder", func() {
 			ssn, _ = initializeSession(3, 2)
 			for _, podGroupInfo := range ssn.ClusterInfo.PodGroupInfos {
 				podGroupInfo.GetSubGroups()[podgroup_info.DefaultSubGroup].SetMinAvailable(int32(len(podGroupInfo.GetAllPodsMap())))
-				podGroupInfo.PodGroup.Spec.MinMember = int32(len(podGroupInfo.GetAllPodsMap()))
+				podGroupInfo.PodGroup.Spec.MinMember = ptr.To(int32(len(podGroupInfo.GetAllPodsMap())))
 			}
 			submitQueue := createQueue("team-a")
 			ssn.ClusterInfo.Queues[submitQueue.UID] = submitQueue
@@ -167,7 +168,7 @@ var _ = Describe("PodAccumulatedScenarioBuilder", func() {
 			ssn, _ = initializeSession(3, 2)
 			for _, podGroupInfo := range ssn.ClusterInfo.PodGroupInfos {
 				podGroupInfo.GetSubGroups()[podgroup_info.DefaultSubGroup].SetMinAvailable(int32(len(podGroupInfo.GetAllPodsMap())))
-				podGroupInfo.PodGroup.Spec.MinMember = int32(len(podGroupInfo.GetAllPodsMap()))
+				podGroupInfo.PodGroup.Spec.MinMember = ptr.To(int32(len(podGroupInfo.GetAllPodsMap())))
 			}
 			submitQueue := createQueue("team-a")
 			ssn.ClusterInfo.Queues[submitQueue.UID] = submitQueue
@@ -206,7 +207,7 @@ var _ = Describe("PodAccumulatedScenarioBuilder", func() {
 			minAvailable := 1
 			for _, podGroupInfo := range ssn.ClusterInfo.PodGroupInfos {
 				podGroupInfo.GetSubGroups()[podgroup_info.DefaultSubGroup].SetMinAvailable(int32(minAvailable))
-				podGroupInfo.PodGroup.Spec.MinMember = int32(minAvailable)
+				podGroupInfo.PodGroup.Spec.MinMember = ptr.To(int32(minAvailable))
 			}
 			submitQueue := createQueue("team-a")
 			ssn.ClusterInfo.Queues[submitQueue.UID] = submitQueue
@@ -247,7 +248,7 @@ var _ = Describe("PodAccumulatedScenarioBuilder", func() {
 			minAvailable := 2
 			for _, podGroupInfo := range ssn.ClusterInfo.PodGroupInfos {
 				podGroupInfo.GetSubGroups()[podgroup_info.DefaultSubGroup].SetMinAvailable(int32(minAvailable))
-				podGroupInfo.PodGroup.Spec.MinMember = int32(minAvailable)
+				podGroupInfo.PodGroup.Spec.MinMember = ptr.To(int32(minAvailable))
 			}
 			submitQueue := createQueue("team-a")
 			ssn.ClusterInfo.Queues[submitQueue.UID] = submitQueue
@@ -382,7 +383,7 @@ func createJobWithTasks(
 			UID:       types.UID(jobUID),
 		},
 		Spec: schedulingv2alpha2.PodGroupSpec{
-			MinMember: 1,
+			MinMember: ptr.To(int32(1)),
 			Queue:     queueName,
 		},
 	})

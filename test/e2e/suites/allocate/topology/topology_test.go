@@ -25,6 +25,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 )
 
 var _ = Describe("Topology", Ordered, func() {
@@ -263,7 +264,7 @@ func createDistributedWorkload(ctx context.Context, testCtx *testcontext.TestCon
 	queueName := testCtx.Queues[0].Name
 
 	podGroup := pod_group.Create(namespace, "distributed-pod-group"+utils.GenerateRandomK8sName(10), queueName)
-	podGroup.Spec.MinMember = int32(podCount)
+	podGroup.Spec.MinMember = ptr.To(int32(podCount))
 	podGroup.Spec.TopologyConstraint = topologyConstraint
 
 	pods := []*v1.Pod{}

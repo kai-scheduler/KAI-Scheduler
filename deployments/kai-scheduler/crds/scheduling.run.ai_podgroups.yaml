@@ -47,16 +47,6 @@ spec:
           spec:
             description: PodGroupSpec defines the desired state of PodGroup
             properties:
-              backoffLimit:
-                description: The number of failed pods required for this podgroup
-                  to move to 'Failed' phase.
-                format: int32
-                type: integer
-              completions:
-                description: The number of successful pods required for this podgroup
-                  to move to 'Successful' phase.
-                format: int32
-                type: integer
               markUnschedulable:
                 description: Should add "Unschedulable" event to the pods or not.
                 type: boolean
@@ -66,10 +56,6 @@ spec:
                   if there are not enough resources to start all required members, the scheduler will not start anyone.
                 format: int32
                 minimum: 1
-                type: integer
-              parallelism:
-                description: The number of pods which will try to run at any instant.
-                format: int32
                 type: integer
               preemptibility:
                 description: |-
