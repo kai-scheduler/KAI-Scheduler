@@ -73,16 +73,3 @@ updates:
         patterns:
           - "k8s.io/*"
           - "sigs.k8s.io/*"
-  - package-ecosystem: "gomod"
-    directory: "/"
-    target-branch: "v0.4"
-    schedule:
-      interval: "weekly"
-    # Enable only security updates for existing releases 
-    # https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference#open-pull-requests-limit-
-    open-pull-requests-limit: 0 
-    groups:
-      kubernetes:
-        patterns:
-          - "k8s.io/*"
-          - "sigs.k8s.io/*"
