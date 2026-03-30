@@ -26,7 +26,7 @@ The following versions are currently supported.
 | **v0.10** | Standard | Dec 2025 | *Until v0.12* | **End of Life** |
 | **v0.9** | **LTS** | Sep 2025 | **Sep 2026** | **Maintenance** |
 | **v0.6** | **LTS** | Jun 2025 | **Jun 2026** | **Maintenance** |
-| **v0.4** | **LTS** | Apr 2025 | **Apr 2026** | **Maintenance** |
+| **v0.4** | **LTS** | Apr 2025 | **Apr 2026** | **End of Life** |
 | **< v0.4** | Legacy | - | - | **End of Life** |
 
 > **Note on Versioning:** The strict "Even numbers are LTS" policy begins with `v0.12`. The versions listed above (`v0.9`, `v0.6`, `v0.4`) are supported as transitional LTS releases.
