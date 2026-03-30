@@ -1,0 +1,367 @@
+[
+  {
+    "SuiteDescription": "Scale Suite",
+    "SuitePath": "github.com/NVIDIA/KAI-scheduler/test/e2e/scale",
+    "SuiteSucceeded": true,
+    "SuiteHasProgrammaticFocus": false,
+    "SpecialSuiteFailureReasons": [],
+    "PreRunStats": { "TotalSpecs": 13, "SpecsThatWillRun": 13 },
+    "StartTime": "2026-03-06T06:00:00Z",
+    "EndTime": "2026-03-06T10:15:22Z",
+    "RunTime": 15322000000000,
+    "RunningInParallel": false,
+    "SpecReports": [
+      {
+        "ContainerHierarchyTexts": ["Kwok scale test", "Topology"],
+        "ContainerHierarchyLabels": [["scale"], []],
+        "LeafNodeType": "It",
+        "LeafNodeLocation": { "FileName": "test/e2e/scale/kwok_test.go", "LineNumber": 229 },
+        "LeafNodeLabels": [],
+        "LeafNodeText": "Allocate single distributed job with preferred topology",
+        "State": "passed",
+        "StartTime": "2026-03-06T06:05:30Z",
+        "EndTime": "2026-03-06T06:18:30Z",
+        "RunTime": 780000000000,
+        "NumAttempts": 1,
+        "MaxFlakeAttempts": 0,
+        "IsSerial": false,
+        "IsInOrderedContainer": true,
+        "CapturedGinkgoWriterOutput": "time=2026-03-06T06:05:31Z level=INFO msg=\"Time to create and wait for topology node pools\" duration=1m22.4s\ntime=2026-03-06T06:07:00Z level=INFO msg=\"Time to wait for topology nodes to be ready\" duration=2m08.7s\ntime=2026-03-06T06:18:28Z level=INFO msg=\"Scheduled pods\" \"Total time\"=10m31.2s nodes=512 distributed-jobs=51\n",
+        "CapturedStdOutErr": "",
+        "ReportEntries": [
+          {
+            "Name": "Test Metrics",
+            "Time": "2026-03-06T06:18:29Z",
+            "Value": { "AsJSON": "{\"distributed jobs\":51,\"nodes\":512,\"pods\":102,\"time\":\"10m31.2s\"}" }
+          }
+        ],
+        "AdditionalFailures": [],
+        "Failure": { "Message": "" }
+      },
+      {
+        "ContainerHierarchyTexts": ["Kwok scale test", "Topology"],
+        "ContainerHierarchyLabels": [["scale"], []],
+        "LeafNodeType": "It",
+        "LeafNodeLocation": { "FileName": "test/e2e/scale/kwok_test.go", "LineNumber": 238 },
+        "LeafNodeLabels": [],
+        "LeafNodeText": "Allocate single distributed job without preferred topology",
+        "State": "passed",
+        "StartTime": "2026-03-06T06:19:40Z",
+        "EndTime": "2026-03-06T06:29:40Z",
+        "RunTime": 600000000000,
+        "NumAttempts": 1,
+        "MaxFlakeAttempts": 0,
+        "IsSerial": false,
+        "IsInOrderedContainer": true,
+        "CapturedGinkgoWriterOutput": "time=2026-03-06T06:29:38Z level=INFO msg=\"Scheduled pods\" \"Total time\"=9m12.8s nodes=512 distributed-jobs=51\n",
+        "CapturedStdOutErr": "",
+        "ReportEntries": [
+          {
+            "Name": "Test Metrics",
+            "Time": "2026-03-06T06:29:39Z",
+            "Value": { "AsJSON": "{\"distributed jobs\":51,\"nodes\":512,\"pods\":102,\"time\":\"9m12.8s\"}" }
+          }
+        ],
+        "AdditionalFailures": [],
+        "Failure": { "Message": "" }
+      },
+      {
+        "ContainerHierarchyTexts": ["Kwok scale test", "Big cluster", "Sanity Fill Cluster", "scheduler disabled during job creation"],
+        "ContainerHierarchyLabels": [["scale"], [], [], []],
+        "LeafNodeType": "It",
+        "LeafNodeLocation": { "FileName": "test/e2e/scale/kwok_test.go", "LineNumber": 294 },
+        "LeafNodeLabels": [],
+        "LeafNodeText": "fill cluster with single GPU Jobs",
+        "State": "passed",
+        "StartTime": "2026-03-06T06:48:00Z",
+        "EndTime": "2026-03-06T07:06:00Z",
+        "RunTime": 1080000000000,
+        "NumAttempts": 1,
+        "MaxFlakeAttempts": 0,
+        "IsSerial": false,
+        "IsInOrderedContainer": true,
+        "CapturedGinkgoWriterOutput": "time=2026-03-06T06:48:01Z level=INFO msg=\"Base test.\" testName=\"Fill Cluster with single GPU Jobs\"\ntime=2026-03-06T06:48:01Z level=INFO msg=\"Creating pods\"\ntime=2026-03-06T06:52:14Z level=INFO msg=\"Waiting for pods creation\"\ntime=2026-03-06T06:52:18Z level=INFO msg=\"Waiting for pods scheduling\"\ntime=2026-03-06T07:05:58Z level=INFO msg=\"Scheduled pods\" \"Total time\"=13m40.1s nodes=500 jobs=4000\n",
+        "CapturedStdOutErr": "",
+        "ReportEntries": [
+          {
+            "Name": "Test Metrics",
+            "Time": "2026-03-06T07:05:59Z",
+            "Value": { "AsJSON": "{\"jobs\":4000,\"nodes\":500,\"time\":\"13m40.1s\"}" }
+          }
+        ],
+        "AdditionalFailures": [],
+        "Failure": { "Message": "" }
+      },
+      {
+        "ContainerHierarchyTexts": ["Kwok scale test", "Big cluster", "Sanity Fill Cluster", "all services are running during job creation"],
+        "ContainerHierarchyLabels": [["scale"], [], [], []],
+        "LeafNodeType": "It",
+        "LeafNodeLocation": { "FileName": "test/e2e/scale/kwok_test.go", "LineNumber": 303 },
+        "LeafNodeLabels": [],
+        "LeafNodeText": "fill cluster with single GPU Jobs",
+        "State": "passed",
+        "StartTime": "2026-03-06T07:07:00Z",
+        "EndTime": "2026-03-06T07:31:00Z",
+        "RunTime": 1440000000000,
+        "NumAttempts": 1,
+        "MaxFlakeAttempts": 0,
+        "IsSerial": false,
+        "IsInOrderedContainer": true,
+        "CapturedGinkgoWriterOutput": "time=2026-03-06T07:07:01Z level=INFO msg=\"Base test.\" testName=\"Fill Cluster with single GPU Jobs - scheduler is running while submitting jobs\"\ntime=2026-03-06T07:07:01Z level=INFO msg=\"Creating pods\"\ntime=2026-03-06T07:12:44Z level=INFO msg=\"Waiting for pods creation\"\ntime=2026-03-06T07:12:48Z level=INFO msg=\"Waiting for pods scheduling\"\ntime=2026-03-06T07:30:57Z level=INFO msg=\"Scheduled pods\" \"Total time\"=23m56.4s nodes=500 jobs=4000\n",
+        "CapturedStdOutErr": "",
+        "ReportEntries": [
+          {
+            "Name": "Test Metrics",
+            "Time": "2026-03-06T07:30:58Z",
+            "Value": { "AsJSON": "{\"jobs\":4000,\"nodes\":500,\"time\":\"23m56.4s\"}" }
+          }
+        ],
+        "AdditionalFailures": [],
+        "Failure": { "Message": "" }
+      },
+      {
+        "ContainerHierarchyTexts": ["Kwok scale test", "Big cluster", "Whole GPU Tests"],
+        "ContainerHierarchyLabels": [["scale"], [], []],
+        "LeafNodeType": "It",
+        "LeafNodeLocation": { "FileName": "test/e2e/scale/kwok_test.go", "LineNumber": 325 },
+        "LeafNodeLabels": [],
+        "LeafNodeText": "schedules jobs with pending tasks in background",
+        "State": "passed",
+        "StartTime": "2026-03-06T07:32:00Z",
+        "EndTime": "2026-03-06T07:52:00Z",
+        "RunTime": 1200000000000,
+        "NumAttempts": 1,
+        "MaxFlakeAttempts": 0,
+        "IsSerial": false,
+        "IsInOrderedContainer": true,
+        "CapturedGinkgoWriterOutput": "time=2026-03-06T07:32:01Z level=INFO msg=\"Base test.\" testName=\"Fill Cluster with single GPU Jobs with 400 pending tasks in background\"\ntime=2026-03-06T07:32:01Z level=INFO msg=\"Creating pods\"\ntime=2026-03-06T07:37:30Z level=INFO msg=\"Waiting for pods creation\"\ntime=2026-03-06T07:37:34Z level=INFO msg=\"Waiting for pods scheduling\"\ntime=2026-03-06T07:51:57Z level=INFO msg=\"Scheduled pods\" \"Total time\"=14m23.2s nodes=500 jobs=4000\n",
+        "CapturedStdOutErr": "",
+        "ReportEntries": [
+          {
+            "Name": "Test Metrics",
+            "Time": "2026-03-06T07:51:58Z",
+            "Value": { "AsJSON": "{\"jobs\":4000,\"nodes\":500,\"time\":\"14m23.2s\"}" }
+          }
+        ],
+        "AdditionalFailures": [],
+        "Failure": { "Message": "" }
+      },
+      {
+        "ContainerHierarchyTexts": ["Kwok scale test", "Big cluster", "Whole GPU Tests", "Reclaim", "Single GPU Reclaimees", "measure reclaim failure time"],
+        "ContainerHierarchyLabels": [["scale"], [], [], [], [], []],
+        "LeafNodeType": "It",
+        "LeafNodeLocation": { "FileName": "test/e2e/scale/kwok_test.go", "LineNumber": 387 },
+        "LeafNodeLabels": [],
+        "LeafNodeText": "measure time for reclaim to fail on distributed job last pod",
+        "State": "passed",
+        "StartTime": "2026-03-06T08:00:00Z",
+        "EndTime": "2026-03-06T08:06:00Z",
+        "RunTime": 360000000000,
+        "NumAttempts": 1,
+        "MaxFlakeAttempts": 0,
+        "IsSerial": false,
+        "IsInOrderedContainer": true,
+        "CapturedGinkgoWriterOutput": "",
+        "CapturedStdOutErr": "",
+        "ReportEntries": [
+          {
+            "Name": "Test Metrics",
+            "Time": "2026-03-06T08:05:58Z",
+            "Value": { "AsJSON": "{\"average time to unschedulable (seconds)\":8.34,\"nodes\":500,\"pods\":10,\"total requested gpus\":80}" }
+          }
+        ],
+        "AdditionalFailures": [],
+        "Failure": { "Message": "" }
+      },
+      {
+        "ContainerHierarchyTexts": ["Kwok scale test", "Big cluster", "Whole GPU Tests", "Reclaim", "Single GPU Reclaimees", "measure reclaim time"],
+        "ContainerHierarchyLabels": [["scale"], [], [], [], [], []],
+        "LeafNodeType": "It",
+        "LeafNodeLocation": { "FileName": "test/e2e/scale/kwok_test.go", "LineNumber": 427 },
+        "LeafNodeLabels": [],
+        "LeafNodeText": "reclaims for one very large job",
+        "State": "passed",
+        "StartTime": "2026-03-06T08:10:00Z",
+        "EndTime": "2026-03-06T08:20:00Z",
+        "RunTime": 600000000000,
+        "NumAttempts": 1,
+        "MaxFlakeAttempts": 0,
+        "IsSerial": false,
+        "IsInOrderedContainer": true,
+        "CapturedGinkgoWriterOutput": "",
+        "CapturedStdOutErr": "",
+        "ReportEntries": [
+          {
+            "Name": "Test Metrics",
+            "Time": "2026-03-06T08:19:58Z",
+            "Value": { "AsJSON": "{\"number of pods\":250,\"time to reclaim (seconds)\":47.2,\"total requested gpus\":2000}" }
+          }
+        ],
+        "AdditionalFailures": [],
+        "Failure": { "Message": "" }
+      },
+      {
+        "ContainerHierarchyTexts": ["Kwok scale test", "Big cluster", "Whole GPU Tests", "Reclaim", "Single GPU Reclaimees", "measure reclaim time"],
+        "ContainerHierarchyLabels": [["scale"], [], [], [], [], []],
+        "LeafNodeType": "It",
+        "LeafNodeLocation": { "FileName": "test/e2e/scale/kwok_test.go", "LineNumber": 431 },
+        "LeafNodeLabels": [],
+        "LeafNodeText": "reclaims single GPU Jobs at intervals to measure latency",
+        "State": "passed",
+        "StartTime": "2026-03-06T08:21:00Z",
+        "EndTime": "2026-03-06T08:29:00Z",
+        "RunTime": 480000000000,
+        "NumAttempts": 1,
+        "MaxFlakeAttempts": 0,
+        "IsSerial": false,
+        "IsInOrderedContainer": true,
+        "CapturedGinkgoWriterOutput": "",
+        "CapturedStdOutErr": "",
+        "ReportEntries": [
+          {
+            "Name": "Test Metrics",
+            "Time": "2026-03-06T08:28:58Z",
+            "Value": { "AsJSON": "{\"average time to reclaim single GPU (seconds)\":3.87,\"running jobs\":4000}" }
+          }
+        ],
+        "AdditionalFailures": [],
+        "Failure": { "Message": "" }
+      },
+      {
+        "ContainerHierarchyTexts": ["Kwok scale test", "Big cluster", "Whole GPU Tests", "Reclaim", "Single GPU Reclaimees"],
+        "ContainerHierarchyLabels": [["scale"], [], [], [], []],
+        "LeafNodeType": "It",
+        "LeafNodeLocation": { "FileName": "test/e2e/scale/kwok_test.go", "LineNumber": 436 },
+        "LeafNodeLabels": [],
+        "LeafNodeText": "reclaims many single GPU Jobs",
+        "State": "passed",
+        "StartTime": "2026-03-06T08:30:00Z",
+        "EndTime": "2026-03-06T08:51:00Z",
+        "RunTime": 1260000000000,
+        "NumAttempts": 1,
+        "MaxFlakeAttempts": 0,
+        "IsSerial": false,
+        "IsInOrderedContainer": true,
+        "CapturedGinkgoWriterOutput": "time=2026-03-06T08:30:01Z level=INFO msg=\"Wait for pods in sanity queue to come back up\"\ntime=2026-03-06T08:30:01Z level=INFO msg=\"Base test.\" testName=\"Reclaim 4000 single GPU Jobs\"\ntime=2026-03-06T08:30:01Z level=INFO msg=\"Creating pods\"\ntime=2026-03-06T08:35:42Z level=INFO msg=\"Waiting for pods creation\"\ntime=2026-03-06T08:35:46Z level=INFO msg=\"Waiting for pods scheduling\"\ntime=2026-03-06T08:50:57Z level=INFO msg=\"Scheduled pods\" \"Total time\"=15m11.3s nodes=500 jobs=4000\n",
+        "CapturedStdOutErr": "",
+        "ReportEntries": [
+          {
+            "Name": "Test Metrics",
+            "Time": "2026-03-06T08:50:58Z",
+            "Value": { "AsJSON": "{\"jobs\":4000,\"nodes\":500,\"time\":\"15m11.3s\"}" }
+          }
+        ],
+        "AdditionalFailures": [],
+        "Failure": { "Message": "" }
+      },
+      {
+        "ContainerHierarchyTexts": ["Kwok scale test", "Big cluster", "Whole GPU Tests", "Reclaim", "Single GPU Reclaimees", "distributed jobs"],
+        "ContainerHierarchyLabels": [["scale"], [], [], [], [], []],
+        "LeafNodeType": "It",
+        "LeafNodeLocation": { "FileName": "test/e2e/scale/kwok_test.go", "LineNumber": 454 },
+        "LeafNodeLabels": [],
+        "LeafNodeText": "reclaims with distributed jobs",
+        "State": "passed",
+        "StartTime": "2026-03-06T08:52:00Z",
+        "EndTime": "2026-03-06T09:07:00Z",
+        "RunTime": 900000000000,
+        "NumAttempts": 1,
+        "MaxFlakeAttempts": 0,
+        "IsSerial": false,
+        "IsInOrderedContainer": true,
+        "CapturedGinkgoWriterOutput": "time=2026-03-06T09:06:57Z level=INFO msg=\"Scheduled pods\" \"Total time\"=14m31.6s nodes=500 distributed-jobs=50\n",
+        "CapturedStdOutErr": "",
+        "ReportEntries": [
+          {
+            "Name": "Test Metrics",
+            "Time": "2026-03-06T09:06:58Z",
+            "Value": { "AsJSON": "{\"distributed jobs\":50,\"nodes\":500,\"pods\":500,\"time\":\"14m31.6s\"}" }
+          }
+        ],
+        "AdditionalFailures": [],
+        "Failure": { "Message": "" }
+      },
+      {
+        "ContainerHierarchyTexts": ["Kwok scale test", "Big cluster", "Whole GPU Tests", "Reclaim", "Single GPU Reclaimees", "distributed jobs"],
+        "ContainerHierarchyLabels": [["scale"], [], [], [], [], []],
+        "LeafNodeType": "It",
+        "LeafNodeLocation": { "FileName": "test/e2e/scale/kwok_test.go", "LineNumber": 458 },
+        "LeafNodeLabels": [],
+        "LeafNodeText": "consolidates for many large jobs",
+        "State": "passed",
+        "StartTime": "2026-03-06T09:08:00Z",
+        "EndTime": "2026-03-06T09:27:00Z",
+        "RunTime": 1140000000000,
+        "NumAttempts": 1,
+        "MaxFlakeAttempts": 0,
+        "IsSerial": false,
+        "IsInOrderedContainer": true,
+        "CapturedGinkgoWriterOutput": "time=2026-03-06T09:08:01Z level=INFO msg=\"delete jobs from each node.\" queue=sanity-xk7f2\ntime=2026-03-06T09:08:01Z level=INFO msg=\"running consolidate test\"\ntime=2026-03-06T09:08:01Z level=INFO msg=\"Consolidating for jobs.\" \"number of distributed jobs\"=44 \"gpus per pod\"=5 \"pods per distributed job\"=10\ntime=2026-03-06T09:26:57Z level=INFO msg=\"Scheduled pods\" \"Total time\"=18m52.1s nodes=500 distributed-jobs=44\n",
+        "CapturedStdOutErr": "",
+        "ReportEntries": [
+          {
+            "Name": "Test Metrics",
+            "Time": "2026-03-06T09:26:58Z",
+            "Value": { "AsJSON": "{\"distributed jobs\":44,\"nodes\":500,\"pods\":440,\"time\":\"18m52.1s\"}" }
+          }
+        ],
+        "AdditionalFailures": [],
+        "Failure": { "Message": "" }
+      },
+      {
+        "ContainerHierarchyTexts": ["Kwok scale test", "Big cluster", "Whole GPU Tests", "Reclaim", "Full Node GPU Reclaimees", "measure reclaim time"],
+        "ContainerHierarchyLabels": [["scale"], [], [], [], [], []],
+        "LeafNodeType": "It",
+        "LeafNodeLocation": { "FileName": "test/e2e/scale/kwok_test.go", "LineNumber": 486 },
+        "LeafNodeLabels": [],
+        "LeafNodeText": "reclaims for one very large job",
+        "State": "passed",
+        "StartTime": "2026-03-06T09:28:00Z",
+        "EndTime": "2026-03-06T09:39:00Z",
+        "RunTime": 660000000000,
+        "NumAttempts": 1,
+        "MaxFlakeAttempts": 0,
+        "IsSerial": false,
+        "IsInOrderedContainer": true,
+        "CapturedGinkgoWriterOutput": "",
+        "CapturedStdOutErr": "",
+        "ReportEntries": [
+          {
+            "Name": "Test Metrics",
+            "Time": "2026-03-06T09:38:58Z",
+            "Value": { "AsJSON": "{\"number of pods\":500,\"time to reclaim (seconds)\":38.9,\"total requested gpus\":4000}" }
+          }
+        ],
+        "AdditionalFailures": [],
+        "Failure": { "Message": "" }
+      },
+      {
+        "ContainerHierarchyTexts": ["Kwok scale test", "Big cluster", "Burst Jobs"],
+        "ContainerHierarchyLabels": [["scale"], [], []],
+        "LeafNodeType": "It",
+        "LeafNodeLocation": { "FileName": "test/e2e/scale/kwok_test.go", "LineNumber": 506 },
+        "LeafNodeLabels": ["nccl"],
+        "LeafNodeText": "Runs NCCL Simulation on empty cluster",
+        "State": "passed",
+        "StartTime": "2026-03-06T09:40:00Z",
+        "EndTime": "2026-03-06T10:12:00Z",
+        "RunTime": 1920000000000,
+        "NumAttempts": 1,
+        "MaxFlakeAttempts": 0,
+        "IsSerial": false,
+        "IsInOrderedContainer": true,
+        "CapturedGinkgoWriterOutput": "time=2026-03-06T10:11:58Z level=INFO msg=\"Finished NCCL test\" completedPods=8190 \"len(testPods)\"=8190 pendingPods=0\n",
+        "CapturedStdOutErr": "",
+        "ReportEntries": [
+          {
+            "Name": "Test Metrics",
+            "Time": "2026-03-06T10:11:59Z",
+            "Value": { "AsJSON": "{\"completed pods\":8190,\"nodes\":500,\"pending pods\":0,\"time(seconds)\":1918.4,\"total pods\":8190}" }
+          }
+        ],
+        "AdditionalFailures": [],
+        "Failure": { "Message": "" }
+      }
+    ]
+  }
+]

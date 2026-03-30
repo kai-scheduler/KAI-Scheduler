@@ -1,0 +1,20 @@
+{
+  "runs": [
+    {
+      "timestamp": "2026-03-06T06:00:00Z",
+      "path": "public/2026-03-06/report.json"
+    },
+    {
+      "timestamp": "2026-03-03T06:15:00Z",
+      "path": "public/2026-03-03/report.json"
+    },
+    {
+      "timestamp": "2026-02-25T07:30:00Z",
+      "path": "public/2026-02-25/report.json"
+    },
+    {
+      "timestamp": "2026-02-04T06:00:00Z",
+      "path": "public/2026-02-04/report.json"
+    }
+  ]
+}
