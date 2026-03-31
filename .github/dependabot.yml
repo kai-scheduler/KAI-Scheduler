@@ -15,6 +15,9 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # Enable only security updates for existing releases
+    # https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference#open-pull-requests-limit-
+    open-pull-requests-limit: 0
     groups:
       kubernetes:
         patterns:
