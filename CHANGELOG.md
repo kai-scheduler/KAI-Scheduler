@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 - Fixed operator reconcile loop caused by status-only updates triggering re-reconciliation. #1229 [cypres](https://github.com/cypres)
+- Race condition where `SyncForGpuGroup` could prematurely delete reservation pods when the informer cache had not yet propagated GPU group labels on recently-bound fraction pods. The binder now checks for active BindRequests referencing the GPU group before deleting a reservation pod.
 
 ## [v0.13.3] - 2026-03-18
 
