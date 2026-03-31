@@ -89,7 +89,7 @@ Add the following section under `spec`:
     clientType: prometheus
     connectionString: http://prometheus-operated.kai-scheduler.svc.cluster.local:9090 # Optional: if not configured, the kai config will populate it 
     usageParams:
-      windowSize: 1w # The time period considered for fairness calculations. One week is the default
+      windowSize: 168h # The time period considered for fairness calculations. One week is the default
       windowType: sliding # Change to the desired value (sliding/tumbling). Sliding is the default
       halfLifePeriod: 10m # Leave empty to not use time decay. Off by default
 ```

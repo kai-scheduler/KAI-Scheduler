@@ -83,7 +83,7 @@ The scheduler will restart and connect to Prometheus.
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `windowSize` | `1w` (1 week) | Time period considered for fairness calculations |
+| `windowSize` | `168h` (1 week) | Time period considered for fairness calculations |
 | `windowType` | `sliding` | Window type: `sliding`, `tumbling`, or `cron` |
 | `halfLifePeriod` | disabled | Half-life for exponential decay (e.g., `10m`, `1h`) |
 | `fetchInterval` | `1m` | How often to fetch usage data from Prometheus |
