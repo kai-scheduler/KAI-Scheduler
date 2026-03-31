@@ -1,0 +1,43 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: "kubeflow.org/v2beta1"
+kind: "MPIJob"
+metadata:
+  name: "mpi-hello-world"
+  labels:
+    kai.scheduler/queue: default-queue
+spec:
+  slotsPerWorker: 1
+  mpiReplicaSpecs:
+    Launcher:
+      replicas: 1
+      template:
+        spec:
+          schedulerName: kai-scheduler
+          restartPolicy: OnFailure
+          containers:
+            - name: mpi-launcher
+              image: mpioperator/mpi-pi:openmpi
+              command:
+                - mpirun
+                - -n
+                - "2"
+                - /home/mpiuser/pi
+              resources:
+                requests:
+                  cpu: "100m"
+                  memory: "128Mi"
+    Worker:
+      replicas: 2
+      template:
+        spec:
+          schedulerName: kai-scheduler
+          restartPolicy: OnFailure
+          containers:
+            - name: mpi-worker
+              image: mpioperator/mpi-pi:openmpi
+              resources:
+                requests:
+                  cpu: "100m"
+                  memory: "128Mi"

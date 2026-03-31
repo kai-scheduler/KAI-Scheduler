@@ -1,0 +1,55 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: "kubeflow.org/v1"
+kind: "XGBoostJob"
+metadata:
+  name: "xgboost-dist-iris"
+  labels:
+    kai.scheduler/queue: default-queue
+spec:
+  xgbReplicaSpecs:
+    Master:
+      replicas: 1
+      restartPolicy: OnFailure
+      template:
+        spec:
+          schedulerName: kai-scheduler
+          containers:
+            - name: xgboost
+              image: docker.io/kubeflow/xgboost-dist-iris:latest
+              ports:
+                - containerPort: 9991
+                  name: xgboostjob-port
+              args:
+                - "--job_type=Train"
+                - "--xgboost_parameter=objective:multi:softprob,num_class:3"
+                - "--n_estimators=10"
+                - "--learning_rate=0.1"
+                - "--model_path=/tmp/xgboost-model"
+                - "--model_storage_type=local"
+              resources:
+                requests:
+                  cpu: "500m"
+                  memory: "512Mi"
+    Worker:
+      replicas: 2
+      restartPolicy: OnFailure
+      template:
+        spec:
+          schedulerName: kai-scheduler
+          containers:
+            - name: xgboost
+              image: docker.io/kubeflow/xgboost-dist-iris:latest
+              ports:
+                - containerPort: 9991
+                  name: xgboostjob-port
+              args:
+                - "--job_type=Train"
+                - "--xgboost_parameter=objective:multi:softprob,num_class:3"
+                - "--n_estimators=10"
+                - "--learning_rate=0.1"
+              resources:
+                requests:
+                  cpu: "500m"
+                  memory: "512Mi"
