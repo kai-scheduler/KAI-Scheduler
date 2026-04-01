@@ -8,21 +8,27 @@ Currently, KAI-scheduler does not enforce resource-isolation when using gpu-shar
 
 ## Principle
 
-The principle behind this design is by introducing an open source component called [HAMi-core](https://github.com/Project-HAMi/HAMi-core). HAMi-core is the in-container gpu resource controller, it operates by Hijacking the API-call between CUDA-Runtime(libcudart.so) and CUDA-Driver(libcuda.so). The output from building HAMi-core is libvgpu.so. HAMi-core is the key component in a gpu-sharing related CNCF Sandbox project called [HAMi](https://github.com/Project-HAMi/HAMi). The following figure is showing that device memory has beed restricted by HAMi-core.
+The principle behind this design is by introducing an open source component called [HAMi-core](https://github.com/Project-HAMi/HAMi-core). It can force resource limitations inside container as the following figure shows.
 
 ![image](images/sample_nvidia-smi.png)
 
-## Prequisites
-
-Nvidia driver version >= 440
 
 ## Architect
 
-The Whole Architect can be shown in the figure below. In order for resource isolation be working properly, we need to do the following actions.
-1. Put HAMi-core to a specific path on every GPU-node, it can be done manully or using a daemonset
-2. Set corresponding environment variables, and mount HAMi-core inside task container, which can be done by pod-mutator. 
+The integration consists of two independently deployed components:
 
-<img src="images/resource-isolation-arch.png" width = "400" />
+1. **kai-resource-isolator** (external, hosted under HAMI) — a DaemonSet that deploys HAMI Core libraries to GPU nodes, and a mutating webhook that injects volume mounts into GPU-sharing pods.
+2. **KAI Scheduler** — injects a `GPU_MEMORY_LIMIT` environment variable into containers requesting shared GPUs. For GPU-memory requests, the value is known at pod creation. For GPU-fraction requests, the value is resolved after the scheduling decision determines which GPU node the pod lands on.
+
+Flow once both components are deployed:
+1. Pod requesting GPU sharing is submitted
+2. HAMI mutating webhook injects a volume mount for the HAMI Core library
+3. KAI Scheduler determines the appropriate node and sets `GPU_MEMORY_LIMIT` accordingly
+4. Container runs with HAMI Core enforcing the memory limit
+
+After both components are implemented and tested, a user guide will be added to the documentation.
+
+[!image](images/resource-isolation-design.png)
 
 ## HAMi-core daemonset installation
 
