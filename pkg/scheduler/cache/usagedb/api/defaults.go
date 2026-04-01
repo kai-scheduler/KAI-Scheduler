@@ -6,6 +6,7 @@ package api
 import (
 	"time"
 
+	"github.com/prometheus/common/model"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -17,7 +18,8 @@ func (p *UsageParams) SetDefaults() {
 		p.HalfLifePeriod = nil
 	}
 	if p.WindowSize == nil {
-		p.WindowSize = &metav1.Duration{Duration: time.Hour * 24 * 7}
+		windowSize := model.Duration(time.Hour * 24 * 7)
+		p.WindowSize = &windowSize
 	}
 	if p.WindowType == nil {
 		windowType := SlidingWindow

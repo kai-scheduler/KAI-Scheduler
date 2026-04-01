@@ -9,9 +9,11 @@ import (
 
 	"github.com/aptible/supercronic/cronexpr"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 )
 
 func TestNewPrometheusClient(t *testing.T) {
@@ -390,7 +392,7 @@ func TestGetLatestUsageResetTime_TumblingWindow(t *testing.T) {
 			client := &PrometheusClient{
 				tumblingWindowStartTime: tt.startTime,
 				usageParams: &api.UsageParams{
-					WindowSize: &metav1.Duration{Duration: tt.windowSize},
+					WindowSize: ptr.To(model.Duration(time.Duration(tt.windowSize))),
 				},
 			}
 

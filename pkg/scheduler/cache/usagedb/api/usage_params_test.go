@@ -4,12 +4,15 @@
 package api
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 )
 
 func TestUsageParams_SetDefaults(t *testing.T) {
@@ -23,7 +26,7 @@ func TestUsageParams_SetDefaults(t *testing.T) {
 			input: &UsageParams{},
 			expected: &UsageParams{
 				HalfLifePeriod: nil, // should remain nil (disabled by default)
-				WindowSize:     &metav1.Duration{Duration: time.Hour * 24 * 7},
+				WindowSize:     ptr.To(model.Duration(time.Hour * 24 * 7)),
 				WindowType:     &[]WindowType{SlidingWindow}[0],
 			},
 		},
@@ -34,7 +37,7 @@ func TestUsageParams_SetDefaults(t *testing.T) {
 			},
 			expected: &UsageParams{
 				HalfLifePeriod: nil,
-				WindowSize:     &metav1.Duration{Duration: time.Hour * 24 * 7},
+				WindowSize:     ptr.To(model.Duration(time.Hour * 24 * 7)),
 				WindowType:     &[]WindowType{SlidingWindow}[0],
 			},
 		},
@@ -45,7 +48,7 @@ func TestUsageParams_SetDefaults(t *testing.T) {
 			},
 			expected: &UsageParams{
 				HalfLifePeriod: nil,
-				WindowSize:     &metav1.Duration{Duration: time.Hour * 24 * 7},
+				WindowSize:     ptr.To(model.Duration(time.Hour * 24 * 7)),
 				WindowType:     &[]WindowType{SlidingWindow}[0],
 			},
 		},
@@ -56,18 +59,18 @@ func TestUsageParams_SetDefaults(t *testing.T) {
 			},
 			expected: &UsageParams{
 				HalfLifePeriod: &metav1.Duration{Duration: 30 * time.Minute},
-				WindowSize:     &metav1.Duration{Duration: time.Hour * 24 * 7},
+				WindowSize:     ptr.To(model.Duration(time.Hour * 24 * 7)),
 				WindowType:     &[]WindowType{SlidingWindow}[0],
 			},
 		},
 		{
 			name: "params with window size set should preserve it",
 			input: &UsageParams{
-				WindowSize: &metav1.Duration{Duration: 2 * time.Hour},
+				WindowSize: ptr.To(model.Duration(2 * time.Hour)),
 			},
 			expected: &UsageParams{
 				HalfLifePeriod: nil,
-				WindowSize:     &metav1.Duration{Duration: 2 * time.Hour},
+				WindowSize:     ptr.To(model.Duration(2 * time.Hour)),
 				WindowType:     &[]WindowType{SlidingWindow}[0],
 			},
 		},
@@ -78,7 +81,7 @@ func TestUsageParams_SetDefaults(t *testing.T) {
 			},
 			expected: &UsageParams{
 				HalfLifePeriod: nil,
-				WindowSize:     &metav1.Duration{Duration: time.Hour * 24 * 7},
+				WindowSize:     ptr.To(model.Duration(time.Hour * 24 * 7)),
 				WindowType:     &[]WindowType{TumblingWindow}[0],
 			},
 		},
@@ -86,12 +89,12 @@ func TestUsageParams_SetDefaults(t *testing.T) {
 			name: "all params set should preserve all",
 			input: &UsageParams{
 				HalfLifePeriod: &metav1.Duration{Duration: 45 * time.Minute},
-				WindowSize:     &metav1.Duration{Duration: 3 * time.Hour},
+				WindowSize:     ptr.To(model.Duration(3 * time.Hour)),
 				WindowType:     &[]WindowType{TumblingWindow}[0],
 			},
 			expected: &UsageParams{
 				HalfLifePeriod: &metav1.Duration{Duration: 45 * time.Minute},
-				WindowSize:     &metav1.Duration{Duration: 3 * time.Hour},
+				WindowSize:     ptr.To(model.Duration(3 * time.Hour)),
 				WindowType:     &[]WindowType{TumblingWindow}[0],
 			},
 		},
@@ -109,7 +112,7 @@ func TestUsageParams_SetDefaults(t *testing.T) {
 			}
 
 			require.NotNil(t, tt.input.WindowSize)
-			assert.Equal(t, tt.expected.WindowSize.Duration, tt.input.WindowSize.Duration)
+			assert.Equal(t, time.Duration(*tt.expected.WindowSize), time.Duration(*tt.input.WindowSize))
 
 			require.NotNil(t, tt.input.WindowType)
 			assert.Equal(t, *tt.expected.WindowType, *tt.input.WindowType)
@@ -163,7 +166,7 @@ func TestUsageDBConfig_GetUsageParams(t *testing.T) {
 			},
 			expected: &UsageParams{
 				HalfLifePeriod: nil,
-				WindowSize:     &metav1.Duration{Duration: time.Hour * 24 * 7},
+				WindowSize:     ptr.To(model.Duration(time.Hour * 24 * 7)),
 				WindowType:     &[]WindowType{SlidingWindow}[0],
 			},
 		},
@@ -176,7 +179,7 @@ func TestUsageDBConfig_GetUsageParams(t *testing.T) {
 			},
 			expected: &UsageParams{
 				HalfLifePeriod: nil,
-				WindowSize:     &metav1.Duration{Duration: time.Hour * 24 * 7},
+				WindowSize:     ptr.To(model.Duration(time.Hour * 24 * 7)),
 				WindowType:     &[]WindowType{SlidingWindow}[0],
 			},
 		},
@@ -191,7 +194,7 @@ func TestUsageDBConfig_GetUsageParams(t *testing.T) {
 			},
 			expected: &UsageParams{
 				HalfLifePeriod: &metav1.Duration{Duration: 30 * time.Minute},
-				WindowSize:     &metav1.Duration{Duration: time.Hour * 24 * 7},
+				WindowSize:     ptr.To(model.Duration(time.Hour * 24 * 7)),
 				WindowType:     &[]WindowType{SlidingWindow}[0],
 			},
 		},
@@ -202,13 +205,13 @@ func TestUsageDBConfig_GetUsageParams(t *testing.T) {
 				ConnectionString: "http://localhost:9090",
 				UsageParams: &UsageParams{
 					HalfLifePeriod: &metav1.Duration{Duration: 45 * time.Minute},
-					WindowSize:     &metav1.Duration{Duration: 2 * time.Hour},
+					WindowSize:     ptr.To(model.Duration(2 * time.Hour)),
 					WindowType:     &[]WindowType{TumblingWindow}[0],
 				},
 			},
 			expected: &UsageParams{
 				HalfLifePeriod: &metav1.Duration{Duration: 45 * time.Minute},
-				WindowSize:     &metav1.Duration{Duration: 2 * time.Hour},
+				WindowSize:     ptr.To(model.Duration(2 * time.Hour)),
 				WindowType:     &[]WindowType{TumblingWindow}[0],
 			},
 		},
@@ -227,7 +230,7 @@ func TestUsageDBConfig_GetUsageParams(t *testing.T) {
 			}
 
 			require.NotNil(t, result.WindowSize)
-			assert.Equal(t, tt.expected.WindowSize.Duration, result.WindowSize.Duration)
+			assert.Equal(t, time.Duration(*tt.expected.WindowSize), time.Duration(*result.WindowSize))
 
 			require.NotNil(t, result.WindowType)
 			assert.Equal(t, *tt.expected.WindowType, *result.WindowType)
@@ -250,7 +253,7 @@ func TestUsageDBConfig_GetUsageParams_ImmutableOriginal(t *testing.T) {
 	result := config.GetUsageParams()
 
 	// Modify the result
-	result.WindowSize = &metav1.Duration{Duration: 5 * time.Hour}
+	result.WindowSize = ptr.To(model.Duration(5 * time.Hour))
 
 	// Original should remain unchanged
 	assert.Nil(t, originalParams.WindowSize)
@@ -307,7 +310,7 @@ func TestUsageParams_ZeroValues(t *testing.T) {
 	// Test behavior with zero duration values
 	params := &UsageParams{
 		HalfLifePeriod: &metav1.Duration{Duration: time.Duration(0)},
-		WindowSize:     &metav1.Duration{Duration: time.Duration(0)},
+		WindowSize:     ptr.To(model.Duration(time.Duration(0))),
 	}
 
 	params.SetDefaults()
@@ -316,8 +319,67 @@ func TestUsageParams_ZeroValues(t *testing.T) {
 
 	// Zero values should be preserved, not replaced with defaults
 	require.NotNil(t, params.WindowSize)
-	assert.Equal(t, time.Duration(0), params.WindowSize.Duration)
+	assert.Equal(t, time.Duration(0), time.Duration(*params.WindowSize))
 
 	require.NotNil(t, params.WindowType)
 	assert.Equal(t, SlidingWindow, *params.WindowType)
+}
+
+func TestWindowSize_UnmarshalJSON(t *testing.T) {
+	tests := []struct {
+		name     string
+		json     string
+		wantErr  bool
+		expected model.Duration
+	}{
+		{
+			name:     "week format 1w",
+			json:     `{"clientType":"prometheus","usageParams":{"windowSize":"1w"}}`,
+			expected: model.Duration(7 * 24 * time.Hour),
+		},
+		{
+			name:     "day format 7d",
+			json:     `{"clientType":"prometheus","usageParams":{"windowSize":"7d"}}`,
+			expected: model.Duration(7 * 24 * time.Hour),
+		},
+		{
+			name:     "hour format 168h",
+			json:     `{"clientType":"prometheus","usageParams":{"windowSize":"168h"}}`,
+			expected: model.Duration(168 * time.Hour),
+		},
+		{
+			name:     "minute format 30m",
+			json:     `{"clientType":"prometheus","usageParams":{"windowSize":"30m"}}`,
+			expected: model.Duration(30 * time.Minute),
+		},
+		{
+			name:     "second format 60s",
+			json:     `{"clientType":"prometheus","usageParams":{"windowSize":"60s"}}`,
+			expected: model.Duration(60 * time.Second),
+		},
+		{
+			name:     "multiple weeks 2w",
+			json:     `{"clientType":"prometheus","usageParams":{"windowSize":"2w"}}`,
+			expected: model.Duration(14 * 24 * time.Hour),
+		},
+		{
+			name:    "invalid format should fail",
+			json:    `{"clientType":"prometheus","usageParams":{"windowSize":"invalid"}}`,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &UsageDBConfig{}
+			err := json.Unmarshal([]byte(tt.json), config)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, config.UsageParams.WindowSize)
+			assert.Equal(t, tt.expected, *config.UsageParams.WindowSize)
+		})
+	}
 }

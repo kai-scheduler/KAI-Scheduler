@@ -6,6 +6,7 @@ package fake
 import (
 	"math"
 	"sync"
+	"time"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
@@ -49,7 +50,7 @@ func (f *FakeUsageDBClient) GetResourceUsage() (*queue_info.ClusterUsage, error)
 	usage := queue_info.NewClusterUsage()
 
 	var windowStart, windowEnd int
-	size := f.usageParams.WindowSize.Duration.Seconds()
+	size := time.Duration(*f.usageParams.WindowSize).Seconds()
 	l := len(f.allocationHistory)
 	if l == 0 {
 		return usage, nil

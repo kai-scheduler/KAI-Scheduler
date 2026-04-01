@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/prometheus/common/model"
 	"github.com/xyproto/randomstring"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -120,7 +121,7 @@ func setupControllers(backgroundCtx context.Context, cfg *rest.Config,
 		ClientType:       "fake-with-history",
 		ConnectionString: "fake-connection",
 		UsageParams: &api.UsageParams{
-			WindowSize:     &metav1.Duration{Duration: time.Second * time.Duration(*windowSize)},
+			WindowSize:     ptr.To(model.Duration(time.Second * time.Duration(*windowSize))),
 			FetchInterval:  &metav1.Duration{Duration: time.Millisecond},
 			HalfLifePeriod: &metav1.Duration{Duration: time.Second * time.Duration(*halfLifePeriod)},
 		},

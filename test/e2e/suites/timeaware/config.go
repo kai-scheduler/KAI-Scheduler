@@ -15,6 +15,7 @@ import (
 	usagedbapi "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/configurations"
 	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
+	"github.com/prometheus/common/model"
 )
 
 // timeAwareConfig holds configuration for time-aware fairness tests
@@ -66,7 +67,7 @@ func configureTimeAwareFairness(ctx context.Context, testCtx *testcontext.TestCo
 		shard.Spec.UsageDBConfig = &usagedbapi.UsageDBConfig{
 			ClientType: "prometheus",
 			UsageParams: &usagedbapi.UsageParams{
-				WindowSize:     &metav1.Duration{Duration: config.WindowSize},
+				WindowSize:     ptr.To(model.Duration(config.WindowSize)),
 				HalfLifePeriod: &metav1.Duration{Duration: config.HalfLifePeriod},
 				FetchInterval:  &metav1.Duration{Duration: config.FetchInterval},
 				WindowType:     &windowType,
