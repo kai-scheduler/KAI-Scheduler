@@ -10,6 +10,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+
 	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
 	kaiprometheus "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/prometheus"
 	usagedbapi "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
@@ -67,7 +69,7 @@ func configureTimeAwareFairness(ctx context.Context, testCtx *testcontext.TestCo
 		shard.Spec.UsageDBConfig = &usagedbapi.UsageDBConfig{
 			ClientType: "prometheus",
 			UsageParams: &usagedbapi.UsageParams{
-				WindowSize:     ptr.To(model.Duration(config.WindowSize)),
+				WindowSize:     monitoringv1.DurationPointer(model.Duration(config.WindowSize).String()),
 				HalfLifePeriod: &metav1.Duration{Duration: config.HalfLifePeriod},
 				FetchInterval:  &metav1.Duration{Duration: config.FetchInterval},
 				WindowType:     &windowType,

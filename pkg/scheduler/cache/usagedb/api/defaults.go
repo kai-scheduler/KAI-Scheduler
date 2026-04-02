@@ -6,7 +6,7 @@ package api
 import (
 	"time"
 
-	"github.com/prometheus/common/model"
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -18,7 +18,7 @@ func (p *UsageParams) SetDefaults() {
 		p.HalfLifePeriod = nil
 	}
 	if p.WindowSize == nil {
-		windowSize := model.Duration(time.Hour * 24 * 7)
+		windowSize := monitoringv1.Duration("1w")
 		p.WindowSize = &windowSize
 	}
 	if p.WindowType == nil {
