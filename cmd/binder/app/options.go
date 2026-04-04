@@ -11,26 +11,28 @@ import (
 )
 
 type Options struct {
-	SchedulerName                        string
-	ResourceReservationNamespace         string
-	ResourceReservationServiceAccount    string
-	ResourceReservationPodImage          string
-	ResourceReservationAppLabel          string
-	ResourceReservationAllocationTimeout int
-	ResourceReservationPodResourcesJSON  string
-	ScalingPodNamespace                  string
-	QPS                                  float64
-	Burst                                int
-	MaxConcurrentReconciles              int
-	RateLimiterBaseDelaySeconds          int
-	RateLimiterMaxDelaySeconds           int
-	EnableLeaderElection                 bool
-	MetricsAddr                          string
-	ProbeAddr                            string
-	FakeGPUNodes                         bool
-	GpuCdiEnabled                        bool
-	VolumeBindingTimeoutSeconds          int
-	RuntimeClassName                     string
+	SchedulerName                                   string
+	ResourceReservationNamespace                    string
+	ResourceReservationServiceAccount               string
+	ResourceReservationPodImage                     string
+	ResourceReservationAppLabel                     string
+	ResourceReservationAllocationTimeout            int
+	ResourceReservationPodResourcesJSON             string
+	ResourceReservationPodSecurityContextJSON       string
+	ResourceReservationContainerSecurityContextJSON string
+	ScalingPodNamespace                             string
+	QPS                                             float64
+	Burst                                           int
+	MaxConcurrentReconciles                         int
+	RateLimiterBaseDelaySeconds                     int
+	RateLimiterMaxDelaySeconds                      int
+	EnableLeaderElection                            bool
+	MetricsAddr                                     string
+	ProbeAddr                                       string
+	FakeGPUNodes                                    bool
+	GpuCdiEnabled                                   bool
+	VolumeBindingTimeoutSeconds                     int
+	RuntimeClassName                                string
 }
 
 func InitOptions(fs *pflag.FlagSet) *Options {
@@ -61,6 +63,12 @@ func InitOptions(fs *pflag.FlagSet) *Options {
 	fs.StringVar(&options.ResourceReservationPodResourcesJSON,
 		"resource-reservation-pod-resources", "",
 		"JSON-serialized ResourceRequirements for GPU reservation pods (optional, empty means not set)")
+	fs.StringVar(&options.ResourceReservationPodSecurityContextJSON,
+		"resource-reservation-pod-security-context", "",
+		"JSON-serialized PodSecurityContext for GPU reservation pods (optional)")
+	fs.StringVar(&options.ResourceReservationContainerSecurityContextJSON,
+		"resource-reservation-container-security-context", "",
+		"JSON-serialized SecurityContext for GPU reservation pod containers (optional)")
 	fs.StringVar(&options.ScalingPodNamespace,
 		"scale-adjust-namespace", constants.DefaultScaleAdjustName,
 		"Scaling pods namespace")
