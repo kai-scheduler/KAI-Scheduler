@@ -8,4 +8,4 @@ By default, batch jobs have a `minMember` of 1, meaning pods are scheduled indep
 kubectl apply -f batch-job-min-member.yaml
 ```
 
-This creates a job with `parallelism: 5` but requires at least 3 pods to be schedulable before any pod starts running. The annotation value must be a positive integer.
+This creates a job with `parallelism: 6` but requires at least 2 pods to be schedulable before any pod starts running. The annotation value must be a positive integer.
