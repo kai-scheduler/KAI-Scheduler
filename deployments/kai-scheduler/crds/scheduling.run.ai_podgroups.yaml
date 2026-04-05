@@ -56,7 +56,7 @@ spec:
                   if there are not enough resources to start all required members, the scheduler will not start anyone.
                   Mutually exclusive with MinSubGroup.
                 format: int32
-                minimum: 0
+                minimum: 1
                 type: integer
               minSubGroup:
                 description: |-
@@ -64,7 +64,7 @@ spec:
                   Only applicable when SubGroups are defined.
                   Mutually exclusive with MinMember.
                 format: int32
-                minimum: 0
+                minimum: 1
                 type: integer
               preemptibility:
                 description: |-
