@@ -10,7 +10,7 @@ import (
 
 	"k8s.io/client-go/rest"
 
-	"github.com/NVIDIA/KAI-scheduler/cmd/podgroupcontroller/app"
+	"github.com/kai-scheduler/KAI-scheduler/cmd/podgroupcontroller/app"
 )
 
 func RunPodGroupController(cfg *rest.Config, ctx context.Context) error {

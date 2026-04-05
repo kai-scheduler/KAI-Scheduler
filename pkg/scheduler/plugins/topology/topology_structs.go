@@ -6,10 +6,10 @@ package topology
 import (
 	"strings"
 
-	kaiv1alpha1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1alpha1"
+	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 )
 
 const (
@@ -35,6 +35,9 @@ type Info struct {
 
 	// Topology resource
 	TopologyResource *kaiv1alpha1.Topology
+
+	// VectorMap shared across all nodes
+	VectorMap *resource_info.ResourceVectorMap
 }
 
 // DomainInfo represents a node in the topology tree
@@ -55,17 +58,16 @@ type DomainInfo struct {
 	AllocatablePods int
 
 	// Total available resources in this domain
-	IdleOrReleasingResources *resource_info.Resource
+	IdleOrReleasingVector resource_info.ResourceVector
 }
 
 func NewDomainInfo(id DomainID, level DomainLevel) *DomainInfo {
 	return &DomainInfo{
-		ID:                       id,
-		Level:                    level,
-		Children:                 []*DomainInfo{},
-		Nodes:                    map[string]*node_info.NodeInfo{},
-		AllocatablePods:          allocatablePodsNotSet,
-		IdleOrReleasingResources: resource_info.EmptyResource(),
+		ID:              id,
+		Level:           level,
+		Children:        []*DomainInfo{},
+		Nodes:           map[string]*node_info.NodeInfo{},
+		AllocatablePods: allocatablePodsNotSet,
 	}
 }
 

@@ -18,21 +18,21 @@ import (
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes/fake"
 
-	kaiv1alpha1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1alpha1"
+	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	k8splugins "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_internal/plugins"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/dra_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	k8splugins "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal/plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/dra_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
 )
 
 var SchedulerVerbosity = flag.String("vv", "", "Scheduler's verbosity")
@@ -303,12 +303,13 @@ func MatchExpectedAndRealTasks(t *testing.T, testNumber int, testMetadata TestTo
 			t.Errorf("Test number: %d, name: %v, has failed. Couldn't find node: %v for expected nodes resources.", testNumber, testMetadata.Name, nodeName)
 		}
 
-		if nodeExpectedResources.ReleasingGPUs != ssnNode.Releasing.GPUs() {
-			t.Errorf("Test number: %d, name: %v, has failed. Node name: %v, actual Releasing GPUs: %v, was expecting Releasing GPUs: %v", testNumber, testMetadata.Name, nodeName, ssnNode.Releasing.GPUs(), nodeExpectedResources.ReleasingGPUs)
+		gpuIdx := ssnNode.VectorMap.GetIndex("gpu")
+		if nodeExpectedResources.ReleasingGPUs != ssnNode.ReleasingVector.Get(gpuIdx) {
+			t.Errorf("Test number: %d, name: %v, has failed. Node name: %v, actual Releasing GPUs: %v, was expecting Releasing GPUs: %v", testNumber, testMetadata.Name, nodeName, ssnNode.ReleasingVector.Get(gpuIdx), nodeExpectedResources.ReleasingGPUs)
 		}
 
-		if nodeExpectedResources.IdleGPUs != ssnNode.Idle.GPUs() {
-			t.Errorf("Test number: %d, name: %v, has failed. Node name: %v, actual Idle GPUs: %v, was expecting Idle GPUs: %v", testNumber, testMetadata.Name, nodeName, ssnNode.Idle.GPUs(), nodeExpectedResources.IdleGPUs)
+		if nodeExpectedResources.IdleGPUs != ssnNode.IdleVector.Get(gpuIdx) {
+			t.Errorf("Test number: %d, name: %v, has failed. Node name: %v, actual Idle GPUs: %v, was expecting Idle GPUs: %v", testNumber, testMetadata.Name, nodeName, ssnNode.IdleVector.Get(gpuIdx), nodeExpectedResources.IdleGPUs)
 		}
 	}
 }

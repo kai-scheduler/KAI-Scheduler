@@ -23,18 +23,19 @@ import (
 	"golang.org/x/exp/slices"
 	admissionv1 "k8s.io/api/admissionregistration/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	vpav1 "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/controller/status_reconciler"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/deployable"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/known_types"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/scheduler"
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/controller/status_reconciler"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/deployable"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/known_types"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/scheduler"
 )
 
 func OperandsForShard(shard *kaiv1.SchedulingShard) []operands.Operand {
@@ -91,6 +92,8 @@ func (r *SchedulingShardReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		known_types.ValidatingWebhookConfigurationFieldInherit)
 	r.deployablePerShard[shard.Name].RegisterFieldsInheritFromClusterObjects(&admissionv1.MutatingWebhookConfiguration{},
 		known_types.MutatingWebhookConfigurationFieldInherit)
+	r.deployablePerShard[shard.Name].RegisterFieldsInheritFromClusterObjects(&vpav1.VerticalPodAutoscaler{},
+		known_types.VPAFieldInherit)
 	r.statusReconcilers[shard.Name] = status_reconciler.New(r.Client, r.deployablePerShard[shard.Name])
 
 	deployable := r.deployablePerShard[shard.Name]

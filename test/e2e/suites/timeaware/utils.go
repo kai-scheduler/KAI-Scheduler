@@ -11,7 +11,7 @@ import (
 
 	"k8s.io/client-go/kubernetes"
 
-	e2econstant "github.com/NVIDIA/KAI-scheduler/test/e2e/modules/constant"
+	e2econstant "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/constant"
 )
 
 const (

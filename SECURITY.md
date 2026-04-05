@@ -12,7 +12,7 @@ For details on which versions currently receive security patches, see [SUPPORT.m
 **Please do not report security vulnerabilities through public GitHub issues.**
 
 Instead, please report them via
-[GitHub Security Advisories](https://github.com/NVIDIA/KAI-Scheduler/security/advisories/new).
+[GitHub Security Advisories](https://github.com/kai-scheduler/KAI-scheduler/security/advisories/new).
 
 Please include a description of the vulnerability, steps to reproduce, affected versions,
 and any potential impact.

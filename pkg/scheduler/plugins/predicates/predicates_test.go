@@ -14,25 +14,25 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_affinity"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/queue_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_internal"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_internal/predicates"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/plugins_fake/predicates_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_affinity"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal/predicates"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/plugins_fake/predicates_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 )
 
 func Test_evaluateTaskOnPrePredicate(t *testing.T) {
@@ -217,11 +217,12 @@ func TestMaxPodsWithReleasingPods(t *testing.T) {
 	nodePodAffinityInfo := pod_affinity.NewMockNodePodAffinityInfo(gomock.NewController(t))
 	nodePodAffinityInfo.EXPECT().AddPod(gomock.Any()).AnyTimes()
 
-	ni := node_info.NewNodeInfo(node, nodePodAffinityInfo)
+	vectorMap := resource_info.NewResourceVectorMap()
+	ni := node_info.NewNodeInfo(node, nodePodAffinityInfo, vectorMap)
 
 	// Add running pods
 	for _, pod := range runningPods {
-		task := pod_info.NewTaskInfo(pod)
+		task := pod_info.NewTaskInfo(pod, nil, vectorMap)
 		task.Status = pod_status.Running
 		err := ni.AddTask(task)
 		if err != nil {
@@ -230,7 +231,7 @@ func TestMaxPodsWithReleasingPods(t *testing.T) {
 	}
 
 	// Add releasing pod
-	releasingTask := pod_info.NewTaskInfo(releasingPod)
+	releasingTask := pod_info.NewTaskInfo(releasingPod, nil, vectorMap)
 	releasingTask.Status = pod_status.Releasing
 	err := ni.AddTask(releasingTask)
 	if err != nil {
@@ -239,25 +240,26 @@ func TestMaxPodsWithReleasingPods(t *testing.T) {
 
 	// Now try to allocate the preemptor pod - it should succeed because
 	// the releasing pod's resources (including its pod count) are available
-	preemptorTask := pod_info.NewTaskInfo(preemptorPod)
+	preemptorTask := pod_info.NewTaskInfo(preemptorPod, nil, vectorMap)
 	preemptorTask.Status = pod_status.Pending
 
 	// Check if the task is allocatable
 	allocatable := ni.IsTaskAllocatableOnReleasingOrIdle(preemptorTask)
 
 	// Debug output
-	t.Logf("Node Allocatable pods: %v", ni.Allocatable.ScalarResources()[resource_info.PodsResourceName])
-	t.Logf("Node Idle pods: %v", ni.Idle.ScalarResources()[resource_info.PodsResourceName])
-	t.Logf("Node Used pods: %v", ni.Used.ScalarResources()[resource_info.PodsResourceName])
-	t.Logf("Node Releasing pods: %v", ni.Releasing.ScalarResources()[resource_info.PodsResourceName])
-	t.Logf("Preemptor ResReq pods: %v", preemptorTask.ResReq.ScalarResources()[resource_info.PodsResourceName])
+	podsIdx := ni.VectorMap.GetIndex(v1.ResourcePods)
+	t.Logf("Node Allocatable pods: %v", ni.AllocatableVector.Get(podsIdx))
+	t.Logf("Node Idle pods: %v", ni.IdleVector.Get(podsIdx))
+	t.Logf("Node Used pods: %v", ni.UsedVector.Get(podsIdx))
+	t.Logf("Node Releasing pods: %v", ni.ReleasingVector.Get(podsIdx))
+	t.Logf("Preemptor ResReqVector: %v", preemptorTask.ResReqVector)
 
 	if !allocatable {
 		t.Errorf("Preemptor pod should be allocatable (109 Running + 1 Releasing + 1 new = 110 total, but Releasing pod resources are available)")
-		t.Logf("Node Idle: %v", ni.Idle)
-		t.Logf("Node Used: %v", ni.Used)
-		t.Logf("Node Releasing: %v", ni.Releasing)
-		t.Logf("Preemptor ResReq: %v", preemptorTask.ResReq)
+		t.Logf("Node IdleVector: %v", ni.IdleVector)
+		t.Logf("Node UsedVector: %v", ni.UsedVector)
+		t.Logf("Node ReleasingVector: %v", ni.ReleasingVector)
+		t.Logf("Preemptor ResReqVector: %v", preemptorTask.ResReqVector)
 	}
 }
 
@@ -1020,7 +1022,7 @@ func Test_predicatesPlugin_evaluateTaskOnPredicates(t *testing.T) {
 				},
 				nodes: map[string]nodes_fake.TestNodeBasic{
 					"n1": {
-						GpuMemorySynced: pointer.Bool(false),
+						GpuMemorySynced: ptr.To(false),
 					},
 				},
 				isRestrictNodeSchedulingEnabled: func() bool {
@@ -1061,7 +1063,7 @@ func Test_predicatesPlugin_evaluateTaskOnPredicates(t *testing.T) {
 				},
 				nodes: map[string]nodes_fake.TestNodeBasic{
 					"n1": {
-						MaxTaskNum: pointer.Int(0),
+						MaxTaskNum: ptr.To(0),
 					},
 				},
 				isRestrictNodeSchedulingEnabled: func() bool {
@@ -1101,7 +1103,7 @@ func Test_predicatesPlugin_evaluateTaskOnPredicates(t *testing.T) {
 				},
 				nodes: map[string]nodes_fake.TestNodeBasic{
 					"n1": {
-						MaxTaskNum: pointer.Int(1),
+						MaxTaskNum: ptr.To(1),
 					},
 				},
 				isRestrictNodeSchedulingEnabled: func() bool {
@@ -1188,8 +1190,9 @@ func Test_predicatesPlugin_evaluateTaskOnPredicates(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			jobsMap, tasksMap, _ := jobs_fake.BuildJobsAndTasksMaps(tt.clusterData.jobs)
-			nodesMap := nodes_fake.BuildNodesInfoMap(tt.clusterData.nodes, tasksMap, nil)
+			vectorMap := resource_info.NewResourceVectorMap()
+			jobsMap, tasksMap, _ := jobs_fake.BuildJobsAndTasksMaps(tt.clusterData.jobs, vectorMap)
+			nodesMap := nodes_fake.BuildNodesInfoMap(tt.clusterData.nodes, tasksMap, nil, vectorMap)
 			ssn := &framework.Session{
 				ClusterInfo: &api.ClusterInfo{
 					Nodes:         nodesMap,

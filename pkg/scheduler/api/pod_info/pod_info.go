@@ -29,15 +29,15 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	clientcache "k8s.io/client-go/tools/cache"
 
-	schedulingv1alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/resources"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/storageclaim_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
+	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/storageclaim_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 )
 
 const (
@@ -82,6 +82,11 @@ type PodInfo struct {
 	// ResReq are the minimal resources that needed to launch a pod. (includes init containers resources)
 	ResReq           *resource_info.ResourceRequirements
 	AcceptedResource *resource_info.ResourceRequirements
+
+	// Vector representation of ResReq and AcceptedResource
+	ResReqVector           resource_info.ResourceVector
+	AcceptedResourceVector resource_info.ResourceVector
+	VectorMap              *resource_info.ResourceVectorMap
 
 	schedulingConstraintsSignature common_info.SchedulingConstraintsSignature
 
@@ -163,11 +168,11 @@ func (pi *PodInfo) UpsertStorageClaim(claimInfo *storageclaim_info.StorageClaimI
 	pi.storageClaims[claimInfo.Key] = claimInfo
 }
 
-func NewTaskInfo(pod *v1.Pod, draPodClaims ...*resourceapi.ResourceClaim) *PodInfo {
-	return NewTaskInfoWithBindRequest(pod, nil, draPodClaims...)
+func NewTaskInfo(pod *v1.Pod, draPodClaims []*resourceapi.ResourceClaim, vectorMap *resource_info.ResourceVectorMap) *PodInfo {
+	return NewTaskInfoWithBindRequest(pod, nil, draPodClaims, vectorMap)
 }
 
-func NewTaskInfoWithBindRequest(pod *v1.Pod, bindRequest *bindrequest_info.BindRequestInfo, draPodClaims ...*resourceapi.ResourceClaim) *PodInfo {
+func NewTaskInfoWithBindRequest(pod *v1.Pod, bindRequest *bindrequest_info.BindRequestInfo, draPodClaims []*resourceapi.ResourceClaim, vectorMap *resource_info.ResourceVectorMap) *PodInfo {
 	initResreq := getPodResourceRequest(pod)
 
 	nodeName := pod.Spec.NodeName
@@ -193,6 +198,9 @@ func NewTaskInfoWithBindRequest(pod *v1.Pod, bindRequest *bindrequest_info.BindR
 		Pod:                            pod,
 		ResReq:                         initResreq,
 		AcceptedResource:               resource_info.EmptyResourceRequirements(),
+		ResReqVector:                   initResreq.ToVector(vectorMap),
+		AcceptedResourceVector:         resource_info.NewResourceVector(vectorMap),
+		VectorMap:                      vectorMap,
 		GPUGroups:                      []string{},
 		ResourceRequestType:            RequestTypeRegular,
 		ResourceReceivedType:           ReceivedTypeNone,
@@ -250,26 +258,45 @@ func resourceClaimInfoFromPodClaims(draPodClaims []*resourceapi.ResourceClaim, p
 	return resourceClaimInfo, nil
 }
 
+func (pi *PodInfo) SetVectorMap(vectorMap *resource_info.ResourceVectorMap) {
+	pi.VectorMap = vectorMap
+	pi.ResReqVector = pi.ResReq.ToVector(vectorMap)
+	pi.AcceptedResourceVector = pi.AcceptedResource.ToVector(vectorMap)
+}
+
 func (pi *PodInfo) Clone() *PodInfo {
+	// TODO - remove this
+	var resReqVectorClone resource_info.ResourceVector
+	if pi.ResReqVector != nil {
+		resReqVectorClone = pi.ResReqVector.Clone()
+	}
+	var acceptedResourceVectorClone resource_info.ResourceVector
+	if pi.AcceptedResourceVector != nil {
+		acceptedResourceVectorClone = pi.AcceptedResourceVector.Clone()
+	}
+
 	return &PodInfo{
-		UID:                  pi.UID,
-		Job:                  pi.Job,
-		Name:                 pi.Name,
-		Namespace:            pi.Namespace,
-		SubGroupName:         pi.SubGroupName,
-		NodeName:             pi.NodeName,
-		Status:               pi.Status,
-		Pod:                  pi.Pod,
-		ResReq:               pi.ResReq.Clone(),
-		AcceptedResource:     pi.AcceptedResource.Clone(),
-		GPUGroups:            pi.GPUGroups,
-		ResourceClaimInfo:    pi.ResourceClaimInfo.Clone(),
-		ResourceRequestType:  pi.ResourceRequestType,
-		ResourceReceivedType: pi.ResourceReceivedType,
-		IsVirtualStatus:      pi.IsVirtualStatus,
-		IsLegacyMIGtask:      pi.IsLegacyMIGtask,
-		storageClaims:        pi.storageClaims,
-		ownedStorageClaims:   pi.ownedStorageClaims,
+		UID:                    pi.UID,
+		Job:                    pi.Job,
+		Name:                   pi.Name,
+		Namespace:              pi.Namespace,
+		SubGroupName:           pi.SubGroupName,
+		NodeName:               pi.NodeName,
+		Status:                 pi.Status,
+		Pod:                    pi.Pod,
+		ResReq:                 pi.ResReq.Clone(),
+		AcceptedResource:       pi.AcceptedResource.Clone(),
+		ResReqVector:           resReqVectorClone,
+		AcceptedResourceVector: acceptedResourceVectorClone,
+		VectorMap:              pi.VectorMap,
+		GPUGroups:              pi.GPUGroups,
+		ResourceClaimInfo:      pi.ResourceClaimInfo.Clone(),
+		ResourceRequestType:    pi.ResourceRequestType,
+		ResourceReceivedType:   pi.ResourceReceivedType,
+		IsVirtualStatus:        pi.IsVirtualStatus,
+		IsLegacyMIGtask:        pi.IsLegacyMIGtask,
+		storageClaims:          pi.storageClaims,
+		ownedStorageClaims:     pi.ownedStorageClaims,
 	}
 }
 
@@ -475,6 +502,7 @@ func (pi *PodInfo) updatePodAdditionalFields(bindRequest *bindrequest_info.BindR
 	if len(pi.ResReq.MigResources()) > 0 {
 		pi.ResourceRequestType = RequestTypeMigInstance
 	}
+	pi.ResReqVector = pi.ResReq.ToVector(pi.VectorMap)
 }
 
 // updateLegacyMigResourceRequestFromAnnotations updates the mig resource request of legacy MIG pods

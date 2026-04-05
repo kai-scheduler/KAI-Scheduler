@@ -43,6 +43,10 @@ spec:
     imagesPullSecret: {{ index .Values.global.imagePullSecrets 0 | default "" }}
     {{- end }}
     replicaCount: {{ .Values.operator.replicaCount | default 1 }}
+    {{- if .Values.global.vpa }}
+    vpa:
+      {{- toYaml .Values.global.vpa | nindent 6 }}
+    {{- end }}
 
   binder:
     service:

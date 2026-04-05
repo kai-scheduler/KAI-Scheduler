@@ -9,8 +9,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/deployable"
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/deployable"
 )
 
 type objectWithConditions interface {
@@ -33,12 +33,27 @@ func New(client client.Client, deployable *deployable.DeployableOperands) *Statu
 	}
 }
 
+// UpdateStartReconcileStatus sets Reconciling=True to signal to observers (e.g. kstatus/Helm --wait)
+// that reconciliation is in progress. It is a no-op when the Reconciling condition already exists
+// for the current generation, which means this reconcile was re-triggered by our own status patch
+// rather than by a spec change — skipping the patch breaks the status-update → reconcile loop.
 func (r *StatusReconciler) UpdateStartReconcileStatus(ctx context.Context, object objectWithConditions) error {
+	if r.hasReconcilingConditionForGeneration(object) {
+		return nil
+	}
 	if err := r.reconcileCondition(ctx, object, r.getReconcilingCondition(object.GetGeneration(), true)); err != nil {
 		return err
 	}
-
 	return r.reconcileCondition(ctx, object, r.getDeployedCondition(ctx, object.GetGeneration()))
+}
+
+func (r *StatusReconciler) hasReconcilingConditionForGeneration(object objectWithConditions) bool {
+	for _, c := range object.GetConditions() {
+		if c.Type == string(kaiv1.ConditionTypeReconciling) {
+			return c.ObservedGeneration == object.GetGeneration()
+		}
+	}
+	return false
 }
 
 func (r *StatusReconciler) ReconcileStatus(ctx context.Context, object objectWithConditions) error {

@@ -26,8 +26,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 )
 
 func BenchmarkPodInfoClone_Minimal(b *testing.B) {
@@ -71,7 +72,7 @@ func createMinimalPodInfo() *PodInfo {
 		},
 	}
 
-	podInfo := NewTaskInfo(pod)
+	podInfo := NewTaskInfo(pod, nil, resource_info.NewResourceVectorMap())
 	return podInfo
 }
 
@@ -104,7 +105,7 @@ func createPodInfoWithGPU() *PodInfo {
 		},
 	}
 
-	podInfo := NewTaskInfo(pod)
+	podInfo := NewTaskInfo(pod, nil, resource_info.NewResourceVectorMap())
 	podInfo.ResourceRequestType = RequestTypeGpuMemory
 	return podInfo
 }
@@ -141,7 +142,7 @@ func createPodInfoWithMultipleGPUs() *PodInfo {
 		},
 	}
 
-	podInfo := NewTaskInfo(pod)
+	podInfo := NewTaskInfo(pod, nil, resource_info.NewResourceVectorMap())
 	podInfo.AcceptedResource = podInfo.ResReq.Clone()
 	return podInfo
 }

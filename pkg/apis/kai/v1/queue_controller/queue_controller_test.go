@@ -21,7 +21,7 @@ var _ = Describe("QueueController", func() {
 		queueController := &QueueController{}
 		var replicaCount int32
 		replicaCount = 1
-		queueController.SetDefaultsWhereNeeded(&replicaCount)
+		queueController.SetDefaultsWhereNeeded(&replicaCount, nil)
 		Expect(*queueController.Service.Enabled).To(Equal(true))
 		Expect(*queueController.Service.Image.Name).To(Equal("queuecontroller"))
 		Expect(*queueController.Replicas).To(Equal(int32(1)))
@@ -30,7 +30,7 @@ var _ = Describe("QueueController", func() {
 		queueController := &QueueController{}
 		var replicaCount int32
 		replicaCount = 3
-		queueController.SetDefaultsWhereNeeded(&replicaCount)
+		queueController.SetDefaultsWhereNeeded(&replicaCount, nil)
 		Expect(*queueController.Replicas).To(Equal(int32(3)))
 	})
 })

@@ -12,11 +12,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_affinity"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_affinity"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils"
 )
 
 const migEnabledLabelKey = "node-role.kubernetes.io/mig-enabled"
@@ -213,7 +214,7 @@ func createTaskBestEffort() *pod_info.PodInfo {
 			Phase: v1.PodPending,
 		},
 	}
-	return pod_info.NewTaskInfo(pod)
+	return pod_info.NewTaskInfo(pod, nil, resource_info.NewResourceVectorMap())
 }
 
 func createTaskWithGPU() *pod_info.PodInfo {
@@ -237,7 +238,7 @@ func createTaskWithGPU() *pod_info.PodInfo {
 			Phase: v1.PodPending,
 		},
 	}
-	return pod_info.NewTaskInfo(pod)
+	return pod_info.NewTaskInfo(pod, nil, resource_info.NewResourceVectorMap())
 }
 
 func createTaskFractionalGPU() *pod_info.PodInfo {
@@ -264,7 +265,7 @@ func createTaskFractionalGPU() *pod_info.PodInfo {
 			Phase: v1.PodPending,
 		},
 	}
-	return pod_info.NewTaskInfo(pod)
+	return pod_info.NewTaskInfo(pod, nil, resource_info.NewResourceVectorMap())
 }
 
 func createTaskMIG() *pod_info.PodInfo {
@@ -288,7 +289,7 @@ func createTaskMIG() *pod_info.PodInfo {
 			Phase: v1.PodPending,
 		},
 	}
-	return pod_info.NewTaskInfo(pod)
+	return pod_info.NewTaskInfo(pod, nil, resource_info.NewResourceVectorMap())
 }
 
 func createTaskGPUMemory() *pod_info.PodInfo {
@@ -316,7 +317,7 @@ func createTaskGPUMemory() *pod_info.PodInfo {
 			Phase: v1.PodPending,
 		},
 	}
-	return pod_info.NewTaskInfo(pod)
+	return pod_info.NewTaskInfo(pod, nil, resource_info.NewResourceVectorMap())
 }
 
 func createTaskWithCustomResources(numResources int) *pod_info.PodInfo {
@@ -347,7 +348,7 @@ func createTaskWithCustomResources(numResources int) *pod_info.PodInfo {
 			Phase: v1.PodPending,
 		},
 	}
-	return pod_info.NewTaskInfo(pod)
+	return pod_info.NewTaskInfo(pod, nil, resource_info.NewResourceVectorMap())
 }
 
 func getCustomResourceNames(count int) []string {
@@ -373,5 +374,9 @@ func buildNodeInfoFromK8sNode(k8sNode *v1.Node, ctrl *gomock.Controller) *node_i
 	mockPodAffinity := pod_affinity.NewMockNodePodAffinityInfo(ctrl)
 	mockPodAffinity.EXPECT().AddPod(gomock.Any()).Times(0)
 	mockPodAffinity.EXPECT().RemovePod(gomock.Any()).Times(0)
-	return node_info.NewNodeInfo(k8sNode, mockPodAffinity)
+	vectorMap := resource_info.NewResourceVectorMap()
+	for resourceName := range k8sNode.Status.Allocatable {
+		vectorMap.AddResource(resourceName)
+	}
+	return node_info.NewNodeInfo(k8sNode, mockPodAffinity, vectorMap)
 }

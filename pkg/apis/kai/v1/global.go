@@ -7,12 +7,16 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/common"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
 // GlobalConfig defines the global configuration of the system
 type GlobalConfig struct {
+	// VPA defines the default Vertical Pod Autoscaler configuration for all services
+	// +kubebuilder:validation:Optional
+	VPA *common.VPASpec `json:"vpa,omitempty"`
+
 	// Openshift configures the operator to install on Openshift
 	// +kubebuilder:validation:Optional
 	Openshift *bool `json:"openshift,omitempty"`
@@ -103,6 +107,11 @@ func (g *GlobalConfig) SetDefaultWhereNeeded() {
 	}
 
 	g.RequireDefaultPodAntiAffinityTerm = common.SetDefault(g.RequireDefaultPodAntiAffinityTerm, ptr.To(false))
+
+	if g.VPA == nil {
+		g.VPA = &common.VPASpec{}
+	}
+	g.VPA.SetDefaultsWhereNeeded()
 }
 
 func (g *GlobalConfig) GetSecurityContext() *v1.SecurityContext {

@@ -10,23 +10,24 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/configurations/feature_flags"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/configurations/feature_flags"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	v2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	testcontext "github.com/NVIDIA/KAI-scheduler/test/e2e/modules/context"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/queue"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/testconfig"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/utils"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/wait"
+	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/testconfig"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/utils"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
 
 	knativeserving "knative.dev/serving/pkg/apis/serving/v1"
 )
@@ -84,7 +85,7 @@ var _ = Describe("Knative integration", Ordered, func() {
 			Expect(testCtx.ControllerClient.List(ctx, &podGroups, client.InNamespace(namespace))).To(Succeed())
 			Expect(len(podGroups.Items)).To(Equal(len(pods)), "Expected a podgroup per pod")
 			for _, pg := range podGroups.Items {
-				Expect(pg.Spec.MinMember).To(Equal(int32(1)), "podgroup per pod need min member 1")
+				Expect(pg.Spec.MinMember).To(Equal(ptr.To(int32(1))), "podgroup per pod need min member 1")
 			}
 		})
 
@@ -114,7 +115,7 @@ var _ = Describe("Knative integration", Ordered, func() {
 			Expect(len(pods)).To(Equal(serviceScale), fmt.Sprintf("Expected %d pods for the service", serviceScale))
 			Expect(len(podGroups.Items)).To(Equal(serviceScale), "Expected a podgroup per pod")
 			for _, pg := range podGroups.Items {
-				Expect(pg.Spec.MinMember).To(Equal(int32(1)), "podgroup per pod need min member 1")
+				Expect(pg.Spec.MinMember).To(Equal(ptr.To(int32(1))), "podgroup per pod need min member 1")
 			}
 
 			setKnativeGangAndWait(ctx, testCtx, pointer.Bool(true))
@@ -131,7 +132,7 @@ var _ = Describe("Knative integration", Ordered, func() {
 			Expect(len(pods)).To(Equal(serviceScale), fmt.Sprintf("Expected %d pods for the service", serviceScale))
 			Expect(len(podGroups.Items)).To(Equal(len(pods)), "Expected a podgroup per pod")
 			for _, pg := range podGroups.Items {
-				Expect(pg.Spec.MinMember).To(Equal(int32(1)), "podgroup per pod need min member 1")
+				Expect(pg.Spec.MinMember).To(Equal(ptr.To(int32(1))), "podgroup per pod need min member 1")
 			}
 			setKnativeGangAndWait(ctx, testCtx, nil)
 		})

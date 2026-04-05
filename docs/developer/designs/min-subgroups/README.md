@@ -201,6 +201,8 @@ The scheduler's pod ordering logic (e.g., `subgrouporder` plugin) must adapt to 
 
 **When `minSubGroup` is nil:** The scheduler falls back to current behavior, requiring **all** child SubGroups to be ready before the parent is considered schedulable.
 
+**SubGroups with minMember = 0:** A leaf SubGroup may set `minMember: 0`, meaning all its pods are elastic (no minimum required). The subgrouporder plugin deprioritizes such SubGroups relative to those with minMember > 0; between two SubGroups both with minMember = 0, the one with fewer allocated tasks is prioritized.
+
 **Tie-breaking:** When multiple SubGroups are equally starved (e.g., both at 2/3 pods ready), the scheduler defaults to the order defined in the PodGroup spec and queue—scheduling the first pending pod in line.
 
 ---
@@ -220,7 +222,7 @@ The following validations will be enforced via a Validating Webhook:
 ### Field-Specific Validations
 
 **When using `minMember`:**
-1. `minMember` must be > 0
+1. `minMember` must be ≥ 0. A value of 0 means the SubGroup has no required pods (all pods are elastic/opportunistic); the scheduler treats it as optional and deprioritizes it relative to SubGroups with minMember > 0 (see subgrouporder plugin).
 2. For mid-level SubGroups/PodGroups: Reserved for future use (currently must use `minSubGroup`)
 
 **When using `minSubGroup`:**

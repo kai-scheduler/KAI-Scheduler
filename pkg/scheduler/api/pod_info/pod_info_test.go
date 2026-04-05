@@ -30,13 +30,13 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
-	schedulingv1alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/storageclaim_info"
+	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/storageclaim_info"
 )
 
 func TestGetPodResourceRequest(t *testing.T) {
@@ -501,6 +501,11 @@ func TestPodInfo_updatePodAdditionalFields(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			vectorMap := resource_info.NewResourceVectorMap()
+			for _, container := range append(tt.fields.Pod.Spec.InitContainers, tt.fields.Pod.Spec.Containers...) {
+				vectorMap.AddResourceList(container.Resources.Requests)
+			}
+
 			pi := &PodInfo{
 				Job:       tt.fields.Job,
 				Name:      tt.fields.Name,
@@ -509,6 +514,7 @@ func TestPodInfo_updatePodAdditionalFields(t *testing.T) {
 				Status:    tt.fields.Status,
 				Pod:       tt.fields.Pod,
 				GPUGroups: make([]string, 0),
+				VectorMap: vectorMap,
 			}
 			pi.updatePodAdditionalFields(tt.fields.bindingRequest)
 
@@ -637,7 +643,7 @@ func TestNewTaskInfoWithBindRequest_ResourceClaimInfo(t *testing.T) {
 		},
 		Status: v1.PodStatus{Phase: v1.PodPending},
 	}
-	pi := NewTaskInfoWithBindRequest(pod, nil, draClaim)
+	pi := NewTaskInfoWithBindRequest(pod, nil, []*resourceapi.ResourceClaim{draClaim}, resource_info.NewResourceVectorMap())
 	assert.Assert(t, pi != nil)
 	assert.Equal(t, 1, len(pi.ResourceClaimInfo))
 	allocation, ok := pi.ResourceClaimInfo["gpu-claim"]
@@ -692,7 +698,7 @@ func TestNewTaskInfoWithBindRequest_ResourceClaimInfo_BindRequestAllocationOverr
 	}
 	bindRequestInfo := bindrequest_info.NewBindRequestInfo(bindRequest)
 
-	pi := NewTaskInfoWithBindRequest(pod, bindRequestInfo, draClaim)
+	pi := NewTaskInfoWithBindRequest(pod, bindRequestInfo, []*resourceapi.ResourceClaim{draClaim}, resource_info.NewResourceVectorMap())
 	assert.Assert(t, pi != nil)
 	assert.Equal(t, 1, len(pi.ResourceClaimInfo))
 	assert.Equal(t, "node1", pi.NodeName, "NodeName should come from BindRequest SelectedNode")
@@ -718,7 +724,7 @@ func TestNewTaskInfoWithBindRequest_ResourceClaimInfo_TemplateClaimSkippedWhenNo
 		},
 		Status: v1.PodStatus{Phase: v1.PodPending},
 	}
-	pi := NewTaskInfoWithBindRequest(pod, nil)
+	pi := NewTaskInfoWithBindRequest(pod, nil, nil, resource_info.NewResourceVectorMap())
 	assert.Assert(t, pi != nil)
 	assert.Equal(t, 0, len(pi.ResourceClaimInfo))
 }

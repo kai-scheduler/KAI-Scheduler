@@ -15,16 +15,17 @@ import (
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes/fake"
 
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	k8splugins "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_internal/plugins"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	k8splugins "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal/plugins"
 )
 
 func newTestSession(t *testing.T, nodes map[string]*node_info.NodeInfo, podGroups map[common_info.PodGroupID]*podgroup_info.PodGroupInfo) *framework.Session {
@@ -70,7 +71,7 @@ func newNode(name string, labels map[string]string) *v1.Node {
 }
 
 func newNodeInfo(node *v1.Node) *node_info.NodeInfo {
-	return node_info.NewNodeInfo(node, nil)
+	return node_info.NewNodeInfo(node, nil, resource_info.NewResourceVectorMap())
 }
 
 func podWithNodeSelector(uid, name, jobID string, selector map[string]string) *pod_info.PodInfo {
@@ -86,7 +87,7 @@ func podWithNodeSelector(uid, name, jobID string, selector map[string]string) *p
 		Spec: v1.PodSpec{
 			NodeSelector: selector,
 		},
-	})
+	}, nil, resource_info.NewResourceVectorMap())
 }
 
 func podWithNodeAffinity(uid, name, jobID, labelKey, labelValue string) *pod_info.PodInfo {
@@ -118,7 +119,7 @@ func podWithNodeAffinity(uid, name, jobID, labelKey, labelValue string) *pod_inf
 				},
 			},
 		},
-	})
+	}, nil, resource_info.NewResourceVectorMap())
 }
 
 func podWithNodeAffinityMatchFields(uid, name, jobID, targetNodeName string) *pod_info.PodInfo {
@@ -150,7 +151,7 @@ func podWithNodeAffinityMatchFields(uid, name, jobID, targetNodeName string) *po
 				},
 			},
 		},
-	})
+	}, nil, resource_info.NewResourceVectorMap())
 }
 
 func podWithPreferredNodeAffinityOnly(uid, name, jobID, labelKey, labelValue string, weight int32) *pod_info.PodInfo {
@@ -183,7 +184,7 @@ func podWithPreferredNodeAffinityOnly(uid, name, jobID, labelKey, labelValue str
 				},
 			},
 		},
-	})
+	}, nil, resource_info.NewResourceVectorMap())
 }
 
 func podWithoutAffinity(uid, name, jobID string) *pod_info.PodInfo {
@@ -197,7 +198,7 @@ func podWithoutAffinity(uid, name, jobID string) *pod_info.PodInfo {
 			},
 		},
 		Spec: v1.PodSpec{},
-	})
+	}, nil, resource_info.NewResourceVectorMap())
 }
 
 func victimPodOnNode(uid, name, jobID, nodeName string) *pod_info.PodInfo {
@@ -213,7 +214,7 @@ func victimPodOnNode(uid, name, jobID, nodeName string) *pod_info.PodInfo {
 		Spec: v1.PodSpec{
 			NodeName: nodeName,
 		},
-	})
+	}, nil, resource_info.NewResourceVectorMap())
 }
 
 func TestNewNodeAffinitiesFilter_NilScenario(t *testing.T) {

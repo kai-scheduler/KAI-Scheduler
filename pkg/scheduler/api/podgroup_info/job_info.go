@@ -31,14 +31,14 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
-	enginev2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
+	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 )
 
 const (
@@ -79,6 +79,10 @@ type PodGroupInfo struct {
 
 	Allocated *resource_info.Resource
 
+	// Vector representation of Allocated
+	AllocatedVector resource_info.ResourceVector
+	VectorMap       *resource_info.ResourceVectorMap
+
 	CreationTimestamp  metav1.Time
 	LastStartTimestamp *time.Time
 	PodGroup           *enginev2alpha2.PodGroup
@@ -92,19 +96,26 @@ type PodGroupInfo struct {
 	schedulingConstraintsSignature common_info.SchedulingConstraintsSignature
 
 	// inner cache
-	tasksToAllocate             []*pod_info.PodInfo
-	tasksToAllocateInitResource *resource_info.Resource
-	PodStatusIndex              map[pod_status.PodStatus]pod_info.PodsMap
-	activeAllocatedCount        *int
+	tasksToAllocate                   []*pod_info.PodInfo
+	tasksToAllocateInitResource       *resource_info.Resource
+	tasksToAllocateInitResourceVector resource_info.ResourceVector
+	PodStatusIndex                    map[pod_status.PodStatus]pod_info.PodsMap
+	activeAllocatedCount              *int
 }
 
 func NewPodGroupInfo(uid common_info.PodGroupID, tasks ...*pod_info.PodInfo) *PodGroupInfo {
+	return NewPodGroupInfoWithVectorMap(uid, resource_info.NewResourceVectorMap(), tasks...)
+}
+
+func NewPodGroupInfoWithVectorMap(uid common_info.PodGroupID, vectorMap *resource_info.ResourceVectorMap, tasks ...*pod_info.PodInfo) *PodGroupInfo {
 	defaultSubGroupSet := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
 	defaultSubGroupSet.AddPodSet(subgroup_info.NewPodSet(DefaultSubGroup, 1, nil))
 
 	podGroupInfo := &PodGroupInfo{
-		UID:       uid,
-		Allocated: resource_info.EmptyResource(),
+		UID:             uid,
+		Allocated:       resource_info.EmptyResource(),
+		AllocatedVector: resource_info.NewResourceVector(vectorMap),
+		VectorMap:       vectorMap,
 
 		JobFitErrors:   make([]common_info.JobFitError, 0),
 		TasksFitErrors: make(map[common_info.PodID]*common_info.TasksFitErrors),
@@ -198,7 +209,11 @@ func (pgi *PodGroupInfo) setSubGroups(podGroup *enginev2alpha2.PodGroup) error {
 		pgi.PodSets = podSets
 	} else {
 		if defaultPodSet, found := pgi.PodSets[DefaultSubGroup]; found {
-			defaultPodSet.SetMinAvailable(max(podGroup.Spec.MinMember, 1))
+			minAvail := int32(1)
+			if podGroup.Spec.MinMember != nil {
+				minAvail = max(*podGroup.Spec.MinMember, 1)
+			}
+			defaultPodSet.SetMinAvailable(minAvail)
 			rootSubGroupSet.AddPodSet(defaultPodSet)
 		}
 	}
@@ -234,6 +249,7 @@ func (pgi *PodGroupInfo) AddTaskInfo(ti *pod_info.PodInfo) {
 
 	if pod_status.AllocatedStatus(ti.Status) {
 		pgi.Allocated.AddResourceRequirements(ti.ResReq)
+		pgi.AllocatedVector.Add(ti.ResReqVector)
 	}
 }
 
@@ -268,6 +284,7 @@ func (pgi *PodGroupInfo) deleteTaskIndex(ti *pod_info.PodInfo) {
 func (pgi *PodGroupInfo) invalidateTasksCache() {
 	pgi.tasksToAllocate = nil
 	pgi.tasksToAllocateInitResource = nil
+	pgi.tasksToAllocateInitResourceVector = nil
 }
 
 func (pgi *PodGroupInfo) GetActiveAllocatedTasksCount() int {
@@ -302,6 +319,7 @@ func (pgi *PodGroupInfo) resetTaskState(ti *pod_info.PodInfo) error {
 
 	if pod_status.AllocatedStatus(task.Status) {
 		pgi.Allocated.SubResourceRequirements(task.ResReq)
+		pgi.AllocatedVector.Sub(task.ResReqVector)
 	}
 
 	pgi.deleteTaskIndex(ti)
@@ -359,10 +377,11 @@ func (pgi *PodGroupInfo) GetNumGatedTasks() int {
 }
 
 func (pgi *PodGroupInfo) GetAliveTasksRequestedGPUs() float64 {
+	gpuIdx := pgi.VectorMap.GetIndex("gpu")
 	tasksTotalRequestedGPUs := float64(0)
 	for _, task := range pgi.GetAllPodsMap() {
 		if pod_status.IsAliveStatus(task.Status) {
-			tasksTotalRequestedGPUs += task.ResReq.GPUs()
+			tasksTotalRequestedGPUs += task.ResReqVector.Get(gpuIdx)
 		}
 	}
 
@@ -378,6 +397,16 @@ func (pgi *PodGroupInfo) GetTasksActiveAllocatedReqResource() *resource_info.Res
 	}
 
 	return tasksTotalRequestedResource
+}
+
+func (pgi *PodGroupInfo) GetTasksActiveAllocatedReqResourceVector() resource_info.ResourceVector {
+	result := resource_info.NewResourceVector(pgi.VectorMap)
+	for _, task := range pgi.GetAllPodsMap() {
+		if pod_status.IsActiveAllocatedStatus(task.Status) {
+			result.Add(task.ResReqVector)
+		}
+	}
+	return result
 }
 
 func (pgi *PodGroupInfo) IsReadyForScheduling() bool {
@@ -451,6 +480,13 @@ func (pgi *PodGroupInfo) Clone() *PodGroupInfo {
 	return pgi.CloneWithTasks(maps.Values(pgi.GetAllPodsMap()))
 }
 
+// SetVectorMap sets the vector map and reinitializes AllocatedVector.
+// Use this for deferred initialization when vectorMap is not available at construction time.
+func (pgi *PodGroupInfo) SetVectorMap(vectorMap *resource_info.ResourceVectorMap) {
+	pgi.VectorMap = vectorMap
+	pgi.AllocatedVector = pgi.Allocated.ToVector(vectorMap)
+}
+
 func (pgi *PodGroupInfo) CloneWithTasks(tasks []*pod_info.PodInfo) *PodGroupInfo {
 	info := &PodGroupInfo{
 		UID:            pgi.UID,
@@ -460,7 +496,9 @@ func (pgi *PodGroupInfo) CloneWithTasks(tasks []*pod_info.PodInfo) *PodGroupInfo
 		Priority:       pgi.Priority,
 		Preemptibility: pgi.Preemptibility,
 
-		Allocated: resource_info.EmptyResource(),
+		Allocated:       resource_info.EmptyResource(),
+		AllocatedVector: resource_info.NewResourceVector(pgi.VectorMap),
+		VectorMap:       pgi.VectorMap,
 
 		JobFitErrors:   make([]common_info.JobFitError, 0),
 		TasksFitErrors: make(map[common_info.PodID]*common_info.TasksFitErrors),

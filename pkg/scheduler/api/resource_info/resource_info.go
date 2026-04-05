@@ -26,9 +26,9 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info/resources"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_internal"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info/resources"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 )
 
 type Resource struct {
@@ -53,6 +53,9 @@ func NewResource(milliCPU float64, memory float64, gpus float64) *Resource {
 func ResourceFromResourceList(rList v1.ResourceList) *Resource {
 	r := EmptyResource()
 	for rName, rQuant := range rList {
+		if rQuant.IsZero() {
+			continue
+		}
 		switch rName {
 		case v1.ResourceCPU:
 			r.milliCpu += float64(rQuant.MilliValue())

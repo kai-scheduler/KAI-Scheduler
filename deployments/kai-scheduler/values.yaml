@@ -16,6 +16,20 @@ global:
   tolerations: []
   namespaceLabelSelector: {}
   podLabelSelector: {}
+  vpa:
+    enabled: false
+    updatePolicy:
+      updateMode: InPlaceOrRecreate
+      minReplicas: 1
+    resourcePolicy:
+      containerPolicies:
+        - containerName: "*"
+          minAllowed:
+            cpu: 50m
+            memory: 500Mi
+          maxAllowed:
+            cpu: 2
+            memory: 5Gi
   resourceReservation:
     namespace: kai-resource-reservation
     serviceAccount: kai-resource-reservation

@@ -6,18 +6,44 @@ package reclaimable
 import (
 	"testing"
 
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	rs "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	rs "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
+
+var testVectorMap = resource_info.NewResourceVectorMap()
+
+func testPodInfo(uid common_info.PodID, gpus float64, status pod_status.PodStatus) *pod_info.PodInfo {
+	resReq := &resource_info.ResourceRequirements{
+		GpuResourceRequirement: *resource_info.NewGpuResourceRequirementWithGpus(gpus, 0),
+	}
+	return &pod_info.PodInfo{
+		UID:          uid,
+		ResReq:       resReq,
+		ResReqVector: resReq.ToVector(testVectorMap),
+		VectorMap:    testVectorMap,
+		Status:       status,
+	}
+}
+
+func testReclaimee(name string, queue common_info.QueueID, pods pod_info.PodsMap) *podgroup_info.PodGroupInfo {
+	return &podgroup_info.PodGroupInfo{
+		Name:      name,
+		Queue:     queue,
+		VectorMap: testVectorMap,
+		PodSets: map[string]*subgroup_info.PodSet{
+			podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil).WithPodInfos(pods),
+		},
+	}
+}
 
 type queuesTestData struct {
 	parentQueue common_info.QueueID
@@ -43,7 +69,8 @@ var _ = Describe("Can Reclaim Resources", func() {
 				name: "No allocated resources, below fair share",
 				reclaimerInfo: &ReclaimerInfo{
 					Queue:             "queue1",
-					RequiredResources: resource_info.NewResource(1000, 1000, 1),
+					RequiredResources: resource_info.NewResource(1000, 1000, 1).ToVector(testVectorMap),
+					VectorMap:         testVectorMap,
 					IsPreemptable:     true,
 				},
 				queue: &rs.QueueAttributes{
@@ -70,7 +97,8 @@ var _ = Describe("Can Reclaim Resources", func() {
 				name: "Some resources allocated, below fair share",
 				reclaimerInfo: &ReclaimerInfo{
 					Queue:             "queue1",
-					RequiredResources: resource_info.NewResource(1000, 1000, 1),
+					RequiredResources: resource_info.NewResource(1000, 1000, 1).ToVector(testVectorMap),
+					VectorMap:         testVectorMap,
 					IsPreemptable:     true,
 				},
 				queue: &rs.QueueAttributes{
@@ -97,7 +125,8 @@ var _ = Describe("Can Reclaim Resources", func() {
 				name: "Some resources at fair share with job, other stay below",
 				reclaimerInfo: &ReclaimerInfo{
 					Queue:             "queue1",
-					RequiredResources: resource_info.NewResource(500, 1000, 0),
+					RequiredResources: resource_info.NewResource(500, 1000, 0).ToVector(testVectorMap),
+					VectorMap:         testVectorMap,
 					IsPreemptable:     true,
 				},
 				queue: &rs.QueueAttributes{
@@ -124,7 +153,8 @@ var _ = Describe("Can Reclaim Resources", func() {
 				name: "Exactly at fair share with job",
 				reclaimerInfo: &ReclaimerInfo{
 					Queue:             "queue1",
-					RequiredResources: resource_info.NewResource(1000, 1000, 1),
+					RequiredResources: resource_info.NewResource(1000, 1000, 1).ToVector(testVectorMap),
+					VectorMap:         testVectorMap,
 					IsPreemptable:     true,
 				},
 				queue: &rs.QueueAttributes{
@@ -151,7 +181,8 @@ var _ = Describe("Can Reclaim Resources", func() {
 				name: "Partially above fair share",
 				reclaimerInfo: &ReclaimerInfo{
 					Queue:             "queue1",
-					RequiredResources: resource_info.NewResource(1, 1000, 1000),
+					RequiredResources: resource_info.NewResource(1, 1000, 1000).ToVector(testVectorMap),
+					VectorMap:         testVectorMap,
 					IsPreemptable:     true,
 				},
 				queue: &rs.QueueAttributes{
@@ -178,7 +209,8 @@ var _ = Describe("Can Reclaim Resources", func() {
 				name: "Fully above fair share",
 				reclaimerInfo: &ReclaimerInfo{
 					Queue:             "queue1",
-					RequiredResources: resource_info.NewResource(1, 1000, 1000),
+					RequiredResources: resource_info.NewResource(1, 1000, 1000).ToVector(testVectorMap),
+					VectorMap:         testVectorMap,
 					IsPreemptable:     true,
 				},
 				queue: &rs.QueueAttributes{
@@ -205,7 +237,8 @@ var _ = Describe("Can Reclaim Resources", func() {
 				name: "Queue partially above fair share without job resources",
 				reclaimerInfo: &ReclaimerInfo{
 					Queue:             "queue1",
-					RequiredResources: resource_info.NewResource(1, 1000, 1000),
+					RequiredResources: resource_info.NewResource(1, 1000, 1000).ToVector(testVectorMap),
+					VectorMap:         testVectorMap,
 					IsPreemptable:     true,
 				},
 				queue: &rs.QueueAttributes{
@@ -254,7 +287,8 @@ var _ = Describe("Can Reclaim Resources", func() {
 				name: "No allocated resources, below quota",
 				reclaimerInfo: &ReclaimerInfo{
 					Queue:             "queue1",
-					RequiredResources: resource_info.NewResource(1000, 1000, 1),
+					RequiredResources: resource_info.NewResource(1000, 1000, 1).ToVector(testVectorMap),
+					VectorMap:         testVectorMap,
 					IsPreemptable:     false,
 				},
 				queue: &rs.QueueAttributes{
@@ -287,7 +321,8 @@ var _ = Describe("Can Reclaim Resources", func() {
 				name: "No allocated resources, exactly at quota",
 				reclaimerInfo: &ReclaimerInfo{
 					Queue:             "queue1",
-					RequiredResources: resource_info.NewResource(1000, 1000, 1),
+					RequiredResources: resource_info.NewResource(1000, 1000, 1).ToVector(testVectorMap),
+					VectorMap:         testVectorMap,
 					IsPreemptable:     false,
 				},
 				queue: &rs.QueueAttributes{
@@ -320,7 +355,8 @@ var _ = Describe("Can Reclaim Resources", func() {
 				name: "No allocated resources, partially above quota",
 				reclaimerInfo: &ReclaimerInfo{
 					Queue:             "queue1",
-					RequiredResources: resource_info.NewResource(1, 1000, 1000),
+					RequiredResources: resource_info.NewResource(1, 1000, 1000).ToVector(testVectorMap),
+					VectorMap:         testVectorMap,
 					IsPreemptable:     false,
 				},
 				queue: &rs.QueueAttributes{
@@ -353,7 +389,8 @@ var _ = Describe("Can Reclaim Resources", func() {
 				name: "Some resources allocated, below quota",
 				reclaimerInfo: &ReclaimerInfo{
 					Queue:             "queue1",
-					RequiredResources: resource_info.NewResource(1000, 1000, 1),
+					RequiredResources: resource_info.NewResource(1000, 1000, 1).ToVector(testVectorMap),
+					VectorMap:         testVectorMap,
 					IsPreemptable:     false,
 				},
 				queue: &rs.QueueAttributes{
@@ -386,7 +423,8 @@ var _ = Describe("Can Reclaim Resources", func() {
 				name: "Some preemptible resources allocated, zero quota",
 				reclaimerInfo: &ReclaimerInfo{
 					Queue:             "queue1",
-					RequiredResources: resource_info.NewResource(1, 1000, 1000),
+					RequiredResources: resource_info.NewResource(1, 1000, 1000).ToVector(testVectorMap),
+					VectorMap:         testVectorMap,
 					IsPreemptable:     false,
 				},
 				queue: &rs.QueueAttributes{
@@ -419,7 +457,8 @@ var _ = Describe("Can Reclaim Resources", func() {
 				name: "Partially above quota",
 				reclaimerInfo: &ReclaimerInfo{
 					Queue:             "queue1",
-					RequiredResources: resource_info.NewResource(1, 1000, 1000),
+					RequiredResources: resource_info.NewResource(1, 1000, 1000).ToVector(testVectorMap),
+					VectorMap:         testVectorMap,
 					IsPreemptable:     false,
 				},
 				queue: &rs.QueueAttributes{
@@ -452,7 +491,8 @@ var _ = Describe("Can Reclaim Resources", func() {
 				name: "Fully above quota",
 				reclaimerInfo: &ReclaimerInfo{
 					Queue:             "queue1",
-					RequiredResources: resource_info.NewResource(1, 1000, 1000),
+					RequiredResources: resource_info.NewResource(1, 1000, 1000).ToVector(testVectorMap),
+					VectorMap:         testVectorMap,
 					IsPreemptable:     false,
 				},
 				queue: &rs.QueueAttributes{
@@ -485,7 +525,8 @@ var _ = Describe("Can Reclaim Resources", func() {
 				name: "Queue partially over quota without job resources",
 				reclaimerInfo: &ReclaimerInfo{
 					Queue:             "queue1",
-					RequiredResources: resource_info.NewResource(1, 1000, 1000),
+					RequiredResources: resource_info.NewResource(1, 1000, 1000).ToVector(testVectorMap),
+					VectorMap:         testVectorMap,
 					IsPreemptable:     false,
 				},
 				queue: &rs.QueueAttributes{
@@ -543,23 +584,13 @@ var _ = Describe("Reclaimable - Single department", func() {
 			Namespace:         "n1",
 			Queue:             "p1",
 			IsPreemptable:     true,
-			RequiredResources: resource_info.NewResource(0, 0, 1),
+			RequiredResources: resource_info.NewResource(0, 0, 1).ToVector(testVectorMap),
+			VectorMap:         testVectorMap,
 		}
 
-		reclaimeePods := pod_info.PodsMap{
-			"1": &pod_info.PodInfo{
-				UID:    "1",
-				ResReq: &resource_info.ResourceRequirements{GpuResourceRequirement: *resource_info.NewGpuResourceRequirementWithGpus(1, 0)},
-				Status: pod_status.Running,
-			},
-		}
-		reclaimee := &podgroup_info.PodGroupInfo{
-			Name:  "reclaimee",
-			Queue: "p2",
-			PodSets: map[string]*subgroup_info.PodSet{
-				podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil).WithPodInfos(reclaimeePods),
-			},
-		}
+		reclaimee := testReclaimee("reclaimee", "p2", pod_info.PodsMap{
+			"1": testPodInfo("1", 1, pod_status.Running),
+		})
 		reclaimees = []*podgroup_info.PodGroupInfo{reclaimee}
 
 		queues = map[common_info.QueueID]*rs.QueueAttributes{
@@ -695,23 +726,13 @@ var _ = Describe("Reclaimable - Multiple departments", func() {
 			Namespace:         "n1",
 			Queue:             "p1",
 			IsPreemptable:     true,
-			RequiredResources: resource_info.NewResource(0, 0, 1),
+			RequiredResources: resource_info.NewResource(0, 0, 1).ToVector(testVectorMap),
+			VectorMap:         testVectorMap,
 		}
 
-		reclaimeePods := pod_info.PodsMap{
-			"1": &pod_info.PodInfo{
-				UID:    "1",
-				ResReq: &resource_info.ResourceRequirements{GpuResourceRequirement: *resource_info.NewGpuResourceRequirementWithGpus(1, 0)},
-				Status: pod_status.Running,
-			},
-		}
-		reclaimee := &podgroup_info.PodGroupInfo{
-			Name:  "reclaimee",
-			Queue: "p2",
-			PodSets: map[string]*subgroup_info.PodSet{
-				podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil).WithPodInfos(reclaimeePods),
-			},
-		}
+		reclaimee := testReclaimee("reclaimee", "p2", pod_info.PodsMap{
+			"1": testPodInfo("1", 1, pod_status.Running),
+		})
 		reclaimees = []*podgroup_info.PodGroupInfo{reclaimee}
 
 		queues = map[common_info.QueueID]*rs.QueueAttributes{
@@ -809,23 +830,13 @@ var _ = Describe("Reclaimable - Multiple hierarchy levels", func() {
 			Namespace:         "n1",
 			Queue:             "left-leaf",
 			IsPreemptable:     true,
-			RequiredResources: resource_info.NewResource(0, 0, 1),
+			RequiredResources: resource_info.NewResource(0, 0, 1).ToVector(testVectorMap),
+			VectorMap:         testVectorMap,
 		}
 
-		reclaimeePods := pod_info.PodsMap{
-			"1": &pod_info.PodInfo{
-				UID:    "1",
-				ResReq: &resource_info.ResourceRequirements{GpuResourceRequirement: *resource_info.NewGpuResourceRequirementWithGpus(2, 0)},
-				Status: pod_status.Running,
-			},
-		}
-		reclaimee = &podgroup_info.PodGroupInfo{
-			Name:  "reclaimee",
-			Queue: "right-leaf",
-			PodSets: map[string]*subgroup_info.PodSet{
-				podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil).WithPodInfos(reclaimeePods),
-			},
-		}
+		reclaimee = testReclaimee("reclaimee", "right-leaf", pod_info.PodsMap{
+			"1": testPodInfo("1", 2, pod_status.Running),
+		})
 	})
 	It("Reclaimer is below fair share, reclaimee above fair share - sanity", func() {
 		queuesData = map[common_info.QueueID]queuesTestData{
@@ -969,7 +980,7 @@ var _ = Describe("Reclaimable - Multiple hierarchy levels", func() {
 
 		reclaimee.GetAllPodsMap()["1"].ResReq.GpuResourceRequirement =
 			*resource_info.NewGpuResourceRequirementWithGpus(1.5, 0)
-		reclaimerInfo.RequiredResources = resource_info.NewResource(0, 0, 1)
+		reclaimerInfo.RequiredResources = resource_info.NewResource(0, 0, 1).ToVector(testVectorMap)
 		reclaimerInfo.Queue = "left-leaf1"
 
 		reclaimees := []*podgroup_info.PodGroupInfo{reclaimee}
@@ -1018,25 +1029,14 @@ var _ = Describe("Reclaimable - Multiple hierarchy levels", func() {
 		queues := buildQueues(queuesData)
 		reclaimable = New(1.0)
 
-		reclaimerInfo.RequiredResources = resource_info.NewResource(0, 0, 1)
+		reclaimerInfo.RequiredResources = resource_info.NewResource(0, 0, 1).ToVector(testVectorMap)
 		reclaimerInfo.Queue = "left-leaf1"
-		reclaimee.GetAllPodsMap()["1"].ResReq.GpuResourceRequirement =
-			*resource_info.NewGpuResourceRequirementWithGpus(1.5, 0)
-		reclaimee2 := &podgroup_info.PodGroupInfo{
-			Name:  "reclaimee",
-			Queue: "left-leaf2",
-			PodSets: map[string]*subgroup_info.PodSet{
-				podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil).WithPodInfos(pod_info.PodsMap{
-					"1": &pod_info.PodInfo{
-						UID: "1",
-						ResReq: &resource_info.ResourceRequirements{
-							GpuResourceRequirement: *resource_info.NewGpuResourceRequirementWithGpus(0.5, 0),
-						},
-						Status: pod_status.Running,
-					},
-				}),
-			},
-		}
+		pod := reclaimee.GetAllPodsMap()["1"]
+		pod.ResReq.GpuResourceRequirement = *resource_info.NewGpuResourceRequirementWithGpus(1.5, 0)
+		pod.ResReqVector = pod.ResReq.ToVector(testVectorMap)
+		reclaimee2 := testReclaimee("reclaimee", "left-leaf2", pod_info.PodsMap{
+			"1": testPodInfo("1", 0.5, pod_status.Running),
+		})
 
 		reclaimees := []*podgroup_info.PodGroupInfo{reclaimee, reclaimee2}
 		result := reclaimable.Reclaimable(queues, reclaimerInfo, reclaimeeResourcesByQueue(reclaimees))
@@ -1078,24 +1078,11 @@ var _ = Describe("Reclaimable - Multiple hierarchy levels", func() {
 		queues := buildQueues(queuesData)
 		reclaimable = New(1.0)
 
-		reclaimerInfo.RequiredResources = resource_info.NewResource(0, 0, 1)
+		reclaimerInfo.RequiredResources = resource_info.NewResource(0, 0, 1).ToVector(testVectorMap)
 		reclaimerInfo.Queue = "d1-project-1"
-		reclaimee2 := &podgroup_info.PodGroupInfo{
-			Name:  "reclaimee2",
-			Queue: "d2-project-1",
-			PodSets: map[string]*subgroup_info.PodSet{
-				podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil).
-					WithPodInfos(pod_info.PodsMap{
-						"1": &pod_info.PodInfo{
-							UID: "1",
-							ResReq: &resource_info.ResourceRequirements{
-								GpuResourceRequirement: *resource_info.NewGpuResourceRequirementWithGpus(1, 0),
-							},
-							Status: pod_status.Running,
-						},
-					}),
-			},
-		}
+		reclaimee2 := testReclaimee("reclaimee2", "d2-project-1", pod_info.PodsMap{
+			"1": testPodInfo("1", 1, pod_status.Running),
+		})
 
 		reclaimees := []*podgroup_info.PodGroupInfo{reclaimee2}
 		result := reclaimable.Reclaimable(queues, reclaimerInfo, reclaimeeResourcesByQueue(reclaimees))
@@ -1137,24 +1124,11 @@ var _ = Describe("Reclaimable - Multiple hierarchy levels", func() {
 
 		reclaimable = New(1.0)
 
-		reclaimerInfo.RequiredResources = resource_info.NewResource(0, 0, 1) // Only requests GPU
+		reclaimerInfo.RequiredResources = resource_info.NewResource(0, 0, 1).ToVector(testVectorMap) // Only requests GPU
 		reclaimerInfo.Queue = "d1-project-1"
-		reclaimee2 := &podgroup_info.PodGroupInfo{
-			Name:  "reclaimee2",
-			Queue: "d2-project-1",
-			PodSets: map[string]*subgroup_info.PodSet{
-				podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil).
-					WithPodInfos(pod_info.PodsMap{
-						"1": &pod_info.PodInfo{
-							UID: "1",
-							ResReq: &resource_info.ResourceRequirements{
-								GpuResourceRequirement: *resource_info.NewGpuResourceRequirementWithGpus(1, 0),
-							},
-							Status: pod_status.Running,
-						},
-					}),
-			},
-		}
+		reclaimee2 := testReclaimee("reclaimee2", "d2-project-1", pod_info.PodsMap{
+			"1": testPodInfo("1", 1, pod_status.Running),
+		})
 
 		reclaimees := []*podgroup_info.PodGroupInfo{reclaimee2}
 		result := reclaimable.Reclaimable(queues, reclaimerInfo, reclaimeeResourcesByQueue(reclaimees))
@@ -1184,14 +1158,14 @@ func buildQueues(queuesData map[common_info.QueueID]queuesTestData) map[common_i
 	return queues
 }
 
-func reclaimeeResourcesByQueue(reclaimees []*podgroup_info.PodGroupInfo) map[common_info.QueueID][]*resource_info.Resource {
-	resources := make(map[common_info.QueueID][]*resource_info.Resource)
+func reclaimeeResourcesByQueue(reclaimees []*podgroup_info.PodGroupInfo) map[common_info.QueueID][]resource_info.ResourceVector {
+	resources := make(map[common_info.QueueID][]resource_info.ResourceVector)
 	for _, reclaimee := range reclaimees {
 
 		if _, found := resources[reclaimee.Queue]; !found {
-			resources[reclaimee.Queue] = make([]*resource_info.Resource, 0)
+			resources[reclaimee.Queue] = make([]resource_info.ResourceVector, 0)
 		}
-		resources[reclaimee.Queue] = append(resources[reclaimee.Queue], reclaimee.GetTasksActiveAllocatedReqResource())
+		resources[reclaimee.Queue] = append(resources[reclaimee.Queue], reclaimee.GetTasksActiveAllocatedReqResourceVector())
 	}
 
 	return resources

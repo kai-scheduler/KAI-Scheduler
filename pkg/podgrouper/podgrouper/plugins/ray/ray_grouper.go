@@ -16,9 +16,10 @@ import (
 
 	"github.com/ray-project/kuberay/ray-operator/controllers/ray/utils"
 
-	schedulingv2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgroup"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
+	schedulingv2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
 )
 
 var logger = log.FromContext(context.Background())
@@ -179,11 +180,16 @@ func (rg *RayGrouper) extractRayClusterObject(
 // https://github.com/ray-project/kuberay/blob/dbcc686eabefecc3b939cd5c6e7a051f2473ad34/ray-operator/controllers/ray/batchscheduler/volcano/volcano_scheduler.go#L51
 func calcJobNumOfPodsAndSubGroups(topOwner *unstructured.Unstructured) (int32, []*podgroup.SubGroupMetadata, error) {
 	minReplicas := int32(1)
+	headTopologyConstraints, err := getHeadGroupTopologyConstraints(topOwner)
+	if err != nil {
+		return 0, nil, err
+	}
 
 	subGroups := []*podgroup.SubGroupMetadata{
 		{
-			Name:         utils.RayNodeHeadGroupLabelValue,
-			MinAvailable: 1,
+			Name:                utils.RayNodeHeadGroupLabelValue,
+			MinAvailable:        1,
+			TopologyConstraints: headTopologyConstraints,
 		},
 	}
 
@@ -219,13 +225,79 @@ func calcJobNumOfPodsAndSubGroups(topOwner *unstructured.Unstructured) (int32, [
 
 		// Get worker group name or generate one
 		workerGroupName := getWorkerGroupName(groupSpec, groupIndex)
+		workerGroupTopologyConstraints, err := getWorkerGroupTopologyConstraints(groupSpec, workerGroupName)
+		if err != nil {
+			return 0, nil, err
+		}
 		subGroups = append(subGroups, &podgroup.SubGroupMetadata{
-			Name:         workerGroupName,
-			MinAvailable: workerGroupMinReplicas,
+			Name:                workerGroupName,
+			MinAvailable:        workerGroupMinReplicas,
+			TopologyConstraints: workerGroupTopologyConstraints,
 		})
 	}
 
 	return minReplicas, subGroups, nil
+}
+
+func getWorkerGroupTopologyConstraints(groupSpec interface{}, groupName string) (*podgroup.TopologyConstraintMetadata, error) {
+	workerGroupSpec, ok := groupSpec.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("failed to parse worker group spec %s", groupName)
+	}
+	return getTemplateTopologyConstraints(workerGroupSpec, "workerGroupSpecs."+groupName)
+}
+
+func getHeadGroupTopologyConstraints(topOwner *unstructured.Unstructured) (*podgroup.TopologyConstraintMetadata, error) {
+	headGroupSpec, found, err := unstructured.NestedMap(topOwner.Object, "spec", "headGroupSpec")
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, nil
+	}
+	return getTemplateTopologyConstraints(headGroupSpec, "headGroupSpec")
+}
+
+func getTemplateTopologyConstraints(groupSpec map[string]interface{}, groupName string) (*podgroup.TopologyConstraintMetadata, error) {
+	topology, found, err := unstructured.NestedString(groupSpec, "template", "metadata", "annotations", constants.TopologyKey)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		topology = ""
+	}
+
+	required, found, err := unstructured.NestedString(groupSpec, "template", "metadata", "annotations", constants.TopologyRequiredPlacementKey)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		required = ""
+	}
+
+	preferred, found, err := unstructured.NestedString(groupSpec, "template", "metadata", "annotations", constants.TopologyPreferredPlacementKey)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		preferred = ""
+	}
+
+	// Topology by itself is not a valid scheduling constraint for Ray subgroups.
+	// Create subgroup constraints only when at least one placement level is provided.
+	if required == "" && preferred == "" {
+		return nil, nil
+	}
+	if topology == "" {
+		return nil, fmt.Errorf("topology annotation (%s) is required for %s when topology placement annotations are set",
+			constants.TopologyKey, groupName)
+	}
+
+	return &podgroup.TopologyConstraintMetadata{
+		Topology:               topology,
+		RequiredTopologyLevel:  required,
+		PreferredTopologyLevel: preferred,
+	}, nil
 }
 
 func getWorkerGroupName(groupSpec interface{}, groupIndex int) string {

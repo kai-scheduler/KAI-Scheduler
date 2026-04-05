@@ -10,15 +10,16 @@ import (
 	"testing"
 	"time"
 
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/spf13/pflag"
 
-	"github.com/NVIDIA/KAI-scheduler/cmd/scheduler/app/options"
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
-	kaiprometheus "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/prometheus"
-	kaiv1qc "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/queue_controller"
-	kaiv1scheduler "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/scheduler"
-	usagedbapi "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/cmd/scheduler/app/options"
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	kaiprometheus "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/prometheus"
+	kaiv1qc "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/queue_controller"
+	kaiv1scheduler "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/scheduler"
+	usagedbapi "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -691,7 +692,7 @@ tiers:
 						ConnectionString: "http://prometheus-operated.kai-scheduler.svc.cluster.local:9090",
 						UsageParams: &usagedbapi.UsageParams{
 							HalfLifePeriod: &metav1.Duration{Duration: 10 * time.Minute},
-							WindowSize:     &metav1.Duration{Duration: 10 * time.Minute},
+							WindowSize:     monitoringv1.DurationPointer("10m"),
 							WindowType:     ptr.To(usagedbapi.SlidingWindow),
 						},
 					},
@@ -1151,7 +1152,7 @@ func TestGetUsageDBConfig(t *testing.T) {
 						ConnectionString: "http://prometheus:9090",
 						UsageParams: &usagedbapi.UsageParams{
 							HalfLifePeriod: &metav1.Duration{Duration: 10 * time.Minute},
-							WindowSize:     &metav1.Duration{Duration: 20 * time.Minute},
+							WindowSize:     monitoringv1.DurationPointer("20m"),
 						},
 					},
 				},
@@ -1162,7 +1163,7 @@ func TestGetUsageDBConfig(t *testing.T) {
 				assert.NotNil(t, result)
 				assert.NotNil(t, result.UsageParams)
 				assert.Equal(t, 10*time.Minute, result.UsageParams.HalfLifePeriod.Duration)
-				assert.Equal(t, 20*time.Minute, result.UsageParams.WindowSize.Duration)
+				assert.Equal(t, monitoringv1.Duration("20m"), *result.UsageParams.WindowSize)
 				assert.Equal(t, "http://prometheus:9090", result.ConnectionString)
 			},
 		},

@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	kaiDefaultRepository = "ghcr.io/nvidia/kai-scheduler"
+	kaiDefaultRepository = "ghcr.io/kai-scheduler/kai-scheduler"
 	defaultImageTag      = "latest"
 )
 
@@ -37,10 +37,10 @@ var _ = Describe("Image", func() {
 
 	It("Get URL", func(ctx context.Context) {
 		image := &Image{
-			Repository: ptr.To("ghcr.io/nvidia/kai-scheduler"),
+			Repository: ptr.To("ghcr.io/kai-scheduler/kai-scheduler"),
 			Name:       ptr.To("example"),
 			Tag:        ptr.To("test"),
 		}
-		Expect(image.Url()).To(Equal("ghcr.io/nvidia/kai-scheduler/example:test"))
+		Expect(image.Url()).To(Equal("ghcr.io/kai-scheduler/kai-scheduler/example:test"))
 	})
 })

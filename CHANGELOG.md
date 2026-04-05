@@ -6,6 +6,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+### Changed
+
+### Fixed
+- Fixed `windowSize` field in `SchedulingShard` CR to support Prometheus duration format (e.g. `1w`, `7d`). Previously, using `windowSize: 1w` as shown in the documentation caused the kai-operator to crash-loop with `time: unknown unit "w" in duration "1w"`.
+- Race condition where `SyncForGpuGroup` could prematurely delete reservation pods when the informer cache had not yet propagated GPU group labels on recently-bound fraction pods. The binder now checks for active BindRequests referencing the GPU group before deleting a reservation pod.
+- Fixed non-preemptible multi-device GPU memory jobs being allowed to exceed their queue's deserved GPU quota. The per-node quota check now correctly accounts for all requested GPU devices. [#1369](https://github.com/kai-scheduler/KAI-Scheduler/issues/1369)
+
+## [v0.14.0] - 2026-03-30
+
+### Added
+- Added queue validation webhook to queuecontroller with optional quota validation for parent-child relationships [AdheipSingh](https://github.com/AdheipSingh)
+- Added support for VPA configuration for the different components of the KAI Scheduler - [jrosenboimnvidia](https://github.com/NVIDIA/KAI-Scheduler/pull/1119)
+- Users that have VPA installed on their cluster can now utilize it for proper vertical autoscaling
+- Added FOSSA scanning for the repository context. Scans will also be performed for submitted PRs. The results can be found [here](https://app.fossa.com/projects/custom%2B162%2Fgit%40github.com%3Akai-scheduler%2FKAI-Scheduler.git). [#1178](https://github.com/kai-scheduler/KAI-Scheduler/pull/1178) - [davidLif](https://github.com/davidLif)
+- Added support for Ray subgroup topology-aware scheduling by specifying `kai.scheduler/topology`, `kai.scheduler/topology-required-placement`, and `kai.scheduler/topology-preferred-placement` annotations.
+- Allow subgroups to have a 0 value for "minAvailable". This means that all pods in this subgroup are "elastic extra pods". [#1216](https://github.com/NVIDIA/KAI-Scheduler/pull/1216) [davidLif](https://github.com/davidLif)
+
+### Changed
+- Auto-enable leader election when `operator.replicaCount` > 1 to prevent concurrent reconciliation [#1218](https://github.com/kai-scheduler/KAI-Scheduler/issues/1218)
+- Update go version to v1.26.1, With appropriate upgrades to the base docker images, linter, and controller generator. [#1222](https://github.com/kai-scheduler/KAI-Scheduler/pull/1222) - [davidLif](https://github.com/davidLif)
+
+### Fixed
+- Updated resource enumeration logic to exclude resources with count of 0. [#1120](https://github.com/NVIDIA/KAI-Scheduler/issues/1120)
+- Fixed scheduler on k8s < 1.34 with DRA disabled.
+- Fixed pod group controller failing to track DRA GPU resources on Kubernetes 1.32-1.33 clusters. [#1214](https://github.com/kai-scheduler/KAI-Scheduler/issues/1214)
+- Fixed scheduling-constraints signature hashing for `Priority` and container `HostPort` by encoding full `int32` values, preventing byte-truncation collisions and flaky signature tests.
+- Fixed rollback in scheduling simulations with DRA [#1168](https://github.com/NVIDIA/KAI-Scheduler/pull/1168) [itsomri](https://github.com/itsomri)
+- Fixed a potential state corruption in DRA scheduling simulations [#1219](https://github.com/kai-scheduler/KAI-Scheduler/pull/1219) [itsomri](https://github.com/itsomri)
+- Fixed operator reconcile loop caused by status-only updates triggering re-reconciliation. #1229 [cypres](https://github.com/cypres)
+- Fixed scheduler not starting on k8s clusters with DRA disabled, due to the ResourceSliceTracker not syncing. #1241 [cypres](https://github.com/cypres)
+- Fixed webhook reconcile loop on AKS, by retaining the cloud-provider-injected namespaceSelector rules during reconciliation. #1292 [cypres](https://github.com/cypres)
+
 ## [v0.13.0] - 2026-03-02
 ### Added
 - Added `minSubGroup` field to PodGroup and SubGroup API to support specifying the minimum number of child SubGroups required for elastic gang scheduling, along with validation to prevent simultaneous use of `minSubGroup` and `minMember` fields (#TBD) by [KAI Dev Agent](https://github.com/run-ai/KAI-Agents)

@@ -16,10 +16,10 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	kaiv1alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	schedulingv2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	schedulingv2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	commonconsts "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	kaiv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	schedulingv2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	schedulingv2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	commonconsts "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
 type PodGroupConfig struct {
@@ -148,7 +148,7 @@ func GroupPods(ctx context.Context, c client.Client, podGroupConfig PodGroupConf
 		},
 		Spec: schedulingv2alpha2.PodGroupSpec{
 			Queue:             podGroupConfig.QueueName,
-			MinMember:         podGroupConfig.MinMember,
+			MinMember:         ptr.To(podGroupConfig.MinMember),
 			MarkUnschedulable: ptr.To(true),
 		},
 	}

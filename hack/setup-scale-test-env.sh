@@ -17,7 +17,7 @@ helm repo add prometheus-community https://prometheus-community.github.io/helm-c
 helm repo add grafana https://grafana.github.io/helm-charts
 helm repo update
 
-helm upgrade -i fake-gpu-operator oci://ghcr.io/run-ai/fake-gpu-operator/fake-gpu-operator --namespace gpu-operator --create-namespace --set topology.nodePools.default.gpuCount=8 --devel --version 0.0.58
+helm upgrade -i fake-gpu-operator oci://ghcr.io/run-ai/fake-gpu-operator/fake-gpu-operator --namespace gpu-operator --create-namespace --set topology.nodePools.default.gpuCount=8 --devel --version 0.0.73
 kubectl delete deployment -n gpu-operator nvidia-dcgm-exporter --ignore-not-found
 kubectl delete deployment -n gpu-operator device-plugin --ignore-not-found
 

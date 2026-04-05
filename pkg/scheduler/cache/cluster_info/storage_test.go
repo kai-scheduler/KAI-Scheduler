@@ -13,12 +13,13 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/storagecapacity_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/storageclaim_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/constants/status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/storagecapacity_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/storageclaim_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants/status"
 )
 
 const (
@@ -83,7 +84,7 @@ func TestSetStorageObjects(t *testing.T) {
 		Status: v1.PodStatus{
 			Phase: status.Running,
 		},
-	})
+	}, nil, resource_info.NewResourceVectorMap())
 
 	existingPods := map[common_info.PodID]*pod_info.PodInfo{
 		common_info.PodID("owner-pod-id"): podInfo,
@@ -184,7 +185,7 @@ func TestSetStorageObjectsMultiplePVCs(t *testing.T) {
 				Status: v1.PodStatus{
 					Phase: status.Running,
 				},
-			}),
+			}, nil, resource_info.NewResourceVectorMap()),
 	}
 
 	nodes := map[string]*node_info.NodeInfo{
@@ -290,7 +291,7 @@ func TestSetStorageObjects_ReleaseOwnedPVCs(t *testing.T) {
 				Status: v1.PodStatus{
 					Phase: status.Running,
 				},
-			}),
+			}, nil, resource_info.NewResourceVectorMap()),
 	}
 
 	nodes := map[string]*node_info.NodeInfo{

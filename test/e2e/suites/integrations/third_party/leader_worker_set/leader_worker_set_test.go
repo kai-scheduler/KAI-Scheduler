@@ -15,14 +15,14 @@ import (
 	"k8s.io/utils/ptr"
 	lws "sigs.k8s.io/lws/api/leaderworkerset/v1"
 
-	v2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	v2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	testcontext "github.com/NVIDIA/KAI-scheduler/test/e2e/modules/context"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/crd"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/queue"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/utils"
+	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	v2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/crd"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -82,7 +82,7 @@ var _ = Describe("Leader worker set Integration", Ordered, func() {
 
 			g.Expect(len(podGroups.Items)).To(Equal(numOfGroups))
 			for _, podGroup := range podGroups.Items {
-				g.Expect(podGroup.Spec.MinMember).To(Equal(int32(numWorkersReplicasPerGroup + 1)))
+				g.Expect(podGroup.Spec.MinMember).To(Equal(ptr.To(int32(numWorkersReplicasPerGroup + 1))))
 			}
 			return true
 		}, time.Minute).Should(BeTrue())
@@ -138,7 +138,7 @@ var _ = Describe("Leader worker set Integration", Ordered, func() {
 
 			g.Expect(len(podGroups.Items)).To(Equal(numOfGroups))
 			for _, podGroup := range podGroups.Items {
-				g.Expect(podGroup.Spec.MinMember).To(Equal(int32(numWorkersReplicasPerGroup + 1)))
+				g.Expect(podGroup.Spec.MinMember).To(Equal(ptr.To(int32(numWorkersReplicasPerGroup + 1))))
 			}
 			return true
 		}, time.Minute).Should(BeTrue())

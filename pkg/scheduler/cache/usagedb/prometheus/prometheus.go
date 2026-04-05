@@ -8,12 +8,12 @@ import (
 	"fmt"
 	"time"
 
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/queue_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
 	"github.com/aptible/supercronic/cronexpr"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	promapi "github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
@@ -216,7 +216,7 @@ func (p *PrometheusClient) queryResourceUsage(
 func (p *PrometheusClient) querySlidingTimeWindow(ctx context.Context, decayedAllocationMetric string) (model.Value, promv1.Warnings, error) {
 	usageQuery := fmt.Sprintf("sum_over_time((%s)[%s:%s])",
 		decayedAllocationMetric,
-		p.usageParams.WindowSize.Duration.String(),
+		string(*p.usageParams.WindowSize),
 		p.queryResolution.String(),
 	)
 
@@ -275,13 +275,19 @@ func (p *PrometheusClient) getLatestUsageResetTime_TumblingWindow(now time.Time)
 		return now
 	}
 
+	windowSize, err := model.ParseDuration(string(*p.usageParams.WindowSize))
+	if err != nil {
+		log.InfraLogger.V(3).Warnf("Failed to parse windowSize %q: %v, using current time as reset time", *p.usageParams.WindowSize, err)
+		return now
+	}
+
 	previousResetTime := startTime
-	currentResetTime := startTime.Add(p.usageParams.WindowSize.Duration)
+	currentResetTime := startTime.Add(time.Duration(windowSize))
 
 	// Keep finding the next reset time until it's after or equal to the current time
 	for currentResetTime.Before(now) {
 		previousResetTime = currentResetTime
-		currentResetTime = currentResetTime.Add(p.usageParams.WindowSize.Duration)
+		currentResetTime = currentResetTime.Add(time.Duration(windowSize))
 	}
 
 	return previousResetTime

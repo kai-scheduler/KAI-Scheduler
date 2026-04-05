@@ -8,25 +8,27 @@ import (
 	"sort"
 	"testing"
 
-	kaiv1alpha1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1alpha1"
+	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/exp/maps"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/topology_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/topology_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 )
+
+var testVectorMap = resource_info.NewResourceVectorMap()
 
 func TestTopologyPlugin_subsetNodesFn(t *testing.T) {
 	tests := []struct {
@@ -86,7 +88,8 @@ func TestTopologyPlugin_subsetNodesFn(t *testing.T) {
 			},
 			setupTopologyTree: func() *Info {
 				tree := &Info{
-					Name: "test-topology",
+					Name:      "test-topology",
+					VectorMap: resource_info.NewResourceVectorMap(),
 					TopologyResource: &kaiv1alpha1.Topology{
 						Spec: kaiv1alpha1.TopologySpec{
 							Levels: []kaiv1alpha1.TopologyLevel{
@@ -98,24 +101,24 @@ func TestTopologyPlugin_subsetNodesFn(t *testing.T) {
 					DomainsByLevel: map[DomainLevel]LevelDomainInfos{
 						"rack": {
 							"rack1.zone1": {
-								ID:                       "rack1.zone1",
-								Level:                    "rack",
-								Nodes:                    map[string]*node_info.NodeInfo{},
-								IdleOrReleasingResources: resource_info.NewResource(0, 0, 0),
+								ID:                    "rack1.zone1",
+								Level:                 "rack",
+								Nodes:                 map[string]*node_info.NodeInfo{},
+								IdleOrReleasingVector: resource_info.NewResource(0, 0, 0).ToVector(testVectorMap),
 							},
 							"rack2.zone1": {
-								ID:                       "rack2.zone1",
-								Level:                    "rack",
-								Nodes:                    map[string]*node_info.NodeInfo{},
-								IdleOrReleasingResources: resource_info.NewResource(0, 0, 0),
+								ID:                    "rack2.zone1",
+								Level:                 "rack",
+								Nodes:                 map[string]*node_info.NodeInfo{},
+								IdleOrReleasingVector: resource_info.NewResource(0, 0, 0).ToVector(testVectorMap),
 							},
 						},
 						"zone": {
 							"zone1": {
-								ID:                       "zone1",
-								Level:                    "zone",
-								Nodes:                    map[string]*node_info.NodeInfo{},
-								IdleOrReleasingResources: resource_info.NewResource(0, 0, 0),
+								ID:                    "zone1",
+								Level:                 "zone",
+								Nodes:                 map[string]*node_info.NodeInfo{},
+								IdleOrReleasingVector: resource_info.NewResource(0, 0, 0).ToVector(testVectorMap),
 							},
 						},
 					},
@@ -188,7 +191,8 @@ func TestTopologyPlugin_subsetNodesFn(t *testing.T) {
 			},
 			setupTopologyTree: func() *Info {
 				tree := &Info{
-					Name: "test-topology",
+					Name:      "test-topology",
+					VectorMap: resource_info.NewResourceVectorMap(),
 					TopologyResource: &kaiv1alpha1.Topology{
 						Spec: kaiv1alpha1.TopologySpec{
 							Levels: []kaiv1alpha1.TopologyLevel{
@@ -200,24 +204,24 @@ func TestTopologyPlugin_subsetNodesFn(t *testing.T) {
 					DomainsByLevel: map[DomainLevel]LevelDomainInfos{
 						"rack": {
 							"rack1.zone1": {
-								ID:                       "rack1.zone1",
-								Level:                    "rack",
-								Nodes:                    map[string]*node_info.NodeInfo{},
-								IdleOrReleasingResources: resource_info.NewResource(0, 0, 0),
+								ID:                    "rack1.zone1",
+								Level:                 "rack",
+								Nodes:                 map[string]*node_info.NodeInfo{},
+								IdleOrReleasingVector: resource_info.NewResource(0, 0, 0).ToVector(testVectorMap),
 							},
 							"rack2.zone1": {
-								ID:                       "rack2.zone1",
-								Level:                    "rack",
-								Nodes:                    map[string]*node_info.NodeInfo{},
-								IdleOrReleasingResources: resource_info.NewResource(0, 0, 0),
+								ID:                    "rack2.zone1",
+								Level:                 "rack",
+								Nodes:                 map[string]*node_info.NodeInfo{},
+								IdleOrReleasingVector: resource_info.NewResource(0, 0, 0).ToVector(testVectorMap),
 							},
 						},
 						"zone": {
 							"zone1": {
-								ID:                       "zone1",
-								Level:                    "zone",
-								Nodes:                    map[string]*node_info.NodeInfo{},
-								IdleOrReleasingResources: resource_info.NewResource(0, 0, 0),
+								ID:                    "zone1",
+								Level:                 "zone",
+								Nodes:                 map[string]*node_info.NodeInfo{},
+								IdleOrReleasingVector: resource_info.NewResource(0, 0, 0).ToVector(testVectorMap),
 							},
 						},
 					},
@@ -268,7 +272,8 @@ func TestTopologyPlugin_subsetNodesFn(t *testing.T) {
 			},
 			setupTopologyTree: func() *Info {
 				return &Info{
-					Name: "test-topology",
+					Name:      "test-topology",
+					VectorMap: resource_info.NewResourceVectorMap(),
 					TopologyResource: &kaiv1alpha1.Topology{
 						Spec: kaiv1alpha1.TopologySpec{
 							Levels: []kaiv1alpha1.TopologyLevel{
@@ -304,7 +309,8 @@ func TestTopologyPlugin_subsetNodesFn(t *testing.T) {
 			},
 			setupTopologyTree: func() *Info {
 				return &Info{
-					Name: "test-topology",
+					Name:      "test-topology",
+					VectorMap: resource_info.NewResourceVectorMap(),
 					TopologyResource: &kaiv1alpha1.Topology{
 						Spec: kaiv1alpha1.TopologySpec{
 							Levels: []kaiv1alpha1.TopologyLevel{
@@ -346,7 +352,8 @@ func TestTopologyPlugin_subsetNodesFn(t *testing.T) {
 			},
 			setupTopologyTree: func() *Info {
 				tree := &Info{
-					Name: "test-topology",
+					Name:      "test-topology",
+					VectorMap: resource_info.NewResourceVectorMap(),
 					TopologyResource: &kaiv1alpha1.Topology{
 						Spec: kaiv1alpha1.TopologySpec{
 							Levels: []kaiv1alpha1.TopologyLevel{
@@ -357,10 +364,10 @@ func TestTopologyPlugin_subsetNodesFn(t *testing.T) {
 					DomainsByLevel: map[DomainLevel]LevelDomainInfos{
 						"zone": {
 							"zone1": {
-								ID:                       "zone1",
-								Level:                    "zone",
-								Nodes:                    map[string]*node_info.NodeInfo{},
-								IdleOrReleasingResources: resource_info.NewResource(0, 0, 0),
+								ID:                    "zone1",
+								Level:                 "zone",
+								Nodes:                 map[string]*node_info.NodeInfo{},
+								IdleOrReleasingVector: resource_info.NewResource(0, 0, 0).ToVector(testVectorMap),
 							},
 						},
 					},
@@ -417,7 +424,8 @@ func TestTopologyPlugin_subsetNodesFn(t *testing.T) {
 			},
 			setupTopologyTree: func() *Info {
 				tree := &Info{
-					Name: "test-topology",
+					Name:      "test-topology",
+					VectorMap: resource_info.NewResourceVectorMap(),
 					TopologyResource: &kaiv1alpha1.Topology{
 						Spec: kaiv1alpha1.TopologySpec{
 							Levels: []kaiv1alpha1.TopologyLevel{
@@ -429,27 +437,27 @@ func TestTopologyPlugin_subsetNodesFn(t *testing.T) {
 					DomainsByLevel: map[DomainLevel]LevelDomainInfos{
 						"rack": {
 							"rack1.zone1": {
-								ID:                       "rack1.zone1",
-								Level:                    "rack",
-								Nodes:                    map[string]*node_info.NodeInfo{},
-								IdleOrReleasingResources: resource_info.NewResource(0, 0, 0),
-								AllocatablePods:          allocatablePodsNotSet,
+								ID:                    "rack1.zone1",
+								Level:                 "rack",
+								Nodes:                 map[string]*node_info.NodeInfo{},
+								IdleOrReleasingVector: resource_info.NewResource(0, 0, 0).ToVector(testVectorMap),
+								AllocatablePods:       allocatablePodsNotSet,
 							},
 							"rack2.zone1": {
-								ID:                       "rack2.zone1",
-								Level:                    "rack",
-								Nodes:                    map[string]*node_info.NodeInfo{},
-								IdleOrReleasingResources: resource_info.NewResource(0, 0, 0),
-								AllocatablePods:          allocatablePodsNotSet,
+								ID:                    "rack2.zone1",
+								Level:                 "rack",
+								Nodes:                 map[string]*node_info.NodeInfo{},
+								IdleOrReleasingVector: resource_info.NewResource(0, 0, 0).ToVector(testVectorMap),
+								AllocatablePods:       allocatablePodsNotSet,
 							},
 						},
 						"zone": {
 							"zone1": {
-								ID:                       "zone1",
-								Level:                    "zone",
-								Nodes:                    map[string]*node_info.NodeInfo{},
-								IdleOrReleasingResources: resource_info.NewResource(0, 0, 0),
-								AllocatablePods:          allocatablePodsNotSet,
+								ID:                    "zone1",
+								Level:                 "zone",
+								Nodes:                 map[string]*node_info.NodeInfo{},
+								IdleOrReleasingVector: resource_info.NewResource(0, 0, 0).ToVector(testVectorMap),
+								AllocatablePods:       allocatablePodsNotSet,
 							},
 						},
 					},
@@ -508,7 +516,8 @@ func TestTopologyPlugin_subsetNodesFn(t *testing.T) {
 			},
 			setupTopologyTree: func() *Info {
 				tree := &Info{
-					Name: "test-topology",
+					Name:      "test-topology",
+					VectorMap: resource_info.NewResourceVectorMap(),
 					TopologyResource: &kaiv1alpha1.Topology{
 						Spec: kaiv1alpha1.TopologySpec{
 							Levels: []kaiv1alpha1.TopologyLevel{
@@ -520,18 +529,18 @@ func TestTopologyPlugin_subsetNodesFn(t *testing.T) {
 					DomainsByLevel: map[DomainLevel]LevelDomainInfos{
 						"rack": {
 							"rack1.zone1": {
-								ID:                       "rack1.zone1",
-								Level:                    "rack",
-								Nodes:                    map[string]*node_info.NodeInfo{},
-								IdleOrReleasingResources: resource_info.NewResource(0, 0, 0),
+								ID:                    "rack1.zone1",
+								Level:                 "rack",
+								Nodes:                 map[string]*node_info.NodeInfo{},
+								IdleOrReleasingVector: resource_info.NewResource(0, 0, 0).ToVector(testVectorMap),
 							},
 						},
 						"zone": {
 							"zone1": {
-								ID:                       "zone1",
-								Level:                    "zone",
-								Nodes:                    map[string]*node_info.NodeInfo{},
-								IdleOrReleasingResources: resource_info.NewResource(0, 0, 0),
+								ID:                    "zone1",
+								Level:                 "zone",
+								Nodes:                 map[string]*node_info.NodeInfo{},
+								IdleOrReleasingVector: resource_info.NewResource(0, 0, 0).ToVector(testVectorMap),
 							},
 						},
 					},
@@ -564,8 +573,9 @@ func TestTopologyPlugin_subsetNodesFn(t *testing.T) {
 			// Setup test data
 			jobName := tt.job.Name
 			clusterPodGroups := append(tt.allocatedPodGroups, tt.job)
-			jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(clusterPodGroups)
-			nodesInfoMap := nodes_fake.BuildNodesInfoMap(tt.nodes, tasksToNodeMap, nil)
+			vectorMap := resource_info.NewResourceVectorMap()
+			jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(clusterPodGroups, vectorMap)
+			nodesInfoMap := nodes_fake.BuildNodesInfoMap(tt.nodes, tasksToNodeMap, nil, vectorMap)
 			job := jobsInfoMap[common_info.PodGroupID(jobName)]
 
 			// Setup topology tree
@@ -658,7 +668,8 @@ func TestTopologyPlugin_calculateRelevantDomainLevels(t *testing.T) {
 				},
 			),
 			topologyTree: &Info{
-				Name: "test-topology",
+				Name:      "test-topology",
+				VectorMap: resource_info.NewResourceVectorMap(),
 				TopologyResource: &kaiv1alpha1.Topology{
 					Spec: kaiv1alpha1.TopologySpec{
 						Levels: []kaiv1alpha1.TopologyLevel{
@@ -684,7 +695,8 @@ func TestTopologyPlugin_calculateRelevantDomainLevels(t *testing.T) {
 				},
 			),
 			topologyTree: &Info{
-				Name: "test-topology",
+				Name:      "test-topology",
+				VectorMap: resource_info.NewResourceVectorMap(),
 				TopologyResource: &kaiv1alpha1.Topology{
 					Spec: kaiv1alpha1.TopologySpec{
 						Levels: []kaiv1alpha1.TopologyLevel{
@@ -709,7 +721,8 @@ func TestTopologyPlugin_calculateRelevantDomainLevels(t *testing.T) {
 				},
 			),
 			topologyTree: &Info{
-				Name: "test-topology",
+				Name:      "test-topology",
+				VectorMap: resource_info.NewResourceVectorMap(),
 				TopologyResource: &kaiv1alpha1.Topology{
 					Spec: kaiv1alpha1.TopologySpec{
 						Levels: []kaiv1alpha1.TopologyLevel{
@@ -736,7 +749,8 @@ func TestTopologyPlugin_calculateRelevantDomainLevels(t *testing.T) {
 				},
 			),
 			topologyTree: &Info{
-				Name: "test-topology",
+				Name:      "test-topology",
+				VectorMap: resource_info.NewResourceVectorMap(),
 				TopologyResource: &kaiv1alpha1.Topology{
 					Spec: kaiv1alpha1.TopologySpec{
 						Levels: []kaiv1alpha1.TopologyLevel{
@@ -758,7 +772,8 @@ func TestTopologyPlugin_calculateRelevantDomainLevels(t *testing.T) {
 				},
 			),
 			topologyTree: &Info{
-				Name: "test-topology",
+				Name:      "test-topology",
+				VectorMap: resource_info.NewResourceVectorMap(),
 				TopologyResource: &kaiv1alpha1.Topology{
 					Spec: kaiv1alpha1.TopologySpec{
 						Levels: []kaiv1alpha1.TopologyLevel{
@@ -780,7 +795,8 @@ func TestTopologyPlugin_calculateRelevantDomainLevels(t *testing.T) {
 				},
 			),
 			topologyTree: &Info{
-				Name: "test-topology",
+				Name:      "test-topology",
+				VectorMap: resource_info.NewResourceVectorMap(),
 				TopologyResource: &kaiv1alpha1.Topology{
 					Spec: kaiv1alpha1.TopologySpec{
 						Levels: []kaiv1alpha1.TopologyLevel{
@@ -802,7 +818,8 @@ func TestTopologyPlugin_calculateRelevantDomainLevels(t *testing.T) {
 				},
 			),
 			topologyTree: &Info{
-				Name: "test-topology",
+				Name:      "test-topology",
+				VectorMap: resource_info.NewResourceVectorMap(),
 				TopologyResource: &kaiv1alpha1.Topology{
 					Spec: kaiv1alpha1.TopologySpec{
 						Levels: []kaiv1alpha1.TopologyLevel{
@@ -827,7 +844,8 @@ func TestTopologyPlugin_calculateRelevantDomainLevels(t *testing.T) {
 				},
 			),
 			topologyTree: &Info{
-				Name: "test-topology",
+				Name:      "test-topology",
+				VectorMap: resource_info.NewResourceVectorMap(),
 				TopologyResource: &kaiv1alpha1.Topology{
 					Spec: kaiv1alpha1.TopologySpec{
 						Levels: []kaiv1alpha1.TopologyLevel{
@@ -855,7 +873,8 @@ func TestTopologyPlugin_calculateRelevantDomainLevels(t *testing.T) {
 				},
 			),
 			topologyTree: &Info{
-				Name: "test-topology",
+				Name:      "test-topology",
+				VectorMap: resource_info.NewResourceVectorMap(),
 				TopologyResource: &kaiv1alpha1.Topology{
 					Spec: kaiv1alpha1.TopologySpec{
 						Levels: []kaiv1alpha1.TopologyLevel{
@@ -882,7 +901,8 @@ func TestTopologyPlugin_calculateRelevantDomainLevels(t *testing.T) {
 				},
 			),
 			topologyTree: &Info{
-				Name: "test-topology",
+				Name:      "test-topology",
+				VectorMap: resource_info.NewResourceVectorMap(),
 				TopologyResource: &kaiv1alpha1.Topology{
 					Spec: kaiv1alpha1.TopologySpec{
 						Levels: []kaiv1alpha1.TopologyLevel{
@@ -907,7 +927,8 @@ func TestTopologyPlugin_calculateRelevantDomainLevels(t *testing.T) {
 				},
 			),
 			topologyTree: &Info{
-				Name: "test-topology",
+				Name:      "test-topology",
+				VectorMap: resource_info.NewResourceVectorMap(),
 				TopologyResource: &kaiv1alpha1.Topology{
 					Spec: kaiv1alpha1.TopologySpec{
 						Levels: []kaiv1alpha1.TopologyLevel{
@@ -987,27 +1008,28 @@ func TestTopologyPlugin_calcTreeAllocatable(t *testing.T) {
 					},
 				},
 			},
+			VectorMap: testVectorMap,
 			DomainsByLevel: map[DomainLevel]LevelDomainInfos{
 				"rack": {
 					"rack1.zone1": {
-						ID:                       "rack1.zone1",
-						Level:                    "rack",
-						Nodes:                    map[string]*node_info.NodeInfo{},
-						IdleOrReleasingResources: resource_info.NewResource(0, 0, 0),
+						ID:                    "rack1.zone1",
+						Level:                 "rack",
+						Nodes:                 map[string]*node_info.NodeInfo{},
+						IdleOrReleasingVector: resource_info.NewResource(0, 0, 0).ToVector(testVectorMap),
 					},
 					"rack2.zone1": {
-						ID:                       "rack2.zone1",
-						Level:                    "rack",
-						Nodes:                    map[string]*node_info.NodeInfo{},
-						IdleOrReleasingResources: resource_info.NewResource(0, 0, 0),
+						ID:                    "rack2.zone1",
+						Level:                 "rack",
+						Nodes:                 map[string]*node_info.NodeInfo{},
+						IdleOrReleasingVector: resource_info.NewResource(0, 0, 0).ToVector(testVectorMap),
 					},
 				},
 				"zone": {
 					"zone1": {
-						ID:                       "zone1",
-						Level:                    "zone",
-						Nodes:                    map[string]*node_info.NodeInfo{},
-						IdleOrReleasingResources: resource_info.NewResource(0, 0, 0),
+						ID:                    "zone1",
+						Level:                 "zone",
+						Nodes:                 map[string]*node_info.NodeInfo{},
+						IdleOrReleasingVector: resource_info.NewResource(0, 0, 0).ToVector(testVectorMap),
 					},
 				},
 			},
@@ -1235,10 +1257,10 @@ func TestTopologyPlugin_calcTreeAllocatable(t *testing.T) {
 					DomainsByLevel: map[DomainLevel]LevelDomainInfos{
 						"zone": {
 							"zone1": {
-								ID:                       "zone1",
-								Level:                    "zone",
-								Nodes:                    map[string]*node_info.NodeInfo{},
-								IdleOrReleasingResources: resource_info.NewResource(0, 0, 0),
+								ID:                    "zone1",
+								Level:                 "zone",
+								Nodes:                 map[string]*node_info.NodeInfo{},
+								IdleOrReleasingVector: resource_info.NewResource(0, 0, 0).ToVector(testVectorMap),
 							},
 						},
 					},
@@ -1380,14 +1402,127 @@ func TestTopologyPlugin_calcTreeAllocatable(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "fractional GPU - all devices partially allocated, remaining capacity accommodates pods",
+			job: &jobs_fake.TestJobBasic{
+				Name:                "pending-job",
+				RequiredGPUsPerTask: 0.4,
+				Tasks: []*tasks_fake.TestTaskBasic{
+					{State: pod_status.Pending},
+					{State: pod_status.Pending},
+				},
+			},
+			allocatedPodGroups: []*jobs_fake.TestJobBasic{
+				{
+					Name:                "running-job",
+					RequiredGPUsPerTask: 0.5,
+					Tasks: []*tasks_fake.TestTaskBasic{
+						{State: pod_status.Running, NodeName: "node-1", GPUGroups: []string{"GPU-0"}},
+						{State: pod_status.Running, NodeName: "node-1", GPUGroups: []string{"GPU-1"}},
+					},
+				},
+			},
+			nodes: map[string]nodes_fake.TestNodeBasic{
+				"node-1": {
+					GPUs:       2,
+					GPUMemory:  1000,
+					MaxTaskNum: ptr.To(100),
+				},
+			},
+			nodesToDomains: map[string]DomainID{
+				"node-1": "rack1.zone1",
+			},
+			setupTopologyTree: twoRacksOneZoneTree,
+			domainParent: map[DomainID]DomainID{
+				"rack1.zone1": "zone1",
+				"rack2.zone1": "zone1",
+			},
+			domainLevel: map[DomainID]DomainLevel{
+				"zone1": "zone",
+			},
+			expectedMaxAllocatablePods: 2,
+			expectedDomains: map[DomainID]*DomainInfo{
+				"rack1.zone1": {
+					ID:              "rack1.zone1",
+					Level:           "rack",
+					AllocatablePods: 2,
+				},
+				"rack2.zone1": {
+					ID:              "rack2.zone1",
+					Level:           "rack",
+					AllocatablePods: 0,
+				},
+				"zone1": {
+					ID:              "zone1",
+					Level:           "zone",
+					AllocatablePods: 2,
+				},
+			},
+		},
+		{
+			name: "fractional GPU - single partially-used device with remaining capacity",
+			job: &jobs_fake.TestJobBasic{
+				Name:                "pending-job",
+				RequiredGPUsPerTask: 0.4,
+				Tasks: []*tasks_fake.TestTaskBasic{
+					{State: pod_status.Pending},
+				},
+			},
+			allocatedPodGroups: []*jobs_fake.TestJobBasic{
+				{
+					Name:                "running-job",
+					RequiredGPUsPerTask: 0.5,
+					Tasks: []*tasks_fake.TestTaskBasic{
+						{State: pod_status.Running, NodeName: "node-1", GPUGroups: []string{"GPU-0"}},
+					},
+				},
+			},
+			nodes: map[string]nodes_fake.TestNodeBasic{
+				"node-1": {
+					GPUs:       1,
+					GPUMemory:  1000,
+					MaxTaskNum: ptr.To(100),
+				},
+			},
+			nodesToDomains: map[string]DomainID{
+				"node-1": "rack1.zone1",
+			},
+			setupTopologyTree: twoRacksOneZoneTree,
+			domainParent: map[DomainID]DomainID{
+				"rack1.zone1": "zone1",
+				"rack2.zone1": "zone1",
+			},
+			domainLevel: map[DomainID]DomainLevel{
+				"zone1": "zone",
+			},
+			expectedMaxAllocatablePods: 1,
+			expectedDomains: map[DomainID]*DomainInfo{
+				"rack1.zone1": {
+					ID:              "rack1.zone1",
+					Level:           "rack",
+					AllocatablePods: 1,
+				},
+				"rack2.zone1": {
+					ID:              "rack2.zone1",
+					Level:           "rack",
+					AllocatablePods: 0,
+				},
+				"zone1": {
+					ID:              "zone1",
+					Level:           "zone",
+					AllocatablePods: 1,
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			jobName := tt.job.Name
 			clusterPodGroups := append(tt.allocatedPodGroups, tt.job)
-			jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(clusterPodGroups)
-			nodesInfoMap := nodes_fake.BuildNodesInfoMap(tt.nodes, tasksToNodeMap, nil)
+			vectorMap := resource_info.NewResourceVectorMap()
+			jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(clusterPodGroups, vectorMap)
+			nodesInfoMap := nodes_fake.BuildNodesInfoMap(tt.nodes, tasksToNodeMap, nil, vectorMap)
 			job := jobsInfoMap[common_info.PodGroupID(jobName)]
 
 			topologyTree := tt.setupTopologyTree()
@@ -1538,7 +1673,8 @@ func TestTopologyPlugin_getJobAllocatableDomains(t *testing.T) {
 				RequiredLevel: "zone",
 			},
 			topologyTree: &Info{
-				Name: "test-topology",
+				Name:      "test-topology",
+				VectorMap: resource_info.NewResourceVectorMap(),
 				TopologyResource: &kaiv1alpha1.Topology{
 					Spec: kaiv1alpha1.TopologySpec{
 						Levels: []kaiv1alpha1.TopologyLevel{
@@ -1602,7 +1738,8 @@ func TestTopologyPlugin_getJobAllocatableDomains(t *testing.T) {
 				RequiredLevel: "zone",
 			},
 			topologyTree: &Info{
-				Name: "test-topology",
+				Name:      "test-topology",
+				VectorMap: resource_info.NewResourceVectorMap(),
 				TopologyResource: &kaiv1alpha1.Topology{
 					Spec: kaiv1alpha1.TopologySpec{
 						Levels: []kaiv1alpha1.TopologyLevel{
@@ -1614,30 +1751,30 @@ func TestTopologyPlugin_getJobAllocatableDomains(t *testing.T) {
 				DomainsByLevel: map[DomainLevel]LevelDomainInfos{
 					"rack": {
 						"rack1.zone1": {
-							ID:                       "rack1.zone1",
-							Level:                    "rack",
-							IdleOrReleasingResources: resource_info.NewResource(500, 0, 0), // Insufficient resources
-							AllocatablePods:          -1,
+							ID:                    "rack1.zone1",
+							Level:                 "rack",
+							IdleOrReleasingVector: resource_info.NewResource(500, 0, 0).ToVector(testVectorMap), // Insufficient resources
+							AllocatablePods:       -1,
 						},
 						"rack2.zone2": {
-							ID:                       "rack2.zone2",
-							Level:                    "rack",
-							IdleOrReleasingResources: resource_info.NewResource(600, 0, 0), // Insufficient resources
-							AllocatablePods:          -1,
+							ID:                    "rack2.zone2",
+							Level:                 "rack",
+							IdleOrReleasingVector: resource_info.NewResource(600, 0, 0).ToVector(testVectorMap), // Insufficient resources
+							AllocatablePods:       -1,
 						},
 					},
 					"zone": {
 						"zone1": {
-							ID:                       "zone1",
-							Level:                    "zone",
-							IdleOrReleasingResources: resource_info.NewResource(500, 0, 0), // Insufficient resources
-							AllocatablePods:          -1,
+							ID:                    "zone1",
+							Level:                 "zone",
+							IdleOrReleasingVector: resource_info.NewResource(500, 0, 0).ToVector(testVectorMap), // Insufficient resources
+							AllocatablePods:       -1,
 						},
 						"zone2": {
-							ID:                       "zone2",
-							Level:                    "zone",
-							IdleOrReleasingResources: resource_info.NewResource(600, 0, 0), // Insufficient resources
-							AllocatablePods:          -1,
+							ID:                    "zone2",
+							Level:                 "zone",
+							IdleOrReleasingVector: resource_info.NewResource(600, 0, 0).ToVector(testVectorMap), // Insufficient resources
+							AllocatablePods:       -1,
 						},
 					},
 				},
@@ -1698,7 +1835,8 @@ func TestTopologyPlugin_getJobAllocatableDomains(t *testing.T) {
 				PreferredLevel: "rack",
 			},
 			topologyTree: &Info{
-				Name: "test-topology",
+				Name:      "test-topology",
+				VectorMap: resource_info.NewResourceVectorMap(),
 				TopologyResource: &kaiv1alpha1.Topology{
 					Spec: kaiv1alpha1.TopologySpec{
 						Levels: []kaiv1alpha1.TopologyLevel{
@@ -1741,7 +1879,8 @@ func TestTopologyPlugin_getJobAllocatableDomains(t *testing.T) {
 				PreferredLevel: "zone",
 			},
 			topologyTree: &Info{
-				Name: "test-topology",
+				Name:      "test-topology",
+				VectorMap: resource_info.NewResourceVectorMap(),
 				TopologyResource: &kaiv1alpha1.Topology{
 					Spec: kaiv1alpha1.TopologySpec{
 						Levels: []kaiv1alpha1.TopologyLevel{
@@ -1815,7 +1954,8 @@ func TestTopologyPlugin_getJobAllocatableDomains(t *testing.T) {
 				RequiredLevel: "zone",
 			},
 			topologyTree: &Info{
-				Name: "test-topology",
+				Name:      "test-topology",
+				VectorMap: resource_info.NewResourceVectorMap(),
 				TopologyResource: &kaiv1alpha1.Topology{
 					Spec: kaiv1alpha1.TopologySpec{
 						Levels: []kaiv1alpha1.TopologyLevel{
@@ -1871,7 +2011,8 @@ func TestTopologyPlugin_getJobAllocatableDomains(t *testing.T) {
 				RequiredLevel: "zone",
 			},
 			topologyTree: &Info{
-				Name: "test-topology",
+				Name:      "test-topology",
+				VectorMap: resource_info.NewResourceVectorMap(),
 				TopologyResource: &kaiv1alpha1.Topology{
 					Spec: kaiv1alpha1.TopologySpec{
 						Levels: []kaiv1alpha1.TopologyLevel{
@@ -1943,7 +2084,8 @@ func TestTopologyPlugin_getJobAllocatableDomains(t *testing.T) {
 				PreferredLevel: "rack",
 			},
 			topologyTree: &Info{
-				Name: "test-topology",
+				Name:      "test-topology",
+				VectorMap: resource_info.NewResourceVectorMap(),
 				TopologyResource: &kaiv1alpha1.Topology{
 					Spec: kaiv1alpha1.TopologySpec{
 						Levels: []kaiv1alpha1.TopologyLevel{
@@ -2093,7 +2235,7 @@ func TestTopologyPlugin_getJobAllocatableDomains(t *testing.T) {
 			tasksCount := len(tasks)
 
 			result, err := plugin.getJobAllocatableDomains(tt.job, &tt.job.RootSubGroupSet.SubGroupInfo,
-				tt.job.RootSubGroupSet.GetAllPodSets(), tasksResources, tasksCount,
+				tt.job.RootSubGroupSet.GetAllPodSets(), tasksResources.ToVector(testVectorMap), tasksCount,
 				tt.topologyTree)
 
 			// Check error

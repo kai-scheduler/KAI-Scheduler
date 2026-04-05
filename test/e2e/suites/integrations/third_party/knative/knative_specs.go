@@ -15,20 +15,21 @@ import (
 	v1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8sptr "k8s.io/utils/ptr"
 	"knative.dev/pkg/ptr"
 	knativeserving "knative.dev/serving/pkg/apis/serving/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	v2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	testcontext "github.com/NVIDIA/KAI-scheduler/test/e2e/modules/context"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/crd"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/queue"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/testconfig"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/utils"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/wait"
+	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/crd"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/testconfig"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/utils"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
 )
 
 const (
@@ -82,7 +83,7 @@ func DescribeKnativeSpecs() bool {
 				Expect(testCtx.ControllerClient.List(ctx, &podGroups, client.InNamespace(namespace))).To(Succeed())
 				Expect(len(podGroups.Items)).To(Equal(1),
 					"Expected one podgroup for the revision")
-				Expect(podGroups.Items[0].Spec.MinMember).To(Equal(int32(2)),
+				Expect(podGroups.Items[0].Spec.MinMember).To(Equal(k8sptr.To(int32(2))),
 					"Expected minmember of podgroup to be 2")
 			})
 
@@ -107,7 +108,7 @@ func DescribeKnativeSpecs() bool {
 				Expect(testCtx.ControllerClient.List(ctx, &podGroups, client.InNamespace(namespace))).To(Succeed())
 				Expect(len(podGroups.Items)).To(Equal(1),
 					"Expected one podgroup for the revision")
-				Expect(podGroups.Items[0].Spec.MinMember).To(Equal(int32(1)),
+				Expect(podGroups.Items[0].Spec.MinMember).To(Equal(k8sptr.To(int32(1))),
 					"Expected minmember of podgroup to be 1")
 			})
 		})

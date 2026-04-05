@@ -9,21 +9,21 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	kubeaischedulerver "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned/fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
+	kubeaischedulerver "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 
-	kaiv1alpha1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1alpha1"
+	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
 )
 
 func TestTopologyPlugin_initializeTopologyTree(t *testing.T) {
@@ -150,6 +150,11 @@ func TestTopologyPlugin_initializeTopologyTree(t *testing.T) {
 	schedulerCache.Run(ctx.Done())
 	schedulerCache.WaitForCacheSync(ctx.Done())
 
+	topologyVectorMap := resource_info.NewResourceVectorMap()
+	for _, n := range testNodes {
+		topologyVectorMap.AddResourceList(n.Status.Allocatable)
+	}
+
 	session := &framework.Session{
 		Config:          schedulerConfig,
 		SchedulerParams: schedulerParams,
@@ -157,25 +162,28 @@ func TestTopologyPlugin_initializeTopologyTree(t *testing.T) {
 		ClusterInfo: &api.ClusterInfo{
 			Nodes: map[string]*node_info.NodeInfo{
 				testNodes[0].Name: {
-					Node:        testNodes[0],
-					Allocatable: resource_info.ResourceFromResourceList(testNodes[0].Status.Allocatable),
-					Idle:        resource_info.NewResource(500, 0, 0),
-					Releasing:   resource_info.NewResource(0, 0, 0),
-					Used:        resource_info.NewResource(500, 0, 1),
+					Node:              testNodes[0],
+					AllocatableVector: resource_info.ResourceFromResourceList(testNodes[0].Status.Allocatable).ToVector(topologyVectorMap),
+					IdleVector:        resource_info.NewResourceVectorWithValues(500, 0, 0, topologyVectorMap),
+					ReleasingVector:   resource_info.NewResourceVector(topologyVectorMap),
+					UsedVector:        resource_info.NewResourceVectorWithValues(500, 0, 1, topologyVectorMap),
+					VectorMap:         topologyVectorMap,
 				},
 				testNodes[1].Name: {
-					Node:        testNodes[1],
-					Allocatable: resource_info.ResourceFromResourceList(testNodes[1].Status.Allocatable),
-					Idle:        resource_info.NewResource(500, 0, 0),
-					Releasing:   resource_info.NewResource(0, 0, 0),
-					Used:        resource_info.NewResource(500, 0, 0),
+					Node:              testNodes[1],
+					AllocatableVector: resource_info.ResourceFromResourceList(testNodes[1].Status.Allocatable).ToVector(topologyVectorMap),
+					IdleVector:        resource_info.NewResourceVectorWithValues(500, 0, 0, topologyVectorMap),
+					ReleasingVector:   resource_info.NewResourceVector(topologyVectorMap),
+					UsedVector:        resource_info.NewResourceVectorWithValues(500, 0, 0, topologyVectorMap),
+					VectorMap:         topologyVectorMap,
 				},
 				testNodes[2].Name: {
-					Node:        testNodes[2],
-					Allocatable: resource_info.ResourceFromResourceList(testNodes[2].Status.Allocatable),
-					Idle:        resource_info.NewResource(0, 0, 0),
-					Releasing:   resource_info.NewResource(0, 0, 0),
-					Used:        resource_info.NewResource(1000, 0, 3),
+					Node:              testNodes[2],
+					AllocatableVector: resource_info.ResourceFromResourceList(testNodes[2].Status.Allocatable).ToVector(topologyVectorMap),
+					IdleVector:        resource_info.NewResourceVector(topologyVectorMap),
+					ReleasingVector:   resource_info.NewResourceVector(topologyVectorMap),
+					UsedVector:        resource_info.NewResourceVectorWithValues(1000, 0, 3, topologyVectorMap),
+					VectorMap:         topologyVectorMap,
 				},
 			},
 			Topologies: []*kaiv1alpha1.Topology{testTopology},

@@ -16,21 +16,22 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/ptr"
 
-	schedulingv2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	schedulingv2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_affinity"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/queue_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
+	schedulingv2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	schedulingv2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_affinity"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 )
 
 var _ = Describe("PodAccumulatedScenarioBuilder", func() {
@@ -107,7 +108,7 @@ var _ = Describe("PodAccumulatedScenarioBuilder", func() {
 		It("returns scenario with all tasks in single groups when minAvailable is amount of pods", func() {
 			for _, podGroupInfo := range ssn.ClusterInfo.PodGroupInfos {
 				podGroupInfo.GetSubGroups()[podgroup_info.DefaultSubGroup].SetMinAvailable(int32(len(podGroupInfo.GetAllPodsMap())))
-				podGroupInfo.PodGroup.Spec.MinMember = int32(len(podGroupInfo.GetAllPodsMap()))
+				podGroupInfo.PodGroup.Spec.MinMember = ptr.To(int32(len(podGroupInfo.GetAllPodsMap())))
 			}
 			scenarioBuilder = NewPodAccumulatedScenarioBuilder(ssn, reclaimerJob, []*podgroup_info.PodGroupInfo{},
 				utils.GetVictimsQueue(ssn, nil), ssn.ClusterInfo.Nodes)
@@ -133,7 +134,7 @@ var _ = Describe("PodAccumulatedScenarioBuilder", func() {
 			ssn, _ = initializeSession(3, 2)
 			for _, podGroupInfo := range ssn.ClusterInfo.PodGroupInfos {
 				podGroupInfo.GetSubGroups()[podgroup_info.DefaultSubGroup].SetMinAvailable(int32(len(podGroupInfo.GetAllPodsMap())))
-				podGroupInfo.PodGroup.Spec.MinMember = int32(len(podGroupInfo.GetAllPodsMap()))
+				podGroupInfo.PodGroup.Spec.MinMember = ptr.To(int32(len(podGroupInfo.GetAllPodsMap())))
 			}
 			submitQueue := createQueue("team-a")
 			ssn.ClusterInfo.Queues[submitQueue.UID] = submitQueue
@@ -167,7 +168,7 @@ var _ = Describe("PodAccumulatedScenarioBuilder", func() {
 			ssn, _ = initializeSession(3, 2)
 			for _, podGroupInfo := range ssn.ClusterInfo.PodGroupInfos {
 				podGroupInfo.GetSubGroups()[podgroup_info.DefaultSubGroup].SetMinAvailable(int32(len(podGroupInfo.GetAllPodsMap())))
-				podGroupInfo.PodGroup.Spec.MinMember = int32(len(podGroupInfo.GetAllPodsMap()))
+				podGroupInfo.PodGroup.Spec.MinMember = ptr.To(int32(len(podGroupInfo.GetAllPodsMap())))
 			}
 			submitQueue := createQueue("team-a")
 			ssn.ClusterInfo.Queues[submitQueue.UID] = submitQueue
@@ -206,7 +207,7 @@ var _ = Describe("PodAccumulatedScenarioBuilder", func() {
 			minAvailable := 1
 			for _, podGroupInfo := range ssn.ClusterInfo.PodGroupInfos {
 				podGroupInfo.GetSubGroups()[podgroup_info.DefaultSubGroup].SetMinAvailable(int32(minAvailable))
-				podGroupInfo.PodGroup.Spec.MinMember = int32(minAvailable)
+				podGroupInfo.PodGroup.Spec.MinMember = ptr.To(int32(minAvailable))
 			}
 			submitQueue := createQueue("team-a")
 			ssn.ClusterInfo.Queues[submitQueue.UID] = submitQueue
@@ -247,7 +248,7 @@ var _ = Describe("PodAccumulatedScenarioBuilder", func() {
 			minAvailable := 2
 			for _, podGroupInfo := range ssn.ClusterInfo.PodGroupInfos {
 				podGroupInfo.GetSubGroups()[podgroup_info.DefaultSubGroup].SetMinAvailable(int32(minAvailable))
-				podGroupInfo.PodGroup.Spec.MinMember = int32(minAvailable)
+				podGroupInfo.PodGroup.Spec.MinMember = ptr.To(int32(minAvailable))
 			}
 			submitQueue := createQueue("team-a")
 			ssn.ClusterInfo.Queues[submitQueue.UID] = submitQueue
@@ -298,17 +299,20 @@ func initializeSession(jobsCount, tasksPerJob int) (*framework.Session, []*pod_i
 	nodePodAffinityInfo.EXPECT().AddPod(gomock.Any()).AnyTimes()
 	nodePodAffinityInfo.EXPECT().RemovePod(gomock.Any()).AnyTimes()
 
-	node := node_info.NewNodeInfo(&v1.Node{
+	tempNode := &v1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "node-1",
 		},
-	}, nodePodAffinityInfo)
+	}
+	vectorMap := resource_info.BuildResourceVectorMap([]v1.ResourceList{tempNode.Status.Allocatable})
+	node := node_info.NewNodeInfo(tempNode, nodePodAffinityInfo, vectorMap)
 	for jobID := range jobsCount {
 		queueName := fmt.Sprintf("team-%d", jobID)
 		newJob, jobTasks := createJobWithTasks(tasksPerJob, jobID, queueName, v1.PodRunning, []v1.ResourceRequirements{requireOneGPU()})
 		jobs = append(jobs, newJob)
-		node.Allocatable.Add(newJob.Allocated)
-		node.Idle.Add(newJob.Allocated)
+		allocatedVector := newJob.Allocated.ToVector(vectorMap)
+		node.AllocatableVector.Add(allocatedVector)
+		node.IdleVector.Add(allocatedVector)
 		_ = node.AddTasksToNode(jobTasks, map[common_info.PodID]*pod_info.PodInfo{})
 		tasks = append(tasks, jobTasks...)
 		queues = append(queues, createQueue(queueName))
@@ -368,7 +372,7 @@ func createJobWithTasks(
 				fmt.Sprintf("pod-%d", taskNum),
 				namespace, jobUID, tasksStatus,
 				podResources,
-			)))
+			), nil, resource_info.NewResourceVectorMap()))
 	}
 
 	newJob := podgroup_info.NewPodGroupInfo(common_info.PodGroupID(strconv.Itoa(jobID)), jobTasks...)
@@ -379,7 +383,7 @@ func createJobWithTasks(
 			UID:       types.UID(jobUID),
 		},
 		Spec: schedulingv2alpha2.PodGroupSpec{
-			MinMember: 1,
+			MinMember: ptr.To(int32(1)),
 			Queue:     queueName,
 		},
 	})

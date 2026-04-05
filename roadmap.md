@@ -1,5 +1,5 @@
-[License](LICENSE) [Coverage](https://github.com/NVIDIA/KAI-Scheduler/blob/main/.github/workflows/update-coverage-badge.yaml)
-[Ask DeepWiki](https://deepwiki.com/NVIDIA/KAI-Scheduler)
+[License](LICENSE) [Coverage](https://github.com/kai-scheduler/KAI-scheduler/blob/main/.github/workflows/update-coverage-badge.yaml)
+[Ask DeepWiki](https://deepwiki.com/kai-scheduler/KAI-scheduler)
 
 # Roadmap
 
@@ -23,18 +23,18 @@
 
 ## High-level overview of the main priorities for 2025
 
-- Refactor the codebase to enhance vendor neutrality [https://github.com/NVIDIA/KAI-Scheduler/issues/134](https://github.com/NVIDIA/KAI-Scheduler/issues/134)
-- Support Scheduling Gates [https://github.com/NVIDIA/KAI-Scheduler/issues/63](https://github.com/NVIDIA/KAI-Scheduler/issues/63)
-- Research on possible integration with Kueue [https://github.com/NVIDIA/KAI-Scheduler/issues/68](https://github.com/NVIDIA/KAI-Scheduler/issues/68)
-- Add Topology Aware Scheduling support of pod-group [https://github.com/NVIDIA/KAI-Scheduler/issues/66](https://github.com/NVIDIA/KAI-Scheduler/issues/66)
-- Support Min Run Time per workloads [https://github.com/NVIDIA/KAI-Scheduler/issues/136](https://github.com/NVIDIA/KAI-Scheduler/issues/136)
+- Refactor the codebase to enhance vendor neutrality [https://github.com/kai-scheduler/KAI-scheduler/issues/134](https://github.com/kai-scheduler/KAI-scheduler/issues/134)
+- Support Scheduling Gates [https://github.com/kai-scheduler/KAI-scheduler/issues/63](https://github.com/kai-scheduler/KAI-scheduler/issues/63)
+- Research on possible integration with Kueue [https://github.com/kai-scheduler/KAI-scheduler/issues/68](https://github.com/kai-scheduler/KAI-scheduler/issues/68)
+- Add Topology Aware Scheduling support of pod-group [https://github.com/kai-scheduler/KAI-scheduler/issues/66](https://github.com/kai-scheduler/KAI-scheduler/issues/66)
+- Support Min Run Time per workloads [https://github.com/kai-scheduler/KAI-scheduler/issues/136](https://github.com/kai-scheduler/KAI-scheduler/issues/136)
 - Add more PriorityClasses as part of the default KAI install
-- Support JobSet [https://github.com/NVIDIA/KAI-Scheduler/issues/763](https://github.com/NVIDIA/KAI-Scheduler/issues/763)
-- Support LWS (LeaderWorkerSet) [https://github.com/NVIDIA/KAI-Scheduler/issues/124](https://github.com/NVIDIA/KAI-Scheduler/issues/124)
+- Support JobSet [https://github.com/kai-scheduler/KAI-scheduler/issues/763](https://github.com/kai-scheduler/KAI-scheduler/issues/763)
+- Support LWS (LeaderWorkerSet) [https://github.com/kai-scheduler/KAI-scheduler/issues/124](https://github.com/kai-scheduler/KAI-scheduler/issues/124)
 - Decouple Priority and Preemption
-- Specify fraction container name [#654](https://github.com/NVIDIA/KAI-Scheduler/pull/654)
-- Support n-levels of hierarchical queues ​​[#858](https://github.com/NVIDIA/KAI-Scheduler/pull/858)
-- Add Time-based Fairshare [#494](https://github.com/NVIDIA/KAI-Scheduler/pull/494)
+- Specify fraction container name [#654](https://github.com/kai-scheduler/KAI-scheduler/pull/654)
+- Support n-levels of hierarchical queues ​​[#858](https://github.com/kai-scheduler/KAI-scheduler/pull/858)
+- Add Time-based Fairshare [#494](https://github.com/kai-scheduler/KAI-scheduler/pull/494)
 
 
 ## Long term goals

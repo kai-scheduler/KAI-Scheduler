@@ -9,9 +9,11 @@ import (
 	"strconv"
 	"strings"
 
-	enginev2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/dustin/go-humanize"
+	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	v1 "k8s.io/api/core/v1"
 )
 
 const (
@@ -141,68 +143,52 @@ func (f *TopologyFitError) DetailedMessage() string {
 
 func NewTopologyInsufficientResourcesError(
 	jobName, subGroupName, namespace, domainID string,
-	resourceRequested *resource_info.Resource, availableResource *resource_info.Resource,
+	resourceRequested resource_info.ResourceVector, availableResource resource_info.ResourceVector,
+	vectorMap *resource_info.ResourceVectorMap,
 ) *TopologyFitError {
 	var shortMessages []string
 	var detailedMessages []string
 
-	if len(resourceRequested.MigResources()) > 0 {
-		for migProfile, quant := range resourceRequested.MigResources() {
-			availableMigProfilesQuant := int64(0)
-			if _, found := availableResource.ScalarResources()[migProfile]; found {
-				availableMigProfilesQuant = availableResource.ScalarResources()[migProfile]
-			}
-			if availableMigProfilesQuant < quant {
-				detailedMessages = append(detailedMessages,
-					fmt.Sprintf("%s didn't have enough resource: %s, requested: %d, available: %d",
-						domainID, migProfile, quant, availableMigProfilesQuant))
-				shortMessages = append(shortMessages, fmt.Sprintf("node-group(s) didn't have enough of mig profile: %s",
-					migProfile))
-			}
+	for i := 0; i < vectorMap.Len(); i++ {
+		resourceName := v1.ResourceName(vectorMap.ResourceAt(i))
+		requested := resourceRequested.Get(i)
+		available := availableResource.Get(i)
+		if requested <= available {
+			continue
 		}
-	} else {
-		requestedGPUs := resourceRequested.GPUs()
-		availableGPUs := availableResource.GPUs()
-		if requestedGPUs > availableGPUs {
+
+		if resource_info.IsMigResource(resourceName) {
+			detailedMessages = append(detailedMessages,
+				fmt.Sprintf("%s didn't have enough resource: %s, requested: %d, available: %d",
+					domainID, resourceName, int64(requested), int64(available)))
+			shortMessages = append(shortMessages, fmt.Sprintf("node-group(s) didn't have enough of mig profile: %s",
+				resourceName))
+		} else if resourceName == constants.GpuResource {
 			detailedMessages = append(detailedMessages, fmt.Sprintf("%s didn't have enough resource: GPUs, requested: %s, available: %s",
 				domainID,
-				strconv.FormatFloat(requestedGPUs, 'g', 3, 64),
-				strconv.FormatFloat(availableGPUs, 'g', 3, 64),
+				strconv.FormatFloat(requested, 'g', 3, 64),
+				strconv.FormatFloat(available, 'g', 3, 64),
 			))
 			shortMessages = append(shortMessages, "node-group(s) didn't have enough resources: GPUs")
-		}
-	}
-
-	requestedCPUs := int64(resourceRequested.Cpu())
-	availableCPUs := int64(availableResource.Cpu())
-	if requestedCPUs > availableCPUs {
-		detailedMessages = append(detailedMessages, fmt.Sprintf("%s didn't have enough resources: CPU cores, requested: %s, available: %s",
-			domainID,
-			humanize.FtoaWithDigits(resourceRequested.Cpu()/resource_info.MilliCPUToCores, 3),
-			humanize.FtoaWithDigits(availableResource.Cpu()/resource_info.MilliCPUToCores, 3),
-		))
-		shortMessages = append(shortMessages, "node-group(s) didn't have enough resources: CPU cores")
-	}
-
-	if resourceRequested.Memory() > availableResource.Memory() {
-		detailedMessages = append(detailedMessages, fmt.Sprintf("%s didn't have enough resources: memory, requested: %s, available: %s",
-			domainID,
-			humanize.FtoaWithDigits(resourceRequested.Memory()/resource_info.MemoryToGB, 3),
-			humanize.FtoaWithDigits(availableResource.Memory()/resource_info.MemoryToGB, 3),
-		))
-		shortMessages = append(shortMessages, "node-group(s) didn't have enough resources: memory")
-	}
-
-	for requestedResourceName, requestedResourceQuant := range resourceRequested.ScalarResources() {
-		availableResourceQuant := int64(0)
-		if _, found := availableResource.ScalarResources()[requestedResourceName]; found {
-			availableResourceQuant = availableResource.ScalarResources()[requestedResourceName]
-		}
-		if availableResourceQuant < requestedResourceQuant {
+		} else if resourceName == v1.ResourceCPU {
+			detailedMessages = append(detailedMessages, fmt.Sprintf("%s didn't have enough resources: CPU cores, requested: %s, available: %s",
+				domainID,
+				humanize.FtoaWithDigits(requested/resource_info.MilliCPUToCores, 3),
+				humanize.FtoaWithDigits(available/resource_info.MilliCPUToCores, 3),
+			))
+			shortMessages = append(shortMessages, "node-group(s) didn't have enough resources: CPU cores")
+		} else if resourceName == v1.ResourceMemory {
+			detailedMessages = append(detailedMessages, fmt.Sprintf("%s didn't have enough resources: memory, requested: %s, available: %s",
+				domainID,
+				humanize.FtoaWithDigits(requested/resource_info.MemoryToGB, 3),
+				humanize.FtoaWithDigits(available/resource_info.MemoryToGB, 3),
+			))
+			shortMessages = append(shortMessages, "node-group(s) didn't have enough resources: memory")
+		} else {
 			detailedMessages = append(detailedMessages, fmt.Sprintf("%s didn't have enough resource: %s, requested: %d, available: %d",
-				domainID, requestedResourceName, requestedResourceQuant, availableResourceQuant))
+				domainID, resourceName, int64(requested), int64(available)))
 			shortMessages = append(shortMessages, fmt.Sprintf("node-group(s) didn't have enough resources: %s",
-				requestedResourceName))
+				resourceName))
 		}
 	}
 

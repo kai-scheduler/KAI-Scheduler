@@ -11,25 +11,27 @@ import (
 	v14 "k8s.io/api/scheduling/v1"
 	storage "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	featureutil "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/informers"
 	listv1 "k8s.io/client-go/listers/core/v1"
 	resourcev1 "k8s.io/client-go/listers/resource/v1"
 	schedv1 "k8s.io/client-go/listers/scheduling/v1"
 	v12 "k8s.io/client-go/listers/storage/v1"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/kubernetes/pkg/features"
 
-	kubeAiSchedulerInfo "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/informers/externalversions"
-	scheudlinglistv1alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/listers/scheduling/v1alpha2"
-	schedlistv2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/listers/scheduling/v2"
-	schedlist2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/listers/scheduling/v2alpha2"
-	schedulingv1alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	enginev2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	enginev2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/queue_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/usagedb"
+	kubeAiSchedulerInfo "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/informers/externalversions"
+	scheudlinglistv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/listers/scheduling/v1alpha2"
+	schedlistv2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/listers/scheduling/v2"
+	schedlist2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/listers/scheduling/v2alpha2"
+	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	enginev2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb"
 
-	kaiv1alpha1Listers "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/listers/kai/v1alpha1"
-	kaiv1alpha1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1alpha1"
+	kaiv1alpha1Listers "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/listers/kai/v1alpha1"
+	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
 )
 
 type k8sLister struct {
@@ -42,11 +44,10 @@ type k8sLister struct {
 	cmLister       listv1.ConfigMapLister
 	usageLister    *usagedb.UsageLister
 
-	pvcLister              listv1.PersistentVolumeClaimLister
-	storageCapacityLister  v12.CSIStorageCapacityLister
-	storageClassLister     v12.StorageClassLister
-	csiDriverLister        v12.CSIDriverLister
-	draResourceClaimLister resourcev1.ResourceClaimLister
+	pvcLister             listv1.PersistentVolumeClaimLister
+	storageCapacityLister v12.CSIStorageCapacityLister
+	storageClassLister    v12.StorageClassLister
+	csiDriverLister       v12.CSIDriverLister
 
 	bindRequestLister scheudlinglistv1alpha2.BindRequestLister
 
@@ -54,6 +55,7 @@ type k8sLister struct {
 
 	resourceSliceLister resourcev1.ResourceSliceLister
 	resourceClaimLister resourcev1.ResourceClaimLister
+	deviceClassLister   resourcev1.DeviceClassLister
 
 	partitionSelector labels.Selector
 }
@@ -67,7 +69,7 @@ func New(
 	usageLister *usagedb.UsageLister,
 	partitionSelector labels.Selector,
 ) *k8sLister {
-	return &k8sLister{
+	lister := &k8sLister{
 		podGroupLister: kubeAiSchedulerInformerFactory.Scheduling().V2alpha2().PodGroups().Lister(),
 		podInformer:    informerFactory.Core().V1().Pods().Informer(),
 		podLister:      informerFactory.Core().V1().Pods().Lister(),
@@ -77,19 +79,24 @@ func New(
 		cmLister:       informerFactory.Core().V1().ConfigMaps().Lister(),
 		usageLister:    usageLister,
 
-		pvcLister:              informerFactory.Core().V1().PersistentVolumeClaims().Lister(),
-		storageCapacityLister:  informerFactory.Storage().V1().CSIStorageCapacities().Lister(),
-		storageClassLister:     informerFactory.Storage().V1().StorageClasses().Lister(),
-		csiDriverLister:        informerFactory.Storage().V1().CSIDrivers().Lister(),
-		draResourceClaimLister: informerFactory.Resource().V1().ResourceClaims().Lister(),
+		pvcLister:             informerFactory.Core().V1().PersistentVolumeClaims().Lister(),
+		storageCapacityLister: informerFactory.Storage().V1().CSIStorageCapacities().Lister(),
+		storageClassLister:    informerFactory.Storage().V1().StorageClasses().Lister(),
+		csiDriverLister:       informerFactory.Storage().V1().CSIDrivers().Lister(),
 
-		bindRequestLister:   kubeAiSchedulerInformerFactory.Scheduling().V1alpha2().BindRequests().Lister(),
-		kaiTopologyLister:   kubeAiSchedulerInformerFactory.Kai().V1alpha1().Topologies().Lister(),
-		resourceSliceLister: informerFactory.Resource().V1().ResourceSlices().Lister(),
-		resourceClaimLister: informerFactory.Resource().V1().ResourceClaims().Lister(),
+		bindRequestLister: kubeAiSchedulerInformerFactory.Scheduling().V1alpha2().BindRequests().Lister(),
+		kaiTopologyLister: kubeAiSchedulerInformerFactory.Kai().V1alpha1().Topologies().Lister(),
 
 		partitionSelector: partitionSelector,
 	}
+
+	if featureutil.DefaultMutableFeatureGate.Enabled(features.DynamicResourceAllocation) {
+		lister.resourceSliceLister = informerFactory.Resource().V1().ResourceSlices().Lister()
+		lister.resourceClaimLister = informerFactory.Resource().V1().ResourceClaims().Lister()
+		lister.deviceClassLister = informerFactory.Resource().V1().DeviceClasses().Lister()
+	}
+
+	return lister
 }
 
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
@@ -183,6 +190,9 @@ func (k *k8sLister) ListTopologies() ([]*kaiv1alpha1.Topology, error) {
 // +kubebuilder:rbac:groups="resource.k8s.io",resources=resourceslices,verbs=get;list;watch
 
 func (k *k8sLister) ListResourceSlicesByNode() (map[string][]*resourceapi.ResourceSlice, error) {
+	if k.resourceSliceLister == nil {
+		return nil, nil
+	}
 	slices, err := k.resourceSliceLister.List(labels.Everything())
 	if err != nil {
 		return nil, err
@@ -204,5 +214,22 @@ func (k *k8sLister) ListResourceSlicesByNode() (map[string][]*resourceapi.Resour
 // +kubebuilder:rbac:groups="resource.k8s.io",resources=resourceclaims,verbs=get;list;watch
 
 func (k *k8sLister) ListResourceClaims() ([]*resourceapi.ResourceClaim, error) {
+	if k.resourceClaimLister == nil {
+		return nil, nil
+	}
 	return k.resourceClaimLister.List(labels.Everything())
+}
+
+func (k *k8sLister) ListResourceSlices() ([]*resourceapi.ResourceSlice, error) {
+	if k.resourceSliceLister == nil {
+		return nil, nil
+	}
+	return k.resourceSliceLister.List(labels.Everything())
+}
+
+func (k *k8sLister) ListDeviceClasses() ([]*resourceapi.DeviceClass, error) {
+	if k.deviceClassLister == nil {
+		return nil, nil
+	}
+	return k.deviceClassLister.List(labels.Everything())
 }

@@ -13,17 +13,18 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/retry"
+	"k8s.io/utils/ptr"
 
-	v2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	schedulingv2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	commonconsts "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	testcontext "github.com/NVIDIA/KAI-scheduler/test/e2e/modules/context"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/capacity"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/pod_group"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/queue"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/utils"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/wait"
+	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	schedulingv2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	commonconsts "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/capacity"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/pod_group"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/utils"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -74,10 +75,10 @@ var _ = Describe("Allocation scenario with subgroups", Ordered, func() {
 
 		namespace := queue.GetConnectedNamespaceToQueue(testCtx.Queues[0])
 		podGroup := pod_group.Create(namespace, pgName, testCtx.Queues[0].Name)
-		podGroup.Spec.MinMember = 6
+		podGroup.Spec.MinMember = ptr.To(int32(6))
 		podGroup.Spec.SubGroups = []schedulingv2alpha2.SubGroup{
-			{Name: "sub-1", MinMember: 3},
-			{Name: "sub-2", MinMember: 3},
+			{Name: "sub-1", MinMember: ptr.To(int32(3))},
+			{Name: "sub-2", MinMember: ptr.To(int32(3))},
 		}
 		_, err := testCtx.KubeAiSchedClientset.SchedulingV2alpha2().PodGroups(namespace).Create(ctx,
 			podGroup, metav1.CreateOptions{})
@@ -96,20 +97,20 @@ var _ = Describe("Allocation scenario with subgroups", Ordered, func() {
 		pg1SubGroup1Pods := createSubGroupPods(ctx, testCtx.KubeClientset, testCtx.Queues[0], pg1Name, "sub-1", 3)
 		pg1SubGroup2Pods := createSubGroupPods(ctx, testCtx.KubeClientset, testCtx.Queues[0], pg1Name, "sub-2", 3)
 		pg1 := pod_group.Create(namespace, pg1Name, testCtx.Queues[0].Name)
-		pg1.Spec.MinMember = 2
+		pg1.Spec.MinMember = ptr.To(int32(2))
 		pg1.Spec.SubGroups = []schedulingv2alpha2.SubGroup{
-			{Name: "sub-1", MinMember: 1},
-			{Name: "sub-2", MinMember: 1},
+			{Name: "sub-1", MinMember: ptr.To(int32(1))},
+			{Name: "sub-2", MinMember: ptr.To(int32(1))},
 		}
 
 		pg2Name := utils.GenerateRandomK8sName(10)
 		pg2SubGroup1Pods := createSubGroupPods(ctx, testCtx.KubeClientset, testCtx.Queues[0], pg2Name, "sub-1", 3)
 		pg2SubGroup2Pods := createSubGroupPods(ctx, testCtx.KubeClientset, testCtx.Queues[0], pg2Name, "sub-2", 3)
 		pg2 := pod_group.Create(namespace, pg2Name, testCtx.Queues[0].Name)
-		pg2.Spec.MinMember = 2
+		pg2.Spec.MinMember = ptr.To(int32(2))
 		pg2.Spec.SubGroups = []schedulingv2alpha2.SubGroup{
-			{Name: "sub-1", MinMember: 1},
-			{Name: "sub-2", MinMember: 1},
+			{Name: "sub-1", MinMember: ptr.To(int32(1))},
+			{Name: "sub-2", MinMember: ptr.To(int32(1))},
 		}
 
 		// impose quota limit on queue to ensure that PodGroups will be scheduled before testing
@@ -118,8 +119,8 @@ var _ = Describe("Allocation scenario with subgroups", Ordered, func() {
 			if err != nil {
 				return err
 			}
-			queue.Spec.Resources.GPU.Quota = 0
-			queue.Spec.Resources.GPU.Limit = 0
+			queue.Spec.Resources.CPU.Quota = 0
+			queue.Spec.Resources.CPU.Limit = 0
 			_, err = testCtx.KubeAiSchedClientset.SchedulingV2().Queues("").Update(ctx, queue, metav1.UpdateOptions{})
 			return err
 		})
@@ -138,8 +139,8 @@ var _ = Describe("Allocation scenario with subgroups", Ordered, func() {
 			if getErr != nil {
 				return getErr
 			}
-			queue.Spec.Resources.GPU.Quota = -1
-			queue.Spec.Resources.GPU.Limit = -1
+			queue.Spec.Resources.CPU.Quota = 600
+			queue.Spec.Resources.CPU.Limit = 600
 			_, updateErr := testCtx.KubeAiSchedClientset.SchedulingV2().Queues("").Update(ctx, queue, metav1.UpdateOptions{})
 			return updateErr
 		})
@@ -166,10 +167,10 @@ var _ = Describe("Allocation scenario with subgroups", Ordered, func() {
 		pg1SubGroup1Pods := createSubGroupPods(ctx, testCtx.KubeClientset, testCtx.Queues[0], pg1Name, "sub-1", 3)
 		pg1SubGroup2Pods := createSubGroupPods(ctx, testCtx.KubeClientset, testCtx.Queues[0], pg1Name, "sub-2", 3)
 		pg1 := pod_group.Create(namespace, pg1Name, testCtx.Queues[0].Name)
-		pg1.Spec.MinMember = 4
+		pg1.Spec.MinMember = ptr.To(int32(4))
 		pg1.Spec.SubGroups = []schedulingv2alpha2.SubGroup{
-			{Name: "sub-1", MinMember: 2},
-			{Name: "sub-2", MinMember: 2},
+			{Name: "sub-1", MinMember: ptr.To(int32(2))},
+			{Name: "sub-2", MinMember: ptr.To(int32(2))},
 		}
 		_, err := testCtx.KubeAiSchedClientset.SchedulingV2alpha2().PodGroups(namespace).Create(ctx,
 			pg1, metav1.CreateOptions{})
@@ -182,10 +183,10 @@ var _ = Describe("Allocation scenario with subgroups", Ordered, func() {
 		pg2SubGroup1Pods := createSubGroupPods(ctx, testCtx.KubeClientset, testCtx.Queues[0], pg2Name, "sub-1", 3)
 		pg2SubGroup2Pods := createSubGroupPods(ctx, testCtx.KubeClientset, testCtx.Queues[0], pg2Name, "sub-2", 3)
 		pg2 := pod_group.Create(namespace, pg2Name, testCtx.Queues[0].Name)
-		pg2.Spec.MinMember = 4
+		pg2.Spec.MinMember = ptr.To(int32(4))
 		pg2.Spec.SubGroups = []schedulingv2alpha2.SubGroup{
-			{Name: "sub-1", MinMember: 2},
-			{Name: "sub-2", MinMember: 2},
+			{Name: "sub-1", MinMember: ptr.To(int32(2))},
+			{Name: "sub-2", MinMember: ptr.To(int32(2))},
 		}
 
 		_, err = testCtx.KubeAiSchedClientset.SchedulingV2alpha2().PodGroups(namespace).Create(ctx,

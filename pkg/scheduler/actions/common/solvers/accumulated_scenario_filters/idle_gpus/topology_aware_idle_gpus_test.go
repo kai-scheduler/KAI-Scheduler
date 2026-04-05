@@ -14,27 +14,28 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_affinity"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/topology_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_affinity"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/topology_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 )
 
 func TestNewTopologyAwareIdleGpusFilter_NoConstraints(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	nodes := createTestNodes(ctrl, map[string]int{
+	nodes, vectorMap := createTestNodes(ctrl, map[string]int{
 		"node-1": 8,
 		"node-2": 8,
 	}, nil)
@@ -47,7 +48,7 @@ func TestNewTopologyAwareIdleGpusFilter_NoConstraints(t *testing.T) {
 		Tasks:               []*tasks_fake.TestTaskBasic{{State: pod_status.Pending}},
 		RootSubGroupSet:     nil,
 	}}
-	jobsInfoMap, _, _ := jobs_fake.BuildJobsAndTasksMaps(jobs)
+	jobsInfoMap, _, _ := jobs_fake.BuildJobsAndTasksMaps(jobs, vectorMap)
 	pendingJob := jobsInfoMap["pending-job"]
 
 	testScenario := scenario.NewByNodeScenario(nil, pendingJob, pendingJob, nil, nil)
@@ -69,7 +70,7 @@ func TestTopologyAwareIdleGpus_SingleDomainSufficientCapacity(t *testing.T) {
 		"node-2": {requiredLevel: "rack-1"},
 		"node-3": {requiredLevel: "rack-2"},
 	}
-	nodes := createTestNodes(ctrl, map[string]int{
+	nodes, vectorMap := createTestNodes(ctrl, map[string]int{
 		"node-1": 8,
 		"node-2": 8,
 		"node-3": 4,
@@ -80,7 +81,7 @@ func TestTopologyAwareIdleGpus_SingleDomainSufficientCapacity(t *testing.T) {
 	pendingJob := buildJob("pending-job", []*tasks_fake.TestTaskBasic{
 		{SubGroupName: "default", State: pod_status.Pending, RequiredGPUs: ptr.To(int64(8))},
 		{SubGroupName: "default", State: pod_status.Pending, RequiredGPUs: ptr.To(int64(4))},
-	}, rootSubGroupSet)
+	}, rootSubGroupSet, vectorMap)
 
 	testScenario := scenario.NewByNodeScenario(nil, pendingJob, pendingJob, nil, nil)
 	filter := NewTopologyAwareIdleGpusFilter(testScenario, nodes)
@@ -102,7 +103,7 @@ func TestTopologyAwareIdleGpus_NoDomainHasSufficientCapacity(t *testing.T) {
 		"node-2": {topologyLabelKey: "rack-2"},
 		"node-3": {topologyLabelKey: "rack-3"},
 	}
-	nodes := createTestNodes(ctrl, map[string]int{
+	nodes, vectorMap := createTestNodes(ctrl, map[string]int{
 		"node-1": 4,
 		"node-2": 5,
 		"node-3": 6,
@@ -113,7 +114,7 @@ func TestTopologyAwareIdleGpus_NoDomainHasSufficientCapacity(t *testing.T) {
 	pendingJob := buildJob("pending-job", []*tasks_fake.TestTaskBasic{
 		{SubGroupName: "default", State: pod_status.Pending, RequiredGPUs: ptr.To(int64(8))},
 		{SubGroupName: "default", State: pod_status.Pending, RequiredGPUs: ptr.To(int64(8))},
-	}, rootSubGroupSet)
+	}, rootSubGroupSet, vectorMap)
 
 	testScenario := scenario.NewByNodeScenario(nil, pendingJob, pendingJob, nil, nil)
 	filter := NewTopologyAwareIdleGpusFilter(testScenario, nodes)
@@ -135,7 +136,7 @@ func TestTopologyAwareIdleGpus_MultiplePodSetsWithSameConstraint(t *testing.T) {
 		"node-2": {requiredLevel: "rack-2"},
 		"node-3": {requiredLevel: "rack-2"},
 	}
-	nodes := createTestNodes(ctrl, map[string]int{
+	nodes, vectorMap := createTestNodes(ctrl, map[string]int{
 		"node-1": 10,
 		"node-2": 2,
 		"node-3": 20,
@@ -148,7 +149,7 @@ func TestTopologyAwareIdleGpus_MultiplePodSetsWithSameConstraint(t *testing.T) {
 		{SubGroupName: "podset1", State: pod_status.Pending, RequiredGPUs: ptr.To(int64(8))},
 		{SubGroupName: "podset1", State: pod_status.Pending, RequiredGPUs: ptr.To(int64(8))},
 		{SubGroupName: "podset2", State: pod_status.Pending, RequiredGPUs: ptr.To(int64(10))},
-	}, rootSubGroupSet)
+	}, rootSubGroupSet, vectorMap)
 
 	testScenario := scenario.NewByNodeScenario(nil, pendingJob, pendingJob, nil, nil)
 	filter := NewTopologyAwareIdleGpusFilter(testScenario, nodes)
@@ -170,20 +171,20 @@ func TestTopologyAwareIdleGpus_WithVictimTasks(t *testing.T) {
 		"node-1": {requiredLevel: "rack-1"},
 		"node-2": {requiredLevel: "rack-2"},
 	}
-	nodes := createTestNodes(ctrl, map[string]int{
+	nodes, vectorMap := createTestNodes(ctrl, map[string]int{
 		"node-1": 4,
 		"node-2": 12,
 	}, topologyLabelsPerNodes)
 
 	victimPod := createRunningPodWithGpus("victim-1", "default", "node-2", 8)
-	victimTask := pod_info.NewTaskInfo(victimPod)
+	victimTask := pod_info.NewTaskInfo(victimPod, nil, vectorMap)
 	nodes["node-2"].AddTask(victimTask)
 
 	rootSubGroupSet := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
 	rootSubGroupSet.AddSubGroup(newConstrainedSubGroup(podgroup_info.DefaultSubGroup, topology, requiredLevel, 1))
 	pendingJob := buildJob("pending-job", []*tasks_fake.TestTaskBasic{
 		{SubGroupName: "default", State: pod_status.Pending, RequiredGPUs: ptr.To(int64(10))},
-	}, rootSubGroupSet)
+	}, rootSubGroupSet, vectorMap)
 
 	session := &framework.Session{
 		ClusterInfo: &api.ClusterInfo{
@@ -226,19 +227,19 @@ func TestTopologyAwareIdleGpus_VictimNotDoubleCountedAcrossFilterCalls(t *testin
 		"node-1": {requiredLevel: "rack-1"},
 	}
 	// node-1: 8 allocatable GPUs, victim-1 uses 4 → 4 idle at construction time
-	nodes := createTestNodes(ctrl, map[string]int{
+	nodes, vectorMap := createTestNodes(ctrl, map[string]int{
 		"node-1": 8,
 	}, topologyLabelsPerNodes)
 
 	victimPod := createRunningPodWithGpus("victim-1", "default", "node-1", 4)
-	victimTask := pod_info.NewTaskInfo(victimPod)
+	victimTask := pod_info.NewTaskInfo(victimPod, nil, vectorMap)
 	nodes["node-1"].AddTask(victimTask)
 
 	rootSubGroupSet := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
 	rootSubGroupSet.AddSubGroup(newConstrainedSubGroup(podgroup_info.DefaultSubGroup, topology, requiredLevel, 1))
 	pendingJob := buildJob("pending-job", []*tasks_fake.TestTaskBasic{
 		{SubGroupName: "default", State: pod_status.Pending, RequiredGPUs: ptr.To(int64(10))},
-	}, rootSubGroupSet)
+	}, rootSubGroupSet, vectorMap)
 
 	session := &framework.Session{
 		ClusterInfo: &api.ClusterInfo{
@@ -283,19 +284,19 @@ func TestTopologyAwareIdleGpus_RecordedVictimsCountedTowardCapacity(t *testing.T
 		"node-1": {requiredLevel: "rack-1"},
 	}
 	// node-1: 12 allocatable GPUs; victim-1 uses 8 → 4 idle at construction time.
-	nodes := createTestNodes(ctrl, map[string]int{
+	nodes, vectorMap := createTestNodes(ctrl, map[string]int{
 		"node-1": 12,
 	}, topologyLabelsPerNodes)
 
 	victimPod := createRunningPodWithGpus("victim-1", "default", "node-1", 8)
-	victimTask := pod_info.NewTaskInfo(victimPod)
+	victimTask := pod_info.NewTaskInfo(victimPod, nil, vectorMap)
 	nodes["node-1"].AddTask(victimTask)
 
 	rootSubGroupSet := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
 	rootSubGroupSet.AddSubGroup(newConstrainedSubGroup(podgroup_info.DefaultSubGroup, topology, requiredLevel, 1))
 	pendingJob := buildJob("pending-job", []*tasks_fake.TestTaskBasic{
 		{SubGroupName: "default", State: pod_status.Pending, RequiredGPUs: ptr.To(int64(10))},
-	}, rootSubGroupSet)
+	}, rootSubGroupSet, vectorMap)
 
 	// Build a PodGroupInfo for the victim job that contains the running task so that
 	// RecordedVictimsTasks() can return it.
@@ -333,7 +334,7 @@ func TestTopologyAwareIdleGpus_MultipleLevels(t *testing.T) {
 		"node-2": {topologyLevels[0]: "zone-1", topologyLevels[1]: "rack-2"},
 		"node-3": {topologyLevels[0]: "zone-2", topologyLevels[1]: "rack-3"},
 	}
-	nodes := createTestNodes(ctrl, map[string]int{
+	nodes, vectorMap := createTestNodes(ctrl, map[string]int{
 		"node-1": 8,
 		"node-2": 8,
 		"node-3": 8,
@@ -346,7 +347,7 @@ func TestTopologyAwareIdleGpus_MultipleLevels(t *testing.T) {
 		{SubGroupName: "podset1", State: pod_status.Pending, RequiredGPUs: ptr.To(int64(6))},
 		{SubGroupName: "podset2", State: pod_status.Pending, RequiredGPUs: ptr.To(int64(8))},
 		{SubGroupName: "podset2", State: pod_status.Pending, RequiredGPUs: ptr.To(int64(8))},
-	}, rootSubGroupSet)
+	}, rootSubGroupSet, vectorMap)
 
 	testScenario := scenario.NewByNodeScenario(nil, pendingJob, pendingJob, nil, nil)
 	filter := NewTopologyAwareIdleGpusFilter(testScenario, nodes)
@@ -395,21 +396,21 @@ func TestTopologyAwareIdleGpus_FilterDomainMovesTwoStepsLeft(t *testing.T) {
 	}
 	// rack-1: 10 idle, rack-2: 8 idle, rack-3: 11 total with victim using 5 → 6 idle.
 	// Initial order [rack-1, rack-2, rack-3]. After victim applied, rack-3 = 11 → moves 2 steps left.
-	nodes := createTestNodes(ctrl, map[string]int{
+	nodes, vectorMap := createTestNodes(ctrl, map[string]int{
 		"node-1": 10,
 		"node-2": 8,
 		"node-3": 11,
 	}, topologyLabels)
 
 	victimPod := createRunningPodWithGpus("victim-1", "default", "node-3", 5)
-	victimTask := pod_info.NewTaskInfo(victimPod)
+	victimTask := pod_info.NewTaskInfo(victimPod, nil, vectorMap)
 	nodes["node-3"].AddTask(victimTask)
 
 	rootSubGroupSet := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
 	rootSubGroupSet.AddSubGroup(newConstrainedSubGroup(podgroup_info.DefaultSubGroup, topology, requiredLevel, 1))
 	pendingJob := buildJob("pending-job", []*tasks_fake.TestTaskBasic{
 		{SubGroupName: "default", State: pod_status.Pending, RequiredGPUs: ptr.To(int64(11))},
-	}, rootSubGroupSet)
+	}, rootSubGroupSet, vectorMap)
 
 	session := &framework.Session{
 		ClusterInfo: &api.ClusterInfo{
@@ -440,7 +441,7 @@ func TestTopologyAwareIdleGpus_BinPackingPreventsOverAllocation(t *testing.T) {
 		"node-1": {requiredLevel: "rack-1"},
 		"node-2": {requiredLevel: "rack-2"},
 	}
-	nodes := createTestNodes(ctrl, map[string]int{
+	nodes, vectorMap := createTestNodes(ctrl, map[string]int{
 		"node-1": 15,
 		"node-2": 15,
 	}, topologyLabels)
@@ -451,7 +452,7 @@ func TestTopologyAwareIdleGpus_BinPackingPreventsOverAllocation(t *testing.T) {
 	job := buildJob("job", []*tasks_fake.TestTaskBasic{
 		{SubGroupName: "podset1", State: pod_status.Pending, RequiredGPUs: ptr.To(int64(10))},
 		{SubGroupName: "podset2", State: pod_status.Pending, RequiredGPUs: ptr.To(int64(10))},
-	}, rootSubGroupSet)
+	}, rootSubGroupSet, vectorMap)
 
 	testScenario := scenario.NewByNodeScenario(nil, job, job, nil, nil)
 	filter := NewTopologyAwareIdleGpusFilter(testScenario, nodes)
@@ -471,7 +472,7 @@ func TestTopologyAwareIdleGpus_BinPackingRejectsInsufficientDomains(t *testing.T
 	topologyLabels := map[string]map[string]string{
 		"node-1": {requiredLevel: "rack-1"},
 	}
-	nodes := createTestNodes(ctrl, map[string]int{
+	nodes, vectorMap := createTestNodes(ctrl, map[string]int{
 		"node-1": 15,
 	}, topologyLabels)
 
@@ -481,7 +482,7 @@ func TestTopologyAwareIdleGpus_BinPackingRejectsInsufficientDomains(t *testing.T
 	job := buildJob("job", []*tasks_fake.TestTaskBasic{
 		{SubGroupName: "podset1", State: pod_status.Pending, RequiredGPUs: ptr.To(int64(10))},
 		{SubGroupName: "podset2", State: pod_status.Pending, RequiredGPUs: ptr.To(int64(10))},
-	}, rootSubGroupSet)
+	}, rootSubGroupSet, vectorMap)
 
 	testScenario := scenario.NewByNodeScenario(nil, job, job, nil, nil)
 	filter := NewTopologyAwareIdleGpusFilter(testScenario, nodes)
@@ -510,7 +511,7 @@ func TestTopologyAwareIdleGpus_FragmentedCapacityRejected(t *testing.T) {
 		"node-1": {requiredLevel: "rack-1"},
 		"node-2": {requiredLevel: "rack-2"},
 	}
-	nodes := createTestNodes(ctrl, map[string]int{
+	nodes, vectorMap := createTestNodes(ctrl, map[string]int{
 		"node-1": 10,
 		"node-2": 9,
 	}, topologyLabels)
@@ -523,7 +524,7 @@ func TestTopologyAwareIdleGpus_FragmentedCapacityRejected(t *testing.T) {
 		{SubGroupName: "subA", State: pod_status.Pending, RequiredGPUs: ptr.To(int64(8))},
 		{SubGroupName: "subB", State: pod_status.Pending, RequiredGPUs: ptr.To(int64(8))},
 		{SubGroupName: "subC", State: pod_status.Pending, RequiredGPUs: ptr.To(int64(3))},
-	}, rootSubGroupSet)
+	}, rootSubGroupSet, vectorMap)
 
 	testScenario := scenario.NewByNodeScenario(nil, job, job, nil, nil)
 	filter := NewTopologyAwareIdleGpusFilter(testScenario, nodes)
@@ -548,7 +549,7 @@ func newConstrainedSubGroup(name, topology, requiredLevel string, podCount int32
 }
 
 // buildJob creates a job with default namespace/queue and returns it from the jobs map.
-func buildJob(name string, tasks []*tasks_fake.TestTaskBasic, rootSubGroupSet *subgroup_info.SubGroupSet) *podgroup_info.PodGroupInfo {
+func buildJob(name string, tasks []*tasks_fake.TestTaskBasic, rootSubGroupSet *subgroup_info.SubGroupSet, vectorMap *resource_info.ResourceVectorMap) *podgroup_info.PodGroupInfo {
 	jobs := []*jobs_fake.TestJobBasic{{
 		Name:            name,
 		Namespace:       "default",
@@ -556,7 +557,7 @@ func buildJob(name string, tasks []*tasks_fake.TestTaskBasic, rootSubGroupSet *s
 		RootSubGroupSet: rootSubGroupSet,
 		Tasks:           tasks,
 	}}
-	jobsInfoMap, _, _ := jobs_fake.BuildJobsAndTasksMaps(jobs)
+	jobsInfoMap, _, _ := jobs_fake.BuildJobsAndTasksMaps(jobs, vectorMap)
 	return jobsInfoMap[common_info.PodGroupID(name)]
 }
 
@@ -576,8 +577,16 @@ func createTestNodes(
 	ctrl *gomock.Controller,
 	nodeCapacities map[string]int,
 	topologyLabels map[string]map[string]string,
-) map[string]*node_info.NodeInfo {
+) (map[string]*node_info.NodeInfo, *resource_info.ResourceVectorMap) {
 	nodes := make(map[string]*node_info.NodeInfo)
+
+	resourceLists := make([]v1.ResourceList, 0, len(nodeCapacities))
+	for _, gpus := range nodeCapacities {
+		resourceLists = append(resourceLists, v1.ResourceList{
+			"nvidia.com/gpu": resource.MustParse(strconv.Itoa(gpus)),
+		})
+	}
+	vectorMap := resource_info.BuildResourceVectorMap(resourceLists)
 
 	for nodeName := range nodeCapacities {
 		nodePodAffinityInfo := pod_affinity.NewMockNodePodAffinityInfo(ctrl)
@@ -601,11 +610,11 @@ func createTestNodes(
 			},
 		}
 
-		nodeInfo := node_info.NewNodeInfo(node, nodePodAffinityInfo)
+		nodeInfo := node_info.NewNodeInfo(node, nodePodAffinityInfo, vectorMap)
 		nodes[nodeName] = nodeInfo
 	}
 
-	return nodes
+	return nodes, vectorMap
 }
 
 func createRunningPodWithGpus(name, namespace, nodeName string, gpus int) *v1.Pod {
