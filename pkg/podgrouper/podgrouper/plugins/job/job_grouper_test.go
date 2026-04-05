@@ -307,7 +307,7 @@ func TestGetPodGroupMetadata_MinMemberOverride(t *testing.T) {
 				"uid":       "1234-5678",
 				"labels":    map[string]interface{}{},
 				"annotations": map[string]interface{}{
-					"kai.scheduler/min-member": "3",
+					"kai.scheduler/batch-min-member": "3",
 				},
 			},
 			"spec": map[string]interface{}{
@@ -355,7 +355,7 @@ func TestGetPodGroupMetadata_MinMemberOverrideInvalid(t *testing.T) {
 						"uid":       "1234-5678",
 						"labels":    map[string]interface{}{},
 						"annotations": map[string]interface{}{
-							"kai.scheduler/min-member": "invalid",
+							"kai.scheduler/batch-min-member": "invalid",
 						},
 					},
 					"spec": map[string]interface{}{},

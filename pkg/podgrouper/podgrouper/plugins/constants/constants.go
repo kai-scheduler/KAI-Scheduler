@@ -26,5 +26,5 @@ const (
 	SegmentTopologyRequiredPlacementKey  = "kai.scheduler/segment-topology-required-placement"
 	SegmentTopologyPreferredPlacementKey = "kai.scheduler/segment-topology-preferred-placement"
 
-	MinMemberOverrideKey = "kai.scheduler/min-member"
+	MinMemberOverrideKey = "kai.scheduler/batch-min-member"
 )
