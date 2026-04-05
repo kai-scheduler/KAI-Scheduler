@@ -49,11 +49,27 @@ func TestValidateSubGroups(t *testing.T) {
 			wantErr:   nil,
 		},
 		{
-			name: "nil minMember",
+			name: "nil minMember on leaf subgroup",
 			subGroups: []SubGroup{
 				{Name: "A"},
 			},
 			wantErr: errors.New("subgroup A: minMember is required"),
+		},
+		{
+			name: "parent subgroup may omit minMember when it has subgroup children",
+			subGroups: []SubGroup{
+				{Name: "P"},
+				{Name: "L", Parent: ptr.To("P"), MinMember: ptr.To(int32(1))},
+			},
+			wantErr: nil,
+		},
+		{
+			name: "leaf child still requires minMember when parent omits it",
+			subGroups: []SubGroup{
+				{Name: "P"},
+				{Name: "L", Parent: ptr.To("P")},
+			},
+			wantErr: errors.New("subgroup L: minMember is required"),
 		},
 		{
 			name: "Duplicate subgroup names",
