@@ -14,7 +14,7 @@ To require a minimum number of pods to be scheduled together (gang scheduling) f
 ```
 kubectl apply -f batch-job-min-member.yaml
 ```
-This will create a job with parallelism of 5, but requires at least 3 pods to be scheduled together before any pod starts running. This is useful for workloads like hyperparameter optimization (HPO) where you want a minimum level of parallelism but don't need all pods running simultaneously.
+This will create a job with parallelism of 6, but requires at least 2 pods to be scheduled together before any pod starts running. This is useful for workloads like hyperparameter optimization (HPO) where you want a minimum level of parallelism but don't need all pods running simultaneously.
 
 For JobSets, the annotation overrides the calculated minAvailable for all PodGroups created by the JobSet.
 
