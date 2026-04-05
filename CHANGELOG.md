@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Race condition where `SyncForGpuGroup` could prematurely delete reservation pods when the informer cache had not yet propagated GPU group labels on recently-bound fraction pods. The binder now checks for active BindRequests referencing the GPU group before deleting a reservation pod.
 - Fixed non-preemptible multi-device GPU memory jobs being allowed to exceed their queue's deserved GPU quota. The per-node quota check now correctly accounts for all requested GPU devices. [#1369](https://github.com/kai-scheduler/KAI-Scheduler/issues/1369)
 - Added `resourceclaims/binding` RBAC permission to the binder ClusterRole for compatibility with Kubernetes v1.36+, where the `DRAResourceClaimGranularStatusAuthorization` feature gate requires explicit permission on the `resourceclaims/binding` subresource to modify `status.allocation` and `status.reservedFor` on ResourceClaims. [#1372](https://github.com/kai-scheduler/KAI-Scheduler/pull/1372) [praveen0raj](https://github.com/praveen0raj)
+- Allow users to override minMember for k8s batch Jobs and JobSets using the `kai.scheduler/batch-min-member` annotation [#1308](https://github.com/kai-scheduler/KAI-Scheduler/pull/1308) [itsomri](https://github.com/itsomri)
 
 ## [v0.14.0] - 2026-03-30
 
@@ -25,7 +26,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Added FOSSA scanning for the repository context. Scans will also be performed for submitted PRs. The results can be found [here](https://app.fossa.com/projects/custom%2B162%2Fgit%40github.com%3Akai-scheduler%2FKAI-Scheduler.git). [#1178](https://github.com/kai-scheduler/KAI-Scheduler/pull/1178) - [davidLif](https://github.com/davidLif)
 - Added support for Ray subgroup topology-aware scheduling by specifying `kai.scheduler/topology`, `kai.scheduler/topology-required-placement`, and `kai.scheduler/topology-preferred-placement` annotations.
 - Allow subgroups to have a 0 value for "minAvailable". This means that all pods in this subgroup are "elastic extra pods". [#1216](https://github.com/NVIDIA/KAI-Scheduler/pull/1216) [davidLif](https://github.com/davidLif)
-- Allow users to override minMember for native k8s batch jobs [#1308](https://github.com/kai-scheduler/KAI-Scheduler/pull/1308) [itsomri](https://github.com/itsomri)
+
 
 ### Changed
 - Auto-enable leader election when `operator.replicaCount` > 1 to prevent concurrent reconciliation [#1218](https://github.com/kai-scheduler/KAI-Scheduler/issues/1218)

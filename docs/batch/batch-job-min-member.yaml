@@ -6,7 +6,7 @@ kind: Job
 metadata:
   name: batch-job-min-member
   annotations:
-    kai.scheduler/min-member: "3"
+    kai.scheduler/batch-min-member: "3"
 spec:
   parallelism: 5
   completions: 5
