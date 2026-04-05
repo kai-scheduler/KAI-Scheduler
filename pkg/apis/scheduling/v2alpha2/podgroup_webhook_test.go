@@ -17,23 +17,23 @@ func TestValidateSubGroups(t *testing.T) {
 		wantErr   error
 	}{
 		{
-			name: "Valid DAG single root",
+			name: "Invalid DAG single root: minMember on non-leaf",
 			subGroups: []SubGroup{
 				{Name: "A", MinMember: ptr.To(int32(1))},
 				{Name: "B", Parent: ptr.To("A"), MinMember: ptr.To(int32(1))},
 				{Name: "C", Parent: ptr.To("B"), MinMember: ptr.To(int32(1))},
 			},
-			wantErr: nil,
+			wantErr: errors.New(`subgroup "A": minMember cannot be set on a mid-level SubGroup (has child SubGroups); use minSubGroup instead`),
 		},
 		{
-			name: "Valid DAG multiple roots",
+			name: "Invalid DAG multiple roots: minMember on non-leaf",
 			subGroups: []SubGroup{
 				{Name: "A", MinMember: ptr.To(int32(1))},
 				{Name: "B", MinMember: ptr.To(int32(1))},
 				{Name: "C", Parent: ptr.To("A"), MinMember: ptr.To(int32(1))},
 				{Name: "D", Parent: ptr.To("B"), MinMember: ptr.To(int32(1))},
 			},
-			wantErr: nil,
+			wantErr: errors.New(`subgroup "A": minMember cannot be set on a mid-level SubGroup (has child SubGroups); use minSubGroup instead`),
 		},
 		{
 			name: "Missing parent",

@@ -50,6 +50,10 @@ func (_ *PodGroup) ValidateUpdate(ctx context.Context, _ runtime.Object, newObj 
 	if err := validatePodGroupSpec(&podGroup.Spec); err != nil {
 		logger.Info("PodGroup spec validation failed",
 			"namespace", podGroup.Namespace, "name", podGroup.Name, "error", err)
+		var w *parentMinMemberError
+		if errors.As(err, &w) {
+			return admission.Warnings{err.Error()}, nil
+		}
 		return nil, err
 	}
 	return nil, nil
@@ -68,10 +72,10 @@ func (_ *PodGroup) ValidateDelete(ctx context.Context, obj runtime.Object) (admi
 // validatePodGroupSpec validates the PodGroup spec including top-level minMember/minSubGroup
 // mutual exclusivity and subgroup structural rules.
 func validatePodGroupSpec(spec *PodGroupSpec) error {
-	if spec.MinMember > 0 && spec.MinSubGroup != nil {
+	if spec.MinMember != nil && spec.MinSubGroup != nil {
 		return fmt.Errorf("minMember and minSubGroup are mutually exclusive: "+
 			"set minMember (%d) to schedule a fixed number of pods, or set minSubGroup to require a minimum number of child SubGroups, but not both",
-			spec.MinMember)
+			*spec.MinMember)
 	}
 
 	if err := validateSubGroups(spec.SubGroups); err != nil {
@@ -105,17 +109,11 @@ func validateSubGroups(subGroups []SubGroup) error {
 		return err
 	}
 
-	childrenByParent := subgroupChildrenByParent(subGroupMap)
+	childrenMap := buildChildrenMap(subGroupMap)
 
-	if err := validateLeafMinMembers(subGroupMap, childrenByParent); err != nil {
-		return err
-	}
-
-	if detectCycle(subGroupMap, childrenByParent) {
+	if detectCycle(subGroupMap, childrenMap) {
 		return errors.New("cycle detected in subgroups")
 	}
-
-	childrenMap := buildChildrenMap(subGroupMap)
 
 	// Sort SubGroup names for deterministic error reporting across API calls.
 	subGroupNames := make([]string, 0, len(subGroupMap))
@@ -132,10 +130,16 @@ func validateSubGroups(subGroups []SubGroup) error {
 	return nil
 }
 
+// parentMinMemberError is returned when minMember is set on a non-leaf SubGroup.
+// On update it is downgraded to a warning for backward compatibility.
+type parentMinMemberError struct{ msg string }
+
+func (e *parentMinMemberError) Error() string { return e.msg }
+
 // validateSubGroupMinFields checks mutual exclusivity and structural rules for minMember/minSubGroup
 // on a single SubGroup.
 func validateSubGroupMinFields(subGroup *SubGroup, childrenMap map[string][]string) error {
-	if subGroup.MinMember > 0 && subGroup.MinSubGroup != nil {
+	if subGroup.MinMember != nil && subGroup.MinSubGroup != nil {
 		return fmt.Errorf("subgroup %q: minMember and minSubGroup are mutually exclusive", subGroup.Name)
 	}
 
@@ -146,8 +150,12 @@ func validateSubGroupMinFields(subGroup *SubGroup, childrenMap map[string][]stri
 		return fmt.Errorf("subgroup %q: minSubGroup cannot be set on a leaf SubGroup (no child SubGroups)", subGroup.Name)
 	}
 
-	if !isLeaf && subGroup.MinMember > 0 {
-		return fmt.Errorf("subgroup %q: minMember cannot be set on a mid-level SubGroup (has child SubGroups); use minSubGroup instead", subGroup.Name)
+	if isLeaf && subGroup.MinMember == nil {
+		return fmt.Errorf("subgroup %s: minMember is required", subGroup.Name)
+	}
+
+	if !isLeaf && subGroup.MinMember != nil {
+		return &parentMinMemberError{msg: fmt.Sprintf("subgroup %q: minMember cannot be set on a mid-level SubGroup (has child SubGroups); use minSubGroup instead", subGroup.Name)}
 	}
 
 	if subGroup.MinSubGroup != nil {
@@ -197,43 +205,19 @@ func validateParent(subGroupMap map[string]*SubGroup) error {
 	return nil
 }
 
-func subgroupChildrenByParent(subGroupMap map[string]*SubGroup) map[string][]string {
-	childrenByParent := make(map[string][]string, len(subGroupMap))
-	for _, subGroup := range subGroupMap {
-		parent := ""
-		if subGroup.Parent != nil {
-			parent = *subGroup.Parent
-		}
-		childrenByParent[parent] = append(childrenByParent[parent], subGroup.Name)
-	}
-	return childrenByParent
-}
-
-func validateLeafMinMembers(subGroupMap map[string]*SubGroup, childrenByParent map[string][]string) error {
-	for name, subGroup := range subGroupMap {
-		if len(childrenByParent[name]) > 0 {
-			continue
-		}
-		if subGroup.MinMember == nil {
-			return fmt.Errorf("subgroup %s: minMember is required", name)
-		}
-	}
-	return nil
-}
-
-func detectCycle(subGroupMap map[string]*SubGroup, childrenByParent map[string][]string) bool {
+func detectCycle(subGroupMap map[string]*SubGroup, childrenMap map[string][]string) bool {
 	visited := map[string]bool{}
 	recStack := map[string]bool{}
 
 	for name := range subGroupMap {
-		if dfsCycleCheck(name, childrenByParent, visited, recStack) {
+		if dfsCycleCheck(name, childrenMap, visited, recStack) {
 			return true
 		}
 	}
 	return false
 }
 
-func dfsCycleCheck(node string, childrenByParent map[string][]string, visited, recStack map[string]bool) bool {
+func dfsCycleCheck(node string, childrenMap map[string][]string, visited, recStack map[string]bool) bool {
 	if recStack[node] {
 		return true // cycle detected
 	}
@@ -243,9 +227,9 @@ func dfsCycleCheck(node string, childrenByParent map[string][]string, visited, r
 	visited[node] = true
 	recStack[node] = true
 
-	children := childrenByParent[node]
+	children := childrenMap[node]
 	for _, child := range children {
-		if dfsCycleCheck(child, childrenByParent, visited, recStack) {
+		if dfsCycleCheck(child, childrenMap, visited, recStack) {
 			return true
 		}
 	}
