@@ -61,7 +61,11 @@ func (b *Binder) deploymentForKAIConfig(
 	deployment.Spec.Strategy.Type = appsv1.RecreateDeploymentStrategyType
 	deployment.Spec.Strategy.RollingUpdate = nil
 	deployment.Spec.Replicas = config.Replicas
-	deployment.Spec.Template.Spec.Containers[0].Args = buildArgsList(kaiConfig, config, fakeGPU, cdiEnabled)
+	binderArgs, err := buildArgsList(kaiConfig, config, fakeGPU, cdiEnabled)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build binder args: %w", err)
+	}
+	deployment.Spec.Template.Spec.Containers[0].Args = binderArgs
 
 	return []client.Object{deployment}, nil
 }
@@ -205,7 +209,7 @@ func isCdiEnabled(ctx context.Context, readerClient client.Reader) (bool, error)
 	return false, nil
 }
 
-func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1binder.Binder, fakeGPU bool, cdiEnabled bool) []string {
+func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1binder.Binder, fakeGPU bool, cdiEnabled bool) ([]string, error) {
 	args := []string{
 		"--scheduler-name",
 		*kaiConfig.Spec.Global.SchedulerName,
@@ -277,17 +281,19 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1binder.Binder, fakeGPU 
 
 	if config.ResourceReservation.PodSecurityContext != nil {
 		secJSON, err := json.Marshal(config.ResourceReservation.PodSecurityContext)
-		if err == nil {
-			args = append(args, "--resource-reservation-pod-security-context", string(secJSON))
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal pod security context: %w", err)
 		}
+		args = append(args, "--resource-reservation-pod-security-context", string(secJSON))
 	}
 
 	if config.ResourceReservation.ContainerSecurityContext != nil {
 		secJSON, err := json.Marshal(config.ResourceReservation.ContainerSecurityContext)
-		if err == nil {
-			args = append(args, "--resource-reservation-container-security-context", string(secJSON))
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal container security context: %w", err)
 		}
+		args = append(args, "--resource-reservation-container-security-context", string(secJSON))
 	}
 
-	return args
+	return args, nil
 }
