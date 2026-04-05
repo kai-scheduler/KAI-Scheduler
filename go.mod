@@ -1,11 +1,11 @@
 module github.com/kai-scheduler/KAI-scheduler
 
-go 1.26.1
+go 1.25.8
 
 require (
 	github.com/NVIDIA/go-nvml v0.13.0-1
 	github.com/NVIDIA/gpu-operator v1.8.3-0.20250724212111-616690d88d86
-	github.com/aptible/supercronic v0.2.44
+	github.com/aptible/supercronic v0.2.43
 	github.com/argoproj/argo-workflows/v3 v3.7.11
 	github.com/dustin/go-humanize v1.0.1
 	github.com/gin-contrib/pprof v1.5.2

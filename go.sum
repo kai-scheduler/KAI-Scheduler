@@ -22,8 +22,8 @@ github.com/Pallinder/go-randomdata v1.2.0/go.mod h1:yHmJgulpD2Nfrm0cR9tI/+oAgRqC
 github.com/antihax/optional v1.0.0/go.mod h1:uupD/76wgC+ih3iEmQUL+0Ugr19nfwCT1kdvxnR2qWY=
 github.com/antlr4-go/antlr/v4 v4.13.1 h1:SqQKkuVZ+zWkMMNkjy5FZe5mr5WURWnlpmOuzYWrPrQ=
 github.com/antlr4-go/antlr/v4 v4.13.1/go.mod h1:GKmUxMtwp6ZgGwZSva4eWPC5mS6vUAmOABFgjdkM7Nw=
-github.com/aptible/supercronic v0.2.44 h1:Nz6z/tMzS7iUceC2PD+yMwFp55Jqg5qhnULE5QEiZx4=
-github.com/aptible/supercronic v0.2.44/go.mod h1:XQUtrMdejYPQYDBAy4cYRGH9KWSOgyP2vEOO5tQLQkc=
+github.com/aptible/supercronic v0.2.43 h1:2bc0N4RpUZX6PduYAuOFodxsnPuci6BrU1BnSKVecvA=
+github.com/aptible/supercronic v0.2.43/go.mod h1:7jb4b1MVaIOGkqHy9+K9KNWe0nWR2/dq8M5zpgD3YhI=
 github.com/argoproj/argo-workflows/v3 v3.7.11 h1:BJcDlhubri/cPXzFBRsk9m56HkMBY9dyJnEWse//0nU=
 github.com/argoproj/argo-workflows/v3 v3.7.11/go.mod h1:/keNJHeSETINZ+6BxmwAUgdFUZS9SSpRXZxosObLmQ0=
 github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5 h1:0CwZNZbxp69SHPdPJAN/hZIm0C4OItdklCFmMRWYpio=
