@@ -30,11 +30,18 @@ func (_ *PodGroup) ValidateCreate(ctx context.Context, obj runtime.Object) (admi
 	}
 	logger.Info("validate create", "namespace", podGroup.Namespace, "name", podGroup.Name)
 
-	if err := validatePodGroupSpec(&podGroup.Spec); err != nil {
-		logger.Info("PodGroup spec validation failed",
-			"namespace", podGroup.Namespace, "name", podGroup.Name, "error", err)
-		return nil, err
+	validationErrors := validatePodGroupSpec(&podGroup.Spec)
+
+	if validationErrors.structuralError != nil {
+		logger.Info("PodGroup spec validation failed on structural error",
+			"namespace", podGroup.Namespace, "name", podGroup.Name, "error", validationErrors.structuralError)
+		return nil, validationErrors.structuralError
 	}
+	if len(validationErrors.minDefinitionErrors) > 0 {
+		return handleMinDefinitionErrors(ctx, validationErrors.minDefinitionErrors, podGroup,
+			[]error{&minSubGroupExceedsChildCountError{}})
+	}
+
 	return nil, nil
 }
 
@@ -47,16 +54,50 @@ func (_ *PodGroup) ValidateUpdate(ctx context.Context, _ runtime.Object, newObj 
 	}
 	logger.Info("validate update", "namespace", podGroup.Namespace, "name", podGroup.Name)
 
-	if err := validatePodGroupSpec(&podGroup.Spec); err != nil {
-		logger.Info("PodGroup spec validation failed",
-			"namespace", podGroup.Namespace, "name", podGroup.Name, "error", err)
-		var w *parentMinMemberError
-		if errors.As(err, &w) {
-			return admission.Warnings{err.Error()}, nil
-		}
-		return nil, err
+	validationErrors := validatePodGroupSpec(&podGroup.Spec)
+
+	if validationErrors.structuralError != nil {
+		logger.Info("PodGroup spec validation failed on structural error",
+			"namespace", podGroup.Namespace, "name", podGroup.Name, "error", validationErrors.structuralError)
+		return nil, validationErrors.structuralError
 	}
+	if len(validationErrors.minDefinitionErrors) > 0 {
+		return handleMinDefinitionErrors(ctx, validationErrors.minDefinitionErrors, podGroup,
+			[]error{&parentMinMemberError{}, &minSubGroupExceedsChildCountError{}})
+	}
+
 	return nil, nil
+}
+
+func handleMinDefinitionErrors(ctx context.Context,
+	minDefinitionErrors []error, podGroup *PodGroup, validationWarningTypes []error) (admission.Warnings, error) {
+	logger := log.FromContext(ctx)
+
+	var warnings admission.Warnings
+	var hardErrs []error
+	for _, e := range minDefinitionErrors {
+		isWarning := false
+		for _, warningType := range validationWarningTypes {
+			if errors.Is(e, warningType) {
+				warnings = append(warnings, e.Error())
+				isWarning = true
+				break
+			}
+		}
+		if !isWarning {
+			hardErrs = append(hardErrs, e)
+		}
+	}
+
+	if len(hardErrs) > 0 {
+		logger.Info("PodGroup spec validation failed on min definition errors",
+			"namespace", podGroup.Namespace, "name", podGroup.Name, "errors", hardErrs,
+			"warnings", warnings)
+		return warnings, errors.Join(hardErrs...)
+	}
+	logger.Info("PodGroup spec validation warning", "namespace", podGroup.Namespace, "name", podGroup.Name,
+		"warnings", warnings)
+	return warnings, nil
 }
 
 func (_ *PodGroup) ValidateDelete(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
@@ -71,48 +112,58 @@ func (_ *PodGroup) ValidateDelete(ctx context.Context, obj runtime.Object) (admi
 
 // validatePodGroupSpec validates the PodGroup spec including top-level minMember/minSubGroup
 // mutual exclusivity and subgroup structural rules.
-func validatePodGroupSpec(spec *PodGroupSpec) error {
+// Returns collected per-subgroup errors and a hard structural error.
+func validatePodGroupSpec(spec *PodGroupSpec) *validationErrors {
 	if spec.MinMember != nil && spec.MinSubGroup != nil {
-		return fmt.Errorf("minMember and minSubGroup are mutually exclusive: "+
-			"set minMember (%d) to schedule a fixed number of pods, or set minSubGroup to require a minimum number of child SubGroups, but not both",
-			*spec.MinMember)
+		return &validationErrors{structuralError: &mutuallyExclusiveFieldsError{msg: fmt.Sprintf(
+			"minMember and minSubGroup are mutually exclusive: "+
+				"set minMember (%d) to schedule a fixed number of pods, or set minSubGroup to require a minimum number of child SubGroups, but not both",
+			*spec.MinMember)}}
 	}
 
-	if err := validateSubGroups(spec.SubGroups); err != nil {
-		return err
+	validationErrors := validateSubGroups(spec.SubGroups)
+	if validationErrors.structuralError != nil {
+		return validationErrors
 	}
 
 	if spec.MinSubGroup != nil {
 		if *spec.MinSubGroup <= 0 {
-			return errors.New("minSubGroup must be greater than 0")
+			validationErrors.minDefinitionErrors = append(validationErrors.minDefinitionErrors,
+				&invalidMinSubGroupError{msg: "minSubGroup must be greater than 0"})
+			return validationErrors
 		}
 		rootCount := countRootSubGroups(spec.SubGroups)
 		if int(*spec.MinSubGroup) > rootCount {
-			return fmt.Errorf("minSubGroup (%d) exceeds the number of direct child SubGroups (%d)", *spec.MinSubGroup, rootCount)
+			validationErrors.minDefinitionErrors = append(validationErrors.minDefinitionErrors,
+				&minSubGroupExceedsChildCountError{msg: fmt.Sprintf(
+					"minSubGroup (%d) exceeds the number of direct child SubGroups (%d)",
+					*spec.MinSubGroup, rootCount)})
 		}
 	}
 
-	return nil
+	return validationErrors
 }
 
-func validateSubGroups(subGroups []SubGroup) error {
+// validateSubGroups validates the subgroup list.
+// Returns collected per-subgroup min-field errors and a hard structural error (duplicate name, missing parent, cycle).
+func validateSubGroups(subGroups []SubGroup) *validationErrors {
 	subGroupMap := map[string]*SubGroup{}
 	for i := range subGroups {
 		subGroup := &subGroups[i]
 		if subGroupMap[subGroup.Name] != nil {
-			return fmt.Errorf("duplicate subgroup name %s", subGroup.Name)
+			return &validationErrors{structuralError: &subGroupGraphError{msg: fmt.Sprintf("duplicate subgroup name %s", subGroup.Name)}}
 		}
 		subGroupMap[subGroup.Name] = subGroup
 	}
 
 	if err := validateParent(subGroupMap); err != nil {
-		return err
+		return &validationErrors{structuralError: err}
 	}
 
 	childrenMap := buildChildrenMap(subGroupMap)
 
 	if detectCycle(subGroupMap, childrenMap) {
-		return errors.New("cycle detected in subgroups")
+		return &validationErrors{structuralError: &subGroupGraphError{msg: "cycle detected in subgroups"}}
 	}
 
 	// Sort SubGroup names for deterministic error reporting across API calls.
@@ -121,54 +172,60 @@ func validateSubGroups(subGroups []SubGroup) error {
 		subGroupNames = append(subGroupNames, name)
 	}
 	sort.Strings(subGroupNames)
+
+	subgroupsErrors := &validationErrors{}
 	for _, name := range subGroupNames {
-		if err := validateSubGroupMinFields(subGroupMap[name], childrenMap); err != nil {
-			return err
+		subgroupValidationErrors := validateSubGroupMinFields(subGroupMap[name], childrenMap)
+		subgroupsErrors.minDefinitionErrors = append(subgroupsErrors.minDefinitionErrors,
+			subgroupValidationErrors.minDefinitionErrors...)
+		if subgroupValidationErrors.structuralError != nil {
+			subgroupsErrors.structuralError = subgroupValidationErrors.structuralError
+			return subgroupsErrors
 		}
 	}
 
-	return nil
+	return subgroupsErrors
 }
 
-// parentMinMemberError is returned when minMember is set on a non-leaf SubGroup.
-// On update it is downgraded to a warning for backward compatibility.
-type parentMinMemberError struct{ msg string }
+// validateSubGroupMinFields returns all validation errors for minMember/minSubGroup on a single SubGroup.
+func validateSubGroupMinFields(subGroup *SubGroup, childrenMap map[string][]string) validationErrors {
+	var minFieldsErrors []error
 
-func (e *parentMinMemberError) Error() string { return e.msg }
-
-// validateSubGroupMinFields checks mutual exclusivity and structural rules for minMember/minSubGroup
-// on a single SubGroup.
-func validateSubGroupMinFields(subGroup *SubGroup, childrenMap map[string][]string) error {
 	if subGroup.MinMember != nil && subGroup.MinSubGroup != nil {
-		return fmt.Errorf("subgroup %q: minMember and minSubGroup are mutually exclusive", subGroup.Name)
+		return validationErrors{structuralError: &mutuallyExclusiveFieldsError{msg: fmt.Sprintf(
+			"subgroup %q: minMember and minSubGroup are mutually exclusive", subGroup.Name)}}
 	}
 
 	children := childrenMap[subGroup.Name]
 	isLeaf := len(children) == 0
 
-	if isLeaf && subGroup.MinSubGroup != nil {
-		return fmt.Errorf("subgroup %q: minSubGroup cannot be set on a leaf SubGroup (no child SubGroups)", subGroup.Name)
-	}
-
-	if isLeaf && subGroup.MinMember == nil {
-		return fmt.Errorf("subgroup %s: minMember is required", subGroup.Name)
-	}
-
-	if !isLeaf && subGroup.MinMember != nil {
-		return &parentMinMemberError{msg: fmt.Sprintf("subgroup %q: minMember cannot be set on a mid-level SubGroup (has child SubGroups); use minSubGroup instead", subGroup.Name)}
-	}
-
-	if subGroup.MinSubGroup != nil {
-		if *subGroup.MinSubGroup <= 0 {
-			return fmt.Errorf("subgroup %q: minSubGroup must be greater than 0", subGroup.Name)
+	if isLeaf {
+		if subGroup.MinSubGroup != nil {
+			minFieldsErrors = append(minFieldsErrors,
+				&invalidMinSubGroupError{msg: fmt.Sprintf("subgroup %q: minSubGroup cannot be set on a leaf SubGroup (no child SubGroups)", subGroup.Name)})
 		}
-		if int(*subGroup.MinSubGroup) > len(children) {
-			return fmt.Errorf("subgroup %q: minSubGroup (%d) exceeds the number of direct child SubGroups (%d)",
-				subGroup.Name, *subGroup.MinSubGroup, len(children))
+		if subGroup.MinMember == nil {
+			minFieldsErrors = append(minFieldsErrors, &missingMinMemberError{msg: fmt.Sprintf(
+				"subgroup %s: minMember is required", subGroup.Name)})
+		}
+	} else {
+		if subGroup.MinMember != nil {
+			minFieldsErrors = append(minFieldsErrors, &parentMinMemberError{msg: fmt.Sprintf(
+				"subgroup %q: minMember cannot be set on a mid-level SubGroup (has child SubGroups); use minSubGroup instead", subGroup.Name)})
+		}
+		if subGroup.MinSubGroup != nil {
+			if *subGroup.MinSubGroup <= 0 {
+				minFieldsErrors = append(minFieldsErrors, &invalidMinSubGroupError{msg: fmt.Sprintf(
+					"subgroup %q: minSubGroup must be greater than 0", subGroup.Name)})
+			} else if int(*subGroup.MinSubGroup) > len(children) {
+				minFieldsErrors = append(minFieldsErrors, &minSubGroupExceedsChildCountError{msg: fmt.Sprintf(
+					"subgroup %q: minSubGroup (%d) exceeds the number of direct child SubGroups (%d)",
+					subGroup.Name, *subGroup.MinSubGroup, len(children))})
+			}
 		}
 	}
 
-	return nil
+	return validationErrors{minDefinitionErrors: minFieldsErrors}
 }
 
 // buildChildrenMap returns a map from parent name to list of child SubGroup names.
@@ -199,7 +256,8 @@ func validateParent(subGroupMap map[string]*SubGroup) error {
 			continue
 		}
 		if _, exists := subGroupMap[*subGroup.Parent]; !exists {
-			return fmt.Errorf("parent %s of %s was not found", *subGroup.Parent, subGroup.Name)
+			return &subGroupGraphError{msg: fmt.Sprintf(
+				"parent %s of %s was not found", *subGroup.Parent, subGroup.Name)}
 		}
 	}
 	return nil

@@ -4,6 +4,7 @@
 package v2alpha2
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -14,26 +15,26 @@ func TestValidateSubGroups(t *testing.T) {
 	tests := []struct {
 		name      string
 		subGroups []SubGroup
-		wantErr   error
+		wantErr   *validationErrors
 	}{
 		{
-			name: "Invalid DAG single root: minMember on non-leaf",
+			name: "Valid DAG single root",
 			subGroups: []SubGroup{
-				{Name: "A", MinMember: ptr.To(int32(1))},
-				{Name: "B", Parent: ptr.To("A"), MinMember: ptr.To(int32(1))},
+				{Name: "A", MinSubGroup: ptr.To(int32(1))},
+				{Name: "B", Parent: ptr.To("A"), MinSubGroup: ptr.To(int32(1))},
 				{Name: "C", Parent: ptr.To("B"), MinMember: ptr.To(int32(1))},
 			},
-			wantErr: errors.New(`subgroup "A": minMember cannot be set on a mid-level SubGroup (has child SubGroups); use minSubGroup instead`),
+			wantErr: nil,
 		},
 		{
-			name: "Invalid DAG multiple roots: minMember on non-leaf",
+			name: "Valid DAG multiple roots",
 			subGroups: []SubGroup{
-				{Name: "A", MinMember: ptr.To(int32(1))},
-				{Name: "B", MinMember: ptr.To(int32(1))},
+				{Name: "A", MinSubGroup: ptr.To(int32(1))},
+				{Name: "B", MinSubGroup: ptr.To(int32(1))},
 				{Name: "C", Parent: ptr.To("A"), MinMember: ptr.To(int32(1))},
 				{Name: "D", Parent: ptr.To("B"), MinMember: ptr.To(int32(1))},
 			},
-			wantErr: errors.New(`subgroup "A": minMember cannot be set on a mid-level SubGroup (has child SubGroups); use minSubGroup instead`),
+			wantErr: nil,
 		},
 		{
 			name: "Missing parent",
@@ -41,7 +42,7 @@ func TestValidateSubGroups(t *testing.T) {
 				{Name: "A", MinMember: ptr.To(int32(1))},
 				{Name: "B", Parent: ptr.To("X"), MinMember: ptr.To(int32(1))}, // parent X does not exist
 			},
-			wantErr: errors.New("parent X of B was not found"),
+			wantErr: &validationErrors{structuralError: &subGroupGraphError{msg: "parent X of B was not found"}},
 		},
 		{
 			name:      "Empty list",
@@ -53,7 +54,7 @@ func TestValidateSubGroups(t *testing.T) {
 			subGroups: []SubGroup{
 				{Name: "A"},
 			},
-			wantErr: errors.New("subgroup A: minMember is required"),
+			wantErr: &validationErrors{minDefinitionErrors: []error{&missingMinMemberError{msg: "subgroup A: minMember is required"}}},
 		},
 		{
 			name: "parent subgroup may omit minMember when it has subgroup children",
@@ -69,7 +70,7 @@ func TestValidateSubGroups(t *testing.T) {
 				{Name: "P"},
 				{Name: "L", Parent: ptr.To("P")},
 			},
-			wantErr: errors.New("subgroup L: minMember is required"),
+			wantErr: &validationErrors{minDefinitionErrors: []error{&missingMinMemberError{msg: "subgroup L: minMember is required"}}},
 		},
 		{
 			name: "Duplicate subgroup names",
@@ -77,7 +78,7 @@ func TestValidateSubGroups(t *testing.T) {
 				{Name: "A", MinMember: ptr.To(int32(1))},
 				{Name: "A", MinMember: ptr.To(int32(1))}, // duplicate
 			},
-			wantErr: errors.New("duplicate subgroup name A"),
+			wantErr: &validationErrors{structuralError: &subGroupGraphError{msg: "duplicate subgroup name A"}},
 		},
 		{
 			name: "Cycle in graph (A -> B -> C -> A) - duplicate subgroup name",
@@ -87,14 +88,14 @@ func TestValidateSubGroups(t *testing.T) {
 				{Name: "C", Parent: ptr.To("B"), MinMember: ptr.To(int32(1))},
 				{Name: "A", Parent: ptr.To("C"), MinMember: ptr.To(int32(1))}, // creates a cycle
 			},
-			wantErr: errors.New("duplicate subgroup name A"), // duplicate is caught before cycle
+			wantErr: &validationErrors{structuralError: &subGroupGraphError{msg: "duplicate subgroup name A"}}, // duplicate is caught before cycle
 		},
 		{
 			name: "Self-parent subgroup (cycle of length 1)",
 			subGroups: []SubGroup{
 				{Name: "A", Parent: ptr.To("A"), MinMember: ptr.To(int32(1))},
 			},
-			wantErr: errors.New("cycle detected in subgroups"),
+			wantErr: &validationErrors{structuralError: &subGroupGraphError{msg: "cycle detected in subgroups"}},
 		},
 		{
 			name: "Cycle in graph (A -> B -> C -> A)",
@@ -103,7 +104,7 @@ func TestValidateSubGroups(t *testing.T) {
 				{Name: "B", Parent: ptr.To("A"), MinMember: ptr.To(int32(1))},
 				{Name: "C", Parent: ptr.To("B"), MinMember: ptr.To(int32(1))}, // creates a cycle
 			},
-			wantErr: errors.New("cycle detected in subgroups"),
+			wantErr: &validationErrors{structuralError: &subGroupGraphError{msg: "cycle detected in subgroups"}},
 		},
 		{
 			name: "Multiple disjoint cycles",
@@ -113,7 +114,7 @@ func TestValidateSubGroups(t *testing.T) {
 				{Name: "C", Parent: ptr.To("D"), MinMember: ptr.To(int32(1))},
 				{Name: "D", Parent: ptr.To("C"), MinMember: ptr.To(int32(1))}, // cycle C <-> D
 			},
-			wantErr: errors.New("cycle detected in subgroups"),
+			wantErr: &validationErrors{structuralError: &subGroupGraphError{msg: "cycle detected in subgroups"}},
 		},
 		// minSubGroup on SubGroup tests
 		{
@@ -130,7 +131,10 @@ func TestValidateSubGroups(t *testing.T) {
 			subGroups: []SubGroup{
 				{Name: "A", MinSubGroup: ptr.To(int32(1))},
 			},
-			wantErr: errors.New(`subgroup "A": minSubGroup cannot be set on a leaf SubGroup (no child SubGroups)`),
+			wantErr: &validationErrors{minDefinitionErrors: []error{
+				&invalidMinSubGroupError{msg: `subgroup "A": minSubGroup cannot be set on a leaf SubGroup (no child SubGroups)`},
+				&missingMinMemberError{msg: "subgroup A: minMember is required"},
+			}},
 		},
 		{
 			name: "Invalid: mid-level SubGroup uses minMember",
@@ -139,7 +143,7 @@ func TestValidateSubGroups(t *testing.T) {
 				{Name: "child-1", Parent: ptr.To("parent"), MinMember: ptr.To(int32(4))},
 				{Name: "child-2", Parent: ptr.To("parent"), MinMember: ptr.To(int32(4))},
 			},
-			wantErr: errors.New(`subgroup "parent": minMember cannot be set on a mid-level SubGroup (has child SubGroups); use minSubGroup instead`),
+			wantErr: &validationErrors{minDefinitionErrors: []error{&parentMinMemberError{msg: `subgroup "parent": minMember cannot be set on a mid-level SubGroup (has child SubGroups); use minSubGroup instead`}}},
 		},
 		{
 			name: "Invalid: SubGroup has both minMember and minSubGroup",
@@ -147,7 +151,7 @@ func TestValidateSubGroups(t *testing.T) {
 				{Name: "parent", MinMember: ptr.To(int32(2)), MinSubGroup: ptr.To(int32(1))},
 				{Name: "child-1", Parent: ptr.To("parent"), MinMember: ptr.To(int32(4))},
 			},
-			wantErr: errors.New(`subgroup "parent": minMember and minSubGroup are mutually exclusive`),
+			wantErr: &validationErrors{structuralError: &mutuallyExclusiveFieldsError{msg: `subgroup "parent": minMember and minSubGroup are mutually exclusive`}},
 		},
 		{
 			name: "Invalid: SubGroup minSubGroup exceeds child count",
@@ -156,7 +160,7 @@ func TestValidateSubGroups(t *testing.T) {
 				{Name: "child-1", Parent: ptr.To("parent"), MinMember: ptr.To(int32(4))},
 				{Name: "child-2", Parent: ptr.To("parent"), MinMember: ptr.To(int32(4))},
 			},
-			wantErr: errors.New(`subgroup "parent": minSubGroup (3) exceeds the number of direct child SubGroups (2)`),
+			wantErr: &validationErrors{minDefinitionErrors: []error{&minSubGroupExceedsChildCountError{msg: `subgroup "parent": minSubGroup (3) exceeds the number of direct child SubGroups (2)`}}},
 		},
 		{
 			name: "Valid: minSubGroup equals child count",
@@ -174,14 +178,17 @@ func TestValidateSubGroups(t *testing.T) {
 				{Name: "child-1", Parent: ptr.To("parent"), MinMember: ptr.To(int32(4))},
 				{Name: "child-2", Parent: ptr.To("parent"), MinMember: ptr.To(int32(4))},
 			},
-			wantErr: errors.New(`subgroup "parent": minSubGroup must be greater than 0`),
+			wantErr: &validationErrors{minDefinitionErrors: []error{&invalidMinSubGroupError{msg: `subgroup "parent": minSubGroup must be greater than 0`}}},
 		},
 		{
 			name: "Invalid: minSubGroup = 0 on leaf SubGroup",
 			subGroups: []SubGroup{
 				{Name: "A", MinSubGroup: ptr.To(int32(0))},
 			},
-			wantErr: errors.New(`subgroup "A": minSubGroup cannot be set on a leaf SubGroup (no child SubGroups)`),
+			wantErr: &validationErrors{minDefinitionErrors: []error{
+				&invalidMinSubGroupError{msg: `subgroup "A": minSubGroup cannot be set on a leaf SubGroup (no child SubGroups)`},
+				&missingMinMemberError{msg: "subgroup A: minMember is required"},
+			}},
 		},
 		{
 			name: "Valid: 2-level hierarchy with minSubGroup at both levels",
@@ -199,12 +206,16 @@ func TestValidateSubGroups(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateSubGroups(tt.subGroups)
-			if (err != nil && tt.wantErr == nil) || (err == nil && tt.wantErr != nil) {
-				t.Fatalf("expected error %v, got %v", tt.wantErr, err)
+			got := validateSubGroups(tt.subGroups)
+			want := tt.wantErr
+			if want == nil {
+				want = &validationErrors{}
 			}
-			if err != nil && tt.wantErr != nil && err.Error() != tt.wantErr.Error() {
-				t.Fatalf("expected error %v, got %v", tt.wantErr, err)
+			if !errorsEqual(want.structuralError, got.structuralError) {
+				t.Fatalf("expected structural error %v, got %v", want.structuralError, got.structuralError)
+			}
+			if !errorsListEqual(want.minDefinitionErrors, got.minDefinitionErrors) {
+				t.Fatalf("expected min definition errors %v, got %v", want.minDefinitionErrors, got.minDefinitionErrors)
 			}
 		})
 	}
@@ -212,16 +223,16 @@ func TestValidateSubGroups(t *testing.T) {
 
 func TestValidatePodGroupSpec(t *testing.T) {
 	tests := []struct {
-		name    string
-		spec    PodGroupSpec
-		wantErr error
+		name string
+		spec PodGroupSpec
+		want *validationErrors
 	}{
 		{
 			name: "Valid: minMember only, no subgroups",
 			spec: PodGroupSpec{
 				MinMember: ptr.To(int32(4)),
 			},
-			wantErr: nil,
+			want: nil,
 		},
 		{
 			name: "Valid: minSubGroup with leaf subgroups using minMember",
@@ -234,7 +245,7 @@ func TestValidatePodGroupSpec(t *testing.T) {
 					{Name: "prefill-3", MinMember: ptr.To(int32(8))},
 				},
 			},
-			wantErr: nil,
+			want: nil,
 		},
 		{
 			name: "Valid: minSubGroup equals subgroup count",
@@ -245,7 +256,7 @@ func TestValidatePodGroupSpec(t *testing.T) {
 					{Name: "B", MinMember: ptr.To(int32(4))},
 				},
 			},
-			wantErr: nil,
+			want: nil,
 		},
 		{
 			name: "Invalid: both minMember and minSubGroup set on PodGroup",
@@ -258,7 +269,7 @@ func TestValidatePodGroupSpec(t *testing.T) {
 					{Name: "C", MinMember: ptr.To(int32(8))},
 				},
 			},
-			wantErr: errors.New("minMember and minSubGroup are mutually exclusive: set minMember (24) to schedule a fixed number of pods, or set minSubGroup to require a minimum number of child SubGroups, but not both"),
+			want: &validationErrors{structuralError: &mutuallyExclusiveFieldsError{msg: "minMember and minSubGroup are mutually exclusive: set minMember (24) to schedule a fixed number of pods, or set minSubGroup to require a minimum number of child SubGroups, but not both"}},
 		},
 		{
 			name: "Invalid: minSubGroup exceeds root subgroup count",
@@ -271,7 +282,7 @@ func TestValidatePodGroupSpec(t *testing.T) {
 					{Name: "D", MinMember: ptr.To(int32(8))},
 				},
 			},
-			wantErr: errors.New("minSubGroup (5) exceeds the number of direct child SubGroups (4)"),
+			want: &validationErrors{minDefinitionErrors: []error{&minSubGroupExceedsChildCountError{msg: "minSubGroup (5) exceeds the number of direct child SubGroups (4)"}}},
 		},
 		{
 			name: "Valid: 2-level hierarchy",
@@ -286,29 +297,32 @@ func TestValidatePodGroupSpec(t *testing.T) {
 					{Name: "prefill-workers", Parent: ptr.To("prefill"), MinMember: ptr.To(int32(4))},
 				},
 			},
-			wantErr: nil,
+			want: nil,
 		},
 		{
 			name: "Invalid: subgroup validation error propagates",
 			spec: PodGroupSpec{
 				MinSubGroup: ptr.To(int32(1)),
 				SubGroups: []SubGroup{
-					{Name: "leaf", MinSubGroup: ptr.To(int32(1))}, // leaf with minSubGroup is invalid
+					{Name: "leaf", MinSubGroup: ptr.To(int32(1))},
 				},
 			},
-			wantErr: errors.New(`subgroup "leaf": minSubGroup cannot be set on a leaf SubGroup (no child SubGroups)`),
+			want: &validationErrors{minDefinitionErrors: []error{
+				&invalidMinSubGroupError{msg: `subgroup "leaf": minSubGroup cannot be set on a leaf SubGroup (no child SubGroups)`},
+				&missingMinMemberError{msg: "subgroup leaf: minMember is required"},
+			}},
 		},
 		{
-			name:    "Valid: no subgroups, no minMember, no minSubGroup",
-			spec:    PodGroupSpec{},
-			wantErr: nil,
+			name: "Valid: no subgroups, no minMember, no minSubGroup",
+			spec: PodGroupSpec{},
+			want: nil,
 		},
 		{
 			name: "Invalid: minSubGroup with no subgroups defined",
 			spec: PodGroupSpec{
 				MinSubGroup: ptr.To(int32(1)),
 			},
-			wantErr: errors.New("minSubGroup (1) exceeds the number of direct child SubGroups (0)"),
+			want: &validationErrors{minDefinitionErrors: []error{&minSubGroupExceedsChildCountError{msg: "minSubGroup (1) exceeds the number of direct child SubGroups (0)"}}},
 		},
 		{
 			name: "Invalid: minSubGroup = 0 on PodGroup",
@@ -319,19 +333,91 @@ func TestValidatePodGroupSpec(t *testing.T) {
 					{Name: "B", MinMember: ptr.To(int32(4))},
 				},
 			},
-			wantErr: errors.New("minSubGroup must be greater than 0"),
+			want: &validationErrors{minDefinitionErrors: []error{&invalidMinSubGroupError{msg: "minSubGroup must be greater than 0"}}},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validatePodGroupSpec(&tt.spec)
-			if (err != nil && tt.wantErr == nil) || (err == nil && tt.wantErr != nil) {
-				t.Fatalf("expected error %v, got %v", tt.wantErr, err)
+			got := validatePodGroupSpec(&tt.spec)
+			want := tt.want
+			if want == nil {
+				want = &validationErrors{}
 			}
-			if err != nil && tt.wantErr != nil && err.Error() != tt.wantErr.Error() {
-				t.Fatalf("expected error %v, got %v", tt.wantErr, err)
+			if !errorsEqual(want.structuralError, got.structuralError) {
+				t.Fatalf("expected structural error %v, got %v", want.structuralError, got.structuralError)
+			}
+			if !errorsListEqual(want.minDefinitionErrors, got.minDefinitionErrors) {
+				t.Fatalf("expected min definition errors %v, got %v", want.minDefinitionErrors, got.minDefinitionErrors)
 			}
 		})
 	}
+}
+
+// TestCreateRejectsWhatUpdateWarns verifies that parentMinMemberError (minMember on a non-leaf subgroup)
+// causes ValidateCreate to fail hard while ValidateUpdate downgrades it to a warning.
+func TestCreateRejectsWhatUpdateWarns(t *testing.T) {
+	podGroup := &PodGroup{
+		Spec: PodGroupSpec{
+			SubGroups: []SubGroup{
+				{Name: "parent", MinMember: ptr.To(int32(2))},
+				{Name: "child", Parent: ptr.To("parent"), MinMember: ptr.To(int32(1))},
+			},
+		},
+	}
+
+	wantMsg := (&parentMinMemberError{msg: `subgroup "parent": minMember cannot be set on a mid-level SubGroup (has child SubGroups); use minSubGroup instead`}).Error()
+
+	validator := &PodGroup{}
+	ctx := context.Background()
+
+	_, createErr := validator.ValidateCreate(ctx, podGroup)
+	if createErr == nil {
+		t.Fatal("ValidateCreate should fail for parentMinMemberError")
+	}
+	var pme *parentMinMemberError
+	if !errors.As(createErr, &pme) {
+		t.Fatalf("ValidateCreate error should unwrap to parentMinMemberError, got: %v", createErr)
+	}
+	if pme.Error() != wantMsg {
+		t.Fatalf("ValidateCreate: got message %q, want %q", pme.Error(), wantMsg)
+	}
+
+	warnings, updateErr := validator.ValidateUpdate(ctx, podGroup, podGroup)
+	if updateErr != nil {
+		t.Fatalf("ValidateUpdate should succeed, got: %v", updateErr)
+	}
+	found := false
+	for _, w := range warnings {
+		if w == wantMsg {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("ValidateUpdate should warn with parentMinMemberError message; warnings=%v", warnings)
+	}
+}
+
+func errorsEqual(a, b error) bool {
+	switch {
+	case a == nil && b == nil:
+		return true
+	case a == nil || b == nil:
+		return false
+	default:
+		return a.Error() == b.Error()
+	}
+}
+
+func errorsListEqual(want, got []error) bool {
+	if len(want) != len(got) {
+		return false
+	}
+	for i := range want {
+		if !errorsEqual(want[i], got[i]) {
+			return false
+		}
+	}
+	return true
 }
