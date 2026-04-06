@@ -461,6 +461,89 @@ func TestGetPodGroupMetadata_StartupPolicyOrderNotInOrder(t *testing.T) {
 	assert.Equal(t, int32(9), workerMeta.MinAvailable)
 }
 
+func TestGetPodGroupMetadata_MinMemberOverride(t *testing.T) {
+	jobSet := baseJobSet("override-jobset", "default", "uid-override", []map[string]interface{}{
+		replicatedJob("worker", 2, 4),
+	})
+	jobSet.SetAnnotations(map[string]string{
+		"kai.scheduler/batch-min-member": "3",
+	})
+
+	pod := podWithJobSetLabels("pod", "default", "worker", "0")
+	scheme := runtime.NewScheme()
+	require.NoError(t, schedulingv2.AddToScheme(scheme))
+	client := fake.NewClientBuilder().WithScheme(scheme).Build()
+	defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, client)
+	jobSetGrouper := NewJobSetGrouper(defaultGrouper)
+
+	pgMeta, err := jobSetGrouper.GetPodGroupMetadata(jobSet, pod)
+	require.NoError(t, err)
+	assert.Equal(t, int32(3), pgMeta.MinAvailable)
+}
+
+func TestGetPodGroupMetadata_MinMemberOverrideAnyOrder(t *testing.T) {
+	jobSet := baseJobSet("override-anyorder", "default", "uid-override-any", []map[string]interface{}{
+		replicatedJob("leader", 1, 1),
+		replicatedJob("worker", 2, 4),
+	})
+	jobSet.Object["spec"].(map[string]interface{})["startupPolicy"] = map[string]interface{}{
+		"startupPolicyOrder": "AnyOrder",
+	}
+	jobSet.SetAnnotations(map[string]string{
+		"kai.scheduler/batch-min-member": "5",
+	})
+
+	pod := podWithJobSetLabels("pod", "default", "worker", "0")
+	scheme := runtime.NewScheme()
+	require.NoError(t, schedulingv2.AddToScheme(scheme))
+	client := fake.NewClientBuilder().WithScheme(scheme).Build()
+	defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, client)
+	jobSetGrouper := NewJobSetGrouper(defaultGrouper)
+
+	pgMeta, err := jobSetGrouper.GetPodGroupMetadata(jobSet, pod)
+	require.NoError(t, err)
+	// Override should replace the calculated value (9)
+	assert.Equal(t, int32(5), pgMeta.MinAvailable)
+}
+
+func TestGetPodGroupMetadata_MinMemberOverrideInvalid(t *testing.T) {
+	jobSet := baseJobSet("invalid-override", "default", "uid-invalid", []map[string]interface{}{
+		replicatedJob("worker", 1, 2),
+	})
+	jobSet.SetAnnotations(map[string]string{
+		"kai.scheduler/batch-min-member": "not-a-number",
+	})
+
+	pod := podWithJobSetLabels("pod", "default", "worker", "0")
+	scheme := runtime.NewScheme()
+	require.NoError(t, schedulingv2.AddToScheme(scheme))
+	client := fake.NewClientBuilder().WithScheme(scheme).Build()
+	defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, client)
+	jobSetGrouper := NewJobSetGrouper(defaultGrouper)
+
+	_, err := jobSetGrouper.GetPodGroupMetadata(jobSet, pod)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid")
+}
+
+func TestGetPodGroupMetadata_NoMinMemberOverride(t *testing.T) {
+	jobSet := baseJobSet("no-override", "default", "uid-no-override", []map[string]interface{}{
+		replicatedJob("worker", 2, 4),
+	})
+
+	pod := podWithJobSetLabels("pod", "default", "worker", "0")
+	scheme := runtime.NewScheme()
+	require.NoError(t, schedulingv2.AddToScheme(scheme))
+	client := fake.NewClientBuilder().WithScheme(scheme).Build()
+	defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, client)
+	jobSetGrouper := NewJobSetGrouper(defaultGrouper)
+
+	pgMeta, err := jobSetGrouper.GetPodGroupMetadata(jobSet, pod)
+	require.NoError(t, err)
+	// Without override, uses calculated value: replicas=2, parallelism=4 => 8
+	assert.Equal(t, int32(8), pgMeta.MinAvailable)
+}
+
 func TestGetPodGroupMetadata_StartupPolicyOrderDefault(t *testing.T) {
 	jobSet := baseJobSet("default-order-jobset", "default", "uid-default", []map[string]interface{}{
 		replicatedJob("worker", 2, 4),

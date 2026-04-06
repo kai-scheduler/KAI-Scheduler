@@ -1,0 +1,26 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: batch-job-min-member
+  annotations:
+    kai.scheduler/batch-min-member: "2"
+spec:
+  parallelism: 6
+  completions: 6
+  template:
+    metadata:
+      labels:
+        kai.scheduler/queue: default-queue
+    spec:
+      schedulerName: kai-scheduler
+      restartPolicy: OnFailure
+      containers:
+        - name: main
+          image: ubuntu
+          args: ["sleep", "infinity"]
+          resources:
+            limits:
+              nvidia.com/gpu: "1"

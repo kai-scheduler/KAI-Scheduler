@@ -6,12 +6,14 @@ package jobset
 import (
 	"fmt"
 	"math"
+	"strconv"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
 )
 
@@ -104,6 +106,14 @@ func (g *JobSetGrouper) GetPodGroupMetadata(
 		pgMeta.MinAvailable = minAvailable
 	}
 
+	minMemberOverride, err := getMinMemberOverride(topOwner)
+	if err != nil {
+		return nil, err
+	}
+	if minMemberOverride > 0 {
+		pgMeta.MinAvailable = minMemberOverride
+	}
+
 	return pgMeta, nil
 }
 
@@ -188,6 +198,20 @@ func getStartupPolicyOrder(jobSet *unstructured.Unstructured) (string, error) {
 		return startupPolicyOrderInOrder, nil
 	}
 	return order, nil
+}
+
+func getMinMemberOverride(topOwner *unstructured.Unstructured) (int32, error) {
+	override, found := topOwner.GetAnnotations()[constants.MinMemberOverrideKey]
+	if !found {
+		return 0, nil
+	}
+
+	minMember, err := strconv.ParseInt(override, 10, 32)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s annotation value: %w", constants.MinMemberOverrideKey, err)
+	}
+
+	return int32(minMember), nil
 }
 
 // getJobSetMinAvailable calculates total minAvailable for all replicatedJobs in the JobSet.
