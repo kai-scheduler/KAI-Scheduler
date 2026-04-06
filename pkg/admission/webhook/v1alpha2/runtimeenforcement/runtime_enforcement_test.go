@@ -6,8 +6,8 @@ package runtimeenforcement
 import (
 	"testing"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned/scheme"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/scheme"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	ocpconf "github.com/openshift/api/config/v1"
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
@@ -61,7 +61,7 @@ func TestMutate(t *testing.T) {
 					Containers: []v1.Container{
 						{
 							Resources: v1.ResourceRequirements{
-								Limits: v1.ResourceList{constants.GpuResource: resource.MustParse("1")},
+								Limits: v1.ResourceList{constants.NvidiaGpuResource: resource.MustParse("1")},
 							},
 						},
 					},
@@ -73,7 +73,34 @@ func TestMutate(t *testing.T) {
 					Containers: []v1.Container{
 						{
 							Resources: v1.ResourceRequirements{
-								Limits: v1.ResourceList{constants.GpuResource: resource.MustParse("1")},
+								Limits: v1.ResourceList{constants.NvidiaGpuResource: resource.MustParse("1")},
+							},
+						},
+					},
+				},
+			},
+			expectedError: nil,
+		},
+		{
+			name:                   "empty gpuPodRuntimeClassName skips runtimeClass injection",
+			gpuPodRuntimeClassName: "",
+			incomingPod: &v1.Pod{
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Resources: v1.ResourceRequirements{
+								Limits: v1.ResourceList{constants.NvidiaGpuResource: resource.MustParse("1")},
+							},
+						},
+					},
+				},
+			},
+			expectedOutboundPod: &v1.Pod{
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Resources: v1.ResourceRequirements{
+								Limits: v1.ResourceList{constants.NvidiaGpuResource: resource.MustParse("1")},
 							},
 						},
 					},
@@ -90,7 +117,7 @@ func TestMutate(t *testing.T) {
 					Containers: []v1.Container{
 						{
 							Resources: v1.ResourceRequirements{
-								Limits: v1.ResourceList{constants.GpuResource: resource.MustParse("1")},
+								Limits: v1.ResourceList{constants.NvidiaGpuResource: resource.MustParse("1")},
 							},
 						},
 					},
@@ -102,7 +129,7 @@ func TestMutate(t *testing.T) {
 					Containers: []v1.Container{
 						{
 							Resources: v1.ResourceRequirements{
-								Limits: v1.ResourceList{constants.GpuResource: resource.MustParse("1")},
+								Limits: v1.ResourceList{constants.NvidiaGpuResource: resource.MustParse("1")},
 							},
 						},
 					},

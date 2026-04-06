@@ -6,8 +6,8 @@ package bindrequest_info
 import (
 	v1 "k8s.io/api/core/v1"
 
-	schedulingv1alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
+	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 )
 
 type Key common_info.ObjectKey
@@ -38,7 +38,7 @@ func NewKeyFromPod(pod *v1.Pod) Key {
 	return NewKey(pod.Namespace, pod.Name)
 }
 
-type ResourceClaimInfo []schedulingv1alpha2.ResourceClaimAllocation
+type ResourceClaimInfo map[string]*schedulingv1alpha2.ResourceClaimAllocation
 
 func (rci ResourceClaimInfo) Clone() ResourceClaimInfo {
 	if rci == nil {
@@ -46,12 +46,23 @@ func (rci ResourceClaimInfo) Clone() ResourceClaimInfo {
 	}
 	newrci := make(ResourceClaimInfo, len(rci))
 	for i, info := range rci {
-		newrci[i] = schedulingv1alpha2.ResourceClaimAllocation{
+		newrci[i] = &schedulingv1alpha2.ResourceClaimAllocation{
 			Name:       info.Name,
 			Allocation: info.Allocation.DeepCopy(),
 		}
 	}
 	return newrci
+}
+
+func (rci ResourceClaimInfo) ToSlice() []schedulingv1alpha2.ResourceClaimAllocation {
+	if rci == nil {
+		return nil
+	}
+	slice := make([]schedulingv1alpha2.ResourceClaimAllocation, 0, len(rci))
+	for _, info := range rci {
+		slice = append(slice, *info)
+	}
+	return slice
 }
 
 type BindRequestInfo struct {

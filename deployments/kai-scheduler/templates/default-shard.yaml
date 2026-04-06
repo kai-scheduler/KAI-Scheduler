@@ -14,3 +14,11 @@ spec:
     gpu: {{ .Values.scheduler.placementStrategy }}
     cpu: {{ .Values.scheduler.placementStrategy }}
   {{- end }}
+  {{- if .Values.scheduler.plugins }}
+  plugins:
+    {{- toYaml .Values.scheduler.plugins | nindent 4 }}
+  {{- end }}
+  {{- if .Values.scheduler.actions }}
+  actions:
+    {{- toYaml .Values.scheduler.actions | nindent 4 }}
+  {{- end }}

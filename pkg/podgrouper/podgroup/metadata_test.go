@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"k8s.io/apimachinery/pkg/types"
 )
 
 func TestFindSubGroupForPod(t *testing.T) {
@@ -21,19 +20,15 @@ func TestFindSubGroupForPod(t *testing.T) {
 		{
 			name: "pod found in first subgroup",
 			metadata: Metadata{
+				Namespace: "ns1",
 				SubGroups: []*SubGroupMetadata{
 					{
-						Name: "subgroup-1",
-						PodsReferences: []*types.NamespacedName{
-							{Namespace: "ns1", Name: "pod-a"},
-							{Namespace: "ns1", Name: "pod-b"},
-						},
+						Name:           "subgroup-1",
+						PodsReferences: []string{"pod-a", "pod-b"},
 					},
 					{
-						Name: "subgroup-2",
-						PodsReferences: []*types.NamespacedName{
-							{Namespace: "ns1", Name: "pod-c"},
-						},
+						Name:           "subgroup-2",
+						PodsReferences: []string{"pod-c"},
 					},
 				},
 			},
@@ -44,18 +39,15 @@ func TestFindSubGroupForPod(t *testing.T) {
 		{
 			name: "pod found in second subgroup",
 			metadata: Metadata{
+				Namespace: "ns1",
 				SubGroups: []*SubGroupMetadata{
 					{
-						Name: "subgroup-1",
-						PodsReferences: []*types.NamespacedName{
-							{Namespace: "ns1", Name: "pod-a"},
-						},
+						Name:           "subgroup-1",
+						PodsReferences: []string{"pod-a"},
 					},
 					{
-						Name: "subgroup-2",
-						PodsReferences: []*types.NamespacedName{
-							{Namespace: "ns1", Name: "pod-c"},
-						},
+						Name:           "subgroup-2",
+						PodsReferences: []string{"pod-c"},
 					},
 				},
 			},
@@ -66,12 +58,11 @@ func TestFindSubGroupForPod(t *testing.T) {
 		{
 			name: "pod not found - different namespace",
 			metadata: Metadata{
+				Namespace: "ns1",
 				SubGroups: []*SubGroupMetadata{
 					{
-						Name: "subgroup-1",
-						PodsReferences: []*types.NamespacedName{
-							{Namespace: "ns1", Name: "pod-a"},
-						},
+						Name:           "subgroup-1",
+						PodsReferences: []string{"pod-a"},
 					},
 				},
 			},
@@ -82,12 +73,11 @@ func TestFindSubGroupForPod(t *testing.T) {
 		{
 			name: "pod not found - different name",
 			metadata: Metadata{
+				Namespace: "ns1",
 				SubGroups: []*SubGroupMetadata{
 					{
-						Name: "subgroup-1",
-						PodsReferences: []*types.NamespacedName{
-							{Namespace: "ns1", Name: "pod-a"},
-						},
+						Name:           "subgroup-1",
+						PodsReferences: []string{"pod-a"},
 					},
 				},
 			},
@@ -116,10 +106,11 @@ func TestFindSubGroupForPod(t *testing.T) {
 		{
 			name: "subgroup with empty pod references",
 			metadata: Metadata{
+				Namespace: "ns1",
 				SubGroups: []*SubGroupMetadata{
 					{
 						Name:           "subgroup-1",
-						PodsReferences: []*types.NamespacedName{},
+						PodsReferences: []string{},
 					},
 				},
 			},

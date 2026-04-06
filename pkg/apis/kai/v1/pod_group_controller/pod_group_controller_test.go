@@ -19,7 +19,7 @@ func TestPodGroupController(t *testing.T) {
 var _ = Describe("PodGroupController", func() {
 	It("Set Defaults", func(ctx context.Context) {
 		podGroupController := &PodGroupController{}
-		podGroupController.SetDefaultsWhereNeeded(nil)
+		podGroupController.SetDefaultsWhereNeeded(nil, nil)
 		Expect(*podGroupController.Service.Enabled).To(Equal(true))
 		Expect(*podGroupController.Service.Image.Name).To(Equal(imageName))
 	})
@@ -27,7 +27,7 @@ var _ = Describe("PodGroupController", func() {
 		podGroupController := &PodGroupController{}
 		var replicaCount int32
 		replicaCount = 3
-		podGroupController.SetDefaultsWhereNeeded(&replicaCount)
+		podGroupController.SetDefaultsWhereNeeded(&replicaCount, nil)
 		Expect(*podGroupController.Replicas).To(Equal(int32(3)))
 	})
 })

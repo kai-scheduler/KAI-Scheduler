@@ -11,8 +11,8 @@ import (
 	"k8s.io/utils/pointer"
 	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/constant"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/testconfig"
 )
 
 // CreateUnequalCompletionJobSetObject creates a JobSet with a single replicatedJob
@@ -22,8 +22,8 @@ func CreateUnequalCompletionJobSetObject(name, namespace, queueName string, para
 			Name:      name,
 			Namespace: namespace,
 			Labels: map[string]string{
-				constants.AppLabelName: "engine-e2e",
-				"kai.scheduler/queue":  queueName,
+				constants.AppLabelName:               "engine-e2e",
+				testconfig.GetConfig().QueueLabelKey: queueName,
 			},
 		},
 		Spec: jobsetv1alpha2.JobSetSpec{
@@ -39,7 +39,7 @@ func CreateUnequalCompletionJobSetObject(name, namespace, queueName string, para
 							Template: corev1.PodTemplateSpec{
 								Spec: corev1.PodSpec{
 									RestartPolicy: corev1.RestartPolicyNever,
-									SchedulerName: constant.SchedulerName,
+									SchedulerName: testconfig.GetConfig().SchedulerName,
 									Containers: []corev1.Container{
 										{
 											Name:  "worker",
@@ -85,8 +85,8 @@ func CreateObjectWithStartupPolicy(name, namespace, queueName, startupPolicyOrde
 			Name:      name,
 			Namespace: namespace,
 			Labels: map[string]string{
-				constants.AppLabelName: "engine-e2e",
-				"kai.scheduler/queue":  queueName,
+				constants.AppLabelName:               "engine-e2e",
+				testconfig.GetConfig().QueueLabelKey: queueName,
 			},
 		},
 		Spec: jobsetv1alpha2.JobSetSpec{
@@ -105,7 +105,7 @@ func CreateObjectWithStartupPolicy(name, namespace, queueName, startupPolicyOrde
 							Template: corev1.PodTemplateSpec{
 								Spec: corev1.PodSpec{
 									RestartPolicy: corev1.RestartPolicyNever,
-									SchedulerName: constant.SchedulerName,
+									SchedulerName: testconfig.GetConfig().SchedulerName,
 									Containers: []corev1.Container{
 										{
 											Name:  "job1",
@@ -139,7 +139,7 @@ func CreateObjectWithStartupPolicy(name, namespace, queueName, startupPolicyOrde
 							Template: corev1.PodTemplateSpec{
 								Spec: corev1.PodSpec{
 									RestartPolicy: corev1.RestartPolicyNever,
-									SchedulerName: constant.SchedulerName,
+									SchedulerName: testconfig.GetConfig().SchedulerName,
 									Containers: []corev1.Container{
 										{
 											Name:  "job2",
@@ -175,8 +175,8 @@ func CreateObjectWithHighParallelism(name, namespace, queueName string) *jobsetv
 			Name:      name,
 			Namespace: namespace,
 			Labels: map[string]string{
-				constants.AppLabelName: "engine-e2e",
-				"kai.scheduler/queue":  queueName,
+				constants.AppLabelName:               "engine-e2e",
+				testconfig.GetConfig().QueueLabelKey: queueName,
 			},
 		},
 		Spec: jobsetv1alpha2.JobSetSpec{
@@ -198,11 +198,11 @@ func CreateObjectWithHighParallelism(name, namespace, queueName string) *jobsetv
 							Template: corev1.PodTemplateSpec{
 								Spec: corev1.PodSpec{
 									RestartPolicy: corev1.RestartPolicyNever,
-									SchedulerName: constant.SchedulerName,
+									SchedulerName: testconfig.GetConfig().SchedulerName,
 									Containers: []corev1.Container{
 										{
 											Name:  "worker",
-											Image: "ubuntu",
+											Image: testconfig.GetConfig().ContainerImage,
 											Command: []string{
 												"sleep",
 												"3600",
@@ -234,8 +234,8 @@ func CreateObjectWithMultipleReplicatedJobs(name, namespace, queueName string) *
 			Name:      name,
 			Namespace: namespace,
 			Labels: map[string]string{
-				constants.AppLabelName: "engine-e2e",
-				"kai.scheduler/queue":  queueName,
+				constants.AppLabelName:               "engine-e2e",
+				testconfig.GetConfig().QueueLabelKey: queueName,
 			},
 		},
 		Spec: jobsetv1alpha2.JobSetSpec{
@@ -260,11 +260,11 @@ func CreateObjectWithMultipleReplicatedJobs(name, namespace, queueName string) *
 							Template: corev1.PodTemplateSpec{
 								Spec: corev1.PodSpec{
 									RestartPolicy: corev1.RestartPolicyNever,
-									SchedulerName: constant.SchedulerName,
+									SchedulerName: testconfig.GetConfig().SchedulerName,
 									Containers: []corev1.Container{
 										{
 											Name:  "coordinator",
-											Image: "ubuntu",
+											Image: testconfig.GetConfig().ContainerImage,
 											Command: []string{
 												"sleep",
 												"3600",
@@ -287,11 +287,11 @@ func CreateObjectWithMultipleReplicatedJobs(name, namespace, queueName string) *
 							Template: corev1.PodTemplateSpec{
 								Spec: corev1.PodSpec{
 									RestartPolicy: corev1.RestartPolicyNever,
-									SchedulerName: constant.SchedulerName,
+									SchedulerName: testconfig.GetConfig().SchedulerName,
 									Containers: []corev1.Container{
 										{
 											Name:  "worker",
-											Image: "ubuntu",
+											Image: testconfig.GetConfig().ContainerImage,
 											Command: []string{
 												"sleep",
 												"3600",
@@ -323,8 +323,8 @@ func CreateObjectWithDefaultParallelism(name, namespace, queueName string) *jobs
 			Name:      name,
 			Namespace: namespace,
 			Labels: map[string]string{
-				constants.AppLabelName: "engine-e2e",
-				"kai.scheduler/queue":  queueName,
+				constants.AppLabelName:               "engine-e2e",
+				testconfig.GetConfig().QueueLabelKey: queueName,
 			},
 		},
 		Spec: jobsetv1alpha2.JobSetSpec{
@@ -346,11 +346,11 @@ func CreateObjectWithDefaultParallelism(name, namespace, queueName string) *jobs
 							Template: corev1.PodTemplateSpec{
 								Spec: corev1.PodSpec{
 									RestartPolicy: corev1.RestartPolicyNever,
-									SchedulerName: constant.SchedulerName,
+									SchedulerName: testconfig.GetConfig().SchedulerName,
 									Containers: []corev1.Container{
 										{
 											Name:  "single",
-											Image: "ubuntu",
+											Image: testconfig.GetConfig().ContainerImage,
 											Command: []string{
 												"sleep",
 												"3600",

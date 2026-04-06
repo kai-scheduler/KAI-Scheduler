@@ -15,12 +15,13 @@ import (
 	"k8s.io/client-go/rest"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	kubeAiSchedClient "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned"
-	v2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/pod_group"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/queue"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/wait"
+	kubeAiSchedClient "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned"
+	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/pod_group"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/testconfig"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
 )
 
 type TestContext struct {
@@ -88,7 +89,7 @@ func (tc *TestContext) TestContextCleanup(ctx context.Context) {
 	wait.ForNoReservationPods(ctx, tc.ControllerClient)
 
 	wait.ForRunningSystemComponentEvent(ctx, tc.ControllerClient, "binder")
-	wait.ForRunningSystemComponentEvent(ctx, tc.ControllerClient, "kai-scheduler-default")
+	wait.ForRunningSystemComponentEvent(ctx, tc.ControllerClient, testconfig.GetConfig().SchedulerDeploymentName)
 }
 
 func (tc *TestContext) ClusterCleanup(ctx context.Context) {

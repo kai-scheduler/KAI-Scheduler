@@ -22,7 +22,7 @@ jobs:
         if: github.event_name == 'merge_group'
         run: echo "Changelog was already validated before entering merge queue"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'skip-changelog') && !contains(github.event.pull_request.labels.*.name, 'dependencies')
         with:
           fetch-depth: 0

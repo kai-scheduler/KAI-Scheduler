@@ -22,8 +22,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgroup"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
 )
 
 type testLogSink struct {
@@ -377,10 +377,8 @@ func TestAssignPodToGroupAndSubGroup(t *testing.T) {
 				Namespace: "test-ns",
 				SubGroups: []*podgroup.SubGroupMetadata{
 					{
-						Name: "subgroup-1",
-						PodsReferences: []*types.NamespacedName{
-							{Namespace: "test-ns", Name: "test-pod"},
-						},
+						Name:           "subgroup-1",
+						PodsReferences: []string{"test-pod"},
 					},
 				},
 			},
@@ -403,10 +401,8 @@ func TestAssignPodToGroupAndSubGroup(t *testing.T) {
 				Namespace: "test-ns",
 				SubGroups: []*podgroup.SubGroupMetadata{
 					{
-						Name: "subgroup-1",
-						PodsReferences: []*types.NamespacedName{
-							{Namespace: "test-ns", Name: "other-pod"},
-						},
+						Name:           "subgroup-1",
+						PodsReferences: []string{"other-pod"},
 					},
 				},
 			},
@@ -433,10 +429,8 @@ func TestAssignPodToGroupAndSubGroup(t *testing.T) {
 				Namespace: "test-ns",
 				SubGroups: []*podgroup.SubGroupMetadata{
 					{
-						Name: "subgroup-1",
-						PodsReferences: []*types.NamespacedName{
-							{Namespace: "test-ns", Name: "test-pod"},
-						},
+						Name:           "subgroup-1",
+						PodsReferences: []string{"test-pod"},
 					},
 				},
 			},

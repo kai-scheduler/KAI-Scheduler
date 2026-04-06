@@ -16,8 +16,8 @@ import (
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/yaml"
 
-	env_tests "github.com/NVIDIA/KAI-scheduler/pkg/env-tests"
-	"github.com/NVIDIA/KAI-scheduler/pkg/env-tests/timeaware"
+	env_tests "github.com/kai-scheduler/KAI-scheduler/pkg/env-tests"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/env-tests/timeaware"
 )
 
 var (

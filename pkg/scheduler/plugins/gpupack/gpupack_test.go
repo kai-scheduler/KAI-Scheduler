@@ -12,8 +12,9 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 )
 
 const fakeNodeName = "node"
@@ -71,7 +72,7 @@ var _ = Describe("GpuPack scoring", func() {
 		},
 	}
 
-	task := pod_info.NewTaskInfo(&v1.Pod{})
+	task := pod_info.NewTaskInfo(&v1.Pod{}, nil, resource_info.NewResourceVectorMap())
 
 	for caseName, caseSpec := range cases {
 		caseName := caseName

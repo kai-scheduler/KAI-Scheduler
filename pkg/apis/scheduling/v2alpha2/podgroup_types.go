@@ -34,8 +34,9 @@ import (
 type PodGroupSpec struct {
 	// MinMember defines the minimal number of members to run the PodGroup;
 	// if there are not enough resources to start all required members, the scheduler will not start anyone.
+	// +kubebuilder:validation:Nullable
 	// +kubebuilder:validation:Minimum=1
-	MinMember int32 `json:"minMember,omitempty" protobuf:"bytes,1,opt,name=minMember"`
+	MinMember *int32 `json:"minMember,omitempty" protobuf:"varint,1,opt,name=minMember"`
 
 	// Queue defines the queue to allocate resource for PodGroup; if queue does not exist,
 	// the PodGroup will not be scheduled.
@@ -54,26 +55,17 @@ type PodGroupSpec struct {
 	// When unspecified, preemptibility is determined by the PriorityClass value - values below 100 are considered preemptible.
 	Preemptibility Preemptibility `json:"preemptibility,omitempty" protobuf:"bytes,4,opt,name=preemptibility"`
 
-	// The number of pods which will try to run at any instant.
-	Parallelism int32 `json:"parallelism,omitempty" protobuf:"bytes,4,opt,name=parallelism"`
-
-	// The number of successful pods required for this podgroup to move to 'Successful' phase.
-	Completions int32 `json:"completions,omitempty" protobuf:"bytes,5,opt,name=completions"`
-
-	// The number of failed pods required for this podgroup to move to 'Failed' phase.
-	BackoffLimit int32 `json:"backoffLimit,omitempty" protobuf:"bytes,6,opt,name=backoffLimit"`
-
-	// Should add "Unschedulable" event to the pods or not.
-	MarkUnschedulable *bool `json:"markUnschedulable,omitempty" protobuf:"bytes,7,opt,name=markUnschedulable"`
-
-	// The number of scheduling cycles to try before marking the pod group as UnschedulableOnNodePool. Currently only supporting -1 and 1
-	SchedulingBackoff *int32 `json:"schedulingBackoff,omitempty" protobuf:"bytes,8,opt,name=schedulingBackoff"`
-
 	// TopologyConstraint defines the topology constraints for this PodGroup
-	TopologyConstraint TopologyConstraint `json:"topologyConstraint,omitempty"`
+	TopologyConstraint TopologyConstraint `json:"topologyConstraint,omitempty" protobuf:"bytes,5,opt,name=topologyConstraint"`
 
 	// SubGroups defines finer-grained subsets of pods within the PodGroup with individual scheduling constraints
-	SubGroups []SubGroup `json:"subGroups,omitempty"`
+	SubGroups []SubGroup `json:"subGroups,omitempty" protobuf:"bytes,6,rep,name=subGroups"`
+
+	// Should add "Unschedulable" event to the pods or not.
+	MarkUnschedulable *bool `json:"markUnschedulable,omitempty" protobuf:"varint,7,opt,name=markUnschedulable"`
+
+	// The number of scheduling cycles to try before marking the pod group as UnschedulableOnNodePool. Currently only supporting -1 and 1
+	SchedulingBackoff *int32 `json:"schedulingBackoff,omitempty" protobuf:"varint,8,opt,name=schedulingBackoff"`
 }
 
 // Preemptibility defines whether this PodGroup can be preempted
@@ -110,19 +102,20 @@ func ParsePreemptibility(value string) (Preemptibility, error) {
 type SubGroup struct {
 	// Name uniquely identifies the SubGroup within the PodGroup.
 	// +kubebuilder:validation:MinLength=1
-	Name string `json:"name"`
+	Name string `json:"name" protobuf:"bytes,1,opt,name=name"`
 
 	// MinMember defines the minimal number of members to run this SubGroup;
 	// if there are not enough resources to start all required members, the scheduler will not start anyone.
-	// +kubebuilder:validation:Minimum=1
-	MinMember int32 `json:"minMember,omitempty"`
+	// +kubebuilder:validation:Nullable
+	// +kubebuilder:validation:Minimum=0
+	MinMember *int32 `json:"minMember,omitempty" protobuf:"varint,2,opt,name=minMember"`
 
 	// Parent is an optional attribute that specifies the name of the parent SubGroup
 	// +kubebuilder:validation:Optional
-	Parent *string `json:"parent,omitempty"`
+	Parent *string `json:"parent,omitempty" protobuf:"bytes,3,opt,name=parent"`
 
 	// TopologyConstraint defines the topology constraints for this SubGroup
-	TopologyConstraint *TopologyConstraint `json:"topologyConstraint,omitempty"`
+	TopologyConstraint *TopologyConstraint `json:"topologyConstraint,omitempty" protobuf:"bytes,4,opt,name=topologyConstraint"`
 }
 
 // PodGroupStatus defines the observed state of PodGroup
@@ -136,27 +129,27 @@ type PodGroupStatus struct {
 
 	// The number of actively running pods.
 	// +optional
-	Running int32 `json:"running,omitempty" protobuf:"bytes,3,opt,name=running"`
+	Running int32 `json:"running,omitempty" protobuf:"varint,3,opt,name=running"`
 
 	// The number of pods which reached phase Succeeded.
 	// +optional
-	Succeeded int32 `json:"succeeded,omitempty" protobuf:"bytes,4,opt,name=succeeded"`
+	Succeeded int32 `json:"succeeded,omitempty" protobuf:"varint,4,opt,name=succeeded"`
 
 	// The number of pods which reached phase Failed.
 	// +optional
-	Failed int32 `json:"failed,omitempty" protobuf:"bytes,5,opt,name=failed"`
+	Failed int32 `json:"failed,omitempty" protobuf:"varint,5,opt,name=failed"`
 
 	// The number of pods which reached phase Pending.
 	// +optional
-	Pending int32 `json:"pending,omitempty" protobuf:"bytes,6,opt,name=pending"`
-
-	// Status of resources related to pods connected to this pod group.
-	// +optional
-	ResourcesStatus PodGroupResourcesStatus `json:"resourcesStatus,omitempty"`
+	Pending int32 `json:"pending,omitempty" protobuf:"varint,6,opt,name=pending"`
 
 	// The scheduling conditions of PodGroup.
 	// +optional
-	SchedulingConditions []SchedulingCondition `json:"schedulingConditions,omitempty" protobuf:"bytes,7,opt,name=schedulingConditions"`
+	SchedulingConditions []SchedulingCondition `json:"schedulingConditions,omitempty" protobuf:"bytes,7,rep,name=schedulingConditions"`
+
+	// Status of resources related to pods connected to this pod group.
+	// +optional
+	ResourcesStatus PodGroupResourcesStatus `json:"resourcesStatus,omitempty" protobuf:"bytes,8,opt,name=resourcesStatus"`
 }
 
 // PodGroupPhase is the phase of a pod group at the current time.
@@ -169,17 +162,17 @@ type PodGroupResourcesStatus struct {
 	// Current allocated GPU (in fracions), CPU (in millicpus), Memory in megabytes and any extra resources in ints
 	// for all preemptible resources used by pods of this pod group
 	// +optional
-	Allocated v1.ResourceList `json:"allocated,omitempty"`
+	Allocated v1.ResourceList `json:"allocated,omitempty" protobuf:"bytes,1,rep,name=allocated,casttype=k8s.io/api/core/v1.ResourceList,castkey=k8s.io/api/core/v1.ResourceName"`
 
 	// Current allocated GPU (in fracions), CPU (in millicpus) and Memory in megabytes and any extra resources in ints
 	// for all non-preemptible resources used by pods of this pod group
 	// +optional
-	AllocatedNonPreemptible v1.ResourceList `json:"allocatedNonPreemptible,omitempty"`
+	AllocatedNonPreemptible v1.ResourceList `json:"allocatedNonPreemptible,omitempty" protobuf:"bytes,2,rep,name=allocatedNonPreemptible,casttype=k8s.io/api/core/v1.ResourceList,castkey=k8s.io/api/core/v1.ResourceName"`
 
 	// Current requested GPU (in fracions), CPU (in millicpus) and Memory in megabytes
 	// by all running and pending jobs in queue and child queues
 	// +optional
-	Requested v1.ResourceList `json:"requested,omitempty"`
+	Requested v1.ResourceList `json:"requested,omitempty" protobuf:"bytes,3,rep,name=requested,casttype=k8s.io/api/core/v1.ResourceList,castkey=k8s.io/api/core/v1.ResourceName"`
 }
 
 // PodGroupCondition contains details for the current state of this pod group.
@@ -227,10 +220,7 @@ type SchedulingCondition struct {
 	// Reasons is a map of UnschedulableReason to a human-readable message indicating details about the condition.
 	// Clients can handle specific reasons, but more types of reasons could be added in the future.
 	// +optional
-	Reasons UnschedulableExplanations `json:"reasons,omitempty" protobuf:"bytes,5,opt,rep,casttype=UnschedulableExplanations,castkey=UnschedulableReason,name=reasons"`
-
-	// The ID of condition transition.
-	TransitionID string `json:"transitionID,omitempty" protobuf:"bytes,5,opt,name=transitionID"`
+	Reasons UnschedulableExplanations `json:"reasons,omitempty" protobuf:"bytes,5,rep,name=reasons"`
 
 	// Last time the phase transitioned from another to current phase.
 	// +optional
@@ -239,6 +229,9 @@ type SchedulingCondition struct {
 	// Status is the status of the condition.
 	// +optional
 	Status v1.ConditionStatus `json:"status,omitempty" protobuf:"bytes,7,opt,name=status"`
+
+	// The ID of condition transition.
+	TransitionID string `json:"transitionID,omitempty" protobuf:"bytes,8,opt,name=transitionID"`
 }
 
 // +genclient
@@ -252,8 +245,8 @@ type PodGroup struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   PodGroupSpec   `json:"spec,omitempty"`
-	Status PodGroupStatus `json:"status,omitempty"`
+	Spec   PodGroupSpec   `json:"spec,omitempty" protobuf:"bytes,2,opt,name=spec"`
+	Status PodGroupStatus `json:"status,omitempty" protobuf:"bytes,3,opt,name=status"`
 }
 
 // +kubebuilder:object:root=true
@@ -262,7 +255,7 @@ type PodGroup struct {
 type PodGroupList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []PodGroup `json:"items"`
+	Items           []PodGroup `json:"items" protobuf:"bytes,2,rep,name=items"`
 }
 
 type SchedulingConditionType string
@@ -289,12 +282,12 @@ type UnschedulableExplanation struct {
 
 	// Message is a human-readable explanation of why the pod group is unschedulable. Can be used by clients when not programmed to handle specific error.
 	// +optional
-	Message string `json:"message,omitempty" protobuf:"bytes,1,opt,name=message"`
+	Message string `json:"message,omitempty" protobuf:"bytes,2,opt,name=message"`
 
 	// Details contains structured information about why the pod group is unschedulable. Can be used by clients to handle specific errors.
 	// Different fields will be set depending on the reason for unschedulability. Use helper functions, such as AsQueueDetails(), to interpret the details.
 	// +optional
-	Details *UnschedulableExplanationDetails `json:"details,omitempty" protobuf:"bytes,2,opt,name=details"`
+	Details *UnschedulableExplanationDetails `json:"details,omitempty" protobuf:"bytes,3,opt,name=details"`
 }
 
 type UnschedulableExplanationDetails struct {
@@ -313,27 +306,27 @@ type QuotaDetails struct {
 
 	// QueueDeservedResources is the deserved resources of the queue at the time of the error.
 	// +optional
-	QueueDeservedResources v1.ResourceList `json:"queueDeservedResources,omitempty" protobuf:"bytes,3,opt,name=queueDeservedResources"`
-
-	// QueueAllocatedResources is the allocated resources of the queue at the time of the error, including preemptible and non-preemptible resources.
-	// +optional
-	QueueAllocatedResources v1.ResourceList `json:"queueAllocatedResources,omitempty" protobuf:"bytes,3,opt,name=queueAllocatedResources"`
+	QueueDeservedResources v1.ResourceList `json:"queueDeservedResources,omitempty" protobuf:"bytes,3,rep,name=queueDeservedResources"`
 
 	// QueueAllocatedNonPreemptibleResources is the allocated non-preemptible resources of the queue at the time of the error.
 	// +optional
-	QueueAllocatedNonPreemptibleResources v1.ResourceList `json:"queueAllocatedNonPreemptibleResources,omitempty" protobuf:"bytes,4,opt,name=queueAllocatedNonPreemptibleResources"`
-
-	// QueueResourceLimits is the resource limits of the queue at the time of the error.
-	// +optional
-	QueueResourceLimits v1.ResourceList `json:"queueResourceLimits,omitempty" protobuf:"bytes,4,opt,name=queueResourceLimits"`
+	QueueAllocatedNonPreemptibleResources v1.ResourceList `json:"queueAllocatedNonPreemptibleResources,omitempty" protobuf:"bytes,4,rep,name=queueAllocatedNonPreemptibleResources"`
 
 	// PodGroupRequestedResources is the requested resources needed to satisfy the minimum number of pods for the pod group at the time of the error, including preemptible and non-preemptible resources.
 	// +optional
-	PodGroupRequestedResources v1.ResourceList `json:"podGroupRequestedResources,omitempty" protobuf:"bytes,5,opt,name=podGroupRequestedResources"`
+	PodGroupRequestedResources v1.ResourceList `json:"podGroupRequestedResources,omitempty" protobuf:"bytes,5,rep,name=podGroupRequestedResources"`
 
 	// PodGroupRequestedNonPreemptibleResources is the requested non-preemptible resources of the pod group at the time of the error.
 	// +optional
-	PodGroupRequestedNonPreemptibleResources v1.ResourceList `json:"podGroupRequestedNonPreemptibleResources,omitempty" protobuf:"bytes,6,opt,name=podGroupRequestedNonPreemptibleResources"`
+	PodGroupRequestedNonPreemptibleResources v1.ResourceList `json:"podGroupRequestedNonPreemptibleResources,omitempty" protobuf:"bytes,6,rep,name=podGroupRequestedNonPreemptibleResources"`
+
+	// QueueAllocatedResources is the allocated resources of the queue at the time of the error, including preemptible and non-preemptible resources.
+	// +optional
+	QueueAllocatedResources v1.ResourceList `json:"queueAllocatedResources,omitempty" protobuf:"bytes,7,rep,name=queueAllocatedResources"`
+
+	// QueueResourceLimits is the resource limits of the queue at the time of the error.
+	// +optional
+	QueueResourceLimits v1.ResourceList `json:"queueResourceLimits,omitempty" protobuf:"bytes,8,rep,name=queueResourceLimits"`
 }
 
 const (
@@ -367,15 +360,15 @@ type TopologyConstraint struct {
 	// PreferredTopologyLevel defines the preferred level in the topology hierarchy
 	// that this constraint applies to (e.g., "rack", "zone", "datacenter").
 	// Jobs will be scheduled to maintain locality at this level when possible.
-	PreferredTopologyLevel string `json:"preferredTopologyLevel,omitempty"`
+	PreferredTopologyLevel string `json:"preferredTopologyLevel,omitempty" protobuf:"bytes,1,opt,name=preferredTopologyLevel"`
 
 	// RequiredTopologyLevel defines the maximal level in the topology hierarchy
 	// that all pods must be scheduled within.
 	// If set, all pods of the job must be scheduled within a single domain at this level.
-	RequiredTopologyLevel string `json:"requiredTopologyLevel,omitempty"`
+	RequiredTopologyLevel string `json:"requiredTopologyLevel,omitempty" protobuf:"bytes,2,opt,name=requiredTopologyLevel"`
 
 	// Topology specifies the name of the topology CRD that defines the
 	// physical layout to use for this constraint. This allows for supporting
 	// multiple different topology configurations in the same cluster.
-	Topology string `json:"topology,omitempty"`
+	Topology string `json:"topology,omitempty" protobuf:"bytes,3,opt,name=topology"`
 }

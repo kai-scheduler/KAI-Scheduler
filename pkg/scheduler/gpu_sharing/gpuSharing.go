@@ -6,10 +6,10 @@ package gpu_sharing
 import (
 	"k8s.io/apimachinery/pkg/util/uuid"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 )
 
 type nodeGpuForSharing struct {
@@ -20,7 +20,7 @@ type nodeGpuForSharing struct {
 func AllocateFractionalGPUTaskToNode(ssn *framework.Session, stmt *framework.Statement, pod *pod_info.PodInfo,
 	node *node_info.NodeInfo, isPipelineOnly bool) bool {
 	fittingGPUs := ssn.FittingGPUs(node, pod)
-	gpuForSharing := getNodePreferableGpuForSharing(fittingGPUs, node, pod, isPipelineOnly)
+	gpuForSharing := GetNodePreferableGpuForSharing(fittingGPUs, node, pod, isPipelineOnly)
 	if gpuForSharing == nil {
 		return false
 	}
@@ -35,7 +35,7 @@ func AllocateFractionalGPUTaskToNode(ssn *framework.Session, stmt *framework.Sta
 	return success
 }
 
-func getNodePreferableGpuForSharing(fittingGPUsOnNode []string, node *node_info.NodeInfo, pod *pod_info.PodInfo,
+func GetNodePreferableGpuForSharing(fittingGPUsOnNode []string, node *node_info.NodeInfo, pod *pod_info.PodInfo,
 	isPipelineOnly bool) *nodeGpuForSharing {
 
 	nodeGpusSharing := &nodeGpuForSharing{

@@ -23,7 +23,7 @@ SPDX-License-Identifier: Apache-2.0
 package v2alpha2
 
 import (
-	internalinterfaces "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/informers/externalversions/internalinterfaces"
+	internalinterfaces "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/informers/externalversions/internalinterfaces"
 )
 
 // Interface provides access to all the informers in this group version.

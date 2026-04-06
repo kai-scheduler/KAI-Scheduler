@@ -65,8 +65,15 @@ func MutatingWebhookConfigurationFieldInherit(current, desired client.Object) {
 	desiredT.Annotations = mergeAnnotations(desiredT.Annotations, currentT.Annotations)
 	if len(currentT.Webhooks) == len(desiredT.Webhooks) {
 		for webhookIndex, currentWebhook := range currentT.Webhooks {
-			if desiredT.Webhooks[webhookIndex].NamespaceSelector == nil {
-				desiredT.Webhooks[webhookIndex].NamespaceSelector = currentWebhook.NamespaceSelector
+			desiredT.Webhooks[webhookIndex].NamespaceSelector = mergeNamespaceSelector(
+				desiredT.Webhooks[webhookIndex].NamespaceSelector,
+				currentWebhook.NamespaceSelector,
+			)
+			if desiredT.Webhooks[webhookIndex].TimeoutSeconds == nil {
+				desiredT.Webhooks[webhookIndex].TimeoutSeconds = currentWebhook.TimeoutSeconds
+			}
+			if desiredT.Webhooks[webhookIndex].MatchPolicy == nil {
+				desiredT.Webhooks[webhookIndex].MatchPolicy = currentWebhook.MatchPolicy
 			}
 		}
 	}

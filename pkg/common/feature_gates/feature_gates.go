@@ -5,6 +5,7 @@ package featuregates
 
 import (
 	"strconv"
+	"strings"
 
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/version"
@@ -35,10 +36,7 @@ func IsDynamicResourcesEnabled(discoveryClient discovery.DiscoveryInterface) boo
 	}
 
 	// Check if the API server version is compatible with DRA
-	if majorVer, errMajor := strconv.Atoi(serverVersion.Major); errMajor != nil || majorVer < 1 {
-		return false
-	}
-	if minorVer, errMinor := strconv.Atoi(serverVersion.Minor); errMinor != nil || minorVer < 26 {
+	if !isCompatibleDRAVersion(serverVersion) {
 		return false
 	}
 
@@ -70,4 +68,21 @@ func IsDynamicResourcesEnabled(discoveryClient discovery.DiscoveryInterface) boo
 	}
 
 	return false
+}
+
+func isCompatibleDRAVersion(serverVersion *version.Info) bool {
+	if majorVer, errMajor := strconv.Atoi(serverVersion.Major); errMajor != nil || majorVer < 1 {
+		return false
+	}
+
+	normalizedMinorVersion := serverVersion.Minor
+	minorVersionSuffix := strings.TrimLeft(normalizedMinorVersion, "0123456789")
+	if len(minorVersionSuffix) > 0 {
+		normalizedMinorVersion = strings.TrimSuffix(normalizedMinorVersion, minorVersionSuffix)
+	}
+	if minorVer, errMinor := strconv.Atoi(normalizedMinorVersion); errMinor != nil || minorVer < 26 {
+		return false
+	}
+
+	return true
 }

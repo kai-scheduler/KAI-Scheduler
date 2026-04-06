@@ -5,8 +5,9 @@ package constants
 
 const (
 	AppLabelName              = "app"
-	GpuResource               = "nvidia.com/gpu"
+	NvidiaGpuResource         = "nvidia.com/gpu"
 	NvidiaGpuMemory           = "nvidia.com/gpu.memory"
+	GpuResource               = "gpu"
 	UnlimitedResourceQuantity = float64(-1)
 
 	DefaultQueuePriority                  = 100

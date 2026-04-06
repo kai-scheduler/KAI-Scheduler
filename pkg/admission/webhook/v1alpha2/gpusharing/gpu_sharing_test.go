@@ -12,7 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
 func TestValidate(t *testing.T) {
@@ -34,7 +34,7 @@ func TestValidate(t *testing.T) {
 						{
 							Resources: v1.ResourceRequirements{
 								Limits: v1.ResourceList{
-									constants.GpuResource: resource.MustParse("1"),
+									constants.NvidiaGpuResource: resource.MustParse("1"),
 								},
 							},
 						},
@@ -56,7 +56,7 @@ func TestValidate(t *testing.T) {
 						{
 							Resources: v1.ResourceRequirements{
 								Limits: v1.ResourceList{
-									constants.GpuResource: resource.MustParse("1"),
+									constants.NvidiaGpuResource: resource.MustParse("1"),
 								},
 							},
 						},
@@ -222,7 +222,7 @@ func TestMutate(t *testing.T) {
 							Name: "test-container",
 							Resources: v1.ResourceRequirements{
 								Limits: v1.ResourceList{
-									constants.GpuResource: resource.MustParse("1"),
+									constants.NvidiaGpuResource: resource.MustParse("1"),
 								},
 							},
 						},

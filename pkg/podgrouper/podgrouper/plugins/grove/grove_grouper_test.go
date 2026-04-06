@@ -6,8 +6,8 @@ package grove
 import (
 	"testing"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -203,10 +203,8 @@ func TestParseGroveSubGroup_Success(t *testing.T) {
 	assert.Equal(t, "mysubgroup", subgroup.Name)
 	assert.Equal(t, int32(2), subgroup.MinAvailable)
 	assert.Equal(t, 2, len(subgroup.PodsReferences))
-	assert.Equal(t, "a", subgroup.PodsReferences[0].Name)
-	assert.Equal(t, "ns", subgroup.PodsReferences[0].Namespace)
-	assert.Equal(t, "b", subgroup.PodsReferences[1].Name)
-	assert.Equal(t, "ns", subgroup.PodsReferences[1].Namespace)
+	assert.Equal(t, "a", subgroup.PodsReferences[0])
+	assert.Equal(t, "b", subgroup.PodsReferences[1])
 }
 
 func TestParseGroveSubGroup_MissingFields(t *testing.T) {
@@ -1953,7 +1951,7 @@ func TestGetPodGroupMetadata_ThreeLevelTopologyWithLeafVerification(t *testing.T
 	assert.Equal(t, int32(2), metadata.SubGroups[5].MinAvailable)
 	assert.Nil(t, metadata.SubGroups[5].Parent)
 	assert.Equal(t, 1, len(metadata.SubGroups[5].PodsReferences))
-	assert.Equal(t, "pod4", metadata.SubGroups[5].PodsReferences[0].Name)
+	assert.Equal(t, "pod4", metadata.SubGroups[5].PodsReferences[0])
 
 	// Verify pg4 inherits topology annotation
 	assert.NotNil(t, metadata.SubGroups[5].TopologyConstraints)

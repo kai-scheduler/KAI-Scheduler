@@ -24,7 +24,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 
 	"github.com/spf13/pflag"
 	"k8s.io/apimachinery/pkg/util/diff"

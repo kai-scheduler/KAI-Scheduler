@@ -21,9 +21,9 @@ DOCKER_GO_CACHING_VOLUME_AND_ENV += -e GOSUMDB=$(GOSUMDB)
 endif
 
 ## Version
-GO_VERSION=1.24.4
-GO_IMAGE_VERSION=${GO_VERSION}-bullseye
-GOLANGCI_LINT_VERSION=v1.64.8
+GO_VERSION=1.26.1
+GO_IMAGE_VERSION=${GO_VERSION}-bookworm
+GOLANGCI_LINT_VERSION=v2.11.3
 
 ## Tool Versions
 CGO_ENABLED?=1
@@ -35,7 +35,7 @@ GIT_VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo 
 GIT_TREE_STATE := $(shell if git diff-index --quiet HEAD -- 2>/dev/null; then echo "clean"; else echo "dirty"; fi)
 
 ## Go Build Flags
-VERSION_PKG := github.com/NVIDIA/KAI-scheduler/pkg/scheduler/version
+VERSION_PKG := github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/version
 LDFLAGS := -X '$(VERSION_PKG).buildDate=$(BUILD_DATE)' \
            -X '$(VERSION_PKG).gitCommit=$(GIT_COMMIT)' \
            -X '$(VERSION_PKG).gitVersion=$(GIT_VERSION)' \

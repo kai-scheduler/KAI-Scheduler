@@ -4,10 +4,10 @@
 package queue_order
 
 import (
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	rs "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/proportion/utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	rs "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/utils"
 )
 
 const (
@@ -15,6 +15,19 @@ const (
 	rQueuePrioritized   = 1
 	equalPrioritization = 0
 )
+
+func quantifyJobInitResources(
+	jobInfo *podgroup_info.PodGroupInfo,
+	subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn,
+	minNodeGPUMemory int64,
+) rs.ResourceQuantities {
+	if jobInfo == nil {
+		return rs.EmptyResourceQuantities()
+	}
+	return utils.QuantifyVector(
+		podgroup_info.GetTasksToAllocateInitResourceVector(jobInfo, subGroupOrderFn, taskOrderFn, false, minNodeGPUMemory),
+		jobInfo.VectorMap)
+}
 
 func GetQueueOrderResult(
 	lQueue *rs.QueueAttributes, rQueue *rs.QueueAttributes,
@@ -104,14 +117,10 @@ func prioritizeUnderQuotaWithJob(lQueue, rQueue *rs.QueueAttributes,
 	subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn, minNodeGPUMemory int64) int {
 
 	lAllocatedWithJob := lQueue.GetAllocatedShare()
-	lJobRequirements := utils.QuantifyResource(
-		podgroup_info.GetTasksToAllocateInitResource(lJobInfo, subGroupOrderFn, taskOrderFn, false, minNodeGPUMemory))
-	lAllocatedWithJob.Add(lJobRequirements)
+	lAllocatedWithJob.Add(quantifyJobInitResources(lJobInfo, subGroupOrderFn, taskOrderFn, minNodeGPUMemory))
 
 	rAllocatedWithJob := rQueue.GetAllocatedShare()
-	rJobRequirements := utils.QuantifyResource(
-		podgroup_info.GetTasksToAllocateInitResource(rJobInfo, subGroupOrderFn, taskOrderFn, false, minNodeGPUMemory))
-	rAllocatedWithJob.Add(rJobRequirements)
+	rAllocatedWithJob.Add(quantifyJobInitResources(rJobInfo, subGroupOrderFn, taskOrderFn, minNodeGPUMemory))
 
 	lStarved := lAllocatedWithJob.LessEqual(lQueue.GetDeservedShare())
 	rStarved := rAllocatedWithJob.LessEqual(rQueue.GetDeservedShare())
@@ -133,14 +142,10 @@ func penalizeZeroShareWithJob(
 	subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn, minNodeGPUMemory int64,
 ) int {
 	lAllocatedWithJob := lQueue.GetAllocatedShare()
-	lJobRequirements := utils.QuantifyResource(
-		podgroup_info.GetTasksToAllocateInitResource(lJobInfo, subGroupOrderFn, taskOrderFn, false, minNodeGPUMemory))
-	lAllocatedWithJob.Add(lJobRequirements)
+	lAllocatedWithJob.Add(quantifyJobInitResources(lJobInfo, subGroupOrderFn, taskOrderFn, minNodeGPUMemory))
 
 	rAllocatedWithJob := rQueue.GetAllocatedShare()
-	rJobRequirements := utils.QuantifyResource(
-		podgroup_info.GetTasksToAllocateInitResource(rJobInfo, subGroupOrderFn, taskOrderFn, false, minNodeGPUMemory))
-	rAllocatedWithJob.Add(rJobRequirements)
+	rAllocatedWithJob.Add(quantifyJobInitResources(rJobInfo, subGroupOrderFn, taskOrderFn, minNodeGPUMemory))
 
 	lQueueViolation := false
 	for _, resource := range rs.AllResources {
@@ -247,8 +252,7 @@ func calculateDominantResourceShareWithJob(
 ) float64 {
 	allocatedShare := queueAttributes.GetAllocatedShare()
 
-	jobResources := podgroup_info.GetTasksToAllocateInitResource(jobInfo, subGroupOrderFn, taskOrderFn, false, minNodeGPUMemory)
-	initResQuantities := utils.QuantifyResource(jobResources)
+	initResQuantities := quantifyJobInitResources(jobInfo, subGroupOrderFn, taskOrderFn, minNodeGPUMemory)
 
 	for _, resource := range rs.AllResources {
 		resourceShare := queueAttributes.ResourceShare(resource)
@@ -256,9 +260,10 @@ func calculateDominantResourceShareWithJob(
 	}
 
 	for _, victim := range victims {
+		victimQuantities := utils.QuantifyVector(victim.AllocatedVector, victim.VectorMap)
 		for _, resource := range rs.AllResources {
 			resourceShare := queueAttributes.ResourceShare(resource)
-			resourceShare.Allocated -= utils.QuantifyResource(victim.Allocated)[resource]
+			resourceShare.Allocated -= victimQuantities[resource]
 		}
 	}
 

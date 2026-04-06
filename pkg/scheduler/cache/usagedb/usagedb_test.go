@@ -9,9 +9,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/queue_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/usagedb/fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb/fake"
 )
 
 func TestNewUsageLister(t *testing.T) {
@@ -89,14 +89,14 @@ func TestGetResourceUsage(t *testing.T) {
 			name: "fresh data available",
 			setupLister: func(l *UsageLister) {
 				usage := queue_info.NewClusterUsage()
-				usage.Queues["queue1"] = queue_info.QueueUsage{constants.GpuResource: 5}
+				usage.Queues["queue1"] = queue_info.QueueUsage{constants.NvidiaGpuResource: 5}
 				now := time.Now()
 				l.lastUsageData = usage
 				l.lastUsageDataTime = &now
 			},
 			wantUsage: func() *queue_info.ClusterUsage {
 				usage := queue_info.NewClusterUsage()
-				usage.Queues["queue1"] = queue_info.QueueUsage{constants.GpuResource: 5}
+				usage.Queues["queue1"] = queue_info.QueueUsage{constants.NvidiaGpuResource: 5}
 				return usage
 			}(),
 		},

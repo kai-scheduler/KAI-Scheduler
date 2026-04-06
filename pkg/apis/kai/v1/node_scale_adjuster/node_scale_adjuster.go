@@ -7,8 +7,8 @@ package node_scale_adjuster
 import (
 	"k8s.io/utils/ptr"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/common"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
 const (
@@ -22,6 +22,10 @@ type NodeScaleAdjuster struct {
 	// Args specifies the CLI arguments for node-scale-adjuster
 	// +kubebuilder:validation:Optional
 	Args *Args `json:"args,omitempty"`
+
+	// VPA specifies Vertical Pod Autoscaler configuration for the node-scale-adjuster
+	// +kubebuilder:validation:Optional
+	VPA *common.VPASpec `json:"vpa,omitempty"`
 }
 
 // Args specifies the CLI arguments for node-scale-adjuster
@@ -54,10 +58,14 @@ func (args *Args) SetDefaultsWhereNeeded() {
 }
 
 // SetDefaultsWhereNeeded sets default for unset fields
-func (nsa *NodeScaleAdjuster) SetDefaultsWhereNeeded() {
+func (nsa *NodeScaleAdjuster) SetDefaultsWhereNeeded(globalVPA *common.VPASpec) {
 	nsa.Service = common.SetDefault(nsa.Service, &common.Service{})
 	nsa.Service.SetDefaultsWhereNeeded(imageName)
 
 	nsa.Args = common.SetDefault(nsa.Args, &Args{})
 	nsa.Args.SetDefaultsWhereNeeded()
+
+	if nsa.VPA == nil {
+		nsa.VPA = globalVPA
+	}
 }

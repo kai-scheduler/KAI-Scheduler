@@ -1,0 +1,21 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: binder
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  jobLabel: binder
+  namespaceSelector:
+    matchNames:
+      - kai-scheduler
+  selector:
+    matchLabels:
+      app: binder
+  endpoints:
+    - port: http-metrics
+      bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token

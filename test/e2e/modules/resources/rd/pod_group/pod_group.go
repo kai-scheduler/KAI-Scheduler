@@ -12,14 +12,16 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/utils/ptr"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	kaiClient "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned"
-	v2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/queue"
+	kaiClient "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned"
+	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/testconfig"
 )
 
 const (
@@ -37,12 +39,12 @@ func Create(namespace, name, queue string) *v2alpha2.PodGroup {
 			Namespace:   namespace,
 			Annotations: map[string]string{},
 			Labels: map[string]string{
-				constants.AppLabelName:      "engine-e2e",
-				constants.DefaultQueueLabel: queue,
+				constants.AppLabelName:               "engine-e2e",
+				testconfig.GetConfig().QueueLabelKey: queue,
 			},
 		},
 		Spec: v2alpha2.PodGroupSpec{
-			MinMember: 1,
+			MinMember: ptr.To(int32(1)),
 			Queue:     queue,
 		},
 	}

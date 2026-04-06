@@ -10,20 +10,22 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/resources"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/cluster_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/resources_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/cluster_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/resources_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 )
 
 const (
@@ -55,11 +57,37 @@ type TestNodeBasic struct {
 
 func BuildNodesInfoMap(
 	Nodes map[string]TestNodeBasic, tasksToNodeMap map[string]pod_info.PodsMap,
-	clusterPodAffinityInfo *cache.K8sClusterPodAffinityInfo, draClusterObjects ...runtime.Object) map[string]*node_info.NodeInfo {
+	clusterPodAffinityInfo *cache.K8sClusterPodAffinityInfo, vectorMap *resource_info.ResourceVectorMap,
+	draClusterObjects ...runtime.Object,
+) map[string]*node_info.NodeInfo {
 	if clusterPodAffinityInfo == nil {
 		clusterPodAffinityInfo = cache.NewK8sClusterPodAffinityInfo()
 	}
 	slicesByNode := calcResourceSlicesMap(draClusterObjects)
+
+	for _, nodeMetadata := range Nodes {
+		nodeGpuCount := strconv.Itoa(nodeMetadata.GPUs)
+		nodeAllocatableGPUs := nodeGpuCount
+		if nodeMetadata.MigStrategy == node_info.MigStrategyMixed {
+			nodeAllocatableGPUs = "0"
+		}
+
+		cpuMilliAllocatableVal := cpuMilliAllocatable
+		memoryAllocatableVal := memoryAllocatable
+
+		if nodeMetadata.CPUMillis > 0 {
+			cpuMilliAllocatableVal = strconv.FormatFloat(nodeMetadata.CPUMillis, 'f', -1, 64)
+		}
+
+		if nodeMetadata.CPUMemory > 0 {
+			memoryAllocatableVal = strconv.FormatFloat(nodeMetadata.CPUMemory, 'f', -1, 64)
+		}
+
+		nodeResourceAllocatable := resources_fake.BuildResourceList(&cpuMilliAllocatableVal, &memoryAllocatableVal,
+			&nodeAllocatableGPUs, nodeMetadata.MigInstances)
+		vectorMap.AddResourceList(*nodeResourceAllocatable)
+	}
+
 	nodesInfoMap := map[string]*node_info.NodeInfo{}
 
 	for nodeName, nodeMetadata := range Nodes {
@@ -68,12 +96,20 @@ func BuildNodesInfoMap(
 			tasksOfNode = tasksToNodeMap[nodeName]
 		}
 
-		nodeInfo := buildNodeInfo(nodeName, &nodeMetadata, tasksOfNode, clusterPodAffinityInfo, slicesByNode)
+		nodeInfo := buildNodeInfo(nodeName, &nodeMetadata, tasksOfNode, clusterPodAffinityInfo, slicesByNode, vectorMap)
 		if nodeMetadata.GpuMemorySynced != nil {
 			nodeInfo.GpuMemorySynced = *nodeMetadata.GpuMemorySynced
 		}
 		if nodeMetadata.MaxTaskNum != nil {
 			nodeInfo.MaxTaskNum = *nodeMetadata.MaxTaskNum
+			podsIdx := nodeInfo.VectorMap.GetIndex(v1.ResourcePods)
+			nodeInfo.AllocatableVector.Set(podsIdx, float64(*nodeMetadata.MaxTaskNum))
+			usedPods := nodeInfo.UsedVector.Get(podsIdx)
+			availablePods := float64(*nodeMetadata.MaxTaskNum) - usedPods
+			if availablePods < 0 {
+				availablePods = 0
+			}
+			nodeInfo.IdleVector.Set(podsIdx, availablePods)
 		}
 		nodesInfoMap[nodeName] = nodeInfo
 	}
@@ -107,6 +143,7 @@ func BuildNode(node string, capacity *v1.ResourceList, allocatable *v1.ResourceL
 func buildNodeInfo(
 	nodeName string, nodeMetadata *TestNodeBasic, tasksOfNode pod_info.PodsMap,
 	clusterPodAffinityInfo *cache.K8sClusterPodAffinityInfo, slicesByNode map[string][]*resourceapi.ResourceSlice,
+	vectorMap *resource_info.ResourceVectorMap,
 ) *node_info.NodeInfo {
 	nodeGpuCount := strconv.Itoa(nodeMetadata.GPUs)
 	nodeAllocatableGPUs := nodeGpuCount
@@ -132,11 +169,17 @@ func buildNodeInfo(
 		migEnabledLabel = "true"
 	}
 
-	nodeResource := resources_fake.BuildResourceList(&cpuMilliOverallVal, &memoryOverallVal, &nodeGpuCount,
+	nodeResource := *resources_fake.BuildResourceList(&cpuMilliOverallVal, &memoryOverallVal, &nodeGpuCount,
 		nodeMetadata.MigInstances)
-	nodeResourceAllocatable := resources_fake.BuildResourceList(&cpuMilliAllocatableVal, &memoryAllocatableVal,
+	if _, found := nodeResource[v1.ResourcePods]; !found {
+		nodeResource[v1.ResourcePods] = resource.MustParse("110")
+	}
+	nodeResourceAllocatable := *resources_fake.BuildResourceList(&cpuMilliAllocatableVal, &memoryAllocatableVal,
 		&nodeAllocatableGPUs, nodeMetadata.MigInstances)
-	node := BuildNode(nodeName, nodeResource, nodeResourceAllocatable)
+	if _, found := nodeResourceAllocatable[v1.ResourcePods]; !found {
+		nodeResourceAllocatable[v1.ResourcePods] = resource.MustParse("110")
+	}
+	node := BuildNode(nodeName, &nodeResource, &nodeResourceAllocatable)
 	node.Labels = map[string]string{
 		commonconstants.GpuCountLabel:    nodeGpuCount,
 		node_info.GpuMemoryLabel:         strconv.Itoa(node_info.DefaultGpuMemory),
@@ -151,7 +194,7 @@ func buildNodeInfo(
 		node.Labels[node_info.GpuMemoryLabel] = strconv.Itoa(nodeMetadata.GPUMemory)
 	}
 	podAffinityInfo := cluster_info.NewK8sNodePodAffinityInfo(node, clusterPodAffinityInfo)
-	nodeInfo := node_info.NewNodeInfo(node, podAffinityInfo)
+	nodeInfo := node_info.NewNodeInfo(node, podAffinityInfo, vectorMap)
 
 	// Count GPUs from node-specific slices
 	var draGPUCount int64

@@ -42,6 +42,7 @@ users:
 - system:serviceaccount:{{ .Release.Namespace }}:scheduler
 - system:serviceaccount:{{ .Release.Namespace }}:node-scale-adjuster
 - system:serviceaccount:{{ .Release.Namespace }}:kai-scheduler-crd-manager
+- system:serviceaccount:{{ .Release.Namespace }}:kai-topology-migration
 volumes:
 - awsElasticBlockStore
 - azureDisk
@@ -129,5 +130,8 @@ subjects:
     namespace: {{ .Release.Namespace }}
   - kind: ServiceAccount
     name: kai-scheduler-crd-manager
+    namespace: {{ .Release.Namespace }}
+  - kind: ServiceAccount
+    name: kai-topology-migration
     namespace: {{ .Release.Namespace }}
 {{- end }}

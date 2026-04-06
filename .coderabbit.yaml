@@ -7,3 +7,6 @@ language: "en-US"
 reviews:
   auto_review:
     enabled: false
+  finishing_touches:
+    docstrings:
+      enabled: false

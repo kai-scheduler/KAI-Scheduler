@@ -18,13 +18,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 
-	kaiv1alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	schedulingv2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	schedulingv2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/env-tests/binder"
-	"github.com/NVIDIA/KAI-scheduler/pkg/env-tests/podgroupcontroller"
-	"github.com/NVIDIA/KAI-scheduler/pkg/env-tests/utils"
+	kaiv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	schedulingv2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	schedulingv2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/env-tests/binder"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/env-tests/podgroupcontroller"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/env-tests/utils"
 )
 
 var _ = Describe("PodGroupController", Ordered, func() {
@@ -107,7 +107,7 @@ var _ = Describe("PodGroupController", Ordered, func() {
 		It("Should update podgroup status", func(ctx context.Context) {
 			testPod := utils.CreatePodObject(testNamespace.Name, "test-pod", corev1.ResourceRequirements{
 				Limits: corev1.ResourceList{
-					constants.GpuResource: resource.MustParse("1"),
+					constants.NvidiaGpuResource: resource.MustParse("1"),
 				},
 			})
 			Expect(ctrlClient.Create(ctx, testPod)).To(Succeed(), "Failed to create test pod")
@@ -153,7 +153,7 @@ var _ = Describe("PodGroupController", Ordered, func() {
 					return false, nil
 				}
 
-				if podgroup.Status.ResourcesStatus.Allocated[constants.GpuResource] != resource.MustParse("1") {
+				if podgroup.Status.ResourcesStatus.Allocated[constants.NvidiaGpuResource] != resource.MustParse("1") {
 					return false, nil
 				}
 

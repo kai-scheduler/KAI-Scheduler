@@ -18,7 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
 func TestDRA(t *testing.T) {
@@ -48,7 +48,7 @@ var _ = Describe("DRA GPU Extraction", func() {
 							Requests: []resourceapi.DeviceRequest{
 								{
 									Exactly: &resourceapi.ExactDeviceRequest{
-										DeviceClassName: constants.GpuResource,
+										DeviceClassName: constants.NvidiaGpuResource,
 										AllocationMode:  resourceapi.DeviceAllocationModeExactCount,
 										Count:           2,
 									},
@@ -69,7 +69,7 @@ var _ = Describe("DRA GPU Extraction", func() {
 							Requests: []resourceapi.DeviceRequest{
 								{
 									Exactly: &resourceapi.ExactDeviceRequest{
-										DeviceClassName: constants.GpuResource,
+										DeviceClassName: constants.NvidiaGpuResource,
 										AllocationMode:  resourceapi.DeviceAllocationModeExactCount,
 										Count:           0,
 									},
@@ -90,7 +90,7 @@ var _ = Describe("DRA GPU Extraction", func() {
 							Requests: []resourceapi.DeviceRequest{
 								{
 									Exactly: &resourceapi.ExactDeviceRequest{
-										DeviceClassName: constants.GpuResource,
+										DeviceClassName: constants.NvidiaGpuResource,
 										AllocationMode:  resourceapi.DeviceAllocationModeAll,
 									},
 								},
@@ -110,14 +110,14 @@ var _ = Describe("DRA GPU Extraction", func() {
 							Requests: []resourceapi.DeviceRequest{
 								{
 									Exactly: &resourceapi.ExactDeviceRequest{
-										DeviceClassName: constants.GpuResource,
+										DeviceClassName: constants.NvidiaGpuResource,
 										AllocationMode:  resourceapi.DeviceAllocationModeExactCount,
 										Count:           2,
 									},
 								},
 								{
 									Exactly: &resourceapi.ExactDeviceRequest{
-										DeviceClassName: constants.GpuResource,
+										DeviceClassName: constants.NvidiaGpuResource,
 										AllocationMode:  resourceapi.DeviceAllocationModeExactCount,
 										Count:           3,
 									},
@@ -145,7 +145,7 @@ var _ = Describe("DRA GPU Extraction", func() {
 								},
 								{
 									Exactly: &resourceapi.ExactDeviceRequest{
-										DeviceClassName: constants.GpuResource,
+										DeviceClassName: constants.NvidiaGpuResource,
 										AllocationMode:  resourceapi.DeviceAllocationModeExactCount,
 										Count:           2,
 									},
@@ -198,7 +198,7 @@ var _ = Describe("DRA GPU Extraction", func() {
 							Requests: []resourceapi.DeviceRequest{
 								{
 									Exactly: &resourceapi.ExactDeviceRequest{
-										DeviceClassName: constants.GpuResource,
+										DeviceClassName: constants.NvidiaGpuResource,
 										AllocationMode:  "UnknownMode",
 										Count:           5,
 									},
@@ -245,7 +245,7 @@ var _ = Describe("DRA GPU Extraction", func() {
 							Requests: []resourceapi.DeviceRequest{
 								{
 									Exactly: &resourceapi.ExactDeviceRequest{
-										DeviceClassName: constants.GpuResource,
+										DeviceClassName: constants.NvidiaGpuResource,
 										AllocationMode:  resourceapi.DeviceAllocationModeExactCount,
 										Count:           2,
 									},
@@ -274,7 +274,7 @@ var _ = Describe("DRA GPU Extraction", func() {
 
 				result, err := ExtractDRAGPUResources(ctx, pod, fakeClient)
 				Expect(err).NotTo(HaveOccurred())
-				gpuQuantity, exists := result[constants.GpuResource]
+				gpuQuantity, exists := result[constants.NvidiaGpuResource]
 				Expect(exists).To(BeTrue(), "result should contain GPU resource")
 				Expect(gpuQuantity.Value()).To(Equal(int64(2)))
 			})
@@ -290,7 +290,7 @@ var _ = Describe("DRA GPU Extraction", func() {
 							Requests: []resourceapi.DeviceRequest{
 								{
 									Exactly: &resourceapi.ExactDeviceRequest{
-										DeviceClassName: constants.GpuResource,
+										DeviceClassName: constants.NvidiaGpuResource,
 										AllocationMode:  resourceapi.DeviceAllocationModeExactCount,
 										Count:           2,
 									},
@@ -310,7 +310,7 @@ var _ = Describe("DRA GPU Extraction", func() {
 							Requests: []resourceapi.DeviceRequest{
 								{
 									Exactly: &resourceapi.ExactDeviceRequest{
-										DeviceClassName: constants.GpuResource,
+										DeviceClassName: constants.NvidiaGpuResource,
 										AllocationMode:  resourceapi.DeviceAllocationModeExactCount,
 										Count:           3,
 									},
@@ -344,7 +344,7 @@ var _ = Describe("DRA GPU Extraction", func() {
 
 				result, err := ExtractDRAGPUResources(ctx, pod, fakeClient)
 				Expect(err).NotTo(HaveOccurred())
-				gpuQuantity, exists := result[constants.GpuResource]
+				gpuQuantity, exists := result[constants.NvidiaGpuResource]
 				Expect(exists).To(BeTrue(), "result should contain GPU resource")
 				Expect(gpuQuantity.Value()).To(Equal(int64(5)))
 			})
@@ -360,7 +360,7 @@ var _ = Describe("DRA GPU Extraction", func() {
 							Requests: []resourceapi.DeviceRequest{
 								{
 									Exactly: &resourceapi.ExactDeviceRequest{
-										DeviceClassName: constants.GpuResource,
+										DeviceClassName: constants.NvidiaGpuResource,
 										AllocationMode:  resourceapi.DeviceAllocationModeExactCount,
 										Count:           1,
 									},
@@ -397,7 +397,7 @@ var _ = Describe("DRA GPU Extraction", func() {
 
 				result, err := ExtractDRAGPUResources(ctx, pod, fakeClient)
 				Expect(err).NotTo(HaveOccurred())
-				gpuQuantity, exists := result[constants.GpuResource]
+				gpuQuantity, exists := result[constants.NvidiaGpuResource]
 				Expect(exists).To(BeTrue(), "result should contain GPU resource")
 				Expect(gpuQuantity.Value()).To(Equal(int64(1)))
 			})
@@ -505,7 +505,7 @@ var _ = Describe("DRA GPU Extraction", func() {
 							Requests: []resourceapi.DeviceRequest{
 								{
 									Exactly: &resourceapi.ExactDeviceRequest{
-										DeviceClassName: constants.GpuResource,
+										DeviceClassName: constants.NvidiaGpuResource,
 										AllocationMode:  resourceapi.DeviceAllocationModeExactCount,
 										Count:           2,
 									},
@@ -559,7 +559,7 @@ var _ = Describe("DRA GPU Extraction", func() {
 
 				result, err := ExtractDRAGPUResources(ctx, pod, fakeClient)
 				Expect(err).NotTo(HaveOccurred())
-				gpuQuantity, exists := result[constants.GpuResource]
+				gpuQuantity, exists := result[constants.NvidiaGpuResource]
 				Expect(exists).To(BeTrue(), "result should contain GPU resource")
 				Expect(gpuQuantity.Value()).To(Equal(int64(2)))
 			})
@@ -577,7 +577,7 @@ var _ = Describe("DRA GPU Extraction", func() {
 							Requests: []resourceapi.DeviceRequest{
 								{
 									Exactly: &resourceapi.ExactDeviceRequest{
-										DeviceClassName: constants.GpuResource,
+										DeviceClassName: constants.NvidiaGpuResource,
 										AllocationMode:  resourceapi.DeviceAllocationModeExactCount,
 										Count:           2,
 									},
@@ -597,7 +597,7 @@ var _ = Describe("DRA GPU Extraction", func() {
 							Requests: []resourceapi.DeviceRequest{
 								{
 									Exactly: &resourceapi.ExactDeviceRequest{
-										DeviceClassName: constants.GpuResource,
+										DeviceClassName: constants.NvidiaGpuResource,
 										AllocationMode:  resourceapi.DeviceAllocationModeAll,
 									},
 								},
@@ -630,7 +630,7 @@ var _ = Describe("DRA GPU Extraction", func() {
 
 				result, err := ExtractDRAGPUResources(ctx, pod, fakeClient)
 				Expect(err).NotTo(HaveOccurred())
-				gpuQuantity, exists := result[constants.GpuResource]
+				gpuQuantity, exists := result[constants.NvidiaGpuResource]
 				Expect(exists).To(BeTrue(), "result should contain GPU resource")
 				// ExactCount: 2, All: 1 (conservative estimate) = 3 total
 				Expect(gpuQuantity.Value()).To(Equal(int64(3)))

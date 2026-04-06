@@ -10,8 +10,8 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/common"
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common"
 )
 
 type PodGroupController struct {
@@ -60,6 +60,10 @@ func (p *PodGroupController) DesiredState(
 			return nil, err
 		}
 		objects = append(objects, obj...)
+	}
+
+	if vpa := common.BuildVPAFromObjects(kaiConfig.Spec.PodGroupController.VPA, objects, kaiConfig.Spec.Namespace); vpa != nil {
+		objects = append(objects, vpa)
 	}
 
 	p.lastDesiredState = objects

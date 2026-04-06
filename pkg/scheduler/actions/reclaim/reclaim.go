@@ -22,15 +22,15 @@ package reclaim
 import (
 	"golang.org/x/exp/maps"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/common"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/common/solvers"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/metrics"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/scheduler_util"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/scheduler_util"
 )
 
 type reclaimAction struct {
@@ -103,7 +103,7 @@ func (ra *reclaimAction) attemptToReclaimForSpecificJob(
 	ssn *framework.Session, reclaimer *podgroup_info.PodGroupInfo,
 ) (bool, *framework.Statement, []string) {
 	queue := ssn.ClusterInfo.Queues[reclaimer.Queue]
-	resReq := podgroup_info.GetTasksToAllocateInitResource(reclaimer, ssn.PodSetOrderFn, ssn.TaskOrderFn, false, ssn.ClusterInfo.MinNodeGPUMemory)
+	resReq := podgroup_info.GetTasksToAllocateInitResourceVector(reclaimer, ssn.PodSetOrderFn, ssn.TaskOrderFn, false, ssn.ClusterInfo.MinNodeGPUMemory)
 	log.InfraLogger.V(3).Infof("Attempting to reclaim for job: <%v/%v> of queue <%v>, resources: <%v>",
 		reclaimer.Namespace, reclaimer.Name, queue.Name, resReq)
 

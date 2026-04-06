@@ -17,16 +17,16 @@ import (
 
 	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 
-	v2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/configurations/feature_flags"
-	testcontext "github.com/NVIDIA/KAI-scheduler/test/e2e/modules/context"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/capacity"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/crd"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/jobset"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/queue"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/utils"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/wait"
+	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/configurations/feature_flags"
+	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/capacity"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/crd"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/jobset"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/utils"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -192,7 +192,7 @@ var _ = Describe("JobSet integration", Ordered, func() {
 			podGroup := &v2alpha2.PodGroup{}
 			err = testCtx.ControllerClient.Get(ctx, runtimeClient.ObjectKey{Namespace: testNamespace, Name: pgName}, podGroup)
 			Expect(err).To(Succeed())
-			Expect(podGroup.Spec.MinMember).To(Equal(int32(8)))
+			Expect(podGroup.Spec.MinMember).To(Equal(ptr.To(int32(8))))
 		})
 
 		It("should create separate PodGroups for multiple ReplicatedJobs with different parallelism", func(ctx context.Context) {
@@ -228,7 +228,7 @@ var _ = Describe("JobSet integration", Ordered, func() {
 			podGroup := &v2alpha2.PodGroup{}
 			err = testCtx.ControllerClient.Get(ctx, runtimeClient.ObjectKey{Namespace: testNamespace, Name: pgName}, podGroup)
 			Expect(err).To(Succeed())
-			Expect(podGroup.Spec.MinMember).To(Equal(int32(4)))
+			Expect(podGroup.Spec.MinMember).To(Equal(ptr.To(int32(4))))
 		})
 
 		It("should create PodGroup with MinMember=1 for single replica with default parallelism", func(ctx context.Context) {
@@ -253,7 +253,7 @@ var _ = Describe("JobSet integration", Ordered, func() {
 			podGroup := &v2alpha2.PodGroup{}
 			err = testCtx.ControllerClient.Get(ctx, runtimeClient.ObjectKey{Namespace: testNamespace, Name: pgName}, podGroup)
 			Expect(err).To(Succeed())
-			Expect(podGroup.Spec.MinMember).To(Equal(int32(1)))
+			Expect(podGroup.Spec.MinMember).To(Equal(ptr.To(int32(1))))
 		})
 	})
 })

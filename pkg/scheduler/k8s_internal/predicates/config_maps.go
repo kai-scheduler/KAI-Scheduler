@@ -13,8 +13,8 @@ import (
 	ksf "k8s.io/kube-scheduler/framework"
 	k8sframework "k8s.io/kubernetes/pkg/scheduler/framework"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/configmap_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/configmap_info"
 )
 
 const (
@@ -75,45 +75,105 @@ func (cmp *ConfigMapPredicate) configMapExists(namespace, name string) bool {
 	return cmp.configMapsNames[namespace][name]
 }
 
+type configMapRef struct {
+	name     string
+	optional bool
+}
+
 func getAllRequiredConfigMapNames(pod *v1.Pod) []string {
 	configmaps := map[string]bool{}
+	mountedVolumes := getMountedVolumes(pod)
 
 	for _, volume := range pod.Spec.Volumes {
-		if !isConfigMapVolume(volume, pod) {
+		if !mountedVolumes[volume.Name] {
 			continue
 		}
-		configMapName := volume.ConfigMap.LocalObjectReference.Name
-		if isSharedGPUConfigMap(pod, configMapName) {
-			continue
+		for _, ref := range getConfigMapRefsFromVolume(volume) {
+			if !ref.optional && !isSharedGPUConfigMap(pod, ref.name) {
+				configmaps[ref.name] = true
+			}
 		}
-		configmaps[configMapName] = true
 	}
 
-	allContainers := append(pod.Spec.InitContainers, pod.Spec.Containers...)
-	for _, container := range allContainers {
-		for _, envVar := range container.Env {
-			if envVar.ValueFrom == nil || envVar.ValueFrom.ConfigMapKeyRef == nil {
-				continue
-			}
-			configMapName := envVar.ValueFrom.ConfigMapKeyRef.Name
-			if isSharedGPUConfigMap(pod, configMapName) {
-				continue
-			}
-			configmaps[configMapName] = true
-		}
-		for _, envVar := range container.EnvFrom {
-			if envVar.ConfigMapRef == nil {
-				continue
-			}
-			configMapName := envVar.ConfigMapRef.Name
-			if isSharedGPUConfigMap(pod, configMapName) {
-				continue
-			}
-			configmaps[configMapName] = true
+	for _, ref := range getConfigMapRefsFromContainers(pod) {
+		if !ref.optional && !isSharedGPUConfigMap(pod, ref.name) {
+			configmaps[ref.name] = true
 		}
 	}
 
 	return maps.Keys(configmaps)
+}
+
+func getConfigMapRefsFromVolume(volume v1.Volume) []configMapRef {
+	var refs []configMapRef
+	addRef := func(name string, optional *bool) {
+		refs = append(refs, configMapRef{
+			name:     name,
+			optional: optional != nil && *optional,
+		})
+	}
+	if volume.ConfigMap != nil {
+		addRef(volume.ConfigMap.LocalObjectReference.Name, volume.ConfigMap.Optional)
+	}
+	if volume.Projected != nil {
+		for _, source := range volume.Projected.Sources {
+			if source.ConfigMap != nil {
+				addRef(source.ConfigMap.Name, source.ConfigMap.Optional)
+			}
+		}
+	}
+	return refs
+}
+
+func getConfigMapRefsFromContainers(pod *v1.Pod) []configMapRef {
+	var refs []configMapRef
+	allContainers := append(pod.Spec.InitContainers, pod.Spec.Containers...)
+	for _, container := range allContainers {
+		refs = append(refs, getConfigMapRefsFromEnv(container.Env, container.EnvFrom)...)
+	}
+	for _, container := range pod.Spec.EphemeralContainers {
+		refs = append(refs, getConfigMapRefsFromEnv(container.Env, container.EnvFrom)...)
+	}
+	return refs
+}
+
+func getConfigMapRefsFromEnv(envVars []v1.EnvVar, envFromSources []v1.EnvFromSource) []configMapRef {
+	var refs []configMapRef
+	for _, envVar := range envVars {
+		if envVar.ValueFrom != nil && envVar.ValueFrom.ConfigMapKeyRef != nil {
+			optional := envVar.ValueFrom.ConfigMapKeyRef.Optional != nil && *envVar.ValueFrom.ConfigMapKeyRef.Optional
+			refs = append(refs, configMapRef{
+				name:     envVar.ValueFrom.ConfigMapKeyRef.Name,
+				optional: optional,
+			})
+		}
+	}
+	for _, envFrom := range envFromSources {
+		if envFrom.ConfigMapRef != nil {
+			optional := envFrom.ConfigMapRef.Optional != nil && *envFrom.ConfigMapRef.Optional
+			refs = append(refs, configMapRef{
+				name:     envFrom.ConfigMapRef.Name,
+				optional: optional,
+			})
+		}
+	}
+	return refs
+}
+
+func getMountedVolumes(pod *v1.Pod) map[string]bool {
+	mounted := make(map[string]bool)
+	allContainers := append(pod.Spec.InitContainers, pod.Spec.Containers...)
+	for _, container := range allContainers {
+		for _, volumeMount := range container.VolumeMounts {
+			mounted[volumeMount.Name] = true
+		}
+	}
+	for _, container := range pod.Spec.EphemeralContainers {
+		for _, volumeMount := range container.VolumeMounts {
+			mounted[volumeMount.Name] = true
+		}
+	}
+	return mounted
 }
 
 func isSharedGPUConfigMap(pod *v1.Pod, configMapName string) bool {
@@ -122,21 +182,4 @@ func isSharedGPUConfigMap(pod *v1.Pod, configMapName string) bool {
 		return false
 	}
 	return strings.HasPrefix(configMapName, sharedGPUConfigMapPrefix)
-}
-
-func isConfigMapVolume(volume v1.Volume, pod *v1.Pod) bool {
-	if volume.ConfigMap == nil {
-		return false
-	}
-
-	allContainers := append(pod.Spec.InitContainers, pod.Spec.Containers...)
-	for _, container := range allContainers {
-		for _, volumeMount := range container.VolumeMounts {
-			if volumeMount.Name == volume.Name {
-				return true
-			}
-		}
-	}
-
-	return false
 }

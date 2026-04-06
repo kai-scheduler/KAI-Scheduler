@@ -1,0 +1,37 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+suite: test leader election auto-enable
+templates:
+  - services/operator.yaml
+tests:
+  - it: should disable leader election by default (single replica)
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--leader-elect=false"
+
+  - it: should enable leader election when global.leaderElection is true
+    set:
+      global.leaderElection: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--leader-elect=true"
+
+  - it: should auto-enable leader election when replicaCount > 1
+    set:
+      operator.replicaCount: 2
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--leader-elect=true"
+
+  - it: should keep leader election enabled when both leaderElection and replicaCount > 1
+    set:
+      global.leaderElection: true
+      operator.replicaCount: 2
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--leader-elect=true"

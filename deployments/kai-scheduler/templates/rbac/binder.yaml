@@ -11,18 +11,6 @@ metadata:
   name: kai-binder
 rules:
 - apiGroups:
-  - coordination.k8s.io
-  resources:
-  - leases
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
   - ""
   resources:
   - configmaps
@@ -76,6 +64,18 @@ rules:
   - update
   - watch
 - apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
   - resource.k8s.io
   resources:
   - deviceclasses
@@ -95,6 +95,13 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - resource.k8s.io
+  resources:
+  - resourceclaims/binding
+  verbs:
+  - patch
+  - update
 - apiGroups:
   - scheduling.run.ai
   resources:

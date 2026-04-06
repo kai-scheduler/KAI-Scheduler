@@ -7,13 +7,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/metrics"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
 )
 
 type GenerateVictimsQueue func() *utils.JobsOrderByQueues
@@ -89,18 +89,17 @@ func (s *JobSolver) Solve(
 }
 
 func (s *JobSolver) solvePartialJob(ssn *framework.Session, state *solvingState, partialPendingJob *podgroup_info.PodGroupInfo) *solutionResult {
-	scenarioBuilder := NewPodAccumulatedScenarioBuilder(
-		ssn, partialPendingJob, state.recordedVictimsJobs, s.generateVictimsQueue())
-
 	feasibleNodeMap := map[string]*node_info.NodeInfo{}
 	for _, node := range s.feasibleNodes {
 		feasibleNodeMap[node.Name] = node
 	}
-	// recorded victim jobs nodes
 	for _, task := range state.recordedVictimsTasks {
 		node := ssn.ClusterInfo.Nodes[task.NodeName]
 		feasibleNodeMap[task.NodeName] = node
 	}
+
+	scenarioBuilder := NewPodAccumulatedScenarioBuilder(
+		ssn, partialPendingJob, state.recordedVictimsJobs, s.generateVictimsQueue(), feasibleNodeMap)
 
 	for scenarioToSolve := scenarioBuilder.GetValidScenario(); scenarioToSolve != nil; scenarioToSolve =
 		scenarioBuilder.GetNextScenario() {

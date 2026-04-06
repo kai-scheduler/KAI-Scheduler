@@ -58,10 +58,10 @@ ${REPO_ROOT}/hack/setup-e2e-cluster.sh $SETUP_ARGS
 # Install ginkgo if it's not installed
 if [ ! -f ${GOBIN}/ginkgo ]; then
     echo "Installing ginkgo"
-    GOBIN=${GOBIN} go install github.com/onsi/ginkgo/v2/ginkgo@v2.23.4
+    GOBIN=${GOBIN} go install github.com/onsi/ginkgo/v2/ginkgo@v2.25.3
 fi
 
-${GOBIN}/ginkgo -r --keep-going --randomize-all --randomize-suites --label-filter '!autoscale && !scale' --trace -vv ${REPO_ROOT}/test/e2e/suites
+${GOBIN}/ginkgo -r --keep-going --randomize-all --randomize-suites --label-filter '!autoscale && !scale && !upgrade' --trace -vv ${REPO_ROOT}/test/e2e/suites
 
 if [ "$PRESERVE_CLUSTER" != "true" ]; then
     kind delete cluster --name $CLUSTER_NAME

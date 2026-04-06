@@ -4,16 +4,16 @@
 package v1
 
 import (
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/admission"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/binder"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/common"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/node_scale_adjuster"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/pod_group_controller"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/pod_grouper"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/prometheus"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/queue_controller"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/scheduler"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/admission"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/binder"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/node_scale_adjuster"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/pod_group_controller"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/pod_grouper"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/prometheus"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/queue_controller"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/scheduler"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -28,6 +28,7 @@ const (
 	ConditionTypeDeployed          ConditionType = "Deployed"
 	ConditionTypeAvailable         ConditionType = "Available"
 	ConditionDependenciesFulfilled ConditionType = "DependenciesFulfilled"
+	ConditionTypeReady             ConditionType = "Ready"
 )
 
 type ConditionReason string
@@ -36,6 +37,9 @@ const (
 	Deployed                   ConditionReason = "deployed"
 	Available                  ConditionReason = "available"
 	Reconciled                 ConditionReason = "reconciled"
+	Reconciling                ConditionReason = "reconciling"
+	Ready                      ConditionReason = "ready"
+	NotReady                   ConditionReason = "not_ready"
 	DependenciesFulfilled      ConditionReason = "dependencies_fulfilled"
 	DependenciesMissing        ConditionReason = "dependencies_missing"
 	PrometheusConnected        ConditionReason = "prometheus_connected"
@@ -93,25 +97,25 @@ func (c *ConfigSpec) SetDefaultsWhereNeeded() {
 	c.Global.SetDefaultWhereNeeded()
 
 	c.QueueController = common.SetDefault(c.QueueController, &queue_controller.QueueController{})
-	c.QueueController.SetDefaultsWhereNeeded(c.Global.ReplicaCount)
+	c.QueueController.SetDefaultsWhereNeeded(c.Global.ReplicaCount, c.Global.VPA)
 
 	c.Binder = common.SetDefault(c.Binder, &binder.Binder{})
-	c.Binder.SetDefaultsWhereNeeded(c.Global.ReplicaCount)
+	c.Binder.SetDefaultsWhereNeeded(c.Global.ReplicaCount, c.Global.VPA)
 
 	c.PodGrouper = common.SetDefault(c.PodGrouper, &pod_grouper.PodGrouper{})
-	c.PodGrouper.SetDefaultsWhereNeeded(c.Global.ReplicaCount)
+	c.PodGrouper.SetDefaultsWhereNeeded(c.Global.ReplicaCount, c.Global.VPA)
 
 	c.Scheduler = common.SetDefault(c.Scheduler, &scheduler.Scheduler{})
-	c.Scheduler.SetDefaultsWhereNeeded(c.Global.ReplicaCount)
+	c.Scheduler.SetDefaultsWhereNeeded(c.Global.ReplicaCount, c.Global.VPA)
 
 	c.PodGroupController = common.SetDefault(c.PodGroupController, &pod_group_controller.PodGroupController{})
-	c.PodGroupController.SetDefaultsWhereNeeded(c.Global.ReplicaCount)
+	c.PodGroupController.SetDefaultsWhereNeeded(c.Global.ReplicaCount, c.Global.VPA)
 
 	c.Admission = common.SetDefault(c.Admission, &admission.Admission{})
-	c.Admission.SetDefaultsWhereNeeded(c.Global.ReplicaCount)
+	c.Admission.SetDefaultsWhereNeeded(c.Global.ReplicaCount, c.Global.VPA)
 
 	c.NodeScaleAdjuster = common.SetDefault(c.NodeScaleAdjuster, &node_scale_adjuster.NodeScaleAdjuster{})
-	c.NodeScaleAdjuster.SetDefaultsWhereNeeded()
+	c.NodeScaleAdjuster.SetDefaultsWhereNeeded(c.Global.VPA)
 
 	c.Prometheus = common.SetDefault(c.Prometheus, &prometheus.Prometheus{})
 	c.Prometheus.SetDefaultsWhereNeeded()

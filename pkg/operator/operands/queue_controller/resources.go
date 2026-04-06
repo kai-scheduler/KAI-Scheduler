@@ -7,10 +7,10 @@ import (
 	"context"
 	"fmt"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	generate "github.com/NVIDIA/KAI-scheduler/pkg/operator/cert-utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/common"
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	generate "github.com/kai-scheduler/KAI-scheduler/pkg/operator/cert-utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common"
 
 	admissionv1 "k8s.io/api/admissionregistration/v1"
 	v1 "k8s.io/api/core/v1"
@@ -257,7 +257,6 @@ func (q *QueueController) webhookClientConfig(namespace, path string, cabundle [
 func buildArgsList(kaiConfig *kaiv1.Config) []string {
 	config := kaiConfig.Spec.QueueController
 	args := []string{
-		"--queue-label-key", *kaiConfig.Spec.Global.QueueLabelKey,
 		"--metrics-listen-address", fmt.Sprintf(":%d", *config.ControllerService.Metrics.Port),
 	}
 	if config.Replicas != nil && *config.Replicas > 1 {

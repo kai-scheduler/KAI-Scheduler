@@ -10,8 +10,8 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/resources"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 )
 
 const gpuFractionDecimalRoundingFactor = 100
@@ -30,7 +30,7 @@ func (c *calculator) calculateNumScalingDevices(scalingPods []*v1.Pod) int64 {
 	numScalingDevices := int64(0)
 	for _, pod := range scalingPods {
 		resReq := pod.Spec.Containers[0].Resources.Requests
-		numDevices := resReq[constants.GpuResource]
+		numDevices := resReq[constants.NvidiaGpuResource]
 		numScalingDevices += numDevices.Value()
 	}
 	return numScalingDevices
@@ -40,7 +40,7 @@ func (c *calculator) calculateMaxScalingDevices(scalingPods []*v1.Pod) int64 {
 	maxScalingDevices := int64(0)
 	for _, pod := range scalingPods {
 		resReq := pod.Spec.Containers[0].Resources.Requests
-		numDevices := resReq[constants.GpuResource]
+		numDevices := resReq[constants.NvidiaGpuResource]
 		maxScalingDevices = max(numDevices.Value(), maxScalingDevices)
 	}
 	return maxScalingDevices

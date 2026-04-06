@@ -14,17 +14,17 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	v2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/configurations/feature_flags"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/constant"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/constant/labels"
-	testcontext "github.com/NVIDIA/KAI-scheduler/test/e2e/modules/context"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/capacity"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/queue"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/utils"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/wait"
+	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/configurations/feature_flags"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/constant"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/constant/labels"
+	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/capacity"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/utils"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
 )
 
 const (
@@ -80,7 +80,7 @@ var _ = Describe("Placement strategy", Label(labels.Operated), Ordered, func() {
 		It("Schedule on same node", func(ctx context.Context) {
 			pod1 := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{
 				Limits: map[v1.ResourceName]resource.Quantity{
-					constants.GpuResource: resource.MustParse("1"),
+					constants.NvidiaGpuResource: resource.MustParse("1"),
 				},
 			})
 			pod1, err := rd.CreatePod(ctx, testCtx.KubeClientset, pod1)
@@ -88,7 +88,7 @@ var _ = Describe("Placement strategy", Label(labels.Operated), Ordered, func() {
 
 			pod2 := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{
 				Limits: map[v1.ResourceName]resource.Quantity{
-					constants.GpuResource: resource.MustParse("1"),
+					constants.NvidiaGpuResource: resource.MustParse("1"),
 				},
 			})
 			pod2, err = rd.CreatePod(ctx, testCtx.KubeClientset, pod2)
@@ -153,7 +153,7 @@ var _ = Describe("Placement strategy", Label(labels.Operated), Ordered, func() {
 		It("Schedule on different nodes", func(ctx context.Context) {
 			pod1 := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{
 				Limits: map[v1.ResourceName]resource.Quantity{
-					constants.GpuResource: resource.MustParse("1"),
+					constants.NvidiaGpuResource: resource.MustParse("1"),
 				},
 			})
 			pod1, err := rd.CreatePod(ctx, testCtx.KubeClientset, pod1)
@@ -161,7 +161,7 @@ var _ = Describe("Placement strategy", Label(labels.Operated), Ordered, func() {
 
 			pod2 := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{
 				Limits: map[v1.ResourceName]resource.Quantity{
-					constants.GpuResource: resource.MustParse("1"),
+					constants.NvidiaGpuResource: resource.MustParse("1"),
 				},
 			})
 			pod2, err = rd.CreatePod(ctx, testCtx.KubeClientset, pod2)

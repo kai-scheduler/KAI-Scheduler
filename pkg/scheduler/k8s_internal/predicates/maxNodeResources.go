@@ -14,14 +14,15 @@ import (
 	ksf "k8s.io/kube-scheduler/framework"
 	k8sframework "k8s.io/kubernetes/pkg/scheduler/framework"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	resourceapi "k8s.io/api/resource/v1"
 )
 
 type MaxNodeResourcesPredicate struct {
-	maxResources       *resource_info.Resource
+	maxResources       resource_info.ResourceVector
+	vectorMap          *resource_info.ResourceVectorMap
 	resourceClaimsMap  map[string]*resourceapi.ResourceClaim
 	podsToClaimsMap    map[types.UID]map[types.UID]*resourceapi.ResourceClaim
 	schedulerShardName string
@@ -32,14 +33,22 @@ func NewMaxNodeResourcesPredicate(nodesMap map[string]*node_info.NodeInfo, resou
 	podsToClaimsMap := resource_info.CalcClaimsToPodsBaseMap(resourceClaimsMap)
 
 	predicate := &MaxNodeResourcesPredicate{
-		maxResources:       resource_info.EmptyResource(),
 		resourceClaimsMap:  resourceClaimsMap,
 		podsToClaimsMap:    podsToClaimsMap,
 		schedulerShardName: nodePoolName,
 	}
 
 	for _, node := range nodesMap {
-		predicate.maxResources.SetMaxResource(node.Allocatable)
+		if predicate.vectorMap == nil {
+			predicate.vectorMap = node.VectorMap
+			predicate.maxResources = node.AllocatableVector.Clone()
+		} else {
+			predicate.maxResources.SetMax(node.AllocatableVector)
+		}
+	}
+	if predicate.vectorMap == nil {
+		predicate.vectorMap = resource_info.NewResourceVectorMap()
+		predicate.maxResources = resource_info.NewResourceVector(predicate.vectorMap)
 	}
 	if nodePoolName == "" {
 		predicate.schedulerShardName = "default"
@@ -60,38 +69,43 @@ func (mnr *MaxNodeResourcesPredicate) PreFilter(_ context.Context, _ ksf.CycleSt
 	*k8sframework.PreFilterResult, *ksf.Status) {
 
 	draPodClaims := resource_info.GetDraPodClaims(pod, mnr.resourceClaimsMap, mnr.podsToClaimsMap)
-	podInfo := pod_info.NewTaskInfo(pod, draPodClaims...)
+	podInfo := pod_info.NewTaskInfo(pod, draPodClaims, mnr.vectorMap)
+	gpuIdx := mnr.vectorMap.GetIndex("gpu")
+	cpuIdx := mnr.vectorMap.GetIndex(v1.ResourceCPU)
+	memIdx := mnr.vectorMap.GetIndex(v1.ResourceMemory)
 
-	podGpuResources := podInfo.ResReq.GPUs() + float64(podInfo.ResReq.GetDraGpusCount())
-	if podGpuResources > mnr.maxResources.GPUs() {
+	if podInfo.ResReqVector.Get(gpuIdx) > mnr.maxResources.Get(gpuIdx) {
 		return nil, ksf.NewStatus(ksf.Unschedulable,
-			mnr.buildUnschedulableMessage(podInfo, "GPU", mnr.maxResources.GPUs(), ""))
+			mnr.buildUnschedulableMessage(podInfo, "GPU", mnr.maxResources.Get(gpuIdx), ""))
 	}
-	if podInfo.ResReq.Cpu() > mnr.maxResources.Cpu() {
+	if podInfo.ResReqVector.Get(cpuIdx) > mnr.maxResources.Get(cpuIdx) {
 		return nil, ksf.NewStatus(ksf.Unschedulable,
 			mnr.buildUnschedulableMessage(podInfo, "CPU",
-				mnr.maxResources.Cpu()/resource_info.MilliCPUToCores, "cores"))
+				mnr.maxResources.Get(cpuIdx)/resource_info.MilliCPUToCores, "cores"))
 	}
-	if podInfo.ResReq.Memory() > mnr.maxResources.Memory() {
+	if podInfo.ResReqVector.Get(memIdx) > mnr.maxResources.Get(memIdx) {
 		return nil, ksf.NewStatus(ksf.Unschedulable,
 			mnr.buildUnschedulableMessage(podInfo, "memory",
-				mnr.maxResources.Memory()/resource_info.MemoryToGB, "GB"))
+				mnr.maxResources.Get(memIdx)/resource_info.MemoryToGB, "GB"))
 	}
-	for rName, rQuant := range podInfo.ResReq.ScalarResources() {
-		rrQuant, found := mnr.maxResources.ScalarResources()[rName]
-		if !found || rQuant > rrQuant {
+	for i := range mnr.vectorMap.Len() {
+		if i == cpuIdx || i == memIdx || i == gpuIdx {
+			continue
+		}
+		podVal := podInfo.ResReqVector.Get(i)
+		maxVal := mnr.maxResources.Get(i)
+		if podVal > 0 && maxVal < podVal {
+			rName := mnr.vectorMap.ResourceAt(i)
 			units := ""
-			maxVal := float64(0)
-			// Humanize ephemeral / storage values: rrQuant is milli-bytes, convert to GB
+			displayMax := float64(0)
 			if rName == v1.ResourceEphemeralStorage || rName == v1.ResourceStorage {
 				units = "GB"
-				maxVal = float64(rrQuant) / resource_info.MemoryToGB
+				displayMax = maxVal / resource_info.MemoryToGB
 			}
 			return nil, ksf.NewStatus(ksf.Unschedulable,
-				mnr.buildUnschedulableMessage(podInfo, string(rName), float64(maxVal), units))
+				mnr.buildUnschedulableMessage(podInfo, string(rName), displayMax, units))
 		}
 	}
-	// TODO: check if any of the resource slices good for the node can satisfy the pod's claim requests (device count for the device class)
 
 	return nil, nil
 }

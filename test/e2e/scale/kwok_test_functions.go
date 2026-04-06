@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go.uber.org/multierr"
@@ -18,14 +18,15 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	v2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	schedulerconfig "github.com/NVIDIA/KAI-scheduler/test/e2e/modules/configurations"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/configurations/feature_flags"
-	testcontext "github.com/NVIDIA/KAI-scheduler/test/e2e/modules/context"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/queue"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/wait"
+	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	schedulerconfig "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/configurations"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/configurations/feature_flags"
+	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/testconfig"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
 )
 
 const (
@@ -50,12 +51,12 @@ const (
 var (
 	SingleGPURequirement = v1.ResourceRequirements{
 		Limits: map[v1.ResourceName]resource.Quantity{
-			constants.GpuResource: *resource.NewQuantity(1, resource.DecimalSI),
+			constants.NvidiaGpuResource: *resource.NewQuantity(1, resource.DecimalSI),
 		},
 	}
 	FullNodeGPURequirement = v1.ResourceRequirements{
 		Limits: map[v1.ResourceName]resource.Quantity{
-			constants.GpuResource: *resource.NewQuantity(gpusPerNode, resource.DecimalSI),
+			constants.NvidiaGpuResource: *resource.NewQuantity(gpusPerNode, resource.DecimalSI),
 		},
 	}
 )
@@ -95,7 +96,7 @@ func fillClusterWithJobs(
 	}
 
 	GinkgoLogr.Info("Creating pods")
-	gpuQuantity := resourceRequirements.Limits[constants.GpuResource]
+	gpuQuantity := resourceRequirements.Limits[constants.NvidiaGpuResource]
 	gpusPerJob := int(gpuQuantity.Value())
 	totalNumberOfJobs = (numberOfNodes * gpusPerNode) / gpusPerJob
 
@@ -112,7 +113,7 @@ func fillClusterWithJobs(
 	GinkgoLogr.Info("Waiting for pods creation")
 	wait.ForAtLeastNPodCreation(ctx, testCtx.ControllerClient, metav1.LabelSelector{
 		MatchLabels: map[string]string{
-			"runai/queue": testQueue.Name,
+			testconfig.GetConfig().QueueLabelKey: testQueue.Name,
 		},
 	}, totalNumberOfJobs)
 
@@ -158,7 +159,7 @@ func distributedJobsScaleTestInternal(
 				ctx, testCtx, testQueue,
 				v1.ResourceRequirements{
 					Limits: map[v1.ResourceName]resource.Quantity{
-						constants.GpuResource: *resource.NewQuantity(int64(gpuPerPod), resource.DecimalSI),
+						constants.NvidiaGpuResource: *resource.NewQuantity(int64(gpuPerPod), resource.DecimalSI),
 					},
 				}, podsPerDistributedJob,
 				map[string]string{}, topologyConstraint,
@@ -271,7 +272,7 @@ func reclaimForOneLargeJob(ctx context.Context, testCtx *testcontext.TestContext
 		ctx, testCtx, reclaimSingleGPUJobsQueue,
 		v1.ResourceRequirements{
 			Limits: map[v1.ResourceName]resource.Quantity{
-				constants.GpuResource: *resource.NewQuantity(int64(gpusPerNode), resource.DecimalSI),
+				constants.NvidiaGpuResource: *resource.NewQuantity(int64(gpusPerNode), resource.DecimalSI),
 			},
 		},
 		numberOfPods, map[string]string{},

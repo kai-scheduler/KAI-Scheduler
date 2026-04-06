@@ -79,6 +79,17 @@ var _ = Describe("SupportedTypes", func() {
 			hasPlugin := hub.HasMatchingPlugin(gvk)
 			Expect(hasPlugin).To(BeFalse())
 		})
+
+		It("should return skipTopOwner plugin for TrainJob", func() {
+			gvk := metav1.GroupVersionKind{
+				Group:   "trainer.kubeflow.org",
+				Version: "v1alpha1",
+				Kind:    "TrainJob",
+			}
+			plugin := hub.GetPodGrouperPlugin(gvk)
+			Expect(plugin).NotTo(BeNil())
+			Expect(plugin.Name()).To(BeEquivalentTo("SkipTopOwner Grouper"))
+		})
 	})
 
 	Context("Wildcard Version Tests", func() {

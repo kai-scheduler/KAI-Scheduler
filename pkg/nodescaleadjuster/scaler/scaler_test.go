@@ -14,9 +14,9 @@ import (
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/nodescaleadjuster/consts"
-	testutils "github.com/NVIDIA/KAI-scheduler/pkg/nodescaleadjuster/test-utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/nodescaleadjuster/consts"
+	testutils "github.com/kai-scheduler/KAI-scheduler/pkg/nodescaleadjuster/test-utils"
 )
 
 func TestCreateScalingPod(t *testing.T) {
@@ -51,8 +51,8 @@ func TestCreateScalingPodWithMultipleDevices(t *testing.T) {
 	assert.Equal(t, 1, len(scalingPods.Items), "Expected one scaling pod")
 
 	container := scalingPods.Items[0].Spec.Containers[0]
-	gpuResourceRequest := container.Resources.Requests[constants.GpuResource]
-	gpuResourceLimits := container.Resources.Limits[constants.GpuResource]
+	gpuResourceRequest := container.Resources.Requests[constants.NvidiaGpuResource]
+	gpuResourceLimits := container.Resources.Limits[constants.NvidiaGpuResource]
 	assert.Equal(t, int64(3), gpuResourceRequest.Value())
 	assert.Equal(t, int64(3), gpuResourceLimits.Value())
 }

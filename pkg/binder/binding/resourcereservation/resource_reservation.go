@@ -23,9 +23,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/binding/resourcereservation/group_mutex"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/resources"
+	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding/resourcereservation/group_mutex"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 )
 
 type Interface interface {
@@ -196,9 +197,20 @@ func (rsc *service) syncForPods(ctx context.Context, pods []*v1.Pod, gpuGroupToS
 
 	for gpuGroup, reservationPod := range reservationPods {
 		if _, found := fractionPods[gpuGroup]; !found {
+			hasActive, err := rsc.hasActiveBindRequestsForGpuGroup(ctx, gpuGroup)
+			if err != nil {
+				logger.Error(err, "Failed to check active BindRequests for gpu group",
+					"gpuGroup", gpuGroup)
+				return err
+			}
+			if hasActive {
+				logger.Info("Skipping reservation pod deletion, active BindRequests exist",
+					"gpuGroup", gpuGroup)
+				continue
+			}
 			logger.Info("Did not find fraction pod for gpu group, deleting reservation pod",
 				"gpuGroup", gpuGroup)
-			err := rsc.deleteReservationPod(ctx, reservationPod)
+			err = rsc.deleteReservationPod(ctx, reservationPod)
 			if err != nil {
 				return err
 			}
@@ -208,6 +220,26 @@ func (rsc *service) syncForPods(ctx context.Context, pods []*v1.Pod, gpuGroupToS
 	return nil
 }
 
+// hasActiveBindRequestsForGpuGroup checks if any non-terminal BindRequests reference
+// the given GPU group. This prevents premature reservation pod deletion when the
+// informer cache has not yet propagated GPU group labels on recently-bound fraction pods.
+func (rsc *service) hasActiveBindRequestsForGpuGroup(ctx context.Context, gpuGroup string) (bool, error) {
+	bindRequestList := &schedulingv1alpha2.BindRequestList{}
+	if err := rsc.kubeClient.List(ctx, bindRequestList); err != nil {
+		return false, fmt.Errorf("failed to list BindRequests: %w", err)
+	}
+
+	for _, br := range bindRequestList.Items {
+		if br.Status.Phase == schedulingv1alpha2.BindRequestPhaseSucceeded ||
+			br.Status.Phase == schedulingv1alpha2.BindRequestPhaseFailed {
+			continue
+		}
+		if slices.Contains(br.Spec.SelectedGPUGroups, gpuGroup) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
 func (rsc *service) ReserveGpuDevice(ctx context.Context, pod *v1.Pod, nodeName string, gpuGroup string) (string, error) {
 	logger := log.FromContext(ctx)
 
@@ -394,20 +426,20 @@ func (rsc *service) createGPUReservationPod(ctx context.Context, nodeName, gpuGr
 	// Build resource requirements starting with GPU resources
 	resources := v1.ResourceRequirements{
 		Limits: v1.ResourceList{
-			constants.GpuResource: *resource.NewQuantity(numberOfGPUsToReserve, resource.DecimalSI),
+			constants.NvidiaGpuResource: *resource.NewQuantity(numberOfGPUsToReserve, resource.DecimalSI),
 		},
 		Requests: v1.ResourceList{
-			constants.GpuResource: *resource.NewQuantity(numberOfGPUsToReserve, resource.DecimalSI),
+			constants.NvidiaGpuResource: *resource.NewQuantity(numberOfGPUsToReserve, resource.DecimalSI),
 		},
 	}
 
 	if rsc.podResources != nil {
 		if rsc.podResources.Limits != nil {
-			delete(rsc.podResources.Limits, constants.GpuResource)
+			delete(rsc.podResources.Limits, constants.NvidiaGpuResource)
 			maps.Copy(resources.Limits, rsc.podResources.Limits)
 		}
 		if rsc.podResources.Requests != nil {
-			delete(rsc.podResources.Requests, constants.GpuResource)
+			delete(rsc.podResources.Requests, constants.NvidiaGpuResource)
 			maps.Copy(resources.Requests, rsc.podResources.Requests)
 		}
 	}

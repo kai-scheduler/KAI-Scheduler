@@ -6,13 +6,13 @@ package podgroup_info
 import (
 	"math"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info/resources"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/scheduler_util"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info/resources"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/scheduler_util"
 )
 
 func HasTasksToAllocate(podGroupInfo *PodGroupInfo, isRealAllocation bool) bool {
@@ -110,6 +110,34 @@ func GetTasksToAllocateInitResource(
 
 	podGroupInfo.tasksToAllocateInitResource = tasksTotalRequestedResource
 	return tasksTotalRequestedResource
+}
+
+func GetTasksToAllocateInitResourceVector(
+	podGroupInfo *PodGroupInfo, subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn,
+	isRealAllocation bool, minNodeGPUMemory int64,
+) resource_info.ResourceVector {
+	if podGroupInfo == nil {
+		return nil
+	}
+	if podGroupInfo.tasksToAllocateInitResourceVector != nil {
+		return podGroupInfo.tasksToAllocateInitResourceVector
+	}
+
+	result := resource_info.NewResourceVector(podGroupInfo.VectorMap)
+	gpuIdx := podGroupInfo.VectorMap.GetIndex("gpu")
+	for _, task := range GetTasksToAllocate(podGroupInfo, subGroupOrderFn, taskOrderFn, isRealAllocation) {
+		if task.ShouldAllocate(isRealAllocation) {
+			result.Add(task.ResReqVector)
+			if task.IsMemoryRequest() && minNodeGPUMemory > 0 {
+				additionalGpuFraction := float64(task.ResReq.GpuResourceRequirement.GetNumOfGpuDevices()) *
+					(float64(task.ResReq.GpuMemory()) / float64(minNodeGPUMemory))
+				result.Set(gpuIdx, result.Get(gpuIdx)+additionalGpuFraction)
+			}
+		}
+	}
+
+	podGroupInfo.tasksToAllocateInitResourceVector = result
+	return result
 }
 
 func getTasksPriorityQueue(

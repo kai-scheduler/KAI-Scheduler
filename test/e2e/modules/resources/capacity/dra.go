@@ -8,7 +8,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -65,7 +65,7 @@ func ListDevicesByNode(clientset kubernetes.Interface, deviceClass string) map[s
 }
 
 func CleanupResourceClaims(ctx context.Context, clientset kubernetes.Interface, namespace string) {
-	err := clientset.ResourceV1beta1().ResourceClaims(namespace).
+	err := clientset.ResourceV1().ResourceClaims(namespace).
 		DeleteCollection(ctx, metav1.DeleteOptions{}, metav1.ListOptions{
 			LabelSelector: fmt.Sprintf("%s=engine-e2e", constants.AppLabelName),
 		})

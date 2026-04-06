@@ -16,12 +16,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	v2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/queuecontroller/common"
-	"github.com/NVIDIA/KAI-scheduler/pkg/queuecontroller/controllers/childqueues_updater"
-	"github.com/NVIDIA/KAI-scheduler/pkg/queuecontroller/controllers/resource_updater"
-	"github.com/NVIDIA/KAI-scheduler/pkg/queuecontroller/metrics"
+	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/queuecontroller/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/queuecontroller/controllers/childqueues_updater"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/queuecontroller/controllers/resource_updater"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/queuecontroller/metrics"
 )
 
 // QueueReconciler reconciles a Queue object
@@ -86,16 +86,21 @@ func (r *QueueReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *QueueReconciler) SetupWithManager(mgr ctrl.Manager, queueLabelKey string, skipNameValidation bool) error {
+func (r *QueueReconciler) SetupWithManager(mgr ctrl.Manager, skipNameValidation bool) error {
 	err := mgr.GetFieldIndexer().IndexField(context.Background(), &v2.Queue{}, common.ParentQueueIndexName,
 		indexQueueByParent)
 	if err != nil {
-		return fmt.Errorf("failed to setup queue parent indexer: %v", err)
+		return fmt.Errorf("failed to setup queue parent indexer: %w", err)
+	}
+
+	err = mgr.GetFieldIndexer().IndexField(context.Background(), &v2alpha2.PodGroup{}, common.PodGroupQueueIndexName,
+		indexPodGroupByQueue)
+	if err != nil {
+		return fmt.Errorf("failed to setup podgroup queue indexer: %w", err)
 	}
 
 	r.resourceUpdater = resource_updater.ResourceUpdater{
-		Client:        r.Client,
-		QueueLabelKey: queueLabelKey,
+		Client: r.Client,
 	}
 	r.childQueuesUpdater = childqueues_updater.ChildQueuesUpdater{
 		Client: r.Client,
@@ -120,6 +125,14 @@ func indexQueueByParent(object client.Object) []string {
 		return []string{}
 	}
 	return []string{queue.Spec.ParentQueue}
+}
+
+func indexPodGroupByQueue(object client.Object) []string {
+	pg := object.(*v2alpha2.PodGroup)
+	if pg.Spec.Queue == "" {
+		return []string{}
+	}
+	return []string{pg.Spec.Queue}
 }
 
 func enqueueQueue(_ context.Context, q client.Object) []reconcile.Request {

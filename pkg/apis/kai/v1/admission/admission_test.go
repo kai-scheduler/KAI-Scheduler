@@ -7,7 +7,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -22,7 +22,7 @@ var _ = Describe("Admission", func() {
 		Admission := &Admission{}
 		var replicaCount int32
 		replicaCount = 1
-		Admission.SetDefaultsWhereNeeded(&replicaCount)
+		Admission.SetDefaultsWhereNeeded(&replicaCount, nil)
 		Expect(*Admission.Service.Enabled).To(Equal(true))
 		Expect(*Admission.Service.Image.Name).To(Equal("admission"))
 		Expect(*Admission.Replicas).To(Equal(int32(1)))
@@ -32,7 +32,7 @@ var _ = Describe("Admission", func() {
 		Admission := &Admission{}
 		var replicaCount int32
 		replicaCount = 3
-		Admission.SetDefaultsWhereNeeded(&replicaCount)
+		Admission.SetDefaultsWhereNeeded(&replicaCount, nil)
 		Expect(*Admission.Replicas).To(Equal(int32(3)))
 	})
 })
