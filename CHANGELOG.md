@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - Added `prometheus.enabled` and `prometheus.externalPrometheusUrl` Helm values to configure Prometheus from values.yaml [#907](https://github.com/NVIDIA/KAI-Scheduler/issues/907)
+- Added validation for `subgroup` name in podgroup [faizanexe](https://github.com/faizan-exe)
 
 ### Changed
 - **Breaking:** JobSet PodGroups no longer auto-calculate `minAvailable` from `parallelism × replicas`. The default is now 1. Use the `kai.scheduler/batch-min-member` annotation to set a custom value.
@@ -47,7 +48,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [v0.13.0] - 2026-03-02
 ### Added
 - Added `global.nodeSelector` propagation from Helm values to Config CR, ensuring operator-created sub-component deployments (admission, binder, scheduler, pod-grouper, etc.) receive the configured nodeSelector [#1102](https://github.com/NVIDIA/KAI-Scheduler/pull/1102) [yuanchen8911](https://github.com/yuanchen8911)
-- Added validation for `subgroup` name in podgroup [faizanexe](https://github.com/faizan-exe)
 - Added `plugins` and `actions` fields to SchedulingShard spec, allowing per-shard customization of scheduler plugin/action enablement, priority, and arguments [gshaibi](https://github.com/gshaibi)
 - Added support for Kubeflow Trainer v2 TrainJob workloads via skipTopOwner grouper pattern
 - Added `binder.cdiEnabled` Helm value to allow explicit override of CDI auto-detection for environments without ClusterPolicy
