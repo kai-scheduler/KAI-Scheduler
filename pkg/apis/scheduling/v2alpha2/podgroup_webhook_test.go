@@ -41,7 +41,7 @@ func TestValidateSubGroups(t *testing.T) {
 				{Name: "A", MinMember: ptr.To(int32(1))},
 				{Name: "B", Parent: ptr.To("X"), MinMember: ptr.To(int32(1))}, // parent X does not exist
 			},
-			wantErr: errors.New("parent x of b was not found"),
+			wantErr: errors.New("parent X of B was not found"),
 		},
 		{
 			name:      "Empty list",
@@ -77,7 +77,7 @@ func TestValidateSubGroups(t *testing.T) {
 				{Name: "A", MinMember: ptr.To(int32(1))},
 				{Name: "A", MinMember: ptr.To(int32(1))}, // duplicate
 			},
-			wantErr: errors.New("duplicate subgroup name a"),
+			wantErr: errors.New("duplicate subgroup name A"),
 		},
 		{
 			name: "Cycle in graph (a -> b -> c -> a) - duplicate subgroup name",
@@ -87,7 +87,7 @@ func TestValidateSubGroups(t *testing.T) {
 				{Name: "C", Parent: ptr.To("B"), MinMember: ptr.To(int32(1))},
 				{Name: "A", Parent: ptr.To("C"), MinMember: ptr.To(int32(1))}, // creates a cycle
 			},
-			wantErr: errors.New("duplicate subgroup name a"), // duplicate is caught before cycle
+			wantErr: errors.New("duplicate subgroup name A"), // duplicate is caught before cycle
 		},
 		{
 			name: "Self-parent subgroup (cycle of length 1)",
