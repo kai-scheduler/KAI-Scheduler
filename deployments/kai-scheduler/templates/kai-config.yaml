@@ -210,3 +210,11 @@ spec:
     schedulerService:
       port: {{ .Values.scheduler.ports.metricsPort }}
     {{- end }}
+
+  {{- if .Values.prometheus.enabled }}
+  prometheus:
+    enabled: true
+    {{- if .Values.prometheus.externalPrometheusUrl }}
+    externalPrometheusUrl: {{ .Values.prometheus.externalPrometheusUrl | quote }}
+    {{- end }}
+  {{- end }}

@@ -184,6 +184,14 @@ postCleanup:
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   serviceAccountName: post-delete-cleanup
 
+prometheus:
+  # Enable Prometheus integration for time-aware fairness features.
+  enabled: false
+  # URL of an external Prometheus instance. When set, KAI will not deploy its own
+  # Prometheus but will use the external instance for usage metrics.
+  # Example: http://prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090
+  # externalPrometheusUrl: ""
+
 defaultQueue:
   createDefaultQueue: true
   parentName: default-parent-queue

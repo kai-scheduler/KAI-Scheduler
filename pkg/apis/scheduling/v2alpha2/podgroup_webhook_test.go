@@ -20,29 +20,29 @@ func TestValidateSubGroups(t *testing.T) {
 		{
 			name: "Valid DAG single root",
 			subGroups: []SubGroup{
-				{Name: "A", MinSubGroup: ptr.To(int32(1))},
-				{Name: "B", Parent: ptr.To("A"), MinSubGroup: ptr.To(int32(1))},
-				{Name: "C", Parent: ptr.To("B"), MinMember: ptr.To(int32(1))},
+				{Name: "a", MinMember: ptr.To(int32(1))},
+				{Name: "b", Parent: ptr.To("a"), MinMember: ptr.To(int32(1))},
+				{Name: "c", Parent: ptr.To("b"), MinMember: ptr.To(int32(1))},
 			},
 			wantErr: nil,
 		},
 		{
 			name: "Valid DAG multiple roots",
 			subGroups: []SubGroup{
-				{Name: "A", MinSubGroup: ptr.To(int32(1))},
-				{Name: "B", MinSubGroup: ptr.To(int32(1))},
-				{Name: "C", Parent: ptr.To("A"), MinMember: ptr.To(int32(1))},
-				{Name: "D", Parent: ptr.To("B"), MinMember: ptr.To(int32(1))},
+				{Name: "a", MinMember: ptr.To(int32(1))},
+				{Name: "b", MinMember: ptr.To(int32(1))},
+				{Name: "c", Parent: ptr.To("a"), MinMember: ptr.To(int32(1))},
+				{Name: "d", Parent: ptr.To("b"), MinMember: ptr.To(int32(1))},
 			},
 			wantErr: nil,
 		},
 		{
 			name: "Missing parent",
 			subGroups: []SubGroup{
-				{Name: "A", MinMember: ptr.To(int32(1))},
-				{Name: "B", Parent: ptr.To("X"), MinMember: ptr.To(int32(1))}, // parent X does not exist
+				{Name: "a", MinMember: ptr.To(int32(1))},
+				{Name: "b", Parent: ptr.To("x"), MinMember: ptr.To(int32(1))},
 			},
-			wantErr: &validationErrors{structuralError: &subGroupGraphError{msg: "parent X of B was not found"}},
+			wantErr: &validationErrors{structuralError: &subGroupGraphError{msg: "parent x of b was not found"}},
 		},
 		{
 			name:      "Empty list",
@@ -52,67 +52,67 @@ func TestValidateSubGroups(t *testing.T) {
 		{
 			name: "nil minMember on leaf subgroup",
 			subGroups: []SubGroup{
-				{Name: "A"},
+				{Name: "a"},
 			},
-			wantErr: &validationErrors{minDefinitionErrors: []error{&missingMinMemberError{msg: "subgroup A: minMember is required"}}},
+			wantErr: &validationErrors{minDefinitionErrors: []error{&missingMinMemberError{msg: "subgroup a: minMember is required"}}},
 		},
 		{
 			name: "parent subgroup may omit minMember when it has subgroup children",
 			subGroups: []SubGroup{
-				{Name: "P"},
-				{Name: "L", Parent: ptr.To("P"), MinMember: ptr.To(int32(1))},
+				{Name: "p"},
+				{Name: "l", Parent: ptr.To("p"), MinMember: ptr.To(int32(1))},
 			},
 			wantErr: nil,
 		},
 		{
 			name: "leaf child still requires minMember when parent omits it",
 			subGroups: []SubGroup{
-				{Name: "P"},
-				{Name: "L", Parent: ptr.To("P")},
+				{Name: "p"},
+				{Name: "l", Parent: ptr.To("p")},
 			},
-			wantErr: &validationErrors{minDefinitionErrors: []error{&missingMinMemberError{msg: "subgroup L: minMember is required"}}},
+			wantErr: &validationErrors{minDefinitionErrors: []error{&missingMinMemberError{msg: "subgroup l: minMember is required"}}},
 		},
 		{
 			name: "Duplicate subgroup names",
 			subGroups: []SubGroup{
-				{Name: "A", MinMember: ptr.To(int32(1))},
-				{Name: "A", MinMember: ptr.To(int32(1))}, // duplicate
+				{Name: "a", MinMember: ptr.To(int32(1))},
+				{Name: "a", MinMember: ptr.To(int32(1))},
 			},
-			wantErr: &validationErrors{structuralError: &subGroupGraphError{msg: "duplicate subgroup name A"}},
+			wantErr: &validationErrors{structuralError: &subGroupGraphError{msg: "duplicate subgroup name a"}},
 		},
 		{
-			name: "Cycle in graph (A -> B -> C -> A) - duplicate subgroup name",
+			name: "Cycle in graph (a -> b -> c -> a) - duplicate subgroup name",
 			subGroups: []SubGroup{
-				{Name: "A", MinMember: ptr.To(int32(1))},
-				{Name: "B", Parent: ptr.To("A"), MinMember: ptr.To(int32(1))},
-				{Name: "C", Parent: ptr.To("B"), MinMember: ptr.To(int32(1))},
-				{Name: "A", Parent: ptr.To("C"), MinMember: ptr.To(int32(1))}, // creates a cycle
+				{Name: "a", MinMember: ptr.To(int32(1))},
+				{Name: "b", Parent: ptr.To("a"), MinMember: ptr.To(int32(1))},
+				{Name: "c", Parent: ptr.To("b"), MinMember: ptr.To(int32(1))},
+				{Name: "a", Parent: ptr.To("c"), MinMember: ptr.To(int32(1))},
 			},
-			wantErr: &validationErrors{structuralError: &subGroupGraphError{msg: "duplicate subgroup name A"}}, // duplicate is caught before cycle
+			wantErr: &validationErrors{structuralError: &subGroupGraphError{msg: "duplicate subgroup name a"}}, // duplicate is caught before cycle
 		},
 		{
 			name: "Self-parent subgroup (cycle of length 1)",
 			subGroups: []SubGroup{
-				{Name: "A", Parent: ptr.To("A"), MinMember: ptr.To(int32(1))},
+				{Name: "a", Parent: ptr.To("a"), MinMember: ptr.To(int32(1))},
 			},
 			wantErr: &validationErrors{structuralError: &subGroupGraphError{msg: "cycle detected in subgroups"}},
 		},
 		{
-			name: "Cycle in graph (A -> B -> C -> A)",
+			name: "Cycle in graph (a -> b -> c -> a)",
 			subGroups: []SubGroup{
-				{Name: "A", Parent: ptr.To("C"), MinMember: ptr.To(int32(1))},
-				{Name: "B", Parent: ptr.To("A"), MinMember: ptr.To(int32(1))},
-				{Name: "C", Parent: ptr.To("B"), MinMember: ptr.To(int32(1))}, // creates a cycle
+				{Name: "a", Parent: ptr.To("c"), MinMember: ptr.To(int32(1))},
+				{Name: "b", Parent: ptr.To("a"), MinMember: ptr.To(int32(1))},
+				{Name: "c", Parent: ptr.To("b"), MinMember: ptr.To(int32(1))},
 			},
 			wantErr: &validationErrors{structuralError: &subGroupGraphError{msg: "cycle detected in subgroups"}},
 		},
 		{
 			name: "Multiple disjoint cycles",
 			subGroups: []SubGroup{
-				{Name: "A", Parent: ptr.To("B"), MinMember: ptr.To(int32(1))},
-				{Name: "B", Parent: ptr.To("A"), MinMember: ptr.To(int32(1))}, // cycle A <-> B
-				{Name: "C", Parent: ptr.To("D"), MinMember: ptr.To(int32(1))},
-				{Name: "D", Parent: ptr.To("C"), MinMember: ptr.To(int32(1))}, // cycle C <-> D
+				{Name: "a", Parent: ptr.To("b"), MinMember: ptr.To(int32(1))},
+				{Name: "b", Parent: ptr.To("a"), MinMember: ptr.To(int32(1))},
+				{Name: "c", Parent: ptr.To("d"), MinMember: ptr.To(int32(1))},
+				{Name: "d", Parent: ptr.To("c"), MinMember: ptr.To(int32(1))},
 			},
 			wantErr: &validationErrors{structuralError: &subGroupGraphError{msg: "cycle detected in subgroups"}},
 		},
@@ -252,8 +252,8 @@ func TestValidatePodGroupSpec(t *testing.T) {
 			spec: PodGroupSpec{
 				MinSubGroup: ptr.To(int32(2)),
 				SubGroups: []SubGroup{
-					{Name: "A", MinMember: ptr.To(int32(4))},
-					{Name: "B", MinMember: ptr.To(int32(4))},
+					{Name: "a", MinMember: ptr.To(int32(4))},
+					{Name: "b", MinMember: ptr.To(int32(4))},
 				},
 			},
 			want: nil,
@@ -264,9 +264,9 @@ func TestValidatePodGroupSpec(t *testing.T) {
 				MinMember:   ptr.To(int32(24)),
 				MinSubGroup: ptr.To(int32(3)),
 				SubGroups: []SubGroup{
-					{Name: "A", MinMember: ptr.To(int32(8))},
-					{Name: "B", MinMember: ptr.To(int32(8))},
-					{Name: "C", MinMember: ptr.To(int32(8))},
+					{Name: "a", MinMember: ptr.To(int32(8))},
+					{Name: "b", MinMember: ptr.To(int32(8))},
+					{Name: "c", MinMember: ptr.To(int32(8))},
 				},
 			},
 			want: &validationErrors{structuralError: &mutuallyExclusiveFieldsError{msg: "minMember and minSubGroup are mutually exclusive: set minMember (24) to schedule a fixed number of pods, or set minSubGroup to require a minimum number of child SubGroups, but not both"}},
@@ -276,10 +276,10 @@ func TestValidatePodGroupSpec(t *testing.T) {
 			spec: PodGroupSpec{
 				MinSubGroup: ptr.To(int32(5)),
 				SubGroups: []SubGroup{
-					{Name: "A", MinMember: ptr.To(int32(8))},
-					{Name: "B", MinMember: ptr.To(int32(8))},
-					{Name: "C", MinMember: ptr.To(int32(8))},
-					{Name: "D", MinMember: ptr.To(int32(8))},
+					{Name: "a", MinMember: ptr.To(int32(8))},
+					{Name: "b", MinMember: ptr.To(int32(8))},
+					{Name: "c", MinMember: ptr.To(int32(8))},
+					{Name: "d", MinMember: ptr.To(int32(8))},
 				},
 			},
 			want: &validationErrors{minDefinitionErrors: []error{&minSubGroupExceedsChildCountError{msg: "minSubGroup (5) exceeds the number of direct child SubGroups (4)"}}},
@@ -329,8 +329,8 @@ func TestValidatePodGroupSpec(t *testing.T) {
 			spec: PodGroupSpec{
 				MinSubGroup: ptr.To(int32(0)),
 				SubGroups: []SubGroup{
-					{Name: "A", MinMember: ptr.To(int32(4))},
-					{Name: "B", MinMember: ptr.To(int32(4))},
+					{Name: "a", MinMember: ptr.To(int32(4))},
+					{Name: "b", MinMember: ptr.To(int32(4))},
 				},
 			},
 			want: &validationErrors{minDefinitionErrors: []error{&invalidMinSubGroupError{msg: "minSubGroup must be greater than 0"}}},
