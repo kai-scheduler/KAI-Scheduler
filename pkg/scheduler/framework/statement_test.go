@@ -146,11 +146,11 @@ func TestStatement_Evict_Unevict(t *testing.T) {
 
 			actualJob := ssn.ClusterInfo.PodGroupInfos[tt.args.jobName]
 			assert.Equal(t, originalJob.AllocatedVector, actualJob.AllocatedVector)
-			assert.Equal(t, tt.expected.jobGpuAllocation, actualJob.AllocatedVector.Get(actualJob.VectorMap.GetIndex("gpu")))
+			assert.Equal(t, tt.expected.jobGpuAllocation, actualJob.AllocatedVector.Get(resource_info.GPUIndex))
 
 			actualNodeInfo := extractNodeAssertedInfo(nodesInfoMap[actualTask.NodeName])
 			originalNodeInfo.assertEqual(t, actualNodeInfo)
-			assert.Equal(t, tt.expected.usedGpuOnNode, actualNodeInfo.used.Get(actualNodeInfo.vectorMap.GetIndex("gpu")))
+			assert.Equal(t, tt.expected.usedGpuOnNode, actualNodeInfo.used.Get(resource_info.GPUIndex))
 		})
 	}
 }
@@ -641,16 +641,16 @@ func TestStatement_Pipeline_Unpipeline(t *testing.T) {
 
 			actualPipelinedJob := ssn.ClusterInfo.PodGroupInfos[tt.args.jobName]
 			assert.Equal(t, originalPipelineJob.AllocatedVector, actualPipelinedJob.AllocatedVector)
-			assert.Equal(t, tt.expected.jobGpuAllocated, actualPipelinedJob.AllocatedVector.Get(actualPipelinedJob.VectorMap.GetIndex("gpu")))
+			assert.Equal(t, tt.expected.jobGpuAllocated, actualPipelinedJob.AllocatedVector.Get(resource_info.GPUIndex))
 
 			if pipelinedTask.NodeName != "" {
 				pipelinedFromNodeInfo := extractNodeAssertedInfo(nodesInfoMap[pipelinedTask.NodeName])
 				originalPipelinedNodeInfo.assertEqual(t, pipelinedFromNodeInfo)
-				assert.Equal(t, tt.expected.usedGpuOnPipelineOriginNode, originalPipelinedNodeInfo.used.Get(originalPipelinedNodeInfo.vectorMap.GetIndex("gpu")))
+				assert.Equal(t, tt.expected.usedGpuOnPipelineOriginNode, originalPipelinedNodeInfo.used.Get(resource_info.GPUIndex))
 			}
 			pipelinedToNodeInfo := extractNodeAssertedInfo(nodesInfoMap[tt.args.nodeToPipeline])
 			originalPipelinedToNodeInfo.assertEqual(t, pipelinedToNodeInfo)
-			assert.Equal(t, tt.expected.usedGpuOnPipelinedNode, originalPipelinedToNodeInfo.used.Get(originalPipelinedToNodeInfo.vectorMap.GetIndex("gpu")))
+			assert.Equal(t, tt.expected.usedGpuOnPipelinedNode, originalPipelinedToNodeInfo.used.Get(resource_info.GPUIndex))
 		})
 	}
 }
@@ -990,11 +990,11 @@ func TestStatement_Allocate_Unallocate(t *testing.T) {
 
 			actualAllocatedJob := ssn.ClusterInfo.PodGroupInfos[tt.args.jobName]
 			assert.Equal(t, originalAllocateJob.AllocatedVector, actualAllocatedJob.AllocatedVector)
-			assert.Equal(t, tt.expected.jobGpuAllocated, actualAllocatedJob.AllocatedVector.Get(actualAllocatedJob.VectorMap.GetIndex("gpu")))
+			assert.Equal(t, tt.expected.jobGpuAllocated, actualAllocatedJob.AllocatedVector.Get(resource_info.GPUIndex))
 
 			actualNodeInfo := extractNodeAssertedInfo(nodesInfoMap[tt.args.nodeToPipeline])
 			originalNodeInfo.assertEqual(t, actualNodeInfo)
-			assert.Equal(t, tt.expected.usedGpuOnNode, actualNodeInfo.used.Get(actualNodeInfo.vectorMap.GetIndex("gpu")))
+			assert.Equal(t, tt.expected.usedGpuOnNode, actualNodeInfo.used.Get(resource_info.GPUIndex))
 		})
 	}
 }

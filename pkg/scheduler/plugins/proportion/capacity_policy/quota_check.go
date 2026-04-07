@@ -4,8 +4,6 @@
 package capacity_policy
 
 import (
-	v1 "k8s.io/api/core/v1"
-
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
@@ -85,9 +83,9 @@ func getNonPreemptibleJobOverQuotaError(queueAttributes *rs.QueueAttributes, req
 	allocatedNonPreemptible := queueAttributes.GetAllocatedNonPreemptible()[exceedingResourceName]
 	vectorMap := resource_info.NewResourceVectorMap()
 	vec := resource_info.NewResourceVector(vectorMap)
-	vec.Set(vectorMap.GetIndex("gpu"), requestedQuota[rs.GpuResource])
-	vec.Set(vectorMap.GetIndex(v1.ResourceCPU), requestedQuota[rs.CpuResource])
-	vec.Set(vectorMap.GetIndex(v1.ResourceMemory), requestedQuota[rs.MemoryResource])
+	vec.Set(resource_info.GPUIndex, requestedQuota[rs.GpuResource])
+	vec.Set(resource_info.CPUIndex, requestedQuota[rs.CpuResource])
+	vec.Set(resource_info.MemoryIndex, requestedQuota[rs.MemoryResource])
 	return api.GetBuildOverCapacityMessageForQueue(queueAttributes.Name, string(exceedingResourceName), deserved,
 		allocatedNonPreemptible, vec, vectorMap)
 }

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"math"
 
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
@@ -58,8 +57,7 @@ func (g *GpuSharingNodeInfo) Clone() *GpuSharingNodeInfo {
 func getAcceptedTaskResourceVectorWithoutSharedGPU(task *pod_info.PodInfo, vectorMap *resource_info.ResourceVectorMap) resource_info.ResourceVector {
 	vec := task.AcceptedResourceVector.Clone()
 	if task.IsSharedGPUAllocation() {
-		gpuIdx := vectorMap.GetIndex(commonconstants.GpuResource)
-		vec.Set(gpuIdx, 0)
+		vec.Set(resource_info.GPUIndex, 0)
 	}
 	return vec
 }

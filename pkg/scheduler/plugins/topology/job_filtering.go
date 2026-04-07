@@ -17,7 +17,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
-	v1 "k8s.io/api/core/v1"
 )
 
 const (
@@ -543,15 +542,11 @@ func useRepresentorPodsAccounting(tasks []*pod_info.PodInfo) bool {
 		return true
 	}
 	vectorMap := tasks[0].VectorMap
-	gpuIdx := vectorMap.GetIndex("gpu")
-	cpuIdx := vectorMap.GetIndex(v1.ResourceCPU)
-	memIdx := vectorMap.GetIndex(v1.ResourceMemory)
-
 	extendedResources := map[int]int{}
 	podsUsingGpu := 0
 	for _, task := range tasks {
 		for i := 0; i < vectorMap.Len(); i++ {
-			if i == cpuIdx || i == memIdx || i == gpuIdx {
+			if i == resource_info.CPUIndex || i == resource_info.MemoryIndex || i == resource_info.GPUIndex {
 				continue
 			}
 			if task.ResReqVector.Get(i) > 0 {

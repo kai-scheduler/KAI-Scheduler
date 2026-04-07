@@ -362,11 +362,10 @@ func (pgi *PodGroupInfo) GetNumGatedTasks() int {
 }
 
 func (pgi *PodGroupInfo) GetAliveTasksRequestedGPUs() float64 {
-	gpuIdx := pgi.VectorMap.GetIndex("gpu")
 	tasksTotalRequestedGPUs := float64(0)
 	for _, task := range pgi.GetAllPodsMap() {
 		if pod_status.IsAliveStatus(task.Status) {
-			tasksTotalRequestedGPUs += task.ResReqVector.Get(gpuIdx)
+			tasksTotalRequestedGPUs += task.ResReqVector.Get(resource_info.GPUIndex)
 		}
 	}
 

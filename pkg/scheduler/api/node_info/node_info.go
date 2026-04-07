@@ -124,7 +124,7 @@ func NewNodeInfo(node *v1.Node, podAffinityInfo pod_affinity.NodePodAffinityInfo
 	nodeInfo.MaxTaskNum = int(numTasks.Value())
 
 	capacityVec := resource_info.ResourceFromResourceList(node.Status.Capacity).ToVector(vectorMap)
-	gpuIdx := vectorMap.GetIndex(commonconstants.GpuResource)
+	gpuIdx := resource_info.GPUIndex
 	if capacityVec.Get(gpuIdx) != allocatableVector.Get(gpuIdx) {
 		log.InfraLogger.V(2).Warnf(
 			"For node %s, the capacity and allocatable are different. Capacity %v, Allocatable %v",
@@ -718,8 +718,7 @@ func (ni *NodeInfo) setAcceptedResources(pi *pod_info.PodInfo) {
 	}
 	// AcceptedResourceVector starts from ResReqVector (same base resources) with GPU set from accepted
 	pi.AcceptedResourceVector = pi.ResReqVector.Clone()
-	gpuIdx := pi.VectorMap.GetIndex(commonconstants.GpuResource)
-	pi.AcceptedResourceVector.Set(gpuIdx, pi.AcceptedGpuRequirement.GPUs()+float64(pi.AcceptedGpuRequirement.GetDraGpusCount()))
+	pi.AcceptedResourceVector.Set(resource_info.GPUIndex, pi.AcceptedGpuRequirement.GPUs()+float64(pi.AcceptedGpuRequirement.GetDraGpusCount()))
 	for migName, migCount := range pi.AcceptedGpuRequirement.MigResources() {
 		if idx := pi.VectorMap.GetIndex(migName); idx >= 0 {
 			pi.AcceptedResourceVector.Set(idx, float64(migCount))

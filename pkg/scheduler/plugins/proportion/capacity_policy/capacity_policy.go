@@ -4,16 +4,15 @@
 package capacity_policy
 
 import (
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	rs "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/utils"
-	v1 "k8s.io/api/core/v1"
 )
 
 type capacityCheckFn func(requestedShare rs.ResourceQuantities, job *podgroup_info.PodGroupInfo) *api.SchedulableResult
@@ -47,9 +46,9 @@ func (cp *CapacityPolicy) IsTaskAllocationOnNodeOverCapacity(task *pod_info.PodI
 	node *node_info.NodeInfo) *api.SchedulableResult {
 	requiredInitQuota := node.GetRequiredInitQuota(task)
 	requestedShare := rs.NewResourceQuantities(
-		requiredInitQuota[node.VectorMap.GetIndex(v1.ResourceCPU)],
-		requiredInitQuota[node.VectorMap.GetIndex(v1.ResourceMemory)],
-		requiredInitQuota[node.VectorMap.GetIndex(constants.GpuResource)])
+		requiredInitQuota[resource_info.CPUIndex],
+		requiredInitQuota[resource_info.MemoryIndex],
+		requiredInitQuota[resource_info.GPUIndex])
 
 	checkFns := []capacityCheckFn{cp.resultsOverLimit, cp.resultsWithNonPreemptibleOverQuota}
 	return cp.isJobOverCapacity(requestedShare, job, checkFns)

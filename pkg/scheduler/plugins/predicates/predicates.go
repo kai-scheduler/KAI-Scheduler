@@ -24,7 +24,6 @@ import (
 	"strconv"
 	"strings"
 
-	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	ksf "k8s.io/kube-scheduler/framework"
 
@@ -33,6 +32,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/cluster_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
@@ -263,8 +263,7 @@ func (pp *predicatesPlugin) evaluateTaskOnPredicates(
 
 func (pp *predicatesPlugin) checkMaxPodsWithGpuGroupReservation(
 	task *pod_info.PodInfo, node *node_info.NodeInfo) error {
-	podsIdx := node.VectorMap.GetIndex(v1.ResourcePods)
-	availablePods := node.IdleVector.Get(podsIdx) + node.ReleasingVector.Get(podsIdx)
+	availablePods := node.IdleVector.Get(resource_info.PodsIndex) + node.ReleasingVector.Get(resource_info.PodsIndex)
 
 	if !task.IsSharedGPURequest() {
 		if availablePods > 0 {

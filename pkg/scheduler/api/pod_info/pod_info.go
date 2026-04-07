@@ -523,8 +523,7 @@ func (pi *PodInfo) updateLegacyMigResourceRequestFromAnnotations() {
 
 // rebuildResReqVector rebuilds ResReqVector from the current vector base resources and GpuRequirement.
 func (pi *PodInfo) rebuildResReqVector() {
-	gpuIdx := pi.VectorMap.GetIndex("gpu")
-	pi.ResReqVector.Set(gpuIdx, pi.GpuRequirement.GPUs()+float64(pi.GpuRequirement.GetDraGpusCount()))
+	pi.ResReqVector.Set(resource_info.GPUIndex, pi.GpuRequirement.GPUs()+float64(pi.GpuRequirement.GetDraGpusCount()))
 	for migName, migCount := range pi.GpuRequirement.MigResources() {
 		if idx := pi.VectorMap.GetIndex(migName); idx >= 0 {
 			pi.ResReqVector.Set(idx, float64(migCount))

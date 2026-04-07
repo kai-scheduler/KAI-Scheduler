@@ -156,16 +156,12 @@ func (r *Resource) AddResourceRequirements(req *ResourceRequirements) {
 }
 
 func (r *Resource) AddVectorAndGpuReq(vec ResourceVector, vectorMap *ResourceVectorMap, gpuReq *GpuResourceRequirement) {
-	cpuIdx := vectorMap.GetIndex(v1.ResourceCPU)
-	memIdx := vectorMap.GetIndex(v1.ResourceMemory)
-	gpuIdx := GPUIndex
-
-	r.milliCpu += vec.Get(cpuIdx)
-	r.memory += vec.Get(memIdx)
+	r.milliCpu += vec.Get(CPUIndex)
+	r.memory += vec.Get(MemoryIndex)
 	r.gpus += gpuReq.GPUs()
 
 	for i := 0; i < vectorMap.Len(); i++ {
-		if i == cpuIdx || i == memIdx || i == gpuIdx {
+		if i == CPUIndex || i == MemoryIndex || i == GPUIndex {
 			continue
 		}
 		val := vec.Get(i)
@@ -191,16 +187,12 @@ func (r *Resource) SubResourceRequirements(req *ResourceRequirements) {
 }
 
 func (r *Resource) SubVectorAndGpuReq(vec ResourceVector, vectorMap *ResourceVectorMap, gpuReq *GpuResourceRequirement) {
-	cpuIdx := vectorMap.GetIndex(v1.ResourceCPU)
-	memIdx := vectorMap.GetIndex(v1.ResourceMemory)
-	gpuIdx := GPUIndex
-
-	r.milliCpu -= vec.Get(cpuIdx)
-	r.memory -= vec.Get(memIdx)
+	r.milliCpu -= vec.Get(CPUIndex)
+	r.memory -= vec.Get(MemoryIndex)
 	r.gpus -= gpuReq.GPUs()
 
 	for i := 0; i < vectorMap.Len(); i++ {
-		if i == cpuIdx || i == memIdx || i == gpuIdx {
+		if i == CPUIndex || i == MemoryIndex || i == GPUIndex {
 			continue
 		}
 		val := vec.Get(i)

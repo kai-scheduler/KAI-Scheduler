@@ -70,9 +70,9 @@ func (mnr *MaxNodeResourcesPredicate) PreFilter(_ context.Context, _ ksf.CycleSt
 
 	draPodClaims := resource_info.GetDraPodClaims(pod, mnr.resourceClaimsMap, mnr.podsToClaimsMap)
 	podInfo := pod_info.NewTaskInfo(pod, draPodClaims, mnr.vectorMap)
-	gpuIdx := mnr.vectorMap.GetIndex("gpu")
-	cpuIdx := mnr.vectorMap.GetIndex(v1.ResourceCPU)
-	memIdx := mnr.vectorMap.GetIndex(v1.ResourceMemory)
+	gpuIdx := resource_info.GPUIndex
+	cpuIdx := resource_info.CPUIndex
+	memIdx := resource_info.MemoryIndex
 
 	if podInfo.ResReqVector.Get(gpuIdx) > mnr.maxResources.Get(gpuIdx) {
 		return nil, ksf.NewStatus(ksf.Unschedulable,

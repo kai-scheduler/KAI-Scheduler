@@ -97,7 +97,7 @@ func GetTasksToAllocateInitResourceVector(
 	}
 
 	result := resource_info.NewResourceVector(podGroupInfo.VectorMap)
-	gpuIdx := podGroupInfo.VectorMap.GetIndex("gpu")
+	gpuIdx := resource_info.GPUIndex
 	for _, task := range GetTasksToAllocate(podGroupInfo, subGroupOrderFn, taskOrderFn, isRealAllocation) {
 		if task.ShouldAllocate(isRealAllocation) {
 			result.Add(task.ResReqVector)

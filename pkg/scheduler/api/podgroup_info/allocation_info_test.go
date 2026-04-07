@@ -255,9 +255,9 @@ func Test_GetTasksToAllocateInitResourceVector(t *testing.T) {
 	pg.AddTaskInfo(task2)
 
 	vec := GetTasksToAllocateInitResourceVector(pg, subGroupOrderFn, tasksOrderFn, true, 0)
-	cpuIdx := vectorMap.GetIndex(v1.ResourceCPU)
-	memIdx := vectorMap.GetIndex(v1.ResourceMemory)
-	gpuIdx := vectorMap.GetIndex("gpu")
+	cpuIdx := resource_info.CPUIndex
+	memIdx := resource_info.MemoryIndex
+	gpuIdx := resource_info.GPUIndex
 
 	if vec.Get(cpuIdx) != 5000 {
 		t.Errorf("want cpu=5000, got %v", vec.Get(cpuIdx))

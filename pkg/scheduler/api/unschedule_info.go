@@ -6,8 +6,6 @@ package api
 import (
 	"fmt"
 
-	v1 "k8s.io/api/core/v1"
-
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
@@ -38,7 +36,7 @@ func getOverCapacityMessageDetails(queueName, resourceName string, deserved, use
 	case CpuResource:
 		return fmt.Sprintf("Workload requested %v CPU cores, but %s quota is %v cores, "+
 			"while %v cores are already allocated for non-preemptible pods.",
-			resource_info.HumanizeResource(requestedResources.Get(vectorMap.GetIndex(v1.ResourceCPU)), resource_info.MilliCPUToCores),
+			resource_info.HumanizeResource(requestedResources.Get(resource_info.CPUIndex), resource_info.MilliCPUToCores),
 			queueName,
 			resource_info.HumanizeResource(deserved, resource_info.MilliCPUToCores),
 			resource_info.HumanizeResource(used, resource_info.MilliCPUToCores),
@@ -46,7 +44,7 @@ func getOverCapacityMessageDetails(queueName, resourceName string, deserved, use
 	case MemoryResource:
 		return fmt.Sprintf("Workload requested %v GB memory, but %s quota is %v GB, "+
 			"while %v GB are already allocated for non-preemptible pods.",
-			resource_info.HumanizeResource(requestedResources.Get(vectorMap.GetIndex(v1.ResourceMemory)), resource_info.MemoryToGB),
+			resource_info.HumanizeResource(requestedResources.Get(resource_info.MemoryIndex), resource_info.MemoryToGB),
 			queueName,
 			resource_info.HumanizeResource(deserved, resource_info.MemoryToGB),
 			resource_info.HumanizeResource(used, resource_info.MemoryToGB),
