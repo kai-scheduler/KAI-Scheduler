@@ -323,7 +323,7 @@ func TestRecordJobStatusEvent(t *testing.T) {
 				},
 				Spec: enginev2alpha2.PodGroupSpec{
 					SchedulingBackoff: ptr.To(int32(1)),
-					MinMember:         int32(minMember),
+					MinMember:         ptr.To(int32(minMember)),
 				},
 			}
 

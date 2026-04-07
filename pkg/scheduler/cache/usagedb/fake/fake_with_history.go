@@ -4,8 +4,12 @@
 package fake
 
 import (
+	"fmt"
 	"math"
 	"sync"
+	"time"
+
+	"github.com/prometheus/common/model"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
@@ -49,7 +53,11 @@ func (f *FakeUsageDBClient) GetResourceUsage() (*queue_info.ClusterUsage, error)
 	usage := queue_info.NewClusterUsage()
 
 	var windowStart, windowEnd int
-	size := f.usageParams.WindowSize.Duration.Seconds()
+	windowSizeDuration, err := model.ParseDuration(string(*f.usageParams.WindowSize))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse windowSize %q: %w", *f.usageParams.WindowSize, err)
+	}
+	size := time.Duration(windowSizeDuration).Seconds()
 	l := len(f.allocationHistory)
 	if l == 0 {
 		return usage, nil

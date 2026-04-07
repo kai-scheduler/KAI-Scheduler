@@ -12,6 +12,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/utils/ptr"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	kaiClient "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned"
@@ -43,7 +44,7 @@ func Create(namespace, name, queue string) *v2alpha2.PodGroup {
 			},
 		},
 		Spec: v2alpha2.PodGroupSpec{
-			MinMember: 1,
+			MinMember: ptr.To(int32(1)),
 			Queue:     queue,
 		},
 	}

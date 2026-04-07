@@ -13,6 +13,7 @@ import (
 	"golang.org/x/exp/maps"
 	batchv1 "k8s.io/api/batch/v1"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/utils/ptr"
 
 	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
@@ -49,7 +50,7 @@ func createDistributedJobForKwok(
 	podGroup := pod_group.Create(
 		namespace, "distributed-job-"+utils.GenerateRandomK8sName(10), jobQueue.Name,
 	)
-	podGroup.Spec.MinMember = int32(numberOfTasks)
+	podGroup.Spec.MinMember = ptr.To(int32(numberOfTasks))
 	maps.Copy(podGroup.Labels, extraLabels)
 	if topologyConstraint != nil {
 		podGroup.Spec.TopologyConstraint = *topologyConstraint

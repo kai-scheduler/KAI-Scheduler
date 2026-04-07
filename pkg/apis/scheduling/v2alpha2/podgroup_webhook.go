@@ -77,7 +77,13 @@ func validateSubGroups(subGroups []SubGroup) error {
 		return err
 	}
 
-	if detectCycle(subGroupMap) {
+	childrenByParent := subgroupChildrenByParent(subGroupMap)
+
+	if err := validateLeafMinMembers(subGroupMap, childrenByParent); err != nil {
+		return err
+	}
+
+	if detectCycle(subGroupMap, childrenByParent) {
 		return errors.New("cycle detected in subgroups")
 	}
 	return nil
@@ -95,28 +101,43 @@ func validateParent(subGroupMap map[string]*SubGroup) error {
 	return nil
 }
 
-func detectCycle(subGroupMap map[string]*SubGroup) bool {
-	graph := map[string][]string{}
+func subgroupChildrenByParent(subGroupMap map[string]*SubGroup) map[string][]string {
+	childrenByParent := make(map[string][]string, len(subGroupMap))
 	for _, subGroup := range subGroupMap {
 		parent := ""
 		if subGroup.Parent != nil {
 			parent = *subGroup.Parent
 		}
-		graph[parent] = append(graph[parent], subGroup.Name)
+		childrenByParent[parent] = append(childrenByParent[parent], subGroup.Name)
 	}
+	return childrenByParent
+}
 
+func validateLeafMinMembers(subGroupMap map[string]*SubGroup, childrenByParent map[string][]string) error {
+	for name, subGroup := range subGroupMap {
+		if len(childrenByParent[name]) > 0 {
+			continue
+		}
+		if subGroup.MinMember == nil {
+			return fmt.Errorf("subgroup %s: minMember is required", name)
+		}
+	}
+	return nil
+}
+
+func detectCycle(subGroupMap map[string]*SubGroup, childrenByParent map[string][]string) bool {
 	visited := map[string]bool{}
 	recStack := map[string]bool{}
 
 	for name := range subGroupMap {
-		if dfsCycleCheck(name, graph, visited, recStack) {
+		if dfsCycleCheck(name, childrenByParent, visited, recStack) {
 			return true
 		}
 	}
 	return false
 }
 
-func dfsCycleCheck(node string, graph map[string][]string, visited, recStack map[string]bool) bool {
+func dfsCycleCheck(node string, childrenByParent map[string][]string, visited, recStack map[string]bool) bool {
 	if recStack[node] {
 		return true // cycle detected
 	}
@@ -126,9 +147,9 @@ func dfsCycleCheck(node string, graph map[string][]string, visited, recStack map
 	visited[node] = true
 	recStack[node] = true
 
-	children := graph[node]
+	children := childrenByParent[node]
 	for _, child := range children {
-		if dfsCycleCheck(child, graph, visited, recStack) {
+		if dfsCycleCheck(child, childrenByParent, visited, recStack) {
 			return true
 		}
 	}

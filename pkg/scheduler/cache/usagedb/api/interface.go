@@ -5,6 +5,7 @@ package api
 
 import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -44,7 +45,7 @@ type UsageParams struct {
 	// Half life period of the usage. If not set, or set to 0, the usage will not be decayed.
 	HalfLifePeriod *metav1.Duration `yaml:"halfLifePeriod,omitempty" json:"halfLifePeriod,omitempty"`
 	// Window size of the usage. Default is 1 week.
-	WindowSize *metav1.Duration `yaml:"windowSize,omitempty" json:"windowSize,omitempty"`
+	WindowSize *monitoringv1.Duration `yaml:"windowSize,omitempty" json:"windowSize,omitempty"`
 	// Window type for time-series aggregation. If not set, defaults to sliding.
 	WindowType *WindowType `yaml:"windowType,omitempty" json:"windowType,omitempty"`
 	// The start timestamp of the tumbling window. If not set, defaults to the current time.

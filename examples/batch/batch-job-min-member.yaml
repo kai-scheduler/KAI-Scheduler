@@ -1,0 +1,31 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# This example demonstrates using the kai.scheduler/batch-min-member annotation
+# to override the default minMember for a batch Job.
+# The scheduler will require at least 3 pods to be schedulable before
+# scheduling any pod in this job.
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: batch-job-min-member
+  annotations:
+    kai.scheduler/batch-min-member: "2"
+spec:
+  parallelism: 6
+  completions: 6
+  template:
+    metadata:
+      labels:
+        kai.scheduler/queue: default-queue
+    spec:
+      schedulerName: kai-scheduler
+      restartPolicy: OnFailure
+      containers:
+        - name: main
+          image: ubuntu
+          args: ["sleep", "infinity"]
+          resources:
+            limits:
+              nvidia.com/gpu: "1"

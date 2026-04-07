@@ -216,7 +216,7 @@ func (p *PrometheusClient) queryResourceUsage(
 func (p *PrometheusClient) querySlidingTimeWindow(ctx context.Context, decayedAllocationMetric string) (model.Value, promv1.Warnings, error) {
 	usageQuery := fmt.Sprintf("sum_over_time((%s)[%s:%s])",
 		decayedAllocationMetric,
-		p.usageParams.WindowSize.Duration.String(),
+		string(*p.usageParams.WindowSize),
 		p.queryResolution.String(),
 	)
 
@@ -275,13 +275,19 @@ func (p *PrometheusClient) getLatestUsageResetTime_TumblingWindow(now time.Time)
 		return now
 	}
 
+	windowSize, err := model.ParseDuration(string(*p.usageParams.WindowSize))
+	if err != nil {
+		log.InfraLogger.V(3).Warnf("Failed to parse windowSize %q: %v, using current time as reset time", *p.usageParams.WindowSize, err)
+		return now
+	}
+
 	previousResetTime := startTime
-	currentResetTime := startTime.Add(p.usageParams.WindowSize.Duration)
+	currentResetTime := startTime.Add(time.Duration(windowSize))
 
 	// Keep finding the next reset time until it's after or equal to the current time
 	for currentResetTime.Before(now) {
 		previousResetTime = currentResetTime
-		currentResetTime = currentResetTime.Add(p.usageParams.WindowSize.Duration)
+		currentResetTime = currentResetTime.Add(time.Duration(windowSize))
 	}
 
 	return previousResetTime

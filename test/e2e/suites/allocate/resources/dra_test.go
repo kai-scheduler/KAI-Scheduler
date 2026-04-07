@@ -286,7 +286,7 @@ var _ = Describe("Schedule pod with dynamic resource request", Ordered, func() {
 						},
 					},
 					Spec: v2alpha2.PodGroupSpec{
-						MinMember: 2,
+						MinMember: ptr.To(int32(2)),
 						Queue:     testCtx.Queues[0].Name,
 					},
 				})
