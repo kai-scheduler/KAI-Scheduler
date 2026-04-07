@@ -6,6 +6,7 @@ package job
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -57,6 +58,12 @@ func (g *K8sJobGrouper) GetPodGroupMetadata(topOwner *unstructured.Unstructured,
 		return nil, err
 	}
 
+	minMember, err := calcMinMember(topOwner, pod)
+	if err != nil {
+		return nil, err
+	}
+	podGroupMetadata.MinAvailable = minMember
+
 	return podGroupMetadata, nil
 }
 
@@ -93,4 +100,18 @@ func calcLegacyName(topOwner *unstructured.Unstructured, pod *v1.Pod) string {
 	}
 
 	return fmt.Sprintf("%s-%s-%s", constants.PodGroupNamePrefix, baseName, topOwner.GetUID())
+}
+
+func calcMinMember(topOwner *unstructured.Unstructured, pod *v1.Pod) (int32, error) {
+	override, found := topOwner.GetAnnotations()[constants.MinMemberOverrideKey]
+	if !found {
+		return 1, nil
+	}
+
+	minMember, err := strconv.ParseInt(override, 10, 32)
+	if err != nil {
+		return 0, fmt.Errorf("invalid min-member annotation value: %w", err)
+	}
+
+	return int32(minMember), nil
 }

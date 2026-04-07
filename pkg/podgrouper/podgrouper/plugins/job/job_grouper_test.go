@@ -296,6 +296,93 @@ func TestGetPodGroupMetadata_LegacyNotFound(t *testing.T) {
 	assert.Equal(t, "train", podGroupMetadata.PriorityClassName)
 }
 
+func TestGetPodGroupMetadata_MinMemberOverride(t *testing.T) {
+	owner := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"kind":       "Job",
+			"apiVersion": "batch/v1",
+			"metadata": map[string]interface{}{
+				"name":      "test_job",
+				"namespace": "test_namespace",
+				"uid":       "1234-5678",
+				"labels":    map[string]interface{}{},
+				"annotations": map[string]interface{}{
+					"kai.scheduler/batch-min-member": "3",
+				},
+			},
+			"spec": map[string]interface{}{
+				"parallelism": int64(5),
+			},
+		},
+	}
+	pod := &v1.Pod{
+		ObjectMeta: v12.ObjectMeta{
+			Name:      "test_job-abc",
+			Namespace: "test_namespace",
+		},
+	}
+
+	scheme := runtime.NewScheme()
+	err := schedulingv2.AddToScheme(scheme)
+	assert.NoError(t, err)
+
+	client := fake.NewClientBuilder().WithScheme(scheme).Build()
+	defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, client)
+	jobGrouper := NewK8sJobGrouper(client, defaultGrouper, false)
+
+	podGroupMetadata, err := jobGrouper.GetPodGroupMetadata(owner, pod)
+	assert.NoError(t, err)
+	assert.Equal(t, int32(3), podGroupMetadata.MinAvailable)
+}
+
+func TestGetPodGroupMetadata_MinMemberOverrideInvalid(t *testing.T) {
+	tests := []struct {
+		name       string
+		annotation string
+	}{
+		{"non-numeric", "abc"},
+		{"non-int", "1.5"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			owner := &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "Job",
+					"apiVersion": "batch/v1",
+					"metadata": map[string]interface{}{
+						"name":      "test_job",
+						"namespace": "test_namespace",
+						"uid":       "1234-5678",
+						"labels":    map[string]interface{}{},
+						"annotations": map[string]interface{}{
+							"kai.scheduler/batch-min-member": "invalid",
+						},
+					},
+					"spec": map[string]interface{}{},
+				},
+			}
+			pod := &v1.Pod{
+				ObjectMeta: v12.ObjectMeta{
+					Name:      "test_job-abc",
+					Namespace: "test_namespace",
+				},
+			}
+
+			scheme := runtime.NewScheme()
+			err := schedulingv2.AddToScheme(scheme)
+			assert.NoError(t, err)
+
+			client := fake.NewClientBuilder().WithScheme(scheme).Build()
+			defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, client)
+			jobGrouper := NewK8sJobGrouper(client, defaultGrouper, false)
+
+			podGroupMetadata, err := jobGrouper.GetPodGroupMetadata(owner, pod)
+			assert.Error(t, err)
+			assert.Nil(t, podGroupMetadata)
+		})
+	}
+}
+
 func TestGetPodGroupMetadata_RegularPodGroup(t *testing.T) {
 	owner := &unstructured.Unstructured{
 		Object: map[string]interface{}{
