@@ -6,7 +6,6 @@ package capacity_policy
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
@@ -1113,7 +1112,6 @@ var _ = Describe("Capacity Policy Check", func() {
 						Namespace:      "team-a",
 						Queue:          "queue",
 						Preemptibility: v2alpha2.NonPreemptible,
-						VectorMap:      testVectorMap,
 						JobFitErrors:   make([]common_info.JobFitError, 0),
 						PodSets: map[string]*subgroup_info.PodSet{
 							podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil).
@@ -1129,13 +1127,13 @@ var _ = Describe("Capacity Policy Check", func() {
 											r.GpuResourceRequirement = *resource_info.NewGpuResourceRequirementWithMultiFraction(2, 0, 60)
 											return r
 										}(),
-										ResReqVector: resource_info.NewResourceRequirements(0, 0, 0).ToVector(testVectorMap),
-										VectorMap:    testVectorMap,
 									},
 								}),
 						},
 					},
-					node:           node_info.NewNodeInfo(&v1.Node{ObjectMeta: metav1.ObjectMeta{Name: "worker-node"}}, nil, testVectorMap),
+					node: &node_info.NodeInfo{
+						Name: "worker-node",
+					},
 					expectedResult: false,
 				},
 			}
@@ -1182,25 +1180,24 @@ var _ = Describe("Capacity Policy Check", func() {
 						Namespace:      "team-a",
 						Queue:          "queue",
 						Preemptibility: v2alpha2.NonPreemptible,
-						VectorMap:      testVectorMap,
 						JobFitErrors:   make([]common_info.JobFitError, 0),
 						PodSets: map[string]*subgroup_info.PodSet{
 							podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil).
 								WithPodInfos(map[common_info.PodID]*pod_info.PodInfo{
 									"task-a": {
-										UID:          "task-a",
-										Job:          "job-a",
-										Name:         "task-a",
-										Namespace:    "team-a",
-										Status:       pod_status.Pending,
-										ResReq:       resource_info.NewResourceRequirementsWithGpus(2),
-										ResReqVector: resource_info.NewResourceRequirementsWithGpus(2).ToVector(testVectorMap),
-										VectorMap:    testVectorMap,
+										UID:       "task-a",
+										Job:       "job-a",
+										Name:      "task-a",
+										Namespace: "team-a",
+										Status:    pod_status.Pending,
+										ResReq:    resource_info.NewResourceRequirementsWithGpus(2),
 									},
 								}),
 						},
 					},
-					node:           node_info.NewNodeInfo(&v1.Node{ObjectMeta: metav1.ObjectMeta{Name: "worker-node"}}, nil, testVectorMap),
+					node: &node_info.NodeInfo{
+						Name: "worker-node",
+					},
 					expectedResult: false,
 				},
 			}
