@@ -6,7 +6,6 @@ package capacity_policy
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
@@ -1066,33 +1065,30 @@ var _ = Describe("Capacity Policy Check", func() {
 						},
 					},
 					job: &podgroup_info.PodGroupInfo{
-						Name:           "job-a",
-						Namespace:      "team-a",
-						Queue:          "queue",
-						Preemptibility: v2alpha2.NonPreemptible,
-						VectorMap:      testVectorMap,
-						JobFitErrors:   make([]common_info.JobFitError, 0),
-						PodSets: map[string]*subgroup_info.PodSet{
-							podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil).
-								WithPodInfos(map[common_info.PodID]*pod_info.PodInfo{
-									"task-a": {
-										UID:       "task-a",
-										Job:       "job-a",
-										Name:      "task-a",
-										Namespace: "team-a",
-										Status:    pod_status.Pending,
-										ResReq: func() *resource_info.ResourceRequirements {
-											r := resource_info.EmptyResourceRequirements()
-											r.GpuResourceRequirement = *resource_info.NewGpuResourceRequirementWithMultiFraction(2, 0, 60)
-											return r
-										}(),
-										ResReqVector: resource_info.NewResourceRequirements(0, 0, 0).ToVector(testVectorMap),
-										VectorMap:    testVectorMap,
-									},
-								}),
+						Name:         "job-a",
+						Namespace:    "team-a",
+						Queue:        "queue",
+						Priority:     constants.PriorityBuildNumber,
+						JobFitErrors: make(v2alpha2.UnschedulableExplanations, 0),
+						PodInfos: map[common_info.PodID]*pod_info.PodInfo{
+							"task-a": {
+								UID:       "task-a",
+								Job:       "job-a",
+								Name:      "task-a",
+								Namespace: "team-a",
+								Status:    pod_status.Pending,
+								ResReq: func() *resource_info.ResourceRequirements {
+									r := resource_info.EmptyResourceRequirements()
+									r.GpuResourceRequirement = *resource_info.NewGpuResourceRequirementWithMultiFraction(2, 0, 60)
+									return r
+								}(),
+							},
 						},
 					},
-					node:           node_info.NewNodeInfo(&v1.Node{ObjectMeta: metav1.ObjectMeta{Name: "worker-node"}}, nil, testVectorMap),
+					node: &node_info.NodeInfo{
+						Name:                   "worker-node",
+						MemoryOfEveryGpuOnNode: 100,
+					},
 					expectedResult: false,
 				},
 			}
@@ -1101,8 +1097,8 @@ var _ = Describe("Capacity Policy Check", func() {
 				testName := name
 				testData := data
 				It(testName, func() {
-					capacityPolicy := New(testData.queues)
-					result := capacityPolicy.IsTaskAllocationOnNodeOverCapacity(testData.job.GetAllPodsMap()["task-a"],
+					capacityPolicy := New(testData.queues, true)
+					result := capacityPolicy.IsTaskAllocationOnNodeOverCapacity(testData.job.PodInfos["task-a"],
 						testData.job, testData.node)
 					Expect(result.IsSchedulable).To(Equal(testData.expectedResult))
 				})
@@ -1116,9 +1112,6 @@ var _ = Describe("Capacity Policy Check", func() {
 				node           *node_info.NodeInfo
 				expectedResult bool
 			}{
-				// A 2-GPU task must be blocked when MaxAllowed=1.
-				// Bug: GetRequiredInitQuota returns the per-device fraction (1.0) instead of
-				// the total GPU count (2.0), so the check sees 0+1=1 which is NOT > 1 → schedulable.
 				"2-GPU task exceeds queue GPU limit of 1": {
 					queues: map[common_info.QueueID]*rs.QueueAttributes{
 						"queue": {
@@ -1135,29 +1128,26 @@ var _ = Describe("Capacity Policy Check", func() {
 						},
 					},
 					job: &podgroup_info.PodGroupInfo{
-						Name:           "job-a",
-						Namespace:      "team-a",
-						Queue:          "queue",
-						Preemptibility: v2alpha2.NonPreemptible,
-						VectorMap:      testVectorMap,
-						JobFitErrors:   make([]common_info.JobFitError, 0),
-						PodSets: map[string]*subgroup_info.PodSet{
-							podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil).
-								WithPodInfos(map[common_info.PodID]*pod_info.PodInfo{
-									"task-a": {
-										UID:          "task-a",
-										Job:          "job-a",
-										Name:         "task-a",
-										Namespace:    "team-a",
-										Status:       pod_status.Pending,
-										ResReq:       resource_info.NewResourceRequirementsWithGpus(2),
-										ResReqVector: resource_info.NewResourceRequirementsWithGpus(2).ToVector(testVectorMap),
-										VectorMap:    testVectorMap,
-									},
-								}),
+						Name:         "job-a",
+						Namespace:    "team-a",
+						Queue:        "queue",
+						Priority:     constants.PriorityBuildNumber,
+						JobFitErrors: make(v2alpha2.UnschedulableExplanations, 0),
+						PodInfos: map[common_info.PodID]*pod_info.PodInfo{
+							"task-a": {
+								UID:       "task-a",
+								Job:       "job-a",
+								Name:      "task-a",
+								Namespace: "team-a",
+								Status:    pod_status.Pending,
+								ResReq:    resource_info.NewResourceRequirementsWithGpus(2),
+							},
 						},
 					},
-					node:           node_info.NewNodeInfo(&v1.Node{ObjectMeta: metav1.ObjectMeta{Name: "worker-node"}}, nil, testVectorMap),
+					node: &node_info.NodeInfo{
+						Name:                   "worker-node",
+						MemoryOfEveryGpuOnNode: 100,
+					},
 					expectedResult: false,
 				},
 			}
@@ -1166,8 +1156,8 @@ var _ = Describe("Capacity Policy Check", func() {
 				testName := name
 				testData := data
 				It(testName, func() {
-					capacityPolicy := New(testData.queues)
-					result := capacityPolicy.IsTaskAllocationOnNodeOverCapacity(testData.job.GetAllPodsMap()["task-a"],
+					capacityPolicy := New(testData.queues, true)
+					result := capacityPolicy.IsTaskAllocationOnNodeOverCapacity(testData.job.PodInfos["task-a"],
 						testData.job, testData.node)
 					Expect(result.IsSchedulable).To(Equal(testData.expectedResult))
 				})
