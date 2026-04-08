@@ -1132,7 +1132,8 @@ var _ = Describe("Capacity Policy Check", func() {
 						},
 					},
 					node: &node_info.NodeInfo{
-						Name: "worker-node",
+						Name:                   "worker-node",
+						MemoryOfEveryGpuOnNode: 100,
 					},
 					expectedResult: false,
 				},
@@ -1157,9 +1158,6 @@ var _ = Describe("Capacity Policy Check", func() {
 				node           *node_info.NodeInfo
 				expectedResult bool
 			}{
-				// A 2-GPU task must be blocked when MaxAllowed=1.
-				// Bug: GetRequiredInitQuota returns the per-device fraction (1.0) instead of
-				// the total GPU count (2.0), so the check sees 0+1=1 which is NOT > 1 → schedulable.
 				"2-GPU task exceeds queue GPU limit of 1": {
 					queues: map[common_info.QueueID]*rs.QueueAttributes{
 						"queue": {
@@ -1196,7 +1194,8 @@ var _ = Describe("Capacity Policy Check", func() {
 						},
 					},
 					node: &node_info.NodeInfo{
-						Name: "worker-node",
+						Name:                   "worker-node",
+						MemoryOfEveryGpuOnNode: 100,
 					},
 					expectedResult: false,
 				},
