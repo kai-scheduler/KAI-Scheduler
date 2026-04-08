@@ -1117,7 +1117,8 @@ var _ = Describe("Capacity Policy Check", func() {
 						},
 					},
 					node: &node_info.NodeInfo{
-						Name: "worker-node",
+						Name:                   "worker-node",
+						MemoryOfEveryGpuOnNode: 100,
 					},
 					expectedResult: false,
 				},
@@ -1181,7 +1182,8 @@ var _ = Describe("Capacity Policy Check", func() {
 						},
 					},
 					node: &node_info.NodeInfo{
-						Name: "worker-node",
+						Name:                   "worker-node",
+						MemoryOfEveryGpuOnNode: 100,
 					},
 					expectedResult: false,
 				},
