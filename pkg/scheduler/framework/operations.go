@@ -54,6 +54,11 @@ type evictOperation struct {
 	message           string
 	evictionMetadata  eviction_info.EvictionMetadata
 	reverseOperation  ReverseOperation
+	// EvictionStrategy is "suspend" or "delete" (default). When "suspend",
+	// commitEvict patches spec.suspend=true on the workload owner instead
+	// of deleting the pod. Set by EvictAllPreemptees based on the PodGroup
+	// annotation kai.scheduler/eviction-strategy.
+	EvictionStrategy string
 }
 
 func (op evictOperation) Name() string {

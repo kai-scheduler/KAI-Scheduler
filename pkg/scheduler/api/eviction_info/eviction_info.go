@@ -11,4 +11,8 @@ type EvictionMetadata struct {
 	EvictionGangSize int
 	Action           string
 	Preemptor        *types.NamespacedName
+	// EvictionStrategy is "suspend" or "delete" (default). When "suspend",
+	// the commit phase patches spec.suspend=true on the workload owner
+	// instead of deleting the pod.
+	EvictionStrategy string
 }

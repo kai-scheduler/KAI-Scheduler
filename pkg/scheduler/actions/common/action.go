@@ -19,27 +19,48 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/scheduler_util"
 )
 
+const (
+	// AnnotationEvictionStrategy controls whether KAI uses suspend-based
+	// preemption ("suspend") or direct pod deletion ("delete").
+	AnnotationEvictionStrategy = "kai.scheduler/eviction-strategy"
+
+	// EvictionStrategySuspend patches spec.suspend=true on the workload owner.
+	EvictionStrategySuspend = "suspend"
+
+	// EvictionStrategyDelete is the default — delete pods directly.
+	EvictionStrategyDelete = "delete"
+)
+
+// GetEvictionStrategy reads the eviction strategy from PodGroup annotations.
+func GetEvictionStrategy(pg *podgroup_info.PodGroupInfo) string {
+	if pg.PodGroup == nil {
+		return EvictionStrategyDelete
+	}
+	if pg.PodGroup.Annotations[AnnotationEvictionStrategy] == EvictionStrategySuspend {
+		return EvictionStrategySuspend
+	}
+	return EvictionStrategyDelete
+}
+
 func EvictAllPreemptees(ssn *framework.Session, preempteeTasks []*pod_info.PodInfo,
 	preemptor *podgroup_info.PodGroupInfo, stmt *framework.Statement,
 	actionType framework.ActionType) error {
 
-	// Check if the preemptee supports suspend-based eviction.
-	if len(preempteeTasks) > 0 && ssn.DynamicClient != nil {
-		preempteeJob, found := ssn.ClusterInfo.PodGroupInfos[preempteeTasks[0].Job]
-		if found && GetEvictionStrategy(preempteeJob) == EvictionStrategySuspend {
-			log.InfraLogger.V(2).Infof("Using suspend-based eviction for PodGroup %s/%s",
-				preempteeJob.Namespace, preempteeJob.Name)
-			if err := SuspendWorkload(ssn.DynamicClient, preempteeJob); err != nil {
-				log.InfraLogger.Errorf("Failed to suspend workload for PodGroup %s/%s: %v. Falling back to pod deletion.",
-					preempteeJob.Namespace, preempteeJob.Name, err)
-				// Fall through to default pod deletion.
-			} else {
-				return nil
+	// Determine eviction strategy per task based on its PodGroup annotation.
+	// All tasks go through stmt.Evict() for simulation (resource accounting),
+	// but at commit time the strategy determines whether to delete pods or
+	// suspend the workload.
+	strategies := make(map[common_info.PodID]string, len(preempteeTasks))
+	for _, task := range preempteeTasks {
+		strategy := EvictionStrategyDelete
+		if ssn.DynamicClient != nil {
+			if job, found := ssn.ClusterInfo.PodGroupInfos[task.Job]; found {
+				strategy = GetEvictionStrategy(job)
 			}
 		}
+		strategies[task.UID] = strategy
 	}
 
-	// Default: per-pod deletion.
 	messages := getEvictionMessages(ssn, preempteeTasks, preemptor, actionType)
 	for _, task := range preempteeTasks {
 		message, found := messages[task.UID]
@@ -52,6 +73,7 @@ func EvictAllPreemptees(ssn *framework.Session, preempteeTasks []*pod_info.PodIn
 			Action:           string(actionType),
 			EvictionGangSize: len(preempteeTasks),
 			Preemptor:        &types.NamespacedName{Namespace: preemptor.Namespace, Name: preemptor.Name},
+			EvictionStrategy: strategies[task.UID],
 		})
 		if err != nil {
 			log.InfraLogger.Errorf("Failed to preempt task <%s/%s> for PodInfos <%s/%s>: %v",
