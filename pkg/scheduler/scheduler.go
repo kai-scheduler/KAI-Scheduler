@@ -27,9 +27,11 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/discovery/cached/memory"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/restmapper"
 
 	kubeaischedulerver "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned"
 	schedcache "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
@@ -71,6 +73,13 @@ func NewScheduler(
 		log.InfraLogger.Warningf("Failed to create dynamic client for suspend-based preemption, falling back to pod deletion: %v", err)
 		dynamicClient = nil
 	}
+
+	// Set up RESTMapper for correct Kind → resource name resolution.
+	// Used by suspend-based preemption to handle non-standard plurals.
+	mapper := restmapper.NewDeferredDiscoveryRESTMapper(
+		memory.NewMemCacheClient(discoveryClient),
+	)
+	framework.SetRESTMapper(mapper)
 
 	usageDBClient, err := getUsageDBClient(schedulerConf.UsageDBConfig)
 	if err != nil {

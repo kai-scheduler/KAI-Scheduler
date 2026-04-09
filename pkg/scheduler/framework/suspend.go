@@ -23,8 +23,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -38,7 +38,7 @@ import (
 // owner. Uses an unstructured JSON merge patch so it works with any CRD
 // that has a spec.suspend field (RayJob, batch Job, JobSet, etc.).
 func suspendWorkload(dynamicClient dynamic.Interface, pg *podgroup_info.PodGroupInfo) error {
-	owner, gvr, err := resolveControllerOwner(pg)
+	owner, gvr, err := resolveControllerOwnerGVR(pg)
 	if err != nil {
 		return err
 	}
@@ -60,7 +60,7 @@ func suspendWorkload(dynamicClient dynamic.Interface, pg *podgroup_info.PodGroup
 // UnsuspendWorkload patches spec.suspend=false on the PodGroup's
 // top-level owner.
 func UnsuspendWorkload(dynamicClient dynamic.Interface, pg *podgroup_info.PodGroupInfo) error {
-	owner, gvr, err := resolveControllerOwner(pg)
+	owner, gvr, err := resolveControllerOwnerGVR(pg)
 	if err != nil {
 		return err
 	}
@@ -81,7 +81,7 @@ func UnsuspendWorkload(dynamicClient dynamic.Interface, pg *podgroup_info.PodGro
 
 // IsWorkloadSuspended checks if the PodGroup's owner has spec.suspend=true.
 func IsWorkloadSuspended(dynamicClient dynamic.Interface, pg *podgroup_info.PodGroupInfo) (bool, error) {
-	owner, gvr, err := resolveControllerOwner(pg)
+	owner, gvr, err := resolveControllerOwnerGVR(pg)
 	if err != nil {
 		return false, err
 	}
@@ -106,10 +106,21 @@ func IsWorkloadSuspended(dynamicClient dynamic.Interface, pg *podgroup_info.PodG
 	return b, nil
 }
 
-// resolveControllerOwner finds the PodGroup's controller owner (the one
-// with controller=true), falling back to the first owner if none is
-// marked as controller.
-func resolveControllerOwner(pg *podgroup_info.PodGroupInfo) (metav1.OwnerReference, schema.GroupVersionResource, error) {
+// restMapper is set during session creation when a discovery client is
+// available. Used by resolveControllerOwnerGVR to correctly map Kind to
+// resource name (handles non-standard plurals like Policy → policies).
+var restMapper meta.RESTMapper
+
+// SetRESTMapper sets the package-level RESTMapper used for GVK → GVR
+// resolution. Called during session creation.
+func SetRESTMapper(mapper meta.RESTMapper) {
+	restMapper = mapper
+}
+
+// resolveControllerOwnerGVR finds the PodGroup's controller owner and
+// resolves its GVR. Uses RESTMapper when available for correct Kind →
+// resource mapping, falling back to naive lowercase+s pluralization.
+func resolveControllerOwnerGVR(pg *podgroup_info.PodGroupInfo) (metav1.OwnerReference, schema.GroupVersionResource, error) {
 	if pg.PodGroup == nil || len(pg.PodGroup.OwnerReferences) == 0 {
 		return metav1.OwnerReference{}, schema.GroupVersionResource{},
 			fmt.Errorf("PodGroup %s/%s has no owner references", pg.Namespace, pg.Name)
@@ -132,14 +143,46 @@ func resolveControllerOwner(pg *podgroup_info.PodGroupInfo) (metav1.OwnerReferen
 }
 
 // ownerRefToGVR converts an OwnerReference's APIVersion and Kind to a
-// GroupVersionResource.
+// GroupVersionResource. Uses the RESTMapper when available for correct
+// pluralization; falls back to naive lowercase+s when the mapper is nil
+// or lookup fails.
 func ownerRefToGVR(ref metav1.OwnerReference) (schema.GroupVersionResource, error) {
 	gv, err := schema.ParseGroupVersion(ref.APIVersion)
 	if err != nil {
 		return schema.GroupVersionResource{}, fmt.Errorf("failed to parse apiVersion %q: %w", ref.APIVersion, err)
 	}
-	resource := strings.ToLower(ref.Kind) + "s"
+
+	gvk := gv.WithKind(ref.Kind)
+
+	// Use RESTMapper for correct Kind → resource mapping.
+	if restMapper != nil {
+		mapping, err := restMapper.RESTMapping(gvk.GroupKind(), gvk.Version)
+		if err == nil {
+			return mapping.Resource, nil
+		}
+		log.InfraLogger.V(4).Infof("RESTMapper lookup failed for %v, falling back to naive pluralization: %v", gvk, err)
+	}
+
+	// Fallback: naive lowercase + "s" (covers common cases like
+	// RayJob→rayjobs, Job→jobs, JobSet→jobsets).
+	resource := toLowerPlural(ref.Kind)
 	return gv.WithResource(resource), nil
+}
+
+// toLowerPlural converts a Kind to its naive plural resource name.
+func toLowerPlural(kind string) string {
+	// Simple lowercase + "s". Covers RayJob→rayjobs, Job→jobs,
+	// JobSet→jobsets. Non-standard plurals (Policy→policies) require
+	// the RESTMapper path above.
+	result := make([]byte, len(kind))
+	for i := 0; i < len(kind); i++ {
+		c := kind[i]
+		if c >= 'A' && c <= 'Z' {
+			c += 32
+		}
+		result[i] = c
+	}
+	return string(result) + "s"
 }
 
 func nestedField(obj map[string]interface{}, fields ...string) (interface{}, bool, error) {
