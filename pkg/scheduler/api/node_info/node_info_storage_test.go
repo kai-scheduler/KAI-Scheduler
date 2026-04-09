@@ -132,7 +132,7 @@ func TestNodeInfoStorage_AddPod(t *testing.T) {
 	node1ExpectedNodeInfo.IdleVector = common_info.BuildResource("7000m", "9G").ToVector(vectorMap)
 	node1ExpectedNodeInfo.UsedVector = common_info.BuildResource("1000m", "1G").ToVector(vectorMap)
 	node1ExpectedNodeInfo.ReleasingVector = resource_info.EmptyResource().ToVector(vectorMap)
-	podsIdx := vectorMap.GetIndex(v1.ResourcePods)
+	podsIdx := resource_info.PodsIndex
 	node1ExpectedNodeInfo.AllocatableVector.Set(podsIdx, 110)
 	node1ExpectedNodeInfo.IdleVector.Set(podsIdx, 109)
 	node1ExpectedNodeInfo.UsedVector.Set(podsIdx, 1)

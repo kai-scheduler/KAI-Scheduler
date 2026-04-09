@@ -14,7 +14,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 )
 
 const (
@@ -152,7 +151,7 @@ func (ig *AccumulatedIdleGpus) updateRequiredResources(scenario *scenario.ByNode
 
 	var requiredResources []float64
 	for _, pod := range scenario.PendingTasks() {
-		requiredResources = append(requiredResources, pod.ResReqVector.Get(resource_info.GPUIndex))
+		requiredResources = append(requiredResources, pod.GpuRequirement.GetGpusQuota())
 		ig.pendingTasksInState[pod.UID] = true
 	}
 	sort.Sort(sort.Reverse(sort.Float64Slice(requiredResources)))
@@ -175,7 +174,7 @@ func (ig *AccumulatedIdleGpus) updateWithVictim(task *pod_info.PodInfo, minIdleG
 	}
 
 	prevMinRelevantValue := ig.nodesNameToIdleGpus[minIdleGpusRelevant]
-	ig.nodesNameToIdleGpus[task.NodeName] += task.AcceptedResourceVector.Get(resource_info.GPUIndex)
+	ig.nodesNameToIdleGpus[task.NodeName] += task.AcceptedGpuRequirement.GetGpusQuota()
 
 	if ig.nodesNameToIdleGpus[task.NodeName] > prevMinRelevantValue {
 		ig.maxFreeGpuNodesSorted = orderedInsert(ig.maxFreeGpuNodesSorted, task.NodeName,

@@ -6,7 +6,7 @@ package api
 import (
 	"testing"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -24,13 +24,10 @@ var _ = Describe("UnscheduledInfo", func() {
 			resourceName := CpuResource
 			deserved := 8000.0 // 8 CPU cores in millicores
 			used := 4000.0     // 4 CPU cores in millicores
-			requiredResources := &podgroup_info.JobRequirement{
-				GPU:      0,
-				MilliCPU: 6000.0, // 6 CPU cores in millicores
-				Memory:   0,
-			}
+			vectorMap := resource_info.NewResourceVectorMap()
+			vec := resource_info.NewResourceRequirements(0, 6000, 0).ToVector(vectorMap)
 
-			message := GetBuildOverCapacityMessageForQueue(queueName, resourceName, deserved, used, requiredResources)
+			message := GetBuildOverCapacityMessageForQueue(queueName, resourceName, deserved, used, vec, vectorMap)
 
 			expectedDetails := "Workload requested 6 CPU cores, but cpu-queue quota is 8 cores, while 4 cores are already allocated for non-preemptible pods."
 
@@ -42,13 +39,10 @@ var _ = Describe("UnscheduledInfo", func() {
 			resourceName := MemoryResource
 			deserved := 100000000000.0 // 100 GB in bytes
 			used := 50000000000.0      // 50 GB in bytes
-			requiredResources := &podgroup_info.JobRequirement{
-				GPU:      0,
-				MilliCPU: 0,
-				Memory:   200000000000.0, // 200 GB in bytes
-			}
+			vectorMap := resource_info.NewResourceVectorMap()
+			vec := resource_info.NewResourceRequirements(0, 0, 200000000000).ToVector(vectorMap)
 
-			message := GetBuildOverCapacityMessageForQueue(queueName, resourceName, deserved, used, requiredResources)
+			message := GetBuildOverCapacityMessageForQueue(queueName, resourceName, deserved, used, vec, vectorMap)
 
 			expectedDetails := "Workload requested 200 GB memory, but memory-queue quota is 100 GB, while 50 GB are already allocated for non-preemptible pods."
 

@@ -32,16 +32,14 @@ type testMetadata struct {
 var testVectorMap = resource_info.NewResourceVectorMap()
 
 func createGpuMemoryTask(name string, numDevices int64, gpuMemory int64) *pod_info.PodInfo {
-	resReq := &resource_info.ResourceRequirements{
-		GpuResourceRequirement: *resource_info.NewGpuResourceRequirementWithMultiFraction(numDevices, 0, gpuMemory),
-	}
+	gpuReq := *resource_info.NewGpuResourceRequirementWithMultiFraction(numDevices, 0, gpuMemory)
 	task := &pod_info.PodInfo{
 		Name:                name,
 		Status:              pod_status.Pending,
 		SubGroupName:        podgroup_info.DefaultSubGroup,
 		ResourceRequestType: pod_info.RequestTypeGpuMemory,
-		ResReq:              resReq,
-		ResReqVector:        resReq.ToVector(testVectorMap),
+		GpuRequirement:      gpuReq,
+		ResReqVector:        resource_info.NewResourceVectorWithValues(0, 0, gpuReq.GPUs(), testVectorMap),
 		VectorMap:           testVectorMap,
 	}
 	return task

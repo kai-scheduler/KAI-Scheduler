@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"math"
 
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
@@ -58,8 +57,7 @@ func (g *GpuSharingNodeInfo) Clone() *GpuSharingNodeInfo {
 func getAcceptedTaskResourceVectorWithoutSharedGPU(task *pod_info.PodInfo, vectorMap *resource_info.ResourceVectorMap) resource_info.ResourceVector {
 	vec := task.AcceptedResourceVector.Clone()
 	if task.IsSharedGPUAllocation() {
-		gpuIdx := vectorMap.GetIndex(commonconstants.GpuResource)
-		vec.Set(gpuIdx, 0)
+		vec.Set(resource_info.GPUIndex, 0)
 	}
 	return vec
 }
@@ -88,13 +86,13 @@ func (ni *NodeInfo) addSharedGPUTaskResourcesPerPodGroup(task *pod_info.PodInfo,
 		ni.ReleasingSharedGPUsMemory[gpuGroup], ni.AllocatedSharedGPUsMemory[gpuGroup],
 		ni.UsedSharedGPUsMemory[gpuGroup])
 
-	ni.UsedSharedGPUsMemory[gpuGroup] += ni.GetResourceGpuMemory(task.ResReq)
+	ni.UsedSharedGPUsMemory[gpuGroup] += ni.GetResourceGpuMemory(&task.GpuRequirement)
 	singleGpu := resource_info.NewSingleGpuVector(ni.VectorMap)
 
 	switch task.Status {
 	case pod_status.Releasing:
-		ni.ReleasingSharedGPUsMemory[gpuGroup] += ni.GetResourceGpuMemory(task.ResReq)
-		ni.AllocatedSharedGPUsMemory[gpuGroup] += ni.GetResourceGpuMemory(task.ResReq)
+		ni.ReleasingSharedGPUsMemory[gpuGroup] += ni.GetResourceGpuMemory(&task.GpuRequirement)
+		ni.AllocatedSharedGPUsMemory[gpuGroup] += ni.GetResourceGpuMemory(&task.GpuRequirement)
 
 		if ni.UsedSharedGPUsMemory[gpuGroup] == ni.ReleasingSharedGPUsMemory[gpuGroup] {
 			// is this the last releasing task for this gpu
@@ -107,16 +105,16 @@ func (ni *NodeInfo) addSharedGPUTaskResourcesPerPodGroup(task *pod_info.PodInfo,
 			}
 		}
 	case pod_status.Pipelined:
-		ni.ReleasingSharedGPUsMemory[gpuGroup] -= ni.GetResourceGpuMemory(task.ResReq)
+		ni.ReleasingSharedGPUsMemory[gpuGroup] -= ni.GetResourceGpuMemory(&task.GpuRequirement)
 
-		if ni.UsedSharedGPUsMemory[gpuGroup]-ni.GetResourceGpuMemory(task.ResReq) ==
-			ni.ReleasingSharedGPUsMemory[gpuGroup]+ni.GetResourceGpuMemory(task.ResReq) {
+		if ni.UsedSharedGPUsMemory[gpuGroup]-ni.GetResourceGpuMemory(&task.GpuRequirement) ==
+			ni.ReleasingSharedGPUsMemory[gpuGroup]+ni.GetResourceGpuMemory(&task.GpuRequirement) {
 			ni.ReleasingVector.Sub(singleGpu)
 		}
 	default:
-		ni.AllocatedSharedGPUsMemory[gpuGroup] += ni.GetResourceGpuMemory(task.ResReq)
+		ni.AllocatedSharedGPUsMemory[gpuGroup] += ni.GetResourceGpuMemory(&task.GpuRequirement)
 
-		if ni.UsedSharedGPUsMemory[gpuGroup] <= ni.GetResourceGpuMemory(task.ResReq) {
+		if ni.UsedSharedGPUsMemory[gpuGroup] <= ni.GetResourceGpuMemory(&task.GpuRequirement) {
 			// no other fractional was allocated here yet
 			if int(ni.GetNumberOfGPUsInNode()) < int(ni.IdleVector.Get(resource_info.GPUIndex))+ni.getNumberOfUsedGPUs() {
 				ni.IdleVector.Sub(singleGpu)
@@ -163,13 +161,13 @@ func (ni *NodeInfo) removeSharedTaskResourcesPerPodGroup(task *pod_info.PodInfo,
 		ni.ReleasingSharedGPUsMemory[gpuGroup], ni.AllocatedSharedGPUsMemory[gpuGroup],
 		ni.UsedSharedGPUsMemory[gpuGroup])
 
-	ni.UsedSharedGPUsMemory[gpuGroup] -= ni.GetResourceGpuMemory(task.ResReq)
+	ni.UsedSharedGPUsMemory[gpuGroup] -= ni.GetResourceGpuMemory(&task.GpuRequirement)
 	singleGpu := resource_info.NewSingleGpuVector(ni.VectorMap)
 
 	switch task.Status {
 	case pod_status.Releasing:
-		ni.ReleasingSharedGPUsMemory[gpuGroup] -= ni.GetResourceGpuMemory(task.ResReq)
-		ni.AllocatedSharedGPUsMemory[gpuGroup] -= ni.GetResourceGpuMemory(task.ResReq)
+		ni.ReleasingSharedGPUsMemory[gpuGroup] -= ni.GetResourceGpuMemory(&task.GpuRequirement)
+		ni.AllocatedSharedGPUsMemory[gpuGroup] -= ni.GetResourceGpuMemory(&task.GpuRequirement)
 		log.InfraLogger.V(6).Infof(
 			"Releasing gpuGroup: <%v> releasingSharedGPU: <%v> "+
 				"AllocatedSharedGPUsMemory <%v>, UsedSharedGPUsMemory: <%v>",
@@ -187,7 +185,7 @@ func (ni *NodeInfo) removeSharedTaskResourcesPerPodGroup(task *pod_info.PodInfo,
 			}
 		}
 	case pod_status.Pipelined:
-		ni.ReleasingSharedGPUsMemory[gpuGroup] += ni.GetResourceGpuMemory(task.ResReq)
+		ni.ReleasingSharedGPUsMemory[gpuGroup] += ni.GetResourceGpuMemory(&task.GpuRequirement)
 		log.InfraLogger.V(6).Infof(
 			"Pipelined gpuGroup: <%v> releasingSharedGPU: <%v> "+
 				"AllocatedSharedGPUsMemory <%v>, UsedSharedGPUsMemory: <%v>",
@@ -204,7 +202,7 @@ func (ni *NodeInfo) removeSharedTaskResourcesPerPodGroup(task *pod_info.PodInfo,
 				"AllocatedSharedGPUsMemory <%v>, UsedSharedGPUsMemory: <%v>",
 			gpuGroup, ni.ReleasingSharedGPUsMemory[gpuGroup],
 			ni.AllocatedSharedGPUsMemory[gpuGroup], ni.UsedSharedGPUsMemory[gpuGroup])
-		ni.AllocatedSharedGPUsMemory[gpuGroup] -= ni.GetResourceGpuMemory(task.ResReq)
+		ni.AllocatedSharedGPUsMemory[gpuGroup] -= ni.GetResourceGpuMemory(&task.GpuRequirement)
 
 		if ni.UsedSharedGPUsMemory[gpuGroup] <= 0 {
 			// no other fractional was allocated here yet
@@ -228,8 +226,8 @@ func (ni *NodeInfo) removeSharedTaskResourcesPerPodGroup(task *pod_info.PodInfo,
 }
 
 func (ni *NodeInfo) isPipelinedToReleasingGpu(task *pod_info.PodInfo, gpuGroup string) bool {
-	usedMemoryBeforeRemoval := ni.UsedSharedGPUsMemory[gpuGroup] + ni.GetResourceGpuMemory(task.ResReq)
-	releasingMemoryBeforeRemoval := ni.ReleasingSharedGPUsMemory[gpuGroup] - ni.GetResourceGpuMemory(task.ResReq)
+	usedMemoryBeforeRemoval := ni.UsedSharedGPUsMemory[gpuGroup] + ni.GetResourceGpuMemory(&task.GpuRequirement)
+	releasingMemoryBeforeRemoval := ni.ReleasingSharedGPUsMemory[gpuGroup] - ni.GetResourceGpuMemory(&task.GpuRequirement)
 	usedOriginally0 := ni.UsedSharedGPUsMemory[gpuGroup] == 0
 	releasingOriginally0 := ni.ReleasingSharedGPUsMemory[gpuGroup] == 0
 
@@ -351,9 +349,9 @@ func (ni *NodeInfo) getGpuMemoryFractionalOnNode(memory int64) float64 {
 func (ni *NodeInfo) fractionTaskGpusAllocatableDeviceCount(pod *pod_info.PodInfo) int64 {
 	matchingGpuGroupsCount := int64(0)
 	for gpuGroup := range ni.UsedSharedGPUsMemory {
-		if ni.IsTaskFitOnGpuGroup(pod.ResReq, gpuGroup) {
+		if ni.IsTaskFitOnGpuGroup(&pod.GpuRequirement, gpuGroup) {
 			matchingGpuGroupsCount += 1
-			if matchingGpuGroupsCount >= pod.ResReq.GetNumOfGpuDevices() {
+			if matchingGpuGroupsCount >= pod.GpuRequirement.GetNumOfGpuDevices() {
 				return matchingGpuGroupsCount
 			}
 		}
@@ -362,13 +360,13 @@ func (ni *NodeInfo) fractionTaskGpusAllocatableDeviceCount(pod *pod_info.PodInfo
 	return matchingGpuGroupsCount
 }
 
-func (ni *NodeInfo) IsTaskFitOnGpuGroup(resourceRequest *resource_info.ResourceRequirements, gpuGroup string) bool {
+func (ni *NodeInfo) IsTaskFitOnGpuGroup(resourceRequest *resource_info.GpuResourceRequirement, gpuGroup string) bool {
 	return ni.UsedSharedGPUsMemory[gpuGroup] != 0 &&
 		ni.enoughResourcesOnGpu(resourceRequest, gpuGroup) &&
 		!ni.isAllGpuReleased(gpuGroup)
 }
 
-func (ni *NodeInfo) EnoughIdleResourcesOnGpu(resources *resource_info.ResourceRequirements, gpuGroup string) bool {
+func (ni *NodeInfo) EnoughIdleResourcesOnGpu(resources *resource_info.GpuResourceRequirement, gpuGroup string) bool {
 	if _, foundOnAllocated := ni.AllocatedSharedGPUsMemory[gpuGroup]; !foundOnAllocated {
 		// If a gpu group is not found in allocated, it's an indication that this group is pipelined
 		return false
@@ -376,7 +374,7 @@ func (ni *NodeInfo) EnoughIdleResourcesOnGpu(resources *resource_info.ResourceRe
 	return ni.MemoryOfEveryGpuOnNode-ni.AllocatedSharedGPUsMemory[gpuGroup]-ni.GetResourceGpuMemory(resources) >= 0
 }
 
-func (ni *NodeInfo) enoughResourcesOnGpu(resources *resource_info.ResourceRequirements, gpuGroup string) bool {
+func (ni *NodeInfo) enoughResourcesOnGpu(resources *resource_info.GpuResourceRequirement, gpuGroup string) bool {
 	return (ni.MemoryOfEveryGpuOnNode -
 		ni.AllocatedSharedGPUsMemory[gpuGroup] +
 		ni.ReleasingSharedGPUsMemory[gpuGroup] -

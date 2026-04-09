@@ -3498,6 +3498,11 @@ spec:
                           type: string
                       type: object
                     type: array
+                  imagesPullSecret:
+                    description: |-
+                      Deprecated: ImagePullSecret defines a single container registry secret credential.
+                      Use ImagePullSecrets instead.
+                    type: string
                   namespaceLabelSelector:
                     additionalProperties:
                       type: string

@@ -8,9 +8,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	v1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 
 	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
@@ -142,16 +140,17 @@ func TestStatement_Evict_Unevict(t *testing.T) {
 			actualTask := ssn.ClusterInfo.PodGroupInfos[tt.args.jobName].GetAllPodsMap()[tt.args.podName]
 			assert.Equal(t, actualTask.NodeName, originalTask.NodeName)
 			assert.Equal(t, actualTask.Status, originalTask.Status)
-			assert.Equal(t, *actualTask.ResReq, *originalTask.ResReq)
+			assert.Equal(t, actualTask.GpuRequirement, originalTask.GpuRequirement)
+			assert.Equal(t, actualTask.ResReqVector, originalTask.ResReqVector)
 			assert.Equal(t, actualTask.GPUGroups, originalTask.GPUGroups)
 
 			actualJob := ssn.ClusterInfo.PodGroupInfos[tt.args.jobName]
-			assert.Equal(t, *originalJob.Allocated, *actualJob.Allocated)
-			assert.Equal(t, tt.expected.jobGpuAllocation, actualJob.Allocated.GPUs())
+			assert.Equal(t, originalJob.AllocatedVector, actualJob.AllocatedVector)
+			assert.Equal(t, tt.expected.jobGpuAllocation, actualJob.AllocatedVector.Get(resource_info.GPUIndex))
 
 			actualNodeInfo := extractNodeAssertedInfo(nodesInfoMap[actualTask.NodeName])
 			originalNodeInfo.assertEqual(t, actualNodeInfo)
-			assert.Equal(t, tt.expected.usedGpuOnNode, actualNodeInfo.used.Get(actualNodeInfo.vectorMap.GetIndex("gpu")))
+			assert.Equal(t, tt.expected.usedGpuOnNode, actualNodeInfo.used.Get(resource_info.GPUIndex))
 		})
 	}
 }
@@ -162,9 +161,8 @@ func TestStatement_Evict(t *testing.T) {
 		podName common_info.PodID
 	}
 	type expected struct {
-		err           error
-		jobAllocation *resource_info.Resource
-		usedOnNode    *resource_info.Resource
+		err              error
+		jobGpuAllocation float64
 	}
 	type originalState struct {
 		task *pod_info.PodInfo
@@ -204,17 +202,8 @@ func TestStatement_Evict(t *testing.T) {
 				podName: "pending_job0-0",
 			},
 			expected{
-				err: fmt.Errorf("node doesn't exist in sesssion: <>"),
-				jobAllocation: resource_info.ResourceFromResourceList(
-					v1.ResourceList{
-						"nvidia.com/gpu": resource.MustParse("0"),
-					},
-				),
-				usedOnNode: resource_info.ResourceFromResourceList(
-					v1.ResourceList{
-						"nvidia.com/gpu": resource.MustParse("0"),
-					},
-				),
+				err:              fmt.Errorf("node doesn't exist in sesssion: <>"),
+				jobGpuAllocation: 0,
 			},
 		},
 		{
@@ -245,19 +234,8 @@ func TestStatement_Evict(t *testing.T) {
 				podName: "running_job0-0",
 			},
 			expected{
-				err: nil,
-				jobAllocation: resource_info.ResourceFromResourceList(
-					v1.ResourceList{
-						"nvidia.com/gpu": resource.MustParse("1"),
-						"pods":           resource.MustParse("1"),
-					},
-				),
-				usedOnNode: resource_info.ResourceFromResourceList(
-					v1.ResourceList{
-						"nvidia.com/gpu": resource.MustParse("1"),
-						"pods":           resource.MustParse("1"),
-					},
-				),
+				err:              nil,
+				jobGpuAllocation: 1,
 			},
 		},
 	}
@@ -300,9 +278,9 @@ func TestStatement_Evict(t *testing.T) {
 
 			validateEvictedTask(t, s.ssn, tt.args.jobName, tt.args.podName, dataBeforeEvict.task)
 			validateEvictedJob(t, s.ssn, tt.args.jobName,
-				dataBeforeEvict.task, dataBeforeEvict.job, tt.expected.jobAllocation)
+				dataBeforeEvict.task, dataBeforeEvict.job, buildGpuVector(vectorMap, tt.expected.jobGpuAllocation))
 			validateEvictedFromNode(t, nodesInfoMap[task.NodeName], dataBeforeEvict.node,
-				dataBeforeEvict.task.ResReq)
+				dataBeforeEvict.task.ResReqVector, dataBeforeEvict.task.VectorMap)
 		})
 	}
 }
@@ -313,9 +291,8 @@ func TestStatement_Evict_Undo_Undo(t *testing.T) {
 		podName common_info.PodID
 	}
 	type expected struct {
-		err           error
-		jobAllocation *resource_info.Resource
-		usedOnNode    *resource_info.Resource
+		err              error
+		jobGpuAllocation float64
 	}
 	type originalState struct {
 		task *pod_info.PodInfo
@@ -355,17 +332,8 @@ func TestStatement_Evict_Undo_Undo(t *testing.T) {
 				podName: "pending_job0-0",
 			},
 			expected{
-				err: fmt.Errorf("node doesn't exist in sesssion: <>"),
-				jobAllocation: resource_info.ResourceFromResourceList(
-					v1.ResourceList{
-						"nvidia.com/gpu": resource.MustParse("0"),
-					},
-				),
-				usedOnNode: resource_info.ResourceFromResourceList(
-					v1.ResourceList{
-						"nvidia.com/gpu": resource.MustParse("0"),
-					},
-				),
+				err:              fmt.Errorf("node doesn't exist in sesssion: <>"),
+				jobGpuAllocation: 0,
 			},
 		},
 		{
@@ -396,17 +364,8 @@ func TestStatement_Evict_Undo_Undo(t *testing.T) {
 				podName: "running_job0-0",
 			},
 			expected{
-				err: nil,
-				jobAllocation: resource_info.ResourceFromResourceList(
-					v1.ResourceList{
-						"nvidia.com/gpu": resource.MustParse("1"),
-					},
-				),
-				usedOnNode: resource_info.ResourceFromResourceList(
-					v1.ResourceList{
-						"nvidia.com/gpu": resource.MustParse("1"),
-					},
-				),
+				err:              nil,
+				jobGpuAllocation: 1,
 			},
 		},
 	}
@@ -455,9 +414,9 @@ func TestStatement_Evict_Undo_Undo(t *testing.T) {
 
 			validateEvictedTask(t, s.ssn, tt.args.jobName, tt.args.podName, dataBeforeEvict.task)
 			validateEvictedJob(t, s.ssn, tt.args.jobName,
-				dataBeforeEvict.task, dataBeforeEvict.job, tt.expected.jobAllocation)
+				dataBeforeEvict.task, dataBeforeEvict.job, buildGpuVector(vectorMap, tt.expected.jobGpuAllocation))
 			validateEvictedFromNode(t, nodesInfoMap[task.NodeName], dataBeforeEvict.node,
-				dataBeforeEvict.task.ResReq)
+				dataBeforeEvict.task.ResReqVector, dataBeforeEvict.task.VectorMap)
 		})
 	}
 }
@@ -676,21 +635,22 @@ func TestStatement_Pipeline_Unpipeline(t *testing.T) {
 			actualTask := ssn.ClusterInfo.PodGroupInfos[tt.args.jobName].GetAllPodsMap()[tt.args.podName]
 			assert.Equal(t, actualTask.NodeName, originalPipelineTask.NodeName)
 			assert.Equal(t, actualTask.Status, originalPipelineTask.Status)
-			assert.Equal(t, *actualTask.ResReq, *originalPipelineTask.ResReq)
+			assert.Equal(t, actualTask.GpuRequirement, originalPipelineTask.GpuRequirement)
+			assert.Equal(t, actualTask.ResReqVector, originalPipelineTask.ResReqVector)
 			assert.Equal(t, actualTask.GPUGroups, originalPipelineTask.GPUGroups)
 
 			actualPipelinedJob := ssn.ClusterInfo.PodGroupInfos[tt.args.jobName]
-			assert.Equal(t, *originalPipelineJob.Allocated, *actualPipelinedJob.Allocated)
-			assert.Equal(t, tt.expected.jobGpuAllocated, actualPipelinedJob.Allocated.GPUs())
+			assert.Equal(t, originalPipelineJob.AllocatedVector, actualPipelinedJob.AllocatedVector)
+			assert.Equal(t, tt.expected.jobGpuAllocated, actualPipelinedJob.AllocatedVector.Get(resource_info.GPUIndex))
 
 			if pipelinedTask.NodeName != "" {
 				pipelinedFromNodeInfo := extractNodeAssertedInfo(nodesInfoMap[pipelinedTask.NodeName])
 				originalPipelinedNodeInfo.assertEqual(t, pipelinedFromNodeInfo)
-				assert.Equal(t, tt.expected.usedGpuOnPipelineOriginNode, originalPipelinedNodeInfo.used.Get(originalPipelinedNodeInfo.vectorMap.GetIndex("gpu")))
+				assert.Equal(t, tt.expected.usedGpuOnPipelineOriginNode, originalPipelinedNodeInfo.used.Get(resource_info.GPUIndex))
 			}
 			pipelinedToNodeInfo := extractNodeAssertedInfo(nodesInfoMap[tt.args.nodeToPipeline])
 			originalPipelinedToNodeInfo.assertEqual(t, pipelinedToNodeInfo)
-			assert.Equal(t, tt.expected.usedGpuOnPipelinedNode, originalPipelinedToNodeInfo.used.Get(originalPipelinedToNodeInfo.vectorMap.GetIndex("gpu")))
+			assert.Equal(t, tt.expected.usedGpuOnPipelinedNode, originalPipelinedToNodeInfo.used.Get(resource_info.GPUIndex))
 		})
 	}
 }
@@ -703,9 +663,8 @@ func TestStatement_Pipeline(t *testing.T) {
 		updateTaskIfExistsOnNode bool
 	}
 	type expected struct {
-		err           error
-		jobAllocation *resource_info.Resource
-		usedOnNode    *resource_info.Resource
+		err              error
+		jobGpuAllocation float64
 	}
 	type originalState struct {
 		task     *pod_info.PodInfo
@@ -760,17 +719,8 @@ func TestStatement_Pipeline(t *testing.T) {
 				updateTaskIfExistsOnNode: true,
 			},
 			expected{
-				err: nil,
-				jobAllocation: resource_info.ResourceFromResourceList(
-					v1.ResourceList{
-						"nvidia.com/gpu": resource.MustParse("0"),
-					},
-				),
-				usedOnNode: resource_info.ResourceFromResourceList(
-					v1.ResourceList{
-						"nvidia.com/gpu": resource.MustParse("0"),
-					},
-				),
+				err:              nil,
+				jobGpuAllocation: 0,
 			},
 		},
 	}
@@ -812,13 +762,13 @@ func TestStatement_Pipeline(t *testing.T) {
 			validatePipelinedTask(t, s.ssn, tt.args.jobName, tt.args.podName, tt.args.nodeToPipeline,
 				dataBeforeEvict.task)
 			validatePipelinedJob(t, s.ssn, tt.args.jobName, dataBeforeEvict.task, dataBeforeEvict.job,
-				tt.expected.jobAllocation)
+				buildGpuVector(vectorMap, tt.expected.jobGpuAllocation))
 
 			if dataBeforeEvict.task.NodeName != tt.args.nodeToPipeline {
 				validateEvictedFromNode(t, nodesInfoMap[pipelinedTask.NodeName], dataBeforeEvict.fromNode,
-					dataBeforeEvict.task.ResReq)
+					dataBeforeEvict.task.ResReqVector, dataBeforeEvict.task.VectorMap)
 				validatePipelinedToNode(t, nodesInfoMap[tt.args.nodeToPipeline], dataBeforeEvict.toNode,
-					dataBeforeEvict.task.ResReq)
+					dataBeforeEvict.task.ResReqVector, dataBeforeEvict.task.VectorMap)
 			}
 		})
 	}
@@ -832,9 +782,8 @@ func TestStatement_Pipeline_Undo_Undo(t *testing.T) {
 		updateTaskIfExistsOnNode bool
 	}
 	type expected struct {
-		err           error
-		jobAllocation *resource_info.Resource
-		usedOnNode    *resource_info.Resource
+		err              error
+		jobGpuAllocation float64
 	}
 	type originalState struct {
 		task     *pod_info.PodInfo
@@ -889,17 +838,8 @@ func TestStatement_Pipeline_Undo_Undo(t *testing.T) {
 				updateTaskIfExistsOnNode: true,
 			},
 			expected{
-				err: nil,
-				jobAllocation: resource_info.ResourceFromResourceList(
-					v1.ResourceList{
-						"nvidia.com/gpu": resource.MustParse("0"),
-					},
-				),
-				usedOnNode: resource_info.ResourceFromResourceList(
-					v1.ResourceList{
-						"nvidia.com/gpu": resource.MustParse("0"),
-					},
-				),
+				err:              nil,
+				jobGpuAllocation: 0,
 			},
 		},
 	}
@@ -948,13 +888,13 @@ func TestStatement_Pipeline_Undo_Undo(t *testing.T) {
 			validatePipelinedTask(t, s.ssn, tt.args.jobName, tt.args.podName, tt.args.nodeToPipeline,
 				dataBeforeEvict.task)
 			validatePipelinedJob(t, s.ssn, tt.args.jobName, dataBeforeEvict.task, dataBeforeEvict.job,
-				tt.expected.jobAllocation)
+				buildGpuVector(vectorMap, tt.expected.jobGpuAllocation))
 
 			if dataBeforeEvict.task.NodeName != tt.args.nodeToPipeline {
 				validateEvictedFromNode(t, nodesInfoMap[pipelinedTask.NodeName], dataBeforeEvict.fromNode,
-					dataBeforeEvict.task.ResReq)
+					dataBeforeEvict.task.ResReqVector, dataBeforeEvict.task.VectorMap)
 				validatePipelinedToNode(t, nodesInfoMap[tt.args.nodeToPipeline], dataBeforeEvict.toNode,
-					dataBeforeEvict.task.ResReq)
+					dataBeforeEvict.task.ResReqVector, dataBeforeEvict.task.VectorMap)
 			}
 		})
 	}
@@ -967,8 +907,8 @@ func TestStatement_Allocate_Unallocate(t *testing.T) {
 		nodeToPipeline string
 	}
 	type expected struct {
-		jobAllocated *resource_info.Resource
-		usedOnNode   *resource_info.Resource
+		jobGpuAllocated float64
+		usedGpuOnNode   float64
 	}
 	tests := []struct {
 		name         string
@@ -1004,16 +944,8 @@ func TestStatement_Allocate_Unallocate(t *testing.T) {
 				nodeToPipeline: "node0",
 			},
 			expected{
-				jobAllocated: resource_info.ResourceFromResourceList(
-					v1.ResourceList{
-						"nvidia.com/gpu": resource.MustParse("0"),
-					},
-				),
-				usedOnNode: resource_info.ResourceFromResourceList(
-					v1.ResourceList{
-						"nvidia.com/gpu": resource.MustParse("0"),
-					},
-				),
+				jobGpuAllocated: 0,
+				usedGpuOnNode:   0,
 			},
 		},
 	}
@@ -1052,16 +984,17 @@ func TestStatement_Allocate_Unallocate(t *testing.T) {
 			actualAllocatedTask := ssn.ClusterInfo.PodGroupInfos[tt.args.jobName].GetAllPodsMap()[tt.args.podName]
 			assert.Equal(t, actualAllocatedTask.NodeName, originalAllocateTask.NodeName)
 			assert.Equal(t, actualAllocatedTask.Status, originalAllocateTask.Status)
-			assert.Equal(t, *actualAllocatedTask.ResReq, *originalAllocateTask.ResReq)
+			assert.Equal(t, actualAllocatedTask.GpuRequirement, originalAllocateTask.GpuRequirement)
+			assert.Equal(t, actualAllocatedTask.ResReqVector, originalAllocateTask.ResReqVector)
 			assert.Equal(t, actualAllocatedTask.GPUGroups, originalAllocateTask.GPUGroups)
 
 			actualAllocatedJob := ssn.ClusterInfo.PodGroupInfos[tt.args.jobName]
-			assert.Equal(t, *originalAllocateJob.Allocated, *actualAllocatedJob.Allocated)
-			assert.Equal(t, tt.expected.jobAllocated.GPUs(), actualAllocatedJob.Allocated.GPUs())
+			assert.Equal(t, originalAllocateJob.AllocatedVector, actualAllocatedJob.AllocatedVector)
+			assert.Equal(t, tt.expected.jobGpuAllocated, actualAllocatedJob.AllocatedVector.Get(resource_info.GPUIndex))
 
 			actualNodeInfo := extractNodeAssertedInfo(nodesInfoMap[tt.args.nodeToPipeline])
 			originalNodeInfo.assertEqual(t, actualNodeInfo)
-			assert.Equal(t, tt.expected.usedOnNode.GPUs(), actualNodeInfo.used.Get(actualNodeInfo.vectorMap.GetIndex("gpu")))
+			assert.Equal(t, tt.expected.usedGpuOnNode, actualNodeInfo.used.Get(resource_info.GPUIndex))
 		})
 	}
 }
@@ -1074,8 +1007,8 @@ func TestStatement_Allocate(t *testing.T) {
 		updateTaskIfExistsOnNode bool
 	}
 	type expected struct {
-		err           error
-		jobAllocation *resource_info.Resource
+		err              error
+		jobGpuAllocation float64
 	}
 	type originalState struct {
 		task   *pod_info.PodInfo
@@ -1120,12 +1053,8 @@ func TestStatement_Allocate(t *testing.T) {
 				updateTaskIfExistsOnNode: true,
 			},
 			expected{
-				err: nil,
-				jobAllocation: resource_info.ResourceFromResourceList(
-					v1.ResourceList{
-						"nvidia.com/gpu": resource.MustParse("1"),
-					},
-				),
+				err:              nil,
+				jobGpuAllocation: 1,
 			},
 		},
 	}
@@ -1165,9 +1094,9 @@ func TestStatement_Allocate(t *testing.T) {
 			validateAllocatedTask(t, s.ssn, tt.args.jobName, tt.args.podName, tt.args.nodeToAllocate,
 				dataBeforeEvict.task)
 			validateAllocatedJob(t, s.ssn, tt.args.jobName, dataBeforeEvict.task, dataBeforeEvict.job,
-				tt.expected.jobAllocation)
+				buildGpuVector(vectorMap, tt.expected.jobGpuAllocation))
 			validateAllocatedToNode(t, nodesInfoMap[tt.args.nodeToAllocate], dataBeforeEvict.toNode,
-				dataBeforeEvict.task.ResReq)
+				dataBeforeEvict.task.ResReqVector, dataBeforeEvict.task.VectorMap)
 		})
 	}
 }
@@ -1180,8 +1109,8 @@ func TestStatement_Allocate_Undo_Undo(t *testing.T) {
 		updateTaskIfExistsOnNode bool
 	}
 	type expected struct {
-		err           error
-		jobAllocation *resource_info.Resource
+		err              error
+		jobGpuAllocation float64
 	}
 	type originalState struct {
 		task   *pod_info.PodInfo
@@ -1226,12 +1155,8 @@ func TestStatement_Allocate_Undo_Undo(t *testing.T) {
 				updateTaskIfExistsOnNode: true,
 			},
 			expected{
-				err: nil,
-				jobAllocation: resource_info.ResourceFromResourceList(
-					v1.ResourceList{
-						"nvidia.com/gpu": resource.MustParse("1"),
-					},
-				),
+				err:              nil,
+				jobGpuAllocation: 1,
 			},
 		},
 	}
@@ -1277,9 +1202,9 @@ func TestStatement_Allocate_Undo_Undo(t *testing.T) {
 			validateAllocatedTask(t, s.ssn, tt.args.jobName, tt.args.podName, tt.args.nodeToAllocate,
 				dataBeforeEvict.task)
 			validateAllocatedJob(t, s.ssn, tt.args.jobName, dataBeforeEvict.task, dataBeforeEvict.job,
-				tt.expected.jobAllocation)
+				buildGpuVector(vectorMap, tt.expected.jobGpuAllocation))
 			validateAllocatedToNode(t, nodesInfoMap[tt.args.nodeToAllocate], dataBeforeEvict.toNode,
-				dataBeforeEvict.task.ResReq)
+				dataBeforeEvict.task.ResReqVector, dataBeforeEvict.task.VectorMap)
 		})
 	}
 }
