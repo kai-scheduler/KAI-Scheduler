@@ -38,6 +38,9 @@ import (
 // owner. Uses an unstructured JSON merge patch so it works with any CRD
 // that has a spec.suspend field (RayJob, batch Job, JobSet, etc.).
 func suspendWorkload(dynamicClient dynamic.Interface, pg *podgroup_info.PodGroupInfo) error {
+	if pg == nil {
+		return fmt.Errorf("nil PodGroupInfo")
+	}
 	owner, gvr, err := resolveControllerOwnerGVR(pg)
 	if err != nil {
 		return err

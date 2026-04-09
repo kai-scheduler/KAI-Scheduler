@@ -27,7 +27,7 @@ const (
 
 // GetEvictionStrategy reads the eviction strategy from PodGroup annotations.
 func GetEvictionStrategy(pg *podgroup_info.PodGroupInfo) string {
-	if pg.PodGroup == nil {
+	if pg == nil || pg.PodGroup == nil {
 		return eviction_info.EvictionStrategyDelete
 	}
 	if pg.PodGroup.Annotations[AnnotationEvictionStrategy] == eviction_info.EvictionStrategySuspend {
