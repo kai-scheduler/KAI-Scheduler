@@ -47,6 +47,11 @@ func suspendWorkload(dynamicClient dynamic.Interface, pg *podgroup_info.PodGroup
 	}
 
 	patch, _ := json.Marshal(map[string]interface{}{
+		"metadata": map[string]interface{}{
+			"annotations": map[string]interface{}{
+				"kai.scheduler/suspended-by": "kai-scheduler",
+			},
+		},
 		"spec": map[string]interface{}{
 			"suspend": true,
 		},
@@ -61,7 +66,7 @@ func suspendWorkload(dynamicClient dynamic.Interface, pg *podgroup_info.PodGroup
 }
 
 // UnsuspendWorkload patches spec.suspend=false on the PodGroup's
-// top-level owner.
+// top-level owner and removes the KAI suspend annotation.
 func UnsuspendWorkload(dynamicClient dynamic.Interface, pg *podgroup_info.PodGroupInfo) error {
 	owner, gvr, err := resolveControllerOwnerGVR(pg)
 	if err != nil {
@@ -69,6 +74,11 @@ func UnsuspendWorkload(dynamicClient dynamic.Interface, pg *podgroup_info.PodGro
 	}
 
 	patch, _ := json.Marshal(map[string]interface{}{
+		"metadata": map[string]interface{}{
+			"annotations": map[string]interface{}{
+				"kai.scheduler/suspended-by": nil,
+			},
+		},
 		"spec": map[string]interface{}{
 			"suspend": false,
 		},
@@ -82,8 +92,9 @@ func UnsuspendWorkload(dynamicClient dynamic.Interface, pg *podgroup_info.PodGro
 	return err
 }
 
-// IsWorkloadSuspended checks if the PodGroup's owner has spec.suspend=true.
-func IsWorkloadSuspended(dynamicClient dynamic.Interface, pg *podgroup_info.PodGroupInfo) (bool, error) {
+// IsSuspendedByKAI checks if the PodGroup's owner was suspended by KAI
+// (has both spec.suspend=true and the kai.scheduler/suspended-by annotation).
+func IsSuspendedByKAI(dynamicClient dynamic.Interface, pg *podgroup_info.PodGroupInfo) (bool, error) {
 	owner, gvr, err := resolveControllerOwnerGVR(pg)
 	if err != nil {
 		return false, err
@@ -95,6 +106,7 @@ func IsWorkloadSuspended(dynamicClient dynamic.Interface, pg *podgroup_info.PodG
 		return false, err
 	}
 
+	// Check spec.suspend
 	val, found, err := nestedField(obj.Object, "spec", "suspend")
 	if err != nil {
 		return false, fmt.Errorf("failed to read spec.suspend: %w", err)
@@ -102,11 +114,18 @@ func IsWorkloadSuspended(dynamicClient dynamic.Interface, pg *podgroup_info.PodG
 	if !found {
 		return false, nil
 	}
-	b, ok := val.(bool)
-	if !ok {
-		return false, fmt.Errorf("spec.suspend is %T, expected bool", val)
+	suspended, ok := val.(bool)
+	if !ok || !suspended {
+		return false, nil
 	}
-	return b, nil
+
+	// Check annotation
+	annotation, _, _ := nestedField(obj.Object, "metadata", "annotations", "kai.scheduler/suspended-by")
+	if annotation != "kai-scheduler" {
+		return false, nil
+	}
+
+	return true, nil
 }
 
 // restMapper is set during session creation when a discovery client is

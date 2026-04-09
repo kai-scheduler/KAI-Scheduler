@@ -135,7 +135,7 @@ func unsuspendReadyWorkloads(ssn *framework.Session) {
 		if job.GetNumAliveTasks() > 0 {
 			continue
 		}
-		suspended, err := framework.IsWorkloadSuspended(ssn.DynamicClient, job)
+		suspended, err := framework.IsSuspendedByKAI(ssn.DynamicClient, job)
 		if err != nil || !suspended {
 			continue
 		}
