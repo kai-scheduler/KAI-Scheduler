@@ -540,6 +540,7 @@ func (s *Statement) ConvertAllAllocatedToPipelined(jobID common_info.PodGroupID)
 
 func (s *Statement) clearOperations() {
 	s.operations = []Operation{}
+	s.suspendedPodGroups = nil
 }
 
 func (s *Statement) Discard() {

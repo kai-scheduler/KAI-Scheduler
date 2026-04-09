@@ -64,9 +64,12 @@ func NewScheduler(
 		return nil, fmt.Errorf("Failed to create discovery client: %v", err)
 	}
 
+	// Dynamic client is optional — used for suspend-based preemption.
+	// If creation fails, fall back to delete-based preemption.
 	dynamicClient, err := dynamic.NewForConfig(config)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to create dynamic client: %v", err)
+		log.InfraLogger.Warningf("Failed to create dynamic client for suspend-based preemption, falling back to pod deletion: %v", err)
+		dynamicClient = nil
 	}
 
 	usageDBClient, err := getUsageDBClient(schedulerConf.UsageDBConfig)
