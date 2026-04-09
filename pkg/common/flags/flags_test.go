@@ -61,6 +61,52 @@ var _ = Describe("StringMapFlag", func() {
 	})
 })
 
+type testStruct struct {
+	Name  string `json:"name"`
+	Count int    `json:"count"`
+}
+
+var _ = Describe("JSONFlag", func() {
+	It("Value is nil by default", func() {
+		var f JSONFlag[testStruct]
+		Expect(f.Value).To(BeNil())
+		Expect(f.String()).To(Equal(""))
+	})
+
+	It("parses valid JSON", func() {
+		var f JSONFlag[testStruct]
+		Expect(f.Set(`{"name":"test","count":42}`)).To(Succeed())
+		Expect(f.Value).ToNot(BeNil())
+		Expect(f.Value.Name).To(Equal("test"))
+		Expect(f.Value.Count).To(Equal(42))
+	})
+
+	It("returns error for invalid JSON", func() {
+		var f JSONFlag[testStruct]
+		Expect(f.Set("not-json")).To(HaveOccurred())
+		Expect(f.Value).To(BeNil())
+	})
+
+	It("sets Value to nil for empty string", func() {
+		var f JSONFlag[testStruct]
+		Expect(f.Set(`{"name":"test"}`)).To(Succeed())
+		Expect(f.Value).ToNot(BeNil())
+		Expect(f.Set("")).To(Succeed())
+		Expect(f.Value).To(BeNil())
+	})
+
+	It("String() returns JSON representation", func() {
+		var f JSONFlag[testStruct]
+		Expect(f.Set(`{"name":"test","count":1}`)).To(Succeed())
+		Expect(f.String()).To(Equal(`{"name":"test","count":1}`))
+	})
+
+	It("Type() returns json", func() {
+		var f JSONFlag[testStruct]
+		Expect(f.Type()).To(Equal("json"))
+	})
+})
+
 // Helper to reverse the order of pairs in a comma-separated string
 func reversePairs(s string) string {
 	pairs := strings.Split(s, ",")

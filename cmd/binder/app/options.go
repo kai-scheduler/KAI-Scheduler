@@ -4,10 +4,13 @@
 package app
 
 import (
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	corev1 "k8s.io/api/core/v1"
+	utilfeature "k8s.io/apiserver/pkg/util/feature"
+
 	"github.com/spf13/pflag"
 
-	utilfeature "k8s.io/apiserver/pkg/util/feature"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/flags"
 )
 
 type Options struct {
@@ -17,9 +20,9 @@ type Options struct {
 	ResourceReservationPodImage                     string
 	ResourceReservationAppLabel                     string
 	ResourceReservationAllocationTimeout            int
-	ResourceReservationPodResourcesJSON             string
-	ResourceReservationPodSecurityContextJSON       string
-	ResourceReservationContainerSecurityContextJSON string
+	ResourceReservationPodResources             flags.JSONFlag[corev1.ResourceRequirements]
+	ResourceReservationPodSecurityContext       flags.JSONFlag[corev1.PodSecurityContext]
+	ResourceReservationContainerSecurityContext flags.JSONFlag[corev1.SecurityContext]
 	ScalingPodNamespace                             string
 	QPS                                             float64
 	Burst                                           int
@@ -60,14 +63,14 @@ func InitOptions(fs *pflag.FlagSet) *Options {
 	fs.IntVar(&options.ResourceReservationAllocationTimeout,
 		"resource-reservation-allocation-timeout", 40,
 		"Resource reservation allocation timeout in seconds")
-	fs.StringVar(&options.ResourceReservationPodResourcesJSON,
-		"resource-reservation-pod-resources", "",
-		"JSON-serialized ResourceRequirements for GPU reservation pods (optional, empty means not set)")
-	fs.StringVar(&options.ResourceReservationPodSecurityContextJSON,
-		"resource-reservation-pod-security-context", "",
+	fs.Var(&options.ResourceReservationPodResources,
+		"resource-reservation-pod-resources",
+		"JSON-serialized ResourceRequirements for GPU reservation pods (optional)")
+	fs.Var(&options.ResourceReservationPodSecurityContext,
+		"resource-reservation-pod-security-context",
 		"JSON-serialized PodSecurityContext for GPU reservation pods (optional)")
-	fs.StringVar(&options.ResourceReservationContainerSecurityContextJSON,
-		"resource-reservation-container-security-context", "",
+	fs.Var(&options.ResourceReservationContainerSecurityContext,
+		"resource-reservation-container-security-context",
 		"JSON-serialized SecurityContext for GPU reservation pod containers (optional)")
 	fs.StringVar(&options.ScalingPodNamespace,
 		"scale-adjust-namespace", constants.DefaultScaleAdjustName,

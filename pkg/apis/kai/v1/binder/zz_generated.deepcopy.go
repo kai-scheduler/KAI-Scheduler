@@ -112,13 +112,13 @@ func (in *ResourceReservation) DeepCopyInto(out *ResourceReservation) {
 		*out = new(common.Resources)
 		(*in).DeepCopyInto(*out)
 	}
-	if in.PodSecurityContext != nil {
-		in, out := &in.PodSecurityContext, &out.PodSecurityContext
+	if in.ReservationPodSecurityContext != nil {
+		in, out := &in.ReservationPodSecurityContext, &out.ReservationPodSecurityContext
 		*out = new(v1.PodSecurityContext)
 		(*in).DeepCopyInto(*out)
 	}
-	if in.ContainerSecurityContext != nil {
-		in, out := &in.ContainerSecurityContext, &out.ContainerSecurityContext
+	if in.ReservationContainerSecurityContext != nil {
+		in, out := &in.ReservationContainerSecurityContext, &out.ReservationContainerSecurityContext
 		*out = new(v1.SecurityContext)
 		(*in).DeepCopyInto(*out)
 	}

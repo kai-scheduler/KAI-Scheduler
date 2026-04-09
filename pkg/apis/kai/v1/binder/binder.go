@@ -120,13 +120,13 @@ type ResourceReservation struct {
 	// +kubebuilder:validation:Optional
 	PodResources *common.Resources `json:"podResources,omitempty"`
 
-	// PodSecurityContext specifies the pod-level security context for reservation pods
+	// ReservationPodSecurityContext specifies the pod-level security context for reservation pods
 	// +kubebuilder:validation:Optional
-	PodSecurityContext *v1.PodSecurityContext `json:"podSecurityContext,omitempty"`
+	ReservationPodSecurityContext *v1.PodSecurityContext `json:"reservationPodSecurityContext,omitempty"`
 
-	// ContainerSecurityContext specifies the container-level security context for reservation pod containers
+	// ReservationContainerSecurityContext specifies the container-level security context for reservation pod containers
 	// +kubebuilder:validation:Optional
-	ContainerSecurityContext *v1.SecurityContext `json:"containerSecurityContext,omitempty"`
+	ReservationContainerSecurityContext *v1.SecurityContext `json:"reservationContainerSecurityContext,omitempty"`
 }
 
 func (r *ResourceReservation) SetDefaultsWhereNeeded() {

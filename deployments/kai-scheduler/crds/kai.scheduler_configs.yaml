@@ -1280,9 +1280,93 @@ spec:
                         description: AppLabel is the value that will be set for all
                           resource reservation pods to the label `app`
                         type: string
-                      containerSecurityContext:
-                        description: ContainerSecurityContext specifies the container-level
-                          security context for reservation pod containers
+                      image:
+                        description: Image is the image used by the resource reservation
+                          pods
+                        properties:
+                          name:
+                            description: Name is the name of the image
+                            type: string
+                          pullPolicy:
+                            description: PullPolicy is the pull policy of the image
+                            type: string
+                          repository:
+                            description: Repository is the repository/registry prefix
+                              for the image
+                            type: string
+                          tag:
+                            description: Tag is the tag of the image
+                            type: string
+                        type: object
+                      namespace:
+                        description: Namespace is the name of the namespace where
+                          the resource reservation pods will run
+                        type: string
+                      podResources:
+                        description: |-
+                          PodResources specifies the CPU and memory resource requests and limits for GPU reservation pods.
+                          If not set, Kubernetes defaults will be used, which allows for better backward compatibility.
+                        properties:
+                          claims:
+                            description: |-
+                              Claims lists the names of resources, defined in spec.resourceClaims,
+                              that are used by this container.
+
+                              This field depends on the
+                              DynamicResourceAllocation feature gate.
+
+                              This field is immutable. It can only be set for containers.
+                            items:
+                              description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                              properties:
+                                name:
+                                  description: |-
+                                    Name must match the name of one entry in pod.spec.resourceClaims of
+                                    the Pod where this field is used. It makes that resource available
+                                    inside a container.
+                                  type: string
+                                request:
+                                  description: |-
+                                    Request is the name chosen for a request in the referenced claim.
+                                    If empty, everything from the claim is made available, otherwise
+                                    only the result of this request.
+                                  type: string
+                              required:
+                              - name
+                              type: object
+                            type: array
+                            x-kubernetes-list-map-keys:
+                            - name
+                            x-kubernetes-list-type: map
+                          limits:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: |-
+                              Limits describes the maximum amount of compute resources allowed.
+                              More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                            type: object
+                          requests:
+                            additionalProperties:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            description: |-
+                              Requests describes the minimum amount of compute resources required.
+                              If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                              otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                              More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                            type: object
+                        type: object
+                      reservationContainerSecurityContext:
+                        description: ReservationContainerSecurityContext specifies
+                          the container-level security context for reservation pod
+                          containers
                         properties:
                           allowPrivilegeEscalation:
                             description: |-
@@ -1473,92 +1557,9 @@ spec:
                                 type: string
                             type: object
                         type: object
-                      image:
-                        description: Image is the image used by the resource reservation
-                          pods
-                        properties:
-                          name:
-                            description: Name is the name of the image
-                            type: string
-                          pullPolicy:
-                            description: PullPolicy is the pull policy of the image
-                            type: string
-                          repository:
-                            description: Repository is the repository/registry prefix
-                              for the image
-                            type: string
-                          tag:
-                            description: Tag is the tag of the image
-                            type: string
-                        type: object
-                      namespace:
-                        description: Namespace is the name of the namespace where
-                          the resource reservation pods will run
-                        type: string
-                      podResources:
-                        description: |-
-                          PodResources specifies the CPU and memory resource requests and limits for GPU reservation pods.
-                          If not set, Kubernetes defaults will be used, which allows for better backward compatibility.
-                        properties:
-                          claims:
-                            description: |-
-                              Claims lists the names of resources, defined in spec.resourceClaims,
-                              that are used by this container.
-
-                              This field depends on the
-                              DynamicResourceAllocation feature gate.
-
-                              This field is immutable. It can only be set for containers.
-                            items:
-                              description: ResourceClaim references one entry in PodSpec.ResourceClaims.
-                              properties:
-                                name:
-                                  description: |-
-                                    Name must match the name of one entry in pod.spec.resourceClaims of
-                                    the Pod where this field is used. It makes that resource available
-                                    inside a container.
-                                  type: string
-                                request:
-                                  description: |-
-                                    Request is the name chosen for a request in the referenced claim.
-                                    If empty, everything from the claim is made available, otherwise
-                                    only the result of this request.
-                                  type: string
-                              required:
-                              - name
-                              type: object
-                            type: array
-                            x-kubernetes-list-map-keys:
-                            - name
-                            x-kubernetes-list-type: map
-                          limits:
-                            additionalProperties:
-                              anyOf:
-                              - type: integer
-                              - type: string
-                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                              x-kubernetes-int-or-string: true
-                            description: |-
-                              Limits describes the maximum amount of compute resources allowed.
-                              More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
-                            type: object
-                          requests:
-                            additionalProperties:
-                              anyOf:
-                              - type: integer
-                              - type: string
-                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                              x-kubernetes-int-or-string: true
-                            description: |-
-                              Requests describes the minimum amount of compute resources required.
-                              If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
-                              otherwise to an implementation-defined value. Requests cannot exceed Limits.
-                              More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
-                            type: object
-                        type: object
-                      podSecurityContext:
-                        description: PodSecurityContext specifies the pod-level security
-                          context for reservation pods
+                      reservationPodSecurityContext:
+                        description: ReservationPodSecurityContext specifies the pod-level
+                          security context for reservation pods
                         properties:
                           appArmorProfile:
                             description: |-

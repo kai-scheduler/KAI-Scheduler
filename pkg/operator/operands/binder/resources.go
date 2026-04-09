@@ -279,16 +279,16 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1binder.Binder, fakeGPU 
 		}
 	}
 
-	if config.ResourceReservation.PodSecurityContext != nil {
-		secJSON, err := json.Marshal(config.ResourceReservation.PodSecurityContext)
+	if config.ResourceReservation.ReservationPodSecurityContext != nil {
+		secJSON, err := json.Marshal(config.ResourceReservation.ReservationPodSecurityContext)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal pod security context: %w", err)
 		}
 		args = append(args, "--resource-reservation-pod-security-context", string(secJSON))
 	}
 
-	if config.ResourceReservation.ContainerSecurityContext != nil {
-		secJSON, err := json.Marshal(config.ResourceReservation.ContainerSecurityContext)
+	if config.ResourceReservation.ReservationContainerSecurityContext != nil {
+		secJSON, err := json.Marshal(config.ResourceReservation.ReservationContainerSecurityContext)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal container security context: %w", err)
 		}
