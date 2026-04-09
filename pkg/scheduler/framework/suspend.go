@@ -163,26 +163,10 @@ func ownerRefToGVR(ref metav1.OwnerReference) (schema.GroupVersionResource, erro
 		log.InfraLogger.V(4).Infof("RESTMapper lookup failed for %v, falling back to naive pluralization: %v", gvk, err)
 	}
 
-	// Fallback: naive lowercase + "s" (covers common cases like
-	// RayJob→rayjobs, Job→jobs, JobSet→jobsets).
-	resource := toLowerPlural(ref.Kind)
-	return gv.WithResource(resource), nil
-}
-
-// toLowerPlural converts a Kind to its naive plural resource name.
-func toLowerPlural(kind string) string {
-	// Simple lowercase + "s". Covers RayJob→rayjobs, Job→jobs,
-	// JobSet→jobsets. Non-standard plurals (Policy→policies) require
-	// the RESTMapper path above.
-	result := make([]byte, len(kind))
-	for i := 0; i < len(kind); i++ {
-		c := kind[i]
-		if c >= 'A' && c <= 'Z' {
-			c += 32
-		}
-		result[i] = c
-	}
-	return string(result) + "s"
+	// Fallback: use UnsafeGuessKindToResource which handles common
+	// irregular plurals (e.g. Ingress→ingresses, Policy→policies).
+	guessed, _ := meta.UnsafeGuessKindToResource(gvk)
+	return guessed, nil
 }
 
 func nestedField(obj map[string]interface{}, fields ...string) (interface{}, bool, error) {

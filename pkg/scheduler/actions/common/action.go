@@ -23,23 +23,17 @@ const (
 	// AnnotationEvictionStrategy controls whether KAI uses suspend-based
 	// preemption ("suspend") or direct pod deletion ("delete").
 	AnnotationEvictionStrategy = "kai.scheduler/eviction-strategy"
-
-	// EvictionStrategySuspend patches spec.suspend=true on the workload owner.
-	EvictionStrategySuspend = "suspend"
-
-	// EvictionStrategyDelete is the default — delete pods directly.
-	EvictionStrategyDelete = "delete"
 )
 
 // GetEvictionStrategy reads the eviction strategy from PodGroup annotations.
 func GetEvictionStrategy(pg *podgroup_info.PodGroupInfo) string {
 	if pg.PodGroup == nil {
-		return EvictionStrategyDelete
+		return eviction_info.EvictionStrategyDelete
 	}
-	if pg.PodGroup.Annotations[AnnotationEvictionStrategy] == EvictionStrategySuspend {
-		return EvictionStrategySuspend
+	if pg.PodGroup.Annotations[AnnotationEvictionStrategy] == eviction_info.EvictionStrategySuspend {
+		return eviction_info.EvictionStrategySuspend
 	}
-	return EvictionStrategyDelete
+	return eviction_info.EvictionStrategyDelete
 }
 
 func EvictAllPreemptees(ssn *framework.Session, preempteeTasks []*pod_info.PodInfo,
@@ -52,7 +46,7 @@ func EvictAllPreemptees(ssn *framework.Session, preempteeTasks []*pod_info.PodIn
 	// suspend the workload.
 	strategies := make(map[common_info.PodID]string, len(preempteeTasks))
 	for _, task := range preempteeTasks {
-		strategy := EvictionStrategyDelete
+		strategy := eviction_info.EvictionStrategyDelete
 		if ssn.DynamicClient != nil {
 			if job, found := ssn.ClusterInfo.PodGroupInfos[task.Job]; found {
 				strategy = GetEvictionStrategy(job)

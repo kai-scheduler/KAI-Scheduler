@@ -7,12 +7,17 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
+const (
+	// EvictionStrategySuspend patches spec.suspend=true on the workload owner.
+	EvictionStrategySuspend = "suspend"
+
+	// EvictionStrategyDelete deletes pods directly (default).
+	EvictionStrategyDelete = "delete"
+)
+
 type EvictionMetadata struct {
 	EvictionGangSize int
 	Action           string
 	Preemptor        *types.NamespacedName
-	// EvictionStrategy is "suspend" or "delete" (default). When "suspend",
-	// the commit phase patches spec.suspend=true on the workload owner
-	// instead of deleting the pod.
 	EvictionStrategy string
 }

@@ -9,6 +9,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
 )
 
 type RayJobGrouper struct {
@@ -33,6 +34,6 @@ func (rjg *RayJobGrouper) GetPodGroupMetadata(
 	if metadata.Annotations == nil {
 		metadata.Annotations = map[string]string{}
 	}
-	metadata.Annotations["kai.scheduler/eviction-strategy"] = "suspend"
+	metadata.Annotations["kai.scheduler/eviction-strategy"] = eviction_info.EvictionStrategySuspend
 	return metadata, nil
 }

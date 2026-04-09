@@ -141,7 +141,7 @@ func (s *Statement) commitEvict(reclaimee *pod_info.PodInfo, evictOp evictOperat
 	// For suspend-based eviction, suspend the workload owner once per
 	// PodGroup instead of deleting individual pods. The workload
 	// controller handles pod cleanup via its native suspend lifecycle.
-	if evictOp.evictionMetadata.EvictionStrategy == "suspend" && s.ssn.DynamicClient != nil {
+	if evictOp.evictionMetadata.EvictionStrategy == eviction_info.EvictionStrategySuspend && s.ssn.DynamicClient != nil {
 		if !s.podGroupSuspended(reclaimeePodGroup) {
 			if err := suspendWorkload(s.ssn.DynamicClient, reclaimeePodGroup); err != nil {
 				log.InfraLogger.Errorf("Failed to suspend workload for PodGroup %v/%v: %v. Falling back to pod deletion.",
