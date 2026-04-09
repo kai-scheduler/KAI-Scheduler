@@ -27,6 +27,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
@@ -63,6 +64,11 @@ func NewScheduler(
 		return nil, fmt.Errorf("Failed to create discovery client: %v", err)
 	}
 
+	dynamicClient, err := dynamic.NewForConfig(config)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to create dynamic client: %v", err)
+	}
+
 	usageDBClient, err := getUsageDBClient(schedulerConf.UsageDBConfig)
 	if err != nil {
 		return nil, fmt.Errorf("error getting usage db client: %v", err)
@@ -87,6 +93,7 @@ func NewScheduler(
 		NumOfStatusRecordingWorkers: schedulerParams.NumOfStatusRecordingWorkers,
 		UpdatePodEvictionCondition:  schedulerParams.UpdatePodEvictionCondition,
 		DiscoveryClient:             discoveryClient,
+		DynamicClient:               dynamicClient,
 	}
 
 	scheduler := &Scheduler{

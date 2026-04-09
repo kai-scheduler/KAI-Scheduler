@@ -23,6 +23,23 @@ func EvictAllPreemptees(ssn *framework.Session, preempteeTasks []*pod_info.PodIn
 	preemptor *podgroup_info.PodGroupInfo, stmt *framework.Statement,
 	actionType framework.ActionType) error {
 
+	// Check if the preemptee supports suspend-based eviction.
+	if len(preempteeTasks) > 0 && ssn.DynamicClient != nil {
+		preempteeJob, found := ssn.ClusterInfo.PodGroupInfos[preempteeTasks[0].Job]
+		if found && GetEvictionStrategy(preempteeJob) == EvictionStrategySuspend {
+			log.InfraLogger.V(2).Infof("Using suspend-based eviction for PodGroup %s/%s",
+				preempteeJob.Namespace, preempteeJob.Name)
+			if err := SuspendWorkload(ssn.DynamicClient, preempteeJob); err != nil {
+				log.InfraLogger.Errorf("Failed to suspend workload for PodGroup %s/%s: %v. Falling back to pod deletion.",
+					preempteeJob.Namespace, preempteeJob.Name, err)
+				// Fall through to default pod deletion.
+			} else {
+				return nil
+			}
+		}
+	}
+
+	// Default: per-pod deletion.
 	messages := getEvictionMessages(ssn, preempteeTasks, preemptor, actionType)
 	for _, task := range preempteeTasks {
 		message, found := messages[task.UID]

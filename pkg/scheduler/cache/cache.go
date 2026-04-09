@@ -31,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -92,12 +93,14 @@ type SchedulerCacheParams struct {
 	NumOfStatusRecordingWorkers int
 	UpdatePodEvictionCondition  bool
 	DiscoveryClient             discovery.DiscoveryInterface
+	DynamicClient               dynamic.Interface
 }
 
 type SchedulerCache struct {
 	workersWaitGroup               sync.WaitGroup
 	kubeClient                     kubernetes.Interface
 	kubeAiSchedulerClient          kubeaischedulerver.Interface
+	dynamicClient                  dynamic.Interface
 	informerFactory                informers.SharedInformerFactory
 	kubeAiSchedulerInformerFactory kubeaischedulerinfo.SharedInformerFactory
 	podLister                      listv1.PodLister
@@ -129,6 +132,7 @@ func newSchedulerCache(schedulerCacheParams *SchedulerCacheParams) *SchedulerCac
 		fullHierarchyFairness:    schedulerCacheParams.FullHierarchyFairness,
 		kubeClient:               draversionawareclient.NewDRAAwareClient(schedulerCacheParams.KubeClient),
 		kubeAiSchedulerClient:    schedulerCacheParams.KAISchedulerClient,
+		dynamicClient:            schedulerCacheParams.DynamicClient,
 	}
 
 	schedulerName := schedulerCacheParams.SchedulerName
@@ -416,6 +420,10 @@ func isTerminated(phase v1.PodPhase) bool {
 
 func (sc *SchedulerCache) KubeClient() kubernetes.Interface {
 	return sc.kubeClient
+}
+
+func (sc *SchedulerCache) DynamicClient() dynamic.Interface {
+	return sc.dynamicClient
 }
 
 func (sc *SchedulerCache) KubeInformerFactory() informers.SharedInformerFactory {
