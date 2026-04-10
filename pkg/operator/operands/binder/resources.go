@@ -287,8 +287,12 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1binder.Binder, fakeGPU 
 		args = append(args, "--resource-reservation-pod-security-context", string(secJSON))
 	}
 
-	if config.ResourceReservation.ReservationContainerSecurityContext != nil {
-		secJSON, err := json.Marshal(config.ResourceReservation.ReservationContainerSecurityContext)
+	containerSecCtx := config.ResourceReservation.ReservationContainerSecurityContext
+	if containerSecCtx == nil {
+		containerSecCtx = kaiConfig.Spec.Global.GetSecurityContext()
+	}
+	if containerSecCtx != nil {
+		secJSON, err := json.Marshal(containerSecCtx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal container security context: %w", err)
 		}
