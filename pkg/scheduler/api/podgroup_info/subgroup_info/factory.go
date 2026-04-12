@@ -13,7 +13,7 @@ import (
 
 const (
 	RootSubGroupSetName         = ""
-	MinimumSubGroupMinAvailable = 1
+	MinimumSubGroupMinAvailable = 0
 )
 
 func FromPodGroup(podGroup *v2alpha2.PodGroup) (*SubGroupSet, error) {
