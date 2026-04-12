@@ -79,10 +79,11 @@ func createSubGroupInfos(allSubGroups map[string]*v2alpha2.SubGroup, children ma
 		if hasChildren {
 			subGroupSets[name] = NewSubGroupSet(name, topologyConstrainInfo)
 		} else {
-			if subGroup.MinMember == nil {
-				return fmt.Errorf("subgroup <%s> minMember is required", name)
+			minMember := int32(0)
+			if subGroup.MinMember != nil {
+				minMember = *subGroup.MinMember
 			}
-			podSets[name] = NewPodSet(name, max(*subGroup.MinMember, MinimumSubGroupMinAvailable), topologyConstrainInfo)
+			podSets[name] = NewPodSet(name, max(minMember, MinimumSubGroupMinAvailable), topologyConstrainInfo)
 		}
 	}
 	return nil

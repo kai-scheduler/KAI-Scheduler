@@ -359,8 +359,13 @@ func TestFromPodGroup_FullTree(t *testing.T) {
 					},
 				},
 			},
-			want:    nil,
-			wantErr: "minMember is required",
+			want: &wantGroup{
+				Name:   RootSubGroupSetName,
+				Groups: nil,
+				PodSets: []*wantPodSet{
+					{Name: "only-leaf", MinMember: 0},
+				},
+			},
 		},
 	}
 
