@@ -99,12 +99,12 @@ func (alloc *preemptAction) Execute(ssn *framework.Session) {
 func attemptToPreemptForPreemptor(
 	ssn *framework.Session, preemptor *podgroup_info.PodGroupInfo,
 ) (bool, *framework.Statement, []string) {
-	resReq := podgroup_info.GetTasksToAllocateInitResourceVector(preemptor, ssn.PodSetOrderFn, ssn.TaskOrderFn, false, ssn.ClusterInfo.MinNodeGPUMemory)
+	resReq := podgroup_info.GetTasksToAllocateInitResourceVector(preemptor, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false, ssn.ClusterInfo.MinNodeGPUMemory)
 	log.InfraLogger.V(3).Infof(
 		"Attempting to preempt for job: <%v/%v>, priority: <%v>, queue: <%v>, resources: <%v>",
 		preemptor.Namespace, preemptor.Name, preemptor.Priority, preemptor.Queue, resReq)
 
-	preemptorTasks := podgroup_info.GetTasksToAllocate(preemptor, ssn.PodSetOrderFn, ssn.TaskOrderFn, false)
+	preemptorTasks := podgroup_info.GetTasksToAllocate(preemptor, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false)
 	if result := ssn.IsNonPreemptibleJobOverQueueQuotaFn(preemptor, preemptorTasks); !result.IsSchedulable {
 		log.InfraLogger.V(3).Infof("Job <%v/%v> would have placed the queue resources over quota",
 			preemptor.Namespace, preemptor.Name)

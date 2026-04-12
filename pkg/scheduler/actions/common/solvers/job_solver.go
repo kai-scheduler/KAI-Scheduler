@@ -51,7 +51,7 @@ func (s *JobSolver) Solve(
 
 	var statement *framework.Statement
 	var pendingTasks []*pod_info.PodInfo
-	tasksToAllocate := podgroup_info.GetTasksToAllocate(pendingJob, ssn.PodSetOrderFn, ssn.TaskOrderFn, false)
+	tasksToAllocate := podgroup_info.GetTasksToAllocate(pendingJob, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false)
 	for _, nextTaskToSolve := range tasksToAllocate {
 		nextTasksToSolve := []*pod_info.PodInfo{nextTaskToSolve}
 		pendingTasks = append(pendingTasks, nextTasksToSolve...)

@@ -281,6 +281,26 @@ func (ssn *Session) SubGroupSetOrderFn(l, r interface{}) bool {
 	return lSubGroupSet.GetName() < rSubGroupSet.GetName()
 }
 
+func (ssn *Session) SubGroupOrderFn(l, r interface{}) bool {
+	lSubGroup, isLPodSet := l.(*subgroup_info.PodSet)
+	rSubGroup, isRPodSet := r.(*subgroup_info.PodSet)
+	if isLPodSet && isRPodSet {
+		return ssn.PodSetOrderFn(lSubGroup, rSubGroup)
+	}
+	lSubGroupSet, isLSubGroupSet := l.(*subgroup_info.SubGroupSet)
+	rSubGroupSet, isRSubGroupSet := r.(*subgroup_info.SubGroupSet)
+	if isLSubGroupSet && isRSubGroupSet {
+		return ssn.SubGroupSetOrderFn(lSubGroupSet, rSubGroupSet)
+	}
+	if isLPodSet {
+		return true
+	}
+	if isRPodSet {
+		return false
+	}
+	return false
+}
+
 func (ssn *Session) QueueOrderFn(lQ, rQ *queue_info.QueueInfo, lJob, rJob *podgroup_info.PodGroupInfo,
 	lVictims, rVictims []*podgroup_info.PodGroupInfo,
 ) bool {

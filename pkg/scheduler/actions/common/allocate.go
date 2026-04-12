@@ -21,7 +21,7 @@ func AllocateJob(ssn *framework.Session, stmt *framework.Statement, nodes []*nod
 	job *podgroup_info.PodGroupInfo, isPipelineOnly bool) bool {
 	ssn.PreJobAllocation(job)
 
-	tasksToAllocate := podgroup_info.GetTasksToAllocate(job, ssn.PodSetOrderFn, ssn.TaskOrderFn, !isPipelineOnly)
+	tasksToAllocate := podgroup_info.GetTasksToAllocate(job, ssn.SubGroupOrderFn, ssn.TaskOrderFn, !isPipelineOnly)
 
 	result := ssn.IsJobOverQueueCapacityFn(job, tasksToAllocate)
 	if !result.IsSchedulable {
