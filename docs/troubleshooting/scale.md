@@ -42,7 +42,13 @@
 
    By default, consolidation is also **off** when either `spec.placementStrategy.gpu` or `spec.placementStrategy.cpu` is `spread` (see `setDefaultActions` in the same file). Using spread for placement is another way to avoid consolidation without an explicit `actions` override.
 
-3. Use similar shape jobs: signature mechanism
+3. **Scheduling signatures (similar “shape” jobs)** — When **`--use-scheduling-signatures`** is **on** (default **true**; `cmd/scheduler/app/options/options.go`), the **preempt**, **reclaim**, and **consolidation** actions group pending work by a **scheduling constraints signature** (a hash of placement-related fields such as node selectors, affinity, tolerations, topology, storage needs, and priority—see `pkg/scheduler/api/pod_info/scheduling_constraints_signature.go` and `podgroup_info` / `subgroup_info` PodSet hashing). For each signature bucket, the scheduler keeps a **minimal representative** failed job and **skips** trying other jobs in the same bucket that are not “easier” to place (`pkg/scheduler/actions/common/minimal_job_comparison.go`). That cuts redundant expensive attempts when many PodGroups differ only in name but share the same constraints and resource shape.
+
+   **Why similar shapes help scale** — Very large numbers of **distinct** signatures increase how many separate buckets must be explored after failures. Aligning templates (same selectors/affinity/tolerations/resource templates where possible) increases reuse of representatives and skip decisions.
+
+   **How to know if it works:** — At log verbosity **V(3)** and above, skipped jobs log lines such as `Skipping preemption for job ... is not easier to preempt for than ...` (and analogous messages for reclaim/consolidation) from those actions.  
+   If metrics are collected, the metric `podgroups_acted_on_by_action` counts workloads that were not skipped by this mechanism.
+   
 4. **Noisy neighbors: cap per-action, per-queue work** — A single queue (or a few queues) with very large backlogs can dominate a scheduling cycle: each **action** (`allocate`, `consolidation`, `reclaim`, `preempt`, `stalegangeviction`; see `framework.ActionType` in `pkg/scheduler/framework/interface.go`) walks candidate jobs in **queue order**, and without a cap the scheduler may spend most of a cycle on one neighbor’s jobs.
 
    **`spec.queueDepthPerAction`** on **SchedulingShard** (`SchedulingShardSpec` in `pkg/apis/kai/v1/schedulingshard_types.go`) maps each action name to the **maximum number of jobs to consider per leaf queue** for that action. It is written into the shard ConfigMap as `queueDepthPerAction` in `pkg/scheduler/conf/scheduler_conf.go` and applied via `Session.GetJobsDepth` (`pkg/scheduler/framework/session.go`). **If an action is omitted, there is no limit** (effectively unbounded depth for that action).
