@@ -333,7 +333,7 @@ func TestValidatePodGroupSpec(t *testing.T) {
 					{Name: "b", MinMember: ptr.To(int32(4))},
 				},
 			},
-			want: &validationErrors{minDefinitionErrors: []error{&invalidMinSubGroupError{msg: "minSubGroup must be greater than 0"}}},
+			want: &validationErrors{minDefinitionErrors: []error{&invalidMinSubGroupError{msg: "minSubGroup at the podgroup level must be equal to or greater than 1"}}},
 		},
 	}
 
