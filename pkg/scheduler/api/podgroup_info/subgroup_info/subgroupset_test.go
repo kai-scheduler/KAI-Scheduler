@@ -4,8 +4,13 @@
 package subgroup_info
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
+
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 )
 
 func newTestPodSet(name string, minAvailable int32) *PodSet {
@@ -16,6 +21,18 @@ func newTestPodSet(name string, minAvailable int32) *PodSet {
 		podStatusIndex: nil,
 		podStatusMap:   nil,
 	}
+}
+
+// podSetWithRunningPods builds a PodSet with the given number of Running tasks (active allocated).
+func podSetWithRunningPods(name string, minAvailable int32, runningCount int) *PodSet {
+	ps := NewPodSet(name, minAvailable, nil)
+	for i := range runningCount {
+		ps.AssignTask(&pod_info.PodInfo{
+			UID:    common_info.PodID(fmt.Sprintf("%s-%d", name, i)),
+			Status: pod_status.Running,
+		})
+	}
+	return ps
 }
 
 func TestNewSubGroupSet(t *testing.T) {
@@ -162,4 +179,93 @@ func TestGetPodSets(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGetMinChildrenToSatisfy(t *testing.T) {
+	t.Run("no_minSubGroup_empty", func(t *testing.T) {
+		sg := NewSubGroupSet("root", nil)
+		if got := sg.GetMinChildrenToSatisfy(); got != 0 {
+			t.Errorf("GetMinChildrenToSatisfy() = %d, want 0", got)
+		}
+	})
+	t.Run("no_minSubGroup_counts_children", func(t *testing.T) {
+		root := NewSubGroupSet("root", nil)
+		root.AddSubGroup(NewSubGroupSet("a", nil))
+		root.AddSubGroup(NewSubGroupSet("b", nil))
+		root.AddPodSet(newTestPodSet("ps", 1))
+		if got := root.GetMinChildrenToSatisfy(); got != 3 {
+			t.Errorf("GetMinChildrenToSatisfy() = %d, want 3", got)
+		}
+	})
+	t.Run("minSubGroup_overrides_count", func(t *testing.T) {
+		root := NewSubGroupSet("root", nil)
+		root.AddSubGroup(NewSubGroupSet("a", nil))
+		root.AddSubGroup(NewSubGroupSet("b", nil))
+		min := int32(1)
+		root.SetMinSubGroup(&min)
+		if got := root.GetMinChildrenToSatisfy(); got != 1 {
+			t.Errorf("GetMinChildrenToSatisfy() = %d, want 1", got)
+		}
+	})
+}
+
+func TestGetNumActiveAllocatedDirectSubGroups(t *testing.T) {
+	t.Run("empty", func(t *testing.T) {
+		sg := NewSubGroupSet("root", nil)
+		if got := sg.GetNumActiveAllocatedDirectSubGroups(); got != 0 {
+			t.Errorf("GetNumActiveAllocatedDirectSubGroups() = %d, want 0", got)
+		}
+	})
+	t.Run("podSet_not_satisfied", func(t *testing.T) {
+		root := NewSubGroupSet("root", nil)
+		root.AddPodSet(podSetWithRunningPods("ps", 3, 2))
+		if got := root.GetNumActiveAllocatedDirectSubGroups(); got != 0 {
+			t.Errorf("GetNumActiveAllocatedDirectSubGroups() = %d, want 0", got)
+		}
+	})
+	t.Run("podSet_satisfied", func(t *testing.T) {
+		root := NewSubGroupSet("root", nil)
+		root.AddPodSet(podSetWithRunningPods("ps", 3, 3))
+		if got := root.GetNumActiveAllocatedDirectSubGroups(); got != 1 {
+			t.Errorf("GetNumActiveAllocatedDirectSubGroups() = %d, want 1", got)
+		}
+	})
+	t.Run("mixed_podSets", func(t *testing.T) {
+		root := NewSubGroupSet("root", nil)
+		root.AddPodSet(podSetWithRunningPods("ok", 1, 1))
+		root.AddPodSet(podSetWithRunningPods("bad", 2, 1))
+		if got := root.GetNumActiveAllocatedDirectSubGroups(); got != 1 {
+			t.Errorf("GetNumActiveAllocatedDirectSubGroups() = %d, want 1", got)
+		}
+	})
+	t.Run("nested_child_satisfied_by_podSet", func(t *testing.T) {
+		root := NewSubGroupSet("root", nil)
+		child := NewSubGroupSet("child", nil)
+		child.AddPodSet(podSetWithRunningPods("ps", 1, 1))
+		root.AddSubGroup(child)
+		if got := root.GetNumActiveAllocatedDirectSubGroups(); got != 1 {
+			t.Errorf("GetNumActiveAllocatedDirectSubGroups() = %d, want 1", got)
+		}
+	})
+	t.Run("empty_child_subgroup_counts_satisfied", func(t *testing.T) {
+		root := NewSubGroupSet("root", nil)
+		root.AddSubGroup(NewSubGroupSet("emptyChild", nil))
+		if got := root.GetNumActiveAllocatedDirectSubGroups(); got != 1 {
+			t.Errorf("GetNumActiveAllocatedDirectSubGroups() = %d, want 1 (0>=0 for min children)", got)
+		}
+	})
+	t.Run("nested_child_not_satisfied_until_pod_min_met", func(t *testing.T) {
+		root := NewSubGroupSet("root", nil)
+		child := NewSubGroupSet("child", nil)
+		ps := podSetWithRunningPods("ps", 2, 1)
+		child.AddPodSet(ps)
+		root.AddSubGroup(child)
+		if got := root.GetNumActiveAllocatedDirectSubGroups(); got != 0 {
+			t.Errorf("GetNumActiveAllocatedDirectSubGroups() = %d, want 0", got)
+		}
+		ps.AssignTask(&pod_info.PodInfo{UID: common_info.PodID("ps-extra"), Status: pod_status.Running})
+		if got := root.GetNumActiveAllocatedDirectSubGroups(); got != 1 {
+			t.Errorf("GetNumActiveAllocatedDirectSubGroups() = %d, want 1", got)
+		}
+	})
 }

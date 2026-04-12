@@ -10,14 +10,16 @@ import (
 type SubGroupSet struct {
 	SubGroupInfo
 
-	groups  []*SubGroupSet
-	podSets []*PodSet
+	minSubGroup *int32
+	groups      []*SubGroupSet
+	podSets     []*PodSet
 }
 
 func NewSubGroupSet(name string, topologyConstraint *topology_info.TopologyConstraintInfo) *SubGroupSet {
 	subGroupInfo := newSubGroupInfo(name, topologyConstraint)
 	return &SubGroupSet{
 		SubGroupInfo: *subGroupInfo,
+		minSubGroup:  nil,
 		groups:       []*SubGroupSet{},
 		podSets:      []*PodSet{},
 	}
@@ -43,6 +45,7 @@ func (sgs *SubGroupSet) GetChildPodSets() []*PodSet {
 
 func (sgs *SubGroupSet) Clone() *SubGroupSet {
 	root := NewSubGroupSet(sgs.name, sgs.topologyConstraint)
+	root.SetMinSubGroup(sgs.minSubGroup)
 	for _, podSet := range sgs.podSets {
 		clonePodSet := podSet.Clone()
 		root.AddPodSet(clonePodSet)
@@ -74,4 +77,34 @@ func (sgs *SubGroupSet) SetParent(parent *SubGroupSet) {
 
 func (sgs *SubGroupSet) GetParent() *SubGroupSet {
 	return sgs.parent
+}
+
+func (sgs *SubGroupSet) GetMinSubGroup() *int32 {
+	return sgs.minSubGroup
+}
+
+func (sgs *SubGroupSet) SetMinSubGroup(minSubGroup *int32) {
+	sgs.minSubGroup = minSubGroup
+}
+
+func (sgs *SubGroupSet) GetNumActiveAllocatedDirectSubGroups() int {
+	count := 0
+	for _, child := range sgs.GetChildGroups() {
+		if child.GetNumActiveAllocatedDirectSubGroups() >= child.GetMinChildrenToSatisfy() {
+			count++
+		}
+	}
+	for _, podSet := range sgs.GetChildPodSets() {
+		if podSet.GetNumActiveAllocatedTasks() >= int(podSet.GetMinAvailable()) {
+			count++
+		}
+	}
+	return count
+}
+
+func (sgs *SubGroupSet) GetMinChildrenToSatisfy() int {
+	if minSG := sgs.GetMinSubGroup(); minSG != nil {
+		return int(*minSG)
+	}
+	return len(sgs.GetChildGroups()) + len(sgs.GetChildPodSets())
 }
