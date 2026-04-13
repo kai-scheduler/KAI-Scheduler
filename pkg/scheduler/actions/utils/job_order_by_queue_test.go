@@ -733,6 +733,7 @@ func TestJobsOrderByQueues_RequeueJob(t *testing.T) {
 			jobsOrder.PushJob(jobToRequeue)
 
 			for _, expectedJob := range tt.expected.expectedJobsList {
+				_ = expectedJob.GetAllPodsMap()
 				actualJob := jobsOrder.PopNextJob()
 				assert.Equal(t, expectedJob, actualJob)
 			}
