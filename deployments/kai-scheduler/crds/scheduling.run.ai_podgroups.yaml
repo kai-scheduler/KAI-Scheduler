@@ -54,6 +54,15 @@ spec:
                 description: |-
                   MinMember defines the minimal number of members to run the PodGroup;
                   if there are not enough resources to start all required members, the scheduler will not start anyone.
+                  Mutually exclusive with MinSubGroup.
+                format: int32
+                minimum: 1
+                type: integer
+              minSubGroup:
+                description: |-
+                  MinSubGroup defines the minimal number of direct child SubGroups required for this PodGroup to be schedulable.
+                  Only applicable when SubGroups are defined.
+                  Mutually exclusive with MinMember.
                 format: int32
                 minimum: 1
                 type: integer
@@ -94,6 +103,15 @@ spec:
                       description: |-
                         MinMember defines the minimal number of members to run this SubGroup;
                         if there are not enough resources to start all required members, the scheduler will not start anyone.
+                        Mutually exclusive with MinSubGroup.
+                      format: int32
+                      minimum: 0
+                      type: integer
+                    minSubGroup:
+                      description: |-
+                        MinSubGroup defines the minimal number of direct child SubGroups required for this SubGroup to be schedulable.
+                        Only applicable when this SubGroup has child SubGroups.
+                        Mutually exclusive with MinMember.
                       format: int32
                       minimum: 0
                       type: integer

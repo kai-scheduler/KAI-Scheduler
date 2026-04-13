@@ -7,6 +7,7 @@ package fillers
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	. "github.com/onsi/gomega"
 	"golang.org/x/exp/maps"
@@ -32,19 +33,24 @@ var (
 func FillAllNodesWithJobs(
 	ctx context.Context, testCtx *testcontext.TestContext, testQueue *v2.Queue, resources v1.ResourceRequirements,
 	annotations map[string]string, labels map[string]string, priorityClass string, targetNodes ...string) ([]*batchv1.Job, []*v1.Pod, error) {
-	var jobs []*batchv1.Job
-	var jobPods []*v1.Pod
-
 	podFillerSize, err := calcNumOfFillerPods(testCtx, resources, annotations, targetNodes...)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	for range podFillerSize {
-		job, jobPod := createFillerJob(ctx, testCtx, testQueue, resources, annotations, labels, priorityClass, targetNodes...)
-		jobs = append(jobs, job)
-		jobPods = append(jobPods, jobPod)
+	jobs := make([]*batchv1.Job, podFillerSize)
+	jobPods := make([]*v1.Pod, podFillerSize)
+	var wg sync.WaitGroup
+	for i := range podFillerSize {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			job, jobPod := createFillerJob(ctx, testCtx, testQueue, resources, annotations, labels, priorityClass, targetNodes...)
+			jobs[i] = job
+			jobPods[i] = jobPod
+		}(i)
 	}
+	wg.Wait()
 
 	namespace := queue.GetConnectedNamespaceToQueue(testQueue)
 	wait.ForPodsScheduled(ctx, testCtx.ControllerClient, namespace, jobPods)

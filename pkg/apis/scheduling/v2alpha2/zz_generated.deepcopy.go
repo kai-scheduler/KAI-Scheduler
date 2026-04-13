@@ -133,6 +133,11 @@ func (in *PodGroupSpec) DeepCopyInto(out *PodGroupSpec) {
 		*out = new(int32)
 		**out = **in
 	}
+	if in.MinSubGroup != nil {
+		in, out := &in.MinSubGroup, &out.MinSubGroup
+		*out = new(int32)
+		**out = **in
+	}
 	out.TopologyConstraint = in.TopologyConstraint
 	if in.SubGroups != nil {
 		in, out := &in.SubGroups, &out.SubGroups
@@ -285,6 +290,11 @@ func (in *SubGroup) DeepCopyInto(out *SubGroup) {
 	*out = *in
 	if in.MinMember != nil {
 		in, out := &in.MinMember, &out.MinMember
+		*out = new(int32)
+		**out = **in
+	}
+	if in.MinSubGroup != nil {
+		in, out := &in.MinSubGroup, &out.MinSubGroup
 		*out = new(int32)
 		**out = **in
 	}
