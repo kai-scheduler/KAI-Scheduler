@@ -188,7 +188,7 @@ func (pp *predicatesPlugin) evaluateTaskOnPredicates(
 	}()
 
 	k8sNodeInfo := node.PodAffinityInfo.(*cluster_info.K8sNodePodAffinityInfo).NodeInfo
-	k8sNodeInfo.SetNode(node.Node)
+	// k8sNodeInfo.SetNode(node.Node)
 
 	if result := isTaskAllocationOnNodeOverCapacityFn(task, job, node); !result.IsSchedulable {
 		return common_info.NewFitError(task.Name, task.Namespace, node.Name,
