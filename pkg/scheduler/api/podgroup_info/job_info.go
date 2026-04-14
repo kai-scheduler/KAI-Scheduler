@@ -86,6 +86,7 @@ type PodGroupInfo struct {
 	schedulingConstraintsSignature common_info.SchedulingConstraintsSignature
 
 	// inner cache
+	allPodsMap                        *pod_info.PodsMap
 	tasksToAllocate                   []*pod_info.PodInfo
 	tasksToAllocateInitResourceVector resource_info.ResourceVector
 	PodStatusIndex                    map[pod_status.PodStatus]pod_info.PodsMap
@@ -129,12 +130,21 @@ func NewPodGroupInfoWithVectorMap(uid common_info.PodGroupID, vectorMap *resourc
 }
 
 func (pgi *PodGroupInfo) GetAllPodsMap() pod_info.PodsMap {
-	allPods := pod_info.PodsMap{}
+	if pgi.allPodsMap != nil {
+		return *pgi.allPodsMap
+	}
+	totalPods := 0
+	for _, podSet := range pgi.PodSets {
+		totalPods += len(podSet.GetPodInfos())
+	}
+
+	allPods := make(pod_info.PodsMap, totalPods)
 	for _, subGroup := range pgi.PodSets {
 		for podId, podInfo := range subGroup.GetPodInfos() {
 			allPods[podId] = podInfo
 		}
 	}
+	pgi.allPodsMap = &allPods
 	return allPods
 }
 
@@ -205,6 +215,7 @@ func (pgi *PodGroupInfo) setSubGroups(podGroup *enginev2alpha2.PodGroup) error {
 			rootSubGroupSet.AddPodSet(defaultPodSet)
 		}
 	}
+	pgi.invalidateTasksCache()
 	return nil
 }
 
@@ -214,6 +225,9 @@ func (pgi *PodGroupInfo) addTaskIndex(ti *pod_info.PodInfo) {
 	}
 
 	pgi.PodStatusIndex[ti.Status][ti.UID] = ti
+	if pgi.allPodsMap != nil {
+		(*pgi.allPodsMap)[ti.UID] = ti
+	}
 	if pod_status.IsActiveAllocatedStatus(ti.Status) {
 		pgi.activeAllocatedCount = ptr.To(*pgi.activeAllocatedCount + 1)
 	}
@@ -256,6 +270,9 @@ func (pgi *PodGroupInfo) UpdateTaskStatus(task *pod_info.PodInfo, status pod_sta
 func (pgi *PodGroupInfo) deleteTaskIndex(ti *pod_info.PodInfo) {
 	if tasks, found := pgi.PodStatusIndex[ti.Status]; found {
 		delete(tasks, ti.UID)
+		if pgi.allPodsMap != nil {
+			delete(*pgi.allPodsMap, ti.UID)
+		}
 		if pod_status.IsActiveAllocatedStatus(ti.Status) {
 			pgi.activeAllocatedCount = ptr.To(*pgi.activeAllocatedCount - 1)
 		}
@@ -269,6 +286,7 @@ func (pgi *PodGroupInfo) deleteTaskIndex(ti *pod_info.PodInfo) {
 }
 
 func (pgi *PodGroupInfo) invalidateTasksCache() {
+	pgi.allPodsMap = nil
 	pgi.tasksToAllocate = nil
 	pgi.tasksToAllocateInitResourceVector = nil
 }
