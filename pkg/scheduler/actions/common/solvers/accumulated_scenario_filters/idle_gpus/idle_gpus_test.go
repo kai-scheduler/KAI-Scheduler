@@ -227,13 +227,9 @@ func TestAccumulatedIdleGpus_updateWithVictim(t *testing.T) {
 			},
 			args: args{
 				victimTask: &pod_info.PodInfo{
-					NodeName: "n1",
-					UID:      "uid1",
-					AcceptedResource: &resource_info.ResourceRequirements{
-						GpuResourceRequirement: *resource_info.NewGpuResourceRequirementWithGpus(
-							2, 0,
-						),
-					},
+					NodeName:               "n1",
+					UID:                    "uid1",
+					AcceptedGpuRequirement: *resource_info.NewGpuResourceRequirementWithGpus(2, 0),
 					AcceptedResourceVector: resource_info.NewResourceVectorWithValues(0, 0, 2, testVectorMap),
 					VectorMap:              testVectorMap,
 				},
@@ -252,13 +248,9 @@ func TestAccumulatedIdleGpus_updateWithVictim(t *testing.T) {
 			},
 			args: args{
 				victimTask: &pod_info.PodInfo{
-					NodeName: "n1",
-					UID:      "uid1",
-					AcceptedResource: &resource_info.ResourceRequirements{
-						GpuResourceRequirement: *resource_info.NewGpuResourceRequirementWithGpus(
-							2, 0,
-						),
-					},
+					NodeName:               "n1",
+					UID:                    "uid1",
+					AcceptedGpuRequirement: *resource_info.NewGpuResourceRequirementWithGpus(2, 0),
 					AcceptedResourceVector: resource_info.NewResourceVectorWithValues(0, 0, 2, testVectorMap),
 					VectorMap:              testVectorMap,
 				},
@@ -277,13 +269,9 @@ func TestAccumulatedIdleGpus_updateWithVictim(t *testing.T) {
 			},
 			args: args{
 				victimTask: &pod_info.PodInfo{
-					NodeName: "n1",
-					UID:      "uid1",
-					AcceptedResource: &resource_info.ResourceRequirements{
-						GpuResourceRequirement: *resource_info.NewGpuResourceRequirementWithGpus(
-							2, 0,
-						),
-					},
+					NodeName:               "n1",
+					UID:                    "uid1",
+					AcceptedGpuRequirement: *resource_info.NewGpuResourceRequirementWithGpus(2, 0),
 					AcceptedResourceVector: resource_info.NewResourceVectorWithValues(0, 0, 2, testVectorMap),
 					VectorMap:              testVectorMap,
 				},

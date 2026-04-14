@@ -127,9 +127,9 @@ func validatePodGroupSpec(spec *PodGroupSpec) *validationErrors {
 	}
 
 	if spec.MinSubGroup != nil {
-		if *spec.MinSubGroup <= 0 {
+		if *spec.MinSubGroup < 1 {
 			validationErrors.minDefinitionErrors = append(validationErrors.minDefinitionErrors,
-				&invalidMinSubGroupError{msg: "minSubGroup must be greater than 0"})
+				&invalidMinSubGroupError{msg: "minSubGroup at the podgroup level must be equal to or greater than 1"})
 			return validationErrors
 		}
 		rootCount := countRootSubGroups(spec.SubGroups)

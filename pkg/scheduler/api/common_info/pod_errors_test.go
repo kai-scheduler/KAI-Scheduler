@@ -192,7 +192,8 @@ func TestNewFitErrorInsufficientResource(t *testing.T) {
 			usedVector := tt.args.usedResource.ToVector(vectorMap)
 			capacityVector := tt.args.capacityResource.ToVector(vectorMap)
 			if got := NewFitErrorInsufficientResource(tt.args.name, tt.args.namespace, tt.args.nodeName,
-				tt.args.resourceRequested, usedVector, capacityVector, vectorMap, tt.args.capacityGpuMemory,
+				&tt.args.resourceRequested.GpuResourceRequirement, tt.args.resourceRequested.ToVector(vectorMap),
+				usedVector, capacityVector, vectorMap, tt.args.capacityGpuMemory,
 				tt.args.gangSchedulingJob, tt.args.suffix); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("NewFitErrorInsufficientResource() = %v, want %v", got, tt.want)
 			}

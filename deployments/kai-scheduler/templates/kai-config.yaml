@@ -40,7 +40,10 @@ spec:
       {{- toYaml .Values.global.securityContext | nindent 6 }}
     {{- end }}
     {{- if .Values.global.imagePullSecrets }}
-    imagesPullSecret: {{ index .Values.global.imagePullSecrets 0 | default "" }}
+    additionalImagePullSecrets:
+    {{- range .Values.global.imagePullSecrets }}
+      - {{ . | quote }}
+    {{- end }}
     {{- end }}
     replicaCount: {{ .Values.operator.replicaCount | default 1 }}
     {{- if .Values.global.vpa }}
@@ -210,3 +213,11 @@ spec:
     schedulerService:
       port: {{ .Values.scheduler.ports.metricsPort }}
     {{- end }}
+
+  {{- if .Values.prometheus.enabled }}
+  prometheus:
+    enabled: true
+    {{- if .Values.prometheus.externalPrometheusUrl }}
+    externalPrometheusUrl: {{ .Values.prometheus.externalPrometheusUrl | quote }}
+    {{- end }}
+  {{- end }}

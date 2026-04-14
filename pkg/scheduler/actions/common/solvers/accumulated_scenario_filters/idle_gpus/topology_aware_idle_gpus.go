@@ -81,7 +81,7 @@ func (taf *TopologyAwareIdleGpus) updateDomainCapacityWithVictims(scenario *scen
 
 func (taf *TopologyAwareIdleGpus) applyVictimTasks(victimTasks []*pod_info.PodInfo) {
 	iterateNewVictims(victimTasks, taf.processedVictims, func(victimTask *pod_info.PodInfo) {
-		freedGpus := victimTask.AcceptedResource.GPUs() + float64(victimTask.AcceptedResource.GetDraGpusCount())
+		freedGpus := victimTask.AcceptedGpuRequirement.GetGpusQuota()
 		if domains, ok := taf.nodeToTopologyDomains[victimTask.NodeName]; ok {
 			for _, domainKey := range domains {
 				taf.domainCapacity[domainKey] += freedGpus
@@ -252,9 +252,7 @@ func sumGpuRequirements(subgroup *subgroup_info.SubGroupSet) float64 {
 	totalGpusNeeded := 0.0
 	for _, podSet := range podSets {
 		for _, task := range podSet.GetPodInfos() {
-			if task.ResReq != nil {
-				totalGpusNeeded += task.ResReq.GPUs() + float64(task.ResReq.GetDraGpusCount())
-			}
+			totalGpusNeeded += task.GpuRequirement.GetGpusQuota()
 		}
 	}
 	return totalGpusNeeded

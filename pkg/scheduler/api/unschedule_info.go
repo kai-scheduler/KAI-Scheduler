@@ -16,19 +16,19 @@ const (
 )
 
 func GetBuildOverCapacityMessageForQueue(queueName string, resourceName string, deserved, used float64,
-	requiredResources *podgroup_info.JobRequirement) string {
-	details := getOverCapacityMessageDetails(queueName, resourceName, deserved, used, requiredResources)
+	requestedResources resource_info.ResourceVector, vectorMap *resource_info.ResourceVectorMap) string {
+	details := getOverCapacityMessageDetails(queueName, resourceName, deserved, used, requestedResources, vectorMap)
 	return fmt.Sprintf("Non-preemptible workload is over quota. "+
 		"%v Use a preemptible workload to go over quota.", details)
 }
 
 func getOverCapacityMessageDetails(queueName, resourceName string, deserved, used float64,
-	requiredResources *podgroup_info.JobRequirement) string {
+	requestedResources resource_info.ResourceVector, vectorMap *resource_info.ResourceVectorMap) string {
 	switch resourceName {
 	case GpuResource:
 		return fmt.Sprintf("Workload requested %v GPUs, but %s quota is %v GPUs, "+
 			"while %v GPUs are already allocated for non-preemptible pods.",
-			requiredResources.GPU,
+			requestedResources.Get(resource_info.GPUIndex),
 			queueName,
 			resource_info.HumanizeResource(deserved, 1),
 			resource_info.HumanizeResource(used, 1),
@@ -36,7 +36,7 @@ func getOverCapacityMessageDetails(queueName, resourceName string, deserved, use
 	case CpuResource:
 		return fmt.Sprintf("Workload requested %v CPU cores, but %s quota is %v cores, "+
 			"while %v cores are already allocated for non-preemptible pods.",
-			resource_info.HumanizeResource(requiredResources.MilliCPU, resource_info.MilliCPUToCores),
+			resource_info.HumanizeResource(requestedResources.Get(resource_info.CPUIndex), resource_info.MilliCPUToCores),
 			queueName,
 			resource_info.HumanizeResource(deserved, resource_info.MilliCPUToCores),
 			resource_info.HumanizeResource(used, resource_info.MilliCPUToCores),
@@ -44,7 +44,7 @@ func getOverCapacityMessageDetails(queueName, resourceName string, deserved, use
 	case MemoryResource:
 		return fmt.Sprintf("Workload requested %v GB memory, but %s quota is %v GB, "+
 			"while %v GB are already allocated for non-preemptible pods.",
-			resource_info.HumanizeResource(requiredResources.Memory, resource_info.MemoryToGB),
+			resource_info.HumanizeResource(requestedResources.Get(resource_info.MemoryIndex), resource_info.MemoryToGB),
 			queueName,
 			resource_info.HumanizeResource(deserved, resource_info.MemoryToGB),
 			resource_info.HumanizeResource(used, resource_info.MemoryToGB),

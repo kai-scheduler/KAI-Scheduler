@@ -9,6 +9,15 @@ kubectl apply -f batch-job.yaml
 This will create 2 pods that will be scheduled separately. Both pods will either run at the same time or sequentially, depending on the available resources in the cluster.
 
 
+## Min Member Override
+To require a minimum number of pods to be scheduled together (gang scheduling) for a batch Job or JobSet, use the `kai.scheduler/batch-min-member` annotation on the Job or JobSet resource:
+```
+kubectl apply -f batch-job-min-member.yaml
+```
+This will create a job with parallelism of 6, but requires at least 2 pods to be scheduled together before any pod starts running. This is useful for workloads like hyperparameter optimization (HPO) where you want a minimum level of parallelism but don't need all pods running simultaneously.
+
+For JobSets, the annotation overrides the calculated minAvailable for all PodGroups created by the JobSet.
+
 ## PyTorchJob
 To run in a distributed way across multiple pods, you can use PyTorchJob.
 

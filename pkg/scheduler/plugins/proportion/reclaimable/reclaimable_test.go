@@ -22,15 +22,12 @@ import (
 var testVectorMap = resource_info.NewResourceVectorMap()
 
 func testPodInfo(uid common_info.PodID, gpus float64, status pod_status.PodStatus) *pod_info.PodInfo {
-	resReq := &resource_info.ResourceRequirements{
-		GpuResourceRequirement: *resource_info.NewGpuResourceRequirementWithGpus(gpus, 0),
-	}
 	return &pod_info.PodInfo{
-		UID:          uid,
-		ResReq:       resReq,
-		ResReqVector: resReq.ToVector(testVectorMap),
-		VectorMap:    testVectorMap,
-		Status:       status,
+		UID:            uid,
+		GpuRequirement: *resource_info.NewGpuResourceRequirementWithGpus(gpus, 0),
+		ResReqVector:   resource_info.NewResourceVectorWithValues(0, 0, gpus, testVectorMap),
+		VectorMap:      testVectorMap,
+		Status:         status,
 	}
 }
 
@@ -978,8 +975,9 @@ var _ = Describe("Reclaimable - Multiple hierarchy levels", func() {
 		queues := buildQueues(queuesData)
 		reclaimable = New(1.0)
 
-		reclaimee.GetAllPodsMap()["1"].ResReq.GpuResourceRequirement =
-			*resource_info.NewGpuResourceRequirementWithGpus(1.5, 0)
+		pod := reclaimee.GetAllPodsMap()["1"]
+		pod.GpuRequirement = *resource_info.NewGpuResourceRequirementWithGpus(1.5, 0)
+		pod.ResReqVector = resource_info.NewResourceVectorWithValues(0, 0, 1.5, testVectorMap)
 		reclaimerInfo.RequiredResources = resource_info.NewResource(0, 0, 1).ToVector(testVectorMap)
 		reclaimerInfo.Queue = "left-leaf1"
 
@@ -1032,8 +1030,8 @@ var _ = Describe("Reclaimable - Multiple hierarchy levels", func() {
 		reclaimerInfo.RequiredResources = resource_info.NewResource(0, 0, 1).ToVector(testVectorMap)
 		reclaimerInfo.Queue = "left-leaf1"
 		pod := reclaimee.GetAllPodsMap()["1"]
-		pod.ResReq.GpuResourceRequirement = *resource_info.NewGpuResourceRequirementWithGpus(1.5, 0)
-		pod.ResReqVector = pod.ResReq.ToVector(testVectorMap)
+		pod.GpuRequirement = *resource_info.NewGpuResourceRequirementWithGpus(1.5, 0)
+		pod.ResReqVector = resource_info.NewResourceVectorWithValues(0, 0, 1.5, testVectorMap)
 		reclaimee2 := testReclaimee("reclaimee", "left-leaf2", pod_info.PodsMap{
 			"1": testPodInfo("1", 0.5, pod_status.Running),
 		})

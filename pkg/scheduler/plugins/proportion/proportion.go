@@ -363,7 +363,7 @@ func (pp *proportionPlugin) updateQueuesCurrentResourceUsage(ssn *framework.Sess
 					resources := utils.QuantifyVector(t.ResReqVector, t.VectorMap)
 					if t.IsMemoryRequest() {
 						resources.Add(rs.ResourceQuantities{
-							rs.GpuResource: float64(t.ResReq.GpuResourceRequirement.GetNumOfGpuDevices()) * (float64(t.ResReq.GpuMemory()) / float64(ssn.ClusterInfo.MinNodeGPUMemory)),
+							rs.GpuResource: float64(t.GpuRequirement.GetNumOfGpuDevices()) * (float64(t.GpuRequirement.GpuMemory()) / float64(ssn.ClusterInfo.MinNodeGPUMemory)),
 						})
 					}
 					pp.updateQueuesResourceUsageForPendingJob(job.Queue, resources)

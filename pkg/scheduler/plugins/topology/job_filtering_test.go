@@ -17,7 +17,6 @@ import (
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
@@ -1581,31 +1580,32 @@ func TestTopologyPlugin_calcTreeAllocatable(t *testing.T) {
 }
 
 func TestTopologyPlugin_getJobAllocatableDomains(t *testing.T) {
+	newTestSubGroup := func(constraint *topology_info.TopologyConstraintInfo, minAvailable int32) *subgroup_info.SubGroupSet {
+		sgs := subgroup_info.NewSubGroupSet("test", constraint)
+		sgs.AddPodSet(subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, minAvailable, nil))
+		return sgs
+	}
+
 	tests := []struct {
-		name               string
-		job                *podgroup_info.PodGroupInfo
-		topologyConstraint *topology_info.TopologyConstraintInfo
-		topologyTree       *Info
-		taskOrderFunc      common_info.LessFn
-		expectedDomains    []*DomainInfo
-		expectedError      string
-		expectedFitErrors  []common_info.JobFitError
+		name              string
+		job               *jobs_fake.TestJobBasic
+		topologyTree      *Info
+		expectedDomains   []*DomainInfo
+		expectedError     string
+		expectedFitErrors []common_info.JobFitError
 	}{
 		{
 			name: "return multi domain",
-			job: &podgroup_info.PodGroupInfo{
+			job: &jobs_fake.TestJobBasic{
 				Name: "test-job",
-				PodSets: map[string]*subgroup_info.PodSet{
-					podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 2, nil).
-						WithPodInfos(map[common_info.PodID]*pod_info.PodInfo{
-							"pod1": {UID: "pod1", Name: "pod1", Status: pod_status.Pending},
-							"pod2": {UID: "pod2", Name: "pod2", Status: pod_status.Pending},
-						}),
+				RootSubGroupSet: newTestSubGroup(&topology_info.TopologyConstraintInfo{
+					RequiredLevel:  "zone",
+					PreferredLevel: "rack",
+				}, 2),
+				Tasks: []*tasks_fake.TestTaskBasic{
+					{State: pod_status.Pending},
+					{State: pod_status.Pending},
 				},
-			},
-			topologyConstraint: &topology_info.TopologyConstraintInfo{
-				RequiredLevel:  "zone",
-				PreferredLevel: "rack",
 			},
 			topologyTree: &Info{
 				Name: "test-topology",
@@ -1639,9 +1639,6 @@ func TestTopologyPlugin_getJobAllocatableDomains(t *testing.T) {
 					},
 				},
 			},
-			taskOrderFunc: func(l, r interface{}) bool {
-				return l.(*pod_info.PodInfo).Name < r.(*pod_info.PodInfo).Name
-			},
 			expectedDomains: []*DomainInfo{
 				{
 					ID:              "rack1.zone1",
@@ -1658,19 +1655,16 @@ func TestTopologyPlugin_getJobAllocatableDomains(t *testing.T) {
 		},
 		{
 			name: "no domains can allocate the job",
-			job: &podgroup_info.PodGroupInfo{
+			job: &jobs_fake.TestJobBasic{
 				Name:      "test-job",
 				Namespace: "test-namespace",
-				PodSets: map[string]*subgroup_info.PodSet{
-					podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 2, nil).
-						WithPodInfos(map[common_info.PodID]*pod_info.PodInfo{
-							"pod1": {UID: "pod1", Name: "pod1", Status: pod_status.Pending},
-							"pod2": {UID: "pod2", Name: "pod2", Status: pod_status.Pending},
-						}),
+				RootSubGroupSet: newTestSubGroup(&topology_info.TopologyConstraintInfo{
+					RequiredLevel: "zone",
+				}, 2),
+				Tasks: []*tasks_fake.TestTaskBasic{
+					{State: pod_status.Pending},
+					{State: pod_status.Pending},
 				},
-			},
-			topologyConstraint: &topology_info.TopologyConstraintInfo{
-				RequiredLevel: "zone",
 			},
 			topologyTree: &Info{
 				Name:      "test-topology",
@@ -1700,9 +1694,6 @@ func TestTopologyPlugin_getJobAllocatableDomains(t *testing.T) {
 					},
 				},
 			},
-			taskOrderFunc: func(l, r interface{}) bool {
-				return l.(*pod_info.PodInfo).Name < r.(*pod_info.PodInfo).Name
-			},
 			expectedDomains: []*DomainInfo{},
 			expectedFitErrors: []common_info.JobFitError{
 				common_info.NewTopologyFitError(
@@ -1723,23 +1714,21 @@ func TestTopologyPlugin_getJobAllocatableDomains(t *testing.T) {
 		},
 		{
 			name: "no domains can allocate the job - using IdleOrReleasingResources",
-			job: &podgroup_info.PodGroupInfo{
-				Name:      "test-job",
-				Namespace: "test-namespace",
-				PodSets: map[string]*subgroup_info.PodSet{
-					podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 2, nil).
-						WithPodInfos(map[common_info.PodID]*pod_info.PodInfo{
-							"pod1": {UID: "pod1", Name: "pod1", Status: pod_status.Pending, ResReq: resource_info.NewResourceRequirementsWithGpus(1)},
-							"pod2": {UID: "pod2", Name: "pod2", Status: pod_status.Pending, ResReq: resource_info.NewResourceRequirements(0, 1000, 0)},
-						}),
+			job: &jobs_fake.TestJobBasic{
+				Name:                "test-job",
+				Namespace:           "test-namespace",
+				RequiredCPUsPerTask: 0.5,
+				RootSubGroupSet: newTestSubGroup(&topology_info.TopologyConstraintInfo{
+					RequiredLevel: "zone",
+				}, 2),
+				Tasks: []*tasks_fake.TestTaskBasic{
+					{State: pod_status.Pending, RequiredGPUs: ptr.To(int64(1))},
+					{State: pod_status.Pending, RequiredGPUs: ptr.To(int64(0))},
 				},
-			},
-			topologyConstraint: &topology_info.TopologyConstraintInfo{
-				RequiredLevel: "zone",
 			},
 			topologyTree: &Info{
 				Name:      "test-topology",
-				VectorMap: resource_info.NewResourceVectorMap(),
+				VectorMap: testVectorMap,
 				TopologyResource: &kaiv1alpha1.Topology{
 					Spec: kaiv1alpha1.TopologySpec{
 						Levels: []kaiv1alpha1.TopologyLevel{
@@ -1753,13 +1742,13 @@ func TestTopologyPlugin_getJobAllocatableDomains(t *testing.T) {
 						"rack1.zone1": {
 							ID:                    "rack1.zone1",
 							Level:                 "rack",
-							IdleOrReleasingVector: resource_info.NewResource(500, 0, 0).ToVector(testVectorMap), // Insufficient resources
+							IdleOrReleasingVector: resource_info.NewResourceVectorWithValues(500, 3e9, 0, testVectorMap),
 							AllocatablePods:       -1,
 						},
 						"rack2.zone2": {
 							ID:                    "rack2.zone2",
 							Level:                 "rack",
-							IdleOrReleasingVector: resource_info.NewResource(600, 0, 0).ToVector(testVectorMap), // Insufficient resources
+							IdleOrReleasingVector: resource_info.NewResourceVectorWithValues(600, 3e9, 0, testVectorMap),
 							AllocatablePods:       -1,
 						},
 					},
@@ -1767,20 +1756,17 @@ func TestTopologyPlugin_getJobAllocatableDomains(t *testing.T) {
 						"zone1": {
 							ID:                    "zone1",
 							Level:                 "zone",
-							IdleOrReleasingVector: resource_info.NewResource(500, 0, 0).ToVector(testVectorMap), // Insufficient resources
+							IdleOrReleasingVector: resource_info.NewResourceVectorWithValues(500, 3e9, 0, testVectorMap),
 							AllocatablePods:       -1,
 						},
 						"zone2": {
 							ID:                    "zone2",
 							Level:                 "zone",
-							IdleOrReleasingVector: resource_info.NewResource(600, 0, 0).ToVector(testVectorMap), // Insufficient resources
+							IdleOrReleasingVector: resource_info.NewResourceVectorWithValues(600, 3e9, 0, testVectorMap),
 							AllocatablePods:       -1,
 						},
 					},
 				},
-			},
-			taskOrderFunc: func(l, r interface{}) bool {
-				return l.(*pod_info.PodInfo).Name < r.(*pod_info.PodInfo).Name
 			},
 			expectedDomains: []*DomainInfo{},
 			expectedFitErrors: []common_info.JobFitError{
@@ -1791,11 +1777,11 @@ func TestTopologyPlugin_getJobAllocatableDomains(t *testing.T) {
 					"zone1",
 					common_info.UnschedulableWorkloadReason,
 					[]string{
-						"node-group(s) didn't have enough resources: GPUs",
 						"node-group(s) didn't have enough resources: CPU cores",
+						"node-group(s) didn't have enough resources: GPUs",
 					},
-					"zone1 didn't have enough resource: GPUs, requested: 1, available: 0",
 					"zone1 didn't have enough resources: CPU cores, requested: 1, available: 0.5",
+					"zone1 didn't have enough resource: GPUs, requested: 1, available: 0",
 				),
 				common_info.NewTopologyFitError(
 					"test-job",
@@ -1804,11 +1790,11 @@ func TestTopologyPlugin_getJobAllocatableDomains(t *testing.T) {
 					"zone2",
 					common_info.UnschedulableWorkloadReason,
 					[]string{
-						"node-group(s) didn't have enough resources: GPUs",
 						"node-group(s) didn't have enough resources: CPU cores",
+						"node-group(s) didn't have enough resources: GPUs",
 					},
-					"zone2 didn't have enough resource: GPUs, requested: 1, available: 0",
 					"zone2 didn't have enough resources: CPU cores, requested: 1, available: 0.6",
+					"zone2 didn't have enough resource: GPUs, requested: 1, available: 0",
 				),
 				common_info.NewJobFitError(
 					"test-job",
@@ -1821,18 +1807,15 @@ func TestTopologyPlugin_getJobAllocatableDomains(t *testing.T) {
 		},
 		{
 			name: "no relevant domain levels",
-			job: &podgroup_info.PodGroupInfo{
+			job: &jobs_fake.TestJobBasic{
 				Name: "test-job",
-				PodSets: map[string]*subgroup_info.PodSet{
-					podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil).
-						WithPodInfos(map[common_info.PodID]*pod_info.PodInfo{
-							"pod1": {UID: "pod1", Name: "pod1", Status: pod_status.Pending},
-						}),
+				RootSubGroupSet: newTestSubGroup(&topology_info.TopologyConstraintInfo{
+					RequiredLevel:  "zone",
+					PreferredLevel: "rack",
+				}, 1),
+				Tasks: []*tasks_fake.TestTaskBasic{
+					{State: pod_status.Pending},
 				},
-			},
-			topologyConstraint: &topology_info.TopologyConstraintInfo{
-				RequiredLevel:  "zone",
-				PreferredLevel: "rack",
 			},
 			topologyTree: &Info{
 				Name:      "test-topology",
@@ -1855,28 +1838,22 @@ func TestTopologyPlugin_getJobAllocatableDomains(t *testing.T) {
 					},
 				},
 			},
-			taskOrderFunc: func(l, r interface{}) bool {
-				return l.(*pod_info.PodInfo).Name < r.(*pod_info.PodInfo).Name
-			},
 			expectedDomains: nil,
 			expectedError:   "topology constraint error: sub-group test specified 'zone' as the required topology constraint level, but the topology tree 'test-topology' does not contain a level with this name",
 		},
 		{
 			name: "complex topology with multiple levels",
-			job: &podgroup_info.PodGroupInfo{
+			job: &jobs_fake.TestJobBasic{
 				Name: "test-job",
-				PodSets: map[string]*subgroup_info.PodSet{
-					podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 3, nil).
-						WithPodInfos(map[common_info.PodID]*pod_info.PodInfo{
-							"pod1": {UID: "pod1", Name: "pod1", Status: pod_status.Pending},
-							"pod2": {UID: "pod2", Name: "pod2", Status: pod_status.Pending},
-							"pod3": {UID: "pod3", Name: "pod3", Status: pod_status.Pending},
-						}),
+				RootSubGroupSet: newTestSubGroup(&topology_info.TopologyConstraintInfo{
+					RequiredLevel:  "region",
+					PreferredLevel: "zone",
+				}, 3),
+				Tasks: []*tasks_fake.TestTaskBasic{
+					{State: pod_status.Pending},
+					{State: pod_status.Pending},
+					{State: pod_status.Pending},
 				},
-			},
-			topologyConstraint: &topology_info.TopologyConstraintInfo{
-				RequiredLevel:  "region",
-				PreferredLevel: "zone",
 			},
 			topologyTree: &Info{
 				Name:      "test-topology",
@@ -1920,9 +1897,6 @@ func TestTopologyPlugin_getJobAllocatableDomains(t *testing.T) {
 					},
 				},
 			},
-			taskOrderFunc: func(l, r interface{}) bool {
-				return l.(*pod_info.PodInfo).Name < r.(*pod_info.PodInfo).Name
-			},
 			expectedDomains: []*DomainInfo{
 				{
 					ID:              "zone1.region1",
@@ -1939,19 +1913,16 @@ func TestTopologyPlugin_getJobAllocatableDomains(t *testing.T) {
 		},
 		{
 			name: "mixed task statuses - some pending, some running",
-			job: &podgroup_info.PodGroupInfo{
+			job: &jobs_fake.TestJobBasic{
 				Name: "test-job",
-				PodSets: map[string]*subgroup_info.PodSet{
-					podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 2, nil).
-						WithPodInfos(map[common_info.PodID]*pod_info.PodInfo{
-							"pod1": {UID: "pod1", Name: "pod1", Status: pod_status.Running, NodeName: "node1"},
-							"pod2": {UID: "pod2", Name: "pod2", Status: pod_status.Pending},
-							"pod3": {UID: "pod3", Name: "pod3", Status: pod_status.Pending},
-						}),
+				RootSubGroupSet: newTestSubGroup(&topology_info.TopologyConstraintInfo{
+					RequiredLevel: "zone",
+				}, 2),
+				Tasks: []*tasks_fake.TestTaskBasic{
+					{State: pod_status.Running, NodeName: "node1"},
+					{State: pod_status.Pending},
+					{State: pod_status.Pending},
 				},
-			},
-			topologyConstraint: &topology_info.TopologyConstraintInfo{
-				RequiredLevel: "zone",
 			},
 			topologyTree: &Info{
 				Name:      "test-topology",
@@ -1982,9 +1953,6 @@ func TestTopologyPlugin_getJobAllocatableDomains(t *testing.T) {
 					},
 				},
 			},
-			taskOrderFunc: func(l, r interface{}) bool {
-				return l.(*pod_info.PodInfo).Name < r.(*pod_info.PodInfo).Name
-			},
 			expectedDomains: []*DomainInfo{
 				{
 					ID:              "zone1",
@@ -1996,19 +1964,16 @@ func TestTopologyPlugin_getJobAllocatableDomains(t *testing.T) {
 		},
 		{
 			name: "mixed task statuses with required constraint - choose zone with existing pods",
-			job: &podgroup_info.PodGroupInfo{
+			job: &jobs_fake.TestJobBasic{
 				Name: "test-job",
-				PodSets: map[string]*subgroup_info.PodSet{
-					podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 2, nil).
-						WithPodInfos(map[common_info.PodID]*pod_info.PodInfo{
-							"pod1": {UID: "pod1", Name: "pod1", Status: pod_status.Running, NodeName: "node2"},
-							"pod2": {UID: "pod2", Name: "pod2", Status: pod_status.Pending},
-							"pod3": {UID: "pod3", Name: "pod3", Status: pod_status.Pending},
-						}),
+				RootSubGroupSet: newTestSubGroup(&topology_info.TopologyConstraintInfo{
+					RequiredLevel: "zone",
+				}, 2),
+				Tasks: []*tasks_fake.TestTaskBasic{
+					{State: pod_status.Running, NodeName: "node2"},
+					{State: pod_status.Pending},
+					{State: pod_status.Pending},
 				},
-			},
-			topologyConstraint: &topology_info.TopologyConstraintInfo{
-				RequiredLevel: "zone",
 			},
 			topologyTree: &Info{
 				Name:      "test-topology",
@@ -2053,9 +2018,6 @@ func TestTopologyPlugin_getJobAllocatableDomains(t *testing.T) {
 					},
 				},
 			},
-			taskOrderFunc: func(l, r interface{}) bool {
-				return l.(*pod_info.PodInfo).Name < r.(*pod_info.PodInfo).Name
-			},
 			expectedDomains: []*DomainInfo{
 				{
 					ID:              "zone2",
@@ -2067,21 +2029,18 @@ func TestTopologyPlugin_getJobAllocatableDomains(t *testing.T) {
 		},
 		{
 			name: "Return multiple levels of domains",
-			job: &podgroup_info.PodGroupInfo{
+			job: &jobs_fake.TestJobBasic{
 				Name: "test-job",
-				PodSets: map[string]*subgroup_info.PodSet{
-					podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 4, nil).
-						WithPodInfos(map[common_info.PodID]*pod_info.PodInfo{
-							"pod1": {UID: "pod1", Name: "pod1", Status: pod_status.Pending},
-							"pod2": {UID: "pod2", Name: "pod2", Status: pod_status.Pending},
-							"pod3": {UID: "pod3", Name: "pod3", Status: pod_status.Pending},
-							"pod4": {UID: "pod4", Name: "pod4", Status: pod_status.Pending},
-						}),
+				RootSubGroupSet: newTestSubGroup(&topology_info.TopologyConstraintInfo{
+					RequiredLevel:  "region",
+					PreferredLevel: "rack",
+				}, 4),
+				Tasks: []*tasks_fake.TestTaskBasic{
+					{State: pod_status.Pending},
+					{State: pod_status.Pending},
+					{State: pod_status.Pending},
+					{State: pod_status.Pending},
 				},
-			},
-			topologyConstraint: &topology_info.TopologyConstraintInfo{
-				RequiredLevel:  "region",
-				PreferredLevel: "rack",
 			},
 			topologyTree: &Info{
 				Name:      "test-topology",
@@ -2194,9 +2153,6 @@ func TestTopologyPlugin_getJobAllocatableDomains(t *testing.T) {
 					},
 				},
 			},
-			taskOrderFunc: func(l, r interface{}) bool {
-				return l.(*pod_info.PodInfo).Name < r.(*pod_info.PodInfo).Name
-			},
 			expectedDomains: []*DomainInfo{
 				{
 					ID:              "zone1.region1",
@@ -2222,20 +2178,19 @@ func TestTopologyPlugin_getJobAllocatableDomains(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			plugin := &topologyPlugin{}
 
-			tt.job.RootSubGroupSet = subgroup_info.NewSubGroupSet("test", tt.topologyConstraint)
-			for _, podSet := range tt.job.PodSets {
-				tt.job.RootSubGroupSet.AddPodSet(podSet)
-			}
+			jobsInfoMap, _, _ := jobs_fake.BuildJobsAndTasksMaps(
+				[]*jobs_fake.TestJobBasic{tt.job}, testVectorMap)
+			job := jobsInfoMap[common_info.PodGroupID(tt.job.Name)]
 
-			tasks := podgroup_info.GetTasksToAllocate(tt.job, nil, nil, true)
+			tasks := podgroup_info.GetTasksToAllocate(job, nil, nil, true)
 			tasksResources := resource_info.NewResource(0, 0, 0)
 			for _, task := range tasks {
-				tasksResources.AddResourceRequirements(task.ResReq)
+				tasksResources.AddVectorAndGpuReq(task.ResReqVector, task.VectorMap, &task.GpuRequirement)
 			}
 			tasksCount := len(tasks)
 
-			result, err := plugin.getJobAllocatableDomains(tt.job, &tt.job.RootSubGroupSet.SubGroupInfo,
-				tt.job.RootSubGroupSet.GetAllPodSets(), tasksResources.ToVector(testVectorMap), tasksCount,
+			result, err := plugin.getJobAllocatableDomains(job, &job.RootSubGroupSet.SubGroupInfo,
+				job.RootSubGroupSet.GetAllPodSets(), tasksResources.ToVector(testVectorMap), tasksCount,
 				tt.topologyTree)
 
 			// Check error
@@ -2247,12 +2202,12 @@ func TestTopologyPlugin_getJobAllocatableDomains(t *testing.T) {
 				if err.Error() != tt.expectedError {
 					t.Errorf("expected error '%s', but got '%s'", tt.expectedError, err.Error())
 				}
-				if len(tt.job.JobFitErrors) != len(tt.expectedFitErrors) {
-					t.Errorf("expected %d fit errors, but got %d", len(tt.expectedFitErrors), len(tt.job.JobFitErrors))
+				if len(job.JobFitErrors) != len(tt.expectedFitErrors) {
+					t.Errorf("expected %d fit errors, but got %d", len(tt.expectedFitErrors), len(job.JobFitErrors))
 				}
 				if len(tt.expectedFitErrors) > 0 {
 					for i, expectedFitError := range tt.expectedFitErrors {
-						actualFitError := tt.job.JobFitErrors[i]
+						actualFitError := job.JobFitErrors[i]
 						if !slices.Equal(expectedFitError.Messages(), actualFitError.Messages()) {
 							t.Errorf("expected fit error %d: messages %v, but got %v", i, expectedFitError.Messages(), actualFitError.Messages())
 						}

@@ -955,8 +955,7 @@ func TestBindRequests(t *testing.T) {
 		assert.Equal(t, assertedPods, expectedPodAsserts)
 
 		for _, node := range snapshot.Nodes {
-			cpuIdx := node.VectorMap.GetIndex(corev1.ResourceCPU)
-			assert.Equal(t, float64(test.resultNodes[node.Name].MilliValue()), node.IdleVector.Get(cpuIdx))
+			assert.Equal(t, float64(test.resultNodes[node.Name].MilliValue()), node.IdleVector.Get(resource_info.CPUIndex))
 		}
 	}
 }
@@ -2530,7 +2529,7 @@ func TestSnapshotNodesWithDRAGPUs(t *testing.T) {
 				nodeInfo, found := nodes[nodeName]
 				assert.True(t, found, "Node %s not found", nodeName)
 				// Check total GPUs (DRA GPUs are merged into AllocatableVector)
-				actualGPUs := nodeInfo.AllocatableVector.Get(vectorMap.GetIndex("gpu"))
+				actualGPUs := nodeInfo.AllocatableVector.Get(resource_info.GPUIndex)
 				assert.Equal(t, expectedGPUs, actualGPUs, "GPUs mismatch for node %s", nodeName)
 				expectedFlag := test.hasDRAGPUs[nodeName]
 				assert.Equal(t, expectedFlag, nodeInfo.HasDRAGPUs, "HasDRAGPUs mismatch for node %s", nodeName)
