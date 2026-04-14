@@ -195,10 +195,14 @@ func Test_GetTasksToAllocate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			pg := NewPodGroupInfo("pg")
+			// Replace the default root so only the test's PodSets are children.
+			root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+			pg.RootSubGroupSet = root
+			pg.PodSets = make(map[string]*subgroup_info.PodSet)
 			for subGroupName, pods := range tt.subGroupTasks {
-				if _, exists := pg.GetSubGroups()[subGroupName]; !exists {
-					pg.PodSets[subGroupName] = subgroup_info.NewPodSet(subGroupName, tt.minAvailMap[subGroupName], nil)
-				}
+				ps := subgroup_info.NewPodSet(subGroupName, tt.minAvailMap[subGroupName], nil)
+				root.AddPodSet(ps)
+				pg.PodSets[subGroupName] = ps
 				for _, pod := range pods {
 					pg.AddTaskInfo(pod)
 				}

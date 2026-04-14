@@ -310,11 +310,8 @@ func TestGetQueueOrderResult(t *testing.T) {
 		t.Run(test.Name, func(t *testing.T) {
 			t.Logf("Running test %d/%d: %s", i+1, len(tests), test.Name)
 			session := &framework.Session{
-				PodSetOrderFns: []common_info.CompareFn{
-					subgrouporder.PodSetOrderFn,
-				},
-				SubGroupSetOrderFns: []common_info.CompareFn{
-					subgrouporder.SubGroupSetOrderFn,
+				SubGroupOrderFns: []common_info.CompareFn{
+					subgrouporder.SubGroupOrderFn,
 				},
 			}
 
@@ -325,7 +322,7 @@ func TestGetQueueOrderResult(t *testing.T) {
 				return false
 			}
 			result := GetQueueOrderResult(test.lqueue, test.rqueue, test.lJobInfo, test.rJobInfo, nil, nil,
-				session.PodSetOrderFn, taskOrderFn, test.totalResources, test.minNodeGPUMemory)
+				session.SubGroupOrderFn, taskOrderFn, test.totalResources, test.minNodeGPUMemory)
 			assert.Equal(t, test.expectedResult, result)
 		})
 	}

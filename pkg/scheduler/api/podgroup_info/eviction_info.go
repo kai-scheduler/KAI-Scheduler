@@ -64,6 +64,15 @@ func getMaxTasksToEvict(subGroup *subgroup_info.PodSet) int {
 	return numAllocatedTasks
 }
 
+func getSubGroupsPriorityQueue(subGroups map[string]*subgroup_info.PodSet,
+	subGroupOrderFn common_info.LessFn) *scheduler_util.PriorityQueue {
+	priorityQueue := scheduler_util.NewPriorityQueue(subGroupOrderFn, scheduler_util.QueueCapacityInfinite)
+	for _, subGroup := range subGroups {
+		priorityQueue.Push(subGroup)
+	}
+	return priorityQueue
+}
+
 func getTasksToEvictPriorityQueue(
 	subGroup *subgroup_info.PodSet, taskOrderFn common_info.LessFn,
 ) *scheduler_util.PriorityQueue {

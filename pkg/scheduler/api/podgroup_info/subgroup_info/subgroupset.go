@@ -108,3 +108,22 @@ func (sgs *SubGroupSet) GetMinChildrenToSatisfy() int {
 	}
 	return len(sgs.GetChildGroups()) + len(sgs.GetChildPodSets())
 }
+
+func (sgs *SubGroupSet) GetChildren() []SubGroupChild {
+	children := make([]SubGroupChild, 0, len(sgs.groups)+len(sgs.podSets))
+	for _, childSubgroup := range sgs.groups {
+		children = append(children, childSubgroup)
+	}
+	for _, childSubgroup := range sgs.podSets {
+		children = append(children, childSubgroup)
+	}
+	return children
+}
+
+func (sgs *SubGroupSet) IsMinRequirementSatisfied() bool {
+	return sgs.GetNumActiveAllocatedDirectSubGroups() >= sgs.GetMinChildrenToSatisfy()
+}
+
+func (sgs *SubGroupSet) GetNumActiveAllocatedDirectChildren() int {
+	return sgs.GetNumActiveAllocatedDirectSubGroups()
+}

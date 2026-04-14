@@ -25,25 +25,17 @@ func (sgop *subGroupOrderPlugin) Name() string {
 }
 
 func (sgop *subGroupOrderPlugin) OnSessionOpen(ssn *framework.Session) {
-	ssn.AddPodSetOrderFn(PodSetOrderFn)
-	ssn.AddSubGroupSetOrderFn(SubGroupSetOrderFn)
+	ssn.AddSubGroupOrderFn(SubGroupOrderFn)
 }
 
-func PodSetOrderFn(l, r interface{}) int {
-	lv := l.(*subgroup_info.PodSet)
-	rv := r.(*subgroup_info.PodSet)
+// SubGroupOrderFn orders two subgroups by their allocation ratio (allocated/threshold).
+// For subGroupSets, it is the allocation ratio of the direct children. For podSets, it is the allocation ratio of the tasks.
+func SubGroupOrderFn(l, r interface{}) int {
+	lv := l.(subgroup_info.SubGroupChild)
+	rv := r.(subgroup_info.SubGroupChild)
 	return orderByAllocationRatio(
-		lv.GetNumActiveAllocatedTasks(), int(lv.GetMinAvailable()),
-		rv.GetNumActiveAllocatedTasks(), int(rv.GetMinAvailable()),
-	)
-}
-
-func SubGroupSetOrderFn(l, r interface{}) int {
-	lv := l.(*subgroup_info.SubGroupSet)
-	rv := r.(*subgroup_info.SubGroupSet)
-	return orderByAllocationRatio(
-		lv.GetNumActiveAllocatedDirectSubGroups(), lv.GetMinChildrenToSatisfy(),
-		rv.GetNumActiveAllocatedDirectSubGroups(), rv.GetMinChildrenToSatisfy(),
+		lv.GetNumActiveAllocatedDirectChildren(), lv.GetMinChildrenToSatisfy(),
+		rv.GetNumActiveAllocatedDirectChildren(), rv.GetMinChildrenToSatisfy(),
 	)
 }
 

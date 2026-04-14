@@ -497,18 +497,17 @@ func getElasticTestsMetadata() []integration_tests_utils.TestTopologyMetadata {
 		{
 			TestTopologyBasic: test_utils.TestTopologyBasic{
 				// All PodSets are satisfied. group-cd (minSubGroup=nil, ratio 2/2=1.0) is ordered
-				// before group-ab (minSubGroup=1, ratio 2/1=2.0). Since all PodSets are satisfied,
-				// getMaxNumSubGroupsToAllocate returns 1 per iteration.
+				// before group-ab (minSubGroup=1, ratio 2/1=2.0) at the root level.
 				//
-				// Round 1: sub-b and sub-d have no pending and are skipped; sub-c (ratio 1.0) wins
-				// the slot over sub-a (ratio 2.0) → job0-6 bound.
+				// Round 1: root elastic fallback selects group-cd (lower ratio 1.0). Within group-cd,
+				// sub-d has no pending; sub-c wins → job0-6 bound.
 				//
-				// Round 2 (job re-queued, HasTasksToAllocate still true): sub-c's ratio rises to 2.0
-				// (1 running + 1 binding). sub-a and sub-c are tied at 2.0; alphabetic tiebreaker
-				// ("sub-a" < "sub-c") gives sub-a the slot → job0-2 bound.
+				// Round 2 (job re-queued, HasTasksToAllocate still true): group-cd ratio stays at 1.0
+				// (2/2 satisfied), still wins over group-ab (ratio 2.0). Within group-cd, sub-d (no
+				// pending) skipped; sub-c wins again → job0-7 bound.
 				//
 				// Round 3: node is full (7/7 GPUs), allocation fails — job is not re-queued.
-				Name: "Elastic allocation: satisfied PodSets in two-parent tree, lower-ratio group wins first extra slot then alphabetic tiebreak allocates second",
+				Name: "Elastic allocation: satisfied PodSets in two-parent tree, lower-ratio group wins consecutive extra slots",
 				Jobs: []*jobs_fake.TestJobBasic{
 					{
 						Name:      "job0",
@@ -553,8 +552,7 @@ func getElasticTestsMetadata() []integration_tests_utils.TestTopologyMetadata {
 						},
 					},
 				},
-				// 5 GPUs used by running tasks; 2 free — enough for 2 extra tasks, but the
-				// elastic limit (maxNumSubGroupsToAllocate=1 when all satisfied) allows only 1.
+				// 5 GPUs used by running tasks; 2 free — enough for 2 extra tasks.
 				Nodes: map[string]nodes_fake.TestNodeBasic{
 					"node0": {GPUs: 7},
 				},
@@ -569,14 +567,13 @@ func getElasticTestsMetadata() []integration_tests_utils.TestTopologyMetadata {
 				TaskExpectedResults: map[string]test_utils.TestExpectedResultBasic{
 					"job0-0": {NodeName: "node0", GPUsRequired: 1, Status: pod_status.Running},
 					"job0-1": {NodeName: "node0", GPUsRequired: 1, Status: pod_status.Running},
-					// sub-a's first extra task wins the 2nd elastic slot (tied ratio 2.0, "sub-a" < "sub-c")
-					"job0-2": {NodeName: "node0", GPUsRequired: 1, Status: pod_status.Binding},
+					"job0-2": {GPUsRequired: 1, Status: pod_status.Pending},
 					"job0-3": {GPUsRequired: 1, Status: pod_status.Pending},
 					"job0-4": {NodeName: "node0", GPUsRequired: 1, Status: pod_status.Running},
 					"job0-5": {NodeName: "node0", GPUsRequired: 1, Status: pod_status.Running},
-					// sub-c's first extra task wins the 1st elastic slot (group-cd ratio 1.0 < group-ab ratio 2.0)
+					// group-cd (ratio 1.0) wins over group-ab (ratio 2.0) in both rounds; sub-c gets both extra slots
 					"job0-6": {NodeName: "node0", GPUsRequired: 1, Status: pod_status.Binding},
-					"job0-7": {GPUsRequired: 1, Status: pod_status.Pending},
+					"job0-7": {NodeName: "node0", GPUsRequired: 1, Status: pod_status.Binding},
 					"job0-8": {NodeName: "node0", GPUsRequired: 1, Status: pod_status.Running},
 				},
 			},

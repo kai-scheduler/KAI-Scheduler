@@ -22,6 +22,9 @@ func AllocateJob(ssn *framework.Session, stmt *framework.Statement, nodes []*nod
 	ssn.PreJobAllocation(job)
 
 	tasksToAllocate := podgroup_info.GetTasksToAllocate(job, ssn.SubGroupOrderFn, ssn.TaskOrderFn, !isPipelineOnly)
+	if len(tasksToAllocate) == 0 {
+		return false
+	}
 
 	result := ssn.IsJobOverQueueCapacityFn(job, tasksToAllocate)
 	if !result.IsSchedulable {
@@ -36,10 +39,14 @@ func AllocateJob(ssn *framework.Session, stmt *framework.Statement, nodes []*nod
 }
 
 func allocateSubGroupSet(ssn *framework.Session, stmt *framework.Statement, nodes []*node_info.NodeInfo,
-	job *podgroup_info.PodGroupInfo, subGroupSet *subgroup_info.SubGroupSet, tasksToAllocate []*pod_info.PodInfo,
+	job *podgroup_info.PodGroupInfo, subGroupSet *subgroup_info.SubGroupSet, subtreeTasksToAllocate []*pod_info.PodInfo,
 	isPipelineOnly bool,
 ) bool {
-	nodeSets, err := ssn.SubsetNodesFn(job, &subGroupSet.SubGroupInfo, subGroupSet.GetAllPodSets(), tasksToAllocate, nodes)
+	if len(subtreeTasksToAllocate) == 0 {
+		return true
+	}
+	relevantPodSets := subtreePodSetsContainingTasks(subGroupSet, subtreeTasksToAllocate)
+	nodeSets, err := ssn.SubsetNodesFn(job, &subGroupSet.SubGroupInfo, relevantPodSets, subtreeTasksToAllocate, nodes)
 	if err != nil {
 		log.InfraLogger.Errorf(
 			"Failed to run SubsetNodes on job <%s/%s>: %v", job.Namespace, job.Name, err)
@@ -48,7 +55,7 @@ func allocateSubGroupSet(ssn *framework.Session, stmt *framework.Statement, node
 
 	for _, nodeSet := range nodeSets {
 		cp := stmt.Checkpoint()
-		if allocateSubGroupSetOnNodes(ssn, stmt, nodeSet, job, subGroupSet, tasksToAllocate, isPipelineOnly) {
+		if allocateChildrenOnNodes(ssn, stmt, nodeSet, job, subGroupSet, subtreeTasksToAllocate, isPipelineOnly) {
 			return true
 		}
 		if err := stmt.Rollback(cp); err != nil {
@@ -59,35 +66,57 @@ func allocateSubGroupSet(ssn *framework.Session, stmt *framework.Statement, node
 	return false
 }
 
-func allocateSubGroupSetOnNodes(ssn *framework.Session, stmt *framework.Statement, nodes node_info.NodeSet,
-	job *podgroup_info.PodGroupInfo, subGroupSet *subgroup_info.SubGroupSet, tasksToAllocate []*pod_info.PodInfo,
+// allocateChildrenOnNodes allocates the tasks that appear in subtreeTasksToAllocate by traversing the subtree rooted at subGroupSet.
+// The tasks in subtreeTasksToAllocate are the required tasks to satisfy the next step of allocation - either part of the min required subgroup or extra tasks from a satisfied subgroup.
+// All children that do have tasks must succeed for this function to return true.
+func allocateChildrenOnNodes(ssn *framework.Session, stmt *framework.Statement, nodes node_info.NodeSet,
+	job *podgroup_info.PodGroupInfo, subGroupSet *subgroup_info.SubGroupSet, subtreeTasksToAllocate []*pod_info.PodInfo,
 	isPipelineOnly bool,
 ) bool {
-	for _, childSubGroupSet := range orderedSubGroupSets(ssn, subGroupSet.GetChildGroups()) {
-		podSets := childSubGroupSet.GetAllPodSets()
-		subGroupTasks := filterTasksForPodSets(podSets, tasksToAllocate)
-		if !allocateSubGroupSet(ssn, stmt, nodes, job, childSubGroupSet, subGroupTasks, isPipelineOnly) {
-			return false
-		}
-	}
-
-	for _, podSet := range orderedPodSets(ssn, subGroupSet.GetChildPodSets()) {
-		podSetTasks := filterTasksForPodSet(podSet, tasksToAllocate)
-		if !allocatePodSet(ssn, stmt, nodes, job, podSet, podSetTasks, isPipelineOnly) {
-			return false
+	for _, child := range orderedChildren(ssn, subGroupSet.GetChildren()) {
+		switch child := child.(type) {
+		case *subgroup_info.PodSet:
+			if !allocatePodSet(ssn, stmt, nodes, job, child,
+				filterTasksForPodSet(child, subtreeTasksToAllocate), isPipelineOnly) {
+				return false
+			}
+		case *subgroup_info.SubGroupSet:
+			if !allocateSubGroupSet(ssn, stmt, nodes, job, child,
+				filterTasksForPodSets(child.GetAllPodSets(), subtreeTasksToAllocate), isPipelineOnly) {
+				return false
+			}
 		}
 	}
 	return true
 }
 
+// subtreePodSetsContainingTasks returns only the PodSets that are a descendant of the given SubGroupSet and that have at least one task in the list.
+func subtreePodSetsContainingTasks(subGroupSet *subgroup_info.SubGroupSet, tasks []*pod_info.PodInfo) map[string]*subgroup_info.PodSet {
+	allPodSets := subGroupSet.GetAllPodSets()
+	result := make(map[string]*subgroup_info.PodSet)
+	for _, task := range tasks {
+		name := task.SubGroupName
+		if len(name) == 0 {
+			name = podgroup_info.DefaultSubGroup
+		}
+		if ps, ok := allPodSets[name]; ok {
+			result[name] = ps
+		}
+	}
+	return result
+}
+
 func allocatePodSet(ssn *framework.Session, stmt *framework.Statement, nodes node_info.NodeSet,
-	job *podgroup_info.PodGroupInfo, podSet *subgroup_info.PodSet, tasksToAllocate []*pod_info.PodInfo,
+	job *podgroup_info.PodGroupInfo, podSet *subgroup_info.PodSet, podsetTasksToAllocate []*pod_info.PodInfo,
 	isPipelineOnly bool,
 ) bool {
+	if len(podsetTasksToAllocate) == 0 {
+		return true
+	}
 	podSets := map[string]*subgroup_info.PodSet{
 		podSet.GetName(): podSet,
 	}
-	nodeSets, err := ssn.SubsetNodesFn(job, &podSet.SubGroupInfo, podSets, tasksToAllocate, nodes)
+	nodeSets, err := ssn.SubsetNodesFn(job, &podSet.SubGroupInfo, podSets, podsetTasksToAllocate, nodes)
 	if err != nil {
 		log.InfraLogger.Errorf(
 			"Failed to run SubsetNodes on job <%s/%s>: %v", job.Namespace, job.Name, err)
@@ -96,7 +125,7 @@ func allocatePodSet(ssn *framework.Session, stmt *framework.Statement, nodes nod
 
 	for _, nodeSet := range nodeSets {
 		cp := stmt.Checkpoint()
-		if allocateTasksOnNodeSet(ssn, stmt, nodeSet, job, tasksToAllocate, isPipelineOnly) {
+		if allocateTasksOnNodeSet(ssn, stmt, nodeSet, job, podsetTasksToAllocate, isPipelineOnly) {
 			return true
 		}
 		if err := stmt.Rollback(cp); err != nil {
@@ -260,18 +289,9 @@ func filterTasksForPodSets(podSets map[string]*subgroup_info.PodSet, tasks []*po
 	return result
 }
 
-func orderedSubGroupSets(ssn *framework.Session, subGroupSets []*subgroup_info.SubGroupSet) []*subgroup_info.SubGroupSet {
-	result := append([]*subgroup_info.SubGroupSet{}, subGroupSets...)
-	sort.Slice(result, func(i, j int) bool {
-		return ssn.SubGroupSetOrderFn(result[i], result[j])
+func orderedChildren(ssn *framework.Session, subGroupChildren []subgroup_info.SubGroupChild) []subgroup_info.SubGroupChild {
+	sort.Slice(subGroupChildren, func(i, j int) bool {
+		return ssn.SubGroupOrderFn(subGroupChildren[i], subGroupChildren[j])
 	})
-	return result
-}
-
-func orderedPodSets(ssn *framework.Session, podSets []*subgroup_info.PodSet) []*subgroup_info.PodSet {
-	result := append([]*subgroup_info.PodSet{}, podSets...)
-	sort.Slice(result, func(i, j int) bool {
-		return ssn.PodSetOrderFn(result[i], result[j])
-	})
-	return result
+	return subGroupChildren
 }
