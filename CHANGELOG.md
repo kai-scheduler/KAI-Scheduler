@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - Allow users to override minMember for k8s batch Jobs and JobSets using the `kai.scheduler/batch-min-member` annotation [#1381](https://github.com/kai-scheduler/KAI-Scheduler/pull/1381) [itsomri](https://github.com/itsomri)
+- Added memory profile and run duration to snapshot tool [#1414](https://github.com/NVIDIA/KAI-Scheduler/issues/1414)
 
 ### Fixed
 - Race condition where `SyncForGpuGroup` could prematurely delete reservation pods when the informer cache had not yet propagated GPU group labels on recently-bound fraction pods. The binder now checks for active BindRequests referencing the GPU group before deleting a reservation pod.
