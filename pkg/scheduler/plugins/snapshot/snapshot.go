@@ -43,7 +43,7 @@ type RawKubernetesObjects struct {
 	BindRequests           []*schedulingv1alpha2.BindRequest `json:"bindRequests"`
 	PriorityClasses        []*v14.PriorityClass              `json:"priorityClasses"`
 	ConfigMaps             []*v1.ConfigMap                   `json:"configMaps"`
-	PersistentVolumes      []*v1.PersistentVolume             `json:"persistentVolumes"`
+	PersistentVolumes      []*v1.PersistentVolume            `json:"persistentVolumes"`
 	PersistentVolumeClaims []*v1.PersistentVolumeClaim       `json:"persistentVolumeClaims"`
 	CSIStorageCapacities   []*storage.CSIStorageCapacity     `json:"csiStorageCapacities"`
 	StorageClasses         []*storage.StorageClass           `json:"storageClasses"`
