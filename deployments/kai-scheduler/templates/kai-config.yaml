@@ -53,7 +53,7 @@ spec:
 
   binder:
     service:
-      enabled: true
+      enabled: {{ .Values.binder.enabled }}
       image:
         name: {{ .Values.binder.image.name }}
         repository: {{ .Values.global.registry }}
@@ -96,7 +96,7 @@ spec:
 
   podGrouper:
     service:
-      enabled: true
+      enabled: {{ .Values.podgrouper.enabled }}
       image:
         name: {{ .Values.podgrouper.image.name }}
         repository: {{ .Values.global.registry }}
@@ -113,7 +113,7 @@ spec:
 
   podGroupController:
     service:
-      enabled: true
+      enabled: {{ .Values.podgroupcontroller.enabled }}
       image:
         name: {{ .Values.podgroupcontroller.image.name }}
         repository: {{ .Values.global.registry }}
@@ -130,7 +130,7 @@ spec:
 
   queueController:
     service:
-      enabled: true
+      enabled: {{ .Values.queuecontroller.enabled }}
       image:
         name: {{ .Values.queuecontroller.image.name }}
         repository: {{ .Values.global.registry }}
@@ -147,7 +147,7 @@ spec:
 
   admission:
     service:
-      enabled: true
+      enabled: {{ .Values.admission.enabled }}
       image:
         name: {{ .Values.admission.image.name }}
         repository: {{ .Values.global.registry }}
@@ -196,6 +196,7 @@ spec:
 
   scheduler:
     service:
+      enabled: {{ .Values.scheduler.enabled }}
       image:
         name: {{ .Values.scheduler.image.name }}
         repository: {{ .Values.global.registry }}
