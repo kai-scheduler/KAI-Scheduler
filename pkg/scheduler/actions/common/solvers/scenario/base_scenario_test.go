@@ -498,7 +498,14 @@ func TestPodSimpleScenario_GetVictimJobRepresentativeById(t *testing.T) {
 				tt.fields.session, tt.fields.pendingTasksAsJob, tt.fields.pendingTasksAsJob, tt.fields.potentialVictimsTasks,
 				tt.fields.recordedVictimsJobs)
 			s.AddPotentialVictimsTasks(tt.args.tasks)
-			if got := s.GetVictimJobRepresentativeById(tt.args.victimPodInfo); !reflect.DeepEqual(got, tt.want) {
+			got := s.GetVictimJobRepresentativeById(tt.args.victimPodInfo)
+			if got != nil {
+				_ = got.GetAllPodsMap()
+			}
+			if tt.want != nil {
+				tt.want.GetAllPodsMap()
+			}
+			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("GetVictimJobRepresentativeById() = %v, want %v", got, tt.want)
 			}
 		})
