@@ -9,6 +9,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters"
 	idle_gpus_filter "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/node_affinities"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/resource_vectors"
 	solverscenario "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -65,6 +66,12 @@ func NewPodAccumulatedScenarioBuilder(
 	idleGpusScenarioFilter := idle_gpus_filter.NewIdleGpusFilter(scenario, session.ClusterInfo.Nodes)
 	if idleGpusScenarioFilter != nil {
 		scenarioFilters = append(scenarioFilters, idleGpusScenarioFilter)
+	}
+
+	// Full resource vector feasibility filter
+	resourceVectorFilter := resource_vectors.NewResourceVectorFilter(scenario, session.ClusterInfo.Nodes)
+	if resourceVectorFilter != nil {
+		scenarioFilters = append(scenarioFilters, resourceVectorFilter)
 	}
 
 	return &PodAccumulatedScenarioBuilder{
