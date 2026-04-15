@@ -24,6 +24,7 @@ type DataLister interface {
 	ListPriorityClasses() ([]*scheduling.PriorityClass, error)
 	GetPriorityClassByName(name string) (*scheduling.PriorityClass, error)
 	ListPodByIndex(index, value string) ([]interface{}, error)
+	ListPersistentVolumes() ([]*v1.PersistentVolume, error)
 	ListPersistentVolumeClaims() ([]*v1.PersistentVolumeClaim, error)
 	ListCSIStorageCapacities() ([]*storage.CSIStorageCapacity, error)
 	ListStorageClasses() ([]*storage.StorageClass, error)
