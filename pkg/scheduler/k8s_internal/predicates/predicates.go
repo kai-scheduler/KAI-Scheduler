@@ -12,7 +12,6 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/nodeaffinity"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/nodeports"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/tainttoleration"
-	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/volumebinding"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal"
@@ -118,17 +117,7 @@ func NewSessionPredicates(ssn *framework.Session) k8s_internal.SessionPredicates
 		}
 	}
 
-	if plugin := initiatedPlugins.VolumeBinding; plugin == nil {
-		predicates[VolumeBinding] = emptyPredicate(VolumeBinding)
-	} else {
-		predicates[VolumeBinding] = k8s_internal.SessionPredicate{
-			Name:                VolumeBinding,
-			IsPreFilterRequired: predicateRequired,
-			PreFilter:           k8s_internal.FitPrePredicateConverter(ssn, ssn, plugin.(*volumebinding.VolumeBinding)),
-			IsFilterRequired:    predicateRequired,
-			Filter:              NewVolumeBindingFilter(ssn, plugin, ssn.ScheduleCSIStorage()),
-		}
-	}
+	predicates[VolumeBinding] = emptyPredicate(VolumeBinding)
 
 	mnrPredicate := NewMaxNodeResourcesPredicate(ssn.ClusterInfo.Nodes, ssn.ClusterInfo.ResourceClaims, ssn.NodePoolName())
 	predicates[MaxNodePoolResources] = k8s_internal.SessionPredicate{
