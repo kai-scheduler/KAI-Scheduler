@@ -251,6 +251,13 @@ func loadClientsWithSnapshot(rawObjects *snapshot.RawKubernetesObjects, discover
 		}
 	}
 
+	for _, persistentVolume := range rawObjects.PersistentVolumes {
+		_, err := kubeClient.CoreV1().PersistentVolumes().Create(context.TODO(), persistentVolume, v1.CreateOptions{})
+		if err != nil {
+			log.InfraLogger.Errorf("Failed to create persistent volume: %v", err)
+		}
+	}
+
 	for _, persistentVolumeClaim := range rawObjects.PersistentVolumeClaims {
 		_, err := kubeClient.CoreV1().PersistentVolumeClaims(persistentVolumeClaim.Namespace).Create(context.TODO(), persistentVolumeClaim, v1.CreateOptions{})
 		if err != nil {
