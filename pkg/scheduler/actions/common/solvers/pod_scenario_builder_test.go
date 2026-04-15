@@ -49,7 +49,7 @@ var _ = Describe("PodAccumulatedScenarioBuilder", func() {
 			recordedVictimsJobs := []*podgroup_info.PodGroupInfo{}
 			victimsQueue := utils.GetVictimsQueue(ssn, nil)
 
-			scenarioBuilder = NewPodAccumulatedScenarioBuilder(ssn, reclaimerJob, recordedVictimsJobs, victimsQueue, ssn.ClusterInfo.Nodes)
+			scenarioBuilder = NewPodAccumulatedScenarioBuilder(ssn, reclaimerJob, recordedVictimsJobs, victimsQueue, ssn.ClusterInfo.Nodes, newSolveStats("test", 0))
 		})
 		It("Reclaimer has pods, NewIdleGpusFilter irrelevant, no victims scenario is valid", func() {
 			Expect(scenarioBuilder.GetValidScenario()).To(Not(BeNil()))
@@ -69,7 +69,7 @@ var _ = Describe("PodAccumulatedScenarioBuilder", func() {
 			recordedVictimsJobs := []*podgroup_info.PodGroupInfo{}
 			victimsQueue := utils.GetVictimsQueue(ssn, nil)
 
-			scenarioBuilder = NewPodAccumulatedScenarioBuilder(ssn, reclaimerJob, recordedVictimsJobs, victimsQueue, ssn.ClusterInfo.Nodes)
+			scenarioBuilder = NewPodAccumulatedScenarioBuilder(ssn, reclaimerJob, recordedVictimsJobs, victimsQueue, ssn.ClusterInfo.Nodes, newSolveStats("test", 0))
 		})
 		It("Empty victimsQueue, no valid scenario", func() {
 			Expect(scenarioBuilder.GetValidScenario()).To(BeNil())
@@ -86,7 +86,7 @@ var _ = Describe("PodAccumulatedScenarioBuilder", func() {
 
 		It("returns scenario with all tasks in single groups when minAvailable is 1", func() {
 			scenarioBuilder = NewPodAccumulatedScenarioBuilder(ssn, reclaimerJob, []*podgroup_info.PodGroupInfo{},
-				utils.GetVictimsQueue(ssn, nil), ssn.ClusterInfo.Nodes)
+				utils.GetVictimsQueue(ssn, nil), ssn.ClusterInfo.Nodes, newSolveStats("test", 0))
 
 			var lastScenario *scenario.ByNodeScenario
 			for tempScenario := scenarioBuilder.GetValidScenario(); tempScenario != nil; tempScenario =
@@ -110,7 +110,7 @@ var _ = Describe("PodAccumulatedScenarioBuilder", func() {
 				podGroupInfo.PodGroup.Spec.MinMember = int32(len(podGroupInfo.GetAllPodsMap()))
 			}
 			scenarioBuilder = NewPodAccumulatedScenarioBuilder(ssn, reclaimerJob, []*podgroup_info.PodGroupInfo{},
-				utils.GetVictimsQueue(ssn, nil), ssn.ClusterInfo.Nodes)
+				utils.GetVictimsQueue(ssn, nil), ssn.ClusterInfo.Nodes, newSolveStats("test", 0))
 
 			var lastScenario *scenario.ByNodeScenario
 			for tempScenario := scenarioBuilder.GetValidScenario(); tempScenario != nil; tempScenario =
@@ -152,7 +152,7 @@ var _ = Describe("PodAccumulatedScenarioBuilder", func() {
 
 			victimsQueue := utils.GetVictimsQueue(ssn, nil)
 
-			scenarioBuilder = NewPodAccumulatedScenarioBuilder(ssn, reclaimerJob, recordedVictimsJobs, victimsQueue, ssn.ClusterInfo.Nodes)
+			scenarioBuilder = NewPodAccumulatedScenarioBuilder(ssn, reclaimerJob, recordedVictimsJobs, victimsQueue, ssn.ClusterInfo.Nodes, newSolveStats("test", 0))
 
 			numberOfGeneratedScenarios := 0
 			for sn := scenarioBuilder.GetValidScenario(); sn != nil; sn = scenarioBuilder.GetNextScenario() {
@@ -186,7 +186,7 @@ var _ = Describe("PodAccumulatedScenarioBuilder", func() {
 
 			victimsQueue := utils.GetVictimsQueue(ssn, nil)
 
-			scenarioBuilder = NewPodAccumulatedScenarioBuilder(ssn, reclaimerJob, recordedVictimsJobs, victimsQueue, ssn.ClusterInfo.Nodes)
+			scenarioBuilder = NewPodAccumulatedScenarioBuilder(ssn, reclaimerJob, recordedVictimsJobs, victimsQueue, ssn.ClusterInfo.Nodes, newSolveStats("test", 0))
 
 			numberOfGeneratedScenarios := 0
 			potentialVictimsPerScenario := []int{0, 2}
@@ -230,7 +230,7 @@ var _ = Describe("PodAccumulatedScenarioBuilder", func() {
 
 			victimsQueue := utils.GetVictimsQueue(ssn, nil)
 
-			scenarioBuilder = NewPodAccumulatedScenarioBuilder(ssn, reclaimerJob, recordedVictimsJobs, victimsQueue, ssn.ClusterInfo.Nodes)
+			scenarioBuilder = NewPodAccumulatedScenarioBuilder(ssn, reclaimerJob, recordedVictimsJobs, victimsQueue, ssn.ClusterInfo.Nodes, newSolveStats("test", 0))
 
 			numberOfGeneratedScenarios := 0
 			for sn := scenarioBuilder.GetValidScenario(); sn != nil; sn = scenarioBuilder.GetNextScenario() {
@@ -271,7 +271,7 @@ var _ = Describe("PodAccumulatedScenarioBuilder", func() {
 
 			victimsQueue := utils.GetVictimsQueue(ssn, nil)
 
-			scenarioBuilder = NewPodAccumulatedScenarioBuilder(ssn, reclaimerJob, recordedVictimsJobs, victimsQueue, ssn.ClusterInfo.Nodes)
+			scenarioBuilder = NewPodAccumulatedScenarioBuilder(ssn, reclaimerJob, recordedVictimsJobs, victimsQueue, ssn.ClusterInfo.Nodes, newSolveStats("test", 0))
 
 			numberOfGeneratedScenarios := 0
 			potentialVictimsPerScenario := []int{0, 1, 3}

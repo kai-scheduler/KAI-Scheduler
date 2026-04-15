@@ -4,6 +4,8 @@
 package solvers
 
 import (
+	"time"
+
 	"golang.org/x/exp/maps"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common"
@@ -44,6 +46,7 @@ type byPodSolver struct {
 	solutionValidator        SolutionValidator
 	allowVictimConsolidation bool
 	actionType               framework.ActionType
+	stats                    *SolveStats
 }
 
 func newByPodSolver(
@@ -51,12 +54,14 @@ func newByPodSolver(
 	checkVictims SolutionValidator,
 	allowVictimConsolidation bool,
 	action framework.ActionType,
+	stats *SolveStats,
 ) *byPodSolver {
 	return &byPodSolver{
 		feasibleNodes:            feasibleNodes,
 		solutionValidator:        checkVictims,
 		allowVictimConsolidation: allowVictimConsolidation,
 		actionType:               action,
+		stats:                    stats,
 	}
 }
 
@@ -69,7 +74,10 @@ func (s *byPodSolver) solve(
 	nextTaskToFindAllocation := scenario.PendingTasks()[len(scenario.PendingTasks())-1]
 	latestPotentialVictim := scenario.LatestPotentialVictim()
 
+	evictStart := time.Now()
 	err := common.EvictAllPreemptees(session, scenario.RecordedVictimsTasks(), pendingJob, statement, s.actionType)
+	s.stats.EvictionDuration += time.Since(evictStart)
+	s.stats.EvictionCalls++
 	if err != nil {
 		return handleSolveError(pendingJob, nextTaskToFindAllocation, err, statement)
 	}
@@ -118,6 +126,7 @@ func (s *byPodSolver) runSimulation(
 func (s *byPodSolver) solveOnPotentialNodes(ssn *framework.Session, scenario *scenario.ByNodeScenario,
 	statement *framework.Statement, potentialVictimNodeNames []string) (*solutionResult, error) {
 	for _, nodeToTest := range potentialVictimNodeNames {
+		s.stats.NodesTestedTotal++
 		log.InfraLogger.V(6).Infof(
 			"Trying to solve scenario with potantial victims from node: %s", nodeToTest)
 
@@ -186,7 +195,10 @@ func (s *byPodSolver) handleScenarioSolution(
 	actualVictimJobs := getVictimJobsFromVictimTasks(victimsTasks, scenario)
 
 	if s.solutionValidator != nil {
+		validatorStart := time.Now()
 		validSolution := s.solutionValidator(scenario)
+		s.stats.ValidatorDuration += time.Since(validatorStart)
+		s.stats.ValidatorCalls++
 		if !validSolution {
 			statement.Discard()
 			return &solutionResult{false, nil, nil, nil}
@@ -217,11 +229,14 @@ func (s *byPodSolver) tryScenarioWithEvictedVictims(ssn *framework.Session, scen
 	statement *framework.Statement, victimTasks []*pod_info.PodInfo) (bool, *simulationVictims, error) {
 	pendingJob := scenario.GetPreemptor()
 
+	simStart := time.Now()
 	nodes := maps.Values(s.feasibleNodes)
 	jobsToAllocate := common.GetJobsToAllocate(ssn, victimTasks, pendingJob)
 	isSuccessfulAllocations, _ :=
 		common.TryToVirtuallyAllocatePreemptorAndGetVictims(ssn, statement, nodes, pendingJob,
 			jobsToAllocate, victimTasks)
+	s.stats.SimulationDuration += time.Since(simStart)
+	s.stats.SimulationCalls++
 
 	if !isSuccessfulAllocations {
 		return false, nil, nil

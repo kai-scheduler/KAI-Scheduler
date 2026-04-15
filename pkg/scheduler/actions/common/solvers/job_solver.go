@@ -46,6 +46,10 @@ func NewJobsSolver(
 
 func (s *JobSolver) Solve(
 	ssn *framework.Session, pendingJob *podgroup_info.PodGroupInfo) (bool, *framework.Statement, []string) {
+	stats := newSolveStats(
+		fmt.Sprintf("%s/%s", pendingJob.Namespace, pendingJob.Name), len(s.feasibleNodes))
+	defer stats.log()
+
 	state := solvingState{}
 	originalNumActiveTasks := pendingJob.GetNumActiveUsedTasks()
 
@@ -57,8 +61,9 @@ func (s *JobSolver) Solve(
 		pendingTasks = append(pendingTasks, nextTasksToSolve...)
 		satisfactorySolution := len(pendingTasks) == len(tasksToAllocate)
 		partialPendingJob := getPartialJobRepresentative(pendingJob, pendingTasks)
+		stats.TaskIncrements++
 
-		result := s.solvePartialJob(ssn, &state, partialPendingJob)
+		result := s.solvePartialJob(ssn, &state, partialPendingJob, stats)
 		if result == nil || !result.solved {
 			log.InfraLogger.V(5).Infof("No solution found for %d tasks out of %d tasks to allocate for %s",
 				len(pendingTasks), len(tasksToAllocate), pendingJob.Name)
@@ -84,11 +89,12 @@ func (s *JobSolver) Solve(
 	if originalNumActiveTasks >= numActiveTasks {
 		jobSolved = false
 	}
+	stats.Solved = jobSolved
 
 	return jobSolved, statement, calcVictimNames(state.recordedVictimsTasks)
 }
 
-func (s *JobSolver) solvePartialJob(ssn *framework.Session, state *solvingState, partialPendingJob *podgroup_info.PodGroupInfo) *solutionResult {
+func (s *JobSolver) solvePartialJob(ssn *framework.Session, state *solvingState, partialPendingJob *podgroup_info.PodGroupInfo, stats *SolveStats) *solutionResult {
 	feasibleNodeMap := map[string]*node_info.NodeInfo{}
 	for _, node := range s.feasibleNodes {
 		feasibleNodeMap[node.Name] = node
@@ -98,16 +104,20 @@ func (s *JobSolver) solvePartialJob(ssn *framework.Session, state *solvingState,
 		feasibleNodeMap[task.NodeName] = node
 	}
 
+	victimsQueue := s.generateVictimsQueue()
+	stats.VictimQueueSize = victimsQueue.Len()
+
 	scenarioBuilder := NewPodAccumulatedScenarioBuilder(
-		ssn, partialPendingJob, state.recordedVictimsJobs, s.generateVictimsQueue(), feasibleNodeMap)
+		ssn, partialPendingJob, state.recordedVictimsJobs, victimsQueue, feasibleNodeMap, stats)
 
 	for scenarioToSolve := scenarioBuilder.GetValidScenario(); scenarioToSolve != nil; scenarioToSolve =
 		scenarioBuilder.GetNextScenario() {
 		scenarioSolver := newByPodSolver(feasibleNodeMap, s.solutionValidator, ssn.AllowConsolidatingReclaim(),
-			s.actionType)
+			s.actionType, stats)
 
 		log.InfraLogger.V(5).Infof("Trying to solve scenario: %s", scenarioToSolve)
 		metrics.IncScenarioSimulatedByAction()
+		stats.ScenariosSimulated++
 
 		result := scenarioSolver.solve(ssn, scenarioToSolve)
 		if result.solved {

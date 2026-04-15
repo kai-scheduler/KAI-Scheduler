@@ -4,6 +4,8 @@
 package solvers
 
 import (
+	"time"
+
 	"golang.org/x/exp/slices"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters"
@@ -28,11 +30,13 @@ type PodAccumulatedScenarioBuilder struct {
 	victimsJobsQueue *utils.JobsOrderByQueues
 
 	recordedVictimsTasks map[common_info.PodID]*pod_info.PodInfo
+	stats                *SolveStats
 }
 
 func NewPodAccumulatedScenarioBuilder(
 	session *framework.Session, pendingJob *podgroup_info.PodGroupInfo, recordedVictimsJobs []*podgroup_info.PodGroupInfo,
 	victimsJobsQueue *utils.JobsOrderByQueues, feasibleNodes map[string]*node_info.NodeInfo,
+	stats *SolveStats,
 ) *PodAccumulatedScenarioBuilder {
 
 	var scenario *solverscenario.ByNodeScenario = nil
@@ -73,6 +77,7 @@ func NewPodAccumulatedScenarioBuilder(
 		recordedVictimsTasks: recordedVictimsTasks,
 		lastScenario:         scenario,
 		scenarioFilters:      scenarioFilters,
+		stats:                stats,
 	}
 }
 
@@ -91,6 +96,7 @@ func (asb *PodAccumulatedScenarioBuilder) GetNextScenario() *solverscenario.ByNo
 
 func (asb *PodAccumulatedScenarioBuilder) addNextPotentialVictims() bool {
 	nextVictimJob := asb.victimsJobsQueue.PopNextJob()
+	asb.stats.VictimJobsPopped++
 
 	potentialVictimTasks, jobHasMoreTasks := podgroup_info.GetTasksToEvict(
 		nextVictimJob, asb.session.PodSetOrderFn, asb.session.TaskOrderFn,
@@ -138,6 +144,7 @@ func (asb *PodAccumulatedScenarioBuilder) GetValidScenario() *solverscenario.ByN
 	if isValid, failedFilterName := asb.isScenarioValid(); !isValid {
 		log.InfraLogger.V(5).Infof("Filtered by %s for scenario: %s", failedFilterName, asb.lastScenario)
 		metrics.IncScenarioFilteredByAction()
+		asb.stats.ScenariosFiltered++
 
 		return asb.GetNextScenario()
 	}
@@ -146,7 +153,10 @@ func (asb *PodAccumulatedScenarioBuilder) GetValidScenario() *solverscenario.ByN
 
 func (asb *PodAccumulatedScenarioBuilder) isScenarioValid() (bool, string) {
 	for _, filter := range asb.scenarioFilters {
+		start := time.Now()
 		validScenario, err := filter.Filter(asb.lastScenario)
+		asb.stats.FilterDurations[filter.Name()] += time.Since(start)
+
 		if err != nil {
 			log.InfraLogger.Errorf("Failed to run the filter %s with the error %v. scenario: %s", filter.Name(), err,
 				asb.lastScenario)
@@ -154,6 +164,7 @@ func (asb *PodAccumulatedScenarioBuilder) isScenarioValid() (bool, string) {
 			continue
 		}
 		if !validScenario {
+			asb.stats.FilterRejects[filter.Name()]++
 			return false, filter.Name()
 		}
 	}
