@@ -10,6 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
+	kubeAiSchedClient "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned"
 	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
 	schedulingv2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
@@ -88,10 +89,16 @@ var _ = Describe("MinSubGroup validation", Ordered, func() {
 				{Name: "prefill-2", MinMember: ptr.To[int32](8)},
 				{Name: "prefill-3", MinMember: ptr.To[int32](8)},
 			})
+		warningCapture := &utils.ClientGoWarningHandler{}
+		cfg := *testCtx.KubeConfig
+		cfg.WarningHandlerWithContext = warningCapture
+		cs, err := kubeAiSchedClient.NewForConfig(&cfg)
 
-		_, err := testCtx.KubeAiSchedClientset.SchedulingV2alpha2().PodGroups(pg.Namespace).Create(ctx,
+		_, err = cs.SchedulingV2alpha2().PodGroups(pg.Namespace).Create(ctx,
 			pg, metav1.CreateOptions{})
-		Expect(err).ToNot(Succeed())
+		Expect(err).To(Succeed()) // We expect a warning in this case, not an error
+		Expect(warningCapture.Messages).To(HaveLen(1))
+		Expect(warningCapture.Messages[0]).To(ContainSubstring("minSubGroup (5) exceeds the number of direct child SubGroups (4)"))
 	})
 
 	It("should reject minSubGroup = 0", func(ctx context.Context) {
