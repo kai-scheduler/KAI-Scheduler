@@ -16,16 +16,15 @@ import (
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/utils/pointer"
 
-	enginev2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/constants/labels"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/resources_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
+	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants/labels"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/resources_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 )
 
 type TestJobBasic struct {
@@ -272,10 +271,6 @@ func createPodOfTask(job *TestJobBasic, taskIndex int,
 	if task.RequiredGPUs != nil {
 		numGPUsStr := strconv.FormatInt(*task.RequiredGPUs, 10)
 		podOfTask.Spec.Containers[0].Resources.Requests[resource_info.GPUResourceName] = resource.MustParse(numGPUsStr)
-	}
-
-	if job.RequiredMultiFractionDevicesPerTask != nil {
-		podOfTask.Annotations[commonconstants.GpuFractionsNumDevices] = strconv.FormatUint(*job.RequiredMultiFractionDevicesPerTask, 10)
 	}
 
 	if pod_status.IsActiveUsedStatus(task.State) {

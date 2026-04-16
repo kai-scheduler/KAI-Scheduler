@@ -18,8 +18,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgroup"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
 )
 
 const nodePoolKey = "kai.scheduler/node-pool"

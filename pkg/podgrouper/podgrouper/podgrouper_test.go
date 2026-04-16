@@ -18,8 +18,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgroup"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper"
 )
 
 const (

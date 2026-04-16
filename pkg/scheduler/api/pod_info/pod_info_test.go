@@ -10,13 +10,13 @@ import (
 	"gotest.tools/assert"
 	v1 "k8s.io/api/core/v1"
 
-	schedulingv1alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/storageclaim_info"
+	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/storageclaim_info"
 )
 
 func TestGetPodResourceRequest(t *testing.T) {

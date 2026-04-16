@@ -11,9 +11,9 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 )
 
 func Test_getNodePreferableGpuForSharing(t *testing.T) {

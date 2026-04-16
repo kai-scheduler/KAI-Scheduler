@@ -12,9 +12,9 @@ package data_lister
 import (
 	reflect "reflect"
 
-	v1alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	v2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	v2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	v1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	v2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	gomock "go.uber.org/mock/gomock"
 	v1 "k8s.io/api/core/v1"
 	v10 "k8s.io/api/policy/v1"

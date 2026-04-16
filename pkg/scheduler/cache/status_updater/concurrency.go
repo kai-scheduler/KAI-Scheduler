@@ -12,8 +12,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 
-	enginev2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
+	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 )
 
 func (su *defaultStatusUpdater) Run(stopCh <-chan struct{}) {

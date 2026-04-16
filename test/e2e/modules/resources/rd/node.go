@@ -21,7 +21,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
 func LabelNode(ctx context.Context, client kubernetes.Interface, node *corev1.Node, labelName, labelValue string,

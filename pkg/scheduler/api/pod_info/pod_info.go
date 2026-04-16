@@ -11,14 +11,14 @@ import (
 	v1 "k8s.io/api/core/v1"
 	clientcache "k8s.io/client-go/tools/cache"
 
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/resources"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/storageclaim_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/storageclaim_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 )
 
 const (

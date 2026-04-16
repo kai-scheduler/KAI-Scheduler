@@ -8,11 +8,11 @@ import (
 
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	"github.com/NVIDIA/KAI-scheduler/cmd/binder/app"
+	"github.com/kai-scheduler/KAI-scheduler/cmd/binder/app"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/plugins"
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/plugins/gpusharing"
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/plugins/k8s-plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/gpusharing"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/k8s-plugins"
 )
 
 var (

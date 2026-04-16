@@ -4,12 +4,12 @@
 package actions
 
 import (
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/allocate"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/consolidation"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/preempt"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/reclaim"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/stalegangeviction"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/allocate"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/consolidation"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/preempt"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/stalegangeviction"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 )
 
 func InitDefaultActions() {

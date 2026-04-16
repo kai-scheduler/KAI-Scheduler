@@ -16,13 +16,13 @@ import (
 	v12 "k8s.io/client-go/listers/storage/v1"
 	"k8s.io/client-go/tools/cache"
 
-	kubeAiSchedulerInfo "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/informers/externalversions"
-	scheudlinglistv1alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/listers/scheduling/v1alpha2"
-	schedlistv2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/listers/scheduling/v2"
-	schedlist2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/listers/scheduling/v2alpha2"
-	schedulingv1alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	enginev2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	enginev2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	kubeAiSchedulerInfo "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/informers/externalversions"
+	scheudlinglistv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/listers/scheduling/v1alpha2"
+	schedlistv2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/listers/scheduling/v2"
+	schedlist2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/listers/scheduling/v2alpha2"
+	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	enginev2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 )
 
 type k8sLister struct {

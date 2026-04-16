@@ -6,16 +6,16 @@ package solvers
 import (
 	"golang.org/x/exp/maps"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/common"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 )
 
 type SolutionValidator func(scenario api.ScenarioInfo) bool

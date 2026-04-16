@@ -10,9 +10,9 @@ import (
 
 	"gopkg.in/yaml.v2"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins"
 )
 
 func TestResolveConfigurationFromFile(t *testing.T) {

@@ -14,8 +14,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	kaiClient "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	kaiClient "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
 func WaitForPodGroupsToBeReady(
