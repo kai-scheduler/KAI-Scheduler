@@ -246,7 +246,7 @@ var _ = Describe("MinSubGroup backward compatibility", Ordered, func() {
 			pg, metav1.CreateOptions{})
 		Expect(err).To(Succeed())
 
-		wait.ForAtLeastNPodsUnschedulable(ctx, testCtx.ControllerClient, namespace, h.AllPods, 6)
+		wait.ForPodGroupNotReadyEvent(ctx, testCtx.ControllerClient, namespace, pgName)
 	})
 
 	It("should handle existing PodGroups with only minMember (no SubGroups)", func(ctx context.Context) {
