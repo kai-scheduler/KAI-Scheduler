@@ -15,14 +15,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 
-	rrmock "github.com/NVIDIA/KAI-scheduler/pkg/binder/binding/resourcereservation/mock"
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/common"
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/plugins"
-	bindinggpusharing "github.com/NVIDIA/KAI-scheduler/pkg/binder/plugins/gpusharing"
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/test_utils"
+	rrmock "github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding/resourcereservation/mock"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins"
+	bindinggpusharing "github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/gpusharing"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/test_utils"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -46,7 +45,7 @@ var happyFlowObjectsBc = []runtime.Object{
 			Containers: []v1.Container{{
 				Env: []v1.EnvVar{
 					{
-						Name: constants.NvidiaVisibleDevices,
+						Name: common.NvidiaVisibleDevices,
 						ValueFrom: &v1.EnvVarSource{
 							ConfigMapKeyRef: &v1.ConfigMapKeySelector{
 								LocalObjectReference: v1.LocalObjectReference{
@@ -217,7 +216,7 @@ var _ = Describe("FractionBinder", func() {
 				if err := fakeClient.Get(context.TODO(), client.ObjectKeyFromObject(configMap), configMap); err != nil {
 					Fail(fmt.Sprintf("Failed to read configmap: %v", err))
 				} else {
-					Expect(configMap.Data[constants.NvidiaVisibleDevices]).To(Equal(testData.gpuIndexByGroupIndex))
+					Expect(configMap.Data[common.NvidiaVisibleDevices]).To(Equal(testData.gpuIndexByGroupIndex))
 					Expect(configMap.Data[common.NumOfGpusEnvVarBC]).To(Equal("0.5"))
 					Expect(configMap.Data[common.GPUPortion]).To(Equal("0.5"))
 				}

@@ -2,7 +2,7 @@
 
 Scheduling queues are the core resource management primitive in KAI Scheduler, providing hierarchical resource allocation with quota guarantees and priority-based distribution.
 
-Currently only queues that have parent queues can be scheduled to and top level queues cannot be used by jobs. This is a limitation that will be fixed in the future [#621](github.com/NVIDIA/KAI-scheduler/issues/621).
+Currently only queues that have parent queues can be scheduled to and top level queues cannot be used by jobs. This is a limitation that will be fixed in the future [#621](github.com/kai-scheduler/KAI-scheduler/issues/621).
 
 ## Table of Contents
 - [Queue Attributes](#queue-attributes)

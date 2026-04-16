@@ -14,13 +14,12 @@ import (
 	"k8s.io/client-go/kubernetes"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	kaiClient "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned"
-	v2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/queue"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/testconfig"
+	kaiClient "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned"
+	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
 )
 
 const (
@@ -38,8 +37,7 @@ func Create(namespace, name, queue string) *v2alpha2.PodGroup {
 			Namespace:   namespace,
 			Annotations: map[string]string{},
 			Labels: map[string]string{
-				constants.AppLabelName:               "engine-e2e",
-				testconfig.GetConfig().QueueLabelKey: queue,
+				constants.AppLabelName: "engine-e2e",
 			},
 		},
 		Spec: v2alpha2.PodGroupSpec{

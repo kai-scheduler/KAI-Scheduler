@@ -25,8 +25,8 @@ package v2
 import (
 	http "net/http"
 
-	scheme "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned/scheme"
-	schedulingv2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
+	scheme "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/scheme"
+	schedulingv2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
 	rest "k8s.io/client-go/rest"
 )
 

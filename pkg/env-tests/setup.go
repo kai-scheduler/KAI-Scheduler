@@ -14,11 +14,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
-	kaiv1alpha1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1alpha1"
-	kaiv1alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	kaiv2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	kaiv2v2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
+	kaiv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	kaiv2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	kaiv2v2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 )
 
 func SetupEnvTest(crdDirectoryPaths []string) (*rest.Config, client.Client, *envtest.Environment, error) {

@@ -23,10 +23,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/metrics"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
 )
 
 func OpenSession(cache cache.Cache, config *conf.SchedulerConfiguration,

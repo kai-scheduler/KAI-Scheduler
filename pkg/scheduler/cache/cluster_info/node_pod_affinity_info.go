@@ -8,7 +8,7 @@ import (
 	"k8s.io/klog/v2"
 	k8sframework "k8s.io/kubernetes/pkg/scheduler/framework"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_affinity"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_affinity"
 )
 
 var logger = klog.NewKlogr()

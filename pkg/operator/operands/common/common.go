@@ -18,9 +18,9 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
-	kaiv1common "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/common"
-	kaiConfigUtils "github.com/NVIDIA/KAI-scheduler/pkg/operator/config"
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	kaiv1common "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
+	kaiConfigUtils "github.com/kai-scheduler/KAI-scheduler/pkg/operator/config"
 )
 
 var controllerTypes = []string{"Deployment", "DaemonSet"}

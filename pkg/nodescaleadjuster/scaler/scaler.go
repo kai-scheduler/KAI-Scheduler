@@ -13,8 +13,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/resources"
-	"github.com/NVIDIA/KAI-scheduler/pkg/nodescaleadjuster/consts"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/nodescaleadjuster/consts"
 )
 
 type Scaler struct {

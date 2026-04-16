@@ -9,21 +9,21 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	kubeaischedulerver "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned/fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
+	kubeaischedulerver "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 
-	kaiv1alpha1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1alpha1"
+	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
 )
 
 func TestTopologyPlugin_initializeTopologyTree(t *testing.T) {
