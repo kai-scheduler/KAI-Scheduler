@@ -51,6 +51,7 @@ func DescribePreemptMinSubGroupSpecs() bool {
 		})
 
 		It("should preempt elastic subgroups above minSubGroup threshold", func(ctx context.Context) {
+			testCtx = testcontext.GetConnectivity(ctx, Default)
 			parentQueue := queue.CreateQueueObject(utils.GenerateRandomK8sName(10), "")
 			lowQueue := queue.CreateQueueObject(utils.GenerateRandomK8sName(10), parentQueue.Name)
 			lowQueue.Spec.Resources.CPU.Quota = 300
