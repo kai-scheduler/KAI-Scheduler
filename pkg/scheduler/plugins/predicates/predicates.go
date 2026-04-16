@@ -105,6 +105,7 @@ func (pp *predicatesPlugin) Name() string {
 
 func (pp *predicatesPlugin) OnSessionOpen(ssn *framework.Session) {
 	k8sPredicates := predicates.NewSessionPredicates(ssn)
+	pp.initializeK8sNodeInfos(ssn)
 
 	pp.storageSchedulingEnabled = ssn.ScheduleCSIStorage()
 	pp.skipPredicates = SkipPredicates{}
@@ -118,6 +119,18 @@ func (pp *predicatesPlugin) OnSessionOpen(ssn *framework.Session) {
 		return pp.evaluateTaskOnPredicates(task, job, node, k8sPredicates,
 			ssn.IsTaskAllocationOnNodeOverCapacityFn, ssn.IsRestrictNodeSchedulingEnabled, pp.skipPredicates)
 	})
+}
+
+func (pp *predicatesPlugin) initializeK8sNodeInfos(ssn *framework.Session) {
+	for _, nodeInfo := range ssn.ClusterInfo.Nodes {
+		podAffinityInfo, ok := nodeInfo.PodAffinityInfo.(*cluster_info.K8sNodePodAffinityInfo)
+		if !ok || podAffinityInfo == nil || podAffinityInfo.NodeInfo == nil {
+			log.InfraLogger.Warningf("Node %s has no pod affinity info", nodeInfo.Name)
+			continue
+		}
+
+		podAffinityInfo.NodeInfo.SetNode(nodeInfo.Node)
+	}
 }
 
 func evaluateTaskOnPrePredicate(task *pod_info.PodInfo, k8sPredicates k8s_internal.SessionPredicates,
@@ -188,7 +201,6 @@ func (pp *predicatesPlugin) evaluateTaskOnPredicates(
 	}()
 
 	k8sNodeInfo := node.PodAffinityInfo.(*cluster_info.K8sNodePodAffinityInfo).NodeInfo
-	k8sNodeInfo.SetNode(node.Node)
 
 	if result := isTaskAllocationOnNodeOverCapacityFn(task, job, node); !result.IsSchedulable {
 		return common_info.NewFitError(task.Name, task.Namespace, node.Name,
