@@ -28,7 +28,7 @@ import (
 // Leaf nodes have PodCount > 0 and produce pods. Mid-level nodes have Children and use MinSubGroup.
 type SubGroupNode struct {
 	Name        string
-	MinMember   int32
+	MinMember   *int32
 	MinSubGroup *int32
 	PodCount    int
 	Children    []SubGroupNode
@@ -115,13 +115,9 @@ func BuildHierarchy(ctx context.Context, client *kubernetes.Clientset, q *v2.Que
 
 func flattenNode(ctx context.Context, client *kubernetes.Clientset, q *v2.Queue,
 	pgName string, node SubGroupNode, parent *string, requirements v1.ResourceRequirements, h *Hierarchy) {
-	var minMember *int32
-	if node.MinMember != 0 {
-		minMember = ptr.To(node.MinMember)
-	}
 	sg := v2alpha2.SubGroup{
 		Name:        node.Name,
-		MinMember:   minMember,
+		MinMember:   node.MinMember,
 		MinSubGroup: node.MinSubGroup,
 		Parent:      parent,
 	}

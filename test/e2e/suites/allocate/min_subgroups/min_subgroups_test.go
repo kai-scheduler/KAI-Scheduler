@@ -214,8 +214,8 @@ var _ = Describe("MinSubGroup backward compatibility", Ordered, func() {
 
 		h := pod_group.BuildHierarchy(ctx, testCtx.KubeClientset, testCtx.Queues[0], pgName,
 			[]pod_group.SubGroupNode{
-				{Name: "sub-1", MinMember: 2, PodCount: 3},
-				{Name: "sub-2", MinMember: 2, PodCount: 3},
+				{Name: "sub-1", MinMember: ptr.To(int32(2)), PodCount: 3},
+				{Name: "sub-2", MinMember: ptr.To(int32(2)), PodCount: 3},
 			}, cpuPerPod)
 
 		pg := pod_group.Create(namespace, pgName, testCtx.Queues[0].Name)
@@ -235,8 +235,8 @@ var _ = Describe("MinSubGroup backward compatibility", Ordered, func() {
 
 		h := pod_group.BuildHierarchy(ctx, testCtx.KubeClientset, testCtx.Queues[0], pgName,
 			[]pod_group.SubGroupNode{
-				{Name: "sub-1", MinMember: 2, PodCount: 3},
-				{Name: "sub-2", MinMember: 5, PodCount: 3}, // Only 3 pods, can't reach 5
+				{Name: "sub-1", MinMember: ptr.To(int32(2)), PodCount: 3},
+				{Name: "sub-2", MinMember: ptr.To(int32(5)), PodCount: 3}, // Only 3 pods, can't reach 5
 			}, cpuPerPod)
 
 		pg := pod_group.Create(namespace, pgName, testCtx.Queues[0].Name)
@@ -277,7 +277,7 @@ func flatLeaves(prefix string, count, podsPerLeaf int) []pod_group.SubGroupNode 
 	for i := 0; i < count; i++ {
 		nodes = append(nodes, pod_group.SubGroupNode{
 			Name:      fmt.Sprintf("%s-%d", prefix, i),
-			MinMember: int32(podsPerLeaf),
+			MinMember: ptr.To(int32(podsPerLeaf)),
 			PodCount:  podsPerLeaf,
 		})
 	}
@@ -292,8 +292,8 @@ func leaderWorkerGroups(groupNames []string, minSubGroup *int32, leaderCount, wo
 			Name:        name,
 			MinSubGroup: minSubGroup,
 			Children: []pod_group.SubGroupNode{
-				{Name: fmt.Sprintf("%s-leaders", name), MinMember: int32(leaderCount), PodCount: leaderCount},
-				{Name: fmt.Sprintf("%s-workers", name), MinMember: int32(workerCount), PodCount: workerCount},
+				{Name: fmt.Sprintf("%s-leaders", name), MinMember: ptr.To(int32(leaderCount)), PodCount: leaderCount},
+				{Name: fmt.Sprintf("%s-workers", name), MinMember: ptr.To(int32(workerCount)), PodCount: workerCount},
 			},
 		})
 	}

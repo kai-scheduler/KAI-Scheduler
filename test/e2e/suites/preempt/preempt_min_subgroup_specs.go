@@ -94,7 +94,7 @@ func flatLeaves(prefix string, count, podsPerLeaf int) []pod_group.SubGroupNode 
 	for i := 0; i < count; i++ {
 		nodes = append(nodes, pod_group.SubGroupNode{
 			Name:      fmt.Sprintf("%s-%d", prefix, i),
-			MinMember: int32(podsPerLeaf),
+			MinMember: ptr.To(int32(podsPerLeaf)),
 			PodCount:  podsPerLeaf,
 		})
 	}
