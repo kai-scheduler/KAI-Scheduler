@@ -44,6 +44,7 @@ type k8sLister struct {
 	cmLister       listv1.ConfigMapLister
 	usageLister    *usagedb.UsageLister
 
+	pvLister              listv1.PersistentVolumeLister
 	pvcLister             listv1.PersistentVolumeClaimLister
 	storageCapacityLister v12.CSIStorageCapacityLister
 	storageClassLister    v12.StorageClassLister
@@ -79,6 +80,7 @@ func New(
 		cmLister:       informerFactory.Core().V1().ConfigMaps().Lister(),
 		usageLister:    usageLister,
 
+		pvLister:              informerFactory.Core().V1().PersistentVolumes().Lister(),
 		pvcLister:             informerFactory.Core().V1().PersistentVolumeClaims().Lister(),
 		storageCapacityLister: informerFactory.Storage().V1().CSIStorageCapacities().Lister(),
 		storageClassLister:    informerFactory.Storage().V1().StorageClasses().Lister(),
@@ -146,6 +148,10 @@ func (k *k8sLister) ListPodByIndex(index, value string) ([]interface{}, error) {
 }
 
 // +kubebuilder:rbac:groups="",resources=persistentvolumeclaims;persistentvolumes,verbs=get;list;watch
+
+func (k *k8sLister) ListPersistentVolumes() ([]*v1.PersistentVolume, error) {
+	return k.pvLister.List(labels.Everything())
+}
 
 func (k *k8sLister) ListPersistentVolumeClaims() ([]*v1.PersistentVolumeClaim, error) {
 	return k.pvcLister.List(labels.Everything())
