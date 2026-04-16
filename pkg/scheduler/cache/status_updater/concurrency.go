@@ -113,6 +113,12 @@ func (su *defaultStatusUpdater) updatePodGroup(
 	}
 
 	if statusErr != nil || patchErr != nil {
+		if apierrors.IsNotFound(statusErr) || apierrors.IsNotFound(patchErr) {
+			log.StatusUpdaterLogger.V(5).Infof("Pod group %s/%s not found, skipping status update: %v",
+				podGroup.Namespace, podGroup.Name, statusErr)
+			su.inFlightPodGroups.Delete(key)
+			return
+		}
 
 		if statusErr != nil {
 			if apierrors.IsConflict(statusErr) {
