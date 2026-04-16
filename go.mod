@@ -1,4 +1,4 @@
-module github.com/NVIDIA/KAI-scheduler
+module github.com/kai-scheduler/KAI-scheduler
 
 go 1.24.4
 

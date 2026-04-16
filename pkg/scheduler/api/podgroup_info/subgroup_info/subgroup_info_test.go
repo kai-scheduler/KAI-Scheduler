@@ -6,7 +6,7 @@ package subgroup_info
 import (
 	"testing"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/topology_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/topology_info"
 )
 
 func TestNewSubGroupInfo(t *testing.T) {
