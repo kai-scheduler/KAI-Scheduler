@@ -401,12 +401,10 @@ func (pgi *PodGroupInfo) GetTasksActiveAllocatedReqResourceVector() resource_inf
 }
 
 func (pgi *PodGroupInfo) IsReadyForScheduling() bool {
-	for _, podSet := range pgi.PodSets {
-		if !podSet.IsReadyForScheduling() {
-			return false
-		}
+	if pgi.RootSubGroupSet == nil {
+		return false
 	}
-	return true
+	return pgi.RootSubGroupSet.IsReadyForScheduling()
 }
 
 func (pgi *PodGroupInfo) IsElastic() bool {

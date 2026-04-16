@@ -10,6 +10,7 @@ type SubGroupChild interface {
 	GetName() string
 	GetTopologyConstraint() *topology_info.TopologyConstraintInfo
 	GetParent() *SubGroupSet
+	IsReadyForScheduling() bool
 	GetMinChildrenToSatisfy() int
 	GetNumActiveAllocatedDirectChildren() int
 }

@@ -120,6 +120,16 @@ func (sgs *SubGroupSet) GetChildren() []SubGroupChild {
 	return children
 }
 
+func (sgs *SubGroupSet) IsReadyForScheduling() bool {
+	childrenReadyForScheduling := 0
+	for _, child := range sgs.GetChildren() {
+		if child.IsReadyForScheduling() {
+			childrenReadyForScheduling++
+		}
+	}
+	return childrenReadyForScheduling >= sgs.GetMinChildrenToSatisfy()
+}
+
 func (sgs *SubGroupSet) IsMinRequirementSatisfied() bool {
 	return sgs.GetNumActiveAllocatedDirectSubGroups() >= sgs.GetMinChildrenToSatisfy()
 }
