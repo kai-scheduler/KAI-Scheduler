@@ -9,8 +9,8 @@ import (
 	rand "math/rand/v2"
 	"slices"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/capacity"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/capacity"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 

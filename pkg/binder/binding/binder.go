@@ -15,12 +15,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/binding/resourcereservation"
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/common"
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/plugins"
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/plugins/state"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding/resourcereservation"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/state"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
 var InvalidCrdWarning = errors.New("invalid binding request")

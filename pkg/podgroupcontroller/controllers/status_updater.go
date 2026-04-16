@@ -14,11 +14,11 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgroupcontroller/controllers/cluster_relations"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgroupcontroller/controllers/metadata"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgroupcontroller/controllers/patcher"
-	utilities "github.com/NVIDIA/KAI-scheduler/pkg/podgroupcontroller/utilities/pod-group"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgroupcontroller/controllers/cluster_relations"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgroupcontroller/controllers/metadata"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgroupcontroller/controllers/patcher"
+	utilities "github.com/kai-scheduler/KAI-scheduler/pkg/podgroupcontroller/utilities/pod-group"
 )
 
 func (r *PodGroupReconciler) handlePodGroupStatus(ctx context.Context, podGroup *v2alpha2.PodGroup) (

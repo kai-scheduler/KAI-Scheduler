@@ -27,9 +27,9 @@ import (
 	sync "sync"
 	time "time"
 
-	versioned "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned"
-	internalinterfaces "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/informers/externalversions/internalinterfaces"
-	scheduling "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/informers/externalversions/scheduling"
+	versioned "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned"
+	internalinterfaces "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/informers/externalversions/internalinterfaces"
+	scheduling "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/informers/externalversions/scheduling"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"

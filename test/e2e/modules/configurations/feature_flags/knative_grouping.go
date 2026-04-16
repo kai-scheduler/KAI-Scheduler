@@ -7,9 +7,9 @@ package feature_flags
 import (
 	"context"
 
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/constant"
-	testcontext "github.com/NVIDIA/KAI-scheduler/test/e2e/modules/context"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/wait"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/constant"
+	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
 )
 
 func UnsetKnativeGangScheduling(ctx context.Context, testCtx *testcontext.TestContext) error {

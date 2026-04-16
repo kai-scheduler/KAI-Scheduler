@@ -1,4 +1,4 @@
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE) [![Coverage](https://github.com/NVIDIA/KAI-Scheduler/raw/coverage-badge/badges/coverage.svg)](https://github.com/NVIDIA/KAI-Scheduler/blob/main/.github/workflows/update-coverage-badge.yaml)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE) [![Coverage](https://github.com/kai-scheduler/KAI-scheduler/raw/coverage-badge/badges/coverage.svg)](https://github.com/kai-scheduler/KAI-scheduler/blob/main/.github/workflows/update-coverage-badge.yaml)
 # KAI Scheduler
 KAI Scheduler is a robust, efficient, and scalable [Kubernetes scheduler](https://kubernetes.io/docs/concepts/scheduling-eviction/kube-scheduler/) that optimizes GPU resource allocation for AI and machine learning workloads.
 
@@ -41,10 +41,10 @@ KAI Scheduler can be installed:
 ⚠️ For API changes and migration guides, please refer to [Breaking Changes & Migration Guides](docs/migrationguides/README.md)
 
 #### Install from Production
-Locate the latest release version in [releases](https://github.com/NVIDIA/KAI-Scheduler/releases) page.
+Locate the latest release version in [releases](https://github.com/kai-scheduler/KAI-scheduler/releases) page.
 Run the following command after replacing `<VERSION>` with the desired release version:
 ```sh
-helm upgrade -i kai-scheduler oci://ghcr.io/nvidia/kai-scheduler/kai-scheduler -n kai-scheduler --create-namespace --version <VERSION>
+helm upgrade -i kai-scheduler oci://ghcr.io/kai-scheduler/KAI-scheduler/kai-scheduler -n kai-scheduler --create-namespace --version <VERSION>
 ```
 #### Build from Source
 Follow the instructions [here](docs/developer/building-from-source.md)
@@ -66,9 +66,9 @@ To start scheduling workloads with KAI Scheduler, please continue to [Quick Star
 
 ### High-level overview of the main priorities for 2025
 * Refactor the codebase to enhance vendor neutrality
-* Support Scheduling Gates https://github.com/NVIDIA/KAI-Scheduler/issues/63
-* Research on possible integration with Kueue https://github.com/NVIDIA/KAI-Scheduler/issues/68
-* Add Topology Aware Scheduling support of pod-group https://github.com/NVIDIA/KAI-Scheduler/issues/66
+* Support Scheduling Gates https://github.com/kai-scheduler/KAI-scheduler/issues/63
+* Research on possible integration with Kueue https://github.com/kai-scheduler/KAI-scheduler/issues/68
+* Add Topology Aware Scheduling support of pod-group https://github.com/kai-scheduler/KAI-scheduler/issues/66
 * Support Min Run Time per workloads
 * Support Max Run Time per workload (with delayed requeue)
 * Add more PriorityClasses as part of the default KAI install
@@ -99,5 +99,5 @@ Join the [CNCF Slack](https://communityinviter.com/apps/cloud-native/cncf) first
 Join the [kai-scheduler mailing list](https://groups.google.com/g/kai-scheduler) to receive updates on biweekly meetings.
 
 ### Technical Issues & Feature Requests  
-Please open a [GitHub issue](https://github.com/NVIDIA/KAI-Scheduler/issues/new/choose) for bugs, feature suggestions, or technical help. This helps us keep track of requests and respond effectively.
+Please open a [GitHub issue](https://github.com/kai-scheduler/KAI-scheduler/issues/new/choose) for bugs, feature suggestions, or technical help. This helps us keep track of requests and respond effectively.
 

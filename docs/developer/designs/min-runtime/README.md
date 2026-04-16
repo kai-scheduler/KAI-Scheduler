@@ -82,29 +82,29 @@ graph TD
 ### Phase 1
 
 Add startTime to PodGroup by mimicking how staleTimestamp is set today:
-https://github.com/NVIDIA/KAI-Scheduler/blob/420efcc17b770f30ca5b899bc3ca8969e352970a/pkg/scheduler/cache/status_updater/default_status_updater.go#L149-L154
+https://github.com/kai-scheduler/KAI-scheduler/blob/420efcc17b770f30ca5b899bc3ca8969e352970a/pkg/scheduler/cache/status_updater/default_status_updater.go#L149-L154
 
 This will be a readable annotation that is set to current time when the workload has been successfully allocated.
 
-For scheduling purposes, the readable timestamp is converted to a unix timestamp when pods are snapshotted, using https://github.com/NVIDIA/KAI-Scheduler/blob/420efcc17b770f30ca5b899bc3ca8969e352970a/pkg/scheduler/api/podgroup_info/job_info.go#L81
+For scheduling purposes, the readable timestamp is converted to a unix timestamp when pods are snapshotted, using https://github.com/kai-scheduler/KAI-scheduler/blob/420efcc17b770f30ca5b899bc3ca8969e352970a/pkg/scheduler/api/podgroup_info/job_info.go#L81
 
 For a more advanced scenario, we could also make use of scheduling conditions, but have left that out of the design proposal for now.
 
 ### Phase 2
 
-Prepare https://github.com/NVIDIA/KAI-Scheduler/blob/420efcc17b770f30ca5b899bc3ca8969e352970a/pkg/scheduler/framework/session_plugins.go to functions that can be used to filter whole jobs from preempt/reclaim actions.
+Prepare https://github.com/kai-scheduler/KAI-scheduler/blob/420efcc17b770f30ca5b899bc3ca8969e352970a/pkg/scheduler/framework/session_plugins.go to functions that can be used to filter whole jobs from preempt/reclaim actions.
 
 For the new functions we will do boolean AND between the results of each plugin returning the values, and use the result of that to determine if the workload is preemptible at all.
 
 These functions will be called in each action's victim selection filters, and will be called only AFTER a workload has been considered eligible based on the fundamental filters of "reclaims" and "preemptible" (such as preemptible only being relevant for in-queue workloads).
 
-https://github.com/NVIDIA/KAI-Scheduler/blob/420efcc17b770f30ca5b899bc3ca8969e352970a/pkg/scheduler/actions/preempt/preempt.go#L105-L134
+https://github.com/kai-scheduler/KAI-scheduler/blob/420efcc17b770f30ca5b899bc3ca8969e352970a/pkg/scheduler/actions/preempt/preempt.go#L105-L134
 
-https://github.com/NVIDIA/KAI-Scheduler/blob/420efcc17b770f30ca5b899bc3ca8969e352970a/pkg/scheduler/actions/reclaim/reclaim.go#L154-L158
+https://github.com/kai-scheduler/KAI-scheduler/blob/420efcc17b770f30ca5b899bc3ca8969e352970a/pkg/scheduler/actions/reclaim/reclaim.go#L154-L158
 
 
 Secondly, because elastic workloads can always be partially preempted, we will also expose another plugin hook that allows plugins to define custom scenario validators to be used here:
-https://github.com/NVIDIA/KAI-Scheduler/blob/7ba6bedce81b9f920f4278376eac28d6709477c7/pkg/scheduler/actions/common/solvers/job_solver.go#L33-L38
+https://github.com/kai-scheduler/KAI-scheduler/blob/7ba6bedce81b9f920f4278376eac28d6709477c7/pkg/scheduler/actions/common/solvers/job_solver.go#L33-L38
 
 These functions will get a pendingJob, a list of victims and the current tasks that would be evicted with the current scenario, and if any plugin returns false the scenario will not be allowed to continue.
 
@@ -113,11 +113,11 @@ These functions will get a pendingJob, a list of victims and the current tasks t
 Implement configuration options for (preempt|reclaim)-min-runtime in node pool and queue configurations.
 
 For node pool level, `pkg/scheduler/conf/scheduler_conf.go` seems like the appropriate place, in `SchedulerConfiguration`.
-https://github.com/NVIDIA/KAI-Scheduler/blob/420efcc17b770f30ca5b899bc3ca8969e352970a/pkg/scheduler/conf/scheduler_conf.go#L18-L43
+https://github.com/kai-scheduler/KAI-scheduler/blob/420efcc17b770f30ca5b899bc3ca8969e352970a/pkg/scheduler/conf/scheduler_conf.go#L18-L43
 
 
 Since queues are defined as CRDs, the extra values will have to be implemented in `pkg/apis/scheduling/v2/queue_types.go` under `QueueSpec`.
-https://github.com/NVIDIA/KAI-Scheduler/blob/420efcc17b770f30ca5b899bc3ca8969e352970a/pkg/apis/scheduling/v2/queue_types.go#L26-L49
+https://github.com/kai-scheduler/KAI-scheduler/blob/420efcc17b770f30ca5b899bc3ca8969e352970a/pkg/apis/scheduling/v2/queue_types.go#L26-L49
 
 If CRD allows it, we will use `time.Duration` to describe these values, otherwise integer with seconds as value. 
 
