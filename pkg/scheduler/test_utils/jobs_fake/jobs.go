@@ -16,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/uuid"
 
 	enginev2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
 	pg "github.com/NVIDIA/KAI-scheduler/pkg/common/podgroup"
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -298,6 +299,10 @@ func createPodOfTask(job *TestJobBasic, taskIndex int,
 	if task.RequiredGPUs != nil {
 		numGPUsStr := strconv.FormatInt(*task.RequiredGPUs, 10)
 		podOfTask.Spec.Containers[0].Resources.Requests[resource_info.GPUResourceName] = resource.MustParse(numGPUsStr)
+	}
+
+	if job.RequiredMultiFractionDevicesPerTask != nil {
+		podOfTask.Annotations[commonconstants.GpuFractionsNumDevices] = strconv.FormatUint(*job.RequiredMultiFractionDevicesPerTask, 10)
 	}
 
 	if pod_status.IsActiveUsedStatus(task.State) {
