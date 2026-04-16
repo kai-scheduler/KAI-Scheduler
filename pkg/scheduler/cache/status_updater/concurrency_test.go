@@ -170,4 +170,98 @@ var _ = Describe("Status Updater Concurrency - large scale: increase queue size"
 			// Expected - queue is empty, meaning no retry was scheduled
 		}
 	})
+
+	It("updatePod - Retry after transient error", func() {
+		patchCalls := 0
+		kubeClient.CoreV1().(*fakecorev1.FakeCoreV1).PrependReactor(
+			"patch", "pods", func(action faketesting.Action) (handled bool, ret runtime.Object, err error) {
+				patchCalls++
+				return true, nil, errors.New("transient API server error")
+			},
+		)
+
+		pod := &v1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-pod",
+				Namespace: "test-ns",
+				UID:       "test-uid",
+			},
+		}
+
+		key := statusUpdater.keyForPodStatusPayload(pod.Name, pod.Namespace, pod.UID)
+		updateData := &inflightUpdate{
+			object:       pod,
+			patchData:    []byte(`{"status":{"conditions":[{"type":"PodScheduled","status":"False","reason":"Unschedulable"}]}}`),
+			subResources: []string{"status"},
+		}
+
+		statusUpdater.inFlightPods.Store(key, updateData)
+		statusUpdater.Run(make(chan struct{}))
+
+		ctx := context.Background()
+		statusUpdater.updatePod(ctx, key, updateData)
+
+		Expect(patchCalls).To(Equal(1), "Patch should be called once")
+
+		// Inflight entry should still exist (not deleted on error)
+		_, exists := statusUpdater.inFlightPods.Load(key)
+		Expect(exists).To(BeTrue(), "Inflight entry should remain after transient error")
+
+		// Verify retry was queued
+		select {
+		case payload := <-statusUpdater.updateQueueOut:
+			Expect(payload.key).To(Equal(key))
+			Expect(payload.objectType).To(Equal(podType))
+		case <-time.After(100 * time.Millisecond):
+			Fail("Expected retry payload in the update queue after transient error")
+		}
+	})
+
+	It("updatePod - No retry after NotFound error", func() {
+		patchCalls := 0
+		kubeClient.CoreV1().(*fakecorev1.FakeCoreV1).PrependReactor(
+			"patch", "pods", func(action faketesting.Action) (handled bool, ret runtime.Object, err error) {
+				patchCalls++
+				return true, nil, apierrors.NewNotFound(
+					schema.GroupResource{Group: "", Resource: "pods"},
+					"test-pod",
+				)
+			},
+		)
+
+		pod := &v1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-pod",
+				Namespace: "test-ns",
+				UID:       "test-uid",
+			},
+		}
+
+		key := statusUpdater.keyForPodStatusPayload(pod.Name, pod.Namespace, pod.UID)
+		updateData := &inflightUpdate{
+			object:       pod,
+			patchData:    []byte(`{"status":{"conditions":[{"type":"PodScheduled","status":"False","reason":"Unschedulable"}]}}`),
+			subResources: []string{"status"},
+		}
+
+		statusUpdater.inFlightPods.Store(key, updateData)
+		statusUpdater.Run(make(chan struct{}))
+
+		ctx := context.Background()
+		statusUpdater.updatePod(ctx, key, updateData)
+
+		Expect(patchCalls).To(Equal(1), "Patch should be called once")
+
+		// Inflight entry should be cleaned up
+		_, exists := statusUpdater.inFlightPods.Load(key)
+		Expect(exists).To(BeFalse(), "Inflight entry should be deleted after NotFound error")
+
+		// No retry should be queued
+		select {
+		case <-statusUpdater.updateQueueOut:
+			Fail("Update queue should be empty - no retry should be queued for NotFound errors")
+		case <-time.After(100 * time.Millisecond):
+			// Expected - queue is empty
+		}
+	})
 })
