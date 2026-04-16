@@ -44,6 +44,27 @@ var testVectorMap = resource_info.NewResourceVectorMap()
 func TestNumericalPriorityWithinSameQueue(t *testing.T) {
 	ssn := newPrioritySession(t)
 
+	makePodGroup := func(name string, priority int32) *podgroup_info.PodGroupInfo {
+		ps := subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 0, nil).
+			WithPodInfos(pod_info.PodsMap{
+				testPod: {UID: testPod},
+			})
+		root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+		root.AddPodSet(ps)
+		return &podgroup_info.PodGroupInfo{
+			Name:     name,
+			Priority: priority,
+			Queue:    testQueue,
+			PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{
+				pod_status.Pending: {testPod: {}},
+			},
+			RootSubGroupSet: root,
+			PodSets: map[string]*subgroup_info.PodSet{
+				podgroup_info.DefaultSubGroup: ps,
+			},
+		}
+	}
+
 	ssn.ClusterInfo.Queues = map[common_info.QueueID]*queue_info.QueueInfo{
 		testQueue: {
 			UID:         testQueue,
@@ -55,78 +76,10 @@ func TestNumericalPriorityWithinSameQueue(t *testing.T) {
 		},
 	}
 	ssn.ClusterInfo.PodGroupInfos = map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{
-		"0": {
-			Name:     "p150",
-			Priority: 150,
-			Queue:    testQueue,
-			PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{
-				pod_status.Pending: {
-					testPod: {},
-				},
-			},
-			PodSets: map[string]*subgroup_info.PodSet{
-				podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 0, nil).
-					WithPodInfos(pod_info.PodsMap{
-						testPod: {
-							UID: testPod,
-						},
-					}),
-			},
-		},
-		"1": {
-			Name:     "p255",
-			Priority: 255,
-			Queue:    testQueue,
-			PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{
-				pod_status.Pending: {
-					testPod: {},
-				},
-			},
-			PodSets: map[string]*subgroup_info.PodSet{
-				podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 0, nil).
-					WithPodInfos(pod_info.PodsMap{
-						testPod: {
-							UID: testPod,
-						},
-					}),
-			},
-		},
-		"2": {
-			Name:     "p160",
-			Priority: 160,
-			Queue:    testQueue,
-			PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{
-				pod_status.Pending: {
-					testPod: {},
-				},
-			},
-			PodSets: map[string]*subgroup_info.PodSet{
-				podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 0, nil).
-					WithPodInfos(pod_info.PodsMap{
-						testPod: {
-							UID: testPod,
-						},
-					}),
-			},
-		},
-		"3": {
-			Name:     "p200",
-			Priority: 200,
-			Queue:    testQueue,
-			PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{
-				pod_status.Pending: {
-					testPod: {},
-				},
-			},
-			PodSets: map[string]*subgroup_info.PodSet{
-				podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 0, nil).
-					WithPodInfos(pod_info.PodsMap{
-						testPod: {
-							UID: testPod,
-						},
-					}),
-			},
-		},
+		"0": makePodGroup("p150", 150),
+		"1": makePodGroup("p255", 255),
+		"2": makePodGroup("p160", 160),
+		"3": makePodGroup("p200", 200),
 	}
 
 	jobsOrderByQueues := NewJobsOrderByQueues(ssn, JobsOrderInitOptions{
@@ -205,108 +158,12 @@ func TestVictimQueue_PopNextJob(t *testing.T) {
 				"pq1": {UID: "pq1", CreationTimestamp: now},
 			},
 			initJobs: map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{
-				"q1j1": {
-					Name:     "q1j1",
-					Priority: 100,
-					Queue:    "q1",
-					PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{
-						pod_status.Allocated: {
-							"p1": {
-								UID:                    "p1",
-								VectorMap:              testVectorMap,
-								AcceptedGpuRequirement: resource_info.NewResourceRequirements(1, 1000, 1024).GpuResourceRequirement,
-								AcceptedResourceVector: resource_info.NewResourceRequirements(1, 1000, 1024).ToVector(testVectorMap),
-							},
-						},
-					},
-					VectorMap:       testVectorMap,
-					AllocatedVector: resource_info.NewResourceRequirements(1, 1000, 1024).ToVector(testVectorMap),
-				},
-				"q1j2": {
-					Name:     "q1j2",
-					Priority: 99,
-					Queue:    "q1",
-					PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{
-						pod_status.Allocated: {
-							"p1": {
-								UID:                    "p1",
-								VectorMap:              testVectorMap,
-								AcceptedGpuRequirement: resource_info.NewResourceRequirements(1, 1000, 1024).GpuResourceRequirement,
-								AcceptedResourceVector: resource_info.NewResourceRequirements(1, 1000, 1024).ToVector(testVectorMap),
-							},
-						},
-					},
-					VectorMap:       testVectorMap,
-					AllocatedVector: resource_info.NewResourceRequirements(1, 1000, 1024).ToVector(testVectorMap),
-				},
-				"q1j3": {
-					Name:     "q1j3",
-					Priority: 98,
-					Queue:    "q1",
-					PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{
-						pod_status.Allocated: {
-							"p1": {
-								UID:                    "p1",
-								VectorMap:              testVectorMap,
-								AcceptedGpuRequirement: resource_info.NewResourceRequirements(1, 1000, 1024).GpuResourceRequirement,
-								AcceptedResourceVector: resource_info.NewResourceRequirements(1, 1000, 1024).ToVector(testVectorMap),
-							},
-						},
-					},
-					VectorMap:       testVectorMap,
-					AllocatedVector: resource_info.NewResourceRequirements(1, 1000, 1024).ToVector(testVectorMap),
-				},
-				"q2j1": {
-					Name:     "q2j1",
-					Priority: 100,
-					Queue:    "q2",
-					PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{
-						pod_status.Allocated: {
-							"p1": {
-								UID:                    "p1",
-								VectorMap:              testVectorMap,
-								AcceptedGpuRequirement: resource_info.NewResourceRequirements(1, 1000, 1024).GpuResourceRequirement,
-								AcceptedResourceVector: resource_info.NewResourceRequirements(1, 1000, 1024).ToVector(testVectorMap),
-							},
-						},
-					},
-					VectorMap:       testVectorMap,
-					AllocatedVector: resource_info.NewResourceRequirements(1, 1000, 1024).ToVector(testVectorMap),
-				},
-				"q2j2": {
-					Name:     "q2j2",
-					Priority: 99,
-					Queue:    "q2",
-					PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{
-						pod_status.Allocated: {
-							"p1": {
-								UID:                    "p1",
-								VectorMap:              testVectorMap,
-								AcceptedGpuRequirement: resource_info.NewResourceRequirements(1, 1000, 1024).GpuResourceRequirement,
-								AcceptedResourceVector: resource_info.NewResourceRequirements(1, 1000, 1024).ToVector(testVectorMap),
-							},
-						},
-					},
-					VectorMap:       testVectorMap,
-					AllocatedVector: resource_info.NewResourceRequirements(1, 1000, 1024).ToVector(testVectorMap),
-				},
-				"q2j3": {
-					Name:     "q2j3",
-					Priority: 98,
-					Queue:    "q2",
-					PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{
-						pod_status.Allocated: {
-							"p1": {
-								UID:                    "p1",
-								VectorMap:              testVectorMap,
-								AcceptedGpuRequirement: resource_info.NewResourceRequirements(1, 1000, 1024).GpuResourceRequirement,
-								AcceptedResourceVector: resource_info.NewResourceRequirements(1, 1000, 1024).ToVector(testVectorMap),
-							},
-						},
-					},
-					VectorMap:       testVectorMap,
-					AllocatedVector: resource_info.NewResourceRequirements(1, 1000, 1024).ToVector(testVectorMap),
-				},
+				"q1j1": victimQueueTestPodGroup("q1j1", "q1", 100),
+				"q1j2": victimQueueTestPodGroup("q1j2", "q1", 99),
+				"q1j3": victimQueueTestPodGroup("q1j3", "q1", 98),
+				"q2j1": victimQueueTestPodGroup("q2j1", "q2", 100),
+				"q2j2": victimQueueTestPodGroup("q2j2", "q2", 99),
+				"q2j3": victimQueueTestPodGroup("q2j3", "q2", 98),
 			},
 			expectedJobNames: []string{"q1j3", "q2j3", "q1j2", "q2j2", "q1j1", "q2j1"},
 		},
@@ -326,6 +183,33 @@ func TestVictimQueue_PopNextJob(t *testing.T) {
 				assert.Equal(t, expectedJobName, actualJob.Name)
 			}
 		})
+	}
+}
+
+func victimQueueTestPodGroup(name string, queue common_info.QueueID, priority int32) *podgroup_info.PodGroupInfo {
+	p1 := &pod_info.PodInfo{
+		UID:                    testPod,
+		VectorMap:              testVectorMap,
+		AcceptedGpuRequirement: resource_info.NewResourceRequirements(1, 1000, 1024).GpuResourceRequirement,
+		AcceptedResourceVector: resource_info.NewResourceRequirements(1, 1000, 1024).ToVector(testVectorMap),
+	}
+	ps := subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 0, nil).
+		WithPodInfos(pod_info.PodsMap{testPod: p1})
+	root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+	root.AddPodSet(ps)
+	return &podgroup_info.PodGroupInfo{
+		Name:     name,
+		Priority: priority,
+		Queue:    queue,
+		PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{
+			pod_status.Allocated: {testPod: p1},
+		},
+		VectorMap:       testVectorMap,
+		AllocatedVector: resource_info.NewResourceRequirements(1, 1000, 1024).ToVector(testVectorMap),
+		RootSubGroupSet: root,
+		PodSets: map[string]*subgroup_info.PodSet{
+			podgroup_info.DefaultSubGroup: ps,
+		},
 	}
 }
 

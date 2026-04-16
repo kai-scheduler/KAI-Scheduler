@@ -393,6 +393,18 @@ func TestPodGroupInfo_GetNumAliveTasks(t *testing.T) {
 	}
 }
 
+func newPodGroupInfoWithRootPodSets(podsets ...*subgroup_info.PodSet) *PodGroupInfo {
+	root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+	for _, podset := range podsets {
+		root.AddPodSet(podset)
+	}
+	return &PodGroupInfo{
+		UID:             "test-pg",
+		RootSubGroupSet: root,
+		PodSets:         root.GetAllPodSets(),
+	}
+}
+
 func TestPodGroupInfo_IsReadyForScheduling(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -561,206 +573,194 @@ func TestPodGroupInfo_IsReadyForScheduling(t *testing.T) {
 		},
 		{
 			name: "job with subgroups - all ready",
-			job: &PodGroupInfo{
-				UID: "test-pg",
-				PodSets: map[string]*subgroup_info.PodSet{
-					"sb-1": subgroup_info.NewPodSet("sb-1", 2, nil).
-						WithPodInfos(pod_info.PodsMap{
-							"111": pod_info.NewTaskInfo(
-								&v1.Pod{
-									ObjectMeta: metav1.ObjectMeta{
-										UID:       "111",
-										Name:      "task1",
-										Namespace: "ns1",
-									},
-									Status: v1.PodStatus{
-										Phase: v1.PodPending,
-									}},
-								nil, resource_info.NewResourceVectorMap(),
-							),
-							"222": pod_info.NewTaskInfo(
-								&v1.Pod{
-									ObjectMeta: metav1.ObjectMeta{
-										UID:       "222",
-										Name:      "task2",
-										Namespace: "ns1",
-									},
-									Status: v1.PodStatus{
-										Phase: v1.PodPending,
-									}},
-								nil, resource_info.NewResourceVectorMap(),
-							),
-						}),
-					"sb-2": subgroup_info.NewPodSet("sb-2", 1, nil).
-						WithPodInfos(pod_info.PodsMap{
-							"333": pod_info.NewTaskInfo(
-								&v1.Pod{
-									ObjectMeta: metav1.ObjectMeta{
-										UID:       "333",
-										Name:      "task3",
-										Namespace: "ns1",
-									},
-									Status: v1.PodStatus{
-										Phase: v1.PodPending,
-									}},
-								nil, resource_info.NewResourceVectorMap(),
-							),
-						}),
-				},
-			},
+			job: newPodGroupInfoWithRootPodSets(
+				subgroup_info.NewPodSet("sb-1", 2, nil).
+					WithPodInfos(pod_info.PodsMap{
+						"111": pod_info.NewTaskInfo(
+							&v1.Pod{
+								ObjectMeta: metav1.ObjectMeta{
+									UID:       "111",
+									Name:      "task1",
+									Namespace: "ns1",
+								},
+								Status: v1.PodStatus{
+									Phase: v1.PodPending,
+								}},
+							nil, resource_info.NewResourceVectorMap(),
+						),
+						"222": pod_info.NewTaskInfo(
+							&v1.Pod{
+								ObjectMeta: metav1.ObjectMeta{
+									UID:       "222",
+									Name:      "task2",
+									Namespace: "ns1",
+								},
+								Status: v1.PodStatus{
+									Phase: v1.PodPending,
+								}},
+							nil, resource_info.NewResourceVectorMap(),
+						),
+					}),
+				subgroup_info.NewPodSet("sb-2", 1, nil).
+					WithPodInfos(pod_info.PodsMap{
+						"333": pod_info.NewTaskInfo(
+							&v1.Pod{
+								ObjectMeta: metav1.ObjectMeta{
+									UID:       "333",
+									Name:      "task3",
+									Namespace: "ns1",
+								},
+								Status: v1.PodStatus{
+									Phase: v1.PodPending,
+								}},
+							nil, resource_info.NewResourceVectorMap(),
+						),
+					}),
+			),
 			expected: true,
 		},
 		{
 			name: "job with subgroups - some already running",
-			job: &PodGroupInfo{
-				UID: "test-pg",
-				PodSets: map[string]*subgroup_info.PodSet{
-					"sb-1": subgroup_info.NewPodSet("sb-1", 2, nil).
-						WithPodInfos(pod_info.PodsMap{
-							"111": pod_info.NewTaskInfo(
-								&v1.Pod{
-									ObjectMeta: metav1.ObjectMeta{
-										UID:       "111",
-										Name:      "task1",
-										Namespace: "ns1",
-									},
-									Status: v1.PodStatus{
-										Phase: v1.PodPending,
-									}},
-								nil, resource_info.NewResourceVectorMap(),
-							),
-							"222": pod_info.NewTaskInfo(
-								&v1.Pod{
-									ObjectMeta: metav1.ObjectMeta{
-										UID:       "222",
-										Name:      "task2",
-										Namespace: "ns1",
-									},
-									Status: v1.PodStatus{
-										Phase: v1.PodPending,
-									}},
-								nil, resource_info.NewResourceVectorMap(),
-							),
-						}),
-					"sb-2": subgroup_info.NewPodSet("sb-2", 1, nil).
-						WithPodInfos(pod_info.PodsMap{
-							"333": pod_info.NewTaskInfo(
-								&v1.Pod{
-									ObjectMeta: metav1.ObjectMeta{
-										UID:       "333",
-										Name:      "task3",
-										Namespace: "ns1",
-									},
-									Status: v1.PodStatus{
-										Phase: v1.PodRunning,
-									}},
-								nil, resource_info.NewResourceVectorMap(),
-							),
-						}),
-				},
-			},
+			job: newPodGroupInfoWithRootPodSets(
+				subgroup_info.NewPodSet("sb-1", 2, nil).
+					WithPodInfos(pod_info.PodsMap{
+						"111": pod_info.NewTaskInfo(
+							&v1.Pod{
+								ObjectMeta: metav1.ObjectMeta{
+									UID:       "111",
+									Name:      "task1",
+									Namespace: "ns1",
+								},
+								Status: v1.PodStatus{
+									Phase: v1.PodPending,
+								}},
+							nil, resource_info.NewResourceVectorMap(),
+						),
+						"222": pod_info.NewTaskInfo(
+							&v1.Pod{
+								ObjectMeta: metav1.ObjectMeta{
+									UID:       "222",
+									Name:      "task2",
+									Namespace: "ns1",
+								},
+								Status: v1.PodStatus{
+									Phase: v1.PodPending,
+								}},
+							nil, resource_info.NewResourceVectorMap(),
+						),
+					}),
+				subgroup_info.NewPodSet("sb-2", 1, nil).
+					WithPodInfos(pod_info.PodsMap{
+						"333": pod_info.NewTaskInfo(
+							&v1.Pod{
+								ObjectMeta: metav1.ObjectMeta{
+									UID:       "333",
+									Name:      "task3",
+									Namespace: "ns1",
+								},
+								Status: v1.PodStatus{
+									Phase: v1.PodRunning,
+								}},
+							nil, resource_info.NewResourceVectorMap(),
+						),
+					}),
+			),
 			expected: true,
 		},
 		{
 			name: "job with subgroups - more then minAvailable",
-			job: &PodGroupInfo{
-				UID: "test-pg",
-				PodSets: map[string]*subgroup_info.PodSet{
-					"sb-1": subgroup_info.NewPodSet("sb-1", 2, nil).
-						WithPodInfos(pod_info.PodsMap{
-							"111": pod_info.NewTaskInfo(
-								&v1.Pod{
-									ObjectMeta: metav1.ObjectMeta{
-										UID:       "111",
-										Name:      "task1",
-										Namespace: "ns1",
-									},
-									Status: v1.PodStatus{
-										Phase: v1.PodPending,
-									}},
-								nil, resource_info.NewResourceVectorMap(),
-							),
-							"222": pod_info.NewTaskInfo(
-								&v1.Pod{
-									ObjectMeta: metav1.ObjectMeta{
-										UID:       "222",
-										Name:      "task2",
-										Namespace: "ns1",
-									},
-									Status: v1.PodStatus{
-										Phase: v1.PodPending,
-									}},
-								nil, resource_info.NewResourceVectorMap(),
-							),
-							"333": pod_info.NewTaskInfo(
-								&v1.Pod{
-									ObjectMeta: metav1.ObjectMeta{
-										UID:       "333",
-										Name:      "task3",
-										Namespace: "ns1",
-									},
-									Status: v1.PodStatus{
-										Phase: v1.PodPending,
-									}},
-								nil, resource_info.NewResourceVectorMap(),
-							),
-						}),
-					"sb-2": subgroup_info.NewPodSet("sb-2", 1, nil).
-						WithPodInfos(pod_info.PodsMap{
-							"444": pod_info.NewTaskInfo(
-								&v1.Pod{
-									ObjectMeta: metav1.ObjectMeta{
-										UID:       "444",
-										Name:      "task4",
-										Namespace: "ns1",
-									},
-									Status: v1.PodStatus{
-										Phase: v1.PodPending,
-									}},
-								nil, resource_info.NewResourceVectorMap(),
-							),
-						}),
-				},
-			},
+			job: newPodGroupInfoWithRootPodSets(
+				subgroup_info.NewPodSet("sb-1", 2, nil).
+					WithPodInfos(pod_info.PodsMap{
+						"111": pod_info.NewTaskInfo(
+							&v1.Pod{
+								ObjectMeta: metav1.ObjectMeta{
+									UID:       "111",
+									Name:      "task1",
+									Namespace: "ns1",
+								},
+								Status: v1.PodStatus{
+									Phase: v1.PodPending,
+								}},
+							nil, resource_info.NewResourceVectorMap(),
+						),
+						"222": pod_info.NewTaskInfo(
+							&v1.Pod{
+								ObjectMeta: metav1.ObjectMeta{
+									UID:       "222",
+									Name:      "task2",
+									Namespace: "ns1",
+								},
+								Status: v1.PodStatus{
+									Phase: v1.PodPending,
+								}},
+							nil, resource_info.NewResourceVectorMap(),
+						),
+						"333": pod_info.NewTaskInfo(
+							&v1.Pod{
+								ObjectMeta: metav1.ObjectMeta{
+									UID:       "333",
+									Name:      "task3",
+									Namespace: "ns1",
+								},
+								Status: v1.PodStatus{
+									Phase: v1.PodPending,
+								}},
+							nil, resource_info.NewResourceVectorMap(),
+						),
+					}),
+				subgroup_info.NewPodSet("sb-2", 1, nil).
+					WithPodInfos(pod_info.PodsMap{
+						"444": pod_info.NewTaskInfo(
+							&v1.Pod{
+								ObjectMeta: metav1.ObjectMeta{
+									UID:       "444",
+									Name:      "task4",
+									Namespace: "ns1",
+								},
+								Status: v1.PodStatus{
+									Phase: v1.PodPending,
+								}},
+							nil, resource_info.NewResourceVectorMap(),
+						),
+					}),
+			),
 			expected: true,
 		},
 		{
 			name: "job with subgroups - one is not ready",
-			job: &PodGroupInfo{
-				UID: "test-pg",
-				PodSets: map[string]*subgroup_info.PodSet{
-					"sb-1": subgroup_info.NewPodSet("sb-1", 2, nil).
-						WithPodInfos(pod_info.PodsMap{
-							"111": pod_info.NewTaskInfo(
-								&v1.Pod{
-									ObjectMeta: metav1.ObjectMeta{
-										UID:       "111",
-										Name:      "task1",
-										Namespace: "ns1",
-									},
-									Status: v1.PodStatus{
-										Phase: v1.PodPending,
-									}},
-								nil, resource_info.NewResourceVectorMap(),
-							),
-						}),
-					"sb-2": subgroup_info.NewPodSet("sb-2", 1, nil).
-						WithPodInfos(pod_info.PodsMap{
-							"333": pod_info.NewTaskInfo(
-								&v1.Pod{
-									ObjectMeta: metav1.ObjectMeta{
-										UID:       "333",
-										Name:      "task3",
-										Namespace: "ns1",
-									},
-									Status: v1.PodStatus{
-										Phase: v1.PodPending,
-									}},
-								nil, resource_info.NewResourceVectorMap(),
-							),
-						}),
-				},
-			},
+			job: newPodGroupInfoWithRootPodSets(
+				subgroup_info.NewPodSet("sb-1", 2, nil).
+					WithPodInfos(pod_info.PodsMap{
+						"111": pod_info.NewTaskInfo(
+							&v1.Pod{
+								ObjectMeta: metav1.ObjectMeta{
+									UID:       "111",
+									Name:      "task1",
+									Namespace: "ns1",
+								},
+								Status: v1.PodStatus{
+									Phase: v1.PodPending,
+								}},
+							nil, resource_info.NewResourceVectorMap(),
+						),
+					}),
+				subgroup_info.NewPodSet("sb-2", 1, nil).
+					WithPodInfos(pod_info.PodsMap{
+						"333": pod_info.NewTaskInfo(
+							&v1.Pod{
+								ObjectMeta: metav1.ObjectMeta{
+									UID:       "333",
+									Name:      "task3",
+									Namespace: "ns1",
+								},
+								Status: v1.PodStatus{
+									Phase: v1.PodPending,
+								}},
+							nil, resource_info.NewResourceVectorMap(),
+						),
+					}),
+			),
 			expected: false,
 		},
 	}
