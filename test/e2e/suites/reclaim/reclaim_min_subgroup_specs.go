@@ -51,6 +51,7 @@ func DescribeReclaimMinSubGroupSpecs() bool {
 		})
 
 		It("should reclaim resources from elastic subgroups for fair share", func(ctx context.Context) {
+			testCtx = testcontext.GetConnectivity(ctx, Default)
 			parentQueue := queue.CreateQueueObject(utils.GenerateRandomK8sName(10), "")
 			reclaimeeQueue := queue.CreateQueueObject(utils.GenerateRandomK8sName(10), parentQueue.Name)
 			reclaimeeQueue.Spec.Resources.CPU.Quota = 200
