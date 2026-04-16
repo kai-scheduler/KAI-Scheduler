@@ -50,33 +50,33 @@ func (s *JobSolver) Solve(
 	originalNumActiveTasks := pendingJob.GetNumActiveUsedTasks()
 
 	var statement *framework.Statement
-	var pendingTasks []*pod_info.PodInfo
 	tasksToAllocate := podgroup_info.GetTasksToAllocate(pendingJob, ssn.PodSetOrderFn, ssn.TaskOrderFn, false)
-	for _, nextTaskToSolve := range tasksToAllocate {
-		nextTasksToSolve := []*pod_info.PodInfo{nextTaskToSolve}
-		pendingTasks = append(pendingTasks, nextTasksToSolve...)
-		satisfactorySolution := len(pendingTasks) == len(tasksToAllocate)
-		partialPendingJob := getPartialJobRepresentative(pendingJob, pendingTasks)
+	low, high := 1, len(tasksToAllocate)
+	for low <= high {
+		mid := low + (high-low)/2
+		candidateState := cloneSolvingState(state)
+		partialPendingJob := getPartialJobRepresentative(pendingJob, tasksToAllocate[:mid])
 
-		result := s.solvePartialJob(ssn, &state, partialPendingJob)
+		result := s.solvePartialJob(ssn, &candidateState, partialPendingJob)
 		if result == nil || !result.solved {
 			log.InfraLogger.V(5).Infof("No solution found for %d tasks out of %d tasks to allocate for %s",
-				len(pendingTasks), len(tasksToAllocate), pendingJob.Name)
-			break
+				mid, len(tasksToAllocate), pendingJob.Name)
+			high = mid - 1
+			continue
 		}
 
-		if !satisfactorySolution && result.statement != nil {
-			result.statement.Discard()
+		if statement != nil {
+			statement.Discard()
 		}
-
 		statement = result.statement
 		state.recordedVictimsTasks = result.victimsTasks
 		state.recordedVictimsJobs = result.victimJobs
 
 		log.InfraLogger.V(4).Infof(
 			"Scenario solved for %d tasks out of %d tasks to allocate for %s. Victims: %s",
-			len(pendingTasks), len(tasksToAllocate), pendingJob.Name,
+			mid, len(tasksToAllocate), pendingJob.Name,
 			victimPrintingStruct{result.victimsTasks})
+		low = mid + 1
 	}
 
 	numActiveTasks := pendingJob.GetNumActiveUsedTasks()
@@ -86,6 +86,17 @@ func (s *JobSolver) Solve(
 	}
 
 	return jobSolved, statement, calcVictimNames(state.recordedVictimsTasks)
+}
+
+func cloneSolvingState(state solvingState) solvingState {
+	clonedState := solvingState{}
+	if len(state.recordedVictimsJobs) > 0 {
+		clonedState.recordedVictimsJobs = append([]*podgroup_info.PodGroupInfo(nil), state.recordedVictimsJobs...)
+	}
+	if len(state.recordedVictimsTasks) > 0 {
+		clonedState.recordedVictimsTasks = append([]*pod_info.PodInfo(nil), state.recordedVictimsTasks...)
+	}
+	return clonedState
 }
 
 func (s *JobSolver) solvePartialJob(ssn *framework.Session, state *solvingState, partialPendingJob *podgroup_info.PodGroupInfo) *solutionResult {
