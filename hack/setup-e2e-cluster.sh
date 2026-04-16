@@ -134,11 +134,20 @@ fi
 
 if [ "$LOCAL_IMAGES_BUILD" = "true" ]; then
     cd ${REPO_ROOT}
+    LOCAL_REGISTRY="localhost:30100"
+    PUSH_REGISTRY="$LOCAL_REGISTRY"
+    PORT_FORWARD_ADDRESS="127.0.0.1"
+    if docker info 2>/dev/null | grep -q "Docker Desktop"; then
+        # Docker Desktop pushes run from a VM, so localhost on the daemon is not the host.
+        PUSH_REGISTRY="host.docker.internal:30100"
+        PORT_FORWARD_ADDRESS="0.0.0.0"
+    fi
+
     echo "Building docker images with version $PACKAGE_VERSION..."
-    make build DOCKER_REPO_BASE=localhost:30100 VERSION=$PACKAGE_VERSION
+    make build DOCKER_REPO_BASE=$LOCAL_REGISTRY VERSION=$PACKAGE_VERSION
 
     # Start port-forward to local registry
-    kubectl port-forward -n kube-registry deploy/registry 30100:5000 &
+    kubectl port-forward -n kube-registry deploy/registry --address "$PORT_FORWARD_ADDRESS" 30100:5000 &
     PORT_FORWARD_PID=$!
     trap "kill $PORT_FORWARD_PID 2>/dev/null || true" EXIT
     sleep 2
@@ -146,13 +155,17 @@ if [ "$LOCAL_IMAGES_BUILD" = "true" ]; then
     # Push images to local registry
     echo "Pushing images to local registry..."
     for image in $(docker images --format '{{.Repository}}:{{.Tag}}' | grep $PACKAGE_VERSION); do
-        docker push $image
+        target_image="${image/#$LOCAL_REGISTRY/$PUSH_REGISTRY}"
+        if [ "$target_image" != "$image" ]; then
+            docker tag "$image" "$target_image"
+        fi
+        docker push "$target_image"
     done
 
     # Package and install helm chart
     helm package ./deployments/kai-scheduler -d ./charts --app-version $PACKAGE_VERSION --version $PACKAGE_VERSION
     helm upgrade -i kai-scheduler ./charts/kai-scheduler-$PACKAGE_VERSION.tgz -n kai-scheduler --create-namespace \
-        --set "global.gpuSharing=true" --set "global.registry=localhost:30100" --debug --wait
+        --set "global.gpuSharing=true" --set "global.registry=$LOCAL_REGISTRY" --debug --wait
     rm -rf ./charts/kai-scheduler-$PACKAGE_VERSION.tgz
     cd ${REPO_ROOT}/hack
 else
