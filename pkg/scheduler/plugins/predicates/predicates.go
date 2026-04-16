@@ -125,6 +125,7 @@ func (pp *predicatesPlugin) initializeK8sNodeInfos(ssn *framework.Session) {
 	for _, nodeInfo := range ssn.ClusterInfo.Nodes {
 		podAffinityInfo, ok := nodeInfo.PodAffinityInfo.(*cluster_info.K8sNodePodAffinityInfo)
 		if !ok || podAffinityInfo == nil || podAffinityInfo.NodeInfo == nil {
+			log.InfraLogger.Warningf("Node %s has no pod affinity info", nodeInfo.Name)
 			continue
 		}
 
