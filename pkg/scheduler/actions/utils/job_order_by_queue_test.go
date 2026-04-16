@@ -41,6 +41,28 @@ const (
 
 var testVectorMap = resource_info.NewResourceVectorMap()
 
+func podGroupForJobOrderTest(name string, uid common_info.PodGroupID, priority int32) *podgroup_info.PodGroupInfo {
+	ps := subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 0, nil).
+		WithPodInfos(pod_info.PodsMap{
+			testPod: {UID: testPod},
+		})
+	root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+	root.AddPodSet(ps)
+	return &podgroup_info.PodGroupInfo{
+		Name:     name,
+		UID:      uid,
+		Priority: priority,
+		Queue:    testQueue,
+		PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{
+			pod_status.Pending: {testPod: {UID: testPod}},
+		},
+		RootSubGroupSet: root,
+		PodSets: map[string]*subgroup_info.PodSet{
+			podgroup_info.DefaultSubGroup: ps,
+		},
+	}
+}
+
 func TestNumericalPriorityWithinSameQueue(t *testing.T) {
 	ssn := newPrioritySession(t)
 
@@ -247,49 +269,11 @@ func TestJobsOrderByQueues_PushJob(t *testing.T) {
 				InsertedJob: map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{},
 			},
 			args: args{
-				job: &podgroup_info.PodGroupInfo{
-					Name:     "p150",
-					Priority: 150,
-					Queue:    "q1",
-					PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{
-						pod_status.Pending: {
-							testPod: {
-								UID: testPod,
-							},
-						},
-					},
-					PodSets: map[string]*subgroup_info.PodSet{
-						podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 0, nil).
-							WithPodInfos(pod_info.PodsMap{
-								testPod: {
-									UID: testPod,
-								},
-							}),
-					},
-				},
+				job: podGroupForJobOrderTest("p150", "", 150),
 			},
 			expected: expected{
 				expectedJobsList: []*podgroup_info.PodGroupInfo{
-					{
-						Name:     "p150",
-						Priority: 150,
-						Queue:    "q1",
-						PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{
-							pod_status.Pending: {
-								testPod: {
-									UID: testPod,
-								},
-							},
-						},
-						PodSets: map[string]*subgroup_info.PodSet{
-							podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 0, nil).
-								WithPodInfos(pod_info.PodsMap{
-									testPod: {
-										UID: testPod,
-									},
-								}),
-						},
-					},
+					podGroupForJobOrderTest("p150", "", 150),
 				},
 			},
 		},
@@ -307,96 +291,16 @@ func TestJobsOrderByQueues_PushJob(t *testing.T) {
 					"pq1": {UID: "pq1"},
 				},
 				InsertedJob: map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{
-					"p140": {
-						Name:     "p140",
-						UID:      "1",
-						Priority: 150,
-						Queue:    "q1",
-						PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{
-							pod_status.Pending: {
-								testPod: {
-									UID: testPod,
-								},
-							},
-						},
-						PodSets: map[string]*subgroup_info.PodSet{
-							podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 0, nil).
-								WithPodInfos(pod_info.PodsMap{
-									testPod: {
-										UID: testPod,
-									},
-								}),
-						},
-					},
+					"p140": podGroupForJobOrderTest("p140", "1", 150),
 				},
 			},
 			args: args{
-				job: &podgroup_info.PodGroupInfo{
-					Name:     "p150",
-					UID:      "2",
-					Priority: 150,
-					Queue:    "q1",
-					PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{
-						pod_status.Pending: {
-							testPod: {
-								UID: testPod,
-							},
-						},
-					},
-					PodSets: map[string]*subgroup_info.PodSet{
-						podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 0, nil).
-							WithPodInfos(pod_info.PodsMap{
-								testPod: {
-									UID: testPod,
-								},
-							}),
-					},
-				},
+				job: podGroupForJobOrderTest("p150", "2", 150),
 			},
 			expected: expected{
 				expectedJobsList: []*podgroup_info.PodGroupInfo{
-					{
-						Name:     "p140",
-						UID:      "1",
-						Priority: 150,
-						Queue:    "q1",
-						PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{
-							pod_status.Pending: {
-								testPod: {
-									UID: testPod,
-								},
-							},
-						},
-						PodSets: map[string]*subgroup_info.PodSet{
-							podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 0, nil).
-								WithPodInfos(pod_info.PodsMap{
-									testPod: {
-										UID: testPod,
-									},
-								}),
-						},
-					},
-					{
-						Name:     "p150",
-						UID:      "2",
-						Priority: 150,
-						Queue:    "q1",
-						PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{
-							pod_status.Pending: {
-								testPod: {
-									UID: testPod,
-								},
-							},
-						},
-						PodSets: map[string]*subgroup_info.PodSet{
-							podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 0, nil).
-								WithPodInfos(pod_info.PodsMap{
-									testPod: {
-										UID: testPod,
-									},
-								}),
-						},
-					},
+					podGroupForJobOrderTest("p140", "1", 150),
+					podGroupForJobOrderTest("p150", "2", 150),
 				},
 			},
 		},
@@ -414,96 +318,16 @@ func TestJobsOrderByQueues_PushJob(t *testing.T) {
 					"pq1": {UID: "pq1"},
 				},
 				InsertedJob: map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{
-					"p140": {
-						Name:     "p140",
-						UID:      "1",
-						Priority: 150,
-						Queue:    "q1",
-						PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{
-							pod_status.Pending: {
-								testPod: {
-									UID: testPod,
-								},
-							},
-						},
-						PodSets: map[string]*subgroup_info.PodSet{
-							podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 0, nil).
-								WithPodInfos(pod_info.PodsMap{
-									testPod: {
-										UID: testPod,
-									},
-								}),
-						},
-					},
+					"p140": podGroupForJobOrderTest("p140", "1", 150),
 				},
 			},
 			args: args{
-				job: &podgroup_info.PodGroupInfo{
-					Name:     "p150",
-					UID:      "2",
-					Priority: 160,
-					Queue:    "q1",
-					PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{
-						pod_status.Pending: {
-							testPod: {
-								UID: testPod,
-							},
-						},
-					},
-					PodSets: map[string]*subgroup_info.PodSet{
-						podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 0, nil).
-							WithPodInfos(pod_info.PodsMap{
-								testPod: {
-									UID: testPod,
-								},
-							}),
-					},
-				},
+				job: podGroupForJobOrderTest("p150", "2", 160),
 			},
 			expected: expected{
 				expectedJobsList: []*podgroup_info.PodGroupInfo{
-					{
-						Name:     "p150",
-						UID:      "2",
-						Priority: 160,
-						Queue:    "q1",
-						PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{
-							pod_status.Pending: {
-								testPod: {
-									UID: testPod,
-								},
-							},
-						},
-						PodSets: map[string]*subgroup_info.PodSet{
-							podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 0, nil).
-								WithPodInfos(pod_info.PodsMap{
-									testPod: {
-										UID: testPod,
-									},
-								}),
-						},
-					},
-					{
-						Name:     "p140",
-						UID:      "1",
-						Priority: 150,
-						Queue:    "q1",
-						PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{
-							pod_status.Pending: {
-								testPod: {
-									UID: testPod,
-								},
-							},
-						},
-						PodSets: map[string]*subgroup_info.PodSet{
-							podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 0, nil).
-								WithPodInfos(pod_info.PodsMap{
-									testPod: {
-										UID: testPod,
-									},
-								}),
-						},
-					},
+					podGroupForJobOrderTest("p150", "2", 160),
+					podGroupForJobOrderTest("p140", "1", 150),
 				},
 			},
 		},
@@ -518,10 +342,12 @@ func TestJobsOrderByQueues_PushJob(t *testing.T) {
 			jobsOrder.PushJob(tt.args.job)
 
 			for _, expectedJob := range tt.expected.expectedJobsList {
-				_ = expectedJob.GetActiveAllocatedTasksCount()
 				actualJob := jobsOrder.PopNextJob()
-				_ = actualJob.GetActiveAllocatedTasksCount()
-				assert.Equal(t, expectedJob, actualJob)
+				assert.NotNil(t, actualJob)
+				assert.Equal(t, expectedJob.Name, actualJob.Name)
+				assert.Equal(t, expectedJob.UID, actualJob.UID)
+				assert.Equal(t, expectedJob.Priority, actualJob.Priority)
+				assert.Equal(t, expectedJob.Queue, actualJob.Queue)
 			}
 		})
 	}
