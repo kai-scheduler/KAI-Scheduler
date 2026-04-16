@@ -74,7 +74,7 @@ func (su *defaultStatusUpdater) updatePod(
 
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			log.StatusUpdaterLogger.V(5).Infof("Pod %s/%s not found, skipping status update: %v",
+			log.StatusUpdaterLogger.V(5).Infof("Pod %s/%s not found, skipping pod patch: %v",
 				pod.Namespace, pod.Name, err)
 			su.inFlightPods.Delete(key)
 			return
@@ -114,7 +114,7 @@ func (su *defaultStatusUpdater) updatePodGroup(
 
 	if statusErr != nil || patchErr != nil {
 		if apierrors.IsNotFound(statusErr) || apierrors.IsNotFound(patchErr) {
-			log.StatusUpdaterLogger.V(5).Infof("Pod group %s/%s not found, skipping status update: %v",
+			log.StatusUpdaterLogger.V(5).Infof("Pod group %s/%s not found, skipping podgroup update: %v",
 				podGroup.Namespace, podGroup.Name, statusErr)
 			su.inFlightPodGroups.Delete(key)
 			return
