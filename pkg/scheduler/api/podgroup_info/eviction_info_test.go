@@ -331,6 +331,13 @@ func TestGetTasksToEvict_HierarchicalTree(t *testing.T) {
 			tasksToEvict, hasMoreTasks := GetTasksToEvict(tt.job, subGroupChildOrderFn, tasksOrderFn)
 			assert.Equal(t, tt.expectedHasMoreTasks, hasMoreTasks)
 			assert.Equal(t, tt.numExpectTasks, len(tasksToEvict))
+			if tt.expectedTaskNames != nil {
+				gotTaskNames := make([]string, 0, len(tasksToEvict))
+				for _, task := range tasksToEvict {
+					gotTaskNames = append(gotTaskNames, task.Name)
+				}
+				assert.ElementsMatch(t, tt.expectedTaskNames, gotTaskNames)
+			}
 		})
 	}
 }

@@ -87,6 +87,9 @@ func collectFromChildInGangPhase(
 ) []*pod_info.PodInfo {
 	switch c := child.(type) {
 	case *subgroup_info.SubGroupSet:
+		if c.IsMinRequirementSatisfied() {
+			return nil // already satisfied; skip in parent gang phase
+		}
 		return collectTasksFromSubGroupSet(c, subGroupOrderFn, taskOrderFn, isRealAllocation)
 	case *subgroup_info.PodSet:
 		if c.GetNumActiveAllocatedTasks() >= int(c.GetMinAvailable()) {

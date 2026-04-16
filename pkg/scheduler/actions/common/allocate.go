@@ -290,7 +290,7 @@ func filterTasksForPodSets(podSets map[string]*subgroup_info.PodSet, tasks []*po
 }
 
 func orderedChildren(ssn *framework.Session, subGroupChildren []subgroup_info.SubGroupChild) []subgroup_info.SubGroupChild {
-	sort.Slice(subGroupChildren, func(i, j int) bool {
+	sort.SliceStable(subGroupChildren, func(i, j int) bool {
 		return ssn.SubGroupOrderFn(subGroupChildren[i], subGroupChildren[j])
 	})
 	return subGroupChildren
