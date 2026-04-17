@@ -16,6 +16,7 @@ import (
 var _ = DescribeHierarchyLevelFairnessSpecs()
 var _ = DescribeReclaimDRASpecs()
 var _ = DescribeReclaimDistributedSpecs()
+var _ = DescribeReclaimMinSubGroupSpecs()
 
 func TestReclaim(t *testing.T) {
 	utils.SetLogger()
