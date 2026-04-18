@@ -14,28 +14,28 @@ import (
 )
 
 type Options struct {
-	SchedulerName                                   string
-	ResourceReservationNamespace                    string
-	ResourceReservationServiceAccount               string
-	ResourceReservationPodImage                     string
-	ResourceReservationAppLabel                     string
-	ResourceReservationAllocationTimeout            int
+	SchedulerName                               string
+	ResourceReservationNamespace                string
+	ResourceReservationServiceAccount           string
+	ResourceReservationPodImage                 string
+	ResourceReservationAppLabel                 string
+	ResourceReservationAllocationTimeout        int
 	ResourceReservationPodResources             flags.JSONFlag[corev1.ResourceRequirements]
 	ResourceReservationPodSecurityContext       flags.JSONFlag[corev1.PodSecurityContext]
 	ResourceReservationContainerSecurityContext flags.JSONFlag[corev1.SecurityContext]
-	ScalingPodNamespace                             string
-	QPS                                             float64
-	Burst                                           int
-	MaxConcurrentReconciles                         int
-	RateLimiterBaseDelaySeconds                     int
-	RateLimiterMaxDelaySeconds                      int
-	EnableLeaderElection                            bool
-	MetricsAddr                                     string
-	ProbeAddr                                       string
-	FakeGPUNodes                                    bool
-	GpuCdiEnabled                                   bool
-	VolumeBindingTimeoutSeconds                     int
-	RuntimeClassName                                string
+	ScalingPodNamespace                         string
+	QPS                                         float64
+	Burst                                       int
+	MaxConcurrentReconciles                     int
+	RateLimiterBaseDelaySeconds                 int
+	RateLimiterMaxDelaySeconds                  int
+	EnableLeaderElection                        bool
+	MetricsAddr                                 string
+	ProbeAddr                                   string
+	FakeGPUNodes                                bool
+	GpuCdiEnabled                               bool
+	VolumeBindingTimeoutSeconds                 int
+	RuntimeClassName                            string
 }
 
 func InitOptions(fs *pflag.FlagSet) *Options {

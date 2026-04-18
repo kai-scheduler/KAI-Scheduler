@@ -47,17 +47,17 @@ const (
 )
 
 type service struct {
-	fakeGPuNodes             bool
-	kubeClient               client.WithWatch
-	reservationPodImage      string
-	allocationTimeout        time.Duration
-	gpuGroupMutex            *group_mutex.GroupMutex
-	namespace                string
-	serviceAccountName       string
-	appLabelValue            string
-	scalingPodNamespace      string
-	runtimeClassName         string
-	podResources             *v1.ResourceRequirements
+	fakeGPuNodes                        bool
+	kubeClient                          client.WithWatch
+	reservationPodImage                 string
+	allocationTimeout                   time.Duration
+	gpuGroupMutex                       *group_mutex.GroupMutex
+	namespace                           string
+	serviceAccountName                  string
+	appLabelValue                       string
+	scalingPodNamespace                 string
+	runtimeClassName                    string
+	podResources                        *v1.ResourceRequirements
 	reservationPodSecurityContext       *v1.PodSecurityContext
 	reservationContainerSecurityContext *v1.SecurityContext
 }
@@ -77,17 +77,17 @@ func NewService(
 	reservationContainerSecurityContext *v1.SecurityContext,
 ) *service {
 	return &service{
-		fakeGPuNodes:                       fakeGPuNodes,
-		kubeClient:                         kubeClient,
-		reservationPodImage:                reservationPodImage,
-		allocationTimeout:                  allocationTimeout,
-		gpuGroupMutex:                      group_mutex.NewGroupMutex(),
-		namespace:                          namespace,
-		serviceAccountName:                 serviceAccountName,
-		appLabelValue:                      appLabelValue,
-		scalingPodNamespace:                scalingPodNamespace,
-		runtimeClassName:                   runtimeClassName,
-		podResources:                       podResources,
+		fakeGPuNodes:                        fakeGPuNodes,
+		kubeClient:                          kubeClient,
+		reservationPodImage:                 reservationPodImage,
+		allocationTimeout:                   allocationTimeout,
+		gpuGroupMutex:                       group_mutex.NewGroupMutex(),
+		namespace:                           namespace,
+		serviceAccountName:                  serviceAccountName,
+		appLabelValue:                       appLabelValue,
+		scalingPodNamespace:                 scalingPodNamespace,
+		runtimeClassName:                    runtimeClassName,
+		podResources:                        podResources,
 		reservationPodSecurityContext:       reservationPodSecurityContext,
 		reservationContainerSecurityContext: reservationContainerSecurityContext,
 	}
