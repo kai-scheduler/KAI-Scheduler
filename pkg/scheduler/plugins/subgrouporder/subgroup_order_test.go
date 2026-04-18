@@ -22,17 +22,17 @@ type podSetSpec struct {
 func TestSubGroupOrderFn(t *testing.T) {
 	tests := []struct {
 		name  string
-		left  subgroup_info.SubGroupChild
-		right subgroup_info.SubGroupChild
+		left  subgroup_info.SubGroupMember
+		right subgroup_info.SubGroupMember
 		want  int
 	}{
 		{
-			name: "both below threshold (nil minSubGroup, no children satisfied)",
-			left: makeSubGroupSetWithPodSetChildren("l", nil, []podSetSpec{
+			name: "both below threshold (nil minSubGroup, no members satisfied)",
+			left: makeSubGroupSetWithPodSetMembers("l", nil, []podSetSpec{
 				{minAvail: 3, numAlloc: 1},
 				{minAvail: 3, numAlloc: 0},
 			}),
-			right: makeSubGroupSetWithPodSetChildren("r", nil, []podSetSpec{
+			right: makeSubGroupSetWithPodSetMembers("r", nil, []podSetSpec{
 				{minAvail: 3, numAlloc: 2},
 				{minAvail: 3, numAlloc: 1},
 			}),
@@ -40,11 +40,11 @@ func TestSubGroupOrderFn(t *testing.T) {
 		},
 		{
 			name: "left below threshold, right above",
-			left: makeSubGroupSetWithPodSetChildren("l", nil, []podSetSpec{
+			left: makeSubGroupSetWithPodSetMembers("l", nil, []podSetSpec{
 				{minAvail: 3, numAlloc: 0},
 				{minAvail: 3, numAlloc: 0},
 			}),
-			right: makeSubGroupSetWithPodSetChildren("r", nil, []podSetSpec{
+			right: makeSubGroupSetWithPodSetMembers("r", nil, []podSetSpec{
 				{minAvail: 3, numAlloc: 5},
 				{minAvail: 3, numAlloc: 4},
 			}),
@@ -52,11 +52,11 @@ func TestSubGroupOrderFn(t *testing.T) {
 		},
 		{
 			name: "right below threshold, left above",
-			left: makeSubGroupSetWithPodSetChildren("l", nil, []podSetSpec{
+			left: makeSubGroupSetWithPodSetMembers("l", nil, []podSetSpec{
 				{minAvail: 3, numAlloc: 5},
 				{minAvail: 3, numAlloc: 4},
 			}),
-			right: makeSubGroupSetWithPodSetChildren("r", nil, []podSetSpec{
+			right: makeSubGroupSetWithPodSetMembers("r", nil, []podSetSpec{
 				{minAvail: 3, numAlloc: 0},
 				{minAvail: 3, numAlloc: 0},
 			}),
@@ -64,8 +64,8 @@ func TestSubGroupOrderFn(t *testing.T) {
 		},
 		{
 			name: "both satisfied, left has lower satisfaction ratio",
-			// left: minSubGroup=2, 2 of 3 children satisfied → ratio=1.0
-			// right: minSubGroup=2, 3 of 3 children satisfied → ratio=1.5
+			// left: minSubGroup=2, 2 of 3 members satisfied → ratio=1.0
+			// right: minSubGroup=2, 3 of 3 members satisfied → ratio=1.5
 			left: func() *subgroup_info.SubGroupSet {
 				sgs := subgroup_info.NewSubGroupSet("l", nil)
 				sgs.SetMinSubGroup(ptr.To(int32(2)))
@@ -86,8 +86,8 @@ func TestSubGroupOrderFn(t *testing.T) {
 		},
 		{
 			name: "both satisfied, equal satisfaction ratio",
-			// left: minSubGroup=2, 4 satisfied → ratio=2.0
-			// right: minSubGroup=4, 8 satisfied → ratio=2.0
+			// left: minSubGroup=2, 4 members satisfied → ratio=2.0
+			// right: minSubGroup=4, 8 members satisfied → ratio=2.0
 			left: func() *subgroup_info.SubGroupSet {
 				sgs := subgroup_info.NewSubGroupSet("l", nil)
 				sgs.SetMinSubGroup(ptr.To(int32(2)))
@@ -108,37 +108,37 @@ func TestSubGroupOrderFn(t *testing.T) {
 		},
 		{
 			name: "left optional (minSubGroup=0), right required and satisfied",
-			left: makeSubGroupSetWithPodSetChildren("l", ptr.To(int32(0)), []podSetSpec{}),
-			right: makeSubGroupSetWithPodSetChildren("r", ptr.To(int32(2)), []podSetSpec{
+			left: makeSubGroupSetWithPodSetMembers("l", ptr.To(int32(0)), []podSetSpec{}),
+			right: makeSubGroupSetWithPodSetMembers("r", ptr.To(int32(2)), []podSetSpec{
 				{minAvail: 3, numAlloc: 5},
 				{minAvail: 3, numAlloc: 4},
 			}),
 			want: rPrioritized,
 		},
 		{
-			name: "nested SubGroupSets: left's child not satisfied, right's child satisfied",
+			name: "nested SubGroupSets: left's member not satisfied, right's member satisfied",
 			left: func() *subgroup_info.SubGroupSet {
-				// outer left: minSubGroup=1, one child SubGroupSet not satisfied
-				// child: two PodSets, only one satisfied
-				child := makeSubGroupSetWithPodSetChildren("l-child", nil, []podSetSpec{
+				// outer left: minSubGroup=1, one member SubGroupSet not satisfied
+				// member: two PodSets, only one satisfied
+				member := makeSubGroupSetWithPodSetMembers("l-member", nil, []podSetSpec{
 					{minAvail: 2, numAlloc: 3},
 					{minAvail: 2, numAlloc: 0},
 				})
 				sgs := subgroup_info.NewSubGroupSet("l", nil)
 				sgs.SetMinSubGroup(ptr.To(int32(1)))
-				sgs.AddSubGroup(child)
+				sgs.AddSubGroup(member)
 				return sgs
 			}(),
 			right: func() *subgroup_info.SubGroupSet {
-				// outer right: minSubGroup=1, one child SubGroupSet satisfied
-				// child: two PodSets both satisfied
-				child := makeSubGroupSetWithPodSetChildren("r-child", nil, []podSetSpec{
+				// outer right: minSubGroup=1, one member SubGroupSet satisfied
+				// member: two PodSets both satisfied
+				member := makeSubGroupSetWithPodSetMembers("r-member", nil, []podSetSpec{
 					{minAvail: 2, numAlloc: 3},
 					{minAvail: 2, numAlloc: 4},
 				})
 				sgs := subgroup_info.NewSubGroupSet("r", nil)
 				sgs.SetMinSubGroup(ptr.To(int32(1)))
-				sgs.AddSubGroup(child)
+				sgs.AddSubGroup(member)
 				return sgs
 			}(),
 			want: lPrioritized,
@@ -208,12 +208,12 @@ func makeSubGroupInfoWithAllocated(minAvailable int32, numAllocated int, name st
 	return sg
 }
 
-func makeSubGroupSetWithPodSetChildren(name string, minSubGroup *int32, childSpecs []podSetSpec) *subgroup_info.SubGroupSet {
+func makeSubGroupSetWithPodSetMembers(name string, minSubGroup *int32, memberSpecs []podSetSpec) *subgroup_info.SubGroupSet {
 	sgs := subgroup_info.NewSubGroupSet(name, nil)
 	sgs.SetMinSubGroup(minSubGroup)
-	for i, spec := range childSpecs {
-		childName := fmt.Sprintf("%s-child-%d", name, i)
-		ps := makeSubGroupInfoWithAllocated(spec.minAvail, spec.numAlloc, childName)
+	for i, spec := range memberSpecs {
+		memberName := fmt.Sprintf("%s-member-%d", name, i)
+		ps := makeSubGroupInfoWithAllocated(spec.minAvail, spec.numAlloc, memberName)
 		sgs.AddPodSet(ps)
 	}
 	return sgs

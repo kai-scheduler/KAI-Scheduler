@@ -401,7 +401,7 @@ func newPodGroupInfoWithRootPodSets(podsets ...*subgroup_info.PodSet) *PodGroupI
 	return &PodGroupInfo{
 		UID:             "test-pg",
 		RootSubGroupSet: root,
-		PodSets:         root.GetAllPodSets(),
+		PodSets:         root.GetDescendantPodSets(),
 	}
 }
 
@@ -955,7 +955,7 @@ func TestPodGroupInfo_GetSchedulingConstraintsSignature(t *testing.T) {
 				pgi := &PodGroupInfo{
 					UID:             "pg-1",
 					RootSubGroupSet: rootSubGroupSet,
-					PodSets:         rootSubGroupSet.GetAllPodSets(),
+					PodSets:         rootSubGroupSet.GetDescendantPodSets(),
 				}
 				podSet.AssignTask(createPendingTask("pod-1"))
 				return pgi
@@ -969,7 +969,7 @@ func TestPodGroupInfo_GetSchedulingConstraintsSignature(t *testing.T) {
 				pgi := &PodGroupInfo{
 					UID:             "pg-2",
 					RootSubGroupSet: rootSubGroupSet,
-					PodSets:         rootSubGroupSet.GetAllPodSets(),
+					PodSets:         rootSubGroupSet.GetDescendantPodSets(),
 				}
 				podSet.AssignTask(createPendingTask("pod-1"))
 				return pgi
@@ -990,7 +990,7 @@ func TestPodGroupInfo_GetSchedulingConstraintsSignature(t *testing.T) {
 				pgi := &PodGroupInfo{
 					UID:             "pg-1",
 					RootSubGroupSet: rootSubGroupSet,
-					PodSets:         rootSubGroupSet.GetAllPodSets(),
+					PodSets:         rootSubGroupSet.GetDescendantPodSets(),
 				}
 				podSet.AssignTask(createPendingTask("pod-1"))
 				return pgi
@@ -1004,7 +1004,7 @@ func TestPodGroupInfo_GetSchedulingConstraintsSignature(t *testing.T) {
 				pgi := &PodGroupInfo{
 					UID:             "pg-2",
 					RootSubGroupSet: rootSubGroupSet,
-					PodSets:         rootSubGroupSet.GetAllPodSets(),
+					PodSets:         rootSubGroupSet.GetDescendantPodSets(),
 				}
 				podSet.AssignTask(createPendingTask("pod-1"))
 				return pgi
@@ -1029,7 +1029,7 @@ func TestPodGroupInfo_GetSchedulingConstraintsSignature(t *testing.T) {
 				pgi := &PodGroupInfo{
 					UID:             "pg-1",
 					RootSubGroupSet: rootSubGroupSet,
-					PodSets:         rootSubGroupSet.GetAllPodSets(),
+					PodSets:         rootSubGroupSet.GetDescendantPodSets(),
 				}
 				podSet.AssignTask(createPendingTask("pod-1"))
 				return pgi
@@ -1046,7 +1046,7 @@ func TestPodGroupInfo_GetSchedulingConstraintsSignature(t *testing.T) {
 				pgi := &PodGroupInfo{
 					UID:             "pg-2",
 					RootSubGroupSet: rootSubGroupSet,
-					PodSets:         rootSubGroupSet.GetAllPodSets(),
+					PodSets:         rootSubGroupSet.GetDescendantPodSets(),
 				}
 				podSet.AssignTask(createPendingTask("pod-1"))
 				return pgi
@@ -1072,7 +1072,7 @@ func TestPodGroupInfo_GetSchedulingConstraintsSignature(t *testing.T) {
 				pgi := &PodGroupInfo{
 					UID:             "pg-1",
 					RootSubGroupSet: rootSubGroupSet,
-					PodSets:         rootSubGroupSet.GetAllPodSets(),
+					PodSets:         rootSubGroupSet.GetDescendantPodSets(),
 				}
 				podSet.AssignTask(createPendingTask("pod-1"))
 				return pgi
@@ -1089,7 +1089,7 @@ func TestPodGroupInfo_GetSchedulingConstraintsSignature(t *testing.T) {
 				pgi := &PodGroupInfo{
 					UID:             "pg-2",
 					RootSubGroupSet: rootSubGroupSet,
-					PodSets:         rootSubGroupSet.GetAllPodSets(),
+					PodSets:         rootSubGroupSet.GetDescendantPodSets(),
 				}
 				podSet.AssignTask(createPendingTask("pod-1"))
 				return pgi
@@ -1114,7 +1114,7 @@ func TestPodGroupInfo_GetSchedulingConstraintsSignature(t *testing.T) {
 				pgi := &PodGroupInfo{
 					UID:             "pg-1",
 					RootSubGroupSet: rootSubGroupSet,
-					PodSets:         rootSubGroupSet.GetAllPodSets(),
+					PodSets:         rootSubGroupSet.GetDescendantPodSets(),
 				}
 				podSet.AssignTask(createPendingTask("pod-1"))
 				return pgi
@@ -1131,7 +1131,7 @@ func TestPodGroupInfo_GetSchedulingConstraintsSignature(t *testing.T) {
 				pgi := &PodGroupInfo{
 					UID:             "pg-2",
 					RootSubGroupSet: rootSubGroupSet,
-					PodSets:         rootSubGroupSet.GetAllPodSets(),
+					PodSets:         rootSubGroupSet.GetDescendantPodSets(),
 				}
 				podSet.AssignTask(createPendingTask("pod-1"))
 				return pgi
@@ -1160,7 +1160,7 @@ func TestPodGroupInfo_GetSchedulingConstraintsSignature(t *testing.T) {
 				pgi := &PodGroupInfo{
 					UID:             "pg-1",
 					RootSubGroupSet: rootSubGroupSet,
-					PodSets:         rootSubGroupSet.GetAllPodSets(),
+					PodSets:         rootSubGroupSet.GetDescendantPodSets(),
 				}
 				podSet.AssignTask(createPendingTask("pod-1"))
 				return pgi
@@ -1180,7 +1180,7 @@ func TestPodGroupInfo_GetSchedulingConstraintsSignature(t *testing.T) {
 				pgi := &PodGroupInfo{
 					UID:             "pg-2",
 					RootSubGroupSet: rootSubGroupSet,
-					PodSets:         rootSubGroupSet.GetAllPodSets(),
+					PodSets:         rootSubGroupSet.GetDescendantPodSets(),
 				}
 				podSet.AssignTask(createPendingTask("pod-1"))
 				return pgi
@@ -1209,7 +1209,7 @@ func TestPodGroupInfo_GetSchedulingConstraintsSignature(t *testing.T) {
 				pgi := &PodGroupInfo{
 					UID:             "pg-1",
 					RootSubGroupSet: rootSubGroupSet,
-					PodSets:         rootSubGroupSet.GetAllPodSets(),
+					PodSets:         rootSubGroupSet.GetDescendantPodSets(),
 				}
 				podSet.AssignTask(createPendingTask("pod-1"))
 				return pgi
@@ -1229,7 +1229,7 @@ func TestPodGroupInfo_GetSchedulingConstraintsSignature(t *testing.T) {
 				pgi := &PodGroupInfo{
 					UID:             "pg-2",
 					RootSubGroupSet: rootSubGroupSet,
-					PodSets:         rootSubGroupSet.GetAllPodSets(),
+					PodSets:         rootSubGroupSet.GetDescendantPodSets(),
 				}
 				podSet.AssignTask(createPendingTask("pod-1"))
 				return pgi
@@ -1252,7 +1252,7 @@ func TestPodGroupInfo_GetSchedulingConstraintsSignature(t *testing.T) {
 				pgi := &PodGroupInfo{
 					UID:             "pg-1",
 					RootSubGroupSet: rootSubGroupSet,
-					PodSets:         rootSubGroupSet.GetAllPodSets(),
+					PodSets:         rootSubGroupSet.GetDescendantPodSets(),
 				}
 				podSet.AssignTask(createPendingTask("pod-1"))
 				podSet.AssignTask(createPendingTask("pod-2")) // Extra pending pod
@@ -1266,7 +1266,7 @@ func TestPodGroupInfo_GetSchedulingConstraintsSignature(t *testing.T) {
 				pgi := &PodGroupInfo{
 					UID:             "pg-2",
 					RootSubGroupSet: rootSubGroupSet,
-					PodSets:         rootSubGroupSet.GetAllPodSets(),
+					PodSets:         rootSubGroupSet.GetDescendantPodSets(),
 				}
 				podSet.AssignTask(createPendingTask("pod-1"))
 				return pgi
@@ -1289,7 +1289,7 @@ func TestPodGroupInfo_GetSchedulingConstraintsSignature(t *testing.T) {
 				pgi := &PodGroupInfo{
 					UID:             "pg-1",
 					RootSubGroupSet: rootSubGroupSet,
-					PodSets:         rootSubGroupSet.GetAllPodSets(),
+					PodSets:         rootSubGroupSet.GetDescendantPodSets(),
 				}
 				podSet.AssignTask(createPendingTask("pod-1"))
 				podSet.AssignTask(createRunningTask("pod-2")) // Extra allocated pod
@@ -1303,7 +1303,7 @@ func TestPodGroupInfo_GetSchedulingConstraintsSignature(t *testing.T) {
 				pgi := &PodGroupInfo{
 					UID:             "pg-2",
 					RootSubGroupSet: rootSubGroupSet,
-					PodSets:         rootSubGroupSet.GetAllPodSets(),
+					PodSets:         rootSubGroupSet.GetDescendantPodSets(),
 				}
 				podSet.AssignTask(createPendingTask("pod-1"))
 				return pgi
@@ -1331,7 +1331,7 @@ func TestPodGroupInfo_GetSchedulingConstraintsSignature(t *testing.T) {
 				pgi := &PodGroupInfo{
 					UID:             "pg-1",
 					RootSubGroupSet: rootSubGroupSet,
-					PodSets:         rootSubGroupSet.GetAllPodSets(),
+					PodSets:         rootSubGroupSet.GetDescendantPodSets(),
 				}
 				podSet1.AssignTask(createPendingTask("pod-1")) // Pod in podset-1
 				return pgi
@@ -1348,7 +1348,7 @@ func TestPodGroupInfo_GetSchedulingConstraintsSignature(t *testing.T) {
 				pgi := &PodGroupInfo{
 					UID:             "pg-2",
 					RootSubGroupSet: rootSubGroupSet,
-					PodSets:         rootSubGroupSet.GetAllPodSets(),
+					PodSets:         rootSubGroupSet.GetDescendantPodSets(),
 				}
 				podSet2.AssignTask(createPendingTask("pod-1")) // Same pod but in podset-2
 				return pgi
@@ -1372,7 +1372,7 @@ func TestPodGroupInfo_GetSchedulingConstraintsSignature(t *testing.T) {
 				pgi := &PodGroupInfo{
 					UID:             "pg-1",
 					RootSubGroupSet: rootSubGroupSet,
-					PodSets:         rootSubGroupSet.GetAllPodSets(),
+					PodSets:         rootSubGroupSet.GetDescendantPodSets(),
 				}
 				podSet.AssignTask(createPendingTask("pod-1"))
 				return pgi
@@ -1387,7 +1387,7 @@ func TestPodGroupInfo_GetSchedulingConstraintsSignature(t *testing.T) {
 				pgi := &PodGroupInfo{
 					UID:             "pg-2",
 					RootSubGroupSet: rootSubGroupSet,
-					PodSets:         rootSubGroupSet.GetAllPodSets(),
+					PodSets:         rootSubGroupSet.GetDescendantPodSets(),
 				}
 				podSet.AssignTask(createPendingTask("pod-1"))
 				return pgi

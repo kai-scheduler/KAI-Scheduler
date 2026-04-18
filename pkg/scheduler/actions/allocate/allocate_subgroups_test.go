@@ -652,7 +652,7 @@ func getAllocationSubGroupsTestsMetadata() []integration_tests_utils.TestTopolog
 							groupAB.AddPodSet(subgroup_info.NewPodSet("sub-b", 1, nil))
 							root.AddSubGroup(groupAB)
 
-							// group-cd is unsatisfied: minSubGroup=nil requires both children, none running
+							// group-cd is unsatisfied: minSubGroup=nil requires both members, none running
 							groupCD := subgroup_info.NewSubGroupSet("group-cd", nil)
 							groupCD.AddPodSet(subgroup_info.NewPodSet("sub-c", 1, nil))
 							groupCD.AddPodSet(subgroup_info.NewPodSet("sub-d", 1, nil))
@@ -716,7 +716,7 @@ func getAllocationSubGroupsTestsMetadata() []integration_tests_utils.TestTopolog
 						NumberOfCacheBinds: 3,
 					},
 				},
-				// group-cd (unsatisfied: 0 of 2 children running) is ordered before group-ab
+				// group-cd (unsatisfied: 0 of 2 members running) is ordered before group-ab
 				// (satisfied via minSubGroup=1: sub-a meets the threshold).
 				// With 3 free GPUs, each of sub-b, sub-c and sub-d gets its one minimum task bound.
 				TaskExpectedResults: map[string]test_utils.TestExpectedResultBasic{
@@ -884,10 +884,10 @@ func getAllocationSubGroupsTestsMetadata() []integration_tests_utils.TestTopolog
 		},
 		{
 			TestTopologyBasic: test_utils.TestTopologyBasic{
-				Name: "Allocate job with minSubGroup - only the first required child is scheduled in the gang phase",
-				// Root has minSubGroup=1 so only one of its two children is required.
+				Name: "Allocate job with minSubGroup - only the first required member is scheduled in the gang phase",
+				// Root has minSubGroup=1 so only one of its two members is required.
 				// Both groups are equally unsatisfied (0/2); sort preserves insertion order so
-				// group-a (added first) is selected as the single required child.  Its two tasks
+				// group-a (added first) is selected as the single required member.  Its two tasks
 				// consume all 2 GPUs on the node, leaving group-b pending for a later call.
 				Jobs: []*jobs_fake.TestJobBasic{
 					{
@@ -974,9 +974,9 @@ func getAllocationSubGroupsTestsMetadata() []integration_tests_utils.TestTopolog
 		},
 		{
 			TestTopologyBasic: test_utils.TestTopologyBasic{
-				Name: "Allocate job with minSubGroup - elastic phase allocates one extra child",
+				Name: "Allocate job with minSubGroup - elastic phase allocates one extra member",
 				// Root (minSubGroup=1): group-a is already satisfied (sub-a1 running).
-				// Elastic phase selects group-b (next extra child). Only group-b tasks returned.
+				// Elastic phase selects group-b (next extra member). Only group-b tasks returned.
 				Jobs: []*jobs_fake.TestJobBasic{
 					{
 						Name:      "job0",

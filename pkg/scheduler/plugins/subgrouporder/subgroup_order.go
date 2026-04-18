@@ -31,11 +31,11 @@ func (sgop *subGroupOrderPlugin) OnSessionOpen(ssn *framework.Session) {
 // SubGroupOrderFn orders two subgroups by their allocation ratio (allocated/threshold).
 // For subGroupSets, it is the allocation ratio of the direct children. For podSets, it is the allocation ratio of the tasks.
 func SubGroupOrderFn(l, r interface{}) int {
-	lv := l.(subgroup_info.SubGroupChild)
-	rv := r.(subgroup_info.SubGroupChild)
+	lv := l.(subgroup_info.SubGroupMember)
+	rv := r.(subgroup_info.SubGroupMember)
 	return orderByAllocationRatio(
-		lv.GetNumActiveAllocatedDirectChildren(), lv.GetMinChildrenToSatisfy(),
-		rv.GetNumActiveAllocatedDirectChildren(), rv.GetMinChildrenToSatisfy(),
+		lv.GetNumActiveAllocatedMembers(), lv.GetMinMembersToSatisfy(),
+		rv.GetNumActiveAllocatedMembers(), rv.GetMinMembersToSatisfy(),
 	)
 }
 

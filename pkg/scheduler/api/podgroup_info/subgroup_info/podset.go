@@ -165,11 +165,11 @@ func (ps *PodSet) GetSchedulingConstraintsSignature() common_info.SchedulingCons
 	return ps.schedulingConstraintsSignature
 }
 
-func (ps *PodSet) GetNumActiveAllocatedDirectChildren() int {
+func (ps *PodSet) GetNumActiveAllocatedMembers() int {
 	return ps.GetNumActiveAllocatedTasks()
 }
 
-func (ps *PodSet) GetMinChildrenToSatisfy() int {
+func (ps *PodSet) GetMinMembersToSatisfy() int {
 	return int(ps.GetMinAvailable())
 }
 

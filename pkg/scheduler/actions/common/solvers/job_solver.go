@@ -156,27 +156,27 @@ func adjustSubGroupsMinAvailable(jobRepresentative *podgroup_info.PodGroupInfo) 
 }
 
 // adjustSubGroupsMinSubGroup recursively walks the SubGroupSet tree and sets each node's
-// minSubGroup to the number of direct children that have tasks in the partial clone.
+// minSubGroup to the number of direct members that have tasks in the partial clone.
 // This mirrors the minAvailable adjustment done on PodSets: the clone must only require
 // what it actually contains, so that gang-satisfaction checks work correctly on the partial job.
 // Returns true if this node contains any tasks.
 func adjustSubGroupsMinSubGroup(sgs *subgroup_info.SubGroupSet) bool {
-	nonEmptyChildren := int32(0)
-	for _, childPodSet := range sgs.GetChildPodSets() {
-		if len(childPodSet.GetPodInfos()) > 0 {
-			nonEmptyChildren++
+	nonEmptyMembers := int32(0)
+	for _, podSet := range sgs.GetDirectPodSets() {
+		if len(podSet.GetPodInfos()) > 0 {
+			nonEmptyMembers++
 		}
 	}
-	for _, childGroup := range sgs.GetChildGroups() {
-		if adjustSubGroupsMinSubGroup(childGroup) {
-			nonEmptyChildren++
+	for _, subGroupSet := range sgs.GetDirectSubgroupsSets() {
+		if adjustSubGroupsMinSubGroup(subGroupSet) {
+			nonEmptyMembers++
 		}
 	}
 	if minSubGroup := sgs.GetMinSubGroup(); minSubGroup != nil {
-		minSubGroup := min(*minSubGroup, nonEmptyChildren)
+		minSubGroup := min(*minSubGroup, nonEmptyMembers)
 		sgs.SetMinSubGroup(&minSubGroup)
 	}
-	return nonEmptyChildren > 0
+	return nonEmptyMembers > 0
 }
 
 func calcVictimNames(victimsTasks []*pod_info.PodInfo) []string {

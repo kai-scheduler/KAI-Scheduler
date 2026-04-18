@@ -603,7 +603,7 @@ func TestTopologyPlugin_subsetNodesFn(t *testing.T) {
 
 			// Call the function under test
 			subsets, err := plugin.subSetNodesFn(job, &job.RootSubGroupSet.SubGroupInfo,
-				job.RootSubGroupSet.GetAllPodSets(), podgroup_info.GetTasksToAllocate(job, nil, nil, true),
+				job.RootSubGroupSet.GetDescendantPodSets(), podgroup_info.GetTasksToAllocate(job, nil, nil, true),
 				maps.Values(nodesInfoMap))
 
 			// Check error
@@ -2190,7 +2190,7 @@ func TestTopologyPlugin_getJobAllocatableDomains(t *testing.T) {
 			tasksCount := len(tasks)
 
 			result, err := plugin.getJobAllocatableDomains(job, &job.RootSubGroupSet.SubGroupInfo,
-				job.RootSubGroupSet.GetAllPodSets(), tasksResources.ToVector(testVectorMap), tasksCount,
+				job.RootSubGroupSet.GetDescendantPodSets(), tasksResources.ToVector(testVectorMap), tasksCount,
 				tt.topologyTree)
 
 			// Check error

@@ -55,7 +55,7 @@ func allocateSubGroupSet(ssn *framework.Session, stmt *framework.Statement, node
 
 	for _, nodeSet := range nodeSets {
 		cp := stmt.Checkpoint()
-		if allocateChildrenOnNodes(ssn, stmt, nodeSet, job, subGroupSet, subtreeTasksToAllocate, isPipelineOnly) {
+		if allocateMembersOnNodes(ssn, stmt, nodeSet, job, subGroupSet, subtreeTasksToAllocate, isPipelineOnly) {
 			return true
 		}
 		if err := stmt.Rollback(cp); err != nil {
@@ -66,23 +66,23 @@ func allocateSubGroupSet(ssn *framework.Session, stmt *framework.Statement, node
 	return false
 }
 
-// allocateChildrenOnNodes allocates the tasks that appear in subtreeTasksToAllocate by traversing the subtree rooted at subGroupSet.
+// allocateMembersOnNodes allocates the tasks that appear in subtreeTasksToAllocate by traversing the subtree rooted at subGroupSet.
 // The tasks in subtreeTasksToAllocate are the required tasks to satisfy the next step of allocation - either part of the min required subgroup or extra tasks from a satisfied subgroup.
-// All children that do have tasks must succeed for this function to return true.
-func allocateChildrenOnNodes(ssn *framework.Session, stmt *framework.Statement, nodes node_info.NodeSet,
+// All members that do have tasks must succeed for this function to return true.
+func allocateMembersOnNodes(ssn *framework.Session, stmt *framework.Statement, nodes node_info.NodeSet,
 	job *podgroup_info.PodGroupInfo, subGroupSet *subgroup_info.SubGroupSet, subtreeTasksToAllocate []*pod_info.PodInfo,
 	isPipelineOnly bool,
 ) bool {
-	for _, child := range orderedChildren(ssn, subGroupSet.GetChildren()) {
-		switch child := child.(type) {
+	for _, memberGeneric := range orderedMembers(ssn, subGroupSet.GetMembers()) {
+		switch member := memberGeneric.(type) {
 		case *subgroup_info.PodSet:
-			if !allocatePodSet(ssn, stmt, nodes, job, child,
-				filterTasksForPodSet(child, subtreeTasksToAllocate), isPipelineOnly) {
+			if !allocatePodSet(ssn, stmt, nodes, job, member,
+				filterTasksForPodSet(member, subtreeTasksToAllocate), isPipelineOnly) {
 				return false
 			}
 		case *subgroup_info.SubGroupSet:
-			if !allocateSubGroupSet(ssn, stmt, nodes, job, child,
-				filterTasksForPodSets(child.GetAllPodSets(), subtreeTasksToAllocate), isPipelineOnly) {
+			if !allocateSubGroupSet(ssn, stmt, nodes, job, member,
+				filterTasksForPodSets(member.GetDescendantPodSets(), subtreeTasksToAllocate), isPipelineOnly) {
 				return false
 			}
 		}
@@ -92,7 +92,7 @@ func allocateChildrenOnNodes(ssn *framework.Session, stmt *framework.Statement, 
 
 // subtreePodSetsContainingTasks returns only the PodSets that are a descendant of the given SubGroupSet and that have at least one task in the list.
 func subtreePodSetsContainingTasks(subGroupSet *subgroup_info.SubGroupSet, tasks []*pod_info.PodInfo) map[string]*subgroup_info.PodSet {
-	allPodSets := subGroupSet.GetAllPodSets()
+	allPodSets := subGroupSet.GetDescendantPodSets()
 	result := make(map[string]*subgroup_info.PodSet)
 	for _, task := range tasks {
 		name := task.SubGroupName
@@ -289,9 +289,9 @@ func filterTasksForPodSets(podSets map[string]*subgroup_info.PodSet, tasks []*po
 	return result
 }
 
-func orderedChildren(ssn *framework.Session, subGroupChildren []subgroup_info.SubGroupChild) []subgroup_info.SubGroupChild {
-	sort.SliceStable(subGroupChildren, func(i, j int) bool {
-		return ssn.SubGroupOrderFn(subGroupChildren[i], subGroupChildren[j])
+func orderedMembers(ssn *framework.Session, subGroupMembers []subgroup_info.SubGroupMember) []subgroup_info.SubGroupMember {
+	sort.SliceStable(subGroupMembers, func(i, j int) bool {
+		return ssn.SubGroupOrderFn(subGroupMembers[i], subGroupMembers[j])
 	})
-	return subGroupChildren
+	return subGroupMembers
 }

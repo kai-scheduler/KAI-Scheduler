@@ -40,11 +40,11 @@ func TestNewSubGroupSet(t *testing.T) {
 	if sg.GetName() != "root" {
 		t.Errorf("expected name to be 'root', got %s", sg.GetName())
 	}
-	if len(sg.GetChildGroups()) != 0 {
-		t.Errorf("expected 0 child groups, got %d", len(sg.GetChildGroups()))
+	if len(sg.GetDirectSubgroupsSets()) != 0 {
+		t.Errorf("expected 0 child groups, got %d", len(sg.GetDirectSubgroupsSets()))
 	}
-	if len(sg.GetChildPodSets()) != 0 {
-		t.Errorf("expected 0 podsets, got %d", len(sg.GetChildPodSets()))
+	if len(sg.GetDirectPodSets()) != 0 {
+		t.Errorf("expected 0 podsets, got %d", len(sg.GetDirectPodSets()))
 	}
 }
 
@@ -52,7 +52,7 @@ func TestAddSubGroup(t *testing.T) {
 	parent := NewSubGroupSet("parent", nil)
 	child := NewSubGroupSet("child", nil)
 	parent.AddSubGroup(child)
-	groups := parent.GetChildGroups()
+	groups := parent.GetDirectSubgroupsSets()
 	if len(groups) != 1 {
 		t.Fatalf("expected 1 child group, got %d", len(groups))
 	}
@@ -65,7 +65,7 @@ func TestAddPodSet(t *testing.T) {
 	parent := NewSubGroupSet("parent", nil)
 	podSet := newTestPodSet("podset", 2)
 	parent.AddPodSet(podSet)
-	ps := parent.GetChildPodSets()
+	ps := parent.GetDirectPodSets()
 	if len(ps) != 1 {
 		t.Fatalf("expected 1 podset, got %d", len(ps))
 	}
@@ -87,7 +87,7 @@ func TestClone_OnlyPodSets(t *testing.T) {
 	if clone.GetName() != "root" {
 		t.Errorf("clone name mismatch: got %s", clone.GetName())
 	}
-	childPodSets := clone.GetChildPodSets()
+	childPodSets := clone.GetDirectPodSets()
 	if len(childPodSets) != 2 {
 		t.Fatalf("expected 2 podsets in clone, got %d", len(childPodSets))
 	}
@@ -113,14 +113,14 @@ func TestClone_WithSubGroupsAndPodSets(t *testing.T) {
 	if clone.GetName() != "root" {
 		t.Errorf("clone name mismatch: got %s", clone.GetName())
 	}
-	subgroups := clone.GetChildGroups()
+	subgroups := clone.GetDirectSubgroupsSets()
 	if len(subgroups) != 2 {
 		t.Fatalf("expected 2 subgroups in clone, got %d", len(subgroups))
 	}
 	found := false
 	for _, g := range subgroups {
 		if g.GetName() == "A" {
-			cps := g.GetChildPodSets()
+			cps := g.GetDirectPodSets()
 			if len(cps) != 1 || cps[0].GetName() != "x" {
 				t.Errorf("cloned group A's podsets incorrect")
 			}
@@ -168,7 +168,7 @@ func TestGetPodSets(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			sg, want := tt.build()
-			got := sg.GetAllPodSets()
+			got := sg.GetDescendantPodSets()
 			if len(got) != len(want) {
 				t.Errorf("expected %d podsets, got %d", len(want), len(got))
 			}
@@ -184,7 +184,7 @@ func TestGetPodSets(t *testing.T) {
 func TestGetMinChildrenToSatisfy(t *testing.T) {
 	t.Run("no_minSubGroup_empty", func(t *testing.T) {
 		sg := NewSubGroupSet("root", nil)
-		if got := sg.GetMinChildrenToSatisfy(); got != 0 {
+		if got := sg.GetMinMembersToSatisfy(); got != 0 {
 			t.Errorf("GetMinChildrenToSatisfy() = %d, want 0", got)
 		}
 	})
@@ -193,7 +193,7 @@ func TestGetMinChildrenToSatisfy(t *testing.T) {
 		root.AddSubGroup(NewSubGroupSet("a", nil))
 		root.AddSubGroup(NewSubGroupSet("b", nil))
 		root.AddPodSet(newTestPodSet("ps", 1))
-		if got := root.GetMinChildrenToSatisfy(); got != 3 {
+		if got := root.GetMinMembersToSatisfy(); got != 3 {
 			t.Errorf("GetMinChildrenToSatisfy() = %d, want 3", got)
 		}
 	})
@@ -203,7 +203,7 @@ func TestGetMinChildrenToSatisfy(t *testing.T) {
 		root.AddSubGroup(NewSubGroupSet("b", nil))
 		min := int32(1)
 		root.SetMinSubGroup(&min)
-		if got := root.GetMinChildrenToSatisfy(); got != 1 {
+		if got := root.GetMinMembersToSatisfy(); got != 1 {
 			t.Errorf("GetMinChildrenToSatisfy() = %d, want 1", got)
 		}
 	})

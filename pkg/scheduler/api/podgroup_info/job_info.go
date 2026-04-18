@@ -116,7 +116,7 @@ func NewPodGroupInfoWithVectorMap(uid common_info.PodGroupID, vectorMap *resourc
 			Stale:     false,
 		},
 		RootSubGroupSet: defaultSubGroupSet,
-		PodSets:         defaultSubGroupSet.GetAllPodSets(),
+		PodSets:         defaultSubGroupSet.GetDescendantPodSets(),
 
 		LastStartTimestamp:   nil,
 		activeAllocatedCount: ptr.To(0),
@@ -213,7 +213,7 @@ func (pgi *PodGroupInfo) setSubGroups(podGroup *enginev2alpha2.PodGroup) error {
 		return err
 	}
 	pgi.RootSubGroupSet = rootSubGroupSet
-	podSets := rootSubGroupSet.GetAllPodSets()
+	podSets := rootSubGroupSet.GetDescendantPodSets()
 	if len(podSets) > 0 {
 		pgi.PodSets = podSets
 	} else {
@@ -517,7 +517,7 @@ func (pgi *PodGroupInfo) CloneWithTasks(tasks []*pod_info.PodInfo) *PodGroupInfo
 	pgi.CreationTimestamp.DeepCopyInto(&info.CreationTimestamp)
 
 	info.RootSubGroupSet = pgi.RootSubGroupSet.Clone()
-	info.PodSets = info.RootSubGroupSet.GetAllPodSets()
+	info.PodSets = info.RootSubGroupSet.GetDescendantPodSets()
 
 	for _, task := range tasks {
 		info.AddTaskInfo(task.Clone())

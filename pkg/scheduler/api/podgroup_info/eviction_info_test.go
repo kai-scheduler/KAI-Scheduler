@@ -14,10 +14,10 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
 )
 
-func subGroupChildOrderFn(l, r interface{}) bool {
-	lChild := l.(subgroup_info.SubGroupChild)
-	rChild := r.(subgroup_info.SubGroupChild)
-	return lChild.GetName() < rChild.GetName()
+func subGroupMemberOrderFn(l, r interface{}) bool {
+	lMember := l.(subgroup_info.SubGroupMember)
+	rMember := r.(subgroup_info.SubGroupMember)
+	return lMember.GetName() < rMember.GetName()
 }
 
 func TestGetTasksToEvict_Table(t *testing.T) {
@@ -81,7 +81,7 @@ func TestGetTasksToEvict_Table(t *testing.T) {
 
 				return &PodGroupInfo{
 					RootSubGroupSet: root,
-					PodSets:         root.GetAllPodSets(),
+					PodSets:         root.GetDescendantPodSets(),
 				}
 			}(),
 			expectedHasMoreTasks: true,
@@ -146,16 +146,16 @@ func TestGetTasksToEvict_HierarchicalTree(t *testing.T) {
 
 				return &PodGroupInfo{
 					RootSubGroupSet: root,
-					PodSets:         root.GetAllPodSets(),
+					PodSets:         root.GetDescendantPodSets(),
 				}
 			}(),
 			expectedHasMoreTasks: true,
 			numExpectTasks:       1,
 		},
 		{
-			name: "Phase2_ElasticDirect_DropChildWhenMinSubGroupLessThanSatisfied",
+			name: "Phase2_ElasticDirect_DropMemberWhenMinSubGroupLessThanSatisfied",
 			job: func() *PodGroupInfo {
-				// Root with minSubGroup=1, 2 children PodSets both at their min
+				// Root with minSubGroup=1, 2 members PodSets both at their min
 				psA := subgroup_info.NewPodSet("ps-a", 1, nil)
 				psA.AssignTask(simpleTask("pod-1", "ps-a", pod_status.Running))
 
@@ -169,17 +169,17 @@ func TestGetTasksToEvict_HierarchicalTree(t *testing.T) {
 
 				return &PodGroupInfo{
 					RootSubGroupSet: root,
-					PodSets:         root.GetAllPodSets(),
+					PodSets:         root.GetDescendantPodSets(),
 				}
 			}(),
-			// Phase 2: drop least-prioritized child (ps-b), evict all its tasks
+			// Phase 2: drop least-prioritized member (ps-b), evict all its tasks
 			expectedHasMoreTasks: true,
 			numExpectTasks:       1,
 		},
 		{
 			name: "Phase2_ElasticDirect_NestedSubGroupSetWithMinSubGroup",
 			job: func() *PodGroupInfo {
-				// Root has child SubGroupSet "inner" with minSubGroup=1 and 2 PodSet children at min
+				// Root has member SubGroupSet "inner" with minSubGroup=1 and 2 PodSet members at min
 				psA := subgroup_info.NewPodSet("ps-a", 2, nil)
 				psA.AssignTask(simpleTask("pod-1", "ps-a", pod_status.Running))
 				psA.AssignTask(simpleTask("pod-2", "ps-a", pod_status.Running))
@@ -198,7 +198,7 @@ func TestGetTasksToEvict_HierarchicalTree(t *testing.T) {
 
 				return &PodGroupInfo{
 					RootSubGroupSet: root,
-					PodSets:         root.GetAllPodSets(),
+					PodSets:         root.GetDescendantPodSets(),
 				}
 			}(),
 			// Phase 1 recurses into inner → inner's phase 2 drops ps-b (2 tasks)
@@ -206,9 +206,9 @@ func TestGetTasksToEvict_HierarchicalTree(t *testing.T) {
 			numExpectTasks:       2,
 		},
 		{
-			name: "Phase3_FullSubtreeEviction_AllChildrenAtMin",
+			name: "Phase3_FullSubtreeEviction_AllMembersAtMin",
 			job: func() *PodGroupInfo {
-				// Root needs all children (no minSubGroup), both at min
+				// Root needs all members (no minSubGroup), both at min
 				psA := subgroup_info.NewPodSet("ps-a", 1, nil)
 				psA.AssignTask(simpleTask("pod-1", "ps-a", pod_status.Running))
 
@@ -221,7 +221,7 @@ func TestGetTasksToEvict_HierarchicalTree(t *testing.T) {
 
 				return &PodGroupInfo{
 					RootSubGroupSet: root,
-					PodSets:         root.GetAllPodSets(),
+					PodSets:         root.GetDescendantPodSets(),
 				}
 			}(),
 			// No elastic surplus, numSatisfied == K → phase 3: evict all
@@ -231,7 +231,7 @@ func TestGetTasksToEvict_HierarchicalTree(t *testing.T) {
 		{
 			name: "NotSatisfied_ReturnsNil",
 			job: func() *PodGroupInfo {
-				// Root needs all children, but ps-b has no allocated tasks
+				// Root needs all members, but ps-b has no allocated tasks
 				psA := subgroup_info.NewPodSet("ps-a", 1, nil)
 				psA.AssignTask(simpleTask("pod-1", "ps-a", pod_status.Running))
 
@@ -243,7 +243,7 @@ func TestGetTasksToEvict_HierarchicalTree(t *testing.T) {
 
 				return &PodGroupInfo{
 					RootSubGroupSet: root,
-					PodSets:         root.GetAllPodSets(),
+					PodSets:         root.GetDescendantPodSets(),
 				}
 			}(),
 			// ps-b is not satisfied, root numSatisfied=1 < K=2
@@ -254,9 +254,9 @@ func TestGetTasksToEvict_HierarchicalTree(t *testing.T) {
 			numExpectTasks:       1,
 		},
 		{
-			name: "MixedSubGroupSetAndPodSetChildren",
+			name: "MixedSubGroupSetAndPodSetMembers",
 			job: func() *PodGroupInfo {
-				// Root has a PodSet child and a SubGroupSet child
+				// Root has a PodSet member and a SubGroupSet member
 				psRoot := subgroup_info.NewPodSet("ps-root", 1, nil)
 				psRoot.AssignTask(simpleTask("pod-1", "ps-root", pod_status.Running))
 				psRoot.AssignTask(simpleTask("pod-2", "ps-root", pod_status.Running))
@@ -273,7 +273,7 @@ func TestGetTasksToEvict_HierarchicalTree(t *testing.T) {
 
 				return &PodGroupInfo{
 					RootSubGroupSet: root,
-					PodSets:         root.GetAllPodSets(),
+					PodSets:         root.GetDescendantPodSets(),
 				}
 			}(),
 			// ps-root has elastic surplus (2 > 1), evict 1 task from it
@@ -281,46 +281,46 @@ func TestGetTasksToEvict_HierarchicalTree(t *testing.T) {
 			numExpectTasks:       1,
 		},
 		{
-			name: "Phase1_GangEvictionInsideChild_DuringElasticRecursion",
+			name: "Phase1_GangEvictionInsideMember_DuringElasticRecursion",
 			job: func() *PodGroupInfo {
-				// Root with minSubGroup=1, 2 SubGroupSet children
-				// child-a: minSubGroup=nil (needs all), 2 PodSets at min → no elastic surplus
-				// child-b: minSubGroup=nil (needs all), 2 PodSets at min → no elastic surplus
-				// Root has numSatisfied=2 > K=1 → phase 1 recurses into child-b (least priority)
-				// child-b has no elastic surplus → phase 3 evicts ALL from child-b
+				// Root with minSubGroup=1, 2 SubGroupSet members
+				// member-a: minSubGroup=nil (needs all), 2 PodSets at min → no elastic surplus
+				// member-b: minSubGroup=nil (needs all), 2 PodSets at min → no elastic surplus
+				// Root has numSatisfied=2 > K=1 → phase 1 recurses into member-b (least priority)
+				// member-b has no elastic surplus → phase 3 evicts ALL from member-b
 
 				psA1 := subgroup_info.NewPodSet("ps-a1", 1, nil)
 				psA1.AssignTask(simpleTask("pod-1", "ps-a1", pod_status.Running))
 				psA2 := subgroup_info.NewPodSet("ps-a2", 1, nil)
 				psA2.AssignTask(simpleTask("pod-2", "ps-a2", pod_status.Running))
-				childA := subgroup_info.NewSubGroupSet("child-a", nil)
-				childA.AddPodSet(psA1)
-				childA.AddPodSet(psA2)
+				memberA := subgroup_info.NewSubGroupSet("member-a", nil)
+				memberA.AddPodSet(psA1)
+				memberA.AddPodSet(psA2)
 
 				psB1 := subgroup_info.NewPodSet("ps-b1", 1, nil)
 				psB1.AssignTask(simpleTask("pod-3", "ps-b1", pod_status.Running))
 				psB2 := subgroup_info.NewPodSet("ps-b2", 1, nil)
 				psB2.AssignTask(simpleTask("pod-4", "ps-b2", pod_status.Running))
-				childB := subgroup_info.NewSubGroupSet("child-b", nil)
-				childB.AddPodSet(psB1)
-				childB.AddPodSet(psB2)
+				memberB := subgroup_info.NewSubGroupSet("member-b", nil)
+				memberB.AddPodSet(psB1)
+				memberB.AddPodSet(psB2)
 
 				root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
 				root.SetMinSubGroup(ptr.To(int32(1)))
-				root.AddSubGroup(childA)
-				root.AddSubGroup(childB)
+				root.AddSubGroup(memberA)
+				root.AddSubGroup(memberB)
 
 				return &PodGroupInfo{
 					RootSubGroupSet: root,
-					PodSets:         root.GetAllPodSets(),
+					PodSets:         root.GetDescendantPodSets(),
 				}
 			}(),
 			// Root phase 1: hasElasticSurplus → numSatisfied(2) > K(1) → true
-			// Iterate: child-b (reversed, "child-b" > "child-a")
-			// child-b elastic: no surplus → returns nil
-			// child-a elastic: no surplus → returns nil
+			// Iterate: member-b (reversed, "member-b" > "member-a")
+			// member-b elastic: no surplus → returns nil
+			// member-a elastic: no surplus → returns nil
 			// Root phase 2: K(1) < numSatisfied(2) → true
-			// collectGangEviction from child-b → ALL 2 tasks
+			// collectGangEviction from member-b → ALL 2 tasks
 			expectedHasMoreTasks: true,
 			numExpectTasks:       2,
 		},
@@ -328,7 +328,7 @@ func TestGetTasksToEvict_HierarchicalTree(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tasksToEvict, hasMoreTasks := GetTasksToEvict(tt.job, subGroupChildOrderFn, tasksOrderFn)
+			tasksToEvict, hasMoreTasks := GetTasksToEvict(tt.job, subGroupMemberOrderFn, tasksOrderFn)
 			assert.Equal(t, tt.expectedHasMoreTasks, hasMoreTasks)
 			assert.Equal(t, tt.numExpectTasks, len(tasksToEvict))
 			if tt.expectedTaskNames != nil {

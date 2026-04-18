@@ -55,25 +55,25 @@ func collectElasticEvictionFromSubGroupSet(
 		return nil
 	}
 
-	children := sgs.GetChildren()
-	sort.Slice(children, func(i, j int) bool {
-		return reverseSubGroupOrderFn(children[i], children[j])
+	members := sgs.GetMembers()
+	sort.Slice(members, func(i, j int) bool {
+		return reverseSubGroupOrderFn(members[i], members[j])
 	})
 
 	// Phase 1 — Elastic recursive: look for elastic surplus deeper in the tree.
 	if hasElasticSurplusInSubGroupSet(sgs) {
-		for _, child := range children {
-			tasks := collectElasticEvictionFromChild(child, reverseSubGroupOrderFn, reverseTaskOrderFn)
+		for _, member := range members {
+			tasks := collectElasticEvictionFromMember(member, reverseSubGroupOrderFn, reverseTaskOrderFn)
 			if len(tasks) > 0 {
 				return tasks
 			}
 		}
 	}
 
-	// Phase 2 — Elastic direct: drop least-prioritized child entirely if sgs has surplus children.
-	if sgs.GetMinChildrenToSatisfy() < numSatisfied {
-		for _, child := range children {
-			tasks := collectGangEvictionFromChild(child, reverseTaskOrderFn)
+	// Phase 2 — Elastic direct: drop least-prioritized member entirely if sgs has surplus members.
+	if sgs.GetMinMembersToSatisfy() < numSatisfied {
+		for _, member := range members {
+			tasks := collectGangEvictionFromMember(member, reverseTaskOrderFn)
 			if len(tasks) > 0 {
 				return tasks
 			}
@@ -83,14 +83,14 @@ func collectElasticEvictionFromSubGroupSet(
 	return nil
 }
 
-func collectElasticEvictionFromChild(
-	child subgroup_info.SubGroupChild, reverseSubGroupOrderFn, reverseTaskOrderFn common_info.LessFn,
+func collectElasticEvictionFromMember(
+	member subgroup_info.SubGroupMember, reverseSubGroupOrderFn, reverseTaskOrderFn common_info.LessFn,
 ) []*pod_info.PodInfo {
-	switch c := child.(type) {
+	switch m := member.(type) {
 	case *subgroup_info.SubGroupSet:
-		return collectElasticEvictionFromSubGroupSet(c, reverseSubGroupOrderFn, reverseTaskOrderFn)
+		return collectElasticEvictionFromSubGroupSet(m, reverseSubGroupOrderFn, reverseTaskOrderFn)
 	case *subgroup_info.PodSet:
-		return collectElasticEvictionFromPodSet(c, reverseTaskOrderFn)
+		return collectElasticEvictionFromPodSet(m, reverseTaskOrderFn)
 	}
 	return nil
 }
@@ -105,17 +105,17 @@ func collectElasticEvictionFromPodSet(
 	return getTasksFromQueue(taskQueue, 1)
 }
 
-// collectGangEvictionFromChild collects all allocated tasks from a child in the context of its parent's gang phase.
-// If we reach a gang eviction of a given SubGroupChild, it means that all the pods under this subtree needs to be evicted.
+// collectGangEvictionFromMember collects all allocated tasks from a member in the context of its parent's gang phase.
+// If we reach a gang eviction of a given SubGroupMember, it means that all the pods under this subtree needs to be evicted.
 // Any elastic pods / subgroups (if they existed and have an active status) have been evicted in previous phases.
-func collectGangEvictionFromChild(
-	child subgroup_info.SubGroupChild, reverseTaskOrderFn common_info.LessFn,
+func collectGangEvictionFromMember(
+	member subgroup_info.SubGroupMember, reverseTaskOrderFn common_info.LessFn,
 ) []*pod_info.PodInfo {
-	switch c := child.(type) {
+	switch m := member.(type) {
 	case *subgroup_info.SubGroupSet:
-		return collectAllAllocatedTasksFromSubGroupSet(c, reverseTaskOrderFn)
+		return collectAllAllocatedTasksFromSubGroupSet(m, reverseTaskOrderFn)
 	case *subgroup_info.PodSet:
-		return collectAllAllocatedTasksFromPodSet(c, reverseTaskOrderFn)
+		return collectAllAllocatedTasksFromPodSet(m, reverseTaskOrderFn)
 	}
 	return nil
 }
@@ -124,7 +124,7 @@ func collectAllAllocatedTasksFromSubGroupSet(
 	sgs *subgroup_info.SubGroupSet, reverseTaskOrderFn common_info.LessFn,
 ) []*pod_info.PodInfo {
 	var tasks []*pod_info.PodInfo
-	for _, ps := range sgs.GetAllPodSets() {
+	for _, ps := range sgs.GetDescendantPodSets() {
 		tasks = append(tasks, collectAllAllocatedTasksFromPodSet(ps, reverseTaskOrderFn)...)
 	}
 	return tasks
@@ -138,23 +138,23 @@ func collectAllAllocatedTasksFromPodSet(
 }
 
 func hasElasticSurplusInSubGroupSet(sgs *subgroup_info.SubGroupSet) bool {
-	if sgs.GetNumActiveAllocatedDirectSubGroups() > sgs.GetMinChildrenToSatisfy() {
+	if sgs.GetNumActiveAllocatedDirectSubGroups() > sgs.GetMinMembersToSatisfy() {
 		return true
 	}
-	for _, child := range sgs.GetChildren() {
-		if hasElasticSurplusInChild(child) {
+	for _, member := range sgs.GetMembers() {
+		if hasElasticSurplusInMember(member) {
 			return true
 		}
 	}
 	return false
 }
 
-func hasElasticSurplusInChild(child subgroup_info.SubGroupChild) bool {
-	switch c := child.(type) {
+func hasElasticSurplusInMember(member subgroup_info.SubGroupMember) bool {
+	switch m := member.(type) {
 	case *subgroup_info.SubGroupSet:
-		return hasElasticSurplusInSubGroupSet(c)
+		return hasElasticSurplusInSubGroupSet(m)
 	case *subgroup_info.PodSet:
-		return c.GetNumActiveAllocatedTasks() > int(c.GetMinAvailable())
+		return m.GetNumActiveAllocatedTasks() > int(m.GetMinAvailable())
 	}
 	return false
 }

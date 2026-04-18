@@ -191,7 +191,7 @@ func getSubgroupsWithRequiredConstraints(
 	if jobSubGroup.GetTopologyConstraint() != nil && len(jobSubGroup.GetTopologyConstraint().RequiredLevel) > 0 {
 		out = append(out, jobSubGroup)
 	}
-	for _, childGroup := range jobSubGroup.GetChildGroups() {
+	for _, childGroup := range jobSubGroup.GetDirectSubgroupsSets() {
 		out = getSubgroupsWithRequiredConstraints(childGroup, out)
 	}
 	return out
@@ -248,7 +248,7 @@ func buildDomainCapacity(
 }
 
 func sumGpuRequirements(subgroup *subgroup_info.SubGroupSet) float64 {
-	podSets := subgroup.GetAllPodSets()
+	podSets := subgroup.GetDescendantPodSets()
 	totalGpusNeeded := 0.0
 	for _, podSet := range podSets {
 		for _, task := range podSet.GetPodInfos() {

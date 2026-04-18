@@ -53,8 +53,8 @@ func collectTasksFromSubGroupSet(
 	sgs *subgroup_info.SubGroupSet, subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn,
 	isRealAllocation bool,
 ) []*pod_info.PodInfo {
-	K := sgs.GetMinChildrenToSatisfy()
-	children := sgs.GetChildren()
+	K := sgs.GetMinMembersToSatisfy()
+	children := sgs.GetMembers()
 	sort.Slice(children, func(i, j int) bool {
 		return subGroupOrderFn(children[i], children[j])
 	})
@@ -82,7 +82,7 @@ func collectTasksFromSubGroupSet(
 // SubGroupSets recurse normally; satisfied PodSets are skipped because their gang requirement
 // is already met and collecting elastic tasks from them would over-count resource needs.
 func collectFromChildInGangPhase(
-	child subgroup_info.SubGroupChild, subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn,
+	child subgroup_info.SubGroupMember, subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn,
 	isRealAllocation bool,
 ) []*pod_info.PodInfo {
 	switch c := child.(type) {
@@ -101,7 +101,7 @@ func collectFromChildInGangPhase(
 }
 
 func collectFromChildSubgroup(
-	child subgroup_info.SubGroupChild, subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn,
+	child subgroup_info.SubGroupMember, subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn,
 	isRealAllocation bool,
 ) []*pod_info.PodInfo {
 	switch c := child.(type) {

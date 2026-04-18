@@ -195,7 +195,7 @@ func Test_GetTasksToAllocate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			pg := NewPodGroupInfo("pg")
-			// Replace the default root so only the test's PodSets are children.
+			// Replace the default root so only the test's PodSets are members.
 			root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
 			pg.RootSubGroupSet = root
 			pg.PodSets = make(map[string]*subgroup_info.PodSet)

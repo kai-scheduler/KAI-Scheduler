@@ -256,8 +256,8 @@ func (ssn *Session) TaskOrderFn(l, r interface{}) bool {
 }
 
 func (ssn *Session) SubGroupOrderFn(l, r interface{}) bool {
-	lSubGroupSet := l.(subgroup_info.SubGroupChild)
-	rSubGroupSet := r.(subgroup_info.SubGroupChild)
+	lSubGroupSet := l.(subgroup_info.SubGroupMember)
+	rSubGroupSet := r.(subgroup_info.SubGroupMember)
 	for _, compareFn := range ssn.SubGroupOrderFns {
 		if comparison := compareFn(lSubGroupSet, rSubGroupSet); comparison != 0 {
 			return comparison < 0
