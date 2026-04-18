@@ -767,7 +767,7 @@ func TestPodGroupInfo_IsReadyForScheduling(t *testing.T) {
 
 	for _, test := range tests {
 		if test.minAvailable != nil {
-			test.job.GetSubGroups()[DefaultSubGroup].SetMinAvailable(*test.minAvailable)
+			test.job.GetAllPodSets()[DefaultSubGroup].SetMinAvailable(*test.minAvailable)
 		}
 		result := test.job.IsReadyForScheduling()
 		if result != test.expected {
@@ -1424,7 +1424,7 @@ func TestPodGroupInfo_IsStale(t *testing.T) {
 			name: "empty PodGroupInfo, not stale",
 			job: func() *PodGroupInfo {
 				pgi := NewPodGroupInfo("test-podgroup")
-				pgi.GetSubGroups()[DefaultSubGroup].SetMinAvailable(1)
+				pgi.GetAllPodSets()[DefaultSubGroup].SetMinAvailable(1)
 				return pgi
 			}(),
 			expected: false,
@@ -1442,7 +1442,7 @@ func TestPodGroupInfo_IsStale(t *testing.T) {
 				}
 				task := pod_info.NewTaskInfo(pod, nil, resource_info.NewResourceVectorMap())
 				pgi := NewPodGroupInfo("test-podgroup", task)
-				pgi.GetSubGroups()[DefaultSubGroup].SetMinAvailable(1)
+				pgi.GetAllPodSets()[DefaultSubGroup].SetMinAvailable(1)
 				return pgi
 			}(),
 			expected: false,
@@ -1469,7 +1469,7 @@ func TestPodGroupInfo_IsStale(t *testing.T) {
 				task1 := pod_info.NewTaskInfo(pod1, nil, resource_info.NewResourceVectorMap())
 				task2 := pod_info.NewTaskInfo(pod2, nil, resource_info.NewResourceVectorMap())
 				pgi := NewPodGroupInfo("test-podgroup", task1, task2)
-				pgi.GetSubGroups()[DefaultSubGroup].SetMinAvailable(2)
+				pgi.GetAllPodSets()[DefaultSubGroup].SetMinAvailable(2)
 				return pgi
 			}(),
 			expected: false,
@@ -1487,7 +1487,7 @@ func TestPodGroupInfo_IsStale(t *testing.T) {
 				}
 				task := pod_info.NewTaskInfo(pod, nil, resource_info.NewResourceVectorMap())
 				pgi := NewPodGroupInfo("test-podgroup", task)
-				pgi.GetSubGroups()[DefaultSubGroup].SetMinAvailable(2)
+				pgi.GetAllPodSets()[DefaultSubGroup].SetMinAvailable(2)
 				return pgi
 			}(),
 			expected: true,
@@ -1505,7 +1505,7 @@ func TestPodGroupInfo_IsStale(t *testing.T) {
 				}
 				task := pod_info.NewTaskInfo(pod, nil, resource_info.NewResourceVectorMap())
 				pgi := NewPodGroupInfo("test-podgroup", task)
-				pgi.GetSubGroups()[DefaultSubGroup].SetMinAvailable(1)
+				pgi.GetAllPodSets()[DefaultSubGroup].SetMinAvailable(1)
 				return pgi
 			}(),
 			expected: false,

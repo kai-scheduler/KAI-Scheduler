@@ -237,7 +237,7 @@ func handleFailedTaskAllocation(job *podgroup_info.PodGroupInfo, unschedulableTa
 	if len(unschedulableTask.SubGroupName) != 0 {
 		taskSubGroupName = unschedulableTask.SubGroupName
 	}
-	taskSubGroup := job.GetSubGroups()[taskSubGroupName]
+	taskSubGroup := job.GetAllPodSets()[taskSubGroupName]
 
 	if !gangScheduling || taskSubGroup.GetNumActiveUsedTasks() >= int(taskSubGroup.GetMinAvailable()) {
 		job.AddSimpleJobFitError(
@@ -247,7 +247,7 @@ func handleFailedTaskAllocation(job *podgroup_info.PodGroupInfo, unschedulableTa
 		return
 	}
 
-	if len(job.GetSubGroups()) == 1 && taskSubGroup.GetName() == podgroup_info.DefaultSubGroup {
+	if len(job.GetAllPodSets()) == 1 && taskSubGroup.GetName() == podgroup_info.DefaultSubGroup {
 		job.AddSimpleJobFitError(
 			podgroup_info.PodSchedulingErrors,
 			fmt.Sprintf("Resources were found for %d pods while %d are required for gang scheduling. "+
@@ -263,7 +263,7 @@ func handleFailedTaskAllocation(job *podgroup_info.PodGroupInfo, unschedulableTa
 }
 
 func isGangScheduling(job *podgroup_info.PodGroupInfo) bool {
-	for _, subGroup := range job.GetSubGroups() {
+	for _, subGroup := range job.GetAllPodSets() {
 		if subGroup.GetMinAvailable() > 1 {
 			return true
 		}

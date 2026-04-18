@@ -22,7 +22,7 @@ import (
 func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 	type fields struct {
 		session               *framework.Session
-		pendingTasksAsJob     *podgroup_info.PodGroupInfo
+		pendingJob            *podgroup_info.PodGroupInfo
 		potentialVictimsTasks []*pod_info.PodInfo
 		recordedVictimsJobs   []*podgroup_info.PodGroupInfo
 	}
@@ -90,7 +90,7 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 						}, nil, resource_info.NewResourceVectorMap())),
 					}},
 				},
-				pendingTasksAsJob: podgroup_info.NewPodGroupInfo("123"),
+				pendingJob: podgroup_info.NewPodGroupInfo("123"),
 				potentialVictimsTasks: []*pod_info.PodInfo{
 					pod_info.NewTaskInfo(&v1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
@@ -215,7 +215,7 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 						}, nil, resource_info.NewResourceVectorMap())),
 					}},
 				},
-				pendingTasksAsJob: podgroup_info.NewPodGroupInfo("123"),
+				pendingJob: podgroup_info.NewPodGroupInfo("123"),
 				potentialVictimsTasks: []*pod_info.PodInfo{
 					pod_info.NewTaskInfo(&v1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
@@ -309,7 +309,7 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 						}, nil, resource_info.NewResourceVectorMap())),
 					}},
 				},
-				pendingTasksAsJob: podgroup_info.NewPodGroupInfo("123"),
+				pendingJob: podgroup_info.NewPodGroupInfo("123"),
 				potentialVictimsTasks: []*pod_info.PodInfo{
 					pod_info.NewTaskInfo(&v1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
@@ -434,7 +434,7 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 						}, nil, resource_info.NewResourceVectorMap())),
 					}},
 				},
-				pendingTasksAsJob: podgroup_info.NewPodGroupInfo("123"),
+				pendingJob: podgroup_info.NewPodGroupInfo("123"),
 				potentialVictimsTasks: []*pod_info.PodInfo{
 					pod_info.NewTaskInfo(&v1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
@@ -509,7 +509,11 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			bns := NewByNodeScenario(tt.fields.session, tt.fields.pendingTasksAsJob, tt.fields.pendingTasksAsJob, tt.fields.potentialVictimsTasks,
+			pendingTasks := []*pod_info.PodInfo{}
+			for _, task := range tt.fields.pendingJob.GetAllPodsMap() {
+				pendingTasks = append(pendingTasks, task)
+			}
+			bns := NewByNodeScenario(tt.fields.session, tt.fields.pendingJob, pendingTasks, tt.fields.potentialVictimsTasks,
 				tt.fields.recordedVictimsJobs)
 			if tt.args.tasks != nil {
 				bns.AddPotentialVictimsTasks(tt.args.tasks)

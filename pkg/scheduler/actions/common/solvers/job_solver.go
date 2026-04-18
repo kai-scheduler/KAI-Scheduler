@@ -11,6 +11,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
@@ -120,27 +121,62 @@ func (s *JobSolver) solvePartialJob(ssn *framework.Session, state *solvingState,
 
 func getPartialJobRepresentative(
 	job *podgroup_info.PodGroupInfo, pendingTasks []*pod_info.PodInfo) *podgroup_info.PodGroupInfo {
-	jobRepresentative := job.CloneWithTasks(pendingTasks)
-	subGroupsMinAvailable := map[string]int{}
-	for _, pendingTask := range pendingTasks {
-		if _, found := jobRepresentative.GetSubGroups()[pendingTask.SubGroupName]; found {
-			subGroupsMinAvailable[pendingTask.SubGroupName] += 1
+	representativeTasks := append(job.GetAllAllocatedPods(), pendingTasks...)
+	jobRepresentative := job.CloneWithTasks(representativeTasks)
+
+	adjustSubGroupsMinAvailable(jobRepresentative)
+	adjustSubGroupsMinSubGroup(jobRepresentative.RootSubGroupSet)
+
+	return jobRepresentative
+}
+
+// adjustSubGroupsMinAvailable adjusts the minAvailable of the subGroups of the job representative to the number of tasks in the job representative.
+// This is done to ensure that the job representative has the correct minAvailable for each subGroup,
+// taking into account that the representative is a PARTIAL clone of the original job.
+func adjustSubGroupsMinAvailable(jobRepresentative *podgroup_info.PodGroupInfo) {
+	subGroupsPodCount := map[string]int{}
+	for _, pendingTask := range jobRepresentative.GetAllPodsMap() {
+		if _, found := jobRepresentative.GetAllPodSets()[pendingTask.SubGroupName]; found {
+			subGroupsPodCount[pendingTask.SubGroupName] += 1
 		} else {
-			subGroupsMinAvailable[podgroup_info.DefaultSubGroup] += 1
+			subGroupsPodCount[podgroup_info.DefaultSubGroup] += 1
 		}
 	}
-	for subGroupName, minAvailable := range subGroupsMinAvailable {
-		subGroup, found := jobRepresentative.GetSubGroups()[subGroupName]
+	for subGroupName, podCount := range subGroupsPodCount {
+		subGroup, found := jobRepresentative.GetAllPodSets()[subGroupName]
 		if !found {
 			log.InfraLogger.V(2).Warnf("Couldn't find SubGroup with name %s for job %s",
-				subGroupName, job.NamespacedName,
+				subGroupName, jobRepresentative.NamespacedName,
 			)
 			continue
 		}
-		subGroup.SetMinAvailable(int32(minAvailable))
+		minAvailable := min(subGroup.GetMinAvailable(), int32(podCount))
+		subGroup.SetMinAvailable(minAvailable)
 	}
+}
 
-	return jobRepresentative
+// adjustSubGroupsMinSubGroup recursively walks the SubGroupSet tree and sets each node's
+// minSubGroup to the number of direct children that have tasks in the partial clone.
+// This mirrors the minAvailable adjustment done on PodSets: the clone must only require
+// what it actually contains, so that gang-satisfaction checks work correctly on the partial job.
+// Returns true if this node contains any tasks.
+func adjustSubGroupsMinSubGroup(sgs *subgroup_info.SubGroupSet) bool {
+	nonEmptyChildren := int32(0)
+	for _, childPodSet := range sgs.GetChildPodSets() {
+		if len(childPodSet.GetPodInfos()) > 0 {
+			nonEmptyChildren++
+		}
+	}
+	for _, childGroup := range sgs.GetChildGroups() {
+		if adjustSubGroupsMinSubGroup(childGroup) {
+			nonEmptyChildren++
+		}
+	}
+	if minSubGroup := sgs.GetMinSubGroup(); minSubGroup != nil {
+		minSubGroup := min(*minSubGroup, nonEmptyChildren)
+		sgs.SetMinSubGroup(&minSubGroup)
+	}
+	return nonEmptyChildren > 0
 }
 
 func calcVictimNames(victimsTasks []*pod_info.PodInfo) []string {

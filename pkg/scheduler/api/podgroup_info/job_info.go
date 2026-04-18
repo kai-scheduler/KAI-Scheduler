@@ -148,7 +148,18 @@ func (pgi *PodGroupInfo) GetAllPodsMap() pod_info.PodsMap {
 	return allPods
 }
 
-func (pgi *PodGroupInfo) GetSubGroups() map[string]*subgroup_info.PodSet {
+func (pgi *PodGroupInfo) GetAllAllocatedPods() []*pod_info.PodInfo {
+	podsMap := pgi.GetAllPodsMap()
+	allocated := make([]*pod_info.PodInfo, 0, len(podsMap))
+	for _, task := range podsMap {
+		if pod_status.IsActiveAllocatedStatus(task.Status) {
+			allocated = append(allocated, task)
+		}
+	}
+	return allocated
+}
+
+func (pgi *PodGroupInfo) GetAllPodSets() map[string]*subgroup_info.PodSet {
 	return pgi.PodSets
 }
 

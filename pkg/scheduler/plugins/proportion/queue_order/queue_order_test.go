@@ -48,7 +48,7 @@ func createGpuMemoryTask(name string, numDevices int64, gpuMemory int64) *pod_in
 
 func createPodGroupWithGpuMemoryTask(name string, numDevices int64, gpuMemory int64) *podgroup_info.PodGroupInfo {
 	pg := podgroup_info.NewPodGroupInfoWithVectorMap(common_info.PodGroupID(name), testVectorMap)
-	pg.GetSubGroups()[podgroup_info.DefaultSubGroup].SetMinAvailable(1)
+	pg.GetAllPodSets()[podgroup_info.DefaultSubGroup].SetMinAvailable(1)
 	task := createGpuMemoryTask("task-"+name, numDevices, gpuMemory)
 	pg.AddTaskInfo(task)
 	return pg
