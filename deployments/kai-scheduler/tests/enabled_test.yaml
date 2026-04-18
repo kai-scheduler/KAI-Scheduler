@@ -1,0 +1,217 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+suite: test service enabled configuration
+templates:
+  - kai-config.yaml
+tests:
+  # ======================================
+  # Default Behavior Tests
+  # ======================================
+  - it: should enable all services by default
+    asserts:
+      - equal:
+          path: spec.binder.service.enabled
+          value: true
+      - equal:
+          path: spec.podGrouper.service.enabled
+          value: true
+      - equal:
+          path: spec.podGroupController.service.enabled
+          value: true
+      - equal:
+          path: spec.queueController.service.enabled
+          value: true
+      - equal:
+          path: spec.admission.service.enabled
+          value: true
+      - equal:
+          path: spec.scheduler.service.enabled
+          value: true
+
+  # ======================================
+  # Binder Enabled Tests
+  # ======================================
+  - it: should render binder enabled true when explicitly set
+    set:
+      binder.enabled: true
+    asserts:
+      - equal:
+          path: spec.binder.service.enabled
+          value: true
+
+  - it: should render binder enabled false when disabled
+    set:
+      binder.enabled: false
+    asserts:
+      - equal:
+          path: spec.binder.service.enabled
+          value: false
+
+  # ======================================
+  # PodGrouper Enabled Tests
+  # ======================================
+  - it: should render podGrouper enabled true when explicitly set
+    set:
+      podgrouper.enabled: true
+    asserts:
+      - equal:
+          path: spec.podGrouper.service.enabled
+          value: true
+
+  - it: should render podGrouper enabled false when disabled
+    set:
+      podgrouper.enabled: false
+    asserts:
+      - equal:
+          path: spec.podGrouper.service.enabled
+          value: false
+
+  # ======================================
+  # PodGroupController Enabled Tests
+  # ======================================
+  - it: should render podGroupController enabled true when explicitly set
+    set:
+      podgroupcontroller.enabled: true
+    asserts:
+      - equal:
+          path: spec.podGroupController.service.enabled
+          value: true
+
+  - it: should render podGroupController enabled false when disabled
+    set:
+      podgroupcontroller.enabled: false
+    asserts:
+      - equal:
+          path: spec.podGroupController.service.enabled
+          value: false
+
+  # ======================================
+  # QueueController Enabled Tests
+  # ======================================
+  - it: should render queueController enabled true when explicitly set
+    set:
+      queuecontroller.enabled: true
+    asserts:
+      - equal:
+          path: spec.queueController.service.enabled
+          value: true
+
+  - it: should render queueController enabled false when disabled
+    set:
+      queuecontroller.enabled: false
+    asserts:
+      - equal:
+          path: spec.queueController.service.enabled
+          value: false
+
+  # ======================================
+  # Admission Enabled Tests
+  # ======================================
+  - it: should render admission enabled true when explicitly set
+    set:
+      admission.enabled: true
+    asserts:
+      - equal:
+          path: spec.admission.service.enabled
+          value: true
+
+  - it: should render admission enabled false when disabled
+    set:
+      admission.enabled: false
+    asserts:
+      - equal:
+          path: spec.admission.service.enabled
+          value: false
+
+  # ======================================
+  # Scheduler Enabled Tests
+  # ======================================
+  - it: should render scheduler enabled true when explicitly set
+    set:
+      scheduler.enabled: true
+    asserts:
+      - equal:
+          path: spec.scheduler.service.enabled
+          value: true
+
+  - it: should render scheduler enabled false when disabled
+    set:
+      scheduler.enabled: false
+    asserts:
+      - equal:
+          path: spec.scheduler.service.enabled
+          value: false
+
+  # ======================================
+  # NodeScaleAdjuster Enabled Tests
+  # ======================================
+  - it: should render nodeScaleAdjuster disabled by default (clusterAutoscaling false)
+    asserts:
+      - equal:
+          path: spec.nodeScaleAdjuster.service.enabled
+          value: false
+
+  - it: should render nodeScaleAdjuster enabled when clusterAutoscaling is true
+    set:
+      global.clusterAutoscaling: true
+    asserts:
+      - equal:
+          path: spec.nodeScaleAdjuster.service.enabled
+          value: true
+
+  # ======================================
+  # Multiple Services Disabled
+  # ======================================
+  - it: should allow disabling multiple services at once
+    set:
+      podgrouper.enabled: false
+      podgroupcontroller.enabled: false
+      admission.enabled: false
+    asserts:
+      - equal:
+          path: spec.podGrouper.service.enabled
+          value: false
+      - equal:
+          path: spec.podGroupController.service.enabled
+          value: false
+      - equal:
+          path: spec.admission.service.enabled
+          value: false
+      - equal:
+          path: spec.binder.service.enabled
+          value: true
+      - equal:
+          path: spec.queueController.service.enabled
+          value: true
+      - equal:
+          path: spec.scheduler.service.enabled
+          value: true
+
+  - it: should allow disabling all optional services
+    set:
+      binder.enabled: false
+      podgrouper.enabled: false
+      podgroupcontroller.enabled: false
+      queuecontroller.enabled: false
+      admission.enabled: false
+      scheduler.enabled: false
+    asserts:
+      - equal:
+          path: spec.binder.service.enabled
+          value: false
+      - equal:
+          path: spec.podGrouper.service.enabled
+          value: false
+      - equal:
+          path: spec.podGroupController.service.enabled
+          value: false
+      - equal:
+          path: spec.queueController.service.enabled
+          value: false
+      - equal:
+          path: spec.admission.service.enabled
+          value: false
+      - equal:
+          path: spec.scheduler.service.enabled
+          value: false

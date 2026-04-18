@@ -143,11 +143,22 @@ if [ "$LOCAL_IMAGES_BUILD" = "true" ]; then
     trap "kill $PORT_FORWARD_PID 2>/dev/null || true" EXIT
     sleep 2
 
-    # Push images to local registry
-    echo "Pushing images to local registry..."
-    for image in $(docker images --format '{{.Repository}}:{{.Tag}}' | grep $PACKAGE_VERSION); do
-        docker push $image
-    done
+    # Probe whether docker push can reach the registry (fails on Docker Desktop where the
+    # daemon runs in a VM and cannot reach the host-side port-forward on localhost).
+    PROBE_IMAGE=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep "$PACKAGE_VERSION" | head -1)
+    if docker push "$PROBE_IMAGE" > /dev/null 2>&1; then
+        echo "Pushing images to local registry via port-forward..."
+        for image in $(docker images --format '{{.Repository}}:{{.Tag}}' | grep $PACKAGE_VERSION); do
+            docker push "$image"
+        done
+    else
+        echo "docker push failed (likely Docker Desktop — daemon cannot reach host port-forward). Falling back to 'kind load docker-image'..."
+        kill "$PORT_FORWARD_PID" 2>/dev/null || true
+        for image in $(docker images --format '{{.Repository}}:{{.Tag}}' | grep "localhost:30100/.*${PACKAGE_VERSION}"); do
+            echo "  loading: $image"
+            kind load docker-image "$image" --name "$CLUSTER_NAME"
+        done
+    fi
 
     # Package and install helm chart
     helm package ./deployments/kai-scheduler -d ./charts --app-version $PACKAGE_VERSION --version $PACKAGE_VERSION

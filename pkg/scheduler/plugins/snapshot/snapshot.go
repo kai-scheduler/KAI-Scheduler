@@ -43,6 +43,7 @@ type RawKubernetesObjects struct {
 	BindRequests           []*schedulingv1alpha2.BindRequest `json:"bindRequests"`
 	PriorityClasses        []*v14.PriorityClass              `json:"priorityClasses"`
 	ConfigMaps             []*v1.ConfigMap                   `json:"configMaps"`
+	PersistentVolumes      []*v1.PersistentVolume            `json:"persistentVolumes"`
 	PersistentVolumeClaims []*v1.PersistentVolumeClaim       `json:"persistentVolumeClaims"`
 	CSIStorageCapacities   []*storage.CSIStorageCapacity     `json:"csiStorageCapacities"`
 	StorageClasses         []*storage.StorageClass           `json:"storageClasses"`
@@ -127,6 +128,12 @@ func (sp *snapshotPlugin) serveSnapshot(writer http.ResponseWriter, request *htt
 	if err != nil {
 		log.InfraLogger.Errorf("Error getting raw config maps: %v", err)
 		rawObjects.ConfigMaps = []*v1.ConfigMap{}
+	}
+
+	rawObjects.PersistentVolumes, err = dataLister.ListPersistentVolumes()
+	if err != nil {
+		log.InfraLogger.Errorf("Error getting raw persistent volumes: %v", err)
+		rawObjects.PersistentVolumes = []*v1.PersistentVolume{}
 	}
 
 	rawObjects.PersistentVolumeClaims, err = dataLister.ListPersistentVolumeClaims()
