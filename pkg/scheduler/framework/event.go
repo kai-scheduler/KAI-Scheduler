@@ -20,7 +20,7 @@ limitations under the License.
 package framework
 
 import (
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 )
 
 type Event struct {

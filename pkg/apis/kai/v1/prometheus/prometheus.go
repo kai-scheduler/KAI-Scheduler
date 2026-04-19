@@ -5,7 +5,7 @@
 package prometheus
 
 import (
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
 	"k8s.io/utils/ptr"
 )
 
