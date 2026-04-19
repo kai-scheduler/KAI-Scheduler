@@ -45,6 +45,9 @@ operator:
   probeBindAddress: ":8081"
   qps: 50
   burst: 300
+  # Zap log level for the operator (controller-runtime --zap-log-level). Leave empty to use binary defaults.
+  # When set: debug, info, error, panic. Example: "info"
+  zapLogLevel: ""
 
 podgrouper:
   enabled: true
