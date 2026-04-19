@@ -8,20 +8,13 @@ import (
 	"fmt"
 
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/ray-project/kuberay/ray-operator/controllers/ray/utils"
-
-	schedulingv2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgroup"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
 )
-
-var logger = log.FromContext(context.Background())
 
 const (
 	rayClusterKind = "RayCluster"
@@ -39,28 +32,6 @@ func NewRayGrouper(client client.Client, defaultGrouper *defaultgrouper.DefaultG
 		client:         client,
 		DefaultGrouper: defaultGrouper,
 	}
-}
-
-// shouldUseSubGroups checks if the new subgrouping logic should be used.
-// Returns false only when an existing PodGroup has no SubGroups (legacy workload).
-// This ensures backwards compatibility for workloads created before subgrouping was introduced.
-// This logic will be removed in v0.14
-func (rg *RayGrouper) shouldUseSubGroups(namespace, name string) bool {
-	existingPG := &schedulingv2alpha2.PodGroup{}
-	err := rg.client.Get(context.Background(), types.NamespacedName{
-		Namespace: namespace,
-		Name:      name,
-	}, existingPG)
-
-	if err != nil {
-		if !errors.IsNotFound(err) {
-			logger.V(1).Info("Failed to get existing PodGroup, using new subgrouping logic",
-				"namespace", namespace, "name", name, "error", err)
-		}
-		return true
-	}
-
-	return len(existingPG.Spec.SubGroups) > 0
 }
 
 // +kubebuilder:rbac:groups=ray.io,resources=rayclusters;rayjobs;rayservices,verbs=get;list;watch
@@ -88,30 +59,7 @@ func (rg *RayGrouper) getPodGroupMetadataWithClusterNamePath(
 		podGroupMetadata.PriorityClassName = rayPriorityClassName
 	}
 
-	// Only assign pod to subgroup if we're using subgroups
-	if len(podGroupMetadata.SubGroups) > 0 {
-		if err = assignRayPodToSubGroup(pod, podGroupMetadata); err != nil {
-			logger.V(1).Info("Failed to assign ray pod to subgroup", "pod", pod.Name, "namespace", pod.Namespace, "error", err)
-		}
-	}
-
 	return podGroupMetadata, nil
-}
-
-func assignRayPodToSubGroup(pod *v1.Pod, pgMetadata *podgroup.Metadata) error {
-	group, found := pod.Labels[utils.RayNodeGroupLabelKey]
-	if !found {
-		return fmt.Errorf("ray node group label (%s) not found on pod %s/%s", utils.RayNodeGroupLabelKey, pod.Namespace, pod.Name)
-	}
-
-	for _, subGroup := range pgMetadata.SubGroups {
-		if subGroup.Name == group {
-			subGroup.PodsReferences = append(subGroup.PodsReferences, pod.Name)
-			return nil
-		}
-	}
-
-	return fmt.Errorf("subgroup %s not found in pod group metadata", group)
 }
 
 func (rg *RayGrouper) getPodGroupMetadataInternal(
@@ -123,15 +71,11 @@ func (rg *RayGrouper) getPodGroupMetadataInternal(
 		return nil, err
 	}
 
-	minReplicas, subGroups, err := calcJobNumOfPodsAndSubGroups(rayClusterObj)
+	minReplicas, err := calcJobNumOfPods(rayClusterObj)
 	if err != nil {
 		return nil, err
 	}
-
 	podGroupMetadata.MinAvailable = minReplicas
-	if rg.shouldUseSubGroups(podGroupMetadata.Namespace, podGroupMetadata.Name) {
-		podGroupMetadata.SubGroups = subGroups
-	}
 
 	return podGroupMetadata, nil
 }
@@ -177,63 +121,42 @@ func (rg *RayGrouper) extractRayClusterObject(
 // These calculations are based on the way KubeRay creates volcano pod-groups
 // https://github.com/ray-project/kuberay/blob/dbcc686eabefecc3b939cd5c6e7a051f2473ad34/ray-operator/controllers/ray/batchscheduler/volcano/volcano_scheduler.go#L106
 // https://github.com/ray-project/kuberay/blob/dbcc686eabefecc3b939cd5c6e7a051f2473ad34/ray-operator/controllers/ray/batchscheduler/volcano/volcano_scheduler.go#L51
-func calcJobNumOfPodsAndSubGroups(topOwner *unstructured.Unstructured) (int32, []*podgroup.SubGroupMetadata, error) {
-	minReplicas := int32(1)
-
-	subGroups := []*podgroup.SubGroupMetadata{
-		{
-			Name:         utils.RayNodeHeadGroupLabelValue,
-			MinAvailable: 1,
-		},
-	}
+func calcJobNumOfPods(topOwner *unstructured.Unstructured) (int32, error) {
+	minReplicas := int32(calcMinHeadReplicas(topOwner))
 
 	workerGroupSpecs, workerSpecFound, err := unstructured.NestedSlice(topOwner.Object,
 		"spec", "workerGroupSpecs")
 	if err != nil {
-		return 0, nil, err
+		return 0, err
 	}
 	if !workerSpecFound || len(workerGroupSpecs) == 0 {
-		return minReplicas, subGroups, nil
+		return minReplicas, nil
 	}
 
 	for groupIndex, groupSpec := range workerGroupSpecs {
 		groupMinReplicas, groupDesiredReplicas, err := getReplicaCountersForWorkerGroup(groupSpec, groupIndex)
 		if err != nil {
-			return 0, nil, err
+			return 0, err
 		}
 		if groupMinReplicas == 0 && groupDesiredReplicas == 0 {
-			continue
+			continue // This type of worker doesn't contribute for minReplicas
 		}
 
 		numOfHosts, err := getGroupNumOfHosts(groupSpec)
 		if err != nil {
-			return 0, nil, err
+			return 0, err
 		}
 
-		workerGroupMinReplicas := int32(groupDesiredReplicas * numOfHosts)
 		if groupMinReplicas > 0 {
 			// if minReplicas is set, use it to calculate the min number for workload scheduling
-			workerGroupMinReplicas = int32(groupMinReplicas * numOfHosts)
+			minReplicas += int32(groupMinReplicas * numOfHosts)
+		} else {
+			// if minReplicas is not set, use the desiredReplicas field to calculate the min number for workload scheduling
+			minReplicas += int32(groupDesiredReplicas * numOfHosts)
 		}
-		minReplicas += workerGroupMinReplicas
-
-		// Get worker group name or generate one
-		workerGroupName := getWorkerGroupName(groupSpec, groupIndex)
-		subGroups = append(subGroups, &podgroup.SubGroupMetadata{
-			Name:         workerGroupName,
-			MinAvailable: workerGroupMinReplicas,
-		})
 	}
 
-	return minReplicas, subGroups, nil
-}
-
-func getWorkerGroupName(groupSpec interface{}, groupIndex int) string {
-	groupName, found, err := unstructured.NestedString(groupSpec.(map[string]interface{}), "groupName")
-	if err != nil || !found || groupName == "" {
-		return fmt.Sprintf("worker-group-%d", groupIndex)
-	}
-	return groupName
+	return minReplicas, nil
 }
 
 func getGroupNumOfHosts(groupSpec interface{}) (int64, error) {
@@ -282,4 +205,22 @@ func getReplicaCountersForWorkerGroup(groupSpec interface{}, groupIndex int) (
 			desiredReplicas, minReplicas, groupIndex)
 	}
 	return minReplicas, desiredReplicas, nil
+}
+
+func calcMinHeadReplicas(topOwner *unstructured.Unstructured) int64 {
+	minHeadReplicas := int64(1) // default value 1
+
+	launcherReplicas, replicasFound, replicasErr := unstructured.NestedInt64(topOwner.Object,
+		"spec", "headGroupSpec", "replicas")
+	if replicasErr == nil && replicasFound && launcherReplicas > 0 {
+		minHeadReplicas = launcherReplicas
+	}
+
+	launcherMinReplicas, minReplicasFound, err := unstructured.NestedInt64(topOwner.Object,
+		"spec", "headGroupSpec", "minReplicas")
+	if err == nil && minReplicasFound && launcherMinReplicas > 0 {
+		minHeadReplicas = launcherMinReplicas
+	}
+
+	return minHeadReplicas
 }

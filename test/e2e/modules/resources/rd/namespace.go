@@ -13,18 +13,16 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/testconfig"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
 func CreateNamespaceObject(name, queueName string) *corev1.Namespace {
-	cfg := testconfig.GetConfig()
 	return &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
 			Labels: map[string]string{
 				"project":              queueName,
-				cfg.QueueLabelKey:      queueName,
+				"kai.scheduler/queue":  queueName,
 				constants.AppLabelName: "engine-e2e",
 			},
 		},

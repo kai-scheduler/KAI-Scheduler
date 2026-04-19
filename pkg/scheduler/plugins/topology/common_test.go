@@ -6,13 +6,12 @@ package topology
 import (
 	"testing"
 
-	kaiv1alpha1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1alpha1"
+	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/topology_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 )
 
 func newNodeInfo(name string, labels map[string]string) *node_info.NodeInfo {
@@ -70,12 +69,11 @@ func TestLowestCommonDomainID(t *testing.T) {
 	}
 
 	tests := []struct {
-		name               string
-		nodes              node_info.NodeSet
-		topologyConstraint *topology_info.TopologyConstraintInfo
-		expectedID         DomainID
-		expectedLevel      DomainLevel
-		expectedValid      []string
+		name          string
+		nodes         node_info.NodeSet
+		expectedID    DomainID
+		expectedLevel DomainLevel
+		expectedValid []string
 	}{
 		{
 			name: "all nodes share full topology",
@@ -83,22 +81,8 @@ func TestLowestCommonDomainID(t *testing.T) {
 				newNodeInfo("node-1", map[string]string{"zone": "z1", "rack": "r1"}),
 				newNodeInfo("node-2", map[string]string{"zone": "z1", "rack": "r1"}),
 			},
-			topologyConstraint: &topology_info.TopologyConstraintInfo{},
-			expectedID:         DomainID("z1.r1"),
-			expectedLevel:      DomainLevel("rack"),
-			expectedValid:      []string{"node-1", "node-2"},
-		},
-		{
-			name: "all nodes share full topology - but the preferred level is zone",
-			nodes: node_info.NodeSet{
-				newNodeInfo("node-1", map[string]string{"zone": "z1", "rack": "r1"}),
-				newNodeInfo("node-2", map[string]string{"zone": "z1", "rack": "r1"}),
-			},
-			topologyConstraint: &topology_info.TopologyConstraintInfo{
-				PreferredLevel: "zone",
-			},
-			expectedID:    DomainID("z1"),
-			expectedLevel: DomainLevel("zone"),
+			expectedID:    DomainID("z1.r1"),
+			expectedLevel: DomainLevel("rack"),
 			expectedValid: []string{"node-1", "node-2"},
 		},
 		{
@@ -107,10 +91,9 @@ func TestLowestCommonDomainID(t *testing.T) {
 				newNodeInfo("node-1", map[string]string{"zone": "z1", "rack": "r1"}),
 				newNodeInfo("node-2", map[string]string{"zone": "z1", "rack": "r2"}),
 			},
-			topologyConstraint: &topology_info.TopologyConstraintInfo{},
-			expectedID:         DomainID("z1"),
-			expectedLevel:      DomainLevel("zone"),
-			expectedValid:      []string{"node-1", "node-2"},
+			expectedID:    DomainID("z1"),
+			expectedLevel: DomainLevel("zone"),
+			expectedValid: []string{"node-1", "node-2"},
 		},
 		{
 			name: "mismatch at first level returns root",
@@ -118,10 +101,9 @@ func TestLowestCommonDomainID(t *testing.T) {
 				newNodeInfo("node-1", map[string]string{"zone": "z1", "rack": "r1"}),
 				newNodeInfo("node-2", map[string]string{"zone": "z2", "rack": "r1"}),
 			},
-			topologyConstraint: &topology_info.TopologyConstraintInfo{},
-			expectedID:         DomainID(rootDomainId),
-			expectedLevel:      DomainLevel(rootLevel),
-			expectedValid:      []string{"node-1", "node-2"},
+			expectedID:    DomainID(rootDomainId),
+			expectedLevel: DomainLevel(rootLevel),
+			expectedValid: []string{"node-1", "node-2"},
 		},
 		{
 			name: "invalid nodes are filtered out",
@@ -129,26 +111,24 @@ func TestLowestCommonDomainID(t *testing.T) {
 				newNodeInfo("node-1", map[string]string{"zone": "z1", "rack": "r1"}),
 				newNodeInfo("node-2", map[string]string{"zone": "z1"}), // missing rack
 			},
-			topologyConstraint: &topology_info.TopologyConstraintInfo{},
-			expectedID:         DomainID("z1.r1"),
-			expectedLevel:      DomainLevel("rack"),
-			expectedValid:      []string{"node-1"},
+			expectedID:    DomainID("z1.r1"),
+			expectedLevel: DomainLevel("rack"),
+			expectedValid: []string{"node-1"},
 		},
 		{
 			name: "no valid nodes returns root and empty map",
 			nodes: node_info.NodeSet{
 				newNodeInfo("node-1", map[string]string{"zone": "z1"}), // missing rack
 			},
-			topologyConstraint: &topology_info.TopologyConstraintInfo{},
-			expectedID:         DomainID(rootDomainId),
-			expectedLevel:      DomainLevel(rootLevel),
-			expectedValid:      []string{},
+			expectedID:    DomainID(rootDomainId),
+			expectedLevel: DomainLevel(rootLevel),
+			expectedValid: []string{},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			domainID, domainLevel, valid := lowestCommonDomainID(tt.nodes, levels, tt.topologyConstraint)
+			domainID, domainLevel, valid := lowestCommonDomainID(tt.nodes, levels)
 
 			assert.Equal(t, tt.expectedID, domainID)
 			assert.Equal(t, tt.expectedLevel, domainLevel)

@@ -6,8 +6,8 @@ package bindrequest_info
 import (
 	v1 "k8s.io/api/core/v1"
 
-	schedulingv1alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
+	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 )
 
 type Key common_info.ObjectKey

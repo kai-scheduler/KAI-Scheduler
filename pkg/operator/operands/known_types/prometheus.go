@@ -6,7 +6,7 @@ package known_types
 import (
 	"context"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/builder"

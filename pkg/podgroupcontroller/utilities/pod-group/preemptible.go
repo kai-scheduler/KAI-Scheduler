@@ -12,11 +12,11 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	pg "github.com/NVIDIA/KAI-scheduler/pkg/common/podgroup"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	pg "github.com/kai-scheduler/KAI-scheduler/pkg/common/podgroup"
 )
 
 func IsPreemptible(ctx context.Context, podGroup *v2alpha2.PodGroup, kubeClient client.Client) (bool, error) {

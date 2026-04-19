@@ -8,13 +8,13 @@ import (
 	"errors"
 	"testing"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"golang.org/x/exp/maps"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/known_types"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/known_types"
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"

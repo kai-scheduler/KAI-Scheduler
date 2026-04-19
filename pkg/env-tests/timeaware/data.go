@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 )
 
 type SimulationDataPoint struct {

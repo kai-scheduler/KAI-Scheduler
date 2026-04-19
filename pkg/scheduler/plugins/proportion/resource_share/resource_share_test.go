@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
 func TestEmptyResource(t *testing.T) {

@@ -10,10 +10,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 
-	kaiClient "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned"
-	v2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/testconfig"
+	kaiClient "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned"
+	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
 func Create(kaiClientset *kaiClient.Clientset, ctx context.Context, queue *v2.Queue,
@@ -114,7 +113,7 @@ func CreateQueueObjectWithGpuResource(name string, gpuResource v2.QueueResource,
 }
 
 func GetConnectedNamespaceToQueue(q *v2.Queue) string {
-	return testconfig.GetConfig().QueueNamespacePrefix + q.Name
+	return "kai-" + q.Name
 }
 
 func ConnectQueuesWithSharedParent(parentQueue *v2.Queue, childrenQueues ...*v2.Queue) {

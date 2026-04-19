@@ -16,11 +16,11 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/pod_group_controller"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	generate "github.com/NVIDIA/KAI-scheduler/pkg/operator/cert-utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/common"
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/pod_group_controller"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	generate "github.com/kai-scheduler/KAI-scheduler/pkg/operator/cert-utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common"
 )
 
 const (

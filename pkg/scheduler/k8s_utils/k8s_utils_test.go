@@ -15,7 +15,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
 func TestK8sHelpers(t *testing.T) {

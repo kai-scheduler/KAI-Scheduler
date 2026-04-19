@@ -16,10 +16,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/nodescaleadjuster/consts"
-	"github.com/NVIDIA/KAI-scheduler/pkg/nodescaleadjuster/controller"
-	"github.com/NVIDIA/KAI-scheduler/pkg/nodescaleadjuster/scale_adjuster"
-	"github.com/NVIDIA/KAI-scheduler/pkg/nodescaleadjuster/scaler"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/nodescaleadjuster/consts"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/nodescaleadjuster/controller"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/nodescaleadjuster/scale_adjuster"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/nodescaleadjuster/scaler"
 )
 
 var (
