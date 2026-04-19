@@ -12,7 +12,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/webhookmanager"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/webhookmanager"
 )
 
 var log = ctrl.Log.WithName("webhookmanager")

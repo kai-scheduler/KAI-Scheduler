@@ -6,8 +6,8 @@ package app
 import (
 	"flag"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgroupcontroller/controllers"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgroupcontroller/controllers"
 
 	"go.uber.org/zap/zapcore"
 	v1 "k8s.io/api/core/v1"

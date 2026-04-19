@@ -14,8 +14,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/nodescaleadjuster/consts"
-	"github.com/NVIDIA/KAI-scheduler/pkg/nodescaleadjuster/scale_adjuster"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/nodescaleadjuster/consts"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/nodescaleadjuster/scale_adjuster"
 )
 
 // PodReconciler reconciles a Pod object

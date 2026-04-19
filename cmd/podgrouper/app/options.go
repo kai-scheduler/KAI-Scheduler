@@ -6,7 +6,7 @@ package app
 import (
 	"flag"
 
-	controllers "github.com/NVIDIA/KAI-scheduler/pkg/podgrouper"
+	controllers "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper"
 )
 
 type Options struct {

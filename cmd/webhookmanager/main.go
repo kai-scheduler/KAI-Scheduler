@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/NVIDIA/KAI-scheduler/cmd/webhookmanager/app"
+	"github.com/kai-scheduler/KAI-scheduler/cmd/webhookmanager/app"
 )
 
 func main() {

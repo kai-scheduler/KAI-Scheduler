@@ -21,9 +21,9 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	kubeAiSchedulerV2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	controllers "github.com/NVIDIA/KAI-scheduler/pkg/podgrouper"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	kubeAiSchedulerV2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	controllers "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper"
 	// +kubebuilder:scaffold:imports
 )
 

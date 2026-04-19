@@ -10,7 +10,7 @@ import (
 	"slices"
 	"strings"
 
-	testContext "github.com/NVIDIA/KAI-scheduler/test/e2e/modules/context"
+	testContext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
 )
 
 const (

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/NVIDIA/KAI-scheduler/cmd/queuecontroller/app"
+	"github.com/kai-scheduler/KAI-scheduler/cmd/queuecontroller/app"
 )
 
 func main() {
