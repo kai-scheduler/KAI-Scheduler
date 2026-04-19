@@ -1,5 +1,7 @@
 bin/
 .claude/
+.gocache/
+.gotmp/
 .idea/
 charts/
 cover.out

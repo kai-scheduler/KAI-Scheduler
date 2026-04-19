@@ -68,38 +68,37 @@ func (g *K8sJobGrouper) GetPodGroupMetadata(topOwner *unstructured.Unstructured,
 }
 
 func (g *K8sJobGrouper) calcPodGroupName(topOwner *unstructured.Unstructured, pod *v1.Pod) (string, error) {
-	if g.searchForLegacyPodGroups {
-		legacyName := calcLegacyName(topOwner, pod)
-		if legacyName != "" {
-			legacyPodGroupObj := &v2alpha2.PodGroup{}
-			err := g.client.Get(context.Background(), types.NamespacedName{Namespace: pod.Namespace, Name: legacyName},
-				legacyPodGroupObj)
-			if err == nil {
-				logger.V(1).Info("Using legacy pod-group %s/%s", pod.Namespace, legacyName)
-				return legacyName, nil
-			} else if !errors.IsNotFound(err) {
-				logger.V(1).Error(err,
-					"While searching for legacy pod group for pod %s/%s, an error has occurred.",
-					pod.Namespace, legacyName)
-				return "", err
-			}
-		}
+	newName := fmt.Sprintf("%s-%s-%s", constants.PodGroupNamePrefix, topOwner.GetName(), topOwner.GetUID())
+
+	// Prior versions named the podgroup after the pod (pg-<pod>-<uid>) so that
+	// each pod of a multi-pod Job had its own podgroup. Keep using that name if
+	// such a podgroup already exists, so running pods aren't re-parented during
+	// an upgrade. During the upgrade window new pods of the same Job may join
+	// the new unified podgroup while older pods remain on their legacy ones;
+	// with the default MinAvailable=1 this is harmless.
+	if !g.searchForLegacyPodGroups {
+		return newName, nil
 	}
 
-	return fmt.Sprintf("%s-%s-%s", constants.PodGroupNamePrefix, pod.Name, topOwner.GetUID()), nil
-}
-
-func calcLegacyName(topOwner *unstructured.Unstructured, pod *v1.Pod) string {
-	jobParallelism, found, err := unstructured.NestedInt64(topOwner.Object, "spec", "parallelism")
-
-	var baseName string
-	if found && err == nil && jobParallelism > 1 {
-		baseName = pod.Name
-	} else {
-		baseName = topOwner.GetName()
+	legacyName := fmt.Sprintf("%s-%s-%s", constants.PodGroupNamePrefix, pod.Name, topOwner.GetUID())
+	if legacyName == newName {
+		return newName, nil
 	}
 
-	return fmt.Sprintf("%s-%s-%s", constants.PodGroupNamePrefix, baseName, topOwner.GetUID())
+	legacyPodGroupObj := &v2alpha2.PodGroup{}
+	err := g.client.Get(context.Background(), types.NamespacedName{Namespace: pod.Namespace, Name: legacyName},
+		legacyPodGroupObj)
+	if err == nil {
+		logger.V(1).Info("Using legacy pod-group %s/%s", pod.Namespace, legacyName)
+		return legacyName, nil
+	}
+	if !errors.IsNotFound(err) {
+		logger.V(1).Error(err,
+			"While searching for legacy pod group for pod %s/%s, an error has occurred.",
+			pod.Namespace, legacyName)
+		return "", err
+	}
+	return newName, nil
 }
 
 func calcMinMember(topOwner *unstructured.Unstructured, pod *v1.Pod) (int32, error) {
