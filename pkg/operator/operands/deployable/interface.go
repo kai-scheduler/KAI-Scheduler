@@ -6,7 +6,7 @@ package deployable
 import (
 	"context"
 
-	kaiConfig "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
+	kaiConfig "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 

@@ -6,7 +6,7 @@ package api
 import (
 	"time"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/queue_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
 )
 
 type Interface interface {

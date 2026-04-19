@@ -12,24 +12,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- Updated resource enumeration logic to exclude resources with count of 0. [#1120](https://github.com/NVIDIA/KAI-Scheduler/issues/1120)
+- Updated resource enumeration logic to exclude resources with count of 0. [#1120](https://github.com/kai-scheduler/KAI-scheduler/issues/1120)
 
 ## [v0.9.15] - 2026-03-09
 
 ### Fixed
-- When a status update for a podGroup in the scheduler is flushed due to update conflict, delete the update payload data as well [#691](https://github.com/NVIDIA/KAI-Scheduler/pull/691) [davidLif](https://github.com/davidLif)
+- When a status update for a podGroup in the scheduler is flushed due to update conflict, delete the update payload data as well [#691](https://github.com/kai-scheduler/KAI-scheduler/pull/691) [davidLif](https://github.com/davidLif)
 
 ## [v0.9.13] - 2026-03-04
 
 ### Fixed
-- Fixed a bug where queue status did not reflect its podgroups resources correctly [#1049](https://github.com/NVIDIA/KAI-Scheduler/pull/1049)
+- Fixed a bug where queue status did not reflect its podgroups resources correctly [#1049](https://github.com/kai-scheduler/KAI-scheduler/pull/1049)
 - Fixed plugin server (snapshot and job-order endpoints) listening on all interfaces by binding to localhost only.
-- Fixed admission webhook to skip runtimeClassName injection when gpuPodRuntimeClassName is empty [#1035](https://github.com/NVIDIA/KAI-Scheduler/pull/1035)
+- Fixed admission webhook to skip runtimeClassName injection when gpuPodRuntimeClassName is empty [#1035](https://github.com/kai-scheduler/KAI-scheduler/pull/1035)
 
 ## [v0.9.12] - 2026-01-21
 
 ### Fixed
-- Fixed rollback for failed bind attempts [#878](https://github.com/NVIDIA/KAI-Scheduler/pull/878) [itsomri](https://github.com/itsomri)
+- Fixed rollback for failed bind attempts [#878](https://github.com/kai-scheduler/KAI-scheduler/pull/878) [itsomri](https://github.com/itsomri)
 - ClusterPolicy CDI parsing for gpu-operator > v25.10.0
 
 ## [v0.9.11] - 2026-01-07
@@ -40,7 +40,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [v0.9.10] - 2025-12-31
 
 ### Fixed
-- Fixed a bug where the scheduler would not consider topology constraints when calculating the scheduling constraints signature [#761](https://github.com/NVIDIA/KAI-Scheduler/pull/766) [gshaibi](https://github.com/gshaibi)
+- Fixed a bug where the scheduler would not consider topology constraints when calculating the scheduling constraints signature [#761](https://github.com/kai-scheduler/KAI-scheduler/pull/766) [gshaibi](https://github.com/gshaibi)
 - GPU Memory pods are not reclaimed or consolidated correctly
 
 ## [v0.9.9] - 20250-12-08

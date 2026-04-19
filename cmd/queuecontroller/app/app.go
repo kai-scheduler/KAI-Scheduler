@@ -9,8 +9,8 @@ import (
 
 	"go.uber.org/zap/zapcore"
 
-	v2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -24,8 +24,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/queuecontroller/controllers"
-	"github.com/NVIDIA/KAI-scheduler/pkg/queuecontroller/metrics"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/queuecontroller/controllers"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/queuecontroller/metrics"
 	// +kubebuilder:scaffold:imports
 )
 
