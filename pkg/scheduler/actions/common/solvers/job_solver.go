@@ -44,14 +44,18 @@ func NewJobsSolver(
 	}
 }
 
-// Solve attempts to allocate all tasksToAllocate for pendingJob, finding victims as needed.
-// Uses exponential-then-binary search over k = number of leading tasks to allocate, probing
-// solvePartialJob at each k. Every search probe is discarded (session left clean) and hints
-// from successful probes are accumulated in state. After the search, a final solve is
-// attempted at n with the accumulated hints — this doubles as producing the live statement
-// returned on success and as a retry that recovers false negatives caused by hint gaps
-// during the search (a k-probe may fail with weak hints yet succeed once later probes
-// strengthen them). Matches prior all-or-nothing semantics: full n or nothing.
+// Solve attempts to find a feasible allocation for all of pendingJob's pending tasks,
+// evicting tasks from other jobs as victims when necessary. It operates with all-or-nothing
+// semantics: either the full set of pending tasks is scheduled, or no allocation is produced.
+//
+// Returns:
+//   - solved: true when every pending task was allocated and pendingJob is gang-satisfied.
+//   - statement: on success, a live Statement holding the speculative allocations and victim
+//     evictions; the caller is responsible for Commit or Discard. nil on failure.
+//   - victimTaskNames: formatted "<namespace>/<name>" strings of the victim tasks, for logging.
+//
+// Session state is mutated only on success (to reflect the speculative operations in the
+// returned statement) and is left unchanged on failure.
 func (s *JobSolver) Solve(
 	ssn *framework.Session, pendingJob *podgroup_info.PodGroupInfo) (bool, *framework.Statement, []string) {
 	state := solvingState{}
