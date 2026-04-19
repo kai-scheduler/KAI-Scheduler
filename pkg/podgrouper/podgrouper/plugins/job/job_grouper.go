@@ -53,12 +53,13 @@ func (g *K8sJobGrouper) GetPodGroupMetadata(topOwner *unstructured.Unstructured,
 		return nil, err
 	}
 
-	podGroupMetadata.Name, err = g.calcPodGroupName(topOwner, pod)
+	var legacy bool
+	podGroupMetadata.Name, legacy, err = g.calcPodGroupName(topOwner, pod)
 	if err != nil {
 		return nil, err
 	}
 
-	minMember, err := calcMinMember(topOwner, pod)
+	minMember, err := calcMinMember(topOwner, pod, legacy)
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +68,7 @@ func (g *K8sJobGrouper) GetPodGroupMetadata(topOwner *unstructured.Unstructured,
 	return podGroupMetadata, nil
 }
 
-func (g *K8sJobGrouper) calcPodGroupName(topOwner *unstructured.Unstructured, pod *v1.Pod) (string, error) {
+func (g *K8sJobGrouper) calcPodGroupName(topOwner *unstructured.Unstructured, pod *v1.Pod) (string, bool, error) {
 	newName := fmt.Sprintf("%s-%s-%s", constants.PodGroupNamePrefix, topOwner.GetName(), topOwner.GetUID())
 
 	// Prior versions named the podgroup after the pod (pg-<pod>-<uid>) so that
@@ -77,12 +78,12 @@ func (g *K8sJobGrouper) calcPodGroupName(topOwner *unstructured.Unstructured, po
 	// the new unified podgroup while older pods remain on their legacy ones;
 	// with the default MinAvailable=1 this is harmless.
 	if !g.searchForLegacyPodGroups {
-		return newName, nil
+		return newName, false, nil
 	}
 
 	legacyName := fmt.Sprintf("%s-%s-%s", constants.PodGroupNamePrefix, pod.Name, topOwner.GetUID())
 	if legacyName == newName {
-		return newName, nil
+		return newName, false, nil
 	}
 
 	legacyPodGroupObj := &v2alpha2.PodGroup{}
@@ -90,18 +91,22 @@ func (g *K8sJobGrouper) calcPodGroupName(topOwner *unstructured.Unstructured, po
 		legacyPodGroupObj)
 	if err == nil {
 		logger.V(1).Info("Using legacy pod-group %s/%s", pod.Namespace, legacyName)
-		return legacyName, nil
+		return legacyName, true, nil
 	}
 	if !errors.IsNotFound(err) {
 		logger.V(1).Error(err,
 			"While searching for legacy pod group for pod %s/%s, an error has occurred.",
 			pod.Namespace, legacyName)
-		return "", err
+		return "", false, err
 	}
-	return newName, nil
+	return newName, false, nil
 }
 
-func calcMinMember(topOwner *unstructured.Unstructured, pod *v1.Pod) (int32, error) {
+func calcMinMember(topOwner *unstructured.Unstructured, pod *v1.Pod, legacy bool) (int32, error) {
+	if legacy {
+		return 1, nil
+	}
+
 	override, found := topOwner.GetAnnotations()[constants.MinMemberOverrideKey]
 	if !found {
 		return 1, nil
