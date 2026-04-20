@@ -750,10 +750,11 @@ func TestDefaultStatusUpdater_RetryAfterError(t *testing.T) {
 	statusUpdater := New(kubeClient, kubeAiSchedClient, recorder, 1, false, nodePoolLabelKey)
 
 	updateCalls := 0
+	// wait with pod groups update until signal is given.
 	kubeAiSchedClient.SchedulingV2alpha2().(*fakeschedulingv2alpha2.FakeSchedulingV2alpha2).PrependReactor(
 		"update", "podgroups", func(action faketesting.Action) (handled bool, ret runtime.Object, err error) {
 			updateCalls += 1
-			return true, nil, errors.New("retryable error")
+			return false, nil, errors.New("test")
 		},
 	)
 
@@ -768,6 +769,20 @@ func TestDefaultStatusUpdater_RetryAfterError(t *testing.T) {
 		},
 		Status: enginev2alpha2.PodGroupStatus{},
 	}
+	jobCopy := job.DeepCopy()
+
+	jobCopy.Status.SchedulingConditions = []enginev2alpha2.SchedulingCondition{
+		{
+			TransitionID: "1",
+			Type:         enginev2alpha2.UnschedulableOnNodePool,
+			NodePool:     "test",
+			Reason:       "test",
+			Message:      "test",
+		},
+	}
+
+	patchData, err := getPodGroupPatch(job, jobCopy)
+	assert.NoError(t, err)
 
 	go func() {
 		time.Sleep(time.Millisecond * 75)
@@ -776,6 +791,7 @@ func TestDefaultStatusUpdater_RetryAfterError(t *testing.T) {
 			objectType: "podgroup",
 		}, &inflightUpdate{
 			object:       job,
+			patchData:    patchData,
 			updateStatus: true,
 			subResources: nil,
 		})
