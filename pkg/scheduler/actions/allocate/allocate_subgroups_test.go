@@ -636,6 +636,127 @@ func getAllocationSubGroupsTestsMetadata() []integration_tests_utils.TestTopolog
 		},
 		{
 			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Name: "Allocate job with tree SubGroups and MinSubGroups - unsatisfied group gets priority",
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:      "job0",
+						QueueName: "queue0",
+						Priority:  constants.PriorityTrainNumber,
+						RootSubGroupSet: func() *subgroup_info.SubGroupSet {
+							root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+
+							// group-ab is satisfied: minSubGroup=1 and sub-a already has 1 running task
+							groupAB := subgroup_info.NewSubGroupSet("group-ab", nil)
+							groupAB.SetMinSubGroup(ptr.To(int32(1)))
+							groupAB.AddPodSet(subgroup_info.NewPodSet("sub-a", 1, nil))
+							groupAB.AddPodSet(subgroup_info.NewPodSet("sub-b", 1, nil))
+							root.AddSubGroup(groupAB)
+
+							// group-cd is unsatisfied: minSubGroup=nil requires both members, none running
+							groupCD := subgroup_info.NewSubGroupSet("group-cd", nil)
+							groupCD.AddPodSet(subgroup_info.NewPodSet("sub-c", 1, nil))
+							groupCD.AddPodSet(subgroup_info.NewPodSet("sub-d", 1, nil))
+							root.AddSubGroup(groupCD)
+
+							return root
+						}(),
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								NodeName:     "node0",
+								State:        pod_status.Running,
+								SubGroupName: "sub-a",
+								RequiredGPUs: ptr.To(int64(1)),
+							},
+							{
+								State:        pod_status.Pending,
+								SubGroupName: "sub-b",
+								RequiredGPUs: ptr.To(int64(1)),
+							},
+							{
+								State:        pod_status.Pending,
+								SubGroupName: "sub-b",
+								RequiredGPUs: ptr.To(int64(1)),
+							},
+							{
+								State:        pod_status.Pending,
+								SubGroupName: "sub-c",
+								RequiredGPUs: ptr.To(int64(1)),
+							},
+							{
+								State:        pod_status.Pending,
+								SubGroupName: "sub-c",
+								RequiredGPUs: ptr.To(int64(1)),
+							},
+							{
+								State:        pod_status.Pending,
+								SubGroupName: "sub-d",
+								RequiredGPUs: ptr.To(int64(1)),
+							},
+							{
+								State:        pod_status.Pending,
+								SubGroupName: "sub-d",
+								RequiredGPUs: ptr.To(int64(1)),
+							},
+						},
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node0": {
+						GPUs: 4,
+					},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{
+						Name:         "queue0",
+						DeservedGPUs: 1,
+					},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{
+						NumberOfCacheBinds: 3,
+					},
+				},
+				// group-cd (unsatisfied: 0 of 2 members running) is ordered before group-ab
+				// (satisfied via minSubGroup=1: sub-a meets the threshold).
+				// With 3 free GPUs, each of sub-b, sub-c and sub-d gets its one minimum task bound.
+				TaskExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"job0-0": {
+						NodeName:     "node0",
+						GPUsRequired: 1,
+						Status:       pod_status.Running,
+					},
+					"job0-1": {
+						NodeName:     "node0",
+						GPUsRequired: 1,
+						Status:       pod_status.Binding,
+					},
+					"job0-2": {
+						GPUsRequired: 1,
+						Status:       pod_status.Pending,
+					},
+					"job0-3": {
+						NodeName:     "node0",
+						GPUsRequired: 1,
+						Status:       pod_status.Binding,
+					},
+					"job0-4": {
+						GPUsRequired: 1,
+						Status:       pod_status.Pending,
+					},
+					"job0-5": {
+						NodeName:     "node0",
+						GPUsRequired: 1,
+						Status:       pod_status.Binding,
+					},
+					"job0-6": {
+						GPUsRequired: 1,
+						Status:       pod_status.Pending,
+					},
+				},
+			},
+		},
+		{
+			TestTopologyBasic: test_utils.TestTopologyBasic{
 				Name: "Allocate multiple jobs with SubGroups",
 				Jobs: []*jobs_fake.TestJobBasic{
 					{
@@ -757,6 +878,165 @@ func getAllocationSubGroupsTestsMetadata() []integration_tests_utils.TestTopolog
 					"pending_job1-3": {
 						GPUsRequired: 1,
 						Status:       pod_status.Pending,
+					},
+				},
+			},
+		},
+		{
+			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Name: "Allocate job with minSubGroup - only the first required member is scheduled in the gang phase",
+				// Root has minSubGroup=1 so only one of its two members is required.
+				// Both groups are equally unsatisfied (0/2); sort preserves insertion order so
+				// group-a (added first) is selected as the single required member.  Its two tasks
+				// consume all 2 GPUs on the node, leaving group-b pending for a later call.
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:      "job0",
+						QueueName: "queue0",
+						Priority:  constants.PriorityTrainNumber,
+						RootSubGroupSet: func() *subgroup_info.SubGroupSet {
+							root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+							root.SetMinSubGroup(ptr.To(int32(1)))
+
+							groupA := subgroup_info.NewSubGroupSet("group-a", nil)
+							groupA.AddPodSet(subgroup_info.NewPodSet("sub-a1", 1, nil))
+							groupA.AddPodSet(subgroup_info.NewPodSet("sub-a2", 1, nil))
+							root.AddSubGroup(groupA)
+
+							groupB := subgroup_info.NewSubGroupSet("group-b", nil)
+							groupB.AddPodSet(subgroup_info.NewPodSet("sub-b1", 1, nil))
+							groupB.AddPodSet(subgroup_info.NewPodSet("sub-b2", 1, nil))
+							root.AddSubGroup(groupB)
+
+							return root
+						}(),
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								State:        pod_status.Pending,
+								SubGroupName: "sub-a1",
+								RequiredGPUs: ptr.To(int64(1)),
+							},
+							{
+								State:        pod_status.Pending,
+								SubGroupName: "sub-a2",
+								RequiredGPUs: ptr.To(int64(1)),
+							},
+							{
+								State:        pod_status.Pending,
+								SubGroupName: "sub-b1",
+								RequiredGPUs: ptr.To(int64(1)),
+							},
+							{
+								State:        pod_status.Pending,
+								SubGroupName: "sub-b2",
+								RequiredGPUs: ptr.To(int64(1)),
+							},
+						},
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node0": {
+						GPUs: 2,
+					},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{
+						Name:         "queue0",
+						DeservedGPUs: 1,
+					},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{
+						NumberOfCacheBinds: 2,
+					},
+				},
+				TaskExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"job0-0": {
+						NodeName:     "node0",
+						GPUsRequired: 1,
+						Status:       pod_status.Binding,
+					},
+					"job0-1": {
+						NodeName:     "node0",
+						GPUsRequired: 1,
+						Status:       pod_status.Binding,
+					},
+					"job0-2": {
+						GPUsRequired: 1,
+						Status:       pod_status.Pending,
+					},
+					"job0-3": {
+						GPUsRequired: 1,
+						Status:       pod_status.Pending,
+					},
+				},
+			},
+		},
+		{
+			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Name: "Allocate job with minSubGroup - elastic phase allocates one extra member",
+				// Root (minSubGroup=1): group-a is already satisfied (sub-a1 running).
+				// Elastic phase selects group-b (next extra member). Only group-b tasks returned.
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:      "job0",
+						QueueName: "queue0",
+						Priority:  constants.PriorityTrainNumber,
+						RootSubGroupSet: func() *subgroup_info.SubGroupSet {
+							root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+							root.SetMinSubGroup(ptr.To(int32(1)))
+
+							groupA := subgroup_info.NewSubGroupSet("group-a", nil)
+							groupA.AddPodSet(subgroup_info.NewPodSet("sub-a1", 1, nil))
+							root.AddSubGroup(groupA)
+
+							groupB := subgroup_info.NewSubGroupSet("group-b", nil)
+							groupB.AddPodSet(subgroup_info.NewPodSet("sub-b1", 1, nil))
+							root.AddSubGroup(groupB)
+
+							return root
+						}(),
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								NodeName:     "node0",
+								State:        pod_status.Running,
+								SubGroupName: "sub-a1",
+								RequiredGPUs: ptr.To(int64(1)),
+							},
+							{
+								State:        pod_status.Pending,
+								SubGroupName: "sub-b1",
+								RequiredGPUs: ptr.To(int64(1)),
+							},
+						},
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node0": {
+						GPUs: 2,
+					},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{
+						Name:         "queue0",
+						DeservedGPUs: 1,
+					},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{
+						NumberOfCacheBinds: 1,
+					},
+				},
+				TaskExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"job0-0": {
+						NodeName:     "node0",
+						GPUsRequired: 1,
+						Status:       pod_status.Running,
+					},
+					"job0-1": {
+						NodeName:     "node0",
+						GPUsRequired: 1,
+						Status:       pod_status.Binding,
 					},
 				},
 			},

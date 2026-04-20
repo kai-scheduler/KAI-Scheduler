@@ -116,7 +116,7 @@ func NewPodGroupInfoWithVectorMap(uid common_info.PodGroupID, vectorMap *resourc
 			Stale:     false,
 		},
 		RootSubGroupSet: defaultSubGroupSet,
-		PodSets:         defaultSubGroupSet.GetAllPodSets(),
+		PodSets:         defaultSubGroupSet.GetDescendantPodSets(),
 
 		LastStartTimestamp:   nil,
 		activeAllocatedCount: ptr.To(0),
@@ -148,7 +148,18 @@ func (pgi *PodGroupInfo) GetAllPodsMap() pod_info.PodsMap {
 	return allPods
 }
 
-func (pgi *PodGroupInfo) GetSubGroups() map[string]*subgroup_info.PodSet {
+func (pgi *PodGroupInfo) GetAllAllocatedPods() []*pod_info.PodInfo {
+	podsMap := pgi.GetAllPodsMap()
+	allocated := make([]*pod_info.PodInfo, 0, len(podsMap))
+	for _, task := range podsMap {
+		if pod_status.IsActiveAllocatedStatus(task.Status) {
+			allocated = append(allocated, task)
+		}
+	}
+	return allocated
+}
+
+func (pgi *PodGroupInfo) GetAllPodSets() map[string]*subgroup_info.PodSet {
 	return pgi.PodSets
 }
 
@@ -202,7 +213,7 @@ func (pgi *PodGroupInfo) setSubGroups(podGroup *enginev2alpha2.PodGroup) error {
 		return err
 	}
 	pgi.RootSubGroupSet = rootSubGroupSet
-	podSets := rootSubGroupSet.GetAllPodSets()
+	podSets := rootSubGroupSet.GetDescendantPodSets()
 	if len(podSets) > 0 {
 		pgi.PodSets = podSets
 	} else {
@@ -401,12 +412,10 @@ func (pgi *PodGroupInfo) GetTasksActiveAllocatedReqResourceVector() resource_inf
 }
 
 func (pgi *PodGroupInfo) IsReadyForScheduling() bool {
-	for _, podSet := range pgi.PodSets {
-		if !podSet.IsReadyForScheduling() {
-			return false
-		}
+	if pgi.RootSubGroupSet == nil {
+		return false
 	}
-	return true
+	return pgi.RootSubGroupSet.IsReadyForScheduling()
 }
 
 func (pgi *PodGroupInfo) IsElastic() bool {
@@ -508,7 +517,7 @@ func (pgi *PodGroupInfo) CloneWithTasks(tasks []*pod_info.PodInfo) *PodGroupInfo
 	pgi.CreationTimestamp.DeepCopyInto(&info.CreationTimestamp)
 
 	info.RootSubGroupSet = pgi.RootSubGroupSet.Clone()
-	info.PodSets = info.RootSubGroupSet.GetAllPodSets()
+	info.PodSets = info.RootSubGroupSet.GetDescendantPodSets()
 
 	for _, task := range tasks {
 		info.AddTaskInfo(task.Clone())

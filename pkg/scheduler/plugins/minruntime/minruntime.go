@@ -216,12 +216,12 @@ func validVictimForMinAvailable(victimInfo *api.VictimInfo) bool {
 
 	numCurrentlyRunningSubGroup := map[string]int32{}
 	for subGroupName := range numVictimTasksPerSubGroup {
-		numCurrentlyRunningSubGroup[subGroupName] = int32(victimInfo.Job.GetSubGroups()[subGroupName].GetNumActiveUsedTasks())
+		numCurrentlyRunningSubGroup[subGroupName] = int32(victimInfo.Job.GetAllPodSets()[subGroupName].GetNumActiveUsedTasks())
 	}
 
 	for subGroupName, numVictims := range numVictimTasksPerSubGroup {
 		subGroupCurrentlyRunning := numCurrentlyRunningSubGroup[subGroupName]
-		if victimInfo.Job.GetSubGroups()[subGroupName].GetMinAvailable() > subGroupCurrentlyRunning-numVictims {
+		if victimInfo.Job.GetAllPodSets()[subGroupName].GetMinAvailable() > subGroupCurrentlyRunning-numVictims {
 			return false
 		}
 	}

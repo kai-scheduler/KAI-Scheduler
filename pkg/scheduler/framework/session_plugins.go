@@ -66,12 +66,8 @@ func (ssn *Session) AddTaskOrderFn(tof common_info.CompareFn) {
 	ssn.TaskOrderFns = append(ssn.TaskOrderFns, tof)
 }
 
-func (ssn *Session) AddPodSetOrderFn(psof common_info.CompareFn) {
-	ssn.PodSetOrderFns = append(ssn.PodSetOrderFns, psof)
-}
-
-func (ssn *Session) AddSubGroupSetOrderFn(ssof common_info.CompareFn) {
-	ssn.SubGroupSetOrderFns = append(ssn.SubGroupSetOrderFns, ssof)
+func (ssn *Session) AddSubGroupOrderFn(ssof common_info.CompareFn) {
+	ssn.SubGroupOrderFns = append(ssn.SubGroupOrderFns, ssof)
 }
 
 func (ssn *Session) AddQueueOrderFn(qof api.CompareQueueFn) {
@@ -259,21 +255,10 @@ func (ssn *Session) TaskOrderFn(l, r interface{}) bool {
 	}
 }
 
-func (ssn *Session) PodSetOrderFn(l, r interface{}) bool {
-	lSubGroup := l.(*subgroup_info.PodSet)
-	rSubGroup := r.(*subgroup_info.PodSet)
-	for _, compareFn := range ssn.PodSetOrderFns {
-		if comparison := compareFn(lSubGroup, rSubGroup); comparison != 0 {
-			return comparison < 0
-		}
-	}
-	return lSubGroup.GetName() < rSubGroup.GetName()
-}
-
-func (ssn *Session) SubGroupSetOrderFn(l, r interface{}) bool {
-	lSubGroupSet := l.(*subgroup_info.SubGroupSet)
-	rSubGroupSet := r.(*subgroup_info.SubGroupSet)
-	for _, compareFn := range ssn.SubGroupSetOrderFns {
+func (ssn *Session) SubGroupOrderFn(l, r interface{}) bool {
+	lSubGroupSet := l.(subgroup_info.SubGroupMember)
+	rSubGroupSet := r.(subgroup_info.SubGroupMember)
+	for _, compareFn := range ssn.SubGroupOrderFns {
 		if comparison := compareFn(lSubGroupSet, rSubGroupSet); comparison != 0 {
 			return comparison < 0
 		}

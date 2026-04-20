@@ -31,6 +31,7 @@ func FromPodGroup(podGroup *v2alpha2.PodGroup) (*SubGroupSet, error) {
 		}
 	}
 	root := NewSubGroupSet(RootSubGroupSetName, topologyConstraint)
+	root.SetMinSubGroup(podGroup.Spec.MinSubGroup)
 	subGroupSets := map[string]*SubGroupSet{
 		RootSubGroupSetName: root,
 	}
@@ -75,9 +76,10 @@ func createSubGroupInfos(allSubGroups map[string]*v2alpha2.SubGroup, children ma
 				PreferredLevel: subGroup.TopologyConstraint.PreferredTopologyLevel,
 			}
 		}
-		_, hasChildren := children[name]
-		if hasChildren {
+		_, hasSubGroupMember := children[name]
+		if hasSubGroupMember {
 			subGroupSets[name] = NewSubGroupSet(name, topologyConstrainInfo)
+			subGroupSets[name].SetMinSubGroup(subGroup.MinSubGroup)
 		} else {
 			minMember := int32(0)
 			if subGroup.MinMember != nil {

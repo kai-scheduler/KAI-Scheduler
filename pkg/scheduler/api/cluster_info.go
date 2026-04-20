@@ -105,7 +105,7 @@ func (ci ClusterInfo) String() string {
 			str = str + fmt.Sprintf("\t Job(%s) name(%s)\n",
 				job.UID, job.Name)
 
-			for _, subGroup := range job.GetSubGroups() {
+			for _, subGroup := range job.GetAllPodSets() {
 				str = str + fmt.Sprintf("\t\t subGroup(%s), minAvailable(%v)\n",
 					subGroup.GetName(), subGroup.GetMinAvailable())
 			}

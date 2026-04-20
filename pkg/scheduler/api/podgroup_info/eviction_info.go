@@ -4,6 +4,8 @@
 package podgroup_info
 
 import (
+	"sort"
+
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
@@ -19,72 +21,152 @@ func GetTasksToEvict(job *PodGroupInfo, subGroupOrderFn, taskOrderFn common_info
 		return subGroupOrderFn(r, l)
 	}
 
-	return getTasksToEvictWithSubGroups(job, reverseSubGroupOrderFn, reverseTaskOrderFn)
-}
-
-func getTasksToEvictWithSubGroups(
-	job *PodGroupInfo, reverseSubGroupOrderFn, reverseTaskOrderFn common_info.LessFn,
-) ([]*pod_info.PodInfo, bool) {
-	subGroupPriorityQueue := getSubGroupsPriorityQueue(job.GetSubGroups(), reverseSubGroupOrderFn)
-	maxNumOfSubGroups := getNumOfSubGroupsToEvict(job)
-
-	var tasksToEvict []*pod_info.PodInfo
-	numEvictedSubGroups := 0
-	for !subGroupPriorityQueue.Empty() && (numEvictedSubGroups < maxNumOfSubGroups) {
-		nextSubGroup := subGroupPriorityQueue.Pop().(*subgroup_info.PodSet)
-
-		tasksPriorityQueue := getTasksToEvictPriorityQueue(nextSubGroup, reverseTaskOrderFn)
-		maxTasksToEvict := getMaxTasksToEvict(nextSubGroup)
-		tasks := getTasksToEvictFromQueue(tasksPriorityQueue, maxTasksToEvict)
-		tasksToEvict = append(tasksToEvict, tasks...)
-		numEvictedSubGroups += 1
-	}
-
-	numAllocatedTasks := job.GetActiveAllocatedTasksCount()
-	return tasksToEvict, len(tasksToEvict) < numAllocatedTasks
-}
-
-func getNumOfSubGroupsToEvict(podGroupInfo *PodGroupInfo) int {
-	for _, subGroup := range podGroupInfo.GetSubGroups() {
-		allocatedTasks := subGroup.GetNumActiveAllocatedTasks()
-
-		// If there is at least one subgroup above minAvailable - a single task is evicted
-		if allocatedTasks > int(subGroup.GetMinAvailable()) {
-			return 1
+	root := job.RootSubGroupSet
+	if root == nil {
+		root = subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+		for _, ps := range job.PodSets {
+			root.AddPodSet(ps)
 		}
 	}
-	return len(podGroupInfo.GetSubGroups())
+
+	tasks := collectTasksToEvictFromSubGroupSet(root, reverseSubGroupOrderFn, reverseTaskOrderFn)
+
+	jobHasMoreActiveTasksAfterEviction := len(tasks) < job.GetActiveAllocatedTasksCount()
+	return tasks, jobHasMoreActiveTasksAfterEviction
 }
 
-func getMaxTasksToEvict(subGroup *subgroup_info.PodSet) int {
-	numAllocatedTasks := subGroup.GetNumActiveAllocatedTasks()
-	if numAllocatedTasks > int(subGroup.GetMinAvailable()) {
-		return 1
+// collectTasksToEvictFromSubGroupSet runs phases 1+2 (elastic), then falls back to phase 3 (full eviction).
+func collectTasksToEvictFromSubGroupSet(
+	sgs *subgroup_info.SubGroupSet, reverseSubGroupOrderFn, reverseTaskOrderFn common_info.LessFn,
+) []*pod_info.PodInfo {
+	tasks := collectElasticEvictionFromSubGroupSet(sgs, reverseSubGroupOrderFn, reverseTaskOrderFn)
+	if len(tasks) > 0 {
+		return tasks
 	}
-	return numAllocatedTasks
+	return collectAllAllocatedTasksFromSubGroupSet(sgs, reverseTaskOrderFn)
 }
 
-func getTasksToEvictPriorityQueue(
-	subGroup *subgroup_info.PodSet, taskOrderFn common_info.LessFn,
+// collectElasticEvictionFromSubGroupSet runs phases 1+2 only, returns nil if no elastic surplus.
+func collectElasticEvictionFromSubGroupSet(
+	sgs *subgroup_info.SubGroupSet, reverseSubGroupOrderFn, reverseTaskOrderFn common_info.LessFn,
+) []*pod_info.PodInfo {
+	numSatisfied := sgs.GetNumActiveAllocatedDirectSubGroups()
+	if numSatisfied == 0 {
+		return nil
+	}
+
+	members := sgs.GetMembers()
+	sort.Slice(members, func(i, j int) bool {
+		return reverseSubGroupOrderFn(members[i], members[j])
+	})
+
+	// Phase 1 — Elastic recursive: look for elastic surplus deeper in the tree.
+	if hasElasticSurplusInSubGroupSet(sgs) {
+		for _, member := range members {
+			tasks := collectElasticEvictionFromMember(member, reverseSubGroupOrderFn, reverseTaskOrderFn)
+			if len(tasks) > 0 {
+				return tasks
+			}
+		}
+	}
+
+	// Phase 2 — Elastic direct: drop least-prioritized member entirely if sgs has surplus members.
+	if sgs.GetMinMembersToSatisfy() < numSatisfied {
+		for _, member := range members {
+			tasks := collectGangEvictionFromMember(member, reverseTaskOrderFn)
+			if len(tasks) > 0 {
+				return tasks
+			}
+		}
+	}
+
+	return nil
+}
+
+func collectElasticEvictionFromMember(
+	member subgroup_info.SubGroupMember, reverseSubGroupOrderFn, reverseTaskOrderFn common_info.LessFn,
+) []*pod_info.PodInfo {
+	switch m := member.(type) {
+	case *subgroup_info.SubGroupSet:
+		return collectElasticEvictionFromSubGroupSet(m, reverseSubGroupOrderFn, reverseTaskOrderFn)
+	case *subgroup_info.PodSet:
+		return collectElasticEvictionFromPodSet(m, reverseTaskOrderFn)
+	}
+	return nil
+}
+
+func collectElasticEvictionFromPodSet(
+	ps *subgroup_info.PodSet, reverseTaskOrderFn common_info.LessFn,
+) []*pod_info.PodInfo {
+	if ps.GetNumActiveAllocatedTasks() <= int(ps.GetMinAvailable()) {
+		return nil
+	}
+	taskQueue := getEvictableTasksPriorityQueue(ps, reverseTaskOrderFn)
+	return getTasksFromQueue(taskQueue, 1)
+}
+
+// collectGangEvictionFromMember collects all allocated tasks from a member in the context of its parent's gang phase.
+// If we reach a gang eviction of a given SubGroupMember, it means that all the pods under this subtree needs to be evicted.
+// Any elastic pods / subgroups (if they existed and have an active status) have been evicted in previous phases.
+func collectGangEvictionFromMember(
+	member subgroup_info.SubGroupMember, reverseTaskOrderFn common_info.LessFn,
+) []*pod_info.PodInfo {
+	switch m := member.(type) {
+	case *subgroup_info.SubGroupSet:
+		return collectAllAllocatedTasksFromSubGroupSet(m, reverseTaskOrderFn)
+	case *subgroup_info.PodSet:
+		return collectAllAllocatedTasksFromPodSet(m, reverseTaskOrderFn)
+	}
+	return nil
+}
+
+func collectAllAllocatedTasksFromSubGroupSet(
+	sgs *subgroup_info.SubGroupSet, reverseTaskOrderFn common_info.LessFn,
+) []*pod_info.PodInfo {
+	var tasks []*pod_info.PodInfo
+	for _, ps := range sgs.GetDescendantPodSets() {
+		tasks = append(tasks, collectAllAllocatedTasksFromPodSet(ps, reverseTaskOrderFn)...)
+	}
+	return tasks
+}
+
+func collectAllAllocatedTasksFromPodSet(
+	ps *subgroup_info.PodSet, reverseTaskOrderFn common_info.LessFn,
+) []*pod_info.PodInfo {
+	taskQueue := getEvictableTasksPriorityQueue(ps, reverseTaskOrderFn)
+	return getTasksFromQueue(taskQueue, taskQueue.Len())
+}
+
+func hasElasticSurplusInSubGroupSet(sgs *subgroup_info.SubGroupSet) bool {
+	if sgs.GetNumActiveAllocatedDirectSubGroups() > sgs.GetMinMembersToSatisfy() {
+		return true
+	}
+	for _, member := range sgs.GetMembers() {
+		if hasElasticSurplusInMember(member) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasElasticSurplusInMember(member subgroup_info.SubGroupMember) bool {
+	switch m := member.(type) {
+	case *subgroup_info.SubGroupSet:
+		return hasElasticSurplusInSubGroupSet(m)
+	case *subgroup_info.PodSet:
+		return m.GetNumActiveAllocatedTasks() > int(m.GetMinAvailable())
+	}
+	return false
+}
+
+func getEvictableTasksPriorityQueue(
+	ps *subgroup_info.PodSet, reverseTaskOrderFn common_info.LessFn,
 ) *scheduler_util.PriorityQueue {
-	podPriorityQueue := scheduler_util.NewPriorityQueue(taskOrderFn, scheduler_util.QueueCapacityInfinite)
-	for _, task := range subGroup.GetPodInfos() {
+	podPriorityQueue := scheduler_util.NewPriorityQueue(reverseTaskOrderFn, scheduler_util.QueueCapacityInfinite)
+	for _, task := range ps.GetPodInfos() {
 		if pod_status.IsActiveAllocatedStatus(task.Status) {
 			podPriorityQueue.Push(task)
 		}
 	}
 	return podPriorityQueue
-}
-
-func getTasksToEvictFromQueue(
-	priorityQueue *scheduler_util.PriorityQueue, maxTasksToEvict int,
-) []*pod_info.PodInfo {
-	numEvictedTasks := 0
-	var tasks []*pod_info.PodInfo
-	for !priorityQueue.Empty() && (numEvictedTasks < maxTasksToEvict) {
-		nextTask := priorityQueue.Pop().(*pod_info.PodInfo)
-		tasks = append(tasks, nextTask)
-		numEvictedTasks += 1
-	}
-	return tasks
 }
