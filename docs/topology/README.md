@@ -153,3 +153,7 @@ Within Zone A, the scheduler prioritizes racks with more available resources to 
 KAI Scheduler supports multi-level topologies, where each level can be defined with a different constraint.
 More information about it can be found in the [Multi-Level Topology Aware Scheduling](multilevel.md) section.
 
+## Segment-Based Topology Placement
+For distributed workloads with hierarchical communication patterns (e.g., tensor parallelism within data parallelism), KAI Scheduler can split a workload's replicas into fixed-size segments and apply a topology constraint to each segment independently.
+See [Segment-Based Topology Placement](segments.md) for the supported workloads, annotations, and examples.
+
