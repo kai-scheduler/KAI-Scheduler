@@ -51,7 +51,11 @@ func TestNewTopologyAwareIdleGpusFilter_NoConstraints(t *testing.T) {
 	jobsInfoMap, _, _ := jobs_fake.BuildJobsAndTasksMaps(jobs, vectorMap)
 	pendingJob := jobsInfoMap["pending-job"]
 
-	testScenario := scenario.NewByNodeScenario(nil, pendingJob, pendingJob, nil, nil)
+	tasks := []*pod_info.PodInfo{}
+	for _, task := range pendingJob.GetAllPodsMap() {
+		tasks = append(tasks, task)
+	}
+	testScenario := scenario.NewByNodeScenario(nil, pendingJob, tasks, nil, nil)
 	filter := NewTopologyAwareIdleGpusFilter(testScenario, nodes)
 
 	if filter != nil {
@@ -83,7 +87,11 @@ func TestTopologyAwareIdleGpus_SingleDomainSufficientCapacity(t *testing.T) {
 		{SubGroupName: "default", State: pod_status.Pending, RequiredGPUs: ptr.To(int64(4))},
 	}, rootSubGroupSet, vectorMap)
 
-	testScenario := scenario.NewByNodeScenario(nil, pendingJob, pendingJob, nil, nil)
+	tasks := []*pod_info.PodInfo{}
+	for _, task := range pendingJob.GetAllPodsMap() {
+		tasks = append(tasks, task)
+	}
+	testScenario := scenario.NewByNodeScenario(nil, pendingJob, tasks, nil, nil)
 	filter := NewTopologyAwareIdleGpusFilter(testScenario, nodes)
 
 	if filter == nil {
@@ -116,7 +124,11 @@ func TestTopologyAwareIdleGpus_NoDomainHasSufficientCapacity(t *testing.T) {
 		{SubGroupName: "default", State: pod_status.Pending, RequiredGPUs: ptr.To(int64(8))},
 	}, rootSubGroupSet, vectorMap)
 
-	testScenario := scenario.NewByNodeScenario(nil, pendingJob, pendingJob, nil, nil)
+	tasks := []*pod_info.PodInfo{}
+	for _, task := range pendingJob.GetAllPodsMap() {
+		tasks = append(tasks, task)
+	}
+	testScenario := scenario.NewByNodeScenario(nil, pendingJob, tasks, nil, nil)
 	filter := NewTopologyAwareIdleGpusFilter(testScenario, nodes)
 
 	if filter == nil {
@@ -151,7 +163,11 @@ func TestTopologyAwareIdleGpus_MultiplePodSetsWithSameConstraint(t *testing.T) {
 		{SubGroupName: "podset2", State: pod_status.Pending, RequiredGPUs: ptr.To(int64(10))},
 	}, rootSubGroupSet, vectorMap)
 
-	testScenario := scenario.NewByNodeScenario(nil, pendingJob, pendingJob, nil, nil)
+	tasks := []*pod_info.PodInfo{}
+	for _, task := range pendingJob.GetAllPodsMap() {
+		tasks = append(tasks, task)
+	}
+	testScenario := scenario.NewByNodeScenario(nil, pendingJob, tasks, nil, nil)
 	filter := NewTopologyAwareIdleGpusFilter(testScenario, nodes)
 
 	if filter == nil {
@@ -194,10 +210,14 @@ func TestTopologyAwareIdleGpus_WithVictimTasks(t *testing.T) {
 		},
 	}
 
+	tasks := []*pod_info.PodInfo{}
+	for _, task := range pendingJob.GetAllPodsMap() {
+		tasks = append(tasks, task)
+	}
 	testScenario := scenario.NewByNodeScenario(
 		session,
 		pendingJob,
-		pendingJob,
+		tasks,
 		[]*pod_info.PodInfo{victimTask},
 		nil,
 	)
@@ -249,9 +269,13 @@ func TestTopologyAwareIdleGpus_VictimNotDoubleCountedAcrossFilterCalls(t *testin
 		},
 	}
 
+	tasks := []*pod_info.PodInfo{}
+	for _, task := range pendingJob.GetAllPodsMap() {
+		tasks = append(tasks, task)
+	}
 	// Both scenarios present the same victim-1.
-	scenario1 := scenario.NewByNodeScenario(session, pendingJob, pendingJob, []*pod_info.PodInfo{victimTask}, nil)
-	scenario2 := scenario.NewByNodeScenario(session, pendingJob, pendingJob, []*pod_info.PodInfo{victimTask}, nil)
+	scenario1 := scenario.NewByNodeScenario(session, pendingJob, tasks, []*pod_info.PodInfo{victimTask}, nil)
+	scenario2 := scenario.NewByNodeScenario(session, pendingJob, tasks, []*pod_info.PodInfo{victimTask}, nil)
 
 	filter := NewTopologyAwareIdleGpusFilter(scenario1, nodes)
 	if filter == nil {
@@ -311,9 +335,13 @@ func TestTopologyAwareIdleGpus_RecordedVictimsCountedTowardCapacity(t *testing.T
 		},
 	}
 
+	tasks := []*pod_info.PodInfo{}
+	for _, task := range pendingJob.GetAllPodsMap() {
+		tasks = append(tasks, task)
+	}
 	// Pass victim-1 as a recorded (committed) victim, not a potential one.
 	testScenario := scenario.NewByNodeScenario(
-		session, pendingJob, pendingJob, nil, []*podgroup_info.PodGroupInfo{victimJob},
+		session, pendingJob, tasks, nil, []*podgroup_info.PodGroupInfo{victimJob},
 	)
 	filter := NewTopologyAwareIdleGpusFilter(testScenario, nodes)
 	if filter == nil {
@@ -348,8 +376,12 @@ func TestTopologyAwareIdleGpus_MultipleLevels(t *testing.T) {
 		{SubGroupName: "podset2", State: pod_status.Pending, RequiredGPUs: ptr.To(int64(8))},
 		{SubGroupName: "podset2", State: pod_status.Pending, RequiredGPUs: ptr.To(int64(8))},
 	}, rootSubGroupSet, vectorMap)
+	tasks := []*pod_info.PodInfo{}
+	for _, task := range pendingJob.GetAllPodsMap() {
+		tasks = append(tasks, task)
+	}
 
-	testScenario := scenario.NewByNodeScenario(nil, pendingJob, pendingJob, nil, nil)
+	testScenario := scenario.NewByNodeScenario(nil, pendingJob, tasks, nil, nil)
 	filter := NewTopologyAwareIdleGpusFilter(testScenario, nodes)
 
 	if filter == nil {
@@ -420,8 +452,12 @@ func TestTopologyAwareIdleGpus_FilterDomainMovesTwoStepsLeft(t *testing.T) {
 		},
 	}
 
+	tasks := []*pod_info.PodInfo{}
+	for _, task := range pendingJob.GetAllPodsMap() {
+		tasks = append(tasks, task)
+	}
 	testScenario := scenario.NewByNodeScenario(
-		session, pendingJob, pendingJob, []*pod_info.PodInfo{victimTask}, nil,
+		session, pendingJob, tasks, []*pod_info.PodInfo{victimTask}, nil,
 	)
 	filter := NewTopologyAwareIdleGpusFilter(testScenario, nodes)
 	if filter == nil {
@@ -453,8 +489,12 @@ func TestTopologyAwareIdleGpus_BinPackingPreventsOverAllocation(t *testing.T) {
 		{SubGroupName: "podset1", State: pod_status.Pending, RequiredGPUs: ptr.To(int64(10))},
 		{SubGroupName: "podset2", State: pod_status.Pending, RequiredGPUs: ptr.To(int64(10))},
 	}, rootSubGroupSet, vectorMap)
+	tasks := []*pod_info.PodInfo{}
+	for _, task := range job.GetAllPodsMap() {
+		tasks = append(tasks, task)
+	}
 
-	testScenario := scenario.NewByNodeScenario(nil, job, job, nil, nil)
+	testScenario := scenario.NewByNodeScenario(nil, job, tasks, nil, nil)
 	filter := NewTopologyAwareIdleGpusFilter(testScenario, nodes)
 	if filter == nil {
 		t.Fatal("Expected non-nil filter")
@@ -483,8 +523,12 @@ func TestTopologyAwareIdleGpus_BinPackingRejectsInsufficientDomains(t *testing.T
 		{SubGroupName: "podset1", State: pod_status.Pending, RequiredGPUs: ptr.To(int64(10))},
 		{SubGroupName: "podset2", State: pod_status.Pending, RequiredGPUs: ptr.To(int64(10))},
 	}, rootSubGroupSet, vectorMap)
+	tasks := []*pod_info.PodInfo{}
+	for _, task := range job.GetAllPodsMap() {
+		tasks = append(tasks, task)
+	}
 
-	testScenario := scenario.NewByNodeScenario(nil, job, job, nil, nil)
+	testScenario := scenario.NewByNodeScenario(nil, job, tasks, nil, nil)
 	filter := NewTopologyAwareIdleGpusFilter(testScenario, nodes)
 	if filter == nil {
 		t.Fatal("Expected non-nil filter")
@@ -525,8 +569,12 @@ func TestTopologyAwareIdleGpus_FragmentedCapacityRejected(t *testing.T) {
 		{SubGroupName: "subB", State: pod_status.Pending, RequiredGPUs: ptr.To(int64(8))},
 		{SubGroupName: "subC", State: pod_status.Pending, RequiredGPUs: ptr.To(int64(3))},
 	}, rootSubGroupSet, vectorMap)
+	tasks := []*pod_info.PodInfo{}
+	for _, task := range job.GetAllPodsMap() {
+		tasks = append(tasks, task)
+	}
 
-	testScenario := scenario.NewByNodeScenario(nil, job, job, nil, nil)
+	testScenario := scenario.NewByNodeScenario(nil, job, tasks, nil, nil)
 	filter := NewTopologyAwareIdleGpusFilter(testScenario, nodes)
 	if filter == nil {
 		t.Fatal("Expected non-nil filter")

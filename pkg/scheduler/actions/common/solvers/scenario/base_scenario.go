@@ -30,7 +30,7 @@ type BaseScenario struct {
 }
 
 func NewBaseScenario(
-	session *framework.Session, originalJob, pendingTasksAsJob *podgroup_info.PodGroupInfo, victimsTasks []*pod_info.PodInfo,
+	session *framework.Session, originalJob *podgroup_info.PodGroupInfo, pendingTasks []*pod_info.PodInfo, victimsTasks []*pod_info.PodInfo,
 	recordedVictimsJobs []*podgroup_info.PodGroupInfo,
 ) *BaseScenario {
 	s := &BaseScenario{
@@ -44,7 +44,7 @@ func NewBaseScenario(
 		victimsJobsTaskGroups: make(map[common_info.PodGroupID][]*podgroup_info.PodGroupInfo),
 	}
 
-	for _, task := range pendingTasksAsJob.GetAllPodsMap() {
+	for _, task := range pendingTasks {
 		s.pendingTasks = append(s.pendingTasks, task)
 	}
 	for _, task := range victimsTasks {

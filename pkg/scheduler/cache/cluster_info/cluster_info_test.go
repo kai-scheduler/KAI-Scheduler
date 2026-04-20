@@ -1259,9 +1259,9 @@ func TestSnapshotPodGroups(t *testing.T) {
 			assert.Equal(t, expected.Name, pg.Name)
 			assert.Equal(t, expected.Queue, pg.Queue)
 
-			assert.Equal(t, len(expected.GetSubGroups()), len(pg.GetSubGroups()))
-			for _, expectedSubGroup := range expected.GetSubGroups() {
-				for _, subGroup := range pg.GetSubGroups() {
+			assert.Equal(t, len(expected.GetAllPodSets()), len(pg.GetAllPodSets()))
+			for _, expectedSubGroup := range expected.GetAllPodSets() {
+				for _, subGroup := range pg.GetAllPodSets() {
 					if expectedSubGroup.GetName() != subGroup.GetName() {
 						continue
 					}
@@ -1792,9 +1792,9 @@ func TestPodGroupWithIndexNoSubGroups(t *testing.T) {
 			kaiSchedulerObjects: []runtime.Object{},
 		},
 	)
-	assert.Equal(t, int32(1), podGroupInfo.GetSubGroups()[podgroup_info.DefaultSubGroup].GetMinAvailable())
+	assert.Equal(t, int32(1), podGroupInfo.GetAllPodSets()[podgroup_info.DefaultSubGroup].GetMinAvailable())
 	clusterInfo.setPodGroupWithIndex(podGroup, podGroupInfo)
-	assert.Equal(t, int32(2), podGroupInfo.GetSubGroups()[podgroup_info.DefaultSubGroup].GetMinAvailable())
+	assert.Equal(t, int32(2), podGroupInfo.GetAllPodSets()[podgroup_info.DefaultSubGroup].GetMinAvailable())
 }
 
 func TestPodGroupWithIndexWithSubGroups(t *testing.T) {
@@ -1824,8 +1824,8 @@ func TestPodGroupWithIndexWithSubGroups(t *testing.T) {
 		},
 	)
 	clusterInfo.setPodGroupWithIndex(podGroup, podGroupInfo)
-	assert.Equal(t, int32(1), podGroupInfo.GetSubGroups()["sub-a"].GetMinAvailable())
-	assert.Equal(t, int32(2), podGroupInfo.GetSubGroups()["sub-b"].GetMinAvailable())
+	assert.Equal(t, int32(1), podGroupInfo.GetAllPodSets()["sub-a"].GetMinAvailable())
+	assert.Equal(t, int32(2), podGroupInfo.GetAllPodSets()["sub-b"].GetMinAvailable())
 }
 
 func TestIsPodGroupUpForScheduler(t *testing.T) {

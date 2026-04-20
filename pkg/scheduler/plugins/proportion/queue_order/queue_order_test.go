@@ -13,6 +13,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/subgrouporder"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/taskorder"
@@ -47,7 +48,7 @@ func createGpuMemoryTask(name string, numDevices int64, gpuMemory int64) *pod_in
 
 func createPodGroupWithGpuMemoryTask(name string, numDevices int64, gpuMemory int64) *podgroup_info.PodGroupInfo {
 	pg := podgroup_info.NewPodGroupInfoWithVectorMap(common_info.PodGroupID(name), testVectorMap)
-	pg.GetSubGroups()[podgroup_info.DefaultSubGroup].SetMinAvailable(1)
+	pg.GetAllPodSets()[podgroup_info.DefaultSubGroup].SetMinAvailable(1)
 	task := createGpuMemoryTask("task-"+name, numDevices, gpuMemory)
 	pg.AddTaskInfo(task)
 	return pg
@@ -306,6 +307,11 @@ func TestGetQueueOrderResult(t *testing.T) {
 	for i, test := range tests {
 		t.Run(test.Name, func(t *testing.T) {
 			t.Logf("Running test %d/%d: %s", i+1, len(tests), test.Name)
+			session := &framework.Session{
+				SubGroupOrderFns: []common_info.CompareFn{
+					subgrouporder.SubGroupOrderFn,
+				},
+			}
 
 			taskOrderFn := func(l, r interface{}) bool {
 				if comparison := taskorder.TaskOrderFn(l, r); comparison != 0 {
@@ -313,15 +319,8 @@ func TestGetQueueOrderResult(t *testing.T) {
 				}
 				return false
 			}
-
-			subGroupOrderFn := func(l, r interface{}) bool {
-				if comparison := subgrouporder.PodSetOrderFn(l, r); comparison != 0 {
-					return comparison < 0
-				}
-				return false
-			}
 			result := GetQueueOrderResult(test.lqueue, test.rqueue, test.lJobInfo, test.rJobInfo, nil, nil,
-				subGroupOrderFn, taskOrderFn, test.totalResources, test.minNodeGPUMemory)
+				session.SubGroupOrderFn, taskOrderFn, test.totalResources, test.minNodeGPUMemory)
 			assert.Equal(t, test.expectedResult, result)
 		})
 	}

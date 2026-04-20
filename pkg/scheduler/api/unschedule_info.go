@@ -83,13 +83,13 @@ func GetJobOverMaxAllowedMessageForQueue(
 }
 
 func GetGangEvictionMessage(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo) string {
-	if len(job.GetSubGroups()) == 1 {
-		if defaultSubgroup, found := job.GetSubGroups()[podgroup_info.DefaultSubGroup]; found {
+	if len(job.GetAllPodSets()) == 1 {
+		if defaultSubgroup, found := job.GetAllPodSets()[podgroup_info.DefaultSubGroup]; found {
 			return getGangEvictionForDefaultSubgroupMessage(task.Namespace, task.Name, defaultSubgroup.GetMinAvailable())
 		}
 	}
 
-	subGroup, found := job.GetSubGroups()[task.SubGroupName]
+	subGroup, found := job.GetAllPodSets()[task.SubGroupName]
 	if !found {
 		return getGangEvictionWithUndefinedSubGroupMessage(task.Namespace, task.Name, task.SubGroupName)
 	}

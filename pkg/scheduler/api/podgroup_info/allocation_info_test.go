@@ -195,10 +195,14 @@ func Test_GetTasksToAllocate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			pg := NewPodGroupInfo("pg")
+			// Replace the default root so only the test's PodSets are members.
+			root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+			pg.RootSubGroupSet = root
+			pg.PodSets = make(map[string]*subgroup_info.PodSet)
 			for subGroupName, pods := range tt.subGroupTasks {
-				if _, exists := pg.GetSubGroups()[subGroupName]; !exists {
-					pg.PodSets[subGroupName] = subgroup_info.NewPodSet(subGroupName, tt.minAvailMap[subGroupName], nil)
-				}
+				ps := subgroup_info.NewPodSet(subGroupName, tt.minAvailMap[subGroupName], nil)
+				root.AddPodSet(ps)
+				pg.PodSets[subGroupName] = ps
 				for _, pod := range pods {
 					pg.AddTaskInfo(pod)
 				}
@@ -218,7 +222,7 @@ func Test_GetTasksToAllocate(t *testing.T) {
 
 func Test_GetTasksToAllocateRequestedGPUs(t *testing.T) {
 	pg := NewPodGroupInfo("test-podgroup")
-	pg.GetSubGroups()[DefaultSubGroup].SetMinAvailable(1)
+	pg.GetAllPodSets()[DefaultSubGroup].SetMinAvailable(1)
 	task := simpleTask("p1", "", pod_status.Pending)
 	// manually set up a fake GpuRequirement that returns 2 for GPUs
 	task.GpuRequirement = *resource_info.NewGpuResourceRequirementWithGpus(2, 0)
@@ -238,7 +242,7 @@ func Test_GetTasksToAllocateInitResourceVector(t *testing.T) {
 
 	vectorMap := resource_info.NewResourceVectorMap()
 	pg := NewPodGroupInfoWithVectorMap("ri-vec", vectorMap)
-	pg.GetSubGroups()[DefaultSubGroup].SetMinAvailable(2)
+	pg.GetAllPodSets()[DefaultSubGroup].SetMinAvailable(2)
 
 	task1 := simpleTask("p1", "", pod_status.Pending)
 	req1 := resource_info.NewResourceRequirements(1, 2000, 4000)
