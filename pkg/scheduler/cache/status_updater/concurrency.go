@@ -9,7 +9,6 @@ import (
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 
 	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
@@ -43,7 +42,7 @@ func (su *defaultStatusUpdater) processPayload(ctx context.Context, payload *upd
 
 	switch payload.objectType {
 	case podType:
-		su.updatePod(ctx, payload.key, updateData.patchData, updateData.subResources, updateData.object)
+		su.updatePod(ctx, payload.key, updateData)
 	case podGroupType:
 		su.updatePodGroup(ctx, payload.key, updateData)
 	}
@@ -66,15 +65,26 @@ func (su *defaultStatusUpdater) loadInflightUpdate(payload *updatePayload) (*inf
 }
 
 func (su *defaultStatusUpdater) updatePod(
-	ctx context.Context, key updatePayloadKey, patchData []byte, subResources []string, object runtime.Object,
+	ctx context.Context, key updatePayloadKey, updateData *inflightUpdate,
 ) {
-	pod := object.(*v1.Pod)
+	pod := updateData.object.(*v1.Pod)
 	_, err := su.kubeClient.CoreV1().Pods(pod.Namespace).Patch(
-		ctx, pod.Name, types.StrategicMergePatchType, patchData, metav1.PatchOptions{}, subResources...,
+		ctx, pod.Name, types.StrategicMergePatchType, updateData.patchData, metav1.PatchOptions{}, updateData.subResources...,
 	)
 
 	if err != nil {
-		log.StatusUpdaterLogger.V(1).Errorf("Failed to patch pod %s/%s: %v", pod.Namespace, pod.Name, err)
+		if apierrors.IsNotFound(err) {
+			log.StatusUpdaterLogger.V(5).Infof("Pod %s/%s not found, skipping pod patch: %v",
+				pod.Namespace, pod.Name, err)
+			su.inFlightPods.Delete(key)
+			return
+		}
+		log.StatusUpdaterLogger.V(1).Errorf("Failed to patch pod %s/%s, retrying: %v",
+			pod.Namespace, pod.Name, err)
+		su.pushToUpdateQueue(
+			&updatePayload{key: key, objectType: podType},
+			updateData,
+		)
 		return
 	}
 
@@ -103,6 +113,12 @@ func (su *defaultStatusUpdater) updatePodGroup(
 	}
 
 	if statusErr != nil || patchErr != nil {
+		if apierrors.IsNotFound(statusErr) || apierrors.IsNotFound(patchErr) {
+			log.StatusUpdaterLogger.V(5).Infof("Pod group %s/%s not found, skipping podgroup update: %v",
+				podGroup.Namespace, podGroup.Name, statusErr)
+			su.inFlightPodGroups.Delete(key)
+			return
+		}
 
 		if statusErr != nil {
 			if apierrors.IsConflict(statusErr) {
@@ -118,7 +134,7 @@ func (su *defaultStatusUpdater) updatePodGroup(
 				podGroup.Namespace, podGroup.Name, statusErr)
 		}
 		if patchErr != nil {
-			log.StatusUpdaterLogger.V(1).Errorf("Failed to patch pod group %s/%s: %v",
+			log.StatusUpdaterLogger.V(1).Errorf("Failed to patch pod group %s/%s, retrying: %v",
 				podGroup.Namespace, podGroup.Name, patchErr)
 		}
 
