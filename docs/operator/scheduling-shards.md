@@ -40,7 +40,7 @@ spec:
   # Custom scheduler arguments
   args:
     leader-elect: "true"
-    log-level: "3"
+    v: "3"
   
   # Placement strategy
   placementStrategy:
@@ -58,6 +58,9 @@ spec:
     preemptMinRuntime: "10m"
     reclaimMinRuntime: "5m"
 ```
+
+The `args` field maps directly to scheduler CLI flags (`--<flag>=<value>`), for example `v`, `qps`, `burst`, and `leader-elect`.
+When installing with Helm, configure these via `scheduler.args` in your values file (for example `scheduler.args.v: "3"`).
 
 For customizing which plugins and actions run in a shard (disabling, reordering, overriding arguments), see [Scheduler Config Customization](./scheduler-config-customization.md).
 
