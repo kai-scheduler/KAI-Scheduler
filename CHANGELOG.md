@@ -11,6 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Added `prometheus.enabled` and `prometheus.externalPrometheusUrl` Helm values to configure Prometheus from values.yaml [#907](https://github.com/NVIDIA/KAI-Scheduler/issues/907)
 - Added validation for `subgroup` name in podgroup [faizanexe](https://github.com/faizan-exe)
 - Added memory profile and run duration to snapshot tool [#1411](https://github.com/NVIDIA/KAI-Scheduler/issues/1411)
+- Added support for configuring pod and container security contexts on resource reservation pods via CLI flags [AdheipSingh](https://github.com/AdheipSingh)
 - Add a retry for pod patching (labels or status) by the scheduler. This follows a similar pattern to the current podgroup patching retries on failure. [#1437](https://github.com/kai-scheduler/KAI-Scheduler/pull/1437) - [davidLif](https://github.com/davidLif)
 - Do not retry podgroup status updates if the update failure was "podgroup not found". [#1437](https://github.com/kai-scheduler/KAI-Scheduler/pull/1437) - [davidLif](https://github.com/davidLif)
 
