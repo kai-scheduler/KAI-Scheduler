@@ -11,6 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
+	schedulingv1 "k8s.io/api/scheduling/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -18,6 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
 	grouperplugin "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/grouper"
 )
@@ -362,6 +364,69 @@ var _ = Describe("SkipTopOwnerGrouper", func() {
 				Expect(lastOwnerAfter.Annotations).To(HaveKeyWithValue("skipped-annotation", "skipped-ann-value"))
 				Expect(lastOwnerAfter.Annotations).To(HaveKeyWithValue("conflicting-annotation", "existing-ann-value")) // NOT overridden
 				Expect(lastOwnerAfter.Annotations).To(HaveKeyWithValue("existing-annotation", "existing-ann-value"))
+			})
+		})
+
+		Context("defaults propagation from skipped owner", func() {
+			It("injects skipped owner defaults as labels on last owner (priorityClassName)", func() {
+				const (
+					defaultsCMName      = "defaults"
+					defaultsCMNamespace = "default"
+					priorityClassName   = "very-high"
+				)
+
+				// ConfigMap defines a default priority for the skipped owner kind/group.
+				defaultsCM := &v1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      defaultsCMName,
+						Namespace: defaultsCMNamespace,
+					},
+					Data: map[string]string{
+						constants.DefaultPrioritiesConfigMapTypesKey: `[{"typeName":"DynamoGraphDeployment","group":"nvidia.com","priorityName":"very-high","preemptibility":"non-preemptible"}]`,
+					},
+				}
+				pc := &schedulingv1.PriorityClass{
+					ObjectMeta: metav1.ObjectMeta{Name: priorityClassName},
+					Value:      1000,
+				}
+				Expect(client.Create(context.TODO(), defaultsCM)).To(Succeed())
+				Expect(client.Create(context.TODO(), pc)).To(Succeed())
+
+				defaultGrouper.SetDefaultConfigPerTypeConfigMapParams(defaultsCMName, defaultsCMNamespace)
+
+				// lastOwner is a Pod (no labels), skippedOwner is DynamoGraphDeployment
+				pod := examplePod.DeepCopy()
+				Expect(client.Create(context.TODO(), pod)).To(Succeed())
+				pod.TypeMeta = metav1.TypeMeta{Kind: examplePod.Kind, APIVersion: examplePod.APIVersion}
+
+				skippedOwner := &unstructured.Unstructured{}
+				skippedOwner.SetAPIVersion("nvidia.com/v1alpha1")
+				skippedOwner.SetKind("DynamoGraphDeployment")
+				skippedOwner.SetNamespace("default")
+				skippedOwner.SetName("dgd")
+
+				// We need at least 2 owners so skipTopOwner doesn't treat the pod as last owner.
+				otherOwners := []*metav1.PartialObjectMetadata{
+					{
+						TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Pod"},
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      pod.Name,
+							Namespace: pod.Namespace,
+						},
+					},
+					{
+						TypeMeta: metav1.TypeMeta{APIVersion: "nvidia.com/v1alpha1", Kind: "DynamoGraphDeployment"},
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      skippedOwner.GetName(),
+							Namespace: skippedOwner.GetNamespace(),
+						},
+					},
+				}
+
+				metadata, err := plugin.GetPodGroupMetadata(skippedOwner, pod, otherOwners...)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(metadata).NotTo(BeNil())
+				Expect(metadata.PriorityClassName).To(Equal(priorityClassName))
 			})
 		})
 
