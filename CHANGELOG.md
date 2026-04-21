@@ -13,8 +13,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Added memory profile and run duration to snapshot tool [#1411](https://github.com/NVIDIA/KAI-Scheduler/issues/1411)
 - Added support for configuring pod and container security contexts on resource reservation pods via CLI flags [AdheipSingh](https://github.com/AdheipSingh)
 - The scheduler now implements elastic PodGroups on both the subgroup level (`minSubGroup`) and pods (`minAvailable`). This allows for elasticity on all of the podgroup tree hierarchy. [#1416](https://github.com/kai-scheduler/KAI-Scheduler/pull/1416) - [davidLif](https://github.com/davidLif)
-- Add a retry for pod patching (labels or status) by the scheduler. This follows a similar pattern to the current podgroup patching retries on failure. [#1437](https://github.com/kai-scheduler/KAI-Scheduler/pull/1437) - [davidLif](https://github.com/davidLif)
-- Do not retry podgroup status updates if the update failure was "podgroup not found". [#1437](https://github.com/kai-scheduler/KAI-Scheduler/pull/1437) - [davidLif](https://github.com/davidLif)
 
 ### Changed
 - **Breaking:** JobSet PodGroups no longer auto-calculate `minAvailable` from `parallelism × replicas`. The default is now 1. Use the `kai.scheduler/batch-min-member` annotation to set a custom value.
