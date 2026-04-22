@@ -41,9 +41,9 @@ spec:
     {{- end }}
     {{- if .Values.global.imagePullSecrets }}
     additionalImagePullSecrets:
-    {{- range .Values.global.imagePullSecrets }}
-      - {{ . | quote }}
-    {{- end }}
+      {{- range .Values.global.imagePullSecrets }}
+      - {{ .name }}
+      {{- end }}
     {{- end }}
     replicaCount: {{ .Values.operator.replicaCount | default 1 }}
     {{- if .Values.global.vpa }}
