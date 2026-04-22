@@ -74,7 +74,7 @@ func (t *topologyPlugin) getTaskSubGroupInfo(task *pod_info.PodInfo) (*subgroup_
 	}
 
 	sgName := getTaskSubGroupName(task)
-	sg, found := job.GetSubGroups()[sgName]
+	sg, found := job.GetAllPodSets()[sgName]
 	if !found {
 		return nil, fmt.Errorf("sub-group %s not found in job %s", sgName, job.Name)
 	}

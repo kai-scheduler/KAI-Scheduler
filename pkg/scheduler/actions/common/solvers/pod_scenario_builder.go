@@ -37,9 +37,9 @@ func NewPodAccumulatedScenarioBuilder(
 
 	var scenario *solverscenario.ByNodeScenario = nil
 	recordedVictimsTasks := make(map[common_info.PodID]*pod_info.PodInfo)
-	tasksToAllocate := podgroup_info.GetTasksToAllocate(pendingJob, session.PodSetOrderFn, session.TaskOrderFn, false)
+	tasksToAllocate := podgroup_info.GetTasksToAllocate(pendingJob, session.SubGroupOrderFn, session.TaskOrderFn, false)
 	if len(tasksToAllocate) != 0 {
-		scenario = solverscenario.NewByNodeScenario(session, pendingJob, pendingJob, nil, recordedVictimsJobs)
+		scenario = solverscenario.NewByNodeScenario(session, pendingJob, tasksToAllocate, nil, recordedVictimsJobs)
 		for _, job := range recordedVictimsJobs {
 			for podId, podInfo := range job.GetAllPodsMap() {
 				recordedVictimsTasks[podId] = podInfo
@@ -93,7 +93,7 @@ func (asb *PodAccumulatedScenarioBuilder) addNextPotentialVictims() bool {
 	nextVictimJob := asb.victimsJobsQueue.PopNextJob()
 
 	potentialVictimTasks, jobHasMoreTasks := podgroup_info.GetTasksToEvict(
-		nextVictimJob, asb.session.PodSetOrderFn, asb.session.TaskOrderFn,
+		nextVictimJob, asb.session.SubGroupOrderFn, asb.session.TaskOrderFn,
 	)
 
 	// Jump over recorded victims in potential victims generation

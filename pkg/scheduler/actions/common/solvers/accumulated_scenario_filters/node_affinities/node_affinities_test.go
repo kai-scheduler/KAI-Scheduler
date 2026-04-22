@@ -228,8 +228,12 @@ func TestNewNodeAffinitiesFilter_NoPendingTasksWithNodeAffinity(t *testing.T) {
 	task := podWithoutAffinity("uid-1", "plain-pod", "job-1")
 	pg := podgroup_info.NewPodGroupInfo("job-1", task)
 	ssn := newTestSession(t, map[string]*node_info.NodeInfo{}, map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{"job-1": pg})
+	tasks := []*pod_info.PodInfo{}
+	for _, task := range pg.GetAllPodsMap() {
+		tasks = append(tasks, task)
+	}
 
-	sc := scenario.NewByNodeScenario(ssn, nil, pg, []*pod_info.PodInfo{}, []*podgroup_info.PodGroupInfo{})
+	sc := scenario.NewByNodeScenario(ssn, nil, tasks, []*pod_info.PodInfo{}, []*podgroup_info.PodGroupInfo{})
 	filter := NewNodeAffinitiesFilter(sc, map[string]*node_info.NodeInfo{}, ssn)
 	assert.Nil(t, filter)
 }
@@ -239,8 +243,12 @@ func TestNewNodeAffinitiesFilter_PreferredOnlyNodeAffinityReturnsNil(t *testing.
 	task := podWithPreferredNodeAffinityOnly("uid-1", "pod-1", "job-1", "gpu-type", "A100", 100)
 	pg := podgroup_info.NewPodGroupInfo("job-1", task)
 	ssn := newTestSession(t, map[string]*node_info.NodeInfo{}, map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{"job-1": pg})
+	tasks := []*pod_info.PodInfo{}
+	for _, task := range pg.GetAllPodsMap() {
+		tasks = append(tasks, task)
+	}
 
-	sc := scenario.NewByNodeScenario(ssn, nil, pg, []*pod_info.PodInfo{}, []*podgroup_info.PodGroupInfo{})
+	sc := scenario.NewByNodeScenario(ssn, nil, tasks, []*pod_info.PodInfo{}, []*podgroup_info.PodGroupInfo{})
 	filter := NewNodeAffinitiesFilter(sc, map[string]*node_info.NodeInfo{}, ssn)
 	assert.Nil(t, filter)
 }
@@ -410,12 +418,12 @@ func TestNodeAffinitiesFilter_Filter(t *testing.T) {
 			ssn := newTestSession(t, tt.allNodes, podGroups)
 
 			// Create the initial scenario (no victims) used to construct the filter
-			initialSc := scenario.NewByNodeScenario(ssn, nil, pendingPG, []*pod_info.PodInfo{}, []*podgroup_info.PodGroupInfo{})
+			initialSc := scenario.NewByNodeScenario(ssn, nil, tt.pendingTasks, []*pod_info.PodInfo{}, []*podgroup_info.PodGroupInfo{})
 			filter := NewNodeAffinitiesFilter(initialSc, tt.feasibleNodes, ssn)
 			assert.NotNil(t, filter, "expected filter to be created since pending tasks have node affinities")
 
 			// Create the filter scenario (with victims) and call Filter
-			filterSc := scenario.NewByNodeScenario(ssn, nil, pendingPG, tt.victimTasks, []*podgroup_info.PodGroupInfo{})
+			filterSc := scenario.NewByNodeScenario(ssn, nil, tt.pendingTasks, tt.victimTasks, []*podgroup_info.PodGroupInfo{})
 			got, err := filter.Filter(filterSc)
 			assert.NoError(t, err)
 			assert.Equal(t, tt.wantFilterResult, got)

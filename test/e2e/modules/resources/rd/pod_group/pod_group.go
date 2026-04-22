@@ -24,6 +24,23 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/testconfig"
 )
 
+// SubGroupNode describes a node in a SubGroup hierarchy.
+// Leaf nodes have PodCount > 0 and produce pods. Mid-level nodes have Children and use MinSubGroup.
+type SubGroupNode struct {
+	Name        string
+	MinMember   *int32
+	MinSubGroup *int32
+	PodCount    int
+	Children    []SubGroupNode
+}
+
+// Hierarchy holds the result of building a SubGroup hierarchy: the flat spec list and pods keyed by leaf name.
+type Hierarchy struct {
+	SubGroups []v2alpha2.SubGroup
+	Pods      map[string][]*v1.Pod
+	AllPods   []*v1.Pod
+}
+
 const (
 	PodGroupNameAnnotation = "pod-group-name"
 )
@@ -82,6 +99,78 @@ func CreateWithPods(ctx context.Context, client *kubernetes.Clientset, kaiClient
 		pods = append(pods, pod)
 	}
 	return podGroup, pods
+}
+
+// BuildHierarchy flattens a tree of SubGroupNodes into the flat SubGroup slice expected by PodGroupSpec
+// and creates pods for all leaf nodes. Use this when you need to configure the PodGroup manually
+// before creation (e.g., for validation tests).
+func BuildHierarchy(ctx context.Context, client *kubernetes.Clientset, q *v2.Queue,
+	podGroupName string, nodes []SubGroupNode, requirements v1.ResourceRequirements) *Hierarchy {
+	h := &Hierarchy{Pods: make(map[string][]*v1.Pod)}
+	for _, node := range nodes {
+		flattenNode(ctx, client, q, podGroupName, node, nil, requirements, h)
+	}
+	return h
+}
+
+func flattenNode(ctx context.Context, client *kubernetes.Clientset, q *v2.Queue,
+	pgName string, node SubGroupNode, parent *string, requirements v1.ResourceRequirements, h *Hierarchy) {
+	sg := v2alpha2.SubGroup{
+		Name:        node.Name,
+		MinMember:   node.MinMember,
+		MinSubGroup: node.MinSubGroup,
+		Parent:      parent,
+	}
+	h.SubGroups = append(h.SubGroups, sg)
+
+	if node.PodCount > 0 {
+		pods := createSubGroupPods(ctx, client, q, pgName, node.Name, node.PodCount, requirements)
+		h.Pods[node.Name] = pods
+		h.AllPods = append(h.AllPods, pods...)
+	}
+
+	for _, child := range node.Children {
+		parentName := node.Name
+		flattenNode(ctx, client, q, pgName, child, &parentName, requirements, h)
+	}
+}
+
+// CreateWithHierarchy creates a PodGroup with a SubGroup hierarchy and associated pods.
+// Similar to CreateWithPods but for hierarchical SubGroup topologies.
+func CreateWithHierarchy(ctx context.Context, client *kubernetes.Clientset, kaiClient *kaiClient.Clientset,
+	podGroupName string, q *v2.Queue, minSubGroup *int32, nodes []SubGroupNode,
+	priorityClassName *string, preemptibility v2alpha2.Preemptibility,
+	requirements v1.ResourceRequirements) (*v2alpha2.PodGroup, *Hierarchy) {
+	namespace := queue.GetConnectedNamespaceToQueue(q)
+	h := BuildHierarchy(ctx, client, q, podGroupName, nodes, requirements)
+
+	podGroup := Create(namespace, podGroupName, q.Name)
+	podGroup.Spec.MinMember = nil
+	podGroup.Spec.MinSubGroup = minSubGroup
+	podGroup.Spec.SubGroups = h.SubGroups
+	if priorityClassName != nil {
+		podGroup.Spec.PriorityClassName = *priorityClassName
+	}
+	if preemptibility != "" {
+		podGroup.Spec.Preemptibility = preemptibility
+	}
+	podGroup, err := kaiClient.SchedulingV2alpha2().PodGroups(namespace).Create(ctx, podGroup, metav1.CreateOptions{})
+	Expect(err).To(Succeed())
+
+	return podGroup, h
+}
+
+func createSubGroupPods(ctx context.Context, client *kubernetes.Clientset, q *v2.Queue,
+	podGroupName string, subGroupName string, numPods int, requirements v1.ResourceRequirements) []*v1.Pod {
+	var pods []*v1.Pod
+	for i := 0; i < numPods; i++ {
+		pod := rd.CreatePodWithPodGroupReference(q, podGroupName, requirements)
+		pod.Labels[constants.SubGroupLabelKey] = subGroupName
+		pod, err := rd.CreatePod(ctx, client, pod)
+		Expect(err).To(Succeed())
+		pods = append(pods, pod)
+	}
+	return pods
 }
 
 func IsNotReadyForScheduling(event *v1.Event) bool {

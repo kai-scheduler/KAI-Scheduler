@@ -94,13 +94,13 @@ func TryToVirtuallyAllocatePreemptorAndGetVictims(
 		}
 
 		resReq := podgroup_info.GetTasksToAllocateInitResourceVector(
-			jobToAllocate, ssn.PodSetOrderFn, ssn.TaskOrderFn, false, ssn.ClusterInfo.MinNodeGPUMemory)
+			jobToAllocate, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false, ssn.ClusterInfo.MinNodeGPUMemory)
 		log.InfraLogger.V(6).Infof("Trying to pipeline job: <%s/%s>. resources required: %v",
 			jobToAllocate.Namespace, jobToAllocate.Name, resReq)
 
 		if jobToAllocate.UID != preemptor.UID {
 			if !AllocateJob(ssn, stmt, nodes, jobToAllocate, true) {
-				tasksToAllocate := podgroup_info.GetTasksToAllocate(jobToAllocate, ssn.PodSetOrderFn,
+				tasksToAllocate := podgroup_info.GetTasksToAllocate(jobToAllocate, ssn.SubGroupOrderFn,
 					ssn.TaskOrderFn, false)
 				newVictims = append(newVictims, tasksToAllocate...)
 			}
