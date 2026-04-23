@@ -8,18 +8,18 @@
 #      Branch: gh-pages / (root)
 #   2. Settings → Variables → New repository variable:
 #        Name:  SCALE_TESTS_S3_URL
-#        Value: https://my-bucket.s3.amazonaws.com  (base URL of the S3 bucket)
+#        Value: <S3 bucket base URL>
 #
-# The page fetches ${SCALE_TESTS_S3_URL}/public/manifest.json at runtime.
+# The page fetches ${SCALE_TESTS_S3_URL}/Public/manifest.json at runtime.
 #
-# S3 bucket layout (maintained by the private CI pipeline):
-#   public/manifest.json                   — index of all runs
-#   public/<run-id>/report.json            — ginkgo --json-report output for that run
+# S3 bucket layout:
+#   Public/manifest.json                   — index of all runs
+#   Public/<run-id>/report.json            — ginkgo --json-report output for that run
 #
 # manifest.json format:
 #   {
 #     "runs": [
-#       { "timestamp": "2024-01-15T10:00:00Z", "path": "public/<run-id>/report.json" }
+#       { "timestamp": "2024-01-15T10:00:00Z", "path": "Public/<run-id>/report.json" }
 #     ]
 #   }
 

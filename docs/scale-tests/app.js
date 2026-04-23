@@ -5,7 +5,7 @@
 
 // Injected by the deploy workflow. Falls back to window override or example data.
 // When __S3_BASE_URL__ has not been replaced, '.' is used so that fetch paths like
-// ./public/manifest.json resolve correctly relative to the page.
+// ./Public/manifest.json resolve correctly relative to the page.
 const _s3raw = typeof window.SCALE_TESTS_S3_BASE_URL !== 'undefined'
   ? window.SCALE_TESTS_S3_BASE_URL : '__S3_BASE_URL__';
 const S3_BASE_URL = (_s3raw === '__S3_BASE_URL__' ? '.' : _s3raw).replace(/\/$/, '');
@@ -359,7 +359,7 @@ function toggleDetail(id) {
 // ── Data loading ───────────────────────────────────────────────────────────
 
 async function loadManifest() {
-  const res = await fetch(`${S3_BASE_URL}/public/manifest.json`, { cache: 'no-cache' });
+  const res = await fetch(`${S3_BASE_URL}/Public/manifest.json`, { cache: 'no-cache' });
   if (!res.ok) throw new Error(`manifest.json: HTTP ${res.status}`);
   return res.json();
 }

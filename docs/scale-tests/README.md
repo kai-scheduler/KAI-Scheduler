@@ -79,6 +79,45 @@ Minimal cluster requirements:
 
 ## Test Execution
 
-- Tests will use dedicated infrastructure and will run every 24 hours
-- Test results will be available for viewing through a dashboard
+- Tests run on dedicated infrastructure every 24 hours
+- Test results are stored in S3 and displayed on a public dashboard
+- Dashboard URL: [KAI Scheduler Scale Tests](https://kai-scheduler.github.io/KAI-Scheduler/) (update with actual URL after deployment)
+
+## Results Dashboard
+
+The scale tests dashboard displays historical test results fetched from S3. The dashboard shows:
+
+- Test execution times and performance metrics
+- Pass/fail status for each test
+- Detailed failure messages and logs
+- Historical trends (30 days)
+- Search and filter capabilities
+
+### S3 Bucket Structure
+
+Test results are stored in an S3 bucket (configured via repository secret) with the following structure:
+
+```
+Public/
+  manifest.json                    # Index of all test runs
+  <run-id>/
+    report.json                    # Ginkgo JSON report for that run
+```
+
+The `manifest.json` file lists all available test runs:
+
+```json
+{
+  "runs": [
+    {
+      "timestamp": "2024-01-15T10:00:00Z",
+      "path": "Public/<run-id>/report.json"
+    }
+  ]
+}
+```
+
+### Dashboard Deployment
+
+The dashboard is automatically deployed to GitHub Pages when changes are pushed to the `docs/scale-tests/` directory. The S3 bucket URL is configured via the `SCALE_TESTS_S3_URL` repository variable
 
