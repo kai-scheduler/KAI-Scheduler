@@ -17,6 +17,7 @@ import (
 
 	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	featuregates "github.com/kai-scheduler/KAI-scheduler/pkg/common/feature_gates"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/k8s_utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
@@ -32,7 +33,6 @@ const (
 )
 
 type draPlugin struct {
-	enabled       bool
 	manager       ksf.SharedDRAManager
 	celCache      *cel.Cache
 	queueLabelKey string
@@ -49,7 +49,6 @@ func New(pluginArgs framework.PluginArguments) framework.Plugin {
 
 	features := k8s_utils.GetK8sFeatures()
 	return &draPlugin{
-		enabled:  features.EnableDynamicResourceAllocation,
 		celCache: cel.NewCache(maxCelCacheEntries, cel.Features{EnableConsumableCapacity: features.EnableDRAConsumableCapacity}),
 	}
 }
@@ -143,13 +142,13 @@ func (drap *draPlugin) preFilter(task *pod_info.PodInfo, job *podgroup_info.PodG
 		return nil
 	}
 
-	if !drap.enabled {
+	if !featuregates.DynamicResourcesEnabled() {
 		var resourceClaimNames []string
 		for _, claim := range pod.Spec.ResourceClaims {
 			resourceClaimNames = append(resourceClaimNames, claim.Name)
 		}
 		return fmt.Errorf("pod %s/%s cannot be scheduled, it references resource claims <%v> "+
-			"while dynamic resource allocation feature is not enabled in cluster",
+			"while dynamic resource allocation is not available in the cluster",
 			task.Namespace, task.Name, strings.Join(resourceClaimNames, ", "))
 	}
 

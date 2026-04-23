@@ -35,16 +35,15 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	version "k8s.io/apimachinery/pkg/version"
-	featureutil "k8s.io/apiserver/pkg/util/feature"
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	"k8s.io/client-go/kubernetes/fake"
 	faketesting "k8s.io/client-go/testing"
-	"k8s.io/kubernetes/pkg/features"
 	"k8s.io/utils/ptr"
 
 	kubeaischedulerfake "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/fake"
 	fakeschedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/typed/scheduling/v1alpha2/fake"
 	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	featuregates "github.com/kai-scheduler/KAI-scheduler/pkg/common/feature_gates"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
@@ -58,8 +57,8 @@ func TestCache(t *testing.T) {
 var _ = Describe("Cache", func() {
 	Describe("New", func() {
 		Context("DRA Feature Gate", func() {
-			DescribeTable("should enable DRA feature gate based on Kubernetes version and resource API availability",
-				func(serverMajor, serverMinor string, resourceGroupVersions []string, expectDRAFeatureEnabled bool) {
+			DescribeTable("should record DRA availability based on Kubernetes version and resource API availability",
+				func(serverMajor, serverMinor string, resourceGroupVersions []string, expectDRAAvailable bool) {
 					fakeClient := fake.NewClientset()
 					fakeClient.Discovery().(*fakediscovery.FakeDiscovery).FakedServerVersion = &version.Info{
 						Major: serverMajor,
@@ -80,10 +79,7 @@ var _ = Describe("Cache", func() {
 					cache := New(params)
 
 					Expect(cache).NotTo(BeNil())
-
-					// Check if the DynamicResourceAllocation feature gate has the expected state
-					draEnabled := featureutil.DefaultFeatureGate.Enabled(features.DynamicResourceAllocation)
-					Expect(draEnabled).To(Equal(expectDRAFeatureEnabled))
+					Expect(featuregates.DynamicResourcesEnabled()).To(Equal(expectDRAAvailable))
 				},
 				Entry("compatible version (1.32) with resource API should enable DRA", "1", "32", []string{resourcev1beta1.SchemeGroupVersion.String()}, true),
 				Entry("compatible version (1.32) without resource API should not enable DRA", "1", "32", []string{}, false),

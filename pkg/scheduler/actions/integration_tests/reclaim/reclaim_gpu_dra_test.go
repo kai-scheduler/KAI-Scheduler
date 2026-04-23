@@ -8,11 +8,9 @@ import (
 	"time"
 
 	"gopkg.in/h2non/gock.v1"
-	utilfeature "k8s.io/apiserver/pkg/util/feature"
-	featuregate "k8s.io/component-base/featuregate/testing"
-	"k8s.io/kubernetes/pkg/features"
 
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	featuregates "github.com/kai-scheduler/KAI-scheduler/pkg/common/feature_gates"
 	integration_tests_utils "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/integration_tests_utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants"
@@ -27,7 +25,10 @@ import (
 func TestReclaimGpuDRAIntegrationTest(t *testing.T) {
 	defer gock.Off()
 
-	featuregate.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, features.DynamicResourceAllocation, true)
+	featuregates.SetDynamicResourcesEnabledForTest(true)
+	t.Cleanup(func() {
+		featuregates.SetDynamicResourcesEnabledForTest(false)
+	})
 
 	// NOTE: These tests currently fail because reclaim with DRA resources may not be fully implemented yet.
 	// The tests are correctly structured and should pass once DRA reclaim support is complete.

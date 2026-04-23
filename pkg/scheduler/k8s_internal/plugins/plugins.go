@@ -6,12 +6,10 @@ package plugins
 import (
 	"context"
 
-	featureutil "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	resourceslicetracker "k8s.io/dynamic-resource-allocation/resourceslice/tracker"
 	ksf "k8s.io/kube-scheduler/framework"
-	"k8s.io/kubernetes/pkg/features"
 	"k8s.io/kubernetes/pkg/scheduler/apis/config"
 	k8splfeature "k8s.io/kubernetes/pkg/scheduler/framework/plugins/feature"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/interpodaffinity"
@@ -20,6 +18,7 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/tainttoleration"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/volumebinding"
 
+	featuregates "github.com/kai-scheduler/KAI-scheduler/pkg/common/feature_gates"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/k8s_utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 )
@@ -50,7 +49,7 @@ func InitializeInternalPlugins(
 	initiatedPlugins.FrameworkHandle = k8sFrameworkHandle
 	initiatedPlugins.InformerFactory = informerFactory
 
-	if featureutil.DefaultMutableFeatureGate.Enabled(features.DynamicResourceAllocation) {
+	if featuregates.DynamicResourcesEnabled() {
 		tracker, err := k8s_utils.StartResourceSliceTracker(informerFactory, client)
 		if err != nil {
 			log.InfraLogger.Errorf("Failed to start resource slice tracker: %v", err)
