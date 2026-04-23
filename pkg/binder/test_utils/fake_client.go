@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 
+	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
@@ -44,6 +45,13 @@ func (f *FakeSubResourceClient) Update(_ context.Context, _ client.Object, _ ...
 }
 
 func (f *FakeSubResourceClient) Patch(_ context.Context, _ client.Object, _ client.Patch, _ ...client.SubResourcePatchOption) error {
+	if f.FailAll {
+		return fmt.Errorf("%s", f.Msg)
+	}
+	return nil
+}
+
+func (f *FakeSubResourceClient) Apply(_ context.Context, _ runtime.ApplyConfiguration, _ ...client.SubResourceApplyOption) error {
 	if f.FailAll {
 		return fmt.Errorf("%s", f.Msg)
 	}

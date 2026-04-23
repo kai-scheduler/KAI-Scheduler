@@ -10,9 +10,9 @@ import (
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	resourceslicetracker "k8s.io/dynamic-resource-allocation/resourceslice/tracker"
+	ksf "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/features"
 	"k8s.io/kubernetes/pkg/scheduler/apis/config"
-	k8sframework "k8s.io/kubernetes/pkg/scheduler/framework"
 	k8splfeature "k8s.io/kubernetes/pkg/scheduler/framework/plugins/feature"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/interpodaffinity"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/nodeaffinity"
@@ -25,23 +25,23 @@ import (
 )
 
 type K8sPlugins struct {
-	FrameworkHandle      k8sframework.Handle
+	FrameworkHandle      ksf.Handle
 	Features             k8splfeature.Features
 	InformerFactory      informers.SharedInformerFactory
 	ResourceSliceTracker *resourceslicetracker.Tracker
-	SessionDRAManager    k8sframework.SharedDRAManager
+	SessionDRAManager    ksf.SharedDRAManager
 
-	NodePorts       k8sframework.Plugin
-	TaintToleration k8sframework.Plugin
-	NodeAffinity    k8sframework.Plugin
-	PodAffinity     k8sframework.Plugin
-	VolumeBinding   k8sframework.Plugin
+	NodePorts       ksf.Plugin
+	TaintToleration ksf.Plugin
+	NodeAffinity    ksf.Plugin
+	PodAffinity     ksf.Plugin
+	VolumeBinding   ksf.Plugin
 }
 
 func InitializeInternalPlugins(
 	client kubernetes.Interface,
 	informerFactory informers.SharedInformerFactory,
-	nodeInfoLister k8sframework.NodeInfoLister,
+	nodeInfoLister ksf.NodeInfoLister,
 ) *K8sPlugins {
 	initiatedPlugins := &K8sPlugins{}
 	k8sFrameworkHandle := k8s_utils.NewFrameworkHandle(

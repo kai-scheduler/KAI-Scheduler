@@ -36,7 +36,7 @@ import (
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	listv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/record"
-	k8sframework "k8s.io/kubernetes/pkg/scheduler/framework"
+	ksf "k8s.io/kube-scheduler/framework"
 
 	kubeaischedulerver "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned"
 	kubeaischedulerschema "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/scheme"
@@ -422,7 +422,7 @@ func (sc *SchedulerCache) KubeInformerFactory() informers.SharedInformerFactory 
 	return sc.informerFactory
 }
 
-func (sc *SchedulerCache) SnapshotSharedLister() k8sframework.NodeInfoLister {
+func (sc *SchedulerCache) SnapshotSharedLister() ksf.NodeInfoLister {
 	return &sc.K8sClusterPodAffinityInfo
 }
 

@@ -60,7 +60,7 @@ func NewTopologyInformer(client versioned.Interface, resyncPeriod time.Duration,
 // one. This reduces memory footprint and number of connections to the server.
 func NewFilteredTopologyInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
-		&cache.ListWatch{
+		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(options v1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
@@ -85,7 +85,7 @@ func NewFilteredTopologyInformer(client versioned.Interface, resyncPeriod time.D
 				}
 				return client.KaiV1alpha1().Topologies().Watch(ctx, options)
 			},
-		},
+		}, client),
 		&apiskaiv1alpha1.Topology{},
 		resyncPeriod,
 		indexers,

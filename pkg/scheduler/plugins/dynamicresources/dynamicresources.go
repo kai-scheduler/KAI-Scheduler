@@ -13,7 +13,7 @@ import (
 	"k8s.io/component-helpers/scheduling/corev1/nodeaffinity"
 	"k8s.io/dynamic-resource-allocation/cel"
 	"k8s.io/dynamic-resource-allocation/structured"
-	k8sframework "k8s.io/kubernetes/pkg/scheduler/framework"
+	ksf "k8s.io/kube-scheduler/framework"
 
 	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
@@ -33,7 +33,7 @@ const (
 
 type draPlugin struct {
 	enabled       bool
-	manager       k8sframework.SharedDRAManager
+	manager       ksf.SharedDRAManager
 	celCache      *cel.Cache
 	queueLabelKey string
 }
@@ -50,7 +50,7 @@ func New(pluginArgs framework.PluginArguments) framework.Plugin {
 	features := k8s_utils.GetK8sFeatures()
 	return &draPlugin{
 		enabled:  features.EnableDynamicResourceAllocation,
-		celCache: cel.NewCache(maxCelCacheEntries, cel.Features{EnableConsumableCapacity: features.EnableConsumableCapacity}),
+		celCache: cel.NewCache(maxCelCacheEntries, cel.Features{EnableConsumableCapacity: features.EnableDRAConsumableCapacity}),
 	}
 }
 

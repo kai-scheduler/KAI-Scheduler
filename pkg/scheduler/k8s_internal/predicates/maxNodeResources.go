@@ -12,7 +12,6 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ksf "k8s.io/kube-scheduler/framework"
-	k8sframework "k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -66,7 +65,7 @@ func (_ *MaxNodeResourcesPredicate) isFilterRequired(_ *v1.Pod) bool {
 }
 
 func (mnr *MaxNodeResourcesPredicate) PreFilter(_ context.Context, _ ksf.CycleState, pod *v1.Pod, _ []ksf.NodeInfo) (
-	*k8sframework.PreFilterResult, *ksf.Status) {
+	*ksf.PreFilterResult, *ksf.Status) {
 
 	draPodClaims := resource_info.GetDraPodClaims(pod, mnr.resourceClaimsMap, mnr.podsToClaimsMap)
 	podInfo := pod_info.NewTaskInfo(pod, draPodClaims, mnr.vectorMap)
