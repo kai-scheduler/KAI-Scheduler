@@ -8,7 +8,6 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -16,11 +15,10 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/admission/plugins"
 )
 
-// log is for logging in this package.
 var mutatorlog = logf.Log.WithName("pod-mutator")
 
 type PodMutator interface {
-	Default(ctx context.Context, obj runtime.Object) error
+	Default(ctx context.Context, obj *corev1.Pod) error
 }
 
 type podMutator struct {
@@ -37,12 +35,9 @@ func NewPodMutator(kubeClient client.Client, plugins *plugins.KaiAdmissionPlugin
 	}
 }
 
-func (cpm *podMutator) Default(ctx context.Context, obj runtime.Object) error {
+func (cpm *podMutator) Default(ctx context.Context, obj *corev1.Pod) error {
 	mutatorlog.Info("customDefaulter", "kind", obj.GetObjectKind().GroupVersionKind().Kind)
-	pod, ok := obj.(*corev1.Pod)
-	if !ok {
-		return fmt.Errorf("bad object type")
-	}
+	pod := obj
 
 	if pod.Spec.SchedulerName != cpm.schedulerName {
 		return nil

@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 - **Breaking:** JobSet PodGroups no longer auto-calculate `minAvailable` from `parallelism × replicas`. The default is now 1. Use the `kai.scheduler/batch-min-member` annotation to set a custom value.
+- Bumped Kubernetes dependencies from v0.34.x to v0.35.4 (k8s.io/kubernetes v1.35.4), controller-runtime to v0.23.3, and jobset to v0.11.1. Adapted to upstream API changes including scheduler framework types moving to `k8s.io/kube-scheduler/framework`, controller-runtime typed webhook generics, and DRA becoming GA. [#1466](https://github.com/kai-scheduler/KAI-Scheduler/issues/1466)
 
 ### Fixed
 - Fixed `additionalImagePullSecrets` in Config CR rendering as `map[name:...]` instead of plain strings by extracting `.name` from `global.imagePullSecrets` objects. Also propagated `global.imagePullSecrets` to all Helm hook jobs (`crd-upgrader`, `topology-migration`, `post-delete-cleanup`)
