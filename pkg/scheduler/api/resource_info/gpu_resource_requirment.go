@@ -163,9 +163,7 @@ func (g *GpuResourceRequirement) GetGpusQuota() float64 {
 
 		totalGpusQuota += float64(gpuPortion) * float64(quant)
 	}
-	for _, count := range g.draGpuCounts {
-		totalGpusQuota += float64(count)
-	}
+	totalGpusQuota += float64(g.GetDraGpusCount())
 	totalGpusQuota += getExtendedResourceGpus(g.portion, g.count)
 
 	return totalGpusQuota

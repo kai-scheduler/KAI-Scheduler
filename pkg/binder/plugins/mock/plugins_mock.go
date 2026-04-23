@@ -58,41 +58,41 @@ func (mr *MockPluginMockRecorder) Name() *gomock.Call {
 }
 
 // PostBind mocks base method.
-func (m *MockPlugin) PostBind(ctx context.Context, pod *v1.Pod, node *v1.Node, bindRequest *v1alpha2.BindRequest, arg4 *state.BindingState) {
+func (m *MockPlugin) PostBind(ctx context.Context, pod *v1.Pod, node *v1.Node, bindRequest *v1alpha2.BindRequest, bindingState *state.BindingState) {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "PostBind", ctx, pod, node, bindRequest, arg4)
+	m.ctrl.Call(m, "PostBind", ctx, pod, node, bindRequest, bindingState)
 }
 
 // PostBind indicates an expected call of PostBind.
-func (mr *MockPluginMockRecorder) PostBind(ctx, pod, node, bindRequest, arg4 any) *gomock.Call {
+func (mr *MockPluginMockRecorder) PostBind(ctx, pod, node, bindRequest, bindingState any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PostBind", reflect.TypeOf((*MockPlugin)(nil).PostBind), ctx, pod, node, bindRequest, arg4)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PostBind", reflect.TypeOf((*MockPlugin)(nil).PostBind), ctx, pod, node, bindRequest, bindingState)
 }
 
 // PreBind mocks base method.
-func (m *MockPlugin) PreBind(ctx context.Context, pod *v1.Pod, node *v1.Node, bindRequest *v1alpha2.BindRequest, arg4 *state.BindingState) error {
+func (m *MockPlugin) PreBind(ctx context.Context, pod *v1.Pod, node *v1.Node, bindRequest *v1alpha2.BindRequest, bindingState *state.BindingState) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "PreBind", ctx, pod, node, bindRequest, arg4)
+	ret := m.ctrl.Call(m, "PreBind", ctx, pod, node, bindRequest, bindingState)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // PreBind indicates an expected call of PreBind.
-func (mr *MockPluginMockRecorder) PreBind(ctx, pod, node, bindRequest, arg4 any) *gomock.Call {
+func (mr *MockPluginMockRecorder) PreBind(ctx, pod, node, bindRequest, bindingState any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PreBind", reflect.TypeOf((*MockPlugin)(nil).PreBind), ctx, pod, node, bindRequest, arg4)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PreBind", reflect.TypeOf((*MockPlugin)(nil).PreBind), ctx, pod, node, bindRequest, bindingState)
 }
 
 // Rollback mocks base method.
-func (m *MockPlugin) Rollback(ctx context.Context, pod *v1.Pod, node *v1.Node, bindRequest *v1alpha2.BindRequest, arg4 *state.BindingState) error {
+func (m *MockPlugin) Rollback(ctx context.Context, pod *v1.Pod, node *v1.Node, bindRequest *v1alpha2.BindRequest, bindingState *state.BindingState) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Rollback", ctx, pod, node, bindRequest, arg4)
+	ret := m.ctrl.Call(m, "Rollback", ctx, pod, node, bindRequest, bindingState)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Rollback indicates an expected call of Rollback.
-func (mr *MockPluginMockRecorder) Rollback(ctx, pod, node, bindRequest, arg4 any) *gomock.Call {
+func (mr *MockPluginMockRecorder) Rollback(ctx, pod, node, bindRequest, bindingState any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Rollback", reflect.TypeOf((*MockPlugin)(nil).Rollback), ctx, pod, node, bindRequest, arg4)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Rollback", reflect.TypeOf((*MockPlugin)(nil).Rollback), ctx, pod, node, bindRequest, bindingState)
 }

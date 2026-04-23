@@ -214,7 +214,7 @@ func DescribePreemptDistributedSpecs() bool {
 
 				pg := pod_group.Create(namespace, "distributed-preemptor-"+utils.GenerateRandomK8sName(6), testQueue.Name)
 				pg.Spec.PriorityClassName = highPriority
-				pg.Spec.MinMember = preemptorCount
+				pg.Spec.MinMember = ptr.To(int32(preemptorCount))
 				Expect(testCtx.ControllerClient.Create(ctx, pg)).To(Succeed())
 
 				var preemptorPods []*v1.Pod

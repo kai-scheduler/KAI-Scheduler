@@ -6,7 +6,7 @@ global:
   tag: ""
   imagePullPolicy: IfNotPresent
   securityContext: {}
-  imagePullSecrets: []
+  imagePullSecrets: [] # format: [{name: secret1}, {name: secret2}]
   leaderElection: false
   gpuSharing: false
   clusterAutoscaling: false
@@ -47,6 +47,7 @@ operator:
   burst: 300
 
 podgrouper:
+  enabled: true
   image:
     name: podgrouper
     pullPolicy: IfNotPresent
@@ -55,12 +56,14 @@ podgrouper:
   affinity: {}
 
 podgroupcontroller:
+  enabled: true
   image:
     name: podgroupcontroller
     pullPolicy: IfNotPresent
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   affinity: {}
 binder:
+  enabled: true
   name: binder
   image:
     name: binder
@@ -85,6 +88,7 @@ binder:
     metricsPort: 8080
   affinity: {}
 scheduler:
+  enabled: true
   image:
     name: scheduler
     pullPolicy: IfNotPresent
@@ -123,6 +127,7 @@ scheduler:
   actions: {}
 
 queuecontroller:
+  enabled: true
   image:
     name: queuecontroller
     pullPolicy: IfNotPresent
@@ -131,6 +136,7 @@ queuecontroller:
   affinity: {}
 
 admission:
+  enabled: true
   name: kai-admission
   image:
     name: admission
@@ -183,6 +189,14 @@ postCleanup:
     pullPolicy: IfNotPresent
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   serviceAccountName: post-delete-cleanup
+
+prometheus:
+  # Enable Prometheus integration for time-aware fairness features.
+  enabled: false
+  # URL of an external Prometheus instance. When set, KAI will not deploy its own
+  # Prometheus but will use the external instance for usage metrics.
+  # Example: http://prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090
+  # externalPrometheusUrl: ""
 
 defaultQueue:
   createDefaultQueue: true

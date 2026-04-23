@@ -227,13 +227,9 @@ func TestAccumulatedIdleGpus_updateWithVictim(t *testing.T) {
 			},
 			args: args{
 				victimTask: &pod_info.PodInfo{
-					NodeName: "n1",
-					UID:      "uid1",
-					AcceptedResource: &resource_info.ResourceRequirements{
-						GpuResourceRequirement: *resource_info.NewGpuResourceRequirementWithGpus(
-							2, 0,
-						),
-					},
+					NodeName:               "n1",
+					UID:                    "uid1",
+					AcceptedGpuRequirement: *resource_info.NewGpuResourceRequirementWithGpus(2, 0),
 					AcceptedResourceVector: resource_info.NewResourceVectorWithValues(0, 0, 2, testVectorMap),
 					VectorMap:              testVectorMap,
 				},
@@ -252,13 +248,9 @@ func TestAccumulatedIdleGpus_updateWithVictim(t *testing.T) {
 			},
 			args: args{
 				victimTask: &pod_info.PodInfo{
-					NodeName: "n1",
-					UID:      "uid1",
-					AcceptedResource: &resource_info.ResourceRequirements{
-						GpuResourceRequirement: *resource_info.NewGpuResourceRequirementWithGpus(
-							2, 0,
-						),
-					},
+					NodeName:               "n1",
+					UID:                    "uid1",
+					AcceptedGpuRequirement: *resource_info.NewGpuResourceRequirementWithGpus(2, 0),
 					AcceptedResourceVector: resource_info.NewResourceVectorWithValues(0, 0, 2, testVectorMap),
 					VectorMap:              testVectorMap,
 				},
@@ -277,13 +269,9 @@ func TestAccumulatedIdleGpus_updateWithVictim(t *testing.T) {
 			},
 			args: args{
 				victimTask: &pod_info.PodInfo{
-					NodeName: "n1",
-					UID:      "uid1",
-					AcceptedResource: &resource_info.ResourceRequirements{
-						GpuResourceRequirement: *resource_info.NewGpuResourceRequirementWithGpus(
-							2, 0,
-						),
-					},
+					NodeName:               "n1",
+					UID:                    "uid1",
+					AcceptedGpuRequirement: *resource_info.NewGpuResourceRequirementWithGpus(2, 0),
 					AcceptedResourceVector: resource_info.NewResourceVectorWithValues(0, 0, 2, testVectorMap),
 					VectorMap:              testVectorMap,
 				},
@@ -353,7 +341,7 @@ func TestAccumulatedIdleGpus_updateStateWithScenario(t *testing.T) {
 			args: args{
 				scenario: scenario.NewByNodeScenario(nil,
 					nil,
-					podgroup_info.NewPodGroupInfo("pendingPg1", pod_info.NewTaskInfo(&v1.Pod{
+					[]*pod_info.PodInfo{pod_info.NewTaskInfo(&v1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
 							UID:       "uid1",
 							Name:      "pending1",
@@ -370,7 +358,7 @@ func TestAccumulatedIdleGpus_updateStateWithScenario(t *testing.T) {
 								},
 							},
 						},
-					}, nil, resource_info.NewResourceVectorMap())),
+					}, nil, resource_info.NewResourceVectorMap())},
 					[]*pod_info.PodInfo{},
 					[]*podgroup_info.PodGroupInfo{},
 				),
@@ -390,7 +378,7 @@ func TestAccumulatedIdleGpus_updateStateWithScenario(t *testing.T) {
 			args: args{
 				scenario: scenario.NewByNodeScenario(nil,
 					nil,
-					podgroup_info.NewPodGroupInfo("pendingPg1", pod_info.NewTaskInfo(&v1.Pod{
+					[]*pod_info.PodInfo{pod_info.NewTaskInfo(&v1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
 							UID:       "uid1",
 							Name:      "pending1",
@@ -407,7 +395,7 @@ func TestAccumulatedIdleGpus_updateStateWithScenario(t *testing.T) {
 								},
 							},
 						},
-					}, nil, resource_info.NewResourceVectorMap())),
+					}, nil, resource_info.NewResourceVectorMap())},
 					[]*pod_info.PodInfo{},
 					[]*podgroup_info.PodGroupInfo{},
 				),
@@ -432,7 +420,7 @@ func TestAccumulatedIdleGpus_updateStateWithScenario(t *testing.T) {
 			args: args{
 				scenario: scenario.NewByNodeScenario(nil,
 					nil,
-					podgroup_info.NewPodGroupInfo("pendingPg1", pod_info.NewTaskInfo(&v1.Pod{
+					[]*pod_info.PodInfo{pod_info.NewTaskInfo(&v1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
 							UID:       "uid1",
 							Name:      "pending1",
@@ -449,7 +437,7 @@ func TestAccumulatedIdleGpus_updateStateWithScenario(t *testing.T) {
 								},
 							},
 						},
-					}, nil, resource_info.NewResourceVectorMap())),
+					}, nil, resource_info.NewResourceVectorMap())},
 					[]*pod_info.PodInfo{},
 					[]*podgroup_info.PodGroupInfo{},
 				),
@@ -472,7 +460,7 @@ func TestAccumulatedIdleGpus_updateStateWithScenario(t *testing.T) {
 			args: args{
 				scenario: scenario.NewByNodeScenario(nil,
 					nil,
-					podgroup_info.NewPodGroupInfo("pendingPg1", pod_info.NewTaskInfo(&v1.Pod{
+					[]*pod_info.PodInfo{pod_info.NewTaskInfo(&v1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
 							UID:       "uid1",
 							Name:      "pending1",
@@ -489,7 +477,7 @@ func TestAccumulatedIdleGpus_updateStateWithScenario(t *testing.T) {
 								},
 							},
 						},
-					}, nil, resource_info.NewResourceVectorMap())),
+					}, nil, resource_info.NewResourceVectorMap())},
 					[]*pod_info.PodInfo{},
 					[]*podgroup_info.PodGroupInfo{},
 				),
@@ -559,7 +547,7 @@ func TestAccumulatedIdleGpus_updateStateWithScenario(t *testing.T) {
 							"pv1pg": podgroup_info.NewPodGroupInfo("pv1pg"),
 						}}},
 						nil,
-						podgroup_info.NewPodGroupInfo("pendingPg1", pod_info.NewTaskInfo(&v1.Pod{
+						[]*pod_info.PodInfo{pod_info.NewTaskInfo(&v1.Pod{
 							ObjectMeta: metav1.ObjectMeta{
 								UID:       "uid1",
 								Name:      "pending1",
@@ -576,7 +564,7 @@ func TestAccumulatedIdleGpus_updateStateWithScenario(t *testing.T) {
 									},
 								},
 							},
-						}, nil, resource_info.NewResourceVectorMap())),
+						}, nil, resource_info.NewResourceVectorMap())},
 						[]*pod_info.PodInfo{potentialVictim1},
 						[]*podgroup_info.PodGroupInfo{},
 					),
@@ -648,7 +636,7 @@ func TestAccumulatedIdleGpus_updateStateWithScenario(t *testing.T) {
 							"pv1pg": podgroup_info.NewPodGroupInfo("pv1pg"),
 						}}},
 						nil,
-						podgroup_info.NewPodGroupInfo("pendingPg1", pod_info.NewTaskInfo(&v1.Pod{
+						[]*pod_info.PodInfo{pod_info.NewTaskInfo(&v1.Pod{
 							ObjectMeta: metav1.ObjectMeta{
 								UID:       "uid1",
 								Name:      "pending1",
@@ -665,7 +653,7 @@ func TestAccumulatedIdleGpus_updateStateWithScenario(t *testing.T) {
 									},
 								},
 							},
-						}, nil, resource_info.NewResourceVectorMap())),
+						}, nil, resource_info.NewResourceVectorMap())},
 						[]*pod_info.PodInfo{potentialVictim1},
 						[]*podgroup_info.PodGroupInfo{},
 					),
@@ -734,7 +722,7 @@ func TestAccumulatedIdleGpus_updateStateWithScenario(t *testing.T) {
 							"rv1pg": podgroup_info.NewPodGroupInfo("rv1pg"),
 						}}},
 						nil,
-						podgroup_info.NewPodGroupInfo("pendingPg1", pod_info.NewTaskInfo(&v1.Pod{
+						[]*pod_info.PodInfo{pod_info.NewTaskInfo(&v1.Pod{
 							ObjectMeta: metav1.ObjectMeta{
 								UID:       "uid1",
 								Name:      "pending1",
@@ -751,7 +739,7 @@ func TestAccumulatedIdleGpus_updateStateWithScenario(t *testing.T) {
 									},
 								},
 							},
-						}, nil, resource_info.NewResourceVectorMap())),
+						}, nil, resource_info.NewResourceVectorMap())},
 						[]*pod_info.PodInfo{},
 						[]*podgroup_info.PodGroupInfo{podgroup_info.NewPodGroupInfo("rv1pg", recordedVictim)},
 					),
@@ -781,7 +769,7 @@ func TestAccumulatedIdleGpus_updateStateWithScenario(t *testing.T) {
 						"rv1pg": podgroup_info.NewPodGroupInfo("rv1pg"),
 					}}},
 					nil,
-					podgroup_info.NewPodGroupInfo("pendingPg1", pod_info.NewTaskInfo(&v1.Pod{
+					[]*pod_info.PodInfo{pod_info.NewTaskInfo(&v1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
 							UID:       "uid1",
 							Name:      "pending1",
@@ -798,7 +786,7 @@ func TestAccumulatedIdleGpus_updateStateWithScenario(t *testing.T) {
 								},
 							},
 						},
-					}, nil, resource_info.NewResourceVectorMap())),
+					}, nil, resource_info.NewResourceVectorMap())},
 					[]*pod_info.PodInfo{},
 					[]*podgroup_info.PodGroupInfo{podgroup_info.NewPodGroupInfo("rv1pg", pod_info.NewTaskInfo(&v1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
@@ -848,7 +836,7 @@ func TestAccumulatedIdleGpus_updateStateWithScenario(t *testing.T) {
 						"rv1pg": podgroup_info.NewPodGroupInfo("rv1pg"),
 					}}},
 					nil,
-					podgroup_info.NewPodGroupInfo("pendingPg1", pod_info.NewTaskInfo(&v1.Pod{
+					[]*pod_info.PodInfo{pod_info.NewTaskInfo(&v1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
 							UID:       "uid1",
 							Name:      "pending1",
@@ -865,7 +853,7 @@ func TestAccumulatedIdleGpus_updateStateWithScenario(t *testing.T) {
 								},
 							},
 						},
-					}, nil, resource_info.NewResourceVectorMap())),
+					}, nil, resource_info.NewResourceVectorMap())},
 					[]*pod_info.PodInfo{},
 					[]*podgroup_info.PodGroupInfo{podgroup_info.NewPodGroupInfo("rv1pg", pod_info.NewTaskInfo(&v1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
@@ -1060,7 +1048,7 @@ func TestAccumulatedIdleGpus_Filter(t *testing.T) {
 							"pv1pg": podgroup_info.NewPodGroupInfo("pv1pg"),
 						}}},
 						nil,
-						podgroup_info.NewPodGroupInfo("pendingPg1",
+						[]*pod_info.PodInfo{
 							pod_info.NewTaskInfo(&v1.Pod{
 								ObjectMeta: metav1.ObjectMeta{
 									UID:       "uid1",
@@ -1115,7 +1103,7 @@ func TestAccumulatedIdleGpus_Filter(t *testing.T) {
 									},
 								},
 							}, nil, resource_info.NewResourceVectorMap()),
-						),
+						},
 						[]*pod_info.PodInfo{
 							potentialVictim1,
 						},
@@ -1214,7 +1202,7 @@ func TestAccumulatedIdleGpus_Filter(t *testing.T) {
 							"pv1pg": podgroup_info.NewPodGroupInfo("pv1pg"),
 						}}},
 						nil,
-						podgroup_info.NewPodGroupInfo("pendingPg1",
+						[]*pod_info.PodInfo{
 							pod_info.NewTaskInfo(&v1.Pod{
 								ObjectMeta: metav1.ObjectMeta{
 									UID:       "uid1",
@@ -1269,7 +1257,7 @@ func TestAccumulatedIdleGpus_Filter(t *testing.T) {
 									},
 								},
 							}, nil, resource_info.NewResourceVectorMap()),
-						),
+						},
 						[]*pod_info.PodInfo{
 							potentialVictim1,
 						},
@@ -1338,7 +1326,7 @@ func TestAccumulatedIdleGpus_Filter(t *testing.T) {
 							"potential_victims": podgroup_info.NewPodGroupInfo("potential_victims"),
 						}}},
 						nil,
-						podgroup_info.NewPodGroupInfo("pendingPodGroup",
+						[]*pod_info.PodInfo{
 							pod_info.NewTaskInfo(&v1.Pod{
 								ObjectMeta: metav1.ObjectMeta{
 									UID:       "uid1",
@@ -1357,7 +1345,7 @@ func TestAccumulatedIdleGpus_Filter(t *testing.T) {
 									},
 								},
 							}, nil, resource_info.NewResourceVectorMap()),
-						),
+						},
 						[]*pod_info.PodInfo{potentialVictim1},
 						[]*podgroup_info.PodGroupInfo{},
 					),

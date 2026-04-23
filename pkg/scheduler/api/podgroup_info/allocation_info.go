@@ -5,6 +5,7 @@ package podgroup_info
 
 import (
 	"math"
+	"sort"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info/resources"
@@ -24,6 +25,9 @@ func HasTasksToAllocate(podGroupInfo *PodGroupInfo, isRealAllocation bool) bool 
 	return false
 }
 
+// GetTasksToAllocate returns the tasks that should be allocated for the given pod group info, sorted by the given order functions.
+// The tasks are collected from all subgroups of the podgroup, respecting the minAvailable and minSubgroup constraints.
+// For satisfied subgroups, collect tasks only from one direct child (a single subgroup for a minSubgroup or a single pod for a minAvailable).
 func GetTasksToAllocate(
 	podGroupInfo *PodGroupInfo, subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn,
 	isRealAllocation bool,
@@ -32,25 +36,90 @@ func GetTasksToAllocate(
 		return podGroupInfo.tasksToAllocate
 	}
 
-	var tasksToAllocate []*pod_info.PodInfo
-	subGroupPriorityQueue := getSubGroupsPriorityQueue(podGroupInfo.GetSubGroups(), subGroupOrderFn)
-	maxNumSubGroups := getMaxNumSubGroupsToAllocate(podGroupInfo)
-	numSubGroupsToAllocate := 0
-
-	for !subGroupPriorityQueue.Empty() && (numSubGroupsToAllocate < maxNumSubGroups) {
-		nextSubGroup := subGroupPriorityQueue.Pop().(*subgroup_info.PodSet)
-		taskPriorityQueue := getTasksPriorityQueue(nextSubGroup, taskOrderFn, isRealAllocation)
-		if taskPriorityQueue.Empty() {
-			continue
+	root := podGroupInfo.RootSubGroupSet
+	if root == nil {
+		root = subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+		for _, ps := range podGroupInfo.PodSets {
+			root.AddPodSet(ps)
 		}
-		maxNumOfTasksToAllocate := getNumTasksToAllocate(nextSubGroup, isRealAllocation)
-		subGroupTasks := getTasksFromQueue(taskPriorityQueue, maxNumOfTasksToAllocate)
-		tasksToAllocate = append(tasksToAllocate, subGroupTasks...)
-		numSubGroupsToAllocate += 1
+	}
+	tasks := collectTasksFromSubGroupSet(root, subGroupOrderFn, taskOrderFn, isRealAllocation)
+	podGroupInfo.tasksToAllocate = tasks
+	return tasks
+}
+
+// collectTasksFromSubGroupSet walks the SubGroupSet tree and collects tasks to allocate.
+func collectTasksFromSubGroupSet(
+	sgs *subgroup_info.SubGroupSet, subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn,
+	isRealAllocation bool,
+) []*pod_info.PodInfo {
+	K := sgs.GetMinMembersToSatisfy()
+	children := sgs.GetMembers()
+	sort.Slice(children, func(i, j int) bool {
+		return subGroupOrderFn(children[i], children[j])
+	})
+
+	if !sgs.IsMinRequirementSatisfied() {
+		// Get tasks from K most prioritized children, so sgs can satisfy its min requirement.
+		var tasks []*pod_info.PodInfo
+		for i := 0; i < K && i < len(children); i++ {
+			tasks = append(tasks, collectFromChildInGangPhase(children[i], subGroupOrderFn, taskOrderFn, isRealAllocation)...)
+		}
+		return tasks
 	}
 
-	podGroupInfo.tasksToAllocate = tasksToAllocate
-	return tasksToAllocate
+	// Elastic phase: get the most prioritized unsatisfied child, and allocate it
+	for i := 0; i < len(children); i++ {
+		childTasks := collectFromChildSubgroup(children[i], subGroupOrderFn, taskOrderFn, isRealAllocation)
+		if len(childTasks) > 0 {
+			return childTasks
+		}
+	}
+	return nil
+}
+
+// collectFromChildInGangPhase collects tasks from a child in the context of its parent's gang phase.
+// SubGroupSets recurse normally; satisfied PodSets are skipped because their gang requirement
+// is already met and collecting elastic tasks from them would over-count resource needs.
+func collectFromChildInGangPhase(
+	child subgroup_info.SubGroupMember, subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn,
+	isRealAllocation bool,
+) []*pod_info.PodInfo {
+	switch c := child.(type) {
+	case *subgroup_info.SubGroupSet:
+		if c.IsMinRequirementSatisfied() {
+			return nil // already satisfied; skip in parent gang phase
+		}
+		return collectTasksFromSubGroupSet(c, subGroupOrderFn, taskOrderFn, isRealAllocation)
+	case *subgroup_info.PodSet:
+		if c.GetNumActiveAllocatedTasks() >= int(c.GetMinAvailable()) {
+			return nil // already satisfied; skip in parent gang phase
+		}
+		return collectTasksFromPodSet(c, taskOrderFn, isRealAllocation)
+	}
+	return nil
+}
+
+func collectFromChildSubgroup(
+	child subgroup_info.SubGroupMember, subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn,
+	isRealAllocation bool,
+) []*pod_info.PodInfo {
+	switch c := child.(type) {
+	case *subgroup_info.SubGroupSet:
+		return collectTasksFromSubGroupSet(c, subGroupOrderFn, taskOrderFn, isRealAllocation)
+	case *subgroup_info.PodSet:
+		return collectTasksFromPodSet(c, taskOrderFn, isRealAllocation)
+	}
+	return nil
+}
+
+func collectTasksFromPodSet(ps *subgroup_info.PodSet, taskOrderFn common_info.LessFn, isRealAllocation bool) []*pod_info.PodInfo {
+	taskPriorityQueue := getTasksPriorityQueue(ps, taskOrderFn, isRealAllocation)
+	if taskPriorityQueue.Empty() {
+		return nil
+	}
+	maxNumOfTasksToAllocate := getNumTasksToAllocate(ps, isRealAllocation)
+	return getTasksFromQueue(taskPriorityQueue, maxNumOfTasksToAllocate)
 }
 
 func GetTasksToAllocateRequestedGPUs(
@@ -60,10 +129,10 @@ func GetTasksToAllocateRequestedGPUs(
 	tasksTotalRequestedGPUs := float64(0)
 	tasksTotalRequestedGpuMemory := int64(0)
 	for _, task := range GetTasksToAllocate(podGroupInfo, subGroupOrderFn, taskOrderFn, isRealAllocation) {
-		tasksTotalRequestedGPUs += task.ResReq.GPUs()
-		tasksTotalRequestedGpuMemory += task.ResReq.GpuMemory()
+		tasksTotalRequestedGPUs += task.GpuRequirement.GPUs()
+		tasksTotalRequestedGpuMemory += task.GpuRequirement.GpuMemory()
 
-		for _, draGpuCount := range task.ResReq.GpuResourceRequirement.DraGpuCounts() {
+		for _, draGpuCount := range task.GpuRequirement.DraGpuCounts() {
 			tasksTotalRequestedGPUs += float64(draGpuCount)
 			// Currently, we do not support DRA gpu memory requests.
 			// DRA gpu requests that have memory constraints (e.g. 2 gpus, each with at least 32GB) are supported by adding the device count (e.g. 2) to the total requested GPUs.
@@ -71,7 +140,7 @@ func GetTasksToAllocateRequestedGPUs(
 			tasksTotalRequestedGpuMemory += 0
 		}
 
-		for migResource, quant := range task.ResReq.MigResources() {
+		for migResource, quant := range task.GpuRequirement.MigResources() {
 			gpuPortion, mem, err := resources.ExtractGpuAndMemoryFromMigResourceName(migResource.String())
 			if err != nil {
 				log.InfraLogger.Errorf("failed to evaluate device portion for resource %v: %v", migResource, err)
@@ -83,33 +152,6 @@ func GetTasksToAllocateRequestedGPUs(
 	}
 
 	return tasksTotalRequestedGPUs, tasksTotalRequestedGpuMemory
-}
-
-func GetTasksToAllocateInitResource(
-	podGroupInfo *PodGroupInfo, subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn,
-	isRealAllocation bool, minNodeGPUMemory int64,
-) *resource_info.Resource {
-	if podGroupInfo == nil {
-		return resource_info.EmptyResource()
-	}
-	if podGroupInfo.tasksToAllocateInitResource != nil {
-		return podGroupInfo.tasksToAllocateInitResource
-	}
-
-	tasksTotalRequestedResource := resource_info.EmptyResource()
-	for _, task := range GetTasksToAllocate(podGroupInfo, subGroupOrderFn, taskOrderFn, isRealAllocation) {
-		if task.ShouldAllocate(isRealAllocation) {
-			tasksTotalRequestedResource.AddResourceRequirements(task.ResReq)
-			if task.IsMemoryRequest() && minNodeGPUMemory > 0 {
-				additionalGpuFraction := float64(task.ResReq.GpuResourceRequirement.GetNumOfGpuDevices()) *
-					(float64(task.ResReq.GpuMemory()) / float64(minNodeGPUMemory))
-				tasksTotalRequestedResource.AddGPUs(additionalGpuFraction)
-			}
-		}
-	}
-
-	podGroupInfo.tasksToAllocateInitResource = tasksTotalRequestedResource
-	return tasksTotalRequestedResource
 }
 
 func GetTasksToAllocateInitResourceVector(
@@ -124,13 +166,13 @@ func GetTasksToAllocateInitResourceVector(
 	}
 
 	result := resource_info.NewResourceVector(podGroupInfo.VectorMap)
-	gpuIdx := podGroupInfo.VectorMap.GetIndex("gpu")
+	gpuIdx := resource_info.GPUIndex
 	for _, task := range GetTasksToAllocate(podGroupInfo, subGroupOrderFn, taskOrderFn, isRealAllocation) {
 		if task.ShouldAllocate(isRealAllocation) {
 			result.Add(task.ResReqVector)
 			if task.IsMemoryRequest() && minNodeGPUMemory > 0 {
-				additionalGpuFraction := float64(task.ResReq.GpuResourceRequirement.GetNumOfGpuDevices()) *
-					(float64(task.ResReq.GpuMemory()) / float64(minNodeGPUMemory))
+				additionalGpuFraction := float64(task.GpuRequirement.GetNumOfGpuDevices()) *
+					(float64(task.GpuRequirement.GpuMemory()) / float64(minNodeGPUMemory))
 				result.Set(gpuIdx, result.Get(gpuIdx)+additionalGpuFraction)
 			}
 		}
@@ -161,15 +203,6 @@ func getTasksFromQueue(priorityQueue *scheduler_util.PriorityQueue, maxNumTasks 
 	return tasksToAllocate
 }
 
-func getSubGroupsPriorityQueue(subGroups map[string]*subgroup_info.PodSet,
-	subGroupOrderFn common_info.LessFn) *scheduler_util.PriorityQueue {
-	priorityQueue := scheduler_util.NewPriorityQueue(subGroupOrderFn, scheduler_util.QueueCapacityInfinite)
-	for _, subGroup := range subGroups {
-		priorityQueue.Push(subGroup)
-	}
-	return priorityQueue
-}
-
 func getNumTasksToAllocate(subGroup *subgroup_info.PodSet, isRealAllocation bool) int {
 	numAllocatedTasks := subGroup.GetNumActiveAllocatedTasks()
 	if numAllocatedTasks >= int(subGroup.GetMinAvailable()) {
@@ -188,18 +221,4 @@ func getNumAllocatableTasks(subGroup *subgroup_info.PodSet, isRealAllocation boo
 		}
 	}
 	return numTasksToAllocate
-}
-
-func getMaxNumSubGroupsToAllocate(podGroupInfo *PodGroupInfo) int {
-	numUnsatisfied := 0
-	for _, subGroup := range podGroupInfo.GetSubGroups() {
-		allocatedTasks := subGroup.GetNumActiveAllocatedTasks()
-		if allocatedTasks < int(subGroup.GetMinAvailable()) {
-			numUnsatisfied += 1
-		}
-	}
-	if numUnsatisfied > 0 {
-		return numUnsatisfied
-	}
-	return 1
 }

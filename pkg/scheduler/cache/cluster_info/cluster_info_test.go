@@ -955,8 +955,7 @@ func TestBindRequests(t *testing.T) {
 		assert.Equal(t, assertedPods, expectedPodAsserts)
 
 		for _, node := range snapshot.Nodes {
-			cpuIdx := node.VectorMap.GetIndex(corev1.ResourceCPU)
-			assert.Equal(t, float64(test.resultNodes[node.Name].MilliValue()), node.IdleVector.Get(cpuIdx))
+			assert.Equal(t, float64(test.resultNodes[node.Name].MilliValue()), node.IdleVector.Get(resource_info.CPUIndex))
 		}
 	}
 }
@@ -1153,15 +1152,15 @@ func TestSnapshotPodGroups(t *testing.T) {
 					},
 					Spec: enginev2alpha2.PodGroupSpec{
 						Queue:     "queue-0",
-						MinMember: 3,
+						MinMember: ptr.To(int32(3)),
 						SubGroups: []enginev2alpha2.SubGroup{
 							{
 								Name:      "SubGroup-0",
-								MinMember: 1,
+								MinMember: ptr.To(int32(1)),
 							},
 							{
 								Name:      "SubGroup-1",
-								MinMember: 2,
+								MinMember: ptr.To(int32(2)),
 							},
 						},
 					},
@@ -1260,9 +1259,9 @@ func TestSnapshotPodGroups(t *testing.T) {
 			assert.Equal(t, expected.Name, pg.Name)
 			assert.Equal(t, expected.Queue, pg.Queue)
 
-			assert.Equal(t, len(expected.GetSubGroups()), len(pg.GetSubGroups()))
-			for _, expectedSubGroup := range expected.GetSubGroups() {
-				for _, subGroup := range pg.GetSubGroups() {
+			assert.Equal(t, len(expected.GetAllPodSets()), len(pg.GetAllPodSets()))
+			for _, expectedSubGroup := range expected.GetAllPodSets() {
+				for _, subGroup := range pg.GetAllPodSets() {
 					if expectedSubGroup.GetName() != subGroup.GetName() {
 						continue
 					}
@@ -1783,7 +1782,7 @@ func TestPodGroupWithIndexNoSubGroups(t *testing.T) {
 			UID: "ABC",
 		},
 		Spec: enginev2alpha2.PodGroupSpec{
-			MinMember: 2,
+			MinMember: ptr.To(int32(2)),
 		},
 	}
 	podGroupInfo := podgroup_info.NewPodGroupInfo("MyTest")
@@ -1793,9 +1792,9 @@ func TestPodGroupWithIndexNoSubGroups(t *testing.T) {
 			kaiSchedulerObjects: []runtime.Object{},
 		},
 	)
-	assert.Equal(t, int32(1), podGroupInfo.GetSubGroups()[podgroup_info.DefaultSubGroup].GetMinAvailable())
+	assert.Equal(t, int32(1), podGroupInfo.GetAllPodSets()[podgroup_info.DefaultSubGroup].GetMinAvailable())
 	clusterInfo.setPodGroupWithIndex(podGroup, podGroupInfo)
-	assert.Equal(t, int32(2), podGroupInfo.GetSubGroups()[podgroup_info.DefaultSubGroup].GetMinAvailable())
+	assert.Equal(t, int32(2), podGroupInfo.GetAllPodSets()[podgroup_info.DefaultSubGroup].GetMinAvailable())
 }
 
 func TestPodGroupWithIndexWithSubGroups(t *testing.T) {
@@ -1804,15 +1803,15 @@ func TestPodGroupWithIndexWithSubGroups(t *testing.T) {
 			UID: "ABC",
 		},
 		Spec: enginev2alpha2.PodGroupSpec{
-			MinMember: 3,
+			MinMember: ptr.To(int32(3)),
 			SubGroups: []enginev2alpha2.SubGroup{
 				{
 					Name:      "sub-a",
-					MinMember: 1,
+					MinMember: ptr.To(int32(1)),
 				},
 				{
 					Name:      "sub-b",
-					MinMember: 2,
+					MinMember: ptr.To(int32(2)),
 				},
 			},
 		},
@@ -1825,8 +1824,8 @@ func TestPodGroupWithIndexWithSubGroups(t *testing.T) {
 		},
 	)
 	clusterInfo.setPodGroupWithIndex(podGroup, podGroupInfo)
-	assert.Equal(t, int32(1), podGroupInfo.GetSubGroups()["sub-a"].GetMinAvailable())
-	assert.Equal(t, int32(2), podGroupInfo.GetSubGroups()["sub-b"].GetMinAvailable())
+	assert.Equal(t, int32(1), podGroupInfo.GetAllPodSets()["sub-a"].GetMinAvailable())
+	assert.Equal(t, int32(2), podGroupInfo.GetAllPodSets()["sub-b"].GetMinAvailable())
 }
 
 func TestIsPodGroupUpForScheduler(t *testing.T) {
@@ -2530,7 +2529,7 @@ func TestSnapshotNodesWithDRAGPUs(t *testing.T) {
 				nodeInfo, found := nodes[nodeName]
 				assert.True(t, found, "Node %s not found", nodeName)
 				// Check total GPUs (DRA GPUs are merged into AllocatableVector)
-				actualGPUs := nodeInfo.AllocatableVector.Get(vectorMap.GetIndex("gpu"))
+				actualGPUs := nodeInfo.AllocatableVector.Get(resource_info.GPUIndex)
 				assert.Equal(t, expectedGPUs, actualGPUs, "GPUs mismatch for node %s", nodeName)
 				expectedFlag := test.hasDRAGPUs[nodeName]
 				assert.Equal(t, expectedFlag, nodeInfo.HasDRAGPUs, "HasDRAGPUs mismatch for node %s", nodeName)

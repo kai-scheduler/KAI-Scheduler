@@ -47,16 +47,6 @@ spec:
           spec:
             description: PodGroupSpec defines the desired state of PodGroup
             properties:
-              backoffLimit:
-                description: The number of failed pods required for this podgroup
-                  to move to 'Failed' phase.
-                format: int32
-                type: integer
-              completions:
-                description: The number of successful pods required for this podgroup
-                  to move to 'Successful' phase.
-                format: int32
-                type: integer
               markUnschedulable:
                 description: Should add "Unschedulable" event to the pods or not.
                 type: boolean
@@ -64,12 +54,17 @@ spec:
                 description: |-
                   MinMember defines the minimal number of members to run the PodGroup;
                   if there are not enough resources to start all required members, the scheduler will not start anyone.
+                  Mutually exclusive with MinSubGroup.
                 format: int32
                 minimum: 1
                 type: integer
-              parallelism:
-                description: The number of pods which will try to run at any instant.
+              minSubGroup:
+                description: |-
+                  MinSubGroup defines the minimal number of direct child SubGroups required for this PodGroup to be schedulable.
+                  Only applicable when SubGroups are defined.
+                  Mutually exclusive with MinMember.
                 format: int32
+                minimum: 1
                 type: integer
               preemptibility:
                 description: |-
@@ -108,17 +103,30 @@ spec:
                       description: |-
                         MinMember defines the minimal number of members to run this SubGroup;
                         if there are not enough resources to start all required members, the scheduler will not start anyone.
+                        Mutually exclusive with MinSubGroup.
                       format: int32
-                      minimum: 1
+                      minimum: 0
+                      type: integer
+                    minSubGroup:
+                      description: |-
+                        MinSubGroup defines the minimal number of direct child SubGroups required for this SubGroup to be schedulable.
+                        Only applicable when this SubGroup has child SubGroups.
+                        Mutually exclusive with MinMember.
+                      format: int32
+                      minimum: 0
                       type: integer
                     name:
-                      description: Name uniquely identifies the SubGroup within the
-                        PodGroup.
+                      description: |-
+                        Name uniquely identifies the SubGroup within the PodGroup.
+                        Must be a valid DNS label (RFC 1123).
                       minLength: 1
+                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                       type: string
                     parent:
-                      description: Parent is an optional attribute that specifies
-                        the name of the parent SubGroup
+                      description: |-
+                        Parent is an optional attribute that specifies the name of the parent SubGroup.
+                        Must be a valid DNS label (RFC 1123).
+                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                       type: string
                     topologyConstraint:
                       description: TopologyConstraint defines the topology constraints

@@ -69,7 +69,9 @@ var _ = Describe("NodeSpread", func() {
 
 			for _, c := range cases {
 				task := &pod_info.PodInfo{
-					ResReq: resource_info.NewResourceRequirementsWithGpus(1),
+					GpuRequirement: *resource_info.NewGpuResourceRequirementWithGpus(1, 0),
+					ResReqVector:   resource_info.NewResourceVectorWithValues(0, 0, 1, vectorMap),
+					VectorMap:      vectorMap,
 				}
 
 				idle := resource_info.NewResource(0, 0, c.nonAllocated)
@@ -103,7 +105,8 @@ var _ = Describe("NodeSpread", func() {
 				Expect(actual).To(Equal(c.expected))
 
 				task = &pod_info.PodInfo{
-					ResReq: resource_info.NewResourceRequirements(0, 1, 0),
+					ResReqVector: resource_info.NewResourceVectorWithValues(1, 0, 0, vectorMap),
+					VectorMap:    vectorMap,
 				}
 
 				idle2 := resource_info.NewResource(c.nonAllocated, 0, 0)

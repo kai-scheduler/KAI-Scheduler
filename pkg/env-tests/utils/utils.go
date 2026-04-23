@@ -148,7 +148,7 @@ func GroupPods(ctx context.Context, c client.Client, podGroupConfig PodGroupConf
 		},
 		Spec: schedulingv2alpha2.PodGroupSpec{
 			Queue:             podGroupConfig.QueueName,
-			MinMember:         podGroupConfig.MinMember,
+			MinMember:         ptr.To(podGroupConfig.MinMember),
 			MarkUnschedulable: ptr.To(true),
 		},
 	}

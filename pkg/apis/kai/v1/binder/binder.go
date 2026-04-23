@@ -119,6 +119,14 @@ type ResourceReservation struct {
 	// If not set, Kubernetes defaults will be used, which allows for better backward compatibility.
 	// +kubebuilder:validation:Optional
 	PodResources *common.Resources `json:"podResources,omitempty"`
+
+	// ReservationPodSecurityContext specifies the pod-level security context for reservation pods
+	// +kubebuilder:validation:Optional
+	ReservationPodSecurityContext *v1.PodSecurityContext `json:"reservationPodSecurityContext,omitempty"`
+
+	// ReservationContainerSecurityContext specifies the container-level security context for reservation pod containers
+	// +kubebuilder:validation:Optional
+	ReservationContainerSecurityContext *v1.SecurityContext `json:"reservationContainerSecurityContext,omitempty"`
 }
 
 func (r *ResourceReservation) SetDefaultsWhereNeeded() {

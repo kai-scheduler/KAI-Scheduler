@@ -70,9 +70,9 @@ func (mnr *MaxNodeResourcesPredicate) PreFilter(_ context.Context, _ ksf.CycleSt
 
 	draPodClaims := resource_info.GetDraPodClaims(pod, mnr.resourceClaimsMap, mnr.podsToClaimsMap)
 	podInfo := pod_info.NewTaskInfo(pod, draPodClaims, mnr.vectorMap)
-	gpuIdx := mnr.vectorMap.GetIndex("gpu")
-	cpuIdx := mnr.vectorMap.GetIndex(v1.ResourceCPU)
-	memIdx := mnr.vectorMap.GetIndex(v1.ResourceMemory)
+	gpuIdx := resource_info.GPUIndex
+	cpuIdx := resource_info.CPUIndex
+	memIdx := resource_info.MemoryIndex
 
 	if podInfo.ResReqVector.Get(gpuIdx) > mnr.maxResources.Get(gpuIdx) {
 		return nil, ksf.NewStatus(ksf.Unschedulable,
@@ -115,7 +115,7 @@ func (mnr *MaxNodeResourcesPredicate) buildUnschedulableMessage(podInfo *pod_inf
 	messageBuilder := strings.Builder{}
 
 	messageBuilder.WriteString(fmt.Sprintf("The pod %s/%s requires %s. ", podInfo.Namespace, podInfo.Name,
-		podInfo.ResReq.DetailedString()))
+		resource_info.DetailedResourceString(podInfo.ResReqVector, &podInfo.GpuRequirement, podInfo.VectorMap)))
 	if resourceQuantity == 0 {
 		messageBuilder.WriteString(fmt.Sprintf("No node in the %s node-pool has %s resources",
 			mnr.schedulerShardName, resourcesName))

@@ -24,7 +24,6 @@ import (
 	"strconv"
 	"strings"
 
-	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	ksf "k8s.io/kube-scheduler/framework"
 
@@ -33,6 +32,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/cluster_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
@@ -105,6 +105,7 @@ func (pp *predicatesPlugin) Name() string {
 
 func (pp *predicatesPlugin) OnSessionOpen(ssn *framework.Session) {
 	k8sPredicates := predicates.NewSessionPredicates(ssn)
+	pp.initializeK8sNodeInfos(ssn)
 
 	pp.storageSchedulingEnabled = ssn.ScheduleCSIStorage()
 	pp.skipPredicates = SkipPredicates{}
@@ -118,6 +119,18 @@ func (pp *predicatesPlugin) OnSessionOpen(ssn *framework.Session) {
 		return pp.evaluateTaskOnPredicates(task, job, node, k8sPredicates,
 			ssn.IsTaskAllocationOnNodeOverCapacityFn, ssn.IsRestrictNodeSchedulingEnabled, pp.skipPredicates)
 	})
+}
+
+func (pp *predicatesPlugin) initializeK8sNodeInfos(ssn *framework.Session) {
+	for _, nodeInfo := range ssn.ClusterInfo.Nodes {
+		podAffinityInfo, ok := nodeInfo.PodAffinityInfo.(*cluster_info.K8sNodePodAffinityInfo)
+		if !ok || podAffinityInfo == nil || podAffinityInfo.NodeInfo == nil {
+			log.InfraLogger.Warningf("Node %s has no pod affinity info", nodeInfo.Name)
+			continue
+		}
+
+		podAffinityInfo.NodeInfo.SetNode(nodeInfo.Node)
+	}
 }
 
 func evaluateTaskOnPrePredicate(task *pod_info.PodInfo, k8sPredicates k8s_internal.SessionPredicates,
@@ -188,7 +201,6 @@ func (pp *predicatesPlugin) evaluateTaskOnPredicates(
 	}()
 
 	k8sNodeInfo := node.PodAffinityInfo.(*cluster_info.K8sNodePodAffinityInfo).NodeInfo
-	k8sNodeInfo.SetNode(node.Node)
 
 	if result := isTaskAllocationOnNodeOverCapacityFn(task, job, node); !result.IsSchedulable {
 		return common_info.NewFitError(task.Name, task.Namespace, node.Name,
@@ -201,7 +213,7 @@ func (pp *predicatesPlugin) evaluateTaskOnPredicates(
 		return fitError
 	}
 
-	if task.ResReq.GpuMemory() > 0 && !node.GpuMemorySynced {
+	if task.GpuRequirement.GpuMemory() > 0 && !node.GpuMemorySynced {
 		return common_info.NewFitError(task.Name, task.Namespace, node.Name,
 			fmt.Sprintf("node is not a gpu node or the gpu memory count on the node was not synced yet,"+
 				" task: <%v/%v>, node: <%v>", task.Namespace, task.Name, node.Name))
@@ -263,8 +275,7 @@ func (pp *predicatesPlugin) evaluateTaskOnPredicates(
 
 func (pp *predicatesPlugin) checkMaxPodsWithGpuGroupReservation(
 	task *pod_info.PodInfo, node *node_info.NodeInfo) error {
-	podsIdx := node.VectorMap.GetIndex(v1.ResourcePods)
-	availablePods := node.IdleVector.Get(podsIdx) + node.ReleasingVector.Get(podsIdx)
+	availablePods := node.IdleVector.Get(resource_info.PodsIndex) + node.ReleasingVector.Get(resource_info.PodsIndex)
 
 	if !task.IsSharedGPURequest() {
 		if availablePods > 0 {

@@ -21,8 +21,10 @@ import (
 	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions"
+
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
@@ -142,10 +144,10 @@ func MatchExpectedAndRealTasks(t *testing.T, testNumber int, testMetadata TestTo
 				t.Errorf("Test number: %d, name: %s, has failed. Task name: %s, actual uses node: %s, was expecting node: %s", testNumber, testMetadata.Name, taskInfo.Name, taskInfo.NodeName, jobExpectedResult.NodeName)
 			}
 
-			sumOfJobRequestedGPU += taskInfo.ResReq.GPUs()
-			sumOfJobRequestedMillisCpu += taskInfo.ResReq.Cpu()
-			sumOfJobRequestedMemory += taskInfo.ResReq.Memory()
-			sumOfAcceptedGpus += taskInfo.AcceptedResource.GPUs()
+			sumOfJobRequestedGPU += taskInfo.GpuRequirement.GPUs()
+			sumOfJobRequestedMillisCpu += taskInfo.ResReqVector.Get(resource_info.CPUIndex)
+			sumOfJobRequestedMemory += taskInfo.ResReqVector.Get(resource_info.MemoryIndex)
+			sumOfAcceptedGpus += taskInfo.AcceptedGpuRequirement.GPUs()
 
 			// verify fractional GPUs index
 			if pod_status.IsActiveUsedStatus(taskInfo.Status) &&
@@ -230,28 +232,28 @@ func MatchExpectedAndRealTasks(t *testing.T, testNumber int, testMetadata TestTo
 						taskExpectedResult.NodeName)
 				}
 
-				acceptedGPUs := task.AcceptedResource.GPUs()
+				acceptedGPUs := task.AcceptedGpuRequirement.GPUs()
 				if taskExpectedResult.GPUsAccepted != 0 && acceptedGPUs != taskExpectedResult.GPUsAccepted {
 					t.Errorf("Test number: %d, name: %v, has failed. Task name: %v, actual accept GPUs: %v, "+
 						"was expecting GPUs: %v", testNumber, testMetadata.Name, taskId, acceptedGPUs,
 						taskExpectedResult.GPUsAccepted)
 				}
 
-				requestedGPUs := task.ResReq.GPUs()
+				requestedGPUs := task.GpuRequirement.GPUs()
 				if requestedGPUs != taskExpectedResult.GPUsRequired {
 					t.Errorf("Test number: %d, name: %v, has failed. Task name: %v, actual uses  GPUs: %v, "+
 						"was expecting GPUs: %v", testNumber, testMetadata.Name, taskId, requestedGPUs,
 						taskExpectedResult.GPUsRequired)
 				}
 
-				requestedMilliCPUs := task.ResReq.Cpu()
+				requestedMilliCPUs := task.ResReqVector.Get(resource_info.CPUIndex)
 				if taskExpectedResult.MilliCpuRequired != 0 && requestedMilliCPUs != taskExpectedResult.MilliCpuRequired {
 					t.Errorf("Test number: %d, name: %v, has failed. Task name: %v, actual uses MilliCpu: %v, "+
 						"was expecting MilliCpu: %v", testNumber, testMetadata.Name, taskId, requestedMilliCPUs,
 						taskExpectedResult.MilliCpuRequired)
 				}
 
-				requestedMemory := task.ResReq.Memory()
+				requestedMemory := task.ResReqVector.Get(resource_info.MemoryIndex)
 				if taskExpectedResult.MemoryRequired != 0 && requestedMemory != taskExpectedResult.MemoryRequired {
 					t.Errorf("Test number: %d, name: %v, has failed. Task name: %v, actual uses Memory: %v, "+
 						"was expecting Memory: %v", testNumber, testMetadata.Name, taskId, requestedMemory,
@@ -303,7 +305,7 @@ func MatchExpectedAndRealTasks(t *testing.T, testNumber int, testMetadata TestTo
 			t.Errorf("Test number: %d, name: %v, has failed. Couldn't find node: %v for expected nodes resources.", testNumber, testMetadata.Name, nodeName)
 		}
 
-		gpuIdx := ssnNode.VectorMap.GetIndex("gpu")
+		gpuIdx := resource_info.GPUIndex
 		if nodeExpectedResources.ReleasingGPUs != ssnNode.ReleasingVector.Get(gpuIdx) {
 			t.Errorf("Test number: %d, name: %v, has failed. Node name: %v, actual Releasing GPUs: %v, was expecting Releasing GPUs: %v", testNumber, testMetadata.Name, nodeName, ssnNode.ReleasingVector.Get(gpuIdx), nodeExpectedResources.ReleasingGPUs)
 		}

@@ -9,6 +9,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	schedulingv2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
@@ -97,7 +98,7 @@ func (h *Handler) createPodGroupForMetadata(podGroupMetadata Metadata) *scheduli
 			},
 		},
 		Spec: schedulingv2alpha2.PodGroupSpec{
-			MinMember:         podGroupMetadata.MinAvailable,
+			MinMember:         ptr.To(podGroupMetadata.MinAvailable),
 			Queue:             podGroupMetadata.Queue,
 			PriorityClassName: podGroupMetadata.PriorityClassName,
 			SubGroups:         []schedulingv2alpha2.SubGroup{},
@@ -117,7 +118,7 @@ func (h *Handler) createPodGroupForMetadata(podGroupMetadata Metadata) *scheduli
 		pg.Spec.SubGroups = append(pg.Spec.SubGroups,
 			schedulingv2alpha2.SubGroup{
 				Name:               subGroup.Name,
-				MinMember:          subGroup.MinAvailable,
+				MinMember:          ptr.To(subGroup.MinAvailable),
 				Parent:             subGroup.Parent,
 				TopologyConstraint: topologyConstraint,
 			})

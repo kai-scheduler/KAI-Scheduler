@@ -58,7 +58,7 @@ func Test_createPodGroupForMetadata(t *testing.T) {
 					},
 				},
 				Spec: schedulingv2alpha2.PodGroupSpec{
-					MinMember:         5,
+					MinMember:         ptr.To(int32(5)),
 					Queue:             "default-queue",
 					PriorityClassName: "high-priority",
 					Preemptibility:    "preemptible",
@@ -102,7 +102,7 @@ func Test_createPodGroupForMetadata(t *testing.T) {
 					},
 				},
 				Spec: schedulingv2alpha2.PodGroupSpec{
-					MinMember: 3,
+					MinMember: ptr.To(int32(3)),
 					SubGroups: []schedulingv2alpha2.SubGroup{},
 					TopologyConstraint: schedulingv2alpha2.TopologyConstraint{
 						PreferredTopologyLevel: "node",
@@ -153,16 +153,16 @@ func Test_createPodGroupForMetadata(t *testing.T) {
 					},
 				},
 				Spec: schedulingv2alpha2.PodGroupSpec{
-					MinMember: 10,
+					MinMember: ptr.To(int32(10)),
 					SubGroups: []schedulingv2alpha2.SubGroup{
 						{
 							Name:               "subgroup-1",
-							MinMember:          5,
+							MinMember:          ptr.To(int32(5)),
 							TopologyConstraint: nil,
 						},
 						{
 							Name:               "subgroup-2",
-							MinMember:          5,
+							MinMember:          ptr.To(int32(5)),
 							TopologyConstraint: nil,
 						},
 					},
@@ -208,11 +208,11 @@ func Test_createPodGroupForMetadata(t *testing.T) {
 					},
 				},
 				Spec: schedulingv2alpha2.PodGroupSpec{
-					MinMember: 5,
+					MinMember: ptr.To(int32(5)),
 					SubGroups: []schedulingv2alpha2.SubGroup{
 						{
 							Name:      "subgroup-1",
-							MinMember: 5,
+							MinMember: ptr.To(int32(5)),
 							TopologyConstraint: &schedulingv2alpha2.TopologyConstraint{
 								PreferredTopologyLevel: "node",
 								RequiredTopologyLevel:  "rack",
@@ -276,11 +276,11 @@ func Test_createPodGroupForMetadata(t *testing.T) {
 					},
 				},
 				Spec: schedulingv2alpha2.PodGroupSpec{
-					MinMember: 15,
+					MinMember: ptr.To(int32(15)),
 					SubGroups: []schedulingv2alpha2.SubGroup{
 						{
 							Name:      "subgroup-with-constraint",
-							MinMember: 5,
+							MinMember: ptr.To(int32(5)),
 							TopologyConstraint: &schedulingv2alpha2.TopologyConstraint{
 								PreferredTopologyLevel: "socket",
 								RequiredTopologyLevel:  "node",
@@ -289,12 +289,12 @@ func Test_createPodGroupForMetadata(t *testing.T) {
 						},
 						{
 							Name:               "subgroup-without-constraint",
-							MinMember:          5,
+							MinMember:          ptr.To(int32(5)),
 							TopologyConstraint: nil,
 						},
 						{
 							Name:      "another-with-constraint",
-							MinMember: 5,
+							MinMember: ptr.To(int32(5)),
 							TopologyConstraint: &schedulingv2alpha2.TopologyConstraint{
 								PreferredTopologyLevel: "rack",
 								RequiredTopologyLevel:  "zone",
@@ -350,23 +350,23 @@ func Test_createPodGroupForMetadata(t *testing.T) {
 					},
 				},
 				Spec: schedulingv2alpha2.PodGroupSpec{
-					MinMember: 10,
+					MinMember: ptr.To(int32(10)),
 					SubGroups: []schedulingv2alpha2.SubGroup{
 						{
 							Name:               "parent-group",
-							MinMember:          0,
+							MinMember:          ptr.To(int32(0)),
 							Parent:             nil,
 							TopologyConstraint: nil,
 						},
 						{
 							Name:               "child-subgroup-1",
-							MinMember:          5,
+							MinMember:          ptr.To(int32(5)),
 							Parent:             ptr.To("parent-group"),
 							TopologyConstraint: nil,
 						},
 						{
 							Name:               "child-subgroup-2",
-							MinMember:          5,
+							MinMember:          ptr.To(int32(5)),
 							Parent:             ptr.To("parent-group"),
 							TopologyConstraint: nil,
 						},
@@ -414,17 +414,17 @@ func Test_createPodGroupForMetadata(t *testing.T) {
 					},
 				},
 				Spec: schedulingv2alpha2.PodGroupSpec{
-					MinMember: 10,
+					MinMember: ptr.To(int32(10)),
 					SubGroups: []schedulingv2alpha2.SubGroup{
 						{
 							Name:               "subgroup-1",
-							MinMember:          5,
+							MinMember:          ptr.To(int32(5)),
 							Parent:             nil,
 							TopologyConstraint: nil,
 						},
 						{
 							Name:               "subgroup-2",
-							MinMember:          5,
+							MinMember:          ptr.To(int32(5)),
 							Parent:             nil,
 							TopologyConstraint: nil,
 						},
@@ -463,7 +463,7 @@ func Test_createPodGroupForMetadata(t *testing.T) {
 					},
 				},
 				Spec: schedulingv2alpha2.PodGroupSpec{
-					MinMember: 5,
+					MinMember: ptr.To(int32(5)),
 					SubGroups: []schedulingv2alpha2.SubGroup{},
 					TopologyConstraint: schedulingv2alpha2.TopologyConstraint{
 						PreferredTopologyLevel: "rack",
@@ -503,7 +503,7 @@ func Test_createPodGroupForMetadata(t *testing.T) {
 					},
 				},
 				Spec: schedulingv2alpha2.PodGroupSpec{
-					MinMember: 5,
+					MinMember: ptr.To(int32(5)),
 					SubGroups: []schedulingv2alpha2.SubGroup{},
 					TopologyConstraint: schedulingv2alpha2.TopologyConstraint{
 						PreferredTopologyLevel: "",
@@ -544,7 +544,7 @@ func Test_createPodGroupForMetadata(t *testing.T) {
 					},
 				},
 				Spec: schedulingv2alpha2.PodGroupSpec{
-					MinMember:          5,
+					MinMember:          ptr.To(int32(5)),
 					SubGroups:          []schedulingv2alpha2.SubGroup{},
 					TopologyConstraint: schedulingv2alpha2.TopologyConstraint{},
 				},
@@ -618,11 +618,11 @@ func Test_createPodGroupForMetadata(t *testing.T) {
 					},
 				},
 				Spec: schedulingv2alpha2.PodGroupSpec{
-					MinMember: 20,
+					MinMember: ptr.To(int32(20)),
 					SubGroups: []schedulingv2alpha2.SubGroup{
 						{
 							Name:      "parent-group",
-							MinMember: 0,
+							MinMember: ptr.To(int32(0)),
 							Parent:    nil,
 							TopologyConstraint: &schedulingv2alpha2.TopologyConstraint{
 								PreferredTopologyLevel: "rack",
@@ -632,7 +632,7 @@ func Test_createPodGroupForMetadata(t *testing.T) {
 						},
 						{
 							Name:      "child-1-1",
-							MinMember: 5,
+							MinMember: ptr.To(int32(5)),
 							Parent:    ptr.To("parent-group"),
 							TopologyConstraint: &schedulingv2alpha2.TopologyConstraint{
 								PreferredTopologyLevel: "node",
@@ -642,13 +642,13 @@ func Test_createPodGroupForMetadata(t *testing.T) {
 						},
 						{
 							Name:               "child-1-2",
-							MinMember:          5,
+							MinMember:          ptr.To(int32(5)),
 							Parent:             ptr.To("parent-group"),
 							TopologyConstraint: nil,
 						},
 						{
 							Name:      "orphan-group",
-							MinMember: 10,
+							MinMember: ptr.To(int32(10)),
 							Parent:    nil,
 							TopologyConstraint: &schedulingv2alpha2.TopologyConstraint{
 								PreferredTopologyLevel: "socket",

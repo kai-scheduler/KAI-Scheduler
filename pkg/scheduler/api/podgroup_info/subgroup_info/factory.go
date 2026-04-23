@@ -13,7 +13,7 @@ import (
 
 const (
 	RootSubGroupSetName         = ""
-	MinimumSubGroupMinAvailable = 1
+	MinimumSubGroupMinAvailable = 0
 )
 
 func FromPodGroup(podGroup *v2alpha2.PodGroup) (*SubGroupSet, error) {
@@ -31,11 +31,14 @@ func FromPodGroup(podGroup *v2alpha2.PodGroup) (*SubGroupSet, error) {
 		}
 	}
 	root := NewSubGroupSet(RootSubGroupSetName, topologyConstraint)
+	root.SetMinSubGroup(podGroup.Spec.MinSubGroup)
 	subGroupSets := map[string]*SubGroupSet{
 		RootSubGroupSetName: root,
 	}
 	podSets := map[string]*PodSet{}
-	createSubGroupInfos(allSubGroups, children, subGroupSets, podSets)
+	if err := createSubGroupInfos(allSubGroups, children, subGroupSets, podSets); err != nil {
+		return nil, err
+	}
 
 	err = addToParent(allSubGroups, subGroupSets, podSets)
 	if err != nil {
@@ -63,7 +66,7 @@ func mapSubGroupsAndChildren(podGroup *v2alpha2.PodGroup) (map[string]*v2alpha2.
 
 func createSubGroupInfos(allSubGroups map[string]*v2alpha2.SubGroup, children map[string][]string,
 	subGroupSets map[string]*SubGroupSet, podSets map[string]*PodSet,
-) {
+) error {
 	for name, subGroup := range allSubGroups {
 		var topologyConstrainInfo *topology_info.TopologyConstraintInfo
 		if subGroup.TopologyConstraint != nil {
@@ -73,13 +76,19 @@ func createSubGroupInfos(allSubGroups map[string]*v2alpha2.SubGroup, children ma
 				PreferredLevel: subGroup.TopologyConstraint.PreferredTopologyLevel,
 			}
 		}
-		_, hasChildren := children[name]
-		if hasChildren {
+		_, hasSubGroupMember := children[name]
+		if hasSubGroupMember {
 			subGroupSets[name] = NewSubGroupSet(name, topologyConstrainInfo)
+			subGroupSets[name].SetMinSubGroup(subGroup.MinSubGroup)
 		} else {
-			podSets[name] = NewPodSet(name, max(subGroup.MinMember, MinimumSubGroupMinAvailable), topologyConstrainInfo)
+			minMember := int32(0)
+			if subGroup.MinMember != nil {
+				minMember = *subGroup.MinMember
+			}
+			podSets[name] = NewPodSet(name, max(minMember, MinimumSubGroupMinAvailable), topologyConstrainInfo)
 		}
 	}
+	return nil
 }
 
 func addToParent(allSubGroups map[string]*v2alpha2.SubGroup, subGroupSets map[string]*SubGroupSet,
