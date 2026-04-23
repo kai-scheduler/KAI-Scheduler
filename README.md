@@ -1,6 +1,7 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE) [![Coverage](https://github.com/kai-scheduler/KAI-scheduler/raw/coverage-badge/badges/coverage.svg)](https://github.com/kai-scheduler/KAI-scheduler/blob/main/.github/workflows/update-coverage-badge.yaml)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/kai-scheduler/KAI-scheduler)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/12064/badge)](https://www.bestpractices.dev/projects/12064)
+[![ACMM](https://img.shields.io/endpoint?url=https%3A%2F%2Fconsole.kubestellar.io%2Fapi%2Facmm%2Fbadge%3Frepo%3Dkai-scheduler%2FKAI-Scheduler)](https://console.kubestellar.io/acmm?repo=kai-scheduler%2FKAI-Scheduler&utm_source=github&utm_medium=badge&utm_campaign=acmm-outreach)
 
 # KAI Scheduler
 
