@@ -34,7 +34,7 @@ spec:
       - kai-scheduler
   selector:
     matchLabels:
-      app: scheduler
+      app: kai-scheduler-default
   endpoints:
     - port: http-metrics
       bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
