@@ -88,6 +88,10 @@ func (drap *draPlugin) assumePendingClaims(ssn *framework.Session) {
 			if pod.BindRequest == nil {
 				continue
 			}
+			if pod.Pod.Status.Phase == v1.PodSucceeded || pod.Pod.Status.Phase == v1.PodFailed {
+				// If the pod has already succeeded or failed, the resources are freed and we can skip assuming pending claims
+				continue
+			}
 			for _, claim := range pod.BindRequest.BindRequest.Spec.ResourceClaimAllocations {
 				err := drap.assumePendingClaim(&claim, pod.Pod)
 				if err != nil {
