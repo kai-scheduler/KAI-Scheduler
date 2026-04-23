@@ -1,0 +1,19 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: trainer.kubeflow.org/v1alpha1
+kind: TrainJob
+metadata:
+  name: pytorch-simple
+  labels:
+    kai.scheduler/queue: default-queue
+spec:
+  runtimeRef:
+    name: torch-distributed-kai
+  trainer:
+    numNodes: 2
+    image: docker.io/kubeflowkatib/pytorch-mnist:v1beta1-45c5727
+    command:
+      - python3
+      - /opt/pytorch-mnist/mnist.py
+      - --epochs=1
