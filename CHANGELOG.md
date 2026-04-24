@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Added support for the upstream Kubernetes Workload API ([KEP-4671](https://github.com/kubernetes/enhancements/tree/master/keps/sig-scheduling/4671-workload-api), `scheduling.k8s.io/v1alpha1`). When the `GenericWorkload` feature gate is enabled on the cluster, the podgrouper reads `Pod.spec.workloadRef` and translates the referenced `Workload.spec.podGroups` entries into KAI `PodGroup` resources (Gang → `MinMember=gang.minCount` per replica key; Basic → single `MinMember=1` group). Falls back to top-owner grouping when the annotation `kai.scheduler/ignore-workload-api=true` is set on the Pod or its top owner. See `docs/developer/designs/k8s-workload-api/README.md`.
 - Added `enabled` Helm values for `binder`, `podgrouper`, `podgroupcontroller`, `queuecontroller`, `admission`, and `scheduler` to allow disabling individual components from values.yaml. Previously these were hardcoded to `true` in the kai-config template.
 - Added `prometheus.enabled` and `prometheus.externalPrometheusUrl` Helm values to configure Prometheus from values.yaml [#907](https://github.com/NVIDIA/KAI-Scheduler/issues/907)
 - Added validation for `subgroup` name in podgroup [faizanexe](https://github.com/faizan-exe)

@@ -5,14 +5,20 @@ package app
 
 import (
 	"flag"
+	"time"
 
 	"go.uber.org/zap/zapcore"
 	corev1 "k8s.io/api/core/v1"
+	schedulingv1alpha1 "k8s.io/api/scheduling/v1alpha1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/informers"
+	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	schedulingv1alpha1listers "k8s.io/client-go/listers/scheduling/v1alpha1"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -26,6 +32,7 @@ import (
 
 	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
 	kubeAiSchedulerV2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	featuregates "github.com/kai-scheduler/KAI-scheduler/pkg/common/feature_gates"
 	controllers "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper"
 	pluginshub "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/hub"
 	// +kubebuilder:scaffold:imports
@@ -45,6 +52,10 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(v2.AddToScheme(scheme))
 	utilruntime.Must(kubeAiSchedulerV2alpha2.AddToScheme(scheme))
+	// Register the upstream Workload API so controller-runtime can decode
+	// Workload events. Registering the type is harmless when the cluster
+	// does not expose the API — the watch itself is gated by discovery.
+	utilruntime.Must(schedulingv1alpha1.AddToScheme(scheme))
 
 	// +kubebuilder:scaffold:scheme
 }
@@ -140,10 +151,15 @@ func (app *App) Run() error {
 		pluginsHub = app.DefaultPluginsHub
 	}
 
+	workloadLister, err := app.setupWorkloadAPI()
+	if err != nil {
+		return err
+	}
+
 	if err := (&controllers.PodReconciler{
 		Client: app.Mgr.GetClient(),
 		Scheme: app.Mgr.GetScheme(),
-	}).SetupWithManager(app.Mgr, app.configs, pluginsHub); err != nil {
+	}).SetupWithManager(app.Mgr, app.configs, pluginsHub, workloadLister); err != nil {
 		return err
 	}
 	// +kubebuilder:scaffold:builder
@@ -157,6 +173,45 @@ func (app *App) Run() error {
 
 	setupLog.Info("starting manager")
 	return app.Mgr.Start(ctrl.SetupSignalHandler())
+}
+
+// setupWorkloadAPI detects whether the upstream Kubernetes Workload API
+// (scheduling.k8s.io/v1alpha1, KEP-4671) is exposed by the cluster. When it
+// is, it starts a namespace-less informer factory for Workloads, runs it, and
+// returns a ready lister for the podgrouper to consult. When the API is not
+// present (feature gate off or pre-1.35), it returns (nil, nil) — the
+// podgrouper will skip Workload-aware behaviour entirely. See
+// docs/developer/designs/k8s-workload-api/README.md.
+func (app *App) setupWorkloadAPI() (schedulingv1alpha1listers.WorkloadLister, error) {
+	cfg := app.Mgr.GetConfig()
+	discoveryClient, err := discovery.NewDiscoveryClientForConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
+	featuregates.SetWorkloadAPIFlag(discoveryClient)
+	if !featuregates.WorkloadAPIEnabled() {
+		setupLog.Info("upstream Workload API (scheduling.k8s.io/v1alpha1) not present on the cluster; skipping Workload-aware podgrouping")
+		app.configs.WorkloadAPIEnabled = false
+		return nil, nil
+	}
+	app.configs.WorkloadAPIEnabled = true
+
+	kubeClient, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		return nil, err
+	}
+	factory := informers.NewSharedInformerFactory(kubeClient, 30*time.Minute)
+	lister := factory.Scheduling().V1alpha1().Workloads().Lister()
+	// Prime the informer.
+	factory.Scheduling().V1alpha1().Workloads().Informer()
+	stopCh := make(chan struct{})
+	factory.Start(stopCh)
+	factory.WaitForCacheSync(stopCh)
+	// Note: the stopCh is intentionally left open. The shared informer
+	// factory runs for the process lifetime, like the rest of the manager.
+
+	setupLog.Info("upstream Workload API detected; Workload-aware podgrouping is enabled")
+	return lister, nil
 }
 
 func initLogger() {

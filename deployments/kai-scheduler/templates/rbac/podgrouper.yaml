@@ -325,6 +325,7 @@ rules:
   - scheduling.k8s.io
   resources:
   - priorityclasses
+  - workloads
   verbs:
   - get
   - list

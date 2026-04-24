@@ -43,6 +43,54 @@ func SetDynamicResourcesEnabledForTest(enabled bool) {
 	dynamicResourcesEnabled.Store(enabled)
 }
 
+// workloadAPIEnabled is the process-wide decision on whether the upstream
+// Kubernetes Workload API (KEP-4671, scheduling.k8s.io/v1alpha1) is usable
+// against the cluster. Set by SetWorkloadAPIFlag at startup based on
+// discovery. The GenericWorkload feature gate is Alpha in v1.35 and not
+// queryable via discovery, so we probe API group presence instead.
+var workloadAPIEnabled atomic.Bool
+
+// SetWorkloadAPIFlag records whether the cluster exposes the scheduling.k8s.io
+// v1alpha1 Workload API, based on server discovery.
+func SetWorkloadAPIFlag(discoveryClient discovery.DiscoveryInterface) {
+	workloadAPIEnabled.Store(IsWorkloadAPIEnabled(discoveryClient))
+}
+
+// WorkloadAPIEnabled reports whether the cluster exposes the upstream
+// Kubernetes Workload API. Use this to gate registration of Workload
+// informers and the Workload-aware podgroup override.
+func WorkloadAPIEnabled() bool {
+	return workloadAPIEnabled.Load()
+}
+
+// SetWorkloadAPIEnabledForTest sets the process-wide Workload API flag.
+// Intended for tests that don't go through SetWorkloadAPIFlag.
+func SetWorkloadAPIEnabledForTest(enabled bool) {
+	workloadAPIEnabled.Store(enabled)
+}
+
+// IsWorkloadAPIEnabled probes the discovery API for the scheduling.k8s.io
+// v1alpha1 group-version and checks that the workloads resource is registered.
+// Returns false for any error — a cluster without the Alpha feature gate simply
+// won't list the resource, which is indistinguishable from a discovery error
+// here and either way should disable Workload-aware behavior.
+func IsWorkloadAPIEnabled(discoveryClient discovery.DiscoveryInterface) bool {
+	logger := log.Log.WithName("feature-gates")
+	const groupVersion = "scheduling.k8s.io/v1alpha1"
+
+	resources, err := discoveryClient.ServerResourcesForGroupVersion(groupVersion)
+	if err != nil {
+		logger.V(4).Info("Workload API group-version not found", "groupVersion", groupVersion, "err", err)
+		return false
+	}
+	for _, r := range resources.APIResources {
+		if r.Name == "workloads" {
+			return true
+		}
+	}
+	return false
+}
+
 func IsDynamicResourcesEnabled(discoveryClient discovery.DiscoveryInterface) bool {
 	logger := log.Log.WithName("feature-gates")
 

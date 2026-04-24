@@ -31,6 +31,11 @@ const (
 	PodGrouperWarning   = "PodGrouperWarning"
 	TopOwnerMetadataKey = "kai.scheduler/top-owner-metadata"
 
+	// WorkloadIgnoreAnnotationKey on a Pod or its top owner causes the podgrouper
+	// to ignore spec.workloadRef (the upstream Workload API, KEP-4671) and fall
+	// back to top-owner-based grouping. See docs/developer/designs/k8s-workload-api/README.md.
+	WorkloadIgnoreAnnotationKey = "kai.scheduler/ignore-workload-api"
+
 	// Annotations
 	PodGroupAnnotationForPod      = "pod-group-name"
 	GpuFraction                   = "gpu-fraction"

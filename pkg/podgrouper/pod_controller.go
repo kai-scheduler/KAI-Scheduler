@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	schedulingv1alpha1listers "k8s.io/client-go/listers/scheduling/v1alpha1"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -23,6 +24,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper"
 	pluginshub "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/hub"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/workload"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
@@ -57,12 +59,20 @@ type Configs struct {
 
 	DefaultConfigPerTypeConfigMapName      string
 	DefaultConfigPerTypeConfigMapNamespace string
+
+	// WorkloadAPIEnabled, when true, registers a field index on
+	// pod.spec.workloadRef.name, a secondary watch on
+	// scheduling.k8s.io/v1alpha1 Workloads, and enables Workload-derived
+	// podgroup metadata overrides. Should reflect cluster capability; see
+	// featuregates.IsWorkloadAPIEnabled.
+	WorkloadAPIEnabled bool
 }
 
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=pods,verbs=create;update;patch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch;update;get;list;watch
 // +kubebuilder:rbac:groups="scheduling.k8s.io",resources=priorityclasses,verbs=get;list;watch
+// +kubebuilder:rbac:groups="scheduling.k8s.io",resources=workloads,verbs=get;list;watch
 // +kubebuilder:rbac:groups="scheduling.run.ai",resources=podgroups,verbs=create;update;patch;get;list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
@@ -112,6 +122,15 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 
 	metadata, err := r.podGrouper.GetPGMetadata(ctx, &pod, topOwner, allOwners)
 	if err != nil {
+		if workload.IsSoftFailure(err) {
+			// Workload referenced by pod.spec.workloadRef (or its podGroup
+			// entry) doesn't exist yet. Leave the Pod pending without
+			// requeueing — the WorkloadReconciler will enqueue us when the
+			// Workload appears. See docs/developer/designs/k8s-workload-api.
+			logger.V(1).Info("Pod references a missing Workload; staying pending",
+				"pod", fmt.Sprintf("%s/%s", req.Namespace, req.Name), "reason", err)
+			return ctrl.Result{}, nil
+		}
 		logger.V(1).Error(err, "Failed to create pod group metadata for pod", req.Namespace, req.Name)
 		return ctrl.Result{}, err
 	}
@@ -136,18 +155,22 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *PodReconciler) SetupWithManager(mgr ctrl.Manager, configs Configs, pluginsHub pluginshub.PluginsHub) error {
+func (r *PodReconciler) SetupWithManager(
+	mgr ctrl.Manager, configs Configs, pluginsHub pluginshub.PluginsHub,
+	workloadLister schedulingv1alpha1listers.WorkloadLister,
+) error {
 	clientWithoutCache, err := client.New(mgr.GetConfig(), client.Options{Cache: nil})
 	if err != nil {
 		return err
 	}
 
-	r.podGrouper = podgrouper.NewPodgrouper(mgr.GetClient(), clientWithoutCache, pluginsHub)
+	r.podGrouper = podgrouper.NewPodgrouperWithWorkloadLister(
+		mgr.GetClient(), clientWithoutCache, pluginsHub, workloadLister)
 	r.PodGroupHandler = podgroup.NewHandler(mgr.GetClient(), configs.NodePoolLabelKey, configs.SchedulingQueueLabelKey)
 	r.configs = configs
 	r.eventRecorder = mgr.GetEventRecorderFor(controllerName)
 
-	return ctrl.NewControllerManagedBy(mgr).
+	b := ctrl.NewControllerManagedBy(mgr).
 		For(&v1.Pod{}).
 		WithEventFilter(predicate.NewPredicateFuncs(eventFilterFn(mgr.GetClient(), configs))).
 		WithOptions(
@@ -155,8 +178,15 @@ func (r *PodReconciler) SetupWithManager(mgr ctrl.Manager, configs Configs, plug
 				MaxConcurrentReconciles: r.configs.MaxConcurrentReconciles,
 				RateLimiter: workqueue.NewTypedItemExponentialFailureRateLimiter[ctrl.Request](
 					rateLimiterBaseDelay, rateLimiterMaxDelay),
-			}).
-		Complete(r)
+			})
+
+	if configs.WorkloadAPIEnabled {
+		if err := registerWorkloadWatch(mgr, b); err != nil {
+			return err
+		}
+	}
+
+	return b.Complete(r)
 }
 
 func (r *PodReconciler) assignPodToGroupAndSubGroup(ctx context.Context, pod *v1.Pod, metadata *podgroup.Metadata) error {

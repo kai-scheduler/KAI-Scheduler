@@ -14,11 +14,13 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	schedulingv1alpha1listers "k8s.io/client-go/listers/scheduling/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
 	pluginshub "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/hub"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/workload"
 )
 
 type Interface interface {
@@ -37,18 +39,35 @@ type podGrouper struct {
 	// https://github.com/kubernetes/client-go/issues/1310#issuecomment-1921598658
 	// https://github.com/kubernetes-sigs/controller-runtime/issues/1222#issuecomment-713037979
 	clientWithoutCache client.Client
+
+	// workloadLister is set when the upstream Kubernetes Workload API
+	// (scheduling.k8s.io/v1alpha1, KEP-4671) is available on the cluster.
+	// When non-nil and the Pod has spec.workloadRef, Workload-derived metadata
+	// overrides the top-owner plugin's result — see
+	// docs/developer/designs/k8s-workload-api/README.md.
+	workloadLister schedulingv1alpha1listers.WorkloadLister
 }
 
 type GetPodGroupMetadataFunc func(topOwner *unstructured.Unstructured, pod *v1.Pod, otherOwners ...*metav1.PartialObjectMetadata) (*podgroup.Metadata, error)
 
 func NewPodgrouper(client client.Client, clientWithoutCache client.Client, pluginsHub pluginshub.PluginsHub) *podGrouper {
-	podGrouper := &podGrouper{
+	return NewPodgrouperWithWorkloadLister(client, clientWithoutCache, pluginsHub, nil)
+}
+
+// NewPodgrouperWithWorkloadLister constructs a podGrouper that also honors
+// the upstream Workload API. Pass a nil workloadLister when the cluster does
+// not expose scheduling.k8s.io/v1alpha1.
+func NewPodgrouperWithWorkloadLister(
+	client client.Client, clientWithoutCache client.Client,
+	pluginsHub pluginshub.PluginsHub,
+	workloadLister schedulingv1alpha1listers.WorkloadLister,
+) *podGrouper {
+	return &podGrouper{
 		client:             client,
 		clientWithoutCache: clientWithoutCache,
 		pluginsHub:         pluginsHub,
+		workloadLister:     workloadLister,
 	}
-
-	return podGrouper
 }
 
 func (pg *podGrouper) GetPodOwners(ctx context.Context, pod *v1.Pod) (
@@ -81,7 +100,20 @@ func (pg *podGrouper) GetPGMetadata(ctx context.Context, pod *v1.Pod, topOwner *
 	plugin := pg.pluginsHub.GetPodGrouperPlugin(ownerKind)
 	logger.V(1).Info(fmt.Sprintf("Using %v plugin for pod.", plugin.Name()),
 		"pod", fmt.Sprintf("%s/%s", pod.Namespace, pod.Name), "topOwner", topOwner)
-	return plugin.GetPodGroupMetadata(topOwner, pod, allOwners...)
+	base, err := plugin.GetPodGroupMetadata(topOwner, pod, allOwners...)
+	if err != nil {
+		return nil, err
+	}
+	merged, err := workload.ApplyOverride(base, pod, topOwner, pg.workloadLister)
+	if err != nil {
+		return nil, err
+	}
+	if merged != base {
+		logger.V(1).Info("Workload API override applied",
+			"pod", fmt.Sprintf("%s/%s", pod.Namespace, pod.Name),
+			"workload", pod.Spec.WorkloadRef)
+	}
+	return merged, nil
 }
 
 func (pg *podGrouper) getResourceOwners(ctx context.Context, pod *v1.Pod) (
