@@ -6,7 +6,7 @@ global:
   tag: latest
   imagePullPolicy: IfNotPresent
   securityContext: {}
-  imagePullSecrets: []
+  imagePullSecrets: [] # format: [{name: secret1}, {name: secret2}]
   leaderElection: false
   gpuSharing: false
   clusterAutoscaling: false
