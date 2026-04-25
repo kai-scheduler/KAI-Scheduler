@@ -34,8 +34,12 @@ import (
 
 const (
 	testSchedulerName = "kai-scheduler"
-	assertTimeout     = 10 * time.Second
-	assertInterval    = 200 * time.Millisecond
+	// 30s gives slow CI runners headroom — locally the suite finishes in <10s.
+	assertTimeout = 30 * time.Second
+	// 2s is enough Consistently coverage to confirm no PodGroup is created
+	// before triggering the next step.
+	consistentlyWindow = 2 * time.Second
+	assertInterval     = 200 * time.Millisecond
 )
 
 // These tests exercise the podgrouper's Workload API translation layer end

@@ -106,7 +106,7 @@ var _ = Describe("Workload API translation", func() {
 		Consistently(func() bool {
 			err := k8sClient.Get(ctx, types.NamespacedName{Namespace: ns, Name: "late-workload-workers"}, &schedulingv2alpha2.PodGroup{})
 			return kerrors.IsNotFound(err)
-		}, 2*assertInterval, assertInterval).Should(BeTrue(),
+		}, consistentlyWindow, assertInterval).Should(BeTrue(),
 			"no PodGroup should exist before the Workload is created")
 
 		// Creating the Workload must trigger re-reconciliation via the
@@ -150,7 +150,7 @@ var _ = Describe("Workload API translation", func() {
 		Consistently(func() bool {
 			err := k8sClient.Get(ctx, types.NamespacedName{Namespace: ns, Name: "ignored-g"}, &schedulingv2alpha2.PodGroup{})
 			return kerrors.IsNotFound(err)
-		}, 2*assertInterval, assertInterval).Should(BeTrue(),
+		}, consistentlyWindow, assertInterval).Should(BeTrue(),
 			"no Workload-derived PodGroup should exist when opt-out is set")
 
 		// The default grouper *does* create a PodGroup for the orphan pod.
