@@ -135,6 +135,211 @@ var _ = Describe("Workload API translation", func() {
 			"Workload's queue label must override the queue derived by the top-owner plugin")
 	})
 
+	It("creates one independent KAI PodGroup per podGroup in the same Workload", func(ctx context.Context) {
+		// Design example: a Workload declaring driver + workers must produce
+		// two independent KAI PodGroups (no co-scheduling between them).
+		wl := &schedulingv1alpha1.Workload{
+			ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "multi"},
+			Spec: schedulingv1alpha1.WorkloadSpec{
+				PodGroups: []schedulingv1alpha1.PodGroup{
+					{
+						Name:   "driver",
+						Policy: schedulingv1alpha1.PodGroupPolicy{Gang: &schedulingv1alpha1.GangSchedulingPolicy{MinCount: 1}},
+					},
+					{
+						Name:   "workers",
+						Policy: schedulingv1alpha1.PodGroupPolicy{Gang: &schedulingv1alpha1.GangSchedulingPolicy{MinCount: 4}},
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, wl)).To(Succeed())
+
+		driverPod := newPod(ns, "driver-0", &corev1.WorkloadReference{Name: "multi", PodGroup: "driver"})
+		workerPod := newPod(ns, "worker-0", &corev1.WorkloadReference{Name: "multi", PodGroup: "workers", PodGroupReplicaKey: "0"})
+		Expect(k8sClient.Create(ctx, driverPod)).To(Succeed())
+		Expect(k8sClient.Create(ctx, workerPod)).To(Succeed())
+
+		driverPG := &schedulingv2alpha2.PodGroup{}
+		Eventually(func() error {
+			return k8sClient.Get(ctx, types.NamespacedName{Namespace: ns, Name: "multi-driver"}, driverPG)
+		}, assertTimeout, assertInterval).Should(Succeed())
+		Expect(*driverPG.Spec.MinMember).To(Equal(int32(1)))
+
+		workersPG := &schedulingv2alpha2.PodGroup{}
+		Eventually(func() error {
+			return k8sClient.Get(ctx, types.NamespacedName{Namespace: ns, Name: "multi-workers-0"}, workersPG)
+		}, assertTimeout, assertInterval).Should(Succeed())
+		Expect(*workersPG.Spec.MinMember).To(Equal(int32(4)))
+
+		// Independence: the two PodGroups must have distinct UIDs and the
+		// driver PodGroup must not have a workers-shaped name.
+		Expect(driverPG.UID).NotTo(Equal(workersPG.UID))
+		Expect(driverPG.Spec.SubGroups).To(BeEmpty())
+		Expect(workersPG.Spec.SubGroups).To(BeEmpty())
+	})
+
+	It("creates separate KAI PodGroups per Gang replicaKey", func(ctx context.Context) {
+		wl := &schedulingv1alpha1.Workload{
+			ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "replicas"},
+			Spec: schedulingv1alpha1.WorkloadSpec{
+				PodGroups: []schedulingv1alpha1.PodGroup{{
+					Name:   "workers",
+					Policy: schedulingv1alpha1.PodGroupPolicy{Gang: &schedulingv1alpha1.GangSchedulingPolicy{MinCount: 2}},
+				}},
+			},
+		}
+		Expect(k8sClient.Create(ctx, wl)).To(Succeed())
+
+		for _, key := range []string{"0", "1"} {
+			Expect(k8sClient.Create(ctx, newPod(ns, "p-"+key, &corev1.WorkloadReference{
+				Name: "replicas", PodGroup: "workers", PodGroupReplicaKey: key,
+			}))).To(Succeed())
+		}
+
+		for _, key := range []string{"0", "1"} {
+			pg := &schedulingv2alpha2.PodGroup{}
+			Eventually(func() error {
+				return k8sClient.Get(ctx, types.NamespacedName{Namespace: ns, Name: "replicas-workers-" + key}, pg)
+			}, assertTimeout, assertInterval).Should(Succeed())
+			Expect(*pg.Spec.MinMember).To(Equal(int32(2)))
+		}
+	})
+
+	It("converges multiple pods sharing the same workloadRef into one PodGroup", func(ctx context.Context) {
+		wl := &schedulingv1alpha1.Workload{
+			ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "shared"},
+			Spec: schedulingv1alpha1.WorkloadSpec{
+				PodGroups: []schedulingv1alpha1.PodGroup{{
+					Name:   "g",
+					Policy: schedulingv1alpha1.PodGroupPolicy{Gang: &schedulingv1alpha1.GangSchedulingPolicy{MinCount: 3}},
+				}},
+			},
+		}
+		Expect(k8sClient.Create(ctx, wl)).To(Succeed())
+
+		for _, name := range []string{"a", "b", "c"} {
+			Expect(k8sClient.Create(ctx, newPod(ns, name, &corev1.WorkloadReference{
+				Name: "shared", PodGroup: "g", PodGroupReplicaKey: "0",
+			}))).To(Succeed())
+		}
+
+		expected := "shared-g-0"
+		// Wait for each pod to be annotated with the shared PodGroup name.
+		for _, name := range []string{"a", "b", "c"} {
+			Eventually(func() string {
+				p := &corev1.Pod{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: ns, Name: name}, p); err != nil {
+					return ""
+				}
+				return p.Annotations[commonconstants.PodGroupAnnotationForPod]
+			}, assertTimeout, assertInterval).Should(Equal(expected),
+				"pod %s should be annotated with PodGroup %s", name, expected)
+		}
+
+		// And there's only one PodGroup in the namespace for this Workload.
+		pgList := &schedulingv2alpha2.PodGroupList{}
+		Expect(k8sClient.List(ctx, pgList, client.InNamespace(ns))).To(Succeed())
+		matching := 0
+		for _, pg := range pgList.Items {
+			if pg.Name == expected {
+				matching++
+			}
+		}
+		Expect(matching).To(Equal(1), "exactly one KAI PodGroup should converge for the shared workloadRef")
+	})
+
+	It("propagates Workload label mutations to the existing KAI PodGroup", func(ctx context.Context) {
+		// Workload.spec is immutable upstream (apiserver enforces it on
+		// PodGroups), so the only Workload mutation that can trigger an
+		// override change is a label/annotation update. This test pins the
+		// contract that the Workload watcher does fire on UPDATE events and
+		// the reconciler does re-run ApplyOverride: the pod's PodGroup
+		// PriorityClassName must follow the Workload's priorityClassName
+		// label.
+		wl := &schedulingv1alpha1.Workload{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: ns, Name: "mutating",
+				Labels: map[string]string{"priorityClassName": "build"},
+			},
+			Spec: schedulingv1alpha1.WorkloadSpec{
+				PodGroups: []schedulingv1alpha1.PodGroup{{
+					Name:   "g",
+					Policy: schedulingv1alpha1.PodGroupPolicy{Gang: &schedulingv1alpha1.GangSchedulingPolicy{MinCount: 1}},
+				}},
+			},
+		}
+		Expect(k8sClient.Create(ctx, wl)).To(Succeed())
+		Expect(k8sClient.Create(ctx, newPod(ns, "p", &corev1.WorkloadReference{Name: "mutating", PodGroup: "g"}))).To(Succeed())
+
+		pg := &schedulingv2alpha2.PodGroup{}
+		Eventually(func() (string, error) {
+			if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: ns, Name: "mutating-g"}, pg); err != nil {
+				return "", err
+			}
+			return pg.Spec.PriorityClassName, nil
+		}, assertTimeout, assertInterval).Should(Equal("build"))
+
+		// Mutate the Workload's priorityClassName label; the watcher must
+		// enqueue the pod and the reconciler must patch the existing
+		// PodGroup. Retry the update on conflict — the watcher's first
+		// reconcile race-edits the same object via labels propagation.
+		Eventually(func() error {
+			cur := &schedulingv1alpha1.Workload{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: ns, Name: "mutating"}, cur); err != nil {
+				return err
+			}
+			cur.Labels["priorityClassName"] = "train"
+			return k8sClient.Update(ctx, cur)
+		}, assertTimeout, assertInterval).Should(Succeed())
+
+		Eventually(func() (string, error) {
+			if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: ns, Name: "mutating-g"}, pg); err != nil {
+				return "", err
+			}
+			return pg.Spec.PriorityClassName, nil
+		}, assertTimeout, assertInterval).Should(Equal("train"),
+			"updated Workload priorityClassName label must propagate to PodGroup.Spec.PriorityClassName")
+	})
+
+	It("preserves the existing KAI PodGroup when the Workload is deleted", func(ctx context.Context) {
+		// Contract: deleting a Workload while pods still reference it must
+		// not delete or mutate the already-derived KAI PodGroup. Disrupting
+		// an in-flight gang because the config object disappeared would be
+		// far worse than leaving a stale PodGroup behind. Pods that arrive
+		// *after* the Workload is gone fall into the soft-failure path and
+		// stay pending until a Workload reappears.
+		wl := &schedulingv1alpha1.Workload{
+			ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "tombstone"},
+			Spec: schedulingv1alpha1.WorkloadSpec{
+				PodGroups: []schedulingv1alpha1.PodGroup{{
+					Name:   "g",
+					Policy: schedulingv1alpha1.PodGroupPolicy{Gang: &schedulingv1alpha1.GangSchedulingPolicy{MinCount: 2}},
+				}},
+			},
+		}
+		Expect(k8sClient.Create(ctx, wl)).To(Succeed())
+		Expect(k8sClient.Create(ctx, newPod(ns, "p", &corev1.WorkloadReference{Name: "tombstone", PodGroup: "g"}))).To(Succeed())
+
+		pg := &schedulingv2alpha2.PodGroup{}
+		Eventually(func() error {
+			return k8sClient.Get(ctx, types.NamespacedName{Namespace: ns, Name: "tombstone-g"}, pg)
+		}, assertTimeout, assertInterval).Should(Succeed())
+		originalUID := pg.UID
+
+		Expect(k8sClient.Delete(ctx, wl)).To(Succeed())
+
+		// PodGroup must continue to exist with its original UID — i.e. it
+		// was neither deleted nor recreated by the soft-failure path.
+		Consistently(func() (types.UID, error) {
+			cur := &schedulingv2alpha2.PodGroup{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: ns, Name: "tombstone-g"}, cur); err != nil {
+				return "", err
+			}
+			return cur.UID, nil
+		}, consistentlyWindow, assertInterval).Should(Equal(originalUID))
+	})
+
 	It("honors the kai.scheduler/ignore-workload-api annotation on the pod", func(ctx context.Context) {
 		wl := &schedulingv1alpha1.Workload{
 			ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "ignored"},
