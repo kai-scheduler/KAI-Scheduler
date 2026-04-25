@@ -106,6 +106,35 @@ var _ = Describe("Workload API translation", func() {
 	// classification (ErrWorkloadNotFound) is unit-tested in the workload
 	// plugin package.
 
+	It("propagates a kai.scheduler/queue label from the Workload onto the KAI PodGroup", func(ctx context.Context) {
+		const wlQueue = "ml-training"
+		wl := &schedulingv1alpha1.Workload{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: ns, Name: "queued",
+				Labels: map[string]string{commonconstants.DefaultQueueLabel: wlQueue},
+			},
+			Spec: schedulingv1alpha1.WorkloadSpec{
+				PodGroups: []schedulingv1alpha1.PodGroup{{
+					Name: "g",
+					Policy: schedulingv1alpha1.PodGroupPolicy{
+						Gang: &schedulingv1alpha1.GangSchedulingPolicy{MinCount: 1},
+					},
+				}},
+			},
+		}
+		Expect(k8sClient.Create(ctx, wl)).To(Succeed())
+
+		pod := newPod(ns, "qpod", &corev1.WorkloadReference{Name: "queued", PodGroup: "g"})
+		Expect(k8sClient.Create(ctx, pod)).To(Succeed())
+
+		pg := &schedulingv2alpha2.PodGroup{}
+		Eventually(func() error {
+			return k8sClient.Get(ctx, types.NamespacedName{Namespace: ns, Name: "queued-g"}, pg)
+		}, assertTimeout, assertInterval).Should(Succeed())
+		Expect(pg.Spec.Queue).To(Equal(wlQueue),
+			"Workload's queue label must override the queue derived by the top-owner plugin")
+	})
+
 	It("honors the kai.scheduler/ignore-workload-api annotation on the pod", func(ctx context.Context) {
 		wl := &schedulingv1alpha1.Workload{
 			ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "ignored"},

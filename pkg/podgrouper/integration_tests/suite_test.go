@@ -11,7 +11,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	corev1 "k8s.io/api/core/v1"
 	schedulingv1alpha1 "k8s.io/api/scheduling/v1alpha1"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
@@ -144,6 +143,3 @@ var _ = AfterSuite(func() {
 	By("tearing down envtest")
 	Expect(testEnv.Stop()).To(Succeed())
 })
-
-// ensure imports are retained even if a subset of tests is stubbed out.
-var _ = corev1.Pod{}

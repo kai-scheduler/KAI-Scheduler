@@ -4,6 +4,7 @@
 package app
 
 import (
+	"context"
 	"flag"
 	"time"
 
@@ -151,7 +152,11 @@ func (app *App) Run() error {
 		pluginsHub = app.DefaultPluginsHub
 	}
 
-	workloadLister, err := app.setupWorkloadAPI()
+	// One signal context drives both the manager and the Workload informer
+	// so they shut down together on SIGTERM.
+	ctx := ctrl.SetupSignalHandler()
+
+	workloadLister, err := app.setupWorkloadAPI(ctx)
 	if err != nil {
 		return err
 	}
@@ -172,17 +177,18 @@ func (app *App) Run() error {
 	}
 
 	setupLog.Info("starting manager")
-	return app.Mgr.Start(ctrl.SetupSignalHandler())
+	return app.Mgr.Start(ctx)
 }
 
 // setupWorkloadAPI detects whether the upstream Kubernetes Workload API
 // (scheduling.k8s.io/v1alpha1, KEP-4671) is exposed by the cluster. When it
-// is, it starts a namespace-less informer factory for Workloads, runs it, and
-// returns a ready lister for the podgrouper to consult. When the API is not
-// present (feature gate off or pre-1.35), it returns (nil, nil) — the
-// podgrouper will skip Workload-aware behaviour entirely. See
-// docs/developer/designs/k8s-workload-api/README.md.
-func (app *App) setupWorkloadAPI() (schedulingv1alpha1listers.WorkloadLister, error) {
+// is, it starts a namespace-less informer factory for Workloads tied to the
+// supplied context — the informer goroutines shut down together with the
+// manager — and returns a ready lister for the podgrouper to consult.
+// When the API is not present (feature gate off or pre-1.35), it returns
+// (nil, nil) and the podgrouper skips Workload-aware behaviour entirely.
+// See docs/developer/designs/k8s-workload-api/README.md.
+func (app *App) setupWorkloadAPI(ctx context.Context) (schedulingv1alpha1listers.WorkloadLister, error) {
 	cfg := app.Mgr.GetConfig()
 	discoveryClient, err := discovery.NewDiscoveryClientForConfig(cfg)
 	if err != nil {
@@ -202,13 +208,10 @@ func (app *App) setupWorkloadAPI() (schedulingv1alpha1listers.WorkloadLister, er
 	}
 	factory := informers.NewSharedInformerFactory(kubeClient, 30*time.Minute)
 	lister := factory.Scheduling().V1alpha1().Workloads().Lister()
-	// Prime the informer.
+	// Prime the informer so factory.Start has something to launch.
 	factory.Scheduling().V1alpha1().Workloads().Informer()
-	stopCh := make(chan struct{})
-	factory.Start(stopCh)
-	factory.WaitForCacheSync(stopCh)
-	// Note: the stopCh is intentionally left open. The shared informer
-	// factory runs for the process lifetime, like the rest of the manager.
+	factory.Start(ctx.Done())
+	factory.WaitForCacheSync(ctx.Done())
 
 	setupLog.Info("upstream Workload API detected; Workload-aware podgrouping is enabled")
 	return lister, nil

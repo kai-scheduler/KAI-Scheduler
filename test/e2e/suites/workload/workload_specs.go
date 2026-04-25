@@ -17,7 +17,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/rand"
-	"k8s.io/utils/ptr"
 
 	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
 	schedulingv2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
@@ -202,8 +201,6 @@ func DescribeWorkloadSpecs() bool {
 				"Workload-derived PodGroup must not be created when opt-out is set")
 		})
 
-		// Silence unused-import warnings when a subset of specs is disabled.
-		_ = ptr.To(int32(0))
 	})
 }
 

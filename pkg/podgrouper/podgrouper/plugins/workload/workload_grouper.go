@@ -22,6 +22,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
+	pgconstants "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
 )
 
 // ErrWorkloadNotFound is returned when a Pod's spec.workloadRef references a
@@ -97,21 +98,21 @@ func ApplyOverride(
 	if v, ok := wl.Labels[commonconstants.DefaultQueueLabel]; ok && v != "" {
 		merged.Queue = v
 	}
-	if v, ok := wl.Labels["priorityClassName"]; ok && v != "" {
+	if v, ok := wl.Labels[pgconstants.PriorityLabelKey]; ok && v != "" {
 		merged.PriorityClassName = v
 	}
-	if v, ok := wl.Labels["kai.scheduler/preemptibility"]; ok && v != "" {
+	if v, ok := wl.Labels[pgconstants.PreemptibilityLabelKey]; ok && v != "" {
 		// Upstream type parsing is done elsewhere; store verbatim — callers
 		// already validate Preemptibility values.
 		merged.Preemptibility = toPreemptibility(v, base.Preemptibility)
 	}
-	if v, ok := wl.Annotations["kai.scheduler/topology"]; ok && v != "" {
+	if v, ok := wl.Annotations[pgconstants.TopologyKey]; ok && v != "" {
 		merged.Topology = v
 	}
-	if v, ok := wl.Annotations["kai.scheduler/topology-required-placement"]; ok && v != "" {
+	if v, ok := wl.Annotations[pgconstants.TopologyRequiredPlacementKey]; ok && v != "" {
 		merged.RequiredTopologyLevel = v
 	}
-	if v, ok := wl.Annotations["kai.scheduler/topology-preferred-placement"]; ok && v != "" {
+	if v, ok := wl.Annotations[pgconstants.TopologyPreferredPlacementKey]; ok && v != "" {
 		merged.PreferredTopologyLevel = v
 	}
 
@@ -145,9 +146,19 @@ func findPodGroup(wl *schedulingv1alpha1.Workload, name string) (schedulingv1alp
 }
 
 // buildPodGroupName synthesizes the KAI PodGroup name for a Workload podGroup.
-// Gang: one KAI PodGroup per (workload, podGroup, replicaKey). Basic: one per
-// (workload, podGroup) — all replicaKeys share the same PodGroup with
-// MinAvailable=1 (design section 2).
+//
+//   - Gang policy with a non-empty replicaKey -> "{workload}-{podGroup}-{replicaKey}".
+//     One KAI PodGroup per (Workload, podGroup, replicaKey).
+//   - Gang policy with an empty replicaKey -> "{workload}-{podGroup}".
+//     A Gang Workload that doesn't use replica keys produces the same name
+//     as a Basic policy would; this is intentional — both end up as a single
+//     gang per (Workload, podGroup).
+//   - Basic policy -> "{workload}-{podGroup}".
+//     All replicaKeys collapse into a single MinAvailable=1 PodGroup
+//     (design section 2).
+//
+// Workload names and podGroup names are both DNS labels (apiserver-validated),
+// so concatenation cannot exceed Kubernetes name limits in practice.
 func buildPodGroupName(workload, podGroup, replicaKey string, policy schedulingv1alpha1.PodGroupPolicy) string {
 	if policy.Gang != nil && replicaKey != "" {
 		return fmt.Sprintf("%s-%s-%s", workload, podGroup, replicaKey)
