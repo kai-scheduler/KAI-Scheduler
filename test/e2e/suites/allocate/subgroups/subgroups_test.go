@@ -6,11 +6,13 @@ package subgroups
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 
 	v2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
@@ -112,12 +114,7 @@ var _ = Describe("Allocation scenario with subgroups", Ordered, func() {
 		}
 
 		// impose quota limit on queue to ensure that PodGroups will be scheduled before testing
-		queue, err := testCtx.KubeAiSchedClientset.SchedulingV2().Queues("").Get(ctx, testCtx.Queues[0].Name, metav1.GetOptions{})
-		Expect(err).To(Succeed())
-
-		queue.Spec.Resources.GPU.Quota = 0
-		queue.Spec.Resources.GPU.Limit = 0
-		_, err = testCtx.KubeAiSchedClientset.SchedulingV2().Queues("").Update(ctx, queue, metav1.UpdateOptions{})
+		err := patchQueueCPUQuotaAndLimit(ctx, testCtx, testCtx.Queues[0].Name, 0, 0)
 		Expect(err).To(Succeed())
 
 		_, err = testCtx.KubeAiSchedClientset.SchedulingV2alpha2().PodGroups(namespace).Create(ctx,
@@ -128,12 +125,7 @@ var _ = Describe("Allocation scenario with subgroups", Ordered, func() {
 		Expect(err).To(Succeed())
 
 		// remove quota limit
-		queue, err = testCtx.KubeAiSchedClientset.SchedulingV2().Queues("").Get(ctx, testCtx.Queues[0].Name, metav1.GetOptions{})
-		Expect(err).To(Succeed())
-
-		queue.Spec.Resources.GPU.Quota = -1
-		queue.Spec.Resources.GPU.Limit = -1
-		queue, err = testCtx.KubeAiSchedClientset.SchedulingV2().Queues("").Update(ctx, queue, metav1.UpdateOptions{})
+		err = patchQueueCPUQuotaAndLimit(ctx, testCtx, testCtx.Queues[0].Name, 600, 600)
 		Expect(err).To(Succeed())
 
 		wait.ForAtLeastNPodsScheduled(ctx, testCtx.ControllerClient, namespace, pg1SubGroup1Pods, 1)
@@ -212,4 +204,21 @@ func createPod(ctx context.Context, client *kubernetes.Clientset, queue *v2.Queu
 	pod, err := rd.CreatePod(ctx, client, pod)
 	Expect(err).To(Succeed())
 	return pod
+}
+
+func patchQueueCPUQuotaAndLimit(ctx context.Context, testCtx *testcontext.TestContext, queueName string,
+	quota int, limit int) error {
+	patchData := []byte(fmt.Sprintf(
+		`{"spec":{"resources":{"cpu":{"quota":%d,"limit":%d}}}}`,
+		quota,
+		limit,
+	))
+	_, err := testCtx.KubeAiSchedClientset.SchedulingV2().Queues("").Patch(
+		ctx,
+		queueName,
+		types.MergePatchType,
+		patchData,
+		metav1.PatchOptions{},
+	)
+	return err
 }
