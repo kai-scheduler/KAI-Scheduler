@@ -1,3 +1,6 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
 apiVersion: scheduling.k8s.io/v1alpha1
 kind: Workload
 metadata:
