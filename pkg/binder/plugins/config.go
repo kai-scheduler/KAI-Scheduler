@@ -7,8 +7,9 @@ import (
 	"cmp"
 	"slices"
 
-	kaiv1binder "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/binder"
 	"k8s.io/utils/ptr"
+
+	kaiv1binder "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/binder"
 )
 
 const (
@@ -100,7 +101,7 @@ func (c Config) EnabledOptions() []PluginOption {
 		priorityA := priority(c[a.Name])
 		priorityB := priority(c[b.Name])
 		if priorityA != priorityB {
-			return priorityB - priorityA
+			return cmp.Compare(priorityB, priorityA)
 		}
 		return cmp.Compare(a.Name, b.Name)
 	})

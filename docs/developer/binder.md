@@ -204,7 +204,7 @@ To create a custom binder plugin:
 1. Implement the `Plugin` interface.
 2. Register a plugin builder with the binder plugin registry using the same name that users will configure.
 3. Define and validate the plugin's expected string arguments.
-4. Ensure the plugin handles handles errors gracefully and provides clear error messages.
+4. Ensure the plugin handles errors gracefully and provides clear error messages.
 
 Custom plugins can address specialized use cases such as:
 - Network configuration and policy enforcement
