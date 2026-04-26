@@ -12,7 +12,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	schedulingv1alpha1listers "k8s.io/client-go/listers/scheduling/v1alpha1"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -157,15 +156,14 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 // SetupWithManager sets up the controller with the Manager.
 func (r *PodReconciler) SetupWithManager(
 	mgr ctrl.Manager, configs Configs, pluginsHub pluginshub.PluginsHub,
-	workloadLister schedulingv1alpha1listers.WorkloadLister,
 ) error {
 	clientWithoutCache, err := client.New(mgr.GetConfig(), client.Options{Cache: nil})
 	if err != nil {
 		return err
 	}
 
-	r.podGrouper = podgrouper.NewPodgrouperWithWorkloadLister(
-		mgr.GetClient(), clientWithoutCache, pluginsHub, workloadLister)
+	r.podGrouper = podgrouper.NewPodgrouperWithWorkloadAPI(
+		mgr.GetClient(), clientWithoutCache, pluginsHub, configs.WorkloadAPIEnabled)
 	r.PodGroupHandler = podgroup.NewHandler(mgr.GetClient(), configs.NodePoolLabelKey, configs.SchedulingQueueLabelKey)
 	r.configs = configs
 	r.eventRecorder = mgr.GetEventRecorderFor(controllerName)

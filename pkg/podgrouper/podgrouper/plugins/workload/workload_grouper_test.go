@@ -4,6 +4,7 @@
 package workload
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -14,9 +15,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/informers"
-	"k8s.io/client-go/kubernetes/fake"
-	schedulingv1alpha1listers "k8s.io/client-go/listers/scheduling/v1alpha1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
@@ -48,31 +48,26 @@ func newPod(name string, ref *corev1.WorkloadReference) *corev1.Pod {
 	}
 }
 
-// buildListerWith seeds a fake clientset with workloads, then builds and
-// starts an informer factory whose Workload lister is ready for queries.
-func buildListerWith(t *testing.T, workloads ...*schedulingv1alpha1.Workload) (schedulingv1alpha1listers.WorkloadLister, func()) {
+// buildReaderWith builds a controller-runtime fake client.Reader seeded
+// with the given Workloads — the same shape ApplyOverride consumes in
+// production (the manager's cached client).
+func buildReaderWith(t *testing.T, workloads ...*schedulingv1alpha1.Workload) (client.Reader, func()) {
 	t.Helper()
-	objs := make([]runtime.Object, 0, len(workloads))
+	scheme := runtime.NewScheme()
+	require.NoError(t, schedulingv1alpha1.AddToScheme(scheme))
+	objs := make([]client.Object, 0, len(workloads))
 	for _, w := range workloads {
 		objs = append(objs, w)
 	}
-	client := fake.NewSimpleClientset(objs...)
-	factory := informers.NewSharedInformerFactory(client, 0)
-	// Register the informer with the factory *before* Start — otherwise
-	// Start has nothing to launch and the lister observes zero objects.
-	lister := factory.Scheduling().V1alpha1().Workloads().Lister()
-	factory.Scheduling().V1alpha1().Workloads().Informer()
-	stop := make(chan struct{})
-	factory.Start(stop)
-	factory.WaitForCacheSync(stop)
-	return lister, func() { close(stop) }
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
+	return c, func() {}
 }
 
 func TestApplyOverride_NoWorkloadRef_NoChange(t *testing.T) {
 	base := baseMetadata()
 	pod := newPod("p1", nil)
 
-	got, err := ApplyOverride(base, pod, nil, nil)
+	got, err := ApplyOverride(context.Background(), base, pod, nil, nil)
 	require.NoError(t, err)
 	assert.Same(t, base, got, "no workloadRef -> base metadata returned unchanged")
 }
@@ -82,7 +77,7 @@ func TestApplyOverride_Ignored_OnPod(t *testing.T) {
 	pod := newPod("p1", &corev1.WorkloadReference{Name: "w", PodGroup: "g"})
 	pod.Annotations = map[string]string{commonconstants.WorkloadIgnoreAnnotationKey: "true"}
 
-	got, err := ApplyOverride(base, pod, nil, nil)
+	got, err := ApplyOverride(context.Background(), base, pod, nil, nil)
 	require.NoError(t, err)
 	assert.Same(t, base, got)
 }
@@ -93,7 +88,7 @@ func TestApplyOverride_Ignored_OnTopOwner(t *testing.T) {
 	top := &unstructured.Unstructured{}
 	top.SetAnnotations(map[string]string{commonconstants.WorkloadIgnoreAnnotationKey: "true"})
 
-	got, err := ApplyOverride(base, pod, top, nil)
+	got, err := ApplyOverride(context.Background(), base, pod, top, nil)
 	require.NoError(t, err)
 	assert.Same(t, base, got)
 }
@@ -110,14 +105,14 @@ func TestApplyOverride_Gang(t *testing.T) {
 			}},
 		},
 	}
-	lister, stop := buildListerWith(t, wl)
+	lister, stop := buildReaderWith(t, wl)
 	defer stop()
 
 	pod := newPod("worker-0", &corev1.WorkloadReference{
 		Name: "my-training", PodGroup: "workers", PodGroupReplicaKey: "0",
 	})
 
-	got, err := ApplyOverride(baseMetadata(), pod, nil, lister)
+	got, err := ApplyOverride(context.Background(), baseMetadata(), pod, nil, lister)
 	require.NoError(t, err)
 	assert.Equal(t, "my-training-workers-0", got.Name)
 	assert.Equal(t, int32(4), got.MinAvailable)
@@ -134,10 +129,10 @@ func TestApplyOverride_Gang_NoReplicaKey(t *testing.T) {
 			}},
 		},
 	}
-	lister, stop := buildListerWith(t, wl)
+	lister, stop := buildReaderWith(t, wl)
 	defer stop()
 
-	got, err := ApplyOverride(baseMetadata(), newPod("p", &corev1.WorkloadReference{Name: "w", PodGroup: "g"}), nil, lister)
+	got, err := ApplyOverride(context.Background(), baseMetadata(), newPod("p", &corev1.WorkloadReference{Name: "w", PodGroup: "g"}), nil, lister)
 	require.NoError(t, err)
 	assert.Equal(t, "w-g", got.Name)
 	assert.Equal(t, int32(2), got.MinAvailable)
@@ -153,11 +148,11 @@ func TestApplyOverride_Basic_CollapsesReplicas(t *testing.T) {
 			}},
 		},
 	}
-	lister, stop := buildListerWith(t, wl)
+	lister, stop := buildReaderWith(t, wl)
 	defer stop()
 
 	// Even with a replicaKey, Basic collapses into a single PodGroup.
-	got, err := ApplyOverride(baseMetadata(), newPod("p", &corev1.WorkloadReference{
+	got, err := ApplyOverride(context.Background(), baseMetadata(), newPod("p", &corev1.WorkloadReference{
 		Name: "w", PodGroup: "g", PodGroupReplicaKey: "ignored",
 	}), nil, lister)
 	require.NoError(t, err)
@@ -189,10 +184,10 @@ func TestApplyOverride_OverridesScheduling(t *testing.T) {
 			}},
 		},
 	}
-	lister, stop := buildListerWith(t, wl)
+	lister, stop := buildReaderWith(t, wl)
 	defer stop()
 
-	got, err := ApplyOverride(baseMetadata(), newPod("p", &corev1.WorkloadReference{Name: "w", PodGroup: "g"}), nil, lister)
+	got, err := ApplyOverride(context.Background(), baseMetadata(), newPod("p", &corev1.WorkloadReference{Name: "w", PodGroup: "g"}), nil, lister)
 	require.NoError(t, err)
 
 	assert.Equal(t, "ml-training", got.Queue)
@@ -222,21 +217,21 @@ func TestApplyOverride_LabelCollision_WorkloadWins(t *testing.T) {
 			}},
 		},
 	}
-	lister, stop := buildListerWith(t, wl)
+	lister, stop := buildReaderWith(t, wl)
 	defer stop()
 
 	base := baseMetadata()
 	base.Labels["shared"] = "from-base"
 
-	got, err := ApplyOverride(base, newPod("p", &corev1.WorkloadReference{Name: "w", PodGroup: "g"}), nil, lister)
+	got, err := ApplyOverride(context.Background(), base, newPod("p", &corev1.WorkloadReference{Name: "w", PodGroup: "g"}), nil, lister)
 	require.NoError(t, err)
 	assert.Equal(t, "from-workload", got.Labels["shared"])
 }
 
 func TestApplyOverride_WorkloadMissing(t *testing.T) {
-	lister, stop := buildListerWith(t /* nothing */)
+	lister, stop := buildReaderWith(t /* nothing */)
 	defer stop()
-	_, err := ApplyOverride(baseMetadata(), newPod("p", &corev1.WorkloadReference{Name: "ghost", PodGroup: "g"}), nil, lister)
+	_, err := ApplyOverride(context.Background(), baseMetadata(), newPod("p", &corev1.WorkloadReference{Name: "ghost", PodGroup: "g"}), nil, lister)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrWorkloadNotFound), "got %v", err)
 	assert.True(t, IsSoftFailure(err))
@@ -252,10 +247,10 @@ func TestApplyOverride_PodGroupMissing(t *testing.T) {
 			}},
 		},
 	}
-	lister, stop := buildListerWith(t, wl)
+	lister, stop := buildReaderWith(t, wl)
 	defer stop()
 
-	_, err := ApplyOverride(baseMetadata(), newPod("p", &corev1.WorkloadReference{Name: "w", PodGroup: "missing"}), nil, lister)
+	_, err := ApplyOverride(context.Background(), baseMetadata(), newPod("p", &corev1.WorkloadReference{Name: "w", PodGroup: "missing"}), nil, lister)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrPodGroupNotFound), "got %v", err)
 	assert.True(t, IsSoftFailure(err))
@@ -264,7 +259,7 @@ func TestApplyOverride_PodGroupMissing(t *testing.T) {
 func TestApplyOverride_NilLister_IsNoOp(t *testing.T) {
 	// If the podgrouper was built without Workload support, pods with a
 	// workloadRef should still go through the top-owner flow.
-	got, err := ApplyOverride(baseMetadata(), newPod("p", &corev1.WorkloadReference{Name: "w", PodGroup: "g"}), nil, nil)
+	got, err := ApplyOverride(context.Background(), baseMetadata(), newPod("p", &corev1.WorkloadReference{Name: "w", PodGroup: "g"}), nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, baseMetadata(), got)
 }
@@ -284,11 +279,11 @@ func TestApplyOverride_FieldFallback_NoWorkloadLabels(t *testing.T) {
 			}},
 		},
 	}
-	lister, stop := buildListerWith(t, wl)
+	lister, stop := buildReaderWith(t, wl)
 	defer stop()
 
 	base := baseMetadata()
-	got, err := ApplyOverride(base, newPod("p", &corev1.WorkloadReference{Name: "w", PodGroup: "g"}), nil, lister)
+	got, err := ApplyOverride(context.Background(), base, newPod("p", &corev1.WorkloadReference{Name: "w", PodGroup: "g"}), nil, lister)
 	require.NoError(t, err)
 
 	// Always-overridden fields.
@@ -331,11 +326,11 @@ func TestApplyOverride_FieldFallback_EmptyWorkloadLabel(t *testing.T) {
 			}},
 		},
 	}
-	lister, stop := buildListerWith(t, wl)
+	lister, stop := buildReaderWith(t, wl)
 	defer stop()
 
 	base := baseMetadata()
-	got, err := ApplyOverride(base, newPod("p", &corev1.WorkloadReference{Name: "w", PodGroup: "g"}), nil, lister)
+	got, err := ApplyOverride(context.Background(), base, newPod("p", &corev1.WorkloadReference{Name: "w", PodGroup: "g"}), nil, lister)
 	require.NoError(t, err)
 
 	assert.Equal(t, base.Queue, got.Queue, "empty queue label must not blank out base")
@@ -362,11 +357,11 @@ func TestApplyOverride_UnknownPreemptibility_FallsBack(t *testing.T) {
 			}},
 		},
 	}
-	lister, stop := buildListerWith(t, wl)
+	lister, stop := buildReaderWith(t, wl)
 	defer stop()
 
 	base := baseMetadata()
-	got, err := ApplyOverride(base, newPod("p", &corev1.WorkloadReference{Name: "w", PodGroup: "g"}), nil, lister)
+	got, err := ApplyOverride(context.Background(), base, newPod("p", &corev1.WorkloadReference{Name: "w", PodGroup: "g"}), nil, lister)
 	require.NoError(t, err)
 	assert.Equal(t, base.Preemptibility, got.Preemptibility)
 }

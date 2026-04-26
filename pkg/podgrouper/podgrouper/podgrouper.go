@@ -14,7 +14,6 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
-	schedulingv1alpha1listers "k8s.io/client-go/listers/scheduling/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -40,33 +39,38 @@ type podGrouper struct {
 	// https://github.com/kubernetes-sigs/controller-runtime/issues/1222#issuecomment-713037979
 	clientWithoutCache client.Client
 
-	// workloadLister is set when the upstream Kubernetes Workload API
+	// workloadAware reports whether the upstream Kubernetes Workload API
 	// (scheduling.k8s.io/v1alpha1, KEP-4671) is available on the cluster.
-	// When non-nil and the Pod has spec.workloadRef, Workload-derived metadata
+	// When true and the Pod has spec.workloadRef, Workload-derived metadata
 	// overrides the top-owner plugin's result — see
-	// docs/developer/designs/k8s-workload-api/README.md.
-	workloadLister schedulingv1alpha1listers.WorkloadLister
+	// docs/developer/designs/k8s-workload-api/README.md. Workload reads use
+	// the same cached `client` that drives the controller's Workload watch,
+	// so reconcile and lookup share a cache and never disagree on the
+	// observed Workload labels.
+	workloadAware bool
 }
 
 type GetPodGroupMetadataFunc func(topOwner *unstructured.Unstructured, pod *v1.Pod, otherOwners ...*metav1.PartialObjectMetadata) (*podgroup.Metadata, error)
 
 func NewPodgrouper(client client.Client, clientWithoutCache client.Client, pluginsHub pluginshub.PluginsHub) *podGrouper {
-	return NewPodgrouperWithWorkloadLister(client, clientWithoutCache, pluginsHub, nil)
+	return NewPodgrouperWithWorkloadAPI(client, clientWithoutCache, pluginsHub, false)
 }
 
-// NewPodgrouperWithWorkloadLister constructs a podGrouper that also honors
-// the upstream Workload API. Pass a nil workloadLister when the cluster does
-// not expose scheduling.k8s.io/v1alpha1.
-func NewPodgrouperWithWorkloadLister(
+// NewPodgrouperWithWorkloadAPI constructs a podGrouper that also honors
+// the upstream Workload API when workloadAware is true. The Workload type
+// must be registered in the manager's scheme and a watch must be set up
+// (see registerWorkloadWatch) so the manager's cached client can serve
+// Workload reads.
+func NewPodgrouperWithWorkloadAPI(
 	client client.Client, clientWithoutCache client.Client,
 	pluginsHub pluginshub.PluginsHub,
-	workloadLister schedulingv1alpha1listers.WorkloadLister,
+	workloadAware bool,
 ) *podGrouper {
 	return &podGrouper{
 		client:             client,
 		clientWithoutCache: clientWithoutCache,
 		pluginsHub:         pluginsHub,
-		workloadLister:     workloadLister,
+		workloadAware:      workloadAware,
 	}
 }
 
@@ -104,7 +108,11 @@ func (pg *podGrouper) GetPGMetadata(ctx context.Context, pod *v1.Pod, topOwner *
 	if err != nil {
 		return nil, err
 	}
-	merged, err := workload.ApplyOverride(base, pod, topOwner, pg.workloadLister)
+	var workloadReader client.Reader
+	if pg.workloadAware {
+		workloadReader = pg.client
+	}
+	merged, err := workload.ApplyOverride(ctx, base, pod, topOwner, workloadReader)
 	if err != nil {
 		return nil, err
 	}

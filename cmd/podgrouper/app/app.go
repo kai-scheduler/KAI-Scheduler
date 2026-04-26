@@ -4,9 +4,7 @@
 package app
 
 import (
-	"context"
 	"flag"
-	"time"
 
 	"go.uber.org/zap/zapcore"
 	corev1 "k8s.io/api/core/v1"
@@ -16,10 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/discovery"
-	"k8s.io/client-go/informers"
-	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	schedulingv1alpha1listers "k8s.io/client-go/listers/scheduling/v1alpha1"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -152,19 +147,16 @@ func (app *App) Run() error {
 		pluginsHub = app.DefaultPluginsHub
 	}
 
-	// One signal context drives both the manager and the Workload informer
-	// so they shut down together on SIGTERM.
 	ctx := ctrl.SetupSignalHandler()
 
-	workloadLister, err := app.setupWorkloadAPI(ctx)
-	if err != nil {
+	if err := app.detectWorkloadAPI(); err != nil {
 		return err
 	}
 
 	if err := (&controllers.PodReconciler{
 		Client: app.Mgr.GetClient(),
 		Scheme: app.Mgr.GetScheme(),
-	}).SetupWithManager(app.Mgr, app.configs, pluginsHub, workloadLister); err != nil {
+	}).SetupWithManager(app.Mgr, app.configs, pluginsHub); err != nil {
 		return err
 	}
 	// +kubebuilder:scaffold:builder
@@ -180,41 +172,28 @@ func (app *App) Run() error {
 	return app.Mgr.Start(ctx)
 }
 
-// setupWorkloadAPI detects whether the upstream Kubernetes Workload API
-// (scheduling.k8s.io/v1alpha1, KEP-4671) is exposed by the cluster. When it
-// is, it starts a namespace-less informer factory for Workloads tied to the
-// supplied context — the informer goroutines shut down together with the
-// manager — and returns a ready lister for the podgrouper to consult.
-// When the API is not present (feature gate off or pre-1.35), it returns
-// (nil, nil) and the podgrouper skips Workload-aware behaviour entirely.
+// detectWorkloadAPI probes whether the upstream Kubernetes Workload API
+// (scheduling.k8s.io/v1alpha1, KEP-4671) is exposed by the cluster and
+// records the result on app.configs. The podgrouper then uses the manager's
+// cached client to read Workloads, sharing the same cache that drives the
+// controller's Workload watch — this keeps reconcile and lookup consistent
+// (a separate informer factory would race the watch and produce stale reads).
 // See docs/developer/designs/k8s-workload-api/README.md.
-func (app *App) setupWorkloadAPI(ctx context.Context) (schedulingv1alpha1listers.WorkloadLister, error) {
+func (app *App) detectWorkloadAPI() error {
 	cfg := app.Mgr.GetConfig()
 	discoveryClient, err := discovery.NewDiscoveryClientForConfig(cfg)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	featuregates.SetWorkloadAPIFlag(discoveryClient)
 	if !featuregates.WorkloadAPIEnabled() {
 		setupLog.Info("upstream Workload API (scheduling.k8s.io/v1alpha1) not present on the cluster; skipping Workload-aware podgrouping")
 		app.configs.WorkloadAPIEnabled = false
-		return nil, nil
+		return nil
 	}
 	app.configs.WorkloadAPIEnabled = true
-
-	kubeClient, err := kubernetes.NewForConfig(cfg)
-	if err != nil {
-		return nil, err
-	}
-	factory := informers.NewSharedInformerFactory(kubeClient, 30*time.Minute)
-	lister := factory.Scheduling().V1alpha1().Workloads().Lister()
-	// Prime the informer so factory.Start has something to launch.
-	factory.Scheduling().V1alpha1().Workloads().Informer()
-	factory.Start(ctx.Done())
-	factory.WaitForCacheSync(ctx.Done())
-
 	setupLog.Info("upstream Workload API detected; Workload-aware podgrouping is enabled")
-	return lister, nil
+	return nil
 }
 
 func initLogger() {

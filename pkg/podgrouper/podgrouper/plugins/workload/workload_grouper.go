@@ -9,6 +9,7 @@
 package workload
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"maps"
@@ -17,7 +18,8 @@ import (
 	schedulingv1alpha1 "k8s.io/api/scheduling/v1alpha1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	schedulingv1alpha1listers "k8s.io/client-go/listers/scheduling/v1alpha1"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
@@ -42,16 +44,24 @@ var ErrPodGroupNotFound = errors.New("workload podGroup not found")
 //   - the Pod or its top owner is annotated with
 //     constants.WorkloadIgnoreAnnotationKey=true.
 //
-// Otherwise it resolves the Workload through the supplied lister, picks the
-// referenced Workload.Spec.PodGroups entry, and overrides Name, MinAvailable,
-// SubGroups, and (when the Workload itself carries them as labels/annotations)
-// Queue / PriorityClassName / Preemptibility / Topology. Labels and
-// annotations are merged with Workload values taking precedence on collision.
+// Otherwise it resolves the Workload through the supplied client.Reader, picks
+// the referenced Workload.Spec.PodGroups entry, and overrides Name,
+// MinAvailable, SubGroups, and (when the Workload itself carries them as
+// labels/annotations) Queue / PriorityClassName / Preemptibility / Topology.
+// Labels and annotations are merged with Workload values taking precedence on
+// collision.
+//
+// The reader must be backed by the same cache that drives the controller's
+// Workload watch (typically the manager's cached client). Using a separate
+// informer factory's lister introduces a race where the controller's watch
+// fires Reconcile before the lister has processed the same Workload UPDATE,
+// so ApplyOverride reads stale labels and the PodGroup never updates.
 func ApplyOverride(
+	ctx context.Context,
 	base *podgroup.Metadata,
 	pod *corev1.Pod,
 	topOwner *unstructured.Unstructured,
-	workloads schedulingv1alpha1listers.WorkloadLister,
+	reader client.Reader,
 ) (*podgroup.Metadata, error) {
 	if base == nil || pod == nil {
 		return base, nil
@@ -63,12 +73,14 @@ func ApplyOverride(
 	if isIgnored(pod, topOwner) {
 		return base, nil
 	}
-	if workloads == nil {
-		// Podgrouper was built without a lister — treat as unavailable.
+	if reader == nil {
+		// Podgrouper was built without a Workload-aware reader — treat as
+		// unavailable (cluster doesn't expose scheduling.k8s.io/v1alpha1).
 		return base, nil
 	}
 
-	wl, err := workloads.Workloads(pod.Namespace).Get(ref.Name)
+	wl := &schedulingv1alpha1.Workload{}
+	err := reader.Get(ctx, types.NamespacedName{Namespace: pod.Namespace, Name: ref.Name}, wl)
 	if err != nil {
 		if kerrors.IsNotFound(err) {
 			return nil, fmt.Errorf("%w: %s/%s", ErrWorkloadNotFound, pod.Namespace, ref.Name)

@@ -14,7 +14,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	schedulingv1alpha1 "k8s.io/api/scheduling/v1alpha1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -106,14 +105,11 @@ var _ = BeforeSuite(func() {
 	})
 	Expect(err).NotTo(HaveOccurred())
 
-	// Start a Workload informer against the apiserver and hand its lister to
-	// the podgrouper, matching the wiring in cmd/podgrouper/app/app.go.
+	// The podgrouper reads Workloads through the manager's cached client,
+	// the same cache that drives the controller's Workload watch. Just
+	// flip the process-wide flag so registerWorkloadWatch installs the
+	// secondary watch and field indexer.
 	featuregates.SetWorkloadAPIEnabledForTest(true)
-	factory := informers.NewSharedInformerFactory(kubeClient, 0)
-	workloadLister := factory.Scheduling().V1alpha1().Workloads().Lister()
-	factory.Scheduling().V1alpha1().Workloads().Informer()
-	factory.Start(testCtx.Done())
-	factory.WaitForCacheSync(testCtx.Done())
 
 	pluginsHub := pluginshub.NewDefaultPluginsHub(
 		k8sManager.GetClient(),
@@ -130,7 +126,7 @@ var _ = BeforeSuite(func() {
 		SchedulerName:           testSchedulerName,
 		MaxConcurrentReconciles: 1,
 		WorkloadAPIEnabled:      true,
-	}, pluginsHub, workloadLister)
+	}, pluginsHub)
 	Expect(err).NotTo(HaveOccurred())
 
 	go func() {
