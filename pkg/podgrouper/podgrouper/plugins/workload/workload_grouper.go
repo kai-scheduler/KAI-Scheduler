@@ -94,7 +94,11 @@ func ApplyOverride(
 			ErrPodGroupNotFound, pod.Namespace, ref.Name, ref.PodGroup)
 	}
 
-	// Never mutate the caller's metadata.
+	// Shallow-copy the base struct, then replace every reference field this
+	// function may touch (Labels, Annotations, SubGroups) with a fresh value
+	// before returning. Any future field on podgroup.Metadata that is a
+	// slice/map/pointer must either be reassigned here or deep-copied — a
+	// missed reassignment would silently alias `base` and `merged`.
 	merged := *base
 	merged.Name = buildPodGroupName(ref.Name, ref.PodGroup, ref.PodGroupReplicaKey, wlPodGroup.Policy)
 	merged.MinAvailable = minAvailableFromPolicy(wlPodGroup.Policy)
@@ -114,8 +118,9 @@ func ApplyOverride(
 		merged.PriorityClassName = v
 	}
 	if v, ok := wl.Labels[pgconstants.PreemptibilityLabelKey]; ok && v != "" {
-		// Upstream type parsing is done elsewhere; store verbatim — callers
-		// already validate Preemptibility values.
+		// toPreemptibility maps the raw string to the typed enum and falls
+		// back to base on unknown values, so a typo doesn't blank the field.
+		// The KAI admission webhook is the authoritative validator.
 		merged.Preemptibility = toPreemptibility(v, base.Preemptibility)
 	}
 	if v, ok := wl.Annotations[pgconstants.TopologyKey]; ok && v != "" {

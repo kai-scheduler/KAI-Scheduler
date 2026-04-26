@@ -136,6 +136,65 @@ var _ = Describe("Workload API translation", func() {
 			"Workload's queue label must override the queue derived by the top-owner plugin")
 	})
 
+	It("does not propagate Workload kai.scheduler/queue label changes to the existing PodGroup", func(ctx context.Context) {
+		// Design contract (docs/developer/designs/k8s-workload-api/README.md,
+		// "Workload mutation"): Spec.Queue is owned by the queue-assigner and
+		// is intentionally not overwritten on update. ApplyOverride still
+		// emits the Workload-derived Queue every reconcile, but
+		// PodGroupHandler.ApplyToCluster's ignoreFields preserves the
+		// existing Spec.Queue on update — the integration of the two is what
+		// this test pins. Removing the guard in ignoreFields silently
+		// breaks the contract; this test catches that regression.
+		const initialQueue = "ml-training"
+		const updatedQueue = "ml-batch"
+		wl := &schedulingv1alpha1.Workload{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: ns, Name: "queue-frozen",
+				Labels: map[string]string{commonconstants.DefaultQueueLabel: initialQueue},
+			},
+			Spec: schedulingv1alpha1.WorkloadSpec{
+				PodGroups: []schedulingv1alpha1.PodGroup{{
+					Name: "g",
+					Policy: schedulingv1alpha1.PodGroupPolicy{
+						Gang: &schedulingv1alpha1.GangSchedulingPolicy{MinCount: 1},
+					},
+				}},
+			},
+		}
+		Expect(k8sClient.Create(ctx, wl)).To(Succeed())
+		Expect(k8sClient.Create(ctx, newPod(ns, "qfp", &corev1.WorkloadReference{Name: "queue-frozen", PodGroup: "g"}))).To(Succeed())
+
+		// CREATE path: Spec.Queue follows the Workload label.
+		Eventually(func() (string, error) {
+			pg := &schedulingv2alpha2.PodGroup{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: ns, Name: "queue-frozen-g"}, pg); err != nil {
+				return "", err
+			}
+			return pg.Spec.Queue, nil
+		}, assertTimeout, assertInterval).Should(Equal(initialQueue))
+
+		// Mutate the Workload's queue label; retry on conflict against the
+		// watcher's race-edit of the same object.
+		Eventually(func() error {
+			cur := &schedulingv1alpha1.Workload{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: ns, Name: "queue-frozen"}, cur); err != nil {
+				return err
+			}
+			cur.Labels[commonconstants.DefaultQueueLabel] = updatedQueue
+			return k8sClient.Update(ctx, cur)
+		}, assertTimeout, assertInterval).Should(Succeed())
+
+		// UPDATE path: Spec.Queue must remain pinned to the initial value.
+		Consistently(func() (string, error) {
+			cur := &schedulingv2alpha2.PodGroup{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: ns, Name: "queue-frozen-g"}, cur); err != nil {
+				return "", err
+			}
+			return cur.Spec.Queue, nil
+		}, consistentlyWindow, assertInterval).Should(Equal(initialQueue),
+			"Spec.Queue is owned by the queue-assigner and must not follow Workload label mutations")
+	})
+
 	It("creates one independent KAI PodGroup per podGroup in the same Workload", func(ctx context.Context) {
 		// Design example: a Workload declaring driver + workers must produce
 		// two independent KAI PodGroups (no co-scheduling between them).
