@@ -26,6 +26,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>KAI Scheduler — Scale Tests</title>
   <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
 </head>
 <body>
 
@@ -39,8 +41,14 @@
   <div class="header-stats" id="header-stats" aria-live="polite"></div>
 </header>
 
-<!-- ── Controls ────────────────────────────────────────────────────────── -->
-<div class="controls">
+<!-- ── Tab navigation ──────────────────────────────────────────────── -->
+<nav class="tabs">
+  <button class="tab active" data-tab="runs">Test Runs</button>
+  <button class="tab" data-tab="metrics">Metrics</button>
+</nav>
+
+<!-- ── Controls (Test Runs tab) ────────────────────────────────────────── -->
+<div class="controls tab-content" data-content="runs">
   <div class="search-wrap">
     <svg class="search-icon" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
       <path fill="var(--muted)" d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398l3.85 3.85a1 1 0 0 0 1.415-1.415l-3.868-3.833zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/>
@@ -68,13 +76,52 @@
 </div>
 
 <!-- ── Summary strip ───────────────────────────────────────────────────── -->
-<div class="summary" id="summary" aria-live="polite">Loading…</div>
+<div class="summary tab-content" data-content="runs" id="summary" aria-live="polite">Loading…</div>
 
 <!-- ── Run list ────────────────────────────────────────────────────────── -->
-<main id="main">
+<main id="main" class="tab-content" data-content="runs">
   <div class="msg"><div class="spinner"></div><br>Fetching scale test results…</div>
 </main>
 
+<!-- ── Metrics view ────────────────────────────────────────────────────── -->
+<main id="metrics-main" class="tab-content hidden" data-content="metrics">
+  <div class="metrics-grid">
+    <div class="chart-card">
+      <h3 class="chart-title">Fill Cluster with single GPU Jobs</h3>
+      <div class="chart-wrapper"><canvas id="chart-1"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <h3 class="chart-title">Fill Cluster with single GPU Jobs (400 pending tasks)</h3>
+      <div class="chart-wrapper"><canvas id="chart-2"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <h3 class="chart-title">Average time to unschedulable for distributed job</h3>
+      <div class="chart-wrapper"><canvas id="chart-3"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <h3 class="chart-title">Reclaim time for one very large job</h3>
+      <div class="chart-wrapper"><canvas id="chart-4"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <h3 class="chart-title">Measuring reclaim time for single GPU</h3>
+      <div class="chart-wrapper"><canvas id="chart-5"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <h3 class="chart-title">Multi Node Reclaim for distributed jobs</h3>
+      <div class="chart-wrapper"><canvas id="chart-6"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <h3 class="chart-title">Reclaim single GPU Jobs</h3>
+      <div class="chart-wrapper"><canvas id="chart-7"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <h3 class="chart-title">Consolidation to run multiple distributed jobs</h3>
+      <div class="chart-wrapper"><canvas id="chart-8"></canvas></div>
+    </div>
+  </div>
+</main>
+
 <script src="app.js"></script>
+<script src="metrics.js"></script>
 </body>
 </html>

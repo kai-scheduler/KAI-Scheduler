@@ -410,8 +410,12 @@ async function init() {
           console.warn('[scale-tests] Failed to load report:', batch[j].path, result.reason);
         }
       });
+      window.allRuns = allRuns;  // Export for metrics.js
       renderAll();
     }
+
+    // Notify metrics.js that data is ready
+    window.dispatchEvent(new CustomEvent('scale-tests:data-loaded'));
   } catch (err) {
     mainEl.innerHTML = `<div class="msg err">
       <strong>Error loading results</strong><br><br>${esc(err.message)}
