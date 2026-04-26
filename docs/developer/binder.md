@@ -88,35 +88,123 @@ Each method serves a specific purpose in the binding lifecycle:
 - **PreBind**: Executes before binding occurs and can perform prerequisite operations like volume or resource claim allocation.
 - **PostBind**: Runs after successful binding for cleanup or logging purposes.
 
-#### Example Plugins
+### Configuration
 
-##### Dynamic Resources Plugin
+Binder plugins can be configured through `spec.binder.plugins` in the KAI `Config` CR or through Helm values under `binder.plugins`. The operator serializes the resolved configuration into the binder process `--plugins` argument. Binder plugin configuration is not stored in a ConfigMap.
 
-The Dynamic Resources plugin handles the binding of Dynamic Resource Allocation (DRA) resources to pods. It:
+Each plugin entry has the following fields:
 
-1. Checks if a pod has any resource claims
-2. Processes the resource claim allocations specified in the BindRequest
-3. Updates each resource claim with the appropriate allocation and reservation for the pod
+```yaml
+enabled: true
+priority: 300
+arguments:
+  key: value
+```
 
-This plugin exemplifies how to interact with Kubernetes API objects during the binding process, including handling retries for API conflicts.
+- `enabled`: Whether the plugin should run. Defaults to `true`.
+- `priority`: Higher priority plugins run first. Plugins with equal priority are ordered by plugin name.
+- `arguments`: String key-value arguments passed to the plugin builder.
 
-##### GPU Request Validator Plugin
+The binder defaulting logic starts with the built-in defaults and merges user overrides:
 
-The GPU Request Validator plugin ensures that GPU resource requests are properly formatted and valid. It:
+- Omitted built-in plugins keep their default settings.
+- `enabled` and `priority` are merged independently.
+- If `arguments` is specified for a plugin, it replaces that plugin's default arguments.
+- A configured plugin that is not part of the built-in default set defaults to `enabled: true` and priority `0`. The binder binary must register a matching plugin builder for that plugin name.
 
-1. Validates that GPU resource requests/limits follow the expected patterns
-2. Checks for consistency between GPU-related annotations and resource specifications
-3. Ensures that fractional GPU requests are valid and well-formed
+### Default Plugins
 
-This plugin demonstrates validation logic that prevents invalid configurations from causing binding failures later in the process.
+The current default binder plugins are:
+
+| Plugin | Priority | Arguments | Purpose |
+| --- | ---: | --- | --- |
+| `volumebinding` | 300 | `bindTimeoutSeconds: "120"` | Handles Kubernetes persistent volume binding before pod bind. |
+| `dynamicresources` | 200 | `bindTimeoutSeconds: "120"` | Handles Kubernetes Dynamic Resource Allocation claim binding before pod bind. |
+| `gpusharing` | 100 | `cdiEnabled: "false"` | Handles fractional GPU pod mutation needed for GPU sharing. |
+
+For operator-managed deployments, the operator sets the `gpusharing` `cdiEnabled` argument from `spec.binder.cdiEnabled`. If `spec.binder.cdiEnabled` is unset, the operator attempts to auto-detect CDI from the NVIDIA GPU Operator `ClusterPolicy`.
+
+### Config Examples
+
+Disable the GPU sharing plugin:
+
+```yaml
+apiVersion: kai.scheduler/v1
+kind: Config
+spec:
+  binder:
+    plugins:
+      gpusharing:
+        enabled: false
+```
+
+Change the volume binding timeout:
+
+```yaml
+apiVersion: kai.scheduler/v1
+kind: Config
+spec:
+  binder:
+    plugins:
+      volumebinding:
+        arguments:
+          bindTimeoutSeconds: "60"
+```
+
+Change plugin ordering:
+
+```yaml
+apiVersion: kai.scheduler/v1
+kind: Config
+spec:
+  binder:
+    plugins:
+      dynamicresources:
+        priority: 400
+      volumebinding:
+        priority: 300
+```
+
+Equivalent Helm values:
+
+```yaml
+binder:
+  plugins:
+    gpusharing:
+      enabled: false
+    volumebinding:
+      arguments:
+        bindTimeoutSeconds: "60"
+```
+
+The binder binary also accepts plugin configuration directly as JSON:
+
+```bash
+--plugins='{"gpusharing":{"enabled":false}}'
+```
+
+### Built-In Plugins
+
+#### Volume Binding Plugin
+
+The volume binding plugin handles Kubernetes persistent volume binding work before the final pod bind. It uses the `bindTimeoutSeconds` argument to control how long it waits for binding operations.
+
+#### Dynamic Resources Plugin
+
+The dynamic resources plugin handles Kubernetes Dynamic Resource Allocation resources. It processes resource claim allocations from the `BindRequest` and updates the relevant resource claims before the pod is bound. It also uses the `bindTimeoutSeconds` argument.
+
+#### GPU Sharing Plugin
+
+The GPU sharing plugin handles fractional GPU assignments. For shared GPU allocations it creates the required GPU sharing ConfigMaps and sets the NVIDIA visible devices and GPU portion information on the target container.
 
 ### Creating Custom Plugins
 
 To create a custom binder plugin:
 
-1. Implement the Plugin interface
-2. Register your plugin with the binder's plugin registry
-3. Ensure your plugin handles errors gracefully and provides clear error messages
+1. Implement the `Plugin` interface.
+2. Register a plugin builder with the binder plugin registry using the same name that users will configure.
+3. Define and validate the plugin's expected string arguments.
+4. Ensure the plugin handles handles errors gracefully and provides clear error messages.
 
 Custom plugins can address specialized use cases such as:
 - Network configuration and policy enforcement
