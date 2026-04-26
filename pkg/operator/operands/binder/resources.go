@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 
 	"golang.org/x/mod/semver"
 
@@ -23,6 +24,7 @@ import (
 
 	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
 	kaiv1binder "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/binder"
+	binderplugins "github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins"
 	kaiConfigUtils "github.com/kai-scheduler/KAI-scheduler/pkg/operator/config"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common"
 )
@@ -227,7 +229,6 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1binder.Binder, fakeGPU 
 		fmt.Sprintf(":%d", *config.ProbePort),
 		"--metrics-bind-address",
 		fmt.Sprintf(":%d", *config.MetricsPort),
-		fmt.Sprintf("--cdi-enabled=%t", cdiEnabled),
 	}
 	if config.MaxConcurrentReconciles != nil {
 		args = append(args, fmt.Sprintf("--max-concurrent-reconciles=%d",
@@ -239,10 +240,11 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1binder.Binder, fakeGPU 
 			*config.ResourceReservation.AllocationTimeout))
 	}
 
-	if config.VolumeBindingTimeoutSeconds != nil {
-		args = append(args, fmt.Sprintf("--volume-binding-timeout-seconds=%d",
-			*config.VolumeBindingTimeoutSeconds))
+	pluginsJSON, err := json.Marshal(resolveBinderPluginsConfig(config, cdiEnabled))
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal binder plugins: %w", err)
 	}
+	args = append(args, "--plugins", string(pluginsJSON))
 
 	if fakeGPU {
 		args = append(args, "--fake-gpu-nodes")
@@ -300,4 +302,32 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1binder.Binder, fakeGPU 
 	}
 
 	return args, nil
+}
+
+func resolveBinderPluginsConfig(config *kaiv1binder.Binder, cdiEnabled bool) binderplugins.Config {
+	apiConfig := config.Plugins
+	if len(apiConfig) == 0 {
+		bindTimeoutSeconds := kaiv1binder.DefaultBindTimeoutSeconds
+		if config.VolumeBindingTimeoutSeconds != nil {
+			bindTimeoutSeconds = *config.VolumeBindingTimeoutSeconds
+		}
+		apiConfig = kaiv1binder.DefaultPluginsConfig(bindTimeoutSeconds, kaiv1binder.DefaultCDIEnabled)
+	}
+
+	resolved := binderplugins.FromAPIConfig(apiConfig)
+	setPluginArgument(resolved, binderplugins.GPUSharingPluginName, binderplugins.CDIEnabledArgument,
+		strconv.FormatBool(cdiEnabled))
+	return resolved
+}
+
+func setPluginArgument(config binderplugins.Config, pluginName, argumentName, argumentValue string) {
+	pluginConfig, found := config[pluginName]
+	if !found {
+		return
+	}
+	if pluginConfig.Arguments == nil {
+		pluginConfig.Arguments = map[string]string{}
+	}
+	pluginConfig.Arguments[argumentName] = argumentValue
+	config[pluginName] = pluginConfig
 }

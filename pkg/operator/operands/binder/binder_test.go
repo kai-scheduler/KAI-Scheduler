@@ -5,6 +5,8 @@ package binder
 
 import (
 	"context"
+	"encoding/json"
+	"strconv"
 	"testing"
 
 	nvidiav1 "github.com/NVIDIA/gpu-operator/api/nvidia/v1"
@@ -16,6 +18,8 @@ import (
 	. "github.com/onsi/gomega"
 
 	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	kaiv1binder "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/binder"
+	binderplugins "github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common/test_utils"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -96,6 +100,47 @@ var _ = Describe("Binder", func() {
 				Expect(deployment.Spec.Template.Labels).To(HaveKeyWithValue("kai", "scheduler"))
 			})
 
+			It("passes default binder plugin config to the deployment", func(ctx context.Context) {
+				objects, err := b.DesiredState(ctx, fakeKubeClient, kaiConfig)
+				Expect(err).To(BeNil())
+
+				deploymentT := test_utils.FindTypeInObjects[*appsv1.Deployment](objects)
+				Expect(deploymentT).NotTo(BeNil())
+				args := (*deploymentT).Spec.Template.Spec.Containers[0].Args
+				expectNoStandalonePluginArgs(args)
+
+				pluginConfig := binderPluginsConfig(args)
+				Expect(pluginConfig).To(HaveKey(binderplugins.VolumeBindingPluginName))
+				Expect(pluginConfig).To(HaveKey(binderplugins.DynamicResourcesPluginName))
+				Expect(pluginConfig).To(HaveKey(binderplugins.GPUSharingPluginName))
+				Expect(pluginConfig[binderplugins.VolumeBindingPluginName].Arguments[binderplugins.BindTimeoutSecondsArgument]).
+					To(Equal(strconv.Itoa(binderplugins.DefaultBindTimeoutSeconds)))
+				Expect(pluginConfig[binderplugins.DynamicResourcesPluginName].Arguments[binderplugins.BindTimeoutSecondsArgument]).
+					To(Equal(strconv.Itoa(binderplugins.DefaultBindTimeoutSeconds)))
+				Expect(pluginConfig[binderplugins.GPUSharingPluginName].Arguments[binderplugins.CDIEnabledArgument]).
+					To(Equal(strconv.FormatBool(binderplugins.DefaultCDIEnabled)))
+			})
+
+			It("passes volume binding timeout through plugin arguments", func(ctx context.Context) {
+				kaiConfig = kaiConfigForBinderWithConfig(&kaiv1binder.Binder{
+					VolumeBindingTimeoutSeconds: ptr.To(45),
+				})
+
+				objects, err := b.DesiredState(ctx, fakeKubeClient, kaiConfig)
+				Expect(err).To(BeNil())
+
+				deploymentT := test_utils.FindTypeInObjects[*appsv1.Deployment](objects)
+				Expect(deploymentT).NotTo(BeNil())
+				args := (*deploymentT).Spec.Template.Spec.Containers[0].Args
+				expectNoStandalonePluginArgs(args)
+
+				pluginConfig := binderPluginsConfig(args)
+				Expect(pluginConfig[binderplugins.VolumeBindingPluginName].Arguments[binderplugins.BindTimeoutSecondsArgument]).
+					To(Equal("45"))
+				Expect(pluginConfig[binderplugins.DynamicResourcesPluginName].Arguments[binderplugins.BindTimeoutSecondsArgument]).
+					To(Equal("45"))
+			})
+
 			Context("CDI Detection", func() {
 				var (
 					clusterPolicy *nvidiav1.ClusterPolicy
@@ -121,7 +166,7 @@ var _ = Describe("Binder", func() {
 
 					deploymentT := test_utils.FindTypeInObjects[*appsv1.Deployment](objects)
 					Expect(deploymentT).NotTo(BeNil())
-					Expect((*deploymentT).Spec.Template.Spec.Containers[0].Args).To(ContainElement("--cdi-enabled=true"))
+					expectGPUSharingCDI((*deploymentT).Spec.Template.Spec.Containers[0].Args, true)
 				})
 
 				It("sets CDI flag to false if not set by default cluser policy", func(ctx context.Context) {
@@ -132,7 +177,7 @@ var _ = Describe("Binder", func() {
 
 					deploymentT := test_utils.FindTypeInObjects[*appsv1.Deployment](objects)
 					Expect(deploymentT).NotTo(BeNil())
-					Expect((*deploymentT).Spec.Template.Spec.Containers[0].Args).To(ContainElement("--cdi-enabled=false"))
+					expectGPUSharingCDI((*deploymentT).Spec.Template.Spec.Containers[0].Args, false)
 				})
 
 				It("detects CDI state with GPU Operator >= v25.10.0", func(ctx context.Context) {
@@ -147,7 +192,7 @@ var _ = Describe("Binder", func() {
 
 					deploymentT := test_utils.FindTypeInObjects[*appsv1.Deployment](objects)
 					Expect(deploymentT).NotTo(BeNil())
-					Expect((*deploymentT).Spec.Template.Spec.Containers[0].Args).To(ContainElement("--cdi-enabled=true"))
+					expectGPUSharingCDI((*deploymentT).Spec.Template.Spec.Containers[0].Args, true)
 				})
 
 				It("detects CDI state with GPU Operator < v25.10.0", func(ctx context.Context) {
@@ -162,7 +207,7 @@ var _ = Describe("Binder", func() {
 
 					deploymentT := test_utils.FindTypeInObjects[*appsv1.Deployment](objects)
 					Expect(deploymentT).NotTo(BeNil())
-					Expect((*deploymentT).Spec.Template.Spec.Containers[0].Args).To(ContainElement("--cdi-enabled=false"))
+					expectGPUSharingCDI((*deploymentT).Spec.Template.Spec.Containers[0].Args, false)
 				})
 
 				It("uses explicit CDIEnabled=true from config, ignoring ClusterPolicy", func(ctx context.Context) {
@@ -176,7 +221,7 @@ var _ = Describe("Binder", func() {
 
 					deploymentT := test_utils.FindTypeInObjects[*appsv1.Deployment](objects)
 					Expect(deploymentT).NotTo(BeNil())
-					Expect((*deploymentT).Spec.Template.Spec.Containers[0].Args).To(ContainElement("--cdi-enabled=true"))
+					expectGPUSharingCDI((*deploymentT).Spec.Template.Spec.Containers[0].Args, true)
 				})
 
 				It("uses explicit CDIEnabled=false from config, ignoring ClusterPolicy", func(ctx context.Context) {
@@ -191,8 +236,39 @@ var _ = Describe("Binder", func() {
 
 					deploymentT := test_utils.FindTypeInObjects[*appsv1.Deployment](objects)
 					Expect(deploymentT).NotTo(BeNil())
-					Expect((*deploymentT).Spec.Template.Spec.Containers[0].Args).To(ContainElement("--cdi-enabled=false"))
+					expectGPUSharingCDI((*deploymentT).Spec.Template.Spec.Containers[0].Args, false)
 				})
+			})
+
+			It("passes binder plugin overrides to the deployment", func(ctx context.Context) {
+				kaiConfig = kaiConfigForBinderWithConfig(&kaiv1binder.Binder{
+					Plugins: map[string]kaiv1binder.PluginConfig{
+						"gpusharing": {
+							Enabled: ptr.To(false),
+						},
+						"volumebinding": {
+							Arguments: map[string]string{
+								"bindTimeoutSeconds": "30",
+							},
+						},
+					},
+				})
+
+				objects, err := b.DesiredState(ctx, fakeKubeClient, kaiConfig)
+				Expect(err).To(BeNil())
+
+				deploymentT := test_utils.FindTypeInObjects[*appsv1.Deployment](objects)
+				Expect(deploymentT).NotTo(BeNil())
+				args := (*deploymentT).Spec.Template.Spec.Containers[0].Args
+				expectNoStandalonePluginArgs(args)
+
+				pluginConfig := binderPluginsConfig(args)
+				Expect(pluginConfig[binderplugins.GPUSharingPluginName].Enabled).NotTo(BeNil())
+				Expect(*pluginConfig[binderplugins.GPUSharingPluginName].Enabled).To(BeFalse())
+				Expect(pluginConfig[binderplugins.VolumeBindingPluginName].Arguments[binderplugins.BindTimeoutSecondsArgument]).
+					To(Equal("30"))
+				Expect(pluginConfig[binderplugins.DynamicResourcesPluginName].Arguments[binderplugins.BindTimeoutSecondsArgument]).
+					To(Equal(strconv.Itoa(binderplugins.DefaultBindTimeoutSeconds)))
 			})
 		})
 
@@ -231,9 +307,41 @@ var _ = Describe("Binder", func() {
 })
 
 func kaiConfigForBinder() *kaiv1.Config {
+	return kaiConfigForBinderWithConfig(&kaiv1binder.Binder{})
+}
+
+func kaiConfigForBinderWithConfig(binderConfig *kaiv1binder.Binder) *kaiv1.Config {
 	kaiConfig := &kaiv1.Config{}
+	kaiConfig.Spec.Binder = binderConfig
 	kaiConfig.Spec.SetDefaultsWhereNeeded()
 	kaiConfig.Spec.Binder.Service.Enabled = ptr.To(true)
 
 	return kaiConfig
+}
+
+func expectNoStandalonePluginArgs(args []string) {
+	Expect(args).NotTo(ContainElement(ContainSubstring("--cdi-enabled")))
+	Expect(args).NotTo(ContainElement(ContainSubstring("--volume-binding-timeout-seconds")))
+}
+
+func expectGPUSharingCDI(args []string, enabled bool) {
+	expectNoStandalonePluginArgs(args)
+	pluginConfig := binderPluginsConfig(args)
+	Expect(pluginConfig[binderplugins.GPUSharingPluginName].Arguments[binderplugins.CDIEnabledArgument]).
+		To(Equal(strconv.FormatBool(enabled)))
+}
+
+func binderPluginsConfig(args []string) binderplugins.Config {
+	pluginsArg := ""
+	for index, arg := range args {
+		if arg == "--plugins" && index+1 < len(args) {
+			pluginsArg = args[index+1]
+			break
+		}
+	}
+	Expect(pluginsArg).NotTo(BeEmpty())
+
+	pluginConfig := binderplugins.Config{}
+	Expect(json.Unmarshal([]byte(pluginsArg), &pluginConfig)).To(Succeed())
+	return pluginConfig
 }
