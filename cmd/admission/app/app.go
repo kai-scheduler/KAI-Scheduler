@@ -148,7 +148,7 @@ func (app *App) Run() error {
 
 	// +kubebuilder:scaffold:builder
 
-	if err = ctrl.NewWebhookManagedBy(app.manager).For(&corev1.Pod{}).
+	if err = ctrl.NewWebhookManagedBy(app.manager, &corev1.Pod{}).
 		WithDefaulter(admissionhooks.NewPodMutator(app.manager.GetClient(), app.admissionPlugins, app.Options.SchedulerName)).
 		WithValidator(admissionhooks.NewPodValidator(app.manager.GetClient(), app.admissionPlugins, app.Options.SchedulerName)).Complete(); err != nil {
 		setupLog.Error(err, "unable to create pod webhooks", "webhook", "Pod")

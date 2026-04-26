@@ -381,6 +381,11 @@ func getResourceClaims(testMetadata TestTopologyBasic) []*resourceapi.ResourceCl
 }
 
 func getResourceSlices(testMetadata TestTopologyBasic) []*resourceapi.ResourceSlice {
+	poolSliceCounts := map[string]int64{}
+	for _, resourceSlice := range testMetadata.ResourceSlices {
+		poolSliceCounts[resourceSlice.NodeName]++
+	}
+
 	var objects []*resourceapi.ResourceSlice
 	for _, resourceSlice := range testMetadata.ResourceSlices {
 		resourceSliceObject := resourceapi.ResourceSlice{
@@ -396,7 +401,7 @@ func getResourceSlices(testMetadata TestTopologyBasic) []*resourceapi.ResourceSl
 				Driver: "nvidia.com/gpu",
 				Pool: resourceapi.ResourcePool{
 					Name:               resourceSlice.NodeName,
-					ResourceSliceCount: int64(len(testMetadata.ResourceSlices)),
+					ResourceSliceCount: poolSliceCounts[resourceSlice.NodeName],
 				},
 				NodeSelector: resourceSlice.NodeSelector,
 				NodeName:     ptr.To(resourceSlice.NodeName),

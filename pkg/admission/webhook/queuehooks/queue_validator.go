@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 
-	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -20,9 +19,9 @@ var queueValidatorLog = logf.Log.WithName("queue-validator")
 const missingResourcesError = "resources must be specified"
 
 type QueueValidator interface {
-	ValidateCreate(ctx context.Context, obj runtime.Object) (warnings admission.Warnings, err error)
-	ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) (warnings admission.Warnings, err error)
-	ValidateDelete(ctx context.Context, obj runtime.Object) (warnings admission.Warnings, err error)
+	ValidateCreate(ctx context.Context, obj *v2.Queue) (warnings admission.Warnings, err error)
+	ValidateUpdate(ctx context.Context, oldObj, newObj *v2.Queue) (warnings admission.Warnings, err error)
+	ValidateDelete(ctx context.Context, obj *v2.Queue) (warnings admission.Warnings, err error)
 }
 
 type queueValidator struct {
@@ -37,11 +36,7 @@ func NewQueueValidator(kubeClient client.Client, enableQuotaValidation bool) Que
 	}
 }
 
-func (v *queueValidator) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
-	queue, ok := obj.(*v2.Queue)
-	if !ok {
-		return nil, fmt.Errorf("expected a Queue but got a %T", obj)
-	}
+func (v *queueValidator) ValidateCreate(ctx context.Context, queue *v2.Queue) (admission.Warnings, error) {
 	queueValidatorLog.Info("validate create", "name", queue.Name)
 
 	if queue.Spec.Resources == nil {
@@ -55,16 +50,7 @@ func (v *queueValidator) ValidateCreate(ctx context.Context, obj runtime.Object)
 	return v.validateParentChildQuota(ctx, queue)
 }
 
-func (v *queueValidator) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
-	oldQueue, ok := oldObj.(*v2.Queue)
-	if !ok {
-		return nil, fmt.Errorf("expected a Queue but got a %T", oldObj)
-	}
-
-	newQueue, ok := newObj.(*v2.Queue)
-	if !ok {
-		return nil, fmt.Errorf("expected a Queue but got a %T", newObj)
-	}
+func (v *queueValidator) ValidateUpdate(ctx context.Context, oldQueue, newQueue *v2.Queue) (admission.Warnings, error) {
 	queueValidatorLog.Info("validate update", "name", newQueue.Name)
 
 	if newQueue.Spec.Resources == nil {
@@ -96,11 +82,7 @@ func (v *queueValidator) ValidateUpdate(ctx context.Context, oldObj, newObj runt
 	return warnings, nil
 }
 
-func (v *queueValidator) ValidateDelete(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
-	queue, ok := obj.(*v2.Queue)
-	if !ok {
-		return nil, fmt.Errorf("expected a Queue but got a %T", obj)
-	}
+func (v *queueValidator) ValidateDelete(ctx context.Context, queue *v2.Queue) (admission.Warnings, error) {
 	queueValidatorLog.Info("validate delete", "name", queue.Name)
 
 	if len(queue.Status.ChildQueues) > 0 {
