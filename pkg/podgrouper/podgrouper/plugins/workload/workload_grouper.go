@@ -94,12 +94,11 @@ func ApplyOverride(
 			ErrPodGroupNotFound, pod.Namespace, ref.Name, ref.PodGroup)
 	}
 
-	// Shallow-copy the base struct, then replace every reference field this
-	// function may touch (Labels, Annotations, SubGroups) with a fresh value
-	// before returning. Any future field on podgroup.Metadata that is a
-	// slice/map/pointer must either be reassigned here or deep-copied — a
-	// missed reassignment would silently alias `base` and `merged`.
-	merged := *base
+	// Deep-copy isolates ApplyOverride from the caller's Metadata: subsequent
+	// in-place mutations here cannot alias back into base, regardless of which
+	// reference-typed fields Metadata grows in the future. The structural
+	// guarantee is enforced by TestMetadataDeepCopyNoAliasing.
+	merged := base.DeepCopy()
 	merged.Name = buildPodGroupName(ref.Name, ref.PodGroup, ref.PodGroupReplicaKey, wlPodGroup.Policy)
 	merged.MinAvailable = minAvailableFromPolicy(wlPodGroup.Policy)
 	// SubGroups are owned by the Workload dispatch and ignored until the
@@ -133,7 +132,7 @@ func ApplyOverride(
 		merged.PreferredTopologyLevel = v
 	}
 
-	return &merged, nil
+	return merged, nil
 }
 
 // IsSoftFailure reports whether err should leave the Pod pending without
