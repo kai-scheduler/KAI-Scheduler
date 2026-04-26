@@ -92,6 +92,8 @@ If a Pod references a Workload or PodGroup that does not exist, strict validatio
 
 `Workload.spec` is immutable upstream — `podGroups` cannot change after creation. Mutable fields (labels, annotations) drive the Workload→TopOwner→Pod fallback chain in section 3, so changing the Workload's `priorityClassName` / `kai.scheduler/preemptibility` / `kai.scheduler/topology*` labels propagates to the existing KAI PodGroup on the next reconcile fired by the Workload watcher. The KAI PodGroup's `Spec.Queue` is owned by the queue assigner and is intentionally not overwritten on mutation.
 
+This matches the existing behaviour for every other top-owner kind (PyTorchJob, MPIJob, RayJob, Deployment, etc.): label/annotation mutations on the top owner propagate to the PodGroup on the next reconcile, subject to the same `Handler.ignoreFields` contract (Queue, MarkUnschedulable, SchedulingBackoff are pinned). The only Workload-specific addition is the dedicated watcher that guarantees prompt propagation; non-Workload paths rely on incidental Pod events to drive reconcile.
+
 For Pods that reference a Workload but have no controller `OwnerReferences` (the standalone case), the orphan-skip in the pod reconciler does **not** apply — the Workload is the authoritative owner for grouping decisions, so subsequent Workload events keep driving re-reconciliation.
 
 #### Workload deletion
