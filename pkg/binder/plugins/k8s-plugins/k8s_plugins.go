@@ -9,9 +9,11 @@ import (
 	"sync"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	ksf "k8s.io/kube-scheduler/framework"
+	"k8s.io/kubernetes/pkg/features"
 	k8splfeature "k8s.io/kubernetes/pkg/scheduler/framework/plugins/feature"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -84,7 +86,7 @@ func NewDynamicResources(
 func newK8sPluginDependencies(
 	client kubernetes.Interface,
 	informerFactory informers.SharedInformerFactory,
-) (k8sframework.Handle, *k8splfeature.Features) {
+) (ksf.Handle, *k8splfeature.Features) {
 	k8sFramework := k8s_utils.NewFrameworkHandle(client, informerFactory, nil)
 	k8sFeatures := k8splfeature.Features{
 		EnableDynamicResourceAllocation: feature.DefaultFeatureGate.Enabled(features.DynamicResourceAllocation),
