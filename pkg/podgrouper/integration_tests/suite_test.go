@@ -11,7 +11,9 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	schedulingv1alpha1 "k8s.io/api/scheduling/v1alpha1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -136,6 +138,19 @@ var _ = BeforeSuite(func() {
 		err := k8sManager.Start(testCtx)
 		Expect(err).NotTo(HaveOccurred())
 	}()
+
+	// Pre-warm the unstructured Pod informer used by getTopOwnerInstance.
+	// controller-runtime starts unstructured informers lazily on the first
+	// GET, which races with the first Reconcile in CI and produces transient
+	// "Pod not found" errors that, combined with workqueue backoff, can
+	// exceed the 30s assertTimeout for tests that rely on multiple reconcile
+	// cycles (e.g. Workload mutation propagation). A no-op List here forces
+	// the informer to start before any spec runs.
+	Eventually(func() error {
+		list := &unstructured.UnstructuredList{}
+		list.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("PodList"))
+		return k8sManager.GetClient().List(testCtx, list)
+	}, 10*time.Second, 100*time.Millisecond).Should(Succeed())
 })
 
 var _ = AfterSuite(func() {
