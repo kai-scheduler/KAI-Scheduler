@@ -31,19 +31,11 @@ A `Workload` declares one or more `podGroups`, each with a scheduling policy. Po
 
 ## Gang scheduling
 
-```bash
-kubectl apply -f gang-workload.yaml
-```
-
-Two pods, both pinned to `(my-training, workers)`, converge into a single PodGroup `my-training-workers-0` with `MinMember=2`. Either both pods schedule together or neither does.
+Example: [`gang-workload.yaml`](gang-workload.yaml) — two pods, both pinned to `(my-training, workers)`, converge into a single PodGroup `my-training-workers-0` with `MinMember=2`. Either both pods schedule together or neither does.
 
 ## Multiple gangs in one Workload
 
-```bash
-kubectl apply -f multi-podgroup-workload.yaml
-```
-
-A driver and a worker pool are declared in the same Workload but produce two **independent** PodGroups (`distributed-train-driver` with `MinMember=1`, `distributed-train-workers-0` with `MinMember=4`) — there is no co-scheduling between them.
+Example: [`multi-podgroup-workload.yaml`](multi-podgroup-workload.yaml) — a driver and a worker pool are declared in the same Workload but produce two **independent** PodGroups (`distributed-train-driver` with `MinMember=1`, `distributed-train-workers-0` with `MinMember=4`); there is no co-scheduling between them.
 
 ## Per-Workload scheduling overrides
 
