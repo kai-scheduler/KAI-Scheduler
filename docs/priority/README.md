@@ -54,3 +54,7 @@ kubectl apply -f example/build-priority-pod.yaml
 ```
 Since both pods request 1 GPU, which is the limit of the `test` queue, only one of the pods will be able to run. 
 The scheduler will preempt lower priority `train-pod` and schedule higher priority `build-pod` instead.
+
+## See Also
+
+- [Scheduling Deep Dive](../scheduling-deep-dive/README.md) — How workload priority differs from queue priority, and how preemption and reclaim work

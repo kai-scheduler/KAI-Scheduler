@@ -3,7 +3,13 @@
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/12064/badge)](https://www.bestpractices.dev/projects/12064)
 [![ACMM](https://img.shields.io/endpoint?url=https%3A%2F%2Fconsole.kubestellar.io%2Fapi%2Facmm%2Fbadge%3Frepo%3Dkai-scheduler%2FKAI-Scheduler)](https://console.kubestellar.io/acmm?repo=kai-scheduler%2FKAI-Scheduler&utm_source=github&utm_medium=badge&utm_campaign=acmm-outreach)
 
-# KAI Scheduler
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/kai-logo-dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/kai-logo-light.png">
+    <img alt="KAI Scheduler" src="docs/assets/kai-logo-light.png" width="550">
+  </picture>
+</p>
 
 KAI Scheduler is a robust, efficient, and scalable [Kubernetes scheduler](https://kubernetes.io/docs/concepts/scheduling-eviction/kube-scheduler/) that optimizes GPU resource allocation for AI and machine learning workloads.
 
@@ -16,6 +22,7 @@ It can run alongside other schedulers installed on the cluster.
 
 ## Latest News 🔥
 
+- [2026/04] **KubeCon EU 2026 Talk:** Watch the recording of the presentation "[GPU Reservations: Maximizing Utilization and Fairness Across Teams](https://www.youtube.com/watch?v=O-OEqmvCkYg)", to explore how KAI Scheduler manages GPU resource reservations to balance utilization and fairness across teams.
 - [2025/11] **KubeCon NA 2025 Talk:** Watch the recording of the presentation "[Lightning Talk: Mind the Topology: Smarter Scheduling for AI Workloads on Kubernetes](https://youtu.be/o5i7pTWZjfo?si=su5iTOAS4r4O1TPa)" to learn how KAI's Topology-Aware Scheduling (TAS) optimizes placement for modern disaggregated serving architectures.
 - [2025/11] **Integration with [Grove](https://github.com/ai-dynamo/grove) & Dynamo:** KAI's Topology-Aware and Hierarchical Gang Scheduling capabilities are integrated with Grove to orchestrate complex, multi-component workloads like disaggregated serving and agentic pipelines at scale. Read the [blog post](https://developer.nvidia.com/blog/streamline-complex-ai-inference-on-kubernetes-with-nvidia-grove/) for more details.
 - [2025/10] **[v0.10.0 Release:](https://github.com/kai-scheduler/KAI-scheduler/releases/tag/v0.10.0)** Major features released, including [Topology-Aware Scheduling (TAS)](https://github.com/kai-scheduler/KAI-scheduler/tree/main/docs/topology), [Hierarchical PodGroups](https://github.com/kai-scheduler/KAI-scheduler/tree/main/docs/developer/designs/hierarchical-podgroup), and [Time-based Fairshare](https://github.com/kai-scheduler/KAI-scheduler/tree/main/docs/time-based-fairshare).
