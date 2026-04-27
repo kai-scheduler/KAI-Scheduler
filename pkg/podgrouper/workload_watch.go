@@ -18,12 +18,21 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
-// WorkloadRefIndex is the field-indexer key used to look up Pods by the
-// upstream Kubernetes Workload they reference (pod.spec.workloadRef.name).
 const WorkloadRefIndex = "spec.workloadRef.name"
 
-// podsByWorkloadRef is an indexer func that lets us list Pods referencing a
-// given Workload via `client.MatchingFields{WorkloadRefIndex: name}`.
+func registerWorkloadWatch(mgr ctrl.Manager, b *builder.Builder) error {
+	err := mgr.GetFieldIndexer().IndexField(context.Background(), &corev1.Pod{}, WorkloadRefIndex, podsByWorkloadRef)
+	if err != nil {
+		return fmt.Errorf("failed to index pods by workload ref name: %w", err)
+	}
+
+	b.Watches(
+		&schedulingv1alpha1.Workload{},
+		handler.EnqueueRequestsFromMapFunc(workloadToPodRequests(mgr.GetClient())),
+	)
+	return nil
+}
+
 func podsByWorkloadRef(obj client.Object) []string {
 	pod, ok := obj.(*corev1.Pod)
 	if !ok {
@@ -35,32 +44,6 @@ func podsByWorkloadRef(obj client.Object) []string {
 	return []string{pod.Spec.WorkloadRef.Name}
 }
 
-// registerWorkloadWatch installs a field-indexer on Pods and attaches a
-// secondary watch on scheduling.k8s.io/v1alpha1 Workload objects. Workload
-// events map back to Pods referencing them, implementing the "instant
-// recovery" behaviour described in section 4 of the design — a Pod that
-// referenced a not-yet-existing Workload is re-reconciled immediately when
-// the Workload appears.
-//
-// Must only be called when the Workload API is available on the cluster (see
-// featuregates.IsWorkloadAPIEnabled).
-func registerWorkloadWatch(mgr ctrl.Manager, b *builder.Builder) error {
-	if err := mgr.GetFieldIndexer().IndexField(
-		context.Background(), &corev1.Pod{}, WorkloadRefIndex, podsByWorkloadRef,
-	); err != nil {
-		return fmt.Errorf("failed to index pods by %s: %w", WorkloadRefIndex, err)
-	}
-
-	b.Watches(
-		&schedulingv1alpha1.Workload{},
-		handler.EnqueueRequestsFromMapFunc(workloadToPodRequests(mgr.GetClient())),
-	)
-	return nil
-}
-
-// workloadToPodRequests returns a MapFunc that, given a Workload event,
-// lists every Pod in the same namespace that references it and produces a
-// reconcile.Request per Pod.
 func workloadToPodRequests(c client.Client) handler.MapFunc {
 	return func(ctx context.Context, obj client.Object) []reconcile.Request {
 		logger := log.FromContext(ctx)
