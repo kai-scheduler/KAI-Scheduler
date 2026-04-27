@@ -52,16 +52,12 @@ type podGrouper struct {
 
 type GetPodGroupMetadataFunc func(topOwner *unstructured.Unstructured, pod *v1.Pod, otherOwners ...*metav1.PartialObjectMetadata) (*podgroup.Metadata, error)
 
-func NewPodgrouper(client client.Client, clientWithoutCache client.Client, pluginsHub pluginshub.PluginsHub) *podGrouper {
-	return NewPodgrouperWithWorkloadAPI(client, clientWithoutCache, pluginsHub, false)
-}
-
-// NewPodgrouperWithWorkloadAPI constructs a podGrouper that also honors
-// the upstream Workload API when workloadAware is true. The Workload type
-// must be registered in the manager's scheme and a watch must be set up
-// (see registerWorkloadWatch) so the manager's cached client can serve
-// Workload reads.
-func NewPodgrouperWithWorkloadAPI(
+// NewPodgrouper constructs a podGrouper. When workloadAware is true the
+// upstream Kubernetes Workload API (scheduling.k8s.io/v1alpha1) is honored:
+// the Workload type must be registered in the manager's scheme and a watch
+// must be set up (see registerWorkloadWatch) so the manager's cached client
+// can serve Workload reads.
+func NewPodgrouper(
 	client client.Client, clientWithoutCache client.Client,
 	pluginsHub pluginshub.PluginsHub,
 	workloadAware bool,
@@ -104,6 +100,7 @@ func (pg *podGrouper) GetPGMetadata(ctx context.Context, pod *v1.Pod, topOwner *
 	plugin := pg.pluginsHub.GetPodGrouperPlugin(ownerKind)
 	logger.V(1).Info(fmt.Sprintf("Using %v plugin for pod.", plugin.Name()),
 		"pod", fmt.Sprintf("%s/%s", pod.Namespace, pod.Name), "topOwner", topOwner)
+
 	base, err := plugin.GetPodGroupMetadata(topOwner, pod, allOwners...)
 	if err != nil {
 		return nil, err
@@ -111,6 +108,7 @@ func (pg *podGrouper) GetPGMetadata(ctx context.Context, pod *v1.Pod, topOwner *
 	if !pg.workloadAware {
 		return base, nil
 	}
+
 	merged, err := workload.ApplyOverride(ctx, base, pod, topOwner, pg.client)
 	if err != nil {
 		return nil, err
@@ -120,6 +118,7 @@ func (pg *podGrouper) GetPGMetadata(ctx context.Context, pod *v1.Pod, topOwner *
 			"pod", fmt.Sprintf("%s/%s", pod.Namespace, pod.Name),
 			"workload", pod.Spec.WorkloadRef)
 	}
+
 	return merged, nil
 }
 

@@ -123,7 +123,7 @@ func TestNewPodgrouper(t *testing.T) {
 
 	pluginsHub := pluginshub.NewDefaultPluginsHub(client, false, true,
 		queueLabelKey, nodePoolLabelKey, "", "")
-	grouper := podgrouper.NewPodgrouper(client, client, pluginsHub)
+	grouper := podgrouper.NewPodgrouper(client, client, pluginsHub, false)
 
 	topOwner, owners, err := grouper.GetPodOwners(context.Background(), &pod)
 	assert.Nil(t, err)
@@ -323,7 +323,7 @@ kind: Pod
 				"",
 				"",
 			)
-			grouper := podgrouper.NewPodgrouper(client, client, pluginsHub)
+			grouper := podgrouper.NewPodgrouper(client, client, pluginsHub, false)
 
 			topOwner, owners, err := grouper.GetPodOwners(context.Background(), tt.reconciledPod)
 			assert.Nil(t, err)

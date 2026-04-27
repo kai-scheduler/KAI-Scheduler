@@ -157,7 +157,7 @@ func (r *PodReconciler) SetupWithManager(
 		return err
 	}
 
-	r.podGrouper = podgrouper.NewPodgrouperWithWorkloadAPI(
+	r.podGrouper = podgrouper.NewPodgrouper(
 		mgr.GetClient(), clientWithoutCache, pluginsHub, configs.WorkloadAPIEnabled)
 	r.PodGroupHandler = podgroup.NewHandler(mgr.GetClient(), configs.NodePoolLabelKey, configs.SchedulingQueueLabelKey)
 	r.configs = configs
