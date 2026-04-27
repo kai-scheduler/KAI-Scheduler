@@ -25,6 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	featuregates "github.com/kai-scheduler/KAI-scheduler/pkg/common/feature_gates"
 	draversionawareclient "github.com/kai-scheduler/KAI-scheduler/pkg/common/resources/dra_version_aware_client"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding"
@@ -103,6 +104,8 @@ func New(options *Options, config *rest.Config) (*App, error) {
 
 	kubeClient := draversionawareclient.NewDRAAwareClient(kubernetes.NewForConfigOrDie(config))
 	informerFactory := informers.NewSharedInformerFactory(kubeClient, 0)
+
+	featuregates.SetDRAFeatureGate(kubeClient.Discovery())
 
 	rrs := resourcereservation.NewService(options.FakeGPUNodes, clientWithWatch, options.ResourceReservationPodImage,
 		time.Duration(options.ResourceReservationAllocationTimeout)*time.Second,
