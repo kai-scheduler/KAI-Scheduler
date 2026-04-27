@@ -161,6 +161,13 @@ spec:
       affinity:
         {{- toYaml .Values.admission.affinity | nindent 8 }}
       {{- end }}
+      podDisruptionBudget:
+        {{- if hasKey .Values.admission.podDisruptionBudget "enabled" }}
+        enabled: {{ .Values.admission.podDisruptionBudget.enabled }}
+        {{- end }}
+        {{- if hasKey .Values.admission.podDisruptionBudget "maxUnavailable" }}
+        maxUnavailable: {{ .Values.admission.podDisruptionBudget.maxUnavailable }}
+        {{- end }}
     gpuSharing: {{ .Values.global.gpuSharing | default false }}
     queueLabelSelector: false
     webhook:

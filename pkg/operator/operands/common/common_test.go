@@ -13,6 +13,7 @@ import (
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -22,6 +23,8 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	kaiv1common "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
 )
 
 func TestCommon(t *testing.T) {
@@ -417,5 +420,73 @@ var _ = Describe("MergeAffinities", func() {
 		Expect(result.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution[0].Weight).To(Equal(int32(100)))
 		Expect(result.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution[0].PodAffinityTerm.LabelSelector.MatchLabels).To(Equal(labelMap))
 		Expect(result.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution[0].PodAffinityTerm.TopologyKey).To(Equal("kubernetes.io/hostname"))
+	})
+})
+
+var _ = Describe("PodDisruptionBudgetForKAIConfig", func() {
+	It("creates PDB for multi-replica enabled service", func() {
+		fakeKubeClient := fake.NewClientBuilder().Build()
+		service := &kaiv1common.Service{
+			PodDisruptionBudget: &kaiv1common.PodDisruptionBudget{
+				Enabled:        ptr.To(true),
+				MaxUnavailable: ptr.To(int32(1)),
+			},
+		}
+
+		obj, err := PodDisruptionBudgetForKAIConfig(
+			context.Background(),
+			fakeKubeClient,
+			"default",
+			"admission",
+			ptr.To(int32(2)),
+			service,
+		)
+		Expect(err).To(BeNil())
+		Expect(obj).ToNot(BeNil())
+	})
+
+	It("defaults maxUnavailable to 1 when omitted", func() {
+		fakeKubeClient := fake.NewClientBuilder().Build()
+		service := &kaiv1common.Service{
+			PodDisruptionBudget: &kaiv1common.PodDisruptionBudget{
+				Enabled: ptr.To(true),
+			},
+		}
+
+		obj, err := PodDisruptionBudgetForKAIConfig(
+			context.Background(),
+			fakeKubeClient,
+			"default",
+			"admission",
+			ptr.To(int32(2)),
+			service,
+		)
+		Expect(err).To(BeNil())
+		Expect(obj).ToNot(BeNil())
+		pdb, ok := obj.(*policyv1.PodDisruptionBudget)
+		Expect(ok).To(BeTrue())
+		Expect(pdb.Spec.MaxUnavailable).ToNot(BeNil())
+		Expect(pdb.Spec.MaxUnavailable.IntVal).To(Equal(int32(1)))
+	})
+
+	It("does not create PDB for single replica service", func() {
+		fakeKubeClient := fake.NewClientBuilder().Build()
+		service := &kaiv1common.Service{
+			PodDisruptionBudget: &kaiv1common.PodDisruptionBudget{
+				Enabled:        ptr.To(true),
+				MaxUnavailable: ptr.To(int32(1)),
+			},
+		}
+
+		obj, err := PodDisruptionBudgetForKAIConfig(
+			context.Background(),
+			fakeKubeClient,
+			"default",
+			"admission",
+			ptr.To(int32(1)),
+			service,
+		)
+		Expect(err).To(BeNil())
+		Expect(obj).To(BeNil())
 	})
 })

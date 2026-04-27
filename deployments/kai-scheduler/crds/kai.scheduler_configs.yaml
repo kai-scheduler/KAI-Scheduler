@@ -1029,6 +1029,20 @@ spec:
                             description: QPS specifies the QPS rate for the k8s client
                             type: integer
                         type: object
+                      podDisruptionBudget:
+                        description: PodDisruptionBudget defines voluntary disruption
+                          constraints for service pods.
+                        properties:
+                          enabled:
+                            description: Enabled defines whether to create a PodDisruptionBudget
+                              for this service.
+                            type: boolean
+                          maxUnavailable:
+                            description: MaxUnavailable is the maximum number of pods
+                              that can be unavailable during voluntary disruptions.
+                            format: int32
+                            type: integer
+                        type: object
                       resources:
                         description: Resources describes the resource requirements
                           for the service pods
@@ -2758,6 +2772,20 @@ spec:
                             type: integer
                           qps:
                             description: QPS specifies the QPS rate for the k8s client
+                            type: integer
+                        type: object
+                      podDisruptionBudget:
+                        description: PodDisruptionBudget defines voluntary disruption
+                          constraints for service pods.
+                        properties:
+                          enabled:
+                            description: Enabled defines whether to create a PodDisruptionBudget
+                              for this service.
+                            type: boolean
+                          maxUnavailable:
+                            description: MaxUnavailable is the maximum number of pods
+                              that can be unavailable during voluntary disruptions.
+                            format: int32
                             type: integer
                         type: object
                       resources:
@@ -5341,6 +5369,20 @@ spec:
                             description: QPS specifies the QPS rate for the k8s client
                             type: integer
                         type: object
+                      podDisruptionBudget:
+                        description: PodDisruptionBudget defines voluntary disruption
+                          constraints for service pods.
+                        properties:
+                          enabled:
+                            description: Enabled defines whether to create a PodDisruptionBudget
+                              for this service.
+                            type: boolean
+                          maxUnavailable:
+                            description: MaxUnavailable is the maximum number of pods
+                              that can be unavailable during voluntary disruptions.
+                            format: int32
+                            type: integer
+                        type: object
                       resources:
                         description: Resources describes the resource requirements
                           for the service pods
@@ -6521,6 +6563,20 @@ spec:
                             type: integer
                           qps:
                             description: QPS specifies the QPS rate for the k8s client
+                            type: integer
+                        type: object
+                      podDisruptionBudget:
+                        description: PodDisruptionBudget defines voluntary disruption
+                          constraints for service pods.
+                        properties:
+                          enabled:
+                            description: Enabled defines whether to create a PodDisruptionBudget
+                              for this service.
+                            type: boolean
+                          maxUnavailable:
+                            description: MaxUnavailable is the maximum number of pods
+                              that can be unavailable during voluntary disruptions.
+                            format: int32
                             type: integer
                         type: object
                       resources:
@@ -7727,6 +7783,20 @@ spec:
                             type: integer
                           qps:
                             description: QPS specifies the QPS rate for the k8s client
+                            type: integer
+                        type: object
+                      podDisruptionBudget:
+                        description: PodDisruptionBudget defines voluntary disruption
+                          constraints for service pods.
+                        properties:
+                          enabled:
+                            description: Enabled defines whether to create a PodDisruptionBudget
+                              for this service.
+                            type: boolean
+                          maxUnavailable:
+                            description: MaxUnavailable is the maximum number of pods
+                              that can be unavailable during voluntary disruptions.
+                            format: int32
                             type: integer
                         type: object
                       resources:
@@ -9019,6 +9089,20 @@ spec:
                             description: QPS specifies the QPS rate for the k8s client
                             type: integer
                         type: object
+                      podDisruptionBudget:
+                        description: PodDisruptionBudget defines voluntary disruption
+                          constraints for service pods.
+                        properties:
+                          enabled:
+                            description: Enabled defines whether to create a PodDisruptionBudget
+                              for this service.
+                            type: boolean
+                          maxUnavailable:
+                            description: MaxUnavailable is the maximum number of pods
+                              that can be unavailable during voluntary disruptions.
+                            format: int32
+                            type: integer
+                        type: object
                       resources:
                         description: Resources describes the resource requirements
                           for the service pods
@@ -10209,6 +10293,20 @@ spec:
                             type: integer
                           qps:
                             description: QPS specifies the QPS rate for the k8s client
+                            type: integer
+                        type: object
+                      podDisruptionBudget:
+                        description: PodDisruptionBudget defines voluntary disruption
+                          constraints for service pods.
+                        properties:
+                          enabled:
+                            description: Enabled defines whether to create a PodDisruptionBudget
+                              for this service.
+                            type: boolean
+                          maxUnavailable:
+                            description: MaxUnavailable is the maximum number of pods
+                              that can be unavailable during voluntary disruptions.
+                            format: int32
                             type: integer
                         type: object
                       resources:
