@@ -14,14 +14,13 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/watch"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 
 	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/capacity"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd"
-	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/pod_group"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/utils"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
@@ -72,13 +71,25 @@ func DescribePreemptElasticSpecs() bool {
 				},
 			}
 
-			podGroup1, pods1 := pod_group.CreateWithPods(ctx, testCtx.KubeClientset, testCtx.KubeAiSchedClientset,
-				"elastic-job-low-1", testQueue, 2, pointer.String(lowPriority), "",
-				lowPodRequirements)
+			job1, _, pods1, err := rd.CreateDistributedBatchJob(ctx, testCtx.ControllerClient, testQueue,
+				rd.DistributedBatchJobOptions{
+					Parallelism:       ptr.To(int32(2)),
+					MinMember:         ptr.To(int32(1)),
+					NamePrefix:        "elastic-job-low-1-",
+					PriorityClassName: lowPriority,
+					Resources:         lowPodRequirements,
+				})
+			Expect(err).To(Succeed())
 
-			podGroup2, pods2 := pod_group.CreateWithPods(ctx, testCtx.KubeClientset, testCtx.KubeAiSchedClientset,
-				"elastic-job-low-2", testQueue, 2, pointer.String(lowPriority), "",
-				lowPodRequirements)
+			job2, _, pods2, err := rd.CreateDistributedBatchJob(ctx, testCtx.ControllerClient, testQueue,
+				rd.DistributedBatchJobOptions{
+					Parallelism:       ptr.To(int32(2)),
+					MinMember:         ptr.To(int32(1)),
+					NamePrefix:        "elastic-job-low-2-",
+					PriorityClassName: lowPriority,
+					Resources:         lowPodRequirements,
+				})
+			Expect(err).To(Succeed())
 
 			var preempteePods []*v1.Pod
 			preempteePods = append(preempteePods, pods1...)
@@ -93,13 +104,13 @@ func DescribePreemptElasticSpecs() bool {
 
 			preemptorPod := rd.CreatePodObject(testQueue, highPodRequirements)
 			preemptorPod.Labels[PriorityClassNameLabelName] = highPriority
-			_, err := rd.CreatePod(ctx, testCtx.KubeClientset, preemptorPod)
+			_, err = rd.CreatePod(ctx, testCtx.KubeClientset, preemptorPod)
 			Expect(err).To(Succeed())
 			wait.ForPodScheduled(ctx, testCtx.ControllerClient, preemptorPod)
 
 			wait.ForPodsWithCondition(ctx, testCtx.ControllerClient, func(watch.Event) bool {
 				pods, err := testCtx.KubeClientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-					LabelSelector: fmt.Sprintf("%s=%s", rd.PodGroupLabelName, podGroup1.Name),
+					LabelSelector: fmt.Sprintf("%s=%s", rd.JobNameLabel, job1.Name),
 				})
 				Expect(err).To(Succeed())
 				return len(pods.Items) == 1
@@ -107,7 +118,7 @@ func DescribePreemptElasticSpecs() bool {
 
 			wait.ForPodsWithCondition(ctx, testCtx.ControllerClient, func(watch.Event) bool {
 				pods, err := testCtx.KubeClientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-					LabelSelector: fmt.Sprintf("%s=%s", rd.PodGroupLabelName, podGroup2.Name),
+					LabelSelector: fmt.Sprintf("%s=%s", rd.JobNameLabel, job2.Name),
 				})
 				Expect(err).To(Succeed())
 				return len(pods.Items) == 1
@@ -129,9 +140,15 @@ func DescribePreemptElasticSpecs() bool {
 				},
 			}
 
-			preempteePodGroup, preempteePods := pod_group.CreateWithPods(ctx, testCtx.KubeClientset,
-				testCtx.KubeAiSchedClientset, "elastic-job-low-1", testQueue, 2,
-				pointer.String(lowPriority), "", lowPodRequirements)
+			preempteeJob, _, preempteePods, err := rd.CreateDistributedBatchJob(ctx, testCtx.ControllerClient, testQueue,
+				rd.DistributedBatchJobOptions{
+					Parallelism:       ptr.To(int32(2)),
+					MinMember:         ptr.To(int32(1)),
+					NamePrefix:        "elastic-job-low-1-",
+					PriorityClassName: lowPriority,
+					Resources:         lowPodRequirements,
+				})
+			Expect(err).To(Succeed())
 			wait.ForPodsScheduled(ctx, testCtx.ControllerClient, namespace, preempteePods)
 
 			highPodRequirements := v1.ResourceRequirements{
@@ -142,13 +159,13 @@ func DescribePreemptElasticSpecs() bool {
 
 			pod := rd.CreatePodObject(testQueue, highPodRequirements)
 			pod.Labels[PriorityClassNameLabelName] = highPriority
-			_, err := rd.CreatePod(ctx, testCtx.KubeClientset, pod)
+			_, err = rd.CreatePod(ctx, testCtx.KubeClientset, pod)
 			Expect(err).To(Succeed())
 			wait.ForPodScheduled(ctx, testCtx.ControllerClient, pod)
 
 			wait.ForPodsWithCondition(ctx, testCtx.ControllerClient, func(watch.Event) bool {
 				pods, err := testCtx.KubeClientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-					LabelSelector: fmt.Sprintf("%s=%s", rd.PodGroupLabelName, preempteePodGroup.Name),
+					LabelSelector: fmt.Sprintf("%s=%s", rd.JobNameLabel, preempteeJob.Name),
 				})
 				Expect(err).To(Succeed())
 				return len(pods.Items) == 0
