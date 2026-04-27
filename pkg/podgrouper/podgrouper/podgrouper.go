@@ -5,11 +5,12 @@ package podgrouper
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -21,6 +22,14 @@ import (
 	pluginshub "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/hub"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/workload"
 )
+
+// ErrDeferred wraps errors that signal "PodGroup metadata cannot be produced
+// yet, but no work needs to be retried". Callers (the pod controller) should
+// detect this with errors.Is and return without requeueing — recovery is
+// driven by the relevant secondary watches (e.g. the Workload watch in
+// workload_watch.go) which re-enqueue the Pod when the missing prerequisite
+// appears. The wrapped error retains the specific reason for logging.
+var ErrDeferred = errors.New("podgroup metadata deferred")
 
 type Interface interface {
 	// GetPodOwners returns all the owners of a pod, the top owner returned also as Unstructured
@@ -111,6 +120,9 @@ func (pg *podGrouper) GetPGMetadata(ctx context.Context, pod *v1.Pod, topOwner *
 
 	merged, err := workload.ApplyOverride(ctx, base, pod, topOwner, pg.client)
 	if err != nil {
+		if workload.IsSoftFailure(err) {
+			return nil, fmt.Errorf("%w: %v", ErrDeferred, err)
+		}
 		return nil, err
 	}
 	if merged != base {
@@ -175,7 +187,7 @@ func (pg *podGrouper) getOwnerInstance(ctx context.Context, ownerRef *metav1.Own
 	}
 	// In some edge cases the owner is already deleted and an identical resource with the same name has been created
 	if ownerRef.UID != owner.GetUID() {
-		return nil, errors.NewResourceExpired(fmt.Sprintf("Owner resource with uid %s not found", ownerRef.UID))
+		return nil, apierrors.NewResourceExpired(fmt.Sprintf("Owner resource with uid %s not found", ownerRef.UID))
 	}
 
 	return owner, nil
@@ -205,7 +217,7 @@ func (pg *podGrouper) handleGetOwnerError(
 	ctx context.Context, err error, pod *v1.Pod, owner *metav1.OwnerReference, lastOwnerInstance *metav1.PartialObjectMetadata,
 ) (*metav1.PartialObjectMetadata, error) {
 	logger := log.FromContext(ctx)
-	if errors.IsForbidden(err) {
+	if apierrors.IsForbidden(err) {
 		if lastOwnerInstance != nil {
 			logger.V(1).Info(fmt.Sprintf("No permissions to get resourceOwner '%s': <%s/%s>. "+
 				"returning last owner '%s': <%s/%s>",

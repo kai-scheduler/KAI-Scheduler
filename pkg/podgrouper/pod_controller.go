@@ -5,11 +5,12 @@ package controllers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -23,7 +24,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper"
 	pluginshub "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/hub"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/workload"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
@@ -78,7 +78,7 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	pod := v1.Pod{}
 	err := r.Client.Get(ctx, types.NamespacedName{Namespace: req.Namespace, Name: req.Name}, &pod)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			logger.V(1).Info(fmt.Sprintf("Pod %s/%s not found, was probably deleted", req.Namespace, req.Name))
 			return ctrl.Result{}, nil
 		}
@@ -116,12 +116,13 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 
 	metadata, err := r.podGrouper.GetPGMetadata(ctx, &pod, topOwner, allOwners)
 	if err != nil {
-		if workload.IsSoftFailure(err) {
-			// Workload referenced by pod.spec.workloadRef (or its podGroup
-			// entry) doesn't exist yet. Leave the Pod pending without
-			// requeueing — the WorkloadReconciler will enqueue us when the
-			// Workload appears. See docs/developer/designs/k8s-workload-api.
-			logger.V(1).Info("Pod references a missing Workload; staying pending",
+		if errors.Is(err, podgrouper.ErrDeferred) {
+			// A prerequisite (today: the upstream Workload referenced by
+			// pod.spec.workloadRef) doesn't exist yet. Leave the Pod
+			// pending without requeueing — the relevant secondary watch
+			// (e.g. workload_watch.go) will enqueue us when the missing
+			// resource appears.
+			logger.V(1).Info("PodGroup metadata deferred; staying pending",
 				"pod", fmt.Sprintf("%s/%s", req.Namespace, req.Name), "reason", err)
 			return ctrl.Result{}, nil
 		}
