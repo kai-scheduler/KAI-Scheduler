@@ -66,8 +66,10 @@ func buildReaderWith(t *testing.T, workloads ...*schedulingv1alpha1.Workload) (c
 func TestApplyOverride_NoWorkloadRef_NoChange(t *testing.T) {
 	base := baseMetadata()
 	pod := newPod("p1", nil)
+	reader, stop := buildReaderWith(t)
+	defer stop()
 
-	got, err := ApplyOverride(context.Background(), base, pod, nil, nil)
+	got, err := ApplyOverride(context.Background(), base, pod, nil, reader)
 	require.NoError(t, err)
 	assert.Same(t, base, got, "no workloadRef -> base metadata returned unchanged")
 }
@@ -76,8 +78,10 @@ func TestApplyOverride_Ignored_OnPod(t *testing.T) {
 	base := baseMetadata()
 	pod := newPod("p1", &corev1.WorkloadReference{Name: "w", PodGroup: "g"})
 	pod.Annotations = map[string]string{commonconstants.WorkloadIgnoreAnnotationKey: "true"}
+	reader, stop := buildReaderWith(t)
+	defer stop()
 
-	got, err := ApplyOverride(context.Background(), base, pod, nil, nil)
+	got, err := ApplyOverride(context.Background(), base, pod, nil, reader)
 	require.NoError(t, err)
 	assert.Same(t, base, got)
 }
@@ -87,8 +91,10 @@ func TestApplyOverride_Ignored_OnTopOwner(t *testing.T) {
 	pod := newPod("p1", &corev1.WorkloadReference{Name: "w", PodGroup: "g"})
 	top := &unstructured.Unstructured{}
 	top.SetAnnotations(map[string]string{commonconstants.WorkloadIgnoreAnnotationKey: "true"})
+	reader, stop := buildReaderWith(t)
+	defer stop()
 
-	got, err := ApplyOverride(context.Background(), base, pod, top, nil)
+	got, err := ApplyOverride(context.Background(), base, pod, top, reader)
 	require.NoError(t, err)
 	assert.Same(t, base, got)
 }
@@ -254,14 +260,6 @@ func TestApplyOverride_PodGroupMissing(t *testing.T) {
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrPodGroupNotFound), "got %v", err)
 	assert.True(t, IsSoftFailure(err))
-}
-
-func TestApplyOverride_NilLister_IsNoOp(t *testing.T) {
-	// If the podgrouper was built without Workload support, pods with a
-	// workloadRef should still go through the top-owner flow.
-	got, err := ApplyOverride(context.Background(), baseMetadata(), newPod("p", &corev1.WorkloadReference{Name: "w", PodGroup: "g"}), nil, nil)
-	require.NoError(t, err)
-	assert.Equal(t, baseMetadata(), got)
 }
 
 // Workload > Top Owner > Pod fallback: when the Workload carries none of the

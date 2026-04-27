@@ -108,11 +108,10 @@ func (pg *podGrouper) GetPGMetadata(ctx context.Context, pod *v1.Pod, topOwner *
 	if err != nil {
 		return nil, err
 	}
-	var workloadReader client.Reader
-	if pg.workloadAware {
-		workloadReader = pg.client
+	if !pg.workloadAware {
+		return base, nil
 	}
-	merged, err := workload.ApplyOverride(ctx, base, pod, topOwner, workloadReader)
+	merged, err := workload.ApplyOverride(ctx, base, pod, topOwner, pg.client)
 	if err != nil {
 		return nil, err
 	}

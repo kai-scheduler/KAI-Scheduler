@@ -51,11 +51,13 @@ var ErrPodGroupNotFound = errors.New("workload podGroup not found")
 // Labels and annotations are merged with Workload values taking precedence on
 // collision.
 //
-// The reader must be backed by the same cache that drives the controller's
-// Workload watch (typically the manager's cached client). Using a separate
-// informer factory's lister introduces a race where the controller's watch
-// fires Reconcile before the lister has processed the same Workload UPDATE,
-// so ApplyOverride reads stale labels and the PodGroup never updates.
+// reader must be non-nil and backed by the same cache that drives the
+// controller's Workload watch (typically the manager's cached client). Using a
+// separate informer factory's lister introduces a race where the controller's
+// watch fires Reconcile before the lister has processed the same Workload
+// UPDATE, so ApplyOverride reads stale labels and the PodGroup never updates.
+// Callers that haven't detected the upstream API on the cluster must skip
+// ApplyOverride entirely rather than passing a sentinel reader.
 func ApplyOverride(
 	ctx context.Context,
 	base *podgroup.Metadata,
@@ -71,11 +73,6 @@ func ApplyOverride(
 		return base, nil
 	}
 	if isIgnored(pod, topOwner) {
-		return base, nil
-	}
-	if reader == nil {
-		// Podgrouper was built without a Workload-aware reader — treat as
-		// unavailable (cluster doesn't expose scheduling.k8s.io/v1alpha1).
 		return base, nil
 	}
 
