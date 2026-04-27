@@ -252,10 +252,6 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1binder.Binder, fakeGPU 
 		args = append(args, "--leader-elect")
 	}
 
-	if featureGates := kaiConfigUtils.FeatureGatesArg(); featureGates != "" {
-		args = append(args, featureGates)
-	}
-
 	if config.Service.K8sClientConfig.QPS != nil {
 		args = append(args, []string{"--qps", fmt.Sprintf("%d", *config.Service.K8sClientConfig.QPS)}...)
 	}

@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"github.com/spf13/pflag"
-	utilfeature "k8s.io/apiserver/pkg/util/feature"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
@@ -126,8 +125,6 @@ func (s *ServerOption) AddFlags(fs *pflag.FlagSet) {
 	fs.StringVar(&s.CPUWorkerNodeLabelKey, "cpu-worker-node-label-key", constants.DefaultCPUWorkerNodeLabelKey, "The label key for CPU worker nodes")
 	fs.StringVar(&s.GPUWorkerNodeLabelKey, "gpu-worker-node-label-key", constants.DefaultGPUWorkerNodeLabelKey, "The label key for GPU worker nodes")
 	fs.StringVar(&s.MIGWorkerNodeLabelKey, "mig-worker-node-label-key", constants.DefaultMIGWorkerNodeLabelKey, "The label key for MIG enabled worker nodes")
-
-	utilfeature.DefaultMutableFeatureGate.AddFlag(fs)
 }
 
 func (so *ServerOption) ValidateOptions() error {

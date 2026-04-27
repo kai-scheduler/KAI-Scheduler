@@ -5,7 +5,6 @@ package app
 
 import (
 	corev1 "k8s.io/api/core/v1"
-	utilfeature "k8s.io/apiserver/pkg/util/feature"
 
 	"github.com/spf13/pflag"
 
@@ -112,8 +111,6 @@ func InitOptions(fs *pflag.FlagSet) *Options {
 	fs.StringVar(&options.RuntimeClassName,
 		"runtime-class-name", "",
 		"Runtime class for reservation pods")
-
-	utilfeature.DefaultMutableFeatureGate.AddFlag(fs)
 
 	return options
 }

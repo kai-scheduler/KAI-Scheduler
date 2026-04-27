@@ -8,8 +8,6 @@ import (
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/spf13/pflag"
-
-	utilfeature "k8s.io/apiserver/pkg/util/feature"
 )
 
 type Options struct {
@@ -69,8 +67,6 @@ func InitOptions() *Options {
 	fs.StringVar(&options.GPUPodRuntimeClassName,
 		"gpu-pod-runtime-class-name", constants.DefaultRuntimeClassName,
 		fmt.Sprintf("Runtime class to be set for GPU pods (defaults to %s) Set to empty string to disable", constants.DefaultRuntimeClassName))
-
-	utilfeature.DefaultMutableFeatureGate.AddFlag(fs)
 
 	return options
 }

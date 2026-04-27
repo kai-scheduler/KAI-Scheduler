@@ -28,8 +28,6 @@ import (
 
 	"github.com/spf13/pflag"
 	"k8s.io/apimachinery/pkg/util/diff"
-	utilfeature "k8s.io/apiserver/pkg/util/feature"
-	"k8s.io/kubernetes/pkg/features"
 )
 
 func TestAddFlags(t *testing.T) {
@@ -39,7 +37,6 @@ func TestAddFlags(t *testing.T) {
 
 	args := []string{
 		"--schedule-period=5m",
-		"--feature-gates=DynamicResourceAllocation=true,VolumeCapacityPriority=false",
 	}
 	fs.Parse(args)
 
@@ -77,10 +74,5 @@ func TestAddFlags(t *testing.T) {
 	if !reflect.DeepEqual(expected, s) {
 		difference := diff.ObjectGoPrintSideBySide(expected, s)
 		t.Errorf("Got different run options than expected.\nGot: %+v\nExpected: %+v\ndiff: %s", s, expected, difference)
-	}
-
-	// Test that the feature gates are set correctly.
-	if !utilfeature.DefaultFeatureGate.Enabled(features.DynamicResourceAllocation) {
-		t.Errorf("DynamicResourceAllocation feature gate should be enabled")
 	}
 }
