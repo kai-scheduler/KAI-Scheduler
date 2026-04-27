@@ -33,9 +33,9 @@ import (
 // the Pod for reconciliation. See section 4 of the design.
 var ErrWorkloadNotFound = errors.New("workload not found")
 
-// ErrPodGroupNotFound is returned when the Workload exists but does not declare
+// ErrWorkloadPodGroupNotFound is returned when the Workload exists but does not declare
 // the PodGroup name referenced by the Pod's spec.workloadRef.podGroup.
-var ErrPodGroupNotFound = errors.New("workload podGroup not found")
+var ErrWorkloadPodGroupNotFound = errors.New("workload podGroup not found")
 
 // ApplyOverride layers Workload-derived metadata on top of the base metadata
 // produced by the top-owner plugin, per section 3 of the design. It is a no-op
@@ -79,16 +79,12 @@ func ApplyOverride(
 		return nil, fmt.Errorf("failed to get workload %s/%s: %w", pod.Namespace, ref.Name, err)
 	}
 
-	wlPodGroup, ok := findPodGroup(wl, ref.PodGroup)
+	wlPodGroup, ok := findWorkloadPodGroup(wl, ref.PodGroup)
 	if !ok {
 		return nil, fmt.Errorf("%w: workload=%s/%s podGroup=%s",
-			ErrPodGroupNotFound, pod.Namespace, ref.Name, ref.PodGroup)
+			ErrWorkloadPodGroupNotFound, pod.Namespace, ref.Name, ref.PodGroup)
 	}
 
-	// Deep-copy isolates ApplyOverride from the caller's Metadata: subsequent
-	// in-place mutations here cannot alias back into base, regardless of which
-	// reference-typed fields Metadata grows in the future. The structural
-	// guarantee is enforced by TestMetadataDeepCopyNoAliasing.
 	merged := base.DeepCopy()
 	merged.Name = buildPodGroupName(ref.Name, ref.PodGroup, ref.PodGroupReplicaKey, wlPodGroup.Policy)
 	merged.MinAvailable = minAvailableFromPolicy(wlPodGroup.Policy)
@@ -140,7 +136,7 @@ func isIgnored(pod *corev1.Pod, topOwner *unstructured.Unstructured) bool {
 	return false
 }
 
-func findPodGroup(wl *schedulingv1alpha1.Workload, name string) (schedulingv1alpha1.PodGroup, bool) {
+func findWorkloadPodGroup(wl *schedulingv1alpha1.Workload, name string) (schedulingv1alpha1.PodGroup, bool) {
 	for _, pg := range wl.Spec.PodGroups {
 		if pg.Name == name {
 			return pg, true
@@ -149,18 +145,6 @@ func findPodGroup(wl *schedulingv1alpha1.Workload, name string) (schedulingv1alp
 	return schedulingv1alpha1.PodGroup{}, false
 }
 
-// buildPodGroupName synthesizes the KAI PodGroup name for a Workload podGroup.
-//
-//   - Gang policy with a non-empty replicaKey -> "{workload}-{podGroup}-{replicaKey}".
-//     One KAI PodGroup per (Workload, podGroup, replicaKey).
-//   - Gang policy with an empty replicaKey -> "{workload}-{podGroup}".
-//     A Gang Workload that doesn't use replica keys produces the same name
-//     as a Basic policy would; this is intentional — both end up as a single
-//     gang per (Workload, podGroup).
-//   - Basic policy -> "{workload}-{podGroup}".
-//     All replicaKeys collapse into a single MinAvailable=1 PodGroup
-//     (design section 2).
-//
 // Workload names and podGroup names are both DNS labels (apiserver-validated),
 // so concatenation cannot exceed Kubernetes name limits in practice.
 func buildPodGroupName(workload, podGroup, replicaKey string, policy schedulingv1alpha1.PodGroupPolicy) string {
