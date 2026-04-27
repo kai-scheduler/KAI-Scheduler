@@ -96,8 +96,14 @@ func ApplyOverride(
 	// the upstream API grows sub-group support
 	merged.SubGroups = nil
 
-	merged.Labels = mergeStrings(base.Labels, wl.Labels)
-	merged.Annotations = mergeStrings(base.Annotations, wl.Annotations)
+	if merged.Labels == nil {
+		merged.Labels = map[string]string{}
+	}
+	maps.Copy(merged.Labels, wl.Labels)
+	if merged.Annotations == nil {
+		merged.Annotations = map[string]string{}
+	}
+	maps.Copy(merged.Annotations, wl.Annotations)
 
 	if v, ok := wl.Labels[commonconstants.DefaultQueueLabel]; ok && v != "" {
 		merged.Queue = v
@@ -159,7 +165,6 @@ func generatePodGroupName(workload, podGroup, replicaKey string, policy scheduli
 	return truncateWithHash(full, validation.DNS1123SubdomainMaxLength)
 }
 
-// GuyTodo: Move to utils package
 // truncateWithHash shrinks name to fit max chars by appending a deterministic
 // SHA-256 suffix. The trimmed prefix is stripped of trailing '-' / '.' so the
 // result remains a valid DNS-1123 subdomain. 40-bit hash gives ~2^20 birthday
@@ -180,15 +185,4 @@ func generateMinAvailable(policy schedulingv1alpha1.PodGroupPolicy) int32 {
 	// Basic policy (or unset, which the apiserver validates against): behave
 	// as a standard non-gang group.
 	return 1
-}
-
-// GuyTodo: Move to utils package or use lo.Something
-func mergeStrings(base, overlay map[string]string) map[string]string {
-	if len(base) == 0 && len(overlay) == 0 {
-		return nil
-	}
-	out := make(map[string]string, len(base)+len(overlay))
-	maps.Copy(out, base)
-	maps.Copy(out, overlay)
-	return out
 }
