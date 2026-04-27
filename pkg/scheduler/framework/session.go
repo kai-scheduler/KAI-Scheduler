@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/dynamic"
 	ksf "k8s.io/kube-scheduler/framework"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
@@ -51,6 +52,10 @@ var server *PluginServer
 type Session struct {
 	ID    string
 	Cache cache.Cache
+
+	// DynamicClient is used for suspend-based preemption to patch
+	// spec.suspend on workload owners (RayJob, batch Job, etc.).
+	DynamicClient dynamic.Interface
 
 	ClusterInfo *api.ClusterInfo
 
@@ -340,8 +345,9 @@ func (ssn *Session) clear() {
 
 func openSession(cache cache.Cache, sessionId string, schedulerParams conf.SchedulerParams, mux *http.ServeMux) (*Session, error) {
 	ssn := &Session{
-		ID:    sessionId,
-		Cache: cache,
+		ID:            sessionId,
+		Cache:         cache,
+		DynamicClient: cache.DynamicClient(),
 
 		ClusterInfo: &api.ClusterInfo{},
 
