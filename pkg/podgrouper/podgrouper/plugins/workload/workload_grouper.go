@@ -65,16 +65,10 @@ func ApplyOverride(
 	topOwner *unstructured.Unstructured,
 	reader client.Reader,
 ) (*podgroup.Metadata, error) {
-	if base == nil || pod == nil {
+	if shouldSkip(base, pod, topOwner) {
 		return base, nil
 	}
 	ref := pod.Spec.WorkloadRef
-	if ref == nil {
-		return base, nil
-	}
-	if isIgnored(pod, topOwner) {
-		return base, nil
-	}
 
 	wl := &schedulingv1alpha1.Workload{}
 	err := reader.Get(ctx, types.NamespacedName{Namespace: pod.Namespace, Name: ref.Name}, wl)
@@ -130,6 +124,10 @@ func ApplyOverride(
 	}
 
 	return merged, nil
+}
+
+func shouldSkip(base *podgroup.Metadata, pod *corev1.Pod, topOwner *unstructured.Unstructured) bool {
+	return base == nil || pod == nil || pod.Spec.WorkloadRef == nil || isIgnored(pod, topOwner)
 }
 
 func isIgnored(pod *corev1.Pod, topOwner *unstructured.Unstructured) bool {
