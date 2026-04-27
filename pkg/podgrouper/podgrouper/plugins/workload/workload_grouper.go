@@ -132,13 +132,6 @@ func ApplyOverride(
 	return merged, nil
 }
 
-// IsSoftFailure reports whether err should leave the Pod pending without
-// triggering a retry loop — currently the Workload- and PodGroup-not-found
-// signals. See section 4 of the design.
-func IsSoftFailure(err error) bool {
-	return errors.Is(err, ErrWorkloadNotFound) || errors.Is(err, ErrPodGroupNotFound)
-}
-
 func isIgnored(pod *corev1.Pod, topOwner *unstructured.Unstructured) bool {
 	if pod != nil && pod.Annotations[commonconstants.WorkloadIgnoreAnnotationKey] == "true" {
 		return true

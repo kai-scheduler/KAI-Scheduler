@@ -120,7 +120,7 @@ func (pg *podGrouper) GetPGMetadata(ctx context.Context, pod *v1.Pod, topOwner *
 
 	merged, err := workload.ApplyOverride(ctx, base, pod, topOwner, pg.client)
 	if err != nil {
-		if workload.IsSoftFailure(err) {
+		if errors.Is(err, workload.ErrWorkloadNotFound) || errors.Is(err, workload.ErrPodGroupNotFound) {
 			return nil, fmt.Errorf("%w: %v", ErrDeferred, err)
 		}
 		return nil, err

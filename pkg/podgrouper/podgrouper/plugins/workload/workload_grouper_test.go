@@ -240,7 +240,6 @@ func TestApplyOverride_WorkloadMissing(t *testing.T) {
 	_, err := ApplyOverride(context.Background(), baseMetadata(), newPod("p", &corev1.WorkloadReference{Name: "ghost", PodGroup: "g"}), nil, lister)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrWorkloadNotFound), "got %v", err)
-	assert.True(t, IsSoftFailure(err))
 }
 
 func TestApplyOverride_PodGroupMissing(t *testing.T) {
@@ -259,7 +258,6 @@ func TestApplyOverride_PodGroupMissing(t *testing.T) {
 	_, err := ApplyOverride(context.Background(), baseMetadata(), newPod("p", &corev1.WorkloadReference{Name: "w", PodGroup: "missing"}), nil, lister)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrPodGroupNotFound), "got %v", err)
-	assert.True(t, IsSoftFailure(err))
 }
 
 // Workload > Top Owner > Pod fallback: when the Workload carries none of the
