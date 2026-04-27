@@ -24,11 +24,7 @@ import (
 )
 
 // ErrDeferred wraps errors that signal "PodGroup metadata cannot be produced
-// yet, but no work needs to be retried". Callers (the pod controller) should
-// detect this with errors.Is and return without requeueing — recovery is
-// driven by the relevant secondary watches (e.g. the Workload watch in
-// workload_watch.go) which re-enqueue the Pod when the missing prerequisite
-// appears. The wrapped error retains the specific reason for logging.
+// yet, but no work needs to be retried".
 var ErrDeferred = errors.New("podgroup metadata deferred")
 
 type Interface interface {
@@ -48,34 +44,21 @@ type podGrouper struct {
 	// https://github.com/kubernetes-sigs/controller-runtime/issues/1222#issuecomment-713037979
 	clientWithoutCache client.Client
 
-	// workloadAware reports whether the upstream Kubernetes Workload API
-	// (scheduling.k8s.io/v1alpha1, KEP-4671) is available on the cluster.
-	// When true and the Pod has spec.workloadRef, Workload-derived metadata
-	// overrides the top-owner plugin's result — see
-	// docs/developer/designs/k8s-workload-api/README.md. Workload reads use
-	// the same cached `client` that drives the controller's Workload watch,
-	// so reconcile and lookup share a cache and never disagree on the
-	// observed Workload labels.
-	workloadAware bool
+	isWorkloadAPIEnabled bool
 }
 
 type GetPodGroupMetadataFunc func(topOwner *unstructured.Unstructured, pod *v1.Pod, otherOwners ...*metav1.PartialObjectMetadata) (*podgroup.Metadata, error)
 
-// NewPodgrouper constructs a podGrouper. When workloadAware is true the
-// upstream Kubernetes Workload API (scheduling.k8s.io/v1alpha1) is honored:
-// the Workload type must be registered in the manager's scheme and a watch
-// must be set up (see registerWorkloadWatch) so the manager's cached client
-// can serve Workload reads.
 func NewPodgrouper(
 	client client.Client, clientWithoutCache client.Client,
 	pluginsHub pluginshub.PluginsHub,
-	workloadAware bool,
+	isWorkloadAPIEnabled bool,
 ) *podGrouper {
 	return &podGrouper{
-		client:             client,
-		clientWithoutCache: clientWithoutCache,
-		pluginsHub:         pluginsHub,
-		workloadAware:      workloadAware,
+		client:               client,
+		clientWithoutCache:   clientWithoutCache,
+		pluginsHub:           pluginsHub,
+		isWorkloadAPIEnabled: isWorkloadAPIEnabled,
 	}
 }
 
@@ -114,7 +97,7 @@ func (pg *podGrouper) GetPGMetadata(ctx context.Context, pod *v1.Pod, topOwner *
 	if err != nil {
 		return nil, err
 	}
-	if !pg.workloadAware {
+	if !pg.isWorkloadAPIEnabled {
 		return base, nil
 	}
 

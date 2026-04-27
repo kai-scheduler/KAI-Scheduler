@@ -5,6 +5,7 @@ package app
 
 import (
 	"flag"
+	"fmt"
 
 	"go.uber.org/zap/zapcore"
 	corev1 "k8s.io/api/core/v1"
@@ -147,7 +148,7 @@ func (app *App) Run() error {
 	ctx := ctrl.SetupSignalHandler()
 
 	if err := app.detectWorkloadAPI(); err != nil {
-		return err
+		return fmt.Errorf("failed to detect Workload API: %w", err)
 	}
 
 	if err := (&controllers.PodReconciler{
@@ -173,16 +174,17 @@ func (app *App) detectWorkloadAPI() error {
 	cfg := app.Mgr.GetConfig()
 	discoveryClient, err := discovery.NewDiscoveryClientForConfig(cfg)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create discovery client: %w", err)
 	}
+
 	featuregates.SetWorkloadAPIFlag(discoveryClient)
-	if !featuregates.WorkloadAPIEnabled() {
+	app.configs.WorkloadAPIEnabled = featuregates.WorkloadAPIEnabled()
+	if !app.configs.WorkloadAPIEnabled {
 		setupLog.Info("upstream Workload API (scheduling.k8s.io/v1alpha1) not present on the cluster; skipping Workload-aware podgrouping")
-		app.configs.WorkloadAPIEnabled = false
-		return nil
+	} else {
+		setupLog.Info("upstream Workload API detected; Workload-aware podgrouping is enabled")
 	}
-	app.configs.WorkloadAPIEnabled = true
-	setupLog.Info("upstream Workload API detected; Workload-aware podgrouping is enabled")
+
 	return nil
 }
 

@@ -117,11 +117,9 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	metadata, err := r.podGrouper.GetPGMetadata(ctx, &pod, topOwner, allOwners)
 	if err != nil {
 		if errors.Is(err, podgrouper.ErrDeferred) {
-			// A prerequisite (today: the upstream Workload referenced by
-			// pod.spec.workloadRef) doesn't exist yet. Leave the Pod
-			// pending without requeueing — the relevant secondary watch
-			// (e.g. workload_watch.go) will enqueue us when the missing
-			// resource appears.
+			// The workload referenced by the pod's spec.workloadRef doesn't exist yet.
+			// Leave the Pod pending without requeueing; the workload watcher
+			// will enqueue the pod controller when the missing workload appears.
 			logger.V(1).Info("PodGroup metadata deferred; staying pending",
 				"pod", fmt.Sprintf("%s/%s", req.Namespace, req.Name), "reason", err)
 			return ctrl.Result{}, nil

@@ -99,8 +99,6 @@ func ApplyOverride(
 	merged.Labels = mergeStrings(base.Labels, wl.Labels)
 	merged.Annotations = mergeStrings(base.Annotations, wl.Annotations)
 
-	// Workload > Top Owner > Pod: only override scheduling config when the
-	// Workload itself declares the KAI-specific label/annotation.
 	if v, ok := wl.Labels[commonconstants.DefaultQueueLabel]; ok && v != "" {
 		merged.Queue = v
 	}
@@ -108,10 +106,11 @@ func ApplyOverride(
 		merged.PriorityClassName = v
 	}
 	if v, ok := wl.Labels[pgconstants.PreemptibilityLabelKey]; ok && v != "" {
-		// toPreemptibility maps the raw string to the typed enum and falls
-		// back to base on unknown values, so a typo doesn't blank the field.
-		// The KAI admission webhook is the authoritative validator.
-		merged.Preemptibility = toPreemptibility(v, base.Preemptibility)
+		preemptibility, err := v2alpha2.ParsePreemptibility(v)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse preemptibility %s from workload %s/%s: %w", v, wl.Namespace, wl.Name, err)
+		}
+		merged.Preemptibility = preemptibility
 	}
 	if v, ok := wl.Annotations[pgconstants.TopologyKey]; ok && v != "" {
 		merged.Topology = v
@@ -149,12 +148,6 @@ func findWorkloadPodGroup(wl *schedulingv1alpha1.Workload, name string) (schedul
 	return schedulingv1alpha1.PodGroup{}, false
 }
 
-// The KAI PodGroup CR's metadata.name must be a DNS-1123 subdomain (≤253).
-// Upstream constrains the inputs as: Workload.metadata.name is a DNS subdomain
-// (253), Pod.spec.workloadRef.podGroup and podGroupReplicaKey are DNS labels
-// (63 each). Worst-case naive concatenation reaches 253+1+63+1+63 = 381, so
-// the synthesized name is hash-truncated when it overflows. The hash suffix
-// disambiguates inputs that share the truncated prefix.
 func generatePodGroupName(workload, podGroup, replicaKey string, policy schedulingv1alpha1.PodGroupPolicy) string {
 	full := fmt.Sprintf("%s-%s", workload, podGroup)
 	if policy.Gang != nil && replicaKey != "" {
@@ -198,17 +191,4 @@ func mergeStrings(base, overlay map[string]string) map[string]string {
 	maps.Copy(out, base)
 	maps.Copy(out, overlay)
 	return out
-}
-
-// toPreemptibility converts a raw string from a label to the typed enum.
-// Unknown values keep the base value — the KAI admission webhook validates.
-func toPreemptibility(raw string, base v2alpha2.Preemptibility) v2alpha2.Preemptibility {
-	switch v2alpha2.Preemptibility(raw) {
-	case v2alpha2.Preemptible:
-		return v2alpha2.Preemptible
-	case v2alpha2.NonPreemptible:
-		return v2alpha2.NonPreemptible
-	default:
-		return base
-	}
 }
