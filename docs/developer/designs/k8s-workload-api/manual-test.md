@@ -1,3 +1,4 @@
+<!-- GuyTodo: Remove file -->
 # Workload API — manual test runbook
 
 End-to-end manual verification of the upstream Kubernetes Workload API

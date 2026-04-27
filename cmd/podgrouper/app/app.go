@@ -48,9 +48,6 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(v2.AddToScheme(scheme))
 	utilruntime.Must(kubeAiSchedulerV2alpha2.AddToScheme(scheme))
-	// Register the upstream Workload API so controller-runtime can decode
-	// Workload events. Registering the type is harmless when the cluster
-	// does not expose the API — the watch itself is gated by discovery.
 	utilruntime.Must(schedulingv1alpha1.AddToScheme(scheme))
 
 	// +kubebuilder:scaffold:scheme
@@ -172,13 +169,6 @@ func (app *App) Run() error {
 	return app.Mgr.Start(ctx)
 }
 
-// detectWorkloadAPI probes whether the upstream Kubernetes Workload API
-// (scheduling.k8s.io/v1alpha1, KEP-4671) is exposed by the cluster and
-// records the result on app.configs. The podgrouper then uses the manager's
-// cached client to read Workloads, sharing the same cache that drives the
-// controller's Workload watch — this keeps reconcile and lookup consistent
-// (a separate informer factory would race the watch and produce stale reads).
-// See docs/developer/designs/k8s-workload-api/README.md.
 func (app *App) detectWorkloadAPI() error {
 	cfg := app.Mgr.GetConfig()
 	discoveryClient, err := discovery.NewDiscoveryClientForConfig(cfg)

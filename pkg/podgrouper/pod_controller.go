@@ -59,11 +59,6 @@ type Configs struct {
 	DefaultConfigPerTypeConfigMapName      string
 	DefaultConfigPerTypeConfigMapNamespace string
 
-	// WorkloadAPIEnabled, when true, registers a field index on
-	// pod.spec.workloadRef.name, a secondary watch on
-	// scheduling.k8s.io/v1alpha1 Workloads, and enables Workload-derived
-	// podgroup metadata overrides. Should reflect cluster capability; see
-	// featuregates.IsWorkloadAPIEnabled.
 	WorkloadAPIEnabled bool
 }
 
