@@ -61,19 +61,21 @@ func DescribeReclaimElasticSpecs() bool {
 
 			reclaimeeJob1, _, pods1, err := rd.CreateDistributedBatchJob(ctx, testCtx.ControllerClient, reclaimeeQueue,
 				rd.DistributedBatchJobOptions{
-					Parallelism: ptr.To(int32(2)),
-					MinMember:   ptr.To(int32(1)),
-					NamePrefix:  "elastic-reclaimee-1-",
-					Resources:   reclaimeePodRequirements,
+					Parallelism:  ptr.To(int32(2)),
+					MinMember:    ptr.To(int32(1)),
+					BackoffLimit: ptr.To(int32(0)),
+					NamePrefix:   "elastic-reclaimee-1-",
+					Resources:    reclaimeePodRequirements,
 				})
 			Expect(err).To(Succeed())
 
 			reclaimeeJob2, _, pods2, err := rd.CreateDistributedBatchJob(ctx, testCtx.ControllerClient, reclaimeeQueue,
 				rd.DistributedBatchJobOptions{
-					Parallelism: ptr.To(int32(2)),
-					MinMember:   ptr.To(int32(1)),
-					NamePrefix:  "elastic-reclaimee-2-",
-					Resources:   reclaimeePodRequirements,
+					Parallelism:  ptr.To(int32(2)),
+					MinMember:    ptr.To(int32(1)),
+					BackoffLimit: ptr.To(int32(0)),
+					NamePrefix:   "elastic-reclaimee-2-",
+					Resources:    reclaimeePodRequirements,
 				})
 			Expect(err).To(Succeed())
 
@@ -124,10 +126,11 @@ func DescribeReclaimElasticSpecs() bool {
 			}
 			reclaimeeJob, _, reclaimeePods, err := rd.CreateDistributedBatchJob(ctx, testCtx.ControllerClient, reclaimeeQueue,
 				rd.DistributedBatchJobOptions{
-					Parallelism: ptr.To(int32(2)),
-					MinMember:   ptr.To(int32(1)),
-					NamePrefix:  "elastic-reclaimee-",
-					Resources:   reclaimeePodRequirements,
+					Parallelism:  ptr.To(int32(2)),
+					MinMember:    ptr.To(int32(1)),
+					BackoffLimit: ptr.To(int32(0)),
+					NamePrefix:   "elastic-reclaimee-",
+					Resources:    reclaimeePodRequirements,
 				})
 			Expect(err).To(Succeed())
 			wait.ForPodsScheduled(ctx, testCtx.ControllerClient, reclaimeeNamespace, reclaimeePods)

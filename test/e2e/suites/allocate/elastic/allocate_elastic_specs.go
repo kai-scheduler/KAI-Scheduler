@@ -146,4 +146,3 @@ func DescribeAllocateElasticSpecs() bool {
 		})
 	})
 }
-

@@ -65,10 +65,11 @@ var _ = Describe("Reclaim with Elastic Jobs", Ordered, func() {
 		}
 		reclaimeeJob, _, reclaimeePods, err := rd.CreateDistributedBatchJob(ctx, testCtx.ControllerClient, reclaimeeQueue,
 			rd.DistributedBatchJobOptions{
-				Parallelism: ptr.To(int32(2)),
-				MinMember:   ptr.To(int32(1)),
-				NamePrefix:  "elastic-reclaimee-",
-				Resources:   reclaimeePodRequirements,
+				Parallelism:  ptr.To(int32(2)),
+				MinMember:    ptr.To(int32(1)),
+				BackoffLimit: ptr.To(int32(0)),
+				NamePrefix:   "elastic-reclaimee-",
+				Resources:    reclaimeePodRequirements,
 			})
 		Expect(err).To(Succeed())
 		wait.ForPodsScheduled(ctx, testCtx.ControllerClient, reclaimeeNamespace, reclaimeePods)
@@ -110,10 +111,11 @@ var _ = Describe("Reclaim with Elastic Jobs", Ordered, func() {
 		}
 		reclaimeeJob, reclaimeePodGroup, reclaimeePods, err := rd.CreateDistributedBatchJob(ctx, testCtx.ControllerClient, reclaimeeQueue,
 			rd.DistributedBatchJobOptions{
-				Parallelism: ptr.To(int32(3)),
-				MinMember:   ptr.To(int32(1)),
-				NamePrefix:  "elastic-reclaimee-",
-				Resources:   reclaimeePodRequirements,
+				Parallelism:  ptr.To(int32(3)),
+				MinMember:    ptr.To(int32(1)),
+				BackoffLimit: ptr.To(int32(0)),
+				NamePrefix:   "elastic-reclaimee-",
+				Resources:    reclaimeePodRequirements,
 			})
 		Expect(err).To(Succeed())
 		Expect(testCtx.ControllerClient.Patch(
@@ -158,10 +160,11 @@ var _ = Describe("Reclaim with Elastic Jobs", Ordered, func() {
 		}
 		reclaimeeJob, _, reclaimeePods, err := rd.CreateDistributedBatchJob(ctx, testCtx.ControllerClient, reclaimeeQueue,
 			rd.DistributedBatchJobOptions{
-				Parallelism: ptr.To(int32(3)),
-				MinMember:   ptr.To(int32(1)),
-				NamePrefix:  "elastic-reclaimee-",
-				Resources:   reclaimeePodRequirements,
+				Parallelism:  ptr.To(int32(3)),
+				MinMember:    ptr.To(int32(1)),
+				BackoffLimit: ptr.To(int32(0)),
+				NamePrefix:   "elastic-reclaimee-",
+				Resources:    reclaimeePodRequirements,
 			})
 		Expect(err).To(Succeed())
 		wait.ForPodsScheduled(ctx, testCtx.ControllerClient, reclaimeeNamespace, reclaimeePods)
