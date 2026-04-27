@@ -6,6 +6,7 @@ package workload
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -15,6 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -360,4 +362,57 @@ func TestApplyOverride_UnknownPreemptibility_FallsBack(t *testing.T) {
 	got, err := ApplyOverride(context.Background(), base, newPod("p", &corev1.WorkloadReference{Name: "w", PodGroup: "g"}), nil, lister)
 	require.NoError(t, err)
 	assert.Equal(t, base.Preemptibility, got.Preemptibility)
+}
+
+// Workload.metadata.name is a DNS subdomain (253), workloadRef.podGroup and
+// podGroupReplicaKey are DNS labels (63 each). Worst-case naive concatenation
+// produces 253+1+63+1+63 = 381 chars, which would be rejected by the apiserver
+// when used as the synthesized KAI PodGroup CR's metadata.name. The synthesizer
+// must keep its output a valid DNS-1123 subdomain.
+
+func TestBuildPodGroupName_ShortInputs_NoTruncation(t *testing.T) {
+	gang := schedulingv1alpha1.PodGroupPolicy{Gang: &schedulingv1alpha1.GangSchedulingPolicy{MinCount: 2}}
+	basic := schedulingv1alpha1.PodGroupPolicy{Basic: &schedulingv1alpha1.BasicSchedulingPolicy{}}
+
+	assert.Equal(t, "wl-pg", generatePodGroupName("wl", "pg", "", basic))
+	assert.Equal(t, "wl-pg", generatePodGroupName("wl", "pg", "", gang))
+	assert.Equal(t, "wl-pg-r0", generatePodGroupName("wl", "pg", "r0", gang))
+	assert.Equal(t, "wl-pg", generatePodGroupName("wl", "pg", "r0", basic))
+}
+
+func TestBuildPodGroupName_OverflowingInputs_TruncatedAndDNSValid(t *testing.T) {
+	longWorkload := strings.Repeat("a", 253)
+	pg := strings.Repeat("b", 63)
+	rk := strings.Repeat("c", 63)
+	gang := schedulingv1alpha1.PodGroupPolicy{Gang: &schedulingv1alpha1.GangSchedulingPolicy{MinCount: 2}}
+
+	got := generatePodGroupName(longWorkload, pg, rk, gang)
+
+	assert.LessOrEqual(t, len(got), validation.DNS1123SubdomainMaxLength,
+		"synthesized name must fit a DNS subdomain (253)")
+	assert.Empty(t, validation.IsDNS1123Subdomain(got),
+		"synthesized name %q must be a valid DNS-1123 subdomain", got)
+}
+
+func TestBuildPodGroupName_DistinctOverflowingInputs_DistinctOutputs(t *testing.T) {
+	prefix := strings.Repeat("a", 253)
+	gang := schedulingv1alpha1.PodGroupPolicy{Gang: &schedulingv1alpha1.GangSchedulingPolicy{MinCount: 2}}
+
+	a := generatePodGroupName(prefix, "alpha", "r0", gang)
+	b := generatePodGroupName(prefix, "alpha", "r1", gang)
+	c := generatePodGroupName(prefix, "beta", "r0", gang)
+
+	assert.NotEqual(t, a, b, "different replicaKeys must produce different names")
+	assert.NotEqual(t, a, c, "different podGroups must produce different names")
+	assert.NotEqual(t, b, c)
+}
+
+func TestBuildPodGroupName_DeterministicAcrossCalls(t *testing.T) {
+	longWorkload := strings.Repeat("a", 253)
+	gang := schedulingv1alpha1.PodGroupPolicy{Gang: &schedulingv1alpha1.GangSchedulingPolicy{MinCount: 2}}
+
+	first := generatePodGroupName(longWorkload, "pg", "r0", gang)
+	for range 5 {
+		assert.Equal(t, first, generatePodGroupName(longWorkload, "pg", "r0", gang))
+	}
 }

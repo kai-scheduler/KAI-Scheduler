@@ -10,15 +10,19 @@ package workload
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"maps"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	schedulingv1alpha1 "k8s.io/api/scheduling/v1alpha1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
@@ -86,10 +90,10 @@ func ApplyOverride(
 	}
 
 	merged := base.DeepCopy()
-	merged.Name = buildPodGroupName(ref.Name, ref.PodGroup, ref.PodGroupReplicaKey, wlPodGroup.Policy)
-	merged.MinAvailable = minAvailableFromPolicy(wlPodGroup.Policy)
-	// SubGroups are owned by the Workload dispatch and ignored until the
-	// upstream API grows sub-group support (design section 3, "SubGroups: None").
+	merged.Name = generatePodGroupName(ref.Name, ref.PodGroup, ref.PodGroupReplicaKey, wlPodGroup.Policy)
+	merged.MinAvailable = generateMinAvailable(wlPodGroup.Policy)
+	// SubGroups are owned by the Workload dispatch and ignored until
+	// the upstream API grows sub-group support
 	merged.SubGroups = nil
 
 	merged.Labels = mergeStrings(base.Labels, wl.Labels)
@@ -145,16 +149,38 @@ func findWorkloadPodGroup(wl *schedulingv1alpha1.Workload, name string) (schedul
 	return schedulingv1alpha1.PodGroup{}, false
 }
 
-// Workload names and podGroup names are both DNS labels (apiserver-validated),
-// so concatenation cannot exceed Kubernetes name limits in practice.
-func buildPodGroupName(workload, podGroup, replicaKey string, policy schedulingv1alpha1.PodGroupPolicy) string {
+// The KAI PodGroup CR's metadata.name must be a DNS-1123 subdomain (≤253).
+// Upstream constrains the inputs as: Workload.metadata.name is a DNS subdomain
+// (253), Pod.spec.workloadRef.podGroup and podGroupReplicaKey are DNS labels
+// (63 each). Worst-case naive concatenation reaches 253+1+63+1+63 = 381, so
+// the synthesized name is hash-truncated when it overflows. The hash suffix
+// disambiguates inputs that share the truncated prefix.
+func generatePodGroupName(workload, podGroup, replicaKey string, policy schedulingv1alpha1.PodGroupPolicy) string {
+	full := fmt.Sprintf("%s-%s", workload, podGroup)
 	if policy.Gang != nil && replicaKey != "" {
-		return fmt.Sprintf("%s-%s-%s", workload, podGroup, replicaKey)
+		full = fmt.Sprintf("%s-%s-%s", workload, podGroup, replicaKey)
 	}
-	return fmt.Sprintf("%s-%s", workload, podGroup)
+	if len(full) <= validation.DNS1123SubdomainMaxLength {
+		return full
+	}
+	return truncateWithHash(full, validation.DNS1123SubdomainMaxLength)
 }
 
-func minAvailableFromPolicy(policy schedulingv1alpha1.PodGroupPolicy) int32 {
+// GuyTodo: Move to utils package
+// truncateWithHash shrinks name to fit max chars by appending a deterministic
+// SHA-256 suffix. The trimmed prefix is stripped of trailing '-' / '.' so the
+// result remains a valid DNS-1123 subdomain. 40-bit hash gives ~2^20 birthday
+// resistance among inputs that share the truncation prefix — overkill for the
+// (Workload, podGroup, replicaKey) cardinality this naming serves.
+func truncateWithHash(name string, max int) string {
+	const hashLen = 10
+	sum := sha256.Sum256([]byte(name))
+	suffix := "-" + hex.EncodeToString(sum[:])[:hashLen]
+	prefix := strings.TrimRight(name[:max-len(suffix)], "-.")
+	return prefix + suffix
+}
+
+func generateMinAvailable(policy schedulingv1alpha1.PodGroupPolicy) int32 {
 	if policy.Gang != nil {
 		return policy.Gang.MinCount
 	}
@@ -163,6 +189,7 @@ func minAvailableFromPolicy(policy schedulingv1alpha1.PodGroupPolicy) int32 {
 	return 1
 }
 
+// GuyTodo: Move to utils package or use lo.Something
 func mergeStrings(base, overlay map[string]string) map[string]string {
 	if len(base) == 0 && len(overlay) == 0 {
 		return nil
