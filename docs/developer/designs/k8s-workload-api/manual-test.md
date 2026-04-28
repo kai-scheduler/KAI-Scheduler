@@ -270,6 +270,148 @@ kubectl -n wl-demo get pod optout -o jsonpath='{.metadata.annotations.pod-group-
 # expect: pg-optout-<uid>, NOT my-training-workers
 ```
 
+#### Test 8 — Top owner + Workload, override wins on collision
+
+A `batch/v1.Job` is the top owner (built-in, no operator install needed).
+PyTorchJob, MPIJob, and any other top-owner plugin behave identically — the
+Workload override is post-dispatch, so it layers on top of whatever base
+metadata the top-owner plugin produced.
+
+The Job sets `kai.scheduler/queue=demo` and would normally drive a
+`pg-{job}-{uid}` PodGroup with `MinMember=1`. The Workload overrides queue,
+name, and `MinMember` simultaneously.
+
+Setup the second Queue first (Workload routes here, Job routes to `demo`):
+
+```bash
+cat <<'EOF' | kubectl apply -f -
+apiVersion: scheduling.run.ai/v2
+kind: Queue
+metadata: {name: ml-training}
+spec:
+  parentQueue: default-parent-queue
+  resources:
+    cpu:    {quota: 4000, limit: 8000, overQuotaWeight: 1}
+    memory: {quota: 4096, limit: 8192, overQuotaWeight: 1}
+    gpu:    {quota: 0,    limit: -1,   overQuotaWeight: 1}
+EOF
+```
+
+Now create the Workload + Job:
+
+```bash
+cat <<'EOF' | kubectl apply -f -
+apiVersion: scheduling.k8s.io/v1alpha1
+kind: Workload
+metadata:
+  namespace: wl-demo
+  name: cross-training
+  labels: {kai.scheduler/queue: ml-training}
+spec:
+  podGroups:
+  - name: workers
+    policy: {gang: {minCount: 2}}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  namespace: wl-demo
+  name: trainer
+  labels: {kai.scheduler/queue: demo}
+spec:
+  parallelism: 2
+  completions: 2
+  template:
+    metadata:
+      labels: {kai.scheduler/queue: demo}
+    spec:
+      schedulerName: kai-scheduler
+      restartPolicy: Never
+      workloadRef:
+        name: cross-training
+        podGroup: workers
+        podGroupReplicaKey: "0"
+      containers:
+      - {name: c, image: busybox, command: ["sleep","3600"], resources: {requests: {cpu: 100m}}}
+EOF
+```
+
+Verify the Workload-derived metadata wins, but ownership stays with the Job:
+
+```bash
+# Name comes from the Workload, NOT pg-trainer-<uid>.
+kubectl -n wl-demo get podgroups.scheduling.run.ai
+# expect: cross-training-workers-0  with MinMember=2
+
+# Queue is the Workload's, not the Job's.
+kubectl -n wl-demo get podgroup cross-training-workers-0 -o jsonpath='{.spec.queue}{"\n"}'
+# expect: ml-training
+
+# MinMember is the Workload's gang.minCount, not the Job plugin's default of 1.
+kubectl -n wl-demo get podgroup cross-training-workers-0 -o jsonpath='{.spec.minMember}{"\n"}'
+# expect: 2
+
+# Ownership stays with the top owner (the Job), not the Workload.
+kubectl -n wl-demo get podgroup cross-training-workers-0 -o jsonpath='{.metadata.ownerReferences[0].kind}/{.metadata.ownerReferences[0].name}{"\n"}'
+# expect: Job/trainer
+```
+
+#### Test 9 — Top owner + Workload, base metadata falls through
+
+When the Workload doesn't carry a key, the override is a no-op for that
+field — the base metadata produced by the top-owner plugin survives. Here
+the Job sets `priorityClassName=build` and the Workload sets neither
+priority nor queue, so the PodGroup ends up with `build` (from the Job)
+but its name still comes from the Workload.
+
+```bash
+cat <<'EOF' | kubectl apply -f -
+apiVersion: scheduling.k8s.io/v1alpha1
+kind: Workload
+metadata: {namespace: wl-demo, name: trainer-fallthrough}
+spec:
+  podGroups:
+  - name: workers
+    policy: {gang: {minCount: 1}}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  namespace: wl-demo
+  name: trainer-ft
+  labels:
+    kai.scheduler/queue: demo
+    priorityClassName: build
+spec:
+  parallelism: 1
+  completions: 1
+  template:
+    metadata:
+      labels:
+        kai.scheduler/queue: demo
+        priorityClassName: build
+    spec:
+      schedulerName: kai-scheduler
+      restartPolicy: Never
+      workloadRef: {name: trainer-fallthrough, podGroup: workers, podGroupReplicaKey: "0"}
+      containers:
+      - {name: c, image: busybox, command: ["sleep","3600"], resources: {requests: {cpu: 100m}}}
+EOF
+```
+
+Verify:
+
+```bash
+# Name comes from the Workload (override path), but...
+kubectl -n wl-demo get podgroup trainer-fallthrough-workers-0 -o jsonpath='{.metadata.name}{"\n"}'
+# expect: trainer-fallthrough-workers-0
+
+# ...priorityClassName falls through from the Job's label since the Workload
+# carries no priorityClassName label.
+kubectl -n wl-demo get podgroup trainer-fallthrough-workers-0 -o jsonpath='{.spec.priorityClassName}{"\n"}'
+# expect: build
+```
+
 ## Cleanup
 
 ```bash
@@ -288,3 +430,5 @@ kind delete cluster --name e2e-kai-scheduler # tears it down
 | 5    | §4 deletion contract | integration |
 | 6    | §4 instant recovery | e2e |
 | 7    | §5 opt-out | unit + integration + e2e |
+| 8    | §3 override precedence (Workload wins) on a real top owner | unit + integration |
+| 9    | §3 fallback chain (Workload absent → base survives) on a real top owner | unit + integration |
