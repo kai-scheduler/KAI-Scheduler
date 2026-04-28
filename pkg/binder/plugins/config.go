@@ -24,13 +24,7 @@ const (
 	DefaultCDIEnabled         = kaiv1binder.DefaultCDIEnabled
 )
 
-type PluginConfig struct {
-	Enabled   *bool             `json:"enabled,omitempty"`
-	Priority  *int              `json:"priority,omitempty"`
-	Arguments map[string]string `json:"arguments,omitempty"`
-}
-
-type Config map[string]PluginConfig
+type Config map[string]kaiv1binder.PluginConfig
 
 type PluginOption struct {
 	Name      string
@@ -44,7 +38,7 @@ func DefaultConfig(volumeBindingTimeoutSeconds int, cdiEnabled bool) Config {
 func FromAPIConfig(config map[string]kaiv1binder.PluginConfig) Config {
 	result := make(Config, len(config))
 	for name, pluginConfig := range config {
-		pc := PluginConfig{}
+		pc := kaiv1binder.PluginConfig{}
 		if pluginConfig.Enabled != nil {
 			pc.Enabled = ptr.To(*pluginConfig.Enabled)
 		}
@@ -62,7 +56,7 @@ func ResolveConfig(defaults, overrides Config) Config {
 	for name, override := range overrides {
 		existing, found := resolved[name]
 		if !found {
-			existing = PluginConfig{
+			existing = kaiv1binder.PluginConfig{
 				Enabled:   ptr.To(true),
 				Priority:  ptr.To(0),
 				Arguments: map[string]string{},
@@ -123,7 +117,7 @@ func (c Config) deepCopy() Config {
 	return result
 }
 
-func priority(config PluginConfig) int {
+func priority(config kaiv1binder.PluginConfig) int {
 	if config.Priority == nil {
 		return 0
 	}
