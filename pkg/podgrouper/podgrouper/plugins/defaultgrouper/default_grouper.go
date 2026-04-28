@@ -11,7 +11,6 @@ import (
 
 	"golang.org/x/exp/maps"
 	v1 "k8s.io/api/core/v1"
-	schedulingv1 "k8s.io/api/scheduling/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -22,6 +21,7 @@ import (
 	commonconsts "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/common"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/topowner"
 )
@@ -284,17 +284,7 @@ func (dg *DefaultGrouper) calcPodGroupPriorityClass(owner *metav1.PartialObjectM
 }
 
 func (dg *DefaultGrouper) validatePriorityClassExists(priorityClassName string) bool {
-	if priorityClassName == "" || dg.kubeReader == nil {
-		return false
-	}
-
-	priorityClass := &schedulingv1.PriorityClass{}
-	err := dg.kubeReader.Get(context.Background(), client.ObjectKey{Name: priorityClassName}, priorityClass)
-	if err != nil {
-		logger.V(1).Info("Failed to get priority class", "priorityClassName", priorityClassName, "error", err.Error())
-		return false
-	}
-	return true
+	return common.PriorityClassExists(context.Background(), dg.kubeReader, priorityClassName)
 }
 
 // getDefaultPriorityClassNameForKind - returns the default priority class name for a given group kind

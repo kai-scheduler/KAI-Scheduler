@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	schedulingv1 "k8s.io/api/scheduling/v1"
 	schedulingv1alpha1 "k8s.io/api/scheduling/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -51,16 +52,15 @@ func newPod(name string, ref *corev1.WorkloadReference) *corev1.Pod {
 }
 
 // buildReaderWith builds a controller-runtime fake client.Reader seeded
-// with the given Workloads — the same shape ApplyOverride consumes in
-// production (the manager's cached client).
-func buildReaderWith(t *testing.T, workloads ...*schedulingv1alpha1.Workload) (client.Reader, func()) {
+// with the given objects — the same shape ApplyOverride consumes in
+// production (the manager's cached client). Accepts any client.Object so
+// tests can mix Workloads with PriorityClasses (or other kinds the override
+// path resolves) without needing a separate helper per kind.
+func buildReaderWith(t *testing.T, objs ...client.Object) (client.Reader, func()) {
 	t.Helper()
 	scheme := runtime.NewScheme()
 	require.NoError(t, schedulingv1alpha1.AddToScheme(scheme))
-	objs := make([]client.Object, 0, len(workloads))
-	for _, w := range workloads {
-		objs = append(objs, w)
-	}
+	require.NoError(t, schedulingv1.AddToScheme(scheme))
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
 	return c, func() {}
 }
@@ -192,7 +192,8 @@ func TestApplyOverride_OverridesScheduling(t *testing.T) {
 			}},
 		},
 	}
-	lister, stop := buildReaderWith(t, wl)
+	buildPC := &schedulingv1.PriorityClass{ObjectMeta: metav1.ObjectMeta{Name: "build"}}
+	lister, stop := buildReaderWith(t, wl, buildPC)
 	defer stop()
 
 	got, err := ApplyOverride(context.Background(), baseMetadata(), newPod("p", &corev1.WorkloadReference{Name: "w", PodGroup: "g"}), nil, lister)
@@ -362,6 +363,60 @@ func TestApplyOverride_UnknownPreemptibility_FallsBack(t *testing.T) {
 	got, err := ApplyOverride(context.Background(), base, newPod("p", &corev1.WorkloadReference{Name: "w", PodGroup: "g"}), nil, lister)
 	require.NoError(t, err)
 	assert.Equal(t, base.Preemptibility, got.Preemptibility)
+}
+
+// A Workload may declare a priorityClassName label that doesn't resolve to a
+// real PriorityClass on the cluster. In that case ApplyOverride must fall
+// back to base.PriorityClassName (already validated/defaulted by the
+// top-owner plugin) rather than propagating the unknown name into the
+// resulting PodGroup spec — see docs/developer/designs/k8s-workload-api
+// "Workload -> Top Owner -> Pod" precedence.
+func TestApplyOverride_InvalidPriorityClass_KeepsBase(t *testing.T) {
+	wl := &schedulingv1alpha1.Workload{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testNamespace, Name: "w",
+			Labels: map[string]string{"priorityClassName": "ghost-priority"},
+		},
+		Spec: schedulingv1alpha1.WorkloadSpec{
+			PodGroups: []schedulingv1alpha1.PodGroup{{
+				Name:   "g",
+				Policy: schedulingv1alpha1.PodGroupPolicy{Basic: &schedulingv1alpha1.BasicSchedulingPolicy{}},
+			}},
+		},
+	}
+	lister, stop := buildReaderWith(t, wl)
+	defer stop()
+
+	base := baseMetadata()
+	got, err := ApplyOverride(context.Background(), base, newPod("p", &corev1.WorkloadReference{Name: "w", PodGroup: "g"}), nil, lister)
+	require.NoError(t, err)
+	assert.Equal(t, base.PriorityClassName, got.PriorityClassName,
+		"unknown PriorityClass on Workload must not override the validated base value")
+}
+
+// Counterpart to TestApplyOverride_InvalidPriorityClass_KeepsBase: when the
+// priority class referenced by the Workload label exists, the override does
+// take effect.
+func TestApplyOverride_ValidPriorityClass_OverridesBase(t *testing.T) {
+	wl := &schedulingv1alpha1.Workload{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testNamespace, Name: "w",
+			Labels: map[string]string{"priorityClassName": "ghost-priority"},
+		},
+		Spec: schedulingv1alpha1.WorkloadSpec{
+			PodGroups: []schedulingv1alpha1.PodGroup{{
+				Name:   "g",
+				Policy: schedulingv1alpha1.PodGroupPolicy{Basic: &schedulingv1alpha1.BasicSchedulingPolicy{}},
+			}},
+		},
+	}
+	pc := &schedulingv1.PriorityClass{ObjectMeta: metav1.ObjectMeta{Name: "ghost-priority"}}
+	lister, stop := buildReaderWith(t, wl, pc)
+	defer stop()
+
+	got, err := ApplyOverride(context.Background(), baseMetadata(), newPod("p", &corev1.WorkloadReference{Name: "w", PodGroup: "g"}), nil, lister)
+	require.NoError(t, err)
+	assert.Equal(t, "ghost-priority", got.PriorityClassName)
 }
 
 // Workload.metadata.name is a DNS subdomain (253), workloadRef.podGroup and

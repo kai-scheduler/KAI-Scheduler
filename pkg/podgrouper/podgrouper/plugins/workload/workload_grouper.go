@@ -24,10 +24,12 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/common"
 	pgconstants "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
 )
 
@@ -108,12 +110,29 @@ func ApplyOverride(
 	if v, ok := wl.Labels[commonconstants.DefaultQueueLabel]; ok && v != "" {
 		merged.Queue = v
 	}
+
 	if v, ok := wl.Labels[pgconstants.PriorityLabelKey]; ok && v != "" {
-		merged.PriorityClassName = v
+		if common.PriorityClassExists(ctx, reader, v) {
+			merged.PriorityClassName = v
+		} else {
+			log.FromContext(ctx).V(1).Info(
+				"Workload priorityClassName label references unknown PriorityClass; keeping base value",
+				"workload", fmt.Sprintf("%s/%s", wl.Namespace, wl.Name),
+				"priorityClassName", v,
+				"baseValue", base.PriorityClassName,
+			)
+		}
 	}
 	if v, ok := wl.Labels[pgconstants.PreemptibilityLabelKey]; ok && v != "" {
 		if preemptibility, err := v2alpha2.ParsePreemptibility(v); err == nil {
 			merged.Preemptibility = preemptibility
+		} else {
+			log.FromContext(ctx).V(1).Info(
+				"Workload preemptibility label is invalid; keeping base value",
+				"workload", fmt.Sprintf("%s/%s", wl.Namespace, wl.Name),
+				"preemptibility", v,
+				"error", err.Error(),
+			)
 		}
 	}
 	if v, ok := wl.Annotations[pgconstants.TopologyKey]; ok && v != "" {

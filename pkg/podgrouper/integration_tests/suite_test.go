@@ -12,7 +12,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	schedulingv1 "k8s.io/api/scheduling/v1"
 	schedulingv1alpha1 "k8s.io/api/scheduling/v1alpha1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -147,6 +149,18 @@ var _ = BeforeSuite(func() {
 		list.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("PodList"))
 		return k8sManager.GetClient().List(testCtx, list)
 	}, 10*time.Second, 100*time.Millisecond).Should(Succeed())
+
+	// The Workload override now validates priorityClassName labels against
+	// existing PriorityClass objects (matching the DefaultGrouper contract).
+	// The KAI-standard classes are created by Helm in production; envtest
+	// starts with none, so seed the three classes the integration specs
+	// reference (build / train / inference) here.
+	for _, name := range []string{"build", "train", "inference"} {
+		Expect(k8sClient.Create(testCtx, &schedulingv1.PriorityClass{
+			ObjectMeta: metav1.ObjectMeta{Name: name},
+			Value:      50,
+		})).To(Succeed())
+	}
 })
 
 var _ = AfterSuite(func() {
