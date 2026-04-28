@@ -145,8 +145,6 @@ func (app *App) Run() error {
 		pluginsHub = app.DefaultPluginsHub
 	}
 
-	ctx := ctrl.SetupSignalHandler()
-
 	if err := app.detectWorkloadAPI(); err != nil {
 		return fmt.Errorf("failed to detect Workload API: %w", err)
 	}
@@ -167,7 +165,7 @@ func (app *App) Run() error {
 	}
 
 	setupLog.Info("starting manager")
-	return app.Mgr.Start(ctx)
+	return app.Mgr.Start(ctrl.SetupSignalHandler())
 }
 
 func (app *App) detectWorkloadAPI() error {

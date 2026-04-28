@@ -108,11 +108,6 @@ func (pg *podGrouper) GetPGMetadata(ctx context.Context, pod *v1.Pod, topOwner *
 		}
 		return nil, err
 	}
-	if merged != base {
-		logger.V(1).Info("Workload API override applied",
-			"pod", fmt.Sprintf("%s/%s", pod.Namespace, pod.Name),
-			"workload", pod.Spec.WorkloadRef)
-	}
 
 	return merged, nil
 }

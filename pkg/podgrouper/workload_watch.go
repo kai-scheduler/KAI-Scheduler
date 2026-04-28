@@ -18,10 +18,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
-const WorkloadRefIndex = "spec.workloadRef.name"
+const workloadRefIndex = "spec.workloadRef.name"
 
 func registerWorkloadWatch(mgr ctrl.Manager, b *builder.Builder) error {
-	err := mgr.GetFieldIndexer().IndexField(context.Background(), &corev1.Pod{}, WorkloadRefIndex, podsByWorkloadRef)
+	err := mgr.GetFieldIndexer().IndexField(context.Background(), &corev1.Pod{}, workloadRefIndex, podsByWorkloadRef)
 	if err != nil {
 		return fmt.Errorf("failed to index pods by workload ref name: %w", err)
 	}
@@ -54,7 +54,7 @@ func workloadToPodRequests(c client.Client) handler.MapFunc {
 		pods := &corev1.PodList{}
 		if err := c.List(ctx, pods,
 			client.InNamespace(wl.Namespace),
-			client.MatchingFields{WorkloadRefIndex: wl.Name},
+			client.MatchingFields{workloadRefIndex: wl.Name},
 		); err != nil {
 			logger.V(1).Error(err, "failed to list pods referencing Workload",
 				"workload", fmt.Sprintf("%s/%s", wl.Namespace, wl.Name))

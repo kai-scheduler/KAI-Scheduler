@@ -184,9 +184,7 @@ func generatePodGroupName(workload, podGroup, replicaKey string, policy scheduli
 
 // truncateWithHash shrinks name to fit max chars by appending a deterministic
 // SHA-256 suffix. The trimmed prefix is stripped of trailing '-' / '.' so the
-// result remains a valid DNS-1123 subdomain. 40-bit hash gives ~2^20 birthday
-// resistance among inputs that share the truncation prefix — overkill for the
-// (Workload, podGroup, replicaKey) cardinality this naming serves.
+// result remains a valid DNS-1123 subdomain.
 func truncateWithHash(name string, max int) string {
 	const hashLen = 10
 	sum := sha256.Sum256([]byte(name))
