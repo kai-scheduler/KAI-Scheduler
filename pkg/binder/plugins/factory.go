@@ -22,7 +22,7 @@ type PluginBuildContext struct {
 	InformerFactory informers.SharedInformerFactory
 }
 
-type PluginBuilder func(PluginBuildContext, PluginArguments) (Plugin, error)
+type PluginBuilder func(PluginBuildContext, map[string]string) (Plugin, error)
 
 var (
 	pluginBuildersMutex sync.Mutex
@@ -67,7 +67,7 @@ func BuildConfiguredPlugins(buildContext PluginBuildContext, config Config) (*Bi
 	return binderPlugins, nil
 }
 
-func newVolumeBindingPlugin(buildContext PluginBuildContext, arguments PluginArguments) (Plugin, error) {
+func newVolumeBindingPlugin(buildContext PluginBuildContext, arguments map[string]string) (Plugin, error) {
 	timeoutSeconds, err := int64Argument(arguments, BindTimeoutSecondsArgument)
 	if err != nil {
 		return nil, err
@@ -80,7 +80,7 @@ func newVolumeBindingPlugin(buildContext PluginBuildContext, arguments PluginArg
 	return k8splugins.NewWithPlugins(VolumeBindingPluginName, plugin), nil
 }
 
-func newDynamicResourcesPlugin(buildContext PluginBuildContext, arguments PluginArguments) (Plugin, error) {
+func newDynamicResourcesPlugin(buildContext PluginBuildContext, arguments map[string]string) (Plugin, error) {
 	timeoutSeconds, err := int64Argument(arguments, BindTimeoutSecondsArgument)
 	if err != nil {
 		return nil, err
@@ -93,7 +93,7 @@ func newDynamicResourcesPlugin(buildContext PluginBuildContext, arguments Plugin
 	return k8splugins.NewWithPlugins(DynamicResourcesPluginName, plugin), nil
 }
 
-func newGPUSharingPlugin(buildContext PluginBuildContext, arguments PluginArguments) (Plugin, error) {
+func newGPUSharingPlugin(buildContext PluginBuildContext, arguments map[string]string) (Plugin, error) {
 	cdiEnabled, err := boolArgument(arguments, CDIEnabledArgument)
 	if err != nil {
 		return nil, err
@@ -101,7 +101,7 @@ func newGPUSharingPlugin(buildContext PluginBuildContext, arguments PluginArgume
 	return gpusharing.New(buildContext.KubeClient, cdiEnabled), nil
 }
 
-func int64Argument(arguments PluginArguments, name string) (int64, error) {
+func int64Argument(arguments map[string]string, name string) (int64, error) {
 	value, found := arguments[name]
 	if !found {
 		return 0, fmt.Errorf("missing argument %q", name)
@@ -113,7 +113,7 @@ func int64Argument(arguments PluginArguments, name string) (int64, error) {
 	return parsed, nil
 }
 
-func boolArgument(arguments PluginArguments, name string) (bool, error) {
+func boolArgument(arguments map[string]string, name string) (bool, error) {
 	value, found := arguments[name]
 	if !found {
 		return false, fmt.Errorf("missing argument %q", name)

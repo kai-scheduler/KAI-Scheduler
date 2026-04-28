@@ -24,8 +24,6 @@ const (
 	DefaultCDIEnabled         = kaiv1binder.DefaultCDIEnabled
 )
 
-type PluginArguments map[string]string
-
 type PluginConfig struct {
 	Enabled   *bool             `json:"enabled,omitempty"`
 	Priority  *int              `json:"priority,omitempty"`
@@ -36,7 +34,7 @@ type Config map[string]PluginConfig
 
 type PluginOption struct {
 	Name      string
-	Arguments PluginArguments
+	Arguments map[string]string
 }
 
 func DefaultConfig(volumeBindingTimeoutSeconds int, cdiEnabled bool) Config {
@@ -93,7 +91,7 @@ func (c Config) EnabledOptions() []PluginOption {
 		}
 		options = append(options, PluginOption{
 			Name:      name,
-			Arguments: PluginArguments(copyArguments(config.Arguments)),
+			Arguments: copyArguments(config.Arguments),
 		})
 	}
 

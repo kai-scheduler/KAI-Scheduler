@@ -78,7 +78,7 @@ func TestResolveConfig(t *testing.T) {
 
 func TestBuildConfiguredPlugins(t *testing.T) {
 	const fakePluginName = "fake-test-plugin"
-	RegisterPluginBuilder(fakePluginName, func(PluginBuildContext, PluginArguments) (Plugin, error) {
+	RegisterPluginBuilder(fakePluginName, func(PluginBuildContext, map[string]string) (Plugin, error) {
 		return &fakePlugin{name: fakePluginName}, nil
 	})
 
@@ -108,13 +108,13 @@ func TestBuildConfiguredPluginsReturnsUnknownPluginError(t *testing.T) {
 }
 
 func TestArgumentParsers(t *testing.T) {
-	if _, err := int64Argument(PluginArguments{}, BindTimeoutSecondsArgument); err == nil {
+	if _, err := int64Argument(map[string]string{}, BindTimeoutSecondsArgument); err == nil {
 		t.Fatalf("expected missing int argument error")
 	}
-	if _, err := int64Argument(PluginArguments{BindTimeoutSecondsArgument: "bad"}, BindTimeoutSecondsArgument); err == nil {
+	if _, err := int64Argument(map[string]string{BindTimeoutSecondsArgument: "bad"}, BindTimeoutSecondsArgument); err == nil {
 		t.Fatalf("expected invalid int argument error")
 	}
-	if _, err := boolArgument(PluginArguments{CDIEnabledArgument: "bad"}, CDIEnabledArgument); err == nil {
+	if _, err := boolArgument(map[string]string{CDIEnabledArgument: "bad"}, CDIEnabledArgument); err == nil {
 		t.Fatalf("expected invalid bool argument error")
 	}
 }
