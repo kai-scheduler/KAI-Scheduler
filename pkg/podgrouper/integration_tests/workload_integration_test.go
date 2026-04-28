@@ -97,16 +97,6 @@ var _ = Describe("Workload API translation", func() {
 		Expect(kerrors.IsNotFound(err)).To(BeTrue(), fmt.Sprintf("expected NotFound, got %v", err))
 	})
 
-	// "Recovery on missing-then-present Workload" is intentionally NOT
-	// covered here. controller-runtime's manager-cached client uses a
-	// lazily-started unstructured informer for `getTopOwnerInstance`, which
-	// races with the test-side pod creation in envtest and produces
-	// transient `Pod not found` errors that swamp the 30s deadline. The
-	// behaviour is exercised end-to-end by test/e2e/suites/workload, which
-	// runs against a real apiserver where the cache stays warm. Soft-failure
-	// classification (ErrWorkloadNotFound) is unit-tested in the workload
-	// plugin package.
-
 	It("propagates a kai.scheduler/queue label from the Workload onto the KAI PodGroup", func(ctx context.Context) {
 		const wlQueue = "ml-training"
 		wl := &schedulingv1alpha1.Workload{
@@ -137,14 +127,6 @@ var _ = Describe("Workload API translation", func() {
 	})
 
 	It("does not propagate Workload kai.scheduler/queue label changes to the existing PodGroup", func(ctx context.Context) {
-		// Design contract (docs/developer/designs/k8s-workload-api/README.md,
-		// "Workload mutation"): Spec.Queue is owned by the queue-assigner and
-		// is intentionally not overwritten on update. ApplyOverride still
-		// emits the Workload-derived Queue every reconcile, but
-		// PodGroupHandler.ApplyToCluster's ignoreFields preserves the
-		// existing Spec.Queue on update — the integration of the two is what
-		// this test pins. Removing the guard in ignoreFields silently
-		// breaks the contract; this test catches that regression.
 		const initialQueue = "ml-training"
 		const updatedQueue = "ml-batch"
 		wl := &schedulingv1alpha1.Workload{
