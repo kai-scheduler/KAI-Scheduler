@@ -34,5 +34,7 @@ jobs:
           fi
 
           pip3 install -U dco-check
-          dco-check --verbose --exclude-pattern "dependabot\[bot\]@users\.noreply\.github.com"
+          dco-check --verbose \
+            --exclude-pattern "dependabot\[bot\]@users\.noreply\.github\.com" \
+            --exclude-pattern ".*github-actions\[bot\]@users\.noreply\.github\.com"
 
