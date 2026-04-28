@@ -9,23 +9,24 @@ import (
 	"sync"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	ksf "k8s.io/kube-scheduler/framework"
+	"k8s.io/kubernetes/pkg/features"
 	k8splfeature "k8s.io/kubernetes/pkg/scheduler/framework/plugins/feature"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	featuregates "github.com/kai-scheduler/KAI-scheduler/pkg/common/feature_gates"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/k8s_utils"
-
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/k8s-plugins/common"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/k8s-plugins/dynamicresources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/k8s-plugins/volumebinding"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/state"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/k8s_utils"
 )
 
 type K8sPlugins struct {
+	name    string
 	plugins []common.K8sPlugin
 	states  sync.Map // underlying type is map[types.UID]*PodState
 }
@@ -41,31 +42,66 @@ func New(
 	timeoutSeconds int64,
 ) (*K8sPlugins, error) {
 	var k8sPlugins []common.K8sPlugin
-	k8sFramework := k8s_utils.NewFrameworkHandle(client, informerFactory, nil)
-	k8sFeatures := k8splfeature.Features{
-		EnableDynamicResourceAllocation: featuregates.DynamicResourcesEnabled(),
-	}
-
-	logger := log.Log.WithName("binder-plugins")
-	logger.Info("Feature flags", "features", k8sFeatures)
+	k8sFramework, k8sFeatures := newK8sPluginDependencies(client, informerFactory)
 
 	for _, initFunc := range []func(ksf.Handle, *k8splfeature.Features, int64) (common.K8sPlugin, error){
 		volumebinding.NewVolumeBindingPlugin,
 		dynamicresources.NewDynamicResourcesPlugin,
 	} {
-		plugin, err := initFunc(k8sFramework, &k8sFeatures, timeoutSeconds)
+		plugin, err := initFunc(k8sFramework, k8sFeatures, timeoutSeconds)
 		if err != nil {
 			return nil, err
 		}
 		k8sPlugins = append(k8sPlugins, plugin)
 	}
 
+	return NewWithPlugins("k8s-plugins", k8sPlugins...), nil
+}
+
+func NewWithPlugins(name string, k8sPlugins ...common.K8sPlugin) *K8sPlugins {
 	return &K8sPlugins{
+		name:    name,
 		plugins: k8sPlugins,
-	}, nil
+	}
+}
+
+func NewVolumeBinding(
+	client kubernetes.Interface,
+	informerFactory informers.SharedInformerFactory,
+	timeoutSeconds int64,
+) (common.K8sPlugin, error) {
+	k8sFramework, k8sFeatures := newK8sPluginDependencies(client, informerFactory)
+	return volumebinding.NewVolumeBindingPlugin(k8sFramework, k8sFeatures, timeoutSeconds)
+}
+
+func NewDynamicResources(
+	client kubernetes.Interface,
+	informerFactory informers.SharedInformerFactory,
+	timeoutSeconds int64,
+) (common.K8sPlugin, error) {
+	k8sFramework, k8sFeatures := newK8sPluginDependencies(client, informerFactory)
+	return dynamicresources.NewDynamicResourcesPlugin(k8sFramework, k8sFeatures, timeoutSeconds)
+}
+
+func newK8sPluginDependencies(
+	client kubernetes.Interface,
+	informerFactory informers.SharedInformerFactory,
+) (ksf.Handle, *k8splfeature.Features) {
+	k8sFramework := k8s_utils.NewFrameworkHandle(client, informerFactory, nil)
+	k8sFeatures := k8splfeature.Features{
+		EnableDynamicResourceAllocation: feature.DefaultFeatureGate.Enabled(features.DynamicResourceAllocation),
+	}
+
+	logger := log.Log.WithName("binder-plugins")
+	logger.Info("Feature flags", "features", k8sFeatures)
+
+	return k8sFramework, &k8sFeatures
 }
 
 func (p *K8sPlugins) Name() string {
+	if p.name != "" {
+		return p.name
+	}
 	return "k8s-plugins"
 }
 

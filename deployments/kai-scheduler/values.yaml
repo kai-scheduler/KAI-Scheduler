@@ -90,6 +90,17 @@ binder:
   ports:
     metricsPort: 8080
   affinity: {}
+  # plugins allows overriding binder plugin configuration.
+  # Built-in plugins can be disabled, reordered, or have their arguments changed.
+  # Default plugins and priorities: volumebinding=300, dynamicresources=200, gpusharing=100.
+  # Example:
+  # plugins:
+  #   gpusharing:
+  #     enabled: false
+  #   volumebinding:
+  #     arguments:
+  #       bindTimeoutSeconds: "60"
+  plugins: {}
 scheduler:
   enabled: true
   image:
