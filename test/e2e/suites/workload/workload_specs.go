@@ -27,6 +27,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/utils"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
 )
 
 const (
@@ -192,7 +193,7 @@ func DescribeWorkloadSpecs() bool {
 			pod := rd.CreatePodObject(testQ, corev1.ResourceRequirements{})
 			pod.Spec.WorkloadRef = &corev1.WorkloadReference{Name: wlName, PodGroup: "g"}
 			pod.Annotations[commonconstants.WorkloadIgnoreAnnotationKey] = "true"
-			_, err := rd.CreatePod(ctx, testCtx.KubeClientset, pod)
+			pod, err := rd.CreatePod(ctx, testCtx.KubeClientset, pod)
 			Expect(err).NotTo(HaveOccurred())
 
 			// The Workload-derived PodGroup must NOT appear.
@@ -203,6 +204,26 @@ func DescribeWorkloadSpecs() bool {
 				return kerrors.IsNotFound(err)
 			}, 3*time.Second, pgPollTick).Should(BeTrue(),
 				"Workload-derived PodGroup must not be created when opt-out is set")
+
+			// Opt-out must release the pod into the default top-owner path:
+			// the pod is annotated with a non-Workload PodGroup name and the
+			// pod schedules. Without this assertion, opt-out could silently
+			// strand the pod.
+			var pgName string
+			Eventually(func() string {
+				cur := &corev1.Pod{}
+				if err := testCtx.ControllerClient.Get(ctx, types.NamespacedName{
+					Namespace: pod.Namespace, Name: pod.Name,
+				}, cur); err != nil {
+					return ""
+				}
+				pgName = cur.Annotations[commonconstants.PodGroupAnnotationForPod]
+				return pgName
+			}, pgWaitTimeout, pgPollTick).ShouldNot(BeEmpty(),
+				"opt-out pod must receive a default PodGroup annotation")
+			Expect(pgName).NotTo(Equal(wlName+"-g"),
+				"opt-out pod must not be annotated with the Workload-derived PodGroup name")
+			wait.ForPodScheduled(ctx, testCtx.ControllerClient, pod)
 		})
 
 		It("layers a Workload override on top of a real top-owner controller (Job)", func(ctx context.Context) {
@@ -287,6 +308,64 @@ func DescribeWorkloadSpecs() bool {
 			}
 			Expect(ownerKinds).To(ContainElement("Job"),
 				"PodGroup ownerReferences must point at the Job (top owner), not the Workload")
+		})
+
+		It("gates gang scheduling on the Workload's MinCount", func(ctx context.Context) {
+			// Smoke test that the Workload-derived PodGroup actually drives
+			// scheduling end-to-end: a single pod referencing a Workload with
+			// gang.MinCount=2 must stay unscheduled until the second pod
+			// arrives, then both schedule together. Pure-translation tests
+			// can't catch a regression where the spec is correct but the
+			// scheduler ignores the resulting PodGroup.
+			wlName := "gang-quorum-" + rand.String(6)
+			ns := queue.GetConnectedNamespaceToQueue(testQ)
+			wl := &schedulingv1alpha1.Workload{
+				ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: wlName},
+				Spec: schedulingv1alpha1.WorkloadSpec{
+					PodGroups: []schedulingv1alpha1.PodGroup{{
+						Name: "workers",
+						Policy: schedulingv1alpha1.PodGroupPolicy{
+							Gang: &schedulingv1alpha1.GangSchedulingPolicy{MinCount: 2},
+						},
+					}},
+				},
+			}
+			Expect(testCtx.ControllerClient.Create(ctx, wl)).To(Succeed())
+			DeferCleanup(func(ctx context.Context) {
+				_ = testCtx.ControllerClient.Delete(ctx, wl)
+			})
+
+			newGangPod := func() *corev1.Pod {
+				p := rd.CreatePodObject(testQ, corev1.ResourceRequirements{})
+				p.Spec.WorkloadRef = &corev1.WorkloadReference{
+					Name: wlName, PodGroup: "workers", PodGroupReplicaKey: "0",
+				}
+				return p
+			}
+
+			pod1, err := rd.CreatePod(ctx, testCtx.KubeClientset, newGangPod())
+			Expect(err).NotTo(HaveOccurred())
+
+			waitForPodGroup(ctx, testCtx, ns, fmt.Sprintf("%s-workers-0", wlName))
+
+			// Below quorum: pod1 must remain unbound to a node. NodeName is
+			// the authoritative bind signal — checking it avoids depending on
+			// the exact Unschedulable-condition reason the scheduler chose.
+			Consistently(func() string {
+				cur := &corev1.Pod{}
+				if err := testCtx.ControllerClient.Get(ctx, types.NamespacedName{
+					Namespace: pod1.Namespace, Name: pod1.Name,
+				}, cur); err != nil {
+					return ""
+				}
+				return cur.Spec.NodeName
+			}, 5*time.Second, pgPollTick).Should(BeEmpty(),
+				"pod must stay unbound while the gang is below MinCount=2")
+
+			pod2, err := rd.CreatePod(ctx, testCtx.KubeClientset, newGangPod())
+			Expect(err).NotTo(HaveOccurred())
+
+			wait.ForPodsScheduled(ctx, testCtx.ControllerClient, ns, []*corev1.Pod{pod1, pod2})
 		})
 
 	})

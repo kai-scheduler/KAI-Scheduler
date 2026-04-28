@@ -36,35 +36,6 @@ var _ = Describe("Workload API translation", func() {
 		_ = k8sClient.Delete(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ns}})
 	})
 
-	It("creates a KAI PodGroup with MinMember=gang.minCount for a Gang-policy Workload", func(ctx context.Context) {
-		wl := &schedulingv1alpha1.Workload{
-			ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "my-training"},
-			Spec: schedulingv1alpha1.WorkloadSpec{
-				PodGroups: []schedulingv1alpha1.PodGroup{{
-					Name: "workers",
-					Policy: schedulingv1alpha1.PodGroupPolicy{
-						Gang: &schedulingv1alpha1.GangSchedulingPolicy{MinCount: 3},
-					},
-				}},
-			},
-		}
-		Expect(k8sClient.Create(ctx, wl)).To(Succeed())
-
-		pod := newPod(ns, "worker-0", &corev1.WorkloadReference{
-			Name: "my-training", PodGroup: "workers", PodGroupReplicaKey: "0",
-		})
-		Expect(k8sClient.Create(ctx, pod)).To(Succeed())
-
-		// The podgrouper names the KAI PodGroup {workload}-{podGroup}-{replicaKey}.
-		pg := &schedulingv2alpha2.PodGroup{}
-		Eventually(func() error {
-			return k8sClient.Get(ctx, types.NamespacedName{Namespace: ns, Name: "my-training-workers-0"}, pg)
-		}, assertTimeout, assertInterval).Should(Succeed())
-		Expect(pg.Spec.MinMember).NotTo(BeNil())
-		Expect(*pg.Spec.MinMember).To(Equal(int32(3)))
-		Expect(pg.Spec.SubGroups).To(BeEmpty())
-	})
-
 	It("collapses all replica keys into one KAI PodGroup for a Basic-policy Workload", func(ctx context.Context) {
 		wl := &schedulingv1alpha1.Workload{
 			ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "serving"},
@@ -95,35 +66,6 @@ var _ = Describe("Workload API translation", func() {
 		// collapses them.
 		err := k8sClient.Get(ctx, types.NamespacedName{Namespace: ns, Name: "serving-replicas-a"}, &schedulingv2alpha2.PodGroup{})
 		Expect(kerrors.IsNotFound(err)).To(BeTrue(), fmt.Sprintf("expected NotFound, got %v", err))
-	})
-
-	It("propagates a kai.scheduler/queue label from the Workload onto the KAI PodGroup", func(ctx context.Context) {
-		const wlQueue = "ml-training"
-		wl := &schedulingv1alpha1.Workload{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: ns, Name: "queued",
-				Labels: map[string]string{commonconstants.DefaultQueueLabel: wlQueue},
-			},
-			Spec: schedulingv1alpha1.WorkloadSpec{
-				PodGroups: []schedulingv1alpha1.PodGroup{{
-					Name: "g",
-					Policy: schedulingv1alpha1.PodGroupPolicy{
-						Gang: &schedulingv1alpha1.GangSchedulingPolicy{MinCount: 1},
-					},
-				}},
-			},
-		}
-		Expect(k8sClient.Create(ctx, wl)).To(Succeed())
-
-		pod := newPod(ns, "qpod", &corev1.WorkloadReference{Name: "queued", PodGroup: "g"})
-		Expect(k8sClient.Create(ctx, pod)).To(Succeed())
-
-		pg := &schedulingv2alpha2.PodGroup{}
-		Eventually(func() error {
-			return k8sClient.Get(ctx, types.NamespacedName{Namespace: ns, Name: "queued-g"}, pg)
-		}, assertTimeout, assertInterval).Should(Succeed())
-		Expect(pg.Spec.Queue).To(Equal(wlQueue),
-			"Workload's queue label must override the queue derived by the top-owner plugin")
 	})
 
 	It("does not propagate Workload kai.scheduler/queue label changes to the existing PodGroup", func(ctx context.Context) {
