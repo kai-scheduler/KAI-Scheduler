@@ -23,15 +23,12 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/grouper"
 )
 
-// stubHub returns a fixed plugin for any GVK.
 type stubHub struct{ plugin grouper.Grouper }
 
 func (s stubHub) GetPodGrouperPlugin(metav1.GroupVersionKind) grouper.Grouper {
 	return s.plugin
 }
 
-// stubGrouper returns a fixed base Metadata, simulating a top-owner plugin
-// that has succeeded and produced a baseline PodGroup spec.
 type stubGrouper struct{ base *podgroup.Metadata }
 
 func (stubGrouper) Name() string { return "stub" }
@@ -39,11 +36,6 @@ func (s stubGrouper) GetPodGroupMetadata(*unstructured.Unstructured, *corev1.Pod
 	return s.base, nil
 }
 
-// TestGetPGMetadata_MissingWorkload_WrapsAsErrDeferred verifies the cross-package
-// contract: when the Workload referenced by a Pod doesn't yet exist, GetPGMetadata
-// surfaces an error that satisfies errors.Is(err, podgrouper.ErrDeferred). The
-// pod_controller relies on this sentinel to skip the reconcile without retrying;
-// the recovery path is the Workload watch in workload_watch.go.
 func TestGetPGMetadata_MissingWorkload_WrapsAsErrDeferred(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))

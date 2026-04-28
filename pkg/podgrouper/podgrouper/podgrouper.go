@@ -23,8 +23,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/workload"
 )
 
-// ErrDeferred wraps errors that signal "PodGroup metadata cannot be produced
-// yet, but no work needs to be retried".
+// ErrDeferred — PodGroup metadata cannot be produced yet; do not retry.
 var ErrDeferred = errors.New("podgroup metadata deferred")
 
 type Interface interface {

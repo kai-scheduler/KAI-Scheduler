@@ -1,11 +1,8 @@
 // Copyright 2025 NVIDIA CORPORATION
 // SPDX-License-Identifier: Apache-2.0
 
-// Package workload implements the translation layer described in
-// docs/developer/designs/k8s-workload-api/README.md: it overrides podgroup
-// metadata produced by the top-owner plugin when a Pod declares
-// spec.workloadRef pointing at an upstream scheduling.k8s.io/v1alpha1
-// Workload resource (KEP-4671).
+// Package workload translates upstream scheduling.k8s.io/v1alpha1 Workloads (KEP-4671) into KAI PodGroup metadata.
+// See docs/developer/designs/k8s-workload-api/README.md.
 package workload
 
 import (
@@ -33,37 +30,13 @@ import (
 	pgconstants "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
 )
 
-// ErrWorkloadNotFound is returned when a Pod's spec.workloadRef references a
-// Workload that does not exist. Callers should treat this as a soft failure —
-// the Pod stays pending until the Workload is created and the watcher enqueues
-// the Pod for reconciliation. See section 4 of the design.
+// ErrWorkloadNotFound — soft failure: the Pod stays pending until the watcher enqueues it.
 var ErrWorkloadNotFound = errors.New("workload not found")
 
-// ErrWorkloadPodGroupNotFound is returned when the Workload exists but does not declare
-// the PodGroup name referenced by the Pod's spec.workloadRef.podGroup.
 var ErrWorkloadPodGroupNotFound = errors.New("workload podGroup not found")
 
-// ApplyOverride layers Workload-derived metadata on top of the base metadata
-// produced by the top-owner plugin, per section 3 of the design. It is a no-op
-// when:
-//   - the Pod has no spec.workloadRef, or
-//   - the Pod or its top owner is annotated with
-//     constants.WorkloadIgnoreAnnotationKey=true.
-//
-// Otherwise it resolves the Workload through the supplied client.Reader, picks
-// the referenced Workload.Spec.PodGroups entry, and overrides Name,
-// MinAvailable, SubGroups, and (when the Workload itself carries them as
-// labels/annotations) Queue / PriorityClassName / Preemptibility / Topology.
-// Labels and annotations are merged with Workload values taking precedence on
-// collision.
-//
-// reader must be non-nil and backed by the same cache that drives the
-// controller's Workload watch (typically the manager's cached client). Using a
-// separate informer factory's lister introduces a race where the controller's
-// watch fires Reconcile before the lister has processed the same Workload
-// UPDATE, so ApplyOverride reads stale labels and the PodGroup never updates.
-// Callers that haven't detected the upstream API on the cluster must skip
-// ApplyOverride entirely rather than passing a sentinel reader.
+// ApplyOverride layers Workload metadata onto base. reader must share the cache that drives the
+// Workload watch — a separate lister races with the watcher and stales reads on UPDATE.
 func ApplyOverride(
 	ctx context.Context,
 	base *podgroup.Metadata,
@@ -94,8 +67,6 @@ func ApplyOverride(
 	merged := base.DeepCopy()
 	merged.Name = generatePodGroupName(ref.Name, ref.PodGroup, ref.PodGroupReplicaKey, wlPodGroup.Policy)
 	merged.MinAvailable = generateMinAvailable(wlPodGroup.Policy)
-	// SubGroups are owned by the Workload dispatch and ignored until
-	// the upstream API grows sub-group support
 	merged.SubGroups = nil
 
 	if merged.Labels == nil {
@@ -182,9 +153,7 @@ func generatePodGroupName(workload, podGroup, replicaKey string, policy scheduli
 	return truncateWithHash(full, validation.DNS1123SubdomainMaxLength)
 }
 
-// truncateWithHash shrinks name to fit max chars by appending a deterministic
-// SHA-256 suffix. The trimmed prefix is stripped of trailing '-' / '.' so the
-// result remains a valid DNS-1123 subdomain.
+// truncateWithHash shrinks name to max chars and keeps the result a valid DNS-1123 subdomain.
 func truncateWithHash(name string, max int) string {
 	const hashLen = 10
 	sum := sha256.Sum256([]byte(name))
@@ -197,7 +166,5 @@ func generateMinAvailable(policy schedulingv1alpha1.PodGroupPolicy) int32 {
 	if policy.Gang != nil {
 		return policy.Gang.MinCount
 	}
-	// Basic policy (or unset, which the apiserver validates against): behave
-	// as a standard non-gang group.
 	return 1
 }

@@ -35,19 +35,11 @@ import (
 )
 
 const (
-	testSchedulerName = "kai-scheduler"
-	// 30s gives slow CI runners headroom — locally the suite finishes in <10s.
-	assertTimeout = 30 * time.Second
-	// 2s is enough Consistently coverage to confirm no PodGroup is created
-	// before triggering the next step.
+	testSchedulerName  = "kai-scheduler"
+	assertTimeout      = 30 * time.Second
 	consistentlyWindow = 2 * time.Second
 	assertInterval     = 200 * time.Millisecond
 )
-
-// These tests exercise the podgrouper's Workload API translation layer end
-// to end against an envtest-started kube-apiserver. The GenericWorkload
-// feature gate is Alpha and off by default, so we explicitly enable it on
-// the apiserver arguments.
 
 var (
 	testCtx    context.Context
@@ -75,9 +67,7 @@ var _ = BeforeSuite(func() {
 		},
 		ErrorIfCRDPathMissing: true,
 	}
-	// GenericWorkload is Alpha in k8s 1.35. Without the feature gate the
-	// apiserver won't serve scheduling.k8s.io/v1alpha1 Workloads nor
-	// persist Pod.Spec.WorkloadRef.
+	// GenericWorkload Alpha gate is required for scheduling.k8s.io/v1alpha1 and Pod.Spec.WorkloadRef.
 	testEnv.ControlPlane.GetAPIServer().Configure().
 		Append("feature-gates", "GenericWorkload=true")
 	testEnv.ControlPlane.GetAPIServer().Configure().
@@ -107,10 +97,6 @@ var _ = BeforeSuite(func() {
 	})
 	Expect(err).NotTo(HaveOccurred())
 
-	// The podgrouper reads Workloads through the manager's cached client,
-	// the same cache that drives the controller's Workload watch. Just
-	// flip the process-wide flag so registerWorkloadWatch installs the
-	// secondary watch and field indexer.
 	featuregates.SetWorkloadAPIEnabledForTest(true)
 
 	pluginsHub := pluginshub.NewDefaultPluginsHub(
@@ -137,24 +123,15 @@ var _ = BeforeSuite(func() {
 		Expect(err).NotTo(HaveOccurred())
 	}()
 
-	// Pre-warm the unstructured Pod informer used by getTopOwnerInstance.
-	// controller-runtime starts unstructured informers lazily on the first
-	// GET, which races with the first Reconcile in CI and produces transient
-	// "Pod not found" errors that, combined with workqueue backoff, can
-	// exceed the 30s assertTimeout for tests that rely on multiple reconcile
-	// cycles (e.g. Workload mutation propagation). A no-op List here forces
-	// the informer to start before any spec runs.
+	// Pre-warm unstructured Pod informer; controller-runtime starts it lazily and
+	// races with the first Reconcile, producing transient "Pod not found" errors.
 	Eventually(func() error {
 		list := &unstructured.UnstructuredList{}
 		list.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("PodList"))
 		return k8sManager.GetClient().List(testCtx, list)
 	}, 10*time.Second, 100*time.Millisecond).Should(Succeed())
 
-	// The Workload override now validates priorityClassName labels against
-	// existing PriorityClass objects (matching the DefaultGrouper contract).
-	// The KAI-standard classes are created by Helm in production; envtest
-	// starts with none, so seed the three classes the integration specs
-	// reference (build / train / inference) here.
+	// PriorityClasses are created by Helm in production; envtest starts with none.
 	for _, name := range []string{"build", "train", "inference"} {
 		Expect(k8sClient.Create(testCtx, &schedulingv1.PriorityClass{
 			ObjectMeta: metav1.ObjectMeta{Name: name},

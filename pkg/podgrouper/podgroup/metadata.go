@@ -64,15 +64,7 @@ type Metadata struct {
 	Topology               string
 }
 
-// DeepCopy returns a deep copy of m. All reference-typed fields (maps, slices,
-// pointers, and embedded types containing them — e.g. metav1.OwnerReference's
-// *bool fields) are cloned so that mutating the returned value cannot alias
-// the receiver.
-//
-// When adding a new field to Metadata, this method must clone any reference
-// type. The reflection-based test in metadata_test.go enforces this by
-// populating every reachable reference-typed field and asserting pointer
-// distinctness, so a missed clone fails the test rather than aliasing in prod.
+// DeepCopy clones every reference-typed field. metadata_test.go enforces this via reflection.
 func (m *Metadata) DeepCopy() *Metadata {
 	if m == nil {
 		return nil

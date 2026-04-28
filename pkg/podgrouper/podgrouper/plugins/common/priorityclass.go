@@ -11,11 +11,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-// PriorityClassExists reports whether a PriorityClass with the given name is
-// resolvable through the supplied reader. Empty name or nil reader return
-// false. Lookup errors (NotFound or otherwise) are logged at V(1) and treated
-// as a non-existent class so callers can fall back to a default value without
-// needing to inspect the error.
+// PriorityClassExists returns false on empty/nil inputs and on any lookup error.
 func PriorityClassExists(ctx context.Context, reader client.Reader, name string) bool {
 	if name == "" || reader == nil {
 		return false

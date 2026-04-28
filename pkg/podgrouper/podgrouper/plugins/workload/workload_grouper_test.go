@@ -51,11 +51,6 @@ func newPod(name string, ref *corev1.WorkloadReference) *corev1.Pod {
 	}
 }
 
-// buildReaderWith builds a controller-runtime fake client.Reader seeded
-// with the given objects — the same shape ApplyOverride consumes in
-// production (the manager's cached client). Accepts any client.Object so
-// tests can mix Workloads with PriorityClasses (or other kinds the override
-// path resolves) without needing a separate helper per kind.
 func buildReaderWith(t *testing.T, objs ...client.Object) (client.Reader, func()) {
 	t.Helper()
 	scheme := runtime.NewScheme()
@@ -159,7 +154,6 @@ func TestApplyOverride_Basic_CollapsesReplicas(t *testing.T) {
 	lister, stop := buildReaderWith(t, wl)
 	defer stop()
 
-	// Even with a replicaKey, Basic collapses into a single PodGroup.
 	got, err := ApplyOverride(context.Background(), baseMetadata(), newPod("p", &corev1.WorkloadReference{
 		Name: "w", PodGroup: "g", PodGroupReplicaKey: "ignored",
 	}), nil, lister)
@@ -205,8 +199,6 @@ func TestApplyOverride_OverridesScheduling(t *testing.T) {
 	assert.Equal(t, "gpu-topology", got.Topology)
 	assert.Equal(t, "rack", got.RequiredTopologyLevel)
 	assert.Equal(t, "zone", got.PreferredTopologyLevel)
-	// Labels/annotations merged, Workload wins on collision (none here),
-	// both sets present.
 	assert.Equal(t, "a", got.Labels["owner-label"])
 	assert.Equal(t, "wl", got.Labels["wl-label"])
 	assert.Equal(t, "1", got.Annotations["owner-annotation"])
@@ -263,11 +255,6 @@ func TestApplyOverride_PodGroupMissing(t *testing.T) {
 	assert.True(t, errors.Is(err, ErrWorkloadPodGroupNotFound), "got %v", err)
 }
 
-// Workload > Top Owner > Pod fallback: when the Workload carries none of the
-// KAI scheduling labels/annotations, base values produced by the top-owner
-// plugin must survive untouched. Only Name, MinAvailable, and SubGroups are
-// always-overridden by the Workload (they're structural to the grouping
-// decision); everything else falls through.
 func TestApplyOverride_FieldFallback_NoWorkloadLabels(t *testing.T) {
 	wl := &schedulingv1alpha1.Workload{
 		ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: "w"},
@@ -285,12 +272,10 @@ func TestApplyOverride_FieldFallback_NoWorkloadLabels(t *testing.T) {
 	got, err := ApplyOverride(context.Background(), base, newPod("p", &corev1.WorkloadReference{Name: "w", PodGroup: "g"}), nil, lister)
 	require.NoError(t, err)
 
-	// Always-overridden fields.
 	assert.Equal(t, "w-g", got.Name)
 	assert.Equal(t, int32(2), got.MinAvailable)
 	assert.Nil(t, got.SubGroups)
 
-	// Fallback fields: base values from top-owner survive.
 	assert.Equal(t, base.Queue, got.Queue)
 	assert.Equal(t, base.PriorityClassName, got.PriorityClassName)
 	assert.Equal(t, base.Preemptibility, got.Preemptibility)
@@ -300,9 +285,6 @@ func TestApplyOverride_FieldFallback_NoWorkloadLabels(t *testing.T) {
 	assert.Equal(t, base.Owner, got.Owner)
 }
 
-// An empty-string label/annotation on the Workload must NOT override the base
-// value — the design's "Workload-wins" rule kicks in only on a meaningful
-// declaration. The current implementation guards each field with `v != ""`.
 func TestApplyOverride_FieldFallback_EmptyWorkloadLabel(t *testing.T) {
 	wl := &schedulingv1alpha1.Workload{
 		ObjectMeta: metav1.ObjectMeta{
@@ -340,9 +322,6 @@ func TestApplyOverride_FieldFallback_EmptyWorkloadLabel(t *testing.T) {
 	assert.Equal(t, base.PreferredTopologyLevel, got.PreferredTopologyLevel)
 }
 
-// Unknown preemptibility values fall back to base — the workload plugin
-// doesn't validate (the KAI admission webhook does), but it shouldn't blank
-// the field either.
 func TestApplyOverride_UnknownPreemptibility_FallsBack(t *testing.T) {
 	wl := &schedulingv1alpha1.Workload{
 		ObjectMeta: metav1.ObjectMeta{
@@ -365,12 +344,6 @@ func TestApplyOverride_UnknownPreemptibility_FallsBack(t *testing.T) {
 	assert.Equal(t, base.Preemptibility, got.Preemptibility)
 }
 
-// A Workload may declare a priorityClassName label that doesn't resolve to a
-// real PriorityClass on the cluster. In that case ApplyOverride must fall
-// back to base.PriorityClassName (already validated/defaulted by the
-// top-owner plugin) rather than propagating the unknown name into the
-// resulting PodGroup spec — see docs/developer/designs/k8s-workload-api
-// "Workload -> Top Owner -> Pod" precedence.
 func TestApplyOverride_InvalidPriorityClass_KeepsBase(t *testing.T) {
 	wl := &schedulingv1alpha1.Workload{
 		ObjectMeta: metav1.ObjectMeta{
@@ -394,9 +367,6 @@ func TestApplyOverride_InvalidPriorityClass_KeepsBase(t *testing.T) {
 		"unknown PriorityClass on Workload must not override the validated base value")
 }
 
-// Counterpart to TestApplyOverride_InvalidPriorityClass_KeepsBase: when the
-// priority class referenced by the Workload label exists, the override does
-// take effect.
 func TestApplyOverride_ValidPriorityClass_OverridesBase(t *testing.T) {
 	wl := &schedulingv1alpha1.Workload{
 		ObjectMeta: metav1.ObjectMeta{
@@ -418,12 +388,6 @@ func TestApplyOverride_ValidPriorityClass_OverridesBase(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "ghost-priority", got.PriorityClassName)
 }
-
-// Workload.metadata.name is a DNS subdomain (253), workloadRef.podGroup and
-// podGroupReplicaKey are DNS labels (63 each). Worst-case naive concatenation
-// produces 253+1+63+1+63 = 381 chars, which would be rejected by the apiserver
-// when used as the synthesized KAI PodGroup CR's metadata.name. The synthesizer
-// must keep its output a valid DNS-1123 subdomain.
 
 func TestBuildPodGroupName_ShortInputs_NoTruncation(t *testing.T) {
 	gang := schedulingv1alpha1.PodGroupPolicy{Gang: &schedulingv1alpha1.GangSchedulingPolicy{MinCount: 2}}

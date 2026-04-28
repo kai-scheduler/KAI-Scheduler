@@ -35,10 +35,7 @@ const (
 	pgPollTick    = 500 * time.Millisecond
 )
 
-// DescribeWorkloadSpecs returns the Ginkgo suite that exercises KAI's
-// translation of the upstream scheduling.k8s.io/v1alpha1 Workload API
-// (KEP-4671) into KAI PodGroups. The suite skips itself on clusters that do
-// not expose the API, so it is safe to include in a default e2e run.
+// DescribeWorkloadSpecs skips itself when the upstream Workload API is unavailable.
 func DescribeWorkloadSpecs() bool {
 	return Describe("Workload API", Ordered, func() {
 		var (
@@ -123,7 +120,6 @@ func DescribeWorkloadSpecs() bool {
 			pg := waitForPodGroup(ctx, testCtx, ns, expected)
 			Expect(*pg.Spec.MinMember).To(Equal(int32(1)))
 
-			// Replica-key-specific name should NOT exist — Basic collapses.
 			err := testCtx.ControllerClient.Get(ctx, types.NamespacedName{
 				Namespace: ns, Name: expected + "-a",
 			}, &schedulingv2alpha2.PodGroup{})
@@ -142,7 +138,6 @@ func DescribeWorkloadSpecs() bool {
 			_, err := rd.CreatePod(ctx, testCtx.KubeClientset, pod)
 			Expect(err).NotTo(HaveOccurred())
 
-			// No PodGroup exists yet.
 			Consistently(func() bool {
 				err := testCtx.ControllerClient.Get(ctx, types.NamespacedName{
 					Namespace: ns, Name: wlName + "-workers",
@@ -196,7 +191,6 @@ func DescribeWorkloadSpecs() bool {
 			pod, err := rd.CreatePod(ctx, testCtx.KubeClientset, pod)
 			Expect(err).NotTo(HaveOccurred())
 
-			// The Workload-derived PodGroup must NOT appear.
 			Consistently(func() bool {
 				err := testCtx.ControllerClient.Get(ctx, types.NamespacedName{
 					Namespace: ns, Name: wlName + "-g",
@@ -205,10 +199,6 @@ func DescribeWorkloadSpecs() bool {
 			}, 3*time.Second, pgPollTick).Should(BeTrue(),
 				"Workload-derived PodGroup must not be created when opt-out is set")
 
-			// Opt-out must release the pod into the default top-owner path:
-			// the pod is annotated with a non-Workload PodGroup name and the
-			// pod schedules. Without this assertion, opt-out could silently
-			// strand the pod.
 			var pgName string
 			Eventually(func() string {
 				cur := &corev1.Pod{}
@@ -227,12 +217,6 @@ func DescribeWorkloadSpecs() bool {
 		})
 
 		It("layers a Workload override on top of a real top-owner controller (Job)", func(ctx context.Context) {
-			// Pods owned by a Job that *also* set spec.workloadRef in their
-			// template. kube-controller-manager fans out the Pods, the Job
-			// plugin builds base metadata (queue from pod label, MinMember=1,
-			// pg-{job}-{uid} naming), and the Workload override layer collapses
-			// every Pod onto a single Workload-derived PodGroup with overridden
-			// queue and MinMember while leaving ownership pointed at the Job.
 			wlName := "jobwl-" + rand.String(6)
 			ns := queue.GetConnectedNamespaceToQueue(testQ)
 
@@ -255,8 +239,6 @@ func DescribeWorkloadSpecs() bool {
 				_ = testCtx.ControllerClient.Delete(ctx, wl)
 			})
 
-			// Pod template carries the *base* queue label (testQ); the
-			// Workload's overrideQ label must beat it on the resulting PodGroup.
 			podTpl := rd.CreatePodObject(testQ, corev1.ResourceRequirements{})
 			podTpl.Spec.RestartPolicy = corev1.RestartPolicyNever
 			podTpl.Spec.WorkloadRef = &corev1.WorkloadReference{
@@ -292,7 +274,6 @@ func DescribeWorkloadSpecs() bool {
 			Expect(pg.Spec.Queue).To(Equal(overrideQ.Name),
 				"Workload's queue label must beat the Pod template's base queue")
 
-			// The legacy Job-shaped name must never materialize.
 			Expect(testCtx.ControllerClient.Get(ctx, types.NamespacedName{
 				Namespace: ns,
 				Name:      fmt.Sprintf("pg-%s-%s", job.Name, job.UID),
@@ -300,7 +281,6 @@ func DescribeWorkloadSpecs() bool {
 				To(MatchError(kerrors.IsNotFound, "IsNotFound"),
 					"no Job-derived PodGroup should exist when a Workload override is active")
 
-			// Ownership stays with the top owner.
 			Expect(pg.OwnerReferences).NotTo(BeEmpty())
 			ownerKinds := make([]string, 0, len(pg.OwnerReferences))
 			for _, or := range pg.OwnerReferences {
@@ -311,12 +291,6 @@ func DescribeWorkloadSpecs() bool {
 		})
 
 		It("gates gang scheduling on the Workload's MinCount", func(ctx context.Context) {
-			// Smoke test that the Workload-derived PodGroup actually drives
-			// scheduling end-to-end: a single pod referencing a Workload with
-			// gang.MinCount=2 must stay unscheduled until the second pod
-			// arrives, then both schedule together. Pure-translation tests
-			// can't catch a regression where the spec is correct but the
-			// scheduler ignores the resulting PodGroup.
 			wlName := "gang-quorum-" + rand.String(6)
 			ns := queue.GetConnectedNamespaceToQueue(testQ)
 			wl := &schedulingv1alpha1.Workload{
@@ -348,9 +322,6 @@ func DescribeWorkloadSpecs() bool {
 
 			waitForPodGroup(ctx, testCtx, ns, fmt.Sprintf("%s-workers-0", wlName))
 
-			// Below quorum: pod1 must remain unbound to a node. NodeName is
-			// the authoritative bind signal — checking it avoids depending on
-			// the exact Unschedulable-condition reason the scheduler chose.
 			Consistently(func() string {
 				cur := &corev1.Pod{}
 				if err := testCtx.ControllerClient.Get(ctx, types.NamespacedName{
@@ -371,9 +342,6 @@ func DescribeWorkloadSpecs() bool {
 	})
 }
 
-// skipIfWorkloadAPIUnavailable probes server discovery for the upstream
-// Workload type. The feature is Alpha in Kubernetes 1.35 and off by default,
-// so the suite has to be skippable on clusters that don't enable it.
 func skipIfWorkloadAPIUnavailable(ctx context.Context, tc *testcontext.TestContext) {
 	const groupVersion = "scheduling.k8s.io/v1alpha1"
 	disc := tc.KubeClientset.Discovery()

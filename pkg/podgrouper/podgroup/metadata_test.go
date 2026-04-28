@@ -138,15 +138,6 @@ func TestFindSubGroupForPod(t *testing.T) {
 	}
 }
 
-// TestMetadataDeepCopyNoAliasing is the structural guard for Metadata.DeepCopy.
-// It auto-populates every reference-typed field reachable from a Metadata via
-// reflection, deep-copies, then walks the two values in parallel asserting
-// that no map/slice/pointer (including those nested inside embedded structs
-// like metav1.OwnerReference) shares an underlying address.
-//
-// The reflection traversal makes this test resilient to schema growth: adding
-// a new map/slice/pointer field to Metadata or SubGroupMetadata that
-// DeepCopy forgets to clone will fail this test, not silently alias in prod.
 func TestMetadataDeepCopyNoAliasing(t *testing.T) {
 	src := &Metadata{}
 	populateReferenceFields(reflect.ValueOf(src).Elem())
@@ -158,11 +149,6 @@ func TestMetadataDeepCopyNoAliasing(t *testing.T) {
 	assertNoAliasing(t, "Metadata", reflect.ValueOf(src).Elem(), reflect.ValueOf(dst).Elem())
 }
 
-// TestMetadataDeepCopyMutationIndependence is a readable, behavioural smoke
-// test that complements the reflection guard above: mutating fields on the
-// source after a DeepCopy must not be visible through the copy, and vice
-// versa. Future maintainers reading this file get a concrete example of what
-// DeepCopy guarantees without having to follow the reflection walker.
 func TestMetadataDeepCopyMutationIndependence(t *testing.T) {
 	parent := "parent-group"
 	src := &Metadata{
@@ -210,11 +196,6 @@ func TestMetadataDeepCopyNil(t *testing.T) {
 	assert.Nil(t, tc.DeepCopy())
 }
 
-// populateReferenceFields fills every reference-typed field reachable from v
-// with a fresh non-nil value, recursing through structs, pointers, and slice
-// elements. Leaf scalars are also given non-zero values to make assertion
-// failures legible. This is intentionally generic so that adding a new field
-// to Metadata expands aliasing-test coverage with no test changes required.
 func populateReferenceFields(v reflect.Value) {
 	switch v.Kind() {
 	case reflect.Struct:
@@ -255,11 +236,7 @@ func populateReferenceFields(v reflect.Value) {
 	}
 }
 
-// assertNoAliasing walks src and dst in parallel and fails the test if any
-// reference-typed value (map, slice, pointer) shares its underlying address.
-// Empty/nil reference values are skipped because Go does not guarantee
-// distinct backing arrays for zero-length slices or pointer-distinctness for
-// nil pointers, which would produce false positives.
+// Skips nil/empty references — Go does not guarantee distinct backing memory for those.
 func assertNoAliasing(t *testing.T, path string, src, dst reflect.Value) {
 	t.Helper()
 	switch src.Kind() {
