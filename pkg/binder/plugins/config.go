@@ -117,13 +117,6 @@ func (c Config) deepCopy() Config {
 	return result
 }
 
-func priority(config kaiv1binder.PluginConfig) int {
-	if config.Priority == nil {
-		return 0
-	}
-	return *config.Priority
-}
-
 func copyArguments(arguments map[string]string) map[string]string {
 	if arguments == nil {
 		return nil
