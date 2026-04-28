@@ -231,18 +231,6 @@ func addNodePoolLabel(metadata *podgroup.Metadata, pod *v1.Pod, nodePoolKey stri
 	}
 }
 
-// isOrphanPodWithPodGroup reports whether the Pod has been grouped before
-// (carries the pod-group-name annotation) and has no controller owner. The
-// reconciler skips such pods because we can no longer re-derive their group
-// from a top-owner — typically a stray Pod whose owning Deployment/Job has
-// already been deleted.
-//
-// Pods that reference an upstream Workload (spec.workloadRef) are excluded
-// from this skip path even when they have no OwnerReferences: the Workload
-// itself is their authoritative source of grouping metadata, so subsequent
-// Workload mutations (label/annotation changes) must continue to drive
-// re-reconciliation. If the Workload has since been deleted, the soft-failure
-// path in Reconcile keeps the Pod pending without recreating its PodGroup.
 func isOrphanPodWithPodGroup(pod *v1.Pod) bool {
 	_, foundPGAnnotation := pod.Annotations[constants.PodGroupAnnotationForPod]
 	if !foundPGAnnotation || pod.OwnerReferences != nil {
