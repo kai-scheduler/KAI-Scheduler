@@ -96,6 +96,12 @@ scheduler:
   placementStrategy: binpack
   ports:
     metricsPort: 8080
+  # args allows passing scheduler CLI flags through the default SchedulingShard spec.args map.
+  # Values must be strings because SchedulingShard.spec.args is map[string]string.
+  # Example:
+  # args:
+  #   v: "0"
+  args: {}
   # plugins allows overriding or adding custom scheduler plugins
   # Built-in plugins can be disabled, reordered, or have their arguments changed.
   # New plugins can be added by specifying a name not in the default set.
