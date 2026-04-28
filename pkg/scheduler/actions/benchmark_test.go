@@ -66,6 +66,11 @@ func BenchmarkReclaimAction_MediumCluster(b *testing.B) {
 	benchmarkReclaim(b, 50, 200)
 }
 
+// BenchmarkReclaimAction_LargeCluster benchmarks reclaim with 200 nodes, 1000 jobs
+func BenchmarkReclaimAction_LargeCluster(b *testing.B) {
+	benchmarkReclaim(b, 200, 1000)
+}
+
 func benchmarkReclaim(b *testing.B, numNodes, numJobs int) {
 	ctrl := gomock.NewController(b)
 	defer ctrl.Finish()
@@ -88,6 +93,11 @@ func BenchmarkPreemptAction_SmallCluster(b *testing.B) {
 // BenchmarkPreemptAction_MediumCluster benchmarks preempt with 50 nodes, 200 jobs
 func BenchmarkPreemptAction_MediumCluster(b *testing.B) {
 	benchmarkPreempt(b, 50, 200)
+}
+
+// BenchmarkPreemptAction_LargeCluster benchmarks preempt with 200 nodes, 1000 jobs
+func BenchmarkPreemptAction_LargeCluster(b *testing.B) {
+	benchmarkPreempt(b, 200, 1000)
 }
 
 func benchmarkPreempt(b *testing.B, numNodes, numJobs int) {

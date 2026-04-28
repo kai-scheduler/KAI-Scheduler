@@ -252,25 +252,14 @@ func getVictimJobsFromVictimTasks(
 func extractJobsFromTasks(
 	tasks []*pod_info.PodInfo, scenario *scenario.ByNodeScenario) map[common_info.PodGroupID][]*podgroup_info.PodGroupInfo {
 	jobs := map[common_info.PodGroupID][]*podgroup_info.PodGroupInfo{}
+	seenJobRepresentatives := map[*podgroup_info.PodGroupInfo]bool{}
 	for _, task := range tasks {
-		jobAlreadyExists := false
-		if possibleDuplicates, ok := jobs[task.Job]; ok {
-			for _, possibleDuplicate := range possibleDuplicates {
-				for _, podInfo := range possibleDuplicate.GetAllPodsMap() {
-					if podInfo.UID == task.UID {
-						jobAlreadyExists = true
-						break
-					}
-				}
-				if jobAlreadyExists {
-					break
-				}
-			}
+		matchingJob := scenario.GetVictimJobRepresentativeById(task)
+		if seenJobRepresentatives[matchingJob] {
+			continue
 		}
-		if !jobAlreadyExists {
-			matchingJob := scenario.GetVictimJobRepresentativeById(task)
-			jobs[matchingJob.UID] = append(jobs[matchingJob.UID], matchingJob)
-		}
+		seenJobRepresentatives[matchingJob] = true
+		jobs[matchingJob.UID] = append(jobs[matchingJob.UID], matchingJob)
 	}
 	return jobs
 }

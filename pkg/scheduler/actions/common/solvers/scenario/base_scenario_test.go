@@ -9,6 +9,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
@@ -269,6 +270,7 @@ func TestPodSimpleScenario_GetVictimJobRepresentativeById(t *testing.T) {
 					ClusterInfo: &api.ClusterInfo{PodGroupInfos: map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{
 						"pg1": podgroup_info.NewPodGroupInfo("pg1", pod_info.NewTaskInfo(&v1.Pod{
 							ObjectMeta: metav1.ObjectMeta{
+								UID:       types.UID("uid-name1"),
 								Name:      "name1",
 								Namespace: "n1",
 								Annotations: map[string]string{
@@ -279,6 +281,7 @@ func TestPodSimpleScenario_GetVictimJobRepresentativeById(t *testing.T) {
 						}, nil, resource_info.NewResourceVectorMap())),
 						"pg2": podgroup_info.NewPodGroupInfo("pg2", pod_info.NewTaskInfo(&v1.Pod{
 							ObjectMeta: metav1.ObjectMeta{
+								UID:       types.UID("uid-name2"),
 								Name:      "name2",
 								Namespace: "n1",
 								Annotations: map[string]string{
@@ -293,6 +296,7 @@ func TestPodSimpleScenario_GetVictimJobRepresentativeById(t *testing.T) {
 				potentialVictimsTasks: []*pod_info.PodInfo{
 					pod_info.NewTaskInfo(&v1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
+							UID:       types.UID("uid-name1"),
 							Name:      "name1",
 							Namespace: "n1",
 							Annotations: map[string]string{
@@ -305,6 +309,7 @@ func TestPodSimpleScenario_GetVictimJobRepresentativeById(t *testing.T) {
 				recordedVictimsJobs: []*podgroup_info.PodGroupInfo{
 					podgroup_info.NewPodGroupInfo("pg2", pod_info.NewTaskInfo(&v1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
+							UID:       types.UID("uid-name2"),
 							Name:      "name2",
 							Namespace: "n1",
 							Annotations: map[string]string{
@@ -318,6 +323,7 @@ func TestPodSimpleScenario_GetVictimJobRepresentativeById(t *testing.T) {
 			args: args{
 				victimPodInfo: pod_info.NewTaskInfo(&v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
+						UID:       types.UID("uid-name1"),
 						Name:      "name1",
 						Namespace: "n1",
 						Annotations: map[string]string{
@@ -330,6 +336,7 @@ func TestPodSimpleScenario_GetVictimJobRepresentativeById(t *testing.T) {
 			},
 			want: podgroup_info.NewPodGroupInfo("pg1", pod_info.NewTaskInfo(&v1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
+					UID:       types.UID("uid-name1"),
 					Name:      "name1",
 					Namespace: "n1",
 					Annotations: map[string]string{
@@ -346,6 +353,7 @@ func TestPodSimpleScenario_GetVictimJobRepresentativeById(t *testing.T) {
 					ClusterInfo: &api.ClusterInfo{PodGroupInfos: map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{
 						"pg1": podgroup_info.NewPodGroupInfo("pg1", pod_info.NewTaskInfo(&v1.Pod{
 							ObjectMeta: metav1.ObjectMeta{
+								UID:       types.UID("uid-name1"),
 								Name:      "name1",
 								Namespace: "n1",
 								Annotations: map[string]string{
@@ -356,6 +364,7 @@ func TestPodSimpleScenario_GetVictimJobRepresentativeById(t *testing.T) {
 						}, nil, resource_info.NewResourceVectorMap())),
 						"pg2": podgroup_info.NewPodGroupInfo("pg2", pod_info.NewTaskInfo(&v1.Pod{
 							ObjectMeta: metav1.ObjectMeta{
+								UID:       types.UID("uid-name2"),
 								Name:      "name2",
 								Namespace: "n1",
 								Annotations: map[string]string{
@@ -370,6 +379,7 @@ func TestPodSimpleScenario_GetVictimJobRepresentativeById(t *testing.T) {
 				potentialVictimsTasks: []*pod_info.PodInfo{
 					pod_info.NewTaskInfo(&v1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
+							UID:       types.UID("uid-name1"),
 							Name:      "name1",
 							Namespace: "n1",
 							Annotations: map[string]string{
@@ -382,6 +392,7 @@ func TestPodSimpleScenario_GetVictimJobRepresentativeById(t *testing.T) {
 				recordedVictimsJobs: []*podgroup_info.PodGroupInfo{
 					podgroup_info.NewPodGroupInfo("pg2", pod_info.NewTaskInfo(&v1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
+							UID:       types.UID("uid-name2"),
 							Name:      "name2",
 							Namespace: "n1",
 							Annotations: map[string]string{
@@ -395,6 +406,7 @@ func TestPodSimpleScenario_GetVictimJobRepresentativeById(t *testing.T) {
 			args: args{
 				victimPodInfo: pod_info.NewTaskInfo(&v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
+						UID:       types.UID("uid-name3"),
 						Name:      "name3",
 						Namespace: "n1",
 						Annotations: map[string]string{
@@ -414,6 +426,7 @@ func TestPodSimpleScenario_GetVictimJobRepresentativeById(t *testing.T) {
 					ClusterInfo: &api.ClusterInfo{PodGroupInfos: map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{
 						"pg1": podgroup_info.NewPodGroupInfo("pg1", pod_info.NewTaskInfo(&v1.Pod{
 							ObjectMeta: metav1.ObjectMeta{
+								UID:       types.UID("uid-name1"),
 								Name:      "name1",
 								Namespace: "n1",
 								Annotations: map[string]string{
@@ -424,6 +437,7 @@ func TestPodSimpleScenario_GetVictimJobRepresentativeById(t *testing.T) {
 						}, nil, resource_info.NewResourceVectorMap())),
 						"pg2": podgroup_info.NewPodGroupInfo("pg2", pod_info.NewTaskInfo(&v1.Pod{
 							ObjectMeta: metav1.ObjectMeta{
+								UID:       types.UID("uid-name2"),
 								Name:      "name2",
 								Namespace: "n1",
 								Annotations: map[string]string{
@@ -438,6 +452,7 @@ func TestPodSimpleScenario_GetVictimJobRepresentativeById(t *testing.T) {
 				potentialVictimsTasks: []*pod_info.PodInfo{
 					pod_info.NewTaskInfo(&v1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
+							UID:       types.UID("uid-name1"),
 							Name:      "name1",
 							Namespace: "n1",
 							Annotations: map[string]string{
@@ -450,6 +465,7 @@ func TestPodSimpleScenario_GetVictimJobRepresentativeById(t *testing.T) {
 				recordedVictimsJobs: []*podgroup_info.PodGroupInfo{
 					podgroup_info.NewPodGroupInfo("pg2", pod_info.NewTaskInfo(&v1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
+							UID:       types.UID("uid-name2"),
 							Name:      "name2",
 							Namespace: "n1",
 							Annotations: map[string]string{
@@ -463,6 +479,7 @@ func TestPodSimpleScenario_GetVictimJobRepresentativeById(t *testing.T) {
 			args: args{
 				victimPodInfo: pod_info.NewTaskInfo(&v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
+						UID:       types.UID("uid-name1"),
 						Name:      "name1",
 						Namespace: "n1",
 						Annotations: map[string]string{
@@ -474,6 +491,7 @@ func TestPodSimpleScenario_GetVictimJobRepresentativeById(t *testing.T) {
 				tasks: []*pod_info.PodInfo{
 					pod_info.NewTaskInfo(&v1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
+							UID:       types.UID("uid-name1.2"),
 							Name:      "name1.2",
 							Namespace: "n1",
 							Annotations: map[string]string{
@@ -486,6 +504,7 @@ func TestPodSimpleScenario_GetVictimJobRepresentativeById(t *testing.T) {
 			},
 			want: podgroup_info.NewPodGroupInfo("pg1", pod_info.NewTaskInfo(&v1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
+					UID:       types.UID("uid-name1"),
 					Name:      "name1",
 					Namespace: "n1",
 					Annotations: map[string]string{
