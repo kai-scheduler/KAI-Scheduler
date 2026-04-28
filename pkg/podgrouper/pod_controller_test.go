@@ -119,10 +119,6 @@ func TestIsOrphanPodWithPodGroup(t *testing.T) {
 	}
 	assert.False(t, isOrphanPodWithPodGroup(&pod))
 
-	// A Pod with no OwnerReferences but referencing a Workload is NOT an
-	// orphan — the Workload drives subsequent re-reconciliation. Without
-	// this branch, Workload label mutations stop propagating to the
-	// PodGroup after the first reconcile.
 	pod.OwnerReferences = nil
 	pod.Spec.WorkloadRef = &v1.WorkloadReference{Name: "wl", PodGroup: "g"}
 	assert.False(t, isOrphanPodWithPodGroup(&pod))
