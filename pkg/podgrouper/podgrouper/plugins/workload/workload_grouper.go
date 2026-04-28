@@ -112,11 +112,12 @@ func ApplyOverride(
 		merged.PriorityClassName = v
 	}
 	if v, ok := wl.Labels[pgconstants.PreemptibilityLabelKey]; ok && v != "" {
-		preemptibility, err := v2alpha2.ParsePreemptibility(v)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse preemptibility %s from workload %s/%s: %w", v, wl.Namespace, wl.Name, err)
+		// Validation of the label value is the admission webhook's job;
+		// silently fall back to base on parse failure rather than blanking
+		// the field.
+		if preemptibility, err := v2alpha2.ParsePreemptibility(v); err == nil {
+			merged.Preemptibility = preemptibility
 		}
-		merged.Preemptibility = preemptibility
 	}
 	if v, ok := wl.Annotations[pgconstants.TopologyKey]; ok && v != "" {
 		merged.Topology = v
