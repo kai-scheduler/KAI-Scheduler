@@ -79,12 +79,26 @@ Creates:
 | **Labels/Annotations** | Merged (Workload takes precedence) |
 | **Owner** | Top Owner |
 
-### 4. Error Handling & Instant Recovery
+### 4. Lifecycle Handling
+
+#### Missing Workload (creation race)
 
 If a Pod references a Workload or PodGroup that does not exist, strict validation is enforced:
 
 *   **Pending State**: The Pod remains **Pending** and no KAI PodGroup is created. It is never scheduled as a standalone task.
-*   **Instant Recovery**: We will implement a **Watcher** on `Workload` resources. As soon as a missing Workload is created, the watcher immediately triggers reconciliation for any pending Pods referencing it, ensuring instant scheduling.
+*   **Instant Recovery**: A **Watcher** on `Workload` resources triggers reconciliation for every Pod referencing a Workload as soon as the Workload appears, ensuring instant scheduling.
+
+#### Workload mutation
+
+`Workload.spec` is immutable upstream — `podGroups` cannot change after creation. Mutable fields (labels, annotations) drive the Workload→TopOwner→Pod fallback chain in section 3, so changing the Workload's `priorityClassName` / `kai.scheduler/preemptibility` / `kai.scheduler/topology*` labels propagates to the existing KAI PodGroup on the next reconcile fired by the Workload watcher. The KAI PodGroup's `Spec.Queue` is owned by the queue assigner and is intentionally not overwritten on mutation.
+
+This matches the existing behaviour for every other top-owner kind (PyTorchJob, MPIJob, RayJob, Deployment, etc.): label/annotation mutations on the top owner propagate to the PodGroup on the next reconcile, subject to the same `Handler.ignoreFields` contract (Queue, MarkUnschedulable, SchedulingBackoff are pinned). The only Workload-specific addition is the dedicated watcher that guarantees prompt propagation; non-Workload paths rely on incidental Pod events to drive reconcile.
+
+For Pods that reference a Workload but have no controller `OwnerReferences` (the standalone case), the orphan-skip in the pod reconciler does **not** apply — the Workload is the authoritative owner for grouping decisions, so subsequent Workload events keep driving re-reconciliation.
+
+#### Workload deletion
+
+Deleting a Workload while pods still reference its derived KAI PodGroup is treated as a soft failure: the KAI PodGroup is **preserved**. Disrupting an in-flight gang because a config object disappeared would be more harmful than leaving a stale PodGroup behind. Pods that arrive *after* the Workload is gone fall into the same soft-failure path used for the creation race and stay pending until a Workload reappears.
 
 ### 5. Opt-Out Mechanism
 

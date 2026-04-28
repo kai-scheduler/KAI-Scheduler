@@ -5,11 +5,12 @@ package controllers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -57,12 +58,15 @@ type Configs struct {
 
 	DefaultConfigPerTypeConfigMapName      string
 	DefaultConfigPerTypeConfigMapNamespace string
+
+	WorkloadAPIEnabled bool
 }
 
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=pods,verbs=create;update;patch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch;update;get;list;watch
 // +kubebuilder:rbac:groups="scheduling.k8s.io",resources=priorityclasses,verbs=get;list;watch
+// +kubebuilder:rbac:groups="scheduling.k8s.io",resources=workloads,verbs=get;list;watch
 // +kubebuilder:rbac:groups="scheduling.run.ai",resources=podgroups,verbs=create;update;patch;get;list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
@@ -74,7 +78,7 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	pod := v1.Pod{}
 	err := r.Client.Get(ctx, types.NamespacedName{Namespace: req.Namespace, Name: req.Name}, &pod)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			logger.V(1).Info(fmt.Sprintf("Pod %s/%s not found, was probably deleted", req.Namespace, req.Name))
 			return ctrl.Result{}, nil
 		}
@@ -112,6 +116,12 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 
 	metadata, err := r.podGrouper.GetPGMetadata(ctx, &pod, topOwner, allOwners)
 	if err != nil {
+		if errors.Is(err, podgrouper.ErrDeferred) {
+			// Stay pending without requeue; the Workload watcher re-enqueues when the Workload appears.
+			logger.V(1).Info("PodGroup metadata deferred; staying pending",
+				"pod", fmt.Sprintf("%s/%s", req.Namespace, req.Name), "reason", err)
+			return ctrl.Result{}, nil
+		}
 		logger.V(1).Error(err, "Failed to create pod group metadata for pod", req.Namespace, req.Name)
 		return ctrl.Result{}, err
 	}
@@ -142,12 +152,12 @@ func (r *PodReconciler) SetupWithManager(mgr ctrl.Manager, configs Configs, plug
 		return err
 	}
 
-	r.podGrouper = podgrouper.NewPodgrouper(mgr.GetClient(), clientWithoutCache, pluginsHub)
+	r.podGrouper = podgrouper.NewPodgrouper(mgr.GetClient(), clientWithoutCache, pluginsHub, configs.WorkloadAPIEnabled)
 	r.PodGroupHandler = podgroup.NewHandler(mgr.GetClient(), configs.NodePoolLabelKey, configs.SchedulingQueueLabelKey)
 	r.configs = configs
 	r.eventRecorder = mgr.GetEventRecorderFor(controllerName)
 
-	return ctrl.NewControllerManagedBy(mgr).
+	b := ctrl.NewControllerManagedBy(mgr).
 		For(&v1.Pod{}).
 		WithEventFilter(predicate.NewPredicateFuncs(eventFilterFn(mgr.GetClient(), configs))).
 		WithOptions(
@@ -155,8 +165,15 @@ func (r *PodReconciler) SetupWithManager(mgr ctrl.Manager, configs Configs, plug
 				MaxConcurrentReconciles: r.configs.MaxConcurrentReconciles,
 				RateLimiter: workqueue.NewTypedItemExponentialFailureRateLimiter[ctrl.Request](
 					rateLimiterBaseDelay, rateLimiterMaxDelay),
-			}).
-		Complete(r)
+			})
+
+	if configs.WorkloadAPIEnabled {
+		if err := registerWorkloadWatch(mgr, b); err != nil {
+			return err
+		}
+	}
+
+	return b.Complete(r)
 }
 
 func (r *PodReconciler) assignPodToGroupAndSubGroup(ctx context.Context, pod *v1.Pod, metadata *podgroup.Metadata) error {
@@ -214,7 +231,10 @@ func addNodePoolLabel(metadata *podgroup.Metadata, pod *v1.Pod, nodePoolKey stri
 
 func isOrphanPodWithPodGroup(pod *v1.Pod) bool {
 	_, foundPGAnnotation := pod.Annotations[constants.PodGroupAnnotationForPod]
-	return foundPGAnnotation && pod.OwnerReferences == nil
+	if !foundPGAnnotation || pod.OwnerReferences != nil {
+		return false
+	}
+	return pod.Spec.WorkloadRef == nil
 }
 
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch

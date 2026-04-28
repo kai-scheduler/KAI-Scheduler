@@ -118,6 +118,10 @@ func TestIsOrphanPodWithPodGroup(t *testing.T) {
 		},
 	}
 	assert.False(t, isOrphanPodWithPodGroup(&pod))
+
+	pod.OwnerReferences = nil
+	pod.Spec.WorkloadRef = &v1.WorkloadReference{Name: "wl", PodGroup: "g"}
+	assert.False(t, isOrphanPodWithPodGroup(&pod))
 }
 
 func TestEventOnFailure(t *testing.T) {

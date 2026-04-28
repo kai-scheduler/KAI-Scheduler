@@ -43,6 +43,7 @@ const (
 	LastStartTimeStamp            = "kai.scheduler/last-start-timestamp"
 	GpuSharingConfigMapAnnotation = "runai/shared-gpu-configmap"
 	NvidiaVisibleDevices          = "NVIDIA_VISIBLE_DEVICES"
+	WorkloadIgnoreAnnotationKey   = "kai.scheduler/ignore-workload-api"
 
 	// UsageDB Prometheus Selector
 	DefaultAccountingLabelKey   = "kai.scheduler/accounting"

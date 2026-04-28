@@ -5,11 +5,12 @@ package podgrouper
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -19,7 +20,11 @@ import (
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
 	pluginshub "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/hub"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/workload"
 )
+
+// ErrDeferred — PodGroup metadata cannot be produced yet; do not retry.
+var ErrDeferred = errors.New("podgroup metadata deferred")
 
 type Interface interface {
 	// GetPodOwners returns all the owners of a pod, the top owner returned also as Unstructured
@@ -37,18 +42,23 @@ type podGrouper struct {
 	// https://github.com/kubernetes/client-go/issues/1310#issuecomment-1921598658
 	// https://github.com/kubernetes-sigs/controller-runtime/issues/1222#issuecomment-713037979
 	clientWithoutCache client.Client
+
+	isWorkloadAPIEnabled bool
 }
 
 type GetPodGroupMetadataFunc func(topOwner *unstructured.Unstructured, pod *v1.Pod, otherOwners ...*metav1.PartialObjectMetadata) (*podgroup.Metadata, error)
 
-func NewPodgrouper(client client.Client, clientWithoutCache client.Client, pluginsHub pluginshub.PluginsHub) *podGrouper {
-	podGrouper := &podGrouper{
-		client:             client,
-		clientWithoutCache: clientWithoutCache,
-		pluginsHub:         pluginsHub,
+func NewPodgrouper(
+	client client.Client, clientWithoutCache client.Client,
+	pluginsHub pluginshub.PluginsHub,
+	isWorkloadAPIEnabled bool,
+) *podGrouper {
+	return &podGrouper{
+		client:               client,
+		clientWithoutCache:   clientWithoutCache,
+		pluginsHub:           pluginsHub,
+		isWorkloadAPIEnabled: isWorkloadAPIEnabled,
 	}
-
-	return podGrouper
 }
 
 func (pg *podGrouper) GetPodOwners(ctx context.Context, pod *v1.Pod) (
@@ -81,7 +91,24 @@ func (pg *podGrouper) GetPGMetadata(ctx context.Context, pod *v1.Pod, topOwner *
 	plugin := pg.pluginsHub.GetPodGrouperPlugin(ownerKind)
 	logger.V(1).Info(fmt.Sprintf("Using %v plugin for pod.", plugin.Name()),
 		"pod", fmt.Sprintf("%s/%s", pod.Namespace, pod.Name), "topOwner", topOwner)
-	return plugin.GetPodGroupMetadata(topOwner, pod, allOwners...)
+
+	base, err := plugin.GetPodGroupMetadata(topOwner, pod, allOwners...)
+	if err != nil {
+		return nil, err
+	}
+	if !pg.isWorkloadAPIEnabled {
+		return base, nil
+	}
+
+	merged, err := workload.ApplyOverride(ctx, base, pod, topOwner, pg.client)
+	if err != nil {
+		if errors.Is(err, workload.ErrWorkloadNotFound) || errors.Is(err, workload.ErrWorkloadPodGroupNotFound) {
+			return nil, fmt.Errorf("%w: %v", ErrDeferred, err)
+		}
+		return nil, err
+	}
+
+	return merged, nil
 }
 
 func (pg *podGrouper) getResourceOwners(ctx context.Context, pod *v1.Pod) (
@@ -137,7 +164,7 @@ func (pg *podGrouper) getOwnerInstance(ctx context.Context, ownerRef *metav1.Own
 	}
 	// In some edge cases the owner is already deleted and an identical resource with the same name has been created
 	if ownerRef.UID != owner.GetUID() {
-		return nil, errors.NewResourceExpired(fmt.Sprintf("Owner resource with uid %s not found", ownerRef.UID))
+		return nil, apierrors.NewResourceExpired(fmt.Sprintf("Owner resource with uid %s not found", ownerRef.UID))
 	}
 
 	return owner, nil
@@ -167,7 +194,7 @@ func (pg *podGrouper) handleGetOwnerError(
 	ctx context.Context, err error, pod *v1.Pod, owner *metav1.OwnerReference, lastOwnerInstance *metav1.PartialObjectMetadata,
 ) (*metav1.PartialObjectMetadata, error) {
 	logger := log.FromContext(ctx)
-	if errors.IsForbidden(err) {
+	if apierrors.IsForbidden(err) {
 		if lastOwnerInstance != nil {
 			logger.V(1).Info(fmt.Sprintf("No permissions to get resourceOwner '%s': <%s/%s>. "+
 				"returning last owner '%s': <%s/%s>",

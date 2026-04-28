@@ -5,13 +5,16 @@ package app
 
 import (
 	"flag"
+	"fmt"
 
 	"go.uber.org/zap/zapcore"
 	corev1 "k8s.io/api/core/v1"
+	schedulingv1alpha1 "k8s.io/api/scheduling/v1alpha1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/discovery"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	"k8s.io/client-go/rest"
@@ -26,6 +29,7 @@ import (
 
 	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
 	kubeAiSchedulerV2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	featuregates "github.com/kai-scheduler/KAI-scheduler/pkg/common/feature_gates"
 	controllers "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper"
 	pluginshub "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/hub"
 	// +kubebuilder:scaffold:imports
@@ -45,6 +49,7 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(v2.AddToScheme(scheme))
 	utilruntime.Must(kubeAiSchedulerV2alpha2.AddToScheme(scheme))
+	utilruntime.Must(schedulingv1alpha1.AddToScheme(scheme))
 
 	// +kubebuilder:scaffold:scheme
 }
@@ -140,6 +145,10 @@ func (app *App) Run() error {
 		pluginsHub = app.DefaultPluginsHub
 	}
 
+	if err := app.detectWorkloadAPI(); err != nil {
+		return fmt.Errorf("failed to detect Workload API: %w", err)
+	}
+
 	if err := (&controllers.PodReconciler{
 		Client: app.Mgr.GetClient(),
 		Scheme: app.Mgr.GetScheme(),
@@ -157,6 +166,24 @@ func (app *App) Run() error {
 
 	setupLog.Info("starting manager")
 	return app.Mgr.Start(ctrl.SetupSignalHandler())
+}
+
+func (app *App) detectWorkloadAPI() error {
+	cfg := app.Mgr.GetConfig()
+	discoveryClient, err := discovery.NewDiscoveryClientForConfig(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to create discovery client: %w", err)
+	}
+
+	featuregates.SetWorkloadAPIFlag(discoveryClient)
+	app.configs.WorkloadAPIEnabled = featuregates.WorkloadAPIEnabled()
+	if !app.configs.WorkloadAPIEnabled {
+		setupLog.Info("upstream Workload API (scheduling.k8s.io/v1alpha1) not present on the cluster; skipping Workload-aware podgrouping")
+	} else {
+		setupLog.Info("upstream Workload API detected; Workload-aware podgrouping is enabled")
+	}
+
+	return nil
 }
 
 func initLogger() {

@@ -18,7 +18,7 @@ while [[ $# -gt 0 ]]; do
     --output)         OUTPUT="$2"; shift 2;;
     -h|--help)
       echo "Usage: $0 --feature-config <config> --k8s-version <version> --output <path>"
-      echo "  --feature-config: default | dra-enabled"
+      echo "  --feature-config: default | dra-enabled | workload-api-enabled"
       echo "  --k8s-version:    kindest/node version tag, e.g. v1.34.0"
       echo "  --output:         path to write the generated kind config YAML"
       exit 0;;
@@ -40,6 +40,7 @@ fi
 
 # Resolve version-specific settings for each feature config
 ENABLE_DRA_FEATURE_GATE=false
+ENABLE_WORKLOAD_API_FEATURE_GATE=false
 RUNTIME_CONFIG=""
 
 case "$FEATURE_CONFIG" in
@@ -54,6 +55,18 @@ case "$FEATURE_CONFIG" in
     # k8s <= 1.31: DRA is alpha only (v1alpha3), no v1beta support
     # k8s >= 1.34: DRA is GA (v1), feature gate on by default, no runtime-config needed
     ;;
+  workload-api-enabled)
+    # GenericWorkload (KEP-4671) is Alpha from 1.35 and off by default. The
+    # scheduling.k8s.io/v1alpha1 group has to be runtime-config-enabled too.
+    if [ "$K8S_MINOR" -ge 35 ]; then
+      ENABLE_WORKLOAD_API_FEATURE_GATE=true
+      if [ -n "$RUNTIME_CONFIG" ]; then
+        RUNTIME_CONFIG="$RUNTIME_CONFIG,scheduling.k8s.io/v1alpha1=true"
+      else
+        RUNTIME_CONFIG="scheduling.k8s.io/v1alpha1=true"
+      fi
+    fi
+    ;;
   default|*)
     ;;
 esac
@@ -67,9 +80,14 @@ esac
   echo "kind: Cluster"
   echo "apiVersion: kind.x-k8s.io/v1alpha4"
 
-  if [ "$ENABLE_DRA_FEATURE_GATE" = "true" ]; then
+  if [ "$ENABLE_DRA_FEATURE_GATE" = "true" ] || [ "$ENABLE_WORKLOAD_API_FEATURE_GATE" = "true" ]; then
     echo "featureGates:"
-    echo "  DynamicResourceAllocation: true"
+    if [ "$ENABLE_DRA_FEATURE_GATE" = "true" ]; then
+      echo "  DynamicResourceAllocation: true"
+    fi
+    if [ "$ENABLE_WORKLOAD_API_FEATURE_GATE" = "true" ]; then
+      echo "  GenericWorkload: true"
+    fi
   fi
 
   echo "nodes:"

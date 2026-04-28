@@ -26,6 +26,7 @@ It can run alongside other schedulers installed on the cluster.
 ## Key Features
 
 - [Batch Scheduling](docs/batch/README.md): Ensure all pods in a group are scheduled simultaneously or not at all.
+- [Kubernetes Workload API](docs/k8s-workload-api/README.md): Native support for the upstream `scheduling.k8s.io/v1alpha1` Workload resource (KEP-4671) — drive gang scheduling with vendor-neutral, standard manifests.
 - Bin Packing & Spread Scheduling: Optimize node usage either by minimizing fragmentation (bin-packing) or increasing resiliency and load balancing (spread scheduling).
 - [Workload Priority](docs/priority/README.md): Prioritize workloads effectively within queues.
 - [Separation of workload priority and preemptibility](https://github.com/kai-scheduler/KAI-scheduler/tree/main/docs/developer/designs/priority-preemptibility-separation): supports separation of workload priority and workloads preemptibility as two independent policies

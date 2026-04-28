@@ -36,11 +36,39 @@ func DynamicResourcesEnabled() bool {
 	return dynamicResourcesEnabled.Load()
 }
 
-// SetDynamicResourcesEnabledForTest sets the process-wide DRA availability flag.
-// Intended for tests that construct scheduler components without going through
-// SetDRAFeatureGate (which requires a discovery client).
 func SetDynamicResourcesEnabledForTest(enabled bool) {
 	dynamicResourcesEnabled.Store(enabled)
+}
+
+var workloadAPIEnabled atomic.Bool
+
+func SetWorkloadAPIFlag(discoveryClient discovery.DiscoveryInterface) {
+	workloadAPIEnabled.Store(IsWorkloadAPIEnabled(discoveryClient))
+}
+
+func WorkloadAPIEnabled() bool {
+	return workloadAPIEnabled.Load()
+}
+
+func SetWorkloadAPIEnabledForTest(enabled bool) {
+	workloadAPIEnabled.Store(enabled)
+}
+
+func IsWorkloadAPIEnabled(discoveryClient discovery.DiscoveryInterface) bool {
+	logger := log.Log.WithName("feature-gates")
+	const groupVersion = "scheduling.k8s.io/v1alpha1"
+
+	resources, err := discoveryClient.ServerResourcesForGroupVersion(groupVersion)
+	if err != nil {
+		logger.V(4).Info("Workload API group-version not found", "groupVersion", groupVersion, "err", err)
+		return false
+	}
+	for _, r := range resources.APIResources {
+		if r.Name == "workloads" {
+			return true
+		}
+	}
+	return false
 }
 
 func IsDynamicResourcesEnabled(discoveryClient discovery.DiscoveryInterface) bool {
