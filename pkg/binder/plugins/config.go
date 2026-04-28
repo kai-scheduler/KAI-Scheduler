@@ -90,8 +90,8 @@ func (c Config) EnabledOptions() []PluginOption {
 	}
 
 	slices.SortFunc(options, func(a, b PluginOption) int {
-		priorityA := priority(c[a.Name])
-		priorityB := priority(c[b.Name])
+		priorityA := ptr.Deref(c[a.Name].Priority, 0)
+		priorityB := ptr.Deref(c[b.Name].Priority, 0)
 		if priorityA != priorityB {
 			return cmp.Compare(priorityB, priorityA)
 		}
