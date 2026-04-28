@@ -27,16 +27,25 @@ jobs:
         id: pr-info
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_REF: ${{ github.base_ref }}
         run: |
           # Branch must match the action's exact pattern: backport-{N}-to-{base_ref}
-          if ! [[ "${{ github.head_ref }}" =~ ^backport-([0-9]+)-to-${{ github.base_ref }}$ ]]; then
+          if [[ "$HEAD_REF" =~ ^backport-([0-9]+)-to-(.+)$ ]]; then
+            PR_NUMBER="${BASH_REMATCH[1]}"
+            TARGET_BASE_REF="${BASH_REMATCH[2]}"
+          else
             echo "Branch name does not match backport pattern; skipping."
             echo "valid=false" >> $GITHUB_OUTPUT
             exit 0
           fi
-          PR_NUMBER="${BASH_REMATCH[1]}"
+          if [[ "$TARGET_BASE_REF" != "$BASE_REF" ]]; then
+            echo "Branch base ref mismatch; skipping."
+            echo "valid=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
 
-          # Original PR must exist, be merged, and carry a "backport ${{ github.base_ref }}" label
+          # Original PR must exist, be merged, and carry a "backport $BASE_REF" label
           PR_JSON=$(gh pr view "$PR_NUMBER" --json state,labels,baseRefName 2>/dev/null || echo "")
           if [ -z "$PR_JSON" ]; then
             echo "Original PR #$PR_NUMBER not found; skipping."
@@ -44,7 +53,7 @@ jobs:
             exit 0
           fi
           STATE=$(echo "$PR_JSON" | jq -r '.state')
-          HAS_BACKPORT_LABEL=$(echo "$PR_JSON" | jq -r --arg t "backport ${{ github.base_ref }}" \
+          HAS_BACKPORT_LABEL=$(echo "$PR_JSON" | jq -r --arg t "backport $BASE_REF" \
             '[.labels[].name] | contains([$t])')
           if [ "$STATE" != "MERGED" ] || [ "$HAS_BACKPORT_LABEL" != "true" ]; then
             echo "PR #$PR_NUMBER is not a merged backport source (state=$STATE, label=$HAS_BACKPORT_LABEL); skipping."
