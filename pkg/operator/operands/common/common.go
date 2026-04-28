@@ -13,9 +13,12 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
@@ -164,6 +167,54 @@ func DeploymentForKAIConfig(
 	deployment.Spec.Template.Spec.ImagePullSecrets = kaiConfigUtils.GetGlobalImagePullSecrets(kaiConfig.Spec.Global)
 
 	return deployment, nil
+}
+
+func ShouldCreatePodDisruptionBudget(replicas *int32, service *kaiv1common.Service) bool {
+	if replicas == nil || *replicas <= 1 {
+		return false
+	}
+	if service == nil || service.PodDisruptionBudget == nil || service.PodDisruptionBudget.Enabled == nil {
+		return false
+	}
+	return *service.PodDisruptionBudget.Enabled
+}
+
+func PodDisruptionBudgetForKAIConfig(
+	ctx context.Context,
+	runtimeClient client.Reader,
+	namespace string,
+	resourceName string,
+	replicas *int32,
+	service *kaiv1common.Service,
+) (client.Object, error) {
+	if !ShouldCreatePodDisruptionBudget(replicas, service) {
+		return nil, nil
+	}
+
+	pdbObj, err := ObjectForKAIConfig(ctx, runtimeClient, &policyv1.PodDisruptionBudget{}, resourceName, namespace)
+	if err != nil {
+		return nil, err
+	}
+
+	pdb := pdbObj.(*policyv1.PodDisruptionBudget)
+	pdb.TypeMeta = metav1.TypeMeta{
+		Kind:       "PodDisruptionBudget",
+		APIVersion: "policy/v1",
+	}
+	maxUnavailable := ptr.Deref(service.PodDisruptionBudget.MaxUnavailable, 1)
+	pdb.Spec = policyv1.PodDisruptionBudgetSpec{
+		MaxUnavailable: &intstr.IntOrString{
+			Type:   intstr.Int,
+			IntVal: maxUnavailable,
+		},
+		Selector: &metav1.LabelSelector{
+			MatchLabels: map[string]string{
+				"app": resourceName,
+			},
+		},
+	}
+
+	return pdb, nil
 }
 
 func PtrFrom[T any](v T) *T {
