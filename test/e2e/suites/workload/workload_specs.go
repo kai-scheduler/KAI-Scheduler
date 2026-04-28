@@ -11,12 +11,14 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	schedulingv1alpha1 "k8s.io/api/scheduling/v1alpha1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/rand"
+	"k8s.io/utils/ptr"
 
 	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
 	schedulingv2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
@@ -39,8 +41,9 @@ const (
 func DescribeWorkloadSpecs() bool {
 	return Describe("Workload API", Ordered, func() {
 		var (
-			testCtx *testcontext.TestContext
-			testQ   *v2.Queue
+			testCtx   *testcontext.TestContext
+			testQ     *v2.Queue
+			overrideQ *v2.Queue
 		)
 
 		BeforeAll(func(ctx context.Context) {
@@ -48,7 +51,8 @@ func DescribeWorkloadSpecs() bool {
 			skipIfWorkloadAPIUnavailable(ctx, testCtx)
 
 			testQ = queue.CreateQueueObject(utils.GenerateRandomK8sName(10), "")
-			testCtx.InitQueues([]*v2.Queue{testQ})
+			overrideQ = queue.CreateQueueObject(utils.GenerateRandomK8sName(10), "")
+			testCtx.InitQueues([]*v2.Queue{testQ, overrideQ})
 		})
 
 		AfterAll(func(ctx context.Context) {
@@ -199,6 +203,90 @@ func DescribeWorkloadSpecs() bool {
 				return kerrors.IsNotFound(err)
 			}, 3*time.Second, pgPollTick).Should(BeTrue(),
 				"Workload-derived PodGroup must not be created when opt-out is set")
+		})
+
+		It("layers a Workload override on top of a real top-owner controller (Job)", func(ctx context.Context) {
+			// Pods owned by a Job that *also* set spec.workloadRef in their
+			// template. kube-controller-manager fans out the Pods, the Job
+			// plugin builds base metadata (queue from pod label, MinMember=1,
+			// pg-{job}-{uid} naming), and the Workload override layer collapses
+			// every Pod onto a single Workload-derived PodGroup with overridden
+			// queue and MinMember while leaving ownership pointed at the Job.
+			wlName := "jobwl-" + rand.String(6)
+			ns := queue.GetConnectedNamespaceToQueue(testQ)
+
+			wl := &schedulingv1alpha1.Workload{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: ns, Name: wlName,
+					Labels: map[string]string{commonconstants.DefaultQueueLabel: overrideQ.Name},
+				},
+				Spec: schedulingv1alpha1.WorkloadSpec{
+					PodGroups: []schedulingv1alpha1.PodGroup{{
+						Name: "workers",
+						Policy: schedulingv1alpha1.PodGroupPolicy{
+							Gang: &schedulingv1alpha1.GangSchedulingPolicy{MinCount: 2},
+						},
+					}},
+				},
+			}
+			Expect(testCtx.ControllerClient.Create(ctx, wl)).To(Succeed())
+			DeferCleanup(func(ctx context.Context) {
+				_ = testCtx.ControllerClient.Delete(ctx, wl)
+			})
+
+			// Pod template carries the *base* queue label (testQ); the
+			// Workload's overrideQ label must beat it on the resulting PodGroup.
+			podTpl := rd.CreatePodObject(testQ, corev1.ResourceRequirements{})
+			podTpl.Spec.RestartPolicy = corev1.RestartPolicyNever
+			podTpl.Spec.WorkloadRef = &corev1.WorkloadReference{
+				Name: wlName, PodGroup: "workers", PodGroupReplicaKey: "0",
+			}
+
+			job := &batchv1.Job{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: ns,
+					Name:      "jobref-" + rand.String(6),
+				},
+				Spec: batchv1.JobSpec{
+					Parallelism: ptr.To(int32(2)),
+					Completions: ptr.To(int32(2)),
+					Template: corev1.PodTemplateSpec{
+						ObjectMeta: podTpl.ObjectMeta,
+						Spec:       podTpl.Spec,
+					},
+				},
+			}
+			Expect(testCtx.ControllerClient.Create(ctx, job)).To(Succeed())
+			DeferCleanup(func(ctx context.Context) {
+				rd.DeleteJob(ctx, testCtx.KubeClientset, job)
+			})
+
+			expected := fmt.Sprintf("%s-workers-0", wlName)
+			pg := waitForPodGroup(ctx, testCtx, ns, expected)
+
+			Expect(pg.Spec.MinMember).NotTo(BeNil())
+			Expect(*pg.Spec.MinMember).To(Equal(int32(2)),
+				"Workload Gang.MinCount must override the Job plugin's default MinMember=1")
+			Expect(pg.Spec.SubGroups).To(BeEmpty())
+			Expect(pg.Spec.Queue).To(Equal(overrideQ.Name),
+				"Workload's queue label must beat the Pod template's base queue")
+
+			// The legacy Job-shaped name must never materialize.
+			Expect(testCtx.ControllerClient.Get(ctx, types.NamespacedName{
+				Namespace: ns,
+				Name:      fmt.Sprintf("pg-%s-%s", job.Name, job.UID),
+			}, &schedulingv2alpha2.PodGroup{})).
+				To(MatchError(kerrors.IsNotFound, "IsNotFound"),
+					"no Job-derived PodGroup should exist when a Workload override is active")
+
+			// Ownership stays with the top owner.
+			Expect(pg.OwnerReferences).NotTo(BeEmpty())
+			ownerKinds := make([]string, 0, len(pg.OwnerReferences))
+			for _, or := range pg.OwnerReferences {
+				ownerKinds = append(ownerKinds, or.Kind)
+			}
+			Expect(ownerKinds).To(ContainElement("Job"),
+				"PodGroup ownerReferences must point at the Job (top owner), not the Workload")
 		})
 
 	})
