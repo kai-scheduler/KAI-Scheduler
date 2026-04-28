@@ -40,8 +40,17 @@ var _ = Describe("Binder", func() {
 			To(Equal(strconv.Itoa(DefaultBindTimeoutSeconds)))
 		Expect(binder.Plugins[DynamicResourcesPluginName].Arguments[BindTimeoutSecondsArgument]).
 			To(Equal(strconv.Itoa(DefaultBindTimeoutSeconds)))
+		// CDIEnabled is intentionally not baked into the gpusharing plugin args
+		// when Binder.CDIEnabled is unset; the operator resolves it at deploy time.
+		_, hasCDIArg := binder.Plugins[GPUSharingPluginName].Arguments[CDIEnabledArgument]
+		Expect(hasCDIArg).To(BeFalse())
+	})
+
+	It("Set Defaults bakes CDI flag when Binder.CDIEnabled is set", func(ctx context.Context) {
+		binder := &Binder{CDIEnabled: ptr.To(true)}
+		binder.SetDefaultsWhereNeeded(nil, nil)
 		Expect(binder.Plugins[GPUSharingPluginName].Arguments[CDIEnabledArgument]).
-			To(Equal(strconv.FormatBool(DefaultCDIEnabled)))
+			To(Equal(strconv.FormatBool(true)))
 	})
 
 	It("Set Defaults With Plugin Overrides", func(ctx context.Context) {

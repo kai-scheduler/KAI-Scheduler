@@ -137,6 +137,15 @@ func (b *Binder) setDefaultPlugins() {
 	binderPluginConfig := DefaultPluginsConfig(ptr.Deref(b.VolumeBindingTimeoutSeconds, DefaultBindTimeoutSeconds),
 		ptr.Deref(b.CDIEnabled, DefaultCDIEnabled))
 
+	// When CDIEnabled is unset at the API level, leave the gpusharing cdiEnabled
+	// argument unbaked so the operator can resolve it (auto-detect) without
+	// having to distinguish a defaulted value from a user-supplied one.
+	if b.CDIEnabled == nil {
+		gpuSharingDefault := binderPluginConfig[GPUSharingPluginName]
+		delete(gpuSharingDefault.Arguments, CDIEnabledArgument)
+		binderPluginConfig[GPUSharingPluginName] = gpuSharingDefault
+	}
+
 	for name, userBinderConfig := range b.Plugins {
 		defaultPluginConfig, found := binderPluginConfig[name]
 		if found {

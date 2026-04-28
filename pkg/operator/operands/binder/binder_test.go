@@ -238,6 +238,28 @@ var _ = Describe("Binder", func() {
 					Expect(deploymentT).NotTo(BeNil())
 					expectGPUSharingCDI((*deploymentT).Spec.Template.Spec.Containers[0].Args, false)
 				})
+
+				It("preserves explicit gpusharing cdiEnabled plugin arg over ClusterPolicy", func(ctx context.Context) {
+					clusterPolicy.Spec.CDI.Default = ptr.To(false)
+					Expect(fakeKubeClient.Create(ctx, clusterPolicy)).To(Succeed())
+
+					kaiConfig = kaiConfigForBinderWithConfig(&kaiv1binder.Binder{
+						Plugins: map[string]kaiv1binder.PluginConfig{
+							binderplugins.GPUSharingPluginName: {
+								Arguments: map[string]string{
+									binderplugins.CDIEnabledArgument: "true",
+								},
+							},
+						},
+					})
+
+					objects, err := b.DesiredState(ctx, fakeKubeClient, kaiConfig)
+					Expect(err).To(BeNil())
+
+					deploymentT := test_utils.FindTypeInObjects[*appsv1.Deployment](objects)
+					Expect(deploymentT).NotTo(BeNil())
+					expectGPUSharingCDI((*deploymentT).Spec.Template.Spec.Containers[0].Args, true)
+				})
 			})
 
 			It("passes binder plugin overrides to the deployment", func(ctx context.Context) {
