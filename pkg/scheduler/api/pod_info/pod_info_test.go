@@ -130,6 +130,40 @@ func TestGetPodResourceRequest(t *testing.T) {
 			expectedResource: resource_info.NewResourceRequirements(1, 3000, 5000000000),
 		},
 		{
+			name: "pod with native sidecar (initContainer with restartPolicy=Always)",
+			pod: &v1.Pod{
+				Spec: v1.PodSpec{
+					InitContainers: []v1.Container{
+						{
+							// Native sidecar — added to running sum.
+							RestartPolicy: ptr.To(v1.ContainerRestartPolicyAlways),
+							Resources: v1.ResourceRequirements{
+								Requests: common_info.BuildResourceList("250m", "256Mi"),
+							},
+						},
+						{
+							// Regular init container — max'd against running sum.
+							Resources: v1.ResourceRequirements{
+								Requests: common_info.BuildResourceList("500m", "1G"),
+							},
+						},
+					},
+					Containers: []v1.Container{
+						{
+							Resources: v1.ResourceRequirements{
+								Requests: common_info.BuildResourceList("4000m", "8Gi"),
+							},
+						},
+					},
+				},
+			},
+			// containers (4000m, 8Gi) + sidecar (250m, 256Mi) = 4250m, 8Gi+256Mi.
+			// Regular init (500m, 1G) is below that, so max yields running sum.
+			expectedResource: resource_info.RequirementsFromResourceList(
+				common_info.BuildResourceList("4250m", "8858370048"),
+			),
+		},
+		{
 			name: "pod with overhead resources",
 			pod: &v1.Pod{
 				Spec: v1.PodSpec{

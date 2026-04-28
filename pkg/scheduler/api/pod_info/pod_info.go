@@ -380,8 +380,25 @@ func getPodGroupID(pod *v1.Pod) common_info.PodGroupID {
 func getPodResourceRequest(pod *v1.Pod) *resource_info.ResourceRequirements {
 	result := getPodResourceWithoutInitContainers(pod)
 
-	// take max_resource(sum_pod, any_init_container)
+	// Native sidecars (initContainers with `restartPolicy: Always`, KEP-753)
+	// run concurrently with regular containers, so their requests are *added*
+	// to the running sum rather than max'd. This matches kubelet's admission
+	// accounting in `k8s.io/component-helpers/resource.PodRequests`; without
+	// this, KAI under-counts every pod with a native sidecar by the sidecar's
+	// request and may bind pods that kubelet then rejects with `OutOfCpu`.
 	for _, container := range pod.Spec.InitContainers {
+		if container.RestartPolicy != nil && *container.RestartPolicy == v1.ContainerRestartPolicyAlways {
+			sidecarReq := resource_info.RequirementsFromResourceList(container.Resources.Requests)
+			result.Add(&sidecarReq.BaseResource)
+		}
+	}
+
+	// Non-restartable initContainers run sequentially before regular containers;
+	// take max(result, init_request).
+	for _, container := range pod.Spec.InitContainers {
+		if container.RestartPolicy != nil && *container.RestartPolicy == v1.ContainerRestartPolicyAlways {
+			continue
+		}
 		err := result.SetMaxResource(resource_info.RequirementsFromResourceList(container.Resources.Requests))
 		if err != nil {
 			log.InfraLogger.Errorf("Failed to calculate pod required resources for pod %s/%s. Error: %s",
