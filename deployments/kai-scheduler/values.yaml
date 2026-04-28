@@ -45,6 +45,12 @@ operator:
   probeBindAddress: ":8081"
   qps: 50
   burst: 300
+  # PodDisruptionBudget limits voluntary evictions (drain) so not all operator pods are removed at once.
+  # Renders only when operator.replicaCount > 1. With a single replica, a PDB (e.g. minAvailable: 1) can
+  # block drains; maxUnavailable is not used for replicaCount: 1 by default.
+  podDisruptionBudget:
+    enabled: true
+    maxUnavailable: 1
 
 podgrouper:
   enabled: true

@@ -1,0 +1,18 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+{{- $cfg := fromYaml (include "kai-scheduler.operator.podDisruptionBudgetConfig" .) }}
+{{- if and $cfg.enabled (gt (int .Values.operator.replicaCount) 1) }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: kai-operator-pdb
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: kai-operator
+spec:
+  maxUnavailable: {{ $cfg.maxUnavailable }}
+  selector:
+    matchLabels:
+      app: kai-operator
+{{- end }}
