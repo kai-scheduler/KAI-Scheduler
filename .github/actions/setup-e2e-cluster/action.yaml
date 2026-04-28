@@ -17,7 +17,7 @@ inputs:
     required: false
     default: 'v1.34.0'
   feature_config:
-    description: Named feature configuration (default or dra-enabled)
+    description: Named feature configuration (default, dra-enabled, or workload-api-enabled)
     required: false
     default: 'default'
 

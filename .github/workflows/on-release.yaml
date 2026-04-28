@@ -87,8 +87,11 @@ jobs:
           # Verify patch versions at https://github.com/kubernetes-sigs/kind/releases
           # DRA feature config is only relevant for v1.32 (v1beta1) and v1.33 (v1beta2).
           # v1.34+ has DRA GA; v1.31 predates the DRA beta.
+          # Workload API (KEP-4671) is Alpha from v1.35 only — earlier versions don't serve the type.
           - k8s_version: v1.35.0
             feature_config: default
+          - k8s_version: v1.35.0
+            feature_config: workload-api-enabled
           - k8s_version: v1.34.0
             feature_config: default
           - k8s_version: v1.33.4
