@@ -141,16 +141,17 @@ func (b *Binder) setDefaultPlugins() {
 		defaultPluginConfig, found := binderPluginConfig[name]
 		if found {
 			//Merge default plugin config with user plugin config
+			pluginConfig := defaultPluginConfig
 			if userBinderConfig.Enabled != nil {
-				defaultPluginConfig.Enabled = ptr.To(*userBinderConfig.Enabled)
+				pluginConfig.Enabled = ptr.To(*userBinderConfig.Enabled)
 			}
 			if userBinderConfig.Priority != nil {
-				defaultPluginConfig.Priority = ptr.To(*userBinderConfig.Priority)
+				pluginConfig.Priority = ptr.To(*userBinderConfig.Priority)
 			}
 			if userBinderConfig.Arguments != nil {
-				defaultPluginConfig.Arguments = copyStringMap(userBinderConfig.Arguments)
+				pluginConfig.Arguments = copyStringMap(userBinderConfig.Arguments)
 			}
-			binderPluginConfig[name] = defaultPluginConfig
+			binderPluginConfig[name] = pluginConfig
 		} else {
 			//If user set plugin but not the enabled parameter, default to enabled
 			if userBinderConfig.Enabled == nil {
