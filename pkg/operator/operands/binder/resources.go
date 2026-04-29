@@ -234,7 +234,8 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1binder.Binder, fakeGPU 
 			*config.ResourceReservation.AllocationTimeout))
 	}
 
-	pluginsJSON, err := json.Marshal(resolveBinderPluginsConfig(config))
+	pluginsConfig := binderplugins.FromAPIConfig(config.Plugins)
+	pluginsJSON, err := json.Marshal(pluginsConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal binder plugins: %w", err)
 	}
@@ -292,18 +293,6 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1binder.Binder, fakeGPU 
 	}
 
 	return args, nil
-}
-
-func resolveBinderPluginsConfig(config *kaiv1binder.Binder) binderplugins.Config {
-	apiConfig := config.Plugins
-	if len(apiConfig) == 0 {
-		bindTimeoutSeconds := kaiv1binder.DefaultBindTimeoutSeconds
-		if config.VolumeBindingTimeoutSeconds != nil {
-			bindTimeoutSeconds = *config.VolumeBindingTimeoutSeconds
-		}
-		apiConfig = kaiv1binder.DefaultPluginsConfig(bindTimeoutSeconds, kaiv1binder.DefaultCDIEnabled)
-	}
-	return binderplugins.FromAPIConfig(apiConfig)
 }
 
 // resolveCDIEnabled fills the gpusharing cdiEnabled plugin argument when it
