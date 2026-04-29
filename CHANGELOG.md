@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+### Changed
+
+### Fixed
+
+## [v0.12.19] - 2026-04-29
+
 ### Changed
 - Update go version to v1.25.6, with appropriate upgrades to the base docker images, linter, and controller generator. [#1282](https://github.com/kai-scheduler/KAI-Scheduler/pull/1283) [davidLif](https://github.com/davidLif)
 
