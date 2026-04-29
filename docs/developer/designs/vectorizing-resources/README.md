@@ -394,14 +394,100 @@ Notes:
 
 ## After Optimization (filled in Phase 5)
 
-*Placeholder for final performance metrics and improvements.*
+### Test Environment
 
-This section will be populated with:
-- Vector-based implementation performance metrics
-- Side-by-side comparison tables (before/after)
-- Performance improvement percentages
-- Analysis of optimization effectiveness
-- Recommendations for further improvements
+Same hardware and configuration as baseline (Intel Core Ultra 7 165H, performance governor).
+
+This refresh was run on commit `91be47d8` (`refactor(scheduler): remove Resource fields from PodInfo and PodGroupInfo (#1238)`), which is the merged `origin/main` commit for the vectorizing-resources refactor effort. `main` had already moved on by the time these measurements were rerun, so the results below are anchored to that refactor endpoint rather than current `main`.
+
+- **Action benchmarks**: `make benchmark BENCH_OUTPUT=benchmark-91be47d8.txt`
+  - Expands to `go test -bench=. -benchmem -count=6 -run=^$ ./pkg/scheduler/actions/...`
+- **API micro-benchmarks**:
+  - `go test -bench='BenchmarkPodInfoClone' -benchmem -count=6 -run='^$' ./pkg/scheduler/api/pod_info`
+  - `go test -bench='BenchmarkIsTaskAllocatable' -benchmem -count=6 -run='^$' ./pkg/scheduler/api/node_info`
+
+### Methodology Note
+
+The original baseline action numbers in this document were collected with `-benchtime=10x`. This refresh uses the repository's current benchmark targets with Go's default auto-calibrated `b.N`. The post-refactor numbers below are current measurements for the merged refactor commit, but percentage deltas against the original baseline should be treated as directional rather than perfectly apples-to-apples.
+
+### API-level Benchmarks: IsTaskAllocatable
+
+`NodeInfo.IsTaskAllocatable()` remains one of the clearest wins from the vectorized model, especially as the number of tracked resources grows.
+
+| Benchmark | Baseline (ns/op) | After (ns/op) | Speedup | Allocs Before → After |
+|-----------|----------------:|-------------:|--------:|----------------------:|
+| best-effort-cpu-only | 55 | 49.7 | **1.1x** | 0 → 0 |
+| regular-gpu | 105 | 82.5 | **1.3x** | 3 (48B) → 3 (48B) |
+| fractional-gpu | 107 | 75.4 | **1.4x** | 3 (48B) → 3 (48B) |
+| mig-1g-10gb | 201 | 72.8 | **2.8x** | 0 → 0 |
+| gpu-memory-request | 106 | 75.5 | **1.4x** | 3 (48B) → 3 (48B) |
+| custom-resources-1-present | 117 | 43.5 | **2.7x** | 0 → 0 |
+| custom-resources-2-present | 133 | 46.9 | **2.8x** | 0 → 0 |
+| custom-resources-5-present | 174 | 46.5 | **3.7x** | 0 → 0 |
+| custom-resources-10-present | 253 | 51.6 | **4.9x** | 0 → 0 |
+| custom-resources-1-with-1-missing | 123 | 44.7 | **2.7x** | 3 (48B) → **0 (0B)** |
+| custom-resources-2-with-1-missing | 132 | 41.4 | **3.2x** | 3 (48B) → **0 (0B)** |
+| custom-resources-5-with-1-missing | 153 | 45.1 | **3.4x** | 3 (48B) → **0 (0B)** |
+| custom-resources-10-with-1-missing | 196 | 52.6 | **3.7x** | 3 (48B) → **0 (0B)** |
+
+Key observation: custom-resource checks now stay in a narrow 41-52ns band even as the number of resources grows, and missing-resource cases no longer allocate.
+
+### API-level Benchmarks: PodInfo.Clone
+
+| Benchmark | Baseline (ns/op) | After (ns/op) | Delta | Memory | Allocs |
+|-----------|----------------:|-------------:|------:|-------:|-------:|
+| Minimal | 506 | 571.7 | +13.0% | 976B → 784B | 12 → 10 |
+| With GPU | 511 | 388.1 | -24.1% | 976B → 784B | 12 → 10 |
+| With Multiple GPUs | 617 | 393.6 | -36.2% | 1184B → 784B | 13 → 10 |
+
+Clone results are mixed in this rerun: the GPU-bearing cases improved materially, while the minimal case regressed slightly in raw time but still reduced memory and allocation count.
+
+### Action-level Benchmarks
+
+At the full action level, the improvements are modest because session construction and broader scheduling setup still dominate total runtime.
+
+| Benchmark | Baseline (ns/op) | After (ns/op) | Delta | After Memory | After Allocs |
+|-----------|----------------:|-------------:|------:|-------------:|-------------:|
+| AllocateAction Small | 106.6M | 108.8M | +2.1% | 2.24Mi | 34.9k |
+| AllocateAction Medium | 127.1M | 130.2M | +2.5% | 12.03Mi | 312.2k |
+| AllocateAction Large | 183.3M | 189.1M | +3.1% | 41.43Mi | 1.337M |
+| ReclaimAction Small | 102.7M | 103.1M | +0.4% | 886.7Ki | 8.0k |
+| ReclaimAction Medium | 105.0M | 106.1M | +1.0% | 2.89Mi | 25.3k |
+| PreemptAction Small | 104.7M | 103.9M | -0.8% | 1.02Mi | 10.9k |
+| PreemptAction Medium | 110.5M | 112.1M | +1.4% | 4.11Mi | 37.8k |
+| ConsolidationAction Small | 111.4M | 115.2M | +3.4% | 5.44Mi | 69.5k |
+| ConsolidationAction Medium | 187.5M | 186.7M | -0.4% | 46.40Mi | 667.1k |
+
+### Additional Action Benchmarks Added During the Refactor
+
+These were not part of the original baseline table, so they are listed as post-refactor reference points only.
+
+| Benchmark | After (ns/op) | After Memory | After Allocs |
+|-----------|--------------:|-------------:|-------------:|
+| FullSchedulingCycle Small | 105.9M | 1.39Mi | 20.5k |
+| FullSchedulingCycle Medium | 119.9M | 6.85Mi | 167.5k |
+| FullSchedulingCycle Large | 148.6M | 22.72Mi | 696.8k |
+| ManyQueues Medium | 135.0M | 16.30Mi | 350.0k |
+| GangScheduling Medium | 143.4M | 17.13Mi | 571.3k |
+
+### Reclaim Scaling (Primary Bottleneck)
+
+The large-scale reclaim path was the main motivation for the vectorization work. This rerun confirms the critical outcome: the 1000-node reclaim benchmark now completes reliably instead of timing out.
+
+| Nodes | Baseline (ns/op) | After (ns/op) | Delta | After Memory | After Allocs |
+|------:|----------------:|-------------:|------:|-------------:|-------------:|
+| 10 | 104.4M | 105.2M | +0.8% | 1.71Mi | 18.1k |
+| 50 | 130.2M | 130.7M | +0.4% | 15.42Mi | 207.2k |
+| 100 | 241.2M | 213.4M | -11.5% | 51.95Mi | 779.6k |
+| 200 | 816.0M | 728.0M | -10.8% | 205.16Mi | 3.350M |
+| 500 | 8.97s | 9.17s | +2.2% | 1.49Gi | 27.654M |
+| 1000 | **>40min (timeout)** | **76.30s** | **completes** | 7.87Gi | 157.955M |
+
+### Takeaways
+
+- The most important functional result held: `BenchmarkReclaimLargeJobs_1000Node` now completes in about 76 seconds on average instead of timing out after 40 minutes.
+- `IsTaskAllocatable()` still shows the strongest CPU-path improvements, particularly for custom-resource-heavy cases, with 2.7x-4.9x speedups and zero allocations in missing-resource scenarios.
+- End-to-end action benchmarks mostly stayed within low single-digit movement, which suggests the vectorized resource model removes a real hot-path cost without dramatically changing total scheduler action time on its own.
 
 ## Future Work: Complete Resource Struct Removal
 
