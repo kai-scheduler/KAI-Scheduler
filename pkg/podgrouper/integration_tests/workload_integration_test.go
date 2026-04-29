@@ -326,6 +326,54 @@ var _ = Describe("Workload API translation", func() {
 		}, assertTimeout, assertInterval).Should(BeNumerically(">=", 1))
 	})
 
+	It("uses the Workload as PodGroup owner when bare pods reference it via OwnerReference", func(ctx context.Context) {
+		wl := &schedulingv1alpha1.Workload{
+			ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "owns-pg"},
+			Spec: schedulingv1alpha1.WorkloadSpec{
+				PodGroups: []schedulingv1alpha1.PodGroup{{
+					Name:   "g",
+					Policy: schedulingv1alpha1.PodGroupPolicy{Gang: &schedulingv1alpha1.GangSchedulingPolicy{MinCount: 3}},
+				}},
+			},
+		}
+		Expect(k8sClient.Create(ctx, wl)).To(Succeed())
+
+		wlOwnerRef := metav1.OwnerReference{
+			APIVersion: schedulingv1alpha1.SchemeGroupVersion.String(),
+			Kind:       "Workload",
+			Name:       wl.Name,
+			UID:        wl.UID,
+		}
+
+		for _, name := range []string{"a", "b", "c"} {
+			p := newPod(ns, name, &corev1.WorkloadReference{Name: "owns-pg", PodGroup: "g"})
+			p.OwnerReferences = []metav1.OwnerReference{wlOwnerRef}
+			Expect(k8sClient.Create(ctx, p)).To(Succeed())
+		}
+
+		pg := &schedulingv2alpha2.PodGroup{}
+		Eventually(func() error {
+			return k8sClient.Get(ctx, types.NamespacedName{Namespace: ns, Name: "owns-pg-g"}, pg)
+		}, assertTimeout, assertInterval).Should(Succeed())
+
+		Expect(pg.OwnerReferences).To(HaveLen(1))
+		Expect(pg.OwnerReferences[0].Kind).To(Equal("Workload"))
+		Expect(pg.OwnerReferences[0].UID).To(Equal(wl.UID),
+			"PodGroup must be owned by the Workload, not by any individual pod")
+
+		Consistently(func() (types.UID, error) {
+			cur := &schedulingv2alpha2.PodGroup{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: ns, Name: "owns-pg-g"}, cur); err != nil {
+				return "", err
+			}
+			if len(cur.OwnerReferences) == 0 {
+				return "", nil
+			}
+			return cur.OwnerReferences[0].UID, nil
+		}, consistentlyWindow, assertInterval).Should(Equal(wl.UID),
+			"PodGroup OwnerReference must stay pinned to the Workload, not thrash across pod reconciles")
+	})
+
 	It("lets the Workload override an owning controller's grouping decision", func(ctx context.Context) {
 		Expect(k8sClient.Create(ctx, &schedulingv1alpha1.Workload{
 			ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: "smallwl"},
