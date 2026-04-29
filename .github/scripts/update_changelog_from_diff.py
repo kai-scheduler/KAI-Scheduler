@@ -39,7 +39,7 @@ def main() -> None:
         # Collect actual added entries; skip blank additions and the section header itself
         # (the header is re-emitted later only if missing in [Unreleased]).
         if line.startswith("+") and not line.startswith("+++"):
-            if not raw.startswith("### ") and raw.strip():
+            if not raw.startswith("##") and raw.strip():
                 additions.append((current_section, raw))
 
     if not additions:
