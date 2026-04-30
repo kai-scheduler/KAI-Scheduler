@@ -50,6 +50,8 @@ simulated allocation. This is expensive and does not change the outcome.
 - Return the same useful scheduling error users would have seen after
   allocation failed.
 - Apply the same guard to reclaim, preempt, and consolidation.
+- Avoid adding duplicate pre-filter cost for healthy jobs where the guard finds
+  no blocker.
 
 ## Non-Goals
 
@@ -172,6 +174,58 @@ For this action guard, a candidate predicate must opt in by returning
 guard should not treat every `UnschedulableAndUnresolvable` from every predicate
 as actionable; the predicate still has to be one of the explicitly supported
 candidate predicates.
+
+## Session-Scoped Pre-Filter Cache
+
+The guard adds an early pre-filter read before the solver path. Without caching,
+healthy jobs can run the same candidate pre-filters twice:
+
+1. once in the action guard;
+2. again later when `allocateTask` calls `ssn.PrePredicateFn`.
+
+That duplicate work is unacceptable for the no-blocker path at scale. The
+predicates plugin should therefore cache the actual pre-filter result it reads
+for this guard and let the normal `PrePredicateFn` path reuse it.
+
+This should be a plugin-owned, session-scoped cache, not a new global framework
+cache. The current session lifecycle supports this pattern: `OpenSession` calls
+the configured plugin builder for each session, stores the returned plugin
+instance in `ssn.plugins`, and `CloseSession` calls `OnSessionClose` before the
+session clears its plugin map. In production, a plugin instance and its fields
+are therefore session-local.
+
+Each plugin that adds a cache is responsible for its own consistency rules:
+
+- initialize or reset the cache in `OnSessionOpen`;
+- cache only results whose inputs are stable for the intended cache lifetime;
+- delete entries after read if the cached result depends on state that can be
+  consumed or changed;
+- avoid caching results that depend on simulated victim changes unless the cache
+  key includes that state.
+
+For this feature, the predicates plugin cache should store results produced by
+real `predicate.PreFilter(task.Pod)` calls for the supported candidate
+predicates. It should not store synthetic shortcuts, because Kubernetes
+pre-filters may populate per-pod cycle state that later filter logic expects.
+
+Suggested cache shape:
+
+```go
+type cachedPrePredicateResult struct {
+	required bool
+	nodes    sets.Set[string]
+	status   *ksf.Status
+}
+
+type predicatesPlugin struct {
+	// existing fields...
+	prePredicateCache map[common_info.PodID]map[k8s_internal.PredicateName]cachedPrePredicateResult
+}
+```
+
+Both the victim-invariant guard and `evaluateTaskOnPrePredicate` should call a
+single helper that reads or populates this cache. This keeps the guard from
+adding extra pre-filter cost when it does not find a blocker.
 
 ## Initial Classifiers
 
@@ -324,6 +378,10 @@ Required tests:
 - predicate classifier positives for missing PVC, missing ConfigMap, and
   max-node-size;
 - predicate classifier negatives for unknown and victim-dependent failures;
+- predicates plugin cache reuses candidate pre-filter results between the guard
+  and the normal `PrePredicateFn` path;
+- predicates plugin cache is reset in `OnSessionOpen`;
+- cached skip statuses still update `skipPredicates`;
 - action tests proving reclaim, preempt, and consolidation skip solver work;
 - action tests proving the skip does not update smallest-failed-job
   representatives;
