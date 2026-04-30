@@ -120,4 +120,3 @@ The `manifest.json` file lists all available test runs:
 ### Dashboard Deployment
 
 The dashboard is automatically deployed to GitHub Pages when changes are pushed to the `docs/scale-tests/` directory. The S3 bucket URL is configured via the `SCALE_TESTS_S3_URL` repository variable
-
