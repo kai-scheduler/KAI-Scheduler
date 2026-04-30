@@ -50,6 +50,10 @@ func TestMissingPVCReclaimTopologyHasVolumeBindingFailure(t *testing.T) {
 		OccupiedQueueCPUQuota: 1000,
 	})
 	ssn := test_utils.BuildSession(topology, controller)
+	onJobSolutionStartCalls := 0
+	ssn.AddOnJobSolutionStartFn(func() {
+		onJobSolutionStartCalls++
+	})
 
 	job := ssn.ClusterInfo.PodGroupInfos[common_info.PodGroupID("missing-pvc-job-0")]
 	require.NotNil(t, job)
@@ -60,7 +64,11 @@ func TestMissingPVCReclaimTopologyHasVolumeBindingFailure(t *testing.T) {
 	require.Contains(t, err.Error(), `persistentvolumeclaim "busybox-missing-pvc" not found`)
 
 	reclaim.New().Execute(ssn)
+	require.Zero(t, onJobSolutionStartCalls)
 	require.Equal(t, pod_status.Pending, task.Status)
+	require.Contains(t, job.TasksFitErrors[task.UID].Error(), `persistentvolumeclaim "busybox-missing-pvc" not found`)
+	require.NotEmpty(t, job.JobFitErrors)
+	require.Contains(t, job.JobFitErrors[0].DetailedMessage(), "Resources were not found for pod runai-reclaim/missing-pvc-job-0-0 due to:")
 }
 
 func BenchmarkReclaimWithMissingPVCJobs(b *testing.B) {
