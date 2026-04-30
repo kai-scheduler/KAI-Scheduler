@@ -28,6 +28,7 @@ from typing import Optional
 from typing import Tuple
 from urllib import request
 
+__version__ = '0.5.0'
 
 DEFAULT_BRANCH = 'master'
 DEFAULT_REMOTE = 'origin'
