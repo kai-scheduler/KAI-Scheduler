@@ -10,14 +10,24 @@ import (
 	"strings"
 	"testing"
 
-	"k8s.io/api/core/v1"
+	"go.uber.org/mock/gomock"
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
+	ksf "k8s.io/kube-scheduler/framework"
 	"k8s.io/utils/pointer"
 
+	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_affinity"
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_internal"
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_internal/predicates"
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
@@ -180,6 +190,181 @@ func Test_evaluateTaskOnPrePredicate(t *testing.T) {
 	}
 }
 
+func TestClassifyVictimInvariantPrePredicateFailure(t *testing.T) {
+	tests := []struct {
+		name          string
+		predicateName k8s_internal.PredicateName
+		status        *ksf.Status
+		wantFailure   bool
+		wantErrorPart string
+	}{
+		{
+			name:          "supported predicate with unresolvable failure",
+			predicateName: predicates.VolumeBinding,
+			status:        ksf.NewStatus(ksf.UnschedulableAndUnresolvable, "persistentvolumeclaim \"missing\" not found"),
+			wantFailure:   true,
+			wantErrorPart: "persistentvolumeclaim \"missing\" not found",
+		},
+		{
+			name:          "supported predicate with resolvable status is ignored",
+			predicateName: predicates.VolumeBinding,
+			status:        ksf.NewStatus(ksf.Unschedulable, "resolvable later"),
+			wantFailure:   false,
+		},
+		{
+			name:          "unsupported predicate is ignored",
+			predicateName: predicates.PodAffinity,
+			status:        ksf.NewStatus(ksf.UnschedulableAndUnresolvable, "not used by the action guard"),
+			wantFailure:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			failure := classifyVictimInvariantPrePredicateFailure(tt.predicateName, tt.status)
+			if tt.wantFailure {
+				if failure == nil {
+					t.Fatal("classifyVictimInvariantPrePredicateFailure() returned nil, want failure")
+				}
+				if !strings.Contains(failure.Err.Error(), tt.wantErrorPart) {
+					t.Fatalf("classifyVictimInvariantPrePredicateFailure() error = %q, want substring %q",
+						failure.Err.Error(), tt.wantErrorPart)
+				}
+				return
+			}
+
+			if failure != nil {
+				t.Fatalf("classifyVictimInvariantPrePredicateFailure() = %v, want nil", failure)
+			}
+		})
+	}
+}
+
+func TestEvaluateTaskOnVictimInvariantPrePredicates(t *testing.T) {
+	task := &pod_info.PodInfo{
+		UID:       common_info.PodID(types.UID("pod-1")),
+		Name:      "p1",
+		Namespace: "ns1",
+		Pod:       &v1.Pod{},
+	}
+
+	configMapCalled := false
+	maxNodeResourcesCalled := false
+	skipPredicates := SkipPredicates{}
+	k8sPredicates := k8s_internal.SessionPredicates{
+		predicates.VolumeBinding: {
+			IsPreFilterRequired: func(_ *v1.Pod) bool { return true },
+			PreFilter: func(_ *v1.Pod) (sets.Set[string], *ksf.Status) {
+				return nil, ksf.NewStatus(ksf.Skip)
+			},
+		},
+		predicates.ConfigMap: {
+			IsPreFilterRequired: func(_ *v1.Pod) bool { return true },
+			PreFilter: func(_ *v1.Pod) (sets.Set[string], *ksf.Status) {
+				configMapCalled = true
+				return nil, ksf.NewStatus(ksf.UnschedulableAndUnresolvable, "Missing required configmaps: [required-cm]")
+			},
+		},
+		predicates.MaxNodePoolResources: {
+			IsPreFilterRequired: func(_ *v1.Pod) bool { return true },
+			PreFilter: func(_ *v1.Pod) (sets.Set[string], *ksf.Status) {
+				maxNodeResourcesCalled = true
+				return nil, ksf.NewStatus(ksf.UnschedulableAndUnresolvable, "should not be reached")
+			},
+		},
+	}
+
+	failure := evaluateTaskOnVictimInvariantPrePredicates(task, k8sPredicates, skipPredicates)
+	if failure == nil {
+		t.Fatal("evaluateTaskOnVictimInvariantPrePredicates() returned nil, want failure")
+	}
+	if !strings.Contains(failure.Err.Error(), "Missing required configmaps") {
+		t.Fatalf("evaluateTaskOnVictimInvariantPrePredicates() error = %q, want configmap failure",
+			failure.Err.Error())
+	}
+	if !configMapCalled {
+		t.Fatal("evaluateTaskOnVictimInvariantPrePredicates() did not evaluate the ConfigMap candidate")
+	}
+	if maxNodeResourcesCalled {
+		t.Fatal("evaluateTaskOnVictimInvariantPrePredicates() continued after the first failure")
+	}
+	if !skipPredicates.ShouldSKip(task.UID, predicates.VolumeBinding) {
+		t.Fatal("evaluateTaskOnVictimInvariantPrePredicates() did not record a skip status for VolumeBinding")
+	}
+}
+func TestMaxPodsWithReleasingPods(t *testing.T) {
+	// Test that releasing pods don't count toward the max pods limit
+	node := common_info.BuildNode("n1", common_info.BuildResourceList("16000m", "32G"))
+	node.Status.Allocatable[v1.ResourcePods] = *resource.NewQuantity(110, resource.DecimalSI)
+
+	// Create 109 running pods and 1 releasing pod
+	runningPods := make([]*v1.Pod, 109)
+	for i := 0; i < 109; i++ {
+		runningPods[i] = common_info.BuildPod("default", fmt.Sprintf("running-pod-%d", i), "n1",
+			v1.PodRunning, common_info.BuildResourceList("100m", "100M"),
+			[]metav1.OwnerReference{}, map[string]string{},
+			map[string]string{commonconstants.PodGroupAnnotationForPod: "job1"})
+	}
+
+	releasingPod := common_info.BuildPod("default", "releasing-pod", "n1",
+		v1.PodRunning, common_info.BuildResourceList("100m", "100M"),
+		[]metav1.OwnerReference{}, map[string]string{},
+		map[string]string{commonconstants.PodGroupAnnotationForPod: "job1"})
+
+	preemptorPod := common_info.BuildPod("default", "preemptor-pod", "",
+		v1.PodPending, common_info.BuildResourceList("100m", "100M"),
+		[]metav1.OwnerReference{}, map[string]string{},
+		map[string]string{commonconstants.PodGroupAnnotationForPod: "job2"})
+
+	// Create node info and add pods
+	nodePodAffinityInfo := pod_affinity.NewMockNodePodAffinityInfo(gomock.NewController(t))
+	nodePodAffinityInfo.EXPECT().AddPod(gomock.Any()).AnyTimes()
+
+	vectorMap := resource_info.NewResourceVectorMap()
+	ni := node_info.NewNodeInfo(node, nodePodAffinityInfo, vectorMap)
+
+	// Add running pods
+	for _, pod := range runningPods {
+		task := pod_info.NewTaskInfo(pod, nil, vectorMap)
+		task.Status = pod_status.Running
+		err := ni.AddTask(task)
+		if err != nil {
+			t.Fatalf("Failed to add running pod: %v", err)
+		}
+	}
+
+	// Add releasing pod
+	releasingTask := pod_info.NewTaskInfo(releasingPod, nil, vectorMap)
+	releasingTask.Status = pod_status.Releasing
+	err := ni.AddTask(releasingTask)
+	if err != nil {
+		t.Fatalf("Failed to add releasing pod: %v", err)
+	}
+
+	// Now try to allocate the preemptor pod - it should succeed because
+	// the releasing pod's resources (including its pod count) are available
+	preemptorTask := pod_info.NewTaskInfo(preemptorPod, nil, vectorMap)
+	preemptorTask.Status = pod_status.Pending
+
+	// Check if the task is allocatable
+	allocatable := ni.IsTaskAllocatableOnReleasingOrIdle(preemptorTask)
+
+	// Debug output
+	podsIdx := ni.VectorMap.GetIndex(v1.ResourcePods)
+	t.Logf("Node Allocatable pods: %v", ni.AllocatableVector.Get(podsIdx))
+	t.Logf("Node Idle pods: %v", ni.IdleVector.Get(podsIdx))
+	t.Logf("Node Used pods: %v", ni.UsedVector.Get(podsIdx))
+	t.Logf("Node Releasing pods: %v", ni.ReleasingVector.Get(podsIdx))
+	t.Logf("Preemptor ResReqVector: %v", preemptorTask.ResReqVector)
+
+	if !allocatable {
+		t.Errorf("Preemptor pod should be allocatable (109 Running + 1 Releasing + 1 new = 110 total, but Releasing pod resources are available)")
+		t.Logf("Node IdleVector: %v", ni.IdleVector)
+		t.Logf("Node UsedVector: %v", ni.UsedVector)
+		t.Logf("Node ReleasingVector: %v", ni.ReleasingVector)
+		t.Logf("Preemptor ResReqVector: %v", preemptorTask.ResReqVector)
+	}
+}
 func Test_predicatesPlugin_evaluateTaskOnPredicates(t *testing.T) {
 	type args struct {
 		taskName                                 common_info.PodID
