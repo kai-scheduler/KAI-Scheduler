@@ -75,6 +75,7 @@ type Session struct {
 	IsTaskAllocationOnNodeOverCapacityFns []api.IsTaskAllocationOverCapacityFn
 	SubsetNodesFns                        []api.SubsetNodesFn
 	PrePredicateFns                       []api.PrePredicateFn
+	VictimInvariantPrePredicateFns        []api.VictimInvariantPrePredicateFn
 	PredicateFns                          []api.PredicateFn
 	BindRequestMutateFns                  []api.BindRequestMutateFn
 	PreJobAllocationFns                   []api.PreJobAllocationFn

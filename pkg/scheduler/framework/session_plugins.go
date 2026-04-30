@@ -50,6 +50,10 @@ func (ssn *Session) AddPrePredicateFn(pf api.PrePredicateFn) {
 	ssn.PrePredicateFns = append(ssn.PrePredicateFns, pf)
 }
 
+func (ssn *Session) AddVictimInvariantPrePredicateFn(pf api.VictimInvariantPrePredicateFn) {
+	ssn.VictimInvariantPrePredicateFns = append(ssn.VictimInvariantPrePredicateFns, pf)
+}
+
 func (ssn *Session) AddSubsetNodesFn(snf api.SubsetNodesFn) {
 	ssn.SubsetNodesFns = append(ssn.SubsetNodesFns, snf)
 }
@@ -372,6 +376,18 @@ func (ssn *Session) PrePredicateFn(task *pod_info.PodInfo, job *podgroup_info.Po
 			return err
 		}
 	}
+	return nil
+}
+
+func (ssn *Session) VictimInvariantPrePredicateFailure(
+	task *pod_info.PodInfo,
+) *api.VictimInvariantPrePredicateFailure {
+	for _, prePredicate := range ssn.VictimInvariantPrePredicateFns {
+		if failure := prePredicate(task); failure != nil {
+			return failure
+		}
+	}
+
 	return nil
 }
 
