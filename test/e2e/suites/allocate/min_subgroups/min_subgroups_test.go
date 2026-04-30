@@ -271,6 +271,93 @@ var _ = Describe("MinSubGroup backward compatibility", Ordered, func() {
 	})
 })
 
+var _ = Describe("Mid-level SubGroup with minSubGroup=0 (fully elastic subtree)", Ordered, func() {
+	var testCtx *testcontext.TestContext
+
+	BeforeAll(func(ctx context.Context) {
+		testCtx = testcontext.GetConnectivity(ctx, Default)
+
+		parentQueue := queue.CreateQueueObject(utils.GenerateRandomK8sName(10), "")
+		childQueue := queue.CreateQueueObject(utils.GenerateRandomK8sName(10), parentQueue.Name)
+		childQueue.Spec.Resources.CPU.Quota = 400
+		childQueue.Spec.Resources.CPU.Limit = 400
+		testCtx.InitQueues([]*v2.Queue{childQueue, parentQueue})
+
+		capacity.SkipIfInsufficientClusterTopologyResources(testCtx.KubeClientset, []capacity.ResourceList{
+			{
+				Cpu:      resource.MustParse("400m"),
+				PodCount: 5,
+			},
+		})
+	})
+
+	AfterAll(func(ctx context.Context) {
+		err := rd.DeleteAllE2EPriorityClasses(ctx, testCtx.ControllerClient)
+		Expect(err).To(Succeed())
+		testCtx.ClusterCleanup(ctx)
+	})
+
+	AfterEach(func(ctx context.Context) {
+		testCtx.TestContextCleanup(ctx)
+	})
+
+	// Hierarchy:
+	//   PodGroup (minSubGroup=2)
+	//   ├── group-required (minSubGroup=2): gang-required subtree
+	//   │   ├── leaf-r1 (minMember=1, 1 pod)
+	//   │   └── leaf-r2 (minMember=1, 1 pod)
+	//   └── group-optional (minSubGroup=0): fully elastic subtree
+	//       ├── leaf-o1 (minMember=1, 1 pod)
+	//       └── leaf-o2 (minMember=1, 1 pod)
+
+	It("should schedule both subtrees when resources are ample", func(ctx context.Context) {
+		_, h := pod_group.CreateWithHierarchy(ctx, testCtx.KubeClientset, testCtx.KubeAiSchedClientset,
+			utils.GenerateRandomK8sName(10), testCtx.Queues[0], ptr.To[int32](2),
+			optionalSubtreeHierarchy(), nil, "", cpuPerPod)
+
+		namespace := queue.GetConnectedNamespaceToQueue(testCtx.Queues[0])
+		wait.ForPodsScheduled(ctx, testCtx.ControllerClient, namespace, h.AllPods)
+	})
+
+	It("should schedule group-required and skip group-optional (minSubGroup=0) when resources are constrained", func(ctx context.Context) {
+		fillerPod := createFillerPod(ctx, testCtx.KubeClientset, testCtx.Queues[0], "200m")
+		wait.ForPodScheduled(ctx, testCtx.ControllerClient, fillerPod)
+
+		_, h := pod_group.CreateWithHierarchy(ctx, testCtx.KubeClientset, testCtx.KubeAiSchedClientset,
+			utils.GenerateRandomK8sName(10), testCtx.Queues[0], ptr.To[int32](2),
+			optionalSubtreeHierarchy(), nil, "", cpuPerPod)
+
+		namespace := queue.GetConnectedNamespaceToQueue(testCtx.Queues[0])
+		wait.ForAtLeastNPodsScheduled(ctx, testCtx.ControllerClient, namespace, h.Pods["leaf-r1"], 1)
+		wait.ForAtLeastNPodsScheduled(ctx, testCtx.ControllerClient, namespace, h.Pods["leaf-r2"], 1)
+		wait.ForAtLeastNPodsUnschedulable(ctx, testCtx.ControllerClient, namespace, h.Pods["leaf-o1"], 1)
+		wait.ForAtLeastNPodsUnschedulable(ctx, testCtx.ControllerClient, namespace, h.Pods["leaf-o2"], 1)
+	})
+})
+
+// optionalSubtreeHierarchy returns a 2-level hierarchy where one mid-level group has minSubGroup=0
+// (fully elastic: no children required) and the other has minSubGroup=2 (both leaves required).
+func optionalSubtreeHierarchy() []pod_group.SubGroupNode {
+	return []pod_group.SubGroupNode{
+		{
+			Name:        "group-required",
+			MinSubGroup: ptr.To[int32](2),
+			Children: []pod_group.SubGroupNode{
+				{Name: "leaf-r1", MinMember: ptr.To[int32](1), PodCount: 1},
+				{Name: "leaf-r2", MinMember: ptr.To[int32](1), PodCount: 1},
+			},
+		},
+		{
+			Name:        "group-optional",
+			MinSubGroup: ptr.To[int32](0),
+			Children: []pod_group.SubGroupNode{
+				{Name: "leaf-o1", MinMember: ptr.To[int32](1), PodCount: 1},
+				{Name: "leaf-o2", MinMember: ptr.To[int32](1), PodCount: 1},
+			},
+		},
+	}
+}
+
 // flatLeaves generates N leaf SubGroupNodes named "{prefix}-0", "{prefix}-1", etc.
 func flatLeaves(prefix string, count, podsPerLeaf int) []pod_group.SubGroupNode {
 	nodes := make([]pod_group.SubGroupNode, 0, count)
