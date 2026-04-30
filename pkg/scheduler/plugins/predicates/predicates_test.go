@@ -14,6 +14,9 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
+	ksf "k8s.io/kube-scheduler/framework"
 	"k8s.io/utils/ptr"
 
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
@@ -186,6 +189,109 @@ func Test_evaluateTaskOnPrePredicate(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestClassifyVictimInvariantPrePredicateFailure(t *testing.T) {
+	tests := []struct {
+		name          string
+		predicateName k8s_internal.PredicateName
+		status        *ksf.Status
+		wantFailure   bool
+		wantErrorPart string
+	}{
+		{
+			name:          "supported predicate with unresolvable failure",
+			predicateName: predicates.VolumeBinding,
+			status:        ksf.NewStatus(ksf.UnschedulableAndUnresolvable, "persistentvolumeclaim \"missing\" not found"),
+			wantFailure:   true,
+			wantErrorPart: "persistentvolumeclaim \"missing\" not found",
+		},
+		{
+			name:          "supported predicate with resolvable status is ignored",
+			predicateName: predicates.VolumeBinding,
+			status:        ksf.NewStatus(ksf.Unschedulable, "resolvable later"),
+			wantFailure:   false,
+		},
+		{
+			name:          "unsupported predicate is ignored",
+			predicateName: predicates.PodAffinity,
+			status:        ksf.NewStatus(ksf.UnschedulableAndUnresolvable, "not used by the action guard"),
+			wantFailure:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			failure := classifyVictimInvariantPrePredicateFailure(tt.predicateName, tt.status)
+			if tt.wantFailure {
+				if failure == nil {
+					t.Fatal("classifyVictimInvariantPrePredicateFailure() returned nil, want failure")
+				}
+				if !strings.Contains(failure.Err.Error(), tt.wantErrorPart) {
+					t.Fatalf("classifyVictimInvariantPrePredicateFailure() error = %q, want substring %q",
+						failure.Err.Error(), tt.wantErrorPart)
+				}
+				return
+			}
+
+			if failure != nil {
+				t.Fatalf("classifyVictimInvariantPrePredicateFailure() = %v, want nil", failure)
+			}
+		})
+	}
+}
+
+func TestEvaluateTaskOnVictimInvariantPrePredicates(t *testing.T) {
+	task := &pod_info.PodInfo{
+		UID:       common_info.PodID(types.UID("pod-1")),
+		Name:      "p1",
+		Namespace: "ns1",
+		Pod:       &v1.Pod{},
+	}
+
+	configMapCalled := false
+	maxNodeResourcesCalled := false
+	skipPredicates := SkipPredicates{}
+	k8sPredicates := k8s_internal.SessionPredicates{
+		predicates.VolumeBinding: {
+			IsPreFilterRequired: func(_ *v1.Pod) bool { return true },
+			PreFilter: func(_ *v1.Pod) (sets.Set[string], *ksf.Status) {
+				return nil, ksf.NewStatus(ksf.Skip)
+			},
+		},
+		predicates.ConfigMap: {
+			IsPreFilterRequired: func(_ *v1.Pod) bool { return true },
+			PreFilter: func(_ *v1.Pod) (sets.Set[string], *ksf.Status) {
+				configMapCalled = true
+				return nil, ksf.NewStatus(ksf.UnschedulableAndUnresolvable, "Missing required configmaps: [required-cm]")
+			},
+		},
+		predicates.MaxNodePoolResources: {
+			IsPreFilterRequired: func(_ *v1.Pod) bool { return true },
+			PreFilter: func(_ *v1.Pod) (sets.Set[string], *ksf.Status) {
+				maxNodeResourcesCalled = true
+				return nil, ksf.NewStatus(ksf.UnschedulableAndUnresolvable, "should not be reached")
+			},
+		},
+	}
+
+	failure := evaluateTaskOnVictimInvariantPrePredicates(task, k8sPredicates, skipPredicates)
+	if failure == nil {
+		t.Fatal("evaluateTaskOnVictimInvariantPrePredicates() returned nil, want failure")
+	}
+	if !strings.Contains(failure.Err.Error(), "Missing required configmaps") {
+		t.Fatalf("evaluateTaskOnVictimInvariantPrePredicates() error = %q, want configmap failure",
+			failure.Err.Error())
+	}
+	if !configMapCalled {
+		t.Fatal("evaluateTaskOnVictimInvariantPrePredicates() did not evaluate the ConfigMap candidate")
+	}
+	if maxNodeResourcesCalled {
+		t.Fatal("evaluateTaskOnVictimInvariantPrePredicates() continued after the first failure")
+	}
+	if !skipPredicates.ShouldSKip(task.UID, predicates.VolumeBinding) {
+		t.Fatal("evaluateTaskOnVictimInvariantPrePredicates() did not record a skip status for VolumeBinding")
 	}
 }
 

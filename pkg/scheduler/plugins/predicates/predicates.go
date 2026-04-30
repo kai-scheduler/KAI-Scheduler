@@ -49,6 +49,12 @@ const (
 	prePredicateReasonsFormat = " Reasons: %s"
 )
 
+var victimInvariantPrePredicateCandidates = []k8s_internal.PredicateName{
+	predicates.VolumeBinding,
+	predicates.ConfigMap,
+	predicates.MaxNodePoolResources,
+}
+
 type prePredicateError struct {
 	name    string
 	err     error
@@ -114,6 +120,9 @@ func (pp *predicatesPlugin) OnSessionOpen(ssn *framework.Session) {
 	ssn.AddPrePredicateFn(func(task *pod_info.PodInfo, _ *podgroup_info.PodGroupInfo) error {
 		return evaluateTaskOnPrePredicate(task, k8sPredicates, pp.skipPredicates)
 	})
+	ssn.AddVictimInvariantPrePredicateFn(func(task *pod_info.PodInfo) *api.VictimInvariantPrePredicateFailure {
+		return evaluateTaskOnVictimInvariantPrePredicates(task, k8sPredicates, pp.skipPredicates)
+	})
 
 	ssn.AddPredicateFn(func(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo) error {
 		return pp.evaluateTaskOnPredicates(task, job, node, k8sPredicates,
@@ -165,6 +174,61 @@ func evaluateTaskOnPrePredicate(task *pod_info.PodInfo, k8sPredicates k8s_intern
 	}
 
 	return nil
+}
+
+func evaluateTaskOnVictimInvariantPrePredicates(
+	task *pod_info.PodInfo,
+	k8sPredicates k8s_internal.SessionPredicates,
+	skipPredicates SkipPredicates,
+) *api.VictimInvariantPrePredicateFailure {
+	for _, name := range victimInvariantPrePredicateCandidates {
+		predicate, found := k8sPredicates[name]
+		if !found || !predicate.IsPreFilterRequired(task.Pod) {
+			continue
+		}
+
+		_, status := predicate.PreFilter(task.Pod)
+		if status.IsSkip() {
+			skipPredicates.Add(task.UID, name)
+			continue
+		}
+
+		if failure := classifyVictimInvariantPrePredicateFailure(name, status); failure != nil {
+			return failure
+		}
+	}
+
+	return nil
+}
+
+func classifyVictimInvariantPrePredicateFailure(
+	predicateName k8s_internal.PredicateName,
+	status *ksf.Status,
+) *api.VictimInvariantPrePredicateFailure {
+	if !isVictimInvariantPrePredicateCandidate(predicateName) || status == nil {
+		return nil
+	}
+
+	if status.Code() != ksf.UnschedulableAndUnresolvable {
+		return nil
+	}
+
+	if err := status.AsError(); err != nil {
+		return &api.VictimInvariantPrePredicateFailure{
+			Err: err,
+		}
+	}
+
+	return nil
+}
+
+func isVictimInvariantPrePredicateCandidate(predicateName k8s_internal.PredicateName) bool {
+	switch predicateName {
+	case predicates.VolumeBinding, predicates.ConfigMap, predicates.MaxNodePoolResources:
+		return true
+	default:
+		return false
+	}
 }
 
 func generateErrorLog(allErrors []prePredicateError) string {
