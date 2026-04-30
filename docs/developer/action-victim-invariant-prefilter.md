@@ -422,3 +422,34 @@ Average before value:
 
 The benchmark should improve materially in both runtime and memory because the
 missing-PVC jobs should skip the solver and avoid the `SubsetNodesFn` path.
+
+Pre-cache values captured on 2026-04-30, after adding the victim-invariant
+guard and before adding the predicates-plugin cache:
+
+Missing-PVC pathological benchmark:
+
+```text
+BenchmarkReclaimWithMissingPVCJobs-22    1    3313361 ns/op    7952 B/op     153 allocs/op
+BenchmarkReclaimWithMissingPVCJobs-22    1    2117777 ns/op    7888 B/op     153 allocs/op
+BenchmarkReclaimWithMissingPVCJobs-22    1    2403462 ns/op    7760 B/op     152 allocs/op
+```
+
+Average pre-cache value:
+
+```text
+2.612 ms/op    7.867 KB/op    152.7 allocs/op
+```
+
+Healthy-path 500-node reclaim benchmark:
+
+```text
+BenchmarkReclaimLargeJobs_500Node-22    1    1560037975 ns/op    661550336 B/op    8091844 allocs/op
+BenchmarkReclaimLargeJobs_500Node-22    1    1564994242 ns/op    660362248 B/op    8083199 allocs/op
+BenchmarkReclaimLargeJobs_500Node-22    1    1543466130 ns/op    660252008 B/op    8083340 allocs/op
+```
+
+Average pre-cache value:
+
+```text
+1.556 s/op    660.722 MB/op    8.086M allocs/op
+```
