@@ -63,6 +63,11 @@ func (alloc *consolidationAction) Execute(ssn *framework.Session) {
 				continue
 			}
 		}
+		tasks := podgroup_info.GetTasksToAllocate(job, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false)
+		if task, failure := common.VictimInvariantPrePredicateFailureForTasks(ssn, job, tasks); failure != nil {
+			common.RecordVictimInvariantPrePredicateFailure(job, task, failure)
+			continue
+		}
 
 		metrics.IncPodgroupsConsideredByAction()
 		if succeeded, stmt := attemptToConsolidateForPreemptor(ssn, job); succeeded {
