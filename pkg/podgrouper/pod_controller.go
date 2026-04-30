@@ -113,6 +113,11 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 
 	err = r.PodGroupHandler.ApplyToCluster(ctx, *metadata)
 	if err != nil {
+		if errors.IsConflict(err) {
+			logger.V(1).Info("PodGroup update conflict, will retry", "namespace", metadata.Namespace, "name", metadata.Name)
+			err = nil
+			return ctrl.Result{Requeue: true}, nil
+		}
 		logger.V(1).Error(err, "Failed to apply metadata for pod group", metadata.Namespace, metadata.Name)
 		return ctrl.Result{}, err
 	}
