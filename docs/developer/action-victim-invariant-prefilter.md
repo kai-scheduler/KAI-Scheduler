@@ -453,3 +453,56 @@ Average pre-cache value:
 ```text
 1.556 s/op    660.722 MB/op    8.086M allocs/op
 ```
+
+Post-cache values captured on 2026-04-30, after adding the predicates-plugin
+cache:
+
+Missing-PVC pathological benchmark:
+
+```text
+BenchmarkReclaimWithMissingPVCJobs-22    1    3022566 ns/op    9520 B/op     161 allocs/op
+BenchmarkReclaimWithMissingPVCJobs-22    1    1865025 ns/op    9736 B/op     164 allocs/op
+BenchmarkReclaimWithMissingPVCJobs-22    1    4393209 ns/op    9360 B/op     160 allocs/op
+```
+
+Average post-cache value:
+
+```text
+3.094 ms/op    9.539 KB/op    161.7 allocs/op
+```
+
+Delta vs pre-cache:
+
+```text
++18.5% runtime    +21.3% memory    +5.9% allocs
+```
+
+Healthy-path 500-node reclaim benchmark:
+
+```text
+BenchmarkReclaimLargeJobs_500Node-22    1    1489040980 ns/op    644786072 B/op    7857065 allocs/op
+BenchmarkReclaimLargeJobs_500Node-22    1    1379026458 ns/op    643338952 B/op    7848437 allocs/op
+BenchmarkReclaimLargeJobs_500Node-22    1    1427762190 ns/op    643451088 B/op    7848416 allocs/op
+```
+
+Average post-cache value:
+
+```text
+1.432 s/op    643.859 MB/op    7.851M allocs/op
+```
+
+Delta vs pre-cache:
+
+```text
+-8.0% runtime    -2.6% memory    -2.9% allocs
+```
+
+Interpretation:
+
+- The cache achieves its main goal on the healthy path: the 500-node reclaim
+  benchmark is faster and allocates less.
+- The missing-PVC benchmark regresses slightly after the cache, but it remains
+  in the low-millisecond range and tiny memory footprint after the guard.
+- The important system-scale outcome is that the cache removes healthy-path
+  duplicate pre-filter work without giving back the original seconds-level
+  missing-PVC pathology.
