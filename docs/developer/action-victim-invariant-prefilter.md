@@ -468,13 +468,13 @@ BenchmarkReclaimWithMissingPVCJobs-22    1    4393209 ns/op    9360 B/op     160
 Average post-cache value:
 
 ```text
-3.094 ms/op    9.539 KB/op    161.7 allocs/op
+2.715 ms/op    9.403 KB/op    160.3 allocs/op
 ```
 
 Delta vs pre-cache:
 
 ```text
-+18.5% runtime    +21.3% memory    +5.9% allocs
++4.0% runtime    +19.5% memory    +5.0% allocs
 ```
 
 Healthy-path 500-node reclaim benchmark:
@@ -488,21 +488,23 @@ BenchmarkReclaimLargeJobs_500Node-22    1    1427762190 ns/op    643451088 B/op 
 Average post-cache value:
 
 ```text
-1.432 s/op    643.859 MB/op    7.851M allocs/op
+1.566 s/op    649.891 MB/op    7.967M allocs/op
 ```
 
 Delta vs pre-cache:
 
 ```text
--8.0% runtime    -2.6% memory    -2.9% allocs
++0.6% runtime    -1.6% memory    -1.5% allocs
 ```
 
 Interpretation:
 
-- The cache achieves its main goal on the healthy path: the 500-node reclaim
-  benchmark is faster and allocates less.
+- The final implementation caches only the supported candidate predicates:
+  `VolumeBinding`, `ConfigMap`, and `MaxNodePoolResources`.
+- On the healthy 500-node reclaim path, runtime stayed roughly unchanged
+  (`+0.6%`), while memory and allocations decreased slightly.
 - The missing-PVC benchmark regresses slightly after the cache, but it remains
   in the low-millisecond range and tiny memory footprint after the guard.
-- The important system-scale outcome is that the cache removes healthy-path
-  duplicate pre-filter work without giving back the original seconds-level
-  missing-PVC pathology.
+- The important system-scale outcome is that the final candidate-only cache
+  does not reintroduce the original seconds-level missing-PVC pathology while
+  slightly reducing healthy-path allocation cost.
