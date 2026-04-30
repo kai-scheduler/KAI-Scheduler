@@ -152,8 +152,11 @@ func Test_evaluateTaskOnPrePredicate(t *testing.T) {
 	for _, tt := range tests {
 		t.Logf("Running test: %s", tt.name)
 		t.Run(tt.name, func(t *testing.T) {
-			skipPredicates := SkipPredicates{}
-			got := evaluateTaskOnPrePredicate(tt.args.task, tt.args.k8sPredicates, skipPredicates)
+			pp := &predicatesPlugin{
+				skipPredicates:    SkipPredicates{},
+				prePredicateCache: map[prePredicateCacheKey]cachedPrePredicateResult{},
+			}
+			got := pp.evaluateTaskOnPrePredicate(tt.args.task, tt.args.k8sPredicates)
 
 			// I use this weird way to compare the 2 errors because sometimes the line order in
 			// the returning error will change
@@ -1215,7 +1218,10 @@ func TestEvaluateTaskOnVictimInvariantPrePredicates(t *testing.T) {
 
 	configMapCalled := false
 	maxNodeResourcesCalled := false
-	skipPredicates := SkipPredicates{}
+	pp := &predicatesPlugin{
+		skipPredicates:    SkipPredicates{},
+		prePredicateCache: map[prePredicateCacheKey]cachedPrePredicateResult{},
+	}
 	k8sPredicates := k8s_internal.SessionPredicates{
 		predicates.VolumeBinding: {
 			IsPreFilterRequired: func(_ *v1.Pod) bool { return true },
@@ -1239,7 +1245,7 @@ func TestEvaluateTaskOnVictimInvariantPrePredicates(t *testing.T) {
 		},
 	}
 
-	failure := evaluateTaskOnVictimInvariantPrePredicates(task, k8sPredicates, skipPredicates)
+	failure := pp.evaluateTaskOnVictimInvariantPrePredicates(task, k8sPredicates)
 	if failure == nil {
 		t.Fatal("evaluateTaskOnVictimInvariantPrePredicates() returned nil, want failure")
 	}
@@ -1252,7 +1258,138 @@ func TestEvaluateTaskOnVictimInvariantPrePredicates(t *testing.T) {
 	if maxNodeResourcesCalled {
 		t.Fatal("evaluation did not stop after the first victim-invariant failure")
 	}
-	if !skipPredicates.ShouldSKip(task.UID, predicates.VolumeBinding) {
+	if !pp.skipPredicates.ShouldSKip(task.UID, predicates.VolumeBinding) {
 		t.Fatal("skip predicate state for VolumeBinding was not recorded")
+	}
+}
+
+func TestPredicatesPluginCachesPrePredicateResultsBetweenGuardAndRegularPath(t *testing.T) {
+	task := &pod_info.PodInfo{
+		UID:       common_info.PodID(types.UID("pod-1")),
+		Name:      "p1",
+		Namespace: "ns1",
+		Pod:       &v1.Pod{},
+	}
+	preFilterCalls := 0
+	pp := &predicatesPlugin{
+		skipPredicates:    SkipPredicates{},
+		prePredicateCache: map[prePredicateCacheKey]cachedPrePredicateResult{},
+	}
+	k8sPredicates := k8s_internal.SessionPredicates{
+		predicates.ConfigMap: {
+			IsPreFilterRequired: func(_ *v1.Pod) bool { return true },
+			PreFilter: func(_ *v1.Pod) (sets.Set[string], *ksf.Status) {
+				preFilterCalls++
+				return nil, nil
+			},
+		},
+	}
+
+	failure := pp.evaluateTaskOnVictimInvariantPrePredicates(task, k8sPredicates)
+	if failure != nil {
+		t.Fatalf("evaluateTaskOnVictimInvariantPrePredicates() = %v, want nil", failure)
+	}
+	err := pp.evaluateTaskOnPrePredicate(task, k8sPredicates)
+	if err != nil {
+		t.Fatalf("evaluateTaskOnPrePredicate() = %v, want nil", err)
+	}
+	if preFilterCalls != 1 {
+		t.Fatalf("PreFilter() call count = %d, want 1", preFilterCalls)
+	}
+}
+
+func TestPredicatesPluginCachesPrePredicateResultsBetweenRegularAndGuardPath(t *testing.T) {
+	task := &pod_info.PodInfo{
+		UID:       common_info.PodID(types.UID("pod-1")),
+		Name:      "p1",
+		Namespace: "ns1",
+		Pod:       &v1.Pod{},
+	}
+	preFilterCalls := 0
+	pp := &predicatesPlugin{
+		skipPredicates:    SkipPredicates{},
+		prePredicateCache: map[prePredicateCacheKey]cachedPrePredicateResult{},
+	}
+	k8sPredicates := k8s_internal.SessionPredicates{
+		predicates.ConfigMap: {
+			IsPreFilterRequired: func(_ *v1.Pod) bool { return true },
+			PreFilter: func(_ *v1.Pod) (sets.Set[string], *ksf.Status) {
+				preFilterCalls++
+				return nil, nil
+			},
+		},
+	}
+
+	err := pp.evaluateTaskOnPrePredicate(task, k8sPredicates)
+	if err != nil {
+		t.Fatalf("evaluateTaskOnPrePredicate() = %v, want nil", err)
+	}
+	failure := pp.evaluateTaskOnVictimInvariantPrePredicates(task, k8sPredicates)
+	if failure != nil {
+		t.Fatalf("evaluateTaskOnVictimInvariantPrePredicates() = %v, want nil", failure)
+	}
+	if preFilterCalls != 1 {
+		t.Fatalf("PreFilter() call count = %d, want 1", preFilterCalls)
+	}
+}
+
+func TestPredicatesPluginCachedSkipStatusUpdatesSkipPredicates(t *testing.T) {
+	task := &pod_info.PodInfo{
+		UID: common_info.PodID(types.UID("pod-1")),
+		Pod: &v1.Pod{},
+	}
+	pp := &predicatesPlugin{
+		skipPredicates:    SkipPredicates{},
+		prePredicateCache: map[prePredicateCacheKey]cachedPrePredicateResult{},
+	}
+	k8sPredicates := k8s_internal.SessionPredicates{
+		predicates.VolumeBinding: {
+			IsPreFilterRequired: func(_ *v1.Pod) bool { return true },
+			PreFilter: func(_ *v1.Pod) (sets.Set[string], *ksf.Status) {
+				return nil, ksf.NewStatus(ksf.Skip)
+			},
+		},
+	}
+
+	if failure := pp.evaluateTaskOnVictimInvariantPrePredicates(task, k8sPredicates); failure != nil {
+		t.Fatalf("evaluateTaskOnVictimInvariantPrePredicates() = %v, want nil", failure)
+	}
+	pp.skipPredicates = SkipPredicates{}
+	if err := pp.evaluateTaskOnPrePredicate(task, k8sPredicates); err != nil {
+		t.Fatalf("evaluateTaskOnPrePredicate() = %v, want nil", err)
+	}
+	if !pp.skipPredicates.ShouldSKip(task.UID, predicates.VolumeBinding) {
+		t.Fatal("cached skip status did not restore skipPredicates state")
+	}
+}
+
+func TestPredicatesPluginDoesNotCacheNonCandidatePrePredicates(t *testing.T) {
+	task := &pod_info.PodInfo{
+		UID: common_info.PodID(types.UID("pod-1")),
+		Pod: &v1.Pod{},
+	}
+	preFilterCalls := 0
+	pp := &predicatesPlugin{
+		skipPredicates:    SkipPredicates{},
+		prePredicateCache: map[prePredicateCacheKey]cachedPrePredicateResult{},
+	}
+	k8sPredicates := k8s_internal.SessionPredicates{
+		predicates.PodFitsHostPorts: {
+			IsPreFilterRequired: func(_ *v1.Pod) bool { return true },
+			PreFilter: func(_ *v1.Pod) (sets.Set[string], *ksf.Status) {
+				preFilterCalls++
+				return nil, nil
+			},
+		},
+	}
+
+	if err := pp.evaluateTaskOnPrePredicate(task, k8sPredicates); err != nil {
+		t.Fatalf("evaluateTaskOnPrePredicate() = %v, want nil", err)
+	}
+	if err := pp.evaluateTaskOnPrePredicate(task, k8sPredicates); err != nil {
+		t.Fatalf("evaluateTaskOnPrePredicate() = %v, want nil", err)
+	}
+	if preFilterCalls != 2 {
+		t.Fatalf("PreFilter() call count = %d, want 2 for a non-candidate predicate", preFilterCalls)
 	}
 }
