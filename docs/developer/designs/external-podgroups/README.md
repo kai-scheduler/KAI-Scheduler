@@ -12,7 +12,7 @@ This blocks cross-workload gang scheduling. If multiple independent workloads sh
 - Allow pods from multiple workloads to join the same PodGroup.
 - Prevent podgrouper from creating competing PodGroups for opted-out pods.
 - Prevent podgrouper from overwriting external `pod-group-name` and `kai.scheduler/subgroup-name`.
-- Detect pods that reference missing subgroups and prevent unsafe scheduling.
+- Detect pods that reference missing subgroups and make the failure visible.
 - Preserve current auto-created PodGroup behavior unless users explicitly opt out.
 
 ## Non-Goals
@@ -115,7 +115,7 @@ Podgrouper should evaluate skip ownership before it applies PodGroup metadata or
 if pod schedulerName != configured scheduler:
     return
 
-if pod has kai.scheduler/skip-podgrouper: "true":
+if pod has kai.scheduler/skip-podgrouper and value is not "false":
     return
 
 if pod is ownerless and already has pod-group-name:
@@ -123,7 +123,7 @@ if pod is ownerless and already has pod-group-name:
 
 topOwner, allOwners = GetPodOwners(pod)
 
-if topOwner or any owner in allOwners has kai.scheduler/skip-podgrouper: "true":
+if topOwner or any owner in allOwners has kai.scheduler/skip-podgrouper and value is not "false":
     return
 
 metadata = GetPGMetadata(pod, topOwner, allOwners)
@@ -134,20 +134,19 @@ ApplyToCluster(metadata)
 assignPodToGroupAndSubGroup(pod, metadata)
 ```
 
-Only the exact value `"true"` should skip. Missing or invalid values should preserve existing podgrouper behavior.
+Any value other than explicit `"false"` should skip. If users do not want to skip podgrouper, they should omit the annotation.
+
+The ownerless pod with `pod-group-name` case should keep the current behavior: podgrouper skips it and does not re-create PodGroup metadata.
 
 ## Scheduler Behavior
 
-The scheduler already discovers PodGroup membership from `pod-group-name`. However, the current behavior around invalid subgroup labels is unsafe for external PodGroups: if a pod has `kai.scheduler/subgroup-name` that does not exist in the referenced PodGroup, the pod is not assigned to a scheduler PodSet and can be ignored.
+The scheduler already discovers PodGroup membership from `pod-group-name`.
 
-This must become an explicit configuration error:
+If a pod references a PodGroup that does not exist yet, the scheduler will not schedule it because scheduling happens at the PodGroup level. This may be a normal creation-order race, so the pod should not make a PodGroup fail and should not get a condition for the missing PodGroup.
 
-- During snapshot construction, detect every pod whose `kai.scheduler/subgroup-name` does not match a subgroup in its referenced PodGroup.
-- Mark the PodGroup unschedulable and do not allocate any pod from that PodGroup in the cycle.
-- Add a PodGroup `SchedulingCondition` with reason such as `InvalidPodGroup` or `InvalidSubGroup`, and a message naming the pod and missing subgroup.
-- Record an event on the PodGroup. Optionally mark the offending pod unschedulable when `markUnschedulable` is enabled.
+If a pod has `kai.scheduler/subgroup-name` that does not exist in its referenced PodGroup, only that pod should be ignored for scheduling. The scheduler should not mark the whole PodGroup unschedulable because elastic PodGroups may still be schedulable when some pods are missing or invalid.
 
-This requirement is part of the MVP because external PodGroups move subgroup assignment responsibility to users and external controllers. Silent ignore makes configuration mistakes hard to diagnose and can break gang semantics.
+The missing-subgroup case should be visible on the offending pod: the scheduler should set a pod condition explaining that the pod references a subgroup that does not exist in the PodGroup.
 
 ## Lifecycle And Events
 
@@ -164,9 +163,9 @@ Scheduling status and scheduling events remain on the PodGroup and pods. Users s
 1. Add `kai.scheduler/skip-podgrouper` as a constant.
 2. Add pod-level and owner-chain skip checks in podgrouper.
 3. Keep `metadata == nil` handling only as plugin compatibility, not as the public API.
-4. Add scheduler validation for pods that reference missing subgroups.
-5. Set a PodGroup scheduling condition and prevent scheduling when invalid subgroup membership is found.
-6. Add tests for pod-level skip, owner-chain skip, normal podgrouper behavior, and invalid subgroup handling.
+4. Keep missing-PodGroup references as ignored pods without setting a pod condition.
+5. Keep missing-subgroup handling pod-scoped: ignore the offending pod and set a pod condition explaining the invalid subgroup label.
+6. Add tests for pod-level skip, owner-chain skip, normal podgrouper behavior, missing PodGroup behavior, and invalid subgroup handling.
 
 ## Test Plan
 
@@ -174,7 +173,8 @@ Scheduling status and scheduling events remain on the PodGroup and pods. Users s
 - Top-owner and intermediate-owner annotations skip after owner lookup.
 - Owned pods with only `pod-group-name` continue through normal podgrouper reconciliation.
 - External PodGroup pods are not rewritten by podgrouper.
-- A missing subgroup label creates a PodGroup condition and prevents scheduling.
+- A missing PodGroup reference does not create a pod or PodGroup condition.
+- A missing subgroup label causes only the offending pod to be ignored and creates a pod condition.
 - A valid cross-workload PodGroup schedules atomically.
 
 ## Risks
