@@ -33,8 +33,12 @@ jobs:
             exit 0
           fi
 
-          pip3 install -U dco-check
-          dco-check --verbose \
+          python3 .github/scripts/dco_check.py --verbose \
             --exclude-pattern "dependabot\[bot\]@users\.noreply\.github\.com" \
             --exclude-pattern ".*github-actions\[bot\]@users\.noreply\.github\.com"
+
+          if [ $? -ne 0 ]; then
+            echo "DCO check failed"
+            exit 1
+          fi
 
