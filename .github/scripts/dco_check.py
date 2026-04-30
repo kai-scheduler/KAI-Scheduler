@@ -910,11 +910,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     # Detect CI
     # Use first one that applies
     retrievers = [
-        GitLabRetriever,
         GitHubRetriever,
-        AzurePipelinesRetriever,
-        AppVeyorRetriever,
-        CircleCiRetriever,
         GitRetriever,
     ]
     commit_retriever = None
