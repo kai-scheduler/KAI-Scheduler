@@ -117,9 +117,11 @@ While priority class is inferred from the workload types, this default can usual
 The PodGroup CRD includes the following key fields:
 
 ### Spec Fields
-- `minMember`: Minimum number of pods required for scheduling
+- `minMember`: Minimum number of pods required for scheduling. Mutually exclusive with `minSubGroup`
+- `minSubGroup`: Minimum number of direct child SubGroups required for hierarchical elastic gang scheduling. Mutually exclusive with `minMember`
 - `queue`: Queue name for resource allocation
 - `priorityClassName`: Priority of the PodGroup
+- `subGroups`: Logical subsets of pods. Leaf SubGroups use `minMember`; mid-level SubGroups can use `minSubGroup`
 - `markUnschedulable`: Whether to mark pods as unschedulable after failed scheduling attempts
 - `schedulingBackoff`: Number of cycles before marking the podgroup as unschedulable. Currently supports only 1 or -1 (no backoff)
 

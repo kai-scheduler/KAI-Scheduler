@@ -1,4 +1,4 @@
-# Hierarchical Elastic workloads with Subgroups via minSubGroups
+# Hierarchical Elastic workloads with SubGroups via minSubGroup
 
 ## Overview
 
@@ -35,7 +35,8 @@ Introduce a new `minSubGroup` field alongside existing `minMember`:
 type PodGroupSpec struct {
     // MinMember defines the minimal number of descendant pods required
     // Mutually exclusive with MinSubGroup (validation enforced)
-    MinMember int32 `json:"minMember,omitempty"`
+    // +optional
+    MinMember *int32 `json:"minMember,omitempty"`
 
     // NEW: 
     // MinSubGroup defines the minimal number of direct child SubGroups required
@@ -53,7 +54,8 @@ type SubGroup struct {
 
     // MinMember defines the minimal number of descendant pods for this SubGroup
     // Mutually exclusive with MinSubGroup (validation enforced)
-    MinMember int32   `json:"minMember,omitempty"`
+    // +optional
+    MinMember *int32 `json:"minMember,omitempty"`
 
     // NEW:
     // MinSubGroup defines the minimal number of direct child SubGroups required
@@ -213,8 +215,8 @@ The following validations will be enforced via a Validating Webhook:
 
 ### Mutual Exclusivity
 1. **PodGroup Level**: `minMember` and `minSubGroup` are mutually exclusive
-   - If `minSubGroup` is specified, `minMember` must be 0 or unset
-   - If `minMember` is specified and > 0, `minSubGroup` must be nil
+   - If `minSubGroup` is specified, `minMember` must be unset
+   - If `minMember` is specified, `minSubGroup` must be unset
 
 2. **SubGroup Level**: `minMember` and `minSubGroup` are mutually exclusive for each SubGroup
    - Same rules as PodGroup level
@@ -222,19 +224,20 @@ The following validations will be enforced via a Validating Webhook:
 ### Field-Specific Validations
 
 **When using `minMember`:**
-1. `minMember` must be ≥ 0. A value of 0 means the SubGroup has no required pods (all pods are elastic/opportunistic); the scheduler treats it as optional and deprioritizes it relative to SubGroups with minMember > 0 (see subgrouporder plugin).
-2. For mid-level SubGroups/PodGroups: Reserved for future use (currently must use `minSubGroup`)
+1. PodGroup `minMember` must be >= 1.
+2. Leaf SubGroup `minMember` is required and must be >= 0. A value of 0 means the SubGroup has no required pods (all pods are elastic/opportunistic); the scheduler treats it as optional and deprioritizes it relative to SubGroups with minMember > 0 (see subgrouporder plugin).
+3. Mid-level SubGroups cannot use `minMember`; they may set `minSubGroup` or omit it to require all direct children.
 
 **When using `minSubGroup`:**
 1. `minSubGroup` must be > 0
-2. `minSubGroup` must be ≤ number of direct child SubGroups
-3. Must have child SubGroups defined (cannot use on leaf SubGroups)
+2. Must have child SubGroups defined (cannot use on leaf SubGroups)
+3. If `minSubGroup` exceeds the number of direct child SubGroups, create and update requests are admitted with a webhook warning rather than rejected.
 
 ### Structural Validations
 1. **Unique SubGroup names** within a PodGroup
 2. **Parent references** must exist and not create cycles
 3. **Leaf SubGroups** (no children) must use `minMember`, not `minSubGroup`
-4. **Mid-level SubGroups** (has children) must use `minSubGroup`, not `minMember`
+4. **Mid-level SubGroups** (has children) cannot use `minMember`; they may use `minSubGroup` or omit it to require all direct children.
 
 ### Example Validations
 
@@ -285,10 +288,10 @@ spec:
       minSubGroup: 2   # ERROR: Leaf SubGroup has no children
 ```
 
-** Invalid: minSubGroup exceeds child count**
+** Warning: minSubGroup exceeds child count**
 ```yaml
 spec:
-  minSubGroup: 5     # ERROR: Only 4 child SubGroups defined
+  minSubGroup: 5     # WARNING: Only 4 child SubGroups defined
   subGroups:
     - name: prefill-0
     - name: prefill-1
