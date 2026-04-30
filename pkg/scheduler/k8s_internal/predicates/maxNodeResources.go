@@ -53,16 +53,16 @@ func (mnr *MaxNodeResourcesPredicate) PreFilter(_ context.Context, _ ksf.CycleSt
 	podInfo := pod_info.NewTaskInfo(pod)
 
 	if podInfo.ResReq.GPUs() > mnr.maxResources.GPUs() {
-		return nil, ksf.NewStatus(ksf.Unschedulable,
+		return nil, ksf.NewStatus(ksf.UnschedulableAndUnresolvable,
 			mnr.buildUnschedulableMessage(podInfo, "GPU", mnr.maxResources.GPUs(), ""))
 	}
 	if podInfo.ResReq.Cpu() > mnr.maxResources.Cpu() {
-		return nil, ksf.NewStatus(ksf.Unschedulable,
+		return nil, ksf.NewStatus(ksf.UnschedulableAndUnresolvable,
 			mnr.buildUnschedulableMessage(podInfo, "CPU",
 				mnr.maxResources.Cpu()/resource_info.MilliCPUToCores, "cores"))
 	}
 	if podInfo.ResReq.Memory() > mnr.maxResources.Memory() {
-		return nil, ksf.NewStatus(ksf.Unschedulable,
+		return nil, ksf.NewStatus(ksf.UnschedulableAndUnresolvable,
 			mnr.buildUnschedulableMessage(podInfo, "memory",
 				mnr.maxResources.Memory()/resource_info.MemoryToGB, "GB"))
 	}
@@ -76,7 +76,7 @@ func (mnr *MaxNodeResourcesPredicate) PreFilter(_ context.Context, _ ksf.CycleSt
 				units = "GB"
 				maxVal = float64(rrQuant) / resource_info.MemoryToGB
 			}
-			return nil, ksf.NewStatus(ksf.Unschedulable,
+			return nil, ksf.NewStatus(ksf.UnschedulableAndUnresolvable,
 				mnr.buildUnschedulableMessage(podInfo, string(rName), float64(maxVal), units))
 		}
 	}
