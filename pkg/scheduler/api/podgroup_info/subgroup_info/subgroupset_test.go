@@ -207,6 +207,51 @@ func TestGetMinChildrenToSatisfy(t *testing.T) {
 			t.Errorf("GetMinChildrenToSatisfy() = %d, want 1", got)
 		}
 	})
+	t.Run("minSubGroup_zero_returns_zero", func(t *testing.T) {
+		root := NewSubGroupSet("root", nil)
+		root.AddSubGroup(NewSubGroupSet("a", nil))
+		root.AddSubGroup(NewSubGroupSet("b", nil))
+		min := int32(0)
+		root.SetMinSubGroup(&min)
+		if got := root.GetMinMembersToSatisfy(); got != 0 {
+			t.Errorf("GetMinChildrenToSatisfy() = %d, want 0 (fully elastic subtree)", got)
+		}
+	})
+}
+
+func TestSubGroupSet_MinSubGroupZero_AlwaysSatisfied(t *testing.T) {
+	t.Run("no_allocated_children_still_satisfied", func(t *testing.T) {
+		root := NewSubGroupSet("root", nil)
+		root.AddPodSet(podSetWithRunningPods("ps", 3, 0))
+		min := int32(0)
+		root.SetMinSubGroup(&min)
+		if !root.IsMinRequirementSatisfied() {
+			t.Errorf("IsMinRequirementSatisfied() = false, want true (minSubGroup=0)")
+		}
+	})
+	t.Run("no_ready_members_still_ready_for_scheduling", func(t *testing.T) {
+		root := NewSubGroupSet("root", nil)
+		root.AddPodSet(podSetWithRunningPods("ps", 3, 0))
+		min := int32(0)
+		root.SetMinSubGroup(&min)
+		if !root.IsReadyForScheduling() {
+			t.Errorf("IsReadyForScheduling() = false, want true (minSubGroup=0)")
+		}
+	})
+	t.Run("nested_minSubGroup_zero_satisfied", func(t *testing.T) {
+		root := NewSubGroupSet("root", nil)
+		inner := NewSubGroupSet("inner", nil)
+		inner.AddPodSet(podSetWithRunningPods("ps", 2, 0))
+		min := int32(0)
+		inner.SetMinSubGroup(&min)
+		root.AddSubGroup(inner)
+		if !inner.IsMinRequirementSatisfied() {
+			t.Errorf("inner.IsMinRequirementSatisfied() = false, want true")
+		}
+		if got := root.GetNumActiveAllocatedDirectSubGroups(); got != 1 {
+			t.Errorf("root.GetNumActiveAllocatedDirectSubGroups() = %d, want 1 (inner is satisfied via minSubGroup=0)", got)
+		}
+	})
 }
 
 func TestGetNumActiveAllocatedDirectSubGroups(t *testing.T) {
