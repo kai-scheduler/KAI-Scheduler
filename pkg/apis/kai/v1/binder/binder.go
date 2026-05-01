@@ -25,9 +25,11 @@ const (
 
 	BindTimeoutSecondsArgument = "bindTimeoutSeconds"
 	CDIEnabledArgument         = "cdiEnabled"
+	HamiCoreEnabledArgument    = "hamiCoreEnabled"
 
 	DefaultBindTimeoutSeconds = 120
 	DefaultCDIEnabled         = false
+	DefaultHamiCoreEnabled    = true
 )
 
 var defaultPluginPriorities = map[string]int{
@@ -193,7 +195,8 @@ func DefaultPluginsConfig(bindTimeoutSeconds int, cdiEnabled bool) map[string]Pl
 			Enabled:  ptr.To(true),
 			Priority: ptr.To(defaultPluginPriorities[GPUSharingPluginName]),
 			Arguments: map[string]string{
-				CDIEnabledArgument: strconv.FormatBool(cdiEnabled),
+				CDIEnabledArgument:      strconv.FormatBool(cdiEnabled),
+				HamiCoreEnabledArgument: strconv.FormatBool(DefaultHamiCoreEnabled),
 			},
 		},
 	}

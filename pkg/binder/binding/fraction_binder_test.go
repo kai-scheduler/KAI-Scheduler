@@ -176,7 +176,7 @@ var _ = Describe("FractionBinder", func() {
 					testData.kubeObjects...).WithInterceptorFuncs(testData.clientInterceptFuncs).Build()
 
 				binderPlugins := plugins.New()
-				bindingGpuSharingPlugin := bindinggpusharing.New(fakeClient, false)
+				bindingGpuSharingPlugin := bindinggpusharing.New(fakeClient, false, false)
 				binderPlugins.RegisterPlugin(bindingGpuSharingPlugin)
 
 				testedBinder := NewBinder(fakeClient, rrs, binderPlugins)
@@ -238,7 +238,7 @@ var _ = Describe("FractionBinder", func() {
 			happyFlowObjects...).WithInterceptorFuncs(clientInterceptFuncs).Build()
 
 		binderPlugins := plugins.New()
-		bindingGpuSharingPlugin := bindinggpusharing.New(fakeClient, false)
+		bindingGpuSharingPlugin := bindinggpusharing.New(fakeClient, false, false)
 		binderPlugins.RegisterPlugin(bindingGpuSharingPlugin)
 
 		testedBinder := NewBinder(fakeClient, rrs, binderPlugins)

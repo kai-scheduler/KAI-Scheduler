@@ -119,6 +119,8 @@ var _ = Describe("Binder", func() {
 					To(Equal(strconv.Itoa(binderplugins.DefaultBindTimeoutSeconds)))
 				Expect(pluginConfig[binderplugins.GPUSharingPluginName].Arguments[binderplugins.CDIEnabledArgument]).
 					To(Equal(strconv.FormatBool(binderplugins.DefaultCDIEnabled)))
+				Expect(pluginConfig[binderplugins.GPUSharingPluginName].Arguments[binderplugins.HamiCoreEnabledArgument]).
+					To(Equal(strconv.FormatBool(true)))
 			})
 
 			It("passes volume binding timeout through plugin arguments", func(ctx context.Context) {

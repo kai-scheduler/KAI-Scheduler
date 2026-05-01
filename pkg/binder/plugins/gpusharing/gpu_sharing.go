@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"golang.org/x/exp/slices"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/common"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/state"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
 const (
@@ -28,12 +30,14 @@ const (
 type GPUSharing struct {
 	kubeClient             client.Client
 	gpuDevicePluginUsesCdi bool
+	hamiCoreEnabled        bool
 }
 
-func New(kubeClient client.Client, gpuDevicePluginUsesCdi bool) *GPUSharing {
+func New(kubeClient client.Client, gpuDevicePluginUsesCdi bool, hamiCoreEnabled bool) *GPUSharing {
 	return &GPUSharing{
 		kubeClient:             kubeClient,
 		gpuDevicePluginUsesCdi: gpuDevicePluginUsesCdi,
+		hamiCoreEnabled:        hamiCoreEnabled,
 	}
 }
 
@@ -42,7 +46,7 @@ func (p *GPUSharing) Name() string {
 }
 
 func (p *GPUSharing) PreBind(
-	ctx context.Context, pod *v1.Pod, _ *v1.Node, bindRequest *v1alpha2.BindRequest, state *state.BindingState,
+	ctx context.Context, pod *v1.Pod, node *v1.Node, bindRequest *v1alpha2.BindRequest, state *state.BindingState,
 ) error {
 	if !common.IsSharedGPUAllocation(bindRequest) {
 		return nil
@@ -76,7 +80,54 @@ func (p *GPUSharing) PreBind(
 		return err
 	}
 
-	return common.SetGPUPortion(ctx, p.kubeClient, pod, containerRef, bindRequest.Spec.ReceivedGPU.Portion)
+	err = common.SetGPUPortion(ctx, p.kubeClient, pod, containerRef, bindRequest.Spec.ReceivedGPU.Portion)
+	if err != nil {
+		return err
+	}
+
+	if !p.hamiCoreEnabled {
+		return nil
+	}
+
+	cudaDeviceMemoryLimit, err := calculateCudaDeviceMemoryLimit(node, bindRequest)
+	if err != nil {
+		return nil
+	}
+
+	err = common.SetCudaDeviceMemoryLimit(ctx, p.kubeClient, pod, containerRef, cudaDeviceMemoryLimit)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func calculateCudaDeviceMemoryLimit(node *v1.Node, bindRequest *v1alpha2.BindRequest) (string, error) {
+	if node == nil || bindRequest == nil || bindRequest.Spec.ReceivedGPU == nil {
+		return "", fmt.Errorf("missing data for CUDA_DEVICE_MEMORY_LIMIT calculation")
+	}
+
+	memoryLabel, found := node.Labels[constants.NvidiaGpuMemory]
+	if !found {
+		return "", fmt.Errorf("node does not include %s label", constants.NvidiaGpuMemory)
+	}
+
+	totalGPUMemoryMib, err := strconv.ParseInt(memoryLabel, 10, 64)
+	if err != nil || totalGPUMemoryMib <= 0 {
+		return "", fmt.Errorf("invalid %s label value %q", constants.NvidiaGpuMemory, memoryLabel)
+	}
+
+	gpuPortion, err := strconv.ParseFloat(bindRequest.Spec.ReceivedGPU.Portion, 64)
+	if err != nil || gpuPortion <= 0 {
+		return "", fmt.Errorf("invalid received gpu portion %q", bindRequest.Spec.ReceivedGPU.Portion)
+	}
+
+	allocatedMemoryMib := int64(float64(totalGPUMemoryMib) * gpuPortion)
+	if allocatedMemoryMib <= 0 {
+		return "", fmt.Errorf("calculated allocated gpu memory is zero")
+	}
+
+	return strconv.FormatInt(allocatedMemoryMib, 10), nil
 }
 
 func (p *GPUSharing) createCapabilitiesConfigMapIfMissing(ctx context.Context, pod *v1.Pod,
