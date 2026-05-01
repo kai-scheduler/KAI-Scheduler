@@ -71,7 +71,7 @@ func TestBind(t *testing.T) {
 	kubeClient := fake.NewClientBuilder().WithRuntimeObjects(kubeObjects...).WithInterceptorFuncs(test_utils.EmptyBind).Build()
 
 	binderPlugins := plugins.New()
-	bindingGpuSharingPlugin := bindinggpusharing.New(kubeClient, false)
+	bindingGpuSharingPlugin := bindinggpusharing.New(kubeClient, false, false)
 	binderPlugins.RegisterPlugin(bindingGpuSharingPlugin)
 
 	binder := NewBinder(kubeClient, rrs, binderPlugins)
@@ -175,7 +175,7 @@ func TestBindApplyResourceReceivedType(t *testing.T) {
 	kubeClient := fake.NewClientBuilder().WithRuntimeObjects(kubeObjects...).WithInterceptorFuncs(test_utils.EmptyBind).Build()
 
 	binderPlugins := plugins.New()
-	bindingGpuSharingPlugin := bindinggpusharing.New(kubeClient, false)
+	bindingGpuSharingPlugin := bindinggpusharing.New(kubeClient, false, false)
 	binderPlugins.RegisterPlugin(bindingGpuSharingPlugin)
 
 	binder := NewBinder(kubeClient, rrs, binderPlugins)
@@ -222,7 +222,7 @@ func TestBindFail(t *testing.T) {
 	kubeClient := fake.NewClientBuilder().WithRuntimeObjects(kubeObjects...).WithInterceptorFuncs(test_utils.EmptyBind).Build()
 
 	binderPlugins := plugins.New()
-	bindingGpuSharingPlugin := bindinggpusharing.New(kubeClient, false)
+	bindingGpuSharingPlugin := bindinggpusharing.New(kubeClient, false, false)
 	binderPlugins.RegisterPlugin(bindingGpuSharingPlugin)
 
 	binder := NewBinder(kubeClient, rrs, binderPlugins)
