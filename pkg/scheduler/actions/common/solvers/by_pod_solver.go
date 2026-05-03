@@ -40,23 +40,26 @@ type solutionResult struct {
 }
 
 type byPodSolver struct {
-	feasibleNodes            map[string]*node_info.NodeInfo
-	solutionValidator        SolutionValidator
-	allowVictimConsolidation bool
-	actionType               framework.ActionType
+	feasibleNodes             map[string]*node_info.NodeInfo
+	amountOfNewPreemptorTasks int
+	solutionValidator         SolutionValidator
+	allowVictimConsolidation  bool
+	actionType                framework.ActionType
 }
 
 func newByPodSolver(
 	feasibleNodes map[string]*node_info.NodeInfo,
+	amountOfNewPreemptorTasks int,
 	checkVictims SolutionValidator,
 	allowVictimConsolidation bool,
 	action framework.ActionType,
 ) *byPodSolver {
 	return &byPodSolver{
-		feasibleNodes:            feasibleNodes,
-		solutionValidator:        checkVictims,
-		allowVictimConsolidation: allowVictimConsolidation,
-		actionType:               action,
+		feasibleNodes:             feasibleNodes,
+		amountOfNewPreemptorTasks: amountOfNewPreemptorTasks,
+		solutionValidator:         checkVictims,
+		allowVictimConsolidation:  allowVictimConsolidation,
+		actionType:                action,
 	}
 }
 
@@ -64,36 +67,38 @@ func (s *byPodSolver) solve(
 	session *framework.Session, scenario *scenario.ByNodeScenario,
 ) *solutionResult {
 	statement := session.Statement()
-
 	pendingJob := scenario.GetPreemptor()
-	nextTaskToFindAllocation := scenario.PendingTasks()[len(scenario.PendingTasks())-1]
-	latestPotentialVictim := scenario.LatestPotentialVictim()
+	nextTask := scenario.PendingTasks()[len(scenario.PendingTasks())-1]
 
-	err := common.EvictAllPreemptees(session, scenario.RecordedVictimsTasks(), pendingJob, statement, s.actionType)
-	if err != nil {
-		return handleSolveError(pendingJob, nextTaskToFindAllocation, err, statement)
+	if err := common.EvictAllPreemptees(session, scenario.RecordedVictimsTasks(), pendingJob, statement, s.actionType); err != nil {
+		return handleSolveError(pendingJob, nextTask, err, statement)
 	}
 
-	if latestPotentialVictim == nil {
+	var result *solutionResult
+	var err error
+
+	latestPotentialVictims := scenario.LatestPotentialVictims()
+	if latestPotentialVictims == nil {
 		if hasRecordedVictimsForSimulation(scenario) {
-			log.InfraLogger.V(6).Infof("Trying to solve scenario with priviously calculated victims only")
-			result := s.runSimulation(session, scenario, statement, scenario.RecordedVictimsTasks())
-			if result != nil {
-				return result
-			}
+			log.InfraLogger.V(6).Infof("Trying to solve scenario with previously calculated victims only")
+			result = s.runSimulation(session, scenario, statement, scenario.RecordedVictimsTasks())
 		}
 	} else {
-		potentialVictimNodes := getNodesOfJob(latestPotentialVictim)
-		result, err := s.solveOnPotentialNodes(session, scenario, statement, potentialVictimNodes)
-		if err != nil {
-			return handleSolveError(pendingJob, nextTaskToFindAllocation, err, statement)
+		potentialVictimNodes := getNodesOfJobs(latestPotentialVictims)
+		if s.amountOfNewPreemptorTasks <= 1 {
+			result, err = s.solveFromSingleNodePreemption(session, scenario, statement, potentialVictimNodes)
+		} else {
+			result, err = s.solveOnPotentialNodes(session, scenario, statement, potentialVictimNodes)
 		}
-		if result != nil {
-			return result
+		if err != nil {
+			return handleSolveError(pendingJob, nextTask, err, statement)
 		}
 	}
 
-	statement.Discard() // No solution for scenario
+	if result != nil {
+		return result
+	}
+	statement.Discard()
 	return &solutionResult{false, nil, nil, nil}
 }
 
@@ -115,29 +120,37 @@ func (s *byPodSolver) runSimulation(
 	return nil
 }
 
+// solveFromSingleNodePreemption tries to solve the scenario by preempting the least amount of potential victims possible, while looking for the best cleanup of a single node.
+// We can assume that cleaning a single node is enough only if we know that the preemptor job has only one more task then the previous scenario we solved.
+// We try to remove potential victims from each node separately, and see if the simulation will succeed.
+func (s *byPodSolver) solveFromSingleNodePreemption(ssn *framework.Session, scenario *scenario.ByNodeScenario,
+	statement *framework.Statement, potentialVictimNodeNames []string) (*solutionResult, error) {
+	for _, node := range potentialVictimNodeNames {
+		log.InfraLogger.V(6).Infof("Trying to solve scenario with potential victims from node: %s", node)
+		if result, err := s.solveOnPotentialNodes(ssn, scenario, statement, []string{node}); err != nil || result != nil {
+			return result, err
+		}
+	}
+	return nil, nil
+}
+
+// solveOnPotentialNodes tries to solve the scenario by preempting all the potential victims from the given nodes, and running a simulation
 func (s *byPodSolver) solveOnPotentialNodes(ssn *framework.Session, scenario *scenario.ByNodeScenario,
 	statement *framework.Statement, potentialVictimNodeNames []string) (*solutionResult, error) {
-	for _, nodeToTest := range potentialVictimNodeNames {
-		log.InfraLogger.V(6).Infof(
-			"Trying to solve scenario with potantial victims from node: %s", nodeToTest)
+	checkpoint, potentialVictimsTasks, err := s.evictPotentialVictimsFromNodes(ssn, scenario, statement, potentialVictimNodeNames...)
+	if err != nil {
+		return nil, err
+	}
+	newFeasibleNodes := s.updateFeasibleNodes(ssn, potentialVictimsTasks)
 
-		nodeVictimsEvictionCheckpoint, potentialVictimsTasks, err :=
-			s.evictPotentialVictimsFromNode(ssn, scenario, statement, nodeToTest)
-		if err != nil {
-			return nil, err
-		}
-		newFeasibleNodes := s.updateFeasibleNodes(ssn, potentialVictimsTasks)
+	victimTasks := getVictimTasks(scenario.RecordedVictimsTasks(), potentialVictimsTasks)
+	if result := s.runSimulation(ssn, scenario, statement, victimTasks); result != nil {
+		return result, nil
+	}
 
-		victimTasks := getVictimTasks(scenario.RecordedVictimsTasks(), potentialVictimsTasks)
-		result := s.runSimulation(ssn, scenario, statement, victimTasks)
-		if result != nil {
-			return result, nil
-		}
-
-		s.feasibleNodesRollback(newFeasibleNodes)
-		if err = statement.Rollback(*nodeVictimsEvictionCheckpoint); err != nil {
-			return nil, err
-		}
+	s.feasibleNodesRollback(newFeasibleNodes)
+	if err = statement.Rollback(*checkpoint); err != nil {
+		return nil, err
 	}
 	return nil, nil
 }
@@ -160,13 +173,13 @@ func (s *byPodSolver) updateFeasibleNodes(ssn *framework.Session, victimTasks []
 	return newFeasibleNodes
 }
 
-func (s *byPodSolver) evictPotentialVictimsFromNode(
-	session *framework.Session, scenario *scenario.ByNodeScenario, statement *framework.Statement, nodeToTest string,
+func (s *byPodSolver) evictPotentialVictimsFromNodes(
+	session *framework.Session, scenario *scenario.ByNodeScenario, statement *framework.Statement, nodeToTest ...string,
 ) (*framework.Checkpoint, []*pod_info.PodInfo, error) {
 	recordedVictimsCheckpoint := statement.Checkpoint()
 	pendingJob := scenario.GetPreemptor()
 
-	potentialVictimsTasks := scenario.VictimsTasksFromNodes([]string{nodeToTest})
+	potentialVictimsTasks := scenario.VictimsTasksFromNodes(nodeToTest)
 	if err := common.EvictAllPreemptees(session, potentialVictimsTasks, pendingJob, statement, s.actionType); err != nil {
 		return nil, nil, err
 	}
@@ -201,15 +214,18 @@ func (s *byPodSolver) handleScenarioSolution(
 	return &solutionResult{true, victimsTasks, actualVictimJobs, statement}
 }
 
-func getNodesOfJob(pj *podgroup_info.PodGroupInfo) []string {
+func getNodesOfJobs(pj []*podgroup_info.PodGroupInfo) []string {
 	if pj == nil {
 		return []string{}
 	}
 
 	pjNodeNames := map[string]string{}
-	for _, latestPotentialVictimTask := range pj.GetAllPodsMap() {
-		pjNodeNames[latestPotentialVictimTask.NodeName] = latestPotentialVictimTask.NodeName
+	for _, job := range pj {
+		for _, latestPotentialVictimTask := range job.GetAllPodsMap() {
+			pjNodeNames[latestPotentialVictimTask.NodeName] = latestPotentialVictimTask.NodeName
+		}
 	}
+
 	return maps.Keys(pjNodeNames)
 }
 

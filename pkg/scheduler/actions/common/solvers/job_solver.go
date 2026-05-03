@@ -73,7 +73,7 @@ func (s *JobSolver) Solve(
 		return false, nil, calcVictimNames(state.recordedVictimsTasks)
 	}
 
-	result := s.probeAtK(ssn, &state, pendingJob, tasksToAllocate, n)
+	result := s.probeAtK(ssn, &state, pendingJob, tasksToAllocate, n, 0)
 	if result == nil || !result.solved {
 		return false, nil, calcVictimNames(state.recordedVictimsTasks)
 	}
@@ -110,7 +110,7 @@ func (s *JobSolver) searchMaxSolvableK(
 	var hi int
 	k := 1
 	for {
-		if !s.tryProbeAndDiscard(ssn, state, pendingJob, tasksToAllocate, k) {
+		if !s.tryProbeAndDiscard(ssn, state, pendingJob, tasksToAllocate, k, lo) {
 			hi = k
 			break
 		}
@@ -126,7 +126,7 @@ func (s *JobSolver) searchMaxSolvableK(
 
 	for hi-lo > 1 {
 		mid := (lo + hi) / 2
-		if s.tryProbeAndDiscard(ssn, state, pendingJob, tasksToAllocate, mid) {
+		if s.tryProbeAndDiscard(ssn, state, pendingJob, tasksToAllocate, mid, lo) {
 			lo = mid
 		} else {
 			hi = mid
@@ -143,8 +143,9 @@ func (s *JobSolver) tryProbeAndDiscard(
 	pendingJob *podgroup_info.PodGroupInfo,
 	tasksToAllocate []*pod_info.PodInfo,
 	k int,
+	previousK int,
 ) bool {
-	result := s.probeAtK(ssn, state, pendingJob, tasksToAllocate, k)
+	result := s.probeAtK(ssn, state, pendingJob, tasksToAllocate, k, previousK)
 	if result == nil || !result.solved {
 		log.InfraLogger.V(5).Infof("No solution found for %d tasks out of %d tasks to allocate for %s",
 			k, len(tasksToAllocate), pendingJob.Name)
@@ -167,13 +168,15 @@ func (s *JobSolver) probeAtK(
 	pendingJob *podgroup_info.PodGroupInfo,
 	tasksToAllocate []*pod_info.PodInfo,
 	k int,
+	previousK int,
 ) *solutionResult {
 	pendingTasks := tasksToAllocate[:k]
 	partialPendingJob := getPartialJobRepresentative(pendingJob, pendingTasks)
-	return s.solvePartialJob(ssn, state, partialPendingJob)
+	return s.solvePartialJob(ssn, state, partialPendingJob, k-previousK)
 }
 
-func (s *JobSolver) solvePartialJob(ssn *framework.Session, state *solvingState, partialPendingJob *podgroup_info.PodGroupInfo) *solutionResult {
+func (s *JobSolver) solvePartialJob(
+	ssn *framework.Session, state *solvingState, partialPendingJob *podgroup_info.PodGroupInfo, amountOfNewPreemptorTasks int) *solutionResult {
 	feasibleNodeMap := map[string]*node_info.NodeInfo{}
 	for _, node := range s.feasibleNodes {
 		feasibleNodeMap[node.Name] = node
@@ -188,8 +191,8 @@ func (s *JobSolver) solvePartialJob(ssn *framework.Session, state *solvingState,
 
 	for scenarioToSolve := scenarioBuilder.GetValidScenario(); scenarioToSolve != nil; scenarioToSolve =
 		scenarioBuilder.GetNextScenario() {
-		scenarioSolver := newByPodSolver(feasibleNodeMap, s.solutionValidator, ssn.AllowConsolidatingReclaim(),
-			s.actionType)
+		scenarioSolver := newByPodSolver(feasibleNodeMap, amountOfNewPreemptorTasks, s.solutionValidator,
+			ssn.AllowConsolidatingReclaim(), s.actionType)
 
 		log.InfraLogger.V(5).Infof("Trying to solve scenario: %s", scenarioToSolve)
 		metrics.IncScenarioSimulatedByAction()
