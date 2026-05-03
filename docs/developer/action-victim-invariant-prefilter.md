@@ -203,8 +203,9 @@ Each plugin that adds a cache is responsible for its own consistency rules:
 
 For this feature, the predicates plugin cache should store results produced by
 real `predicate.PreFilter(task.Pod)` calls for the supported candidate
-predicates. It should not store synthetic shortcuts, because Kubernetes
-pre-filters may populate per-pod cycle state that later filter logic expects.
+predicates. It should not cache results computed by custom direct checks that
+bypass the real `PreFilter` implementation, because Kubernetes pre-filters may
+populate per-pod cycle state that later filter logic expects.
 
 Suggested cache shape:
 
@@ -242,13 +243,15 @@ The first implementation supports only three conservative classifiers.
 
 - predicate key is `VolumeBinding`;
 - status code is `UnschedulableAndUnresolvable`;
-- message identifies `persistentvolumeclaim "<name>" not found`.
+- the classifier matches only when the status/error message indicates
+  `persistentvolumeclaim "<name>" not found`.
 
 `ConfigMap` missing required ConfigMap:
 
 - predicate key is `ConfigMap`;
 - status code is `UnschedulableAndUnresolvable`;
-- message contains `Missing required configmaps:`.
+- the classifier matches only when the status/error message contains
+  `Missing required configmaps:`.
 
 `MaxNodePoolResources` max node size:
 
