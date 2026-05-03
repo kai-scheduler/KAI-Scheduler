@@ -209,6 +209,11 @@ pre-filters may populate per-pod cycle state that later filter logic expects.
 Suggested cache shape:
 
 ```go
+type prePredicateCacheKey struct {
+	podID         common_info.PodID
+	predicateName k8s_internal.PredicateName
+}
+
 type cachedPrePredicateResult struct {
 	required bool
 	nodes    sets.Set[string]
@@ -217,7 +222,7 @@ type cachedPrePredicateResult struct {
 
 type predicatesPlugin struct {
 	// existing fields...
-	prePredicateCache map[common_info.PodID]map[k8s_internal.PredicateName]cachedPrePredicateResult
+	prePredicateCache map[prePredicateCacheKey]cachedPrePredicateResult
 }
 ```
 
