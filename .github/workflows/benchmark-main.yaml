@@ -69,4 +69,3 @@ jobs:
           alert-threshold: '150%'
           fail-on-alert: false
           comment-on-alert: true
-          alert-comment-cc-users: '@gshaibi'
