@@ -100,7 +100,7 @@ func (ssn *Session) GetSessionStateForResource(uid types.UID) k8s_internal.Sessi
 func (ssn *Session) GetNodes() []ksf.NodeInfo {
 	nodes, err := ssn.Cache.SnapshotSharedLister().List()
 	if err != nil {
-		log.InfraLogger.Errorf("Failed to list nodes: ", err)
+		log.InfraLogger.Errorf("Failed to list nodes: %v", err)
 		return nil
 	}
 
