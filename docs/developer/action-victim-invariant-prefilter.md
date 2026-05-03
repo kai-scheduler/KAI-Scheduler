@@ -221,6 +221,10 @@ type predicatesPlugin struct {
 }
 ```
 
+Here, `required` caches the result of `IsPreFilterRequired(task.Pod)`. It
+distinguishes between "predicate was not applicable and was not run" and
+"predicate was applicable and `PreFilter` ran successfully with nil status".
+
 Both the victim-invariant guard and `evaluateTaskOnPrePredicate` should call a
 single helper that reads or populates this cache. This keeps the guard from
 adding extra pre-filter cost when it does not find a blocker.
