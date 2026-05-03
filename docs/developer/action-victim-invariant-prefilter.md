@@ -91,8 +91,7 @@ Proposed types:
 
 ```go
 type VictimInvariantPrePredicateFailure struct {
-	Task *pod_info.PodInfo
-	Err  error
+	Err error
 }
 
 type VictimInvariantPrePredicateFn func(
@@ -103,7 +102,6 @@ type VictimInvariantPrePredicateFn func(
 
 This exposes only what actions need:
 
-- the blocked task;
 - the user-visible error to record.
 
 It intentionally does not expose Kubernetes status codes, all pre-predicate
@@ -273,7 +271,7 @@ error path used by allocation:
 ```go
 fitErrors := common_info.NewFitErrors()
 fitErrors.SetError(failure.Err.Error())
-job.AddTaskFitErrors(failure.Task, fitErrors)
+job.AddTaskFitErrors(task, fitErrors)
 ```
 
 If job-level status reporting requires a job error, the implementation should
@@ -297,12 +295,13 @@ func VictimInvariantPrePredicateFailureForTasks(
 	ssn *framework.Session,
 	job *podgroup_info.PodGroupInfo,
 	tasks []*pod_info.PodInfo,
-) *api.VictimInvariantPrePredicateFailure
+) (*pod_info.PodInfo, *api.VictimInvariantPrePredicateFailure)
 ```
 
 The helper iterates the tasks the action would try to allocate and returns the
-first classified blocker. It receives the task list from the action so it does
-not encode action-specific task-selection rules.
+first classified blocker together with the task that triggered it. It receives
+the task list from the action so it does not encode action-specific
+task-selection rules.
 
 One blocked task is enough to skip the job because the job solver has
 all-or-nothing semantics for pending tasks.
@@ -319,7 +318,8 @@ Run it before:
 - `metrics.IncPodgroupsConsideredByAction()`;
 - `attemptToReclaimForSpecificJob`.
 
-If a victim-invariant failure is found, record it and `continue`.
+If a victim-invariant failure is found, record it for the returned task and
+`continue`.
 
 Do not call `smallestFailedJobs.UpdateRepresentative(job)` for this skip.
 
@@ -331,7 +331,8 @@ and before:
 - `metrics.IncPodgroupsConsideredByAction()`;
 - `attemptToPreemptForPreemptor`.
 
-If a victim-invariant failure is found, record it and `continue`.
+If a victim-invariant failure is found, record it for the returned task and
+`continue`.
 
 Do not call `smallestFailedJobs.UpdateRepresentative(job)` for this skip.
 
@@ -349,7 +350,8 @@ check and before:
 - `metrics.IncPodgroupsConsideredByAction()`;
 - `attemptToConsolidateForPreemptor`.
 
-If a victim-invariant failure is found, record it and `continue`.
+If a victim-invariant failure is found, record it for the returned task and
+`continue`.
 
 Do not call `smallestFailedJobs.UpdateRepresentative(job)` for this skip.
 Consolidation has a session-wide `smallestFailedJobs` pool, so avoiding false
