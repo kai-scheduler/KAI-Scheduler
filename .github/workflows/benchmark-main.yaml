@@ -1,0 +1,72 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# Runs benchmarks on every push to main and publishes a per-commit history
+# chart to GitHub Pages at /dev/bench/.
+#
+# Use workflow_dispatch with `gh-pages-branch: gh-pages-test` to dry-run
+# against a throwaway branch before merging changes to this workflow.
+
+name: Benchmark History
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'pkg/scheduler/**'
+      - 'go.mod'
+      - 'go.sum'
+  workflow_dispatch:
+    inputs:
+      gh-pages-branch:
+        description: 'Branch to publish history to (use a throwaway like gh-pages-test for dry runs)'
+        required: false
+        default: 'gh-pages'
+      auto-push:
+        description: 'Push results to gh-pages-branch'
+        required: false
+        type: boolean
+        default: true
+
+concurrency:
+  group: benchmark-main
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    name: Run and publish benchmarks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      deployments: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.1'
+          cache: true
+
+      - name: Download envtest binaries
+        run: |
+          make envtest
+          echo "KUBEBUILDER_ASSETS=$(bin/setup-envtest use 1.34.0 -p path --bin-dir bin)" >> $GITHUB_ENV
+
+      - name: Run benchmarks
+        run: make benchmark BENCH_OUTPUT=bench.txt
+
+      - name: Publish benchmark history
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: KAI Scheduler
+          tool: go
+          output-file-path: bench.txt
+          gh-pages-branch: ${{ github.event.inputs.gh-pages-branch || 'gh-pages' }}
+          benchmark-data-dir-path: dev/bench
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: ${{ github.event_name == 'push' || github.event.inputs.auto-push == 'true' }}
+          alert-threshold: '150%'
+          fail-on-alert: false
+          comment-on-alert: true
+          alert-comment-cc-users: '@gshaibi'
