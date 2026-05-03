@@ -96,7 +96,6 @@ type VictimInvariantPrePredicateFailure struct {
 
 type VictimInvariantPrePredicateFn func(
 	task *pod_info.PodInfo,
-	job *podgroup_info.PodGroupInfo,
 ) *VictimInvariantPrePredicateFailure
 ```
 
@@ -125,7 +124,6 @@ func (ssn *Session) AddVictimInvariantPrePredicateFn(fn api.VictimInvariantPrePr
 
 func (ssn *Session) VictimInvariantPrePredicateFailure(
 	task *pod_info.PodInfo,
-	job *podgroup_info.PodGroupInfo,
 ) *api.VictimInvariantPrePredicateFailure
 ```
 
