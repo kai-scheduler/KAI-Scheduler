@@ -15,7 +15,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/configurations/feature_flags"
 	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd"
-	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/pod_group"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/utils"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
@@ -260,24 +259,13 @@ var _ = Describe("Topology", Ordered, func() {
 
 func createDistributedWorkload(ctx context.Context, testCtx *testcontext.TestContext,
 	podCount int, podResource v1.ResourceList, topologyConstraint v2alpha2.TopologyConstraint) []*v1.Pod {
-	namespace := queue.GetConnectedNamespaceToQueue(testCtx.Queues[0])
-	queueName := testCtx.Queues[0].Name
-
-	podGroup := pod_group.Create(namespace, "distributed-pod-group"+utils.GenerateRandomK8sName(10), queueName)
-	podGroup.Spec.MinMember = ptr.To(int32(podCount))
-	podGroup.Spec.TopologyConstraint = topologyConstraint
-
-	pods := []*v1.Pod{}
-	Expect(testCtx.ControllerClient.Create(ctx, podGroup)).To(Succeed())
-	for i := 0; i < podCount; i++ {
-		pod := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{Requests: podResource, Limits: podResource})
-		pod.Name = "distributed-pod-" + utils.GenerateRandomK8sName(10)
-		pod.Annotations[pod_group.PodGroupNameAnnotation] = podGroup.Name
-		pod.Labels[pod_group.PodGroupNameAnnotation] = podGroup.Name
-		_, err := rd.CreatePod(ctx, testCtx.KubeClientset, pod)
-		Expect(err).To(Succeed())
-		pods = append(pods, pod)
-	}
-
+	_, _, pods, err := rd.CreateDistributedBatchJob(ctx, testCtx.ControllerClient, testCtx.Queues[0],
+		rd.DistributedBatchJobOptions{
+			Parallelism:        ptr.To(int32(podCount)),
+			NamePrefix:         "distributed-" + utils.GenerateRandomK8sName(5) + "-",
+			Resources:          v1.ResourceRequirements{Requests: podResource, Limits: podResource},
+			TopologyConstraint: &topologyConstraint,
+		})
+	Expect(err).To(Succeed())
 	return pods
 }
