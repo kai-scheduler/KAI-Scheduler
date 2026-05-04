@@ -6,11 +6,11 @@ package common
 import (
 	"fmt"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
 )
 
 func VictimInvariantPrePredicateFailureForTasks(
@@ -34,10 +34,11 @@ func RecordVictimInvariantPrePredicateFailure(
 ) {
 	fitErrors := common_info.NewFitErrors()
 	fitErrors.SetError(failure.Err.Error())
-	job.AddTaskFitErrors(task, fitErrors)
-	job.AddSimpleJobFitError(
+	job.SetTaskFitError(task, fitErrors)
+	job.SetJobFitError(
 		podgroup_info.PodSchedulingErrors,
 		fmt.Sprintf("Resources were not found for pod %s/%s due to: %s",
 			task.Namespace, task.Name, fitErrors.Error()),
+		nil,
 	)
 }

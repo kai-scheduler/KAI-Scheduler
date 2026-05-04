@@ -10,24 +10,17 @@ import (
 	"strings"
 	"testing"
 
-	"go.uber.org/mock/gomock"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	ksf "k8s.io/kube-scheduler/framework"
 	"k8s.io/utils/pointer"
 
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_affinity"
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_internal"
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_internal/predicates"
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
@@ -450,79 +443,6 @@ func TestPredicatesPluginResetPrePredicateCache(t *testing.T) {
 
 	if len(pp.prePredicateCache) != 0 {
 		t.Fatalf("resetPrePredicateCache() cache size = %d, want 0", len(pp.prePredicateCache))
-	}
-}
-func TestMaxPodsWithReleasingPods(t *testing.T) {
-	// Test that releasing pods don't count toward the max pods limit
-	node := common_info.BuildNode("n1", common_info.BuildResourceList("16000m", "32G"))
-	node.Status.Allocatable[v1.ResourcePods] = *resource.NewQuantity(110, resource.DecimalSI)
-
-	// Create 109 running pods and 1 releasing pod
-	runningPods := make([]*v1.Pod, 109)
-	for i := 0; i < 109; i++ {
-		runningPods[i] = common_info.BuildPod("default", fmt.Sprintf("running-pod-%d", i), "n1",
-			v1.PodRunning, common_info.BuildResourceList("100m", "100M"),
-			[]metav1.OwnerReference{}, map[string]string{},
-			map[string]string{commonconstants.PodGroupAnnotationForPod: "job1"})
-	}
-
-	releasingPod := common_info.BuildPod("default", "releasing-pod", "n1",
-		v1.PodRunning, common_info.BuildResourceList("100m", "100M"),
-		[]metav1.OwnerReference{}, map[string]string{},
-		map[string]string{commonconstants.PodGroupAnnotationForPod: "job1"})
-
-	preemptorPod := common_info.BuildPod("default", "preemptor-pod", "",
-		v1.PodPending, common_info.BuildResourceList("100m", "100M"),
-		[]metav1.OwnerReference{}, map[string]string{},
-		map[string]string{commonconstants.PodGroupAnnotationForPod: "job2"})
-
-	// Create node info and add pods
-	nodePodAffinityInfo := pod_affinity.NewMockNodePodAffinityInfo(gomock.NewController(t))
-	nodePodAffinityInfo.EXPECT().AddPod(gomock.Any()).AnyTimes()
-
-	vectorMap := resource_info.NewResourceVectorMap()
-	ni := node_info.NewNodeInfo(node, nodePodAffinityInfo, vectorMap)
-
-	// Add running pods
-	for _, pod := range runningPods {
-		task := pod_info.NewTaskInfo(pod, nil, vectorMap)
-		task.Status = pod_status.Running
-		err := ni.AddTask(task)
-		if err != nil {
-			t.Fatalf("Failed to add running pod: %v", err)
-		}
-	}
-
-	// Add releasing pod
-	releasingTask := pod_info.NewTaskInfo(releasingPod, nil, vectorMap)
-	releasingTask.Status = pod_status.Releasing
-	err := ni.AddTask(releasingTask)
-	if err != nil {
-		t.Fatalf("Failed to add releasing pod: %v", err)
-	}
-
-	// Now try to allocate the preemptor pod - it should succeed because
-	// the releasing pod's resources (including its pod count) are available
-	preemptorTask := pod_info.NewTaskInfo(preemptorPod, nil, vectorMap)
-	preemptorTask.Status = pod_status.Pending
-
-	// Check if the task is allocatable
-	allocatable := ni.IsTaskAllocatableOnReleasingOrIdle(preemptorTask)
-
-	// Debug output
-	podsIdx := ni.VectorMap.GetIndex(v1.ResourcePods)
-	t.Logf("Node Allocatable pods: %v", ni.AllocatableVector.Get(podsIdx))
-	t.Logf("Node Idle pods: %v", ni.IdleVector.Get(podsIdx))
-	t.Logf("Node Used pods: %v", ni.UsedVector.Get(podsIdx))
-	t.Logf("Node Releasing pods: %v", ni.ReleasingVector.Get(podsIdx))
-	t.Logf("Preemptor ResReqVector: %v", preemptorTask.ResReqVector)
-
-	if !allocatable {
-		t.Errorf("Preemptor pod should be allocatable (109 Running + 1 Releasing + 1 new = 110 total, but Releasing pod resources are available)")
-		t.Logf("Node IdleVector: %v", ni.IdleVector)
-		t.Logf("Node UsedVector: %v", ni.UsedVector)
-		t.Logf("Node ReleasingVector: %v", ni.ReleasingVector)
-		t.Logf("Preemptor ResReqVector: %v", preemptorTask.ResReqVector)
 	}
 }
 func Test_predicatesPlugin_evaluateTaskOnPredicates(t *testing.T) {

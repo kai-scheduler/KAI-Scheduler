@@ -37,9 +37,6 @@ func (ssn *Session) AddVictimInvariantPrePredicateFn(pf api.VictimInvariantPrePr
 	ssn.VictimInvariantPrePredicateFns = append(ssn.VictimInvariantPrePredicateFns, pf)
 }
 
-func (ssn *Session) AddSubsetNodesFn(snf api.SubsetNodesFn) {
-	ssn.SubsetNodesFns = append(ssn.SubsetNodesFns, snf)
-}
 func (ssn *Session) AddPredicateFn(pf api.PredicateFn) {
 	ssn.PredicateFns = append(ssn.PredicateFns, pf)
 }

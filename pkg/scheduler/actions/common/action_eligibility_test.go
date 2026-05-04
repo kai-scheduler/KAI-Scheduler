@@ -10,11 +10,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
 )
 
 func TestVictimInvariantPrePredicateFailureForTasks(t *testing.T) {
@@ -53,9 +53,9 @@ func TestRecordVictimInvariantPrePredicateFailure(t *testing.T) {
 
 	RecordVictimInvariantPrePredicateFailure(job, task, failure)
 
-	taskFitError, found := job.TasksFitErrors[task.UID]
+	taskFitError, found := job.NodesFitErrors[task.UID]
 	require.True(t, found)
 	require.Contains(t, taskFitError.Error(), `persistentvolumeclaim "missing" not found`)
 	require.Len(t, job.JobFitErrors, 1)
-	require.Contains(t, job.JobFitErrors[0].DetailedMessage(), "Resources were not found for pod ns1/task-1 due to:")
+	require.Contains(t, job.JobFitErrors[0].Message, "Resources were not found for pod ns1/task-1 due to:")
 }

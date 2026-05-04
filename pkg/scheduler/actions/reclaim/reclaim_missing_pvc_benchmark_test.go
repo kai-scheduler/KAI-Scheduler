@@ -12,14 +12,14 @@ import (
 	"gopkg.in/h2non/gock.v1"
 	"k8s.io/utils/ptr"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/reclaim"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/constants"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 )
 
 type reclaimMissingPVCBenchmarkParams struct {
@@ -55,9 +55,9 @@ func TestMissingPVCReclaimTopologyHasVolumeBindingFailure(t *testing.T) {
 		onJobSolutionStartCalls++
 	})
 
-	job := ssn.ClusterInfo.PodGroupInfos[common_info.PodGroupID("missing-pvc-job-0")]
+	job := ssn.PodGroupInfos[common_info.PodGroupID("missing-pvc-job-0")]
 	require.NotNil(t, job)
-	task := job.GetAllPodsMap()[common_info.PodID("missing-pvc-job-0-0")]
+	task := job.PodInfos[common_info.PodID("missing-pvc-job-0-0")]
 
 	err := ssn.PrePredicateFn(task, job)
 	require.Error(t, err)
@@ -66,9 +66,9 @@ func TestMissingPVCReclaimTopologyHasVolumeBindingFailure(t *testing.T) {
 	reclaim.New().Execute(ssn)
 	require.Zero(t, onJobSolutionStartCalls)
 	require.Equal(t, pod_status.Pending, task.Status)
-	require.Contains(t, job.TasksFitErrors[task.UID].Error(), `persistentvolumeclaim "busybox-missing-pvc" not found`)
+	require.Contains(t, job.NodesFitErrors[task.UID].Error(), `persistentvolumeclaim "busybox-missing-pvc" not found`)
 	require.NotEmpty(t, job.JobFitErrors)
-	require.Contains(t, job.JobFitErrors[0].DetailedMessage(), "Resources were not found for pod runai-reclaim/missing-pvc-job-0-0 due to:")
+	require.Contains(t, job.JobFitErrors[0].Message, "Resources were not found for pod runai-reclaim/missing-pvc-job-0-0 due to:")
 }
 
 func BenchmarkReclaimWithMissingPVCJobs(b *testing.B) {
