@@ -42,24 +42,6 @@ var (
 	}
 )
 
-func createObjectWithRetries(ctx context.Context, kubeClient runtimeClient.Client, obj runtimeClient.Object) error {
-	key := runtimeClient.ObjectKeyFromObject(obj)
-	err := kubeClient.Get(ctx, key, obj)
-	if err == nil {
-		// object is not expected to exist in the cluster
-		return fmt.Errorf("object %v already exists in the cluster", key)
-	}
-
-	for i := 0; i < operationAttemptsRetries; i++ {
-		err = kubeClient.Create(ctx, obj)
-		if err == nil || errors.IsAlreadyExists(err) {
-			return nil
-		}
-		time.Sleep(retryInterval)
-	}
-	return err
-}
-
 func deleteObjectWithRetries(
 	ctx context.Context, kubeClient runtimeClient.Client,
 	obj runtimeClient.Object, opts ...runtimeClient.DeleteOption) error {
