@@ -18,6 +18,19 @@ type Scenario struct {
 	// Pending are the pods of Preemptor to be placed in this scenario.
 	Pending []*pod_info.PodInfo
 
-	// Victims are the pods to evict to make room for Pending.
+	// Victims are the pods the simulator should evict.
 	Victims []*pod_info.PodInfo
+
+	// Candidates is the broader candidate set that an action validator
+	// evaluates fair-share against. May be a strict superset of Victims
+	// when the generator emits per-node subsets of a larger accumulated
+	// pool. Empty Candidates means "use Victims" — kept lean for
+	// generators that don't carry a separate notion.
+	//
+	// Phase-3 transitional: the legacy ScenarioInfo validators expect
+	// the whole accumulated pool, so the accumulating generator
+	// populates this with recorded ∪ all potentials. Phase 6 will give
+	// validators native access to the SimulationResult and this field
+	// can be removed.
+	Candidates []*pod_info.PodInfo
 }

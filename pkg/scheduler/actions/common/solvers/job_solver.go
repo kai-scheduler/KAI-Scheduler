@@ -7,7 +7,11 @@ import (
 	"fmt"
 	"strings"
 
+	"golang.org/x/exp/maps"
+
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/v2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
@@ -183,24 +187,86 @@ func (s *JobSolver) solvePartialJob(ssn *framework.Session, state *solvingState,
 		feasibleNodeMap[task.NodeName] = node
 	}
 
-	scenarioBuilder := NewPodAccumulatedScenarioBuilder(
-		ssn, partialPendingJob, state.recordedVictimsJobs, s.generateVictimsQueue(), feasibleNodeMap)
+	gen := v2.NewAccumulatingGenerator(
+		ssn, partialPendingJob, state.recordedVictimsJobs, s.generateVictimsQueue(), feasibleNodeMap,
+	)
+	sim := newCountingSimulator(v2.NewSessionSimulator(ssn, maps.Values(feasibleNodeMap), s.actionType))
+	val := v2.LegacyValidator(ssn, string(s.actionType), s.solutionValidator)
 
-	for scenarioToSolve := scenarioBuilder.GetValidScenario(); scenarioToSolve != nil; scenarioToSolve =
-		scenarioBuilder.GetNextScenario() {
-		scenarioSolver := newByPodSolver(feasibleNodeMap, s.solutionValidator, ssn.AllowConsolidatingReclaim(),
-			s.actionType)
+	_, result, ok := v2.Solve(gen, sim, val)
+	if !ok {
+		return nil
+	}
+	return solutionResultFromSimulation(ssn, result)
+}
 
-		log.InfraLogger.V(5).Infof("Trying to solve scenario: %s", scenarioToSolve)
-		metrics.IncScenarioSimulatedByAction()
+// countingSimulator wraps a v2.Simulator to bump the per-scenario
+// "simulated" metric and emit the V(5) trace line that the legacy
+// solver path produced once per scenario attempt.
+type countingSimulator struct {
+	inner v2.Simulator
+}
 
-		result := scenarioSolver.solve(ssn, scenarioToSolve)
-		if result.solved {
-			return result
+func newCountingSimulator(inner v2.Simulator) v2.Simulator {
+	return &countingSimulator{inner: inner}
+}
+
+func (c *countingSimulator) Simulate(scenario v2.Scenario) v2.SimulationResult {
+	log.InfraLogger.V(5).Infof(
+		"Trying to solve scenario: pending=%s victims=%s",
+		taskNames(scenario.Pending), taskNames(scenario.Victims),
+	)
+	metrics.IncScenarioSimulatedByAction()
+	return c.inner.Simulate(scenario)
+}
+
+func solutionResultFromSimulation(ssn *framework.Session, result v2.SimulationResult) *solutionResult {
+	victimTasks := make([]*pod_info.PodInfo, 0, len(result.Preempted)+len(result.Pipelined))
+	victimTasks = append(victimTasks, result.Preempted...)
+	victimTasks = append(victimTasks, result.Pipelined...)
+
+	byJob := map[common_info.PodGroupID][]*pod_info.PodInfo{}
+	for _, t := range victimTasks {
+		byJob[t.Job] = append(byJob[t.Job], t)
+	}
+	// Build per-job representatives that share the SAME task pointers the
+	// simulator produced (which are also the pointers indexed by the session
+	// after Discard). Cloning the tasks here would create new objects with
+	// stale Status that don't match what the session's PodStatusIndex holds,
+	// so the next probe's eviction would corrupt the index.
+	victimJobs := make([]*podgroup_info.PodGroupInfo, 0, len(byJob))
+	for jobID, tasks := range byJob {
+		original := ssn.ClusterInfo.PodGroupInfos[jobID]
+		rep := original.CloneWithTasks(nil)
+		for _, t := range tasks {
+			rep.AddTaskInfo(t)
 		}
+		victimJobs = append(victimJobs, rep)
 	}
 
-	return nil
+	return &solutionResult{
+		solved:       true,
+		victimsTasks: victimTasks,
+		victimJobs:   victimJobs,
+		statement:    result.Statement,
+	}
+}
+
+func taskNames(tasks []*pod_info.PodInfo) string {
+	if len(tasks) == 0 {
+		return ""
+	}
+	b := strings.Builder{}
+	b.WriteString(tasks[0].Namespace)
+	b.WriteString("/")
+	b.WriteString(tasks[0].Name)
+	for _, t := range tasks[1:] {
+		b.WriteString(", ")
+		b.WriteString(t.Namespace)
+		b.WriteString("/")
+		b.WriteString(t.Name)
+	}
+	return b.String()
 }
 
 func getPartialJobRepresentative(

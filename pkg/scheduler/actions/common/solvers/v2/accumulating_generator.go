@@ -6,32 +6,44 @@ package v2
 import (
 	"sort"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers"
+	"golang.org/x/exp/slices"
+
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters"
+	idle_gpus_filter "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/idle_gpus"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/node_affinities"
 	solverscenario "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
 )
 
-// accumulatingGenerator wraps the legacy PodAccumulatedScenarioBuilder
-// and emits, for each surviving accumulation step, the same set of
-// scenarios that today's byPodSolver iterates: one Scenario per host
-// node of the just-added victim job (per-node subset).
+// accumulatingGenerator walks a victim queue, growing a single
+// underlying ByNodeScenario one job at a time, and emits one Scenario
+// per host node of the just-added victim job.
+//
+// The accumulation + filter logic is ported from the legacy
+// PodAccumulatedScenarioBuilder. Inlining keeps this package free of an
+// import on its parent solvers/, avoiding a cycle when JobSolver wires
+// through v2.
 //
 // Phase 2 contract: emit-by-emit equivalent to PodAccumulatedScenarioBuilder
-// + byPodSolver's per-node loop. Filter behavior is inherited from the
-// wrapped builder. No "full set" fallback at this stage — that emission
-// is introduced in Phase 5.
-//
-// Phases 5 and 7 will fold accumulation into v2 directly and remove the
-// dependency on the parent solvers package.
+// + byPodSolver's per-node loop. Filters use the existing
+// accumulated_scenario_filters package against the underlying
+// ByNodeScenario.
 type accumulatingGenerator struct {
+	ssn       *framework.Session
 	preemptor *podgroup_info.PodGroupInfo
 	pending   []*pod_info.PodInfo
 
-	builder *solvers.PodAccumulatedScenarioBuilder
+	scenario             *solverscenario.ByNodeScenario
+	filters              []accumulated_scenario_filters.Interface
+	victimsQueue         *utils.JobsOrderByQueues
+	recordedVictimsTasks map[common_info.PodID]*pod_info.PodInfo
 
 	pendingEmissions []Scenario
 	started          bool
@@ -54,13 +66,37 @@ func NewAccumulatingGenerator(
 	pending := podgroup_info.GetTasksToAllocate(
 		pendingJob, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false,
 	)
-	builder := solvers.NewPodAccumulatedScenarioBuilder(
-		ssn, pendingJob, recordedVictimsJobs, victimsQueue, feasibleNodes,
-	)
+
+	var scenario *solverscenario.ByNodeScenario
+	recorded := map[common_info.PodID]*pod_info.PodInfo{}
+	if len(pending) > 0 {
+		scenario = solverscenario.NewByNodeScenario(ssn, pendingJob, pending, nil, recordedVictimsJobs)
+		for _, job := range recordedVictimsJobs {
+			for id, podInfo := range job.GetAllPodsMap() {
+				recorded[id] = podInfo
+			}
+		}
+	}
+
+	var filters []accumulated_scenario_filters.Interface
+	if f := node_affinities.NewNodeAffinitiesFilter(scenario, feasibleNodes, ssn); f != nil {
+		filters = append(filters, f)
+	}
+	if f := idle_gpus_filter.NewTopologyAwareIdleGpusFilter(scenario, ssn.ClusterInfo.Nodes); f != nil {
+		filters = append(filters, f)
+	}
+	if f := idle_gpus_filter.NewIdleGpusFilter(scenario, ssn.ClusterInfo.Nodes); f != nil {
+		filters = append(filters, f)
+	}
+
 	return &accumulatingGenerator{
-		preemptor: pendingJob,
-		pending:   pending,
-		builder:   builder,
+		ssn:                  ssn,
+		preemptor:            pendingJob,
+		pending:              pending,
+		scenario:             scenario,
+		filters:              filters,
+		victimsQueue:         victimsQueue,
+		recordedVictimsTasks: recorded,
 	}
 }
 
@@ -77,33 +113,125 @@ func (g *accumulatingGenerator) Next() (Scenario, bool) {
 	}
 }
 
+// advance moves the underlying scenario to its next valid state and
+// queues that step's emissions. Returns false when the queue is
+// exhausted.
 func (g *accumulatingGenerator) advance() bool {
-	var s *solverscenario.ByNodeScenario
-	if !g.started {
-		s = g.builder.GetValidScenario()
-		g.started = true
-	} else {
-		s = g.builder.GetNextScenario()
-	}
-	if s == nil {
+	if g.scenario == nil {
 		return false
 	}
-	g.pendingEmissions = g.buildEmissions(s)
+
+	if !g.started {
+		g.started = true
+		if g.scenarioValid() {
+			g.pendingEmissions = g.buildEmissions(g.scenario)
+			if len(g.pendingEmissions) > 0 {
+				return true
+			}
+		}
+	}
+
+	for !g.victimsQueue.IsEmpty() {
+		if !g.addNextPotentialVictims() {
+			continue
+		}
+		if !g.scenarioValid() {
+			continue
+		}
+		g.pendingEmissions = g.buildEmissions(g.scenario)
+		if len(g.pendingEmissions) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func (g *accumulatingGenerator) scenarioValid() bool {
+	for _, f := range g.filters {
+		ok, err := f.Filter(g.scenario)
+		if err != nil {
+			log.InfraLogger.Errorf(
+				"Failed to run the filter %s with the error %v. scenario: %s",
+				f.Name(), err, g.scenario,
+			)
+			continue
+		}
+		if !ok {
+			log.InfraLogger.V(5).Infof(
+				"Filtered by %s for scenario: %s", f.Name(), g.scenario,
+			)
+			metrics.IncScenarioFilteredByAction()
+			return false
+		}
+	}
 	return true
 }
 
+// addNextPotentialVictims pops the next victim job from the queue and
+// folds its evictable tasks into the accumulated scenario. If any of
+// those tasks are already recorded victims, the step is skipped and
+// the remaining (non-recorded) tasks are pushed back so they can be
+// evaluated independently.
+//
+// Returns true when the scenario actually changed.
+func (g *accumulatingGenerator) addNextPotentialVictims() bool {
+	nextVictimJob := g.victimsQueue.PopNextJob()
+
+	potentialTasks, jobHasMoreTasks := podgroup_info.GetTasksToEvict(
+		nextVictimJob, g.ssn.SubGroupOrderFn, g.ssn.TaskOrderFn,
+	)
+
+	for _, t := range potentialTasks {
+		if _, ok := g.recordedVictimsTasks[t.UID]; !ok {
+			continue
+		}
+		// Elastic-job carve-out: tasks not yet recorded get re-queued
+		// so they can be evaluated as a fresh step.
+		var remaining []*pod_info.PodInfo
+		for _, jobTask := range nextVictimJob.GetAllPodsMap() {
+			if _, isRecorded := g.recordedVictimsTasks[jobTask.UID]; !isRecorded {
+				remaining = append(remaining, jobTask)
+			}
+		}
+		if len(remaining) > 0 {
+			g.victimsQueue.PushJob(nextVictimJob.CloneWithTasks(remaining))
+		}
+		return false
+	}
+
+	if jobHasMoreTasks {
+		var remaining []*pod_info.PodInfo
+		for _, jobTask := range nextVictimJob.GetAllPodsMap() {
+			if !slices.Contains(potentialTasks, jobTask) {
+				remaining = append(remaining, jobTask)
+			}
+		}
+		g.victimsQueue.PushJob(nextVictimJob.CloneWithTasks(remaining))
+	}
+
+	g.scenario.AddPotentialVictimsTasks(potentialTasks)
+	return true
+}
+
+// buildEmissions yields one Scenario per host node of the latest victim
+// job, mirroring today's byPodSolver per-node iteration. The full-set
+// fallback emission is intentionally absent; it is reintroduced in
+// Phase 5 once byPodSolver is removed.
+//
+// All emissions share the same Candidates set: the full accumulated
+// victim pool (recorded ∪ every potential added so far). That is what
+// a legacy ScenarioInfo validator would have observed at this
+// accumulation step, so passing it through preserves their semantics.
 func (g *accumulatingGenerator) buildEmissions(s *solverscenario.ByNodeScenario) []Scenario {
 	recorded := s.RecordedVictimsTasks()
 	latest := s.LatestPotentialVictim()
+	candidates := joinTasks(recorded, s.PotentialVictimsTasks())
 
-	// Initial step: no potentials accumulated yet. Only emit if there
-	// are recorded victims to simulate against (matches today's
-	// "hasRecordedVictimsForSimulation" branch in byPodSolver.solve).
 	if latest == nil {
 		if len(recorded) == 0 {
 			return nil
 		}
-		return []Scenario{g.scenarioWithVictims(append([]*pod_info.PodInfo(nil), recorded...))}
+		return []Scenario{g.scenarioWith(append([]*pod_info.PodInfo(nil), recorded...), candidates)}
 	}
 
 	// Per-node subset for each host node of the latest victim job:
@@ -112,16 +240,17 @@ func (g *accumulatingGenerator) buildEmissions(s *solverscenario.ByNodeScenario)
 	emissions := make([]Scenario, 0, len(nodes))
 	for _, node := range nodes {
 		victimsOnNode := s.VictimsTasksFromNodes([]string{node})
-		emissions = append(emissions, g.scenarioWithVictims(joinTasks(recorded, victimsOnNode)))
+		emissions = append(emissions, g.scenarioWith(joinTasks(recorded, victimsOnNode), candidates))
 	}
 	return emissions
 }
 
-func (g *accumulatingGenerator) scenarioWithVictims(victims []*pod_info.PodInfo) Scenario {
+func (g *accumulatingGenerator) scenarioWith(victims, candidates []*pod_info.PodInfo) Scenario {
 	return Scenario{
-		Preemptor: g.preemptor,
-		Pending:   g.pending,
-		Victims:   victims,
+		Preemptor:  g.preemptor,
+		Pending:    g.pending,
+		Victims:    victims,
+		Candidates: candidates,
 	}
 }
 

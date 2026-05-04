@@ -41,6 +41,10 @@ func (v *legacyValidator) Validate(s Scenario, _ SimulationResult) bool {
 	if v.fn == nil {
 		return true
 	}
-	info := solverscenario.NewBaseScenario(v.ssn, s.Preemptor, s.Pending, s.Victims, nil)
+	candidates := s.Candidates
+	if candidates == nil {
+		candidates = s.Victims
+	}
+	info := solverscenario.NewBaseScenario(v.ssn, s.Preemptor, s.Pending, candidates, nil)
 	return v.fn(info)
 }
