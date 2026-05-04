@@ -29,6 +29,20 @@ type Service struct {
 	// Affinity defines affinity for the service pods
 	// +kubebuilder:validation:Optional
 	Affinity *v1.Affinity `json:"affinity,omitempty"`
+
+	// PodDisruptionBudget defines voluntary disruption constraints for service pods.
+	// +kubebuilder:validation:Optional
+	PodDisruptionBudget *PodDisruptionBudget `json:"podDisruptionBudget,omitempty"`
+}
+
+type PodDisruptionBudget struct {
+	// Enabled defines whether to create a PodDisruptionBudget for this service.
+	// +kubebuilder:validation:Optional
+	Enabled *bool `json:"enabled,omitempty"`
+
+	// MaxUnavailable is the maximum number of pods that can be unavailable during voluntary disruptions.
+	// +kubebuilder:validation:Optional
+	MaxUnavailable *int32 `json:"maxUnavailable,omitempty"`
 }
 
 func (s *Service) SetDefaultsWhereNeeded(imageName string) {
@@ -43,4 +57,8 @@ func (s *Service) SetDefaultsWhereNeeded(imageName string) {
 
 	s.K8sClientConfig = SetDefault(s.K8sClientConfig, &K8sClientConfig{})
 	s.K8sClientConfig.SetDefaultsWhereNeeded()
+
+	s.PodDisruptionBudget = SetDefault(s.PodDisruptionBudget, &PodDisruptionBudget{})
+	s.PodDisruptionBudget.Enabled = SetDefault(s.PodDisruptionBudget.Enabled, ptr.To(true))
+	s.PodDisruptionBudget.MaxUnavailable = SetDefault(s.PodDisruptionBudget.MaxUnavailable, ptr.To(int32(1)))
 }

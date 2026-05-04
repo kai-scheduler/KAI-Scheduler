@@ -12,11 +12,13 @@ import (
 	admissionv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/admission"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -567,4 +569,77 @@ func TestServiceForKAIConfig(t *testing.T) {
 	require.NotNil(t, metricsPort, "should have metrics port")
 	assert.Equal(t, int32(8080), metricsPort.Port)
 	assert.Equal(t, int32(8080), metricsPort.TargetPort.IntVal)
+}
+
+func TestPodDisruptionBudgetForKAIConfig(t *testing.T) {
+	ctx := context.Background()
+	client := fake.NewClientBuilder().Build()
+
+	tests := []struct {
+		name              string
+		replicas          int32
+		pdbEnabled        bool
+		maxUnavailable    int32
+		expectPDBCreation bool
+	}{
+		{
+			name:              "create PDB when replicas greater than one and enabled",
+			replicas:          2,
+			pdbEnabled:        true,
+			maxUnavailable:    1,
+			expectPDBCreation: true,
+		},
+		{
+			name:              "skip PDB when replicas is one",
+			replicas:          1,
+			pdbEnabled:        true,
+			maxUnavailable:    1,
+			expectPDBCreation: false,
+		},
+		{
+			name:              "skip PDB when disabled",
+			replicas:          3,
+			pdbEnabled:        false,
+			maxUnavailable:    1,
+			expectPDBCreation: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Namespace: constants.DefaultKAINamespace,
+					Admission: &admission.Admission{
+						Replicas: ptr.To(tt.replicas),
+						Service: &common.Service{
+							PodDisruptionBudget: &common.PodDisruptionBudget{
+								Enabled:        ptr.To(tt.pdbEnabled),
+								MaxUnavailable: ptr.To(tt.maxUnavailable),
+							},
+						},
+					},
+				},
+			}
+
+			a := &Admission{BaseResourceName: defaultResourceName}
+			objects, err := a.podDisruptionBudgetForKAIConfig(ctx, client, config)
+			require.NoError(t, err)
+
+			if !tt.expectPDBCreation {
+				assert.Empty(t, objects)
+				return
+			}
+
+			require.Len(t, objects, 1)
+			pdb, ok := objects[0].(*policyv1.PodDisruptionBudget)
+			require.True(t, ok, "object should be PodDisruptionBudget")
+			assert.Equal(t, "admission", pdb.Name)
+			assert.Equal(t, constants.DefaultKAINamespace, pdb.Namespace)
+			require.NotNil(t, pdb.Spec.MaxUnavailable)
+			assert.Equal(t, tt.maxUnavailable, pdb.Spec.MaxUnavailable.IntVal)
+			require.NotNil(t, pdb.Spec.Selector)
+			assert.Equal(t, "admission", pdb.Spec.Selector.MatchLabels["app"])
+		})
+	}
 }

@@ -170,6 +170,9 @@ admission:
   cdi: false
   gpuPodRuntimeClassName: nvidia
   affinity: {}
+  podDisruptionBudget:
+    enabled: true
+    maxUnavailable: 1
 
 nodescaleadjuster:
   image:
