@@ -117,6 +117,8 @@ $(KUSTOMIZE): $(LOCALBIN)
 # Benchmark targets
 BENCHSTAT ?= $(LOCALBIN)/benchstat
 BENCH_OUTPUT ?= benchmark-results.txt
+BENCH_SPECIAL_PACKAGES := ./pkg/scheduler/actions/reclaim
+BENCH_SPECIAL_REGEX := '^BenchmarkReclaimWithMissingPVCJobs$$'
 
 .PHONY: benchstat
 benchstat: $(BENCHSTAT)
@@ -126,8 +128,11 @@ $(BENCHSTAT): $(LOCALBIN)
 .PHONY: benchmark
 benchmark: envtest ## Run benchmarks and output results (use BENCH_OUTPUT=file.txt to customize output)
 	@echo "Running benchmarks..."
+	@action_pkgs="$$(go list ./pkg/scheduler/actions/... | grep -vE '/pkg/scheduler/actions/reclaim$$')"; \
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path --bin-dir $(LOCALBIN))" \
-	go test -bench=. -benchmem -count=6 -run=^$$ ./pkg/scheduler/actions/... | tee $(BENCH_OUTPUT)
+	go test -bench=. -benchmem -count=6 -run=^$$ $$action_pkgs | tee $(BENCH_OUTPUT); \
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path --bin-dir $(LOCALBIN))" \
+	go test -bench=$(BENCH_SPECIAL_REGEX) -benchmem -benchtime=1x -count=6 -run=^$$ $(BENCH_SPECIAL_PACKAGES) | tee -a $(BENCH_OUTPUT)
 
 .PHONY: benchmark-docker
 benchmark-docker: builder gocache ## Run benchmarks in Docker
