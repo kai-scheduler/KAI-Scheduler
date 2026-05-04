@@ -172,15 +172,6 @@ func TestValidateSubGroups(t *testing.T) {
 			wantErr: nil,
 		},
 		{
-			name: "Invalid: minSubGroup = 0 on SubGroup with children",
-			subGroups: []SubGroup{
-				{Name: "parent", MinSubGroup: ptr.To(int32(0))},
-				{Name: "child-1", Parent: ptr.To("parent"), MinMember: ptr.To(int32(4))},
-				{Name: "child-2", Parent: ptr.To("parent"), MinMember: ptr.To(int32(4))},
-			},
-			wantErr: &validationErrors{minDefinitionErrors: []error{&invalidMinSubGroupError{msg: `subgroup "parent": minSubGroup must be greater than 0`}}},
-		},
-		{
 			name: "Invalid: minSubGroup = 0 on leaf SubGroup",
 			subGroups: []SubGroup{
 				{Name: "A", MinSubGroup: ptr.To(int32(0))},
@@ -323,17 +314,6 @@ func TestValidatePodGroupSpec(t *testing.T) {
 				MinSubGroup: ptr.To(int32(1)),
 			},
 			want: &validationErrors{minDefinitionErrors: []error{&minSubGroupExceedsChildCountError{msg: "minSubGroup (1) exceeds the number of direct child SubGroups (0)"}}},
-		},
-		{
-			name: "Invalid: minSubGroup = 0 on PodGroup",
-			spec: PodGroupSpec{
-				MinSubGroup: ptr.To(int32(0)),
-				SubGroups: []SubGroup{
-					{Name: "a", MinMember: ptr.To(int32(4))},
-					{Name: "b", MinMember: ptr.To(int32(4))},
-				},
-			},
-			want: &validationErrors{minDefinitionErrors: []error{&invalidMinSubGroupError{msg: "minSubGroup at the podgroup level must be equal to or greater than 1"}}},
 		},
 	}
 

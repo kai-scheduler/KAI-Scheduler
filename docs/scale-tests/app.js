@@ -8,7 +8,7 @@
 // ./Public/manifest.json resolve correctly relative to the page.
 const _s3raw = typeof window.SCALE_TESTS_S3_BASE_URL !== 'undefined'
   ? window.SCALE_TESTS_S3_BASE_URL : '__S3_BASE_URL__';
-const S3_BASE_URL = (_s3raw === '__S3_BASE_URL__' ? '.' : _s3raw).replace(/\/$/, '');
+const S3_BASE_URL = (_s3raw === '__S3_' + 'BASE_URL__' ? '.' : _s3raw).replace(/\/$/, '');
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 

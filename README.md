@@ -35,7 +35,7 @@ It can run alongside other schedulers installed on the cluster.
 - [Time-based Fairshare](https://github.com/kai-scheduler/KAI-scheduler/tree/main/docs/time-based-fairshare): Over-time fair usage of resources, considering historical usage, time decay, and other parameters for fine-tuning.
 - [Min-guaranteed-runtime](https://github.com/kai-scheduler/KAI-scheduler/tree/main/docs/developer/designs/min-runtime): ensures a time period in which the scheduler must not preempt or reclaim a running workload, even if preemptible.
 - Workload Consolidation: Reallocate running workloads intelligently to reduce fragmentation and increase cluster utilization.
-- [Elastic Workloads](docs/elastic/README.md): Dynamically scale workloads within defined minimum and maximum pod counts.
+- [Elastic Workloads](docs/elastic/README.md): Dynamically scale workloads within defined minimum and maximum pod or SubGroup thresholds.
 - Dynamic Resource Allocation (DRA): Support vendor-specific hardware resources through Kubernetes ResourceClaims (e.g., GPUs from NVIDIA or AMD).
 - [Topology-Aware Scheduling (TAS)](https://github.com/kai-scheduler/KAI-scheduler/tree/main/docs/topology): supports optimized placement with [topology aware scheduling](https://github.com/kai-scheduler/KAI-scheduler/tree/main/docs/developer/designs/topology-awareness) and hierarchical topology aware scheduling for [Hierarchical PodGroups](https://github.com/kai-scheduler/KAI-scheduler/tree/main/docs/developer/designs/hierarchical-podgroup).
 - [Hierarchical PodGroups](https://github.com/kai-scheduler/KAI-scheduler/tree/main/docs/developer/designs/hierarchical-podgroup): supports gang scheduling with optimized topology aware scheduling of multi-level workloads, such as distributed and disaggregated workloads such as Dynamo/Grove.
@@ -131,6 +131,16 @@ Join the [kai-scheduler mailing list](https://groups.google.com/g/kai-scheduler)
 
 ### Technical Issues & Feature Requests  
 Please open a [GitHub issue](https://github.com/kai-scheduler/KAI-scheduler/issues/new/choose) for bugs, feature suggestions, or technical help. This helps us keep track of requests and respond effectively.
+
+---
+
+## Performance Dashboards
+
+KAI Scheduler provides public dashboards for monitoring performance and scale testing:
+
+- **[Scale Tests Dashboard](https://kai-scheduler.github.io/KAI-Scheduler/)**: View historical results from scale tests that validate scheduler performance at large cluster sizes (hundreds to thousands of nodes). Tests run every 24 hours on dedicated infrastructure and measure scheduling performance, topology-aware scheduling, resource allocation, and system stability under load. The dashboard displays execution times, pass/fail status, detailed failure logs, and 30-day historical trends. See [scale tests documentation](docs/developer/scale-tests.md) for technical details.
+
+- **[Benchmarks Dashboard](https://kai-scheduler.github.io/KAI-Scheduler/dev/bench/)**: Track scheduler performance benchmarks across commits to the main branch. The dashboard shows per-commit benchmark history for core scheduler operations, with automatic alerts when performance regresses beyond thresholds.
 
 ---
 

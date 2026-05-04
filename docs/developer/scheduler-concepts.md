@@ -78,9 +78,9 @@ For detailed information about snapshots and the snapshot plugin, see [Snapshot 
 
 ## PodGroups
 
-**PodGroups** define gang scheduling requirements for workloads, specifying how multiple pods should be scheduled together.
+**PodGroups** define gang scheduling requirements for workloads, specifying how multiple pods or SubGroups should be scheduled together.
 
-PodGroups are automatically created by the pod-grouper component based on workload types and can specify minimum member requirements, queue assignments, and priority classes.
+For existing workload integrations, PodGroups can be created automatically by the pod-grouper component based on workload types and can specify minimum member requirements, minimum child SubGroup requirements, queue assignments, and priority classes. `minMember` defines a pod-count threshold, while `minSubGroup` defines how many direct child SubGroups must satisfy their own thresholds before a hierarchical workload can start.
 
 For detailed information about PodGroup creation and gang scheduling, see [Pod Grouper](pod-grouper.md).
 

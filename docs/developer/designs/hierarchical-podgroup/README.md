@@ -46,16 +46,17 @@ This proposal extends the PodGroup CRD and scheduling flow to introduce SubGroup
   - The PodGroup is divided into distinct SubGroups, enabling structured subdivision of the workload while preserving atomic scheduling boundaries. 
   - Scheduling Semantics:
     - The PodGroup is scheduled atomically (gang scheduling) to guarantee coordinated workload orchestration and execution consistency.
-    - SubGroups enable fine-grained placement and policy specification while maintaining atomicity; partial execution of the workload is not permitted.
+    - SubGroups enable fine-grained placement and policy specification while preserving the configured gang thresholds.
 - SubGroup is a logical subset within a PodGroup, enabling scoped placement and scheduling requirements:
   - name: Unique identifier within the parent PodGroup.  
-    minMember: Specifies the minimum number of entities required within the SubGroup to satisfy scheduling constraints. These entities may be pods or child SubGroups. A value of **0** is allowed: the SubGroup has no required pods (all pods are elastic/opportunistic); the scheduler may schedule them after subgroups with minMember > 0.
+    minMember: For leaf SubGroups, specifies the minimum number of pods required within the SubGroup to satisfy scheduling constraints. A value of **0** is allowed: the SubGroup has no required pods (all pods are elastic/opportunistic); the scheduler may schedule them after subgroups with minMember > 0.
+  - minSubGroup: For PodGroups and mid-level SubGroups, specifies the minimum number of direct child SubGroups required to satisfy scheduling constraints. When unset, all direct children are required.
   - parent: the name of the parent SubGroup.
   - Pods are assigned to SubGroups with `kai.scheduler/subgroup-name` label, where the value is the name of the respective SubGroup. Pods are assigned to leaf SubGroups only.
-- TopologyConstraints – Provides hierarchical placement control across three levels:
-  - A global constraint applied to all pods in the PodGroup when no more specific constraint is defined. 
-  - Specific constraints applied to explicitly named SubGroups for targeted placement control. 
-  - Shared constraints applied to sets of SubGroups collectively, enabling coordinated placement policies across related SubGroups.
+- TopologyConstraint provides hierarchical placement control:
+  - A PodGroup-level constraint applies to the entire workload.
+  - A SubGroup-level constraint applies to the subtree rooted at that SubGroup.
+  - Leaf SubGroup constraints apply to the pods assigned to that leaf.
 - **SubGroup ordering** (subgrouporder plugin): When choosing which SubGroup’s pods to schedule next, the scheduler applies the following order. SubGroups that have not yet reached their minAvailable (minMember) are deprioritized relative to those that have. Among SubGroups below minAvailable, no relative priority is applied. SubGroups with **minAvailable = 0** (optional/elastic subgroups) are deprioritized relative to SubGroups with minAvailable > 0; between two SubGroups both with minAvailable = 0, the one with fewer allocated tasks is prioritized. Among SubGroups that are at or above minAvailable, the one with the lower allocation ratio (allocated / minAvailable) is prioritized.
 
 ## API Changes
@@ -65,7 +66,14 @@ To support SubGroups within a PodGroup, the PodGroupSpec API is extended as foll
 type PodGroupSpec struct {
     // MinMember defines the minimal number of members to run the PodGroup;
     // if there are not enough resources to start all required members, the scheduler will not start anyone.
-    MinMember int32 `json:"minMember,omitempty"`
+    // Mutually exclusive with MinSubGroup.
+    MinMember *int32 `json:"minMember,omitempty"`
+
+    // MinSubGroup defines the minimal number of direct child SubGroups required
+    // for this PodGroup to be schedulable. When unset, all direct children are required.
+    // Mutually exclusive with MinMember.
+    // +optional
+    MinSubGroup *int32 `json:"minSubGroup,omitempty"`
     
     // Queue defines the queue to allocate resource for PodGroup; if queue does not exist,
     // the PodGroup will not be scheduled.
@@ -86,8 +94,8 @@ type PodGroupSpec struct {
     // The number of scheduling cycles to try before marking the pod group as UnschedulableOnNodePool. Currently only supporting -1 and 1
     SchedulingBackoff *int32 `json:"schedulingBackoff,omitempty"`
     
-    // TopologyConstraints define the topology constraints for this PodGroup
-    TopologyConstraints TopologyConstraints `json:"topologyConstraints,omitempty"`
+    // TopologyConstraint defines the topology constraints for this PodGroup
+    TopologyConstraint TopologyConstraint `json:"topologyConstraint,omitempty"`
     
     // SubGroups defines finer-grained subsets of pods within the PodGroup with individual scheduling constraints
     SubGroups []SubGroup `json:"subGroups,omitempty"`
@@ -102,31 +110,14 @@ type SubGroup struct {
     
     // MinMember defines the minimal number of members to run this SubGroup;
     // if there are not enough resources to start all required members, the scheduler will not start anyone.
-    MinMember int32 `json:"minMember,omitempty"`
-}
+    // Mutually exclusive with MinSubGroup.
+    MinMember *int32 `json:"minMember,omitempty"`
 
-// TopologyConstraints defines topology constraints at group, subgroup, and subgroup-set levels.
-type TopologyConstraints struct {
-    // Global applies the constraint to all pods in the PodGroup if no more specific subgroup constraint applies.
-    Global *TopologyConstraint `json:"global,omitempty"`
-    
-    // SubGroups defines topology constraints for specific named subgroups.
-    // The key is the subgroup name, and the constraint applies to all pods in that subgroup.
-    SubGroups map[string]TopologyConstraint `json:"subGroups,omitempty"`
-    
-    // SubGroupSets allows defining constraints that apply to multiple subgroups collectively.
-    // Each entry specifies a set of subgroup names to which the constraint will be applied.
-    // Useful for scenarios where several subgroups need to share the same topology policy.
-    SubGroupSets []SubGroupSetTopologyConstraint `json:"subGroupSets,omitempty"`
-}
-
-// SubGroupSetTopologyConstraint defines a topology constraint for a set of subgroup names.
-type SubGroupSetTopologyConstraint struct {
-    // SubGroups is the list of subgroup names that this constraint applies to collectively.
-    SubGroups []string `json:"subGroups"`
-    
-    // Constraint defines the topology constraint to apply to the listed subgroups.
-    Constraint TopologyConstraint `json:"constraint"`
+    // MinSubGroup defines the minimal number of direct child SubGroups required
+    // for this SubGroup to be schedulable. When unset, all direct children are required.
+    // Mutually exclusive with MinMember.
+    // +optional
+    MinSubGroup *int32 `json:"minSubGroup,omitempty"`
 }
 
 type TopologyConstraint struct {
@@ -150,8 +141,11 @@ type TopologyConstraint struct {
 ### Validation
 The following validations will be enforced via a Validating Webhook:
 - Unique SubGroup name validation - ensure that all SubGroups within a PodGroup have unique names, preventing conflicts and enabling reliable hierarchical processing during scheduling.
-- Validate that, if SubGroups are defined, the PodGroup’s global minMember is not larger than the number of SubGroups to ensure scheduling consistency.
-- SubGroup membership validation - the Validating Webhook can enforce that each pod associated with the workload is assigned to exactly one SubGroup and each SubGroup is part in a single SubGroupSet, ensuring clear, non-overlapping SubGroup membership across all pods within the PodGroup.
+- Parent references must exist and must not create cycles.
+- `minMember` and `minSubGroup` are mutually exclusive at the PodGroup level and for each SubGroup.
+- Leaf SubGroups require `minMember` and cannot set `minSubGroup`.
+- Mid-level SubGroups cannot set `minMember`; they may set `minSubGroup` or omit it to require all direct children.
+- `minSubGroup` exceeding the number of direct child SubGroups is admitted with a webhook warning for backward compatibility.
 
 ## Examples
 
@@ -159,7 +153,7 @@ The following validations will be enforced via a Validating Webhook:
 This example demonstrates a PodGroup with two SubGroups, each defining distinct minMember requirements and enforcing rack-level topology constraints to ensure efficient, localized scheduling.
 ```mermaid
 graph TD
-    PG[PodGroup<br>minMember: 2]
+    PG[PodGroup<br>minSubGroup: 2]
 
     Decode[decode<br>minMember: 4<br>Topology: rack]
     Prefill[prefill<br>minMember: 1<br>Topology: rack]
@@ -169,33 +163,32 @@ graph TD
 ```
 ```yaml
 spec:
-  minMember: 2 # (decode) + (prefill), ensuring the gang scheduling invariant
+  minSubGroup: 2 # (decode) + (prefill), ensuring the gang scheduling invariant
   subGroups:
   - name: decode
     minMember: 4
+    topologyConstraint:
+      topology: cluster-topology
+      requiredTopologyLevel: rack
 
   - name: prefill
     minMember: 1
-      
-  topologyConstraints:
-    subGroups:
-      decode:
-        requiredTopologyLevel: rack
-      prefill:
-        requiredTopologyLevel: rack
+    topologyConstraint:
+      topology: cluster-topology
+      requiredTopologyLevel: rack
 ```
 
 ### Example 2: Multi-SubGroup Leaders and Workers
 This example illustrates a hierarchical PodGroup structure with multiple SubGroups representing leaders and workers, applying both rack-level and block-level topology constraints to achieve co-located placement within each logical group while allowing separation between groups.
 ```mermaid
 graph TD
-    PG[PodGroup<br>minMember: 2]
+    PG[PodGroup<br>minSubGroup: 2]
 
-    Decode[decode<br>minMember: 2<br>Topology: block]
+    Decode[decode<br>minSubGroup: 2<br>Topology: block]
     DecodeWorkers[decode-workers<br>minMember: 4<br>Topology: rack]
     DecodeLeaders[decode-leaders<br>minMember: 1<br>Topology: rack]
 
-    Prefill[prefill<br>minMember: 2<br>Topology: block]
+    Prefill[prefill<br>minSubGroup: 2<br>Topology: block]
     PrefillWorkers[prefill-workers<br>minMember: 4<br>Topology: rack]
     PrefillLeaders[prefill-leaders<br>minMember: 1<br>Topology: rack]
 
@@ -209,60 +202,54 @@ graph TD
 ```
 ```yaml
 spec:
-  minMember: 2  # To ensure gang scheduling, both decode and prefill SubGroups need to be scheduled 
+  minSubGroup: 2  # To ensure gang scheduling, both decode and prefill SubGroups need to be scheduled
   subGroups:
     - name: decode
-      minMember: 2
+      minSubGroup: 2
+      topologyConstraint:
+        topology: cluster-topology
+        requiredTopologyLevel: block
 
     - name: decode-workers
       parent: decode
       minMember: 4
+      topologyConstraint:
+        topology: cluster-topology
+        requiredTopologyLevel: rack
 
     - name: decode-leaders
       parent: decode
       minMember: 1
+      topologyConstraint:
+        topology: cluster-topology
+        requiredTopologyLevel: rack
 
-      
     - name: prefill
-      minMember: 2
+      minSubGroup: 2
+      topologyConstraint:
+        topology: cluster-topology
+        requiredTopologyLevel: block
 
     - name: prefill-workers
       parent: prefill
       minMember: 4
+      topologyConstraint:
+        topology: cluster-topology
+        requiredTopologyLevel: rack
 
     - name: prefill-leaders
       parent: prefill
       minMember: 1
-
-  topologyConstraints:
-    subGroups:
-      decode-workers:
+      topologyConstraint:
+        topology: cluster-topology
         requiredTopologyLevel: rack
-      decode-leaders:
-        requiredTopologyLevel: rack
-      prefill-workers:
-        requiredTopologyLevel: rack
-      prefill-leaders:
-        requiredTopologyLevel: rack
-
-    subGroupSets:
-      - subGroups:
-          - decode-workers
-          - decode-leaders
-        constraint:
-          requiredTopologyLevel: block
-      - subGroups:
-          - prefill-workers
-          - prefill-leaders
-        constraint:
-          requiredTopologyLevel: block
 ```
 
 ### Example 3: PodGroup with Minimum Replica Threshold
-This example demonstrates a PodGroup representing multiple replicas of the same workload. The minMember field specifies that a minimum number of replicas must be scheduled before the workload can start. Additional replicas can be scheduled opportunistically once resources become available.
+This example demonstrates a PodGroup representing multiple replicas of the same workload. The `minSubGroup` field specifies that a minimum number of replicas must be scheduled before the workload can start. Additional replicas can be scheduled opportunistically once resources become available.
 ```mermaid
 graph TD
-    PG[PodGroup<br>minMember: 2]
+    PG[PodGroup<br>minSubGroup: 2]
 
     Replica1[replica-1<br>minMember: 3]
     Replica2[replica-2<br>minMember: 3]
@@ -274,7 +261,7 @@ graph TD
 ```
 ```yaml
 spec:
-  minMember: 2 # Minimum number of replicas required to satisfy gang scheduling constraints
+  minSubGroup: 2 # Minimum number of replicas required to satisfy gang scheduling constraints
   subGroups:
     - name: replica-1
       minMember: 3
@@ -290,13 +277,13 @@ spec:
 This example demonstrates a workload that contains two child SubGroups (leaders and workers). The entire workload can auto-scale, meaning new replicas of leaders and workers are created together. Each such replica must be scheduled as a gang, but only a minimum of one such replica is required for the workload to start.
 ```mermaid
 graph TD
-    PG[PodGroup<br>minMember: 1]
+    PG[PodGroup<br>minSubGroup: 1]
 
-    Replica1[replica-1<br>minMember: 2]
+    Replica1[replica-1<br>minSubGroup: 2]
     Leader1[leaders-1<br>minMember: 1]
     Worker1[workers-1<br>minMember: 3]
 
-    Replica2[replica-2<br>minMember: 2]
+    Replica2[replica-2<br>minSubGroup: 2]
     Leader2[leaders-2<br>minMember: 1]
     Worker2[workers-2<br>minMember: 3]
 
@@ -310,10 +297,10 @@ graph TD
 ```
 ```yaml
 spec:
-  minMember: 1 # One replica required to satisfy scheduling constraints
+  minSubGroup: 1 # One replica required to satisfy scheduling constraints
   subGroups:
     - name: replica-1
-      minMember: 2
+      minSubGroup: 2
 
     - name: leaders-1
       parent: replica-1
@@ -325,7 +312,7 @@ spec:
 
     
     - name: replica-2
-      minMember: 2
+      minSubGroup: 2
 
     - name: leaders-2
       parent: replica-2

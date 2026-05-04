@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/pflag"
 
+	binderplugins "github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/flags"
 )
@@ -33,8 +34,7 @@ type Options struct {
 	MetricsAddr                                 string
 	ProbeAddr                                   string
 	FakeGPUNodes                                bool
-	GpuCdiEnabled                               bool
-	VolumeBindingTimeoutSeconds                 int
+	Plugins                                     flags.JSONFlag[binderplugins.Config]
 	RuntimeClassName                            string
 }
 
@@ -103,12 +103,9 @@ func InitOptions(fs *pflag.FlagSet) *Options {
 	fs.BoolVar(&options.FakeGPUNodes,
 		"fake-gpu-nodes", false,
 		"Enables running fractions on fake gpu nodes for testing")
-	fs.BoolVar(&options.GpuCdiEnabled,
-		"cdi-enabled", false,
-		"Specifies if the gpu device plugin uses the cdi devices api to set gpu devices to the pods")
-	fs.IntVar(&options.VolumeBindingTimeoutSeconds,
-		"volume-binding-timeout-seconds", 120,
-		"Volume binding timeout in seconds")
+	fs.Var(&options.Plugins,
+		"plugins",
+		"JSON-serialized binder plugin configuration keyed by plugin name")
 	fs.StringVar(&options.RuntimeClassName,
 		"runtime-class-name", "",
 		"Runtime class for reservation pods")
