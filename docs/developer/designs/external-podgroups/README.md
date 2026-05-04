@@ -115,7 +115,7 @@ Podgrouper should evaluate skip ownership before it applies PodGroup metadata or
 if pod schedulerName != configured scheduler:
     return
 
-if pod has kai.scheduler/skip-podgrouper and value is not "false":
+if pod has kai.scheduler/skip-podgrouper: "true":
     return
 
 if pod is ownerless and already has pod-group-name:
@@ -123,7 +123,7 @@ if pod is ownerless and already has pod-group-name:
 
 topOwner, allOwners = GetPodOwners(pod)
 
-if topOwner or any owner in allOwners has kai.scheduler/skip-podgrouper and value is not "false":
+if topOwner or any owner in allOwners has kai.scheduler/skip-podgrouper: "true":
     return
 
 metadata = GetPGMetadata(pod, topOwner, allOwners)
@@ -134,7 +134,7 @@ ApplyToCluster(metadata)
 assignPodToGroupAndSubGroup(pod, metadata)
 ```
 
-Any value other than explicit `"false"` should skip. If users do not want to skip podgrouper, they should omit the annotation.
+Only the exact value `"true"` should skip. Missing, `"false"`, or invalid values should preserve existing podgrouper behavior.
 
 The ownerless pod with `pod-group-name` case should keep the current behavior: podgrouper skips it and does not re-create PodGroup metadata.
 
