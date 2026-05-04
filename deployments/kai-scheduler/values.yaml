@@ -187,6 +187,7 @@ crdupgrader:
   image:
     name: crd-upgrader
     pullPolicy: IfNotPresent
+    # registry: ""  # Optional: Override global.registry (e.g. to mirror only the hook image)
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
 
 topologyMigration:
