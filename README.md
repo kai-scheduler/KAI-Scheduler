@@ -103,6 +103,11 @@ Refer to the [Breaking Changes](https://github.com/kai-scheduler/KAI-scheduler/b
 
 To start scheduling workloads with KAI Scheduler, please continue to [Quick Start example](docs/quickstart/README.md)
 
+## Performance & Scale
+
+- **[Scale tests dashboard](https://kai-scheduler.github.io/KAI-Scheduler/)**: results from large-cluster scale tests run every 24 hours on dedicated infrastructure. See [scale tests docs](docs/developer/scale-tests.md) for methodology.
+- **[Benchmark history](https://kai-scheduler.github.io/KAI-Scheduler/dev/bench/)**: Go benchmark trends published on every push to `main`.
+
 ## Roadmap
 
 You can find the updated KAI Scheduler roadmap (historical, near year and future) [here](roadmap.md).
