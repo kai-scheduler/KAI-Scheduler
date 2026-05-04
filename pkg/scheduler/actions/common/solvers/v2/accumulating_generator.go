@@ -18,12 +18,12 @@ import (
 // accumulatingGenerator wraps the legacy PodAccumulatedScenarioBuilder
 // and emits, for each surviving accumulation step, the same set of
 // scenarios that today's byPodSolver iterates: one Scenario per host
-// node of the just-added victim job (per-node subset), followed by one
-// Scenario over the full accumulated set.
+// node of the just-added victim job (per-node subset).
 //
 // Phase 2 contract: emit-by-emit equivalent to PodAccumulatedScenarioBuilder
-// + byPodSolver's per-node loop + the full-set fallback. Filter behavior
-// is inherited from the wrapped builder.
+// + byPodSolver's per-node loop. Filter behavior is inherited from the
+// wrapped builder. No "full set" fallback at this stage — that emission
+// is introduced in Phase 5.
 //
 // Phases 5 and 7 will fold accumulation into v2 directly and remove the
 // dependency on the parent solvers package.
@@ -106,22 +106,14 @@ func (g *accumulatingGenerator) buildEmissions(s *solverscenario.ByNodeScenario)
 		return []Scenario{g.scenarioWithVictims(append([]*pod_info.PodInfo(nil), recorded...))}
 	}
 
-	nodes := sortedHostNodes(latest)
-	emissions := make([]Scenario, 0, len(nodes)+1)
-
 	// Per-node subset for each host node of the latest victim job:
 	// recorded ∪ all accumulated victims on that node.
+	nodes := sortedHostNodes(latest)
+	emissions := make([]Scenario, 0, len(nodes))
 	for _, node := range nodes {
 		victimsOnNode := s.VictimsTasksFromNodes([]string{node})
 		emissions = append(emissions, g.scenarioWithVictims(joinTasks(recorded, victimsOnNode)))
 	}
-
-	// Full-set fallback: recorded ∪ every accumulated potential victim.
-	all := s.PotentialVictimsTasks()
-	if len(all) > 0 {
-		emissions = append(emissions, g.scenarioWithVictims(joinTasks(recorded, all)))
-	}
-
 	return emissions
 }
 
