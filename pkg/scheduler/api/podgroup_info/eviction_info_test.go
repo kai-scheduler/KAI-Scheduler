@@ -324,6 +324,78 @@ func TestGetTasksToEvict_HierarchicalTree(t *testing.T) {
 			expectedHasMoreTasks: true,
 			numExpectTasks:       2,
 		},
+		{
+			name: "MinSubGroupZero_RootEntireSubtreeElasticDroppable",
+			job: func() *PodGroupInfo {
+				// Root with minSubGroup=0 and one PodSet child at exactly min.
+				// Phase 2 fires because 0 < numSatisfied(1) → drop the whole child.
+				psA := subgroup_info.NewPodSet("ps-a", 1, nil)
+				psA.AssignTask(simpleTask("pod-1", "ps-a", pod_status.Running))
+
+				root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+				root.SetMinSubGroup(ptr.To(int32(0)))
+				root.AddPodSet(psA)
+
+				return &PodGroupInfo{
+					RootSubGroupSet: root,
+					PodSets:         root.GetDescendantPodSets(),
+				}
+			}(),
+			expectedHasMoreTasks: false,
+			numExpectTasks:       1,
+		},
+		{
+			name: "MinSubGroupZero_NestedInnerSubtreeElasticDroppable",
+			job: func() *PodGroupInfo {
+				// Inner SubGroupSet with minSubGroup=0 containing a PodSet at min.
+				// Root requires inner (no minSubGroup). Inner is treated as fully elastic:
+				// phase 1 finds elastic surplus inside inner → recurses → inner phase 2 drops ps-a.
+				psA := subgroup_info.NewPodSet("ps-a", 1, nil)
+				psA.AssignTask(simpleTask("pod-1", "ps-a", pod_status.Running))
+
+				inner := subgroup_info.NewSubGroupSet("inner", nil)
+				inner.SetMinSubGroup(ptr.To(int32(0)))
+				inner.AddPodSet(psA)
+
+				root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+				root.AddSubGroup(inner)
+
+				return &PodGroupInfo{
+					RootSubGroupSet: root,
+					PodSets:         root.GetDescendantPodSets(),
+				}
+			}(),
+			expectedHasMoreTasks: false,
+			numExpectTasks:       1,
+		},
+		{
+			name: "MinSubGroupZero_NestedInnerLeavesSiblingAlone",
+			job: func() *PodGroupInfo {
+				// Root requires both children; inner has minSubGroup=0 (fully elastic),
+				// sibling required ps-keep is at min. Eviction must come from inner only.
+				psElastic := subgroup_info.NewPodSet("ps-elastic", 1, nil)
+				psElastic.AssignTask(simpleTask("pod-1", "ps-elastic", pod_status.Running))
+
+				inner := subgroup_info.NewSubGroupSet("inner", nil)
+				inner.SetMinSubGroup(ptr.To(int32(0)))
+				inner.AddPodSet(psElastic)
+
+				psKeep := subgroup_info.NewPodSet("ps-keep", 1, nil)
+				psKeep.AssignTask(simpleTask("pod-2", "ps-keep", pod_status.Running))
+
+				root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+				root.AddSubGroup(inner)
+				root.AddPodSet(psKeep)
+
+				return &PodGroupInfo{
+					RootSubGroupSet: root,
+					PodSets:         root.GetDescendantPodSets(),
+				}
+			}(),
+			expectedHasMoreTasks: true, // pod-2 in ps-keep stays
+			numExpectTasks:       1,
+			expectedTaskNames:    []string{"pod-1"},
+		},
 	}
 
 	for _, tt := range tests {
