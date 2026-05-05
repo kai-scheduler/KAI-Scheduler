@@ -30,13 +30,15 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 )
 
 type Statement struct {
-	operations []Operation
-	ssn        *Session
-	sessionID  string
+	operations         []Operation
+	ssn                *Session
+	sessionID          string
+	suspendedPodGroups map[common_info.PodGroupID]bool // tracks PodGroups suspended during this commit
 }
 
 type Checkpoint int
@@ -135,6 +137,28 @@ func (s *Statement) commitEvict(reclaimee *pod_info.PodInfo, evictOp evictOperat
 	previousGpuGroup := reclaimee.GPUGroups
 	previousResourceClaimInfo := reclaimee.ResourceClaimInfo
 	previousIsVirtualStatus := reclaimee.IsVirtualStatus
+
+	// For suspend-based eviction, suspend the workload owner once per
+	// PodGroup instead of deleting individual pods. The workload
+	// controller handles pod cleanup via its native suspend lifecycle.
+	if evictOp.evictionMetadata.EvictionStrategy == eviction_info.EvictionStrategySuspend && s.ssn.DynamicClient != nil {
+		if !s.podGroupSuspended(reclaimeePodGroup) {
+			if err := suspendWorkload(s.ssn.DynamicClient, reclaimeePodGroup); err != nil {
+				log.InfraLogger.Errorf("Failed to suspend workload for PodGroup %v/%v: %v. Falling back to pod deletion.",
+					reclaimeePodGroup.Namespace, reclaimeePodGroup.Name, err)
+				// Fall through to default pod deletion.
+			} else {
+				s.markPodGroupSuspended(reclaimeePodGroup)
+				reclaimee.IsVirtualStatus = false
+				return nil
+			}
+		} else {
+			// Already suspended this PodGroup — skip redundant pod deletion.
+			reclaimee.IsVirtualStatus = false
+			return nil
+		}
+	}
+
 	if err := s.ssn.Cache.Evict(reclaimee.Pod, reclaimeePodGroup, evictOp.evictionMetadata, evictOp.message); err != nil {
 		log.InfraLogger.Errorf("Failed to evict task <%v/%v>: %v.", reclaimee.Namespace, reclaimee.Name, err)
 		if e := s.unevict(reclaimee, previousStatus, evictOp.previousNode, previousGpuGroup, previousResourceClaimInfo,
@@ -516,6 +540,7 @@ func (s *Statement) ConvertAllAllocatedToPipelined(jobID common_info.PodGroupID)
 
 func (s *Statement) clearOperations() {
 	s.operations = []Operation{}
+	s.suspendedPodGroups = nil
 }
 
 func (s *Statement) Discard() {
@@ -659,4 +684,18 @@ func (s *Statement) operationValid(i int) bool {
 		}
 	}
 	return true
+}
+
+func (s *Statement) podGroupSuspended(pg *podgroup_info.PodGroupInfo) bool {
+	if s.suspendedPodGroups == nil {
+		return false
+	}
+	return s.suspendedPodGroups[pg.UID]
+}
+
+func (s *Statement) markPodGroupSuspended(pg *podgroup_info.PodGroupInfo) {
+	if s.suspendedPodGroups == nil {
+		s.suspendedPodGroups = make(map[common_info.PodGroupID]bool)
+	}
+	s.suspendedPodGroups[pg.UID] = true
 }

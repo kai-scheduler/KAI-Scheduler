@@ -332,6 +332,7 @@ func GetTestCacheMock(
 
 	fakeClient := fake.NewSimpleClientset(additionalObjects...)
 	cacheMock.EXPECT().KubeClient().AnyTimes().Return(fakeClient)
+	cacheMock.EXPECT().DynamicClient().AnyTimes().Return(nil)
 
 	informerFactory := informers.NewSharedInformerFactory(cacheMock.KubeClient(), 0)
 

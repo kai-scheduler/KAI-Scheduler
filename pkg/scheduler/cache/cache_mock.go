@@ -20,6 +20,7 @@ import (
 	plugins "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal/plugins"
 	gomock "go.uber.org/mock/gomock"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/dynamic"
 	informers "k8s.io/client-go/informers"
 	kubernetes "k8s.io/client-go/kubernetes"
 	framework "k8s.io/kube-scheduler/framework"
@@ -117,6 +118,20 @@ func (m *MockCache) KubeClient() kubernetes.Interface {
 func (mr *MockCacheMockRecorder) KubeClient() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "KubeClient", reflect.TypeOf((*MockCache)(nil).KubeClient))
+}
+
+// DynamicClient mocks base method.
+func (m *MockCache) DynamicClient() dynamic.Interface {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DynamicClient")
+	ret0, _ := ret[0].(dynamic.Interface)
+	return ret0
+}
+
+// DynamicClient indicates an expected call of DynamicClient.
+func (mr *MockCacheMockRecorder) DynamicClient() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DynamicClient", reflect.TypeOf((*MockCache)(nil).DynamicClient))
 }
 
 // KubeInformerFactory mocks base method.

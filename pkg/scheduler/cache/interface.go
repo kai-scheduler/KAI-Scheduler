@@ -21,6 +21,7 @@ package cache
 
 import (
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	ksf "k8s.io/kube-scheduler/framework"
@@ -42,6 +43,7 @@ type Cache interface {
 	RecordJobStatusEvent(job *podgroup_info.PodGroupInfo) error
 	TaskPipelined(task *pod_info.PodInfo, message string)
 	KubeClient() kubernetes.Interface
+	DynamicClient() dynamic.Interface
 	KubeInformerFactory() informers.SharedInformerFactory
 	SnapshotSharedLister() ksf.NodeInfoLister
 	InternalK8sPlugins() *k8splugins.K8sPlugins

@@ -19,9 +19,41 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/scheduler_util"
 )
 
+const (
+	// AnnotationEvictionStrategy controls whether KAI uses suspend-based
+	// preemption ("suspend") or direct pod deletion ("delete").
+	AnnotationEvictionStrategy = "kai.scheduler/eviction-strategy"
+)
+
+// GetEvictionStrategy reads the eviction strategy from PodGroup annotations.
+func GetEvictionStrategy(pg *podgroup_info.PodGroupInfo) string {
+	if pg == nil || pg.PodGroup == nil {
+		return eviction_info.EvictionStrategyDelete
+	}
+	if pg.PodGroup.Annotations[AnnotationEvictionStrategy] == eviction_info.EvictionStrategySuspend {
+		return eviction_info.EvictionStrategySuspend
+	}
+	return eviction_info.EvictionStrategyDelete
+}
+
 func EvictAllPreemptees(ssn *framework.Session, preempteeTasks []*pod_info.PodInfo,
 	preemptor *podgroup_info.PodGroupInfo, stmt *framework.Statement,
 	actionType framework.ActionType) error {
+
+	// Determine eviction strategy per task based on its PodGroup annotation.
+	// All tasks go through stmt.Evict() for simulation (resource accounting),
+	// but at commit time the strategy determines whether to delete pods or
+	// suspend the workload.
+	strategies := make(map[common_info.PodID]string, len(preempteeTasks))
+	for _, task := range preempteeTasks {
+		strategy := eviction_info.EvictionStrategyDelete
+		if ssn.DynamicClient != nil {
+			if job, found := ssn.ClusterInfo.PodGroupInfos[task.Job]; found {
+				strategy = GetEvictionStrategy(job)
+			}
+		}
+		strategies[task.UID] = strategy
+	}
 
 	messages := getEvictionMessages(ssn, preempteeTasks, preemptor, actionType)
 	for _, task := range preempteeTasks {
@@ -35,6 +67,7 @@ func EvictAllPreemptees(ssn *framework.Session, preempteeTasks []*pod_info.PodIn
 			Action:           string(actionType),
 			EvictionGangSize: len(preempteeTasks),
 			Preemptor:        &types.NamespacedName{Namespace: preemptor.Namespace, Name: preemptor.Name},
+			EvictionStrategy: strategies[task.UID],
 		})
 		if err != nil {
 			log.InfraLogger.Errorf("Failed to preempt task <%s/%s> for PodInfos <%s/%s>: %v",
