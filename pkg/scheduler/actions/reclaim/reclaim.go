@@ -68,6 +68,11 @@ func (ra *reclaimAction) Execute(ssn *framework.Session) {
 				continue
 			}
 		}
+		tasks := podgroup_info.GetTasksToAllocate(job, ssn.TaskOrderFn, false)
+		if task, failure := common.VictimInvariantPrePredicateFailureForTasks(ssn, job, tasks); failure != nil {
+			common.RecordVictimInvariantPrePredicateFailure(job, task, failure)
+			continue
+		}
 		metrics.IncPodgroupsConsideredByAction()
 		succeeded, statement, reclaimeeTasksNames := ra.attemptToReclaimForSpecificJob(ssn, job, reclaimerInfo)
 		if succeeded {

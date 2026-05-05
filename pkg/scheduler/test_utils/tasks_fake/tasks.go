@@ -23,17 +23,18 @@ const (
 )
 
 type TestTaskBasic struct {
-	Name                   string
-	GPUGroups              []string
-	RequiredGPUs           *int64
-	State                  pod_status.PodStatus
-	NodeName               string // Relevant if job is running
-	NodeAffinityNames      []string
-	RequiredMigInstances   map[v1.ResourceName]int
-	Priority               *int
-	IsLegacyMigTask        bool
-	ResourceClaimTemplates map[string]string
-	ResourceClaimNames     []string
+	Name                       string
+	GPUGroups                  []string
+	RequiredGPUs               *int64
+	State                      pod_status.PodStatus
+	NodeName                   string // Relevant if job is running
+	NodeAffinityNames          []string
+	RequiredMigInstances       map[v1.ResourceName]int
+	Priority                   *int
+	IsLegacyMigTask            bool
+	ResourceClaimTemplates     map[string]string
+	ResourceClaimNames         []string
+	PersistentVolumeClaimNames []string
 }
 
 func BuildPod(
