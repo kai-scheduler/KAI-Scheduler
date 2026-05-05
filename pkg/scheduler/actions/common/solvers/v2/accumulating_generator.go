@@ -235,12 +235,21 @@ func (g *accumulatingGenerator) buildEmissions(s *solverscenario.ByNodeScenario)
 	}
 
 	// Per-node subset for each host node of the latest victim job:
-	// recorded ∪ all accumulated victims on that node.
+	// recorded ∪ all accumulated victims on that node. Emitted first so
+	// the least-disruptive single-node solution is preferred when one
+	// exists.
 	nodes := sortedHostNodes(latest)
-	emissions := make([]Scenario, 0, len(nodes))
+	emissions := make([]Scenario, 0, len(nodes)+1)
 	for _, node := range nodes {
 		victimsOnNode := s.VictimsTasksFromNodes([]string{node})
 		emissions = append(emissions, g.scenarioWith(joinTasks(recorded, victimsOnNode), candidates))
+	}
+	// Full-set fallback: recorded ∪ every accumulated potential victim.
+	// Necessary for gang scheduling, where the preemptor's tasks span
+	// multiple nodes and no single host node carries the full victim set.
+	all := s.PotentialVictimsTasks()
+	if len(all) > 0 {
+		emissions = append(emissions, g.scenarioWith(joinTasks(recorded, all), candidates))
 	}
 	return emissions
 }
