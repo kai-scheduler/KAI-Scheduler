@@ -214,3 +214,7 @@ View logs for specific shards:
 # View shard scheduler logs
 kubectl logs -n kai-system deployment/kai-scheduler-gpu-shard
 ```
+
+## See Also
+
+- [Scheduling Deep Dive](../scheduling-deep-dive/README.md) — How scheduling concepts interact within and across shards

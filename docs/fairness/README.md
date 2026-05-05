@@ -88,3 +88,7 @@ pluginArguments:
 | `1.0` | Standard comparison (default) |
 | `> 1.0` | More conservative reclaim |
 | `< 1.0` | Not allowed (prevents infinite cycles) |
+
+## See Also
+
+- [Scheduling Deep Dive](../scheduling-deep-dive/README.md) — Visual guide to how fair-share allocation, reclaim, and preemption interact
