@@ -11,96 +11,51 @@ const CHART_CONFIGS = [
     id: 'chart-1',
     testNamePattern: /^fill cluster with single GPU Jobs$/i,
     excludePattern: /pending tasks/i,
-    extractMetric: (entries) => {
-      const metrics = findMetrics(entries);
-      return metrics?.time ? parseDuration(metrics.time) : null;
+    extractMetric: (entries, metrics) => {
+      if (!metrics) metrics = findMetrics(entries);
+      return metrics?.time || metrics?.total_time ? parseDuration(metrics.time || metrics.total_time) : null;
     },
     label: 'Time (seconds)',
-    legendBuilder: (metrics) => `${metrics.nodes || '?'} nodes, ${metrics.jobs || '?'} jobs`,
+    legendBuilder: (metrics, containerHierarchy) => {
+      const nodes = metrics.nodes || '?';
+      const jobs = metrics.jobs || '?';
+      // Use last container context to distinguish test variants
+      const context = containerHierarchy?.[containerHierarchy.length - 1] || '';
+      const variant = context.includes('scheduler disabled') ? 'scheduler disabled' :
+                      context.includes('running') ? 'scheduler running' : '';
+      return variant ? `${nodes} nodes, ${jobs} jobs (${variant})` : `${nodes} nodes, ${jobs} jobs`;
+    },
   },
   {
     id: 'chart-2',
-    testNamePattern: /^fill cluster with single GPU Jobs.*400 pending tasks/i,
-    extractMetric: (entries) => {
-      const metrics = findMetrics(entries);
-      return metrics?.time ? parseDuration(metrics.time) : null;
+    testNamePattern: /schedules jobs with pending tasks in background/i,
+    extractMetric: (entries, metrics) => {
+      if (!metrics) metrics = findMetrics(entries);
+      return metrics?.time || metrics?.total_time ? parseDuration(metrics.time || metrics.total_time) : null;
     },
     label: 'Time (seconds)',
-    legendBuilder: (metrics) => `${metrics.nodes || '?'} nodes, ${metrics.jobs || '?'} jobs`,
+    legendBuilder: (metrics, containerHierarchy) => `${metrics.nodes || '?'} nodes, ${metrics.jobs || '?'} jobs`,
   },
   {
     id: 'chart-3',
-    testNamePattern: /average time to unschedulable for distributed job/i,
-    extractMetric: (entries) => {
-      const metrics = findMetrics(entries);
-      return metrics?.average_time_to_unschedulable__seconds_ ||
-             metrics?.details_average_time_to_unschedulable__seconds_ || null;
+    testNamePattern: /Allocate single distributed job with preferred topology/i,
+    extractMetric: (entries, metrics) => {
+      if (!metrics) metrics = findMetrics(entries);
+      return metrics?.time || metrics?.total_time || metrics?.duration ?
+             parseDuration(metrics.time || metrics.total_time) || metrics.duration : null;
     },
     label: 'Time (seconds)',
-    legendBuilder: (metrics) =>
-      `${metrics.nodes || metrics.details_nodes || '?'} nodes, ` +
-      `${metrics.total_requested_gpus || metrics.details_total_requested_gpus || '?'} GPUs requested`,
+    legendBuilder: (metrics, containerHierarchy) => `${metrics.nodes || '?'} nodes, ${metrics.jobs || '?'} jobs`,
   },
   {
     id: 'chart-4',
-    testNamePattern: /reclaim time for one very large job/i,
-    extractMetric: (entries) => {
-      const metrics = findMetrics(entries);
-      return metrics?.time_to_reclaim__seconds_ ||
-             metrics?.details_time_to_reclaim__seconds_ || null;
+    testNamePattern: /Allocate single distributed job without preferred topology/i,
+    extractMetric: (entries, metrics) => {
+      if (!metrics) metrics = findMetrics(entries);
+      return metrics?.time || metrics?.total_time ? parseDuration(metrics.time || metrics.total_time) : null;
     },
     label: 'Time (seconds)',
-    legendBuilder: (metrics) =>
-      `${metrics.total_requested_gpus || metrics.details_total_requested_gpus || '?'} GPUs requested`,
-  },
-  {
-    id: 'chart-5',
-    testNamePattern: /measuring reclaim time for single GPU/i,
-    extractMetric: (entries) => {
-      const metrics = findMetrics(entries);
-      return metrics?.average_time_to_reclaim_single_GPU__seconds_ ||
-             metrics?.details_average_time_to_reclaim_single_GPU__seconds_ || null;
-    },
-    label: 'Time (seconds)',
-    legendBuilder: (metrics) =>
-      `${metrics.running_jobs || metrics.details_running_jobs || '?'} running jobs`,
-  },
-  {
-    id: 'chart-6',
-    testNamePattern: /multi node reclaim for distributed jobs/i,
-    extractMetric: (entries) => {
-      const metrics = findMetrics(entries);
-      return metrics?.time ? parseDuration(metrics.time) : null;
-    },
-    label: 'Time (seconds)',
-    legendBuilder: (metrics) =>
-      `${metrics.nodes || metrics.details_nodes || '?'} nodes, ` +
-      `${metrics.pods || metrics.details_pods || '?'} pods`,
-  },
-  {
-    id: 'chart-7',
-    testNamePattern: /reclaim.*single GPU jobs/i,
-    excludePattern: /measuring/i,
-    extractMetric: (entries) => {
-      const metrics = findMetrics(entries);
-      return metrics?.time ? parseDuration(metrics.time) : null;
-    },
-    label: 'Time (seconds)',
-    legendBuilder: (metrics) =>
-      `${metrics.nodes || metrics.details_nodes || '?'} nodes, ` +
-      `${metrics.jobs || metrics.details_jobs || '?'} jobs`,
-  },
-  {
-    id: 'chart-8',
-    testNamePattern: /consolidation to run multiple distributed jobs/i,
-    extractMetric: (entries) => {
-      const metrics = findMetrics(entries);
-      return metrics?.time ? parseDuration(metrics.time) : null;
-    },
-    label: 'Time (seconds)',
-    legendBuilder: (metrics) =>
-      `${metrics.nodes || metrics.details_nodes || '?'} nodes, ` +
-      `${metrics.pods || metrics.details_pods || '?'} pods`,
+    legendBuilder: (metrics, containerHierarchy) => `${metrics.nodes || '?'} nodes, ${metrics.jobs || '?'} jobs`,
   },
 ];
 
@@ -119,6 +74,29 @@ function findMetrics(reportEntries) {
     }
   }
   return null;
+}
+
+// Parse metrics from CapturedGinkgoWriterOutput log format
+// Example: "Total time"="6m36.848389057s" "nodes"=500 "jobs"=4000
+function parseMetricsFromOutput(output) {
+  if (!output) return null;
+
+  const metrics = {};
+
+  // Match key="value" or key=value patterns
+  const pattern = /"([^"]+)"=(?:"([^"]*)"|(\d+(?:\.\d+)?))/g;
+  let match;
+
+  while ((match = pattern.exec(output)) !== null) {
+    const key = match[1].toLowerCase().replace(/\s+/g, '_');
+    const value = match[2] || match[3];
+
+    // Try to parse as number, otherwise keep as string
+    const numValue = parseFloat(value);
+    metrics[key] = isNaN(numValue) ? value : numValue;
+  }
+
+  return Object.keys(metrics).length > 0 ? metrics : null;
 }
 
 function parseDuration(durationStr) {
@@ -142,9 +120,11 @@ function extractMetricsFromRuns(runs, config) {
   const dataPoints = [];
 
   runs.forEach(run => {
-    if (!run.specs || !Array.isArray(run.specs)) return;
+    // Use suite.SpecReports which contains all test results
+    const specs = run.suite?.SpecReports || run.specs || [];
+    if (!Array.isArray(specs)) return;
 
-    run.specs.forEach(spec => {
+    specs.forEach(spec => {
       const testName = spec.LeafNodeText || '';
 
       // Check if this spec matches the pattern
@@ -154,11 +134,18 @@ function extractMetricsFromRuns(runs, config) {
       // Only include passed tests for metrics
       if (spec.State !== 'passed') return;
 
-      const metric = config.extractMetric(spec.ReportEntries);
+      // Try ReportEntries first (new format), fall back to parsing output (current format)
+      let metrics = findMetrics(spec.ReportEntries);
+      if (!metrics) {
+        metrics = parseMetricsFromOutput(spec.CapturedGinkgoWriterOutput);
+      }
+
+      // Pass metrics to extractMetric for compatibility
+      const metric = config.extractMetric(spec.ReportEntries, metrics);
       if (metric === null || metric === undefined) return;
 
-      const metrics = findMetrics(spec.ReportEntries);
-      const legend = config.legendBuilder(metrics || {});
+      // Include container hierarchy for distinguishing test variants
+      const legend = config.legendBuilder(metrics || {}, spec.ContainerHierarchyTexts);
 
       dataPoints.push({
         timestamp: new Date(run.timestamp),
@@ -268,7 +255,7 @@ function createChart(canvasId, dataPoints, config) {
             },
             label: (context) => {
               const value = context.parsed.y;
-              return `${context.dataset.label}: ${value.toFixed(1)}s`;
+              return `${context.dataset.label}: ${value.toFixed(3)}s`;
             },
           },
         },
@@ -292,7 +279,8 @@ function createChart(canvasId, dataPoints, config) {
           },
         },
         y: {
-          beginAtZero: true,
+          beginAtZero: false,
+          grace: '10%',
           grid: {
             color: '#30363d',
             drawBorder: false,
@@ -300,7 +288,7 @@ function createChart(canvasId, dataPoints, config) {
           ticks: {
             color: '#8b949e',
             font: { size: 10 },
-            callback: (value) => `${value}s`,
+            callback: (value) => `${value.toFixed(3)}s`,
           },
           title: {
             display: true,
@@ -372,5 +360,11 @@ initializeTabs();
 // Listen for data loaded event from app.js
 window.addEventListener('scale-tests:data-loaded', () => {
   console.log('[metrics] Data loaded event received');
-  // Metrics will be initialized when user clicks the Metrics tab
+
+  // If metrics tab is currently visible, initialize now
+  const metricsTab = document.getElementById('metrics-main');
+  if (metricsTab && !metricsTab.classList.contains('hidden')) {
+    window._metricsInitialized = false;  // Reset flag to allow initialization
+    initializeMetrics();
+  }
 });
