@@ -22,6 +22,7 @@ package framework
 import (
 	"fmt"
 	"net/http"
+	"runtime"
 	"sort"
 	"sync"
 	"time"
@@ -232,36 +233,61 @@ func (ssn *Session) FittingNode(task *pod_info.PodInfo, node *node_info.NodeInfo
 	return true
 }
 
+// OrderedNodesByTask scores nodes for a task and returns them in order of their scores
+// The function is parallelized using multiple workers (up to GOMAXPROCS or number of nodes, whichever is smaller) to speed up the scoring process
 func (ssn *Session) OrderedNodesByTask(nodes []*node_info.NodeInfo, task *pod_info.PodInfo) []*node_info.NodeInfo {
-	var (
-		nodeScores = make(map[float64][]*node_info.NodeInfo)
-		mutex      sync.Mutex
-		wg         sync.WaitGroup
-	)
-
 	ssn.NodePreOrderFn(task, nodes)
 
-	for _, node := range nodes {
+	numWorkers := max(min(runtime.GOMAXPROCS(0), len(nodes)), 1)
+	workerLocalScores := make([]map[float64][]*node_info.NodeInfo, numWorkers)
+
+	var wg sync.WaitGroup
+	chunkSize := (len(nodes) + numWorkers - 1) / numWorkers
+	for workerIdx := range numWorkers {
 		wg.Add(1)
-		go func(node *node_info.NodeInfo) {
+		go func(workerIdx int) {
 			defer wg.Done()
-			score, err := ssn.NodeOrderFn(task, node)
-			if err != nil {
-				log.InfraLogger.Errorf("Error in Calculating Priority for the node:%v", err)
+			workerNodes := ssn.getWorkerNodes(nodes, workerIdx, chunkSize)
+			if workerNodes == nil {
 				return
 			}
-
-			mutex.Lock()
-			nodeScores[score] = append(nodeScores[score], node)
-			mutex.Unlock()
-
-			log.InfraLogger.V(5).Infof("Overall priority node score of node <%v> for task <%v/%v> is: %f",
-				node.Name, task.Namespace, task.Name, score)
-		}(node)
+			workerScores := ssn.scoreNodes(workerNodes, task)
+			workerLocalScores[workerIdx] = workerScores
+		}(workerIdx)
 	}
-
 	wg.Wait()
+
+	nodeScores := workerLocalScores[0]
+	for _, m := range workerLocalScores[1:] {
+		for score, ns := range m {
+			nodeScores[score] = append(nodeScores[score], ns...)
+		}
+	}
 	return sortNodesByScore(nodeScores)
+}
+
+func (ssn *Session) getWorkerNodes(nodes []*node_info.NodeInfo, workerIdx int, chunkSize int) []*node_info.NodeInfo {
+	start := workerIdx * chunkSize
+	end := min(start+chunkSize, len(nodes))
+	if start >= end {
+		return nil
+	}
+	return nodes[start:end]
+}
+
+func (ssn *Session) scoreNodes(nodes []*node_info.NodeInfo, task *pod_info.PodInfo) map[float64][]*node_info.NodeInfo {
+	workerScores := make(map[float64][]*node_info.NodeInfo)
+	for _, node := range nodes {
+		score, err := ssn.NodeOrderFn(task, node)
+		if err != nil {
+			log.InfraLogger.Errorf("Error in Calculating Priority for the node:%v", err)
+			continue
+		}
+		workerScores[score] = append(workerScores[score], node)
+		log.InfraLogger.V(5).Infof("Overall priority node score of node <%v> for task <%v/%v> is: %f",
+			node.Name, task.Namespace, task.Name, score)
+	}
+	return workerScores
 }
 
 func (ssn *Session) isTaskAllocatableOnNode(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo,
