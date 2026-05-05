@@ -138,7 +138,7 @@ Please open a [GitHub issue](https://github.com/kai-scheduler/KAI-scheduler/issu
 
 KAI Scheduler provides public dashboards for monitoring performance and scale testing:
 
-- **[Scale Tests Dashboard](https://kai-scheduler.github.io/KAI-Scheduler/)**: View historical results from scale tests that validate scheduler performance at large cluster sizes (hundreds to thousands of nodes). Tests run every 24 hours on dedicated infrastructure and measure scheduling performance, topology-aware scheduling, resource allocation, and system stability under load. The dashboard displays execution times, pass/fail status, detailed failure logs, and 30-day historical trends. See [scale tests documentation](docs/developer/scale-tests.md) for technical details.
+- **[Scale Tests Dashboard](https://kai-scheduler.github.io/KAI-Scheduler/scale-tests/)**: View historical results from scale tests that validate scheduler performance at large cluster sizes (hundreds to thousands of nodes). Tests run every 24 hours on dedicated infrastructure and measure scheduling performance, topology-aware scheduling, resource allocation, and system stability under load. The dashboard displays execution times, pass/fail status, detailed failure logs, and 30-day historical trends. See [scale tests documentation](docs/developer/scale-tests.md) for technical details.
 
 - **[Benchmarks Dashboard](https://kai-scheduler.github.io/KAI-Scheduler/dev/bench/)**: Track scheduler performance benchmarks across commits to the main branch. The dashboard shows per-commit benchmark history for core scheduler operations, with automatic alerts when performance regresses beyond thresholds.
 

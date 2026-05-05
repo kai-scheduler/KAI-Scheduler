@@ -65,4 +65,4 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: docs/scale-tests
           publish_branch: gh-pages
-          force_orphan: true
+          destination_dir: scale-tests

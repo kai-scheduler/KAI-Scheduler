@@ -81,7 +81,7 @@ Minimal cluster requirements:
 
 - Tests run on dedicated infrastructure every 24 hours
 - Test results are stored in S3 and displayed on a public dashboard
-- Dashboard URL: [KAI Scheduler Scale Tests](https://kai-scheduler.github.io/KAI-Scheduler/) (update with actual URL after deployment)
+- Dashboard URL: [KAI Scheduler Scale Tests](https://kai-scheduler.github.io/KAI-Scheduler/scale-tests/) (update with actual URL after deployment)
 
 ## Results Dashboard
 
