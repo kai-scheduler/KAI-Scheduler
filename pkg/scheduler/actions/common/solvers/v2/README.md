@@ -24,11 +24,28 @@ Phases 0–5 of the refactor are landed:
   full-accumulated-set fallback per accumulation step.
 - `byPodSolver` is deleted; its emission logic moved into the generator.
 
-Pending phases:
-- Phase 6: native `Validator` implementations per action; remove the
-  `Candidates` field added for the legacy adapter.
-- Phase 7: delete `JobSolver` wrapper, `BaseScenario` / `ByNodeScenario`,
-  rename `solvers/v2/` → `solvers/`.
+Open follow-ups (not blocking):
+- **Native action validators.** Today every action wraps its
+  `func(api.ScenarioInfo) bool` validator via `LegacyValidator`, which
+  rebuilds a `BaseScenario` from `Scenario.Candidates`. Once each
+  action exposes a native `v2.Validator`, the `Candidates` field and
+  `LegacyValidator` adapter both go away. The plugin contract
+  (`ssn.AddReclaimScenarioValidatorFn`, etc.) needs to migrate too.
+- **Tighter generator emissions for gang preemptors.**
+  `TestHandleScatteredNodesForGangPreempt` now expects
+  `NumberOfPipelineActions: 3` (was 2). Phase 4 collapses the partial-K
+  gang loop, so a gang preemptor with cross-node node-affinity falls
+  through the per-node emissions and is solved by the full-set
+  fallback. That set includes accumulated victims that aren't strictly
+  needed (a node-2 victim accumulated before the relevant node-1 and
+  node-3 victims), so one extra task gets pipelined as part of
+  re-allocation. Correctness preserved; solution-quality regression
+  vs. legacy. To restore the tighter set, the generator needs to
+  explore subsets of accumulated victims rather than emitting only the
+  full set as fallback.
+- **`solvers/v2/` → `solvers/` rename.** Mechanical move. Best done
+  together with the validator migration to avoid touching every import
+  twice.
 
 ## Known follow-up
 
