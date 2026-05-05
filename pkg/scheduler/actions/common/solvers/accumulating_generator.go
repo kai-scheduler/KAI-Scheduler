@@ -214,10 +214,15 @@ func (g *accumulatingGenerator) addNextPotentialVictims() bool {
 //  2. Pairs — recorded ∪ victims on (one prior host node + one latest
 //     host node). Catches gang preemptors that need exactly two nodes
 //     freed without dragging unrelated accumulated victims along.
+//     Skipped for single-task preemptors: a 1-task pod can only land
+//     on one node, so victims from multiple nodes can't expand its
+//     placement options.
 //  3. Full set — recorded ∪ every accumulated potential. Required for
-//     gangs spanning more than two host nodes; otherwise the upper
-//     bound that always finds a solution if one exists in the
-//     accumulated pool.
+//     gangs spanning more than two host nodes. Skipped for single-task
+//     preemptors for the same reason as (2). Total emissions per step
+//     are O(N) for single-task and O(N) for two-task gangs (with N
+//     accumulated host nodes) — keeping pair/full-set behind a gang
+//     check avoids quadratic blowup on large clusters.
 //
 // All emissions share the same Candidates set: the full accumulated
 // victim pool (recorded ∪ every potential added so far). That is what
@@ -236,18 +241,26 @@ func (g *accumulatingGenerator) buildEmissions(s *solverscenario.ByNodeScenario)
 	}
 
 	latestHosts := sortedHostNodes(latest)
-	priorHosts := priorHostNodes(s, latestHosts)
+	multiTask := len(g.pending) >= 2
 
-	emissions := make([]Scenario, 0, len(latestHosts)+len(latestHosts)*len(priorHosts)+1)
+	capHint := len(latestHosts)
+	if multiTask {
+		capHint += len(latestHosts)*len(latestHosts) + 1
+	}
+	emissions := make([]Scenario, 0, capHint)
 
 	// (1) Per-node of the latest victim job's host nodes.
 	for _, node := range latestHosts {
 		victims := s.VictimsTasksFromNodes([]string{node})
 		emissions = append(emissions, g.scenarioWith(joinTasks(recorded, victims), candidates))
 	}
+	if !multiTask {
+		return emissions
+	}
 	// (2) Pairs: each prior host node combined with each latest host
 	// node. Two-node gang preemptors are solved here without including
 	// unrelated accumulated victims.
+	priorHosts := priorHostNodes(s, latestHosts)
 	for _, prior := range priorHosts {
 		for _, node := range latestHosts {
 			victims := s.VictimsTasksFromNodes([]string{prior, node})
