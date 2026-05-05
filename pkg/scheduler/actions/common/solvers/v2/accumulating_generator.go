@@ -209,11 +209,18 @@ func (g *accumulatingGenerator) addNextPotentialVictims() bool {
 	return true
 }
 
-// buildEmissions yields one Scenario per host node of the latest victim
-// job, then a full-accumulated-set fallback. The per-node emissions
-// preserve the least-disruptive single-node solution when one exists;
-// the full-set is required for gang preemptors whose tasks span
-// multiple nodes.
+// buildEmissions yields, for the current accumulation step, scenarios
+// of progressively-larger host-node coverage:
+//
+//  1. Per-node — recorded ∪ victims on a single host node of the latest
+//     victim job. Cheapest fix when one node's victims suffice.
+//  2. Pairs — recorded ∪ victims on (one prior host node + one latest
+//     host node). Catches gang preemptors that need exactly two nodes
+//     freed without dragging unrelated accumulated victims along.
+//  3. Full set — recorded ∪ every accumulated potential. Required for
+//     gangs spanning more than two host nodes; otherwise the upper
+//     bound that always finds a solution if one exists in the
+//     accumulated pool.
 //
 // All emissions share the same Candidates set: the full accumulated
 // victim pool (recorded ∪ every potential added so far). That is what
@@ -231,24 +238,58 @@ func (g *accumulatingGenerator) buildEmissions(s *solverscenario.ByNodeScenario)
 		return []Scenario{g.scenarioWith(append([]*pod_info.PodInfo(nil), recorded...), candidates)}
 	}
 
-	// Per-node subset for each host node of the latest victim job:
-	// recorded ∪ all accumulated victims on that node. Emitted first so
-	// the least-disruptive single-node solution is preferred when one
-	// exists.
-	nodes := sortedHostNodes(latest)
-	emissions := make([]Scenario, 0, len(nodes)+1)
-	for _, node := range nodes {
-		victimsOnNode := s.VictimsTasksFromNodes([]string{node})
-		emissions = append(emissions, g.scenarioWith(joinTasks(recorded, victimsOnNode), candidates))
+	latestHosts := sortedHostNodes(latest)
+	priorHosts := priorHostNodes(s, latestHosts)
+
+	emissions := make([]Scenario, 0, len(latestHosts)+len(latestHosts)*len(priorHosts)+1)
+
+	// (1) Per-node of the latest victim job's host nodes.
+	for _, node := range latestHosts {
+		victims := s.VictimsTasksFromNodes([]string{node})
+		emissions = append(emissions, g.scenarioWith(joinTasks(recorded, victims), candidates))
 	}
-	// Full-set fallback: recorded ∪ every accumulated potential victim.
-	// Necessary for gang scheduling, where the preemptor's tasks span
-	// multiple nodes and no single host node carries the full victim set.
+	// (2) Pairs: each prior host node combined with each latest host
+	// node. Two-node gang preemptors are solved here without including
+	// unrelated accumulated victims.
+	for _, prior := range priorHosts {
+		for _, node := range latestHosts {
+			victims := s.VictimsTasksFromNodes([]string{prior, node})
+			emissions = append(emissions, g.scenarioWith(joinTasks(recorded, victims), candidates))
+		}
+	}
+	// (3) Full-set fallback.
 	all := s.PotentialVictimsTasks()
 	if len(all) > 0 {
 		emissions = append(emissions, g.scenarioWith(joinTasks(recorded, all), candidates))
 	}
 	return emissions
+}
+
+// priorHostNodes returns the host nodes carrying any accumulated
+// potential victim that does NOT live on one of the given exclude
+// nodes. Used by buildEmissions to find pair candidates for the
+// just-added victim job.
+func priorHostNodes(s *solverscenario.ByNodeScenario, exclude []string) []string {
+	excluded := make(map[string]struct{}, len(exclude))
+	for _, n := range exclude {
+		excluded[n] = struct{}{}
+	}
+	set := make(map[string]struct{})
+	for _, t := range s.PotentialVictimsTasks() {
+		if t.NodeName == "" {
+			continue
+		}
+		if _, skip := excluded[t.NodeName]; skip {
+			continue
+		}
+		set[t.NodeName] = struct{}{}
+	}
+	nodes := make([]string, 0, len(set))
+	for n := range set {
+		nodes = append(nodes, n)
+	}
+	sort.Strings(nodes)
+	return nodes
 }
 
 func (g *accumulatingGenerator) scenarioWith(victims, candidates []*pod_info.PodInfo) Scenario {

@@ -15,14 +15,13 @@ valid result is the least-disruptive solution found.
 
 ## Migration status
 
-Phases 0–5 of the refactor are landed:
+The refactor is feature-complete:
 - Solve-loop spine, `sessionSimulator`, `accumulatingGenerator`,
   `LegacyValidator` are in place.
 - `JobSolver.Solve` runs a single full-gang solve through `v2.Solve` —
   no per-task probing, no binary search.
-- The accumulating generator emits per-node subsets followed by a
-  full-accumulated-set fallback per accumulation step.
-- `byPodSolver` is deleted; its emission logic moved into the generator.
+- `byPodSolver` is deleted; its per-node iteration logic moved into
+  the generator's emission step.
 
 Open follow-ups (not blocking):
 - **Native action validators.** Today every action wraps its
@@ -31,35 +30,22 @@ Open follow-ups (not blocking):
   action exposes a native `v2.Validator`, the `Candidates` field and
   `LegacyValidator` adapter both go away. The plugin contract
   (`ssn.AddReclaimScenarioValidatorFn`, etc.) needs to migrate too.
-- **Tighter generator emissions for gang preemptors.**
-  `TestHandleScatteredNodesForGangPreempt` now expects
-  `NumberOfPipelineActions: 3` (was 2). Phase 4 collapses the partial-K
-  gang loop, so a gang preemptor with cross-node node-affinity falls
-  through the per-node emissions and is solved by the full-set
-  fallback. That set includes accumulated victims that aren't strictly
-  needed (a node-2 victim accumulated before the relevant node-1 and
-  node-3 victims), so one extra task gets pipelined as part of
-  re-allocation. Correctness preserved; solution-quality regression
-  vs. legacy. To restore the tighter set, the generator needs to
-  explore subsets of accumulated victims rather than emitting only the
-  full set as fallback.
 - **`solvers/v2/` → `solvers/` rename.** Mechanical move. Best done
   together with the validator migration to avoid touching every import
   twice.
 
-## Known follow-up
+## Emission strategy
 
-`TestHandleScatteredNodesForGangPreempt` now expects
-`NumberOfPipelineActions: 3` (was 2). Phase 4 collapses the partial-K
-gang loop, so a gang preemptor with cross-node node-affinity falls
-through the per-node emissions and is solved by the full-set fallback.
-That set includes accumulated victims that aren't strictly needed for
-the placement (a node-2 victim accumulated before the relevant node-1
-and node-3 victims), so one extra task gets pipelined as part of
-re-allocation.
+The accumulating generator emits, per accumulation step, a layered
+sequence of victim subsets:
 
-This is correctness-preserving but a solution-quality regression
-relative to legacy. To restore the tighter set, the generator needs to
-explore subsets of accumulated victims rather than emitting only the
-full set as fallback. Consider doing this when `byPodSolver` is removed
-in Phase 5/7.
+1. **Per-node** of the latest victim job's host nodes — the cheapest
+   single-node fix.
+2. **Pairs** of (one prior host node + one latest host node) — solves
+   two-node gang preemptors without dragging unrelated accumulated
+   victims along.
+3. **Full-set** — recorded ∪ every accumulated potential. Required for
+   gangs spanning more than two host nodes.
+
+Solve takes the first emission whose simulation is feasible AND passes
+the validator, so the least-disruptive solution wins.
