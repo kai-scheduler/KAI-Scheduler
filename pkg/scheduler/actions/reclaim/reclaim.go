@@ -24,6 +24,7 @@ import (
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/v2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
@@ -110,9 +111,10 @@ func (ra *reclaimAction) attemptToReclaimForSpecificJob(
 	ssn.OnJobSolutionStart()
 
 	feasibleNodes := common.FeasibleNodesForJob(maps.Values(ssn.ClusterInfo.Nodes), reclaimer)
+	validator := v2.LegacyValidator(ssn, "reclaim", ssn.ReclaimScenarioValidatorFn)
 	solver := solvers.NewJobsSolver(
 		feasibleNodes,
-		ssn.ReclaimScenarioValidatorFn,
+		validator,
 		getOrderedVictimsQueue(ssn, reclaimer),
 		framework.Reclaim)
 	return solver.Solve(ssn, reclaimer)

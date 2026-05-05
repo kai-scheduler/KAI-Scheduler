@@ -24,6 +24,7 @@ import (
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/v2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
@@ -112,9 +113,10 @@ func attemptToPreemptForPreemptor(
 	}
 
 	feasibleNodes := common.FeasibleNodesForJob(maps.Values(ssn.ClusterInfo.Nodes), preemptor)
+	validator := v2.LegacyValidator(ssn, "preempt", ssn.PreemptScenarioValidator)
 	solver := solvers.NewJobsSolver(
 		feasibleNodes,
-		ssn.PreemptScenarioValidator,
+		validator,
 		getOrderedVictimsQueue(ssn, preemptor),
 		framework.Preempt,
 	)

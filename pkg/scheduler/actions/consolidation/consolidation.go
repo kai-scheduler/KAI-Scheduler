@@ -8,9 +8,8 @@ import (
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/v2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
@@ -98,7 +97,7 @@ func attemptToConsolidatePreemptor(
 	feasibleNodes := common.FeasibleNodesForJob(maps.Values(ssn.ClusterInfo.Nodes), preemptor)
 	solver := solvers.NewJobsSolver(
 		feasibleNodes,
-		allPodsReallocated,
+		&allPodsReallocatedValidator{},
 		func() *utils.JobsOrderByQueues { return buildConsolidationVictimsQueue(ssn, preemptor) },
 		framework.Consolidation)
 
@@ -115,15 +114,15 @@ func attemptToConsolidatePreemptor(
 	return false, nil
 }
 
-func allPodsReallocated(scenario api.ScenarioInfo) bool {
-	for _, victim := range scenario.GetVictims() {
-		for _, task := range victim.Tasks {
-			if task.Status == pod_status.Releasing {
-				return false
-			}
-		}
-	}
-	return true
+// allPodsReallocatedValidator rejects scenarios where the simulator
+// could not re-home every victim — i.e., consolidation requires a pure
+// shuffle, not eviction.
+type allPodsReallocatedValidator struct{}
+
+func (allPodsReallocatedValidator) Name() string { return "AllPodsReallocated" }
+
+func (allPodsReallocatedValidator) Validate(_ v2.Scenario, r v2.SimulationResult) bool {
+	return len(r.Preempted) == 0
 }
 
 func buildConsolidationVictimsQueue(ssn *framework.Session, preemptor *podgroup_info.PodGroupInfo) *utils.JobsOrderByQueues {

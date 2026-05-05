@@ -11,7 +11,6 @@ import (
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/v2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
@@ -20,29 +19,28 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
 )
 
-// SolutionValidator is the legacy action-policy check signature: a
-// function from a ScenarioInfo to a pass/fail bool. Phase 6 will give
-// each action a native v2.Validator and remove this alias.
-type SolutionValidator func(scenario api.ScenarioInfo) bool
-
 type GenerateVictimsQueue func() *utils.JobsOrderByQueues
 
 type JobSolver struct {
 	feasibleNodes        []*node_info.NodeInfo
-	solutionValidator    SolutionValidator
+	validator            v2.Validator
 	generateVictimsQueue GenerateVictimsQueue
 	actionType           framework.ActionType
 }
 
+// NewJobsSolver constructs a JobSolver. The validator is action-specific
+// policy on top of the simulator's outcome; pass nil to skip validation.
+// Actions that still hold legacy func(api.ScenarioInfo) bool validators
+// can wrap them with v2.LegacyValidator at the call site.
 func NewJobsSolver(
 	feasibleNodes []*node_info.NodeInfo,
-	solutionValidator SolutionValidator,
+	validator v2.Validator,
 	generateVictimsQueue GenerateVictimsQueue,
 	action framework.ActionType,
 ) *JobSolver {
 	return &JobSolver{
 		feasibleNodes:        feasibleNodes,
-		solutionValidator:    solutionValidator,
+		validator:            validator,
 		generateVictimsQueue: generateVictimsQueue,
 		actionType:           action,
 	}
@@ -77,9 +75,8 @@ func (s *JobSolver) Solve(
 		ssn, pendingJob, nil, s.generateVictimsQueue(), feasibleNodeMap,
 	)
 	sim := newCountingSimulator(v2.NewSessionSimulator(ssn, maps.Values(feasibleNodeMap), s.actionType))
-	val := v2.LegacyValidator(ssn, string(s.actionType), s.solutionValidator)
 
-	_, result, ok := v2.Solve(gen, sim, val)
+	_, result, ok := v2.Solve(gen, sim, s.validator)
 	if !ok {
 		return false, nil, nil
 	}
