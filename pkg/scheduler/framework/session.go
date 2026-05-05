@@ -27,6 +27,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/panjf2000/ants/v2"
 	"k8s.io/apimachinery/pkg/types"
 	ksf "k8s.io/kube-scheduler/framework"
 
@@ -87,6 +88,7 @@ type Session struct {
 	mux             *http.ServeMux
 
 	k8sResourceStateCache sync.Map
+	nodeScoringPool       *ants.Pool
 }
 
 func (ssn *Session) Statement() *Statement {
@@ -243,17 +245,25 @@ func (ssn *Session) OrderedNodesByTask(nodes []*node_info.NodeInfo, task *pod_in
 
 	var wg sync.WaitGroup
 	chunkSize := (len(nodes) + numWorkers - 1) / numWorkers
+	scoreChunk := func(idx int) {
+		workerNodes := ssn.getWorkerNodes(nodes, idx, chunkSize)
+		if workerNodes == nil {
+			return
+		}
+		workerLocalScores[idx] = ssn.scoreNodes(workerNodes, task)
+	}
 	for workerIdx := range numWorkers {
 		wg.Add(1)
-		go func(workerIdx int) {
+		idx := workerIdx
+		err := ssn.nodeScoringPool.Submit(func() {
 			defer wg.Done()
-			workerNodes := ssn.getWorkerNodes(nodes, workerIdx, chunkSize)
-			if workerNodes == nil {
-				return
-			}
-			workerScores := ssn.scoreNodes(workerNodes, task)
-			workerLocalScores[workerIdx] = workerScores
-		}(workerIdx)
+			scoreChunk(idx)
+		})
+		if err != nil {
+			log.InfraLogger.Errorf("Failed to submit node scoring task, running sequentially: %v", err)
+			scoreChunk(idx)
+			wg.Done()
+		}
 	}
 	wg.Wait()
 
@@ -364,6 +374,21 @@ func (ssn *Session) clear() {
 	ssn.JobOrderFns = nil
 }
 
+func (ssn *Session) InitNodeScoringPool() error {
+	pool, err := ants.NewPool(runtime.GOMAXPROCS(0))
+	if err != nil {
+		return fmt.Errorf("failed to create node scoring pool: %w", err)
+	}
+	ssn.nodeScoringPool = pool
+	runtime.SetFinalizer(ssn, func(s *Session) {
+		if s.nodeScoringPool != nil {
+			s.nodeScoringPool.Release()
+			s.nodeScoringPool = nil
+		}
+	})
+	return nil
+}
+
 func openSession(cache cache.Cache, sessionId string, schedulerParams conf.SchedulerParams, mux *http.ServeMux) (*Session, error) {
 	ssn := &Session{
 		ID:    sessionId,
@@ -375,6 +400,10 @@ func openSession(cache cache.Cache, sessionId string, schedulerParams conf.Sched
 		SchedulerParams:       schedulerParams,
 		mux:                   mux,
 		k8sResourceStateCache: sync.Map{},
+	}
+
+	if err := ssn.InitNodeScoringPool(); err != nil {
+		return nil, err
 	}
 
 	log.InfraLogger.V(2).Infof("Taking cluster snapshot ...")
@@ -402,6 +431,8 @@ func closeSession(ssn *Session) {
 		}
 	}
 
+	ssn.nodeScoringPool.Release()
+	ssn.nodeScoringPool = nil
 	ssn.clear()
 	stopCh := make(chan struct{})
 	ssn.Cache.WaitForWorkers(stopCh)

@@ -76,6 +76,9 @@ func CreateFakeSession(schedulerConfig *TestSessionConfig,
 			QueueLabelKey: constants.DefaultQueueLabel,
 		},
 	}
+	if err := ssn.InitNodeScoringPool(); err != nil {
+		panic(err)
+	}
 	ssn.OverrideMaxNumberConsolidationPreemptees(-1)
 	ssn.OverrideAllowConsolidatingReclaim(true)
 	ssn.OverrideSchedulerName(schedulerName)
