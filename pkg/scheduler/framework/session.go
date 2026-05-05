@@ -22,10 +22,12 @@ package framework
 import (
 	"fmt"
 	"net/http"
+	"runtime"
 	"sort"
 	"sync"
 	"time"
 
+	"github.com/panjf2000/ants/v2"
 	"k8s.io/apimachinery/pkg/types"
 	ksf "k8s.io/kube-scheduler/framework"
 
@@ -85,7 +87,9 @@ type Session struct {
 	SchedulerParams conf.SchedulerParams
 	mux             *http.ServeMux
 
-	k8sResourceStateCache sync.Map
+	k8sResourceStateCache  sync.Map
+	nodeScoringPool        *ants.Pool
+	scoringPoolWorkerCount int
 }
 
 func (ssn *Session) Statement() *Statement {
@@ -232,36 +236,69 @@ func (ssn *Session) FittingNode(task *pod_info.PodInfo, node *node_info.NodeInfo
 	return true
 }
 
+// OrderedNodesByTask scores nodes for a task and returns them in order of their scores
+// The function is parallelized using multiple workers to speed up the scoring process
 func (ssn *Session) OrderedNodesByTask(nodes []*node_info.NodeInfo, task *pod_info.PodInfo) []*node_info.NodeInfo {
-	var (
-		nodeScores = make(map[float64][]*node_info.NodeInfo)
-		mutex      sync.Mutex
-		wg         sync.WaitGroup
-	)
-
 	ssn.NodePreOrderFn(task, nodes)
 
-	for _, node := range nodes {
-		wg.Add(1)
-		go func(node *node_info.NodeInfo) {
-			defer wg.Done()
-			score, err := ssn.NodeOrderFn(task, node)
-			if err != nil {
-				log.InfraLogger.Errorf("Error in Calculating Priority for the node:%v", err)
-				return
-			}
+	numWorkersToUseInParallel := max(min(ssn.scoringPoolWorkerCount, len(nodes)), 1)
+	workerLocalScores := make([]map[float64][]*node_info.NodeInfo, numWorkersToUseInParallel)
 
-			mutex.Lock()
-			nodeScores[score] = append(nodeScores[score], node)
-			mutex.Unlock()
-
-			log.InfraLogger.V(5).Infof("Overall priority node score of node <%v> for task <%v/%v> is: %f",
-				node.Name, task.Namespace, task.Name, score)
-		}(node)
+	var wg sync.WaitGroup
+	chunkSize := (len(nodes) + numWorkersToUseInParallel - 1) / numWorkersToUseInParallel
+	scoreChunk := func(idx int) {
+		workerNodes := ssn.getWorkerNodes(nodes, idx, chunkSize)
+		if workerNodes == nil {
+			return
+		}
+		workerLocalScores[idx] = ssn.scoreNodes(workerNodes, task)
 	}
-
+	for workerIdx := range numWorkersToUseInParallel {
+		wg.Add(1)
+		idx := workerIdx
+		err := ssn.nodeScoringPool.Submit(func() {
+			defer wg.Done()
+			scoreChunk(idx)
+		})
+		if err != nil {
+			defer wg.Done()
+			log.InfraLogger.Errorf("Failed to submit node scoring task, running sequentially: %v", err)
+			scoreChunk(idx)
+		}
+	}
 	wg.Wait()
+
+	nodeScores := workerLocalScores[0]
+	for _, m := range workerLocalScores[1:] {
+		for score, ns := range m {
+			nodeScores[score] = append(nodeScores[score], ns...)
+		}
+	}
 	return sortNodesByScore(nodeScores)
+}
+
+func (ssn *Session) getWorkerNodes(nodes []*node_info.NodeInfo, workerIdx int, chunkSize int) []*node_info.NodeInfo {
+	start := workerIdx * chunkSize
+	end := min(start+chunkSize, len(nodes))
+	if start >= end {
+		return nil
+	}
+	return nodes[start:end]
+}
+
+func (ssn *Session) scoreNodes(nodes []*node_info.NodeInfo, task *pod_info.PodInfo) map[float64][]*node_info.NodeInfo {
+	workerScores := make(map[float64][]*node_info.NodeInfo)
+	for _, node := range nodes {
+		score, err := ssn.NodeOrderFn(task, node)
+		if err != nil {
+			log.InfraLogger.Errorf("Error in Calculating Priority for the node:%v", err)
+			continue
+		}
+		workerScores[score] = append(workerScores[score], node)
+		log.InfraLogger.V(5).Infof("Overall priority node score of node <%v> for task <%v/%v> is: %f",
+			node.Name, task.Namespace, task.Name, score)
+	}
+	return workerScores
 }
 
 func (ssn *Session) isTaskAllocatableOnNode(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo,
@@ -338,6 +375,23 @@ func (ssn *Session) clear() {
 	ssn.JobOrderFns = nil
 }
 
+func (ssn *Session) InitNodeScoringPool() error {
+	numWorkers := max(runtime.GOMAXPROCS(0), 1)
+	pool, err := ants.NewPool(numWorkers)
+	if err != nil {
+		return fmt.Errorf("failed to create node scoring pool: %w", err)
+	}
+	ssn.nodeScoringPool = pool
+	ssn.scoringPoolWorkerCount = numWorkers
+	runtime.SetFinalizer(ssn, func(s *Session) {
+		if s.nodeScoringPool != nil {
+			s.nodeScoringPool.Release()
+			s.nodeScoringPool = nil
+		}
+	})
+	return nil
+}
+
 func openSession(cache cache.Cache, sessionId string, schedulerParams conf.SchedulerParams, mux *http.ServeMux) (*Session, error) {
 	ssn := &Session{
 		ID:    sessionId,
@@ -349,6 +403,10 @@ func openSession(cache cache.Cache, sessionId string, schedulerParams conf.Sched
 		SchedulerParams:       schedulerParams,
 		mux:                   mux,
 		k8sResourceStateCache: sync.Map{},
+	}
+
+	if err := ssn.InitNodeScoringPool(); err != nil {
+		return nil, err
 	}
 
 	log.InfraLogger.V(2).Infof("Taking cluster snapshot ...")
@@ -376,6 +434,9 @@ func closeSession(ssn *Session) {
 		}
 	}
 
+	ssn.nodeScoringPool.Release()
+	ssn.nodeScoringPool = nil
+	ssn.scoringPoolWorkerCount = 0
 	ssn.clear()
 	stopCh := make(chan struct{})
 	ssn.Cache.WaitForWorkers(stopCh)
