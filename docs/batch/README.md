@@ -18,6 +18,29 @@ This will create a job with parallelism of 6, but requires at least 2 pods to be
 
 For JobSets, the annotation overrides the calculated minAvailable for all PodGroups created by the JobSet.
 
+## External PodGroups
+
+KAI also supports PodGroups that are created outside the podgrouper. This is useful when multiple workloads should join the same gang or when an external controller owns the PodGroup lifecycle.
+
+Use the following contract:
+
+- Create the `PodGroup` explicitly.
+- Set `pod-group-name` on the pod template metadata to join that PodGroup.
+- Set `kai.scheduler/subgroup-name` on the pod template metadata labels when using non-default subgroups.
+- Set `kai.scheduler/skip-podgrouper: "true"` on the workload or any readable owner in the owner chain to prevent podgrouper from creating or rewriting PodGroup membership.
+
+Example:
+
+```bash
+kubectl apply -f examples/batch/external-podgroup-job.yaml
+```
+
+Behavior notes:
+
+- `PodGroup.spec.queue` is authoritative for scheduling.
+- If a pod references a PodGroup that does not exist yet, KAI leaves that case unchanged and does not set a new pod condition.
+- If a pod references a subgroup that does not exist in the PodGroup, KAI ignores only that pod for scheduling and sets a pod condition explaining the invalid subgroup.
+
 ## PyTorchJob
 To run in a distributed way across multiple pods, you can use PyTorchJob.
 
