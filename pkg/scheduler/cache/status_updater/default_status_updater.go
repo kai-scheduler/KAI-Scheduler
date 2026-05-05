@@ -205,6 +205,9 @@ func (su *defaultStatusUpdater) RecordJobStatusEvent(job *podgroup_info.PodGroup
 	if job.StalenessInfo.Stale {
 		su.recordStaleJobEvent(job)
 	}
+	if err := su.recordInvalidSubGroupPodsEvents(job); err != nil {
+		return err
+	}
 
 	updatePodgroupStatus := false
 	if job.GetNumPendingTasks() > 0 || job.GetNumGatedTasks() > 0 {
@@ -348,6 +351,10 @@ func (su *defaultStatusUpdater) recordUnschedulablePodsEvents(job *podgroup_info
 	// Update podCondition for tasks Allocated and Pending before job discarded
 	var errs []error
 	for _, taskInfo := range job.PodStatusIndex[pod_status.Pending] {
+		if job.IsInvalidSubGroupTask(taskInfo.UID) {
+			continue
+		}
+
 		msg := common_info.DefaultPodError
 		fitError := job.TasksFitErrors[taskInfo.UID]
 		if fitError != nil {
@@ -367,6 +374,28 @@ func (su *defaultStatusUpdater) recordUnschedulablePodsEvents(job *podgroup_info
 		updatePodCondition := utils.GetMarkUnschedulableValue(job.PodGroup.Spec.MarkUnschedulable)
 		if err := su.markTaskUnschedulable(taskInfo.Pod, msg, updatePodCondition); err != nil {
 			errs = append(errs, fmt.Errorf("failed to update unschedulable task status <%s/%s>: %v",
+				taskInfo.Namespace, taskInfo.Name, err))
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
+func (su *defaultStatusUpdater) recordInvalidSubGroupPodsEvents(job *podgroup_info.PodGroupInfo) error {
+	var errs []error
+
+	for _, taskInfo := range job.GetInvalidSubGroupTasks() {
+		msg := common_info.DefaultPodError
+		if fitError := job.TasksFitErrors[taskInfo.UID]; fitError != nil {
+			msg = fitError.Error()
+			if su.detailedFitErrors {
+				msg = fitError.DetailedError()
+			}
+		}
+
+		msg = su.addNodePoolPrefixIfNeeded(job, msg)
+		if err := su.markTaskUnschedulable(taskInfo.Pod, msg, true); err != nil {
+			errs = append(errs, fmt.Errorf("failed to update invalid subgroup task status <%s/%s>: %v",
 				taskInfo.Namespace, taskInfo.Name, err))
 		}
 	}

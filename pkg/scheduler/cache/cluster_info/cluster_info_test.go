@@ -962,9 +962,10 @@ func TestBindRequests(t *testing.T) {
 
 func TestSnapshotPodGroups(t *testing.T) {
 	tests := map[string]struct {
-		objs     []runtime.Object
-		kubeObjs []runtime.Object
-		results  []*podgroup_info.PodGroupInfo
+		objs                 []runtime.Object
+		kubeObjs             []runtime.Object
+		results              []*podgroup_info.PodGroupInfo
+		invalidSubGroupTasks map[common_info.PodGroupID][]common_info.PodID
 	}{
 		"BasicUsage": {
 			objs: []runtime.Object{
@@ -1233,6 +1234,74 @@ func TestSnapshotPodGroups(t *testing.T) {
 				}(),
 			},
 		},
+		"With invalid subgroup pod": {
+			objs: []runtime.Object{
+				&enginev2alpha2.PodGroup{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "podGroup-0",
+						UID:  "ABC",
+					},
+					Spec: enginev2alpha2.PodGroupSpec{
+						Queue: "queue-0",
+						SubGroups: []enginev2alpha2.SubGroup{
+							{
+								Name:      "SubGroup-0",
+								MinMember: ptr.To(int32(1)),
+							},
+						},
+					},
+				},
+			},
+			kubeObjs: []runtime.Object{
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: testNamespace,
+						Name:      "pod-valid",
+						UID:       types.UID(fmt.Sprintf("%s/pod-valid", testNamespace)),
+						Annotations: map[string]string{
+							commonconstants.PodGroupAnnotationForPod: "podGroup-0",
+						},
+						Labels: map[string]string{
+							commonconstants.SubGroupLabelKey: "SubGroup-0",
+						},
+					},
+				},
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: testNamespace,
+						Name:      "pod-invalid",
+						UID:       types.UID(fmt.Sprintf("%s/pod-invalid", testNamespace)),
+						Annotations: map[string]string{
+							commonconstants.PodGroupAnnotationForPod: "podGroup-0",
+						},
+						Labels: map[string]string{
+							commonconstants.SubGroupLabelKey: "missing-subgroup",
+						},
+					},
+				},
+			},
+			results: []*podgroup_info.PodGroupInfo{
+				func() *podgroup_info.PodGroupInfo {
+					subGroup0 := subgroup_info.NewPodSet("SubGroup-0", 1, nil)
+					subGroup0.AssignTask(&pod_info.PodInfo{UID: "pod-valid", SubGroupName: "SubGroup-0"})
+
+					subGroupSet := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+					subGroupSet.AddPodSet(subGroup0)
+
+					return &podgroup_info.PodGroupInfo{
+						Name:            "podGroup-0",
+						Queue:           "queue-0",
+						RootSubGroupSet: subGroupSet,
+						PodSets: map[string]*subgroup_info.PodSet{
+							"SubGroup-0": subGroup0,
+						},
+					}
+				}(),
+			},
+			invalidSubGroupTasks: map[common_info.PodGroupID][]common_info.PodID{
+				"podGroup-0": {common_info.PodID(fmt.Sprintf("%s/pod-invalid", testNamespace))},
+			},
+		},
 	}
 
 	for name, test := range tests {
@@ -1274,6 +1343,12 @@ func TestSnapshotPodGroups(t *testing.T) {
 						assert.Equal(t, subGroup.GetName(), podInfo.SubGroupName)
 					}
 				}
+			}
+
+			expectedInvalidTasks := test.invalidSubGroupTasks[common_info.PodGroupID(expected.Name)]
+			assert.Len(t, pg.GetInvalidSubGroupTasks(), len(expectedInvalidTasks))
+			for _, taskID := range expectedInvalidTasks {
+				assert.Contains(t, pg.GetInvalidSubGroupTasks(), taskID)
 			}
 		}
 
