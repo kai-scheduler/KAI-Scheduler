@@ -88,8 +88,9 @@ type Session struct {
 	SchedulerParams conf.SchedulerParams
 	mux             *http.ServeMux
 
-	k8sResourceStateCache sync.Map
-	nodeScoringPool       *ants.Pool
+	k8sResourceStateCache  sync.Map
+	nodeScoringPool        *ants.Pool
+	scoringPoolWorkerCount int
 }
 
 func (ssn *Session) Statement() *Statement {
@@ -237,15 +238,15 @@ func (ssn *Session) FittingNode(task *pod_info.PodInfo, node *node_info.NodeInfo
 }
 
 // OrderedNodesByTask scores nodes for a task and returns them in order of their scores
-// The function is parallelized using multiple workers (up to GOMAXPROCS or number of nodes, whichever is smaller) to speed up the scoring process
+// The function is parallelized using multiple workers to speed up the scoring process
 func (ssn *Session) OrderedNodesByTask(nodes []*node_info.NodeInfo, task *pod_info.PodInfo) []*node_info.NodeInfo {
 	ssn.NodePreOrderFn(task, nodes)
 
-	numWorkers := max(min(runtime.GOMAXPROCS(0), len(nodes)), 1)
-	workerLocalScores := make([]map[float64][]*node_info.NodeInfo, numWorkers)
+	numWorkersToUseInParallel := min(ssn.scoringPoolWorkerCount, len(nodes))
+	workerLocalScores := make([]map[float64][]*node_info.NodeInfo, numWorkersToUseInParallel)
 
 	var wg sync.WaitGroup
-	chunkSize := (len(nodes) + numWorkers - 1) / numWorkers
+	chunkSize := (len(nodes) + numWorkersToUseInParallel - 1) / numWorkersToUseInParallel
 	scoreChunk := func(idx int) {
 		workerNodes := ssn.getWorkerNodes(nodes, idx, chunkSize)
 		if workerNodes == nil {
@@ -253,7 +254,7 @@ func (ssn *Session) OrderedNodesByTask(nodes []*node_info.NodeInfo, task *pod_in
 		}
 		workerLocalScores[idx] = ssn.scoreNodes(workerNodes, task)
 	}
-	for workerIdx := range numWorkers {
+	for workerIdx := range numWorkersToUseInParallel {
 		wg.Add(1)
 		idx := workerIdx
 		err := ssn.nodeScoringPool.Submit(func() {
@@ -261,9 +262,9 @@ func (ssn *Session) OrderedNodesByTask(nodes []*node_info.NodeInfo, task *pod_in
 			scoreChunk(idx)
 		})
 		if err != nil {
+			defer wg.Done()
 			log.InfraLogger.Errorf("Failed to submit node scoring task, running sequentially: %v", err)
 			scoreChunk(idx)
-			wg.Done()
 		}
 	}
 	wg.Wait()
@@ -376,11 +377,13 @@ func (ssn *Session) clear() {
 }
 
 func (ssn *Session) InitNodeScoringPool() error {
-	pool, err := ants.NewPool(runtime.GOMAXPROCS(0))
+	numWorkers := max(runtime.GOMAXPROCS(0), 1)
+	pool, err := ants.NewPool(numWorkers)
 	if err != nil {
 		return fmt.Errorf("failed to create node scoring pool: %w", err)
 	}
 	ssn.nodeScoringPool = pool
+	ssn.scoringPoolWorkerCount = numWorkers
 	runtime.SetFinalizer(ssn, func(s *Session) {
 		if s.nodeScoringPool != nil {
 			s.nodeScoringPool.Release()
@@ -434,6 +437,7 @@ func closeSession(ssn *Session) {
 
 	ssn.nodeScoringPool.Release()
 	ssn.nodeScoringPool = nil
+	ssn.scoringPoolWorkerCount = 0
 	ssn.clear()
 	stopCh := make(chan struct{})
 	ssn.Cache.WaitForWorkers(stopCh)
