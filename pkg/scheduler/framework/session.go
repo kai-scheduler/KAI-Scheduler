@@ -236,7 +236,7 @@ func (ssn *Session) FittingNode(task *pod_info.PodInfo, node *node_info.NodeInfo
 func (ssn *Session) OrderedNodesByTask(nodes []*node_info.NodeInfo, task *pod_info.PodInfo) []*node_info.NodeInfo {
 	ssn.NodePreOrderFn(task, nodes)
 
-	numWorkers := min(runtime.GOMAXPROCS(0), len(nodes))
+	numWorkers := max(min(runtime.GOMAXPROCS(0), len(nodes)), 1)
 
 	localScores := make([]map[float64][]*node_info.NodeInfo, numWorkers)
 	for i := range localScores {
