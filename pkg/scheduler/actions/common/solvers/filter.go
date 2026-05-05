@@ -1,7 +1,7 @@
 // Copyright 2025 NVIDIA CORPORATION
 // SPDX-License-Identifier: Apache-2.0
 
-package v2
+package solvers
 
 // Filter rejects scenarios cheaply, before expensive simulation.
 //

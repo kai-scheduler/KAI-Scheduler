@@ -1,7 +1,7 @@
 // Copyright 2025 NVIDIA CORPORATION
 // SPDX-License-Identifier: Apache-2.0
 
-package v2
+package solvers
 
 // Solve drives the search loop. No outer gang loop, no per-node sub-loop,
 // no fallbacks: filters are wrapped into the generator via WithFilters

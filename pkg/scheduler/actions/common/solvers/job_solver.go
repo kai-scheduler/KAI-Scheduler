@@ -9,7 +9,6 @@ import (
 
 	"golang.org/x/exp/maps"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/v2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -23,7 +22,7 @@ type GenerateVictimsQueue func() *utils.JobsOrderByQueues
 
 type JobSolver struct {
 	feasibleNodes        []*node_info.NodeInfo
-	validator            v2.Validator
+	validator            Validator
 	generateVictimsQueue GenerateVictimsQueue
 	actionType           framework.ActionType
 }
@@ -31,10 +30,10 @@ type JobSolver struct {
 // NewJobsSolver constructs a JobSolver. The validator is action-specific
 // policy on top of the simulator's outcome; pass nil to skip validation.
 // Actions that still hold legacy func(api.ScenarioInfo) bool validators
-// can wrap them with v2.LegacyValidator at the call site.
+// can wrap them with LegacyValidator at the call site.
 func NewJobsSolver(
 	feasibleNodes []*node_info.NodeInfo,
-	validator v2.Validator,
+	validator Validator,
 	generateVictimsQueue GenerateVictimsQueue,
 	action framework.ActionType,
 ) *JobSolver {
@@ -71,12 +70,12 @@ func (s *JobSolver) Solve(
 		feasibleNodeMap[node.Name] = node
 	}
 
-	gen := v2.NewAccumulatingGenerator(
+	gen := NewAccumulatingGenerator(
 		ssn, pendingJob, nil, s.generateVictimsQueue(), feasibleNodeMap,
 	)
-	sim := newCountingSimulator(v2.NewSessionSimulator(ssn, maps.Values(feasibleNodeMap), s.actionType))
+	sim := newCountingSimulator(NewSessionSimulator(ssn, maps.Values(feasibleNodeMap), s.actionType))
 
-	_, result, ok := v2.Solve(gen, sim, s.validator)
+	_, result, ok := Solve(gen, sim, s.validator)
 	if !ok {
 		return false, nil, nil
 	}
@@ -96,18 +95,18 @@ func (s *JobSolver) Solve(
 	return jobSolved, result.Statement, calcVictimNames(victimTasks)
 }
 
-// countingSimulator wraps a v2.Simulator to bump the per-scenario
+// countingSimulator wraps a Simulator to bump the per-scenario
 // "simulated" metric and emit the V(5) trace line that the legacy
 // solver path produced once per scenario attempt.
 type countingSimulator struct {
-	inner v2.Simulator
+	inner Simulator
 }
 
-func newCountingSimulator(inner v2.Simulator) v2.Simulator {
+func newCountingSimulator(inner Simulator) Simulator {
 	return &countingSimulator{inner: inner}
 }
 
-func (c *countingSimulator) Simulate(scenario v2.Scenario) v2.SimulationResult {
+func (c *countingSimulator) Simulate(scenario Scenario) SimulationResult {
 	log.InfraLogger.V(5).Infof(
 		"Trying to solve scenario: pending=%s victims=%s",
 		taskNames(scenario.Pending), taskNames(scenario.Victims),

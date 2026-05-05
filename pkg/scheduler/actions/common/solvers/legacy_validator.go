@@ -1,7 +1,7 @@
 // Copyright 2025 NVIDIA CORPORATION
 // SPDX-License-Identifier: Apache-2.0
 
-package v2
+package solvers
 
 import (
 	solverscenario "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
@@ -9,18 +9,15 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 )
 
-// LegacyValidator adapts the existing SolutionValidator (a function from
-// api.ScenarioInfo to bool) into the v2.Validator interface.
+// LegacyValidator adapts a func(api.ScenarioInfo) bool into a
+// Validator. Used by actions that hold plugin-registered validators
+// expecting the legacy ScenarioInfo shape (reclaim, preempt).
 //
-// Phase 6 will replace the adapter by giving each action a native
-// Validate(Scenario, SimulationResult) implementation. Until then, this
-// shim lets reclaim/preempt/consolidation reuse their plugin-registered
-// validators without modification.
-//
-// The adapter rebuilds a BaseScenario from the flat v2.Scenario so the
-// legacy validator sees the same ScenarioInfo shape it always has. The
+// The adapter rebuilds a BaseScenario from the flat Scenario so the
+// legacy validator sees the same shape it always has. The
 // SimulationResult is ignored — today's validators only inspect the
-// scenario.
+// scenario. Native Validators that read SimulationResult directly
+// don't need this adapter.
 func LegacyValidator(
 	ssn *framework.Session,
 	name string,

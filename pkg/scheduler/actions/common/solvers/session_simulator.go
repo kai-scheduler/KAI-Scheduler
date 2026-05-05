@@ -1,7 +1,7 @@
 // Copyright 2025 NVIDIA CORPORATION
 // SPDX-License-Identifier: Apache-2.0
 
-package v2
+package solvers
 
 import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common"

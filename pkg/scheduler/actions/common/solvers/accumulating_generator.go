@@ -1,7 +1,7 @@
 // Copyright 2025 NVIDIA CORPORATION
 // SPDX-License-Identifier: Apache-2.0
 
-package v2
+package solvers
 
 import (
 	"sort"
@@ -46,12 +46,9 @@ type accumulatingGenerator struct {
 }
 
 // NewAccumulatingGenerator constructs a Generator that walks the given
-// victims queue, accumulates potential victims, and emits scenarios in
-// the same order as today's solver stack.
-//
-// pendingJob may be a partial-job representative when called from the
-// outer gang loop (Phase 3). Phase 4 will collapse the gang loop and
-// always pass the full preemptor.
+// victims queue, accumulates potential victims, and emits scenarios.
+// pendingJob is the full preemptor; the simulator fits every pending
+// task in one shot per emitted scenario (gang-direct).
 func NewAccumulatingGenerator(
 	ssn *framework.Session,
 	pendingJob *podgroup_info.PodGroupInfo,

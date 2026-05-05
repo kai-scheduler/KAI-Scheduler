@@ -8,7 +8,6 @@ import (
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/v2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
@@ -121,7 +120,7 @@ type allPodsReallocatedValidator struct{}
 
 func (allPodsReallocatedValidator) Name() string { return "AllPodsReallocated" }
 
-func (allPodsReallocatedValidator) Validate(_ v2.Scenario, r v2.SimulationResult) bool {
+func (allPodsReallocatedValidator) Validate(_ solvers.Scenario, r solvers.SimulationResult) bool {
 	return len(r.Preempted) == 0
 }
 

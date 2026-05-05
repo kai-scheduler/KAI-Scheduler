@@ -1,7 +1,7 @@
 // Copyright 2025 NVIDIA CORPORATION
 // SPDX-License-Identifier: Apache-2.0
 
-package v2
+package solvers
 
 import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -24,13 +24,12 @@ type Scenario struct {
 	// Candidates is the broader candidate set that an action validator
 	// evaluates fair-share against. May be a strict superset of Victims
 	// when the generator emits per-node subsets of a larger accumulated
-	// pool. Empty Candidates means "use Victims" — kept lean for
-	// generators that don't carry a separate notion.
+	// pool. Empty Candidates means "use Victims".
 	//
-	// Phase-3 transitional: the legacy ScenarioInfo validators expect
-	// the whole accumulated pool, so the accumulating generator
-	// populates this with recorded ∪ all potentials. Phase 6 will give
-	// validators native access to the SimulationResult and this field
-	// can be removed.
+	// Used today by LegacyValidator to give plugin-registered
+	// ScenarioInfo validators the same view they had pre-refactor: the
+	// whole accumulated pool. Native Validators that read
+	// SimulationResult directly don't need this field — once every
+	// action has migrated off LegacyValidator it can be removed.
 	Candidates []*pod_info.PodInfo
 }
