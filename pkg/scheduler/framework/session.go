@@ -241,7 +241,7 @@ func (ssn *Session) FittingNode(task *pod_info.PodInfo, node *node_info.NodeInfo
 func (ssn *Session) OrderedNodesByTask(nodes []*node_info.NodeInfo, task *pod_info.PodInfo) []*node_info.NodeInfo {
 	ssn.NodePreOrderFn(task, nodes)
 
-	numWorkersToUseInParallel := min(ssn.scoringPoolWorkerCount, len(nodes))
+	numWorkersToUseInParallel := max(min(ssn.scoringPoolWorkerCount, len(nodes)), 1)
 	workerLocalScores := make([]map[float64][]*node_info.NodeInfo, numWorkersToUseInParallel)
 
 	var wg sync.WaitGroup
