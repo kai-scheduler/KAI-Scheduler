@@ -139,7 +139,55 @@ func (s *byPodSolver) solveOnPotentialNodes(ssn *framework.Session, scenario *sc
 			return nil, err
 		}
 	}
+
+	return s.solveOnAllPotentialNodes(ssn, scenario, statement)
+}
+
+// solveOnAllPotentialNodes is a fallback used when no single host node's potential
+// victims are sufficient: it evicts every potential victim recorded in the scenario
+// at once and runs a single simulation. The scenario validator has already approved
+// the full potentials set, so this expands the simulator's view across nodes
+// without violating fair-share.
+func (s *byPodSolver) solveOnAllPotentialNodes(ssn *framework.Session, scenario *scenario.ByNodeScenario,
+	statement *framework.Statement) (*solutionResult, error) {
+	allPotentialVictims := scenario.PotentialVictimsTasks()
+	if len(allPotentialVictims) == 0 {
+		return nil, nil
+	}
+	log.InfraLogger.V(6).Infof(
+		"Per-node iteration exhausted; trying scenario with all potential victims evicted at once")
+
+	checkpoint := statement.Checkpoint()
+	pendingJob := scenario.GetPreemptor()
+	if err := common.EvictAllPreemptees(ssn, allPotentialVictims, pendingJob, statement, s.actionType); err != nil {
+		return nil, err
+	}
+	newFeasibleNodes := s.updateFeasibleNodes(ssn, allPotentialVictims)
+
+	victimTasks := getVictimTasks(scenario.RecordedVictimsTasks(), allPotentialVictims)
+	result := s.runSimulation(ssn, scenario, statement, victimTasks)
+	if result != nil {
+		return result, nil
+	}
+
+	s.feasibleNodesRollback(newFeasibleNodes)
+	if err := statement.Rollback(checkpoint); err != nil {
+		return nil, err
+	}
 	return nil, nil
+}
+
+func (s *byPodSolver) evictPotentialVictimsFromNode(
+	session *framework.Session, scenario *scenario.ByNodeScenario, statement *framework.Statement, nodeToTest string,
+) (*framework.Checkpoint, []*pod_info.PodInfo, error) {
+	recordedVictimsCheckpoint := statement.Checkpoint()
+	pendingJob := scenario.GetPreemptor()
+
+	potentialVictimsTasks := scenario.VictimsTasksFromNodes([]string{nodeToTest})
+	if err := common.EvictAllPreemptees(session, potentialVictimsTasks, pendingJob, statement, s.actionType); err != nil {
+		return nil, nil, err
+	}
+	return &recordedVictimsCheckpoint, potentialVictimsTasks, nil
 }
 
 func (s *byPodSolver) feasibleNodesRollback(newFeasibleNodes map[string]bool) {
@@ -158,19 +206,6 @@ func (s *byPodSolver) updateFeasibleNodes(ssn *framework.Session, victimTasks []
 		s.feasibleNodes[potentialVictimTasks.NodeName] = ssn.ClusterInfo.Nodes[potentialVictimTasks.NodeName]
 	}
 	return newFeasibleNodes
-}
-
-func (s *byPodSolver) evictPotentialVictimsFromNode(
-	session *framework.Session, scenario *scenario.ByNodeScenario, statement *framework.Statement, nodeToTest string,
-) (*framework.Checkpoint, []*pod_info.PodInfo, error) {
-	recordedVictimsCheckpoint := statement.Checkpoint()
-	pendingJob := scenario.GetPreemptor()
-
-	potentialVictimsTasks := scenario.VictimsTasksFromNodes([]string{nodeToTest})
-	if err := common.EvictAllPreemptees(session, potentialVictimsTasks, pendingJob, statement, s.actionType); err != nil {
-		return nil, nil, err
-	}
-	return &recordedVictimsCheckpoint, potentialVictimsTasks, nil
 }
 
 func (s *byPodSolver) handleScenarioSolution(
