@@ -33,6 +33,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Fixed `skipTopOwnerGrouper` not propagating per-type defaults (priority class and preemptibility) for skipped owners (e.g. `DynamoGraphDeployment`), causing PodGroup spec to retain stale values after defaults ConfigMap updates.
 - Fixed binder DRA detection on clusters where the upstream `DynamicResourceAllocation` feature gate does not reflect server-side DRA availability. The binder now probes the API server during init (matching the scheduler) so the DRA plugin is gated on the same authoritative decision. [#1481](https://github.com/kai-scheduler/KAI-Scheduler/issues/1481)
 - Suppressed noisy `Reconciler error` logs and `PodGrouperWarning` events on transient PodGroup update conflicts. The podgrouper now treats `IsConflict` errors as expected and silently requeues the reconcile instead of surfacing the apiserver's "object has been modified" message.
+- Fixed kai-operator not reconciling on Prometheus and ServiceMonitor changes. The Config controller now watches owned `Prometheus` and `ServiceMonitor` resources, so deletions and drift trigger reconciliation. CRD presence is checked at startup against the API server (the scheme-only check used previously could not detect missing CRDs), and the watch is registered only when the CRDs are installed. [#877](https://github.com/kai-scheduler/KAI-Scheduler/issues/877)
 
 ## [v0.14.0] - 2026-03-30
 
