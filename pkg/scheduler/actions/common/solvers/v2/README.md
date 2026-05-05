@@ -15,17 +15,16 @@ valid result is the least-disruptive solution found.
 
 ## Migration status
 
-Phases 0–4 of the refactor are landed:
+Phases 0–5 of the refactor are landed:
 - Solve-loop spine, `sessionSimulator`, `accumulatingGenerator`,
   `LegacyValidator` are in place.
 - `JobSolver.Solve` runs a single full-gang solve through `v2.Solve` —
   no per-task probing, no binary search.
 - The accumulating generator emits per-node subsets followed by a
   full-accumulated-set fallback per accumulation step.
+- `byPodSolver` is deleted; its emission logic moved into the generator.
 
 Pending phases:
-- Phase 5: delete the legacy `byPodSolver` (now unused on production
-  paths; its emission logic lives in `accumulatingGenerator`).
 - Phase 6: native `Validator` implementations per action; remove the
   `Candidates` field added for the legacy adapter.
 - Phase 7: delete `JobSolver` wrapper, `BaseScenario` / `ByNodeScenario`,

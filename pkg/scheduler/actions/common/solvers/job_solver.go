@@ -11,6 +11,7 @@ import (
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/v2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
@@ -18,6 +19,11 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
 )
+
+// SolutionValidator is the legacy action-policy check signature: a
+// function from a ScenarioInfo to a pass/fail bool. Phase 6 will give
+// each action a native v2.Validator and remove this alias.
+type SolutionValidator func(scenario api.ScenarioInfo) bool
 
 type GenerateVictimsQueue func() *utils.JobsOrderByQueues
 

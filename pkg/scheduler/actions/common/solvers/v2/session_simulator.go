@@ -28,8 +28,8 @@ type sessionSimulator struct {
 
 // NewSessionSimulator constructs a Simulator bound to a session and an
 // initial set of candidate nodes. The simulator augments that set per
-// scenario with host nodes of the scenario's victims (matching the way
-// the legacy byPodSolver expanded its feasibleNodes map).
+// scenario with host nodes of the scenario's victims so the virtual
+// allocator can consider those nodes once their slots free up.
 func NewSessionSimulator(
 	ssn *framework.Session,
 	feasibleNodes []*node_info.NodeInfo,

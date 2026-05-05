@@ -24,15 +24,11 @@ import (
 
 // accumulatingGenerator walks a victim queue, growing a single
 // underlying ByNodeScenario one job at a time, and emits one Scenario
-// per host node of the just-added victim job.
+// per host node of the just-added victim job, followed by a full-set
+// fallback covering every accumulated potential.
 //
 // The accumulation + filter logic is ported from the legacy
-// PodAccumulatedScenarioBuilder. Inlining keeps this package free of an
-// import on its parent solvers/, avoiding a cycle when JobSolver wires
-// through v2.
-//
-// Phase 2 contract: emit-by-emit equivalent to PodAccumulatedScenarioBuilder
-// + byPodSolver's per-node loop. Filters use the existing
+// PodAccumulatedScenarioBuilder. Filters use the existing
 // accumulated_scenario_filters package against the underlying
 // ByNodeScenario.
 type accumulatingGenerator struct {
@@ -214,9 +210,10 @@ func (g *accumulatingGenerator) addNextPotentialVictims() bool {
 }
 
 // buildEmissions yields one Scenario per host node of the latest victim
-// job, mirroring today's byPodSolver per-node iteration. The full-set
-// fallback emission is intentionally absent; it is reintroduced in
-// Phase 5 once byPodSolver is removed.
+// job, then a full-accumulated-set fallback. The per-node emissions
+// preserve the least-disruptive single-node solution when one exists;
+// the full-set is required for gang preemptors whose tasks span
+// multiple nodes.
 //
 // All emissions share the same Candidates set: the full accumulated
 // victim pool (recorded ∪ every potential added so far). That is what
