@@ -35,8 +35,12 @@ import (
 
 type Statement struct {
 	operations []Operation
-	ssn        *Session
-	sessionID  string
+	// undoTargets[i] is the index in operations of the first undoOperation
+	// whose operationIndex is i. Maintained incrementally on append and
+	// rebuilt whenever the operations slice is truncated or reshuffled.
+	undoTargets map[int]int
+	ssn         *Session
+	sessionID   string
 }
 
 type Checkpoint int
@@ -57,6 +61,7 @@ func (s *Statement) Rollback(cp Checkpoint) error {
 	}
 
 	s.operations = s.operations[:cp]
+	s.rebuildUndoTargets()
 	return nil
 }
 
@@ -510,12 +515,14 @@ func (s *Statement) ConvertAllAllocatedToPipelined(jobID common_info.PodGroupID)
 		}
 	}
 	s.operations = newOperations
+	s.rebuildUndoTargets()
 
 	return nil
 }
 
 func (s *Statement) clearOperations() {
 	s.operations = []Operation{}
+	s.undoTargets = nil
 }
 
 func (s *Statement) Discard() {
@@ -638,6 +645,12 @@ func (s *Statement) undoOperation(index int) error {
 			reverseOperation: redoOperation,
 		},
 	)
+	if _, exists := s.undoTargets[index]; !exists {
+		if s.undoTargets == nil {
+			s.undoTargets = make(map[int]int)
+		}
+		s.undoTargets[index] = len(s.operations) - 1
+	}
 
 	return err
 }
@@ -649,14 +662,40 @@ func (s *Statement) cleanupFailedAllocation(task *pod_info.PodInfo, node *node_i
 	_ = s.unallocate(task, node.Name, false)
 }
 
+// operationValid reports whether the operation at index i is currently in
+// effect. The original implementation walked s.operations recursively to find,
+// at each level, the first undoOperation targeting the current index. We
+// preserve that exact semantic by following the chain via undoTargets — each
+// hop is one nested undo, and an even number of hops means the operation
+// survives unflipped.
 func (s *Statement) operationValid(i int) bool {
-	for undoIndex, operation := range s.operations {
-		if operation.Name() != undo {
+	flips := 0
+	for {
+		next, ok := s.undoTargets[i]
+		if !ok {
+			break
+		}
+		flips++
+		i = next
+	}
+	return flips%2 == 0
+}
+
+// rebuildUndoTargets recomputes undoTargets from the current operations slice.
+// Used after Rollback truncates and after ConvertAllAllocatedToPipelined
+// reshuffles, since both invalidate the cached indices.
+func (s *Statement) rebuildUndoTargets() {
+	s.undoTargets = nil
+	for idx, op := range s.operations {
+		if op.Name() != undo {
 			continue
 		}
-		if operation.(undoOperation).operationIndex == i {
-			return !s.operationValid(undoIndex)
+		target := op.(undoOperation).operationIndex
+		if s.undoTargets == nil {
+			s.undoTargets = make(map[int]int, len(s.operations))
+		}
+		if _, exists := s.undoTargets[target]; !exists {
+			s.undoTargets[target] = idx
 		}
 	}
-	return true
 }
