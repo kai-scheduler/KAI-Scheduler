@@ -21,6 +21,7 @@ package predicates
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -280,12 +281,7 @@ func classifyVictimInvariantPrePredicateFailure(
 }
 
 func isVictimInvariantPrePredicateCandidate(predicateName k8s_internal.PredicateName) bool {
-	switch predicateName {
-	case predicates.VolumeBinding, predicates.ConfigMap, predicates.MaxNodePoolResources:
-		return true
-	default:
-		return false
-	}
+	return slices.Contains(victimInvariantPrePredicateCandidates, predicateName)
 }
 
 func generateErrorLog(allErrors []prePredicateError) string {
