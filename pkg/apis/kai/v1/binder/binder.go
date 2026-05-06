@@ -29,7 +29,7 @@ const (
 
 	DefaultBindTimeoutSeconds = 120
 	DefaultCDIEnabled         = false
-	DefaultHamiCoreEnabled    = true
+	DefaultHamiCoreEnabled    = false
 )
 
 var defaultPluginPriorities = map[string]int{
