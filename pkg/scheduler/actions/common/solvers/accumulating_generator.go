@@ -237,7 +237,11 @@ func (g *accumulatingGenerator) buildEmissions(s *solverscenario.ByNodeScenario)
 		if len(recorded) == 0 {
 			return nil
 		}
-		return []Scenario{g.scenarioWith(append([]*pod_info.PodInfo(nil), recorded...), candidates)}
+		victims := append([]*pod_info.PodInfo(nil), recorded...)
+		if !g.emissionFits(victims) {
+			return nil
+		}
+		return []Scenario{g.scenarioWith(victims, candidates)}
 	}
 
 	latestHosts := sortedHostNodes(latest)
@@ -249,10 +253,17 @@ func (g *accumulatingGenerator) buildEmissions(s *solverscenario.ByNodeScenario)
 	}
 	emissions := make([]Scenario, 0, capHint)
 
+	tryAppend := func(victims []*pod_info.PodInfo) {
+		if !g.emissionFits(victims) {
+			return
+		}
+		emissions = append(emissions, g.scenarioWith(victims, candidates))
+	}
+
 	// (1) Per-node of the latest victim job's host nodes.
 	for _, node := range latestHosts {
 		victims := s.VictimsTasksFromNodes([]string{node})
-		emissions = append(emissions, g.scenarioWith(joinTasks(recorded, victims), candidates))
+		tryAppend(joinTasks(recorded, victims))
 	}
 	if !multiTask {
 		return emissions
@@ -264,15 +275,25 @@ func (g *accumulatingGenerator) buildEmissions(s *solverscenario.ByNodeScenario)
 	for _, prior := range priorHosts {
 		for _, node := range latestHosts {
 			victims := s.VictimsTasksFromNodes([]string{prior, node})
-			emissions = append(emissions, g.scenarioWith(joinTasks(recorded, victims), candidates))
+			tryAppend(joinTasks(recorded, victims))
 		}
 	}
 	// (3) Full-set fallback.
 	all := s.PotentialVictimsTasks()
 	if len(all) > 0 {
-		emissions = append(emissions, g.scenarioWith(joinTasks(recorded, all), candidates))
+		tryAppend(joinTasks(recorded, all))
 	}
 	return emissions
+}
+
+// emissionFits is a stateless precheck applied per emission. It rejects
+// emissions whose freed-GPU pool (baseline idle plus victim contributions)
+// could not possibly host the pending gang. This skips the heavy simulator
+// pass on emissions the simulator would reject anyway — most importantly
+// the per-node and pair emissions for large gangs that physically cannot
+// fit on 1 or 2 host nodes.
+func (g *accumulatingGenerator) emissionFits(victims []*pod_info.PodInfo) bool {
+	return idle_gpus_filter.EmissionFitsByIdleGpus(g.pending, victims, g.ssn.ClusterInfo.Nodes)
 }
 
 // priorHostNodes returns the host nodes carrying any accumulated
