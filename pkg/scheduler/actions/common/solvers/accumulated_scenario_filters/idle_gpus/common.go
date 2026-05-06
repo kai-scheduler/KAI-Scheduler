@@ -4,6 +4,8 @@
 package accumulated_scenario_filters
 
 import (
+	"sort"
+
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -61,6 +63,59 @@ func greedyMatchRequirements[K comparable](
 		}
 	}
 	return true
+}
+
+// EmissionFitsByIdleGpus is a stateless feasibility check for a single
+// emission of the accumulating generator. It greedy-matches the pending
+// tasks' GPU demands against the per-node free-GPU pool composed of:
+//
+//   - each node's baseline idle/releasing GPU capacity (independent of the
+//     emission)
+//   - plus the freed GPUs from victims-on-that-node IN THIS EMISSION
+//
+// Unlike AccumulatedIdleGpus.Filter this maintains no incremental state,
+// so callers may invoke it on arbitrary subsets in any order.
+func EmissionFitsByIdleGpus(
+	pendingTasks []*pod_info.PodInfo,
+	emissionVictims []*pod_info.PodInfo,
+	nodes map[string]*node_info.NodeInfo,
+) bool {
+	var requirements []float64
+	for _, p := range pendingTasks {
+		if q := p.GpuRequirement.GetGpusQuota(); q > 0 {
+			requirements = append(requirements, q)
+		}
+	}
+	if len(requirements) == 0 {
+		return true
+	}
+	sort.Sort(sort.Reverse(sort.Float64Slice(requirements)))
+
+	freedByHost := make(map[string]float64, len(emissionVictims))
+	for _, v := range emissionVictims {
+		if v.NodeName == "" {
+			continue
+		}
+		freedByHost[v.NodeName] += v.AcceptedGpuRequirement.GetGpusQuota()
+	}
+
+	caps := make(map[string]float64, len(nodes))
+	holders := make([]string, 0, len(nodes))
+	for name, n := range nodes {
+		c := nodeIdleOrReleasingGpuCapacity(n) + freedByHost[name]
+		if c <= 0 {
+			continue
+		}
+		caps[name] = c
+		holders = append(holders, name)
+	}
+	sort.Slice(holders, func(i, j int) bool {
+		return caps[holders[i]] > caps[holders[j]]
+	})
+
+	return greedyMatchRequirements(requirements, holders, func(h string) float64 {
+		return caps[h]
+	})
 }
 
 // iterateNewVictims calls fn for each victim task not yet in processedCache.

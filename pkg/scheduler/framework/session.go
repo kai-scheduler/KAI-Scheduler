@@ -22,6 +22,7 @@ package framework
 import (
 	"fmt"
 	"net/http"
+	"runtime"
 	"sort"
 	"sync"
 	"time"
@@ -233,34 +234,51 @@ func (ssn *Session) FittingNode(task *pod_info.PodInfo, node *node_info.NodeInfo
 }
 
 func (ssn *Session) OrderedNodesByTask(nodes []*node_info.NodeInfo, task *pod_info.PodInfo) []*node_info.NodeInfo {
-	var (
-		nodeScores = make(map[float64][]*node_info.NodeInfo)
-		mutex      sync.Mutex
-		wg         sync.WaitGroup
-	)
-
 	ssn.NodePreOrderFn(task, nodes)
 
-	for _, node := range nodes {
-		wg.Add(1)
-		go func(node *node_info.NodeInfo) {
-			defer wg.Done()
-			score, err := ssn.NodeOrderFn(task, node)
-			if err != nil {
-				log.InfraLogger.Errorf("Error in Calculating Priority for the node:%v", err)
-				return
-			}
+	type nodeScore struct {
+		score float64
+		ok    bool
+	}
+	scores := make([]nodeScore, len(nodes))
 
-			mutex.Lock()
-			nodeScores[score] = append(nodeScores[score], node)
-			mutex.Unlock()
-
-			log.InfraLogger.V(5).Infof("Overall priority node score of node <%v> for task <%v/%v> is: %f",
-				node.Name, task.Namespace, task.Name, score)
-		}(node)
+	scoreNode := func(i int) {
+		score, err := ssn.NodeOrderFn(task, nodes[i])
+		if err != nil {
+			log.InfraLogger.Errorf("Error in Calculating Priority for the node:%v", err)
+			return
+		}
+		scores[i] = nodeScore{score: score, ok: true}
+		log.InfraLogger.V(5).Infof("Overall priority node score of node <%v> for task <%v/%v> is: %f",
+			nodes[i].Name, task.Namespace, task.Name, score)
 	}
 
-	wg.Wait()
+	workers := min(runtime.GOMAXPROCS(0), len(nodes))
+	if workers <= 1 {
+		for i := range nodes {
+			scoreNode(i)
+		}
+	} else {
+		var wg sync.WaitGroup
+		wg.Add(workers)
+		for w := range workers {
+			go func(start int) {
+				defer wg.Done()
+				for i := start; i < len(nodes); i += workers {
+					scoreNode(i)
+				}
+			}(w)
+		}
+		wg.Wait()
+	}
+
+	nodeScores := make(map[float64][]*node_info.NodeInfo)
+	for i, node := range nodes {
+		if !scores[i].ok {
+			continue
+		}
+		nodeScores[scores[i].score] = append(nodeScores[scores[i].score], node)
+	}
 	return sortNodesByScore(nodeScores)
 }
 

@@ -4036,5 +4036,131 @@ func getTestsMetadata() []integration_tests_utils.TestTopologyMetadata {
 				},
 			},
 		},
+		{
+			// Regression: a pending reclaimer needs one victim from each of several
+			// single-GPU nodes. The exponential job solver probes prefixes of pending
+			// tasks (k=1, 2, 4, ...) and skips intermediates, which previously caused
+			// the final probe for the full job to miss the multi-node victim set.
+			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Name: "Reclaim across many single-GPU nodes",
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:                "q0_n0_job",
+						RequiredGPUsPerTask: 1,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "queue0",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{NodeName: "node0", State: pod_status.Running},
+						},
+					},
+					{
+						Name:                "q0_n1_job",
+						RequiredGPUsPerTask: 1,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "queue0",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{NodeName: "node1", State: pod_status.Running},
+						},
+					},
+					{
+						Name:                "q0_n2_job",
+						RequiredGPUsPerTask: 1,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "queue0",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{NodeName: "node2", State: pod_status.Running},
+						},
+					},
+					{
+						Name:                "q0_n3_job",
+						RequiredGPUsPerTask: 1,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "queue0",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{NodeName: "node3", State: pod_status.Running},
+						},
+					},
+					{
+						Name:                "q0_n4_job",
+						RequiredGPUsPerTask: 1,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "queue0",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{NodeName: "node4", State: pod_status.Running},
+						},
+					},
+					{
+						Name:                "reclaimer",
+						RequiredGPUsPerTask: 1,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "queue1",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{State: pod_status.Pending},
+							{State: pod_status.Pending},
+							{State: pod_status.Pending},
+							{State: pod_status.Pending},
+							{State: pod_status.Pending},
+						},
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node0": {GPUs: 1},
+					"node1": {GPUs: 1},
+					"node2": {GPUs: 1},
+					"node3": {GPUs: 1},
+					"node4": {GPUs: 1},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{
+						Name:               "queue0",
+						DeservedGPUs:       0,
+						GPUOverQuotaWeight: 1,
+					},
+					{
+						Name:               "queue1",
+						DeservedGPUs:       5,
+						GPUOverQuotaWeight: 1,
+					},
+				},
+				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"q0_n0_job": {
+						GPUsRequired:         1,
+						Status:               pod_status.Releasing,
+						DontValidateGPUGroup: true,
+					},
+					"q0_n1_job": {
+						GPUsRequired:         1,
+						Status:               pod_status.Releasing,
+						DontValidateGPUGroup: true,
+					},
+					"q0_n2_job": {
+						GPUsRequired:         1,
+						Status:               pod_status.Releasing,
+						DontValidateGPUGroup: true,
+					},
+					"q0_n3_job": {
+						GPUsRequired:         1,
+						Status:               pod_status.Releasing,
+						DontValidateGPUGroup: true,
+					},
+					"q0_n4_job": {
+						GPUsRequired:         1,
+						Status:               pod_status.Releasing,
+						DontValidateGPUGroup: true,
+					},
+					"reclaimer": {
+						GPUsRequired:         5,
+						Status:               pod_status.Pipelined,
+						DontValidateGPUGroup: true,
+					},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{
+						NumberOfCacheEvictions:  5,
+						NumberOfPipelineActions: 5,
+					},
+				},
+			},
+		},
 	}
 }

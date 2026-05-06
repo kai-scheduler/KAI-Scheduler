@@ -7,11 +7,12 @@ import (
 	"fmt"
 	"strings"
 
+	"golang.org/x/exp/maps"
+
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
@@ -21,246 +22,114 @@ type GenerateVictimsQueue func() *utils.JobsOrderByQueues
 
 type JobSolver struct {
 	feasibleNodes        []*node_info.NodeInfo
-	solutionValidator    SolutionValidator
+	validator            Validator
 	generateVictimsQueue GenerateVictimsQueue
 	actionType           framework.ActionType
 }
 
-type solvingState struct {
-	recordedVictimsJobs  []*podgroup_info.PodGroupInfo
-	recordedVictimsTasks []*pod_info.PodInfo
-}
-
+// NewJobsSolver constructs a JobSolver. The validator is action-specific
+// policy on top of the simulator's outcome; pass nil to skip validation.
+// Actions that still hold legacy func(api.ScenarioInfo) bool validators
+// can wrap them with LegacyValidator at the call site.
 func NewJobsSolver(
 	feasibleNodes []*node_info.NodeInfo,
-	solutionValidator SolutionValidator,
+	validator Validator,
 	generateVictimsQueue GenerateVictimsQueue,
 	action framework.ActionType,
 ) *JobSolver {
 	return &JobSolver{
 		feasibleNodes:        feasibleNodes,
-		solutionValidator:    solutionValidator,
+		validator:            validator,
 		generateVictimsQueue: generateVictimsQueue,
 		actionType:           action,
 	}
 }
 
-// Solve attempts to find a feasible allocation for all of pendingJob's pending tasks,
-// evicting tasks from other jobs as victims when necessary. It operates with all-or-nothing
-// semantics: either the full set of pending tasks is scheduled, or no allocation is produced.
+// Solve attempts to allocate every pending task of pendingJob in a single
+// shot, evicting tasks from other jobs as needed.
 //
-// Returns:
-//   - solved: true when every pending task was allocated and pendingJob is gang-satisfied.
-//   - statement: on success, a live Statement holding the speculative allocations and victim
-//     evictions; the caller is responsible for Commit or Discard. nil on failure.
-//   - victimTaskNames: formatted "<namespace>/<name>" strings of the victim tasks, for logging.
+// All-or-nothing: the simulator either fits the full gang on top of some
+// victim set, or no allocation is produced. There is no per-task probing
+// loop — gang-direct simulation removes the iter-1 lock-in where an early
+// commitment to a poor victim choice could poison the search space.
 //
-// Session state is mutated only on success (to reflect the speculative operations in the
-// returned statement) and is left unchanged on failure.
+// On success, returns a live Statement holding the speculative
+// allocations and victim evictions; the caller is responsible for Commit
+// or Discard. Session state is left unchanged on failure.
 func (s *JobSolver) Solve(
 	ssn *framework.Session, pendingJob *podgroup_info.PodGroupInfo) (bool, *framework.Statement, []string) {
-	state := solvingState{}
 	originalNumActiveTasks := pendingJob.GetNumActiveUsedTasks()
 
 	tasksToAllocate := podgroup_info.GetTasksToAllocate(pendingJob, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false)
-	n := len(tasksToAllocate)
-	if n == 0 {
-		return false, nil, calcVictimNames(state.recordedVictimsTasks)
+	if len(tasksToAllocate) == 0 {
+		return false, nil, nil
 	}
 
-	maxSolvedK := s.searchMaxSolvableK(ssn, &state, pendingJob, tasksToAllocate)
-	if maxSolvedK == 0 {
-		return false, nil, calcVictimNames(state.recordedVictimsTasks)
+	feasibleNodeMap := map[string]*node_info.NodeInfo{}
+	for _, node := range s.feasibleNodes {
+		feasibleNodeMap[node.Name] = node
 	}
 
-	result := s.probeAtK(ssn, &state, pendingJob, tasksToAllocate, n)
-	if result == nil || !result.solved {
-		return false, nil, calcVictimNames(state.recordedVictimsTasks)
+	gen := NewAccumulatingGenerator(
+		ssn, pendingJob, nil, s.generateVictimsQueue(), feasibleNodeMap,
+	)
+	sim := newCountingSimulator(NewSessionSimulator(ssn, maps.Values(feasibleNodeMap), s.actionType))
+
+	_, result, ok := Solve(gen, sim, s.validator)
+	if !ok {
+		return false, nil, nil
 	}
 
-	numActiveTasks := pendingJob.GetNumActiveUsedTasks()
+	victimTasks := make([]*pod_info.PodInfo, 0, len(result.Preempted)+len(result.Pipelined))
+	victimTasks = append(victimTasks, result.Preempted...)
+	victimTasks = append(victimTasks, result.Pipelined...)
+
 	jobSolved := pendingJob.IsGangSatisfied()
-	if originalNumActiveTasks >= numActiveTasks {
+	if originalNumActiveTasks >= pendingJob.GetNumActiveUsedTasks() {
 		jobSolved = false
 	}
 
 	log.InfraLogger.V(4).Infof(
 		"Scenario solved for %d tasks to allocate for %s. Victims: %s",
-		n, pendingJob.Name, victimPrintingStruct{result.victimsTasks})
-	return jobSolved, result.statement, calcVictimNames(result.victimsTasks)
+		len(tasksToAllocate), pendingJob.Name, victimPrintingStruct{victimTasks})
+	return jobSolved, result.Statement, calcVictimNames(victimTasks)
 }
 
-// searchMaxSolvableK returns the largest k in [0, n] for which a probe at k succeeds.
-// Each probe is discarded before returning, so session state is clean on return.
-// Successful probes update hints in state for use by subsequent probes.
-// Complexity: O(log n) probes — exponential doubling to locate a failing k (or reach n),
-// then binary search between the last success and first failure.
-func (s *JobSolver) searchMaxSolvableK(
-	ssn *framework.Session,
-	state *solvingState,
-	pendingJob *podgroup_info.PodGroupInfo,
-	tasksToAllocate []*pod_info.PodInfo,
-) int {
-	n := len(tasksToAllocate)
-	if n == 0 {
-		return 0
-	}
-
-	lo := 0
-	var hi int
-	k := 1
-	for {
-		if !s.tryProbeAndDiscard(ssn, state, pendingJob, tasksToAllocate, k) {
-			hi = k
-			break
-		}
-		lo = k
-		if k == n {
-			return n
-		}
-		k *= 2
-		if k > n {
-			k = n
-		}
-	}
-
-	for hi-lo > 1 {
-		mid := (lo + hi) / 2
-		if s.tryProbeAndDiscard(ssn, state, pendingJob, tasksToAllocate, mid) {
-			lo = mid
-		} else {
-			hi = mid
-		}
-	}
-	return lo
+// countingSimulator wraps a Simulator to bump the per-scenario
+// "simulated" metric and emit the V(5) trace line that the legacy
+// solver path produced once per scenario attempt.
+type countingSimulator struct {
+	inner Simulator
 }
 
-// tryProbeAndDiscard probes at k and always discards the resulting statement so the session
-// is left clean. On success, hints are written to state; returns whether the probe succeeded.
-func (s *JobSolver) tryProbeAndDiscard(
-	ssn *framework.Session,
-	state *solvingState,
-	pendingJob *podgroup_info.PodGroupInfo,
-	tasksToAllocate []*pod_info.PodInfo,
-	k int,
-) bool {
-	result := s.probeAtK(ssn, state, pendingJob, tasksToAllocate, k)
-	if result == nil || !result.solved {
-		log.InfraLogger.V(5).Infof("No solution found for %d tasks out of %d tasks to allocate for %s",
-			k, len(tasksToAllocate), pendingJob.Name)
-		return false
-	}
+func newCountingSimulator(inner Simulator) Simulator {
+	return &countingSimulator{inner: inner}
+}
+
+func (c *countingSimulator) Simulate(scenario Scenario) SimulationResult {
 	log.InfraLogger.V(5).Infof(
-		"Scenario probed for %d tasks out of %d tasks to allocate for %s. Victims: %s",
-		k, len(tasksToAllocate), pendingJob.Name, victimPrintingStruct{result.victimsTasks})
-	state.recordedVictimsTasks = result.victimsTasks
-	state.recordedVictimsJobs = result.victimJobs
-	if result.statement != nil {
-		result.statement.Discard()
-	}
-	return true
+		"Trying to solve scenario: pending=%s victims=%s",
+		taskNames(scenario.Pending), taskNames(scenario.Victims),
+	)
+	metrics.IncScenarioSimulatedByAction()
+	return c.inner.Simulate(scenario)
 }
 
-func (s *JobSolver) probeAtK(
-	ssn *framework.Session,
-	state *solvingState,
-	pendingJob *podgroup_info.PodGroupInfo,
-	tasksToAllocate []*pod_info.PodInfo,
-	k int,
-) *solutionResult {
-	pendingTasks := tasksToAllocate[:k]
-	partialPendingJob := getPartialJobRepresentative(pendingJob, pendingTasks)
-	return s.solvePartialJob(ssn, state, partialPendingJob)
-}
-
-func (s *JobSolver) solvePartialJob(ssn *framework.Session, state *solvingState, partialPendingJob *podgroup_info.PodGroupInfo) *solutionResult {
-	feasibleNodeMap := map[string]*node_info.NodeInfo{}
-	for _, node := range s.feasibleNodes {
-		feasibleNodeMap[node.Name] = node
+func taskNames(tasks []*pod_info.PodInfo) string {
+	if len(tasks) == 0 {
+		return ""
 	}
-	for _, task := range state.recordedVictimsTasks {
-		node := ssn.ClusterInfo.Nodes[task.NodeName]
-		feasibleNodeMap[task.NodeName] = node
+	b := strings.Builder{}
+	b.WriteString(tasks[0].Namespace)
+	b.WriteString("/")
+	b.WriteString(tasks[0].Name)
+	for _, t := range tasks[1:] {
+		b.WriteString(", ")
+		b.WriteString(t.Namespace)
+		b.WriteString("/")
+		b.WriteString(t.Name)
 	}
-
-	scenarioBuilder := NewPodAccumulatedScenarioBuilder(
-		ssn, partialPendingJob, state.recordedVictimsJobs, s.generateVictimsQueue(), feasibleNodeMap)
-
-	for scenarioToSolve := scenarioBuilder.GetValidScenario(); scenarioToSolve != nil; scenarioToSolve =
-		scenarioBuilder.GetNextScenario() {
-		scenarioSolver := newByPodSolver(feasibleNodeMap, s.solutionValidator, ssn.AllowConsolidatingReclaim(),
-			s.actionType)
-
-		log.InfraLogger.V(5).Infof("Trying to solve scenario: %s", scenarioToSolve)
-		metrics.IncScenarioSimulatedByAction()
-
-		result := scenarioSolver.solve(ssn, scenarioToSolve)
-		if result.solved {
-			return result
-		}
-	}
-
-	return nil
-}
-
-func getPartialJobRepresentative(
-	job *podgroup_info.PodGroupInfo, pendingTasks []*pod_info.PodInfo) *podgroup_info.PodGroupInfo {
-	representativeTasks := append(job.GetAllAllocatedPods(), pendingTasks...)
-	jobRepresentative := job.CloneWithTasks(representativeTasks)
-
-	adjustSubGroupsMinAvailable(jobRepresentative)
-	adjustSubGroupsMinSubGroup(jobRepresentative.RootSubGroupSet)
-
-	return jobRepresentative
-}
-
-// adjustSubGroupsMinAvailable adjusts the minAvailable of the subGroups of the job representative to the number of tasks in the job representative.
-// This is done to ensure that the job representative has the correct minAvailable for each subGroup,
-// taking into account that the representative is a PARTIAL clone of the original job.
-func adjustSubGroupsMinAvailable(jobRepresentative *podgroup_info.PodGroupInfo) {
-	subGroupsPodCount := map[string]int{}
-	for _, pendingTask := range jobRepresentative.GetAllPodsMap() {
-		if _, found := jobRepresentative.GetAllPodSets()[pendingTask.SubGroupName]; found {
-			subGroupsPodCount[pendingTask.SubGroupName] += 1
-		} else {
-			subGroupsPodCount[podgroup_info.DefaultSubGroup] += 1
-		}
-	}
-	for subGroupName, podCount := range subGroupsPodCount {
-		subGroup, found := jobRepresentative.GetAllPodSets()[subGroupName]
-		if !found {
-			log.InfraLogger.V(2).Warnf("Couldn't find SubGroup with name %s for job %s",
-				subGroupName, jobRepresentative.NamespacedName,
-			)
-			continue
-		}
-		minAvailable := min(subGroup.GetMinAvailable(), int32(podCount))
-		subGroup.SetMinAvailable(minAvailable)
-	}
-}
-
-// adjustSubGroupsMinSubGroup recursively walks the SubGroupSet tree and sets each node's
-// minSubGroup to the number of direct members that have tasks in the partial clone.
-// This mirrors the minAvailable adjustment done on PodSets: the clone must only require
-// what it actually contains, so that gang-satisfaction checks work correctly on the partial job.
-// Returns true if this node contains any tasks.
-func adjustSubGroupsMinSubGroup(sgs *subgroup_info.SubGroupSet) bool {
-	nonEmptyMembers := int32(0)
-	for _, podSet := range sgs.GetDirectPodSets() {
-		if len(podSet.GetPodInfos()) > 0 {
-			nonEmptyMembers++
-		}
-	}
-	for _, subGroupSet := range sgs.GetDirectSubgroupsSets() {
-		if adjustSubGroupsMinSubGroup(subGroupSet) {
-			nonEmptyMembers++
-		}
-	}
-	if minSubGroup := sgs.GetMinSubGroup(); minSubGroup != nil {
-		minSubGroup := min(*minSubGroup, nonEmptyMembers)
-		sgs.SetMinSubGroup(&minSubGroup)
-	}
-	return nonEmptyMembers > 0
+	return b.String()
 }
 
 func calcVictimNames(victimsTasks []*pod_info.PodInfo) []string {
@@ -277,21 +146,5 @@ type victimPrintingStruct struct {
 }
 
 func (v victimPrintingStruct) String() string {
-	if len(v.victims) == 0 {
-		return ""
-	}
-	stringBuilder := strings.Builder{}
-
-	stringBuilder.WriteString(v.victims[0].Namespace)
-	stringBuilder.WriteString("/")
-	stringBuilder.WriteString(v.victims[0].Name)
-
-	for _, victimTask := range v.victims[1:] {
-		stringBuilder.WriteString(", ")
-		stringBuilder.WriteString(victimTask.Namespace)
-		stringBuilder.WriteString("/")
-		stringBuilder.WriteString(victimTask.Name)
-	}
-
-	return stringBuilder.String()
+	return taskNames(v.victims)
 }
