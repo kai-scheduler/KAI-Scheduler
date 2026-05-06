@@ -1,12 +1,14 @@
-# Migration Guide: v0.6.x → v0.9.0 (and beyond)
+# Migration Guide: v0.6.x → v0.9.0+
 
-This guide applies to anyone upgrading directly from a v0.6.x release to v0.9.0 or later (v0.12.x, v0.13.x, v0.14.x, ...). v0.7 and v0.8 are skipped from the supported track, so the v0.6 → v0.9+ jump bypasses the release that originally introduced the `Config` CRD.
+This guide applies to anyone upgrading directly from a v0.6.x release to v0.9.0 or later (v0.12.x, v0.13.x, v0.14.x, ...).
 
 If you are already on v0.9.0 or later, this guide does not apply.
 
 ## 1. What Changed
 
-The `kai.scheduler/Config` CRD was introduced in v0.8.5 and is consumed by the `kai-config` resource shipped from v0.9.0 onward. The chart includes the CRD under its `crds/` directory, but Helm only installs files from `crds/` on `helm install` — **never on `helm upgrade`**. Because v0.6.x predates the CRD, a direct `helm upgrade` from v0.6.x to v0.9+ leaves the cluster without the CRD when Helm renders the new manifest, and the upgrade fails with:
+v0.9.0 introduced the `kai.scheduler/Config` CRD and the `kai-config` resource that the operator reconciles. v0.6.x clusters do not have this CRD installed.
+
+The chart ships the CRD under its `crds/` directory, but Helm only installs files from `crds/` on `helm install` — **never on `helm upgrade`**. A direct `helm upgrade` from v0.6.x to v0.9+ therefore reaches the upgrade with no `Config` CRD on the cluster, and Helm fails with:
 
 ```
 Error: UPGRADE FAILED: resource mapping not found for name: "kai-config"
