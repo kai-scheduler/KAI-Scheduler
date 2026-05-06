@@ -56,4 +56,3 @@ The scheduler `Deployment` should continue running without a rolling restart, an
 ## 4. Cross-References
 
 - [#1536](https://github.com/kai-scheduler/KAI-Scheduler/issues/1536) — root-cause analysis of the SA-recreation behavior this release fixes.
-- [v0.9.0 Migration Guide](../v0.9.0/) — required pre-step (manual CRD apply) for direct upgrades from v0.6.x.
