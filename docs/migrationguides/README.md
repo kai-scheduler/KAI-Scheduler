@@ -7,6 +7,7 @@ In this section, we will collect and describe API changes (or other breaking cha
 | Version | Highlights                                 | Docs                                  |
 |---------|--------------------------------------------|---------------------------------------|
 | v0.6.0  | Namespace rename, queue-label key update   | [v0.6.0 Migration Guide](./v0.6.0/)   |
+| v0.9.0  | Config CRD prerequisite when upgrading from v0.6.x | [v0.9.0 Migration Guide](./v0.9.0/) |
 | v0.13.0 | Queue-controller flag removal, rollback limitation | [v0.13.0 Migration Guide](./v0.13.0/) |
 
 > **Note:** Always check this page before upgrading to a new major/minor release.
