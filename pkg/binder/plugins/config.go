@@ -19,9 +19,11 @@ const (
 
 	BindTimeoutSecondsArgument = kaiv1binder.BindTimeoutSecondsArgument
 	CDIEnabledArgument         = kaiv1binder.CDIEnabledArgument
+	HamiCoreEnabledArgument    = kaiv1binder.HamiCoreEnabledArgument
 
 	DefaultBindTimeoutSeconds = kaiv1binder.DefaultBindTimeoutSeconds
 	DefaultCDIEnabled         = kaiv1binder.DefaultCDIEnabled
+	DefaultHamiCoreEnabled    = kaiv1binder.DefaultHamiCoreEnabled
 )
 
 type Config map[string]kaiv1binder.PluginConfig

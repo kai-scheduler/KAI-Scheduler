@@ -431,7 +431,7 @@ func TestGPUSharingRollback(t *testing.T) {
 			kubeClient := clientBuilder.Build()
 
 			// Create GPUSharing plugin
-			plugin := New(kubeClient, false)
+			plugin := New(kubeClient, false, false)
 
 			// Execute rollback
 			err := plugin.Rollback(context.Background(), tt.pod, nil, tt.bindRequest, nil)
@@ -495,7 +495,7 @@ func TestGPUSharingRollbackDeleteConfigMap(t *testing.T) {
 			}
 			kubeClient := clientBuilder.Build()
 
-			plugin := New(kubeClient, false)
+			plugin := New(kubeClient, false, false)
 			err := plugin.deleteConfigMap(context.Background(), tt.namespace, tt.cmName)
 
 			if tt.expectError {

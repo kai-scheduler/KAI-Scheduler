@@ -27,6 +27,9 @@ func TestDefaultConfig(t *testing.T) {
 	if got := config[GPUSharingPluginName].Arguments[CDIEnabledArgument]; got != "true" {
 		t.Fatalf("expected gpusharing CDI true, got %q", got)
 	}
+	if got := config[GPUSharingPluginName].Arguments[HamiCoreEnabledArgument]; got != "false" {
+		t.Fatalf("expected gpusharing hami core false, got %q", got)
+	}
 
 	options := config.EnabledOptions()
 	if got := []string{options[0].Name, options[1].Name, options[2].Name}; !equalStrings(got,
@@ -116,6 +119,13 @@ func TestArgumentParsers(t *testing.T) {
 	}
 	if _, err := boolArgument(map[string]string{CDIEnabledArgument: "bad"}, CDIEnabledArgument); err == nil {
 		t.Fatalf("expected invalid bool argument error")
+	}
+	if got, err := boolArgumentOrDefault(map[string]string{}, HamiCoreEnabledArgument, DefaultHamiCoreEnabled); err != nil || got {
+		t.Fatalf("expected missing hami core argument to use default false, got %t, err %v", got, err)
+	}
+	if _, err := boolArgumentOrDefault(map[string]string{HamiCoreEnabledArgument: "bad"}, HamiCoreEnabledArgument,
+		DefaultHamiCoreEnabled); err == nil {
+		t.Fatalf("expected invalid defaulted bool argument error")
 	}
 }
 
