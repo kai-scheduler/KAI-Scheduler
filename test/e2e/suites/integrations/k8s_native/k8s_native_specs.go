@@ -18,10 +18,12 @@ import (
 	"k8s.io/utils/ptr"
 
 	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	schedulingv2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/capacity"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/pod_group"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/utils"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
@@ -216,6 +218,67 @@ func DescribeK8sNativeSpecs() bool {
 			Expect(len(pods.Items)).To(BeNumerically(">", 0))
 
 			wait.ForPodScheduled(ctx, testCtx.ControllerClient, &pods.Items[0])
+		})
+
+		It("BatchJob with external PodGroup", func(ctx context.Context) {
+			namespace := queue.GetConnectedNamespaceToQueue(testCtx.Queues[0])
+			externalPodGroupName := utils.GenerateRandomK8sName(10)
+
+			externalPodGroup := pod_group.Create(namespace, externalPodGroupName, testCtx.Queues[0].Name)
+			externalPodGroup.Spec.MinMember = ptr.To(int32(1))
+			externalPodGroup.Spec.SubGroups = []schedulingv2alpha2.SubGroup{
+				{
+					Name:      "workers",
+					MinMember: ptr.To(int32(1)),
+				},
+			}
+			externalPodGroup, err := testCtx.KubeAiSchedClientset.SchedulingV2alpha2().
+				PodGroups(namespace).Create(ctx, externalPodGroup, metav1.CreateOptions{})
+			Expect(err).To(Succeed())
+
+			job := rd.CreateBatchJobObject(testCtx.Queues[0], v1.ResourceRequirements{})
+			job.Annotations = map[string]string{
+				constants.SkipPodGrouperAnnotation: "true",
+			}
+			job.Spec.Template.Annotations[constants.PodGroupAnnotationForPod] = externalPodGroupName
+			job.Spec.Template.Labels[constants.SubGroupLabelKey] = "workers"
+
+			job, err = testCtx.KubeClientset.BatchV1().Jobs(job.Namespace).Create(ctx, job, metav1.CreateOptions{})
+			Expect(err).To(Succeed())
+
+			defer func() {
+				rd.DeleteJob(ctx, testCtx.KubeClientset, job)
+			}()
+
+			labelSelector := metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					rd.BatchJobAppLabel: job.Labels[rd.BatchJobAppLabel],
+				},
+			}
+			wait.ForAtLeastOnePodCreation(ctx, testCtx.ControllerClient, labelSelector)
+
+			Eventually(func(g Gomega) {
+				podGroups := &schedulingv2alpha2.PodGroupList{}
+				g.Expect(testCtx.ControllerClient.List(ctx, podGroups, client.InNamespace(namespace))).To(Succeed())
+				g.Expect(podGroups.Items).To(HaveLen(1))
+				g.Expect(podGroups.Items[0].Name).To(Equal(externalPodGroupName))
+			}).WithTimeout(watcher.FlowTimeout).WithPolling(time.Second).WithContext(ctx).Should(Succeed())
+
+			pods := rd.GetJobPods(ctx, testCtx.KubeClientset, job)
+			Expect(pods).To(HaveLen(1))
+
+			Eventually(func(g Gomega) {
+				updatedPod := &v1.Pod{}
+				g.Expect(testCtx.ControllerClient.Get(ctx, client.ObjectKeyFromObject(&pods[0]), updatedPod)).To(Succeed())
+				g.Expect(updatedPod.Annotations[constants.PodGroupAnnotationForPod]).To(Equal(externalPodGroupName))
+				g.Expect(updatedPod.Labels[constants.SubGroupLabelKey]).To(Equal("workers"))
+			}).WithTimeout(watcher.FlowTimeout).WithPolling(time.Second).WithContext(ctx).Should(Succeed())
+
+			wait.ForPodScheduled(ctx, testCtx.ControllerClient, &pods[0])
+
+			createdPodGroup := &schedulingv2alpha2.PodGroup{}
+			Expect(testCtx.ControllerClient.Get(ctx, client.ObjectKeyFromObject(externalPodGroup), createdPodGroup)).To(Succeed())
+			Expect(createdPodGroup.Name).To(Equal(externalPodGroupName))
 		})
 
 		It("CronJob", func(ctx context.Context) {
