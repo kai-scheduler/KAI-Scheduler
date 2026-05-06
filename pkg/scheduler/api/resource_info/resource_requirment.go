@@ -109,6 +109,18 @@ func (r *ResourceRequirements) SetMaxResource(rr *ResourceRequirements) error {
 	return r.GpuResourceRequirement.SetMaxResource(&rr.GpuResourceRequirement)
 }
 
+// Add sums `rr` into `r` across both halves. `BaseResource.Add` (the embedded
+// method picked up by Go's method promotion) only covers CPU/memory/scalar
+// resources; this wrapper additionally sums the `GpuResourceRequirement` so
+// callers don't silently drop GPU/MIG requests.
+func (r *ResourceRequirements) Add(rr *ResourceRequirements) error {
+	if r == nil || rr == nil {
+		return nil
+	}
+	r.BaseResource.Add(&rr.BaseResource)
+	return r.GpuResourceRequirement.Add(&rr.GpuResourceRequirement)
+}
+
 func (r *ResourceRequirements) LessInAtLeastOneResource(rr *ResourceRequirements) bool {
 	return !rr.LessEqual(r)
 }

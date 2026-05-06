@@ -378,37 +378,49 @@ func getPodGroupID(pod *v1.Pod) common_info.PodGroupID {
 }
 
 func getPodResourceRequest(pod *v1.Pod) *resource_info.ResourceRequirements {
+	// Steady-state running sum: regular (main) containers.
 	result := getPodResourceWithoutInitContainers(pod)
 
-	// Native sidecars (initContainers with `restartPolicy: Always`, KEP-753)
-	// run concurrently with regular containers, so their requests are *added*
-	// to the running sum rather than max'd. This matches kubelet's admission
-	// accounting in `k8s.io/component-helpers/resource.PodRequests`; without
-	// this, KAI under-counts every pod with a native sidecar by the sidecar's
-	// request and may bind pods that kubelet then rejects with `OutOfCpu`.
-	for _, container := range pod.Spec.InitContainers {
-		if container.RestartPolicy != nil && *container.RestartPolicy == v1.ContainerRestartPolicyAlways {
-			sidecarReq := resource_info.RequirementsFromResourceList(container.Resources.Requests)
-			result.Add(&sidecarReq.BaseResource)
-		}
-	}
-
-	// Non-restartable initContainers run sequentially before regular containers;
-	// take max(result, init_request).
-	for _, container := range pod.Spec.InitContainers {
-		if container.RestartPolicy != nil && *container.RestartPolicy == v1.ContainerRestartPolicyAlways {
-			continue
-		}
-		err := result.SetMaxResource(resource_info.RequirementsFromResourceList(container.Resources.Requests))
+	// Walk init containers in spec order, tracking the cumulative prefix of
+	// native sidecars (initContainers with `restartPolicy: Always`, KEP-753).
+	// Native sidecars start before regular containers and persist alongside
+	// them, so:
+	//   * they contribute to the steady-state running sum (added to `result`
+	//     after the loop), and
+	//   * a regular initContainer's peak demand is `init.Requests +
+	//     sum(sidecars_declared_before_it)`, since those sidecars are already
+	//     running concurrently with the init.
+	// This matches kubelet's admission accounting in
+	// `k8s.io/component-helpers/resource.PodRequests` (see
+	// `AggregateContainerRequests` in `helpers.go`); diverging from it leads
+	// to KAI binding pods that kubelet then rejects with `OutOfCpu`/`OutOfGpu`.
+	logErr := func(err error) {
 		if err != nil {
 			log.InfraLogger.Errorf("Failed to calculate pod required resources for pod %s/%s. Error: %s",
 				pod.Namespace, pod.Name, err.Error())
 		}
 	}
+	sidecarPrefix := resource_info.EmptyResourceRequirements()
+	initPhasePeak := resource_info.EmptyResourceRequirements()
+	for _, container := range pod.Spec.InitContainers {
+		containerReq := resource_info.RequirementsFromResourceList(container.Resources.Requests)
+		if container.RestartPolicy != nil && *container.RestartPolicy == v1.ContainerRestartPolicyAlways {
+			logErr(sidecarPrefix.Add(containerReq))
+			continue
+		}
+		// Peak at this regular init's runtime = its own request plus every
+		// native sidecar declared before it (which is already running).
+		logErr(containerReq.Add(sidecarPrefix))
+		logErr(initPhasePeak.SetMaxResource(containerReq))
+	}
+	// Steady-state running sum: include all native sidecars.
+	logErr(result.Add(sidecarPrefix))
+	// Final: max(steady-state, init-phase peak).
+	logErr(result.SetMaxResource(initPhasePeak))
 
 	if pod.Spec.Overhead != nil {
 		overheadReq := resource_info.RequirementsFromResourceList(pod.Spec.Overhead)
-		result.Add(&overheadReq.BaseResource)
+		result.BaseResource.Add(&overheadReq.BaseResource)
 	}
 
 	result.ScalarResources()[resource_info.PodsResourceName] = 1
