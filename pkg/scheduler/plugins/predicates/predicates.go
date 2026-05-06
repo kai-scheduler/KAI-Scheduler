@@ -21,6 +21,7 @@ package predicates
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -48,6 +49,12 @@ const (
 	prePredicateErrorFormat   = "%s: %v.%s\n"
 	prePredicateReasonsFormat = " Reasons: %s"
 )
+
+var victimInvariantPrePredicateCandidates = []k8s_internal.PredicateName{
+	predicates.VolumeBinding,
+	predicates.ConfigMap,
+	predicates.MaxNodePoolResources,
+}
 
 type prePredicateError struct {
 	name    string
@@ -88,11 +95,23 @@ func (sp SkipPredicates) ShouldSKip(podID common_info.PodID, predicateName k8s_i
 	return skip && found
 }
 
+type cachedPrePredicateResult struct {
+	required bool
+	nodes    sets.Set[string]
+	status   *ksf.Status
+}
+
+type prePredicateCacheKey struct {
+	podID         common_info.PodID
+	predicateName k8s_internal.PredicateName
+}
+
 type predicatesPlugin struct {
 	storageSchedulingEnabled bool
 
-	skipPredicates SkipPredicates
-	ssn            *framework.Session
+	skipPredicates    SkipPredicates
+	prePredicateCache map[prePredicateCacheKey]cachedPrePredicateResult
+	ssn               *framework.Session
 }
 
 func New(_ framework.PluginArguments) framework.Plugin {
@@ -109,10 +128,14 @@ func (pp *predicatesPlugin) OnSessionOpen(ssn *framework.Session) {
 
 	pp.storageSchedulingEnabled = ssn.ScheduleCSIStorage()
 	pp.skipPredicates = SkipPredicates{}
+	pp.resetPrePredicateCache()
 	pp.ssn = ssn
 
 	ssn.AddPrePredicateFn(func(task *pod_info.PodInfo, _ *podgroup_info.PodGroupInfo) error {
-		return evaluateTaskOnPrePredicate(task, k8sPredicates, pp.skipPredicates)
+		return pp.evaluateTaskOnPrePredicate(task, k8sPredicates)
+	})
+	ssn.AddVictimInvariantPrePredicateFn(func(task *pod_info.PodInfo) *api.VictimInvariantPrePredicateFailure {
+		return pp.evaluateTaskOnVictimInvariantPrePredicates(task, k8sPredicates)
 	})
 
 	ssn.AddPredicateFn(func(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo) error {
@@ -133,21 +156,67 @@ func (pp *predicatesPlugin) initializeK8sNodeInfos(ssn *framework.Session) {
 	}
 }
 
-func evaluateTaskOnPrePredicate(task *pod_info.PodInfo, k8sPredicates k8s_internal.SessionPredicates,
-	skipPredicates SkipPredicates,
+func (pp *predicatesPlugin) evaluateSinglePrePredicate(
+	task *pod_info.PodInfo,
+	predicateName k8s_internal.PredicateName,
+	predicate k8s_internal.SessionPredicate,
+) (sets.Set[string], *ksf.Status, bool) {
+	cacheKey := prePredicateCacheKey{podID: task.UID, predicateName: predicateName}
+	shouldCache := isVictimInvariantPrePredicateCandidate(predicateName)
+	if shouldCache {
+		if cachedResult, found := pp.prePredicateCache[cacheKey]; found {
+			if cachedResult.status != nil && cachedResult.status.IsSkip() {
+				pp.skipPredicates.Add(task.UID, predicateName)
+			}
+			return cachedResult.nodes, cachedResult.status, cachedResult.required
+		}
+	}
+
+	if !predicate.IsPreFilterRequired(task.Pod) {
+		if shouldCache {
+			pp.storePrePredicateResult(cacheKey, cachedPrePredicateResult{required: false})
+		}
+		return nil, nil, false
+	}
+
+	nodes, status := predicate.PreFilter(task.Pod)
+	if status != nil && status.IsSkip() {
+		pp.skipPredicates.Add(task.UID, predicateName)
+	}
+	if shouldCache {
+		pp.storePrePredicateResult(cacheKey, cachedPrePredicateResult{
+			required: true,
+			nodes:    nodes,
+			status:   status,
+		})
+	}
+	return nodes, status, true
+}
+
+func (pp *predicatesPlugin) storePrePredicateResult(
+	cacheKey prePredicateCacheKey,
+	result cachedPrePredicateResult,
+) {
+	pp.prePredicateCache[cacheKey] = result
+}
+
+func (pp *predicatesPlugin) resetPrePredicateCache() {
+	pp.prePredicateCache = map[prePredicateCacheKey]cachedPrePredicateResult{}
+}
+
+func (pp *predicatesPlugin) evaluateTaskOnPrePredicate(
+	task *pod_info.PodInfo,
+	k8sPredicates k8s_internal.SessionPredicates,
 ) error {
 	var allErrors []prePredicateError
 	var allowedNodes sets.Set[string] = nil
 	for name, predicate := range k8sPredicates {
-		if !predicate.IsPreFilterRequired(task.Pod) {
+		nodes, status, required := pp.evaluateSinglePrePredicate(task, name, predicate)
+		if !required {
 			continue
 		}
-		nodes, status := predicate.PreFilter(task.Pod)
-		if status.IsSkip() {
-			skipPredicates.Add(task.UID, name)
-		}
 
-		if status.AsError() != nil {
+		if status != nil && status.AsError() != nil {
 			allErrors = append(allErrors, newPrePredicateError(string(name), *status))
 		} else {
 			if allowedNodes == nil {
@@ -165,6 +234,54 @@ func evaluateTaskOnPrePredicate(task *pod_info.PodInfo, k8sPredicates k8s_intern
 	}
 
 	return nil
+}
+
+func (pp *predicatesPlugin) evaluateTaskOnVictimInvariantPrePredicates(
+	task *pod_info.PodInfo,
+	k8sPredicates k8s_internal.SessionPredicates,
+) *api.VictimInvariantPrePredicateFailure {
+	for _, name := range victimInvariantPrePredicateCandidates {
+		predicate, found := k8sPredicates[name]
+		if !found {
+			continue
+		}
+
+		_, status, required := pp.evaluateSinglePrePredicate(task, name, predicate)
+		if !required || status == nil || status.IsSkip() {
+			continue
+		}
+
+		if failure := classifyVictimInvariantPrePredicateFailure(name, status); failure != nil {
+			return failure
+		}
+	}
+
+	return nil
+}
+
+func classifyVictimInvariantPrePredicateFailure(
+	predicateName k8s_internal.PredicateName,
+	status *ksf.Status,
+) *api.VictimInvariantPrePredicateFailure {
+	if !isVictimInvariantPrePredicateCandidate(predicateName) || status == nil {
+		return nil
+	}
+
+	if status.Code() != ksf.UnschedulableAndUnresolvable {
+		return nil
+	}
+
+	if err := status.AsError(); err != nil {
+		return &api.VictimInvariantPrePredicateFailure{
+			Err: err,
+		}
+	}
+
+	return nil
+}
+
+func isVictimInvariantPrePredicateCandidate(predicateName k8s_internal.PredicateName) bool {
+	return slices.Contains(victimInvariantPrePredicateCandidates, predicateName)
 }
 
 func generateErrorLog(allErrors []prePredicateError) string {

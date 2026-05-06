@@ -303,7 +303,6 @@ Proposed helper:
 ```go
 func VictimInvariantPrePredicateFailureForTasks(
 	ssn *framework.Session,
-	job *podgroup_info.PodGroupInfo,
 	tasks []*pod_info.PodInfo,
 ) (*pod_info.PodInfo, *api.VictimInvariantPrePredicateFailure)
 ```
@@ -422,3 +421,89 @@ Average before value:
 
 The benchmark should improve materially in both runtime and memory because the
 missing-PVC jobs should skip the solver and avoid the `SubsetNodesFn` path.
+
+Pre-cache values captured on 2026-04-30, after adding the victim-invariant
+guard and before adding the predicates-plugin cache:
+
+Missing-PVC pathological benchmark:
+
+```text
+BenchmarkReclaimWithMissingPVCJobs-22    1    3313361 ns/op    7952 B/op     153 allocs/op
+BenchmarkReclaimWithMissingPVCJobs-22    1    2117777 ns/op    7888 B/op     153 allocs/op
+BenchmarkReclaimWithMissingPVCJobs-22    1    2403462 ns/op    7760 B/op     152 allocs/op
+```
+
+Average pre-cache value:
+
+```text
+2.612 ms/op    7.867 KB/op    152.7 allocs/op
+```
+
+Healthy-path 500-node reclaim benchmark:
+
+```text
+BenchmarkReclaimLargeJobs_500Node-22    1    1560037975 ns/op    661550336 B/op    8091844 allocs/op
+BenchmarkReclaimLargeJobs_500Node-22    1    1564994242 ns/op    660362248 B/op    8083199 allocs/op
+BenchmarkReclaimLargeJobs_500Node-22    1    1543466130 ns/op    660252008 B/op    8083340 allocs/op
+```
+
+Average pre-cache value:
+
+```text
+1.556 s/op    660.722 MB/op    8.086M allocs/op
+```
+
+Post-cache values captured on 2026-04-30, after adding the predicates-plugin
+cache:
+
+Missing-PVC pathological benchmark:
+
+```text
+BenchmarkReclaimWithMissingPVCJobs-22    1    3022566 ns/op    9520 B/op     161 allocs/op
+BenchmarkReclaimWithMissingPVCJobs-22    1    1865025 ns/op    9736 B/op     164 allocs/op
+BenchmarkReclaimWithMissingPVCJobs-22    1    4393209 ns/op    9360 B/op     160 allocs/op
+```
+
+Average post-cache value:
+
+```text
+2.715 ms/op    9.403 KB/op    160.3 allocs/op
+```
+
+Delta vs pre-cache:
+
+```text
++4.0% runtime    +19.5% memory    +5.0% allocs
+```
+
+Healthy-path 500-node reclaim benchmark:
+
+```text
+BenchmarkReclaimLargeJobs_500Node-22    1    1489040980 ns/op    644786072 B/op    7857065 allocs/op
+BenchmarkReclaimLargeJobs_500Node-22    1    1379026458 ns/op    643338952 B/op    7848437 allocs/op
+BenchmarkReclaimLargeJobs_500Node-22    1    1427762190 ns/op    643451088 B/op    7848416 allocs/op
+```
+
+Average post-cache value:
+
+```text
+1.566 s/op    649.891 MB/op    7.967M allocs/op
+```
+
+Delta vs pre-cache:
+
+```text
++0.6% runtime    -1.6% memory    -1.5% allocs
+```
+
+Interpretation:
+
+- The final implementation caches only the supported candidate predicates:
+  `VolumeBinding`, `ConfigMap`, and `MaxNodePoolResources`.
+- On the healthy 500-node reclaim path, runtime stayed roughly unchanged
+  (`+0.6%`), while memory and allocations decreased slightly.
+- The missing-PVC benchmark regresses slightly after the cache, but it remains
+  in the low-millisecond range and tiny memory footprint after the guard.
+- The important system-scale outcome is that the final candidate-only cache
+  does not reintroduce the original seconds-level missing-PVC pathology while
+  slightly reducing healthy-path allocation cost.

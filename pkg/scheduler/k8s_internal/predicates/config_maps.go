@@ -60,7 +60,8 @@ func (cmp *ConfigMapPredicate) PreFilter(ctx context.Context, _ ksf.CycleState, 
 	}
 
 	if len(missingConfigMaps) > 0 {
-		return nil, ksf.NewStatus(ksf.Unschedulable, fmt.Sprintf("Missing required configmaps: %v", missingConfigMaps))
+		return nil, ksf.NewStatus(ksf.UnschedulableAndUnresolvable,
+			fmt.Sprintf("Missing required configmaps: %v", missingConfigMaps))
 	}
 
 	return nil, nil

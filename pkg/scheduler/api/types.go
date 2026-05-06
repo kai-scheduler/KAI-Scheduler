@@ -39,6 +39,18 @@ type PredicateFn func(*pod_info.PodInfo, *podgroup_info.PodGroupInfo, *node_info
 // PrePredicateFn is used to prepare for predicate on pod.
 type PrePredicateFn func(*pod_info.PodInfo, *podgroup_info.PodGroupInfo) error
 
+// VictimInvariantPrePredicateFailure is an action-level pre-predicate blocker
+// that cannot be resolved by changing the victim set in the current session.
+type VictimInvariantPrePredicateFailure struct {
+	Err error
+}
+
+// VictimInvariantPrePredicateFn returns a victim-invariant blocker for a task,
+// or nil when action handling should continue normally.
+type VictimInvariantPrePredicateFn func(
+	*pod_info.PodInfo,
+) *VictimInvariantPrePredicateFailure
+
 // CanReclaimResourcesFn is a function that determines if a reclaimer can get more resources
 type CanReclaimResourcesFn func(pendingJob *podgroup_info.PodGroupInfo) bool
 
