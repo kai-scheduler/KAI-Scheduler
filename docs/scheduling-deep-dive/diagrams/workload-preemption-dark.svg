@@ -1,0 +1,156 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="100 10 975 220" width="900" height="250">
+  <defs>
+    <style>
+      :root{--wf-w:130px;--wf-h:80px;--preempt-color:#f44336}
+      .wf-box{width:var(--wf-w);height:var(--wf-h);rx:3}
+      .wf-inference{fill:#6b9b6b;stroke:#88bb88;stroke-width:2}
+      .wf-train{fill:#4a5a4a;stroke:#6a7a6a;stroke-width:2;stroke-dasharray:5,5}
+      .wf-running{fill:#5a8fc4;stroke:#7ab0e4;stroke-width:2}
+      .wf-running-train{fill:#5a7a8a;stroke:#7a9aaa;stroke-width:2;stroke-dasharray:5,5}
+      .node-box{fill:#2b2b2b;stroke:#555;stroke-width:2;stroke-dasharray:3,3;rx:3}
+      .running-border{fill:none;stroke:#555;stroke-width:1.5;stroke-dasharray:4,4}
+      .preemption-overlay{fill:var(--preempt-color);font-size:18px;font-weight:bold;opacity:0}
+      .preemption-hatch{fill:url(#crosshatch-dark);opacity:0}
+      text{font-family:Arial,sans-serif;text-anchor:middle}
+      .wf-title,.label{font-weight:bold;fill:#e0e0e0}
+      .wf-title{font-size:20px}
+      .wf-label{font-size:14px;fill:#e0e0e0}
+      .label{font-size:16px}
+      .qlabel{font-size:13px;fill:#e08070;font-weight:bold}
+      .arrow{stroke:#b0b0b0;stroke-width:2;fill:none;marker-end:url(#arrowhead)}
+      .dim{fill:#b0b0b0;opacity:.9}
+
+      .queue-wl3{animation:wl3m 16s ease-in-out infinite}
+      @keyframes wl3m{
+        0%,5%{opacity:0;transform:translate(-180px,60px)}
+        6%{opacity:1}12%,28%{opacity:1;transform:translate(483px,60px)}
+        32%,78%{opacity:1;transform:translate(340px,60px)}
+        84%,100%{opacity:0;transform:translate(340px,60px)}
+      }
+      .queue-wl4{animation:wl4m 16s ease-in-out infinite}
+      @keyframes wl4m{
+        0%,13%{opacity:0;transform:translate(-180px,60px)}
+        14%{opacity:1}20%,28%{opacity:1;transform:translate(340px,60px)}
+        32%,78%{opacity:1;transform:translate(197px,60px)}
+        84%,100%{opacity:0;transform:translate(197px,60px)}
+      }
+      .queue-wl5{animation:wl5m 16s ease-in-out infinite}
+      .queue-wl5 rect{animation:wl5c 16s ease-in-out infinite}
+      .queue-wl5 .running-text{animation:wl5rt 16s ease-in-out infinite}
+      @keyframes wl5m{
+        0%,21%{opacity:0;transform:translate(-180px,60px)}
+        22%{opacity:1}30%,44%{opacity:1;transform:translate(483px,60px)}
+        52%,78%{opacity:1;transform:translate(770px,60px)}
+        84%,100%{opacity:0;transform:translate(770px,60px)}
+      }
+      @keyframes wl5c{
+        0%,44%{fill:#6b9b6b;stroke:#88bb88;stroke-width:2}
+        52%,78%{fill:#5a8fc4;stroke:#7ab0e4;stroke-width:2}
+        84%,100%{fill:#6b9b6b;stroke:#88bb88;stroke-width:2}
+      }
+      @keyframes wl5rt{0%,44%{opacity:0}52%,78%{opacity:1}84%,100%{opacity:0}}
+      .queue-wl5 .submitted-text{animation:wl5st 16s ease-in-out infinite}
+      @keyframes wl5st{0%,44%{opacity:1}50%,100%{opacity:0}}
+
+      .scene{animation:scene-fade 16s ease-in-out infinite}
+      @keyframes scene-fade{0%{opacity:0}3%,78%{opacity:1}84%,100%{opacity:0}}
+      .gpu1-node{animation:gpu1vis 16s ease-in-out infinite}
+      @keyframes gpu1vis{0%,37%{opacity:0}40%,52%{opacity:.4}56%,100%{opacity:0}}
+      .running-wl2{transform:translate(920px,60px);animation:wl2f 16s ease-in-out infinite}
+      @keyframes wl2f{0%{opacity:0}3%,78%{opacity:1}84%,100%{opacity:0}}
+      .running-wl1{transform:translate(770px,60px);animation:wl1s 16s ease-in-out infinite}
+      .running-wl1>rect:first-child{animation:wl1b 16s ease-in-out infinite}
+      .running-wl1 .running-text{animation:wl1rt 16s ease-in-out infinite}
+      .running-wl1 .preempted-text{animation:wl1pt 16s ease-in-out infinite}
+      .running-wl1 .preemption-overlay{animation:wl1po 16s ease-in-out infinite}
+      .running-wl1 .preemption-hatch{animation:wl1ph 16s ease-in-out infinite}
+      .running-wl1 .wf-title:not(.running-text):not(.preempted-text),
+      .running-wl1 .wf-label:not(.running-text):not(.preempted-text){animation:wl1tf 16s ease-in-out infinite}
+
+      @keyframes wl1b{
+        0%,3%{fill:#5a7a8a;stroke:#7a9aaa;stroke-width:2;stroke-dasharray:5,5}
+        37%{fill:#5a7a8a;stroke:#7a9aaa;stroke-width:2;stroke-dasharray:5,5}
+        38%,40%,44%,46%{fill:#5a7a8a;stroke:#f44336;stroke-width:4;stroke-dasharray:5,5}
+        41%,43%{fill:#5a7a8a;stroke:#f44336;stroke-width:2.5;stroke-dasharray:5,5}
+        47%,48%{fill:#5a7a8a;stroke:#7a9aaa;stroke-width:2;stroke-dasharray:5,5}
+        52%,78%{fill:#4a5a4a;stroke:#6a7a6a;stroke-width:2;stroke-dasharray:5,5}
+        84%,100%{fill:#5a7a8a;stroke:#7a9aaa;stroke-width:2;stroke-dasharray:5,5}
+      }
+      @keyframes wl1po{0%,37%{opacity:0}38%,48%{opacity:1}50%,100%{opacity:0}}
+      @keyframes wl1ph{0%,37%{opacity:0}40%,48%{opacity:.85}50%,100%{opacity:0}}
+      @keyframes wl1tf{0%,2%{opacity:0}3%,37%{opacity:1}40%,48%{opacity:.2}52%,78%{opacity:1}84%,100%{opacity:0}}
+      @keyframes wl1s{
+        0%{opacity:0;transform:translate(770px,60px)}
+        3%,46%{opacity:1;transform:translate(770px,60px)}
+        52%,78%{opacity:1;transform:translate(483px,60px)}
+        84%{opacity:0;transform:translate(483px,60px)}
+        90%,100%{opacity:0;transform:translate(770px,60px)}
+      }
+      @keyframes wl1rt{0%,2%{opacity:0}3%,36%{opacity:1}38%,100%{opacity:0}}
+      @keyframes wl1pt{0%,52%{opacity:0}54%,78%{opacity:1}84%,100%{opacity:0}}
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#b0b0b0"/>
+    </marker>
+    <pattern id="crosshatch-dark" patternUnits="userSpaceOnUse" width="8" height="8">
+      <rect width="8" height="8" fill="rgba(30,30,30,0.75)"/>
+      <path d="M0,8 l8,-8 M-2,2 l4,-4 M6,10 l4,-4" stroke="#555" stroke-width="0.5" opacity="0.5"/>
+    </pattern>
+  </defs>
+
+  <g class="scene">
+    <text x="405" y="25" class="label">Workload Priority &amp; Preemption</text>
+    <text x="405" y="42" class="qlabel">Vision Team's Queue</text>
+    <text x="910" y="90" class="label">Running</text>
+    <text x="120" y="60" class="label">Back</text>
+    <text x="680" y="60" class="label">Front</text>
+    <line x1="655" y1="55" x2="155" y2="55" class="arrow"/>
+    <rect x="755" y="60" width="310" height="160" class="running-border" rx="5"/>
+    <g transform="translate(0,120)">
+      <rect x="920" class="wf-box node-box"/>
+      <text x="985" y="45" class="wf-label" fill="#666">GPU 2</text>
+    </g>
+  </g>
+  <g class="gpu1-node" transform="translate(0,120)">
+    <rect x="770" class="wf-box node-box"/>
+    <text x="835" y="45" class="wf-label" fill="#666">GPU 1</text>
+  </g>
+
+  <g class="queue-wl3">
+    <rect y="60" class="wf-box wf-train"/>
+    <text x="65" y="92" class="wf-title dim">train</text>
+    <text x="65" y="112" class="wf-label dim">(pri: 50)</text>
+    <text x="65" y="128" class="wf-label dim">Submitted: 1st</text>
+  </g>
+  <g class="queue-wl4">
+    <rect y="60" class="wf-box wf-train"/>
+    <text x="65" y="92" class="wf-title dim">train</text>
+    <text x="65" y="112" class="wf-label dim">(pri: 50)</text>
+    <text x="65" y="128" class="wf-label dim">Submitted: 2nd</text>
+  </g>
+
+  <g class="running-wl1">
+    <rect y="60" class="wf-box wf-running-train"/>
+    <rect y="60" width="130" height="80" rx="3" class="preemption-hatch"/>
+    <text x="65" y="92" class="wf-title" fill="#fff">train</text>
+    <text x="65" y="112" class="wf-label" fill="#c0d8f0">(pri: 50)</text>
+    <text x="65" y="128" class="wf-label running-text" fill="#c0d8f0">Running</text>
+    <text x="65" y="128" class="wf-label preempted-text">Preempted</text>
+    <text x="65" y="105" class="preemption-overlay">Preemption</text>
+  </g>
+
+  <g class="running-wl2">
+    <rect y="60" class="wf-box wf-running"/>
+    <text x="65" y="92" class="wf-title" fill="#fff">build</text>
+    <text x="65" y="112" class="wf-label" fill="#c0d8f0">(pri: 100)</text>
+    <text x="65" y="128" class="wf-label" fill="#c0d8f0">Running</text>
+  </g>
+
+  <g class="queue-wl5">
+    <rect y="60" class="wf-box wf-inference"/>
+    <text x="65" y="92" class="wf-title">inference</text>
+    <text x="65" y="112" class="wf-label">(pri: 125)</text>
+    <text x="65" y="128" class="wf-label submitted-text">Submitted: 3rd</text>
+    <text x="65" y="128" class="wf-label running-text" fill="#fff">Running</text>
+  </g>
+</svg>
