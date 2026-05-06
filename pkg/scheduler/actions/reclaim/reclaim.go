@@ -81,7 +81,7 @@ func (ra *reclaimAction) Execute(ssn *framework.Session) {
 			}
 		}
 		tasks := podgroup_info.GetTasksToAllocate(job, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false)
-		if task, failure := common.VictimInvariantPrePredicateFailureForTasks(ssn, job, tasks); failure != nil {
+		if task, failure := common.VictimInvariantPrePredicateFailureForTasks(ssn, tasks); failure != nil {
 			common.RecordVictimInvariantPrePredicateFailure(job, task, failure)
 			continue
 		}

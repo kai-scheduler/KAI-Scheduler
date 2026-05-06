@@ -303,7 +303,6 @@ Proposed helper:
 ```go
 func VictimInvariantPrePredicateFailureForTasks(
 	ssn *framework.Session,
-	job *podgroup_info.PodGroupInfo,
 	tasks []*pod_info.PodInfo,
 ) (*pod_info.PodInfo, *api.VictimInvariantPrePredicateFailure)
 ```

@@ -18,7 +18,6 @@ import (
 )
 
 func TestVictimInvariantPrePredicateFailureForTasks(t *testing.T) {
-	job := podgroup_info.NewPodGroupInfo("job-1")
 	task1 := &pod_info.PodInfo{UID: common_info.PodID(types.UID("task-1")), Name: "task-1", Namespace: "ns1"}
 	task2 := &pod_info.PodInfo{UID: common_info.PodID(types.UID("task-2")), Name: "task-2", Namespace: "ns1"}
 	expectedErr := errors.New("missing dependency")
@@ -35,7 +34,7 @@ func TestVictimInvariantPrePredicateFailureForTasks(t *testing.T) {
 		}
 	})
 
-	blockedTask, failure := VictimInvariantPrePredicateFailureForTasks(ssn, job, []*pod_info.PodInfo{task1, task2})
+	blockedTask, failure := VictimInvariantPrePredicateFailureForTasks(ssn, []*pod_info.PodInfo{task1, task2})
 	require.NotNil(t, failure)
 	require.Same(t, task2, blockedTask)
 	require.Same(t, expectedErr, failure.Err)
