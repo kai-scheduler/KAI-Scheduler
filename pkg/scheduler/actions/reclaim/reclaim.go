@@ -110,9 +110,10 @@ func (ra *reclaimAction) attemptToReclaimForSpecificJob(
 	ssn.OnJobSolutionStart()
 
 	feasibleNodes := common.FeasibleNodesForJob(maps.Values(ssn.ClusterInfo.Nodes), reclaimer)
+	validator := solvers.LegacyValidator(ssn, "reclaim", ssn.ReclaimScenarioValidatorFn)
 	solver := solvers.NewJobsSolver(
 		feasibleNodes,
-		ssn.ReclaimScenarioValidatorFn,
+		validator,
 		getOrderedVictimsQueue(ssn, reclaimer),
 		framework.Reclaim)
 	return solver.Solve(ssn, reclaimer)

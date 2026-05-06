@@ -112,9 +112,10 @@ func attemptToPreemptForPreemptor(
 	}
 
 	feasibleNodes := common.FeasibleNodesForJob(maps.Values(ssn.ClusterInfo.Nodes), preemptor)
+	validator := solvers.LegacyValidator(ssn, "preempt", ssn.PreemptScenarioValidator)
 	solver := solvers.NewJobsSolver(
 		feasibleNodes,
-		ssn.PreemptScenarioValidator,
+		validator,
 		getOrderedVictimsQueue(ssn, preemptor),
 		framework.Preempt,
 	)
