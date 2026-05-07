@@ -10,16 +10,16 @@ import (
 	"github.com/stretchr/testify/require"
 	. "go.uber.org/mock/gomock"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/preempt"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/preempt"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/constants"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 )
 
 func TestPreemptSkipsSolverForVictimInvariantPrePredicateFailure(t *testing.T) {
@@ -59,8 +59,8 @@ func TestPreemptSkipsSolverForVictimInvariantPrePredicateFailure(t *testing.T) {
 		}},
 	}, controller)
 
-	job := ssn.ClusterInfo.PodGroupInfos[common_info.PodGroupID("pending-job")]
-	task := job.GetAllPodsMap()[common_info.PodID("pending-job-0")]
+	job := ssn.PodGroupInfos[common_info.PodGroupID("pending-job")]
+	task := job.PodInfos[common_info.PodID("pending-job-0")]
 	blockerErr := errors.New("blocked before preempt")
 	calls := 0
 	ssn.AddVictimInvariantPrePredicateFn(func(gotTask *pod_info.PodInfo) *api.VictimInvariantPrePredicateFailure {
@@ -75,7 +75,7 @@ func TestPreemptSkipsSolverForVictimInvariantPrePredicateFailure(t *testing.T) {
 
 	require.Positive(t, calls)
 	require.Equal(t, pod_status.Pending, task.Status)
-	require.Contains(t, job.TasksFitErrors[task.UID].Error(), blockerErr.Error())
+	require.Contains(t, job.NodesFitErrors[task.UID].Error(), blockerErr.Error())
 	require.NotEmpty(t, job.JobFitErrors)
-	require.Contains(t, job.JobFitErrors[0].DetailedMessage(), "Resources were not found for pod /pending-job-0 due to:")
+	require.Contains(t, job.JobFitErrors[0].Message, "Resources were not found for pod /pending-job-0 due to:")
 }
