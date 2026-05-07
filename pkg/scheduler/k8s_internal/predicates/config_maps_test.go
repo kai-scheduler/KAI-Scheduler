@@ -9,6 +9,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ksf "k8s.io/kube-scheduler/framework"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -701,6 +702,17 @@ func TestPreFilterOptionalConfigMapVolumes(t *testing.T) {
 				t.Errorf("Test %s: Expected %t, got %v", test.name, test.expectedError, status)
 			}
 		})
+	}
+}
+
+func TestPreFilterMissingRequiredConfigMapsReturnsUnschedulableAndUnresolvable(t *testing.T) {
+	cmp := NewConfigMapPredicate(nil)
+	_, status := cmp.PreFilter(context.Background(), nil, podWithConfigMapVolume("required-cm", boolPtr(false)), nil)
+	if status == nil {
+		t.Fatal("PreFilter() returned nil status for a missing required ConfigMap")
+	}
+	if status.Code() != ksf.UnschedulableAndUnresolvable {
+		t.Fatalf("PreFilter() code = %v, want %v", status.Code(), ksf.UnschedulableAndUnresolvable)
 	}
 }
 

@@ -200,6 +200,30 @@ main { padding: 16px 24px; max-width: 1280px; margin: 0 auto; }
 .run-dur  { color: var(--muted); font-size: 11px; font-family: monospace; white-space: nowrap; flex-shrink: 0; }
 .run-counts { margin-left: auto; display: flex; gap: 12px; font-size: 12px; flex-shrink: 0; align-items: center; }
 
+.commit-display {
+  font-size: 12px;
+  padding: 0 8px;
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.commit-link {
+  font-family: monospace;
+  color: var(--accent);
+  text-decoration: none;
+  transition: color 0.1s;
+}
+.commit-link:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+.commit-na {
+  font-family: monospace;
+  color: var(--muted);
+  opacity: 0.5;
+}
+
 .c-pass  { color: var(--pass); }
 .c-fail  { color: var(--fail); }
 .c-skip  { color: var(--skip); }
