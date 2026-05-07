@@ -6,11 +6,11 @@ package common
 import (
 	"fmt"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
 )
 
 func VictimInvariantPrePredicateFailureForTasks(

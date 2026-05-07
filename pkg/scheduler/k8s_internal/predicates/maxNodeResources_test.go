@@ -290,7 +290,7 @@ func Test_podToMaxNodeResourcesFiltering(t *testing.T) {
 				},
 			},
 			expected{
-				ksf.NewStatus(ksf.Unschedulable,
+				ksf.NewStatus(ksf.UnschedulableAndUnresolvable,
 					"The pod n1/name1 requires GPU: 0, CPU: 0 (cores), memory: 0 (GB), ephemeral-storage: 25 (GB). "+
 						"Max ephemeral-storage resources available in a single node in the default node-pool is topped at 21.474 GB"),
 			},

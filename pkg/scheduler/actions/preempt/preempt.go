@@ -76,7 +76,7 @@ func (alloc *preemptAction) Execute(ssn *framework.Session) {
 				continue
 			}
 		}
-		tasks := podgroup_info.GetTasksToAllocate(job, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false)
+		tasks := podgroup_info.GetTasksToAllocate(job, ssn.PodSetOrderFn, ssn.TaskOrderFn, false)
 		if task, failure := common.VictimInvariantPrePredicateFailureForTasks(ssn, tasks); failure != nil {
 			common.RecordVictimInvariantPrePredicateFailure(job, task, failure)
 			continue

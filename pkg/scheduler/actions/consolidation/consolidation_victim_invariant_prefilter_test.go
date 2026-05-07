@@ -10,16 +10,16 @@ import (
 	"github.com/stretchr/testify/require"
 	. "go.uber.org/mock/gomock"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/consolidation"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/consolidation"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/constants"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
+	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 )
 
 func TestConsolidationSkipsSolverForVictimInvariantPrePredicateFailure(t *testing.T) {
