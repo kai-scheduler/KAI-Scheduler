@@ -279,6 +279,13 @@ function renderRun(run, runIdx) {
   if (!specHtml) return '';
 
   const tsStr  = fmtDate(run.timestamp);
+  const commit = run.commit;
+  const commitHtml = commit
+    ? `<a href="https://github.com/kai-scheduler/KAI-Scheduler/commit/${esc(commit)}"
+         target="_blank"
+         class="commit-link"
+         title="${esc(commit)}">${esc(commit.substring(0, 8))}</a>`
+    : '<span class="commit-na">N/A</span>';
   const passed  = run.specs.filter(s => s.State === 'passed').length;
   const failed  = run.specs.filter(s => s.State === 'failed').length;
   const skipped = run.specs.filter(s => s.State === 'skipped' || s.State === 'pending').length;
@@ -292,6 +299,7 @@ function renderRun(run, runIdx) {
            aria-expanded="${autoOpen}" onkeydown="if(event.key==='Enter'||event.key===' ')toggleRun('${runId}')">
         <span class="chevron" aria-hidden="true">▶</span>
         <span class="run-ts">${esc(tsStr)}</span>
+        <span class="commit-display">${commitHtml}</span>
         <span class="run-desc">${esc(run.suite?.SuiteDescription || 'Scale Suite')}</span>
         <span class="run-dur">${esc(nsToHuman(run.suite?.RunTime))}</span>
         <div class="run-counts">
@@ -378,7 +386,7 @@ function processReport(reportJson, meta) {
   const specs   = (suite.SpecReports || []).filter(
     s => s.LeafNodeType === 'It' || s.State === 'failed'
   );
-  return { timestamp: meta.timestamp, path: meta.path, suite, specs };
+  return { timestamp: meta.timestamp, path: meta.path, commit: meta.commit, suite, specs };
 }
 
 async function init() {
