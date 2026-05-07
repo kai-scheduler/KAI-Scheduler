@@ -20,15 +20,11 @@ const (
 )
 
 func upgradeKAIScheduler(chartPath string) {
-	// --take-ownership lets helm adopt resources that lack the standard
-	// release-ownership labels — e.g. anything a prior chart created as a
-	// hook. Requires Helm 3.17+ / 4.x.
 	args := []string{
 		"upgrade", kaiReleaseName, chartPath,
 		"-n", kaiNamespace,
 		"--set", "global.gpuSharing=true",
 		"--set", "global.registry=localhost:30100",
-		"--take-ownership",
 		"--wait",
 		"--timeout", helmUpgradeTimeout.String(),
 	}

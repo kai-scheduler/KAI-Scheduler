@@ -63,8 +63,9 @@ func DescribeUpgradeSpecs() bool {
 			By("Running helm upgrade to the new version")
 			upgradeKAIScheduler(upgradeChartPath)
 
-			// Adopting the prior chart's kai-config and rolling every operand
-			// in place takes longer than a fresh install, so allow more headroom
+			// kai-config is applied by a post-upgrade hook Job that runs
+			// after helm --wait returns; the operator then has to roll every
+			// operand in place against the new spec, so allow more headroom
 			// than the default 2-minute status timeout.
 			const upgradeStatusTimeout = 5 * time.Minute
 
