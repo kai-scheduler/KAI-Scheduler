@@ -310,6 +310,18 @@ jobs:
         run: |
           ginkgo -r --keep-going --trace -vv --label-filter 'upgrade' --output-dir=. --json-report=e2e-upgrade-report.json ./test/e2e/suites/upgrade
 
+      # Debug-only: open an SSH session into the runner when the upgrade tests
+      # fail, so the cluster state can be inspected directly. Restricted to the
+      # PR actor (uses their registered SSH keys); auto-times out after 30 min.
+      # Remove before merging.
+      - name: Debug — tmate SSH on failure
+        if: failure() && steps.resolve_version.outputs.skip != 'true'
+        uses: mxschmitt/action-tmate@v3
+        timeout-minutes: 30
+        with:
+          limit-access-to-actor: true
+          detached: false
+
   fossa-validate:
     needs: [ build, check-build-and-test-required ]
     if: needs.check-build-and-test-required.outputs.code == 'true'
