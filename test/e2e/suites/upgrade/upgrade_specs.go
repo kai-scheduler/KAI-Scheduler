@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -62,11 +63,16 @@ func DescribeUpgradeSpecs() bool {
 			By("Running helm upgrade to the new version")
 			upgradeKAIScheduler(upgradeChartPath)
 
+			// Adopting the prior chart's kai-config and rolling every operand
+			// in place takes longer than a fresh install, so allow more headroom
+			// than the default 2-minute status timeout.
+			const upgradeStatusTimeout = 5 * time.Minute
+
 			By("Waiting for KAI config to report healthy status")
-			wait.ForKAIConfigStatusOK(ctx, testCtx.ControllerClient)
+			wait.ForKAIConfigStatusOKWithTimeout(ctx, testCtx.ControllerClient, upgradeStatusTimeout)
 
 			By("Waiting for default scheduling shard to report healthy status")
-			wait.ForSchedulingShardStatusOK(ctx, testCtx.ControllerClient, "default")
+			wait.ForSchedulingShardStatusOKWithTimeout(ctx, testCtx.ControllerClient, "default", upgradeStatusTimeout)
 		})
 
 		It("should keep pre-upgrade workload running after upgrade", func(ctx context.Context) {

@@ -20,9 +20,9 @@ const (
 )
 
 func upgradeKAIScheduler(chartPath string) {
-	// --take-ownership covers the one-time transition from the previous chart's
-	// hook-managed kai-config CR to the regular release resource introduced in
-	// #1536. Helm 3.17+ / 4.x.
+	// --take-ownership lets helm adopt resources that lack the standard
+	// release-ownership labels — e.g. anything a prior chart created as a
+	// hook. Requires Helm 3.17+ / 4.x.
 	args := []string{
 		"upgrade", kaiReleaseName, chartPath,
 		"-n", kaiNamespace,
