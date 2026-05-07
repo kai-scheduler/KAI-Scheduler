@@ -50,6 +50,6 @@ Are you using KAI Scheduler? We'd love to hear from you. Open a Pull Request aga
 - **Phase** — Evaluation, Staging, or Production
 - **Type** — End User, Platform / Provider, or both
 
-If you'd prefer not to be listed publicly, we're happy to hear from you privately instead — see [MAINTAINERS](#) for contact details.
+If you'd prefer not to be listed publicly, we're happy to hear from you privately instead — see [MAINTAINERS](https://github.com/kai-scheduler/KAI-Scheduler/blob/main/MAINTAINERS.md) for contact details.
 
 This list is community-maintained. Entries may be updated or removed if they become stale; if your organization's status changes, please open a PR.
