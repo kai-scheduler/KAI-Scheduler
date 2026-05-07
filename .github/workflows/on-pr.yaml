@@ -303,6 +303,18 @@ jobs:
           kubectl create clusterrole pods-patcher --verb=patch --resource=pods
           kubectl create rolebinding fake-status-updater --clusterrole=pods-patcher --serviceaccount=gpu-operator:status-updater -n kai-resource-reservation
 
+      # Debug-only: opens a detached tmate SSH session BEFORE the upgrade
+      # tests run so the actor can connect, watch the test flow live, and
+      # inspect cluster state in real time. Restricted to the PR actor
+      # (uses their registered SSH keys). The session stays alive in the
+      # background until the job ends. Remove before merging.
+      - name: Debug — tmate SSH (detached, before upgrade tests)
+        if: steps.resolve_version.outputs.skip != 'true'
+        uses: mxschmitt/action-tmate@v3
+        with:
+          limit-access-to-actor: true
+          detached: true
+
       - name: Run upgrade e2e tests
         if: steps.resolve_version.outputs.skip != 'true'
         env:
@@ -310,11 +322,11 @@ jobs:
         run: |
           ginkgo -r --keep-going --trace -vv --label-filter 'upgrade' --output-dir=. --json-report=e2e-upgrade-report.json ./test/e2e/suites/upgrade
 
-      # Debug-only: open an SSH session into the runner when the upgrade tests
-      # fail, so the cluster state can be inspected directly. Restricted to the
-      # PR actor (uses their registered SSH keys); auto-times out after 30 min.
-      # Remove before merging.
-      - name: Debug — tmate SSH on failure
+      # Debug-only: keeps the runner alive after a failure so the SSH
+      # session from the detached step above doesn't get torn down with
+      # the job. Blocks until the actor types `touch /continue` or the
+      # 30-minute timeout fires. Remove before merging.
+      - name: Debug — keep runner alive on failure
         if: failure() && steps.resolve_version.outputs.skip != 'true'
         uses: mxschmitt/action-tmate@v3
         timeout-minutes: 30
