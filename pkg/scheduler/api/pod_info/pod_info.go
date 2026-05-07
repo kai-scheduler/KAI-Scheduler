@@ -378,45 +378,11 @@ func getPodGroupID(pod *v1.Pod) common_info.PodGroupID {
 }
 
 func getPodResourceRequest(pod *v1.Pod) *resource_info.ResourceRequirements {
-	// Steady-state running sum: regular (main) containers.
 	result := getPodResourceWithoutInitContainers(pod)
 
-	// Walk init containers in spec order, tracking the cumulative prefix of
-	// native sidecars (initContainers with `restartPolicy: Always`, KEP-753).
-	// Native sidecars start before regular containers and persist alongside
-	// them, so:
-	//   * they contribute to the steady-state running sum (added to `result`
-	//     after the loop), and
-	//   * a regular initContainer's peak demand is `init.Requests +
-	//     sum(sidecars_declared_before_it)`, since those sidecars are already
-	//     running concurrently with the init.
-	// This matches kubelet's admission accounting in
-	// `k8s.io/component-helpers/resource.PodRequests` (see
-	// `AggregateContainerRequests` in `helpers.go`); diverging from it leads
-	// to KAI binding pods that kubelet then rejects with `OutOfCpu`/`OutOfGpu`.
-	logErr := func(err error) {
-		if err != nil {
-			log.InfraLogger.Errorf("Failed to calculate pod required resources for pod %s/%s. Error: %s",
-				pod.Namespace, pod.Name, err.Error())
-		}
-	}
-	sidecarPrefix := resource_info.EmptyResourceRequirements()
-	initPhasePeak := resource_info.EmptyResourceRequirements()
-	for _, container := range pod.Spec.InitContainers {
-		containerReq := resource_info.RequirementsFromResourceList(container.Resources.Requests)
-		if container.RestartPolicy != nil && *container.RestartPolicy == v1.ContainerRestartPolicyAlways {
-			logErr(sidecarPrefix.Add(containerReq))
-			continue
-		}
-		// Peak at this regular init's runtime = its own request plus every
-		// native sidecar declared before it (which is already running).
-		logErr(containerReq.Add(sidecarPrefix))
-		logErr(initPhasePeak.SetMaxResource(containerReq))
-	}
-	// Steady-state running sum: include all native sidecars.
-	logErr(result.Add(sidecarPrefix))
-	// Final: max(steady-state, init-phase peak).
-	logErr(result.SetMaxResource(initPhasePeak))
+	sidecarSum, initPhasePeak := initContainerEffects(pod)
+	logIfErr(pod, result.Add(sidecarSum))
+	logIfErr(pod, result.SetMaxResource(initPhasePeak))
 
 	if pod.Spec.Overhead != nil {
 		overheadReq := resource_info.RequirementsFromResourceList(pod.Spec.Overhead)
@@ -426,6 +392,36 @@ func getPodResourceRequest(pod *v1.Pod) *resource_info.ResourceRequirements {
 	result.ScalarResources()[resource_info.PodsResourceName] = 1
 
 	return result
+}
+
+// initContainerEffects returns the contributions of `pod`'s init containers to
+// pod resource accounting, mirroring kubelet's `AggregateContainerRequests`:
+//   - sidecarSum: total request of native sidecars (initContainers with
+//     `restartPolicy: Always`, KEP-753), which run concurrently with regular
+//     containers and add to the steady-state sum.
+//   - initPhasePeak: max over each non-restartable init of `init.Requests +
+//     sum(native sidecars declared before it)`, since those sidecars are
+//     already running when the init runs.
+func initContainerEffects(pod *v1.Pod) (sidecarSum, initPhasePeak *resource_info.ResourceRequirements) {
+	sidecarSum = resource_info.EmptyResourceRequirements()
+	initPhasePeak = resource_info.EmptyResourceRequirements()
+	for _, container := range pod.Spec.InitContainers {
+		containerReq := resource_info.RequirementsFromResourceList(container.Resources.Requests)
+		if container.RestartPolicy != nil && *container.RestartPolicy == v1.ContainerRestartPolicyAlways {
+			logIfErr(pod, sidecarSum.Add(containerReq))
+			continue
+		}
+		logIfErr(pod, containerReq.Add(sidecarSum))
+		logIfErr(pod, initPhasePeak.SetMaxResource(containerReq))
+	}
+	return sidecarSum, initPhasePeak
+}
+
+func logIfErr(pod *v1.Pod, err error) {
+	if err != nil {
+		log.InfraLogger.Errorf("Failed to calculate pod required resources for pod %s/%s. Error: %s",
+			pod.Namespace, pod.Name, err.Error())
+	}
 }
 
 // getPodResourceWithoutInitContainers returns Pod's resource request, it does not contain
