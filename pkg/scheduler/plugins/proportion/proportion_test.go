@@ -29,6 +29,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	k8splugins "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal/plugins"
+	rec "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/reclaimable"
 	rs "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
 )
 
@@ -1002,6 +1003,105 @@ var _ = Describe("New", func() {
 			plugin := New(args).(*proportionPlugin)
 			Expect(plugin.pluginArguments).To(Equal(args))
 			Expect(plugin.relcaimerSaturationMultiplier).To(Equal(1.0))
+		})
+	})
+
+	Context("handleAllVictimsConsolidated", func() {
+		makeQueue := func(name string, allocated, deserved float64) *rs.QueueAttributes {
+			q := &rs.QueueAttributes{
+				UID:  common_info.QueueID(name),
+				Name: name,
+			}
+			q.SetQuotaResources(rs.GpuResource, deserved, commonconstants.UnlimitedResourceQuantity, 0)
+			q.SetQuotaResources(rs.CpuResource, commonconstants.UnlimitedResourceQuantity, commonconstants.UnlimitedResourceQuantity, 0)
+			q.SetQuotaResources(rs.MemoryResource, commonconstants.UnlimitedResourceQuantity, commonconstants.UnlimitedResourceQuantity, 0)
+			q.GPU.Allocated = allocated
+			return q
+		}
+
+		It("should reject when reclaimer would exceed deserved quota", func() {
+			plugin := &proportionPlugin{
+				jobSimulationQueues: map[common_info.QueueID]*rs.QueueAttributes{
+					"pre-training": makeQueue("pre-training", 6215, 5120),
+				},
+			}
+			reclaimerInfo := &rec.ReclaimerInfo{
+				Name:              "test-job",
+				Namespace:         "pre-training",
+				Queue:             "pre-training",
+				RequiredResources: resource_info.NewResourceVectorWithValues(0, 0, 32, testVectorMap),
+				VectorMap:         testVectorMap,
+				IsPreemptable:     true,
+			}
+			result := plugin.handleAllVictimsConsolidated(reclaimerInfo, 15, 15)
+			Expect(result).To(BeFalse())
+		})
+
+		It("should approve when reclaimer stays within deserved quota", func() {
+			plugin := &proportionPlugin{
+				jobSimulationQueues: map[common_info.QueueID]*rs.QueueAttributes{
+					"queue1": makeQueue("queue1", 0, 2),
+				},
+			}
+			reclaimerInfo := &rec.ReclaimerInfo{
+				Name:              "test-job",
+				Namespace:         "queue1",
+				Queue:             "queue1",
+				RequiredResources: resource_info.NewResourceVectorWithValues(0, 0, 2, testVectorMap),
+				VectorMap:         testVectorMap,
+				IsPreemptable:     true,
+			}
+			result := plugin.handleAllVictimsConsolidated(reclaimerInfo, 1, 1)
+			Expect(result).To(BeTrue())
+		})
+
+		It("should approve GPU-starved queue even when CPU/Memory deserved is zero", func() {
+			q := &rs.QueueAttributes{
+				UID:  "gpu-queue",
+				Name: "gpu-queue",
+			}
+			q.SetQuotaResources(rs.GpuResource, 4, commonconstants.UnlimitedResourceQuantity, 0)
+			q.SetQuotaResources(rs.CpuResource, 0, commonconstants.UnlimitedResourceQuantity, 0)
+			q.SetQuotaResources(rs.MemoryResource, 0, commonconstants.UnlimitedResourceQuantity, 0)
+			q.GPU.Allocated = 1
+			q.CPU.Allocated = 500
+			q.Memory.Allocated = 1000
+
+			plugin := &proportionPlugin{
+				jobSimulationQueues: map[common_info.QueueID]*rs.QueueAttributes{
+					"gpu-queue": q,
+				},
+			}
+			reclaimerInfo := &rec.ReclaimerInfo{
+				Name:              "test-job",
+				Namespace:         "ns",
+				Queue:             "gpu-queue",
+				RequiredResources: resource_info.NewResourceVectorWithValues(100, 500, 2, testVectorMap),
+				VectorMap:         testVectorMap,
+				IsPreemptable:     true,
+			}
+			result := plugin.handleAllVictimsConsolidated(reclaimerInfo, 1, 1)
+			Expect(result).To(BeTrue())
+		})
+	})
+
+	Context("isUnderDeservedForManagedResources", func() {
+		It("should return true when all managed resources are under deserved", func() {
+			allocated := rs.ResourceQuantities{rs.GpuResource: 3, rs.CpuResource: 100, rs.MemoryResource: 200}
+			deserved := rs.ResourceQuantities{rs.GpuResource: 5, rs.CpuResource: commonconstants.UnlimitedResourceQuantity, rs.MemoryResource: commonconstants.UnlimitedResourceQuantity}
+			Expect(isUnderDeservedForManagedResources(allocated, deserved)).To(BeTrue())
+		})
+
+		It("should return false when GPU exceeds deserved", func() {
+			allocated := rs.ResourceQuantities{rs.GpuResource: 6, rs.CpuResource: 100, rs.MemoryResource: 200}
+			deserved := rs.ResourceQuantities{rs.GpuResource: 5, rs.CpuResource: commonconstants.UnlimitedResourceQuantity, rs.MemoryResource: commonconstants.UnlimitedResourceQuantity}
+			Expect(isUnderDeservedForManagedResources(allocated, deserved)).To(BeFalse())
+		})
+
+		It("should skip resources with deserved=0", func() {
+			allocated := rs.ResourceQuantities{rs.GpuResource: 2, rs.CpuResource: 500, rs.MemoryResource: 1000}
+			deserved := rs.ResourceQuantities{rs.GpuResource: 4, rs.CpuResource: 0, rs.MemoryResource: 0}
+			Expect(isUnderDeservedForManagedResources(allocated, deserved)).To(BeTrue())
 		})
 	})
 })
