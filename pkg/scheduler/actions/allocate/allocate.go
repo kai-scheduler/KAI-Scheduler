@@ -26,6 +26,7 @@ import (
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
@@ -46,6 +47,11 @@ func (alloc *allocateAction) Name() framework.ActionType {
 func (alloc *allocateAction) Execute(ssn *framework.Session) {
 	log.InfraLogger.V(2).Infof("Enter Allocate ...")
 	defer log.InfraLogger.V(2).Infof("Leaving Allocate ...")
+
+	// Unsuspend workloads that were previously suspended by KAI's
+	// preemption and now have resources available. Suspended workloads
+	// have no pods, so they're invisible to the main allocate loop.
+	unsuspendReadyWorkloads(ssn)
 
 	jobsOrderByQueues := utils.NewJobsOrderByQueues(ssn, utils.JobsOrderInitOptions{
 		FilterNonPending:  true,
@@ -108,6 +114,39 @@ func attemptToAllocateJob(ssn *framework.Session, stmt *framework.Statement, job
 	}
 
 	return true, pipelined
+}
+
+// unsuspendReadyWorkloads finds PodGroups that were suspended by KAI's
+// preemption and unsuspends them so the workload controller can recreate
+// pods. Suspended workloads have no pods, making them invisible to the
+// main allocate loop. We unsuspend unconditionally — if resources are
+// still contended, the workload will be preempted again in the next
+// scheduling cycle.
+func unsuspendReadyWorkloads(ssn *framework.Session) {
+	if ssn.DynamicClient == nil {
+		return
+	}
+
+	for _, job := range ssn.ClusterInfo.PodGroupInfos {
+		if common.GetEvictionStrategy(job) != eviction_info.EvictionStrategySuspend {
+			continue
+		}
+		// A suspended workload has zero alive tasks.
+		if job.GetNumAliveTasks() > 0 {
+			continue
+		}
+		suspended, err := framework.IsSuspendedByKAI(ssn.DynamicClient, job)
+		if err != nil || !suspended {
+			continue
+		}
+
+		log.InfraLogger.V(2).Infof("Unsuspending workload for PodGroup %s/%s",
+			job.Namespace, job.Name)
+		if err := framework.UnsuspendWorkload(ssn.DynamicClient, job); err != nil {
+			log.InfraLogger.Errorf("Failed to unsuspend workload for PodGroup %s/%s: %v",
+				job.Namespace, job.Name, err)
+		}
+	}
 }
 
 func setLastStartTimestamp(job *podgroup_info.PodGroupInfo) {
