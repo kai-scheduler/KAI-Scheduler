@@ -42,6 +42,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Suppressed noisy `Reconciler error` logs and `PodGrouperWarning` events on transient PodGroup update conflicts. The podgrouper now treats `IsConflict` errors as expected and silently requeues the reconcile instead of surfacing the apiserver's "object has been modified" message.
 - Fixed kai-operator not reconciling on Prometheus and ServiceMonitor changes. The Config controller now watches owned `Prometheus` and `ServiceMonitor` resources, so deletions and drift trigger reconciliation. CRD presence is checked at startup against the API server (the scheme-only check used previously could not detect missing CRDs), and the watch is registered only when the CRDs are installed. [#877](https://github.com/kai-scheduler/KAI-Scheduler/issues/877)
 - Added `before-hook-creation` to the `crd-upgrader` Helm hook delete policy so failed hook Jobs no longer block subsequent `helm upgrade --install` retries. Aligns with the policy already used by the chart's other hook resources. [#1404](https://github.com/kai-scheduler/KAI-Scheduler/issues/1404)
+- Fixed kai-operator leader-election event emission by adding RBAC permission for core `events` (`create`, `patch`, `update`) so operators can publish leadership events instead of logging `events is forbidden`. [#1572](https://github.com/kai-scheduler/KAI-Scheduler/pull/1572) [dttung2905](https://github.com/dttung2905)
 
 ## [v0.14.0] - 2026-03-30
 
