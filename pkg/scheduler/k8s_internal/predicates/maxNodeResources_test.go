@@ -547,7 +547,7 @@ func TestMaxNodeResourcesPredicateDRA(t *testing.T) {
 					},
 				},
 			},
-			ksf.NewStatus(ksf.Unschedulable,
+			ksf.NewStatus(ksf.UnschedulableAndUnresolvable,
 				"The pod n1/name1 requires GPU: 2, CPU: 0 (cores), memory: 0 (GB), pods: 1. Max GPU resources available in a single node in the default node-pool is topped at 1"),
 		},
 	}

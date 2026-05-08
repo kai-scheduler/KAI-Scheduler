@@ -111,6 +111,7 @@ type predicatesPlugin struct {
 
 	skipPredicates    SkipPredicates
 	prePredicateCache map[prePredicateCacheKey]cachedPrePredicateResult
+	ssn               *framework.Session
 }
 
 func New(_ framework.PluginArguments) framework.Plugin {
@@ -128,6 +129,7 @@ func (pp *predicatesPlugin) OnSessionOpen(ssn *framework.Session) {
 	pp.storageSchedulingEnabled = ssn.ScheduleCSIStorage()
 	pp.skipPredicates = SkipPredicates{}
 	pp.resetPrePredicateCache()
+	pp.ssn = ssn
 
 	ssn.AddPrePredicateFn(func(task *pod_info.PodInfo, _ *podgroup_info.PodGroupInfo) error {
 		return pp.evaluateTaskOnPrePredicate(task, k8sPredicates)
