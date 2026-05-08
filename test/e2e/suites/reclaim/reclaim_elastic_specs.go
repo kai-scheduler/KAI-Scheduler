@@ -14,19 +14,15 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/utils/ptr"
 
 	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/capacity"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd"
-	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/pod_group"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
-)
-
-const (
-	PodGroupLabelName = "pod-group-name"
 )
 
 func DescribeReclaimElasticSpecs() bool {
@@ -63,13 +59,25 @@ func DescribeReclaimElasticSpecs() bool {
 				},
 			}
 
-			reclaimeePodgroup1, pods1 := pod_group.CreateWithPods(ctx, testCtx.KubeClientset, testCtx.KubeAiSchedClientset,
-				"elastic-reclaimee-job-1", reclaimeeQueue, 2, nil, "",
-				reclaimeePodRequirements)
+			reclaimeeJob1, _, pods1, err := rd.CreateDistributedBatchJob(ctx, testCtx.ControllerClient, reclaimeeQueue,
+				rd.DistributedBatchJobOptions{
+					Parallelism:  ptr.To(int32(2)),
+					MinMember:    ptr.To(int32(1)),
+					BackoffLimit: ptr.To(int32(0)),
+					NamePrefix:   "elastic-reclaimee-1-",
+					Resources:    reclaimeePodRequirements,
+				})
+			Expect(err).To(Succeed())
 
-			reclaimeePodgroup2, pods2 := pod_group.CreateWithPods(ctx, testCtx.KubeClientset, testCtx.KubeAiSchedClientset,
-				"elastic-reclaimee-job-2", reclaimeeQueue, 2, nil, "",
-				reclaimeePodRequirements)
+			reclaimeeJob2, _, pods2, err := rd.CreateDistributedBatchJob(ctx, testCtx.ControllerClient, reclaimeeQueue,
+				rd.DistributedBatchJobOptions{
+					Parallelism:  ptr.To(int32(2)),
+					MinMember:    ptr.To(int32(1)),
+					BackoffLimit: ptr.To(int32(0)),
+					NamePrefix:   "elastic-reclaimee-2-",
+					Resources:    reclaimeePodRequirements,
+				})
+			Expect(err).To(Succeed())
 
 			var preempteePods []*v1.Pod
 			preempteePods = append(preempteePods, pods1...)
@@ -83,13 +91,13 @@ func DescribeReclaimElasticSpecs() bool {
 			}
 
 			reclaimerPod := rd.CreatePodObject(reclaimerQueue, reclaimerPodRequirements)
-			reclaimerPod, err := rd.CreatePod(ctx, testCtx.KubeClientset, reclaimerPod)
+			reclaimerPod, err = rd.CreatePod(ctx, testCtx.KubeClientset, reclaimerPod)
 			Expect(err).To(Succeed())
 			wait.ForPodScheduled(ctx, testCtx.ControllerClient, reclaimerPod)
 
 			wait.ForPodsWithCondition(ctx, testCtx.ControllerClient, func(watch.Event) bool {
 				pods, err := testCtx.KubeClientset.CoreV1().Pods(reclaimeeNamespace).List(ctx, metav1.ListOptions{
-					LabelSelector: fmt.Sprintf("%s=%s", PodGroupLabelName, reclaimeePodgroup1.Name),
+					LabelSelector: fmt.Sprintf("%s=%s", rd.JobNameLabel, reclaimeeJob1.Name),
 				})
 				Expect(err).To(Succeed())
 				return len(pods.Items) == 1
@@ -97,7 +105,7 @@ func DescribeReclaimElasticSpecs() bool {
 
 			wait.ForPodsWithCondition(ctx, testCtx.ControllerClient, func(watch.Event) bool {
 				pods, err := testCtx.KubeClientset.CoreV1().Pods(reclaimeeNamespace).List(ctx, metav1.ListOptions{
-					LabelSelector: fmt.Sprintf("%s=%s", PodGroupLabelName, reclaimeePodgroup2.Name),
+					LabelSelector: fmt.Sprintf("%s=%s", rd.JobNameLabel, reclaimeeJob2.Name),
 				})
 				Expect(err).To(Succeed())
 				return len(pods.Items) == 1
@@ -116,9 +124,15 @@ func DescribeReclaimElasticSpecs() bool {
 					constants.NvidiaGpuResource: resource.MustParse("1"),
 				},
 			}
-			reclaimeePodGroup, reclaimeePods := pod_group.CreateWithPods(ctx, testCtx.KubeClientset, testCtx.KubeAiSchedClientset,
-				"elastic-reclaimee-job", reclaimeeQueue, 2, nil, "",
-				reclaimeePodRequirements)
+			reclaimeeJob, _, reclaimeePods, err := rd.CreateDistributedBatchJob(ctx, testCtx.ControllerClient, reclaimeeQueue,
+				rd.DistributedBatchJobOptions{
+					Parallelism:  ptr.To(int32(2)),
+					MinMember:    ptr.To(int32(1)),
+					BackoffLimit: ptr.To(int32(0)),
+					NamePrefix:   "elastic-reclaimee-",
+					Resources:    reclaimeePodRequirements,
+				})
+			Expect(err).To(Succeed())
 			wait.ForPodsScheduled(ctx, testCtx.ControllerClient, reclaimeeNamespace, reclaimeePods)
 
 			reclaimerPodRequirements := v1.ResourceRequirements{
@@ -127,13 +141,13 @@ func DescribeReclaimElasticSpecs() bool {
 				},
 			}
 			reclaimerPod := rd.CreatePodObject(reclaimerQueue, reclaimerPodRequirements)
-			reclaimerPod, err := rd.CreatePod(ctx, testCtx.KubeClientset, reclaimerPod)
+			reclaimerPod, err = rd.CreatePod(ctx, testCtx.KubeClientset, reclaimerPod)
 			Expect(err).To(Succeed())
 			wait.ForPodScheduled(ctx, testCtx.ControllerClient, reclaimerPod)
 
 			wait.ForPodsWithCondition(ctx, testCtx.ControllerClient, func(watch.Event) bool {
 				pods, err := testCtx.KubeClientset.CoreV1().Pods(reclaimeeNamespace).List(ctx, metav1.ListOptions{
-					LabelSelector: fmt.Sprintf("%s=%s", PodGroupLabelName, reclaimeePodGroup.Name),
+					LabelSelector: fmt.Sprintf("%s=%s", rd.JobNameLabel, reclaimeeJob.Name),
 				})
 				Expect(err).To(Succeed())
 				return len(pods.Items) == 0
