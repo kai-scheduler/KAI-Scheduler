@@ -120,9 +120,10 @@ The current default binder plugins are:
 | --- | ---: | --- | --- |
 | `volumebinding` | 300 | `bindTimeoutSeconds: "120"` | Handles Kubernetes persistent volume binding before pod bind. |
 | `dynamicresources` | 200 | `bindTimeoutSeconds: "120"` | Handles Kubernetes Dynamic Resource Allocation claim binding before pod bind. |
-| `gpusharing` | 100 | `cdiEnabled: "false"`, `hamiCoreEnabled: "false"` | Handles fractional GPU pod mutation needed for GPU sharing. |
+| `gpusharing` | 100 | `cdiEnabled: "false"` | Handles fractional GPU pod mutation needed for GPU sharing. |
+| `hamicore` | 50 |  | Optional HAMI-core GPU virtualization for fractional GPU pods. Depends on `gpusharing`. Disabled by default. |
 
-For operator-managed deployments, the operator sets the `gpusharing` `cdiEnabled` argument from `spec.binder.cdiEnabled`. If `spec.binder.cdiEnabled` is unset, the operator attempts to auto-detect CDI from the NVIDIA GPU Operator `ClusterPolicy`. Set `hamiCoreEnabled: "true"` to opt into HAMI-core GPU memory limits.
+For operator-managed deployments, the operator sets the `gpusharing` `cdiEnabled` argument from `spec.binder.cdiEnabled`. If `spec.binder.cdiEnabled` is unset, the operator attempts to auto-detect CDI from the NVIDIA GPU Operator `ClusterPolicy`. Enable `hamicore` to opt into HAMI-core GPU memory limits.
 
 ### Config Examples
 
@@ -197,7 +198,9 @@ The dynamic resources plugin handles Kubernetes Dynamic Resource Allocation reso
 
 The GPU sharing plugin handles fractional GPU assignments. For shared GPU allocations it creates the required GPU sharing ConfigMaps and sets the NVIDIA visible devices and GPU portion information on the target container.
 
-When `hamiCoreEnabled` is `true`, the plugin also writes `CUDA_DEVICE_MEMORY_LIMIT` to the GPU sharing ConfigMap based on node label `nvidia.com/gpu.memory` and `BindRequest.spec.receivedGPU.portion`. This is disabled by default; enable it to opt into HAMI-core memory isolation.
+#### HAMI-core Plugin
+
+The HAMI-core plugin is disabled by default and **requires `gpusharing` to be enabled**. When enabled, it writes `CUDA_DEVICE_MEMORY_LIMIT` to the GPU sharing ConfigMap based on node label `nvidia.com/gpu.memory` and `BindRequest.spec.receivedGPU.portion`.
 
 ### Creating Custom Plugins
 

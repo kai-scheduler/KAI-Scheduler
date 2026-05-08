@@ -113,14 +113,15 @@ var _ = Describe("Binder", func() {
 				Expect(pluginConfig).To(HaveKey(binderplugins.VolumeBindingPluginName))
 				Expect(pluginConfig).To(HaveKey(binderplugins.DynamicResourcesPluginName))
 				Expect(pluginConfig).To(HaveKey(binderplugins.GPUSharingPluginName))
+				Expect(pluginConfig).To(HaveKey(binderplugins.HamiCorePluginName))
 				Expect(pluginConfig[binderplugins.VolumeBindingPluginName].Arguments[binderplugins.BindTimeoutSecondsArgument]).
 					To(Equal(strconv.Itoa(binderplugins.DefaultBindTimeoutSeconds)))
 				Expect(pluginConfig[binderplugins.DynamicResourcesPluginName].Arguments[binderplugins.BindTimeoutSecondsArgument]).
 					To(Equal(strconv.Itoa(binderplugins.DefaultBindTimeoutSeconds)))
 				Expect(pluginConfig[binderplugins.GPUSharingPluginName].Arguments[binderplugins.CDIEnabledArgument]).
 					To(Equal(strconv.FormatBool(binderplugins.DefaultCDIEnabled)))
-				Expect(pluginConfig[binderplugins.GPUSharingPluginName].Arguments[binderplugins.HamiCoreEnabledArgument]).
-					To(Equal(strconv.FormatBool(binderplugins.DefaultHamiCoreEnabled)))
+				Expect(pluginConfig[binderplugins.HamiCorePluginName].Enabled).NotTo(BeNil())
+				Expect(*pluginConfig[binderplugins.HamiCorePluginName].Enabled).To(BeFalse())
 			})
 
 			It("passes volume binding timeout through plugin arguments", func(ctx context.Context) {

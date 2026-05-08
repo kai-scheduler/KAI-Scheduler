@@ -16,14 +16,13 @@ const (
 	VolumeBindingPluginName    = kaiv1binder.VolumeBindingPluginName
 	DynamicResourcesPluginName = kaiv1binder.DynamicResourcesPluginName
 	GPUSharingPluginName       = kaiv1binder.GPUSharingPluginName
+	HamiCorePluginName         = kaiv1binder.HamiCorePluginName
 
 	BindTimeoutSecondsArgument = kaiv1binder.BindTimeoutSecondsArgument
 	CDIEnabledArgument         = kaiv1binder.CDIEnabledArgument
-	HamiCoreEnabledArgument    = kaiv1binder.HamiCoreEnabledArgument
 
 	DefaultBindTimeoutSeconds = kaiv1binder.DefaultBindTimeoutSeconds
 	DefaultCDIEnabled         = kaiv1binder.DefaultCDIEnabled
-	DefaultHamiCoreEnabled    = kaiv1binder.DefaultHamiCoreEnabled
 )
 
 type Config map[string]kaiv1binder.PluginConfig

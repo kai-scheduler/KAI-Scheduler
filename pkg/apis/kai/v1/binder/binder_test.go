@@ -51,8 +51,8 @@ var _ = Describe("Binder", func() {
 		binder.SetDefaultsWhereNeeded(nil, nil)
 		Expect(binder.Plugins[GPUSharingPluginName].Arguments[CDIEnabledArgument]).
 			To(Equal(strconv.FormatBool(true)))
-		Expect(binder.Plugins[GPUSharingPluginName].Arguments[HamiCoreEnabledArgument]).
-			To(Equal(strconv.FormatBool(DefaultHamiCoreEnabled)))
+		Expect(binder.Plugins[HamiCorePluginName].Enabled).NotTo(BeNil())
+		Expect(*binder.Plugins[HamiCorePluginName].Enabled).To(BeFalse())
 	})
 
 	It("Set Defaults With Plugin Overrides", func(ctx context.Context) {
