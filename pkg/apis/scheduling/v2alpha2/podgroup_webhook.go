@@ -9,25 +9,19 @@ import (
 	"fmt"
 	"sort"
 
-	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 func (p *PodGroup) SetupWebhookWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewWebhookManagedBy(mgr).
-		For(p).
+	return ctrl.NewWebhookManagedBy(mgr, p).
 		WithValidator(&PodGroup{}).
 		Complete()
 }
 
-func (_ *PodGroup) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
+func (_ *PodGroup) ValidateCreate(ctx context.Context, podGroup *PodGroup) (admission.Warnings, error) {
 	logger := log.FromContext(ctx)
-	podGroup, ok := obj.(*PodGroup)
-	if !ok {
-		return nil, fmt.Errorf("expected a PodGroup but got a %T", obj)
-	}
 	logger.Info("validate create", "namespace", podGroup.Namespace, "name", podGroup.Name)
 
 	validationErrors := validatePodGroupSpec(&podGroup.Spec)
@@ -46,12 +40,8 @@ func (_ *PodGroup) ValidateCreate(ctx context.Context, obj runtime.Object) (admi
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
-func (_ *PodGroup) ValidateUpdate(ctx context.Context, _ runtime.Object, newObj runtime.Object) (admission.Warnings, error) {
+func (_ *PodGroup) ValidateUpdate(ctx context.Context, _ *PodGroup, podGroup *PodGroup) (admission.Warnings, error) {
 	logger := log.FromContext(ctx)
-	podGroup, ok := newObj.(*PodGroup)
-	if !ok {
-		return nil, fmt.Errorf("expected a PodGroup but got a %T", newObj)
-	}
 	logger.Info("validate update", "namespace", podGroup.Namespace, "name", podGroup.Name)
 
 	validationErrors := validatePodGroupSpec(&podGroup.Spec)
@@ -100,12 +90,8 @@ func handleMinDefinitionErrors(ctx context.Context,
 	return warnings, nil
 }
 
-func (_ *PodGroup) ValidateDelete(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
+func (_ *PodGroup) ValidateDelete(ctx context.Context, podGroup *PodGroup) (admission.Warnings, error) {
 	logger := log.FromContext(ctx)
-	podGroup, ok := obj.(*PodGroup)
-	if !ok {
-		return nil, fmt.Errorf("expected a PodGroup but got a %T", obj)
-	}
 	logger.Info("validate delete", "namespace", podGroup.Namespace, "name", podGroup.Name)
 	return nil, nil
 }
@@ -214,10 +200,7 @@ func validateSubGroupMinFields(subGroup *SubGroup, childrenMap map[string][]stri
 				"subgroup %q: minMember cannot be set on a mid-level SubGroup (has child SubGroups); use minSubGroup instead", subGroup.Name)})
 		}
 		if subGroup.MinSubGroup != nil {
-			if *subGroup.MinSubGroup <= 0 {
-				minFieldsErrors = append(minFieldsErrors, &invalidMinSubGroupError{msg: fmt.Sprintf(
-					"subgroup %q: minSubGroup must be greater than 0", subGroup.Name)})
-			} else if int(*subGroup.MinSubGroup) > len(children) {
+			if int(*subGroup.MinSubGroup) > len(children) {
 				minFieldsErrors = append(minFieldsErrors, &minSubGroupExceedsChildCountError{msg: fmt.Sprintf(
 					"subgroup %q: minSubGroup (%d) exceeds the number of direct child SubGroups (%d)",
 					subGroup.Name, *subGroup.MinSubGroup, len(children))})

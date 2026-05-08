@@ -220,6 +220,79 @@ func Test_GetTasksToAllocate(t *testing.T) {
 	}
 }
 
+func Test_GetTasksToAllocate_MinSubGroupZero(t *testing.T) {
+	tests := []struct {
+		name          string
+		subGroupTasks map[string][]*pod_info.PodInfo
+		minAvailMap   map[string]int32
+		wantNumTasks  int
+	}{
+		{
+			name: "root minSubGroup=0, all children unsatisfied: gang skipped, elastic returns one child's tasks",
+			subGroupTasks: map[string][]*pod_info.PodInfo{
+				"sgA": {
+					simpleTask("taskA1", "sgA", pod_status.Pending),
+				},
+				"sgB": {
+					simpleTask("taskB1", "sgB", pod_status.Pending),
+				},
+			},
+			minAvailMap:  map[string]int32{"sgA": 1, "sgB": 1},
+			wantNumTasks: 1,
+		},
+		{
+			name: "root minSubGroup=0, all children satisfied: elastic returns no tasks",
+			subGroupTasks: map[string][]*pod_info.PodInfo{
+				"sgA": {
+					simpleTask("taskA1", "sgA", pod_status.Running),
+				},
+				"sgB": {
+					simpleTask("taskB1", "sgB", pod_status.Running),
+				},
+			},
+			minAvailMap:  map[string]int32{"sgA": 1, "sgB": 1},
+			wantNumTasks: 0,
+		},
+		{
+			name: "root minSubGroup=0, one satisfied + one with elastic surplus: returns one elastic task",
+			subGroupTasks: map[string][]*pod_info.PodInfo{
+				"sgA": {
+					simpleTask("taskA1", "sgA", pod_status.Running),
+				},
+				"sgB": {
+					simpleTask("taskB1", "sgB", pod_status.Running),
+					simpleTask("taskB2", "sgB", pod_status.Pending),
+				},
+			},
+			minAvailMap:  map[string]int32{"sgA": 1, "sgB": 1},
+			wantNumTasks: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pg := NewPodGroupInfo("pg")
+			root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+			min := int32(0)
+			root.SetMinSubGroup(&min)
+			pg.RootSubGroupSet = root
+			pg.PodSets = make(map[string]*subgroup_info.PodSet)
+			for subGroupName, pods := range tt.subGroupTasks {
+				ps := subgroup_info.NewPodSet(subGroupName, tt.minAvailMap[subGroupName], nil)
+				root.AddPodSet(ps)
+				pg.PodSets[subGroupName] = ps
+				for _, pod := range pods {
+					pg.AddTaskInfo(pod)
+				}
+			}
+			gotTasks := GetTasksToAllocate(pg, subGroupOrderFn, tasksOrderFn, true)
+			if len(gotTasks) != tt.wantNumTasks {
+				t.Errorf("GetTasksToAllocate len = %d, want %d", len(gotTasks), tt.wantNumTasks)
+			}
+		})
+	}
+}
+
 func Test_GetTasksToAllocateRequestedGPUs(t *testing.T) {
 	pg := NewPodGroupInfo("test-podgroup")
 	pg.GetAllPodSets()[DefaultSubGroup].SetMinAvailable(1)

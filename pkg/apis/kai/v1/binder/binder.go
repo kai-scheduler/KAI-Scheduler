@@ -5,18 +5,52 @@
 package binder
 
 import (
+	"strconv"
+
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/utils/ptr"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
-	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 const (
 	imageName                           = "binder"
 	defaultResourceReservationImageName = "resource-reservation"
+
+	VolumeBindingPluginName    = "volumebinding"
+	DynamicResourcesPluginName = "dynamicresources"
+	GPUSharingPluginName       = "gpusharing"
+
+	BindTimeoutSecondsArgument = "bindTimeoutSeconds"
+	CDIEnabledArgument         = "cdiEnabled"
+
+	DefaultBindTimeoutSeconds = 120
+	DefaultCDIEnabled         = false
 )
+
+var defaultPluginPriorities = map[string]int{
+	VolumeBindingPluginName:    300,
+	DynamicResourcesPluginName: 200,
+	GPUSharingPluginName:       100,
+}
+
+// PluginConfig allows overriding binder plugin settings.
+type PluginConfig struct {
+	// Enabled controls whether this plugin is active. Defaults to true.
+	// +kubebuilder:validation:Optional
+	Enabled *bool `json:"enabled,omitempty"`
+
+	// Priority controls the ordering of this plugin. Higher values run first.
+	// +kubebuilder:validation:Optional
+	Priority *int `json:"priority,omitempty"`
+
+	// Arguments are key-value pairs passed to the plugin. When specified, they replace
+	// the default arguments for the plugin.
+	// +kubebuilder:validation:Optional
+	Arguments map[string]string `json:"arguments,omitempty"`
+}
 
 type Binder struct {
 	Service *common.Service `json:"service,omitempty"`
@@ -47,6 +81,12 @@ type Binder struct {
 	// leave empty if unsure to let the operator auto detect using ClusterPolicy (nvidia gpu-operator only)
 	// +kubebuilder:validation:Optional
 	CDIEnabled *bool `json:"cdiEnabled,omitempty"`
+
+	// Plugins allows overriding binder plugin configuration. Keys are plugin names.
+	// Built-in plugins can be disabled, reordered, or have their arguments changed.
+	// Built-in plugins: volumebinding, dynamicresources, gpusharing.
+	// +kubebuilder:validation:Optional
+	Plugins map[string]PluginConfig `json:"plugins,omitempty"`
 
 	// VPA specifies Vertical Pod Autoscaler configuration for the binder
 	// +kubebuilder:validation:Optional
@@ -86,9 +126,88 @@ func (b *Binder) SetDefaultsWhereNeeded(replicaCount *int32, globalVPA *common.V
 	b.ProbePort = common.SetDefault(b.ProbePort, ptr.To(8081))
 	b.MetricsPort = common.SetDefault(b.MetricsPort, ptr.To(8080))
 
+	b.setDefaultPlugins()
+
 	if b.VPA == nil {
 		b.VPA = globalVPA
 	}
+}
+
+func (b *Binder) setDefaultPlugins() {
+	binderPluginConfig := DefaultPluginsConfig(ptr.Deref(b.VolumeBindingTimeoutSeconds, DefaultBindTimeoutSeconds),
+		ptr.Deref(b.CDIEnabled, DefaultCDIEnabled))
+
+	// When CDIEnabled is unset at the API level, leave the gpusharing cdiEnabled
+	// argument unbaked so the operator can resolve it (auto-detect) without
+	// having to distinguish a defaulted value from a user-supplied one.
+	if b.CDIEnabled == nil {
+		gpuSharingDefault := binderPluginConfig[GPUSharingPluginName]
+		delete(gpuSharingDefault.Arguments, CDIEnabledArgument)
+		binderPluginConfig[GPUSharingPluginName] = gpuSharingDefault
+	}
+
+	for name, userBinderConfig := range b.Plugins {
+		defaultPluginConfig, found := binderPluginConfig[name]
+		if found {
+			//Merge default plugin config with user plugin config
+			pluginConfig := defaultPluginConfig
+			if userBinderConfig.Enabled != nil {
+				pluginConfig.Enabled = ptr.To(*userBinderConfig.Enabled)
+			}
+			if userBinderConfig.Priority != nil {
+				pluginConfig.Priority = ptr.To(*userBinderConfig.Priority)
+			}
+			if userBinderConfig.Arguments != nil {
+				pluginConfig.Arguments = copyStringMap(userBinderConfig.Arguments)
+			}
+			binderPluginConfig[name] = pluginConfig
+		} else {
+			//If user set plugin but not the enabled parameter, default to enabled
+			if userBinderConfig.Enabled == nil {
+				userBinderConfig.Enabled = ptr.To(true)
+			}
+			binderPluginConfig[name] = userBinderConfig
+		}
+	}
+
+	b.Plugins = binderPluginConfig
+}
+
+func DefaultPluginsConfig(bindTimeoutSeconds int, cdiEnabled bool) map[string]PluginConfig {
+	return map[string]PluginConfig{
+		VolumeBindingPluginName: {
+			Enabled:  ptr.To(true),
+			Priority: ptr.To(defaultPluginPriorities[VolumeBindingPluginName]),
+			Arguments: map[string]string{
+				BindTimeoutSecondsArgument: strconv.Itoa(bindTimeoutSeconds),
+			},
+		},
+		DynamicResourcesPluginName: {
+			Enabled:  ptr.To(true),
+			Priority: ptr.To(defaultPluginPriorities[DynamicResourcesPluginName]),
+			Arguments: map[string]string{
+				BindTimeoutSecondsArgument: strconv.Itoa(bindTimeoutSeconds),
+			},
+		},
+		GPUSharingPluginName: {
+			Enabled:  ptr.To(true),
+			Priority: ptr.To(defaultPluginPriorities[GPUSharingPluginName]),
+			Arguments: map[string]string{
+				CDIEnabledArgument: strconv.FormatBool(cdiEnabled),
+			},
+		},
+	}
+}
+
+func copyStringMap(value map[string]string) map[string]string {
+	if value == nil {
+		return nil
+	}
+	result := make(map[string]string, len(value))
+	for key, item := range value {
+		result[key] = item
+	}
+	return result
 }
 
 type ResourceReservation struct {

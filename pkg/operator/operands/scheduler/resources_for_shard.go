@@ -21,7 +21,6 @@ import (
 
 	"github.com/kai-scheduler/KAI-scheduler/cmd/scheduler/app/options"
 	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
-	kaiConfigUtils "github.com/kai-scheduler/KAI-scheduler/pkg/operator/config"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common"
 	usagedbapi "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
@@ -275,9 +274,6 @@ func buildArgsList(
 		}
 	})
 
-	if featureGates := kaiConfigUtils.FeatureGatesArg(); featureGates != "" {
-		args = append(args, featureGates)
-	}
 	schedulerConfig := kaiConfig.Spec.Scheduler
 	if schedulerConfig.Replicas != nil && *schedulerConfig.Replicas > 1 {
 		args = append(args, "--leader-elect=true")

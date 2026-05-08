@@ -12,7 +12,7 @@ CLUSTER_NAME=${CLUSTER_NAME:-e2e-kai-scheduler}
 REPO_ROOT=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )/..
 : ${FEATURE_CONFIG:="default"}
 
-: ${KIND_K8S_TAG:="v1.34.0"}
+: ${KIND_K8S_TAG:="v1.35.0"}
 : ${KIND_IMAGE:="kindest/node:${KIND_K8S_TAG}"}
 
 # Parse named parameters

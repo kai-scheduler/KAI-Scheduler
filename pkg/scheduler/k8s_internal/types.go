@@ -20,7 +20,7 @@ type NodeFilter interface {
 
 type NodePreFilter interface {
 	PreFilter(ctx context.Context,
-		cycleState ksf.CycleState, pod *v1.Pod, nodes []ksf.NodeInfo) (*k8sframework.PreFilterResult, *ksf.Status)
+		cycleState ksf.CycleState, pod *v1.Pod, nodes []ksf.NodeInfo) (*ksf.PreFilterResult, *ksf.Status)
 }
 
 type NodeScorer interface {

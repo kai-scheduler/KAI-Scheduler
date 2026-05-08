@@ -12,7 +12,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	resourceslicetracker "k8s.io/dynamic-resource-allocation/resourceslice/tracker"
 	"k8s.io/klog/v2"
-	k8sframework "k8s.io/kubernetes/pkg/scheduler/framework"
+	ksf "k8s.io/kube-scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources"
 	"k8s.io/kubernetes/pkg/scheduler/util/assumecache"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -40,7 +40,7 @@ func NewSessionDRAManager(
 	claims []*resourceapi.ResourceClaim,
 	tracker *resourceslicetracker.Tracker,
 	informerFactory informers.SharedInformerFactory,
-) k8sframework.SharedDRAManager {
+) ksf.SharedDRAManager {
 	objects := make([]any, len(claims))
 	for i, claim := range claims {
 		objects[i] = claim

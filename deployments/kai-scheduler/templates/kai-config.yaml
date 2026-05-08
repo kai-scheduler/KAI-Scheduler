@@ -93,6 +93,10 @@ spec:
     {{- if hasKey .Values.binder "cdiEnabled" }}
     cdiEnabled: {{ .Values.binder.cdiEnabled }}
     {{- end }}
+    {{- if .Values.binder.plugins }}
+    plugins:
+      {{- toYaml .Values.binder.plugins | nindent 6 }}
+    {{- end }}
 
   podGrouper:
     service:

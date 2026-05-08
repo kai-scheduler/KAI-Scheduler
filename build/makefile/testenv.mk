@@ -1,5 +1,5 @@
-ENVTEST_K8S_VERSION = 1.34.0
-ENVTEST_VERSION=release-0.22
+ENVTEST_K8S_VERSION = 1.35.0
+ENVTEST_VERSION=release-0.23
 
 E2E_TESTS_DIR = "test/e2e/"
 TEST_TARGETS = $(shell go list ./... | grep -v "${E2E_TESTS_DIR}")

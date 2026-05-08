@@ -345,6 +345,7 @@ func createPodOfTask(job *TestJobBasic, taskIndex int,
 	podName := fmt.Sprintf("%s-%d", job.Name, taskIndex)
 	podOfTask := tasks_fake.BuildPod(podName, job.Namespace, task, v1.PodPending, *podResourceList, gpuFraction, gpuMemory,
 		gpuGroups, job.Name)
+	addPersistentVolumeClaimVolumes(podOfTask, task.PersistentVolumeClaimNames)
 
 	if task.Priority != nil {
 		podOfTask.Labels[labels.TaskOrderLabelKey] = strconv.Itoa(int(*task.Priority))
@@ -370,4 +371,17 @@ func createPodOfTask(job *TestJobBasic, taskIndex int,
 		}
 	}
 	return podOfTask
+}
+
+func addPersistentVolumeClaimVolumes(pod *v1.Pod, claimNames []string) {
+	for index, claimName := range claimNames {
+		pod.Spec.Volumes = append(pod.Spec.Volumes, v1.Volume{
+			Name: fmt.Sprintf("pvc-%d", index),
+			VolumeSource: v1.VolumeSource{
+				PersistentVolumeClaim: &v1.PersistentVolumeClaimVolumeSource{
+					ClaimName: claimName,
+				},
+			},
+		})
+	}
 }

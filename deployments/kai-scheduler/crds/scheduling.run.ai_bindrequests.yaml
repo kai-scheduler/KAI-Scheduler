@@ -115,7 +115,7 @@ spec:
                                           to decide whether it needs to validate them.
 
                                           Must be a DNS subdomain and should end with a DNS domain owned by the
-                                          vendor of the driver.
+                                          vendor of the driver. It should use only lower case characters.
                                         type: string
                                       parameters:
                                         description: |-
@@ -221,7 +221,7 @@ spec:
                                       needed on a node.
 
                                       Must be a DNS subdomain and should end with a DNS domain owned by the
-                                      vendor of the driver.
+                                      vendor of the driver. It should use only lower case characters.
                                     type: string
                                   pool:
                                     description: |-

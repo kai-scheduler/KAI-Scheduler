@@ -6,12 +6,11 @@ package featuregates
 import (
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/version"
-	featureutil "k8s.io/apiserver/pkg/util/feature"
 	discovery "k8s.io/client-go/discovery"
-	"k8s.io/kubernetes/pkg/features"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -19,10 +18,29 @@ const (
 	minimalSupportedVersion = "v1beta1"
 )
 
-func SetDRAFeatureGate(discoveryClient discovery.DiscoveryInterface) error {
-	enabled := IsDynamicResourcesEnabled(discoveryClient)
-	return featureutil.DefaultMutableFeatureGate.SetFromMap(
-		map[string]bool{string(features.DynamicResourceAllocation): enabled})
+// dynamicResourcesEnabled is the process-wide decision on whether DRA is usable,
+// set by SetDRAFeatureGate. It is the authoritative source for scheduler and
+// binder components because the upstream DynamicResourceAllocation feature gate
+// is GA and locked to true in Kubernetes v1.35+, so it can no longer be toggled
+// off to reflect server-side DRA availability.
+var dynamicResourcesEnabled atomic.Bool
+
+func SetDRAFeatureGate(discoveryClient discovery.DiscoveryInterface) {
+	dynamicResourcesEnabled.Store(IsDynamicResourcesEnabled(discoveryClient))
+}
+
+// DynamicResourcesEnabled reports whether DRA was determined to be usable
+// against the cluster at startup. Use this instead of the upstream feature gate
+// to gate DRA-specific scheduler behaviour.
+func DynamicResourcesEnabled() bool {
+	return dynamicResourcesEnabled.Load()
+}
+
+// SetDynamicResourcesEnabledForTest sets the process-wide DRA availability flag.
+// Intended for tests that construct scheduler components without going through
+// SetDRAFeatureGate (which requires a discovery client).
+func SetDynamicResourcesEnabledForTest(enabled bool) {
+	dynamicResourcesEnabled.Store(enabled)
 }
 
 func IsDynamicResourcesEnabled(discoveryClient discovery.DiscoveryInterface) bool {

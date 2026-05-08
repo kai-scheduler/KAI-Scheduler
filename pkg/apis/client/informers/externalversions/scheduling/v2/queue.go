@@ -61,7 +61,7 @@ func NewQueueInformer(client versioned.Interface, namespace string, resyncPeriod
 // one. This reduces memory footprint and number of connections to the server.
 func NewFilteredQueueInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
-		&cache.ListWatch{
+		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(options v1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
@@ -86,7 +86,7 @@ func NewFilteredQueueInformer(client versioned.Interface, namespace string, resy
 				}
 				return client.SchedulingV2().Queues(namespace).Watch(ctx, options)
 			},
-		},
+		}, client),
 		&apisschedulingv2.Queue{},
 		resyncPeriod,
 		indexers,

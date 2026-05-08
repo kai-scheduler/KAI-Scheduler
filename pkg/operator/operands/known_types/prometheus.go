@@ -26,23 +26,32 @@ func prometheusIndexer(object client.Object) []string {
 }
 
 func registerPrometheus() {
-	// Only register Prometheus collectable if CRD is available
-	// We'll check this at runtime during manager initialization
+	var prometheusCRDAvailable bool
 	collectable := &Collectable{
 		Collect: getCurrentPrometheusState,
 		InitWithManager: func(ctx context.Context, mgr manager.Manager) error {
-			// Try to register the indexer, but don't fail if the CRD is not available
 			log.FromContext(ctx).Info("Attempting to register Prometheus resource management")
-			err := mgr.GetFieldIndexer().IndexField(ctx, &monitoringv1.Prometheus{}, CollectableOwnerKey, prometheusIndexer)
+			available, err := crdAvailable(ctx, mgr, "prometheus")
 			if err != nil {
-				log.FromContext(ctx).Info("Prometheus CRD not available, skipping field indexer registration", "error", err)
-				return nil // Don't fail the test if CRD is not available
+				log.FromContext(ctx).Info("Failed to check Prometheus CRD availability, skipping registration", "error", err)
+				return nil
 			}
+			if !available {
+				log.FromContext(ctx).Info("Prometheus CRD not available, skipping registration")
+				return nil
+			}
+			if err := mgr.GetFieldIndexer().IndexField(ctx, &monitoringv1.Prometheus{}, CollectableOwnerKey, prometheusIndexer); err != nil {
+				return err
+			}
+			prometheusCRDAvailable = true
 			log.FromContext(ctx).Info("Successfully registered Prometheus resource management")
 			return nil
 		},
-		InitWithBuilder: func(builder *builder.Builder) *builder.Builder {
-			return builder
+		InitWithBuilder: func(b *builder.Builder) *builder.Builder {
+			if !prometheusCRDAvailable {
+				return b
+			}
+			return b.Owns(&monitoringv1.Prometheus{})
 		},
 		InitWithFakeClientBuilder: func(fakeClientBuilder *fake.ClientBuilder) {
 			fakeClientBuilder.WithIndex(&monitoringv1.Prometheus{}, CollectableOwnerKey, prometheusIndexer)
@@ -50,28 +59,49 @@ func registerPrometheus() {
 	}
 	SetupKAIConfigOwned(collectable)
 
-	// Register ServiceMonitor collectable if CRD is available
+	var serviceMonitorCRDAvailable bool
 	serviceMonitorCollectable := &Collectable{
 		Collect: getCurrentServiceMonitorState,
 		InitWithManager: func(ctx context.Context, mgr manager.Manager) error {
-			// Try to register the indexer, but don't fail if the CRD is not available
 			log.FromContext(ctx).Info("Attempting to register ServiceMonitor resource management")
-			err := mgr.GetFieldIndexer().IndexField(ctx, &monitoringv1.ServiceMonitor{}, CollectableOwnerKey, serviceMonitorIndexer)
+			available, err := crdAvailable(ctx, mgr, "serviceMonitor")
 			if err != nil {
-				log.FromContext(ctx).Info("ServiceMonitor CRD not available, skipping field indexer registration", "error", err)
-				return nil // Don't fail the test if CRD is not available
+				log.FromContext(ctx).Info("Failed to check ServiceMonitor CRD availability, skipping registration", "error", err)
+				return nil
 			}
+			if !available {
+				log.FromContext(ctx).Info("ServiceMonitor CRD not available, skipping registration")
+				return nil
+			}
+			if err := mgr.GetFieldIndexer().IndexField(ctx, &monitoringv1.ServiceMonitor{}, CollectableOwnerKey, serviceMonitorIndexer); err != nil {
+				return err
+			}
+			serviceMonitorCRDAvailable = true
 			log.FromContext(ctx).Info("Successfully registered ServiceMonitor resource management")
 			return nil
 		},
-		InitWithBuilder: func(builder *builder.Builder) *builder.Builder {
-			return builder
+		InitWithBuilder: func(b *builder.Builder) *builder.Builder {
+			if !serviceMonitorCRDAvailable {
+				return b
+			}
+			return b.Owns(&monitoringv1.ServiceMonitor{})
 		},
 		InitWithFakeClientBuilder: func(fakeClientBuilder *fake.ClientBuilder) {
 			fakeClientBuilder.WithIndex(&monitoringv1.ServiceMonitor{}, CollectableOwnerKey, serviceMonitorIndexer)
 		},
 	}
 	SetupKAIConfigOwned(serviceMonitorCollectable)
+}
+
+// crdAvailable performs a live API-server check for the given Prometheus-family CRD.
+// The manager scheme registers monitoringv1 unconditionally, so a scheme-only check
+// would falsely report availability on clusters without prometheus-operator installed.
+func crdAvailable(ctx context.Context, mgr manager.Manager, target string) (bool, error) {
+	tempClient, err := client.New(mgr.GetConfig(), client.Options{Scheme: mgr.GetScheme()})
+	if err != nil {
+		return false, err
+	}
+	return common.CheckPrometheusCRDsAvailable(ctx, tempClient, target)
 }
 
 func getCurrentPrometheusState(ctx context.Context, runtimeClient client.Client, reconciler client.Object) (map[string]client.Object, error) {

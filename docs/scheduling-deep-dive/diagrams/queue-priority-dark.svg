@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 405" width="900" height="405">
+  <defs>
+    <style>
+      :root{--gw:55px;--gh:35px}
+      .gpu{width:var(--gw);height:var(--gh);rx:3;fill:#707070;stroke:#888;stroke-width:2}
+      .pool{fill:#21262d;stroke:#444;stroke-width:1.5;rx:6}
+      .qbg{fill:#21262d;stroke:#444;stroke-width:1.5;rx:6}
+      .sbox{fill:none;stroke:#8b949e;stroke-width:2;stroke-dasharray:7,4;rx:4}
+      text{font-family:Arial,sans-serif}
+      .title{font-size:15px;font-weight:bold;fill:#e6edf3;text-anchor:middle}
+      .plbl{font-size:13px;fill:#c9d1d9;font-weight:bold;text-anchor:middle}
+      .qn{font-size:13px;font-weight:bold;text-anchor:middle}
+      .qi{font-size:10px;fill:#8b949e;text-anchor:middle}
+      .gt{font-size:10px;fill:#fff;font-weight:bold;text-anchor:middle}
+      .pt{font-size:12px;fill:#b1bac4;text-anchor:middle;font-style:italic}
+      .sl{font-size:11px;fill:#8b949e;font-weight:bold;text-anchor:middle}
+      .stl{font-size:9px;fill:#8b949e;text-anchor:start}
+
+      .g1{animation:g1a 24s ease-in-out infinite}
+      .g2{animation:g2a 24s ease-in-out infinite}
+      .g3{animation:g3a 24s ease-in-out infinite}
+      .g4{animation:g4a 24s ease-in-out infinite}
+      .g5{animation:g5a 24s ease-in-out infinite}
+      .g6{animation:g6a 24s ease-in-out infinite}
+      .g7{animation:g7a 24s ease-in-out infinite}
+      .g8{animation:g8a 24s ease-in-out infinite}
+      .g9{animation:g9a 24s ease-in-out infinite}
+      .g10{animation:g10a 24s ease-in-out infinite}
+
+      .g1 rect,.g2 rect{animation:ch 24s ease-in-out infinite}
+      .g3 rect,.g4 rect{animation:cm 24s ease-in-out infinite}
+      .g5 rect,.g6 rect,.g7 rect{animation:cl 24s ease-in-out infinite}
+      .g8 rect,.g9 rect{animation:chs 24s ease-in-out infinite}
+      .g10 rect{animation:cms 24s ease-in-out infinite}
+
+      @keyframes ch{0%,10%{fill:#707070;stroke:#888}16%,81%{fill:#c06050;stroke:#e08070}87%,100%{fill:#707070;stroke:#888}}
+      @keyframes cm{0%,10%{fill:#707070;stroke:#888}16%,81%{fill:#c09030;stroke:#e0b050}87%,100%{fill:#707070;stroke:#888}}
+      @keyframes cl{0%,10%{fill:#707070;stroke:#888}16%,81%{fill:#5080c0;stroke:#70a0e0}87%,100%{fill:#707070;stroke:#888}}
+      @keyframes chs{0%,3%{fill:#707070;stroke:#888}46%{fill:#707070;stroke:#888}52%,81%{fill:#c06050;stroke:#e08070}87%,100%{fill:#707070;stroke:#888}}
+      @keyframes cms{0%,3%{fill:#707070;stroke:#888}48%{fill:#707070;stroke:#888}54%,81%{fill:#c09030;stroke:#e0b050}87%,100%{fill:#707070;stroke:#888}}
+
+      @keyframes g1a{0%{opacity:0;transform:translate(290px,58px)}3%,8%{opacity:1;transform:translate(290px,58px)}16%,81%{opacity:1;transform:translate(80px,287px)}87%{opacity:0;transform:translate(80px,287px)}93%,100%{opacity:0;transform:translate(290px,58px)}}
+      @keyframes g2a{0%{opacity:0;transform:translate(355px,58px)}3%,10%{opacity:1;transform:translate(355px,58px)}18%,81%{opacity:1;transform:translate(145px,287px)}87%{opacity:0;transform:translate(145px,287px)}93%,100%{opacity:0;transform:translate(355px,58px)}}
+      @keyframes g3a{0%{opacity:0;transform:translate(420px,58px)}3%,8%{opacity:1;transform:translate(420px,58px)}16%,81%{opacity:1;transform:translate(355px,287px)}87%{opacity:0;transform:translate(355px,287px)}93%,100%{opacity:0;transform:translate(420px,58px)}}
+      @keyframes g4a{0%{opacity:0;transform:translate(485px,58px)}3%,10%{opacity:1;transform:translate(485px,58px)}18%,81%{opacity:1;transform:translate(420px,287px)}87%{opacity:0;transform:translate(420px,287px)}93%,100%{opacity:0;transform:translate(485px,58px)}}
+      @keyframes g5a{0%{opacity:0;transform:translate(550px,58px)}3%,8%{opacity:1;transform:translate(550px,58px)}16%,81%{opacity:1;transform:translate(625px,287px)}87%{opacity:0;transform:translate(625px,287px)}93%,100%{opacity:0;transform:translate(550px,58px)}}
+      @keyframes g6a{0%{opacity:0;transform:translate(290px,98px)}3%,10%{opacity:1;transform:translate(290px,98px)}18%,81%{opacity:1;transform:translate(690px,287px)}87%{opacity:0;transform:translate(690px,287px)}93%,100%{opacity:0;transform:translate(290px,98px)}}
+      @keyframes g7a{0%{opacity:0;transform:translate(355px,98px)}3%,12%{opacity:1;transform:translate(355px,98px)}20%,81%{opacity:1;transform:translate(755px,287px)}87%{opacity:0;transform:translate(755px,287px)}93%,100%{opacity:0;transform:translate(355px,98px)}}
+      @keyframes g8a{0%{opacity:0;transform:translate(420px,98px)}3%,42%{opacity:1;transform:translate(420px,98px)}50%,81%{opacity:1;transform:translate(80px,343px)}87%{opacity:0;transform:translate(80px,343px)}93%,100%{opacity:0;transform:translate(420px,98px)}}
+      @keyframes g9a{0%{opacity:0;transform:translate(485px,98px)}3%,44%{opacity:1;transform:translate(485px,98px)}52%,81%{opacity:1;transform:translate(145px,343px)}87%{opacity:0;transform:translate(145px,343px)}93%,100%{opacity:0;transform:translate(485px,98px)}}
+      @keyframes g10a{0%{opacity:0;transform:translate(550px,98px)}3%,46%{opacity:1;transform:translate(550px,98px)}54%,81%{opacity:1;transform:translate(355px,343px)}87%{opacity:0;transform:translate(355px,343px)}93%,100%{opacity:0;transform:translate(550px,98px)}}
+
+      .t1{animation:t1a 24s ease-in-out infinite}
+      @keyframes t1a{0%,5%{opacity:0}8%,25%{opacity:1}30%,100%{opacity:0}}
+      .t2{animation:t2a 24s ease-in-out infinite}
+      @keyframes t2a{0%,33%{opacity:0}37%,75%{opacity:1}81%,100%{opacity:0}}
+      .sb{animation:sba 24s ease-in-out infinite}
+      @keyframes sba{0%,24%{opacity:0}28%,54%{opacity:1}58%,100%{opacity:0}}
+    </style>
+  </defs>
+
+  <text x="450" y="20" class="title">Queue Priority: Resource Distribution</text>
+
+  <text x="450" y="46" class="plbl">Resource Pool (10 GPUs)</text>
+  <rect x="275" y="52" width="350" height="92" class="pool"/>
+
+  <rect x="55" y="220" width="235" height="170" class="qbg"/>
+  <rect x="330" y="220" width="235" height="170" class="qbg"/>
+  <rect x="605" y="220" width="235" height="170" class="qbg"/>
+
+  <text x="172" y="238" class="qn" fill="#e08070">Vision Team</text>
+  <text x="172" y="252" class="qi">Priority: 2 | Quota: 2 | Weight: 2</text>
+  <text x="447" y="238" class="qn" fill="#e0b050">LLM Team</text>
+  <text x="447" y="252" class="qi">Priority: 2 | Quota: 2 | Weight: 1</text>
+  <text x="722" y="238" class="qn" fill="#70a0e0">Data Processing</text>
+  <text x="722" y="252" class="qi">Priority: 1 | Quota: 3 | Weight: 1</text>
+
+  <text x="75" y="277" class="stl">Quota</text>
+  <text x="75" y="333" class="stl">Surplus</text>
+  <text x="350" y="277" class="stl">Quota</text>
+  <text x="350" y="333" class="stl">Surplus</text>
+  <text x="620" y="277" class="stl">Quota</text>
+
+  <text x="450" y="192" class="pt t1">Quota: Distributed to all queues regardless of priority</text>
+  <text x="450" y="192" class="pt t2">Over-quota: Highest priority first, then split by weight (2:1)</text>
+
+  <rect x="413" y="92" width="200" height="48" class="sbox sb"/>
+  <text x="513" y="158" class="sl sb">Surplus (3 GPUs)</text>
+
+  <g class="g1"><rect class="gpu"/><text x="27" y="22" class="gt">GPU</text></g>
+  <g class="g2"><rect class="gpu"/><text x="27" y="22" class="gt">GPU</text></g>
+  <g class="g3"><rect class="gpu"/><text x="27" y="22" class="gt">GPU</text></g>
+  <g class="g4"><rect class="gpu"/><text x="27" y="22" class="gt">GPU</text></g>
+  <g class="g5"><rect class="gpu"/><text x="27" y="22" class="gt">GPU</text></g>
+  <g class="g6"><rect class="gpu"/><text x="27" y="22" class="gt">GPU</text></g>
+  <g class="g7"><rect class="gpu"/><text x="27" y="22" class="gt">GPU</text></g>
+  <g class="g8"><rect class="gpu"/><text x="27" y="22" class="gt">GPU</text></g>
+  <g class="g9"><rect class="gpu"/><text x="27" y="22" class="gt">GPU</text></g>
+  <g class="g10"><rect class="gpu"/><text x="27" y="22" class="gt">GPU</text></g>
+</svg>

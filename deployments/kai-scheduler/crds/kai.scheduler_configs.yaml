@@ -1260,6 +1260,31 @@ spec:
                   metricsPort:
                     description: MetricsPort specifies the metrics service port
                     type: integer
+                  plugins:
+                    additionalProperties:
+                      description: PluginConfig allows overriding binder plugin settings.
+                      properties:
+                        arguments:
+                          additionalProperties:
+                            type: string
+                          description: |-
+                            Arguments are key-value pairs passed to the plugin. When specified, they replace
+                            the default arguments for the plugin.
+                          type: object
+                        enabled:
+                          description: Enabled controls whether this plugin is active.
+                            Defaults to true.
+                          type: boolean
+                        priority:
+                          description: Priority controls the ordering of this plugin.
+                            Higher values run first.
+                          type: integer
+                      type: object
+                    description: |-
+                      Plugins allows overriding binder plugin configuration. Keys are plugin names.
+                      Built-in plugins can be disabled, reordered, or have their arguments changed.
+                      Built-in plugins: volumebinding, dynamicresources, gpusharing.
+                    type: object
                   probePort:
                     description: ProbePort specifies the health check port
                     type: integer
@@ -3907,9 +3932,10 @@ spec:
                         operator:
                           description: |-
                             Operator represents a key's relationship to the value.
-                            Valid operators are Exists and Equal. Defaults to Equal.
+                            Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
                             Exists is equivalent to wildcard for value, so that a pod can
                             tolerate all taints of a particular category.
+                            Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
                           type: string
                         tolerationSeconds:
                           description: |-
@@ -4190,9 +4216,10 @@ spec:
                         operator:
                           description: |-
                             Operator represents a key's relationship to the value.
-                            Valid operators are Exists and Equal. Defaults to Equal.
+                            Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
                             Exists is equivalent to wildcard for value, so that a pod can
                             tolerate all taints of a particular category.
+                            Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
                           type: string
                         tolerationSeconds:
                           description: |-

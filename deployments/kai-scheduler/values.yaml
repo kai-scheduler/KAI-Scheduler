@@ -45,6 +45,9 @@ operator:
   probeBindAddress: ":8081"
   qps: 50
   burst: 300
+  # Log level for the operator (currently mapped to controller-runtime --zap-log-level). Leave empty to use binary defaults.
+  # When set: debug, info, error, panic. Example: "info"
+  logLevel: ""
 
 podgrouper:
   enabled: true
@@ -87,6 +90,17 @@ binder:
   ports:
     metricsPort: 8080
   affinity: {}
+  # plugins allows overriding binder plugin configuration.
+  # Built-in plugins can be disabled, reordered, or have their arguments changed.
+  # Default plugins and priorities: volumebinding=300, dynamicresources=200, gpusharing=100.
+  # Example:
+  # plugins:
+  #   gpusharing:
+  #     enabled: false
+  #   volumebinding:
+  #     arguments:
+  #       bindTimeoutSeconds: "60"
+  plugins: {}
 scheduler:
   enabled: true
   image:
@@ -96,6 +110,12 @@ scheduler:
   placementStrategy: binpack
   ports:
     metricsPort: 8080
+  # args allows passing scheduler CLI flags through the default SchedulingShard spec.args map.
+  # Values must be strings because SchedulingShard.spec.args is map[string]string.
+  # Example:
+  # args:
+  #   v: "0"
+  args: {}
   # plugins allows overriding or adding custom scheduler plugins
   # Built-in plugins can be disabled, reordered, or have their arguments changed.
   # New plugins can be added by specifying a name not in the default set.
@@ -167,6 +187,7 @@ crdupgrader:
   image:
     name: crd-upgrader
     pullPolicy: IfNotPresent
+    # registry: ""  # Optional: Override global.registry (e.g. to mirror only the hook image)
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
 
 topologyMigration:

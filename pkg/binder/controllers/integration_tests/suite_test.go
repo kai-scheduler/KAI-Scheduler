@@ -15,8 +15,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/kai-scheduler/KAI-scheduler/cmd/binder/app"
-
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -33,7 +31,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding/resourcereservation"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/controllers"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins"
-	k8s_plugins "github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/k8s-plugins"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -101,19 +98,16 @@ var _ = BeforeSuite(func() {
 		RateLimiterBaseDelaySeconds: 1,
 		RateLimiterMaxDelaySeconds:  1,
 	}
-	options := app.Options{
-		MaxConcurrentReconciles:     params.MaxConcurrentReconciles,
-		RateLimiterBaseDelaySeconds: params.RateLimiterBaseDelaySeconds,
-		RateLimiterMaxDelaySeconds:  params.RateLimiterMaxDelaySeconds,
-	}
-
 	kubeClient := kubernetes.NewForConfigOrDie(cfg)
 	informerFactory := informers.NewSharedInformerFactory(kubeClient, 0)
 
-	binderPlugins := plugins.New()
-	k8sPlugins, err := k8s_plugins.New(kubeClient, informerFactory, int64(options.VolumeBindingTimeoutSeconds))
+	plugins.InitDefaultPlugins()
+	binderPlugins, err := plugins.BuildConfiguredPlugins(plugins.PluginBuildContext{
+		KubeClient:      k8sManager.GetClient(),
+		K8sInterface:    kubeClient,
+		InformerFactory: informerFactory,
+	}, plugins.DefaultConfig(plugins.DefaultBindTimeoutSeconds, plugins.DefaultCDIEnabled))
 	Expect(err).NotTo(HaveOccurred())
-	binderPlugins.RegisterPlugin(k8sPlugins)
 	clientWithWatch, err := client.NewWithWatch(cfg, client.Options{})
 	Expect(err).NotTo(HaveOccurred())
 
