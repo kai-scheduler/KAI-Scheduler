@@ -2,36 +2,18 @@
 
 ## Summary
 
-The solver stack used by `reclaim`, `preempt`, and `consolidation` is
-rewritten around three small interfaces — `Generator`, `Simulator`,
-`Validator` — driven by a single `Solve` function. The old four-layer
-stack (`JobSolver` → `PodAccumulatedScenarioBuilder` → `byPodSolver`
-→ `Scenario`) is replaced; about 700 lines of legacy code are
-deleted, the gang-loop binary search is gone, and the iter-1
-lock-in bug is fixed.
+The solver stack used by `reclaim`, `preempt`, and `consolidation` is proposed to be rebuilt around three interfaces — `Generator`, `Simulator`, and `Validator` — driven by a single `Solve` function. The current four-layer stack does not separate responsibilities clearly between the layers, making it both inefficient and complicated to understand and modify.
+The proposal is to clearly re-define the interfaces with good separation of concerns. In addition to better readability, testability and maintainability, this will allow us to use alternative generators (e.g., topology-first) and validators, allowing for improvements in both performance, usability, and better scenario search, increasing the chances of success for different actions. Eliminating the state shared between the different layers will allow for more concurrency in the implementation.
 
-PR scope: 12 commits, +949 / −1127 net across 18 files.
+For the purpose of this document, we will refer to all actions that require scenario generation and simulation as simply "Actions". For the sake of simplicity, we might refer to reclaim/preempt/consolidate scenarios simply as "reclaim scenarios".
 
-## Workload shape
+In some cases, we will refer to "priority" of jobs in the context of reclaim: this means the global priority of a job (i.e, considering all jobs and queues in the cluster).
 
-Typical podgroups are distributed training/inference jobs — a
-leader plus one or two worker templates, scaling out to hundreds
-of pods that are *replicas* of those few templates: identical
-resource requests, predicates, and affinity rules. The solver
-treats every pod independently today, but template-level
-equivalence classes can shrink the effective candidate space
-substantially. Predicate evaluation (one victim's predicates ≡
-another victim's of the same template) and placement (one pod's
-`feasibleNodes` ≡ all its template-siblings') both deduplicate
-cleanly along template boundaries; the same insight powers Borg's
-equivalence-class scoring caches (Verma et al., EuroSys 2015).
-Several of the open follow-ups below become much cheaper under
-this assumption.
+## Motivation
 
-## Background
+### Responsibility leakage between layers
 
-The pre-refactor stack ran each `reclaim` / `preempt` /
-`consolidation` action through a four-layer pipeline:
+The pre-refactor stack runs each `reclaim` / `preempt` / `consolidation` action through a four-layer pipeline:
 
 ```
                   ┌─────────────────────┐
@@ -58,209 +40,96 @@ The pre-refactor stack ran each `reclaim` / `preempt` /
                   └─────────────────────┘   per-node bucketing
 ```
 
-The stack reads as ad-hoc branch-and-bound where the "branches"
-(per-`k` probes) shared mutable state with the search driver.
-Every level both produced new candidates and committed results
-into a parent context — neither backtracking cleanly nor
-expressing its own search order independently.
+Every level both produces new candidates and commits results into a parent context — neither backtracking cleanly nor expressing its own search order independently. A few specific consequences:
 
-A typical reclaim of an N-task preemptor:
+- **Scenario generation logic is split** - A higher-level scenario generator adds potential victims. The inner `byPodSolver` internally splits this scenario by bucketing victims per node, essentially iterating over sub-scenarios. These are not validated with the regular scenario filters, instead wasting time on full simulations.
+- **Inner solver assumes caller implementation** - the inner solver implicitly assumes that each new scenario is an extension of the previous one, with one more reclaimer task. This allows it to iterate on the new victims by bucketing them to nodes, but breaks when trying to implement changes in the larger solver scope.
 
-```go
-// JobSolver.Solve
-maxK := s.searchMaxSolvableK(...)        // O(log N) probes;
-                                         // each commits victims
-                                         // into state on success
-result := s.probeAtK(ssn, &state, ..., N) // final probe with full N
+Testing any one layer in isolation requires reproducing most of the stack, and adding a new generation strategy or simulator backend requires touching all four layers.
 
-// solvePartialJob (called by every probe)
-builder := NewPodAccumulatedScenarioBuilder(ssn, partialJob, recorded, ...)
-for s := builder.GetValidScenario(); s != nil; s = builder.GetNextScenario() {
-    bp := newByPodSolver(...)
-    result := bp.solve(ssn, s)             // per-node iteration
-    if result.solved {                     // inside; validator
-        return result                       // called from within
-    }
-}
-```
+### Decoupling unlocks several open follow-ups
 
-### Layer responsibilities
+A clean interface boundary is the precondition for several long-term enhancements that cannot be staged independently today:
 
-Each layer carried multiple, cross-cutting concerns:
+- pluggable scenario search & scoring
+- concurrent scenario generation / filtering
+- adaptive scenario generation
 
-- **`JobSolver.Solve`** — entry per pending job. Ran the gang
-  loop **and** owned the `recordedVictimsTasks` carry-forward
-  state across probes.
-- **`PodAccumulatedScenarioBuilder`** — stateful, monotonic
-  scenario emitter, with filter logic baked into accumulation.
-- **`byPodSolver.solveOnPotentialNodes`** — per-scenario inner
-  search with checkpoint/rollback against a shared statement.
-- **`byPodSolver.handleScenarioSolution`** — ran the
-  action-policy validator from inside that inner loop. What the
-  validator saw depended on the scenario builder's internal
-  accumulation state.
+Those will be explored in *Open follow-ups*; the refactor itself doesn't deliver them, but they will be used to guide the design.
 
-Validation alone was split across three places: cheap filters
-pre-sim, predicates mid-sim, and the action validator post-sim.
-The action validator received the scenario's *candidate* set
-rather than the actual placement — so its semantics depended on
-emission order. The `ByNodeScenario` it inspected was a mix of
-post-eviction (`Releasing`/`Pipelined`) and pre-eviction
-(`Running`) tasks.
+## Usage stories
 
-## Motivation
+### Reclaim across a few host nodes (common case)
 
-### Architecture: layers had grown into each other
+A 4-GPU training job queues against a cluster where several lower-priority jobs hold GPUs. The action wants the cheapest viable victim set, evicting as few victims as possible, as low priority as possible.
 
-Each layer mutated state owned by another (see *Background*), so
-testing any one in isolation required reproducing most of the
-stack. Adding a new generator strategy or simulator backend was
-effectively impossible without refactoring all four layers in
-lockstep. The refactor pins each concern to a single layer behind
-a narrow interface — see *Goals and non-goals*.
+ToDo: detail a case that requires sub-scenario search
 
-### Bug: iter-1 lock-in for multi-task pending jobs
+### Topology-constrained gang on topology domains
 
-The legacy solver allocated a multi-pod gang **incrementally**. For a
-preemptor with N pending tasks it ran an exponential-doubling +
-binary search over `k ∈ [1, N]`, calling `solvePartialJob` at each
-probe with the first `k` tasks. Each successful probe **committed**
-its victim set into `state.recordedVictimsJobs`, and that prefix was
-carried into the next probe.
+A distributed inference job requires accelerators with compatible topology constraints (e.g., eight GPUs in the same low-latency domain). Most freed-victim sets across the cluster do not free a coherent domain, so a victim-set-first generator emits mostly infeasible candidates and falls back to a full-set evict-everything candidate that over-evicts.
 
-There was no backtracking. If the cheapest victim set for `k=1`
-poisoned the search space for `k=2..N`, the solver gave up even
-when a feasible plan existed. This is a textbook
-greedy-prefix-commit pathology — the same shape appears in
-Volcano's `reclaim` action (priority-queue greedy with no
-global-disruption backtracking) and in the k8s default scheduler's
-preemption (mitigated there by single-step `reprievePod` rescue).
-Globally lock-in-free production schedulers exist (Firmament,
-[OSDI 2016](https://www.usenix.org/system/files/conference/osdi16/osdi16-gog.pdf),
-re-solves a min-cost flow each cycle), but at substantially higher
-engineering cost.
+This is the main argument for well-scoped, adaptive scenario generation: an alternative generator can detect a topology-constrained workload, enumerates viable topology domains first and derives the minimum victim set per domain. It needs to plug into the same `Solve` driver alongside the same simulator and validator — no changes to those layers. Different job types warrant fundamentally different search orders, and the architecture should make swapping enumeration strategies cheap and safe. See *Topology-first generation* in *Open follow-ups*.
 
-The reproducer in `reclaim_test.go::TestHandleReclaim` test 40
-("Reclaim across many single-GPU nodes") exercises exactly this: a
-5-task reclaimer needs one victim from each of 5 single-GPU nodes,
-but the binary-search prefix structure picks `k=1, 2, 4, 5` and
-skips intermediate `k=3`, so the final probe never encounters the
-multi-node victim set.
+## Typical workload shape
+
+Generically solving every possible workload in reasonable time is impractical. Luckily, we can make some reasonable assumptions that will make the task easier.
+
+Typical podgroups are usually:
+- Single pod workloads, which are the easiest
+- Distributed training, inference, or data processing jobs — a leader plus several (typically one, sometimes a few, generally less than 10) worker templates, ranging from very few to thousands of pods that are *replicas* of those few templates: identical resource requests, predicates, and affinity rules. The solver treats every pod independently today, but template-level equivalence classes can shrink the effective candidate space substantially.
 
 ## Desired properties
 
-The properties below are the long-horizon target for the solver
-stack. This refactor delivers some outright; others are natural
-follow-ups. The *Goals and non-goals* section that follows
-crystallizes which is which for the current change.
+The properties below are (some of the) desired properties that we want to achieve. 
 
 ### Clearly defined, decoupled components
 
-`Generator`, `Simulator`, `Validator` are independently testable
-and substitutable. State lives inside per-call `Statement`s, not
-in the search driver. Delivered by this refactor.
+`Generator`, `Simulator`, `Validator` are independently testable and substitutable. They should have minimal assumptions on each other's internal implementation, and share only the necessary state between them. This will allow us to test and modify them independently.
 
-### Good performance at our target scale
+### Good performance at the target scale
 
 - **1,000s of nodes** and **1,000s of jobs** per scheduling cycle.
-- **Distributed jobs have low template variety** (see *Workload
-  shape*) — leader plus a small number of worker templates,
-  replicated. Algorithms should deduplicate per-template, not
-  per-pod.
-
-The cardinality-first generator targets the common case (gangs
-spanning 1–2 host nodes) cheaply. The open follow-ups (pre-flight
-static feasibility, failure-mode caching) scale with templates
-rather than pods.
+- **Distributed jobs have low template variety** (see *Typical workload shape*) — leader plus a small number of worker templates, replicated. This assumption is reasonable for common usage patterns and allows us to implement optimizations.
+- **Jobs with topology requirements** is a common use case that requires its own optimizations
+- Busy, multi-tenant, highly utilized clusters that serve dozens of teams
 
 ### Best solutions for reclaim, by multiple criteria
 
-Reclaim quality is multi-dimensional and the criteria don't
-combine into one natural ordering:
+Reclaim quality is multi-dimensional and the criteria don't combine into one natural ordering:
 
 - **Fairness** — respect queue guarantees and weights.
 - **Bin packing** — favor scenarios that consolidate workloads.
-- **Topology** — preserve NVLink islands, NUMA locality.
-- **Affinities** — honor pod (anti-)affinity and
-  taint/toleration constraints.
+- **Topology** — respect network topology requirements for workloads. When possible, place workloads according to their preferred topology.
+- **Affinities** — honor pod (anti-)affinity and taint/toleration constraints and preferences.
 - **Minimal cluster disruption** — fewer evictions when possible.
-- **Priority-aware victim selection** — prefer disrupting
-  lower-priority jobs first.
+- **Priority-aware victim selection** — prefer disrupting lower-priority jobs first.
+- **Performance at scale** - simulating every possible scenario is not practical in real world large-scale clusters. Sparse scenario evaluation might be necessary.
 
-The path forward is a **pluggable scenario cost function** — a
-`ScenarioScorer` plugin that actions compose from per-criterion
-contributions, replacing the current implicit cardinality-first
-ordering. See *Open follow-ups*.
-
-### Adaptable to evolving definitions of "good"
-
-The cost function must evolve as the cluster does:
-
-- **Node or device utilization** as a first-class objective.
-- **Device-level topology** — GPU-to-GPU NVLink/PCIe distance,
-  not just node-level.
-- **Varying dominant resources** — clusters where memory,
-  network, or storage become the bottleneck instead of GPU.
-
-The plugin shape (per-criterion scorers composed by the action)
-keeps these additive: new criteria don't perturb existing ones.
+Different use cases and different setups might weigh these criteria differently. Implementing a **pluggable scenario cost function** will allow greater flexibility in different use cases.
 
 ### Adaptable to job types
 
-Different job classes warrant different scenario-generation
-strategies:
+While out of scope for the initial refactor, it's worth considering that different job classes warrant different scenario-generation strategies. The refactor should take into account that scenario generation could be **adaptive** to job type and cluster state.
 
-- **Strict topology gangs** (e.g., NVLink-island affinity) —
-  enumerate viable placement domains first, derive the minimum
-  victim set per domain. The default victim-set-first generator
-  is inappropriate here; see *Topology-first generation* in
-  *Open follow-ups*.
-- **Single-task preemptors** — already special-cased to skip the
-  pair and full-set tiers (one pod can only land on one node).
-- **Elastic / partial-gang jobs** — out of scope for the current
-  all-or-nothing simulator, but the `Generator`/`Simulator` split
-  doesn't preclude a future elastic simulator alongside the
-  current one.
+- **Strict topology gangs** — enumerate viable placement domains first, derive the minimum victim set per domain. The default victim-set-first generator could be suboptimal here, both from performance and for finding the optimal solution.
+- **Single-task reclaimers** — one pod can only land on one node, so a single-pod reclaimer requires single-node sub-scenario evaluation. This can be generalized further: each reclaimer set of pods has a theoretical minimum and maximum number of nodes that need to be evaluated.
 
 ## Goals and non-goals
 
 ### Goals
 
-- **Decouple the four layers** behind narrow, single-purpose
-  interfaces (`Generator`, `Simulator`, `Validator`).
-- **Prevent responsibility leakage** — no layer reads or mutates
-  state owned by another. Each `Simulate` call runs as a
-  speculative transaction in its own `Statement`.
-- **Independent testability** — each layer can be exercised in
-  isolation with a fake or stub.
-- **Extendability** — alternative generators (topology-first,
-  best-first, IMP-style cardinality-`k`), simulators, or validators
-  plug in without touching the others.
-- **Find good solutions quickly for typical workloads.** Per
-  *Workload shape*, gangs typically span a small number of host
-  nodes; the cardinality-first generator targets the common cases
-  cheaply.
-- **Fix iter-1 lock-in** — no greedy commits in the search
-  driver; each candidate is evaluated independently.
+- **Decouple the four layers** behind well-defined, single-purpose interfaces (`Generator`, `Simulator`, `Validator`).
+- **Prevent responsibility leakage** — no layer reads or mutates state owned by another.
+- **Independent testability** — each layer can be exercised in isolation with a fake or stub.
+- **Extendability** — alternative generators, simulators, or validators plug in without touching the others. 
+- **Performance** - initial refactor should not introduce major performance regressions, while allowing for performance improvements down the road.
 
 ### Non-goals
 
-- **Exhaustive enumeration of feasible victim subsets.** Finding
-  every possible solution is explicitly *not* the target. Gangs
-  spanning 3+ host nodes fall through to a full-set fallback that
-  may over-evict. Adding cardinality-`k` enumeration is left to
-  *Open follow-ups*, gated on a real workload demonstrating need.
-- **Globally optimal disruption cost.** Emission order is
-  cardinality-first, not cost-optimal. The plugin-driven scoring
-  follow-up is the path here if it becomes load-bearing.
-- **Replacing the action-policy validator API.** Plugin-registered
-  `func(api.ScenarioInfo) bool` validators continue to work via
-  `LegacyValidator`. Migrating that contract is separate work.
-- **Graceful partial-gang allocation.** The simulator is
-  all-or-nothing per scenario: either the full pending set fits on
-  top of the candidate victim set, or the scenario is rejected.
+- **Exhaustive enumeration of feasible victim subsets.** Finding the optimum out of every possible solution is explicitly *not* the target. Some gang shapes (e.g., very picky node-selectors) may fall back to a coarser candidate that over-evicts; tightening this is left to *Open follow-ups*, gated on a real workload demonstrating need.
 
-## After
+## Proposed initial architecture
 
 ```
    action  ────►  ┌─────────────────────┐
@@ -286,91 +155,48 @@ strategies:
   │ Next()      │    │ Simulate(s) │    │ Validate(   │
   │  → Scenario │    │  → Result   │    │   s, r) bool│
   │             │    │             │    │             │
-  │ accumulating│    │ session     │    │ native +    │
-  │ Generator   │    │ Simulator   │    │ Legacy      │
-  │ (per-node + │    │ (one        │    │ Validator   │
-  │  pairs +    │    │  Statement  │    │ adapter)    │
-  │  full-set)  │    │  per call)  │    │             │
+  │ pluggable   │    │ transaction │    │ native +    │
+  │ enumeration │    │ per call    │    │ adapter for │
+  │ strategy    │    │             │    │ legacy plugs│
   └─────────────┘    └─────────────┘    └─────────────┘
 ```
 
-This is **best-first search over scenarios**: the generator is the
-enumeration source, the simulator is the per-candidate evaluator,
-and the validator is a post-evaluation policy filter. Each
-`Simulate` call runs as a speculative transaction in its own
-`Statement` — committed by the caller on success, discarded on
-failure — so the search driver owns no mutable state between
-candidates.
+The scenario generator is responsible for scenario search strategy and initial filtering. Once a scenario is deemed feasible by all pre-filters, the Simulator simulates it, taking into account every constraint: job allocation order, kubernetes predicates, node scoring, etc. Given a successful simulation, the validator is a post-evaluation policy filter, checking for custom plugin policies, like fairness.
+
+TODO: scenario scoring as p0?
 
 ### `Scenario`
 
-A flat candidate plan. No "recorded" carry-forward, no per-node
-bucketing in the type — those are implementation details of
-generators.
+A flat candidate plan. No "recorded" carry-forward, no per-node bucketing in the type — those become implementation details of specific generators.
 
 ```go
 type Scenario struct {
-    Preemptor  *podgroup_info.PodGroupInfo
-    Pending    []*pod_info.PodInfo  // tasks of Preemptor to place
-    Victims    []*pod_info.PodInfo  // tasks the simulator should evict
-    Candidates []*pod_info.PodInfo  // broader pool used by LegacyValidator;
-                                    // empty when the validator reads
-                                    // SimulationResult directly
+    Preemptor *podgroup_info.PodGroupInfo
+    Pending   []*pod_info.PodInfo  // tasks of Preemptor to be allocated
+    Victims   []*pod_info.PodInfo  // candidate victims for the scenario
 }
 ```
 
 ### `Generator`
 
-Yields candidate scenarios in a layered, cardinality-first order.
-The shape is a node-locality-aware variant of **Incremental Minimal
-Preemption** (IMP, [arxiv:2411.11560](https://arxiv.org/abs/2411.11560)):
-enumerate victim subsets of increasing cardinality until one is
-feasible, where cardinality is *host nodes touched*, not victim
-tasks.
+Yields candidate scenarios. Pre-filters unfeasible scenarios before they are simulated.
 
-The production implementation, `accumulatingGenerator`, walks the
-victim queue and emits, per accumulation step:
+Today, the scenario generator attempts to greedily find the "cheapest" scenario - meaning, the scenario that involves the least prioritized jobs in the cluster, by adding candidate victims from a global job queue.
 
-1. **Per-node** — the latest victim job's host nodes, individually.
-   Cheapest when one node's victims suffice.
-2. **Pairs** — (one prior host node + one latest host node). Solves
-   two-node gang preemptors without dragging unrelated accumulated
-   victims along.
-3. **Full-set** — recorded ∪ every accumulated potential. Required
-   for gangs spanning 3+ host nodes; over-evicts there
-   (see Open follow-ups).
+A cheap stateless prune (e.g., a freed-resource lower-bound check) should drop emissions whose freed-resource pool cannot possibly host the gang, so most pre-tier candidates never reach the simulator.
 
-A cheap stateless prune (`emissionFits`) drops emissions whose
-freed-GPU pool cannot possibly host the gang, so most pre-tier
-candidates never reach the simulator. Within each tier, host nodes
-are visited in lexicographic order.
-
-The ordering is monotone in *cardinality*, not in *absolute
-disruption cost*: a per-node emission may touch a high-priority
-job while a later pair emission could touch two low-priority ones.
-`Solve` takes the first feasible-and-validated emission, so the
-cardinality-minimal feasible scenario wins — but no global cost
-minimum is guaranteed. Replacing the implicit ordering with an
-explicit `ScenarioScorer` plugin (admissible lower bound + post-sim
-score) would turn `Solve` into A\* over scenarios; see Open
-follow-ups.
+ToDo: Adaptive scenario generation, scenario scoring
 
 ### `Simulator`
 
-Runs the expensive work for one scenario: opens a fresh
-`Statement`, evicts the victims, calls the existing
-`TryToVirtuallyAllocatePreemptorAndGetVictims` primitive, and
-returns the result. On feasibility the live `Statement` is handed
-back to the caller; on infeasibility it is discarded. Each call is
-independent — no checkpoint/rollback dance, no per-call mutation of
-shared state.
+Simulator validates the proposed scenario by simulating the evicted and expected allocation, using the session state and the statement mechanism. Simulator takes into account all relevant scheduling constraints, including job ordering, predicates, fine-grained resources (DRA, fractions), plugins etc. Scenarios that fail to allocate the pending job are discarded. Simulations are orders of magnitude more expensive computationally than scenario generation and filtering, and they cannot be performed concurrently due to modifying session state, so a good implementation will avoid simulating unfeasible scenarios as much as possible.
 
 ```go
 type SimulationResult struct {
     Feasible  bool
     Placement map[*pod_info.PodInfo]*node_info.NodeInfo
-    Preempted []*pod_info.PodInfo  // status=Releasing post-sim
-    Pipelined []*pod_info.PodInfo  // status=Pipelined post-sim
+    Preempted []*pod_info.PodInfo  // tasks evicted post-sim
+    Pipelined []*pod_info.PodInfo  // tasks pipelined post-sim
     Statement *framework.Statement // non-nil on Feasible
 }
 ```
@@ -384,184 +210,52 @@ type Validator interface {
 }
 ```
 
-- **Consolidation** uses a native `Validator` that reads
-  `SimulationResult.Preempted` directly:
-  `len(r.Preempted) == 0` means every victim was re-homed.
-- **Preempt** and **reclaim** wrap their plugin-registered
-  `func(api.ScenarioInfo) bool` validator with `LegacyValidator`,
-  which rebuilds a `BaseScenario` from `Scenario.Candidates` so the
-  plugin contract is unchanged.
-
-## Behavior changes
-
-### Gang scheduling: incremental greedy → full-gang one-shot
-
-For min-member > 1 jobs, the simulator now tries to fit the entire
-gang on top of every candidate victim set. There is no per-task
-probing.
-
-- **Min-member = 1 jobs**: behavior unchanged.
-- **Multi-task jobs**: different victim choices possible. The
-  iter-1 lock-in regression test (`TestHandleReclaim` test 40,
-  "Reclaim across many single-GPU nodes") starts succeeding.
-
-### Generator emission order
-
-Per-node emissions are tried before pairs, pairs before the
-full-set. Within each tier, host nodes are visited in lexicographic
-order (legacy used Go map iteration, effectively random). For
-single-task preemptors only the per-node tier is emitted — pair
-and full-set emissions can't expand the placement options of a
-1-task pod. Tests with specific node-pinning expectations may need
-expectation updates; none were observed in this PR.
-
-### Scenario validator's view
-
-Plugin-registered validators (preempt, reclaim) keep their legacy
-view via `LegacyValidator`, which passes them
-`Scenario.Candidates` (the full accumulated pool) wrapped in a
-`BaseScenario`. No semantic change.
-
-The native consolidation validator switches from "any task in the
-scenario victim list is `Releasing`" to
-`len(SimulationResult.Preempted) == 0`. These are equivalent
-because the legacy iteration treated `Running` tasks (non-evicted
-potentials on other nodes) as a no-op, leaving the check
-effectively `any actually-evicted task is Releasing`.
+Validators allow plugins to implement policies on acceptable scenarios: for example, the Proportion plugin allows only reclaims that fit fairness limitations.
 
 ## Risks
 
 ### Simulator-call inflation from unfiltered emissions
 
-The generator can emit `O(host_nodes²)` pair candidates per
-accumulation step, and each simulator call is expensive (eviction
-+ virtual allocation against a fresh `Statement`). Without
-filtering, the per-cycle simulation count can dominate the
-scheduling budget on large clusters.
+Some job properties are not taken into account by the scenario generator - for example, volume placement. Some jobs risk passing all scenario pre-filters but failing in the simulation stage - this is the case today as it will be after the refactor. However, any changes to scenario generation that can generate more scenarios than today, risk inflating the number of simulations the solver has to run, potentially degrading performance significantly. 
 
-Mitigations in place:
-- **`emissionFits`** — stateless idle-GPU lower-bound check that
-  rejects emissions whose freed-GPU pool cannot possibly host the
-  gang, before the simulator sees them.
-- **`accumulated_scenario_filters` pipeline** — node-affinity and
-  topology-aware idle-GPU filters at the scenario level.
-- **Pair tier gated on multi-task gangs** — single-task preemptors
-  emit only the per-node tier, avoiding the pair quadratic.
+This could be mitigated in a number of ways:
 
-If emissions still outrun the simulation budget on real workloads,
-the next mitigations are pre-flight static feasibility and
-failure-mode caching (see *Open follow-ups*); both scale
-per-template per *Workload shape*.
+- Setting actual time limits on solver runs per job, to avoid scheduler hang
+- Using sparse scenario generation (skipping some feasible scenarios) in cases where scenario filters do not filter out any scenario
+
+A worst-case test should be added to our benchmarks to keep track on this behavior.
 
 ### One-shot gang vs incremental greedy
 
-The legacy gang loop probed `k = 1, 2, 4, ..., N` and could retain
-the largest feasible `k` as a partial allocation. The new
-simulator is all-or-nothing: the entire pending set fits or
-nothing fits.
+The legacy gang loop probed `k = 1, 2, 4, ..., N` and could retain the largest feasible `k` as a partial allocation. The new simulator is all-or-nothing.
 
-- **Strict gang semantics is correct** for min-member=N jobs —
-  partial allocations don't help a gang that requires N tasks
-  running together.
-- **Different victim choices** — full-gang simulation may pick a
-  different victim set than the legacy partial-gang fixed-point
-  would. The iter-1 lock-in fix relies on this, and is the
-  intended outcome.
-- **Larger per-call cost, far fewer calls** — each simulation
-  places the whole gang, but there's no exponential probing over
-  `k` and no per-node inner loop with checkpoint/rollback.
-- **No "almost fit" fallback** — if a gang of N can fit N-1 tasks
-  but not all N, the new solver returns infeasible where the
-  legacy could have reported partial progress on the first `k`
-  tasks. Intended for gang jobs; flagged here so the difference
-  from legacy behavior is explicit.
+- **Strict gang semantics is correct** for min-member=N jobs — partial allocations don't help a gang that requires N tasks running together.
+- **Different victim choices** — full-gang simulation may pick a different victim set than the legacy partial-gang fixed-point would. 
 
-### Validator equivalence not pinned by a test
+TODO: find an actual scenario where that's the case
 
-The consolidation validator's switch from "any victim is
-`Releasing`" to `len(Preempted) == 0` relies on legacy iteration
-treating `Running` tasks as a no-op. The equivalence holds today
-but isn't asserted by a dedicated regression test.
+This can potentially be mitigated by the scenario generator searching more sub-scenarios instead of just incrementing.
 
-## Test impact
+## Implementation plan
 
-All `pkg/scheduler/...` suites are green.
+TODO
 
-- **TestHandleReclaim** test 40 ("Reclaim across many single-GPU
-  nodes") now passes — this is the iter-1 lock-in regression test
-  added before the refactor.
-- **TestHandleScatteredNodesForGangPreempt** unchanged — keeps
-  `NumberOfPipelineActions: 2`. The pair-emission tier finds the
-  tight 2-victim set (`{job-1, job-3}`) before the full-set
-  fallback would over-evict.
-- All other reclaim, preempt, and consolidation suites unchanged.
+## Open questions
 
-## Migration path
-
-The refactor landed in seven phases, each shippable on its own:
-
-| Phase | Description | Behavior change |
-|-------|-------------|-----------------|
-| 0 | Define `Generator` / `Simulator` / `Validator` interfaces, `Solve` driver | none |
-| 1 | `sessionSimulator` wrapping the existing eviction + virtual-allocate body | none |
-| 2 | `accumulatingGenerator` ported from `PodAccumulatedScenarioBuilder` | none |
-| 3 | `JobSolver.Solve` wires through `Solve(gen, sim, val)`; gang loop still runs outside | none |
-| 4 | Collapse the gang loop; single full-gang solve | min-member > 1 jobs may pick different victim sets; iter-1 lock-in fixed |
-| 5 | Delete `byPodSolver` and helpers (≈ 300 lines) | none |
-| 6 | `JobSolver` accepts `Validator` natively; consolidation gets a native validator | none |
-| 7 | Merge `solvers/v2/` into `solvers/`; delete `PodAccumulatedScenarioBuilder` | none |
+- **Pluggable scenario scoring API.** A future `ScenarioScorer` would allow us to explore scenarios concurrently and pick the best one. Same pattern as `NodeOrderFn`, but at the scenario layer. This needs to be POC'd to assess impact on performance.
 
 ## Open follow-ups
 
-- **Native validators for preempt and reclaim.** Today they wrap
-  their plugin-registered `func(api.ScenarioInfo) bool` validator
-  with `LegacyValidator`. Native `Validator` implementations that
-  read `SimulationResult` directly would let the `Candidates`
-  field and the `LegacyValidator` adapter both go away. This
-  requires migrating the plugin registration API
-  (`ssn.AddReclaimScenarioValidatorFn`, etc.) to a `Validator`-shaped
-  contract.
-- **Tighter generator emissions for 3+ node gangs.** The current
-  tiering (per-node → pairs → full) optimally handles 1- and
-  2-node preemptors. Gangs spanning 3+ host nodes fall through to
-  the full-set fallback and may over-evict. The natural extension
-  is full IMP-style cardinality-`k` enumeration with `emissionFits`
-  pruning; bounded `C(m, k)` for small accumulated `m`. Empirically
-  the IMP paper reports k≤2 covers the bulk of cases, which matches
-  the current tier shape — the gap is real but rare in practice.
-- **Explicit scenario scoring / best-first search.** The generator's
-  cardinality-first ordering is a fixed approximation. A
-  `ScenarioScorer` plugin (admissible lower bound for pre-sim
-  pruning, plus post-sim score) would turn `Solve` into A\* over
-  scenarios and let actions express disruption cost directly. Same
-  pattern as Volcano's `NodeOrderFn` / `TaskOrderFn` plugins, but
-  at the scenario layer.
-- **Topology-first generation.** For topology-constrained gangs
-  (e.g., NVLink-island affinity), the current victim-set-first
-  enumeration mostly emits scenarios that don't free a coherent
-  placement and is dominated by the full-set fallback. Inverting
-  the search — enumerate viable topology domains first, derive the
-  minimum victim set per domain — collapses the search space from
-  `O(2^running_tasks)` to `O(islands)`.
-- **Pre-flight static feasibility.** When a job is unschedulable
-  for static reasons (PVC mismatch, taints, missing GPU type), the
-  current solver rediscovers it once per emitted scenario.
-  Strengthening `feasibleNodes` to include the pending pods'
-  static-only predicates short-circuits the entire search before
-  the generator is constructed. Per *Workload shape*: this runs
-  once per template, not once per pod.
-- **Failure-mode caching across scenarios.** The simulator returns
-  only `Feasible: false` on rejection. Surfacing *why*
-  (`(template, node, predicate)` triples — keyed by template, not
-  by pod, per *Workload shape*) would let the driver skip
-  scenarios whose freed-node set is a subset of an already-failed
-  set. Standard no-good learning from CSP solvers.
+- **"Sub-scenario" generation.** Today, after a scenario passes the pre-filters, the `byPodSolver` evaluates it by iterating over the potential nodes involved in the scenario: these are essentially "sub-scenarios", a set of less-disruptive subset scenarios generated from a bigger one. While the current implementation is crude and makes assumptions on the implementation of the bigger solver (attempting to solve a reclaimer pod-by-pod), it might make sense in some cases to attempt a less disruptive sub-scenario before evaluating the full one.
+- **Topology-first generation** Is probably the first use case to benefit from improvements to scenario generation.
 
 ## Code anchors
 
+The code areas affected by this work:
+
 - Production solver: `pkg/scheduler/actions/common/solvers/`
 - Action callers: `pkg/scheduler/actions/{reclaim,preempt,consolidation}/`
-- Existing scenario types (still used as generator-internal state):
+- Existing scenario types (would become generator-internal state):
   `pkg/scheduler/actions/common/solvers/scenario/`
-- Existing accumulated filters (still used by the generator):
-  `pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/`
+- Existing accumulated filters (would be reused by a default
+  generator): `pkg/scheduler/actions/common/solvers/accumulated_scenario_filters/`
