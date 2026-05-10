@@ -133,18 +133,18 @@ While out of scope for the initial refactor, it's worth considering that differe
 
 ```
    action  ────►  ┌─────────────────────┐
-                  │      JobSolver      │   thin wrapper: build
-                  │       .Solve        │   gen/sim/val, call Solve
+                  │      JobSolver      │
+                  │       .Solve        │
                   └────────┬────────────┘
                            │
                            ▼
                   ┌─────────────────────┐
-                  │  Solve(g, sim, val) │   for s, ok := g.Next(); ok; … {
-                  │                     │     r := sim.Simulate(s)
-                  │                     │     if !r.Feasible        { continue }
-                  │                     │     if !val.Validate(s,r) { continue }
-                  │                     │     return s, r, true
-                  │                     │   }
+                  │  Solve(g, sim, val) │   
+                  │                     │   
+                  │                     │   
+                  │                     │   
+                  │                     │   
+                  │                     │   
                   └────────┬────────────┘
                            │
         ┌──────────────────┼──────────────────┐
@@ -155,13 +155,13 @@ While out of scope for the initial refactor, it's worth considering that differe
   │ Next()      │    │ Simulate(s) │    │ Validate(   │
   │  → Scenario │    │  → Result   │    │   s, r) bool│
   │             │    │             │    │             │
-  │ pluggable   │    │ transaction │    │ native +    │
-  │ enumeration │    │ per call    │    │ adapter for │
-  │ strategy    │    │             │    │ legacy plugs│
+  │ pluggable   │    │ transaction │    │ plugin      │
+  │ enumeration │    │ per call    │    │ policy      │
+  │ strategy    │    │             │    │ enforcement │
   └─────────────┘    └─────────────┘    └─────────────┘
 ```
 
-The scenario generator is responsible for scenario search strategy and initial filtering. Once a scenario is deemed feasible by all pre-filters, the Simulator simulates it, taking into account every constraint: job allocation order, kubernetes predicates, node scoring, etc. Given a successful simulation, the validator is a post-evaluation policy filter, checking for custom plugin policies, like fairness.
+The scenario generator is responsible for scenario search strategy and initial filtering. Once a scenario is deemed feasible by all pre-filters, the Simulator simulates it, taking into account every constraint: job allocation order, kubernetes predicates, node scoring, etc. Given a successful simulation, the validator is a post-evaluation policy filter that enforces plugin-specific policies, such as fairness in the proportion plugin.
 
 TODO: scenario scoring as p0?
 
