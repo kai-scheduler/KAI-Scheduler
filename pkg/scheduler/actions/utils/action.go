@@ -21,6 +21,10 @@ func GetVictimsQueue(
 	preemptees := map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{}
 
 	for _, job := range ssn.ClusterInfo.PodGroupInfos {
+		// A job with any StuckInReleasing pod is not a valid victim
+		if hasStuckInReleasingPod(job) {
+			continue
+		}
 		atLeastOneAlivePod := false
 		for _, task := range job.GetAllPodsMap() {
 			if !pod_status.IsAliveStatus(task.Status) {
@@ -157,4 +161,13 @@ func getSumOfAvailableGPUs(ssn *framework.Session) (float64, int64) {
 	}
 
 	return sumOfAllAllocatableGPUs, sumOfAllAllocatableGPUsMemory
+}
+
+func hasStuckInReleasingPod(job *podgroup_info.PodGroupInfo) bool {
+	for _, task := range job.GetAllPodsMap() {
+		if task.Status == pod_status.StuckInReleasing {
+			return true
+		}
+	}
+	return false
 }

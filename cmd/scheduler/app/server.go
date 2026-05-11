@@ -90,6 +90,7 @@ func BuildSchedulerParams(opt *options.ServerOption) *conf.SchedulerParams {
 		NumOfStatusRecordingWorkers:       opt.NumOfStatusRecordingWorkers,
 		GlobalDefaultStalenessGracePeriod: opt.GlobalDefaultStalenessGracePeriod,
 		SchedulePeriod:                    opt.SchedulePeriod,
+		StuckInReleasingThreshold:         opt.StuckInReleasingThreshold,
 		DetailedFitErrors:                 opt.DetailedFitErrors,
 		UpdatePodEvictionCondition:        opt.UpdatePodEvictionCondition,
 		QueueLabelKey:                     opt.QueueLabelKey,

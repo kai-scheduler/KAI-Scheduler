@@ -498,5 +498,59 @@ func getPreemptTestsMetadata() []integration_tests_utils.TestTopologyMetadata {
 				},
 			},
 		},
+		{
+			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Name: "Job with a StuckInReleasing pod is not a preempt victim",
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:                "stuck_victim_job",
+						RequiredGPUsPerTask: 1,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "queue0",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								NodeName: "node0",
+								State:    pod_status.StuckInReleasing,
+							},
+						},
+					},
+					{
+						Name:                "preemptor_job",
+						RequiredGPUsPerTask: 1,
+						Priority:            constants.PriorityBuildNumber,
+						QueueName:           "queue0",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								State: pod_status.Pending,
+							},
+						},
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node0": {GPUs: 1},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{Name: "queue0", DeservedGPUs: 1},
+				},
+				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"stuck_victim_job": {
+						NodeName:     "node0",
+						GPUsRequired: 1,
+						Status:       pod_status.StuckInReleasing,
+					},
+					"preemptor_job": {
+						GPUsRequired: 1,
+						Status:       pod_status.Pending,
+					},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{
+						NumberOfCacheBinds:      0,
+						NumberOfCacheEvictions:  0,
+						NumberOfPipelineActions: 0,
+					},
+				},
+			},
+		},
 	}
 }

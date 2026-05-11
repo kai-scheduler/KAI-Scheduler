@@ -83,6 +83,7 @@ func main() {
 		FullHierarchyFairness:       snapshot.SchedulerParams.FullHierarchyFairness,
 		AllowConsolidatingReclaim:   snapshot.SchedulerParams.AllowConsolidatingReclaim,
 		NumOfStatusRecordingWorkers: snapshot.SchedulerParams.NumOfStatusRecordingWorkers,
+		StuckInReleasingThreshold:   snapshot.SchedulerParams.StuckInReleasingThreshold,
 		DiscoveryClient:             kubeClient.Discovery(),
 	}
 

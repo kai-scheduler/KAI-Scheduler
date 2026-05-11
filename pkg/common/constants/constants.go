@@ -3,6 +3,8 @@
 
 package constants
 
+import "time"
+
 const (
 	AppLabelName              = "app"
 	NvidiaGpuResource         = "nvidia.com/gpu"
@@ -22,6 +24,7 @@ const (
 	DefaultKAIConfigSingeltonInstanceName = "kai-config"
 	DefaultNodePoolLabelKey               = "kai.scheduler/node-pool"
 	DefaultRuntimeClassName               = "nvidia"
+	DefaultStuckInReleasingThreshold      = 2 * time.Minute
 
 	DefaultCPUWorkerNodeLabelKey = "node-role.kubernetes.io/cpu-worker"
 	DefaultGPUWorkerNodeLabelKey = "node-role.kubernetes.io/gpu-worker"

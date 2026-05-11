@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	v1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
@@ -169,10 +170,14 @@ func (pi *PodInfo) UpsertStorageClaim(claimInfo *storageclaim_info.StorageClaimI
 }
 
 func NewTaskInfo(pod *v1.Pod, draPodClaims []*resourceapi.ResourceClaim, vectorMap *resource_info.ResourceVectorMap) *PodInfo {
-	return NewTaskInfoWithBindRequest(pod, nil, draPodClaims, vectorMap)
+	return NewTaskInfoWithConfig(pod, nil, draPodClaims, vectorMap, commonconstants.DefaultStuckInReleasingThreshold)
 }
 
 func NewTaskInfoWithBindRequest(pod *v1.Pod, bindRequest *bindrequest_info.BindRequestInfo, draPodClaims []*resourceapi.ResourceClaim, vectorMap *resource_info.ResourceVectorMap) *PodInfo {
+	return NewTaskInfoWithConfig(pod, bindRequest, draPodClaims, vectorMap, commonconstants.DefaultStuckInReleasingThreshold)
+}
+
+func NewTaskInfoWithConfig(pod *v1.Pod, bindRequest *bindrequest_info.BindRequestInfo, draPodClaims []*resourceapi.ResourceClaim, vectorMap *resource_info.ResourceVectorMap, stuckInReleasingThreshold time.Duration) *PodInfo {
 	initResreq := getPodResourceRequest(pod)
 
 	nodeName := pod.Spec.NodeName
@@ -192,7 +197,7 @@ func NewTaskInfoWithBindRequest(pod *v1.Pod, bindRequest *bindrequest_info.BindR
 		Namespace:                      pod.Namespace,
 		SubGroupName:                   pod.Labels[commonconstants.SubGroupLabelKey],
 		NodeName:                       nodeName,
-		Status:                         getTaskStatus(pod, bindRequest),
+		Status:                         getTaskStatus(pod, bindRequest, stuckInReleasingThreshold),
 		IsVirtualStatus:                false,
 		IsLegacyMIGtask:                false,
 		Pod:                            pod,
@@ -414,10 +419,13 @@ func getPodResourceWithoutInitContainers(pod *v1.Pod) *resource_info.ResourceReq
 	return resource_info.RequirementsFromResourceList(podResourcesList)
 }
 
-func getTaskStatus(pod *v1.Pod, bindRequest *bindrequest_info.BindRequestInfo) pod_status.PodStatus {
+func getTaskStatus(pod *v1.Pod, bindRequest *bindrequest_info.BindRequestInfo, stuckInReleasingThreshold time.Duration) pod_status.PodStatus {
 	switch pod.Status.Phase {
 	case v1.PodRunning:
 		if pod.DeletionTimestamp != nil {
+			if time.Since(pod.DeletionTimestamp.Time) > stuckInReleasingThreshold {
+				return pod_status.StuckInReleasing
+			}
 			return pod_status.Releasing
 		}
 

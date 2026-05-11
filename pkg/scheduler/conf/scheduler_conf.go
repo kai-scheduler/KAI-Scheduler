@@ -40,6 +40,7 @@ type SchedulerParams struct {
 	NumOfStatusRecordingWorkers       int                       `json:"numOfStatusRecordingWorkers,omitempty"`
 	GlobalDefaultStalenessGracePeriod time.Duration             `json:"globalDefaultStalenessGracePeriod,omitempty"`
 	SchedulePeriod                    time.Duration             `json:"schedulePeriod,omitempty"`
+	StuckInReleasingThreshold         time.Duration             `json:"stuckInReleasingThreshold,omitempty"`
 	DetailedFitErrors                 bool                      `json:"detailedFitErrors,omitempty"`
 	UpdatePodEvictionCondition        bool                      `json:"updatePodEvictionCondition,omitempty"`
 	QueueLabelKey                     string                    `json:"queueLabelKey,omitempty"`
