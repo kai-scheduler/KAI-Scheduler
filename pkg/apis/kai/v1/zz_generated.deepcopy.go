@@ -463,6 +463,11 @@ func (in *SchedulingShardSpec) DeepCopyInto(out *SchedulingShardSpec) {
 		*out = new(MinRuntime)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.StuckInReleasingThreshold != nil {
+		in, out := &in.StuckInReleasingThreshold, &out.StuckInReleasingThreshold
+		*out = new(metav1.Duration)
+		**out = **in
+	}
 	if in.KValue != nil {
 		in, out := &in.KValue, &out.KValue
 		*out = new(float64)
