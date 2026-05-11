@@ -2597,6 +2597,99 @@ func getTestsMetadata() []integration_tests_utils.TestTopologyMetadata {
 		},
 		{
 			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Name: "over-deserved queue should not consolidate-reclaim from under-deserved queue",
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:                "mid_job0",
+						RequiredGPUsPerTask: 2,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "mid-training",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								NodeName: "node0",
+								State:    pod_status.Running,
+							},
+						},
+					},
+					{
+						Name:                "mid_job1",
+						RequiredGPUsPerTask: 1,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "mid-training",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								NodeName: "node1",
+								State:    pod_status.Running,
+							},
+						},
+					},
+					{
+						Name:                "pre_job0",
+						RequiredGPUsPerTask: 2,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "pre-training",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								State: pod_status.Pending,
+							},
+						},
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node0": {
+						GPUs: 3,
+					},
+					"node1": {
+						GPUs: 2,
+					},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{
+						Name:               "mid-training",
+						DeservedGPUs:       4,
+						GPUOverQuotaWeight: 0,
+					},
+					{
+						Name:               "pre-training",
+						DeservedGPUs:       1,
+						GPUOverQuotaWeight: 1,
+					},
+				},
+				// mid-training: 3 GPU allocated, 4 deserved → under deserved
+				// pre-training: 0 GPU allocated, 1 deserved, requests 2 GPU
+				// FairShare expands pre-training to ~2 (absorbs mid's unused capacity),
+				// so CanReclaimResources passes (0+2 ≤ 2).
+				// Without the fix: solver consolidates mid_job1 to node0, pipelines
+				// pre_job0 to node1. All victims are Pipelined → empty resource map →
+				// validator trivially approves → mid-training is disrupted.
+				// With the fix: handleAllVictimsConsolidated checks 0+2=2 > 1 (deserved)
+				// → rejects. mid-training jobs stay Running.
+				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"mid_job0": {
+						NodeName:             "node0",
+						GPUsRequired:         2,
+						Status:               pod_status.Running,
+						DontValidateGPUGroup: true,
+					},
+					"mid_job1": {
+						NodeName:             "node1",
+						GPUsRequired:         1,
+						Status:               pod_status.Running,
+						DontValidateGPUGroup: true,
+					},
+					"pre_job0": {
+						GPUsRequired:         2,
+						Status:               pod_status.Pending,
+						DontValidateGPUGroup: true,
+					},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{},
+				},
+			},
+		},
+		{
+			TestTopologyBasic: test_utils.TestTopologyBasic{
 				Name: "Attempt to reclaim from an inference workload",
 				Jobs: []*jobs_fake.TestJobBasic{
 					{

@@ -55,7 +55,8 @@ var (
 	queueMemoryUsage            *prometheus.GaugeVec
 	queueGPUUsage               *prometheus.GaugeVec
 	usageQueryLatency           *prometheus.HistogramVec
-	podGroupEvictedPodsTotal    *prometheus.CounterVec
+	podGroupEvictedPodsTotal              *prometheus.CounterVec
+	reclaimConsolidationEmptyVictimMap *prometheus.CounterVec
 )
 
 func init() {
@@ -207,6 +208,13 @@ func InitMetrics(namespace string) {
 			Name:      "pod_group_evicted_pods_total",
 			Help:      "Total number of pods evicted per pod group",
 		}, []string{"podgroup", "namespace", "uid", "nodepool", "action"})
+
+	reclaimConsolidationEmptyVictimMap = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Name:      "reclaim_consolidation_empty_victim_map_total",
+			Help:      "Reclaim scenarios where victims existed but all were excluded from fair-share accounting (all re-pipelined).",
+		}, []string{"reclaimer_queue", "outcome"})
 }
 
 // UpdateOpenSessionDuration updates latency for open session, including all plugins
@@ -306,6 +314,10 @@ func RegisterPreemptionAttempts() {
 // RecordPodGroupEvictedPods records the number of pods evicted for a pod group
 func RecordPodGroupEvictedPods(name, namespace, uid, nodepool, action string, count int) {
 	podGroupEvictedPodsTotal.WithLabelValues(name, namespace, uid, nodepool, action).Add(float64(count))
+}
+
+func RecordReclaimConsolidationEmptyVictimMap(reclaimerQueue, outcome string) {
+	reclaimConsolidationEmptyVictimMap.WithLabelValues(reclaimerQueue, outcome).Inc()
 }
 
 // Duration get the time since specified start

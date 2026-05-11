@@ -146,9 +146,11 @@ func (pp *proportionPlugin) reclaimableFn(
 	reclaimerInfo := pp.buildReclaimerInfo(scenario.GetPreemptor(), pp.minNodeGPUMemory)
 	totalVictimsResources := make(map[common_info.QueueID][]resource_info.ResourceVector)
 	victims := scenario.GetVictims()
+	skippedVictimCount := 0
 	for _, victim := range victims {
 		totalJobResources := pp.getVictimResources(victim)
 		if len(totalJobResources) == 0 {
+			skippedVictimCount++
 			continue
 		}
 
@@ -158,7 +160,70 @@ func (pp *proportionPlugin) reclaimableFn(
 		)
 	}
 
+	if len(victims) > 0 && len(totalVictimsResources) == 0 {
+		return pp.handleAllVictimsConsolidated(reclaimerInfo, len(victims), skippedVictimCount)
+	}
+
 	return pp.reclaimablePlugin.Reclaimable(pp.jobSimulationQueues, reclaimerInfo, totalVictimsResources)
+}
+
+// handleAllVictimsConsolidated handles the case where victims exist but all were
+// re-pipelined and excluded from resource accounting. Allows the reclaim only if
+// the reclaimer queue stays within its deserved quota for managed resources —
+// preventing an over-fed queue from disrupting another queue's running work
+// under the guise of defragmentation.
+func (pp *proportionPlugin) handleAllVictimsConsolidated(
+	reclaimerInfo *rec.ReclaimerInfo, totalVictims, skippedVictims int,
+) bool {
+	reclaimerQueue, found := pp.jobSimulationQueues[reclaimerInfo.Queue]
+	if !found {
+		log.InfraLogger.Errorf("Reclaim consolidation check: reclaimer queue <%s> not found", reclaimerInfo.Queue)
+		return false
+	}
+
+	allocated := reclaimerQueue.GetAllocatedShare()
+	allocated.Add(utils.QuantifyVector(reclaimerInfo.RequiredResources, reclaimerInfo.VectorMap))
+	deserved := reclaimerQueue.GetDeservedShare()
+	underDeserved := isUnderDeservedForManagedResources(allocated, deserved)
+
+	log.InfraLogger.V(3).Infof(
+		"Reclaim consolidation check for <%s/%s> in queue <%s>: "+
+			"totalVictims=%d skippedVictims=%d (all re-pipelined). "+
+			"Reclaimer allocated+request=%s deserved=%s underDeserved=%v",
+		reclaimerInfo.Namespace, reclaimerInfo.Name, reclaimerQueue.Name,
+		totalVictims, skippedVictims, allocated, deserved, underDeserved)
+
+	if !underDeserved {
+		log.InfraLogger.V(2).Infof(
+			"Rejecting consolidating reclaim for <%s/%s>: reclaimer queue <%s> "+
+				"would exceed deserved quota. %d victims were re-pipelined but disruption is not justified",
+			reclaimerInfo.Namespace, reclaimerInfo.Name, reclaimerQueue.Name, totalVictims)
+		metrics.RecordReclaimConsolidationEmptyVictimMap(reclaimerQueue.Name, "rejected")
+		return false
+	}
+
+	log.InfraLogger.V(3).Infof(
+		"Allowing consolidating reclaim for <%s/%s>: reclaimer queue <%s> is under deserved quota",
+		reclaimerInfo.Namespace, reclaimerInfo.Name, reclaimerQueue.Name)
+	metrics.RecordReclaimConsolidationEmptyVictimMap(reclaimerQueue.Name, "approved")
+	return true
+}
+
+// isUnderDeservedForManagedResources checks allocated <= deserved only for
+// resources where the queue has a real quota (deserved > 0 and not unlimited).
+// Resources with deserved=0 or unlimited are not managed by the quota system
+// and should not block consolidation.
+func isUnderDeservedForManagedResources(allocated, deserved rs.ResourceQuantities) bool {
+	for _, resource := range rs.AllResources {
+		d := deserved[resource]
+		if d <= 0 || d == commonconstants.UnlimitedResourceQuantity {
+			continue
+		}
+		if allocated[resource] > d {
+			return false
+		}
+	}
+	return true
 }
 
 func (pp *proportionPlugin) getVictimResources(victim *api.VictimInfo) []resource_info.ResourceVector {
