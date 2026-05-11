@@ -267,11 +267,6 @@ func buildArgsList(
 		args = append(args, fmt.Sprintf("--%s=%s", "metrics-namespace", *kaiConfig.Spec.QueueController.MetricsNamespace))
 	}
 
-	if shard.Spec.StuckInReleasingThreshold != nil {
-		args = append(args, fmt.Sprintf("--%s=%s", "stuck-in-releasing-threshold",
-			shard.Spec.StuckInReleasingThreshold.Duration.String()))
-	}
-
 	// Dynamically apply valid scheduler flags from shard args, ignoring unknown flags
 	flagSet.VisitAll(func(flag *pflag.Flag) {
 		if value, found := shard.Spec.Args[flag.Name]; found {

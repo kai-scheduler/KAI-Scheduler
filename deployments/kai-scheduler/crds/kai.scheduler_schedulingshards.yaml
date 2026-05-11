@@ -150,11 +150,6 @@ spec:
                 description: QueueDepthPerAction max number of jobs to try for action
                   per queue
                 type: object
-              stuckInReleasingThreshold:
-                description: |-
-                  StuckInReleasingThreshold is the duration after a Running pod's deletionTimestamp
-                  before its resources are excluded from pipelining. Defaults to 2m.
-                type: string
               usageDBConfig:
                 description: UsageDBConfig defines configuration for the usage db
                   client

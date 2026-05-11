@@ -92,11 +92,6 @@ type SchedulingShardSpec struct {
 	// +kubebuilder:validation:Optional
 	MinRuntime *MinRuntime `json:"minRuntime,omitempty"`
 
-	// StuckInReleasingThreshold is the duration after a Running pod's deletionTimestamp
-	// before its resources are excluded from pipelining. Defaults to 2m.
-	// +kubebuilder:validation:Optional
-	StuckInReleasingThreshold *metav1.Duration `json:"stuckInReleasingThreshold,omitempty"`
-
 	// KValue specifies the kValue for the proportion plugin. Default is 1.0.
 	// +kubebuilder:validation:Optional
 	KValue *float64 `json:"kValue,omitempty"`
