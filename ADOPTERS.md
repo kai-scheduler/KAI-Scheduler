@@ -23,8 +23,8 @@ Listed alphabetically.
 | --- | --- | --- | --- | --- |
 | [Cantina](https://cantina.com/) | [@sam-huang1223](https://github.com/sam-huang1223) | [KubeCon EU 2026: GPU Reservations](https://www.youtube.com/watch?v=O-OEqmvCkYg) | Production | End User |
 | [Lightning AI](https://lightning.ai/) | [@tchaton](https://github.com/tchaton) | [KubeCon EU 2026: GPU Reservations](https://www.youtube.com/watch?v=O-OEqmvCkYg) | — | Platform / Provider |
-| [NVIDIA Run:ai](https://www.nvidia.com/en-us/software/run-ai/) | — | KAI was originally developed within the Run:ai platform and continues to be packaged and delivered as part of the [NVIDIA Run:ai platform](https://www.nvidia.com/en-us/software/run-ai/), used in production by enterprises across financial services, education, healthcare, defense and more | Production | Platform / Provider |
-| [OSMO](https://github.com/NVIDIA/OSMO/) | — | A platform for scaling Physical AI workloads across heterogeneous compute — unifying training GPUs, simulation clusters, and edge devices. See [KAI Scheduler configuration](https://nvidia.github.io/OSMO/main/deployment_guide/advanced_config/scheduler.html). | Production | End User & Platform / Provider |
+| [NVIDIA Run:ai](https://www.nvidia.com/en-us/software/run-ai/) | [@yarongol](https://github.com/yarongol) | KAI was originally developed within the Run:ai platform and continues to be packaged and delivered as part of the [NVIDIA Run:ai platform](https://www.nvidia.com/en-us/software/run-ai/), used in production by enterprises across financial services, education, healthcare, defense and more | Production | Platform / Provider |
+| [OSMO](https://github.com/NVIDIA/OSMO/) | [@ecolternv](https://github.com/ecolternv) | A platform for scaling Physical AI workloads across heterogeneous compute — unifying training GPUs, simulation clusters, and edge devices. See [KAI Scheduler configuration](https://nvidia.github.io/OSMO/main/deployment_guide/advanced_config/scheduler.html). | Production | End User & Platform / Provider |
 
 ## Integrations
 
