@@ -160,38 +160,38 @@ func InitMetrics(namespace string) {
 			Namespace: namespace,
 			Name:      "queue_fair_share_cpu_cores",
 			Help:      "CPU Fair share of queue, as a gauge. Value is in Cores",
-		}, []string{"queue_name"})
+		}, []string{"queue_name", "queue_metadata_name", "queue_display_name"})
 	queueFairShareMemory = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: namespace,
 			Name:      "queue_fair_share_memory_gb",
 			Help:      "Memory Fair share of queue, as a gauge. Value is in GB",
-		}, []string{"queue_name"})
+		}, []string{"queue_name", "queue_metadata_name", "queue_display_name"})
 	queueFairShareGPU = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: namespace,
 			Name:      "queue_fair_share_gpu",
 			Help:      "GPU Fair share of queue, as a gauge. Values in GPU devices",
-		}, []string{"queue_name"})
+		}, []string{"queue_name", "queue_metadata_name", "queue_display_name"})
 
 	queueCPUUsage = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: namespace,
 			Name:      "queue_cpu_usage",
 			Help:      "CPU usage of queue, as a gauge. Units depend on UsageDB configuration",
-		}, []string{"queue_name"})
+		}, []string{"queue_name", "queue_metadata_name", "queue_display_name"})
 	queueMemoryUsage = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: namespace,
 			Name:      "queue_memory_usage",
 			Help:      "Memory usage of queue, as a gauge. Units depend on UsageDB configuration",
-		}, []string{"queue_name"})
+		}, []string{"queue_name", "queue_metadata_name", "queue_display_name"})
 	queueGPUUsage = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: namespace,
 			Name:      "queue_gpu_usage",
 			Help:      "GPU usage of queue, as a gauge. Units depend on UsageDB configuration",
-		}, []string{"queue_name"})
+		}, []string{"queue_name", "queue_metadata_name", "queue_display_name"})
 
 	usageQueryLatency = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
@@ -268,11 +268,14 @@ func UpdateTaskBindDuration(startTime time.Time) {
 	taskBindLatency.Observe(float64(duration))
 }
 
-// UpdateQueueFairShare updates fair share of queue for a resource
-func UpdateQueueFairShare(queueName string, cpu, memory, gpu float64) {
-	queueFairShareCPU.WithLabelValues(queueName).Set(cpu)
-	queueFairShareMemory.WithLabelValues(queueName).Set(memory)
-	queueFairShareGPU.WithLabelValues(queueName).Set(gpu)
+// UpdateQueueFairShare updates fair share of queue for a resource.
+// queueName preserves the legacy queue_name label value (DisplayName when set, otherwise metadata.name).
+// queueMetadataName is always the Queue resource's metadata.name and is the recommended join key
+// against queue-controller metrics. queueDisplayName is the Queue's spec.displayName (empty when unset).
+func UpdateQueueFairShare(queueName, queueMetadataName, queueDisplayName string, cpu, memory, gpu float64) {
+	queueFairShareCPU.WithLabelValues(queueName, queueMetadataName, queueDisplayName).Set(cpu)
+	queueFairShareMemory.WithLabelValues(queueName, queueMetadataName, queueDisplayName).Set(memory)
+	queueFairShareGPU.WithLabelValues(queueName, queueMetadataName, queueDisplayName).Set(gpu)
 }
 
 func ResetQueueFairShare() {
@@ -281,11 +284,12 @@ func ResetQueueFairShare() {
 	queueFairShareGPU.Reset()
 }
 
-// UpdateQueueUsage updates usage of queue for a resource
-func UpdateQueueUsage(queueName string, cpu, memory, gpu float64) {
-	queueCPUUsage.WithLabelValues(queueName).Set(cpu)
-	queueMemoryUsage.WithLabelValues(queueName).Set(memory)
-	queueGPUUsage.WithLabelValues(queueName).Set(gpu)
+// UpdateQueueUsage updates usage of queue for a resource.
+// See UpdateQueueFairShare for the meaning of each label.
+func UpdateQueueUsage(queueName, queueMetadataName, queueDisplayName string, cpu, memory, gpu float64) {
+	queueCPUUsage.WithLabelValues(queueName, queueMetadataName, queueDisplayName).Set(cpu)
+	queueMemoryUsage.WithLabelValues(queueName, queueMetadataName, queueDisplayName).Set(memory)
+	queueGPUUsage.WithLabelValues(queueName, queueMetadataName, queueDisplayName).Set(gpu)
 }
 
 func ResetQueueUsage() {
