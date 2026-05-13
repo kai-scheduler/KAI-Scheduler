@@ -1,0 +1,59 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# RayJob that references the externally-created PodGroup.
+# Pods are annotated with "pod-group-name" and "kai.scheduler/subgroup-name"
+# to join the shared PodGroup and appropriate SubGroups.
+
+apiVersion: ray.io/v1
+kind: RayJob
+metadata:
+  name: post-training-rayjob
+  labels:
+    kai.scheduler/queue: default-queue
+spec:
+  entrypoint: python /home/ray/train.py
+  rayClusterSpec:
+    rayVersion: '2.46.0'
+    headGroupSpec:
+      rayStartParams: {}
+      template:
+        metadata:
+          annotations:
+            pod-group-name: post-training-pipeline
+          labels:
+            kai.scheduler/subgroup-name: ray-head
+        spec:
+          schedulerName: kai-scheduler
+          containers:
+            - name: ray-head
+              image: rayproject/ray:2.46.0
+              resources:
+                limits:
+                  cpu: "1"
+                  nvidia.com/gpu: "1"
+                requests:
+                  cpu: "200m"
+    workerGroupSpecs:
+      - replicas: 2
+        minReplicas: 2
+        maxReplicas: 2
+        groupName: gpu-workers
+        rayStartParams: {}
+        template:
+          metadata:
+            annotations:
+              pod-group-name: post-training-pipeline
+            labels:
+              kai.scheduler/subgroup-name: ray-workers
+          spec:
+            schedulerName: kai-scheduler
+            containers:
+              - name: ray-worker
+                image: rayproject/ray:2.46.0
+                resources:
+                  limits:
+                    cpu: "1"
+                    nvidia.com/gpu: "1"
+                  requests:
+                    cpu: "200m"

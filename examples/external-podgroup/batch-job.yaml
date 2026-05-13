@@ -1,0 +1,33 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# Batch Job that references the same externally-created PodGroup.
+# Scheduled atomically together with the RayJob above.
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: post-training-evaluation
+spec:
+  parallelism: 2
+  completions: 2
+  template:
+    metadata:
+      annotations:
+        pod-group-name: post-training-pipeline
+      labels:
+        kai.scheduler/queue: default-queue
+        kai.scheduler/subgroup-name: evaluation
+    spec:
+      schedulerName: kai-scheduler
+      restartPolicy: OnFailure
+      containers:
+        - name: eval
+          image: nvcr.io/nvidia/pytorch:24.01-py3
+          command: ["python", "-c", "print('Evaluation complete')"]
+          resources:
+            limits:
+              cpu: "1"
+              nvidia.com/gpu: "1"
+            requests:
+              cpu: "200m"
