@@ -77,7 +77,8 @@ func (s *byPodSolver) solve(
 	if latestPotentialVictim == nil {
 		if hasRecordedVictimsForSimulation(scenario) {
 			log.InfraLogger.V(6).Infof("Trying to solve scenario with priviously calculated victims only")
-			result := s.runSimulation(session, scenario, statement, scenario.RecordedVictimsTasks())
+			result := s.runSimulation(session, scenario, statement, scenario.RecordedVictimsTasks(),
+				maps.Values(s.feasibleNodes))
 			if result != nil {
 				return result
 			}
@@ -99,12 +100,12 @@ func (s *byPodSolver) solve(
 
 func (s *byPodSolver) runSimulation(
 	session *framework.Session, scenario *scenario.ByNodeScenario, statement *framework.Statement,
-	victimTasks []*pod_info.PodInfo) *solutionResult {
+	victimTasks []*pod_info.PodInfo, nodes []*node_info.NodeInfo) *solutionResult {
 	pendingJob := scenario.GetPreemptor()
 	nextTaskToFindAllocation := scenario.PendingTasks()[len(scenario.PendingTasks())-1]
 
 	successfulSimulation, solutionVictims, err :=
-		s.tryScenarioWithEvictedVictims(session, scenario, statement, victimTasks)
+		s.tryScenarioWithEvictedVictims(session, scenario, statement, victimTasks, nodes)
 
 	if err != nil {
 		return handleSolveError(pendingJob, nextTaskToFindAllocation, err, statement)
@@ -129,7 +130,7 @@ func (s *byPodSolver) solveOnPotentialNodes(ssn *framework.Session, scenario *sc
 		newFeasibleNodes := s.updateFeasibleNodes(ssn, potentialVictimsTasks)
 
 		victimTasks := getVictimTasks(scenario.RecordedVictimsTasks(), potentialVictimsTasks)
-		result := s.runSimulation(ssn, scenario, statement, victimTasks)
+		result := s.runSimulation(ssn, scenario, statement, victimTasks, maps.Values(s.feasibleNodes))
 		if result != nil {
 			return result, nil
 		}
@@ -148,6 +149,11 @@ func (s *byPodSolver) solveOnPotentialNodes(ssn *framework.Session, scenario *sc
 // at once and runs a single simulation. The scenario validator has already approved
 // the full potentials set, so this expands the simulator's view across nodes
 // without violating fair-share.
+//
+// The simulation is run against only the nodes that could plausibly host at least one
+// pending task after eviction. The full potential-victim set may span hundreds of nodes,
+// most of which cannot fit any pending task; including them in the simulation makes
+// every AllocateJob call scan and score nodes that have no chance of helping.
 func (s *byPodSolver) solveOnAllPotentialNodes(ssn *framework.Session, scenario *scenario.ByNodeScenario,
 	statement *framework.Statement) (*solutionResult, error) {
 	allPotentialVictims := scenario.PotentialVictimsTasks()
@@ -165,7 +171,8 @@ func (s *byPodSolver) solveOnAllPotentialNodes(ssn *framework.Session, scenario 
 	newFeasibleNodes := s.updateFeasibleNodes(ssn, allPotentialVictims)
 
 	victimTasks := getVictimTasks(scenario.RecordedVictimsTasks(), allPotentialVictims)
-	result := s.runSimulation(ssn, scenario, statement, victimTasks)
+	simulationNodes := s.nodesFittingMinPendingTask(scenario)
+	result := s.runSimulation(ssn, scenario, statement, victimTasks, simulationNodes)
 	if result != nil {
 		return result, nil
 	}
@@ -175,6 +182,40 @@ func (s *byPodSolver) solveOnAllPotentialNodes(ssn *framework.Session, scenario 
 		return nil, err
 	}
 	return nil, nil
+}
+
+// nodesFittingMinPendingTask returns the subset of feasibleNodes whose post-eviction
+// idle+releasing GPU capacity is at least the smallest pending-task GPU requirement.
+// Nodes that cannot host any pending task are dropped: the simulation would scan and
+// score them on every AllocateJob call, but they cannot contribute to a pending
+// allocation. Victims pipelined back to dropped nodes are lost as an optimization,
+// which only matters when total post-eviction capacity exceeds total pending demand;
+// in the large-cluster reclaim case it does not.
+func (s *byPodSolver) nodesFittingMinPendingTask(scenario *scenario.ByNodeScenario) []*node_info.NodeInfo {
+	minPendingGpu := -1.0
+	for _, task := range scenario.PendingTasks() {
+		req := task.GpuRequirement.GetGpusQuota()
+		if minPendingGpu < 0 || req < minPendingGpu {
+			minPendingGpu = req
+		}
+	}
+	if minPendingGpu <= 0 {
+		return maps.Values(s.feasibleNodes)
+	}
+
+	filtered := make([]*node_info.NodeInfo, 0, len(s.feasibleNodes))
+	for _, node := range s.feasibleNodes {
+		if nodeIdleOrReleasingGpus(node) >= minPendingGpu {
+			filtered = append(filtered, node)
+		}
+	}
+	return filtered
+}
+
+func nodeIdleOrReleasingGpus(ni *node_info.NodeInfo) float64 {
+	idle, _ := ni.GetSumOfIdleGPUs()
+	releasing, _ := ni.GetSumOfReleasingGPUs()
+	return idle + releasing
 }
 
 func (s *byPodSolver) evictPotentialVictimsFromNode(
@@ -249,10 +290,9 @@ func getNodesOfJob(pj *podgroup_info.PodGroupInfo) []string {
 }
 
 func (s *byPodSolver) tryScenarioWithEvictedVictims(ssn *framework.Session, scenario *scenario.ByNodeScenario,
-	statement *framework.Statement, victimTasks []*pod_info.PodInfo) (bool, *simulationVictims, error) {
+	statement *framework.Statement, victimTasks []*pod_info.PodInfo, nodes []*node_info.NodeInfo) (bool, *simulationVictims, error) {
 	pendingJob := scenario.GetPreemptor()
 
-	nodes := maps.Values(s.feasibleNodes)
 	jobsToAllocate := common.GetJobsToAllocate(ssn, victimTasks, pendingJob)
 	isSuccessfulAllocations, _ :=
 		common.TryToVirtuallyAllocatePreemptorAndGetVictims(ssn, statement, nodes, pendingJob,
