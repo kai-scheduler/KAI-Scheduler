@@ -601,7 +601,9 @@ func TestNewTaskInfoWithBindRequest_ResourceClaimInfo(t *testing.T) {
 		},
 		Status: v1.PodStatus{Phase: v1.PodPending},
 	}
-	pi := NewTaskInfoWithBindRequest(pod, nil, []*resourceapi.ResourceClaim{draClaim}, resource_info.NewResourceVectorMap())
+	pi := NewTaskInfo(pod, resource_info.NewResourceVectorMap(), TaskInfoOptions{
+		DraPodClaims: []*resourceapi.ResourceClaim{draClaim},
+	})
 	assert.Assert(t, pi != nil)
 	assert.Equal(t, 1, len(pi.ResourceClaimInfo))
 	allocation, ok := pi.ResourceClaimInfo["gpu-claim"]
@@ -610,7 +612,7 @@ func TestNewTaskInfoWithBindRequest_ResourceClaimInfo(t *testing.T) {
 	assert.DeepEqual(t, alloc, allocation.Allocation)
 }
 
-func TestNewTaskInfoWithBindRequest_ResourceClaimInfo_BindRequestAllocationOverridesClaim(t *testing.T) {
+func TestNewTaskInfo_BindRequest_ResourceClaimInfo_BindRequestAllocationOverridesClaim(t *testing.T) {
 	claimAlloc := &resourceapi.AllocationResult{}
 	bindRequestAlloc := &resourceapi.AllocationResult{
 		Devices: resourceapi.DeviceAllocationResult{
@@ -656,7 +658,10 @@ func TestNewTaskInfoWithBindRequest_ResourceClaimInfo_BindRequestAllocationOverr
 	}
 	bindRequestInfo := bindrequest_info.NewBindRequestInfo(bindRequest)
 
-	pi := NewTaskInfoWithBindRequest(pod, bindRequestInfo, []*resourceapi.ResourceClaim{draClaim}, resource_info.NewResourceVectorMap())
+	pi := NewTaskInfo(pod, resource_info.NewResourceVectorMap(), TaskInfoOptions{
+		BindRequest:  bindRequestInfo,
+		DraPodClaims: []*resourceapi.ResourceClaim{draClaim},
+	})
 	assert.Assert(t, pi != nil)
 	assert.Equal(t, 1, len(pi.ResourceClaimInfo))
 	assert.Equal(t, "node1", pi.NodeName, "NodeName should come from BindRequest SelectedNode")
@@ -669,7 +674,7 @@ func TestNewTaskInfoWithBindRequest_ResourceClaimInfo_BindRequestAllocationOverr
 		"Allocation should be from BindRequest (node1/device 1), not claim status (empty)")
 }
 
-func TestNewTaskInfoWithBindRequest_ResourceClaimInfo_TemplateClaimSkippedWhenNotCreated(t *testing.T) {
+func TestNewTaskInfo_BindRequest_ResourceClaimInfo_TemplateClaimSkippedWhenNotCreated(t *testing.T) {
 	pod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{UID: types.UID("pod-uid"), Name: "p1", Namespace: "ns1"},
 		Spec: v1.PodSpec{
@@ -682,7 +687,9 @@ func TestNewTaskInfoWithBindRequest_ResourceClaimInfo_TemplateClaimSkippedWhenNo
 		},
 		Status: v1.PodStatus{Phase: v1.PodPending},
 	}
-	pi := NewTaskInfoWithBindRequest(pod, nil, nil, resource_info.NewResourceVectorMap())
+	pi := NewTaskInfo(pod, resource_info.NewResourceVectorMap(), TaskInfoOptions{
+		DraPodClaims: []*resourceapi.ResourceClaim{},
+	})
 	assert.Assert(t, pi != nil)
 	assert.Equal(t, 0, len(pi.ResourceClaimInfo))
 }

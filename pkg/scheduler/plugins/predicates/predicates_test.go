@@ -488,7 +488,7 @@ func TestMaxPodsWithReleasingPods(t *testing.T) {
 
 	// Add running pods
 	for _, pod := range runningPods {
-		task := pod_info.NewTaskInfo(pod, nil, vectorMap)
+		task := pod_info.NewTaskInfo(pod, vectorMap)
 		task.Status = pod_status.Running
 		err := ni.AddTask(task)
 		if err != nil {
@@ -497,7 +497,7 @@ func TestMaxPodsWithReleasingPods(t *testing.T) {
 	}
 
 	// Add releasing pod
-	releasingTask := pod_info.NewTaskInfo(releasingPod, nil, vectorMap)
+	releasingTask := pod_info.NewTaskInfo(releasingPod, vectorMap)
 	releasingTask.Status = pod_status.Releasing
 	err := ni.AddTask(releasingTask)
 	if err != nil {
@@ -506,7 +506,7 @@ func TestMaxPodsWithReleasingPods(t *testing.T) {
 
 	// Now try to allocate the preemptor pod - it should succeed because
 	// the releasing pod's resources (including its pod count) are available
-	preemptorTask := pod_info.NewTaskInfo(preemptorPod, nil, vectorMap)
+	preemptorTask := pod_info.NewTaskInfo(preemptorPod, vectorMap)
 	preemptorTask.Status = pod_status.Pending
 
 	// Check if the task is allocatable

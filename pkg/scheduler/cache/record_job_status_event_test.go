@@ -547,7 +547,7 @@ func getPods(pods map[v1.PodPhase][]common_info.PodID) (podsInfos map[common_inf
 				},
 			}
 
-			podInfo := pod_info.NewTaskInfo(pod, nil, resource_info.NewResourceVectorMap())
+			podInfo := pod_info.NewTaskInfo(pod, resource_info.NewResourceVectorMap())
 
 			podsInfos[podInfo.UID] = podInfo
 			podsAsObjects = append(podsAsObjects, pod)
