@@ -452,6 +452,104 @@ func TestRecordJobStatusEvent(t *testing.T) {
 	}
 }
 
+func TestRecordJobStatusEventInvalidSubGroupPod(t *testing.T) {
+	validPod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pod-valid",
+			Namespace: "namespace-1",
+			UID:       "pod-valid",
+			Annotations: map[string]string{
+				"pod-group-name": "group-1",
+			},
+			Labels: map[string]string{
+				"kai.scheduler/subgroup-name": "valid-subgroup",
+			},
+		},
+	}
+	invalidPod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pod-invalid",
+			Namespace: "namespace-1",
+			UID:       "pod-invalid",
+			Annotations: map[string]string{
+				"pod-group-name": "group-1",
+			},
+			Labels: map[string]string{
+				"kai.scheduler/subgroup-name": "missing-subgroup",
+			},
+		},
+	}
+	podGroup := &enginev2alpha2.PodGroup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "group-1",
+			Namespace: "namespace-1",
+			UID:       "group-1",
+		},
+		Spec: enginev2alpha2.PodGroupSpec{
+			Queue: "queue-1",
+			SubGroups: []enginev2alpha2.SubGroup{
+				{
+					Name:      "valid-subgroup",
+					MinMember: ptr.To(int32(2)),
+				},
+			},
+		},
+	}
+
+	kubeClient := fake.NewSimpleClientset(validPod, invalidPod)
+	kubeAiSchedulerClient := kubeaischedulerfake.NewSimpleClientset(podGroup)
+	cache := New(&SchedulerCacheParams{
+		KubeClient:                  kubeClient,
+		KAISchedulerClient:          kubeAiSchedulerClient,
+		NodePoolParams:              &conf.SchedulingNodePoolParams{},
+		DetailedFitErrors:           false,
+		FullHierarchyFairness:       true,
+		NumOfStatusRecordingWorkers: 4,
+		DiscoveryClient:             kubeClient.Discovery(),
+	})
+
+	stopCh := make(chan struct{})
+	cache.Run(stopCh)
+	cache.WaitForCacheSync(stopCh)
+	defer close(stopCh)
+
+	vectorMap := resource_info.NewResourceVectorMap()
+	job := podgroup_info.NewPodGroupInfoWithVectorMap("group-1", vectorMap)
+	job.SetPodGroup(podGroup)
+	job.AddTaskInfo(pod_info.NewTaskInfo(validPod, nil, vectorMap))
+	job.AddTaskInfo(pod_info.NewTaskInfo(invalidPod, nil, vectorMap))
+
+	err := cache.RecordJobStatusEvent(job)
+	assert.NoError(t, err)
+
+	invalidPodObj, err := waitForCondition(func() (runtime.Object, error) {
+		pod, err := kubeClient.CoreV1().Pods("namespace-1").Get(context.TODO(), "pod-invalid", metav1.GetOptions{})
+		if err != nil {
+			return nil, err
+		}
+		if len(pod.Status.Conditions) > 0 {
+			return pod, nil
+		}
+		return nil, fmt.Errorf("no conditions found for pod %s", pod.Name)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	updatedInvalidPod := invalidPodObj.(*v1.Pod)
+	assert.Len(t, updatedInvalidPod.Status.Conditions, 1)
+	assert.Equal(t, v1.PodReasonUnschedulable, updatedInvalidPod.Status.Conditions[0].Reason)
+	assert.Contains(t, updatedInvalidPod.Status.Conditions[0].Message, "missing-subgroup")
+
+	updatedValidPod, err := kubeClient.CoreV1().Pods("namespace-1").Get(context.TODO(), "pod-valid", metav1.GetOptions{})
+	assert.NoError(t, err)
+	assert.Empty(t, updatedValidPod.Status.Conditions)
+
+	updatedPodGroup, err := kubeAiSchedulerClient.SchedulingV2alpha2().PodGroups("namespace-1").Get(context.TODO(), "group-1", metav1.GetOptions{})
+	assert.NoError(t, err)
+	assert.Empty(t, updatedPodGroup.Status.SchedulingConditions)
+}
+
 func waitForCondition(condition func() (runtime.Object, error)) (runtime.Object, error) {
 	timer := time.NewTimer(1 * time.Second)
 	ticker := time.NewTicker(10 * time.Millisecond)

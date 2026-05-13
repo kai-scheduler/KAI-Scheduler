@@ -109,6 +109,9 @@ func TestIsOrphanPodWithPodGroup(t *testing.T) {
 
 	assert.True(t, isOrphanPodWithPodGroup(&pod))
 
+	pod.OwnerReferences = []metav1.OwnerReference{}
+	assert.True(t, isOrphanPodWithPodGroup(&pod))
+
 	pod.OwnerReferences = []metav1.OwnerReference{
 		{
 			APIVersion: "v1",
@@ -158,14 +161,266 @@ func TestEventOnFailure(t *testing.T) {
 
 }
 
-type fakePodGrouper struct{}
+type fakePodGrouper struct {
+	getPGMetadataFn    func(ctx context.Context, pod *v1.Pod, topOwner *unstructured.Unstructured, allOwners []*metav1.PartialObjectMetadata) (*podgroup.Metadata, error)
+	getPodOwnersFn     func(ctx context.Context, pod *v1.Pod) (*unstructured.Unstructured, []*metav1.PartialObjectMetadata, error)
+	getPGMetadataCalls int
+	getPodOwnersCalls  int
+}
 
-func (*fakePodGrouper) GetPGMetadata(ctx context.Context, pod *v1.Pod, topOwner *unstructured.Unstructured, allOwners []*metav1.PartialObjectMetadata) (*podgroup.Metadata, error) {
+func (f *fakePodGrouper) GetPGMetadata(ctx context.Context, pod *v1.Pod, topOwner *unstructured.Unstructured, allOwners []*metav1.PartialObjectMetadata) (*podgroup.Metadata, error) {
+	f.getPGMetadataCalls++
+	if f.getPGMetadataFn != nil {
+		return f.getPGMetadataFn(ctx, pod, topOwner, allOwners)
+	}
 	return nil, nil
 }
 
-func (*fakePodGrouper) GetPodOwners(ctx context.Context, pod *v1.Pod) (*unstructured.Unstructured, []*metav1.PartialObjectMetadata, error) {
+func (f *fakePodGrouper) GetPodOwners(ctx context.Context, pod *v1.Pod) (*unstructured.Unstructured, []*metav1.PartialObjectMetadata, error) {
+	f.getPodOwnersCalls++
+	if f.getPodOwnersFn != nil {
+		return f.getPodOwnersFn(ctx, pod)
+	}
 	return nil, nil, fmt.Errorf("failed")
+}
+
+func TestShouldSkipPodGrouper(t *testing.T) {
+	pod := &v1.Pod{}
+	assert.False(t, shouldSkipPodGrouper(pod))
+
+	pod.Annotations = map[string]string{constants.SkipPodGrouperAnnotation: "false"}
+	assert.False(t, shouldSkipPodGrouper(pod))
+
+	pod.Annotations[constants.SkipPodGrouperAnnotation] = "true"
+	assert.True(t, shouldSkipPodGrouper(pod))
+}
+
+func TestShouldSkipAnyOwner(t *testing.T) {
+	owner := &metav1.PartialObjectMetadata{}
+	assert.False(t, shouldSkipAnyOwner([]*metav1.PartialObjectMetadata{owner}))
+
+	owner.Annotations = map[string]string{constants.SkipPodGrouperAnnotation: "true"}
+	assert.True(t, shouldSkipAnyOwner([]*metav1.PartialObjectMetadata{owner}))
+}
+
+func TestReconcileSkipsAnnotatedPod(t *testing.T) {
+	pod := v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-pod",
+			Namespace: "my-namespace",
+			Annotations: map[string]string{
+				constants.SkipPodGrouperAnnotation: "true",
+			},
+		},
+		Spec: v1.PodSpec{
+			SchedulerName: "kai-scheduler",
+		},
+	}
+
+	fakeGrouper := &fakePodGrouper{
+		getPodOwnersFn: func(ctx context.Context, pod *v1.Pod) (*unstructured.Unstructured, []*metav1.PartialObjectMetadata, error) {
+			return nil, nil, nil
+		},
+	}
+	podReconciler := PodReconciler{
+		Client:     fake.NewClientBuilder().WithObjects(&pod).Build(),
+		Scheme:     scheme.Scheme,
+		podGrouper: fakeGrouper,
+		configs: Configs{
+			SchedulerName: "kai-scheduler",
+		},
+		eventRecorder: record.NewFakeRecorder(10),
+	}
+
+	_, err := podReconciler.Reconcile(context.TODO(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Namespace: pod.Namespace, Name: pod.Name},
+	})
+
+	assert.NoError(t, err)
+	assert.Zero(t, fakeGrouper.getPodOwnersCalls)
+}
+
+func TestReconcileSkipsAnnotatedOwner(t *testing.T) {
+	pod := v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-pod",
+			Namespace: "my-namespace",
+		},
+		Spec: v1.PodSpec{
+			SchedulerName: "kai-scheduler",
+		},
+	}
+
+	fakeGrouper := &fakePodGrouper{
+		getPodOwnersFn: func(ctx context.Context, pod *v1.Pod) (*unstructured.Unstructured, []*metav1.PartialObjectMetadata, error) {
+			return nil, []*metav1.PartialObjectMetadata{{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{constants.SkipPodGrouperAnnotation: "true"},
+				},
+			}}, nil
+		},
+		getPGMetadataFn: func(ctx context.Context, pod *v1.Pod, topOwner *unstructured.Unstructured, allOwners []*metav1.PartialObjectMetadata) (*podgroup.Metadata, error) {
+			return nil, nil
+		},
+	}
+	podReconciler := PodReconciler{
+		Client:     fake.NewClientBuilder().WithObjects(&pod).Build(),
+		Scheme:     scheme.Scheme,
+		podGrouper: fakeGrouper,
+		configs: Configs{
+			SchedulerName: "kai-scheduler",
+		},
+		eventRecorder: record.NewFakeRecorder(10),
+	}
+
+	_, err := podReconciler.Reconcile(context.TODO(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Namespace: pod.Namespace, Name: pod.Name},
+	})
+
+	assert.NoError(t, err)
+	assert.Equal(t, 1, fakeGrouper.getPodOwnersCalls)
+	assert.Zero(t, fakeGrouper.getPGMetadataCalls)
+}
+
+func TestReconcileSkipsIntermediateAnnotatedOwner(t *testing.T) {
+	pod := v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-pod",
+			Namespace: "my-namespace",
+		},
+		Spec: v1.PodSpec{
+			SchedulerName: "kai-scheduler",
+		},
+	}
+
+	fakeGrouper := &fakePodGrouper{
+		getPodOwnersFn: func(ctx context.Context, pod *v1.Pod) (*unstructured.Unstructured, []*metav1.PartialObjectMetadata, error) {
+			return nil, []*metav1.PartialObjectMetadata{
+				{ObjectMeta: metav1.ObjectMeta{}},
+				{ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{constants.SkipPodGrouperAnnotation: "true"},
+				}},
+			}, nil
+		},
+	}
+	podReconciler := PodReconciler{
+		Client:     fake.NewClientBuilder().WithObjects(&pod).Build(),
+		Scheme:     scheme.Scheme,
+		podGrouper: fakeGrouper,
+		configs: Configs{
+			SchedulerName: "kai-scheduler",
+		},
+		eventRecorder: record.NewFakeRecorder(10),
+	}
+
+	_, err := podReconciler.Reconcile(context.TODO(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Namespace: pod.Namespace, Name: pod.Name},
+	})
+
+	assert.NoError(t, err)
+	assert.Equal(t, 1, fakeGrouper.getPodOwnersCalls)
+	assert.Zero(t, fakeGrouper.getPGMetadataCalls)
+}
+
+func TestReconcileDoesNotSkipOnFalseAnnotationValue(t *testing.T) {
+	pod := v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-pod",
+			Namespace: "my-namespace",
+			Annotations: map[string]string{
+				constants.SkipPodGrouperAnnotation: "false",
+			},
+		},
+		Spec: v1.PodSpec{
+			SchedulerName: "kai-scheduler",
+		},
+	}
+
+	fakeGrouper := &fakePodGrouper{}
+	podReconciler := PodReconciler{
+		Client:     fake.NewClientBuilder().WithObjects(&pod).Build(),
+		Scheme:     scheme.Scheme,
+		podGrouper: fakeGrouper,
+		configs: Configs{
+			SchedulerName: "kai-scheduler",
+		},
+		eventRecorder: record.NewFakeRecorder(10),
+	}
+
+	_, err := podReconciler.Reconcile(context.TODO(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Namespace: pod.Namespace, Name: pod.Name},
+	})
+
+	assert.Error(t, err)
+	assert.Equal(t, 1, fakeGrouper.getPodOwnersCalls)
+}
+
+func TestReconcileSkipsOwnerlessPodGroupPod(t *testing.T) {
+	pod := v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-pod",
+			Namespace: "my-namespace",
+			Annotations: map[string]string{
+				constants.PodGroupAnnotationForPod: "external-pg",
+			},
+			OwnerReferences: []metav1.OwnerReference{},
+		},
+		Spec: v1.PodSpec{
+			SchedulerName: "kai-scheduler",
+		},
+	}
+
+	fakeGrouper := &fakePodGrouper{}
+	podReconciler := PodReconciler{
+		Client:     fake.NewClientBuilder().WithObjects(&pod).Build(),
+		Scheme:     scheme.Scheme,
+		podGrouper: fakeGrouper,
+		configs: Configs{
+			SchedulerName: "kai-scheduler",
+		},
+		eventRecorder: record.NewFakeRecorder(10),
+	}
+
+	_, err := podReconciler.Reconcile(context.TODO(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Namespace: pod.Namespace, Name: pod.Name},
+	})
+
+	assert.NoError(t, err)
+	assert.Zero(t, fakeGrouper.getPodOwnersCalls)
+}
+
+func TestReconcileNoOpsOnNilMetadata(t *testing.T) {
+	pod := v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-pod",
+			Namespace: "my-namespace",
+		},
+		Spec: v1.PodSpec{
+			SchedulerName: "kai-scheduler",
+		},
+	}
+
+	fakeGrouper := &fakePodGrouper{
+		getPodOwnersFn: func(ctx context.Context, pod *v1.Pod) (*unstructured.Unstructured, []*metav1.PartialObjectMetadata, error) {
+			return nil, []*metav1.PartialObjectMetadata{{ObjectMeta: metav1.ObjectMeta{}}}, nil
+		},
+	}
+	podReconciler := PodReconciler{
+		Client:     fake.NewClientBuilder().WithObjects(&pod).Build(),
+		Scheme:     scheme.Scheme,
+		podGrouper: fakeGrouper,
+		configs: Configs{
+			SchedulerName: "kai-scheduler",
+		},
+		eventRecorder: record.NewFakeRecorder(10),
+	}
+
+	_, err := podReconciler.Reconcile(context.TODO(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Namespace: pod.Namespace, Name: pod.Name},
+	})
+
+	assert.NoError(t, err)
+	assert.Equal(t, 1, fakeGrouper.getPGMetadataCalls)
 }
 
 func TestEventFilterFn(t *testing.T) {
