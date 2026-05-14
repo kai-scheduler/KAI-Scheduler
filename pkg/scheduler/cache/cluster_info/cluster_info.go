@@ -456,7 +456,9 @@ func (c *ClusterInfo) getPodInfo(
 	if !found {
 		log.InfraLogger.V(6).Infof("Pod %s/%s/%s not found in existing pods, adding", pod.Namespace,
 			pod.Name, pod.UID)
-		podInfo = pod_info.NewTaskInfoWithConfig(pod, nil, nil, vectorMap, c.stuckInReleasingThreshold)
+		podInfo = pod_info.NewTaskInfo(pod, vectorMap, pod_info.TaskInfoOptions{
+			StuckInReleasingThreshold: c.stuckInReleasingThreshold,
+		})
 		existingPods[common_info.PodID(pod.UID)] = podInfo
 	}
 	return podInfo
@@ -481,7 +483,11 @@ func (c *ClusterInfo) getNodeToPodInfosMap(allPods []*v1.Pod, bindRequests bindr
 
 		podBindRequest := bindRequests.GetBindRequestForPod(pod)
 		draPodClaims := resource_info.GetDraPodClaims(pod, draClaimMap, podsToClaimsMap)
-		podInfo := pod_info.NewTaskInfoWithConfig(pod, podBindRequest, draPodClaims, vectorMap, c.stuckInReleasingThreshold)
+		podInfo := pod_info.NewTaskInfo(pod, vectorMap, pod_info.TaskInfoOptions{
+			BindRequest:               podBindRequest,
+			DraPodClaims:              draPodClaims,
+			StuckInReleasingThreshold: c.stuckInReleasingThreshold,
+		})
 
 		if pod_info.IsResourceReservationTask(podInfo.Pod) {
 			podInfos := nodeReservationPodInfosMap[podInfo.NodeName]

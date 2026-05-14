@@ -109,7 +109,7 @@ func TestPodSchedulingConstraintsSignature(t *testing.T) {
 	pod.Spec.Priority = pointer.Int32(6)
 	pod.Spec.PriorityClassName = "priority-class-1"
 
-	podInfo := NewTaskInfo(&pod, nil, resource_info.NewResourceVectorMap())
+	podInfo := NewTaskInfo(&pod, resource_info.NewResourceVectorMap())
 	storageClaimID := storageclaim_info.NewKey("test-namespace", "claim-1")
 	podInfo.storageClaims = map[storageclaim_info.Key]*storageclaim_info.StorageClaimInfo{
 		storageClaimID: {
@@ -129,11 +129,11 @@ func TestPodSchedulingConstraintsSignature(t *testing.T) {
 func TestPodSchedulingConstraintsSignature_NodeSelector(t *testing.T) {
 	pod := getRandomPod()
 
-	podInfo := NewTaskInfo(&pod, nil, resource_info.NewResourceVectorMap())
+	podInfo := NewTaskInfo(&pod, resource_info.NewResourceVectorMap())
 	key := podInfo.GetSchedulingConstraintsSignature()
 
 	pod.Spec.NodeSelector = nil
-	newPodInfo := NewTaskInfo(&pod, nil, resource_info.NewResourceVectorMap())
+	newPodInfo := NewTaskInfo(&pod, resource_info.NewResourceVectorMap())
 	newKey := newPodInfo.GetSchedulingConstraintsSignature()
 	assert.NotEqualf(t, key, newKey, "Expected node selector to affect signature, got same")
 }
@@ -141,11 +141,11 @@ func TestPodSchedulingConstraintsSignature_NodeSelector(t *testing.T) {
 func TestPodSchedulingConstraintsSignature_Affinity(t *testing.T) {
 	pod := getRandomPod()
 
-	podInfo := NewTaskInfo(&pod, nil, resource_info.NewResourceVectorMap())
+	podInfo := NewTaskInfo(&pod, resource_info.NewResourceVectorMap())
 	key := podInfo.GetSchedulingConstraintsSignature()
 
 	pod.Spec.Affinity = nil
-	newPodInfo := NewTaskInfo(&pod, nil, resource_info.NewResourceVectorMap())
+	newPodInfo := NewTaskInfo(&pod, resource_info.NewResourceVectorMap())
 	newKey := newPodInfo.GetSchedulingConstraintsSignature()
 	assert.NotEqualf(t, key, newKey, "Expected affinity to affect signature, got same")
 }
@@ -153,11 +153,11 @@ func TestPodSchedulingConstraintsSignature_Affinity(t *testing.T) {
 func TestPodSchedulingConstraintsSignature_Tolerations(t *testing.T) {
 	pod := getRandomPod()
 
-	podInfo := NewTaskInfo(&pod, nil, resource_info.NewResourceVectorMap())
+	podInfo := NewTaskInfo(&pod, resource_info.NewResourceVectorMap())
 	key := podInfo.GetSchedulingConstraintsSignature()
 
 	pod.Spec.Tolerations = nil
-	newPodInfo := NewTaskInfo(&pod, nil, resource_info.NewResourceVectorMap())
+	newPodInfo := NewTaskInfo(&pod, resource_info.NewResourceVectorMap())
 	newKey := newPodInfo.GetSchedulingConstraintsSignature()
 	assert.NotEqualf(t, key, newKey, "Expected tolerations to affect signature, got same")
 }
@@ -165,11 +165,11 @@ func TestPodSchedulingConstraintsSignature_Tolerations(t *testing.T) {
 func TestPodSchedulingConstraintsSignature_Priority(t *testing.T) {
 	pod := getRandomPod()
 
-	podInfo := NewTaskInfo(&pod, nil, resource_info.NewResourceVectorMap())
+	podInfo := NewTaskInfo(&pod, resource_info.NewResourceVectorMap())
 	key := podInfo.GetSchedulingConstraintsSignature()
 
 	pod.Spec.Priority = nil
-	newPodInfo := NewTaskInfo(&pod, nil, resource_info.NewResourceVectorMap())
+	newPodInfo := NewTaskInfo(&pod, resource_info.NewResourceVectorMap())
 	newKey := newPodInfo.GetSchedulingConstraintsSignature()
 	assert.NotEqualf(t, key, newKey, "Expected priority to affect signature, got same")
 }
@@ -177,11 +177,11 @@ func TestPodSchedulingConstraintsSignature_Priority(t *testing.T) {
 func TestPodSchedulingConstraintsSignature_TopologySpreadConstraints(t *testing.T) {
 	pod := getRandomPod()
 
-	podInfo := NewTaskInfo(&pod, nil, resource_info.NewResourceVectorMap())
+	podInfo := NewTaskInfo(&pod, resource_info.NewResourceVectorMap())
 	key := podInfo.GetSchedulingConstraintsSignature()
 
 	pod.Spec.TopologySpreadConstraints = nil
-	newPodInfo := NewTaskInfo(&pod, nil, resource_info.NewResourceVectorMap())
+	newPodInfo := NewTaskInfo(&pod, resource_info.NewResourceVectorMap())
 	newKey := newPodInfo.GetSchedulingConstraintsSignature()
 	assert.NotEqualf(t, key, newKey, "Expected topology spread constraints to affect signature, got same")
 }
@@ -189,11 +189,11 @@ func TestPodSchedulingConstraintsSignature_TopologySpreadConstraints(t *testing.
 func TestPodSchedulingConstraintsSignature_TopologySpreadConstraints_MinDomainsNil(t *testing.T) {
 	pod := getRandomPod()
 
-	podInfo := NewTaskInfo(&pod, nil, resource_info.NewResourceVectorMap())
+	podInfo := NewTaskInfo(&pod, resource_info.NewResourceVectorMap())
 	key := podInfo.GetSchedulingConstraintsSignature()
 
 	pod.Spec.TopologySpreadConstraints[0].MinDomains = nil
-	newPodInfo := NewTaskInfo(&pod, nil, resource_info.NewResourceVectorMap())
+	newPodInfo := NewTaskInfo(&pod, resource_info.NewResourceVectorMap())
 	newKey := newPodInfo.GetSchedulingConstraintsSignature()
 	assert.NotEqualf(t, key, newKey, "Expected topology spread constraints to affect signature, got same")
 }
@@ -201,11 +201,11 @@ func TestPodSchedulingConstraintsSignature_TopologySpreadConstraints_MinDomainsN
 func TestPodSchedulingConstraintsSignature_TopologySpreadConstraints_nodeAffinityPolicyNil(t *testing.T) {
 	pod := getRandomPod()
 
-	podInfo := NewTaskInfo(&pod, nil, resource_info.NewResourceVectorMap())
+	podInfo := NewTaskInfo(&pod, resource_info.NewResourceVectorMap())
 	key := podInfo.GetSchedulingConstraintsSignature()
 
 	pod.Spec.TopologySpreadConstraints[0].NodeAffinityPolicy = nil
-	newPodInfo := NewTaskInfo(&pod, nil, resource_info.NewResourceVectorMap())
+	newPodInfo := NewTaskInfo(&pod, resource_info.NewResourceVectorMap())
 	newKey := newPodInfo.GetSchedulingConstraintsSignature()
 	assert.NotEqualf(t, key, newKey, "Expected topology spread constraints to affect signature, got same")
 }
@@ -213,11 +213,11 @@ func TestPodSchedulingConstraintsSignature_TopologySpreadConstraints_nodeAffinit
 func TestPodSchedulingConstraintsSignature_TopologySpreadConstraints_nodeTaintsPolicyNil(t *testing.T) {
 	pod := getRandomPod()
 
-	podInfo := NewTaskInfo(&pod, nil, resource_info.NewResourceVectorMap())
+	podInfo := NewTaskInfo(&pod, resource_info.NewResourceVectorMap())
 	key := podInfo.GetSchedulingConstraintsSignature()
 
 	pod.Spec.TopologySpreadConstraints[0].NodeTaintsPolicy = nil
-	newPodInfo := NewTaskInfo(&pod, nil, resource_info.NewResourceVectorMap())
+	newPodInfo := NewTaskInfo(&pod, resource_info.NewResourceVectorMap())
 	newKey := newPodInfo.GetSchedulingConstraintsSignature()
 	assert.NotEqualf(t, key, newKey, "Expected topology spread constraints to affect signature, got same")
 }
@@ -225,11 +225,11 @@ func TestPodSchedulingConstraintsSignature_TopologySpreadConstraints_nodeTaintsP
 func TestPodSchedulingConstraintsSignature_ContainerPorts(t *testing.T) {
 	pod := getRandomPod()
 
-	podInfo := NewTaskInfo(&pod, nil, resource_info.NewResourceVectorMap())
+	podInfo := NewTaskInfo(&pod, resource_info.NewResourceVectorMap())
 	key := podInfo.GetSchedulingConstraintsSignature()
 
 	pod.Spec.Containers[0].Ports[0].HostPort = rand.Int31()
-	newPodInfo := NewTaskInfo(&pod, nil, resource_info.NewResourceVectorMap())
+	newPodInfo := NewTaskInfo(&pod, resource_info.NewResourceVectorMap())
 	newKey := newPodInfo.GetSchedulingConstraintsSignature()
 	assert.NotEqualf(t, key, newKey, "Expected container ports to affect signature, got same")
 }
@@ -237,11 +237,11 @@ func TestPodSchedulingConstraintsSignature_ContainerPorts(t *testing.T) {
 func TestPodSchedulingConstraintsSignature_InitContainerPorts(t *testing.T) {
 	pod := getRandomPod()
 
-	podInfo := NewTaskInfo(&pod, nil, resource_info.NewResourceVectorMap())
+	podInfo := NewTaskInfo(&pod, resource_info.NewResourceVectorMap())
 	key := podInfo.GetSchedulingConstraintsSignature()
 
 	pod.Spec.InitContainers[0].Ports[0].HostPort = rand.Int31()
-	newPodInfo := NewTaskInfo(&pod, nil, resource_info.NewResourceVectorMap())
+	newPodInfo := NewTaskInfo(&pod, resource_info.NewResourceVectorMap())
 	newKey := newPodInfo.GetSchedulingConstraintsSignature()
 	assert.NotEqualf(t, key, newKey, "Expected init container ports to affect signature, got same")
 }

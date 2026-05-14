@@ -214,7 +214,7 @@ func createTaskBestEffort() *pod_info.PodInfo {
 			Phase: v1.PodPending,
 		},
 	}
-	return pod_info.NewTaskInfo(pod, nil, resource_info.NewResourceVectorMap())
+	return pod_info.NewTaskInfo(pod, resource_info.NewResourceVectorMap())
 }
 
 func createTaskWithGPU() *pod_info.PodInfo {
@@ -238,7 +238,7 @@ func createTaskWithGPU() *pod_info.PodInfo {
 			Phase: v1.PodPending,
 		},
 	}
-	return pod_info.NewTaskInfo(pod, nil, resource_info.NewResourceVectorMap())
+	return pod_info.NewTaskInfo(pod, resource_info.NewResourceVectorMap())
 }
 
 func createTaskFractionalGPU() *pod_info.PodInfo {
@@ -265,7 +265,7 @@ func createTaskFractionalGPU() *pod_info.PodInfo {
 			Phase: v1.PodPending,
 		},
 	}
-	return pod_info.NewTaskInfo(pod, nil, resource_info.NewResourceVectorMap())
+	return pod_info.NewTaskInfo(pod, resource_info.NewResourceVectorMap())
 }
 
 func createTaskMIG() *pod_info.PodInfo {
@@ -289,7 +289,7 @@ func createTaskMIG() *pod_info.PodInfo {
 			Phase: v1.PodPending,
 		},
 	}
-	return pod_info.NewTaskInfo(pod, nil, resource_info.NewResourceVectorMap())
+	return pod_info.NewTaskInfo(pod, resource_info.NewResourceVectorMap())
 }
 
 func createTaskGPUMemory() *pod_info.PodInfo {
@@ -317,7 +317,7 @@ func createTaskGPUMemory() *pod_info.PodInfo {
 			Phase: v1.PodPending,
 		},
 	}
-	return pod_info.NewTaskInfo(pod, nil, resource_info.NewResourceVectorMap())
+	return pod_info.NewTaskInfo(pod, resource_info.NewResourceVectorMap())
 }
 
 func createTaskWithCustomResources(numResources int) *pod_info.PodInfo {
@@ -348,7 +348,7 @@ func createTaskWithCustomResources(numResources int) *pod_info.PodInfo {
 			Phase: v1.PodPending,
 		},
 	}
-	return pod_info.NewTaskInfo(pod, nil, resource_info.NewResourceVectorMap())
+	return pod_info.NewTaskInfo(pod, resource_info.NewResourceVectorMap())
 }
 
 func getCustomResourceNames(count int) []string {
