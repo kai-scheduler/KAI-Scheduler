@@ -158,4 +158,3 @@ func getSumOfAvailableGPUs(ssn *framework.Session) (float64, int64) {
 
 	return sumOfAllAllocatableGPUs, sumOfAllAllocatableGPUsMemory
 }
-
