@@ -321,9 +321,21 @@ func (sc *SchedulerCache) createBindRequest(podInfo *pod_info.PodInfo, nodeName 
 		},
 	}
 
-	_, err := sc.kubeAiSchedulerClient.SchedulingV1alpha2().BindRequests(
+	createdBindRequest, err := sc.kubeAiSchedulerClient.SchedulingV1alpha2().BindRequests(
 		podInfo.Namespace).Create(context.TODO(), bindRequest, metav1.CreateOptions{})
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Expose scheduler-created BindRequests to the next snapshot before the informer watch catches up.
+	if err := sc.kubeAiSchedulerInformerFactory.Scheduling().V1alpha2().BindRequests().Informer().GetStore().Add(
+		createdBindRequest.DeepCopy(),
+	); err != nil {
+		log.InfraLogger.Warningf("Failed to add BindRequest <%s/%s> to informer store: %v",
+			createdBindRequest.Namespace, createdBindRequest.Name, err)
+	}
+
+	return nil
 }
 
 func (sc *SchedulerCache) getNodPoolName() string {
