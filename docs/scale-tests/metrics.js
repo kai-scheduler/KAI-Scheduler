@@ -152,6 +152,7 @@ function extractMetricsFromRuns(runs, config) {
         value: metric,
         legend: legend,
         testName: testName,
+        commit: run.commit,
       });
     });
   });
@@ -201,7 +202,7 @@ function createChart(canvasId, dataPoints, config) {
 
   const datasets = Object.entries(grouped).map(([legend, points], idx) => ({
     label: legend,
-    data: points.map(p => ({ x: p.timestamp, y: p.value })),
+    data: points.map(p => ({ x: p.timestamp, y: p.value, commit: p.commit })),
     borderColor: CHART_COLORS[idx % CHART_COLORS.length],
     backgroundColor: CHART_COLORS[idx % CHART_COLORS.length] + '20',
     borderWidth: 2,
@@ -243,13 +244,26 @@ function createChart(canvasId, dataPoints, config) {
           callbacks: {
             title: (items) => {
               if (items[0]) {
-                return new Date(items[0].parsed.x).toLocaleDateString('en-US', {
-                  year: 'numeric',
-                  month: 'short',
-                  day: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                });
+                const lines = [
+                  new Date(items[0].parsed.x).toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })
+                ];
+
+                // Access commit from raw data
+                const datasetIndex = items[0].datasetIndex;
+                const dataIndex = items[0].dataIndex;
+                const rawData = items[0].chart.data.datasets[datasetIndex].data[dataIndex];
+
+                if (rawData.commit) {
+                  lines.push(`Commit: ${rawData.commit.substring(0, 8)}`);
+                }
+
+                return lines;
               }
               return '';
             },

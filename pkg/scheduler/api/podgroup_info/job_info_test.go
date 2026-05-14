@@ -23,11 +23,13 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
+	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -47,6 +49,8 @@ func jobInfoEqual(l, r *PodGroupInfo) bool {
 	rCopy.AllocatedVector = nil
 	lCopy.VectorMap = nil
 	rCopy.VectorMap = nil
+	lCopy.InvalidSubGroupTasks = nil
+	rCopy.InvalidSubGroupTasks = nil
 
 	if !reflect.DeepEqual(lCopy, rCopy) {
 		return false
@@ -130,6 +134,47 @@ func TestAddTaskInfo(t *testing.T) {
 				i, test.expected, ps)
 		}
 	}
+}
+
+func TestAddTaskInfoTracksInvalidSubGroupTask(t *testing.T) {
+	vectorMap := resource_info.BuildResourceVectorMap([]v1.ResourceList{common_info.BuildResourceList("1000m", "1G")})
+	pod := common_info.BuildPod(
+		"ns-1",
+		"pod-1",
+		"",
+		v1.PodPending,
+		common_info.BuildResourceList("1000m", "1G"),
+		nil,
+		map[string]string{commonconstants.SubGroupLabelKey: "missing-subgroup"},
+		map[string]string{
+			commonconstants.PodGroupAnnotationForPod: "group-1",
+		},
+	)
+	task := pod_info.NewTaskInfo(pod, nil, vectorMap)
+
+	info := NewPodGroupInfoWithVectorMap("group-1", vectorMap)
+	info.SetPodGroup(&enginev2alpha2.PodGroup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "group-1",
+			Namespace: "ns-1",
+		},
+		Spec: enginev2alpha2.PodGroupSpec{
+			Queue: "queue-1",
+			SubGroups: []enginev2alpha2.SubGroup{
+				{
+					Name:      "valid-subgroup",
+					MinMember: ptr.To(int32(1)),
+				},
+			},
+		},
+	})
+
+	info.AddTaskInfo(task)
+
+	assert.Empty(t, info.GetAllPodsMap())
+	assert.Len(t, info.GetInvalidSubGroupTasks(), 1)
+	assert.Equal(t, task, info.GetInvalidSubGroupTasks()[task.UID])
+	assert.Contains(t, info.TasksFitErrors[task.UID].Error(), `missing-subgroup`)
 }
 
 func TestDeleteTaskInfo(t *testing.T) {
