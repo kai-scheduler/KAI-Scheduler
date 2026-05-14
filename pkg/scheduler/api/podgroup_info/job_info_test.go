@@ -150,7 +150,7 @@ func TestAddTaskInfoTracksInvalidSubGroupTask(t *testing.T) {
 			commonconstants.PodGroupAnnotationForPod: "group-1",
 		},
 	)
-	task := pod_info.NewTaskInfo(pod, nil, vectorMap)
+	task := pod_info.NewTaskInfo(pod, vectorMap)
 
 	info := NewPodGroupInfoWithVectorMap("group-1", vectorMap)
 	info.SetPodGroup(&enginev2alpha2.PodGroup{
