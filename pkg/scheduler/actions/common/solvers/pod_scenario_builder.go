@@ -28,6 +28,17 @@ type PodAccumulatedScenarioBuilder struct {
 	victimsJobsQueue *utils.JobsOrderByQueues
 
 	recordedVictimsTasks map[common_info.PodID]*pod_info.PodInfo
+
+	// feasibleNodes is the set of nodes the JobSolver gave us as feasible for the
+	// preemptor (post FeasibleNodesForJob filter + recorded-victim nodes). The sub-
+	// scenario emitter uses it to compute "baseline capacity" already available to
+	// the simulation regardless of which potential victims it chooses.
+	feasibleNodes map[string]*node_info.NodeInfo
+
+	// subEmitter, when non-nil, owns the active sub-scenario emission for the current
+	// outer state. Each Get*Scenario call drains one sub-scenario from it; when it
+	// returns nil, outer accumulation resumes.
+	subEmitter *subScenarioEmitter
 }
 
 func NewPodAccumulatedScenarioBuilder(
@@ -73,10 +84,15 @@ func NewPodAccumulatedScenarioBuilder(
 		recordedVictimsTasks: recordedVictimsTasks,
 		lastScenario:         scenario,
 		scenarioFilters:      scenarioFilters,
+		feasibleNodes:        feasibleNodes,
 	}
 }
 
 func (asb *PodAccumulatedScenarioBuilder) GetNextScenario() *solverscenario.ByNodeScenario {
+	if sub := asb.nextFromSubEmitter(); sub != nil {
+		return sub
+	}
+
 	if asb.victimsJobsQueue.IsEmpty() {
 		return nil
 	}
@@ -87,6 +103,20 @@ func (asb *PodAccumulatedScenarioBuilder) GetNextScenario() *solverscenario.ByNo
 	}
 
 	return asb.GetValidScenario()
+}
+
+// nextFromSubEmitter drains the active sub-scenario emitter (if any) by one. Returns
+// nil and clears the emitter when it is exhausted, so callers fall through to outer
+// accumulation.
+func (asb *PodAccumulatedScenarioBuilder) nextFromSubEmitter() *solverscenario.ByNodeScenario {
+	if asb.subEmitter == nil {
+		return nil
+	}
+	if sub := asb.subEmitter.next(); sub != nil {
+		return sub
+	}
+	asb.subEmitter = nil
+	return nil
 }
 
 func (asb *PodAccumulatedScenarioBuilder) addNextPotentialVictims() bool {
@@ -135,13 +165,33 @@ func (asb *PodAccumulatedScenarioBuilder) addNextPotentialVictims() bool {
 }
 
 func (asb *PodAccumulatedScenarioBuilder) GetValidScenario() *solverscenario.ByNodeScenario {
+	if sub := asb.nextFromSubEmitter(); sub != nil {
+		return sub
+	}
+
 	if isValid, failedFilterName := asb.isScenarioValid(); !isValid {
 		log.InfraLogger.V(5).Infof("Filtered by %s for scenario: %s", failedFilterName, asb.lastScenario)
 		metrics.IncScenarioFilteredByAction()
 
 		return asb.GetNextScenario()
 	}
-	return asb.lastScenario
+
+	// Recorded-victims-only state: nothing to group by node; hand the outer scenario
+	// straight to the solver.
+	if len(asb.lastScenario.PotentialVictimsTasks()) == 0 {
+		return asb.lastScenario
+	}
+
+	// Outer is potentially feasible: hand off to the sub-scenario emitter, which
+	// picks the smallest set of victim-bearing nodes whose post-eviction capacity
+	// covers pending demand, and grows it on subsequent calls if the solver fails.
+	asb.subEmitter = newSubScenarioEmitter(asb.session, asb.lastScenario, asb.feasibleNodes)
+	if sub := asb.nextFromSubEmitter(); sub != nil {
+		return sub
+	}
+	// The emitter has nothing to offer (no node passes the smallest-pending-task
+	// gate, or no K covers demand). Treat this like a filter rejection and advance.
+	return asb.GetNextScenario()
 }
 
 func (asb *PodAccumulatedScenarioBuilder) isScenarioValid() (bool, string) {
