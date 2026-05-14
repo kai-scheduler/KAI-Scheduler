@@ -9,7 +9,6 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -56,19 +55,6 @@ func AddGPUSharingEnvVars(container *v1.Container, sharedGpuConfigMapName string
 				LocalObjectReference: v1.LocalObjectReference{
 					Name: sharedGpuConfigMapName,
 				},
-			},
-		},
-	})
-
-	AddEnvVarToContainer(container, v1.EnvVar{
-		Name: CudaDeviceMemoryLimit,
-		ValueFrom: &v1.EnvVarSource{
-			ConfigMapKeyRef: &v1.ConfigMapKeySelector{
-				Key: CudaDeviceMemoryLimit,
-				LocalObjectReference: v1.LocalObjectReference{
-					Name: sharedGpuConfigMapName,
-				},
-				Optional: ptr.To(true),
 			},
 		},
 	})

@@ -10,6 +10,7 @@ import (
 
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/gpusharing"
@@ -124,8 +125,8 @@ func validateDependentPlugins(config Config) error {
 
 	// PreBind is invoked in EnabledOptions() order (higher priority first).
 	// hamicore requires gpusharing to have already created the configmap.
-	hamiCorePri := ptrDerefInt(config[HamiCorePluginName].Priority, 0)
-	gpuSharingPri := ptrDerefInt(config[GPUSharingPluginName].Priority, 0)
+	hamiCorePri := ptr.Deref(config[HamiCorePluginName].Priority, 0)
+	gpuSharingPri := ptr.Deref(config[GPUSharingPluginName].Priority, 0)
 	if gpuSharingPri <= hamiCorePri {
 		return fmt.Errorf("%q plugin requires %q to run before it (expected %q.priority > %q.priority, got %d <= %d)",
 			HamiCorePluginName, GPUSharingPluginName, GPUSharingPluginName, HamiCorePluginName,
@@ -133,13 +134,6 @@ func validateDependentPlugins(config Config) error {
 	}
 
 	return nil
-}
-
-func ptrDerefInt(v *int, defaultValue int) int {
-	if v == nil {
-		return defaultValue
-	}
-	return *v
 }
 
 func int64Argument(arguments map[string]string, name string) (int64, error) {
@@ -158,18 +152,6 @@ func boolArgument(arguments map[string]string, name string) (bool, error) {
 	value, found := arguments[name]
 	if !found {
 		return false, fmt.Errorf("missing argument %q", name)
-	}
-	parsed, err := strconv.ParseBool(value)
-	if err != nil {
-		return false, fmt.Errorf("invalid argument %q=%q: %w", name, value, err)
-	}
-	return parsed, nil
-}
-
-func boolArgumentOrDefault(arguments map[string]string, name string, defaultValue bool) (bool, error) {
-	value, found := arguments[name]
-	if !found {
-		return defaultValue, nil
 	}
 	parsed, err := strconv.ParseBool(value)
 	if err != nil {
