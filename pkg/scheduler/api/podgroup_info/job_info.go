@@ -78,8 +78,9 @@ type PodGroupInfo struct {
 	PodGroup           *enginev2alpha2.PodGroup
 	PodGroupUID        types.UID
 
-	RootSubGroupSet *subgroup_info.SubGroupSet
-	PodSets         map[string]*subgroup_info.PodSet
+	RootSubGroupSet      *subgroup_info.SubGroupSet
+	PodSets              map[string]*subgroup_info.PodSet
+	InvalidSubGroupTasks pod_info.PodsMap
 
 	StalenessInfo
 
@@ -115,8 +116,9 @@ func NewPodGroupInfoWithVectorMap(uid common_info.PodGroupID, vectorMap *resourc
 			TimeStamp: nil,
 			Stale:     false,
 		},
-		RootSubGroupSet: defaultSubGroupSet,
-		PodSets:         defaultSubGroupSet.GetDescendantPodSets(),
+		RootSubGroupSet:      defaultSubGroupSet,
+		PodSets:              defaultSubGroupSet.GetDescendantPodSets(),
+		InvalidSubGroupTasks: pod_info.PodsMap{},
 
 		LastStartTimestamp:   nil,
 		activeAllocatedCount: ptr.To(0),
@@ -254,6 +256,7 @@ func (pgi *PodGroupInfo) AddTaskInfo(ti *pod_info.PodInfo) {
 	podSet, found := pgi.PodSets[taskSubGroupName]
 	if !found {
 		log.InfraLogger.Warningf("AddTaskInfo for task <%s/%s> of podGroup: <%s/%s>: SubGroup not found <%s>", ti.Namespace, ti.Name, pgi.Namespace, pgi.Name, taskSubGroupName)
+		pgi.addInvalidSubGroupTask(ti, taskSubGroupName)
 		return
 	}
 
@@ -511,6 +514,7 @@ func (pgi *PodGroupInfo) CloneWithTasks(tasks []*pod_info.PodInfo) *PodGroupInfo
 		PodGroupUID: pgi.PodGroupUID,
 
 		PodStatusIndex:       map[pod_status.PodStatus]pod_info.PodsMap{},
+		InvalidSubGroupTasks: pod_info.PodsMap{},
 		activeAllocatedCount: ptr.To(0),
 	}
 
@@ -553,6 +557,15 @@ func (pgi *PodGroupInfo) AddTaskFitErrors(task *pod_info.PodInfo, fitErrors *com
 	}
 }
 
+func (pgi *PodGroupInfo) GetInvalidSubGroupTasks() pod_info.PodsMap {
+	return pgi.InvalidSubGroupTasks
+}
+
+func (pgi *PodGroupInfo) IsInvalidSubGroupTask(taskID common_info.PodID) bool {
+	_, found := pgi.InvalidSubGroupTasks[taskID]
+	return found
+}
+
 func (pgi *PodGroupInfo) AddSimpleJobFitError(reason enginev2alpha2.UnschedulableReason, message string) {
 	pgi.AddJobFitError(common_info.NewJobFitError(pgi.Name, DefaultSubGroup, pgi.Namespace, reason, []string{message}))
 }
@@ -584,4 +597,17 @@ func (pgi *PodGroupInfo) generateSchedulingConstraintsSignature() common_info.Sc
 	}
 
 	return common_info.SchedulingConstraintsSignature(fmt.Sprintf("%x", hash.Sum(nil)))
+}
+
+func (pgi *PodGroupInfo) addInvalidSubGroupTask(ti *pod_info.PodInfo, taskSubGroupName string) {
+	pgi.InvalidSubGroupTasks[ti.UID] = ti
+
+	fitErrors := common_info.NewFitErrors()
+	fitErrors.SetError(fmt.Sprintf(
+		"Pod references subgroup %q, which does not exist in PodGroup %s/%s",
+		taskSubGroupName,
+		pgi.Namespace,
+		pgi.Name,
+	))
+	pgi.AddTaskFitErrors(ti, fitErrors)
 }

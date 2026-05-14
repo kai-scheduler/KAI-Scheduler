@@ -36,6 +36,7 @@ const (
 
 	// Annotations
 	PodGroupAnnotationForPod      = "pod-group-name"
+	SkipPodGrouperAnnotation      = "kai.scheduler/skip-podgrouper"
 	GpuFraction                   = "gpu-fraction"
 	GpuFractionContainerName      = "gpu-fraction-container-name"
 	GpuMemory                     = "gpu-memory"
