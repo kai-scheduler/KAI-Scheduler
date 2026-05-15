@@ -9,6 +9,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ksf "k8s.io/kube-scheduler/framework"
 
 	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
 	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -640,4 +641,43 @@ type FilterTest struct {
 	configMaps    map[common_info.ConfigMapID]*configmap_info.ConfigMapInfo
 	pod           *v1.Pod
 	expectedError bool
+}
+
+func TestPreFilterMissingRequiredConfigMapsReturnsUnschedulableAndUnresolvable(t *testing.T) {
+	cmp := NewConfigMapPredicate(nil)
+	_, status := cmp.PreFilter(context.Background(), nil, &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "test-namespace",
+		},
+		Spec: v1.PodSpec{
+			Containers: []v1.Container{
+				{
+					VolumeMounts: []v1.VolumeMount{
+						{
+							Name: "required-configmap-volume",
+						},
+					},
+				},
+			},
+			Volumes: []v1.Volume{
+				{
+					Name: "required-configmap-volume",
+					VolumeSource: v1.VolumeSource{
+						ConfigMap: &v1.ConfigMapVolumeSource{
+							LocalObjectReference: v1.LocalObjectReference{
+								Name: "required-cm",
+							},
+						},
+					},
+				},
+			},
+		},
+	}, nil)
+	if status == nil {
+		t.Fatal("PreFilter() returned nil status for a missing required ConfigMap")
+	}
+	if status.Code() != ksf.UnschedulableAndUnresolvable {
+		t.Fatalf("PreFilter() code = %v, want %v", status.Code(), ksf.UnschedulableAndUnresolvable)
+	}
 }
