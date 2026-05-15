@@ -12,11 +12,11 @@ import (
 
 	"go.uber.org/mock/gomock"
 	v1 "k8s.io/api/core/v1"
-	ksf "k8s.io/kube-scheduler/framework"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
+	ksf "k8s.io/kube-scheduler/framework"
 	"k8s.io/utils/ptr"
 
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
