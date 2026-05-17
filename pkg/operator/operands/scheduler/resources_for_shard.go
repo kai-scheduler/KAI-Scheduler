@@ -28,6 +28,8 @@ import (
 
 const (
 	invalidJobDepthMapError = "the scheduler's actions are %s. %s isn't one of them, making the queueDepthPerAction invalid"
+	livezPath               = "/livez"
+	readyzPath              = "/readyz"
 )
 
 func (s *SchedulerForShard) deploymentForShard(
@@ -95,6 +97,22 @@ func (s *SchedulerForShard) deploymentForShard(
 		},
 	}
 	deployment.Spec.Template.Spec.Containers[0].Args = containerArgs
+	deployment.Spec.Template.Spec.Containers[0].LivenessProbe = &corev1.Probe{
+		ProbeHandler: corev1.ProbeHandler{
+			HTTPGet: &corev1.HTTPGetAction{
+				Path: livezPath,
+				Port: intstr.FromInt(*config.SchedulerService.TargetPort),
+			},
+		},
+	}
+	deployment.Spec.Template.Spec.Containers[0].ReadinessProbe = &corev1.Probe{
+		ProbeHandler: corev1.ProbeHandler{
+			HTTPGet: &corev1.HTTPGetAction{
+				Path: readyzPath,
+				Port: intstr.FromInt(*config.SchedulerService.TargetPort),
+			},
+		},
+	}
 	deployment.Spec.Template.Spec.Volumes = []corev1.Volume{
 		{
 			VolumeSource: corev1.VolumeSource{

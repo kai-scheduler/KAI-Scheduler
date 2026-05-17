@@ -130,6 +130,46 @@ var _ = Describe("Scheduler", func() {
 		Expect(len(services.Items)).To(Equal(2))
 	})
 
+	It("Should consider an active-passive scheduler deployment available when one updated pod is ready", func(ctx context.Context) {
+		deployment := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      deploymentName(kaiConfig, shard),
+				Namespace: kaiConfig.Spec.Namespace,
+			},
+			Spec: appsv1.DeploymentSpec{Replicas: ptr.To(int32(2))},
+			Status: appsv1.DeploymentStatus{
+				UpdatedReplicas: 2,
+				ReadyReplicas:   1,
+			},
+		}
+		Expect(fakeClient.Create(ctx, deployment)).To(Succeed())
+		schedulerOperandForShard.lastDesiredState = []client.Object{deployment}
+
+		available, err := schedulerOperandForShard.IsAvailable(ctx, fakeClient)
+		Expect(err).To(BeNil())
+		Expect(available).To(BeTrue())
+	})
+
+	It("Should not consider an active-passive scheduler deployment available when no updated pod is ready", func(ctx context.Context) {
+		deployment := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      deploymentName(kaiConfig, shard),
+				Namespace: kaiConfig.Spec.Namespace,
+			},
+			Spec: appsv1.DeploymentSpec{Replicas: ptr.To(int32(2))},
+			Status: appsv1.DeploymentStatus{
+				UpdatedReplicas: 2,
+				ReadyReplicas:   0,
+			},
+		}
+		Expect(fakeClient.Create(ctx, deployment)).To(Succeed())
+		schedulerOperandForShard.lastDesiredState = []client.Object{deployment}
+
+		available, err := schedulerOperandForShard.IsAvailable(ctx, fakeClient)
+		Expect(err).To(BeNil())
+		Expect(available).To(BeFalse())
+	})
+
 	Context("ConfigMap", func() {
 		It("Should create configmap", func(ctx context.Context) {
 			s := NewSchedulerForShard(shard)

@@ -140,6 +140,12 @@ func TestDeploymentForShard(t *testing.T) {
 
 			container := deploy.Spec.Template.Spec.Containers[0]
 			args := container.Args
+			require.NotNil(t, container.LivenessProbe)
+			require.NotNil(t, container.LivenessProbe.HTTPGet)
+			assert.Equal(t, "/livez", container.LivenessProbe.HTTPGet.Path)
+			require.NotNil(t, container.ReadinessProbe)
+			require.NotNil(t, container.ReadinessProbe.HTTPGet)
+			assert.Equal(t, "/readyz", container.ReadinessProbe.HTTPGet.Path)
 
 			// Check expected args
 			for _, expected := range tt.expected {
