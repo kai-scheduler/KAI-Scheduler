@@ -134,7 +134,7 @@ func Test_podToMaxNodeResourcesFiltering(t *testing.T) {
 				},
 			},
 			expected{
-				ksf.NewStatus(ksf.Unschedulable,
+				ksf.NewStatus(ksf.UnschedulableAndUnresolvable,
 					"The pod n1/name1 requires GPU: 0, CPU: 1 (cores), memory: 0 (GB), pods: 1. Max CPU resources available in a single node in the default node-pool is topped at 0.5 cores"),
 				false,
 				nil,
@@ -180,7 +180,7 @@ func Test_podToMaxNodeResourcesFiltering(t *testing.T) {
 				},
 			},
 			expected{
-				ksf.NewStatus(ksf.Unschedulable,
+				ksf.NewStatus(ksf.UnschedulableAndUnresolvable,
 					"The pod n1/name1 requires GPU: 0, CPU: 0 (cores), memory: 1 (GB), pods: 1. Max memory resources available in a single node in the default node-pool is topped at 0.419 GB"),
 				false,
 				nil,
@@ -226,7 +226,7 @@ func Test_podToMaxNodeResourcesFiltering(t *testing.T) {
 				},
 			},
 			expected{
-				ksf.NewStatus(ksf.Unschedulable,
+				ksf.NewStatus(ksf.UnschedulableAndUnresolvable,
 					"The pod n1/name1 requires GPU: 2, CPU: 0 (cores), memory: 0 (GB), pods: 1. Max GPU resources available in a single node in the default node-pool is topped at 1"),
 				false,
 				nil,
@@ -271,7 +271,7 @@ func Test_podToMaxNodeResourcesFiltering(t *testing.T) {
 				},
 			},
 			expected{
-				ksf.NewStatus(ksf.Unschedulable,
+				ksf.NewStatus(ksf.UnschedulableAndUnresolvable,
 					"The pod n1/name1 requires GPU: 0.5, CPU: 0 (cores), memory: 0 (GB), pods: 1. No node in the default node-pool has GPU resources"),
 				false,
 				nil,
@@ -547,7 +547,7 @@ func TestMaxNodeResourcesPredicateDRA(t *testing.T) {
 					},
 				},
 			},
-			ksf.NewStatus(ksf.Unschedulable,
+			ksf.NewStatus(ksf.UnschedulableAndUnresolvable,
 				"The pod n1/name1 requires GPU: 2, CPU: 0 (cores), memory: 0 (GB), pods: 1. Max GPU resources available in a single node in the default node-pool is topped at 1"),
 		},
 	}
