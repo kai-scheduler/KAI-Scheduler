@@ -234,34 +234,35 @@ func (ssn *Session) FittingNode(task *pod_info.PodInfo, node *node_info.NodeInfo
 }
 
 func (ssn *Session) OrderedNodesByTask(nodes []*node_info.NodeInfo, task *pod_info.PodInfo) []*node_info.NodeInfo {
-	var (
-		nodeScores = make(map[float64][]*node_info.NodeInfo)
-		mutex      sync.Mutex
-		wg         sync.WaitGroup
-	)
+	type nodeOrderResult struct {
+		node  *node_info.NodeInfo
+		score float64
+		err   error
+	}
 
 	ssn.NodePreOrderFn(task, nodes)
 
+	results := make(chan nodeOrderResult, len(nodes))
 	for _, node := range nodes {
-		wg.Add(1)
 		go func(node *node_info.NodeInfo) {
-			defer wg.Done()
 			score, err := ssn.NodeOrderFn(task, node)
-			if err != nil {
-				log.InfraLogger.Errorf("Error in Calculating Priority for the node:%v", err)
-				return
-			}
-
-			mutex.Lock()
-			nodeScores[score] = append(nodeScores[score], node)
-			mutex.Unlock()
-
-			log.InfraLogger.V(5).Infof("Overall priority node score of node <%v> for task <%v/%v> is: %f",
-				node.Name, task.Namespace, task.Name, score)
+			results <- nodeOrderResult{node: node, score: score, err: err}
 		}(node)
 	}
 
-	wg.Wait()
+	nodeScores := make(map[float64][]*node_info.NodeInfo)
+	for range nodes {
+		result := <-results
+		if result.err != nil {
+			log.InfraLogger.Errorf("Error in Calculating Priority for the node:%v", result.err)
+			continue
+		}
+
+		nodeScores[result.score] = append(nodeScores[result.score], result.node)
+
+		log.InfraLogger.V(5).Infof("Overall priority node score of node <%v> for task <%v/%v> is: %f",
+			result.node.Name, task.Namespace, task.Name, result.score)
+	}
 	return sortNodesByScore(nodeScores)
 }
 
