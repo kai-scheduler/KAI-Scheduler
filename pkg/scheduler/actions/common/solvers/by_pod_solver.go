@@ -60,27 +60,17 @@ func newByPodSolver(
 	}
 }
 
-// solve runs one simulation for the given scenario: evict all of its recorded and
-// potential victims, then try to virtually allocate the preemptor across the resulting
-// feasible nodes. The scenario builder owns the search strategy (which victims to put
-// in this scenario and in what order). solve is intentionally a single path with no
-// per-node fallbacks of its own.
-func (s *byPodSolver) solve(
-	session *framework.Session, scenario *scenario.ByNodeScenario,
-) *solutionResult {
+// solve evaluates a scenario's feasibility by simulating it: evicting its victims and simulating the allocation loop.
+// This simulates allocation order, node sorting, predicates, and all relevant scheduling logic, so the scheduler will
+// not perform evictions that will not result in successful allocation of the pending job. This also helps the scheduler
+// avoid evictions which are not relevant to the specific scenario.
+func (s *byPodSolver) solve(session *framework.Session, scenario *scenario.ByNodeScenario) *solutionResult {
 	statement := session.Statement()
 
 	pendingJob := scenario.GetPreemptor()
 	nextTaskToFindAllocation := scenario.PendingTasks()[len(scenario.PendingTasks())-1]
 
 	allVictims := getVictimTasks(scenario.RecordedVictimsTasks(), scenario.PotentialVictimsTasks())
-	if len(allVictims) == 0 {
-		// Nothing to evict. byPodSolver is only invoked when the preemptor needs
-		// to displace at least one task; pure idle-capacity fits are the allocate
-		// action's job, not ours. Signal failure so the builder advances.
-		statement.Discard()
-		return &solutionResult{false, nil, nil, nil}
-	}
 
 	checkpoint := statement.Checkpoint()
 	if err := common.EvictAllPreemptees(session, allVictims, pendingJob, statement, s.actionType); err != nil {
