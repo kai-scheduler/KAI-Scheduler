@@ -50,6 +50,7 @@ require (
 	k8s.io/cli-runtime v0.34.1
 	k8s.io/client-go v0.34.3
 	k8s.io/cluster-bootstrap v0.34.1
+	k8s.io/code-generator v0.34.3
 	k8s.io/component-base v0.34.3
 	k8s.io/component-helpers v0.34.1
 	k8s.io/cri-client v0.34.1
@@ -193,6 +194,7 @@ require (
 	k8s.io/controller-manager v0.34.1 // indirect
 	k8s.io/cri-api v0.34.1 // indirect
 	k8s.io/csi-translation-lib v0.34.1 // indirect
+	k8s.io/gengo/v2 v2.0.0-20250820003526-c297c0c1eb9d // indirect
 	k8s.io/kube-openapi v0.0.0-20250814151709-d7b6acb124c3 // indirect
 	k8s.io/kubelet v0.34.1 // indirect
 	knative.dev/networking v0.0.0-20260120131110-a7cdca238a0d // indirect

@@ -97,7 +97,7 @@ func (sse *subScenarioEmitter) next() *scenario.ByNodeScenario {
 	sub := scenario.NewByNodeScenario(
 		sse.session,
 		sse.base.GetPreemptor(),
-		sse.base.PendingTasks(),
+		sse.base.GetPreemptor(),
 		nil,
 		sse.base.RecordedVictimsJobs(),
 	)
@@ -117,7 +117,7 @@ func recordedFreedByNode(base *scenario.ByNodeScenario) map[string]float64 {
 		if victim.NodeName == "" {
 			continue
 		}
-		out[victim.NodeName] += victim.AcceptedGpuRequirement.GetGpusQuota()
+		out[victim.NodeName] += podGpus(victim)
 	}
 	return out
 }
@@ -187,7 +187,7 @@ func nodeCapacities(
 		for _, bi := range batchIdxs {
 			for _, t := range batches[bi].tasks {
 				if t.NodeName == nodeName {
-					c += t.AcceptedGpuRequirement.GetGpusQuota()
+					c += podGpus(t)
 				}
 			}
 		}
@@ -245,10 +245,16 @@ func baselineCapacity(
 	return out
 }
 
+// podGpus returns the pod's whole + DRA GPU request count, matching the convention
+// used by the rest of the v0.14 scheduler when computing per-pod GPU demand.
+func podGpus(p *pod_info.PodInfo) float64 {
+	return p.ResReq.GPUs() + float64(p.ResReq.GetDraGpusCount())
+}
+
 func pendingTaskGpuStats(s *scenario.ByNodeScenario) (totalDemand, minTask float64) {
 	minTask = -1
-	for _, t := range s.PendingTasks() {
-		req := t.GpuRequirement.GetGpusQuota()
+	for _, t := range s.GetPreemptor().GetAllPodsMap() {
+		req := podGpus(t)
 		totalDemand += req
 		if minTask < 0 || req < minTask {
 			minTask = req
