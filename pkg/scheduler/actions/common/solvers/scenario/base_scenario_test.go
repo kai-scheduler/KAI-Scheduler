@@ -533,7 +533,7 @@ func TestPodSimpleScenario_LatestPotentialVictim(t *testing.T) {
 		name   string
 		fields fields
 		args   args
-		want   *podgroup_info.PodGroupInfo
+		want   []*podgroup_info.PodGroupInfo
 	}{
 		{
 			name: "tasks only in ctor",
@@ -577,7 +577,7 @@ func TestPodSimpleScenario_LatestPotentialVictim(t *testing.T) {
 				},
 			},
 			args: args{},
-			want: podgroup_info.NewPodGroupInfo("pg1", pod_info.NewTaskInfo(&v1.Pod{
+			want: []*podgroup_info.PodGroupInfo{podgroup_info.NewPodGroupInfo("pg1", pod_info.NewTaskInfo(&v1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "name1",
 					Namespace: "n1",
@@ -586,7 +586,7 @@ func TestPodSimpleScenario_LatestPotentialVictim(t *testing.T) {
 					},
 				},
 				Spec: v1.PodSpec{},
-			}, nil, resource_info.NewResourceVectorMap())),
+			}, nil, resource_info.NewResourceVectorMap()))},
 		},
 		{
 			name: "return latest task from AddPotentialVictimsTasks",
@@ -652,7 +652,7 @@ func TestPodSimpleScenario_LatestPotentialVictim(t *testing.T) {
 					}, nil, resource_info.NewResourceVectorMap()),
 				},
 			},
-			want: podgroup_info.NewPodGroupInfo("pg1", pod_info.NewTaskInfo(&v1.Pod{
+			want: []*podgroup_info.PodGroupInfo{podgroup_info.NewPodGroupInfo("pg1", pod_info.NewTaskInfo(&v1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "name1",
 					Namespace: "n1",
@@ -670,7 +670,7 @@ func TestPodSimpleScenario_LatestPotentialVictim(t *testing.T) {
 					},
 				},
 				Spec: v1.PodSpec{},
-			}, nil, resource_info.NewResourceVectorMap())),
+			}, nil, resource_info.NewResourceVectorMap()))},
 		},
 	}
 	for _, tt := range tests {
@@ -685,7 +685,7 @@ func TestPodSimpleScenario_LatestPotentialVictim(t *testing.T) {
 			if tt.args.tasks != nil {
 				s.AddPotentialVictimsTasks(tt.args.tasks)
 			}
-			if got := s.LatestPotentialVictim(); !reflect.DeepEqual(got, tt.want) {
+			if got := s.LatestPotentialVictims(); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("LatestPotentialVictim() = %v, want %v", got, tt.want)
 			}
 		})

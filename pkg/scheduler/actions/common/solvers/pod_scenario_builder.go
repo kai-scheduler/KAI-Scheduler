@@ -28,6 +28,8 @@ type PodAccumulatedScenarioBuilder struct {
 	victimsJobsQueue *utils.JobsOrderByQueues
 
 	recordedVictimsTasks map[common_info.PodID]*pod_info.PodInfo
+
+	amountOfNewPotentialTasksInCurrentScenario int
 }
 
 func NewPodAccumulatedScenarioBuilder(
@@ -73,6 +75,7 @@ func NewPodAccumulatedScenarioBuilder(
 		recordedVictimsTasks: recordedVictimsTasks,
 		lastScenario:         scenario,
 		scenarioFilters:      scenarioFilters,
+		amountOfNewPotentialTasksInCurrentScenario: 0,
 	}
 }
 
@@ -130,6 +133,7 @@ func (asb *PodAccumulatedScenarioBuilder) addNextPotentialVictims() bool {
 
 	if asb.lastScenario != nil {
 		asb.lastScenario.AddPotentialVictimsTasks(potentialVictimTasks)
+		asb.amountOfNewPotentialTasksInCurrentScenario += len(potentialVictimTasks)
 	}
 	return true
 }
@@ -141,6 +145,8 @@ func (asb *PodAccumulatedScenarioBuilder) GetValidScenario() *solverscenario.ByN
 
 		return asb.GetNextScenario()
 	}
+	asb.lastScenario.SetAmountOfNewPotentialTasks(asb.amountOfNewPotentialTasksInCurrentScenario)
+	asb.amountOfNewPotentialTasksInCurrentScenario = 0
 	return asb.lastScenario
 }
 

@@ -37,6 +37,7 @@ func NewByNodeScenario(
 	for _, task := range potentialVictimsTasks {
 		bns.addPotentialVictimTask(task)
 	}
+	bns.SetAmountOfNewPotentialTasks(len(potentialVictimsTasks))
 
 	return bns
 }

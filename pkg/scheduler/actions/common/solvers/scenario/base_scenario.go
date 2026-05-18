@@ -18,12 +18,13 @@ var _ api.ScenarioInfo = &BaseScenario{}
 type BaseScenario struct {
 	session *framework.Session
 
-	preemptor             *podgroup_info.PodGroupInfo
-	victims               map[common_info.PodGroupID]*api.VictimInfo
-	pendingTasks          []*pod_info.PodInfo
-	potentialVictimsTasks []*pod_info.PodInfo
-	recordedVictimsJobs   []*podgroup_info.PodGroupInfo
-	recordedVictimsTasks  []*pod_info.PodInfo
+	preemptor                 *podgroup_info.PodGroupInfo
+	victims                   map[common_info.PodGroupID]*api.VictimInfo
+	pendingTasks              []*pod_info.PodInfo
+	potentialVictimsTasks     []*pod_info.PodInfo
+	amountOfNewPotentialTasks int
+	recordedVictimsJobs       []*podgroup_info.PodGroupInfo
+	recordedVictimsTasks      []*pod_info.PodInfo
 
 	// Deprecated: Use preemptor instead
 	victimsJobsTaskGroups map[common_info.PodGroupID][]*podgroup_info.PodGroupInfo
@@ -34,14 +35,15 @@ func NewBaseScenario(
 	recordedVictimsJobs []*podgroup_info.PodGroupInfo,
 ) *BaseScenario {
 	s := &BaseScenario{
-		session:               session,
-		preemptor:             originalJob,
-		victims:               make(map[common_info.PodGroupID]*api.VictimInfo),
-		pendingTasks:          make([]*pod_info.PodInfo, 0),
-		potentialVictimsTasks: make([]*pod_info.PodInfo, 0),
-		recordedVictimsJobs:   make([]*podgroup_info.PodGroupInfo, len(recordedVictimsJobs)),
-		recordedVictimsTasks:  nil,
-		victimsJobsTaskGroups: make(map[common_info.PodGroupID][]*podgroup_info.PodGroupInfo),
+		session:                   session,
+		preemptor:                 originalJob,
+		victims:                   make(map[common_info.PodGroupID]*api.VictimInfo),
+		pendingTasks:              make([]*pod_info.PodInfo, 0),
+		potentialVictimsTasks:     make([]*pod_info.PodInfo, 0),
+		amountOfNewPotentialTasks: 0,
+		recordedVictimsJobs:       make([]*podgroup_info.PodGroupInfo, len(recordedVictimsJobs)),
+		recordedVictimsTasks:      nil,
+		victimsJobsTaskGroups:     make(map[common_info.PodGroupID][]*podgroup_info.PodGroupInfo),
 	}
 
 	for _, task := range pendingTasks {
@@ -50,6 +52,7 @@ func NewBaseScenario(
 	for _, task := range victimsTasks {
 		s.AddPotentialVictimsTasks([]*pod_info.PodInfo{task})
 	}
+	s.SetAmountOfNewPotentialTasks(len(victimsTasks))
 	for index, recordedVictimJob := range recordedVictimsJobs {
 		s.recordedVictimsJobs[index] = recordedVictimJob
 		var tasks []*pod_info.PodInfo
@@ -86,9 +89,13 @@ func (s *BaseScenario) RecordedVictimsJobs() []*podgroup_info.PodGroupInfo {
 	return s.recordedVictimsJobs
 }
 
-func (s *BaseScenario) LatestPotentialVictim() *podgroup_info.PodGroupInfo {
+func (s *BaseScenario) LatestPotentialVictims() []*podgroup_info.PodGroupInfo {
 	if len(s.potentialVictimsTasks) > 0 {
-		return s.getJobForTask(s.potentialVictimsTasks[len(s.potentialVictimsTasks)-1])
+		latestPotentialVictims := []*podgroup_info.PodGroupInfo{}
+		for i := len(s.potentialVictimsTasks) - s.amountOfNewPotentialTasks; i < len(s.potentialVictimsTasks); i++ {
+			latestPotentialVictims = append(latestPotentialVictims, s.getJobForTask(s.potentialVictimsTasks[i]))
+		}
+		return latestPotentialVictims
 	} else {
 		return nil
 	}
@@ -105,6 +112,15 @@ func (s *BaseScenario) AddPotentialVictimsTasks(tasks []*pod_info.PodInfo) {
 
 	s.potentialVictimsTasks = append(s.potentialVictimsTasks, tasks...)
 	s.appendTasksAsVictimJob(tasks)
+}
+
+// SetAmountOfNewPotentialTasks sets the amount of new potential tasks that have been added to the scenario in comparison to the previous scenario tested.
+func (s *BaseScenario) SetAmountOfNewPotentialTasks(amount int) {
+	s.amountOfNewPotentialTasks = amount
+}
+
+func (s *BaseScenario) GetAmountOfNewPotentialTasks() int {
+	return s.amountOfNewPotentialTasks
 }
 
 func (s *BaseScenario) appendTasksAsVictimJob(tasks []*pod_info.PodInfo) {

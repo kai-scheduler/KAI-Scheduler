@@ -74,8 +74,8 @@ func benchmarkReclaimLargeJobs(b *testing.B, numNodes int) {
 		Queue0DeservedGPUs:      0,
 		Queue1DeservedGPUs:      numNodes * 8,
 		NumberOfCacheBinds:      numNodes * 4,
-		NumberOfCacheEvictions:  numNodes * 4,
-		NumberOfPipelineActions: numNodes * 4,
+		NumberOfCacheEvictions:  numNodes * 8,
+		NumberOfPipelineActions: numNodes * 8,
 	}
 
 	topology := buildReclaimTopology(params)
