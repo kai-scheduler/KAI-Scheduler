@@ -22,7 +22,9 @@ const (
 	megabytesToBytesMultiplier = 1000000
 	unlimitedQuota             = float64(-1)
 
-	queueNameLabel = "queue_name"
+	queueNameLabel         = "queue_name"
+	queueMetadataNameLabel = "queue_metadata_name"
+	queueDisplayNameLabel  = "queue_display_name"
 
 	gpuResourceNameSuffix = "/gpu"
 )
@@ -77,7 +79,10 @@ func InitMetrics(namespace string, queueLabelToMetricLabelMap, queueLabelToDefau
 
 	queueLabelToDefaultMetricValue = queueLabelToDefaultMetricValueMap
 
-	queueMetricsLabels := append([]string{queueNameLabel}, additionalMetricLabelKeys...)
+	queueMetricsLabels := append(
+		[]string{queueNameLabel, queueMetadataNameLabel, queueDisplayNameLabel},
+		additionalMetricLabelKeys...,
+	)
 
 	queueInfo = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -149,6 +154,7 @@ func SetQueueMetrics(queue *v2.Queue) {
 	additionalMetricLabelValues := getAdditionalMetricLabelValues(queue.Labels)
 
 	queueName := queue.Name
+	queueDisplayName := queue.Spec.DisplayName
 	gpuQuota := getGpuQuota(queue.Spec.Resources)
 	cpuQuota := getCpuQuotaCores(queue.Spec.Resources)
 	memoryQuota := getMemoryQuotaBytes(queue.Spec.Resources)
@@ -156,7 +162,10 @@ func SetQueueMetrics(queue *v2.Queue) {
 	allocatedCpus := getAllocatedCpuCores(queue.Status)
 	allocatedMemory := getAllocatedMemoryBytes(queue.Status)
 
-	queueQuotaMetricValues := append([]string{queueName}, additionalMetricLabelValues...)
+	queueQuotaMetricValues := append(
+		[]string{queueName, queueName, queueDisplayName},
+		additionalMetricLabelValues...,
+	)
 
 	queueInfo.WithLabelValues(queueQuotaMetricValues...).Set(1)
 	queueDeservedGPUs.WithLabelValues(queueQuotaMetricValues...).Set(gpuQuota)

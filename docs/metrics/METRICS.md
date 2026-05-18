@@ -10,17 +10,19 @@ Metrics related to Queue resource management and resource quota tracking.
 
 | Metric Name | Type | Labels | Description |
 |---|---|---|---|
-| `queue_info` | Gauge | `queue_name`, `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Queue existence marker (always 1 when queue exists). Standard Kubernetes labels track the queue-controller pod exposing the metric. |
-| `queue_deserved_gpus` | Gauge | `queue_name`, `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Deserved/allocated GPU quota for the queue (fair-share allocation). |
-| `queue_quota_cpu_cores` | Gauge | `queue_name`, `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | CPU quota for the queue in cores. Value of -1 indicates unlimited quota. |
-| `queue_quota_memory_bytes` | Gauge | `queue_name`, `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Memory quota for the queue in bytes. Value of -1 indicates unlimited quota. |
-| `queue_allocated_gpus` | Gauge | `queue_name`, `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Currently allocated GPUs in the queue (actual resource consumption). |
-| `queue_allocated_cpu_cores` | Gauge | `queue_name`, `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Currently allocated CPU in cores (actual resource consumption). |
-| `queue_allocated_memory_bytes` | Gauge | `queue_name`, `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Currently allocated memory in bytes (actual resource consumption). |
+| `queue_info` | Gauge | `queue_name`, `queue_metadata_name`, `queue_display_name`, `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Queue existence marker (always 1 when queue exists). Standard Kubernetes labels track the queue-controller pod exposing the metric. |
+| `queue_deserved_gpus` | Gauge | `queue_name`, `queue_metadata_name`, `queue_display_name`, `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Deserved/allocated GPU quota for the queue (fair-share allocation). |
+| `queue_quota_cpu_cores` | Gauge | `queue_name`, `queue_metadata_name`, `queue_display_name`, `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | CPU quota for the queue in cores. Value of -1 indicates unlimited quota. |
+| `queue_quota_memory_bytes` | Gauge | `queue_name`, `queue_metadata_name`, `queue_display_name`, `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Memory quota for the queue in bytes. Value of -1 indicates unlimited quota. |
+| `queue_allocated_gpus` | Gauge | `queue_name`, `queue_metadata_name`, `queue_display_name`, `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Currently allocated GPUs in the queue (actual resource consumption). |
+| `queue_allocated_cpu_cores` | Gauge | `queue_name`, `queue_metadata_name`, `queue_display_name`, `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Currently allocated CPU in cores (actual resource consumption). |
+| `queue_allocated_memory_bytes` | Gauge | `queue_name`, `queue_metadata_name`, `queue_display_name`, `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Currently allocated memory in bytes (actual resource consumption). |
 
 ### Label Definitions
 
-- **`queue_name`**: Name of the Queue resource (e.g., `default-parent-queue`, `default-queue`)
+- **`queue_name`**: Queue identifier as emitted by the queue-controller (the Queue resource's `metadata.name`). Retained for backward compatibility — note that the scheduler emits a different value under the same label (see [Queue Identification Labels](#queue-identification-labels)).
+- **`queue_metadata_name`**: The Queue resource's `metadata.name`. Always populated. **Recommended join key** between queue-controller and scheduler metrics.
+- **`queue_display_name`**: The Queue's `spec.displayName`. Empty string when unset.
 - **`endpoint`**: Prometheus scrape endpoint path (e.g., `metrics`)
 - **`instance`**: Pod IP:Port (e.g., `10.244.1.5.8080`)
 - **`job`**: Scrape job name from Prometheus config (e.g., `queue-controller`)
@@ -62,12 +64,12 @@ Metrics related to the core scheduling algorithm performance, task lifecycle, an
 
 | Metric Name | Type | Labels | Description |
 |---|---|---|---|
-| `queue_fair_share_cpu_cores` | Gauge | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `queue_name` | CPU fair-share allocation for the queue in cores. Updated per scheduling cycle. |
-| `queue_fair_share_memory_gb` | Gauge | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `queue_name` | Memory fair-share allocation for the queue in GB. Updated per scheduling cycle. |
-| `queue_fair_share_gpu` | Gauge | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `queue_name` | GPU fair-share allocation for the queue in device count. Updated per scheduling cycle. |
-| `queue_cpu_usage` | Gauge | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `queue_name` | CPU usage of the queue. Units depend on configured UsageDB (typically cores or cost units). |
-| `queue_memory_usage` | Gauge | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `queue_name` | Memory usage of the queue. Units depend on configured UsageDB (typically GB or cost units). |
-| `queue_gpu_usage` | Gauge | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `queue_name` | GPU usage of the queue. Units depend on configured UsageDB (typically device count or cost units). |
+| `queue_fair_share_cpu_cores` | Gauge | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `queue_name`, `queue_metadata_name`, `queue_display_name` | CPU fair-share allocation for the queue in cores. Updated per scheduling cycle. |
+| `queue_fair_share_memory_gb` | Gauge | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `queue_name`, `queue_metadata_name`, `queue_display_name` | Memory fair-share allocation for the queue in GB. Updated per scheduling cycle. |
+| `queue_fair_share_gpu` | Gauge | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `queue_name`, `queue_metadata_name`, `queue_display_name` | GPU fair-share allocation for the queue in device count. Updated per scheduling cycle. |
+| `queue_cpu_usage` | Gauge | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `queue_name`, `queue_metadata_name`, `queue_display_name` | CPU usage of the queue. Units depend on configured UsageDB (typically cores or cost units). |
+| `queue_memory_usage` | Gauge | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `queue_name`, `queue_metadata_name`, `queue_display_name` | Memory usage of the queue. Units depend on configured UsageDB (typically GB or cost units). |
+| `queue_gpu_usage` | Gauge | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `queue_name`, `queue_metadata_name`, `queue_display_name` | GPU usage of the queue. Units depend on configured UsageDB (typically device count or cost units). |
 
 ---
 
@@ -82,12 +84,46 @@ All metrics include these standard Prometheus scrape labels:
 - **`service`**: Kubernetes Service name for the component
 
 Business/Resource Labels:
-- **`queue_name`**: Queue resource identifier
+- **`queue_name`**: Legacy queue identifier label. See [Queue Identification Labels](#queue-identification-labels) for value semantics.
+- **`queue_metadata_name`**: The Queue resource's `metadata.name`. Always populated; recommended join key across components.
+- **`queue_display_name`**: The Queue's `spec.displayName`. Empty string when unset.
 - **`action`**: Scheduling action name
 - **`plugin`**: Plugin name
 - **`OnSession`**: Session lifecycle phase (`OnSessionOpen` or `OnSessionClose`)
 - **`podgroup`**: PodGroup resource identifier
 - **`nodepool`**: Node pool identifier for resource allocation
 - **`uid`**: Unique identifier (pod group UID)
+
+---
+
+## Queue Identification Labels
+
+All queue metrics emitted by both the scheduler and the queue-controller carry three labels that identify the queue: `queue_name`, `queue_metadata_name`, and `queue_display_name`.
+
+### Why three labels?
+
+The legacy `queue_name` label is populated inconsistently across components:
+
+- **Queue-controller** sets `queue_name` to the Queue's `metadata.name`.
+- **Scheduler** sets `queue_name` to `spec.displayName` when set, falling back to `metadata.name`.
+
+For queues that set `spec.displayName` to something other than `metadata.name`, this means that a PromQL `on(queue_name)` join between scheduler and queue-controller metrics silently drops those queues.
+
+To make joins reliable without breaking existing dashboards that rely on the current `queue_name` values, two additional labels are emitted by all components:
+
+- `queue_metadata_name` is always the Queue's `metadata.name`. Use this as the join key.
+- `queue_display_name` is always the Queue's `spec.displayName` (empty when unset). Use this for human-readable presentation.
+
+### Recommended PromQL
+
+Join scheduler and queue-controller metrics on `queue_metadata_name`:
+
+```promql
+queue_allocated_gpus / on(queue_metadata_name) group_left() queue_fair_share_gpu
+```
+
+### Migration
+
+The legacy `queue_name` label is preserved unchanged for backward compatibility. Existing dashboards continue to work. New dashboards and alerts should prefer `queue_metadata_name` as the canonical queue identifier.
 
 ---

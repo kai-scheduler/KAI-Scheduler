@@ -49,6 +49,8 @@ func reportDivisionResult(queues map[common_info.QueueID]*rs.QueueAttributes) {
 
 		metrics.UpdateQueueFairShare(
 			queue.Name,
+			string(queue.UID),
+			queue.DisplayName,
 			cpuResourceShare.FairShare/resource_info.MilliCPUToCores,
 			memoryResourceShare.FairShare/resource_info.MemoryToGB,
 			gpuResourceShare.FairShare,
@@ -56,6 +58,8 @@ func reportDivisionResult(queues map[common_info.QueueID]*rs.QueueAttributes) {
 
 		metrics.UpdateQueueUsage(
 			queue.Name,
+			string(queue.UID),
+			queue.DisplayName,
 			cpuResourceShare.GetUsage(),
 			memoryResourceShare.GetUsage(),
 			gpuResourceShare.GetUsage(),
