@@ -268,7 +268,7 @@ var _ = Describe("Can Reclaim Resources", func() {
 					testData.queue.UID: testData.queue,
 				}
 				result := reclaimable.CanReclaimResources(queues, testData.reclaimerInfo)
-				Expect(result).To(Equal(testData.canReclaim))
+				Expect(result.Passed).To(Equal(testData.canReclaim))
 			})
 		}
 	})
@@ -562,7 +562,7 @@ var _ = Describe("Can Reclaim Resources", func() {
 					testData.queue.UID: testData.queue,
 				}
 				result := reclaimable.CanReclaimResources(queues, testData.reclaimerInfo)
-				Expect(result).To(Equal(testData.canReclaim))
+				Expect(result.Passed).To(Equal(testData.canReclaim))
 			})
 		}
 	})

@@ -110,7 +110,7 @@ var _ = Describe("MinRuntime Plugin", func() {
 				// The preempt min runtime for prod-team2 is 15s, and the job started 10s ago
 				// so it should be protected
 				result := plugin.preemptFilterFn(pendingJob, victim)
-				Expect(result).To(BeFalse(), "Job 'victim-job' should be protected from preemption")
+				Expect(result.Passed).To(BeFalse(), "Job 'victim-job' should be protected from preemption")
 			})
 		})
 
@@ -125,7 +125,7 @@ var _ = Describe("MinRuntime Plugin", func() {
 
 				// The preempt min runtime for prod-team2 is 15s, so 30s is past protection period
 				result := plugin.preemptFilterFn(pendingJob, victim)
-				Expect(result).To(BeTrue(), "Job 'old-victim' should not be protected from preemption")
+				Expect(result.Passed).To(BeTrue(), "Job 'old-victim' should not be protected from preemption")
 			})
 
 			It("should return true if victim has no start time", func() {
@@ -136,7 +136,7 @@ var _ = Describe("MinRuntime Plugin", func() {
 				victim := createPodGroup("no-start-victim", "prod-team2", nil, 1, 1)
 
 				result := plugin.preemptFilterFn(pendingJob, victim)
-				Expect(result).To(BeTrue(), "Job with no start time should not be protected")
+				Expect(result.Passed).To(BeTrue(), "Job with no start time should not be protected")
 			})
 		})
 	})
@@ -156,7 +156,7 @@ var _ = Describe("MinRuntime Plugin", func() {
 				// The reclaim min runtime for prod-team2 is 35s, and the job started 20s ago
 				// so it should be protected
 				result := plugin.reclaimFilterFn(pendingJob, victim)
-				Expect(result).To(BeFalse(), "Job 'victim-job' should be protected from reclaim")
+				Expect(result.Passed).To(BeFalse(), "Job 'victim-job' should be protected from reclaim")
 			})
 		})
 
@@ -171,7 +171,7 @@ var _ = Describe("MinRuntime Plugin", func() {
 
 				// The reclaim min runtime for prod-team2 is 35s, so 40s is past protection period
 				result := plugin.reclaimFilterFn(pendingJob, victim)
-				Expect(result).To(BeTrue(), "Job 'old-victim' should not be protected from reclaim")
+				Expect(result.Passed).To(BeTrue(), "Job 'old-victim' should not be protected from reclaim")
 			})
 		})
 
@@ -190,7 +190,7 @@ var _ = Describe("MinRuntime Plugin", func() {
 				// With LCA method, the reclaim min runtime for different top-level queues
 				// is determined by prod's value (30s)
 				result := plugin.reclaimFilterFn(pendingJob, victim)
-				Expect(result).To(BeFalse(), "Job should be protected with LCA method")
+				Expect(result.Passed).To(BeFalse(), "Job should be protected with LCA method")
 			})
 
 			It("should use queue method when configured", func() {
@@ -206,7 +206,7 @@ var _ = Describe("MinRuntime Plugin", func() {
 
 				// With queue method, the reclaim min runtime is prod-team2's value (35s)
 				result := plugin.reclaimFilterFn(pendingJob, victim)
-				Expect(result).To(BeFalse(), "Job should be protected with queue method")
+				Expect(result.Passed).To(BeFalse(), "Job should be protected with queue method")
 			})
 		})
 	})
@@ -236,7 +236,7 @@ var _ = Describe("MinRuntime Plugin", func() {
 					Victims:   map[common_info.PodGroupID]*api.VictimInfo{victim.UID: {Job: victim, Tasks: tasks}},
 				}
 				result := plugin.preemptScenarioValidatorFn(scenario)
-				Expect(result).To(BeTrue(), "Should allow preemption of one pod from elastic job")
+				Expect(result.Passed).To(BeTrue(), "Should allow preemption of one pod from elastic job")
 			})
 
 			It("should return false if too many tasks would be preempted", func() {
@@ -268,7 +268,7 @@ var _ = Describe("MinRuntime Plugin", func() {
 					Victims:   map[common_info.PodGroupID]*api.VictimInfo{victim.UID: {Job: victim, Tasks: victimPods}},
 				}
 				result := plugin.preemptScenarioValidatorFn(scenario)
-				Expect(result).To(BeFalse(), "Should not allow preemption of too many pods from elastic job")
+				Expect(result.Passed).To(BeFalse(), "Should not allow preemption of too many pods from elastic job")
 			})
 		})
 	})
@@ -298,7 +298,7 @@ var _ = Describe("MinRuntime Plugin", func() {
 					Victims:   map[common_info.PodGroupID]*api.VictimInfo{victim.UID: {Job: victim, Tasks: tasks}},
 				}
 				result := plugin.reclaimScenarioValidatorFn(scenario)
-				Expect(result).To(BeTrue(), "Should allow reclaiming of one pod from elastic job")
+				Expect(result.Passed).To(BeTrue(), "Should allow reclaiming of one pod from elastic job")
 			})
 
 			It("should return false if too many tasks would be reclaimed", func() {
@@ -333,7 +333,7 @@ var _ = Describe("MinRuntime Plugin", func() {
 					Victims:   map[common_info.PodGroupID]*api.VictimInfo{victim.UID: {Job: victim, Tasks: victimPods}},
 				}
 				result := plugin.reclaimScenarioValidatorFn(scenario)
-				Expect(result).To(BeFalse(), "Should not allow reclaim of too many pods from elastic job")
+				Expect(result.Passed).To(BeFalse(), "Should not allow reclaim of too many pods from elastic job")
 			})
 		})
 	})

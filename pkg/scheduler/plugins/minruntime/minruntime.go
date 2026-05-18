@@ -7,6 +7,7 @@ import (
 	"slices"
 	"time"
 
+	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
@@ -93,23 +94,37 @@ func (mr *minruntimePlugin) OnSessionClose(ssn *framework.Session) {
 	mr.resolver = nil
 }
 
-func (mr *minruntimePlugin) reclaimFilterFn(pendingJob *podgroup_info.PodGroupInfo, victim *podgroup_info.PodGroupInfo) bool {
-	// always return true for elastic jobs, they are checked in scenario validator
+func (mr *minruntimePlugin) reclaimFilterFn(pendingJob *podgroup_info.PodGroupInfo, victim *podgroup_info.PodGroupInfo) common_info.FilterResult {
+	// elastic jobs are checked in the scenario validator instead
 	if victim.IsElastic() {
-		return true
+		return common_info.Pass()
 	}
-	return !mr.isReclaimMinRuntimeProtected(pendingJob, victim)
+	if mr.isReclaimMinRuntimeProtected(pendingJob, victim) {
+		return common_info.Reject(
+			enginev2alpha2.ReclaimNoEligibleVictims,
+			"victim %s/%s protected by reclaim min-runtime",
+			victim.Namespace, victim.Name,
+		)
+	}
+	return common_info.Pass()
 }
 
-func (mr *minruntimePlugin) preemptFilterFn(pendingJob *podgroup_info.PodGroupInfo, victim *podgroup_info.PodGroupInfo) bool {
-	// always return true for elastic jobs, they are checked in scenario validator
+func (mr *minruntimePlugin) preemptFilterFn(pendingJob *podgroup_info.PodGroupInfo, victim *podgroup_info.PodGroupInfo) common_info.FilterResult {
+	// elastic jobs are checked in the scenario validator instead
 	if victim.IsElastic() {
-		return true
+		return common_info.Pass()
 	}
-	return !mr.isPreemptMinRuntimeProtected(pendingJob, victim)
+	if mr.isPreemptMinRuntimeProtected(pendingJob, victim) {
+		return common_info.Reject(
+			enginev2alpha2.PreemptNoEligibleVictims,
+			"victim %s/%s protected by preempt min-runtime",
+			victim.Namespace, victim.Name,
+		)
+	}
+	return common_info.Pass()
 }
 
-func (mr *minruntimePlugin) reclaimScenarioValidatorFn(scenario api.ScenarioInfo) bool {
+func (mr *minruntimePlugin) reclaimScenarioValidatorFn(scenario api.ScenarioInfo) common_info.FilterResult {
 	reclaimer := scenario.GetPreemptor()
 	for _, victimInfo := range scenario.GetVictims() {
 		if !victimInfo.Job.IsElastic() {
@@ -121,13 +136,17 @@ func (mr *minruntimePlugin) reclaimScenarioValidatorFn(scenario api.ScenarioInfo
 		}
 
 		if !validVictimForMinAvailable(victimInfo) {
-			return false
+			return common_info.Reject(
+				enginev2alpha2.ReclaimNoSolutionFound,
+				"elastic victim %s/%s would drop below minAvailable during reclaim min-runtime protection",
+				victimInfo.Job.Namespace, victimInfo.Job.Name,
+			)
 		}
 	}
-	return true
+	return common_info.Pass()
 }
 
-func (mr *minruntimePlugin) preemptScenarioValidatorFn(scenario api.ScenarioInfo) bool {
+func (mr *minruntimePlugin) preemptScenarioValidatorFn(scenario api.ScenarioInfo) common_info.FilterResult {
 	preemptor := scenario.GetPreemptor()
 	for _, victimInfo := range scenario.GetVictims() {
 		if !victimInfo.Job.IsElastic() {
@@ -139,10 +158,14 @@ func (mr *minruntimePlugin) preemptScenarioValidatorFn(scenario api.ScenarioInfo
 		}
 
 		if !validVictimForMinAvailable(victimInfo) {
-			return false
+			return common_info.Reject(
+				enginev2alpha2.PreemptNoSolutionFound,
+				"elastic victim %s/%s would drop below minAvailable during preempt min-runtime protection",
+				victimInfo.Job.Namespace, victimInfo.Job.Name,
+			)
 		}
 	}
-	return true
+	return common_info.Pass()
 }
 
 func (mr *minruntimePlugin) isReclaimMinRuntimeProtected(pendingJob *podgroup_info.PodGroupInfo, victim *podgroup_info.PodGroupInfo) bool {

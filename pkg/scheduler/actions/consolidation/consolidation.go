@@ -6,10 +6,12 @@ package consolidation
 import (
 	"golang.org/x/exp/maps"
 
+	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
@@ -60,6 +62,11 @@ func (alloc *consolidationAction) Execute(ssn *framework.Session) {
 				log.InfraLogger.V(3).Infof(
 					"Skipping consolidation for job: <%v/%v> - is not easier to consolidate for than: <%v/%v>",
 					job.Namespace, job.Name, otherJob.Namespace, otherJob.Name)
+				job.AddJobFitError(common_info.NewLazyJobFitError(
+					enginev2alpha2.ConsolidationNoSolutionFound,
+					"Consolidation: skipped after considering equivalent job %s/%s",
+					otherJob.Namespace, otherJob.Name,
+				))
 				continue
 			}
 		}
@@ -92,6 +99,10 @@ func attemptToConsolidateForPreemptor(
 		log.InfraLogger.V(3).Infof(
 			"Can't consolidate for job: <%v/%v>, not enough allocatable GPUs in the cluster",
 			job.Namespace, job.Name)
+		job.AddJobFitError(common_info.NewLazyJobFitError(
+			enginev2alpha2.ConsolidationInsufficientGPUs,
+			"Consolidation: not enough allocatable GPUs in the cluster",
+		))
 		return false, nil
 	}
 	success, stmt := attemptToConsolidatePreemptor(ssn, job)
@@ -107,7 +118,7 @@ func attemptToConsolidatePreemptor(
 		func() *utils.JobsOrderByQueues { return buildConsolidationVictimsQueue(ssn, preemptor) },
 		framework.Consolidation)
 
-	isScenarioFeasible, stmt, victimsTasksNames := solver.Solve(ssn, preemptor)
+	isScenarioFeasible, stmt, victimsTasksNames, validatorReject := solver.Solve(ssn, preemptor)
 	if isScenarioFeasible {
 		log.InfraLogger.V(3).Infof(
 			"Sucesfully consolidated for job: <%s/%s>, and about to reallocate victims: <%v>",
@@ -117,18 +128,31 @@ func attemptToConsolidatePreemptor(
 
 	log.InfraLogger.V(3).Infof("Didn't find a consolidation strategy for job: <%v/%v>",
 		preemptor.Namespace, preemptor.Name)
+	if validatorReject != nil {
+		preemptor.AddJobFitError(common_info.NewLazyJobFitErrorFromFilterResult(*validatorReject))
+	} else {
+		preemptor.AddJobFitError(common_info.NewLazyJobFitError(
+			enginev2alpha2.ConsolidationNoSolutionFound,
+			"Consolidation: no feasible consolidation scenario found for job %s/%s",
+			preemptor.Namespace, preemptor.Name,
+		))
+	}
 	return false, nil
 }
 
-func allPodsReallocated(scenario api.ScenarioInfo) bool {
+func allPodsReallocated(scenario api.ScenarioInfo) common_info.FilterResult {
 	for _, victim := range scenario.GetVictims() {
 		for _, task := range victim.Tasks {
 			if task.Status == pod_status.Releasing {
-				return false
+				return common_info.Reject(
+					enginev2alpha2.ConsolidationNoSolutionFound,
+					"victim task %s/%s is releasing rather than reallocating",
+					task.Namespace, task.Name,
+				)
 			}
 		}
 	}
-	return true
+	return common_info.Pass()
 }
 
 func buildConsolidationVictimsQueue(ssn *framework.Session, preemptor *podgroup_info.PodGroupInfo) *utils.JobsOrderByQueues {

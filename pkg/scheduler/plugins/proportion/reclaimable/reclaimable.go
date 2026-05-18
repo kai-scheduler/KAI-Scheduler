@@ -9,6 +9,7 @@ import (
 	"math"
 	"strings"
 
+	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
@@ -31,27 +32,35 @@ func New(multiplier float64) *Reclaimable {
 func (r *Reclaimable) CanReclaimResources(
 	queues map[common_info.QueueID]*rs.QueueAttributes,
 	reclaimer *ReclaimerInfo,
-) bool {
+) common_info.FilterResult {
 	reclaimerQueue := queues[reclaimer.Queue]
 	requestedResources := utils.QuantifyVector(reclaimer.RequiredResources, reclaimer.VectorMap)
 
 	allocatedResources := reclaimerQueue.GetAllocatedShare()
 	allocatedResources.Add(requestedResources)
 	if !allocatedResources.LessEqual(reclaimerQueue.GetFairShare()) {
-		return false
+		return common_info.Reject(
+			enginev2alpha2.ReclaimQueueAtFairShare,
+			"queue %s would exceed fair share if it reclaimed the requested resources",
+			reclaimerQueue.Name,
+		)
 	}
 
 	if reclaimer.IsPreemptable {
-		return true
+		return common_info.Pass()
 	}
 
 	allocatedNonPreemptible := reclaimerQueue.GetAllocatedNonPreemptible()
 	allocatedNonPreemptible.Add(requestedResources)
 	if !allocatedNonPreemptible.LessEqual(reclaimerQueue.GetDeservedShare()) {
-		return false
+		return common_info.Reject(
+			enginev2alpha2.ReclaimQueueAtFairShare,
+			"queue %s non-preemptible allocation would exceed deserved share",
+			reclaimerQueue.Name,
+		)
 	}
 
-	return true
+	return common_info.Pass()
 }
 
 func (r *Reclaimable) Reclaimable(

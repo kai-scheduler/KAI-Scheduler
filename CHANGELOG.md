@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Action-level scheduling error reporting: reclaim, preempt, and consolidation now publish `SchedulingCondition` entries and pod/podgroup events explaining why these actions failed (e.g. queue at fair share, victims protected by min-runtime, consolidation disabled). Plugin filter callbacks (`CanReclaimResourcesFn`, `VictimFilterFn`, `ScenarioValidatorFn`) now return a `FilterResult` carrying a lazily formatted rejection reason; errors are recorded on the pending job via a `LazyJobFitError` that defers string formatting to publish time. [docs/developer/designs/action-scheduling-errors/README.md](docs/developer/designs/action-scheduling-errors/README.md)
 - Added `enabled` Helm values for `binder`, `podgrouper`, `podgroupcontroller`, `queuecontroller`, `admission`, and `scheduler` to allow disabling individual components from values.yaml. Previously these were hardcoded to `true` in the kai-config template.
 - Added `prometheus.enabled` and `prometheus.externalPrometheusUrl` Helm values to configure Prometheus from values.yaml [#907](https://github.com/NVIDIA/KAI-Scheduler/issues/907)
 - Added validation for `subgroup` name in podgroup [faizanexe](https://github.com/faizan-exe)

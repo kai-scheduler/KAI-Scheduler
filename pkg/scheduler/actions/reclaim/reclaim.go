@@ -20,8 +20,13 @@ limitations under the License.
 package reclaim
 
 import (
+	"fmt"
+	"sort"
+	"strings"
+
 	"golang.org/x/exp/maps"
 
+	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
@@ -62,7 +67,8 @@ func (ra *reclaimAction) Execute(ssn *framework.Session) {
 
 	for !jobsOrderByQueues.IsEmpty() {
 		job := jobsOrderByQueues.PopNextJob()
-		if !ssn.CanReclaimResources(job) {
+		if result := ssn.CanReclaimResources(job); !result.Passed {
+			job.AddJobFitError(common_info.NewLazyJobFitErrorFromFilterResult(result))
 			continue
 		}
 
@@ -77,6 +83,11 @@ func (ra *reclaimAction) Execute(ssn *framework.Session) {
 				log.InfraLogger.V(3).Infof(
 					"Skipping reclaim for job: <%v/%v> - is not easier to reclaim for than: <%v/%v>",
 					job.Namespace, job.Name, otherJob.Namespace, otherJob.Name)
+				job.AddJobFitError(common_info.NewLazyJobFitError(
+					enginev2alpha2.ReclaimNoSolutionFound,
+					"Reclaim: skipped after considering equivalent job %s/%s",
+					otherJob.Namespace, otherJob.Name,
+				))
 				continue
 			}
 		}
@@ -115,12 +126,32 @@ func (ra *reclaimAction) attemptToReclaimForSpecificJob(
 	ssn.OnJobSolutionStart()
 
 	feasibleNodes := common.FeasibleNodesForJob(maps.Values(ssn.ClusterInfo.Nodes), reclaimer)
+	if len(feasibleNodes) == 0 {
+		reclaimer.AddJobFitError(common_info.NewLazyJobFitError(
+			enginev2alpha2.ReclaimNoFeasibleNodes,
+			"Reclaim: no feasible nodes for job %s/%s",
+			reclaimer.Namespace, reclaimer.Name,
+		))
+		return false, nil, nil
+	}
 	solver := solvers.NewJobsSolver(
 		feasibleNodes,
 		ssn.ReclaimScenarioValidatorFn,
 		getOrderedVictimsQueue(ssn, reclaimer),
 		framework.Reclaim)
-	return solver.Solve(ssn, reclaimer)
+	solved, stmt, victimNames, validatorReject := solver.Solve(ssn, reclaimer)
+	if !solved {
+		if validatorReject != nil {
+			reclaimer.AddJobFitError(common_info.NewLazyJobFitErrorFromFilterResult(*validatorReject))
+		} else {
+			reclaimer.AddJobFitError(common_info.NewLazyJobFitError(
+				enginev2alpha2.ReclaimNoSolutionFound,
+				"Reclaim: no feasible reclaim scenario found for job %s/%s",
+				reclaimer.Namespace, reclaimer.Name,
+			))
+		}
+	}
+	return solved, stmt, victimNames
 }
 
 func getOrderedVictimsQueue(ssn *framework.Session, reclaimer *podgroup_info.PodGroupInfo) solvers.GenerateVictimsQueue {
@@ -132,17 +163,48 @@ func getOrderedVictimsQueue(ssn *framework.Session, reclaimer *podgroup_info.Pod
 			MaxJobsQueueDepth:        scheduler_util.QueueCapacityInfinite,
 		})
 		jobs := map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{}
+		rejectionCounts := map[enginev2alpha2.UnschedulableReason]int{}
+		totalCandidates := 0
 		for _, job := range ssn.ClusterInfo.PodGroupInfos {
 			if job.Queue == reclaimer.Queue {
 				continue
 			}
-			if !ssn.ReclaimVictimFilter(reclaimer, job) {
+			totalCandidates++
+			result := ssn.ReclaimVictimFilter(reclaimer, job)
+			if !result.Passed {
+				rejectionCounts[result.ReasonCode]++
 				continue
 			}
 			jobs[job.UID] = job
 		}
 
+		if len(jobs) == 0 && totalCandidates > 0 {
+			reclaimer.AddJobFitError(common_info.NewLazyJobFitError(
+				enginev2alpha2.ReclaimNoEligibleVictims,
+				"Reclaim: all %d cross-queue candidates filtered (%s)",
+				totalCandidates, formatRejectionCounts(rejectionCounts),
+			))
+		}
+
 		jobsOrderedByQueue.InitializeWithJobs(jobs)
 		return &jobsOrderedByQueue
 	}
+}
+
+// formatRejectionCounts produces a stable, human-readable summary like
+// "3 by ReclaimNoEligibleVictims, 2 by ReclaimQueueAtFairShare".
+func formatRejectionCounts(counts map[enginev2alpha2.UnschedulableReason]int) string {
+	if len(counts) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(counts))
+	for k := range counts {
+		keys = append(keys, string(k))
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, fmt.Sprintf("%d by %s", counts[enginev2alpha2.UnschedulableReason(k)], k))
+	}
+	return strings.Join(parts, ", ")
 }

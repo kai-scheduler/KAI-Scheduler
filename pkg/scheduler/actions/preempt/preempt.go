@@ -20,8 +20,13 @@ limitations under the License.
 package preempt
 
 import (
+	"fmt"
+	"sort"
+	"strings"
+
 	"golang.org/x/exp/maps"
 
+	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
@@ -73,6 +78,11 @@ func (alloc *preemptAction) Execute(ssn *framework.Session) {
 				log.InfraLogger.V(3).Infof(
 					"Skipping preemption for job: <%v/%v> - is not easier to preempt for than: <%v/%v>",
 					job.Namespace, job.Name, otherJob.Namespace, otherJob.Name)
+				job.AddJobFitError(common_info.NewLazyJobFitError(
+					enginev2alpha2.PreemptNoSolutionFound,
+					"Preempt: skipped after considering equivalent job %s/%s",
+					otherJob.Namespace, otherJob.Name,
+				))
 				continue
 			}
 		}
@@ -113,6 +123,10 @@ func attemptToPreemptForPreemptor(
 	if result := ssn.IsNonPreemptibleJobOverQueueQuotaFn(preemptor, preemptorTasks); !result.IsSchedulable {
 		log.InfraLogger.V(3).Infof("Job <%v/%v> would have placed the queue resources over quota",
 			preemptor.Namespace, preemptor.Name)
+		preemptor.AddJobFitError(common_info.NewLazyJobFitError(
+			enginev2alpha2.PreemptOverQueueQuota,
+			"Preempt: %s", result.Message,
+		))
 		return false, nil, nil
 	}
 
@@ -123,44 +137,118 @@ func attemptToPreemptForPreemptor(
 		getOrderedVictimsQueue(ssn, preemptor),
 		framework.Preempt,
 	)
-	return solver.Solve(ssn, preemptor)
+	solved, stmt, victimNames, validatorReject := solver.Solve(ssn, preemptor)
+	if !solved {
+		if validatorReject != nil {
+			preemptor.AddJobFitError(common_info.NewLazyJobFitErrorFromFilterResult(*validatorReject))
+		} else {
+			preemptor.AddJobFitError(common_info.NewLazyJobFitError(
+				enginev2alpha2.PreemptNoSolutionFound,
+				"Preempt: no feasible preemption scenario found for job %s/%s",
+				preemptor.Namespace, preemptor.Name,
+			))
+		}
+	}
+	return solved, stmt, victimNames
 }
 
-func buildFilterFuncForPreempt(ssn *framework.Session, preemptor *podgroup_info.PodGroupInfo) func(*podgroup_info.PodGroupInfo) bool {
-	return func(job *podgroup_info.PodGroupInfo) bool {
-		if !job.IsPreemptibleJob() {
-			return false
-		}
-
-		if job.Priority >= preemptor.Priority {
-			return false
-		}
-
-		if job.Queue != preemptor.Queue {
-			return false
-		}
-
-		// Preempt other jobs
+func buildFilterFuncForPreempt(ssn *framework.Session, preemptor *podgroup_info.PodGroupInfo) func(*podgroup_info.PodGroupInfo) common_info.FilterResult {
+	return func(job *podgroup_info.PodGroupInfo) common_info.FilterResult {
 		if preemptor.UID == job.UID {
-			return false
+			// silently skip self
+			return common_info.Pass()
 		}
-
+		if !job.IsPreemptibleJob() {
+			return common_info.Reject(
+				enginev2alpha2.PreemptNoEligibleVictims,
+				"victim %s/%s is not preemptible",
+				job.Namespace, job.Name,
+			)
+		}
+		if job.Priority >= preemptor.Priority {
+			return common_info.Reject(
+				enginev2alpha2.PreemptNoEligibleVictims,
+				"victim %s/%s priority %d >= preemptor priority %d",
+				job.Namespace, job.Name, job.Priority, preemptor.Priority,
+			)
+		}
+		if job.Queue != preemptor.Queue {
+			return common_info.Reject(
+				enginev2alpha2.PreemptNoEligibleVictims,
+				"victim %s/%s is in different queue",
+				job.Namespace, job.Name,
+			)
+		}
 		if job.GetActiveAllocatedTasksCount() == 0 {
-			return false
+			return common_info.Reject(
+				enginev2alpha2.PreemptNoEligibleVictims,
+				"victim %s/%s has no active allocated tasks",
+				job.Namespace, job.Name,
+			)
 		}
-
-		if !ssn.PreemptVictimFilter(preemptor, job) {
-			return false
-		}
-
-		return true
+		return ssn.PreemptVictimFilter(preemptor, job)
 	}
 }
 
 func getOrderedVictimsQueue(ssn *framework.Session, preemptor *podgroup_info.PodGroupInfo) solvers.GenerateVictimsQueue {
 	return func() *utils.JobsOrderByQueues {
 		filter := buildFilterFuncForPreempt(ssn, preemptor)
-		victimsQueue := utils.GetVictimsQueue(ssn, filter)
+		boolFilter, recordRejection := wrapFilterWithRejectionAggregator(filter)
+		victimsQueue := utils.GetVictimsQueue(ssn, boolFilter)
+		recordRejection(preemptor)
 		return victimsQueue
 	}
+}
+
+// wrapFilterWithRejectionAggregator adapts a FilterResult-returning filter to
+// the bool-returning shape utils.GetVictimsQueue expects, while collecting per-
+// reason rejection counts. The returned recorder publishes a single
+// PreemptNoEligibleVictims error on the preemptor when it processed at least
+// one rejected candidate and accepted none.
+func wrapFilterWithRejectionAggregator(
+	filter func(*podgroup_info.PodGroupInfo) common_info.FilterResult,
+) (
+	func(*podgroup_info.PodGroupInfo) bool,
+	func(*podgroup_info.PodGroupInfo),
+) {
+	rejectionCounts := map[enginev2alpha2.UnschedulableReason]int{}
+	totalRejected := 0
+	totalAccepted := 0
+	boolFilter := func(job *podgroup_info.PodGroupInfo) bool {
+		result := filter(job)
+		if !result.Passed {
+			rejectionCounts[result.ReasonCode]++
+			totalRejected++
+			return false
+		}
+		totalAccepted++
+		return true
+	}
+	recorder := func(preemptor *podgroup_info.PodGroupInfo) {
+		if totalAccepted > 0 || totalRejected == 0 {
+			return
+		}
+		preemptor.AddJobFitError(common_info.NewLazyJobFitError(
+			enginev2alpha2.PreemptNoEligibleVictims,
+			"Preempt: all %d in-queue candidates filtered (%s)",
+			totalRejected, formatPreemptRejectionCounts(rejectionCounts),
+		))
+	}
+	return boolFilter, recorder
+}
+
+func formatPreemptRejectionCounts(counts map[enginev2alpha2.UnschedulableReason]int) string {
+	if len(counts) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(counts))
+	for k := range counts {
+		keys = append(keys, string(k))
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, fmt.Sprintf("%d by %s", counts[enginev2alpha2.UnschedulableReason(k)], k))
+	}
+	return strings.Join(parts, ", ")
 }

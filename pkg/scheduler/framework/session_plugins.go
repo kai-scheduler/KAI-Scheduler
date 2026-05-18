@@ -23,6 +23,7 @@ import (
 	"maps"
 	"net/http"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
@@ -114,54 +115,63 @@ func (ssn *Session) AddPreJobAllocationFn(fn api.PreJobAllocationFn) {
 	ssn.PreJobAllocationFns = append(ssn.PreJobAllocationFns, fn)
 }
 
-func (ssn *Session) CanReclaimResources(reclaimer *podgroup_info.PodGroupInfo) bool {
+func (ssn *Session) CanReclaimResources(reclaimer *podgroup_info.PodGroupInfo) common_info.FilterResult {
 	for _, canReclaimFn := range ssn.CanReclaimResourcesFns {
 		return canReclaimFn(reclaimer)
 	}
 
-	return false
+	return common_info.Reject(v2alpha2.ReclaimNoSolutionFound, "no CanReclaimResources plugin registered")
 }
 
-func (ssn *Session) ReclaimVictimFilter(reclaimer *podgroup_info.PodGroupInfo, victim *podgroup_info.PodGroupInfo) bool {
+// ReclaimVictimFilter chains the registered reclaim victim filters and returns
+// the first failing FilterResult (with its reason and message); Pass() if all
+// filters accept.
+func (ssn *Session) ReclaimVictimFilter(reclaimer *podgroup_info.PodGroupInfo, victim *podgroup_info.PodGroupInfo) common_info.FilterResult {
 	for _, rf := range ssn.ReclaimVictimFilterFns {
-		if !rf(reclaimer, victim) {
-			return false
+		result := rf(reclaimer, victim)
+		if !result.Passed {
+			return result
 		}
 	}
 
-	return true
+	return common_info.Pass()
 }
 
-func (ssn *Session) ReclaimScenarioValidatorFn(scenario api.ScenarioInfo) bool {
+func (ssn *Session) ReclaimScenarioValidatorFn(scenario api.ScenarioInfo) common_info.FilterResult {
 	for _, rf := range ssn.ReclaimScenarioValidatorFns {
-		if !rf(scenario) {
-			return false
+		result := rf(scenario)
+		if !result.Passed {
+			return result
 		}
 	}
 
-	return true
+	return common_info.Pass()
 }
 
-func (ssn *Session) PreemptVictimFilter(preemptor *podgroup_info.PodGroupInfo, victim *podgroup_info.PodGroupInfo) bool {
+// PreemptVictimFilter chains the registered preempt victim filters and returns
+// the first failing FilterResult; Pass() if all filters accept.
+func (ssn *Session) PreemptVictimFilter(preemptor *podgroup_info.PodGroupInfo, victim *podgroup_info.PodGroupInfo) common_info.FilterResult {
 	for _, pf := range ssn.PreemptVictimFilterFns {
-		if !pf(preemptor, victim) {
-			return false
+		result := pf(preemptor, victim)
+		if !result.Passed {
+			return result
 		}
 	}
 
-	return true
+	return common_info.Pass()
 }
 
 func (ssn *Session) PreemptScenarioValidator(
 	scenario api.ScenarioInfo,
-) bool {
+) common_info.FilterResult {
 	for _, pf := range ssn.PreemptScenarioValidatorFns {
-		if !pf(scenario) {
-			return false
+		result := pf(scenario)
+		if !result.Passed {
+			return result
 		}
 	}
 
-	return true
+	return common_info.Pass()
 }
 
 func (ssn *Session) AddHttpHandler(path string, handler func(http.ResponseWriter, *http.Request)) {

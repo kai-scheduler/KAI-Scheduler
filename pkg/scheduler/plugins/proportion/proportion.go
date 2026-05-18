@@ -22,6 +22,7 @@ package proportion
 import (
 	"math"
 
+	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -135,14 +136,14 @@ func (pp *proportionPlugin) OnJobSolutionStartFn() {
 	}
 }
 
-func (pp *proportionPlugin) CanReclaimResourcesFn(reclaimer *podgroup_info.PodGroupInfo) bool {
+func (pp *proportionPlugin) CanReclaimResourcesFn(reclaimer *podgroup_info.PodGroupInfo) common_info.FilterResult {
 	reclaimerInfo := pp.buildReclaimerInfo(reclaimer, pp.minNodeGPUMemory)
 	return pp.reclaimablePlugin.CanReclaimResources(pp.queues, reclaimerInfo)
 }
 
 func (pp *proportionPlugin) reclaimableFn(
 	scenario api.ScenarioInfo,
-) bool {
+) common_info.FilterResult {
 	reclaimerInfo := pp.buildReclaimerInfo(scenario.GetPreemptor(), pp.minNodeGPUMemory)
 	totalVictimsResources := make(map[common_info.QueueID][]resource_info.ResourceVector)
 	victims := scenario.GetVictims()
@@ -158,7 +159,14 @@ func (pp *proportionPlugin) reclaimableFn(
 		)
 	}
 
-	return pp.reclaimablePlugin.Reclaimable(pp.jobSimulationQueues, reclaimerInfo, totalVictimsResources)
+	if pp.reclaimablePlugin.Reclaimable(pp.jobSimulationQueues, reclaimerInfo, totalVictimsResources) {
+		return common_info.Pass()
+	}
+	return common_info.Reject(
+		enginev2alpha2.ReclaimNoSolutionFound,
+		"reclaim scenario for job %s/%s would violate queue boundaries",
+		reclaimerInfo.Namespace, reclaimerInfo.Name,
+	)
 }
 
 func (pp *proportionPlugin) getVictimResources(victim *api.VictimInfo) []resource_info.ResourceVector {

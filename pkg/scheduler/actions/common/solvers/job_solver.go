@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
@@ -29,6 +30,10 @@ type JobSolver struct {
 type solvingState struct {
 	recordedVictimsJobs  []*podgroup_info.PodGroupInfo
 	recordedVictimsTasks []*pod_info.PodInfo
+	// lastValidatorReject records the most recent rejection produced by the
+	// scenario validator across probe attempts; surfaced to action callers so
+	// they can publish the reason on the pending job.
+	lastValidatorReject *common_info.FilterResult
 }
 
 func NewJobsSolver(
@@ -57,25 +62,30 @@ func NewJobsSolver(
 //
 // Session state is mutated only on success (to reflect the speculative operations in the
 // returned statement) and is left unchanged on failure.
+//
+// The fourth return value is non-nil only when no solution was found and at
+// least one probe was rejected by the scenario validator. Callers may use it
+// to surface the rejection reason on the pending job.
 func (s *JobSolver) Solve(
-	ssn *framework.Session, pendingJob *podgroup_info.PodGroupInfo) (bool, *framework.Statement, []string) {
+	ssn *framework.Session, pendingJob *podgroup_info.PodGroupInfo,
+) (bool, *framework.Statement, []string, *common_info.FilterResult) {
 	state := solvingState{}
 	originalNumActiveTasks := pendingJob.GetNumActiveUsedTasks()
 
 	tasksToAllocate := podgroup_info.GetTasksToAllocate(pendingJob, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false)
 	n := len(tasksToAllocate)
 	if n == 0 {
-		return false, nil, calcVictimNames(state.recordedVictimsTasks)
+		return false, nil, calcVictimNames(state.recordedVictimsTasks), state.lastValidatorReject
 	}
 
 	maxSolvedK := s.searchMaxSolvableK(ssn, &state, pendingJob, tasksToAllocate)
 	if maxSolvedK == 0 {
-		return false, nil, calcVictimNames(state.recordedVictimsTasks)
+		return false, nil, calcVictimNames(state.recordedVictimsTasks), state.lastValidatorReject
 	}
 
 	result := s.probeAtK(ssn, &state, pendingJob, tasksToAllocate, n)
 	if result == nil || !result.solved {
-		return false, nil, calcVictimNames(state.recordedVictimsTasks)
+		return false, nil, calcVictimNames(state.recordedVictimsTasks), state.lastValidatorReject
 	}
 
 	numActiveTasks := pendingJob.GetNumActiveUsedTasks()
@@ -87,7 +97,7 @@ func (s *JobSolver) Solve(
 	log.InfraLogger.V(4).Infof(
 		"Scenario solved for %d tasks to allocate for %s. Victims: %s",
 		n, pendingJob.Name, victimPrintingStruct{result.victimsTasks})
-	return jobSolved, result.statement, calcVictimNames(result.victimsTasks)
+	return jobSolved, result.statement, calcVictimNames(result.victimsTasks), nil
 }
 
 // searchMaxSolvableK returns the largest k in [0, n] for which a probe at k succeeds.
@@ -197,6 +207,9 @@ func (s *JobSolver) solvePartialJob(ssn *framework.Session, state *solvingState,
 		result := scenarioSolver.solve(ssn, scenarioToSolve)
 		if result.solved {
 			return result
+		}
+		if result.validatorReject != nil {
+			state.lastValidatorReject = result.validatorReject
 		}
 	}
 

@@ -2,6 +2,7 @@ bin/
 .claude/
 .gocache/
 .gotmp/
+.gomodcache/
 .idea/
 charts/
 cover.out

@@ -18,7 +18,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 )
 
-type SolutionValidator func(scenario api.ScenarioInfo) bool
+type SolutionValidator func(scenario api.ScenarioInfo) common_info.FilterResult
 
 type simulationVictims struct {
 	preemptedVictims []*pod_info.PodInfo
@@ -37,6 +37,11 @@ type solutionResult struct {
 	victimsTasks []*pod_info.PodInfo
 	victimJobs   []*podgroup_info.PodGroupInfo
 	statement    *framework.Statement
+	// validatorReject, when non-nil, carries the rejection reason from the
+	// scenario validator that prevented this solution from being accepted.
+	// It is only set when solved is false and a validator rejected an
+	// otherwise-feasible scenario.
+	validatorReject *common_info.FilterResult
 }
 
 type byPodSolver struct {
@@ -94,7 +99,7 @@ func (s *byPodSolver) solve(
 	}
 
 	statement.Discard() // No solution for scenario
-	return &solutionResult{false, nil, nil, nil}
+	return &solutionResult{solved: false}
 }
 
 func (s *byPodSolver) runSimulation(
@@ -186,10 +191,10 @@ func (s *byPodSolver) handleScenarioSolution(
 	actualVictimJobs := getVictimJobsFromVictimTasks(victimsTasks, scenario)
 
 	if s.solutionValidator != nil {
-		validSolution := s.solutionValidator(scenario)
-		if !validSolution {
+		result := s.solutionValidator(scenario)
+		if !result.Passed {
 			statement.Discard()
-			return &solutionResult{false, nil, nil, nil}
+			return &solutionResult{solved: false, validatorReject: &result}
 		}
 	}
 
@@ -198,7 +203,7 @@ func (s *byPodSolver) handleScenarioSolution(
 		actualVictimJobs = getVictimJobsFromVictimTasks(victimsTasks, scenario)
 	}
 
-	return &solutionResult{true, victimsTasks, actualVictimJobs, statement}
+	return &solutionResult{solved: true, victimsTasks: victimsTasks, victimJobs: actualVictimJobs, statement: statement}
 }
 
 func getNodesOfJob(pj *podgroup_info.PodGroupInfo) []string {
@@ -290,7 +295,7 @@ func handleSolveError(pendingJob *podgroup_info.PodGroupInfo, nextTaskToFindAllo
 		pendingJob.Namespace, pendingJob.Name, pendingJob.GetAliveTasksRequestedGPUs(), nextTaskToFindAllocation,
 		err)
 	statement.Discard()
-	return &solutionResult{false, nil, nil, nil}
+	return &solutionResult{solved: false}
 }
 
 func hasRecordedVictimsForSimulation(scenario *scenario.ByNodeScenario) bool {

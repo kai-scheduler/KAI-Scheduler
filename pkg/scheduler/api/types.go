@@ -21,6 +21,7 @@ package api
 
 import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
@@ -51,14 +52,17 @@ type VictimInvariantPrePredicateFn func(
 	*pod_info.PodInfo,
 ) *VictimInvariantPrePredicateFailure
 
-// CanReclaimResourcesFn is a function that determines if a reclaimer can get more resources
-type CanReclaimResourcesFn func(pendingJob *podgroup_info.PodGroupInfo) bool
+// CanReclaimResourcesFn is a function that determines if a reclaimer can get more resources.
+// The returned FilterResult carries a rejection reason when Passed is false.
+type CanReclaimResourcesFn func(pendingJob *podgroup_info.PodGroupInfo) common_info.FilterResult
 
 // VictimFilterFn is a function which filters out jobs that cannot a victim candidate for a specific reclaimer/preemptor.
-type VictimFilterFn func(pendingJob *podgroup_info.PodGroupInfo, victim *podgroup_info.PodGroupInfo) bool
+// The returned FilterResult carries a rejection reason when Passed is false.
+type VictimFilterFn func(pendingJob *podgroup_info.PodGroupInfo, victim *podgroup_info.PodGroupInfo) common_info.FilterResult
 
 // ScenarioValidatorFn is a function which determines the validity of a scenario.
-type ScenarioValidatorFn func(scenario ScenarioInfo) bool
+// The returned FilterResult carries a rejection reason when Passed is false.
+type ScenarioValidatorFn func(scenario ScenarioInfo) common_info.FilterResult
 
 // QueueResource is a function which returns the resource of a queue.
 type QueueResource func(*queue_info.QueueInfo) *resource_info.ResourceRequirements
