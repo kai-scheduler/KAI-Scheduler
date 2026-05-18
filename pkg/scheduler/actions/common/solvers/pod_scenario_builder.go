@@ -88,21 +88,56 @@ func NewPodAccumulatedScenarioBuilder(
 	}
 }
 
+// GetValidScenario returns the next scenario to solve, evaluating the current outer
+// state without advancing the victim queue. Used to obtain the first scenario in a
+// pass.
+func (asb *PodAccumulatedScenarioBuilder) GetValidScenario() *solverscenario.ByNodeScenario {
+	return asb.iterate(false)
+}
+
+// GetNextScenario advances the victim queue by one before evaluating, returning the
+// next scenario or nil when the queue is exhausted. Used in the body of the
+// caller's iteration loop after consuming each scenario.
 func (asb *PodAccumulatedScenarioBuilder) GetNextScenario() *solverscenario.ByNodeScenario {
-	if sub := asb.nextFromSubEmitter(); sub != nil {
-		return sub
-	}
+	return asb.iterate(true)
+}
 
-	if asb.victimsJobsQueue.IsEmpty() {
-		return nil
-	}
+// iterate is the unified driver behind GetValidScenario / GetNextScenario.
+//
+// The pipeline runs as a single loop with three exit points:
+//  1. An active sub-emitter yields a sub-scenario — return it.
+//  2. The outer scenario is valid and has no potential victims — return it
+//     unmodified (the recorded-victims-only case).
+//  3. The victim queue is exhausted — return nil.
+//
+// Otherwise the loop either pops the next victim, runs the accumulating filters
+// (skipping rejected states), or constructs a fresh sub-emitter for a newly-valid
+// outer state. advanceFirst controls whether the first pass starts by popping a
+// victim or by evaluating the current state as-is.
+func (asb *PodAccumulatedScenarioBuilder) iterate(advanceFirst bool) *solverscenario.ByNodeScenario {
+	needAdvance := advanceFirst
+	for {
+		if sub := asb.nextFromSubEmitter(); sub != nil {
+			return sub
+		}
+		if needAdvance {
+			if asb.victimsJobsQueue.IsEmpty() {
+				return nil
+			}
+			if !asb.addNextPotentialVictims() {
+				continue
+			}
+		}
+		needAdvance = true
 
-	addedPotentialVictims := asb.addNextPotentialVictims()
-	if !addedPotentialVictims {
-		return asb.GetNextScenario()
+		if !asb.outerScenarioValid() {
+			continue
+		}
+		if len(asb.lastScenario.PotentialVictimsTasks()) == 0 {
+			return asb.lastScenario
+		}
+		asb.subEmitter = newSubScenarioEmitter(asb.session, asb.lastScenario, asb.feasibleNodes)
 	}
-
-	return asb.GetValidScenario()
 }
 
 // nextFromSubEmitter drains the active sub-scenario emitter (if any) by one. Returns
@@ -117,6 +152,17 @@ func (asb *PodAccumulatedScenarioBuilder) nextFromSubEmitter() *solverscenario.B
 	}
 	asb.subEmitter = nil
 	return nil
+}
+
+// outerScenarioValid runs the accumulating filters against the current outer
+// scenario, logging and counting the rejection on failure for observability.
+func (asb *PodAccumulatedScenarioBuilder) outerScenarioValid() bool {
+	isValid, failedFilterName := asb.isScenarioValid()
+	if !isValid {
+		log.InfraLogger.V(5).Infof("Filtered by %s for scenario: %s", failedFilterName, asb.lastScenario)
+		metrics.IncScenarioFilteredByAction()
+	}
+	return isValid
 }
 
 func (asb *PodAccumulatedScenarioBuilder) addNextPotentialVictims() bool {
@@ -162,36 +208,6 @@ func (asb *PodAccumulatedScenarioBuilder) addNextPotentialVictims() bool {
 		asb.lastScenario.AddPotentialVictimsTasks(potentialVictimTasks)
 	}
 	return true
-}
-
-func (asb *PodAccumulatedScenarioBuilder) GetValidScenario() *solverscenario.ByNodeScenario {
-	if sub := asb.nextFromSubEmitter(); sub != nil {
-		return sub
-	}
-
-	if isValid, failedFilterName := asb.isScenarioValid(); !isValid {
-		log.InfraLogger.V(5).Infof("Filtered by %s for scenario: %s", failedFilterName, asb.lastScenario)
-		metrics.IncScenarioFilteredByAction()
-
-		return asb.GetNextScenario()
-	}
-
-	// Recorded-victims-only state: nothing to group by node; hand the outer scenario
-	// straight to the solver.
-	if len(asb.lastScenario.PotentialVictimsTasks()) == 0 {
-		return asb.lastScenario
-	}
-
-	// Outer is potentially feasible: hand off to the sub-scenario emitter, which
-	// picks the smallest set of victim-bearing nodes whose post-eviction capacity
-	// covers pending demand, and grows it on subsequent calls if the solver fails.
-	asb.subEmitter = newSubScenarioEmitter(asb.session, asb.lastScenario, asb.feasibleNodes)
-	if sub := asb.nextFromSubEmitter(); sub != nil {
-		return sub
-	}
-	// The emitter has nothing to offer (no node passes the smallest-pending-task
-	// gate, or no K covers demand). Treat this like a filter rejection and advance.
-	return asb.GetNextScenario()
 }
 
 func (asb *PodAccumulatedScenarioBuilder) isScenarioValid() (bool, string) {
