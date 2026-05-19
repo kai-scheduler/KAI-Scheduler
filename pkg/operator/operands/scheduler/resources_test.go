@@ -135,17 +135,11 @@ func TestDeploymentForShard(t *testing.T) {
 			deploy, ok := deployment.(*appsv1.Deployment)
 			require.True(t, ok, "Expected *appsv1.Deployment")
 
-			assert.Equal(t, deploymentName(tt.config, tt.shard), deploy.Name)
+			assert.Equal(t, DeploymentName(tt.config, tt.shard), deploy.Name)
 			assert.Equal(t, tt.config.Spec.Namespace, deploy.Namespace)
 
 			container := deploy.Spec.Template.Spec.Containers[0]
 			args := container.Args
-			require.NotNil(t, container.LivenessProbe)
-			require.NotNil(t, container.LivenessProbe.HTTPGet)
-			assert.Equal(t, "/livez", container.LivenessProbe.HTTPGet.Path)
-			require.NotNil(t, container.ReadinessProbe)
-			require.NotNil(t, container.ReadinessProbe.HTTPGet)
-			assert.Equal(t, "/readyz", container.ReadinessProbe.HTTPGet.Path)
 
 			// Check expected args
 			for _, expected := range tt.expected {

@@ -163,7 +163,6 @@ func Run(opt *options.ServerOption, config *restclient.Config, mux *http.ServeMu
 		version.PrintVersion()
 	}
 	metrics.InitMetrics(opt.MetricsNamespace)
-	health := newSchedulerHealth()
 
 	actions.InitDefaultActions()
 	plugins.InitDefaultPlugins()
@@ -183,13 +182,14 @@ func Run(opt *options.ServerOption, config *restclient.Config, mux *http.ServeMu
 		return err
 	}
 
-	go startBaseSchedulerHTTPServer(opt.ListenAddress, health)
+	go func() {
+		http.Handle("/metrics", promhttp.Handler())
+		glog.Fatalf("Prometheus Http Server failed %s", http.ListenAndServe(opt.ListenAddress, nil))
+	}()
 
 	run := func(ctx context.Context) {
 		scheduler.Run(ctx.Done())
-		health.setThisSchedulerInstanceReadiness(true)
 		<-ctx.Done()
-		health.setThisSchedulerInstanceReadiness(false)
 	}
 
 	if !opt.EnableLeaderElection {
@@ -244,20 +244,4 @@ func Run(opt *options.ServerOption, config *restclient.Config, mux *http.ServeMu
 		},
 	})
 	return fmt.Errorf("lost lease")
-}
-
-func startBaseSchedulerHTTPServer(listenAddress string, health *schedulerHealth) {
-	mux := http.NewServeMux()
-	registerMetricsHandler(mux)
-	registerHealthHandlers(mux, health)
-	glog.Fatalf("Scheduler HTTP server failed: %v", http.ListenAndServe(listenAddress, mux))
-}
-
-func registerMetricsHandler(mux *http.ServeMux) {
-	mux.Handle("/metrics", promhttp.Handler())
-}
-
-func registerHealthHandlers(mux *http.ServeMux, health *schedulerHealth) {
-	mux.HandleFunc("/livez", health.livez)
-	mux.HandleFunc("/readyz", health.readyz)
 }

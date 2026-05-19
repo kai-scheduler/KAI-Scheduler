@@ -61,7 +61,7 @@ var _ = Describe("Scheduler", func() {
 	It("Should maintain existing annotations", func(ctx context.Context) {
 		existingDeployment := &appsv1.Deployment{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      deploymentName(kaiConfig, shard),
+				Name:      DeploymentName(kaiConfig, shard),
 				Namespace: kaiConfig.Spec.Namespace,
 				Annotations: map[string]string{
 					"bla": "bla",
@@ -133,7 +133,7 @@ var _ = Describe("Scheduler", func() {
 	It("Should consider an active-passive scheduler deployment available when one updated pod is ready", func(ctx context.Context) {
 		deployment := &appsv1.Deployment{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      deploymentName(kaiConfig, shard),
+				Name:      DeploymentName(kaiConfig, shard),
 				Namespace: kaiConfig.Spec.Namespace,
 			},
 			Spec: appsv1.DeploymentSpec{Replicas: ptr.To(int32(2))},
@@ -153,7 +153,7 @@ var _ = Describe("Scheduler", func() {
 	It("Should not consider an active-passive scheduler deployment available when no updated pod is ready", func(ctx context.Context) {
 		deployment := &appsv1.Deployment{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      deploymentName(kaiConfig, shard),
+				Name:      DeploymentName(kaiConfig, shard),
 				Namespace: kaiConfig.Spec.Namespace,
 			},
 			Spec: appsv1.DeploymentSpec{Replicas: ptr.To(int32(2))},

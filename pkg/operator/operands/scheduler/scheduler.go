@@ -61,10 +61,14 @@ func (s *SchedulerForShard) DesiredState(
 		s.deploymentForShard,
 		s.configMapForShard,
 		s.serviceForShard,
+		s.endpointSliceForShard,
 	} {
 		object, err := resourceFunc(ctx, readerClient, kaiConfig, s.schedulingShard)
 		if err != nil {
 			return nil, err
+		}
+		if object == nil {
+			continue
 		}
 		objects = append(objects, object)
 	}

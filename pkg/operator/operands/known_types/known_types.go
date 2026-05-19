@@ -42,6 +42,7 @@ func init() {
 	registerServiceAccounts()
 	registerConfigmaps()
 	registerServices()
+	registerEndpointSlices()
 	registerSecrets()
 	registerMutatingWebhookConfigurations()
 	registerValidatingWebhookConfigurations()
