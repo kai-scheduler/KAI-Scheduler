@@ -33,7 +33,11 @@ func deploymentForKAIConfig(
 		return nil, err
 	}
 
-	deployment.Spec.Template.Spec.Containers[0].Args = argsForKAIConfig(kaiConfig.Spec.NodeScaleAdjuster, *kaiConfig.Spec.Global.SchedulerName)
+	deployment.Spec.Template.Spec.Containers[0].Args = argsForKAIConfig(
+		kaiConfig.Spec.NodeScaleAdjuster,
+		*kaiConfig.Spec.Global.SchedulerName,
+		kaiConfig.Spec.Global.JSONLog,
+	)
 
 	return deployment, nil
 }
@@ -76,7 +80,7 @@ func scalingPodServiceAccountForKAIConfig(
 	return sa, err
 }
 
-func argsForKAIConfig(config *node_scale_adjuster.NodeScaleAdjuster, schedulerName string) []string {
+func argsForKAIConfig(config *node_scale_adjuster.NodeScaleAdjuster, schedulerName string, jsonLog *bool) []string {
 	args := []string{
 		"--scheduler-name", schedulerName,
 	}
@@ -98,5 +102,5 @@ func argsForKAIConfig(config *node_scale_adjuster.NodeScaleAdjuster, schedulerNa
 			fmt.Sprintf("%f", *config.Args.GPUMemoryToFractionRatio))
 	}
 
-	return args
+	return common.AddControllerRuntimeJSONLogArg(jsonLog, args)
 }

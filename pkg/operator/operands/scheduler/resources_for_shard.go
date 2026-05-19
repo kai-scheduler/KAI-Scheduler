@@ -279,7 +279,7 @@ func buildArgsList(
 		args = append(args, "--leader-elect=true")
 	}
 
-	return args, nil
+	return common.AddSchedulerJSONLogArg(kaiConfig.Spec.Global.JSONLog, args), nil
 }
 
 func configMapName(config *kaiv1.Config, shard *kaiv1.SchedulingShard) string {

@@ -91,7 +91,7 @@ func buildArgsList(kaiConfig *kaiv1.Config) []string {
 		args = append(args, "--pod-label-selector", formatLabelSelector(kaiConfig.Spec.Global.PodLabelSelector))
 	}
 
-	return args
+	return common.AddControllerRuntimeJSONLogArg(kaiConfig.Spec.Global.JSONLog, args)
 }
 
 func formatLabelSelector(selector map[string]string) string {

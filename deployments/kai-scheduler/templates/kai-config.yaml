@@ -20,6 +20,9 @@ spec:
     podLabelSelector:
       {{- toYaml .Values.global.podLabelSelector | nindent 6 }}
     {{- end }}
+    {{- if .Values.global.jsonLog }}
+    jsonLog: true
+    {{- end }}
     {{- if .Values.global.affinity }}
     affinity:
       {{- toYaml .Values.global.affinity | nindent 6 }}

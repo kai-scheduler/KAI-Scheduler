@@ -216,6 +216,22 @@ func AddK8sClientConfigToArgs(k8sClientConfig *kaiv1common.K8sClientConfig, args
 	}
 }
 
+func AddControllerRuntimeJSONLogArg(jsonLog *bool, args []string) []string {
+	if jsonLog != nil && *jsonLog {
+		args = append(args, "--zap-devel=false")
+	}
+
+	return args
+}
+
+func AddSchedulerJSONLogArg(jsonLog *bool, args []string) []string {
+	if jsonLog != nil && *jsonLog {
+		args = append(args, "--log-json")
+	}
+
+	return args
+}
+
 func CheckCRDsAvailable(ctx context.Context, client client.Reader, crdNames ...string) (bool, error) {
 	for _, name := range crdNames {
 		crd := &metav1.PartialObjectMetadata{
