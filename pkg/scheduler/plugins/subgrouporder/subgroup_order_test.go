@@ -116,6 +116,41 @@ func TestSubGroupOrderFn(t *testing.T) {
 			want: rPrioritized,
 		},
 		{
+			name: "left non-leaf optional (minSubGroup=0 with children), right required and satisfied",
+			// Non-leaf with minSubGroup=0: threshold=0 → deprioritized vs. a satisfied required sibling.
+			left: makeSubGroupSetWithPodSetMembers("l", ptr.To(int32(0)), []podSetSpec{
+				{minAvail: 2, numAlloc: 0},
+				{minAvail: 2, numAlloc: 0},
+			}),
+			right: makeSubGroupSetWithPodSetMembers("r", ptr.To(int32(2)), []podSetSpec{
+				{minAvail: 3, numAlloc: 5},
+				{minAvail: 3, numAlloc: 4},
+			}),
+			want: rPrioritized,
+		},
+		{
+			name: "both non-leaf optional (minSubGroup=0), neither has allocated members",
+			// Both threshold=0, both 0 allocated members → equal.
+			left: makeSubGroupSetWithPodSetMembers("l", ptr.To(int32(0)), []podSetSpec{
+				{minAvail: 2, numAlloc: 0},
+			}),
+			right: makeSubGroupSetWithPodSetMembers("r", ptr.To(int32(0)), []podSetSpec{
+				{minAvail: 3, numAlloc: 0},
+			}),
+			want: equalPrioritization,
+		},
+		{
+			name: "both non-leaf optional (minSubGroup=0), left has fewer allocated members",
+			// Both threshold=0; tie-break: prioritize the one with fewer allocated members.
+			left: makeSubGroupSetWithPodSetMembers("l", ptr.To(int32(0)), []podSetSpec{
+				{minAvail: 1, numAlloc: 0}, // not satisfied → 0 allocated members
+			}),
+			right: makeSubGroupSetWithPodSetMembers("r", ptr.To(int32(0)), []podSetSpec{
+				{minAvail: 1, numAlloc: 1}, // satisfied → 1 allocated member
+			}),
+			want: lPrioritized,
+		},
+		{
 			name: "nested SubGroupSets: left's member not satisfied, right's member satisfied",
 			left: func() *subgroup_info.SubGroupSet {
 				// outer left: minSubGroup=1, one member SubGroupSet not satisfied

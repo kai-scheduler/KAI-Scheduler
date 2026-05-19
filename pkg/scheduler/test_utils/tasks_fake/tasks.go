@@ -39,6 +39,7 @@ type TestTaskBasic struct {
 	IsLegacyMigTask            bool
 	ResourceClaimTemplates     map[string]string
 	ResourceClaimNames         []string
+	PersistentVolumeClaimNames []string
 }
 
 func BuildPod(

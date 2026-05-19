@@ -200,10 +200,7 @@ func validateSubGroupMinFields(subGroup *SubGroup, childrenMap map[string][]stri
 				"subgroup %q: minMember cannot be set on a mid-level SubGroup (has child SubGroups); use minSubGroup instead", subGroup.Name)})
 		}
 		if subGroup.MinSubGroup != nil {
-			if *subGroup.MinSubGroup <= 0 {
-				minFieldsErrors = append(minFieldsErrors, &invalidMinSubGroupError{msg: fmt.Sprintf(
-					"subgroup %q: minSubGroup must be greater than 0", subGroup.Name)})
-			} else if int(*subGroup.MinSubGroup) > len(children) {
+			if int(*subGroup.MinSubGroup) > len(children) {
 				minFieldsErrors = append(minFieldsErrors, &minSubGroupExceedsChildCountError{msg: fmt.Sprintf(
 					"subgroup %q: minSubGroup (%d) exceeds the number of direct child SubGroups (%d)",
 					subGroup.Name, *subGroup.MinSubGroup, len(children))})

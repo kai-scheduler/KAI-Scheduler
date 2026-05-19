@@ -22,6 +22,16 @@ The Pod Grouper uses the PodGroup Custom Resource Definition (CRD) to represent 
 
 While users or third-party tools can manually create PodGroup resources, the Pod Grouper automates this process by analyzing incoming pods and applying appropriate grouping logic based on the pod's characteristics and ownership.
 
+### External PodGroups
+
+Podgrouper can also be told to leave PodGroup membership unchanged. When a pod or any readable object in its owner chain has `kai.scheduler/skip-podgrouper: "true"`, podgrouper does not create or update a PodGroup for that pod and does not patch `pod-group-name` or `kai.scheduler/subgroup-name`.
+
+This is the supported path for externally-created PodGroups. External controllers or manifests still need to:
+
+- Create the `PodGroup` resource explicitly.
+- Set `pod-group-name` on the pod template annotations.
+- Set `kai.scheduler/subgroup-name` on the pod template labels when using non-default subgroups.
+
 ## Plugin Architecture
 The Pod Grouper uses a plugin-based architecture similar to the scheduler's plugin framework. Each plugin implements specific grouping logic for different types of workloads:
 

@@ -25,6 +25,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>KAI Scheduler — Scale Tests</title>
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
   <link rel="stylesheet" href="styles.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
@@ -33,10 +34,7 @@
 
 <!-- ── Page header ─────────────────────────────────────────────────────── -->
 <header class="page-header">
-  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"
-          stroke="#58a6ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-  </svg>
+  <img src="logo.svg" width="32" height="32" alt="KAI Scheduler Logo" aria-hidden="true">
   <h1>KAI Scheduler — Scale Tests</h1>
   <div class="header-stats" id="header-stats" aria-live="polite"></div>
 </header>
@@ -91,32 +89,16 @@
       <div class="chart-wrapper"><canvas id="chart-1"></canvas></div>
     </div>
     <div class="chart-card">
-      <h3 class="chart-title">Fill Cluster with single GPU Jobs (400 pending tasks)</h3>
+      <h3 class="chart-title">Schedules Jobs with Pending Tasks in Background</h3>
       <div class="chart-wrapper"><canvas id="chart-2"></canvas></div>
     </div>
     <div class="chart-card">
-      <h3 class="chart-title">Average time to unschedulable for distributed job</h3>
+      <h3 class="chart-title">Allocate Single Distributed Job (with preferred topology)</h3>
       <div class="chart-wrapper"><canvas id="chart-3"></canvas></div>
     </div>
     <div class="chart-card">
-      <h3 class="chart-title">Reclaim time for one very large job</h3>
+      <h3 class="chart-title">Allocate Single Distributed Job (without preferred topology)</h3>
       <div class="chart-wrapper"><canvas id="chart-4"></canvas></div>
-    </div>
-    <div class="chart-card">
-      <h3 class="chart-title">Measuring reclaim time for single GPU</h3>
-      <div class="chart-wrapper"><canvas id="chart-5"></canvas></div>
-    </div>
-    <div class="chart-card">
-      <h3 class="chart-title">Multi Node Reclaim for distributed jobs</h3>
-      <div class="chart-wrapper"><canvas id="chart-6"></canvas></div>
-    </div>
-    <div class="chart-card">
-      <h3 class="chart-title">Reclaim single GPU Jobs</h3>
-      <div class="chart-wrapper"><canvas id="chart-7"></canvas></div>
-    </div>
-    <div class="chart-card">
-      <h3 class="chart-title">Consolidation to run multiple distributed jobs</h3>
-      <div class="chart-wrapper"><canvas id="chart-8"></canvas></div>
     </div>
   </div>
 </main>
