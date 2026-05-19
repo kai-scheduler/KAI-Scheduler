@@ -6,7 +6,6 @@ package scheduler
 import (
 	"context"
 
-	appsv1 "k8s.io/api/apps/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -83,11 +82,6 @@ func (s *SchedulerForShard) DesiredState(
 }
 
 func (s *SchedulerForShard) IsAvailable(ctx context.Context, readerClient client.Reader) (bool, error) {
-	desiredSchedulerDeployment, isOnlyDesiredObject := s.desiredSchedulerDeployment()
-	if isOnlyDesiredObject && desiredSchedulerDeployment != nil && desiredSchedulerDeployment.Spec.Replicas != nil &&
-		*desiredSchedulerDeployment.Spec.Replicas > 1 {
-		return s.isActivePassiveSchedulerAvailable(ctx, readerClient, desiredSchedulerDeployment)
-	}
 	return common.AllControllersAvailable(ctx, readerClient, s.lastDesiredState)
 }
 
@@ -105,36 +99,6 @@ func (s *SchedulerForShard) HasMissingDependencies(context.Context, client.Reade
 
 func (s *SchedulerForShard) Name() string {
 	return "SchedulerForShard"
-}
-
-func (s *SchedulerForShard) desiredSchedulerDeployment() (*appsv1.Deployment, bool) {
-	if len(s.lastDesiredState) != 1 {
-		return nil, false
-	}
-	deployment, ok := s.lastDesiredState[0].(*appsv1.Deployment)
-	return deployment, ok
-}
-
-func (s *SchedulerForShard) isActivePassiveSchedulerAvailable(
-	ctx context.Context, readerClient client.Reader, desiredDeployment *appsv1.Deployment,
-) (bool, error) {
-	for _, obj := range s.lastDesiredState {
-		if _, isDeployment := obj.(*appsv1.Deployment); isDeployment {
-			continue
-		}
-		if err := readerClient.Get(ctx, client.ObjectKeyFromObject(obj), obj); err != nil {
-			return false, err
-		}
-	}
-
-	deployment := &appsv1.Deployment{}
-	if err := readerClient.Get(ctx, client.ObjectKeyFromObject(desiredDeployment), deployment); err != nil {
-		return false, err
-	}
-	if deployment.Status.UpdatedReplicas != *desiredDeployment.Spec.Replicas {
-		return false, nil
-	}
-	return deployment.Status.ReadyReplicas >= 1, nil
 }
 
 func (s *SchedulerForConfig) DesiredState(
