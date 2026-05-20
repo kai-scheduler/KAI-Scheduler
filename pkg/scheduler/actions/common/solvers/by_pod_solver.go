@@ -72,6 +72,11 @@ func (s *byPodSolver) solve(session *framework.Session, scenario *scenario.ByNod
 
 	allVictims := getVictimTasks(scenario.RecordedVictimsTasks(), scenario.PotentialVictimsTasks())
 
+	if len(allVictims) == 0 {
+		statement.Discard()
+		return &solutionResult{false, nil, nil, nil}
+	}
+
 	checkpoint := statement.Checkpoint()
 	if err := common.EvictAllPreemptees(session, allVictims, pendingJob, statement, s.actionType); err != nil {
 		return handleSolveError(pendingJob, nextTaskToFindAllocation, err, statement)
