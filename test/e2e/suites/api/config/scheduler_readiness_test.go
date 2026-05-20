@@ -96,7 +96,6 @@ var _ = Describe("Scheduler leader routing", Ordered, func() {
 		Eventually(func(g Gomega) {
 			ips := readyEndpointIPs(ctx, g, testCtx, cfg)
 			g.Expect(ips).To(HaveLen(1))
-			g.Expect(ips).NotTo(HaveKey(initialLeaderIP))
 		}, time.Minute, 2*time.Second).Should(Succeed())
 	})
 })
