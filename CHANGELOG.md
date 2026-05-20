@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [v0.14.3] - 2026-05-20
+
+### Fixed
+- Fixed a bug where multi-node reclaims would fail in some cases [itsomri](https://github.com/itsomri)
+
 ## [v0.14.2] - 2026-05-07
 
 ### Added
@@ -15,7 +20,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 - Fixed kai-operator not reconciling on Prometheus and ServiceMonitor changes. The Config controller now watches owned `Prometheus` and `ServiceMonitor` resources, so deletions and drift trigger reconciliation. CRD presence is checked at startup against the API server (the scheme-only check used previously could not detect missing CRDs), and the watch is registered only when the CRDs are installed. [#877](https://github.com/kai-scheduler/KAI-Scheduler/issues/877)
-- Fixed a bug where multi-node reclaims would fail in some cases [itsomri](https://github.com/itsomri)
 
 ## [v0.14.1] - 2026-04-29
 
