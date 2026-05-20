@@ -516,8 +516,8 @@ func TestRecordJobStatusEventInvalidSubGroupPod(t *testing.T) {
 	vectorMap := resource_info.NewResourceVectorMap()
 	job := podgroup_info.NewPodGroupInfoWithVectorMap("group-1", vectorMap)
 	job.SetPodGroup(podGroup)
-	job.AddTaskInfo(pod_info.NewTaskInfo(validPod, nil, vectorMap))
-	job.AddTaskInfo(pod_info.NewTaskInfo(invalidPod, nil, vectorMap))
+	job.AddTaskInfo(pod_info.NewTaskInfo(validPod, vectorMap))
+	job.AddTaskInfo(pod_info.NewTaskInfo(invalidPod, vectorMap))
 
 	err := cache.RecordJobStatusEvent(job)
 	assert.NoError(t, err)
@@ -645,7 +645,7 @@ func getPods(pods map[v1.PodPhase][]common_info.PodID) (podsInfos map[common_inf
 				},
 			}
 
-			podInfo := pod_info.NewTaskInfo(pod, nil, resource_info.NewResourceVectorMap())
+			podInfo := pod_info.NewTaskInfo(pod, resource_info.NewResourceVectorMap())
 
 			podsInfos[podInfo.UID] = podInfo
 			podsAsObjects = append(podsAsObjects, pod)

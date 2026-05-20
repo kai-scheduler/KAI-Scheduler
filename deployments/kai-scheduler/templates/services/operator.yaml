@@ -37,6 +37,9 @@ spec:
           {{- if .Values.operator.logLevel }}
           - --zap-log-level={{ .Values.operator.logLevel }}
           {{- end }}
+          {{- if .Values.global.jsonLog }}
+          - --zap-devel=false
+          {{- end }}
         env:
         - name: WATCH_NAMESPACE
           value: {{ .Release.Namespace }}

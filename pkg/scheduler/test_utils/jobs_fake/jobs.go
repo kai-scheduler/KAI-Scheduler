@@ -213,7 +213,7 @@ func generateTasks(
 			vectorMap.AddResourceList(container.Resources.Requests)
 		}
 
-		taskInfo := pod_info.NewTaskInfo(podOfTask, draPodClaims, vectorMap)
+		taskInfo := pod_info.NewTaskInfo(podOfTask, vectorMap, pod_info.TaskInfoOptions{DraPodClaims: draPodClaims})
 		taskInfo.Status = task.State
 		taskInfo.GPUGroups = gpuGroups
 		taskInfo.SubGroupName = task.SubGroupName

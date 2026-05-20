@@ -3985,6 +3985,9 @@ spec:
                       Deprecated: ImagePullSecret defines a single container registry secret credential.
                       Use ImagePullSecrets instead.
                     type: string
+                  jsonLog:
+                    description: JSONLog switches all services to JSON-formatted logging
+                    type: boolean
                   namespaceLabelSelector:
                     additionalProperties:
                       type: string

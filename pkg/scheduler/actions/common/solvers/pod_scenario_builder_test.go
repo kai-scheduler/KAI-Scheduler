@@ -372,7 +372,7 @@ func createJobWithTasks(
 				fmt.Sprintf("pod-%d", taskNum),
 				namespace, jobUID, tasksStatus,
 				podResources,
-			), nil, resource_info.NewResourceVectorMap()))
+			), resource_info.NewResourceVectorMap()))
 	}
 
 	newJob := podgroup_info.NewPodGroupInfo(common_info.PodGroupID(strconv.Itoa(jobID)), jobTasks...)

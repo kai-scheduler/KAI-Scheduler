@@ -31,23 +31,23 @@ func TestTaskOrder(t *testing.T) {
 		},
 	}
 
-	assert.Equal(t, TaskOrderFn(pod_info.NewTaskInfo(lPod, nil, resource_info.NewResourceVectorMap()), pod_info.NewTaskInfo(rPod, nil, resource_info.NewResourceVectorMap())), 1)
+	assert.Equal(t, TaskOrderFn(pod_info.NewTaskInfo(lPod, resource_info.NewResourceVectorMap()), pod_info.NewTaskInfo(rPod, resource_info.NewResourceVectorMap())), 1)
 
 	lPod.Labels["kai.scheduler/task-priority"] = "2"
-	assert.Equal(t, TaskOrderFn(pod_info.NewTaskInfo(lPod, nil, resource_info.NewResourceVectorMap()), pod_info.NewTaskInfo(rPod, nil, resource_info.NewResourceVectorMap())), 0)
+	assert.Equal(t, TaskOrderFn(pod_info.NewTaskInfo(lPod, resource_info.NewResourceVectorMap()), pod_info.NewTaskInfo(rPod, resource_info.NewResourceVectorMap())), 0)
 
 	rPod.Labels["kai.scheduler/task-priority"] = "1"
 
-	assert.Equal(t, TaskOrderFn(pod_info.NewTaskInfo(lPod, nil, resource_info.NewResourceVectorMap()), pod_info.NewTaskInfo(rPod, nil, resource_info.NewResourceVectorMap())), -1)
+	assert.Equal(t, TaskOrderFn(pod_info.NewTaskInfo(lPod, resource_info.NewResourceVectorMap()), pod_info.NewTaskInfo(rPod, resource_info.NewResourceVectorMap())), -1)
 
 	lPod.Labels = map[string]string{}
-	assert.Equal(t, TaskOrderFn(pod_info.NewTaskInfo(lPod, nil, resource_info.NewResourceVectorMap()), pod_info.NewTaskInfo(rPod, nil, resource_info.NewResourceVectorMap())), 1)
+	assert.Equal(t, TaskOrderFn(pod_info.NewTaskInfo(lPod, resource_info.NewResourceVectorMap()), pod_info.NewTaskInfo(rPod, resource_info.NewResourceVectorMap())), 1)
 
 	lPod.Labels = rPod.Labels
 	rPod.Labels = map[string]string{}
-	assert.Equal(t, TaskOrderFn(pod_info.NewTaskInfo(lPod, nil, resource_info.NewResourceVectorMap()), pod_info.NewTaskInfo(rPod, nil, resource_info.NewResourceVectorMap())), -1)
+	assert.Equal(t, TaskOrderFn(pod_info.NewTaskInfo(lPod, resource_info.NewResourceVectorMap()), pod_info.NewTaskInfo(rPod, resource_info.NewResourceVectorMap())), -1)
 
 	lPod.Labels = map[string]string{}
-	assert.Equal(t, TaskOrderFn(pod_info.NewTaskInfo(lPod, nil, resource_info.NewResourceVectorMap()), pod_info.NewTaskInfo(rPod, nil, resource_info.NewResourceVectorMap())), 0)
+	assert.Equal(t, TaskOrderFn(pod_info.NewTaskInfo(lPod, resource_info.NewResourceVectorMap()), pod_info.NewTaskInfo(rPod, resource_info.NewResourceVectorMap())), 0)
 
 }
