@@ -10,9 +10,11 @@ import (
 
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/gpusharing"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/hamicore"
 	k8splugins "github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/k8s-plugins"
 )
 
@@ -48,9 +50,14 @@ func InitDefaultPlugins() {
 	RegisterPluginBuilder(VolumeBindingPluginName, newVolumeBindingPlugin)
 	RegisterPluginBuilder(DynamicResourcesPluginName, newDynamicResourcesPlugin)
 	RegisterPluginBuilder(GPUSharingPluginName, newGPUSharingPlugin)
+	RegisterPluginBuilder(HamiCorePluginName, newHamiCorePlugin)
 }
 
 func BuildConfiguredPlugins(buildContext PluginBuildContext, config Config) (*BinderPlugins, error) {
+	if err := validateDependentPlugins(config); err != nil {
+		return nil, err
+	}
+
 	binderPlugins := New()
 	for _, option := range config.EnabledOptions() {
 		builder, found := GetPluginBuilder(option.Name)
@@ -99,6 +106,34 @@ func newGPUSharingPlugin(buildContext PluginBuildContext, arguments map[string]s
 		return nil, err
 	}
 	return gpusharing.New(buildContext.KubeClient, cdiEnabled), nil
+}
+
+func newHamiCorePlugin(buildContext PluginBuildContext, _ map[string]string) (Plugin, error) {
+	return hamicore.New(buildContext.KubeClient), nil
+}
+
+func validateDependentPlugins(config Config) error {
+	hamiCoreCfg, hamiCoreFound := config[HamiCorePluginName]
+	if !hamiCoreFound || (hamiCoreCfg.Enabled != nil && !*hamiCoreCfg.Enabled) {
+		return nil
+	}
+
+	gpuSharingCfg, gpuSharingFound := config[GPUSharingPluginName]
+	if !gpuSharingFound || (gpuSharingCfg.Enabled != nil && !*gpuSharingCfg.Enabled) {
+		return fmt.Errorf("%q plugin requires %q plugin to be enabled", HamiCorePluginName, GPUSharingPluginName)
+	}
+
+	// PreBind is invoked in EnabledOptions() order (higher priority first).
+	// hamicore requires gpusharing to have already created the configmap.
+	hamiCorePri := ptr.Deref(config[HamiCorePluginName].Priority, 0)
+	gpuSharingPri := ptr.Deref(config[GPUSharingPluginName].Priority, 0)
+	if gpuSharingPri <= hamiCorePri {
+		return fmt.Errorf("%q plugin requires %q to run before it (expected %q.priority > %q.priority, got %d <= %d)",
+			HamiCorePluginName, GPUSharingPluginName, GPUSharingPluginName, HamiCorePluginName,
+			gpuSharingPri, hamiCorePri)
+	}
+
+	return nil
 }
 
 func int64Argument(arguments map[string]string, name string) (int64, error) {
