@@ -79,7 +79,7 @@ func Test_getNodePreferableGpuForSharing(t *testing.T) {
 							},
 						},
 					},
-				}, nil, resource_info.NewResourceVectorMap()),
+				}, resource_info.NewResourceVectorMap()),
 				isPipelineOnly: false,
 			},
 			want: want{
@@ -130,7 +130,7 @@ func Test_getNodePreferableGpuForSharing(t *testing.T) {
 							},
 						},
 					},
-				}, nil, resource_info.NewResourceVectorMap()),
+				}, resource_info.NewResourceVectorMap()),
 				isPipelineOnly: false,
 			},
 			want: want{
@@ -193,7 +193,7 @@ func Test_getNodePreferableGpuForSharing(t *testing.T) {
 							},
 						},
 					},
-				}, nil, resource_info.NewResourceVectorMap()),
+				}, resource_info.NewResourceVectorMap()),
 				isPipelineOnly: false,
 			},
 			want: want{
@@ -257,7 +257,7 @@ func Test_getNodePreferableGpuForSharing(t *testing.T) {
 							},
 						},
 					},
-				}, nil, resource_info.NewResourceVectorMap()),
+				}, resource_info.NewResourceVectorMap()),
 				isPipelineOnly: false,
 			},
 			want: want{

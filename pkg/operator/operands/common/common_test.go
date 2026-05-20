@@ -332,6 +332,28 @@ var _ = Describe("AllObjectsExists", func() {
 	})
 })
 
+var _ = Describe("JSON logging args", func() {
+	DescribeTable(
+		"adds controller-runtime JSON logging arg only when enabled",
+		func(jsonLog *bool, expected []string) {
+			Expect(AddControllerRuntimeJSONLogArg(jsonLog, []string{"--existing"})).To(Equal(expected))
+		},
+		Entry("nil", nil, []string{"--existing"}),
+		Entry("disabled", ptr.To(false), []string{"--existing"}),
+		Entry("enabled", ptr.To(true), []string{"--existing", "--zap-devel=false"}),
+	)
+
+	DescribeTable(
+		"adds scheduler JSON logging arg only when enabled",
+		func(jsonLog *bool, expected []string) {
+			Expect(AddSchedulerJSONLogArg(jsonLog, []string{"--existing"})).To(Equal(expected))
+		},
+		Entry("nil", nil, []string{"--existing"}),
+		Entry("disabled", ptr.To(false), []string{"--existing"}),
+		Entry("enabled", ptr.To(true), []string{"--existing", "--log-json"}),
+	)
+})
+
 var _ = Describe("MergeAffinities", func() {
 	It("should return globalAffinity when localAffinity is nil", func() {
 		globalAffinity := &v1.Affinity{

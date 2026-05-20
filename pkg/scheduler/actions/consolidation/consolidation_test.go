@@ -1568,13 +1568,13 @@ func getTestsMetadata() []integration_tests_utils.TestTopologyMetadata {
 						Status:       pod_status.Pipelined,
 					},
 					"running_job3": {
-						NodeName:     "node3",
+						NodeName:     "node2",
 						GPUsRequired: 4,
-						Status:       pod_status.Running,
+						Status:       pod_status.Pipelined,
 					},
 					"pending_job0": {
 						GPUsRequired: 3,
-						NodeName:     "node2",
+						NodeName:     "node3",
 						Status:       pod_status.Pipelined,
 					},
 				},

@@ -392,7 +392,7 @@ func JobFromPodSignatureData(jobTestInfo []podTestsInfo) *podgroup_info.PodGroup
 				map[string]string{
 					commonconstants.PodGroupAnnotationForPod: "test",
 				},
-			), nil, resource_info.NewResourceVectorMap())
+			), resource_info.NewResourceVectorMap())
 	}
 	return podgroup_info.NewPodGroupInfo(
 		"test", tasks...,

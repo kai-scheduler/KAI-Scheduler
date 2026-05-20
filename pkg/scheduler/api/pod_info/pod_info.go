@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	v1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
@@ -112,6 +113,12 @@ type PodInfo struct {
 	Pod *v1.Pod
 }
 
+type TaskInfoOptions struct {
+	BindRequest               *bindrequest_info.BindRequestInfo
+	DraPodClaims              []*resourceapi.ResourceClaim
+	StuckInReleasingThreshold time.Duration
+}
+
 func (pi *PodInfo) GetAllStorageClaims() map[storageclaim_info.Key]*storageclaim_info.StorageClaimInfo {
 	return pi.storageClaims
 }
@@ -168,19 +175,18 @@ func (pi *PodInfo) UpsertStorageClaim(claimInfo *storageclaim_info.StorageClaimI
 	pi.storageClaims[claimInfo.Key] = claimInfo
 }
 
-func NewTaskInfo(pod *v1.Pod, draPodClaims []*resourceapi.ResourceClaim, vectorMap *resource_info.ResourceVectorMap) *PodInfo {
-	return NewTaskInfoWithBindRequest(pod, nil, draPodClaims, vectorMap)
-}
+func NewTaskInfo(pod *v1.Pod, vectorMap *resource_info.ResourceVectorMap, opts ...TaskInfoOptions) *PodInfo {
+	options := TaskInfoOptions{StuckInReleasingThreshold: commonconstants.DefaultStuckInReleasingThreshold}
+	options.ApplyOptions(opts...)
 
-func NewTaskInfoWithBindRequest(pod *v1.Pod, bindRequest *bindrequest_info.BindRequestInfo, draPodClaims []*resourceapi.ResourceClaim, vectorMap *resource_info.ResourceVectorMap) *PodInfo {
 	initResreq := getPodResourceRequest(pod)
 
 	nodeName := pod.Spec.NodeName
-	if nodeName == "" && bindRequest != nil {
-		nodeName = bindRequest.BindRequest.Spec.SelectedNode
+	if nodeName == "" && options.BindRequest != nil {
+		nodeName = options.BindRequest.BindRequest.Spec.SelectedNode
 	}
 
-	resourceClaimInfo, err := resourceClaimInfoFromPodClaims(draPodClaims, pod, bindRequest)
+	resourceClaimInfo, err := resourceClaimInfoFromPodClaims(options.DraPodClaims, pod, options.BindRequest)
 	if err != nil {
 		log.InfraLogger.Errorf("PodInfo ctor failure - failed to calculate resource claim info for pod %s/%s: %v", pod.Namespace, pod.Name, err)
 	}
@@ -192,7 +198,7 @@ func NewTaskInfoWithBindRequest(pod *v1.Pod, bindRequest *bindrequest_info.BindR
 		Namespace:                      pod.Namespace,
 		SubGroupName:                   pod.Labels[commonconstants.SubGroupLabelKey],
 		NodeName:                       nodeName,
-		Status:                         getTaskStatus(pod, bindRequest),
+		Status:                         getTaskStatus(pod, options.BindRequest, options.StuckInReleasingThreshold),
 		IsVirtualStatus:                false,
 		IsLegacyMIGtask:                false,
 		Pod:                            pod,
@@ -204,14 +210,14 @@ func NewTaskInfoWithBindRequest(pod *v1.Pod, bindRequest *bindrequest_info.BindR
 		GPUGroups:                      []string{},
 		ResourceRequestType:            RequestTypeRegular,
 		ResourceReceivedType:           ReceivedTypeNone,
-		BindRequest:                    bindRequest,
+		BindRequest:                    options.BindRequest,
 		ResourceClaimInfo:              resourceClaimInfo,
 		schedulingConstraintsSignature: "",
 		storageClaims:                  map[storageclaim_info.Key]*storageclaim_info.StorageClaimInfo{},
 		ownedStorageClaims:             map[storageclaim_info.Key]*storageclaim_info.StorageClaimInfo{},
 	}
 
-	podInfo.updatePodAdditionalFields(bindRequest, draPodClaims...)
+	podInfo.updatePodAdditionalFields(options.BindRequest, options.DraPodClaims...)
 
 	return podInfo
 }
@@ -414,10 +420,13 @@ func getPodResourceWithoutInitContainers(pod *v1.Pod) *resource_info.ResourceReq
 	return resource_info.RequirementsFromResourceList(podResourcesList)
 }
 
-func getTaskStatus(pod *v1.Pod, bindRequest *bindrequest_info.BindRequestInfo) pod_status.PodStatus {
+func getTaskStatus(pod *v1.Pod, bindRequest *bindrequest_info.BindRequestInfo, stuckInReleasingThreshold time.Duration) pod_status.PodStatus {
 	switch pod.Status.Phase {
 	case v1.PodRunning:
 		if pod.DeletionTimestamp != nil {
+			if time.Since(pod.DeletionTimestamp.Time) > stuckInReleasingThreshold {
+				return pod_status.StuckInReleasing
+			}
 			return pod_status.Releasing
 		}
 
@@ -534,4 +543,23 @@ func (pi *PodInfo) rebuildResReqVector() {
 func (pi *PodInfo) ShouldAllocate(isRealAllocation bool) bool {
 	return pi.Status == pod_status.Pending ||
 		(!isRealAllocation && pi.Status == pod_status.Releasing && pi.IsVirtualStatus)
+}
+
+func (o *TaskInfoOptions) ApplyOptions(opts ...TaskInfoOptions) *TaskInfoOptions {
+	for _, opt := range opts {
+		o.ApplyToList(opt)
+	}
+	return o
+}
+
+func (o *TaskInfoOptions) ApplyToList(inputOptions TaskInfoOptions) {
+	if inputOptions.BindRequest != nil {
+		o.BindRequest = inputOptions.BindRequest
+	}
+	if len(inputOptions.DraPodClaims) > 0 {
+		o.DraPodClaims = inputOptions.DraPodClaims
+	}
+	if inputOptions.StuckInReleasingThreshold > 0 {
+		o.StuckInReleasingThreshold = inputOptions.StuckInReleasingThreshold
+	}
 }

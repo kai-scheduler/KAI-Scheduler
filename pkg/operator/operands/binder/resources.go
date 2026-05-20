@@ -256,6 +256,8 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1binder.Binder, fakeGPU 
 		args = append(args, []string{"--burst", fmt.Sprintf("%d", *config.Service.K8sClientConfig.Burst)}...)
 	}
 
+	args = common.AddControllerRuntimeJSONLogArg(kaiConfig.Spec.Global.JSONLog, args)
+
 	if config.ResourceReservation.RuntimeClassName != nil && len(*config.ResourceReservation.RuntimeClassName) > 0 {
 		args = append(args, []string{fmt.Sprintf("--runtime-class-name=%s", *config.ResourceReservation.RuntimeClassName)}...)
 	}
