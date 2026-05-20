@@ -8,6 +8,7 @@ In this section, we will collect and describe API changes (or other breaking cha
 |---------|--------------------------------------------|---------------------------------------|
 | v0.6.0  | Namespace rename, queue-label key update   | [v0.6.0 Migration Guide](./v0.6.0/)   |
 | v0.13.0 | Queue-controller flag removal, rollback limitation | [v0.13.0 Migration Guide](./v0.13.0/) |
+| v0.14.0 | `prometheus` value required on upgrade, leader election auto-enable | [v0.14.0 Migration Guide](./v0.14.0/) |
 
 > **Note:** Always check this page before upgrading to a new major/minor release.
 
@@ -27,7 +28,7 @@ helm install kai-scheduler oci://ghcr.io/nvidia/kai-scheduler/kai-scheduler \
   --version <TARGET_VERSION> -n kai-scheduler
 ```
 All queues, workloads, CRDs, and PodGroups are preserved across this cycle. See the
-[v0.13.0 Migration Guide](./v0.13.0/) for full details.
+version-specific migration guide for the full downgrade procedure.
 
 
 ## How to use
