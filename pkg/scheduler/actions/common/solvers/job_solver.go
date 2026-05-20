@@ -69,7 +69,7 @@ func (s *JobSolver) Solve(
 	}
 
 	maxSolvedK := s.searchMaxSolvableK(ssn, &state, pendingJob, tasksToAllocate)
-	if maxSolvedK == 0 {
+	if maxSolvedK < n {
 		return false, nil, calcVictimNames(state.recordedVictimsTasks)
 	}
 
