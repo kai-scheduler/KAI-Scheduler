@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- Updated Go toolchain and base build images to v1.25.10.
+
 ## [v0.12.20] - 2026-05-07
 
 ### Added
