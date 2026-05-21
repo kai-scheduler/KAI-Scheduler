@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 ### Changed
+- Updated Go toolchain and base build images to v1.26.4.
 
 ### Fixed
 
