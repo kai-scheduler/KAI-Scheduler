@@ -3,9 +3,7 @@
 
 package accumulated_scenario_filters
 
-import "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
-
 type Interface interface {
 	Name() string
-	Filter(*scenario.ByNodeScenario) (bool, error)
+	Filter(AccumulatedScenarioInput) (bool, error)
 }

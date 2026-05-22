@@ -10,6 +10,7 @@ import (
 
 	"golang.org/x/exp/slices"
 
+	inputfilters "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
@@ -47,6 +48,8 @@ type AccumulatedIdleGpus struct {
 	// This helps us to calculate "gpus freed by victim task eviction" only once for each task,
 	// even if multiple scenarios reference to a single task as a victim.
 	potentialVictimsInCache map[common_info.PodID]bool
+	recordedVictimsCursor   inputfilters.VictimTaskCursor
+	potentialVictimsCursor  inputfilters.VictimTaskCursor
 
 	// We have a separate map for each type of task to help with scenario accumulated build assertions.
 }
@@ -62,7 +65,7 @@ func NewIdleGpusFilter(
 		recordedVictimsInCache:  make(map[common_info.PodID]bool),
 		potentialVictimsInCache: make(map[common_info.PodID]bool),
 	}
-	err := filter.updateStateWithScenario(scenario, true)
+	err := filter.updateStateWithScenario(inputfilters.NewFullScanScenarioInput(scenario), true)
 	if err != nil {
 		return nil
 	}
@@ -74,8 +77,8 @@ func (ig *AccumulatedIdleGpus) Name() string {
 	return idleGpuFilterName
 }
 
-func (ig *AccumulatedIdleGpus) Filter(scenario *scenario.ByNodeScenario) (bool, error) {
-	err := ig.updateStateWithScenario(scenario, false)
+func (ig *AccumulatedIdleGpus) Filter(input inputfilters.AccumulatedScenarioInput) (bool, error) {
+	err := ig.updateStateWithScenario(input, false)
 	if err != nil {
 		return false, err
 	}
@@ -87,35 +90,46 @@ func (ig *AccumulatedIdleGpus) Filter(scenario *scenario.ByNodeScenario) (bool, 
 	), nil
 }
 
-func (ig *AccumulatedIdleGpus) updateStateWithScenario(scenario *scenario.ByNodeScenario, isFirstScenario bool) error {
+func (ig *AccumulatedIdleGpus) updateStateWithScenario(
+	input inputfilters.AccumulatedScenarioInput, isFirstScenario bool,
+) error {
+	scenario := input.Scenario()
 	err := ig.updateRequiredResources(scenario, isFirstScenario)
 	if err != nil {
 		return err
 	}
 
 	preUpdateRecordedVictimsCacheSize := len(ig.recordedVictimsInCache)
-	recordedVictimsCacheHits := ig.updateVictimList(scenario.RecordedVictimsTasks(), ig.recordedVictimsInCache)
+	recordedVictimsDelta := input.RecordedVictimsSince(ig.recordedVictimsCursor)
+	recordedVictimsCacheHits := ig.updateVictimList(recordedVictimsDelta, ig.recordedVictimsInCache)
 	if err = ig.assertRecordedVictimsState(isFirstScenario, len(ig.recordedVictimsInCache), preUpdateRecordedVictimsCacheSize, recordedVictimsCacheHits); err != nil {
 		return err
 	}
+	ig.recordedVictimsCursor = recordedVictimsDelta.Next
 
 	preUpdatePotentialVictimsCacheSize := len(ig.potentialVictimsInCache)
-	potentialVictimsCacheHits := ig.updateVictimList(scenario.PotentialVictimsTasks(), ig.potentialVictimsInCache)
+	potentialVictimsDelta := input.PotentialVictimsSince(ig.potentialVictimsCursor)
+	potentialVictimsCacheHits := ig.updateVictimList(potentialVictimsDelta, ig.potentialVictimsInCache)
 	if err = ig.assertPotentialVictimsState(potentialVictimsCacheHits, preUpdatePotentialVictimsCacheSize); err != nil {
 		return err
 	}
+	ig.potentialVictimsCursor = potentialVictimsDelta.Next
 	return nil
 }
 
 func (ig *AccumulatedIdleGpus) updateVictimList(
-	victimTasks []*pod_info.PodInfo, relevantCacheData map[common_info.PodID]bool,
+	victimsDelta inputfilters.VictimTaskDelta, relevantCacheData map[common_info.PodID]bool,
 ) int {
 	var minIdleGpusRelevant string
 	if len(ig.maxFreeGpuNodesSorted) > 0 {
 		minIdleGpusRelevant = ig.maxFreeGpuNodesSorted[len(ig.maxFreeGpuNodesSorted)-1]
 	}
 
-	return iterateNewVictims(victimTasks, relevantCacheData, func(task *pod_info.PodInfo) {
+	previousCacheHits := 0
+	if victimsDelta.Monotonic {
+		previousCacheHits = len(relevantCacheData)
+	}
+	return previousCacheHits + iterateNewVictims(victimsDelta.Tasks, relevantCacheData, func(task *pod_info.PodInfo) {
 		minIdleGpusRelevant = ig.updateWithVictim(task, minIdleGpusRelevant)
 	})
 }
