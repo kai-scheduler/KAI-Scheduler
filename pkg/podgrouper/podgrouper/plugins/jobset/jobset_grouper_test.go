@@ -6,33 +6,33 @@ package jobset
 import (
 	"testing"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	schedulingv2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
 )
 
 const (
-	queueLabelKey              = "kai.scheduler/queue"
-	nodePoolLabelKey           = "kai.scheduler/node-pool"
-	jobSetLabelJobIndexForTest = "jobset.sigs.k8s.io/job-index"
+	queueLabelKey    = "kai.scheduler/queue"
+	nodePoolLabelKey = "kai.scheduler/node-pool"
 )
 
 // baseJobSet creates a minimal JobSet unstructured object for testing.
 func baseJobSet(name, namespace, uid string, replicatedJobs []map[string]interface{}) *unstructured.Unstructured {
-	// Convert []map[string]interface{} to []interface{} for unstructured.NestedSlice
 	rjSlice := make([]interface{}, len(replicatedJobs))
 	for i, rj := range replicatedJobs {
 		rjSlice[i] = rj
 	}
-
-	js := &unstructured.Unstructured{
+	return &unstructured.Unstructured{
 		Object: map[string]interface{}{
 			"kind":       "JobSet",
 			"apiVersion": "jobset.x-k8s.io/v1alpha2",
@@ -40,20 +40,15 @@ func baseJobSet(name, namespace, uid string, replicatedJobs []map[string]interfa
 				"name":      name,
 				"namespace": namespace,
 				"uid":       uid,
-				"labels": map[string]interface{}{
-					"test-label": "test-value",
-				},
 			},
 			"spec": map[string]interface{}{
 				"replicatedJobs": rjSlice,
 			},
 		},
 	}
-	return js
 }
 
-// replicatedJob creates a replicatedJob entry for JobSet spec.
-func replicatedJob(name string, replicas int64, parallelism int64) map[string]interface{} {
+func replicatedJob(name string, replicas, parallelism int64) map[string]interface{} {
 	return map[string]interface{}{
 		"name":     name,
 		"replicas": replicas,
@@ -65,16 +60,32 @@ func replicatedJob(name string, replicas int64, parallelism int64) map[string]in
 	}
 }
 
-// podWithJobSetLabels creates a Pod with JobSet labels.
+// replicatedJobWithTemplateAnnotation adds the batch-min-member annotation to
+// the Job template metadata.
+func replicatedJobWithTemplateAnnotation(name string, replicas, parallelism int64, annotationValue string) map[string]interface{} {
+	rj := replicatedJob(name, replicas, parallelism)
+	rj["template"].(map[string]interface{})["metadata"] = map[string]interface{}{
+		"annotations": map[string]interface{}{
+			constants.MinMemberOverrideKey: annotationValue,
+		},
+	}
+	return rj
+}
+
+func setStartupPolicy(js *unstructured.Unstructured, order string) {
+	js.Object["spec"].(map[string]interface{})["startupPolicy"] = map[string]interface{}{
+		"startupPolicyOrder": order,
+	}
+}
+
 func podWithJobSetLabels(name, namespace, replicatedJobName, jobIndex string) *v1.Pod {
 	return &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
 			Labels: map[string]string{
-				jobSetLabelJobSetName:        "my-jobset",
 				jobSetLabelReplicatedJobName: replicatedJobName,
-				jobSetLabelJobIndexForTest:   jobIndex,
+				jobSetLabelJobIndex:          jobIndex,
 				queueLabelKey:                "test-queue",
 			},
 		},
@@ -85,256 +96,326 @@ func newJobSetGrouper(t *testing.T) *JobSetGrouper {
 	t.Helper()
 	scheme := runtime.NewScheme()
 	require.NoError(t, schedulingv2.AddToScheme(scheme))
-	client := fake.NewClientBuilder().WithScheme(scheme).Build()
-	defaultGrouper := defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, client)
-	return NewJobSetGrouper(defaultGrouper)
+	c := fake.NewClientBuilder().WithScheme(scheme).Build()
+	return NewJobSetGrouper(defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, c))
 }
 
-func TestGetPodGroupMetadata_Basic(t *testing.T) {
-	jobSet := baseJobSet("my-jobset", "default", "jobset-uid-123", []map[string]interface{}{
+// findSubGroup returns the SubGroup with the given name, or nil.
+func findSubGroup(meta *podgroup.Metadata, name string) *podgroup.SubGroupMetadata {
+	for _, sg := range meta.SubGroups {
+		if sg.Name == name {
+			return sg
+		}
+	}
+	return nil
+}
+
+func TestSingleReplicatedJobSingleReplica(t *testing.T) {
+	js := baseJobSet("js", "default", "uid", []map[string]interface{}{
+		replicatedJob("worker", 1, 4),
+	})
+	pod := podWithJobSetLabels("p", "default", "worker", "0")
+
+	meta, err := newJobSetGrouper(t).GetPodGroupMetadata(js, pod)
+	require.NoError(t, err)
+
+	assert.Equal(t, "pg-js-uid", meta.Name)
+	require.NotNil(t, meta.MinSubGroup)
+	// InOrder is the JobSet default → root MinSubGroup = 1.
+	assert.Equal(t, int32(1), *meta.MinSubGroup)
+
+	require.Len(t, meta.SubGroups, 2)
+	parent := findSubGroup(meta, "worker")
+	require.NotNil(t, parent)
+	require.NotNil(t, parent.MinSubGroup)
+	assert.Equal(t, int32(1), *parent.MinSubGroup)
+	assert.Nil(t, parent.Parent)
+
+	leaf := findSubGroup(meta, "worker-replica-0")
+	require.NotNil(t, leaf)
+	require.NotNil(t, leaf.Parent)
+	assert.Equal(t, "worker", *leaf.Parent)
+	assert.Equal(t, int32(4), leaf.MinAvailable)
+	assert.Contains(t, leaf.PodsReferences, "p")
+}
+
+func TestSingleReplicatedJobMultipleReplicas(t *testing.T) {
+	js := baseJobSet("js", "default", "uid", []map[string]interface{}{
+		replicatedJob("worker", 3, 4),
+	})
+	pod := podWithJobSetLabels("p", "default", "worker", "2")
+
+	meta, err := newJobSetGrouper(t).GetPodGroupMetadata(js, pod)
+	require.NoError(t, err)
+
+	// 1 parent + 3 leaves.
+	require.Len(t, meta.SubGroups, 4)
+	parent := findSubGroup(meta, "worker")
+	require.NotNil(t, parent)
+	require.NotNil(t, parent.MinSubGroup)
+	assert.Equal(t, int32(3), *parent.MinSubGroup)
+
+	for i := 0; i < 3; i++ {
+		leaf := findSubGroup(meta, "worker-replica-"+itoa(i))
+		require.NotNil(t, leaf, "leaf worker-replica-%d", i)
+		assert.Equal(t, int32(4), leaf.MinAvailable)
+		require.NotNil(t, leaf.Parent)
+		assert.Equal(t, "worker", *leaf.Parent)
+	}
+	leaf := findSubGroup(meta, "worker-replica-2")
+	require.NotNil(t, leaf)
+	assert.Contains(t, leaf.PodsReferences, "p")
+}
+
+func TestMultipleReplicatedJobsAnyOrder(t *testing.T) {
+	js := baseJobSet("js", "default", "uid", []map[string]interface{}{
+		replicatedJob("leader", 1, 1),
 		replicatedJob("worker", 2, 4),
 	})
-	pod := podWithJobSetLabels("my-jobset-worker-0-pod-abc", "default", "worker", "0")
-	jobSetGrouper := newJobSetGrouper(t)
+	setStartupPolicy(js, "AnyOrder")
+	pod := podWithJobSetLabels("p", "default", "worker", "0")
 
-	pgMeta, err := jobSetGrouper.GetPodGroupMetadata(jobSet, pod)
-
+	meta, err := newJobSetGrouper(t).GetPodGroupMetadata(js, pod)
 	require.NoError(t, err)
-	assert.Equal(t, "pg-my-jobset-jobset-uid-123-worker", pgMeta.Name)
-	assert.Equal(t, int32(1), pgMeta.MinAvailable)
-	assert.Equal(t, "test-queue", pgMeta.Queue)
-	assert.Equal(t, "JobSet", pgMeta.Owner.Kind)
-	assert.Equal(t, "jobset.x-k8s.io/v1alpha2", pgMeta.Owner.APIVersion)
-	assert.Equal(t, "my-jobset", pgMeta.Owner.Name)
-	assert.Equal(t, "jobset-uid-123", string(pgMeta.Owner.UID))
+
+	require.NotNil(t, meta.MinSubGroup)
+	assert.Equal(t, int32(2), *meta.MinSubGroup, "root MinSubGroup = len(replicatedJobs) for AnyOrder")
 }
 
-func TestGetPodGroupMetadata_MultipleReplicatedJobs(t *testing.T) {
-	jobSet := baseJobSet("multi-role-jobset", "default", "uid-456", []map[string]interface{}{
+func TestStartupPolicyInOrderRootMinSubGroup(t *testing.T) {
+	js := baseJobSet("js", "default", "uid", []map[string]interface{}{
 		replicatedJob("leader", 1, 1),
-		replicatedJob("worker", 3, 8),
+		replicatedJob("worker", 2, 4),
 	})
-	jobSetGrouper := newJobSetGrouper(t)
+	setStartupPolicy(js, startupPolicyOrderInOrder)
+	pod := podWithJobSetLabels("p", "default", "leader", "0")
 
-	leaderPod := podWithJobSetLabels("leader-pod", "default", "leader", "0")
-	leaderMeta, err := jobSetGrouper.GetPodGroupMetadata(jobSet, leaderPod)
+	meta, err := newJobSetGrouper(t).GetPodGroupMetadata(js, pod)
 	require.NoError(t, err)
-	assert.Equal(t, "pg-multi-role-jobset-uid-456-leader", leaderMeta.Name)
-	assert.Equal(t, int32(1), leaderMeta.MinAvailable)
-
-	workerPod := podWithJobSetLabels("worker-pod", "default", "worker", "1")
-	workerMeta, err := jobSetGrouper.GetPodGroupMetadata(jobSet, workerPod)
-	require.NoError(t, err)
-	assert.Equal(t, "pg-multi-role-jobset-uid-456-worker", workerMeta.Name)
-	assert.Equal(t, int32(1), workerMeta.MinAvailable)
-
-	workerPod2 := podWithJobSetLabels("worker-pod-2", "default", "worker", "2")
-	workerMeta2, err := jobSetGrouper.GetPodGroupMetadata(jobSet, workerPod2)
-	require.NoError(t, err)
-	assert.Equal(t, workerMeta.Name, workerMeta2.Name)
+	require.NotNil(t, meta.MinSubGroup)
+	assert.Equal(t, int32(1), *meta.MinSubGroup)
 }
 
-func TestGetPodGroupMetadata_MissingJobSetName(t *testing.T) {
-	jobSet := baseJobSet("", "default", "uid", []map[string]interface{}{
-		replicatedJob("worker", 1, 2),
+func TestJobSetAnnotationOverridesRoot(t *testing.T) {
+	js := baseJobSet("js", "default", "uid", []map[string]interface{}{
+		replicatedJob("a", 1, 1),
+		replicatedJob("b", 1, 1),
+		replicatedJob("c", 1, 1),
 	})
-	pod := podWithJobSetLabels("pod", "default", "worker", "0")
-	jobSetGrouper := newJobSetGrouper(t)
+	setStartupPolicy(js, "AnyOrder")
+	js.SetAnnotations(map[string]string{constants.MinMemberOverrideKey: "2"})
+	pod := podWithJobSetLabels("p", "default", "a", "0")
 
-	_, err := jobSetGrouper.GetPodGroupMetadata(jobSet, pod)
+	meta, err := newJobSetGrouper(t).GetPodGroupMetadata(js, pod)
+	require.NoError(t, err)
+	require.NotNil(t, meta.MinSubGroup)
+	assert.Equal(t, int32(2), *meta.MinSubGroup)
+}
+
+func TestJobSetAnnotationClampedToReplicatedJobCount(t *testing.T) {
+	js := baseJobSet("js", "default", "uid", []map[string]interface{}{
+		replicatedJob("a", 1, 1),
+		replicatedJob("b", 1, 1),
+	})
+	js.SetAnnotations(map[string]string{constants.MinMemberOverrideKey: "9"})
+	pod := podWithJobSetLabels("p", "default", "a", "0")
+
+	meta, err := newJobSetGrouper(t).GetPodGroupMetadata(js, pod)
+	require.NoError(t, err)
+	require.NotNil(t, meta.MinSubGroup)
+	assert.Equal(t, int32(2), *meta.MinSubGroup, "clamped to len(replicatedJobs)")
+}
+
+func TestJobSetAnnotationWinsOverInOrder(t *testing.T) {
+	js := baseJobSet("js", "default", "uid", []map[string]interface{}{
+		replicatedJob("a", 1, 1),
+		replicatedJob("b", 1, 1),
+	})
+	setStartupPolicy(js, startupPolicyOrderInOrder)
+	js.SetAnnotations(map[string]string{constants.MinMemberOverrideKey: "2"})
+	pod := podWithJobSetLabels("p", "default", "a", "0")
+
+	meta, err := newJobSetGrouper(t).GetPodGroupMetadata(js, pod)
+	require.NoError(t, err)
+	require.NotNil(t, meta.MinSubGroup)
+	assert.Equal(t, int32(2), *meta.MinSubGroup)
+}
+
+func TestJobSetAnnotationUnparseable(t *testing.T) {
+	js := baseJobSet("js", "default", "uid", []map[string]interface{}{
+		replicatedJob("a", 1, 1),
+	})
+	js.SetAnnotations(map[string]string{constants.MinMemberOverrideKey: "not-an-int"})
+	pod := podWithJobSetLabels("p", "default", "a", "0")
+
+	_, err := newJobSetGrouper(t).GetPodGroupMetadata(js, pod)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "missing name or UID")
+	assert.Contains(t, err.Error(), constants.MinMemberOverrideKey)
 }
 
-func TestGetPodGroupMetadata_MissingJobSetUID(t *testing.T) {
-	jobSet := baseJobSet("my-jobset", "default", "", []map[string]interface{}{
-		replicatedJob("worker", 1, 2),
+func TestJobSetAnnotationBelowOne(t *testing.T) {
+	js := baseJobSet("js", "default", "uid", []map[string]interface{}{
+		replicatedJob("a", 1, 1),
 	})
-	pod := podWithJobSetLabels("pod", "default", "worker", "0")
-	jobSetGrouper := newJobSetGrouper(t)
+	js.SetAnnotations(map[string]string{constants.MinMemberOverrideKey: "0"})
+	pod := podWithJobSetLabels("p", "default", "a", "0")
 
-	_, err := jobSetGrouper.GetPodGroupMetadata(jobSet, pod)
+	_, err := newJobSetGrouper(t).GetPodGroupMetadata(js, pod)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "missing name or UID")
+	assert.Contains(t, err.Error(), ">= 1")
 }
 
-func TestGetPodGroupMetadata_MissingReplicatedJobLabel(t *testing.T) {
-	jobSet := baseJobSet("my-jobset", "default", "uid", []map[string]interface{}{
+func TestTemplateAnnotationOverridesLeafMinMember(t *testing.T) {
+	js := baseJobSet("js", "default", "uid", []map[string]interface{}{
+		replicatedJobWithTemplateAnnotation("worker", 2, 8, "5"),
+	})
+	pod := podWithJobSetLabels("p", "default", "worker", "0")
+
+	meta, err := newJobSetGrouper(t).GetPodGroupMetadata(js, pod)
+	require.NoError(t, err)
+
+	leaf := findSubGroup(meta, "worker-replica-0")
+	require.NotNil(t, leaf)
+	assert.Equal(t, int32(5), leaf.MinAvailable)
+}
+
+func TestTemplateAnnotationGreaterThanParallelismAccepted(t *testing.T) {
+	// Greater than parallelism is logged and applied.
+	js := baseJobSet("js", "default", "uid", []map[string]interface{}{
+		replicatedJobWithTemplateAnnotation("worker", 1, 2, "10"),
+	})
+	pod := podWithJobSetLabels("p", "default", "worker", "0")
+
+	meta, err := newJobSetGrouper(t).GetPodGroupMetadata(js, pod)
+	require.NoError(t, err)
+	leaf := findSubGroup(meta, "worker-replica-0")
+	require.NotNil(t, leaf)
+	assert.Equal(t, int32(10), leaf.MinAvailable)
+}
+
+func TestTemplateAnnotationUnparseable(t *testing.T) {
+	js := baseJobSet("js", "default", "uid", []map[string]interface{}{
+		replicatedJobWithTemplateAnnotation("worker", 1, 2, "abc"),
+	})
+	pod := podWithJobSetLabels("p", "default", "worker", "0")
+
+	_, err := newJobSetGrouper(t).GetPodGroupMetadata(js, pod)
+	require.Error(t, err)
+}
+
+func TestTemplateAnnotationBelowOne(t *testing.T) {
+	js := baseJobSet("js", "default", "uid", []map[string]interface{}{
+		replicatedJobWithTemplateAnnotation("worker", 1, 2, "0"),
+	})
+	pod := podWithJobSetLabels("p", "default", "worker", "0")
+
+	_, err := newJobSetGrouper(t).GetPodGroupMetadata(js, pod)
+	require.Error(t, err)
+}
+
+func TestPodMissingReplicatedJobLabel(t *testing.T) {
+	js := baseJobSet("js", "default", "uid", []map[string]interface{}{
 		replicatedJob("worker", 1, 2),
 	})
 	pod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "pod",
+			Name:      "p",
 			Namespace: "default",
-			Labels: map[string]string{
-				jobSetLabelJobSetName:      "my-jobset",
-				jobSetLabelJobIndexForTest: "0",
-			},
+			Labels:    map[string]string{jobSetLabelJobIndex: "0"},
 		},
 	}
-	jobSetGrouper := newJobSetGrouper(t)
-
-	_, err := jobSetGrouper.GetPodGroupMetadata(jobSet, pod)
+	_, err := newJobSetGrouper(t).GetPodGroupMetadata(js, pod)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), jobSetLabelReplicatedJobName)
 }
 
-func TestGetPodGroupMetadata_DefaultGrouperIntegration(t *testing.T) {
-	jobSet := baseJobSet("integrated", "test-ns", "uid-integ", []map[string]interface{}{
-		replicatedJob("worker", 1, 3),
-	})
-	pod := podWithJobSetLabels("pod", "test-ns", "worker", "0")
-	pod.Labels[queueLabelKey] = "custom-queue"
-	jobSetGrouper := newJobSetGrouper(t)
-
-	pgMeta, err := jobSetGrouper.GetPodGroupMetadata(jobSet, pod)
-	require.NoError(t, err)
-
-	assert.Equal(t, "pg-integrated-uid-integ-worker", pgMeta.Name)
-	assert.Equal(t, int32(1), pgMeta.MinAvailable)
-	assert.Equal(t, "custom-queue", pgMeta.Queue)
-	assert.Equal(t, "test-ns", pgMeta.Namespace)
-	assert.Equal(t, "JobSet", pgMeta.Owner.Kind)
-	assert.Equal(t, "jobset.x-k8s.io/v1alpha2", pgMeta.Owner.APIVersion)
-}
-
-func TestGetPodGroupMetadata_NameUniqueness(t *testing.T) {
-	jobSet := baseJobSet("unique", "default", "uid-unique", []map[string]interface{}{
-		replicatedJob("worker", 2, 4),
-	})
-	jobSetGrouper := newJobSetGrouper(t)
-
-	pod0 := podWithJobSetLabels("pod-0", "default", "worker", "0")
-	pod1 := podWithJobSetLabels("pod-1", "default", "worker", "1")
-
-	meta0, err := jobSetGrouper.GetPodGroupMetadata(jobSet, pod0)
-	require.NoError(t, err)
-	meta1, err := jobSetGrouper.GetPodGroupMetadata(jobSet, pod1)
-	require.NoError(t, err)
-
-	assert.Equal(t, meta0.Name, meta1.Name)
-	assert.Equal(t, "pg-unique-uid-unique-worker", meta0.Name)
-	assert.Equal(t, int32(1), meta0.MinAvailable)
-	assert.Equal(t, int32(1), meta1.MinAvailable)
-}
-
-func TestGetPodGroupMetadata_StartupPolicyOrderInOrder(t *testing.T) {
-	jobSet := baseJobSet("inorder-jobset", "default", "uid-inorder", []map[string]interface{}{
-		replicatedJob("leader", 1, 1),
-		replicatedJob("worker", 2, 4),
-	})
-	jobSet.Object["spec"].(map[string]interface{})["startupPolicy"] = map[string]interface{}{
-		"startupPolicyOrder": startupPolicyOrderInOrder,
-	}
-	jobSetGrouper := newJobSetGrouper(t)
-
-	leaderPod := podWithJobSetLabels("leader-pod", "default", "leader", "0")
-	leaderMeta, err := jobSetGrouper.GetPodGroupMetadata(jobSet, leaderPod)
-	require.NoError(t, err)
-	assert.Equal(t, "pg-inorder-jobset-uid-inorder-leader", leaderMeta.Name)
-	assert.Equal(t, int32(1), leaderMeta.MinAvailable)
-
-	workerPod := podWithJobSetLabels("worker-pod", "default", "worker", "0")
-	workerMeta, err := jobSetGrouper.GetPodGroupMetadata(jobSet, workerPod)
-	require.NoError(t, err)
-	assert.Equal(t, "pg-inorder-jobset-uid-inorder-worker", workerMeta.Name)
-	assert.Equal(t, int32(1), workerMeta.MinAvailable)
-}
-
-func TestGetPodGroupMetadata_StartupPolicyOrderNotInOrder(t *testing.T) {
-	jobSet := baseJobSet("anyorder-jobset", "default", "uid-anyorder", []map[string]interface{}{
-		replicatedJob("leader", 1, 1),
-		replicatedJob("worker", 2, 4),
-	})
-	jobSet.Object["spec"].(map[string]interface{})["startupPolicy"] = map[string]interface{}{
-		"startupPolicyOrder": "AnyOrder",
-	}
-	jobSetGrouper := newJobSetGrouper(t)
-
-	leaderPod := podWithJobSetLabels("leader-pod", "default", "leader", "0")
-	leaderMeta, err := jobSetGrouper.GetPodGroupMetadata(jobSet, leaderPod)
-	require.NoError(t, err)
-	assert.Equal(t, "pg-anyorder-jobset-uid-anyorder", leaderMeta.Name)
-	assert.Equal(t, int32(1), leaderMeta.MinAvailable)
-
-	workerPod := podWithJobSetLabels("worker-pod", "default", "worker", "0")
-	workerMeta, err := jobSetGrouper.GetPodGroupMetadata(jobSet, workerPod)
-	require.NoError(t, err)
-	assert.Equal(t, "pg-anyorder-jobset-uid-anyorder", workerMeta.Name)
-	assert.Equal(t, leaderMeta.Name, workerMeta.Name)
-	assert.Equal(t, int32(1), workerMeta.MinAvailable)
-}
-
-func TestGetPodGroupMetadata_MinMemberOverride(t *testing.T) {
-	jobSet := baseJobSet("override-jobset", "default", "uid-override", []map[string]interface{}{
-		replicatedJob("worker", 2, 4),
-	})
-	jobSet.SetAnnotations(map[string]string{
-		"kai.scheduler/batch-min-member": "3",
-	})
-	pod := podWithJobSetLabels("pod", "default", "worker", "0")
-	jobSetGrouper := newJobSetGrouper(t)
-
-	pgMeta, err := jobSetGrouper.GetPodGroupMetadata(jobSet, pod)
-	require.NoError(t, err)
-	assert.Equal(t, int32(3), pgMeta.MinAvailable)
-}
-
-func TestGetPodGroupMetadata_MinMemberOverrideAnyOrder(t *testing.T) {
-	jobSet := baseJobSet("override-anyorder", "default", "uid-override-any", []map[string]interface{}{
-		replicatedJob("leader", 1, 1),
-		replicatedJob("worker", 2, 4),
-	})
-	jobSet.Object["spec"].(map[string]interface{})["startupPolicy"] = map[string]interface{}{
-		"startupPolicyOrder": "AnyOrder",
-	}
-	jobSet.SetAnnotations(map[string]string{
-		"kai.scheduler/batch-min-member": "5",
-	})
-	pod := podWithJobSetLabels("pod", "default", "worker", "0")
-	jobSetGrouper := newJobSetGrouper(t)
-
-	pgMeta, err := jobSetGrouper.GetPodGroupMetadata(jobSet, pod)
-	require.NoError(t, err)
-	assert.Equal(t, int32(5), pgMeta.MinAvailable)
-}
-
-func TestGetPodGroupMetadata_MinMemberOverrideInvalid(t *testing.T) {
-	jobSet := baseJobSet("invalid-override", "default", "uid-invalid", []map[string]interface{}{
+func TestPodMissingJobIndexLabel(t *testing.T) {
+	js := baseJobSet("js", "default", "uid", []map[string]interface{}{
 		replicatedJob("worker", 1, 2),
 	})
-	jobSet.SetAnnotations(map[string]string{
-		"kai.scheduler/batch-min-member": "not-a-number",
-	})
-	pod := podWithJobSetLabels("pod", "default", "worker", "0")
-	jobSetGrouper := newJobSetGrouper(t)
-
-	_, err := jobSetGrouper.GetPodGroupMetadata(jobSet, pod)
+	pod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "p",
+			Namespace: "default",
+			Labels:    map[string]string{jobSetLabelReplicatedJobName: "worker"},
+		},
+	}
+	_, err := newJobSetGrouper(t).GetPodGroupMetadata(js, pod)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid")
+	assert.Contains(t, err.Error(), jobSetLabelJobIndex)
 }
 
-func TestGetPodGroupMetadata_NoMinMemberOverride(t *testing.T) {
-	jobSet := baseJobSet("no-override", "default", "uid-no-override", []map[string]interface{}{
-		replicatedJob("worker", 2, 4),
+func TestPodRoutingFindsCorrectLeaf(t *testing.T) {
+	js := baseJobSet("js", "default", "uid", []map[string]interface{}{
+		replicatedJob("leader", 1, 1),
+		replicatedJob("worker", 3, 4),
 	})
-	pod := podWithJobSetLabels("pod", "default", "worker", "0")
-	jobSetGrouper := newJobSetGrouper(t)
+	g := newJobSetGrouper(t)
 
-	pgMeta, err := jobSetGrouper.GetPodGroupMetadata(jobSet, pod)
+	leaderPod := podWithJobSetLabels("leader-pod", "default", "leader", "0")
+	meta, err := g.GetPodGroupMetadata(js, leaderPod)
 	require.NoError(t, err)
-	assert.Equal(t, int32(1), pgMeta.MinAvailable)
+	leaderLeaf := findSubGroup(meta, "leader-replica-0")
+	require.NotNil(t, leaderLeaf)
+	assert.Equal(t, []string{"leader-pod"}, leaderLeaf.PodsReferences)
+	assert.Empty(t, findSubGroup(meta, "worker-replica-1").PodsReferences)
+
+	workerPod := podWithJobSetLabels("worker-pod", "default", "worker", "1")
+	meta, err = g.GetPodGroupMetadata(js, workerPod)
+	require.NoError(t, err)
+	workerLeaf := findSubGroup(meta, "worker-replica-1")
+	require.NotNil(t, workerLeaf)
+	assert.Equal(t, []string{"worker-pod"}, workerLeaf.PodsReferences)
 }
 
-func TestGetPodGroupMetadata_StartupPolicyOrderDefault(t *testing.T) {
-	jobSet := baseJobSet("default-order-jobset", "default", "uid-default", []map[string]interface{}{
-		replicatedJob("worker", 2, 4),
-	})
-	pod := podWithJobSetLabels("pod", "default", "worker", "0")
-	jobSetGrouper := newJobSetGrouper(t)
+func TestEmptyReplicatedJobs(t *testing.T) {
+	js := baseJobSet("js", "default", "uid", []map[string]interface{}{})
+	pod := podWithJobSetLabels("p", "default", "worker", "0")
 
-	pgMeta, err := jobSetGrouper.GetPodGroupMetadata(jobSet, pod)
+	_, err := newJobSetGrouper(t).GetPodGroupMetadata(js, pod)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no replicatedJobs")
+}
+
+func TestRootMinSubGroupNotMinAvailable(t *testing.T) {
+	// Sanity: confirm we set MinSubGroup (not MinAvailable) at the root.
+	js := baseJobSet("js", "default", "uid", []map[string]interface{}{
+		replicatedJob("worker", 1, 1),
+	})
+	pod := podWithJobSetLabels("p", "default", "worker", "0")
+	meta, err := newJobSetGrouper(t).GetPodGroupMetadata(js, pod)
 	require.NoError(t, err)
-	assert.Equal(t, "pg-default-order-jobset-uid-default-worker", pgMeta.Name)
-	assert.Equal(t, int32(1), pgMeta.MinAvailable)
+	assert.Equal(t, int32(0), meta.MinAvailable)
+	assert.NotNil(t, meta.MinSubGroup)
+}
+
+func TestReplicasDefaultsToOne(t *testing.T) {
+	js := baseJobSet("js", "default", "uid", []map[string]interface{}{
+		{
+			"name": "worker",
+			"template": map[string]interface{}{
+				"spec": map[string]interface{}{"parallelism": int64(2)},
+			},
+		},
+	})
+	pod := podWithJobSetLabels("p", "default", "worker", "0")
+
+	meta, err := newJobSetGrouper(t).GetPodGroupMetadata(js, pod)
+	require.NoError(t, err)
+	parent := findSubGroup(meta, "worker")
+	require.NotNil(t, parent)
+	assert.Equal(t, ptr.To(int32(1)), parent.MinSubGroup)
+}
+
+// itoa is a small helper to avoid importing strconv just for tests.
+func itoa(i int) string {
+	if i == 0 {
+		return "0"
+	}
+	digits := ""
+	for i > 0 {
+		digits = string(rune('0'+i%10)) + digits
+		i /= 10
+	}
+	return digits
 }
