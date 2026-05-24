@@ -128,7 +128,7 @@ func (s *JobSolver) searchMaxSolvableK(
 		}
 		lo = k
 		if k == n {
-			return k, maybeResult
+			return n, maybeResult
 		}
 		k *= 2
 		if k > n {
