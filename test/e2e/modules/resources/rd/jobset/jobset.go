@@ -55,8 +55,8 @@ func CreateSetWith2ReplicatedJobs(name, namespace, queueName, startupPolicyOrder
 								SchedulerName: testconfig.GetConfig().SchedulerName,
 								Containers: []corev1.Container{
 									{
-										Name:  "job1",
-										Image: testconfig.GetConfig().ContainerImage,
+										Name:    "job1",
+										Image:   testconfig.GetConfig().ContainerImage,
 										Command: []string{"sh", "-c", firstJobCommand},
 									},
 								},
@@ -79,8 +79,8 @@ func CreateSetWith2ReplicatedJobs(name, namespace, queueName, startupPolicyOrder
 								SchedulerName: testconfig.GetConfig().SchedulerName,
 								Containers: []corev1.Container{
 									{
-										Name:  "job2",
-										Image: testconfig.GetConfig().ContainerImage,
+										Name:    "job2",
+										Image:   testconfig.GetConfig().ContainerImage,
 										Command: []string{"sh", "-c", secondJobCommand},
 									},
 								},
