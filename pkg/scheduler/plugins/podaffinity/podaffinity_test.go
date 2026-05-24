@@ -85,7 +85,7 @@ var _ = Describe("Preferred Pod Affinity", func() {
 						Name:      "test-pod",
 						Namespace: "test",
 					},
-				}, nil, resource_info.NewResourceVectorMap()),
+				}, resource_info.NewResourceVectorMap()),
 				expectedScore: 0,
 			},
 			"Not fitting Pod Affinity": {
@@ -117,7 +117,7 @@ var _ = Describe("Preferred Pod Affinity", func() {
 						Name:      "test-pod",
 						Namespace: "test",
 					},
-				}, nil, resource_info.NewResourceVectorMap()),
+				}, resource_info.NewResourceVectorMap()),
 				expectedScore: 0,
 			},
 			"Matching Pod Affinity": {
@@ -153,7 +153,7 @@ var _ = Describe("Preferred Pod Affinity", func() {
 					Spec: v1.PodSpec{
 						Affinity: exampleAffinity.DeepCopy(),
 					},
-				}, nil, resource_info.NewResourceVectorMap()),
+				}, resource_info.NewResourceVectorMap()),
 				expectedScore: 2 * 10 * scores.K8sPlugins,
 			},
 		} {
@@ -193,7 +193,7 @@ func testPodPreferredAffinity(testData testInput, clusterAffinityInfo pod_affini
 	}
 	for _, pod := range testData.pods {
 		kubernetesObjects = append(kubernetesObjects, pod)
-		err := nodeInfos[pod.Spec.NodeName].AddTask(pod_info.NewTaskInfo(pod, nil, vectorMap))
+		err := nodeInfos[pod.Spec.NodeName].AddTask(pod_info.NewTaskInfo(pod, vectorMap))
 		Expect(err).To(Succeed(), "Expected to add task to node")
 	}
 	kubernetesObjects = append(kubernetesObjects, testData.task.Pod)

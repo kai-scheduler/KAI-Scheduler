@@ -48,7 +48,7 @@ func main() {
 		return
 	}
 
-	if err := log.InitLoggers(int(*verbosity)); err != nil {
+	if err := log.InitLoggers(int(*verbosity), false); err != nil {
 		fmt.Printf("Failed to initialize logger: %v", err)
 		return
 	}
@@ -83,6 +83,7 @@ func main() {
 		FullHierarchyFairness:       snapshot.SchedulerParams.FullHierarchyFairness,
 		AllowConsolidatingReclaim:   snapshot.SchedulerParams.AllowConsolidatingReclaim,
 		NumOfStatusRecordingWorkers: snapshot.SchedulerParams.NumOfStatusRecordingWorkers,
+		StuckInReleasingThreshold:   snapshot.SchedulerParams.StuckInReleasingThreshold,
 		DiscoveryClient:             kubeClient.Discovery(),
 	}
 

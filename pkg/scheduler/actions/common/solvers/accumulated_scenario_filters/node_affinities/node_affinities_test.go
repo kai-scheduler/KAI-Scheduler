@@ -87,7 +87,7 @@ func podWithNodeSelector(uid, name, jobID string, selector map[string]string) *p
 		Spec: v1.PodSpec{
 			NodeSelector: selector,
 		},
-	}, nil, resource_info.NewResourceVectorMap())
+	}, resource_info.NewResourceVectorMap())
 }
 
 func podWithNodeAffinity(uid, name, jobID, labelKey, labelValue string) *pod_info.PodInfo {
@@ -119,7 +119,7 @@ func podWithNodeAffinity(uid, name, jobID, labelKey, labelValue string) *pod_inf
 				},
 			},
 		},
-	}, nil, resource_info.NewResourceVectorMap())
+	}, resource_info.NewResourceVectorMap())
 }
 
 func podWithNodeAffinityMatchFields(uid, name, jobID, targetNodeName string) *pod_info.PodInfo {
@@ -151,7 +151,7 @@ func podWithNodeAffinityMatchFields(uid, name, jobID, targetNodeName string) *po
 				},
 			},
 		},
-	}, nil, resource_info.NewResourceVectorMap())
+	}, resource_info.NewResourceVectorMap())
 }
 
 func podWithPreferredNodeAffinityOnly(uid, name, jobID, labelKey, labelValue string, weight int32) *pod_info.PodInfo {
@@ -184,7 +184,7 @@ func podWithPreferredNodeAffinityOnly(uid, name, jobID, labelKey, labelValue str
 				},
 			},
 		},
-	}, nil, resource_info.NewResourceVectorMap())
+	}, resource_info.NewResourceVectorMap())
 }
 
 func podWithoutAffinity(uid, name, jobID string) *pod_info.PodInfo {
@@ -198,7 +198,7 @@ func podWithoutAffinity(uid, name, jobID string) *pod_info.PodInfo {
 			},
 		},
 		Spec: v1.PodSpec{},
-	}, nil, resource_info.NewResourceVectorMap())
+	}, resource_info.NewResourceVectorMap())
 }
 
 func victimPodOnNode(uid, name, jobID, nodeName string) *pod_info.PodInfo {
@@ -214,7 +214,7 @@ func victimPodOnNode(uid, name, jobID, nodeName string) *pod_info.PodInfo {
 		Spec: v1.PodSpec{
 			NodeName: nodeName,
 		},
-	}, nil, resource_info.NewResourceVectorMap())
+	}, resource_info.NewResourceVectorMap())
 }
 
 func TestNewNodeAffinitiesFilter_NilScenario(t *testing.T) {

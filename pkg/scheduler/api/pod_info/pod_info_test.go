@@ -22,6 +22,7 @@ package pod_info
 import (
 	"reflect"
 	"testing"
+	"time"
 
 	"gotest.tools/assert"
 	v1 "k8s.io/api/core/v1"
@@ -700,7 +701,9 @@ func TestNewTaskInfoWithBindRequest_ResourceClaimInfo(t *testing.T) {
 		},
 		Status: v1.PodStatus{Phase: v1.PodPending},
 	}
-	pi := NewTaskInfoWithBindRequest(pod, nil, []*resourceapi.ResourceClaim{draClaim}, resource_info.NewResourceVectorMap())
+	pi := NewTaskInfo(pod, resource_info.NewResourceVectorMap(), TaskInfoOptions{
+		DraPodClaims: []*resourceapi.ResourceClaim{draClaim},
+	})
 	assert.Assert(t, pi != nil)
 	assert.Equal(t, 1, len(pi.ResourceClaimInfo))
 	allocation, ok := pi.ResourceClaimInfo["gpu-claim"]
@@ -709,7 +712,7 @@ func TestNewTaskInfoWithBindRequest_ResourceClaimInfo(t *testing.T) {
 	assert.DeepEqual(t, alloc, allocation.Allocation)
 }
 
-func TestNewTaskInfoWithBindRequest_ResourceClaimInfo_BindRequestAllocationOverridesClaim(t *testing.T) {
+func TestNewTaskInfo_BindRequest_ResourceClaimInfo_BindRequestAllocationOverridesClaim(t *testing.T) {
 	claimAlloc := &resourceapi.AllocationResult{}
 	bindRequestAlloc := &resourceapi.AllocationResult{
 		Devices: resourceapi.DeviceAllocationResult{
@@ -755,7 +758,10 @@ func TestNewTaskInfoWithBindRequest_ResourceClaimInfo_BindRequestAllocationOverr
 	}
 	bindRequestInfo := bindrequest_info.NewBindRequestInfo(bindRequest)
 
-	pi := NewTaskInfoWithBindRequest(pod, bindRequestInfo, []*resourceapi.ResourceClaim{draClaim}, resource_info.NewResourceVectorMap())
+	pi := NewTaskInfo(pod, resource_info.NewResourceVectorMap(), TaskInfoOptions{
+		BindRequest:  bindRequestInfo,
+		DraPodClaims: []*resourceapi.ResourceClaim{draClaim},
+	})
 	assert.Assert(t, pi != nil)
 	assert.Equal(t, 1, len(pi.ResourceClaimInfo))
 	assert.Equal(t, "node1", pi.NodeName, "NodeName should come from BindRequest SelectedNode")
@@ -768,7 +774,7 @@ func TestNewTaskInfoWithBindRequest_ResourceClaimInfo_BindRequestAllocationOverr
 		"Allocation should be from BindRequest (node1/device 1), not claim status (empty)")
 }
 
-func TestNewTaskInfoWithBindRequest_ResourceClaimInfo_TemplateClaimSkippedWhenNotCreated(t *testing.T) {
+func TestNewTaskInfo_BindRequest_ResourceClaimInfo_TemplateClaimSkippedWhenNotCreated(t *testing.T) {
 	pod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{UID: types.UID("pod-uid"), Name: "p1", Namespace: "ns1"},
 		Spec: v1.PodSpec{
@@ -781,7 +787,9 @@ func TestNewTaskInfoWithBindRequest_ResourceClaimInfo_TemplateClaimSkippedWhenNo
 		},
 		Status: v1.PodStatus{Phase: v1.PodPending},
 	}
-	pi := NewTaskInfoWithBindRequest(pod, nil, nil, resource_info.NewResourceVectorMap())
+	pi := NewTaskInfo(pod, resource_info.NewResourceVectorMap(), TaskInfoOptions{
+		DraPodClaims: []*resourceapi.ResourceClaim{},
+	})
 	assert.Assert(t, pi != nil)
 	assert.Equal(t, 0, len(pi.ResourceClaimInfo))
 }
@@ -844,6 +852,37 @@ func TestPodInfo_ShouldAllocate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			pi := &PodInfo{Status: tt.status, IsVirtualStatus: tt.isVirtualStatus}
 			got := pi.ShouldAllocate(tt.isRealAllocation)
+			assert.Equal(t, tt.expected, got)
+		})
+	}
+}
+
+func TestGetTaskStatusStuckInReleasing(t *testing.T) {
+	now := metav1.Now()
+	fiveMinAgo := metav1.NewTime(now.Add(-5 * time.Minute))
+	thirtySecAgo := metav1.NewTime(now.Add(-30 * time.Second))
+
+	runningPod := func(deletionTime *metav1.Time) *v1.Pod {
+		return &v1.Pod{
+			Status:     v1.PodStatus{Phase: v1.PodRunning},
+			ObjectMeta: metav1.ObjectMeta{DeletionTimestamp: deletionTime},
+		}
+	}
+
+	tests := []struct {
+		name      string
+		pod       *v1.Pod
+		threshold time.Duration
+		expected  pod_status.PodStatus
+	}{
+		{name: "fresh deletion under threshold", pod: runningPod(&thirtySecAgo), threshold: 2 * time.Minute, expected: pod_status.Releasing},
+		{name: "old deletion over default threshold", pod: runningPod(&fiveMinAgo), threshold: 2 * time.Minute, expected: pod_status.StuckInReleasing},
+		{name: "old deletion under custom larger threshold", pod: runningPod(&fiveMinAgo), threshold: 10 * time.Minute, expected: pod_status.Releasing},
+		{name: "running without deletion", pod: runningPod(nil), threshold: 2 * time.Minute, expected: pod_status.Running},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := getTaskStatus(tt.pod, nil, tt.threshold)
 			assert.Equal(t, tt.expected, got)
 		})
 	}

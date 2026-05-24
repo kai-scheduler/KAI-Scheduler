@@ -16,6 +16,7 @@ global:
   tolerations: []
   namespaceLabelSelector: {}
   podLabelSelector: {}
+  jsonLog: false
   vpa:
     enabled: false
     updatePolicy:
@@ -170,6 +171,9 @@ admission:
   cdi: false
   gpuPodRuntimeClassName: nvidia
   affinity: {}
+  podDisruptionBudget:
+    enabled: true
+    maxUnavailable: 1
 
 nodescaleadjuster:
   image:

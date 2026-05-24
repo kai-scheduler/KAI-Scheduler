@@ -84,7 +84,7 @@ func TestSetStorageObjects(t *testing.T) {
 		Status: v1.PodStatus{
 			Phase: status.Running,
 		},
-	}, nil, resource_info.NewResourceVectorMap())
+	}, resource_info.NewResourceVectorMap())
 
 	existingPods := map[common_info.PodID]*pod_info.PodInfo{
 		common_info.PodID("owner-pod-id"): podInfo,
@@ -185,7 +185,7 @@ func TestSetStorageObjectsMultiplePVCs(t *testing.T) {
 				Status: v1.PodStatus{
 					Phase: status.Running,
 				},
-			}, nil, resource_info.NewResourceVectorMap()),
+			}, resource_info.NewResourceVectorMap()),
 	}
 
 	nodes := map[string]*node_info.NodeInfo{
@@ -291,7 +291,7 @@ func TestSetStorageObjects_ReleaseOwnedPVCs(t *testing.T) {
 				Status: v1.PodStatus{
 					Phase: status.Running,
 				},
-			}, nil, resource_info.NewResourceVectorMap()),
+			}, resource_info.NewResourceVectorMap()),
 	}
 
 	nodes := map[string]*node_info.NodeInfo{
