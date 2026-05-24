@@ -179,10 +179,7 @@ func DeploymentForKAIConfig(
 	return deployment, nil
 }
 
-func ShouldCreatePodDisruptionBudget(serviceName string, replicas *int32, service *kaiv1common.Service) bool {
-	if !PodDisruptionBudgetImplemented(serviceName) {
-		return false
-	}
+func ShouldCreatePodDisruptionBudget(replicas *int32, service *kaiv1common.Service) bool {
 	if replicas == nil || *replicas <= 1 {
 		return false
 	}
@@ -200,7 +197,7 @@ func PodDisruptionBudgetForKAIConfig(
 	replicas *int32,
 	service *kaiv1common.Service,
 ) (client.Object, error) {
-	if !ShouldCreatePodDisruptionBudget(resourceName, replicas, service) {
+	if !ShouldCreatePodDisruptionBudget(replicas, service) {
 		return nil, nil
 	}
 
