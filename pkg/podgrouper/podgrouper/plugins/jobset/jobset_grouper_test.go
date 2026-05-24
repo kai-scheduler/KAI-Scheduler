@@ -4,6 +4,8 @@
 package jobset
 
 import (
+	"fmt"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -121,7 +123,7 @@ func TestSingleReplicatedJobSingleReplica(t *testing.T) {
 
 	assert.Equal(t, "pg-js-uid", meta.Name)
 	require.NotNil(t, meta.MinSubGroup)
-	// InOrder is the JobSet default → root MinSubGroup = 1.
+	// AnyOrder is the JobSet default → root MinSubGroup = len(replicatedJobs) = 1.
 	assert.Equal(t, int32(1), *meta.MinSubGroup)
 
 	require.Len(t, meta.SubGroups, 2)
@@ -140,8 +142,9 @@ func TestSingleReplicatedJobSingleReplica(t *testing.T) {
 }
 
 func TestSingleReplicatedJobMultipleReplicas(t *testing.T) {
+	replicasCount := 3
 	js := baseJobSet("js", "default", "uid", []map[string]interface{}{
-		replicatedJob("worker", 3, 4),
+		replicatedJob("worker", int64(replicasCount), 4),
 	})
 	pod := podWithJobSetLabels("p", "default", "worker", "2")
 
@@ -149,14 +152,14 @@ func TestSingleReplicatedJobMultipleReplicas(t *testing.T) {
 	require.NoError(t, err)
 
 	// 1 parent + 3 leaves.
-	require.Len(t, meta.SubGroups, 4)
+	require.Len(t, meta.SubGroups, 1+replicasCount)
 	parent := findSubGroup(meta, "worker")
 	require.NotNil(t, parent)
 	require.NotNil(t, parent.MinSubGroup)
-	assert.Equal(t, int32(3), *parent.MinSubGroup)
+	assert.Equal(t, int32(replicasCount), *parent.MinSubGroup)
 
-	for i := 0; i < 3; i++ {
-		leaf := findSubGroup(meta, "worker-replica-"+itoa(i))
+	for i := 0; i < replicasCount; i++ {
+		leaf := findSubGroup(meta, fmt.Sprintf(replicasSubgroupNameFormat, "worker", strconv.Itoa(i)))
 		require.NotNil(t, leaf, "leaf worker-replica-%d", i)
 		assert.Equal(t, int32(4), leaf.MinAvailable)
 		require.NotNil(t, leaf.Parent)
@@ -172,7 +175,7 @@ func TestMultipleReplicatedJobsAnyOrder(t *testing.T) {
 		replicatedJob("leader", 1, 1),
 		replicatedJob("worker", 2, 4),
 	})
-	setStartupPolicy(js, "AnyOrder")
+	setStartupPolicy(js, startupPolicyOrderAnyOrder)
 	pod := podWithJobSetLabels("p", "default", "worker", "0")
 
 	meta, err := newJobSetGrouper(t).GetPodGroupMetadata(js, pod)
@@ -202,7 +205,7 @@ func TestJobSetAnnotationOverridesRoot(t *testing.T) {
 		replicatedJob("b", 1, 1),
 		replicatedJob("c", 1, 1),
 	})
-	setStartupPolicy(js, "AnyOrder")
+	setStartupPolicy(js, startupPolicyOrderAnyOrder)
 	js.SetAnnotations(map[string]string{constants.MinMemberOverrideKey: "2"})
 	pod := podWithJobSetLabels("p", "default", "a", "0")
 
@@ -405,17 +408,4 @@ func TestReplicasDefaultsToOne(t *testing.T) {
 	parent := findSubGroup(meta, "worker")
 	require.NotNil(t, parent)
 	assert.Equal(t, ptr.To(int32(1)), parent.MinSubGroup)
-}
-
-// itoa is a small helper to avoid importing strconv just for tests.
-func itoa(i int) string {
-	if i == 0 {
-		return "0"
-	}
-	digits := ""
-	for i > 0 {
-		digits = string(rune('0'+i%10)) + digits
-		i /= 10
-	}
-	return digits
 }
