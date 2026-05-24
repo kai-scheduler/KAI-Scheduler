@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 - Fixed post-delete cleanup hook hardcoding `kai-scheduler` namespace instead of Helm release namespace on `helm uninstall` [#1619](https://github.com/kai-scheduler/KAI-Scheduler/pull/1619) [dttung2905](https://github.com/dttung2905)
+- Fixed `kai_pod_group_evicted_pods_total` counter being inflated by gang size. The metric was incremented by `EvictionGangSize` (= N) on every per-pod eviction emit, so an N-pod gang eviction wrote N² to the counter instead of N (and a cross-PodGroup batch of size N inflated each PG's counter by `tasks_in_pg × N`). All eviction-emitting actions (preempt, reclaim, consolidation, stalegangeviction) were affected. [#1620](https://github.com/kai-scheduler/KAI-Scheduler/issues/1620)
 
 ## [v0.15.0] - 2026-05-20
 

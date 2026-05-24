@@ -123,7 +123,6 @@ func (su *defaultStatusUpdater) Evicted(
 		string(evictedPodGroup.UID),
 		nodepool,
 		evictionMetadata.Action,
-		evictionMetadata.EvictionGangSize,
 	)
 }
 
