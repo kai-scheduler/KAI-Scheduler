@@ -1,0 +1,28 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+suite: scheduler podDisruptionBudget in kai-config
+templates:
+  - kai-config.yaml
+tests:
+  - it: renders scheduler podDisruptionBudget from values
+    set:
+      scheduler.podDisruptionBudget:
+        enabled: true
+        maxUnavailable: 1
+    asserts:
+      - equal:
+          path: spec.scheduler.service.podDisruptionBudget.enabled
+          value: true
+      - equal:
+          path: spec.scheduler.service.podDisruptionBudget.maxUnavailable
+          value: 1
+
+  - it: renders disabled PDB without maxUnavailable when only enabled is set in test values
+    set:
+      scheduler.podDisruptionBudget:
+        enabled: false
+    asserts:
+      - equal:
+          path: spec.scheduler.service.podDisruptionBudget.enabled
+          value: false

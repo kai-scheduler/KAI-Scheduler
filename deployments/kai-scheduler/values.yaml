@@ -146,6 +146,11 @@ scheduler:
   #   mycustomaction:
   #     priority: 150
   actions: {}
+  # PDB is created only when scheduler replicas > 1 (global.replicaCount / scheduler.replicas).
+  # For HA: set operator.replicaCount: 2 (or override scheduler.replicas in Config).
+  podDisruptionBudget:
+    enabled: true
+    maxUnavailable: 1
 
 queuecontroller:
   enabled: true
