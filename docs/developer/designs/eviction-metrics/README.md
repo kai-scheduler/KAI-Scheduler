@@ -28,7 +28,7 @@ Today the metric records the underlying events but every standard query path is 
 1. **Single-eviction series are invisible to `rate()` / `increase()`.** Counters in Prometheus only have a defined rate from the second sample onward — a series born at value `N` reports `0` forever. Production data over a 24h window: `count(kai_pod_group_evicted_pods_total)` grew from 91 → 94 series, but `count(rate(...[5m]) > 0)` and `count(increase(...[1h]) > 0)` both stayed at 0. The new evictions are recorded but invisible to any rate-based dashboard or alert.
 2. **No owner-workload label.** To roll evictions up to a JobSet or Workspace, callers must `label_replace` with a regex on the PodGroup name (which encodes the topOwner UID). Fragile, and doesn't generalize across workload types.
 3. **`uid` label adds churn for no real benefit.** `{namespace, podgroup}` is already unique for a PG's lifetime, and the PG name already encodes the topOwner UID. The `uid` label only disambiguates the niche case of "PG deleted and recreated while topOwner UID stays the same," and every PG recreation today spawns a fresh series, amplifying problem #1.
-4. **Counts pods, not eviction events — and even the pod count appears inflated.** With variable gang sizes, "PG evicted twice, gang of 5 each" and "PG evicted once, gang of 10" should both increment the counter by 10, so the "events" question cannot be answered. While tracing the code we also believe the counter is being multiplied per-emit by the full gang size: a gang of N pods writes N² to the counter, not N. See [pods-counter-bug.md](pods-counter-bug.md) for the full walk-through. Maintainers can disagree with the reading; the fix proposed in this design replaces the broken emission regardless.
+4. **Counts pods, not eviction events.** With variable gang sizes, "PG evicted twice, gang of 5 each" and "PG evicted once, gang of 10" should both increment the counter by 10, so the "events" question cannot be answered.
 
 The PodGroup is an internal scheduler abstraction; the metric should let operators pivot to the workload view in one `sum by (...)`.
 
@@ -101,7 +101,7 @@ A per-subgroup event counter (`kai_pod_group_subgroup_eviction_events_total`) ca
 
 #### Per-pod increment for the pods counter
 
-The pods counter increments by **1 per pod evicted**, at the existing eviction emit point in the scheduler's status updater. The current behavior of adding `EvictionGangSize` on every emit is replaced: because the action layer loops over the gang and emits once per pod, the existing code effectively multiplies the count by gang size, which is not the operator-meaningful number.
+The pods counter increments by **1 per pod evicted**, at the existing eviction emit point in the scheduler's status updater.
 
 #### Per-(decision, PodGroup) increment for the events counter
 
@@ -118,9 +118,14 @@ So a decision evicting M pods across K distinct PodGroups produces M increments 
 
 #### Pre-initialization at 0
 
-When the scheduler first observes a PodGroup (cache event-handler `OnAdd`), both counters are initialized to 0 across all label combinations that can ever fire for that PG. In practice this means initializing the small set of `action` values for that PG, with empty `subgroup` for the events counter. The series is then born at 0 in Prometheus and a first eviction takes it `0 → N`, making `rate()` / `increase()` correct from the first eviction onward.
+When the scheduler first observes a PodGroup (cache event-handler `OnAdd`), both counters are initialized to 0 across all label combinations that can ever fire for that PG. The series is then born at 0 in Prometheus and a first eviction takes it `0 → N`, making `rate()` / `increase()` correct from the first eviction onward.
 
-Cardinality of pre-init is bounded by the number of active PGs (already tracked in the scheduler cache) × the number of `action` values.
+- **Events counter**: one series per `action` value (subgroup is not a label on this counter).
+- **Pods counter**: one series per `(action, leaf-subgroup)` combination. Leaf subgroups are declared upfront in `PodGroup.Spec.SubGroups`, so they can be enumerated at `OnAdd` time without waiting for pods. PodGroups with no `SubGroups` field pre-init a single `subgroup=""` series per action.
+
+Pre-initialization is essential for the per-subgroup pods counter: without it, a JobSet whose first eviction lands on leaf `r2` would have the `subgroup="r2"` series born at the eviction value, hitting the first-sample-invisible problem the design is meant to fix.
+
+Cardinality of pre-init is bounded by the active PG count × number of `action` values (× number of leaf subgroups per PG, for the pods counter).
 
 ## Worked examples
 
@@ -161,8 +166,8 @@ Single PG, `owner_kind=InferenceJob`, `owner_name=infer-y`. Pods counter has thr
 | `kai_pod_group_evicted_pods_total{subgroup="prefill"}` | 3 | |
 | `kai_pod_group_evicted_pods_total{subgroup="decode"}` | 4 | |
 | `kai_pod_group_evicted_pods_total{subgroup="preprocessor"}` | 1 | |
-| `sum by (owner_name)` | | **8 pods** |
-| `sum by (owner_name, subgroup)` | | exact role breakdown |
+| `sum by (owner_name) (kai_pod_group_evicted_pods_total)` | | **8 pods** |
+| `sum by (owner_name, subgroup) (kai_pod_group_evicted_pods_total)` | | exact role breakdown |
 | `kai_pod_group_eviction_events_total` | 1 | **1 event** |
 
 A subsequent decision that only takes down the `prefill` SubGroup increments `subgroup="prefill"` on the pods counter and the single event series on the events counter. No double-count anywhere.
@@ -249,12 +254,24 @@ sum by (action) (rate(kai_pod_group_eviction_events_total[5m]))
 
 ## Cardinality
 
-Worst-case series count per cluster, with `A` = number of `action` values (≤ 3), `P` = active PodGroups, `S̄` = average leaf SubGroups per PG (typically 1, ≤ 5):
+Series count per cluster, with `A` = number of eviction `action` values (4: `preempt`, `reclaim`, `consolidation`, `stalegangeviction`), `P` = active PodGroups, `L` = total leaf SubGroups across all PGs:
 
 - `kai_pod_group_eviction_events_total`: `A × P` series.
-- `kai_pod_group_evicted_pods_total`: `A × P × S̄` series.
+- `kai_pod_group_evicted_pods_total`: `A × L` series.
 
-For a cluster running 10,000 PodGroups (already an extreme), the events counter is ≤ 30k series and the pods counter is ≤ 150k series. Pre-initialization adds zero-valued series for PGs that never get evicted; the cost is bounded by the same `A × P` (and `A × P × S̄`) formula.
+`L` is workload-shape-dependent, not bounded by any single ceiling: a flat PG contributes 1 to `L`, a hierarchical PG with `k` leaves contributes `k`. Typical values: flat PGs (the common case today) give `L = P`; multi-replica JobSets post-[#1189](https://github.com/kai-scheduler/KAI-Scheduler/issues/1189) contribute one leaf per replica (single digits to low tens); inference pipelines contribute a handful of role-named leaves.
+
+For a cluster of 100,000 PodGroups (a realistic upper bound — clusters of this size are observed in practice, with most PGs pending), the events counter is ~400k series; the pods counter is ~400k for mostly-flat PG populations and a multiple of that for hierarchical workloads, in proportion to their average leaf count. Pre-initialization adds zero-valued series for PGs that never get evicted; the cost follows the same formulas.
+
+This sits within Prometheus's operational envelope at that cluster size — kube-state-metrics alone is already emitting multi-million-series volumes from per-pod and per-container metrics, so the eviction counters are a small fraction of the total.
+
+The honest trade-off operators should know about:
+
+- **Sample storage is cheap.** Prometheus TSDB uses Gorilla/XOR encoding for sample values; long sequences of identical values (the zero-init case until a first eviction) compress to near 1 bit per sample, so disk and ingest cost is minimal.
+- **In-memory head block cost is not free.** Each active series consumes ~3KB of head-block RAM regardless of sample volume. A zero-valued series costs the same memory as a busy one.
+- **Managed-Prometheus billing impact.** Grafana Cloud and most managed Prometheus offerings bill by active series count, not sample volume. Pre-initialized zero series therefore add to recurring billed cardinality even when no eviction has ever happened. Operators on managed plans should size accordingly.
+
+We accept this cost because there is no alternative that solves the "first-eviction invisible to `rate()` / `increase()`" problem (the whole motivation for this design) without pre-initialization. Skipping pre-init keeps the metric broken in exactly the way #1573 reports.
 
 For Deployments specifically, the per-pod PG model means `P` scales with pod count, not workload count. Operators querying by `owner_name` recover the workload view via aggregation — dashboards stay tractable.
 
@@ -266,24 +283,8 @@ For Deployments specifically, the per-pod PG model means `P` scales with pod cou
 | Add `owner_kind`, `owner_name`, `subgroup` | Additive | Changes series identity, but queries that `sum by (...)` without these labels keep working. |
 | Pre-init at 0 on first observe | Additive | New zero-valued series for never-evicted PGs. Cardinality bound = active PGs × actions. |
 | New `kai_pod_group_eviction_events_total` | Additive | No impact on existing consumers. |
-| Pods counter no longer scaled by `EvictionGangSize` | **Behavioral fix** | The counter now increments by 1 per pod evicted (correct), rather than by gang size (which produced N² growth in the per-pod loop). For consumers querying the existing metric this changes absolute values, but the previous values were not meaningful in any standard interpretation. CHANGELOG entry required. |
 
 Mitigation if `uid` removal is a concern: keep `uid` for one release behind a feature flag, then remove. Default to removed unless maintainers request otherwise.
-
-## Assumptions to validate
-
-This design rests on one remaining assumption about scheduler internals that comes from reading the code, not from end-to-end verification. Maintainer confirmation or correction would be appreciated before implementation; if it turns out to be wrong, the corresponding emission rule needs adjustment while the rest of the design (labels, aggregation properties, motivation) is unaffected.
-
-- **The current pods counter is effectively multiplied by gang size per eviction.** The per-pod loop in the preempt / reclaim / consolidation / stalegangeviction paths passes `EvictionGangSize = len(preempteeTasks)` on every iteration, and the cache's `Evicted()` adds that value to the counter on every call. A gang of N evicted pods therefore writes N² to the counter today. The full walk-through, affected actions, and the reasoning are in [pods-counter-bug.md](pods-counter-bug.md). The proposed "+1 per pod" rule in this design fixes it as a side effect.
-
-### Sequencing question for the bug
-
-We see two reasonable paths:
-
-1. **Fold the bug fix into this design PR.** The proposal already replaces the broken `+EvictionGangSize` behavior with `+1 per pod`. Single PR, single behavior change.
-2. **File a separate GitHub issue and fix it on a faster timeline**, then this redesign on top. Operators see correct pod-count values immediately, even before the workload-centric labels land.
-
-If maintainers prefer option 2, we'll open the issue (the content of [pods-counter-bug.md](pods-counter-bug.md) is ready to file as-is). Either path is fine on our side.
 
 ## Open issues / out of scope
 
@@ -322,4 +323,4 @@ The implementation lives in a follow-up PR; this document covers behavior and co
 
 Test coverage: unit tests for the new label shape, and an integration test that asserts `rate()` and `increase()` return non-zero for a workload that has been evicted exactly once.
 
-CHANGELOG entries are required for the `uid` removal and for the pods-counter behavioral fix (no longer multiplied by gang size).
+A CHANGELOG entry is required for the `uid` removal.
