@@ -105,16 +105,16 @@ For MPI workloads:
 - Use "Train" priority class by default
 
 ### JobSet Grouping
-For JobSet workloads:
-- When `startupPolicy.order` is "InOrder" (default):
-  - Creates one PodGroup per replicatedJob to avoid sequencing deadlocks
-  - PodGroup name: `pg-<jobset-name>-<jobset-uid>-<replicatedjob-name>`
-  - MinAvailable: `replicas * min(parallelism, completions if set)`
-- When `startupPolicy.order` is not "InOrder":
-  - Creates a single PodGroup for all replicatedJobs
-  - PodGroup name: `pg-<jobset-name>-<jobset-uid>`
-  - MinAvailable: sum of all replicatedJobs' minAvailable
-- Uses default priority class from DefaultGrouper
+For JobSet workloads, a single PodGroup is created per JobSet with a two-level SubGroup hierarchy: one parent SubGroup per replicatedJob and one leaf SubGroup per replica. Pods are routed to their leaf via the standard JobSet labels `jobset.sigs.k8s.io/replicatedjob-name` and `jobset.sigs.k8s.io/job-index`.
+
+- PodGroup name: `pg-<jobset-name>-<jobset-uid>`
+- Root `minSubGroup`:
+  - `1` when `spec.startupPolicy.startupPolicyOrder` is `InOrder` (the JobSet controller creates one replicatedJob at a time; the scheduler must not block waiting on pods that don't exist yet).
+  - `len(spec.replicatedJobs)` otherwise.
+  - The user has the option to overridable via the `kai.scheduler/batch-min-member` annotation on the JobSet; 
+- Per-replicatedJob parent SubGroup name: `<replicatedJob-name>`, with `minSubGroup = replicas`.
+- Per-replica leaf SubGroup name: `<replicatedJob-name>-replica-<job-index>`, with `minMember` defaulting to `template.spec.parallelism`. Override per replicatedJob by setting `kai.scheduler/batch-min-member` on `replicatedJobs[].template.metadata.annotations`; values exceeding `parallelism` are accepted and logged.
+- Uses default priority class from DefaultGrouper.
 
 ### Pod Grouping
 For pods with no owner, a "Train"-priority PodGroup with MinMember=1 is created.
