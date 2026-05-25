@@ -91,6 +91,7 @@ type SchedulerCacheParams struct {
 	AllowConsolidatingReclaim   bool
 	NumOfStatusRecordingWorkers int
 	UpdatePodEvictionCondition  bool
+	StuckInReleasingThreshold   time.Duration
 	DiscoveryClient             discovery.DiscoveryInterface
 }
 
@@ -110,10 +111,11 @@ type SchedulerCache struct {
 	Evictor       evictor.Interface
 	StatusUpdater status_updater.Interface
 
-	detailedFitErrors      bool
-	restrictNodeScheduling bool
-	scheduleCSIStorage     bool
-	fullHierarchyFairness  bool
+	detailedFitErrors         bool
+	restrictNodeScheduling    bool
+	scheduleCSIStorage        bool
+	fullHierarchyFairness     bool
+	stuckInReleasingThreshold time.Duration
 
 	internalPlugins *k8splugins.K8sPlugins
 
@@ -122,13 +124,14 @@ type SchedulerCache struct {
 
 func newSchedulerCache(schedulerCacheParams *SchedulerCacheParams) *SchedulerCache {
 	sc := &SchedulerCache{
-		schedulingNodePoolParams: schedulerCacheParams.NodePoolParams,
-		restrictNodeScheduling:   schedulerCacheParams.RestrictNodeScheduling,
-		detailedFitErrors:        schedulerCacheParams.DetailedFitErrors,
-		scheduleCSIStorage:       schedulerCacheParams.ScheduleCSIStorage,
-		fullHierarchyFairness:    schedulerCacheParams.FullHierarchyFairness,
-		kubeClient:               draversionawareclient.NewDRAAwareClient(schedulerCacheParams.KubeClient),
-		kubeAiSchedulerClient:    schedulerCacheParams.KAISchedulerClient,
+		schedulingNodePoolParams:  schedulerCacheParams.NodePoolParams,
+		restrictNodeScheduling:    schedulerCacheParams.RestrictNodeScheduling,
+		detailedFitErrors:         schedulerCacheParams.DetailedFitErrors,
+		scheduleCSIStorage:        schedulerCacheParams.ScheduleCSIStorage,
+		fullHierarchyFairness:     schedulerCacheParams.FullHierarchyFairness,
+		stuckInReleasingThreshold: schedulerCacheParams.StuckInReleasingThreshold,
+		kubeClient:                draversionawareclient.NewDRAAwareClient(schedulerCacheParams.KubeClient),
+		kubeAiSchedulerClient:     schedulerCacheParams.KAISchedulerClient,
 	}
 
 	schedulerName := schedulerCacheParams.SchedulerName
@@ -165,7 +168,7 @@ func newSchedulerCache(schedulerCacheParams *SchedulerCacheParams) *SchedulerCac
 	}
 
 	clusterInfo, err := cluster_info.New(sc.informerFactory, sc.kubeAiSchedulerInformerFactory, sc.usageLister, sc.schedulingNodePoolParams,
-		sc.restrictNodeScheduling, &sc.K8sClusterPodAffinityInfo, sc.scheduleCSIStorage, sc.fullHierarchyFairness, sc.StatusUpdater)
+		sc.restrictNodeScheduling, &sc.K8sClusterPodAffinityInfo, sc.scheduleCSIStorage, sc.fullHierarchyFairness, sc.StatusUpdater, sc.stuckInReleasingThreshold)
 
 	if err != nil {
 		log.InfraLogger.Errorf("Failed to create cluster info object: %v", err)
@@ -321,9 +324,21 @@ func (sc *SchedulerCache) createBindRequest(podInfo *pod_info.PodInfo, nodeName 
 		},
 	}
 
-	_, err := sc.kubeAiSchedulerClient.SchedulingV1alpha2().BindRequests(
+	createdBindRequest, err := sc.kubeAiSchedulerClient.SchedulingV1alpha2().BindRequests(
 		podInfo.Namespace).Create(context.TODO(), bindRequest, metav1.CreateOptions{})
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Expose scheduler-created BindRequests to the next snapshot before the informer watch catches up.
+	if err := sc.kubeAiSchedulerInformerFactory.Scheduling().V1alpha2().BindRequests().Informer().GetStore().Add(
+		createdBindRequest.DeepCopy(),
+	); err != nil {
+		log.InfraLogger.Warningf("Failed to add BindRequest <%s/%s> to informer store: %v",
+			createdBindRequest.Namespace, createdBindRequest.Name, err)
+	}
+
+	return nil
 }
 
 func (sc *SchedulerCache) getNodPoolName() string {

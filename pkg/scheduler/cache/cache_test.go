@@ -135,7 +135,7 @@ var _ = Describe("Cache", func() {
 					},
 				}
 
-				taskInfo := pod_info.NewTaskInfo(pod, nil, resource_info.NewResourceVectorMap())
+				taskInfo := pod_info.NewTaskInfo(pod, resource_info.NewResourceVectorMap())
 
 				err := cache.Bind(taskInfo, "node-1", map[string]string{})
 				Expect(err).To(HaveOccurred())

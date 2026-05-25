@@ -86,6 +86,7 @@ func NewScheduler(
 		FullHierarchyFairness:       schedulerParams.FullHierarchyFairness,
 		NumOfStatusRecordingWorkers: schedulerParams.NumOfStatusRecordingWorkers,
 		UpdatePodEvictionCondition:  schedulerParams.UpdatePodEvictionCondition,
+		StuckInReleasingThreshold:   schedulerParams.StuckInReleasingThreshold,
 		DiscoveryClient:             discoveryClient,
 	}
 

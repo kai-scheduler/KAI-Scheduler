@@ -140,6 +140,28 @@ func (a *Admission) serviceForKAIConfig(
 	return []client.Object{service}, nil
 }
 
+func (a *Admission) podDisruptionBudgetForKAIConfig(
+	ctx context.Context, runtimeClient client.Reader, kaiConfig *kaiv1.Config,
+) ([]client.Object, error) {
+	config := kaiConfig.Spec.Admission
+	pdbObj, err := common.PodDisruptionBudgetForKAIConfig(
+		ctx,
+		runtimeClient,
+		kaiConfig.Spec.Namespace,
+		a.BaseResourceName,
+		config.Replicas,
+		config.Service,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if pdbObj == nil {
+		return nil, nil
+	}
+
+	return []client.Object{pdbObj}, nil
+}
+
 func buildWebhookSelectors(kaiConfig *kaiv1.Config) (namespaceSelector *metav1.LabelSelector, objectSelector *metav1.LabelSelector) {
 	config := kaiConfig.Spec.Admission
 
@@ -369,8 +391,7 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1admission.Admission) []
 	}
 
 	common.AddK8sClientConfigToArgs(config.Service.K8sClientConfig, args)
-
-	return args
+	return common.AddControllerRuntimeJSONLogArg(kaiConfig.Spec.Global.JSONLog, args)
 }
 
 func isHamiCoreEnabled(kaiConfig *kaiv1.Config) bool {

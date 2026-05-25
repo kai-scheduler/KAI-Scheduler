@@ -7,6 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Added support for configuring admission Pod Disruption Budget via Helm values (`admission.podDisruptionBudget`) [#1490](https://github.com/kai-scheduler/KAI-Scheduler/pull/1490) [dttung2905](https://github.com/dttung2905)
+
+### Changed
+- Removed redundant `PodDisruptionBudgetImplemented` guard from operator PDB creation helper [#1613](https://github.com/kai-scheduler/KAI-Scheduler/pull/1613) [dttung2905](https://github.com/dttung2905)
+
+### Fixed
+
+## [v0.15.0] - 2026-05-20
+
+### Added
 - Added `enabled` Helm values for `binder`, `podgrouper`, `podgroupcontroller`, `queuecontroller`, `admission`, and `scheduler` to allow disabling individual components from values.yaml. Previously these were hardcoded to `true` in the kai-config template.
 - Added `prometheus.enabled` and `prometheus.externalPrometheusUrl` Helm values to configure Prometheus from values.yaml [#907](https://github.com/NVIDIA/KAI-Scheduler/issues/907)
 - Added validation for `subgroup` name in podgroup [faizanexe](https://github.com/faizan-exe)
@@ -16,9 +26,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The scheduler now implements elastic PodGroups on both the subgroup level (`minSubGroup`) and pods (`minAvailable`). This allows for elasticity on all of the podgroup tree hierarchy. [#1416](https://github.com/kai-scheduler/KAI-Scheduler/pull/1416) - [davidLif](https://github.com/davidLif)
 - Allow the configuration of plugins in the binder service. [#1480](https://github.com/kai-scheduler/KAI-Scheduler/pull/1480) - [davidLif](https://github.com/davidLif)
 - Added support for configuring scheduler log level and custom scheduler args via Helm values (`scheduler.args`) [#1452](https://github.com/kai-scheduler/KAI-Scheduler/pull/1452) [dttung2905](https://github.com/dttung2905)
+- Added `global.jsonLog` Helm value to enable JSON-formatted logging for use with log aggregation platforms
 - Added `crdupgrader.image.registry` Helm value to override `global.registry` for the `crd-upgrader` pre-install/pre-upgrade hook image, allowing the hook image to be served from a separate mirror without redirecting all chart images. [#1404](https://github.com/kai-scheduler/KAI-Scheduler/issues/1404)
 - Added an opt-in `hamicore` binder plugin (depends on `gpusharing`) to write the HAMI-core GPU memory limit (`CUDA_DEVICE_MEMORY_LIMIT`) for fractional GPU pods.
 - Added support for externally-created PodGroups. Workloads can opt out of podgrouper mutation with `kai.scheduler/skip-podgrouper: "true"` on the pod or owner chain, join an existing PodGroup via `pod-group-name`, and now get a pod condition when they reference a non-existent subgroup. [#1420](https://github.com/kai-scheduler/KAI-Scheduler/issues/1420)
+- Added `--stuck-in-releasing-threshold` scheduler flag (default `2m`) controlling how long a Running pod with a `deletionTimestamp` remains classified as `Releasing` before being reclassified as `StuckInReleasing` and excluded from pipelining. Configurable per shard via `SchedulingShard.spec.args.stuck-in-releasing-threshold`.
 
 ### Changed
 - **Breaking:** JobSet PodGroups no longer auto-calculate `minAvailable` from `parallelism × replicas`. The default is now 1. Use the `kai.scheduler/batch-min-member` annotation to set a custom value.
@@ -46,6 +58,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Fixed kai-operator not reconciling on Prometheus and ServiceMonitor changes. The Config controller now watches owned `Prometheus` and `ServiceMonitor` resources, so deletions and drift trigger reconciliation. CRD presence is checked at startup against the API server (the scheme-only check used previously could not detect missing CRDs), and the watch is registered only when the CRDs are installed. [#877](https://github.com/kai-scheduler/KAI-Scheduler/issues/877)
 - Added `before-hook-creation` to the `crd-upgrader` Helm hook delete policy so failed hook Jobs no longer block subsequent `helm upgrade --install` retries. Aligns with the policy already used by the chart's other hook resources. [#1404](https://github.com/kai-scheduler/KAI-Scheduler/issues/1404)
 - Fixed kai-operator leader-election event emission by adding RBAC permission for core `events` (`create`, `patch`, `update`) so operators can publish leadership events instead of logging `events is forbidden`. [#1572](https://github.com/kai-scheduler/KAI-Scheduler/pull/1572) [dttung2905](https://github.com/dttung2905)
+- The scheduler's per-shard Service is now populated by an operator-managed `EndpointSlice` pointing at the current leader-election Lease holder, which is connected to the service of the shard's scheduler. This allows the service to route all it's incoming request to the lease-holding pod of the scheduler deployment. [#1593](https://github.com/kai-scheduler/KAI-Scheduler/pull/1593) [davidLif](https://github.com/davidLif)
+- Fixed `podgroupcontroller` logging spurious errors on every reconcile for completed/failed pods because it tried to fetch DRA `ResourceClaim` objects that the DRA driver had already deleted. Terminal pods now skip the ResourceClaim lookup entirely, mirroring the scheduler-side fix in [#1456](https://github.com/kai-scheduler/KAI-Scheduler/pull/1456). [#1529](https://github.com/kai-scheduler/KAI-Scheduler/issues/1529)
 
 ## [v0.14.0] - 2026-03-30
 

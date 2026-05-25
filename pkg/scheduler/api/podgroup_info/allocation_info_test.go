@@ -23,7 +23,7 @@ func simpleTask(name string, subGroupName string, status pod_status.PodStatus) *
 		common_info.BuildResourceList("1", "1G"),
 		nil, nil, nil,
 	)
-	info := pod_info.NewTaskInfo(pod, nil, resource_info.NewResourceVectorMap())
+	info := pod_info.NewTaskInfo(pod, resource_info.NewResourceVectorMap())
 	info.Status = status
 	info.SubGroupName = subGroupName
 	return info
@@ -716,7 +716,7 @@ func Test_getNumOfAllocatedTasks(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			pg := NewPodGroupInfo("u1")
 			for i, pod := range tt.args.pods {
-				pi := pod_info.NewTaskInfo(pod, nil, resource_info.NewResourceVectorMap())
+				pi := pod_info.NewTaskInfo(pod, resource_info.NewResourceVectorMap())
 				pg.AddTaskInfo(pi)
 
 				if tt.args.overridingStatus != nil {

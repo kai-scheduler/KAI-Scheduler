@@ -135,7 +135,7 @@ func TestDeploymentForShard(t *testing.T) {
 			deploy, ok := deployment.(*appsv1.Deployment)
 			require.True(t, ok, "Expected *appsv1.Deployment")
 
-			assert.Equal(t, deploymentName(tt.config, tt.shard), deploy.Name)
+			assert.Equal(t, DeploymentName(tt.config, tt.shard), deploy.Name)
 			assert.Equal(t, tt.config.Spec.Namespace, deploy.Namespace)
 
 			container := deploy.Spec.Template.Spec.Containers[0]
@@ -274,6 +274,30 @@ func TestBuildArgsList(t *testing.T) {
 				"metrics-namespace": "monitoring",
 			},
 			notExpected: []string{"leader-elect"},
+		},
+		{
+			name: "with json logging",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Global: &kaiv1.GlobalConfig{
+						SchedulerName: ptr.To("test-scheduler"),
+						JSONLog:       ptr.To(true),
+					},
+					Namespace: "kai-system",
+					Scheduler: &kaiv1scheduler.Scheduler{
+						Replicas: ptr.To(int32(1)),
+					},
+				},
+			},
+			shard: &kaiv1.SchedulingShard{
+				Spec: kaiv1.SchedulingShardSpec{},
+			},
+			expected: map[string]string{
+				"scheduler-conf": "config.yaml",
+				"scheduler-name": "test-scheduler",
+				"namespace":      "kai-system",
+				"log-json":       "true",
+			},
 		},
 	}
 

@@ -90,6 +90,7 @@ func BuildSchedulerParams(opt *options.ServerOption) *conf.SchedulerParams {
 		NumOfStatusRecordingWorkers:       opt.NumOfStatusRecordingWorkers,
 		GlobalDefaultStalenessGracePeriod: opt.GlobalDefaultStalenessGracePeriod,
 		SchedulePeriod:                    opt.SchedulePeriod,
+		StuckInReleasingThreshold:         opt.StuckInReleasingThreshold,
 		DetailedFitErrors:                 opt.DetailedFitErrors,
 		UpdatePodEvictionCondition:        opt.UpdatePodEvictionCondition,
 		QueueLabelKey:                     opt.QueueLabelKey,
@@ -138,7 +139,7 @@ func setupProfiling(so *options.ServerOption) {
 }
 
 func setupLogging(so *options.ServerOption) error {
-	if err := log.InitLoggers(so.Verbosity); err != nil {
+	if err := log.InitLoggers(so.Verbosity, so.JSONLog); err != nil {
 		return err
 	}
 
