@@ -127,7 +127,7 @@ func TestStatement_Evict_Unevict(t *testing.T) {
 			originalJob := jobsInfoMap[tt.args.jobName].Clone()
 			originalNodeInfo := extractNodeAssertedInfo(nodesInfoMap[originalTask.NodeName])
 
-			if err := s.Evict(originalTask, "eviction message", eviction_info.EvictionMetadata{
+			if err := s.Evict(originalTask, func() string { return "eviction message" }, eviction_info.EvictionMetadata{
 				Action:           "action",
 				EvictionGangSize: 1,
 			}); err != nil {
@@ -265,7 +265,7 @@ func TestStatement_Evict(t *testing.T) {
 				dataBeforeEvict.node = extractNodeAssertedInfo(nodesInfoMap[task.NodeName])
 			}
 
-			err := s.Evict(task, "message", eviction_info.EvictionMetadata{
+			err := s.Evict(task, func() string { return "message" }, eviction_info.EvictionMetadata{
 				Action:           "action",
 				EvictionGangSize: 1,
 			})
@@ -395,7 +395,7 @@ func TestStatement_Evict_Undo_Undo(t *testing.T) {
 				dataBeforeEvict.node = extractNodeAssertedInfo(nodesInfoMap[task.NodeName])
 			}
 
-			err := s.Evict(task, "message", eviction_info.EvictionMetadata{
+			err := s.Evict(task, func() string { return "message" }, eviction_info.EvictionMetadata{
 				Action:           "action",
 				EvictionGangSize: 1,
 			})
@@ -1294,7 +1294,7 @@ func TestStatement_Evict_Undo_Undo_DRA_ResourceClaimInfo(t *testing.T) {
 	}
 
 	// Evict (op[0])
-	err := s.Evict(task, "message", eviction_info.EvictionMetadata{
+	err := s.Evict(task, func() string { return "message" }, eviction_info.EvictionMetadata{
 		Action:           "action",
 		EvictionGangSize: 1,
 	})

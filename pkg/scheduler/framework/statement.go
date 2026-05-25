@@ -60,7 +60,7 @@ func (s *Statement) Rollback(cp Checkpoint) error {
 	return nil
 }
 
-func (s *Statement) Evict(reclaimeeTask *pod_info.PodInfo, message string,
+func (s *Statement) Evict(reclaimeeTask *pod_info.PodInfo, messageBuilder func() string,
 	evictionMetadata eviction_info.EvictionMetadata) error {
 	// Update status in session
 	job, jobFound := s.ssn.ClusterInfo.PodGroupInfos[reclaimeeTask.Job]
@@ -109,7 +109,7 @@ func (s *Statement) Evict(reclaimeeTask *pod_info.PodInfo, message string,
 			previousStatus:    previousStatus,
 			previousNode:      node,
 			previousGpuGroups: previousGpuGroup,
-			message:           message,
+			messageBuilder:    messageBuilder,
 			evictionMetadata:  evictionMetadata,
 			reverseOperation: func() error {
 				return s.unevict(reclaimeeTask, previousStatus, node, previousGpuGroup, previousResourceClaimInfo, previousIsVirtualStatus)
@@ -135,7 +135,11 @@ func (s *Statement) commitEvict(reclaimee *pod_info.PodInfo, evictOp evictOperat
 	previousGpuGroup := reclaimee.GPUGroups
 	previousResourceClaimInfo := reclaimee.ResourceClaimInfo
 	previousIsVirtualStatus := reclaimee.IsVirtualStatus
-	if err := s.ssn.Cache.Evict(reclaimee.Pod, reclaimeePodGroup, evictOp.evictionMetadata, evictOp.message); err != nil {
+	message := ""
+	if evictOp.messageBuilder != nil {
+		message = evictOp.messageBuilder()
+	}
+	if err := s.ssn.Cache.Evict(reclaimee.Pod, reclaimeePodGroup, evictOp.evictionMetadata, message); err != nil {
 		log.InfraLogger.Errorf("Failed to evict task <%v/%v>: %v.", reclaimee.Namespace, reclaimee.Name, err)
 		if e := s.unevict(reclaimee, previousStatus, evictOp.previousNode, previousGpuGroup, previousResourceClaimInfo,
 			previousIsVirtualStatus); e != nil {
@@ -611,7 +615,7 @@ func (s *Statement) undoOperation(index int) error {
 	case evictOperation:
 		operation := op.(evictOperation)
 		redoOperation = func() error {
-			return s.Evict(taskToUndo, operation.message, operation.evictionMetadata)
+			return s.Evict(taskToUndo, operation.messageBuilder, operation.evictionMetadata)
 		}
 	case pipelineOperation:
 		operation := op.(pipelineOperation)

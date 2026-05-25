@@ -32,7 +32,7 @@ func TestStatement_Checkpoint(t *testing.T) {
 		{
 			name: "rollback evict",
 			fn: func(ssn *Session, stmt *Statement) {
-				err := stmt.Evict(ssn.ClusterInfo.PodGroupInfos["running_job0"].GetAllPodsMap()["running_job0-0"], "evicting task",
+				err := stmt.Evict(ssn.ClusterInfo.PodGroupInfos["running_job0"].GetAllPodsMap()["running_job0-0"], func() string { return "evicting task" },
 					eviction_info.EvictionMetadata{
 						Action:           "action",
 						EvictionGangSize: 1,
@@ -66,7 +66,7 @@ func TestStatement_Checkpoint(t *testing.T) {
 			fn: func(ssn *Session, stmt *Statement) {
 				err := stmt.Allocate(ssn.ClusterInfo.PodGroupInfos["pending_job0"].GetAllPodsMap()["pending_job0-0"], "node0")
 				assert.Nil(t, err)
-				err = stmt.Evict(ssn.ClusterInfo.PodGroupInfos["pending_job0"].GetAllPodsMap()["pending_job0-0"], "evicting task",
+				err = stmt.Evict(ssn.ClusterInfo.PodGroupInfos["pending_job0"].GetAllPodsMap()["pending_job0-0"], func() string { return "evicting task" },
 					eviction_info.EvictionMetadata{
 						Action:           "action",
 						EvictionGangSize: 1,
@@ -79,7 +79,7 @@ func TestStatement_Checkpoint(t *testing.T) {
 			fn: func(ssn *Session, stmt *Statement) {
 				err := stmt.Pipeline(ssn.ClusterInfo.PodGroupInfos["pending_job0"].GetAllPodsMap()["pending_job0-0"], "node0", true)
 				assert.Nil(t, err)
-				err = stmt.Evict(ssn.ClusterInfo.PodGroupInfos["pending_job0"].GetAllPodsMap()["pending_job0-0"], "evicting task",
+				err = stmt.Evict(ssn.ClusterInfo.PodGroupInfos["pending_job0"].GetAllPodsMap()["pending_job0-0"], func() string { return "evicting task" },
 					eviction_info.EvictionMetadata{
 						Action:           "action",
 						EvictionGangSize: 1,
@@ -90,7 +90,7 @@ func TestStatement_Checkpoint(t *testing.T) {
 		{
 			name: "rollback evict pipeline",
 			fn: func(ssn *Session, stmt *Statement) {
-				err := stmt.Evict(ssn.ClusterInfo.PodGroupInfos["running_job0"].GetAllPodsMap()["running_job0-0"], "evicting task",
+				err := stmt.Evict(ssn.ClusterInfo.PodGroupInfos["running_job0"].GetAllPodsMap()["running_job0-0"], func() string { return "evicting task" },
 					eviction_info.EvictionMetadata{
 						Action:           "action",
 						EvictionGangSize: 1,
@@ -105,7 +105,7 @@ func TestStatement_Checkpoint(t *testing.T) {
 			fn: func(ssn *Session, stmt *Statement) {
 				err := stmt.Pipeline(ssn.ClusterInfo.PodGroupInfos["pending_job0"].GetAllPodsMap()["pending_job0-0"], "node0", false)
 				assert.Nil(t, err)
-				err = stmt.Evict(ssn.ClusterInfo.PodGroupInfos["pending_job0"].GetAllPodsMap()["pending_job0-0"], "evicting task",
+				err = stmt.Evict(ssn.ClusterInfo.PodGroupInfos["pending_job0"].GetAllPodsMap()["pending_job0-0"], func() string { return "evicting task" },
 					eviction_info.EvictionMetadata{
 						Action:           "action",
 						EvictionGangSize: 1,
@@ -116,7 +116,7 @@ func TestStatement_Checkpoint(t *testing.T) {
 		{
 			name: "rollback evict pipeline update false",
 			fn: func(ssn *Session, stmt *Statement) {
-				err := stmt.Evict(ssn.ClusterInfo.PodGroupInfos["running_job0"].GetAllPodsMap()["running_job0-0"], "evicting task",
+				err := stmt.Evict(ssn.ClusterInfo.PodGroupInfos["running_job0"].GetAllPodsMap()["running_job0-0"], func() string { return "evicting task" },
 					eviction_info.EvictionMetadata{
 						Action:           "action",
 						EvictionGangSize: 1,
@@ -129,7 +129,7 @@ func TestStatement_Checkpoint(t *testing.T) {
 		{
 			name: "rollback evict checkpoint pipeline update false",
 			fn: func(ssn *Session, stmt *Statement) {
-				err := stmt.Evict(ssn.ClusterInfo.PodGroupInfos["running_job0"].GetAllPodsMap()["running_job0-0"], "evicting task",
+				err := stmt.Evict(ssn.ClusterInfo.PodGroupInfos["running_job0"].GetAllPodsMap()["running_job0-0"], func() string { return "evicting task" },
 					eviction_info.EvictionMetadata{
 						Action:           "action",
 						EvictionGangSize: 1,
@@ -146,7 +146,7 @@ func TestStatement_Checkpoint(t *testing.T) {
 		{
 			name: "rollback illegal evict allocate",
 			fn: func(ssn *Session, stmt *Statement) {
-				err := stmt.Evict(ssn.ClusterInfo.PodGroupInfos["running_job0"].GetAllPodsMap()["running_job0-0"], "evicting task",
+				err := stmt.Evict(ssn.ClusterInfo.PodGroupInfos["running_job0"].GetAllPodsMap()["running_job0-0"], func() string { return "evicting task" },
 					eviction_info.EvictionMetadata{
 						Action:           "action",
 						EvictionGangSize: 1,
