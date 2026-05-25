@@ -12,6 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/utils/ptr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
@@ -38,11 +39,13 @@ const (
 // (JobSet's controller enforces start ordering when configured).
 type JobSetGrouper struct {
 	*defaultgrouper.DefaultGrouper
+	client client.Client
 }
 
-func NewJobSetGrouper(defaultGrouper *defaultgrouper.DefaultGrouper) *JobSetGrouper {
+func NewJobSetGrouper(kubeClient client.Client, defaultGrouper *defaultgrouper.DefaultGrouper) *JobSetGrouper {
 	return &JobSetGrouper{
 		DefaultGrouper: defaultGrouper,
+		client:         kubeClient,
 	}
 }
 
@@ -55,11 +58,6 @@ func (g *JobSetGrouper) Name() string {
 
 func (g *JobSetGrouper) GetPodGroupMetadata(jobsetObj *unstructured.Unstructured, pod *v1.Pod, _ ...*metav1.PartialObjectMetadata,
 ) (*podgroup.Metadata, error) {
-	pgMeta, err := g.DefaultGrouper.GetPodGroupMetadata(jobsetObj, pod)
-	if err != nil {
-		return nil, err
-	}
-
 	jobSetName := jobsetObj.GetName()
 	jobSetUID := jobsetObj.GetUID()
 	if jobSetName == "" || len(jobSetUID) == 0 {
@@ -74,6 +72,21 @@ func (g *JobSetGrouper) GetPodGroupMetadata(jobsetObj *unstructured.Unstructured
 		return nil, fmt.Errorf("jobset %s/%s has no replicatedJobs", jobsetObj.GetNamespace(), jobSetName)
 	}
 
+	// Legacy detection: if any PodGroup already exists for this JobSet without
+	// SubGroups, fall back to the previous (flat) handler so we don't disrupt
+	// in-flight workloads. Remove in v0.17.
+	legacy, err := g.detectLegacyPodGroup(jobsetObj)
+	if err != nil {
+		return nil, err
+	}
+	if legacy {
+		return g.legacyGetPodGroupMetadata(jobsetObj, pod)
+	}
+
+	pgMeta, err := g.DefaultGrouper.GetPodGroupMetadata(jobsetObj, pod)
+	if err != nil {
+		return nil, err
+	}
 	podGroupMinSubGroup, err := computePodGroupMinSubGroup(jobsetObj, replicatedJobs)
 	if err != nil {
 		return nil, err

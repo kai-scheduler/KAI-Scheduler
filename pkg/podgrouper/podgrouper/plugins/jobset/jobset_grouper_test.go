@@ -15,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	schedulingv2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
@@ -94,12 +95,12 @@ func podWithJobSetLabels(name, namespace, replicatedJobName, jobIndex string) *v
 	}
 }
 
-func newJobSetGrouper(t *testing.T) *JobSetGrouper {
+func newJobSetGrouper(t *testing.T, existingObjects ...client.Object) *JobSetGrouper {
 	t.Helper()
 	scheme := runtime.NewScheme()
 	require.NoError(t, schedulingv2.AddToScheme(scheme))
-	c := fake.NewClientBuilder().WithScheme(scheme).Build()
-	return NewJobSetGrouper(defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, c))
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existingObjects...).Build()
+	return NewJobSetGrouper(c, defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, c))
 }
 
 // findSubGroup returns the SubGroup with the given name, or nil.
