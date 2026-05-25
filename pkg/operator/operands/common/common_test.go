@@ -512,26 +512,6 @@ var _ = Describe("PodDisruptionBudgetForKAIConfig", func() {
 		Expect(obj).To(BeNil())
 	})
 
-	It("does not create PDB for services without operator implementation", func() {
-		fakeKubeClient := fake.NewClientBuilder().Build()
-		service := &kaiv1common.Service{
-			PodDisruptionBudget: &kaiv1common.PodDisruptionBudget{
-				Enabled:        ptr.To(true),
-				MaxUnavailable: ptr.To(int32(1)),
-			},
-		}
-
-		obj, err := PodDisruptionBudgetForKAIConfig(
-			context.Background(),
-			fakeKubeClient,
-			"default",
-			"binder",
-			ptr.To(int32(2)),
-			service,
-		)
-		Expect(err).To(BeNil())
-		Expect(obj).To(BeNil())
-	})
 })
 
 var _ = Describe("PodDisruptionBudgetImplementedServices", func() {
