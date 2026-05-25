@@ -393,6 +393,51 @@ func TestRootMinSubGroupNotMinAvailable(t *testing.T) {
 	assert.NotNil(t, meta.MinSubGroup)
 }
 
+func TestDistinctTopologiesAtJobSetAndReplicatedJobLevels(t *testing.T) {
+	// Two replicas so we can confirm the template-level topology is applied to
+	// every leaf SubGroup, not just one.
+	rj := replicatedJob("worker", 2, 4)
+	rj["template"].(map[string]interface{})["metadata"] = map[string]interface{}{
+		"annotations": map[string]interface{}{
+			constants.TopologyKey:                   "leaf-topology",
+			constants.TopologyRequiredPlacementKey:  "rack",
+			constants.TopologyPreferredPlacementKey: "zone",
+		},
+	}
+	js := baseJobSet("js", "default", "uid", []map[string]interface{}{rj})
+	js.SetAnnotations(map[string]string{
+		constants.TopologyKey:                  "root-topology",
+		constants.TopologyRequiredPlacementKey: "datacenter",
+	})
+	pod := podWithJobSetLabels("p", "default", "worker", "0")
+
+	meta, err := newJobSetGrouper(t).GetPodGroupMetadata(js, pod)
+	require.NoError(t, err)
+
+	// Root PodGroup carries the JobSet-level topology (read by DefaultGrouper).
+	assert.Equal(t, "root-topology", meta.Topology)
+	assert.Equal(t, "datacenter", meta.RequiredTopologyLevel)
+	assert.Empty(t, meta.PreferredTopologyLevel)
+
+	// Parent SubGroup has no topology — only leaves get the template-level
+	// constraints.
+	parent := findSubGroup(meta, "worker")
+	require.NotNil(t, parent)
+	assert.Nil(t, parent.TopologyConstraints)
+
+	// Both leaves carry the replicatedJob-template topology, distinct from the
+	// root.
+	for i := 0; i < 2; i++ {
+		leafName := fmt.Sprintf(replicasSubgroupNameFormat, "worker", strconv.Itoa(i))
+		leaf := findSubGroup(meta, leafName)
+		require.NotNil(t, leaf, "leaf %s", leafName)
+		require.NotNil(t, leaf.TopologyConstraints, "leaf %s missing TopologyConstraints", leafName)
+		assert.Equal(t, "leaf-topology", leaf.TopologyConstraints.Topology)
+		assert.Equal(t, "rack", leaf.TopologyConstraints.RequiredTopologyLevel)
+		assert.Equal(t, "zone", leaf.TopologyConstraints.PreferredTopologyLevel)
+	}
+}
+
 func TestReplicasDefaultsToOne(t *testing.T) {
 	js := baseJobSet("js", "default", "uid", []map[string]interface{}{
 		{

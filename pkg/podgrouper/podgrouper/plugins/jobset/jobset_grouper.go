@@ -151,8 +151,11 @@ func buildSubGroups(replicatedJobs []map[string]any) ([]*podgroup.SubGroupMetada
 		if err != nil {
 			return nil, err
 		}
-
 		leafMinMember, err := singleReplicaSubGroupMinMember(rj)
+		if err != nil {
+			return nil, err
+		}
+		leafTopology, err := singleReplicaSubGroupTopology(rj)
 		if err != nil {
 			return nil, err
 		}
@@ -165,13 +168,40 @@ func buildSubGroups(replicatedJobs []map[string]any) ([]*podgroup.SubGroupMetada
 		for idx := int32(0); idx < replicasCount; idx++ {
 			leafName := fmt.Sprintf(replicasSubgroupNameFormat, parentName, strconv.Itoa(int(idx)))
 			subGroups = append(subGroups, &podgroup.SubGroupMetadata{
-				Name:         leafName,
-				MinAvailable: leafMinMember,
-				Parent:       ptr.To(parentName),
+				Name:                leafName,
+				MinAvailable:        leafMinMember,
+				Parent:              ptr.To(parentName),
+				TopologyConstraints: leafTopology,
 			})
 		}
 	}
 	return subGroups, nil
+}
+
+// singleReplicaSubGroupTopology reads topology annotations from
+// replicatedJob.template.metadata.annotations and returns the corresponding
+// TopologyConstraintMetadata. Returns nil when no topology annotation is set.
+func singleReplicaSubGroupTopology(rj map[string]any) (*podgroup.TopologyConstraintMetadata, error) {
+	topology, err := readReplicatedJobTemplateAnnotation(rj, constants.TopologyKey)
+	if err != nil {
+		return nil, err
+	}
+	required, err := readReplicatedJobTemplateAnnotation(rj, constants.TopologyRequiredPlacementKey)
+	if err != nil {
+		return nil, err
+	}
+	preferred, err := readReplicatedJobTemplateAnnotation(rj, constants.TopologyPreferredPlacementKey)
+	if err != nil {
+		return nil, err
+	}
+	if topology == "" || (required == "" && preferred == "") {
+		return nil, nil
+	}
+	return &podgroup.TopologyConstraintMetadata{
+		Topology:               topology,
+		RequiredTopologyLevel:  required,
+		PreferredTopologyLevel: preferred,
+	}, nil
 }
 
 func singleReplicaSubGroupMinMember(rj map[string]any) (int32, error) {
@@ -180,11 +210,11 @@ func singleReplicaSubGroupMinMember(rj map[string]any) (int32, error) {
 		return 0, err
 	}
 
-	singleReplicaUserSetMinMember, found, err := unstructured.NestedString(rj, "template", "metadata", "annotations", constants.MinMemberOverrideKey)
+	singleReplicaUserSetMinMember, err := readReplicatedJobTemplateAnnotation(rj, constants.MinMemberOverrideKey)
 	if err != nil {
 		return 0, fmt.Errorf("failed to read template annotation %s: %w", constants.MinMemberOverrideKey, err)
 	}
-	if !found {
+	if len(singleReplicaUserSetMinMember) == 0 {
 		return parallelism, nil
 	}
 
@@ -204,6 +234,17 @@ func singleReplicaSubGroupMinMember(rj map[string]any) (int32, error) {
 		)
 	}
 	return int32(userSetMinMember), nil
+}
+
+func readReplicatedJobTemplateAnnotation(rj map[string]any, key string) (string, error) {
+	value, found, err := unstructured.NestedString(rj, "template", "metadata", "annotations", key)
+	if err != nil {
+		return "", fmt.Errorf("failed to read template annotation %s: %w", key, err)
+	}
+	if !found {
+		return "", nil
+	}
+	return value, nil
 }
 
 // assignPodToSubGroup routes the pod into its leaf SubGroup based on JobSet labels.

@@ -114,6 +114,9 @@ For JobSet workloads, a single PodGroup is created per JobSet with a two-level S
   - The user has the option to overridable via the `kai.scheduler/batch-min-member` annotation on the JobSet; 
 - Per-replicatedJob parent SubGroup name: `<replicatedJob-name>`, with `minSubGroup = replicas`.
 - Per-replica leaf SubGroup name: `<replicatedJob-name>-replica-<job-index>`, with `minMember` defaulting to `template.spec.parallelism`. Override per replicatedJob by setting `kai.scheduler/batch-min-member` on `replicatedJobs[].template.metadata.annotations`; values exceeding `parallelism` are accepted and logged.
+- Topology constraints are read from two scopes:
+  - On the JobSet's own `metadata.annotations` — `kai.scheduler/topology`, `kai.scheduler/topology-required-placement`, `kai.scheduler/topology-preferred-placement` — populate the root PodGroup's `topologyConstraint` (handled by the default grouper).
+  - On `replicatedJobs[].template.metadata.annotations` — the same three keys — populate every leaf SubGroup's `topologyConstraint` for that replicatedJob. Parent SubGroups never carry topology. The two scopes are independent: a JobSet can constrain the workload to one topology level while constraining each replica's gang to a tighter level.
 - Uses default priority class from DefaultGrouper.
 
 ### Pod Grouping
