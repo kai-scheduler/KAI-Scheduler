@@ -155,15 +155,13 @@ func (ni *NodeInfo) IsTaskAllocatable(task *pod_info.PodInfo) bool {
 	}
 
 	if allocatable := ni.isTaskAllocatableOnNonAllocatedResources(task, ni.IdleVector); !allocatable {
-		log.InfraLogger.V(7).Infof("Task GPU %s/%s is not allocatable on node %s",
-			task.Namespace, task.Name, ni.Name)
+		log.InfraLogger.V(7).Infof("%s", &taskGPUNotAllocatableLog{task: task, node: ni})
 		return false
 	}
 
 	storageAllocatable, err := ni.isTaskStorageAllocatable(task)
 	if !storageAllocatable {
-		log.InfraLogger.V(7).Infof("Task storage %s/%s is not allocatable on node %s, error: %v",
-			task.Namespace, task.Name, ni.Name, err)
+		log.InfraLogger.V(7).Infof("%s", &taskStorageNotAllocatableLog{task: task, node: ni, err: err})
 		return false
 	}
 
@@ -174,18 +172,39 @@ func (ni *NodeInfo) IsTaskAllocatableOnReleasingOrIdle(task *pod_info.PodInfo) b
 	nodeNonAllocatedVector := ni.nonAllocatedVector()
 
 	if allocatable := ni.isTaskAllocatableOnNonAllocatedResources(task, nodeNonAllocatedVector); !allocatable {
-		log.InfraLogger.V(7).Infof("Task GPU %s/%s is not allocatable on node %s",
-			task.Namespace, task.Name, ni.Name)
+		log.InfraLogger.V(7).Infof("%s", &taskGPUNotAllocatableLog{task: task, node: ni})
 		return false
 	}
 
 	if allocatable, err := ni.isTaskStorageAllocatableOnReleasingOrIdle(task); !allocatable {
-		log.InfraLogger.V(7).Infof("Task storage %s/%s is not allocatable on node %s, error: %v",
-			task.Namespace, task.Name, ni.Name, err)
+		log.InfraLogger.V(7).Infof("%s", &taskStorageNotAllocatableLog{task: task, node: ni, err: err})
 		return false
 	}
 
 	return true
+}
+
+// taskGPUNotAllocatableLog / taskStorageNotAllocatableLog defer formatting until
+// the V(7) log line actually fires; when disabled, String() is never invoked.
+type taskGPUNotAllocatableLog struct {
+	task *pod_info.PodInfo
+	node *NodeInfo
+}
+
+func (l *taskGPUNotAllocatableLog) String() string {
+	return fmt.Sprintf("Task GPU %s/%s is not allocatable on node %s",
+		l.task.Namespace, l.task.Name, l.node.Name)
+}
+
+type taskStorageNotAllocatableLog struct {
+	task *pod_info.PodInfo
+	node *NodeInfo
+	err  error
+}
+
+func (l *taskStorageNotAllocatableLog) String() string {
+	return fmt.Sprintf("Task storage %s/%s is not allocatable on node %s, error: %v",
+		l.task.Namespace, l.task.Name, l.node.Name, l.err)
 }
 
 // isTaskStorageAllocatable iterates over a pod's volumes. For all unbound PVCs, which use a CSI storage, we check the
