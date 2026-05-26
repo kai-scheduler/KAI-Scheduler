@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - Added support for configuring admission Pod Disruption Budget via Helm values (`admission.podDisruptionBudget`) [#1490](https://github.com/kai-scheduler/KAI-Scheduler/pull/1490) [dttung2905](https://github.com/dttung2905)
+- Added snapshot redaction CLI tool for sanitizing Kubernetes scheduler snapshots before sharing. Includes translation table generation and deterministic metadata obfuscation. [#1628](https://github.com/kai-scheduler/KAI-Scheduler/pull/1628) [maishivamhoo123](https://github.com/maishivamhoo123)
+
 
 ### Changed
 - Removed redundant `PodDisruptionBudgetImplemented` guard from operator PDB creation helper [#1613](https://github.com/kai-scheduler/KAI-Scheduler/pull/1613) [dttung2905](https://github.com/dttung2905)
