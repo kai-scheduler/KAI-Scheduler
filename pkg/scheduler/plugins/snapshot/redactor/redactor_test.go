@@ -4,6 +4,7 @@
 package redactor
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/snapshot"
@@ -156,6 +157,34 @@ func TestRedactEnvVars(t *testing.T) {
 	assert.NotEqual(t, "api-token", container.Env[2].ValueFrom.SecretKeyRef.Key)
 
 	assert.Equal(t, 2, r.GetStats().EnvVarsRedacted, "Should have redacted 2 env var values")
+}
+func TestRedactNodeName(t *testing.T) {
+	snap := &snapshot.Snapshot{
+		RawObjects: &snapshot.RawKubernetesObjects{
+			Pods: []*corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "bound-pod",
+						Namespace: "default",
+					},
+					Spec: corev1.PodSpec{
+						NodeName: "worker-node-42",
+						Containers: []corev1.Container{
+							{Name: "app", Image: "app:v1"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	r := NewRedactor()
+	err := r.RedactSnapshot(snap)
+	assert.NoError(t, err)
+
+	pod := snap.RawObjects.Pods[0]
+	assert.NotEqual(t, "worker-node-42", pod.Spec.NodeName)
+	assert.True(t, strings.HasPrefix(pod.Spec.NodeName, "node-"))
 }
 
 func TestRedactConfigMaps(t *testing.T) {
@@ -436,6 +465,115 @@ func TestRedactNodeStatus(t *testing.T) {
 	// Verify node identifiers are redacted
 	assert.NotEqual(t, "ec2-i-0123456789abcdef0", node.Status.NodeInfo.MachineID)
 	assert.NotEqual(t, "12345678-1234-1234-1234-123456789012", node.Status.NodeInfo.SystemUUID)
+}
+func TestRedactedSnapshotSchedulingValid(t *testing.T) {
+	// Create a snapshot with valid scheduling constraints
+	snap := &snapshot.Snapshot{
+		RawObjects: &snapshot.RawKubernetesObjects{
+			Pods: []*corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "critical-pod",
+						Namespace: "production",
+						Labels: map[string]string{
+							"priority": "high",
+						},
+						OwnerReferences: []metav1.OwnerReference{
+							{
+								APIVersion: "apps/v1",
+								Kind:       "Deployment",
+								Name:       "my-deployment",
+								UID:        "12345-67890",
+							},
+						},
+					},
+					Spec: corev1.PodSpec{
+						NodeName:           "node-1",
+						ServiceAccountName: "default-sa",
+						Containers: []corev1.Container{
+							{
+								Name:  "app",
+								Image: "nginx:latest",
+								Env: []corev1.EnvVar{
+									{Name: "ENV_VAR", Value: "secret"},
+								},
+							},
+						},
+						NodeSelector: map[string]string{
+							"disk": "ssd",
+						},
+						Affinity: &corev1.Affinity{
+							NodeAffinity: &corev1.NodeAffinity{
+								RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+									NodeSelectorTerms: []corev1.NodeSelectorTerm{
+										{
+											MatchExpressions: []corev1.NodeSelectorRequirement{
+												{
+													Key:      "zone",
+													Operator: corev1.NodeSelectorOpIn,
+													Values:   []string{"zone-a"},
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			Nodes: []*corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-1",
+						Labels: map[string]string{
+							"disk": "ssd",
+							"zone": "zone-a",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// Redact the snapshot
+	r := NewRedactor()
+	err := r.RedactSnapshot(snap)
+	assert.NoError(t, err)
+
+	// Validate snapshot structure is intact
+	redactedSnap := snap
+	assert.NotNil(t, redactedSnap.RawObjects)
+	assert.Len(t, redactedSnap.RawObjects.Pods, 1)
+	assert.Len(t, redactedSnap.RawObjects.Nodes, 1)
+
+	// Verify scheduling-critical fields are preserved (but redacted)
+	pod := redactedSnap.RawObjects.Pods[0]
+	node := redactedSnap.RawObjects.Nodes[0]
+
+	// Check that relationships are maintained
+	assert.NotEmpty(t, pod.Spec.NodeName)
+	assert.NotEmpty(t, node.Name)
+	assert.NotEmpty(t, pod.ObjectMeta.OwnerReferences)
+	assert.NotEmpty(t, pod.Spec.NodeSelector)
+	assert.NotNil(t, pod.Spec.Affinity)
+
+	// Verify selectors still match (after redaction)
+	nodeSelectorValue := pod.Spec.NodeSelector["disk"]
+	assert.NotEmpty(t, nodeSelectorValue, "NodeSelector values must be preserved")
+
+	// Verify pod can still reference node (relationship intact)
+	assert.True(t, len(pod.Spec.NodeName) > 0, "Pod must have NodeName for scheduling")
+	assert.True(t, len(node.Name) > 0, "Node must have name")
+
+	// Verify affinity structure is valid
+	affinity := pod.Spec.Affinity.NodeAffinity
+	assert.NotNil(t, affinity.RequiredDuringSchedulingIgnoredDuringExecution)
+	assert.Len(t, affinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms, 1)
+	terms := affinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms[0]
+	assert.Len(t, terms.MatchExpressions, 1)
+	assert.Len(t, terms.MatchExpressions[0].Values, 1)
+	assert.NotEmpty(t, terms.MatchExpressions[0].Values[0], "Affinity values must be redacted but present")
 }
 
 func TestRedactNilFields(t *testing.T) {

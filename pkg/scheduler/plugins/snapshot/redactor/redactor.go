@@ -407,6 +407,9 @@ func (r *Redactor) redactPodSpec(spec *corev1.PodSpec) {
 	if spec == nil {
 		return
 	}
+	if spec.NodeName != "" {
+		spec.NodeName = r.Obfuscate(spec.NodeName, "node")
+	}
 
 	// Redact containers
 	for i := range spec.Containers {
