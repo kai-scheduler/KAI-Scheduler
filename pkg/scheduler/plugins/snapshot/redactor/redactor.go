@@ -5,6 +5,7 @@ package redactor
 
 import (
 	"fmt"
+	"maps"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/snapshot"
 	corev1 "k8s.io/api/core/v1"
@@ -79,10 +80,10 @@ func (r *Redactor) RedactSnapshot(snap *snapshot.Snapshot) error {
 			q.Name = r.Obfuscate(q.Name, "queue")
 			q.Namespace = r.Obfuscate(q.Namespace, "namespace")
 			if q.ObjectMeta.Labels != nil {
-				r.redactLabelsAndAnnotations(q.ObjectMeta.Labels)
+				r.redactLabelsAndAnnotations(q.ObjectMeta.Labels, false)
 			}
 			if q.ObjectMeta.Annotations != nil {
-				r.redactLabelsAndAnnotations(q.ObjectMeta.Annotations)
+				r.redactLabelsAndAnnotations(q.ObjectMeta.Annotations, true)
 			}
 		}
 	}
@@ -92,10 +93,10 @@ func (r *Redactor) RedactSnapshot(snap *snapshot.Snapshot) error {
 			pg.Name = r.Obfuscate(pg.Name, "podgroup")
 			pg.Namespace = r.Obfuscate(pg.Namespace, "namespace")
 			if pg.ObjectMeta.Labels != nil {
-				r.redactLabelsAndAnnotations(pg.ObjectMeta.Labels)
+				r.redactLabelsAndAnnotations(pg.ObjectMeta.Labels, false)
 			}
 			if pg.ObjectMeta.Annotations != nil {
-				r.redactLabelsAndAnnotations(pg.ObjectMeta.Annotations)
+				r.redactLabelsAndAnnotations(pg.ObjectMeta.Annotations, true)
 			}
 		}
 	}
@@ -105,10 +106,10 @@ func (r *Redactor) RedactSnapshot(snap *snapshot.Snapshot) error {
 			br.Name = r.Obfuscate(br.Name, "bindreq")
 			br.Namespace = r.Obfuscate(br.Namespace, "namespace")
 			if br.ObjectMeta.Labels != nil {
-				r.redactLabelsAndAnnotations(br.ObjectMeta.Labels)
+				r.redactLabelsAndAnnotations(br.ObjectMeta.Labels, false)
 			}
 			if br.ObjectMeta.Annotations != nil {
-				r.redactLabelsAndAnnotations(br.ObjectMeta.Annotations)
+				r.redactLabelsAndAnnotations(br.ObjectMeta.Annotations, true)
 			}
 		}
 	}
@@ -117,10 +118,10 @@ func (r *Redactor) RedactSnapshot(snap *snapshot.Snapshot) error {
 		if pc != nil {
 			pc.Name = r.Obfuscate(pc.Name, "priorityclass")
 			if pc.ObjectMeta.Labels != nil {
-				r.redactLabelsAndAnnotations(pc.ObjectMeta.Labels)
+				r.redactLabelsAndAnnotations(pc.ObjectMeta.Labels, false)
 			}
 			if pc.ObjectMeta.Annotations != nil {
-				r.redactLabelsAndAnnotations(pc.ObjectMeta.Annotations)
+				r.redactLabelsAndAnnotations(pc.ObjectMeta.Annotations, true)
 			}
 		}
 	}
@@ -135,10 +136,10 @@ func (r *Redactor) RedactSnapshot(snap *snapshot.Snapshot) error {
 		if pv != nil {
 			pv.Name = r.Obfuscate(pv.Name, "pv")
 			if pv.ObjectMeta.Labels != nil {
-				r.redactLabelsAndAnnotations(pv.ObjectMeta.Labels)
+				r.redactLabelsAndAnnotations(pv.ObjectMeta.Labels, false)
 			}
 			if pv.ObjectMeta.Annotations != nil {
-				r.redactLabelsAndAnnotations(pv.ObjectMeta.Annotations)
+				r.redactLabelsAndAnnotations(pv.ObjectMeta.Annotations, true)
 			}
 		}
 	}
@@ -148,10 +149,10 @@ func (r *Redactor) RedactSnapshot(snap *snapshot.Snapshot) error {
 			pvc.Name = r.Obfuscate(pvc.Name, "pvc")
 			pvc.Namespace = r.Obfuscate(pvc.Namespace, "namespace")
 			if pvc.ObjectMeta.Labels != nil {
-				r.redactLabelsAndAnnotations(pvc.ObjectMeta.Labels)
+				r.redactLabelsAndAnnotations(pvc.ObjectMeta.Labels, false)
 			}
 			if pvc.ObjectMeta.Annotations != nil {
-				r.redactLabelsAndAnnotations(pvc.ObjectMeta.Annotations)
+				r.redactLabelsAndAnnotations(pvc.ObjectMeta.Annotations, true)
 			}
 		}
 	}
@@ -161,10 +162,10 @@ func (r *Redactor) RedactSnapshot(snap *snapshot.Snapshot) error {
 			csi.Name = r.Obfuscate(csi.Name, "csicapacity")
 			csi.Namespace = r.Obfuscate(csi.Namespace, "namespace")
 			if csi.ObjectMeta.Labels != nil {
-				r.redactLabelsAndAnnotations(csi.ObjectMeta.Labels)
+				r.redactLabelsAndAnnotations(csi.ObjectMeta.Labels, false)
 			}
 			if csi.ObjectMeta.Annotations != nil {
-				r.redactLabelsAndAnnotations(csi.ObjectMeta.Annotations)
+				r.redactLabelsAndAnnotations(csi.ObjectMeta.Annotations, true)
 			}
 		}
 	}
@@ -173,10 +174,10 @@ func (r *Redactor) RedactSnapshot(snap *snapshot.Snapshot) error {
 		if sc != nil {
 			sc.Name = r.Obfuscate(sc.Name, "storageclass")
 			if sc.ObjectMeta.Labels != nil {
-				r.redactLabelsAndAnnotations(sc.ObjectMeta.Labels)
+				r.redactLabelsAndAnnotations(sc.ObjectMeta.Labels, false)
 			}
 			if sc.ObjectMeta.Annotations != nil {
-				r.redactLabelsAndAnnotations(sc.ObjectMeta.Annotations)
+				r.redactLabelsAndAnnotations(sc.ObjectMeta.Annotations, true)
 			}
 		}
 	}
@@ -185,10 +186,10 @@ func (r *Redactor) RedactSnapshot(snap *snapshot.Snapshot) error {
 		if driver != nil {
 			driver.Name = r.Obfuscate(driver.Name, "csidriver")
 			if driver.ObjectMeta.Labels != nil {
-				r.redactLabelsAndAnnotations(driver.ObjectMeta.Labels)
+				r.redactLabelsAndAnnotations(driver.ObjectMeta.Labels, false)
 			}
 			if driver.ObjectMeta.Annotations != nil {
-				r.redactLabelsAndAnnotations(driver.ObjectMeta.Annotations)
+				r.redactLabelsAndAnnotations(driver.ObjectMeta.Annotations, true)
 			}
 		}
 	}
@@ -198,10 +199,10 @@ func (r *Redactor) RedactSnapshot(snap *snapshot.Snapshot) error {
 			rc.Name = r.Obfuscate(rc.Name, "resourceclaim")
 			rc.Namespace = r.Obfuscate(rc.Namespace, "namespace")
 			if rc.ObjectMeta.Labels != nil {
-				r.redactLabelsAndAnnotations(rc.ObjectMeta.Labels)
+				r.redactLabelsAndAnnotations(rc.ObjectMeta.Labels, false)
 			}
 			if rc.ObjectMeta.Annotations != nil {
-				r.redactLabelsAndAnnotations(rc.ObjectMeta.Annotations)
+				r.redactLabelsAndAnnotations(rc.ObjectMeta.Annotations, true)
 			}
 		}
 	}
@@ -210,10 +211,10 @@ func (r *Redactor) RedactSnapshot(snap *snapshot.Snapshot) error {
 		if rs != nil {
 			rs.Name = r.Obfuscate(rs.Name, "resourceslice")
 			if rs.ObjectMeta.Labels != nil {
-				r.redactLabelsAndAnnotations(rs.ObjectMeta.Labels)
+				r.redactLabelsAndAnnotations(rs.ObjectMeta.Labels, false)
 			}
 			if rs.ObjectMeta.Annotations != nil {
-				r.redactLabelsAndAnnotations(rs.ObjectMeta.Annotations)
+				r.redactLabelsAndAnnotations(rs.ObjectMeta.Annotations, true)
 			}
 		}
 	}
@@ -222,10 +223,10 @@ func (r *Redactor) RedactSnapshot(snap *snapshot.Snapshot) error {
 		if dc != nil {
 			dc.Name = r.Obfuscate(dc.Name, "deviceclass")
 			if dc.ObjectMeta.Labels != nil {
-				r.redactLabelsAndAnnotations(dc.ObjectMeta.Labels)
+				r.redactLabelsAndAnnotations(dc.ObjectMeta.Labels, false)
 			}
 			if dc.ObjectMeta.Annotations != nil {
-				r.redactLabelsAndAnnotations(dc.ObjectMeta.Annotations)
+				r.redactLabelsAndAnnotations(dc.ObjectMeta.Annotations, true)
 			}
 		}
 	}
@@ -235,10 +236,10 @@ func (r *Redactor) RedactSnapshot(snap *snapshot.Snapshot) error {
 			top.Name = r.Obfuscate(top.Name, "topology")
 			top.Namespace = r.Obfuscate(top.Namespace, "namespace")
 			if top.ObjectMeta.Labels != nil {
-				r.redactLabelsAndAnnotations(top.ObjectMeta.Labels)
+				r.redactLabelsAndAnnotations(top.ObjectMeta.Labels, false)
 			}
 			if top.ObjectMeta.Annotations != nil {
-				r.redactLabelsAndAnnotations(top.ObjectMeta.Annotations)
+				r.redactLabelsAndAnnotations(top.ObjectMeta.Annotations, true)
 			}
 		}
 	}
@@ -255,12 +256,12 @@ func (r *Redactor) redactNode(node *corev1.Node) {
 
 	// Redact labels (can contain sensitive infrastructure info)
 	if node.ObjectMeta.Labels != nil {
-		r.redactLabelsAndAnnotations(node.ObjectMeta.Labels)
+		r.redactLabelsAndAnnotations(node.ObjectMeta.Labels, false)
 	}
 
 	// Redact annotations
 	if node.ObjectMeta.Annotations != nil {
-		r.redactLabelsAndAnnotations(node.ObjectMeta.Annotations)
+		r.redactLabelsAndAnnotations(node.ObjectMeta.Annotations, true)
 	}
 
 	// Redact node status (contains IPs, hostnames, etc.)
@@ -289,10 +290,10 @@ func (r *Redactor) redactConfigMap(cm *corev1.ConfigMap) {
 
 	// Redact labels and annotations
 	if cm.ObjectMeta.Labels != nil {
-		r.redactLabelsAndAnnotations(cm.ObjectMeta.Labels)
+		r.redactLabelsAndAnnotations(cm.ObjectMeta.Labels, false)
 	}
 	if cm.ObjectMeta.Annotations != nil {
-		r.redactLabelsAndAnnotations(cm.ObjectMeta.Annotations)
+		r.redactLabelsAndAnnotations(cm.ObjectMeta.Annotations, true)
 	}
 
 	// Redact data contents - they can contain sensitive info
@@ -319,17 +320,23 @@ func (r *Redactor) redactConfigMap(cm *corev1.ConfigMap) {
 }
 
 // redactLabelsAndAnnotations redacts sensitive values in labels/annotations maps
-func (r *Redactor) redactLabelsAndAnnotations(labelMap map[string]string) {
+// isAnnotation parameter distinguishes between labels and annotations for proper stat tracking
+func (r *Redactor) redactLabelsAndAnnotations(labelMap map[string]string, isAnnotation bool) {
 	if labelMap == nil {
 		return
 	}
 	for key, value := range labelMap {
 		// Only redact values, not keys (keys are structural)
-		// But if value looks suspicious, obfuscate it
-		if value != "" && len(value) > 0 {
+		if value != "" {
 			redactedValue := r.Obfuscate(value, "labelval")
 			labelMap[key] = redactedValue
-			r.stats.LabelsRedacted++
+
+			// Track stats accurately based on whether it's a label or annotation
+			if isAnnotation {
+				r.stats.AnnotationsRedacted++
+			} else {
+				r.stats.LabelsRedacted++
+			}
 		}
 	}
 }
@@ -344,10 +351,10 @@ func (r *Redactor) redactPod(pod *corev1.Pod) {
 
 	// Redact labels and annotations
 	if pod.ObjectMeta.Labels != nil {
-		r.redactLabelsAndAnnotations(pod.ObjectMeta.Labels)
+		r.redactLabelsAndAnnotations(pod.ObjectMeta.Labels, false)
 	}
 	if pod.ObjectMeta.Annotations != nil {
-		r.redactLabelsAndAnnotations(pod.ObjectMeta.Annotations)
+		r.redactLabelsAndAnnotations(pod.ObjectMeta.Annotations, true)
 	}
 
 	// Redact OwnerReferences to maintain relationships but hide original names
@@ -421,7 +428,7 @@ func (r *Redactor) redactPodSpec(spec *corev1.PodSpec) {
 
 	// Redact node selector (can contain sensitive labels)
 	if spec.NodeSelector != nil {
-		r.redactLabelsAndAnnotations(spec.NodeSelector)
+		r.redactLabelsAndAnnotations(spec.NodeSelector, false)
 	}
 
 	// Redact tolerations (values can be sensitive)
@@ -442,7 +449,6 @@ func (r *Redactor) redactContainer(container *corev1.Container, containerPrefix 
 
 	container.Image = r.Obfuscate(container.Image, "image")
 	container.Name = r.Obfuscate(container.Name, containerPrefix)
-	r.stats.EnvVarsRedacted++
 
 	// Redact command and args (can contain sensitive info like API keys)
 	if len(container.Command) > 0 {
@@ -460,11 +466,12 @@ func (r *Redactor) redactContainer(container *corev1.Container, containerPrefix 
 		}
 	}
 
-	// Redact environment variables
+	// Redact environment variables - track only actual redactions
 	if len(container.Env) > 0 {
 		for i := range container.Env {
 			if container.Env[i].Value != "" {
 				container.Env[i].Value = r.Obfuscate(container.Env[i].Value, "envval")
+				r.stats.EnvVarsRedacted++
 			}
 			// Redact secret references
 			if container.Env[i].ValueFrom != nil && container.Env[i].ValueFrom.SecretKeyRef != nil {
@@ -600,7 +607,7 @@ func (r *Redactor) redactNodeSelectorTerm(term *corev1.NodeSelectorTerm) {
 func (r *Redactor) redactPodAffinityTerms(terms []corev1.PodAffinityTerm) {
 	for i := range terms {
 		if terms[i].LabelSelector != nil && terms[i].LabelSelector.MatchLabels != nil {
-			r.redactLabelsAndAnnotations(terms[i].LabelSelector.MatchLabels)
+			r.redactLabelsAndAnnotations(terms[i].LabelSelector.MatchLabels, false)
 		}
 		if terms[i].LabelSelector != nil && len(terms[i].LabelSelector.MatchExpressions) > 0 {
 			for j := range terms[i].LabelSelector.MatchExpressions {
@@ -621,13 +628,17 @@ func (r *Redactor) redactPodAffinityTerms(terms []corev1.PodAffinityTerm) {
 // redactWeightedPodAffinityTerms redacts weighted pod affinity terms
 func (r *Redactor) redactWeightedPodAffinityTerms(terms []corev1.WeightedPodAffinityTerm) {
 	for i := range terms {
-		r.redactPodAffinityTerms([]corev1.PodAffinityTerm{terms[i].PodAffinityTerm})
+		podTerms := []corev1.PodAffinityTerm{terms[i].PodAffinityTerm}
+		r.redactPodAffinityTerms(podTerms)
+		terms[i].PodAffinityTerm = podTerms[0]
 	}
 }
 
-// GetTranslationTable returns the mapping for the CLI tool to output.
+// GetTranslationTable returns a defensive copy of the mapping to prevent external mutations
 func (r *Redactor) GetTranslationTable() map[string]string {
-	return r.translationTable
+	out := make(map[string]string, len(r.translationTable))
+	maps.Copy(out, r.translationTable)
+	return out
 }
 
 // GetStats returns redaction statistics

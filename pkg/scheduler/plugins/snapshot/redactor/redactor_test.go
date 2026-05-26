@@ -41,19 +41,15 @@ func TestRedactSnapshot(t *testing.T) {
 	err := r.RedactSnapshot(snap)
 	assert.NoError(t, err)
 
-	// Verify Obfuscation
 	assert.Equal(t, "pod-1", snap.RawObjects.Pods[0].Name)
 	assert.Equal(t, "pod-2", snap.RawObjects.Pods[1].Name)
 
-	// Verify Idempotency (Namespace should be the same for both)
 	assert.Equal(t, "namespace-1", snap.RawObjects.Pods[0].Namespace)
 	assert.Equal(t, "namespace-1", snap.RawObjects.Pods[1].Namespace)
 
-	// Verify Container mapping
 	assert.Equal(t, "container-1", snap.RawObjects.Pods[0].Spec.Containers[0].Name)
 	assert.Equal(t, "image-1", snap.RawObjects.Pods[0].Spec.Containers[0].Image)
 
-	// Verify Translation Table
 	table := r.GetTranslationTable()
 	assert.Equal(t, "namespace-1", table["production-namespace"])
 	assert.Equal(t, "pod-1", table["my-secret-pod"])
@@ -86,21 +82,20 @@ func TestRedactLabelsAndAnnotations(t *testing.T) {
 	err := r.RedactSnapshot(snap)
 	assert.NoError(t, err)
 
-	// Verify labels are redacted
 	pod := snap.RawObjects.Pods[0]
 	for _, value := range pod.ObjectMeta.Labels {
-		// All values should be obfuscated (but keys remain)
 		assert.NotEqual(t, "my-app", value)
 		assert.NotEqual(t, "platform-team", value)
+		assert.NotEqual(t, "production", value)
 	}
 
-	// Verify annotations are redacted
 	for _, value := range pod.ObjectMeta.Annotations {
 		assert.NotEqual(t, "critical-service", value)
 		assert.NotEqual(t, "restricted-access", value)
 	}
 
-	assert.Equal(t, 5, r.GetStats().LabelsRedacted, "Should have redacted 5 label/annotation values")
+	assert.Equal(t, 5, r.GetStats().LabelsRedacted, "Should have redacted 3 label values")
+	assert.Equal(t, 2, r.GetStats().AnnotationsRedacted, "Should have redacted 2 annotation values")
 }
 
 func TestRedactEnvVars(t *testing.T) {
@@ -153,14 +148,14 @@ func TestRedactEnvVars(t *testing.T) {
 	pod := snap.RawObjects.Pods[0]
 	container := pod.Spec.Containers[0]
 
-	// Verify env values are redacted
 	assert.NotEqual(t, "sk-super-secret-key-12345", container.Env[0].Value)
 	assert.NotEqual(t, "postgres://user:password@internal-db:5432/prod", container.Env[1].Value)
 	assert.Equal(t, "API_KEY", container.Env[0].Name) // Key names shouldn't be redacted
 
-	// Verify secret references are redacted
 	assert.NotEqual(t, "app-secrets", container.Env[2].ValueFrom.SecretKeyRef.Name)
 	assert.NotEqual(t, "api-token", container.Env[2].ValueFrom.SecretKeyRef.Key)
+
+	assert.Equal(t, 2, r.GetStats().EnvVarsRedacted, "Should have redacted 2 env var values")
 }
 
 func TestRedactConfigMaps(t *testing.T) {
@@ -192,7 +187,6 @@ func TestRedactConfigMaps(t *testing.T) {
 	assert.Equal(t, "configmap-1", cm.Name)
 	assert.Equal(t, "namespace-1", cm.Namespace)
 
-	// Verify data is redacted
 	for key, value := range cm.Data {
 		assert.NotEqual(t, "database.yml", key)
 		assert.NotEqual(t, "host: prod-db.internal\nport: 5432", value)
@@ -538,6 +532,78 @@ func TestRedactionStats(t *testing.T) {
 	stats := r.GetStats()
 	assert.Equal(t, 1, stats.PodsRedacted, "Should have redacted 1 pod")
 	assert.Greater(t, stats.LabelsRedacted, 0, "Should have redacted labels")
-	assert.Greater(t, stats.EnvVarsRedacted, 0, "Should have redacted env vars")
+	assert.Equal(t, 2, stats.EnvVarsRedacted, "Should have redacted 2 env vars")
 	assert.Greater(t, stats.SecretsRedacted, 0, "Should have redacted secrets")
+}
+
+func TestGetTranslationTableDefensiveCopy(t *testing.T) {
+	r := NewRedactor()
+
+	val1 := r.Obfuscate("original-1", "test")
+	val2 := r.Obfuscate("original-2", "test")
+
+	table := r.GetTranslationTable()
+	assert.NotNil(t, table)
+	assert.Equal(t, val1, table["original-1"])
+	assert.Equal(t, val2, table["original-2"])
+
+	table["original-1"] = "mutated-value"
+	table["new-key"] = "new-value"
+
+	originalTable := r.GetTranslationTable()
+	assert.Equal(t, val1, originalTable["original-1"], "Internal map should not be mutated")
+	assert.NotContains(t, originalTable, "new-key", "New keys should not affect internal state")
+}
+
+func TestRedactWeightedPodAffinityTerms(t *testing.T) {
+	snap := &snapshot.Snapshot{
+		RawObjects: &snapshot.RawKubernetesObjects{
+			Pods: []*corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "pod-with-weighted-affinity",
+						Namespace: "default",
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{Name: "app", Image: "app:v1"},
+						},
+						Affinity: &corev1.Affinity{
+							PodAffinity: &corev1.PodAffinity{
+								PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{
+									{
+										Weight: 50,
+										PodAffinityTerm: corev1.PodAffinityTerm{
+											LabelSelector: &metav1.LabelSelector{
+												MatchLabels: map[string]string{
+													"app": "preferred-app",
+												},
+											},
+											TopologyKey: "kubernetes.io/hostname",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	r := NewRedactor()
+	err := r.RedactSnapshot(snap)
+	assert.NoError(t, err)
+
+	pod := snap.RawObjects.Pods[0]
+	affinity := pod.Spec.Affinity.PodAffinity
+	assert.NotNil(t, affinity)
+	assert.NotNil(t, affinity.PreferredDuringSchedulingIgnoredDuringExecution)
+	assert.Len(t, affinity.PreferredDuringSchedulingIgnoredDuringExecution, 1)
+
+	term := affinity.PreferredDuringSchedulingIgnoredDuringExecution[0]
+	for _, value := range term.PodAffinityTerm.LabelSelector.MatchLabels {
+		assert.NotEqual(t, "preferred-app", value, "Label value should be redacted in weighted affinity term")
+	}
+	assert.NotEqual(t, "kubernetes.io/hostname", term.PodAffinityTerm.TopologyKey, "TopologyKey should be redacted")
 }

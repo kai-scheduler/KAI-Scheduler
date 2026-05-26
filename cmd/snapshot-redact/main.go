@@ -59,7 +59,7 @@ func main() {
 	}
 
 	if !*dryRun {
-		if err := validateOutputFiles(*outputZip, *translationFile, *force); err != nil {
+		if err := validateOutputFiles(*outputZip, *translationFile, *reportFile, *force); err != nil {
 			fmt.Fprintf(os.Stderr, "ERROR: Output file validation failed: %v\n", err)
 			os.Exit(1)
 		}
@@ -106,7 +106,8 @@ func main() {
 		fmt.Println("Redaction completed successfully")
 		fmt.Printf("  Pods redacted: %d\n", stats.PodsRedacted)
 		fmt.Printf("  Nodes redacted: %d\n", stats.NodesRedacted)
-		fmt.Printf("  Labels/Annotations redacted: %d\n", stats.LabelsRedacted)
+		fmt.Printf("  Labels redacted: %d\n", stats.LabelsRedacted)
+		fmt.Printf("  Annotations redacted: %d\n", stats.AnnotationsRedacted)
 		fmt.Printf("  Env vars redacted: %d\n", stats.EnvVarsRedacted)
 		fmt.Printf("  Secrets redacted: %d\n", stats.SecretsRedacted)
 		fmt.Printf("  ConfigMaps redacted: %d\n", stats.ConfigMapsRedacted)
@@ -119,6 +120,9 @@ func main() {
 		fmt.Printf("\nWould have created:\n")
 		fmt.Printf("  - Redacted snapshot: %s\n", *outputZip)
 		fmt.Printf("  - Translation table: %s\n", *translationFile)
+		if *reportFile != "" {
+			fmt.Printf("  - Redaction report: %s\n", *reportFile)
+		}
 		printRedactionSummary(stats, len(translationTable))
 		return
 	}
@@ -161,6 +165,9 @@ func main() {
 
 	fmt.Printf("\n✓ Successfully created redacted snapshot: %s\n", *outputZip)
 	fmt.Printf("✓ Successfully created translation table: %s\n", *translationFile)
+	if *reportFile != "" {
+		fmt.Printf("✓ Successfully created redaction report: %s\n", *reportFile)
+	}
 	printRedactionSummary(stats, len(translationTable))
 }
 
@@ -178,24 +185,31 @@ func validateInputFile(filename string) error {
 		return fmt.Errorf("path is a directory, not a file: %s", filename)
 	}
 
-	// Try to open as zip
-	_, err = zip.OpenReader(filename)
+	// Try to open as zip and properly close the reader
+	zr, err := zip.OpenReader(filename)
 	if err != nil {
 		return fmt.Errorf("file is not a valid zip: %v", err)
 	}
+	defer zr.Close()
 
 	return nil
 }
 
 // validateOutputFiles checks if output files can be created
-func validateOutputFiles(outZip, tableFile string, force bool) error {
-	// Check if files already exist
+// FIXED: Now includes reportFile in --force flag enforcement
+func validateOutputFiles(outZip, tableFile, reportFile string, force bool) error {
+	// Check if files already exist and respect --force flag
 	if _, err := os.Stat(outZip); err == nil && !force {
 		return fmt.Errorf("output file already exists: %s (use --force to overwrite)", outZip)
 	}
 
 	if _, err := os.Stat(tableFile); err == nil && !force {
 		return fmt.Errorf("translation table file already exists: %s (use --force to overwrite)", tableFile)
+	}
+	if reportFile != "" {
+		if _, err := os.Stat(reportFile); err == nil && !force {
+			return fmt.Errorf("report file already exists: %s (use --force to overwrite)", reportFile)
+		}
 	}
 
 	// Check if directories are writable
@@ -213,6 +227,16 @@ func validateOutputFiles(outZip, tableFile string, force bool) error {
 	}
 	if info, err := os.Stat(tableDir); err != nil || !info.IsDir() {
 		return fmt.Errorf("table directory is not accessible: %s", tableDir)
+	}
+
+	if reportFile != "" {
+		reportDir := filepath.Dir(reportFile)
+		if reportDir == "" {
+			reportDir = "."
+		}
+		if info, err := os.Stat(reportDir); err != nil || !info.IsDir() {
+			return fmt.Errorf("report directory is not accessible: %s", reportDir)
+		}
 	}
 
 	return nil
@@ -349,7 +373,8 @@ func printRedactionSummary(stats redactor.RedactionStats, tableSize int) {
 	fmt.Printf("Resources Redacted:\n")
 	fmt.Printf("  Pods: %d\n", stats.PodsRedacted)
 	fmt.Printf("  Nodes: %d\n", stats.NodesRedacted)
-	fmt.Printf("  Labels/Annotations: %d\n", stats.LabelsRedacted)
+	fmt.Printf("  Labels: %d\n", stats.LabelsRedacted)
+	fmt.Printf("  Annotations: %d\n", stats.AnnotationsRedacted)
 	fmt.Printf("  Environment Variables: %d\n", stats.EnvVarsRedacted)
 	fmt.Printf("  Secrets: %d\n", stats.SecretsRedacted)
 	fmt.Printf("  ConfigMaps: %d\n", stats.ConfigMapsRedacted)
