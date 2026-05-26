@@ -52,7 +52,7 @@ spec:
             - -c
             - |
               echo "Deleting deployments..."
-              kubectl -n kai-scheduler delete deployment --all --ignore-not-found=true
+              kubectl -n {{ .Release.Namespace }} delete deployment --all --ignore-not-found=true
 
               echo "Deleting kai-config..."
               kubectl delete Config kai-config --ignore-not-found
