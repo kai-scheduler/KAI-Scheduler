@@ -94,7 +94,7 @@ func TestRedactLabelsAndAnnotations(t *testing.T) {
 		assert.NotEqual(t, "restricted-access", value)
 	}
 
-	assert.Equal(t, 5, r.GetStats().LabelsRedacted, "Should have redacted 3 label values")
+	assert.Equal(t, 3, r.GetStats().LabelsRedacted, "Should have redacted 3 label values")
 	assert.Equal(t, 2, r.GetStats().AnnotationsRedacted, "Should have redacted 2 annotation values")
 }
 
