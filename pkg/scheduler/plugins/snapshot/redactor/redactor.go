@@ -45,12 +45,16 @@ func (r *Redactor) Obfuscate(original, prefix string) string {
 	if original == "" {
 		return ""
 	}
-	if obfuscated, exists := r.translationTable[original]; exists {
+
+	key := prefix + ":" + original
+
+	if obfuscated, exists := r.translationTable[key]; exists {
 		return obfuscated
 	}
+
 	r.counters[prefix]++
 	obfuscated := fmt.Sprintf("%s-%d", prefix, r.counters[prefix])
-	r.translationTable[original] = obfuscated
+	r.translationTable[key] = obfuscated
 	return obfuscated
 }
 

@@ -196,7 +196,6 @@ func validateInputFile(filename string) error {
 }
 
 // validateOutputFiles checks if output files can be created
-// FIXED: Now includes reportFile in --force flag enforcement
 func validateOutputFiles(outZip, tableFile, reportFile string, force bool) error {
 	// Check if files already exist and respect --force flag
 	if _, err := os.Stat(outZip); err == nil && !force {

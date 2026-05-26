@@ -745,3 +745,23 @@ func TestRedactWeightedPodAffinityTerms(t *testing.T) {
 	}
 	assert.NotEqual(t, "kubernetes.io/hostname", term.PodAffinityTerm.TopologyKey, "TopologyKey should be redacted")
 }
+func TestObfuscateSameValueDifferentPrefix(t *testing.T) {
+	r := NewRedactor()
+
+	podObfuscated := r.Obfuscate("worker-1", "pod")
+	nodeObfuscated := r.Obfuscate("worker-1", "node")
+
+	assert.NotEqual(t, podObfuscated, nodeObfuscated,
+		"Same value with different prefixes should obfuscate to different values")
+
+	assert.Equal(t, "pod-1", podObfuscated)
+	assert.Equal(t, "node-1", nodeObfuscated)
+
+	podObfuscated2 := r.Obfuscate("worker-1", "pod")
+	assert.Equal(t, "pod-1", podObfuscated2)
+
+	table := r.GetTranslationTable()
+	assert.Equal(t, 2, len(table))
+	assert.Equal(t, "pod-1", table["pod:worker-1"])
+	assert.Equal(t, "node-1", table["node:worker-1"])
+}
