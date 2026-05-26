@@ -54,14 +54,14 @@ The PodGroup is an internal scheduler abstraction; the metric should let operato
 ```
 kai_pod_group_evicted_pods_total{
   podgroup, namespace, nodepool, action,
-  owner_kind, owner_name, subgroup
+  owner_group, owner_kind, owner_name, subgroup
 }
 # Counter. Increments by 1 per pod evicted.
 # Pre-initialized at 0 when the scheduler first observes the PodGroup.
 
 kai_pod_group_eviction_events_total{                          # NEW
   podgroup, namespace, nodepool, action,
-  owner_kind, owner_name
+  owner_group, owner_kind, owner_name
 }
 # Counter. Increments by 1 per scheduling decision that evicts pods from this PG.
 # Pre-initialized at 0 when the scheduler first observes the PodGroup.
@@ -75,6 +75,7 @@ kai_pod_group_eviction_events_total{                          # NEW
 | `namespace` | `PodGroup.Namespace` | Unchanged. |
 | `nodepool` | PodGroup label (existing helper) | Unchanged. |
 | `action` | scheduler action type | Unchanged. Values: `preempt`, `reclaim`, `consolidation`, `stalegangeviction`. |
+| `owner_group` | `kai.scheduler/top-owner-metadata` annotation on the PodGroup | NEW. The API Group of the top-level workload object (`kubeflow.org`, `jobset.x-k8s.io`, `apps`, …). Disambiguates Kinds shared across operators (e.g., `MPIJob` from kubeflow vs mpi-operator). `""` for core/v1 objects. |
 | `owner_kind` | `kai.scheduler/top-owner-metadata` annotation on the PodGroup | NEW. The Kind of the top-level workload object (`JobSet`, `Deployment`, `MPIJob`, …). |
 | `owner_name` | `kai.scheduler/top-owner-metadata` annotation on the PodGroup | NEW. The Name of the top-level workload object. Re-submissions of the same name aggregate together. |
 | `subgroup` | `kai.scheduler/subgroup-name` label on the evicted pod (pods counter only) | NEW. The leaf SubGroup the evicted pod belongs to. `""` for flat PodGroups. |
@@ -86,7 +87,11 @@ The podgrouper writes the annotation `kai.scheduler/top-owner-metadata` on every
 
 `PodGroup.OwnerReferences` is not a reliable source because grouper plugins override it for plugin-specific purposes — e.g., the Deployment grouper sets the ownerReference to the Pod itself rather than the Deployment, to keep its per-pod PodGroup naming model coherent. The top-owner annotation always reflects the true workload object regardless of grouper plugin quirks.
 
-For PodGroups without a top-owner annotation, both labels are emitted as `""`.
+For PodGroups without a top-owner annotation, all three labels (`owner_group`, `owner_kind`, `owner_name`) are emitted as `""`.
+
+#### Why `owner_group` but not `owner_version`
+
+The annotation carries the full GVK, but `version` is intentionally not exposed as a label. A given workload object does not change CRD version after creation, so the version label would add cardinality without disambiguating anything in operator queries. `group` is exposed because the same `Kind` name is reused across operators (e.g., `MPIJob` exists under both `kubeflow.org` and `mpi-operator.kubeflow.org`), and operators querying by `owner_kind="MPIJob"` would otherwise silently aggregate across distinct operator universes. If a future query genuinely needs version pivoting, the version field is still present in the annotation and a follow-up can add the label without breaking existing series.
 
 #### Why `subgroup` only on the pods counter
 
@@ -237,8 +242,9 @@ sum by (owner_name) (
 )
 
 # "Top 10 most-disrupted JobSets in the last hour"
+# owner_group disambiguates Kinds shared across operators (e.g. MPIJob in kubeflow vs mpi-operator).
 topk(10,
-  sum by (namespace, owner_name) (
+  sum by (namespace, owner_group, owner_name) (
     increase(kai_pod_group_eviction_events_total{owner_kind="JobSet"}[1h])
   )
 )
@@ -280,7 +286,7 @@ For Deployments specifically, the per-pod PG model means `P` scales with pod cou
 | Change | Type | Impact |
 |---|---|---|
 | Drop `uid` label | **Breaking** | Existing dashboard panels that filter on `uid="..."` return empty. In practice impact is expected to be near-zero because (a) the metric is broken for rate-based queries today, so consumers using it are limited, and (b) `uid` is an internal value, not a human-typed filter. CHANGELOG entry required. |
-| Add `owner_kind`, `owner_name`, `subgroup` | Additive | Changes series identity, but queries that `sum by (...)` without these labels keep working. |
+| Add `owner_group`, `owner_kind`, `owner_name`, `subgroup` | Additive | Changes series identity, but queries that `sum by (...)` without these labels keep working. |
 | Pre-init at 0 on first observe | Additive | New zero-valued series for never-evicted PGs. Cardinality bound = active PGs × actions. |
 | New `kai_pod_group_eviction_events_total` | Additive | No impact on existing consumers. |
 
