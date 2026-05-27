@@ -106,6 +106,16 @@ func (r *ResourceRequirements) SetMaxResource(rr *ResourceRequirements) error {
 	return r.GpuResourceRequirement.SetMaxResource(&rr.GpuResourceRequirement)
 }
 
+// Add sums `rr` into `r` across both `BaseResource` and
+// `GpuResourceRequirement`.
+func (r *ResourceRequirements) Add(rr *ResourceRequirements) error {
+	if r == nil || rr == nil {
+		return nil
+	}
+	r.BaseResource.Add(&rr.BaseResource)
+	return r.GpuResourceRequirement.Add(&rr.GpuResourceRequirement)
+}
+
 func (r *ResourceRequirements) LessInAtLeastOneResource(rr *ResourceRequirements) bool {
 	return !rr.LessEqual(r)
 }
