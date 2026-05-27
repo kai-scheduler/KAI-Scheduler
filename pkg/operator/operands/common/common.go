@@ -31,6 +31,7 @@ var controllerTypes = []string{"Deployment", "DaemonSet"}
 // PodDisruptionBudgetImplementedServices lists operand resource names with operator-side PDB creation.
 var PodDisruptionBudgetImplementedServices = map[string]struct{}{
 	"admission": {},
+	"scheduler": {},
 }
 
 func PodDisruptionBudgetImplemented(serviceName string) bool {

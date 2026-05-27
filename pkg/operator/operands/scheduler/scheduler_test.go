@@ -11,8 +11,10 @@ import (
 	. "github.com/onsi/gomega"
 
 	appsv1 "k8s.io/api/apps/v1"
+	policyv1 "k8s.io/api/policy/v1"
 
 	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -128,6 +130,80 @@ var _ = Describe("Scheduler", func() {
 		services := &v1.ServiceList{}
 		Expect(fakeClient.List(ctx, services, client.InNamespace(kaiConfig.Spec.Namespace))).To(Succeed())
 		Expect(len(services.Items)).To(Equal(2))
+	})
+
+	It("Should create one PDB per shard when HA and PDB enabled", func(ctx context.Context) {
+		kaiConfig.Spec.Scheduler.Replicas = ptr.To(int32(2))
+		kaiConfig.Spec.Scheduler.Service.PodDisruptionBudget = &common.PodDisruptionBudget{
+			Enabled:        ptr.To(true),
+			MaxUnavailable: ptr.To(int32(1)),
+		}
+
+		desiredState, err := schedulerOperandForShard.DesiredState(ctx, fakeClient, kaiConfig)
+		Expect(err).To(BeNil())
+		for _, obj := range desiredState {
+			Expect(fakeClient.Create(ctx, obj)).To(Succeed())
+		}
+
+		otherShard := &kaiv1.SchedulingShard{
+			ObjectMeta: metav1.ObjectMeta{Name: "other"},
+		}
+		otherShard.Spec.SetDefaultsWhereNeeded()
+		otherDesiredState, err := NewSchedulerForShard(otherShard).DesiredState(ctx, fakeClient, kaiConfig)
+		Expect(err).To(BeNil())
+		for _, obj := range otherDesiredState {
+			Expect(fakeClient.Create(ctx, obj)).To(Succeed())
+		}
+
+		pdbs := &policyv1.PodDisruptionBudgetList{}
+		Expect(fakeClient.List(ctx, pdbs, client.InNamespace(kaiConfig.Spec.Namespace))).To(Succeed())
+		Expect(pdbs.Items).To(HaveLen(2))
+		pdbNames := []string{pdbs.Items[0].Name, pdbs.Items[1].Name}
+		Expect(pdbNames).To(ConsistOf("kai-scheduler-default", "kai-scheduler-other"))
+	})
+
+	Context("PodDisruptionBudget DesiredState", func() {
+		It("includes PDB when HA and enabled", func(ctx context.Context) {
+			kaiConfig.Spec.Scheduler.Replicas = ptr.To(int32(2))
+			kaiConfig.Spec.Scheduler.Service.PodDisruptionBudget = &common.PodDisruptionBudget{
+				Enabled: ptr.To(true),
+			}
+
+			desiredState, err := schedulerOperandForShard.DesiredState(ctx, fakeClient, kaiConfig)
+			Expect(err).To(BeNil())
+			Expect(desiredState).To(HaveLen(5))
+
+			var pdbCount int
+			for _, obj := range desiredState {
+				if _, ok := obj.(*policyv1.PodDisruptionBudget); ok {
+					pdbCount++
+				}
+			}
+			Expect(pdbCount).To(Equal(1))
+		})
+
+		It("omits PDB when HA but disabled", func(ctx context.Context) {
+			kaiConfig.Spec.Scheduler.Replicas = ptr.To(int32(2))
+			kaiConfig.Spec.Scheduler.Service.PodDisruptionBudget = &common.PodDisruptionBudget{
+				Enabled: ptr.To(false),
+			}
+
+			desiredState, err := schedulerOperandForShard.DesiredState(ctx, fakeClient, kaiConfig)
+			Expect(err).To(BeNil())
+			Expect(desiredState).To(HaveLen(4))
+
+			for _, obj := range desiredState {
+				Expect(obj).NotTo(BeAssignableToTypeOf(&policyv1.PodDisruptionBudget{}))
+			}
+		})
+
+		It("returns empty desired state when scheduler disabled", func(ctx context.Context) {
+			kaiConfig.Spec.Scheduler.Service.Enabled = ptr.To(false)
+
+			desiredState, err := schedulerOperandForShard.DesiredState(ctx, fakeClient, kaiConfig)
+			Expect(err).To(BeNil())
+			Expect(desiredState).To(BeEmpty())
+		})
 	})
 
 	Context("ConfigMap", func() {
