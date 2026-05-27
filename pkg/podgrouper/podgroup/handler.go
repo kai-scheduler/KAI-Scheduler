@@ -98,12 +98,16 @@ func (h *Handler) createPodGroupForMetadata(podGroupMetadata Metadata) *scheduli
 			},
 		},
 		Spec: schedulingv2alpha2.PodGroupSpec{
-			MinMember:         ptr.To(podGroupMetadata.MinAvailable),
 			Queue:             podGroupMetadata.Queue,
 			PriorityClassName: podGroupMetadata.PriorityClassName,
 			SubGroups:         []schedulingv2alpha2.SubGroup{},
 			Preemptibility:    podGroupMetadata.Preemptibility,
 		},
+	}
+	if podGroupMetadata.MinSubGroup != nil {
+		pg.Spec.MinSubGroup = podGroupMetadata.MinSubGroup
+	} else {
+		pg.Spec.MinMember = ptr.To(podGroupMetadata.MinAvailable)
 	}
 
 	for _, subGroup := range podGroupMetadata.SubGroups {
@@ -115,13 +119,17 @@ func (h *Handler) createPodGroupForMetadata(podGroupMetadata Metadata) *scheduli
 				Topology:               subGroup.TopologyConstraints.Topology,
 			}
 		}
-		pg.Spec.SubGroups = append(pg.Spec.SubGroups,
-			schedulingv2alpha2.SubGroup{
-				Name:               subGroup.Name,
-				MinMember:          ptr.To(subGroup.MinAvailable),
-				Parent:             subGroup.Parent,
-				TopologyConstraint: topologyConstraint,
-			})
+		newSubGroup := schedulingv2alpha2.SubGroup{
+			Name:               subGroup.Name,
+			Parent:             subGroup.Parent,
+			TopologyConstraint: topologyConstraint,
+		}
+		if subGroup.MinSubGroup != nil {
+			newSubGroup.MinSubGroup = subGroup.MinSubGroup
+		} else {
+			newSubGroup.MinMember = ptr.To(subGroup.MinAvailable)
+		}
+		pg.Spec.SubGroups = append(pg.Spec.SubGroups, newSubGroup)
 	}
 
 	pg.Spec.TopologyConstraint = schedulingv2alpha2.TopologyConstraint{
