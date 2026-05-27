@@ -27,11 +27,6 @@
 //   - Environment variable names (they're structural)
 //   - Affinity operators and effect types
 //   - Resource relationships (pod → node, etc.)
-//
-// Consistency:
-//   - The same original value always maps to the same obfuscated value
-//   - Different prefixes for the same value produce different obfuscations
-//   - The translation table can be used to reverse-map obfuscated values
 package redactor
 
 import (
@@ -679,8 +674,6 @@ func (r *Redactor) redactWeightedPodAffinityTerms(terms []corev1.WeightedPodAffi
 }
 
 // GetTranslationTable returns a defensive copy of the translation table mapping original values
-// to their obfuscated equivalents. Keys in the map include the prefix separated by colon, e.g.,
-// "pod:my-pod-name" → "pod-1", "node:worker-1" → "node-1".
 func (r *Redactor) GetTranslationTable() map[string]string {
 	out := make(map[string]string, len(r.translationTable))
 	for k, v := range r.translationTable {
