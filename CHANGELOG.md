@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - Removed redundant `PodDisruptionBudgetImplemented` guard from operator PDB creation helper [#1613](https://github.com/kai-scheduler/KAI-Scheduler/pull/1613) [dttung2905](https://github.com/dttung2905)
 - Updated Go toolchain and base build images to v1.26.3.
+- **Breaking:** The podgroup produced for JobSet is now produces as a single PodGroup per JobSet with a two-level SubGroup hierarchy (one parent SubGroup per `replicatedJob`, one leaf SubGroup per replica) regardless of `startupPolicyOrder`. The `kai.scheduler/batch-min-member` annotation on the JobSet now overrides the root `minSubGroup`; the same annotation on `replicatedJobs[].template.metadata.annotations` overrides the leaf `minMember` (defaulting to `template.spec.parallelism`). [#1617](https://github.com/kai-scheduler/KAI-Scheduler/pull/1617) [davidLif](https://github.com/davidLif)
 
 ### Fixed
 - Fixed post-delete cleanup hook hardcoding `kai-scheduler` namespace instead of Helm release namespace on `helm uninstall` [#1619](https://github.com/kai-scheduler/KAI-Scheduler/pull/1619) [dttung2905](https://github.com/dttung2905)
@@ -41,6 +42,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Rebuilt the `crd-upgrader` hook image on `alpine:3.20` instead of `ubi9/ubi-minimal`. Image size drops from ~165 MB to ~67 MB uncompressed (~60% reduction), shrinking cold-pull latency on ephemeral CI runners. The image is also reused by the `topology-migration` and `post-delete` hook jobs as a generic `kubectl + bash` toolbox, so bash is preserved on the runtime image. [#1404](https://github.com/kai-scheduler/KAI-Scheduler/issues/1404)
 
 ### Fixed
+- Account for native sidecar containers (initContainers with `restartPolicy: Always`, KEP-753) in pod resource accounting, matching kubelet's `AggregateContainerRequests`. Previously, native sidecar requests were max'd against regular containers instead of summed with them, causing the scheduler to bind pods that kubelet then rejected at admission with `OutOfCpu`/`OutOfGpu`. [#1556](https://github.com/kai-scheduler/KAI-Scheduler/pull/1556)
 - Streaming snapshot JSON directly into the zip writer to avoid OOM on large clusters. The `/get-snapshot` endpoint previously buffered the entire JSON payload in memory (~3x the data size); it now streams per-element, reducing peak memory to ~1x. [#1564](https://github.com/kai-scheduler/KAI-Scheduler/pull/1564)
 - Fixed `additionalImagePullSecrets` in Config CR rendering as `map[name:...]` instead of plain strings by extracting `.name` from `global.imagePullSecrets` objects. Also propagated `global.imagePullSecrets` to all Helm hook jobs (`crd-upgrader`, `topology-migration`, `post-delete-cleanup`)
 - Added `global.nodeSelector`, `global.tolerations`, `global.affinity`, `global.securityContext` support to the post-delete job hook.

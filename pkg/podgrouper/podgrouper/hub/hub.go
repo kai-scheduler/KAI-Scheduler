@@ -116,7 +116,7 @@ func NewDefaultPluginsHub(kubeClient client.Client, searchForLegacyPodGroups,
 	podJobGrouper := podjob.NewPodJobGrouper(defaultGrouper, sparkGrouper)
 
 	groveGrouper := grove.NewGroveGrouper(kubeClient, defaultGrouper)
-	jobSetGrouper := jobsetplugin.NewJobSetGrouper(defaultGrouper)
+	jobSetGrouper := jobsetplugin.NewJobSetGrouper(kubeClient, defaultGrouper)
 
 	table := map[metav1.GroupVersionKind]grouper.Grouper{
 		{
