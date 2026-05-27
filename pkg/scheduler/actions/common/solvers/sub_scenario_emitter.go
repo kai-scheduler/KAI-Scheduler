@@ -18,7 +18,7 @@ import (
 // potential victims, picked by node so the simulation only sees nodes that can plausibly
 // host a pending task. The emitter starts at the smallest top-K of victim-bearing nodes
 // whose cumulative post-eviction capacity (added to baseline) covers total pending demand,
-// and grows the set by one node each subsequent call.
+// and grows the set with exponentially increasing steps, clamped to the full candidate set.
 //
 // "Picking" a node selects every potential-victim *batch* that has any task on that node,
 // and includes the batch's tasks across all nodes it spans. This preserves gang semantics:
@@ -48,18 +48,19 @@ type subScenarioEmitter struct {
 	nodeBatches map[string][]int // node -> indexes into batches, in insertion order
 	batches     []victimBatch
 	nextK       int
+	dK          int
 }
 
 func newSubScenarioEmitter(
 	session *framework.Session, base *scenario.ByNodeScenario,
-	feasibleNodes map[string]*node_info.NodeInfo,
+	baseNodes map[string]*node_info.NodeInfo,
 ) *subScenarioEmitter {
 	pendingDemand, minPendingTask := pendingTaskGpuStats(base)
 	recordedFreed := recordedFreedByNode(base)
 	batches, nodeBatches, nodeFirstSeenAt := buildVictimBatches(base)
 	nodeCap := nodeCapacities(session, batches, nodeBatches, recordedFreed)
 	candidates := sortViableCandidates(nodeBatches, nodeCap, nodeFirstSeenAt, minPendingTask)
-	baseline := baselineCapacity(feasibleNodes, nodeBatches, recordedFreed)
+	baseline := baselineCapacity(baseNodes, nodeBatches, recordedFreed)
 
 	remaining := pendingDemand - baseline
 	if remaining < 0 {
@@ -74,25 +75,27 @@ func newSubScenarioEmitter(
 		nodeBatches: nodeBatches,
 		batches:     batches,
 		nextK:       minK,
+		dK:          1,
 	}
 }
 
 // next emits the next sub-scenario, or nil when no more sub-scenarios are worth trying.
-// Each call grows the picked-nodes prefix by one. Picking a node selects every victim
-// batch with a task on that node and includes the batch's full task set across all
-// nodes (gang-preserving).
+// Each call grows the picked-nodes prefix. Picking a node selects every victim batch
+// with a task on that node and includes the batch's full task set across all nodes
+// (gang-preserving).
 func (sse *subScenarioEmitter) next() *scenario.ByNodeScenario {
 	if sse.nextK < 0 || sse.nextK > len(sse.sortedNodes) {
 		return nil
 	}
 
+	k := sse.nextK
 	pickedBatches := map[int]bool{}
-	for i := 0; i < sse.nextK; i++ {
+	for i := 0; i < k; i++ {
 		for _, bi := range sse.nodeBatches[sse.sortedNodes[i]] {
 			pickedBatches[bi] = true
 		}
 	}
-	sse.nextK++
+	sse.advanceNextK(k)
 
 	sub := scenario.NewByNodeScenario(
 		sse.session,
@@ -105,6 +108,20 @@ func (sse *subScenarioEmitter) next() *scenario.ByNodeScenario {
 		sub.AddPotentialVictimsTasks(sse.batches[bi].tasks)
 	}
 	return sub
+}
+
+func (sse *subScenarioEmitter) advanceNextK(currentK int) {
+	if currentK >= len(sse.sortedNodes) {
+		sse.nextK = len(sse.sortedNodes) + 1
+		return
+	}
+
+	nextK := currentK + sse.dK
+	if nextK > len(sse.sortedNodes) {
+		nextK = len(sse.sortedNodes)
+	}
+	sse.nextK = nextK
+	sse.dK *= 2
 }
 
 // recordedFreedByNode returns the per-node sum of GPUs that will be freed when the
