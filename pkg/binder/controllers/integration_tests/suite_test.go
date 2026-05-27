@@ -25,7 +25,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding/resourcereservation"
@@ -112,7 +111,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 
 	rrs = resourcereservation.NewService(false, clientWithWatch, "", 40*time.Second,
-		resourceReservationNameSpace, resourceReservationServiceAccount, resourceReservationAppLabelValue, scalingPodsNamespace, constants.DefaultRuntimeClassName,
+		resourceReservationNameSpace, resourceReservationServiceAccount, resourceReservationAppLabelValue, scalingPodsNamespace,
 		nil, nil, nil)
 	podBinder := binding.NewBinder(k8sManager.GetClient(), rrs, binderPlugins)
 

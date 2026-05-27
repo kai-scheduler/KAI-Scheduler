@@ -169,7 +169,7 @@ admission:
     metricsPort: 8080
     probePort: 8081
   cdi: false
-  gpuPodRuntimeClassName: nvidia
+  gpuFractionRuntimeClassName: nvidia
   affinity: {}
   podDisruptionBudget:
     enabled: true

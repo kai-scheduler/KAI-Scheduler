@@ -25,6 +25,20 @@ type Options struct {
 	FakeGPUNodes                bool
 	GPUSharingEnabled           bool
 	GPUPodRuntimeClassName      string
+	GPUFractionRuntimeClassName string
+}
+
+// ResolvedGPUFractionRuntimeClassName returns the effective runtime class name
+// for fraction pods, preferring the new flag and falling back to the deprecated
+// alias when only the deprecated one was set explicitly.
+func (o *Options) ResolvedGPUFractionRuntimeClassName() string {
+	if pflag.CommandLine.Changed("gpu-fraction-runtime-class-name") {
+		return o.GPUFractionRuntimeClassName
+	}
+	if pflag.CommandLine.Changed("gpu-pod-runtime-class-name") {
+		return o.GPUPodRuntimeClassName
+	}
+	return o.GPUFractionRuntimeClassName
 }
 
 func InitOptions() *Options {
@@ -68,7 +82,14 @@ func InitOptions() *Options {
 		"Specifies if the GPU sharing is enabled")
 	fs.StringVar(&options.GPUPodRuntimeClassName,
 		"gpu-pod-runtime-class-name", constants.DefaultRuntimeClassName,
-		fmt.Sprintf("Runtime class to be set for GPU pods (defaults to %s) Set to empty string to disable", constants.DefaultRuntimeClassName))
+		fmt.Sprintf("Deprecated: use --gpu-fraction-runtime-class-name. "+
+			"Runtime class for GPU fraction pods (defaults to %s). "+
+			"Set to empty string to disable.", constants.DefaultRuntimeClassName))
+	fs.StringVar(&options.GPUFractionRuntimeClassName,
+		"gpu-fraction-runtime-class-name", constants.DefaultRuntimeClassName,
+		fmt.Sprintf("Runtime class to be set for GPU fraction pods (defaults to %s). "+
+			"Whole-GPU pods are not affected. Set to empty string to disable.",
+			constants.DefaultRuntimeClassName))
 
 	utilfeature.DefaultMutableFeatureGate.AddFlag(fs)
 

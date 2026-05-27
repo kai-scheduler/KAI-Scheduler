@@ -56,6 +56,11 @@ func (in *Admission) DeepCopyInto(out *Admission) {
 		*out = new(string)
 		**out = **in
 	}
+	if in.GPUFractionRuntimeClassName != nil {
+		in, out := &in.GPUFractionRuntimeClassName, &out.GPUFractionRuntimeClassName
+		*out = new(string)
+		**out = **in
+	}
 	if in.VPA != nil {
 		in, out := &in.VPA, &out.VPA
 		*out = new(common.VPASpec)

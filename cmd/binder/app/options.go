@@ -35,7 +35,6 @@ type Options struct {
 	ProbeAddr                                   string
 	FakeGPUNodes                                bool
 	Plugins                                     flags.JSONFlag[binderplugins.Config]
-	RuntimeClassName                            string
 }
 
 func InitOptions(fs *pflag.FlagSet) *Options {
@@ -106,9 +105,6 @@ func InitOptions(fs *pflag.FlagSet) *Options {
 	fs.Var(&options.Plugins,
 		"plugins",
 		"JSON-serialized binder plugin configuration keyed by plugin name")
-	fs.StringVar(&options.RuntimeClassName,
-		"runtime-class-name", "",
-		"Runtime class for reservation pods")
 
 	utilfeature.DefaultMutableFeatureGate.AddFlag(fs)
 

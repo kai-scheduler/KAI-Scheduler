@@ -258,10 +258,6 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1binder.Binder, fakeGPU 
 
 	args = common.AddControllerRuntimeJSONLogArg(kaiConfig.Spec.Global.JSONLog, args)
 
-	if config.ResourceReservation.RuntimeClassName != nil && len(*config.ResourceReservation.RuntimeClassName) > 0 {
-		args = append(args, []string{fmt.Sprintf("--runtime-class-name=%s", *config.ResourceReservation.RuntimeClassName)}...)
-	}
-
 	// Serialize and add GPU reservation pod resource configurations
 	if config.ResourceReservation.PodResources != nil {
 		resourceRequirements := v1.ResourceRequirements{

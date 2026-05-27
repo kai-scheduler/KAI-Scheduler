@@ -141,11 +141,6 @@ func (in *ResourceReservation) DeepCopyInto(out *ResourceReservation) {
 		*out = new(string)
 		**out = **in
 	}
-	if in.RuntimeClassName != nil {
-		in, out := &in.RuntimeClassName, &out.RuntimeClassName
-		*out = new(string)
-		**out = **in
-	}
 	if in.PodResources != nil {
 		in, out := &in.PodResources, &out.PodResources
 		*out = new(common.Resources)

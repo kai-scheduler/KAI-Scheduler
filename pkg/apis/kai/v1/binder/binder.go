@@ -231,9 +231,6 @@ type ResourceReservation struct {
 	// +kubebuilder:validation:Optional
 	AppLabel *string `json:"appLabel,omitempty"`
 
-	// RuntimeClassName specifies the runtime class used by the reservation pods. Needs to allow access to the GPU
-	RuntimeClassName *string `json:"runtimeClassName,omitempty"`
-
 	// PodResources specifies the CPU and memory resource requests and limits for GPU reservation pods.
 	// If not set, Kubernetes defaults will be used, which allows for better backward compatibility.
 	// +kubebuilder:validation:Optional
@@ -256,5 +253,4 @@ func (r *ResourceReservation) SetDefaultsWhereNeeded() {
 	r.Namespace = common.SetDefault(r.Namespace, ptr.To(constants.DefaultResourceReservationName))
 	r.ServiceAccountName = common.SetDefault(r.ServiceAccountName, ptr.To(constants.DefaultResourceReservationName))
 	r.AppLabel = common.SetDefault(r.AppLabel, ptr.To(constants.DefaultResourceReservationName))
-	r.RuntimeClassName = common.SetDefault(r.RuntimeClassName, ptr.To(constants.DefaultRuntimeClassName))
 }

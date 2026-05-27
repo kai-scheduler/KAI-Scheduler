@@ -48,10 +48,19 @@ spec:
               admission:
                 description: Admission holds KAI admission webhooks
                 properties:
+                  gpuFractionRuntimeClassName:
+                    description: |-
+                      GPUFractionRuntimeClassName specifies the runtime class to be set for
+                      GPU fraction pods (those requesting GPU via the gpu-fraction or
+                      gpu-memory annotations). Whole-GPU pods are not affected.
+                      Set to empty string to disable.
+                    type: string
                   gpuPodRuntimeClassName:
                     description: |-
-                      GPUPodRuntimeClassName specifies the runtime class to be set for GPU pods
-                      set to empty string to disable
+                      GPUPodRuntimeClassName specifies the runtime class to be set for GPU
+                      fraction pods.
+                      Deprecated: use GPUFractionRuntimeClassName. If both are set,
+                      GPUFractionRuntimeClassName wins.
                     type: string
                   gpuSharing:
                     description: GPUSharing enables GPU sharing functionality for
@@ -1830,11 +1839,6 @@ spec:
                                 type: string
                             type: object
                         type: object
-                      runtimeClassName:
-                        description: RuntimeClassName specifies the runtime class
-                          used by the reservation pods. Needs to allow access to the
-                          GPU
-                        type: string
                       serviceAccountName:
                         description: ServiceAccountName is the name of the service
                           account that will be used by the resource reservation pods

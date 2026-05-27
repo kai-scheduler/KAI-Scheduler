@@ -81,9 +81,6 @@ spec:
       {{- if .Values.global.resourceReservation.appLabel }}
       appLabel: {{ .Values.global.resourceReservation.appLabel }}
       {{- end }}
-      {{- if .Values.binder.runtimeClassName }}
-      runtimeClassName: {{ .Values.binder.runtimeClassName }}
-      {{- end }}
       image:
         name: {{ .Values.binder.resourceReservationImage.name }}
         repository: {{ .Values.global.registry }}
@@ -182,7 +179,11 @@ spec:
       targetPort: {{ .Values.admission.ports.webhookPort | default 9443 }}
       probePort: {{ .Values.admission.ports.probePort | default 8081 }}
       metricsPort: {{ .Values.admission.ports.metricsPort | default 8080 }}
+    {{- if hasKey .Values.admission "gpuFractionRuntimeClassName" }}
+    gpuFractionRuntimeClassName: {{ .Values.admission.gpuFractionRuntimeClassName | quote }}
+    {{- else if hasKey .Values.admission "gpuPodRuntimeClassName" }}
     gpuPodRuntimeClassName: {{ .Values.admission.gpuPodRuntimeClassName | quote }}
+    {{- end }}
 
   nodeScaleAdjuster:
     service:
