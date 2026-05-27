@@ -1,0 +1,32 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+suite: test post-delete cleanup hook
+templates:
+  - hooks/post/post-delete-job.yaml
+tests:
+  - it: should use release namespace in kubectl delete deployment command
+    release:
+      namespace: custom-ns
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: kubectl -n custom-ns delete deployment --all --ignore-not-found=true
+      - notMatchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: kubectl -n kai-scheduler delete deployment
+
+  - it: should place the cleanup job in the release namespace
+    release:
+      namespace: custom-ns
+    asserts:
+      - equal:
+          path: metadata.namespace
+          value: custom-ns
+
+  - it: should not render when postCleanup is disabled
+    set:
+      postCleanup.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
