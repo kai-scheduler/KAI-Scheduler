@@ -52,8 +52,8 @@ func TestRedactSnapshot(t *testing.T) {
 	assert.Equal(t, "image-1", snap.RawObjects.Pods[0].Spec.Containers[0].Image)
 
 	table := r.GetTranslationTable()
-	assert.Equal(t, "namespace-1", table["production-namespace"])
-	assert.Equal(t, "pod-1", table["my-secret-pod"])
+	assert.Equal(t, "namespace-1", table["namespace:production-namespace"])
+	assert.Equal(t, "pod-1", table["pod:my-secret-pod"])
 }
 
 func TestRedactLabelsAndAnnotations(t *testing.T) {
@@ -660,6 +660,17 @@ func TestRedactionStats(t *testing.T) {
 					},
 				},
 			},
+			ConfigMaps: []*corev1.ConfigMap{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-config",
+						Namespace: "default",
+					},
+					Data: map[string]string{
+						"key": "value",
+					},
+				},
+			},
 		},
 	}
 
@@ -672,8 +683,8 @@ func TestRedactionStats(t *testing.T) {
 	assert.Greater(t, stats.LabelsRedacted, 0, "Should have redacted labels")
 	assert.Equal(t, 2, stats.EnvVarsRedacted, "Should have redacted 2 env vars")
 	assert.Greater(t, stats.SecretsRedacted, 0, "Should have redacted secrets")
+	assert.Equal(t, 1, stats.ConfigMapsRedacted, "Should track ALL configmaps, not just with data")
 }
-
 func TestGetTranslationTableDefensiveCopy(t *testing.T) {
 	r := NewRedactor()
 
@@ -682,14 +693,14 @@ func TestGetTranslationTableDefensiveCopy(t *testing.T) {
 
 	table := r.GetTranslationTable()
 	assert.NotNil(t, table)
-	assert.Equal(t, val1, table["original-1"])
-	assert.Equal(t, val2, table["original-2"])
+	assert.Equal(t, val1, table["test:original-1"])
+	assert.Equal(t, val2, table["test:original-2"])
 
-	table["original-1"] = "mutated-value"
+	table["test:original-1"] = "mutated-value"
 	table["new-key"] = "new-value"
 
 	originalTable := r.GetTranslationTable()
-	assert.Equal(t, val1, originalTable["original-1"], "Internal map should not be mutated")
+	assert.Equal(t, val1, originalTable["test:original-1"], "Internal map should not be mutated")
 	assert.NotContains(t, originalTable, "new-key", "New keys should not affect internal state")
 }
 
@@ -764,4 +775,340 @@ func TestObfuscateSameValueDifferentPrefix(t *testing.T) {
 	assert.Equal(t, 2, len(table))
 	assert.Equal(t, "pod-1", table["pod:worker-1"])
 	assert.Equal(t, "node-1", table["node:worker-1"])
+}
+
+func TestRedactPodStatus(t *testing.T) {
+	snap := &snapshot.Snapshot{
+		RawObjects: &snapshot.RawKubernetesObjects{
+			Pods: []*corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-pod",
+						Namespace: "default",
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{Name: "app", Image: "app:v1"},
+						},
+					},
+					Status: corev1.PodStatus{
+						HostIP: "192.168.1.100",
+						PodIP:  "10.0.0.5",
+						PodIPs: []corev1.PodIP{
+							{IP: "10.0.0.5"},
+							{IP: "10.0.0.6"},
+						},
+						ContainerStatuses: []corev1.ContainerStatus{
+							{
+								Name:        "app",
+								ContainerID: "docker://abc123def456",
+								ImageID:     "docker-pullable://app@sha256:xyz789",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	r := NewRedactor()
+	err := r.RedactSnapshot(snap)
+	assert.NoError(t, err)
+
+	pod := snap.RawObjects.Pods[0]
+
+	assert.NotEqual(t, "192.168.1.100", pod.Status.HostIP)
+	assert.NotEqual(t, "10.0.0.5", pod.Status.PodIP)
+
+	for _, podIP := range pod.Status.PodIPs {
+		assert.NotEqual(t, "10.0.0.5", podIP.IP)
+		assert.NotEqual(t, "10.0.0.6", podIP.IP)
+	}
+
+	assert.NotEqual(t, "docker://abc123def456", pod.Status.ContainerStatuses[0].ContainerID)
+	assert.NotEqual(t, "docker-pullable://app@sha256:xyz789", pod.Status.ContainerStatuses[0].ImageID)
+}
+
+func TestRedactPersistentVolumes(t *testing.T) {
+	snap := &snapshot.Snapshot{
+		RawObjects: &snapshot.RawKubernetesObjects{
+			PersistentVolumes: []*corev1.PersistentVolume{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "production-pv",
+						Labels: map[string]string{
+							"tier": "production",
+						},
+					},
+				},
+			},
+			PersistentVolumeClaims: []*corev1.PersistentVolumeClaim{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "data-pvc",
+						Namespace: "production",
+						Labels: map[string]string{
+							"app": "database",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	r := NewRedactor()
+	err := r.RedactSnapshot(snap)
+	assert.NoError(t, err)
+
+	pv := snap.RawObjects.PersistentVolumes[0]
+	pvc := snap.RawObjects.PersistentVolumeClaims[0]
+
+	assert.Equal(t, "pv-1", pv.Name)
+	assert.Equal(t, "pvc-1", pvc.Name)
+	assert.Equal(t, "namespace-1", pvc.Namespace)
+
+	for _, value := range pv.ObjectMeta.Labels {
+		assert.NotEqual(t, "production", value)
+	}
+	for _, value := range pvc.ObjectMeta.Labels {
+		assert.NotEqual(t, "database", value)
+	}
+
+	assert.Equal(t, 1, r.GetStats().PersistentVolumesRedacted)
+	assert.Equal(t, 1, r.GetStats().PersistentVolumeClaimsRedacted)
+}
+
+func TestRedactInitContainers(t *testing.T) {
+	snap := &snapshot.Snapshot{
+		RawObjects: &snapshot.RawKubernetesObjects{
+			Pods: []*corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "init-pod",
+						Namespace: "default",
+					},
+					Spec: corev1.PodSpec{
+						InitContainers: []corev1.Container{
+							{
+								Name:  "setup",
+								Image: "setup-image:v1",
+								Env: []corev1.EnvVar{
+									{
+										Name:  "SETUP_KEY",
+										Value: "secret-setup-value",
+									},
+								},
+							},
+						},
+						Containers: []corev1.Container{
+							{Name: "app", Image: "app:v1"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	r := NewRedactor()
+	err := r.RedactSnapshot(snap)
+	assert.NoError(t, err)
+
+	pod := snap.RawObjects.Pods[0]
+
+	initContainer := pod.Spec.InitContainers[0]
+	assert.Equal(t, "initcontainer-1", initContainer.Name)
+	assert.NotEqual(t, "setup-image:v1", initContainer.Image)
+	assert.NotEqual(t, "secret-setup-value", initContainer.Env[0].Value)
+	assert.Equal(t, "SETUP_KEY", initContainer.Env[0].Name) // Env var names should NOT be redacted
+}
+
+func TestRedactNodeSelector(t *testing.T) {
+	snap := &snapshot.Snapshot{
+		RawObjects: &snapshot.RawKubernetesObjects{
+			Pods: []*corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "selective-pod",
+						Namespace: "default",
+					},
+					Spec: corev1.PodSpec{
+						NodeSelector: map[string]string{
+							"disktype":     "ssd",
+							"gpu-required": "nvidia-tesla-v100",
+						},
+						Containers: []corev1.Container{
+							{Name: "app", Image: "app:v1"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	r := NewRedactor()
+	err := r.RedactSnapshot(snap)
+	assert.NoError(t, err)
+
+	pod := snap.RawObjects.Pods[0]
+
+	for _, value := range pod.Spec.NodeSelector {
+		assert.NotEqual(t, "ssd", value)
+		assert.NotEqual(t, "nvidia-tesla-v100", value)
+	}
+
+	assert.Equal(t, 2, r.GetStats().NodeSelectorsRedacted)
+}
+
+func TestRedactTolerations(t *testing.T) {
+	snap := &snapshot.Snapshot{
+		RawObjects: &snapshot.RawKubernetesObjects{
+			Pods: []*corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "tolerant-pod",
+						Namespace: "default",
+					},
+					Spec: corev1.PodSpec{
+						Tolerations: []corev1.Toleration{
+							{
+								Key:      "gpu-type",
+								Operator: corev1.TolerationOpEqual,
+								Value:    "nvidia-a100",
+								Effect:   corev1.TaintEffectNoSchedule,
+							},
+							{
+								Key:      "dedicated",
+								Operator: corev1.TolerationOpEqual,
+								Value:    "machine-learning",
+								Effect:   corev1.TaintEffectNoExecute,
+							},
+						},
+						Containers: []corev1.Container{
+							{Name: "app", Image: "app:v1"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	r := NewRedactor()
+	err := r.RedactSnapshot(snap)
+	assert.NoError(t, err)
+
+	pod := snap.RawObjects.Pods[0]
+
+	assert.NotEqual(t, "nvidia-a100", pod.Spec.Tolerations[0].Value)
+	assert.NotEqual(t, "machine-learning", pod.Spec.Tolerations[1].Value)
+
+	// Verify structural fields are preserved
+	assert.Equal(t, "gpu-type", pod.Spec.Tolerations[0].Key)
+	assert.Equal(t, corev1.TolerationOpEqual, pod.Spec.Tolerations[0].Operator)
+	assert.Equal(t, corev1.TaintEffectNoSchedule, pod.Spec.Tolerations[0].Effect)
+
+	// Verify stats tracking
+	assert.Equal(t, 2, r.GetStats().TolerationsRedacted)
+}
+
+func TestRedactOwnerReferences(t *testing.T) {
+	snap := &snapshot.Snapshot{
+		RawObjects: &snapshot.RawKubernetesObjects{
+			Pods: []*corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "owned-pod",
+						Namespace: "default",
+						OwnerReferences: []metav1.OwnerReference{
+							{
+								APIVersion: "apps/v1",
+								Kind:       "Deployment",
+								Name:       "production-deployment",
+								UID:        "abc-123-def",
+							},
+							{
+								APIVersion: "v1",
+								Kind:       "Node",
+								Name:       "worker-node-1",
+								UID:        "xyz-789-uvw",
+							},
+						},
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{Name: "app", Image: "app:v1"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	r := NewRedactor()
+	err := r.RedactSnapshot(snap)
+	assert.NoError(t, err)
+
+	pod := snap.RawObjects.Pods[0]
+
+	assert.Len(t, pod.ObjectMeta.OwnerReferences, 2)
+	assert.NotEqual(t, "production-deployment", pod.ObjectMeta.OwnerReferences[0].Name)
+	assert.NotEqual(t, "worker-node-1", pod.ObjectMeta.OwnerReferences[1].Name)
+
+	assert.Equal(t, "apps/v1", pod.ObjectMeta.OwnerReferences[0].APIVersion)
+	assert.Equal(t, "Deployment", pod.ObjectMeta.OwnerReferences[0].Kind)
+	assert.Equal(t, "v1", pod.ObjectMeta.OwnerReferences[1].APIVersion)
+	assert.Equal(t, "Node", pod.ObjectMeta.OwnerReferences[1].Kind)
+}
+
+func TestRedactionCrossReferenceConsistency(t *testing.T) {
+	snap := &snapshot.Snapshot{
+		RawObjects: &snapshot.RawKubernetesObjects{
+			Pods: []*corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "pod-1",
+						Namespace: "default",
+					},
+					Spec: corev1.PodSpec{
+						NodeName: "node-1",
+						Containers: []corev1.Container{
+							{Name: "app", Image: "app:v1"},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "pod-2",
+						Namespace: "default",
+					},
+					Spec: corev1.PodSpec{
+						NodeName: "node-1",
+						Containers: []corev1.Container{
+							{Name: "app", Image: "app:v1"},
+						},
+					},
+				},
+			},
+			Nodes: []*corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "node-1",
+					},
+				},
+			},
+		},
+	}
+
+	r := NewRedactor()
+	err := r.RedactSnapshot(snap)
+	assert.NoError(t, err)
+
+	pod1NodeRef := snap.RawObjects.Pods[0].Spec.NodeName
+	pod2NodeRef := snap.RawObjects.Pods[1].Spec.NodeName
+	nodeName := snap.RawObjects.Nodes[0].Name
+
+	assert.Equal(t, pod1NodeRef, pod2NodeRef, "Multiple pods should reference same node")
+	assert.Equal(t, pod1NodeRef, nodeName, "Pod NodeName should match actual Node name after redaction")
+
+	table := r.GetTranslationTable()
+	assert.Equal(t, "node-1", table["node:node-1"])
 }

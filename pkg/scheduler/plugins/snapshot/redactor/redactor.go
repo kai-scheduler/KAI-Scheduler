@@ -1,11 +1,41 @@
 // Copyright 2026 NVIDIA CORPORATION
 // SPDX-License-Identifier: Apache-2.0
 
+// Package redactor provides functionality to obfuscate sensitive Kubernetes metadata
+// in snapshot data, making it safe to share for debugging while preserving scheduling
+// relationships.
+//
+// What Gets Redacted:
+//   - Pod and Node names
+//   - Namespace names (consistently across all resources)
+//   - Container images and names
+//   - Environment variable values
+//   - Command and argument values
+//   - Labels and annotation values (keys are preserved as they're structural)
+//   - Secret and ConfigMap names and keys
+//   - Pod status information (IPs, container IDs)
+//   - Node status information (addresses, machine IDs)
+//   - Affinity rules and selectors
+//   - Node selectors and tolerations
+//   - Volume names and references
+//   - Owner references
+//   - PersistentVolume and PersistentVolumeClaim names
+//   - Priority class, queue, pod group, and other resource names
+//
+// What Gets Preserved:
+//   - Label and annotation keys (they're structural)
+//   - Environment variable names (they're structural)
+//   - Affinity operators and effect types
+//   - Resource relationships (pod → node, etc.)
+//
+// Consistency:
+//   - The same original value always maps to the same obfuscated value
+//   - Different prefixes for the same value produce different obfuscations
+//   - The translation table can be used to reverse-map obfuscated values
 package redactor
 
 import (
 	"fmt"
-	"maps"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/snapshot"
 	corev1 "k8s.io/api/core/v1"
@@ -13,15 +43,30 @@ import (
 
 // RedactionStats tracks what was redacted
 type RedactionStats struct {
-	PodsRedacted        int
-	NodesRedacted       int
-	LabelsRedacted      int
-	AnnotationsRedacted int
-	EnvVarsRedacted     int
-	SecretsRedacted     int
-	ConfigMapsRedacted  int
-	VolumesRedacted     int
-	Affinity            int
+	PodsRedacted                   int
+	NodesRedacted                  int
+	LabelsRedacted                 int
+	AnnotationsRedacted            int
+	EnvVarsRedacted                int
+	SecretsRedacted                int
+	ConfigMapsRedacted             int
+	VolumesRedacted                int
+	Affinity                       int
+	PersistentVolumesRedacted      int
+	PersistentVolumeClaimsRedacted int
+	PriorityClassesRedacted        int
+	QueuesRedacted                 int
+	PodGroupsRedacted              int
+	BindRequestsRedacted           int
+	CSICapacitiesRedacted          int
+	StorageClassesRedacted         int
+	CSIDriversRedacted             int
+	ResourceClaimsRedacted         int
+	ResourceSlicesRedacted         int
+	DeviceClassesRedacted          int
+	TopologiesRedacted             int
+	NodeSelectorsRedacted          int
+	TolerationsRedacted            int
 }
 
 // Redactor handles the obfuscation of sensitive Kubernetes metadata.
@@ -40,7 +85,10 @@ func NewRedactor() *Redactor {
 	}
 }
 
-// Obfuscate checks if a string is already translated. If not, it creates a new one.
+// Obfuscate checks if a string is already translated, returning the cached obfuscation. If not cached, it creates a new obfuscated value using the
+// provided prefix and increments the counter for that prefix.
+// The prefix parameter is important: the same original value with different prefixes will produce different obfuscations. For example:
+// Empty strings are returned as-is without obfuscation.
 func (r *Redactor) Obfuscate(original, prefix string) string {
 	if original == "" {
 		return ""
@@ -58,7 +106,6 @@ func (r *Redactor) Obfuscate(original, prefix string) string {
 	return obfuscated
 }
 
-// RedactSnapshot modifies the snapshot in-place based on the RawKubernetesObjects struct.
 func (r *Redactor) RedactSnapshot(snap *snapshot.Snapshot) error {
 	if snap == nil || snap.RawObjects == nil {
 		return nil
@@ -89,6 +136,7 @@ func (r *Redactor) RedactSnapshot(snap *snapshot.Snapshot) error {
 			if q.ObjectMeta.Annotations != nil {
 				r.redactLabelsAndAnnotations(q.ObjectMeta.Annotations, true)
 			}
+			r.stats.QueuesRedacted++
 		}
 	}
 
@@ -102,6 +150,7 @@ func (r *Redactor) RedactSnapshot(snap *snapshot.Snapshot) error {
 			if pg.ObjectMeta.Annotations != nil {
 				r.redactLabelsAndAnnotations(pg.ObjectMeta.Annotations, true)
 			}
+			r.stats.PodGroupsRedacted++
 		}
 	}
 
@@ -115,6 +164,7 @@ func (r *Redactor) RedactSnapshot(snap *snapshot.Snapshot) error {
 			if br.ObjectMeta.Annotations != nil {
 				r.redactLabelsAndAnnotations(br.ObjectMeta.Annotations, true)
 			}
+			r.stats.BindRequestsRedacted++
 		}
 	}
 
@@ -127,6 +177,7 @@ func (r *Redactor) RedactSnapshot(snap *snapshot.Snapshot) error {
 			if pc.ObjectMeta.Annotations != nil {
 				r.redactLabelsAndAnnotations(pc.ObjectMeta.Annotations, true)
 			}
+			r.stats.PriorityClassesRedacted++
 		}
 	}
 
@@ -145,6 +196,7 @@ func (r *Redactor) RedactSnapshot(snap *snapshot.Snapshot) error {
 			if pv.ObjectMeta.Annotations != nil {
 				r.redactLabelsAndAnnotations(pv.ObjectMeta.Annotations, true)
 			}
+			r.stats.PersistentVolumesRedacted++
 		}
 	}
 
@@ -158,6 +210,7 @@ func (r *Redactor) RedactSnapshot(snap *snapshot.Snapshot) error {
 			if pvc.ObjectMeta.Annotations != nil {
 				r.redactLabelsAndAnnotations(pvc.ObjectMeta.Annotations, true)
 			}
+			r.stats.PersistentVolumeClaimsRedacted++
 		}
 	}
 
@@ -171,6 +224,7 @@ func (r *Redactor) RedactSnapshot(snap *snapshot.Snapshot) error {
 			if csi.ObjectMeta.Annotations != nil {
 				r.redactLabelsAndAnnotations(csi.ObjectMeta.Annotations, true)
 			}
+			r.stats.CSICapacitiesRedacted++
 		}
 	}
 
@@ -183,6 +237,7 @@ func (r *Redactor) RedactSnapshot(snap *snapshot.Snapshot) error {
 			if sc.ObjectMeta.Annotations != nil {
 				r.redactLabelsAndAnnotations(sc.ObjectMeta.Annotations, true)
 			}
+			r.stats.StorageClassesRedacted++
 		}
 	}
 
@@ -195,6 +250,7 @@ func (r *Redactor) RedactSnapshot(snap *snapshot.Snapshot) error {
 			if driver.ObjectMeta.Annotations != nil {
 				r.redactLabelsAndAnnotations(driver.ObjectMeta.Annotations, true)
 			}
+			r.stats.CSIDriversRedacted++
 		}
 	}
 
@@ -208,6 +264,7 @@ func (r *Redactor) RedactSnapshot(snap *snapshot.Snapshot) error {
 			if rc.ObjectMeta.Annotations != nil {
 				r.redactLabelsAndAnnotations(rc.ObjectMeta.Annotations, true)
 			}
+			r.stats.ResourceClaimsRedacted++
 		}
 	}
 
@@ -220,6 +277,7 @@ func (r *Redactor) RedactSnapshot(snap *snapshot.Snapshot) error {
 			if rs.ObjectMeta.Annotations != nil {
 				r.redactLabelsAndAnnotations(rs.ObjectMeta.Annotations, true)
 			}
+			r.stats.ResourceSlicesRedacted++
 		}
 	}
 
@@ -232,6 +290,7 @@ func (r *Redactor) RedactSnapshot(snap *snapshot.Snapshot) error {
 			if dc.ObjectMeta.Annotations != nil {
 				r.redactLabelsAndAnnotations(dc.ObjectMeta.Annotations, true)
 			}
+			r.stats.DeviceClassesRedacted++
 		}
 	}
 
@@ -245,20 +304,19 @@ func (r *Redactor) RedactSnapshot(snap *snapshot.Snapshot) error {
 			if top.ObjectMeta.Annotations != nil {
 				r.redactLabelsAndAnnotations(top.ObjectMeta.Annotations, true)
 			}
+			r.stats.TopologiesRedacted++
 		}
 	}
 
 	return nil
 }
 
-// redactNode redacts sensitive information in node specs and status
 func (r *Redactor) redactNode(node *corev1.Node) {
 	if node == nil {
 		return
 	}
 	node.Name = r.Obfuscate(node.Name, "node")
 
-	// Redact labels (can contain sensitive infrastructure info)
 	if node.ObjectMeta.Labels != nil {
 		r.redactLabelsAndAnnotations(node.ObjectMeta.Labels, false)
 	}
@@ -275,7 +333,6 @@ func (r *Redactor) redactNode(node *corev1.Node) {
 		}
 	}
 
-	// Redact node name from Status
 	if node.Status.NodeInfo.MachineID != "" {
 		node.Status.NodeInfo.MachineID = r.Obfuscate(node.Status.NodeInfo.MachineID, "machineid")
 	}
@@ -292,7 +349,6 @@ func (r *Redactor) redactConfigMap(cm *corev1.ConfigMap) {
 	cm.Name = r.Obfuscate(cm.Name, "configmap")
 	cm.Namespace = r.Obfuscate(cm.Namespace, "namespace")
 
-	// Redact labels and annotations
 	if cm.ObjectMeta.Labels != nil {
 		r.redactLabelsAndAnnotations(cm.ObjectMeta.Labels, false)
 	}
@@ -300,7 +356,6 @@ func (r *Redactor) redactConfigMap(cm *corev1.ConfigMap) {
 		r.redactLabelsAndAnnotations(cm.ObjectMeta.Annotations, true)
 	}
 
-	// Redact data contents - they can contain sensitive info
 	if cm.Data != nil {
 		redactedData := make(map[string]string)
 		for key, value := range cm.Data {
@@ -309,7 +364,6 @@ func (r *Redactor) redactConfigMap(cm *corev1.ConfigMap) {
 			redactedData[redactedKey] = redactedValue
 		}
 		cm.Data = redactedData
-		r.stats.ConfigMapsRedacted++
 	}
 
 	// Redact BinaryData if present
@@ -321,6 +375,8 @@ func (r *Redactor) redactConfigMap(cm *corev1.ConfigMap) {
 		}
 		cm.BinaryData = redactedBinaryData
 	}
+
+	r.stats.ConfigMapsRedacted++
 }
 
 // redactLabelsAndAnnotations redacts sensitive values in labels/annotations maps
@@ -330,12 +386,10 @@ func (r *Redactor) redactLabelsAndAnnotations(labelMap map[string]string, isAnno
 		return
 	}
 	for key, value := range labelMap {
-		// Only redact values, not keys (keys are structural)
 		if value != "" {
 			redactedValue := r.Obfuscate(value, "labelval")
 			labelMap[key] = redactedValue
 
-			// Track stats accurately based on whether it's a label or annotation
 			if isAnnotation {
 				r.stats.AnnotationsRedacted++
 			} else {
@@ -353,7 +407,6 @@ func (r *Redactor) redactPod(pod *corev1.Pod) {
 	pod.Namespace = r.Obfuscate(pod.Namespace, "namespace")
 	pod.Spec.ServiceAccountName = r.Obfuscate(pod.Spec.ServiceAccountName, "serviceaccount")
 
-	// Redact labels and annotations
 	if pod.ObjectMeta.Labels != nil {
 		r.redactLabelsAndAnnotations(pod.ObjectMeta.Labels, false)
 	}
@@ -361,7 +414,6 @@ func (r *Redactor) redactPod(pod *corev1.Pod) {
 		r.redactLabelsAndAnnotations(pod.ObjectMeta.Annotations, true)
 	}
 
-	// Redact OwnerReferences to maintain relationships but hide original names
 	if pod.ObjectMeta.OwnerReferences != nil {
 		for i := range pod.ObjectMeta.OwnerReferences {
 			pod.ObjectMeta.OwnerReferences[i].Name = r.Obfuscate(
@@ -371,16 +423,11 @@ func (r *Redactor) redactPod(pod *corev1.Pod) {
 		}
 	}
 
-	// Redact pod spec details
 	r.redactPodSpec(&pod.Spec)
 
-	// Redact pod status
-	if pod.Status.HostIP != "" {
-		pod.Status.HostIP = r.Obfuscate(pod.Status.HostIP, "hostip")
-	}
-	if pod.Status.PodIP != "" {
-		pod.Status.PodIP = r.Obfuscate(pod.Status.PodIP, "podip")
-	}
+	pod.Status.HostIP = r.Obfuscate(pod.Status.HostIP, "hostip")
+	pod.Status.PodIP = r.Obfuscate(pod.Status.PodIP, "podip")
+
 	if pod.Status.PodIPs != nil {
 		for i := range pod.Status.PodIPs {
 			pod.Status.PodIPs[i].IP = r.Obfuscate(pod.Status.PodIPs[i].IP, "podip")
@@ -390,18 +437,14 @@ func (r *Redactor) redactPod(pod *corev1.Pod) {
 	// Redact container statuses
 	if pod.Status.ContainerStatuses != nil {
 		for i := range pod.Status.ContainerStatuses {
-			if pod.Status.ContainerStatuses[i].ContainerID != "" {
-				pod.Status.ContainerStatuses[i].ContainerID = r.Obfuscate(
-					pod.Status.ContainerStatuses[i].ContainerID,
-					"containerid",
-				)
-			}
-			if pod.Status.ContainerStatuses[i].ImageID != "" {
-				pod.Status.ContainerStatuses[i].ImageID = r.Obfuscate(
-					pod.Status.ContainerStatuses[i].ImageID,
-					"imageid",
-				)
-			}
+			pod.Status.ContainerStatuses[i].ContainerID = r.Obfuscate(
+				pod.Status.ContainerStatuses[i].ContainerID,
+				"containerid",
+			)
+			pod.Status.ContainerStatuses[i].ImageID = r.Obfuscate(
+				pod.Status.ContainerStatuses[i].ImageID,
+				"imageid",
+			)
 		}
 	}
 }
@@ -411,44 +454,41 @@ func (r *Redactor) redactPodSpec(spec *corev1.PodSpec) {
 	if spec == nil {
 		return
 	}
-	if spec.NodeName != "" {
-		spec.NodeName = r.Obfuscate(spec.NodeName, "node")
-	}
+	spec.NodeName = r.Obfuscate(spec.NodeName, "node")
 
-	// Redact containers
 	for i := range spec.Containers {
 		r.redactContainer(&spec.Containers[i], "container")
 	}
 
-	// Redact init containers
 	for i := range spec.InitContainers {
 		r.redactContainer(&spec.InitContainers[i], "initcontainer")
 	}
 
-	// Redact volumes (including secrets and configmaps)
 	r.redactVolumes(spec.Volumes)
 
-	// Redact affinity (node/pod affinity can contain sensitive labels)
 	if spec.Affinity != nil {
 		r.redactAffinity(spec.Affinity)
 	}
 
-	// Redact node selector (can contain sensitive labels)
 	if spec.NodeSelector != nil {
-		r.redactLabelsAndAnnotations(spec.NodeSelector, false)
+		for key, value := range spec.NodeSelector {
+			if value != "" {
+				spec.NodeSelector[key] = r.Obfuscate(value, "nodeselectval")
+				r.stats.NodeSelectorsRedacted++
+			}
+		}
 	}
 
-	// Redact tolerations (values can be sensitive)
 	if spec.Tolerations != nil {
 		for i := range spec.Tolerations {
 			if spec.Tolerations[i].Value != "" {
 				spec.Tolerations[i].Value = r.Obfuscate(spec.Tolerations[i].Value, "tolvalue")
+				r.stats.TolerationsRedacted++
 			}
 		}
 	}
 }
 
-// redactContainer redacts sensitive information in container specs
 func (r *Redactor) redactContainer(container *corev1.Container, containerPrefix string) {
 	if container == nil {
 		return
@@ -457,23 +497,17 @@ func (r *Redactor) redactContainer(container *corev1.Container, containerPrefix 
 	container.Image = r.Obfuscate(container.Image, "image")
 	container.Name = r.Obfuscate(container.Name, containerPrefix)
 
-	// Redact command and args (can contain sensitive info like API keys)
 	if len(container.Command) > 0 {
 		for i := range container.Command {
-			if container.Command[i] != "" {
-				container.Command[i] = r.Obfuscate(container.Command[i], "cmdarg")
-			}
+			container.Command[i] = r.Obfuscate(container.Command[i], "cmdarg")
 		}
 	}
 	if len(container.Args) > 0 {
 		for i := range container.Args {
-			if container.Args[i] != "" {
-				container.Args[i] = r.Obfuscate(container.Args[i], "cmdarg")
-			}
+			container.Args[i] = r.Obfuscate(container.Args[i], "cmdarg")
 		}
 	}
 
-	// Redact environment variables - track only actual redactions
 	if len(container.Env) > 0 {
 		for i := range container.Env {
 			if container.Env[i].Value != "" {
@@ -490,6 +524,7 @@ func (r *Redactor) redactContainer(container *corev1.Container, containerPrefix 
 					container.Env[i].ValueFrom.SecretKeyRef.Key,
 					"secretkey",
 				)
+				r.stats.SecretsRedacted++
 			}
 			// Redact configmap references
 			if container.Env[i].ValueFrom != nil && container.Env[i].ValueFrom.ConfigMapKeyRef != nil {
@@ -501,11 +536,11 @@ func (r *Redactor) redactContainer(container *corev1.Container, containerPrefix 
 					container.Env[i].ValueFrom.ConfigMapKeyRef.Key,
 					"configkey",
 				)
+				r.stats.ConfigMapsRedacted++
 			}
 		}
 	}
 
-	// Redact envFrom (Secret/ConfigMap refs)
 	if len(container.EnvFrom) > 0 {
 		for i := range container.EnvFrom {
 			if container.EnvFrom[i].SecretRef != nil {
@@ -513,26 +548,31 @@ func (r *Redactor) redactContainer(container *corev1.Container, containerPrefix 
 					container.EnvFrom[i].SecretRef.Name,
 					"secret",
 				)
+				r.stats.SecretsRedacted++
 			}
 			if container.EnvFrom[i].ConfigMapRef != nil {
 				container.EnvFrom[i].ConfigMapRef.Name = r.Obfuscate(
 					container.EnvFrom[i].ConfigMapRef.Name,
 					"configmap",
 				)
+				r.stats.ConfigMapsRedacted++
 			}
 		}
 	}
 }
 
-// redactVolumes redacts volume references
+// redactVolumes redacts volume references and names
 func (r *Redactor) redactVolumes(volumes []corev1.Volume) {
 	for i := range volumes {
+		volumes[i].Name = r.Obfuscate(volumes[i].Name, "volume")
+
 		if volumes[i].Secret != nil {
 			volumes[i].Secret.SecretName = r.Obfuscate(volumes[i].Secret.SecretName, "secret")
 			r.stats.SecretsRedacted++
 		}
 		if volumes[i].ConfigMap != nil {
 			volumes[i].ConfigMap.Name = r.Obfuscate(volumes[i].ConfigMap.Name, "configmap")
+			r.stats.ConfigMapsRedacted++
 		}
 		if volumes[i].PersistentVolumeClaim != nil {
 			volumes[i].PersistentVolumeClaim.ClaimName = r.Obfuscate(
@@ -550,7 +590,6 @@ func (r *Redactor) redactAffinity(affinity *corev1.Affinity) {
 		return
 	}
 
-	// Redact node affinity
 	if affinity.NodeAffinity != nil {
 		if affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution != nil {
 			for i := range affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms {
@@ -568,13 +607,11 @@ func (r *Redactor) redactAffinity(affinity *corev1.Affinity) {
 		}
 	}
 
-	// Redact pod affinity
 	if affinity.PodAffinity != nil {
 		r.redactPodAffinityTerms(affinity.PodAffinity.RequiredDuringSchedulingIgnoredDuringExecution)
 		r.redactWeightedPodAffinityTerms(affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution)
 	}
 
-	// Redact pod anti-affinity
 	if affinity.PodAntiAffinity != nil {
 		r.redactPodAffinityTerms(affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution)
 		r.redactWeightedPodAffinityTerms(affinity.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution)
@@ -641,10 +678,14 @@ func (r *Redactor) redactWeightedPodAffinityTerms(terms []corev1.WeightedPodAffi
 	}
 }
 
-// GetTranslationTable returns a defensive copy of the mapping to prevent external mutations
+// GetTranslationTable returns a defensive copy of the translation table mapping original values
+// to their obfuscated equivalents. Keys in the map include the prefix separated by colon, e.g.,
+// "pod:my-pod-name" → "pod-1", "node:worker-1" → "node-1".
 func (r *Redactor) GetTranslationTable() map[string]string {
 	out := make(map[string]string, len(r.translationTable))
-	maps.Copy(out, r.translationTable)
+	for k, v := range r.translationTable {
+		out[k] = v
+	}
 	return out
 }
 
