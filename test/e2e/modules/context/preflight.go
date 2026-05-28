@@ -16,9 +16,17 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/constant"
 )
 
+const (
+	defaultParentQueueName = "default-parent-queue"
+	defaultQueueName       = "default-queue"
+)
+
 // preflightOnce ensures the cluster guard runs at most once per process even
-// though GetConnectivity is invoked from every spec's BeforeEach.
-var preflightOnce sync.Once
+// though GetConnectivity is invoked from many different specs.
+var (
+	preflightOnce sync.Once
+	preflightErr  error
+)
 
 // runPreflight inspects the target cluster for Queues that were not created
 // by this e2e suite. The presence of any such Queue is a strong signal that
@@ -28,11 +36,10 @@ var preflightOnce sync.Once
 // Queues, etc.). There is no opt-in: the user must clean the conflicting
 // Queues themselves before re-running.
 func runPreflight(ctx goctx.Context, cli runtimeClient.Client) error {
-	var err error
 	preflightOnce.Do(func() {
-		err = checkForeignQueues(ctx, cli)
+		preflightErr = checkForeignQueues(ctx, cli)
 	})
-	return err
+	return preflightErr
 }
 
 func checkForeignQueues(ctx goctx.Context, cli runtimeClient.Client) error {
@@ -44,6 +51,10 @@ func checkForeignQueues(ctx goctx.Context, cli runtimeClient.Client) error {
 	var foreign []string
 	for _, q := range queues.Items {
 		if q.Labels[commonconstants.AppLabelName] == constant.EngineTestPodsApp {
+			continue
+		}
+		// The defaults are created by default on a fresh install. They shouldn't block an e2e test run.
+		if q.Name == defaultParentQueueName || q.Name == defaultQueueName {
 			continue
 		}
 		foreign = append(foreign, q.Name)
