@@ -231,6 +231,12 @@ type ResourceReservation struct {
 	// +kubebuilder:validation:Optional
 	AppLabel *string `json:"appLabel,omitempty"`
 
+	// RuntimeClassName specifies the runtime class used by GPU reservation pods.
+	// Defaults to empty (no runtime class). Set this if the cluster requires a
+	// specific runtime class for GPU access on reservation pods.
+	// +kubebuilder:validation:Optional
+	RuntimeClassName *string `json:"runtimeClassName,omitempty"`
+
 	// PodResources specifies the CPU and memory resource requests and limits for GPU reservation pods.
 	// If not set, Kubernetes defaults will be used, which allows for better backward compatibility.
 	// +kubebuilder:validation:Optional

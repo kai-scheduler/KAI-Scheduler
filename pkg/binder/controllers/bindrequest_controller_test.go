@@ -88,7 +88,7 @@ var _ = Describe("BindRequest Controller", func() {
 		binderPlugins.RegisterPlugin(fakePlugin)
 
 		rrs := resourcereservation.NewService(false, fakeClient, "", 40*time.Second,
-			resourceReservationNameSpace, resourceReservationServiceAccount, resourceReservationAppLabelValue, scalingPodsNamespace,
+			resourceReservationNameSpace, resourceReservationServiceAccount, resourceReservationAppLabelValue, scalingPodsNamespace, "",
 			nil, nil, nil)
 		binder := binding.NewBinder(fakeClient, rrs, binderPlugins)
 		reconciler = NewBindRequestReconciler(fakeClient, testScheme, fakeEventRecorder, params,

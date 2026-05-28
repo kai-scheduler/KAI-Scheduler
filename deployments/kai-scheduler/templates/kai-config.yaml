@@ -81,6 +81,9 @@ spec:
       {{- if .Values.global.resourceReservation.appLabel }}
       appLabel: {{ .Values.global.resourceReservation.appLabel }}
       {{- end }}
+      {{- if .Values.binder.runtimeClassName }}
+      runtimeClassName: {{ .Values.binder.runtimeClassName }}
+      {{- end }}
       image:
         name: {{ .Values.binder.resourceReservationImage.name }}
         repository: {{ .Values.global.registry }}

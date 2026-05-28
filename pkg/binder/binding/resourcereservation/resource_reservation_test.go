@@ -54,7 +54,7 @@ func initializeTestService(
 	client runtimeClient.WithWatch,
 ) *service {
 	service := NewService(false, client, "", 40*time.Millisecond,
-		resourceReservationNameSpace, resourceReservationServiceAccount, resourceReservationAppLabelValue, scalingPodsNamespace,
+		resourceReservationNameSpace, resourceReservationServiceAccount, resourceReservationAppLabelValue, scalingPodsNamespace, "",
 		nil, nil, nil)
 
 	return service
@@ -1499,7 +1499,7 @@ var _ = Describe("Race condition: reservation pod deleted during concurrent bind
 				WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
 			svc := NewService(false, clientWithObjs, "test-image", 40*time.Millisecond,
 				resourceReservationNameSpace, resourceReservationServiceAccount,
-				resourceReservationAppLabelValue, scalingPodsNamespace,
+				resourceReservationAppLabelValue, scalingPodsNamespace, "",
 				nil, podSecCtx, containerSecCtx)
 
 			pod, err := svc.createResourceReservationPod(
@@ -1519,7 +1519,7 @@ var _ = Describe("Race condition: reservation pod deleted during concurrent bind
 				WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
 			svc := NewService(false, clientWithObjs, "test-image", 40*time.Millisecond,
 				resourceReservationNameSpace, resourceReservationServiceAccount,
-				resourceReservationAppLabelValue, scalingPodsNamespace,
+				resourceReservationAppLabelValue, scalingPodsNamespace, "",
 				nil, nil, nil)
 
 			pod, err := svc.createResourceReservationPod(

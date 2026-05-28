@@ -56,6 +56,7 @@ type service struct {
 	serviceAccountName                  string
 	appLabelValue                       string
 	scalingPodNamespace                 string
+	runtimeClassName                    string
 	podResources                        *v1.ResourceRequirements
 	reservationPodSecurityContext       *v1.PodSecurityContext
 	reservationContainerSecurityContext *v1.SecurityContext
@@ -70,6 +71,7 @@ func NewService(
 	serviceAccountName string,
 	appLabelValue string,
 	scalingPodNamespace string,
+	runtimeClassName string,
 	podResources *v1.ResourceRequirements,
 	reservationPodSecurityContext *v1.PodSecurityContext,
 	reservationContainerSecurityContext *v1.SecurityContext,
@@ -84,6 +86,7 @@ func NewService(
 		serviceAccountName:                  serviceAccountName,
 		appLabelValue:                       appLabelValue,
 		scalingPodNamespace:                 scalingPodNamespace,
+		runtimeClassName:                    runtimeClassName,
 		podResources:                        podResources,
 		reservationPodSecurityContext:       reservationPodSecurityContext,
 		reservationContainerSecurityContext: reservationContainerSecurityContext,
@@ -528,7 +531,13 @@ func (rsc *service) createResourceReservationPod(
 			},
 		},
 		Spec: v1.PodSpec{
-			NodeName:           nodeName,
+			NodeName: nodeName,
+			RuntimeClassName: func() *string {
+				if len(rsc.runtimeClassName) == 0 {
+					return nil
+				}
+				return &rsc.runtimeClassName
+			}(),
 			SecurityContext:    rsc.reservationPodSecurityContext,
 			ServiceAccountName: rsc.serviceAccountName,
 			Containers: []v1.Container{

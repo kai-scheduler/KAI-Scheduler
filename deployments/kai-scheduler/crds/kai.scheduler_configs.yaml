@@ -1839,6 +1839,12 @@ spec:
                                 type: string
                             type: object
                         type: object
+                      runtimeClassName:
+                        description: |-
+                          RuntimeClassName specifies the runtime class used by GPU reservation pods.
+                          Defaults to empty (no runtime class). Set this if the cluster requires a
+                          specific runtime class for GPU access on reservation pods.
+                        type: string
                       serviceAccountName:
                         description: ServiceAccountName is the name of the service
                           account that will be used by the resource reservation pods
