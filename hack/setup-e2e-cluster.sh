@@ -44,10 +44,11 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     -h|--help)
-      echo "Usage: $0 [--test-third-party-integrations] [--local-images-build] [--install-vpa] [--kind-config <path>]"
+      echo "Usage: $0 [--test-third-party-integrations] [--local-images-build] [--install-vpa] [--feature-config <config>] [--kind-config <path>]"
       echo "  --test-third-party-integrations: Install third party operators for compatibility testing"
       echo "  --local-images-build: Build and use local images instead of pulling from registry"
       echo "  --install-vpa: Install Vertical Pod Autoscaler and metrics-server"
+      echo "  --feature-config: Feature configuration for kind cluster generation (default: \"default\")"
       echo "  --kind-config: Existing kind config file to use instead of generating one"
       exit 0
       ;;
@@ -88,7 +89,7 @@ kubectl wait --for=condition=available --timeout=60s deployment/registry -n kube
 
 # Install the fake-gpu-operator to provide fake GPU resources for the e2e tests
 DRA_PLUGIN_ENABLED="false"
-if [ -z "$KIND_CONFIG" ] && [ "$FEATURE_CONFIG" = "dra-enabled" ]; then
+if [ "$FEATURE_CONFIG" = "dra-enabled" ]; then
   DRA_PLUGIN_ENABLED="true"
 fi
 helm upgrade -i gpu-operator oci://ghcr.io/run-ai/fake-gpu-operator/fake-gpu-operator --namespace gpu-operator --create-namespace \
