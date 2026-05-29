@@ -12,9 +12,22 @@ CLUSTER_NAME=${CLUSTER_NAME:-e2e-kai-scheduler}
 REPO_ROOT=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )/..
 : ${FEATURE_CONFIG:="default"}
 KIND_CONFIG=${KIND_CONFIG:-""}
+GENERATED_KIND_CONFIG=""
+PORT_FORWARD_PID=""
 
 : ${KIND_K8S_TAG:="v1.35.0"}
 : ${KIND_IMAGE:="kindest/node:${KIND_K8S_TAG}"}
+
+cleanup() {
+  if [[ -n "$PORT_FORWARD_PID" ]]; then
+    kill "$PORT_FORWARD_PID" 2>/dev/null || true
+  fi
+  if [[ -n "$GENERATED_KIND_CONFIG" ]]; then
+    rm -f "$GENERATED_KIND_CONFIG"
+  fi
+}
+
+trap cleanup EXIT
 
 # Parse named parameters
 TEST_THIRD_PARTY_INTEGRATIONS=${TEST_THIRD_PARTY_INTEGRATIONS:-"false"}
@@ -69,7 +82,6 @@ if [[ -n "$KIND_CONFIG" ]]; then
   CLUSTER_KIND_CONFIG="$KIND_CONFIG"
 else
   GENERATED_KIND_CONFIG=$(mktemp "${TMPDIR:-/tmp}/kind-config-XXXXXX.yaml")
-  trap "rm -f \"$GENERATED_KIND_CONFIG\"" EXIT
   ${REPO_ROOT}/hack/generate-kind-config.sh \
       --feature-config "$FEATURE_CONFIG" \
       --k8s-version "$KIND_K8S_TAG" \
@@ -154,7 +166,6 @@ if [ "$LOCAL_IMAGES_BUILD" = "true" ]; then
     # Start port-forward to local registry
     kubectl port-forward -n kube-registry deploy/registry 30100:5000 &
     PORT_FORWARD_PID=$!
-    trap "kill $PORT_FORWARD_PID 2>/dev/null || true" EXIT
     sleep 2
 
     # Probe whether docker push can reach the registry (fails on Docker Desktop where the
