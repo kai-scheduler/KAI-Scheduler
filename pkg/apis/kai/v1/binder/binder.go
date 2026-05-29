@@ -22,6 +22,7 @@ const (
 	VolumeBindingPluginName    = "volumebinding"
 	DynamicResourcesPluginName = "dynamicresources"
 	GPUSharingPluginName       = "gpusharing"
+	HamiCorePluginName         = "hamicore"
 
 	BindTimeoutSecondsArgument = "bindTimeoutSeconds"
 	CDIEnabledArgument         = "cdiEnabled"
@@ -34,6 +35,7 @@ var defaultPluginPriorities = map[string]int{
 	VolumeBindingPluginName:    300,
 	DynamicResourcesPluginName: 200,
 	GPUSharingPluginName:       100,
+	HamiCorePluginName:         50,
 }
 
 // PluginConfig allows overriding binder plugin settings.
@@ -84,7 +86,7 @@ type Binder struct {
 
 	// Plugins allows overriding binder plugin configuration. Keys are plugin names.
 	// Built-in plugins can be disabled, reordered, or have their arguments changed.
-	// Built-in plugins: volumebinding, dynamicresources, gpusharing.
+	// Built-in plugins: volumebinding, dynamicresources, gpusharing, hamicore.
 	// +kubebuilder:validation:Optional
 	Plugins map[string]PluginConfig `json:"plugins,omitempty"`
 
@@ -195,6 +197,10 @@ func DefaultPluginsConfig(bindTimeoutSeconds int, cdiEnabled bool) map[string]Pl
 			Arguments: map[string]string{
 				CDIEnabledArgument: strconv.FormatBool(cdiEnabled),
 			},
+		},
+		HamiCorePluginName: {
+			Enabled:  ptr.To(false),
+			Priority: ptr.To(defaultPluginPriorities[HamiCorePluginName]),
 		},
 	}
 }
