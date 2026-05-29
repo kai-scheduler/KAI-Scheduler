@@ -56,6 +56,52 @@ func TestCache(t *testing.T) {
 
 var _ = Describe("Cache", func() {
 	Describe("New", func() {
+		Context("Pod informer filtering", func() {
+			It("should filter terminal pods without filtering pods by scheduler name", func() {
+				kubeClient := fake.NewSimpleClientset()
+				cache := New(&SchedulerCacheParams{
+					KubeClient:         kubeClient,
+					KAISchedulerClient: kubeaischedulerfake.NewSimpleClientset(),
+					NodePoolParams:     &conf.SchedulingNodePoolParams{},
+					DiscoveryClient:    kubeClient.Discovery(),
+				})
+
+				stopCh := make(chan struct{})
+				defer close(stopCh)
+				cache.Run(stopCh)
+				cache.WaitForCacheSync(stopCh)
+
+				podSelectors := []string{}
+				nonPodSelectors := map[string][]string{}
+				for _, action := range kubeClient.Actions() {
+					switch typedAction := action.(type) {
+					case faketesting.ListAction:
+						selector := typedAction.GetListRestrictions().Fields.String()
+						if action.GetResource().Resource == "pods" {
+							podSelectors = append(podSelectors, selector)
+						} else if selector != "" {
+							nonPodSelectors[action.GetResource().Resource] = append(nonPodSelectors[action.GetResource().Resource], selector)
+						}
+					case faketesting.WatchAction:
+						selector := typedAction.GetWatchRestrictions().Fields.String()
+						if action.GetResource().Resource == "pods" {
+							podSelectors = append(podSelectors, selector)
+						} else if selector != "" {
+							nonPodSelectors[action.GetResource().Resource] = append(nonPodSelectors[action.GetResource().Resource], selector)
+						}
+					}
+				}
+
+				Expect(podSelectors).NotTo(BeEmpty())
+				for _, selector := range podSelectors {
+					Expect(selector).To(ContainSubstring("status.phase!=Succeeded"))
+					Expect(selector).To(ContainSubstring("status.phase!=Failed"))
+					Expect(selector).NotTo(ContainSubstring("spec.schedulerName"))
+				}
+				Expect(nonPodSelectors).To(BeEmpty())
+			})
+		})
+
 		Context("DRA Feature Gate", func() {
 			DescribeTable("should record DRA availability based on Kubernetes version and resource API availability",
 				func(serverMajor, serverMinor string, resourceGroupVersions []string, expectDRAAvailable bool) {
