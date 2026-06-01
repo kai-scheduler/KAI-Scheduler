@@ -405,6 +405,8 @@ func TestGetPodGroupMetadata_WithTopologyHierarchy(t *testing.T) {
 	// Parent SubGroup
 	assert.Equal(t, "group1", metadata.SubGroups[0].Name)
 	assert.Equal(t, int32(0), metadata.SubGroups[0].MinAvailable)
+	assert.NotNil(t, metadata.SubGroups[0].MinSubGroup)
+	assert.Equal(t, int32(2), *metadata.SubGroups[0].MinSubGroup)
 	assert.Nil(t, metadata.SubGroups[0].Parent)
 	assert.NotNil(t, metadata.SubGroups[0].TopologyConstraints)
 	assert.Equal(t, "node", metadata.SubGroups[0].TopologyConstraints.PreferredTopologyLevel)
@@ -593,8 +595,12 @@ func TestGetPodGroupMetadata_MultipleParentGroups(t *testing.T) {
 	// Parents first
 	assert.Equal(t, "group1", metadata.SubGroups[0].Name)
 	assert.Equal(t, int32(0), metadata.SubGroups[0].MinAvailable)
+	assert.NotNil(t, metadata.SubGroups[0].MinSubGroup)
+	assert.Equal(t, int32(2), *metadata.SubGroups[0].MinSubGroup)
 	assert.Equal(t, "group2", metadata.SubGroups[1].Name)
 	assert.Equal(t, int32(0), metadata.SubGroups[1].MinAvailable)
+	assert.NotNil(t, metadata.SubGroups[1].MinSubGroup)
+	assert.Equal(t, int32(1), *metadata.SubGroups[1].MinSubGroup)
 
 	// Children
 	assert.Equal(t, "pg1", metadata.SubGroups[2].Name)
@@ -1906,6 +1912,8 @@ func TestGetPodGroupMetadata_ThreeLevelTopologyWithLeafVerification(t *testing.T
 	assert.Equal(t, "test-topology", metadata.SubGroups[0].TopologyConstraints.Topology)
 	assert.Nil(t, metadata.SubGroups[0].Parent)
 	assert.Equal(t, int32(0), metadata.SubGroups[0].MinAvailable)
+	assert.NotNil(t, metadata.SubGroups[0].MinSubGroup)
+	assert.Equal(t, int32(2), *metadata.SubGroups[0].MinSubGroup)
 
 	// Level 2: Verify Parent group2
 	assert.Equal(t, "group2", metadata.SubGroups[1].Name)
@@ -1915,6 +1923,8 @@ func TestGetPodGroupMetadata_ThreeLevelTopologyWithLeafVerification(t *testing.T
 	assert.Equal(t, "test-topology", metadata.SubGroups[1].TopologyConstraints.Topology)
 	assert.Nil(t, metadata.SubGroups[1].Parent)
 	assert.Equal(t, int32(0), metadata.SubGroups[1].MinAvailable)
+	assert.NotNil(t, metadata.SubGroups[1].MinSubGroup)
+	assert.Equal(t, int32(1), *metadata.SubGroups[1].MinSubGroup)
 
 	// Level 3 (LEAF): Verify Child pg1 under group1
 	assert.Equal(t, "pg1", metadata.SubGroups[2].Name)
