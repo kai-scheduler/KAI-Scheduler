@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- Updated Go toolchain and base build images to v1.26.3.
+
+## [v0.14.3] - 2026-05-20
+
+### Fixed
+- Fixed a bug where multi-node reclaims would fail in some cases [itsomri](https://github.com/itsomri)
+
 ## [v0.14.2] - 2026-05-07
 
 ### Added
