@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 - Improved solver performance in some large reclaim scenarios [#1627](https://github.com/kai-scheduler/KAI-Scheduler/pull/1627) [itsomri](https://github.com/itsomri)
+- Improved reclaim, preempt, and consolidation performance by skipping solver work for jobs blocked by victim-invariant pre-predicate failures such as missing PVCs, missing required ConfigMaps, and tasks larger than any node. [#1502](https://github.com/kai-scheduler/KAI-Scheduler/issues/1502)
 
 ## [v0.14.4] - 2026-06-01
 
@@ -30,7 +31,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 - Fixed kai-operator not reconciling on Prometheus and ServiceMonitor changes. The Config controller now watches owned `Prometheus` and `ServiceMonitor` resources, so deletions and drift trigger reconciliation. CRD presence is checked at startup against the API server (the scheme-only check used previously could not detect missing CRDs), and the watch is registered only when the CRDs are installed. [#877](https://github.com/kai-scheduler/KAI-Scheduler/issues/877)
-- Improved reclaim, preempt, and consolidation performance by skipping solver work for jobs blocked by victim-invariant pre-predicate failures such as missing PVCs, missing required ConfigMaps, and tasks larger than any node. [#1502](https://github.com/kai-scheduler/KAI-Scheduler/issues/1502)
 
 ## [v0.14.1] - 2026-04-29
 
