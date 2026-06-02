@@ -549,6 +549,8 @@ sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 h1:IpInykpT6ceI+QxKBbEflcR5E
 sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730/go.mod h1:mdzfpAEoE6DHQEN0uh9ZbOCuHbLK5wOm7dK4ctXE9Tg=
 sigs.k8s.io/karpenter v1.2.0 h1:y1zyFGzDLiT5OHpG8Jvj4JKKe/iXmJDYeejs8k8OznM=
 sigs.k8s.io/karpenter v1.2.0/go.mod h1:646txj32arNTy+K4gySCqWSljYrEdemAdYoBMQmkS7o=
+sigs.k8s.io/kueue v0.12.3 h1:BwpNe6CSwkP6Y9KiaWPB9eye4cj7RUMs5Q1vbzPNB3I=
+sigs.k8s.io/kueue v0.12.3/go.mod h1:xPEY7mqb3zDY69rcZnd0xsi/y3mggk4b1kBhWNfI8PM=
 sigs.k8s.io/kwok v0.6.1 h1:Ar8u7Y5TWvvOktAWapXRWJxwiwy9XFolJd4IPDR3fPg=
 sigs.k8s.io/kwok v0.6.1/go.mod h1:1ZydjiCOLly7ogqEmwN8YBgbF7bC8Z7BKURLHXPVrFc=
 sigs.k8s.io/lws v0.7.0 h1:qWfzX8+UBak+Hq0+m/PuE3uO0mp/3dmm5q/h/7z31A8=
