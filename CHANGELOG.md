@@ -6,14 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- Improved solver performance in some large reclaim scenarios [#1627](https://github.com/kai-scheduler/KAI-Scheduler/pull/1627) [itsomri](https://github.com/itsomri)
+
 ## [v0.15.1] - 2026-06-01
 
 ### Added
 
 ### Changed
 - Updated Go toolchain and base build images to v1.26.3.
-
-### Fixed
 
 ## [v0.15.0] - 2026-05-20
 
