@@ -19,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Fixed post-delete cleanup hook hardcoding `kai-scheduler` namespace instead of Helm release namespace on `helm uninstall` [#1619](https://github.com/kai-scheduler/KAI-Scheduler/pull/1619) [dttung2905](https://github.com/dttung2905)
 - Improved solver performance in some large reclaim scenarios [#1627](https://github.com/kai-scheduler/KAI-Scheduler/pull/1627) [itsomri](https://github.com/itsomri)
 - Grove grouper now sets `minSubGroup` (equal to the number of child SubGroups) instead of `minMember=0` on parent SubGroups generated from `topologyConstraintGroupConfigs` [#1639](https://github.com/kai-scheduler/KAI-Scheduler/issues/1639) [davidLif](https://github.com/davidLif)
+- Fixed Helm chart not wiring `podgrouper.queueLabelKey` into `spec.global.queueLabelKey` on the Config CR, so custom queue label keys were ignored at install time [#1655](https://github.com/kai-scheduler/KAI-Scheduler/pull/1655) [dttung2905](https://github.com/dttung2905)
 
 ## [v0.15.0] - 2026-05-20
 

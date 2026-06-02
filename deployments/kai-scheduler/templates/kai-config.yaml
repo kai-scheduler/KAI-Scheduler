@@ -53,6 +53,9 @@ spec:
     vpa:
       {{- toYaml .Values.global.vpa | nindent 6 }}
     {{- end }}
+    {{- if .Values.podgrouper.queueLabelKey }}
+    queueLabelKey: {{ .Values.podgrouper.queueLabelKey | quote }}
+    {{- end }}
 
   binder:
     service:
