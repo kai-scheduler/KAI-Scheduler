@@ -22,6 +22,7 @@ package framework
 import (
 	"fmt"
 	"net/http"
+	"runtime"
 	"sort"
 	"sync"
 	"time"
@@ -233,36 +234,72 @@ func (ssn *Session) FittingNode(task *pod_info.PodInfo, node *node_info.NodeInfo
 	return true
 }
 
-func (ssn *Session) OrderedNodesByTask(nodes []*node_info.NodeInfo, task *pod_info.PodInfo) []*node_info.NodeInfo {
-	var (
-		nodeScores = make(map[float64][]*node_info.NodeInfo)
-		mutex      sync.Mutex
-		wg         sync.WaitGroup
-	)
+// nodeScore is a per-worker scoring result; using a private slice per worker
+// avoids the shared-map + mutex contention seen on the hot scoring path.
+type nodeScore struct {
+	node  *node_info.NodeInfo
+	score float64
+}
 
+func (ssn *Session) OrderedNodesByTask(nodes []*node_info.NodeInfo, task *pod_info.PodInfo) []*node_info.NodeInfo {
 	ssn.NodePreOrderFn(task, nodes)
 
-	for _, node := range nodes {
-		wg.Add(1)
-		go func(node *node_info.NodeInfo) {
-			defer wg.Done()
-			score, err := ssn.NodeOrderFn(task, node)
-			if err != nil {
-				log.InfraLogger.Errorf("Error in Calculating Priority for the node:%v", err)
-				return
-			}
-
-			mutex.Lock()
-			nodeScores[score] = append(nodeScores[score], node)
-			mutex.Unlock()
-
-			log.InfraLogger.V(5).Infof("Overall priority node score of node <%v> for task <%v/%v> is: %f",
-				node.Name, task.Namespace, task.Name, score)
-		}(node)
+	if len(nodes) == 0 {
+		return sortNodesByScore(nil)
 	}
 
+	workers := runtime.GOMAXPROCS(0)
+	if workers > len(nodes) {
+		workers = len(nodes)
+	}
+	if workers < 1 {
+		workers = 1
+	}
+
+	partials := make([][]nodeScore, workers)
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for w := 0; w < workers; w++ {
+		start := (len(nodes) * w) / workers
+		end := (len(nodes) * (w + 1)) / workers
+		partials[w] = make([]nodeScore, 0, end-start)
+		go func(workerIdx, start, end int) {
+			defer wg.Done()
+			local := partials[workerIdx]
+			for i := start; i < end; i++ {
+				node := nodes[i]
+				score, err := ssn.NodeOrderFn(task, node)
+				if err != nil {
+					log.InfraLogger.Errorf("Error in Calculating Priority for the node:%v", err)
+					continue
+				}
+				local = append(local, nodeScore{node: node, score: score})
+				log.InfraLogger.V(5).Infof("%s", &nodeScoreLog{node: node, task: task, score: score})
+			}
+			partials[workerIdx] = local
+		}(w, start, end)
+	}
 	wg.Wait()
+
+	nodeScores := make(map[float64][]*node_info.NodeInfo, len(nodes))
+	for _, part := range partials {
+		for _, ns := range part {
+			nodeScores[ns.score] = append(nodeScores[ns.score], ns.node)
+		}
+	}
 	return sortNodesByScore(nodeScores)
+}
+
+// nodeScoreLog defers formatting until V(5) actually emits.
+type nodeScoreLog struct {
+	node  *node_info.NodeInfo
+	task  *pod_info.PodInfo
+	score float64
+}
+
+func (l *nodeScoreLog) String() string {
+	return fmt.Sprintf("Overall priority node score of node <%v> for task <%v/%v> is: %f",
+		l.node.Name, l.task.Namespace, l.task.Name, l.score)
 }
 
 func (ssn *Session) isTaskAllocatableOnNode(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo,

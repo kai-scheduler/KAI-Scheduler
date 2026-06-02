@@ -51,9 +51,12 @@ type evictOperation struct {
 	previousStatus    pod_status.PodStatus
 	previousNode      *node_info.NodeInfo
 	previousGpuGroups []string
-	message           string
-	evictionMetadata  eviction_info.EvictionMetadata
-	reverseOperation  ReverseOperation
+	// messageBuilder is invoked at commit time (in commitEvict), avoiding the
+	// formatting cost on speculative probe-and-discard paths. May be called
+	// more than once on undo+redo, so callers must keep it safe to re-invoke.
+	messageBuilder   func() string
+	evictionMetadata eviction_info.EvictionMetadata
+	reverseOperation ReverseOperation
 }
 
 func (op evictOperation) Name() string {

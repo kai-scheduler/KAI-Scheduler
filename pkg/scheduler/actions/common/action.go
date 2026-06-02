@@ -23,15 +23,14 @@ func EvictAllPreemptees(ssn *framework.Session, preempteeTasks []*pod_info.PodIn
 	preemptor *podgroup_info.PodGroupInfo, stmt *framework.Statement,
 	actionType framework.ActionType) error {
 
-	messages := getEvictionMessages(ssn, preempteeTasks, preemptor, actionType)
 	for _, task := range preempteeTasks {
-		message, found := messages[task.UID]
-		if !found {
-			return fmt.Errorf("failed to find message for task: %s", task.UID)
+		// Materialize the eviction message lazily at commit time; on the hot
+		// probe-and-discard path the statement is rolled back and the builder
+		// is never invoked.
+		messageBuilder := func() string {
+			return utils.GetMessageOfEviction(ssn, actionType, task, preemptor)
 		}
-		log.InfraLogger.V(7).Infof("Statement eviction for task <%s/%s>, message: <%v> ",
-			task.Namespace, task.Name, message)
-		err := stmt.Evict(task, message, eviction_info.EvictionMetadata{
+		err := stmt.Evict(task, messageBuilder, eviction_info.EvictionMetadata{
 			Action:           string(actionType),
 			EvictionGangSize: len(preempteeTasks),
 			Preemptor:        &types.NamespacedName{Namespace: preemptor.Namespace, Name: preemptor.Name},
@@ -44,16 +43,6 @@ func EvictAllPreemptees(ssn *framework.Session, preempteeTasks []*pod_info.PodIn
 	}
 
 	return nil
-}
-
-// getEvictionMessages generates all eviction message based on the state before any task was evicted
-func getEvictionMessages(ssn *framework.Session, tasks []*pod_info.PodInfo, preemptor *podgroup_info.PodGroupInfo,
-	actionType framework.ActionType) map[common_info.PodID]string {
-	messages := map[common_info.PodID]string{}
-	for _, task := range tasks {
-		messages[task.UID] = utils.GetMessageOfEviction(ssn, actionType, task, preemptor)
-	}
-	return messages
 }
 
 func GetJobsToAllocate(ssn *framework.Session, preempteeTasks []*pod_info.PodInfo,

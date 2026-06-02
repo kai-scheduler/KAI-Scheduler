@@ -570,7 +570,7 @@ func TestStatementEvictUnevict_WithDRAClaims(t *testing.T) {
 			initialState := captureTaskState(task)
 			assert.Greater(t, initialState.claimInfoCount, 0, "Task should have ResourceClaimInfo")
 
-			err := stmt.Evict(task, "test eviction", eviction_info.EvictionMetadata{
+			err := stmt.Evict(task, func() string { return "test eviction" }, eviction_info.EvictionMetadata{
 				EvictionGangSize: 1,
 				Action:           "reclaim",
 			})
