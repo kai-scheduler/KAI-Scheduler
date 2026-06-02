@@ -121,8 +121,13 @@ The current default binder plugins are:
 | `volumebinding` | 300 | `bindTimeoutSeconds: "120"` | Handles Kubernetes persistent volume binding before pod bind. |
 | `dynamicresources` | 200 | `bindTimeoutSeconds: "120"` | Handles Kubernetes Dynamic Resource Allocation claim binding before pod bind. |
 | `gpusharing` | 100 | `cdiEnabled: "false"` | Handles fractional GPU pod mutation needed for GPU sharing. |
+| `hamicore` | 50 |  | Optional HAMI-core GPU virtualization for fractional GPU pods. Depends on `gpusharing`. Disabled by default. |
 
-For operator-managed deployments, the operator sets the `gpusharing` `cdiEnabled` argument from `spec.binder.cdiEnabled`. If `spec.binder.cdiEnabled` is unset, the operator attempts to auto-detect CDI from the NVIDIA GPU Operator `ClusterPolicy`.
+For operator-managed deployments, the operator sets the `gpusharing` `cdiEnabled` argument from `spec.binder.cdiEnabled`. If `spec.binder.cdiEnabled` is unset, the operator attempts to auto-detect CDI from the NVIDIA GPU Operator `ClusterPolicy`. Enable `hamicore` to opt into HAMI-core GPU memory limits.
+
+When `hamicore` is enabled in `spec.binder.plugins`, the operator also passes `--hami-core-enabled=true` to the admission service. No separate admission configuration is required. The admission `hamicore` plugin runs after `gpusharing` and injects the `CUDA_DEVICE_MEMORY_LIMIT` environment variable into fractional GPU pods; the binder `hamicore` plugin writes the limit value into the GPU sharing ConfigMap at bind time.
+
+If admission is run outside the operator (for example, for local development), pass `--hami-core-enabled=true` to the admission binary when the binder `hamicore` plugin is enabled.
 
 ### Config Examples
 
@@ -165,6 +170,27 @@ spec:
         priority: 300
 ```
 
+Enable HAMI-core GPU memory limits for fractional GPU pods:
+
+```yaml
+apiVersion: kai.scheduler/v1
+kind: Config
+spec:
+  binder:
+    plugins:
+      hamicore:
+        enabled: true
+```
+
+Helm equivalent:
+
+```yaml
+binder:
+  plugins:
+    hamicore:
+      enabled: true
+```
+
 Equivalent Helm values:
 
 ```yaml
@@ -196,6 +222,19 @@ The dynamic resources plugin handles Kubernetes Dynamic Resource Allocation reso
 #### GPU Sharing Plugin
 
 The GPU sharing plugin handles fractional GPU assignments. For shared GPU allocations it creates the required GPU sharing ConfigMaps and sets the NVIDIA visible devices and GPU portion information on the target container.
+
+#### HAMI-core Plugin
+
+The HAMI-core plugin is disabled by default and **requires `gpusharing` to be enabled**. It is split across admission and binder:
+
+| Component | Responsibility |
+| --- | --- |
+| Admission `hamicore` | Injects `CUDA_DEVICE_MEMORY_LIMIT` into the fractional GPU container (ConfigMap key reference, optional). Uses the capabilities ConfigMap name set by the `gpusharing` admission plugin. |
+| Binder `hamicore` | At PreBind, writes the computed limit into that ConfigMap from node label `nvidia.com/gpu.memory` and `BindRequest.spec.receivedGPU.portion`. |
+
+Fractional pods created while `hamicore` is disabled do not receive this environment variable. Enabling `hamicore` affects only pods admitted after the change.
+
+Setting `CUDA_DEVICE_MEMORY_LIMIT` does not by itself enforce memory inside the container. For enforcement, deploy [KAI-resource-isolator](https://github.com/Project-HAMi/KAI-resource-isolator) alongside KAI Scheduler so HAMi-core can apply the limit at runtime. See [GPU Sharing — Enforcing GPU memory limits](../gpu-sharing/README.md#enforcing-gpu-memory-limits-optional).
 
 ### Creating Custom Plugins
 
