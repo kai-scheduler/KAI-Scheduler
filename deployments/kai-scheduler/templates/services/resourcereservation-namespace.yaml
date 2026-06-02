@@ -9,4 +9,8 @@ metadata:
   name: {{ .Values.global.resourceReservation.namespace }}
   annotations:
     helm.sh/resource-policy: keep
+  {{- with .Values.global.resourceReservation.namespaceLabels }}
+  labels:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 {{- end }}
