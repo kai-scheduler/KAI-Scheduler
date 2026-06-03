@@ -24,6 +24,7 @@ type Options struct {
 	WebhookPort                 int
 	FakeGPUNodes                bool
 	GPUSharingEnabled           bool
+	HamiCoreEnabled             bool
 	GPUPodRuntimeClassName      string
 	GPUFractionRuntimeClassName string
 }
@@ -80,6 +81,9 @@ func InitOptions() *Options {
 	fs.BoolVar(&options.GPUSharingEnabled,
 		"gpu-sharing-enabled", false,
 		"Specifies if the GPU sharing is enabled")
+	fs.BoolVar(&options.HamiCoreEnabled,
+		"hami-core-enabled", false,
+		"Specifies if the HAMI-core GPU memory limit injection is enabled")
 	fs.StringVar(&options.GPUPodRuntimeClassName,
 		"gpu-pod-runtime-class-name", constants.DefaultRuntimeClassName,
 		fmt.Sprintf("Deprecated: use --gpu-fraction-runtime-class-name. "+

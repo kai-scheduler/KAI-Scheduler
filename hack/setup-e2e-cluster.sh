@@ -11,9 +11,23 @@ CLUSTER_NAME=${CLUSTER_NAME:-e2e-kai-scheduler}
 
 REPO_ROOT=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )/..
 : ${FEATURE_CONFIG:="default"}
+KIND_CONFIG=${KIND_CONFIG:-""}
+GENERATED_KIND_CONFIG=""
+PORT_FORWARD_PID=""
 
 : ${KIND_K8S_TAG:="v1.35.0"}
 : ${KIND_IMAGE:="kindest/node:${KIND_K8S_TAG}"}
+
+cleanup() {
+  if [[ -n "$PORT_FORWARD_PID" ]]; then
+    kill "$PORT_FORWARD_PID" 2>/dev/null || true
+  fi
+  if [[ -n "$GENERATED_KIND_CONFIG" ]]; then
+    rm -f "$GENERATED_KIND_CONFIG"
+  fi
+}
+
+trap cleanup EXIT
 
 # Parse named parameters
 TEST_THIRD_PARTY_INTEGRATIONS=${TEST_THIRD_PARTY_INTEGRATIONS:-"false"}
@@ -38,12 +52,17 @@ while [[ $# -gt 0 ]]; do
       FEATURE_CONFIG="$2"
       shift 2
       ;;
+    --kind-config)
+      KIND_CONFIG="$2"
+      shift 2
+      ;;
     -h|--help)
-      echo "Usage: $0 [--test-third-party-integrations] [--local-images-build] [--install-vpa] [--feature-config <config>]"
+      echo "Usage: $0 [--test-third-party-integrations] [--local-images-build] [--install-vpa] [--feature-config <config>] [--kind-config <path>]"
       echo "  --test-third-party-integrations: Install third party operators for compatibility testing"
       echo "  --local-images-build: Build and use local images instead of pulling from registry"
       echo "  --install-vpa: Install Vertical Pod Autoscaler and metrics-server"
       echo "  --feature-config: Feature configuration for kind cluster generation (default: \"default\")"
+      echo "  --kind-config: Existing kind config file to use instead of generating one"
       exit 0
       ;;
     *)
@@ -54,19 +73,26 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-GENERATED_KIND_CONFIG=$(mktemp "${TMPDIR:-/tmp}/kind-config-XXXXXX.yaml")
-trap "rm -f \"$GENERATED_KIND_CONFIG\"" EXIT
-${REPO_ROOT}/hack/generate-kind-config.sh \
-    --feature-config "$FEATURE_CONFIG" \
-    --k8s-version "$KIND_K8S_TAG" \
-    --output "$GENERATED_KIND_CONFIG"
+if [[ -n "$KIND_CONFIG" && "$FEATURE_CONFIG" != "default" ]]; then
+  echo "--feature-config cannot be used together with --kind-config"
+  exit 1
+fi
+
+if [[ -n "$KIND_CONFIG" ]]; then
+  CLUSTER_KIND_CONFIG="$KIND_CONFIG"
+else
+  GENERATED_KIND_CONFIG=$(mktemp "${TMPDIR:-/tmp}/kind-config-XXXXXX.yaml")
+  ${REPO_ROOT}/hack/generate-kind-config.sh \
+      --feature-config "$FEATURE_CONFIG" \
+      --k8s-version "$KIND_K8S_TAG" \
+      --output "$GENERATED_KIND_CONFIG"
+  CLUSTER_KIND_CONFIG="$GENERATED_KIND_CONFIG"
+fi
 
 kind create cluster \
-    --config "$GENERATED_KIND_CONFIG" \
+    --config "$CLUSTER_KIND_CONFIG" \
     --image "${KIND_IMAGE}" \
     --name "$CLUSTER_NAME"
-
-rm -f "$GENERATED_KIND_CONFIG"
 
 # Deploy local image registry
 echo "Deploying local image registry..."
@@ -140,7 +166,6 @@ if [ "$LOCAL_IMAGES_BUILD" = "true" ]; then
     # Start port-forward to local registry
     kubectl port-forward -n kube-registry deploy/registry 30100:5000 &
     PORT_FORWARD_PID=$!
-    trap "kill $PORT_FORWARD_PID 2>/dev/null || true" EXIT
     sleep 2
 
     # Probe whether docker push can reach the registry (fails on Docker Desktop where the

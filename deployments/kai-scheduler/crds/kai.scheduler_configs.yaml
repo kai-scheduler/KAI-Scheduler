@@ -1306,7 +1306,7 @@ spec:
                     description: |-
                       Plugins allows overriding binder plugin configuration. Keys are plugin names.
                       Built-in plugins can be disabled, reordered, or have their arguments changed.
-                      Built-in plugins: volumebinding, dynamicresources, gpusharing.
+                      Built-in plugins: volumebinding, dynamicresources, gpusharing, hamicore.
                     type: object
                   probePort:
                     description: ProbePort specifies the health check port
