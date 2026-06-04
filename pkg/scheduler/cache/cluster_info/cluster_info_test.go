@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	nrtv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 	corev1 "k8s.io/api/core/v1"
@@ -2311,6 +2312,7 @@ func TestSnapshotWithListerErrors(t *testing.T) {
 	for name, test := range tests {
 		t.Logf("Running test: %s", name)
 		dl := data_lister.NewMockDataLister(ctrl)
+		dl.EXPECT().ListNodeResourceTopologies().Return(nil, nil).AnyTimes()
 		clusterInfo := newClusterInfoTests(t,
 			clusterInfoTestParams{
 				kubeObjects:         []runtime.Object{},
@@ -2338,7 +2340,7 @@ func TestNewClusterInfoErrorPartitionSelector(t *testing.T) {
 		NodePoolLabelKey:   "@!A",
 		NodePoolLabelValue: "!@#",
 	}
-	_, err := New(informerFactory, kubeAiSchedulerInformerFactory, nil, params, false, clusterPodAffinityInfo, false, true, nil, 0)
+	_, err := New(informerFactory, kubeAiSchedulerInformerFactory, nil, nil, params, false, clusterPodAffinityInfo, false, true, nil, 0)
 
 	assert.NotNil(t, err)
 }
@@ -2368,7 +2370,7 @@ func TestNewClusterInfoAddIndexerFails(t *testing.T) {
 	clusterPodAffinityInfo.EXPECT().UpdateNodeAffinity(gomock.Any()).AnyTimes()
 	clusterPodAffinityInfo.EXPECT().AddNode(gomock.Any(), gomock.Any()).AnyTimes()
 
-	_, err = New(informerFactory, kubeAiSchedulerInformerFactory, nil, nil, false,
+	_, err = New(informerFactory, kubeAiSchedulerInformerFactory, nil, nil, nil, false,
 		clusterPodAffinityInfo, false, true, nil, 0)
 	assert.NotNil(t, err, "Expected error for conflicting indexers")
 }
@@ -2406,7 +2408,7 @@ func newClusterInfoTestsInner(t *testing.T, kubeObjects, kaiSchedulerObjects []r
 	fakeUsageClient.SetResourceUsage(clusterUsage, clusterUsageErr)
 	usageLister := usagedb.NewUsageLister(&fakeUsageClient, ptr.To(10*time.Microsecond), ptr.To(10*time.Second), ptr.To(10*time.Second))
 
-	clusterInfo, _ := New(informerFactory, kubeAiSchedulerInformerFactory, usageLister, nodePoolParams, false,
+	clusterInfo, _ := New(informerFactory, kubeAiSchedulerInformerFactory, nil, usageLister, nodePoolParams, false,
 		clusterPodAffinityInfo, true, fullHierarchyFairness, nil, 0)
 
 	stopCh := context.Background().Done()
@@ -2584,6 +2586,7 @@ func TestSnapshotNodesWithDRAGPUs(t *testing.T) {
 			mockLister := data_lister.NewMockDataLister(ctrl)
 			mockLister.EXPECT().ListNodes().Return(test.nodes, nil)
 			mockLister.EXPECT().ListResourceSlicesByNode().Return(slicesByNode, nil)
+			mockLister.EXPECT().ListNodeResourceTopologies().Return(nil, nil).AnyTimes()
 
 			clusterPodAffinityInfo := pod_affinity.NewMockClusterPodAffinityInfo(ctrl)
 			clusterPodAffinityInfo.EXPECT().UpdateNodeAffinity(gomock.Any()).AnyTimes()
@@ -2611,6 +2614,44 @@ func TestSnapshotNodesWithDRAGPUs(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSnapshotNodesWithNodeResourceTopology(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	nodes := []*corev1.Node{
+		{ObjectMeta: metav1.ObjectMeta{Name: "node-a"}},
+		{ObjectMeta: metav1.ObjectMeta{Name: "node-b"}},
+	}
+	nrts := []*nrtv1alpha2.NodeResourceTopology{
+		{ObjectMeta: metav1.ObjectMeta{Name: "node-a"}},
+		// Unmatched NRT object: must be ignored, not attached to any node.
+		{ObjectMeta: metav1.ObjectMeta{Name: "node-missing"}},
+	}
+
+	mockLister := data_lister.NewMockDataLister(ctrl)
+	mockLister.EXPECT().ListNodes().Return(nodes, nil)
+	mockLister.EXPECT().ListResourceSlicesByNode().Return(map[string][]*resourceapi.ResourceSlice{}, nil)
+	mockLister.EXPECT().ListNodeResourceTopologies().Return(nrts, nil)
+
+	clusterPodAffinityInfo := pod_affinity.NewMockClusterPodAffinityInfo(ctrl)
+	clusterPodAffinityInfo.EXPECT().UpdateNodeAffinity(gomock.Any()).AnyTimes()
+	clusterPodAffinityInfo.EXPECT().AddNode(gomock.Any(), gomock.Any()).AnyTimes()
+
+	ci := &ClusterInfo{
+		dataLister:             mockLister,
+		nodePoolParams:         &conf.SchedulingNodePoolParams{},
+		nodePoolSelector:       labels.Everything(),
+		clusterPodAffinityInfo: clusterPodAffinityInfo,
+	}
+
+	result, _, err := ci.snapshotNodes(clusterPodAffinityInfo, resource_info.NewResourceVectorMap())
+	assert.NoError(t, err)
+
+	assert.NotNil(t, result["node-a"].NodeResourceTopology, "NRT should be attached to node-a")
+	assert.Equal(t, "node-a", result["node-a"].NodeResourceTopology.Name)
+	assert.Nil(t, result["node-b"].NodeResourceTopology, "node-b has no NRT object")
 }
 
 func createTestResourceSlice(name, nodeName, driver string, deviceCount int) *resourceapi.ResourceSlice {

@@ -12,6 +12,7 @@ package data_lister
 import (
 	reflect "reflect"
 
+	nrtv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 	v1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
 	v1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
@@ -346,4 +347,19 @@ func (m *MockDataLister) ListTopologies() ([]*v1alpha1.Topology, error) {
 func (mr *MockDataListerMockRecorder) ListTopologies() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListTopologies", reflect.TypeOf((*MockDataLister)(nil).ListTopologies))
+}
+
+// ListNodeResourceTopologies mocks base method.
+func (m *MockDataLister) ListNodeResourceTopologies() ([]*nrtv1alpha2.NodeResourceTopology, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListNodeResourceTopologies")
+	ret0, _ := ret[0].([]*nrtv1alpha2.NodeResourceTopology)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListNodeResourceTopologies indicates an expected call of ListNodeResourceTopologies.
+func (mr *MockDataListerMockRecorder) ListNodeResourceTopologies() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListNodeResourceTopologies", reflect.TypeOf((*MockDataLister)(nil).ListNodeResourceTopologies))
 }
