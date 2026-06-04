@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	schedulingv2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
@@ -643,7 +644,7 @@ func TestGetPodGroupMetadata_BackwardsCompatibility_ExistingPodGroupWithoutSubGr
 			Namespace: autoScalingRayCluster.GetNamespace(),
 		},
 		Spec: schedulingv2alpha2.PodGroupSpec{
-			MinMember: 4,
+			MinMember: ptr.To(int32(4)),
 			// No SubGroups - legacy format
 		},
 	}
@@ -683,11 +684,11 @@ func TestGetPodGroupMetadata_BackwardsCompatibility_ExistingPodGroupWithSubGroup
 			Namespace: autoScalingRayCluster.GetNamespace(),
 		},
 		Spec: schedulingv2alpha2.PodGroupSpec{
-			MinMember: 4,
+			MinMember: ptr.To(int32(4)),
 			SubGroups: []schedulingv2alpha2.SubGroup{
-				{Name: "headgroup", MinMember: 1},
-				{Name: "worker-group-0", MinMember: 2},
-				{Name: "worker-group-1", MinMember: 1},
+				{Name: "headgroup", MinMember: ptr.To(int32(1))},
+				{Name: "worker-group-0", MinMember: ptr.To(int32(2))},
+				{Name: "worker-group-1", MinMember: ptr.To(int32(1))},
 			},
 		},
 	}
@@ -722,7 +723,7 @@ func TestShouldUseSubGroups_PodGroupExistsWithoutSubGroups(t *testing.T) {
 			Namespace: "test-ns",
 		},
 		Spec: schedulingv2alpha2.PodGroupSpec{
-			MinMember: 2,
+			MinMember: ptr.To(int32(2)),
 		},
 	}
 	client := fake.NewClientBuilder().WithScheme(s).WithRuntimeObjects(existingPodGroup).Build()
@@ -741,9 +742,9 @@ func TestShouldUseSubGroups_PodGroupExistsWithSubGroups(t *testing.T) {
 			Namespace: "test-ns",
 		},
 		Spec: schedulingv2alpha2.PodGroupSpec{
-			MinMember: 2,
+			MinMember: ptr.To(int32(2)),
 			SubGroups: []schedulingv2alpha2.SubGroup{
-				{Name: "headgroup", MinMember: 1},
+				{Name: "headgroup", MinMember: ptr.To(int32(1))},
 			},
 		},
 	}

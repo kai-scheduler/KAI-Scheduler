@@ -36,7 +36,7 @@ import (
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	listv1 "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/record"
-	k8sframework "k8s.io/kubernetes/pkg/scheduler/framework"
+	ksf "k8s.io/kube-scheduler/framework"
 
 	kubeaischedulerver "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned"
 	kubeaischedulerschema "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/scheme"
@@ -91,6 +91,7 @@ type SchedulerCacheParams struct {
 	AllowConsolidatingReclaim   bool
 	NumOfStatusRecordingWorkers int
 	UpdatePodEvictionCondition  bool
+	StuckInReleasingThreshold   time.Duration
 	DiscoveryClient             discovery.DiscoveryInterface
 }
 
@@ -110,10 +111,11 @@ type SchedulerCache struct {
 	Evictor       evictor.Interface
 	StatusUpdater status_updater.Interface
 
-	detailedFitErrors      bool
-	restrictNodeScheduling bool
-	scheduleCSIStorage     bool
-	fullHierarchyFairness  bool
+	detailedFitErrors         bool
+	restrictNodeScheduling    bool
+	scheduleCSIStorage        bool
+	fullHierarchyFairness     bool
+	stuckInReleasingThreshold time.Duration
 
 	internalPlugins *k8splugins.K8sPlugins
 
@@ -122,13 +124,14 @@ type SchedulerCache struct {
 
 func newSchedulerCache(schedulerCacheParams *SchedulerCacheParams) *SchedulerCache {
 	sc := &SchedulerCache{
-		schedulingNodePoolParams: schedulerCacheParams.NodePoolParams,
-		restrictNodeScheduling:   schedulerCacheParams.RestrictNodeScheduling,
-		detailedFitErrors:        schedulerCacheParams.DetailedFitErrors,
-		scheduleCSIStorage:       schedulerCacheParams.ScheduleCSIStorage,
-		fullHierarchyFairness:    schedulerCacheParams.FullHierarchyFairness,
-		kubeClient:               draversionawareclient.NewDRAAwareClient(schedulerCacheParams.KubeClient),
-		kubeAiSchedulerClient:    schedulerCacheParams.KAISchedulerClient,
+		schedulingNodePoolParams:  schedulerCacheParams.NodePoolParams,
+		restrictNodeScheduling:    schedulerCacheParams.RestrictNodeScheduling,
+		detailedFitErrors:         schedulerCacheParams.DetailedFitErrors,
+		scheduleCSIStorage:        schedulerCacheParams.ScheduleCSIStorage,
+		fullHierarchyFairness:     schedulerCacheParams.FullHierarchyFairness,
+		stuckInReleasingThreshold: schedulerCacheParams.StuckInReleasingThreshold,
+		kubeClient:                draversionawareclient.NewDRAAwareClient(schedulerCacheParams.KubeClient),
+		kubeAiSchedulerClient:     schedulerCacheParams.KAISchedulerClient,
 	}
 
 	schedulerName := schedulerCacheParams.SchedulerName
@@ -151,9 +154,7 @@ func newSchedulerCache(schedulerCacheParams *SchedulerCacheParams) *SchedulerCac
 	sc.informerFactory = informers.NewSharedInformerFactory(sc.kubeClient, 0)
 	sc.kubeAiSchedulerInformerFactory = kubeaischedulerinfo.NewSharedInformerFactory(sc.kubeAiSchedulerClient, 0)
 
-	if err := featuregates.SetDRAFeatureGate(schedulerCacheParams.DiscoveryClient); err != nil {
-		log.InfraLogger.Warningf("Failed to set DRA feature gate: ", err)
-	}
+	featuregates.SetDRAFeatureGate(schedulerCacheParams.DiscoveryClient)
 	sc.internalPlugins = k8splugins.InitializeInternalPlugins(sc.kubeClient, sc.informerFactory, sc.SnapshotSharedLister())
 
 	sc.podLister = sc.informerFactory.Core().V1().Pods().Lister()
@@ -167,7 +168,7 @@ func newSchedulerCache(schedulerCacheParams *SchedulerCacheParams) *SchedulerCac
 	}
 
 	clusterInfo, err := cluster_info.New(sc.informerFactory, sc.kubeAiSchedulerInformerFactory, sc.usageLister, sc.schedulingNodePoolParams,
-		sc.restrictNodeScheduling, &sc.K8sClusterPodAffinityInfo, sc.scheduleCSIStorage, sc.fullHierarchyFairness, sc.StatusUpdater)
+		sc.restrictNodeScheduling, &sc.K8sClusterPodAffinityInfo, sc.scheduleCSIStorage, sc.fullHierarchyFairness, sc.StatusUpdater, sc.stuckInReleasingThreshold)
 
 	if err != nil {
 		log.InfraLogger.Errorf("Failed to create cluster info object: %v", err)
@@ -271,7 +272,7 @@ func (sc *SchedulerCache) Bind(taskInfo *pod_info.PodInfo, hostname string, bind
 
 	log.InfraLogger.V(3).Infof(
 		"Creating bind request for task <%v/%v> to node <%v> gpuGroup: <%v>, requires: <%v> GPUs",
-		taskInfo.Namespace, taskInfo.Name, hostname, taskInfo.GPUGroups, taskInfo.ResReq)
+		taskInfo.Namespace, taskInfo.Name, hostname, taskInfo.GPUGroups, taskInfo.ResReqVector)
 	if bindRequestError := sc.createBindRequest(taskInfo, hostname, bindRequestAnnotations); bindRequestError != nil {
 		return sc.StatusUpdater.Bound(taskInfo.Pod, hostname, bindRequestError, sc.getNodPoolName())
 	}
@@ -316,16 +317,28 @@ func (sc *SchedulerCache) createBindRequest(podInfo *pod_info.PodInfo, nodeName 
 			SelectedGPUGroups:    podInfo.GPUGroups,
 			ReceivedResourceType: string(podInfo.ResourceReceivedType),
 			ReceivedGPU: &schedulingv1alpha2.ReceivedGPU{
-				Count:   int(podInfo.AcceptedResource.GetNumOfGpuDevices()),
-				Portion: fmt.Sprintf("%.2f", podInfo.AcceptedResource.GpuFractionalPortion()),
+				Count:   int(podInfo.AcceptedGpuRequirement.GetNumOfGpuDevices()),
+				Portion: fmt.Sprintf("%.2f", podInfo.AcceptedGpuRequirement.GpuFractionalPortion()),
 			},
 			ResourceClaimAllocations: podInfo.ResourceClaimInfo.ToSlice(),
 		},
 	}
 
-	_, err := sc.kubeAiSchedulerClient.SchedulingV1alpha2().BindRequests(
+	createdBindRequest, err := sc.kubeAiSchedulerClient.SchedulingV1alpha2().BindRequests(
 		podInfo.Namespace).Create(context.TODO(), bindRequest, metav1.CreateOptions{})
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Expose scheduler-created BindRequests to the next snapshot before the informer watch catches up.
+	if err := sc.kubeAiSchedulerInformerFactory.Scheduling().V1alpha2().BindRequests().Informer().GetStore().Add(
+		createdBindRequest.DeepCopy(),
+	); err != nil {
+		log.InfraLogger.Warningf("Failed to add BindRequest <%s/%s> to informer store: %v",
+			createdBindRequest.Namespace, createdBindRequest.Name, err)
+	}
+
+	return nil
 }
 
 func (sc *SchedulerCache) getNodPoolName() string {
@@ -422,7 +435,7 @@ func (sc *SchedulerCache) KubeInformerFactory() informers.SharedInformerFactory 
 	return sc.informerFactory
 }
 
-func (sc *SchedulerCache) SnapshotSharedLister() k8sframework.NodeInfoLister {
+func (sc *SchedulerCache) SnapshotSharedLister() ksf.NodeInfoLister {
 	return &sc.K8sClusterPodAffinityInfo
 }
 

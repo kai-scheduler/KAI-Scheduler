@@ -165,6 +165,14 @@ func (ps *PodSet) GetSchedulingConstraintsSignature() common_info.SchedulingCons
 	return ps.schedulingConstraintsSignature
 }
 
+func (ps *PodSet) GetNumActiveAllocatedMembers() int {
+	return ps.GetNumActiveAllocatedTasks()
+}
+
+func (ps *PodSet) GetMinMembersToSatisfy() int {
+	return int(ps.GetMinAvailable())
+}
+
 func (ps *PodSet) generateSchedulingConstraintsSignature() common_info.SchedulingConstraintsSignature {
 	hash := sha256.New()
 

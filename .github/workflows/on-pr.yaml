@@ -58,7 +58,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: '1.26.1'
+          go-version: '1.26.3'
           cache: true
 
       - name: Run validation
@@ -72,6 +72,22 @@ jobs:
         with:
           name: code-coverage
           path: coverage/coverage.out
+
+      - name: Calculate total coverage
+        run: |
+          if [ ! -s coverage/coverage.out ]; then
+            exit 0
+          fi
+
+          COVERAGE=$(go tool cover -func=coverage/coverage.out | grep total | grep -Eo '[0-9]+\.[0-9]+')
+          echo "$COVERAGE" > coverage/total-coverage.txt
+
+      - name: Archive total coverage
+        if: hashFiles('coverage/total-coverage.txt') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: total-coverage
+          path: coverage/total-coverage.txt
 
   code-coverage-report:
     name: Code Coverage Report
@@ -87,10 +103,40 @@ jobs:
           root-package: "github.com/kai-scheduler/KAI-scheduler"
           github-baseline-workflow-ref: update-coverage-badge.yaml
           skip-comment: true
+      - name: Download total coverage artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: total-coverage
+          path: coverage-summary
+      - name: Download coverage badge branch
+        uses: actions/checkout@v6
+        with:
+          ref: coverage-badge
+          path: coverage-badge
+      - name: Calculate coverage totals
+        id: coverage_totals
+        run: |
+          PR_COVERAGE=$(cat coverage-summary/total-coverage.txt)
+          echo "pr=$PR_COVERAGE" >> $GITHUB_OUTPUT
+
+          BASELINE_COVERAGE=$(grep -oE '[0-9]+\.[0-9]+%' coverage-badge/badges/coverage.svg | head -1 | tr -d '%')
+          echo "baseline=$BASELINE_COVERAGE" >> $GITHUB_OUTPUT
       - name: Save coverage report to file
         env:
           REPORT_BODY: ${{ steps.coverage_reporter.outputs.coverage_report }}
-        run: echo "$REPORT_BODY" > coverage-report.txt
+          BASELINE_COVERAGE: ${{ steps.coverage_totals.outputs.baseline }}
+          PR_COVERAGE: ${{ steps.coverage_totals.outputs.pr }}
+        run: |
+          if [ -z "$REPORT_BODY" ]; then
+            : > coverage-report.txt
+            exit 0
+          fi
+
+          {
+            echo "**Total coverage:** ${BASELINE_COVERAGE}% -> ${PR_COVERAGE}%"
+            echo ""
+            echo "$REPORT_BODY"
+          } > coverage-report.txt
       - name: Upload coverage report
         uses: actions/upload-artifact@v7
         with:
@@ -137,7 +183,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: '1.26.1'
+          go-version: '1.26.3'
           cache: true
 
       - name: Move Docker Data to /mnt

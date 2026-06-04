@@ -122,6 +122,27 @@ func SetGPUPortion(
 	return nil
 }
 
+func SetCudaDeviceMemoryLimit(
+	ctx context.Context, kubeClient client.Client, pod *v1.Pod, containerRef *gpusharingconfigmap.PodContainerRef,
+	cudaDeviceMemoryLimit string,
+) error {
+	updateFunc := func(data map[string]string) error {
+		data[CudaDeviceMemoryLimit] = cudaDeviceMemoryLimit
+		return nil
+	}
+	capabilitiesMapName, err := gpusharingconfigmap.ExtractCapabilitiesConfigMapName(pod, containerRef)
+	if err != nil {
+		return err
+	}
+
+	err = UpdateConfigMapEnvironmentVariable(ctx, kubeClient, pod, capabilitiesMapName, updateFunc)
+	if err != nil {
+		return fmt.Errorf("failed to update CUDA_DEVICE_MEMORY_LIMIT value in gpu sharing configmap for pod <%s/%s>: %v",
+			pod.Namespace, pod.Name, err)
+	}
+	return nil
+}
+
 func UpdateConfigMapEnvironmentVariable(
 	ctx context.Context, kubeclient client.Client, task *v1.Pod,
 	configMapName string, changesFunc func(map[string]string) error,

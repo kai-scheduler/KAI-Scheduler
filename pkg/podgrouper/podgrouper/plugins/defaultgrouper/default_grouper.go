@@ -317,6 +317,25 @@ func (dg *DefaultGrouper) getDefaultPriorityClassNameForKind(groupKind *schema.G
 	return ""
 }
 
+func (dg *DefaultGrouper) ResolveDefaultsForKind(groupKind schema.GroupKind) (string, string, error) {
+	defaults, err := dg.getDefaultConfigsPerTypeMapping()
+	if err != nil {
+		return "", "", err
+	}
+
+	defaultConfig, found := selectDefaultsForKind(defaults, &groupKind)
+	if !found {
+		return "", "", nil
+	}
+
+	priorityClassName := defaultConfig.PriorityName
+	if !dg.validatePriorityClassExists(priorityClassName) {
+		priorityClassName = ""
+	}
+
+	return priorityClassName, defaultConfig.Preemptibility, nil
+}
+
 // getDefaultConfigsPerTypeMapping - returns a map of workload groupKind to default workload-type config (priorityClassName and preemptibility).
 // It fetches the defaults from a ConfigMap if configured, otherwise returns an empty map.
 func (dg *DefaultGrouper) getDefaultConfigsPerTypeMapping() (map[string]workloadTypePriorityConfig, error) {

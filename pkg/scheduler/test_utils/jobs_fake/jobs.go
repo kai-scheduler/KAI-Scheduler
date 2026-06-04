@@ -18,6 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/uuid"
 
 	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	pg "github.com/kai-scheduler/KAI-scheduler/pkg/common/podgroup"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -88,7 +89,7 @@ func BuildJobsAndTasksMaps(Jobs []*TestJobBasic, vectorMap *resource_info.Resour
 		job.Preemptibility = pg.CalculatePreemptibility(job.Preemptibility, job.Priority)
 
 		jobInfo := BuildJobInfo(
-			jobName, job.Namespace, jobUID, jobAllocatedResource, job.RootSubGroupSet, taskInfos,
+			jobName, job.Namespace, jobUID, job.RootSubGroupSet, taskInfos,
 			job.Priority, job.Preemptibility, queueUID, jobCreationTime, job.StaleDuration, vectorMap,
 		)
 		jobsInfoMap[common_info.PodGroupID(job.Name)] = jobInfo
@@ -98,7 +99,7 @@ func BuildJobsAndTasksMaps(Jobs []*TestJobBasic, vectorMap *resource_info.Resour
 }
 
 func BuildJobInfo(
-	name, namespace string, uid common_info.PodGroupID, allocatedResource *resource_info.Resource,
+	name, namespace string, uid common_info.PodGroupID,
 	rootSubGroupSet *subgroup_info.SubGroupSet, taskInfos []*pod_info.PodInfo,
 	priority int32, preemptibility enginev2alpha2.Preemptibility, queueUID common_info.QueueID,
 	jobCreationTime time.Time, staleDuration *time.Duration, vectorMap *resource_info.ResourceVectorMap,
@@ -117,7 +118,7 @@ func BuildJobInfo(
 	if rootSubGroupSet == nil {
 		rootSubGroupSet = subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
 	}
-	podSets := rootSubGroupSet.GetAllPodSets()
+	podSets := rootSubGroupSet.GetDescendantPodSets()
 	for _, taskInfo := range taskInfos {
 		if len(taskInfo.SubGroupName) > 0 {
 			subGroup := podSets[taskInfo.SubGroupName]
@@ -133,12 +134,18 @@ func BuildJobInfo(
 		}
 	}
 
+	allocatedVector := resource_info.NewResourceVector(vectorMap)
+	for _, taskInfo := range taskInfos {
+		if pod_status.AllocatedStatus(taskInfo.Status) {
+			allocatedVector.Add(taskInfo.ResReqVector)
+		}
+	}
+
 	result := &podgroup_info.PodGroupInfo{
 		UID:             uid,
 		Name:            name,
 		Namespace:       namespace,
-		Allocated:       allocatedResource,
-		AllocatedVector: allocatedResource.ToVector(vectorMap),
+		AllocatedVector: allocatedVector,
 		VectorMap:       vectorMap,
 		PodStatusIndex:  taskStatusIndex,
 		Priority:        priority,
@@ -206,7 +213,7 @@ func generateTasks(
 			vectorMap.AddResourceList(container.Resources.Requests)
 		}
 
-		taskInfo := pod_info.NewTaskInfo(podOfTask, draPodClaims, vectorMap)
+		taskInfo := pod_info.NewTaskInfo(podOfTask, vectorMap, pod_info.TaskInfoOptions{DraPodClaims: draPodClaims})
 		taskInfo.Status = task.State
 		taskInfo.GPUGroups = gpuGroups
 		taskInfo.SubGroupName = task.SubGroupName
@@ -338,6 +345,7 @@ func createPodOfTask(job *TestJobBasic, taskIndex int,
 	podName := fmt.Sprintf("%s-%d", job.Name, taskIndex)
 	podOfTask := tasks_fake.BuildPod(podName, job.Namespace, task, v1.PodPending, *podResourceList, gpuFraction, gpuMemory,
 		gpuGroups, job.Name)
+	addPersistentVolumeClaimVolumes(podOfTask, task.PersistentVolumeClaimNames)
 
 	if task.Priority != nil {
 		podOfTask.Labels[labels.TaskOrderLabelKey] = strconv.Itoa(int(*task.Priority))
@@ -346,6 +354,10 @@ func createPodOfTask(job *TestJobBasic, taskIndex int,
 	if task.RequiredGPUs != nil {
 		numGPUsStr := strconv.FormatInt(*task.RequiredGPUs, 10)
 		podOfTask.Spec.Containers[0].Resources.Requests[resource_info.GPUResourceName] = resource.MustParse(numGPUsStr)
+	}
+
+	if job.RequiredMultiFractionDevicesPerTask != nil {
+		podOfTask.Annotations[commonconstants.GpuFractionsNumDevices] = strconv.FormatUint(*job.RequiredMultiFractionDevicesPerTask, 10)
 	}
 
 	if pod_status.IsActiveUsedStatus(task.State) {
@@ -359,4 +371,17 @@ func createPodOfTask(job *TestJobBasic, taskIndex int,
 		}
 	}
 	return podOfTask
+}
+
+func addPersistentVolumeClaimVolumes(pod *v1.Pod, claimNames []string) {
+	for index, claimName := range claimNames {
+		pod.Spec.Volumes = append(pod.Spec.Volumes, v1.Volume{
+			Name: fmt.Sprintf("pvc-%d", index),
+			VolumeSource: v1.VolumeSource{
+				PersistentVolumeClaim: &v1.PersistentVolumeClaimVolumeSource{
+					ClaimName: claimName,
+				},
+			},
+		})
+	}
 }

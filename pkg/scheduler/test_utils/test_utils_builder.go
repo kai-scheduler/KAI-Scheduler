@@ -53,6 +53,7 @@ func CreateFakeSession(schedulerConfig *TestSessionConfig,
 	createCacheMockIfNotExists bool,
 	topologies []*kaiv1alpha1.Topology,
 	clusterPodAffinityInfo *cache.K8sClusterPodAffinityInfo,
+	vectorMap *resource_info.ResourceVectorMap,
 ) *framework.Session {
 	ssn := framework.Session{
 		Config: &conf.SchedulerConfiguration{
@@ -63,12 +64,13 @@ func CreateFakeSession(schedulerConfig *TestSessionConfig,
 			},
 		},
 		ClusterInfo: &api.ClusterInfo{
-			Nodes:            nodesInfoMap,
-			Queues:           queueInfoMap,
-			PodGroupInfos:    jobInfoMap,
-			ResourceClaims:   getResourceClaims(testMetadata),
-			Topologies:       topologies,
-			MinNodeGPUMemory: node_info.DefaultGpuMemory,
+			Nodes:             nodesInfoMap,
+			Queues:            queueInfoMap,
+			PodGroupInfos:     jobInfoMap,
+			ResourceClaims:    getResourceClaims(testMetadata),
+			Topologies:        topologies,
+			MinNodeGPUMemory:  node_info.DefaultGpuMemory,
+			ResourceVectorMap: vectorMap,
 		},
 		SchedulerParams: conf.SchedulerParams{
 			QueueLabelKey: constants.DefaultQueueLabel,
@@ -285,7 +287,7 @@ func BuildSession(testMetadata TestTopologyBasic, controller *Controller) *frame
 		testMetadata.Mocks.Cache == nil
 
 	return CreateFakeSession(&schedulerConfig, nodesInfoMap, jobsInfoMap, queueInfoMap, testMetadata,
-		controller, createCacheMockIfNotExists, testMetadata.Topologies, clusterPodAffinityInfo)
+		controller, createCacheMockIfNotExists, testMetadata.Topologies, clusterPodAffinityInfo, vectorMap)
 }
 
 func mergeQueues(queuesMaps ...map[common_info.QueueID]*queue_info.QueueInfo) map[common_info.QueueID]*queue_info.QueueInfo {
@@ -379,6 +381,11 @@ func getResourceClaims(testMetadata TestTopologyBasic) []*resourceapi.ResourceCl
 }
 
 func getResourceSlices(testMetadata TestTopologyBasic) []*resourceapi.ResourceSlice {
+	poolSliceCounts := map[string]int64{}
+	for _, resourceSlice := range testMetadata.ResourceSlices {
+		poolSliceCounts[resourceSlice.NodeName]++
+	}
+
 	var objects []*resourceapi.ResourceSlice
 	for _, resourceSlice := range testMetadata.ResourceSlices {
 		resourceSliceObject := resourceapi.ResourceSlice{
@@ -394,7 +401,7 @@ func getResourceSlices(testMetadata TestTopologyBasic) []*resourceapi.ResourceSl
 				Driver: "nvidia.com/gpu",
 				Pool: resourceapi.ResourcePool{
 					Name:               resourceSlice.NodeName,
-					ResourceSliceCount: int64(len(testMetadata.ResourceSlices)),
+					ResourceSliceCount: poolSliceCounts[resourceSlice.NodeName],
 				},
 				NodeSelector: resourceSlice.NodeSelector,
 				NodeName:     ptr.To(resourceSlice.NodeName),

@@ -26,7 +26,7 @@ Open an issue with a clear description, steps to reproduce, and relevant environ
 ### Improving Documentation
 Help us keep the docs clear and useful by fixing typos, updating outdated information, or adding examples.
 
-### Contributing changes
+### Contributing Changes
 - Fork and Clone – Begin by forking the repository and cloning it to your local machine.
 - Create a Branch – Use a descriptive branch name, such as feature/add-cool-feature or bugfix/fix-issue123.
 - Make Changes – Keep your commits small, focused, and well-documented. For detailed build and test instructions, refer to [Building from Source](docs/developer/building-from-source.md).

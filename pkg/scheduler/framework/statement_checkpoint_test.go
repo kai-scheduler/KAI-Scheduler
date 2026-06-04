@@ -244,12 +244,13 @@ func assertEqualSessionData(t *testing.T,
 ) {
 	for id, job := range jobs {
 		originalJob := originalJobs[id]
-		assert.Equal(t, *originalJob.Allocated, *job.Allocated)
+		assert.Equal(t, originalJob.AllocatedVector, job.AllocatedVector)
 		for name, actualTask := range job.GetAllPodsMap() {
 			originalTask := originalJob.GetAllPodsMap()[name]
 			assert.Equal(t, actualTask.NodeName, originalTask.NodeName)
 			assert.Equal(t, originalTask.Status, actualTask.Status)
-			assert.EqualValues(t, *actualTask.ResReq, *originalTask.ResReq)
+			assert.Equal(t, actualTask.GpuRequirement, originalTask.GpuRequirement)
+			assert.Equal(t, actualTask.ResReqVector, originalTask.ResReqVector)
 		}
 	}
 

@@ -22,7 +22,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	informers "k8s.io/client-go/informers"
 	kubernetes "k8s.io/client-go/kubernetes"
-	framework "k8s.io/kubernetes/pkg/scheduler/framework"
+	framework "k8s.io/kube-scheduler/framework"
 )
 
 // MockCache is a mock of Cache interface.

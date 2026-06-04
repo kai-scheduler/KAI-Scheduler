@@ -34,6 +34,12 @@ spec:
           - --qps={{ .Values.operator.qps | default 50 }}
           - --burst={{ .Values.operator.burst | default 300 }}
           - --namespace={{ .Release.Namespace }}
+          {{- if .Values.operator.logLevel }}
+          - --zap-log-level={{ .Values.operator.logLevel }}
+          {{- end }}
+          {{- if .Values.global.jsonLog }}
+          - --zap-devel=false
+          {{- end }}
         env:
         - name: WATCH_NAMESPACE
           value: {{ .Release.Namespace }}
@@ -64,6 +70,10 @@ spec:
             port: 8081
           initialDelaySeconds: 5
           periodSeconds: 10
+        {{- with .Values.global.securityContext }}
+        securityContext:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
       {{- if .Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml .Values.global.imagePullSecrets | nindent 8 }}
@@ -79,4 +89,8 @@ spec:
       {{- if .Values.global.nodeSelector }}
       nodeSelector:
         {{- toYaml .Values.global.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- with .Values.global.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
       {{- end }}

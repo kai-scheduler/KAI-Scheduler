@@ -70,12 +70,15 @@ type ServerOption struct {
 	AllowConsolidatingReclaim         bool
 	NumOfStatusRecordingWorkers       int
 	GlobalDefaultStalenessGracePeriod time.Duration
+	StuckInReleasingThreshold         time.Duration
 	PluginServerPort                  int
 	CPUWorkerNodeLabelKey             string
 	GPUWorkerNodeLabelKey             string
 	MIGWorkerNodeLabelKey             string
 	QueueLabelKey                     string
 	Namspace                          string
+
+	JSONLog bool
 
 	QPS   int
 	Burst int
@@ -111,6 +114,7 @@ func (s *ServerOption) AddFlags(fs *pflag.FlagSet) {
 	fs.IntVar(&s.PyroscopeMutexProfilerRate, "pyroscope-mutex-profiler-rate", DefaultPyroscopeMutexProfilerRate, "Mutex Profiler rate")
 	fs.IntVar(&s.PyroscopeBlockProfilerRate, "pyroscope-block-profiler-rate", DefaultPyroscopeBlockProfilerRate, "Block Profiler rate")
 	fs.IntVar(&s.Verbosity, "v", defaultVerbosityLevel, "Verbosity level")
+	fs.BoolVar(&s.JSONLog, "log-json", false, "Output logs without ANSI color codes for log aggregation platforms")
 	fs.IntVar(&s.MaxNumberConsolidationPreemptees, "max-consolidation-preemptees", defaultMaxConsolidationPreemptees, "Maximum number of consolidation preemptees. Defaults to 16")
 	fs.IntVar(&s.QPS, "qps", 50, "Queries per second to the K8s API server")
 	fs.IntVar(&s.Burst, "burst", 300, "Burst to the K8s API server")
@@ -122,6 +126,7 @@ func (s *ServerOption) AddFlags(fs *pflag.FlagSet) {
 	fs.BoolVar(&s.AllowConsolidatingReclaim, "allow-consolidating-reclaim", true, "Do not count pipelined pods towards 'reclaimed' resources")
 	fs.IntVar(&s.NumOfStatusRecordingWorkers, "num-of-status-recording-workers", defaultNumOfStatusRecordingWorkers, "specifies the max number of go routines spawned to update pod and podgroups conditions and events. Defaults to 5")
 	fs.DurationVar(&s.GlobalDefaultStalenessGracePeriod, "default-staleness-grace-period", defaultStalenessGracePeriod, "Global default staleness grace period duration. Negative values means infinite. Defaults to 60s")
+	fs.DurationVar(&s.StuckInReleasingThreshold, "stuck-in-releasing-threshold", constants.DefaultStuckInReleasingThreshold, "Duration after a Running pod's deletionTimestamp before its resources are excluded from pipelining. Defaults to 2m.")
 	fs.IntVar(&s.PluginServerPort, "plugin-server-port", 8081, "The port to bind for plugin server requests")
 	fs.StringVar(&s.CPUWorkerNodeLabelKey, "cpu-worker-node-label-key", constants.DefaultCPUWorkerNodeLabelKey, "The label key for CPU worker nodes")
 	fs.StringVar(&s.GPUWorkerNodeLabelKey, "gpu-worker-node-label-key", constants.DefaultGPUWorkerNodeLabelKey, "The label key for GPU worker nodes")

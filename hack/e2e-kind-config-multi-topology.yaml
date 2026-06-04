@@ -1,0 +1,49 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+- role: worker
+  labels:
+    run.ai/simulated-gpu-node-pool: default
+    nvidia.com/gpu.deploy.device-plugin: "true"
+    nvidia.com/gpu.memory: "11441"
+    topology.test/rack-domain: rack-a
+    topology.test/zone-domain: zone-x
+- role: worker
+  labels:
+    run.ai/simulated-gpu-node-pool: default
+    nvidia.com/gpu.deploy.device-plugin: "true"
+    nvidia.com/gpu.memory: "11441"
+    topology.test/rack-domain: rack-a
+    topology.test/zone-domain: zone-y
+- role: worker
+  labels:
+    run.ai/simulated-gpu-node-pool: default
+    nvidia.com/gpu.deploy.device-plugin: "true"
+    nvidia.com/gpu.memory: "11441"
+    topology.test/rack-domain: rack-b
+    topology.test/zone-domain: zone-x
+- role: worker
+  labels:
+    run.ai/simulated-gpu-node-pool: default
+    nvidia.com/gpu.deploy.device-plugin: "true"
+    nvidia.com/gpu.memory: "11441"
+    topology.test/rack-domain: rack-b
+    topology.test/zone-domain: zone-y
+- role: worker
+  labels:
+    run.ai/simulated-gpu-node-pool: default
+    nvidia.com/gpu.deploy.device-plugin: "true"
+    nvidia.com/gpu.memory: "11441"
+    topology.test/rack-domain: rack-c
+    topology.test/zone-domain: zone-x
+- role: worker
+  labels:
+    run.ai/simulated-gpu-node-pool: default
+    nvidia.com/gpu.deploy.device-plugin: "true"
+    nvidia.com/gpu.memory: "11441"
+    topology.test/rack-domain: rack-c
+    topology.test/zone-domain: zone-y

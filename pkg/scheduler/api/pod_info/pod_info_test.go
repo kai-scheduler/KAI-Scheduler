@@ -22,6 +22,7 @@ package pod_info
 import (
 	"reflect"
 	"testing"
+	"time"
 
 	"gotest.tools/assert"
 	v1 "k8s.io/api/core/v1"
@@ -128,6 +129,106 @@ func TestGetPodResourceRequest(t *testing.T) {
 				},
 			},
 			expectedResource: resource_info.NewResourceRequirements(1, 3000, 5000000000),
+		},
+		{
+			name: "pod with native sidecar (initContainer with restartPolicy=Always)",
+			pod: &v1.Pod{
+				Spec: v1.PodSpec{
+					InitContainers: []v1.Container{
+						{
+							// Native sidecar — added to running sum.
+							RestartPolicy: ptr.To(v1.ContainerRestartPolicyAlways),
+							Resources: v1.ResourceRequirements{
+								Requests: common_info.BuildResourceList("250m", "256Mi"),
+							},
+						},
+						{
+							// Regular init container — max'd against running sum.
+							Resources: v1.ResourceRequirements{
+								Requests: common_info.BuildResourceList("500m", "1G"),
+							},
+						},
+					},
+					Containers: []v1.Container{
+						{
+							Resources: v1.ResourceRequirements{
+								Requests: common_info.BuildResourceList("4000m", "8Gi"),
+							},
+						},
+					},
+				},
+			},
+			// containers (4000m, 8Gi) + sidecar (250m, 256Mi) = 4250m, 8Gi+256Mi.
+			// Regular init (500m, 1G) is below that, so max yields running sum.
+			expectedResource: resource_info.RequirementsFromResourceList(
+				common_info.BuildResourceList("4250m", "8858370048"),
+			),
+		},
+		{
+			// Mirrors upstream `AggregateContainerRequests` (KEP-753): a
+			// regular initContainer's peak demand includes any native sidecars
+			// declared before it, since those sidecars start first and run
+			// concurrently with the init.
+			name: "regular init dominates and includes preceding native sidecar",
+			pod: &v1.Pod{
+				Spec: v1.PodSpec{
+					InitContainers: []v1.Container{
+						{
+							RestartPolicy: ptr.To(v1.ContainerRestartPolicyAlways),
+							Resources: v1.ResourceRequirements{
+								Requests: common_info.BuildResourceList("500m", "256Mi"),
+							},
+						},
+						{
+							// Regular init dominates the steady-state sum.
+							Resources: v1.ResourceRequirements{
+								Requests: common_info.BuildResourceList("5000m", "1Gi"),
+							},
+						},
+					},
+					Containers: []v1.Container{
+						{
+							Resources: v1.ResourceRequirements{
+								Requests: common_info.BuildResourceList("1000m", "1Gi"),
+							},
+						},
+					},
+				},
+			},
+			// steady-state = main(1000m,1Gi) + sidecar(500m,256Mi) = 1500m, 1Gi+256Mi.
+			// init-phase peak = init(5000m,1Gi) + sidecar(500m,256Mi) = 5500m, 1Gi+256Mi.
+			// max → 5500m, 1Gi+256Mi (= 1342177280 bytes).
+			expectedResource: resource_info.RequirementsFromResourceList(
+				common_info.BuildResourceList("5500m", "1342177280"),
+			),
+		},
+		{
+			// Native sidecars that request GPUs must contribute to the GPU
+			// half of the running sum, not be silently dropped via method
+			// promotion to BaseResource.Add.
+			name: "native sidecar with GPU is summed into pod GPU request",
+			pod: &v1.Pod{
+				Spec: v1.PodSpec{
+					InitContainers: []v1.Container{
+						{
+							RestartPolicy: ptr.To(v1.ContainerRestartPolicyAlways),
+							Resources: v1.ResourceRequirements{
+								Requests: common_info.BuildResourceListWithGPU("250m", "256Mi", "1"),
+							},
+						},
+					},
+					Containers: []v1.Container{
+						{
+							Resources: v1.ResourceRequirements{
+								Requests: common_info.BuildResourceListWithGPU("4000m", "8Gi", "2"),
+							},
+						},
+					},
+				},
+			},
+			// main(4000m, 8Gi, 2 GPUs) + sidecar(250m, 256Mi, 1 GPU) =
+			// 4250m, 8Gi+256Mi, 3 GPUs.
+			expectedResource: resource_info.NewResourceRequirements(3, 4250, 8858370048),
 		},
 		{
 			name: "pod with overhead resources",
@@ -243,17 +344,14 @@ func TestPodInfo_updatePodAdditionalFields(t *testing.T) {
 		bindingRequest *bindrequest_info.BindRequestInfo
 	}
 	type expected struct {
-		// Resreq are the resources that used when pod is running. (main containers resources, no init containers)
-		Resreq *resource_info.ResourceRequirements
-		// ResReq are the minimal resources that needed to launch a pod. (includes init containers resources)
-		InitResreq           *resource_info.ResourceRequirements
-		AcceptedResource     *resource_info.ResourceRequirements
-		ResourceRequestType  string
-		ResourceReceivedType string
-		GPUGroups            []string
-		SelectedMigProfile   string
-		IsBound              bool
-		IsChiefPod           bool
+		GpuRequirement         resource_info.GpuResourceRequirement
+		AcceptedGpuRequirement resource_info.GpuResourceRequirement
+		ResourceRequestType    string
+		ResourceReceivedType   string
+		GPUGroups              []string
+		SelectedMigProfile     string
+		IsBound                bool
+		IsChiefPod             bool
 	}
 	tests := []struct {
 		name     string
@@ -274,9 +372,7 @@ func TestPodInfo_updatePodAdditionalFields(t *testing.T) {
 					map[string]string{}),
 			},
 			expected{
-				Resreq:              resource_info.EmptyResourceRequirements(),
-				InitResreq:          resource_info.EmptyResourceRequirements(),
-				AcceptedResource:    nil,
+				GpuRequirement:      *resource_info.NewGpuResourceRequirement(),
 				ResourceRequestType: "",
 				GPUGroups:           nil,
 				SelectedMigProfile:  "",
@@ -298,9 +394,7 @@ func TestPodInfo_updatePodAdditionalFields(t *testing.T) {
 					map[string]string{}),
 			},
 			expected{
-				Resreq:              resource_info.EmptyResourceRequirements(),
-				InitResreq:          resource_info.EmptyResourceRequirements(),
-				AcceptedResource:    nil,
+				GpuRequirement:      *resource_info.NewGpuResourceRequirement(),
 				ResourceRequestType: "",
 				GPUGroups:           nil,
 				SelectedMigProfile:  "",
@@ -324,17 +418,7 @@ func TestPodInfo_updatePodAdditionalFields(t *testing.T) {
 					}),
 			},
 			expected{
-				Resreq: &resource_info.ResourceRequirements{
-					GpuResourceRequirement: *resource_info.NewGpuResourceRequirementWithGpus(
-						0, 1024),
-					BaseResource: *resource_info.EmptyBaseResource(),
-				},
-				InitResreq: &resource_info.ResourceRequirements{
-					GpuResourceRequirement: *resource_info.NewGpuResourceRequirementWithGpus(
-						0, 1024),
-					BaseResource: *resource_info.EmptyBaseResource(),
-				},
-				AcceptedResource:    nil,
+				GpuRequirement:      *resource_info.NewGpuResourceRequirementWithGpus(0, 1024),
 				ResourceRequestType: "GpuMemory",
 				GPUGroups:           nil,
 				SelectedMigProfile:  "",
@@ -359,17 +443,7 @@ func TestPodInfo_updatePodAdditionalFields(t *testing.T) {
 					}),
 			},
 			expected{
-				Resreq: &resource_info.ResourceRequirements{
-					GpuResourceRequirement: *resource_info.NewGpuResourceRequirementWithMultiFraction(
-						2, 0, 1024),
-					BaseResource: *resource_info.EmptyBaseResource(),
-				},
-				InitResreq: &resource_info.ResourceRequirements{
-					GpuResourceRequirement: *resource_info.NewGpuResourceRequirementWithMultiFraction(
-						2, 0, 1024),
-					BaseResource: *resource_info.EmptyBaseResource(),
-				},
-				AcceptedResource:    nil,
+				GpuRequirement:      *resource_info.NewGpuResourceRequirementWithMultiFraction(2, 0, 1024),
 				ResourceRequestType: "GpuMemory",
 				GPUGroups:           nil,
 				SelectedMigProfile:  "",
@@ -393,9 +467,7 @@ func TestPodInfo_updatePodAdditionalFields(t *testing.T) {
 					}),
 			},
 			expected{
-				Resreq:              resource_info.NewResourceRequirementsWithGpus(0.5),
-				InitResreq:          resource_info.NewResourceRequirementsWithGpus(0.5),
-				AcceptedResource:    nil,
+				GpuRequirement:      *resource_info.NewGpuResourceRequirementWithGpus(0.5, 0),
 				ResourceRequestType: "Fraction",
 				GPUGroups:           nil,
 				SelectedMigProfile:  "",
@@ -427,9 +499,7 @@ func TestPodInfo_updatePodAdditionalFields(t *testing.T) {
 				},
 			},
 			expected{
-				Resreq:              resource_info.NewResourceRequirementsWithGpus(0.5),
-				InitResreq:          resource_info.NewResourceRequirementsWithGpus(0.5),
-				AcceptedResource:    nil,
+				GpuRequirement:      *resource_info.NewGpuResourceRequirementWithGpus(0.5, 0),
 				ResourceRequestType: "Fraction",
 				GPUGroups:           []string{"1"},
 				SelectedMigProfile:  "",
@@ -454,17 +524,7 @@ func TestPodInfo_updatePodAdditionalFields(t *testing.T) {
 					}),
 			},
 			expected{
-				Resreq: &resource_info.ResourceRequirements{
-					GpuResourceRequirement: *resource_info.NewGpuResourceRequirementWithMultiFraction(
-						3, 0.5, 0),
-					BaseResource: *resource_info.EmptyBaseResource(),
-				},
-				InitResreq: &resource_info.ResourceRequirements{
-					GpuResourceRequirement: *resource_info.NewGpuResourceRequirementWithMultiFraction(
-						3, 0.5, 0),
-					BaseResource: *resource_info.EmptyBaseResource(),
-				},
-				AcceptedResource:    nil,
+				GpuRequirement:      *resource_info.NewGpuResourceRequirementWithMultiFraction(3, 0.5, 0),
 				ResourceRequestType: "Fraction",
 				GPUGroups:           nil,
 				SelectedMigProfile:  "",
@@ -488,9 +548,7 @@ func TestPodInfo_updatePodAdditionalFields(t *testing.T) {
 					}),
 			},
 			expected{
-				Resreq:               resource_info.EmptyResourceRequirements(),
-				InitResreq:           resource_info.EmptyResourceRequirements(),
-				AcceptedResource:     nil,
+				GpuRequirement:       *resource_info.NewGpuResourceRequirement(),
 				ResourceReceivedType: "Regular",
 				SelectedMigProfile:   "",
 				IsBound:              false,
@@ -507,24 +565,24 @@ func TestPodInfo_updatePodAdditionalFields(t *testing.T) {
 			}
 
 			pi := &PodInfo{
-				Job:       tt.fields.Job,
-				Name:      tt.fields.Name,
-				Namespace: tt.fields.Namespace,
-				ResReq:    resource_info.EmptyResourceRequirements(),
-				Status:    tt.fields.Status,
-				Pod:       tt.fields.Pod,
-				GPUGroups: make([]string, 0),
-				VectorMap: vectorMap,
+				Job:            tt.fields.Job,
+				Name:           tt.fields.Name,
+				Namespace:      tt.fields.Namespace,
+				Status:         tt.fields.Status,
+				Pod:            tt.fields.Pod,
+				GpuRequirement: *resource_info.NewGpuResourceRequirement(),
+				GPUGroups:      make([]string, 0),
+				VectorMap:      vectorMap,
 			}
 			pi.updatePodAdditionalFields(tt.fields.bindingRequest)
 
-			if !reflect.DeepEqual(pi.ResReq, tt.expected.InitResreq) {
-				t.Errorf("case (%s) failed: ResReq \n expected %v, \n got: %v \n",
-					tt.name, tt.expected.InitResreq, pi.ResReq)
+			if !reflect.DeepEqual(pi.GpuRequirement, tt.expected.GpuRequirement) {
+				t.Errorf("case (%s) failed: GpuRequirement \n expected %v, \n got: %v \n",
+					tt.name, tt.expected.GpuRequirement, pi.GpuRequirement)
 			}
-			if !reflect.DeepEqual(pi.AcceptedResource, tt.expected.AcceptedResource) {
-				t.Errorf("case (%s) failed: AcceptedResource \n expected %v, \n got: %v \n",
-					tt.name, tt.expected.AcceptedResource, pi.AcceptedResource)
+			if !reflect.DeepEqual(pi.AcceptedGpuRequirement, tt.expected.AcceptedGpuRequirement) {
+				t.Errorf("case (%s) failed: AcceptedGpuRequirement \n expected %v, \n got: %v \n",
+					tt.name, tt.expected.AcceptedGpuRequirement, pi.AcceptedGpuRequirement)
 			}
 			assert.Equal(t, string(pi.ResourceRequestType), tt.expected.ResourceRequestType)
 			if !reflect.DeepEqual(pi.GPUGroups, tt.expected.GPUGroups) {
@@ -599,12 +657,12 @@ func TestGetPodStorageClaims(t *testing.T) {
 }
 
 func TestIsRequireAnyKindOfGPU_DRA(t *testing.T) {
-	req := resource_info.EmptyResourceRequirements()
-	req.GpuResourceRequirement.SetDraGpus(map[string]int64{"nvidia.com/gpu": 2})
+	gpuReq := resource_info.NewGpuResourceRequirement()
+	gpuReq.SetDraGpus(map[string]int64{"nvidia.com/gpu": 2})
 	pi := &PodInfo{
-		Name:   "dra-pod",
-		ResReq: req,
-		Pod:    &v1.Pod{},
+		Name:           "dra-pod",
+		GpuRequirement: *gpuReq,
+		Pod:            &v1.Pod{},
 	}
 	assert.Assert(t, pi.IsRequireAnyKindOfGPU(), "pod with only DRA GPU requests should require GPU")
 	assert.Assert(t, !pi.IsCPUOnlyRequest(), "pod with only DRA GPU requests should not be CPU-only")
@@ -643,7 +701,9 @@ func TestNewTaskInfoWithBindRequest_ResourceClaimInfo(t *testing.T) {
 		},
 		Status: v1.PodStatus{Phase: v1.PodPending},
 	}
-	pi := NewTaskInfoWithBindRequest(pod, nil, []*resourceapi.ResourceClaim{draClaim}, resource_info.NewResourceVectorMap())
+	pi := NewTaskInfo(pod, resource_info.NewResourceVectorMap(), TaskInfoOptions{
+		DraPodClaims: []*resourceapi.ResourceClaim{draClaim},
+	})
 	assert.Assert(t, pi != nil)
 	assert.Equal(t, 1, len(pi.ResourceClaimInfo))
 	allocation, ok := pi.ResourceClaimInfo["gpu-claim"]
@@ -652,7 +712,7 @@ func TestNewTaskInfoWithBindRequest_ResourceClaimInfo(t *testing.T) {
 	assert.DeepEqual(t, alloc, allocation.Allocation)
 }
 
-func TestNewTaskInfoWithBindRequest_ResourceClaimInfo_BindRequestAllocationOverridesClaim(t *testing.T) {
+func TestNewTaskInfo_BindRequest_ResourceClaimInfo_BindRequestAllocationOverridesClaim(t *testing.T) {
 	claimAlloc := &resourceapi.AllocationResult{}
 	bindRequestAlloc := &resourceapi.AllocationResult{
 		Devices: resourceapi.DeviceAllocationResult{
@@ -698,7 +758,10 @@ func TestNewTaskInfoWithBindRequest_ResourceClaimInfo_BindRequestAllocationOverr
 	}
 	bindRequestInfo := bindrequest_info.NewBindRequestInfo(bindRequest)
 
-	pi := NewTaskInfoWithBindRequest(pod, bindRequestInfo, []*resourceapi.ResourceClaim{draClaim}, resource_info.NewResourceVectorMap())
+	pi := NewTaskInfo(pod, resource_info.NewResourceVectorMap(), TaskInfoOptions{
+		BindRequest:  bindRequestInfo,
+		DraPodClaims: []*resourceapi.ResourceClaim{draClaim},
+	})
 	assert.Assert(t, pi != nil)
 	assert.Equal(t, 1, len(pi.ResourceClaimInfo))
 	assert.Equal(t, "node1", pi.NodeName, "NodeName should come from BindRequest SelectedNode")
@@ -711,7 +774,7 @@ func TestNewTaskInfoWithBindRequest_ResourceClaimInfo_BindRequestAllocationOverr
 		"Allocation should be from BindRequest (node1/device 1), not claim status (empty)")
 }
 
-func TestNewTaskInfoWithBindRequest_ResourceClaimInfo_TemplateClaimSkippedWhenNotCreated(t *testing.T) {
+func TestNewTaskInfo_BindRequest_ResourceClaimInfo_TemplateClaimSkippedWhenNotCreated(t *testing.T) {
 	pod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{UID: types.UID("pod-uid"), Name: "p1", Namespace: "ns1"},
 		Spec: v1.PodSpec{
@@ -724,7 +787,9 @@ func TestNewTaskInfoWithBindRequest_ResourceClaimInfo_TemplateClaimSkippedWhenNo
 		},
 		Status: v1.PodStatus{Phase: v1.PodPending},
 	}
-	pi := NewTaskInfoWithBindRequest(pod, nil, nil, resource_info.NewResourceVectorMap())
+	pi := NewTaskInfo(pod, resource_info.NewResourceVectorMap(), TaskInfoOptions{
+		DraPodClaims: []*resourceapi.ResourceClaim{},
+	})
 	assert.Assert(t, pi != nil)
 	assert.Equal(t, 0, len(pi.ResourceClaimInfo))
 }
@@ -738,11 +803,12 @@ func TestPodInfo_Clone_ResourceClaimInfo(t *testing.T) {
 		},
 	}
 	pi := &PodInfo{
-		UID:              "uid",
-		Name:             "p1",
-		Namespace:        "ns1",
-		ResReq:           resource_info.EmptyResourceRequirements(),
-		AcceptedResource: resource_info.EmptyResourceRequirements(),
+		UID:                    "uid",
+		Name:                   "p1",
+		Namespace:              "ns1",
+		VectorMap:              resource_info.NewResourceVectorMap(),
+		ResReqVector:           resource_info.NewResourceVector(resource_info.NewResourceVectorMap()),
+		AcceptedResourceVector: resource_info.NewResourceVector(resource_info.NewResourceVectorMap()),
 		ResourceClaimInfo: bindrequest_info.ResourceClaimInfo{
 			"gpu-claim": {Name: "gpu-claim", Allocation: alloc},
 		},
@@ -786,6 +852,37 @@ func TestPodInfo_ShouldAllocate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			pi := &PodInfo{Status: tt.status, IsVirtualStatus: tt.isVirtualStatus}
 			got := pi.ShouldAllocate(tt.isRealAllocation)
+			assert.Equal(t, tt.expected, got)
+		})
+	}
+}
+
+func TestGetTaskStatusStuckInReleasing(t *testing.T) {
+	now := metav1.Now()
+	fiveMinAgo := metav1.NewTime(now.Add(-5 * time.Minute))
+	thirtySecAgo := metav1.NewTime(now.Add(-30 * time.Second))
+
+	runningPod := func(deletionTime *metav1.Time) *v1.Pod {
+		return &v1.Pod{
+			Status:     v1.PodStatus{Phase: v1.PodRunning},
+			ObjectMeta: metav1.ObjectMeta{DeletionTimestamp: deletionTime},
+		}
+	}
+
+	tests := []struct {
+		name      string
+		pod       *v1.Pod
+		threshold time.Duration
+		expected  pod_status.PodStatus
+	}{
+		{name: "fresh deletion under threshold", pod: runningPod(&thirtySecAgo), threshold: 2 * time.Minute, expected: pod_status.Releasing},
+		{name: "old deletion over default threshold", pod: runningPod(&fiveMinAgo), threshold: 2 * time.Minute, expected: pod_status.StuckInReleasing},
+		{name: "old deletion under custom larger threshold", pod: runningPod(&fiveMinAgo), threshold: 10 * time.Minute, expected: pod_status.Releasing},
+		{name: "running without deletion", pod: runningPod(nil), threshold: 2 * time.Minute, expected: pod_status.Running},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := getTaskStatus(tt.pod, nil, tt.threshold)
 			assert.Equal(t, tt.expected, got)
 		})
 	}

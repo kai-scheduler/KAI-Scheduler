@@ -20,6 +20,9 @@ spec:
     podLabelSelector:
       {{- toYaml .Values.global.podLabelSelector | nindent 6 }}
     {{- end }}
+    {{- if .Values.global.jsonLog }}
+    jsonLog: true
+    {{- end }}
     {{- if .Values.global.affinity }}
     affinity:
       {{- toYaml .Values.global.affinity | nindent 6 }}
@@ -40,17 +43,23 @@ spec:
       {{- toYaml .Values.global.securityContext | nindent 6 }}
     {{- end }}
     {{- if .Values.global.imagePullSecrets }}
-    imagesPullSecret: {{ index .Values.global.imagePullSecrets 0 | default "" }}
+    additionalImagePullSecrets:
+      {{- range .Values.global.imagePullSecrets }}
+      - {{ .name }}
+      {{- end }}
     {{- end }}
     replicaCount: {{ .Values.operator.replicaCount | default 1 }}
     {{- if .Values.global.vpa }}
     vpa:
       {{- toYaml .Values.global.vpa | nindent 6 }}
     {{- end }}
+    {{- if .Values.podgrouper.queueLabelKey }}
+    queueLabelKey: {{ .Values.podgrouper.queueLabelKey | quote }}
+    {{- end }}
 
   binder:
     service:
-      enabled: true
+      enabled: {{ .Values.binder.enabled }}
       image:
         name: {{ .Values.binder.image.name }}
         repository: {{ .Values.global.registry }}
@@ -90,10 +99,14 @@ spec:
     {{- if hasKey .Values.binder "cdiEnabled" }}
     cdiEnabled: {{ .Values.binder.cdiEnabled }}
     {{- end }}
+    {{- if .Values.binder.plugins }}
+    plugins:
+      {{- toYaml .Values.binder.plugins | nindent 6 }}
+    {{- end }}
 
   podGrouper:
     service:
-      enabled: true
+      enabled: {{ .Values.podgrouper.enabled }}
       image:
         name: {{ .Values.podgrouper.image.name }}
         repository: {{ .Values.global.registry }}
@@ -110,7 +123,7 @@ spec:
 
   podGroupController:
     service:
-      enabled: true
+      enabled: {{ .Values.podgroupcontroller.enabled }}
       image:
         name: {{ .Values.podgroupcontroller.image.name }}
         repository: {{ .Values.global.registry }}
@@ -127,7 +140,7 @@ spec:
 
   queueController:
     service:
-      enabled: true
+      enabled: {{ .Values.queuecontroller.enabled }}
       image:
         name: {{ .Values.queuecontroller.image.name }}
         repository: {{ .Values.global.registry }}
@@ -144,7 +157,7 @@ spec:
 
   admission:
     service:
-      enabled: true
+      enabled: {{ .Values.admission.enabled }}
       image:
         name: {{ .Values.admission.image.name }}
         repository: {{ .Values.global.registry }}
@@ -158,6 +171,13 @@ spec:
       affinity:
         {{- toYaml .Values.admission.affinity | nindent 8 }}
       {{- end }}
+      podDisruptionBudget:
+        {{- if hasKey .Values.admission.podDisruptionBudget "enabled" }}
+        enabled: {{ .Values.admission.podDisruptionBudget.enabled }}
+        {{- end }}
+        {{- if hasKey .Values.admission.podDisruptionBudget "maxUnavailable" }}
+        maxUnavailable: {{ .Values.admission.podDisruptionBudget.maxUnavailable }}
+        {{- end }}
     gpuSharing: {{ .Values.global.gpuSharing | default false }}
     queueLabelSelector: false
     webhook:
@@ -193,6 +213,7 @@ spec:
 
   scheduler:
     service:
+      enabled: {{ .Values.scheduler.enabled }}
       image:
         name: {{ .Values.scheduler.image.name }}
         repository: {{ .Values.global.registry }}
@@ -210,3 +231,11 @@ spec:
     schedulerService:
       port: {{ .Values.scheduler.ports.metricsPort }}
     {{- end }}
+
+  {{- if .Values.prometheus.enabled }}
+  prometheus:
+    enabled: true
+    {{- if .Values.prometheus.externalPrometheusUrl }}
+    externalPrometheusUrl: {{ .Values.prometheus.externalPrometheusUrl | quote }}
+    {{- end }}
+  {{- end }}

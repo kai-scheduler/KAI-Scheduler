@@ -14,6 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/grouper"
 )
@@ -55,10 +56,49 @@ func (sk *skipTopOwnerGrouper) GetPodGroupMetadata(
 		return nil, fmt.Errorf("failed to get last owner: %w", err)
 	}
 
+	sk.applyDefaultsFromSkippedOwner(lastOwnerPartial, lastOwner, skippedOwner)
+
 	// propagate labels down chain
 	sk.propagateMetadataDownChain(lastOwner, skippedOwner)
 
 	return sk.getSupportedTypePGMetadata(lastOwner, pod, otherOwners[:len(otherOwners)-1]...)
+}
+
+func (sk *skipTopOwnerGrouper) applyDefaultsFromSkippedOwner(lastOwnerPartial *metav1.PartialObjectMetadata, lastOwner, skippedOwner *unstructured.Unstructured) {
+	if sk == nil || sk.defaultPlugin == nil || lastOwner == nil || skippedOwner == nil {
+		return
+	}
+
+	skippedGK := skippedOwner.GroupVersionKind().GroupKind()
+	priorityClassName, preemptibility, err := sk.defaultPlugin.ResolveDefaultsForKind(skippedGK)
+	if err != nil {
+		return
+	}
+
+	lastOwnerLabels := lastOwner.GetLabels()
+	if lastOwnerLabels == nil {
+		lastOwnerLabels = map[string]string{}
+	}
+	if _, exists := lastOwnerLabels[constants.PriorityLabelKey]; !exists && priorityClassName != "" {
+		lastOwnerLabels[constants.PriorityLabelKey] = priorityClassName
+	}
+	if _, exists := lastOwnerLabels[constants.PreemptibilityLabelKey]; !exists && preemptibility != "" {
+		lastOwnerLabels[constants.PreemptibilityLabelKey] = preemptibility
+	}
+	lastOwner.SetLabels(lastOwnerLabels)
+
+	if lastOwnerPartial == nil {
+		return
+	}
+	if lastOwnerPartial.Labels == nil {
+		lastOwnerPartial.Labels = map[string]string{}
+	}
+	if _, exists := lastOwnerPartial.Labels[constants.PriorityLabelKey]; !exists && priorityClassName != "" {
+		lastOwnerPartial.Labels[constants.PriorityLabelKey] = priorityClassName
+	}
+	if _, exists := lastOwnerPartial.Labels[constants.PreemptibilityLabelKey]; !exists && preemptibility != "" {
+		lastOwnerPartial.Labels[constants.PreemptibilityLabelKey] = preemptibility
+	}
 }
 
 func (*skipTopOwnerGrouper) propagateMetadataDownChain(lastOwner *unstructured.Unstructured, skippedOwner *unstructured.Unstructured) {

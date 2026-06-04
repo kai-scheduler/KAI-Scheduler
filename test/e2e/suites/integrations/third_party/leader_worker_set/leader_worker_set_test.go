@@ -82,7 +82,7 @@ var _ = Describe("Leader worker set Integration", Ordered, func() {
 
 			g.Expect(len(podGroups.Items)).To(Equal(numOfGroups))
 			for _, podGroup := range podGroups.Items {
-				g.Expect(podGroup.Spec.MinMember).To(Equal(int32(numWorkersReplicasPerGroup + 1)))
+				g.Expect(podGroup.Spec.MinMember).To(Equal(ptr.To(int32(numWorkersReplicasPerGroup + 1))))
 			}
 			return true
 		}, time.Minute).Should(BeTrue())
@@ -138,7 +138,7 @@ var _ = Describe("Leader worker set Integration", Ordered, func() {
 
 			g.Expect(len(podGroups.Items)).To(Equal(numOfGroups))
 			for _, podGroup := range podGroups.Items {
-				g.Expect(podGroup.Spec.MinMember).To(Equal(int32(numWorkersReplicasPerGroup + 1)))
+				g.Expect(podGroup.Spec.MinMember).To(Equal(ptr.To(int32(numWorkersReplicasPerGroup + 1))))
 			}
 			return true
 		}, time.Minute).Should(BeTrue())

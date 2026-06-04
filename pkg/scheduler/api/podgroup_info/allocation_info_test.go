@@ -23,7 +23,7 @@ func simpleTask(name string, subGroupName string, status pod_status.PodStatus) *
 		common_info.BuildResourceList("1", "1G"),
 		nil, nil, nil,
 	)
-	info := pod_info.NewTaskInfo(pod, nil, resource_info.NewResourceVectorMap())
+	info := pod_info.NewTaskInfo(pod, resource_info.NewResourceVectorMap())
 	info.Status = status
 	info.SubGroupName = subGroupName
 	return info
@@ -195,10 +195,14 @@ func Test_GetTasksToAllocate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			pg := NewPodGroupInfo("pg")
+			// Replace the default root so only the test's PodSets are members.
+			root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+			pg.RootSubGroupSet = root
+			pg.PodSets = make(map[string]*subgroup_info.PodSet)
 			for subGroupName, pods := range tt.subGroupTasks {
-				if _, exists := pg.GetSubGroups()[subGroupName]; !exists {
-					pg.PodSets[subGroupName] = subgroup_info.NewPodSet(subGroupName, tt.minAvailMap[subGroupName], nil)
-				}
+				ps := subgroup_info.NewPodSet(subGroupName, tt.minAvailMap[subGroupName], nil)
+				root.AddPodSet(ps)
+				pg.PodSets[subGroupName] = ps
 				for _, pod := range pods {
 					pg.AddTaskInfo(pod)
 				}
@@ -216,40 +220,89 @@ func Test_GetTasksToAllocate(t *testing.T) {
 	}
 }
 
+func Test_GetTasksToAllocate_MinSubGroupZero(t *testing.T) {
+	tests := []struct {
+		name          string
+		subGroupTasks map[string][]*pod_info.PodInfo
+		minAvailMap   map[string]int32
+		wantNumTasks  int
+	}{
+		{
+			name: "root minSubGroup=0, all children unsatisfied: gang skipped, elastic returns one child's tasks",
+			subGroupTasks: map[string][]*pod_info.PodInfo{
+				"sgA": {
+					simpleTask("taskA1", "sgA", pod_status.Pending),
+				},
+				"sgB": {
+					simpleTask("taskB1", "sgB", pod_status.Pending),
+				},
+			},
+			minAvailMap:  map[string]int32{"sgA": 1, "sgB": 1},
+			wantNumTasks: 1,
+		},
+		{
+			name: "root minSubGroup=0, all children satisfied: elastic returns no tasks",
+			subGroupTasks: map[string][]*pod_info.PodInfo{
+				"sgA": {
+					simpleTask("taskA1", "sgA", pod_status.Running),
+				},
+				"sgB": {
+					simpleTask("taskB1", "sgB", pod_status.Running),
+				},
+			},
+			minAvailMap:  map[string]int32{"sgA": 1, "sgB": 1},
+			wantNumTasks: 0,
+		},
+		{
+			name: "root minSubGroup=0, one satisfied + one with elastic surplus: returns one elastic task",
+			subGroupTasks: map[string][]*pod_info.PodInfo{
+				"sgA": {
+					simpleTask("taskA1", "sgA", pod_status.Running),
+				},
+				"sgB": {
+					simpleTask("taskB1", "sgB", pod_status.Running),
+					simpleTask("taskB2", "sgB", pod_status.Pending),
+				},
+			},
+			minAvailMap:  map[string]int32{"sgA": 1, "sgB": 1},
+			wantNumTasks: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pg := NewPodGroupInfo("pg")
+			root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+			min := int32(0)
+			root.SetMinSubGroup(&min)
+			pg.RootSubGroupSet = root
+			pg.PodSets = make(map[string]*subgroup_info.PodSet)
+			for subGroupName, pods := range tt.subGroupTasks {
+				ps := subgroup_info.NewPodSet(subGroupName, tt.minAvailMap[subGroupName], nil)
+				root.AddPodSet(ps)
+				pg.PodSets[subGroupName] = ps
+				for _, pod := range pods {
+					pg.AddTaskInfo(pod)
+				}
+			}
+			gotTasks := GetTasksToAllocate(pg, subGroupOrderFn, tasksOrderFn, true)
+			if len(gotTasks) != tt.wantNumTasks {
+				t.Errorf("GetTasksToAllocate len = %d, want %d", len(gotTasks), tt.wantNumTasks)
+			}
+		})
+	}
+}
+
 func Test_GetTasksToAllocateRequestedGPUs(t *testing.T) {
 	pg := NewPodGroupInfo("test-podgroup")
-	pg.GetSubGroups()[DefaultSubGroup].SetMinAvailable(1)
+	pg.GetAllPodSets()[DefaultSubGroup].SetMinAvailable(1)
 	task := simpleTask("p1", "", pod_status.Pending)
-	// manually set up a fake ResReq that returns 2 for GPUs and 1000 for GpuMemory
-	task.ResReq = resource_info.NewResourceRequirements(2, 1000, 2000)
+	// manually set up a fake GpuRequirement that returns 2 for GPUs
+	task.GpuRequirement = *resource_info.NewGpuResourceRequirementWithGpus(2, 0)
 	pg.AddTaskInfo(task)
 	gpus, _ := GetTasksToAllocateRequestedGPUs(pg, subGroupOrderFn, tasksOrderFn, true)
 	if gpus != 2 {
 		t.Errorf("expected gpus=2, got %v", gpus)
-	}
-}
-
-func Test_GetTasksToAllocateInitResource(t *testing.T) {
-	pg := NewPodGroupInfo("ri")
-	// Nil case
-	res := GetTasksToAllocateInitResource(nil, subGroupOrderFn, tasksOrderFn, true, 0)
-	if !res.IsEmpty() {
-		t.Error("empty resource expected for nil pg")
-	}
-
-	pg.GetSubGroups()[DefaultSubGroup].SetMinAvailable(1)
-	task := simpleTask("p", "", pod_status.Pending)
-	task.ResReq = resource_info.NewResourceRequirements(0, 5000, 0)
-	pg.AddTaskInfo(task)
-	resource := GetTasksToAllocateInitResource(pg, subGroupOrderFn, tasksOrderFn, true, 0)
-	cpu := resource.BaseResource.Get(v1.ResourceCPU)
-	if cpu != 5000 {
-		t.Fatalf("want cpu=5, got %v", cpu)
-	}
-	// Memoization/second call should return r
-	newResource := GetTasksToAllocateInitResource(pg, subGroupOrderFn, tasksOrderFn, true, 0)
-	if newResource != resource {
-		t.Error("cached resource pointer mismatch")
 	}
 }
 
@@ -262,24 +315,26 @@ func Test_GetTasksToAllocateInitResourceVector(t *testing.T) {
 
 	vectorMap := resource_info.NewResourceVectorMap()
 	pg := NewPodGroupInfoWithVectorMap("ri-vec", vectorMap)
-	pg.GetSubGroups()[DefaultSubGroup].SetMinAvailable(2)
+	pg.GetAllPodSets()[DefaultSubGroup].SetMinAvailable(2)
 
 	task1 := simpleTask("p1", "", pod_status.Pending)
-	task1.ResReq = resource_info.NewResourceRequirements(1, 2000, 4000)
-	task1.ResReqVector = task1.ResReq.ToVector(vectorMap)
+	req1 := resource_info.NewResourceRequirements(1, 2000, 4000)
+	task1.GpuRequirement = req1.GpuResourceRequirement
+	task1.ResReqVector = req1.ToVector(vectorMap)
 	task1.VectorMap = vectorMap
 	pg.AddTaskInfo(task1)
 
 	task2 := simpleTask("p2", "", pod_status.Pending)
-	task2.ResReq = resource_info.NewResourceRequirements(2, 3000, 5000)
-	task2.ResReqVector = task2.ResReq.ToVector(vectorMap)
+	req2 := resource_info.NewResourceRequirements(2, 3000, 5000)
+	task2.GpuRequirement = req2.GpuResourceRequirement
+	task2.ResReqVector = req2.ToVector(vectorMap)
 	task2.VectorMap = vectorMap
 	pg.AddTaskInfo(task2)
 
 	vec := GetTasksToAllocateInitResourceVector(pg, subGroupOrderFn, tasksOrderFn, true, 0)
-	cpuIdx := vectorMap.GetIndex(v1.ResourceCPU)
-	memIdx := vectorMap.GetIndex(v1.ResourceMemory)
-	gpuIdx := vectorMap.GetIndex("gpu")
+	cpuIdx := resource_info.CPUIndex
+	memIdx := resource_info.MemoryIndex
+	gpuIdx := resource_info.GPUIndex
 
 	if vec.Get(cpuIdx) != 5000 {
 		t.Errorf("want cpu=5000, got %v", vec.Get(cpuIdx))
@@ -661,7 +716,7 @@ func Test_getNumOfAllocatedTasks(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			pg := NewPodGroupInfo("u1")
 			for i, pod := range tt.args.pods {
-				pi := pod_info.NewTaskInfo(pod, nil, resource_info.NewResourceVectorMap())
+				pi := pod_info.NewTaskInfo(pod, resource_info.NewResourceVectorMap())
 				pg.AddTaskInfo(pi)
 
 				if tt.args.overridingStatus != nil {

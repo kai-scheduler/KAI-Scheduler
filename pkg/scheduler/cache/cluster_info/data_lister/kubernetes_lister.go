@@ -11,14 +11,12 @@ import (
 	v14 "k8s.io/api/scheduling/v1"
 	storage "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	featureutil "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/informers"
 	listv1 "k8s.io/client-go/listers/core/v1"
 	resourcev1 "k8s.io/client-go/listers/resource/v1"
 	schedv1 "k8s.io/client-go/listers/scheduling/v1"
 	v12 "k8s.io/client-go/listers/storage/v1"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/kubernetes/pkg/features"
 
 	kubeAiSchedulerInfo "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/informers/externalversions"
 	scheudlinglistv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/listers/scheduling/v1alpha2"
@@ -27,6 +25,7 @@ import (
 	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	enginev2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
 	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	featuregates "github.com/kai-scheduler/KAI-scheduler/pkg/common/feature_gates"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb"
 
@@ -44,6 +43,7 @@ type k8sLister struct {
 	cmLister       listv1.ConfigMapLister
 	usageLister    *usagedb.UsageLister
 
+	pvLister              listv1.PersistentVolumeLister
 	pvcLister             listv1.PersistentVolumeClaimLister
 	storageCapacityLister v12.CSIStorageCapacityLister
 	storageClassLister    v12.StorageClassLister
@@ -79,6 +79,7 @@ func New(
 		cmLister:       informerFactory.Core().V1().ConfigMaps().Lister(),
 		usageLister:    usageLister,
 
+		pvLister:              informerFactory.Core().V1().PersistentVolumes().Lister(),
 		pvcLister:             informerFactory.Core().V1().PersistentVolumeClaims().Lister(),
 		storageCapacityLister: informerFactory.Storage().V1().CSIStorageCapacities().Lister(),
 		storageClassLister:    informerFactory.Storage().V1().StorageClasses().Lister(),
@@ -90,7 +91,7 @@ func New(
 		partitionSelector: partitionSelector,
 	}
 
-	if featureutil.DefaultMutableFeatureGate.Enabled(features.DynamicResourceAllocation) {
+	if featuregates.DynamicResourcesEnabled() {
 		lister.resourceSliceLister = informerFactory.Resource().V1().ResourceSlices().Lister()
 		lister.resourceClaimLister = informerFactory.Resource().V1().ResourceClaims().Lister()
 		lister.deviceClassLister = informerFactory.Resource().V1().DeviceClasses().Lister()
@@ -146,6 +147,10 @@ func (k *k8sLister) ListPodByIndex(index, value string) ([]interface{}, error) {
 }
 
 // +kubebuilder:rbac:groups="",resources=persistentvolumeclaims;persistentvolumes,verbs=get;list;watch
+
+func (k *k8sLister) ListPersistentVolumes() ([]*v1.PersistentVolume, error) {
+	return k.pvLister.List(labels.Everything())
+}
 
 func (k *k8sLister) ListPersistentVolumeClaims() ([]*v1.PersistentVolumeClaim, error) {
 	return k.pvcLister.List(labels.Everything())

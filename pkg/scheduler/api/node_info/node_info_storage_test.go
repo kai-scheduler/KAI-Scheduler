@@ -106,8 +106,8 @@ func TestNodeInfoStorage_AddPod(t *testing.T) {
 		make(map[string]string), podAnnotations)
 
 	vectorMap := resource_info.NewResourceVectorMap()
-	pod1Info := pod_info.NewTaskInfo(pod1, nil, vectorMap)
-	pod2Info := pod_info.NewTaskInfo(pod2, nil, vectorMap)
+	pod1Info := pod_info.NewTaskInfo(pod1, vectorMap)
+	pod2Info := pod_info.NewTaskInfo(pod2, vectorMap)
 
 	storageCapacityRaw := common_info.BuildStorageCapacity("capacity-name", namespace, storageClassName, 100, 100, nil)
 	storageCapacity, _ := storagecapacity_info.NewStorageCapacityInfo(storageCapacityRaw)
@@ -132,7 +132,7 @@ func TestNodeInfoStorage_AddPod(t *testing.T) {
 	node1ExpectedNodeInfo.IdleVector = common_info.BuildResource("7000m", "9G").ToVector(vectorMap)
 	node1ExpectedNodeInfo.UsedVector = common_info.BuildResource("1000m", "1G").ToVector(vectorMap)
 	node1ExpectedNodeInfo.ReleasingVector = resource_info.EmptyResource().ToVector(vectorMap)
-	podsIdx := vectorMap.GetIndex(v1.ResourcePods)
+	podsIdx := resource_info.PodsIndex
 	node1ExpectedNodeInfo.AllocatableVector.Set(podsIdx, 110)
 	node1ExpectedNodeInfo.IdleVector.Set(podsIdx, 109)
 	node1ExpectedNodeInfo.UsedVector.Set(podsIdx, 1)
@@ -178,7 +178,7 @@ func TestAddTaskStorage(t *testing.T) {
 		StorageClass:    storageClass,
 		ProvisionedPVCs: map[storageclaim_info.Key]*storageclaim_info.StorageClaimInfo{},
 	}
-	podInfo := pod_info.NewTaskInfo(&v1.Pod{}, nil, resource_info.NewResourceVectorMap())
+	podInfo := pod_info.NewTaskInfo(&v1.Pod{}, resource_info.NewResourceVectorMap())
 	podInfo.UpsertStorageClaim(storageClaim)
 	nodeInfo := &NodeInfo{
 		AccessibleStorageCapacities: map[common_info.StorageClassID][]*storagecapacity_info.StorageCapacityInfo{
@@ -229,7 +229,7 @@ func TestIsTaskStorageAllocatableMissingStorageclass(t *testing.T) {
 	storageCapacityRaw := common_info.BuildStorageCapacity("capacity-name", testNamespace, string(storageClass), 100, 100, nil)
 	storageCapacity, _ := storagecapacity_info.NewStorageCapacityInfo(storageCapacityRaw)
 
-	podInfo := pod_info.NewTaskInfo(&v1.Pod{}, nil, resource_info.NewResourceVectorMap())
+	podInfo := pod_info.NewTaskInfo(&v1.Pod{}, resource_info.NewResourceVectorMap())
 	podInfo.UpsertStorageClaim(storageClaim)
 	nodeInfo := &NodeInfo{
 		AccessibleStorageCapacities: map[common_info.StorageClassID][]*storagecapacity_info.StorageCapacityInfo{
@@ -272,7 +272,7 @@ func TestIsTaskStorageAllocatableStorageCapacity(t *testing.T) {
 	storageCapacityRaw := common_info.BuildStorageCapacity("capacity-name", testNamespace, string(storageClass), 100, 100, nil)
 	storageCapacity, _ := storagecapacity_info.NewStorageCapacityInfo(storageCapacityRaw)
 
-	podInfo := pod_info.NewTaskInfo(&v1.Pod{}, nil, resource_info.NewResourceVectorMap())
+	podInfo := pod_info.NewTaskInfo(&v1.Pod{}, resource_info.NewResourceVectorMap())
 	podInfo.UpsertStorageClaim(storageClaim)
 	nodeInfo := &NodeInfo{
 		AccessibleStorageCapacities: map[common_info.StorageClassID][]*storagecapacity_info.StorageCapacityInfo{

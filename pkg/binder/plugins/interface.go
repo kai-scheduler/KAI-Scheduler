@@ -16,9 +16,9 @@ import (
 type Plugin interface {
 	Name() string
 	PreBind(ctx context.Context, pod *v1.Pod, node *v1.Node, bindRequest *v1alpha2.BindRequest,
-		state *state.BindingState) error
+		bindingState *state.BindingState) error
 	PostBind(ctx context.Context, pod *v1.Pod, node *v1.Node, bindRequest *v1alpha2.BindRequest,
-		state *state.BindingState)
+		bindingState *state.BindingState)
 	Rollback(ctx context.Context, pod *v1.Pod, node *v1.Node, bindRequest *v1alpha2.BindRequest,
-		state *state.BindingState) error
+		bindingState *state.BindingState) error
 }

@@ -32,6 +32,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
@@ -217,7 +218,7 @@ var _ = Describe("QueueController", Ordered, func() {
 				},
 				Spec: v2alpha2.PodGroupSpec{
 					Queue:     "resource-queue",
-					MinMember: 1,
+					MinMember: ptr.To(int32(1)),
 				},
 			}
 			Expect(k8sClient.Create(ctx, podGroup1)).Should(Succeed())
@@ -232,7 +233,7 @@ var _ = Describe("QueueController", Ordered, func() {
 				},
 				Spec: v2alpha2.PodGroupSpec{
 					Queue:     "resource-queue",
-					MinMember: 1,
+					MinMember: ptr.To(int32(1)),
 				},
 			}
 			Expect(k8sClient.Create(ctx, podGroup2)).Should(Succeed())

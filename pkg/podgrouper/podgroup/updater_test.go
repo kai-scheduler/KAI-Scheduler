@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 
 	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 )
@@ -142,7 +143,7 @@ func Test_podGroupsEqual(t *testing.T) {
 						},
 					},
 					Spec: enginev2alpha2.PodGroupSpec{
-						MinMember: 1,
+						MinMember: ptr.To(int32(1)),
 					},
 				},
 				&enginev2alpha2.PodGroup{
@@ -159,7 +160,7 @@ func Test_podGroupsEqual(t *testing.T) {
 						},
 					},
 					Spec: enginev2alpha2.PodGroupSpec{
-						MinMember: 1,
+						MinMember: ptr.To(int32(1)),
 					},
 				},
 			},
@@ -182,7 +183,7 @@ func Test_podGroupsEqual(t *testing.T) {
 						},
 					},
 					Spec: enginev2alpha2.PodGroupSpec{
-						MinMember: 1,
+						MinMember: ptr.To(int32(1)),
 					},
 				},
 				&enginev2alpha2.PodGroup{
@@ -199,7 +200,7 @@ func Test_podGroupsEqual(t *testing.T) {
 						},
 					},
 					Spec: enginev2alpha2.PodGroupSpec{
-						MinMember: 1,
+						MinMember: ptr.To(int32(1)),
 					},
 				},
 			},
@@ -222,7 +223,7 @@ func Test_podGroupsEqual(t *testing.T) {
 						},
 					},
 					Spec: enginev2alpha2.PodGroupSpec{
-						MinMember: 2,
+						MinMember: ptr.To(int32(2)),
 					},
 				},
 				&enginev2alpha2.PodGroup{
@@ -239,7 +240,7 @@ func Test_podGroupsEqual(t *testing.T) {
 						},
 					},
 					Spec: enginev2alpha2.PodGroupSpec{
-						MinMember: 1,
+						MinMember: ptr.To(int32(1)),
 					},
 				},
 			},
@@ -262,7 +263,7 @@ func Test_podGroupsEqual(t *testing.T) {
 						},
 					},
 					Spec: enginev2alpha2.PodGroupSpec{
-						MinMember: 2,
+						MinMember: ptr.To(int32(2)),
 					},
 				},
 				&enginev2alpha2.PodGroup{
@@ -279,7 +280,7 @@ func Test_podGroupsEqual(t *testing.T) {
 						},
 					},
 					Spec: enginev2alpha2.PodGroupSpec{
-						MinMember: 1,
+						MinMember: ptr.To(int32(1)),
 					},
 				},
 			},
@@ -302,7 +303,7 @@ func Test_podGroupsEqual(t *testing.T) {
 						},
 					},
 					Spec: enginev2alpha2.PodGroupSpec{
-						MinMember: 1,
+						MinMember: ptr.To(int32(1)),
 					},
 				},
 				&enginev2alpha2.PodGroup{
@@ -319,7 +320,7 @@ func Test_podGroupsEqual(t *testing.T) {
 						},
 					},
 					Spec: enginev2alpha2.PodGroupSpec{
-						MinMember: 1,
+						MinMember: ptr.To(int32(1)),
 					},
 				},
 			},
@@ -362,7 +363,7 @@ func Test_updatePodGroup(t *testing.T) {
 						},
 					},
 					Spec: enginev2alpha2.PodGroupSpec{
-						MinMember: 1,
+						MinMember: ptr.To(int32(1)),
 					},
 				},
 				&enginev2alpha2.PodGroup{
@@ -379,7 +380,7 @@ func Test_updatePodGroup(t *testing.T) {
 						},
 					},
 					Spec: enginev2alpha2.PodGroupSpec{
-						MinMember: 1,
+						MinMember: ptr.To(int32(1)),
 					},
 				},
 			},
@@ -397,7 +398,7 @@ func Test_updatePodGroup(t *testing.T) {
 					},
 				},
 				Spec: enginev2alpha2.PodGroupSpec{
-					MinMember: 1,
+					MinMember: ptr.To(int32(1)),
 				},
 			},
 		},
@@ -418,7 +419,7 @@ func Test_updatePodGroup(t *testing.T) {
 						},
 					},
 					Spec: enginev2alpha2.PodGroupSpec{
-						MinMember: 1,
+						MinMember: ptr.To(int32(1)),
 					},
 				},
 				&enginev2alpha2.PodGroup{
@@ -435,7 +436,7 @@ func Test_updatePodGroup(t *testing.T) {
 						},
 					},
 					Spec: enginev2alpha2.PodGroupSpec{
-						MinMember: 1,
+						MinMember: ptr.To(int32(1)),
 					},
 				},
 			},
@@ -453,7 +454,7 @@ func Test_updatePodGroup(t *testing.T) {
 					},
 				},
 				Spec: enginev2alpha2.PodGroupSpec{
-					MinMember: 1,
+					MinMember: ptr.To(int32(1)),
 				},
 			},
 		},
@@ -474,7 +475,7 @@ func Test_updatePodGroup(t *testing.T) {
 						},
 					},
 					Spec: enginev2alpha2.PodGroupSpec{
-						MinMember: 2,
+						MinMember: ptr.To(int32(2)),
 					},
 				},
 				&enginev2alpha2.PodGroup{
@@ -491,7 +492,7 @@ func Test_updatePodGroup(t *testing.T) {
 						},
 					},
 					Spec: enginev2alpha2.PodGroupSpec{
-						MinMember: 1,
+						MinMember: ptr.To(int32(1)),
 					},
 				},
 			},
@@ -509,7 +510,7 @@ func Test_updatePodGroup(t *testing.T) {
 					},
 				},
 				Spec: enginev2alpha2.PodGroupSpec{
-					MinMember: 2,
+					MinMember: ptr.To(int32(2)),
 				},
 			},
 		},
@@ -530,7 +531,7 @@ func Test_updatePodGroup(t *testing.T) {
 						},
 					},
 					Spec: enginev2alpha2.PodGroupSpec{
-						MinMember: 2,
+						MinMember: ptr.To(int32(2)),
 					},
 				},
 				&enginev2alpha2.PodGroup{
@@ -547,7 +548,7 @@ func Test_updatePodGroup(t *testing.T) {
 						},
 					},
 					Spec: enginev2alpha2.PodGroupSpec{
-						MinMember: 1,
+						MinMember: ptr.To(int32(1)),
 					},
 				},
 			},
@@ -565,7 +566,7 @@ func Test_updatePodGroup(t *testing.T) {
 					},
 				},
 				Spec: enginev2alpha2.PodGroupSpec{
-					MinMember: 1,
+					MinMember: ptr.To(int32(1)),
 				},
 			},
 		},
@@ -586,7 +587,7 @@ func Test_updatePodGroup(t *testing.T) {
 						},
 					},
 					Spec: enginev2alpha2.PodGroupSpec{
-						MinMember: 1,
+						MinMember: ptr.To(int32(1)),
 					},
 				},
 				&enginev2alpha2.PodGroup{
@@ -603,7 +604,7 @@ func Test_updatePodGroup(t *testing.T) {
 						},
 					},
 					Spec: enginev2alpha2.PodGroupSpec{
-						MinMember: 1,
+						MinMember: ptr.To(int32(1)),
 					},
 				},
 			},
@@ -621,7 +622,7 @@ func Test_updatePodGroup(t *testing.T) {
 					},
 				},
 				Spec: enginev2alpha2.PodGroupSpec{
-					MinMember: 1,
+					MinMember: ptr.To(int32(1)),
 				},
 			},
 		},
@@ -642,7 +643,7 @@ func Test_updatePodGroup(t *testing.T) {
 						},
 					},
 					Spec: enginev2alpha2.PodGroupSpec{
-						MinMember: 1,
+						MinMember: ptr.To(int32(1)),
 					},
 				},
 				&enginev2alpha2.PodGroup{
@@ -659,7 +660,7 @@ func Test_updatePodGroup(t *testing.T) {
 						},
 					},
 					Spec: enginev2alpha2.PodGroupSpec{
-						MinMember: 1,
+						MinMember: ptr.To(int32(1)),
 					},
 				},
 			},
@@ -677,7 +678,7 @@ func Test_updatePodGroup(t *testing.T) {
 					},
 				},
 				Spec: enginev2alpha2.PodGroupSpec{
-					MinMember: 1,
+					MinMember: ptr.To(int32(1)),
 				},
 			},
 		},

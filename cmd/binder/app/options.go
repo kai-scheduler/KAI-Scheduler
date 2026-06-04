@@ -4,33 +4,38 @@
 package app
 
 import (
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	corev1 "k8s.io/api/core/v1"
+	utilfeature "k8s.io/apiserver/pkg/util/feature"
+
 	"github.com/spf13/pflag"
 
-	utilfeature "k8s.io/apiserver/pkg/util/feature"
+	binderplugins "github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/flags"
 )
 
 type Options struct {
-	SchedulerName                        string
-	ResourceReservationNamespace         string
-	ResourceReservationServiceAccount    string
-	ResourceReservationPodImage          string
-	ResourceReservationAppLabel          string
-	ResourceReservationAllocationTimeout int
-	ResourceReservationPodResourcesJSON  string
-	ScalingPodNamespace                  string
-	QPS                                  float64
-	Burst                                int
-	MaxConcurrentReconciles              int
-	RateLimiterBaseDelaySeconds          int
-	RateLimiterMaxDelaySeconds           int
-	EnableLeaderElection                 bool
-	MetricsAddr                          string
-	ProbeAddr                            string
-	FakeGPUNodes                         bool
-	GpuCdiEnabled                        bool
-	VolumeBindingTimeoutSeconds          int
-	RuntimeClassName                     string
+	SchedulerName                               string
+	ResourceReservationNamespace                string
+	ResourceReservationServiceAccount           string
+	ResourceReservationPodImage                 string
+	ResourceReservationAppLabel                 string
+	ResourceReservationAllocationTimeout        int
+	ResourceReservationPodResources             flags.JSONFlag[corev1.ResourceRequirements]
+	ResourceReservationPodSecurityContext       flags.JSONFlag[corev1.PodSecurityContext]
+	ResourceReservationContainerSecurityContext flags.JSONFlag[corev1.SecurityContext]
+	ScalingPodNamespace                         string
+	QPS                                         float64
+	Burst                                       int
+	MaxConcurrentReconciles                     int
+	RateLimiterBaseDelaySeconds                 int
+	RateLimiterMaxDelaySeconds                  int
+	EnableLeaderElection                        bool
+	MetricsAddr                                 string
+	ProbeAddr                                   string
+	FakeGPUNodes                                bool
+	Plugins                                     flags.JSONFlag[binderplugins.Config]
+	RuntimeClassName                            string
 }
 
 func InitOptions(fs *pflag.FlagSet) *Options {
@@ -58,9 +63,15 @@ func InitOptions(fs *pflag.FlagSet) *Options {
 	fs.IntVar(&options.ResourceReservationAllocationTimeout,
 		"resource-reservation-allocation-timeout", 40,
 		"Resource reservation allocation timeout in seconds")
-	fs.StringVar(&options.ResourceReservationPodResourcesJSON,
-		"resource-reservation-pod-resources", "",
-		"JSON-serialized ResourceRequirements for GPU reservation pods (optional, empty means not set)")
+	fs.Var(&options.ResourceReservationPodResources,
+		"resource-reservation-pod-resources",
+		"JSON-serialized ResourceRequirements for GPU reservation pods (optional)")
+	fs.Var(&options.ResourceReservationPodSecurityContext,
+		"resource-reservation-pod-security-context",
+		"JSON-serialized PodSecurityContext for GPU reservation pods (optional)")
+	fs.Var(&options.ResourceReservationContainerSecurityContext,
+		"resource-reservation-container-security-context",
+		"JSON-serialized SecurityContext for GPU reservation pod containers (optional)")
 	fs.StringVar(&options.ScalingPodNamespace,
 		"scale-adjust-namespace", constants.DefaultScaleAdjustName,
 		"Scaling pods namespace")
@@ -92,12 +103,9 @@ func InitOptions(fs *pflag.FlagSet) *Options {
 	fs.BoolVar(&options.FakeGPUNodes,
 		"fake-gpu-nodes", false,
 		"Enables running fractions on fake gpu nodes for testing")
-	fs.BoolVar(&options.GpuCdiEnabled,
-		"cdi-enabled", false,
-		"Specifies if the gpu device plugin uses the cdi devices api to set gpu devices to the pods")
-	fs.IntVar(&options.VolumeBindingTimeoutSeconds,
-		"volume-binding-timeout-seconds", 120,
-		"Volume binding timeout in seconds")
+	fs.Var(&options.Plugins,
+		"plugins",
+		"JSON-serialized binder plugin configuration keyed by plugin name")
 	fs.StringVar(&options.RuntimeClassName,
 		"runtime-class-name", "",
 		"Runtime class for reservation pods")

@@ -100,10 +100,10 @@ func isPodGroupFootprintSmaller(podGroup1, podGroup2 *podgroup_info.PodGroupInfo
 	return true
 }
 
-func extractSortedResourceRequests(tasks []*pod_info.PodInfo) []*resource_info.ResourceRequirements {
-	tasksResources := make([]*resource_info.ResourceRequirements, len(tasks))
+func extractSortedResourceRequests(tasks []*pod_info.PodInfo) []resource_info.ResourceVector {
+	tasksResources := make([]resource_info.ResourceVector, len(tasks))
 	for i, task := range tasks {
-		tasksResources[i] = task.ResReq
+		tasksResources[i] = task.ResReqVector
 	}
 	sort.Slice(tasksResources, func(i, j int) bool {
 		return tasksResources[i].LessEqual(tasksResources[j])

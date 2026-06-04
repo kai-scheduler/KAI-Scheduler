@@ -63,6 +63,11 @@ func (alloc *consolidationAction) Execute(ssn *framework.Session) {
 				continue
 			}
 		}
+		tasks := podgroup_info.GetTasksToAllocate(job, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false)
+		if task, failure := common.VictimInvariantPrePredicateFailureForTasks(ssn, tasks); failure != nil {
+			common.RecordVictimInvariantPrePredicateFailure(job, task, failure)
+			continue
+		}
 
 		metrics.IncPodgroupsConsideredByAction()
 		if succeeded, stmt := attemptToConsolidateForPreemptor(ssn, job); succeeded {
@@ -79,7 +84,7 @@ func (alloc *consolidationAction) Execute(ssn *framework.Session) {
 
 func attemptToConsolidateForPreemptor(
 	ssn *framework.Session, job *podgroup_info.PodGroupInfo) (bool, *framework.Statement) {
-	resReq := podgroup_info.GetTasksToAllocateInitResourceVector(job, ssn.PodSetOrderFn, ssn.TaskOrderFn, false, ssn.ClusterInfo.MinNodeGPUMemory)
+	resReq := podgroup_info.GetTasksToAllocateInitResourceVector(job, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false, ssn.ClusterInfo.MinNodeGPUMemory)
 	log.InfraLogger.V(3).Infof(
 		"Attempting to consolidate running jobs in order to make room for job: <%s/%s>, resources: <%v>",
 		job.Namespace, job.Name, resReq)

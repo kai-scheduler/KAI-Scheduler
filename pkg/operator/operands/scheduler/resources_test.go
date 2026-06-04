@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/spf13/pflag"
 
 	"github.com/kai-scheduler/KAI-scheduler/cmd/scheduler/app/options"
@@ -134,7 +135,7 @@ func TestDeploymentForShard(t *testing.T) {
 			deploy, ok := deployment.(*appsv1.Deployment)
 			require.True(t, ok, "Expected *appsv1.Deployment")
 
-			assert.Equal(t, deploymentName(tt.config, tt.shard), deploy.Name)
+			assert.Equal(t, DeploymentName(tt.config, tt.shard), deploy.Name)
 			assert.Equal(t, tt.config.Spec.Namespace, deploy.Namespace)
 
 			container := deploy.Spec.Template.Spec.Containers[0]
@@ -273,6 +274,30 @@ func TestBuildArgsList(t *testing.T) {
 				"metrics-namespace": "monitoring",
 			},
 			notExpected: []string{"leader-elect"},
+		},
+		{
+			name: "with json logging",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Global: &kaiv1.GlobalConfig{
+						SchedulerName: ptr.To("test-scheduler"),
+						JSONLog:       ptr.To(true),
+					},
+					Namespace: "kai-system",
+					Scheduler: &kaiv1scheduler.Scheduler{
+						Replicas: ptr.To(int32(1)),
+					},
+				},
+			},
+			shard: &kaiv1.SchedulingShard{
+				Spec: kaiv1.SchedulingShardSpec{},
+			},
+			expected: map[string]string{
+				"scheduler-conf": "config.yaml",
+				"scheduler-name": "test-scheduler",
+				"namespace":      "kai-system",
+				"log-json":       "true",
+			},
 		},
 	}
 
@@ -691,7 +716,7 @@ tiers:
 						ConnectionString: "http://prometheus-operated.kai-scheduler.svc.cluster.local:9090",
 						UsageParams: &usagedbapi.UsageParams{
 							HalfLifePeriod: &metav1.Duration{Duration: 10 * time.Minute},
-							WindowSize:     &metav1.Duration{Duration: 10 * time.Minute},
+							WindowSize:     monitoringv1.DurationPointer("10m"),
 							WindowType:     ptr.To(usagedbapi.SlidingWindow),
 						},
 					},
@@ -1151,7 +1176,7 @@ func TestGetUsageDBConfig(t *testing.T) {
 						ConnectionString: "http://prometheus:9090",
 						UsageParams: &usagedbapi.UsageParams{
 							HalfLifePeriod: &metav1.Duration{Duration: 10 * time.Minute},
-							WindowSize:     &metav1.Duration{Duration: 20 * time.Minute},
+							WindowSize:     monitoringv1.DurationPointer("20m"),
 						},
 					},
 				},
@@ -1162,7 +1187,7 @@ func TestGetUsageDBConfig(t *testing.T) {
 				assert.NotNil(t, result)
 				assert.NotNil(t, result.UsageParams)
 				assert.Equal(t, 10*time.Minute, result.UsageParams.HalfLifePeriod.Duration)
-				assert.Equal(t, 20*time.Minute, result.UsageParams.WindowSize.Duration)
+				assert.Equal(t, monitoringv1.Duration("20m"), *result.UsageParams.WindowSize)
 				assert.Equal(t, "http://prometheus:9090", result.ConnectionString)
 			},
 		},

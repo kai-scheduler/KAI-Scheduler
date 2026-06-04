@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -23,7 +24,7 @@ func TestUsageParams_SetDefaults(t *testing.T) {
 			input: &UsageParams{},
 			expected: &UsageParams{
 				HalfLifePeriod: nil, // should remain nil (disabled by default)
-				WindowSize:     &metav1.Duration{Duration: time.Hour * 24 * 7},
+				WindowSize:     monitoringv1.DurationPointer("1w"),
 				WindowType:     &[]WindowType{SlidingWindow}[0],
 			},
 		},
@@ -34,7 +35,7 @@ func TestUsageParams_SetDefaults(t *testing.T) {
 			},
 			expected: &UsageParams{
 				HalfLifePeriod: nil,
-				WindowSize:     &metav1.Duration{Duration: time.Hour * 24 * 7},
+				WindowSize:     monitoringv1.DurationPointer("1w"),
 				WindowType:     &[]WindowType{SlidingWindow}[0],
 			},
 		},
@@ -45,7 +46,7 @@ func TestUsageParams_SetDefaults(t *testing.T) {
 			},
 			expected: &UsageParams{
 				HalfLifePeriod: nil,
-				WindowSize:     &metav1.Duration{Duration: time.Hour * 24 * 7},
+				WindowSize:     monitoringv1.DurationPointer("1w"),
 				WindowType:     &[]WindowType{SlidingWindow}[0],
 			},
 		},
@@ -56,18 +57,18 @@ func TestUsageParams_SetDefaults(t *testing.T) {
 			},
 			expected: &UsageParams{
 				HalfLifePeriod: &metav1.Duration{Duration: 30 * time.Minute},
-				WindowSize:     &metav1.Duration{Duration: time.Hour * 24 * 7},
+				WindowSize:     monitoringv1.DurationPointer("1w"),
 				WindowType:     &[]WindowType{SlidingWindow}[0],
 			},
 		},
 		{
 			name: "params with window size set should preserve it",
 			input: &UsageParams{
-				WindowSize: &metav1.Duration{Duration: 2 * time.Hour},
+				WindowSize: monitoringv1.DurationPointer("2h"),
 			},
 			expected: &UsageParams{
 				HalfLifePeriod: nil,
-				WindowSize:     &metav1.Duration{Duration: 2 * time.Hour},
+				WindowSize:     monitoringv1.DurationPointer("2h"),
 				WindowType:     &[]WindowType{SlidingWindow}[0],
 			},
 		},
@@ -78,7 +79,7 @@ func TestUsageParams_SetDefaults(t *testing.T) {
 			},
 			expected: &UsageParams{
 				HalfLifePeriod: nil,
-				WindowSize:     &metav1.Duration{Duration: time.Hour * 24 * 7},
+				WindowSize:     monitoringv1.DurationPointer("1w"),
 				WindowType:     &[]WindowType{TumblingWindow}[0],
 			},
 		},
@@ -86,12 +87,12 @@ func TestUsageParams_SetDefaults(t *testing.T) {
 			name: "all params set should preserve all",
 			input: &UsageParams{
 				HalfLifePeriod: &metav1.Duration{Duration: 45 * time.Minute},
-				WindowSize:     &metav1.Duration{Duration: 3 * time.Hour},
+				WindowSize:     monitoringv1.DurationPointer("3h"),
 				WindowType:     &[]WindowType{TumblingWindow}[0],
 			},
 			expected: &UsageParams{
 				HalfLifePeriod: &metav1.Duration{Duration: 45 * time.Minute},
-				WindowSize:     &metav1.Duration{Duration: 3 * time.Hour},
+				WindowSize:     monitoringv1.DurationPointer("3h"),
 				WindowType:     &[]WindowType{TumblingWindow}[0],
 			},
 		},
@@ -109,7 +110,7 @@ func TestUsageParams_SetDefaults(t *testing.T) {
 			}
 
 			require.NotNil(t, tt.input.WindowSize)
-			assert.Equal(t, tt.expected.WindowSize.Duration, tt.input.WindowSize.Duration)
+			assert.Equal(t, *tt.expected.WindowSize, *tt.input.WindowSize)
 
 			require.NotNil(t, tt.input.WindowType)
 			assert.Equal(t, *tt.expected.WindowType, *tt.input.WindowType)
@@ -163,7 +164,7 @@ func TestUsageDBConfig_GetUsageParams(t *testing.T) {
 			},
 			expected: &UsageParams{
 				HalfLifePeriod: nil,
-				WindowSize:     &metav1.Duration{Duration: time.Hour * 24 * 7},
+				WindowSize:     monitoringv1.DurationPointer("1w"),
 				WindowType:     &[]WindowType{SlidingWindow}[0],
 			},
 		},
@@ -176,7 +177,7 @@ func TestUsageDBConfig_GetUsageParams(t *testing.T) {
 			},
 			expected: &UsageParams{
 				HalfLifePeriod: nil,
-				WindowSize:     &metav1.Duration{Duration: time.Hour * 24 * 7},
+				WindowSize:     monitoringv1.DurationPointer("1w"),
 				WindowType:     &[]WindowType{SlidingWindow}[0],
 			},
 		},
@@ -191,7 +192,7 @@ func TestUsageDBConfig_GetUsageParams(t *testing.T) {
 			},
 			expected: &UsageParams{
 				HalfLifePeriod: &metav1.Duration{Duration: 30 * time.Minute},
-				WindowSize:     &metav1.Duration{Duration: time.Hour * 24 * 7},
+				WindowSize:     monitoringv1.DurationPointer("1w"),
 				WindowType:     &[]WindowType{SlidingWindow}[0],
 			},
 		},
@@ -202,13 +203,13 @@ func TestUsageDBConfig_GetUsageParams(t *testing.T) {
 				ConnectionString: "http://localhost:9090",
 				UsageParams: &UsageParams{
 					HalfLifePeriod: &metav1.Duration{Duration: 45 * time.Minute},
-					WindowSize:     &metav1.Duration{Duration: 2 * time.Hour},
+					WindowSize:     monitoringv1.DurationPointer("2h"),
 					WindowType:     &[]WindowType{TumblingWindow}[0],
 				},
 			},
 			expected: &UsageParams{
 				HalfLifePeriod: &metav1.Duration{Duration: 45 * time.Minute},
-				WindowSize:     &metav1.Duration{Duration: 2 * time.Hour},
+				WindowSize:     monitoringv1.DurationPointer("2h"),
 				WindowType:     &[]WindowType{TumblingWindow}[0],
 			},
 		},
@@ -227,7 +228,7 @@ func TestUsageDBConfig_GetUsageParams(t *testing.T) {
 			}
 
 			require.NotNil(t, result.WindowSize)
-			assert.Equal(t, tt.expected.WindowSize.Duration, result.WindowSize.Duration)
+			assert.Equal(t, *tt.expected.WindowSize, *result.WindowSize)
 
 			require.NotNil(t, result.WindowType)
 			assert.Equal(t, *tt.expected.WindowType, *result.WindowType)
@@ -250,7 +251,7 @@ func TestUsageDBConfig_GetUsageParams_ImmutableOriginal(t *testing.T) {
 	result := config.GetUsageParams()
 
 	// Modify the result
-	result.WindowSize = &metav1.Duration{Duration: 5 * time.Hour}
+	result.WindowSize = monitoringv1.DurationPointer("5h")
 
 	// Original should remain unchanged
 	assert.Nil(t, originalParams.WindowSize)
@@ -307,7 +308,7 @@ func TestUsageParams_ZeroValues(t *testing.T) {
 	// Test behavior with zero duration values
 	params := &UsageParams{
 		HalfLifePeriod: &metav1.Duration{Duration: time.Duration(0)},
-		WindowSize:     &metav1.Duration{Duration: time.Duration(0)},
+		WindowSize:     monitoringv1.DurationPointer("0s"),
 	}
 
 	params.SetDefaults()
@@ -316,7 +317,7 @@ func TestUsageParams_ZeroValues(t *testing.T) {
 
 	// Zero values should be preserved, not replaced with defaults
 	require.NotNil(t, params.WindowSize)
-	assert.Equal(t, time.Duration(0), params.WindowSize.Duration)
+	assert.Equal(t, monitoringv1.Duration("0s"), *params.WindowSize)
 
 	require.NotNil(t, params.WindowType)
 	assert.Equal(t, SlidingWindow, *params.WindowType)

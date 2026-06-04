@@ -168,6 +168,21 @@ func (mr *MockDataListerMockRecorder) ListPersistentVolumeClaims() *gomock.Call 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListPersistentVolumeClaims", reflect.TypeOf((*MockDataLister)(nil).ListPersistentVolumeClaims))
 }
 
+// ListPersistentVolumes mocks base method.
+func (m *MockDataLister) ListPersistentVolumes() ([]*v1.PersistentVolume, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListPersistentVolumes")
+	ret0, _ := ret[0].([]*v1.PersistentVolume)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListPersistentVolumes indicates an expected call of ListPersistentVolumes.
+func (mr *MockDataListerMockRecorder) ListPersistentVolumes() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListPersistentVolumes", reflect.TypeOf((*MockDataLister)(nil).ListPersistentVolumes))
+}
+
 // ListPodByIndex mocks base method.
 func (m *MockDataLister) ListPodByIndex(index, value string) ([]any, error) {
 	m.ctrl.T.Helper()

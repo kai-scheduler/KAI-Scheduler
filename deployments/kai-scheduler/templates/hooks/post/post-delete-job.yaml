@@ -16,17 +16,52 @@ spec:
         app.kubernetes.io/name: post-delete-cleanup
     spec:
       serviceAccountName: {{ .Values.postCleanup.serviceAccountName }}
+      {{- if .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml .Values.global.imagePullSecrets | nindent 8 }}
+      {{- end }}
+      {{- if (lookup "apiextensions.k8s.io/v1" "CustomResourceDefinition" "" "clusterversions.config.openshift.io") }}
+      securityContext:
+        runAsUser: 10000
+        runAsNonRoot: true
+        fsGroup: 10000
+      {{- else }}
+      {{- with .Values.global.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- end }}
       restartPolicy: Never
+      {{- if .Values.global.nodeSelector }}
+      nodeSelector:
+        {{- toYaml .Values.global.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- if .Values.global.affinity }}
+      affinity:
+        {{- toYaml .Values.global.affinity | nindent 8 }}
+      {{- end }}
+      {{- if .Values.global.tolerations }}
+      tolerations:
+        {{- toYaml .Values.global.tolerations | nindent 8 }}
+      {{- end }}
       containers:
         - name: deleter
           image: "{{ .Values.global.registry }}/{{ .Values.postCleanup.image.name }}:{{ .Values.postCleanup.image.tag | default .Values.global.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.postCleanup.image.pullPolicy }}
+          {{- with .Values.postCleanup.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if .Values.global.securityContext }}
+          securityContext:
+            {{- toYaml .Values.global.securityContext | nindent 12 }}
+          {{- end }}
           command:
             - /bin/sh
             - -c
             - |
               echo "Deleting deployments..."
-              kubectl -n kai-scheduler delete deployment --all --ignore-not-found=true
+              kubectl -n {{ .Release.Namespace }} delete deployment --all --ignore-not-found=true
 
               echo "Deleting kai-config..."
               kubectl delete Config kai-config --ignore-not-found

@@ -20,6 +20,7 @@ import (
 	version "k8s.io/apimachinery/pkg/version"
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/utils/ptr"
 
 	kubeaischedulerver "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/fake"
 	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
@@ -125,7 +126,7 @@ func TestSnapshotPlugin(t *testing.T) {
 			},
 		},
 		Spec: enginev2alpha2.PodGroupSpec{
-			MinMember: 1,
+			MinMember: ptr.To(int32(1)),
 		},
 	}
 

@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 
 	"golang.org/x/mod/semver"
 
@@ -23,6 +24,7 @@ import (
 
 	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
 	kaiv1binder "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/binder"
+	binderplugins "github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins"
 	kaiConfigUtils "github.com/kai-scheduler/KAI-scheduler/pkg/operator/config"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common"
 )
@@ -48,20 +50,18 @@ func (b *Binder) deploymentForKAIConfig(
 		return nil, err
 	}
 
-	var cdiEnabled bool
-	if config.CDIEnabled != nil {
-		cdiEnabled = *config.CDIEnabled
-	} else {
-		cdiEnabled, err = isCdiEnabled(ctx, runtimeClient)
-		if err != nil {
-			return nil, err
-		}
+	if err := resolveCDIEnabled(ctx, runtimeClient, config); err != nil {
+		return nil, err
 	}
 
 	deployment.Spec.Strategy.Type = appsv1.RecreateDeploymentStrategyType
 	deployment.Spec.Strategy.RollingUpdate = nil
 	deployment.Spec.Replicas = config.Replicas
-	deployment.Spec.Template.Spec.Containers[0].Args = buildArgsList(kaiConfig, config, fakeGPU, cdiEnabled)
+	binderArgs, err := buildArgsList(kaiConfig, config, fakeGPU)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build binder args: %w", err)
+	}
+	deployment.Spec.Template.Spec.Containers[0].Args = binderArgs
 
 	return []client.Object{deployment}, nil
 }
@@ -205,7 +205,7 @@ func isCdiEnabled(ctx context.Context, readerClient client.Reader) (bool, error)
 	return false, nil
 }
 
-func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1binder.Binder, fakeGPU bool, cdiEnabled bool) []string {
+func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1binder.Binder, fakeGPU bool) ([]string, error) {
 	args := []string{
 		"--scheduler-name",
 		*kaiConfig.Spec.Global.SchedulerName,
@@ -223,7 +223,6 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1binder.Binder, fakeGPU 
 		fmt.Sprintf(":%d", *config.ProbePort),
 		"--metrics-bind-address",
 		fmt.Sprintf(":%d", *config.MetricsPort),
-		fmt.Sprintf("--cdi-enabled=%t", cdiEnabled),
 	}
 	if config.MaxConcurrentReconciles != nil {
 		args = append(args, fmt.Sprintf("--max-concurrent-reconciles=%d",
@@ -235,10 +234,12 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1binder.Binder, fakeGPU 
 			*config.ResourceReservation.AllocationTimeout))
 	}
 
-	if config.VolumeBindingTimeoutSeconds != nil {
-		args = append(args, fmt.Sprintf("--volume-binding-timeout-seconds=%d",
-			*config.VolumeBindingTimeoutSeconds))
+	pluginsConfig := binderplugins.FromAPIConfig(config.Plugins)
+	pluginsJSON, err := json.Marshal(pluginsConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal binder plugins: %w", err)
 	}
+	args = append(args, "--plugins", string(pluginsJSON))
 
 	if fakeGPU {
 		args = append(args, "--fake-gpu-nodes")
@@ -248,16 +249,14 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1binder.Binder, fakeGPU 
 		args = append(args, "--leader-elect")
 	}
 
-	if featureGates := kaiConfigUtils.FeatureGatesArg(); featureGates != "" {
-		args = append(args, featureGates)
-	}
-
 	if config.Service.K8sClientConfig.QPS != nil {
 		args = append(args, []string{"--qps", fmt.Sprintf("%d", *config.Service.K8sClientConfig.QPS)}...)
 	}
 	if config.Service.K8sClientConfig.Burst != nil {
 		args = append(args, []string{"--burst", fmt.Sprintf("%d", *config.Service.K8sClientConfig.Burst)}...)
 	}
+
+	args = common.AddControllerRuntimeJSONLogArg(kaiConfig.Spec.Global.JSONLog, args)
 
 	if config.ResourceReservation.RuntimeClassName != nil && len(*config.ResourceReservation.RuntimeClassName) > 0 {
 		args = append(args, []string{fmt.Sprintf("--runtime-class-name=%s", *config.ResourceReservation.RuntimeClassName)}...)
@@ -271,9 +270,59 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1binder.Binder, fakeGPU 
 		}
 		resourcesJSON, err := json.Marshal(resourceRequirements)
 		if err == nil {
-			args = append(args, []string{"--resource-reservation-pod-resources", string(resourcesJSON)}...)
+			args = append(args, "--resource-reservation-pod-resources", string(resourcesJSON))
 		}
 	}
 
-	return args
+	if config.ResourceReservation.ReservationPodSecurityContext != nil {
+		secJSON, err := json.Marshal(config.ResourceReservation.ReservationPodSecurityContext)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal pod security context: %w", err)
+		}
+		args = append(args, "--resource-reservation-pod-security-context", string(secJSON))
+	}
+
+	containerSecCtx := config.ResourceReservation.ReservationContainerSecurityContext
+	if containerSecCtx == nil {
+		containerSecCtx = kaiConfig.Spec.Global.GetSecurityContext()
+	}
+	if containerSecCtx != nil {
+		secJSON, err := json.Marshal(containerSecCtx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal container security context: %w", err)
+		}
+		args = append(args, "--resource-reservation-container-security-context", string(secJSON))
+	}
+
+	return args, nil
+}
+
+// resolveCDIEnabled fills the gpusharing cdiEnabled plugin argument when it
+// has not been explicitly supplied. Resolution order (highest priority first):
+// explicit gpusharing plugin arg, explicit Binder.CDIEnabled, ClusterPolicy auto-detect.
+func resolveCDIEnabled(ctx context.Context, runtimeClient client.Reader, config *kaiv1binder.Binder) error {
+	pluginConfig, ok := config.Plugins[kaiv1binder.GPUSharingPluginName]
+	if !ok {
+		return nil
+	}
+	if _, set := pluginConfig.Arguments[kaiv1binder.CDIEnabledArgument]; set {
+		return nil
+	}
+
+	cdiEnabled := false
+	if config.CDIEnabled != nil {
+		cdiEnabled = *config.CDIEnabled
+	} else {
+		detected, err := isCdiEnabled(ctx, runtimeClient)
+		if err != nil {
+			return err
+		}
+		cdiEnabled = detected
+	}
+	if pluginConfig.Arguments == nil {
+		pluginConfig.Arguments = map[string]string{}
+	}
+	pluginConfig.Arguments[kaiv1binder.CDIEnabledArgument] = strconv.FormatBool(cdiEnabled)
+	config.Plugins[kaiv1binder.GPUSharingPluginName] = pluginConfig
+	return nil
 }

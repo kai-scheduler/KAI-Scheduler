@@ -1,0 +1,29 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+suite: test crd-upgrader hook configuration
+templates:
+  - hooks/pre/crd-upgrader.yaml
+tests:
+  - it: should set hook-delete-policy to hook-succeeded,before-hook-creation
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook-delete-policy"]
+          value: hook-succeeded,before-hook-creation
+
+  - it: should default image registry to global.registry
+    set:
+      global.registry: ghcr.io/nvidia/kai-scheduler
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/nvidia/kai-scheduler/crd-upgrader:0.0.0
+
+  - it: should override image registry when crdupgrader.image.registry is set
+    set:
+      global.registry: ghcr.io/nvidia/kai-scheduler
+      crdupgrader.image.registry: my-mirror.example.com/kai
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: my-mirror.example.com/kai/crd-upgrader:0.0.0

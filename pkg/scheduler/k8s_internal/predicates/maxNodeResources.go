@@ -12,7 +12,6 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ksf "k8s.io/kube-scheduler/framework"
-	k8sframework "k8s.io/kubernetes/pkg/scheduler/framework"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -66,25 +65,27 @@ func (_ *MaxNodeResourcesPredicate) isFilterRequired(_ *v1.Pod) bool {
 }
 
 func (mnr *MaxNodeResourcesPredicate) PreFilter(_ context.Context, _ ksf.CycleState, pod *v1.Pod, _ []ksf.NodeInfo) (
-	*k8sframework.PreFilterResult, *ksf.Status) {
+	*ksf.PreFilterResult, *ksf.Status) {
 
 	draPodClaims := resource_info.GetDraPodClaims(pod, mnr.resourceClaimsMap, mnr.podsToClaimsMap)
-	podInfo := pod_info.NewTaskInfo(pod, draPodClaims, mnr.vectorMap)
-	gpuIdx := mnr.vectorMap.GetIndex("gpu")
-	cpuIdx := mnr.vectorMap.GetIndex(v1.ResourceCPU)
-	memIdx := mnr.vectorMap.GetIndex(v1.ResourceMemory)
+	podInfo := pod_info.NewTaskInfo(pod, mnr.vectorMap, pod_info.TaskInfoOptions{
+		DraPodClaims: draPodClaims,
+	})
+	gpuIdx := resource_info.GPUIndex
+	cpuIdx := resource_info.CPUIndex
+	memIdx := resource_info.MemoryIndex
 
 	if podInfo.ResReqVector.Get(gpuIdx) > mnr.maxResources.Get(gpuIdx) {
-		return nil, ksf.NewStatus(ksf.Unschedulable,
+		return nil, ksf.NewStatus(ksf.UnschedulableAndUnresolvable,
 			mnr.buildUnschedulableMessage(podInfo, "GPU", mnr.maxResources.Get(gpuIdx), ""))
 	}
 	if podInfo.ResReqVector.Get(cpuIdx) > mnr.maxResources.Get(cpuIdx) {
-		return nil, ksf.NewStatus(ksf.Unschedulable,
+		return nil, ksf.NewStatus(ksf.UnschedulableAndUnresolvable,
 			mnr.buildUnschedulableMessage(podInfo, "CPU",
 				mnr.maxResources.Get(cpuIdx)/resource_info.MilliCPUToCores, "cores"))
 	}
 	if podInfo.ResReqVector.Get(memIdx) > mnr.maxResources.Get(memIdx) {
-		return nil, ksf.NewStatus(ksf.Unschedulable,
+		return nil, ksf.NewStatus(ksf.UnschedulableAndUnresolvable,
 			mnr.buildUnschedulableMessage(podInfo, "memory",
 				mnr.maxResources.Get(memIdx)/resource_info.MemoryToGB, "GB"))
 	}
@@ -102,7 +103,7 @@ func (mnr *MaxNodeResourcesPredicate) PreFilter(_ context.Context, _ ksf.CycleSt
 				units = "GB"
 				displayMax = maxVal / resource_info.MemoryToGB
 			}
-			return nil, ksf.NewStatus(ksf.Unschedulable,
+			return nil, ksf.NewStatus(ksf.UnschedulableAndUnresolvable,
 				mnr.buildUnschedulableMessage(podInfo, string(rName), displayMax, units))
 		}
 	}
@@ -115,7 +116,7 @@ func (mnr *MaxNodeResourcesPredicate) buildUnschedulableMessage(podInfo *pod_inf
 	messageBuilder := strings.Builder{}
 
 	messageBuilder.WriteString(fmt.Sprintf("The pod %s/%s requires %s. ", podInfo.Namespace, podInfo.Name,
-		podInfo.ResReq.DetailedString()))
+		resource_info.DetailedResourceString(podInfo.ResReqVector, &podInfo.GpuRequirement, podInfo.VectorMap)))
 	if resourceQuantity == 0 {
 		messageBuilder.WriteString(fmt.Sprintf("No node in the %s node-pool has %s resources",
 			mnr.schedulerShardName, resourcesName))

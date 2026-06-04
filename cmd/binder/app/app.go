@@ -5,7 +5,6 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -26,6 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	featuregates "github.com/kai-scheduler/KAI-scheduler/pkg/common/feature_gates"
 	draversionawareclient "github.com/kai-scheduler/KAI-scheduler/pkg/common/resources/dra_version_aware_client"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding"
@@ -105,21 +105,15 @@ func New(options *Options, config *rest.Config) (*App, error) {
 	kubeClient := draversionawareclient.NewDRAAwareClient(kubernetes.NewForConfigOrDie(config))
 	informerFactory := informers.NewSharedInformerFactory(kubeClient, 0)
 
-	// Deserialize pod resources if provided
-	var podResources *corev1.ResourceRequirements
-	if options.ResourceReservationPodResourcesJSON != "" {
-		podResources = &corev1.ResourceRequirements{}
-		if err := json.Unmarshal([]byte(options.ResourceReservationPodResourcesJSON), podResources); err != nil {
-			setupLog.Error(err, "failed to unmarshal resource reservation pod resources")
-			return nil, fmt.Errorf("failed to unmarshal resource reservation pod resources: %w", err)
-		}
-	}
+	featuregates.SetDRAFeatureGate(kubeClient.Discovery())
 
 	rrs := resourcereservation.NewService(options.FakeGPUNodes, clientWithWatch, options.ResourceReservationPodImage,
 		time.Duration(options.ResourceReservationAllocationTimeout)*time.Second,
 		options.ResourceReservationNamespace, options.ResourceReservationServiceAccount,
 		options.ResourceReservationAppLabel, options.ScalingPodNamespace, options.RuntimeClassName,
-		podResources)
+		options.ResourceReservationPodResources.Value,
+		options.ResourceReservationPodSecurityContext.Value,
+		options.ResourceReservationContainerSecurityContext.Value)
 
 	reconcilerParams := &controllers.ReconcilerParams{
 		MaxConcurrentReconciles:     options.MaxConcurrentReconciles,

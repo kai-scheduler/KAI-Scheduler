@@ -8,15 +8,12 @@ import (
 	"os"
 
 	"github.com/spf13/pflag"
-
 	"go.uber.org/zap/zapcore"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/kai-scheduler/KAI-scheduler/cmd/binder/app"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/gpusharing"
-	k8s_plugins "github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/k8s-plugins"
 )
 
 var (
@@ -56,17 +53,21 @@ func main() {
 }
 
 func registerPlugins(app *app.App) error {
-	binderPlugins := plugins.New()
-	k8sPlugins, err := k8s_plugins.New(app.K8sInterface, app.InformerFactory,
-		int64(app.Options.VolumeBindingTimeoutSeconds))
+	plugins.InitDefaultPlugins()
+	defaultConfig := plugins.DefaultConfig(plugins.DefaultBindTimeoutSeconds, plugins.DefaultCDIEnabled)
+	config := plugins.ResolveConfig(defaultConfig, nil)
+	if app.Options.Plugins.Value != nil {
+		config = plugins.ResolveConfig(defaultConfig, *app.Options.Plugins.Value)
+	}
+
+	binderPlugins, err := plugins.BuildConfiguredPlugins(plugins.PluginBuildContext{
+		KubeClient:      app.Client,
+		K8sInterface:    app.K8sInterface,
+		InformerFactory: app.InformerFactory,
+	}, config)
 	if err != nil {
 		return err
 	}
-	binderPlugins.RegisterPlugin(k8sPlugins)
-
-	bindingGpuSharingPlugin := gpusharing.New(app.Client, app.Options.GpuCdiEnabled)
-
-	binderPlugins.RegisterPlugin(bindingGpuSharingPlugin)
 	app.RegisterPlugins(binderPlugins)
 	return nil
 }

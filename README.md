@@ -1,8 +1,15 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE) [![Coverage](https://github.com/kai-scheduler/KAI-scheduler/raw/coverage-badge/badges/coverage.svg)](https://github.com/kai-scheduler/KAI-scheduler/blob/main/.github/workflows/update-coverage-badge.yaml)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/kai-scheduler/KAI-scheduler)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/12064/badge)](https://www.bestpractices.dev/projects/12064)
+[![ACMM](https://img.shields.io/endpoint?url=https%3A%2F%2Fconsole.kubestellar.io%2Fapi%2Facmm%2Fbadge%3Frepo%3Dkai-scheduler%2FKAI-Scheduler)](https://console.kubestellar.io/acmm?repo=kai-scheduler%2FKAI-Scheduler&utm_source=github&utm_medium=badge&utm_campaign=acmm-outreach)
 
-# KAI Scheduler
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/kai-logo-dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/kai-logo-light.png">
+    <img alt="KAI Scheduler" src="docs/assets/kai-logo-light.png" width="550">
+  </picture>
+</p>
 
 KAI Scheduler is a robust, efficient, and scalable [Kubernetes scheduler](https://kubernetes.io/docs/concepts/scheduling-eviction/kube-scheduler/) that optimizes GPU resource allocation for AI and machine learning workloads.
 
@@ -15,6 +22,7 @@ It can run alongside other schedulers installed on the cluster.
 
 ## Latest News 🔥
 
+- [2026/04] **KubeCon EU 2026 Talk:** Watch the recording of the presentation "[GPU Reservations: Maximizing Utilization and Fairness Across Teams](https://www.youtube.com/watch?v=O-OEqmvCkYg)", to explore how KAI Scheduler manages GPU resource reservations to balance utilization and fairness across teams.
 - [2025/11] **KubeCon NA 2025 Talk:** Watch the recording of the presentation "[Lightning Talk: Mind the Topology: Smarter Scheduling for AI Workloads on Kubernetes](https://youtu.be/o5i7pTWZjfo?si=su5iTOAS4r4O1TPa)" to learn how KAI's Topology-Aware Scheduling (TAS) optimizes placement for modern disaggregated serving architectures.
 - [2025/11] **Integration with [Grove](https://github.com/ai-dynamo/grove) & Dynamo:** KAI's Topology-Aware and Hierarchical Gang Scheduling capabilities are integrated with Grove to orchestrate complex, multi-component workloads like disaggregated serving and agentic pipelines at scale. Read the [blog post](https://developer.nvidia.com/blog/streamline-complex-ai-inference-on-kubernetes-with-nvidia-grove/) for more details.
 - [2025/10] **[v0.10.0 Release:](https://github.com/kai-scheduler/KAI-scheduler/releases/tag/v0.10.0)** Major features released, including [Topology-Aware Scheduling (TAS)](https://github.com/kai-scheduler/KAI-scheduler/tree/main/docs/topology), [Hierarchical PodGroups](https://github.com/kai-scheduler/KAI-scheduler/tree/main/docs/developer/designs/hierarchical-podgroup), and [Time-based Fairshare](https://github.com/kai-scheduler/KAI-scheduler/tree/main/docs/time-based-fairshare).
@@ -31,14 +39,14 @@ It can run alongside other schedulers installed on the cluster.
 - [Hierarchical Queues](docs/queues/README.md): Manage workloads with two-level queue hierarchies for flexible organizational control.
 - [Resource distribution](docs/fairness/README.md#resource-division-algorithm): Customize quotas, over-quota weights, limits, and priorities per queue.
 - [Fairness Policies](docs/fairness/README.md#reclaim-strategies): Ensure equitable resource distribution using Dominant Resource Fairness (DRF) and resource reclamation across queues.
-- [Time-based Fairshare](https://github.com/kai-scheduler/KAI-scheduler/tree/main/docs/time-based-fairshare): Over-time fair usage of resources, considering historical usage, time decay, and other parameters for fine-tunning. 
+- [Time-based Fairshare](https://github.com/kai-scheduler/KAI-scheduler/tree/main/docs/time-based-fairshare): Over-time fair usage of resources, considering historical usage, time decay, and other parameters for fine-tuning.
 - [Min-guaranteed-runtime](https://github.com/kai-scheduler/KAI-scheduler/tree/main/docs/developer/designs/min-runtime): ensures a time period in which the scheduler must not preempt or reclaim a running workload, even if preemptible.
 - Workload Consolidation: Reallocate running workloads intelligently to reduce fragmentation and increase cluster utilization.
-- [Elastic Workloads](docs/elastic/README.md): Dynamically scale workloads within defined minimum and maximum pod counts.
+- [Elastic Workloads](docs/elastic/README.md): Dynamically scale workloads within defined minimum and maximum pod or SubGroup thresholds.
 - Dynamic Resource Allocation (DRA): Support vendor-specific hardware resources through Kubernetes ResourceClaims (e.g., GPUs from NVIDIA or AMD).
 - [Topology-Aware Scheduling (TAS)](https://github.com/kai-scheduler/KAI-scheduler/tree/main/docs/topology): supports optimized placement with [topology aware scheduling](https://github.com/kai-scheduler/KAI-scheduler/tree/main/docs/developer/designs/topology-awareness) and hierarchical topology aware scheduling for [Hierarchical PodGroups](https://github.com/kai-scheduler/KAI-scheduler/tree/main/docs/developer/designs/hierarchical-podgroup).
 - [Hierarchical PodGroups](https://github.com/kai-scheduler/KAI-scheduler/tree/main/docs/developer/designs/hierarchical-podgroup): supports gang scheduling with optimized topology aware scheduling of multi-level workloads, such as distributed and disaggregated workloads such as Dynamo/Grove.
-- DRA support - supporting DRA for NVidia ComputeResources (GB200/GB300)
+- DRA support - supporting DRA for NVIDIA ComputeResources (GB200/GB300)
 - Workload signatures: KAI Scheduler provides performance optimization for large  multi-pod submissions using workload signatures. 
 - Scheduler explainability: based on K8S Events, every major step of the scheduling process is logged.
 
@@ -84,7 +92,7 @@ Follow the instructions [here](docs/developer/building-from-source.md)
 
 ## Flavor Specific Instructions
 
-### Openshift
+### OpenShift
 
 When `gpu-operator` <v25.10.0 is installed, the following flag should be added to the installation command:
 
@@ -130,6 +138,16 @@ Join the [kai-scheduler mailing list](https://groups.google.com/g/kai-scheduler)
 
 ### Technical Issues & Feature Requests  
 Please open a [GitHub issue](https://github.com/kai-scheduler/KAI-scheduler/issues/new/choose) for bugs, feature suggestions, or technical help. This helps us keep track of requests and respond effectively.
+
+---
+
+## Performance Dashboards
+
+KAI Scheduler provides public dashboards for monitoring performance and scale testing:
+
+- **[Scale Tests Dashboard](https://kai-scheduler.github.io/KAI-Scheduler/scale-tests/)**: View historical results from scale tests that validate scheduler performance at large cluster sizes (hundreds to thousands of nodes). Tests run every 24 hours on dedicated infrastructure and measure scheduling performance, topology-aware scheduling, resource allocation, and system stability under load. The dashboard displays execution times, pass/fail status, detailed failure logs, and 30-day historical trends. See [scale tests documentation](docs/developer/scale-tests.md) for technical details.
+
+- **[Benchmarks Dashboard](https://kai-scheduler.github.io/KAI-Scheduler/dev/bench/)**: Track scheduler performance benchmarks across commits to the main branch. The dashboard shows per-commit benchmark history for core scheduler operations, with automatic alerts when performance regresses beyond thresholds.
 
 ---
 

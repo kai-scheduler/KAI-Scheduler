@@ -5,8 +5,10 @@ There are several ways for users to request a portion of GPU for their pods:
 * Pod can request a specific GPU memory amount (e.g. 2000Mib), leaving the remaining GPU memory for other pods.
 * Or, it can request a portion of a GPU device memory (e.g. 0.5) that the pod intends to consume from the mounted GPU device.
 
-KAI Scheduler does not enforce memory allocation limit or performs memory isolation between processes.
-In order to make sure the pods share the GPU device nicely it is important that the running processes will allocate GPU memory up to the requested amount and not beyond that.
+By default, KAI Scheduler does not enforce memory allocation limits or perform memory isolation between processes. Please use [mps](./mps/README.md) or [hami](./hami/README.md) to enforce memory isolation.
+
+Without mps or hami, pods sharing the same GPU may consume more memory than requested, which can impact other workloads on that device.
+
 In addition, note that pods sharing a single GPU device can reside in different namespaces.
 
 In order to reserve a GPU device, KAI Scheduler will run a reservation pod in `kai-resource-reservation` namespace.

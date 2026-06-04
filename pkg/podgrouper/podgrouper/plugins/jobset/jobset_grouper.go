@@ -4,43 +4,48 @@
 package jobset
 
 import (
+	"context"
 	"fmt"
-	"math"
+	"strconv"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/utils/ptr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
 )
 
 const (
 	// JobSet pod labels (duplicated to avoid importing JobSet project).
-	jobSetLabelJobSetName        = "jobset.sigs.k8s.io/jobset-name"
 	jobSetLabelReplicatedJobName = "jobset.sigs.k8s.io/replicatedjob-name"
+	jobSetLabelJobIndex          = "jobset.sigs.k8s.io/job-index"
 	jobSetPodGroupNamePrefix     = "pg"
-	// startupPolicyOrderInOrder is the default startup policy order for JobSet.
-	startupPolicyOrderInOrder = "InOrder"
+	// startupPolicyOrderInOrder is the InOrder startup policy order value.
+	startupPolicyOrderAnyOrder = "AnyOrder"
+	startupPolicyOrderInOrder  = "InOrder"
+
+	jobSetPodGroupNameFormat   = "%s-%s-%s"
+	replicasSubgroupNameFormat = "%s-replica-%s"
 )
 
-// JobSetGrouper creates PodGroups for JobSet workloads.
-// When startupPolicy.startupPolicyOrder is "InOrder" (default):
-//   - Creates one PodGroup per replicatedJob to avoid sequencing deadlocks
-//   - PodGroup name: pg-<jobset-name>-<jobset-uid>-<replicatedjob-name>
-//   - MinAvailable: replicas * min(parallelism, completions if set) (defaults to 1)
-//
-// When startupPolicy.startupPolicyOrder is not "InOrder":
-//   - Creates a single PodGroup for all replicatedJobs
-//   - PodGroup name: pg-<jobset-name>-<jobset-uid>
-//   - MinAvailable: sum of all replicatedJobs' minAvailable
+// JobSetGrouper creates a single PodGroup per JobSet with a two-level SubGroup
+// hierarchy: one parent SubGroup per replicatedJob and one leaf SubGroup per
+// replica. The root PodGroup uses MinSubGroup to allow incremental scheduling
+// (JobSet's controller enforces start ordering when configured).
 type JobSetGrouper struct {
 	*defaultgrouper.DefaultGrouper
+	client client.Client
 }
 
-func NewJobSetGrouper(defaultGrouper *defaultgrouper.DefaultGrouper) *JobSetGrouper {
+func NewJobSetGrouper(kubeClient client.Client, defaultGrouper *defaultgrouper.DefaultGrouper) *JobSetGrouper {
 	return &JobSetGrouper{
 		DefaultGrouper: defaultGrouper,
+		client:         kubeClient,
 	}
 }
 
@@ -51,133 +56,242 @@ func (g *JobSetGrouper) Name() string {
 // +kubebuilder:rbac:groups=jobset.x-k8s.io,resources=jobsets,verbs=get;list;watch
 // +kubebuilder:rbac:groups=jobset.x-k8s.io,resources=jobsets/finalizers,verbs=patch;update;create
 
-func (g *JobSetGrouper) GetPodGroupMetadata(
-	topOwner *unstructured.Unstructured,
-	pod *v1.Pod,
-	_ ...*metav1.PartialObjectMetadata,
+func (g *JobSetGrouper) GetPodGroupMetadata(jobsetObj *unstructured.Unstructured, pod *v1.Pod, _ ...*metav1.PartialObjectMetadata,
 ) (*podgroup.Metadata, error) {
-	pgMeta, err := g.DefaultGrouper.GetPodGroupMetadata(topOwner, pod)
-	if err != nil {
-		return nil, err
-	}
-
-	jobSetName := topOwner.GetName()
-	jobSetUID := topOwner.GetUID()
+	jobSetName := jobsetObj.GetName()
+	jobSetUID := jobsetObj.GetUID()
 	if jobSetName == "" || len(jobSetUID) == 0 {
-		return nil, fmt.Errorf("jobset top owner %s/%s missing name or UID", topOwner.GetNamespace(), topOwner.GetName())
+		return nil, fmt.Errorf("jobset top owner %s/%s missing name or UID", jobsetObj.GetNamespace(), jobsetObj.GetName())
 	}
 
-	replicatedJobName, ok := pod.Labels[jobSetLabelReplicatedJobName]
-	if !ok || replicatedJobName == "" {
-		return nil, fmt.Errorf("pod %s/%s missing required label %q", pod.Namespace, pod.Name, jobSetLabelReplicatedJobName)
+	replicatedJobs, err := getReplicatedJobs(jobsetObj)
+	if err != nil {
+		return nil, err
+	}
+	if len(replicatedJobs) == 0 {
+		return nil, fmt.Errorf("jobset %s/%s has no replicatedJobs", jobsetObj.GetNamespace(), jobSetName)
 	}
 
-	startupPolicyOrder, err := getStartupPolicyOrder(topOwner)
+	// Legacy detection: if any PodGroup already exists for this JobSet without
+	// SubGroups, fall back to the previous (flat) handler so we don't disrupt
+	// in-flight workloads. Remove in v0.17.
+	legacy, err := g.detectLegacyPodGroup(jobsetObj)
+	if err != nil {
+		return nil, err
+	}
+	if legacy {
+		return g.legacyGetPodGroupMetadata(jobsetObj, pod)
+	}
+
+	pgMeta, err := g.DefaultGrouper.GetPodGroupMetadata(jobsetObj, pod)
+	if err != nil {
+		return nil, err
+	}
+	podGroupMinSubGroup, err := computePodGroupMinSubGroup(jobsetObj, replicatedJobs)
 	if err != nil {
 		return nil, err
 	}
 
-	if startupPolicyOrder == startupPolicyOrderInOrder {
-		pgMeta.Name = fmt.Sprintf(
-			"%s-%s-%s-%s",
-			jobSetPodGroupNamePrefix,
-			jobSetName,
-			string(jobSetUID),
-			replicatedJobName,
-		)
-		minAvailable, err := getReplicatedJobMinAvailable(topOwner, replicatedJobName)
-		if err != nil {
-			return nil, err
-		}
-		pgMeta.MinAvailable = minAvailable
-	} else {
-		pgMeta.Name = fmt.Sprintf(
-			"%s-%s-%s",
-			jobSetPodGroupNamePrefix,
-			jobSetName,
-			string(jobSetUID),
-		)
-		minAvailable, err := getJobSetMinAvailable(topOwner)
-		if err != nil {
-			return nil, err
-		}
-		pgMeta.MinAvailable = minAvailable
+	pgMeta.Name = fmt.Sprintf(jobSetPodGroupNameFormat, jobSetPodGroupNamePrefix, jobSetName, string(jobSetUID))
+	pgMeta.MinSubGroup = ptr.To(podGroupMinSubGroup)
+	pgMeta.MinAvailable = 0
+
+	subGroups, err := buildSubGroups(replicatedJobs)
+	if err != nil {
+		return nil, err
+	}
+	pgMeta.SubGroups = subGroups
+
+	if err := assignPodToSubGroup(pod, pgMeta.SubGroups); err != nil {
+		return nil, err
 	}
 
 	return pgMeta, nil
 }
 
-// calculateReplicatedJobMinAvailable calculates minAvailable for a single replicatedJob.
-func calculateReplicatedJobMinAvailable(rjMap map[string]interface{}, jobSetNamespace, jobSetName, replicatedJobName string) (int32, error) {
-	replicas64, foundReplicas, err := unstructured.NestedInt64(rjMap, "replicas")
-	if err != nil {
-		return 0, fmt.Errorf("failed to read replicas from JobSet %s/%s replicatedJob %s: %w",
-			jobSetNamespace, jobSetName, replicatedJobName, err)
-	}
-	replicas := int64(1)
-	if foundReplicas && replicas64 > 0 {
-		replicas = replicas64
+func computePodGroupMinSubGroup(jobSet *unstructured.Unstructured, replicatedJobs []map[string]any) (int32, error) {
+	numReplicatedJobs := int32(len(replicatedJobs))
+
+	if override, ok := jobSet.GetAnnotations()[constants.MinMemberOverrideKey]; ok {
+		userSetMinSubGroup, err := strconv.ParseInt(override, 10, 32)
+		if err != nil {
+			return 0, fmt.Errorf("invalid %s annotation on JobSet: %w", constants.MinMemberOverrideKey, err)
+		}
+		if userSetMinSubGroup < 1 {
+			return 0, fmt.Errorf("invalid %s annotation on JobSet: value %d must be >= 1", constants.MinMemberOverrideKey, userSetMinSubGroup)
+		}
+		if int32(userSetMinSubGroup) < numReplicatedJobs {
+			return int32(userSetMinSubGroup), nil
+		}
+		return numReplicatedJobs, nil
 	}
 
-	parallelism64, foundParallelism, err := unstructured.NestedInt64(rjMap, "template", "spec", "parallelism")
+	orderPolicy, err := getStartupPolicyOrder(jobSet)
 	if err != nil {
-		return 0, fmt.Errorf("failed to read template.spec.parallelism from JobSet %s/%s replicatedJob %s: %w",
-			jobSetNamespace, jobSetName, replicatedJobName, err)
+		return 0, err
 	}
-	parallelism := int64(1)
-	if foundParallelism && parallelism64 > 0 {
-		parallelism = parallelism64
-	}
-
-	completions64, foundCompletions, err := unstructured.NestedInt64(rjMap, "template", "spec", "completions")
-	if err != nil {
-		return 0, fmt.Errorf("failed to read template.spec.completions from JobSet %s/%s replicatedJob %s: %w",
-			jobSetNamespace, jobSetName, replicatedJobName, err)
-	}
-	if foundCompletions && completions64 > 0 && completions64 < parallelism {
-		parallelism = completions64
-	}
-
-	minAvailable64 := replicas * parallelism
-	if minAvailable64 <= 0 {
+	// If the order policy is InOrder, set the MinSubGroup to 1. The jobset controller will create one replicatedJob at a time.
+	if orderPolicy == startupPolicyOrderInOrder {
 		return 1, nil
 	}
-	if minAvailable64 > math.MaxInt32 {
-		return 0, fmt.Errorf("minAvailable too large (%d) for JobSet %s/%s replicatedJob %s: exceeds int32 max value",
-			minAvailable64, jobSetNamespace, jobSetName, replicatedJobName)
-	}
-	return int32(minAvailable64), nil
+	// If the order policy is AnyOrder, set the MinSubGroup to the number of replicatedJobs.
+	return numReplicatedJobs, nil
 }
 
-// getReplicatedJobMinAvailable returns minAvailable for a specific replicatedJob.
-func getReplicatedJobMinAvailable(jobSet *unstructured.Unstructured, replicatedJobName string) (int32, error) {
-	replicatedJobs, found, err := unstructured.NestedSlice(jobSet.Object, "spec", "replicatedJobs")
+// buildSubGroups produces the parent-per-replicatedJob / leaf-per-replica tree.
+func buildSubGroups(replicatedJobs []map[string]any) ([]*podgroup.SubGroupMetadata, error) {
+	var subGroups []*podgroup.SubGroupMetadata
+	for i, rj := range replicatedJobs {
+		replicatedJobName, found, err := unstructured.NestedString(rj, "name")
+		if err != nil || !found || replicatedJobName == "" {
+			return nil, fmt.Errorf("replicatedJobs[%d] missing name", i)
+		}
+
+		replicasCount, err := getReplicas(rj)
+		if err != nil {
+			return nil, err
+		}
+		leafMinMember, err := singleReplicaSubGroupMinMember(rj)
+		if err != nil {
+			return nil, err
+		}
+		leafTopology, err := singleReplicaSubGroupTopology(rj)
+		if err != nil {
+			return nil, err
+		}
+
+		parentName := replicatedJobName
+		subGroups = append(subGroups, &podgroup.SubGroupMetadata{
+			Name:        parentName,
+			MinSubGroup: ptr.To(replicasCount),
+		})
+		for idx := int32(0); idx < replicasCount; idx++ {
+			leafName := fmt.Sprintf(replicasSubgroupNameFormat, parentName, strconv.Itoa(int(idx)))
+			subGroups = append(subGroups, &podgroup.SubGroupMetadata{
+				Name:                leafName,
+				MinAvailable:        leafMinMember,
+				Parent:              ptr.To(parentName),
+				TopologyConstraints: leafTopology,
+			})
+		}
+	}
+	return subGroups, nil
+}
+
+// singleReplicaSubGroupTopology reads topology annotations from
+// replicatedJob.template.metadata.annotations and returns the corresponding
+// TopologyConstraintMetadata. Returns nil when no topology annotation is set.
+func singleReplicaSubGroupTopology(rj map[string]any) (*podgroup.TopologyConstraintMetadata, error) {
+	topology, err := readReplicatedJobTemplateAnnotation(rj, constants.TopologyKey)
 	if err != nil {
-		return 0, fmt.Errorf("failed to read spec.replicatedJobs from JobSet %s/%s: %w",
+		return nil, err
+	}
+	required, err := readReplicatedJobTemplateAnnotation(rj, constants.TopologyRequiredPlacementKey)
+	if err != nil {
+		return nil, err
+	}
+	preferred, err := readReplicatedJobTemplateAnnotation(rj, constants.TopologyPreferredPlacementKey)
+	if err != nil {
+		return nil, err
+	}
+	if topology == "" || (required == "" && preferred == "") {
+		return nil, nil
+	}
+	return &podgroup.TopologyConstraintMetadata{
+		Topology:               topology,
+		RequiredTopologyLevel:  required,
+		PreferredTopologyLevel: preferred,
+	}, nil
+}
+
+func singleReplicaSubGroupMinMember(rj map[string]any) (int32, error) {
+	parallelism, err := getParallelism(rj)
+	if err != nil {
+		return 0, err
+	}
+
+	singleReplicaUserSetMinMember, err := readReplicatedJobTemplateAnnotation(rj, constants.MinMemberOverrideKey)
+	if err != nil {
+		return 0, fmt.Errorf("failed to read template annotation %s: %w", constants.MinMemberOverrideKey, err)
+	}
+	if len(singleReplicaUserSetMinMember) == 0 {
+		return parallelism, nil
+	}
+
+	userSetMinMember, err := strconv.ParseInt(singleReplicaUserSetMinMember, 10, 32)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s annotation on replicatedJob template: %w", constants.MinMemberOverrideKey, err)
+	}
+	if userSetMinMember < 1 {
+		return 0, fmt.Errorf("invalid %s annotation on replicatedJob template: value %d must be >= 1", constants.MinMemberOverrideKey, userSetMinMember)
+	}
+	if int32(userSetMinMember) > parallelism {
+		log.FromContext(context.Background()).Info(
+			"min-member annotation exceeds parallelism; applying user value",
+			"annotation", constants.MinMemberOverrideKey,
+			"value", userSetMinMember,
+			"parallelism", parallelism,
+		)
+	}
+	return int32(userSetMinMember), nil
+}
+
+func readReplicatedJobTemplateAnnotation(rj map[string]any, key string) (string, error) {
+	value, found, err := unstructured.NestedString(rj, "template", "metadata", "annotations", key)
+	if err != nil {
+		return "", fmt.Errorf("failed to read template annotation %s: %w", key, err)
+	}
+	if !found {
+		return "", nil
+	}
+	return value, nil
+}
+
+// assignPodToSubGroup routes the pod into its leaf SubGroup based on JobSet labels.
+func assignPodToSubGroup(pod *v1.Pod, subGroups []*podgroup.SubGroupMetadata) error {
+	rj, ok := pod.Labels[jobSetLabelReplicatedJobName]
+	if !ok || rj == "" {
+		return fmt.Errorf("pod %s/%s missing required label %q", pod.Namespace, pod.Name, jobSetLabelReplicatedJobName)
+	}
+	idx, ok := pod.Labels[jobSetLabelJobIndex]
+	if !ok || idx == "" {
+		return fmt.Errorf("pod %s/%s missing required label %q", pod.Namespace, pod.Name, jobSetLabelJobIndex)
+	}
+
+	leafName := fmt.Sprintf(replicasSubgroupNameFormat, rj, idx)
+	for _, sg := range subGroups {
+		if sg.Name == leafName {
+			sg.PodsReferences = append(sg.PodsReferences, pod.Name)
+			return nil
+		}
+	}
+	return fmt.Errorf("leaf subgroup %q not found for pod %s/%s", leafName, pod.Namespace, pod.Name)
+}
+
+// Parse jobset crd functions
+
+// getReplicatedJobs returns spec.replicatedJobs as a slice of unstructured maps.
+func getReplicatedJobs(jobSet *unstructured.Unstructured) ([]map[string]any, error) {
+	raw, found, err := unstructured.NestedSlice(jobSet.Object, "spec", "replicatedJobs")
+	if err != nil {
+		return nil, fmt.Errorf("failed to read spec.replicatedJobs from JobSet %s/%s: %w",
 			jobSet.GetNamespace(), jobSet.GetName(), err)
 	}
-	if !found || len(replicatedJobs) == 0 {
-		return 1, nil
+	if !found {
+		return nil, nil
 	}
-
-	for _, rjRaw := range replicatedJobs {
-		rjMap, ok := rjRaw.(map[string]interface{})
+	out := make([]map[string]any, 0, len(raw))
+	for i, item := range raw {
+		rj, ok := item.(map[string]any)
 		if !ok {
-			continue
+			return nil, fmt.Errorf("replicatedJobs[%d] is not an object", i)
 		}
-
-		name, _, _ := unstructured.NestedString(rjMap, "name")
-		if name != replicatedJobName {
-			continue
-		}
-
-		return calculateReplicatedJobMinAvailable(rjMap, jobSet.GetNamespace(), jobSet.GetName(), replicatedJobName)
+		out = append(out, rj)
 	}
-
-	return 1, nil
+	return out, nil
 }
 
-// getStartupPolicyOrder returns startupPolicy.startupPolicyOrder from JobSet spec.
+// getStartupPolicyOrder returns spec.startupPolicy.startupPolicyOrder, defaulting to AnyOrder.
 func getStartupPolicyOrder(jobSet *unstructured.Unstructured) (string, error) {
 	order, found, err := unstructured.NestedString(jobSet.Object, "spec", "startupPolicy", "startupPolicyOrder")
 	if err != nil {
@@ -185,47 +299,31 @@ func getStartupPolicyOrder(jobSet *unstructured.Unstructured) (string, error) {
 			jobSet.GetNamespace(), jobSet.GetName(), err)
 	}
 	if !found {
-		return startupPolicyOrderInOrder, nil
+		return startupPolicyOrderAnyOrder, nil
 	}
 	return order, nil
 }
 
-// getJobSetMinAvailable calculates total minAvailable for all replicatedJobs in the JobSet.
-func getJobSetMinAvailable(jobSet *unstructured.Unstructured) (int32, error) {
-	replicatedJobs, found, err := unstructured.NestedSlice(jobSet.Object, "spec", "replicatedJobs")
+// getParallelism reads replicatedJob.template.spec.parallelism, defaulting to 1.
+func getParallelism(rj map[string]any) (int32, error) {
+	v, found, err := unstructured.NestedInt64(rj, "template", "spec", "parallelism")
 	if err != nil {
-		return 0, fmt.Errorf("failed to read spec.replicatedJobs from JobSet %s/%s: %w",
-			jobSet.GetNamespace(), jobSet.GetName(), err)
+		return 0, fmt.Errorf("failed to read template.spec.parallelism: %w", err)
 	}
-	if !found || len(replicatedJobs) == 0 {
+	if !found {
 		return 1, nil
 	}
+	return int32(v), nil
+}
 
-	var totalMinAvailable int64 = 0
-	for _, rjRaw := range replicatedJobs {
-		rjMap, ok := rjRaw.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		name, _, _ := unstructured.NestedString(rjMap, "name")
-		if name == "" {
-			continue
-		}
-
-		minAvailable, err := calculateReplicatedJobMinAvailable(rjMap, jobSet.GetNamespace(), jobSet.GetName(), name)
-		if err != nil {
-			return 0, err
-		}
-		totalMinAvailable += int64(minAvailable)
+// getReplicas reads replicatedJob.replicas, defaulting to 1.
+func getReplicas(rj map[string]any) (int32, error) {
+	v, found, err := unstructured.NestedInt64(rj, "replicas")
+	if err != nil {
+		return 0, fmt.Errorf("failed to read replicatedJob.replicas: %w", err)
 	}
-
-	if totalMinAvailable <= 0 {
+	if !found {
 		return 1, nil
 	}
-	if totalMinAvailable > math.MaxInt32 {
-		return 0, fmt.Errorf("total minAvailable too large (%d) for JobSet %s/%s: exceeds int32 max value",
-			totalMinAvailable, jobSet.GetNamespace(), jobSet.GetName())
-	}
-	return int32(totalMinAvailable), nil
+	return int32(v), nil
 }

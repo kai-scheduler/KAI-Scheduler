@@ -67,7 +67,19 @@ func WaitForDeploymentPodsRunning(ctx context.Context, client runtimeClient.With
 			}
 		}
 
-		return int32(runningPods) == replicas
+		deployment := &appsv1.Deployment{}
+		err := client.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, deployment)
+		if err != nil {
+			return false
+		}
+
+		// The amount of expected replicas might have changed. We need to check the updated replicas.
+		var updatedReplicas int32 = replicas
+		if deployment.Spec.Replicas != nil {
+			updatedReplicas = *deployment.Spec.Replicas
+		}
+
+		return int32(runningPods) == updatedReplicas
 	}
 
 	// Create a watcher for the pods

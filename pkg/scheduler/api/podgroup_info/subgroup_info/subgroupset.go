@@ -10,14 +10,16 @@ import (
 type SubGroupSet struct {
 	SubGroupInfo
 
-	groups  []*SubGroupSet
-	podSets []*PodSet
+	minSubGroup *int32
+	groups      []*SubGroupSet
+	podSets     []*PodSet
 }
 
 func NewSubGroupSet(name string, topologyConstraint *topology_info.TopologyConstraintInfo) *SubGroupSet {
 	subGroupInfo := newSubGroupInfo(name, topologyConstraint)
 	return &SubGroupSet{
 		SubGroupInfo: *subGroupInfo,
+		minSubGroup:  nil,
 		groups:       []*SubGroupSet{},
 		podSets:      []*PodSet{},
 	}
@@ -33,34 +35,35 @@ func (sgs *SubGroupSet) AddPodSet(podSet *PodSet) {
 	sgs.podSets = append(sgs.podSets, podSet)
 }
 
-func (sgs *SubGroupSet) GetChildGroups() []*SubGroupSet {
+func (sgs *SubGroupSet) GetDirectSubgroupsSets() []*SubGroupSet {
 	return sgs.groups
 }
 
-func (sgs *SubGroupSet) GetChildPodSets() []*PodSet {
+func (sgs *SubGroupSet) GetDirectPodSets() []*PodSet {
 	return sgs.podSets
 }
 
 func (sgs *SubGroupSet) Clone() *SubGroupSet {
 	root := NewSubGroupSet(sgs.name, sgs.topologyConstraint)
+	root.SetMinSubGroup(sgs.minSubGroup)
 	for _, podSet := range sgs.podSets {
 		clonePodSet := podSet.Clone()
 		root.AddPodSet(clonePodSet)
 	}
 	for _, subGroup := range sgs.groups {
-		childSubGroup := subGroup.Clone()
-		root.AddSubGroup(childSubGroup)
+		directSubGroup := subGroup.Clone()
+		root.AddSubGroup(directSubGroup)
 	}
 	return root
 }
 
-func (sgs *SubGroupSet) GetAllPodSets() map[string]*PodSet {
+func (sgs *SubGroupSet) GetDescendantPodSets() map[string]*PodSet {
 	result := make(map[string]*PodSet)
 	for _, podSet := range sgs.podSets {
 		result[podSet.GetName()] = podSet
 	}
 	for _, subGroup := range sgs.groups {
-		podSets := subGroup.GetAllPodSets()
+		podSets := subGroup.GetDescendantPodSets()
 		for name, podSet := range podSets {
 			result[name] = podSet
 		}
@@ -74,4 +77,63 @@ func (sgs *SubGroupSet) SetParent(parent *SubGroupSet) {
 
 func (sgs *SubGroupSet) GetParent() *SubGroupSet {
 	return sgs.parent
+}
+
+func (sgs *SubGroupSet) GetMinSubGroup() *int32 {
+	return sgs.minSubGroup
+}
+
+func (sgs *SubGroupSet) SetMinSubGroup(minSubGroup *int32) {
+	sgs.minSubGroup = minSubGroup
+}
+
+func (sgs *SubGroupSet) GetNumActiveAllocatedDirectSubGroups() int {
+	count := 0
+	for _, subGroupSet := range sgs.GetDirectSubgroupsSets() {
+		if subGroupSet.GetNumActiveAllocatedDirectSubGroups() >= subGroupSet.GetMinMembersToSatisfy() {
+			count++
+		}
+	}
+	for _, podSet := range sgs.GetDirectPodSets() {
+		if podSet.GetNumActiveAllocatedTasks() >= int(podSet.GetMinAvailable()) {
+			count++
+		}
+	}
+	return count
+}
+
+func (sgs *SubGroupSet) GetMinMembersToSatisfy() int {
+	if minSG := sgs.GetMinSubGroup(); minSG != nil {
+		return int(*minSG)
+	}
+	return len(sgs.GetDirectSubgroupsSets()) + len(sgs.GetDirectPodSets())
+}
+
+func (sgs *SubGroupSet) GetMembers() []SubGroupMember {
+	members := make([]SubGroupMember, 0, len(sgs.groups)+len(sgs.podSets))
+	for _, subGroupSet := range sgs.groups {
+		members = append(members, subGroupSet)
+	}
+	for _, podSet := range sgs.podSets {
+		members = append(members, podSet)
+	}
+	return members
+}
+
+func (sgs *SubGroupSet) IsReadyForScheduling() bool {
+	membersReadyForScheduling := 0
+	for _, member := range sgs.GetMembers() {
+		if member.IsReadyForScheduling() {
+			membersReadyForScheduling++
+		}
+	}
+	return membersReadyForScheduling >= sgs.GetMinMembersToSatisfy()
+}
+
+func (sgs *SubGroupSet) IsMinRequirementSatisfied() bool {
+	return sgs.GetNumActiveAllocatedDirectSubGroups() >= sgs.GetMinMembersToSatisfy()
+}
+
+func (sgs *SubGroupSet) GetNumActiveAllocatedMembers() int {
+	return sgs.GetNumActiveAllocatedDirectSubGroups()
 }

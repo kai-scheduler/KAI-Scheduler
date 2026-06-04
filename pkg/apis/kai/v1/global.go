@@ -35,6 +35,11 @@ type GlobalConfig struct {
 	// +kubebuilder:validation:Optional
 	SecurityContext *v1.SecurityContext `json:"securityContext,omitempty"`
 
+	// Deprecated: ImagePullSecret defines a single container registry secret credential.
+	// Use ImagePullSecrets instead.
+	// +kubebuilder:validation:Optional
+	ImagePullSecret *string `json:"imagesPullSecret,omitempty"`
+
 	// ImagePullSecrets defines the container registry additional secret credentials
 	// +kubebuilder:validation:Optional
 	ImagePullSecrets []string `json:"additionalImagePullSecrets,omitempty"`
@@ -75,6 +80,10 @@ type GlobalConfig struct {
 	// PodLabelSelector filters pods for webhooks and pod grouper
 	// +kubebuilder:validation:Optional
 	PodLabelSelector map[string]string `json:"podLabelSelector,omitempty"`
+
+	// JSONLog switches all services to JSON-formatted logging
+	// +kubebuilder:validation:Optional
+	JSONLog *bool `json:"jsonLog,omitempty"`
 }
 
 func (g *GlobalConfig) SetDefaultWhereNeeded() {
@@ -90,6 +99,19 @@ func (g *GlobalConfig) SetDefaultWhereNeeded() {
 
 	if g.ImagePullSecrets == nil {
 		g.ImagePullSecrets = []string{}
+	}
+	if g.ImagePullSecret != nil && *g.ImagePullSecret != "" {
+		found := false
+		for _, s := range g.ImagePullSecrets {
+			if s == *g.ImagePullSecret {
+				found = true
+				break
+			}
+		}
+		if !found {
+			g.ImagePullSecrets = append(g.ImagePullSecrets, *g.ImagePullSecret)
+		}
+		g.ImagePullSecret = nil
 	}
 	if g.DaemonsetsTolerations == nil {
 		g.DaemonsetsTolerations = []v1.Toleration{}
@@ -107,6 +129,7 @@ func (g *GlobalConfig) SetDefaultWhereNeeded() {
 	}
 
 	g.RequireDefaultPodAntiAffinityTerm = common.SetDefault(g.RequireDefaultPodAntiAffinityTerm, ptr.To(false))
+	g.JSONLog = common.SetDefault(g.JSONLog, ptr.To(false))
 
 	if g.VPA == nil {
 		g.VPA = &common.VPASpec{}

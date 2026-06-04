@@ -55,7 +55,7 @@ func initializeTestService(
 ) *service {
 	service := NewService(false, client, "", 40*time.Millisecond,
 		resourceReservationNameSpace, resourceReservationServiceAccount, resourceReservationAppLabelValue, scalingPodsNamespace, constants.DefaultRuntimeClassName,
-		nil) // nil podResources to use defaults
+		nil, nil, nil)
 
 	return service
 }
@@ -1491,4 +1491,60 @@ var _ = Describe("Race condition: reservation pod deleted during concurrent bind
 				"Reservation pod should be preserved when an active BindRequest exists")
 		})
 	})
+
+	Context("SecurityContext", func() {
+		It("should apply pod and container security contexts to reservation pods", func() {
+			podSecCtx := &v1.PodSecurityContext{
+				RunAsNonRoot: ptrBool(true),
+				RunAsUser:    ptrInt64(1001),
+				RunAsGroup:   ptrInt64(1001),
+			}
+			containerSecCtx := &v1.SecurityContext{
+				AllowPrivilegeEscalation: ptrBool(false),
+				ReadOnlyRootFilesystem:   ptrBool(true),
+			}
+
+			clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).
+				WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
+			svc := NewService(false, clientWithObjs, "test-image", 40*time.Millisecond,
+				resourceReservationNameSpace, resourceReservationServiceAccount,
+				resourceReservationAppLabelValue, scalingPodsNamespace,
+				constants.DefaultRuntimeClassName, nil, podSecCtx, containerSecCtx)
+
+			pod, err := svc.createResourceReservationPod(
+				nodeName, gpuGroup, "test-reservation-pod",
+				v1.ResourceRequirements{
+					Limits:   v1.ResourceList{constants.NvidiaGpuResource: *resource.NewQuantity(1, resource.DecimalSI)},
+					Requests: v1.ResourceList{constants.NvidiaGpuResource: *resource.NewQuantity(1, resource.DecimalSI)},
+				},
+			)
+			Expect(err).To(Succeed())
+			Expect(pod.Spec.SecurityContext).To(Equal(podSecCtx))
+			Expect(pod.Spec.Containers[0].SecurityContext).To(Equal(containerSecCtx))
+		})
+
+		It("should not set security contexts when nil", func() {
+			clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).
+				WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
+			svc := NewService(false, clientWithObjs, "test-image", 40*time.Millisecond,
+				resourceReservationNameSpace, resourceReservationServiceAccount,
+				resourceReservationAppLabelValue, scalingPodsNamespace,
+				constants.DefaultRuntimeClassName, nil, nil, nil)
+
+			pod, err := svc.createResourceReservationPod(
+				nodeName, gpuGroup, "test-reservation-pod",
+				v1.ResourceRequirements{
+					Limits:   v1.ResourceList{constants.NvidiaGpuResource: *resource.NewQuantity(1, resource.DecimalSI)},
+					Requests: v1.ResourceList{constants.NvidiaGpuResource: *resource.NewQuantity(1, resource.DecimalSI)},
+				},
+			)
+			Expect(err).To(Succeed())
+			Expect(pod.Spec.SecurityContext).To(BeNil())
+			Expect(pod.Spec.Containers[0].SecurityContext).To(BeNil())
+		})
+	})
 })
+
+func ptrBool(b bool) *bool { return &b }
+
+func ptrInt64(i int64) *int64 { return &i }

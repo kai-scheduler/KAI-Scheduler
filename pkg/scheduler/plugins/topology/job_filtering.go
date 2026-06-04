@@ -17,7 +17,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
-	v1 "k8s.io/api/core/v1"
 )
 
 const (
@@ -26,8 +25,8 @@ const (
 )
 
 type jobAllocationMetaData struct {
-	maxPodResources *resource_info.ResourceRequirements
-	tasksToAllocate []*pod_info.PodInfo
+	maxPodResourcesVector resource_info.ResourceVector
+	tasksToAllocate       []*pod_info.PodInfo
 }
 
 func (t *topologyPlugin) subSetNodesFn(
@@ -149,16 +148,17 @@ func (t *topologyPlugin) calcTreeAllocatable(tasks []*pod_info.PodInfo, domain *
 }
 
 func initTasksRepresentorMetadataStruct(tasksToAllocate []*pod_info.PodInfo) (*jobAllocationMetaData, error) {
-	maxPodResources := resource_info.NewResourceRequirements(0, 0, 0)
+	var maxPodVector resource_info.ResourceVector
 	for _, podInfo := range tasksToAllocate {
-		err := maxPodResources.SetMaxResource(podInfo.ResReq)
-		if err != nil {
-			return nil, err
+		if maxPodVector == nil {
+			maxPodVector = podInfo.ResReqVector.Clone()
+		} else {
+			maxPodVector.SetMax(podInfo.ResReqVector)
 		}
 	}
 	return &jobAllocationMetaData{
-		maxPodResources: maxPodResources,
-		tasksToAllocate: tasksToAllocate,
+		maxPodResourcesVector: maxPodVector,
+		tasksToAllocate:       tasksToAllocate,
 	}, nil
 }
 
@@ -209,7 +209,7 @@ func calcSubTreeFreeResources(domain *DomainInfo) resource_info.ResourceVector {
 }
 
 func calcNodeAccommodation(jobAllocationMetaData *jobAllocationMetaData, node *node_info.NodeInfo) int {
-	maxPodVector := jobAllocationMetaData.maxPodResources.ToVector(node.VectorMap)
+	maxPodVector := jobAllocationMetaData.maxPodResourcesVector
 
 	onePodOnlyVector := resource_info.NewResourceVector(node.VectorMap)
 	onePodOnlyVector.Set(resource_info.PodsIndex, 1)
@@ -538,13 +538,22 @@ func sortDomainInfos(topologyTree *Info, domainInfos []*DomainInfo) []*DomainInf
 // If the tasks are heterogeneous, i.e. some of the tasks require resources that other tasks do not require,
 // then use the job resources sum to see if a domain can allocate the job.
 func useRepresentorPodsAccounting(tasks []*pod_info.PodInfo) bool {
-	extendedResources := map[v1.ResourceName]int{}
+	if len(tasks) == 0 {
+		return true
+	}
+	vectorMap := tasks[0].VectorMap
+	extendedResources := map[int]int{}
 	podsUsingGpu := 0
 	for _, task := range tasks {
-		for resourceName := range task.ResReq.BaseResource.ScalarResources() {
-			extendedResources[resourceName] += 1
+		for i := 0; i < vectorMap.Len(); i++ {
+			if i == resource_info.CPUIndex || i == resource_info.MemoryIndex || i == resource_info.GPUIndex {
+				continue
+			}
+			if task.ResReqVector.Get(i) > 0 {
+				extendedResources[i] += 1
+			}
 		}
-		if task.ResReq.GPUs() > 0 {
+		if task.GpuRequirement.GPUs() > 0 {
 			podsUsingGpu += 1
 		}
 	}

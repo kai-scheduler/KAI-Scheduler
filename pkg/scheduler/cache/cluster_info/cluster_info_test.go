@@ -955,17 +955,17 @@ func TestBindRequests(t *testing.T) {
 		assert.Equal(t, assertedPods, expectedPodAsserts)
 
 		for _, node := range snapshot.Nodes {
-			cpuIdx := node.VectorMap.GetIndex(corev1.ResourceCPU)
-			assert.Equal(t, float64(test.resultNodes[node.Name].MilliValue()), node.IdleVector.Get(cpuIdx))
+			assert.Equal(t, float64(test.resultNodes[node.Name].MilliValue()), node.IdleVector.Get(resource_info.CPUIndex))
 		}
 	}
 }
 
 func TestSnapshotPodGroups(t *testing.T) {
 	tests := map[string]struct {
-		objs     []runtime.Object
-		kubeObjs []runtime.Object
-		results  []*podgroup_info.PodGroupInfo
+		objs                 []runtime.Object
+		kubeObjs             []runtime.Object
+		results              []*podgroup_info.PodGroupInfo
+		invalidSubGroupTasks map[common_info.PodGroupID][]common_info.PodID
 	}{
 		"BasicUsage": {
 			objs: []runtime.Object{
@@ -1153,15 +1153,15 @@ func TestSnapshotPodGroups(t *testing.T) {
 					},
 					Spec: enginev2alpha2.PodGroupSpec{
 						Queue:     "queue-0",
-						MinMember: 3,
+						MinMember: ptr.To(int32(3)),
 						SubGroups: []enginev2alpha2.SubGroup{
 							{
 								Name:      "SubGroup-0",
-								MinMember: 1,
+								MinMember: ptr.To(int32(1)),
 							},
 							{
 								Name:      "SubGroup-1",
-								MinMember: 2,
+								MinMember: ptr.To(int32(2)),
 							},
 						},
 					},
@@ -1234,6 +1234,74 @@ func TestSnapshotPodGroups(t *testing.T) {
 				}(),
 			},
 		},
+		"With invalid subgroup pod": {
+			objs: []runtime.Object{
+				&enginev2alpha2.PodGroup{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "podGroup-0",
+						UID:  "ABC",
+					},
+					Spec: enginev2alpha2.PodGroupSpec{
+						Queue: "queue-0",
+						SubGroups: []enginev2alpha2.SubGroup{
+							{
+								Name:      "SubGroup-0",
+								MinMember: ptr.To(int32(1)),
+							},
+						},
+					},
+				},
+			},
+			kubeObjs: []runtime.Object{
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: testNamespace,
+						Name:      "pod-valid",
+						UID:       types.UID(fmt.Sprintf("%s/pod-valid", testNamespace)),
+						Annotations: map[string]string{
+							commonconstants.PodGroupAnnotationForPod: "podGroup-0",
+						},
+						Labels: map[string]string{
+							commonconstants.SubGroupLabelKey: "SubGroup-0",
+						},
+					},
+				},
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: testNamespace,
+						Name:      "pod-invalid",
+						UID:       types.UID(fmt.Sprintf("%s/pod-invalid", testNamespace)),
+						Annotations: map[string]string{
+							commonconstants.PodGroupAnnotationForPod: "podGroup-0",
+						},
+						Labels: map[string]string{
+							commonconstants.SubGroupLabelKey: "missing-subgroup",
+						},
+					},
+				},
+			},
+			results: []*podgroup_info.PodGroupInfo{
+				func() *podgroup_info.PodGroupInfo {
+					subGroup0 := subgroup_info.NewPodSet("SubGroup-0", 1, nil)
+					subGroup0.AssignTask(&pod_info.PodInfo{UID: "pod-valid", SubGroupName: "SubGroup-0"})
+
+					subGroupSet := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+					subGroupSet.AddPodSet(subGroup0)
+
+					return &podgroup_info.PodGroupInfo{
+						Name:            "podGroup-0",
+						Queue:           "queue-0",
+						RootSubGroupSet: subGroupSet,
+						PodSets: map[string]*subgroup_info.PodSet{
+							"SubGroup-0": subGroup0,
+						},
+					}
+				}(),
+			},
+			invalidSubGroupTasks: map[common_info.PodGroupID][]common_info.PodID{
+				"podGroup-0": {common_info.PodID(fmt.Sprintf("%s/pod-invalid", testNamespace))},
+			},
+		},
 	}
 
 	for name, test := range tests {
@@ -1260,9 +1328,9 @@ func TestSnapshotPodGroups(t *testing.T) {
 			assert.Equal(t, expected.Name, pg.Name)
 			assert.Equal(t, expected.Queue, pg.Queue)
 
-			assert.Equal(t, len(expected.GetSubGroups()), len(pg.GetSubGroups()))
-			for _, expectedSubGroup := range expected.GetSubGroups() {
-				for _, subGroup := range pg.GetSubGroups() {
+			assert.Equal(t, len(expected.GetAllPodSets()), len(pg.GetAllPodSets()))
+			for _, expectedSubGroup := range expected.GetAllPodSets() {
+				for _, subGroup := range pg.GetAllPodSets() {
 					if expectedSubGroup.GetName() != subGroup.GetName() {
 						continue
 					}
@@ -1275,6 +1343,12 @@ func TestSnapshotPodGroups(t *testing.T) {
 						assert.Equal(t, subGroup.GetName(), podInfo.SubGroupName)
 					}
 				}
+			}
+
+			expectedInvalidTasks := test.invalidSubGroupTasks[common_info.PodGroupID(expected.Name)]
+			assert.Len(t, pg.GetInvalidSubGroupTasks(), len(expectedInvalidTasks))
+			for _, taskID := range expectedInvalidTasks {
+				assert.Contains(t, pg.GetInvalidSubGroupTasks(), taskID)
 			}
 		}
 
@@ -1783,7 +1857,7 @@ func TestPodGroupWithIndexNoSubGroups(t *testing.T) {
 			UID: "ABC",
 		},
 		Spec: enginev2alpha2.PodGroupSpec{
-			MinMember: 2,
+			MinMember: ptr.To(int32(2)),
 		},
 	}
 	podGroupInfo := podgroup_info.NewPodGroupInfo("MyTest")
@@ -1793,9 +1867,9 @@ func TestPodGroupWithIndexNoSubGroups(t *testing.T) {
 			kaiSchedulerObjects: []runtime.Object{},
 		},
 	)
-	assert.Equal(t, int32(1), podGroupInfo.GetSubGroups()[podgroup_info.DefaultSubGroup].GetMinAvailable())
+	assert.Equal(t, int32(1), podGroupInfo.GetAllPodSets()[podgroup_info.DefaultSubGroup].GetMinAvailable())
 	clusterInfo.setPodGroupWithIndex(podGroup, podGroupInfo)
-	assert.Equal(t, int32(2), podGroupInfo.GetSubGroups()[podgroup_info.DefaultSubGroup].GetMinAvailable())
+	assert.Equal(t, int32(2), podGroupInfo.GetAllPodSets()[podgroup_info.DefaultSubGroup].GetMinAvailable())
 }
 
 func TestPodGroupWithIndexWithSubGroups(t *testing.T) {
@@ -1804,15 +1878,15 @@ func TestPodGroupWithIndexWithSubGroups(t *testing.T) {
 			UID: "ABC",
 		},
 		Spec: enginev2alpha2.PodGroupSpec{
-			MinMember: 3,
+			MinMember: ptr.To(int32(3)),
 			SubGroups: []enginev2alpha2.SubGroup{
 				{
 					Name:      "sub-a",
-					MinMember: 1,
+					MinMember: ptr.To(int32(1)),
 				},
 				{
 					Name:      "sub-b",
-					MinMember: 2,
+					MinMember: ptr.To(int32(2)),
 				},
 			},
 		},
@@ -1825,8 +1899,8 @@ func TestPodGroupWithIndexWithSubGroups(t *testing.T) {
 		},
 	)
 	clusterInfo.setPodGroupWithIndex(podGroup, podGroupInfo)
-	assert.Equal(t, int32(1), podGroupInfo.GetSubGroups()["sub-a"].GetMinAvailable())
-	assert.Equal(t, int32(2), podGroupInfo.GetSubGroups()["sub-b"].GetMinAvailable())
+	assert.Equal(t, int32(1), podGroupInfo.GetAllPodSets()["sub-a"].GetMinAvailable())
+	assert.Equal(t, int32(2), podGroupInfo.GetAllPodSets()["sub-b"].GetMinAvailable())
 }
 
 func TestIsPodGroupUpForScheduler(t *testing.T) {
@@ -2264,7 +2338,7 @@ func TestNewClusterInfoErrorPartitionSelector(t *testing.T) {
 		NodePoolLabelKey:   "@!A",
 		NodePoolLabelValue: "!@#",
 	}
-	_, err := New(informerFactory, kubeAiSchedulerInformerFactory, nil, params, false, clusterPodAffinityInfo, false, true, nil)
+	_, err := New(informerFactory, kubeAiSchedulerInformerFactory, nil, params, false, clusterPodAffinityInfo, false, true, nil, 0)
 
 	assert.NotNil(t, err)
 }
@@ -2295,7 +2369,7 @@ func TestNewClusterInfoAddIndexerFails(t *testing.T) {
 	clusterPodAffinityInfo.EXPECT().AddNode(gomock.Any(), gomock.Any()).AnyTimes()
 
 	_, err = New(informerFactory, kubeAiSchedulerInformerFactory, nil, nil, false,
-		clusterPodAffinityInfo, false, true, nil)
+		clusterPodAffinityInfo, false, true, nil, 0)
 	assert.NotNil(t, err, "Expected error for conflicting indexers")
 }
 
@@ -2333,7 +2407,7 @@ func newClusterInfoTestsInner(t *testing.T, kubeObjects, kaiSchedulerObjects []r
 	usageLister := usagedb.NewUsageLister(&fakeUsageClient, ptr.To(10*time.Microsecond), ptr.To(10*time.Second), ptr.To(10*time.Second))
 
 	clusterInfo, _ := New(informerFactory, kubeAiSchedulerInformerFactory, usageLister, nodePoolParams, false,
-		clusterPodAffinityInfo, true, fullHierarchyFairness, nil)
+		clusterPodAffinityInfo, true, fullHierarchyFairness, nil, 0)
 
 	stopCh := context.Background().Done()
 	informerFactory.Start(stopCh)
@@ -2530,7 +2604,7 @@ func TestSnapshotNodesWithDRAGPUs(t *testing.T) {
 				nodeInfo, found := nodes[nodeName]
 				assert.True(t, found, "Node %s not found", nodeName)
 				// Check total GPUs (DRA GPUs are merged into AllocatableVector)
-				actualGPUs := nodeInfo.AllocatableVector.Get(vectorMap.GetIndex("gpu"))
+				actualGPUs := nodeInfo.AllocatableVector.Get(resource_info.GPUIndex)
 				assert.Equal(t, expectedGPUs, actualGPUs, "GPUs mismatch for node %s", nodeName)
 				expectedFlag := test.hasDRAGPUs[nodeName]
 				assert.Equal(t, expectedFlag, nodeInfo.HasDRAGPUs, "HasDRAGPUs mismatch for node %s", nodeName)

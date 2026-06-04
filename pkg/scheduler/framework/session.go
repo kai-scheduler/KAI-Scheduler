@@ -58,8 +58,7 @@ type Session struct {
 	NodePreOrderFns                       []api.NodePreOrderFn
 	NodeOrderFns                          []api.NodeOrderFn
 	JobOrderFns                           []common_info.CompareFn
-	PodSetOrderFns                        []common_info.CompareFn
-	SubGroupSetOrderFns                   []common_info.CompareFn
+	SubGroupOrderFns                      []common_info.CompareFn
 	TaskOrderFns                          []common_info.CompareFn
 	QueueOrderFns                         []api.CompareQueueFn
 	CanReclaimResourcesFns                []api.CanReclaimResourcesFn
@@ -76,6 +75,7 @@ type Session struct {
 	IsTaskAllocationOnNodeOverCapacityFns []api.IsTaskAllocationOverCapacityFn
 	SubsetNodesFns                        []api.SubsetNodesFn
 	PrePredicateFns                       []api.PrePredicateFn
+	VictimInvariantPrePredicateFns        []api.VictimInvariantPrePredicateFn
 	PredicateFns                          []api.PredicateFn
 	BindRequestMutateFns                  []api.BindRequestMutateFn
 	PreJobAllocationFns                   []api.PreJobAllocationFn
@@ -170,7 +170,7 @@ func (ssn *Session) FittingGPUs(node *node_info.NodeInfo, pod *pod_info.PodInfo)
 func filterGpusByEnoughResources(node *node_info.NodeInfo, pod *pod_info.PodInfo) []string {
 	filteredGPUs := []string{}
 	for gpuIdx := range node.UsedSharedGPUsMemory {
-		if node.IsTaskFitOnGpuGroup(pod.ResReq, gpuIdx) {
+		if node.IsTaskFitOnGpuGroup(&pod.GpuRequirement, gpuIdx) {
 			filteredGPUs = append(filteredGPUs, gpuIdx)
 		}
 	}
@@ -335,8 +335,7 @@ func (ssn *Session) clear() {
 	ssn.plugins = nil
 	ssn.eventHandlers = nil
 	ssn.TaskOrderFns = nil
-	ssn.PodSetOrderFns = nil
-	ssn.SubGroupSetOrderFns = nil
+	ssn.SubGroupOrderFns = nil
 	ssn.JobOrderFns = nil
 }
 

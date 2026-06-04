@@ -76,6 +76,7 @@ func NewBindRequestReconciler(
 // +kubebuilder:rbac:groups=resource.k8s.io,resources=deviceclasses;resourceslices,verbs=get;list;watch
 // +kubebuilder:rbac:groups=resource.k8s.io,resources=resourceclaims,verbs=get;list;watch;patch;update
 // +kubebuilder:rbac:groups=resource.k8s.io,resources=resourceclaims/status,verbs=get;list;watch;patch;update
+// +kubebuilder:rbac:groups=resource.k8s.io,resources=resourceclaims/binding,verbs=update;patch
 // +kubebuilder:rbac:groups=scheduling.run.ai,resources=bindrequests,verbs=get;list;watch;patch;update;delete
 // +kubebuilder:rbac:groups=scheduling.run.ai,resources=bindrequests/finalizers,verbs=patch;update
 // +kubebuilder:rbac:groups=scheduling.run.ai,resources=bindrequests/status,verbs=get;list;watch;patch;update

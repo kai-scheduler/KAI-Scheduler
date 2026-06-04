@@ -24,3 +24,19 @@ func NewDRAAwareClient(client kubernetes.Interface) kubernetes.Interface {
 func (c *draAwareKubeClient) ResourceV1() resourcev1.ResourceV1Interface {
 	return c.draClient
 }
+
+// IsWatchListSemanticsUnSupported forwards the optional reflector hint
+// (see k8s.io/client-go/util/watchlist.DoesClientNotSupportWatchListSemantics)
+// from the wrapped client. Embedding kubernetes.Interface does not promote
+// optional methods on concrete implementations (e.g. fake.Clientset), so
+// without this forward the reflector cannot detect that fake clients don't
+// support WatchList and hangs waiting for an initial-events bookmark.
+func (c *draAwareKubeClient) IsWatchListSemanticsUnSupported() bool {
+	type unSupported interface {
+		IsWatchListSemanticsUnSupported() bool
+	}
+	if lw, ok := c.Interface.(unSupported); ok {
+		return lw.IsWatchListSemanticsUnSupported()
+	}
+	return false
+}

@@ -102,7 +102,7 @@ func BuildNodesInfoMap(
 		}
 		if nodeMetadata.MaxTaskNum != nil {
 			nodeInfo.MaxTaskNum = *nodeMetadata.MaxTaskNum
-			podsIdx := nodeInfo.VectorMap.GetIndex(v1.ResourcePods)
+			podsIdx := resource_info.PodsIndex
 			nodeInfo.AllocatableVector.Set(podsIdx, float64(*nodeMetadata.MaxTaskNum))
 			usedPods := nodeInfo.UsedVector.Get(podsIdx)
 			availablePods := float64(*nodeMetadata.MaxTaskNum) - usedPods

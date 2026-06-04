@@ -80,6 +80,11 @@ func (ra *reclaimAction) Execute(ssn *framework.Session) {
 				continue
 			}
 		}
+		tasks := podgroup_info.GetTasksToAllocate(job, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false)
+		if task, failure := common.VictimInvariantPrePredicateFailureForTasks(ssn, tasks); failure != nil {
+			common.RecordVictimInvariantPrePredicateFailure(job, task, failure)
+			continue
+		}
 		metrics.IncPodgroupsConsideredByAction()
 		succeeded, statement, reclaimeeTasksNames := ra.attemptToReclaimForSpecificJob(ssn, job)
 		if succeeded {
@@ -103,7 +108,7 @@ func (ra *reclaimAction) attemptToReclaimForSpecificJob(
 	ssn *framework.Session, reclaimer *podgroup_info.PodGroupInfo,
 ) (bool, *framework.Statement, []string) {
 	queue := ssn.ClusterInfo.Queues[reclaimer.Queue]
-	resReq := podgroup_info.GetTasksToAllocateInitResourceVector(reclaimer, ssn.PodSetOrderFn, ssn.TaskOrderFn, false, ssn.ClusterInfo.MinNodeGPUMemory)
+	resReq := podgroup_info.GetTasksToAllocateInitResourceVector(reclaimer, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false, ssn.ClusterInfo.MinNodeGPUMemory)
 	log.InfraLogger.V(3).Infof("Attempting to reclaim for job: <%v/%v> of queue <%v>, resources: <%v>",
 		reclaimer.Namespace, reclaimer.Name, queue.Name, resReq)
 

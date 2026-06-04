@@ -26,7 +26,6 @@ import (
 
 	"golang.org/x/exp/maps"
 	"golang.org/x/exp/slices"
-	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
@@ -46,12 +45,6 @@ const (
 	PodSchedulingErrors = "PodSchedulingErrors"
 	DefaultSubGroup     = "default"
 )
-
-type JobRequirement struct {
-	GPU      float64
-	MilliCPU float64
-	Memory   float64
-}
 
 type StalenessInfo struct {
 	TimeStamp *time.Time
@@ -77,9 +70,6 @@ type PodGroupInfo struct {
 	JobFitErrors   []common_info.JobFitError
 	TasksFitErrors map[common_info.PodID]*common_info.TasksFitErrors
 
-	Allocated *resource_info.Resource
-
-	// Vector representation of Allocated
 	AllocatedVector resource_info.ResourceVector
 	VectorMap       *resource_info.ResourceVectorMap
 
@@ -88,16 +78,17 @@ type PodGroupInfo struct {
 	PodGroup           *enginev2alpha2.PodGroup
 	PodGroupUID        types.UID
 
-	RootSubGroupSet *subgroup_info.SubGroupSet
-	PodSets         map[string]*subgroup_info.PodSet
+	RootSubGroupSet      *subgroup_info.SubGroupSet
+	PodSets              map[string]*subgroup_info.PodSet
+	InvalidSubGroupTasks pod_info.PodsMap
 
 	StalenessInfo
 
 	schedulingConstraintsSignature common_info.SchedulingConstraintsSignature
 
 	// inner cache
+	allPodsMap                        *pod_info.PodsMap
 	tasksToAllocate                   []*pod_info.PodInfo
-	tasksToAllocateInitResource       *resource_info.Resource
 	tasksToAllocateInitResourceVector resource_info.ResourceVector
 	PodStatusIndex                    map[pod_status.PodStatus]pod_info.PodsMap
 	activeAllocatedCount              *int
@@ -113,7 +104,6 @@ func NewPodGroupInfoWithVectorMap(uid common_info.PodGroupID, vectorMap *resourc
 
 	podGroupInfo := &PodGroupInfo{
 		UID:             uid,
-		Allocated:       resource_info.EmptyResource(),
 		AllocatedVector: resource_info.NewResourceVector(vectorMap),
 		VectorMap:       vectorMap,
 
@@ -126,8 +116,9 @@ func NewPodGroupInfoWithVectorMap(uid common_info.PodGroupID, vectorMap *resourc
 			TimeStamp: nil,
 			Stale:     false,
 		},
-		RootSubGroupSet: defaultSubGroupSet,
-		PodSets:         defaultSubGroupSet.GetAllPodSets(),
+		RootSubGroupSet:      defaultSubGroupSet,
+		PodSets:              defaultSubGroupSet.GetDescendantPodSets(),
+		InvalidSubGroupTasks: pod_info.PodsMap{},
 
 		LastStartTimestamp:   nil,
 		activeAllocatedCount: ptr.To(0),
@@ -141,16 +132,36 @@ func NewPodGroupInfoWithVectorMap(uid common_info.PodGroupID, vectorMap *resourc
 }
 
 func (pgi *PodGroupInfo) GetAllPodsMap() pod_info.PodsMap {
-	allPods := pod_info.PodsMap{}
+	if pgi.allPodsMap != nil {
+		return *pgi.allPodsMap
+	}
+	totalPods := 0
+	for _, podSet := range pgi.PodSets {
+		totalPods += len(podSet.GetPodInfos())
+	}
+
+	allPods := make(pod_info.PodsMap, totalPods)
 	for _, subGroup := range pgi.PodSets {
 		for podId, podInfo := range subGroup.GetPodInfos() {
 			allPods[podId] = podInfo
 		}
 	}
+	pgi.allPodsMap = &allPods
 	return allPods
 }
 
-func (pgi *PodGroupInfo) GetSubGroups() map[string]*subgroup_info.PodSet {
+func (pgi *PodGroupInfo) GetAllAllocatedPods() []*pod_info.PodInfo {
+	podsMap := pgi.GetAllPodsMap()
+	allocated := make([]*pod_info.PodInfo, 0, len(podsMap))
+	for _, task := range podsMap {
+		if pod_status.IsActiveAllocatedStatus(task.Status) {
+			allocated = append(allocated, task)
+		}
+	}
+	return allocated
+}
+
+func (pgi *PodGroupInfo) GetAllPodSets() map[string]*subgroup_info.PodSet {
 	return pgi.PodSets
 }
 
@@ -204,15 +215,20 @@ func (pgi *PodGroupInfo) setSubGroups(podGroup *enginev2alpha2.PodGroup) error {
 		return err
 	}
 	pgi.RootSubGroupSet = rootSubGroupSet
-	podSets := rootSubGroupSet.GetAllPodSets()
+	podSets := rootSubGroupSet.GetDescendantPodSets()
 	if len(podSets) > 0 {
 		pgi.PodSets = podSets
 	} else {
 		if defaultPodSet, found := pgi.PodSets[DefaultSubGroup]; found {
-			defaultPodSet.SetMinAvailable(max(podGroup.Spec.MinMember, 1))
+			minAvail := int32(1)
+			if podGroup.Spec.MinMember != nil {
+				minAvail = max(*podGroup.Spec.MinMember, 1)
+			}
+			defaultPodSet.SetMinAvailable(minAvail)
 			rootSubGroupSet.AddPodSet(defaultPodSet)
 		}
 	}
+	pgi.invalidateTasksCache()
 	return nil
 }
 
@@ -222,6 +238,9 @@ func (pgi *PodGroupInfo) addTaskIndex(ti *pod_info.PodInfo) {
 	}
 
 	pgi.PodStatusIndex[ti.Status][ti.UID] = ti
+	if pgi.allPodsMap != nil {
+		(*pgi.allPodsMap)[ti.UID] = ti
+	}
 	if pod_status.IsActiveAllocatedStatus(ti.Status) {
 		pgi.activeAllocatedCount = ptr.To(*pgi.activeAllocatedCount + 1)
 	}
@@ -237,6 +256,7 @@ func (pgi *PodGroupInfo) AddTaskInfo(ti *pod_info.PodInfo) {
 	podSet, found := pgi.PodSets[taskSubGroupName]
 	if !found {
 		log.InfraLogger.Warningf("AddTaskInfo for task <%s/%s> of podGroup: <%s/%s>: SubGroup not found <%s>", ti.Namespace, ti.Name, pgi.Namespace, pgi.Name, taskSubGroupName)
+		pgi.addInvalidSubGroupTask(ti, taskSubGroupName)
 		return
 	}
 
@@ -244,7 +264,6 @@ func (pgi *PodGroupInfo) AddTaskInfo(ti *pod_info.PodInfo) {
 	pgi.addTaskIndex(ti)
 
 	if pod_status.AllocatedStatus(ti.Status) {
-		pgi.Allocated.AddResourceRequirements(ti.ResReq)
 		pgi.AllocatedVector.Add(ti.ResReqVector)
 	}
 }
@@ -265,6 +284,9 @@ func (pgi *PodGroupInfo) UpdateTaskStatus(task *pod_info.PodInfo, status pod_sta
 func (pgi *PodGroupInfo) deleteTaskIndex(ti *pod_info.PodInfo) {
 	if tasks, found := pgi.PodStatusIndex[ti.Status]; found {
 		delete(tasks, ti.UID)
+		if pgi.allPodsMap != nil {
+			delete(*pgi.allPodsMap, ti.UID)
+		}
 		if pod_status.IsActiveAllocatedStatus(ti.Status) {
 			pgi.activeAllocatedCount = ptr.To(*pgi.activeAllocatedCount - 1)
 		}
@@ -278,8 +300,8 @@ func (pgi *PodGroupInfo) deleteTaskIndex(ti *pod_info.PodInfo) {
 }
 
 func (pgi *PodGroupInfo) invalidateTasksCache() {
+	pgi.allPodsMap = nil
 	pgi.tasksToAllocate = nil
-	pgi.tasksToAllocateInitResource = nil
 	pgi.tasksToAllocateInitResourceVector = nil
 }
 
@@ -314,7 +336,6 @@ func (pgi *PodGroupInfo) resetTaskState(ti *pod_info.PodInfo) error {
 	}
 
 	if pod_status.AllocatedStatus(task.Status) {
-		pgi.Allocated.SubResourceRequirements(task.ResReq)
 		pgi.AllocatedVector.Sub(task.ResReqVector)
 	}
 
@@ -373,26 +394,14 @@ func (pgi *PodGroupInfo) GetNumGatedTasks() int {
 }
 
 func (pgi *PodGroupInfo) GetAliveTasksRequestedGPUs() float64 {
-	gpuIdx := pgi.VectorMap.GetIndex("gpu")
 	tasksTotalRequestedGPUs := float64(0)
 	for _, task := range pgi.GetAllPodsMap() {
 		if pod_status.IsAliveStatus(task.Status) {
-			tasksTotalRequestedGPUs += task.ResReqVector.Get(gpuIdx)
+			tasksTotalRequestedGPUs += task.ResReqVector.Get(resource_info.GPUIndex)
 		}
 	}
 
 	return tasksTotalRequestedGPUs
-}
-
-func (pgi *PodGroupInfo) GetTasksActiveAllocatedReqResource() *resource_info.Resource {
-	tasksTotalRequestedResource := resource_info.EmptyResource()
-	for _, task := range pgi.GetAllPodsMap() {
-		if pod_status.IsActiveAllocatedStatus(task.Status) {
-			tasksTotalRequestedResource.AddResourceRequirements(task.ResReq)
-		}
-	}
-
-	return tasksTotalRequestedResource
 }
 
 func (pgi *PodGroupInfo) GetTasksActiveAllocatedReqResourceVector() resource_info.ResourceVector {
@@ -406,12 +415,10 @@ func (pgi *PodGroupInfo) GetTasksActiveAllocatedReqResourceVector() resource_inf
 }
 
 func (pgi *PodGroupInfo) IsReadyForScheduling() bool {
-	for _, podSet := range pgi.PodSets {
-		if !podSet.IsReadyForScheduling() {
-			return false
-		}
+	if pgi.RootSubGroupSet == nil {
+		return false
 	}
-	return true
+	return pgi.RootSubGroupSet.IsReadyForScheduling()
 }
 
 func (pgi *PodGroupInfo) IsElastic() bool {
@@ -480,7 +487,12 @@ func (pgi *PodGroupInfo) Clone() *PodGroupInfo {
 // Use this for deferred initialization when vectorMap is not available at construction time.
 func (pgi *PodGroupInfo) SetVectorMap(vectorMap *resource_info.ResourceVectorMap) {
 	pgi.VectorMap = vectorMap
-	pgi.AllocatedVector = pgi.Allocated.ToVector(vectorMap)
+	pgi.AllocatedVector = resource_info.NewResourceVector(vectorMap)
+	for _, task := range pgi.GetAllPodsMap() {
+		if pod_status.AllocatedStatus(task.Status) {
+			pgi.AllocatedVector.Add(task.ResReqVector)
+		}
+	}
 }
 
 func (pgi *PodGroupInfo) CloneWithTasks(tasks []*pod_info.PodInfo) *PodGroupInfo {
@@ -492,7 +504,6 @@ func (pgi *PodGroupInfo) CloneWithTasks(tasks []*pod_info.PodInfo) *PodGroupInfo
 		Priority:       pgi.Priority,
 		Preemptibility: pgi.Preemptibility,
 
-		Allocated:       resource_info.EmptyResource(),
 		AllocatedVector: resource_info.NewResourceVector(pgi.VectorMap),
 		VectorMap:       pgi.VectorMap,
 
@@ -503,13 +514,14 @@ func (pgi *PodGroupInfo) CloneWithTasks(tasks []*pod_info.PodInfo) *PodGroupInfo
 		PodGroupUID: pgi.PodGroupUID,
 
 		PodStatusIndex:       map[pod_status.PodStatus]pod_info.PodsMap{},
+		InvalidSubGroupTasks: pod_info.PodsMap{},
 		activeAllocatedCount: ptr.To(0),
 	}
 
 	pgi.CreationTimestamp.DeepCopyInto(&info.CreationTimestamp)
 
 	info.RootSubGroupSet = pgi.RootSubGroupSet.Clone()
-	info.PodSets = info.RootSubGroupSet.GetAllPodSets()
+	info.PodSets = info.RootSubGroupSet.GetDescendantPodSets()
 
 	for _, task := range tasks {
 		info.AddTaskInfo(task.Clone())
@@ -545,6 +557,15 @@ func (pgi *PodGroupInfo) AddTaskFitErrors(task *pod_info.PodInfo, fitErrors *com
 	}
 }
 
+func (pgi *PodGroupInfo) GetInvalidSubGroupTasks() pod_info.PodsMap {
+	return pgi.InvalidSubGroupTasks
+}
+
+func (pgi *PodGroupInfo) IsInvalidSubGroupTask(taskID common_info.PodID) bool {
+	_, found := pgi.InvalidSubGroupTasks[taskID]
+	return found
+}
+
 func (pgi *PodGroupInfo) AddSimpleJobFitError(reason enginev2alpha2.UnschedulableReason, message string) {
 	pgi.AddJobFitError(common_info.NewJobFitError(pgi.Name, DefaultSubGroup, pgi.Namespace, reason, []string{message}))
 }
@@ -578,15 +599,15 @@ func (pgi *PodGroupInfo) generateSchedulingConstraintsSignature() common_info.Sc
 	return common_info.SchedulingConstraintsSignature(fmt.Sprintf("%x", hash.Sum(nil)))
 }
 
-func (jr *JobRequirement) Get(resourceName v1.ResourceName) float64 {
-	switch resourceName {
-	case v1.ResourceCPU:
-		return jr.MilliCPU
-	case v1.ResourceMemory:
-		return jr.Memory
-	case resource_info.GPUResourceName:
-		return jr.GPU
-	default:
-		return 0
-	}
+func (pgi *PodGroupInfo) addInvalidSubGroupTask(ti *pod_info.PodInfo, taskSubGroupName string) {
+	pgi.InvalidSubGroupTasks[ti.UID] = ti
+
+	fitErrors := common_info.NewFitErrors()
+	fitErrors.SetError(fmt.Sprintf(
+		"Pod references subgroup %q, which does not exist in PodGroup %s/%s",
+		taskSubGroupName,
+		pgi.Namespace,
+		pgi.Name,
+	))
+	pgi.AddTaskFitErrors(ti, fitErrors)
 }

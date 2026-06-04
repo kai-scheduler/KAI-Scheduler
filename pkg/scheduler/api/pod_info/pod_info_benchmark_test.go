@@ -72,7 +72,7 @@ func createMinimalPodInfo() *PodInfo {
 		},
 	}
 
-	podInfo := NewTaskInfo(pod, nil, resource_info.NewResourceVectorMap())
+	podInfo := NewTaskInfo(pod, resource_info.NewResourceVectorMap())
 	return podInfo
 }
 
@@ -105,7 +105,7 @@ func createPodInfoWithGPU() *PodInfo {
 		},
 	}
 
-	podInfo := NewTaskInfo(pod, nil, resource_info.NewResourceVectorMap())
+	podInfo := NewTaskInfo(pod, resource_info.NewResourceVectorMap())
 	podInfo.ResourceRequestType = RequestTypeGpuMemory
 	return podInfo
 }
@@ -142,7 +142,8 @@ func createPodInfoWithMultipleGPUs() *PodInfo {
 		},
 	}
 
-	podInfo := NewTaskInfo(pod, nil, resource_info.NewResourceVectorMap())
-	podInfo.AcceptedResource = podInfo.ResReq.Clone()
+	podInfo := NewTaskInfo(pod, resource_info.NewResourceVectorMap())
+	podInfo.AcceptedGpuRequirement = *podInfo.GpuRequirement.Clone()
+	podInfo.AcceptedResourceVector = podInfo.ResReqVector.Clone()
 	return podInfo
 }

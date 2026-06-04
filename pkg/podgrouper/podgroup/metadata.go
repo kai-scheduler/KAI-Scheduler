@@ -17,6 +17,7 @@ type TopologyConstraintMetadata struct {
 type SubGroupMetadata struct {
 	Name                string
 	MinAvailable        int32
+	MinSubGroup         *int32
 	Parent              *string
 	PodsReferences      []string
 	TopologyConstraints *TopologyConstraintMetadata
@@ -31,6 +32,7 @@ type Metadata struct {
 	Namespace         string
 	Name              string
 	MinAvailable      int32
+	MinSubGroup       *int32
 	Owner             metav1.OwnerReference
 	SubGroups         []*SubGroupMetadata
 

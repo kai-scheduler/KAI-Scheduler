@@ -180,6 +180,30 @@ func TestBuildArgsList(t *testing.T) {
 				"--leader-elect",
 			},
 		},
+		{
+			name: "with json logging",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Global: &kaiv1.GlobalConfig{
+						SchedulerName:    ptr.To(constants.DefaultSchedulerName),
+						QueueLabelKey:    ptr.To(constants.DefaultQueueLabel),
+						NodePoolLabelKey: ptr.To(constants.DefaultNodePoolLabelKey),
+						JSONLog:          ptr.To(true),
+					},
+					PodGrouper: &pod_grouper.PodGrouper{
+						Replicas:        ptr.To(int32(1)),
+						Args:            &pod_grouper.Args{},
+						K8sClientConfig: &common.K8sClientConfig{},
+					},
+				},
+			},
+			expected: []string{
+				"--scheduler-name", constants.DefaultSchedulerName,
+				"--queue-label-key", constants.DefaultQueueLabel,
+				"--nodepool-label-key", constants.DefaultNodePoolLabelKey,
+				"--zap-devel=false",
+			},
+		},
 	}
 
 	for _, tt := range tests {

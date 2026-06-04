@@ -1,0 +1,77 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+suite: test prometheus configuration
+templates:
+  - kai-config.yaml
+tests:
+  # ======================================
+  # Default Behavior Tests
+  # ======================================
+  - it: should not render prometheus section when disabled (default)
+    asserts:
+      - notExists:
+          path: spec.prometheus
+
+  - it: should not render prometheus section when explicitly disabled
+    set:
+      prometheus.enabled: false
+    asserts:
+      - notExists:
+          path: spec.prometheus
+
+  # ======================================
+  # Enabled Without External URL Tests
+  # ======================================
+  - it: should render prometheus section when enabled
+    set:
+      prometheus.enabled: true
+    asserts:
+      - exists:
+          path: spec.prometheus
+      - equal:
+          path: spec.prometheus.enabled
+          value: true
+
+  - it: should not render externalPrometheusUrl when not set
+    set:
+      prometheus.enabled: true
+    asserts:
+      - exists:
+          path: spec.prometheus
+      - notExists:
+          path: spec.prometheus.externalPrometheusUrl
+
+  # ======================================
+  # External Prometheus URL Tests
+  # ======================================
+  - it: should render externalPrometheusUrl when set
+    set:
+      prometheus.enabled: true
+      prometheus.externalPrometheusUrl: "http://prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090"
+    asserts:
+      - exists:
+          path: spec.prometheus
+      - equal:
+          path: spec.prometheus.enabled
+          value: true
+      - equal:
+          path: spec.prometheus.externalPrometheusUrl
+          value: "http://prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090"
+
+  - it: should render externalPrometheusUrl with custom port
+    set:
+      prometheus.enabled: true
+      prometheus.externalPrometheusUrl: "http://my-prometheus.custom-ns.svc.cluster.local:8080"
+    asserts:
+      - equal:
+          path: spec.prometheus.externalPrometheusUrl
+          value: "http://my-prometheus.custom-ns.svc.cluster.local:8080"
+
+  - it: should not render prometheus when disabled even if externalPrometheusUrl is set
+    set:
+      prometheus.enabled: false
+      prometheus.externalPrometheusUrl: "http://prometheus:9090"
+    asserts:
+      - notExists:
+          path: spec.prometheus

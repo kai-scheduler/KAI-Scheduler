@@ -13,6 +13,10 @@ This project includes components from kueue, which is licensed under the Apache 
 Copyright (c) The Kubernetes Authors.
 This project includes components derived from kueue, originally developed by The Kubernetes Authors.
 
+The base code for `dco_check.py` was derived from christophebedard/dco-check , which is licensed under the Apache License, Version 2.0.
+Copyright (c) The christophebedard/dco-check Authors.
+This project includes components derived from christophebedard/dco-check, originally developed by christophebedard/dco-check Authors.
+
 This project also includes software components licensed under various open-source licenses. The following licenses apply to the components used in this project:
 
 ## MIT License

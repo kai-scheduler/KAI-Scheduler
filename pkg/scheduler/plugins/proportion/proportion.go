@@ -98,7 +98,7 @@ func (pp *proportionPlugin) Name() string {
 
 func (pp *proportionPlugin) OnSessionOpen(ssn *framework.Session) {
 	pp.calculateResourcesProportion(ssn)
-	pp.subGroupOrderFn = ssn.PodSetOrderFn
+	pp.subGroupOrderFn = ssn.SubGroupOrderFn
 	pp.taskOrderFunc = ssn.TaskOrderFn
 	pp.minNodeGPUMemory = ssn.ClusterInfo.MinNodeGPUMemory
 	pp.reclaimablePlugin = rec.New(pp.relcaimerSaturationMultiplier)
@@ -164,7 +164,7 @@ func (pp *proportionPlugin) reclaimableFn(
 func (pp *proportionPlugin) getVictimResources(victim *api.VictimInfo) []resource_info.ResourceVector {
 	var victimResources []resource_info.ResourceVector
 
-	elasticTasks, coreTasks := splitVictimTasks(victim.Tasks, victim.Job.GetSubGroups())
+	elasticTasks, coreTasks := splitVictimTasks(victim.Tasks, victim.Job.GetAllPodSets())
 
 	// Process elastic tasks individually
 	for _, task := range elasticTasks {
@@ -363,7 +363,7 @@ func (pp *proportionPlugin) updateQueuesCurrentResourceUsage(ssn *framework.Sess
 					resources := utils.QuantifyVector(t.ResReqVector, t.VectorMap)
 					if t.IsMemoryRequest() {
 						resources.Add(rs.ResourceQuantities{
-							rs.GpuResource: float64(t.ResReq.GpuResourceRequirement.GetNumOfGpuDevices()) * (float64(t.ResReq.GpuMemory()) / float64(ssn.ClusterInfo.MinNodeGPUMemory)),
+							rs.GpuResource: float64(t.GpuRequirement.GetNumOfGpuDevices()) * (float64(t.GpuRequirement.GpuMemory()) / float64(ssn.ClusterInfo.MinNodeGPUMemory)),
 						})
 					}
 					pp.updateQueuesResourceUsageForPendingJob(job.Queue, resources)

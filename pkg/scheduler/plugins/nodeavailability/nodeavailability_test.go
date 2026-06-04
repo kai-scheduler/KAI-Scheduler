@@ -50,7 +50,7 @@ var _ = Describe("NodeAvailability", func() {
 			Context("scoring a node for a task", func() {
 				It("Returns 10 score if node can allocate", func() {
 					task := createFakeTask("task-1")
-					task.ResReq = createResource(1)
+					setTaskResources(task, 1)
 					node := createFakeNode("node-1", 1)
 					score, _ := nodeOrderFn(task, node)
 					Expect(score).To(Equal(float64(scores.Availability)))
@@ -58,7 +58,7 @@ var _ = Describe("NodeAvailability", func() {
 
 				It("Returns 0 score if node cannot allocate", func() {
 					task := createFakeTask("task-1")
-					task.ResReq = createResource(2)
+					setTaskResources(task, 2)
 					node := createFakeNode("node-1", 1)
 					score, _ := nodeOrderFn(task, node)
 					Expect(score).To(Equal(0.0))
@@ -68,10 +68,12 @@ var _ = Describe("NodeAvailability", func() {
 	})
 })
 
+var testVectorMap = resource_info.NewResourceVectorMap()
+
 func createFakeTask(taskName string) *pod_info.PodInfo {
 	return &pod_info.PodInfo{
-		Name:   taskName,
-		ResReq: createResource(0),
+		Name:      taskName,
+		VectorMap: testVectorMap,
 		Pod: &v1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
 				CreationTimestamp: metav1.Now(),
@@ -95,6 +97,7 @@ func createFakeNode(nodeName string, idleGpu int) *node_info.NodeInfo {
 	return node_info.NewNodeInfo(node, podAffinityInfo, vectorMap)
 }
 
-func createResource(gpu float64) *resource_info.ResourceRequirements {
-	return resource_info.NewResourceRequirementsWithGpus(gpu)
+func setTaskResources(task *pod_info.PodInfo, gpu float64) {
+	task.GpuRequirement = *resource_info.NewGpuResourceRequirementWithGpus(gpu, 0)
+	task.ResReqVector = resource_info.NewResourceVectorWithValues(0, 0, gpu, testVectorMap)
 }

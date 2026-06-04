@@ -11,12 +11,10 @@ import (
 	. "go.uber.org/mock/gomock"
 	"gopkg.in/h2non/gock.v1"
 	resourceapi "k8s.io/api/resource/v1"
-	utilfeature "k8s.io/apiserver/pkg/util/feature"
-	featuregate "k8s.io/component-base/featuregate/testing"
-	"k8s.io/kubernetes/pkg/features"
 
 	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	featuregates "github.com/kai-scheduler/KAI-scheduler/pkg/common/feature_gates"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
@@ -551,7 +549,10 @@ func TestStatementEvictUnevict_WithDRAClaims(t *testing.T) {
 
 			if test.bindRequest != nil {
 				bindRequestInfo := bindrequest_info.NewBindRequestInfo(test.bindRequest)
-				newTask := pod_info.NewTaskInfoWithBindRequest(task.Pod, bindRequestInfo, ssn.ClusterInfo.ResourceClaims, resource_info.NewResourceVectorMap())
+				newTask := pod_info.NewTaskInfo(task.Pod, resource_info.NewResourceVectorMap(), pod_info.TaskInfoOptions{
+					BindRequest:  bindRequestInfo,
+					DraPodClaims: ssn.ClusterInfo.ResourceClaims,
+				})
 
 				for _, podSet := range job.PodSets {
 					if _, exists := podSet.GetPodInfos()[task.UID]; exists {
@@ -751,7 +752,10 @@ type taskState struct {
 }
 
 func setupTestSession(t *testing.T, topology test_utils.TestTopologyBasic, controller *Controller) *framework.Session {
-	featuregate.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, features.DynamicResourceAllocation, true)
+	featuregates.SetDynamicResourcesEnabledForTest(true)
+	t.Cleanup(func() {
+		featuregates.SetDynamicResourcesEnabledForTest(false)
+	})
 	ssn := test_utils.BuildSession(topology, controller)
 	time.Sleep(1 * time.Millisecond)
 	return ssn

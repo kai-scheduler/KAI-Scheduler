@@ -15,6 +15,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8sptr "k8s.io/utils/ptr"
 	"knative.dev/pkg/ptr"
 	knativeserving "knative.dev/serving/pkg/apis/serving/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -82,7 +83,7 @@ func DescribeKnativeSpecs() bool {
 				Expect(testCtx.ControllerClient.List(ctx, &podGroups, client.InNamespace(namespace))).To(Succeed())
 				Expect(len(podGroups.Items)).To(Equal(1),
 					"Expected one podgroup for the revision")
-				Expect(podGroups.Items[0].Spec.MinMember).To(Equal(int32(2)),
+				Expect(podGroups.Items[0].Spec.MinMember).To(Equal(k8sptr.To(int32(2))),
 					"Expected minmember of podgroup to be 2")
 			})
 
@@ -107,7 +108,7 @@ func DescribeKnativeSpecs() bool {
 				Expect(testCtx.ControllerClient.List(ctx, &podGroups, client.InNamespace(namespace))).To(Succeed())
 				Expect(len(podGroups.Items)).To(Equal(1),
 					"Expected one podgroup for the revision")
-				Expect(podGroups.Items[0].Spec.MinMember).To(Equal(int32(1)),
+				Expect(podGroups.Items[0].Spec.MinMember).To(Equal(k8sptr.To(int32(1))),
 					"Expected minmember of podgroup to be 1")
 			})
 		})
