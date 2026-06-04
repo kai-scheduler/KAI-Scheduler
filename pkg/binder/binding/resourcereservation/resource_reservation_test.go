@@ -54,7 +54,7 @@ func initializeTestService(
 	client runtimeClient.WithWatch,
 ) *service {
 	service := NewService(false, client, "", 40*time.Millisecond,
-		resourceReservationNameSpace, resourceReservationServiceAccount, resourceReservationAppLabelValue, scalingPodsNamespace, constants.DefaultRuntimeClassName,
+		resourceReservationNameSpace, resourceReservationServiceAccount, resourceReservationAppLabelValue, scalingPodsNamespace, "",
 		nil, nil, nil)
 
 	return service
@@ -889,15 +889,13 @@ var _ = Describe("ResourceReservationService", func() {
 	})
 
 	Context("createResourceReservationPod", func() {
-		It("should create a pod with the correct RuntimeClassName and metadata", func() {
-			customRuntime := "custom-runtime"
+		It("should create a pod with the correct metadata and no RuntimeClassName", func() {
 			rsc := &service{
 				namespace:           "kai-resource-reservation",
 				appLabelValue:       "kai-reservation",
 				serviceAccountName:  "kai-sa",
 				reservationPodImage: "nvidia/kai-reservation:latest",
 				kubeClient:          fake.NewClientBuilder().WithScheme(testScheme).Build(),
-				runtimeClassName:    customRuntime,
 			}
 
 			resources := v1.ResourceRequirements{
@@ -922,10 +920,7 @@ var _ = Describe("ResourceReservationService", func() {
 
 			// PodSpec checks
 			Expect(pod.Spec.NodeName).To(Equal(nodeName))
-			Expect(pod.Spec.RuntimeClassName).NotTo(BeNil())
-			if pod.Spec.RuntimeClassName != nil {
-				Expect(*pod.Spec.RuntimeClassName).To(Equal(customRuntime))
-			}
+			Expect(pod.Spec.RuntimeClassName).To(BeNil())
 			Expect(pod.Spec.ServiceAccountName).To(Equal("kai-sa"))
 
 			// Check container
@@ -1106,7 +1101,6 @@ var _ = Describe("ResourceReservationService", func() {
 				serviceAccountName:  "kai-sa",
 				reservationPodImage: "test-image:latest",
 				kubeClient:          fake.NewClientBuilder().WithScheme(testScheme).Build(),
-				runtimeClassName:    "nvidia",
 				podResources: &v1.ResourceRequirements{
 					Requests: v1.ResourceList{
 						v1.ResourceCPU:    resource.MustParse("2m"),
@@ -1146,7 +1140,6 @@ var _ = Describe("ResourceReservationService", func() {
 				serviceAccountName:  "kai-sa",
 				reservationPodImage: "test-image:latest",
 				kubeClient:          fake.NewClientBuilder().WithScheme(testScheme).Build(),
-				runtimeClassName:    "nvidia",
 				podResources:        nil,
 				scalingPodNamespace: scalingPodsNamespace,
 			}
@@ -1182,7 +1175,6 @@ var _ = Describe("ResourceReservationService", func() {
 				serviceAccountName:  "kai-sa",
 				reservationPodImage: "test-image:latest",
 				kubeClient:          fake.NewClientBuilder().WithScheme(testScheme).Build(),
-				runtimeClassName:    "nvidia",
 				podResources: &v1.ResourceRequirements{
 					Requests: v1.ResourceList{
 						v1.ResourceCPU: resource.MustParse("5m"),
@@ -1220,7 +1212,6 @@ var _ = Describe("ResourceReservationService", func() {
 				serviceAccountName:  "kai-sa",
 				reservationPodImage: "test-image:latest",
 				kubeClient:          fake.NewClientBuilder().WithScheme(testScheme).Build(),
-				runtimeClassName:    "nvidia",
 				podResources: &v1.ResourceRequirements{
 					Requests: v1.ResourceList{
 						v1.ResourceCPU:              resource.MustParse("10m"),
@@ -1508,8 +1499,8 @@ var _ = Describe("Race condition: reservation pod deleted during concurrent bind
 				WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
 			svc := NewService(false, clientWithObjs, "test-image", 40*time.Millisecond,
 				resourceReservationNameSpace, resourceReservationServiceAccount,
-				resourceReservationAppLabelValue, scalingPodsNamespace,
-				constants.DefaultRuntimeClassName, nil, podSecCtx, containerSecCtx)
+				resourceReservationAppLabelValue, scalingPodsNamespace, "",
+				nil, podSecCtx, containerSecCtx)
 
 			pod, err := svc.createResourceReservationPod(
 				nodeName, gpuGroup, "test-reservation-pod",
@@ -1528,8 +1519,8 @@ var _ = Describe("Race condition: reservation pod deleted during concurrent bind
 				WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
 			svc := NewService(false, clientWithObjs, "test-image", 40*time.Millisecond,
 				resourceReservationNameSpace, resourceReservationServiceAccount,
-				resourceReservationAppLabelValue, scalingPodsNamespace,
-				constants.DefaultRuntimeClassName, nil, nil, nil)
+				resourceReservationAppLabelValue, scalingPodsNamespace, "",
+				nil, nil, nil)
 
 			pod, err := svc.createResourceReservationPod(
 				nodeName, gpuGroup, "test-reservation-pod",

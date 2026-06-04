@@ -44,10 +44,19 @@ type Admission struct {
 	// +kubebuilder:validation:Optional
 	MutatingWebhookConfigurationName *string `json:"mutatingWebhookConfigurationName,omitempty"`
 
-	// GPUPodRuntimeClassName specifies the runtime class to be set for GPU pods
-	// set to empty string to disable
+	// GPUPodRuntimeClassName specifies the runtime class to be set for GPU
+	// fraction pods.
+	// Deprecated: use GPUFractionRuntimeClassName. If both are set,
+	// GPUFractionRuntimeClassName wins.
 	// +kubebuilder:validation:Optional
 	GPUPodRuntimeClassName *string `json:"gpuPodRuntimeClassName,omitempty"`
+
+	// GPUFractionRuntimeClassName specifies the runtime class to be set for
+	// GPU fraction pods (those requesting GPU via the gpu-fraction or
+	// gpu-memory annotations). Whole-GPU pods are not affected.
+	// Set to empty string to disable.
+	// +kubebuilder:validation:Optional
+	GPUFractionRuntimeClassName *string `json:"gpuFractionRuntimeClassName,omitempty"`
 
 	// VPA specifies Vertical Pod Autoscaler configuration for the admission service
 	// +kubebuilder:validation:Optional
@@ -71,7 +80,12 @@ func (b *Admission) SetDefaultsWhereNeeded(replicaCount *int32, globalVPA *commo
 	b.ValidatingWebhookConfigurationName = common.SetDefault(b.ValidatingWebhookConfigurationName, ptr.To(defaultValidatingWebhookName))
 	b.MutatingWebhookConfigurationName = common.SetDefault(b.MutatingWebhookConfigurationName, ptr.To(defaultMutatingWebhookName))
 
-	b.GPUPodRuntimeClassName = common.SetDefault(b.GPUPodRuntimeClassName, ptr.To(constants.DefaultRuntimeClassName))
+	if b.GPUFractionRuntimeClassName == nil {
+		if b.GPUPodRuntimeClassName == nil {
+			// set GPUFractionRuntimeClassName default only if the deprecated field is not set
+			b.GPUFractionRuntimeClassName = ptr.To(constants.DefaultRuntimeClassName)
+		}
+	}
 
 	if b.VPA == nil {
 		b.VPA = globalVPA

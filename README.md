@@ -97,9 +97,10 @@ Follow the instructions [here](docs/developer/building-from-source.md)
 When `gpu-operator` <v25.10.0 is installed, the following flag should be added to the installation command:
 
 ```
---set admission.gpuPodRuntimeClassName=null
+--set admission.gpuFractionRuntimeClassName=null
 ```
-If CDI is enabled also add `--set binder.cdiEnabled=true`.
+If CDI is enabled, add `--set binder.cdiEnabled=true` to the installation command.
+
 ## Support & Breaking changes
 
 For details on our release lifecycle, LTS versions, and supported releases, see the [Support Policy](SUPPORT.md).
