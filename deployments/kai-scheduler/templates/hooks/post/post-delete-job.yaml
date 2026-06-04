@@ -25,6 +25,11 @@ spec:
         runAsUser: 10000
         runAsNonRoot: true
         fsGroup: 10000
+      {{- else }}
+      {{- with .Values.global.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- end }}
       restartPolicy: Never
       {{- if .Values.global.nodeSelector }}
@@ -43,6 +48,10 @@ spec:
         - name: deleter
           image: "{{ .Values.global.registry }}/{{ .Values.postCleanup.image.name }}:{{ .Values.postCleanup.image.tag | default .Values.global.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.postCleanup.image.pullPolicy }}
+          {{- with .Values.postCleanup.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           {{- if .Values.global.securityContext }}
           securityContext:
             {{- toYaml .Values.global.securityContext | nindent 12 }}

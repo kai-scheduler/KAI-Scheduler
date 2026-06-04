@@ -83,7 +83,7 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		logger.V(1).Error(err, "Failed to get pod", req.Namespace, req.Name)
 		return ctrl.Result{
 			Requeue:      true,
-			RequeueAfter: 1,
+			RequeueAfter: time.Second,
 		}, err
 	}
 

@@ -31,11 +31,20 @@ spec:
         runAsUser: 10000
         runAsNonRoot: true
         fsGroup: 10000
+      {{- else }}
+      {{- with .Values.global.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- end }}
       containers:
       - name: upgrader
         image: "{{ .Values.crdupgrader.image.registry | default .Values.global.registry }}/{{ .Values.crdupgrader.image.name }}:{{ .Values.crdupgrader.image.tag | default .Values.global.tag | default .Chart.AppVersion }}"
         imagePullPolicy: {{ .Values.crdupgrader.image.pullPolicy }}
+        {{- with .Values.crdupgrader.resources }}
+        resources:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
         {{- if (lookup "apiextensions.k8s.io/v1" "CustomResourceDefinition" "" "clusterversions.config.openshift.io") }}
         securityContext:
           runAsUser: 10000

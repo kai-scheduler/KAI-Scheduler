@@ -6,6 +6,7 @@ global:
   tag: ""
   imagePullPolicy: IfNotPresent
   securityContext: {}
+  podSecurityContext: {}
   imagePullSecrets: [] # format: [{name: secret1}, {name: secret2}]
   leaderElection: false
   gpuSharing: false
@@ -35,6 +36,7 @@ global:
     namespace: kai-resource-reservation
     serviceAccount: kai-resource-reservation
     appLabel: kai-resource-reservation
+    namespaceLabels: {}
 
 operator:
   image:
@@ -186,6 +188,7 @@ nodescaleadjuster:
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   scalingPodNamespace: kai-scale-adjust
   affinity: {}
+  labels: {}
 
 crdupgrader:
   image:
@@ -193,6 +196,7 @@ crdupgrader:
     pullPolicy: IfNotPresent
     # registry: ""  # Optional: Override global.registry (e.g. to mirror only the hook image)
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
+  resources: {}
 
 topologyMigration:
   # Enable migration of Kueue Topology CRs to KAI Topology CRs
@@ -205,6 +209,7 @@ topologyMigration:
     name: crd-upgrader
     pullPolicy: IfNotPresent
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
+  resources: {}
 
 postCleanup:
   enabled: true
@@ -214,6 +219,7 @@ postCleanup:
     pullPolicy: IfNotPresent
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   serviceAccountName: post-delete-cleanup
+  resources: {}
 
 prometheus:
   # Enable Prometheus integration for time-aware fairness features.
