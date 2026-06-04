@@ -224,6 +224,16 @@ func (g *GpuResourceRequirement) GPUs() float64 {
 	return getExtendedResourceGpus(g.portion, g.count)
 }
 
+// GpuMemoryAsGpuFraction converts a GPU-memory request into an equivalent whole-GPU
+// quota amount using gpuDeviceMemory as the per-device memory basis. Returns 0 for
+// non-memory requests or non-positive gpuDeviceMemory.
+func (g *GpuResourceRequirement) GpuMemoryAsGpuFraction(gpuDeviceMemory int64) float64 {
+	if g.gpuMemory <= 0 || gpuDeviceMemory <= 0 {
+		return 0
+	}
+	return float64(g.count) * (float64(g.gpuMemory) / float64(gpuDeviceMemory))
+}
+
 func (g *GpuResourceRequirement) GetNumOfGpuDevices() int64 {
 	return g.count
 }

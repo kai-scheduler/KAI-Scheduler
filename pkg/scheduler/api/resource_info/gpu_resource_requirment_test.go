@@ -44,6 +44,25 @@ var _ = Describe("GpuResourceRequirement mechanism", func() {
 		})
 	})
 
+	Context("GpuMemoryAsGpuFraction", func() {
+		It("converts memory to an equivalent gpu fraction", func() {
+			gpuResource := NewGpuResourceRequirementWithGpus(0, 50)
+			Expect(gpuResource.GpuMemoryAsGpuFraction(100)).To(Equal(0.5))
+		})
+		It("scales by the number of devices", func() {
+			gpuResource := NewGpuResourceRequirementWithMultiFraction(2, 0, 50)
+			Expect(gpuResource.GpuMemoryAsGpuFraction(100)).To(Equal(1.0))
+		})
+		It("returns 0 for a non-memory request", func() {
+			gpuResource := NewGpuResourceRequirementWithGpus(0.5, 0)
+			Expect(gpuResource.GpuMemoryAsGpuFraction(100)).To(Equal(float64(0)))
+		})
+		It("returns 0 when the device memory basis is non-positive", func() {
+			gpuResource := NewGpuResourceRequirementWithGpus(0, 50)
+			Expect(gpuResource.GpuMemoryAsGpuFraction(0)).To(Equal(float64(0)))
+		})
+	})
+
 	Context("SetMaxResource", func() {
 		It("Supported Resources", func() {
 			gpuResource1 := newGpuResourceRequirementWithValues(5, 0, map[v1.ResourceName]int64{

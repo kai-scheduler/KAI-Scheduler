@@ -171,9 +171,7 @@ func GetTasksToAllocateInitResourceVector(
 		if task.ShouldAllocate(isRealAllocation) {
 			result.Add(task.ResReqVector)
 			if task.IsMemoryRequest() && minNodeGPUMemory > 0 {
-				additionalGpuFraction := float64(task.GpuRequirement.GetNumOfGpuDevices()) *
-					(float64(task.GpuRequirement.GpuMemory()) / float64(minNodeGPUMemory))
-				result.Set(gpuIdx, result.Get(gpuIdx)+additionalGpuFraction)
+				result.Set(gpuIdx, result.Get(gpuIdx)+task.GpuRequirement.GpuMemoryAsGpuFraction(minNodeGPUMemory))
 			}
 		}
 	}

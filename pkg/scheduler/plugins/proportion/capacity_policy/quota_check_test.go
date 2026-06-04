@@ -10,6 +10,7 @@ import (
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	rs "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
 )
@@ -326,7 +327,7 @@ var _ = Describe("Quota Policy Check", func() {
 				testName := name
 				testData := data
 				It(testName, func() {
-					capacityPolicy := New(testData.queues)
+					capacityPolicy := New(testData.queues, node_info.DefaultGpuMemory)
 					result := capacityPolicy.resultsWithNonPreemptibleOverQuota(testData.requestedShare,
 						testData.job)
 					Expect(result.IsSchedulable).To(Equal(testData.expectedResult))
