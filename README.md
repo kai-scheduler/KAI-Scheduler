@@ -94,6 +94,11 @@ Follow the instructions [here](docs/developer/building-from-source.md)
 
 ### OpenShift
 
+When `gpu-operator` <v25.10.0 is installed, the following flag should be added to the installation command:
+
+```
+--set admission.gpuFractionRuntimeClassName=null
+```
 If CDI is enabled, add `--set binder.cdiEnabled=true` to the installation command.
 
 ## Support & Breaking changes
