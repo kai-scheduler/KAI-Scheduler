@@ -25,6 +25,7 @@ import (
 	"strconv"
 	"strings"
 
+	nrtv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 	"go.uber.org/multierr"
 	"golang.org/x/exp/maps"
 	v1 "k8s.io/api/core/v1"
@@ -85,6 +86,8 @@ type NodeInfo struct {
 
 	// HasDRAGPUs indicates GPUs were added via DRA ResourceSlices. Temporary fix - remove when device-plugin pods are supported on DRA nodes.
 	HasDRAGPUs bool
+
+	NodeResourceTopology *nrtv1alpha2.NodeResourceTopology
 
 	PodAffinityInfo pod_affinity.NodePodAffinityInfo
 
