@@ -50,8 +50,8 @@ func registerPlugins(app *app.App) error {
 		admissionPlugins.RegisterPlugin(hamicore.New())
 	}
 
-	if app.Options.GPUPodRuntimeClassName != "" {
-		admissionRuntimeEnforcementPlugin := runtimeenforcement.New(app.Options.GPUPodRuntimeClassName)
+	if rc := app.Options.ResolvedGPUFractionRuntimeClassName(); rc != "" {
+		admissionRuntimeEnforcementPlugin := runtimeenforcement.New(rc)
 		admissionPlugins.RegisterPlugin(admissionRuntimeEnforcementPlugin)
 	}
 

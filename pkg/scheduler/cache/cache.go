@@ -25,6 +25,8 @@ import (
 	"sync"
 	"time"
 
+	nrtclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
+	nrtinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
 	"go.uber.org/multierr"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -83,6 +85,7 @@ type SchedulerCacheParams struct {
 	RestrictNodeScheduling      bool
 	KubeClient                  kubernetes.Interface
 	KAISchedulerClient          kubeaischedulerver.Interface
+	NRTClient                   nrtclientset.Interface
 	UsageDBParams               *usageapi.UsageParams
 	UsageDBClient               usageapi.Interface
 	DetailedFitErrors           bool
@@ -101,6 +104,7 @@ type SchedulerCache struct {
 	kubeAiSchedulerClient          kubeaischedulerver.Interface
 	informerFactory                informers.SharedInformerFactory
 	kubeAiSchedulerInformerFactory kubeaischedulerinfo.SharedInformerFactory
+	nrtInformerFactory             nrtinformers.SharedInformerFactory
 	podLister                      listv1.PodLister
 	podGroupLister                 enginelisters.PodGroupLister
 	clusterInfo                    *cluster_info.ClusterInfo
@@ -155,6 +159,11 @@ func newSchedulerCache(schedulerCacheParams *SchedulerCacheParams) *SchedulerCac
 	sc.kubeAiSchedulerInformerFactory = kubeaischedulerinfo.NewSharedInformerFactory(sc.kubeAiSchedulerClient, 0)
 
 	featuregates.SetDRAFeatureGate(schedulerCacheParams.DiscoveryClient)
+	featuregates.SetNodeResourceTopologyFeatureGate(schedulerCacheParams.DiscoveryClient)
+	if featuregates.NodeResourceTopologyEnabled() && schedulerCacheParams.NRTClient != nil {
+		sc.nrtInformerFactory = nrtinformers.NewSharedInformerFactory(schedulerCacheParams.NRTClient, 0)
+	}
+
 	sc.internalPlugins = k8splugins.InitializeInternalPlugins(sc.kubeClient, sc.informerFactory, sc.SnapshotSharedLister())
 
 	sc.podLister = sc.informerFactory.Core().V1().Pods().Lister()
@@ -167,7 +176,7 @@ func newSchedulerCache(schedulerCacheParams *SchedulerCacheParams) *SchedulerCac
 			&schedulerCacheParams.UsageDBParams.WaitTimeout.Duration)
 	}
 
-	clusterInfo, err := cluster_info.New(sc.informerFactory, sc.kubeAiSchedulerInformerFactory, sc.usageLister, sc.schedulingNodePoolParams,
+	clusterInfo, err := cluster_info.New(sc.informerFactory, sc.kubeAiSchedulerInformerFactory, sc.nrtInformerFactory, sc.usageLister, sc.schedulingNodePoolParams,
 		sc.restrictNodeScheduling, &sc.K8sClusterPodAffinityInfo, sc.scheduleCSIStorage, sc.fullHierarchyFairness, sc.StatusUpdater, sc.stuckInReleasingThreshold)
 
 	if err != nil {
@@ -198,6 +207,9 @@ func (sc *SchedulerCache) Snapshot() (*api.ClusterInfo, error) {
 func (sc *SchedulerCache) Run(stopCh <-chan struct{}) {
 	sc.informerFactory.Start(stopCh)
 	sc.kubeAiSchedulerInformerFactory.Start(stopCh)
+	if sc.nrtInformerFactory != nil {
+		sc.nrtInformerFactory.Start(stopCh)
+	}
 	sc.StatusUpdater.Run(stopCh)
 
 	if sc.usageLister != nil {
@@ -208,6 +220,9 @@ func (sc *SchedulerCache) Run(stopCh <-chan struct{}) {
 func (sc *SchedulerCache) WaitForCacheSync(stopCh <-chan struct{}) {
 	sc.informerFactory.WaitForCacheSync(stopCh)
 	sc.kubeAiSchedulerInformerFactory.WaitForCacheSync(stopCh)
+	if sc.nrtInformerFactory != nil {
+		sc.nrtInformerFactory.WaitForCacheSync(stopCh)
+	}
 
 	if sc.usageLister != nil {
 		sc.usageLister.WaitForCacheSync(stopCh)
@@ -450,5 +465,5 @@ func (sc *SchedulerCache) GetDataLister() data_lister.DataLister {
 		log.InfraLogger.Errorf("Failed to get label selector: %v", err)
 		return nil
 	}
-	return data_lister.New(sc.informerFactory, sc.kubeAiSchedulerInformerFactory, sc.usageLister, selector)
+	return data_lister.New(sc.informerFactory, sc.kubeAiSchedulerInformerFactory, sc.nrtInformerFactory, sc.usageLister, selector)
 }

@@ -115,6 +115,9 @@ func (asb *PodAccumulatedScenarioBuilder) GetNextScenario() *solverscenario.ByNo
 // outer state. advanceFirst controls whether the first pass starts by popping a
 // victim or by evaluating the current state as-is.
 func (asb *PodAccumulatedScenarioBuilder) iterate(advanceFirst bool) *solverscenario.ByNodeScenario {
+	if asb.lastScenario == nil {
+		return nil
+	}
 	needAdvance := advanceFirst
 	for {
 		if sub := asb.nextFromSubEmitter(); sub != nil {

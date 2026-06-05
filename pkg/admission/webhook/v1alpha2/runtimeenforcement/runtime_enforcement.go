@@ -7,17 +7,16 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding/resourcereservation"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 )
 
 type RuntimeEnforcement struct {
-	gpuPodRuntimeClassName string
+	gpuFractionRuntimeClassName string
 }
 
-func New(gpuPodRuntimeClassName string) *RuntimeEnforcement {
+func New(gpuFractionRuntimeClassName string) *RuntimeEnforcement {
 	return &RuntimeEnforcement{
-		gpuPodRuntimeClassName: gpuPodRuntimeClassName,
+		gpuFractionRuntimeClassName: gpuFractionRuntimeClassName,
 	}
 }
 
@@ -30,22 +29,16 @@ func (p *RuntimeEnforcement) Validate(pod *v1.Pod) error {
 }
 
 func (p *RuntimeEnforcement) Mutate(pod *v1.Pod) error {
-	// Skip runtimeClassName injection entirely when configured with empty string
-	if p.gpuPodRuntimeClassName == "" {
+	if p.gpuFractionRuntimeClassName == "" {
 		return nil
 	}
 
-	// in order to no collide with custom reservation pods runtimeClass
-	if resourcereservation.IsGPUReservationPod(pod) {
-		return nil
-	}
-
-	if !resources.RequestsGPU(pod) {
+	if !resources.RequestsGPUFraction(pod) {
 		return nil
 	}
 
 	if pod.Spec.RuntimeClassName == nil || *pod.Spec.RuntimeClassName == "" {
-		setRuntimeClass(pod, p.gpuPodRuntimeClassName)
+		setRuntimeClass(pod, p.gpuFractionRuntimeClassName)
 		return nil
 	}
 
