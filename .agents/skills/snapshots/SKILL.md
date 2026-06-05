@@ -41,7 +41,7 @@ KUBECONFIG=$HOME/.kube/engine-scale-test \
 
 - `inspect-snapshot.sh`: validate that the archive contains `snapshot.json` and print top-level structure. Run this before replaying user-provided artifacts.
 - `run-snapshot.sh`: build `snapshot-tool` with `make build-go SERVICE_NAME=snapshot-tool` and replay on the current checkout, or use `--ref` to switch to one Git ref, replay, and restore the original branch or commit. For large snapshots, start with `--verbosity 2`. For reruns, prefer `--no-build --tool bin/snapshot-tool-amd64`. If a ref-based run is interrupted hard enough that the shell trap does not execute, the repo can stay detached; check with `git status --short --branch` and restore with `git switch <branch>`.
-- `compare-snapshot-refs.sh`: run the same snapshot against several refs and save one log per ref plus `summary.tsv`.
+- `compare-snapshot-refs.sh`: run the same snapshot against several git refs and save one log per ref plus `summary.tsv`.
 
 ## Workflow
 
