@@ -120,7 +120,7 @@ BENCH_OUTPUT ?= benchmark-results.txt
 # pkg/scheduler/actions/reclaim is excluded from the default benchmark sweep
 # because some reclaim benchmarks require -benchtime=1x and only a curated subset
 # should run in CI.
-BENCH_SPECIAL_PACKAGES := ./pkg/scheduler/actions/reclaim ./pkg/scheduler/actions/integration_tests/reclaim
+BENCH_SPECIAL_PACKAGES := ./pkg/scheduler/actions/reclaim
 BENCH_SPECIAL_REGEX := '^BenchmarkReclaim(WithMissingPVCJobs|UnschedulableDistributedJob_(10|50|100)Node)$$'
 
 .PHONY: benchstat

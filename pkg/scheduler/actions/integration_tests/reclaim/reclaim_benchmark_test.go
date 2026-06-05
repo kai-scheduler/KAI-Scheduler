@@ -20,6 +20,20 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 )
 
+type VeryLargeJobReclaimParams struct {
+	NumNodes                int
+	GPUsPerNode             int
+	NumJobs                 int
+	GPUsPerTask             int
+	VeryLargeJobGPUsPerTask int
+	VeryLargeJobTasks       int
+	Queue0DeservedGPUs      int
+	Queue1DeservedGPUs      int
+	NumberOfCacheBinds      int
+	NumberOfCacheEvictions  int
+	NumberOfPipelineActions int
+}
+
 func init() {
 	test_utils.InitTestingInfrastructure()
 }
@@ -68,6 +82,22 @@ func TestUnschedulableDistributedReclaimTopology(t *testing.T) {
 	}
 }
 
+type unschedulableDistributedReclaimParams struct {
+	NumNodes                int
+	GPUsPerNode             int
+	PodsPerDistributedJob   int
+	RunningJobsPerNode      int
+	Queue0DeservedGPUs      int
+	Queue1DeservedGPUs      int
+	NumberOfCacheBinds      int
+	NumberOfCacheEvictions  int
+	NumberOfPipelineActions int
+}
+
+const (
+	unschedulableDistributedJobName = "unschedulable-distributed-job"
+)
+
 func BenchmarkReclaimLargeJobs_10Node(b *testing.B) {
 	benchmarkReclaimLargeJobs(b, 10)
 }
@@ -91,60 +121,6 @@ func BenchmarkReclaimLargeJobs_500Node(b *testing.B) {
 func BenchmarkReclaimLargeJobs_1000Node(b *testing.B) {
 	benchmarkReclaimLargeJobs(b, 1000)
 }
-
-func BenchmarkReclaimUnschedulableDistributedJob_10Node(b *testing.B) {
-	benchmarkReclaimUnschedulableDistributedJob(b, 10)
-}
-
-func BenchmarkReclaimUnschedulableDistributedJob_50Node(b *testing.B) {
-	benchmarkReclaimUnschedulableDistributedJob(b, 50)
-}
-
-func BenchmarkReclaimUnschedulableDistributedJob_100Node(b *testing.B) {
-	benchmarkReclaimUnschedulableDistributedJob(b, 100)
-}
-
-func BenchmarkReclaimUnschedulableDistributedJob_200Node(b *testing.B) {
-	benchmarkReclaimUnschedulableDistributedJob(b, 200)
-}
-
-func BenchmarkReclaimUnschedulableDistributedJob_500Node(b *testing.B) {
-	benchmarkReclaimUnschedulableDistributedJob(b, 500)
-}
-
-func BenchmarkReclaimUnschedulableDistributedJob_1000Node(b *testing.B) {
-	benchmarkReclaimUnschedulableDistributedJob(b, 1000)
-}
-
-type VeryLargeJobReclaimParams struct {
-	NumNodes                int
-	GPUsPerNode             int
-	NumJobs                 int
-	GPUsPerTask             int
-	VeryLargeJobGPUsPerTask int
-	VeryLargeJobTasks       int
-	Queue0DeservedGPUs      int
-	Queue1DeservedGPUs      int
-	NumberOfCacheBinds      int
-	NumberOfCacheEvictions  int
-	NumberOfPipelineActions int
-}
-
-type unschedulableDistributedReclaimParams struct {
-	NumNodes                int
-	GPUsPerNode             int
-	PodsPerDistributedJob   int
-	RunningJobsPerNode      int
-	Queue0DeservedGPUs      int
-	Queue1DeservedGPUs      int
-	NumberOfCacheBinds      int
-	NumberOfCacheEvictions  int
-	NumberOfPipelineActions int
-}
-
-const (
-	unschedulableDistributedJobName = "unschedulable-distributed-job"
-)
 
 func benchmarkReclaimLargeJobs(b *testing.B, numNodes int) {
 	defer gock.Off()
@@ -171,34 +147,6 @@ func benchmarkReclaimLargeJobs(b *testing.B, numNodes int) {
 		action := reclaim.New()
 		action.Execute(ssn)
 		ctrl.Finish()
-	}
-}
-
-func benchmarkReclaimUnschedulableDistributedJob(b *testing.B, numNodes int) {
-	defer gock.Off()
-
-	topology := buildUnschedulableDistributedReclaimTopology(defaultUnschedulableDistributedReclaimParams(numNodes))
-	action := reclaim.New()
-
-	for b.Loop() {
-		ctrl := gomock.NewController(b)
-		ssn := test_utils.BuildSession(topology, ctrl)
-		action.Execute(ssn)
-		ctrl.Finish()
-	}
-}
-
-func defaultUnschedulableDistributedReclaimParams(numNodes int) unschedulableDistributedReclaimParams {
-	return unschedulableDistributedReclaimParams{
-		NumNodes:                numNodes,
-		GPUsPerNode:             8,
-		PodsPerDistributedJob:   10,
-		RunningJobsPerNode:      8,
-		Queue0DeservedGPUs:      (numNodes * 8) - (10 * 8) + 1,
-		Queue1DeservedGPUs:      10 * 8,
-		NumberOfCacheBinds:      0,
-		NumberOfCacheEvictions:  0,
-		NumberOfPipelineActions: 0,
 	}
 }
 
@@ -263,6 +211,20 @@ func buildReclaimTopology(params VeryLargeJobReclaimParams) test_utils.TestTopol
 				NumberOfPipelineActions: params.NumberOfPipelineActions,
 			},
 		},
+	}
+}
+
+func defaultUnschedulableDistributedReclaimParams(numNodes int) unschedulableDistributedReclaimParams {
+	return unschedulableDistributedReclaimParams{
+		NumNodes:                numNodes,
+		GPUsPerNode:             8,
+		PodsPerDistributedJob:   10,
+		RunningJobsPerNode:      8,
+		Queue0DeservedGPUs:      (numNodes * 8) - (10 * 8) + 1,
+		Queue1DeservedGPUs:      10 * 8,
+		NumberOfCacheBinds:      0,
+		NumberOfCacheEvictions:  0,
+		NumberOfPipelineActions: 0,
 	}
 }
 
