@@ -118,7 +118,16 @@ port_forward_pid=""
 cleanup() {
   if [[ -n "$port_forward_pid" ]] && kill -0 "$port_forward_pid" >/dev/null 2>&1; then
     kill "$port_forward_pid" >/dev/null 2>&1 || true
+    # Kill the port-forward if wait does not return after SIGTERM.
+    (
+      sleep 2
+      kill -0 "$port_forward_pid" >/dev/null 2>&1 && kill -9 "$port_forward_pid" >/dev/null 2>&1 || true
+    ) &
+    wait_timeout_pid="$!"
+
     wait "$port_forward_pid" >/dev/null 2>&1 || true
+    kill "$wait_timeout_pid" >/dev/null 2>&1 || true
+    wait "$wait_timeout_pid" >/dev/null 2>&1 || true
   fi
   rm -rf "$tmpdir"
 }
