@@ -372,7 +372,7 @@ var _ = Describe("Scheduler", Ordered, func() {
 			var podgroup schedulingv2alpha2.PodGroup
 			Expect(ctrlClient.Get(ctx, client.ObjectKey{Name: "test-podgroup", Namespace: testNamespace.Name}, &podgroup)).
 				To(Succeed(), "Failed to get test podgroup")
-			podgroup.Status.Pending = 42
+			podgroup.Status.Conditions = []schedulingv2alpha2.PodGroupCondition{{Type: "test"}}
 			err = ctrlClient.Status().Update(ctx, &podgroup)
 			Expect(err).To(HaveOccurred(), "Expected to fail to update podgroup status")
 

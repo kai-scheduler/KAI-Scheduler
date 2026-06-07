@@ -140,28 +140,9 @@ type SubGroup struct {
 
 // PodGroupStatus defines the observed state of PodGroup
 type PodGroupStatus struct {
-	// Current phase of PodGroup.
-	Phase PodGroupPhase `json:"phase,omitempty" protobuf:"bytes,1,opt,name=phase"`
-
 	// The conditions of PodGroup.
 	// +optional
 	Conditions []PodGroupCondition `json:"conditions,omitempty" protobuf:"bytes,2,opt,name=conditions"`
-
-	// The number of actively running pods.
-	// +optional
-	Running int32 `json:"running,omitempty" protobuf:"varint,3,opt,name=running"`
-
-	// The number of pods which reached phase Succeeded.
-	// +optional
-	Succeeded int32 `json:"succeeded,omitempty" protobuf:"varint,4,opt,name=succeeded"`
-
-	// The number of pods which reached phase Failed.
-	// +optional
-	Failed int32 `json:"failed,omitempty" protobuf:"varint,5,opt,name=failed"`
-
-	// The number of pods which reached phase Pending.
-	// +optional
-	Pending int32 `json:"pending,omitempty" protobuf:"varint,6,opt,name=pending"`
 
 	// The scheduling conditions of PodGroup.
 	// +optional
@@ -171,9 +152,6 @@ type PodGroupStatus struct {
 	// +optional
 	ResourcesStatus PodGroupResourcesStatus `json:"resourcesStatus,omitempty" protobuf:"bytes,8,opt,name=resourcesStatus"`
 }
-
-// PodGroupPhase is the phase of a pod group at the current time.
-type PodGroupPhase string
 
 type PodGroupConditionType string
 
