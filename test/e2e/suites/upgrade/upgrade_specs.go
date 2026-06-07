@@ -60,14 +60,22 @@ func DescribeUpgradeSpecs() bool {
 		})
 
 		It("should upgrade KAI scheduler via helm", func(ctx context.Context) {
+			By("Recording the pre-upgrade kai-config generation")
+			preUpgradeGeneration := wait.GetKAIConfigGeneration(ctx, testCtx.ControllerClient)
+
 			By("Running helm upgrade to the new version")
 			upgradeKAIScheduler(upgradeChartPath)
 
-			// kai-config is applied by a post-upgrade hook Job that runs
-			// after helm --wait returns; the operator then has to roll every
-			// operand in place against the new spec, so allow more headroom
-			// than the default 2-minute status timeout.
+			// The post-upgrade hook Job applies the new kai-config and completes
+			// within the helm invocation (Helm waits for hook Jobs). The operator
+			// then reconciles the new spec, rolling each operand in place, which
+			// can exceed the default 2-minute status timeout. The generation guard
+			// below ensures the OK status checked afterwards reflects the new spec
+			// rather than a leftover from the previous installation.
 			const upgradeStatusTimeout = 5 * time.Minute
+
+			By("Waiting for the post-upgrade hook to apply the new kai-config")
+			wait.ForKAIConfigGenerationAfter(ctx, testCtx.ControllerClient, preUpgradeGeneration, upgradeStatusTimeout)
 
 			By("Waiting for KAI config to report healthy status")
 			wait.ForKAIConfigStatusOKWithTimeout(ctx, testCtx.ControllerClient, upgradeStatusTimeout)
