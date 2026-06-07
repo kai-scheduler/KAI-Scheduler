@@ -7,7 +7,7 @@ metadata:
   name: kai-config-deployer
   namespace: {{ .Release.Namespace }}
   annotations:
-    "helm.sh/hook": post-install,post-upgrade,post-delete
+    "helm.sh/hook": post-install,post-upgrade
     "helm.sh/hook-weight": "-1"
     "helm.sh/hook-delete-policy": hook-succeeded,before-hook-creation
 ---
@@ -16,20 +16,20 @@ kind: ClusterRole
 metadata:
   name: kai-scheduler-config-deployer
   annotations:
-    "helm.sh/hook": post-install,post-upgrade,post-delete
+    "helm.sh/hook": post-install,post-upgrade
     "helm.sh/hook-weight": "-1"
     "helm.sh/hook-delete-policy": hook-succeeded,before-hook-creation
 rules:
 - apiGroups: ["kai.scheduler"]
   resources: ["configs"]
-  verbs: ["get", "list", "create", "update", "patch", "delete"]
+  verbs: ["get", "list", "create", "update", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: kai-scheduler-config-deployer
   annotations:
-    "helm.sh/hook": post-install,post-upgrade,post-delete
+    "helm.sh/hook": post-install,post-upgrade
     "helm.sh/hook-weight": "-1"
     "helm.sh/hook-delete-policy": hook-succeeded,before-hook-creation
 roleRef:
