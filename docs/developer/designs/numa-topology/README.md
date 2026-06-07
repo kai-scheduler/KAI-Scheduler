@@ -186,17 +186,46 @@ type nodeTopology struct {
 }
 
 type numaPlugin struct {
-    denylist  sets.Set[v1.ResourceName]      // optional; resources reported per-zone but NOT aligned
-                                             // (e.g. cpu/memory when their manager is off). Default empty.
-    nodes     map[string]*nodeTopology       // rebuilt each OnSessionOpen; nil entry ⇒ pass
-    reserved  map[common_info.PodID][]string // task UID → charged zone id(s); 1 for single-numa, ≥1 for restricted
+    denylist sets.Set[v1.ResourceName]  // optional; resources reported per-zone but NOT aligned
+                                        // (e.g. cpu/memory when their manager is off). Default empty.
+    nodes    map[string]*nodeTopology   // rebuilt each OnSessionOpen; nil entry ⇒ pass
 }
 ```
 
+**The per-task placement lives on `PodInfo`, not in the plugin** — mirroring `GPUGroups`. A task
+carries its exact NUMA placement (the zone(s) it was charged *and the amount on each*), and the
+plugin holds only the node-side per-zone occupancy ledger (`nodes`), the analog of
+`GpuSharingNodeInfo`:
+
+```go
+// On pod_info.PodInfo (framework state, snapshotted/restored across eviction undo
+// like GPUGroups; the dedup compares it — see Interaction with eviction dedup):
+type ZoneCharge struct {
+    Zone   string                                  // NUMA zone id
+    Amount map[v1.ResourceName]resource.Quantity   // exact per-zone charge
+}
+NUMAPlacement []ZoneCharge                          // empty ⇒ placement unknown
+```
+
+Storing the **exact amount** (not just the zone id) means credit-back on rollback/eviction
+restores precisely what was charged — no re-deriving a split that would differ once headroom
+changed. There is **no plugin-side per-task map**: `DeallocateFunc` credits back
+`task.NUMAPlacement` directly, and the statement snapshots/restores it across virtual-eviction
+undo (see *In-cycle reservation* and *Interaction with eviction dedup*).
+
+**A running pod's placement is populated from its annotation, precedence `observed > predicted`**
+(see *Observed placement* and *Scheduler-predicted placement record*), parsed onto `PodInfo` at
+snapshot build exactly as `GPUGroups` is. **There is no re-derive fallback:** a running pod with
+*neither* annotation has an empty `NUMAPlacement`, so its resources are simply **not credited on
+virtual eviction**. Its consumption is already netted out of NRT `Available` (the occupancy ledger
+is seeded from `Available`), so the only effect is that evicting it does not free a zone in the
+ledger — which matters *only* to a NUMA-sensitive preemptor on that exact zone; non-NUMA-sensitive
+preemption is unaffected. This is the deliberate, safe floor: never guess a zone.
+
 The scheduler instantiates a **fresh plugin instance every cycle** (`OpenSession` calls the
-builder then `OnSessionOpen`), so all plugin state is per-cycle: `nodes` is rebuilt from the
-snapshot's NRT data each cycle, and `reserved` tracks only the current cycle's in-flight
-allocations. v1 keeps no cross-cycle state (see
+builder then `OnSessionOpen`), so the plugin's `nodes` ledger is rebuilt from the snapshot's NRT
+data each cycle. Per-task placement is not plugin state — it rides `PodInfo` (durably, via the
+annotation) — so the plugin itself keeps no cross-cycle state (see
 [Appendix A](#appendix-a-optional-cross-cycle-staleness-compensation)).
 
 ### NUMA-relevant resources
@@ -340,13 +369,14 @@ Within-cycle correctness rides the existing session `EventHandler`
 AllocateFunc(e):
     nt = nodes[e.Task.NodeName]
     if !shouldHandle(e.Task, nt): return
-    zones = evaluate(nt, requests(e.Task)).zones   // 1 zone for single-numa, ≥1 for restricted
-    charge zones by requests(e.Task)               // restricted: split across the masked zones
-    reserved[e.Task.UID] = ids(zones)
+    if e.Task.NUMAPlacement is empty:                       // fresh placement (else: restored, reuse it)
+        zones = evaluate(nt, requests(e.Task)).zones        // 1 zone for single-numa, ≥1 for restricted
+        e.Task.NUMAPlacement = split(requests(e.Task), zones) // exact per-zone amounts; set BEFORE Pipeline
+    for c in e.Task.NUMAPlacement: nt.zones[c.Zone] -= c.Amount
 
 DeallocateFunc(e):
-    zones = reserved[e.Task.UID]; if none: return
-    credit back zones; delete reserved[e.Task.UID]
+    if e.Task.NUMAPlacement is empty: return                // unknown placement ⇒ not accounted (no re-derive)
+    for c in e.Task.NUMAPlacement: nt.zones[c.Zone] += c.Amount   // credit back the exact amounts
 ```
 
 For `single-numa-node` this charges exactly one zone. For `restricted`, the chosen mask `M` may
@@ -354,22 +384,58 @@ span several zones; the kubelet does not fix the per-zone split at admission, so
 an **approximate greedy split** across `M`'s zones (internal accounting only — see the
 reservation-split caveat in *Known Limitations*).
 
-Because the statement's undo path fires `DeallocateFunc` on rollback (and `AllocateFunc` on
-redo), preemption/reclaim scenario probing — which speculatively allocates and `Discard()`s —
-stays consistent automatically, with **no manual clone/restore**. Recording the charged zone(s)
-(rather than recomputing them) guarantees the restore targets the exact zones even though
-headroom changed in between. The chosen zones are internal accounting only; they are never sent
-to the kubelet, which independently re-derives placement.
+The placement (zones **and** amounts) lives on `PodInfo.NUMAPlacement`, not in a plugin map. It is
+set during the allocate step — **before `Pipeline`**, like `GPUGroups`, so the copy the statement
+clones onto the node carries it and the dedup can compare it. Because the placement rides
+`PodInfo`, the statement's existing undo machinery **snapshots the previous placement on virtual
+eviction and restores it on rollback** (exactly as it does for `GPUGroups`/`previousGpuGroups`),
+and `DeallocateFunc`/`AllocateFunc` simply credit/charge whatever placement the task currently
+carries. So preemption/reclaim scenario probing — which speculatively allocates and `Discard()`s —
+stays consistent with **no plugin-side bookkeeping**: the framework already restores the exact
+prior placement. The chosen zones are internal accounting only; they are never sent to the
+kubelet, which independently re-derives placement.
 
-This layer is *within-cycle* and in-memory: speculative allocations from preemption probing must
-never leak into long-lived state. Only a **committed** bind persists its chosen zone — as the
-scheduler-predicted placement record, next.
+This restore-by-snapshot is necessary but **not sufficient**: the solver's *eviction dedup* can
+cancel a victim's eviction outright. That interaction is handled via the same `NUMAPlacement`
+identity — see *Interaction with eviction dedup*.
+
+This layer is *within-cycle*: only a **committed** bind persists its chosen placement durably — as
+the scheduler-predicted placement record, next.
+
+### Interaction with eviction dedup
+
+The solver de-duplicates virtual evictions: when a task is re-pipelined to a node it was already
+evicted from in the same scenario, the statement (`Pipeline` → `Unevict`) **cancels** the pending
+eviction instead of double-counting, and restores the task's allocation identity from the copy on
+the node. Its only existing "don't dedup" exception is a *shared-GPU-moved-to-a-different-GPU*
+check, which is **always false for whole-GPU / NUMA pods**. So without change, such a pod's
+eviction is unconditionally cancelled regardless of which NUMA zone the scenario would move it to,
+which (a) **drifts the ledger** — accounting believes the pod moved zones while the kubelet keeps
+it pinned to the old one — and (b) **silently defeats any scenario that needed the victim on a
+different zone** (e.g. consolidating a victim off the exact zone the pending pod needs).
+
+v1 closes this by giving the chosen placement the same first-class allocation-identity treatment
+GPU sharing already gets:
+
+- **`NUMAPlacement` on `PodInfo`** (defined in *Plugin-local per-zone data model*) — the task's
+  chosen zone(s) and per-zone amounts, set during the allocate step (before `Pipeline`'s dedup
+  check), mirroring `GPUGroups`. It is the same placement the record persists, so the in-memory
+  identity and the durable annotation agree.
+- The framework **snapshots the previous `NUMAPlacement` on virtual eviction and restores it** on
+  evict undo / pipeline undo, exactly as it already does for `GPUGroups` (`previousGpuGroups`).
+- A **`numaMovesToDifferentZone` gate** is added to the dedup, analogous to
+  `isSharedAndMoveToDifferentGPU`: when the task's new placement is on a different zone than the
+  copy on the node, the eviction is *not* deduped, so the move is realized.
+
+This is a small, mechanical extension of the existing GPU-sharing dedup path; it is the one piece
+of v1 that touches shared framework code (`pkg/scheduler/framework/statement.go`,
+`pkg/scheduler/api/pod_info`) rather than the plugin alone.
 
 ### Scheduler-predicted placement record
 
-`pickZone` produces a prediction of each pod's NUMA zone. v1 keeps that prediction in memory
-only (the `reserved` map) for the current cycle. Persisting it turns it into a durable, per-pod
-**zone ledger** that survives across cycles and across scheduler restarts:
+The evaluator produces a prediction of each pod's NUMA placement (`NUMAPlacement`). Within a cycle
+it rides `PodInfo`; persisting it on commit turns it into a durable, per-pod **placement record**
+that survives across cycles and scheduler restarts. **This record is part of v1.**
 
 - **On commit only**, the chosen zone(s) are carried in the `BindRequest` (a new field, exactly
   like `SelectedGPUGroups` / `ResourceClaimAllocations`), and the binder writes them to a pod
@@ -377,28 +443,32 @@ only (the `reserved` map) for the current cycle. Persisting it turns it into a d
   already performs — **no extra API writes** — and the `BindRequest` is added to the snapshot
   store synchronously, so the prediction is readable the very next cycle. Speculative
   (probed-then-discarded) allocations are never persisted.
-- **On later cycles**, the plugin reads each pod's recorded prediction instead of re-deriving
-  its zone. This is what makes the Appendix A reconstruction and the reclaim eviction-crediting
-  **stable**: a recorded prediction never drifts (a re-derived one does, and a restart re-derives
-  inconsistently). It is the persistent form of the per-pod ledger those mechanisms need. 
+- **On later cycles**, each pod's `NUMAPlacement` is populated from this recorded prediction at
+  snapshot build (when no observed annotation supersedes it). This is what makes the reclaim
+  eviction-crediting **stable**: a recorded prediction never drifts, whereas guessing would
+  (and a restart would guess inconsistently). It is the persistent form of the per-pod placement
+  the eviction-crediting needs.
 
-**Precedence: observed > predicted > re-derive.** This record is the scheduler's *prediction*,
-not ground truth. When the per-node placement agent (next) has published a pod's *observed*
-placement, that supersedes this predicted one; when the agent is absent or hasn't reported a pod
-yet, the predicted record is the best available per-pod zone.
+**Precedence: observed > predicted.** This record is the scheduler's *prediction*, not ground
+truth. When the per-node placement agent (next) has published a pod's *observed* placement, that
+supersedes this predicted one; when the agent is absent or hasn't reported a pod yet, the
+predicted record is the best available placement. When **neither** exists, the pod has no
+`NUMAPlacement` and is not accounted on virtual eviction — v1 never *guesses* a zone.
 
 ### Observed placement: the per-node agent
 
-Prediction is only as good as the scheduler's `pickZone` matching the kubelet's actual choice. To
+Prediction is only as good as the scheduler's evaluator matching the kubelet's actual choice. To
 make per-zone accounting (and especially reclaim) *exact*, v1 also consumes the **observed**
 placement produced by a per-node agent — a DaemonSet that reads the kubelet **podresources API**,
 derives each pod's actual per-NUMA-zone resource placement, and publishes it as a pod annotation
 (`kai.scheduler/numa-placement-observed`). When present, the plugin uses observed placement
 directly: occupancy is exact, victim evictions credit the *real* zone, and reclaim simulation is
 accurate. When absent or not-yet-reported (agent undeployed, lagging, or pod just bound), the
-plugin falls back to the predicted record, then to re-derivation — so the agent is **purely
-additive**: it improves accuracy without being a hard dependency, and the scheduler is built to
-handle its input from day one.
+plugin falls back to the predicted record — and when that is also absent, the pod is simply not
+accounted on virtual eviction (no guessing). So the agent is **purely additive**: it improves
+accuracy without being a hard dependency, and the scheduler is built to consume its input from day
+one. **The plugin's consumption of the observed annotation is part of v1; building the agent
+itself is out of scope for this round.**
 
 The agent ships with v1, and the operator deploys it automatically when the `numa` plugin is
 enabled (see *Operator integration*), but a cluster can run without it on the prediction
@@ -481,14 +551,15 @@ regardless; Appendix A is the in-plugin fallback if the assumption proves insuff
   the assumption holds in practice; documented as a divergence source.
 - **Greedy container-scope packing** is order-sensitive and an approximation of the kubelet's
   per-container hint merge. Exact in the common single-GPU-container case.
-- **Reclaim-simulation accuracy depends on the placement agent.** NRT is aggregate per-zone only,
-  so without observed placement the scheduler *predicts* each pod's zone; reclaim/preemption then
-  runs on predicted victim zones and can occasionally waste an eviction when the pending pod needs
-  multiple per-zone-scarce resources co-located (GPU-bound pods with abundant per-zone CPU are
-  largely immune). With the [per-node placement agent](../numa-placement-agent/README.md) deployed
-  (a v1 component — see *Observed placement*), victim zones are *observed* and reclaim is accurate;
-  **when the agent is absent or lagging the scheduler falls back to prediction**, where the worst
-  case is a wasted eviction and a bounce, never a loop.
+- **Reclaim-simulation accuracy depends on the placement source.** NRT is aggregate per-zone only,
+  so the victim's zone comes from its placement record (observed > predicted). Reclaim/preemption
+  runs on those zones and can occasionally waste an eviction when the pending pod needs multiple
+  per-zone-scarce resources co-located (GPU-bound pods with abundant per-zone CPU are largely
+  immune). With the [per-node placement agent](../numa-placement-agent/README.md) deployed, victim
+  zones are *observed* and reclaim is accurate; with only the predicted record the worst case is a
+  wasted eviction and a bounce, never a loop. A victim with **no** placement record (neither
+  observed nor predicted) is **not credited** on virtual eviction — so a NUMA-sensitive preemptor
+  may miss it, but accounting never drifts on a guess. v1 never re-derives a zone.
 
 ## Testing
 
@@ -662,9 +733,10 @@ So a dirty node is served a **reconstructed** view rather than being dropped:
   reflecting *every* pod on the node (ours or not). No prediction.
 - **Dirty node (mismatch):** reconstruct per-zone availability from the snapshot,
   `available[zone] = capacity[zone] − Σ predicted_occupancy[zone]` over **all** NUMA pods on the
-  node (`capacity` = static per-zone NRT `Allocatable`; each pod's zone taken from its persisted
-  *scheduler-predicted placement record* where available — stable across cycles and restarts —
-  else re-derived via the evaluator). Used only while dirty; the next match reverts to NRT.
+  node (`capacity` = static per-zone NRT `Allocatable`; each pod's zone taken from its placement
+  record — observed or predicted — where available, stable across cycles and restarts; a pod with
+  no record is omitted, consistent with v1 never guessing a zone). Used only while dirty; the next
+  match reverts to NRT.
 
 The fingerprint gate is what makes reconstruction safe: it is **transient**, so it cannot drift
 permanently the way an *ungated* reconstruction would (one that never defers to ground truth and
