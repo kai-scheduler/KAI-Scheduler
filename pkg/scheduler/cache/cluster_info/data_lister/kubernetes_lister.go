@@ -6,6 +6,9 @@ package data_lister
 import (
 	"fmt"
 
+	nrtv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
+	nrtinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
+	nrtlisters "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/listers/topology/v1alpha2"
 	v1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
 	v14 "k8s.io/api/scheduling/v1"
@@ -53,6 +56,8 @@ type k8sLister struct {
 
 	kaiTopologyLister kaiv1alpha1Listers.TopologyLister
 
+	nrtLister nrtlisters.NodeResourceTopologyLister
+
 	resourceSliceLister resourcev1.ResourceSliceLister
 	resourceClaimLister resourcev1.ResourceClaimLister
 	deviceClassLister   resourcev1.DeviceClassLister
@@ -66,6 +71,7 @@ var _ DataLister = &k8sLister{}
 
 func New(
 	informerFactory informers.SharedInformerFactory, kubeAiSchedulerInformerFactory kubeAiSchedulerInfo.SharedInformerFactory,
+	nrtInformerFactory nrtinformers.SharedInformerFactory,
 	usageLister *usagedb.UsageLister,
 	partitionSelector labels.Selector,
 ) *k8sLister {
@@ -95,6 +101,10 @@ func New(
 		lister.resourceSliceLister = informerFactory.Resource().V1().ResourceSlices().Lister()
 		lister.resourceClaimLister = informerFactory.Resource().V1().ResourceClaims().Lister()
 		lister.deviceClassLister = informerFactory.Resource().V1().DeviceClasses().Lister()
+	}
+
+	if nrtInformerFactory != nil {
+		lister.nrtLister = nrtInformerFactory.Topology().V1alpha2().NodeResourceTopologies().Lister()
 	}
 
 	return lister
@@ -190,6 +200,15 @@ func (k *k8sLister) ListConfigMaps() ([]*v1.ConfigMap, error) {
 
 func (k *k8sLister) ListTopologies() ([]*kaiv1alpha1.Topology, error) {
 	return k.kaiTopologyLister.List(labels.Everything())
+}
+
+// +kubebuilder:rbac:groups="topology.node.k8s.io",resources=noderesourcetopologies,verbs=get;list;watch
+
+func (k *k8sLister) ListNodeResourceTopologies() ([]*nrtv1alpha2.NodeResourceTopology, error) {
+	if k.nrtLister == nil {
+		return nil, nil
+	}
+	return k.nrtLister.List(labels.Everything())
 }
 
 // +kubebuilder:rbac:groups="resource.k8s.io",resources=resourceslices,verbs=get;list;watch

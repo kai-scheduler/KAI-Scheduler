@@ -10,6 +10,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -82,7 +83,7 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		logger.V(1).Error(err, "Failed to get pod", req.Namespace, req.Name)
 		return ctrl.Result{
 			Requeue:      true,
-			RequeueAfter: 1,
+			RequeueAfter: time.Second,
 		}, err
 	}
 
@@ -95,6 +96,10 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 			r.eventRecorder.Event(&pod, v1.EventTypeWarning, constants.PodGrouperWarning, err.Error())
 		}
 	}()
+
+	if shouldSkipPodGrouper(&pod) {
+		return ctrl.Result{}, nil
+	}
 
 	if isOrphanPodWithPodGroup(&pod) {
 		return ctrl.Result{}, nil
@@ -110,10 +115,17 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		return ctrl.Result{}, err
 	}
 
+	if shouldSkipAnyOwner(allOwners) {
+		return ctrl.Result{}, nil
+	}
+
 	metadata, err := r.podGrouper.GetPGMetadata(ctx, &pod, topOwner, allOwners)
 	if err != nil {
 		logger.V(1).Error(err, "Failed to create pod group metadata for pod", req.Namespace, req.Name)
 		return ctrl.Result{}, err
+	}
+	if metadata == nil {
+		return ctrl.Result{}, nil
 	}
 
 	if len(r.configs.NodePoolLabelKey) > 0 {
@@ -219,7 +231,24 @@ func addNodePoolLabel(metadata *podgroup.Metadata, pod *v1.Pod, nodePoolKey stri
 
 func isOrphanPodWithPodGroup(pod *v1.Pod) bool {
 	_, foundPGAnnotation := pod.Annotations[constants.PodGroupAnnotationForPod]
-	return foundPGAnnotation && pod.OwnerReferences == nil
+	return foundPGAnnotation && len(pod.OwnerReferences) == 0
+}
+
+func shouldSkipAnyOwner(owners []*metav1.PartialObjectMetadata) bool {
+	for _, owner := range owners {
+		if shouldSkipPodGrouper(owner) {
+			return true
+		}
+	}
+	return false
+}
+
+func shouldSkipPodGrouper(obj metav1.Object) bool {
+	if obj == nil {
+		return false
+	}
+
+	return obj.GetAnnotations()[constants.SkipPodGrouperAnnotation] == "true"
 }
 
 // +kubebuilder:rbac:groups="",resources=namespaces,verbs=get;list;watch

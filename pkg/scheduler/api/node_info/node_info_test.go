@@ -224,11 +224,11 @@ func RunAddRemovePodsTests(t *testing.T, tests []AddRemovePodsTest) {
 			ni := NewNodeInfo(test.node, nodePodAffinityInfo, vectorMap)
 
 			for _, pod := range test.pods {
-				_ = ni.AddTask(pod_info.NewTaskInfo(pod, nil, vectorMap))
+				_ = ni.AddTask(pod_info.NewTaskInfo(pod, vectorMap))
 			}
 
 			for _, pod := range test.rmPods {
-				pi := pod_info.NewTaskInfo(pod, nil, vectorMap)
+				pi := pod_info.NewTaskInfo(pod, vectorMap)
 				_ = ni.RemoveTask(pi)
 			}
 
@@ -276,8 +276,8 @@ func TestNodeInfo_AddPod(t *testing.T) {
 		Name: "n1",
 		Node: node1,
 		PodInfos: map[common_info.PodID]*pod_info.PodInfo{
-			"c1/p1": pod_info.NewTaskInfo(pod1, nil, resource_info.NewResourceVectorMap()),
-			"c1/p2": pod_info.NewTaskInfo(pod2, nil, resource_info.NewResourceVectorMap()),
+			"c1/p1": pod_info.NewTaskInfo(pod1, resource_info.NewResourceVectorMap()),
+			"c1/p2": pod_info.NewTaskInfo(pod2, resource_info.NewResourceVectorMap()),
 		},
 		LegacyMIGTasks:              map[common_info.PodID]string{},
 		MemoryOfEveryGpuOnNode:      DefaultGpuMemory,
@@ -332,8 +332,8 @@ func TestNodeInfo_RemovePod(t *testing.T) {
 		[]metav1.OwnerReference{}, make(map[string]string), podAnnotations)
 	pod3 := common_info.BuildPod("c1", "p3", "n1", v1.PodRunning, common_info.BuildResourceList("3000m", "3G"),
 		[]metav1.OwnerReference{}, make(map[string]string), podAnnotations)
-	pod1PodInfo := pod_info.NewTaskInfo(pod1, nil, resource_info.NewResourceVectorMap())
-	pod3PodInfo := pod_info.NewTaskInfo(pod3, nil, resource_info.NewResourceVectorMap())
+	pod1PodInfo := pod_info.NewTaskInfo(pod1, resource_info.NewResourceVectorMap())
+	pod3PodInfo := pod_info.NewTaskInfo(pod3, resource_info.NewResourceVectorMap())
 
 	node1ExpectedNodeInfo := &NodeInfo{
 		Name: "n1",
@@ -654,7 +654,7 @@ func TestAddRemovePods(t *testing.T) {
 
 			var podsInfo []*pod_info.PodInfo
 			for _, podInfoMetaData := range test.podsInfoMetadata {
-				pi := pod_info.NewTaskInfo(podInfoMetaData.pod, nil, vectorMap)
+				pi := pod_info.NewTaskInfo(podInfoMetaData.pod, vectorMap)
 				pi.Status = podInfoMetaData.status
 				pi.GPUGroups = podInfoMetaData.gpuGroups
 				podsInfo = append(podsInfo, pi)
@@ -877,7 +877,7 @@ func runAllocatableTest(
 			fmt.Sprintf("p%d", ind), "p1", "n1", v1.PodRunning, podResouces,
 			[]metav1.OwnerReference{}, make(map[string]string), map[string]string{})
 		addJobAnnotation(pod)
-		pi := pod_info.NewTaskInfo(pod, nil, vectorMap)
+		pi := pod_info.NewTaskInfo(pod, vectorMap)
 		if err := ni.AddTask(pi); err != nil {
 			t.Errorf("%s: failed to add pod %v, index: %d", testName, pi, ind)
 		}
@@ -891,7 +891,7 @@ func runAllocatableTest(
 		pod.Spec.Overhead = testData.podOverhead
 	}
 
-	task := pod_info.NewTaskInfo(pod, nil, vectorMap)
+	task := pod_info.NewTaskInfo(pod, vectorMap)
 	allocatable, fitErr := testedFunction(ni, task)
 	if allocatable != testData.expected {
 		t.Errorf("%s: is pod allocatable: expected %v, got %v", testName, testData.expected, allocatable)
@@ -993,7 +993,7 @@ func TestNodeInfo_isTaskAllocatableOnNonAllocatedResources(t *testing.T) {
 							Namespace: "n1",
 							Annotations: map[string]string{
 								commonconstants.PodGroupAnnotationForPod: "pg1",
-								pod_info.GpuMemoryAnnotationName:         "1500",
+								commonconstants.GpuMemory:                "1500",
 							},
 						},
 						Spec: v1.PodSpec{
@@ -1003,7 +1003,7 @@ func TestNodeInfo_isTaskAllocatableOnNonAllocatedResources(t *testing.T) {
 								},
 							},
 						},
-					}, nil, resource_info.NewResourceVectorMap(),
+					}, resource_info.NewResourceVectorMap(),
 				),
 				nodeNonAllocatedResources: func() *resource_info.Resource {
 					r := resource_info.NewResource(0, 0, 2)
@@ -1039,7 +1039,7 @@ func TestNodeInfo_isTaskAllocatableOnNonAllocatedResources(t *testing.T) {
 							Namespace: "n1",
 							Annotations: map[string]string{
 								commonconstants.PodGroupAnnotationForPod: "pg1",
-								pod_info.GpuMemoryAnnotationName:         "1000",
+								commonconstants.GpuMemory:                "1000",
 							},
 						},
 						Spec: v1.PodSpec{
@@ -1049,7 +1049,7 @@ func TestNodeInfo_isTaskAllocatableOnNonAllocatedResources(t *testing.T) {
 								},
 							},
 						},
-					}, nil, resource_info.NewResourceVectorMap(),
+					}, resource_info.NewResourceVectorMap(),
 				),
 				nodeNonAllocatedResources: func() *resource_info.Resource {
 					r := resource_info.NewResource(0, 0, 2)
@@ -1321,7 +1321,7 @@ func createPod(namespace, name string, options podCreationOptions) *pod_info.Pod
 		pod.Annotations[commonconstants.GpuFraction] = numGPUsStr
 	}
 
-	task := pod_info.NewTaskInfo(pod, nil, resource_info.NewResourceVectorMap())
+	task := pod_info.NewTaskInfo(pod, resource_info.NewResourceVectorMap())
 	task.GPUGroups = []string{options.gpuGroup}
 	return task
 }
@@ -1561,7 +1561,7 @@ func TestResourceReservationPodConsumesMaxPods(t *testing.T) {
 			ni := NewNodeInfo(tt.node, nodePodAffinityInfo, vectorMap)
 
 			for _, pod := range tt.pods {
-				pi := pod_info.NewTaskInfo(pod, nil, vectorMap)
+				pi := pod_info.NewTaskInfo(pod, vectorMap)
 				err := ni.AddTask(pi)
 				assert.NoError(t, err, "failed to add pod")
 			}

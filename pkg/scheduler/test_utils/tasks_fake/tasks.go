@@ -13,7 +13,6 @@ import (
 
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 )
@@ -67,8 +66,8 @@ func BuildPod(
 				return baseLabels
 			}(),
 			Annotations: map[string]string{
-				common_info.GPUFraction:                  gpuFraction,
-				pod_info.GpuMemoryAnnotationName:         gpuMemory,
+				commonconstants.GpuFraction:              gpuFraction,
+				commonconstants.GpuMemory:                gpuMemory,
 				commonconstants.PodGroupAnnotationForPod: jobName,
 			},
 		},

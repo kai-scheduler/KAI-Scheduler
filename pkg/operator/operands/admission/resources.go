@@ -19,6 +19,7 @@ import (
 
 	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
 	kaiv1admission "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/admission"
+	kaiv1binder "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/binder"
 	generate "github.com/kai-scheduler/KAI-scheduler/pkg/operator/cert-utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common"
 )
@@ -137,6 +138,28 @@ func (a *Admission) serviceForKAIConfig(
 	service.Spec.Type = v1.ServiceTypeClusterIP
 
 	return []client.Object{service}, nil
+}
+
+func (a *Admission) podDisruptionBudgetForKAIConfig(
+	ctx context.Context, runtimeClient client.Reader, kaiConfig *kaiv1.Config,
+) ([]client.Object, error) {
+	config := kaiConfig.Spec.Admission
+	pdbObj, err := common.PodDisruptionBudgetForKAIConfig(
+		ctx,
+		runtimeClient,
+		kaiConfig.Spec.Namespace,
+		a.BaseResourceName,
+		config.Replicas,
+		config.Service,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if pdbObj == nil {
+		return nil, nil
+	}
+
+	return []client.Object{pdbObj}, nil
 }
 
 func buildWebhookSelectors(kaiConfig *kaiv1.Config) (namespaceSelector *metav1.LabelSelector, objectSelector *metav1.LabelSelector) {
@@ -355,15 +378,32 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1admission.Admission) []
 		args = append(args, "--gpu-sharing-enabled=true")
 	}
 
+	if isHamiCoreEnabled(kaiConfig) {
+		args = append(args, "--hami-core-enabled=true")
+	}
+
 	if config.Replicas != nil && *config.Replicas > 1 {
 		args = append(args, "--leader-elect")
 	}
 
+	if config.GPUFractionRuntimeClassName != nil {
+		args = append(args, "--gpu-fraction-runtime-class-name", *config.GPUFractionRuntimeClassName)
+	}
 	if config.GPUPodRuntimeClassName != nil {
 		args = append(args, "--gpu-pod-runtime-class-name", *config.GPUPodRuntimeClassName)
 	}
 
 	common.AddK8sClientConfigToArgs(config.Service.K8sClientConfig, args)
+	return common.AddControllerRuntimeJSONLogArg(kaiConfig.Spec.Global.JSONLog, args)
+}
 
-	return args
+func isHamiCoreEnabled(kaiConfig *kaiv1.Config) bool {
+	if kaiConfig.Spec.Binder == nil {
+		return false
+	}
+	pluginCfg, found := kaiConfig.Spec.Binder.Plugins[kaiv1binder.HamiCorePluginName]
+	if !found {
+		return false
+	}
+	return ptr.Deref(pluginCfg.Enabled, false)
 }

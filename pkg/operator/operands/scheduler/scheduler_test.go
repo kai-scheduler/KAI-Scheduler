@@ -61,7 +61,7 @@ var _ = Describe("Scheduler", func() {
 	It("Should maintain existing annotations", func(ctx context.Context) {
 		existingDeployment := &appsv1.Deployment{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      deploymentName(kaiConfig, shard),
+				Name:      DeploymentName(kaiConfig, shard),
 				Namespace: kaiConfig.Spec.Namespace,
 				Annotations: map[string]string{
 					"bla": "bla",

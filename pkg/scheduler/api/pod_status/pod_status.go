@@ -59,14 +59,18 @@ const (
 	Unknown
 
 	Deleted
+
+	// StuckInReleasing means a task/pod is stuck in deleting state for a while.
+	// This means that this pod resources won't be able to be used for pipelining.
+	StuckInReleasing
 )
 
 // Status group constants using bitwise OR
 const (
-	activeUsedStatuses      = Allocated | Pipelined | Binding | Bound | Running | Releasing
+	activeUsedStatuses      = Allocated | Pipelined | Binding | Bound | Running | Releasing | StuckInReleasing
 	activeAllocatedStatuses = Allocated | Pipelined | Binding | Bound | Running
 	aliveStatuses           = Allocated | Pipelined | Binding | Bound | Running | Pending | Gated
-	boundStatuses           = Allocated | Bound | Running | Releasing
+	boundStatuses           = Allocated | Bound | Running | Releasing | StuckInReleasing
 	allocatedStatuses       = Allocated | Bound | Binding | Running
 )
 
@@ -94,6 +98,8 @@ func (ps PodStatus) String() string {
 		return "Failed"
 	case Deleted:
 		return "Deleted"
+	case StuckInReleasing:
+		return "StuckInReleasing"
 	default:
 		return "Unknown"
 	}

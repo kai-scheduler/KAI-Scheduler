@@ -19,6 +19,9 @@ spec:
     podLabelSelector:
       {{- toYaml .Values.global.podLabelSelector | nindent 6 }}
     {{- end }}
+    {{- if .Values.global.jsonLog }}
+    jsonLog: true
+    {{- end }}
     {{- if .Values.global.affinity }}
     affinity:
       {{- toYaml .Values.global.affinity | nindent 6 }}
@@ -48,6 +51,9 @@ spec:
     {{- if .Values.global.vpa }}
     vpa:
       {{- toYaml .Values.global.vpa | nindent 6 }}
+    {{- end }}
+    {{- if .Values.podgrouper.queueLabelKey }}
+    queueLabelKey: {{ .Values.podgrouper.queueLabelKey | quote }}
     {{- end }}
 
   binder:
@@ -164,6 +170,13 @@ spec:
       affinity:
         {{- toYaml .Values.admission.affinity | nindent 8 }}
       {{- end }}
+      podDisruptionBudget:
+        {{- if hasKey .Values.admission.podDisruptionBudget "enabled" }}
+        enabled: {{ .Values.admission.podDisruptionBudget.enabled }}
+        {{- end }}
+        {{- if hasKey .Values.admission.podDisruptionBudget "maxUnavailable" }}
+        maxUnavailable: {{ .Values.admission.podDisruptionBudget.maxUnavailable }}
+        {{- end }}
     gpuSharing: {{ .Values.global.gpuSharing | default false }}
     queueLabelSelector: false
     webhook:
@@ -171,7 +184,11 @@ spec:
       targetPort: {{ .Values.admission.ports.webhookPort | default 9443 }}
       probePort: {{ .Values.admission.ports.probePort | default 8081 }}
       metricsPort: {{ .Values.admission.ports.metricsPort | default 8080 }}
+    {{- if hasKey .Values.admission "gpuFractionRuntimeClassName" }}
+    gpuFractionRuntimeClassName: {{ .Values.admission.gpuFractionRuntimeClassName | quote }}
+    {{- else if hasKey .Values.admission "gpuPodRuntimeClassName" }}
     gpuPodRuntimeClassName: {{ .Values.admission.gpuPodRuntimeClassName | quote }}
+    {{- end }}
 
   nodeScaleAdjuster:
     service:

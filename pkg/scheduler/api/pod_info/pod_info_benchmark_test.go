@@ -72,7 +72,7 @@ func createMinimalPodInfo() *PodInfo {
 		},
 	}
 
-	podInfo := NewTaskInfo(pod, nil, resource_info.NewResourceVectorMap())
+	podInfo := NewTaskInfo(pod, resource_info.NewResourceVectorMap())
 	return podInfo
 }
 
@@ -84,7 +84,7 @@ func createPodInfoWithGPU() *PodInfo {
 			Name:      "gpu-pod",
 			Namespace: "default",
 			Annotations: map[string]string{
-				common_info.GPUFraction: "0.5",
+				constants.GpuFraction: "0.5",
 			},
 			Labels: map[string]string{
 				GPUGroup: "group-1",
@@ -105,7 +105,7 @@ func createPodInfoWithGPU() *PodInfo {
 		},
 	}
 
-	podInfo := NewTaskInfo(pod, nil, resource_info.NewResourceVectorMap())
+	podInfo := NewTaskInfo(pod, resource_info.NewResourceVectorMap())
 	podInfo.ResourceRequestType = RequestTypeGpuMemory
 	return podInfo
 }
@@ -119,7 +119,7 @@ func createPodInfoWithMultipleGPUs() *PodInfo {
 			Namespace: "default",
 			Annotations: map[string]string{
 				constants.GpuFractionsNumDevices: "3",
-				common_info.GPUFraction:          "0.5",
+				constants.GpuFraction:            "0.5",
 			},
 			Labels: map[string]string{
 				constants.MultiGpuGroupLabelPrefix + "gpu-group-0": "group-0",
@@ -142,7 +142,7 @@ func createPodInfoWithMultipleGPUs() *PodInfo {
 		},
 	}
 
-	podInfo := NewTaskInfo(pod, nil, resource_info.NewResourceVectorMap())
+	podInfo := NewTaskInfo(pod, resource_info.NewResourceVectorMap())
 	podInfo.AcceptedGpuRequirement = *podInfo.GpuRequirement.Clone()
 	podInfo.AcceptedResourceVector = podInfo.ResReqVector.Clone()
 	return podInfo

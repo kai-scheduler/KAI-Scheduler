@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	v1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
@@ -41,7 +42,6 @@ import (
 )
 
 const (
-	GpuMemoryAnnotationName            = "gpu-memory"
 	GPUGroup                           = "runai-gpu-group"
 	ReceivedResourceTypeAnnotationName = "received-resource-type"
 	WholeGpuIndicator                  = "-2"
@@ -112,6 +112,12 @@ type PodInfo struct {
 	Pod *v1.Pod
 }
 
+type TaskInfoOptions struct {
+	BindRequest               *bindrequest_info.BindRequestInfo
+	DraPodClaims              []*resourceapi.ResourceClaim
+	StuckInReleasingThreshold time.Duration
+}
+
 func (pi *PodInfo) GetAllStorageClaims() map[storageclaim_info.Key]*storageclaim_info.StorageClaimInfo {
 	return pi.storageClaims
 }
@@ -168,19 +174,18 @@ func (pi *PodInfo) UpsertStorageClaim(claimInfo *storageclaim_info.StorageClaimI
 	pi.storageClaims[claimInfo.Key] = claimInfo
 }
 
-func NewTaskInfo(pod *v1.Pod, draPodClaims []*resourceapi.ResourceClaim, vectorMap *resource_info.ResourceVectorMap) *PodInfo {
-	return NewTaskInfoWithBindRequest(pod, nil, draPodClaims, vectorMap)
-}
+func NewTaskInfo(pod *v1.Pod, vectorMap *resource_info.ResourceVectorMap, opts ...TaskInfoOptions) *PodInfo {
+	options := TaskInfoOptions{StuckInReleasingThreshold: commonconstants.DefaultStuckInReleasingThreshold}
+	options.ApplyOptions(opts...)
 
-func NewTaskInfoWithBindRequest(pod *v1.Pod, bindRequest *bindrequest_info.BindRequestInfo, draPodClaims []*resourceapi.ResourceClaim, vectorMap *resource_info.ResourceVectorMap) *PodInfo {
 	initResreq := getPodResourceRequest(pod)
 
 	nodeName := pod.Spec.NodeName
-	if nodeName == "" && bindRequest != nil {
-		nodeName = bindRequest.BindRequest.Spec.SelectedNode
+	if nodeName == "" && options.BindRequest != nil {
+		nodeName = options.BindRequest.BindRequest.Spec.SelectedNode
 	}
 
-	resourceClaimInfo, err := resourceClaimInfoFromPodClaims(draPodClaims, pod, bindRequest)
+	resourceClaimInfo, err := resourceClaimInfoFromPodClaims(options.DraPodClaims, pod, options.BindRequest)
 	if err != nil {
 		log.InfraLogger.Errorf("PodInfo ctor failure - failed to calculate resource claim info for pod %s/%s: %v", pod.Namespace, pod.Name, err)
 	}
@@ -192,7 +197,7 @@ func NewTaskInfoWithBindRequest(pod *v1.Pod, bindRequest *bindrequest_info.BindR
 		Namespace:                      pod.Namespace,
 		SubGroupName:                   pod.Labels[commonconstants.SubGroupLabelKey],
 		NodeName:                       nodeName,
-		Status:                         getTaskStatus(pod, bindRequest),
+		Status:                         getTaskStatus(pod, options.BindRequest, options.StuckInReleasingThreshold),
 		IsVirtualStatus:                false,
 		IsLegacyMIGtask:                false,
 		Pod:                            pod,
@@ -204,14 +209,14 @@ func NewTaskInfoWithBindRequest(pod *v1.Pod, bindRequest *bindrequest_info.BindR
 		GPUGroups:                      []string{},
 		ResourceRequestType:            RequestTypeRegular,
 		ResourceReceivedType:           ReceivedTypeNone,
-		BindRequest:                    bindRequest,
+		BindRequest:                    options.BindRequest,
 		ResourceClaimInfo:              resourceClaimInfo,
 		schedulingConstraintsSignature: "",
 		storageClaims:                  map[storageclaim_info.Key]*storageclaim_info.StorageClaimInfo{},
 		ownedStorageClaims:             map[storageclaim_info.Key]*storageclaim_info.StorageClaimInfo{},
 	}
 
-	podInfo.updatePodAdditionalFields(bindRequest, draPodClaims...)
+	podInfo.updatePodAdditionalFields(options.BindRequest, options.DraPodClaims...)
 
 	return podInfo
 }
@@ -380,23 +385,48 @@ func getPodGroupID(pod *v1.Pod) common_info.PodGroupID {
 func getPodResourceRequest(pod *v1.Pod) *resource_info.ResourceRequirements {
 	result := getPodResourceWithoutInitContainers(pod)
 
-	// take max_resource(sum_pod, any_init_container)
-	for _, container := range pod.Spec.InitContainers {
-		err := result.SetMaxResource(resource_info.RequirementsFromResourceList(container.Resources.Requests))
-		if err != nil {
-			log.InfraLogger.Errorf("Failed to calculate pod required resources for pod %s/%s. Error: %s",
-				pod.Namespace, pod.Name, err.Error())
-		}
-	}
+	sidecarSum, initPhasePeak := initContainerEffects(pod)
+	logIfErr(pod, result.Add(sidecarSum))
+	logIfErr(pod, result.SetMaxResource(initPhasePeak))
 
 	if pod.Spec.Overhead != nil {
 		overheadReq := resource_info.RequirementsFromResourceList(pod.Spec.Overhead)
-		result.Add(&overheadReq.BaseResource)
+		result.BaseResource.Add(&overheadReq.BaseResource)
 	}
 
 	result.ScalarResources()[resource_info.PodsResourceName] = 1
 
 	return result
+}
+
+// initContainerEffects returns the contributions of `pod`'s init containers to
+// pod resource accounting, mirroring kubelet's `AggregateContainerRequests`:
+//   - sidecarSum: total request of native sidecars (initContainers with
+//     `restartPolicy: Always`, KEP-753), which run concurrently with regular
+//     containers and add to the steady-state sum.
+//   - initPhasePeak: max over each non-restartable init of `init.Requests +
+//     sum(native sidecars declared before it)`, since those sidecars are
+//     already running when the init runs.
+func initContainerEffects(pod *v1.Pod) (sidecarSum, initPhasePeak *resource_info.ResourceRequirements) {
+	sidecarSum = resource_info.EmptyResourceRequirements()
+	initPhasePeak = resource_info.EmptyResourceRequirements()
+	for _, container := range pod.Spec.InitContainers {
+		containerReq := resource_info.RequirementsFromResourceList(container.Resources.Requests)
+		if container.RestartPolicy != nil && *container.RestartPolicy == v1.ContainerRestartPolicyAlways {
+			logIfErr(pod, sidecarSum.Add(containerReq))
+			continue
+		}
+		logIfErr(pod, containerReq.Add(sidecarSum))
+		logIfErr(pod, initPhasePeak.SetMaxResource(containerReq))
+	}
+	return sidecarSum, initPhasePeak
+}
+
+func logIfErr(pod *v1.Pod, err error) {
+	if err != nil {
+		log.InfraLogger.Errorf("Failed to calculate pod required resources for pod %s/%s. Error: %s",
+			pod.Namespace, pod.Name, err.Error())
+	}
 }
 
 // getPodResourceWithoutInitContainers returns Pod's resource request, it does not contain
@@ -414,10 +444,13 @@ func getPodResourceWithoutInitContainers(pod *v1.Pod) *resource_info.ResourceReq
 	return resource_info.RequirementsFromResourceList(podResourcesList)
 }
 
-func getTaskStatus(pod *v1.Pod, bindRequest *bindrequest_info.BindRequestInfo) pod_status.PodStatus {
+func getTaskStatus(pod *v1.Pod, bindRequest *bindrequest_info.BindRequestInfo, stuckInReleasingThreshold time.Duration) pod_status.PodStatus {
 	switch pod.Status.Phase {
 	case v1.PodRunning:
 		if pod.DeletionTimestamp != nil {
+			if time.Since(pod.DeletionTimestamp.Time) > stuckInReleasingThreshold {
+				return pod_status.StuckInReleasing
+			}
 			return pod_status.Releasing
 		}
 
@@ -467,13 +500,13 @@ func (pi *PodInfo) updatePodAdditionalFields(bindRequest *bindrequest_info.BindR
 		}
 	}
 
-	gpuMemory, err := strconv.ParseInt(pi.Pod.Annotations[GpuMemoryAnnotationName], 10, 64)
+	gpuMemory, err := strconv.ParseInt(pi.Pod.Annotations[commonconstants.GpuMemory], 10, 64)
 	if err == nil && gpuMemory > 0 {
 		pi.GpuRequirement = *resource_info.NewGpuResourceRequirementWithGpus(0, gpuMemory)
 		pi.ResourceRequestType = RequestTypeGpuMemory
 	}
 
-	gpuFractionString := pi.Pod.Annotations[common_info.GPUFraction]
+	gpuFractionString := pi.Pod.Annotations[commonconstants.GpuFraction]
 	gpuFraction, GPUFractionErr := strconv.ParseFloat(gpuFractionString, 64)
 	if !(gpuFraction <= 0 || gpuFraction > 1 || GPUFractionErr != nil) {
 		pi.GpuRequirement = *resource_info.NewGpuResourceRequirementWithGpus(gpuFraction, 0)
@@ -534,4 +567,23 @@ func (pi *PodInfo) rebuildResReqVector() {
 func (pi *PodInfo) ShouldAllocate(isRealAllocation bool) bool {
 	return pi.Status == pod_status.Pending ||
 		(!isRealAllocation && pi.Status == pod_status.Releasing && pi.IsVirtualStatus)
+}
+
+func (o *TaskInfoOptions) ApplyOptions(opts ...TaskInfoOptions) *TaskInfoOptions {
+	for _, opt := range opts {
+		o.ApplyToList(opt)
+	}
+	return o
+}
+
+func (o *TaskInfoOptions) ApplyToList(inputOptions TaskInfoOptions) {
+	if inputOptions.BindRequest != nil {
+		o.BindRequest = inputOptions.BindRequest
+	}
+	if len(inputOptions.DraPodClaims) > 0 {
+		o.DraPodClaims = inputOptions.DraPodClaims
+	}
+	if inputOptions.StuckInReleasingThreshold > 0 {
+		o.StuckInReleasingThreshold = inputOptions.StuckInReleasingThreshold
+	}
 }

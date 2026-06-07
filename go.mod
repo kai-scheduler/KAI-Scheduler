@@ -1,6 +1,6 @@
 module github.com/kai-scheduler/KAI-scheduler
 
-go 1.26.1
+go 1.26.3
 
 require (
 	github.com/NVIDIA/go-nvml v0.13.0-1
@@ -15,6 +15,7 @@ require (
 	github.com/golang/glog v1.2.5
 	github.com/google/go-cmp v0.7.0
 	github.com/grafana/pyroscope-go v1.2.8
+	github.com/k8stopologyawareschedwg/noderesourcetopology-api v0.1.2
 	github.com/kubeflow/mpi-operator v0.6.0
 	github.com/kubeflow/training-operator v1.9.3
 	github.com/onsi/ginkgo/v2 v2.28.1

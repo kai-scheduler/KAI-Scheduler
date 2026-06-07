@@ -118,11 +118,10 @@ $(KUSTOMIZE): $(LOCALBIN)
 BENCHSTAT ?= $(LOCALBIN)/benchstat
 BENCH_OUTPUT ?= benchmark-results.txt
 # pkg/scheduler/actions/reclaim is excluded from the default benchmark sweep
-# because BenchmarkReclaimWithMissingPVCJobs requires -benchtime=1x. Add any
-# new reclaim-package benchmarks to a dedicated benchmark phase, or move them
-# out of that package, so they are not skipped by make benchmark.
+# because some reclaim benchmarks require -benchtime=1x and only a curated subset
+# should run in CI.
 BENCH_SPECIAL_PACKAGES := ./pkg/scheduler/actions/reclaim
-BENCH_SPECIAL_REGEX := '^BenchmarkReclaimWithMissingPVCJobs$$'
+BENCH_SPECIAL_REGEX := '^BenchmarkReclaim(WithMissingPVCJobs|UnschedulableDistributedJob_(10|50|100)Node)$$'
 
 .PHONY: benchstat
 benchstat: $(BENCHSTAT)

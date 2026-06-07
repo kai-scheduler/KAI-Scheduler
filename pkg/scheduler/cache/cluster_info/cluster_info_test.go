@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	nrtv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 	corev1 "k8s.io/api/core/v1"
@@ -962,9 +963,10 @@ func TestBindRequests(t *testing.T) {
 
 func TestSnapshotPodGroups(t *testing.T) {
 	tests := map[string]struct {
-		objs     []runtime.Object
-		kubeObjs []runtime.Object
-		results  []*podgroup_info.PodGroupInfo
+		objs                 []runtime.Object
+		kubeObjs             []runtime.Object
+		results              []*podgroup_info.PodGroupInfo
+		invalidSubGroupTasks map[common_info.PodGroupID][]common_info.PodID
 	}{
 		"BasicUsage": {
 			objs: []runtime.Object{
@@ -1233,6 +1235,74 @@ func TestSnapshotPodGroups(t *testing.T) {
 				}(),
 			},
 		},
+		"With invalid subgroup pod": {
+			objs: []runtime.Object{
+				&enginev2alpha2.PodGroup{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "podGroup-0",
+						UID:  "ABC",
+					},
+					Spec: enginev2alpha2.PodGroupSpec{
+						Queue: "queue-0",
+						SubGroups: []enginev2alpha2.SubGroup{
+							{
+								Name:      "SubGroup-0",
+								MinMember: ptr.To(int32(1)),
+							},
+						},
+					},
+				},
+			},
+			kubeObjs: []runtime.Object{
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: testNamespace,
+						Name:      "pod-valid",
+						UID:       types.UID(fmt.Sprintf("%s/pod-valid", testNamespace)),
+						Annotations: map[string]string{
+							commonconstants.PodGroupAnnotationForPod: "podGroup-0",
+						},
+						Labels: map[string]string{
+							commonconstants.SubGroupLabelKey: "SubGroup-0",
+						},
+					},
+				},
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: testNamespace,
+						Name:      "pod-invalid",
+						UID:       types.UID(fmt.Sprintf("%s/pod-invalid", testNamespace)),
+						Annotations: map[string]string{
+							commonconstants.PodGroupAnnotationForPod: "podGroup-0",
+						},
+						Labels: map[string]string{
+							commonconstants.SubGroupLabelKey: "missing-subgroup",
+						},
+					},
+				},
+			},
+			results: []*podgroup_info.PodGroupInfo{
+				func() *podgroup_info.PodGroupInfo {
+					subGroup0 := subgroup_info.NewPodSet("SubGroup-0", 1, nil)
+					subGroup0.AssignTask(&pod_info.PodInfo{UID: "pod-valid", SubGroupName: "SubGroup-0"})
+
+					subGroupSet := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+					subGroupSet.AddPodSet(subGroup0)
+
+					return &podgroup_info.PodGroupInfo{
+						Name:            "podGroup-0",
+						Queue:           "queue-0",
+						RootSubGroupSet: subGroupSet,
+						PodSets: map[string]*subgroup_info.PodSet{
+							"SubGroup-0": subGroup0,
+						},
+					}
+				}(),
+			},
+			invalidSubGroupTasks: map[common_info.PodGroupID][]common_info.PodID{
+				"podGroup-0": {common_info.PodID(fmt.Sprintf("%s/pod-invalid", testNamespace))},
+			},
+		},
 	}
 
 	for name, test := range tests {
@@ -1274,6 +1344,12 @@ func TestSnapshotPodGroups(t *testing.T) {
 						assert.Equal(t, subGroup.GetName(), podInfo.SubGroupName)
 					}
 				}
+			}
+
+			expectedInvalidTasks := test.invalidSubGroupTasks[common_info.PodGroupID(expected.Name)]
+			assert.Len(t, pg.GetInvalidSubGroupTasks(), len(expectedInvalidTasks))
+			for _, taskID := range expectedInvalidTasks {
+				assert.Contains(t, pg.GetInvalidSubGroupTasks(), taskID)
 			}
 		}
 
@@ -2236,6 +2312,7 @@ func TestSnapshotWithListerErrors(t *testing.T) {
 	for name, test := range tests {
 		t.Logf("Running test: %s", name)
 		dl := data_lister.NewMockDataLister(ctrl)
+		dl.EXPECT().ListNodeResourceTopologies().Return(nil, nil).AnyTimes()
 		clusterInfo := newClusterInfoTests(t,
 			clusterInfoTestParams{
 				kubeObjects:         []runtime.Object{},
@@ -2263,7 +2340,7 @@ func TestNewClusterInfoErrorPartitionSelector(t *testing.T) {
 		NodePoolLabelKey:   "@!A",
 		NodePoolLabelValue: "!@#",
 	}
-	_, err := New(informerFactory, kubeAiSchedulerInformerFactory, nil, params, false, clusterPodAffinityInfo, false, true, nil)
+	_, err := New(informerFactory, kubeAiSchedulerInformerFactory, nil, nil, params, false, clusterPodAffinityInfo, false, true, nil, 0)
 
 	assert.NotNil(t, err)
 }
@@ -2293,8 +2370,8 @@ func TestNewClusterInfoAddIndexerFails(t *testing.T) {
 	clusterPodAffinityInfo.EXPECT().UpdateNodeAffinity(gomock.Any()).AnyTimes()
 	clusterPodAffinityInfo.EXPECT().AddNode(gomock.Any(), gomock.Any()).AnyTimes()
 
-	_, err = New(informerFactory, kubeAiSchedulerInformerFactory, nil, nil, false,
-		clusterPodAffinityInfo, false, true, nil)
+	_, err = New(informerFactory, kubeAiSchedulerInformerFactory, nil, nil, nil, false,
+		clusterPodAffinityInfo, false, true, nil, 0)
 	assert.NotNil(t, err, "Expected error for conflicting indexers")
 }
 
@@ -2331,8 +2408,8 @@ func newClusterInfoTestsInner(t *testing.T, kubeObjects, kaiSchedulerObjects []r
 	fakeUsageClient.SetResourceUsage(clusterUsage, clusterUsageErr)
 	usageLister := usagedb.NewUsageLister(&fakeUsageClient, ptr.To(10*time.Microsecond), ptr.To(10*time.Second), ptr.To(10*time.Second))
 
-	clusterInfo, _ := New(informerFactory, kubeAiSchedulerInformerFactory, usageLister, nodePoolParams, false,
-		clusterPodAffinityInfo, true, fullHierarchyFairness, nil)
+	clusterInfo, _ := New(informerFactory, kubeAiSchedulerInformerFactory, nil, usageLister, nodePoolParams, false,
+		clusterPodAffinityInfo, true, fullHierarchyFairness, nil, 0)
 
 	stopCh := context.Background().Done()
 	informerFactory.Start(stopCh)
@@ -2509,6 +2586,7 @@ func TestSnapshotNodesWithDRAGPUs(t *testing.T) {
 			mockLister := data_lister.NewMockDataLister(ctrl)
 			mockLister.EXPECT().ListNodes().Return(test.nodes, nil)
 			mockLister.EXPECT().ListResourceSlicesByNode().Return(slicesByNode, nil)
+			mockLister.EXPECT().ListNodeResourceTopologies().Return(nil, nil).AnyTimes()
 
 			clusterPodAffinityInfo := pod_affinity.NewMockClusterPodAffinityInfo(ctrl)
 			clusterPodAffinityInfo.EXPECT().UpdateNodeAffinity(gomock.Any()).AnyTimes()
@@ -2536,6 +2614,44 @@ func TestSnapshotNodesWithDRAGPUs(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSnapshotNodesWithNodeResourceTopology(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	nodes := []*corev1.Node{
+		{ObjectMeta: metav1.ObjectMeta{Name: "node-a"}},
+		{ObjectMeta: metav1.ObjectMeta{Name: "node-b"}},
+	}
+	nrts := []*nrtv1alpha2.NodeResourceTopology{
+		{ObjectMeta: metav1.ObjectMeta{Name: "node-a"}},
+		// Unmatched NRT object: must be ignored, not attached to any node.
+		{ObjectMeta: metav1.ObjectMeta{Name: "node-missing"}},
+	}
+
+	mockLister := data_lister.NewMockDataLister(ctrl)
+	mockLister.EXPECT().ListNodes().Return(nodes, nil)
+	mockLister.EXPECT().ListResourceSlicesByNode().Return(map[string][]*resourceapi.ResourceSlice{}, nil)
+	mockLister.EXPECT().ListNodeResourceTopologies().Return(nrts, nil)
+
+	clusterPodAffinityInfo := pod_affinity.NewMockClusterPodAffinityInfo(ctrl)
+	clusterPodAffinityInfo.EXPECT().UpdateNodeAffinity(gomock.Any()).AnyTimes()
+	clusterPodAffinityInfo.EXPECT().AddNode(gomock.Any(), gomock.Any()).AnyTimes()
+
+	ci := &ClusterInfo{
+		dataLister:             mockLister,
+		nodePoolParams:         &conf.SchedulingNodePoolParams{},
+		nodePoolSelector:       labels.Everything(),
+		clusterPodAffinityInfo: clusterPodAffinityInfo,
+	}
+
+	result, _, err := ci.snapshotNodes(clusterPodAffinityInfo, resource_info.NewResourceVectorMap())
+	assert.NoError(t, err)
+
+	assert.NotNil(t, result["node-a"].NodeResourceTopology, "NRT should be attached to node-a")
+	assert.Equal(t, "node-a", result["node-a"].NodeResourceTopology.Name)
+	assert.Nil(t, result["node-b"].NodeResourceTopology, "node-b has no NRT object")
 }
 
 func createTestResourceSlice(name, nodeName, driver string, deviceCount int) *resourceapi.ResourceSlice {

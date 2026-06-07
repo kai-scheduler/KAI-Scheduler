@@ -137,3 +137,11 @@ rules:
   - get
   - list
   - watch
+- apiGroups:
+  - topology.node.k8s.io
+  resources:
+  - noderesourcetopologies
+  verbs:
+  - get
+  - list
+  - watch
