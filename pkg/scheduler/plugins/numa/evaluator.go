@@ -220,18 +220,6 @@ func project(request resourceAmounts, aware sets.Set[v1.ResourceName]) resourceA
 	return out
 }
 
-func cloneZones(zones []*numaZone) []*numaZone {
-	cloned := make([]*numaZone, len(zones))
-	for i, zone := range zones {
-		available := make(resourceAmounts, len(zone.available))
-		for r, qty := range zone.available {
-			available[r] = qty.DeepCopy()
-		}
-		cloned[i] = &numaZone{id: zone.id, available: available}
-	}
-	return cloned
-}
-
 func cloneScratch(zones []*numaZone) []resourceAmounts {
 	scratch := make([]resourceAmounts, len(zones))
 	for i, zone := range zones {
@@ -264,6 +252,14 @@ func subtract(amounts, delta resourceAmounts) {
 	for r, qty := range delta {
 		v := amountOf(amounts, r)
 		v.Sub(qty)
+		amounts[r] = v
+	}
+}
+
+func add(amounts, delta resourceAmounts) {
+	for r, qty := range delta {
+		v := amountOf(amounts, r)
+		v.Add(qty)
 		amounts[r] = v
 	}
 }
