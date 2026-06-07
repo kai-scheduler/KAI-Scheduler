@@ -35,8 +35,8 @@ const (
 	scopePod
 )
 
-// zoneTypeNode is the NRT Zone.Type that represents a NUMA node. Other zone types
-// (sockets, etc.) are ignored: NUMA-node alignment is what the kubelet enforces.
+// zoneTypeNode is the NRT Zone.Type for a NUMA node; see buildZones for why only
+// this zone type is modeled.
 const zoneTypeNode = "Node"
 
 const (
@@ -106,8 +106,23 @@ func buildNodeTopology(nrt *nrtv1alpha2.NodeResourceTopology, denylist sets.Set[
 	}
 }
 
-// buildZones extracts the NUMA-node zones (Type == "Node") and their per-resource Available quantities.
-// Zones of other types are skipped for now, to match the kubelet's Topology Manager behavior.
+// buildZones keeps only NUMA-node zones (NRT Zone.Type == "Node") and their
+// per-resource Available quantities.
+//
+// We deliberately model only the NUMA-node level and drop every other zone type
+// the NRT API can express (sockets, dies, ...). This is not a simplification we
+// chose freely: the kubelet Topology Manager — the actual enforcer at pod
+// admission — aligns purely at NUMA-node granularity, and the upstream
+// scheduler-plugins NRT plugin filters identically. Modeling finer levels here
+// would be useless, because the kubelet could not act on them. The richer zone
+// tree lives in the NRT API/exporters but is unused end-to-end today.
+//
+// References:
+//   - kubelet builds NUMA-node bitmasks only:
+//     https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/cm/topologymanager/numa_info.go (NewNUMAInfo)
+//   - upstream plugin skips zone.Type != "Node":
+//     sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/pluginhelpers.go (createNUMANodeList)
+//   - rationale and history: docs/developer/designs/numa-topology/README.md
 func buildZones(nrtZones nrtv1alpha2.ZoneList) []*numaZone {
 	var zones []*numaZone
 	for i := range nrtZones {
