@@ -25,26 +25,11 @@ the criterion as **Guaranteed QoS + modeled policy**.
 
 ## 2. `reserved` ledger: amounts, indices, seeding, and runtime authority
 
-The design sketches `reserved map[PodID][]string` (zone ids) populated by `AllocateFunc`.
-Implementation refines this in four ways:
-
-- **Store per-zone amounts, not just ids.** `zoneReservation{zoneIndex, amount}`. Credit-back
-  on rollback/eviction must restore the exact charged amounts; re-deriving the split on
-  deallocate is wrong under `restricted`, whose greedy split depends on headroom *at allocate
-  time* (which changes before deallocate, e.g. during preemption probing).
-- **Reference zones by index** into the (now deterministically ordered) `zones` slice — O(1)
-  credit-back. The durable `zone.id` is retained for the cross-cycle placement record and the
-  observed-placement agent, recovered via `zones[zoneIndex].id`.
-- **Seed `reserved` with all live NUMA pods at `OnSessionOpen`** (not only this-cycle
-  allocations), so a pre-existing running victim's zone is known when reclaim/preemption
-  (un)evicts it.
-- **Precedence applies only to seeding.** `observed > predicted > re-derive` establishes a
-  pod's *initial* placement. At runtime `reserved` is the single source of truth:
-  `DeallocateFunc` always credits `reserved[uid]` and never re-consults the observed
-  annotation. This is required for evict → re-allocate → re-evict, where the latest in-cycle
-  zone must be credited, not the stale observed one.
-
-**Action:** update the *Plugin-local per-zone data model* and *In-cycle reservation* sections.
+**✅ Folded into v1 design** — *Plugin-local per-zone data model*: the per-task placement (zones +
+exact amounts) lives on `PodInfo.NUMAPlacement` (like `GPUGroups`), the statement snapshots/restores
+it across virtual-eviction undo, and the plugin's per-task `reserved` map is dropped (plugin keeps
+only the node-side occupancy ledger). Placement source precedence is **observed > predicted** —
+**no re-derive**; a pod with neither is not accounted on virtual eviction.
 
 ## 3. Deterministic NUMA-zone ordering (guarantee)
 
@@ -58,25 +43,10 @@ but does not state the ordering guarantee.
 
 ## 4. NUMA-aware eviction dedup (framework change)
 
-The solver's virtual-eviction dedup (`framework/statement.go`, `Pipeline` → `Unevict`) cancels
-an eviction when a pod is re-pipelined to the same node. Its only "don't dedup" gate is
-`isSharedAndMoveToDifferentGPU`, which requires `task.IsSharedGPUAllocation()` — **always false
-for our whole-GPU Guaranteed pods**. So today such a pod's eviction is unconditionally
-cancelled regardless of which NUMA zone it was re-placed on, causing (a) ledger drift (the pod
-stays kubelet-pinned to its old zone while accounting believes it moved) and (b) silent failure
-of any scenario that needed the pod on a different zone.
-
-**Required addition (beyond the current design):**
-- Carry the predicted zone(s) as **allocation identity on `PodInfo`** (`NUMAZones`), set by
-  `pickZone` during the allocate step (before `Pipeline`'s dedup check), mirroring `GPUGroups`.
-  The framework snapshots/restores it on evict undo/redo (like `previousGpuGroups`).
-- Add a `numaMovesToDifferentZone` gate to the dedup, analogous to
-  `isSharedAndMoveToDifferentGPU`, and restore `NUMAZones` on unevict.
-
-This shares the predicted-zone field with the cross-cycle placement record (design's
-*Scheduler-predicted placement record*).
-
-**Action:** add an *Interaction with eviction dedup* subsection to the design.
+**✅ Folded into v1 design** — see *Interaction with eviction dedup* (`NUMAPlacement` allocation
+identity on `PodInfo`, framework snapshot/restore mirroring `GPUGroups`/`previousGpuGroups`, and
+the `numaMovesToDifferentZone` dedup gate). This is the one v1 piece that touches shared
+framework code.
 
 ## 5. NRT activation via API discovery, not plugin-enablement
 
@@ -153,13 +123,15 @@ The current design is compatible, by construction:
 - **State is partitioned per node** (`pp.nodes[node.Name]`), so concurrent node goroutines
   never touch the same `nodeTopology` / `numaZone`.
 - **`evaluate` is pure**: it clones `nt.zones` into a scratch and mutates only locals; it never
-  writes `nodeTopology` or `reserved`. (Concurrent *reads* of the same maps would be safe in Go
-  anyway, but the partitioning means it doesn't even arise.)
-- **The only writers — `AllocateFunc` / `DeallocateFunc`** — run at commit/rollback. The action
-  loop scores (parallel, joined) *then* commits (serial); the phases never overlap.
+  writes `nodeTopology` (and per-task placement lives on `PodInfo`, not in plugin state).
+  (Concurrent *reads* of the same maps would be safe in Go anyway, but the partitioning means it
+  doesn't even arise.)
+- **The only writer of the node ledger — `AllocateFunc` / `DeallocateFunc`** — runs at
+  commit/rollback. The action loop scores (parallel, joined) *then* commits (serial); the phases
+  never overlap.
 
 **Invariant to preserve when implementing scoring:** the score fn MUST remain read-only on
-shared state — compute via `evaluate`/clone, never mutate `nt` or `reserved`. If per-node
+shared state — compute via `evaluate`/clone, never mutate `nt`. If per-node
 memoization is ever wanted, compute it in the **serial** `NodePreOrderFn` (which runs once
 before the goroutines) or guard it with a lock; never lazily cache onto shared structs from
 inside the concurrent score fn. The vector port (item 7) must keep this discipline — a shared

@@ -78,6 +78,7 @@ func (s *Statement) Evict(reclaimeeTask *pod_info.PodInfo, message string,
 
 	previousStatus := reclaimeeTask.Status
 	previousGpuGroup := reclaimeeTask.GPUGroups
+	previousNumaPlacement := reclaimeeTask.NUMAPlacement
 	previousIsVirtualStatus := reclaimeeTask.IsVirtualStatus
 	var previousResourceClaimInfo bindrequest_info.ResourceClaimInfo
 	if reclaimeeTask.ResourceClaimInfo != nil {
@@ -105,14 +106,15 @@ func (s *Statement) Evict(reclaimeeTask *pod_info.PodInfo, message string,
 
 	s.operations = append(s.operations,
 		evictOperation{
-			taskInfo:          reclaimeeTask,
-			previousStatus:    previousStatus,
-			previousNode:      node,
-			previousGpuGroups: previousGpuGroup,
-			message:           message,
-			evictionMetadata:  evictionMetadata,
+			taskInfo:              reclaimeeTask,
+			previousStatus:        previousStatus,
+			previousNode:          node,
+			previousGpuGroups:     previousGpuGroup,
+			previousNumaPlacement: previousNumaPlacement,
+			message:               message,
+			evictionMetadata:      evictionMetadata,
 			reverseOperation: func() error {
-				return s.unevict(reclaimeeTask, previousStatus, node, previousGpuGroup, previousResourceClaimInfo, previousIsVirtualStatus)
+				return s.unevict(reclaimeeTask, previousStatus, node, previousGpuGroup, previousNumaPlacement, previousResourceClaimInfo, previousIsVirtualStatus)
 			},
 		},
 	)
@@ -133,11 +135,12 @@ func (s *Statement) commitEvict(reclaimee *pod_info.PodInfo, evictOp evictOperat
 
 	previousStatus := reclaimee.Status
 	previousGpuGroup := reclaimee.GPUGroups
+	previousNumaPlacement := reclaimee.NUMAPlacement
 	previousResourceClaimInfo := reclaimee.ResourceClaimInfo
 	previousIsVirtualStatus := reclaimee.IsVirtualStatus
 	if err := s.ssn.Cache.Evict(reclaimee.Pod, reclaimeePodGroup, evictOp.evictionMetadata, evictOp.message); err != nil {
 		log.InfraLogger.Errorf("Failed to evict task <%v/%v>: %v.", reclaimee.Namespace, reclaimee.Name, err)
-		if e := s.unevict(reclaimee, previousStatus, evictOp.previousNode, previousGpuGroup, previousResourceClaimInfo,
+		if e := s.unevict(reclaimee, previousStatus, evictOp.previousNode, previousGpuGroup, previousNumaPlacement, previousResourceClaimInfo,
 			previousIsVirtualStatus); e != nil {
 			log.InfraLogger.Errorf("Failed to un-evict task <%v/%v>: %v.",
 				reclaimee.Namespace, reclaimee.Name, e)
@@ -151,7 +154,8 @@ func (s *Statement) commitEvict(reclaimee *pod_info.PodInfo, evictOp evictOperat
 
 func (s *Statement) unevict(
 	reclaimee *pod_info.PodInfo, previousStatus pod_status.PodStatus, node *node_info.NodeInfo,
-	previousGpuGroups []string, previousResourceClaimInfo bindrequest_info.ResourceClaimInfo, previousIsVirtualStatus bool) error {
+	previousGpuGroups []string, previousNumaPlacement pod_info.NUMAPlacement,
+	previousResourceClaimInfo bindrequest_info.ResourceClaimInfo, previousIsVirtualStatus bool) error {
 	// Update status in session
 	job, found := s.ssn.ClusterInfo.PodGroupInfos[reclaimee.Job]
 	if found {
@@ -164,6 +168,7 @@ func (s *Statement) unevict(
 			reclaimee.Job, s.sessionID)
 	}
 	reclaimee.GPUGroups = previousGpuGroups
+	reclaimee.NUMAPlacement = previousNumaPlacement
 	reclaimee.IsVirtualStatus = previousIsVirtualStatus
 	reclaimee.ResourceClaimInfo = previousResourceClaimInfo.Clone()
 
@@ -206,16 +211,20 @@ func (s *Statement) Pipeline(task *pod_info.PodInfo, hostname string, updateTask
 	taskKey := pod_info.PodKey(task.Pod)
 	taskOnNode, foundOnNode := node.PodInfos[taskKey]
 	isSharedAndMoveToDifferentGPU := false
+	numaMovesToDifferentZone := false
 	if foundOnNode {
 		isSharedAndMoveToDifferentGPU = len(task.GPUGroups) > 0 && task.IsSharedGPUAllocation() &&
 			!slices.Equal(task.GPUGroups, []string{"-1"}) && !slices.Equal(task.GPUGroups, taskOnNode.GPUGroups)
+		numaMovesToDifferentZone = len(task.NUMAPlacement) > 0 &&
+			!slices.Equal(task.NUMAPlacement.Zones(), taskOnNode.NUMAPlacement.Zones())
 	}
 
 	// If the task already exist on the node, we assume it was evicted before.
 	// If task already exist on the node, and we didn't ask to update if on the node,
 	// and there is no special reason we should update on the node, then we need to unevict instead of pipelining it.
-	if foundOnNode && !updateTaskIfExistsOnNode && !isSharedAndMoveToDifferentGPU {
+	if foundOnNode && !updateTaskIfExistsOnNode && !isSharedAndMoveToDifferentGPU && !numaMovesToDifferentZone {
 		task.GPUGroups = taskOnNode.GPUGroups
+		task.NUMAPlacement = taskOnNode.NUMAPlacement
 		log.InfraLogger.V(6).Infof("Task: <%v/%v> already exists on node: <%v>, unevicting it", task.Namespace, task.Name, hostname)
 		if err := s.Unevict(task); err != nil {
 			log.InfraLogger.Errorf("Failed to unevict task <%v/%v> to node <%v> in Session <%v>: %v",
@@ -234,6 +243,11 @@ func (s *Statement) Pipeline(task *pod_info.PodInfo, hostname string, updateTask
 	previousNode := task.NodeName
 	task.NodeName = hostname
 	previousGpuGroup := task.GPUGroups
+
+	previousNumaPlacement := task.NUMAPlacement
+	if numaMovesToDifferentZone {
+		previousNumaPlacement = taskOnNode.NUMAPlacement
+	}
 	previousIsVirtualStatus := task.IsVirtualStatus
 	var previousResourceClaimInfo bindrequest_info.ResourceClaimInfo
 	if task.ResourceClaimInfo != nil {
@@ -277,11 +291,12 @@ func (s *Statement) Pipeline(task *pod_info.PodInfo, hostname string, updateTask
 		previousStatus:            previousStatus,
 		previousNode:              previousNode,
 		previousGpuGroups:         previousGpuGroup,
+		previousNumaPlacement:     previousNumaPlacement,
 		previousResourceClaimInfo: previousResourceClaimInfo,
 		nextNode:                  hostname,
 		message:                   fmt.Sprintf("Pod %s/%s was pipelined to node %s", task.Namespace, task.Name, node.Name),
 		reverseOperation: func() error {
-			return s.unpipeline(task, previousNode, previousStatus, previousGpuGroup, previousResourceClaimInfo, previousIsVirtualStatus)
+			return s.unpipeline(task, previousNode, previousStatus, previousGpuGroup, previousNumaPlacement, previousResourceClaimInfo, previousIsVirtualStatus)
 		},
 	})
 	task.IsVirtualStatus = true
@@ -431,6 +446,7 @@ func (s *Statement) commitPipeline(task *pod_info.PodInfo, message string) {
 
 func (s *Statement) unpipeline(
 	task *pod_info.PodInfo, previousNode string, previousStatus pod_status.PodStatus, previousGpuGroups []string,
+	previousNumaPlacement pod_info.NUMAPlacement,
 	previousResourceClaimInfo bindrequest_info.ResourceClaimInfo,
 	previousIsVirtualStatus bool) error {
 	// Only update status in session
@@ -449,6 +465,7 @@ func (s *Statement) unpipeline(
 	hostname := task.NodeName
 	task.NodeName = previousNode
 	task.GPUGroups = previousGpuGroups
+	task.NUMAPlacement = previousNumaPlacement
 	task.ResourceClaimInfo = previousResourceClaimInfo.Clone()
 	task.IsVirtualStatus = previousIsVirtualStatus
 
