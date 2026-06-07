@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -36,11 +35,11 @@ type numaPlugin struct {
 	reserved map[common_info.PodID][]zoneReservation
 }
 
-// zoneReservation records the amount a task was charged on one NUMA zone, in-cycle. Zone is identified by its
-// index in nodeTopology.zones.
+// zoneReservation records the resources allocated to a task on one NUMA zone during the cycle.
+// The zone is identified by its index in nodeTopology.zones.
 type zoneReservation struct {
 	zoneIndex int
-	amount    map[v1.ResourceName]resource.Quantity
+	amount    resourceAmounts
 }
 
 // New builds a numa plugin instance. The only argument is the optional resource denylist.
