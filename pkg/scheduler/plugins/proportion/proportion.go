@@ -361,7 +361,7 @@ func (pp *proportionPlugin) updateQueuesCurrentResourceUsage(ssn *framework.Sess
 			} else if status == pod_status.Pending {
 				for _, t := range tasks {
 					resources := utils.QuantifyVector(t.ResReqVector, t.VectorMap)
-					if t.IsMemoryRequest() {
+					if t.IsGpuMemoryRequest() {
 						resources.Add(rs.ResourceQuantities{
 							rs.GpuResource: t.GpuRequirement.GpuMemoryAsGpuFraction(ssn.ClusterInfo.MinNodeGPUMemory),
 						})

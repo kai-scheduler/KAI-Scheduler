@@ -333,7 +333,7 @@ func (pi *PodInfo) IsMigCandidate() bool {
 	return pi.ResourceRequestType == RequestTypeMigInstance
 }
 
-func (pi *PodInfo) IsMemoryRequest() bool {
+func (pi *PodInfo) IsGpuMemoryRequest() bool {
 	return pi.ResourceRequestType == RequestTypeGpuMemory
 }
 
@@ -342,7 +342,7 @@ func (pi *PodInfo) IsRegularGPURequest() bool {
 }
 
 func (pi *PodInfo) IsSharedGPURequest() bool {
-	return pi.IsFractionRequest() || pi.IsMemoryRequest()
+	return pi.IsFractionRequest() || pi.IsGpuMemoryRequest()
 }
 
 func (pi *PodInfo) IsSharedGPUAllocation() bool {
@@ -355,7 +355,7 @@ func (pi *PodInfo) IsCPUOnlyRequest() bool {
 
 func (pi *PodInfo) IsRequireAnyKindOfGPU() bool {
 	return pi.GpuRequirement.GPUs() > 0 || pi.GpuRequirement.GetDraGpusCount() > 0 ||
-		pi.IsMemoryRequest() || pi.IsMigProfileRequest()
+		pi.IsGpuMemoryRequest() || pi.IsMigProfileRequest()
 }
 
 func (pi *PodInfo) GetSchedulingConstraintsSignature() common_info.SchedulingConstraintsSignature {

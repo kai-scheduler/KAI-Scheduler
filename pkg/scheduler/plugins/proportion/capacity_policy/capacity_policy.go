@@ -72,11 +72,12 @@ func getRequiredQuota(tasksToAllocate []*pod_info.PodInfo, minNodeGPUMemory int6
 	quota := rs.EmptyResourceQuantities()
 	for _, pod := range tasksToAllocate {
 		quantities := utils.QuantifyVector(pod.ResReqVector, pod.VectorMap)
-		quota[rs.GpuResource] += quantities[rs.GpuResource]
 		quota[rs.CpuResource] += quantities[rs.CpuResource]
 		quota[rs.MemoryResource] += quantities[rs.MemoryResource]
-		if pod.IsMemoryRequest() {
+		if pod.IsGpuMemoryRequest() {
 			quota[rs.GpuResource] += pod.GpuRequirement.GpuMemoryAsGpuFraction(minNodeGPUMemory)
+		} else {
+			quota[rs.GpuResource] += quantities[rs.GpuResource]
 		}
 	}
 	return quota
