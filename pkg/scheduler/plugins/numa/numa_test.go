@@ -25,7 +25,13 @@ func numaZone(id string, available map[string]string) *node_info.NumaZone {
 	for name, qty := range available {
 		a[v1.ResourceName(name)] = resource.MustParse(qty)
 	}
-	return &node_info.NumaZone{ID: id, Available: a}
+	// In tests all zones are at full capacity (no pre-existing allocations), so
+	// Allocatable == Available.
+	alloc := map[v1.ResourceName]resource.Quantity{}
+	for r, qty := range a {
+		alloc[r] = qty.DeepCopy()
+	}
+	return &node_info.NumaZone{ID: id, Available: a, Allocatable: alloc}
 }
 
 // numaTopology builds a NumaTopology directly (no NRT round-trip), computing the reported
