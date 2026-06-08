@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
@@ -163,6 +164,136 @@ func TestValidate(t *testing.T) {
 			} else {
 				assert.EqualError(t, err, tt.expectedErr)
 			}
+		})
+	}
+}
+
+func gpuContainer(name string) v1.Container {
+	return v1.Container{
+		Name: name,
+		Resources: v1.ResourceRequirements{
+			Requests: map[v1.ResourceName]resource.Quantity{
+				v1.ResourceName(constants.NvidiaGpuResource): resource.MustParse("1"),
+			},
+		},
+	}
+}
+
+func migContainer(name string) v1.Container {
+	return v1.Container{
+		Name: name,
+		Resources: v1.ResourceRequirements{
+			Requests: map[v1.ResourceName]resource.Quantity{
+				"nvidia.com/mig-3g.20gb": resource.MustParse("1"),
+			},
+		},
+	}
+}
+
+func fractionPod(initContainers, containers []v1.Container) *v1.Pod {
+	return &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace:   "n1",
+			Annotations: map[string]string{constants.GpuFraction: "0.5"},
+		},
+		Spec: v1.PodSpec{InitContainers: initContainers, Containers: containers},
+	}
+}
+
+// voidedContainerNames returns the names of containers that have
+// NVIDIA_VISIBLE_DEVICES set to "void" (i.e. were blocked from GPU access).
+func voidedContainerNames(pod *v1.Pod) []string {
+	var names []string
+	for _, container := range append(pod.Spec.InitContainers, pod.Spec.Containers...) {
+		for _, env := range container.Env {
+			if env.Name == constants.NvidiaVisibleDevices && env.Value == "void" {
+				names = append(names, container.Name)
+				break
+			}
+		}
+	}
+	return names
+}
+
+func TestMutate(t *testing.T) {
+	tests := []struct {
+		name    string
+		pod     *v1.Pod
+		blocked []string // containers expected to get NVIDIA_VISIBLE_DEVICES=void
+	}{
+		{
+			name: "CPU pod - all containers blocked",
+			pod: &v1.Pod{Spec: v1.PodSpec{
+				InitContainers: []v1.Container{cpuContainer("init-container-0")},
+				Containers:     []v1.Container{cpuContainer("container-0"), cpuContainer("container-1")},
+			}},
+			blocked: []string{"init-container-0", "container-0", "container-1"},
+		},
+		{
+			name: "CPU container with a pre-existing NVIDIA_VISIBLE_DEVICES is overridden to void",
+			pod: &v1.Pod{Spec: v1.PodSpec{
+				Containers: []v1.Container{cpuContainer("container-0", visibleDevicesEnv("7"))},
+			}},
+			blocked: []string{"container-0"},
+		},
+		{
+			name: "whole GPU pod - single GPU container not blocked",
+			pod: &v1.Pod{Spec: v1.PodSpec{
+				Containers: []v1.Container{gpuContainer("container-0")},
+			}},
+			blocked: nil,
+		},
+		{
+			name: "whole GPU pod - multiple GPU containers not blocked",
+			pod: &v1.Pod{Spec: v1.PodSpec{
+				Containers: []v1.Container{gpuContainer("container-0"), gpuContainer("container-1")},
+			}},
+			blocked: nil,
+		},
+		{
+			name: "whole GPU pod - CPU sidecar blocked, GPU container not",
+			pod: &v1.Pod{Spec: v1.PodSpec{
+				Containers: []v1.Container{gpuContainer("container-0"), cpuContainer("container-1")},
+			}},
+			blocked: []string{"container-1"},
+		},
+		{
+			name: "whole GPU pod - CPU init container blocked, GPU container not",
+			pod: &v1.Pod{Spec: v1.PodSpec{
+				InitContainers: []v1.Container{cpuContainer("init-container-0")},
+				Containers:     []v1.Container{gpuContainer("container-0")},
+			}},
+			blocked: []string{"init-container-0"},
+		},
+		{
+			name:    "fractional GPU pod - fraction container exempt",
+			pod:     fractionPod(nil, []v1.Container{cpuContainer("container-0")}),
+			blocked: nil,
+		},
+		{
+			name:    "fractional GPU pod - sidecar blocked, fraction container exempt",
+			pod:     fractionPod(nil, []v1.Container{cpuContainer("container-0"), cpuContainer("container-1")}),
+			blocked: []string{"container-1"},
+		},
+		{
+			name:    "fractional GPU pod - init container blocked, fraction container exempt",
+			pod:     fractionPod([]v1.Container{cpuContainer("init-container-0")}, []v1.Container{cpuContainer("container-0")}),
+			blocked: []string{"init-container-0"},
+		},
+		{
+			name: "pod requesting a MIG device not blocked",
+			pod: &v1.Pod{Spec: v1.PodSpec{
+				Containers: []v1.Container{migContainer("container-0")},
+			}},
+			blocked: nil,
+		},
+	}
+
+	plugin := New()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.NoError(t, plugin.Mutate(tt.pod))
+			assert.ElementsMatch(t, tt.blocked, voidedContainerNames(tt.pod))
 		})
 	}
 }

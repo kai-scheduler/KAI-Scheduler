@@ -65,7 +65,63 @@ func (da *DeviceAccess) Validate(pod *v1.Pod) error {
 }
 
 func (da *DeviceAccess) Mutate(pod *v1.Pod) error {
+	requestsFraction := resources.RequestsGPUFraction(pod)
+
+	var containerRef *gpusharingconfigmap.PodContainerRef
+	if requestsFraction {
+		var err error
+		containerRef, err = common.GetFractionContainerRef(pod)
+		if err != nil {
+			return fmt.Errorf("failed to get fraction container ref: %w", err)
+		}
+	}
+
+	for containerIndex := range pod.Spec.InitContainers {
+		if requestsFraction && containerRef.Type == gpusharingconfigmap.InitContainer && containerIndex == containerRef.Index {
+			continue
+		}
+		blockGPUAccessIfNotRequested(&pod.Spec.InitContainers[containerIndex])
+	}
+
+	for containerIndex := range pod.Spec.Containers {
+		if requestsFraction && containerRef.Type == gpusharingconfigmap.RegularContainer && containerIndex == containerRef.Index {
+			continue
+		}
+		blockGPUAccessIfNotRequested(&pod.Spec.Containers[containerIndex])
+	}
+
 	return nil
+}
+
+// blockGPUAccessIfNotRequested sets NVIDIA_VISIBLE_DEVICES=void on containers that do not
+// request a GPU, preventing them from accessing GPUs on the node.
+func blockGPUAccessIfNotRequested(container *v1.Container) {
+	if containerRequestsGPU(container) {
+		return
+	}
+	setVisibleDevicesEnvVar(container, "void")
+}
+
+func containerRequestsGPU(container *v1.Container) bool {
+	if qty, found := container.Resources.Requests[v1.ResourceName(constants.NvidiaGpuResource)]; found && !qty.IsZero() {
+		return true
+	}
+	for name, qty := range container.Resources.Requests {
+		if resources.IsMigResource(name.String()) && !qty.IsZero() {
+			return true
+		}
+	}
+	return false
+}
+
+func setVisibleDevicesEnvVar(container *v1.Container, value string) {
+	for i, env := range container.Env {
+		if env.Name == constants.NvidiaVisibleDevices {
+			container.Env[i].Value = value
+			return
+		}
+	}
+	container.Env = append(container.Env, v1.EnvVar{Name: constants.NvidiaVisibleDevices, Value: value})
 }
 
 func validateSingleContainer(container *v1.Container) error {

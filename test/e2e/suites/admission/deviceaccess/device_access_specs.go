@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
@@ -81,8 +82,42 @@ func DescribeDeviceAccessSpecs() bool {
 				Entry("void", "void"),
 				Entry("none", "none"),
 			)
+
+			It("injects NVIDIA_VISIBLE_DEVICES=void into non-GPU containers, exempting the GPU container", func(ctx context.Context) {
+				pod := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{
+					Limits: v1.ResourceList{
+						v1.ResourceName(constants.NvidiaGpuResource): resource.MustParse("1"),
+					},
+				})
+				gpuContainerName := pod.Spec.Containers[0].Name
+				pod.Spec.Containers = append(pod.Spec.Containers, v1.Container{
+					Name:  "cpu-sidecar",
+					Image: pod.Spec.Containers[0].Image,
+				})
+
+				created, err := testCtx.KubeClientset.CoreV1().Pods(pod.Namespace).Create(ctx, pod, metav1.CreateOptions{})
+				Expect(err).ToNot(HaveOccurred())
+
+				Expect(visibleDevicesValue(created, gpuContainerName)).ToNot(Equal("void"))
+				Expect(visibleDevicesValue(created, "cpu-sidecar")).To(Equal("void"))
+			})
 		})
 	})
+}
+
+// visibleDevicesValue returns the NVIDIA_VISIBLE_DEVICES env value of the named container ("" if unset).
+func visibleDevicesValue(pod *v1.Pod, containerName string) string {
+	for _, container := range pod.Spec.Containers {
+		if container.Name != containerName {
+			continue
+		}
+		for _, env := range container.Env {
+			if env.Name == constants.NvidiaVisibleDevices {
+				return env.Value
+			}
+		}
+	}
+	return ""
 }
 
 // createPodWithVisibleDevices builds a kai-scheduler pod that sets NVIDIA_VISIBLE_DEVICES to
