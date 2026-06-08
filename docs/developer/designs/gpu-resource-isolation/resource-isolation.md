@@ -18,17 +18,17 @@ The principle behind this design is by introducing an open source component call
 The integration consists of two independently deployed components:
 
 1. **kai-resource-isolator** (external, hosted under HAMI) — a DaemonSet that deploys HAMI Core libraries to GPU nodes, and a mutating webhook that injects volume mounts into GPU-sharing pods.
-2. **KAI Scheduler** — injects a `GPU_MEMORY_LIMIT` environment variable into containers requesting shared GPUs. For GPU-memory requests, the value is known at pod creation. For GPU-fraction requests, the value is resolved after the scheduling decision determines which GPU node the pod lands on.
+2. **KAI Scheduler** — injects a `CUDA_DEVICE_MEMORY_LIMIT` environment variable into containers requesting shared GPUs. For GPU-memory requests, the value is known at pod creation. For GPU-fraction requests, the value is resolved after the scheduling decision determines which GPU node the pod lands on.
 
 Flow once both components are deployed:
 1. Pod requesting GPU sharing is submitted
 2. HAMI mutating webhook injects a volume mount for the HAMI Core library
-3. KAI Scheduler determines the appropriate node and sets `GPU_MEMORY_LIMIT` accordingly
+3. KAI Scheduler determines the appropriate node and sets `CUDA_DEVICE_MEMORY_LIMIT` accordingly
 4. Container runs with HAMI Core enforcing the memory limit
 
 After both components are implemented and tested, a user guide will be added to the documentation.
 
-[!image](images/resource-isolation-design.png)
+![image](images/resource-isolation-design.png)
 
 ## HAMi-core daemonset installation
 
