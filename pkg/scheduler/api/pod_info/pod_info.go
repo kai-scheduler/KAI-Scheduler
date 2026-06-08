@@ -494,8 +494,6 @@ func (pi *PodInfo) updatePodAdditionalFields(bindRequest *bindrequest_info.BindR
 		pi.GPUGroups = resources.GetGpuGroups(pi.Pod)
 	}
 
-	pi.NUMAPlacement = numaPlacementFromPod(pi.Pod)
-
 	if bindRequest != nil && len(bindRequest.BindRequest.Spec.ReceivedResourceType) > 0 {
 		pi.ResourceReceivedType = ResourceReceivedType(bindRequest.BindRequest.Spec.ReceivedResourceType)
 	} else {

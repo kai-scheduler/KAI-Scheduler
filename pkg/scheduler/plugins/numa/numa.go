@@ -25,40 +25,23 @@ import (
 const fitErrorMessage = "node cannot NUMA-align the pod's resources under its Topology Manager policy"
 
 const (
-	pluginName  = "numa"
-	denylistArg = "denylist"
+	pluginName    = "numa"
+	ignoreListArg = "ignoreList"
 )
 
 type numaPlugin struct {
-	// denylist holds resources reported per-zone but not aligned by the kubelet. Default empty.
-	denylist sets.Set[v1.ResourceName]
-
-	nodes map[string]*nodeTopology
-
-	// reserved maps virtually allocated tasks' resources to the expected allocation they'll get on a node. This is used
-	// to model in-cycle reservation, to be taken into account when evaluating the next tasks' allocation, and to model evictions.
-	reserved map[common_info.PodID][]zoneReservation
+	// ignoreList holds resources reported per-zone but not aligned by the kubelet. Default empty.
+	ignoreList sets.Set[v1.ResourceName]
 }
 
-// zoneReservation records the resources allocated to a task on one NUMA zone during the cycle.
-// The zone is identified by its index in nodeTopology.zones.
-type zoneReservation struct {
-	zoneIndex int
-	amount    resourceAmounts
-}
-
-// New builds a numa plugin instance. The only argument is the optional resource denylist.
+// New builds a numa plugin instance. The only argument is the optional resource ignoreList.
 func New(arguments framework.PluginArguments) framework.Plugin {
-	denylist := parseDenylist(arguments)
-	if denylist.Len() > 0 {
-		log.InfraLogger.V(4).Infof("numa plugin: ignoring resources in denylist: %v", denylist)
+	ignoreList := parseIgnoreList(arguments)
+	if ignoreList.Len() > 0 {
+		log.InfraLogger.V(4).Infof("numa plugin: ignoring resources in ignoreList: %v", ignoreList)
 	}
 
-	return &numaPlugin{
-		denylist: denylist,
-		nodes:    map[string]*nodeTopology{},
-		reserved: map[common_info.PodID][]zoneReservation{},
-	}
+	return &numaPlugin{ignoreList: ignoreList}
 }
 
 func (pp *numaPlugin) Name() string {
@@ -66,36 +49,22 @@ func (pp *numaPlugin) Name() string {
 }
 
 func (pp *numaPlugin) OnSessionOpen(ssn *framework.Session) {
-	pp.nodes = map[string]*nodeTopology{}
-	pp.reserved = map[common_info.PodID][]zoneReservation{}
-
-	for name, node := range ssn.ClusterInfo.Nodes {
-		nt := buildNodeTopology(node.NodeResourceTopology, pp.denylist)
-		if nt == nil {
-			continue
-		}
-		pp.nodes[name] = nt
-	}
-
-	log.InfraLogger.V(4).Infof("numa plugin: built topology for %d/%d nodes",
-		len(pp.nodes), len(ssn.ClusterInfo.Nodes))
-
 	ssn.AddPredicateFn(pp.predicate)
 	ssn.AddEventHandler(&framework.EventHandler{
-		AllocateFunc:   pp.allocate,
-		DeallocateFunc: pp.deallocate,
+		AllocateFunc:   func(event *framework.Event) { pp.allocate(ssn, event) },
+		DeallocateFunc: func(event *framework.Event) { pp.deallocate(ssn, event) },
 	})
 }
 
 // predicate rejects a node when the kubelet's Topology Manager could not NUMA-align
 // the task there. It is pure: it never mutates the node's working state.
 func (pp *numaPlugin) predicate(task *pod_info.PodInfo, _ *podgroup_info.PodGroupInfo, node *node_info.NodeInfo) error {
-	nt := pp.nodes[node.Name]
-	if !pp.shouldHandle(task, nt) {
+	topo := node.NumaTopology
+	if !pp.shouldHandle(task, topo) {
 		return nil
 	}
 
-	if _, admit := evaluatorFor(nt.policy).evaluate(nt, requestUnits(task, nt.scope)); !admit {
+	if _, admit := evaluatorFor(topo.Policy).evaluate(topo, pp.ignoreList, requestUnits(task, topo.Scope)); !admit {
 		log.InfraLogger.V(6).Infof("numa plugin: task <%s/%s> cannot be NUMA-aligned on node <%s>",
 			task.Namespace, task.Name, node.Name)
 		return common_info.NewFitError(task.Name, task.Namespace, node.Name, fitErrorMessage)
@@ -103,73 +72,83 @@ func (pp *numaPlugin) predicate(task *pod_info.PodInfo, _ *podgroup_info.PodGrou
 	return nil
 }
 
-// allocate charges the task's evaluated per-zone allocation against the node's
-// in-cycle headroom, so the next task on the same node sees the reduced zones.
-// Fires on commit and on preemption/reclaim redo via the session EventHandler.
-func (pp *numaPlugin) allocate(event *framework.Event) {
+// allocate evaluates a task's expected NUMA placement and updates the node's numa topology resources.
+func (pp *numaPlugin) allocate(ssn *framework.Session, event *framework.Event) {
 	task := event.Task
-	nt := pp.nodes[task.NodeName]
-	if !pp.shouldHandle(task, nt) {
+	node := ssn.ClusterInfo.Nodes[task.NodeName]
+	if node == nil || !pp.shouldHandle(task, node.NumaTopology) {
 		return
 	}
+	topo := node.NumaTopology
 
-	allocation, admit := evaluatorFor(nt.policy).evaluate(nt, requestUnits(task, nt.scope))
-	if !admit {
-		return
-	}
-
-	reservations := make([]zoneReservation, 0, len(allocation))
-	for zoneIndex, amount := range allocation {
-		subtract(nt.zones[zoneIndex].available, amount)
-		reservations = append(reservations, zoneReservation{zoneIndex: zoneIndex, amount: amount})
-	}
-	pp.reserved[task.UID] = reservations
-}
-
-// deallocate credits back the exact per-zone amounts recorded at allocate time,
-// restoring headroom on rollback/eviction. The recorded amounts (not a re-derived
-// split) are used because the restricted greedy split depends on headroom at
-// allocate time, which changes before deallocate.
-func (pp *numaPlugin) deallocate(event *framework.Event) {
-	task := event.Task
-	reservations, ok := pp.reserved[task.UID]
-	if !ok {
-		return
-	}
-
-	if nt := pp.nodes[task.NodeName]; nt != nil {
-		for _, reservation := range reservations {
-			add(nt.zones[reservation.zoneIndex].available, reservation.amount)
+	if len(task.NUMAPlacement) == 0 {
+		placement, admit := evaluatorFor(topo.Policy).evaluate(topo, pp.ignoreList, requestUnits(task, topo.Scope))
+		if !admit {
+			return
 		}
+		task.NUMAPlacement = placement
 	}
-	delete(pp.reserved, task.UID)
+
+	numaAllocate(topo, task.NUMAPlacement)
 }
 
-func (pp *numaPlugin) OnSessionClose(_ *framework.Session) {
-	pp.nodes = nil
-	pp.reserved = nil
+// deallocate frees a task's NUMA placement, if it's known, from the node's numa topology resources.
+func (pp *numaPlugin) deallocate(ssn *framework.Session, event *framework.Event) {
+	task := event.Task
+	if len(task.NUMAPlacement) == 0 {
+		return
+	}
+	if node := ssn.ClusterInfo.Nodes[task.NodeName]; node != nil && node.NumaTopology != nil {
+		numaDeallocate(node.NumaTopology, task.NUMAPlacement)
+	}
 }
 
-func parseDenylist(arguments framework.PluginArguments) sets.Set[v1.ResourceName] {
-	denylist := sets.New[v1.ResourceName]()
-	raw := arguments.GetString(denylistArg, "")
+func numaAllocate(topo *node_info.NumaTopology, placement pod_info.NUMAPlacement) {
+	for _, zone := range placement {
+		if zone.ZoneIndex < 0 || zone.ZoneIndex >= len(topo.Zones) {
+			continue
+		}
+		subtract(topo.Zones[zone.ZoneIndex].Available, resourceAmounts(zone.Amount))
+	}
+}
+
+func numaDeallocate(topo *node_info.NumaTopology, placement pod_info.NUMAPlacement) {
+	for _, zone := range placement {
+		if zone.ZoneIndex < 0 || zone.ZoneIndex >= len(topo.Zones) {
+			continue
+		}
+		add(topo.Zones[zone.ZoneIndex].Available, resourceAmounts(zone.Amount))
+	}
+}
+
+func (pp *numaPlugin) OnSessionClose(_ *framework.Session) {}
+
+func parseIgnoreList(arguments framework.PluginArguments) sets.Set[v1.ResourceName] {
+	ignoreList := sets.New[v1.ResourceName]()
+	raw := arguments.GetString(ignoreListArg, "")
 	for _, name := range strings.Split(raw, ",") {
 		name = strings.TrimSpace(name)
 		if name == "" {
 			continue
 		}
-		denylist.Insert(v1.ResourceName(name))
+		ignoreList.Insert(v1.ResourceName(name))
 	}
-	return denylist
+	return ignoreList
 }
 
 // shouldHandle engages the plugin for any Guaranteed task on a rejecting-policy node: the
 // kubelet aligns every Guaranteed pod (fractional/MIG included, on cpu/memory). The request
 // intersection in the evaluator decides which resources actually constrain each task.
-func (pp *numaPlugin) shouldHandle(task *pod_info.PodInfo, nt *nodeTopology) bool {
-	if nt == nil || !nt.isModeledPolicy() {
+func (pp *numaPlugin) shouldHandle(task *pod_info.PodInfo, topo *node_info.NumaTopology) bool {
+	if topo == nil || !isModeledPolicy(topo.Policy) {
 		return false
 	}
 
 	return task.Pod != nil && task.Pod.Status.QOSClass == v1.PodQOSGuaranteed
+}
+
+// isModeledPolicy reports whether the plugin engages for a node with this policy.
+// Only single-numa-node and restricted are supported at this point.
+func isModeledPolicy(policy node_info.TopologyManagerPolicy) bool {
+	return policy == node_info.TopologyPolicySingleNUMANode || policy == node_info.TopologyPolicyRestricted
 }
