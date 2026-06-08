@@ -163,6 +163,15 @@ crdupgrader:
     pullPolicy: IfNotPresent
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
 
+kaiConfigDeployer:
+  # Post-install/post-upgrade hook that applies the kai-config CR out-of-release (#1536).
+  image:
+    name: crd-upgrader
+    pullPolicy: IfNotPresent
+    # registry: ""  # Optional: Override global.registry (e.g. to mirror only the hook image)
+    # tag: ""  # Optional: Override global.tag or Chart.AppVersion
+  resources: {}
+
 topologyMigration:
   # Enable migration of Kueue Topology CRs to KAI Topology CRs
   # When enabled, a pre-install/pre-upgrade hook will:
