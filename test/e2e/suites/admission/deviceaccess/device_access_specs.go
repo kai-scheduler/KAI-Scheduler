@@ -131,10 +131,19 @@ func expectAdmitted(ctx context.Context, testCtx *testcontext.TestContext, value
 		Should(Succeed(), "expected pod with NVIDIA_VISIBLE_DEVICES=%s to be admitted", value)
 }
 
-// createPodWithVisibleDevices builds a kai-scheduler pod (fresh random name) that sets
-// NVIDIA_VISIBLE_DEVICES to the given value and submits it directly (single attempt).
+// createPodWithVisibleDevices builds a kai-scheduler pod (fresh random name) whose container
+// requests a GPU and sets NVIDIA_VISIBLE_DEVICES to the given value, then submits it directly.
+//
+// The container must request a GPU: the mutating webhook runs before the validating one and
+// injects NVIDIA_VISIBLE_DEVICES=void into non-GPU containers, which would neutralize a
+// forbidden value before validation ever sees it. GPU-requesting containers are exempt from
+// that mutation, so the validation path is actually exercised.
 func createPodWithVisibleDevices(ctx context.Context, testCtx *testcontext.TestContext, value string) (*v1.Pod, error) {
-	pod := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{})
+	pod := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{
+		Limits: v1.ResourceList{
+			v1.ResourceName(constants.NvidiaGpuResource): resource.MustParse("1"),
+		},
+	})
 	pod.Spec.Containers[0].Env = append(pod.Spec.Containers[0].Env, v1.EnvVar{
 		Name:  constants.NvidiaVisibleDevices,
 		Value: value,
