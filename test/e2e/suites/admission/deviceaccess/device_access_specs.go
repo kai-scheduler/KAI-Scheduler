@@ -6,6 +6,7 @@ package deviceaccess
 
 import (
 	"context"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -21,6 +22,12 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/utils"
 )
+
+// webhookPropagationTimeout bounds how long we retry pod submissions after toggling the
+// flag: SetBlockNvidiaVisibleDevices already waits for the admission Deployment rollout to
+// complete, but there is a brief window where the rolled-out webhook is not yet enforcing
+// the new config. Each retry uses a freshly-named pod, so admitted pods don't collide.
+const webhookPropagationTimeout = time.Minute
 
 func DescribeDeviceAccessSpecs() bool {
 	return Describe("Device access admission validation", Ordered, func() {
@@ -50,8 +57,7 @@ func DescribeDeviceAccessSpecs() bool {
 			})
 
 			It("admits a pod overriding NVIDIA_VISIBLE_DEVICES=all", func(ctx context.Context) {
-				_, err := createPodWithVisibleDevices(ctx, testCtx, "all")
-				Expect(err).ToNot(HaveOccurred())
+				expectAdmitted(ctx, testCtx, "all")
 			})
 		})
 
@@ -66,8 +72,7 @@ func DescribeDeviceAccessSpecs() bool {
 
 			DescribeTable("rejects forbidden NVIDIA_VISIBLE_DEVICES values",
 				func(ctx context.Context, value string) {
-					_, err := createPodWithVisibleDevices(ctx, testCtx, value)
-					Expect(err).To(HaveOccurred())
+					expectRejected(ctx, testCtx, value)
 				},
 				Entry("single index", "1"),
 				Entry("multiple indexes", "1,2"),
@@ -76,33 +81,65 @@ func DescribeDeviceAccessSpecs() bool {
 
 			DescribeTable("admits allowed NVIDIA_VISIBLE_DEVICES values",
 				func(ctx context.Context, value string) {
-					_, err := createPodWithVisibleDevices(ctx, testCtx, value)
-					Expect(err).ToNot(HaveOccurred())
+					expectAdmitted(ctx, testCtx, value)
 				},
 				Entry("void", "void"),
 				Entry("none", "none"),
 			)
 
 			It("injects NVIDIA_VISIBLE_DEVICES=void into non-GPU containers, exempting the GPU container", func(ctx context.Context) {
-				pod := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{
-					Limits: v1.ResourceList{
-						v1.ResourceName(constants.NvidiaGpuResource): resource.MustParse("1"),
-					},
-				})
-				gpuContainerName := pod.Spec.Containers[0].Name
-				pod.Spec.Containers = append(pod.Spec.Containers, v1.Container{
-					Name:  "cpu-sidecar",
-					Image: pod.Spec.Containers[0].Image,
-				})
+				Eventually(func(g Gomega) {
+					pod := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{
+						Limits: v1.ResourceList{
+							v1.ResourceName(constants.NvidiaGpuResource): resource.MustParse("1"),
+						},
+					})
+					gpuContainerName := pod.Spec.Containers[0].Name
+					pod.Spec.Containers = append(pod.Spec.Containers, v1.Container{
+						Name:  "cpu-sidecar",
+						Image: pod.Spec.Containers[0].Image,
+					})
 
-				created, err := testCtx.KubeClientset.CoreV1().Pods(pod.Namespace).Create(ctx, pod, metav1.CreateOptions{})
-				Expect(err).ToNot(HaveOccurred())
-
-				Expect(visibleDevicesValue(created, gpuContainerName)).ToNot(Equal("void"))
-				Expect(visibleDevicesValue(created, "cpu-sidecar")).To(Equal("void"))
+					created, err := testCtx.KubeClientset.CoreV1().Pods(pod.Namespace).Create(ctx, pod, metav1.CreateOptions{})
+					g.Expect(err).ToNot(HaveOccurred())
+					g.Expect(visibleDevicesValue(created, "cpu-sidecar")).To(Equal("void"))
+					g.Expect(visibleDevicesValue(created, gpuContainerName)).ToNot(Equal("void"))
+				}).WithContext(ctx).WithTimeout(webhookPropagationTimeout).WithPolling(2 * time.Second).Should(Succeed())
 			})
 		})
 	})
+}
+
+// expectRejected retries (with a fresh pod each time) until the admission webhook rejects a
+// pod setting NVIDIA_VISIBLE_DEVICES to the given value. It only passes on a real rejection,
+// so it tolerates webhook-propagation delay without masking a non-enforcing webhook.
+func expectRejected(ctx context.Context, testCtx *testcontext.TestContext, value string) {
+	Eventually(func() error {
+		_, err := createPodWithVisibleDevices(ctx, testCtx, value)
+		return err
+	}).WithContext(ctx).WithTimeout(webhookPropagationTimeout).WithPolling(2*time.Second).
+		Should(HaveOccurred(), "expected pod with NVIDIA_VISIBLE_DEVICES=%s to be rejected", value)
+}
+
+// expectAdmitted retries (with a fresh pod each time) until a pod setting NVIDIA_VISIBLE_DEVICES
+// to the given value is admitted.
+func expectAdmitted(ctx context.Context, testCtx *testcontext.TestContext, value string) {
+	Eventually(func() error {
+		_, err := createPodWithVisibleDevices(ctx, testCtx, value)
+		return err
+	}).WithContext(ctx).WithTimeout(webhookPropagationTimeout).WithPolling(2*time.Second).
+		Should(Succeed(), "expected pod with NVIDIA_VISIBLE_DEVICES=%s to be admitted", value)
+}
+
+// createPodWithVisibleDevices builds a kai-scheduler pod (fresh random name) that sets
+// NVIDIA_VISIBLE_DEVICES to the given value and submits it directly (single attempt).
+func createPodWithVisibleDevices(ctx context.Context, testCtx *testcontext.TestContext, value string) (*v1.Pod, error) {
+	pod := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{})
+	pod.Spec.Containers[0].Env = append(pod.Spec.Containers[0].Env, v1.EnvVar{
+		Name:  constants.NvidiaVisibleDevices,
+		Value: value,
+	})
+	return testCtx.KubeClientset.CoreV1().Pods(pod.Namespace).Create(ctx, pod, metav1.CreateOptions{})
 }
 
 // visibleDevicesValue returns the NVIDIA_VISIBLE_DEVICES env value of the named container ("" if unset).
@@ -118,16 +155,4 @@ func visibleDevicesValue(pod *v1.Pod, containerName string) string {
 		}
 	}
 	return ""
-}
-
-// createPodWithVisibleDevices builds a kai-scheduler pod that sets NVIDIA_VISIBLE_DEVICES to
-// the given value and submits it directly (single attempt) so admission rejections surface
-// immediately instead of being retried.
-func createPodWithVisibleDevices(ctx context.Context, testCtx *testcontext.TestContext, value string) (*v1.Pod, error) {
-	pod := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{})
-	pod.Spec.Containers[0].Env = append(pod.Spec.Containers[0].Env, v1.EnvVar{
-		Name:  constants.NvidiaVisibleDevices,
-		Value: value,
-	})
-	return testCtx.KubeClientset.CoreV1().Pods(pod.Namespace).Create(ctx, pod, metav1.CreateOptions{})
 }
