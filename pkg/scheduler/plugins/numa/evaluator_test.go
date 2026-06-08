@@ -39,6 +39,21 @@ func req(pairs ...string) resourceAmounts {
 	return out
 }
 
+// partialZone builds a NumaZone whose Allocatable differs from Available, modelling a zone
+// that has pre-existing allocations. allocatable is the static per-zone capacity; available is
+// what remains after current pod allocations are subtracted.
+func partialZone(id string, allocatable, available map[string]string) *node_info.NumaZone {
+	alloc := map[v1.ResourceName]resource.Quantity{}
+	for name, qty := range allocatable {
+		alloc[v1.ResourceName(name)] = resource.MustParse(qty)
+	}
+	avail := map[v1.ResourceName]resource.Quantity{}
+	for name, qty := range available {
+		avail[v1.ResourceName(name)] = resource.MustParse(qty)
+	}
+	return &node_info.NumaZone{ID: id, Allocatable: alloc, Available: avail}
+}
+
 // twoZoneNode builds a restricted/single-numa node with two identical NUMA zones.
 func twoZoneNode(policy node_info.TopologyManagerPolicy, perZone resourceAmounts) *node_info.NumaTopology {
 	toStrings := map[string]string{}
@@ -133,6 +148,47 @@ func TestRestrictedEvaluatorWorkedExamples(t *testing.T) {
 		allocation, admit := restrictedEvaluator{}.evaluate(node, noIgnoreList, []resourceAmounts{req(gpu, "2", "cpu", "8")})
 		assert.True(t, admit)
 		assert.Equal(t, []int{0}, allocation.ZoneIndices(), "width 1 stays on one zone")
+	})
+
+	// Allocatable-vs-available regression tests: the preferred (minAffinitySize) width must be
+	// computed from Allocatable, matching the kubelet device manager's m.allDevices pass. When
+	// current availability drops below per-zone allocatable capacity, the single-zone preferred
+	// hint may be infeasible, making the only feasible mask non-preferred → restricted rejects.
+
+	t.Run("reject: 4 GPU requested, allocatable=4/zone but only 3 available/zone", func(t *testing.T) {
+		// Allocatable: 4 GPU per zone → minAffinitySize=1 (single zone preferred by capacity).
+		// Available:   3 GPU per zone → no single-zone mask is feasible.
+		// Only feasible mask {z0,z1} has width 2 ≠ minAffinitySize 1 → preferred=false → reject.
+		node := numaTopology(node_info.TopologyPolicyRestricted, node_info.TopologyScopeContainer,
+			partialZone("node-0",
+				map[string]string{gpu: "4", "cpu": "95"},
+				map[string]string{gpu: "3", "cpu": "45"},
+			),
+			partialZone("node-1",
+				map[string]string{gpu: "4", "cpu": "96"},
+				map[string]string{gpu: "3", "cpu": "46"},
+			),
+		)
+		_, admit := restrictedEvaluator{}.evaluate(node, noIgnoreList, []resourceAmounts{req(gpu, "4", "cpu", "50")})
+		assert.False(t, admit, "single-zone preferred by allocatable but infeasible by available → non-preferred width-2 hint → reject")
+	})
+
+	t.Run("reject: 1 GPU + 50 CPU, CPU fits by allocatable but fragmented in available", func(t *testing.T) {
+		// After two pods (1 GPU + 50 CPU each) land — one per zone — neither zone has 50 CPU
+		// available, though both have 50+ by allocatable. GPU still fits single-zone by both.
+		// CPU: allocatable minWidth=1, but no single zone is feasible by available → preferred=false → reject.
+		node := numaTopology(node_info.TopologyPolicyRestricted, node_info.TopologyScopeContainer,
+			partialZone("node-0",
+				map[string]string{gpu: "4", "cpu": "95"},
+				map[string]string{gpu: "3", "cpu": "45"},
+			),
+			partialZone("node-1",
+				map[string]string{gpu: "4", "cpu": "96"},
+				map[string]string{gpu: "3", "cpu": "46"},
+			),
+		)
+		_, admit := restrictedEvaluator{}.evaluate(node, noIgnoreList, []resourceAmounts{req(gpu, "1", "cpu", "50")})
+		assert.False(t, admit, "CPU fits by allocatable (minWidth=1) but no zone has 50 CPU available → non-preferred → reject")
 	})
 }
 

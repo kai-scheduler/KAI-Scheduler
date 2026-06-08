@@ -70,8 +70,12 @@ type NumaTopology struct {
 }
 
 type NumaZone struct {
-	ID        string
-	Available map[v1.ResourceName]resource.Quantity
+	ID          string
+	Available   map[v1.ResourceName]resource.Quantity
+	// Allocatable is the node's static per-zone capacity (kubelet allocatable), which never
+	// changes within a scheduling cycle. Used for preferred-width computation, matching how the
+	// kubelet device manager uses m.allDevices for minAffinitySize.
+	Allocatable map[v1.ResourceName]resource.Quantity
 }
 
 func (t *NumaTopology) Clone() *NumaTopology {
@@ -84,7 +88,11 @@ func (t *NumaTopology) Clone() *NumaTopology {
 		for r, qty := range zone.Available {
 			available[r] = qty.DeepCopy()
 		}
-		zones[i] = &NumaZone{ID: zone.ID, Available: available}
+		allocatable := make(map[v1.ResourceName]resource.Quantity, len(zone.Allocatable))
+		for r, qty := range zone.Allocatable {
+			allocatable[r] = qty.DeepCopy()
+		}
+		zones[i] = &NumaZone{ID: zone.ID, Available: available, Allocatable: allocatable}
 	}
 	return &NumaTopology{
 		Policy:    t.Policy,
@@ -124,7 +132,7 @@ func BuildNumaTopology(nrt *nrtv1alpha2.NodeResourceTopology) *NumaTopology {
 }
 
 // buildZones keeps only NUMA-node zones (NRT Zone.Type == "Node") and their
-// per-resource Available quantities.
+// per-resource Available and Allocatable quantities.
 //
 // We deliberately model only the NUMA-node level and drop every other zone type
 // the NRT API can express (sockets, dies, ...). This is not a simplification we
@@ -149,13 +157,16 @@ func buildZones(nrtZones nrtv1alpha2.ZoneList) []*NumaZone {
 		}
 
 		available := make(map[v1.ResourceName]resource.Quantity, len(nrtZone.Resources))
+		allocatable := make(map[v1.ResourceName]resource.Quantity, len(nrtZone.Resources))
 		for _, ri := range nrtZone.Resources {
 			available[v1.ResourceName(ri.Name)] = ri.Available.DeepCopy()
+			allocatable[v1.ResourceName(ri.Name)] = ri.Allocatable.DeepCopy()
 		}
 
 		zones = append(zones, &NumaZone{
-			ID:        nrtZone.Name,
-			Available: available,
+			ID:          nrtZone.Name,
+			Available:   available,
+			Allocatable: allocatable,
 		})
 	}
 

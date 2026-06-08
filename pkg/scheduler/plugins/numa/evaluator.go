@@ -60,15 +60,22 @@ func (singleNUMAEvaluator) evaluate(topo *node_info.NumaTopology, ignoreList set
 // single minimal-width NUMA mask that is a preferred (minimal-width) satisfying hint for every
 // resource it requests. Equivalently, all per-resource minimal widths must agree and a mask of
 // that width must satisfy every resource at once. single-numa-node is the |mask|==1 case.
+//
+// Preferred width is computed from Allocatable (matching the kubelet device manager's
+// m.allDevices pass), while feasibility is checked against Available (matching the kubelet's
+// available-device pass). When some devices are already allocated the two can disagree: a
+// single-zone placement may be preferred by capacity but infeasible by availability, making the
+// only feasible mask (multi-zone) non-preferred → restricted rejects, matching kubelet behavior.
 type restrictedEvaluator struct{}
 
 func (restrictedEvaluator) evaluate(topo *node_info.NumaTopology, ignoreList sets.Set[v1.ResourceName], requests []resourceAmounts) (pod_info.NUMAPlacement, bool) {
 	scratch := cloneScratch(topo.Zones)
+	allocatable := cloneAllocatable(topo.Zones)
 	allocation := map[int]resourceAmounts{}
 
 	for _, request := range requests {
 		req := extractNumaRequest(request, topo.Resources, ignoreList)
-		mask, ok := preferredCommonMask(scratch, req)
+		mask, ok := preferredCommonMask(scratch, allocatable, req)
 		if !ok {
 			return nil, false
 		}
@@ -103,10 +110,14 @@ func placementFromAllocation(allocation map[int]resourceAmounts) pod_info.NUMAPl
 
 // preferredCommonMask finds the lowest minimal-width NUMA mask that satisfies every requested
 // resource, or reports false. It rejects when per-resource minimal widths disagree.
-func preferredCommonMask(scratch []resourceAmounts, req resourceAmounts) ([]int, bool) {
+//
+// allocatable is used for min-width (preferred) computation; scratch (available) is used for
+// feasibility. This matches the kubelet device manager, which uses m.allDevices for
+// minAffinitySize and the available set for the per-mask device count check.
+func preferredCommonMask(scratch, allocatable []resourceAmounts, req resourceAmounts) ([]int, bool) {
 	width := -1
 	for r, qty := range req {
-		w, ok := minWidthForResource(scratch, r, qty)
+		w, ok := minWidthForResource(allocatable, r, qty)
 		if !ok {
 			return nil, false
 		}
@@ -258,6 +269,18 @@ func cloneScratch(zones []*node_info.NumaZone) []resourceAmounts {
 		scratch[i] = amounts
 	}
 	return scratch
+}
+
+func cloneAllocatable(zones []*node_info.NumaZone) []resourceAmounts {
+	allocatable := make([]resourceAmounts, len(zones))
+	for i, zone := range zones {
+		amounts := make(resourceAmounts, len(zone.Allocatable))
+		for r, qty := range zone.Allocatable {
+			amounts[r] = qty.DeepCopy()
+		}
+		allocatable[i] = amounts
+	}
+	return allocatable
 }
 
 func lowestZoneFitting(scratch []resourceAmounts, req resourceAmounts) (int, bool) {
