@@ -1,7 +1,7 @@
 // Copyright 2025 NVIDIA CORPORATION
 // SPDX-License-Identifier: Apache-2.0
 
-package numa
+package node_info
 
 import (
 	"sort"
@@ -14,25 +14,25 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
-// tmPolicy mirrors the kubelet Topology Manager policy reported per node via NRT.
+// TopologyManagerPolicy mirrors the kubelet Topology Manager policy reported per node via NRT.
 // See https://kubernetes.io/docs/tasks/administer-cluster/topology-manager/#topology-manager-policies for details.
-type tmPolicy int
+type TopologyManagerPolicy int
 
 const (
-	policyNone tmPolicy = iota
-	policyBestEffort
-	policyRestricted
-	policySingleNUMANode
+	TopologyPolicyNone TopologyManagerPolicy = iota
+	TopologyPolicyBestEffort
+	TopologyPolicyRestricted
+	TopologyPolicySingleNUMANode
 )
 
-// tmScope mirrors the kubelet Topology Manager scope: alignment is computed per
+// TopologyManagerScope mirrors the kubelet Topology Manager scope: alignment is computed per
 // container or once for the whole pod.
 // See https://kubernetes.io/docs/tasks/administer-cluster/topology-manager/#topology-manager-scopes for details.
-type tmScope int
+type TopologyManagerScope int
 
 const (
-	scopeContainer tmScope = iota
-	scopePod
+	TopologyScopeContainer TopologyManagerScope = iota
+	TopologyScopePod
 )
 
 // zoneTypeNode is the NRT Zone.Type for a NUMA node; see buildZones for why only
@@ -54,29 +54,49 @@ const (
 	scopeValuePod       = "pod"
 )
 
-// nodeTopology is the plugin's per-node working state, derived from a node's
-// NodeResourceTopology object at OnSessionOpen.
-type nodeTopology struct {
-	policy tmPolicy
-	scope  tmScope
-	zones  []*numaZone
-	// topologyAware is the set of resources this node reports per-zone, minus the
-	// operator denylist. A resource constrains zone selection only if it appears here.
-	topologyAware sets.Set[v1.ResourceName]
+// NumaTopology is a node's NUMA topology derived from its NodeResourceTopology object: the
+// declared Topology Manager policy/scope and the per-NUMA-node Available ledger. It is the
+// node-side analog of pod_info.NUMAPlacement — node-level state the numa plugin charges in
+// cycle, built fresh per snapshot by cluster_info, and cloned with the node. The plugin owns
+// the policy decisions (admission, alignment); this struct holds only the facts.
+type NumaTopology struct {
+	Policy TopologyManagerPolicy
+	Scope  TopologyManagerScope
+	Zones  []*NumaZone
+	// Resources is the set of resources reported per-zone. A resource constrains zone
+	// selection only if it appears here. The operator ignoreList is NOT applied (it is plugin
+	// configuration, unknown at ingestion); the numa plugin subtracts it at evaluation.
+	Resources sets.Set[v1.ResourceName]
 }
 
-type numaZone struct {
-	id        string
-	available map[v1.ResourceName]resource.Quantity
+type NumaZone struct {
+	ID        string
+	Available map[v1.ResourceName]resource.Quantity
 }
 
-// isModeledPolicy reports whether the plugin engages for a node with this policy.
-// Only single-numa-node and restricted are supported at this point.
-func (nt *nodeTopology) isModeledPolicy() bool {
-	return nt.policy == policySingleNUMANode || nt.policy == policyRestricted
+func (t *NumaTopology) Clone() *NumaTopology {
+	if t == nil {
+		return nil
+	}
+	zones := make([]*NumaZone, len(t.Zones))
+	for i, zone := range t.Zones {
+		available := make(map[v1.ResourceName]resource.Quantity, len(zone.Available))
+		for r, qty := range zone.Available {
+			available[r] = qty.DeepCopy()
+		}
+		zones[i] = &NumaZone{ID: zone.ID, Available: available}
+	}
+	return &NumaTopology{
+		Policy:    t.Policy,
+		Scope:     t.Scope,
+		Zones:     zones,
+		Resources: t.Resources.Clone(),
+	}
 }
 
-func buildNodeTopology(nrt *nrtv1alpha2.NodeResourceTopology, denylist sets.Set[v1.ResourceName]) *nodeTopology {
+// BuildNumaTopology derives a node's NumaTopology from its NodeResourceTopology object, or
+// returns nil when the object is absent or reports no NUMA-node zones.
+func BuildNumaTopology(nrt *nrtv1alpha2.NodeResourceTopology) *NumaTopology {
 	if nrt == nil {
 		return nil
 	}
@@ -88,21 +108,18 @@ func buildNodeTopology(nrt *nrtv1alpha2.NodeResourceTopology, denylist sets.Set[
 
 	policy, scope := parsePolicyAndScope(nrt)
 
-	topologyAware := sets.New[v1.ResourceName]()
+	resources := sets.New[v1.ResourceName]()
 	for _, zone := range zones {
-		for name := range zone.available {
-			if denylist.Has(name) {
-				continue
-			}
-			topologyAware.Insert(name)
+		for name := range zone.Available {
+			resources.Insert(name)
 		}
 	}
 
-	return &nodeTopology{
-		policy:        policy,
-		scope:         scope,
-		zones:         zones,
-		topologyAware: topologyAware,
+	return &NumaTopology{
+		Policy:    policy,
+		Scope:     scope,
+		Zones:     zones,
+		Resources: resources,
 	}
 }
 
@@ -123,8 +140,8 @@ func buildNodeTopology(nrt *nrtv1alpha2.NodeResourceTopology, denylist sets.Set[
 //   - upstream plugin skips zone.Type != "Node":
 //     sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/pluginhelpers.go (createNUMANodeList)
 //   - rationale and history: docs/developer/designs/numa-topology/README.md
-func buildZones(nrtZones nrtv1alpha2.ZoneList) []*numaZone {
-	var zones []*numaZone
+func buildZones(nrtZones nrtv1alpha2.ZoneList) []*NumaZone {
+	var zones []*NumaZone
 	for i := range nrtZones {
 		nrtZone := &nrtZones[i]
 		if nrtZone.Type != zoneTypeNode {
@@ -136,9 +153,9 @@ func buildZones(nrtZones nrtv1alpha2.ZoneList) []*numaZone {
 			available[v1.ResourceName(ri.Name)] = ri.Available.DeepCopy()
 		}
 
-		zones = append(zones, &numaZone{
-			id:        nrtZone.Name,
-			available: available,
+		zones = append(zones, &NumaZone{
+			ID:        nrtZone.Name,
+			Available: available,
 		})
 	}
 
@@ -152,17 +169,17 @@ func buildZones(nrtZones nrtv1alpha2.ZoneList) []*numaZone {
 // split has a stable tie-break. Zones are ordered by the numeric NUMA-node id parsed from
 // their name (e.g. "node-10" after "node-2"); names without a numeric suffix sort after, by
 // name. The durable identity remains the zone id; the index is an in-cycle convenience.
-func sortZones(zones []*numaZone) {
+func sortZones(zones []*NumaZone) {
 	sort.Slice(zones, func(i, j int) bool {
-		iNum, iOK := numaNodeID(zones[i].id)
-		jNum, jOK := numaNodeID(zones[j].id)
+		iNum, iOK := numaNodeID(zones[i].ID)
+		jNum, jOK := numaNodeID(zones[j].ID)
 		if iOK && jOK && iNum != jNum {
 			return iNum < jNum
 		}
 		if iOK != jOK {
 			return iOK // numbered zones sort before unnumbered ones
 		}
-		return zones[i].id < zones[j].id
+		return zones[i].ID < zones[j].ID
 	})
 }
 
@@ -185,7 +202,7 @@ func numaNodeID(name string) (int, bool) {
 // top-level attributes, falling back to the deprecated TopologyPolicies field for
 // exporters that have not migrated to attributes. The default scope is container,
 // matching the kubelet.
-func parsePolicyAndScope(nrt *nrtv1alpha2.NodeResourceTopology) (tmPolicy, tmScope) {
+func parsePolicyAndScope(nrt *nrtv1alpha2.NodeResourceTopology) (TopologyManagerPolicy, TopologyManagerScope) {
 	policyAttr, scopeAttr := "", ""
 	for _, attr := range nrt.Attributes {
 		switch attr.Name {
@@ -203,53 +220,53 @@ func parsePolicyAndScope(nrt *nrtv1alpha2.NodeResourceTopology) (tmPolicy, tmSco
 	return policyAndScopeFromLegacy(nrt.TopologyPolicies)
 }
 
-func policyFromAttribute(value string) tmPolicy {
+func policyFromAttribute(value string) TopologyManagerPolicy {
 	switch value {
 	case policyValueSingleNUMANode:
-		return policySingleNUMANode
+		return TopologyPolicySingleNUMANode
 	case policyValueRestricted:
-		return policyRestricted
+		return TopologyPolicyRestricted
 	case policyValueBestEffort:
-		return policyBestEffort
+		return TopologyPolicyBestEffort
 	case policyValueNone:
-		return policyNone
+		return TopologyPolicyNone
 	default:
-		return policyNone
+		return TopologyPolicyNone
 	}
 }
 
-func scopeFromAttribute(value string) tmScope {
+func scopeFromAttribute(value string) TopologyManagerScope {
 	switch value {
 	case scopeValuePod:
-		return scopePod
+		return TopologyScopePod
 	case scopeValueContainer:
-		return scopeContainer
+		return TopologyScopeContainer
 	default:
-		return scopeContainer
+		return TopologyScopeContainer
 	}
 }
 
 // policyAndScopeFromLegacy maps the deprecated combined TopologyPolicies enum (which
-// encodes both policy and scope) onto the plugin's policy/scope pair.
-func policyAndScopeFromLegacy(policies []string) (tmPolicy, tmScope) {
+// encodes both policy and scope) onto the policy/scope pair.
+func policyAndScopeFromLegacy(policies []string) (TopologyManagerPolicy, TopologyManagerScope) {
 	if len(policies) == 0 {
-		return policyNone, scopeContainer
+		return TopologyPolicyNone, TopologyScopeContainer
 	}
 
 	switch nrtv1alpha2.TopologyManagerPolicy(policies[0]) {
 	case nrtv1alpha2.SingleNUMANodePodLevel:
-		return policySingleNUMANode, scopePod
+		return TopologyPolicySingleNUMANode, TopologyScopePod
 	case nrtv1alpha2.SingleNUMANodeContainerLevel:
-		return policySingleNUMANode, scopeContainer
+		return TopologyPolicySingleNUMANode, TopologyScopeContainer
 	case nrtv1alpha2.RestrictedPodLevel:
-		return policyRestricted, scopePod
+		return TopologyPolicyRestricted, TopologyScopePod
 	case nrtv1alpha2.Restricted, nrtv1alpha2.RestrictedContainerLevel:
-		return policyRestricted, scopeContainer
+		return TopologyPolicyRestricted, TopologyScopeContainer
 	case nrtv1alpha2.BestEffortPodLevel:
-		return policyBestEffort, scopePod
+		return TopologyPolicyBestEffort, TopologyScopePod
 	case nrtv1alpha2.BestEffort, nrtv1alpha2.BestEffortContainerLevel:
-		return policyBestEffort, scopeContainer
+		return TopologyPolicyBestEffort, TopologyScopeContainer
 	default:
-		return policyNone, scopeContainer
+		return TopologyPolicyNone, TopologyScopeContainer
 	}
 }

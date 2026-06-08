@@ -7,6 +7,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	resourcehelper "k8s.io/component-helpers/resource"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 )
 
@@ -15,8 +16,8 @@ import (
 // scope) or one per concurrently-running container (container scope). Each unit
 // is a request the evaluator places on NUMA zone(s); the evaluator intersects it
 // with the node's topology-aware resources, so non-aligned resources drop out.
-func requestUnits(task *pod_info.PodInfo, scope tmScope) []resourceAmounts {
-	if scope == scopePod {
+func requestUnits(task *pod_info.PodInfo, scope node_info.TopologyManagerScope) []resourceAmounts {
+	if scope == node_info.TopologyScopePod {
 		return []resourceAmounts{toAmounts(resourcehelper.PodRequests(task.Pod, resourcehelper.PodResourcesOptions{}))}
 	}
 	return containerUnits(task.Pod)

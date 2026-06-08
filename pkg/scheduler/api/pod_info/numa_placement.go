@@ -4,34 +4,21 @@
 package pod_info
 
 import (
-	"encoding/json"
-
 	v1 "k8s.io/api/core/v1"
-
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 )
 
-const (
-	// NUMAPlacementObservedAnnotation carries a pod's actual NUMA placement, as
-	// observed by the per-node placement agent (ground truth).
-	NUMAPlacementObservedAnnotation = "kai.scheduler/numa-placement-observed"
-	// NUMAPlacementPredictedAnnotation carries the scheduler's predicted NUMA
-	// placement, written by the binder on commit (the placement record).
-	NUMAPlacementPredictedAnnotation = "kai.scheduler/numa-placement-predicted"
-)
-
-// ZoneCharge is a task's charge on one NUMA zone: the zone id and the exact
-// per-resource amount placed there.
-type ZoneCharge struct {
-	Zone   string          `json:"zone"`
-	Amount v1.ResourceList `json:"amount,omitempty"`
+// ZonePlacement is a task's placement on one NUMA zone: the zone's index (into the
+// numa plugin's per-cycle nodeTopology.zones) and the exact per-resource amount
+// placed there. The index is the internal scheduler representation; translation
+// to/from the durable zone id happens only at the persistence boundary (BindRequest
+// field and pod annotation).
+type ZonePlacement struct {
+	ZoneIndex int
+	Amount    v1.ResourceList
 }
 
-// NUMAPlacement is a task's NUMA placement — its zone(s) and per-zone amounts. It
-// is the NUMA analog of GPUGroups: framework state on PodInfo, snapshotted and
-// restored across virtual-eviction undo, and compared by the eviction dedup. An
-// empty placement means "unknown" — v1 never guesses a zone.
-type NUMAPlacement []ZoneCharge
+// NUMAPlacement is a task's NUMA placement — its zone(s) and per-zone amounts. Could be empty if the placement is unknown.
+type NUMAPlacement []ZonePlacement
 
 func (p NUMAPlacement) Clone() NUMAPlacement {
 	if p == nil {
@@ -39,19 +26,43 @@ func (p NUMAPlacement) Clone() NUMAPlacement {
 	}
 	out := make(NUMAPlacement, len(p))
 	for i, charge := range p {
-		out[i] = ZoneCharge{Zone: charge.Zone, Amount: cloneResourceList(charge.Amount)}
+		out[i] = ZonePlacement{ZoneIndex: charge.ZoneIndex, Amount: cloneResourceList(charge.Amount)}
 	}
 	return out
 }
 
-// Zones returns the placement's zone ids in order — used for dedup comparison,
-// where only the zone identity (not the amounts) matters.
-func (p NUMAPlacement) Zones() []string {
-	zones := make([]string, len(p))
+// ZoneIndices returns the placement's zone indices in order.
+func (p NUMAPlacement) ZoneIndices() []int {
+	indices := make([]int, len(p))
 	for i, charge := range p {
-		zones[i] = charge.Zone
+		indices[i] = charge.ZoneIndex
 	}
-	return zones
+	return indices
+}
+
+func (p NUMAPlacement) Equal(other NUMAPlacement) bool {
+	if len(p) != len(other) {
+		return false
+	}
+	for i := range p {
+		if p[i].ZoneIndex != other[i].ZoneIndex || !equal(p[i].Amount, other[i].Amount) {
+			return false
+		}
+	}
+	return true
+}
+
+func equal(a, b v1.ResourceList) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for name, qa := range a {
+		qb, ok := b[name]
+		if !ok || qa.Cmp(qb) != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func cloneResourceList(list v1.ResourceList) v1.ResourceList {
@@ -63,26 +74,4 @@ func cloneResourceList(list v1.ResourceList) v1.ResourceList {
 		out[name] = qty.DeepCopy()
 	}
 	return out
-}
-
-// numaPlacementFromPod reads a pod's NUMA placement from its annotations,
-// preferring the agent-observed placement over the scheduler-predicted one.
-// Returns nil when neither annotation is present or parseable.
-func numaPlacementFromPod(pod *v1.Pod) NUMAPlacement {
-	for _, key := range []string{NUMAPlacementObservedAnnotation, NUMAPlacementPredictedAnnotation} {
-		raw, ok := pod.Annotations[key]
-		if !ok || raw == "" {
-			continue
-		}
-		var placement NUMAPlacement
-		if err := json.Unmarshal([]byte(raw), &placement); err != nil {
-			log.InfraLogger.V(3).Warnf("Failed to parse NUMA placement annotation %s on pod %s/%s: %v",
-				key, pod.Namespace, pod.Name, err)
-			continue
-		}
-		if len(placement) > 0 {
-			return placement
-		}
-	}
-	return nil
 }

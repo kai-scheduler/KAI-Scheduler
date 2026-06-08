@@ -6,7 +6,6 @@ package numa
 import (
 	"testing"
 
-	nrtv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -20,7 +19,41 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 )
 
-func TestParseDenylist(t *testing.T) {
+// numaZone builds a NUMA zone with the given per-resource Available quantities.
+func numaZone(id string, available map[string]string) *node_info.NumaZone {
+	a := map[v1.ResourceName]resource.Quantity{}
+	for name, qty := range available {
+		a[v1.ResourceName(name)] = resource.MustParse(qty)
+	}
+	return &node_info.NumaZone{ID: id, Available: a}
+}
+
+// numaTopology builds a NumaTopology directly (no NRT round-trip), computing the reported
+// resource set from the zones.
+func numaTopology(policy node_info.TopologyManagerPolicy, scope node_info.TopologyManagerScope, zones ...*node_info.NumaZone) *node_info.NumaTopology {
+	resources := sets.New[v1.ResourceName]()
+	for _, z := range zones {
+		for r := range z.Available {
+			resources.Insert(r)
+		}
+	}
+	return &node_info.NumaTopology{Policy: policy, Scope: scope, Zones: zones, Resources: resources}
+}
+
+func singleNUMANodeTopology(scope node_info.TopologyManagerScope, zones ...*node_info.NumaZone) *node_info.NumaTopology {
+	return numaTopology(node_info.TopologyPolicySingleNUMANode, scope, zones...)
+}
+
+// wiredPlugin returns a plugin, a session whose node map holds a single node-a carrying topo,
+// and that node (the same object the plugin charges, so predicate observes the in-cycle ledger).
+func wiredPlugin(topo *node_info.NumaTopology) (*numaPlugin, *framework.Session, *node_info.NodeInfo) {
+	node := &node_info.NodeInfo{Name: "node-a", NumaTopology: topo}
+	pp := &numaPlugin{ignoreList: sets.New[v1.ResourceName]()}
+	ssn := &framework.Session{ClusterInfo: &schedapi.ClusterInfo{Nodes: map[string]*node_info.NodeInfo{"node-a": node}}}
+	return pp, ssn, node
+}
+
+func TestParseIgnoreList(t *testing.T) {
 	tests := map[string]struct {
 		raw      string
 		expected []v1.ResourceName
@@ -35,12 +68,12 @@ func TestParseDenylist(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			args := framework.PluginArguments{}
 			if test.raw != "" {
-				args[denylistArg] = test.raw
+				args[ignoreListArg] = test.raw
 			}
-			denylist := parseDenylist(args)
-			assert.Equal(t, len(test.expected), denylist.Len())
+			ignoreList := parseIgnoreList(args)
+			assert.Equal(t, len(test.expected), ignoreList.Len())
 			for _, r := range test.expected {
-				assert.True(t, denylist.Has(r), "expected %s in denylist", r)
+				assert.True(t, ignoreList.Has(r), "expected %s in ignoreList", r)
 			}
 		})
 	}
@@ -57,86 +90,76 @@ func makeTask(qos v1.PodQOSClass, reqType pod_info.ResourceRequestType, gpus flo
 
 func TestShouldHandle(t *testing.T) {
 	plugin := &numaPlugin{}
-	singleNUMA := &nodeTopology{policy: policySingleNUMANode}
-	restricted := &nodeTopology{policy: policyRestricted}
-	bestEffort := &nodeTopology{policy: policyBestEffort}
+	singleNUMA := &node_info.NumaTopology{Policy: node_info.TopologyPolicySingleNUMANode}
+	restricted := &node_info.NumaTopology{Policy: node_info.TopologyPolicyRestricted}
+	bestEffort := &node_info.NumaTopology{Policy: node_info.TopologyPolicyBestEffort}
 
 	tests := map[string]struct {
 		task     *pod_info.PodInfo
-		nt       *nodeTopology
+		topo     *node_info.NumaTopology
 		expected bool
 	}{
 		"guaranteed whole-GPU on single-numa-node": {
-			task: makeTask(v1.PodQOSGuaranteed, pod_info.RequestTypeRegular, 2), nt: singleNUMA, expected: true,
+			task: makeTask(v1.PodQOSGuaranteed, pod_info.RequestTypeRegular, 2), topo: singleNUMA, expected: true,
 		},
 		"guaranteed whole-GPU on restricted": {
-			task: makeTask(v1.PodQOSGuaranteed, pod_info.RequestTypeRegular, 1), nt: restricted, expected: true,
+			task: makeTask(v1.PodQOSGuaranteed, pod_info.RequestTypeRegular, 1), topo: restricted, expected: true,
 		},
 		"nil node topology passes through": {
-			task: makeTask(v1.PodQOSGuaranteed, pod_info.RequestTypeRegular, 1), nt: nil, expected: false,
+			task: makeTask(v1.PodQOSGuaranteed, pod_info.RequestTypeRegular, 1), topo: nil, expected: false,
 		},
 		"best-effort policy passes through": {
-			task: makeTask(v1.PodQOSGuaranteed, pod_info.RequestTypeRegular, 1), nt: bestEffort, expected: false,
+			task: makeTask(v1.PodQOSGuaranteed, pod_info.RequestTypeRegular, 1), topo: bestEffort, expected: false,
 		},
 		"non-guaranteed QoS passes through": {
-			task: makeTask(v1.PodQOSBurstable, pod_info.RequestTypeRegular, 1), nt: singleNUMA, expected: false,
+			task: makeTask(v1.PodQOSBurstable, pod_info.RequestTypeRegular, 1), topo: singleNUMA, expected: false,
 		},
 		"best-effort QoS passes through": {
-			task: makeTask(v1.PodQOSBestEffort, pod_info.RequestTypeRegular, 0), nt: singleNUMA, expected: false,
+			task: makeTask(v1.PodQOSBestEffort, pod_info.RequestTypeRegular, 0), topo: singleNUMA, expected: false,
 		},
 		"guaranteed fraction request is handled (cpu/memory still aligned)": {
-			task: makeTask(v1.PodQOSGuaranteed, pod_info.RequestTypeFraction, 0), nt: singleNUMA, expected: true,
+			task: makeTask(v1.PodQOSGuaranteed, pod_info.RequestTypeFraction, 0), topo: singleNUMA, expected: true,
 		},
 		"guaranteed mig request is handled": {
-			task: makeTask(v1.PodQOSGuaranteed, pod_info.RequestTypeMigInstance, 0), nt: singleNUMA, expected: true,
+			task: makeTask(v1.PodQOSGuaranteed, pod_info.RequestTypeMigInstance, 0), topo: singleNUMA, expected: true,
 		},
 		"guaranteed cpu/memory-only pod is handled": {
-			task: makeTask(v1.PodQOSGuaranteed, pod_info.RequestTypeRegular, 0), nt: singleNUMA, expected: true,
+			task: makeTask(v1.PodQOSGuaranteed, pod_info.RequestTypeRegular, 0), topo: singleNUMA, expected: true,
 		},
 	}
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			assert.Equal(t, test.expected, plugin.shouldHandle(test.task, test.nt))
+			assert.Equal(t, test.expected, plugin.shouldHandle(test.task, test.topo))
 		})
 	}
 }
 
-func TestOnSessionOpenBuildsTopology(t *testing.T) {
-	cpuZone := numaNodeZone("node-0", map[string]string{"cpu": "4"})
-
+func TestOnSessionOpenRegistersWithoutState(t *testing.T) {
 	nodes := map[string]*node_info.NodeInfo{
 		"with-single-numa": {
-			Name:                 "with-single-numa",
-			NodeResourceTopology: nrtWithAttributes(policyValueSingleNUMANode, scopeValueContainer, cpuZone),
+			Name:         "with-single-numa",
+			NumaTopology: singleNUMANodeTopology(node_info.TopologyScopeContainer, numaZone("node-0", map[string]string{"cpu": "4"})),
 		},
-		"with-best-effort": {
-			Name:                 "with-best-effort",
-			NodeResourceTopology: nrtWithAttributes(policyValueBestEffort, scopeValueContainer, cpuZone),
-		},
-		"without-nrt": {
-			Name: "without-nrt",
-		},
+		"without-nrt": {Name: "without-nrt"},
 	}
 
 	plugin := New(framework.PluginArguments{}).(*numaPlugin)
 	ssn := &framework.Session{ClusterInfo: &schedapi.ClusterInfo{Nodes: nodes}}
+
+	// The plugin is stateless across sessions: OnSessionOpen only registers callbacks (it holds no
+	// node map), so open/close are safe no-ops on plugin state.
 	plugin.OnSessionOpen(ssn)
+	plugin.OnSessionClose(ssn)
 
-	// best-effort still builds a topology entry (its policy is recorded for v2 reuse), but
-	// shouldHandle gates it out; only nodes with usable NUMA-node zones get an entry.
-	assert.Contains(t, plugin.nodes, "with-single-numa")
-	assert.Contains(t, plugin.nodes, "with-best-effort")
-	assert.NotContains(t, plugin.nodes, "without-nrt", "node without NRT is a pass-through")
-
-	assert.Equal(t, policySingleNUMANode, plugin.nodes["with-single-numa"].policy)
 	assert.True(t, plugin.shouldHandle(
 		makeTask(v1.PodQOSGuaranteed, pod_info.RequestTypeRegular, 1),
-		plugin.nodes["with-single-numa"],
+		nodes["with-single-numa"].NumaTopology,
 	))
-
-	plugin.OnSessionClose(ssn)
-	assert.Nil(t, plugin.nodes)
+	assert.False(t, plugin.shouldHandle(
+		makeTask(v1.PodQOSGuaranteed, pod_info.RequestTypeRegular, 1),
+		nodes["without-nrt"].NumaTopology,
+	), "node without topology is a pass-through")
 }
 
 // gPod builds a Guaranteed single-container task on node-a with the given requests.
@@ -158,18 +181,6 @@ func gPod(uid string, requests map[string]string) *pod_info.PodInfo {
 	}
 }
 
-func singleNUMANodeTopology(scope string, zones ...nrtv1alpha2.Zone) *nodeTopology {
-	return buildNodeTopology(nrtWithAttributes(policyValueSingleNUMANode, scope, zones...), sets.New[v1.ResourceName]())
-}
-
-func newWiredPlugin(nt *nodeTopology) *numaPlugin {
-	return &numaPlugin{
-		denylist: sets.New[v1.ResourceName](),
-		nodes:    map[string]*nodeTopology{"node-a": nt},
-		reserved: map[common_info.PodID][]zoneReservation{},
-	}
-}
-
 func TestRequestUnits(t *testing.T) {
 	always := v1.ContainerRestartPolicyAlways
 	cpu := func(q string) v1.ResourceRequirements {
@@ -184,7 +195,7 @@ func TestRequestUnits(t *testing.T) {
 	}}}
 
 	t.Run("pod scope aggregates into one unit", func(t *testing.T) {
-		units := requestUnits(task, scopePod)
+		units := requestUnits(task, node_info.TopologyScopePod)
 		assert.Len(t, units, 1)
 		// PodRequests = max(init peak 10, sidecar+regulars 1+2+2=5) = 10.
 		got := units[0]["cpu"]
@@ -192,7 +203,7 @@ func TestRequestUnits(t *testing.T) {
 	})
 
 	t.Run("container scope yields one unit per concurrent container", func(t *testing.T) {
-		units := requestUnits(task, scopeContainer)
+		units := requestUnits(task, node_info.TopologyScopeContainer)
 		assert.Len(t, units, 3, "native sidecar + two regular containers (ordinary init excluded)")
 		var total int64
 		for _, u := range units {
@@ -204,10 +215,9 @@ func TestRequestUnits(t *testing.T) {
 }
 
 func TestPredicate(t *testing.T) {
-	node := &node_info.NodeInfo{Name: "node-a"}
-	pp := newWiredPlugin(singleNUMANodeTopology(scopeValuePod,
-		numaNodeZone("node-0", map[string]string{"cpu": "4"}),
-		numaNodeZone("node-1", map[string]string{"cpu": "4"}),
+	pp, _, node := wiredPlugin(singleNUMANodeTopology(node_info.TopologyScopePod,
+		numaZone("node-0", map[string]string{"cpu": "4"}),
+		numaZone("node-1", map[string]string{"cpu": "4"}),
 	))
 
 	assert.NoError(t, pp.predicate(gPod("fits", map[string]string{"cpu": "3"}), nil, node))
@@ -219,23 +229,44 @@ func TestPredicate(t *testing.T) {
 }
 
 func TestInCycleReservation(t *testing.T) {
-	node := &node_info.NodeInfo{Name: "node-a"}
-	pp := newWiredPlugin(singleNUMANodeTopology(scopeValuePod,
-		numaNodeZone("node-0", map[string]string{"cpu": "4"}),
+	pp, ssn, node := wiredPlugin(singleNUMANodeTopology(node_info.TopologyScopePod,
+		numaZone("node-0", map[string]string{"cpu": "4"}),
 	))
-	nt := pp.nodes["node-a"]
-	avail := func() int64 { q := nt.zones[0].available["cpu"]; return q.Value() }
+	avail := func() int64 { q := node.NumaTopology.Zones[0].Available["cpu"]; return q.Value() }
 
 	first := gPod("first", map[string]string{"cpu": "3"})
-	pp.allocate(&framework.Event{Task: first})
+	pp.allocate(ssn, &framework.Event{Task: first})
 	assert.Equal(t, int64(1), avail(), "zone charged by the first pod")
-	assert.Contains(t, pp.reserved, first.UID)
+	assert.Equal(t, []int{0}, first.NUMAPlacement.ZoneIndices(), "placement recorded on the task (zone 0)")
 
 	second := gPod("second", map[string]string{"cpu": "3"})
 	assert.Error(t, pp.predicate(second, nil, node), "only 1 cpu left in the single zone")
 
-	pp.deallocate(&framework.Event{Task: first})
+	pp.deallocate(ssn, &framework.Event{Task: first})
 	assert.Equal(t, int64(4), avail(), "zone credited back exactly on rollback")
-	assert.NotContains(t, pp.reserved, first.UID)
 	assert.NoError(t, pp.predicate(second, nil, node), "zone freed, second pod now fits")
+}
+
+func TestAllocateReusesExistingPlacement(t *testing.T) {
+	// A task arrives with a placement already set (restored on unevict, or seeded from
+	// the annotation). allocate must charge THAT placement, not re-evaluate — a fresh
+	// evaluate would pick the lowest zone (node-0), but the placement says node-1.
+	pp, ssn, node := wiredPlugin(singleNUMANodeTopology(node_info.TopologyScopePod,
+		numaZone("node-0", map[string]string{"cpu": "4"}),
+		numaZone("node-1", map[string]string{"cpu": "4"}),
+	))
+	task := gPod("seeded", map[string]string{"cpu": "3"})
+	task.NUMAPlacement = pod_info.NUMAPlacement{
+		{ZoneIndex: 1, Amount: v1.ResourceList{"cpu": resource.MustParse("3")}},
+	}
+
+	pp.allocate(ssn, &framework.Event{Task: task})
+	n0, n1 := node.NumaTopology.Zones[0].Available["cpu"], node.NumaTopology.Zones[1].Available["cpu"]
+	assert.Equal(t, int64(4), n0.Value(), "node-0 untouched (no re-evaluation)")
+	assert.Equal(t, int64(1), n1.Value(), "the existing placement on zone 1 is charged")
+	assert.Equal(t, []int{1}, task.NUMAPlacement.ZoneIndices(), "placement unchanged")
+
+	pp.deallocate(ssn, &framework.Event{Task: task})
+	n1 = node.NumaTopology.Zones[1].Available["cpu"]
+	assert.Equal(t, int64(4), n1.Value(), "credited back to node-1")
 }

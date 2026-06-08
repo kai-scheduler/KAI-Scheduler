@@ -9,23 +9,27 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/sets"
+
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 )
 
 // resourceAmounts is a set of resource quantities — a request, a zone's allocatable, or a
 // per-zone allocation.
 type resourceAmounts = map[v1.ResourceName]resource.Quantity
 
-// numaEvaluator decides whether a set of requests can be NUMA-aligned on a node and returns the expected allocation.
-// Each request is one alignment unit — the whole pod under pod scope, one container under container scope.
+// numaEvaluator decides whether a set of requests can be NUMA-aligned on a node and returns the
+// expected per-zone placement. Each request is one alignment unit — the whole pod under pod scope,
+// one container under container scope.
 type numaEvaluator interface {
-	evaluate(nt *nodeTopology, requests []resourceAmounts) (allocation map[int]resourceAmounts, admit bool)
+	evaluate(topo *node_info.NumaTopology, ignoreList sets.Set[v1.ResourceName], requests []resourceAmounts) (placement pod_info.NUMAPlacement, admit bool)
 }
 
-func evaluatorFor(policy tmPolicy) numaEvaluator {
+func evaluatorFor(policy node_info.TopologyManagerPolicy) numaEvaluator {
 	switch policy {
-	case policySingleNUMANode:
+	case node_info.TopologyPolicySingleNUMANode:
 		return singleNUMAEvaluator{}
-	case policyRestricted:
+	case node_info.TopologyPolicyRestricted:
 		return restrictedEvaluator{}
 	default:
 		return nil
@@ -36,12 +40,12 @@ func evaluatorFor(policy tmPolicy) numaEvaluator {
 // that fits). Requests may land on different zones (container scope), but none may span zones.
 type singleNUMAEvaluator struct{}
 
-func (singleNUMAEvaluator) evaluate(nt *nodeTopology, requests []resourceAmounts) (map[int]resourceAmounts, bool) {
-	scratch := cloneScratch(nt.zones)
+func (singleNUMAEvaluator) evaluate(topo *node_info.NumaTopology, ignoreList sets.Set[v1.ResourceName], requests []resourceAmounts) (pod_info.NUMAPlacement, bool) {
+	scratch := cloneScratch(topo.Zones)
 	allocation := map[int]resourceAmounts{}
 
 	for _, request := range requests {
-		req := project(request, nt.topologyAware)
+		req := extractNumaRequest(request, topo.Resources, ignoreList)
 		idx, ok := lowestZoneFitting(scratch, req)
 		if !ok {
 			return nil, false
@@ -49,7 +53,7 @@ func (singleNUMAEvaluator) evaluate(nt *nodeTopology, requests []resourceAmounts
 		subtract(scratch[idx], req)
 		addAllocation(allocation, idx, req)
 	}
-	return allocation, true
+	return placementFromAllocation(allocation), true
 }
 
 // restrictedEvaluator reproduces the kubelet's hint merge: a request is admitted iff there is a
@@ -58,12 +62,12 @@ func (singleNUMAEvaluator) evaluate(nt *nodeTopology, requests []resourceAmounts
 // that width must satisfy every resource at once. single-numa-node is the |mask|==1 case.
 type restrictedEvaluator struct{}
 
-func (restrictedEvaluator) evaluate(nt *nodeTopology, requests []resourceAmounts) (map[int]resourceAmounts, bool) {
-	scratch := cloneScratch(nt.zones)
+func (restrictedEvaluator) evaluate(topo *node_info.NumaTopology, ignoreList sets.Set[v1.ResourceName], requests []resourceAmounts) (pod_info.NUMAPlacement, bool) {
+	scratch := cloneScratch(topo.Zones)
 	allocation := map[int]resourceAmounts{}
 
 	for _, request := range requests {
-		req := project(request, nt.topologyAware)
+		req := extractNumaRequest(request, topo.Resources, ignoreList)
 		mask, ok := preferredCommonMask(scratch, req)
 		if !ok {
 			return nil, false
@@ -73,7 +77,28 @@ func (restrictedEvaluator) evaluate(nt *nodeTopology, requests []resourceAmounts
 			addAllocation(allocation, idx, amt)
 		}
 	}
-	return allocation, true
+	return placementFromAllocation(allocation), true
+}
+
+// placementFromAllocation converts the evaluator's zone-index→amounts accumulation into a
+// pod_info.NUMAPlacement, ordered by zone index for a deterministic placement (so the eviction
+// dedup's comparison is stable). Index-keyed: the internal scheduler representation. Translation
+// to the durable zone id happens only at the persistence boundary (BindRequest / annotation).
+func placementFromAllocation(allocation map[int]resourceAmounts) pod_info.NUMAPlacement {
+	indices := make([]int, 0, len(allocation))
+	for idx := range allocation {
+		indices = append(indices, idx)
+	}
+	sort.Ints(indices)
+
+	placement := make(pod_info.NUMAPlacement, 0, len(indices))
+	for _, idx := range indices {
+		placement = append(placement, pod_info.ZonePlacement{
+			ZoneIndex: idx,
+			Amount:    v1.ResourceList(allocation[idx]),
+		})
+	}
+	return placement
 }
 
 // preferredCommonMask finds the lowest minimal-width NUMA mask that satisfies every requested
@@ -209,10 +234,13 @@ func combinations(n, k int, yield func([]int) bool) {
 	}
 }
 
-func project(request resourceAmounts, aware sets.Set[v1.ResourceName]) resourceAmounts {
+// extractNumaRequest keeps only the resources that constrain zone selection: those reported per-zone
+// (aware) and not ignored, dropping zero-quantity entries. ignoreList is applied here rather
+// than at ingestion because it is plugin configuration, unknown to the topology builder.
+func extractNumaRequest(request resourceAmounts, aware, ignoreList sets.Set[v1.ResourceName]) resourceAmounts {
 	out := resourceAmounts{}
 	for r, qty := range request {
-		if qty.Sign() == 0 || !aware.Has(r) {
+		if qty.Sign() == 0 || !aware.Has(r) || ignoreList.Has(r) {
 			continue
 		}
 		out[r] = qty.DeepCopy()
@@ -220,11 +248,11 @@ func project(request resourceAmounts, aware sets.Set[v1.ResourceName]) resourceA
 	return out
 }
 
-func cloneScratch(zones []*numaZone) []resourceAmounts {
+func cloneScratch(zones []*node_info.NumaZone) []resourceAmounts {
 	scratch := make([]resourceAmounts, len(zones))
 	for i, zone := range zones {
-		amounts := make(resourceAmounts, len(zone.available))
-		for r, qty := range zone.available {
+		amounts := make(resourceAmounts, len(zone.Available))
+		for r, qty := range zone.Available {
 			amounts[r] = qty.DeepCopy()
 		}
 		scratch[i] = amounts

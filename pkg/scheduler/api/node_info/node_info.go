@@ -89,6 +89,8 @@ type NodeInfo struct {
 
 	NodeResourceTopology *nrtv1alpha2.NodeResourceTopology
 
+	NumaTopology *NumaTopology
+
 	PodAffinityInfo pod_affinity.NodePodAffinityInfo
 
 	GpuSharingNodeInfo
