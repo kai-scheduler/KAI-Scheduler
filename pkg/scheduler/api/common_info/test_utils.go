@@ -28,11 +28,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 )
 
 const FakePogGroupId = "12345678"
-const GPUFraction = "gpu-fraction"
 
 func BuildNode(name string, alloc v1.ResourceList) *v1.Node {
 	return &v1.Node{
@@ -80,7 +80,7 @@ func BuildPod(namespace, name, nodeName string, phase v1.PodPhase, req v1.Resour
 			if pod.Annotations == nil {
 				pod.Annotations = map[string]string{}
 			}
-			pod.Annotations[GPUFraction] = gpuRequest.AsDec().String()
+			pod.Annotations[commonconstants.GpuFraction] = gpuRequest.AsDec().String()
 		}
 	}
 

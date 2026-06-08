@@ -42,7 +42,6 @@ import (
 )
 
 const (
-	GpuMemoryAnnotationName            = "gpu-memory"
 	GPUGroup                           = "runai-gpu-group"
 	ReceivedResourceTypeAnnotationName = "received-resource-type"
 	WholeGpuIndicator                  = "-2"
@@ -501,13 +500,13 @@ func (pi *PodInfo) updatePodAdditionalFields(bindRequest *bindrequest_info.BindR
 		}
 	}
 
-	gpuMemory, err := strconv.ParseInt(pi.Pod.Annotations[GpuMemoryAnnotationName], 10, 64)
+	gpuMemory, err := strconv.ParseInt(pi.Pod.Annotations[commonconstants.GpuMemory], 10, 64)
 	if err == nil && gpuMemory > 0 {
 		pi.GpuRequirement = *resource_info.NewGpuResourceRequirementWithGpus(0, gpuMemory)
 		pi.ResourceRequestType = RequestTypeGpuMemory
 	}
 
-	gpuFractionString := pi.Pod.Annotations[common_info.GPUFraction]
+	gpuFractionString := pi.Pod.Annotations[commonconstants.GpuFraction]
 	gpuFraction, GPUFractionErr := strconv.ParseFloat(gpuFractionString, 64)
 	if !(gpuFraction <= 0 || gpuFraction > 1 || GPUFractionErr != nil) {
 		pi.GpuRequirement = *resource_info.NewGpuResourceRequirementWithGpus(gpuFraction, 0)

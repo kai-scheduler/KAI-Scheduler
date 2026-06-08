@@ -12,6 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_affinity"
@@ -248,7 +249,7 @@ func createTaskFractionalGPU() *pod_info.PodInfo {
 			Name:      "frac-gpu-task",
 			Namespace: "default",
 			Annotations: map[string]string{
-				common_info.GPUFraction: "0.25",
+				commonconstants.GpuFraction: "0.25",
 			},
 		},
 		Spec: v1.PodSpec{
@@ -299,8 +300,8 @@ func createTaskGPUMemory() *pod_info.PodInfo {
 			Name:      "gpu-memory-task",
 			Namespace: "default",
 			Annotations: map[string]string{
-				pod_info.GpuMemoryAnnotationName: "40000",
-				common_info.GPUFraction:          "0.5",
+				commonconstants.GpuMemory:   "40000",
+				commonconstants.GpuFraction: "0.5",
 			},
 		},
 		Spec: v1.PodSpec{
