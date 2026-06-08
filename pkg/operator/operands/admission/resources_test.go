@@ -287,6 +287,54 @@ func TestDeploymentForKAIConfig(t *testing.T) {
 			},
 			notExpectedArgs: []string{
 				"--hami-core-enabled=true",
+				"--block-nvidia-visible-devices=true",
+			},
+		},
+		{
+			name: "block-nvidia-visible-devices enabled",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Namespace: constants.DefaultKAINamespace,
+					Global: &kaiv1.GlobalConfig{
+						SchedulerName: ptr.To(constants.DefaultSchedulerName),
+					},
+					Admission: &admission.Admission{
+						Replicas:                  ptr.To(int32(1)),
+						GPUSharing:                ptr.To(true),
+						BlockNvidiaVisibleDevices: ptr.To(true),
+						Webhook: &admission.Webhook{
+							TargetPort:  ptr.To(9443),
+							ProbePort:   ptr.To(8081),
+							MetricsPort: ptr.To(8080),
+						},
+					},
+				},
+			},
+			expectedArgs: []string{
+				"--block-nvidia-visible-devices=true",
+			},
+		},
+		{
+			name: "block-nvidia-visible-devices disabled by default",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Namespace: constants.DefaultKAINamespace,
+					Global: &kaiv1.GlobalConfig{
+						SchedulerName: ptr.To(constants.DefaultSchedulerName),
+					},
+					Admission: &admission.Admission{
+						Replicas:   ptr.To(int32(1)),
+						GPUSharing: ptr.To(true),
+						Webhook: &admission.Webhook{
+							TargetPort:  ptr.To(9443),
+							ProbePort:   ptr.To(8081),
+							MetricsPort: ptr.To(8080),
+						},
+					},
+				},
+			},
+			notExpectedArgs: []string{
+				"--block-nvidia-visible-devices=true",
 			},
 		},
 	}

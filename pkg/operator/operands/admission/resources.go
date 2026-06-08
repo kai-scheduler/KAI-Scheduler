@@ -382,6 +382,10 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1admission.Admission) []
 		args = append(args, "--hami-core-enabled=true")
 	}
 
+	if config.BlockNvidiaVisibleDevices != nil && *config.BlockNvidiaVisibleDevices {
+		args = append(args, "--block-nvidia-visible-devices=true")
+	}
+
 	if config.Replicas != nil && *config.Replicas > 1 {
 		args = append(args, "--leader-elect")
 	}

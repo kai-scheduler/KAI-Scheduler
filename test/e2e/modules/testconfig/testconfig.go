@@ -15,6 +15,7 @@ type TestConfig struct {
 	SystemPodsNamespace     string
 	ReservationNamespace    string
 	SchedulerDeploymentName string
+	AdmissionDeploymentName string
 	QueueLabelKey           string
 	QueueNamespacePrefix    string
 	ContainerImage          string
@@ -27,6 +28,7 @@ var activeConfig = TestConfig{
 	SystemPodsNamespace:     "kai-scheduler",
 	ReservationNamespace:    "kai-resource-reservation",
 	SchedulerDeploymentName: "kai-scheduler-default",
+	AdmissionDeploymentName: "admission",
 	QueueLabelKey:           "kai.scheduler/queue",
 	QueueNamespacePrefix:    "kai-",
 	ContainerImage:          "ubuntu",

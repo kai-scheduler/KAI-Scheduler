@@ -10,6 +10,7 @@ global:
   imagePullSecrets: [] # format: [{name: secret1}, {name: secret2}]
   leaderElection: false
   gpuSharing: false
+  blockNvidiaVisibleDevices: false
   clusterAutoscaling: false
   nodeSelector: {}
   affinity: {}

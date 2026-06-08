@@ -1,0 +1,24 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+suite: test block nvidia visible devices configuration
+
+set:
+  _test:
+    renderKaiConfig: true
+templates:
+  - kai-config.yaml
+tests:
+  - it: should render blockNvidiaVisibleDevices false by default
+    asserts:
+      - equal:
+          path: spec.admission.blockNvidiaVisibleDevices
+          value: false
+
+  - it: should render blockNvidiaVisibleDevices true when global.blockNvidiaVisibleDevices is set
+    set:
+      global.blockNvidiaVisibleDevices: true
+    asserts:
+      - equal:
+          path: spec.admission.blockNvidiaVisibleDevices
+          value: true

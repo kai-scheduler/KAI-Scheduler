@@ -178,6 +178,7 @@ spec:
         maxUnavailable: {{ .Values.admission.podDisruptionBudget.maxUnavailable }}
         {{- end }}
     gpuSharing: {{ .Values.global.gpuSharing | default false }}
+    blockNvidiaVisibleDevices: {{ .Values.global.blockNvidiaVisibleDevices | default false }}
     queueLabelSelector: false
     webhook:
       port: 443

@@ -36,6 +36,11 @@ func (in *Admission) DeepCopyInto(out *Admission) {
 		*out = new(bool)
 		**out = **in
 	}
+	if in.BlockNvidiaVisibleDevices != nil {
+		in, out := &in.BlockNvidiaVisibleDevices, &out.BlockNvidiaVisibleDevices
+		*out = new(bool)
+		**out = **in
+	}
 	if in.QueueLabelSelector != nil {
 		in, out := &in.QueueLabelSelector, &out.QueueLabelSelector
 		*out = new(bool)

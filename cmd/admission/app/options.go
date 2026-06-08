@@ -25,6 +25,7 @@ type Options struct {
 	FakeGPUNodes                bool
 	GPUSharingEnabled           bool
 	HamiCoreEnabled             bool
+	BlockNvidiaVisibleDevices   bool
 	GPUPodRuntimeClassName      string
 	GPUFractionRuntimeClassName string
 }
@@ -84,6 +85,10 @@ func InitOptions() *Options {
 	fs.BoolVar(&options.HamiCoreEnabled,
 		"hami-core-enabled", false,
 		"Specifies if the HAMI-core GPU memory limit injection is enabled")
+	fs.BoolVar(&options.BlockNvidiaVisibleDevices,
+		"block-nvidia-visible-devices", false,
+		"Reject pods that set the NVIDIA_VISIBLE_DEVICES environment variable to values "+
+			"that conflict with NVIDIA's device plugin (only 'void'/'none' are allowed)")
 	fs.StringVar(&options.GPUPodRuntimeClassName,
 		"gpu-pod-runtime-class-name", constants.DefaultRuntimeClassName,
 		fmt.Sprintf("Deprecated: use --gpu-fraction-runtime-class-name. "+

@@ -32,6 +32,12 @@ type Admission struct {
 	// +kubebuilder:validation:Optional
 	GPUSharing *bool `json:"gpuSharing,omitempty"`
 
+	// BlockNvidiaVisibleDevices enables the device access plugin, which validates that
+	// pods do not override the NVIDIA_VISIBLE_DEVICES environment variable with
+	// values that conflict with NVIDIA's device plugin.
+	// +kubebuilder:validation:Optional
+	BlockNvidiaVisibleDevices *bool `json:"blockNvidiaVisibleDevices,omitempty"`
+
 	// QueueLabelSelector enables the queue label MatchExpression in webhooks
 	// +kubebuilder:validation:Optional
 	QueueLabelSelector *bool `json:"queueLabelSelector,omitempty"`
@@ -76,6 +82,7 @@ func (b *Admission) SetDefaultsWhereNeeded(replicaCount *int32, globalVPA *commo
 	b.Replicas = common.SetDefault(b.Replicas, ptr.To(ptr.Deref(replicaCount, 1)))
 	b.GPUSharing = common.SetDefault(b.GPUSharing, ptr.To(false))
 	b.QueueLabelSelector = common.SetDefault(b.QueueLabelSelector, ptr.To(false))
+	b.BlockNvidiaVisibleDevices = common.SetDefault(b.BlockNvidiaVisibleDevices, ptr.To(false))
 
 	b.ValidatingWebhookConfigurationName = common.SetDefault(b.ValidatingWebhookConfigurationName, ptr.To(defaultValidatingWebhookName))
 	b.MutatingWebhookConfigurationName = common.SetDefault(b.MutatingWebhookConfigurationName, ptr.To(defaultMutatingWebhookName))
