@@ -94,6 +94,13 @@ func (in *BindRequestSpec) DeepCopyInto(out *BindRequestSpec) {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
+	if in.SelectedNUMAZones != nil {
+		in, out := &in.SelectedNUMAZones, &out.SelectedNUMAZones
+		*out = make([]NUMAZonePlacement, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
 	if in.BackoffLimit != nil {
 		in, out := &in.BackoffLimit, &out.BackoffLimit
 		*out = new(int32)

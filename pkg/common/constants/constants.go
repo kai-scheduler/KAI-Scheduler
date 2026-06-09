@@ -63,6 +63,7 @@ const (
 	LastStartTimeStamp            = "kai.scheduler/last-start-timestamp"
 	GpuSharingConfigMapAnnotation = "runai/shared-gpu-configmap"
 	NvidiaVisibleDevices          = "NVIDIA_VISIBLE_DEVICES"
+	NumaPlacementPredicted        = "kai.scheduler/numa-placement-predicted"
 	NumaPlacementObserved         = "kai.scheduler/numa-placement-observed"
 
 	// UsageDB Prometheus Selector
