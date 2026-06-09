@@ -214,8 +214,9 @@ func (asb *PodAccumulatedScenarioBuilder) addNextPotentialVictims() bool {
 }
 
 func (asb *PodAccumulatedScenarioBuilder) isScenarioValid() (bool, string) {
+	input := accumulated_scenario_filters.NewMonotonicScenarioInput(asb.lastScenario)
 	for _, filter := range asb.scenarioFilters {
-		validScenario, err := filter.Filter(asb.lastScenario)
+		validScenario, err := filter.Filter(input)
 		if err != nil {
 			log.InfraLogger.Errorf("Failed to run the filter %s with the error %v. scenario: %s", filter.Name(), err,
 				asb.lastScenario)
