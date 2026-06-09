@@ -5,7 +5,7 @@ There are several ways for users to request a portion of GPU for their pods:
 * Pod can request a specific GPU memory amount (e.g. 2000Mib), leaving the remaining GPU memory for other pods.
 * Or, it can request a portion of a GPU device memory (e.g. 0.5) that the pod intends to consume from the mounted GPU device.
 
-By default, KAI Scheduler does not enforce memory allocation limits or perform memory isolation between processes. Please use [mps](./mps/README.md) or [hami](./hami/README.md) to enforce memory isolation.
+By default, KAI Scheduler does not enforce memory allocation limits or perform memory isolation between processes. Please use [hami](./hami/README.md) to enforce memory isolation.
 
 Without mps or hami, pods sharing the same GPU may consume more memory than requested, which can impact other workloads on that device.
 
