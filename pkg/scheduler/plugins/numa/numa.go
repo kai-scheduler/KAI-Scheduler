@@ -56,8 +56,6 @@ func (pp *numaPlugin) OnSessionOpen(ssn *framework.Session) {
 	})
 }
 
-// predicate rejects a node when the kubelet's Topology Manager could not NUMA-align
-// the task there. It is pure: it never mutates the node's working state.
 func (pp *numaPlugin) predicate(task *pod_info.PodInfo, _ *podgroup_info.PodGroupInfo, node *node_info.NodeInfo) error {
 	topo := node.NumaTopology
 	if !pp.shouldHandle(task, topo) {
@@ -76,14 +74,22 @@ func (pp *numaPlugin) predicate(task *pod_info.PodInfo, _ *podgroup_info.PodGrou
 func (pp *numaPlugin) allocate(ssn *framework.Session, event *framework.Event) {
 	task := event.Task
 	node := ssn.ClusterInfo.Nodes[task.NodeName]
-	if node == nil || !pp.shouldHandle(task, node.NumaTopology) {
+	if node == nil {
+		log.InfraLogger.Errorf("numa plugin: node <%s> not found in session", task.NodeName)
 		return
 	}
+
+	if !pp.shouldHandle(task, node.NumaTopology) {
+		return
+	}
+
 	topo := node.NumaTopology
 
 	if len(task.NUMAPlacement) == 0 {
 		placement, admit := evaluatorFor(topo.Policy).evaluate(topo, pp.ignoreList, requestUnits(task, topo.Scope))
 		if !admit {
+			log.InfraLogger.Errorf("numa plugin: task <%s/%s> cannot be NUMA-aligned on node <%s>",
+				task.Namespace, task.Name, node.Name)
 			return
 		}
 		task.NUMAPlacement = placement
@@ -98,14 +104,23 @@ func (pp *numaPlugin) deallocate(ssn *framework.Session, event *framework.Event)
 	if len(task.NUMAPlacement) == 0 {
 		return
 	}
-	if node := ssn.ClusterInfo.Nodes[task.NodeName]; node != nil && node.NumaTopology != nil {
-		numaDeallocate(node.NumaTopology, task.NUMAPlacement)
+	node := ssn.ClusterInfo.Nodes[task.NodeName]
+	if node == nil {
+		log.InfraLogger.Errorf("numa plugin: node <%s> not found in session", task.NodeName)
+		return
 	}
+
+	if node.NumaTopology == nil {
+		return
+	}
+
+	numaDeallocate(node.NumaTopology, task.NUMAPlacement)
 }
 
 func numaAllocate(topo *node_info.NumaTopology, placement pod_info.NUMAPlacement) {
 	for _, zone := range placement {
 		if zone.ZoneIndex < 0 || zone.ZoneIndex >= len(topo.Zones) {
+			log.InfraLogger.Errorf("numa plugin: zone index <%d> out of range", zone.ZoneIndex)
 			continue
 		}
 		subtract(topo.Zones[zone.ZoneIndex].Available, resourceAmounts(zone.Amount))
@@ -115,6 +130,7 @@ func numaAllocate(topo *node_info.NumaTopology, placement pod_info.NUMAPlacement
 func numaDeallocate(topo *node_info.NumaTopology, placement pod_info.NUMAPlacement) {
 	for _, zone := range placement {
 		if zone.ZoneIndex < 0 || zone.ZoneIndex >= len(topo.Zones) {
+			log.InfraLogger.Errorf("numa plugin: zone index <%d> out of range", zone.ZoneIndex)
 			continue
 		}
 		add(topo.Zones[zone.ZoneIndex].Available, resourceAmounts(zone.Amount))
