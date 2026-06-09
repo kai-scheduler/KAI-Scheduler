@@ -171,22 +171,23 @@ mutates it during the cycle. The resource vectors are **not** involved.
 type tmPolicy int // none | bestEffort | restricted | singleNUMANode
 type tmScope  int // container | pod
 
-// One NUMA node's working headroom, seeded from NRT zone Available,
+// One NUMA node's working headroom, seeded from NRT zone data,
 // decremented as tasks commit in-cycle, restored on rollback/eviction.
 type numaZone struct {
-    id        string
-    available map[v1.ResourceName]resource.Quantity
+    id          string
+    available   map[v1.ResourceName]resource.Quantity  // dynamic: decremented in-cycle
+    allocatable map[v1.ResourceName]resource.Quantity  // static: per-zone capacity, never changes in a cycle
 }
 
 type nodeTopology struct {
     policy        tmPolicy
     scope         tmScope
     zones         []*numaZone               // NRT zones of Type == "Node"
-    topologyAware sets.Set[v1.ResourceName] // resources this node reports per-zone, minus denylist
+    topologyAware sets.Set[v1.ResourceName] // resources this node reports per-zone, minus ignoreList
 }
 
 type numaPlugin struct {
-    denylist sets.Set[v1.ResourceName]  // optional; resources reported per-zone but NOT aligned
+    ignoreList sets.Set[v1.ResourceName]  // optional; resources reported per-zone but NOT aligned
                                         // (e.g. cpu/memory when their manager is off). Default empty.
     nodes    map[string]*nodeTopology   // rebuilt each OnSessionOpen; nil entry ⇒ pass
 }
@@ -254,7 +255,7 @@ topologyAware(node) = { r : some zone of node reports r }  ∩  { r : pod reques
   over-rejection on nodes whose manager is off; because **Memory Manager defaults to `None`**, a
   `single-numa-node` node that aligns CPU+devices but lets memory float is a real case where
   treating `memory` as aligned over-rejects.
-- **Optional denylist**: an operator who knows a reported resource is
+- **Optional ignoreList**: an operator who knows a reported resource is
   *not* aligned on their nodes (e.g. `memory` with Memory Manager `None`, or `cpu` without
   `static`) lists it, excluding it from per-zone reasoning and recovering the over-rejected
   capacity. Default is empty.
@@ -264,7 +265,7 @@ the kubelet, which aligns them only for Guaranteed QoS.)
 
 > **Possible future work:** upstream a `cpuManagerPolicy` / `memoryManagerPolicy` NRT attribute (none
 > exists today — exporters publish only the Topology Manager policy/scope). With it, `cpu`/`memory`
-> alignment becomes inferable per node and the denylist can be dropped.
+> alignment becomes inferable per node and the ignoreList can be dropped.
 
 ### `shouldHandle` gate
 
@@ -319,8 +320,14 @@ funnel.
 A **hint** is `{NUMANodeAffinity bitmask, Preferred bool}` — a candidate set of NUMA nodes a
 hint provider (CPU/Memory/Device Manager) can satisfy its slice of the request from. Each
 provider lists the NUMA-node subsets that can supply its requested amount, marking
-`Preferred=true` on those using the **minimum** number of NUMA nodes the request physically
-needs. A hint is a candidate grouping, **not** an allocation — it names no specific device/core.
+`Preferred=true` on those using the **minimum** number of NUMA nodes sufficient to satisfy
+the request from their **Allocatable** capacity (total installed devices; `m.allDevices` in the
+kubelet device manager). Feasibility — whether a given mask actually has enough free devices —
+is checked against **Available** (currently unallocated). This two-pass structure means that
+when some devices are already placed, a single-zone placement can be *preferred* by capacity but
+*infeasible* by availability; the only feasible mask (multi-zone) is then non-preferred →
+`restricted` rejects. A hint is a candidate grouping, **not** an allocation — it names no
+specific device/core.
 
 The Topology Manager merges one hint per provider (`mergePermutation`): merged affinity is the
 **bitwise-AND** of the picked affinities, and is `Preferred` **iff all picked affinities are
@@ -353,8 +360,10 @@ rejection — it does not (and must not) "fix" it.
 #### Reimplement the merge, don't import it
 
 The merge + `Preferred`/admit rule — is small (the admit short-circuit is a
-few dozen lines). Per-resource hint generation (enumerate NUMA-node subsets from per-zone
-`Available`, mark minimal-width preferred) is generic; there seems to be **no vendor-specific hint code**
+few dozen lines). Per-resource hint generation uses a **two-pass approach** matching the kubelet device manager:
+preferred width (minimum number of zones) is computed from per-zone **`Allocatable`** (total
+capacity; `m.allDevices`), while feasibility is checked against per-zone **`Available`** (currently
+free). The logic is generic; there seems to be **no vendor-specific hint code**
 in the kubelet (device hints are driven by per-device NUMA affinity, which NRT already encodes as
 per-zone counts). Importing `k8s.io/kubernetes/.../topologymanager` (an internal kubelet package)
 would couple KAI to kubelet internals; upstream scheduler-plugins itself imports only
@@ -423,9 +432,15 @@ GPU sharing already gets:
   identity and the durable annotation agree.
 - The framework **snapshots the previous `NUMAPlacement` on virtual eviction and restores it** on
   evict undo / pipeline undo, exactly as it already does for `GPUGroups` (`previousGpuGroups`).
-- A **`numaMovesToDifferentZone` gate** is added to the dedup, analogous to
-  `isSharedAndMoveToDifferentGPU`: when the task's new placement is on a different zone than the
-  copy on the node, the eviction is *not* deduped, so the move is realized.
+- A **`numaPlacementChanged` gate** is added to the dedup, analogous to
+  `isSharedAndMoveToDifferentGPU`: when the task's new placement differs from the copy on the
+  node, the eviction is *not* deduped, so the move is realized. The comparison is the **full
+  placement — zones *and* per-zone amounts**, not zone identity alone. The per-zone split is a
+  free variable (it depends on evaluation-time headroom), so a consolidation/rebalance can
+  deliberately re-lay-out a pod onto the *same* zone set; deduping that on zone identity would
+  silently restore the old split and desync the ledger. (Unlike GPU, where per-task memory is
+  fixed and group identity is a sufficient move key, NUMA needs the amounts.) An ordinary victim
+  that stays put carries its placement unchanged, so it still dedups.
 
 This is a small, mechanical extension of the existing GPU-sharing dedup path; it is the one piece
 of v1 that touches shared framework code (`pkg/scheduler/framework/statement.go`,
@@ -491,9 +506,11 @@ type numaEvaluator interface {
 v1 ships **two** evaluators, selected per node by its Topology Manager policy:
 - `singleNUMAEvaluator` — the bitmask intersection (`single-numa-node`); always returns one zone.
 - `restrictedEvaluator` — the hint merge (`restricted`); returns the chosen mask's zones.
-  It builds per-resource hints from per-zone `Available` via a small `resourceHinter` registry
-  (one generic counting hinter covers `nvidia.com/gpu` and `memory`; `cpu` needs care — see
-  *Known Limitations*) and searches for a common minimal-width mask. If some requested
+  It builds per-resource hints using `Allocatable` for preferred-width computation and
+  `Available` for feasibility (matching the kubelet device manager — see *Correctness and Known
+  Limitations*), via a small `resourceHinter` registry (one generic counting hinter covers
+  `nvidia.com/gpu` and `memory`; `cpu` needs care — see *Known Limitations*) and searches for a
+  common minimal-width mask. If some requested
   topology-aware resource has no registered hinter, it falls back to `singleNUMAEvaluator` (a
   safe, stricter rejection).
 
@@ -510,7 +527,7 @@ framework.RegisterPluginBuilder("numa", numa.New)
 ```
 
 and enable it in the scheduler plugin configuration. The only argument is the optional resource
-**denylist** (see *NUMA-relevant resources*), read from `PluginArguments`.
+**ignoreList** (see *NUMA-relevant resources*), read from `PluginArguments`.
 
 ### Deployment guidance: NRT freshness vs. schedule period
 
@@ -560,12 +577,20 @@ regardless; Appendix A is the in-plugin fallback if the assumption proves insuff
   wasted eviction and a bounce, never a loop. A victim with **no** placement record (neither
   observed nor predicted) is **not credited** on virtual eviction — so a NUMA-sensitive preemptor
   may miss it, but accounting never drifts on a guess. v1 never re-derives a zone.
+- **Allocatable-vs-available split in preferred-width computation.** The kubelet device manager
+  computes `minAffinitySize` (which governs `Preferred`) from total device capacity (`m.allDevices`),
+  not from currently-free devices. When zone capacity is partially allocated, a single-zone placement
+  may be preferred by capacity yet infeasible by availability — making the only feasible mask
+  (multi-zone) non-preferred → `restricted` rejects. This is correct kubelet behavior; the plugin
+  matches it by using `Allocatable` for preferred-width and `Available` for feasibility. Confirmed
+  against kubelet source: `pkg/kubelet/cm/devicemanager/topology_hints.go` lines 176–184
+  (`m.allDevices` pass) vs. 201–210 (available-device feasibility pass). See FOLLOWUPS item 10.
 
 ## Testing
 
 - **Unit**: policy/scope parsing from NRT attributes (and legacy `TopologyPolicies`); the
   `single-numa-node` bitmask filter across single/multi-zone fits; QoS gating; per-node
-  NUMA-relevant inference (resource constrains iff reported per-zone) and denylist exclusion; pod-
+  NUMA-relevant inference (resource constrains iff reported per-zone) and ignoreList exclusion; pod-
   vs container-scope; `shouldHandle` rejection of fractional/MIG/non-Guaranteed pods.
 - **`restricted` merge**: the worked examples above (admit on a common minimal-width mask;
   reject when per-resource minimal widths disagree, incl. the 4-GPU+1-CPU footgun); hinter-
