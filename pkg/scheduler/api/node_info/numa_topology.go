@@ -70,8 +70,8 @@ type NumaTopology struct {
 }
 
 type NumaZone struct {
-	ID          string
-	Available   map[v1.ResourceName]resource.Quantity
+	ID        string
+	Available map[v1.ResourceName]resource.Quantity
 	// Allocatable is the node's static per-zone capacity (kubelet allocatable), which never
 	// changes within a scheduling cycle. Used for preferred-width computation, matching how the
 	// kubelet device manager uses m.allDevices for minAffinitySize.
@@ -174,12 +174,23 @@ func buildZones(nrtZones nrtv1alpha2.ZoneList) []*NumaZone {
 	return zones
 }
 
-// sortZones imposes a deterministic NUMA-node ordering on the zones so that a zone's index
-// is stable and meaningful for the lifetime of the cycle, and so that single-numa-node
-// selection prefers the lowest NUMA node (matching the kubelet) and the restricted greedy
-// split has a stable tie-break. Zones are ordered by the numeric NUMA-node id parsed from
-// their name (e.g. "node-10" after "node-2"); names without a numeric suffix sort after, by
-// name. The durable identity remains the zone id; the index is an in-cycle convenience.
+// sortZones orders the zones by ascending NUMA-node id so the evaluators' zone/mask selection
+// matches the kubelet's allocation preference, independent of the order the exporter happened to
+// list zones in the NRT object (array position is not guaranteed to be the NUMA-node id — the id
+// is in the zone name). Among equally-preferred (minimal-width) hints the kubelet picks the
+// numerically-lowest NUMA-node affinity: bitmask.IsNarrowerThan breaks count ties via IsLessThan,
+// so mask {0} beats {1} and {0,1} beats {0,2}. Sorting ascending makes singleNUMAEvaluator's
+// lowest-fitting-zone and restrictedEvaluator's lowest-satisfying-mask reproduce that choice, so
+// the zone we predict and charge is the one the kubelet would use.
+//
+// Reference: k8s.io/kubernetes/pkg/kubelet/cm/topologymanager — bitmask/bitmask.go
+// (IsNarrowerThan -> IsLessThan) and policy.go (compare / narrowest-hint selection).
+//
+// This affects only which zone/mask is predicted, never the admit/reject verdict (feasibility is
+// order-independent), so a misprediction costs only in-cycle reservation accuracy, not a rejection.
+// Zones are ordered by the numeric suffix of the zone name (e.g. "node-10" after "node-2"); names
+// without a numeric suffix sort after, by name. The durable identity stays the zone id; the index
+// is an in-cycle convenience.
 func sortZones(zones []*NumaZone) {
 	sort.Slice(zones, func(i, j int) bool {
 		iNum, iOK := numaNodeID(zones[i].ID)
