@@ -28,35 +28,25 @@ func (da *DeviceAccess) Name() string {
 }
 
 func (da *DeviceAccess) Validate(pod *v1.Pod) error {
-	requestsFraction := resources.RequestsGPUFraction(pod)
-
-	var containerRef *gpusharingconfigmap.PodContainerRef
-	if requestsFraction {
-		var err error
-		containerRef, err = common.GetFractionContainerRef(pod)
-		if err != nil {
-			return fmt.Errorf("failed to get fraction container ref: %w", err)
-		}
+	containerRef, err := fractionContainerRef(pod)
+	if err != nil {
+		return err
 	}
 
 	for containerIndex := range pod.Spec.InitContainers {
-		if requestsFraction && containerRef.Type == gpusharingconfigmap.InitContainer && containerIndex == containerRef.Index {
+		if isFractionContainer(containerRef, gpusharingconfigmap.InitContainer, containerIndex) {
 			continue
 		}
-
-		err := validateSingleContainer(&pod.Spec.InitContainers[containerIndex])
-		if err != nil {
+		if err := validateSingleContainer(&pod.Spec.InitContainers[containerIndex]); err != nil {
 			return err
 		}
 	}
 
 	for containerIndex := range pod.Spec.Containers {
-		if requestsFraction && containerRef.Type == gpusharingconfigmap.RegularContainer && containerIndex == containerRef.Index {
+		if isFractionContainer(containerRef, gpusharingconfigmap.RegularContainer, containerIndex) {
 			continue
 		}
-
-		err := validateSingleContainer(&pod.Spec.Containers[containerIndex])
-		if err != nil {
+		if err := validateSingleContainer(&pod.Spec.Containers[containerIndex]); err != nil {
 			return err
 		}
 	}
@@ -65,32 +55,47 @@ func (da *DeviceAccess) Validate(pod *v1.Pod) error {
 }
 
 func (da *DeviceAccess) Mutate(pod *v1.Pod) error {
-	requestsFraction := resources.RequestsGPUFraction(pod)
-
-	var containerRef *gpusharingconfigmap.PodContainerRef
-	if requestsFraction {
-		var err error
-		containerRef, err = common.GetFractionContainerRef(pod)
-		if err != nil {
-			return fmt.Errorf("failed to get fraction container ref: %w", err)
-		}
+	containerRef, err := fractionContainerRef(pod)
+	if err != nil {
+		return err
 	}
 
 	for containerIndex := range pod.Spec.InitContainers {
-		if requestsFraction && containerRef.Type == gpusharingconfigmap.InitContainer && containerIndex == containerRef.Index {
+		if isFractionContainer(containerRef, gpusharingconfigmap.InitContainer, containerIndex) {
 			continue
 		}
 		blockGPUAccessIfNotRequested(&pod.Spec.InitContainers[containerIndex])
 	}
 
 	for containerIndex := range pod.Spec.Containers {
-		if requestsFraction && containerRef.Type == gpusharingconfigmap.RegularContainer && containerIndex == containerRef.Index {
+		if isFractionContainer(containerRef, gpusharingconfigmap.RegularContainer, containerIndex) {
 			continue
 		}
 		blockGPUAccessIfNotRequested(&pod.Spec.Containers[containerIndex])
 	}
 
 	return nil
+}
+
+// fractionContainerRef returns the pod's GPU-fraction container reference, or nil when the pod
+// does not request a fraction. It returns nil (instead of calling GetFractionContainerRef, which
+// indexes pod.Spec.Containers[0]) when there are no regular containers, since the mutating
+// webhook can run before the API server enforces containers >= 1.
+func fractionContainerRef(pod *v1.Pod) (*gpusharingconfigmap.PodContainerRef, error) {
+	if !resources.RequestsGPUFraction(pod) || len(pod.Spec.Containers) == 0 {
+		return nil, nil
+	}
+	containerRef, err := common.GetFractionContainerRef(pod)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get fraction container ref: %w", err)
+	}
+	return containerRef, nil
+}
+
+// isFractionContainer reports whether the container at the given type+index is the
+// GPU-fraction container that should be exempt from device-access handling.
+func isFractionContainer(ref *gpusharingconfigmap.PodContainerRef, containerType gpusharingconfigmap.ContainerType, index int) bool {
+	return ref != nil && ref.Type == containerType && index == ref.Index
 }
 
 // blockGPUAccessIfNotRequested sets NVIDIA_VISIBLE_DEVICES=void on containers that do not

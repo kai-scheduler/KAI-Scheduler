@@ -297,3 +297,17 @@ func TestMutate(t *testing.T) {
 		})
 	}
 }
+
+// TestFractionPodWithoutRegularContainers guards against a panic: a pod with a GPU-fraction
+// annotation but no regular containers can reach the mutating webhook before the API server
+// enforces containers >= 1. GetFractionContainerRef indexes pod.Spec.Containers[0], so the
+// plugin must short-circuit instead of panicking.
+func TestFractionPodWithoutRegularContainers(t *testing.T) {
+	pod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{constants.GpuFraction: "0.5"}},
+		Spec:       v1.PodSpec{InitContainers: []v1.Container{cpuContainer("init-container-0")}},
+	}
+	plugin := New()
+	assert.NoError(t, plugin.Validate(pod))
+	assert.NoError(t, plugin.Mutate(pod))
+}

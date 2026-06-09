@@ -32,9 +32,8 @@ type Admission struct {
 	// +kubebuilder:validation:Optional
 	GPUSharing *bool `json:"gpuSharing,omitempty"`
 
-	// BlockNvidiaVisibleDevices enables the device access plugin, which validates that
-	// pods do not override the NVIDIA_VISIBLE_DEVICES environment variable with
-	// values that conflict with NVIDIA's device plugin.
+	// BlockNvidiaVisibleDevices prevents pods from overriding the NVIDIA_VISIBLE_DEVICES
+	// environment variable, which would conflict with NVIDIA's device plugin.
 	// +kubebuilder:validation:Optional
 	BlockNvidiaVisibleDevices *bool `json:"blockNvidiaVisibleDevices,omitempty"`
 
