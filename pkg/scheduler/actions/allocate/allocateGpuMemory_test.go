@@ -76,8 +76,9 @@ func getMemoryGPUTestsMetadata() []integration_tests_utils.TestTopologyMetadata 
 						DeservedGPUs: 1,
 					},
 				},
-				// 3 tasks × 40 MiB ≈ 2.4 GPU-equivalents exceeds the queue's deserved
-				// quota of 1. A non-preemptible job must not exceed deserved quota, so the
+				// 3 tasks × 40 MiB ≈ 120 MiB, each gpu in the unitests is 100 MiB,
+				// so the required 2.4 GPU-equivalents exceeds the queue's deserved quota of 1.
+				// A non-preemptible job must not exceed deserved quota, so the
 				// job-level capacity check blocks it (same as for fraction requests).
 				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
 					"pending_job-0": {
@@ -129,8 +130,9 @@ func getMemoryGPUTestsMetadata() []integration_tests_utils.TestTopologyMetadata 
 						MaxAllowedGPUs: 1,
 					},
 				},
-				// 3 tasks × 40 MiB ≈ 2.4 GPU-equivalents exceeds the queue's hard limit
-				// (MaxAllowed) of 1. Even a preemptible job cannot exceed the limit, so the
+				// 3 tasks × 40 MiB ≈ 120 MiB, each gpu in the unitests is 100 MiB,
+				// so the required 2.4 GPU-equivalents exceeds the queue's hard limit (MaxAllowed) of 1.
+				// Even a preemptible job cannot exceed the limit, so the
 				// job-level capacity check blocks it (same as for fraction requests).
 				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
 					"pending_job-0": {
