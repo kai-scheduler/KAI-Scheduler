@@ -327,7 +327,7 @@ func GetTestCacheMock(
 	}
 
 	if cacheRequirements.NumberOfCacheBinds != 0 {
-		cacheMock.EXPECT().Bind(Any(), Any(), Any()).Return(nil).MaxTimes(cacheRequirements.NumberOfCacheBinds)
+		cacheMock.EXPECT().Bind(Any(), Any(), Any(), Any()).Return(nil).MaxTimes(cacheRequirements.NumberOfCacheBinds)
 	}
 
 	fakeClient := fake.NewSimpleClientset(additionalObjects...)

@@ -11,7 +11,7 @@ import (
 // numa plugin's per-cycle nodeTopology.zones) and the exact per-resource amount
 // placed there. The index is the internal scheduler representation; translation
 // to/from the durable zone id happens only at the persistence boundary (BindRequest
-// field and pod annotation).
+// field and pod annotation), which the numa plugin owns.
 type ZonePlacement struct {
 	ZoneIndex int
 	Amount    v1.ResourceList
