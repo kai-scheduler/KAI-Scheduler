@@ -413,6 +413,34 @@ spec:
                 items:
                   type: string
                 type: array
+              selectedNUMAZones:
+                description: |-
+                  SelectedNUMAZones is the scheduler's predicted NUMA placement of the pod's resources on the
+                  selected node, set only on nodes whose kubelet Topology Manager policy rejects on topology
+                  grounds (single-numa-node / restricted). The binder records it as a pod annotation; the
+                  scheduler reads it back to keep per-zone accounting stable across cycles. Empty when the pod
+                  is not NUMA-constrained.
+                items:
+                  description: |-
+                    NUMAZonePlacement is the predicted placement of a pod's resources on one NUMA zone: the durable
+                    NUMA-node zone id and the amount of each resource placed there.
+                  properties:
+                    amount:
+                      additionalProperties:
+                        anyOf:
+                        - type: integer
+                        - type: string
+                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                        x-kubernetes-int-or-string: true
+                      description: Amount is the per-resource quantity placed on this
+                        zone.
+                      type: object
+                    zone:
+                      description: Zone is the NUMA-node zone id (the NodeResourceTopology
+                        Zone.Name).
+                      type: string
+                  type: object
+                type: array
               selectedNode:
                 description: SelectedNode is the name of the selected node the pod
                   should be bound to
