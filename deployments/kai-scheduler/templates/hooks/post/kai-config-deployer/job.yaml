@@ -1,6 +1,7 @@
 # Copyright 2025 NVIDIA CORPORATION
 # SPDX-License-Identifier: Apache-2.0
 
+{{- if .Values.kaiConfigDeployer.enabled }}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -87,3 +88,4 @@ spec:
       - name: manifest
         configMap:
           name: kai-config-manifest
+{{- end }}

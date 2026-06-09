@@ -201,6 +201,8 @@ crdupgrader:
 
 kaiConfigDeployer:
   # Post-install/post-upgrade hook that applies the kai-config CR out-of-release (#1536).
+  # Disable to manage the kai-config CR outside of this chart.
+  enabled: true
   image:
     name: crd-upgrader
     pullPolicy: IfNotPresent

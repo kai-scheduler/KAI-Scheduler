@@ -1,0 +1,49 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+suite: test kaiConfigDeployer enabled configuration
+
+templates:
+  - hooks/post/kai-config-deployer/job.yaml
+  - hooks/post/kai-config-deployer/configmap.yaml
+  - hooks/post/kai-config-deployer/rbac.yaml
+tests:
+  - it: should render the deployer hook resources by default
+    asserts:
+      - hasDocuments:
+          count: 1
+        template: hooks/post/kai-config-deployer/job.yaml
+      - hasDocuments:
+          count: 1
+        template: hooks/post/kai-config-deployer/configmap.yaml
+      - hasDocuments:
+          count: 3
+        template: hooks/post/kai-config-deployer/rbac.yaml
+
+  - it: should render the deployer hook resources when explicitly enabled
+    set:
+      kaiConfigDeployer.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+        template: hooks/post/kai-config-deployer/job.yaml
+      - hasDocuments:
+          count: 1
+        template: hooks/post/kai-config-deployer/configmap.yaml
+      - hasDocuments:
+          count: 3
+        template: hooks/post/kai-config-deployer/rbac.yaml
+
+  - it: should not render the deployer hook resources when disabled
+    set:
+      kaiConfigDeployer.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+        template: hooks/post/kai-config-deployer/job.yaml
+      - hasDocuments:
+          count: 0
+        template: hooks/post/kai-config-deployer/configmap.yaml
+      - hasDocuments:
+          count: 0
+        template: hooks/post/kai-config-deployer/rbac.yaml

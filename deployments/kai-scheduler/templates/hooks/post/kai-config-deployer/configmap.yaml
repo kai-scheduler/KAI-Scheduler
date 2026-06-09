@@ -1,6 +1,7 @@
 # Copyright 2025 NVIDIA CORPORATION
 # SPDX-License-Identifier: Apache-2.0
 
+{{- if .Values.kaiConfigDeployer.enabled }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -13,3 +14,4 @@ metadata:
 data:
   kai-config.yaml: |
     {{- include "kai-scheduler.kai-config" . | nindent 4 }}
+{{- end }}
