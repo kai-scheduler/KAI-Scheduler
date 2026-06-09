@@ -32,11 +32,11 @@ import (
 
 const (
 	kaiResourceIsolatorWebhookName = "kai-resource-isolator-mutating"
-	binderDeploymentName = "binder"
-	binderDeploymentNamespace = "kai-scheduler"
-	binderPluginsFlag = "--plugins"
-	cudaImage = "nvidia/cuda:12.6.0-base-ubuntu22.04"
-	gpuMemoryRequestMiB = 2000
+	binderDeploymentName           = "binder"
+	binderDeploymentNamespace      = "kai-scheduler"
+	binderPluginsFlag              = "--plugins"
+	cudaImage                      = "nvidia/cuda:12.6.0-base-ubuntu22.04"
+	gpuMemoryRequestMiB            = 2000
 )
 
 var _ = Describe("HAMi-core resource isolation", Ordered, func() {
@@ -187,6 +187,9 @@ var _ = Describe("HAMi-core resource isolation", Ordered, func() {
 			GinkgoLogr.Info("nvidia-smi inside container", "memory.total (MiB)", visibleMemMiB)
 			Expect(visibleMemMiB).To(BeNumerically("<", totalGPUMemMiB),
 				"nvidia-smi inside container should report limited GPU memory for fraction request")
+			Expect(visibleMemMiB).To(BeNumerically("==", limitMiB),
+				"nvidia-smi visible memory (%d MiB) should match CUDA_DEVICE_MEMORY_LIMIT (%d MiB)",
+				visibleMemMiB, limitMiB)
 		})
 })
 
