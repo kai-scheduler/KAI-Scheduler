@@ -1,0 +1,111 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+#
+# Standalone manifest for the per-node NUMA placement agent (POC).
+# Deploy manually after building and pushing the `numa-agent` image:
+#
+#   make numa-agent                              # builds the binary + image
+#   # override registry/tag as needed, e.g.:
+#   make numa-agent DOCKER_REPO_BASE=<your-registry> VERSION=<tag>
+#   docker push <image>
+#   kubectl apply -f deployments/numa-agent/numa-agent.yaml
+#
+# Set the `image:` below to the tag you built/pushed.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: numa-agent
+  namespace: kai-scheduler
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kai-numa-agent
+rules:
+  # Patch the observed NUMA placement annotation onto pods. get is needed for the patch round-trip.
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kai-numa-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kai-numa-agent
+subjects:
+  - kind: ServiceAccount
+    name: numa-agent
+    namespace: kai-scheduler
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: numa-agent
+  namespace: kai-scheduler
+  labels:
+    app: numa-agent
+spec:
+  selector:
+    matchLabels:
+      app: numa-agent
+  template:
+    metadata:
+      labels:
+        app: numa-agent
+    spec:
+      serviceAccountName: numa-agent
+      # Pull secret for the image registry (e.g. ghcr.io). Create it in this namespace, e.g.:
+      #   kubectl create secret docker-registry ghcr-pull -n kai-scheduler \
+      #     --docker-server=ghcr.io --docker-username=<user> --docker-password=<PAT>
+      imagePullSecrets:
+        - name: ghcr-pull
+      # The kubelet podresources socket and its parent directory are root-owned; read as root.
+      securityContext:
+        runAsUser: 0
+        runAsNonRoot: false
+      # Restrict to the nodes you want observed. For the POC this targets GPU nodes; adjust or
+      # remove as needed.
+      nodeSelector:
+        kubernetes.io/os: linux
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: numa-agent
+          image: ghcr.io/itsomri/kai-scheduler/numa-agent:0.0.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - --podresources-socket=/var/lib/kubelet/pod-resources/kubelet.sock
+            - --sysfs-root=/host/sys
+            - --poll-interval=10s
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          volumeMounts:
+            - name: podresources
+              mountPath: /var/lib/kubelet/pod-resources
+              readOnly: true
+            - name: sysfs
+              mountPath: /host/sys
+              readOnly: true
+      volumes:
+        - name: podresources
+          hostPath:
+            path: /var/lib/kubelet/pod-resources
+            type: Directory
+        - name: sysfs
+          hostPath:
+            path: /sys
+            type: Directory
