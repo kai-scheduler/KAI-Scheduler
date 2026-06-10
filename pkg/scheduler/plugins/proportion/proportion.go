@@ -311,6 +311,7 @@ func (pp *proportionPlugin) createQueueResourceAttrs(ssn *framework.Session) {
 		queueAttributes := &rs.QueueAttributes{
 			UID:               queue.UID,
 			Name:              queue.Name,
+			DisplayName:       queue.DisplayName,
 			ParentQueue:       queue.ParentQueue,
 			ChildQueues:       queue.ChildQueues,
 			CreationTimestamp: queue.CreationTimestamp,
