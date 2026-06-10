@@ -18,7 +18,7 @@ tests:
 
   - it: should render the default SchedulingShard when explicitly enabled
     set:
-      scheduler.defaultShard.enabled: true
+      defaultShard.enabled: true
     asserts:
       - hasDocuments:
           count: 1
@@ -27,7 +27,7 @@ tests:
 
   - it: should not render the default SchedulingShard when disabled
     set:
-      scheduler.defaultShard.enabled: false
+      defaultShard.enabled: false
     asserts:
       - hasDocuments:
           count: 0
