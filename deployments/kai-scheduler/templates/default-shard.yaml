@@ -1,6 +1,7 @@
 # Copyright 2025 NVIDIA CORPORATION
 # SPDX-License-Identifier: Apache-2.0
 
+{{- if .Values.defaultShard.enabled }}
 apiVersion: kai.scheduler/v1
 kind: SchedulingShard
 metadata:
@@ -26,3 +27,4 @@ spec:
   actions:
     {{- toYaml .Values.scheduler.actions | nindent 4 }}
   {{- end }}
+{{- end }}

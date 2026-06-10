@@ -153,7 +153,7 @@ func (ni *NodeInfo) NonAllocatedResource(resourceType v1.ResourceName) float64 {
 
 func (ni *NodeInfo) IsTaskAllocatable(task *pod_info.PodInfo) bool {
 	if isBestEffortJob := task.GpuRequirement.IsEmpty() && task.ResReqVector.IsZero() &&
-		(len(task.GetAllStorageClaims()) == 0) && !task.IsMemoryRequest(); isBestEffortJob {
+		(len(task.GetAllStorageClaims()) == 0) && !task.IsGpuMemoryRequest(); isBestEffortJob {
 		return true
 	}
 

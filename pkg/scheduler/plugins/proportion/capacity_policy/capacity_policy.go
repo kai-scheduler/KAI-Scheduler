@@ -18,16 +18,17 @@ import (
 type capacityCheckFn func(requestedShare rs.ResourceQuantities, job *podgroup_info.PodGroupInfo) *api.SchedulableResult
 
 type CapacityPolicy struct {
-	queues map[common_info.QueueID]*rs.QueueAttributes
+	queues           map[common_info.QueueID]*rs.QueueAttributes
+	minNodeGPUMemory int64
 }
 
-func New(queues map[common_info.QueueID]*rs.QueueAttributes) *CapacityPolicy {
-	return &CapacityPolicy{queues}
+func New(queues map[common_info.QueueID]*rs.QueueAttributes, minNodeGPUMemory int64) *CapacityPolicy {
+	return &CapacityPolicy{queues, minNodeGPUMemory}
 }
 
 func (cp *CapacityPolicy) IsJobOverQueueCapacity(job *podgroup_info.PodGroupInfo,
 	tasksToAllocate []*pod_info.PodInfo) *api.SchedulableResult {
-	requestedShareQuantities := getRequiredQuota(tasksToAllocate)
+	requestedShareQuantities := getRequiredQuota(tasksToAllocate, cp.minNodeGPUMemory)
 
 	checkFns := []capacityCheckFn{cp.resultsOverLimit, cp.resultsWithNonPreemptibleOverQuota}
 	return cp.isJobOverCapacity(requestedShareQuantities, job, checkFns)
@@ -36,7 +37,7 @@ func (cp *CapacityPolicy) IsJobOverQueueCapacity(job *podgroup_info.PodGroupInfo
 func (cp *CapacityPolicy) IsNonPreemptibleJobOverQuota(job *podgroup_info.PodGroupInfo,
 	tasksToAllocate []*pod_info.PodInfo) *api.SchedulableResult {
 
-	requestedShareQuantities := getRequiredQuota(tasksToAllocate)
+	requestedShareQuantities := getRequiredQuota(tasksToAllocate, cp.minNodeGPUMemory)
 
 	checkFns := []capacityCheckFn{cp.resultsWithNonPreemptibleOverQuota}
 	return cp.isJobOverCapacity(requestedShareQuantities, job, checkFns)
@@ -67,13 +68,17 @@ func (cp *CapacityPolicy) isJobOverCapacity(requestedShare rs.ResourceQuantities
 	return Schedulable()
 }
 
-func getRequiredQuota(tasksToAllocate []*pod_info.PodInfo) rs.ResourceQuantities {
+func getRequiredQuota(tasksToAllocate []*pod_info.PodInfo, minNodeGPUMemory int64) rs.ResourceQuantities {
 	quota := rs.EmptyResourceQuantities()
 	for _, pod := range tasksToAllocate {
 		quantities := utils.QuantifyVector(pod.ResReqVector, pod.VectorMap)
-		quota[rs.GpuResource] += quantities[rs.GpuResource]
 		quota[rs.CpuResource] += quantities[rs.CpuResource]
 		quota[rs.MemoryResource] += quantities[rs.MemoryResource]
+		if pod.IsGpuMemoryRequest() {
+			quota[rs.GpuResource] += pod.GpuRequirement.GpuMemoryAsGpuFraction(minNodeGPUMemory)
+		} else {
+			quota[rs.GpuResource] += quantities[rs.GpuResource]
+		}
 	}
 	return quota
 }

@@ -48,6 +48,11 @@ spec:
               admission:
                 description: Admission holds KAI admission webhooks
                 properties:
+                  blockNvidiaVisibleDevices:
+                    description: |-
+                      BlockNvidiaVisibleDevices prevents pods from overriding the NVIDIA_VISIBLE_DEVICES
+                      environment variable, which would conflict with NVIDIA's device plugin.
+                    type: boolean
                   gpuFractionRuntimeClassName:
                     description: |-
                       GPUFractionRuntimeClassName specifies the runtime class to be set for

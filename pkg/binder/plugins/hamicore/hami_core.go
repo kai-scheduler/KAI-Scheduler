@@ -74,7 +74,7 @@ func calculateCudaDeviceMemoryLimit(node *v1.Node, bindRequest *v1alpha2.BindReq
 		return "", fmt.Errorf("calculated allocated gpu memory is zero")
 	}
 
-	return strconv.FormatInt(allocatedMemoryMib, 10), nil
+	return fmt.Sprintf("%dm", allocatedMemoryMib), nil
 }
 
 func (p *Plugin) PostBind(

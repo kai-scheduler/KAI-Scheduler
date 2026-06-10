@@ -170,10 +170,8 @@ func GetTasksToAllocateInitResourceVector(
 	for _, task := range GetTasksToAllocate(podGroupInfo, subGroupOrderFn, taskOrderFn, isRealAllocation) {
 		if task.ShouldAllocate(isRealAllocation) {
 			result.Add(task.ResReqVector)
-			if task.IsMemoryRequest() && minNodeGPUMemory > 0 {
-				additionalGpuFraction := float64(task.GpuRequirement.GetNumOfGpuDevices()) *
-					(float64(task.GpuRequirement.GpuMemory()) / float64(minNodeGPUMemory))
-				result.Set(gpuIdx, result.Get(gpuIdx)+additionalGpuFraction)
+			if task.IsGpuMemoryRequest() && minNodeGPUMemory > 0 {
+				result.Set(gpuIdx, result.Get(gpuIdx)+task.GpuRequirement.GpuMemoryAsGpuFraction(minNodeGPUMemory))
 			}
 		}
 	}

@@ -414,7 +414,7 @@ func TestPodInfo_updatePodAdditionalFields(t *testing.T) {
 					nil,
 					map[string]string{},
 					map[string]string{
-						GpuMemoryAnnotationName: "1024",
+						commonconstants.GpuMemory: "1024",
 					}),
 			},
 			expected{
@@ -438,7 +438,7 @@ func TestPodInfo_updatePodAdditionalFields(t *testing.T) {
 					nil,
 					map[string]string{},
 					map[string]string{
-						GpuMemoryAnnotationName:                "1024",
+						commonconstants.GpuMemory:              "1024",
 						commonconstants.GpuFractionsNumDevices: "2",
 					}),
 			},
@@ -463,7 +463,7 @@ func TestPodInfo_updatePodAdditionalFields(t *testing.T) {
 					nil,
 					map[string]string{},
 					map[string]string{
-						common_info.GPUFraction: "0.5",
+						commonconstants.GpuFraction: "0.5",
 					}),
 			},
 			expected{
@@ -487,7 +487,7 @@ func TestPodInfo_updatePodAdditionalFields(t *testing.T) {
 					nil,
 					map[string]string{},
 					map[string]string{
-						common_info.GPUFraction: "0.5",
+						commonconstants.GpuFraction: "0.5",
 					}),
 				bindingRequest: &bindrequest_info.BindRequestInfo{
 					BindRequest: &schedulingv1alpha2.BindRequest{
@@ -519,7 +519,7 @@ func TestPodInfo_updatePodAdditionalFields(t *testing.T) {
 					nil,
 					map[string]string{},
 					map[string]string{
-						common_info.GPUFraction:                "0.5",
+						commonconstants.GpuFraction:            "0.5",
 						commonconstants.GpuFractionsNumDevices: "3",
 					}),
 			},
