@@ -111,6 +111,11 @@ scheduler:
     name: scheduler
     pullPolicy: IfNotPresent
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
+  # defaultShard controls the chart-managed "default" SchedulingShard CR.
+  # Disable to install KAI without deploying the default SchedulingShard
+  # (e.g. to manage shards out-of-band).
+  defaultShard:
+    enabled: true
   placementStrategy: binpack
   ports:
     metricsPort: 8080

@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Added an opt-in `hamicore` binder plugin (depends on `gpusharing`) to write the HAMI-core GPU memory limit (`CUDA_DEVICE_MEMORY_LIMIT`) for fractional GPU pods.
 - Added `global.podSecurityContext`, `global.resourceReservation.namespaceLabels`, `nodescaleadjuster.labels`, `crdupgrader.resources`, `topologyMigration.resources`, and `postCleanup.resources` to the Helm. chart.
 - Added `kaiConfigDeployer.enabled` Helm value (default `true`) to allow disabling the post-install/post-upgrade hook that applies the kai-config CR, for managing the CR outside of the chart.
+- Added `scheduler.defaultShard.enabled` Helm value (default `true`) to allow installing KAI without deploying the chart-managed default `SchedulingShard` CR.
 
 ### Changed
 - Scoped admission `runtimeClassName` injection to GPU fraction pods only; whole-GPU pods are no longer mutated. `admission.gpuPodRuntimeClassName` is deprecated in favor of `admission.gpuFractionRuntimeClassName`. Reservation pod `runtimeClassName` now defaults to empty. [#1543](https://github.com/kai-scheduler/KAI-Scheduler/issues/1543) [davidLif](https://github.com/davidLif)
