@@ -30,6 +30,8 @@ The following versions are currently supported.
 | **v0.4** | **LTS** | Apr 2025 | **Apr 2026** | **End of Life** |
 | **< v0.4** | Legacy | - | - | **End of Life** |
 
+> **Note:** With the release of `v0.15`, the Standard release `v0.13` has reached End of Life and is no longer supported.
+
 > **Note on Versioning:** The strict "Even numbers are LTS" policy begins with `v0.12`. The versions listed above (`v0.9`, `v0.6`, `v0.4`) are supported as transitional LTS releases.
 
 ## Reporting Bugs
