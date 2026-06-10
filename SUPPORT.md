@@ -20,6 +20,7 @@ The following versions are currently supported.
 
 | Version | Type | Release Date | End of Support | Status |
 | :--- | :--- | :--- | :--- | :--- |
+| **v0.15** | Standard | Jun 2026 | *Until v0.16* | **Active** |
 | **v0.14** | **LTS** | Mar 2026 | Mar 2027 | **Maintenance** |
 | **v0.13** | Standard | Mar 2026 | *Until v0.14* | **End of Life** |
 | **v0.12** | **LTS** | Dec 2025 | Dec 2026 | **Maintenance** |
