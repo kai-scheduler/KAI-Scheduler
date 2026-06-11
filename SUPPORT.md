@@ -40,7 +40,7 @@ Historical support additions are listed after the table.
 | KAI Release Line | Kubernetes Versions Validated | Notes |
 | :--- | :--- | :--- |
 | `v0.14.x` and `v0.15.x` tags | `v1.31.6`, `v1.32.3` (`default`, `dra-enabled`), `v1.33.4` (`default`, `dra-enabled`), `v1.34.0`, `v1.35.0` | This matrix landed in `5f09d6dc` and is present through tag `v0.15.2`. |
-| `main` / next unreleased line | Same as above plus `v1.36.0` | `5743bccc` added `v1.36.0` to the release workflow. |
+| `main` / next unreleased line | Same as above plus `v1.36.1` | `5743bccc` added `v1.36.0`; the workflow now pins `v1.36.1` so kind can pull the matching prebuilt node image. |
 
 ### Historical Support Notes
 
