@@ -31,7 +31,7 @@ The following versions are currently supported.
 
 > **Note on Versioning:** The strict "Even numbers are LTS" policy begins with `v0.12`. The versions listed above (`v0.9`, `v0.6`, `v0.4`) are supported as transitional LTS releases.
 
-## Kubernetes Support Matrix
+## Kubernetes Compatibility Matrix
 
 The `v0.14` release line is validated against the following Kubernetes versions.
 
