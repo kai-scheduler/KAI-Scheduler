@@ -54,10 +54,10 @@ runs:
           --output /tmp/kind-config.yaml
 
     - name: Create k8s Kind Cluster
-      uses: helm/kind-action@v1.13.0
+      uses: helm/kind-action@v1.14.0
       with:
         cluster_name: kind
-        version: v0.31.0
+        version: v0.32.0
         config: /tmp/kind-config.yaml
         node_image: kindest/node:${{ inputs.k8s_version }}
 
