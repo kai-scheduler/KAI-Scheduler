@@ -386,23 +386,48 @@ func getPodGroupID(pod *v1.Pod) common_info.PodGroupID {
 func getPodResourceRequest(pod *v1.Pod) *resource_info.ResourceRequirements {
 	result := getPodResourceWithoutInitContainers(pod)
 
-	// take max_resource(sum_pod, any_init_container)
-	for _, container := range pod.Spec.InitContainers {
-		err := result.SetMaxResource(resource_info.RequirementsFromResourceList(container.Resources.Requests))
-		if err != nil {
-			log.InfraLogger.Errorf("Failed to calculate pod required resources for pod %s/%s. Error: %s",
-				pod.Namespace, pod.Name, err.Error())
-		}
-	}
+	sidecarSum, initPhasePeak := initContainerEffects(pod)
+	logIfErr(pod, result.Add(sidecarSum))
+	logIfErr(pod, result.SetMaxResource(initPhasePeak))
 
 	if pod.Spec.Overhead != nil {
 		overheadReq := resource_info.RequirementsFromResourceList(pod.Spec.Overhead)
-		result.Add(&overheadReq.BaseResource)
+		result.BaseResource.Add(&overheadReq.BaseResource)
 	}
 
 	result.ScalarResources()[resource_info.PodsResourceName] = 1
 
 	return result
+}
+
+// initContainerEffects returns the contributions of `pod`'s init containers to
+// pod resource accounting, mirroring kubelet's `AggregateContainerRequests`:
+//   - sidecarSum: total request of native sidecars (initContainers with
+//     `restartPolicy: Always`, KEP-753), which run concurrently with regular
+//     containers and add to the steady-state sum.
+//   - initPhasePeak: max over each non-restartable init of `init.Requests +
+//     sum(native sidecars declared before it)`, since those sidecars are
+//     already running when the init runs.
+func initContainerEffects(pod *v1.Pod) (sidecarSum, initPhasePeak *resource_info.ResourceRequirements) {
+	sidecarSum = resource_info.EmptyResourceRequirements()
+	initPhasePeak = resource_info.EmptyResourceRequirements()
+	for _, container := range pod.Spec.InitContainers {
+		containerReq := resource_info.RequirementsFromResourceList(container.Resources.Requests)
+		if container.RestartPolicy != nil && *container.RestartPolicy == v1.ContainerRestartPolicyAlways {
+			logIfErr(pod, sidecarSum.Add(containerReq))
+			continue
+		}
+		logIfErr(pod, containerReq.Add(sidecarSum))
+		logIfErr(pod, initPhasePeak.SetMaxResource(containerReq))
+	}
+	return sidecarSum, initPhasePeak
+}
+
+func logIfErr(pod *v1.Pod, err error) {
+	if err != nil {
+		log.InfraLogger.Errorf("Failed to calculate pod required resources for pod %s/%s. Error: %s",
+			pod.Namespace, pod.Name, err.Error())
+	}
 }
 
 // getPodResourceWithoutInitContainers returns Pod's resource request, it does not contain
