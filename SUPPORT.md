@@ -20,6 +20,7 @@ The following versions are currently supported.
 
 | Version | Type | Release Date | End of Support | Status |
 | :--- | :--- | :--- | :--- | :--- |
+| **v0.15** | Standard | Jun 2026 | *Until v0.16* | **Active** |
 | **v0.14** | **LTS** | Mar 2026 | Mar 2027 | **Maintenance** |
 | **v0.13** | Standard | Mar 2026 | *Until v0.14* | **End of Life** |
 | **v0.12** | **LTS** | Dec 2025 | Dec 2026 | **Maintenance** |
@@ -30,6 +31,14 @@ The following versions are currently supported.
 | **< v0.4** | Legacy | - | - | **End of Life** |
 
 > **Note on Versioning:** The strict "Even numbers are LTS" policy begins with `v0.12`. The versions listed above (`v0.9`, `v0.6`, `v0.4`) are supported as transitional LTS releases.
+
+## Kubernetes Support Matrix
+
+The `v0.15` release line is validated against the following Kubernetes versions.
+
+| KAI Release Line | Kubernetes Versions Validated | Notes |
+| :--- | :--- | :--- |
+| `v0.15.x` tags | `v1.28.13`, `v1.29.8`, `v1.30.4`, `v1.31.6`, `v1.32.3` (`default`, `dra-enabled`), `v1.33.4` (`default`, `dra-enabled`), `v1.34.0`, `v1.35.0` | Release workflow validation for the `v0.15` line. |
 
 ## Reporting Bugs
 
