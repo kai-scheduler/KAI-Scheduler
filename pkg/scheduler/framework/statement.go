@@ -432,7 +432,6 @@ func (s *Statement) unallocate(task *pod_info.PodInfo, previousNodeName string,
 		return fmt.Errorf("node doesn't exist on cluster")
 	}
 
-	task.NodeName = ""
 	task.IsVirtualStatus = previousIsVirtualStatus
 
 	for _, eh := range s.ssn.eventHandlers {
@@ -443,8 +442,7 @@ func (s *Statement) unallocate(task *pod_info.PodInfo, previousNodeName string,
 		}
 	}
 
-	// Restore the pre-allocate placement only *after* DeallocateFunc credited the
-	// charged one — the plugin credits the placement the task currently carries.
+	task.NodeName = ""
 	task.NUMAPlacement = previousNumaPlacement
 	return nil
 }
@@ -472,7 +470,6 @@ func (s *Statement) unpipeline(
 	}
 
 	hostname := task.NodeName
-	task.NodeName = previousNode
 	task.GPUGroups = previousGpuGroups
 	task.ResourceClaimInfo = previousResourceClaimInfo.Clone()
 	task.IsVirtualStatus = previousIsVirtualStatus
@@ -496,8 +493,7 @@ func (s *Statement) unpipeline(
 		}
 	}
 
-	// Restore the pre-pipeline placement only *after* DeallocateFunc credited the
-	// charged one — the plugin credits the placement the task currently carries.
+	task.NodeName = previousNode
 	task.NUMAPlacement = previousNumaPlacement
 
 	return nil

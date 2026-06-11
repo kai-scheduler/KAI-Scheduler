@@ -49,20 +49,46 @@ func (pp *numaPlugin) Name() string {
 }
 
 func (pp *numaPlugin) OnSessionOpen(ssn *framework.Session) {
+	pp.seedPlacements(ssn)
+
 	ssn.AddPredicateFn(pp.predicate)
+	ssn.AddNumaPlacementFn(pp.placement)
 	ssn.AddEventHandler(&framework.EventHandler{
 		AllocateFunc:   func(event *framework.Event) { pp.allocate(ssn, event) },
 		DeallocateFunc: func(event *framework.Event) { pp.deallocate(ssn, event) },
 	})
 }
 
-func (pp *numaPlugin) predicate(task *pod_info.PodInfo, _ *podgroup_info.PodGroupInfo, node *node_info.NodeInfo) error {
-	topo := node.NumaTopology
-	if !pp.shouldHandle(task, topo) {
-		return nil
+// evaluate is the shared core of predicate and placement: it returns the task's expected NUMA
+// placement on the node and whether the kubelet's Topology Manager would admit it. A task the
+// plugin does not constrain (wrong policy/QoS, or no NRT) passes through as (nil, true).
+func (pp *numaPlugin) evaluate(task *pod_info.PodInfo, node *node_info.NodeInfo) (pod_info.NUMAPlacement, bool) {
+	if node == nil || !pp.shouldHandle(task, node.NumaTopology) {
+		return nil, true
 	}
+	topo := node.NumaTopology
+	placement, admit := evaluatorFor(topo.Policy).evaluate(topo, pp.ignoreList, requestUnits(task, topo.Scope))
+	if !admit {
+		return nil, false
+	}
+	return placement, true
+}
 
-	if _, admit := evaluatorFor(topo.Policy).evaluate(topo, pp.ignoreList, requestUnits(task, topo.Scope)); !admit {
+// placement is the session NumaPlacementFn: the task's expected NUMA placement on the node. It's called
+// after the predicate, so it's expected to always return a placement - the error log is for safety.
+func (pp *numaPlugin) placement(task *pod_info.PodInfo, node *node_info.NodeInfo) pod_info.NUMAPlacement {
+	placement, admit := pp.evaluate(task, node)
+	if !admit {
+		// FittingNode runs the predicate before the allocation path stamps the placement, so a
+		// rejection at stamp time is unexpected (the ledger changed between filter and stamp).
+		log.InfraLogger.Errorf("numa plugin: task <%s/%s> cannot be NUMA-aligned on node <%s>",
+			task.Namespace, task.Name, node.Name)
+	}
+	return placement
+}
+
+func (pp *numaPlugin) predicate(task *pod_info.PodInfo, _ *podgroup_info.PodGroupInfo, node *node_info.NodeInfo) error {
+	if _, admit := pp.evaluate(task, node); !admit {
 		log.InfraLogger.V(6).Infof("numa plugin: task <%s/%s> cannot be NUMA-aligned on node <%s>",
 			task.Namespace, task.Name, node.Name)
 		return common_info.NewFitError(task.Name, task.Namespace, node.Name, fitErrorMessage)
@@ -70,32 +96,17 @@ func (pp *numaPlugin) predicate(task *pod_info.PodInfo, _ *podgroup_info.PodGrou
 	return nil
 }
 
-// allocate evaluates a task's expected NUMA placement and updates the node's numa topology resources.
+// allocate charges the task's per-zone placement against the node's in-cycle ledger. The placement
+// is decided before the statement op — stamped by the allocation path via the NumaPlacementFn, or
+// restored from the snapshot on eviction undo — so this handler only charges; it never evaluates.
+// An empty placement (non-NUMA pod, or unknown) is a no-op.
 func (pp *numaPlugin) allocate(ssn *framework.Session, event *framework.Event) {
 	task := event.Task
 	node := ssn.ClusterInfo.Nodes[task.NodeName]
-	if node == nil {
-		log.InfraLogger.Errorf("numa plugin: node <%s> not found in session", task.NodeName)
+	if node == nil || node.NumaTopology == nil {
 		return
 	}
-
-	if !pp.shouldHandle(task, node.NumaTopology) {
-		return
-	}
-
-	topo := node.NumaTopology
-
-	if len(task.NUMAPlacement) == 0 {
-		placement, admit := evaluatorFor(topo.Policy).evaluate(topo, pp.ignoreList, requestUnits(task, topo.Scope))
-		if !admit {
-			log.InfraLogger.Errorf("numa plugin: task <%s/%s> cannot be NUMA-aligned on node <%s>",
-				task.Namespace, task.Name, node.Name)
-			return
-		}
-		task.NUMAPlacement = placement
-	}
-
-	numaAllocate(topo, task.NUMAPlacement)
+	numaAllocate(node.NumaTopology, task.NUMAPlacement)
 }
 
 // deallocate frees a task's NUMA placement, if it's known, from the node's numa topology resources.

@@ -192,6 +192,8 @@ func allocateTask(ssn *framework.Session, stmt *framework.Statement, nodes []*no
 }
 
 func allocateTaskToNode(ssn *framework.Session, stmt *framework.Statement, task *pod_info.PodInfo, node *node_info.NodeInfo, isPipelineOnly bool) bool {
+	task.NUMAPlacement = ssn.GetNumaPlacement(task, node)
+
 	if task.IsFractionRequest() || task.IsGpuMemoryRequest() {
 		return gpu_sharing.AllocateFractionalGPUTaskToNode(ssn, stmt, task, node, isPipelineOnly)
 	}

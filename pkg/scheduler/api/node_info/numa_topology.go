@@ -78,6 +78,17 @@ type NumaZone struct {
 	Allocatable map[v1.ResourceName]resource.Quantity
 }
 
+// ZoneIndexByID returns the index of the zone with the given durable id, or false if no zone has
+// it. Used to translate a persisted (id-based) placement back to the internal index representation.
+func (t *NumaTopology) ZoneIndexByID(id string) (int, bool) {
+	for i, zone := range t.Zones {
+		if zone.ID == id {
+			return i, true
+		}
+	}
+	return -1, false
+}
+
 func (t *NumaTopology) Clone() *NumaTopology {
 	if t == nil {
 		return nil
