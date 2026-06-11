@@ -197,3 +197,14 @@ func TestNumaNodeID(t *testing.T) {
 		assert.Equal(t, test.expectedID, id, name)
 	}
 }
+
+func TestZoneIndexByID(t *testing.T) {
+	topo := &NumaTopology{Zones: []*NumaZone{{ID: "node-0"}, {ID: "node-1"}}}
+
+	idx, ok := topo.ZoneIndexByID("node-1")
+	assert.True(t, ok)
+	assert.Equal(t, 1, idx)
+
+	_, ok = topo.ZoneIndexByID("node-9")
+	assert.False(t, ok, "unknown id")
+}

@@ -4,6 +4,7 @@
 package numa
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -11,10 +12,13 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/sets"
 
+	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	schedapi "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 )
@@ -241,6 +245,7 @@ func TestInCycleReservation(t *testing.T) {
 	avail := func() int64 { q := node.NumaTopology.Zones[0].Available["cpu"]; return q.Value() }
 
 	first := gPod("first", map[string]string{"cpu": "3"})
+	first.NUMAPlacement = pp.placement(first, node) // stamped before the op, as the allocation path does
 	pp.allocate(ssn, &framework.Event{Task: first})
 	assert.Equal(t, int64(1), avail(), "zone charged by the first pod")
 	assert.Equal(t, []int{0}, first.NUMAPlacement.ZoneIndices(), "placement recorded on the task (zone 0)")
@@ -275,4 +280,83 @@ func TestAllocateReusesExistingPlacement(t *testing.T) {
 	pp.deallocate(ssn, &framework.Event{Task: task})
 	n1 = node.NumaTopology.Zones[1].Available["cpu"]
 	assert.Equal(t, int64(4), n1.Value(), "credited back to node-1")
+}
+
+func observedZone(zone, cpu string) schedulingv1alpha2.NUMAZonePlacement {
+	return schedulingv1alpha2.NUMAZonePlacement{Zone: zone, Amount: v1.ResourceList{"cpu": resource.MustParse(cpu)}}
+}
+
+func observedAnnotation(zones ...schedulingv1alpha2.NUMAZonePlacement) string {
+	b, _ := json.Marshal(zones)
+	return string(b)
+}
+
+func TestPlacementFromObserved(t *testing.T) {
+	topo := singleNUMANodeTopology(node_info.TopologyScopePod,
+		numaZone("node-0", map[string]string{"cpu": "4"}),
+		numaZone("node-1", map[string]string{"cpu": "4"}),
+	)
+
+	t.Run("translates zone id to index, ordered ascending", func(t *testing.T) {
+		got := placementFromRecord([]schedulingv1alpha2.NUMAZonePlacement{observedZone("node-1", "3"), observedZone("node-0", "1")}, topo)
+		assert.Equal(t, []int{0, 1}, got.ZoneIndices(), "sorted by zone index")
+	})
+
+	t.Run("unknown zone id voids the whole placement", func(t *testing.T) {
+		got := placementFromRecord([]schedulingv1alpha2.NUMAZonePlacement{observedZone("node-0", "1"), observedZone("node-9", "1")}, topo)
+		assert.Nil(t, got, "a missing zone makes the placement unknown")
+	})
+}
+
+func TestSeedObservedPlacements(t *testing.T) {
+	topo := singleNUMANodeTopology(node_info.TopologyScopePod,
+		numaZone("node-0", map[string]string{"cpu": "4"}),
+		numaZone("node-1", map[string]string{"cpu": "4"}),
+	)
+
+	withObserved := gPod("observed", map[string]string{"cpu": "2"})
+	withObserved.Pod.Annotations = map[string]string{commonconstants.NumaPlacementObserved: observedAnnotation(observedZone("node-1", "2"))}
+
+	alreadyPlaced := gPod("already", map[string]string{"cpu": "2"})
+	alreadyPlaced.Pod.Annotations = map[string]string{commonconstants.NumaPlacementObserved: observedAnnotation(observedZone("node-1", "2"))}
+	alreadyPlaced.NUMAPlacement = pod_info.NUMAPlacement{{ZoneIndex: 0, Amount: v1.ResourceList{"cpu": resource.MustParse("2")}}}
+
+	noAnnotation := gPod("none", map[string]string{"cpu": "2"})
+
+	malformed := gPod("malformed", map[string]string{"cpu": "2"})
+	malformed.Pod.Annotations = map[string]string{commonconstants.NumaPlacementObserved: "{not json"}
+
+	burstable := gPod("burstable", map[string]string{"cpu": "2"})
+	burstable.Pod.Status.QOSClass = v1.PodQOSBurstable
+	burstable.Pod.Annotations = map[string]string{commonconstants.NumaPlacementObserved: observedAnnotation(observedZone("node-1", "2"))}
+
+	pending := gPod("pending", map[string]string{"cpu": "2"})
+	pending.NodeName = ""
+	pending.Pod.Annotations = map[string]string{commonconstants.NumaPlacementObserved: observedAnnotation(observedZone("node-1", "2"))}
+
+	// The node holds a *clone* of the running pod (as the snapshot does via addTask). Seeding must
+	// target the canonical job task, not this copy — the eviction path credits the job task.
+	nodeCopy := withObserved.Clone()
+	node := &node_info.NodeInfo{
+		Name:         "node-a",
+		NumaTopology: topo,
+		PodInfos:     map[common_info.PodID]*pod_info.PodInfo{withObserved.UID: nodeCopy},
+	}
+	job := podgroup_info.NewPodGroupInfo("job", withObserved, alreadyPlaced, noAnnotation, malformed, burstable, pending)
+
+	pp := &numaPlugin{ignoreList: sets.New[v1.ResourceName]()}
+	ssn := &framework.Session{ClusterInfo: &schedapi.ClusterInfo{
+		Nodes:         map[string]*node_info.NodeInfo{"node-a": node},
+		PodGroupInfos: map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{"job": job},
+	}}
+
+	pp.seedPlacements(ssn)
+
+	assert.Equal(t, []int{1}, withObserved.NUMAPlacement.ZoneIndices(), "observed annotation translated onto the canonical job task")
+	assert.Empty(t, nodeCopy.NUMAPlacement, "the node's clone is not the seed target (job task is)")
+	assert.Equal(t, []int{0}, alreadyPlaced.NUMAPlacement.ZoneIndices(), "existing placement not overwritten")
+	assert.Empty(t, noAnnotation.NUMAPlacement, "no annotation ⇒ unaccounted")
+	assert.Empty(t, malformed.NUMAPlacement, "malformed annotation ⇒ unaccounted")
+	assert.Empty(t, burstable.NUMAPlacement, "non-Guaranteed pod is not seeded")
+	assert.Empty(t, pending.NUMAPlacement, "pending pod (no node assigned) is not seeded")
 }

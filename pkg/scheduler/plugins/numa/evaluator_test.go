@@ -93,6 +93,15 @@ func TestSingleNUMAEvaluator(t *testing.T) {
 		assert.False(t, admit)
 	})
 
+	t.Run("rejects when total fits across zones but no single zone fits", func(t *testing.T) {
+		// Both zones carry both resources. The request total (3 GPU, 6 CPU) is within the node's
+		// combined capacity (4 GPU, 8 CPU), but exceeds what any single zone holds (2 GPU, 4 CPU).
+		// single-numa requires one zone to satisfy everything, so it rejects despite the aggregate fit.
+		node := twoZoneNode(node_info.TopologyPolicySingleNUMANode, req(gpu, "2", "cpu", "4"))
+		_, admit := singleNUMAEvaluator{}.evaluate(node, noIgnoreList, []resourceAmounts{req(gpu, "3", "cpu", "6")})
+		assert.False(t, admit, "fits across both zones combined, but neither zone alone fits")
+	})
+
 	t.Run("ignored resource is not aligned", func(t *testing.T) {
 		// memory only on node-1; with memory ignored the cpu-only request fits node-0.
 		split := numaTopology(node_info.TopologyPolicySingleNUMANode, node_info.TopologyScopeContainer,
