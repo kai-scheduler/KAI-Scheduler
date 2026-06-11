@@ -40,7 +40,7 @@ Historical support additions are listed after the table.
 | KAI Release Line | Kubernetes Versions Validated | Notes |
 | :--- | :--- | :--- |
 | `v0.14.x` and `v0.15.x` tags | `v1.31.6`, `v1.32.3` (`default`, `dra-enabled`), `v1.33.4` (`default`, `dra-enabled`), `v1.34.0`, `v1.35.0` | This matrix landed in `5f09d6dc` and is present through tag `v0.15.2`. |
-| `main` / next unreleased line | `v1.28.13`, `v1.29.8`, `v1.30.4`, `v1.31.6`, `v1.32.3` (`default`, `dra-enabled`), `v1.33.4` (`default`, `dra-enabled`), `v1.34.0`, `v1.35.0`, `v1.36.1` | We support Kubernetes `v1.28` onwards in the release workflow matrix. |
+| `main` / next unreleased line | `v1.28.13`, `v1.29.8`, `v1.30.4`, `v1.31.6`, `v1.32.3` (`default`, `dra-enabled`), `v1.33.4` (`default`, `dra-enabled`), `v1.34.0`, `v1.35.0`, `v1.36.1` | Release workflow validation for the main line. |
 
 ### Historical Support Notes
 
