@@ -113,9 +113,6 @@ func (g *GpuResourceRequirement) Add(gg *GpuResourceRequirement) error {
 		}
 		g.count += gg.count
 	}
-	for name, ggQuant := range gg.draGpuCounts {
-		g.draGpuCounts[name] += ggQuant
-	}
 	for name, ggQuant := range gg.migResources {
 		g.migResources[name] += ggQuant
 	}

@@ -25,6 +25,7 @@ import (
 
 	"gotest.tools/assert"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/utils/ptr"
 
 	schedulingv1alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
