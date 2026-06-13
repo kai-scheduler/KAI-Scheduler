@@ -1,0 +1,44 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# Published at: https://kai-scheduler.github.io/KAI-Scheduler/presentations/
+#
+# Shares the "pages" concurrency group with the other gh-pages deploy workflows
+# so deploys to the gh-pages branch are serialized and never clobber each other.
+
+name: Deploy Design Presentations
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/presentations/**"
+      - ".github/workflows/deploy-design-presentations.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to GitHub Pages
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Build presentations site
+        run: bash docs/presentations/build-index.sh _site
+
+      - name: Deploy to gh-pages branch
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: _site
+          publish_branch: gh-pages
+          destination_dir: presentations
