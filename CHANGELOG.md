@@ -28,6 +28,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Fixed Helm chart not wiring `podgrouper.queueLabelKey` into `spec.global.queueLabelKey` on the Config CR, so custom queue label keys were ignored at install time [#1655](https://github.com/kai-scheduler/KAI-Scheduler/pull/1655) [dttung2905](https://github.com/dttung2905)
 - Fixed scheduler nil-pointer panic in the preempt scenario builder when a (partial) job has no tasks to allocate (`NewIdleGpusFilter` dereferenced a nil scenario); added the missing nil-guard matching the sibling filters [#1664](https://github.com/kai-scheduler/KAI-Scheduler/issues/1664) [sam-huang1223](https://github.com/sam-huang1223)
 - Fixed default node-scale-adjuster image name (`node-scale-adjuster` → `nodescaleadjuster`) so it matches the image published to GHCR
+- Fixed duplicate GPU reservation pods being created for a single `gpu-group` on a node (each reserving a different physical GPU), which corrupted the scheduler's fractional-GPU accounting and left devices unschedulable. The binder now resolves existing reservation pods via an uncached read and names reservation pods deterministically per (node, gpu-group) so concurrent or retried binds collide on one object instead of duplicating [#1673](https://github.com/kai-scheduler/KAI-Scheduler/issues/1673)
 
 ## [v0.15.0] - 2026-05-20
 

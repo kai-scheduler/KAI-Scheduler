@@ -110,7 +110,7 @@ var _ = BeforeSuite(func() {
 	clientWithWatch, err := client.NewWithWatch(cfg, client.Options{})
 	Expect(err).NotTo(HaveOccurred())
 
-	rrs = resourcereservation.NewService(false, clientWithWatch, "", 40*time.Second,
+	rrs = resourcereservation.NewService(false, clientWithWatch, clientWithWatch, "", 40*time.Second,
 		resourceReservationNameSpace, resourceReservationServiceAccount, resourceReservationAppLabelValue, scalingPodsNamespace, "",
 		nil, nil, nil)
 	podBinder := binding.NewBinder(k8sManager.GetClient(), rrs, binderPlugins)
