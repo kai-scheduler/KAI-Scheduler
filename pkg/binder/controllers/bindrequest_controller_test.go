@@ -87,7 +87,7 @@ var _ = Describe("BindRequest Controller", func() {
 		fakePlugin = mockplugins.NewMockPlugin(gomock.NewController(GinkgoT()))
 		binderPlugins.RegisterPlugin(fakePlugin)
 
-		rrs := resourcereservation.NewService(false, fakeClient, "", 40*time.Second,
+		rrs := resourcereservation.NewService(false, fakeClient, fakeClient, "", 40*time.Second,
 			resourceReservationNameSpace, resourceReservationServiceAccount, resourceReservationAppLabelValue, scalingPodsNamespace, "",
 			nil, nil, nil)
 		binder := binding.NewBinder(fakeClient, rrs, binderPlugins)

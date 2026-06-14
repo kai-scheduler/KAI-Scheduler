@@ -6,6 +6,8 @@ package resourcereservation
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -53,7 +55,7 @@ func nodeNameIndexer(rawObj runtimeClient.Object) []string {
 func initializeTestService(
 	client runtimeClient.WithWatch,
 ) *service {
-	service := NewService(false, client, "", 40*time.Millisecond,
+	service := NewService(false, client, client, "", 40*time.Millisecond,
 		resourceReservationNameSpace, resourceReservationServiceAccount, resourceReservationAppLabelValue, scalingPodsNamespace, "",
 		nil, nil, nil)
 
@@ -1497,7 +1499,7 @@ var _ = Describe("Race condition: reservation pod deleted during concurrent bind
 
 			clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).
 				WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
-			svc := NewService(false, clientWithObjs, "test-image", 40*time.Millisecond,
+			svc := NewService(false, clientWithObjs, clientWithObjs, "test-image", 40*time.Millisecond,
 				resourceReservationNameSpace, resourceReservationServiceAccount,
 				resourceReservationAppLabelValue, scalingPodsNamespace, "",
 				nil, podSecCtx, containerSecCtx)
@@ -1517,7 +1519,7 @@ var _ = Describe("Race condition: reservation pod deleted during concurrent bind
 		It("should not set security contexts when nil", func() {
 			clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).
 				WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
-			svc := NewService(false, clientWithObjs, "test-image", 40*time.Millisecond,
+			svc := NewService(false, clientWithObjs, clientWithObjs, "test-image", 40*time.Millisecond,
 				resourceReservationNameSpace, resourceReservationServiceAccount,
 				resourceReservationAppLabelValue, scalingPodsNamespace, "",
 				nil, nil, nil)
@@ -1533,6 +1535,99 @@ var _ = Describe("Race condition: reservation pod deleted during concurrent bind
 			Expect(pod.Spec.SecurityContext).To(BeNil())
 			Expect(pod.Spec.Containers[0].SecurityContext).To(BeNil())
 		})
+	})
+})
+
+var _ = Describe("Reservation pod duplicate gpu-group race", func() {
+	const (
+		raceNodeName = "race-node"
+		raceGroup    = "race-gpu-group"
+	)
+
+	// These tests cover issue #1673: two reservation pods getting assigned the same
+	// gpu-group while reserving different physical GPUs.
+	//
+	// In production the reservation service reads through an informer cache that lags
+	// behind writes, while it creates/watches against the API server directly. So a
+	// find-or-create of the reservation pod can miss a pod a previous ReserveGpuDevice
+	// call just created, and a second call for the same gpu-group creates a duplicate
+	// reservation pod on a different physical GPU.
+	//
+	// reserveTwice models that cache lag deterministically: List in the reservation
+	// namespace served from `readClient` is forced empty, and each created reservation
+	// pod is allocated a distinct physical GPU index. It returns the number of
+	// reservation pods that actually exist after two ReserveGpuDevice calls for the
+	// same gpu-group.
+	reserveTwice := func(lagReads bool) int {
+		base := fake.NewClientBuilder().WithScheme(testScheme).
+			WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
+
+		var gpuIndexCounter int32
+		staleListNamespace := func(ctx context.Context, c runtimeClient.WithWatch, list runtimeClient.ObjectList, opts ...runtimeClient.ListOption) error {
+			listOpts := runtimeClient.ListOptions{}
+			listOpts.ApplyOptions(opts)
+			if _, ok := list.(*v1.PodList); ok && listOpts.Namespace == resourceReservationNameSpace {
+				return nil // cache lag: reservation namespace appears empty
+			}
+			return c.List(ctx, list, opts...)
+		}
+		writeClient := interceptor.NewClient(base, interceptor.Funcs{
+			List: func(ctx context.Context, c runtimeClient.WithWatch, list runtimeClient.ObjectList, opts ...runtimeClient.ListOption) error {
+				return staleListNamespace(ctx, c, list, opts...)
+			},
+			Create: func(ctx context.Context, c runtimeClient.WithWatch, obj runtimeClient.Object, opts ...runtimeClient.CreateOption) error {
+				// Simulate the GPU device plugin allocating a distinct physical GPU index
+				// to each reservation pod it admits.
+				if pod, ok := obj.(*v1.Pod); ok && pod.Namespace == resourceReservationNameSpace {
+					if pod.Annotations == nil {
+						pod.Annotations = map[string]string{}
+					}
+					pod.Annotations[gpuIndexAnnotationName] = strconv.Itoa(int(atomic.AddInt32(&gpuIndexCounter, 1) - 1))
+				}
+				return c.Create(ctx, obj, opts...)
+			},
+			Watch: func(ctx context.Context, c runtimeClient.WithWatch, obj runtimeClient.ObjectList, opts ...runtimeClient.ListOption) (watch.Interface, error) {
+				return exampleMockWatchPod("0", 0), nil
+			},
+		})
+
+		// apiReader models the authoritative API-server read path. With the fix it is
+		// always consistent; when lagReads is true it is forced stale like the cache, to
+		// exercise the deterministic-name backstop in isolation.
+		var apiReader runtimeClient.Reader = base
+		if lagReads {
+			apiReader = interceptor.NewClient(base, interceptor.Funcs{List: staleListNamespace})
+		}
+
+		rsc := NewService(false, writeClient, apiReader, "", 40*time.Millisecond,
+			resourceReservationNameSpace, resourceReservationServiceAccount,
+			resourceReservationAppLabelValue, scalingPodsNamespace, "", nil, nil, nil)
+
+		fractionPodA := &v1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "team-a", Name: "frac-a"}}
+		fractionPodB := &v1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "team-a", Name: "frac-b"}}
+		Expect(base.Create(context.Background(), fractionPodA)).To(Succeed())
+		Expect(base.Create(context.Background(), fractionPodB)).To(Succeed())
+
+		_, err := rsc.ReserveGpuDevice(context.Background(), fractionPodA, raceNodeName, raceGroup)
+		Expect(err).To(Succeed())
+		_, err = rsc.ReserveGpuDevice(context.Background(), fractionPodB, raceNodeName, raceGroup)
+		Expect(err).To(Succeed())
+
+		reservationPods := &v1.PodList{}
+		Expect(base.List(context.Background(), reservationPods,
+			runtimeClient.InNamespace(resourceReservationNameSpace),
+			runtimeClient.MatchingLabels{constants.GPUGroup: raceGroup})).To(Succeed())
+		return len(reservationPods.Items)
+	}
+
+	It("creates a single reservation pod when the find path reads authoritatively", func() {
+		Expect(reserveTwice(false)).To(Equal(1),
+			"a single gpu-group must map to exactly one reservation pod / physical GPU")
+	})
+
+	It("creates a single reservation pod via deterministic naming even when all reads lag", func() {
+		Expect(reserveTwice(true)).To(Equal(1),
+			"deterministic naming must prevent a duplicate reservation pod even under cache lag")
 	})
 })
 

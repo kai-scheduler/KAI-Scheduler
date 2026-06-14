@@ -107,7 +107,7 @@ func New(options *Options, config *rest.Config) (*App, error) {
 
 	featuregates.SetDRAFeatureGate(kubeClient.Discovery())
 
-	rrs := resourcereservation.NewService(options.FakeGPUNodes, clientWithWatch, options.ResourceReservationPodImage,
+	rrs := resourcereservation.NewService(options.FakeGPUNodes, clientWithWatch, mgr.GetAPIReader(), options.ResourceReservationPodImage,
 		time.Duration(options.ResourceReservationAllocationTimeout)*time.Second,
 		options.ResourceReservationNamespace, options.ResourceReservationServiceAccount,
 		options.ResourceReservationAppLabel, options.ScalingPodNamespace, options.RuntimeClassName,
@@ -143,12 +143,18 @@ func (app *App) RegisterPlugins(plugins *plugins.BinderPlugins) {
 func (app *App) Run(ctx context.Context) error {
 	var err error
 	go func() {
-		app.manager.GetCache().WaitForCacheSync(context.Background())
+		if !app.manager.GetCache().WaitForCacheSync(ctx) {
+			return // shutting down before the cache synced
+		}
 		setupLog.Info("syncing resource reservation")
-		err := app.rrs.Sync(context.Background())
-		if err != nil {
-			setupLog.Error(err, "unable to sync resource reservation")
-			panic(err)
+		if syncErr := app.rrs.Sync(ctx); syncErr != nil {
+			if ctx.Err() != nil {
+				// Errors during shutdown (e.g. the API server going away) are expected.
+				setupLog.Info("resource reservation sync interrupted by shutdown")
+				return
+			}
+			setupLog.Error(syncErr, "unable to sync resource reservation")
+			panic(syncErr)
 		}
 	}()
 
