@@ -14,8 +14,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 )
 
-// resourceAmounts is a set of resource quantities — a request, a zone's allocatable, or a
-// per-zone allocation.
 type resourceAmounts = map[v1.ResourceName]resource.Quantity
 
 // numaEvaluator decides whether a set of requests can be NUMA-aligned on a node and returns the
@@ -41,16 +39,16 @@ func evaluatorFor(policy node_info.TopologyManagerPolicy) numaEvaluator {
 type singleNUMAEvaluator struct{}
 
 func (singleNUMAEvaluator) evaluate(topo *node_info.NumaTopology, ignoreList sets.Set[v1.ResourceName], requests []resourceAmounts) (pod_info.NUMAPlacement, bool) {
-	scratch := cloneScratch(topo.Zones)
+	available := cloneAvailable(topo.Zones)
 	allocation := map[int]resourceAmounts{}
 
 	for _, request := range requests {
 		req := extractNumaRequest(request, topo.Resources, ignoreList)
-		idx, ok := lowestZoneFitting(scratch, req)
+		idx, ok := lowestZoneFitting(available, req)
 		if !ok {
 			return nil, false
 		}
-		subtract(scratch[idx], req)
+		subtract(available[idx], req)
 		addAllocation(allocation, idx, req)
 	}
 	return placementFromAllocation(allocation), true
@@ -69,18 +67,18 @@ func (singleNUMAEvaluator) evaluate(topo *node_info.NumaTopology, ignoreList set
 type restrictedEvaluator struct{}
 
 func (restrictedEvaluator) evaluate(topo *node_info.NumaTopology, ignoreList sets.Set[v1.ResourceName], requests []resourceAmounts) (pod_info.NUMAPlacement, bool) {
-	scratch := cloneScratch(topo.Zones)
+	available := cloneAvailable(topo.Zones)
 	allocatable := cloneAllocatable(topo.Zones)
 	allocation := map[int]resourceAmounts{}
 
 	for _, request := range requests {
 		req := extractNumaRequest(request, topo.Resources, ignoreList)
-		mask, ok := preferredCommonMask(scratch, allocatable, req)
+		mask, ok := preferredCommonMask(available, allocatable, req)
 		if !ok {
 			return nil, false
 		}
-		for idx, amt := range splitAcrossMask(scratch, mask, req) {
-			subtract(scratch[idx], amt)
+		for idx, amt := range splitAcrossMask(available, mask, req) {
+			subtract(available[idx], amt)
 			addAllocation(allocation, idx, amt)
 		}
 	}
@@ -114,7 +112,7 @@ func placementFromAllocation(allocation map[int]resourceAmounts) pod_info.NUMAPl
 // allocatable is used for min-width (preferred) computation; scratch (available) is used for
 // feasibility. This matches the kubelet device manager, which uses m.allDevices for
 // minAffinitySize and the available set for the per-mask device count check.
-func preferredCommonMask(scratch, allocatable []resourceAmounts, req resourceAmounts) ([]int, bool) {
+func preferredCommonMask(available, allocatable []resourceAmounts, req resourceAmounts) ([]int, bool) {
 	width := -1
 	for r, qty := range req {
 		w, ok := minWidthForResource(allocatable, r, qty)
@@ -130,7 +128,7 @@ func preferredCommonMask(scratch, allocatable []resourceAmounts, req resourceAmo
 	if width <= 0 {
 		return []int{}, true
 	}
-	return lowestSatisfyingMask(scratch, req, width)
+	return lowestSatisfyingMask(available, req, width)
 }
 
 // minWidthForResource is the fewest zones whose largest Available values sum to at least qty,
@@ -161,10 +159,10 @@ func minWidthForResource(scratch []resourceAmounts, r v1.ResourceName, qty resou
 
 // lowestSatisfyingMask returns the lexicographically-lowest width-sized zone mask whose summed
 // Available satisfies every requested resource.
-func lowestSatisfyingMask(scratch []resourceAmounts, req resourceAmounts, width int) ([]int, bool) {
+func lowestSatisfyingMask(available []resourceAmounts, req resourceAmounts, width int) ([]int, bool) {
 	var found []int
-	combinations(len(scratch), width, func(mask []int) bool {
-		if maskSatisfies(scratch, req, mask) {
+	combinations(len(available), width, func(mask []int) bool {
+		if maskSatisfies(available, req, mask) {
 			found = append([]int(nil), mask...)
 			return false
 		}
@@ -173,11 +171,11 @@ func lowestSatisfyingMask(scratch []resourceAmounts, req resourceAmounts, width 
 	return found, found != nil
 }
 
-func maskSatisfies(scratch []resourceAmounts, req resourceAmounts, mask []int) bool {
+func maskSatisfies(available []resourceAmounts, req resourceAmounts, mask []int) bool {
 	for r, qty := range req {
 		sum := resource.Quantity{}
 		for _, i := range mask {
-			sum.Add(amountOf(scratch[i], r))
+			sum.Add(amountOf(available[i], r))
 		}
 		if sum.Cmp(qty) < 0 {
 			return false
@@ -259,16 +257,16 @@ func extractNumaRequest(request resourceAmounts, aware, ignoreList sets.Set[v1.R
 	return out
 }
 
-func cloneScratch(zones []*node_info.NumaZone) []resourceAmounts {
-	scratch := make([]resourceAmounts, len(zones))
+func cloneAvailable(zones []*node_info.NumaZone) []resourceAmounts {
+	available := make([]resourceAmounts, len(zones))
 	for i, zone := range zones {
 		amounts := make(resourceAmounts, len(zone.Available))
 		for r, qty := range zone.Available {
 			amounts[r] = qty.DeepCopy()
 		}
-		scratch[i] = amounts
+		available[i] = amounts
 	}
-	return scratch
+	return available
 }
 
 func cloneAllocatable(zones []*node_info.NumaZone) []resourceAmounts {

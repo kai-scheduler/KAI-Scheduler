@@ -78,7 +78,7 @@ func (s *Statement) Evict(reclaimeeTask *pod_info.PodInfo, message string,
 
 	previousStatus := reclaimeeTask.Status
 	previousGpuGroup := reclaimeeTask.GPUGroups
-	previousNumaPlacement := reclaimeeTask.NUMAPlacement
+	previousNumaPlacement := reclaimeeTask.NUMAPlacement.Clone()
 	previousIsVirtualStatus := reclaimeeTask.IsVirtualStatus
 	var previousResourceClaimInfo bindrequest_info.ResourceClaimInfo
 	if reclaimeeTask.ResourceClaimInfo != nil {
@@ -135,7 +135,7 @@ func (s *Statement) commitEvict(reclaimee *pod_info.PodInfo, evictOp evictOperat
 
 	previousStatus := reclaimee.Status
 	previousGpuGroup := reclaimee.GPUGroups
-	previousNumaPlacement := reclaimee.NUMAPlacement
+	previousNumaPlacement := reclaimee.NUMAPlacement.Clone()
 	previousResourceClaimInfo := reclaimee.ResourceClaimInfo
 	previousIsVirtualStatus := reclaimee.IsVirtualStatus
 	if err := s.ssn.Cache.Evict(reclaimee.Pod, reclaimeePodGroup, evictOp.evictionMetadata, evictOp.message); err != nil {
@@ -168,7 +168,7 @@ func (s *Statement) unevict(
 			reclaimee.Job, s.sessionID)
 	}
 	reclaimee.GPUGroups = previousGpuGroups
-	reclaimee.NUMAPlacement = previousNumaPlacement
+	reclaimee.NUMAPlacement = previousNumaPlacement.Clone()
 	reclaimee.IsVirtualStatus = previousIsVirtualStatus
 	reclaimee.ResourceClaimInfo = previousResourceClaimInfo.Clone()
 
@@ -224,7 +224,7 @@ func (s *Statement) Pipeline(task *pod_info.PodInfo, hostname string, updateTask
 	// and there is no special reason we should update on the node, then we need to unevict instead of pipelining it.
 	if foundOnNode && !updateTaskIfExistsOnNode && !gpuPlacementChanged && !numaPlacementChanged {
 		task.GPUGroups = taskOnNode.GPUGroups
-		task.NUMAPlacement = taskOnNode.NUMAPlacement
+		task.NUMAPlacement = taskOnNode.NUMAPlacement.Clone()
 		log.InfraLogger.V(6).Infof("Task: <%v/%v> already exists on node: <%v>, unevicting it", task.Namespace, task.Name, hostname)
 		if err := s.Unevict(task); err != nil {
 			log.InfraLogger.Errorf("Failed to unevict task <%v/%v> to node <%v> in Session <%v>: %v",
@@ -244,9 +244,9 @@ func (s *Statement) Pipeline(task *pod_info.PodInfo, hostname string, updateTask
 	task.NodeName = hostname
 	previousGpuGroup := task.GPUGroups
 
-	previousNumaPlacement := task.NUMAPlacement
+	previousNumaPlacement := task.NUMAPlacement.Clone()
 	if numaPlacementChanged {
-		previousNumaPlacement = taskOnNode.NUMAPlacement
+		previousNumaPlacement = taskOnNode.NUMAPlacement.Clone()
 	}
 	previousIsVirtualStatus := task.IsVirtualStatus
 	var previousResourceClaimInfo bindrequest_info.ResourceClaimInfo
@@ -344,7 +344,7 @@ func (s *Statement) Allocate(task *pod_info.PodInfo, hostname string) error {
 
 	// Snapshot the placement before AllocateFunc sets it, so unallocate can restore
 	// it (the plugin's AllocateFunc fills NUMAPlacement for a fresh task).
-	previousNumaPlacement := task.NUMAPlacement
+	previousNumaPlacement := task.NUMAPlacement.Clone()
 
 	// Callbacks
 	for _, eh := range s.ssn.eventHandlers {
@@ -443,7 +443,7 @@ func (s *Statement) unallocate(task *pod_info.PodInfo, previousNodeName string,
 	}
 
 	task.NodeName = ""
-	task.NUMAPlacement = previousNumaPlacement
+	task.NUMAPlacement = previousNumaPlacement.Clone()
 	return nil
 }
 
@@ -494,7 +494,7 @@ func (s *Statement) unpipeline(
 	}
 
 	task.NodeName = previousNode
-	task.NUMAPlacement = previousNumaPlacement
+	task.NUMAPlacement = previousNumaPlacement.Clone()
 
 	return nil
 }

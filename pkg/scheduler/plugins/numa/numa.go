@@ -1,10 +1,6 @@
 // Copyright 2026 NVIDIA CORPORATION
 // SPDX-License-Identifier: Apache-2.0
 
-// Package numa implements NUMA-aware scheduling against the NodeResourceTopology CRD.
-// It predicts the kubelet Topology Manager admission verdict for the policies that
-// reject on topology grounds (single-numa-node and restricted) so that Guaranteed pods
-// are placed only where the kubelet can NUMA-align their resources.
 package numa
 
 import (
