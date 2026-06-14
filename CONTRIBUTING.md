@@ -129,19 +129,6 @@ git commit --amend -s
 git rebase --signoff origin/main
 ```
 
-**Auto sign-off every commit in this repo:**
-
-Configure a local `prepare-commit-msg` hook to append the sign-off automatically:
-
-```bash
-cat > .git/hooks/prepare-commit-msg <<'EOF'
-#!/bin/sh
-SOB=$(git var GIT_AUTHOR_IDENT | sed -n 's/^\(.*>\).*$/Signed-off-by: \1/p')
-grep -qs "^${SOB}" "$1" || printf "\n%s\n" "${SOB}" >> "$1"
-EOF
-chmod +x .git/hooks/prepare-commit-msg
-```
-
 ## License
 By contributing, you agree that your contributions will be licensed under the Apache License 2.0.
 
