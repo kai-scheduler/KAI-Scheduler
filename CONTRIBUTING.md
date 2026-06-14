@@ -109,6 +109,26 @@ Need support or have a question? We're here to help:
 - Report issues or ask questions by [opening an issue on GitHub](https://github.com/kai-scheduler/KAI-scheduler/issues).
 - Join the conversation in the [#batch-wg](https://cloud-native.slack.com/archives/C02Q5DFF3MM) Slack channel to connect with the community and contributors.
 
+## Developer Certificate of Origin (DCO)
+
+All commits must be signed off to certify you authored the change and agree to the [DCO](https://developercertificate.org/). Add `-s` to your commit command:
+
+```bash
+git commit -s -m "feat: my change"
+```
+
+This appends a `Signed-off-by: Your Name <your@email.com>` line to the commit message.
+
+**Fixing unsigned commits:**
+
+```bash
+# Amend the last commit
+git commit --amend -s
+
+# Sign all commits on your branch at once
+git rebase --signoff origin/main
+```
+
 ## License
 By contributing, you agree that your contributions will be licensed under the Apache License 2.0.
 
