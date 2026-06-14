@@ -49,6 +49,7 @@ type TestJobBasic struct {
 	Tasks                               []*tasks_fake.TestTaskBasic
 	RootSubGroupSet                     *subgroup_info.SubGroupSet
 	StaleDuration                       *time.Duration
+	QOSClass                            v1.PodQOSClass
 }
 
 func BuildJobsAndTasksMaps(Jobs []*TestJobBasic, vectorMap *resource_info.ResourceVectorMap, draClaims ...runtime.Object) (
@@ -203,6 +204,9 @@ func generateTasks(
 
 		podOfTask := createPodOfTask(job, taskIndex, task, podResourceList, gpuFraction,
 			gpuMemory, gpuGroups)
+		if job.QOSClass != "" {
+			podOfTask.Status.QOSClass = job.QOSClass
+		}
 
 		var draPodClaims []*resourceapi.ResourceClaim
 		if len(draClaimsMap) > 0 {

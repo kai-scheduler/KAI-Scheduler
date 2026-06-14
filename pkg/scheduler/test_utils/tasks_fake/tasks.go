@@ -39,6 +39,7 @@ type TestTaskBasic struct {
 	ResourceClaimTemplates     map[string]string
 	ResourceClaimNames         []string
 	PersistentVolumeClaimNames []string
+	Annotations                map[string]string
 }
 
 func BuildPod(
@@ -120,6 +121,8 @@ func BuildPod(
 	for migInstance, count := range task.RequiredMigInstances {
 		pod.Annotations[migInstance.String()] = fmt.Sprintf("%d", count)
 	}
+
+	maps.Copy(pod.Annotations, task.Annotations)
 
 	for _, claimName := range task.ResourceClaimNames {
 		pod.Spec.ResourceClaims = append(pod.Spec.ResourceClaims, v1.PodResourceClaim{

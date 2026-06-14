@@ -4,6 +4,7 @@
 package nodes_fake
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strconv"
@@ -13,7 +14,9 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/sets"
 
+	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -53,6 +56,7 @@ type TestNodeBasic struct {
 	GpuMemorySynced *bool
 	MaxTaskNum      *int
 	Labels          map[string]string
+	NumaTopology    *node_info.NumaTopology
 }
 
 func BuildNodesInfoMap(
@@ -195,6 +199,7 @@ func buildNodeInfo(
 	}
 	podAffinityInfo := cluster_info.NewK8sNodePodAffinityInfo(node, clusterPodAffinityInfo)
 	nodeInfo := node_info.NewNodeInfo(node, podAffinityInfo, vectorMap)
+	nodeInfo.NumaTopology = nodeMetadata.NumaTopology
 
 	// Count GPUs from node-specific slices
 	var draGPUCount int64
@@ -242,4 +247,56 @@ func toSorted(tasks pod_info.PodsMap) []*pod_info.PodInfo {
 	}
 
 	return sortedTasks
+}
+
+// NewNumaZone builds a NUMA zone whose Allocatable equals its Available (no in-flight usage).
+// Amounts are resource-name to quantity-string, e.g. {"cpu": "4", "memory": "16Gi"}.
+func NewNumaZone(id string, available map[v1.ResourceName]string) *node_info.NumaZone {
+	return NewNumaZoneWithAllocatable(id, available, available)
+}
+
+// NewNumaZoneWithAllocatable builds a NUMA zone with distinct static capacity (allocatable) and
+// current headroom (available) — used to model zones already partly consumed by running pods.
+func NewNumaZoneWithAllocatable(id string, allocatable, available map[v1.ResourceName]string) *node_info.NumaZone {
+	return &node_info.NumaZone{
+		ID:          id,
+		Allocatable: parseQuantities(allocatable),
+		Available:   parseQuantities(available),
+	}
+}
+
+// NewNumaTopology builds a NumaTopology, deriving the per-zone Resources set from the zones.
+func NewNumaTopology(
+	policy node_info.TopologyManagerPolicy, scope node_info.TopologyManagerScope, zones ...*node_info.NumaZone,
+) *node_info.NumaTopology {
+	resources := sets.New[v1.ResourceName]()
+	for _, zone := range zones {
+		for name := range zone.Available {
+			resources.Insert(name)
+		}
+	}
+	return &node_info.NumaTopology{Policy: policy, Scope: scope, Zones: zones, Resources: resources}
+}
+
+func parseQuantities(amounts map[v1.ResourceName]string) map[v1.ResourceName]resource.Quantity {
+	out := make(map[v1.ResourceName]resource.Quantity, len(amounts))
+	for name, qty := range amounts {
+		out[name] = resource.MustParse(qty)
+	}
+	return out
+}
+
+// NumaObservedPlacementAnnotation builds the kai.scheduler/numa-placement-observed pod annotation
+// (zone id to per-resource amount) the binder would have persisted for a running pod. The numa
+// plugin reconstructs the pod's NUMAPlacement from it at session open. Merge it via TestTaskBasic.Annotations.
+func NumaObservedPlacementAnnotation(zonePlacements map[string]map[v1.ResourceName]string) map[string]string {
+	record := make([]schedulingv1alpha2.NUMAZonePlacement, 0, len(zonePlacements))
+	for zoneID, amounts := range zonePlacements {
+		record = append(record, schedulingv1alpha2.NUMAZonePlacement{Zone: zoneID, Amount: parseQuantities(amounts)})
+	}
+	data, err := json.Marshal(record)
+	if err != nil {
+		panic(err)
+	}
+	return map[string]string{commonconstants.NumaPlacementObserved: string(data)}
 }
