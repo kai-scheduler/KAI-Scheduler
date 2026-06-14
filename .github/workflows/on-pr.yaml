@@ -121,21 +121,22 @@ jobs:
 
           BASELINE_COVERAGE=$(grep -oE '[0-9]+\.[0-9]+%' coverage-badge/badges/coverage.svg | head -1 | tr -d '%')
           echo "baseline=$BASELINE_COVERAGE" >> $GITHUB_OUTPUT
+
+          DELTA=$(awk -v pr="$PR_COVERAGE" -v baseline="$BASELINE_COVERAGE" 'BEGIN { printf "%.2f", pr - baseline }')
+          echo "delta=$DELTA" >> $GITHUB_OUTPUT
       - name: Save coverage report to file
         env:
           REPORT_BODY: ${{ steps.coverage_reporter.outputs.coverage_report }}
           BASELINE_COVERAGE: ${{ steps.coverage_totals.outputs.baseline }}
           PR_COVERAGE: ${{ steps.coverage_totals.outputs.pr }}
+          COVERAGE_DELTA: ${{ steps.coverage_totals.outputs.delta }}
         run: |
-          if [ -z "$REPORT_BODY" ]; then
-            : > coverage-report.txt
-            exit 0
-          fi
-
           {
-            echo "**Total coverage:** ${BASELINE_COVERAGE}% -> ${PR_COVERAGE}%"
-            echo ""
-            echo "$REPORT_BODY"
+            echo "**Total coverage:** ${BASELINE_COVERAGE}% -> ${PR_COVERAGE}% (delta ${COVERAGE_DELTA}%)"
+            if [ -n "$REPORT_BODY" ]; then
+              echo ""
+              echo "$REPORT_BODY"
+            fi
           } > coverage-report.txt
       - name: Upload coverage report
         uses: actions/upload-artifact@v7
