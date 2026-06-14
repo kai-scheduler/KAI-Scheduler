@@ -111,6 +111,10 @@ Refer to the [Breaking Changes](https://github.com/kai-scheduler/KAI-scheduler/b
 
 To start scheduling workloads with KAI Scheduler, please continue to [Quick Start example](docs/quickstart/README.md)
 
+## Agent Skills
+
+Repo-local agent skills live under [`.agents/`](.agents/README.md). This directory is the shared source of truth for reusable agent workflows in this repository, including Codex and Claude Code integrations.
+
 ## Roadmap
 
 You can find the updated KAI Scheduler roadmap (historical, near year and future) [here](roadmap.md).

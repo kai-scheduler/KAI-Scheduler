@@ -86,7 +86,9 @@ jobs:
           # Update with each release to match the current k8s support window.
           # Verify patch versions at https://github.com/kubernetes-sigs/kind/releases
           # DRA feature config is only relevant for v1.32 (v1beta1) and v1.33 (v1beta2).
-          # v1.34+ has DRA GA; v1.31 predates the DRA beta.
+          # v1.34+ has DRA GA; v1.31 and earlier predate the DRA beta.
+          - k8s_version: v1.36.1
+            feature_config: default
           - k8s_version: v1.35.0
             feature_config: default
           - k8s_version: v1.34.0
@@ -100,6 +102,12 @@ jobs:
           - k8s_version: v1.32.3
             feature_config: dra-enabled
           - k8s_version: v1.31.6
+            feature_config: default
+          - k8s_version: v1.30.4
+            feature_config: default
+          - k8s_version: v1.29.8
+            feature_config: default
+          - k8s_version: v1.28.13
             feature_config: default
     steps:
       - name: Checkout code

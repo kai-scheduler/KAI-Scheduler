@@ -32,6 +32,21 @@ The following versions are currently supported.
 
 > **Note on Versioning:** The strict "Even numbers are LTS" policy begins with `v0.12`. The versions listed above (`v0.9`, `v0.6`, `v0.4`) are supported as transitional LTS releases.
 
+## Kubernetes Compatibility Matrix
+
+The release workflow matrix below is the current KAI-to-Kubernetes support window.
+Historical support additions are listed after the table.
+
+| KAI Release Line | Kubernetes Versions Validated | Notes |
+| :--- | :--- | :--- |
+| `v0.14.x` and `v0.15.x` tags | `v1.31.6`, `v1.32.3` (`default`, `dra-enabled`), `v1.33.4` (`default`, `dra-enabled`), `v1.34.0`, `v1.35.0` | This matrix landed in `5f09d6dc` and is present through tag `v0.15.2`. |
+| `main` / next unreleased line | `v1.28.13`, `v1.29.8`, `v1.30.4`, `v1.31.6`, `v1.32.3` (`default`, `dra-enabled`), `v1.33.4` (`default`, `dra-enabled`), `v1.34.0`, `v1.35.0`, `v1.36.1` | Release workflow validation for the main line. |
+
+### Historical Support Notes
+
+* `v0.13.x` added version-aware DRA handling, including the `1.32`/`1.33` runtime-config split and DRA tracker gating (`62391cc4`, `032d7641`, `2f429935`).
+* `v0.9.x`, `v0.6.x`, and `v0.4.x` explicitly added `v1.34` DRA support (`281f4269`, `2279b43d`, `95c963e2`).
+
 ## Reporting Bugs
 
 If you encounter a bug, please [open an issue](https://github.com/kai-scheduler/KAI-scheduler/issues) on GitHub.
