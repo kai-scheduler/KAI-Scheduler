@@ -11,13 +11,17 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
-// numaNodeZone builds an NRT NUMA-node zone with the given per-resource Available quantities.
 func numaNodeZone(name string, available map[string]string) nrtv1alpha2.Zone {
+	return numaNodeZoneWithAllocatable(name, available, available)
+}
+
+func numaNodeZoneWithAllocatable(name string, available, allocatable map[string]string) nrtv1alpha2.Zone {
 	var resources nrtv1alpha2.ResourceInfoList
 	for resName, qty := range available {
 		resources = append(resources, nrtv1alpha2.ResourceInfo{
-			Name:      resName,
-			Available: resource.MustParse(qty),
+			Name:        resName,
+			Available:   resource.MustParse(qty),
+			Allocatable: resource.MustParse(allocatable[resName]),
 		})
 	}
 	return nrtv1alpha2.Zone{Name: name, Type: zoneTypeNode, Resources: resources}
@@ -144,8 +148,29 @@ func TestBuildNumaTopology(t *testing.T) {
 		gpu := nt.Zones[0].Available["nvidia.com/gpu"]
 		assert.Equal(t, int64(2), gpu.Value())
 
+		gpuAlloc := nt.Zones[0].Allocatable["nvidia.com/gpu"]
+		assert.Equal(t, int64(2), gpuAlloc.Value(), "allocatable is populated")
+
 		assert.True(t, nt.Resources.HasAll("cpu", "memory", "nvidia.com/gpu"))
 		assert.Equal(t, 3, nt.Resources.Len())
+	})
+
+	// Restricted mode admits against a zone's total capacity, not its free capacity, so Allocatable
+	// must be carried through independently of Available.
+	t.Run("allocatable is populated independently of available", func(t *testing.T) {
+		nrt := nrtWithAttributes(policyValueRestricted, scopeValueContainer,
+			numaNodeZoneWithAllocatable("node-0",
+				map[string]string{"cpu": "4"}, // available: free capacity
+				map[string]string{"cpu": "8"}, // allocatable: total capacity
+			),
+		)
+
+		nt := BuildNumaTopology(nrt)
+
+		avail := nt.Zones[0].Available["cpu"]
+		alloc := nt.Zones[0].Allocatable["cpu"]
+		assert.Equal(t, int64(4), avail.Value(), "available reflects free capacity")
+		assert.Equal(t, int64(8), alloc.Value(), "allocatable reflects total capacity")
 	})
 }
 
@@ -171,13 +196,19 @@ func TestNumaTopologyClone(t *testing.T) {
 	orig := BuildNumaTopology(nrt)
 	clone := orig.Clone()
 
-	// Mutating the clone's ledger must not affect the original (deep copy).
+	// Mutating the clone's ledgers must not affect the original (deep copy).
 	cpu := clone.Zones[0].Available["cpu"]
 	cpu.Sub(resource.MustParse("1"))
 	clone.Zones[0].Available["cpu"] = cpu
 
+	allocCPU := clone.Zones[0].Allocatable["cpu"]
+	allocCPU.Sub(resource.MustParse("2"))
+	clone.Zones[0].Allocatable["cpu"] = allocCPU
+
 	origCPU := orig.Zones[0].Available["cpu"]
-	assert.Equal(t, int64(4), origCPU.Value(), "original ledger unchanged")
+	assert.Equal(t, int64(4), origCPU.Value(), "original available ledger unchanged")
+	origAllocCPU := orig.Zones[0].Allocatable["cpu"]
+	assert.Equal(t, int64(4), origAllocCPU.Value(), "original allocatable ledger unchanged")
 	assert.Nil(t, (*NumaTopology)(nil).Clone())
 }
 

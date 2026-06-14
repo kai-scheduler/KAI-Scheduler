@@ -54,27 +54,16 @@ const (
 	scopeValuePod       = "pod"
 )
 
-// NumaTopology is a node's NUMA topology derived from its NodeResourceTopology object: the
-// declared Topology Manager policy/scope and the per-NUMA-node Available ledger. It is the
-// node-side analog of pod_info.NUMAPlacement — node-level state the numa plugin charges in
-// cycle, built fresh per snapshot by cluster_info, and cloned with the node. The plugin owns
-// the policy decisions (admission, alignment); this struct holds only the facts.
 type NumaTopology struct {
-	Policy TopologyManagerPolicy
-	Scope  TopologyManagerScope
-	Zones  []*NumaZone
-	// Resources is the set of resources reported per-zone. A resource constrains zone
-	// selection only if it appears here. The operator ignoreList is NOT applied (it is plugin
-	// configuration, unknown at ingestion); the numa plugin subtracts it at evaluation.
+	Policy    TopologyManagerPolicy
+	Scope     TopologyManagerScope
+	Zones     []*NumaZone
 	Resources sets.Set[v1.ResourceName]
 }
 
 type NumaZone struct {
-	ID        string
-	Available map[v1.ResourceName]resource.Quantity
-	// Allocatable is the node's static per-zone capacity (kubelet allocatable), which never
-	// changes within a scheduling cycle. Used for preferred-width computation, matching how the
-	// kubelet device manager uses m.allDevices for minAffinitySize.
+	ID          string
+	Available   map[v1.ResourceName]resource.Quantity
 	Allocatable map[v1.ResourceName]resource.Quantity
 }
 
@@ -146,12 +135,8 @@ func BuildNumaTopology(nrt *nrtv1alpha2.NodeResourceTopology) *NumaTopology {
 // per-resource Available and Allocatable quantities.
 //
 // We deliberately model only the NUMA-node level and drop every other zone type
-// the NRT API can express (sockets, dies, ...). This is not a simplification we
-// chose freely: the kubelet Topology Manager — the actual enforcer at pod
-// admission — aligns purely at NUMA-node granularity, and the upstream
-// scheduler-plugins NRT plugin filters identically. Modeling finer levels here
-// would be useless, because the kubelet could not act on them. The richer zone
-// tree lives in the NRT API/exporters but is unused end-to-end today.
+// the NRT API can express (sockets, dies, ...). This is because the kubelet
+// Topology Manager aligns purely at NUMA-node granularity.
 //
 // References:
 //   - kubelet builds NUMA-node bitmasks only:
@@ -196,12 +181,6 @@ func buildZones(nrtZones nrtv1alpha2.ZoneList) []*NumaZone {
 //
 // Reference: k8s.io/kubernetes/pkg/kubelet/cm/topologymanager — bitmask/bitmask.go
 // (IsNarrowerThan -> IsLessThan) and policy.go (compare / narrowest-hint selection).
-//
-// This affects only which zone/mask is predicted, never the admit/reject verdict (feasibility is
-// order-independent), so a misprediction costs only in-cycle reservation accuracy, not a rejection.
-// Zones are ordered by the numeric suffix of the zone name (e.g. "node-10" after "node-2"); names
-// without a numeric suffix sort after, by name. The durable identity stays the zone id; the index
-// is an in-cycle convenience.
 func sortZones(zones []*NumaZone) {
 	sort.Slice(zones, func(i, j int) bool {
 		iNum, iOK := numaNodeID(zones[i].ID)
