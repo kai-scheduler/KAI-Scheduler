@@ -156,6 +156,10 @@ func newSchedulerCache(schedulerCacheParams *SchedulerCacheParams) *SchedulerCac
 	)
 
 	sc.informerFactory = informers.NewSharedInformerFactory(sc.kubeClient, 0)
+	if err := setSchedulerPodTransform(sc.informerFactory.Core().V1().Pods().Informer()); err != nil {
+		log.InfraLogger.Errorf("Failed to set scheduler pod transform: %v", err)
+		return nil
+	}
 	sc.kubeAiSchedulerInformerFactory = kubeaischedulerinfo.NewSharedInformerFactory(sc.kubeAiSchedulerClient, 0)
 
 	featuregates.SetDRAFeatureGate(schedulerCacheParams.DiscoveryClient)
