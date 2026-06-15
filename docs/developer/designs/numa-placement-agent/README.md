@@ -87,7 +87,7 @@ one node), so it is not specific to `single-numa-node`.
 
 The NUMA plugin, when building its per-zone model:
 
-Precedence is **observed > predicted > re-derive**:
+Precedence is **observed > predicted**:
 
 - **If a pod carries `kai.scheduler/numa-placement-observed`** → use the observed per-zone
   quantities directly; this **supersedes** any scheduler-predicted record. Occupancy is now
@@ -96,8 +96,8 @@ Precedence is **observed > predicted > re-derive**:
   Reclaim simulation becomes accurate.
 - **Else if the pod carries the scheduler's `…-predicted` record** → use that (stable, but a
   prediction — see the plugin design).
-- **Else** (agent absent, pod not yet observed, non-aligned, and no predicted record) → re-derive
-  via the evaluator.
+- **Else** (agent absent, pod not yet observed, and no predicted record) → the pod has no placement
+  and is **left uncredited** on virtual eviction.
 
 When both records are present, their agreement is the prediction-accuracy signal described in
 the plugin design.

@@ -90,7 +90,7 @@ These are the objectives of NUMA-aware scheduling as a whole; The implementation
   is **Guaranteed QoS** still has its `cpu`/`memory` aligned by the kubelet, and the plugin accounts
   for those — the GPU simply drops out of the per-resource intersection (see *`shouldHandle` gate*
   and *NUMA-relevant resources*). Only the GPU-fraction alignment itself is out of scope.
-- **100% prevention of kubelet pod rejections.** The current implementation of NUMA topology is inherently split-brained: the kubelet decides the actual placement of pods, while the scheduler attempts to predict that and match it's decisions. While we can probably approximate it pretty well and cover for some gaps like inter-cycle allocations, some mismatches might still occur, like when foreign (non kai-scheduler) pods are bound to nodes, or many pods are bound concurrently (NUMA allocation can be affected by order). The design aims to mitigate those cases as much as possible, and to be **self-healing**: when mismatches occur, we aim for the scheduler to be **eventually consistent** with the real state, so errors will not be carried for many cycles.
+- **100% prevention of kubelet pod rejections.** The current implementation of NUMA topology is inherently split-brained: the kubelet decides the actual placement of pods, while the scheduler attempts to predict that and match its decisions. While we can probably approximate it pretty well and cover for some gaps like inter-cycle allocations, some mismatches might still occur, like when foreign (non kai-scheduler) pods are bound to nodes, or many pods are bound concurrently (NUMA allocation can be affected by order). The design aims to mitigate those cases as much as possible, and to be **self-healing**: when mismatches occur, we aim for the scheduler to be **eventually consistent** with the real state, so errors will not be carried for many cycles.
 
 ## Background: who decides NUMA alignment
 
@@ -449,12 +449,12 @@ accurate. When absent or not-yet-reported (agent undeployed, lagging, or pod jus
 plugin falls back to the predicted record — and when that is also absent, the pod is simply not
 accounted on virtual eviction (no guessing). So the agent is **purely additive**: it improves
 accuracy without being a hard dependency, and the scheduler is built to consume its input from day
-one. **The plugin's consumption of the observed annotation is part of v1; building the agent
-itself is out of scope for this round.**
+one. **Scope:** the *scheduler-side* consumption of the observed annotation is part of v1; the
+per-node agent's own implementation and delivery are tracked separately (not in this PR).
 
-The agent ships with v1, and the operator deploys it automatically when the `numa` plugin is
-enabled (see *Operator integration*), but a cluster can run without it on the prediction
-fallback. Full design: [Per-Node NUMA Placement Agent](../numa-placement-agent/README.md).
+When the agent is deployed, the operator auto-enables observed-based reconstruction (see *Operator
+integration*); without it, the scheduler runs on the prediction fallback. Full design:
+[Per-Node NUMA Placement Agent](../numa-placement-agent/README.md).
 
 ### Policy evaluator seam
 
@@ -647,7 +647,7 @@ Two properties make it attractive:
   stuck `Pending`.
 - **Pod-granularity NUMA requirements.** Like network topology, the sensitivity to NUMA placement 
   should be a property of the workload, and specifically, of the pod. This implementation lets
-  the users express their wokrloads' requirements, instead of having the admin config this globally.
+  the users express their workloads' requirements, instead of having the admin config this globally.
 - **Per-resource granularity.** A workload could ask to align only what it cares about (e.g. GPU
   and NIC, not CPU), sidestepping the node-level all-resource merge that drives `restricted`'s
   request-inflation quirk.

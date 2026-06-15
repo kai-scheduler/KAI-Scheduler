@@ -32,7 +32,7 @@ kubelet *simulator*:
 - The **fingerprint / cross-cycle staleness** path ([Appendix A](../numa-topology/README.md#appendix-a-optional-cross-cycle-staleness-compensation))
   — testable only if NRT `Available` lags binding by a controllable, jittered delay and the pod
   fingerprint attribute is emitted/refreshed.
-- The **placement agent** ([Appendix B](../numa-placement-agent/README.md)) and the
+- The **placement agent** ([placement-agent design doc](../numa-placement-agent/README.md)) and the
   observed-placement path — testable only if there is a podresources-API-equivalent the agent can
   consume to discover per-pod NUMA placement.
 
@@ -79,13 +79,13 @@ self-healing once NRT catches up.
 
 ### R4 — Expose per-pod placement for the placement agent
 
-Provide a way for the proposed placement-agent DaemonSet (Appendix B) to "discover" each pod's
+Provide a way for the proposed placement-agent DaemonSet (see the [placement-agent design doc](../numa-placement-agent/README.md)) to "discover" each pod's
 actual NUMA placement — i.e. fake the kubelet **podresources API** (device IDs with NUMA
 `Topology`, `cpu_ids`, memory blocks), or an equivalent the agent can consume — consistent with
 the placement computed in R2.
 
 *Enables:* end-to-end testing of the placement agent and the observed-placement path
-(observed > predicted > re-derive precedence), including reclaim-simulation accuracy, without a
+(observed > predicted precedence), including reclaim-simulation accuracy, without a
 real kubelet.
 
 [fgo]: https://github.com/run-ai/fake-gpu-operator
