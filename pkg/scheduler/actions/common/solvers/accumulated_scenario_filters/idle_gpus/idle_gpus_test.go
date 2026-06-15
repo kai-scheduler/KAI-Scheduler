@@ -1390,3 +1390,9 @@ func TestAccumulatedIdleGpus_Filter(t *testing.T) {
 		})
 	}
 }
+
+func Test_NewIdleGpusFilter_NilScenario(t *testing.T) {
+	if filter := NewIdleGpusFilter(nil, map[string]*node_info.NodeInfo{}); filter != nil {
+		t.Fatalf("expected nil filter for nil scenario, got %#v", filter)
+	}
+}
