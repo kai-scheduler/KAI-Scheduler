@@ -3,17 +3,16 @@
 ## Summary
 
 This document describes a v1 design for making KAI-Scheduler aware of per-NUMA-node
-resource topology, so that **Guaranteed-QoS, whole-GPU workloads** are placed only on
-nodes where the kubelet's Topology Manager can actually align their GPU, CPU, memory and
-NIC resources onto a single NUMA node.
+resource topology, so that **Guaranteed-QoS workloads** are placed only on nodes where the
+kubelet's Topology Manager can actually align their resources.
 
 The scheduler consumes the [`NodeResourceTopology`][nrt-api] (NRT) CRD, which is published
 per-node by an external exporter (NFD topology-updater or the resource-topology-exporter).
 A new `numa` plugin replicates the kubelet's Topology Manager admission check — for both the
 `single-numa-node` and `restricted` policies — against the NRT data as a **filter predicate**,
 and tracks per-NUMA-zone consumption **within a scheduling cycle** so that multiple pods placed
-on the same node in one cycle are not over-committed onto the same zone. Compensating for NRT *staleness across cycles* is an optional extension
-([Appendix A](#appendix-a-optional-cross-cycle-staleness-compensation)), not part of v1.
+on the same node in one cycle are not over-committed onto the same zone. Compensating for NRT
+ *staleness across cycles* is discussed in ([Appendix A](#appendix-a-cross-cycle-staleness-compensation)).
 
 ## Motivation
 
@@ -27,8 +26,7 @@ The scheduler cannot *enforce* NUMA alignment (the kubelet owns that), but it ca
 it and avoid placing pods where the kubelet will reject them. This is the same role played
 by the upstream [`NodeResourceTopologyMatch`][nrt-match] plugin in kubernetes-sigs/scheduler-plugins.
 
-The highest-value case for KAI is GPU locality: strict GPU↔CPU↔NIC NUMA affinity (e.g. for
-GPUDirect RDMA) materially affects throughput for AI/ML workloads. That is the `single-numa-node`
+The highest-value case for KAI seems to be GPU locality: strict GPU↔CPU↔NIC NUMA affinity materially affects throughput for AI/ML workloads. That is the `single-numa-node`
 scenario (everything on one NUMA node) and, for workloads larger than one NUMA node, the
 `restricted` scenario (the minimal NUMA span) — both of which the kubelet enforces by rejecting
 mismatched placements, and which this plugin therefore predicts.
@@ -86,9 +84,12 @@ These are the objectives of NUMA-aware scheduling as a whole; The implementation
 
 ## Non-Goals
 
-- **Fractional / MIG GPU sharing.** Only whole-GPU (`RequestTypeRegular`, integer
-  `nvidia.com/gpu`) Guaranteed pods are handled. Shared-GPU pods are typically not
-  Guaranteed QoS, so the kubelet Topology Manager does not align them.
+- **Aligning a fractional / MIG GPU with the pod's other resources.** A shared (fractional or MIG)
+  GPU is not a device-plugin NUMA-aligned resource, so the plugin does not try to co-locate the GPU
+  *fraction* with the pod's CPU/memory. This is **not** a gate on the pod: a fractional/MIG pod that
+  is **Guaranteed QoS** still has its `cpu`/`memory` aligned by the kubelet, and the plugin accounts
+  for those — the GPU simply drops out of the per-resource intersection (see *`shouldHandle` gate*
+  and *NUMA-relevant resources*). Only the GPU-fraction alignment itself is out of scope.
 - **100% prevention of kubelet pod rejections.** The current implementation of NUMA topology is inherently split-brained: the kubelet decides the actual placement of pods, while the scheduler attempts to predict that and match it's decisions. While we can probably approximate it pretty well and cover for some gaps like inter-cycle allocations, some mismatches might still occur, like when foreign (non kai-scheduler) pods are bound to nodes, or many pods are bound concurrently (NUMA allocation can be affected by order). The design aims to mitigate those cases as much as possible, and to be **self-healing**: when mismatches occur, we aim for the scheduler to be **eventually consistent** with the real state, so errors will not be carried for many cycles.
 
 ## Background: who decides NUMA alignment
@@ -117,8 +118,8 @@ usable.
 
 ## Design Details
 
-The work is staged into two phases (plus a v3 idea, and one optional enhancement —
-cross-cycle staleness, [Appendix A](#appendix-a-optional-cross-cycle-staleness-compensation)):
+The work is staged into two phases (plus a v3 idea, and an opt-in, agent-trusted cross-cycle
+staleness correction, [Appendix A](#appendix-a-cross-cycle-staleness-compensation)):
 
 - **v1 — correctness (this section).** A **filter** that predicts the kubelet's admission verdict
   for the two policies that *reject* on topology grounds (`single-numa-node` and `restricted`),
@@ -162,72 +163,28 @@ single-zone special case; `restricted` allows the minimal multi-zone span the ku
 This keeps ingestion consistent with KAI's deterministic, snapshot-based scheduling and
 testability, while leaving the vector model untouched.
 
-### Plugin-local per-zone data model
+### NUMA data model: on `NodeInfo` and `PodInfo`
 
-The plugin builds its own working state at `OnSessionOpen` from the snapshot's NRT data and
-mutates it during the cycle. The resource vectors are **not** involved.
+NUMA state lives on the existing snapshot objects:
 
-```go
-type tmPolicy int // none | bestEffort | restricted | singleNUMANode
-type tmScope  int // container | pod
+- **Node topology on `NodeInfo`.** Each node's NRT object is parsed once at snapshot build into a
+  `NumaTopology` attached to its `NodeInfo` (alongside the raw NRT): the Topology Manager
+  policy/scope, the per-zone `Available` (dynamic — decremented as tasks commit in-cycle, restored
+  on rollback) and `Allocatable` (static per-zone capacity), and the set of resources the node
+  reports per zone.
+- **Per-task placement on `PodInfo`.** A task carries its NUMA placement — the zone(s) it was
+  allocated to *and the exact per-zone amount* (if known) — on `PodInfo`. Storing the exact
+  amount enables simulating NUMA allocations on allocation rollback/eviction, which allows for 
+  consolidate/preempt/reclaim simulations.
 
-// One NUMA node's working headroom, seeded from NRT zone data,
-// decremented as tasks commit in-cycle, restored on rollback/eviction.
-type numaZone struct {
-    id          string
-    available   map[v1.ResourceName]resource.Quantity  // dynamic: decremented in-cycle
-    allocatable map[v1.ResourceName]resource.Quantity  // static: per-zone capacity, never changes in a cycle
-}
-
-type nodeTopology struct {
-    policy        tmPolicy
-    scope         tmScope
-    zones         []*numaZone               // NRT zones of Type == "Node"
-    topologyAware sets.Set[v1.ResourceName] // resources this node reports per-zone, minus ignoreList
-}
-
-type numaPlugin struct {
-    ignoreList sets.Set[v1.ResourceName]  // optional; resources reported per-zone but NOT aligned
-                                        // (e.g. cpu/memory when their manager is off). Default empty.
-    nodes    map[string]*nodeTopology   // rebuilt each OnSessionOpen; nil entry ⇒ pass
-}
-```
-
-**The per-task placement lives on `PodInfo`, not in the plugin** — mirroring `GPUGroups`. A task
-carries its exact NUMA placement (the zone(s) it was charged *and the amount on each*), and the
-plugin holds only the node-side per-zone occupancy ledger (`nodes`), the analog of
-`GpuSharingNodeInfo`:
-
-```go
-// On pod_info.PodInfo (framework state, snapshotted/restored across eviction undo
-// like GPUGroups; the dedup compares it — see Interaction with eviction dedup):
-type ZoneCharge struct {
-    Zone   string                                  // NUMA zone id
-    Amount map[v1.ResourceName]resource.Quantity   // exact per-zone charge
-}
-NUMAPlacement []ZoneCharge                          // empty ⇒ placement unknown
-```
-
-Storing the **exact amount** (not just the zone id) means credit-back on rollback/eviction
-restores precisely what was charged — no re-deriving a split that would differ once headroom
-changed. There is **no plugin-side per-task map**: `DeallocateFunc` credits back
-`task.NUMAPlacement` directly, and the statement snapshots/restores it across virtual-eviction
-undo (see *In-cycle reservation* and *Interaction with eviction dedup*).
-
-**A running pod's placement is populated from its annotation, precedence `observed > predicted`**
-(see *Observed placement* and *Scheduler-predicted placement record*), parsed onto `PodInfo` at
-snapshot build exactly as `GPUGroups` is. **There is no re-derive fallback:** a running pod with
-*neither* annotation has an empty `NUMAPlacement`, so its resources are simply **not credited on
+A running pod's placement is rebuilt each cycle from its durable record (precedence
+**observed > predicted**; see *Observed placement* and *Scheduler-predicted placement record*),
+parsed onto `PodInfo` at snapshot build exactly as `GPUGroups` is. A running pod with no record 
+(for example, if the NUMA agent is missing or stuck) has an empty placement and is simply **not credited on
 virtual eviction**. Its consumption is already netted out of NRT `Available` (the occupancy ledger
-is seeded from `Available`), so the only effect is that evicting it does not free a zone in the
-ledger — which matters *only* to a NUMA-sensitive preemptor on that exact zone; non-NUMA-sensitive
-preemption is unaffected. This is the deliberate, safe floor: never guess a zone.
-
-The scheduler instantiates a **fresh plugin instance every cycle** (`OpenSession` calls the
-builder then `OnSessionOpen`), so the plugin's `nodes` ledger is rebuilt from the snapshot's NRT
-data each cycle. Per-task placement is not plugin state — it rides `PodInfo` (durably, via the
-annotation) — so the plugin itself keeps no cross-cycle state (see
-[Appendix A](#appendix-a-optional-cross-cycle-staleness-compensation)).
+is seeded from `Available`), so the only effect is that evicting it frees no zone in the ledger —
+which matters *only* to a NUMA-sensitive preemptor on that exact zone; non-NUMA-sensitive preemption
+is unaffected.
 
 ### NUMA-relevant resources
 
@@ -269,13 +226,15 @@ the kubelet, which aligns them only for Guaranteed QoS.)
 
 ### `shouldHandle` gate
 
-The plugin engages for a task only when **all** hold (otherwise the predicate passes
+The plugin engages for a task only when **both** hold (otherwise the predicate passes
 through):
 
-- node has a `nodeTopology` entry whose policy is `singleNUMANode` or `restricted`, and
-- `task.Pod.Status.QoSClass == Guaranteed`, and
-- whole-GPU request: `task.ResourceRequestType == RequestTypeRegular` and integer
-  `nvidia.com/gpu` (i.e. `!IsFractionCandidate() && !IsMigCandidate()`).
+- the node has a `NumaTopology` whose policy is `single-numa-node` or `restricted`, and
+- `task.Pod.Status.QOSClass == Guaranteed` — the QoS for which the kubelet Topology Manager runs
+  alignment at all.
+
+At this stage, aligning the GPU *fraction* (where relevant) itself is out of scope (see *Non-Goals*),
+but is feasible in the future.
 
 ### Filter algorithm: `single-numa-node`
 
@@ -359,50 +318,58 @@ rejection — it does not (and must not) "fix" it.
 
 #### Reimplement the merge, don't import it
 
-The merge + `Preferred`/admit rule — is small (the admit short-circuit is a
-few dozen lines). Per-resource hint generation uses a **two-pass approach** matching the kubelet device manager:
-preferred width (minimum number of zones) is computed from per-zone **`Allocatable`** (total
-capacity; `m.allDevices`), while feasibility is checked against per-zone **`Available`** (currently
-free). The logic is generic; there seems to be **no vendor-specific hint code**
-in the kubelet (device hints are driven by per-device NUMA affinity, which NRT already encodes as
-per-zone counts). Importing `k8s.io/kubernetes/.../topologymanager` (an internal kubelet package)
-would couple KAI to kubelet internals; upstream scheduler-plugins itself imports only
-`bitmask` and reimplements the rest. v1 does the same.
+The merge + `Preferred`/admit rule is small (the admit short-circuit is a few dozen lines).
+Importing `k8s.io/kubernetes/.../topologymanager` (an internal kubelet package) would couple KAI to
+kubelet internals; upstream scheduler-plugins itself imports only `bitmask` and reimplements the
+rest. v1 does the same.
+
+**One generic counting rule covers GPU, CPU and memory.** Per-resource hint generation is
+*identical* across all three kubelet hint providers, so a single generic rule over `resource.Quantity`
+reproduces them — there is no per-resource hinter and no vendor-specific hint code:
+
+- **Device Manager** — `generateDeviceTopologyHints`
+  (`k8s.io/kubernetes/pkg/kubelet/cm/devicemanager/topology_hints.go`): preferred width =
+  fewest NUMA nodes whose **total** device count (`m.allDevices`) covers the request; a mask is
+  feasible iff its **available** device count covers it; `Preferred` iff the mask's width equals the
+  minimal width (`minAffinitySize`).
+- **CPU Manager** — `generateCPUTopologyHints` (`.../cpumanager/policy_static.go`): the same,
+  counting **CPUs** (`CPUDetails.CPUsInNUMANodes` for capacity, `availableCPUs` for feasibility).
+- **Memory Manager** — `calculateHints` (`.../memorymanager/policy_static.go`): the same, summing
+  **memory bytes** (`Allocatable` for capacity, `Free` for feasibility).
+
+All three reduce to one two-pass rule — *preferred width = fewest zones whose summed `Allocatable` ≥
+request; feasible = summed `Available` ≥ request; `Preferred` iff width = the minimal width* —
+differing only in the **unit** (device count, CPU count, memory bytes), each just a
+`resource.Quantity`. So the plugin runs one generic counting hinter for every NUMA-relevant resource.
+
+**Is there any deviation between the providers?** Only in edge cases, all captured in *Known
+Limitations* and none changing the common-case verdict: the Memory Manager's multi-NUMA *group*
+bookkeeping (consistency of already-grouped NUMA nodes); the CPU Manager's alpha `align-by-socket` /
+`prefer-align-cpus-by-uncore-cache` options (off by default, and *relaxations* — so the generic rule
+is only ever conservative there); and devices whose topology spans multiple NUMA nodes (rare).
+Absent those, the providers' hint generation and the generic rule are identical.
 
 ### In-cycle reservation (EventHandler)
 
-Within-cycle correctness rides the existing session `EventHandler`
-(`framework.Event{Task}`), which fires symmetrically on commit and on rollback/undo:
-
-```
-AllocateFunc(e):
-    nt = nodes[e.Task.NodeName]
-    if !shouldHandle(e.Task, nt): return
-    if e.Task.NUMAPlacement is empty:                       // fresh placement (else: restored, reuse it)
-        zones = evaluate(nt, requests(e.Task)).zones        // 1 zone for single-numa, ≥1 for restricted
-        e.Task.NUMAPlacement = split(requests(e.Task), zones) // exact per-zone amounts; set BEFORE Pipeline
-    for c in e.Task.NUMAPlacement: nt.zones[c.Zone] -= c.Amount
-
-DeallocateFunc(e):
-    if e.Task.NUMAPlacement is empty: return                // unknown placement ⇒ not accounted (no re-derive)
-    for c in e.Task.NUMAPlacement: nt.zones[c.Zone] += c.Amount   // credit back the exact amounts
-```
+Within-cycle correctness rides the existing session `EventHandler` (`framework.Event{Task}`), which
+fires symmetrically on commit and on rollback/undo. On allocate, the task's chosen placement is
+charged against the node's per-zone `Available`; on deallocate (rollback, or virtual eviction during
+preempt/reclaim probing), the exact per-zone amounts are credited back. A task with no placement is
+not accounted (no re-derive).
 
 For `single-numa-node` this charges exactly one zone. For `restricted`, the chosen mask `M` may
 span several zones; the kubelet does not fix the per-zone split at admission, so the plugin uses
 an **approximate greedy split** across `M`'s zones (internal accounting only — see the
 reservation-split caveat in *Known Limitations*).
 
-The placement (zones **and** amounts) lives on `PodInfo.NUMAPlacement`, not in a plugin map. It is
-set during the allocate step — **before `Pipeline`**, like `GPUGroups`, so the copy the statement
-clones onto the node carries it and the dedup can compare it. Because the placement rides
-`PodInfo`, the statement's existing undo machinery **snapshots the previous placement on virtual
-eviction and restores it on rollback** (exactly as it does for `GPUGroups`/`previousGpuGroups`),
-and `DeallocateFunc`/`AllocateFunc` simply credit/charge whatever placement the task currently
-carries. So preemption/reclaim scenario probing — which speculatively allocates and `Discard()`s —
-stays consistent with **no plugin-side bookkeeping**: the framework already restores the exact
-prior placement. The chosen zones are internal accounting only; they are never sent to the
-kubelet, which independently re-derives placement.
+The placement (zones **and** amounts) rides `PodInfo`, set during the allocate step before
+`Pipeline` like `GPUGroups`, so the copy the statement clones onto the node carries it and the dedup
+can compare it. Because it rides `PodInfo`, the statement's existing undo machinery **snapshots the
+previous placement on virtual eviction and restores it on rollback** (exactly as for
+`GPUGroups`/`previousGpuGroups`), so preemption/reclaim scenario probing — which speculatively
+allocates and `Discard()`s — stays consistent with **no plugin-side bookkeeping**. The chosen zones
+are internal accounting only; they are never sent to the kubelet, which independently re-derives
+placement.
 
 This restore-by-snapshot is necessary but **not sufficient**: the solver's *eviction dedup* can
 cancel a victim's eviction outright. That interaction is handled via the same `NUMAPlacement`
@@ -426,7 +393,7 @@ different zone** (e.g. consolidating a victim off the exact zone the pending pod
 v1 closes this by giving the chosen placement the same first-class allocation-identity treatment
 GPU sharing already gets:
 
-- **`NUMAPlacement` on `PodInfo`** (defined in *Plugin-local per-zone data model*) — the task's
+- **`NUMAPlacement` on `PodInfo`** (defined in *NUMA data model*) — the task's
   chosen zone(s) and per-zone amounts, set during the allocate step (before `Pipeline`'s dedup
   check), mirroring `GPUGroups`. It is the same placement the record persists, so the in-memory
   identity and the durable annotation agree.
@@ -499,20 +466,16 @@ and the reservation are policy-agnostic:
 // zone(s) the in-cycle reservation should charge — one zone for single-numa-node,
 // one or more for a restricted merge.
 type numaEvaluator interface {
-    evaluate(nt *nodeTopology, req resourceRequests) (zones []*numaZone, admit bool)
+    evaluate(nt *NumaTopology, req resourceRequests) (zones []*NumaZone, admit bool)
 }
 ```
 
 v1 ships **two** evaluators, selected per node by its Topology Manager policy:
 - `singleNUMAEvaluator` — the bitmask intersection (`single-numa-node`); always returns one zone.
-- `restrictedEvaluator` — the hint merge (`restricted`); returns the chosen mask's zones.
-  It builds per-resource hints using `Allocatable` for preferred-width computation and
-  `Available` for feasibility (matching the kubelet device manager — see *Correctness and Known
-  Limitations*), via a small `resourceHinter` registry (one generic counting hinter covers
-  `nvidia.com/gpu` and `memory`; `cpu` needs care — see *Known Limitations*) and searches for a
-  common minimal-width mask. If some requested
-  topology-aware resource has no registered hinter, it falls back to `singleNUMAEvaluator` (a
-  safe, stricter rejection).
+- `restrictedEvaluator` — the hint merge (`restricted`); returns the chosen mask's zones. It builds
+  per-resource hints with the single generic counting rule (`Allocatable` for preferred-width,
+  `Available` for feasibility; see *Reimplement the merge*) and searches for a common minimal-width
+  mask — one rule covers GPU, CPU and memory, so there is no per-resource registry.
 
 The predicate and the `AllocateFunc`/`DeallocateFunc` reservation both route through `evaluate`
 and charge whatever zones it returns. v2's scoring layer reuses the same evaluators and per-zone
@@ -552,7 +515,7 @@ state in the plugin:
 - **Observe it.** Emit a metric/log when the kubelet rejects a NUMA pod
   (`TopologyAffinityError`) or when the scheduler re-selects a node it just failed on. This
   reveals whether the timing assumption actually holds in a given fleet — and therefore whether
-  [Appendix A](#appendix-a-optional-cross-cycle-staleness-compensation) is ever needed.
+  [Appendix A](#appendix-a-cross-cycle-staleness-compensation) is ever needed.
 
 This is a timing assumption, not a guarantee: under bind bursts, kubelet admission lag, or
 exporter backlog the window can still exceed a cycle. The kubelet preserves correctness
@@ -606,8 +569,9 @@ regardless; Appendix A is the in-plugin fallback if the assumption proves insuff
 - **Stale-node behavior** (scheduler integration tests): using the fake-NRT update delay, feed
   NRT whose `Available` lags recent binds and assert the documented behavior — in-cycle
   reservation prevents over-commit within a cycle, the scheduler does not place pods the
-  (simulated) kubelet would reject, and it converges once NRT catches up; with Appendix A enabled,
-  that the fingerprint-driven reservation corrects the stale view rather than hot-looping.
+  (simulated) kubelet would reject, and it converges once NRT catches up; with Appendix A enabled
+  (the agent present), that reconstruction from observed placements corrects the stale view
+  immediately rather than hot-looping.
 - **NUMA-aware preemption, reclaim, and consolidation** (integration tests and e2e): verify these
   actions respect per-zone constraints — evicting/reclaiming a victim actually frees a *usable
   aligned* slot for the pending pod (eviction-zone crediting), a multi-cycle reclaim plan stays
@@ -619,10 +583,10 @@ regardless; Appendix A is the in-plugin fallback if the assumption proves insuff
   [fake-gpu-operator][fgo] — a component that fakes per-node NUMA topology and NRT objects (with
   the Topology Manager policy/scope attributes), simulates the kubelet-like per-pod NUMA allocation
   and rejection for bound pods, reflects that consumption in NRT `Available` after a configurable
-  (jittered) update delay and refreshes the pod fingerprint, and exposes each pod's placement for
-  the [placement agent](../numa-placement-agent/README.md) to discover. This lets the plugin's
-  prediction/`TopologyAffinityError` handling, the fingerprint/staleness path (Appendix A), and the
-  agent be tested without real NUMA hardware. Requirements:
+  (jittered) update delay, and exposes each pod's observed placement for the
+  [placement agent](../numa-placement-agent/README.md) to discover. This lets the plugin's
+  prediction/`TopologyAffinityError` handling, the reconstruction/staleness path (Appendix A), and
+  the agent be tested without real NUMA hardware. Requirements:
   [Fake NRT Simulation Mechanism](../fake-nrt/README.md).
 
 ## v2: Optimization & scoring
@@ -699,108 +663,101 @@ This also lines up with where Kubernetes is heading — **DRA**, where workloads
 topology constraints and the scheduler allocates against them; v3 is a KAI-native precursor to that
 model.
 
-## Appendix A: (optional) cross-cycle staleness compensation
+## Appendix A: cross-cycle staleness compensation
 
-**Status: optional, not part of v1, and the *second* line of defense.** First apply the
-operational mitigation in *Deployment guidance* (event-driven NRT exporter + longer
-`--schedule-period`), which closes the staleness window in the common case with no in-plugin
-state. Implement this appendix only if the observability signal shows the bounded reschedule
-hot-loop still matters in practice. It does not affect correctness (the kubelet is the
-backstop) — only scheduling efficiency during the NRT refresh window.
+**Status: part of the design, opt-in via a boolean plugin flag, auto-configured by the operator.**
+NRT `Available` is republished by the exporter and **lags across cycles**. When the per-node
+[placement agent](#observed-placement-the-per-node-agent) is deployed, the scheduler can ignore the
+laggy `Available` entirely and **reconstruct** each zone's free capacity from data that is always
+fresh. The operator enables this automatically when the agent is present (overridable); without the
+agent the scheduler trusts NRT `Available` and relies on the operational mitigation in *Deployment
+guidance*. Correctness never depends on this — the kubelet is the backstop — but on packed or
+single-node clusters the stale window is hit on nearly every bind, so the correction matters in
+practice.
 
 ### The problem
 
-The schedule period is **1s** (`defaultSchedulerPeriod`). NRT is republished by the exporter
-near-real-time on allocation changes (event-driven), but can lag up to its **periodic** refresh
-(default 60s, configurable; see *Deployment guidance*) if event updates are disabled or delayed.
-During any such lag, NRT `Available` still shows the pre-binding state: a second NUMA pod can be
-placed on the same node off stale data; under packing pressure the kubelet rejects it
-(`TopologyAffinityError`), and since the next cycle sees the same stale NRT the scheduler
-re-picks the same node — a hot-loop until NRT catches up. With event-driven updates active this
-window is small; this appendix matters only when it is not.
+NRT is republished near-real-time on allocation changes (event-driven) but can lag up to its
+periodic refresh (default 60s; see *Deployment guidance*) when events are disabled or delayed.
+During any such lag NRT `Available` is stale in **both** directions:
 
-### The clean signal: the NRT pod fingerprint
+- **A just-bound pod is missing** → `Available` over-reports free capacity → a second NUMA pod is
+  placed on the same zone, the kubelet rejects it (`TopologyAffinityError`), and the next cycle
+  re-picks the same node off the same stale data — a hot-loop until NRT catches up.
+- **A just-deleted pod still lingers** → `Available` under-reports → a freed zone looks occupied.
+  This is especially harmful under preemption: after evicting a victim on one NUMA node and
+  pipelining the preemptor onto it, a stale `Available` that still shows the victim's zone occupied
+  can drive the scheduler to preempt a *second* victim on another zone — over-evicting.
 
-The hard part of any cross-cycle cache is *eviction* — knowing when NRT has caught up so the
-cache can stop compensating. There is a deterministic signal for this: the **pod fingerprint**
-([`podfingerprint`](https://github.com/k8stopologyawareschedwg/podfingerprint)). The exporter
-hashes the set of pods (by `namespace+name`) whose resources it accounted for when building the
-NRT object and publishes it on the object:
+### The mechanism: reconstruct `Available` from `Allocatable` minus known placements
 
-- attribute **`nodeTopologyPodsFingerprint`**, with **`nodeTopologyPodsFingerprintMethod`** =
-  `all` or `with-exclusive-resources` (legacy annotation `topology.node.k8s.io/fingerprint`).
+The plugin already separates the two roles of per-zone data — `Allocatable` (static capacity, drives
+preferred width) and `Available` (free space, drives feasibility). A boolean flag changes only the
+**source of `Available`**:
 
-It lets the scheduler answer *"does this NRT object already reflect the pods I know about?"*
-exactly:
+```
+Available[zone] = Allocatable[zone] − Σ placement[zone]   over every pod the scheduler sees on the node
+```
 
-1. List the pods the scheduler sees on the node (it already exposes its own just-bound pods to
-   the next snapshot). Use the **`with-exclusive-resources`** subset to match the exporter's
-   method — that subset is exactly our Guaranteed whole-GPU pods.
-2. Compute their fingerprint and compare to the NRT object's `nodeTopologyPodsFingerprint`.
-3. **Match** → NRT accounts for exactly that pod set → it is current → trust `Available`.
-   **Mismatch** → a pod the scheduler knows (e.g. a just-bound one) is not yet reflected → do
-   not trust `Available` for this node.
+where each pod's placement is resolved by the precedence already used for eviction crediting —
+**observed (agent) > predicted (BindRequest / annotation)**. The evaluator, predicate and merge are
+unchanged; they consume whatever `Available` the topology carries. This reads from three sources,
+**none of which is the laggy NRT `Available`**:
 
-This is the mechanism upstream's production NRT cache uses (`OverReserve.Resync`).
+1. **`Allocatable`** — static per-zone capacity; never changes within a node's lifetime.
+2. **The set of pods on the node** — from the scheduler's own snapshot, which sees binds *and
+   deletions* immediately, long before the NRT exporter republishes.
+3. **Each pod's zone** — the agent's **observed** placement (ground truth, read from the kubelet
+   podresources API), with the scheduler's own **predicted** placement as a fallback for the brief
+   window between a bind and the agent's first report.
 
-### Serving a dirty node: never skip — reconstruct
+### Why anchor on *observed*, not predictions
 
-A first instinct is to **skip** a dirty node (fail the NUMA predicate on it until it goes
-clean). Do **not**: it breaks multi-cycle reclaim. A reclaim/preempt decision spans cycles —
-victims drain over their `terminationGracePeriod` while the pending pod is *pipelined* onto the
-node. If the node disappears from NUMA consideration mid-drain, the solver re-plans onto a
-different node and **evicts a second set of victims** while the first set is already dying.
-Staleness would thus actively *multiply* evictions. The node must stay a candidate.
+Reconstructing from *predicted* placements alone was rejected earlier: predicted zones often
+disagree with the kubelet's actual choice, and the error would scale with the whole pod count. The
+agent removes that objection — observed placement is the kubelet's real per-zone assignment, so the
+reconstruction is **exact for every pod the agent has reported**. Prediction survives only as a
+fallback for a just-bound pod the agent has not yet observed (seconds), for that one pod, and is the
+scheduler's own prediction — internally consistent (the pod was pipelined onto the zone it
+predicts). The agent annotates **all** pods with exclusive NUMA allocations — KAI-scheduled *and
+foreign* — so the subtraction is complete for `cpu`/`memory` (every exclusive consumer is
+accounted), not only for GPUs.
 
-So a dirty node is served a **reconstructed** view rather than being dropped:
+### Why it beats trusting NRT `Available`
 
-- **Clean node (fingerprint match):** use NRT `Available` directly — ground truth, already
-  reflecting *every* pod on the node (ours or not). No prediction.
-- **Dirty node (mismatch):** reconstruct per-zone availability from the snapshot,
-  `available[zone] = capacity[zone] − Σ predicted_occupancy[zone]` over **all** NUMA pods on the
-  node (`capacity` = static per-zone NRT `Allocatable`; each pod's zone taken from its placement
-  record — observed or predicted — where available, stable across cycles and restarts; a pod with
-  no record is omitted, consistent with v1 never guessing a zone). Used only while dirty; the next
-  match reverts to NRT.
+Because it never reads NRT `Available`, it is immune to exporter lag in both directions:
 
-The fingerprint gate is what makes reconstruction safe: it is **transient**, so it cannot drift
-permanently the way an *ungated* reconstruction would (one that never defers to ground truth and
-strands capacity under fragmentation).
+- **Additions**: a just-bound pod is in the snapshot immediately and subtracted (observed once
+  reported, predicted until then) — no over-allocation window.
+- **Deletions**: a deleted/Releasing pod leaves the snapshot immediately, so its zone is credited at
+  once (`Allocatable − Σ(remaining)`), with no dependence on the exporter noticing the deletion.
+- **Preemption continuation**: a Releasing victim still running is charged (still consuming); a
+  Pipelined preemptor is charged on its predicted zone; once the victim deletes it drops out and the
+  zone frees — all from the fresh snapshot, so the over-eviction scenario above cannot arise.
 
-**No foreign-pod special case.** Upstream rejects nodes carrying pods it did not schedule,
-because its cache is built only from its own `Reserve` calls and has no record of a foreign pod
-to subtract. KAI's snapshot already contains *every* pod on the node (it must, for whole-node
-`IdleVector`), and no pod's zone is ever *observed* anyway — ours included, all zones are
-predictions. So reconstruction treats foreign and self-scheduled pods identically; there is
-nothing special about a pod we did not place.
+It is also simpler than any scheme that keeps NRT `Available` as the baseline and patches it: there
+is no staleness *detection* step, because the laggy source is not used at all.
 
-**Eviction credits the freed zone.** Because reconstruction assigns every live NUMA pod a
-predicted zone, the in-cycle `DeallocateFunc` credits a victim's zone back when a reclaim
-scenario (speculatively) evicts it — so NUMA-pod reclaim scenarios succeed without re-planning.
-The prediction need only be **internally consistent**, not match the kubelet: a wrong victim
-zone just means the pending pod is pipelined onto a zone label differing from where the kubelet
-actually frees a GPU — but a GPU *did* free, so the kubelet still admits it. Mispredicted zones
-cost internal precision, never correctness. The
-[per-node placement agent](../numa-placement-agent/README.md) (v1 — see *Observed placement*)
-removes the prediction entirely by reporting each pod's *observed* zone, making reclaim simulation
-exact.
+### Operator integration
 
-### Caveats and the no-fingerprint fallback
+The flag is **auto-enabled when the placement agent is deployed**, and can be explicitly overridden.
+The common path is zero-touch: deploy the agent (the operator does this when the `numa` plugin is
+enabled — see *Operator integration*) and the scheduler switches to reconstruction automatically;
+remove the agent (or override the flag) and it reverts to trusting NRT `Available`.
 
-- **Requires a fingerprint-emitting exporter** (RTE publishes it; plain NFD topology-updater may
-  not). No attribute → no clean/dirty signal → fall back to the operational mitigation, or the
-  gap-bounded correction below.
-- **v1 fingerprint is `namespace+name`, not UID** — aliases only if *naked* pods are recreated
-  with the same name under churn; a non-issue with controllers (unique generated names).
-- **Transient over-report during a dirty window.** Reconstruction predicts zones, so it can
-  briefly over-report a zone and earn a kubelet rejection — bounded to the window and caught by
-  the kubelet backstop. This is the accepted cost of keeping the node usable (vs. skip) for
-  reclaim stability.
-- **No fingerprint? Gap-bounded fallback.** Without the clean/dirty gate, anchor on NRT
-  `Available` and subtract only up to the measured lag `gap = Σ_zone Available −
-  KAI_exact_node_free` (KAI's whole-node free never lags); it auto-decays as NRT catches up.
-  The drift warning applies specifically to *ungated* reconstruction — with no fingerprint to
-  snap back to NRT, predicting all pods' zones every cycle never defers to ground truth.
+### Caveats
+
+- **Accuracy depends on a healthy agent.** With the flag on but the agent absent or badly lagging,
+  reconstruction degrades to *predicted-only* — the very mode this avoids. The operator only enables
+  the flag alongside the agent; the plugin should additionally treat a pod running well beyond the
+  agent's report interval with no observed annotation as an agent-health signal (log/metric), so the
+  degradation is visible rather than silent.
+- **A pod with neither observed nor predicted placement** is omitted from the subtraction (never
+  guess a zone) → a transient per-zone over-report on its zone. With the agent covering all pods this
+  is limited to the bind→observe window of KAI's own pods, where the predicted record covers it.
+- **`Allocatable` already nets out reserved capacity** (kube/system-reserved), so
+  `Allocatable − Σ exclusive` is the correct free-for-alignment figure; no separate reserved
+  handling is needed.
 
 ## Operator integration (intent)
 

@@ -11,11 +11,8 @@ reclaim/preemption simulation, accurate.
 
 This agent is **part of the NUMA plugin v1**, and the scheduler is built to consume its input from
 day one — but **deploying it is optional**: the plugin works without it on a predicted-placement
-fallback, so the agent is an accuracy upgrade rather than a hard dependency (the KAI operator
-deploys it automatically when the `numa` plugin is enabled). It is also a deliberate **stopgap for
-the device-plugin + Topology Manager world** — under Dynamic Resource Allocation the scheduler
-already knows real placement (see *Superseded long-term by DRA*) — and the capability it provides
-is being built upstream (see *Prior art*).
+fallback, so the agent is an enabler of reclaim/preempt action rather than a hard dependency (the KAI operator
+deploys it automatically when the `numa` plugin is enabled).
 
 ## Motivation
 
@@ -24,8 +21,7 @@ reports "zone 0 has 2 free GPUs," never "pod V holds a GPU in zone 0." But the k
 Topology Manager makes the real per-pod NUMA assignment at admission, and the scheduler never
 observes it. The NUMA plugin therefore *predicts* each pod's zone.
 
-Prediction is adequate for filtering (the kubelet backstops admission), but it is a genuine
-problem for **reclaim simulation**: to free an aligned slot for a pending pod, the scheduler
+Prediction is adequate for filtering, but it is a problem for **reclaim simulation**: to free an aligned slot for a pending pod, the scheduler
 must know which zone evicting a victim opens up. If it mispredicts the victim's zone, it can
 evict a victim that does *not* create a usable aligned slot — a wasted eviction plus a
 `TopologyAffinityError` bounce. (This bites specifically when the pending pod needs multiple
