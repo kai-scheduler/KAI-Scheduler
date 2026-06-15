@@ -13,15 +13,6 @@ semantic import versioning requires. As a result the module can only ever be
 resolved at v1.x pseudo-versions, which CVE scanners always compare as lower
 than the advisory's fixed version (e.g. 25.3.2) — so the dependency is reported
 as vulnerable and cannot be bumped to a fixed version.
-
-KAI-scheduler only ever compiled these CRD struct definitions (no upstream
-runtime code), so the reported gpu-operator / container-toolkit CVEs never
-applied to its binaries. Mirroring the types locally removes the dependency from
-the module graph entirely.
-
-The GroupVersionKind is identical to upstream (nvidia.com/v1, Kind=ClusterPolicy)
-so the controller-runtime client watches, lists and gets the very same cluster
-objects; fields we do not declare are ignored when decoding live objects.
 */
 package v1
 
