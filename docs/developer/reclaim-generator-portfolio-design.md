@@ -58,7 +58,7 @@ The current reclaim path can spend unbounded synchronous scheduler time trying t
 
 ## Proposal
 
-Move scenario generation behind a bounded generator portfolio owned by the shared `JobSolver` path used by reclaim, preempt, and consolidation. Each applicable generator yields `ByNodeScenario` candidates incrementally. The driver deduplicates scenarios, simulates candidates through the existing solver, validates accepted solutions with the existing post-simulation validator, and stops when a solution is found, all generators are exhausted, or the effective time budget expires.
+Move scenario generation behind a bounded generator portfolio owned by the shared `JobSolver` path used by reclaim, preempt, and consolidation. Each applicable generator yields `ByNodeScenario` candidates incrementally. The driver simulates candidates through the existing solver, validates accepted solutions with the existing post-simulation validator, and stops when a solution is found, all generators are exhausted, or the effective time budget expires.
 
 The initial portfolio is:
 
@@ -102,7 +102,7 @@ The negative result is intentionally approximate when produced by the bounded po
 
 ### Mechanism
 
-`solvePartialJob` keeps its skeleton. The scenario source changes from a single exhaustive emitter to an ordered portfolio of generators. The portfolio owns generator iteration, action filtering, budget checks, and stop reasons. The existing scenario simulation cache remains in the driver to avoid repeated virtual allocations for duplicate victim sets.
+`solvePartialJob` keeps its skeleton. The scenario source changes from a single exhaustive emitter to an ordered portfolio of generators. The portfolio owns generator iteration, action filtering, budget checks, and stop reasons.
 
 When the driver reaches the effective deadline without a validated solution, the action reports "no solution" as an incomplete result. The result reason must distinguish at least deadline exhaustion, generator exhaustion, no applicable generator, and not-attempted jobs so metrics and reduced-budget messages are accurate.
 
@@ -197,12 +197,8 @@ All values are strings parsed with Go's standard `time.ParseDuration`, which sup
 ```go
 budget := newSearchBudget(actionDeadline, jobDeadline, generatorDeadlines)
 portfolio := newScenarioPortfolio(ssn, partialPendingJob, state, feasibleNodeMap, budget)
-cache := newScenarioSimulationCache()
 
 for sc := portfolio.Next(); sc != nil; sc = portfolio.Next() {
-    if !cache.shouldSimulate(sc) {
-        continue
-    }
     result := scenarioSolver.solve(ssn, sc)
     if result.solved {
         return searchResult{reason: solved, solution: result}
@@ -267,7 +263,7 @@ For reduced-budget jobs, the user-visible unschedulable detail should say that t
 
 ### Integration Posture
 
-Wrap rather than rewrite. `NodeLocalGreedy` restores deleted narrow logic, and `MultiNodeGang` wraps the existing builder/emitter under the configured deadline. `byPodSolver.solve`, the fingerprint cache, and the validator remain unchanged. The generator portfolio is the normal path, with sensible default budgets. Operators or support workflows that need legacy-equivalent behavior can configure the portfolio to use only the current emitter and unlimited budgets.
+Wrap rather than rewrite. `NodeLocalGreedy` restores deleted narrow logic, and `MultiNodeGang` wraps the existing builder/emitter under the configured deadline. `byPodSolver.solve` and the validator remain unchanged. The generator portfolio is the normal path, with sensible default budgets. Operators or support workflows that need legacy-equivalent behavior can configure the portfolio to use only the current emitter and unlimited budgets.
 
 ### Scale-Test Walkthrough
 
@@ -287,7 +283,7 @@ Production metrics to add:
 - `scenario_search_generator_budget_configured_seconds{generator}`: configured generator budget.
 - `scenario_search_action_budget_exhausted_total{action}`: count action-level budget exhaustion.
 - `scenario_search_duration_seconds{action,generator,result}`: Prometheus histogram of elapsed generator-search duration. `result` uses the same result-reason values as `scenario_search_jobs_total` when the attempt maps to a whole-job outcome.
-- `scenario_search_scenarios_total{action,generator,state}`: count scenarios by `state`. `state` values: `emitted`, `simulated`, `duplicate`, `validator_rejected`.
+- `scenario_search_scenarios_total{action,generator,state}`: count scenarios by `state`. `state` values: `emitted`, `simulated`, `validator_rejected`.
 
 The `scenario_search_duration_seconds` histogram `_sum` and `_count` series are cumulative and are expected to grow after each scheduling session. Dashboards should use `rate()` or `increase()`. The histogram `_count` is the per-generator attempt count. Sum by `action` to get total generator-search time spent by an action.
 
@@ -301,7 +297,7 @@ Replay and benchmark-only instrumentation can be added later for generator disco
 ## Test Plan
 
 - Unit-test portfolio ordering, applicable-action filtering, stop reasons, and deadline handling.
-- Unit-test `NodeLocalGreedy` candidate construction, best-fit node ordering, deduplication behavior, and whole victim-job handling.
+- Unit-test `NodeLocalGreedy` candidate construction, best-fit node ordering, and whole victim-job handling.
 - Unit-test `MultiNodeGang` as a wrapper over the existing builder/emitter.
 - Keep existing reclaim, preempt, and consolidation solver tests passing with the default portfolio configuration and with the legacy-equivalent configuration of current emitter plus unlimited budgets.
 - Preserve existing #1537 gang/topology regression coverage.
@@ -342,6 +338,6 @@ Long-term criteria:
 | --- | --- |
 | Complete unschedulability prover for reclaim | Victim selection is knapsack-shaped; a complete cheap proof would require solving the hard search problem. |
 | Necessary-condition oracle only | Useful for covered negative causes, but cannot handle coupled proportion, victim, and topology cases generally. It remains complementary. |
-| Keep exhaustive emitter with cache improvements only | Reduces constants but does not bound worst-case synchronous scheduler time. |
+| Keep exhaustive emitter with constant-factor improvements only | Reduces constants but does not bound worst-case synchronous scheduler time. |
 | Expose work-unit budgets | Hard to explain and tune operationally; time budgets are clearer for alpha users and support. |
 | Async/off-path search in Phase 1 | Valuable later, but too invasive for the first bounded-search change. |
