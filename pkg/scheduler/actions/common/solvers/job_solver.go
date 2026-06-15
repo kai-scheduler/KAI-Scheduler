@@ -6,7 +6,9 @@ package solvers
 import (
 	"fmt"
 	"strings"
+	"time"
 
+	solverscenario "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -24,6 +26,7 @@ type JobSolver struct {
 	solutionValidator    SolutionValidator
 	generateVictimsQueue GenerateVictimsQueue
 	actionType           framework.ActionType
+	actionBudget         *ActionSearchBudget
 }
 
 type solvingState struct {
@@ -36,12 +39,37 @@ func NewJobsSolver(
 	solutionValidator SolutionValidator,
 	generateVictimsQueue GenerateVictimsQueue,
 	action framework.ActionType,
+	actionBudget ...*ActionSearchBudget,
 ) *JobSolver {
+	var budget *ActionSearchBudget
+	if len(actionBudget) > 0 {
+		budget = actionBudget[0]
+	}
+	if budget == nil {
+		budget = newUnlimitedActionSearchBudget(action)
+	}
 	return &JobSolver{
 		feasibleNodes:        feasibleNodes,
 		solutionValidator:    solutionValidator,
 		generateVictimsQueue: generateVictimsQueue,
 		actionType:           action,
+		actionBudget:         budget,
+	}
+}
+
+func (s *JobSolver) ensureActionBudget() *ActionSearchBudget {
+	if s.actionBudget == nil {
+		s.actionBudget = newUnlimitedActionSearchBudget(s.actionType)
+	}
+	return s.actionBudget
+}
+
+func newUnlimitedActionSearchBudget(action framework.ActionType) *ActionSearchBudget {
+	now := time.Now
+	return &ActionSearchBudget{
+		action:    action,
+		startedAt: now(),
+		now:       now,
 	}
 }
 
@@ -59,25 +87,52 @@ func NewJobsSolver(
 // returned statement) and is left unchanged on failure.
 func (s *JobSolver) Solve(
 	ssn *framework.Session, pendingJob *podgroup_info.PodGroupInfo) (bool, *framework.Statement, []string) {
+	solved, statement, victimTaskNames, _ := s.SolveWithResult(ssn, pendingJob)
+	return solved, statement, victimTaskNames
+}
+
+// SolveWithResult attempts to solve pendingJob and returns a structured search result
+// describing why the scenario search stopped.
+func (s *JobSolver) SolveWithResult(
+	ssn *framework.Session, pendingJob *podgroup_info.PodGroupInfo,
+) (bool, *framework.Statement, []string, *SearchResult) {
 	state := solvingState{}
 	originalNumActiveTasks := pendingJob.GetNumActiveUsedTasks()
 
 	tasksToAllocate := podgroup_info.GetTasksToAllocate(pendingJob, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false)
 	n := len(tasksToAllocate)
 	if n == 0 {
-		return false, nil, calcVictimNames(state.recordedVictimsTasks)
+		return false, nil, calcVictimNames(state.recordedVictimsTasks),
+			terminalSearchResult(SearchResultGeneratorsExhausted, false, false)
 	}
 
-	maxSolvedK := s.searchMaxSolvableK(ssn, &state, pendingJob, tasksToAllocate)
-	if maxSolvedK == 0 {
-		return false, nil, calcVictimNames(state.recordedVictimsTasks)
+	actionBudget := s.ensureActionBudget()
+	jobBudget := actionBudget.BeginJob()
+	if actionBudget.Exhausted() {
+		return false, nil, calcVictimNames(state.recordedVictimsTasks),
+			terminalSearchResult(SearchResultNotAttempted, false, false)
 	}
 
-	result := s.probeAtK(ssn, &state, pendingJob, tasksToAllocate, n)
-	if result == nil || !result.solved {
-		return false, nil, calcVictimNames(state.recordedVictimsTasks)
+	enteredSearch := false
+	if n > 1 {
+		maxSolvedK, searchResult := s.searchMaxSolvableK(ssn, &state, pendingJob, tasksToAllocate, jobBudget)
+		enteredSearch = searchResultEntered(searchResult) || maxSolvedK > 0
+		if maxSolvedK == 0 {
+			if searchResult == nil {
+				searchResult = terminalSearchResult(SearchResultGeneratorsExhausted, false, false)
+			}
+			preserveEnteredSearch(searchResult, enteredSearch)
+			return false, nil, calcVictimNames(state.recordedVictimsTasks), searchResult
+		}
 	}
 
+	result := s.probeAtK(ssn, &state, pendingJob, tasksToAllocate, n, jobBudget)
+	if !resultSolved(result) {
+		preserveEnteredSearch(result, enteredSearch)
+		return false, nil, calcVictimNames(state.recordedVictimsTasks), result
+	}
+
+	solution := result.solution
 	numActiveTasks := pendingJob.GetNumActiveUsedTasks()
 	jobSolved := pendingJob.IsGangSatisfied()
 	if originalNumActiveTasks >= numActiveTasks {
@@ -86,11 +141,11 @@ func (s *JobSolver) Solve(
 
 	log.InfraLogger.V(4).Infof(
 		"Scenario solved for %d tasks to allocate for %s. Victims: %s",
-		n, pendingJob.Name, victimPrintingStruct{result.victimsTasks})
-	return jobSolved, result.statement, calcVictimNames(result.victimsTasks)
+		n, pendingJob.Name, victimPrintingStruct{solution.victimsTasks})
+	return jobSolved, solution.statement, calcVictimNames(solution.victimsTasks), result
 }
 
-// searchMaxSolvableK returns the largest k in [0, n] for which a probe at k succeeds.
+// searchMaxSolvableK returns the largest k in [0, n) for which a probe at k succeeds.
 // Each probe is discarded before returning, so session state is clean on return.
 // Successful probes update hints in state for use by subsequent probes.
 // Complexity: O(log n) probes — exponential doubling to locate a failing k (or reach n),
@@ -100,65 +155,88 @@ func (s *JobSolver) searchMaxSolvableK(
 	state *solvingState,
 	pendingJob *podgroup_info.PodGroupInfo,
 	tasksToAllocate []*pod_info.PodInfo,
-) int {
+	jobBudget *jobSearchBudget,
+) (int, *SearchResult) {
 	n := len(tasksToAllocate)
-	if n == 0 {
-		return 0
+	if n <= 1 {
+		return 0, nil
 	}
 
+	return searchMaxSolvableK(n, func(k int) *SearchResult {
+		return s.tryProbeAndDiscard(ssn, state, pendingJob, tasksToAllocate, k, jobBudget)
+	})
+}
+
+func searchMaxSolvableK(n int, probe func(k int) *SearchResult) (int, *SearchResult) {
 	lo := 0
-	var hi int
+	hi := n
+	var lastUnsolvedResult *SearchResult
+	enteredSearch := false
 	k := 1
-	for {
-		if !s.tryProbeAndDiscard(ssn, state, pendingJob, tasksToAllocate, k) {
+	for k < n {
+		result := probe(k)
+		enteredSearch = enteredSearch || searchResultEntered(result) || resultSolved(result)
+		if shouldStopSearch(result) {
+			preserveEnteredSearch(result, enteredSearch)
+			return 0, result
+		}
+		if !resultSolved(result) {
+			lastUnsolvedResult = result
 			hi = k
 			break
 		}
 		lo = k
-		if k == n {
-			return n
-		}
 		k *= 2
-		if k > n {
-			k = n
+		if k >= n {
+			hi = n
+			break
 		}
 	}
 
 	for hi-lo > 1 {
 		mid := (lo + hi) / 2
-		if s.tryProbeAndDiscard(ssn, state, pendingJob, tasksToAllocate, mid) {
+		result := probe(mid)
+		enteredSearch = enteredSearch || searchResultEntered(result) || resultSolved(result)
+		if shouldStopSearch(result) {
+			preserveEnteredSearch(result, enteredSearch)
+			return 0, result
+		}
+		if resultSolved(result) {
 			lo = mid
 		} else {
+			lastUnsolvedResult = result
 			hi = mid
 		}
 	}
-	return lo
+	return lo, lastUnsolvedResult
 }
 
-// tryProbeAndDiscard probes at k and always discards the resulting statement so the session
-// is left clean. On success, hints are written to state; returns whether the probe succeeded.
+// tryProbeAndDiscard probes at k and always discards a solved statement so the session
+// is left clean. On success, hints are written to state.
 func (s *JobSolver) tryProbeAndDiscard(
 	ssn *framework.Session,
 	state *solvingState,
 	pendingJob *podgroup_info.PodGroupInfo,
 	tasksToAllocate []*pod_info.PodInfo,
 	k int,
-) bool {
-	result := s.probeAtK(ssn, state, pendingJob, tasksToAllocate, k)
-	if result == nil || !result.solved {
+	jobBudget *jobSearchBudget,
+) *SearchResult {
+	result := s.probeAtK(ssn, state, pendingJob, tasksToAllocate, k, jobBudget)
+	if !resultSolved(result) {
 		log.InfraLogger.V(5).Infof("No solution found for %d tasks out of %d tasks to allocate for %s",
 			k, len(tasksToAllocate), pendingJob.Name)
-		return false
+		return result
 	}
+	solution := result.solution
 	log.InfraLogger.V(5).Infof(
 		"Scenario probed for %d tasks out of %d tasks to allocate for %s. Victims: %s",
-		k, len(tasksToAllocate), pendingJob.Name, victimPrintingStruct{result.victimsTasks})
-	state.recordedVictimsTasks = result.victimsTasks
-	state.recordedVictimsJobs = result.victimJobs
-	if result.statement != nil {
-		result.statement.Discard()
+		k, len(tasksToAllocate), pendingJob.Name, victimPrintingStruct{solution.victimsTasks})
+	state.recordedVictimsTasks = solution.victimsTasks
+	state.recordedVictimsJobs = solution.victimJobs
+	if solution.statement != nil {
+		solution.statement.Discard()
 	}
-	return true
+	return result
 }
 
 func (s *JobSolver) probeAtK(
@@ -167,13 +245,22 @@ func (s *JobSolver) probeAtK(
 	pendingJob *podgroup_info.PodGroupInfo,
 	tasksToAllocate []*pod_info.PodInfo,
 	k int,
-) *solutionResult {
+	jobBudget *jobSearchBudget,
+) *SearchResult {
 	pendingTasks := tasksToAllocate[:k]
 	partialPendingJob := getPartialJobRepresentative(pendingJob, pendingTasks)
-	return s.solvePartialJob(ssn, state, partialPendingJob)
+	return s.solvePartialJob(ssn, state, partialPendingJob, jobBudget)
 }
 
-func (s *JobSolver) solvePartialJob(ssn *framework.Session, state *solvingState, partialPendingJob *podgroup_info.PodGroupInfo) *solutionResult {
+func (s *JobSolver) solvePartialJob(
+	ssn *framework.Session, state *solvingState, partialPendingJob *podgroup_info.PodGroupInfo,
+	jobBudget *jobSearchBudget,
+) *SearchResult {
+	actionBudget := s.ensureActionBudget()
+	if jobBudget == nil {
+		jobBudget = actionBudget.BeginJob()
+	}
+
 	feasibleNodeMap := map[string]*node_info.NodeInfo{}
 	for _, node := range s.feasibleNodes {
 		feasibleNodeMap[node.Name] = node
@@ -183,11 +270,40 @@ func (s *JobSolver) solvePartialJob(ssn *framework.Session, state *solvingState,
 		feasibleNodeMap[task.NodeName] = node
 	}
 
-	scenarioBuilder := NewPodAccumulatedScenarioBuilder(
-		ssn, partialPendingJob, state.recordedVictimsJobs, s.generateVictimsQueue(), feasibleNodeMap)
+	if s.generateVictimsQueue == nil {
+		return terminalSearchResult(SearchResultNoGenerator, jobBudget.ReducedBudget(), false)
+	}
+	victimsQueue := s.generateVictimsQueue()
+	if victimsQueue == nil {
+		return terminalSearchResult(SearchResultNoGenerator, jobBudget.ReducedBudget(), false)
+	}
 
-	for scenarioToSolve := scenarioBuilder.GetValidScenario(); scenarioToSolve != nil; scenarioToSolve =
-		scenarioBuilder.GetNextScenario() {
+	scenarioBuilder := NewPodAccumulatedScenarioBuilder(
+		ssn, partialPendingJob, state.recordedVictimsJobs, victimsQueue, feasibleNodeMap)
+
+	enteredSearch := false
+	firstScenario := true
+	for {
+		if actionBudget.Exhausted() || jobBudget.Remaining() <= 0 {
+			return terminalSearchResult(SearchResultDeadlineExhausted, jobBudget.ReducedBudget(), enteredSearch)
+		}
+		var scenarioToSolve *solverscenario.ByNodeScenario
+		if firstScenario {
+			scenarioToSolve = scenarioBuilder.GetValidScenario()
+			firstScenario = false
+		} else {
+			scenarioToSolve = scenarioBuilder.GetNextScenario()
+		}
+		if actionBudget.Exhausted() || jobBudget.Remaining() <= 0 {
+			return terminalSearchResult(SearchResultDeadlineExhausted, jobBudget.ReducedBudget(), enteredSearch)
+		}
+		if scenarioToSolve == nil {
+			if actionBudget.Exhausted() || jobBudget.Remaining() <= 0 {
+				return terminalSearchResult(SearchResultDeadlineExhausted, jobBudget.ReducedBudget(), enteredSearch)
+			}
+			break
+		}
+		enteredSearch = true
 		scenarioSolver := newByPodSolver(feasibleNodeMap, s.solutionValidator, ssn.AllowConsolidatingReclaim(),
 			s.actionType)
 
@@ -196,11 +312,35 @@ func (s *JobSolver) solvePartialJob(ssn *framework.Session, state *solvingState,
 
 		result := scenarioSolver.solve(ssn, scenarioToSolve)
 		if result.solved {
-			return result
+			return solvedSearchResult(result, jobBudget.ReducedBudget())
 		}
 	}
 
-	return nil
+	return terminalSearchResult(SearchResultGeneratorsExhausted, jobBudget.ReducedBudget(), enteredSearch)
+}
+
+func searchResultEntered(result *SearchResult) bool {
+	return result != nil && result.EnteredSearch()
+}
+
+func preserveEnteredSearch(result *SearchResult, enteredSearch bool) {
+	if result != nil && enteredSearch {
+		result.enteredSearch = true
+	}
+}
+
+func shouldStopSearch(result *SearchResult) bool {
+	switch result.Reason() {
+	case SearchResultDeadlineExhausted, SearchResultNotAttempted, SearchResultNoGenerator:
+		return true
+	default:
+		return false
+	}
+}
+
+func resultSolved(result *SearchResult) bool {
+	return result != nil && result.Reason() == SearchResultSolved &&
+		result.solution != nil && result.solution.solved
 }
 
 func getPartialJobRepresentative(
