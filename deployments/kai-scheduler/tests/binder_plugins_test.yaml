@@ -2,6 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 
 suite: test binder plugin configuration
+
+set:
+  _test:
+    renderKaiConfig: true
 templates:
   - kai-config.yaml
 tests:
