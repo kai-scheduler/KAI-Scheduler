@@ -21,23 +21,35 @@ import (
 const fitErrorMessage = "node cannot NUMA-align the pod's resources under its Topology Manager policy"
 
 const (
-	pluginName    = "numa"
-	ignoreListArg = "ignoreList"
+	pluginName              = "numa"
+	ignoreListArg           = "ignoreList"
+	reconstructAvailableArg = "reconstructAvailable"
 )
 
 type numaPlugin struct {
 	// ignoreList holds resources reported per-zone but not aligned by the kubelet. Default empty.
 	ignoreList sets.Set[v1.ResourceName]
+	// reconstructAvailable, when set, ignores the NRT-reported per-zone Available and recomputes it
+	// as Allocatable minus the placements of the pods consuming the node (see reconstructNodeAvailable).
+	// The operator sets it when the placement agent is deployed; default false trusts NRT Available.
+	reconstructAvailable bool
 }
 
-// New builds a numa plugin instance. The only argument is the optional resource ignoreList.
 func New(arguments framework.PluginArguments) framework.Plugin {
 	ignoreList := parseIgnoreList(arguments)
 	if ignoreList.Len() > 0 {
 		log.InfraLogger.V(4).Infof("numa plugin: ignoring resources in ignoreList: %v", ignoreList)
 	}
 
-	return &numaPlugin{ignoreList: ignoreList}
+	reconstructAvailable, err := arguments.GetBool(reconstructAvailableArg, false)
+	if err != nil {
+		log.InfraLogger.Warningf("numa plugin: invalid %s argument, defaulting to false: %v", reconstructAvailableArg, err)
+	}
+	if reconstructAvailable {
+		log.InfraLogger.V(4).Infof("numa plugin: reconstructing per-zone Available from pod placements (NRT Available ignored)")
+	}
+
+	return &numaPlugin{ignoreList: ignoreList, reconstructAvailable: reconstructAvailable}
 }
 
 func (pp *numaPlugin) Name() string {
@@ -46,6 +58,9 @@ func (pp *numaPlugin) Name() string {
 
 func (pp *numaPlugin) OnSessionOpen(ssn *framework.Session) {
 	pp.seedPlacements(ssn)
+	if pp.reconstructAvailable {
+		pp.reconstructNodeAvailable(ssn)
+	}
 
 	ssn.AddPredicateFn(pp.predicate)
 	ssn.AddNumaPlacementFn(pp.placement)

@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"sort"
 
+	v1 "k8s.io/api/core/v1"
+
 	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
@@ -14,11 +16,9 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 )
 
-// seedPlacements translates each already-placed pod's persisted NUMA placement into the internal
-// index-based NUMAPlacement, so virtual eviction can credit the pod's actual zones. The placement is
-// resolved by the pod_info layer (observed > BindRequest > predicted; see PodInfo.NUMAPlacementRecord)
-// and carried as durable zone ids — this only maps those ids to the per-cycle topology indices. A pod
-// with no record, or whose record names a zone the node no longer reports, is left unaccounted — v1
+// seedPlacements translates each already-placed pod's observed NUMA placement into the internal
+// index-based NUMAPlacement, so virtual eviction can credit the pod's actual zones. A pod with no
+// observed record, or whose record names a zone the node no longer reports, is left unaccounted — v1
 // never guesses a zone. Only pods the plugin would handle are seeded, keeping allocate/deallocate
 // charging symmetric.
 //
@@ -36,17 +36,24 @@ func (pp *numaPlugin) seedPlacements(ssn *framework.Session) {
 			if node == nil || !pp.shouldHandle(task, node.NumaTopology) {
 				continue
 			}
-			raw, ok := task.Pod.Annotations[commonconstants.NumaPlacementObserved]
-			if !ok {
-				continue
-			}
-			var record []schedulingv1alpha2.NUMAZonePlacement
-			if err := json.Unmarshal([]byte(raw), &record); err != nil {
-				continue
-			}
-			task.NUMAPlacement = placementFromRecord(record, node.NumaTopology)
+			task.NUMAPlacement = placementFromRecord(observedRecord(task.Pod), node.NumaTopology)
 		}
 	}
+}
+
+// observedRecord returns the pod's agent-published (observed) durable NUMA placement, or nil when the
+// annotation is absent or malformed. v1 consumes the observed placement only; the scheduler-predicted
+// record is a follow-up.
+func observedRecord(pod *v1.Pod) []schedulingv1alpha2.NUMAZonePlacement {
+	raw, ok := pod.Annotations[commonconstants.NumaPlacementObserved]
+	if !ok {
+		return nil
+	}
+	var record []schedulingv1alpha2.NUMAZonePlacement
+	if err := json.Unmarshal([]byte(raw), &record); err != nil {
+		return nil
+	}
+	return record
 }
 
 // placementFromRecord maps a persisted (zone-id-based) NUMA placement record to the internal index
