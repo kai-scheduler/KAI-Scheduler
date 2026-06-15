@@ -27,4 +27,8 @@ spec:
   actions:
     {{- toYaml .Values.scheduler.actions | nindent 4 }}
   {{- end }}
+  {{- if .Values.scheduler.scenarioSearchBudgets }}
+  scenarioSearchBudgets:
+    {{- toYaml .Values.scheduler.scenarioSearchBudgets | nindent 4 }}
+  {{- end }}
 {{- end }}

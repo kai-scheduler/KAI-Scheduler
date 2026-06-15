@@ -10,6 +10,7 @@ import (
 
 	"sigs.k8s.io/yaml"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/scenariosearch"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins"
@@ -61,6 +62,7 @@ func TestResolveConfigurationFromFile(t *testing.T) {
 				QueueDepthPerAction: map[string]int{
 					"consolidation": 10,
 				},
+				ScenarioSearchBudgets: defaultScenarioSearchBudgetsForTest(),
 			},
 			wantErr: false,
 		},
@@ -91,6 +93,7 @@ func TestResolveConfigurationFromFile(t *testing.T) {
 						},
 					},
 				},
+				ScenarioSearchBudgets: defaultScenarioSearchBudgetsForTest(),
 			},
 			wantErr: false,
 		},
@@ -136,6 +139,7 @@ func TestResolveConfigurationFromFile(t *testing.T) {
 				t.Errorf("Tiers equal: %v", reflect.DeepEqual(got.Tiers, tt.want.Tiers))
 				t.Errorf("QueueDepthPerAction equal: %v", reflect.DeepEqual(got.QueueDepthPerAction, tt.want.QueueDepthPerAction))
 				t.Errorf("UsageDBConfig equal: %v", reflect.DeepEqual(got.UsageDBConfig, tt.want.UsageDBConfig))
+				t.Errorf("ScenarioSearchBudgets equal: %v", reflect.DeepEqual(got.ScenarioSearchBudgets, tt.want.ScenarioSearchBudgets))
 				if len(got.Tiers) > 0 && len(tt.want.Tiers) > 0 {
 					t.Errorf("First tier plugins equal: %v", reflect.DeepEqual(got.Tiers[0].Plugins, tt.want.Tiers[0].Plugins))
 					if len(got.Tiers[0].Plugins) > 0 && len(tt.want.Tiers[0].Plugins) > 0 {
@@ -148,6 +152,21 @@ func TestResolveConfigurationFromFile(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func defaultScenarioSearchBudgetsForTest() *conf.ScenarioSearchBudgets {
+	return &conf.ScenarioSearchBudgets{
+		MaxActionSearchDuration: map[string]string{
+			scenariosearch.ActionDefault: scenariosearch.DefaultActionBudget,
+		},
+		MaxJobSearchDuration: scenariosearch.DefaultJobBudget,
+		MinJobSearchDuration: scenariosearch.DefaultMinJobBudget,
+		MaxGeneratorSearchDuration: map[string]string{
+			scenariosearch.ActionDefault:            scenariosearch.DefaultGeneratorBudget,
+			scenariosearch.GeneratorNodeLocalGreedy: scenariosearch.DefaultNodeLocalGreedy,
+			scenariosearch.GeneratorMultiNodeGang:   scenariosearch.DefaultMultiNodeGang,
+		},
 	}
 }
 

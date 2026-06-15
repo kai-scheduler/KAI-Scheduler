@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/pflag"
 	"golang.org/x/exp/slices"
@@ -25,6 +26,7 @@ import (
 
 	"github.com/kai-scheduler/KAI-scheduler/cmd/scheduler/app/options"
 	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/scenariosearch"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common"
 	usagedbapi "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
@@ -134,6 +136,10 @@ func (s *SchedulerForShard) configMapForShard(
 	innerConfig.Tiers = []conf.Tier{{Plugins: resolvePlugins(shard.Spec.Plugins)}}
 	actions := resolveActions(shard.Spec.Actions)
 	innerConfig.Actions = strings.Join(actions, ", ")
+	if err = validateScenarioSearchBudgets(shard.Spec.ScenarioSearchBudgets); err != nil {
+		return nil, err
+	}
+	innerConfig.ScenarioSearchBudgets = convertScenarioSearchBudgets(shard.Spec.ScenarioSearchBudgets)
 
 	if len(shard.Spec.QueueDepthPerAction) > 0 {
 		if err = validateJobDepthMap(shard, innerConfig, actions); err != nil {
@@ -167,6 +173,117 @@ func validateJobDepthMap(shard *kaiv1.SchedulingShard, innerConfig conf.Schedule
 		}
 	}
 	return nil
+}
+
+var validScenarioSearchActionKeys = []string{
+	scenariosearch.ActionDefault,
+	scenariosearch.ActionReclaim,
+	scenariosearch.ActionPreempt,
+	scenariosearch.ActionConsolidation,
+}
+
+func validateScenarioSearchBudgets(config *kaiv1.ScenarioSearchBudgets) error {
+	if config == nil {
+		return nil
+	}
+	if err := validateDurationMap(
+		"maxActionSearchDuration", config.MaxActionSearchDuration, validScenarioSearchActionKeySet(), validScenarioSearchActionKeys,
+	); err != nil {
+		return err
+	}
+	if err := validateDurationString("maxJobSearchDuration", config.MaxJobSearchDuration); err != nil {
+		return err
+	}
+	if err := validateDurationString("minJobSearchDuration", config.MinJobSearchDuration); err != nil {
+		return err
+	}
+	if err := validateDurationMap("maxGeneratorSearchDuration", config.MaxGeneratorSearchDuration, nil, nil); err != nil {
+		return err
+	}
+	return validateMinJobBudget(config.MinJobSearchDuration, config.MaxJobSearchDuration)
+}
+
+func validScenarioSearchActionKeySet() map[string]struct{} {
+	validKeys := make(map[string]struct{}, len(validScenarioSearchActionKeys))
+	for _, key := range validScenarioSearchActionKeys {
+		validKeys[key] = struct{}{}
+	}
+	return validKeys
+}
+
+func validateDurationMap(fieldName string, durations map[string]string, validKeys map[string]struct{}, validKeyNames []string) error {
+	for key, duration := range durations {
+		if validKeys != nil {
+			if _, found := validKeys[key]; !found {
+				return fmt.Errorf(
+					"%s contains invalid action key %q; valid action keys: %s",
+					fieldName, key, strings.Join(validKeyNames, ", "),
+				)
+			}
+		}
+		if err := validateDurationString(key, duration); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateDurationString(name, duration string) error {
+	if duration == "" {
+		return nil
+	}
+	parsedDuration, err := time.ParseDuration(duration)
+	if err != nil {
+		return fmt.Errorf("%s must be a valid Go duration: %w", name, err)
+	}
+	if parsedDuration < 0 {
+		return fmt.Errorf("%s must be non-negative", name)
+	}
+	return nil
+}
+
+func validateMinJobBudget(minJobBudget, maxJobBudget string) error {
+	if minJobBudget == "" || maxJobBudget == "" {
+		return nil
+	}
+	maxDuration, err := time.ParseDuration(maxJobBudget)
+	if err != nil {
+		return err
+	}
+	if maxDuration == 0 {
+		return nil
+	}
+	minDuration, err := time.ParseDuration(minJobBudget)
+	if err != nil {
+		return err
+	}
+	if minDuration >= maxDuration {
+		return fmt.Errorf("minJobSearchDuration must be less than maxJobSearchDuration")
+	}
+	return nil
+}
+
+func convertScenarioSearchBudgets(config *kaiv1.ScenarioSearchBudgets) *conf.ScenarioSearchBudgets {
+	if config == nil {
+		return nil
+	}
+	return &conf.ScenarioSearchBudgets{
+		MaxActionSearchDuration:    copyStringMap(config.MaxActionSearchDuration),
+		MaxJobSearchDuration:       config.MaxJobSearchDuration,
+		MinJobSearchDuration:       config.MinJobSearchDuration,
+		MaxGeneratorSearchDuration: copyStringMap(config.MaxGeneratorSearchDuration),
+	}
+}
+
+func copyStringMap(source map[string]string) map[string]string {
+	if source == nil {
+		return nil
+	}
+	copied := make(map[string]string, len(source))
+	for key, value := range source {
+		copied[key] = value
+	}
+	return copied
 }
 
 func getUsageDBConfig(shard *kaiv1.SchedulingShard, kaiConfig *kaiv1.Config) (*usagedbapi.UsageDBConfig, error) {

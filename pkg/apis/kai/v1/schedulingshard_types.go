@@ -23,6 +23,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/scenariosearch"
 	usagedbapi "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
 )
 
@@ -58,6 +59,13 @@ type ActionConfig struct {
 	// Built-in actions use priorities in the range 0-10000, spaced by 100.
 	// +kubebuilder:validation:Optional
 	Priority *int `json:"priority,omitempty"`
+}
+
+type ScenarioSearchBudgets struct {
+	MaxActionSearchDuration    map[string]string `json:"maxActionSearchDuration,omitempty"`
+	MaxJobSearchDuration       string            `json:"maxJobSearchDuration,omitempty"`
+	MinJobSearchDuration       string            `json:"minJobSearchDuration,omitempty"`
+	MaxGeneratorSearchDuration map[string]string `json:"maxGeneratorSearchDuration,omitempty"`
 }
 
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
@@ -100,6 +108,10 @@ type SchedulingShardSpec struct {
 	// +kubebuilder:validation:Optional
 	UsageDBConfig *usagedbapi.UsageDBConfig `yaml:"usageDBConfig,omitempty" json:"usageDBConfig,omitempty"`
 
+	// ScenarioSearchBudgets configures alpha/experimental time budgets for scenario search.
+	// +kubebuilder:validation:Optional
+	ScenarioSearchBudgets *ScenarioSearchBudgets `json:"scenarioSearchBudgets,omitempty"`
+
 	// Plugins allows overriding plugin configuration. Keys are plugin names.
 	// Built-in plugins can be disabled, reordered, or have their arguments changed.
 	// New plugins can be added by specifying a name not in the default set.
@@ -127,6 +139,38 @@ func (s *SchedulingShardSpec) SetDefaultsWhereNeeded() {
 
 	s.setDefaultPlugins()
 	s.setDefaultActions()
+	s.ScenarioSearchBudgets = DefaultScenarioSearchBudgets(s.ScenarioSearchBudgets)
+}
+
+func DefaultScenarioSearchBudgets(config *ScenarioSearchBudgets) *ScenarioSearchBudgets {
+	if config == nil {
+		config = &ScenarioSearchBudgets{}
+	}
+	if config.MaxActionSearchDuration == nil {
+		config.MaxActionSearchDuration = map[string]string{}
+	}
+	if config.MaxActionSearchDuration[scenariosearch.ActionDefault] == "" {
+		config.MaxActionSearchDuration[scenariosearch.ActionDefault] = scenariosearch.DefaultActionBudget
+	}
+	if config.MaxJobSearchDuration == "" {
+		config.MaxJobSearchDuration = scenariosearch.DefaultJobBudget
+	}
+	if config.MinJobSearchDuration == "" {
+		config.MinJobSearchDuration = scenariosearch.DefaultMinJobBudget
+	}
+	if config.MaxGeneratorSearchDuration == nil {
+		config.MaxGeneratorSearchDuration = map[string]string{}
+	}
+	if config.MaxGeneratorSearchDuration[scenariosearch.ActionDefault] == "" {
+		config.MaxGeneratorSearchDuration[scenariosearch.ActionDefault] = scenariosearch.DefaultGeneratorBudget
+	}
+	if config.MaxGeneratorSearchDuration[scenariosearch.GeneratorNodeLocalGreedy] == "" {
+		config.MaxGeneratorSearchDuration[scenariosearch.GeneratorNodeLocalGreedy] = scenariosearch.DefaultNodeLocalGreedy
+	}
+	if config.MaxGeneratorSearchDuration[scenariosearch.GeneratorMultiNodeGang] == "" {
+		config.MaxGeneratorSearchDuration[scenariosearch.GeneratorMultiNodeGang] = scenariosearch.DefaultMultiNodeGang
+	}
+	return config
 }
 
 // Default priorities preserve the current hardcoded ordering.

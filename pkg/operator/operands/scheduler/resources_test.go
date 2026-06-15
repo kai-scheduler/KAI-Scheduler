@@ -18,6 +18,7 @@ import (
 	kaiprometheus "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/prometheus"
 	kaiv1qc "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/queue_controller"
 	kaiv1scheduler "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/scheduler"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/scenariosearch"
 	usagedbapi "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 
@@ -198,6 +199,111 @@ func TestValidateJobDepthMap(t *testing.T) {
 			err := validateJobDepthMap(tt.shard, innerConfig, tt.actions)
 			if tt.expectError {
 				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestValidateScenarioSearchBudgets(t *testing.T) {
+	tests := []struct {
+		name        string
+		config      *kaiv1.ScenarioSearchBudgets
+		expectError bool
+		errorText   []string
+	}{
+		{
+			name:        "nil config",
+			config:      nil,
+			expectError: false,
+		},
+		{
+			name: "valid config allows defaults for disabled consolidation",
+			config: &kaiv1.ScenarioSearchBudgets{
+				MaxActionSearchDuration: map[string]string{
+					scenariosearch.ActionDefault:       "1s",
+					scenariosearch.ActionReclaim:       "2s",
+					scenariosearch.ActionPreempt:       "1s",
+					scenariosearch.ActionConsolidation: "1s",
+				},
+				MaxJobSearchDuration: "250ms",
+				MinJobSearchDuration: "0s",
+				MaxGeneratorSearchDuration: map[string]string{
+					scenariosearch.ActionDefault:            "250ms",
+					scenariosearch.GeneratorNodeLocalGreedy: "50ms",
+					scenariosearch.GeneratorMultiNodeGang:   "250ms",
+					"PluginProvidedGeneratorFromScheduler":  "1s",
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "invalid action budget key",
+			config: &kaiv1.ScenarioSearchBudgets{
+				MaxActionSearchDuration: map[string]string{"allocate": "1s"},
+			},
+			expectError: true,
+			errorText: []string{
+				"maxActionSearchDuration",
+				"allocate",
+				"valid action keys: default, reclaim, preempt, consolidation",
+			},
+		},
+		{
+			name: "invalid duration string",
+			config: &kaiv1.ScenarioSearchBudgets{
+				MaxJobSearchDuration: "250milliseconds",
+			},
+			expectError: true,
+		},
+		{
+			name: "negative duration",
+			config: &kaiv1.ScenarioSearchBudgets{
+				MaxGeneratorSearchDuration: map[string]string{
+					scenariosearch.GeneratorNodeLocalGreedy: "-1s",
+				},
+			},
+			expectError: true,
+		},
+		{
+			name: "min job budget must be less than max job budget",
+			config: &kaiv1.ScenarioSearchBudgets{
+				MaxJobSearchDuration: "100ms",
+				MinJobSearchDuration: "100ms",
+			},
+			expectError: true,
+		},
+		{
+			name: "zero max job budget disables min max ordering",
+			config: &kaiv1.ScenarioSearchBudgets{
+				MaxJobSearchDuration: "0s",
+				MinJobSearchDuration: "1s",
+			},
+			expectError: false,
+		},
+		{
+			name: "empty durations are defaulted later",
+			config: &kaiv1.ScenarioSearchBudgets{
+				MaxActionSearchDuration: map[string]string{
+					scenariosearch.ActionReclaim: "",
+				},
+				MaxGeneratorSearchDuration: map[string]string{
+					scenariosearch.GeneratorNodeLocalGreedy: "",
+				},
+			},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateScenarioSearchBudgets(tt.config)
+			if tt.expectError {
+				require.Error(t, err)
+				for _, expectedText := range tt.errorText {
+					assert.Contains(t, err.Error(), expectedText)
+				}
 			} else {
 				require.NoError(t, err)
 			}
@@ -458,6 +564,71 @@ tiers:
 				},
 			},
 			expectedErr: true,
+		},
+		{
+			name: "scenario search budget configuration",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Scheduler: &kaiv1scheduler.Scheduler{
+						Replicas: ptr.To(int32(1)),
+					},
+				},
+			},
+			shard: &kaiv1.SchedulingShard{
+				Spec: kaiv1.SchedulingShardSpec{
+					PlacementStrategy: &kaiv1.PlacementStrategy{
+						GPU: ptr.To(binpackStrategy),
+						CPU: ptr.To(binpackStrategy),
+					},
+					ScenarioSearchBudgets: &kaiv1.ScenarioSearchBudgets{
+						MaxActionSearchDuration: map[string]string{
+							scenariosearch.ActionReclaim: "3s",
+						},
+						MaxJobSearchDuration: "500ms",
+						MinJobSearchDuration: "50ms",
+						MaxGeneratorSearchDuration: map[string]string{
+							scenariosearch.GeneratorNodeLocalGreedy: "75ms",
+						},
+					},
+				},
+			},
+			expected: map[string]string{
+				"config.yaml": `actions: allocate,consolidation,reclaim,preempt,stalegangeviction
+scenarioSearchBudgets:
+  maxActionSearchDuration:
+    default: 5s
+    reclaim: 3s
+  maxGeneratorSearchDuration:
+    MultiNodeGang: 250ms
+    NodeLocalGreedy: 75ms
+    default: 250ms
+  maxJobSearchDuration: 500ms
+  minJobSearchDuration: 50ms
+tiers:
+- plugins:
+  - name: predicates
+  - name: proportion
+  - name: priority
+  - name: nodeavailability
+  - name: resourcetype
+  - name: podaffinity
+  - name: elastic
+  - name: kubeflow
+  - name: ray
+  - name: subgrouporder
+  - name: taskorder
+  - name: nominatednode
+  - name: dynamicresources
+  - name: minruntime
+  - name: topology
+  - name: snapshot
+  - name: gpupack
+  - name: nodeplacement
+    arguments:
+      cpu: binpack
+      gpu: binpack
+  - name: gpusharingorder`,
+			},
 		},
 		{
 			name: "plugin disable: elastic disabled via override",
@@ -795,6 +966,9 @@ usageDBConfig:
 				// Compare the configuration structs
 				assert.Equal(t, expectedConfig.Tiers, actualConfig.Tiers, "ConfigMap Tiers content mismatch")
 				assert.Equal(t, expectedConfig.QueueDepthPerAction, actualConfig.QueueDepthPerAction, "ConfigMap QueueDepthPerAction content mismatch")
+				if expectedConfig.ScenarioSearchBudgets != nil {
+					assert.Equal(t, expectedConfig.ScenarioSearchBudgets, actualConfig.ScenarioSearchBudgets, "ConfigMap ScenarioSearchBudgets content mismatch")
+				}
 				// Trim and split actions
 				expectedActions := make([]string, 0, len(expectedConfig.Actions))
 				for _, action := range strings.Split(expectedConfig.Actions, ",") {

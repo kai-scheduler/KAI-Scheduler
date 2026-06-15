@@ -150,6 +150,23 @@ spec:
                 description: QueueDepthPerAction max number of jobs to try for action
                   per queue
                 type: object
+              scenarioSearchBudgets:
+                description: ScenarioSearchBudgets configures alpha/experimental time
+                  budgets for scenario search.
+                properties:
+                  maxActionSearchDuration:
+                    additionalProperties:
+                      type: string
+                    type: object
+                  maxGeneratorSearchDuration:
+                    additionalProperties:
+                      type: string
+                    type: object
+                  maxJobSearchDuration:
+                    type: string
+                  minJobSearchDuration:
+                    type: string
+                type: object
               usageDBConfig:
                 description: UsageDBConfig defines configuration for the usage db
                   client

@@ -26,6 +26,7 @@ import (
 
 	"sigs.k8s.io/yaml"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/scenariosearch"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 )
@@ -123,8 +124,40 @@ func loadSchedulerConf(confStr string) (*conf.SchedulerConfiguration, error) {
 	if _, err := GetActionsFromConfig(schedulerConf); err != nil {
 		return nil, err
 	}
+	schedulerConf.ScenarioSearchBudgets = defaultScenarioSearchBudgets(schedulerConf.ScenarioSearchBudgets)
 
 	return schedulerConf, nil
+}
+
+func defaultScenarioSearchBudgets(config *conf.ScenarioSearchBudgets) *conf.ScenarioSearchBudgets {
+	if config == nil {
+		config = &conf.ScenarioSearchBudgets{}
+	}
+	if config.MaxActionSearchDuration == nil {
+		config.MaxActionSearchDuration = map[string]string{}
+	}
+	if config.MaxActionSearchDuration[scenariosearch.ActionDefault] == "" {
+		config.MaxActionSearchDuration[scenariosearch.ActionDefault] = scenariosearch.DefaultActionBudget
+	}
+	if config.MaxJobSearchDuration == "" {
+		config.MaxJobSearchDuration = scenariosearch.DefaultJobBudget
+	}
+	if config.MinJobSearchDuration == "" {
+		config.MinJobSearchDuration = scenariosearch.DefaultMinJobBudget
+	}
+	if config.MaxGeneratorSearchDuration == nil {
+		config.MaxGeneratorSearchDuration = map[string]string{}
+	}
+	if config.MaxGeneratorSearchDuration[scenariosearch.ActionDefault] == "" {
+		config.MaxGeneratorSearchDuration[scenariosearch.ActionDefault] = scenariosearch.DefaultGeneratorBudget
+	}
+	if config.MaxGeneratorSearchDuration[scenariosearch.GeneratorNodeLocalGreedy] == "" {
+		config.MaxGeneratorSearchDuration[scenariosearch.GeneratorNodeLocalGreedy] = scenariosearch.DefaultNodeLocalGreedy
+	}
+	if config.MaxGeneratorSearchDuration[scenariosearch.GeneratorMultiNodeGang] == "" {
+		config.MaxGeneratorSearchDuration[scenariosearch.GeneratorMultiNodeGang] = scenariosearch.DefaultMultiNodeGang
+	}
+	return config
 }
 
 func readSchedulerConf(confPath string) (string, error) {
