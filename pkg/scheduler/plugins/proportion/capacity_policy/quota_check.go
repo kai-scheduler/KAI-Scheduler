@@ -14,13 +14,10 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/utils"
 )
 
+var schedulableResult = &api.SchedulableResult{IsSchedulable: true}
+
 func Schedulable() *api.SchedulableResult {
-	return &api.SchedulableResult{
-		IsSchedulable: true,
-		Reason:        "",
-		Message:       "",
-		Details:       nil,
-	}
+	return schedulableResult
 }
 
 func (cp *CapacityPolicy) resultsWithNonPreemptibleOverQuota(requestedShare rs.ResourceQuantities,
