@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 - Account for native sidecar containers (initContainers with `restartPolicy: Always`, KEP-753) in pod resource accounting, matching kubelet's `AggregateContainerRequests`. Previously, native sidecar requests were max'd against regular containers instead of summed with them, causing the scheduler to bind pods that kubelet then rejected at admission with `OutOfCpu`/`OutOfGpu`. [#1556](https://github.com/kai-scheduler/KAI-Scheduler/pull/1556)
+- Stopped recreating the `kai-config` CR on every `helm upgrade`. The CR is now applied by a post-install/post-upgrade hook Job (`kai-config-deployer`) using `kubectl apply --server-side` instead of being a Helm-managed resource, so its UID stays stable across upgrades. [#1536](https://github.com/kai-scheduler/KAI-Scheduler/issues/1536)
 
 ## [v0.9.19] - 2026-06-01
 

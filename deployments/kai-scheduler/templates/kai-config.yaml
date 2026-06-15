@@ -1,106 +1,14 @@
 # Copyright 2025 NVIDIA CORPORATION
 # SPDX-License-Identifier: Apache-2.0
-
-apiVersion: kai.scheduler/v1
-kind: Config
-metadata:
-  name: kai-config
-  namespace: {{ .Release.Namespace }}
-  annotations:
-    "helm.sh/hook": pre-install,pre-upgrade
-    "helm.sh/hook-weight": "3"
-spec:
-  namespace: {{ .Release.Namespace }}
-  global:
-    schedulerName: "kai-scheduler"
-    queueLabelKey: "kai.scheduler/queue"
-    nodePoolLabelKey: "kai.scheduler/nodepool"
-    {{- if .Values.global.namespaceLabelSelector }}
-    namespaceLabelSelector:
-      {{- toYaml .Values.global.namespaceLabelSelector | nindent 6 }}
-    {{- end }}
-    {{- if .Values.global.podLabelSelector }}
-    podLabelSelector:
-      {{- toYaml .Values.global.podLabelSelector | nindent 6 }}
-    {{- end }}
-    {{- if .Values.global.affinity }}
-    affinity:
-      {{- toYaml .Values.global.affinity | nindent 6 }}
-    {{- end }}
-    {{- if .Values.global.tolerations }}
-    tolerations:
-      {{- toYaml .Values.global.tolerations | nindent 6 }}
-    {{- end }}
-    {{- if .Values.global.securityContext }}
-    securityContext:
-      {{- toYaml .Values.global.securityContext | nindent 6 }}
-    {{- end }}
-    {{- if .Values.global.imagePullSecrets }}
-    additionalImagePullSecrets:
-      {{- range .Values.global.imagePullSecrets }}
-      - {{ .name }}
-      {{- end }}
-    {{- end }}
-    replicaCount: {{ .Values.operator.replicaCount | default 1 }}
-
-  podGroupController:
-    service:
-        enabled: true
-        image:
-          name: {{ .Values.podgroupcontroller.image.name }}
-          repository: {{ .Values.global.registry }}
-          tag: {{ .Chart.Version }}
-          pullPolicy: {{ .Values.podgroupcontroller.image.pullPolicy | default .Values.global.imagePullPolicy }}
-        {{- if .Values.podgroupcontroller.resources }}
-        resources:
-          {{- toYaml .Values.podgroupcontroller.resources | nindent 6 }}
-        {{- end }}
-
-  queueController:
-    service:
-      enabled: true
-      image:
-        name: {{ .Values.queuecontroller.image.name }}
-        repository: {{ .Values.global.registry }}
-        tag: {{ .Chart.Version }}
-        pullPolicy: {{ .Values.queuecontroller.image.pullPolicy | default .Values.global.imagePullPolicy }}
-      {{- if .Values.queuecontroller.resources }}
-      resources:
-        {{- toYaml .Values.queuecontroller.resources | nindent 6 }}
-      {{- end }}
-
-  admission:
-    service:
-      enabled: true
-      image:
-        name: {{ .Values.admission.image.name }}
-        repository: {{ .Values.global.registry }}
-        tag: {{ .Chart.Version }}
-        pullPolicy: {{ .Values.admission.image.pullPolicy | default .Values.global.imagePullPolicy }}
-      {{- if .Values.admission.resources }}
-      resources:
-        {{- toYaml .Values.admission.resources | nindent 6 }}
-      {{- end }}
-    gpuSharing: {{ .Values.global.gpuSharing | default false }}
-    queueLabelSelector: false
-    webhook:
-      port: 443
-      targetPort: {{ .Values.admission.ports.webhookPort | default 9443 }}
-      probePort: {{ .Values.admission.ports.probePort | default 8081 }}
-      metricsPort: {{ .Values.admission.ports.metricsPort | default 8080 }}
-    gpuPodRuntimeClassName: {{ .Values.admission.gpuPodRuntimeClassName | default "nvidia" }}
-
-  nodeScaleAdjuster:
-    service:
-      enabled: {{ .Values.global.clusterAutoscaling }}
-      image:
-        name: {{ .Values.nodescaleadjuster.image.name }}
-        repository: {{ .Values.global.registry }}
-        tag: {{ .Chart.Version }}
-        pullPolicy: {{ .Values.nodescaleadjuster.image.pullPolicy | default .Values.global.imagePullPolicy }}
-      {{- if .Values.nodescaleadjuster.resources }}
-      resources:
-        {{- toYaml .Values.nodescaleadjuster.resources | nindent 6 }}
-      {{- end }}
-    args:
-      nodeScaleNamespace: {{ .Values.nodescaleadjuster.scalingPodNamespace }} 
+{{- /*
+This template is intentionally empty in production. The kai-config CR is
+applied by the post-install/post-upgrade hook Job (see hooks/post/kai-config-deployer/)
+using kubectl apply --server-side, so it is NOT a Helm release resource.
+The chart unit tests under tests/ render the kai-config body to assert
+chart values flow correctly into the operator input config; they enable
+the standalone render via .Values._test.renderKaiConfig=true.
+*/ -}}
+{{- $testCfg := .Values._test | default dict -}}
+{{- if $testCfg.renderKaiConfig -}}
+{{ include "kai-scheduler.kai-config" . }}
+{{- end -}}

@@ -91,3 +91,10 @@ crdupgrader:
   image:
     name: crd-upgrader
     pullPolicy: IfNotPresent
+
+kaiConfigDeployer:
+  # Post-install/post-upgrade hook that applies the kai-config CR out-of-release (#1536).
+  image:
+    name: crd-upgrader
+    pullPolicy: IfNotPresent
+  resources: {}
