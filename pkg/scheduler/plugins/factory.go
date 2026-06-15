@@ -39,6 +39,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/ray"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/reflectjoborder"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/resourcetype"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/scenariogenerators"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/snapshot"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/subgrouporder"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/taskorder"
@@ -72,6 +73,9 @@ func InitDefaultPlugins() {
 
 	// Other Plugins
 	framework.RegisterPluginBuilder("snapshot", snapshot.New)
+	framework.RegisterPluginBuilder(scenariogenerators.LegacyName, scenariogenerators.NewLegacy)
+	framework.RegisterPluginBuilder(scenariogenerators.NodeLocalGreedyName, scenariogenerators.NewNodeLocalGreedy)
+	framework.RegisterPluginBuilder(scenariogenerators.MultiNodeGangName, scenariogenerators.NewMultiNodeGang)
 
 	// Always register the Job Order Plugin last.
 	framework.RegisterPluginBuilder("reflectjoborder", reflectjoborder.New)
