@@ -8,12 +8,15 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"sigs.k8s.io/yaml"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/scenariosearch"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/scenariogenerators"
 )
 
 func TestResolveConfigurationFromFile(t *testing.T) {
@@ -153,6 +156,32 @@ func TestResolveConfigurationFromFile(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDefaultSchedulerConfRegistersScenarioGeneratorsForDefaultBudgets(t *testing.T) {
+	actions.InitDefaultActions()
+
+	schedulerConf, err := GetDefaultSchedulerConf()
+	require.NoError(t, err)
+
+	ssn := &framework.Session{Config: schedulerConf}
+	registeredPlugins := map[string]bool{}
+	for _, tier := range schedulerConf.Tiers {
+		for _, plugin := range tier.Plugins {
+			switch plugin.Name {
+			case scenariogenerators.NodeLocalGreedyName:
+				scenariogenerators.NewNodeLocalGreedy(plugin.Arguments).OnSessionOpen(ssn)
+				registeredPlugins[plugin.Name] = true
+			case scenariogenerators.MultiNodeGangName:
+				scenariogenerators.NewMultiNodeGang(plugin.Arguments).OnSessionOpen(ssn)
+				registeredPlugins[plugin.Name] = true
+			}
+		}
+	}
+
+	require.True(t, registeredPlugins[scenariogenerators.NodeLocalGreedyName])
+	require.True(t, registeredPlugins[scenariogenerators.MultiNodeGangName])
+	require.NoError(t, ssn.ValidateScenarioGeneratorBudgetKeys())
 }
 
 func defaultScenarioSearchBudgetsForTest() *conf.ScenarioSearchBudgets {

@@ -59,6 +59,8 @@ tiers:
   - name: minruntime
   - name: topology
   - name: snapshot
+  - name: sg-nodelocalgreedy
+  - name: sg-multinodegang
 `
 
 func ResolveConfigurationFromFile(confPath string) (*conf.SchedulerConfiguration, error) {
