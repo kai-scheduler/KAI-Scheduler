@@ -206,22 +206,70 @@ func TestRequestUnits(t *testing.T) {
 	}}}
 
 	t.Run("pod scope aggregates into one unit", func(t *testing.T) {
-		units := requestUnits(task, node_info.TopologyScopePod)
-		assert.Len(t, units, 1)
+		concurrent, serial := requestUnits(task, node_info.TopologyScopePod)
+		assert.Len(t, concurrent, 1)
+		assert.Empty(t, serial, "pod scope folds init containers into the effective pod request")
 		// PodRequests = max(init peak 10, sidecar+regulars 1+2+2=5) = 10.
-		got := units[0]["cpu"]
+		got := concurrent[0]["cpu"]
 		assert.Equal(t, int64(10), got.Value())
 	})
 
-	t.Run("container scope yields one unit per concurrent container", func(t *testing.T) {
-		units := requestUnits(task, node_info.TopologyScopeContainer)
-		assert.Len(t, units, 3, "native sidecar + two regular containers (ordinary init excluded)")
+	t.Run("container scope splits concurrent and serial units", func(t *testing.T) {
+		concurrent, serial := requestUnits(task, node_info.TopologyScopeContainer)
+		assert.Len(t, concurrent, 3, "native sidecar + two regular containers")
 		var total int64
-		for _, u := range units {
+		for _, u := range concurrent {
 			q := u["cpu"]
 			total += q.Value()
 		}
 		assert.Equal(t, int64(5), total, "1 (sidecar) + 2 + 2")
+
+		assert.Len(t, serial, 1, "the ordinary init container is a serial unit")
+		initCPU := serial[0]["cpu"]
+		assert.Equal(t, int64(10), initCPU.Value())
+	})
+}
+
+// TestPredicateOrdinaryInitContainer verifies an ordinary init container is checked for
+// alignability on its own (rejected if it cannot fit a zone) but is not accumulated into the
+// concurrent app containers' headroom.
+func TestPredicateOrdinaryInitContainer(t *testing.T) {
+	always := v1.ContainerRestartPolicyAlways
+	cpu := func(q string) v1.ResourceRequirements {
+		return v1.ResourceRequirements{Requests: v1.ResourceList{"cpu": resource.MustParse(q)}}
+	}
+	build := func(initCPU string, restartable bool) *pod_info.PodInfo {
+		init := v1.Container{Resources: cpu(initCPU)}
+		if restartable {
+			init.RestartPolicy = &always
+		}
+		return &pod_info.PodInfo{Pod: &v1.Pod{
+			Status: v1.PodStatus{QOSClass: v1.PodQOSGuaranteed},
+			Spec: v1.PodSpec{
+				InitContainers: []v1.Container{init},
+				Containers:     []v1.Container{{Resources: cpu("2")}},
+			},
+		}}
+	}
+
+	t.Run("ordinary init within a zone is admitted, not accumulated", func(t *testing.T) {
+		pp, _, node := wiredPlugin(singleNUMANodeTopology(node_info.TopologyScopeContainer,
+			numaZone("node-0", map[string]string{"cpu": "4"}),
+			numaZone("node-1", map[string]string{"cpu": "4"}),
+		))
+		// init wants 4 (fits a 4-CPU zone alone); app wants 2. If init were accumulated with the
+		// app container, the two together (6) would not fit a single zone — admission proves it isn't.
+		_, admit := pp.evaluate(build("4", false), node)
+		assert.True(t, admit)
+	})
+
+	t.Run("ordinary init larger than any zone is rejected", func(t *testing.T) {
+		pp, _, node := wiredPlugin(singleNUMANodeTopology(node_info.TopologyScopeContainer,
+			numaZone("node-0", map[string]string{"cpu": "4"}),
+			numaZone("node-1", map[string]string{"cpu": "4"}),
+		))
+		_, admit := pp.evaluate(build("5", false), node)
+		assert.False(t, admit, "an init container that fits no single zone cannot be NUMA-aligned")
 	})
 }
 
