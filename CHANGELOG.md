@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 - Fixed default node-scale-adjuster image name (`node-scale-adjuster` → `nodescaleadjuster`) so it matches the image published to GHCR
 - Account for native sidecar containers (initContainers with `restartPolicy: Always`, KEP-753) in pod resource accounting, matching kubelet's `AggregateContainerRequests`. Previously, native sidecar requests were max'd against regular containers instead of summed with them, causing the scheduler to bind pods that kubelet then rejected at admission with `OutOfCpu`/`OutOfGpu`. [#1556](https://github.com/kai-scheduler/KAI-Scheduler/pull/1556)
+- Fixed duplicate GPU reservation pods being created for a single `gpu-group` on a node (each reserving a different physical GPU), which corrupted the scheduler's fractional-GPU accounting and left devices unschedulable. Reservation pods are now named deterministically per (node, gpu-group) and treat AlreadyExists as success, so concurrent or retried binds collide on one object instead of duplicating [#1673](https://github.com/kai-scheduler/KAI-Scheduler/issues/1673)
 
 ## [v0.12.21] - 2026-06-01
 

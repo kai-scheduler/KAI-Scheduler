@@ -6,6 +6,8 @@ package resourcereservation
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1477,5 +1479,75 @@ var _ = Describe("Race condition: reservation pod deleted during concurrent bind
 			Expect(len(pods.Items)).To(Equal(1),
 				"Reservation pod should be preserved when an active BindRequest exists")
 		})
+	})
+})
+
+var _ = Describe("Reservation pod duplicate gpu-group race", func() {
+	const (
+		raceNodeName = "race-node"
+		raceGroup    = "race-gpu-group"
+	)
+
+	// This test covers issue #1673: two reservation pods getting assigned the same
+	// gpu-group while reserving different physical GPUs.
+	//
+	// In production the reservation service reads through an informer cache that lags
+	// behind writes, while it creates/watches against the API server directly. So a
+	// find-or-create of the reservation pod can miss a pod a previous ReserveGpuDevice
+	// call just created, and a second call for the same gpu-group would create a
+	// duplicate reservation pod on a different physical GPU.
+	//
+	// The interceptor models that cache lag deterministically: List in the reservation
+	// namespace always appears empty, and each created reservation pod is allocated a
+	// distinct physical GPU index. Deterministic per-(node, gpu-group) naming plus
+	// AlreadyExists handling must collapse the second create onto the first pod.
+	It("creates a single reservation pod for a gpu-group despite cache lag", func() {
+		base := fake.NewClientBuilder().WithScheme(testScheme).
+			WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
+
+		var gpuIndexCounter int32
+		laggingClient := interceptor.NewClient(base, interceptor.Funcs{
+			List: func(ctx context.Context, c runtimeClient.WithWatch, list runtimeClient.ObjectList, opts ...runtimeClient.ListOption) error {
+				listOpts := runtimeClient.ListOptions{}
+				listOpts.ApplyOptions(opts)
+				if _, ok := list.(*v1.PodList); ok && listOpts.Namespace == resourceReservationNameSpace {
+					return nil // cache lag: reservation namespace appears empty
+				}
+				return c.List(ctx, list, opts...)
+			},
+			Create: func(ctx context.Context, c runtimeClient.WithWatch, obj runtimeClient.Object, opts ...runtimeClient.CreateOption) error {
+				// Simulate the GPU device plugin allocating a distinct physical GPU index
+				// to each reservation pod it admits.
+				if pod, ok := obj.(*v1.Pod); ok && pod.Namespace == resourceReservationNameSpace {
+					if pod.Annotations == nil {
+						pod.Annotations = map[string]string{}
+					}
+					pod.Annotations[gpuIndexAnnotationName] = strconv.Itoa(int(atomic.AddInt32(&gpuIndexCounter, 1) - 1))
+				}
+				return c.Create(ctx, obj, opts...)
+			},
+			Watch: func(ctx context.Context, c runtimeClient.WithWatch, obj runtimeClient.ObjectList, opts ...runtimeClient.ListOption) (watch.Interface, error) {
+				return exampleMockWatchPod("0", 0), nil
+			},
+		})
+
+		rsc := initializeTestService(laggingClient)
+
+		fractionPodA := &v1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "team-a", Name: "frac-a"}}
+		fractionPodB := &v1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "team-a", Name: "frac-b"}}
+		Expect(base.Create(context.Background(), fractionPodA)).To(Succeed())
+		Expect(base.Create(context.Background(), fractionPodB)).To(Succeed())
+
+		_, err := rsc.ReserveGpuDevice(context.Background(), fractionPodA, raceNodeName, raceGroup)
+		Expect(err).To(Succeed())
+		_, err = rsc.ReserveGpuDevice(context.Background(), fractionPodB, raceNodeName, raceGroup)
+		Expect(err).To(Succeed())
+
+		reservationPods := &v1.PodList{}
+		Expect(base.List(context.Background(), reservationPods,
+			runtimeClient.InNamespace(resourceReservationNameSpace),
+			runtimeClient.MatchingLabels{constants.GPUGroup: raceGroup})).To(Succeed())
+		Expect(reservationPods.Items).To(HaveLen(1),
+			"a single gpu-group must map to exactly one reservation pod / physical GPU")
 	})
 })
