@@ -43,6 +43,11 @@ func (r *SearchResult) EnteredSearch() bool {
 	return r.enteredSearch
 }
 
+// NewNotAttemptedSearchResult returns a terminal result for callers that skip solver entry.
+func NewNotAttemptedSearchResult() *SearchResult {
+	return terminalSearchResult(SearchResultNotAttempted, false, false)
+}
+
 func solvedSearchResult(solution *solutionResult, reducedBudget bool) *SearchResult {
 	return &SearchResult{
 		reason:        SearchResultSolved,
