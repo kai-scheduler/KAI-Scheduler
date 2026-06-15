@@ -15,7 +15,7 @@
   - [Generator Abstraction](#generator-abstraction)
   - [Plugin Registration and Ordering](#plugin-registration-and-ordering)
   - [Driver Loop and Budget](#driver-loop-and-budget)
-  - [Essential Follow-Up: Scenario Dedupe](#essential-follow-up-scenario-dedupe)
+  - [Essential Follow-Up: Scenario Deduplication](#essential-follow-up-scenario-deduplication)
   - [Initial Shipped Plugin Policy](#initial-shipped-plugin-policy)
   - [Possible Future Generators](#possible-future-generators)
   - [Approximation Contract](#approximation-contract)
@@ -24,14 +24,14 @@
   - [Relationship to Necessary-Condition Checks](#relationship-to-necessary-condition-checks)
 - [Monitoring](#monitoring)
 - [Test Plan](#test-plan)
-- [Graduation Criteria](#graduation-criteria)
+- [Rollout Criteria](#rollout-criteria)
 - [Implementation History](#implementation-history)
 - [Alternatives](#alternatives)
 <!-- /toc -->
 
 ## Summary
 
-This proposal replaces unbounded reclaim scenario enumeration with a bounded, plugin-registered generator portfolio. Generators propose concrete victim scenarios best-first, while the existing simulator and post-simulation validator remain the authority for accepted solutions. The first policy runs a cheap node-local generator before the existing multi-node gang generator, all under alpha wall-clock budgets. This intentionally bounds scheduler time rather than trying to prove every negative reclaim case, because victim selection is a knapsack-shaped combinatorial search.
+This proposal replaces unbounded reclaim scenario enumeration with a bounded, plugin-registered generator portfolio. Generators propose concrete victim scenarios best-first, while the existing simulator and post-simulation validator remain the authority for accepted solutions. The first policy runs a cheap node-local generator before the existing multi-node gang generator, all under configurable wall-clock budgets. This intentionally bounds scheduler time rather than trying to prove every negative reclaim case, because victim selection is a knapsack related problem.
 
 ## Motivation
 
@@ -43,15 +43,15 @@ The current reclaim path can spend unbounded synchronous scheduler time trying t
 - Keep every accepted solution validator-approved; never accept a scenario from a shortcut alone.
 - Preserve the #1537 gang/topology correctness fix by keeping whole victim gangs intact.
 - Restore fast common-case behavior with a narrow `NodeLocalGreedy` generator before wider search.
-- Let future case-specific generators register through plugins without changing the shared solver driver.
-- Expose all new search-budget and generator-selection controls as alpha/experimental only.
+- Let future case-specific generators register through normal scheduler plugin enablement and ordering without changing the shared solver driver.
+- Expose the new search-budget configuration knobs as alpha/experimental.
 - Add production metrics that show budget use, generator work, scenario outcomes, and reduced-budget jobs.
 
 ### Non-Goals
 
 - Do not prove complete unschedulability for reclaim. General victim selection is a hard combinatorial problem.
 - Do not expose victim-count, node-count, victim-by-node, or scenario-count work-unit budgets.
-- Do not make the generator plugin API or per-generator args a stable user-facing contract in Phase 1.
+- Do not introduce a separate generator-selection mechanism outside normal scheduler plugin enablement.
 - Do not move heavy search off the synchronous scheduling path in Phase 1.
 - Do not include replay, benchmark, or debug-only metric schemas in the production metric contract.
 
@@ -66,18 +66,18 @@ The initial portfolio is:
 | 1 | `NodeLocalGreedy` | Restore the cheap pre-#1537 node-local scenario shape for common cases and the scale-test failure. |
 | 2 | `MultiNodeGang` | Wrap today's wide accumulated scenario builder while preserving the #1537 whole-gang behavior. |
 
-The negative result is intentionally approximate when produced by the bounded portfolio. If the budget expires or the registered generators do not cover the shape, the scheduler may report no solution even if a solution exists. This is acceptable only because accepted positives remain fully simulated and validator-approved, and because the feature is explicitly bounded and observable.
+The negative result is intentionally approximate when produced by the bounded portfolio. If the budget expires or the registered generators do not cover the shape, the scheduler may report no solution even if a solution exists. This is acceptable only because accepted positives remain fully simulated and validator-approved, and because the behavior is explicitly bounded and observable.
 
 ### Limitations/Risks and Mitigations
 
 | Risk | Mitigation |
 | --- | --- |
-| False negative when a valid scenario exists after the budget expires. | Report deadline/generator exhaustion through metrics; keep the feature alpha; add future generators based on observed misses. |
+| False negative when a valid scenario exists after the budget expires. | Report deadline/generator exhaustion through metrics; keep budget knobs alpha/experimental while tuning defaults; add future generators based on observed misses. |
 | A job can consume most of the action budget before later jobs run. | Support `maxJobSearchMillis` and optional best-effort `minJobSearchMillis` with default `0`; it does not reserve action budget upfront, but gives reached jobs a minimal chance when action budget remains. |
-| Generator ordering can hide useful later generators. | Derive ordering from plugin registration order and expose it as alpha/experimental policy. |
+| Generator ordering can hide useful later generators. | Derive ordering from normal scheduler plugin order and document that plugin enablement/order controls generator selection. |
 | `MultiNodeGang` changes could regress #1537 gang/topology correctness. | Wrap the existing builder/emitter and keep #1537 coverage; topology-specific generators may also preserve the same correctness case later. |
 | Budget metrics can grow unbounded as cumulative counters/histograms. | Document that Prometheus `_sum` and `_count` series are cumulative and should be queried with `rate()` or `increase()`. |
-| Experimental knobs become an accidental compatibility contract. | Mark all new generator-selection and time-budget args alpha/experimental in the design and implementation docs. |
+| Experimental knobs become an accidental compatibility contract. | Mark only the new time-budget configuration args alpha/experimental in the design and implementation docs. |
 
 ## Design Details
 
@@ -149,7 +149,7 @@ func (ssn *Session) AddScenarioGenerator(
 
 Generator order is derived from scheduler plugin execution order. `OpenSession` calls plugin `OnSessionOpen` hooks in configured plugin order, and each hook appends its generators by calling `AddScenarioGenerator`. If a plugin registers multiple generators, their relative order is the order of its `AddScenarioGenerator` calls. `JobSolver.solvePartialJob` filters registered generators by the current action and drains them in registration order.
 
-The first version does not promise a stable user-facing API for choosing scenario builders or tuning search effort. Builder selection and all new search-budget knobs are alpha/experimental controls for KAI development, support, and experiments.
+Generator selection is controlled by normal scheduler plugin enablement and plugin order; this is not an alpha mechanism. The new time-budget knobs are alpha/experimental controls for KAI development, support, and experiments while defaults are tuned.
 
 ### Driver Loop and Budget
 
@@ -175,25 +175,25 @@ The budget model is time-only:
 
 | Budget | Unit | Where set | Contract |
 | --- | --- | --- | --- |
-| Action deadline | wall-clock time, for example `maxActionSearchMillis` | alpha action / solver config | the action stops scenario search after this time and moves on |
-| Job deadline | wall-clock time, for example `maxJobSearchMillis` | alpha action / solver config | one pending job cannot consume the whole action indefinitely |
-| Minimum job attempt | wall-clock time, for example `minJobSearchMillis`, default `0` | alpha action / solver config | optional best-effort floor for jobs reached while action budget remains |
-| Generator deadline | wall-clock time, for example `maxGeneratorSearchMillis` | alpha generator config | one generator cannot consume the whole job indefinitely |
+| Action deadline | wall-clock time, for example `maxActionSearchMillis` | alpha budget config | the action stops scenario search after this time and moves on |
+| Job deadline | wall-clock time, for example `maxJobSearchMillis` | alpha budget config | one pending job cannot consume the whole action indefinitely |
+| Minimum job attempt | wall-clock time, for example `minJobSearchMillis`, default `0` | alpha budget config | optional best-effort floor for jobs reached while action budget remains |
+| Generator deadline | wall-clock time, for example `maxGeneratorSearchMillis` | alpha budget config | one generator cannot consume the whole job indefinitely |
 
-The effective deadline for any candidate is normally the minimum remaining time across action, current job, and current generator. `minJobSearchMillis` is an optional best-effort floor, disabled by default, and must be lower than `maxJobSearchMillis` when configured. It does not reserve action budget upfront and does not guarantee every pending job receives that amount of time. Instead, when a job is reached and action budget remains, the scheduler should give it a minimal search attempt up to the remaining action budget. If the remaining action budget is less than `minJobSearchMillis`, the job may still run with the remaining time and is marked `reduced_budget=true`. If no action budget remains, the job is `not_attempted`.
+The effective deadline for any candidate is normally the minimum remaining time across action, current job, and current generator. `minJobSearchMillis` is an alpha/experimental budget knob. It is an optional best-effort floor, disabled by default, and must be lower than `maxJobSearchMillis` when configured. It does not reserve action budget upfront and does not guarantee every pending job receives that amount of time. Instead, when a job is reached and action budget remains, the scheduler should give it a minimal search attempt up to the remaining action budget. If the remaining action budget is less than `minJobSearchMillis`, the job may still run with the remaining time and is marked `reduced_budget=true`. If no action budget remains, the job is `not_attempted`.
 
 Internal work-unit budgets such as victim-count, node-count, victim-by-node products, and per-generator scenario caps are not exposed. Budgets are enforced at candidate boundaries: before asking the portfolio for the next scenario, before accepting that candidate for simulation, and before starting the simulation. Generators must yield candidates incrementally so the driver can check the effective deadline between candidates. One `Next()` call or simulation may finish after the deadline if it started just before the deadline, but the loop must not request or start another candidate after the effective deadline has expired.
 
-### Essential Follow-Up: Scenario Dedupe
+### Essential Follow-Up: Scenario Deduplication
 
-The generator portfolio needs a scenario dedupe mechanism so generators cannot repeatedly simulate equivalent victim sets. This is necessary both within one generator and across different generators: `NodeLocalGreedy`, `MultiNodeGang`, and future case-specific generators may overlap when they discover the same victim set through different heuristics.
+The generator portfolio needs a scenario deduplication mechanism so generators cannot repeatedly simulate equivalent victim sets. This is necessary both within one generator and across different generators: `NodeLocalGreedy`, `MultiNodeGang`, and future case-specific generators may overlap when they discover the same victim set through different heuristics.
 
-The exact dedupe design should be specified and implemented separately. That follow-up design must define:
+The exact deduplication design should be specified and implemented separately. That follow-up design must define:
 
 - whether the cache is new or wraps an existing helper;
 - the canonical scenario fingerprint, including victim tasks/jobs and node assignment data that affects simulation;
 - how equivalent victim sets emitted in different orders map to the same fingerprint;
-- where dedupe metrics are recorded, including the `duplicate` state in `scenario_search_scenarios_total`;
+- where deduplication metrics are recorded, including the `duplicate` state in `scenario_search_scenarios_total`;
 - how long the cache lives, expected to be per job/probe rather than global scheduler state.
 
 ### Initial Shipped Plugin Policy
@@ -260,7 +260,7 @@ Replay and benchmark-only instrumentation can be added later for generator disco
 ## Test Plan
 
 - Unit-test portfolio ordering, applicable-action filtering, stop reasons, and deadline handling.
-- Unit-test `NodeLocalGreedy` candidate construction, best-fit node ordering, dedupe behavior, and whole victim-job handling.
+- Unit-test `NodeLocalGreedy` candidate construction, best-fit node ordering, deduplication behavior, and whole victim-job handling.
 - Unit-test `MultiNodeGang` as a wrapper over the existing builder/emitter.
 - Keep existing reclaim, preempt, and consolidation solver tests passing with the default portfolio configuration and with the legacy-equivalent configuration of current emitter plus unlimited budgets.
 - Preserve existing #1537 gang/topology regression coverage.
@@ -268,32 +268,32 @@ Replay and benchmark-only instrumentation can be added later for generator disco
 - Replay the failing scale snapshot and verify reclaim exits quickly.
 - Benchmark `BenchmarkReclaimUnschedulableDistributedJob_100Node`, `AntiAffinity100Node`, and `Topology100Node`, and use width-decomposition instrumentation to show simulations avoided, generator coverage, and deadline behavior.
 
-## Graduation Criteria
+## Rollout Criteria
 
-Alpha entry criteria:
+Initial implementation criteria:
 
-- Default generator order and time budgets are safe for experiments.
-- All new configuration knobs are marked alpha/experimental.
+- Default generator order is safe.
+- All new budget configuration knobs are marked alpha/experimental.
 - Production metrics are emitted with the labels defined in this design.
 - Snapshot replay leaves reclaim quickly under configured budgets.
 - Existing reclaim, preempt, consolidation, gang, and topology tests pass.
 
-Beta or default-on criteria:
+Default tuning criteria:
 
 - Defaults are tuned against the 500-node snapshot and representative production-like snapshots.
 - Reduced-budget user messages are accurate and only emitted for reduced-budget jobs.
 - Metrics show `deadline_exhausted`, `generators_exhausted`, `no_generator`, and `not_attempted` outcomes clearly by action and, where applicable, generator.
 - Legacy-equivalent configuration is documented as current emitter plus unlimited budgets; bounded-search misses are terminal for the current scheduling attempt.
 
-Stable criteria:
+Long-term criteria:
 
-- Generator registration API and config surface are either declared stable or replaced by adaptive scheduler policy.
+- Generator registration and plugin-order behavior remain normal scheduler plugin behavior, or are replaced by adaptive scheduler policy.
 - Operational dashboards and alerts use the production metric contract.
 - False-negative behavior is understood and accepted for supported workloads.
 
 ## Implementation History
 
-- 2026-06-13: Initial standalone design.
+- 2026-06-15: Initial standalone design.
 
 ## Alternatives
 
@@ -301,10 +301,6 @@ Stable criteria:
 | --- | --- |
 | Complete unschedulability prover for reclaim | Victim selection is knapsack-shaped; a complete cheap proof would require solving the hard search problem. |
 | Necessary-condition oracle only | Useful for covered negative causes, but cannot handle coupled proportion, victim, and topology cases generally. It remains complementary. |
-| Keep exhaustive emitter with dedupe/cache improvements only | Reduces constants but does not bound worst-case synchronous scheduler time. |
+| Keep exhaustive emitter with cache improvements only | Reduces constants but does not bound worst-case synchronous scheduler time. |
 | Expose work-unit budgets | Hard to explain and tune operationally; wall-clock budgets are clearer for alpha users and support. |
 | Async/off-path search in Phase 1 | Valuable later, but too invasive for the first bounded-search change. |
-
-## Review Discussion Queue
-
-1. Deferred: benchmark variant names need to match `origin/main` or be introduced by a separate benchmark PR before this design depends on them.
