@@ -54,9 +54,27 @@ In simulations, only the "extra" (`n - minMember`) pods per leaf PodSet are cons
 
 ## Implementation Notes
 
-- **Over-quota checks**: core pods (up to `minMember` per leaf) must be in-quota; extra pods may be over-quota
-- **Podgroup and queue status**: count only `minMember` resources per leaf PodSet toward the non-preemptible totals. The pod ordering plugin determines which specific pods are "core" vs. "extra"
-- **Solver simulation**: represent the "extra" pods of a semi-preemptible job as a fully-preemptible representative job
+### API
+
+`pkg/apis/scheduling/v2alpha2/podgroup_types.go` — `SemiPreemptible = "semi-preemptible"` added to the `Preemptibility` enum. The kubebuilder validation marker is updated accordingly.
+
+### Victim Selection
+
+`pkg/scheduler/actions/preempt/preempt.go`, `pkg/scheduler/actions/utils/input_jobs.go` — The job-level filter that previously excluded all non-preemptible jobs from victim pools is updated to also admit semi-preemptible jobs. Core pod protection is handled downstream by the existing `minAvailable` guard in `pkg/scheduler/api/podgroup_info/eviction_info.go`:
+
+```go
+if ps.GetNumActiveAllocatedTasks() <= int(ps.GetMinAvailable()) {
+    return nil  // cannot evict — would violate minAvailable
+}
+```
+
+No changes to eviction logic are needed; `minAvailable` already maps to `minMember` for leaf PodSets.
+
+### Quota Accounting
+
+`pkg/scheduler/plugins/proportion/capacity_policy/capacity_policy.go` — `IsJobOverQueueCapacity` and `IsNonPreemptibleJobOverQuota` compute a `coreRequiredQuota` for semi-preemptible jobs (sum of resources for at most `minMember` tasks per PodSet from the tasks being allocated) and use it for the non-preemptible quota check. The over-limit (`MaxAllowed`) check still uses the total resource request.
+
+`pkg/scheduler/plugins/proportion/proportion.go` — `allocateHandlerFn` and `deallocateHandlerFn` track `AllocatedNotPreemptible` per-task for semi-preemptible jobs: a task is "core" if the PodSet's allocated count (post-event) is ≤ `minAvailable`. Session initialization (`updateQueuesCurrentResourceUsage`) uses a per-PodSet counter to correctly initialize `AllocatedNotPreemptible` from already-running semi-preemptible jobs.
 
 ## Future Work: `minNonPreemptible` field
 

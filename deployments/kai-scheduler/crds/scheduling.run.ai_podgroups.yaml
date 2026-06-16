@@ -73,6 +73,7 @@ spec:
                 enum:
                 - preemptible
                 - non-preemptible
+                - semi-preemptible
                 type: string
               priorityClassName:
                 description: |-

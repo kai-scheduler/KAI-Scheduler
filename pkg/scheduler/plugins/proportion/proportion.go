@@ -361,11 +361,28 @@ func (pp *proportionPlugin) updateQueuesCurrentResourceUsage(ssn *framework.Sess
 		log.InfraLogger.V(7).Infof("Updateding queue consumed resources based on job <%s/%s>.",
 			job.Namespace, job.Name)
 
+		// For semi-preemptible jobs we track per-PodSet how many tasks have been counted as core,
+		// to correctly initialize AllocatedNotPreemptible (only minMember per PodSet count).
+		podSetCoreUsed := map[string]int{}
+
 		for status, tasks := range job.PodStatusIndex {
 			if pod_status.AllocatedStatus(status) {
 				for _, t := range tasks {
 					resources := utils.QuantifyVector(t.AcceptedResourceVector, t.VectorMap)
 					isPreemptible := job.IsPreemptibleJob()
+					if job.IsSemiPreemptibleJob() {
+						podSetName := t.SubGroupName
+						if podSetName == "" {
+							podSetName = podgroup_info.DefaultSubGroup
+						}
+						podSet := job.PodSets[podSetName]
+						isCore := podSet != nil && podSetCoreUsed[podSetName] < int(podSet.GetMinAvailable())
+						if isCore {
+							podSetCoreUsed[podSetName]++
+						}
+						pp.updateQueuesResourceUsageForAllocatedJob(job.Queue, resources, !isCore)
+						continue
+					}
 					pp.updateQueuesResourceUsageForAllocatedJob(job.Queue, resources, isPreemptible)
 				}
 			} else if status == pod_status.Pending {
@@ -452,10 +469,42 @@ func (pp *proportionPlugin) getChildQueues(parentQueue *rs.QueueAttributes) map[
 	return childQueues
 }
 
+// isCoreTaskForSemiPreemptible returns true if the task is a core (non-preemptible) task
+// for a semi-preemptible job. Called during allocation after UpdateTaskStatus has already
+// incremented the PodSet count, so the condition uses <= minAvailable.
+func isCoreTaskForSemiPreemptible(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo) bool {
+	podSetName := task.SubGroupName
+	if podSetName == "" {
+		podSetName = podgroup_info.DefaultSubGroup
+	}
+	podSet, found := job.PodSets[podSetName]
+	if !found {
+		return true
+	}
+	return podSet.GetNumActiveAllocatedTasks() <= int(podSet.GetMinAvailable())
+}
+
+// isCoreTaskForSemiPreemptibleOnDealloc returns true if the task being deallocated was a core task.
+// Called during deallocation after UpdateTaskStatus has already decremented the PodSet count.
+// Elastic tasks are always evicted before core tasks, so the count after removal of an elastic
+// task remains >= minAvailable; removal of a core task leaves count < minAvailable.
+func isCoreTaskForSemiPreemptibleOnDealloc(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo) bool {
+	podSetName := task.SubGroupName
+	if podSetName == "" {
+		podSetName = podgroup_info.DefaultSubGroup
+	}
+	podSet, found := job.PodSets[podSetName]
+	if !found {
+		return true
+	}
+	return podSet.GetNumActiveAllocatedTasks() < int(podSet.GetMinAvailable())
+}
+
 func (pp *proportionPlugin) allocateHandlerFn(ssn *framework.Session) func(event *framework.Event) {
 	return func(event *framework.Event) {
 		job := ssn.ClusterInfo.PodGroupInfos[event.Task.Job]
 		isPreemptibleJob := job.IsPreemptibleJob()
+		isCoreTask := !isPreemptibleJob && (!job.IsSemiPreemptibleJob() || isCoreTaskForSemiPreemptible(event.Task, job))
 		taskResources := utils.QuantifyVector(event.Task.AcceptedResourceVector, event.Task.VectorMap)
 
 		for queue, ok := pp.queues[job.Queue]; ok; queue, ok = pp.queues[queue.ParentQueue] {
@@ -463,7 +512,7 @@ func (pp *proportionPlugin) allocateHandlerFn(ssn *framework.Session) func(event
 				resourceShare := queue.ResourceShare(resource)
 				resourceShare.Allocated += taskResources[resource]
 
-				if !isPreemptibleJob {
+				if isCoreTask {
 					resourceShare.AllocatedNotPreemptible += taskResources[resource]
 				}
 			}
@@ -480,6 +529,9 @@ func (pp *proportionPlugin) deallocateHandlerFn(ssn *framework.Session) func(eve
 	return func(event *framework.Event) {
 		job := ssn.ClusterInfo.PodGroupInfos[event.Task.Job]
 		isPreemptibleJob := job.IsPreemptibleJob()
+		// For deallocation, a task was core if the PodSet (after removal) still has fewer than minMember tasks.
+		// Since the task is being removed, count is already decremented; we use <= instead of <.
+		isCoreTask := !isPreemptibleJob && (!job.IsSemiPreemptibleJob() || isCoreTaskForSemiPreemptibleOnDealloc(event.Task, job))
 		taskResources := utils.QuantifyVector(event.Task.AcceptedResourceVector, event.Task.VectorMap)
 
 		for queue, ok := pp.queues[job.Queue]; ok; queue, ok = pp.queues[queue.ParentQueue] {
@@ -487,7 +539,7 @@ func (pp *proportionPlugin) deallocateHandlerFn(ssn *framework.Session) func(eve
 				resourceShare := queue.ResourceShare(resource)
 				resourceShare.Allocated -= taskResources[resource]
 
-				if !isPreemptibleJob {
+				if isCoreTask {
 					resourceShare.AllocatedNotPreemptible -= taskResources[resource]
 				}
 			}

@@ -379,6 +379,75 @@ func TestCreateRejectsWhatUpdateWarns(t *testing.T) {
 	}
 }
 
+func TestSemiPreemptibleImmutability(t *testing.T) {
+	ctx := context.Background()
+	validator := &PodGroup{}
+
+	tests := []struct {
+		name      string
+		old       PodGroupSpec
+		new       PodGroupSpec
+		wantError bool
+	}{
+		{
+			name:      "increase minMember on root is rejected",
+			old:       PodGroupSpec{Preemptibility: SemiPreemptible, MinMember: ptr.To(int32(2))},
+			new:       PodGroupSpec{Preemptibility: SemiPreemptible, MinMember: ptr.To(int32(3))},
+			wantError: true,
+		},
+		{
+			name:      "decrease minMember on root is allowed",
+			old:       PodGroupSpec{Preemptibility: SemiPreemptible, MinMember: ptr.To(int32(3))},
+			new:       PodGroupSpec{Preemptibility: SemiPreemptible, MinMember: ptr.To(int32(2))},
+			wantError: false,
+		},
+		{
+			name:      "unchanged minMember is allowed",
+			old:       PodGroupSpec{Preemptibility: SemiPreemptible, MinMember: ptr.To(int32(2))},
+			new:       PodGroupSpec{Preemptibility: SemiPreemptible, MinMember: ptr.To(int32(2))},
+			wantError: false,
+		},
+		{
+			name:      "increase minSubGroup on root is rejected",
+			old:       PodGroupSpec{Preemptibility: SemiPreemptible, MinSubGroup: ptr.To(int32(1)), SubGroups: []SubGroup{{Name: "a", MinMember: ptr.To(int32(1))}, {Name: "b", MinMember: ptr.To(int32(1))}}},
+			new:       PodGroupSpec{Preemptibility: SemiPreemptible, MinSubGroup: ptr.To(int32(2)), SubGroups: []SubGroup{{Name: "a", MinMember: ptr.To(int32(1))}, {Name: "b", MinMember: ptr.To(int32(1))}}},
+			wantError: true,
+		},
+		{
+			name: "increase minMember on subgroup is rejected",
+			old: PodGroupSpec{
+				Preemptibility: SemiPreemptible,
+				SubGroups:      []SubGroup{{Name: "a", MinMember: ptr.To(int32(1))}},
+			},
+			new: PodGroupSpec{
+				Preemptibility: SemiPreemptible,
+				SubGroups:      []SubGroup{{Name: "a", MinMember: ptr.To(int32(2))}},
+			},
+			wantError: true,
+		},
+		{
+			name:      "non-semi-preemptible PodGroup allows minMember increase",
+			old:       PodGroupSpec{Preemptibility: NonPreemptible, MinMember: ptr.To(int32(2))},
+			new:       PodGroupSpec{Preemptibility: NonPreemptible, MinMember: ptr.To(int32(5))},
+			wantError: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			oldPG := &PodGroup{Spec: tc.old}
+			newPG := &PodGroup{Spec: tc.new}
+			_, err := validator.ValidateUpdate(ctx, oldPG, newPG)
+			if tc.wantError && err == nil {
+				t.Fatalf("expected error, got nil")
+			}
+			if !tc.wantError && err != nil {
+				t.Fatalf("expected no error, got: %v", err)
+			}
+		})
+	}
+}
+
 func errorsEqual(a, b error) bool {
 	switch {
 	case a == nil && b == nil:
