@@ -12,11 +12,14 @@ import (
 	"go.uber.org/mock/gomock"
 	"gopkg.in/h2non/gock.v1"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/scenariosearch"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
@@ -94,6 +97,37 @@ func TestUnschedulableDistributedReclaimTopology(t *testing.T) {
 			t.Fatalf("expected no pipelined tasks after failed reclaim, found %d on job %q",
 				len(clusterJob.PodStatusIndex[pod_status.Pipelined]), clusterJob.Name)
 		}
+	}
+}
+
+func TestDefaultGeneratorPortfolioPreservesTopologyReclaimCoverage(t *testing.T) {
+	defer gock.Off()
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	params := defaultUnschedulableDistributedReclaimParams(10)
+	topology := buildUnschedulableDistributedReclaimTopology(params)
+
+	ssn := test_utils.BuildSession(topology, ctrl)
+	assertDefaultScenarioGeneratorPortfolio(t, ssn)
+	assertDefaultScenarioSearchBudgets(t, ssn)
+	multiNodeGangEmissions := observeMultiNodeGangScenarios(t, ssn)
+
+	action := reclaim.New()
+	action.Execute(ssn)
+
+	if *multiNodeGangEmissions == 0 {
+		t.Fatalf("expected default reclaim scenario portfolio to reach %s", scenariosearch.GeneratorMultiNodeGang)
+	}
+
+	job := ssn.ClusterInfo.PodGroupInfos[common_info.PodGroupID(unschedulableDistributedJobName)]
+	if job == nil {
+		t.Fatalf("expected distributed job %q in session", unschedulableDistributedJobName)
+	}
+	if len(job.PodStatusIndex[pod_status.Pending]) != params.PodsPerDistributedJob {
+		t.Fatalf("expected %d pending distributed-job tasks, got %d",
+			params.PodsPerDistributedJob, len(job.PodStatusIndex[pod_status.Pending]))
 	}
 }
 
@@ -440,4 +474,88 @@ func buildUnschedulableDistributedReclaimJobs(
 
 	jobs = append(jobs, distributedJob)
 	return jobs
+}
+
+func assertDefaultScenarioGeneratorPortfolio(t *testing.T, ssn *framework.Session) {
+	t.Helper()
+
+	for _, expectedGenerator := range []string{
+		scenariosearch.GeneratorNodeLocalGreedy,
+		scenariosearch.GeneratorMultiNodeGang,
+	} {
+		foundGenerator := false
+		for _, registration := range ssn.ScenarioGeneratorRegistrations {
+			if registration.Name != expectedGenerator {
+				continue
+			}
+			foundGenerator = true
+			if _, found := registration.Actions[framework.Reclaim]; !found {
+				t.Fatalf("expected default generator %q to apply to reclaim", expectedGenerator)
+			}
+			break
+		}
+		if !foundGenerator {
+			t.Fatalf("expected default scenario generator plugins to register %q", expectedGenerator)
+		}
+	}
+}
+
+func observeMultiNodeGangScenarios(t *testing.T, ssn *framework.Session) *int {
+	t.Helper()
+
+	for index, registration := range ssn.ScenarioGeneratorRegistrations {
+		if registration.Name != scenariosearch.GeneratorMultiNodeGang {
+			continue
+		}
+		emissions := 0
+		originalFactory := registration.Factory
+		ssn.ScenarioGeneratorRegistrations[index].Factory = func(ctx framework.ScenarioGeneratorContext) framework.ScenarioGenerator {
+			generator := originalFactory(ctx)
+			if generator == nil {
+				return nil
+			}
+			return &observedScenarioGenerator{
+				ScenarioGenerator: generator,
+				onScenario: func() {
+					emissions++
+				},
+			}
+		}
+		return &emissions
+	}
+	t.Fatalf("expected default scenario generator plugins to register %q", scenariosearch.GeneratorMultiNodeGang)
+	return nil
+}
+
+func assertDefaultScenarioSearchBudgets(t *testing.T, ssn *framework.Session) {
+	t.Helper()
+
+	if ssn.Config == nil || ssn.Config.ScenarioSearchBudgets == nil {
+		t.Fatalf("expected default scenario search budgets on session")
+	}
+
+	generatorBudgets := ssn.Config.ScenarioSearchBudgets.MaxGeneratorSearchDuration
+	if generatorBudgets[scenariosearch.GeneratorNodeLocalGreedy] != scenariosearch.DefaultNodeLocalGreedy {
+		t.Fatalf("expected default %s budget %q, got %q",
+			scenariosearch.GeneratorNodeLocalGreedy, scenariosearch.DefaultNodeLocalGreedy,
+			generatorBudgets[scenariosearch.GeneratorNodeLocalGreedy])
+	}
+	if generatorBudgets[scenariosearch.GeneratorMultiNodeGang] != scenariosearch.DefaultMultiNodeGang {
+		t.Fatalf("expected default %s budget %q, got %q",
+			scenariosearch.GeneratorMultiNodeGang, scenariosearch.DefaultMultiNodeGang,
+			generatorBudgets[scenariosearch.GeneratorMultiNodeGang])
+	}
+}
+
+type observedScenarioGenerator struct {
+	framework.ScenarioGenerator
+	onScenario func()
+}
+
+func (g *observedScenarioGenerator) Next() api.ScenarioInfo {
+	scenario := g.ScenarioGenerator.Next()
+	if scenario != nil && g.onScenario != nil {
+		g.onScenario()
+	}
+	return scenario
 }
