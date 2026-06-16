@@ -31,6 +31,8 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 )
 
+const reducedBudgetReclaimMessage = "Scheduler could not find a valid reclaim scenario for this job within the remaining configured search time."
+
 type test struct {
 	name                             string
 	podGroupMinMember                int   // if not set, uses len(pods)
@@ -97,6 +99,23 @@ func TestRecordJobStatusEvent(t *testing.T) {
 			},
 			expectedPodEventPatterns: map[common_info.PodID][]string{
 				"pod-1": {"generic error"},
+			},
+		},
+		{
+			name: "reduced-budget reclaim job error",
+			pods: map[v1.PodPhase][]common_info.PodID{
+				v1.PodPending: {"pod-1"},
+			},
+			nodeErrors:                    map[common_info.PodID]map[string]string{},
+			podErrors:                     map[common_info.PodID]error{},
+			jobErrors:                     newUnschedulabeReasons(map[string]string{podgroup_info.PodSchedulingErrors: reducedBudgetReclaimMessage}),
+			expectedPodgroupErrorPatterns: []string{reducedBudgetReclaimMessage},
+			expectedPodgroupEventPatterns: []string{reducedBudgetReclaimMessage},
+			expectedPodErrorPatterns: map[common_info.PodID][]string{
+				"pod-1": {reducedBudgetReclaimMessage},
+			},
+			expectedPodEventPatterns: map[common_info.PodID][]string{
+				"pod-1": {reducedBudgetReclaimMessage},
 			},
 		},
 		{
