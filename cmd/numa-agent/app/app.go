@@ -63,7 +63,8 @@ func Run() error {
 		return err
 	}
 
-	numaAgent := agent.New(options.NodeName, options.PollInterval, resourcesClient, cpuToNUMA, clientset)
+	numaAgent := agent.New(options.NodeName, options.PollInterval, options.DriftResyncInterval,
+		resourcesClient, cpuToNUMA, clientset)
 
 	if err := numaAgent.Run(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "agent terminated with error")

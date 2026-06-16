@@ -21,5 +21,10 @@ const (
 	// DefaultPollInterval is how often the agent reconciles observed placement onto pods.
 	// Placement is stable for a pod's lifetime, so this only needs to be frequent enough to
 	// keep the initial-observation lag small.
-	DefaultPollInterval = 10 * time.Second
+	DefaultPollInterval = 1 * time.Second
+
+	// DefaultDriftResyncInterval is how often the agent reconciles against the API server to
+	// repair pods whose annotation drifted from the observed placement (removed or modified
+	// out-of-band). Set to 0 to disable, relying solely on the in-memory write cache.
+	DefaultDriftResyncInterval = 60 * time.Second
 )

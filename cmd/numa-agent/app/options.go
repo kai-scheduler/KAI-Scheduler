@@ -11,10 +11,11 @@ import (
 )
 
 type Options struct {
-	NodeName           string
-	PodResourcesSocket string
-	SysfsRoot          string
-	PollInterval       time.Duration
+	NodeName            string
+	PodResourcesSocket  string
+	SysfsRoot           string
+	PollInterval        time.Duration
+	DriftResyncInterval time.Duration
 
 	// k8s client options
 	Qps   int
@@ -36,7 +37,9 @@ func (o *Options) AddFlags() {
 	flag.StringVar(&o.SysfsRoot, "sysfs-root", consts.DefaultSysfsRoot,
 		"Path to the sysfs mount used to resolve CPU to NUMA node mappings.")
 	flag.DurationVar(&o.PollInterval, "poll-interval", consts.DefaultPollInterval,
-		"How often to reconcile observed NUMA placement onto pods.")
+		"How often to reconcile observed NUMA placement from the node's podresources onto pods.")
+	flag.DurationVar(&o.DriftResyncInterval, "drift-resync-interval", consts.DefaultDriftResyncInterval,
+		"How often to reconcile against the API server and repair pods whose annotation drifted. Set to 0 to disable.")
 	flag.IntVar(&o.Qps, "qps", 50, "Queries per second to the K8s API server")
 	flag.IntVar(&o.Burst, "burst", 100, "Burst to the K8s API server")
 }
