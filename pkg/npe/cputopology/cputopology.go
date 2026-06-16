@@ -1,4 +1,4 @@
-// Copyright 2025 NVIDIA CORPORATION
+// Copyright 2026 NVIDIA CORPORATION
 // SPDX-License-Identifier: Apache-2.0
 
 // Package cputopology resolves logical CPU IDs to their NUMA node by reading sysfs.

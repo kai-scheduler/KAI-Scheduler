@@ -1,4 +1,4 @@
-// Copyright 2025 NVIDIA CORPORATION
+// Copyright 2026 NVIDIA CORPORATION
 // SPDX-License-Identifier: Apache-2.0
 
 // Package npe is the NUMA Placement Exporter: it ties the kubelet podresources observations to
