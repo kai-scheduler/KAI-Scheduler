@@ -4,8 +4,10 @@
 package reclaim
 
 import (
+	"flag"
 	"fmt"
 	"testing"
+	"time"
 
 	"go.uber.org/mock/gomock"
 	"gopkg.in/h2non/gock.v1"
@@ -13,11 +15,24 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
+)
+
+var reclaimLargeJobSearchBudget = flag.String(
+	"reclaim-large-job-search-budget",
+	"",
+	"scenario search job budget for BenchmarkReclaimLargeJobs; action uses the same budget and generators use half",
+)
+
+var reclaimLargeJobNodeLocalGreedyBudget = flag.String(
+	"reclaim-large-job-node-local-greedy-budget",
+	"",
+	"optional NodeLocalGreedy generator budget override for BenchmarkReclaimLargeJobs",
 )
 
 type VeryLargeJobReclaimParams struct {
@@ -102,6 +117,70 @@ func BenchmarkReclaimLargeJobs_10Node(b *testing.B) {
 	benchmarkReclaimLargeJobs(b, 10)
 }
 
+func TestReclaimLargeJobScenarioSearchBudgetsUsesHalfBudgetForGenerators(t *testing.T) {
+	originalBudget := *reclaimLargeJobSearchBudget
+	*reclaimLargeJobSearchBudget = "2m"
+	defer func() {
+		*reclaimLargeJobSearchBudget = originalBudget
+	}()
+
+	budgets := reclaimLargeJobScenarioSearchBudgets()
+	if budgets == nil {
+		t.Fatal("expected benchmark scenario search budgets")
+	}
+	if got := budgets.MaxActionSearchDuration[scenariosearch.ActionDefault]; got != "2m" {
+		t.Fatalf("expected default action budget 2m, got %q", got)
+	}
+	if got := budgets.MaxActionSearchDuration[scenariosearch.ActionReclaim]; got != "2m" {
+		t.Fatalf("expected reclaim action budget 2m, got %q", got)
+	}
+	if got := budgets.MaxJobSearchDuration; got != "2m" {
+		t.Fatalf("expected job budget 2m, got %q", got)
+	}
+
+	expectedGeneratorBudget := time.Minute.String()
+	for _, generator := range []string{
+		scenariosearch.ActionDefault,
+		scenariosearch.GeneratorNodeLocalGreedy,
+		scenariosearch.GeneratorMultiNodeGang,
+	} {
+		if got := budgets.MaxGeneratorSearchDuration[generator]; got != expectedGeneratorBudget {
+			t.Fatalf("expected %s generator budget %q, got %q", generator, expectedGeneratorBudget, got)
+		}
+	}
+}
+
+func TestReclaimLargeJobScenarioSearchBudgetsCanOverrideNodeLocalGreedyBudget(t *testing.T) {
+	originalBudget := *reclaimLargeJobSearchBudget
+	originalNodeLocalGreedyBudget := *reclaimLargeJobNodeLocalGreedyBudget
+	*reclaimLargeJobSearchBudget = "4m"
+	*reclaimLargeJobNodeLocalGreedyBudget = "0s"
+	defer func() {
+		*reclaimLargeJobSearchBudget = originalBudget
+		*reclaimLargeJobNodeLocalGreedyBudget = originalNodeLocalGreedyBudget
+	}()
+
+	budgets := reclaimLargeJobScenarioSearchBudgets()
+	if budgets == nil {
+		t.Fatal("expected benchmark scenario search budgets")
+	}
+	if got := budgets.MaxActionSearchDuration[scenariosearch.ActionReclaim]; got != "4m" {
+		t.Fatalf("expected reclaim action budget 4m, got %q", got)
+	}
+	if got := budgets.MaxJobSearchDuration; got != "4m" {
+		t.Fatalf("expected job budget 4m, got %q", got)
+	}
+	if got := budgets.MaxGeneratorSearchDuration[scenariosearch.ActionDefault]; got != (2 * time.Minute).String() {
+		t.Fatalf("expected default generator budget 2m, got %q", got)
+	}
+	if got := budgets.MaxGeneratorSearchDuration[scenariosearch.GeneratorMultiNodeGang]; got != (2 * time.Minute).String() {
+		t.Fatalf("expected MultiNodeGang generator budget 2m, got %q", got)
+	}
+	if got := budgets.MaxGeneratorSearchDuration[scenariosearch.GeneratorNodeLocalGreedy]; got != "0s" {
+		t.Fatalf("expected NodeLocalGreedy generator budget 0s, got %q", got)
+	}
+}
+
 func BenchmarkReclaimLargeJobs_50Node(b *testing.B) {
 	benchmarkReclaimLargeJobs(b, 50)
 }
@@ -131,7 +210,7 @@ func benchmarkReclaimLargeJobs(b *testing.B, numNodes int) {
 		NumJobs:                 numNodes * 8,
 		GPUsPerTask:             1,
 		VeryLargeJobGPUsPerTask: 8,
-		VeryLargeJobTasks:       numNodes / 10,
+		VeryLargeJobTasks:       numNodes / 2,
 		Queue0DeservedGPUs:      0,
 		Queue1DeservedGPUs:      numNodes * 8,
 		NumberOfCacheBinds:      numNodes * 4,
@@ -144,9 +223,66 @@ func benchmarkReclaimLargeJobs(b *testing.B, numNodes int) {
 	for b.Loop() {
 		ctrl := gomock.NewController(b)
 		ssn := test_utils.BuildSession(topology, ctrl)
+		if budgets := reclaimLargeJobScenarioSearchBudgets(); budgets != nil {
+			ssn.Config.ScenarioSearchBudgets = budgets
+		}
 		action := reclaim.New()
 		action.Execute(ssn)
+		assertVeryLargeJobReclaimed(b, ssn, params)
 		ctrl.Finish()
+	}
+}
+
+func reclaimLargeJobScenarioSearchBudgets() *conf.ScenarioSearchBudgets {
+	if *reclaimLargeJobSearchBudget == "" {
+		return nil
+	}
+	jobBudget, err := time.ParseDuration(*reclaimLargeJobSearchBudget)
+	if err != nil {
+		panic(fmt.Sprintf("invalid reclaim-large-job-search-budget: %v", err))
+	}
+	generatorBudget := (jobBudget / 2).String()
+	nodeLocalGreedyBudget := generatorBudget
+	if *reclaimLargeJobNodeLocalGreedyBudget != "" {
+		nodeLocalGreedyBudget = *reclaimLargeJobNodeLocalGreedyBudget
+	}
+	return &conf.ScenarioSearchBudgets{
+		MaxActionSearchDuration: map[string]string{
+			scenariosearch.ActionDefault: *reclaimLargeJobSearchBudget,
+			scenariosearch.ActionReclaim: *reclaimLargeJobSearchBudget,
+		},
+		MaxJobSearchDuration: *reclaimLargeJobSearchBudget,
+		MinJobSearchDuration: "0s",
+		MaxGeneratorSearchDuration: map[string]string{
+			scenariosearch.ActionDefault:            generatorBudget,
+			scenariosearch.GeneratorNodeLocalGreedy: nodeLocalGreedyBudget,
+			scenariosearch.GeneratorMultiNodeGang:   generatorBudget,
+		},
+	}
+}
+
+func assertVeryLargeJobReclaimed(b *testing.B, ssn *framework.Session, params VeryLargeJobReclaimParams) {
+	b.Helper()
+
+	job := ssn.ClusterInfo.PodGroupInfos[common_info.PodGroupID("very-large-job")]
+	if job == nil {
+		b.Fatalf("expected very-large-job in session")
+	}
+	if pending := len(job.PodStatusIndex[pod_status.Pending]); pending != 0 {
+		b.Fatalf("expected very-large-job to have no pending tasks after reclaim, got %d", pending)
+	}
+	if pipelined := len(job.PodStatusIndex[pod_status.Pipelined]); pipelined != params.VeryLargeJobTasks {
+		b.Fatalf("expected very-large-job to pipeline %d tasks, got %d", params.VeryLargeJobTasks, pipelined)
+	}
+
+	releasingTasks := 0
+	for _, clusterJob := range ssn.ClusterInfo.PodGroupInfos {
+		releasingTasks += len(clusterJob.PodStatusIndex[pod_status.Releasing])
+	}
+	expectedReleasingTasks := params.VeryLargeJobTasks * params.VeryLargeJobGPUsPerTask / params.GPUsPerTask
+	if releasingTasks != expectedReleasingTasks {
+		b.Fatalf("expected %d victim tasks to be releasing after reclaim, got %d",
+			expectedReleasingTasks, releasingTasks)
 	}
 }
 
