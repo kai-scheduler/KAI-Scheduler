@@ -16,9 +16,12 @@
   - [Plugin Registration and Ordering](#plugin-registration-and-ordering)
   - [Configuration](#configuration)
   - [Driver Loop and Budget](#driver-loop-and-budget)
-  - [Essential Follow-Up: Scenario Deduplication](#essential-follow-up-scenario-deduplication)
   - [Initial Shipped Plugin Policy](#initial-shipped-plugin-policy)
-  - [Possible Future Generators](#possible-future-generators)
+  - [Future Enhancements](#future-enhancements)
+    - [Scenario Deduplication Cache](#scenario-deduplication-cache)
+    - [Smart Generator Selection](#smart-generator-selection)
+    - [Generator Checkpointing Across Scheduling Sessions](#generator-checkpointing-across-scheduling-sessions)
+    - [Possible Future Generators](#possible-future-generators)
   - [Approximation Contract](#approximation-contract)
   - [Integration Posture](#integration-posture)
   - [Scale-Test Walkthrough](#scale-test-walkthrough)
@@ -52,7 +55,7 @@ The current reclaim path can spend unbounded synchronous scheduler time trying t
 
 - Do not prove complete unschedulability for reclaim. General victim selection is a hard combinatorial problem.
 - Do not expose victim-count, node-count, victim-by-node, or scenario-count work-unit budgets.
-- Do not introduce a separate generator-selection mechanism outside normal scheduler plugin enablement.
+- Do not introduce a runtime generator-selection policy in Phase 1; generator enablement and default ordering remain controlled by normal scheduler plugin configuration.
 - Do not move heavy search off the synchronous scheduling path in Phase 1.
 - Do not include replay, benchmark, or debug-only metric schemas in the production metric contract.
 
@@ -134,6 +137,8 @@ type ScenarioGenerator interface {
 A generator is built per probe from a shared solve context: partial pending job, recorded victims, feasible nodes, victim queue, gang constraints, topology constraints, and action type.
 
 For Phase 1, `Next()` intentionally stays simple and does not accept a deadline or context. The generator contract is that `Next()` is cheap and incremental: it may compute or return the next candidate, but it must not run simulation, scan an unbounded search space, or perform expensive blocking work before returning. The initial `NodeLocalGreedy` and `MultiNodeGang` generators must be structured around this contract. If a future generator needs expensive candidate construction, the interface must be revisited so candidate generation can receive a deadline/context or otherwise poll the search budget internally.
+
+Generators that feed accumulated scenario filters keep an additive stream contract in Phase 1: one stream may append potential victims, but it must not retract victims or restart from a different accumulated base. This preserves the assumptions used by accumulated filters and by cursor-aware inputs such as PR #1614's monotonic `AccumulatedScenarioInput` path. A future generator may need to say "start over from a different place"; that should be expressed through a richer generator result, a reset/full-scan input, or a separate stream abstraction rather than being implicit in `Next()`.
 
 ### Plugin Registration and Ordering
 
@@ -221,7 +226,19 @@ The effective deadline for any candidate is normally the minimum remaining time 
 
 Internal work-unit budgets such as victim-count, node-count, victim-by-node products, and per-generator scenario caps are not exposed. Budgets are enforced at candidate boundaries: before asking the portfolio for the next scenario, before accepting that candidate for simulation, and before starting the simulation. Generators must yield candidates incrementally so the driver can check the effective deadline between candidates. One `Next()` call or simulation may finish after the deadline if it started just before the deadline, but the loop must not request or start another candidate after the effective deadline has expired.
 
-### Essential Follow-Up: Scenario Deduplication
+### Initial Shipped Plugin Policy
+
+| Plugin order | Generator | Restores / covers | Width |
+| --- | --- | --- | --- |
+| 1 | `NodeLocalGreedy` | recorded victims plus one candidate node's victims, candidate nodes best-fit ordered; restores the pre-#1537 `solveOnPotentialNodes` shape | narrow |
+| 2 | `MultiNodeGang` | today's `PodAccumulatedScenarioBuilder` plus `subScenarioEmitter`, time-limited by the effective deadline while preserving #1537 gang/topology correctness | wide |
+| later | plugin hook | new case-specific generators | case-specific |
+
+`NodeLocalGreedy` is expected to handle the common single-pod-per-node reclaimee case and the known scale-test failure. `MultiNodeGang` remains necessary for true gangs that need several nodes freed simultaneously. A topology-specific generator may later preserve the same correctness case more directly, but #1537 regression coverage remains required either way.
+
+### Future Enhancements
+
+#### Scenario Deduplication Cache
 
 The generator portfolio needs a scenario deduplication mechanism so generators cannot repeatedly simulate equivalent victim sets. This is necessary both within one generator and across different generators: `NodeLocalGreedy`, `MultiNodeGang`, and future case-specific generators may overlap when they discover the same victim set through different heuristics.
 
@@ -233,17 +250,15 @@ The exact deduplication design should be specified and implemented separately. T
 - where deduplication metrics are recorded, including the `duplicate` state in `scenario_search_scenarios_total`;
 - how long the cache lives, expected to be per job/probe rather than global scheduler state.
 
-### Initial Shipped Plugin Policy
+#### Smart Generator Selection
 
-| Plugin order | Generator | Restores / covers | Width |
-| --- | --- | --- | --- |
-| 1 | `NodeLocalGreedy` | recorded victims plus one candidate node's victims, candidate nodes best-fit ordered; restores the pre-#1537 `solveOnPotentialNodes` shape | narrow |
-| 2 | `MultiNodeGang` | today's `PodAccumulatedScenarioBuilder` plus `subScenarioEmitter`, time-limited by the effective deadline while preserving #1537 gang/topology correctness | wide |
-| later | plugin hook | new case-specific generators | case-specific |
+Phase 1 drains applicable generators in normal scheduler plugin order. A later generator-selection policy may choose, skip, or reorder registered generators per job or per probe based on job shape and, if useful, cluster state. That future policy should be designed from replay and production evidence showing which generator families solve which workload shapes; it should not be implicit in the Phase 1 plugin-registration mechanism.
 
-`NodeLocalGreedy` is expected to handle the common single-pod-per-node reclaimee case and the known scale-test failure. `MultiNodeGang` remains necessary for true gangs that need several nodes freed simultaneously. A topology-specific generator may later preserve the same correctness case more directly, but #1537 regression coverage remains required either way.
+#### Generator Checkpointing Across Scheduling Sessions
 
-### Possible Future Generators
+A future portfolio can persist per-job generator progress across scheduling sessions so a job that exhausts its current budget can resume near the last tried scenario instead of restarting from the first generator candidate every session. The checkpoint should record enough state to resume safely, such as job/probe identity, generator name, generator cursor or last scenario fingerprint, budget stop reason, and an input fingerprint covering pending tasks, recorded victims, feasible nodes, plugin order, generator configuration, and relevant cluster state. If any fingerprint input changes, the checkpoint must be discarded and the next session should restart from the beginning rather than reuse stale generator state.
+
+#### Possible Future Generators
 
 | Generator option | Covers | Notes |
 | --- | --- | --- |
@@ -293,6 +308,8 @@ Example queries:
 - Total generator-search time spent per action over 5 minutes: `sum by (action) (increase(scenario_search_duration_seconds_sum[5m]))`.
 
 Replay and benchmark-only instrumentation can be added later for generator discovery, but it is not part of the Phase 1 production metric contract.
+
+The Phase 1 production metrics do not export per-job generator attribution such as "generator X solved job Y". That tuple is high-cardinality and does not fit the production metric contract. If needed for generator validation, it should be collected through bounded logs, replay output, benchmark instrumentation, or a separate observability design.
 
 ## Test Plan
 
