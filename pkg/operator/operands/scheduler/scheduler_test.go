@@ -165,6 +165,8 @@ tiers:
         - name: minruntime
         - name: topology
         - name: snapshot
+        - name: sg-nodelocalgreedy
+        - name: sg-multinodegang
         - name: gpupack
         - name: nodeplacement
           arguments:
@@ -220,6 +222,8 @@ tiers:
         - name: minruntime
         - name: topology
         - name: snapshot
+        - name: sg-nodelocalgreedy
+        - name: sg-multinodegang
         - name: gpuspread
         - name: nodeplacement
           arguments:

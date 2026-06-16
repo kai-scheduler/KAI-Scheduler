@@ -17,6 +17,7 @@ type SolveContext struct {
 	PartialPendingJob    *podgroup_info.PodGroupInfo
 	RecordedVictimsJobs  []*podgroup_info.PodGroupInfo
 	RecordedVictimsTasks []*pod_info.PodInfo
+	GenerateVictimsQueue GenerateVictimsQueue
 	VictimsQueue         *utils.JobsOrderByQueues
 	FeasibleNodes        map[string]*node_info.NodeInfo
 	ProbeK               int
@@ -26,10 +27,13 @@ func (ctx *SolveContext) Action() framework.ActionType {
 	return ctx.ActionType
 }
 
-func NewNodeLocalGreedyGenerator(_ framework.ScenarioGeneratorContext) framework.ScenarioGenerator {
-	return nil
-}
+func validateScenarioGeneratorContext(ctx framework.ScenarioGeneratorContext) (*SolveContext, GenerateVictimsQueue, bool) {
+	solveCtx, ok := ctx.(*SolveContext)
+	if !ok || solveCtx == nil || solveCtx.Session == nil || solveCtx.Session.ClusterInfo == nil ||
+		solveCtx.Session.ClusterInfo.Nodes == nil || solveCtx.Session.ClusterInfo.PodGroupInfos == nil ||
+		solveCtx.PartialPendingJob == nil || solveCtx.FeasibleNodes == nil || solveCtx.GenerateVictimsQueue == nil {
+		return nil, nil, false
+	}
 
-func NewMultiNodeGangGenerator(_ framework.ScenarioGeneratorContext) framework.ScenarioGenerator {
-	return nil
+	return solveCtx, solveCtx.GenerateVictimsQueue, true
 }
