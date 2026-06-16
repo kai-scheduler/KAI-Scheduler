@@ -21,7 +21,8 @@ reports "zone 0 has 2 free GPUs," never "pod V holds a GPU in zone 0." But the k
 Topology Manager makes the real per-pod NUMA assignment at admission, and the scheduler never
 observes it. The NUMA plugin therefore *predicts* each pod's zone.
 
-Prediction is adequate for filtering, but it is a problem for **reclaim simulation**: to free an aligned slot for a pending pod, the scheduler
+Prediction is adequate for filtering (the kubelet backstops admission), but it is a genuine
+problem for **reclaim simulation**: to free an aligned slot for a pending pod, the scheduler
 must know which zone evicting a victim opens up. If it mispredicts the victim's zone, it can
 evict a victim that does *not* create a usable aligned slot — a wasted eviction plus a
 `TopologyAffinityError` bounce. (This bites specifically when the pending pod needs multiple
@@ -73,37 +74,11 @@ A single annotation on the pod, resource → {NUMA node → quantity}:
 
 ```
 kai.scheduler/numa-placement-observed: |
-  [{"zone":"node-0","amount":{"cpu":"50","nvidia.com/gpu":"1"}}]
+  [{"zone":"node-0","amount":{"nvidia.com/gpu":"2","cpu":"8","memory":"17179869184"}}]
 ```
-
-The `-observed` suffix distinguishes this agent's *measured* placement from the scheduler's own
-`kai.scheduler/numa-placement-predicted` record (see the plugin design); both share the same
-value format.
 
 This represents multi-zone placement too (a `restricted`/multi-NUMA pod would list more than
 one node), so it is not specific to `single-numa-node`.
-
-### Scheduler consumption
-
-The NUMA plugin, when building its per-zone model:
-
-Precedence is **observed > predicted**:
-
-- **If a pod carries `kai.scheduler/numa-placement-observed`** → use the observed per-zone
-  quantities directly; this **supersedes** any scheduler-predicted record. Occupancy is now
-  *exact*, not predicted: per-zone availability can be reconstructed as
-  `capacity[zone] − Σ observed_placement[zone]`, and a victim's eviction credits the *real* zone.
-  Reclaim simulation becomes accurate.
-- **Else if the pod carries the scheduler's `…-predicted` record** → use that (stable, but a
-  prediction — see the plugin design).
-- **Else** (agent absent, pod not yet observed, and no predicted record) → the pod has no placement
-  and is **left uncredited** on virtual eviction.
-
-When both records are present, their agreement is the prediction-accuracy signal described in
-the plugin design.
-
-No new informer or CRD is needed — the scheduler already watches pods, so the annotation rides
-the existing pod cache.
 
 ### Lifecycle and freshness
 
@@ -139,34 +114,6 @@ plugin falls back to prediction for that pod, exactly as if the agent were absen
 - **Annotation write load:** bounded by writing only for aligned pods and only on change;
   placement stability keeps this to roughly one write per pod lifetime.
 
-## Prior art and relationship to upstream
-
-This is a **known pattern**, not a novel mechanism — the gap it fills is well-documented and
-others are actively building the same capability:
-
-- **The gap is documented upstream.** The scheduler-plugins NRT design ([KEP-119][kep119]) states
-  that only the kubelet's Topology Manager knows a pod's exact NUMA node and the scheduler learns
-  it "with latency"; that is exactly why the NRT plugin uses a pessimistic *overreserve* cache
-  reconciled by the [pod fingerprint](../numa-topology/README.md#appendix-a-optional-cross-cycle-staleness-compensation).
-- **Direct analog, in progress.** The topology-aware WG is building per-container NUMA-placement
-  feedback from the same podresources data: the [`numaplacement`][numaplacement] encoding and
-  resource-topology-exporter PRs ([#390][rte390]/#396) derive each container's actual NUMA
-  affinity and publish it — but as **NRT CRD node-level attributes** (alongside the fingerprint),
-  *not* as pod annotations.
-- **Abandoned alternative.** A podresources `Watch`/streaming endpoint ([KEP-1926][kep1926]) was
-  proposed partly to feed exactly this kind of monitor/exporter, but was never implemented.
-- **Volcano** has the identical limitation: its `numa-aware` plugin only *predicts* placement
-  (`assignRes`) and pushes the prediction back; it does not read actual placement from a node
-  agent.
-
-**Transport choice — the one real differentiator.** This design annotates the **individual pod**
-(`kai.scheduler/numa-placement`) rather than encoding placement into the per-node NRT object. A
-pod annotation is simpler for a scheduler to consume per-pod, but it has write-amplification and
-object-ownership downsides that the single-NRT-object approach avoids. **Recommendation:** prefer
-**consuming the upstream NRT placement attribute** (`numaplacement` / RTE) once it lands, and
-treat this DaemonSet-annotates-pods variant as the fallback for clusters that need it sooner. The
-scheduler-side consumption (observed-over-predicted) is identical either way.
-
 ## Superseded long-term by DRA
 
 Under **Dynamic Resource Allocation** ([KEP-3063][kep3063], GA-track) the scheduler itself
@@ -175,6 +122,12 @@ node as a device attribute — so the scheduler knows real placement with no scr
 is therefore a stopgap for the legacy device-plugin + Topology Manager world (and for CPU/memory
 NUMA, which DRA does not yet manage — [KEP-3695][kep3695] tracks bridging podresources/DRA). As
 workloads move to DRA, the need for it fades.
+
+The topology-aware WG is building per-container NUMA-placement feedback from the same podresources
+data: the [`numaplacement`][numaplacement] encoding and resource-topology-exporter PRs 
+([#390][rte390]/#396) derive each container's actual NUMA affinity and publish it — but as 
+**NRT CRD node-level attributes** (alongside the fingerprint), *not* as pod annotations. Assuming this capability
+is adopted by the community, it could replace our own implementation.
 
 ## Future Work
 
