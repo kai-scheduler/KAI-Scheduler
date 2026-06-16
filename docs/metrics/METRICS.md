@@ -20,8 +20,8 @@ Metrics related to Queue resource management and resource quota tracking.
 
 ### Label Definitions
 
-- **`queue_name`**: Queue identifier as emitted by the queue-controller (the Queue resource's `metadata.name`). Retained for backward compatibility — note that the scheduler emits a different value under the same label (see [Queue Identification Labels](#queue-identification-labels)).
-- **`queue_metadata_name`**: The Queue resource's `metadata.name`. Always populated. **Recommended join key** between queue-controller and scheduler metrics.
+- **`queue_name`**: Queue identifier as emitted by the queue-controller (the Queue resource's `metadata.name`). Retained for backward compatibility.
+- **`queue_metadata_name`**: The Queue resource's `metadata.name`. Always populated.
 - **`queue_display_name`**: The Queue's `spec.displayName`. Empty string when unset.
 - **`endpoint`**: Prometheus scrape endpoint path (e.g., `metrics`)
 - **`instance`**: Pod IP:Port (e.g., `10.244.1.5.8080`)
@@ -84,8 +84,8 @@ All metrics include these standard Prometheus scrape labels:
 - **`service`**: Kubernetes Service name for the component
 
 Business/Resource Labels:
-- **`queue_name`**: Legacy queue identifier label. See [Queue Identification Labels](#queue-identification-labels) for value semantics.
-- **`queue_metadata_name`**: The Queue resource's `metadata.name`. Always populated; recommended join key across components.
+- **`queue_name`**: Legacy queue identifier label.
+- **`queue_metadata_name`**: The Queue resource's `metadata.name`. Always populated.
 - **`queue_display_name`**: The Queue's `spec.displayName`. Empty string when unset.
 - **`action`**: Scheduling action name
 - **`plugin`**: Plugin name
@@ -93,37 +93,3 @@ Business/Resource Labels:
 - **`podgroup`**: PodGroup resource identifier
 - **`nodepool`**: Node pool identifier for resource allocation
 - **`uid`**: Unique identifier (pod group UID)
-
----
-
-## Queue Identification Labels
-
-All queue metrics emitted by both the scheduler and the queue-controller carry three labels that identify the queue: `queue_name`, `queue_metadata_name`, and `queue_display_name`.
-
-### Why three labels?
-
-The legacy `queue_name` label is populated inconsistently across components:
-
-- **Queue-controller** sets `queue_name` to the Queue's `metadata.name`.
-- **Scheduler** sets `queue_name` to `spec.displayName` when set, falling back to `metadata.name`.
-
-For queues that set `spec.displayName` to something other than `metadata.name`, this means that a PromQL `on(queue_name)` join between scheduler and queue-controller metrics silently drops those queues.
-
-To make joins reliable without breaking existing dashboards that rely on the current `queue_name` values, two additional labels are emitted by all components:
-
-- `queue_metadata_name` is always the Queue's `metadata.name`. Use this as the join key.
-- `queue_display_name` is always the Queue's `spec.displayName` (empty when unset). Use this for human-readable presentation.
-
-### Recommended PromQL
-
-Join scheduler and queue-controller metrics on `queue_metadata_name`:
-
-```promql
-queue_allocated_gpus / on(queue_metadata_name) group_left() queue_fair_share_gpu
-```
-
-### Migration
-
-The legacy `queue_name` label is preserved unchanged for backward compatibility. Existing dashboards continue to work. New dashboards and alerts should prefer `queue_metadata_name` as the canonical queue identifier.
-
----
