@@ -545,18 +545,3 @@ func podNamesFromMap(tasks pod_info.PodsMap) []string {
 	sort.Strings(names)
 	return names
 }
-
-func removeGeneratorTestTasks(tasks []*pod_info.PodInfo, tasksToRemove []*pod_info.PodInfo) []*pod_info.PodInfo {
-	removeByUID := map[common_info.PodID]struct{}{}
-	for _, task := range tasksToRemove {
-		removeByUID[task.UID] = struct{}{}
-	}
-	remaining := make([]*pod_info.PodInfo, 0, len(tasks))
-	for _, task := range tasks {
-		if _, remove := removeByUID[task.UID]; remove {
-			continue
-		}
-		remaining = append(remaining, task)
-	}
-	return remaining
-}

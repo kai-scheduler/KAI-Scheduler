@@ -93,6 +93,51 @@ func TestScenarioPortfolioMovesToNextGeneratorAfterGeneratorDeadline(t *testing.
 	require.Equal(t, 1, secondGenerator.nextCalls)
 }
 
+func TestScenarioPortfolioRecordsGeneratorBudgetExhaustedDuration(t *testing.T) {
+	clock := &fakeClock{now: time.Unix(0, 0)}
+	ctx, _, firstScenario := newScenarioPortfolioTestContext(t, framework.Reclaim)
+	secondScenario := newPortfolioTestByNodeScenario(t, ctx.Session, ctx.PartialPendingJob)
+	firstGeneratorName := "test-generator-budget-exhausted"
+	secondGeneratorName := "test-generator-budget-next"
+	firstGenerator := &portfolioTestGenerator{
+		name:      firstGeneratorName,
+		scenarios: []api.ScenarioInfo{firstScenario},
+		onNext: func() {
+			clock.Advance(2 * time.Millisecond)
+		},
+	}
+	secondGenerator := &portfolioTestGenerator{
+		name:      secondGeneratorName,
+		scenarios: []api.ScenarioInfo{secondScenario},
+	}
+	ctx.Session.AddScenarioGenerator("first", portfolioTestFactory(firstGenerator))
+	ctx.Session.AddScenarioGenerator("second", portfolioTestFactory(secondGenerator))
+	actionBudget, err := newActionSearchBudgetWithClock(
+		sessionWithScenarioSearchBudgets(&conf.ScenarioSearchBudgets{
+			MaxActionSearchDuration: map[string]string{scenariosearch.ActionReclaim: "1s"},
+			MaxJobSearchDuration:    "1s",
+			MaxGeneratorSearchDuration: map[string]string{
+				firstGeneratorName:  "1ms",
+				secondGeneratorName: "1s",
+			},
+		}),
+		framework.Reclaim,
+		clock.Now,
+	)
+	require.NoError(t, err)
+	labels := map[string]string{
+		"action":    "reclaim",
+		"generator": firstGeneratorName,
+		"result":    scenarioSearchResultGeneratorBudgetExhausted,
+	}
+	before := scenarioSearchHistogramCount(t, "scenario_search_duration_seconds", labels)
+
+	portfolio := newScenarioPortfolio(ctx, actionBudget.BeginJob())
+
+	require.Same(t, secondScenario, portfolio.Next())
+	require.Equal(t, before+1, scenarioSearchHistogramCount(t, "scenario_search_duration_seconds", labels))
+}
+
 func TestScenarioPortfolioReturnsDeadlineExhaustedAfterJobDeadline(t *testing.T) {
 	clock := &fakeClock{now: time.Unix(0, 0)}
 	ctx, _, firstScenario := newScenarioPortfolioTestContext(t, framework.Reclaim)

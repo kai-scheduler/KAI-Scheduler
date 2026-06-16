@@ -8,10 +8,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/require"
 	v1 "k8s.io/api/core/v1"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/scenariosearch"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -53,6 +56,23 @@ func TestSolveWithResultReturnsTerminalResultWhenNoTasksToAllocate(t *testing.T)
 	require.False(t, result.EnteredSearch())
 }
 
+func TestSolveWithResultRecordsNoSearchMetricAsNotAttempted(t *testing.T) {
+	labels := map[string]string{
+		"action":         "reclaim",
+		"result":         string(SearchResultNotAttempted),
+		"reduced_budget": "false",
+	}
+	before := scenarioSearchCounterValue(t, "scenario_search_jobs_total", labels)
+	solver := NewJobsSolver(nil, nil, nil, framework.Reclaim, nil)
+	pendingJob := podgroup_info.NewPodGroupInfo("pending-job")
+
+	_, _, _, result := solver.SolveWithResult(&framework.Session{}, pendingJob)
+
+	require.Equal(t, SearchResultGeneratorsExhausted, result.Reason())
+	require.False(t, result.EnteredSearch())
+	require.Equal(t, before+1, scenarioSearchCounterValue(t, "scenario_search_jobs_total", labels))
+}
+
 func TestSolveWithResultReturnsNoGeneratorWhenGeneratorFuncIsNil(t *testing.T) {
 	ssn, pendingJob := newJobSolverResultTestSession(t, 1)
 	solver := NewJobsSolver(nil, nil, nil, framework.Reclaim, nil)
@@ -87,6 +107,66 @@ func TestSolveWithResultReturnsNoGeneratorWhenGeneratorReturnsNil(t *testing.T) 
 	require.Equal(t, SearchResultNoGenerator, result.Reason())
 	require.False(t, result.ReducedBudget())
 	require.False(t, result.EnteredSearch())
+}
+
+func TestSolveWithResultRecordsGeneratorExhaustedMetricAfterGeneratorAttempt(t *testing.T) {
+	labels := map[string]string{
+		"action":         "reclaim",
+		"result":         string(SearchResultGeneratorsExhausted),
+		"reduced_budget": "false",
+	}
+	before := scenarioSearchCounterValue(t, "scenario_search_jobs_total", labels)
+	ssn, pendingJob := newJobSolverResultTestSession(t, 1)
+	ssn.AddScenarioGenerator("empty", portfolioTestFactory(&portfolioTestGenerator{name: "empty"}), framework.Reclaim)
+	solver := NewJobsSolver(
+		nil,
+		nil,
+		func() *utils.JobsOrderByQueues {
+			return utils.GetVictimsQueue(ssn, nil)
+		},
+		framework.Reclaim,
+		nil,
+	)
+
+	_, _, _, result := solver.SolveWithResult(ssn, pendingJob)
+
+	require.Equal(t, SearchResultGeneratorsExhausted, result.Reason())
+	require.False(t, result.EnteredSearch())
+	require.Equal(t, before+1, scenarioSearchCounterValue(t, "scenario_search_jobs_total", labels))
+}
+
+func TestSolveWithResultRecordsUnsolvedScenarioDurationAfterSimulation(t *testing.T) {
+	generatorName := "test-unsolved-duration"
+	labels := map[string]string{
+		"action":    "reclaim",
+		"generator": generatorName,
+		"result":    scenarioSearchResultUnsolved,
+	}
+	before := scenarioSearchHistogramCount(t, "scenario_search_duration_seconds", labels)
+	ssn, pendingJob := newJobSolverResultTestSession(t, 1)
+	ssn.ClusterInfo.Nodes = map[string]*node_info.NodeInfo{"node-1": {}}
+	scenarioToSolve := scenario.NewByNodeScenario(
+		ssn, pendingJob,
+		podgroup_info.GetTasksToAllocate(pendingJob, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false),
+		nil, nil,
+	)
+	ssn.AddScenarioGenerator(generatorName, portfolioTestFactory(&portfolioTestGenerator{
+		name:      generatorName,
+		scenarios: []api.ScenarioInfo{scenarioToSolve},
+	}), framework.Reclaim)
+	solver := NewJobsSolver(
+		nil,
+		nil,
+		func() *utils.JobsOrderByQueues {
+			return utils.GetVictimsQueue(ssn, nil)
+		},
+		framework.Reclaim,
+		nil,
+	)
+
+	solver.SolveWithResult(ssn, pendingJob)
+
+	require.Equal(t, before+1, scenarioSearchHistogramCount(t, "scenario_search_duration_seconds", labels))
 }
 
 func TestSearchMaxSolvableKSkipsSingleTaskFullProbe(t *testing.T) {
@@ -274,4 +354,55 @@ func newJobSolverResultTestSession(t *testing.T, tasksCount int) (*framework.Ses
 			Nodes: map[string]*node_info.NodeInfo{},
 		},
 	}, pendingJob
+}
+
+func scenarioSearchCounterValue(t *testing.T, metricName string, labels map[string]string) float64 {
+	t.Helper()
+
+	metric := scenarioSearchMetric(t, metricName, labels)
+	if metric == nil || metric.GetCounter() == nil {
+		return 0
+	}
+	return metric.GetCounter().GetValue()
+}
+
+func scenarioSearchHistogramCount(t *testing.T, metricName string, labels map[string]string) uint64 {
+	t.Helper()
+
+	metric := scenarioSearchMetric(t, metricName, labels)
+	if metric == nil || metric.GetHistogram() == nil {
+		return 0
+	}
+	return metric.GetHistogram().GetSampleCount()
+}
+
+func scenarioSearchMetric(t *testing.T, metricName string, labels map[string]string) *dto.Metric {
+	t.Helper()
+
+	families, err := prometheus.DefaultGatherer.Gather()
+	require.NoError(t, err)
+	for _, family := range families {
+		if family.GetName() != metricName {
+			continue
+		}
+		for _, metric := range family.GetMetric() {
+			if scenarioSearchMetricHasLabels(metric, labels) {
+				return metric
+			}
+		}
+	}
+	return nil
+}
+
+func scenarioSearchMetricHasLabels(metric *dto.Metric, labels map[string]string) bool {
+	if len(metric.GetLabel()) != len(labels) {
+		return false
+	}
+	for _, label := range metric.GetLabel() {
+		expectedValue, found := labels[label.GetName()]
+		if !found || expectedValue != label.GetValue() {
+			return false
+		}
+	}
+	return true
 }

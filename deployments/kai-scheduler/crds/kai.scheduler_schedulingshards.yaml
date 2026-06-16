@@ -142,7 +142,8 @@ spec:
                   resourcetype=1500, podaffinity=1400, elastic=1300, kubeflow=1200,
                   ray=1100, subgrouporder=1000, taskorder=900, nominatednode=800,
                   dynamicresources=700, minruntime=600, topology=500, snapshot=400,
-                  gpupack/gpuspread=300, nodeplacement=200, gpusharingorder=100.
+                  sg-nodelocalgreedy=360, sg-multinodegang=350, gpupack/gpuspread=300,
+                  nodeplacement=200, gpusharingorder=100.
                 type: object
               queueDepthPerAction:
                 additionalProperties:

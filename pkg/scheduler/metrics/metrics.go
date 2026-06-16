@@ -20,6 +20,7 @@ limitations under the License.
 package metrics
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -35,27 +36,34 @@ const (
 )
 
 var (
-	currentAction               string
-	e2eSchedulingLatency        prometheus.Gauge
-	openSessionLatency          prometheus.Gauge
-	closeSessionLatency         prometheus.Gauge
-	pluginSchedulingLatency     *prometheus.GaugeVec
-	actionSchedulingLatency     *prometheus.GaugeVec
-	taskSchedulingLatency       prometheus.Histogram
-	taskBindLatency             prometheus.Histogram
-	podgroupsScheduledByAction  *prometheus.CounterVec
-	podgroupsConsideredByAction *prometheus.CounterVec
-	scenariosSimulatedByAction  *prometheus.CounterVec
-	scenariosFilteredByAction   *prometheus.CounterVec
-	preemptionAttempts          prometheus.Counter
-	queueFairShareCPU           *prometheus.GaugeVec
-	queueFairShareMemory        *prometheus.GaugeVec
-	queueFairShareGPU           *prometheus.GaugeVec
-	queueCPUUsage               *prometheus.GaugeVec
-	queueMemoryUsage            *prometheus.GaugeVec
-	queueGPUUsage               *prometheus.GaugeVec
-	usageQueryLatency           *prometheus.HistogramVec
-	podGroupEvictedPodsTotal    *prometheus.CounterVec
+	currentAction                                  string
+	e2eSchedulingLatency                           prometheus.Gauge
+	openSessionLatency                             prometheus.Gauge
+	closeSessionLatency                            prometheus.Gauge
+	pluginSchedulingLatency                        *prometheus.GaugeVec
+	actionSchedulingLatency                        *prometheus.GaugeVec
+	taskSchedulingLatency                          prometheus.Histogram
+	taskBindLatency                                prometheus.Histogram
+	podgroupsScheduledByAction                     *prometheus.CounterVec
+	podgroupsConsideredByAction                    *prometheus.CounterVec
+	scenariosSimulatedByAction                     *prometheus.CounterVec
+	scenariosFilteredByAction                      *prometheus.CounterVec
+	preemptionAttempts                             prometheus.Counter
+	queueFairShareCPU                              *prometheus.GaugeVec
+	queueFairShareMemory                           *prometheus.GaugeVec
+	queueFairShareGPU                              *prometheus.GaugeVec
+	queueCPUUsage                                  *prometheus.GaugeVec
+	queueMemoryUsage                               *prometheus.GaugeVec
+	queueGPUUsage                                  *prometheus.GaugeVec
+	usageQueryLatency                              *prometheus.HistogramVec
+	podGroupEvictedPodsTotal                       *prometheus.CounterVec
+	scenarioSearchJobsTotal                        *prometheus.CounterVec
+	scenarioSearchActionBudgetConfiguredSeconds    *prometheus.GaugeVec
+	scenarioSearchJobBudgetConfiguredSeconds       prometheus.Gauge
+	scenarioSearchGeneratorBudgetConfiguredSeconds *prometheus.GaugeVec
+	scenarioSearchActionBudgetExhaustedTotal       *prometheus.CounterVec
+	scenarioSearchDurationSeconds                  *prometheus.HistogramVec
+	scenarioSearchScenariosTotal                   *prometheus.CounterVec
 )
 
 func init() {
@@ -207,6 +215,56 @@ func InitMetrics(namespace string) {
 			Name:      "pod_group_evicted_pods_total",
 			Help:      "Total number of pods evicted per pod group",
 		}, []string{"podgroup", "namespace", "uid", "nodepool", "action"})
+
+	scenarioSearchJobsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Name:      "scenario_search_jobs_total",
+			Help:      "Count of jobs considered by bounded scenario search.",
+		}, []string{"action", "result", "reduced_budget"})
+
+	scenarioSearchActionBudgetConfiguredSeconds = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "scenario_search_action_budget_configured_seconds",
+			Help:      "Configured action scenario search budget in seconds.",
+		}, []string{"action"})
+
+	scenarioSearchJobBudgetConfiguredSeconds = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "scenario_search_job_budget_configured_seconds",
+			Help:      "Configured per-job scenario search budget in seconds.",
+		})
+
+	scenarioSearchGeneratorBudgetConfiguredSeconds = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "scenario_search_generator_budget_configured_seconds",
+			Help:      "Configured generator scenario search budget in seconds.",
+		}, []string{"generator"})
+
+	scenarioSearchActionBudgetExhaustedTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Name:      "scenario_search_action_budget_exhausted_total",
+			Help:      "Count of action-level scenario search budget exhaustion events.",
+		}, []string{"action"})
+
+	scenarioSearchDurationSeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: namespace,
+			Name:      "scenario_search_duration_seconds",
+			Help:      "Elapsed generator-search duration in seconds.",
+			Buckets:   prometheus.ExponentialBuckets(0.001, 2, 16),
+		}, []string{"action", "generator", "result"})
+
+	scenarioSearchScenariosTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Name:      "scenario_search_scenarios_total",
+			Help:      "Count of bounded-search scenarios by state.",
+		}, []string{"action", "generator", "state"})
 }
 
 // UpdateOpenSessionDuration updates latency for open session, including all plugins
@@ -310,6 +368,34 @@ func RegisterPreemptionAttempts() {
 // RecordPodGroupEvictedPods records the number of pods evicted for a pod group
 func RecordPodGroupEvictedPods(name, namespace, uid, nodepool, action string, count int) {
 	podGroupEvictedPodsTotal.WithLabelValues(name, namespace, uid, nodepool, action).Add(float64(count))
+}
+
+func IncScenarioSearchJobs[A ~string](action A, result string, reducedBudget bool) {
+	scenarioSearchJobsTotal.WithLabelValues(string(action), result, strconv.FormatBool(reducedBudget)).Inc()
+}
+
+func SetScenarioSearchActionBudget[A ~string](action A, budget time.Duration) {
+	scenarioSearchActionBudgetConfiguredSeconds.WithLabelValues(string(action)).Set(budget.Seconds())
+}
+
+func SetScenarioSearchJobBudget(budget time.Duration) {
+	scenarioSearchJobBudgetConfiguredSeconds.Set(budget.Seconds())
+}
+
+func SetScenarioSearchGeneratorBudget(generator string, budget time.Duration) {
+	scenarioSearchGeneratorBudgetConfiguredSeconds.WithLabelValues(generator).Set(budget.Seconds())
+}
+
+func IncScenarioSearchActionBudgetExhausted[A ~string](action A) {
+	scenarioSearchActionBudgetExhaustedTotal.WithLabelValues(string(action)).Inc()
+}
+
+func ObserveScenarioSearchDuration[A ~string](action A, generator string, result string, duration time.Duration) {
+	scenarioSearchDurationSeconds.WithLabelValues(string(action), generator, result).Observe(duration.Seconds())
+}
+
+func IncScenarioSearchScenario[A ~string](action A, generator string, state string) {
+	scenarioSearchScenariosTotal.WithLabelValues(string(action), generator, state).Inc()
 }
 
 // Duration get the time since specified start

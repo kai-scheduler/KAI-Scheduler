@@ -20,6 +20,7 @@ type SearchResult struct {
 	solution      *solutionResult
 	reducedBudget bool
 	enteredSearch bool
+	metricResult  string
 }
 
 func (r *SearchResult) Reason() SearchResultReason {
@@ -41,6 +42,16 @@ func (r *SearchResult) EnteredSearch() bool {
 		return false
 	}
 	return r.enteredSearch
+}
+
+func (r *SearchResult) scenarioSearchMetricResult() string {
+	if r == nil {
+		return ""
+	}
+	if r.metricResult != "" {
+		return r.metricResult
+	}
+	return string(r.reason)
 }
 
 // NewNotAttemptedSearchResult returns a terminal result for callers that skip solver entry.

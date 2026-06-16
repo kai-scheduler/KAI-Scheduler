@@ -4,6 +4,8 @@
 package solvers
 
 import (
+	"time"
+
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
@@ -11,7 +13,12 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
 )
+
+const scenarioSearchResultGeneratorBudgetExhausted = "generator_budget_exhausted"
+const scenarioSearchResultUnsolved = "unsolved"
+const scenarioSearchResultValidatorRejected = "validator_rejected"
 
 type SolveContext struct {
 	Session              *framework.Session
@@ -30,13 +37,15 @@ func (ctx *SolveContext) Action() framework.ActionType {
 }
 
 type scenarioPortfolio struct {
-	ctx           *SolveContext
-	generators    []framework.ScenarioGenerator
-	jobBudget     *jobSearchBudget
-	currentIndex  int
-	currentBudget *generatorSearchBudget
-	enteredSearch bool
-	stopReason    SearchResultReason
+	ctx              *SolveContext
+	generators       []framework.ScenarioGenerator
+	jobBudget        *jobSearchBudget
+	currentIndex     int
+	currentBudget    *generatorSearchBudget
+	currentName      string
+	currentStartedAt time.Time
+	enteredSearch    bool
+	stopReason       SearchResultReason
 }
 
 func newScenarioPortfolio(ctx *SolveContext, jobBudget *jobSearchBudget) *scenarioPortfolio {
@@ -118,31 +127,55 @@ func (p *scenarioPortfolio) Next() *scenario.ByNodeScenario {
 			continue
 		}
 
+		generatorName := generator.Name()
+		attemptStartedAt := time.Now()
 		sn := generator.Next()
 		if p.deadlineExhausted() {
 			p.stopReason = SearchResultDeadlineExhausted
+			p.observeGeneratorAttempt(generatorName, string(SearchResultDeadlineExhausted), attemptStartedAt)
 			return nil
 		}
 		if p.currentBudget.Exhausted() {
+			p.observeGeneratorAttempt(generatorName, scenarioSearchResultGeneratorBudgetExhausted, attemptStartedAt)
 			p.moveToNextGenerator()
 			continue
 		}
 		if sn == nil {
+			p.observeGeneratorAttempt(generatorName, string(SearchResultGeneratorsExhausted), attemptStartedAt)
 			p.moveToNextGenerator()
 			continue
 		}
 		byNodeScenario, ok := sn.(*scenario.ByNodeScenario)
 		if !ok {
+			p.observeGeneratorAttempt(generatorName, "unsupported", attemptStartedAt)
 			log.InfraLogger.V(4).Infof(
 				"Scenario generator <%s> returned unsupported scenario type %T",
-				generator.Name(), sn,
+				generatorName, sn,
 			)
 			p.moveToNextGenerator()
 			continue
 		}
 		p.enteredSearch = true
+		p.currentName = generatorName
+		p.currentStartedAt = attemptStartedAt
+		metrics.IncScenarioSearchScenario(p.ctx.ActionType, generatorName, "emitted")
 		return byNodeScenario
 	}
+}
+
+func (p *scenarioPortfolio) CurrentGeneratorName() string {
+	if p == nil {
+		return ""
+	}
+	return p.currentName
+}
+
+func (p *scenarioPortfolio) ObserveCurrentAttempt(result string) {
+	if p == nil || p.currentStartedAt.IsZero() {
+		return
+	}
+	p.observeGeneratorAttempt(p.currentName, result, p.currentStartedAt)
+	p.currentStartedAt = time.Time{}
 }
 
 func (p *scenarioPortfolio) StopReason() SearchResultReason {
@@ -162,10 +195,19 @@ func (p *scenarioPortfolio) currentGenerator() framework.ScenarioGenerator {
 func (p *scenarioPortfolio) moveToNextGenerator() {
 	p.currentIndex++
 	p.currentBudget = nil
+	p.currentName = ""
+	p.currentStartedAt = time.Time{}
 }
 
 func (p *scenarioPortfolio) deadlineExhausted() bool {
 	return p == nil || p.jobBudget == nil || p.jobBudget.Remaining() <= 0
+}
+
+func (p *scenarioPortfolio) observeGeneratorAttempt(generator string, result string, startedAt time.Time) {
+	if p == nil || p.ctx == nil {
+		return
+	}
+	metrics.ObserveScenarioSearchDuration(p.ctx.ActionType, generator, result, time.Since(startedAt))
 }
 
 func scenarioGeneratorAppliesToAction(
