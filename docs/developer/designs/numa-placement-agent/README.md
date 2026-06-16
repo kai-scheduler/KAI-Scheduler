@@ -88,11 +88,29 @@ once per pod (shortly after the pod starts running) and on the rare re-allocatio
 small initial lag between a pod starting and the annotation appearing — during that window the
 plugin falls back to prediction for that pod, exactly as if the agent were absent.
 
+### Drift reconciliation against the API server
+
+The fast path is driven by the podresources `List` and an in-memory cache of the last value
+written per pod, so a pod is patched only when its computed placement changes. That cache
+assumes the agent's last successful patch still reflects what is actually on the pod object —
+an assumption that breaks if the annotation is removed or mutated externally.
+
+To catch the out-of-band case, a second, slower pass reconciles against the API server. On its
+own interval it lists the pods assigned to this node (`spec.nodeName` field selector), compares
+each pod's **live** annotation value to the value the agent computes from podresources, and
+patches the ones that have **drifted** (missing, stale, or externally modified).
+
+The interval is configurable via `--drift-resync-interval`, **defaulting to `60s`**, and is
+**disabled by `0`** (relying solely on the in-memory cache). The pass is read-mostly: it lists
+pods (one paginated `List` per interval, scoped to the node) and patches only the drifted
+subset, so steady-state cost is one list per interval and zero writes once placement is stable.
+
 ### RBAC and security
 
 - **Agent → kubelet podresources:** read-only access to the podresources socket via a hostPath
   mount. This is the same surface NRT exporters use.
-- **Agent → API server:** `patch` on pods (annotations only). Scoped to the annotation key.
+- **Agent → API server:** `patch` on pods (annotations only), scoped to the annotation key, plus
+  `list` on pods for the drift-reconciliation pass (scoped to this node via field selector).
 - **Scheduler:** no new permissions — it already lists/watches pods.
 
 ## Interaction with the NUMA plugin and NRT
