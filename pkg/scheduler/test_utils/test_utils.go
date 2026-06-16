@@ -18,6 +18,7 @@ import (
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes/fake"
 
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
 	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions"
@@ -98,8 +99,9 @@ type TestDepartmentBasic struct {
 }
 
 type TestSessionConfig struct {
-	Plugins      []conf.Tier
-	CachePlugins map[string]bool
+	Plugins               []conf.Tier
+	CachePlugins          map[string]bool
+	ScenarioSearchBudgets *kaiv1.ScenarioSearchBudgets
 }
 
 type TestExpectedResultBasic struct {
