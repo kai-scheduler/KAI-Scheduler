@@ -21,10 +21,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Updated Go toolchain and base build images to v1.26.3.
 - **Breaking:** The podgroup produced for JobSet is now produces as a single PodGroup per JobSet with a two-level SubGroup hierarchy (one parent SubGroup per `replicatedJob`, one leaf SubGroup per replica) regardless of `startupPolicyOrder`. The `kai.scheduler/batch-min-member` annotation on the JobSet now overrides the root `minSubGroup`; the same annotation on `replicatedJobs[].template.metadata.annotations` overrides the leaf `minMember` (defaulting to `template.spec.parallelism`). [#1617](https://github.com/kai-scheduler/KAI-Scheduler/pull/1617) [davidLif](https://github.com/davidLif)
 
-### Performance
-- Reduced allocation churn in the scheduler hot path: cached `Schedulable()` result as a package-level singleton and guarded `logNodeSetsPluginResult` node-name collection behind an `IsVerbose(7)` check to avoid building slices on non-verbose runs
-
 ### Fixed
+- Reduced allocation churn in the scheduler hot path: cached `Schedulable()` result as a package-level singleton and guarded `logNodeSetsPluginResult` node-name collection behind an `IsVerbose(7)` check to avoid building slices on non-verbose runs
 - Fixed Helm chart prometheus RBAC always being installed when `prometheus.enabled` is false, and the `kai-prometheus` ClusterRoleBinding referencing the `prometheus` ServiceAccount in hardcoded `kai-scheduler` namespace instead of the Helm release namespace [#1684](https://github.com/kai-scheduler/KAI-Scheduler/pull/1684) [dttung2905](https://github.com/dttung2905)
 - Fixed post-delete cleanup hook hardcoding `kai-scheduler` namespace instead of Helm release namespace on `helm uninstall` [#1619](https://github.com/kai-scheduler/KAI-Scheduler/pull/1619) [dttung2905](https://github.com/dttung2905)
 - Improved solver performance in some large reclaim scenarios [#1627](https://github.com/kai-scheduler/KAI-Scheduler/pull/1627) [itsomri](https://github.com/itsomri)
