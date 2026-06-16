@@ -755,6 +755,10 @@ remove the exporter (or override the flag) and it reverts to trusting NRT `Avail
 - **A pod with neither observed nor predicted placement** is omitted from the subtraction (never
   guess a zone) → a transient per-zone over-report on its zone. With the exporter covering all pods this
   is limited to the bind→observe window of KAI's own pods, where the predicted record covers it.
+  *Potential follow-up mitigation:* on a node where any consuming numa-sensitive pod still lacks a placement,
+  **defer** (pipeline) numa-sensitive allocations rather than binding them — keeping the node a
+  candidate while waiting until the per-zone data is trustworthy — instead of risking a bind the
+  kubelet rejects.
 - **`Allocatable` already nets out reserved capacity** (kube/system-reserved), so
   `Allocatable − Σ exclusive` is the correct free-for-alignment figure; no separate reserved
   handling is needed.
