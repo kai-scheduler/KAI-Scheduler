@@ -7,12 +7,12 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/kai-scheduler/KAI-scheduler/cmd/numa-agent/app"
+	"github.com/kai-scheduler/KAI-scheduler/cmd/numa-placement-exporter/app"
 )
 
 func main() {
 	if err := app.Run(); err != nil {
-		fmt.Printf("Error while running the NUMA placement agent: %v\n", err)
+		fmt.Printf("Error while running the NUMA placement exporter: %v\n", err)
 		os.Exit(1)
 	}
 }

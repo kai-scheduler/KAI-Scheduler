@@ -7,7 +7,7 @@ import (
 	"flag"
 	"time"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/numaagent/consts"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/npe/consts"
 )
 
 type Options struct {
@@ -28,10 +28,10 @@ func NewOptions() *Options {
 	return &Options{}
 }
 
-// AddFlags registers the agent's flags on the default FlagSet.
+// AddFlags registers the exporter's flags on the default FlagSet.
 func (o *Options) AddFlags() {
 	flag.StringVar(&o.NodeName, "node-name", "",
-		"Name of the node this agent runs on. Defaults to the NODE_NAME environment variable.")
+		"Name of the node this exporter runs on. Defaults to the NODE_NAME environment variable.")
 	flag.StringVar(&o.PodResourcesSocket, "podresources-socket", consts.DefaultPodResourcesSocket,
 		"Path to the kubelet podresources gRPC socket.")
 	flag.StringVar(&o.SysfsRoot, "sysfs-root", consts.DefaultSysfsRoot,

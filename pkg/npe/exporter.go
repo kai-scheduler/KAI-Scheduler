@@ -1,10 +1,10 @@
 // Copyright 2025 NVIDIA CORPORATION
 // SPDX-License-Identifier: Apache-2.0
 
-// Package agent ties the kubelet podresources observations to pod annotations: on each tick it
-// lists local pod allocations, computes their NUMA placement, and patches the result onto pods
-// whose placement changed.
-package agent
+// Package npe is the NUMA Placement Exporter: it ties the kubelet podresources observations to
+// pod annotations. On each tick it lists local pod allocations, computes their NUMA placement,
+// and patches the result onto pods whose placement changed.
+package npe
 
 import (
 	"context"
@@ -20,19 +20,19 @@ import (
 	podresourcesv1 "k8s.io/kubelet/pkg/apis/podresources/v1"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/numaagent/consts"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/numaagent/cputopology"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/numaagent/placement"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/npe/consts"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/npe/cputopology"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/npe/placement"
 )
 
 // resourceLister lists per-pod resource allocations from the local kubelet. *podresources.Client
-// satisfies it; the interface keeps the agent testable without a real podresources socket.
+// satisfies it; the interface keeps the exporter testable without a real podresources socket.
 type resourceLister interface {
 	List(ctx context.Context) ([]*podresourcesv1.PodResources, error)
 }
 
-// Agent reconciles observed NUMA placement onto pods on a single node.
-type Agent struct {
+// Exporter reconciles observed NUMA placement onto pods on a single node.
+type Exporter struct {
 	nodeName            string
 	pollInterval        time.Duration
 	driftResyncInterval time.Duration
@@ -47,10 +47,10 @@ type Agent struct {
 	written map[string]string
 }
 
-// New constructs an Agent. A driftResyncInterval of 0 disables the API-server drift pass.
+// New constructs an Exporter. A driftResyncInterval of 0 disables the API-server drift pass.
 func New(nodeName string, pollInterval, driftResyncInterval time.Duration, resources resourceLister,
-	cpuToNUMA cputopology.CPUToNUMA, clientset kubernetes.Interface) *Agent {
-	return &Agent{
+	cpuToNUMA cputopology.CPUToNUMA, clientset kubernetes.Interface) *Exporter {
+	return &Exporter{
 		nodeName:            nodeName,
 		pollInterval:        pollInterval,
 		driftResyncInterval: driftResyncInterval,
@@ -64,9 +64,9 @@ func New(nodeName string, pollInterval, driftResyncInterval time.Duration, resou
 // Run reconciles once immediately, then drives the fast podresources pass and (unless disabled)
 // the slower API-server drift pass off their own tickers until the context is cancelled. Both
 // passes run on this single goroutine, so the write cache needs no locking.
-func (a *Agent) Run(ctx context.Context) error {
+func (a *Exporter) Run(ctx context.Context) error {
 	logger := log.FromContext(ctx)
-	logger.Info("Starting NUMA placement agent", "node", a.nodeName,
+	logger.Info("Starting NUMA placement exporter", "node", a.nodeName,
 		"pollInterval", a.pollInterval, "driftResyncInterval", a.driftResyncInterval)
 
 	if err := a.reconcile(ctx); err != nil {
@@ -97,7 +97,7 @@ func (a *Agent) Run(ctx context.Context) error {
 
 // driftTicker returns the drift pass's tick channel and a stop func. When the interval is 0 the
 // channel is nil, which blocks forever in select — disabling the pass without a special case.
-func (a *Agent) driftTicker() (<-chan time.Time, func()) {
+func (a *Exporter) driftTicker() (<-chan time.Time, func()) {
 	if a.driftResyncInterval <= 0 {
 		return nil, func() {}
 	}
@@ -105,7 +105,7 @@ func (a *Agent) driftTicker() (<-chan time.Time, func()) {
 	return ticker.C, ticker.Stop
 }
 
-func (a *Agent) reconcile(ctx context.Context) error {
+func (a *Exporter) reconcile(ctx context.Context) error {
 	logger := log.FromContext(ctx)
 
 	pods, err := a.resources.List(ctx)
@@ -155,7 +155,7 @@ func (a *Agent) reconcile(ctx context.Context) error {
 // live annotation no longer matches the observed placement (removed or modified out-of-band).
 // Unlike reconcile it does not trust the write cache: the live annotation is the comparison
 // baseline. The cache is refreshed to match reality as a side effect.
-func (a *Agent) reconcileDrift(ctx context.Context) error {
+func (a *Exporter) reconcileDrift(ctx context.Context) error {
 	logger := log.FromContext(ctx)
 
 	pods, err := a.resources.List(ctx)
@@ -208,7 +208,7 @@ func (a *Agent) reconcileDrift(ctx context.Context) error {
 
 // placementValue computes a pod's observed placement and marshals it to the annotation value.
 // Returns ok=false when the pod holds no topology-aligned resources or marshaling fails.
-func (a *Agent) placementValue(ctx context.Context, pod *podresourcesv1.PodResources) (string, bool) {
+func (a *Exporter) placementValue(ctx context.Context, pod *podresourcesv1.PodResources) (string, bool) {
 	observed := placement.Compute(pod, a.cpuToNUMA)
 	if observed == nil {
 		return "", false
@@ -222,7 +222,7 @@ func (a *Agent) placementValue(ctx context.Context, pod *podresourcesv1.PodResou
 	return value, true
 }
 
-func (a *Agent) patchAnnotation(ctx context.Context, namespace, name, value string) error {
+func (a *Exporter) patchAnnotation(ctx context.Context, namespace, name, value string) error {
 	patch := map[string]any{
 		"metadata": map[string]any{
 			"annotations": map[string]string{

@@ -3,7 +3,7 @@
 
 // Package podresources is a thin client over the kubelet podresources gRPC API, exposing the
 // per-pod, per-container resource allocations (devices with NUMA topology, exclusive CPU IDs,
-// and pinned memory blocks) the agent needs to attribute placement.
+// and pinned memory blocks) the exporter needs to attribute placement.
 package podresources
 
 import (

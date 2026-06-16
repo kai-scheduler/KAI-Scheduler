@@ -10,7 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	podresourcesv1 "k8s.io/kubelet/pkg/apis/podresources/v1"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/numaagent/cputopology"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/npe/cputopology"
 )
 
 func topology(nodes ...int64) *podresourcesv1.TopologyInfo {

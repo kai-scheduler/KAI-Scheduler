@@ -1,7 +1,7 @@
 // Copyright 2025 NVIDIA CORPORATION
 // SPDX-License-Identifier: Apache-2.0
 
-package agent
+package npe
 
 import (
 	"context"
@@ -13,8 +13,8 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	podresourcesv1 "k8s.io/kubelet/pkg/apis/podresources/v1"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/numaagent/consts"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/numaagent/cputopology"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/npe/consts"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/npe/cputopology"
 )
 
 // gpuPlacement is the annotation value gpuPod resolves to.
@@ -110,7 +110,7 @@ func TestReconcileDriftPropagatesListError(t *testing.T) {
 }
 
 func TestDriftTickerDisabled(t *testing.T) {
-	a := &Agent{driftResyncInterval: 0}
+	a := &Exporter{driftResyncInterval: 0}
 	c, stop := a.driftTicker()
 	defer stop()
 	if c != nil {
@@ -119,7 +119,7 @@ func TestDriftTickerDisabled(t *testing.T) {
 }
 
 func TestDriftTickerEnabled(t *testing.T) {
-	a := &Agent{driftResyncInterval: time.Hour}
+	a := &Exporter{driftResyncInterval: time.Hour}
 	c, stop := a.driftTicker()
 	defer stop()
 	if c == nil {

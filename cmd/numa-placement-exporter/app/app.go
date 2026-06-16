@@ -13,9 +13,9 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/numaagent/agent"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/numaagent/cputopology"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/numaagent/podresources"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/npe"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/npe/cputopology"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/npe/podresources"
 )
 
 var setupLog = ctrl.Log.WithName("setup")
@@ -63,11 +63,11 @@ func Run() error {
 		return err
 	}
 
-	numaAgent := agent.New(options.NodeName, options.PollInterval, options.DriftResyncInterval,
+	exporter := npe.New(options.NodeName, options.PollInterval, options.DriftResyncInterval,
 		resourcesClient, cpuToNUMA, clientset)
 
-	if err := numaAgent.Run(ctrl.SetupSignalHandler()); err != nil {
-		setupLog.Error(err, "agent terminated with error")
+	if err := exporter.Run(ctrl.SetupSignalHandler()); err != nil {
+		setupLog.Error(err, "exporter terminated with error")
 		return err
 	}
 	return nil

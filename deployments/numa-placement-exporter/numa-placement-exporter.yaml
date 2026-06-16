@@ -1,63 +1,64 @@
-# Copyright 2025 NVIDIA CORPORATION
+# Copyright 2026 NVIDIA CORPORATION
 # SPDX-License-Identifier: Apache-2.0
 #
-# Standalone manifest for the per-node NUMA placement agent (POC).
-# Deploy manually after building and pushing the `numa-agent` image:
+# Standalone manifest for the per-node NUMA placement exporter (POC).
+# Deploy manually after building and pushing the `numa-placement-exporter` image:
 #
-#   make numa-agent                              # builds the binary + image
+#   make numa-placement-exporter                              # builds the binary + image
 #   # override registry/tag as needed, e.g.:
-#   make numa-agent DOCKER_REPO_BASE=<your-registry> VERSION=<tag>
+#   make numa-placement-exporter DOCKER_REPO_BASE=<your-registry> VERSION=<tag>
 #   docker push <image>
-#   kubectl apply -f deployments/numa-agent/numa-agent.yaml
+#   kubectl apply -f deployments/numa-placement-exporter/numa-placement-exporter.yaml
 #
 # Set the `image:` below to the tag you built/pushed.
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: numa-agent
+  name: numa-placement-exporter
   namespace: kai-scheduler
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: kai-numa-agent
+  name: kai-numa-placement-exporter
 rules:
-  # Patch the observed NUMA placement annotation onto pods. get is needed for the patch round-trip.
+  # Patch the observed NUMA placement annotation onto pods. get is needed for the patch round-trip;
+  # list is needed for the drift-reconciliation pass against the API server.
   - apiGroups: [""]
     resources: ["pods"]
-    verbs: ["get", "patch"]
+    verbs: ["get", "list", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: kai-numa-agent
+  name: kai-numa-placement-exporter
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: kai-numa-agent
+  name: kai-numa-placement-exporter
 subjects:
   - kind: ServiceAccount
-    name: numa-agent
+    name: numa-placement-exporter
     namespace: kai-scheduler
 ---
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
-  name: numa-agent
+  name: numa-placement-exporter
   namespace: kai-scheduler
   labels:
-    app: numa-agent
+    app: numa-placement-exporter
 spec:
   selector:
     matchLabels:
-      app: numa-agent
+      app: numa-placement-exporter
   template:
     metadata:
       labels:
-        app: numa-agent
+        app: numa-placement-exporter
     spec:
-      serviceAccountName: numa-agent
+      serviceAccountName: numa-placement-exporter
       # Pull secret for the image registry (e.g. ghcr.io). Create it in this namespace, e.g.:
       #   kubectl create secret docker-registry ghcr-pull -n kai-scheduler \
       #     --docker-server=ghcr.io --docker-username=<user> --docker-password=<PAT>
@@ -74,8 +75,8 @@ spec:
       tolerations:
         - operator: Exists
       containers:
-        - name: numa-agent
-          image: ghcr.io/itsomri/kai-scheduler/numa-agent:0.0.0
+        - name: numa-placement-exporter
+          image: ghcr.io/itsomri/kai-scheduler/numa-placement-exporter:0.0.0
           imagePullPolicy: IfNotPresent
           args:
             - --podresources-socket=/var/lib/kubelet/pod-resources/kubelet.sock
