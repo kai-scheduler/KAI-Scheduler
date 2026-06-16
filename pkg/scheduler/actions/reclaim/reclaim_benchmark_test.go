@@ -7,17 +7,24 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	. "go.uber.org/mock/gomock"
 	"gopkg.in/h2non/gock.v1"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/scenariosearch"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 )
+
+const reducedBudgetReclaimMessage = "Scheduler could not find a valid reclaim scenario for this job within the remaining configured search time."
 
 type unschedulableDistributedReclaimBenchmarkParams struct {
 	NumNodes              int
@@ -26,6 +33,34 @@ type unschedulableDistributedReclaimBenchmarkParams struct {
 	RunningJobsPerNode    int
 	Queue0DeservedGPUs    int
 	Queue1DeservedGPUs    int
+}
+
+func TestReducedBudgetFailedReclaimRecordsJobFitError(t *testing.T) {
+	defer gock.Off()
+
+	test_utils.InitTestingInfrastructure()
+	controller := NewController(t)
+	defer controller.Finish()
+
+	topology := buildUnschedulableDistributedReclaimBenchmarkTopology(
+		defaultUnschedulableDistributedReclaimBenchmarkParams(10),
+	)
+	ssn := test_utils.BuildSession(topology, controller)
+	ssn.Config.ScenarioSearchBudgets = &conf.ScenarioSearchBudgets{
+		MaxActionSearchDuration: map[string]string{
+			scenariosearch.ActionReclaim: "250ms",
+		},
+		MaxJobSearchDuration: "1s",
+		MinJobSearchDuration: "500ms",
+	}
+
+	reclaim.New().Execute(ssn)
+
+	job := ssn.ClusterInfo.PodGroupInfos[common_info.PodGroupID("unschedulable-distributed-job")]
+	require.NotNil(t, job)
+	require.Len(t, job.JobFitErrors, 1)
+	require.Equal(t, podgroup_info.PodSchedulingErrors, string(job.JobFitErrors[0].Reason()))
+	require.Equal(t, []string{reducedBudgetReclaimMessage}, job.JobFitErrors[0].Messages())
 }
 
 func BenchmarkReclaimUnschedulableDistributedJob_10Node(b *testing.B) {

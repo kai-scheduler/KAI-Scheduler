@@ -36,6 +36,8 @@ import (
 type reclaimAction struct {
 }
 
+const reducedBudgetReclaimMessage = "Scheduler could not find a valid reclaim scenario for this job within the remaining configured search time."
+
 func New() *reclaimAction {
 	return &reclaimAction{}
 }
@@ -102,9 +104,11 @@ func (ra *reclaimAction) Execute(ssn *framework.Session) {
 			if err := statement.Commit(); err != nil {
 				log.InfraLogger.Errorf("Failed to commit reclaim statement: %v", err)
 			}
-		} else if shouldStopActionForSearchResult(searchResult) {
-			return
 		} else {
+			recordReducedBudgetReclaimFailure(job, searchResult)
+			if shouldStopActionForSearchResult(searchResult) {
+				return
+			}
 			log.InfraLogger.V(3).Infof("Didn't find a reclaim strategy for job <%s/%s>",
 				job.Namespace, job.Name)
 			smallestFailedJobs.UpdateRepresentative(job)
@@ -134,6 +138,13 @@ func (ra *reclaimAction) attemptToReclaimForSpecificJob(
 		framework.Reclaim,
 		actionBudget)
 	return solver.SolveWithResult(ssn, reclaimer)
+}
+
+func recordReducedBudgetReclaimFailure(job *podgroup_info.PodGroupInfo, searchResult *solvers.SearchResult) {
+	if searchResult == nil || !searchResult.ReducedBudget() {
+		return
+	}
+	job.AddSimpleJobFitError(podgroup_info.PodSchedulingErrors, reducedBudgetReclaimMessage)
 }
 
 func shouldStopActionForSearchResult(result *solvers.SearchResult) bool {
