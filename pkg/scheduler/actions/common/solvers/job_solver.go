@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	solverscenario "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -249,12 +248,12 @@ func (s *JobSolver) probeAtK(
 ) *SearchResult {
 	pendingTasks := tasksToAllocate[:k]
 	partialPendingJob := getPartialJobRepresentative(pendingJob, pendingTasks)
-	return s.solvePartialJob(ssn, state, partialPendingJob, jobBudget)
+	return s.solvePartialJob(ssn, state, partialPendingJob, jobBudget, k)
 }
 
 func (s *JobSolver) solvePartialJob(
 	ssn *framework.Session, state *solvingState, partialPendingJob *podgroup_info.PodGroupInfo,
-	jobBudget *jobSearchBudget,
+	jobBudget *jobSearchBudget, probeK int,
 ) *SearchResult {
 	actionBudget := s.ensureActionBudget()
 	if jobBudget == nil {
@@ -273,37 +272,33 @@ func (s *JobSolver) solvePartialJob(
 	if s.generateVictimsQueue == nil {
 		return terminalSearchResult(SearchResultNoGenerator, jobBudget.ReducedBudget(), false)
 	}
-	victimsQueue := s.generateVictimsQueue()
-	if victimsQueue == nil {
-		return terminalSearchResult(SearchResultNoGenerator, jobBudget.ReducedBudget(), false)
+	solveCtx := &SolveContext{
+		Session:              ssn,
+		ActionType:           s.actionType,
+		PartialPendingJob:    partialPendingJob,
+		RecordedVictimsJobs:  state.recordedVictimsJobs,
+		RecordedVictimsTasks: state.recordedVictimsTasks,
+		GenerateVictimsQueue: s.generateVictimsQueue,
+		FeasibleNodes:        feasibleNodeMap,
+		ProbeK:               probeK,
 	}
+	portfolio := newScenarioPortfolio(solveCtx, jobBudget)
 
-	scenarioBuilder := NewPodAccumulatedScenarioBuilder(
-		ssn, partialPendingJob, state.recordedVictimsJobs, victimsQueue, feasibleNodeMap)
-
-	enteredSearch := false
-	firstScenario := true
 	for {
 		if actionBudget.Exhausted() || jobBudget.Remaining() <= 0 {
-			return terminalSearchResult(SearchResultDeadlineExhausted, jobBudget.ReducedBudget(), enteredSearch)
+			return terminalSearchResult(
+				SearchResultDeadlineExhausted, jobBudget.ReducedBudget(), portfolio.enteredSearch,
+			)
 		}
-		var scenarioToSolve *solverscenario.ByNodeScenario
-		if firstScenario {
-			scenarioToSolve = scenarioBuilder.GetValidScenario()
-			firstScenario = false
-		} else {
-			scenarioToSolve = scenarioBuilder.GetNextScenario()
-		}
+		scenarioToSolve := portfolio.Next()
 		if actionBudget.Exhausted() || jobBudget.Remaining() <= 0 {
-			return terminalSearchResult(SearchResultDeadlineExhausted, jobBudget.ReducedBudget(), enteredSearch)
+			return terminalSearchResult(
+				SearchResultDeadlineExhausted, jobBudget.ReducedBudget(), portfolio.enteredSearch,
+			)
 		}
 		if scenarioToSolve == nil {
-			if actionBudget.Exhausted() || jobBudget.Remaining() <= 0 {
-				return terminalSearchResult(SearchResultDeadlineExhausted, jobBudget.ReducedBudget(), enteredSearch)
-			}
 			break
 		}
-		enteredSearch = true
 		scenarioSolver := newByPodSolver(feasibleNodeMap, s.solutionValidator, ssn.AllowConsolidatingReclaim(),
 			s.actionType)
 
@@ -316,7 +311,7 @@ func (s *JobSolver) solvePartialJob(
 		}
 	}
 
-	return terminalSearchResult(SearchResultGeneratorsExhausted, jobBudget.ReducedBudget(), enteredSearch)
+	return terminalSearchResult(portfolio.StopReason(), jobBudget.ReducedBudget(), portfolio.enteredSearch)
 }
 
 func searchResultEntered(result *SearchResult) bool {

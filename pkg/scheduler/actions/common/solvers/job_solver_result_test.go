@@ -123,6 +123,7 @@ func TestSolveWithResultReportsDeadlineBeforeScenarioSimulation(t *testing.T) {
 	)
 	require.NoError(t, err)
 	ssn, pendingJob := newJobSolverResultTestSession(t, 1)
+	ssn.AddScenarioGenerator("deadline-test", NewMultiNodeGangGenerator, framework.Reclaim)
 	solver := NewJobsSolver(
 		nil,
 		nil,
