@@ -126,8 +126,9 @@ Generator deadlines bound one generator, not the whole job search. When a genera
 ### Generator Abstraction
 
 ```go
-// A ScenarioGenerator proposes concrete candidate victim sets, best-first, cheaply.
-// It performs no simulation; it only decides which victim sets are worth trying.
+// A ScenarioGenerator proposes concrete candidate victim sets, best-first and
+// cheaply pre-filtered. It performs no simulation; it only decides which victim
+// sets are worth trying.
 type ScenarioGenerator interface {
     Name() string
     Next() *scenario.ByNodeScenario // nil when exhausted
@@ -138,7 +139,9 @@ A generator is built per probe from a shared solve context: partial pending job,
 
 For Phase 1, `Next()` intentionally stays simple and does not accept a deadline or context. The generator contract is that `Next()` is cheap and incremental: it may compute or return the next candidate, but it must not run simulation, scan an unbounded search space, or perform expensive blocking work before returning. The initial `NodeLocalGreedy` and `MultiNodeGang` generators must be structured around this contract. If a future generator needs expensive candidate construction, the interface must be revisited so candidate generation can receive a deadline/context or otherwise poll the search budget internally.
 
-Generators that feed accumulated scenario filters keep an additive stream contract in Phase 1: one stream may append potential victims, but it must not retract victims or restart from a different accumulated base. This preserves the assumptions used by accumulated filters and by cursor-aware inputs such as PR #1614's monotonic `AccumulatedScenarioInput` path. A future generator may need to say "start over from a different place"; that should be expressed through a richer generator result, a reset/full-scan input, or a separate stream abstraction rather than being implicit in `Next()`.
+Generators are responsible for scenario quality, not just scenario enumeration. They should use cheap necessary-condition checks before emitting a candidate, because every emitted scenario can trigger a full simulation and validator pass. Low-quality candidates waste the bounded search budget and can hide useful later generators behind avoidable simulation work.
+
+Accumulated scenario filters are the Phase 1 mechanism for these cheap validity checks. A generator that uses them must build the filter input incrementally: one accumulated filter stream may append potential victims, but it must not retract victims or restart from a different accumulated base. This preserves the assumptions used by accumulated filters and by cursor-aware inputs such as PR #1614's monotonic `AccumulatedScenarioInput` path. The monotonicity requirement applies to each accumulated-filter stream, not to every independent candidate returned by `Next()`. A generator may still emit independent candidate scenarios after deriving them from a monotonic accumulated base, as `NodeLocalGreedy` does for node-local branches. A future generator that needs to restart from a different base should express that through a richer generator result, a reset/full-scan input, or a separate stream abstraction rather than making a reset implicit in `Next()`.
 
 ### Plugin Registration and Ordering
 
@@ -230,8 +233,8 @@ Internal work-unit budgets such as victim-count, node-count, victim-by-node prod
 
 | Plugin order | Generator | Restores / covers | Width |
 | --- | --- | --- | --- |
-| 1 | `NodeLocalGreedy` | recorded victims plus one candidate node's victims, candidate nodes best-fit ordered; restores the pre-#1537 `solveOnPotentialNodes` shape | narrow |
-| 2 | `MultiNodeGang` | today's `PodAccumulatedScenarioBuilder` plus `subScenarioEmitter`, time-limited by the effective deadline while preserving #1537 gang/topology correctness | wide |
+| 1 | `NodeLocalGreedy` | builds an accumulated, filter-validated base, then emits recorded victims plus one candidate node's victims; restores the pre-#1537 `solveOnPotentialNodes` shape | narrow |
+| 2 | `MultiNodeGang` | today's `PodAccumulatedScenarioBuilder` plus `subScenarioEmitter`, using accumulated filters before emission and time-limited by the effective deadline while preserving #1537 gang/topology correctness | wide |
 | later | plugin hook | new case-specific generators | case-specific |
 
 `NodeLocalGreedy` is expected to handle the common single-pod-per-node reclaimee case and the known scale-test failure. `MultiNodeGang` remains necessary for true gangs that need several nodes freed simultaneously. A topology-specific generator may later preserve the same correctness case more directly, but #1537 regression coverage remains required either way.
@@ -271,6 +274,7 @@ A future portfolio can persist per-job generator progress across scheduling sess
 
 - Incomplete by design: may report no solution when one exists.
 - Never wrong-positive: accepted solutions are fully simulated and validator-approved.
+- Quality-gated: generators use cheap validity checks before emission so bounded time is spent mostly on plausible scenarios.
 - Gang-preserving: `MultiNodeGang` uses #1537 batches; `NodeLocalGreedy` pulls whole victim-job representatives.
 - Reduced-budget reporting: only jobs that actually received reduced budget get the user-visible message.
 
