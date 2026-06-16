@@ -59,11 +59,11 @@ spec:
         app: numa-placement-exporter
     spec:
       serviceAccountName: numa-placement-exporter
-      # Pull secret for the image registry (e.g. ghcr.io). Create it in this namespace, e.g.:
-      #   kubectl create secret docker-registry ghcr-pull -n kai-scheduler \
-      #     --docker-server=ghcr.io --docker-username=<user> --docker-password=<PAT>
-      imagePullSecrets:
-        - name: ghcr-pull
+      # If pulling from a private registry, create a pull secret in this namespace and reference it:
+      #   kubectl create secret docker-registry <pull-secret> -n kai-scheduler \
+      #     --docker-server=<registry> --docker-username=<user> --docker-password=<password>
+      # imagePullSecrets:
+      #   - name: <pull-secret>
       # The kubelet podresources socket and its parent directory are root-owned; read as root.
       securityContext:
         runAsUser: 0
@@ -76,12 +76,12 @@ spec:
         - operator: Exists
       containers:
         - name: numa-placement-exporter
-          image: ghcr.io/itsomri/kai-scheduler/numa-placement-exporter:0.0.0
+          image: <registry>/kai-scheduler/numa-placement-exporter:<tag>
           imagePullPolicy: IfNotPresent
           args:
             - --podresources-socket=/var/lib/kubelet/pod-resources/kubelet.sock
             - --sysfs-root=/host/sys
-            - --poll-interval=10s
+            - --poll-interval=1s
           env:
             - name: NODE_NAME
               valueFrom:
