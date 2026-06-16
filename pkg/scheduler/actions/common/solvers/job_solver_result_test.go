@@ -4,6 +4,7 @@
 package solvers
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -13,10 +14,12 @@ import (
 
 	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
@@ -132,6 +135,7 @@ func TestSolveWithResultReportsDeadlineWhenBudgetExhaustsDuringScenarioSearch(t 
 		nil, resource_info.NewResourceVectorMap(),
 	)
 	ssn.ClusterInfo.Nodes[node.Name] = node
+	ssn.AddScenarioGenerator("deadline-test", NewMultiNodeGangGenerator, framework.Reclaim)
 	solver := NewJobsSolver(
 		[]*node_info.NodeInfo{node},
 		nil,
@@ -151,6 +155,54 @@ func TestSolveWithResultReportsDeadlineWhenBudgetExhaustsDuringScenarioSearch(t 
 	require.Equal(t, SearchResultDeadlineExhausted, result.Reason())
 }
 
+func TestSolveWithResultRunsCompletePartialSearchForOneGeneratorBeforeNext(t *testing.T) {
+	ssn := newGeneratorTestSession(t, map[string]int{
+		"node-1": 1,
+		"node-2": 1,
+		"node-3": 1,
+	})
+	require.NoError(t, ssn.InitNodeScoringPool())
+	pendingJob := addGeneratorTestPendingJob(t, ssn, 3, 10, "team-pending")
+	setGeneratorTestMinAvailable(pendingJob, 3)
+	victimJob, victimTasks := addGeneratorTestJob(t, ssn, 3, 20, "team-victim", "node-1", "node-2", "node-3")
+	factoryCalls := []string{}
+
+	ssn.AddScenarioGenerator("first", func(ctx framework.ScenarioGeneratorContext) framework.ScenarioGenerator {
+		solveCtx := ctx.(*SolveContext)
+		factoryCalls = append(factoryCalls, fmt.Sprintf("first:%d", solveCtx.ProbeK))
+		return &portfolioTestGenerator{name: "first"}
+	}, framework.Reclaim)
+	ssn.AddScenarioGenerator("second", func(ctx framework.ScenarioGeneratorContext) framework.ScenarioGenerator {
+		solveCtx := ctx.(*SolveContext)
+		factoryCalls = append(factoryCalls, fmt.Sprintf("second:%d", solveCtx.ProbeK))
+		pendingTasks := podgroup_info.GetTasksToAllocate(
+			solveCtx.PartialPendingJob, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false,
+		)
+		sn := scenario.NewByNodeScenario(
+			ssn, solveCtx.PartialPendingJob, pendingTasks,
+			unrecordedVictimsForProbe(victimTasks, solveCtx.RecordedVictimsTasks, solveCtx.ProbeK),
+			solveCtx.RecordedVictimsJobs,
+		)
+		return &portfolioTestGenerator{name: "second", scenarios: []api.ScenarioInfo{sn}}
+	}, framework.Reclaim)
+	solver := NewJobsSolver(
+		jobSolverResultTestFeasibleNodes(ssn),
+		nil,
+		generatorTestVictimsQueueFactory(ssn, victimJob),
+		framework.Reclaim,
+		nil,
+	)
+
+	solved, statement, _, result := solver.SolveWithResult(ssn, pendingJob)
+	if statement != nil {
+		defer statement.Discard()
+	}
+
+	require.True(t, solved)
+	require.Equal(t, SearchResultSolved, result.Reason())
+	require.Equal(t, []string{"first:1", "second:1", "second:2", "second:3", "second:3"}, factoryCalls)
+}
+
 func TestSearchMaxSolvableKStopsAfterTerminalPartialProbe(t *testing.T) {
 	probes := map[int]*SearchResult{
 		1: solvedSearchResult(&solutionResult{solved: true}, false),
@@ -163,6 +215,40 @@ func TestSearchMaxSolvableKStopsAfterTerminalPartialProbe(t *testing.T) {
 
 	require.Equal(t, 0, maxSolvedK)
 	require.Equal(t, SearchResultDeadlineExhausted, result.Reason())
+}
+
+func jobSolverResultTestFeasibleNodes(ssn *framework.Session) []*node_info.NodeInfo {
+	nodes := make([]*node_info.NodeInfo, 0, len(ssn.ClusterInfo.Nodes))
+	for _, node := range ssn.ClusterInfo.Nodes {
+		nodes = append(nodes, node)
+	}
+	return nodes
+}
+
+func unrecordedVictimsForProbe(
+	victimTasks []*pod_info.PodInfo, recordedVictims []*pod_info.PodInfo, probeK int,
+) []*pod_info.PodInfo {
+	recordedByUID := map[common_info.PodID]struct{}{}
+	for _, task := range recordedVictims {
+		recordedByUID[task.UID] = struct{}{}
+	}
+
+	neededVictims := probeK - len(recordedVictims)
+	if neededVictims <= 0 {
+		return nil
+	}
+
+	selectedVictims := make([]*pod_info.PodInfo, 0, neededVictims)
+	for _, task := range victimTasks {
+		if _, alreadyRecorded := recordedByUID[task.UID]; alreadyRecorded {
+			continue
+		}
+		selectedVictims = append(selectedVictims, task)
+		if len(selectedVictims) == neededVictims {
+			return selectedVictims
+		}
+	}
+	return selectedVictims
 }
 
 func newJobSolverResultTestSession(t *testing.T, tasksCount int) (*framework.Session, *podgroup_info.PodGroupInfo) {
