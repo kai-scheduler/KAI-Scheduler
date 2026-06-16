@@ -15,12 +15,6 @@ github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERo
 github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
 github.com/NVIDIA/go-nvml v0.12.4-1 h1:WKUvqshhWSNTfm47ETRhv0A0zJyr1ncCuHiXwoTrBEc=
 github.com/NVIDIA/go-nvml v0.12.4-1/go.mod h1:8Llmj+1Rr+9VGGwZuRer5N/aCjxGuR5nPb/9ebBiIEQ=
-github.com/NVIDIA/gpu-operator v1.8.3-0.20250724212111-616690d88d86 h1:KcEKuIVSUY5XJZTzLjbpD3DRPcQTLwkX1DyzuCZHYKU=
-github.com/NVIDIA/gpu-operator v1.8.3-0.20250724212111-616690d88d86/go.mod h1:EkmCOAWVMphjgnRpbqXhpArJQrOJjbKsoHcrklnisfU=
-github.com/NVIDIA/k8s-kata-manager v0.2.3 h1:d5+gRFqU5el/fKMXhHUaPY7haj+dbHL4nDsO/q05LBo=
-github.com/NVIDIA/k8s-kata-manager v0.2.3/go.mod h1:xx5OUiMsHyKbyX0JjKHqAftvqS8vx00LFn/5EaMdtB4=
-github.com/NVIDIA/k8s-operator-libs v0.0.0-20250311214045-7d667fbaa7ac h1:zY0RHvLzhlZlRV8XZ30foz3cGpflVZTwMpegq+nVePA=
-github.com/NVIDIA/k8s-operator-libs v0.0.0-20250311214045-7d667fbaa7ac/go.mod h1:2d+9jpnO7PxsuFJg3Mt/SHmsauD80USc00zRMYba++E=
 github.com/Pallinder/go-randomdata v1.2.0 h1:DZ41wBchNRb/0GfsePLiSwb0PHZmT67XY00lCDlaYPg=
 github.com/Pallinder/go-randomdata v1.2.0/go.mod h1:yHmJgulpD2Nfrm0cR9tI/+oAgRqCQQixsA8HyRZfV9Y=
 github.com/antihax/optional v1.0.0/go.mod h1:uupD/76wgC+ih3iEmQUL+0Ugr19nfwCT1kdvxnR2qWY=
