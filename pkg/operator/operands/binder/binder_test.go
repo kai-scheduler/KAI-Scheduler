@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"testing"
 
-	nvidiav1 "github.com/NVIDIA/gpu-operator/api/nvidia/v1"
+	nvidiav1 "github.com/kai-scheduler/KAI-scheduler/third_party/nvidia/gpu-operator/api/nvidia/v1"
 	"golang.org/x/exp/maps"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
