@@ -73,7 +73,7 @@ A single annotation on the pod, resource → {NUMA node → quantity}:
 
 ```
 kai.scheduler/numa-placement-observed: |
-  {"nvidia.com/gpu":{"0":2},"cpu":{"0":8},"memory":{"0":17179869184}}
+  [{"zone":"node-0","amount":{"cpu":"50","nvidia.com/gpu":"1"}}]
 ```
 
 The `-observed` suffix distinguishes this agent's *measured* placement from the scheduler's own
