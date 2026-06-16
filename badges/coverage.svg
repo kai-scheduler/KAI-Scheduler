@@ -8,13 +8,13 @@
   </mask>
   <g mask="url(#a)">
     <path fill="#555" d="M0 0h61v20H0z"/>
-    <path fill="#yellow" d="M61 0h45v20H61z"/>
+    <path fill="#orange" d="M61 0h45v20H61z"/>
     <path fill="url(#b)" d="M0 0h106v20H0z"/>
   </g>
   <g fill="#fff" text-anchor="middle" font-family="DejaVu Sans,Verdana,Geneva,sans-serif" font-size="11">
     <text x="30.5" y="15" fill="#010101" fill-opacity=".3">coverage</text>
     <text x="30.5" y="14">coverage</text>
-    <text x="82.5" y="15" fill="#010101" fill-opacity=".3">50.0%</text>
-    <text x="82.5" y="14">50.0%</text>
+    <text x="82.5" y="15" fill="#010101" fill-opacity=".3">49.9%</text>
+    <text x="82.5" y="14">49.9%</text>
   </g>
 </svg>
