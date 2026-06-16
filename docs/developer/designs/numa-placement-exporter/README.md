@@ -1,17 +1,17 @@
-# Per-Node NUMA Placement Agent
+# Per-Node NUMA Placement Exporter (NPE)
 
 ## Summary
 
-An optional per-node DaemonSet that reads the kubelet's **podresources API**, derives the
+The **NUMA Placement Exporter (NPE)** is an optional per-node DaemonSet that reads the kubelet's **podresources API**, derives the
 actual NUMA-node placement of each pod's exclusive resources (GPUs, CPUs, NICs, memory), and
-publishes that attribution back onto the pod (as an annotation). When the agent is deployed,
+publishes that attribution back onto the pod (as an annotation). When the exporter is deployed,
 the [NUMA scheduler plugin](../numa-topology/README.md) consumes this *observed* placement
 instead of *predicting* it — making its per-zone accounting, and in particular its
 reclaim/preemption simulation, accurate.
 
-This agent is **part of the NUMA plugin v1**, and the scheduler is built to consume its input from
+This exporter is **part of the NUMA plugin v1**, and the scheduler is built to consume its input from
 day one — but **deploying it is optional**: the plugin works without it on a predicted-placement
-fallback, so the agent is an enabler of reclaim/preempt action rather than a hard dependency (the KAI operator
+fallback, so the exporter is an enabler of reclaim/preempt action rather than a hard dependency (the KAI operator
 deploys it automatically when the `numa` plugin is enabled).
 
 ## Motivation
@@ -37,14 +37,14 @@ allocated. Surfacing it removes the prediction entirely.
 
 - Publish, per pod, the actual NUMA-node assignment of its topology-aligned resources.
 - Let the NUMA scheduler plugin consume observed placement when available, and fall back to
-  prediction when not — so the agent is purely additive.
+  prediction when not — so the exporter is purely additive.
 - Keep the scheduler's consumption cheap (no new informer, no new CRD if avoidable).
 
 ## Non-Goals
 
 - Replacing the NRT exporter. NRT (aggregate per-zone availability) is still required; this
-  agent is complementary (per-pod attribution).
-- Influencing the kubelet's placement. The agent is read-only with respect to allocation; it
+  exporter is complementary (per-pod attribution).
+- Influencing the kubelet's placement. The exporter is read-only with respect to allocation; it
   observes and reports, it does not hint or pin.
 - Supporting pods the kubelet does not NUMA-align (non-Guaranteed). Those have no exclusive
   placement to report.
@@ -83,21 +83,21 @@ one node), so it is not specific to `single-numa-node`.
 ### Lifecycle and freshness
 
 Placement is **stable**: the kubelet pins a pod's exclusive resources for the pod's lifetime,
-so once written the annotation does not change until the pod ends. The agent therefore writes
+so once written the annotation does not change until the pod ends. The exporter therefore writes
 once per pod (shortly after the pod starts running) and on the rare re-allocation. There is a
 small initial lag between a pod starting and the annotation appearing — during that window the
-plugin falls back to prediction for that pod, exactly as if the agent were absent.
+plugin falls back to prediction for that pod, exactly as if the exporter were absent.
 
 ### Drift reconciliation against the API server
 
 The fast path is driven by the podresources `List` and an in-memory cache of the last value
 written per pod, so a pod is patched only when its computed placement changes. That cache
-assumes the agent's last successful patch still reflects what is actually on the pod object —
+assumes the exporter's last successful patch still reflects what is actually on the pod object —
 an assumption that breaks if the annotation is removed or mutated externally.
 
 To catch the out-of-band case, a second, slower pass reconciles against the API server. On its
 own interval it lists the pods assigned to this node (`spec.nodeName` field selector), compares
-each pod's **live** annotation value to the value the agent computes from podresources, and
+each pod's **live** annotation value to the value the exporter computes from podresources, and
 patches the ones that have **drifted** (missing, stale, or externally modified).
 
 The interval is configurable via `--drift-resync-interval`, **defaulting to `60s`**, and is
@@ -107,9 +107,9 @@ subset, so steady-state cost is one list per interval and zero writes once place
 
 ### RBAC and security
 
-- **Agent → kubelet podresources:** read-only access to the podresources socket via a hostPath
+- **Exporter → kubelet podresources:** read-only access to the podresources socket via a hostPath
   mount. This is the same surface NRT exporters use.
-- **Agent → API server:** `patch` on pods (annotations only), scoped to the annotation key, plus
+- **Exporter → API server:** `patch` on pods (annotations only), scoped to the annotation key, plus
   `list` on pods for the drift-reconciliation pass (scoped to this node via field selector).
 - **Scheduler:** no new permissions — it already lists/watches pods.
 
@@ -117,17 +117,17 @@ subset, so steady-state cost is one list per interval and zero writes once place
 
 - **NRT** remains the source for aggregate per-zone *availability* and Topology Manager
   policy/scope.
-- **This agent** supplies per-pod *attribution*, which the plugin layers on top to turn
+- **This exporter** supplies per-pod *attribution*, which the plugin layers on top to turn
   predicted occupancy into observed occupancy.
-- With the agent present, the plugin's prediction-based reconstruction (and its drift/accuracy
+- With the exporter present, the plugin's prediction-based reconstruction (and its drift/accuracy
   caveats) is bypassed for annotated pods; the fingerprint freshness signal is still useful for
   the aggregate `Available` numbers but is no longer load-bearing for reclaim accuracy.
 
 ## Limitations and Caveats
 
-- **Initial-observation lag:** a just-started pod is unannotated until the agent observes it;
+- **Initial-observation lag:** a just-started pod is unannotated until the exporter observes it;
   the plugin falls back to prediction meanwhile.
-- **Agent must be deployed on every relevant node**, or coverage is partial (mixed
+- **Exporter must be deployed on every relevant node**, or coverage is partial (mixed
   observed/predicted placement — still correct, just less accurate on un-covered nodes).
 - **Annotation write load:** bounded by writing only for aligned pods and only on change;
   placement stability keeps this to roughly one write per pod lifetime.
@@ -136,7 +136,7 @@ subset, so steady-state cost is one list per interval and zero writes once place
 
 Under **Dynamic Resource Allocation** ([KEP-3063][kep3063], GA-track) the scheduler itself
 allocates devices and records them in `ResourceClaim` status, and DRA drivers can expose NUMA
-node as a device attribute — so the scheduler knows real placement with no scraping. This agent
+node as a device attribute — so the scheduler knows real placement with no scraping. This exporter
 is therefore a stopgap for the legacy device-plugin + Topology Manager world (and for CPU/memory
 NUMA, which DRA does not yet manage — [KEP-3695][kep3695] tracks bridging podresources/DRA). As
 workloads move to DRA, the need for it fades.

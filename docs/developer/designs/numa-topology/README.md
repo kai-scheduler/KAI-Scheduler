@@ -118,7 +118,7 @@ usable.
 
 ## Design Details
 
-The work is staged into two phases (plus a v3 idea, and an opt-in, agent-trusted cross-cycle
+The work is staged into two phases (plus a v3 idea, and an opt-in, exporter-trusted cross-cycle
 staleness correction, [Appendix A](#appendix-a-cross-cycle-staleness-compensation)):
 
 - **v1 — correctness (this section).** A **filter** that predicts the kubelet's admission verdict
@@ -126,11 +126,11 @@ staleness correction, [Appendix A](#appendix-a-cross-cycle-staleness-compensatio
   plus **within-cycle per-zone reservation** so pods placed together in one cycle stay consistent.
   The aim is to prevent the wasted cycles and stranded capacity from *Background* — pods
   land where they can actually run. `best-effort` and `none` are pass-through.
-- **Observed placement (v1).** A per-node agent publishes each pod's *actual* NUMA placement; the
+- **Observed placement (v1).** A per-node exporter publishes each pod's *actual* NUMA placement; the
   scheduler consumes it for exact per-zone accounting (and accurate reclaim) when available, and
-  **falls back to its own prediction when the agent is absent or lagging**. The agent ships with
+  **falls back to its own prediction when the exporter is absent or lagging**. The exporter ships with
   v1, but deploying it is optional — the scheduler degrades gracefully without it. See *Observed
-  placement: the per-node agent*.
+  placement: the per-node exporter*.
 - **v2 — optimization & scoring** ([Optimization & scoring](#v2-optimization--scoring)). Adds
   *performance*: ranks feasible nodes (least fragmentation / fewest NUMA nodes) and steers
   `best-effort` workloads toward nodes where alignment will actually succeed. It reuses v1's
@@ -180,7 +180,7 @@ NUMA state lives on the existing snapshot objects:
 A running pod's placement is rebuilt each cycle from its durable record (precedence
 **observed > predicted**; see *Observed placement* and *Scheduler-predicted placement record*),
 parsed onto `PodInfo` at snapshot build exactly as `GPUGroups` is. A running pod with no record 
-(for example, if the NUMA agent is missing or stuck) has an empty placement and is simply **not credited on
+(for example, if the NUMA exporter is missing or stuck) has an empty placement and is simply **not credited on
 virtual eviction**. Its consumption is already netted out of NRT `Available` (the occupancy ledger
 is seeded from `Available`), so the only effect is that evicting it frees no zone in the ledger —
 which matters *only* to a NUMA-sensitive preemptor on that exact zone; non-NUMA-sensitive preemption
@@ -432,29 +432,29 @@ that survives across cycles and scheduler restarts. **This record is part of v1.
   the eviction-crediting needs.
 
 **Precedence: observed > predicted.** This record is the scheduler's *prediction*, not ground
-truth. When the per-node placement agent (next) has published a pod's *observed* placement, that
-supersedes this predicted one; when the agent is absent or hasn't reported a pod yet, the
+truth. When the per-node placement exporter (next) has published a pod's *observed* placement, that
+supersedes this predicted one; when the exporter is absent or hasn't reported a pod yet, the
 predicted record is the best available placement. When **neither** exists, the pod has no
 `NUMAPlacement` and is not accounted on virtual eviction — v1 never *guesses* a zone.
 
-### Observed placement: the per-node agent
+### Observed placement: the per-node exporter
 
 Prediction is only as good as the scheduler's evaluator matching the kubelet's actual choice. To
 make per-zone accounting (and especially reclaim) *exact*, v1 also consumes the **observed**
-placement produced by a per-node agent — a DaemonSet that reads the kubelet **podresources API**,
+placement produced by a per-node exporter — a DaemonSet that reads the kubelet **podresources API**,
 derives each pod's actual per-NUMA-zone resource placement, and publishes it as a pod annotation
 (`kai.scheduler/numa-placement-observed`). When present, the plugin uses observed placement
 directly: occupancy is exact, victim evictions credit the *real* zone, and reclaim simulation is
-accurate. When absent or not-yet-reported (agent undeployed, lagging, or pod just bound), the
+accurate. When absent or not-yet-reported (exporter undeployed, lagging, or pod just bound), the
 plugin falls back to the predicted record — and when that is also absent, the pod is simply not
-accounted on virtual eviction (no guessing). So the agent is **purely additive**: it improves
+accounted on virtual eviction (no guessing). So the exporter is **purely additive**: it improves
 accuracy without being a hard dependency, and the scheduler is built to consume its input from day
 one. **Scope:** the *scheduler-side* consumption of the observed annotation is part of v1; the
-per-node agent's own implementation and delivery are tracked separately (not in this PR).
+per-node exporter's own implementation and delivery are tracked separately (not in this PR).
 
-When the agent is deployed, the operator auto-enables observed-based reconstruction (see *Operator
+When the exporter is deployed, the operator auto-enables observed-based reconstruction (see *Operator
 integration*); without it, the scheduler runs on the prediction fallback. Full design:
-[Per-Node NUMA Placement Agent](../numa-placement-agent/README.md).
+[Per-Node NUMA Placement Exporter](../numa-placement-exporter/README.md).
 
 ### Policy evaluator seam
 
@@ -535,7 +535,7 @@ regardless; Appendix A is the in-plugin fallback if the assumption proves insuff
   so the victim's zone comes from its placement record (observed > predicted). Reclaim/preemption
   runs on those zones and can occasionally waste an eviction when the pending pod needs multiple
   per-zone-scarce resources co-located (GPU-bound pods with abundant per-zone CPU are largely
-  immune). With the [per-node placement agent](../numa-placement-agent/README.md) deployed, victim
+  immune). With the [per-node placement exporter](../numa-placement-exporter/README.md) deployed, victim
   zones are *observed* and reclaim is accurate; with only the predicted record the worst case is a
   wasted eviction and a bounce, never a loop. A victim with **no** placement record (neither
   observed nor predicted) is **not credited** on virtual eviction — so a NUMA-sensitive preemptor
@@ -570,7 +570,7 @@ regardless; Appendix A is the in-plugin fallback if the assumption proves insuff
   NRT whose `Available` lags recent binds and assert the documented behavior — in-cycle
   reservation prevents over-commit within a cycle, the scheduler does not place pods the
   (simulated) kubelet would reject, and it converges once NRT catches up; with Appendix A enabled
-  (the agent present), that reconstruction from observed placements corrects the stale view
+  (the exporter present), that reconstruction from observed placements corrects the stale view
   immediately rather than hot-looping.
 - **NUMA-aware preemption, reclaim, and consolidation** (integration tests and e2e): verify these
   actions respect per-zone constraints — evicting/reclaiming a victim actually frees a *usable
@@ -584,9 +584,9 @@ regardless; Appendix A is the in-plugin fallback if the assumption proves insuff
   the Topology Manager policy/scope attributes), simulates the kubelet-like per-pod NUMA allocation
   and rejection for bound pods, reflects that consumption in NRT `Available` after a configurable
   (jittered) update delay, and exposes each pod's observed placement for the
-  [placement agent](../numa-placement-agent/README.md) to discover. This lets the plugin's
+  [placement exporter](../numa-placement-exporter/README.md) to discover. This lets the plugin's
   prediction/`TopologyAffinityError` handling, the reconstruction/staleness path (Appendix A), and
-  the agent be tested without real NUMA hardware. Requirements:
+  the exporter be tested without real NUMA hardware. Requirements:
   [Fake NRT Simulation Mechanism](../fake-nrt/README.md).
 
 ## v2: Optimization & scoring
@@ -656,7 +656,7 @@ Two properties make it attractive:
 scheduler cannot provide a *kubelet-enforced* guarantee; it offers a strong placement preference
 (place only where alignment is achievable, plus reservation) and the kubelet best-effort path
 delivers it. A true "align or don't run" guarantee would additionally need the
-[placement agent](../numa-placement-agent/README.md) to observe actual placement and re-place on a
+[placement exporter](../numa-placement-exporter/README.md) to observe actual placement and re-place on a
 miss (verify-and-heal).
 
 This also lines up with where Kubernetes is heading — **DRA**, where workloads express device and
@@ -667,10 +667,10 @@ model.
 
 **Status: part of the design, opt-in via a boolean plugin flag, auto-configured by the operator.**
 NRT `Available` is republished by the exporter and **lags across cycles**. When the per-node
-[placement agent](#observed-placement-the-per-node-agent) is deployed, the scheduler can ignore the
+[placement exporter](#observed-placement-the-per-node-exporter) is deployed, the scheduler can ignore the
 laggy `Available` entirely and **reconstruct** each zone's free capacity from data that is always
-fresh. The operator enables this automatically when the agent is present (overridable); without the
-agent the scheduler trusts NRT `Available` and relies on the operational mitigation in *Deployment
+fresh. The operator enables this automatically when the exporter is present (overridable); without the
+exporter the scheduler trusts NRT `Available` and relies on the operational mitigation in *Deployment
 guidance*. Correctness never depends on this — the kubelet is the backstop — but on packed or
 single-node clusters the stale window is hit on nearly every bind, so the correction matters in
 practice.
@@ -700,26 +700,26 @@ Available[zone] = Allocatable[zone] − Σ placement[zone]   over every pod the 
 ```
 
 where each pod's placement is resolved by the precedence already used for eviction crediting —
-**observed (agent) > predicted (BindRequest / annotation)**. The evaluator, predicate and merge are
+**observed (exporter) > predicted (BindRequest / annotation)**. The evaluator, predicate and merge are
 unchanged; they consume whatever `Available` the topology carries. This reads from three sources,
 **none of which is the laggy NRT `Available`**:
 
 1. **`Allocatable`** — static per-zone capacity; never changes within a node's lifetime.
 2. **The set of pods on the node** — from the scheduler's own snapshot, which sees binds *and
    deletions* immediately, long before the NRT exporter republishes.
-3. **Each pod's zone** — the agent's **observed** placement (ground truth, read from the kubelet
+3. **Each pod's zone** — the exporter's **observed** placement (ground truth, read from the kubelet
    podresources API), with the scheduler's own **predicted** placement as a fallback for the brief
-   window between a bind and the agent's first report.
+   window between a bind and the exporter's first report.
 
 ### Why anchor on *observed*, not predictions
 
 Reconstructing from *predicted* placements alone was rejected earlier: predicted zones often
 disagree with the kubelet's actual choice, and the error would scale with the whole pod count. The
-agent removes that objection — observed placement is the kubelet's real per-zone assignment, so the
-reconstruction is **exact for every pod the agent has reported**. Prediction survives only as a
-fallback for a just-bound pod the agent has not yet observed (seconds), for that one pod, and is the
+exporter removes that objection — observed placement is the kubelet's real per-zone assignment, so the
+reconstruction is **exact for every pod the exporter has reported**. Prediction survives only as a
+fallback for a just-bound pod the exporter has not yet observed (seconds), for that one pod, and is the
 scheduler's own prediction — internally consistent (the pod was pipelined onto the zone it
-predicts). The agent annotates **all** pods with exclusive NUMA allocations — KAI-scheduled *and
+predicts). The exporter annotates **all** pods with exclusive NUMA allocations — KAI-scheduled *and
 foreign* — so the subtraction is complete for `cpu`/`memory` (every exclusive consumer is
 accounted), not only for GPUs.
 
@@ -740,20 +740,20 @@ is no staleness *detection* step, because the laggy source is not used at all.
 
 ### Operator integration
 
-The flag is **auto-enabled when the placement agent is deployed**, and can be explicitly overridden.
-The common path is zero-touch: deploy the agent (the operator does this when the `numa` plugin is
+The flag is **auto-enabled when the placement exporter is deployed**, and can be explicitly overridden.
+The common path is zero-touch: deploy the exporter (the operator does this when the `numa` plugin is
 enabled — see *Operator integration*) and the scheduler switches to reconstruction automatically;
-remove the agent (or override the flag) and it reverts to trusting NRT `Available`.
+remove the exporter (or override the flag) and it reverts to trusting NRT `Available`.
 
 ### Caveats
 
-- **Accuracy depends on a healthy agent.** With the flag on but the agent absent or badly lagging,
+- **Accuracy depends on a healthy exporter.** With the flag on but the exporter absent or badly lagging,
   reconstruction degrades to *predicted-only* — the very mode this avoids. The operator only enables
-  the flag alongside the agent; the plugin should additionally treat a pod running well beyond the
-  agent's report interval with no observed annotation as an agent-health signal (log/metric), so the
+  the flag alongside the exporter; the plugin should additionally treat a pod running well beyond the
+  exporter's report interval with no observed annotation as an exporter-health signal (log/metric), so the
   degradation is visible rather than silent.
 - **A pod with neither observed nor predicted placement** is omitted from the subtraction (never
-  guess a zone) → a transient per-zone over-report on its zone. With the agent covering all pods this
+  guess a zone) → a transient per-zone over-report on its zone. With the exporter covering all pods this
   is limited to the bind→observe window of KAI's own pods, where the predicted record covers it.
 - **`Allocatable` already nets out reserved capacity** (kube/system-reserved), so
   `Allocatable − Σ exclusive` is the correct free-for-alignment figure; no separate reserved
@@ -761,9 +761,9 @@ remove the agent (or override the flag) and it reverts to trusting NRT `Availabl
 
 ## Operator integration (intent)
 
-The KAI operator should make the placement agent zero-touch: **detect whether the `numa` plugin
-is enabled and, if so, deploy the placement agent automatically** (unless an operator has
-explicitly disabled it). The plugin works without the agent (predicted placement), so this is a
+The KAI operator should make the placement exporter zero-touch: **detect whether the `numa` plugin
+is enabled and, if so, deploy the placement exporter automatically** (unless an operator has
+explicitly disabled it). The plugin works without the exporter (predicted placement), so this is a
 convenience/accuracy default, not a hard dependency. Design details (how detection works, the
 disable switch, lifecycle) are deferred.
 
