@@ -14,13 +14,11 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 )
 
-type resourceAmounts = map[v1.ResourceName]resource.Quantity
-
 // numaEvaluator decides whether a set of requests can be NUMA-aligned on a node and returns the
 // expected per-zone placement. Each request is one alignment unit — the whole pod under pod scope,
 // one container under container scope.
 type numaEvaluator interface {
-	evaluate(topo *node_info.NumaTopology, ignoreList sets.Set[v1.ResourceName], requests []resourceAmounts) (placement pod_info.NUMAPlacement, admit bool)
+	evaluate(topo *node_info.NumaTopology, ignoreList sets.Set[v1.ResourceName], requests []v1.ResourceList) (placement pod_info.NUMAPlacement, admit bool)
 }
 
 func evaluatorFor(policy node_info.TopologyManagerPolicy) numaEvaluator {
@@ -38,9 +36,9 @@ func evaluatorFor(policy node_info.TopologyManagerPolicy) numaEvaluator {
 // that fits). Requests may land on different zones (container scope), but none may span zones.
 type singleNUMAEvaluator struct{}
 
-func (singleNUMAEvaluator) evaluate(topo *node_info.NumaTopology, ignoreList sets.Set[v1.ResourceName], requests []resourceAmounts) (pod_info.NUMAPlacement, bool) {
+func (singleNUMAEvaluator) evaluate(topo *node_info.NumaTopology, ignoreList sets.Set[v1.ResourceName], requests []v1.ResourceList) (pod_info.NUMAPlacement, bool) {
 	available := cloneAvailable(topo.Zones)
-	allocation := map[int]resourceAmounts{}
+	allocation := map[int]v1.ResourceList{}
 
 	for _, request := range requests {
 		req := extractNumaRequest(request, topo.Resources, ignoreList)
@@ -66,10 +64,10 @@ func (singleNUMAEvaluator) evaluate(topo *node_info.NumaTopology, ignoreList set
 // only feasible mask (multi-zone) non-preferred → restricted rejects, matching kubelet behavior.
 type restrictedEvaluator struct{}
 
-func (restrictedEvaluator) evaluate(topo *node_info.NumaTopology, ignoreList sets.Set[v1.ResourceName], requests []resourceAmounts) (pod_info.NUMAPlacement, bool) {
+func (restrictedEvaluator) evaluate(topo *node_info.NumaTopology, ignoreList sets.Set[v1.ResourceName], requests []v1.ResourceList) (pod_info.NUMAPlacement, bool) {
 	available := cloneAvailable(topo.Zones)
 	allocatable := cloneAllocatable(topo.Zones)
-	allocation := map[int]resourceAmounts{}
+	allocation := map[int]v1.ResourceList{}
 
 	for _, request := range requests {
 		req := extractNumaRequest(request, topo.Resources, ignoreList)
@@ -89,7 +87,7 @@ func (restrictedEvaluator) evaluate(topo *node_info.NumaTopology, ignoreList set
 // pod_info.NUMAPlacement, ordered by zone index for a deterministic placement (so the eviction
 // dedup's comparison is stable). Index-keyed: the internal scheduler representation. Translation
 // to the durable zone id happens only at the persistence boundary (BindRequest / annotation).
-func placementFromAllocation(allocation map[int]resourceAmounts) pod_info.NUMAPlacement {
+func placementFromAllocation(allocation map[int]v1.ResourceList) pod_info.NUMAPlacement {
 	indices := make([]int, 0, len(allocation))
 	for idx := range allocation {
 		indices = append(indices, idx)
@@ -100,7 +98,7 @@ func placementFromAllocation(allocation map[int]resourceAmounts) pod_info.NUMAPl
 	for _, idx := range indices {
 		placement = append(placement, pod_info.ZonePlacement{
 			ZoneIndex: idx,
-			Amount:    v1.ResourceList(allocation[idx]),
+			Amount:    allocation[idx],
 		})
 	}
 	return placement
@@ -112,7 +110,7 @@ func placementFromAllocation(allocation map[int]resourceAmounts) pod_info.NUMAPl
 // allocatable is used for min-width (preferred) computation; scratch (available) is used for
 // feasibility. This matches the kubelet device manager, which uses m.allDevices for
 // minAffinitySize and the available set for the per-mask device count check.
-func preferredCommonMask(available, allocatable []resourceAmounts, req resourceAmounts) ([]int, bool) {
+func preferredCommonMask(available, allocatable []v1.ResourceList, req v1.ResourceList) ([]int, bool) {
 	width := -1
 	for r, qty := range req {
 		w, ok := minWidthForResource(allocatable, r, qty)
@@ -134,7 +132,7 @@ func preferredCommonMask(available, allocatable []resourceAmounts, req resourceA
 // minWidthForResource is the fewest zones whose largest Available values sum to at least qty,
 // i.e. the resource's preferred (minimal) NUMA-node count. Reports false when even all zones
 // together cannot satisfy qty.
-func minWidthForResource(scratch []resourceAmounts, r v1.ResourceName, qty resource.Quantity) (int, bool) {
+func minWidthForResource(scratch []v1.ResourceList, r v1.ResourceName, qty resource.Quantity) (int, bool) {
 	vals := make([]resource.Quantity, len(scratch))
 	total := resource.Quantity{}
 	for i := range scratch {
@@ -159,7 +157,7 @@ func minWidthForResource(scratch []resourceAmounts, r v1.ResourceName, qty resou
 
 // lowestSatisfyingMask returns the lexicographically-lowest width-sized zone mask whose summed
 // Available satisfies every requested resource.
-func lowestSatisfyingMask(available []resourceAmounts, req resourceAmounts, width int) ([]int, bool) {
+func lowestSatisfyingMask(available []v1.ResourceList, req v1.ResourceList, width int) ([]int, bool) {
 	var found []int
 	combinations(len(available), width, func(mask []int) bool {
 		if maskSatisfies(available, req, mask) {
@@ -171,7 +169,7 @@ func lowestSatisfyingMask(available []resourceAmounts, req resourceAmounts, widt
 	return found, found != nil
 }
 
-func maskSatisfies(available []resourceAmounts, req resourceAmounts, mask []int) bool {
+func maskSatisfies(available []v1.ResourceList, req v1.ResourceList, mask []int) bool {
 	for r, qty := range req {
 		sum := resource.Quantity{}
 		for _, i := range mask {
@@ -188,8 +186,8 @@ func maskSatisfies(available []resourceAmounts, req resourceAmounts, mask []int)
 // producing the per-zone amounts to allocate. The kubelet does not fix the per-zone split at
 // admission, so any split drawing each resource entirely from the mask is acceptable; this is
 // internal accounting only.
-func splitAcrossMask(scratch []resourceAmounts, mask []int, req resourceAmounts) map[int]resourceAmounts {
-	split := map[int]resourceAmounts{}
+func splitAcrossMask(scratch []v1.ResourceList, mask []int, req v1.ResourceList) map[int]v1.ResourceList {
+	split := map[int]v1.ResourceList{}
 	for r, qty := range req {
 		remaining := qty.DeepCopy()
 		for _, i := range mask {
@@ -204,7 +202,7 @@ func splitAcrossMask(scratch []resourceAmounts, mask []int, req resourceAmounts)
 				continue
 			}
 			if split[i] == nil {
-				split[i] = resourceAmounts{}
+				split[i] = v1.ResourceList{}
 			}
 			cur := amountOf(split[i], r)
 			cur.Add(take)
@@ -246,8 +244,8 @@ func combinations(n, k int, yield func([]int) bool) {
 // extractNumaRequest keeps only the resources that constrain zone selection: those reported per-zone
 // (aware) and not ignored, dropping zero-quantity entries. ignoreList is applied here rather
 // than at ingestion because it is plugin configuration, unknown to the topology builder.
-func extractNumaRequest(request resourceAmounts, aware, ignoreList sets.Set[v1.ResourceName]) resourceAmounts {
-	out := resourceAmounts{}
+func extractNumaRequest(request v1.ResourceList, aware, ignoreList sets.Set[v1.ResourceName]) v1.ResourceList {
+	out := v1.ResourceList{}
 	for r, qty := range request {
 		if qty.Sign() == 0 || !aware.Has(r) || ignoreList.Has(r) {
 			continue
@@ -257,10 +255,10 @@ func extractNumaRequest(request resourceAmounts, aware, ignoreList sets.Set[v1.R
 	return out
 }
 
-func cloneAvailable(zones []*node_info.NumaZone) []resourceAmounts {
-	available := make([]resourceAmounts, len(zones))
+func cloneAvailable(zones []*node_info.NumaZone) []v1.ResourceList {
+	available := make([]v1.ResourceList, len(zones))
 	for i, zone := range zones {
-		amounts := make(resourceAmounts, len(zone.Available))
+		amounts := make(v1.ResourceList, len(zone.Available))
 		for r, qty := range zone.Available {
 			amounts[r] = qty.DeepCopy()
 		}
@@ -269,10 +267,10 @@ func cloneAvailable(zones []*node_info.NumaZone) []resourceAmounts {
 	return available
 }
 
-func cloneAllocatable(zones []*node_info.NumaZone) []resourceAmounts {
-	allocatable := make([]resourceAmounts, len(zones))
+func cloneAllocatable(zones []*node_info.NumaZone) []v1.ResourceList {
+	allocatable := make([]v1.ResourceList, len(zones))
 	for i, zone := range zones {
-		amounts := make(resourceAmounts, len(zone.Allocatable))
+		amounts := make(v1.ResourceList, len(zone.Allocatable))
 		for r, qty := range zone.Allocatable {
 			amounts[r] = qty.DeepCopy()
 		}
@@ -281,7 +279,7 @@ func cloneAllocatable(zones []*node_info.NumaZone) []resourceAmounts {
 	return allocatable
 }
 
-func lowestZoneFitting(scratch []resourceAmounts, req resourceAmounts) (int, bool) {
+func lowestZoneFitting(scratch []v1.ResourceList, req v1.ResourceList) (int, bool) {
 	for i := range scratch {
 		fits := true
 		for r, qty := range req {
@@ -297,7 +295,7 @@ func lowestZoneFitting(scratch []resourceAmounts, req resourceAmounts) (int, boo
 	return 0, false
 }
 
-func subtract(amounts, delta resourceAmounts) {
+func subtract(amounts, delta v1.ResourceList) {
 	for r, qty := range delta {
 		v := amountOf(amounts, r)
 		v.Sub(qty)
@@ -305,7 +303,7 @@ func subtract(amounts, delta resourceAmounts) {
 	}
 }
 
-func add(amounts, delta resourceAmounts) {
+func add(amounts, delta v1.ResourceList) {
 	for r, qty := range delta {
 		v := amountOf(amounts, r)
 		v.Add(qty)
@@ -313,10 +311,10 @@ func add(amounts, delta resourceAmounts) {
 	}
 }
 
-func addAllocation(allocation map[int]resourceAmounts, idx int, amt resourceAmounts) {
+func addAllocation(allocation map[int]v1.ResourceList, idx int, amt v1.ResourceList) {
 	cur := allocation[idx]
 	if cur == nil {
-		cur = resourceAmounts{}
+		cur = v1.ResourceList{}
 		allocation[idx] = cur
 	}
 	for r, qty := range amt {
@@ -326,7 +324,7 @@ func addAllocation(allocation map[int]resourceAmounts, idx int, amt resourceAmou
 	}
 }
 
-func amountOf(amounts resourceAmounts, r v1.ResourceName) resource.Quantity {
+func amountOf(amounts v1.ResourceList, r v1.ResourceName) resource.Quantity {
 	if qty, ok := amounts[r]; ok {
 		return qty.DeepCopy()
 	}

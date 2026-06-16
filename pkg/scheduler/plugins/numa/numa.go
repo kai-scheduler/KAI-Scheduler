@@ -145,7 +145,7 @@ func numaAllocate(topo *node_info.NumaTopology, placement pod_info.NUMAPlacement
 			log.InfraLogger.Errorf("numa plugin: zone index <%d> out of range", zone.ZoneIndex)
 			continue
 		}
-		subtract(topo.Zones[zone.ZoneIndex].Available, resourceAmounts(zone.Amount))
+		subtract(topo.Zones[zone.ZoneIndex].Available, zone.Amount)
 	}
 }
 
@@ -155,7 +155,7 @@ func numaDeallocate(topo *node_info.NumaTopology, placement pod_info.NUMAPlaceme
 			log.InfraLogger.Errorf("numa plugin: zone index <%d> out of range", zone.ZoneIndex)
 			continue
 		}
-		add(topo.Zones[zone.ZoneIndex].Available, resourceAmounts(zone.Amount))
+		add(topo.Zones[zone.ZoneIndex].Available, zone.Amount)
 	}
 }
 
