@@ -63,6 +63,7 @@ require (
 	k8s.io/kube-proxy v0.35.4
 	k8s.io/kube-scheduler v0.35.4
 	k8s.io/kubectl v0.35.4
+	k8s.io/kubelet v0.35.4
 	k8s.io/kubernetes v1.35.4
 	k8s.io/metrics v0.35.4
 	k8s.io/mount-utils v0.35.4
@@ -193,7 +194,6 @@ require (
 	k8s.io/cri-api v0.35.4 // indirect
 	k8s.io/csi-translation-lib v0.35.4 // indirect
 	k8s.io/kube-openapi v0.0.0-20250910181357-589584f1c912 // indirect
-	k8s.io/kubelet v0.35.4 // indirect
 	knative.dev/networking v0.0.0-20260120131110-a7cdca238a0d // indirect
 	sigs.k8s.io/gateway-api v1.4.0 // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect

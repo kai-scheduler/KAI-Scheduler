@@ -1,0 +1,112 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+#
+# Standalone manifest for the per-node NUMA placement exporter (POC).
+# Deploy manually after building and pushing the `numa-placement-exporter` image:
+#
+#   make numa-placement-exporter                              # builds the binary + image
+#   # override registry/tag as needed, e.g.:
+#   make numa-placement-exporter DOCKER_REPO_BASE=<your-registry> VERSION=<tag>
+#   docker push <image>
+#   kubectl apply -f deployments/numa-placement-exporter/numa-placement-exporter.yaml
+#
+# Set the `image:` below to the tag you built/pushed.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: numa-placement-exporter
+  namespace: kai-scheduler
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kai-numa-placement-exporter
+rules:
+  # Patch the observed NUMA placement annotation onto pods. get is needed for the patch round-trip;
+  # list is needed for the drift-reconciliation pass against the API server.
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kai-numa-placement-exporter
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kai-numa-placement-exporter
+subjects:
+  - kind: ServiceAccount
+    name: numa-placement-exporter
+    namespace: kai-scheduler
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: numa-placement-exporter
+  namespace: kai-scheduler
+  labels:
+    app: numa-placement-exporter
+spec:
+  selector:
+    matchLabels:
+      app: numa-placement-exporter
+  template:
+    metadata:
+      labels:
+        app: numa-placement-exporter
+    spec:
+      serviceAccountName: numa-placement-exporter
+      # If pulling from a private registry, create a pull secret in this namespace and reference it:
+      #   kubectl create secret docker-registry <pull-secret> -n kai-scheduler \
+      #     --docker-server=<registry> --docker-username=<user> --docker-password=<password>
+      # imagePullSecrets:
+      #   - name: <pull-secret>
+      # The kubelet podresources socket and its parent directory are root-owned; read as root.
+      securityContext:
+        runAsUser: 0
+        runAsNonRoot: false
+      # Restrict to the nodes you want observed. For the POC this targets GPU nodes; adjust or
+      # remove as needed.
+      nodeSelector:
+        kubernetes.io/os: linux
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: numa-placement-exporter
+          image: <registry>/kai-scheduler/numa-placement-exporter:<tag>
+          imagePullPolicy: IfNotPresent
+          args:
+            - --podresources-socket=/var/lib/kubelet/pod-resources/kubelet.sock
+            - --sysfs-root=/host/sys
+            - --poll-interval=1s
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          volumeMounts:
+            - name: podresources
+              mountPath: /var/lib/kubelet/pod-resources
+              readOnly: true
+            - name: sysfs
+              mountPath: /host/sys
+              readOnly: true
+      volumes:
+        - name: podresources
+          hostPath:
+            path: /var/lib/kubelet/pod-resources
+            type: Directory
+        - name: sysfs
+          hostPath:
+            path: /sys
+            type: Directory

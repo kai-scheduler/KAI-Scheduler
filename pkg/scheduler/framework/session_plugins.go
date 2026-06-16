@@ -110,6 +110,21 @@ func (ssn *Session) AddBindRequestMutateFn(fn api.BindRequestMutateFn) {
 	ssn.BindRequestMutateFns = append(ssn.BindRequestMutateFns, fn)
 }
 
+func (ssn *Session) AddNumaPlacementFn(fn api.NumaPlacementFn) {
+	if ssn.NumaPlacementFn != nil {
+		log.InfraLogger.Errorf("NumaPlacementFn already registered; ignoring duplicate registration")
+		return
+	}
+	ssn.NumaPlacementFn = fn
+}
+
+func (ssn *Session) GetNumaPlacement(task *pod_info.PodInfo, node *node_info.NodeInfo) pod_info.NUMAPlacement {
+	if ssn.NumaPlacementFn == nil {
+		return nil
+	}
+	return ssn.NumaPlacementFn(task, node)
+}
+
 func (ssn *Session) AddPreJobAllocationFn(fn api.PreJobAllocationFn) {
 	ssn.PreJobAllocationFns = append(ssn.PreJobAllocationFns, fn)
 }

@@ -92,6 +92,8 @@ type PodInfo struct {
 
 	GPUGroups []string
 
+	NUMAPlacement NUMAPlacement
+
 	NodeName        string
 	Status          pod_status.PodStatus
 	IsVirtualStatus bool
@@ -294,6 +296,7 @@ func (pi *PodInfo) Clone() *PodInfo {
 		AcceptedResourceVector: acceptedResourceVectorClone,
 		VectorMap:              pi.VectorMap,
 		GPUGroups:              pi.GPUGroups,
+		NUMAPlacement:          pi.NUMAPlacement.Clone(),
 		ResourceClaimInfo:      pi.ResourceClaimInfo.Clone(),
 		ResourceRequestType:    pi.ResourceRequestType,
 		ResourceReceivedType:   pi.ResourceReceivedType,
