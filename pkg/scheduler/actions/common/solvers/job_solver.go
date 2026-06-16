@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
@@ -84,12 +85,22 @@ func (s *JobSolver) Solve(
 func (s *JobSolver) SolveWithResult(
 	ssn *framework.Session, pendingJob *podgroup_info.PodGroupInfo,
 ) (solved bool, statement *framework.Statement, victimTaskNames []string, searchResult *SearchResult) {
+	defer func() {
+		if searchResult != nil {
+			metrics.IncScenarioSearchJobs(
+				s.actionType, searchResult.scenarioSearchMetricResult(), searchResult.ReducedBudget(),
+			)
+		}
+	}()
+
 	originalNumActiveTasks := pendingJob.GetNumActiveUsedTasks()
 
 	tasksToAllocate := podgroup_info.GetTasksToAllocate(pendingJob, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false)
 	n := len(tasksToAllocate)
 	if n == 0 {
-		return false, nil, nil, terminalSearchResult(SearchResultGeneratorsExhausted, false)
+		searchResult := terminalSearchResult(SearchResultGeneratorsExhausted, false)
+		searchResult.metricResult = string(SearchResultNotAttempted)
+		return false, nil, nil, searchResult
 	}
 
 	jobBudget := s.actionBudget.BeginJob()
@@ -313,25 +324,58 @@ func (s *JobSolver) solvePartialJob(
 
 	for {
 		if jobBudget.Exhausted() {
+			s.observeActionBudgetExhausted()
 			return terminalSearchResult(SearchResultDeadlineExhausted, jobBudget.ReducedBudget())
 		}
 		scenarioToSolve := portfolio.Next()
 		if scenarioToSolve == nil {
 			break
 		}
-		scenarioSolver := newByPodSolver(feasibleNodeMap, s.solutionValidator, ssn.AllowConsolidatingReclaim(),
+		generatorName := portfolio.CurrentGeneratorName()
+		validatorRejected := false
+		scenarioSolver := newByPodSolver(feasibleNodeMap, s.solutionValidatorWithMetrics(generatorName, &validatorRejected),
+			ssn.AllowConsolidatingReclaim(),
 			s.actionType)
 
 		log.InfraLogger.V(5).Infof("Trying to solve scenario: %s", scenarioToSolve)
 		metrics.IncScenarioSimulatedByAction()
+		metrics.IncScenarioSearchScenario(s.actionType, generatorName, "simulated")
 
 		result := scenarioSolver.solve(ssn, scenarioToSolve)
+		attemptResult := scenarioSearchResultUnsolved
+		if validatorRejected {
+			attemptResult = scenarioSearchResultValidatorRejected
+		}
 		if result.solved {
+			portfolio.ObserveCurrentAttempt(string(SearchResultSolved))
 			return solvedSearchResult(result, jobBudget.ReducedBudget())
 		}
+		portfolio.ObserveCurrentAttempt(attemptResult)
 	}
 
 	return terminalSearchResult(portfolio.StopReason(), jobBudget.ReducedBudget())
+}
+
+func (s *JobSolver) observeActionBudgetExhausted() {
+	if s.actionBudget != nil && s.actionBudget.Exhausted() {
+		metrics.IncScenarioSearchActionBudgetExhausted(s.actionType)
+	}
+}
+
+func (s *JobSolver) solutionValidatorWithMetrics(generator string, rejected *bool) SolutionValidator {
+	if s.solutionValidator == nil {
+		return nil
+	}
+	return func(scenario api.ScenarioInfo) bool {
+		valid := s.solutionValidator(scenario)
+		if !valid {
+			if rejected != nil {
+				*rejected = true
+			}
+			metrics.IncScenarioSearchScenario(s.actionType, generator, "validator_rejected")
+		}
+		return valid
+	}
 }
 
 func shouldStopSearch(result *SearchResult) bool {

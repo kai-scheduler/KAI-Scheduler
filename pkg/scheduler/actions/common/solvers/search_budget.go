@@ -12,6 +12,7 @@ import (
 	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
 )
 
 const unlimitedRemaining = time.Duration(1<<63 - 1)
@@ -79,6 +80,11 @@ func newActionSearchBudgetWithClock(
 	generatorLimits, err := parseGeneratorLimits(budgets)
 	if err != nil {
 		return nil, err
+	}
+	metrics.SetScenarioSearchActionBudget(action, actionLimit)
+	metrics.SetScenarioSearchJobBudget(jobLimit)
+	for generator, limit := range generatorLimits {
+		metrics.SetScenarioSearchGeneratorBudget(generator, limit)
 	}
 
 	return &ActionSearchBudget{
