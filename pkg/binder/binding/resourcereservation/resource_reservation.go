@@ -5,6 +5,8 @@ package resourcereservation
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -16,7 +18,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/rand"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -36,12 +37,11 @@ type Interface interface {
 }
 
 const (
-	resourceReservation            = "resource-reservation"
-	gpuReservationPodPrefix        = "gpu-reservation"
-	gpuIndexAnnotationName         = "run.ai/reserve_for_gpu_index"
-	numberOfGPUsToReserve          = 1
-	reservationPodRandomCharacters = 5
-	unknownGpuIndicator            = "-1"
+	resourceReservation     = "resource-reservation"
+	gpuReservationPodPrefix = "gpu-reservation"
+	gpuIndexAnnotationName  = "run.ai/reserve_for_gpu_index"
+	numberOfGPUsToReserve   = 1
+	unknownGpuIndicator     = "-1"
 )
 
 type service struct {
@@ -419,7 +419,7 @@ func (rsc *service) createGPUReservationPod(ctx context.Context, nodeName, gpuGr
 		return nil, fmt.Errorf("cluster is scaling up, could not create reservation pod")
 	}
 
-	podName := fmt.Sprintf("%s-%s-%s", gpuReservationPodPrefix, nodeName, rand.String(reservationPodRandomCharacters))
+	podName := reservationPodName(nodeName, gpuGroup)
 
 	// Build resource requirements starting with GPU resources
 	resources := v1.ResourceRequirements{
@@ -453,6 +453,15 @@ func (rsc *service) createGPUReservationPod(ctx context.Context, nodeName, gpuGr
 
 	pod, err := rsc.createResourceReservationPod(nodeName, gpuGroup, podName, resources)
 	if err != nil {
+		// The reservation pod name is deterministic per (node, gpu-group). AlreadyExists
+		// means another actor (a concurrent bind, a retry, or another binder replica)
+		// already created the reservation pod for this gpu-group, so reuse it rather than
+		// creating a duplicate on a different physical GPU.
+		if apierrors.IsAlreadyExists(err) {
+			logger.Info("GPU reservation pod already exists for gpu group, reusing",
+				"nodeName", nodeName, "namespace", rsc.namespace, "name", podName, "gpuGroup", gpuGroup)
+			return pod, nil
+		}
 		logger.Error(err, "Failed to create GPU reservation pod on node",
 			"nodeName", nodeName, "namespace", rsc.namespace, "name", podName)
 		return nil, err
@@ -592,4 +601,13 @@ func (rsc *service) isScalingUp(ctx context.Context) bool {
 
 func IsGPUReservationPod(pod *v1.Pod) bool {
 	return strings.HasPrefix(pod.Name, gpuReservationPodPrefix)
+}
+
+// reservationPodName derives a deterministic reservation pod name from the node and
+// gpu-group, so concurrent or retried creates for the same gpu-group collide on a
+// single API-server object (AlreadyExists) instead of producing duplicate reservation
+// pods on different physical GPUs.
+func reservationPodName(nodeName, gpuGroup string) string {
+	hash := sha256.Sum256([]byte(nodeName + "/" + gpuGroup))
+	return fmt.Sprintf("%s-%s", gpuReservationPodPrefix, hex.EncodeToString(hash[:8]))
 }
