@@ -450,7 +450,7 @@ func TestSeedObservedPlacements(t *testing.T) {
 			bindrequest_info.NewKeyFromPod(fromBindRequest.Pod): &bindrequest_info.BindRequestInfo{
 				BindRequest: &schedulingv1alpha2.BindRequest{
 					Spec: schedulingv1alpha2.BindRequestSpec{
-						SelectedNUMAZones: []schedulingv1alpha2.NUMAZonePlacement{observedZone("node-0", "2")},
+						PredictedNUMAZones: []schedulingv1alpha2.NUMAZonePlacement{observedZone("node-0", "2")},
 					},
 				},
 			},
