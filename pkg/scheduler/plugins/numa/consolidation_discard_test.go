@@ -25,7 +25,9 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 )
 
-// scenarioFixture wires up the debug-preempt scenario: one node, two NUMA single-numa-node zones
+// These tests verify bookkeeping and rollback/discard correctness in complicated simulations.
+
+// scenarioFixture wires up the following scenario: one node, two NUMA single-numa-node zones
 // (4 cpu allocatable, 1 cpu available — each already holds a 3-cpu Guaranteed victim), and one
 // pending 3-cpu Guaranteed preemptor that fits neither zone until a victim is evicted.
 type scenarioFixture struct {
@@ -100,11 +102,7 @@ func (f *scenarioFixture) zone(i int) int64 {
 	return q.Value()
 }
 
-// runScenario replays by_pod_solver.solve's core through the real common-action functions:
-// EvictAllPreemptees evicts both victims, then AllocateJob pipelines the preemptor and
-// re-pipelines the victim jobs — each routing through FittingNode + allocateTaskToNode (the
-// NUMA stamp) + statement.Pipeline (the eviction dedup). It stops short of unwinding so the
-// caller can choose Discard vs Rollback+Discard.
+// runScenario simulates the scenario by evicting the victims and allocating the preemptor.
 func (f *scenarioFixture) runScenario(t *testing.T) {
 	t.Helper()
 	require.NoError(t, common.EvictAllPreemptees(f.ssn, f.allVictims, f.preemptorJob, f.stmt, framework.Preempt))
@@ -126,20 +124,8 @@ func (f *scenarioFixture) runScenario(t *testing.T) {
 	require.Equal(t, []int{1}, f.victim0.NUMAPlacement.ZoneIndices(), "victim0 re-homes to the free zone 1, not its stale zone 0")
 }
 
-// TestConsolidationDiscardRestoresLedger guards against a post-Discard negative NUMA ledger,
-// reproduced through the real solver allocation path. (Before the fix it left zone 0 at -2.)
-//
-// Scenario (debug-preempt-like): one node, two single-numa-node zones (4 cpu allocatable each).
-// Two running 3-cpu Guaranteed victims, one per zone (so each zone has 1 cpu available). One
-// pending 3-cpu Guaranteed preemptor. by_pod_solver.solve evicts both victims (crediting both
-// zones to 4), pipelines the preemptor onto zone 0 (charging it to 1), then re-pipelines the
-// victims: victim0 re-homes to zone 1, victim1 fails to fit.
-//
-// On unwind, statement.unpipeline restores task.NodeName to its pre-pipeline value *before*
-// firing DeallocateFunc. For the preemptor that pre-pipeline NodeName is "" (it was pending), so
-// the numa plugin's deallocate looks up ssn.Nodes[""], finds nil, and silently drops the credit —
-// the forward zone-0 charge of the preemptor is never reversed. Undoing victim0's evict then
-// re-charges its original zone-0 placement, driving zone 0's available cpu negative.
+// TestConsolidationDiscardRestoresLedger validates NUMA resource correctness after discard/rollback, verifying
+// that the resources are restored correctly.
 func TestConsolidationDiscardRestoresLedger(t *testing.T) {
 	t.Run("Discard", func(t *testing.T) {
 		f := newScenarioFixture(t)
