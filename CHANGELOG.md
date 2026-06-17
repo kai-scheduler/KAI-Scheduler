@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Skill to capture and run snapshots
 - Added `kaiConfigDeployer.enabled` Helm value (default `true`) to allow disabling the post-install/post-upgrade hook that applies the kai-config CR, for managing the CR outside of the chart.
 - Added `defaultShard.enabled` Helm value (default `true`) to allow installing KAI without deploying the chart-managed default `SchedulingShard` CR.
+- Added design presantation hosting on Github Pages [siormeir](https://github.com/kai-scheduler/KAI-Scheduler/pull/1691)
 
 ### Changed
 - Scoped admission `runtimeClassName` injection to GPU fraction pods only; whole-GPU pods are no longer mutated. `admission.gpuPodRuntimeClassName` is deprecated in favor of `admission.gpuFractionRuntimeClassName`. Reservation pod `runtimeClassName` now defaults to empty. [#1543](https://github.com/kai-scheduler/KAI-Scheduler/issues/1543) [davidLif](https://github.com/davidLif)
