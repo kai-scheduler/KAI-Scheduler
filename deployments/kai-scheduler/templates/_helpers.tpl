@@ -243,4 +243,37 @@ spec:
     externalPrometheusUrl: {{ .Values.prometheus.externalPrometheusUrl | quote }}
     {{- end }}
   {{- end }}
+
+  numaPlacementExporter:
+    service:
+      {{- if not (kindIs "invalid" .Values.numaPlacementExporter.enabled) }}
+      enabled: {{ .Values.numaPlacementExporter.enabled }}
+      {{- end }}
+      image:
+        name: {{ .Values.numaPlacementExporter.image.name }}
+        repository: {{ .Values.global.registry }}
+        tag: {{ .Values.numaPlacementExporter.image.tag | default .Values.global.tag | default .Chart.AppVersion }}
+        pullPolicy: {{ .Values.numaPlacementExporter.image.pullPolicy | default .Values.global.imagePullPolicy }}
+      {{- if .Values.numaPlacementExporter.resources }}
+      resources:
+        {{- toYaml .Values.numaPlacementExporter.resources | nindent 8 }}
+      {{- end }}
+      {{- if .Values.numaPlacementExporter.affinity }}
+      affinity:
+        {{- toYaml .Values.numaPlacementExporter.affinity | nindent 8 }}
+      {{- end }}
+    {{- if .Values.numaPlacementExporter.nodeSelector }}
+    nodeSelector:
+      {{- toYaml .Values.numaPlacementExporter.nodeSelector | nindent 6 }}
+    {{- end }}
+    {{- if .Values.numaPlacementExporter.tolerations }}
+    tolerations:
+      {{- toYaml .Values.numaPlacementExporter.tolerations | nindent 6 }}
+    {{- end }}
+    {{- if .Values.numaPlacementExporter.pollInterval }}
+    pollInterval: {{ .Values.numaPlacementExporter.pollInterval | quote }}
+    {{- end }}
+    {{- if .Values.numaPlacementExporter.driftResyncInterval }}
+    driftResyncInterval: {{ .Values.numaPlacementExporter.driftResyncInterval | quote }}
+    {{- end }}
 {{- end -}}
