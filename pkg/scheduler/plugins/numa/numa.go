@@ -89,7 +89,7 @@ func (pp *numaPlugin) evaluate(task *pod_info.PodInfo, node *node_info.NodeInfo)
 	// Ordinary init containers run serially before the app containers and free their resources
 	// first, so each must be alignable on its own but is not accumulated into the placement.
 	for _, unit := range serial {
-		if _, ok := eval.evaluate(topo, pp.ignoreList, []resourceAmounts{unit}); !ok {
+		if _, ok := eval.evaluate(topo, pp.ignoreList, []v1.ResourceList{unit}); !ok {
 			return nil, false
 		}
 	}

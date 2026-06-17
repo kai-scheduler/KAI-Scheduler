@@ -416,14 +416,12 @@ spec:
               selectedNUMAZones:
                 description: |-
                   SelectedNUMAZones is the scheduler's predicted NUMA placement of the pod's resources on the
-                  selected node, set only on nodes whose kubelet Topology Manager policy rejects on topology
-                  grounds (single-numa-node / restricted). The binder records it as a pod annotation; the
-                  scheduler reads it back to keep per-zone accounting stable across cycles. Empty when the pod
-                  is not NUMA-constrained.
+                  selected node.
                 items:
                   description: |-
-                    NUMAZonePlacement is the predicted placement of a pod's resources on one NUMA zone: the durable
-                    NUMA-node zone id and the amount of each resource placed there.
+                    NUMAZonePlacement is a pod's durable per-zone placement record: the NRT zone id and the
+                    per-resource amounts placed there. Serialized to kai.scheduler/numa-placement-observed and
+                    kai.scheduler/numa-placement-predicted.
                   properties:
                     amount:
                       additionalProperties:
@@ -432,13 +430,14 @@ spec:
                         - type: string
                         pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                         x-kubernetes-int-or-string: true
-                      description: Amount is the per-resource quantity placed on this
-                        zone.
+                      description: ResourceList is a set of (resource name, quantity)
+                        pairs.
                       type: object
                     zone:
-                      description: Zone is the NUMA-node zone id (the NodeResourceTopology
-                        Zone.Name).
                       type: string
+                  required:
+                  - amount
+                  - zone
                   type: object
                 type: array
               selectedNode:
