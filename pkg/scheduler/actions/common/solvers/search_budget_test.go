@@ -33,12 +33,12 @@ func TestActionSearchBudgetDefaults(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, framework.Reclaim, budget.action)
-	require.Equal(t, 5*time.Second, budget.actionLimit)
-	require.Equal(t, 250*time.Millisecond, budget.jobLimit)
+	require.Equal(t, 20*time.Second, budget.actionLimit)
+	require.Equal(t, 10*time.Second, budget.jobLimit)
 	require.Equal(t, time.Duration(0), budget.minJobSearch)
-	require.Equal(t, 50*time.Millisecond, budget.generatorLimits[scenariosearch.GeneratorNodeLocalGreedy])
-	require.Equal(t, 250*time.Millisecond, budget.generatorLimits[scenariosearch.GeneratorMultiNodeGang])
-	require.Equal(t, 250*time.Millisecond, budget.generatorLimits[scenariosearch.ActionDefault])
+	require.Equal(t, 5*time.Second, budget.generatorLimits[scenariosearch.GeneratorNodeLocalGreedy])
+	require.Equal(t, 5*time.Second, budget.generatorLimits[scenariosearch.GeneratorMultiNodeGang])
+	require.Equal(t, 5*time.Second, budget.generatorLimits[scenariosearch.ActionDefault])
 }
 
 func TestActionSearchBudgetParsesDurationStrings(t *testing.T) {

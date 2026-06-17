@@ -600,12 +600,12 @@ tiers:
 				"config.yaml": `actions: allocate,consolidation,reclaim,preempt,stalegangeviction
 scenarioSearchBudgets:
   maxActionSearchDuration:
-    default: 5s
+    default: 20s
     reclaim: 3s
   maxGeneratorSearchDuration:
-    MultiNodeGang: 250ms
+    MultiNodeGang: 5s
     NodeLocalGreedy: 75ms
-    default: 250ms
+    default: 5s
   maxJobSearchDuration: 500ms
   minJobSearchDuration: 50ms
 tiers:
