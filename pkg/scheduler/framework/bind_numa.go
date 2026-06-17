@@ -10,10 +10,8 @@ import (
 )
 
 // numaPlacementToZones translates a task's internal, index-based NUMAPlacement into the durable,
-// zone-id-based form carried on the BindRequest. This is the persistence boundary for the write
-// direction: the scheduler reasons in zone indices in-cycle, and only here — where the per-cycle
-// node topology that defines the index↔id mapping is in scope — does it resolve indices to the
-// stable NUMA-node zone ids. Returns nil when the task has no placement or the node has no topology.
+// zone-id-based form carried on the BindRequest. The order of Zones in the NRT CRD is not guaranteed.
+// Returns nil when the task has no placement or the node has no topology.
 func numaPlacementToZones(pod *pod_info.PodInfo, node *node_info.NodeInfo) []schedulingv1alpha2.NUMAZonePlacement {
 	if pod == nil || len(pod.NUMAPlacement) == 0 || node == nil || node.NumaTopology == nil {
 		return nil
