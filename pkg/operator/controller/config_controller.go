@@ -41,6 +41,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/deployable"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/known_types"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/node_scale_adjuster"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/numa_placement_exporter"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/pod_group_controller"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/pod_grouper"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/prometheus"
@@ -57,6 +58,7 @@ var ConfigReconcilerOperands = []operands.Operand{
 	&admission.Admission{},
 	&prometheus.Prometheus{},
 	&scheduler.SchedulerForConfig{},
+	&numa_placement_exporter.NumaPlacementExporter{},
 }
 
 // ConfigReconciler reconciles a Config object
@@ -160,6 +162,8 @@ func (r *ConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if checkForClusterPolicy(mgr) {
 		builder = builder.Watches(&nvidiav1.ClusterPolicy{}, handler.EnqueueRequestsFromMapFunc(enqueueWatched))
 	}
+
+	builder = builder.Watches(&kaiv1.SchedulingShard{}, handler.EnqueueRequestsFromMapFunc(enqueueWatched))
 
 	for _, collectable := range known_types.KAIConfigRegisteredCollectible {
 		builder = collectable.InitWithBuilder(builder)

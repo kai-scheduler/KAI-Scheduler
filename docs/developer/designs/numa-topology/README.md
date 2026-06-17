@@ -118,8 +118,8 @@ usable.
 
 ## Design Details
 
-The work is staged into two phases (plus a v3 idea, and an opt-in, exporter-trusted cross-cycle
-staleness correction, [Appendix A](#appendix-a-cross-cycle-staleness-compensation)):
+The work is staged into two phases (plus a v3 idea, and a default-on cross-cycle staleness correction
+— exact with the exporter, predicted-record fallback without it, [Appendix A](#appendix-a-cross-cycle-staleness-compensation)):
 
 - **v1 — correctness (this section).** A **filter** that predicts the kubelet's admission verdict
   for the two policies that *reject* on topology grounds (`single-numa-node` and `restricted`),
@@ -452,8 +452,10 @@ accuracy without being a hard dependency, and the scheduler is built to consume 
 one. **Scope:** the *scheduler-side* consumption of the observed annotation is part of v1; the
 per-node exporter's own implementation and delivery are tracked separately (not in this PR).
 
-When the exporter is deployed, the operator auto-enables observed-based reconstruction (see *Operator
-integration*); without it, the scheduler runs on the prediction fallback. Full design:
+Cross-cycle reconstruction from these placements is **on by default** (Appendix A); the exporter makes
+it *exact*, and without the exporter it falls back to the prediction record. The operator deploys the
+exporter automatically when the `numa` plugin is enabled in a shard — see *Operator integration* and
+the [Operator Deployment design](./operator-deployment.md). Full exporter design:
 [Per-Node NUMA Placement Exporter](../numa-placement-exporter/README.md).
 
 ### Policy evaluator seam
@@ -665,15 +667,16 @@ model.
 
 ## Appendix A: cross-cycle staleness compensation
 
-**Status: part of the design, opt-in via a boolean plugin flag, auto-configured by the operator.**
-NRT `Available` is republished by the exporter and **lags across cycles**. When the per-node
-[placement exporter](#observed-placement-the-per-node-exporter) is deployed, the scheduler can ignore the
-laggy `Available` entirely and **reconstruct** each zone's free capacity from data that is always
-fresh. The operator enables this automatically when the exporter is present (overridable); without the
-exporter the scheduler trusts NRT `Available` and relies on the operational mitigation in *Deployment
-guidance*. Correctness never depends on this — the kubelet is the backstop — but on packed or
-single-node clusters the stale window is hit on nearly every bind, so the correction matters in
-practice.
+**Status: part of the design, on by default via a boolean plugin flag (`reconstructAvailable`,
+overridable per shard).** NRT `Available` is republished by the exporter and **lags across cycles**.
+The scheduler therefore ignores the laggy `Available` by default and **reconstructs** each zone's free
+capacity from data that is always fresh (the snapshot's pods + their placement records). The per-node
+[placement exporter](#observed-placement-the-per-node-exporter) makes this reconstruction *exact*
+(observed placements); without it the plugin falls back to predicted placement records, and an admin
+can pin the flag off (`reconstructAvailable: "false"`) to trust NRT `Available` and rely on the
+operational mitigation in *Deployment guidance* instead. Correctness never depends on this — the
+kubelet is the backstop — but on packed or single-node clusters the stale window is hit on nearly every
+bind, so the correction matters in practice.
 
 ### The problem
 
@@ -692,8 +695,8 @@ During any such lag NRT `Available` is stale in **both** directions:
 ### The mechanism: reconstruct `Available` from `Allocatable` minus known placements
 
 The plugin already separates the two roles of per-zone data — `Allocatable` (static capacity, drives
-preferred width) and `Available` (free space, drives feasibility). A boolean flag changes only the
-**source of `Available`**:
+preferred width) and `Available` (free space, drives feasibility). A boolean flag
+(`reconstructAvailable`, default `true`) changes only the **source of `Available`**:
 
 ```
 Available[zone] = Allocatable[zone] − Σ placement[zone]   over every pod the scheduler sees on the node
@@ -740,10 +743,12 @@ is no staleness *detection* step, because the laggy source is not used at all.
 
 ### Operator integration
 
-The flag is **auto-enabled when the placement exporter is deployed**, and can be explicitly overridden.
-The common path is zero-touch: deploy the exporter (the operator does this when the `numa` plugin is
-enabled — see *Operator integration*) and the scheduler switches to reconstruction automatically;
-remove the exporter (or override the flag) and it reverts to trusting NRT `Available`.
+The flag is **on by default in the plugin** — reconstruction does not wait on the exporter; it uses
+observed placements when the exporter is present and predicted placement records otherwise. The
+operator independently deploys the exporter when the `numa` plugin is enabled in a shard (making
+reconstruction *exact*), and an admin can pin the flag off per shard to revert to trusting NRT
+`Available`. Detailed mechanics — the exporter operand, its shard-enablement trigger, and the override
+— are in the [Operator Deployment design](./operator-deployment.md).
 
 ### Caveats
 
@@ -763,13 +768,15 @@ remove the exporter (or override the flag) and it reverts to trusting NRT `Avail
   `Allocatable − Σ exclusive` is the correct free-for-alignment figure; no separate reserved
   handling is needed.
 
-## Operator integration (intent)
+## Operator integration
 
-The KAI operator should make the placement exporter zero-touch: **detect whether the `numa` plugin
-is enabled and, if so, deploy the placement exporter automatically** (unless an operator has
-explicitly disabled it). The plugin works without the exporter (predicted placement), so this is a
-convenience/accuracy default, not a hard dependency. Design details (how detection works, the
-disable switch, lifecycle) are deferred.
+The KAI operator makes the placement exporter zero-touch: it **deploys the exporter DaemonSet when the
+`numa` plugin is enabled in at least one `SchedulingShard`**, with a tri-state `Config` override
+(auto / force-on / force-off). The plugin works without the exporter (predicted placement), so this is
+a convenience/accuracy default, not a hard dependency; cross-cycle reconstruction (Appendix A) is on by
+default regardless. The exporter image ships through the standard CI build like every other service.
+Full mechanics — the operand, the shard-enablement detection, the override, RBAC, and lifecycle — are
+in the [Operator Deployment design](./operator-deployment.md).
 
 [tm]: https://kubernetes.io/docs/tasks/administer-cluster/topology-manager/
 [tm-none]: https://kubernetes.io/docs/tasks/administer-cluster/topology-manager/#policy-none

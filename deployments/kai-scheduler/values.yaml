@@ -157,6 +157,21 @@ scheduler:
 defaultShard:
   enabled: true
 
+numaPlacementExporter:
+  image:
+    name: numa-placement-exporter
+    pullPolicy: IfNotPresent
+    # tag: ""  # Optional: Override global.tag or Chart.AppVersion
+  # nodeSelector targets the DaemonSet at specific nodes (e.g. GPU/NUMA nodes). The global
+  # nodeSelector is intentionally NOT applied to this DaemonSet.
+  nodeSelector: {}
+  # tolerations let the DaemonSet run on tainted worker nodes (merged with global.daemonsetsTolerations).
+  tolerations: []
+  affinity: {}
+  resources: {}
+  # pollInterval: 1s
+  # driftResyncInterval: 60s
+
 queuecontroller:
   enabled: true
   image:

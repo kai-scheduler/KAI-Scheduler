@@ -24,11 +24,11 @@ func cpuMap(q string) map[v1.ResourceName]resource.Quantity {
 }
 
 func TestNewReconstructAvailableFlag(t *testing.T) {
-	off := New(framework.PluginArguments{}).(*numaPlugin)
-	assert.False(t, off.reconstructAvailable, "defaults to trusting NRT Available")
+	on := New(framework.PluginArguments{}).(*numaPlugin)
+	assert.True(t, on.reconstructAvailable, "defaults to reconstructing Available from placements")
 
-	on := New(framework.PluginArguments{reconstructAvailableArg: "true"}).(*numaPlugin)
-	assert.True(t, on.reconstructAvailable)
+	off := New(framework.PluginArguments{reconstructAvailableArg: "false"}).(*numaPlugin)
+	assert.False(t, off.reconstructAvailable)
 }
 
 func TestReconstructNodeAvailable(t *testing.T) {

@@ -31,7 +31,9 @@ type numaPlugin struct {
 	ignoreList sets.Set[v1.ResourceName]
 	// reconstructAvailable, when set, ignores the NRT-reported per-zone Available and recomputes it
 	// as Allocatable minus the placements of the pods consuming the node (see reconstructNodeAvailable).
-	// The operator sets it when the placement agent is deployed; default false trusts NRT Available.
+	// Defaults true: NRT Available lags across cycles, so reconstruction from the fresh snapshot is the
+	// safer default. Set false to trust NRT Available (e.g. when the placement exporter is absent and
+	// predicted-only reconstruction is not wanted).
 	reconstructAvailable bool
 }
 
@@ -41,9 +43,9 @@ func New(arguments framework.PluginArguments) framework.Plugin {
 		log.InfraLogger.V(4).Infof("numa plugin: ignoring resources in ignoreList: %v", ignoreList)
 	}
 
-	reconstructAvailable, err := arguments.GetBool(reconstructAvailableArg, false)
+	reconstructAvailable, err := arguments.GetBool(reconstructAvailableArg, true)
 	if err != nil {
-		log.InfraLogger.Warningf("numa plugin: invalid %s argument, defaulting to false: %v", reconstructAvailableArg, err)
+		log.InfraLogger.Warningf("numa plugin: invalid %s argument, defaulting to true: %v", reconstructAvailableArg, err)
 	}
 	if reconstructAvailable {
 		log.InfraLogger.V(4).Infof("numa plugin: reconstructing per-zone Available from pod placements (NRT Available ignored)")
