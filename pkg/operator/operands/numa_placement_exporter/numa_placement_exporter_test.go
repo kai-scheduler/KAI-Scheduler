@@ -131,4 +131,31 @@ var _ = Describe("NumaPlacementExporter DesiredState", func() {
 		}
 		Expect(envNames).To(ContainElement("NODE_NAME"))
 	})
+
+	It("is idempotent across reconciles (no duplicate volumes/mounts)", func(ctx context.Context) {
+		cfg.Spec.NumaPlacementExporter.Service.Enabled = ptr.To(true)
+		c := fakeClient()
+		operand := &NumaPlacementExporter{}
+
+		first, err := operand.DesiredState(ctx, c, cfg)
+		Expect(err).To(BeNil())
+		for _, o := range first {
+			Expect(c.Create(ctx, o)).To(Succeed())
+		}
+
+		// Second reconcile builds from the now-existing object; appending would duplicate.
+		second, err := operand.DesiredState(ctx, c, cfg)
+		Expect(err).To(BeNil())
+
+		var ds *appsv1.DaemonSet
+		for _, o := range second {
+			if d, ok := o.(*appsv1.DaemonSet); ok {
+				ds = d
+			}
+		}
+		Expect(ds).ToNot(BeNil())
+		Expect(ds.Spec.Template.Spec.Volumes).To(HaveLen(2))
+		Expect(ds.Spec.Template.Spec.Containers[0].VolumeMounts).To(HaveLen(2))
+		Expect(ds.Spec.Template.Spec.Containers[0].Env).To(HaveLen(1))
+	})
 })

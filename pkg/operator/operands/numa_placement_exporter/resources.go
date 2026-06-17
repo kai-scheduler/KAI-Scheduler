@@ -42,27 +42,27 @@ func (e *NumaPlacementExporter) daemonSetForKAIConfig(
 
 	container := &ds.Spec.Template.Spec.Containers[0]
 	container.Args = buildArgsList(config)
-	container.Env = append(container.Env, v1.EnvVar{
+	container.Env = []v1.EnvVar{{
 		Name:      "NODE_NAME",
 		ValueFrom: &v1.EnvVarSource{FieldRef: &v1.ObjectFieldSelector{FieldPath: "spec.nodeName"}},
-	})
+	}}
 	// The kubelet podresources socket and its parent directory are root-owned; read as root.
 	container.SecurityContext = &v1.SecurityContext{
 		RunAsUser:    ptr.To(int64(0)),
 		RunAsNonRoot: ptr.To(false),
 	}
-	container.VolumeMounts = append(container.VolumeMounts,
-		v1.VolumeMount{Name: "podresources", MountPath: podResourcesDir, ReadOnly: true},
-		v1.VolumeMount{Name: "sysfs", MountPath: sysfsMountPath, ReadOnly: true},
-	)
+	container.VolumeMounts = []v1.VolumeMount{
+		{Name: "podresources", MountPath: podResourcesDir, ReadOnly: true},
+		{Name: "sysfs", MountPath: sysfsMountPath, ReadOnly: true},
+	}
 
 	hostPathDir := v1.HostPathDirectory
-	ds.Spec.Template.Spec.Volumes = append(ds.Spec.Template.Spec.Volumes,
-		v1.Volume{Name: "podresources", VolumeSource: v1.VolumeSource{
+	ds.Spec.Template.Spec.Volumes = []v1.Volume{
+		{Name: "podresources", VolumeSource: v1.VolumeSource{
 			HostPath: &v1.HostPathVolumeSource{Path: podResourcesDir, Type: &hostPathDir}}},
-		v1.Volume{Name: "sysfs", VolumeSource: v1.VolumeSource{
+		{Name: "sysfs", VolumeSource: v1.VolumeSource{
 			HostPath: &v1.HostPathVolumeSource{Path: sysfsHostPath, Type: &hostPathDir}}},
-	)
+	}
 
 	return []client.Object{ds}, nil
 }
