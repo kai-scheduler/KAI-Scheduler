@@ -94,8 +94,8 @@ func (in *BindRequestSpec) DeepCopyInto(out *BindRequestSpec) {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
-	if in.SelectedNUMAZones != nil {
-		in, out := &in.SelectedNUMAZones, &out.SelectedNUMAZones
+	if in.PredictedNUMAZones != nil {
+		in, out := &in.PredictedNUMAZones, &out.PredictedNUMAZones
 		*out = make([]NUMAZonePlacement, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])

@@ -53,7 +53,7 @@ func bindRequestZones(ssn *framework.Session, pod *v1.Pod) []schedulingv1alpha2.
 	if bindRequest == nil {
 		return nil
 	}
-	return bindRequest.BindRequest.Spec.SelectedNUMAZones
+	return bindRequest.BindRequest.Spec.PredictedNUMAZones
 }
 
 // resolvePlacementRecord returns a pod's persisted (zone-id-based) NUMA placement, with precedence

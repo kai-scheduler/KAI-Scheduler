@@ -132,8 +132,8 @@ func (b *Binder) patchBindAnnotations(ctx context.Context, pod *v1.Pod, bindRequ
 		constants.ReceivedResourceType: bindRequest.Spec.ReceivedResourceType,
 	}
 
-	if len(bindRequest.Spec.SelectedNUMAZones) > 0 {
-		placement, err := json.Marshal(bindRequest.Spec.SelectedNUMAZones)
+	if len(bindRequest.Spec.PredictedNUMAZones) > 0 {
+		placement, err := json.Marshal(bindRequest.Spec.PredictedNUMAZones)
 		if err != nil {
 			return err
 		}

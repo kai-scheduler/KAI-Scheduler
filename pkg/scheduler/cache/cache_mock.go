@@ -51,17 +51,17 @@ func (m *MockCache) EXPECT() *MockCacheMockRecorder {
 }
 
 // Bind mocks base method.
-func (m *MockCache) Bind(podInfo *pod_info.PodInfo, hostname string, bindRequestAnnotations map[string]string, selectedNUMAZones []v1alpha2.NUMAZonePlacement) error {
+func (m *MockCache) Bind(podInfo *pod_info.PodInfo, hostname string, bindRequestAnnotations map[string]string, predictedNUMAZones []v1alpha2.NUMAZonePlacement) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Bind", podInfo, hostname, bindRequestAnnotations, selectedNUMAZones)
+	ret := m.ctrl.Call(m, "Bind", podInfo, hostname, bindRequestAnnotations, predictedNUMAZones)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Bind indicates an expected call of Bind.
-func (mr *MockCacheMockRecorder) Bind(podInfo, hostname, bindRequestAnnotations, selectedNUMAZones any) *gomock.Call {
+func (mr *MockCacheMockRecorder) Bind(podInfo, hostname, bindRequestAnnotations, predictedNUMAZones any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Bind", reflect.TypeOf((*MockCache)(nil).Bind), podInfo, hostname, bindRequestAnnotations, selectedNUMAZones)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Bind", reflect.TypeOf((*MockCache)(nil).Bind), podInfo, hostname, bindRequestAnnotations, predictedNUMAZones)
 }
 
 // Evict mocks base method.

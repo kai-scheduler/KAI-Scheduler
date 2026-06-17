@@ -1812,6 +1812,6 @@ type failingBindCache struct {
 	cache.Cache
 }
 
-func (f *failingBindCache) Bind(podInfo *pod_info.PodInfo, hostname string, bindRequestAnnotations map[string]string, selectedNUMAZones []schedulingv1alpha2.NUMAZonePlacement) error {
+func (f *failingBindCache) Bind(podInfo *pod_info.PodInfo, hostname string, bindRequestAnnotations map[string]string, predictedNUMAZones []schedulingv1alpha2.NUMAZonePlacement) error {
 	return fmt.Errorf("create pod error")
 }
