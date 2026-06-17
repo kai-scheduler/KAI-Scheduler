@@ -233,7 +233,7 @@ Internal work-unit budgets such as victim-count, node-count, victim-by-node prod
 
 | Plugin order | Generator | Restores / covers | Width |
 | --- | --- | --- | --- |
-| 1 | `NodeLocalGreedy` | builds an accumulated, filter-validated base, then emits recorded victims plus one candidate node's victims; restores the pre-#1537 `solveOnPotentialNodes` shape | narrow |
+| 1 | `NodeLocalGreedy` | builds an accumulated, filter-validated base, then emits the same node-local scenario shape used by pre-#1537 `solveOnPotentialNodes`: recorded victims plus one candidate node's victims | narrow |
 | 2 | `MultiNodeGang` | today's `PodAccumulatedScenarioBuilder` plus `subScenarioEmitter`, using accumulated filters before emission and time-limited by the effective deadline while preserving #1537 gang/topology correctness | wide |
 | later | plugin hook | new case-specific generators | case-specific |
 
@@ -286,7 +286,7 @@ Wrap rather than rewrite. `NodeLocalGreedy` restores deleted narrow logic, and `
 
 ### Scale-Test Walkthrough
 
-For the known distributed unschedulable fixture, `probeSize=1,2,4,8,9` solve cheaply through `NodeLocalGreedy`, accumulating recorded victims. At `probeSize=10`, `NodeLocalGreedy` tries "recorded 9 nodes plus each remaining candidate node as the 10th" in best-fit order. Every candidate fails because no 10th node exists. Reclaim reports unschedulable when the effective deadline is reached or generators are exhausted, instead of draining the wide multi-node search. `MultiNodeGang` remains time-limited by its generator deadline and the remaining job/action time.
+For the known distributed unschedulable fixture, `probeSize=1,2,4,8,9` solve cheaply through `NodeLocalGreedy`, accumulating recorded victims. At `probeSize=10`, `NodeLocalGreedy` tries the pre-#1537 scenario shape: "recorded 9 nodes plus one remaining candidate node as the 10th" for each candidate node. Every candidate fails because no 10th node exists. Reclaim reports unschedulable when the effective deadline is reached or generators are exhausted, instead of draining the wide multi-node search. `MultiNodeGang` remains time-limited by its generator deadline and the remaining job/action time.
 
 ### Relationship to Necessary-Condition Checks
 
@@ -318,7 +318,7 @@ The Phase 1 production metrics do not export per-job generator attribution such 
 ## Test Plan
 
 - Unit-test portfolio ordering, applicable-action filtering, stop reasons, and deadline handling.
-- Unit-test `NodeLocalGreedy` candidate construction, best-fit node ordering, and whole victim-job handling.
+- Unit-test `NodeLocalGreedy` candidate construction, pre-#1537 node-local scenario shape, and whole victim-job handling.
 - Unit-test `MultiNodeGang` as a wrapper over the existing builder/emitter.
 - Keep existing reclaim, preempt, and consolidation solver tests passing with the default portfolio configuration and with the legacy-equivalent configuration of current emitter plus unlimited budgets.
 - Preserve existing #1537 gang/topology regression coverage.
