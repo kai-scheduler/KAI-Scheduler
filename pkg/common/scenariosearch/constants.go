@@ -12,10 +12,10 @@ const (
 	GeneratorNodeLocalGreedy = "NodeLocalGreedy"
 	GeneratorMultiNodeGang   = "MultiNodeGang"
 
-	DefaultActionBudget    = "20s"
-	DefaultJobBudget       = "10s"
+	DefaultActionBudget    = "5m"
+	DefaultJobBudget       = "4m"
 	DefaultMinJobBudget    = "0s"
-	DefaultGeneratorBudget = "5s"
-	DefaultNodeLocalGreedy = "5s"
-	DefaultMultiNodeGang   = "5s"
+	DefaultGeneratorBudget = "2m"
+	DefaultNodeLocalGreedy = "30s"
+	DefaultMultiNodeGang   = "2m"
 )
