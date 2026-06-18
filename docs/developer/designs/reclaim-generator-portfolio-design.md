@@ -175,31 +175,31 @@ kind: SchedulingShard
 spec:
   scenarioSearchBudgets:
     maxActionSearchDuration:
-      default: "1s"
-      reclaim: "2s"
-      preempt: "1s"
-      consolidation: "1s"
-    maxJobSearchDuration: "250ms"
+      default: "5m"
+      reclaim: "5m"
+      preempt: "5m"
+      consolidation: "5m"
+    maxJobSearchDuration: "4m"
     minJobSearchDuration: "0s"
     maxGeneratorSearchDuration:
-      default: "250ms"
-      NodeLocalGreedy: "50ms"
-      MultiNodeGang: "250ms"
+      default: "2m"
+      NodeLocalGreedy: "30s"
+      MultiNodeGang: "2m"
 ```
 
 Initial defaults when the block is omitted:
 
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `maxActionSearchDuration.default` | `"1s"` | fallback action budget |
-| `maxActionSearchDuration.reclaim` | `"2s"` | reclaim-specific action budget |
-| `maxActionSearchDuration.preempt` | `"1s"` | preempt-specific action budget |
-| `maxActionSearchDuration.consolidation` | `"1s"` | consolidation-specific action budget |
-| `maxJobSearchDuration` | `"250ms"` | per-job budget cap |
+| `maxActionSearchDuration.default` | `"5m"` | fallback action budget |
+| `maxActionSearchDuration.reclaim` | `"5m"` | reclaim-specific action budget |
+| `maxActionSearchDuration.preempt` | `"5m"` | preempt-specific action budget |
+| `maxActionSearchDuration.consolidation` | `"5m"` | consolidation-specific action budget |
+| `maxJobSearchDuration` | `"4m"` | per-job budget cap |
 | `minJobSearchDuration` | `"0s"` | disabled best-effort job floor |
-| `maxGeneratorSearchDuration.default` | `"250ms"` | fallback generator budget |
-| `maxGeneratorSearchDuration.NodeLocalGreedy` | `"50ms"` | narrow generator budget |
-| `maxGeneratorSearchDuration.MultiNodeGang` | `"250ms"` | wide generator budget |
+| `maxGeneratorSearchDuration.default` | `"2m"` | fallback generator budget |
+| `maxGeneratorSearchDuration.NodeLocalGreedy` | `"30s"` | narrow generator budget |
+| `maxGeneratorSearchDuration.MultiNodeGang` | `"2m"` | wide generator budget |
 
 All values are strings parsed with Go's standard `time.ParseDuration`, which supports units such as `ms`, `s`, `m`, and `h`. Values must parse as non-negative durations. For max budgets, `0s` means unlimited and is used for legacy-equivalent support configurations. For `minJobSearchDuration`, `0s` disables the best-effort floor. If configured, `minJobSearchDuration` must be lower than `maxJobSearchDuration` unless `maxJobSearchDuration` is unlimited. Unknown action or generator names should be rejected during configuration validation so misspelled knobs do not silently fail.
 
@@ -345,7 +345,7 @@ Initial implementation criteria:
 
 Default tuning criteria:
 
-- Defaults are tuned against the 500-node snapshot and representative production-like snapshots.
+- Defaults are tuned against the 1000-node large-job benchmark and representative production-like snapshots.
 - Reduced-budget user messages are accurate and only emitted for reduced-budget jobs.
 - Metrics show `deadline_exhausted`, `generators_exhausted`, `no_generator`, and `not_attempted` outcomes clearly by action and, where applicable, generator.
 - Legacy-equivalent configuration is documented as current emitter plus unlimited budgets; bounded-search misses are terminal for the current scheduling attempt.
@@ -360,6 +360,7 @@ Long-term criteria:
 
 - 2026-06-15: Initial standalone design.
 - 2026-06-18: Clarified that generator attempts own the full partial-gang search for a pending job before the next generator starts.
+- 2026-06-18: Updated default search budgets to the 1000-node large-job benchmark tuning target.
 
 ## Alternatives
 
