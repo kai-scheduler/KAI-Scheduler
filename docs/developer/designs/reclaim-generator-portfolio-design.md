@@ -92,6 +92,7 @@ The negative result is intentionally approximate when produced by the bounded po
 - **Scenario**: one concrete victim set to evict or reclaim before trying to place the current `probeSize`.
 - **Simulation**: the virtual allocation attempt after applying one scenario.
 - **Generator**: a component that proposes scenarios. It does not simulate them.
+- **Generator attempt**: one generator's complete search for a pending job across the partial gang sizes tried by `searchMaxSolvableK`, followed by the full-job probe if the partial search succeeds.
 - **Deadline / budget**: time limits for action, job, and generator search.
 - **Reduced budget**: a job received less reclaim-search time than configured because the action-level budget was already depleted.
 
@@ -105,7 +106,9 @@ The negative result is intentionally approximate when produced by the bounded po
 
 ### Mechanism
 
-`solvePartialJob` keeps its skeleton. The scenario source changes from a single exhaustive emitter to an ordered portfolio of generators. The portfolio owns generator iteration, action filtering, budget checks, and stop reasons.
+`solvePartialJob` keeps its simulation and validation skeleton. The scenario source changes from a single exhaustive emitter to an ordered portfolio of generators. The portfolio owns generator iteration, action filtering, budget checks, and stop reasons.
+
+Generator iteration happens at pending-job granularity, not at `probeSize` granularity. For one pending job, the driver selects the first applicable generator and lets that generator attempt own the complete `searchMaxSolvableK` progression: exponential probes, binary-search probes, and the full-job probe when the partial search succeeds. Only after that generator attempt exhausts candidates or reaches its generator deadline does the driver start over with the next applicable generator. The driver must not restart the whole generator portfolio for every partial gang size, because that discards the intended progression from smaller successful probes to larger probes and can let an earlier generator repeatedly consume the shared job/action budget before a later generator gets its own search.
 
 When the driver reaches the effective deadline without a validated solution, the action reports "no solution" as an incomplete result. The result reason must distinguish at least deadline exhaustion, generator exhaustion, no applicable generator, and not-attempted jobs so metrics and reduced-budget messages are accurate.
 
@@ -121,7 +124,7 @@ The driver returns a structured result, not just `nil`. The result reason is the
 | `no_generator` | no registered generator applies to this action/job shape | no |
 | `not_attempted` | the job was skipped before any generator attempt, usually because no search budget remained | no |
 
-Generator deadlines bound one generator, not the whole job search. When a generator reaches `maxGeneratorSearchDuration`, the portfolio moves to the next applicable generator. The whole-job result is `generators_exhausted` only after all applicable generators have either exhausted their candidates or reached their generator deadline. User-facing messages may still say "no valid reclaim scenario was found," but metrics should use the concrete result reason rather than a vague `no_solution_found` value.
+Generator deadlines bound one generator attempt, not the whole job search. A generator's `maxGeneratorSearchDuration` covers all partial gang probes it owns for that pending job. When that generator attempt reaches its deadline, the portfolio moves to the next applicable generator and restarts the pending-job partial-gang search with that generator. The whole-job result is `generators_exhausted` only after all applicable generators have either exhausted their candidates or reached their generator deadline. User-facing messages may still say "no valid reclaim scenario was found," but metrics should use the concrete result reason rather than a vague `no_solution_found` value.
 
 ### Generator Abstraction
 
@@ -135,7 +138,7 @@ type ScenarioGenerator interface {
 }
 ```
 
-A generator is built per probe from a shared solve context: partial pending job, recorded victims, feasible nodes, victim queue, gang constraints, topology constraints, and action type.
+A generator attempt is built per pending job from a shared solve context: pending job, recorded victims, feasible nodes, victim queue, gang constraints, topology constraints, and action type. Within that attempt, the same generator family owns every `probeSize` tried for the job. The current probe still supplies a partial pending job when deriving candidate scenarios, and smaller successful probes still update the recorded-victim state used by later probes. Changing `probeSize` must not switch to the next generator or restart the full portfolio.
 
 For Phase 1, `Next()` intentionally stays simple and does not accept a deadline or context. The generator contract is that `Next()` is cheap and incremental: it may compute or return the next candidate, but it must not run simulation, scan an unbounded search space, or perform expensive blocking work before returning. The initial `NodeLocalGreedy` and `MultiNodeGang` generators must be structured around this contract. If a future generator needs expensive candidate construction, the interface must be revisited so candidate generation can receive a deadline/context or otherwise poll the search budget internally.
 
@@ -156,7 +159,7 @@ func (ssn *Session) AddScenarioGenerator(
 )
 ```
 
-Generator order is derived from scheduler plugin execution order. `OpenSession` calls plugin `OnSessionOpen` hooks in configured plugin order, and each hook appends its generators by calling `AddScenarioGenerator`. If a plugin registers multiple generators, their relative order is the order of its `AddScenarioGenerator` calls. `JobSolver.solvePartialJob` filters registered generators by the current action and drains them in registration order.
+Generator order is derived from scheduler plugin execution order. `OpenSession` calls plugin `OnSessionOpen` hooks in configured plugin order, and each hook appends its generators by calling `AddScenarioGenerator`. If a plugin registers multiple generators, their relative order is the order of its `AddScenarioGenerator` calls. `JobSolver` filters registered generators by the current action and tries them in registration order at generator-attempt granularity: each generator gets the complete partial-gang search for the pending job before the next generator starts.
 
 Generator selection is controlled by normal scheduler plugin enablement and plugin order; this is not an alpha mechanism. The new time-budget knobs are alpha/experimental controls for KAI development, support, and experiments while defaults are tuned.
 
@@ -204,16 +207,19 @@ All values are strings parsed with Go's standard `time.ParseDuration`, which sup
 
 ```go
 budget := newSearchBudget(actionDeadline, jobDeadline, generatorDeadlines)
-portfolio := newScenarioPortfolio(ssn, partialPendingJob, state, feasibleNodeMap, budget)
+generators := applicableGenerators(ssn, action, pendingJob)
 
-for sc := portfolio.Next(); sc != nil; sc = portfolio.Next() {
-    result := scenarioSolver.solve(ssn, sc)
-    if result.solved {
-        return searchResult{reason: solved, solution: result}
+for _, generatorFactory := range generators {
+    generatorBudget := budget.beginGenerator(generatorFactory.Name())
+    result := searchMaxSolvableKWithGenerator(
+        ssn, pendingJob, state, feasibleNodeMap, generatorFactory, generatorBudget,
+    )
+    if result.reason == solved || result.reason == deadline_exhausted {
+        return result
     }
 }
 
-return searchResult{reason: portfolio.StopReason()} // approximate no solution
+return searchResult{reason: generators_exhausted} // approximate no solution
 ```
 
 The budget model is time-only: every exposed budget is a wall-clock duration.
@@ -227,7 +233,7 @@ The budget model is time-only: every exposed budget is a wall-clock duration.
 
 The effective deadline for any candidate is normally the minimum remaining time across action, current job, and current generator. `minJobSearchDuration` is an alpha/experimental budget knob. It is an optional best-effort floor, disabled by default, and must be lower than `maxJobSearchDuration` when configured. It does not reserve action budget upfront and does not guarantee every pending job receives that amount of time. Instead, when a job is reached and action budget remains, the scheduler should give it a minimal search attempt up to the remaining action budget. If the remaining action budget is less than `minJobSearchDuration`, the job may still run with the remaining time and is marked `reduced_budget=true`. If no action budget remains, the job is `not_attempted`.
 
-Internal work-unit budgets such as victim-count, node-count, victim-by-node products, and per-generator scenario caps are not exposed. Budgets are enforced at candidate boundaries: before asking the portfolio for the next scenario, before accepting that candidate for simulation, and before starting the simulation. Generators must yield candidates incrementally so the driver can check the effective deadline between candidates. One `Next()` call or simulation may finish after the deadline if it started just before the deadline, but the loop must not request or start another candidate after the effective deadline has expired.
+Internal work-unit budgets such as victim-count, node-count, victim-by-node products, and per-generator scenario caps are not exposed. Budgets are enforced at candidate boundaries: before asking the active generator for the next scenario, before accepting that candidate for simulation, and before starting the simulation. Generators must yield candidates incrementally so the driver can check the effective deadline between candidates. One `Next()` call or simulation may finish after the deadline if it started just before the deadline, but the loop must not request or start another candidate after the effective deadline has expired.
 
 ### Initial Shipped Plugin Policy
 
@@ -255,7 +261,7 @@ The exact deduplication design should be specified and implemented separately. T
 
 #### Smart Generator Selection
 
-Phase 1 drains applicable generators in normal scheduler plugin order. A later generator-selection policy may choose, skip, or reorder registered generators per job or per probe based on job shape and, if useful, cluster state. That future policy should be designed from replay and production evidence showing which generator families solve which workload shapes; it should not be implicit in the Phase 1 plugin-registration mechanism.
+Phase 1 drains applicable generators in normal scheduler plugin order. A later generator-selection policy may choose, skip, or reorder registered generators per job based on job shape and, if useful, cluster state. It must preserve the generator-attempt boundary unless a separate design explains how per-probe switching preserves search continuity and budget fairness. That future policy should be designed from replay and production evidence showing which generator families solve which workload shapes; it should not be implicit in the Phase 1 plugin-registration mechanism.
 
 #### Generator Checkpointing Across Scheduling Sessions
 
@@ -286,7 +292,7 @@ Wrap rather than rewrite. `NodeLocalGreedy` restores deleted narrow logic, and `
 
 ### Scale-Test Walkthrough
 
-For the known distributed unschedulable fixture, `probeSize=1,2,4,8,9` solve cheaply through `NodeLocalGreedy`, accumulating recorded victims. At `probeSize=10`, `NodeLocalGreedy` tries the pre-#1537 scenario shape: "recorded 9 nodes plus one remaining candidate node as the 10th" for each candidate node. Every candidate fails because no 10th node exists. Reclaim reports unschedulable when the effective deadline is reached or generators are exhausted, instead of draining the wide multi-node search. `MultiNodeGang` remains time-limited by its generator deadline and the remaining job/action time.
+For the known distributed unschedulable fixture, `NodeLocalGreedy` owns the whole partial-gang search for the job first. Its `probeSize=1,2,4,8,9` probes solve cheaply, accumulating recorded victims. At `probeSize=10`, `NodeLocalGreedy` tries the pre-#1537 scenario shape: "recorded 9 nodes plus one remaining candidate node as the 10th" for each candidate node. Every candidate fails because no 10th node exists. Reclaim moves to `MultiNodeGang` only after the `NodeLocalGreedy` attempt exhausts or reaches its generator deadline. `MultiNodeGang` then starts its own partial-gang search from the pending job shape, time-limited by its generator deadline and the remaining job/action time.
 
 ### Relationship to Necessary-Condition Checks
 
@@ -318,6 +324,7 @@ The Phase 1 production metrics do not export per-job generator attribution such 
 ## Test Plan
 
 - Unit-test portfolio ordering, applicable-action filtering, stop reasons, and deadline handling.
+- Unit-test that one generator owns the complete partial-gang search for a pending job before the next generator is tried.
 - Unit-test `NodeLocalGreedy` candidate construction, pre-#1537 node-local scenario shape, and whole victim-job handling.
 - Unit-test `MultiNodeGang` as a wrapper over the existing builder/emitter.
 - Keep existing reclaim, preempt, and consolidation solver tests passing with the default portfolio configuration and with the legacy-equivalent configuration of current emitter plus unlimited budgets.
@@ -352,6 +359,7 @@ Long-term criteria:
 ## Implementation History
 
 - 2026-06-15: Initial standalone design.
+- 2026-06-18: Clarified that generator attempts own the full partial-gang search for a pending job before the next generator starts.
 
 ## Alternatives
 
