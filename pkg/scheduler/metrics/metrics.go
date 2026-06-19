@@ -47,6 +47,7 @@ var (
 	podgroupsConsideredByAction *prometheus.CounterVec
 	scenariosSimulatedByAction  *prometheus.CounterVec
 	scenariosFilteredByAction   *prometheus.CounterVec
+	scenariosDedupedByAction    *prometheus.CounterVec
 	preemptionAttempts          prometheus.Counter
 	queueFairShareCPU           *prometheus.GaugeVec
 	queueFairShareMemory        *prometheus.GaugeVec
@@ -145,6 +146,13 @@ func InitMetrics(namespace string) {
 			Namespace: namespace,
 			Name:      "scenarios_filtered_by_action",
 			Help:      "Count of scenarios filtered per action",
+		}, []string{"action"})
+
+	scenariosDedupedByAction = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Name:      "scenarios_deduped_by_action",
+			Help:      "Count of duplicate scenarios skipped before simulation per action",
 		}, []string{"action"})
 
 	preemptionAttempts = promauto.NewCounter(
@@ -260,6 +268,15 @@ func IncScenarioSimulatedByAction() {
 
 func IncScenarioFilteredByAction() {
 	scenariosFilteredByAction.WithLabelValues(currentAction).Inc()
+}
+
+func IncScenarioDedupedByAction() {
+	scenariosDedupedByAction.WithLabelValues(currentAction).Inc()
+}
+
+// ScenariosDedupedByAction returns the counter vec for testing.
+func ScenariosDedupedByAction() *prometheus.CounterVec {
+	return scenariosDedupedByAction
 }
 
 // UpdateTaskBindDuration updates single task bind latency, including bind request creation

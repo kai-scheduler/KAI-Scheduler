@@ -186,8 +186,16 @@ func (s *JobSolver) solvePartialJob(ssn *framework.Session, state *solvingState,
 	scenarioBuilder := NewPodAccumulatedScenarioBuilder(
 		ssn, partialPendingJob, state.recordedVictimsJobs, s.generateVictimsQueue(), feasibleNodeMap)
 
+	seenScenarios := make(map[uint64]struct{})
 	for scenarioToSolve := scenarioBuilder.GetValidScenario(); scenarioToSolve != nil; scenarioToSolve =
 		scenarioBuilder.GetNextScenario() {
+		fp := scenarioToSolve.Fingerprint()
+		if _, seen := seenScenarios[fp]; seen {
+			metrics.IncScenarioDedupedByAction()
+			continue
+		}
+		seenScenarios[fp] = struct{}{}
+
 		scenarioSolver := newByPodSolver(feasibleNodeMap, s.solutionValidator, ssn.AllowConsolidatingReclaim(),
 			s.actionType)
 
