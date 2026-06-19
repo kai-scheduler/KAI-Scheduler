@@ -23,13 +23,13 @@
     - [Generator Checkpointing Across Scheduling Sessions](#generator-checkpointing-across-scheduling-sessions)
     - [Possible Future Generators](#possible-future-generators)
   - [Approximation Contract](#approximation-contract)
+  - [Explainability](#explainability)
   - [Integration Posture](#integration-posture)
   - [Scale-Test Walkthrough](#scale-test-walkthrough)
   - [Relationship to Necessary-Condition Checks](#relationship-to-necessary-condition-checks)
 - [Monitoring](#monitoring)
 - [Test Plan](#test-plan)
 - [Rollout Criteria](#rollout-criteria)
-- [Implementation History](#implementation-history)
 - [Alternatives](#alternatives)
 <!-- /toc -->
 
@@ -284,7 +284,26 @@ A future portfolio can persist per-job generator progress across scheduling sess
 - Gang-preserving: `MultiNodeGang` uses #1537 batches; `NodeLocalGreedy` pulls whole victim-job representatives.
 - Reduced-budget reporting: only jobs that actually received reduced budget get the user-visible message.
 
-For reduced-budget jobs, the user-visible unschedulable detail should say that the scheduler could not find a valid reclaim scenario within the remaining configured search time. Jobs that received their full configured search budget should not get this wording.
+For reduced-budget jobs, the `ScenarioSearchUnresolved` detail should say that the scheduler could not find a valid reclaim scenario within the remaining configured search time. Jobs that received their full configured search budget should not get this wording.
+
+### Explainability
+
+Bounded scenario search outcomes must be visible to job submitters without changing the meaning of Kubernetes `Unschedulable`. The allocate action can continue to set the existing `Unschedulable` condition and events for ordinary allocation failures. An unresolved scenario-search attempt is a separate scheduler outcome and must not overload that signal, because other Kubernetes components, including autoscaling integrations, already use `Unschedulable` semantics.
+
+When reclaim, preempt, or consolidation reaches a bounded-search terminal result for a pending job, the scheduler should set a dedicated `ScenarioSearchUnresolved` condition on both the `PodGroup` and its pending Pods. The `PodGroup` condition is the authoritative job-level explanation. Pod conditions provide a direct answer for users who inspect only the submitted Pods. The condition should be emitted once for the job scheduling outcome, not once per generator, probe, or scenario. `Unresolved` is intentionally broader than `exhausted`: it covers jobs where all configured generator attempts were drained, jobs where the time budget expired before a complete answer, jobs skipped because no budget remained, and jobs with no applicable generator.
+
+User-facing condition messages should describe the scheduling outcome, not the internal generator mechanics:
+
+| Search result | `ScenarioSearchUnresolved` message |
+| --- | --- |
+| `deadline_exhausted` | `KAI could not find a valid reclaim scenario within the configured search budget for this scheduling attempt. The job remains pending and may be retried in a later scheduling cycle.` |
+| `generators_exhausted` | `KAI tried the configured scenario-search policy and found no valid reclaim scenario for this scheduling attempt. The job remains pending and may be retried in a later scheduling cycle.` |
+| `not_attempted` | `KAI did not attempt scenario search for this job in this scheduling cycle because the configured search budget was already exhausted.` |
+| `no_generator` | `KAI did not attempt scenario search for this job because no configured scenario generator applies to this action.` |
+
+If `reduced_budget=true`, the message should say that the scheduler could not find a valid scenario within the remaining configured search time because the action search budget was partly consumed by earlier jobs. This wording must only be used for jobs that actually received a reduced budget.
+
+Kubernetes Events may repeat the same human-readable message on the `PodGroup` and Pods, but they should use `ScenarioSearchUnresolved` as the event reason rather than `Unschedulable`. Events should not include generator names, probe sizes, scenario counts, or elapsed durations. Those details belong in metrics, logs, replay output, or future debug tooling.
 
 ### Integration Posture
 
@@ -330,6 +349,7 @@ The Phase 1 production metrics do not export per-job generator attribution such 
 - Keep existing reclaim, preempt, and consolidation solver tests passing with the default portfolio configuration and with the legacy-equivalent configuration of current emitter plus unlimited budgets.
 - Preserve existing #1537 gang/topology regression coverage.
 - Preserve or add topology coverage so bounded search does not lose cases that motivated wide search.
+- Test that bounded-search terminal results set `ScenarioSearchUnresolved` on the `PodGroup` and pending Pods without changing the allocate action's existing `Unschedulable` behavior.
 - Replay the failing scale snapshot and verify reclaim exits quickly.
 - Benchmark `BenchmarkReclaimUnschedulableDistributedJob_100Node`, `AntiAffinity100Node`, and `Topology100Node`, and use width-decomposition instrumentation to show simulations avoided, generator coverage, and deadline behavior.
 
@@ -346,7 +366,7 @@ Initial implementation criteria:
 Default tuning criteria:
 
 - Defaults are tuned against the 1000-node large-job benchmark and representative production-like snapshots.
-- Reduced-budget user messages are accurate and only emitted for reduced-budget jobs.
+- `ScenarioSearchUnresolved` conditions and events are accurate, and reduced-budget wording is only emitted for reduced-budget jobs.
 - Metrics show `deadline_exhausted`, `generators_exhausted`, `no_generator`, and `not_attempted` outcomes clearly by action and, where applicable, generator.
 - Legacy-equivalent configuration is documented as current emitter plus unlimited budgets; bounded-search misses are terminal for the current scheduling attempt.
 
@@ -355,12 +375,6 @@ Long-term criteria:
 - Generator registration and plugin-order behavior remain normal scheduler plugin behavior, or are replaced by adaptive scheduler policy.
 - Operational dashboards and alerts use the production metric contract.
 - False-negative behavior is understood and accepted for supported workloads.
-
-## Implementation History
-
-- 2026-06-15: Initial standalone design.
-- 2026-06-18: Clarified that generator attempts own the full partial-gang search for a pending job before the next generator starts.
-- 2026-06-18: Updated default search budgets to the 1000-node large-job benchmark tuning target.
 
 ## Alternatives
 
