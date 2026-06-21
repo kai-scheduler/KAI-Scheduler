@@ -1,11 +1,12 @@
 # Copyright 2025 NVIDIA CORPORATION
 # SPDX-License-Identifier: Apache-2.0
 
-{{- if .Values.global.clusterAutoscaling }}
+{{- $ns := .Values.nodescaleadjuster.scalingPodNamespace }}
+{{- if and .Values.global.clusterAutoscaling (not (lookup "v1" "Namespace" "" $ns)) }}
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: {{ .Values.nodescaleadjuster.scalingPodNamespace }}
+  name: {{ $ns }}
   {{- with .Values.nodescaleadjuster.labels }}
   labels:
     {{- toYaml . | nindent 4 }}

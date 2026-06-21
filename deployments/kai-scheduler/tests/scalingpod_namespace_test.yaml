@@ -1,0 +1,78 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+suite: test scaling pod namespace template
+templates:
+  - services/scalingpod-namespace.yaml
+kubernetesProvider:
+  scheme:
+    v1/Namespace:
+      gvr:
+        version: v1
+        resource: namespaces
+      namespaced: false
+tests:
+  - it: should not render namespace when cluster autoscaling is disabled
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: should render namespace when cluster autoscaling is enabled and namespace does not exist
+    set:
+      global.clusterAutoscaling: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: metadata.name
+          value: kai-scale-adjust
+
+  - it: should not render namespace when it already exists
+    set:
+      global.clusterAutoscaling: true
+    kubernetesProvider:
+      objects:
+        - kind: Namespace
+          apiVersion: v1
+          metadata:
+            name: kai-scale-adjust
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: should use custom scaling pod namespace value
+    set:
+      global.clusterAutoscaling: true
+      nodescaleadjuster.scalingPodNamespace: custom-scaling-ns
+    asserts:
+      - equal:
+          path: metadata.name
+          value: custom-scaling-ns
+
+  - it: should not render namespace when custom name already exists
+    set:
+      global.clusterAutoscaling: true
+      nodescaleadjuster.scalingPodNamespace: custom-scaling-ns
+    kubernetesProvider:
+      objects:
+        - kind: Namespace
+          apiVersion: v1
+          metadata:
+            name: custom-scaling-ns
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: should render namespace labels when configured
+    set:
+      global.clusterAutoscaling: true
+      nodescaleadjuster.labels:
+        team: platform
+        env: staging
+    asserts:
+      - equal:
+          path: metadata.labels.team
+          value: platform
+      - equal:
+          path: metadata.labels.env
+          value: staging
