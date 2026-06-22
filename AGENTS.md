@@ -138,7 +138,7 @@ logger.Info("Binding pod", "namespace", pod.Namespace, "name", pod.Name)
 
 ## Linter Configuration
 
-Enabled linters (see `build/lint/.golangci.yaml`):
+Enabled linters (see `.golangci.yaml`):
 - `gofmt` `unused` `goconst` `errcheck` `govet`
 
 Test files (`*_test.go`) have relaxed rules for `goconst`, `errcheck`, `govet`.

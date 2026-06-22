@@ -16,7 +16,7 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 
 # Space seperated list of services to build by default
 # SERVICE_NAMES := service1 service2 service3
-SERVICE_NAMES := podgrouper scheduler binder resourcereservation snapshot-tool scalingpod nodescaleadjuster podgroupcontroller queuecontroller fairshare-simulator admission operator time-based-fairshare-simulator
+SERVICE_NAMES := podgrouper scheduler binder resourcereservation snapshot-tool scalingpod nodescaleadjuster podgroupcontroller queuecontroller fairshare-simulator admission operator time-based-fairshare-simulator numa-placement-exporter
 
 # Kubernetes manifest files that require Kubernetes copyright header (space-separated)
 K8S_COPYRIGHTED_MANIFEST_FILES := deployments/kai-scheduler/crds/kai.scheduler_topologies.yaml
@@ -80,6 +80,7 @@ manifests: controller-gen kustomize ## Generate ClusterRole and CustomResourceDe
 	$(CONTROLLER_GEN) rbac:roleName=queuecontroller,headerFile="./hack/boilerplate.yaml.txt" paths="./pkg/queuecontroller/..." paths="./cmd/queuecontroller/..." output:stdout > deployments/kai-scheduler/templates/rbac/queuecontroller.yaml
 	$(CONTROLLER_GEN) rbac:roleName=kai-admission,headerFile="./hack/boilerplate.yaml.txt" paths="./pkg/admission/..." paths="./cmd/admission/..." output:stdout > deployments/kai-scheduler/templates/rbac/admission.yaml
 	$(CONTROLLER_GEN) rbac:roleName=kai-operator,headerFile="./hack/boilerplate.yaml.txt" paths="./pkg/operator/..." paths="./cmd/operator/..." output:stdout > deployments/kai-scheduler/templates/rbac/operator.yaml
+	$(CONTROLLER_GEN) rbac:roleName=kai-numa-placement-exporter,headerFile="./hack/boilerplate.yaml.txt" paths="./pkg/npe/..." paths="./cmd/numa-placement-exporter/..." output:stdout > deployments/kai-scheduler/templates/rbac/numa-placement-exporter.yaml
 
 	# Add Kubernetes copyright to files derived from Kubernetes projects
 	@for f in $(K8S_COPYRIGHTED_MANIFEST_FILES); do \
@@ -118,11 +119,10 @@ $(KUSTOMIZE): $(LOCALBIN)
 BENCHSTAT ?= $(LOCALBIN)/benchstat
 BENCH_OUTPUT ?= benchmark-results.txt
 # pkg/scheduler/actions/reclaim is excluded from the default benchmark sweep
-# because BenchmarkReclaimWithMissingPVCJobs requires -benchtime=1x. Add any
-# new reclaim-package benchmarks to a dedicated benchmark phase, or move them
-# out of that package, so they are not skipped by make benchmark.
+# because some reclaim benchmarks require -benchtime=1x and only a curated subset
+# should run in CI.
 BENCH_SPECIAL_PACKAGES := ./pkg/scheduler/actions/reclaim
-BENCH_SPECIAL_REGEX := '^BenchmarkReclaimWithMissingPVCJobs$$'
+BENCH_SPECIAL_REGEX := '^BenchmarkReclaim(WithMissingPVCJobs|UnschedulableDistributedJob_(10|50|100)Node)$$'
 
 .PHONY: benchstat
 benchstat: $(BENCHSTAT)

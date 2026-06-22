@@ -665,6 +665,57 @@ func Test_createPodGroupForMetadata(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "MinSubGroup at root populates Spec.MinSubGroup and leaves MinMember nil",
+			input: Metadata{
+				Name:        "root-minsubgroup",
+				Namespace:   "ns",
+				MinSubGroup: ptr.To(int32(2)),
+				Owner:       metav1.OwnerReference{APIVersion: "v1", Kind: "Pod", Name: "o", UID: "u"},
+			},
+			expected: &schedulingv2alpha2.PodGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "root-minsubgroup",
+					Namespace: "ns",
+					OwnerReferences: []metav1.OwnerReference{
+						{APIVersion: "v1", Kind: "Pod", Name: "o", UID: "u"},
+					},
+				},
+				Spec: schedulingv2alpha2.PodGroupSpec{
+					MinSubGroup: ptr.To(int32(2)),
+					SubGroups:   []schedulingv2alpha2.SubGroup{},
+				},
+			},
+		},
+		{
+			name: "MinSubGroup on a SubGroup populates SubGroup.MinSubGroup and leaves MinMember nil",
+			input: Metadata{
+				Name:        "parent-pg",
+				Namespace:   "ns",
+				MinSubGroup: ptr.To(int32(1)),
+				Owner:       metav1.OwnerReference{APIVersion: "v1", Kind: "Pod", Name: "o", UID: "u"},
+				SubGroups: []*SubGroupMetadata{
+					{Name: "parent", MinSubGroup: ptr.To(int32(3))},
+					{Name: "leaf-0", MinAvailable: 4, Parent: ptr.To("parent")},
+				},
+			},
+			expected: &schedulingv2alpha2.PodGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "parent-pg",
+					Namespace: "ns",
+					OwnerReferences: []metav1.OwnerReference{
+						{APIVersion: "v1", Kind: "Pod", Name: "o", UID: "u"},
+					},
+				},
+				Spec: schedulingv2alpha2.PodGroupSpec{
+					MinSubGroup: ptr.To(int32(1)),
+					SubGroups: []schedulingv2alpha2.SubGroup{
+						{Name: "parent", MinSubGroup: ptr.To(int32(3))},
+						{Name: "leaf-0", MinMember: ptr.To(int32(4)), Parent: ptr.To("parent")},
+					},
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {

@@ -42,7 +42,6 @@ import (
 )
 
 const (
-	GpuMemoryAnnotationName            = "gpu-memory"
 	GPUGroup                           = "runai-gpu-group"
 	ReceivedResourceTypeAnnotationName = "received-resource-type"
 	WholeGpuIndicator                  = "-2"
@@ -92,6 +91,8 @@ type PodInfo struct {
 	schedulingConstraintsSignature common_info.SchedulingConstraintsSignature
 
 	GPUGroups []string
+
+	NUMAPlacement NUMAPlacement
 
 	NodeName        string
 	Status          pod_status.PodStatus
@@ -295,6 +296,7 @@ func (pi *PodInfo) Clone() *PodInfo {
 		AcceptedResourceVector: acceptedResourceVectorClone,
 		VectorMap:              pi.VectorMap,
 		GPUGroups:              pi.GPUGroups,
+		NUMAPlacement:          pi.NUMAPlacement.Clone(),
 		ResourceClaimInfo:      pi.ResourceClaimInfo.Clone(),
 		ResourceRequestType:    pi.ResourceRequestType,
 		ResourceReceivedType:   pi.ResourceReceivedType,
@@ -334,7 +336,7 @@ func (pi *PodInfo) IsMigCandidate() bool {
 	return pi.ResourceRequestType == RequestTypeMigInstance
 }
 
-func (pi *PodInfo) IsMemoryRequest() bool {
+func (pi *PodInfo) IsGpuMemoryRequest() bool {
 	return pi.ResourceRequestType == RequestTypeGpuMemory
 }
 
@@ -343,7 +345,7 @@ func (pi *PodInfo) IsRegularGPURequest() bool {
 }
 
 func (pi *PodInfo) IsSharedGPURequest() bool {
-	return pi.IsFractionRequest() || pi.IsMemoryRequest()
+	return pi.IsFractionRequest() || pi.IsGpuMemoryRequest()
 }
 
 func (pi *PodInfo) IsSharedGPUAllocation() bool {
@@ -356,7 +358,7 @@ func (pi *PodInfo) IsCPUOnlyRequest() bool {
 
 func (pi *PodInfo) IsRequireAnyKindOfGPU() bool {
 	return pi.GpuRequirement.GPUs() > 0 || pi.GpuRequirement.GetDraGpusCount() > 0 ||
-		pi.IsMemoryRequest() || pi.IsMigProfileRequest()
+		pi.IsGpuMemoryRequest() || pi.IsMigProfileRequest()
 }
 
 func (pi *PodInfo) GetSchedulingConstraintsSignature() common_info.SchedulingConstraintsSignature {
@@ -386,23 +388,48 @@ func getPodGroupID(pod *v1.Pod) common_info.PodGroupID {
 func getPodResourceRequest(pod *v1.Pod) *resource_info.ResourceRequirements {
 	result := getPodResourceWithoutInitContainers(pod)
 
-	// take max_resource(sum_pod, any_init_container)
-	for _, container := range pod.Spec.InitContainers {
-		err := result.SetMaxResource(resource_info.RequirementsFromResourceList(container.Resources.Requests))
-		if err != nil {
-			log.InfraLogger.Errorf("Failed to calculate pod required resources for pod %s/%s. Error: %s",
-				pod.Namespace, pod.Name, err.Error())
-		}
-	}
+	sidecarSum, initPhasePeak := initContainerEffects(pod)
+	logIfErr(pod, result.Add(sidecarSum))
+	logIfErr(pod, result.SetMaxResource(initPhasePeak))
 
 	if pod.Spec.Overhead != nil {
 		overheadReq := resource_info.RequirementsFromResourceList(pod.Spec.Overhead)
-		result.Add(&overheadReq.BaseResource)
+		result.BaseResource.Add(&overheadReq.BaseResource)
 	}
 
 	result.ScalarResources()[resource_info.PodsResourceName] = 1
 
 	return result
+}
+
+// initContainerEffects returns the contributions of `pod`'s init containers to
+// pod resource accounting, mirroring kubelet's `AggregateContainerRequests`:
+//   - sidecarSum: total request of native sidecars (initContainers with
+//     `restartPolicy: Always`, KEP-753), which run concurrently with regular
+//     containers and add to the steady-state sum.
+//   - initPhasePeak: max over each non-restartable init of `init.Requests +
+//     sum(native sidecars declared before it)`, since those sidecars are
+//     already running when the init runs.
+func initContainerEffects(pod *v1.Pod) (sidecarSum, initPhasePeak *resource_info.ResourceRequirements) {
+	sidecarSum = resource_info.EmptyResourceRequirements()
+	initPhasePeak = resource_info.EmptyResourceRequirements()
+	for _, container := range pod.Spec.InitContainers {
+		containerReq := resource_info.RequirementsFromResourceList(container.Resources.Requests)
+		if container.RestartPolicy != nil && *container.RestartPolicy == v1.ContainerRestartPolicyAlways {
+			logIfErr(pod, sidecarSum.Add(containerReq))
+			continue
+		}
+		logIfErr(pod, containerReq.Add(sidecarSum))
+		logIfErr(pod, initPhasePeak.SetMaxResource(containerReq))
+	}
+	return sidecarSum, initPhasePeak
+}
+
+func logIfErr(pod *v1.Pod, err error) {
+	if err != nil {
+		log.InfraLogger.Errorf("Failed to calculate pod required resources for pod %s/%s. Error: %s",
+			pod.Namespace, pod.Name, err.Error())
+	}
 }
 
 // getPodResourceWithoutInitContainers returns Pod's resource request, it does not contain
@@ -476,13 +503,13 @@ func (pi *PodInfo) updatePodAdditionalFields(bindRequest *bindrequest_info.BindR
 		}
 	}
 
-	gpuMemory, err := strconv.ParseInt(pi.Pod.Annotations[GpuMemoryAnnotationName], 10, 64)
+	gpuMemory, err := strconv.ParseInt(pi.Pod.Annotations[commonconstants.GpuMemory], 10, 64)
 	if err == nil && gpuMemory > 0 {
 		pi.GpuRequirement = *resource_info.NewGpuResourceRequirementWithGpus(0, gpuMemory)
 		pi.ResourceRequestType = RequestTypeGpuMemory
 	}
 
-	gpuFractionString := pi.Pod.Annotations[common_info.GPUFraction]
+	gpuFractionString := pi.Pod.Annotations[commonconstants.GpuFraction]
 	gpuFraction, GPUFractionErr := strconv.ParseFloat(gpuFractionString, 64)
 	if !(gpuFraction <= 0 || gpuFraction > 1 || GPUFractionErr != nil) {
 		pi.GpuRequirement = *resource_info.NewGpuResourceRequirementWithGpus(gpuFraction, 0)

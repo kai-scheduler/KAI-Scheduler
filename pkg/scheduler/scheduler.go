@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"time"
 
+	nrtclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes"
@@ -58,6 +59,11 @@ func NewScheduler(
 ) (*Scheduler, error) {
 	kubeClient, kubeAiSchedulerClient := newClients(config)
 
+	nrtClient, err := nrtclientset.NewForConfig(config)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to create NodeResourceTopology client: %v", err)
+	}
+
 	discoveryClient, err := discovery.NewDiscoveryClientForConfig(config)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create discovery client: %v", err)
@@ -76,6 +82,7 @@ func NewScheduler(
 	schedulerCacheParams := &schedcache.SchedulerCacheParams{
 		KubeClient:                  kubeClient,
 		KAISchedulerClient:          kubeAiSchedulerClient,
+		NRTClient:                   nrtClient,
 		UsageDBParams:               usageDBParams,
 		UsageDBClient:               usageDBClient,
 		SchedulerName:               schedulerParams.SchedulerName,

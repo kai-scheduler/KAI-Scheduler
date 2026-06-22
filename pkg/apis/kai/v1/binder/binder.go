@@ -22,6 +22,7 @@ const (
 	VolumeBindingPluginName    = "volumebinding"
 	DynamicResourcesPluginName = "dynamicresources"
 	GPUSharingPluginName       = "gpusharing"
+	HamiCorePluginName         = "hamicore"
 
 	BindTimeoutSecondsArgument = "bindTimeoutSeconds"
 	CDIEnabledArgument         = "cdiEnabled"
@@ -34,6 +35,7 @@ var defaultPluginPriorities = map[string]int{
 	VolumeBindingPluginName:    300,
 	DynamicResourcesPluginName: 200,
 	GPUSharingPluginName:       100,
+	HamiCorePluginName:         50,
 }
 
 // PluginConfig allows overriding binder plugin settings.
@@ -84,7 +86,7 @@ type Binder struct {
 
 	// Plugins allows overriding binder plugin configuration. Keys are plugin names.
 	// Built-in plugins can be disabled, reordered, or have their arguments changed.
-	// Built-in plugins: volumebinding, dynamicresources, gpusharing.
+	// Built-in plugins: volumebinding, dynamicresources, gpusharing, hamicore.
 	// +kubebuilder:validation:Optional
 	Plugins map[string]PluginConfig `json:"plugins,omitempty"`
 
@@ -196,6 +198,10 @@ func DefaultPluginsConfig(bindTimeoutSeconds int, cdiEnabled bool) map[string]Pl
 				CDIEnabledArgument: strconv.FormatBool(cdiEnabled),
 			},
 		},
+		HamiCorePluginName: {
+			Enabled:  ptr.To(false),
+			Priority: ptr.To(defaultPluginPriorities[HamiCorePluginName]),
+		},
 	}
 }
 
@@ -231,7 +237,10 @@ type ResourceReservation struct {
 	// +kubebuilder:validation:Optional
 	AppLabel *string `json:"appLabel,omitempty"`
 
-	// RuntimeClassName specifies the runtime class used by the reservation pods. Needs to allow access to the GPU
+	// RuntimeClassName specifies the runtime class used by GPU reservation pods.
+	// Defaults to empty (no runtime class). Set this if the cluster requires a
+	// specific runtime class for GPU access on reservation pods.
+	// +kubebuilder:validation:Optional
 	RuntimeClassName *string `json:"runtimeClassName,omitempty"`
 
 	// PodResources specifies the CPU and memory resource requests and limits for GPU reservation pods.
@@ -256,5 +265,4 @@ func (r *ResourceReservation) SetDefaultsWhereNeeded() {
 	r.Namespace = common.SetDefault(r.Namespace, ptr.To(constants.DefaultResourceReservationName))
 	r.ServiceAccountName = common.SetDefault(r.ServiceAccountName, ptr.To(constants.DefaultResourceReservationName))
 	r.AppLabel = common.SetDefault(r.AppLabel, ptr.To(constants.DefaultResourceReservationName))
-	r.RuntimeClassName = common.SetDefault(r.RuntimeClassName, ptr.To(constants.DefaultRuntimeClassName))
 }

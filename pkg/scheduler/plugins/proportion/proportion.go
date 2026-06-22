@@ -102,7 +102,7 @@ func (pp *proportionPlugin) OnSessionOpen(ssn *framework.Session) {
 	pp.taskOrderFunc = ssn.TaskOrderFn
 	pp.minNodeGPUMemory = ssn.ClusterInfo.MinNodeGPUMemory
 	pp.reclaimablePlugin = rec.New(pp.relcaimerSaturationMultiplier)
-	capacityPolicy := cp.New(pp.queues)
+	capacityPolicy := cp.New(pp.queues, pp.minNodeGPUMemory)
 	ssn.AddQueueOrderFn(pp.queueOrder)
 	ssn.AddCanReclaimResourcesFn(pp.CanReclaimResourcesFn)
 	ssn.AddReclaimScenarioValidatorFn(pp.reclaimableFn)
@@ -311,6 +311,7 @@ func (pp *proportionPlugin) createQueueResourceAttrs(ssn *framework.Session) {
 		queueAttributes := &rs.QueueAttributes{
 			UID:               queue.UID,
 			Name:              queue.Name,
+			DisplayName:       queue.DisplayName,
 			ParentQueue:       queue.ParentQueue,
 			ChildQueues:       queue.ChildQueues,
 			CreationTimestamp: queue.CreationTimestamp,
@@ -361,9 +362,9 @@ func (pp *proportionPlugin) updateQueuesCurrentResourceUsage(ssn *framework.Sess
 			} else if status == pod_status.Pending {
 				for _, t := range tasks {
 					resources := utils.QuantifyVector(t.ResReqVector, t.VectorMap)
-					if t.IsMemoryRequest() {
+					if t.IsGpuMemoryRequest() {
 						resources.Add(rs.ResourceQuantities{
-							rs.GpuResource: float64(t.GpuRequirement.GetNumOfGpuDevices()) * (float64(t.GpuRequirement.GpuMemory()) / float64(ssn.ClusterInfo.MinNodeGPUMemory)),
+							rs.GpuResource: t.GpuRequirement.GpuMemoryAsGpuFraction(ssn.ClusterInfo.MinNodeGPUMemory),
 						})
 					}
 					pp.updateQueuesResourceUsageForPendingJob(job.Queue, resources)

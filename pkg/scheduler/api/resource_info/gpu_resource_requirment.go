@@ -113,6 +113,33 @@ func (g *GpuResourceRequirement) Clone() *GpuResourceRequirement {
 	}
 }
 
+// Add sums `gg` into `g`. KAI represents whole and fractional GPU requests as
+// `count × portion`; summing two requirements with different non-zero
+// fractional portions has no canonical representation, so we surface that as
+// an error (mirroring `SetMaxResource`). Whole-GPU additions (portion = 1) and
+// summing into an empty receiver are well-defined.
+func (g *GpuResourceRequirement) Add(gg *GpuResourceRequirement) error {
+	if gg == nil {
+		return nil
+	}
+	if g.portion == 0 && g.count == 0 {
+		g.count = gg.count
+		g.portion = gg.portion
+	} else if gg.portion != 0 || gg.count != 0 {
+		if g.portion != gg.portion {
+			return fmt.Errorf("cannot add GpuResourceRequirements with different fractional portions: %v vs %v", g.portion, gg.portion)
+		}
+		g.count += gg.count
+	}
+	for name, ggQuant := range gg.draGpuCounts {
+		g.draGpuCounts[name] += ggQuant
+	}
+	for name, ggQuant := range gg.migResources {
+		g.migResources[name] += ggQuant
+	}
+	return nil
+}
+
 func (g *GpuResourceRequirement) SetMaxResource(gg *GpuResourceRequirement) error {
 	if g.portion != 0 && gg.portion != 0 && g.portion != gg.portion {
 		return fmt.Errorf("cannot calculate max resource for GpuResourceRequirements with different fractional portions. %v vs %v", g.portion, gg.portion)
@@ -195,6 +222,16 @@ func (g *GpuResourceRequirement) GpuMemory() int64 {
 
 func (g *GpuResourceRequirement) GPUs() float64 {
 	return getExtendedResourceGpus(g.portion, g.count)
+}
+
+// GpuMemoryAsGpuFraction converts a GPU-memory request into an equivalent whole-GPU
+// quota amount using gpuDeviceMemory as the per-device memory basis. Returns 0 for
+// non-memory requests or non-positive gpuDeviceMemory.
+func (g *GpuResourceRequirement) GpuMemoryAsGpuFraction(gpuDeviceMemory int64) float64 {
+	if g.gpuMemory <= 0 || gpuDeviceMemory <= 0 {
+		return 0
+	}
+	return float64(g.count) * (float64(g.gpuMemory) / float64(gpuDeviceMemory))
 }
 
 func (g *GpuResourceRequirement) GetNumOfGpuDevices() int64 {

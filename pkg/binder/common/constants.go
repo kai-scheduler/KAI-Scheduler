@@ -4,7 +4,8 @@
 package common
 
 const (
-	GPUPortion           = "GPU_PORTION"
-	ReceivedTypeFraction = "Fraction"
-	ReceivedTypeRegular  = "Regular"
+	GPUPortion            = "GPU_PORTION"
+	CudaDeviceMemoryLimit = "CUDA_DEVICE_MEMORY_LIMIT"
+	ReceivedTypeFraction  = "Fraction"
+	ReceivedTypeRegular   = "Regular"
 )

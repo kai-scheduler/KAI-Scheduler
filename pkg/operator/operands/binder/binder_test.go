@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"testing"
 
-	nvidiav1 "github.com/NVIDIA/gpu-operator/api/nvidia/v1"
+	nvidiav1 "github.com/kai-scheduler/KAI-scheduler/third_party/nvidia/gpu-operator/api/nvidia/v1"
 	"golang.org/x/exp/maps"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -113,12 +113,15 @@ var _ = Describe("Binder", func() {
 				Expect(pluginConfig).To(HaveKey(binderplugins.VolumeBindingPluginName))
 				Expect(pluginConfig).To(HaveKey(binderplugins.DynamicResourcesPluginName))
 				Expect(pluginConfig).To(HaveKey(binderplugins.GPUSharingPluginName))
+				Expect(pluginConfig).To(HaveKey(binderplugins.HamiCorePluginName))
 				Expect(pluginConfig[binderplugins.VolumeBindingPluginName].Arguments[binderplugins.BindTimeoutSecondsArgument]).
 					To(Equal(strconv.Itoa(binderplugins.DefaultBindTimeoutSeconds)))
 				Expect(pluginConfig[binderplugins.DynamicResourcesPluginName].Arguments[binderplugins.BindTimeoutSecondsArgument]).
 					To(Equal(strconv.Itoa(binderplugins.DefaultBindTimeoutSeconds)))
 				Expect(pluginConfig[binderplugins.GPUSharingPluginName].Arguments[binderplugins.CDIEnabledArgument]).
 					To(Equal(strconv.FormatBool(binderplugins.DefaultCDIEnabled)))
+				Expect(pluginConfig[binderplugins.HamiCorePluginName].Enabled).NotTo(BeNil())
+				Expect(*pluginConfig[binderplugins.HamiCorePluginName].Enabled).To(BeFalse())
 			})
 
 			It("passes volume binding timeout through plugin arguments", func(ctx context.Context) {

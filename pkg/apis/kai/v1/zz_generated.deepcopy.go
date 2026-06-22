@@ -14,6 +14,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/binder"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/node_scale_adjuster"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/numa_placement_exporter"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/pod_group_controller"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/pod_grouper"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/prometheus"
@@ -154,6 +155,11 @@ func (in *ConfigSpec) DeepCopyInto(out *ConfigSpec) {
 	if in.Prometheus != nil {
 		in, out := &in.Prometheus, &out.Prometheus
 		*out = new(prometheus.Prometheus)
+		(*in).DeepCopyInto(*out)
+	}
+	if in.NumaPlacementExporter != nil {
+		in, out := &in.NumaPlacementExporter, &out.NumaPlacementExporter
+		*out = new(numa_placement_exporter.NumaPlacementExporter)
 		(*in).DeepCopyInto(*out)
 	}
 }

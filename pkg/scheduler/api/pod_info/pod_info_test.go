@@ -131,6 +131,106 @@ func TestGetPodResourceRequest(t *testing.T) {
 			expectedResource: resource_info.NewResourceRequirements(1, 3000, 5000000000),
 		},
 		{
+			name: "pod with native sidecar (initContainer with restartPolicy=Always)",
+			pod: &v1.Pod{
+				Spec: v1.PodSpec{
+					InitContainers: []v1.Container{
+						{
+							// Native sidecar — added to running sum.
+							RestartPolicy: ptr.To(v1.ContainerRestartPolicyAlways),
+							Resources: v1.ResourceRequirements{
+								Requests: common_info.BuildResourceList("250m", "256Mi"),
+							},
+						},
+						{
+							// Regular init container — max'd against running sum.
+							Resources: v1.ResourceRequirements{
+								Requests: common_info.BuildResourceList("500m", "1G"),
+							},
+						},
+					},
+					Containers: []v1.Container{
+						{
+							Resources: v1.ResourceRequirements{
+								Requests: common_info.BuildResourceList("4000m", "8Gi"),
+							},
+						},
+					},
+				},
+			},
+			// containers (4000m, 8Gi) + sidecar (250m, 256Mi) = 4250m, 8Gi+256Mi.
+			// Regular init (500m, 1G) is below that, so max yields running sum.
+			expectedResource: resource_info.RequirementsFromResourceList(
+				common_info.BuildResourceList("4250m", "8858370048"),
+			),
+		},
+		{
+			// Mirrors upstream `AggregateContainerRequests` (KEP-753): a
+			// regular initContainer's peak demand includes any native sidecars
+			// declared before it, since those sidecars start first and run
+			// concurrently with the init.
+			name: "regular init dominates and includes preceding native sidecar",
+			pod: &v1.Pod{
+				Spec: v1.PodSpec{
+					InitContainers: []v1.Container{
+						{
+							RestartPolicy: ptr.To(v1.ContainerRestartPolicyAlways),
+							Resources: v1.ResourceRequirements{
+								Requests: common_info.BuildResourceList("500m", "256Mi"),
+							},
+						},
+						{
+							// Regular init dominates the steady-state sum.
+							Resources: v1.ResourceRequirements{
+								Requests: common_info.BuildResourceList("5000m", "1Gi"),
+							},
+						},
+					},
+					Containers: []v1.Container{
+						{
+							Resources: v1.ResourceRequirements{
+								Requests: common_info.BuildResourceList("1000m", "1Gi"),
+							},
+						},
+					},
+				},
+			},
+			// steady-state = main(1000m,1Gi) + sidecar(500m,256Mi) = 1500m, 1Gi+256Mi.
+			// init-phase peak = init(5000m,1Gi) + sidecar(500m,256Mi) = 5500m, 1Gi+256Mi.
+			// max → 5500m, 1Gi+256Mi (= 1342177280 bytes).
+			expectedResource: resource_info.RequirementsFromResourceList(
+				common_info.BuildResourceList("5500m", "1342177280"),
+			),
+		},
+		{
+			// Native sidecars that request GPUs must contribute to the GPU
+			// half of the running sum, not be silently dropped via method
+			// promotion to BaseResource.Add.
+			name: "native sidecar with GPU is summed into pod GPU request",
+			pod: &v1.Pod{
+				Spec: v1.PodSpec{
+					InitContainers: []v1.Container{
+						{
+							RestartPolicy: ptr.To(v1.ContainerRestartPolicyAlways),
+							Resources: v1.ResourceRequirements{
+								Requests: common_info.BuildResourceListWithGPU("250m", "256Mi", "1"),
+							},
+						},
+					},
+					Containers: []v1.Container{
+						{
+							Resources: v1.ResourceRequirements{
+								Requests: common_info.BuildResourceListWithGPU("4000m", "8Gi", "2"),
+							},
+						},
+					},
+				},
+			},
+			// main(4000m, 8Gi, 2 GPUs) + sidecar(250m, 256Mi, 1 GPU) =
+			// 4250m, 8Gi+256Mi, 3 GPUs.
+			expectedResource: resource_info.NewResourceRequirements(3, 4250, 8858370048),
+		},
+		{
 			name: "pod with overhead resources",
 			pod: &v1.Pod{
 				Spec: v1.PodSpec{
@@ -314,7 +414,7 @@ func TestPodInfo_updatePodAdditionalFields(t *testing.T) {
 					nil,
 					map[string]string{},
 					map[string]string{
-						GpuMemoryAnnotationName: "1024",
+						commonconstants.GpuMemory: "1024",
 					}),
 			},
 			expected{
@@ -338,7 +438,7 @@ func TestPodInfo_updatePodAdditionalFields(t *testing.T) {
 					nil,
 					map[string]string{},
 					map[string]string{
-						GpuMemoryAnnotationName:                "1024",
+						commonconstants.GpuMemory:              "1024",
 						commonconstants.GpuFractionsNumDevices: "2",
 					}),
 			},
@@ -363,7 +463,7 @@ func TestPodInfo_updatePodAdditionalFields(t *testing.T) {
 					nil,
 					map[string]string{},
 					map[string]string{
-						common_info.GPUFraction: "0.5",
+						commonconstants.GpuFraction: "0.5",
 					}),
 			},
 			expected{
@@ -387,7 +487,7 @@ func TestPodInfo_updatePodAdditionalFields(t *testing.T) {
 					nil,
 					map[string]string{},
 					map[string]string{
-						common_info.GPUFraction: "0.5",
+						commonconstants.GpuFraction: "0.5",
 					}),
 				bindingRequest: &bindrequest_info.BindRequestInfo{
 					BindRequest: &schedulingv1alpha2.BindRequest{
@@ -419,7 +519,7 @@ func TestPodInfo_updatePodAdditionalFields(t *testing.T) {
 					nil,
 					map[string]string{},
 					map[string]string{
-						common_info.GPUFraction:                "0.5",
+						commonconstants.GpuFraction:            "0.5",
 						commonconstants.GpuFractionsNumDevices: "3",
 					}),
 			},

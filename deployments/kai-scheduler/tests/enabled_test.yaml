@@ -2,6 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 
 suite: test service enabled configuration
+
+set:
+  _test:
+    renderKaiConfig: true
 templates:
   - kai-config.yaml
 tests:
@@ -10,6 +14,9 @@ tests:
   # ======================================
   - it: should enable all services by default
     asserts:
+      - equal:
+          path: spec.global.queueLabelKey
+          value: "kai.scheduler/queue"
       - equal:
           path: spec.binder.service.enabled
           value: true
@@ -28,6 +35,17 @@ tests:
       - equal:
           path: spec.scheduler.service.enabled
           value: true
+
+  # ======================================
+  # Global queueLabelKey Tests
+  # ======================================
+  - it: should wire podgrouper.queueLabelKey into spec.global.queueLabelKey
+    set:
+      podgrouper.queueLabelKey: "runai/queue"
+    asserts:
+      - equal:
+          path: spec.global.queueLabelKey
+          value: "runai/queue"
 
   # ======================================
   # Binder Enabled Tests

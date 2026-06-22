@@ -417,7 +417,7 @@ func parseGroupTopologyConfig(config map[string]interface{}, subGroupToParentMap
 
 	return &podgroup.SubGroupMetadata{
 		Name:                name,
-		MinAvailable:        0,
+		MinSubGroup:         ptr.To(int32(len(podGroupNames))),
 		Parent:              nil,
 		PodsReferences:      nil,
 		TopologyConstraints: topologyConstraint,
