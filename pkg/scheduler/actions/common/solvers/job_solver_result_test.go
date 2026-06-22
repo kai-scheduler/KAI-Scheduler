@@ -273,7 +273,7 @@ func TestSolveWithResultRunsCompletePartialSearchForOneGeneratorBeforeNext(t *te
 
 	require.True(t, solved)
 	require.Equal(t, SearchResultSolved, result.Reason())
-	require.Equal(t, []string{"first:1", "second:1", "second:2", "second:3", "second:3"}, factoryCalls)
+	require.Equal(t, []string{"first:1", "second:1", "second:2", "second:3"}, factoryCalls)
 }
 
 func TestSearchMaxSolvableKStopsAfterTerminalPartialProbe(t *testing.T) {
