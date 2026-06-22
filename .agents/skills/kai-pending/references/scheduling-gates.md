@@ -1,7 +1,6 @@
 # scheduling gates / suspended Job (held, not "no resources")
 
-The workload is **intentionally held**, so the scheduler never considers it - like a Slurm job
-with a future begin-time or in `held` state. Not a capacity problem.
+The workload is **intentionally held**, so the scheduler never considers it. Not a capacity problem.
 
 **Check** (verified on cluster)
 - Pod `STATUS: SchedulingGated` (kubectl shows it directly), or `spec.schedulingGates` non-empty.
