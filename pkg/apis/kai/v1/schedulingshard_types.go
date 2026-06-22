@@ -23,6 +23,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/scenariosearch"
 	usagedbapi "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
 )
 
@@ -58,6 +59,13 @@ type ActionConfig struct {
 	// Built-in actions use priorities in the range 0-10000, spaced by 100.
 	// +kubebuilder:validation:Optional
 	Priority *int `json:"priority,omitempty"`
+}
+
+type ScenarioSearchBudgets struct {
+	MaxActionSearchDuration    map[string]string `json:"maxActionSearchDuration,omitempty"`
+	MaxJobSearchDuration       string            `json:"maxJobSearchDuration,omitempty"`
+	MinJobSearchDuration       string            `json:"minJobSearchDuration,omitempty"`
+	MaxGeneratorSearchDuration map[string]string `json:"maxGeneratorSearchDuration,omitempty"`
 }
 
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
@@ -100,6 +108,10 @@ type SchedulingShardSpec struct {
 	// +kubebuilder:validation:Optional
 	UsageDBConfig *usagedbapi.UsageDBConfig `yaml:"usageDBConfig,omitempty" json:"usageDBConfig,omitempty"`
 
+	// ScenarioSearchBudgets configures alpha/experimental time budgets for scenario search.
+	// +kubebuilder:validation:Optional
+	ScenarioSearchBudgets *ScenarioSearchBudgets `json:"scenarioSearchBudgets,omitempty"`
+
 	// Plugins allows overriding plugin configuration. Keys are plugin names.
 	// Built-in plugins can be disabled, reordered, or have their arguments changed.
 	// New plugins can be added by specifying a name not in the default set.
@@ -108,7 +120,8 @@ type SchedulingShardSpec struct {
 	// resourcetype=1500, podaffinity=1400, elastic=1300, kubeflow=1200,
 	// ray=1100, subgrouporder=1000, taskorder=900, nominatednode=800,
 	// dynamicresources=700, minruntime=600, topology=500, snapshot=400,
-	// gpupack/gpuspread=300, nodeplacement=200, gpusharingorder=100.
+	// sg-nodelocalgreedy=360, sg-multinodegang=350, gpupack/gpuspread=300,
+	// nodeplacement=200, gpusharingorder=100.
 	// +kubebuilder:validation:Optional
 	Plugins map[string]PluginConfig `json:"plugins,omitempty"`
 
@@ -127,31 +140,65 @@ func (s *SchedulingShardSpec) SetDefaultsWhereNeeded() {
 
 	s.setDefaultPlugins()
 	s.setDefaultActions()
+	s.ScenarioSearchBudgets = DefaultScenarioSearchBudgets(s.ScenarioSearchBudgets)
+}
+
+func DefaultScenarioSearchBudgets(config *ScenarioSearchBudgets) *ScenarioSearchBudgets {
+	if config == nil {
+		config = &ScenarioSearchBudgets{}
+	}
+	if config.MaxActionSearchDuration == nil {
+		config.MaxActionSearchDuration = map[string]string{}
+	}
+	if config.MaxActionSearchDuration[scenariosearch.ActionDefault] == "" {
+		config.MaxActionSearchDuration[scenariosearch.ActionDefault] = scenariosearch.DefaultActionBudget
+	}
+	if config.MaxJobSearchDuration == "" {
+		config.MaxJobSearchDuration = scenariosearch.DefaultJobBudget
+	}
+	if config.MinJobSearchDuration == "" {
+		config.MinJobSearchDuration = scenariosearch.DefaultMinJobBudget
+	}
+	if config.MaxGeneratorSearchDuration == nil {
+		config.MaxGeneratorSearchDuration = map[string]string{}
+	}
+	if config.MaxGeneratorSearchDuration[scenariosearch.ActionDefault] == "" {
+		config.MaxGeneratorSearchDuration[scenariosearch.ActionDefault] = scenariosearch.DefaultGeneratorBudget
+	}
+	if config.MaxGeneratorSearchDuration[scenariosearch.GeneratorNodeLocalGreedy] == "" {
+		config.MaxGeneratorSearchDuration[scenariosearch.GeneratorNodeLocalGreedy] = scenariosearch.DefaultNodeLocalGreedy
+	}
+	if config.MaxGeneratorSearchDuration[scenariosearch.GeneratorMultiNodeGang] == "" {
+		config.MaxGeneratorSearchDuration[scenariosearch.GeneratorMultiNodeGang] = scenariosearch.DefaultMultiNodeGang
+	}
+	return config
 }
 
 // Default priorities preserve the current hardcoded ordering.
 // Higher priority = runs first. Spaced by 100.
 var defaultPluginPriorities = map[string]int{
-	"predicates":       1900,
-	"proportion":       1800,
-	"priority":         1700,
-	"nodeavailability": 1600,
-	"resourcetype":     1500,
-	"podaffinity":      1400,
-	"elastic":          1300,
-	"kubeflow":         1200,
-	"ray":              1100,
-	"subgrouporder":    1000,
-	"taskorder":        900,
-	"nominatednode":    800,
-	"dynamicresources": 700,
-	"minruntime":       600,
-	"topology":         500,
-	"snapshot":         400,
-	"gpupack":          300,
-	"gpuspread":        300,
-	"nodeplacement":    200,
-	"gpusharingorder":  100,
+	"predicates":         1900,
+	"proportion":         1800,
+	"priority":           1700,
+	"nodeavailability":   1600,
+	"resourcetype":       1500,
+	"podaffinity":        1400,
+	"elastic":            1300,
+	"kubeflow":           1200,
+	"ray":                1100,
+	"subgrouporder":      1000,
+	"taskorder":          900,
+	"nominatednode":      800,
+	"dynamicresources":   700,
+	"minruntime":         600,
+	"topology":           500,
+	"snapshot":           400,
+	"sg-nodelocalgreedy": 360,
+	"sg-multinodegang":   350,
+	"gpupack":            300,
+	"gpuspread":          300,
+	"nodeplacement":      200,
+	"gpusharingorder":    100,
 }
 
 var defaultActionPriorities = map[string]int{

@@ -36,6 +36,8 @@ import (
 type reclaimAction struct {
 }
 
+const reducedBudgetReclaimMessage = "Scheduler could not find a valid reclaim scenario for this job within the remaining configured search time."
+
 func New() *reclaimAction {
 	return &reclaimAction{}
 }
@@ -47,6 +49,12 @@ func (ra *reclaimAction) Name() framework.ActionType {
 func (ra *reclaimAction) Execute(ssn *framework.Session) {
 	log.InfraLogger.V(2).Infof("Enter Reclaim ...")
 	defer log.InfraLogger.V(2).Infof("Leaving Reclaim ...")
+
+	actionBudget, err := solvers.NewActionSearchBudget(ssn, framework.Reclaim)
+	if err != nil {
+		log.InfraLogger.Errorf("Invalid scenario search budget for reclaim: %v", err)
+		return
+	}
 
 	jobsOrderByQueues := utils.NewJobsOrderByQueues(ssn, utils.JobsOrderInitOptions{
 		FilterNonPending:  true,
@@ -86,7 +94,7 @@ func (ra *reclaimAction) Execute(ssn *framework.Session) {
 			continue
 		}
 		metrics.IncPodgroupsConsideredByAction()
-		succeeded, statement, reclaimeeTasksNames := ra.attemptToReclaimForSpecificJob(ssn, job)
+		succeeded, statement, reclaimeeTasksNames, searchResult := ra.attemptToReclaimForSpecificJob(ssn, job, actionBudget)
 		if succeeded {
 			metrics.IncPodgroupScheduledByAction()
 			log.InfraLogger.V(3).Infof(
@@ -97,6 +105,10 @@ func (ra *reclaimAction) Execute(ssn *framework.Session) {
 				log.InfraLogger.Errorf("Failed to commit reclaim statement: %v", err)
 			}
 		} else {
+			recordReducedBudgetReclaimFailure(job, searchResult)
+			if shouldStopActionForSearchResult(searchResult) {
+				return
+			}
 			log.InfraLogger.V(3).Infof("Didn't find a reclaim strategy for job <%s/%s>",
 				job.Namespace, job.Name)
 			smallestFailedJobs.UpdateRepresentative(job)
@@ -105,12 +117,16 @@ func (ra *reclaimAction) Execute(ssn *framework.Session) {
 }
 
 func (ra *reclaimAction) attemptToReclaimForSpecificJob(
-	ssn *framework.Session, reclaimer *podgroup_info.PodGroupInfo,
-) (bool, *framework.Statement, []string) {
+	ssn *framework.Session, reclaimer *podgroup_info.PodGroupInfo, actionBudget *solvers.ActionSearchBudget,
+) (bool, *framework.Statement, []string, *solvers.SearchResult) {
 	queue := ssn.ClusterInfo.Queues[reclaimer.Queue]
 	resReq := podgroup_info.GetTasksToAllocateInitResourceVector(reclaimer, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false, ssn.ClusterInfo.MinNodeGPUMemory)
 	log.InfraLogger.V(3).Infof("Attempting to reclaim for job: <%v/%v> of queue <%v>, resources: <%v>",
 		reclaimer.Namespace, reclaimer.Name, queue.Name, resReq)
+
+	if actionBudget != nil && actionBudget.Exhausted() {
+		return false, nil, nil, solvers.NewNotAttemptedSearchResult()
+	}
 
 	ssn.OnJobSolutionStart()
 
@@ -119,8 +135,25 @@ func (ra *reclaimAction) attemptToReclaimForSpecificJob(
 		feasibleNodes,
 		ssn.ReclaimScenarioValidatorFn,
 		getOrderedVictimsQueue(ssn, reclaimer),
-		framework.Reclaim)
-	return solver.Solve(ssn, reclaimer)
+		framework.Reclaim,
+		actionBudget)
+	return solver.SolveWithResult(ssn, reclaimer)
+}
+
+func recordReducedBudgetReclaimFailure(job *podgroup_info.PodGroupInfo, searchResult *solvers.SearchResult) {
+	if searchResult == nil || !searchResult.ReducedBudget() {
+		return
+	}
+	job.AddSimpleJobFitError(podgroup_info.PodSchedulingErrors, reducedBudgetReclaimMessage)
+}
+
+func shouldStopActionForSearchResult(result *solvers.SearchResult) bool {
+	switch result.Reason() {
+	case solvers.SearchResultDeadlineExhausted, solvers.SearchResultNotAttempted:
+		return true
+	default:
+		return false
+	}
 }
 
 func getOrderedVictimsQueue(ssn *framework.Session, reclaimer *podgroup_info.PodGroupInfo) solvers.GenerateVictimsQueue {

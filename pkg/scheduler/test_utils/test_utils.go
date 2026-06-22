@@ -98,8 +98,9 @@ type TestDepartmentBasic struct {
 }
 
 type TestSessionConfig struct {
-	Plugins      []conf.Tier
-	CachePlugins map[string]bool
+	Plugins               []conf.Tier
+	CachePlugins          map[string]bool
+	ScenarioSearchBudgets *conf.ScenarioSearchBudgets
 }
 
 type TestExpectedResultBasic struct {

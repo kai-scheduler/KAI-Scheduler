@@ -46,6 +46,13 @@ type SchedulerParams struct {
 	QueueLabelKey                     string                    `json:"queueLabelKey,omitempty"`
 }
 
+type ScenarioSearchBudgets struct {
+	MaxActionSearchDuration    map[string]string `json:"maxActionSearchDuration,omitempty" yaml:"maxActionSearchDuration,omitempty"`
+	MaxJobSearchDuration       string            `json:"maxJobSearchDuration,omitempty" yaml:"maxJobSearchDuration,omitempty"`
+	MinJobSearchDuration       string            `json:"minJobSearchDuration,omitempty" yaml:"minJobSearchDuration,omitempty"`
+	MaxGeneratorSearchDuration map[string]string `json:"maxGeneratorSearchDuration,omitempty" yaml:"maxGeneratorSearchDuration,omitempty"`
+}
+
 // SchedulerConfiguration defines the configuration of scheduler.
 type SchedulerConfiguration struct {
 	// Actions defines the actions list of scheduler in order
@@ -59,6 +66,8 @@ type SchedulerConfiguration struct {
 
 	// UsageDBConfig defines configuration for the usage db client
 	UsageDBConfig *usagedbapi.UsageDBConfig `yaml:"usageDBConfig,omitempty" json:"usageDBConfig,omitempty"`
+
+	ScenarioSearchBudgets *ScenarioSearchBudgets `json:"scenarioSearchBudgets,omitempty" yaml:"scenarioSearchBudgets,omitempty"`
 }
 
 // Tier defines plugin tier
