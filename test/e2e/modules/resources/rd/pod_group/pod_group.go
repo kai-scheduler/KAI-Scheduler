@@ -79,28 +79,6 @@ func DeleteAllInNamespace(
 	return runtimeClient.IgnoreNotFound(err)
 }
 
-func CreateWithPods(ctx context.Context, client *kubernetes.Clientset, kaiClient *kaiClient.Clientset,
-	podGroupName string, q *v2.Queue, numPods int, priorityClassName *string, preemptibility v2alpha2.Preemptibility,
-	requirements v1.ResourceRequirements) (*v2alpha2.PodGroup, []*v1.Pod) {
-	namespace := queue.GetConnectedNamespaceToQueue(q)
-	podGroup := Create(namespace, podGroupName, q.Name)
-	if priorityClassName != nil {
-		podGroup.Spec.PriorityClassName = *priorityClassName
-	}
-	if preemptibility != "" {
-		podGroup.Spec.Preemptibility = preemptibility
-	}
-	podGroup, err := kaiClient.SchedulingV2alpha2().PodGroups(namespace).Create(ctx, podGroup, metav1.CreateOptions{})
-	Expect(err).To(Succeed())
-
-	var pods []*v1.Pod
-	for i := 0; i < numPods; i++ {
-		pod := createPod(ctx, client, q, podGroupName, requirements)
-		pods = append(pods, pod)
-	}
-	return podGroup, pods
-}
-
 // BuildHierarchy flattens a tree of SubGroupNodes into the flat SubGroup slice expected by PodGroupSpec
 // and creates pods for all leaf nodes. Use this when you need to configure the PodGroup manually
 // before creation (e.g., for validation tests).
@@ -182,14 +160,4 @@ func IsNotReadyForScheduling(event *v1.Event) bool {
 		event.Message)
 	Expect(err).To(Succeed())
 	return match
-}
-
-func createPod(ctx context.Context, client *kubernetes.Clientset, queue *v2.Queue,
-	podGroupName string, requirements v1.ResourceRequirements) *v1.Pod {
-	pod := rd.CreatePodObject(queue, requirements)
-	pod.Annotations[PodGroupNameAnnotation] = podGroupName
-	pod.Labels[PodGroupNameAnnotation] = podGroupName
-	pod, err := rd.CreatePod(ctx, client, pod)
-	Expect(err).To(Succeed())
-	return pod
 }

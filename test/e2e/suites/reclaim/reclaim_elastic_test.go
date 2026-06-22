@@ -16,13 +16,14 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/capacity"
-	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/pod_group"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
 )
@@ -62,9 +63,15 @@ var _ = Describe("Reclaim with Elastic Jobs", Ordered, func() {
 				constants.NvidiaGpuResource: resource.MustParse("1"),
 			},
 		}
-		reclaimeePodGroup, reclaimeePods := pod_group.CreateWithPods(ctx, testCtx.KubeClientset, testCtx.KubeAiSchedClientset,
-			"elastic-reclaimee-job", reclaimeeQueue, 2, nil, "",
-			reclaimeePodRequirements)
+		reclaimeeJob, _, reclaimeePods, err := rd.CreateDistributedBatchJob(ctx, testCtx.ControllerClient, reclaimeeQueue,
+			rd.DistributedBatchJobOptions{
+				Parallelism:  ptr.To(int32(2)),
+				MinMember:    ptr.To(int32(1)),
+				BackoffLimit: ptr.To(int32(0)),
+				NamePrefix:   "elastic-reclaimee-",
+				Resources:    reclaimeePodRequirements,
+			})
+		Expect(err).To(Succeed())
 		wait.ForPodsScheduled(ctx, testCtx.ControllerClient, reclaimeeNamespace, reclaimeePods)
 
 		reclaimerPodRequirements := v1.ResourceRequirements{
@@ -72,16 +79,18 @@ var _ = Describe("Reclaim with Elastic Jobs", Ordered, func() {
 				constants.NvidiaGpuResource: resource.MustParse("1"),
 			},
 		}
-		_, reclaimerPods := pod_group.CreateDistributedJob(
-			ctx, testCtx.KubeClientset, testCtx.ControllerClient,
-			reclaimerQueue, 2, reclaimerPodRequirements, "",
-		)
+		_, _, reclaimerPods, err := rd.CreateDistributedBatchJob(ctx, testCtx.ControllerClient, reclaimerQueue,
+			rd.DistributedBatchJobOptions{
+				Parallelism: ptr.To(int32(2)),
+				Resources:   reclaimerPodRequirements,
+			})
+		Expect(err).To(Succeed())
 		reclaimerNamespace := queue.GetConnectedNamespaceToQueue(reclaimerQueue)
 		wait.ForPodsScheduled(ctx, testCtx.ControllerClient, reclaimerNamespace, reclaimerPods)
 
 		wait.ForPodsWithCondition(ctx, testCtx.ControllerClient, func(watch.Event) bool {
 			pods, err := testCtx.KubeClientset.CoreV1().Pods(reclaimeeNamespace).List(ctx, metav1.ListOptions{
-				LabelSelector: fmt.Sprintf("%s=%s", PodGroupLabelName, reclaimeePodGroup.Name),
+				LabelSelector: fmt.Sprintf("%s=%s", rd.JobNameLabel, reclaimeeJob.Name),
 			})
 			Expect(err).To(Succeed())
 			return len(pods.Items) == 0
@@ -100,9 +109,15 @@ var _ = Describe("Reclaim with Elastic Jobs", Ordered, func() {
 				constants.NvidiaGpuResource: resource.MustParse("1"),
 			},
 		}
-		reclaimeePodGroup, reclaimeePods := pod_group.CreateWithPods(ctx, testCtx.KubeClientset, testCtx.KubeAiSchedClientset,
-			"elastic-reclaimee-job", reclaimeeQueue, 3, nil, "",
-			reclaimeePodRequirements)
+		reclaimeeJob, reclaimeePodGroup, reclaimeePods, err := rd.CreateDistributedBatchJob(ctx, testCtx.ControllerClient, reclaimeeQueue,
+			rd.DistributedBatchJobOptions{
+				Parallelism:  ptr.To(int32(3)),
+				MinMember:    ptr.To(int32(1)),
+				BackoffLimit: ptr.To(int32(0)),
+				NamePrefix:   "elastic-reclaimee-",
+				Resources:    reclaimeePodRequirements,
+			})
+		Expect(err).To(Succeed())
 		Expect(testCtx.ControllerClient.Patch(
 			ctx, reclaimeePodGroup, client.RawPatch(types.JSONPatchType, []byte(`[{"op": "replace", "path": "/spec/minMember", "value": 2}]`)))).To(Succeed())
 		wait.ForPodsScheduled(ctx, testCtx.ControllerClient, reclaimeeNamespace, reclaimeePods)
@@ -112,16 +127,18 @@ var _ = Describe("Reclaim with Elastic Jobs", Ordered, func() {
 				constants.NvidiaGpuResource: resource.MustParse("1"),
 			},
 		}
-		_, reclaimerPods := pod_group.CreateDistributedJob(
-			ctx, testCtx.KubeClientset, testCtx.ControllerClient,
-			reclaimerQueue, 2, reclaimerPodRequirements, "",
-		)
+		_, _, reclaimerPods, err := rd.CreateDistributedBatchJob(ctx, testCtx.ControllerClient, reclaimerQueue,
+			rd.DistributedBatchJobOptions{
+				Parallelism: ptr.To(int32(2)),
+				Resources:   reclaimerPodRequirements,
+			})
+		Expect(err).To(Succeed())
 		reclaimerNamespace := queue.GetConnectedNamespaceToQueue(reclaimerQueue)
 		wait.ForPodsScheduled(ctx, testCtx.ControllerClient, reclaimerNamespace, reclaimerPods)
 
 		wait.ForPodsWithCondition(ctx, testCtx.ControllerClient, func(watch.Event) bool {
 			pods, err := testCtx.KubeClientset.CoreV1().Pods(reclaimeeNamespace).List(ctx, metav1.ListOptions{
-				LabelSelector: fmt.Sprintf("%s=%s", PodGroupLabelName, reclaimeePodGroup.Name),
+				LabelSelector: fmt.Sprintf("%s=%s", rd.JobNameLabel, reclaimeeJob.Name),
 			})
 			Expect(err).To(Succeed())
 			return len(pods.Items) == 2
@@ -141,9 +158,15 @@ var _ = Describe("Reclaim with Elastic Jobs", Ordered, func() {
 				constants.NvidiaGpuResource: resource.MustParse("1"),
 			},
 		}
-		reclaimeePodGroup, reclaimeePods := pod_group.CreateWithPods(ctx, testCtx.KubeClientset, testCtx.KubeAiSchedClientset,
-			"elastic-reclaimee-job", reclaimeeQueue, 3, nil, "",
-			reclaimeePodRequirements)
+		reclaimeeJob, _, reclaimeePods, err := rd.CreateDistributedBatchJob(ctx, testCtx.ControllerClient, reclaimeeQueue,
+			rd.DistributedBatchJobOptions{
+				Parallelism:  ptr.To(int32(3)),
+				MinMember:    ptr.To(int32(1)),
+				BackoffLimit: ptr.To(int32(0)),
+				NamePrefix:   "elastic-reclaimee-",
+				Resources:    reclaimeePodRequirements,
+			})
+		Expect(err).To(Succeed())
 		wait.ForPodsScheduled(ctx, testCtx.ControllerClient, reclaimeeNamespace, reclaimeePods)
 
 		reclaimer1PodRequirements := v1.ResourceRequirements{
@@ -151,16 +174,19 @@ var _ = Describe("Reclaim with Elastic Jobs", Ordered, func() {
 				constants.NvidiaGpuResource: resource.MustParse("1"),
 			},
 		}
-		_, reclaimer1Pods := pod_group.CreatePrefixedDistributedJob(
-			ctx, testCtx.KubeClientset, testCtx.ControllerClient,
-			reclaimerQueue, "reclaimer1-", 2, reclaimer1PodRequirements, "",
-		)
+		_, _, reclaimer1Pods, err := rd.CreateDistributedBatchJob(ctx, testCtx.ControllerClient, reclaimerQueue,
+			rd.DistributedBatchJobOptions{
+				Parallelism: ptr.To(int32(2)),
+				NamePrefix:  "reclaimer1-",
+				Resources:   reclaimer1PodRequirements,
+			})
+		Expect(err).To(Succeed())
 		reclaimerNamespace := queue.GetConnectedNamespaceToQueue(reclaimerQueue)
 		wait.ForPodsScheduled(ctx, testCtx.ControllerClient, reclaimerNamespace, reclaimer1Pods)
 
 		wait.ForPodsWithCondition(ctx, testCtx.ControllerClient, func(watch.Event) bool {
 			pods, err := testCtx.KubeClientset.CoreV1().Pods(reclaimeeNamespace).List(ctx, metav1.ListOptions{
-				LabelSelector: fmt.Sprintf("%s=%s", PodGroupLabelName, reclaimeePodGroup.Name),
+				LabelSelector: fmt.Sprintf("%s=%s", rd.JobNameLabel, reclaimeeJob.Name),
 			})
 			Expect(err).To(Succeed())
 			return len(pods.Items) == 1
@@ -171,10 +197,13 @@ var _ = Describe("Reclaim with Elastic Jobs", Ordered, func() {
 				constants.NvidiaGpuResource: resource.MustParse("1"),
 			},
 		}
-		_, reclaimer2Pods := pod_group.CreatePrefixedDistributedJob(
-			ctx, testCtx.KubeClientset, testCtx.ControllerClient,
-			reclaimerQueue, "reclaimer2-", 1, reclaimer2PodRequirements, "",
-		)
+		_, _, reclaimer2Pods, err := rd.CreateDistributedBatchJob(ctx, testCtx.ControllerClient, reclaimerQueue,
+			rd.DistributedBatchJobOptions{
+				Parallelism: ptr.To(int32(1)),
+				NamePrefix:  "reclaimer2-",
+				Resources:   reclaimer2PodRequirements,
+			})
+		Expect(err).To(Succeed())
 		wait.ForPodUnschedulable(ctx, testCtx.ControllerClient, reclaimer2Pods[0])
 		wait.ForPodsScheduled(ctx, testCtx.ControllerClient, reclaimerNamespace, reclaimer2Pods)
 	})
