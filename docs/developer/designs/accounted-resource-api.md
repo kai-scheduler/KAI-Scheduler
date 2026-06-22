@@ -610,11 +610,14 @@ Validation is layered:
 Scheduler behavior:
 
 - If a queue references an `AccountedResource` that the scheduler cannot
-  resolve, jobs in that queue do not schedule.
-- Those jobs should get a fit-error event.
+  resolve, this is a queue configuration error. KAI blocks scheduling for all
+  jobs in that queue until the reference is resolved, even if the queue entry
+  uses `limit: "-1"`.
+- Blocked jobs should surface an Unschedulable message and event with a
+  distinct reason such as `AccountedResourceNotFound`. The message should
+  include the queue name and missing `resourceRef`.
 - The queue should get a condition such as
   `AccountedResourcesResolved=False`, reason `AccountedResourceNotFound`.
-- This applies even if the queue's configured limit is `-1`.
 - If an existing `AccountedResource` cannot be evaluated for a candidate because
   selected runtime data is missing or unparsable, emit an event and skip
   enforcement for that unresolved source or candidate in phase 1.
@@ -649,6 +652,9 @@ node-fit failures. They should be surfaced through the same global
 queue-admission mechanism that #1615 defines, so AccountedResource limits do not
 create a new path that accidentally triggers scale-up for jobs blocked by queue
 policy.
+
+If #1615 introduces scheduling gates or another queue-admission signal, the
+`AccountedResourceNotFound` reason should be preserved there as well.
 
 ## Phase Boundaries
 
