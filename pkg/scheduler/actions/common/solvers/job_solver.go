@@ -69,7 +69,11 @@ func (s *JobSolver) Solve(
 	}
 
 	maxSolvedK := s.searchMaxSolvableK(ssn, &state, pendingJob, tasksToAllocate)
-	if maxSolvedK == 0 {
+	// The search relies on solvability being monotonic in k, so maxSolvedK < n means a
+	// full allocation is infeasible. Probing at n would only repeat a known-failing
+	// simulation; only maxSolvedK == n can yield a committable solution. The probe at n
+	// is still required to rebuild the live statement the search discards.
+	if maxSolvedK < n {
 		return false, nil, calcVictimNames(state.recordedVictimsTasks)
 	}
 
