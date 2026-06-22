@@ -40,6 +40,57 @@ type UpdatePodGroupConditionTest struct {
 	expectedUpdated     bool
 }
 
+func TestScenarioSearchUnresolvedMessage(t *testing.T) {
+	tests := []struct {
+		name       string
+		unresolved *podgroup_info.ScenarioSearchUnresolved
+		expected   string
+	}{
+		{
+			name: "deadline exhausted",
+			unresolved: &podgroup_info.ScenarioSearchUnresolved{
+				Reason: podgroup_info.ScenarioSearchResultDeadlineExhausted,
+			},
+			expected: "KAI could not find a valid reclaim scenario within the configured search budget for this scheduling attempt. The job remains pending and may be retried in a later scheduling cycle.",
+		},
+		{
+			name: "generators exhausted",
+			unresolved: &podgroup_info.ScenarioSearchUnresolved{
+				Reason: podgroup_info.ScenarioSearchResultGeneratorsExhausted,
+			},
+			expected: "KAI tried the configured scenario-search policy and found no valid reclaim scenario for this scheduling attempt. The job remains pending and may be retried in a later scheduling cycle.",
+		},
+		{
+			name: "not attempted",
+			unresolved: &podgroup_info.ScenarioSearchUnresolved{
+				Reason: podgroup_info.ScenarioSearchResultNotAttempted,
+			},
+			expected: "KAI did not attempt scenario search for this job in this scheduling cycle because the configured search budget was already exhausted.",
+		},
+		{
+			name: "no generator",
+			unresolved: &podgroup_info.ScenarioSearchUnresolved{
+				Reason: podgroup_info.ScenarioSearchResultNoGenerator,
+			},
+			expected: "KAI did not attempt scenario search for this job because no configured scenario generator applies to this action.",
+		},
+		{
+			name: "reduced budget overrides terminal reason",
+			unresolved: &podgroup_info.ScenarioSearchUnresolved{
+				Reason:        podgroup_info.ScenarioSearchResultGeneratorsExhausted,
+				ReducedBudget: true,
+			},
+			expected: "KAI could not find a valid scenario within the remaining configured search time for this scheduling attempt because the action search budget was partly consumed by earlier jobs. The job remains pending and may be retried in a later scheduling cycle.",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, scenarioSearchUnresolvedMessage(tt.unresolved))
+		})
+	}
+}
+
 func TestUpdatePodGroupSchedulingCondition(t *testing.T) {
 	for i, test := range []UpdatePodGroupConditionTest{
 		{

@@ -215,10 +215,17 @@ func (su *defaultStatusUpdater) RecordJobStatusEvent(job *podgroup_info.PodGroup
 			su.recordJobNotReadyEvent(job)
 			return nil
 		}
-		if err := su.recordUnschedulablePodsEvents(job); err != nil {
-			return err
+		if job.ScenarioSearchUnresolved != nil {
+			if err := su.recordScenarioSearchUnresolvedPodsEvents(job); err != nil {
+				return err
+			}
+			updatePodgroupStatus = su.recordScenarioSearchUnresolvedPodGroup(job)
+		} else {
+			if err := su.recordUnschedulablePodsEvents(job); err != nil {
+				return err
+			}
+			updatePodgroupStatus = su.recordUnschedulablePodGroup(job)
 		}
-		updatePodgroupStatus = su.recordUnschedulablePodGroup(job)
 	}
 
 	if len(patchData) > 0 || updatePodgroupStatus {
@@ -254,6 +261,18 @@ func (su *defaultStatusUpdater) markTaskUnschedulable(pod *v1.Pod, message strin
 	}
 
 	return nil
+}
+
+func (su *defaultStatusUpdater) markTaskScenarioSearchUnresolved(pod *v1.Pod, message string) error {
+	log.InfraLogger.V(6).Infof("setting scenario search unresolved message for task: %v", pod.Name)
+	su.recorder.Eventf(pod, v1.EventTypeWarning, string(enginev2alpha2.ScenarioSearchUnresolved), message)
+
+	return su.updatePodCondition(pod, &v1.PodCondition{
+		Type:    v1.PodConditionType(enginev2alpha2.ScenarioSearchUnresolved),
+		Status:  v1.ConditionTrue,
+		Reason:  string(enginev2alpha2.ScenarioSearchUnresolved),
+		Message: message,
+	})
 }
 
 func (su *defaultStatusUpdater) recordStaleJobEvent(job *podgroup_info.PodGroupInfo) {
@@ -315,6 +334,18 @@ func (su *defaultStatusUpdater) markPodGroupUnschedulable(job *podgroup_info.Pod
 		Message:  message,
 		Status:   v1.ConditionTrue,
 		Reasons:  unschedulableExplanations,
+	})
+}
+
+func (su *defaultStatusUpdater) markPodGroupScenarioSearchUnresolved(job *podgroup_info.PodGroupInfo, message string) bool {
+	su.recorder.Event(job.PodGroup, v1.EventTypeNormal, string(enginev2alpha2.ScenarioSearchUnresolved), message)
+
+	return su.updatePodGroupSchedulingCondition(job.PodGroup, &enginev2alpha2.SchedulingCondition{
+		Type:     enginev2alpha2.ScenarioSearchUnresolved,
+		NodePool: utils.GetNodePoolNameFromLabels(job.PodGroup.Labels, su.nodePoolLabelKey),
+		Reason:   string(enginev2alpha2.ScenarioSearchUnresolved),
+		Message:  message,
+		Status:   v1.ConditionTrue,
 	})
 }
 
@@ -381,6 +412,22 @@ func (su *defaultStatusUpdater) recordUnschedulablePodsEvents(job *podgroup_info
 	return errors.Join(errs...)
 }
 
+func (su *defaultStatusUpdater) recordScenarioSearchUnresolvedPodsEvents(job *podgroup_info.PodGroupInfo) error {
+	var errs []error
+	message := scenarioSearchUnresolvedMessage(job.ScenarioSearchUnresolved)
+	for _, taskInfo := range job.PodStatusIndex[pod_status.Pending] {
+		if job.IsInvalidSubGroupTask(taskInfo.UID) {
+			continue
+		}
+		if err := su.markTaskScenarioSearchUnresolved(taskInfo.Pod, message); err != nil {
+			errs = append(errs, fmt.Errorf("failed to update scenario search unresolved task status <%s/%s>: %v",
+				taskInfo.Namespace, taskInfo.Name, err))
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
 func (su *defaultStatusUpdater) recordInvalidSubGroupPodsEvents(job *podgroup_info.PodGroupInfo) error {
 	var errs []error
 
@@ -437,6 +484,31 @@ func (su *defaultStatusUpdater) recordUnschedulablePodGroup(job *podgroup_info.P
 
 	msg = su.addNodePoolPrefixIfNeeded(job, msg)
 	return su.markPodGroupUnschedulable(job, msg)
+}
+
+func (su *defaultStatusUpdater) recordScenarioSearchUnresolvedPodGroup(job *podgroup_info.PodGroupInfo) bool {
+	return su.markPodGroupScenarioSearchUnresolved(job, scenarioSearchUnresolvedMessage(job.ScenarioSearchUnresolved))
+}
+
+func scenarioSearchUnresolvedMessage(unresolved *podgroup_info.ScenarioSearchUnresolved) string {
+	if unresolved != nil && unresolved.ReducedBudget {
+		return "KAI could not find a valid scenario within the remaining configured search time for this scheduling attempt because the action search budget was partly consumed by earlier jobs. The job remains pending and may be retried in a later scheduling cycle."
+	}
+	if unresolved == nil {
+		return ""
+	}
+	switch unresolved.Reason {
+	case podgroup_info.ScenarioSearchResultDeadlineExhausted:
+		return "KAI could not find a valid reclaim scenario within the configured search budget for this scheduling attempt. The job remains pending and may be retried in a later scheduling cycle."
+	case podgroup_info.ScenarioSearchResultGeneratorsExhausted:
+		return "KAI tried the configured scenario-search policy and found no valid reclaim scenario for this scheduling attempt. The job remains pending and may be retried in a later scheduling cycle."
+	case podgroup_info.ScenarioSearchResultNotAttempted:
+		return "KAI did not attempt scenario search for this job in this scheduling cycle because the configured search budget was already exhausted."
+	case podgroup_info.ScenarioSearchResultNoGenerator:
+		return "KAI did not attempt scenario search for this job because no configured scenario generator applies to this action."
+	default:
+		return "KAI tried the configured scenario-search policy and found no valid reclaim scenario for this scheduling attempt. The job remains pending and may be retried in a later scheduling cycle."
+	}
 }
 
 func (su *defaultStatusUpdater) updatePodGroupSchedulingCondition(

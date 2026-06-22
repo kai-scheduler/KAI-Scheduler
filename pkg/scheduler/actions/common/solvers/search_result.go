@@ -3,6 +3,8 @@
 
 package solvers
 
+import "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+
 // SearchResultReason describes why a scenario search stopped.
 type SearchResultReason string
 
@@ -44,6 +46,39 @@ func (r *SearchResult) scenarioSearchMetricResult() string {
 		return r.metricResult
 	}
 	return string(r.reason)
+}
+
+func (r *SearchResult) ScenarioSearchUnresolved() *podgroup_info.ScenarioSearchUnresolved {
+	if r == nil {
+		return nil
+	}
+
+	var reason podgroup_info.ScenarioSearchResultReason
+	switch r.reason {
+	case SearchResultDeadlineExhausted:
+		reason = podgroup_info.ScenarioSearchResultDeadlineExhausted
+	case SearchResultGeneratorsExhausted:
+		reason = podgroup_info.ScenarioSearchResultGeneratorsExhausted
+	case SearchResultNoGenerator:
+		reason = podgroup_info.ScenarioSearchResultNoGenerator
+	case SearchResultNotAttempted:
+		reason = podgroup_info.ScenarioSearchResultNotAttempted
+	default:
+		return nil
+	}
+
+	return &podgroup_info.ScenarioSearchUnresolved{
+		Reason:        reason,
+		ReducedBudget: r.reducedBudget,
+	}
+}
+
+func RecordScenarioSearchUnresolved(job *podgroup_info.PodGroupInfo, result *SearchResult) {
+	unresolved := result.ScenarioSearchUnresolved()
+	if unresolved == nil {
+		return
+	}
+	job.SetScenarioSearchUnresolved(unresolved.Reason, unresolved.ReducedBudget)
 }
 
 // NewNotAttemptedSearchResult returns a terminal result for callers that skip solver entry.

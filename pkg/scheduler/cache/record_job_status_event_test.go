@@ -31,6 +31,8 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 )
 
+const reducedBudgetReclaimMessage = "Scheduler could not find a valid reclaim scenario for this job within the remaining configured search time."
+
 type test struct {
 	name                             string
 	podGroupMinMember                int   // if not set, uses len(pods)
@@ -97,6 +99,23 @@ func TestRecordJobStatusEvent(t *testing.T) {
 			},
 			expectedPodEventPatterns: map[common_info.PodID][]string{
 				"pod-1": {"generic error"},
+			},
+		},
+		{
+			name: "reduced-budget reclaim job error",
+			pods: map[v1.PodPhase][]common_info.PodID{
+				v1.PodPending: {"pod-1"},
+			},
+			nodeErrors:                    map[common_info.PodID]map[string]string{},
+			podErrors:                     map[common_info.PodID]error{},
+			jobErrors:                     newUnschedulabeReasons(map[string]string{podgroup_info.PodSchedulingErrors: reducedBudgetReclaimMessage}),
+			expectedPodgroupErrorPatterns: []string{reducedBudgetReclaimMessage},
+			expectedPodgroupEventPatterns: []string{reducedBudgetReclaimMessage},
+			expectedPodErrorPatterns: map[common_info.PodID][]string{
+				"pod-1": {reducedBudgetReclaimMessage},
+			},
+			expectedPodEventPatterns: map[common_info.PodID][]string{
+				"pod-1": {reducedBudgetReclaimMessage},
 			},
 		},
 		{
@@ -450,6 +469,104 @@ func TestRecordJobStatusEvent(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRecordJobStatusEventScenarioSearchUnresolved(t *testing.T) {
+	podInfos, podsAsObjects := getPods(map[v1.PodPhase][]common_info.PodID{
+		v1.PodPending: {"pod-1", "pod-2"},
+	})
+	podGroup := &enginev2alpha2.PodGroup{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "PodGroup",
+			APIVersion: "scheduling.run.ai/v2alpha2",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "group-1",
+			Namespace: "namespace-1",
+		},
+		Spec: enginev2alpha2.PodGroupSpec{
+			SchedulingBackoff: ptr.To(int32(1)),
+			MinMember:         ptr.To(int32(2)),
+		},
+	}
+
+	kubeClient := fake.NewSimpleClientset(podsAsObjects...)
+	kubeAiSchedulerClient := kubeaischedulerfake.NewSimpleClientset(podGroup)
+	cache := New(&SchedulerCacheParams{
+		KubeClient:                  kubeClient,
+		KAISchedulerClient:          kubeAiSchedulerClient,
+		NodePoolParams:              &conf.SchedulingNodePoolParams{},
+		FullHierarchyFairness:       true,
+		NumOfStatusRecordingWorkers: 4,
+		DiscoveryClient:             kubeClient.Discovery(),
+	})
+
+	stopCh := make(chan struct{})
+	cache.Run(stopCh)
+	cache.WaitForCacheSync(stopCh)
+	defer close(stopCh)
+
+	podGroupInfo := podgroup_info.NewPodGroupInfo("group-1", maps.Values(podInfos)...)
+	podGroupInfo.SetPodGroup(podGroup)
+	podGroupInfo.SetScenarioSearchUnresolved(
+		podgroup_info.ScenarioSearchResultDeadlineExhausted,
+		false,
+	)
+
+	err := cache.RecordJobStatusEvent(podGroupInfo)
+	assert.Nil(t, err)
+
+	exhaustedMessage := "KAI could not find a valid reclaim scenario within the configured search budget for this scheduling attempt. The job remains pending and may be retried in a later scheduling cycle."
+	newPodGroupObj, err := waitForCondition(func() (runtime.Object, error) {
+		updatedPodGroup, err := kubeAiSchedulerClient.SchedulingV2alpha2().PodGroups("namespace-1").Get(context.TODO(), "group-1", metav1.GetOptions{})
+		if err != nil {
+			return nil, err
+		}
+		if len(updatedPodGroup.Status.SchedulingConditions) > 0 {
+			return updatedPodGroup, nil
+		}
+		return nil, fmt.Errorf("no scheduling conditions found")
+	})
+	assert.Nil(t, err)
+
+	newPodGroup := newPodGroupObj.(*enginev2alpha2.PodGroup)
+	condition := newPodGroup.Status.SchedulingConditions[0]
+	assert.Equal(t, enginev2alpha2.ScenarioSearchUnresolved, condition.Type)
+	assert.Equal(t, string(enginev2alpha2.ScenarioSearchUnresolved), condition.Reason)
+	assert.Equal(t, exhaustedMessage, condition.Message)
+	assert.Empty(t, condition.Reasons)
+
+	for _, podID := range []common_info.PodID{"pod-1", "pod-2"} {
+		podObj, err := waitForCondition(func() (runtime.Object, error) {
+			pod, err := kubeClient.CoreV1().Pods("namespace-1").Get(context.TODO(), string(podID), metav1.GetOptions{})
+			if err != nil {
+				return nil, err
+			}
+			if len(pod.Status.Conditions) > 0 {
+				return pod, nil
+			}
+			return nil, fmt.Errorf("no conditions found for pod %s", pod.Name)
+		})
+		assert.Nil(t, err)
+
+		pod := podObj.(*v1.Pod)
+		podCondition := pod.Status.Conditions[0]
+		assert.Equal(t, v1.PodConditionType(enginev2alpha2.ScenarioSearchUnresolved), podCondition.Type)
+		assert.Equal(t, v1.ConditionTrue, podCondition.Status)
+		assert.Equal(t, string(enginev2alpha2.ScenarioSearchUnresolved), podCondition.Reason)
+		assert.Equal(t, exhaustedMessage, podCondition.Message)
+	}
+
+	for podID, event := range getPodEvents(t, kubeClient) {
+		assert.Contains(t, []common_info.PodID{"pod-1", "pod-2"}, podID)
+		assert.Equal(t, string(enginev2alpha2.ScenarioSearchUnresolved), event.Reason)
+		assert.Equal(t, exhaustedMessage, event.Message)
+	}
+
+	podGroupEvent := getPodGroupEvent(t, kubeClient)
+	assert.NotNil(t, podGroupEvent)
+	assert.Equal(t, string(enginev2alpha2.ScenarioSearchUnresolved), podGroupEvent.Reason)
+	assert.Equal(t, exhaustedMessage, podGroupEvent.Message)
 }
 
 func TestRecordJobStatusEventInvalidSubGroupPod(t *testing.T) {

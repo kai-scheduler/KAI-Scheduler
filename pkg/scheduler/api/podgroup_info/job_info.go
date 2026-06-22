@@ -51,6 +51,20 @@ type StalenessInfo struct {
 	Stale     bool
 }
 
+type ScenarioSearchResultReason string
+
+const (
+	ScenarioSearchResultDeadlineExhausted   ScenarioSearchResultReason = "deadline_exhausted"
+	ScenarioSearchResultGeneratorsExhausted ScenarioSearchResultReason = "generators_exhausted"
+	ScenarioSearchResultNoGenerator         ScenarioSearchResultReason = "no_generator"
+	ScenarioSearchResultNotAttempted        ScenarioSearchResultReason = "not_attempted"
+)
+
+type ScenarioSearchUnresolved struct {
+	Reason        ScenarioSearchResultReason
+	ReducedBudget bool
+}
+
 type PodGroupInfos struct {
 	PodGroupInfos []*PodGroupInfo
 }
@@ -69,6 +83,8 @@ type PodGroupInfo struct {
 
 	JobFitErrors   []common_info.JobFitError
 	TasksFitErrors map[common_info.PodID]*common_info.TasksFitErrors
+
+	ScenarioSearchUnresolved *ScenarioSearchUnresolved
 
 	AllocatedVector resource_info.ResourceVector
 	VectorMap       *resource_info.ResourceVectorMap
@@ -572,6 +588,13 @@ func (pgi *PodGroupInfo) AddSimpleJobFitError(reason enginev2alpha2.Unschedulabl
 
 func (pgi *PodGroupInfo) AddJobFitError(err common_info.JobFitError) {
 	pgi.JobFitErrors = append(pgi.JobFitErrors, err)
+}
+
+func (pgi *PodGroupInfo) SetScenarioSearchUnresolved(reason ScenarioSearchResultReason, reducedBudget bool) {
+	pgi.ScenarioSearchUnresolved = &ScenarioSearchUnresolved{
+		Reason:        reason,
+		ReducedBudget: reducedBudget,
+	}
 }
 
 func (pgi *PodGroupInfo) GetSchedulingConstraintsSignature() common_info.SchedulingConstraintsSignature {
