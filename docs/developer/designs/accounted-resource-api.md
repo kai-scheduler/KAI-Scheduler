@@ -334,6 +334,21 @@ Queue semantics:
   workload, both limits are enforced.
 - `deserved` and `overQuotaWeight` are intentionally not exposed in phase 1.
 
+### Hierarchical Queue Semantics
+
+`spec.accountedResources` may be configured on any queue in the hierarchy,
+including parent queues. Parent queue limits act as aggregate ceilings for the
+subtree rooted at that queue. Leaf or child queue limits act as local ceilings.
+
+When KAI evaluates a candidate allocation for a workload in a queue, the
+allocation must fit the effective limit of that queue and every ancestor queue.
+For each queue in the path, the effective value is the explicit queue entry when
+present, otherwise `AccountedResource.spec.defaults.limit`.
+
+For example, if parent queue `research-team` has `gpu-h200` limit `10`, and
+children `ml-team` and `cv-team` each have `gpu-h200` limit `8`, each child is
+capped at `8`, while the combined subtree usage is capped at `10`.
+
 ### AccountedResource CRD
 
 An `AccountedResource` defines how one logical resource is charged.
