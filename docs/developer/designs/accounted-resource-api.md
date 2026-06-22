@@ -607,6 +607,34 @@ Scheduler behavior:
   through the existing `OverLimit` path. The message should identify the queue,
   `resourceRef`, current usage, candidate request, and limit.
 
+## Queue Admission Signaling
+
+This design must integrate with the queue-admission signaling work tracked in
+https://github.com/kai-scheduler/KAI-Scheduler/issues/1615.
+
+Issue #1615 covers a scheduler behavior problem: pods that cannot run because of
+queue quota or capacity limits should not look like ordinary node-resource
+failures. If KAI marks those pods as unschedulable in the same way it marks pods
+that lack cluster capacity, autoscalers such as Karpenter may provision nodes
+even though the workload is blocked by queue policy and cannot be admitted by
+adding capacity.
+
+`AccountedResource` limits introduce new queue-policy rejection reasons. Any
+solution for #1615, whether it uses scheduling gates or another admission
+signal, must apply globally to all queue-capacity failures, including:
+
+- current CPU, memory, and GPU limits from `spec.resources`;
+- every finite limit in `spec.accountedResources`;
+- default limits from `AccountedResource.spec.defaults.limit`;
+- validation failures where a queue references an unresolved
+  `AccountedResource` and jobs in that queue are blocked from scheduling.
+
+The important boundary is that AccountedResource over-limit failures are not
+node-fit failures. They should be surfaced through the same global
+queue-admission mechanism that #1615 defines, so AccountedResource limits do not
+create a new path that accidentally triggers scale-up for jobs blocked by queue
+policy.
+
 ## Phase Boundaries
 
 Phase 1 intentionally stops at limit enforcement. The proposal defines how to
