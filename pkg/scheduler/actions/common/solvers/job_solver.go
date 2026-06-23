@@ -68,12 +68,19 @@ func (s *JobSolver) Solve(
 		return false, nil, calcVictimNames(state.recordedVictimsTasks)
 	}
 
-	maxSolvedK := s.searchMaxSolvableK(ssn, &state, pendingJob, tasksToAllocate)
+	maxSolvedK, maybeResult := s.searchMaxSolvableK(ssn, &state, pendingJob, tasksToAllocate)
 	if maxSolvedK == 0 {
 		return false, nil, calcVictimNames(state.recordedVictimsTasks)
 	}
 
-	result := s.probeAtK(ssn, &state, pendingJob, tasksToAllocate, n)
+	var result *solutionResult
+
+	if maxSolvedK == n {
+		result = maybeResult
+	} else {
+		result = s.probeAtK(ssn, &state, pendingJob, tasksToAllocate, n)
+	}
+
 	if result == nil || !result.solved {
 		return false, nil, calcVictimNames(state.recordedVictimsTasks)
 	}
@@ -90,9 +97,12 @@ func (s *JobSolver) Solve(
 	return jobSolved, result.statement, calcVictimNames(result.victimsTasks)
 }
 
-// searchMaxSolvableK returns the largest k in [0, n] for which a probe at k succeeds.
-// Each probe is discarded before returning, so session state is clean on return.
-// Successful probes update hints in state for use by subsequent probes.
+// searchMaxSolvableK returns the largest k in [0, n] for which a probe at k succeeds,
+// along with that probe's *solutionResult when (and only when) k == n. For every k < n
+// the probe's statement is discarded so session state stays clean; the k == n probe's
+// statement is intentionally preserved and handed back so the caller can consume it
+// without re-simulating. Successful probes also update hints in state for use by
+// subsequent probes.
 // Complexity: O(log n) probes — exponential doubling to locate a failing k (or reach n),
 // then binary search between the last success and first failure.
 func (s *JobSolver) searchMaxSolvableK(
@@ -100,23 +110,25 @@ func (s *JobSolver) searchMaxSolvableK(
 	state *solvingState,
 	pendingJob *podgroup_info.PodGroupInfo,
 	tasksToAllocate []*pod_info.PodInfo,
-) int {
+) (int, *solutionResult) {
 	n := len(tasksToAllocate)
 	if n == 0 {
-		return 0
+		return 0, nil
 	}
 
 	lo := 0
 	var hi int
 	k := 1
+	var maybeResult *solutionResult
 	for {
-		if !s.tryProbeAndDiscard(ssn, state, pendingJob, tasksToAllocate, k) {
+		maybeResult = s.tryProbeAndMaybeDiscard(ssn, state, pendingJob, tasksToAllocate, k, k != n)
+		if maybeResult == nil {
 			hi = k
 			break
 		}
 		lo = k
 		if k == n {
-			return n
+			return n, maybeResult
 		}
 		k *= 2
 		if k > n {
@@ -126,39 +138,42 @@ func (s *JobSolver) searchMaxSolvableK(
 
 	for hi-lo > 1 {
 		mid := (lo + hi) / 2
-		if s.tryProbeAndDiscard(ssn, state, pendingJob, tasksToAllocate, mid) {
+		maybeResult = s.tryProbeAndMaybeDiscard(ssn, state, pendingJob, tasksToAllocate, mid, mid != n)
+		if maybeResult != nil {
 			lo = mid
 		} else {
 			hi = mid
 		}
 	}
-	return lo
+	return lo, maybeResult
 }
 
-// tryProbeAndDiscard probes at k and always discards the resulting statement so the session
-// is left clean. On success, hints are written to state; returns whether the probe succeeded.
-func (s *JobSolver) tryProbeAndDiscard(
+// tryProbeAndMaybeDiscard probes at k. Returns nil on failure. On success, writes hints
+// to state and returns the *solutionResult; the result's statement is discarded iff
+// shouldDiscard is true, otherwise it is preserved on the result for the caller.
+func (s *JobSolver) tryProbeAndMaybeDiscard(
 	ssn *framework.Session,
 	state *solvingState,
 	pendingJob *podgroup_info.PodGroupInfo,
 	tasksToAllocate []*pod_info.PodInfo,
 	k int,
-) bool {
+	shouldDiscard bool,
+) *solutionResult {
 	result := s.probeAtK(ssn, state, pendingJob, tasksToAllocate, k)
 	if result == nil || !result.solved {
 		log.InfraLogger.V(5).Infof("No solution found for %d tasks out of %d tasks to allocate for %s",
 			k, len(tasksToAllocate), pendingJob.Name)
-		return false
+		return nil
 	}
 	log.InfraLogger.V(5).Infof(
 		"Scenario probed for %d tasks out of %d tasks to allocate for %s. Victims: %s",
 		k, len(tasksToAllocate), pendingJob.Name, victimPrintingStruct{result.victimsTasks})
 	state.recordedVictimsTasks = result.victimsTasks
 	state.recordedVictimsJobs = result.victimJobs
-	if result.statement != nil {
+	if result.statement != nil && shouldDiscard {
 		result.statement.Discard()
 	}
-	return true
+	return result
 }
 
 func (s *JobSolver) probeAtK(
