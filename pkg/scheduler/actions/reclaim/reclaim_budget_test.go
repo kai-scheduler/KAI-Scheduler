@@ -72,7 +72,7 @@ func TestAttemptToReclaimLetsSolverApplyMinJobBudgetAfterActionBudgetExpires(t *
 	require.False(t, succeeded)
 	require.Nil(t, statement)
 	require.Empty(t, victims)
-	require.Equal(t, solvers.SearchResultGeneratorsExhausted, result.Reason())
+	require.Equal(t, solvers.SearchResultNoGenerator, result.Reason())
 	require.Equal(t, 1, onJobSolutionStartCalls)
 }
 

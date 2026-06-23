@@ -59,6 +59,7 @@ func TestScenarioPortfolioFiltersByAction(t *testing.T) {
 func TestScenarioPortfolioDoesNotChargeGeneratorBuildTimeToGeneratorDeadline(t *testing.T) {
 	clock := &fakeClock{now: time.Unix(0, 0)}
 	ctx, _, firstScenario := newScenarioPortfolioTestContext(t, framework.Reclaim)
+	secondScenario := newPortfolioTestByNodeScenario(t, ctx.Session, ctx.PartialPendingJob)
 	firstGenerator := &portfolioTestGenerator{
 		name:      constants.GeneratorNodeLocalGreedy,
 		scenarios: []api.ScenarioInfo{firstScenario},
@@ -68,7 +69,7 @@ func TestScenarioPortfolioDoesNotChargeGeneratorBuildTimeToGeneratorDeadline(t *
 	}
 	secondGenerator := &portfolioTestGenerator{
 		name:      constants.GeneratorMultiNodeGang,
-		scenarios: []api.ScenarioInfo{newPortfolioTestByNodeScenario(t, ctx.Session, ctx.PartialPendingJob)},
+		scenarios: []api.ScenarioInfo{secondScenario},
 	}
 	ctx.Session.AddScenarioGenerator("first", portfolioTestFactory(firstGenerator))
 	ctx.Session.AddScenarioGenerator("second", portfolioTestFactory(secondGenerator))
@@ -91,7 +92,7 @@ func TestScenarioPortfolioDoesNotChargeGeneratorBuildTimeToGeneratorDeadline(t *
 	portfolio := newScenarioPortfolio(ctx, actionBudget.BeginJob())
 
 	require.Same(t, firstScenario, portfolio.Next())
-	require.Same(t, secondGenerator.scenarios[0], portfolio.Next())
+	require.Same(t, secondScenario, portfolio.Next())
 	require.Equal(t, 1, firstGenerator.nextCalls)
 	require.Equal(t, 1, secondGenerator.nextCalls)
 }
