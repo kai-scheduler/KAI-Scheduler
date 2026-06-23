@@ -107,7 +107,7 @@ func (s *JobSolver) SolveWithResult(
 
 	actionBudget := s.ensureActionBudget()
 	jobBudget := actionBudget.BeginJob()
-	if jobBudget.Remaining() <= 0 {
+	if jobBudget.Exhausted() {
 		return false, nil, calcVictimNames(state.recordedVictimsTasks),
 			terminalSearchResult(SearchResultNotAttempted, false, false)
 	}
@@ -286,7 +286,7 @@ func (s *JobSolver) solvePartialJob(
 	enteredSearch := false
 	firstScenario := true
 	for {
-		if jobBudget.Remaining() <= 0 {
+		if jobBudget.Exhausted() {
 			return terminalSearchResult(SearchResultDeadlineExhausted, jobBudget.ReducedBudget(), enteredSearch)
 		}
 		var scenarioToSolve *solverscenario.ByNodeScenario
@@ -296,11 +296,11 @@ func (s *JobSolver) solvePartialJob(
 		} else {
 			scenarioToSolve = scenarioBuilder.GetNextScenario()
 		}
-		if jobBudget.Remaining() <= 0 {
+		if jobBudget.Exhausted() {
 			return terminalSearchResult(SearchResultDeadlineExhausted, jobBudget.ReducedBudget(), enteredSearch)
 		}
 		if scenarioToSolve == nil {
-			if jobBudget.Remaining() <= 0 {
+			if jobBudget.Exhausted() {
 				return terminalSearchResult(SearchResultDeadlineExhausted, jobBudget.ReducedBudget(), enteredSearch)
 			}
 			break
