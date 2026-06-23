@@ -59,6 +59,13 @@ Metrics related to the core scheduling algorithm performance, task lifecycle, an
 | `scenarios_filtered_by_action` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `action` | Cumulative count of simulation scenarios filtered/rejected by each action. |
 | `total_preemption_attempts` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Cumulative total of preemption attempts across the entire cluster lifetime. |
 | `pod_group_evicted_pods_total` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `podgroup`, `uid`, `nodepool`, `action` | Cumulative count of pods evicted per pod group, tracked by nodepool and action. |
+| `scenario_search_jobs_total` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `action`, `result`, `reduced_budget` | Cumulative count of jobs considered by bounded scenario search, grouped by scheduling action, terminal search result, and whether the job ran after the action budget was reduced. |
+| `scenario_search_action_budget_configured_seconds` | Gauge | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `action` | Configured scenario-search budget for each scheduling action in seconds. A value of 0 means unlimited. |
+| `scenario_search_job_budget_configured_seconds` | Gauge | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Configured per-job scenario-search budget in seconds. A value of 0 means unlimited. |
+| `scenario_search_generator_budget_configured_seconds` | Gauge | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `generator` | Configured per-generator scenario-search budget in seconds. A value of 0 means unlimited. |
+| `scenario_search_action_budget_exhausted_total` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `action` | Cumulative count of action-level scenario-search budget exhaustion events. |
+| `scenario_search_duration_seconds` | Histogram | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `action`, `generator`, `result` | Duration in seconds of generator scenario-search attempts. Buckets: [1ms, 2ms, 4ms, ..., 32.768s] (exponential). |
+| `scenario_search_scenarios_total` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `action`, `generator`, `state` | Cumulative count of bounded-search scenarios emitted by generators, simulated by the solver, or rejected by validation. |
 
 ### Queue Fair-Share & Usage Metrics
 
@@ -88,6 +95,10 @@ Business/Resource Labels:
 - **`queue_metadata_name`**: The Queue resource's `metadata.name`. Always populated.
 - **`queue_display_name`**: The Queue's `spec.displayName`. Empty string when unset.
 - **`action`**: Scheduling action name
+- **`generator`**: Scenario generator name
+- **`result`**: Scenario search result (`solved`, `deadline_exhausted`, `generators_exhausted`, `no_generator`, `not_attempted`, `unsolved`, or `validator_rejected`, depending on the metric)
+- **`reduced_budget`**: Whether the scenario search ran after the action budget was reduced (`true` or `false`)
+- **`state`**: Scenario lifecycle state (`emitted`, `simulated`, or `validator_rejected`)
 - **`plugin`**: Plugin name
 - **`OnSession`**: Session lifecycle phase (`OnSessionOpen` or `OnSessionClose`)
 - **`podgroup`**: PodGroup resource identifier
