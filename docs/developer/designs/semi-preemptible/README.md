@@ -18,6 +18,16 @@ From this:
 - A semi-preemptible podgroup where the total pod count equals `minMember` == non-preemptible podgroup
 - A semi-preemptible podgroup where `minMember` is 0 == preemptible podgroup
 
+### Quota Scale-Down
+
+If a queue's deserved quota is reduced below the running **core** (non-preemptible) allocation of a semi-preemptible job, the queue becomes persistently over-quota with no automatic mitigation. Reclaim evicts the job's elastic pods first; the core pods remain (protected by the existing `minAvailable` / `GetNumActiveAllocatedTasks()` eviction guard) and the queue stays over-quota until the job completes or scales down on its own.
+
+This is **accepted behavior** — it is identical to how a fully `non-preemptible` job already behaves when its queue is scaled down today. No special mitigation is introduced for semi-preemptible jobs.
+
+Future options considered and deferred:
+- **Conditional non-preemptibility:** make core pods reclaimable once `Deserved < AllocatedNotPreemptible`. Requires a new reclaim path and breaks the "core pods are always safe" guarantee.
+- **Queue quota-floor webhook:** extend the existing Queue validating webhook (`pkg/admission/webhook/queuehooks/queue_validator.go`) to reject lowering quota below `Status.AllocatedNonPreemptible`. A guardrail only — eventually-consistent (validates the queue-controller status projection, not the scheduler's live accounting) and introduces GitOps friction.
+
 ## Subgroups and Multi-Level Trees
 
 ### Scope: semi-elasticity is a pod-level concept
