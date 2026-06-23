@@ -363,7 +363,6 @@ func TestSearchResultNilReceiver(t *testing.T) {
 
 	require.Empty(t, result.Reason())
 	require.False(t, result.ReducedBudget())
-	require.False(t, result.EnteredSearch())
 }
 
 func sessionWithScenarioSearchBudgets(budgets *kaiv1.ScenarioSearchBudgets) *framework.Session {

@@ -17,8 +17,8 @@ const (
 // SearchResult records the outcome and budget state of a scenario search attempt.
 type SearchResult struct {
 	reason        SearchResultReason
+	solution      *solutionResult
 	reducedBudget bool
-	enteredSearch bool
 }
 
 func (r *SearchResult) Reason() SearchResultReason {
@@ -35,9 +35,22 @@ func (r *SearchResult) ReducedBudget() bool {
 	return r.reducedBudget
 }
 
-func (r *SearchResult) EnteredSearch() bool {
-	if r == nil {
-		return false
+// NewNotAttemptedSearchResult returns a terminal result for callers that skip solver entry.
+func NewNotAttemptedSearchResult() *SearchResult {
+	return terminalSearchResult(SearchResultNotAttempted, false)
+}
+
+func solvedSearchResult(solution *solutionResult, reducedBudget bool) *SearchResult {
+	return &SearchResult{
+		reason:        SearchResultSolved,
+		solution:      solution,
+		reducedBudget: reducedBudget,
 	}
-	return r.enteredSearch
+}
+
+func terminalSearchResult(reason SearchResultReason, reducedBudget bool) *SearchResult {
+	return &SearchResult{
+		reason:        reason,
+		reducedBudget: reducedBudget,
+	}
 }
