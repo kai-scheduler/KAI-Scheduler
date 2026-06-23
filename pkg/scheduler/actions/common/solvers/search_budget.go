@@ -33,9 +33,9 @@ type deadlineBudget struct {
 }
 
 type jobSearchBudget struct {
-	deadline      deadlineBudget
-	reducedBudget bool
-	actionBudget  *ActionSearchBudget
+	deadline        deadlineBudget
+	reducedBudget   bool
+	generatorLimits map[string]time.Duration
 }
 
 type generatorSearchBudget struct {
@@ -109,9 +109,9 @@ func (b *ActionSearchBudget) BeginJob() *jobSearchBudget {
 	}
 
 	return &jobSearchBudget{
-		deadline:      newDeadlineBudget(remaining, now),
-		reducedBudget: b.jobLimit > 0 && actionRemaining < b.jobLimit,
-		actionBudget:  b,
+		deadline:        newDeadlineBudget(remaining, now),
+		reducedBudget:   b.jobLimit > 0 && actionRemaining < b.jobLimit,
+		generatorLimits: b.generatorLimits,
 	}
 }
 
@@ -176,13 +176,13 @@ func (b *generatorSearchBudget) Exhausted() bool {
 }
 
 func (b *jobSearchBudget) generatorLimit(name string) time.Duration {
-	if b == nil || b.actionBudget == nil || b.actionBudget.generatorLimits == nil {
+	if b == nil || b.generatorLimits == nil {
 		return 0
 	}
-	if limit, found := b.actionBudget.generatorLimits[name]; found {
+	if limit, found := b.generatorLimits[name]; found {
 		return limit
 	}
-	return b.actionBudget.generatorLimits[constants.ActionDefault]
+	return b.generatorLimits[constants.ActionDefault]
 }
 
 func newDeadlineBudget(remaining time.Duration, now func() time.Time) deadlineBudget {
@@ -224,10 +224,10 @@ func (b *ActionSearchBudget) clock() func() time.Time {
 }
 
 func (b *jobSearchBudget) clock() func() time.Time {
-	if b == nil || b.actionBudget == nil {
+	if b == nil {
 		return time.Now
 	}
-	return b.actionBudget.clock()
+	return clockOrDefault(b.deadline.now)
 }
 
 func searchDurationForLimit(limit time.Duration) time.Duration {
