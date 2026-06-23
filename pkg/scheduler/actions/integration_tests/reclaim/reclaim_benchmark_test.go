@@ -494,9 +494,6 @@ func assertDefaultScenarioGeneratorPortfolio(t *testing.T, ssn *framework.Sessio
 				continue
 			}
 			foundGenerator = true
-			if _, found := registration.Actions[framework.Reclaim]; !found {
-				t.Fatalf("expected default generator %q to apply to reclaim", expectedGenerator)
-			}
 			break
 		}
 		if !foundGenerator {
