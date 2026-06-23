@@ -18,11 +18,11 @@ import (
 )
 
 type nodeLocalGreedyGenerator struct {
-	solveCtx             *solvers.SolveContext
-	generateVictimsQueue solvers.GenerateVictimsQueue
-	builder              *solvers.PodAccumulatedScenarioBuilder
-	scenarios            []*scenario.ByNodeScenario
-	advanceNext          bool
+	solveCtx                         *solvers.SolveContext
+	generateVictimsQueue             solvers.GenerateVictimsQueue
+	builder                          *solvers.PodAccumulatedScenarioBuilder
+	scenarios                        []*scenario.ByNodeScenario
+	shouldAdvanceAccumulatedScenario bool
 }
 
 func NewNodeLocalGreedyGenerator(ctx framework.ScenarioGeneratorContext) framework.ScenarioGenerator {
@@ -48,7 +48,7 @@ func (g *nodeLocalGreedyGenerator) Next() api.ScenarioInfo {
 		if sn := g.popScenario(); sn != nil {
 			return sn
 		}
-		accumulated := g.nextAccumulatedScenario()
+		accumulated := g.nextValidAccumulatedScenario()
 		if accumulated == nil {
 			return nil
 		}
@@ -74,20 +74,6 @@ func (g *nodeLocalGreedyGenerator) ensureBuilder() bool {
 	return true
 }
 
-func addPotentialVictimsGroupedByJob(sn *scenario.ByNodeScenario, tasks []*pod_info.PodInfo) {
-	groupedTasks := map[common_info.PodGroupID][]*pod_info.PodInfo{}
-	var jobOrder []common_info.PodGroupID
-	for _, task := range tasks {
-		if _, found := groupedTasks[task.Job]; !found {
-			jobOrder = append(jobOrder, task.Job)
-		}
-		groupedTasks[task.Job] = append(groupedTasks[task.Job], task)
-	}
-	for _, jobID := range jobOrder {
-		sn.AddPotentialVictimsTasks(groupedTasks[jobID])
-	}
-}
-
 func (g *nodeLocalGreedyGenerator) popScenario() *scenario.ByNodeScenario {
 	if len(g.scenarios) == 0 {
 		return nil
@@ -97,11 +83,11 @@ func (g *nodeLocalGreedyGenerator) popScenario() *scenario.ByNodeScenario {
 	return sn
 }
 
-func (g *nodeLocalGreedyGenerator) nextAccumulatedScenario() *scenario.ByNodeScenario {
-	if g.advanceNext {
+func (g *nodeLocalGreedyGenerator) nextValidAccumulatedScenario() *scenario.ByNodeScenario {
+	if g.shouldAdvanceAccumulatedScenario {
 		return g.builder.GetNextAccumulatedScenario()
 	}
-	g.advanceNext = true
+	g.shouldAdvanceAccumulatedScenario = true
 
 	return g.builder.GetValidAccumulatedScenario()
 }
@@ -168,4 +154,18 @@ func victimUIDSetKey(tasks []*pod_info.PodInfo) string {
 	}
 	sort.Strings(uids)
 	return strings.Join(uids, "\x00")
+}
+
+func addPotentialVictimsGroupedByJob(sn *scenario.ByNodeScenario, tasks []*pod_info.PodInfo) {
+	groupedTasks := map[common_info.PodGroupID][]*pod_info.PodInfo{}
+	var jobOrder []common_info.PodGroupID
+	for _, task := range tasks {
+		if _, found := groupedTasks[task.Job]; !found {
+			jobOrder = append(jobOrder, task.Job)
+		}
+		groupedTasks[task.Job] = append(groupedTasks[task.Job], task)
+	}
+	for _, jobID := range jobOrder {
+		sn.AddPotentialVictimsTasks(groupedTasks[jobID])
+	}
 }
