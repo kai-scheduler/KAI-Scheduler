@@ -149,6 +149,8 @@ scheduler:
   #   mycustomaction:
   #     priority: 150
   actions: {}
+  # Alpha/experimental scenario search time budgets. Values are Go duration strings.
+  scenarioSearchBudgets: {}
 
 # defaultShard controls the chart-managed "default" SchedulingShard CR,
 # whose spec is populated from the scheduler.* values above.

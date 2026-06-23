@@ -20,9 +20,11 @@ limitations under the License.
 package framework
 
 import (
+	"fmt"
 	"maps"
 	"net/http"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
@@ -127,6 +129,38 @@ func (ssn *Session) GetNumaPlacement(task *pod_info.PodInfo, node *node_info.Nod
 
 func (ssn *Session) AddPreJobAllocationFn(fn api.PreJobAllocationFn) {
 	ssn.PreJobAllocationFns = append(ssn.PreJobAllocationFns, fn)
+}
+
+func (ssn *Session) AddScenarioGenerator(name string, factory ScenarioGeneratorFactory, applies ...ActionType) {
+	actions := map[ActionType]struct{}{}
+	for _, action := range applies {
+		actions[action] = struct{}{}
+	}
+	ssn.ScenarioGeneratorRegistrations = append(ssn.ScenarioGeneratorRegistrations, ScenarioGeneratorRegistration{
+		Name:    name,
+		Factory: factory,
+		Actions: actions,
+	})
+}
+
+func (ssn *Session) ValidateScenarioGeneratorBudgetKeys() error {
+	if ssn.Config == nil || ssn.Config.ScenarioSearchBudgets == nil {
+		return nil
+	}
+	known := map[string]struct{}{
+		constants.ActionDefault:            {},
+		constants.GeneratorNodeLocalGreedy: {},
+		constants.GeneratorMultiNodeGang:   {},
+	}
+	for _, registration := range ssn.ScenarioGeneratorRegistrations {
+		known[registration.Name] = struct{}{}
+	}
+	for name := range ssn.Config.ScenarioSearchBudgets.MaxGeneratorSearchDuration {
+		if _, ok := known[name]; !ok {
+			return fmt.Errorf("unknown scenario generator budget key %q", name)
+		}
+	}
+	return nil
 }
 
 func (ssn *Session) CanReclaimResources(reclaimer *podgroup_info.PodGroupInfo) bool {

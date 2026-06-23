@@ -18,11 +18,13 @@ package v1
 
 import (
 	"strconv"
+	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	usagedbapi "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
 )
 
@@ -58,6 +60,23 @@ type ActionConfig struct {
 	// Built-in actions use priorities in the range 0-10000, spaced by 100.
 	// +kubebuilder:validation:Optional
 	Priority *int `json:"priority,omitempty"`
+}
+
+type ScenarioSearchBudgets struct {
+	// MaxActionSearchDuration limits total scenario search time per scheduler action.
+	// Keys are action names, with "default" used as the fallback budget.
+	MaxActionSearchDuration map[string]metav1.Duration `json:"maxActionSearchDuration,omitempty"`
+
+	// MaxJobSearchDuration limits total scenario search time per pending job.
+	MaxJobSearchDuration *metav1.Duration `json:"maxJobSearchDuration,omitempty"`
+
+	// MinJobSearchDuration guarantees each pending job this much scenario search time
+	// before action and generator budgets can stop the job's search.
+	MinJobSearchDuration *metav1.Duration `json:"minJobSearchDuration,omitempty"`
+
+	// MaxGeneratorSearchDuration limits scenario search time per generator attempt.
+	// Keys are generator names, with "default" used as the fallback budget.
+	MaxGeneratorSearchDuration map[string]metav1.Duration `json:"maxGeneratorSearchDuration,omitempty"`
 }
 
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
@@ -100,6 +119,10 @@ type SchedulingShardSpec struct {
 	// +kubebuilder:validation:Optional
 	UsageDBConfig *usagedbapi.UsageDBConfig `yaml:"usageDBConfig,omitempty" json:"usageDBConfig,omitempty"`
 
+	// ScenarioSearchBudgets configures alpha/experimental time budgets for scenario search.
+	// +kubebuilder:validation:Optional
+	ScenarioSearchBudgets *ScenarioSearchBudgets `json:"scenarioSearchBudgets,omitempty"`
+
 	// Plugins allows overriding plugin configuration. Keys are plugin names.
 	// Built-in plugins can be disabled, reordered, or have their arguments changed.
 	// New plugins can be added by specifying a name not in the default set.
@@ -108,7 +131,8 @@ type SchedulingShardSpec struct {
 	// resourcetype=1500, podaffinity=1400, elastic=1300, kubeflow=1200,
 	// ray=1100, subgrouporder=1000, taskorder=900, nominatednode=800,
 	// dynamicresources=700, minruntime=600, topology=500, snapshot=400,
-	// gpupack/gpuspread=300, nodeplacement=200, gpusharingorder=100.
+	// sg-nodelocalgreedy=360, sg-multinodegang=350, gpupack/gpuspread=300,
+	// nodeplacement=200, gpusharingorder=100.
 	// +kubebuilder:validation:Optional
 	Plugins map[string]PluginConfig `json:"plugins,omitempty"`
 
@@ -127,31 +151,73 @@ func (s *SchedulingShardSpec) SetDefaultsWhereNeeded() {
 
 	s.setDefaultPlugins()
 	s.setDefaultActions()
+	s.ScenarioSearchBudgets = DefaultScenarioSearchBudgets(s.ScenarioSearchBudgets)
+}
+
+func DefaultScenarioSearchBudgets(config *ScenarioSearchBudgets) *ScenarioSearchBudgets {
+	if config == nil {
+		config = &ScenarioSearchBudgets{}
+	}
+	if config.MaxActionSearchDuration == nil {
+		config.MaxActionSearchDuration = map[string]metav1.Duration{}
+	}
+	if _, found := config.MaxActionSearchDuration[constants.ActionDefault]; !found {
+		config.MaxActionSearchDuration[constants.ActionDefault] = mustParseScenarioSearchDuration(constants.DefaultActionBudget)
+	}
+	if config.MaxJobSearchDuration == nil {
+		config.MaxJobSearchDuration = ptr.To(mustParseScenarioSearchDuration(constants.DefaultJobBudget))
+	}
+	if config.MinJobSearchDuration == nil {
+		config.MinJobSearchDuration = ptr.To(mustParseScenarioSearchDuration(constants.DefaultMinJobBudget))
+	}
+	if config.MaxGeneratorSearchDuration == nil {
+		config.MaxGeneratorSearchDuration = map[string]metav1.Duration{}
+	}
+	if _, found := config.MaxGeneratorSearchDuration[constants.ActionDefault]; !found {
+		config.MaxGeneratorSearchDuration[constants.ActionDefault] = mustParseScenarioSearchDuration(constants.DefaultGeneratorBudget)
+	}
+	if _, found := config.MaxGeneratorSearchDuration[constants.GeneratorNodeLocalGreedy]; !found {
+		config.MaxGeneratorSearchDuration[constants.GeneratorNodeLocalGreedy] = mustParseScenarioSearchDuration(constants.DefaultNodeLocalGreedy)
+	}
+	if _, found := config.MaxGeneratorSearchDuration[constants.GeneratorMultiNodeGang]; !found {
+		config.MaxGeneratorSearchDuration[constants.GeneratorMultiNodeGang] = mustParseScenarioSearchDuration(constants.DefaultMultiNodeGang)
+	}
+	return config
+}
+
+func mustParseScenarioSearchDuration(value string) metav1.Duration {
+	duration, err := time.ParseDuration(value)
+	if err != nil {
+		panic(err)
+	}
+	return metav1.Duration{Duration: duration}
 }
 
 // Default priorities preserve the current hardcoded ordering.
 // Higher priority = runs first. Spaced by 100.
 var defaultPluginPriorities = map[string]int{
-	"predicates":       1900,
-	"proportion":       1800,
-	"priority":         1700,
-	"nodeavailability": 1600,
-	"resourcetype":     1500,
-	"podaffinity":      1400,
-	"elastic":          1300,
-	"kubeflow":         1200,
-	"ray":              1100,
-	"subgrouporder":    1000,
-	"taskorder":        900,
-	"nominatednode":    800,
-	"dynamicresources": 700,
-	"minruntime":       600,
-	"topology":         500,
-	"snapshot":         400,
-	"gpupack":          300,
-	"gpuspread":        300,
-	"nodeplacement":    200,
-	"gpusharingorder":  100,
+	"predicates":         1900,
+	"proportion":         1800,
+	"priority":           1700,
+	"nodeavailability":   1600,
+	"resourcetype":       1500,
+	"podaffinity":        1400,
+	"elastic":            1300,
+	"kubeflow":           1200,
+	"ray":                1100,
+	"subgrouporder":      1000,
+	"taskorder":          900,
+	"nominatednode":      800,
+	"dynamicresources":   700,
+	"minruntime":         600,
+	"topology":           500,
+	"snapshot":           400,
+	"sg-nodelocalgreedy": 360,
+	"sg-multinodegang":   350,
+	"gpupack":            300,
+	"gpuspread":          300,
+	"nodeplacement":      200,
+	"gpusharingorder":    100,
 }
 
 var defaultActionPriorities = map[string]int{

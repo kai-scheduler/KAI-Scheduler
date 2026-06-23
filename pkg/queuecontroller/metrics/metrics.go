@@ -41,6 +41,7 @@ var (
 	queueAllocatedMemory *prometheus.GaugeVec
 
 	additionalQueueLabelKeys       []string
+	additionalMetricLabelKeys      []string
 	queueLabelToDefaultMetricValue map[string]string
 )
 
@@ -70,7 +71,7 @@ func InitMetrics(namespace string, queueLabelToMetricLabelMap, queueLabelToDefau
 	}
 	sort.Strings(sortedQueueLabelKeys)
 
-	additionalMetricLabelKeys := make([]string, 0, len(queueLabelToMetricLabelMap))
+	additionalMetricLabelKeys = make([]string, 0, len(queueLabelToMetricLabelMap))
 	for _, queueLabelKey := range sortedQueueLabelKeys {
 		metricLabelKey := queueLabelToMetricLabelMap[queueLabelKey]
 		additionalQueueLabelKeys = append(additionalQueueLabelKeys, queueLabelKey)
@@ -151,8 +152,6 @@ func SetQueueMetrics(queue *v2.Queue) {
 
 	ResetQueueMetrics(queue.Name)
 
-	additionalMetricLabelValues := getAdditionalMetricLabelValues(queue.Labels)
-
 	queueName := queue.Name
 	queueDisplayName := queue.Spec.DisplayName
 	gpuQuota := getGpuQuota(queue.Spec.Resources)
@@ -162,18 +161,22 @@ func SetQueueMetrics(queue *v2.Queue) {
 	allocatedCpus := getAllocatedCpuCores(queue.Status)
 	allocatedMemory := getAllocatedMemoryBytes(queue.Status)
 
-	queueQuotaMetricValues := append(
-		[]string{queueName, queueName, queueDisplayName},
-		additionalMetricLabelValues...,
-	)
+	queueLabels := prometheus.Labels{
+		queueNameLabel:         queueName,
+		queueMetadataNameLabel: queueName,
+		queueDisplayNameLabel:  queueDisplayName,
+	}
+	for metricLabelKey, value := range getAdditionalMetricLabelValues(queue.Labels) {
+		queueLabels[metricLabelKey] = value
+	}
 
-	queueInfo.WithLabelValues(queueQuotaMetricValues...).Set(1)
-	queueDeservedGPUs.WithLabelValues(queueQuotaMetricValues...).Set(gpuQuota)
-	queueQuotaCPU.WithLabelValues(queueQuotaMetricValues...).Set(cpuQuota)
-	queueQuotaMemory.WithLabelValues(queueQuotaMetricValues...).Set(memoryQuota)
-	queueAllocatedGpus.WithLabelValues(queueQuotaMetricValues...).Set(allocatedGpus)
-	queueAllocatedCpus.WithLabelValues(queueQuotaMetricValues...).Set(allocatedCpus)
-	queueAllocatedMemory.WithLabelValues(queueQuotaMetricValues...).Set(allocatedMemory)
+	queueInfo.With(queueLabels).Set(1)
+	queueDeservedGPUs.With(queueLabels).Set(gpuQuota)
+	queueQuotaCPU.With(queueLabels).Set(cpuQuota)
+	queueQuotaMemory.With(queueLabels).Set(memoryQuota)
+	queueAllocatedGpus.With(queueLabels).Set(allocatedGpus)
+	queueAllocatedCpus.With(queueLabels).Set(allocatedCpus)
+	queueAllocatedMemory.With(queueLabels).Set(allocatedMemory)
 }
 
 func ResetQueueMetrics(queueName string) {
@@ -245,23 +248,20 @@ func roundResourceQuantity(quantity resource.Quantity) float64 {
 	return math.Round(quantity.AsApproximateFloat64()*10000) / 10000
 }
 
-func getAdditionalMetricLabelValues(queueLabels map[string]string) []string {
-	labelValues := make([]string, len(additionalQueueLabelKeys))
-
-	// we already added the additional metric label keys to each metric using the original order,
-	// so we can just iterate over the additionalQueueLabelKeys - they should have the same order.
+func getAdditionalMetricLabelValues(queueLabels map[string]string) prometheus.Labels {
+	labelValues := make(prometheus.Labels, len(additionalQueueLabelKeys))
 
 	for i, queueLabelKey := range additionalQueueLabelKeys {
+		metricLabelKey := additionalMetricLabelKeys[i]
 		if value, exists := queueLabels[queueLabelKey]; exists {
-			labelValues[i] = value
+			labelValues[metricLabelKey] = value
 		} else if defaultValue, defaultExists := queueLabelToDefaultMetricValue[queueLabelKey]; defaultExists {
-			labelValues[i] = defaultValue
+			labelValues[metricLabelKey] = defaultValue
 		} else {
-			labelValues[i] = "" // Default to empty string if no value exists
+			labelValues[metricLabelKey] = "" // Default to empty string if no value exists
 		}
 	}
 	return labelValues
-
 }
 
 func GetQueueInfoMetric() *prometheus.GaugeVec {
