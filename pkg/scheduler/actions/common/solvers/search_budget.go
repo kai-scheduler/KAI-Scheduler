@@ -153,6 +153,10 @@ func (b *jobSearchBudget) Remaining() time.Duration {
 	return b.deadline.Remaining()
 }
 
+func (b *jobSearchBudget) Exhausted() bool {
+	return b.Remaining() <= 0
+}
+
 func (b *jobSearchBudget) ReducedBudget() bool {
 	if b == nil {
 		return false

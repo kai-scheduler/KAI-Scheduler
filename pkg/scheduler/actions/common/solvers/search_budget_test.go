@@ -237,6 +237,7 @@ func TestBeginJobReturnsNotAttemptedWhenActionBudgetExpired(t *testing.T) {
 
 	require.True(t, jobBudget.ReducedBudget())
 	require.True(t, budget.Exhausted())
+	require.True(t, jobBudget.Exhausted())
 	require.Equal(t, time.Duration(0), jobBudget.Remaining())
 }
 
