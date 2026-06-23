@@ -34,14 +34,6 @@ func TestNewJobsSolverDefaultsNilBudgetToUnlimited(t *testing.T) {
 	require.Greater(t, solver.actionBudget.BeginJob().Remaining(), time.Hour)
 }
 
-func TestNewJobsSolverDefaultsOmittedBudgetToUnlimited(t *testing.T) {
-	solver := NewJobsSolver(nil, nil, nil, framework.Reclaim)
-
-	require.NotNil(t, solver.actionBudget)
-	require.False(t, solver.actionBudget.Exhausted())
-	require.Greater(t, solver.actionBudget.BeginJob().Remaining(), time.Hour)
-}
-
 func TestSolveWithResultReturnsTerminalResultWhenNoTasksToAllocate(t *testing.T) {
 	solver := NewJobsSolver(nil, nil, nil, framework.Reclaim, nil)
 	pendingJob := podgroup_info.NewPodGroupInfo("pending-job")

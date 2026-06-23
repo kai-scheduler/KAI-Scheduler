@@ -38,12 +38,9 @@ func NewJobsSolver(
 	solutionValidator SolutionValidator,
 	generateVictimsQueue GenerateVictimsQueue,
 	action framework.ActionType,
-	actionBudget ...*ActionSearchBudget,
+	actionBudget *ActionSearchBudget,
 ) *JobSolver {
-	var budget *ActionSearchBudget
-	if len(actionBudget) > 0 {
-		budget = actionBudget[0]
-	}
+	budget := actionBudget
 	if budget == nil {
 		budget = newUnlimitedActionSearchBudget(action)
 	}
