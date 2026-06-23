@@ -73,7 +73,6 @@ func InitDefaultPlugins() {
 
 	// Other Plugins
 	framework.RegisterPluginBuilder("snapshot", snapshot.New)
-	framework.RegisterPluginBuilder(scenariogenerators.LegacyName, scenariogenerators.NewLegacy)
 	framework.RegisterPluginBuilder(scenariogenerators.NodeLocalGreedyName, scenariogenerators.NewNodeLocalGreedy)
 	framework.RegisterPluginBuilder(scenariogenerators.MultiNodeGangName, scenariogenerators.NewMultiNodeGang)
 

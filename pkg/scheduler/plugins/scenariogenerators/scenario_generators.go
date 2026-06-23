@@ -10,7 +10,6 @@ import (
 )
 
 const (
-	LegacyName          = "scenariogenerators"
 	NodeLocalGreedyName = "sg-nodelocalgreedy"
 	MultiNodeGangName   = "sg-multinodegang"
 )
@@ -19,12 +18,6 @@ type scenarioGeneratorPlugin struct {
 	pluginName    string
 	generatorName string
 	factory       framework.ScenarioGeneratorFactory
-}
-
-type legacyScenarioGeneratorPlugin struct{}
-
-func NewLegacy(_ framework.PluginArguments) framework.Plugin {
-	return &legacyScenarioGeneratorPlugin{}
 }
 
 func NewNodeLocalGreedy(_ framework.PluginArguments) framework.Plugin {
@@ -52,17 +45,6 @@ func (p *scenarioGeneratorPlugin) OnSessionOpen(ssn *framework.Session) {
 }
 
 func (p *scenarioGeneratorPlugin) OnSessionClose(_ *framework.Session) {}
-
-func (p *legacyScenarioGeneratorPlugin) Name() string {
-	return LegacyName
-}
-
-func (p *legacyScenarioGeneratorPlugin) OnSessionOpen(ssn *framework.Session) {
-	addScenarioGenerator(ssn, constants.GeneratorNodeLocalGreedy, solvers.NewNodeLocalGreedyGenerator)
-	addScenarioGenerator(ssn, constants.GeneratorMultiNodeGang, solvers.NewMultiNodeGangGenerator)
-}
-
-func (p *legacyScenarioGeneratorPlugin) OnSessionClose(_ *framework.Session) {}
 
 func addScenarioGenerator(
 	ssn *framework.Session, name string, factory framework.ScenarioGeneratorFactory,
