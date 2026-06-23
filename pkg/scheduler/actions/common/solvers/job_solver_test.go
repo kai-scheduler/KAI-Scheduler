@@ -17,9 +17,9 @@ func TestSearchMaxSolvableKSkipsFullProbe(t *testing.T) {
 		return solvedSearchResult(&solutionResult{solved: true}, false)
 	})
 
-	require.Equal(t, 3, maxSolvedK)
+	require.Equal(t, 2, maxSolvedK)
 	require.Nil(t, result)
-	require.Equal(t, []int{1, 2, 3}, probes)
+	require.Equal(t, []int{1, 2}, probes)
 }
 
 func TestSearchMaxSolvableKSkipsSingleTaskFullProbe(t *testing.T) {
