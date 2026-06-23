@@ -88,6 +88,34 @@ func TestSolveWithResultReturnsNoGeneratorWhenGeneratorReturnsNil(t *testing.T) 
 	require.False(t, result.EnteredSearch())
 }
 
+func TestSolveWithResultUsesMinJobBudgetAfterActionBudgetExpired(t *testing.T) {
+	clock := &fakeClock{now: time.Unix(0, 0)}
+	actionBudget, err := newActionSearchBudgetWithClock(
+		sessionWithScenarioSearchBudgets(&kaiv1.ScenarioSearchBudgets{
+			MaxActionSearchDuration: map[string]metav1.Duration{
+				constants.ActionReclaim: scenarioSearchDurationForTest("10ms"),
+			},
+			MaxJobSearchDuration: scenarioSearchDurationPtrForTest("1s"),
+			MinJobSearchDuration: scenarioSearchDurationPtrForTest("50ms"),
+		}),
+		framework.Reclaim,
+		clock.Now,
+	)
+	require.NoError(t, err)
+	ssn, pendingJob := newJobSolverResultTestSession(t, 1)
+	solver := NewJobsSolver(nil, nil, nil, framework.Reclaim, actionBudget)
+
+	clock.Advance(10 * time.Millisecond)
+	solved, statement, victims, result := solver.SolveWithResult(ssn, pendingJob)
+
+	require.False(t, solved)
+	require.Nil(t, statement)
+	require.Empty(t, victims)
+	require.Equal(t, SearchResultNoGenerator, result.Reason())
+	require.True(t, result.ReducedBudget())
+	require.False(t, result.EnteredSearch())
+}
+
 func TestSolveWithResultReportsDeadlineBeforeScenarioSimulation(t *testing.T) {
 	clock := &fakeClock{now: time.Unix(0, 0)}
 	actionBudget, err := newActionSearchBudgetWithClock(

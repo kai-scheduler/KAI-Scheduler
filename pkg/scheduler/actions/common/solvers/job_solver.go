@@ -67,9 +67,8 @@ func (s *JobSolver) ensureActionBudget() *ActionSearchBudget {
 func newUnlimitedActionSearchBudget(action framework.ActionType) *ActionSearchBudget {
 	now := time.Now
 	return &ActionSearchBudget{
-		action:    action,
-		startedAt: now(),
-		now:       now,
+		action:   action,
+		deadline: newDeadlineBudget(unlimitedRemaining, now),
 	}
 }
 
@@ -108,7 +107,7 @@ func (s *JobSolver) SolveWithResult(
 
 	actionBudget := s.ensureActionBudget()
 	jobBudget := actionBudget.BeginJob()
-	if actionBudget.Exhausted() {
+	if jobBudget.Remaining() <= 0 {
 		return false, nil, calcVictimNames(state.recordedVictimsTasks),
 			terminalSearchResult(SearchResultNotAttempted, false, false)
 	}
@@ -260,9 +259,8 @@ func (s *JobSolver) solvePartialJob(
 	ssn *framework.Session, state *solvingState, partialPendingJob *podgroup_info.PodGroupInfo,
 	jobBudget *jobSearchBudget,
 ) *SearchResult {
-	actionBudget := s.ensureActionBudget()
 	if jobBudget == nil {
-		jobBudget = actionBudget.BeginJob()
+		jobBudget = s.ensureActionBudget().BeginJob()
 	}
 
 	feasibleNodeMap := map[string]*node_info.NodeInfo{}
@@ -288,7 +286,7 @@ func (s *JobSolver) solvePartialJob(
 	enteredSearch := false
 	firstScenario := true
 	for {
-		if actionBudget.Exhausted() || jobBudget.Remaining() <= 0 {
+		if jobBudget.Remaining() <= 0 {
 			return terminalSearchResult(SearchResultDeadlineExhausted, jobBudget.ReducedBudget(), enteredSearch)
 		}
 		var scenarioToSolve *solverscenario.ByNodeScenario
@@ -298,11 +296,11 @@ func (s *JobSolver) solvePartialJob(
 		} else {
 			scenarioToSolve = scenarioBuilder.GetNextScenario()
 		}
-		if actionBudget.Exhausted() || jobBudget.Remaining() <= 0 {
+		if jobBudget.Remaining() <= 0 {
 			return terminalSearchResult(SearchResultDeadlineExhausted, jobBudget.ReducedBudget(), enteredSearch)
 		}
 		if scenarioToSolve == nil {
-			if actionBudget.Exhausted() || jobBudget.Remaining() <= 0 {
+			if jobBudget.Remaining() <= 0 {
 				return terminalSearchResult(SearchResultDeadlineExhausted, jobBudget.ReducedBudget(), enteredSearch)
 			}
 			break
