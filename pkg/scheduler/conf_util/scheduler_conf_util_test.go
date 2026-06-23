@@ -20,7 +20,8 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/scenariogenerators"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/multinodegang"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/nodelocalgreedy"
 )
 
 func TestResolveConfigurationFromFile(t *testing.T) {
@@ -173,18 +174,18 @@ func TestDefaultSchedulerConfRegistersScenarioGeneratorsForDefaultBudgets(t *tes
 	for _, tier := range schedulerConf.Tiers {
 		for _, plugin := range tier.Plugins {
 			switch plugin.Name {
-			case scenariogenerators.NodeLocalGreedyName:
-				scenariogenerators.NewNodeLocalGreedy(plugin.Arguments).OnSessionOpen(ssn)
+			case nodelocalgreedy.Name:
+				nodelocalgreedy.New(plugin.Arguments).OnSessionOpen(ssn)
 				registeredPlugins[plugin.Name] = true
-			case scenariogenerators.MultiNodeGangName:
-				scenariogenerators.NewMultiNodeGang(plugin.Arguments).OnSessionOpen(ssn)
+			case multinodegang.Name:
+				multinodegang.New(plugin.Arguments).OnSessionOpen(ssn)
 				registeredPlugins[plugin.Name] = true
 			}
 		}
 	}
 
-	require.True(t, registeredPlugins[scenariogenerators.NodeLocalGreedyName])
-	require.True(t, registeredPlugins[scenariogenerators.MultiNodeGangName])
+	require.True(t, registeredPlugins[nodelocalgreedy.Name])
+	require.True(t, registeredPlugins[multinodegang.Name])
 	require.NoError(t, ssn.ValidateScenarioGeneratorBudgetKeys())
 }
 

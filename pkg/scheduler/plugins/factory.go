@@ -28,7 +28,9 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/gpuspread"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/kubeflow"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/minruntime"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/multinodegang"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/nodeavailability"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/nodelocalgreedy"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/nodeplacement"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/nominatednode"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/numa"
@@ -39,7 +41,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/ray"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/reflectjoborder"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/resourcetype"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/scenariogenerators"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/snapshot"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/subgrouporder"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/taskorder"
@@ -73,8 +74,8 @@ func InitDefaultPlugins() {
 
 	// Other Plugins
 	framework.RegisterPluginBuilder("snapshot", snapshot.New)
-	framework.RegisterPluginBuilder(scenariogenerators.NodeLocalGreedyName, scenariogenerators.NewNodeLocalGreedy)
-	framework.RegisterPluginBuilder(scenariogenerators.MultiNodeGangName, scenariogenerators.NewMultiNodeGang)
+	framework.RegisterPluginBuilder(nodelocalgreedy.Name, nodelocalgreedy.New)
+	framework.RegisterPluginBuilder(multinodegang.Name, multinodegang.New)
 
 	// Always register the Job Order Plugin last.
 	framework.RegisterPluginBuilder("reflectjoborder", reflectjoborder.New)
