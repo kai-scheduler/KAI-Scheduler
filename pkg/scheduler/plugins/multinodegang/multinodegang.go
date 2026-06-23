@@ -5,7 +5,6 @@ package multinodegang
 
 import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 )
 
@@ -22,7 +21,7 @@ func (p *multiNodeGangPlugin) Name() string {
 }
 
 func (p *multiNodeGangPlugin) OnSessionOpen(ssn *framework.Session) {
-	addScenarioGenerator(ssn, constants.GeneratorMultiNodeGang, solvers.NewMultiNodeGangGenerator)
+	addScenarioGenerator(ssn, constants.GeneratorMultiNodeGang, NewMultiNodeGangGenerator)
 }
 
 func (p *multiNodeGangPlugin) OnSessionClose(_ *framework.Session) {}

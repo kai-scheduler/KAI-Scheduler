@@ -1,9 +1,10 @@
 // Copyright 2025 NVIDIA CORPORATION
 // SPDX-License-Identifier: Apache-2.0
 
-package solvers
+package nodelocalgreedy
 
 import (
+	"fmt"
 	"sort"
 	"strconv"
 	"testing"
@@ -13,9 +14,13 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
+	schedulingv2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	schedulingv2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
@@ -27,8 +32,12 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/multinodegang"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/scheduler_util"
 )
+
+type SolveContext = solvers.SolveContext
+type GenerateVictimsQueue = solvers.GenerateVictimsQueue
 
 func TestNodeLocalGreedyEmitsRecordedVictimsBeforePotentialVictims(t *testing.T) {
 	ssn := newGeneratorTestSession(t, map[string]int{"node-1": 1, "node-2": 1})
@@ -254,7 +263,7 @@ func TestNodeLocalGreedyUsesIndependentVictimsQueue(t *testing.T) {
 	require.NotNil(t, nodeLocal)
 	require.NotNil(t, nodeLocal.Next())
 
-	multiNode := NewMultiNodeGangGenerator(ctx)
+	multiNode := multinodegang.NewMultiNodeGangGenerator(ctx)
 	require.NotNil(t, multiNode)
 	sn := requireByNodeScenario(t, multiNode.Next())
 	require.ElementsMatch(t, podNames(victimTasks), podNames(sn.PotentialVictimsTasks()))
@@ -362,7 +371,7 @@ func TestScenarioGeneratorConstructorsRejectMalformedContext(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			require.Nil(t, NewNodeLocalGreedyGenerator(tt.ctx))
-			require.Nil(t, NewMultiNodeGangGenerator(tt.ctx))
+			require.Nil(t, multinodegang.NewMultiNodeGangGenerator(tt.ctx))
 		})
 	}
 }
@@ -373,7 +382,7 @@ func TestMultiNodeGangPreservesWholeGangVictims(t *testing.T) {
 	setGeneratorTestMinAvailable(victimJob, 2)
 	pendingJob := addGeneratorTestPendingJob(t, ssn, 1, 10, "team-pending")
 
-	generator := NewMultiNodeGangGenerator(&SolveContext{
+	generator := multinodegang.NewMultiNodeGangGenerator(&SolveContext{
 		Session:              ssn,
 		ActionType:           framework.Reclaim,
 		PartialPendingJob:    pendingJob,
@@ -442,6 +451,103 @@ func generatorTestNodeResources(gpus int) v1.ResourceList {
 	return v1.ResourceList{
 		resource_info.GPUResourceName: resource.MustParse(strconv.Itoa(gpus)),
 		v1.ResourcePods:               resource.MustParse("100"),
+	}
+}
+
+func createQueue(queueName string) *queue_info.QueueInfo {
+	return queue_info.NewQueueInfo(&schedulingv2.Queue{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: queueName,
+		},
+		Spec: schedulingv2.QueueSpec{
+			ParentQueue: "default",
+			Resources: &schedulingv2.QueueResources{
+				GPU: schedulingv2.QueueResource{
+					Quota: 1,
+				},
+			},
+		},
+	})
+}
+
+func createJobWithTasks(
+	tasksPerJob int, jobID int, queueName string, tasksStatus v1.PodPhase, podResources []v1.ResourceRequirements,
+) (*podgroup_info.PodGroupInfo, []*pod_info.PodInfo) {
+	jobTasks := []*pod_info.PodInfo{}
+	namespace := "kai-" + queueName
+	jobUID := strconv.Itoa(jobID)
+
+	for taskID := 0; taskID < tasksPerJob; taskID++ {
+		taskNum := jobID*tasksPerJob + taskID
+		jobTasks = append(jobTasks, pod_info.NewTaskInfo(
+			buildPod(
+				strconv.Itoa(taskNum),
+				fmt.Sprintf("pod-%d", taskNum),
+				namespace,
+				jobUID,
+				tasksStatus,
+				podResources,
+			),
+			resource_info.NewResourceVectorMap(),
+		))
+	}
+
+	newJob := podgroup_info.NewPodGroupInfo(common_info.PodGroupID(strconv.Itoa(jobID)), jobTasks...)
+	newJob.SetPodGroup(&schedulingv2alpha2.PodGroup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      fmt.Sprintf("job%d", jobID),
+			Namespace: namespace,
+			UID:       types.UID(jobUID),
+		},
+		Spec: schedulingv2alpha2.PodGroupSpec{
+			MinMember: ptr.To(int32(1)),
+			Queue:     queueName,
+		},
+	})
+
+	return newJob, jobTasks
+}
+
+func buildPod(
+	uid, name, namespace, podGroupID string, status v1.PodPhase, resources []v1.ResourceRequirements,
+) *v1.Pod {
+	pod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			UID:       types.UID(uid),
+			Annotations: map[string]string{
+				constants.PodGroupAnnotationForPod: podGroupID,
+			},
+		},
+		Spec: v1.PodSpec{
+			Containers: func() []v1.Container {
+				var containers []v1.Container
+				for _, r := range resources {
+					containers = append(containers, v1.Container{
+						Resources: r,
+					})
+				}
+				return containers
+			}(),
+		},
+		Status: v1.PodStatus{
+			Phase: status,
+		},
+	}
+
+	if status == v1.PodRunning {
+		pod.Spec.NodeName = "node-1"
+	}
+
+	return pod
+}
+
+func requireOneGPU() v1.ResourceRequirements {
+	return v1.ResourceRequirements{
+		Requests: v1.ResourceList{
+			resource_info.GPUResourceName: resource.MustParse("1"),
+		},
 	}
 }
 

@@ -1,13 +1,14 @@
 // Copyright 2025 NVIDIA CORPORATION
 // SPDX-License-Identifier: Apache-2.0
 
-package solvers
+package nodelocalgreedy
 
 import (
 	"sort"
 	"strings"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -17,15 +18,15 @@ import (
 )
 
 type nodeLocalGreedyGenerator struct {
-	solveCtx             *SolveContext
-	generateVictimsQueue GenerateVictimsQueue
-	builder              *PodAccumulatedScenarioBuilder
+	solveCtx             *solvers.SolveContext
+	generateVictimsQueue solvers.GenerateVictimsQueue
+	builder              *solvers.PodAccumulatedScenarioBuilder
 	scenarios            []*scenario.ByNodeScenario
 	advanceNext          bool
 }
 
 func NewNodeLocalGreedyGenerator(ctx framework.ScenarioGeneratorContext) framework.ScenarioGenerator {
-	solveCtx, generateVictimsQueue, ok := validateScenarioGeneratorContext(ctx)
+	solveCtx, generateVictimsQueue, ok := solvers.ValidateScenarioGeneratorContext(ctx)
 	if !ok {
 		return nil
 	}
@@ -51,7 +52,7 @@ func (g *nodeLocalGreedyGenerator) Next() api.ScenarioInfo {
 		if accumulated == nil {
 			return nil
 		}
-		g.scenarios = nodeLocalScenarios(g.builder.session, accumulated)
+		g.scenarios = nodeLocalScenarios(g.solveCtx.Session, accumulated)
 	}
 }
 
@@ -63,7 +64,7 @@ func (g *nodeLocalGreedyGenerator) ensureBuilder() bool {
 	if victimsQueue == nil {
 		return false
 	}
-	g.builder = NewPodAccumulatedScenarioBuilder(
+	g.builder = solvers.NewPodAccumulatedScenarioBuilder(
 		g.solveCtx.Session,
 		g.solveCtx.PartialPendingJob,
 		g.solveCtx.RecordedVictimsJobs,
@@ -97,25 +98,12 @@ func (g *nodeLocalGreedyGenerator) popScenario() *scenario.ByNodeScenario {
 }
 
 func (g *nodeLocalGreedyGenerator) nextAccumulatedScenario() *scenario.ByNodeScenario {
-	for {
-		if g.advanceNext {
-			if g.builder.victimsJobsQueue.IsEmpty() {
-				return nil
-			}
-			if !g.builder.addNextPotentialVictims() {
-				continue
-			}
-		}
-		g.advanceNext = true
-
-		if g.builder.lastScenario == nil {
-			return nil
-		}
-		if !g.builder.outerScenarioValid() {
-			continue
-		}
-		return g.builder.lastScenario
+	if g.advanceNext {
+		return g.builder.GetNextAccumulatedScenario()
 	}
+	g.advanceNext = true
+
+	return g.builder.GetValidAccumulatedScenario()
 }
 
 func nodeLocalScenarios(session *framework.Session, base *scenario.ByNodeScenario) []*scenario.ByNodeScenario {

@@ -1,21 +1,22 @@
 // Copyright 2025 NVIDIA CORPORATION
 // SPDX-License-Identifier: Apache-2.0
 
-package solvers
+package multinodegang
 
 import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 )
 
 type multiNodeGangGenerator struct {
-	builder *PodAccumulatedScenarioBuilder
+	builder *solvers.PodAccumulatedScenarioBuilder
 	first   bool
 }
 
 func NewMultiNodeGangGenerator(ctx framework.ScenarioGeneratorContext) framework.ScenarioGenerator {
-	solveCtx, generateVictimsQueue, ok := validateScenarioGeneratorContext(ctx)
+	solveCtx, generateVictimsQueue, ok := solvers.ValidateScenarioGeneratorContext(ctx)
 	if !ok {
 		return nil
 	}
@@ -25,7 +26,7 @@ func NewMultiNodeGangGenerator(ctx framework.ScenarioGeneratorContext) framework
 	}
 
 	return &multiNodeGangGenerator{
-		builder: NewPodAccumulatedScenarioBuilder(
+		builder: solvers.NewPodAccumulatedScenarioBuilder(
 			solveCtx.Session,
 			solveCtx.PartialPendingJob,
 			solveCtx.RecordedVictimsJobs,

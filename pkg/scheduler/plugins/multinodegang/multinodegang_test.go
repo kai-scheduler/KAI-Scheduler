@@ -25,3 +25,7 @@ func TestMultiNodeGangPluginRegistersMultiNodeGangGenerator(t *testing.T) {
 	require.Contains(t, ssn.ScenarioGeneratorRegistrations[0].Actions, framework.Preempt)
 	require.Contains(t, ssn.ScenarioGeneratorRegistrations[0].Actions, framework.Consolidation)
 }
+
+func TestMultiNodeGangGeneratorConstructorLivesInPluginPackage(t *testing.T) {
+	require.Nil(t, NewMultiNodeGangGenerator(nil))
+}

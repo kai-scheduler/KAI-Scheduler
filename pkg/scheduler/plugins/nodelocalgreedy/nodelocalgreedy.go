@@ -5,7 +5,6 @@ package nodelocalgreedy
 
 import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 )
 
@@ -22,7 +21,7 @@ func (p *nodeLocalGreedyPlugin) Name() string {
 }
 
 func (p *nodeLocalGreedyPlugin) OnSessionOpen(ssn *framework.Session) {
-	addScenarioGenerator(ssn, constants.GeneratorNodeLocalGreedy, solvers.NewNodeLocalGreedyGenerator)
+	addScenarioGenerator(ssn, constants.GeneratorNodeLocalGreedy, NewNodeLocalGreedyGenerator)
 }
 
 func (p *nodeLocalGreedyPlugin) OnSessionClose(_ *framework.Session) {}

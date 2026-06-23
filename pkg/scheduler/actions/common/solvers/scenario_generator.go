@@ -27,7 +27,8 @@ func (ctx *SolveContext) Action() framework.ActionType {
 	return ctx.ActionType
 }
 
-func validateScenarioGeneratorContext(ctx framework.ScenarioGeneratorContext) (*SolveContext, GenerateVictimsQueue, bool) {
+// ValidateScenarioGeneratorContext extracts the solver context required by scenario generator plugins.
+func ValidateScenarioGeneratorContext(ctx framework.ScenarioGeneratorContext) (*SolveContext, GenerateVictimsQueue, bool) {
 	solveCtx, ok := ctx.(*SolveContext)
 	if !ok || solveCtx == nil || solveCtx.Session == nil || solveCtx.Session.ClusterInfo == nil ||
 		solveCtx.Session.ClusterInfo.Nodes == nil || solveCtx.Session.ClusterInfo.PodGroupInfos == nil ||
