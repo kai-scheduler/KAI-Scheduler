@@ -17,7 +17,6 @@ const (
 // SearchResult records the outcome and budget state of a scenario search attempt.
 type SearchResult struct {
 	reason        SearchResultReason
-	solution      *solutionResult
 	reducedBudget bool
 	enteredSearch bool
 }
@@ -41,21 +40,4 @@ func (r *SearchResult) EnteredSearch() bool {
 		return false
 	}
 	return r.enteredSearch
-}
-
-func solvedSearchResult(solution *solutionResult, reducedBudget bool) *SearchResult {
-	return &SearchResult{
-		reason:        SearchResultSolved,
-		solution:      solution,
-		reducedBudget: reducedBudget,
-		enteredSearch: true,
-	}
-}
-
-func terminalSearchResult(reason SearchResultReason, reducedBudget bool, enteredSearch bool) *SearchResult {
-	return &SearchResult{
-		reason:        reason,
-		reducedBudget: reducedBudget,
-		enteredSearch: enteredSearch,
-	}
 }
