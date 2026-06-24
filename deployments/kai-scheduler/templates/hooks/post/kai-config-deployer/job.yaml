@@ -47,7 +47,7 @@ spec:
       {{- end }}
       containers:
       - name: deployer
-        image: "{{ .Values.kaiConfigDeployer.image.registry | default .Values.global.registry }}/{{ .Values.kaiConfigDeployer.image.name }}:{{ .Values.kaiConfigDeployer.image.tag | default .Values.global.tag | default .Chart.AppVersion }}"
+        image: "{{ .Values.kaiConfigDeployer.image.registry | default .Values.global.registry }}/{{ .Values.kaiConfigDeployer.image.name }}:{{ .Values.kaiConfigDeployer.image.tag | default .Chart.Version }}"
         imagePullPolicy: {{ .Values.kaiConfigDeployer.image.pullPolicy }}
         {{- with .Values.kaiConfigDeployer.resources }}
         resources:
