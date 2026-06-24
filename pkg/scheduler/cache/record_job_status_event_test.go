@@ -577,12 +577,12 @@ func TestRecordJobStatusEventScenarioSearchUnresolved(t *testing.T) {
 	podEvents := getPodEventsByPod(t, kubeClient)
 	for _, podID := range []common_info.PodID{"pod-1", "pod-2"} {
 		assertPodEvent(t, podEvents[podID], v1.PodReasonUnschedulable, "job is over capacity")
-		assertPodEvent(t, podEvents[podID], string(enginev2alpha2.ScenarioSearchUnresolved), exhaustedMessage)
+		assertNoPodEvent(t, podEvents[podID], string(enginev2alpha2.ScenarioSearchUnresolved))
 	}
 
 	podGroupEvents := getPodGroupEvents(t, kubeClient)
 	assertPodGroupEvent(t, podGroupEvents, enginev2alpha2.PodGroupReasonUnschedulable, "job is over capacity")
-	assertPodGroupEvent(t, podGroupEvents, string(enginev2alpha2.ScenarioSearchUnresolved), exhaustedMessage)
+	assertNoPodGroupEvent(t, podGroupEvents, string(enginev2alpha2.ScenarioSearchUnresolved))
 }
 
 func TestRecordJobStatusEventInvalidSubGroupPod(t *testing.T) {
@@ -787,6 +787,12 @@ func assertPodEvent(t *testing.T, events []*v1.Event, reason, messageSubstring s
 		reason, messageSubstring, events)
 }
 
+func assertNoPodEvent(t *testing.T, events []*v1.Event, reason string) {
+	for _, event := range events {
+		assert.NotEqual(t, reason, event.Reason, "expected no Pod event with reason %q; events: %v", reason, events)
+	}
+}
+
 func getPodGroupEvent(t *testing.T, kubeClient clientset.Interface) *v1.Event {
 	events := getPodGroupEvents(t, kubeClient)
 	if len(events) == 0 {
@@ -820,6 +826,12 @@ func assertPodGroupEvent(t *testing.T, events []*v1.Event, reason, messageSubstr
 	assert.Failf(t, "expected PodGroup event",
 		"expected PodGroup event with reason %q and message containing %q; events: %v",
 		reason, messageSubstring, events)
+}
+
+func assertNoPodGroupEvent(t *testing.T, events []*v1.Event, reason string) {
+	for _, event := range events {
+		assert.NotEqual(t, reason, event.Reason, "expected no PodGroup event with reason %q; events: %v", reason, events)
+	}
 }
 
 func getPods(pods map[v1.PodPhase][]common_info.PodID) (podsInfos map[common_info.PodID]*pod_info.PodInfo, podsAsObjects []runtime.Object) {

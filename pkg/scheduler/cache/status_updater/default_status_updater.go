@@ -220,7 +220,7 @@ func (su *defaultStatusUpdater) RecordJobStatusEvent(job *podgroup_info.PodGroup
 			return err
 		}
 		if job.ScenarioSearchUnresolved != nil {
-			if err := su.recordScenarioSearchUnresolvedPodsEvents(job); err != nil {
+			if err := su.recordScenarioSearchUnresolvedPodsConditions(job); err != nil {
 				return err
 			}
 			updatePodgroupStatus = su.recordScenarioSearchUnresolvedPodGroup(job)
@@ -263,9 +263,8 @@ func (su *defaultStatusUpdater) markTaskUnschedulable(pod *v1.Pod, message strin
 	return nil
 }
 
-func (su *defaultStatusUpdater) markTaskScenarioSearchUnresolved(pod *v1.Pod, message string) error {
+func (su *defaultStatusUpdater) markTaskScenarioSearchUnresolvedCondition(pod *v1.Pod, message string) error {
 	log.InfraLogger.V(6).Infof("setting scenario search unresolved message for task: %v", pod.Name)
-	su.recorder.Eventf(pod, v1.EventTypeWarning, string(enginev2alpha2.ScenarioSearchUnresolved), message)
 
 	return su.updatePodCondition(pod, &v1.PodCondition{
 		Type:    v1.PodConditionType(enginev2alpha2.ScenarioSearchUnresolved),
@@ -338,8 +337,6 @@ func (su *defaultStatusUpdater) markPodGroupUnschedulable(job *podgroup_info.Pod
 }
 
 func (su *defaultStatusUpdater) markPodGroupScenarioSearchUnresolved(job *podgroup_info.PodGroupInfo, message string) bool {
-	su.recorder.Event(job.PodGroup, v1.EventTypeNormal, string(enginev2alpha2.ScenarioSearchUnresolved), message)
-
 	return su.updatePodGroupSchedulingCondition(job.PodGroup, &enginev2alpha2.SchedulingCondition{
 		Type:     enginev2alpha2.ScenarioSearchUnresolved,
 		NodePool: utils.GetNodePoolNameFromLabels(job.PodGroup.Labels, su.nodePoolLabelKey),
@@ -418,14 +415,14 @@ func (su *defaultStatusUpdater) unschedulableTaskMessage(
 	return su.addNodePoolPrefixIfNeeded(job, msg)
 }
 
-func (su *defaultStatusUpdater) recordScenarioSearchUnresolvedPodsEvents(job *podgroup_info.PodGroupInfo) error {
+func (su *defaultStatusUpdater) recordScenarioSearchUnresolvedPodsConditions(job *podgroup_info.PodGroupInfo) error {
 	var errs []error
 	message := scenarioSearchUnresolvedMessage(job.ScenarioSearchUnresolved)
 	for _, taskInfo := range job.PodStatusIndex[pod_status.Pending] {
 		if job.IsInvalidSubGroupTask(taskInfo.UID) {
 			continue
 		}
-		if err := su.markTaskScenarioSearchUnresolved(taskInfo.Pod, message); err != nil {
+		if err := su.markTaskScenarioSearchUnresolvedCondition(taskInfo.Pod, message); err != nil {
 			errs = append(errs, fmt.Errorf("failed to update scenario search unresolved task status <%s/%s>: %v",
 				taskInfo.Namespace, taskInfo.Name, err))
 		}
