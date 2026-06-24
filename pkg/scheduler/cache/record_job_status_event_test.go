@@ -542,19 +542,26 @@ func TestRecordJobStatusEventScenarioSearchUnresolved(t *testing.T) {
 			if err != nil {
 				return nil, err
 			}
-			if len(pod.Status.Conditions) > 0 {
+			if hasPodCondition(pod, v1.PodScheduled) &&
+				hasPodCondition(pod, v1.PodConditionType(enginev2alpha2.ScenarioSearchUnresolved)) {
 				return pod, nil
 			}
-			return nil, fmt.Errorf("no conditions found for pod %s", pod.Name)
+			return nil, fmt.Errorf("missing expected conditions for pod %s", pod.Name)
 		})
-		assert.Nil(t, err)
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		pod := podObj.(*v1.Pod)
-		podCondition := pod.Status.Conditions[0]
-		assert.Equal(t, v1.PodConditionType(enginev2alpha2.ScenarioSearchUnresolved), podCondition.Type)
-		assert.Equal(t, v1.ConditionTrue, podCondition.Status)
-		assert.Equal(t, string(enginev2alpha2.ScenarioSearchUnresolved), podCondition.Reason)
-		assert.Equal(t, exhaustedMessage, podCondition.Message)
+		unschedulableCondition := podConditionByType(pod, v1.PodScheduled)
+		assert.Equal(t, v1.ConditionFalse, unschedulableCondition.Status)
+		assert.Equal(t, v1.PodReasonUnschedulable, unschedulableCondition.Reason)
+		assert.Equal(t, "Node-Pool 'default': "+common_info.DefaultPodError, unschedulableCondition.Message)
+
+		scenarioSearchCondition := podConditionByType(pod, v1.PodConditionType(enginev2alpha2.ScenarioSearchUnresolved))
+		assert.Equal(t, v1.ConditionTrue, scenarioSearchCondition.Status)
+		assert.Equal(t, string(enginev2alpha2.ScenarioSearchUnresolved), scenarioSearchCondition.Reason)
+		assert.Equal(t, exhaustedMessage, scenarioSearchCondition.Message)
 	}
 
 	for podID, event := range getPodEvents(t, kubeClient) {
@@ -681,6 +688,19 @@ func waitForCondition(condition func() (runtime.Object, error)) (runtime.Object,
 			}
 		}
 	}
+}
+
+func hasPodCondition(pod *v1.Pod, conditionType v1.PodConditionType) bool {
+	return podConditionByType(pod, conditionType) != nil
+}
+
+func podConditionByType(pod *v1.Pod, conditionType v1.PodConditionType) *v1.PodCondition {
+	for index := range pod.Status.Conditions {
+		if pod.Status.Conditions[index].Type == conditionType {
+			return &pod.Status.Conditions[index]
+		}
+	}
+	return nil
 }
 
 func validatePodEvents(t *testing.T, eventsPerPod map[common_info.PodID]*v1.Event, expectedPatterns map[common_info.PodID][]string) {

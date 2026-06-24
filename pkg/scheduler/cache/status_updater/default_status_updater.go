@@ -23,6 +23,7 @@ import (
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal"
@@ -216,6 +217,9 @@ func (su *defaultStatusUpdater) RecordJobStatusEvent(job *podgroup_info.PodGroup
 			return nil
 		}
 		if job.ScenarioSearchUnresolved != nil {
+			if err := su.recordUnschedulablePodsConditions(job); err != nil {
+				return err
+			}
 			if err := su.recordScenarioSearchUnresolvedPodsEvents(job); err != nil {
 				return err
 			}
@@ -355,7 +359,7 @@ func (su *defaultStatusUpdater) updatePodCondition(pod *v1.Pod, condition *v1.Po
 		pod.Namespace, pod.Name, condition.Type, condition.Status)
 	if k8s_internal.UpdatePodCondition(&pod.Status, condition) {
 		statusPatchBaseObject := v1.PodStatus{}
-		statusPatchBaseObject.Conditions = []v1.PodCondition{*condition}
+		statusPatchBaseObject.Conditions = pod.Status.Conditions
 		podStatusPatchBytes, err := json.Marshal(statusPatchBaseObject)
 		if err != nil {
 			return err
@@ -386,21 +390,7 @@ func (su *defaultStatusUpdater) recordUnschedulablePodsEvents(job *podgroup_info
 			continue
 		}
 
-		msg := common_info.DefaultPodError
-		fitError := job.TasksFitErrors[taskInfo.UID]
-		if fitError != nil {
-			msg = fitError.Error()
-
-			if su.detailedFitErrors {
-				msg = fitError.DetailedError()
-			} else {
-				log.InfraLogger.V(6).Infof("Full fit error: %s", fitError.DetailedError())
-			}
-		} else if len(job.JobFitErrors) > 0 {
-			msg = fmt.Sprintf("%s", common_info.JobFitErrorsToMessage(job.JobFitErrors))
-		}
-
-		msg = su.addNodePoolPrefixIfNeeded(job, msg)
+		msg := su.unschedulableTaskMessage(job, taskInfo)
 		log.InfraLogger.V(6).Infof("setting message for task: %v, %v", taskInfo.Name, msg)
 		updatePodCondition := utils.GetMarkUnschedulableValue(job.PodGroup.Spec.MarkUnschedulable)
 		if err := su.markTaskUnschedulable(taskInfo.Pod, msg, updatePodCondition); err != nil {
@@ -410,6 +400,52 @@ func (su *defaultStatusUpdater) recordUnschedulablePodsEvents(job *podgroup_info
 	}
 
 	return errors.Join(errs...)
+}
+
+func (su *defaultStatusUpdater) recordUnschedulablePodsConditions(job *podgroup_info.PodGroupInfo) error {
+	if !utils.GetMarkUnschedulableValue(job.PodGroup.Spec.MarkUnschedulable) {
+		return nil
+	}
+
+	var errs []error
+	for _, taskInfo := range job.PodStatusIndex[pod_status.Pending] {
+		if job.IsInvalidSubGroupTask(taskInfo.UID) {
+			continue
+		}
+
+		msg := su.unschedulableTaskMessage(job, taskInfo)
+		if err := su.updatePodCondition(taskInfo.Pod, &v1.PodCondition{
+			Type:    v1.PodScheduled,
+			Status:  v1.ConditionFalse,
+			Reason:  v1.PodReasonUnschedulable,
+			Message: msg,
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("failed to update unschedulable task status <%s/%s>: %v",
+				taskInfo.Namespace, taskInfo.Name, err))
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
+func (su *defaultStatusUpdater) unschedulableTaskMessage(
+	job *podgroup_info.PodGroupInfo, taskInfo *pod_info.PodInfo,
+) string {
+	msg := common_info.DefaultPodError
+	fitError := job.TasksFitErrors[taskInfo.UID]
+	if fitError != nil {
+		msg = fitError.Error()
+
+		if su.detailedFitErrors {
+			msg = fitError.DetailedError()
+		} else {
+			log.InfraLogger.V(6).Infof("Full fit error: %s", fitError.DetailedError())
+		}
+	} else if len(job.JobFitErrors) > 0 {
+		msg = fmt.Sprintf("%s", common_info.JobFitErrorsToMessage(job.JobFitErrors))
+	}
+
+	return su.addNodePoolPrefixIfNeeded(job, msg)
 }
 
 func (su *defaultStatusUpdater) recordScenarioSearchUnresolvedPodsEvents(job *podgroup_info.PodGroupInfo) error {
