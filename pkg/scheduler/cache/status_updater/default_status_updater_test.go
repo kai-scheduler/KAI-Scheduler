@@ -92,6 +92,31 @@ func TestScenarioSearchUnresolvedMessage(t *testing.T) {
 }
 
 func TestUpdatePodGroupSchedulingCondition(t *testing.T) {
+	unschedulableCondition := func(nodePool, transitionID string) enginev2alpha2.SchedulingCondition {
+		return enginev2alpha2.SchedulingCondition{
+			Type:         enginev2alpha2.UnschedulableOnNodePool,
+			NodePool:     nodePool,
+			Reason:       "reason",
+			Message:      "message",
+			TransitionID: transitionID,
+			Status:       v1.ConditionTrue,
+		}
+	}
+	scenarioSearchCondition := func(nodePool, transitionID string) enginev2alpha2.SchedulingCondition {
+		return enginev2alpha2.SchedulingCondition{
+			Type:         enginev2alpha2.ScenarioSearchUnresolved,
+			NodePool:     nodePool,
+			Reason:       "scenario-search-unresolved",
+			Message:      "scenario search unresolved",
+			TransitionID: transitionID,
+			Status:       v1.ConditionTrue,
+		}
+	}
+	newUnschedulableCondition := func(nodePool string) *enginev2alpha2.SchedulingCondition {
+		condition := unschedulableCondition(nodePool, "0")
+		return &condition
+	}
+
 	for i, test := range []UpdatePodGroupConditionTest{
 		{
 			name: "No conditions",
@@ -100,25 +125,9 @@ func TestUpdatePodGroupSchedulingCondition(t *testing.T) {
 					SchedulingConditions: []enginev2alpha2.SchedulingCondition{},
 				},
 			},
-			schedulingCondition: &enginev2alpha2.SchedulingCondition{
-				Type:               enginev2alpha2.UnschedulableOnNodePool,
-				NodePool:           "default",
-				Reason:             "reason",
-				Message:            "message",
-				TransitionID:       "0",
-				LastTransitionTime: metav1.Time{},
-				Status:             v1.ConditionTrue,
-			},
+			schedulingCondition: newUnschedulableCondition("default"),
 			expectedConditions: []enginev2alpha2.SchedulingCondition{
-				{
-					Type:               enginev2alpha2.UnschedulableOnNodePool,
-					NodePool:           "default",
-					Reason:             "reason",
-					Message:            "message",
-					TransitionID:       "1",
-					LastTransitionTime: metav1.Time{},
-					Status:             v1.ConditionTrue,
-				},
+				unschedulableCondition("default", "1"),
 			},
 
 			expectedUpdated: true,
@@ -128,44 +137,14 @@ func TestUpdatePodGroupSchedulingCondition(t *testing.T) {
 			podGroup: &enginev2alpha2.PodGroup{
 				Status: enginev2alpha2.PodGroupStatus{
 					SchedulingConditions: []enginev2alpha2.SchedulingCondition{
-						{
-							Type:               enginev2alpha2.UnschedulableOnNodePool,
-							NodePool:           "existingConditionNodepool",
-							Reason:             "reason",
-							Message:            "message",
-							TransitionID:       "99",
-							LastTransitionTime: metav1.Time{},
-							Status:             v1.ConditionTrue,
-						},
+						unschedulableCondition("existingConditionNodepool", "99"),
 					},
 				},
 			},
-			schedulingCondition: &enginev2alpha2.SchedulingCondition{
-				Type:               enginev2alpha2.UnschedulableOnNodePool,
-				NodePool:           "default",
-				Reason:             "reason",
-				Message:            "message",
-				TransitionID:       "0",
-				LastTransitionTime: metav1.Time{},
-				Status:             v1.ConditionTrue,
-			},
+			schedulingCondition: newUnschedulableCondition("default"),
 			expectedConditions: []enginev2alpha2.SchedulingCondition{
-				{
-					Type:         enginev2alpha2.UnschedulableOnNodePool,
-					NodePool:     "existingConditionNodepool",
-					Reason:       "reason",
-					Message:      "message",
-					TransitionID: "99",
-					Status:       v1.ConditionTrue,
-				},
-				{
-					Type:         enginev2alpha2.UnschedulableOnNodePool,
-					NodePool:     "default",
-					Reason:       "reason",
-					Message:      "message",
-					TransitionID: "100",
-					Status:       v1.ConditionTrue,
-				},
+				unschedulableCondition("existingConditionNodepool", "99"),
+				unschedulableCondition("default", "100"),
 			},
 
 			expectedUpdated: true,
@@ -175,55 +154,15 @@ func TestUpdatePodGroupSchedulingCondition(t *testing.T) {
 			podGroup: &enginev2alpha2.PodGroup{
 				Status: enginev2alpha2.PodGroupStatus{
 					SchedulingConditions: []enginev2alpha2.SchedulingCondition{
-						{
-							Type:               enginev2alpha2.UnschedulableOnNodePool,
-							NodePool:           "existingConditionNodepool",
-							Reason:             "reason",
-							Message:            "message",
-							TransitionID:       "1",
-							LastTransitionTime: metav1.Time{},
-							Status:             v1.ConditionTrue,
-						},
-						{
-							Type:               enginev2alpha2.UnschedulableOnNodePool,
-							NodePool:           "newerConditionNodepool",
-							Reason:             "reason",
-							Message:            "message",
-							TransitionID:       "2",
-							LastTransitionTime: metav1.Time{},
-							Status:             v1.ConditionTrue,
-						},
+						unschedulableCondition("existingConditionNodepool", "1"),
+						unschedulableCondition("newerConditionNodepool", "2"),
 					},
 				},
 			},
-			schedulingCondition: &enginev2alpha2.SchedulingCondition{
-				Type:               enginev2alpha2.UnschedulableOnNodePool,
-				NodePool:           "existingConditionNodepool",
-				Reason:             "reason",
-				Message:            "message",
-				TransitionID:       "0",
-				LastTransitionTime: metav1.Time{},
-				Status:             v1.ConditionTrue,
-			},
+			schedulingCondition: newUnschedulableCondition("existingConditionNodepool"),
 			expectedConditions: []enginev2alpha2.SchedulingCondition{
-				{
-					Type:               enginev2alpha2.UnschedulableOnNodePool,
-					NodePool:           "newerConditionNodepool",
-					Reason:             "reason",
-					Message:            "message",
-					TransitionID:       "2",
-					LastTransitionTime: metav1.Time{},
-					Status:             v1.ConditionTrue,
-				},
-				{
-					Type:               enginev2alpha2.UnschedulableOnNodePool,
-					NodePool:           "existingConditionNodepool",
-					Reason:             "reason",
-					Message:            "message",
-					TransitionID:       "3",
-					LastTransitionTime: metav1.Time{},
-					Status:             v1.ConditionTrue,
-				},
+				unschedulableCondition("newerConditionNodepool", "2"),
+				unschedulableCondition("existingConditionNodepool", "3"),
 			},
 
 			expectedUpdated: true,
@@ -233,55 +172,15 @@ func TestUpdatePodGroupSchedulingCondition(t *testing.T) {
 			podGroup: &enginev2alpha2.PodGroup{
 				Status: enginev2alpha2.PodGroupStatus{
 					SchedulingConditions: []enginev2alpha2.SchedulingCondition{
-						{
-							Type:               enginev2alpha2.UnschedulableOnNodePool,
-							NodePool:           "newerConditionNodepool",
-							Reason:             "reason",
-							Message:            "message",
-							TransitionID:       "2",
-							LastTransitionTime: metav1.Time{},
-							Status:             v1.ConditionTrue,
-						},
-						{
-							Type:               enginev2alpha2.UnschedulableOnNodePool,
-							NodePool:           "existingConditionNodepool",
-							Reason:             "reason",
-							Message:            "message",
-							TransitionID:       "3",
-							LastTransitionTime: metav1.Time{},
-							Status:             v1.ConditionTrue,
-						},
+						unschedulableCondition("newerConditionNodepool", "2"),
+						unschedulableCondition("existingConditionNodepool", "3"),
 					},
 				},
 			},
-			schedulingCondition: &enginev2alpha2.SchedulingCondition{
-				Type:               enginev2alpha2.UnschedulableOnNodePool,
-				NodePool:           "existingConditionNodepool",
-				Reason:             "reason",
-				Message:            "message",
-				TransitionID:       "0",
-				LastTransitionTime: metav1.Time{},
-				Status:             v1.ConditionTrue,
-			},
+			schedulingCondition: newUnschedulableCondition("existingConditionNodepool"),
 			expectedConditions: []enginev2alpha2.SchedulingCondition{
-				{
-					Type:               enginev2alpha2.UnschedulableOnNodePool,
-					NodePool:           "newerConditionNodepool",
-					Reason:             "reason",
-					Message:            "message",
-					TransitionID:       "2",
-					LastTransitionTime: metav1.Time{},
-					Status:             v1.ConditionTrue,
-				},
-				{
-					Type:               enginev2alpha2.UnschedulableOnNodePool,
-					NodePool:           "existingConditionNodepool",
-					Reason:             "reason",
-					Message:            "message",
-					TransitionID:       "3",
-					LastTransitionTime: metav1.Time{},
-					Status:             v1.ConditionTrue,
-				},
+				unschedulableCondition("newerConditionNodepool", "2"),
+				unschedulableCondition("existingConditionNodepool", "3"),
 			},
 
 			expectedUpdated: false,
@@ -291,122 +190,36 @@ func TestUpdatePodGroupSchedulingCondition(t *testing.T) {
 			podGroup: &enginev2alpha2.PodGroup{
 				Status: enginev2alpha2.PodGroupStatus{
 					SchedulingConditions: []enginev2alpha2.SchedulingCondition{
-						{
-							Type:               enginev2alpha2.UnschedulableOnNodePool,
-							NodePool:           "existingConditionNodepool",
-							Reason:             "reason",
-							Message:            "message",
-							TransitionID:       "3",
-							LastTransitionTime: metav1.Time{},
-							Status:             v1.ConditionTrue,
-						},
-						{
-							Type:               enginev2alpha2.UnschedulableOnNodePool,
-							NodePool:           "newerConditionNodepool",
-							Reason:             "reason",
-							Message:            "message",
-							TransitionID:       "2",
-							LastTransitionTime: metav1.Time{},
-							Status:             v1.ConditionTrue,
-						},
+						unschedulableCondition("existingConditionNodepool", "3"),
+						unschedulableCondition("newerConditionNodepool", "2"),
 					},
 				},
 			},
-			schedulingCondition: &enginev2alpha2.SchedulingCondition{
-				Type:               enginev2alpha2.UnschedulableOnNodePool,
-				NodePool:           "existingConditionNodepool",
-				Reason:             "reason",
-				Message:            "message",
-				TransitionID:       "0",
-				LastTransitionTime: metav1.Time{},
-				Status:             v1.ConditionTrue,
-			},
+			schedulingCondition: newUnschedulableCondition("existingConditionNodepool"),
 			expectedConditions: []enginev2alpha2.SchedulingCondition{
-				{
-					Type:               enginev2alpha2.UnschedulableOnNodePool,
-					NodePool:           "newerConditionNodepool",
-					Reason:             "reason",
-					Message:            "message",
-					TransitionID:       "2",
-					LastTransitionTime: metav1.Time{},
-					Status:             v1.ConditionTrue,
-				},
-				{
-					Type:               enginev2alpha2.UnschedulableOnNodePool,
-					NodePool:           "existingConditionNodepool",
-					Reason:             "reason",
-					Message:            "message",
-					TransitionID:       "4",
-					LastTransitionTime: metav1.Time{},
-					Status:             v1.ConditionTrue,
-				},
+				unschedulableCondition("newerConditionNodepool", "2"),
+				unschedulableCondition("existingConditionNodepool", "4"),
 			},
 
 			expectedUpdated: true,
 		},
 		{
-			name: "Squash conditions",
+			name: "Squash same nodepool and type",
 			podGroup: &enginev2alpha2.PodGroup{
 				Status: enginev2alpha2.PodGroupStatus{
 					SchedulingConditions: []enginev2alpha2.SchedulingCondition{
-						{
-							Type:               enginev2alpha2.UnschedulableOnNodePool,
-							NodePool:           "existingConditionNodepool",
-							Reason:             "reason",
-							Message:            "message",
-							TransitionID:       "1",
-							LastTransitionTime: metav1.Time{},
-							Status:             v1.ConditionTrue,
-						},
-						{
-							Type:               enginev2alpha2.UnschedulableOnNodePool,
-							NodePool:           "newerConditionNodepool",
-							Reason:             "reason",
-							Message:            "message",
-							TransitionID:       "2",
-							LastTransitionTime: metav1.Time{},
-							Status:             v1.ConditionTrue,
-						},
-						{
-							Type:               enginev2alpha2.UnschedulableOnNodePool,
-							NodePool:           "existingConditionNodepool",
-							Reason:             "reason",
-							Message:            "message",
-							TransitionID:       "3",
-							LastTransitionTime: metav1.Time{},
-							Status:             v1.ConditionTrue,
-						},
+						unschedulableCondition("existingConditionNodepool", "1"),
+						unschedulableCondition("newerConditionNodepool", "2"),
+						unschedulableCondition("existingConditionNodepool", "3"),
+						scenarioSearchCondition("existingConditionNodepool", "4"),
 					},
 				},
 			},
-			schedulingCondition: &enginev2alpha2.SchedulingCondition{
-				Type:               enginev2alpha2.UnschedulableOnNodePool,
-				NodePool:           "existingConditionNodepool",
-				Reason:             "reason",
-				Message:            "message",
-				TransitionID:       "0",
-				LastTransitionTime: metav1.Time{},
-				Status:             v1.ConditionTrue,
-			},
+			schedulingCondition: newUnschedulableCondition("existingConditionNodepool"),
 			expectedConditions: []enginev2alpha2.SchedulingCondition{
-				{
-					Type:               enginev2alpha2.UnschedulableOnNodePool,
-					NodePool:           "newerConditionNodepool",
-					Reason:             "reason",
-					Message:            "message",
-					TransitionID:       "2",
-					LastTransitionTime: metav1.Time{},
-					Status:             v1.ConditionTrue,
-				},
-				{
-					Type:               enginev2alpha2.UnschedulableOnNodePool,
-					NodePool:           "existingConditionNodepool",
-					Reason:             "reason",
-					Message:            "message",
-					TransitionID:       "4",
-					LastTransitionTime: metav1.Time{},
-					Status:             v1.ConditionTrue,
-				},
+				unschedulableCondition("newerConditionNodepool", "2"),
+				scenarioSearchCondition("existingConditionNodepool", "4"),
+				unschedulableCondition("existingConditionNodepool", "5"),
 			},
 
 			expectedUpdated: true,

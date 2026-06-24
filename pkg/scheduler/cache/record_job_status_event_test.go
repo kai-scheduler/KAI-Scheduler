@@ -523,22 +523,28 @@ func TestRecordJobStatusEventScenarioSearchUnresolved(t *testing.T) {
 		if err != nil {
 			return nil, err
 		}
-		if len(updatedPodGroup.Status.SchedulingConditions) > 0 {
+		if podGroupSchedulingConditionByType(updatedPodGroup, enginev2alpha2.UnschedulableOnNodePool) != nil &&
+			podGroupSchedulingConditionByType(updatedPodGroup, enginev2alpha2.ScenarioSearchUnresolved) != nil {
 			return updatedPodGroup, nil
 		}
-		return nil, fmt.Errorf("no scheduling conditions found")
+		return nil, fmt.Errorf("missing expected scheduling conditions")
 	})
 	assert.Nil(t, err)
 
 	newPodGroup := newPodGroupObj.(*enginev2alpha2.PodGroup)
-	condition := newPodGroup.Status.SchedulingConditions[0]
-	assert.Equal(t, enginev2alpha2.UnschedulableOnNodePool, condition.Type)
-	assert.Equal(t, enginev2alpha2.PodGroupReasonUnschedulable, condition.Reason)
-	assert.Contains(t, condition.Message, "job is over capacity")
-	if assert.Len(t, condition.Reasons, 1) {
-		assert.Equal(t, enginev2alpha2.UnschedulableReason(podgroup_info.OverCapacity), condition.Reasons[0].Reason)
-		assert.Equal(t, "job is over capacity", condition.Reasons[0].Message)
+	unschedulablePodGroupCondition := podGroupSchedulingConditionByType(newPodGroup, enginev2alpha2.UnschedulableOnNodePool)
+	assert.Equal(t, enginev2alpha2.PodGroupReasonUnschedulable, unschedulablePodGroupCondition.Reason)
+	assert.Contains(t, unschedulablePodGroupCondition.Message, "job is over capacity")
+	if assert.Len(t, unschedulablePodGroupCondition.Reasons, 1) {
+		assert.Equal(t, enginev2alpha2.UnschedulableReason(podgroup_info.OverCapacity),
+			unschedulablePodGroupCondition.Reasons[0].Reason)
+		assert.Equal(t, "job is over capacity", unschedulablePodGroupCondition.Reasons[0].Message)
 	}
+
+	scenarioSearchPodGroupCondition := podGroupSchedulingConditionByType(newPodGroup, enginev2alpha2.ScenarioSearchUnresolved)
+	assert.Equal(t, string(enginev2alpha2.ScenarioSearchUnresolved), scenarioSearchPodGroupCondition.Reason)
+	assert.Equal(t, exhaustedMessage, scenarioSearchPodGroupCondition.Message)
+	assert.Empty(t, scenarioSearchPodGroupCondition.Reasons)
 
 	for _, podID := range []common_info.PodID{"pod-1", "pod-2"} {
 		podObj, err := waitForCondition(func() (runtime.Object, error) {
@@ -574,10 +580,9 @@ func TestRecordJobStatusEventScenarioSearchUnresolved(t *testing.T) {
 		assert.Equal(t, exhaustedMessage, event.Message)
 	}
 
-	podGroupEvent := getPodGroupEvent(t, kubeClient)
-	assert.NotNil(t, podGroupEvent)
-	assert.Equal(t, enginev2alpha2.PodGroupReasonUnschedulable, podGroupEvent.Reason)
-	assert.Contains(t, podGroupEvent.Message, "job is over capacity")
+	podGroupEvents := getPodGroupEvents(t, kubeClient)
+	assertPodGroupEvent(t, podGroupEvents, enginev2alpha2.PodGroupReasonUnschedulable, "job is over capacity")
+	assertPodGroupEvent(t, podGroupEvents, string(enginev2alpha2.ScenarioSearchUnresolved), exhaustedMessage)
 }
 
 func TestRecordJobStatusEventInvalidSubGroupPod(t *testing.T) {
@@ -707,6 +712,17 @@ func podConditionByType(pod *v1.Pod, conditionType v1.PodConditionType) *v1.PodC
 	return nil
 }
 
+func podGroupSchedulingConditionByType(
+	podGroup *enginev2alpha2.PodGroup, conditionType enginev2alpha2.SchedulingConditionType,
+) *enginev2alpha2.SchedulingCondition {
+	for index := range podGroup.Status.SchedulingConditions {
+		if podGroup.Status.SchedulingConditions[index].Type == conditionType {
+			return &podGroup.Status.SchedulingConditions[index]
+		}
+	}
+	return nil
+}
+
 func validatePodEvents(t *testing.T, eventsPerPod map[common_info.PodID]*v1.Event, expectedPatterns map[common_info.PodID][]string) {
 	for podID, expectedMessagePatterns := range expectedPatterns {
 		event, found := eventsPerPod[podID]
@@ -744,17 +760,38 @@ func getPodEvents(t *testing.T, kubeClient clientset.Interface) (eventsPerPod ma
 }
 
 func getPodGroupEvent(t *testing.T, kubeClient clientset.Interface) *v1.Event {
+	events := getPodGroupEvents(t, kubeClient)
+	if len(events) == 0 {
+		return nil
+	}
+
+	return events[0]
+}
+
+func getPodGroupEvents(t *testing.T, kubeClient clientset.Interface) []*v1.Event {
 	events, err := kubeClient.CoreV1().Events("namespace-1").List(context.TODO(), metav1.ListOptions{})
 	assert.Nil(t, err)
 
+	var podGroupEvents []*v1.Event
 	for _, event := range events.Items {
 		if event.InvolvedObject.Kind == "PodGroup" {
-			return &event
+			podGroupEvents = append(podGroupEvents, &event)
 		}
-
 	}
 
-	return nil
+	return podGroupEvents
+}
+
+func assertPodGroupEvent(t *testing.T, events []*v1.Event, reason, messageSubstring string) {
+	for _, event := range events {
+		if event.Reason == reason && regexp.MustCompile(regexp.QuoteMeta(messageSubstring)).MatchString(event.Message) {
+			return
+		}
+	}
+
+	assert.Failf(t, "expected PodGroup event",
+		"expected PodGroup event with reason %q and message containing %q; events: %v",
+		reason, messageSubstring, events)
 }
 
 func getPods(pods map[v1.PodPhase][]common_info.PodID) (podsInfos map[common_info.PodID]*pod_info.PodInfo, podsAsObjects []runtime.Object) {

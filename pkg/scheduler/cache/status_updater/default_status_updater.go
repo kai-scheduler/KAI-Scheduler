@@ -223,12 +223,13 @@ func (su *defaultStatusUpdater) RecordJobStatusEvent(job *podgroup_info.PodGroup
 			if err := su.recordScenarioSearchUnresolvedPodsEvents(job); err != nil {
 				return err
 			}
+			updatePodgroupStatus = su.recordScenarioSearchUnresolvedPodGroup(job)
 		} else {
 			if err := su.recordUnschedulablePodsEvents(job); err != nil {
 				return err
 			}
 		}
-		updatePodgroupStatus = su.recordUnschedulablePodGroup(job)
+		updatePodgroupStatus = su.recordUnschedulablePodGroup(job) || updatePodgroupStatus
 	}
 
 	if len(patchData) > 0 || updatePodgroupStatus {
@@ -337,6 +338,18 @@ func (su *defaultStatusUpdater) markPodGroupUnschedulable(job *podgroup_info.Pod
 		Message:  message,
 		Status:   v1.ConditionTrue,
 		Reasons:  unschedulableExplanations,
+	})
+}
+
+func (su *defaultStatusUpdater) markPodGroupScenarioSearchUnresolved(job *podgroup_info.PodGroupInfo, message string) bool {
+	su.recorder.Event(job.PodGroup, v1.EventTypeNormal, string(enginev2alpha2.ScenarioSearchUnresolved), message)
+
+	return su.updatePodGroupSchedulingCondition(job.PodGroup, &enginev2alpha2.SchedulingCondition{
+		Type:     enginev2alpha2.ScenarioSearchUnresolved,
+		NodePool: utils.GetNodePoolNameFromLabels(job.PodGroup.Labels, su.nodePoolLabelKey),
+		Reason:   string(enginev2alpha2.ScenarioSearchUnresolved),
+		Message:  message,
+		Status:   v1.ConditionTrue,
 	})
 }
 
@@ -509,6 +522,10 @@ func (su *defaultStatusUpdater) recordUnschedulablePodGroup(job *podgroup_info.P
 	return su.markPodGroupUnschedulable(job, msg)
 }
 
+func (su *defaultStatusUpdater) recordScenarioSearchUnresolvedPodGroup(job *podgroup_info.PodGroupInfo) bool {
+	return su.markPodGroupScenarioSearchUnresolved(job, scenarioSearchUnresolvedMessage(job.ScenarioSearchUnresolved))
+}
+
 func scenarioSearchUnresolvedMessage(unresolved *podgroup_info.ScenarioSearchUnresolved) string {
 	if unresolved != nil && unresolved.ReducedBudget {
 		return "KAI could not find a valid scenario within the remaining configured search time for this scheduling attempt because the action search budget was partly consumed by earlier jobs. The job remains pending and may be retried in a later scheduling cycle."
@@ -606,7 +623,7 @@ func setPodGroupLastStartTimeStamp(podGroup *enginev2alpha2.PodGroup, startTimeS
 }
 
 func setPodGroupSchedulingCondition(podGroup *enginev2alpha2.PodGroup, schedulingCondition *enginev2alpha2.SchedulingCondition) bool {
-	currentSchedulingConditionIndex := utils.GetSchedulingConditionIndex(podGroup, schedulingCondition.NodePool)
+	currentSchedulingConditionIndex := getSchedulingConditionIndex(podGroup, schedulingCondition)
 	lastSchedulingCondition := utils.GetLastSchedulingCondition(podGroup)
 
 	setTransitionID(podGroup, schedulingCondition, lastSchedulingCondition)
@@ -616,9 +633,21 @@ func setPodGroupSchedulingCondition(podGroup *enginev2alpha2.PodGroup, schedulin
 	}
 
 	// BC: older versions of pod group assigner rely on the most recent condition to be the last in the list.
-	// We want to squash all conditions of the same node pool and append ours to the end.
-	squashAndAppendConditionsForNodepool(podGroup, schedulingCondition)
+	// Squash conditions of the same node pool and type and append ours to the end.
+	squashAndAppendSchedulingCondition(podGroup, schedulingCondition)
 	return true
+}
+
+func getSchedulingConditionIndex(
+	podGroup *enginev2alpha2.PodGroup, schedulingCondition *enginev2alpha2.SchedulingCondition,
+) int {
+	for i, condition := range podGroup.Status.SchedulingConditions {
+		if condition.NodePool == schedulingCondition.NodePool && condition.Type == schedulingCondition.Type {
+			return i
+		}
+	}
+
+	return -1
 }
 
 func setTransitionID(podGroup *enginev2alpha2.PodGroup, schedulingCondition, lastSchedulingCondition *enginev2alpha2.SchedulingCondition) {
@@ -660,10 +689,10 @@ func equalSchedulingConditions(a, b *enginev2alpha2.SchedulingCondition) bool {
 		a.Status == b.Status
 }
 
-func squashAndAppendConditionsForNodepool(podGroup *enginev2alpha2.PodGroup, schedulingCondition *enginev2alpha2.SchedulingCondition) {
+func squashAndAppendSchedulingCondition(podGroup *enginev2alpha2.PodGroup, schedulingCondition *enginev2alpha2.SchedulingCondition) {
 	var squashedConditions []enginev2alpha2.SchedulingCondition
 	for _, condition := range podGroup.Status.SchedulingConditions {
-		if condition.NodePool != schedulingCondition.NodePool {
+		if condition.NodePool != schedulingCondition.NodePool || condition.Type != schedulingCondition.Type {
 			squashedConditions = append(squashedConditions, condition)
 		}
 	}
