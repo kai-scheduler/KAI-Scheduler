@@ -105,6 +105,7 @@ func (pp *proportionPlugin) OnSessionOpen(ssn *framework.Session) {
 	capacityPolicy := cp.New(pp.queues, pp.minNodeGPUMemory)
 	ssn.AddQueueOrderFn(pp.queueOrder)
 	ssn.AddCanReclaimResourcesFn(pp.CanReclaimResourcesFn)
+	ssn.AddReclaimVictimFilterFn(pp.reclaimVictimFilterFn)
 	ssn.AddReclaimScenarioValidatorFn(pp.reclaimableFn)
 	ssn.AddOnJobSolutionStartFn(pp.OnJobSolutionStartFn)
 	ssn.AddIsNonPreemptibleJobOverQueueQuotaFns(capacityPolicy.IsNonPreemptibleJobOverQuota)
@@ -138,6 +139,13 @@ func (pp *proportionPlugin) OnJobSolutionStartFn() {
 func (pp *proportionPlugin) CanReclaimResourcesFn(reclaimer *podgroup_info.PodGroupInfo) bool {
 	reclaimerInfo := pp.buildReclaimerInfo(reclaimer, pp.minNodeGPUMemory)
 	return pp.reclaimablePlugin.CanReclaimResources(pp.queues, reclaimerInfo)
+}
+
+func (pp *proportionPlugin) reclaimVictimFilterFn(
+	reclaimer *podgroup_info.PodGroupInfo, victim *podgroup_info.PodGroupInfo,
+) bool {
+	reclaimerInfo := pp.buildReclaimerInfo(reclaimer, pp.minNodeGPUMemory)
+	return pp.reclaimablePlugin.FilterVictim(pp.queues, reclaimerInfo, victim.Queue)
 }
 
 func (pp *proportionPlugin) reclaimableFn(
