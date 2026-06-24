@@ -4,7 +4,7 @@
 
 In v0.10 we separated Priority and Preemption to allow users to control the two parameters independently, where Preemption has 2 modes (values) - **preemptible** and **non-preemptible**.
 
-We want to add a new 3rd mode, named **semi-preemptible**, where the podgroup will be non-preemptible up to the `minMember` count of each leaf PodSet, and any extra pods are "elastic" pods and preemptible.
+We want to add a new 3rd mode, named **semi-preemptible**, where the podgroup is non-preemptible up to its **minimum required shape** — `minMember` pods at each leaf PodSet and `minSubGroup` child subgroups at each intermediate node — and anything beyond that minimum is "elastic" and preemptible. Elasticity therefore applies at **every level of the subgroup tree**, not just to pods.
 
 ## Use Cases
 
@@ -30,43 +30,65 @@ Future options considered and deferred:
 
 ## Subgroups and Multi-Level Trees
 
-### Scope: semi-elasticity is a pod-level concept
+### Scope: semi-elasticity applies at every level of the tree
 
-Semi-elasticity (the core/elastic split) applies **exclusively to pods**. Subgroups and groups are atomic scheduling units — they are either fully scheduled or not. There is no "semi-elastic subgroup" concept. A user who defines fine-grained subgroups intends them to be scheduled as a whole.
+The core/elastic split is **not** limited to pods. It is defined by the minimum requirement of each node in the subgroup tree:
+
+- A **leaf PodSet** with `minMember = m` keeps `m` pods core (non-preemptible); any pods beyond `m` are elastic.
+- An **intermediate SubGroupSet** with `minSubGroup = k` keeps its `k` most-prioritized child subgroups core; any additional scheduled child subgroups are elastic and reclaimed as a whole.
+
+Subgroups remain **atomic** as a scheduling unit: an elastic subgroup is evicted in its entirety (gang), never partially. "Semi-elasticity at the subgroup level" means *which* subgroups are protected, not that a subgroup is itself split.
+
+This matches what the scheduler already does. The allocator's gang phase (`collectTasksFromSubGroupSet` in `allocation_info.go`) schedules the `minSubGroup` highest-priority children first and then bursts extra children opportunistically; eviction (`eviction_info.go`) protects exactly the `minSubGroup` core children (`GetMinMembersToSatisfy()`) and reclaims surplus subgroups whole. As today, an elastic (extra) subgroup is only deployed if its pods can be gang-scheduled — otherwise it simply stays unsatisfied.
 
 ### Inheritance
 
-Subgroups inherit the preemption mode from the root PodGroup. If the PodGroup is **semi-preemptible**, all subgroups are **semi-preemptible**.
+Subgroups inherit the preemption mode from the root PodGroup. If the PodGroup is **semi-preemptible**, the whole tree is **semi-preemptible**, and each node's minimum (`minMember` or `minSubGroup`) defines its own core/elastic boundary.
 
-### `minMember` vs. `minSubGroups`
+### Non-preemptible resource count = the minimal satisfying set
 
-The core/elastic split is determined **only at nodes that have `minMember` set** (leaf PodSets). Intermediate nodes that use `minSubGroups` define a scheduling gate (how many child subgroups must be satisfied) but do not themselves define a non-preemptible pod threshold.
+The non-preemptible (core) resources of a semi-preemptible job are the resources of the tree's **minimal satisfying set**, computed recursively from the root:
 
-Since pods are always attached to leaf PodSets and never to intermediate SubGroupSets, this is a natural boundary: `minMember` is always a leaf-level concept.
+- at each SubGroupSet, descend into the `minSubGroup` most-prioritized children (all of them if `minSubGroup` is unset);
+- at each leaf PodSet, take `minMember` pods × the per-pod request.
 
-**Non-preemptible resource count** = sum of (`minMember × pod resource request`) across all scheduled leaf PodSets.
+This is **the same set the allocator computes in its gang phase**, so quota and scheduling agree on what "core" means. It replaces the earlier leaf-only definition (`Σ minMember × request` over all leaf PodSets), which over-counted core resources whenever an intermediate `minSubGroup` made some leaf subgroups elastic.
 
-### Behavior when `minSubGroups < scheduled children`
-
-When a parent node requires fewer children than are actually scheduled (i.e., some children are "extra" from the scheduling perspective), each child's core/elastic split is still determined independently by that child's own `minMember`. The "extra-ness" is a scheduling-gate concept handled by the existing elastic subgroup scheduling; it does not override the per-subgroup semi-preemptible semantics.
+Degenerate cases follow naturally:
+- a leaf where total pods `== minMember`, or a node where scheduled children `== minSubGroup`, is fully non-preemptible at that level;
+- the lower a node's `minSubGroup` (or a leaf's `minMember`) relative to what is scheduled, the wider its elastic tier;
+- `minMember == 0` / no minimum ⇒ fully preemptible at that node.
 
 ## Immutability Constraint
 
 A validation webhook must **prevent increases** to `minMember` and `minSubGroups` on a semi-preemptible PodGroup after creation. This applies to the root PodGroup spec and to all SubGroup entries within it.
 
-**Rationale:** once a semi-preemptible job is running, some pods may be over-quota (the elastic ones). Increasing `minMember` or `minSubGroups` would silently reclassify those over-quota pods as "core" non-preemptible pods, violating quota invariants without a rescheduling cycle.
+**Rationale:** once a semi-preemptible job is running, some of its shape may be over-quota (the elastic pods *and* the elastic subgroups). Increasing `minMember` would reclassify over-quota elastic pods as core; increasing `minSubGroup` would reclassify whole over-quota elastic subgroups as core. Either silently grows the minimal satisfying set and violates quota invariants without a rescheduling cycle — which is why both fields are immutable upward.
 
-Decreasing these fields is allowed — it can only widen the elastic tier.
+Decreasing these fields is allowed — it can only widen the elastic tier (at the pod or subgroup level, respectively).
+
+## Interaction with Segmented Subgroups
+
+The [segmented subgroups](../segmented-subgroups/README.md) feature auto-builds a specific tree shape: a workload's replicas are split into `N` fixed-size **segments**, each emitted as a leaf PodSet with `minAvailable = segmentSize`, nested under a parent SubGroupSet that may carry a `minSubGroup`. Segmentation forces this shape so each segment lands in its own topology domain (e.g. a rack).
+
+Subgroup-level semi-elasticity is **what makes semi-preemptible meaningful for segmented workloads**:
+
+- Each segment is fully gang (`minAvailable == segmentSize`), so there is **no pod-level elastic tier inside a segment**. Under a pod-only model every pod of every segment would be core, and a segmented semi-preemptible job would collapse to plain non-preemptible.
+- With the tree-level model, the parent's `minSubGroup` defines how many **segments** are core; extra segments are elastic. A job with `minSubGroup: 2` over 4 segments keeps 2 segments core (in-quota, non-preemptible) and lets the other 2 burst as elastic, over-quota, reclaimed-first.
+
+Because elastic eviction at the subgroup level drops a **whole** segment (a segment is a gang PodSet with no internal surplus), reclaim never tears apart a segment — the forced topology shape is preserved. Segmentation and semi-preemptible therefore compose cleanly: segmentation decides the shape, semi-preemptible decides which parts of that shape are guaranteed.
 
 ## Simulation Considerations
 
-In simulations, only the "extra" (`n - minMember`) pods per leaf PodSet are considered as possible victims. This is applied independently per PodSet; no cross-subgroup victim selection is needed. This approach may miss some solutions when checking all $\binom{n}{m}$ orderings, but the added complexity is not justified for the MVP.
+Victim selection considers only the **surplus** of each node: the "extra" (`n - minMember`) pods at a leaf PodSet, and the extra (`scheduled - minSubGroup`) child subgroups at an intermediate node (evicted whole). This is applied independently per node; no cross-subgroup victim selection is needed. This approach may miss some solutions when checking all orderings, but the added complexity is not justified for the MVP.
 
 ## Implementation Notes
 
-- **Over-quota checks**: core pods (up to `minMember` per leaf) must be in-quota; extra pods may be over-quota
-- **Podgroup and queue status**: count only `minMember` resources per leaf PodSet toward the non-preemptible totals. The pod ordering plugin determines which specific pods are "core" vs. "extra"
-- **Solver simulation**: represent the "extra" pods of a semi-preemptible job as a fully-preemptible representative job
+- **Allocation & eviction — already tree-aware.** `allocation_info.go` (`collectTasksFromSubGroupSet`) and `eviction_info.go` (`hasElasticSurplusInSubGroupSet`, `GetMinMembersToSatisfy()`) already gate core vs. elastic at every level of the tree. Admitting semi-preemptible jobs into the victim pools is enough for reclaim/preempt to evict only the surplus (elastic pods and surplus subgroups); no change to allocation or eviction logic is needed.
+- **Over-quota checks**: the minimal satisfying set (see above) must be in-quota; anything beyond it may be over-quota.
+- **Quota accounting — follow-up gap (impl branch, PR #1713).** The current quota accounting is **leaf-only**: `pkg/scheduler/plugins/proportion/proportion.go` (`isCoreTaskForSemiPreemptible`, `updateQueuesCurrentResourceUsage`) and `pkg/scheduler/plugins/proportion/capacity_policy/capacity_policy.go` (`filterCoreTasksToAllocate`, `isTaskCoreForSemiPreemptibleJob`) classify a pod as core purely by `count ≤ minMember` within its PodSet and ignore `minSubGroup`. This over-counts `AllocatedNotPreemptible` whenever an intermediate `minSubGroup` makes some leaf subgroups elastic (e.g. a `minSubGroup: 2` job over 4 segments counts all 4 segments as core while eviction protects only 2). These must be reworked to use the tree's minimal satisfying set, so quota matches the allocation/eviction semantics.
+- **Correctness item to verify during impl**: ensure preempt/reclaim only ever take the elastic-phase victims for semi-preemptible jobs and never fall back to the phase-3 full eviction in `collectTasksToEvictFromSubGroupSet`, so core subgroups/pods are never offered as victims.
+- **Solver simulation**: represent the elastic surplus of a semi-preemptible job (extra pods and extra subgroups) as a fully-preemptible representative job.
 
 ## Future Work: `minNonPreemptible` field
 
