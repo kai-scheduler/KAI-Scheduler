@@ -19,7 +19,7 @@ jobs:
       package_version: ${{ steps.package_version.outputs.PACKAGE_VERSION }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Extract package version
         id: package_version
@@ -111,7 +111,7 @@ jobs:
             feature_config: default
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup e2e cluster
         uses: ./.github/actions/setup-e2e-cluster
