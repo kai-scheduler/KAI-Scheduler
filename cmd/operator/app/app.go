@@ -6,7 +6,7 @@ package app
 import (
 	"os"
 
-	nvidiav1 "github.com/NVIDIA/gpu-operator/api/nvidia/v1"
+	nvidiav1 "github.com/NVIDIA/KAI-scheduler/third_party/nvidia/gpu-operator/api/nvidia/v1"
 
 	"github.com/NVIDIA/KAI-scheduler/cmd/operator/config"
 	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
