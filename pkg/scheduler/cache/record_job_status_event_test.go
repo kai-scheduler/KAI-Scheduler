@@ -574,10 +574,10 @@ func TestRecordJobStatusEventScenarioSearchUnresolved(t *testing.T) {
 		assert.Equal(t, exhaustedMessage, scenarioSearchCondition.Message)
 	}
 
-	for podID, event := range getPodEvents(t, kubeClient) {
-		assert.Contains(t, []common_info.PodID{"pod-1", "pod-2"}, podID)
-		assert.Equal(t, string(enginev2alpha2.ScenarioSearchUnresolved), event.Reason)
-		assert.Equal(t, exhaustedMessage, event.Message)
+	podEvents := getPodEventsByPod(t, kubeClient)
+	for _, podID := range []common_info.PodID{"pod-1", "pod-2"} {
+		assertPodEvent(t, podEvents[podID], v1.PodReasonUnschedulable, "job is over capacity")
+		assertPodEvent(t, podEvents[podID], string(enginev2alpha2.ScenarioSearchUnresolved), exhaustedMessage)
 	}
 
 	podGroupEvents := getPodGroupEvents(t, kubeClient)
@@ -757,6 +757,34 @@ func getPodEvents(t *testing.T, kubeClient clientset.Interface) (eventsPerPod ma
 	}
 
 	return eventsPerPod
+}
+
+func getPodEventsByPod(t *testing.T, kubeClient clientset.Interface) map[common_info.PodID][]*v1.Event {
+	events, err := kubeClient.CoreV1().Events("namespace-1").List(context.TODO(), metav1.ListOptions{})
+	assert.Nil(t, err)
+
+	eventsPerPod := make(map[common_info.PodID][]*v1.Event)
+	for _, event := range events.Items {
+		if event.InvolvedObject.Kind != "Pod" {
+			continue
+		}
+		podID := common_info.PodID(event.InvolvedObject.UID)
+		eventsPerPod[podID] = append(eventsPerPod[podID], &event)
+	}
+
+	return eventsPerPod
+}
+
+func assertPodEvent(t *testing.T, events []*v1.Event, reason, messageSubstring string) {
+	for _, event := range events {
+		if event.Reason == reason && regexp.MustCompile(regexp.QuoteMeta(messageSubstring)).MatchString(event.Message) {
+			return
+		}
+	}
+
+	assert.Failf(t, "expected Pod event",
+		"expected Pod event with reason %q and message containing %q; events: %v",
+		reason, messageSubstring, events)
 }
 
 func getPodGroupEvent(t *testing.T, kubeClient clientset.Interface) *v1.Event {

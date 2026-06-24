@@ -216,18 +216,14 @@ func (su *defaultStatusUpdater) RecordJobStatusEvent(job *podgroup_info.PodGroup
 			su.recordJobNotReadyEvent(job)
 			return nil
 		}
+		if err := su.recordUnschedulablePodsEvents(job); err != nil {
+			return err
+		}
 		if job.ScenarioSearchUnresolved != nil {
-			if err := su.recordUnschedulablePodsConditions(job); err != nil {
-				return err
-			}
 			if err := su.recordScenarioSearchUnresolvedPodsEvents(job); err != nil {
 				return err
 			}
 			updatePodgroupStatus = su.recordScenarioSearchUnresolvedPodGroup(job)
-		} else {
-			if err := su.recordUnschedulablePodsEvents(job); err != nil {
-				return err
-			}
 		}
 		updatePodgroupStatus = su.recordUnschedulablePodGroup(job) || updatePodgroupStatus
 	}
@@ -394,32 +390,6 @@ func (su *defaultStatusUpdater) recordUnschedulablePodsEvents(job *podgroup_info
 		log.InfraLogger.V(6).Infof("setting message for task: %v, %v", taskInfo.Name, msg)
 		updatePodCondition := utils.GetMarkUnschedulableValue(job.PodGroup.Spec.MarkUnschedulable)
 		if err := su.markTaskUnschedulable(taskInfo.Pod, msg, updatePodCondition); err != nil {
-			errs = append(errs, fmt.Errorf("failed to update unschedulable task status <%s/%s>: %v",
-				taskInfo.Namespace, taskInfo.Name, err))
-		}
-	}
-
-	return errors.Join(errs...)
-}
-
-func (su *defaultStatusUpdater) recordUnschedulablePodsConditions(job *podgroup_info.PodGroupInfo) error {
-	if !utils.GetMarkUnschedulableValue(job.PodGroup.Spec.MarkUnschedulable) {
-		return nil
-	}
-
-	var errs []error
-	for _, taskInfo := range job.PodStatusIndex[pod_status.Pending] {
-		if job.IsInvalidSubGroupTask(taskInfo.UID) {
-			continue
-		}
-
-		msg := su.unschedulableTaskMessage(job, taskInfo)
-		if err := su.updatePodCondition(taskInfo.Pod, &v1.PodCondition{
-			Type:    v1.PodScheduled,
-			Status:  v1.ConditionFalse,
-			Reason:  v1.PodReasonUnschedulable,
-			Message: msg,
-		}); err != nil {
 			errs = append(errs, fmt.Errorf("failed to update unschedulable task status <%s/%s>: %v",
 				taskInfo.Namespace, taskInfo.Name, err))
 		}
