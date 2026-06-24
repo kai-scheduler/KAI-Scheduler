@@ -112,6 +112,13 @@ func TestReclaimAnchorVictim(t *testing.T) {
 				DontValidateGPUGroup: true,
 			},
 		},
+		Mocks: &test_utils.TestMock{
+			CacheRequirements: &test_utils.CacheMocking{
+				NumberOfCacheBinds:      5,
+				NumberOfCacheEvictions:  2,
+				NumberOfPipelineActions: 2,
+			},
+		},
 	}
 
 	ssn := test_utils.BuildSession(topology, controller)

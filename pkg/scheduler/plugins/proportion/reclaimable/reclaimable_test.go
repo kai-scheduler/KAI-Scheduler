@@ -1134,6 +1134,45 @@ var _ = Describe("Reclaimable - Multiple hierarchy levels", func() {
 	})
 })
 
+var _ = Describe("FilterVictim", func() {
+	reclaimerInfo := &ReclaimerInfo{
+		Queue:             "reclaimer",
+		RequiredResources: resource_info.NewResource(0, 0, 2).ToVector(testVectorMap),
+		VectorMap:         testVectorMap,
+		IsPreemptable:     true,
+	}
+
+	It("filters victims whose leveled queue is strictly under deserved quota", func() {
+		reclaimable := New(1)
+		queues := buildQueues(map[common_info.QueueID]queuesTestData{
+			"reclaimer": {deserved: 4, fairShare: 4, allocated: 0},
+			"victim":    {deserved: 4, fairShare: 4, allocated: 2},
+		})
+
+		Expect(reclaimable.FilterVictim(queues, reclaimerInfo, "victim")).To(BeFalse())
+	})
+
+	It("keeps victims whose leveled queue is over deserved quota", func() {
+		reclaimable := New(1)
+		queues := buildQueues(map[common_info.QueueID]queuesTestData{
+			"reclaimer": {deserved: 4, fairShare: 4, allocated: 0},
+			"victim":    {deserved: 0, fairShare: 4, allocated: 4},
+		})
+
+		Expect(reclaimable.FilterVictim(queues, reclaimerInfo, "victim")).To(BeTrue())
+	})
+
+	It("keeps victims exactly at deserved quota for consolidation", func() {
+		reclaimable := New(1)
+		queues := buildQueues(map[common_info.QueueID]queuesTestData{
+			"reclaimer": {deserved: 4, fairShare: 4, allocated: 0},
+			"victim":    {deserved: 2, fairShare: 4, allocated: 2},
+		})
+
+		Expect(reclaimable.FilterVictim(queues, reclaimerInfo, "victim")).To(BeTrue())
+	})
+})
+
 func buildQueues(queuesData map[common_info.QueueID]queuesTestData) map[common_info.QueueID]*rs.QueueAttributes {
 	queues := map[common_info.QueueID]*rs.QueueAttributes{}
 	for name, queueData := range queuesData {
