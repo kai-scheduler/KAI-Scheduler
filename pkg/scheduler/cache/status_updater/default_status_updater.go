@@ -223,13 +223,12 @@ func (su *defaultStatusUpdater) RecordJobStatusEvent(job *podgroup_info.PodGroup
 			if err := su.recordScenarioSearchUnresolvedPodsEvents(job); err != nil {
 				return err
 			}
-			updatePodgroupStatus = su.recordScenarioSearchUnresolvedPodGroup(job)
 		} else {
 			if err := su.recordUnschedulablePodsEvents(job); err != nil {
 				return err
 			}
-			updatePodgroupStatus = su.recordUnschedulablePodGroup(job)
 		}
+		updatePodgroupStatus = su.recordUnschedulablePodGroup(job)
 	}
 
 	if len(patchData) > 0 || updatePodgroupStatus {
@@ -338,18 +337,6 @@ func (su *defaultStatusUpdater) markPodGroupUnschedulable(job *podgroup_info.Pod
 		Message:  message,
 		Status:   v1.ConditionTrue,
 		Reasons:  unschedulableExplanations,
-	})
-}
-
-func (su *defaultStatusUpdater) markPodGroupScenarioSearchUnresolved(job *podgroup_info.PodGroupInfo, message string) bool {
-	su.recorder.Event(job.PodGroup, v1.EventTypeNormal, string(enginev2alpha2.ScenarioSearchUnresolved), message)
-
-	return su.updatePodGroupSchedulingCondition(job.PodGroup, &enginev2alpha2.SchedulingCondition{
-		Type:     enginev2alpha2.ScenarioSearchUnresolved,
-		NodePool: utils.GetNodePoolNameFromLabels(job.PodGroup.Labels, su.nodePoolLabelKey),
-		Reason:   string(enginev2alpha2.ScenarioSearchUnresolved),
-		Message:  message,
-		Status:   v1.ConditionTrue,
 	})
 }
 
@@ -520,10 +507,6 @@ func (su *defaultStatusUpdater) recordUnschedulablePodGroup(job *podgroup_info.P
 
 	msg = su.addNodePoolPrefixIfNeeded(job, msg)
 	return su.markPodGroupUnschedulable(job, msg)
-}
-
-func (su *defaultStatusUpdater) recordScenarioSearchUnresolvedPodGroup(job *podgroup_info.PodGroupInfo) bool {
-	return su.markPodGroupScenarioSearchUnresolved(job, scenarioSearchUnresolvedMessage(job.ScenarioSearchUnresolved))
 }
 
 func scenarioSearchUnresolvedMessage(unresolved *podgroup_info.ScenarioSearchUnresolved) string {

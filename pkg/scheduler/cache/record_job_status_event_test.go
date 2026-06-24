@@ -508,6 +508,7 @@ func TestRecordJobStatusEventScenarioSearchUnresolved(t *testing.T) {
 
 	podGroupInfo := podgroup_info.NewPodGroupInfo("group-1", maps.Values(podInfos)...)
 	podGroupInfo.SetPodGroup(podGroup)
+	podGroupInfo.AddSimpleJobFitError(podgroup_info.OverCapacity, "job is over capacity")
 	podGroupInfo.SetScenarioSearchUnresolved(
 		podgroup_info.ScenarioSearchResultDeadlineExhausted,
 		false,
@@ -531,10 +532,13 @@ func TestRecordJobStatusEventScenarioSearchUnresolved(t *testing.T) {
 
 	newPodGroup := newPodGroupObj.(*enginev2alpha2.PodGroup)
 	condition := newPodGroup.Status.SchedulingConditions[0]
-	assert.Equal(t, enginev2alpha2.ScenarioSearchUnresolved, condition.Type)
-	assert.Equal(t, string(enginev2alpha2.ScenarioSearchUnresolved), condition.Reason)
-	assert.Equal(t, exhaustedMessage, condition.Message)
-	assert.Empty(t, condition.Reasons)
+	assert.Equal(t, enginev2alpha2.UnschedulableOnNodePool, condition.Type)
+	assert.Equal(t, enginev2alpha2.PodGroupReasonUnschedulable, condition.Reason)
+	assert.Contains(t, condition.Message, "job is over capacity")
+	if assert.Len(t, condition.Reasons, 1) {
+		assert.Equal(t, enginev2alpha2.UnschedulableReason(podgroup_info.OverCapacity), condition.Reasons[0].Reason)
+		assert.Equal(t, "job is over capacity", condition.Reasons[0].Message)
+	}
 
 	for _, podID := range []common_info.PodID{"pod-1", "pod-2"} {
 		podObj, err := waitForCondition(func() (runtime.Object, error) {
@@ -556,7 +560,7 @@ func TestRecordJobStatusEventScenarioSearchUnresolved(t *testing.T) {
 		unschedulableCondition := podConditionByType(pod, v1.PodScheduled)
 		assert.Equal(t, v1.ConditionFalse, unschedulableCondition.Status)
 		assert.Equal(t, v1.PodReasonUnschedulable, unschedulableCondition.Reason)
-		assert.Equal(t, "Node-Pool 'default': "+common_info.DefaultPodError, unschedulableCondition.Message)
+		assert.Equal(t, "Node-Pool 'default': OverCapacity: job is over capacity.", unschedulableCondition.Message)
 
 		scenarioSearchCondition := podConditionByType(pod, v1.PodConditionType(enginev2alpha2.ScenarioSearchUnresolved))
 		assert.Equal(t, v1.ConditionTrue, scenarioSearchCondition.Status)
@@ -572,8 +576,8 @@ func TestRecordJobStatusEventScenarioSearchUnresolved(t *testing.T) {
 
 	podGroupEvent := getPodGroupEvent(t, kubeClient)
 	assert.NotNil(t, podGroupEvent)
-	assert.Equal(t, string(enginev2alpha2.ScenarioSearchUnresolved), podGroupEvent.Reason)
-	assert.Equal(t, exhaustedMessage, podGroupEvent.Message)
+	assert.Equal(t, enginev2alpha2.PodGroupReasonUnschedulable, podGroupEvent.Reason)
+	assert.Contains(t, podGroupEvent.Message, "job is over capacity")
 }
 
 func TestRecordJobStatusEventInvalidSubGroupPod(t *testing.T) {
