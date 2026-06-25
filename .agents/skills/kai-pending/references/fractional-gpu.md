@@ -2,9 +2,10 @@
 
 The slice is requested via a `gpu-fraction` / `gpu-memory` annotation; the container resources
 carry **no** `nvidia.com/gpu`. KAI backs it with a **reservation pod** holding one **whole**
-physical GPU in `kai-resource-reservation`. With no free whole GPU that pod can't be placed ->
-Pending, and the verdict is only the generic "no nodes with enough resources" (it does **not**
-break down fractional usage).
+physical GPU in `kai-resource-reservation`. The slice fits only where a **whole** GPU is free (for
+a new reservation pod) or an existing reservation pod still has room; with neither it stays Pending,
+and the verdict is only the generic "no nodes with enough resources" (it does **not** break down
+fractional usage).
 
 ## Steps
 
