@@ -11,39 +11,20 @@ metadata:
 # KAI: why is my job pending?
 
 A KAI "job" is a Pod (single) or PodGroup (gang). Its verdict is on the PodGroup's
-`.status.schedulingConditions`.
+`.status.schedulingConditions`, one condition **per node-pool** (`nodePool` names it); read each
+condition's `reasons[]` - the top-level `reason`/`message` are deprecated. Walk the steps in order.
 
-## Facts
+## 1. Rule out non-KAI causes - stop if any holds
 
-- always read `.status.schedulingConditions`. It holds one condition **per node-pool**
-  (`type: UnschedulableOnNodePool`, `nodePool` names it); the top-level `reason`/`message` fields
-  are deprecated - read the per-condition `reasons[]` array instead.
-- The verdict path: `pod.metadata.annotations["pod-group-name"]` -> PodGroup ->
-  `.status.schedulingConditions[].reasons[]` with `.reason`, `.message`, `.details.queueDetails`.
-  `reasons[]` can repeat the same cause across cycles - dedupe by `.message`.
-- `QueueDoesNotExist`, `OverLimit`, `NonPreemptibleOverQuota` are read straight from the verdict
-  (the last two carry `queueDetails` numbers). The skill's helper is **not** needed for them.
-- `PodSchedulingErrors` is an umbrella: one generic "no nodes with enough resources" message
-  covers node-fit, gang, fair-share, fractional GPU and node-pool/affinity, with no `queueDetails`
-  - read the message and the pod's annotations to tell them apart.
-- No `kai.scheduler/queue` label -> KAI defaults the pod to a queue named `default-queue`; if it
-  does not exist the reason is `QueueDoesNotExist` naming `default-queue` (fix: add the label).
-- A gated pod (`spec.schedulingGates`) gets a PodGroup but an **empty** verdict and
-  `STATUS: SchedulingGated` - never scheduled until the gate is removed.
-- Fractional GPU (`gpu-fraction`/`gpu-memory` annotation) is served by a reservation pod in
-  `kai-resource-reservation` holding one whole GPU; the workload's own resources carry no GPU.
+- `Running` / `ContainerCreating` / `ImagePullBackOff` / `CrashLoopBackOff` -> not scheduling;
+  check the image / volume / app.
+- `SchedulingGated`, `spec.schedulingGates` set, or `Job.spec.suspend: true` -> held by design ->
+  [scheduling-gates](references/scheduling-gates.md).
+- `spec.schedulerName != kai-scheduler` -> KAI never sees the pod (no PodGroup); set it.
+- unbound PVC, native `ResourceQuota` (not a KAI `Queue`), or cordoned node -> plain Kubernetes,
+  not KAI.
 
-## 1. Triage - is it KAI's problem?
-
-- Pod is `Running` / `ContainerCreating` / `ImagePullBackOff` / `CrashLoopBackOff` -> not a
-  scheduling problem; look at the image/volume/app.
-- Pod `STATUS: SchedulingGated` / `spec.schedulingGates` set, or its `Job.spec.suspend: true` ->
-  intentionally held, the scheduler won't touch it -> [references/scheduling-gates.md](references/scheduling-gates.md).
-- `spec.schedulerName != kai-scheduler` -> KAI never sees the pod (no PodGroup is created). Fix it.
-- Unbound PVC, a native `ResourceQuota` (a different object from a KAI `Queue`), cordon -> standard
-  k8s, not KAI logic.
-
-## 2. Read the verdict
+## 2. Fetch the verdict
 
 ```bash
 PG=$(kubectl get pod <pod> -n <ns> -o jsonpath='{.metadata.annotations.pod-group-name}')
@@ -51,37 +32,24 @@ kubectl get podgroup "$PG" -n <ns> -o json \
   | jq '.status.schedulingConditions[] | {nodePool, reasons: (.reasons | unique_by(.message))}'
 ```
 
-- No `pod-group-name` annotation -> check pod-grouper / admission webhook are up
-  (`kubectl -n kai-scheduler get pods`).
-- Empty `schedulingConditions` -> no verdict yet; re-check. If it persists: scheduler down, or the
-  pod is **gated** (`STATUS SchedulingGated`) - see triage above.
-- Otherwise read each entry's `.reason` (typed), `.message` (detail) and `.details.queueDetails`
-  (quota numbers). `reasons` repeats the same cause per cycle - `unique_by(.message)` drops the
-  duplicates; the richest message (e.g. a `MaxNodePoolResources` subtype) is the verdict.
+- no `pod-group-name` annotation -> never grouped -> step 5 (pod-grouper).
+- `schedulingConditions` empty -> no verdict yet; re-check. Persists -> scheduler down, or gated (step 1).
+- populated -> `reasons[]` repeats per cycle; `unique_by(.message)` dedupes, the richest message
+  (e.g. `MaxNodePoolResources`) is the verdict. Take `.reason` -> step 3.
 
-## 3. Reason -> playbook
+## 3. Act on the reason - read its `.message`, then:
 
-| reason | this is a... | playbook |
-|--------|-----------|----------|
-| `QueueDoesNotExist` | queue-label problem | [references/queue-does-not-exist.md](references/queue-does-not-exist.md) |
-| `OverLimit` | queue hard-limit problem | [references/over-limit.md](references/over-limit.md) |
-| `NonPreemptibleOverQuota` | quota problem | [references/nonpreemptible-over-quota.md](references/nonpreemptible-over-quota.md) |
-| `PodSchedulingErrors` | **node-fit family** - needs the dump below | section 4 + the node-fit playbooks |
+- `QueueDoesNotExist` -> set the `kai.scheduler/queue` label to an existing queue, or create it
+  (+ parent). (`default-queue` named = no label at all.)
+- `OverLimit` (`allocated + requested > limit`) -> wait, lower the request, or raise the limit.
+- `NonPreemptibleOverQuota` (`allocatedNP + requestedNP > deserved`) -> raise `quota`, or use a
+  preemptible class (`value < 100`).
+- `PodSchedulingErrors` -> umbrella, no `queueDetails` -> step 4.
 
-The first three are read straight from the verdict - they do **not** need the script.
-`PodSchedulingErrors` is a generic "no nodes with enough resources" message that hides several
-causes; that is the only branch that needs node math.
+## 4. PodSchedulingErrors - dump the cluster, read the table
 
-## 4. node-fit: dump the cluster, read the table
-
-The script reads JSON you dump with kubectl - it prints each node's free vs total capacity and
-whether it matches the pod, but does **not** judge; you do, from the table.
-
-NOTE: `free_capacity.py` takes the **dump directory** as its only positional argument. It does **not**
-accept `--ns`/`--namespace` and never calls kubectl - dump the three files first, then pass the
-directory:
-
-Run from the repository root:
+The script prints each node's free vs total capacity and whether it matches the pod; you judge. It
+takes the dump dir as its only arg (no `--ns`, never calls kubectl) - dump first, from the repo root:
 
 ```bash
 mkdir -p /tmp/kai
@@ -90,22 +58,37 @@ kubectl get nodes -o json > /tmp/kai/nodes.json
 # allpods gives FREE (not just total); skip finished pods so it stays small on big clusters:
 kubectl get pods -A --field-selector=status.phase!=Succeeded,status.phase!=Failed -o json > /tmp/kai/allpods.json
 .agents/skills/kai-pending/scripts/free_capacity.py /tmp/kai --pod <pod>   # only positional arg is the dir
-# for a GPU request only GPU nodes are shown; add --all-nodes to include the rest
+# a GPU request shows only GPU nodes; add --all-nodes to include the rest
 ```
 
-Reading the table (`GPU f/a` = free/allocatable, `SELECTOR` = matches the pod, `TAINTS` =
-untolerated):
+Columns: `GPU f/a` = free/allocatable, `SELECTOR` = matches the pod, `TAINTS` = untolerated. Match one:
 
-| what the table shows | cause | playbook |
-|---|---|---|
-| a node has free GPU >= request, `SELECTOR match`, no taint | **fits** - nodes aren't the blocker; the message likely says `gang scheduling` -> | [references/gang.md](references/gang.md) |
-| no node has free room now, but some `match` node's **total** GPU >= request | **contention** - capacity is held by others | [references/fair-share.md](references/fair-share.md) |
-| ...and your pod outranks the holders (you expected it to evict them) | **preemption** question | [references/preemption.md](references/preemption.md) |
-| a node has free GPU >= request but `SELECTOR no:` | **affinity-trap** - free capacity excluded by the pod's selector | [references/node-pool-affinity.md](references/node-pool-affinity.md) |
-| no `match` node's total GPU >= request | **too-big** - request bigger than any node | [references/node-fit.md](references/node-fit.md) |
-| request is `gpu-fraction`/`gpu-memory`; no node has free **whole** GPU >= 1 | **fractional** - no GPU for its reservation pod | [references/fractional-gpu.md](references/fractional-gpu.md) |
+- free GPU >= request, `SELECTOR match`, no taint -> nodes fit; message says `gang scheduling` ->
+  [gang](references/gang.md).
+- no free room now, but a `match` node's **total** GPU >= request -> contention ->
+  [fair-share](references/fair-share.md).
+- ...and you outrank the holders (expected eviction) -> [preemption](references/preemption.md).
+- free GPU >= request but `SELECTOR no:` -> affinity trap -> [node-pool-affinity](references/node-pool-affinity.md).
+- no `match` node's total GPU >= request -> too big for any node -> [node-fit](references/node-fit.md).
+- `gpu-fraction`/`gpu-memory` request, no free **whole** GPU >= 1 -> no GPU for its reservation pod
+  -> [fractional-gpu](references/fractional-gpu.md).
+
+## 5. Object path silent - which component's logs
+
+When the pod / PodGroup don't answer, read the owning component's logs
+(`kubectl -n kai-scheduler logs deploy/<component>`):
+
+- no PodGroup (`pod-group-name` missing) -> **pod-grouper** (unknown owner, webhook reject, panic).
+- PodGroup exists, `schedulingConditions` stays empty, no event -> **scheduler** (no verdict produced).
+- `PodSchedulingErrors` message too vague -> **scheduler**; per-node detail only at `-v=6` /
+  `--detailed-fit-errors=true`, which step 4's script reconstructs without flipping flags.
+- scheduled but not Running (`BindRequest` `.status.phase: Failed`) -> **binder** (reservation
+  timeout, scale-up, bind error).
+
+`kubectl logs` keeps only recent lines; older logs live in the cluster's store (Loki /
+Elasticsearch / etc.). This names *which* component to read, wherever they're kept.
 
 ## RBAC
 
 The verdict is in your own PodGroup. The dump needs cluster-scoped `get nodes` / `get pods -A`
-(and `get queues` for fair-share). If you lack them, say so - don't guess.
+(+ `get queues` for fair-share). Lack them -> say so, don't guess.
