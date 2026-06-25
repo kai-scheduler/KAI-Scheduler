@@ -585,6 +585,75 @@ func TestRecordJobStatusEventScenarioSearchUnresolved(t *testing.T) {
 	assertNoPodGroupEvent(t, podGroupEvents, string(enginev2alpha2.ScenarioSearchUnresolved))
 }
 
+func TestRecordJobStatusEventClearsPodGroupSchedulingConditionsForScheduledJob(t *testing.T) {
+	podInfos, podsAsObjects := getPods(map[v1.PodPhase][]common_info.PodID{
+		v1.PodRunning: {"pod-1"},
+	})
+	podGroup := &enginev2alpha2.PodGroup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "group-1",
+			Namespace: "namespace-1",
+			UID:       "group-1",
+		},
+		Status: enginev2alpha2.PodGroupStatus{
+			SchedulingConditions: []enginev2alpha2.SchedulingCondition{
+				{
+					Type:    enginev2alpha2.UnschedulableOnNodePool,
+					Reason:  enginev2alpha2.PodGroupReasonUnschedulable,
+					Message: "previous unschedulable reason",
+					Status:  v1.ConditionTrue,
+				},
+				{
+					Type:    enginev2alpha2.ScenarioSearchUnresolved,
+					Reason:  string(enginev2alpha2.ScenarioSearchUnresolved),
+					Message: "previous search limit",
+					Status:  v1.ConditionTrue,
+				},
+			},
+		},
+	}
+
+	kubeClient := fake.NewSimpleClientset(podsAsObjects...)
+	kubeAiSchedulerClient := kubeaischedulerfake.NewSimpleClientset(podGroup)
+	cache := New(&SchedulerCacheParams{
+		KubeClient:                  kubeClient,
+		KAISchedulerClient:          kubeAiSchedulerClient,
+		NodePoolParams:              &conf.SchedulingNodePoolParams{},
+		DetailedFitErrors:           false,
+		FullHierarchyFairness:       true,
+		NumOfStatusRecordingWorkers: 4,
+		DiscoveryClient:             kubeClient.Discovery(),
+	})
+
+	stopCh := make(chan struct{})
+	cache.Run(stopCh)
+	cache.WaitForCacheSync(stopCh)
+	defer close(stopCh)
+
+	podGroupInfo := podgroup_info.NewPodGroupInfo("group-1", maps.Values(podInfos)...)
+	podGroupInfo.SetPodGroup(podGroup)
+
+	err := cache.RecordJobStatusEvent(podGroupInfo)
+	assert.NoError(t, err)
+
+	updatedPodGroupObj, err := waitForCondition(func() (runtime.Object, error) {
+		updatedPodGroup, err := kubeAiSchedulerClient.SchedulingV2alpha2().PodGroups("namespace-1").Get(
+			context.TODO(), "group-1", metav1.GetOptions{},
+		)
+		if err != nil {
+			return nil, err
+		}
+		if len(updatedPodGroup.Status.SchedulingConditions) == 0 {
+			return updatedPodGroup, nil
+		}
+		return nil, fmt.Errorf("scheduling conditions were not cleared")
+	})
+	assert.NoError(t, err)
+
+	updatedPodGroup := updatedPodGroupObj.(*enginev2alpha2.PodGroup)
+	assert.Empty(t, updatedPodGroup.Status.SchedulingConditions)
+}
+
 func TestRecordJobStatusEventInvalidSubGroupPod(t *testing.T) {
 	validPod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{

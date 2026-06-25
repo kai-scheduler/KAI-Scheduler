@@ -226,6 +226,8 @@ func (su *defaultStatusUpdater) RecordJobStatusEvent(job *podgroup_info.PodGroup
 			updatePodgroupStatus = su.recordScenarioSearchUnresolvedPodGroup(job)
 		}
 		updatePodgroupStatus = su.recordUnschedulablePodGroup(job) || updatePodgroupStatus
+	} else {
+		updatePodgroupStatus = clearPodGroupSchedulingConditions(job.PodGroup)
 	}
 
 	if len(patchData) > 0 || updatePodgroupStatus {
@@ -602,6 +604,14 @@ func setPodGroupSchedulingCondition(podGroup *enginev2alpha2.PodGroup, schedulin
 	// BC: older versions of pod group assigner rely on the most recent condition to be the last in the list.
 	// Squash conditions of the same node pool and type and append ours to the end.
 	squashAndAppendSchedulingCondition(podGroup, schedulingCondition)
+	return true
+}
+
+func clearPodGroupSchedulingConditions(podGroup *enginev2alpha2.PodGroup) bool {
+	if len(podGroup.Status.SchedulingConditions) == 0 {
+		return false
+	}
+	podGroup.Status.SchedulingConditions = nil
 	return true
 }
 
