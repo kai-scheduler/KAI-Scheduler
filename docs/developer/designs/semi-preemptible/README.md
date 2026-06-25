@@ -2,7 +2,7 @@
 
 ## Overview
 
-In v0.10 we separated Priority and Preemption to allow users to control the two parameters independently, where Preemption has 2 modes (values) - **preemptible** and **non-preemptible**.
+In `v0.10` we separated Priority and Preemption to allow users to control the two parameters independently, where Preemption has 2 modes (values) - **preemptible** and **non-preemptible**.
 
 We want to add a new 3rd mode, named **semi-preemptible**, where the podgroup is non-preemptible up to its **minimum required shape** — `minMember` pods at each leaf PodSet and `minSubGroup` child subgroups at each intermediate node — and anything beyond that minimum is "elastic" and preemptible. Elasticity therefore applies at **every level of the subgroup tree**, not just to pods.
 
@@ -12,9 +12,9 @@ A workload with `minReplicas` such as Inference and Elastic Distributed Training
 
 ## Usage
 
-Semi-preemptible reuses the **existing preemptibility API** introduced in [priority/preemptibility separation](../priority-preemptibility-separation/README.md) — it is simply a third value, `semi-preemptible`, alongside `preemptible` and `non-preemptible`. There is no new field or label. The minimum that stays non-preemptible is the PodGroup's existing minimum shape (`minMember` at leaf PodSets, `minSubGroup` at intermediate nodes); nothing extra needs to be declared.
+Semi-preemptible reuses the **existing preemptibility API** introduced in [priority/preemptibility separation](../priority-preemptibility-separation/README.md)
 
-It can be set either directly on the PodGroup spec, or via the `kai.scheduler/preemptibility` label on a workload (the PodGrouper passes it through to the generated PodGroup).
+This is an **opt-in** feature.
 
 **On the PodGroup spec** — a single elastic group (3 core pods, bursts beyond):
 ```yaml
@@ -180,13 +180,7 @@ There is no node where `count > minimum`, so the job has no elastic shape and be
 
 Victim selection considers only the **surplus** of each node: the "extra" (`n - minMember`) pods at a leaf PodSet, and the extra (`scheduled - minSubGroup`) child subgroups at an intermediate node (evicted whole). This is applied independently per node; no cross-subgroup victim selection is needed. This approach may miss some solutions when checking all orderings, but the added complexity is not justified for the MVP.
 
-## Implementation Notes
-
-- **Allocation & eviction — already tree-aware.** `allocation_info.go` (`collectTasksFromSubGroupSet`) and `eviction_info.go` (`hasElasticSurplusInSubGroupSet`, `GetMinMembersToSatisfy()`) already gate core vs. elastic at every level of the tree. Admitting semi-preemptible jobs into the victim pools is enough for reclaim/preempt to evict only the surplus (elastic pods and surplus subgroups); no change to allocation or eviction logic is needed.
-- **Over-quota checks**: the minimal satisfying set (see above) must be in-quota; anything beyond it may be over-quota.
-- **Quota accounting — follow-up gap (impl branch, PR #1713).** The current quota accounting is **leaf-only**: `pkg/scheduler/plugins/proportion/proportion.go` (`isCoreTaskForSemiPreemptible`, `updateQueuesCurrentResourceUsage`) and `pkg/scheduler/plugins/proportion/capacity_policy/capacity_policy.go` (`filterCoreTasksToAllocate`, `isTaskCoreForSemiPreemptibleJob`) classify a pod as core purely by `count ≤ minMember` within its PodSet and ignore `minSubGroup`. This over-counts `AllocatedNotPreemptible` whenever an intermediate `minSubGroup` makes some leaf subgroups elastic (e.g. a `minSubGroup: 2` job over 4 segments counts all 4 segments as core while eviction protects only 2). These must be reworked to use the tree's minimal satisfying set, so quota matches the allocation/eviction semantics.
-- **Correctness item to verify during impl**: ensure preempt/reclaim only ever take the elastic-phase victims for semi-preemptible jobs and never fall back to the phase-3 full eviction in `collectTasksToEvictFromSubGroupSet`, so core subgroups/pods are never offered as victims.
-- **Solver simulation**: represent the elastic surplus of a semi-preemptible job (extra pods and extra subgroups) as a fully-preemptible representative job.
+This implies that pods will be treated equally within the same subgroups in consideration of eviction, prompting the user to use subgroup API to specify any ordering or hierarchy for pod eviction. 
 
 ## Future Work: `minNonPreemptible` field
 
