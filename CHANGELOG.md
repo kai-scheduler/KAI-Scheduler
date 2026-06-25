@@ -9,7 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 ### Changed
-- Podgrouper now preserves an existing PodGroup's topology constraint when the workload does not specify one, so a topology assigned by an external PodGroupAssigner is not overwritten. Workload topology annotations still take precedence when present.
+- Podgrouper now preserves an existing PodGroup's topology constraint when the workload does not specify one, so an externally-assigned topology is not overwritten. Workload topology annotations still take precedence when present.
 
 ### Fixed
 
