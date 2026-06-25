@@ -48,8 +48,7 @@ kubectl get podgroup "$PG" -n <ns> -o json \
 
 ## 4. PodSchedulingErrors - dump the cluster, read the table
 
-The script prints each node's free vs total capacity and whether it matches the pod; you judge. It
-takes the dump dir as its only arg (no `--ns`, never calls kubectl) - dump first, from the repo root:
+The script prints each node's free vs total capacity and whether it matches the pod; you judge. It takes the dump dir as its only arg (it never calls kubectl) - dump first, from the repo root:
 
 ```bash
 mkdir -p /tmp/kai
@@ -70,13 +69,13 @@ Columns: `GPU f/a` = free/allocatable, `SELECTOR` = matches the pod, `TAINTS` = 
 - ...and you outrank the holders (expected eviction) -> [preemption](references/preemption.md).
 - free GPU >= request but `SELECTOR no:` -> affinity trap -> [node-pool-affinity](references/node-pool-affinity.md).
 - no `match` node's total GPU >= request -> too big for any node -> [node-fit](references/node-fit.md).
-- `gpu-fraction`/`gpu-memory` request, no free **whole** GPU >= 1 -> no GPU for its reservation pod
-  -> [fractional-gpu](references/fractional-gpu.md).
+- `gpu-fraction`/`gpu-memory` request -> fractional fit isn't decidable from the dump (per-GPU
+  sharing isn't in the objects; whole-GPU `f/a` is context only) -> [fractional-gpu](references/fractional-gpu.md).
 
 ## 5. Object path silent - which component's logs
 
-When the pod / PodGroup don't answer, read the owning component's logs
-(`kubectl -n kai-scheduler logs deploy/<component>`):
+When the pod / PodGroup don't answer, read the owning component's logs - find its deployment with
+`kubectl -n <kai scheduler namespace> get deploy` (names are install-specific):
 
 - no PodGroup (`pod-group-name` missing) -> **pod-grouper** (unknown owner, webhook reject, panic).
 - PodGroup exists, `schedulingConditions` stays empty, no event -> **scheduler** (no verdict produced).
@@ -85,8 +84,7 @@ When the pod / PodGroup don't answer, read the owning component's logs
 - scheduled but not Running (`BindRequest` `.status.phase: Failed`) -> **binder** (reservation
   timeout, scale-up, bind error).
 
-`kubectl logs` keeps only recent lines; older logs live in the cluster's store (Loki /
-Elasticsearch / etc.). This names *which* component to read, wherever they're kept.
+`kubectl logs` keeps only recent lines.
 
 ## RBAC
 
