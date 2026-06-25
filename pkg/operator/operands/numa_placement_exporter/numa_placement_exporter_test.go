@@ -113,6 +113,9 @@ var _ = Describe("NumaPlacementExporter DesiredState", func() {
 			}
 		}
 		Expect(ds).ToNot(BeNil())
+		Expect(ds.Spec.Template.Spec.NodeSelector).To(Equal(map[string]string{
+			"feature.node.kubernetes.io/memory-numa": "true",
+		}))
 
 		container := ds.Spec.Template.Spec.Containers[0]
 		Expect(*container.SecurityContext.RunAsUser).To(Equal(int64(0)))

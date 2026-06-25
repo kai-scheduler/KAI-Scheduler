@@ -10,6 +10,7 @@ import (
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/admission"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/numa_placement_exporter"
 )
 
 var _ = Describe("ConfigSpec", func() {
@@ -47,6 +48,40 @@ var _ = Describe("ConfigSpec", func() {
 			spec.SetDefaultsWhereNeeded()
 
 			Expect(*spec.Admission.Service.PodDisruptionBudget.Enabled).To(BeTrue())
+		})
+
+		It("defaults NumaPlacementExporter to NUMA memory nodes", func() {
+			spec := &ConfigSpec{}
+			spec.SetDefaultsWhereNeeded()
+
+			Expect(spec.NumaPlacementExporter.NodeSelector).To(Equal(map[string]string{
+				"feature.node.kubernetes.io/memory-numa": "true",
+			}))
+		})
+
+		It("defaults an empty NumaPlacementExporter node selector to NUMA memory nodes", func() {
+			spec := &ConfigSpec{
+				NumaPlacementExporter: &numa_placement_exporter.NumaPlacementExporter{
+					NodeSelector: map[string]string{},
+				},
+			}
+			spec.SetDefaultsWhereNeeded()
+
+			Expect(spec.NumaPlacementExporter.NodeSelector).To(Equal(map[string]string{
+				"feature.node.kubernetes.io/memory-numa": "true",
+			}))
+		})
+
+		It("preserves an explicit NumaPlacementExporter node selector", func() {
+			selector := map[string]string{"node-role.kubernetes.io/worker": "true"}
+			spec := &ConfigSpec{
+				NumaPlacementExporter: &numa_placement_exporter.NumaPlacementExporter{
+					NodeSelector: selector,
+				},
+			}
+			spec.SetDefaultsWhereNeeded()
+
+			Expect(spec.NumaPlacementExporter.NodeSelector).To(Equal(selector))
 		})
 	})
 })
