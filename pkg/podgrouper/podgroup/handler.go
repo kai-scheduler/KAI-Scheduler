@@ -83,6 +83,10 @@ func (h *Handler) ignoreFields(oldPodGroup, newPodGroup *schedulingv2alpha2.PodG
 		newPodGroupCopy.Labels[h.queueLabelKey] = queueName
 	}
 
+	if newPodGroupCopy.Spec.TopologyConstraint.Topology == "" {
+		newPodGroupCopy.Spec.TopologyConstraint = oldPodGroup.Spec.TopologyConstraint
+	}
+
 	return newPodGroupCopy
 }
 
