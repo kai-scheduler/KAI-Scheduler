@@ -10,6 +10,62 @@ We want to add a new 3rd mode, named **semi-preemptible**, where the podgroup is
 
 A workload with `minReplicas` such as Inference and Elastic Distributed Training can request to be non-preemptible up to its `minReplicas`, with any pods above that count being preemptible. This allows running a critical workload with some assured resources and some on-demand, availability-based resources.
 
+## Usage
+
+Semi-preemptible reuses the **existing preemptibility API** introduced in [priority/preemptibility separation](../priority-preemptibility-separation/README.md) — it is simply a third value, `semi-preemptible`, alongside `preemptible` and `non-preemptible`. There is no new field or label. The minimum that stays non-preemptible is the PodGroup's existing minimum shape (`minMember` at leaf PodSets, `minSubGroup` at intermediate nodes); nothing extra needs to be declared.
+
+It can be set either directly on the PodGroup spec, or via the `kai.scheduler/preemptibility` label on a workload (the PodGrouper passes it through to the generated PodGroup).
+
+**On the PodGroup spec** — a single elastic group (3 core pods, bursts beyond):
+```yaml
+apiVersion: scheduling.kai.nvidia.com/v2alpha2
+kind: PodGroup
+metadata:
+  name: elastic-inference
+spec:
+  preemptibility: "semi-preemptible"
+  minMember: 3            # 3 core (non-preemptible) pods; pods above 3 are elastic
+  priorityClassName: "inference"
+  # ... rest of podgroup spec
+```
+
+**On a workload (label)** — the PodGrouper propagates it to the PodGroup:
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: elastic-inference
+spec:
+  template:
+    metadata:
+      labels:
+        kai.scheduler/preemptibility: "semi-preemptible"
+    spec:
+      # ... pod spec
+```
+
+**Subgroup-level (multi-level tree)** — `minSubGroup` makes whole subgroups core vs. elastic:
+```yaml
+apiVersion: scheduling.kai.nvidia.com/v2alpha2
+kind: PodGroup
+metadata:
+  name: segmented-training
+spec:
+  preemptibility: "semi-preemptible"
+  minSubGroup: 2          # 2 core subgroups; additional subgroups are elastic
+  subGroups:
+    - name: segment-0
+      minMember: 4
+    - name: segment-1
+      minMember: 4
+    - name: segment-2     # elastic — reclaimed as a whole before any core subgroup
+      minMember: 4
+  priorityClassName: "train"
+  # ... rest of podgroup spec
+```
+
+When `preemptibility` is omitted, behavior is unchanged (priority-based default). Semi-preemptible is never applied implicitly — it is always opt-in.
+
 ## Quota Requirements
 
 The "core" pods (up to `minMember` per leaf PodSet) must be in-quota when allocated. Any "extra" pods can be allocated over-quota. All pods must respect the Limit setting for the job's queue.
