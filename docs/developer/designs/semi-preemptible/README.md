@@ -134,6 +134,48 @@ Subgroup-level semi-elasticity is **what makes semi-preemptible meaningful for s
 
 Because elastic eviction at the subgroup level drops a **whole** segment (a segment is a gang PodSet with no internal surplus), reclaim never tears apart a segment — the forced topology shape is preserved. Segmentation and semi-preemptible therefore compose cleanly: segmentation decides the shape, semi-preemptible decides which parts of that shape are guaranteed.
 
+### Examples
+
+For a segmented job, the elastic tier exists **only at the parent `minSubGroup` node, and only when `minSubGroup < #segments`**. The leaf segments are always fully core (each is fully gang, so it has no pod-level surplus). The unit of preemption is therefore an entire segment, never pods within one.
+
+**Elastic tier present** — `minSubGroup: 2` over 4 segments → 2 core segments, 2 elastic:
+```yaml
+apiVersion: scheduling.kai.nvidia.com/v2alpha2
+kind: PodGroup
+metadata:
+  name: segmented-elastic
+spec:
+  preemptibility: "semi-preemptible"
+  minSubGroup: 2            # 2 segments are core (in-quota, non-preemptible)
+  subGroups:
+    - name: segment-0       # core
+      minMember: 8          # fully gang: no pod-level elasticity inside the segment
+    - name: segment-1       # core
+      minMember: 8
+    - name: segment-2       # elastic — evicted as a whole segment, reclaimed first
+      minMember: 8
+    - name: segment-3       # elastic — evicted as a whole segment
+      minMember: 8
+```
+Core (minimal satisfying set) = 2 segments × 8 pods = 16 pods, which must be in-quota. The other 16 pods (segments 2 and 3) may run over-quota and are reclaimed a whole segment at a time, topology intact.
+
+**No elastic tier (degenerate)** — `minSubGroup` equals the segment count, so every segment is core:
+```yaml
+spec:
+  preemptibility: "semi-preemptible"
+  minSubGroup: 4            # == #segments ⇒ no surplus at the subgroup level
+  subGroups:
+    - name: segment-0
+      minMember: 8
+    - name: segment-1
+      minMember: 8
+    - name: segment-2
+      minMember: 8
+    - name: segment-3
+      minMember: 8
+```
+There is no node where `count > minimum`, so the job has no elastic shape and behaves as **fully non-preemptible** despite the `semi-preemptible` setting. Marking such a job `semi-preemptible` is a no-op — lower `minSubGroup` (here, below 4) to create an elastic segment tier.
+
 ## Simulation Considerations
 
 Victim selection considers only the **surplus** of each node: the "extra" (`n - minMember`) pods at a leaf PodSet, and the extra (`scheduled - minSubGroup`) child subgroups at an intermediate node (evicted whole). This is applied independently per node; no cross-subgroup victim selection is needed. This approach may miss some solutions when checking all orderings, but the added complexity is not justified for the MVP.
