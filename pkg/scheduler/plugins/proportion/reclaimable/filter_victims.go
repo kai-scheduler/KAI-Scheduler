@@ -11,7 +11,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/utils"
 )
 
-// FilterVictim removes victims that cannot be reclaimed by the deserved-quota strategy.
+// FilterVictim removes victims that cannot be reclaimed by any proportion reclaim strategy.
 func (r *Reclaimable) FilterVictim(
 	queues map[common_info.QueueID]*rs.QueueAttributes,
 	reclaimer *ReclaimerInfo,
@@ -27,7 +27,7 @@ func (r *Reclaimable) FilterVictim(
 	}
 
 	if !canUseGuaranteeDeservedQuotaStrategy(reclaimer, reclaimerQueue) {
-		return true
+		return canBeMaintainFairShareReclaimCandidate(reclaimeeQueue)
 	}
 
 	return canBeDeservedQuotaReclaimCandidate(reclaimer, reclaimeeQueue)
@@ -39,6 +39,10 @@ func canUseGuaranteeDeservedQuotaStrategy(
 	allocatedWithReclaimer := reclaimerQueue.GetAllocatedShare()
 	allocatedWithReclaimer.Add(utils.QuantifyVector(reclaimer.RequiredResources, reclaimer.VectorMap))
 	return allocatedWithReclaimer.LessEqual(reclaimerQueue.GetDeservedShare())
+}
+
+func canBeMaintainFairShareReclaimCandidate(reclaimeeQueue *rs.QueueAttributes) bool {
+	return !reclaimeeQueue.GetAllocatedShare().LessEqual(reclaimeeQueue.GetAllocatableShare())
 }
 
 func canBeDeservedQuotaReclaimCandidate(

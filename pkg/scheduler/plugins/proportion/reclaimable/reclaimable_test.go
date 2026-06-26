@@ -1171,6 +1171,26 @@ var _ = Describe("FilterVictim", func() {
 
 		Expect(reclaimable.FilterVictim(queues, reclaimerInfo, "victim")).To(BeTrue())
 	})
+
+	It("filters victims under allocatable share when the reclaimer cannot use deserved quota", func() {
+		reclaimable := New(1)
+		queues := buildQueues(map[common_info.QueueID]queuesTestData{
+			"reclaimer": {deserved: 1, fairShare: 4, allocated: 0},
+			"victim":    {deserved: 2, fairShare: 4, allocated: 3},
+		})
+
+		Expect(reclaimable.FilterVictim(queues, reclaimerInfo, "victim")).To(BeFalse())
+	})
+
+	It("keeps victims over allocatable share when the reclaimer cannot use deserved quota", func() {
+		reclaimable := New(1)
+		queues := buildQueues(map[common_info.QueueID]queuesTestData{
+			"reclaimer": {deserved: 1, fairShare: 4, allocated: 0},
+			"victim":    {deserved: 2, fairShare: 4, allocated: 5},
+		})
+
+		Expect(reclaimable.FilterVictim(queues, reclaimerInfo, "victim")).To(BeTrue())
+	})
 })
 
 func buildQueues(queuesData map[common_info.QueueID]queuesTestData) map[common_info.QueueID]*rs.QueueAttributes {
