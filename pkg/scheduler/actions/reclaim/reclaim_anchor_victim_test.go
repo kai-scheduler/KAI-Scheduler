@@ -8,6 +8,7 @@ import (
 
 	. "go.uber.org/mock/gomock"
 	"gopkg.in/h2non/gock.v1"
+	"k8s.io/utils/ptr"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
@@ -17,8 +18,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 )
-
-func intPtr(i int) *int { return &i }
 
 // Queue hierarchy under test:
 //
@@ -91,10 +90,10 @@ func TestReclaimAnchorVictim(t *testing.T) {
 			"node-spare": {GPUs: 1},
 		},
 		Queues: []test_utils.TestQueueBasic{
-			{Name: "org-parent", DeservedGPUs: 6, GPUOverQuotaWeight: 1, ParentQueue: "root", Priority: intPtr(110)},
-			{Name: "reclaimer-queue", DeservedGPUs: 4, GPUOverQuotaWeight: 1, ParentQueue: "org-parent", Priority: intPtr(75)},
-			{Name: "batch-queue", DeservedGPUs: 0, GPUOverQuotaWeight: 1, ParentQueue: "org-parent", Priority: intPtr(25)},
-			{Name: "protected-queue", DeservedGPUs: 4, GPUOverQuotaWeight: 1, ParentQueue: "root", Priority: intPtr(100)},
+			{Name: "org-parent", DeservedGPUs: 6, GPUOverQuotaWeight: 1, ParentQueue: "root", Priority: ptr.To(110)},
+			{Name: "reclaimer-queue", DeservedGPUs: 4, GPUOverQuotaWeight: 1, ParentQueue: "org-parent", Priority: ptr.To(75)},
+			{Name: "batch-queue", DeservedGPUs: 0, GPUOverQuotaWeight: 1, ParentQueue: "org-parent", Priority: ptr.To(25)},
+			{Name: "protected-queue", DeservedGPUs: 4, GPUOverQuotaWeight: 1, ParentQueue: "root", Priority: ptr.To(100)},
 		},
 		Departments: []test_utils.TestDepartmentBasic{
 			{Name: "root", DeservedGPUs: 10},
@@ -168,9 +167,9 @@ func TestReclaimAnchorVictim_ControlNoProtectedQueue(t *testing.T) {
 			"node-spare":   {GPUs: 1},
 		},
 		Queues: []test_utils.TestQueueBasic{
-			{Name: "org-parent", DeservedGPUs: 6, GPUOverQuotaWeight: 1, ParentQueue: "root", Priority: intPtr(110)},
-			{Name: "reclaimer-queue", DeservedGPUs: 4, GPUOverQuotaWeight: 1, ParentQueue: "org-parent", Priority: intPtr(75)},
-			{Name: "batch-queue", DeservedGPUs: 0, GPUOverQuotaWeight: 1, ParentQueue: "org-parent", Priority: intPtr(25)},
+			{Name: "org-parent", DeservedGPUs: 6, GPUOverQuotaWeight: 1, ParentQueue: "root", Priority: ptr.To(110)},
+			{Name: "reclaimer-queue", DeservedGPUs: 4, GPUOverQuotaWeight: 1, ParentQueue: "org-parent", Priority: ptr.To(75)},
+			{Name: "batch-queue", DeservedGPUs: 0, GPUOverQuotaWeight: 1, ParentQueue: "org-parent", Priority: ptr.To(25)},
 		},
 		Departments: []test_utils.TestDepartmentBasic{
 			{Name: "root", DeservedGPUs: 10},
