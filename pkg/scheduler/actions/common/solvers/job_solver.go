@@ -162,21 +162,23 @@ func (s *JobSolver) solvePendingJobWithGenerator(
 	generatorBudget *generatorSearchBudget,
 ) *SearchResult {
 	n := len(tasksToAllocate)
-	maxSolvedK, searchResult := s.searchMaxSolvableK(
-		ssn, state, pendingJob, tasksToAllocate, jobBudget, availableGenerator, generatorBudget,
-	)
-	if maxSolvedK == 0 {
-		if searchResult == nil {
-			searchResult = terminalSearchResult(SearchResultGeneratorsExhausted, jobBudget.ReducedBudget())
+	if n > 1 {
+		maxSolvedK, searchResult := s.searchMaxSolvableK(
+			ssn, state, pendingJob, tasksToAllocate, jobBudget, availableGenerator, generatorBudget,
+		)
+		if maxSolvedK == 0 {
+			if searchResult == nil {
+				searchResult = terminalSearchResult(SearchResultGeneratorsExhausted, jobBudget.ReducedBudget())
+			}
+			return searchResult
 		}
-		return searchResult
 	}
 
 	result := s.probeAtK(ssn, state, pendingJob, tasksToAllocate, n, jobBudget, availableGenerator, generatorBudget)
 	return result
 }
 
-// searchMaxSolvableK returns the largest k in [0, n] for which a probe at k succeeds.
+// searchMaxSolvableK returns the largest k in [0, n) for which a probe at k succeeds.
 // Each probe is discarded before returning, so session state is clean on return.
 // Successful probes update hints in state for use by subsequent probes.
 // Complexity: O(log n) probes — exponential doubling to locate a failing k (or reach n),
@@ -191,7 +193,7 @@ func (s *JobSolver) searchMaxSolvableK(
 	generatorBudget *generatorSearchBudget,
 ) (int, *SearchResult) {
 	n := len(tasksToAllocate)
-	if n == 0 {
+	if n <= 1 {
 		return 0, nil
 	}
 
@@ -203,7 +205,7 @@ func (s *JobSolver) searchMaxSolvableK(
 }
 
 func searchMaxSolvableK(n int, probe func(k int) *SearchResult) (int, *SearchResult) {
-	if n == 0 {
+	if n <= 1 {
 		return 0, nil
 	}
 
@@ -211,7 +213,7 @@ func searchMaxSolvableK(n int, probe func(k int) *SearchResult) (int, *SearchRes
 	var hi int
 	var lastUnsolvedResult *SearchResult
 	k := 1
-	for {
+	for k < n {
 		result := probe(k)
 		if shouldStopSearch(result) {
 			return 0, result
@@ -222,12 +224,9 @@ func searchMaxSolvableK(n int, probe func(k int) *SearchResult) (int, *SearchRes
 			break
 		}
 		lo = k
-		if k == n {
-			return n, lastUnsolvedResult
-		}
 		k *= 2
-		if k > n {
-			k = n
+		if k >= n {
+			return lo, lastUnsolvedResult
 		}
 	}
 

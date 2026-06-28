@@ -283,6 +283,9 @@ type SchedulingConditionType string
 const (
 	// UnschedulableOnNodePool means the pod group is Unschedulable on the current node pool
 	UnschedulableOnNodePool SchedulingConditionType = "UnschedulableOnNodePool"
+
+	// ScenarioSearchUnresolved means bounded scenario search did not resolve a pending job in the current scheduling attempt
+	ScenarioSearchUnresolved SchedulingConditionType = "ScenarioSearchUnresolved"
 )
 
 // These are reasons for a pod group's transition to a condition.

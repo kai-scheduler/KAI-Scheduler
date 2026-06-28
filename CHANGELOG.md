@@ -30,6 +30,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Removed redundant `PodDisruptionBudgetImplemented` guard from operator PDB creation helper [#1613](https://github.com/kai-scheduler/KAI-Scheduler/pull/1613) [dttung2905](https://github.com/dttung2905)
 - Updated Go toolchain and base build images to v1.26.3.
 - **Breaking:** The podgroup produced for JobSet is now produces as a single PodGroup per JobSet with a two-level SubGroup hierarchy (one parent SubGroup per `replicatedJob`, one leaf SubGroup per replica) regardless of `startupPolicyOrder`. The `kai.scheduler/batch-min-member` annotation on the JobSet now overrides the root `minSubGroup`; the same annotation on `replicatedJobs[].template.metadata.annotations` overrides the leaf `minMember` (defaulting to `template.spec.parallelism`). [#1617](https://github.com/kai-scheduler/KAI-Scheduler/pull/1617) [davidLif](https://github.com/davidLif)
+- Optimized the job solver to run the full allocation probe only once after partial search finds at least one solvable pending task.
 
 ### Fixed
 - Reduced scheduler heap retention after scheduling cycles by clearing completed session snapshots and callback references, and by releasing the node scoring pool without waiting for finalizers.
