@@ -295,8 +295,20 @@ main { padding: 16px 24px; max-width: 1280px; margin: 0 auto; }
 }
 .spec-meta { display: flex; gap: 14px; margin-top: 3px; font-size: 11px; color: var(--muted); }
 .spec-meta .mono { font-family: monospace; }
-.spec-metrics { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 11px; font-family: monospace; color: var(--accent); }
-.spec-metrics .sep-dot { color: var(--border); }
+.spec-metrics { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.spec-metrics span {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  background: rgba(232, 25, 108, 0.12);
+  border: 1px solid rgba(232, 25, 108, 0.35);
+  border-radius: 12px;
+  font-size: 11px;
+  font-family: monospace;
+  font-weight: 600;
+  color: var(--accent);
+}
+.spec-metrics .sep-dot { display: none; }
 
 .detail-btn {
   flex-shrink: 0;
@@ -466,36 +478,3 @@ main { padding: 16px 24px; max-width: 1280px; margin: 0 auto; }
 :root .theme-btn::before, [data-theme="dark"] .theme-btn::before { content: "☀"; }
 [data-theme="light"] .theme-btn::before { content: "☽"; }
 
-/* ── Stat chips ──────────────────────────────────────────────────────────── */
-
-.chart-stats {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 12px;
-  min-height: 28px;
-}
-
-.stat-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 10px;
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  font-size: 12px;
-}
-
-.stat-label { color: var(--muted); }
-
-.stat-value {
-  font-family: monospace;
-  font-weight: 600;
-  color: var(--text);
-}
-
-.stat-trend { font-weight: 700; font-size: 13px; }
-.stat-trend.down { color: var(--pass); }
-.stat-trend.up   { color: var(--fail); }
-.stat-trend.flat { color: var(--muted); }
