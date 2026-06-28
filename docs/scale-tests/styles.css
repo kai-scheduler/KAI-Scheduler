@@ -461,6 +461,8 @@ main { padding: 16px 24px; max-width: 1280px; margin: 0 auto; }
   flex-shrink: 0;
 }
 .theme-btn:hover { color: var(--text); border-color: var(--accent); }
+:root .theme-btn::before, [data-theme="dark"] .theme-btn::before { content: "☀"; }
+[data-theme="light"] .theme-btn::before { content: "☽"; }
 
 /* ── Stat chips ──────────────────────────────────────────────────────────── */
 

@@ -485,16 +485,9 @@ init();
 (function () {
   const btn = document.getElementById('theme-toggle');
 
-  function syncIcon() {
-    btn.textContent = document.documentElement.getAttribute('data-theme') === 'dark' ? '☀' : '☽';
-  }
-
-  syncIcon();
-
   btn.addEventListener('click', () => {
     const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
     document.documentElement.setAttribute('data-theme', next);
     localStorage.setItem('kai-theme', next);
-    syncIcon();
   });
 })();
