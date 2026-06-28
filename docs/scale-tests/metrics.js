@@ -3,6 +3,10 @@
 
 'use strict';
 
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
 // ── Metric extraction mappings ────────────────────────────────────────────
 
 // Map test names to chart configurations
@@ -180,7 +184,7 @@ function groupByLegend(dataPoints) {
 
 // Dark theme colors for Chart.js
 const CHART_COLORS = [
-  '#58a6ff', // accent blue
+  '#e8196c', // KAI pink
   '#3fb950', // pass green
   '#d29922', // skip yellow
   '#f85149', // fail red
@@ -227,17 +231,17 @@ function createChart(canvasId, dataPoints, config) {
           display: true,
           position: 'top',
           labels: {
-            color: '#e6edf3',
+            color: cssVar('--text'),
             font: { size: 11 },
             padding: 10,
             usePointStyle: true,
           },
         },
         tooltip: {
-          backgroundColor: '#161b22',
-          titleColor: '#e6edf3',
-          bodyColor: '#e6edf3',
-          borderColor: '#30363d',
+          backgroundColor: cssVar('--surface'),
+          titleColor: cssVar('--text'),
+          bodyColor: cssVar('--text'),
+          borderColor: cssVar('--border'),
           borderWidth: 1,
           padding: 10,
           displayColors: true,
@@ -284,11 +288,11 @@ function createChart(canvasId, dataPoints, config) {
             },
           },
           grid: {
-            color: '#30363d',
+            color: cssVar('--border'),
             drawBorder: false,
           },
           ticks: {
-            color: '#8b949e',
+            color: cssVar('--muted'),
             font: { size: 10 },
           },
         },
@@ -296,18 +300,18 @@ function createChart(canvasId, dataPoints, config) {
           beginAtZero: false,
           grace: '10%',
           grid: {
-            color: '#30363d',
+            color: cssVar('--border'),
             drawBorder: false,
           },
           ticks: {
-            color: '#8b949e',
+            color: cssVar('--muted'),
             font: { size: 10 },
             callback: (value) => `${value.toFixed(3)}s`,
           },
           title: {
             display: true,
             text: config.label,
-            color: '#8b949e',
+            color: cssVar('--muted'),
             font: { size: 11 },
           },
         },
