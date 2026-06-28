@@ -1,0 +1,106 @@
+{{/*
+Renders the kai-config Config CR. Used by the kai-config-deployer hook
+ConfigMap so the operator input config can be applied via kubectl
+out-of-band of the Helm release. See deployments/kai-scheduler/templates/hooks/post/kai-config-deployer/.
+*/}}
+{{- define "kai-scheduler.kai-config" -}}
+apiVersion: kai.scheduler/v1
+kind: Config
+metadata:
+  name: kai-config
+spec:
+  namespace: {{ .Release.Namespace }}
+  global:
+    schedulerName: "kai-scheduler"
+    queueLabelKey: "kai.scheduler/queue"
+    nodePoolLabelKey: "kai.scheduler/nodepool"
+    {{- if .Values.global.namespaceLabelSelector }}
+    namespaceLabelSelector:
+      {{- toYaml .Values.global.namespaceLabelSelector | nindent 6 }}
+    {{- end }}
+    {{- if .Values.global.podLabelSelector }}
+    podLabelSelector:
+      {{- toYaml .Values.global.podLabelSelector | nindent 6 }}
+    {{- end }}
+    {{- if .Values.global.affinity }}
+    affinity:
+      {{- toYaml .Values.global.affinity | nindent 6 }}
+    {{- end }}
+    {{- if .Values.global.tolerations }}
+    tolerations:
+      {{- toYaml .Values.global.tolerations | nindent 6 }}
+    {{- end }}
+    {{- if .Values.global.securityContext }}
+    securityContext:
+      {{- toYaml .Values.global.securityContext | nindent 6 }}
+    {{- end }}
+    {{- if .Values.global.imagePullSecrets }}
+    additionalImagePullSecrets:
+      {{- range .Values.global.imagePullSecrets }}
+      - {{ .name }}
+      {{- end }}
+    {{- end }}
+    replicaCount: {{ .Values.operator.replicaCount | default 1 }}
+
+  podGroupController:
+    service:
+        enabled: true
+        image:
+          name: {{ .Values.podgroupcontroller.image.name }}
+          repository: {{ .Values.global.registry }}
+          tag: {{ .Chart.Version }}
+          pullPolicy: {{ .Values.podgroupcontroller.image.pullPolicy | default .Values.global.imagePullPolicy }}
+        {{- if .Values.podgroupcontroller.resources }}
+        resources:
+          {{- toYaml .Values.podgroupcontroller.resources | nindent 6 }}
+        {{- end }}
+
+  queueController:
+    service:
+      enabled: true
+      image:
+        name: {{ .Values.queuecontroller.image.name }}
+        repository: {{ .Values.global.registry }}
+        tag: {{ .Chart.Version }}
+        pullPolicy: {{ .Values.queuecontroller.image.pullPolicy | default .Values.global.imagePullPolicy }}
+      {{- if .Values.queuecontroller.resources }}
+      resources:
+        {{- toYaml .Values.queuecontroller.resources | nindent 6 }}
+      {{- end }}
+
+  admission:
+    service:
+      enabled: true
+      image:
+        name: {{ .Values.admission.image.name }}
+        repository: {{ .Values.global.registry }}
+        tag: {{ .Chart.Version }}
+        pullPolicy: {{ .Values.admission.image.pullPolicy | default .Values.global.imagePullPolicy }}
+      {{- if .Values.admission.resources }}
+      resources:
+        {{- toYaml .Values.admission.resources | nindent 6 }}
+      {{- end }}
+    gpuSharing: {{ .Values.global.gpuSharing | default false }}
+    queueLabelSelector: false
+    webhook:
+      port: 443
+      targetPort: {{ .Values.admission.ports.webhookPort | default 9443 }}
+      probePort: {{ .Values.admission.ports.probePort | default 8081 }}
+      metricsPort: {{ .Values.admission.ports.metricsPort | default 8080 }}
+    gpuPodRuntimeClassName: {{ .Values.admission.gpuPodRuntimeClassName | default "nvidia" }}
+
+  nodeScaleAdjuster:
+    service:
+      enabled: {{ .Values.global.clusterAutoscaling }}
+      image:
+        name: {{ .Values.nodescaleadjuster.image.name }}
+        repository: {{ .Values.global.registry }}
+        tag: {{ .Chart.Version }}
+        pullPolicy: {{ .Values.nodescaleadjuster.image.pullPolicy | default .Values.global.imagePullPolicy }}
+      {{- if .Values.nodescaleadjuster.resources }}
+      resources:
+        {{- toYaml .Values.nodescaleadjuster.resources | nindent 6 }}
+      {{- end }}
+    args:
+      nodeScaleNamespace: {{ .Values.nodescaleadjuster.scalingPodNamespace }}
+{{- end -}}
