@@ -8,13 +8,14 @@ function cssVar(name) {
 }
 
 function formatSeconds(s) {
-  if (s === null || s === undefined) return '—';
+  if (s === null || s === undefined || typeof s !== 'number' || !isFinite(s)) return '—';
   if (s < 60) return `${s.toFixed(1)}s`;
   const m = Math.floor(s / 60);
   return `${m}m ${Math.round(s % 60)}s`;
 }
 
 function trendArrow(latest, prevMean) {
+  if (prevMean === 0) return '<span class="stat-trend flat">→</span>';
   const pct = (latest - prevMean) / prevMean;
   if (pct < -0.05) return '<span class="stat-trend down">↓</span>';
   if (pct >  0.05) return '<span class="stat-trend up">↑</span>';
