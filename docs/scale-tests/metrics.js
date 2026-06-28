@@ -378,7 +378,7 @@ window.addEventListener('scale-tests:data-loaded', () => {
   // If metrics tab is currently visible, initialize now
   const metricsTab = document.getElementById('metrics-main');
   if (metricsTab && !metricsTab.classList.contains('hidden')) {
-    window._metricsInitialized = false;  // Reset flag to allow initialization
+    window._metricsInitialized = true;
     initializeMetrics();
   }
 });
