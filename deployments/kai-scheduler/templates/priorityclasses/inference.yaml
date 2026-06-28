@@ -1,3 +1,4 @@
+{{- if .Values.defaultPriorityClasses.enabled }}
 # Copyright 2025 NVIDIA CORPORATION
 # SPDX-License-Identifier: Apache-2.0
 
@@ -6,3 +7,4 @@ kind: PriorityClass
 metadata:
   name: inference
 value: 125
+{{- end }}

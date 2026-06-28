@@ -20,7 +20,7 @@ jobs:
       code: ${{ steps.filter.outputs.code }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Check changed files
         uses: dorny/paths-filter@v3
@@ -43,7 +43,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Cache Go build cache (Docker-mounted)
         uses: actions/cache@v5
@@ -109,7 +109,7 @@ jobs:
           name: total-coverage
           path: coverage-summary
       - name: Download coverage badge branch
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: coverage-badge
           path: coverage-badge
@@ -160,7 +160,7 @@ jobs:
       package_version: ${{ steps.package_version.outputs.PACKAGE_VERSION }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Extract package version
         id: package_version
@@ -238,7 +238,7 @@ jobs:
       actions: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup e2e cluster
         uses: ./.github/actions/setup-e2e-cluster
@@ -295,7 +295,7 @@ jobs:
       actions: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Resolve upgrade-from version
         id: resolve_version
@@ -368,7 +368,7 @@ jobs:
       FOSSA_API_KEY: 577e3d21c48454822ae8ea496209a505 # This is a push-only token that is safe to be exposed.
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Run FOSSA analysis and validate status
         uses: fossa-contrib/fossa-action@v3.0.1

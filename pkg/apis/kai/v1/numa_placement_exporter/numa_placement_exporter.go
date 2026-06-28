@@ -14,6 +14,8 @@ import (
 
 const imageName = "numa-placement-exporter"
 
+const defaultNodeSelectorKey = "feature.node.kubernetes.io/memory-numa"
+
 // NumaPlacementExporter configures the per-node NUMA placement exporter DaemonSet. The exporter reads
 // the kubelet podresources API and publishes each pod's observed NUMA placement; the numa scheduler
 // plugin consumes it. Deployment is gated by the operator on the numa plugin being enabled in a shard.
@@ -49,6 +51,9 @@ type NumaPlacementExporter struct {
 
 func (n *NumaPlacementExporter) SetDefaultsWhereNeeded() {
 	n.Service = common.SetDefault(n.Service, &common.Service{})
+	if len(n.NodeSelector) == 0 {
+		n.NodeSelector = map[string]string{defaultNodeSelectorKey: "true"}
+	}
 
 	// Service.SetDefaultsWhereNeeded forces Enabled=true; preserve the tri-state (nil = auto).
 	enabled := n.Service.Enabled
