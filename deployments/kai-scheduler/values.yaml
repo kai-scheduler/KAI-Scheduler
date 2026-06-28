@@ -258,10 +258,10 @@ postCleanup:
   serviceAccountName: post-delete-cleanup
   resources: {}
 
-# priorityClasses controls the chart-managed build, train, inference, and
+# defaultPriorityClasses controls the chart-managed build, train, inference, and
 # build-preemptible PriorityClasses. Disable when these cluster-scoped resources
 # are managed externally.
-priorityClasses:
+defaultPriorityClasses:
   enabled: true
 
 prometheus:
