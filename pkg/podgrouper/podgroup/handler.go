@@ -61,7 +61,7 @@ func (h *Handler) ApplyToCluster(ctx context.Context, pgMetadata Metadata) error
 }
 
 func (h *Handler) ignoreFields(oldPodGroup, newPodGroup *schedulingv2alpha2.PodGroup) *schedulingv2alpha2.PodGroup {
-	// to avoid overriding the fields that the pod-group-assigner is responsible for
+	// to avoid overriding the fields that external services are responsible for
 	newPodGroupCopy := newPodGroup.DeepCopy()
 
 	newPodGroupCopy.Spec.MarkUnschedulable = oldPodGroup.Spec.MarkUnschedulable
