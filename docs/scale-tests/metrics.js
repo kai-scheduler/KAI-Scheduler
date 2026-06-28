@@ -7,6 +7,43 @@ function cssVar(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
+function formatSeconds(s) {
+  if (s === null || s === undefined) return '—';
+  if (s < 60) return `${s.toFixed(1)}s`;
+  const m = Math.floor(s / 60);
+  return `${m}m ${Math.round(s % 60)}s`;
+}
+
+function trendArrow(latest, prevMean) {
+  const pct = (latest - prevMean) / prevMean;
+  if (pct < -0.05) return '<span class="stat-trend down">↓</span>';
+  if (pct >  0.05) return '<span class="stat-trend up">↑</span>';
+  return '<span class="stat-trend flat">→</span>';
+}
+
+function renderChartStats(statsId, grouped) {
+  const el = document.getElementById(statsId);
+  if (!el) return;
+
+  const chips = Object.entries(grouped).map(([legend, points]) => {
+    const latest = points.length ? points[points.length - 1].value : null;
+    const prev   = points.length >= 2 ? points.slice(-4, -1).map(p => p.value) : null;
+    const prevMean = prev && prev.length
+      ? prev.reduce((a, b) => a + b, 0) / prev.length
+      : null;
+    const arrow = latest !== null && prevMean !== null
+      ? trendArrow(latest, prevMean)
+      : '';
+    return `<span class="stat-chip">
+      <span class="stat-label">${esc(legend)}</span>
+      <span class="stat-value">${formatSeconds(latest)}</span>
+      ${arrow}
+    </span>`;
+  }).join('');
+
+  el.innerHTML = chips;
+}
+
 // ── Metric extraction mappings ────────────────────────────────────────────
 
 // Map test names to chart configurations
@@ -318,6 +355,9 @@ function createChart(canvasId, dataPoints, config) {
       },
     },
   });
+
+  const statsId = canvasId.replace('chart-', 'stats-');
+  renderChartStats(statsId, grouped);
 }
 
 // ── Initialization ─────────────────────────────────────────────────────────

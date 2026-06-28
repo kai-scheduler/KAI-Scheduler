@@ -461,3 +461,37 @@ main { padding: 16px 24px; max-width: 1280px; margin: 0 auto; }
   flex-shrink: 0;
 }
 .theme-btn:hover { color: var(--text); border-color: var(--accent); }
+
+/* ── Stat chips ──────────────────────────────────────────────────────────── */
+
+.chart-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+  min-height: 28px;
+}
+
+.stat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  font-size: 12px;
+}
+
+.stat-label { color: var(--muted); }
+
+.stat-value {
+  font-family: monospace;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.stat-trend { font-weight: 700; font-size: 13px; }
+.stat-trend.down { color: var(--pass); }
+.stat-trend.up   { color: var(--fail); }
+.stat-trend.flat { color: var(--muted); }
