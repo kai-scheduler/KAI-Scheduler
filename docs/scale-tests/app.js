@@ -191,10 +191,11 @@ function specMetricsHtml(spec) {
     || (typeof parseMetricsFromOutput === 'function' && parseMetricsFromOutput(spec.CapturedGinkgoWriterOutput));
   if (!m) return '';
   const parts = [];
-  if (m.nodes != null)                            parts.push(`${m.nodes} nodes`);
-  if (m.jobs  != null)                            parts.push(`${m.jobs} jobs`);
+  if (m.nodes != null) parts.push(`${m.nodes} nodes`);
+  const jobs = m.jobs ?? m['distributed jobs'] ?? m['distributed-jobs'];
+  if (jobs != null) parts.push(`${jobs} jobs`);
   const t = m.total_time || m.time;
-  if (t != null && t !== '')                      parts.push(typeof t === 'string' ? t.replace(/(\d+m)[\d.]+s/, '$1').trim() : `${t}s`);
+  if (t != null && t !== '') parts.push(String(t));
   if (!parts.length) return '';
   return `<div class="spec-metrics">${parts.map(p => `<span>${esc(p)}</span>`).join('<span class="sep-dot">·</span>')}</div>`;
 }
