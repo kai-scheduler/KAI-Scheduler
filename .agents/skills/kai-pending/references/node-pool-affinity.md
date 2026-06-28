@@ -7,8 +7,8 @@ surprises because KAI queue quotas are **cluster-wide, not per-pool** - "the que
 
 ## Steps
 
-1. Read the `SELECTOR no:` lines - they name the excluded label (`wants pool=a, has b`); those are
-   the free nodes you're locked out of.
+1. Read the affinity/selector predicate reason in the step 4 fit detail - it names the label that
+   excluded the node; those are the free nodes you're locked out of.
 
 ## Fix (any of)
 

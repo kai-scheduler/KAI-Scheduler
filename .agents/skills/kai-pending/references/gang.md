@@ -7,7 +7,7 @@ each pod fits alone but the cluster can't host `minMember` together.
 ## Steps
 
 1. Read `M - N` from the message = how many more simultaneous slots are needed.
-2. Count `match` nodes with free GPU >= per-pod request; compare to `minMember`.
+2. Count nodes with free GPU (`capacity - used`, step 4 detail) >= per-pod request; compare to `minMember`.
 
 ## Fix (any of)
 

@@ -5,8 +5,8 @@ bigger than any single node, and a pod cannot span nodes.
 
 ## Steps
 
-1. Compare `requests: gpu=N` against the largest `match` node's `f/a` allocatable.
-2. Check the CPU/MEM columns too - the blocker may be CPU or memory, not GPU.
+1. Compare `requests: gpu=N` against the largest node's `capacity` in the step 4 fit detail.
+2. Check the CPU / memory reasons too - the blocker may be CPU or memory, not GPU.
 
 ## Fix
 
