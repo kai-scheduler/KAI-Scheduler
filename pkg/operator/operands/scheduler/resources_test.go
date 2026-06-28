@@ -19,6 +19,7 @@ import (
 	kaiv1qc "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/queue_controller"
 	kaiv1scheduler "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/scheduler"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	operatorcommon "github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common"
 	usagedbapi "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 
@@ -138,6 +139,8 @@ func TestDeploymentForShard(t *testing.T) {
 
 			assert.Equal(t, DeploymentName(tt.config, tt.shard), deploy.Name)
 			assert.Equal(t, tt.config.Spec.Namespace, deploy.Namespace)
+			assert.Equal(t, operatorcommon.OperatorManagedByLabelValue,
+				deploy.Labels[operatorcommon.OperatorManagedByLabelKey])
 
 			container := deploy.Spec.Template.Spec.Containers[0]
 			args := container.Args
