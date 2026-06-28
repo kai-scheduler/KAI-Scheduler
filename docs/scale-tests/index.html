@@ -29,6 +29,13 @@
   <link rel="stylesheet" href="styles.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+  <script>
+    (function(){
+      var t = localStorage.getItem('kai-theme') ||
+              (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
 </head>
 <body>
 
@@ -37,6 +44,7 @@
   <img src="logo.svg" width="32" height="32" alt="KAI Scheduler Logo" aria-hidden="true">
   <h1>KAI Scheduler — Scale Tests</h1>
   <div class="header-stats" id="header-stats" aria-live="polite"></div>
+  <button id="theme-toggle" class="theme-btn" title="Toggle light/dark mode" aria-label="Toggle theme">☀</button>
 </header>
 
 <!-- ── Tab navigation ──────────────────────────────────────────────── -->

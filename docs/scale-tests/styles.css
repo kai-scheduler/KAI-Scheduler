@@ -2,16 +2,16 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 :root {
-  --bg:       #0d1117;
-  --surface:  #161b22;
-  --surface2: #21262d;
-  --border:   #30363d;
+  --bg:       #0c1524;
+  --surface:  #111e2f;
+  --surface2: #182436;
+  --border:   #1f3450;
   --text:     #e6edf3;
-  --muted:    #8b949e;
+  --muted:    #7a8fa6;
   --pass:     #3fb950;
   --fail:     #f85149;
   --skip:     #d29922;
-  --accent:   #58a6ff;
+  --accent:   #e8196c;
   --radius:   6px;
 }
 
@@ -432,3 +432,32 @@ main { padding: 16px 24px; max-width: 1280px; margin: 0 auto; }
 .chart-wrapper canvas {
   max-height: 100%;
 }
+
+/* ── Light mode ──────────────────────────────────────────────────────────── */
+
+[data-theme="light"] {
+  --bg:       #f5f7fa;
+  --surface:  #ffffff;
+  --surface2: #eef1f5;
+  --border:   #d0d7e0;
+  --text:     #1a2540;
+  --muted:    #5a6a80;
+  --pass:     #1a8f37;
+  --fail:     #d13027;
+  --skip:     #a07010;
+}
+
+/* ── Theme toggle button ─────────────────────────────────────────────────── */
+
+.theme-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--muted);
+  font-size: 14px;
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: color 0.1s, border-color 0.1s;
+  flex-shrink: 0;
+}
+.theme-btn:hover { color: var(--text); border-color: var(--accent); }
