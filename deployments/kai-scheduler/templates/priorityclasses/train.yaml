@@ -1,4 +1,4 @@
-{{- if .Values.priorityClasses.enabled }}
+{{- if .Values.defaultPriorityClasses.enabled }}
 # Copyright 2025 NVIDIA CORPORATION
 # SPDX-License-Identifier: Apache-2.0
 

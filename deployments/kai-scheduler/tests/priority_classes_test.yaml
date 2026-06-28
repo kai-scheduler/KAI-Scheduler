@@ -45,7 +45,7 @@ tests:
 
   - it: should not render priority classes when disabled
     set:
-      priorityClasses.enabled: false
+      defaultPriorityClasses.enabled: false
     asserts:
       - hasDocuments:
           count: 0

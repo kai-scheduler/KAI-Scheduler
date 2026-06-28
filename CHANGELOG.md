@@ -7,7 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
-- Added `priorityClasses.enabled` Helm value (default `true`) for installations that manage KAI PriorityClasses externally.
+- Added `defaultPriorityClasses.enabled` Helm value (default `true`) for installations that manage KAI PriorityClasses externally.
 
 ### Changed
 - Podgrouper now preserves an existing PodGroup's topology constraint when the workload does not specify one, so an externally-assigned topology is not overwritten. Workload topology annotations still take precedence when present.
