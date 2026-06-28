@@ -7,10 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Added `priorityClasses.enabled` Helm value (default `true`) for installations that manage KAI PriorityClasses externally.
 
 ### Changed
 
 ### Fixed
+- Restricted Helm post-delete cleanup to KAI operator-managed Deployments and preserved externally managed `kai-config` resources when `kaiConfigDeployer.enabled=false`.
 
 ## [v0.16.0] - 2026-06-24
 

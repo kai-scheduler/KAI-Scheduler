@@ -60,10 +60,12 @@ spec:
             - /bin/sh
             - -c
             - |
-              echo "Deleting deployments..."
-              kubectl -n {{ .Release.Namespace }} delete deployment --all --ignore-not-found=true
+              echo "Deleting KAI operator-managed deployments..."
+              kubectl -n {{ .Release.Namespace }} delete deployment --selector=app.kubernetes.io/managed-by=kai-operator --ignore-not-found=true
 
+              {{- if .Values.kaiConfigDeployer.enabled }}
               echo "Deleting kai-config..."
               kubectl delete Config kai-config --ignore-not-found
+              {{- end }}
               echo "Cleanup complete."
 {{- end }}
