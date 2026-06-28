@@ -28,6 +28,11 @@ import (
 
 var controllerTypes = []string{"Deployment", "DaemonSet"}
 
+const (
+	OperatorManagedByLabelKey   = "app.kubernetes.io/managed-by"
+	OperatorManagedByLabelValue = "kai-operator"
+)
+
 // PodDisruptionBudgetImplementedServices lists operand resource names with operator-side PDB creation.
 var PodDisruptionBudgetImplementedServices = map[string]struct{}{
 	"admission": {},
@@ -139,6 +144,7 @@ func DeploymentForKAIConfig(
 		return nil, err
 	}
 	deployment := deploymentObj.(*appsv1.Deployment)
+	deployment.Labels[OperatorManagedByLabelKey] = OperatorManagedByLabelValue
 	deployment.TypeMeta = metav1.TypeMeta{
 		Kind:       "Deployment",
 		APIVersion: "apps/v1",
