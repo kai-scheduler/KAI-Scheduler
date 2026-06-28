@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - Added `defaultPriorityClasses.enabled` Helm value (default `true`) for installations that manage KAI PriorityClasses externally.
+- Added **topology level aliases**: a `Topology` level may declare an `alias` (e.g. `rack`), usable in place of the raw node label key in a workload's `requiredTopologyLevel`/`preferredTopologyLevel`. Aliases are one-to-one (unique within the Topology and must not collide with a `nodeLabel`, enforced by a new Topology validating webhook) and may be edited freely (the `levels` immutability rule now freezes only the `nodeLabel` structure). When a level has no alias, behavior is unchanged and raw label keys keep working. [#1498](https://github.com/kai-scheduler/KAI-Scheduler/issues/1498)
 
 ### Changed
 - Podgrouper now preserves an existing PodGroup's topology constraint when the workload does not specify one, so an externally-assigned topology is not overwritten. Workload topology annotations still take precedence when present.

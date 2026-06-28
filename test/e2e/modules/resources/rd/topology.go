@@ -29,6 +29,9 @@ const (
 	TestZoneLabelKey = "e2e-topology-label/zone"
 	TestRackLabelKey = "e2e-topology-label/rack"
 	NodeNameLabelKey = "kubernetes.io/hostname"
+	// TestRackAlias is a friendly alias for TestRackLabelKey, set on the test Topology so workloads
+	// can reference the rack level by alias. Benign for tests using the raw key (pass-through).
+	TestRackAlias = "rack"
 )
 
 type TestTopologyData struct {
@@ -65,7 +68,7 @@ func CreateRackZoneTopology(
 		Spec: kaiv1alpha1.TopologySpec{
 			Levels: []kaiv1alpha1.TopologyLevel{
 				{NodeLabel: TestZoneLabelKey},
-				{NodeLabel: TestRackLabelKey},
+				{NodeLabel: TestRackLabelKey, Alias: TestRackAlias},
 				{NodeLabel: NodeNameLabelKey},
 			},
 		},

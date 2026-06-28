@@ -165,6 +165,36 @@ func (pgi *PodGroupInfo) GetAllPodSets() map[string]*subgroup_info.PodSet {
 	return pgi.PodSets
 }
 
+// ResolveTopologyAliases rewrites every subgroup/podset topology constraint's level strings to the
+// canonical node labels, using per-topology alias maps (topology name -> alias -> nodeLabel). It is
+// applied once when the snapshot is built, so every downstream consumer (topology plugin, solvers)
+// reads canonical labels and never has to resolve aliases itself.
+func (pgi *PodGroupInfo) ResolveTopologyAliases(aliasesByTopology map[string]map[string]string) {
+	if pgi.RootSubGroupSet == nil || len(aliasesByTopology) == 0 {
+		return
+	}
+	resolveSubGroupSetTopologyAliases(pgi.RootSubGroupSet, aliasesByTopology)
+}
+
+func resolveSubGroupSetTopologyAliases(
+	subGroupSet *subgroup_info.SubGroupSet, aliasesByTopology map[string]map[string]string,
+) {
+	if subGroupSet == nil {
+		return
+	}
+	if constraint := subGroupSet.GetTopologyConstraint(); constraint != nil {
+		constraint.ResolveAliases(aliasesByTopology[constraint.Topology])
+	}
+	for _, podSet := range subGroupSet.GetDirectPodSets() {
+		if constraint := podSet.GetTopologyConstraint(); constraint != nil {
+			constraint.ResolveAliases(aliasesByTopology[constraint.Topology])
+		}
+	}
+	for _, child := range subGroupSet.GetDirectSubgroupsSets() {
+		resolveSubGroupSetTopologyAliases(child, aliasesByTopology)
+	}
+}
+
 func (pgi *PodGroupInfo) IsPreemptibleJob() bool {
 	return pgi.Preemptibility == enginev2alpha2.Preemptible
 }

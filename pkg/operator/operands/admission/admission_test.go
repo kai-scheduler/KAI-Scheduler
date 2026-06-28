@@ -83,11 +83,14 @@ var _ = Describe("Admission", func() {
 				Expect(mutatingWebhook.Webhooks).To(HaveLen(1))
 				Expect(mutatingWebhook.Webhooks[0].ClientConfig.CABundle).To(Equal(secret.Data[certKey]))
 
-				Expect(validatingWebhook.Webhooks).To(HaveLen(1))
-				Expect(validatingWebhook.Webhooks[0].ClientConfig.CABundle).To(Equal(secret.Data[certKey]))
+				// One webhook for pods, one for the Topology one-to-one alias validation.
+				Expect(validatingWebhook.Webhooks).To(HaveLen(2))
+				for _, wh := range validatingWebhook.Webhooks {
+					Expect(wh.ClientConfig.CABundle).To(Equal(secret.Data[certKey]))
+					Expect(wh.ClientConfig.Service.Name).To(Equal(defaultResourceName))
+				}
 
 				Expect(mutatingWebhook.Webhooks[0].ClientConfig.Service.Name).To(Equal(defaultResourceName))
-				Expect(validatingWebhook.Webhooks[0].ClientConfig.Service.Name).To(Equal(defaultResourceName))
 			})
 
 			It("should preserve existing deployment labels", func() {
