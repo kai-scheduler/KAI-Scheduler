@@ -1,8 +1,8 @@
 ---
 name: kai-pending
-description: Use when a KAI-Scheduler (Run:ai / NVIDIA) pod or PodGroup is stuck Pending and you need to know why - GPU jobs that won't start, queue quota/limit, fair-share, gang scheduling, fractional GPU, node-pool affinity, or scheduling gates. Reads the PodGroup's scheduling verdict; an optional python helper adds per-node free-capacity math.
+description: Use when a KAI-Scheduler pod or PodGroup is stuck Pending and you need to know why - GPU jobs that won't start, queue quota/limit, fair-share, gang scheduling, fractional GPU, node-pool affinity, or scheduling gates. Reads the PodGroup's scheduling verdict and the scheduler's own per-node fit errors.
 license: MIT
-compatibility: Requires kubectl. The optional helper free_capacity.py needs python3, but most cases are read straight from the scheduler verdict, so the skill works without it.
+compatibility: Requires kubectl.
 metadata:
   author: KAI Scheduler maintainers
   version: "1.0"
@@ -46,31 +46,26 @@ kubectl get podgroup "$PG" -n <ns> -o json \
   preemptible class (`value < 100`).
 - `PodSchedulingErrors` -> umbrella, no `queueDetails` -> step 4.
 
-## 4. PodSchedulingErrors - dump the cluster, read the table
+## 4. PodSchedulingErrors - read the per-node fit detail
 
-The script prints each node's free vs total capacity and whether it matches the pod; you judge. It takes the dump dir as its only arg (it never calls kubectl) - dump first, from the repo root:
+The default message is an aggregated histogram, to get per-node numbers
+(requested / used / capacity) try to read this:
 
-```bash
-mkdir -p /tmp/kai
-kubectl get pods -n <ns> --field-selector=status.phase=Pending -o json > /tmp/kai/pods.json
-kubectl get nodes -o json > /tmp/kai/nodes.json
-# allpods gives FREE (not just total); skip finished pods so it stays small on big clusters:
-kubectl get pods -A --field-selector=status.phase!=Succeeded,status.phase!=Failed -o json > /tmp/kai/allpods.json
-.agents/skills/kai-pending/scripts/free_capacity.py /tmp/kai --pod <pod>   # only positional arg is the dir
-# a GPU request shows only GPU nodes; add --all-nodes to include the rest
-```
+- per-node lines are in the condition `message`
+  (`<node-a>: Insufficient GPUs, requested: 2, used: 6, capacity: 8`).
+  (available if installed with `--detailed-fit-errors=true`)
+- otherwise the same detail is only in the scheduler log (`Full fit error: ...`) -> step 5. (available if installed with high verbosity `-v=6`)
 
-Columns: `GPU f/a` = free/allocatable, `SELECTOR` = matches the pod, `TAINTS` = untolerated. Match one:
+Match the per-node reason (or, with just the histogram, the short dimension):
 
-- free GPU >= request, `SELECTOR match`, no taint -> nodes fit; message says `gang scheduling` ->
-  [gang](references/gang.md).
-- no free room now, but a `match` node's **total** GPU >= request -> contention ->
-  [fair-share](references/fair-share.md).
-- ...and you outrank the holders (expected eviction) -> [preemption](references/preemption.md).
-- free GPU >= request but `SELECTOR no:` -> affinity trap -> [node-pool-affinity](references/node-pool-affinity.md).
-- no `match` node's total GPU >= request -> too big for any node -> [node-fit](references/node-fit.md).
-- `gpu-fraction`/`gpu-memory` request -> fractional fit isn't decidable from the dump (per-GPU
-  sharing isn't in the objects; whole-GPU `f/a` is context only) -> [fractional-gpu](references/fractional-gpu.md).
+- a node's `capacity` >= request but `used` blocks it -> capacity is held by others -> contention /
+  preemption -> [fair-share](references/fair-share.md).
+- `capacity` < request on every node -> too big for any single node -> [node-fit](references/node-fit.md).
+- a node-affinity / selector / taint predicate reason (not a resource shortage) -> affinity trap ->
+  [node-pool-affinity](references/node-pool-affinity.md).
+- `Resources were found for N pods while M are required for gang scheduling` -> each pod fits but not
+  `minMember` at once -> [gang](references/gang.md).
+- `gpu-fraction` / `gpu-memory` request -> fractional fit isn't decidable here yet. Treat whole-GPU fit as context only.
 
 ## 5. Object path silent - which component's logs
 
@@ -79,8 +74,8 @@ When the pod / PodGroup don't answer, read the owning component's logs - find it
 
 - no PodGroup (`pod-group-name` missing) -> **pod-grouper** (unknown owner, webhook reject, panic).
 - PodGroup exists, `schedulingConditions` stays empty, no event -> **scheduler** (no verdict produced).
-- `PodSchedulingErrors` message too vague -> **scheduler**; per-node detail only at `-v=6` /
-  `--detailed-fit-errors=true`, which step 4's script reconstructs without flipping flags.
+- `PodSchedulingErrors` histogram too vague -> **scheduler** at `-v=6` carries the per-node `Full fit
+  error` (same data `--detailed-fit-errors=true` puts in the verdict; step 4).
 - scheduled but not Running (`BindRequest` `.status.phase: Failed`) -> **binder** (reservation
   timeout, scale-up, bind error).
 
@@ -88,5 +83,5 @@ When the pod / PodGroup don't answer, read the owning component's logs - find it
 
 ## RBAC
 
-The verdict is in your own PodGroup. The dump needs cluster-scoped `get nodes` / `get pods -A`
-(+ `get queues` for fair-share). Lack them -> say so, don't guess.
+The verdict and fit errors are in your own PodGroup. fair-share needs cluster-scoped `get queues`;
+the scheduler logs need read access in the scheduler's namespace. Lack them -> say so, don't guess.
