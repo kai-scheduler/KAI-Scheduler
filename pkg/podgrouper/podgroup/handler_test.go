@@ -729,3 +729,102 @@ func Test_createPodGroupForMetadata(t *testing.T) {
 		})
 	}
 }
+
+func Test_ignoreFields_TopologyConstraint(t *testing.T) {
+	externalAssigned := schedulingv2alpha2.TopologyConstraint{
+		PreferredTopologyLevel: "rack",
+		RequiredTopologyLevel:  "zone",
+		Topology:               "external-assigned-topology",
+	}
+	workloadAnnotated := schedulingv2alpha2.TopologyConstraint{
+		PreferredTopologyLevel: "node",
+		RequiredTopologyLevel:  "rack",
+		Topology:               "workload-topology",
+	}
+
+	tests := []struct {
+		name     string
+		old      *schedulingv2alpha2.PodGroup
+		new      *schedulingv2alpha2.PodGroup
+		expected *schedulingv2alpha2.PodGroup
+	}{
+		{
+			name: "new has no topology - preserve external-assigned constraint",
+			old: &schedulingv2alpha2.PodGroup{
+				Spec: schedulingv2alpha2.PodGroupSpec{TopologyConstraint: externalAssigned},
+			},
+			new: &schedulingv2alpha2.PodGroup{
+				Spec: schedulingv2alpha2.PodGroupSpec{TopologyConstraint: schedulingv2alpha2.TopologyConstraint{}},
+			},
+			expected: &schedulingv2alpha2.PodGroup{
+				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{}},
+				Spec:       schedulingv2alpha2.PodGroupSpec{TopologyConstraint: externalAssigned},
+			},
+		},
+		{
+			name: "new has topology - workload annotations override external-assigned constraint",
+			old: &schedulingv2alpha2.PodGroup{
+				Spec: schedulingv2alpha2.PodGroupSpec{TopologyConstraint: externalAssigned},
+			},
+			new: &schedulingv2alpha2.PodGroup{
+				Spec: schedulingv2alpha2.PodGroupSpec{TopologyConstraint: workloadAnnotated},
+			},
+			expected: &schedulingv2alpha2.PodGroup{
+				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{}},
+				Spec:       schedulingv2alpha2.PodGroupSpec{TopologyConstraint: workloadAnnotated},
+			},
+		},
+		{
+			name: "both empty - constraint stays empty",
+			old: &schedulingv2alpha2.PodGroup{
+				Spec: schedulingv2alpha2.PodGroupSpec{TopologyConstraint: schedulingv2alpha2.TopologyConstraint{}},
+			},
+			new: &schedulingv2alpha2.PodGroup{
+				Spec: schedulingv2alpha2.PodGroupSpec{TopologyConstraint: schedulingv2alpha2.TopologyConstraint{}},
+			},
+			expected: &schedulingv2alpha2.PodGroup{
+				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{}},
+				Spec:       schedulingv2alpha2.PodGroupSpec{TopologyConstraint: schedulingv2alpha2.TopologyConstraint{}},
+			},
+		},
+		{
+			name: "old empty, new has topology - use workload annotations",
+			old: &schedulingv2alpha2.PodGroup{
+				Spec: schedulingv2alpha2.PodGroupSpec{TopologyConstraint: schedulingv2alpha2.TopologyConstraint{}},
+			},
+			new: &schedulingv2alpha2.PodGroup{
+				Spec: schedulingv2alpha2.PodGroupSpec{TopologyConstraint: workloadAnnotated},
+			},
+			expected: &schedulingv2alpha2.PodGroup{
+				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{}},
+				Spec:       schedulingv2alpha2.PodGroupSpec{TopologyConstraint: workloadAnnotated},
+			},
+		},
+		{
+			name: "new has only topology level but no topology name - preserve external-assigned constraint",
+			old: &schedulingv2alpha2.PodGroup{
+				Spec: schedulingv2alpha2.PodGroupSpec{TopologyConstraint: externalAssigned},
+			},
+			new: &schedulingv2alpha2.PodGroup{
+				Spec: schedulingv2alpha2.PodGroupSpec{
+					TopologyConstraint: schedulingv2alpha2.TopologyConstraint{PreferredTopologyLevel: "node"},
+				},
+			},
+			expected: &schedulingv2alpha2.PodGroup{
+				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{}},
+				Spec:       schedulingv2alpha2.PodGroupSpec{TopologyConstraint: externalAssigned},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := &Handler{}
+			result := handler.ignoreFields(tt.old, tt.new)
+
+			if diff := cmp.Diff(tt.expected, result); diff != "" {
+				t.Errorf("ignoreFields() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
