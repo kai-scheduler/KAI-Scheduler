@@ -12,10 +12,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - Podgrouper now preserves an existing PodGroup's topology constraint when the workload does not specify one, so an externally-assigned topology is not overwritten. Workload topology annotations still take precedence when present.
 
+
+
 ### Fixed
 - Fixed reclaim abandoning valid over-quota victims when an unrelated under-deserved queue appeared earlier in victim ordering. [#1750](https://github.com/kai-scheduler/KAI-Scheduler/issues/1750)
 - Restricted Helm post-delete cleanup to KAI operator-managed Deployments and preserved externally managed `kai-config` resources when `kaiConfigDeployer.enabled=false`.
 - Scheduler cache now filters terminal Pods at watch time to reduce memory use, while still watching Pods bound by other schedulers so their resource usage is counted in allocatable calculations. [#1645](https://github.com/kai-scheduler/KAI-Scheduler/issues/1645) [enoodle](https://github.com/enoodle)
+- Fix the MinNodeGPUMemoryMiB calculation in the scheduler. This affected allocations for fractional pod requesting gpu "gpu-memory". [#1792](https://github.com/kai-scheduler/KAI-Scheduler/issues/1792) [davidLif](https://github.com/davidLif)
+- Use the maximum gpu size ine the cluster rather then the minimum when checking a potential overLimit or isNonPreemptebleOverquota for a pod. [#1792](https://github.com/kai-scheduler/KAI-Scheduler/issues/1792) [davidLif](https://github.com/davidLif)
 
 ## [v0.16.0] - 2026-06-24
 
