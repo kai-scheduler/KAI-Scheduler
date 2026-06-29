@@ -136,7 +136,8 @@ func (c *ClusterInfo) Snapshot() (*api.ClusterInfo, error) {
 
 	snapshot.ResourceVectorMap = resource_info.NewResourceVectorMap()
 
-	snapshot.Nodes, snapshot.MinNodeGPUMemory, err = c.snapshotNodes(c.clusterPodAffinityInfo, snapshot.ResourceVectorMap)
+	snapshot.Nodes, snapshot.MinNodeGPUMemoryMiB, snapshot.MaxNodeGPUMemoryMiB, err = c.snapshotNodes(
+		c.clusterPodAffinityInfo, snapshot.ResourceVectorMap)
 	if err != nil {
 		err = errors.WithStack(fmt.Errorf("error snapshotting nodes: %w", err))
 		return nil, err
@@ -246,16 +247,17 @@ func (c *ClusterInfo) Snapshot() (*api.ClusterInfo, error) {
 func (c *ClusterInfo) snapshotNodes(
 	clusterPodAffinityInfo pod_affinity.ClusterPodAffinityInfo,
 	vectorMap *resource_info.ResourceVectorMap,
-) (nodesMap map[string]*node_info.NodeInfo, minimalNodeGPUMemory int64, err error) {
+) (nodesMap map[string]*node_info.NodeInfo, minimalNodeGPUMemory *int64, maximalNodeGPUMemory *int64, err error) {
 	nodes, err := c.dataLister.ListNodes()
 	if err != nil {
-		return nil, 0, fmt.Errorf("error listing nodes: %w", err)
+		return nil, nil, nil, fmt.Errorf("error listing nodes: %w", err)
 	}
 	if c.restrictNodeScheduling {
 		nodes = filterUnmarkedNodes(nodes)
 	}
 
-	var minGPUMemory int64 = node_info.DefaultGpuMemory
+	minimalNodeGPUMemory = nil
+	maximalNodeGPUMemory = nil
 
 	resultNodes := map[string]*node_info.NodeInfo{}
 	for _, node := range nodes {
@@ -265,13 +267,18 @@ func (c *ClusterInfo) snapshotNodes(
 		resultNodes[node.Name] = node_info.NewNodeInfo(node, podAffinityInfo, vectorMap)
 		nodeGPUMemory := resultNodes[node.Name].MemoryOfEveryGpuOnNode
 		if nodeGPUMemory > node_info.DefaultGpuMemory {
-			minGPUMemory = min(minGPUMemory, resultNodes[node.Name].MemoryOfEveryGpuOnNode)
+			if minimalNodeGPUMemory == nil || *minimalNodeGPUMemory > nodeGPUMemory {
+				minimalNodeGPUMemory = &nodeGPUMemory
+			}
+			if maximalNodeGPUMemory == nil || *maximalNodeGPUMemory < nodeGPUMemory {
+				maximalNodeGPUMemory = &nodeGPUMemory
+			}
 		}
 	}
 
 	c.populateDRAGPUs(resultNodes)
 	c.populateNodeResourceTopologies(resultNodes)
-	return resultNodes, minGPUMemory, nil
+	return resultNodes, minimalNodeGPUMemory, maximalNodeGPUMemory, nil
 }
 
 // populateNodeResourceTopologies attaches each node's NodeResourceTopology object to the corresponding NodeInfo.

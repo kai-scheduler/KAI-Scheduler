@@ -95,7 +95,7 @@ type CompareQueueFn func(
 	lQ, rQ *queue_info.QueueInfo,
 	lJob, rJob *podgroup_info.PodGroupInfo,
 	lVictims, rVictims []*podgroup_info.PodGroupInfo,
-	minNodeGPUMemory int64,
+	minNodeGPUMemory *int64,
 ) int
 
 type SchedulableResult struct {
