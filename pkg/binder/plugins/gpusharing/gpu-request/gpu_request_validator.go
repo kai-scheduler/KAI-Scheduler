@@ -85,6 +85,12 @@ func validateGpuFractionAnnotation(hasGpuFractionAnnotation bool, gpuFractionFro
 	if math.IsNaN(gpuFraction) {
 		return fmt.Errorf("gpu-fraction annotation value must be a valid number. NaN is not allowed")
 	}
+	_, err := resource.ParseQuantity(gpuFractionFromAnnotation)
+	if err != nil {
+		return fmt.Errorf(
+			"gpu-fraction annotation value must be a float written with a decimal point or a scientific notation .given value: %s",
+			gpuFractionFromAnnotation)
+	}
 	return nil
 }
 
