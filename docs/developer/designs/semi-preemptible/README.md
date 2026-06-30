@@ -40,6 +40,25 @@ Since pods are always attached to leaf PodSets and never to intermediate SubGrou
 
 When a parent node requires fewer children than are actually scheduled (i.e., some children are "extra" from the scheduling perspective), each child's core/elastic split is still determined independently by that child's own `minMember`. The "extra-ness" is a scheduling-gate concept handled by the existing elastic subgroup scheduling; it does not override the per-subgroup semi-preemptible semantics.
 
+## Interaction with Segmented Subgroups
+
+Semi-preemptible is **mutually exclusive with automatic segmentation** (the `kai.scheduler/segment-size`
+annotation, wired for `PyTorchJob` Worker replicas and `LeaderWorkerSet`). Automatic segmentation emits a
+fully-gang tree — every segment leaf gets `MinMember = segmentSize`, no `minSubGroup` and no `MinMember = 0`
+— so the job has no elastic surplus. Semi-preemptible therefore has nothing to make preemptible and collapses
+to non-preemptible.
+
+This is **soft-enforced in the podgrouper**, not in an admission webhook: only the grouper has both the
+segmentation decision and the resolved preemptibility at full fidelity, and for auto-segmented workloads the
+user submits the source workload (PyTorchJob/LWS) rather than the PodGroup, so a Warning event on the pod is
+more visible than a PodGroup-webhook warning. When a workload is both auto-segmented and semi-preemptible, the
+LWS/PyTorch grouper records a warning on the PodGroup metadata (`podgroup.Metadata.Warnings`) and the pod
+controller surfaces it as a `PodGrouperWarning` event. The PodGroup is still created unchanged; the warning is
+non-blocking.
+
+Hand-authored `minSubGroup` SubGroup trees are **not** affected — those are the intended way to get
+subgroup-level elasticity with semi-preemptible, and they do not pass through the segmentation code path.
+
 ## Immutability Constraint
 
 A validation webhook must **prevent increases** to `minMember` and `minSubGroups` on a semi-preemptible PodGroup after creation. This applies to the root PodGroup spec and to all SubGroup entries within it.

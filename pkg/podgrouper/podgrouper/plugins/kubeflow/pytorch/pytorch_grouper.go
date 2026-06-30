@@ -59,29 +59,31 @@ func (ptg *PyTorchGrouper) GetPodGroupMetadata(
 		podGroupMetadata.MinAvailable = int32(minAvailable)
 	}
 
-	subGroups, err := ptg.buildSubGroups(topOwner, pod, podGroupMetadata.MinAvailable)
+	subGroups, segmented, err := ptg.buildSubGroups(topOwner, pod, podGroupMetadata.MinAvailable)
 	if err != nil {
 		return nil, err
 	}
 	podGroupMetadata.SubGroups = subGroups
+	podGroupMetadata.WarnIfSemiPreemptibleSegmented(segmented)
 
 	return podGroupMetadata, nil
 }
 
+// buildSubGroups returns the subgroup tree and whether worker segmentation was applied.
 func (ptg *PyTorchGrouper) buildSubGroups(
 	topOwner *unstructured.Unstructured, pod *v1.Pod, totalMinAvailable int32,
-) ([]*podgroup.SubGroupMetadata, error) {
+) ([]*podgroup.SubGroupMetadata, bool, error) {
 	replicaSpecs, found, err := unstructured.NestedMap(topOwner.Object, "spec", "pytorchReplicaSpecs")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get pytorchReplicaSpecs from PyTorchJob %s/%s. Err: %w", topOwner.GetNamespace(), topOwner.GetName(), err)
+		return nil, false, fmt.Errorf("failed to get pytorchReplicaSpecs from PyTorchJob %s/%s. Err: %w", topOwner.GetNamespace(), topOwner.GetName(), err)
 	}
 	if !found {
-		return nil, fmt.Errorf("pytorchReplicaSpecs not found in PyTorchJob %s/%s", topOwner.GetNamespace(), topOwner.GetName())
+		return nil, false, fmt.Errorf("pytorchReplicaSpecs not found in PyTorchJob %s/%s", topOwner.GetNamespace(), topOwner.GetName())
 	}
 
 	masterReplicas, found, err := unstructured.NestedInt64(replicaSpecs, replicaTypeMaster, "replicas")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get replicas from pytorchReplicaSpecs[%s] in PyTorchJob %s/%s. Err: %w", replicaTypeMaster, topOwner.GetNamespace(), topOwner.GetName(), err)
+		return nil, false, fmt.Errorf("failed to get replicas from pytorchReplicaSpecs[%s] in PyTorchJob %s/%s. Err: %w", replicaTypeMaster, topOwner.GetNamespace(), topOwner.GetName(), err)
 	}
 	if !found {
 		masterReplicas = 0
@@ -95,13 +97,13 @@ func (ptg *PyTorchGrouper) buildSubGroups(
 	}
 
 	workerMinAvailable := max(0, totalMinAvailable-int32(masterReplicas))
-	workerSubGroups, err := buildWorkerSubGroups(replicaSpecs, pod, workerMinAvailable, topOwner)
+	workerSubGroups, segmented, err := buildWorkerSubGroups(replicaSpecs, pod, workerMinAvailable, topOwner)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	subGroups = append(subGroups, workerSubGroups...)
 
-	return subGroups, nil
+	return subGroups, segmented, nil
 }
 
 func buildMasterSubGroup(replicaSpecs map[string]interface{}, pod *v1.Pod, masterReplicas int32) *podgroup.SubGroupMetadata {
@@ -124,16 +126,17 @@ func buildMasterSubGroup(replicaSpecs map[string]interface{}, pod *v1.Pod, maste
 	}
 }
 
+// buildWorkerSubGroups returns the worker subgroup tree and whether segmentation was applied.
 func buildWorkerSubGroups(
 	replicaSpecs map[string]interface{}, pod *v1.Pod, workerMinAvailable int32, topOwner *unstructured.Unstructured,
-) ([]*podgroup.SubGroupMetadata, error) {
+) ([]*podgroup.SubGroupMetadata, bool, error) {
 	if _, exists := replicaSpecs[replicaTypeWorker]; !exists {
-		return nil, nil
+		return nil, false, nil
 	}
 
 	workerReplicas, found, err := unstructured.NestedInt64(replicaSpecs, replicaTypeWorker, "replicas")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get replicas for worker groups. Err: %w", err)
+		return nil, false, fmt.Errorf("failed to get replicas for worker groups. Err: %w", err)
 	}
 	if !found {
 		workerReplicas = 1
@@ -146,14 +149,14 @@ func buildWorkerSubGroups(
 
 	segmentSize, found, err := getSegmentSize(pod, replicaSpecs)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if !found {
 		return []*podgroup.SubGroupMetadata{{
 			Name:           strings.ToLower(replicaTypeWorker),
 			MinAvailable:   workerMinAvailable,
 			PodsReferences: podReferences,
-		}}, nil
+		}}, false, nil
 	}
 
 	workers := int(workerReplicas)
@@ -164,7 +167,7 @@ func buildWorkerSubGroups(
 	}
 	segmentIndex, err := getPodSegmentIndex(pod, segmentSize)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	topologyConstraints := getSegmentTopologyConstraints(pod, replicaSpecs, topOwner)
@@ -189,7 +192,7 @@ func buildWorkerSubGroups(
 		subGroups = append(subGroups, subGroup)
 	}
 
-	return subGroups, nil
+	return subGroups, true, nil
 }
 
 // Returns the segment index for the pod. Returns -1 if the pod is not a worker pod.

@@ -1,0 +1,57 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# A semi-preemptible elastic PyTorchJob: the minReplicas (1) "core" pod is non-preemptible
+# and stays in-quota, while the additional elastic workers (up to replicas) may be scheduled
+# over-quota and are preempted first when higher-priority workloads need the resources.
+#
+# Note: semi-preemptible has no effect when combined with automatic segmentation
+# (kai.scheduler/segment-size). A segmented workload is fully gang and behaves as
+# non-preemptible; the podgrouper emits a Warning event in that case.
+apiVersion: "kubeflow.org/v1"
+kind: PyTorchJob
+metadata:
+  name: semi-preemptible-example-imagenet
+  labels:
+    kai.scheduler/queue: default-queue
+    kai.scheduler/preemptibility: semi-preemptible
+spec:
+  elasticPolicy:
+    rdzvBackend: c10d
+    minReplicas: 1
+    maxReplicas: 3
+    maxRestarts: 100
+    metrics:
+      - type: Resource
+        resource:
+          name: cpu
+          target:
+            type: Utilization
+            averageUtilization: 80
+  pytorchReplicaSpecs:
+    Worker:
+      replicas: 3
+      restartPolicy: OnFailure
+      template:
+        spec:
+          schedulerName: kai-scheduler
+          containers:
+            - name: pytorch
+              image: kubeflow/pytorch-elastic-example-imagenet:latest
+              imagePullPolicy: IfNotPresent
+              resources:
+                requests:
+                  cpu: 4
+              env:
+                - name: LOGLEVEL
+                  value: DEBUG
+              command:
+                - python
+                - -m
+                - torch.distributed.run
+                - /workspace/examples/imagenet.py
+                - "--arch=resnet18"
+                - "--epochs=1"
+                - "--batch-size=32"
+                - "--workers=0"
+                - "/workspace/data/tiny-imagenet-200"
