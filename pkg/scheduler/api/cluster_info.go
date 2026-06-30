@@ -59,7 +59,8 @@ type ClusterInfo struct {
 	ConfigMaps                  map[common_info.ConfigMapID]*configmap_info.ConfigMapInfo
 	Topologies                  []*kaiv1alpha1.Topology
 
-	MinNodeGPUMemory int64
+	MinNodeGPUMemoryMiB *int64 // nil if no node has GPUs
+	MaxNodeGPUMemoryMiB *int64 // nil if no node has GPUs
 
 	// Shared resource vector index map for this scheduling cycle
 	ResourceVectorMap *resource_info.ResourceVectorMap

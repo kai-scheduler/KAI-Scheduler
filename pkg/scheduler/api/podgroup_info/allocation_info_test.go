@@ -308,7 +308,7 @@ func Test_GetTasksToAllocateRequestedGPUs(t *testing.T) {
 
 func Test_GetTasksToAllocateInitResourceVector(t *testing.T) {
 	// Nil case
-	res := GetTasksToAllocateInitResourceVector(nil, subGroupOrderFn, tasksOrderFn, true, 0)
+	res := GetTasksToAllocateInitResourceVector(nil, subGroupOrderFn, tasksOrderFn, true, nil)
 	if res != nil {
 		t.Error("nil expected for nil pg")
 	}
@@ -331,7 +331,7 @@ func Test_GetTasksToAllocateInitResourceVector(t *testing.T) {
 	task2.VectorMap = vectorMap
 	pg.AddTaskInfo(task2)
 
-	vec := GetTasksToAllocateInitResourceVector(pg, subGroupOrderFn, tasksOrderFn, true, 0)
+	vec := GetTasksToAllocateInitResourceVector(pg, subGroupOrderFn, tasksOrderFn, true, nil)
 	cpuIdx := resource_info.CPUIndex
 	memIdx := resource_info.MemoryIndex
 	gpuIdx := resource_info.GPUIndex
@@ -347,7 +347,7 @@ func Test_GetTasksToAllocateInitResourceVector(t *testing.T) {
 	}
 
 	// Caching: second call should return same slice
-	vec2 := GetTasksToAllocateInitResourceVector(pg, subGroupOrderFn, tasksOrderFn, true, 0)
+	vec2 := GetTasksToAllocateInitResourceVector(pg, subGroupOrderFn, tasksOrderFn, true, nil)
 	if len(vec) != len(vec2) {
 		t.Fatal("cached vector length mismatch")
 	}

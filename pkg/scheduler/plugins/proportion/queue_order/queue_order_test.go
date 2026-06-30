@@ -17,6 +17,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/subgrouporder"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/taskorder"
+	"k8s.io/utils/ptr"
 )
 
 type testMetadata struct {
@@ -27,7 +28,7 @@ type testMetadata struct {
 	rJobInfo         *podgroup_info.PodGroupInfo
 	expectedResult   int
 	totalResources   resource_share.ResourceQuantities
-	minNodeGPUMemory int64
+	minNodeGPUMemory *int64
 }
 
 var testVectorMap = resource_info.NewResourceVectorMap()
@@ -258,7 +259,7 @@ func TestGetQueueOrderResult(t *testing.T) {
 			rJobInfo:         createPodGroupWithGpuMemoryTask("rJob", 2, 10000),
 			expectedResult:   lQueuePrioritized,
 			totalResources:   resource_share.ResourceQuantities{resource_share.GpuResource: 100},
-			minNodeGPUMemory: 10000,
+			minNodeGPUMemory: ptr.To(int64(10000)),
 		},
 		{
 			Name: "GPU memory affects queue order - higher memory request deprioritized",
@@ -300,7 +301,7 @@ func TestGetQueueOrderResult(t *testing.T) {
 			rJobInfo:         createPodGroupWithGpuMemoryTask("rJobLow", 4, 2000),
 			expectedResult:   rQueuePrioritized,
 			totalResources:   resource_share.ResourceQuantities{resource_share.GpuResource: 100},
-			minNodeGPUMemory: 10000,
+			minNodeGPUMemory: ptr.To(int64(10000)),
 		},
 	}
 
