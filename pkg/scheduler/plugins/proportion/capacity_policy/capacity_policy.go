@@ -63,8 +63,9 @@ func (cp *CapacityPolicy) IsTaskAllocationOnNodeOverCapacity(task *pod_info.PodI
 		requiredInitQuota[resource_info.MemoryIndex],
 		requiredInitQuota[resource_info.GPUIndex])
 
-	// Elastic tasks of a semi-preemptible job are not subject to non-preemptible quota.
-	if job.IsSemiPreemptibleJob() && !isTaskCoreForSemiPreemptibleJob(task, job) {
+	// Elastic tasks of a semi-preemptible job (allocated beyond its minimal satisfying set) are not
+	// subject to non-preemptible quota.
+	if job.IsSemiPreemptibleJob() && podgroup_info.IsMinRequirementSatisfied(job) {
 		return cp.resultsOverLimit(requestedShare, job)
 	}
 	checkFns := []capacityCheckFn{cp.resultsOverLimit, cp.resultsWithNonPreemptibleOverQuota}
@@ -84,54 +85,15 @@ func (cp *CapacityPolicy) isJobOverCapacity(requestedShare rs.ResourceQuantities
 	return Schedulable()
 }
 
-// getCoreRequiredQuota computes the non-preemptible resource quota for a semi-preemptible job,
-// counting only core tasks (up to minMember per PodSet, accounting for already-allocated tasks).
+// getCoreRequiredQuota computes the non-preemptible resource quota for a semi-preemptible job.
+// tasksToAllocate is a single batch from GetTasksToAllocate: a gang-phase batch (the whole minimal
+// satisfying set being assembled, all core) while the job's minimum is unmet, or an elastic burst
+// (none core) once it is met. This matches the tree-aware core set used for accounting and eviction.
 func (cp *CapacityPolicy) getCoreRequiredQuota(tasksToAllocate []*pod_info.PodInfo, job *podgroup_info.PodGroupInfo) rs.ResourceQuantities {
-	return getRequiredQuota(filterCoreTasksToAllocate(tasksToAllocate, job), cp.minNodeGPUMemory)
-}
-
-// filterCoreTasksToAllocate returns the subset of tasksToAllocate that are "core" (non-preemptible)
-// for a semi-preemptible job. A task is core if its PodSet has fewer than minMember allocated tasks.
-func filterCoreTasksToAllocate(tasksToAllocate []*pod_info.PodInfo, job *podgroup_info.PodGroupInfo) []*pod_info.PodInfo {
-	tasksByPodSet := map[string][]*pod_info.PodInfo{}
-	for _, task := range tasksToAllocate {
-		name := task.SubGroupName
-		if name == "" {
-			name = podgroup_info.DefaultSubGroup
-		}
-		tasksByPodSet[name] = append(tasksByPodSet[name], task)
+	if podgroup_info.IsMinRequirementSatisfied(job) {
+		return rs.EmptyResourceQuantities()
 	}
-
-	var coreTasks []*pod_info.PodInfo
-	for podSetName, tasks := range tasksByPodSet {
-		podSet, found := job.PodSets[podSetName]
-		if !found {
-			coreTasks = append(coreTasks, tasks...)
-			continue
-		}
-		coreCount := int(podSet.GetMinAvailable()) - podSet.GetNumActiveAllocatedTasks()
-		if coreCount > len(tasks) {
-			coreCount = len(tasks)
-		}
-		if coreCount > 0 {
-			coreTasks = append(coreTasks, tasks[:coreCount]...)
-		}
-	}
-	return coreTasks
-}
-
-// isTaskCoreForSemiPreemptibleJob returns true if the task is a core (non-preemptible) task
-// in its PodSet, i.e. the PodSet has fewer allocated tasks than minMember.
-func isTaskCoreForSemiPreemptibleJob(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo) bool {
-	podSetName := task.SubGroupName
-	if podSetName == "" {
-		podSetName = podgroup_info.DefaultSubGroup
-	}
-	podSet, found := job.PodSets[podSetName]
-	if !found {
-		return true
-	}
-	return podSet.GetNumActiveAllocatedTasks() < int(podSet.GetMinAvailable())
+	return getRequiredQuota(tasksToAllocate, cp.maxNodeGPUMemoryMiB)
 }
 
 // getRequiredQuota calculates the required quota for a job based on the tasks to allocate and the max node GPU memory.
