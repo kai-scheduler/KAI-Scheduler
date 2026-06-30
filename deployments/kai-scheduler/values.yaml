@@ -39,8 +39,6 @@ global:
     serviceAccount: kai-resource-reservation
     appLabel: kai-resource-reservation
     namespaceLabels: {}
-    # createNamespace controls whether the chart creates the resource-reservation namespace.
-    # Set to false when embedding KAI in a parent chart that creates this namespace itself.
     createNamespace: true
 
 operator:
