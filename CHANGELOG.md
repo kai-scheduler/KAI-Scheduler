@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- Fix the MinNodeGPUMemoryMiB calculation in the scheduler. This affected allocations for fractional pod requesting gpu "gpu-memory". [#1795](https://github.com/kai-scheduler/KAI-Scheduler/issues/1795) [davidLif](https://github.com/davidLif)
+- Use the maximum gpu size ine the cluster rather then the minimum when checking a potential overLimit or isNonPreemptebleOverquota for a pod. [#1792](https://github.com/kai-scheduler/KAI-Scheduler/issues/1795) [davidLif](https://github.com/davidLif)
+
 ## [v0.16.1] - 2026-06-28
 
 ### Added
@@ -17,8 +21,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 - Restricted Helm post-delete cleanup to KAI operator-managed Deployments and preserved externally managed `kai-config` resources when `kaiConfigDeployer.enabled=false`.
 - Scheduler cache now filters terminal Pods at watch time to reduce memory use, while still watching Pods bound by other schedulers so their resource usage is counted in allocatable calculations. [#1645](https://github.com/kai-scheduler/KAI-Scheduler/issues/1645) [enoodle](https://github.com/enoodle)
-- Fix the MinNodeGPUMemoryMiB calculation in the scheduler. This affected allocations for fractional pod requesting gpu "gpu-memory". [#1792](https://github.com/kai-scheduler/KAI-Scheduler/issues/1792) [davidLif](https://github.com/davidLif)
-- Use the maximum gpu size ine the cluster rather then the minimum when checking a potential overLimit or isNonPreemptebleOverquota for a pod. [#1792](https://github.com/kai-scheduler/KAI-Scheduler/issues/1792) [davidLif](https://github.com/davidLif)
 
 ## [v0.16.0] - 2026-06-24
 
