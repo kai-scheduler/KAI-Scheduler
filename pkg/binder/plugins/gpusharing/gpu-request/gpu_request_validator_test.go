@@ -406,6 +406,24 @@ func TestValidateGpuRequests(t *testing.T) {
 			},
 			error: nil,
 		},
+		{
+			name: "Block NaN fraction value",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						constants.GpuFraction: "NaN",
+					},
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Resources: v1.ResourceRequirements{},
+						},
+					},
+				},
+			},
+			error: fmt.Errorf("gpu-fraction annotation value must be a valid number. NaN is not allowed"),
+		},
 	}
 
 	for _, tt := range tests {
