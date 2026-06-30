@@ -488,7 +488,7 @@ func TestSnapshotNodes(t *testing.T) {
 
 			allPods, _ := clusterInfo.dataLister.ListPods()
 			vectorMap := resource_info.NewResourceVectorMap()
-			nodes, _, err := clusterInfo.snapshotNodes(clusterPodAffinityInfo, vectorMap)
+			nodes, _, _, err := clusterInfo.snapshotNodes(clusterPodAffinityInfo, vectorMap)
 			if err != nil {
 				assert.FailNow(t, fmt.Sprintf("SnapshotNode got error in test %s", t.Name()), err)
 			}
@@ -2600,7 +2600,7 @@ func TestSnapshotNodesWithDRAGPUs(t *testing.T) {
 			}
 
 			vectorMap := resource_info.NewResourceVectorMap()
-			nodes, _, err := ci.snapshotNodes(clusterPodAffinityInfo, vectorMap)
+			nodes, _, _, err := ci.snapshotNodes(clusterPodAffinityInfo, vectorMap)
 			assert.NoError(t, err)
 
 			for nodeName, expectedGPUs := range test.expectedDRAGPUs {
@@ -2646,7 +2646,7 @@ func TestSnapshotNodesWithNodeResourceTopology(t *testing.T) {
 		clusterPodAffinityInfo: clusterPodAffinityInfo,
 	}
 
-	result, _, err := ci.snapshotNodes(clusterPodAffinityInfo, resource_info.NewResourceVectorMap())
+	result, _, _, err := ci.snapshotNodes(clusterPodAffinityInfo, resource_info.NewResourceVectorMap())
 	assert.NoError(t, err)
 
 	assert.NotNil(t, result["node-a"].NodeResourceTopology, "NRT should be attached to node-a")

@@ -421,6 +421,93 @@ func getMemoryGPUTestsMetadata() []integration_tests_utils.TestTopologyMetadata 
 			},
 		},
 		{
+			// 3 nodes with different GPU memory sizes per GPU.
+			// running-job takes all 2 GPUs of node-large (2000 MiB/GPU, the largest).
+			// pending-job requests 350 MiB and cannot be scheduled:
+			//   - node-small (400 MiB): 350/400 = 0.875 > 0.5 deserved → overlimit
+			//   - node-medium (600 MiB): 350/600 ≈ 0.583 > 0.5 → overlimit
+			//   - node-large (2000 MiB): 350/2000 = 0.175 < 0.5 → NOT overlimit, but full
+			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Name: "pending job requests gpu memory - overlimit on available nodes, not overlimit on full largest-memory node",
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:                "running-job",
+						RequiredGPUsPerTask: 1,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "queue1",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								NodeName: "node-large",
+								State:    pod_status.Running,
+							},
+							{
+								NodeName: "node-large",
+								State:    pod_status.Running,
+							},
+						},
+					},
+					{
+						Name:              "pending-job",
+						RequiredGpuMemory: 350,
+						Priority:          constants.PriorityBuildNumber,
+						QueueName:         "queue0",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								State: pod_status.Pending,
+							},
+						},
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node-small": {
+						GPUs:      1,
+						GPUMemory: 400,
+					},
+					"node-medium": {
+						GPUs:      1,
+						GPUMemory: 600,
+					},
+					"node-large": {
+						GPUs:      2,
+						GPUMemory: 2000,
+					},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{
+						Name:         "queue0",
+						DeservedGPUs: 0.5,
+					},
+					{
+						Name:         "queue1",
+						DeservedGPUs: 2,
+					},
+				},
+				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"running-job": {
+						NodeName:     "node-large",
+						GPUsRequired: 2,
+						Status:       pod_status.Running,
+					},
+					"pending-job": {
+						Status: pod_status.Pending,
+						ExpectedErrorMessage: "\nPodSchedulingErrors.\nResources were not found for pod /pending-job-0 due to: " +
+							"no nodes with enough resources were found: " +
+							"1 node does not have enough capacity. Reason: NonPreemptibleOverQuota, Details: " +
+							"Non-preemptible workload is over quota. Workload requested 0.59 GPUs, but queue0 quota is 0.5 GPUs, " +
+							"while 0 GPUs are already allocated for non-preemptible pods. Use a preemptible workload to go over quota.. \n" +
+							"1 node does not have enough capacity. Reason: NonPreemptibleOverQuota, Details: " +
+							"Non-preemptible workload is over quota. Workload requested 0.88 GPUs, but queue0 quota is 0.5 GPUs, " +
+							"while 0 GPUs are already allocated for non-preemptible pods. Use a preemptible workload to go over quota...",
+					},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{
+						NumberOfCacheBinds: 0,
+					},
+				},
+			},
+		},
+		{
 			// A task requesting 2 GPU-memory devices (2×60 MiB) needs 1.2 GPU-fraction units
 			// (2 × 60/100). With DeservedGPUs=1 the job must stay pending.
 			//

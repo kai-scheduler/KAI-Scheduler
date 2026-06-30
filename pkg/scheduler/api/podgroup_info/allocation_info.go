@@ -154,9 +154,16 @@ func GetTasksToAllocateRequestedGPUs(
 	return tasksTotalRequestedGPUs, tasksTotalRequestedGpuMemory
 }
 
+// GetTasksToAllocateInitResourceVector returns the aggregated resource vector of the tasks to
+// allocate, converting GPU-memory requests to a GPU fraction using minNodeGPUMemory (the smallest
+// per-GPU memory in the cluster) as a conservative upper-bound divisor; nil minNodeGPUMemory skips
+// the conversion (no node advertises GPU memory, so such requests are unschedulable anyway).
+// The result is cached on the PodGroupInfo and the cache does NOT key on the divisor: this function
+// must only ever be called with the min divisor. Quota/limit accounting that needs a different
+// divisor (e.g. capacity_policy's max) must compute its own conversion, not route through here.
 func GetTasksToAllocateInitResourceVector(
 	podGroupInfo *PodGroupInfo, subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn,
-	isRealAllocation bool, minNodeGPUMemory int64,
+	isRealAllocation bool, minNodeGPUMemory *int64,
 ) resource_info.ResourceVector {
 	if podGroupInfo == nil {
 		return nil
@@ -170,8 +177,8 @@ func GetTasksToAllocateInitResourceVector(
 	for _, task := range GetTasksToAllocate(podGroupInfo, subGroupOrderFn, taskOrderFn, isRealAllocation) {
 		if task.ShouldAllocate(isRealAllocation) {
 			result.Add(task.ResReqVector)
-			if task.IsGpuMemoryRequest() && minNodeGPUMemory > 0 {
-				result.Set(gpuIdx, result.Get(gpuIdx)+task.GpuRequirement.GpuMemoryAsGpuFraction(minNodeGPUMemory))
+			if task.IsGpuMemoryRequest() && minNodeGPUMemory != nil {
+				result.Set(gpuIdx, result.Get(gpuIdx)+task.GpuRequirement.GpuMemoryAsGpuFraction(*minNodeGPUMemory))
 			}
 		}
 	}
