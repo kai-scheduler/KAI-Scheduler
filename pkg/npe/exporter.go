@@ -25,6 +25,8 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/npe/placement"
 )
 
+// +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;patch
+
 // resourceLister lists per-pod resource allocations from the local kubelet. *podresources.Client
 // satisfies it; the interface keeps the exporter testable without a real podresources socket.
 type resourceLister interface {

@@ -18,6 +18,7 @@ global:
   tolerations: []
   namespaceLabelSelector: {}
   podLabelSelector: {}
+  nodePoolLabelKey: ""
   jsonLog: false
   vpa:
     enabled: false
@@ -149,6 +150,8 @@ scheduler:
   #   mycustomaction:
   #     priority: 150
   actions: {}
+  # Alpha/experimental scenario search time budgets. Values are Go duration strings.
+  scenarioSearchBudgets: {}
 
 # defaultShard controls the chart-managed "default" SchedulingShard CR,
 # whose spec is populated from the scheduler.* values above.
@@ -156,6 +159,21 @@ scheduler:
 # (e.g. to manage shards out-of-band).
 defaultShard:
   enabled: true
+
+numaPlacementExporter:
+  image:
+    name: numa-placement-exporter
+    pullPolicy: IfNotPresent
+    # tag: ""  # Optional: Override global.tag or Chart.AppVersion
+  # nodeSelector targets the DaemonSet at specific nodes (e.g. GPU/NUMA nodes). The global
+  # nodeSelector is intentionally NOT applied to this DaemonSet.
+  nodeSelector: {}
+  # tolerations let the DaemonSet run on tainted worker nodes (merged with global.daemonsetsTolerations).
+  tolerations: []
+  affinity: {}
+  resources: {}
+  # pollInterval: 1s
+  # driftResyncInterval: 60s
 
 queuecontroller:
   enabled: true
@@ -208,7 +226,8 @@ crdupgrader:
 
 kaiConfigDeployer:
   # Post-install/post-upgrade hook that applies the kai-config CR out-of-release (#1536).
-  # Disable to manage the kai-config CR outside of this chart.
+  # Disable to manage the kai-config CR outside of this chart. When disabled, the chart
+  # neither creates kai-config nor deletes it during post-delete cleanup.
   enabled: true
   image:
     name: crd-upgrader
@@ -239,6 +258,12 @@ postCleanup:
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   serviceAccountName: post-delete-cleanup
   resources: {}
+
+# defaultPriorityClasses controls the chart-managed build, train, inference, and
+# build-preemptible PriorityClasses. Disable when these cluster-scoped resources
+# are managed externally.
+defaultPriorityClasses:
+  enabled: true
 
 prometheus:
   # Enable Prometheus integration for time-aware fairness features.

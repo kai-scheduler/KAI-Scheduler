@@ -5,16 +5,32 @@ suite: test post-delete cleanup hook
 templates:
   - hooks/post/post-delete-job.yaml
 tests:
-  - it: should use release namespace in kubectl delete deployment command
+  - it: should delete only operator-managed deployments in the release namespace
     release:
       namespace: custom-ns
     asserts:
       - matchRegex:
           path: spec.template.spec.containers[0].command[2]
-          pattern: kubectl -n custom-ns delete deployment --all --ignore-not-found=true
+          pattern: kubectl -n custom-ns delete deployment --selector=app.kubernetes.io/managed-by=kai-operator --ignore-not-found=true
       - notMatchRegex:
           path: spec.template.spec.containers[0].command[2]
-          pattern: kubectl -n kai-scheduler delete deployment
+          pattern: delete deployments? --all
+
+  - it: should delete kai-config when the config deployer is enabled
+    set:
+      kaiConfigDeployer.enabled: true
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: kubectl delete Config kai-config --ignore-not-found
+
+  - it: should preserve kai-config when the config deployer is disabled
+    set:
+      kaiConfigDeployer.enabled: false
+    asserts:
+      - notMatchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: kubectl delete Config kai-config
 
   - it: should place the cleanup job in the release namespace
     release:

@@ -31,3 +31,27 @@ tests:
     asserts:
       - hasDocuments:
           count: 0
+
+  - it: should render scenario search budgets
+    set:
+      scheduler:
+        scenarioSearchBudgets:
+          maxActionSearchDuration:
+            reclaim: "2s"
+          maxJobSearchDuration: "250ms"
+          minJobSearchDuration: "0s"
+          maxGeneratorSearchDuration:
+            NodeLocalGreedy: "50ms"
+    asserts:
+      - equal:
+          path: spec.scenarioSearchBudgets.maxActionSearchDuration.reclaim
+          value: 2s
+      - equal:
+          path: spec.scenarioSearchBudgets.maxJobSearchDuration
+          value: 250ms
+      - equal:
+          path: spec.scenarioSearchBudgets.minJobSearchDuration
+          value: 0s
+      - equal:
+          path: spec.scenarioSearchBudgets.maxGeneratorSearchDuration.NodeLocalGreedy
+          value: 50ms

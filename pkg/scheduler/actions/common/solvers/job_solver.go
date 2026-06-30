@@ -6,8 +6,10 @@ package solvers
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
@@ -24,6 +26,7 @@ type JobSolver struct {
 	solutionValidator    SolutionValidator
 	generateVictimsQueue GenerateVictimsQueue
 	actionType           framework.ActionType
+	actionBudget         *ActionSearchBudget
 }
 
 type solvingState struct {
@@ -36,12 +39,26 @@ func NewJobsSolver(
 	solutionValidator SolutionValidator,
 	generateVictimsQueue GenerateVictimsQueue,
 	action framework.ActionType,
+	actionBudget *ActionSearchBudget,
 ) *JobSolver {
+	budget := actionBudget
+	if budget == nil {
+		budget = newUnlimitedActionSearchBudget(action)
+	}
 	return &JobSolver{
 		feasibleNodes:        feasibleNodes,
 		solutionValidator:    solutionValidator,
 		generateVictimsQueue: generateVictimsQueue,
 		actionType:           action,
+		actionBudget:         budget,
+	}
+}
+
+func newUnlimitedActionSearchBudget(action framework.ActionType) *ActionSearchBudget {
+	now := time.Now
+	return &ActionSearchBudget{
+		action:   action,
+		deadline: newDeadlineBudget(unlimitedRemaining, now),
 	}
 }
 
@@ -59,35 +76,104 @@ func NewJobsSolver(
 // returned statement) and is left unchanged on failure.
 func (s *JobSolver) Solve(
 	ssn *framework.Session, pendingJob *podgroup_info.PodGroupInfo) (bool, *framework.Statement, []string) {
-	state := solvingState{}
+	solved, statement, victimTaskNames, _ := s.SolveWithResult(ssn, pendingJob)
+	return solved, statement, victimTaskNames
+}
+
+// SolveWithResult attempts to solve pendingJob and returns a structured search result
+// describing why the scenario search stopped.
+func (s *JobSolver) SolveWithResult(
+	ssn *framework.Session, pendingJob *podgroup_info.PodGroupInfo,
+) (solved bool, statement *framework.Statement, victimTaskNames []string, searchResult *SearchResult) {
+	defer func() {
+		if searchResult != nil {
+			metrics.IncScenarioSearchJobs(
+				s.actionType, searchResult.scenarioSearchMetricResult(), searchResult.ReducedBudget(),
+			)
+		}
+	}()
+
 	originalNumActiveTasks := pendingJob.GetNumActiveUsedTasks()
 
 	tasksToAllocate := podgroup_info.GetTasksToAllocate(pendingJob, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false)
 	n := len(tasksToAllocate)
 	if n == 0 {
-		return false, nil, calcVictimNames(state.recordedVictimsTasks)
+		searchResult := terminalSearchResult(SearchResultGeneratorsExhausted, false)
+		searchResult.metricResult = string(SearchResultNotAttempted)
+		return false, nil, nil, searchResult
 	}
 
-	maxSolvedK := s.searchMaxSolvableK(ssn, &state, pendingJob, tasksToAllocate)
+	jobBudget := s.actionBudget.BeginJob()
+	if jobBudget.Exhausted() {
+		return false, nil, nil, terminalSearchResult(SearchResultNotAttempted, false)
+	}
+
+	if s.generateVictimsQueue == nil {
+		return false, nil, nil, terminalSearchResult(SearchResultNoGenerator, jobBudget.ReducedBudget())
+	}
+	availableGenerators := ssn.ScenarioGeneratorRegistrations
+	if len(availableGenerators) == 0 {
+		return false, nil, nil, terminalSearchResult(SearchResultNoGenerator, jobBudget.ReducedBudget())
+	}
+
+	var lastVictimTasks []*pod_info.PodInfo
+	var lastResult *SearchResult
+	for _, availableGenerator := range availableGenerators {
+		state := solvingState{}
+		generatorBudget := jobBudget.BeginGenerator(availableGenerator.Name)
+		result := s.solvePendingJobWithGenerator(
+			ssn, &state, pendingJob, tasksToAllocate, jobBudget, availableGenerator, generatorBudget,
+		)
+		lastVictimTasks = state.recordedVictimsTasks
+		lastResult = result
+
+		if resultSolved(result) {
+			solution := result.solution
+			numActiveTasks := pendingJob.GetNumActiveUsedTasks()
+			jobSolved := pendingJob.IsGangSatisfied()
+			if originalNumActiveTasks >= numActiveTasks {
+				jobSolved = false
+			}
+
+			log.InfraLogger.V(4).Infof(
+				"Scenario solved for %d tasks to allocate for %s. Victims: %s",
+				n, pendingJob.Name, victimPrintingStruct{solution.victimsTasks})
+			return jobSolved, solution.statement, calcVictimNames(solution.victimsTasks), result
+		}
+
+		if shouldStopSearch(result) {
+			return false, nil, calcVictimNames(lastVictimTasks), result
+		}
+	}
+
+	if lastResult == nil {
+		lastResult = terminalSearchResult(SearchResultGeneratorsExhausted, jobBudget.ReducedBudget())
+	}
+	return false, nil, calcVictimNames(lastVictimTasks), lastResult
+}
+
+func (s *JobSolver) solvePendingJobWithGenerator(
+	ssn *framework.Session,
+	state *solvingState,
+	pendingJob *podgroup_info.PodGroupInfo,
+	tasksToAllocate []*pod_info.PodInfo,
+	jobBudget *jobSearchBudget,
+	availableGenerator framework.ScenarioGeneratorRegistration,
+	generatorBudget *generatorSearchBudget,
+) *SearchResult {
+	n := len(tasksToAllocate)
+	maxSolvedK, searchResult := s.searchMaxSolvableK(
+		ssn, state, pendingJob, tasksToAllocate, jobBudget, availableGenerator, generatorBudget,
+	)
 	if maxSolvedK == 0 {
-		return false, nil, calcVictimNames(state.recordedVictimsTasks)
+		if searchResult == nil {
+			searchResult = terminalSearchResult(SearchResultGeneratorsExhausted, jobBudget.ReducedBudget())
+		}
+		return searchResult
 	}
 
-	result := s.probeAtK(ssn, &state, pendingJob, tasksToAllocate, n)
-	if result == nil || !result.solved {
-		return false, nil, calcVictimNames(state.recordedVictimsTasks)
-	}
-
-	numActiveTasks := pendingJob.GetNumActiveUsedTasks()
-	jobSolved := pendingJob.IsGangSatisfied()
-	if originalNumActiveTasks >= numActiveTasks {
-		jobSolved = false
-	}
-
-	log.InfraLogger.V(4).Infof(
-		"Scenario solved for %d tasks to allocate for %s. Victims: %s",
-		n, pendingJob.Name, victimPrintingStruct{result.victimsTasks})
-	return jobSolved, result.statement, calcVictimNames(result.victimsTasks)
+	result := s.probeAtK(ssn, state, pendingJob, tasksToAllocate, n, jobBudget, availableGenerator, generatorBudget)
+	return result
 }
 
 // searchMaxSolvableK returns the largest k in [0, n] for which a probe at k succeeds.
@@ -100,23 +186,44 @@ func (s *JobSolver) searchMaxSolvableK(
 	state *solvingState,
 	pendingJob *podgroup_info.PodGroupInfo,
 	tasksToAllocate []*pod_info.PodInfo,
-) int {
+	jobBudget *jobSearchBudget,
+	availableGenerator framework.ScenarioGeneratorRegistration,
+	generatorBudget *generatorSearchBudget,
+) (int, *SearchResult) {
 	n := len(tasksToAllocate)
 	if n == 0 {
-		return 0
+		return 0, nil
+	}
+
+	return searchMaxSolvableK(n, func(k int) *SearchResult {
+		return s.tryProbeAndDiscard(
+			ssn, state, pendingJob, tasksToAllocate, k, jobBudget, availableGenerator, generatorBudget,
+		)
+	})
+}
+
+func searchMaxSolvableK(n int, probe func(k int) *SearchResult) (int, *SearchResult) {
+	if n == 0 {
+		return 0, nil
 	}
 
 	lo := 0
 	var hi int
+	var lastUnsolvedResult *SearchResult
 	k := 1
 	for {
-		if !s.tryProbeAndDiscard(ssn, state, pendingJob, tasksToAllocate, k) {
+		result := probe(k)
+		if shouldStopSearch(result) {
+			return 0, result
+		}
+		if !resultSolved(result) {
+			lastUnsolvedResult = result
 			hi = k
 			break
 		}
 		lo = k
 		if k == n {
-			return n
+			return n, lastUnsolvedResult
 		}
 		k *= 2
 		if k > n {
@@ -126,39 +233,48 @@ func (s *JobSolver) searchMaxSolvableK(
 
 	for hi-lo > 1 {
 		mid := (lo + hi) / 2
-		if s.tryProbeAndDiscard(ssn, state, pendingJob, tasksToAllocate, mid) {
+		result := probe(mid)
+		if shouldStopSearch(result) {
+			return 0, result
+		}
+		if resultSolved(result) {
 			lo = mid
 		} else {
+			lastUnsolvedResult = result
 			hi = mid
 		}
 	}
-	return lo
+	return lo, lastUnsolvedResult
 }
 
-// tryProbeAndDiscard probes at k and always discards the resulting statement so the session
-// is left clean. On success, hints are written to state; returns whether the probe succeeded.
+// tryProbeAndDiscard probes at k and always discards a solved statement so the session
+// is left clean. On success, hints are written to state.
 func (s *JobSolver) tryProbeAndDiscard(
 	ssn *framework.Session,
 	state *solvingState,
 	pendingJob *podgroup_info.PodGroupInfo,
 	tasksToAllocate []*pod_info.PodInfo,
 	k int,
-) bool {
-	result := s.probeAtK(ssn, state, pendingJob, tasksToAllocate, k)
-	if result == nil || !result.solved {
+	jobBudget *jobSearchBudget,
+	availableGenerator framework.ScenarioGeneratorRegistration,
+	generatorBudget *generatorSearchBudget,
+) *SearchResult {
+	result := s.probeAtK(ssn, state, pendingJob, tasksToAllocate, k, jobBudget, availableGenerator, generatorBudget)
+	if !resultSolved(result) {
 		log.InfraLogger.V(5).Infof("No solution found for %d tasks out of %d tasks to allocate for %s",
 			k, len(tasksToAllocate), pendingJob.Name)
-		return false
+		return result
 	}
+	solution := result.solution
 	log.InfraLogger.V(5).Infof(
 		"Scenario probed for %d tasks out of %d tasks to allocate for %s. Victims: %s",
-		k, len(tasksToAllocate), pendingJob.Name, victimPrintingStruct{result.victimsTasks})
-	state.recordedVictimsTasks = result.victimsTasks
-	state.recordedVictimsJobs = result.victimJobs
-	if result.statement != nil {
-		result.statement.Discard()
+		k, len(tasksToAllocate), pendingJob.Name, victimPrintingStruct{solution.victimsTasks})
+	state.recordedVictimsTasks = solution.victimsTasks
+	state.recordedVictimsJobs = solution.victimJobs
+	if solution.statement != nil {
+		solution.statement.Discard()
 	}
-	return true
+	return result
 }
 
 func (s *JobSolver) probeAtK(
@@ -167,13 +283,24 @@ func (s *JobSolver) probeAtK(
 	pendingJob *podgroup_info.PodGroupInfo,
 	tasksToAllocate []*pod_info.PodInfo,
 	k int,
-) *solutionResult {
+	jobBudget *jobSearchBudget,
+	availableGenerator framework.ScenarioGeneratorRegistration,
+	generatorBudget *generatorSearchBudget,
+) *SearchResult {
 	pendingTasks := tasksToAllocate[:k]
 	partialPendingJob := getPartialJobRepresentative(pendingJob, pendingTasks)
-	return s.solvePartialJob(ssn, state, partialPendingJob)
+	return s.solvePartialJob(ssn, state, partialPendingJob, jobBudget, availableGenerator, generatorBudget, k)
 }
 
-func (s *JobSolver) solvePartialJob(ssn *framework.Session, state *solvingState, partialPendingJob *podgroup_info.PodGroupInfo) *solutionResult {
+func (s *JobSolver) solvePartialJob(
+	ssn *framework.Session, state *solvingState, partialPendingJob *podgroup_info.PodGroupInfo,
+	jobBudget *jobSearchBudget, availableGenerator framework.ScenarioGeneratorRegistration,
+	generatorBudget *generatorSearchBudget, probeK int,
+) *SearchResult {
+	if jobBudget == nil {
+		jobBudget = newUnlimitedActionSearchBudget(s.actionType).BeginJob()
+	}
+
 	feasibleNodeMap := map[string]*node_info.NodeInfo{}
 	for _, node := range s.feasibleNodes {
 		feasibleNodeMap[node.Name] = node
@@ -183,24 +310,86 @@ func (s *JobSolver) solvePartialJob(ssn *framework.Session, state *solvingState,
 		feasibleNodeMap[task.NodeName] = node
 	}
 
-	scenarioBuilder := NewPodAccumulatedScenarioBuilder(
-		ssn, partialPendingJob, state.recordedVictimsJobs, s.generateVictimsQueue(), feasibleNodeMap)
+	solveCtx := &SolveContext{
+		Session:              ssn,
+		ActionType:           s.actionType,
+		PartialPendingJob:    partialPendingJob,
+		RecordedVictimsJobs:  state.recordedVictimsJobs,
+		RecordedVictimsTasks: state.recordedVictimsTasks,
+		GenerateVictimsQueue: s.generateVictimsQueue,
+		FeasibleNodes:        feasibleNodeMap,
+		ProbeK:               probeK,
+	}
+	portfolio := newSingleGeneratorScenarioPortfolio(solveCtx, jobBudget, availableGenerator, generatorBudget)
 
-	for scenarioToSolve := scenarioBuilder.GetValidScenario(); scenarioToSolve != nil; scenarioToSolve =
-		scenarioBuilder.GetNextScenario() {
-		scenarioSolver := newByPodSolver(feasibleNodeMap, s.solutionValidator, ssn.AllowConsolidatingReclaim(),
+	for {
+		if jobBudget.Exhausted() {
+			s.observeActionBudgetExhausted()
+			return terminalSearchResult(SearchResultDeadlineExhausted, jobBudget.ReducedBudget())
+		}
+		scenarioToSolve := portfolio.Next()
+		if scenarioToSolve == nil {
+			break
+		}
+		generatorName := portfolio.CurrentGeneratorName()
+		validatorRejected := false
+		scenarioSolver := newByPodSolver(feasibleNodeMap, s.solutionValidatorWithMetrics(generatorName, &validatorRejected),
+			ssn.AllowConsolidatingReclaim(),
 			s.actionType)
 
 		log.InfraLogger.V(5).Infof("Trying to solve scenario: %s", scenarioToSolve)
 		metrics.IncScenarioSimulatedByAction()
+		metrics.IncScenarioSearchScenario(s.actionType, generatorName, "simulated")
 
 		result := scenarioSolver.solve(ssn, scenarioToSolve)
-		if result.solved {
-			return result
+		attemptResult := scenarioSearchResultUnsolved
+		if validatorRejected {
+			attemptResult = scenarioSearchResultValidatorRejected
 		}
+		if result.solved {
+			portfolio.ObserveCurrentAttempt(string(SearchResultSolved))
+			return solvedSearchResult(result, jobBudget.ReducedBudget())
+		}
+		portfolio.ObserveCurrentAttempt(attemptResult)
 	}
 
-	return nil
+	return terminalSearchResult(portfolio.StopReason(), jobBudget.ReducedBudget())
+}
+
+func (s *JobSolver) observeActionBudgetExhausted() {
+	if s.actionBudget != nil && s.actionBudget.Exhausted() {
+		metrics.IncScenarioSearchActionBudgetExhausted(s.actionType)
+	}
+}
+
+func (s *JobSolver) solutionValidatorWithMetrics(generator string, rejected *bool) SolutionValidator {
+	if s.solutionValidator == nil {
+		return nil
+	}
+	return func(scenario api.ScenarioInfo) bool {
+		valid := s.solutionValidator(scenario)
+		if !valid {
+			if rejected != nil {
+				*rejected = true
+			}
+			metrics.IncScenarioSearchScenario(s.actionType, generator, "validator_rejected")
+		}
+		return valid
+	}
+}
+
+func shouldStopSearch(result *SearchResult) bool {
+	switch result.Reason() {
+	case SearchResultDeadlineExhausted, SearchResultNotAttempted, SearchResultNoGenerator:
+		return true
+	default:
+		return false
+	}
+}
+
+func resultSolved(result *SearchResult) bool {
+	return result != nil && result.Reason() == SearchResultSolved &&
+		result.solution != nil && result.solution.solved
 }
 
 func getPartialJobRepresentative(

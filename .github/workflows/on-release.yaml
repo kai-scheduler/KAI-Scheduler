@@ -19,7 +19,7 @@ jobs:
       package_version: ${{ steps.package_version.outputs.PACKAGE_VERSION }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Extract package version
         id: package_version
@@ -50,7 +50,7 @@ jobs:
           sudo chown -R $USER:$USER /mnt/images
 
       - name: Cache for docker images and helm chart
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: /mnt/images
           key: images-${{ github.sha }}
@@ -111,7 +111,7 @@ jobs:
             feature_config: default
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup e2e cluster
         uses: ./.github/actions/setup-e2e-cluster

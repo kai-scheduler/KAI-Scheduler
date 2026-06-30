@@ -27,6 +27,21 @@ const (
 	DefaultRuntimeClassName               = "nvidia"
 	DefaultStuckInReleasingThreshold      = 2 * time.Minute
 
+	ActionDefault       = "default"
+	ActionReclaim       = "reclaim"
+	ActionPreempt       = "preempt"
+	ActionConsolidation = "consolidation"
+
+	GeneratorNodeLocalGreedy = "NodeLocalGreedy"
+	GeneratorMultiNodeGang   = "MultiNodeGang"
+
+	DefaultActionBudget    = "5m"
+	DefaultJobBudget       = "4m"
+	DefaultMinJobBudget    = "0s"
+	DefaultGeneratorBudget = "2m"
+	DefaultNodeLocalGreedy = "30s"
+	DefaultMultiNodeGang   = "2m"
+
 	DefaultCPUWorkerNodeLabelKey = "node-role.kubernetes.io/cpu-worker"
 	DefaultGPUWorkerNodeLabelKey = "node-role.kubernetes.io/gpu-worker"
 	DefaultMIGWorkerNodeLabelKey = "node-role.kubernetes.io/mig-enabled"

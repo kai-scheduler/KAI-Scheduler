@@ -35,6 +35,8 @@ tests:
       - equal:
           path: spec.scheduler.service.enabled
           value: true
+      - notExists:
+          path: spec.global.nodePoolLabelKey
 
   # ======================================
   # Global queueLabelKey Tests
@@ -46,6 +48,17 @@ tests:
       - equal:
           path: spec.global.queueLabelKey
           value: "runai/queue"
+
+  # ======================================
+  # Global nodePoolLabelKey Tests
+  # ======================================
+  - it: should wire global.nodePoolLabelKey into spec.global.nodePoolLabelKey
+    set:
+      global.nodePoolLabelKey: "runai/node-pool"
+    asserts:
+      - equal:
+          path: spec.global.nodePoolLabelKey
+          value: "runai/node-pool"
 
   # ======================================
   # Binder Enabled Tests

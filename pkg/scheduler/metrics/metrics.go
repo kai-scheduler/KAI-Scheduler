@@ -20,6 +20,7 @@ limitations under the License.
 package metrics
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -35,27 +36,34 @@ const (
 )
 
 var (
-	currentAction               string
-	e2eSchedulingLatency        prometheus.Gauge
-	openSessionLatency          prometheus.Gauge
-	closeSessionLatency         prometheus.Gauge
-	pluginSchedulingLatency     *prometheus.GaugeVec
-	actionSchedulingLatency     *prometheus.GaugeVec
-	taskSchedulingLatency       prometheus.Histogram
-	taskBindLatency             prometheus.Histogram
-	podgroupsScheduledByAction  *prometheus.CounterVec
-	podgroupsConsideredByAction *prometheus.CounterVec
-	scenariosSimulatedByAction  *prometheus.CounterVec
-	scenariosFilteredByAction   *prometheus.CounterVec
-	preemptionAttempts          prometheus.Counter
-	queueFairShareCPU           *prometheus.GaugeVec
-	queueFairShareMemory        *prometheus.GaugeVec
-	queueFairShareGPU           *prometheus.GaugeVec
-	queueCPUUsage               *prometheus.GaugeVec
-	queueMemoryUsage            *prometheus.GaugeVec
-	queueGPUUsage               *prometheus.GaugeVec
-	usageQueryLatency           *prometheus.HistogramVec
-	podGroupEvictedPodsTotal    *prometheus.CounterVec
+	currentAction                                  string
+	e2eSchedulingLatency                           prometheus.Gauge
+	openSessionLatency                             prometheus.Gauge
+	closeSessionLatency                            prometheus.Gauge
+	pluginSchedulingLatency                        *prometheus.GaugeVec
+	actionSchedulingLatency                        *prometheus.GaugeVec
+	taskSchedulingLatency                          prometheus.Histogram
+	taskBindLatency                                prometheus.Histogram
+	podgroupsScheduledByAction                     *prometheus.CounterVec
+	podgroupsConsideredByAction                    *prometheus.CounterVec
+	scenariosSimulatedByAction                     *prometheus.CounterVec
+	scenariosFilteredByAction                      *prometheus.CounterVec
+	preemptionAttempts                             prometheus.Counter
+	queueFairShareCPU                              *prometheus.GaugeVec
+	queueFairShareMemory                           *prometheus.GaugeVec
+	queueFairShareGPU                              *prometheus.GaugeVec
+	queueCPUUsage                                  *prometheus.GaugeVec
+	queueMemoryUsage                               *prometheus.GaugeVec
+	queueGPUUsage                                  *prometheus.GaugeVec
+	usageQueryLatency                              *prometheus.HistogramVec
+	podGroupEvictedPodsTotal                       *prometheus.CounterVec
+	scenarioSearchJobsTotal                        *prometheus.CounterVec
+	scenarioSearchActionBudgetConfiguredSeconds    *prometheus.GaugeVec
+	scenarioSearchJobBudgetConfiguredSeconds       prometheus.Gauge
+	scenarioSearchGeneratorBudgetConfiguredSeconds *prometheus.GaugeVec
+	scenarioSearchActionBudgetExhaustedTotal       *prometheus.CounterVec
+	scenarioSearchDurationSeconds                  *prometheus.HistogramVec
+	scenarioSearchScenariosTotal                   *prometheus.CounterVec
 )
 
 func init() {
@@ -160,38 +168,38 @@ func InitMetrics(namespace string) {
 			Namespace: namespace,
 			Name:      "queue_fair_share_cpu_cores",
 			Help:      "CPU Fair share of queue, as a gauge. Value is in Cores",
-		}, []string{"queue_name"})
+		}, []string{"queue_name", "queue_metadata_name", "queue_display_name"})
 	queueFairShareMemory = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: namespace,
 			Name:      "queue_fair_share_memory_gb",
 			Help:      "Memory Fair share of queue, as a gauge. Value is in GB",
-		}, []string{"queue_name"})
+		}, []string{"queue_name", "queue_metadata_name", "queue_display_name"})
 	queueFairShareGPU = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: namespace,
 			Name:      "queue_fair_share_gpu",
 			Help:      "GPU Fair share of queue, as a gauge. Values in GPU devices",
-		}, []string{"queue_name"})
+		}, []string{"queue_name", "queue_metadata_name", "queue_display_name"})
 
 	queueCPUUsage = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: namespace,
 			Name:      "queue_cpu_usage",
 			Help:      "CPU usage of queue, as a gauge. Units depend on UsageDB configuration",
-		}, []string{"queue_name"})
+		}, []string{"queue_name", "queue_metadata_name", "queue_display_name"})
 	queueMemoryUsage = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: namespace,
 			Name:      "queue_memory_usage",
 			Help:      "Memory usage of queue, as a gauge. Units depend on UsageDB configuration",
-		}, []string{"queue_name"})
+		}, []string{"queue_name", "queue_metadata_name", "queue_display_name"})
 	queueGPUUsage = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: namespace,
 			Name:      "queue_gpu_usage",
 			Help:      "GPU usage of queue, as a gauge. Units depend on UsageDB configuration",
-		}, []string{"queue_name"})
+		}, []string{"queue_name", "queue_metadata_name", "queue_display_name"})
 
 	usageQueryLatency = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
@@ -207,6 +215,56 @@ func InitMetrics(namespace string) {
 			Name:      "pod_group_evicted_pods_total",
 			Help:      "Total number of pods evicted per pod group",
 		}, []string{"podgroup", "namespace", "uid", "nodepool", "action"})
+
+	scenarioSearchJobsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Name:      "scenario_search_jobs_total",
+			Help:      "Count of jobs considered by bounded scenario search.",
+		}, []string{"action", "result", "reduced_budget"})
+
+	scenarioSearchActionBudgetConfiguredSeconds = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "scenario_search_action_budget_configured_seconds",
+			Help:      "Configured action scenario search budget in seconds.",
+		}, []string{"action"})
+
+	scenarioSearchJobBudgetConfiguredSeconds = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "scenario_search_job_budget_configured_seconds",
+			Help:      "Configured per-job scenario search budget in seconds.",
+		})
+
+	scenarioSearchGeneratorBudgetConfiguredSeconds = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "scenario_search_generator_budget_configured_seconds",
+			Help:      "Configured generator scenario search budget in seconds.",
+		}, []string{"generator"})
+
+	scenarioSearchActionBudgetExhaustedTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Name:      "scenario_search_action_budget_exhausted_total",
+			Help:      "Count of action-level scenario search budget exhaustion events.",
+		}, []string{"action"})
+
+	scenarioSearchDurationSeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: namespace,
+			Name:      "scenario_search_duration_seconds",
+			Help:      "Elapsed generator-search duration in seconds.",
+			Buckets:   prometheus.ExponentialBuckets(0.001, 2, 16),
+		}, []string{"action", "generator", "result"})
+
+	scenarioSearchScenariosTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Name:      "scenario_search_scenarios_total",
+			Help:      "Count of bounded-search scenarios by state.",
+		}, []string{"action", "generator", "state"})
 }
 
 // UpdateOpenSessionDuration updates latency for open session, including all plugins
@@ -268,11 +326,14 @@ func UpdateTaskBindDuration(startTime time.Time) {
 	taskBindLatency.Observe(float64(duration))
 }
 
-// UpdateQueueFairShare updates fair share of queue for a resource
-func UpdateQueueFairShare(queueName string, cpu, memory, gpu float64) {
-	queueFairShareCPU.WithLabelValues(queueName).Set(cpu)
-	queueFairShareMemory.WithLabelValues(queueName).Set(memory)
-	queueFairShareGPU.WithLabelValues(queueName).Set(gpu)
+// UpdateQueueFairShare updates fair share of queue for a resource.
+// queueName preserves the legacy queue_name label value (DisplayName when set, otherwise metadata.name).
+// queueMetadataName is always the Queue resource's metadata.name and is the recommended join key
+// against queue-controller metrics. queueDisplayName is the Queue's spec.displayName (empty when unset).
+func UpdateQueueFairShare(queueName, queueMetadataName, queueDisplayName string, cpu, memory, gpu float64) {
+	queueFairShareCPU.WithLabelValues(queueName, queueMetadataName, queueDisplayName).Set(cpu)
+	queueFairShareMemory.WithLabelValues(queueName, queueMetadataName, queueDisplayName).Set(memory)
+	queueFairShareGPU.WithLabelValues(queueName, queueMetadataName, queueDisplayName).Set(gpu)
 }
 
 func ResetQueueFairShare() {
@@ -281,11 +342,12 @@ func ResetQueueFairShare() {
 	queueFairShareGPU.Reset()
 }
 
-// UpdateQueueUsage updates usage of queue for a resource
-func UpdateQueueUsage(queueName string, cpu, memory, gpu float64) {
-	queueCPUUsage.WithLabelValues(queueName).Set(cpu)
-	queueMemoryUsage.WithLabelValues(queueName).Set(memory)
-	queueGPUUsage.WithLabelValues(queueName).Set(gpu)
+// UpdateQueueUsage updates usage of queue for a resource.
+// See UpdateQueueFairShare for the meaning of each label.
+func UpdateQueueUsage(queueName, queueMetadataName, queueDisplayName string, cpu, memory, gpu float64) {
+	queueCPUUsage.WithLabelValues(queueName, queueMetadataName, queueDisplayName).Set(cpu)
+	queueMemoryUsage.WithLabelValues(queueName, queueMetadataName, queueDisplayName).Set(memory)
+	queueGPUUsage.WithLabelValues(queueName, queueMetadataName, queueDisplayName).Set(gpu)
 }
 
 func ResetQueueUsage() {
@@ -306,6 +368,34 @@ func RegisterPreemptionAttempts() {
 // RecordPodGroupEvictedPods records the number of pods evicted for a pod group
 func RecordPodGroupEvictedPods(name, namespace, uid, nodepool, action string, count int) {
 	podGroupEvictedPodsTotal.WithLabelValues(name, namespace, uid, nodepool, action).Add(float64(count))
+}
+
+func IncScenarioSearchJobs[A ~string](action A, result string, reducedBudget bool) {
+	scenarioSearchJobsTotal.WithLabelValues(string(action), result, strconv.FormatBool(reducedBudget)).Inc()
+}
+
+func SetScenarioSearchActionBudget[A ~string](action A, budget time.Duration) {
+	scenarioSearchActionBudgetConfiguredSeconds.WithLabelValues(string(action)).Set(budget.Seconds())
+}
+
+func SetScenarioSearchJobBudget(budget time.Duration) {
+	scenarioSearchJobBudgetConfiguredSeconds.Set(budget.Seconds())
+}
+
+func SetScenarioSearchGeneratorBudget(generator string, budget time.Duration) {
+	scenarioSearchGeneratorBudgetConfiguredSeconds.WithLabelValues(generator).Set(budget.Seconds())
+}
+
+func IncScenarioSearchActionBudgetExhausted[A ~string](action A) {
+	scenarioSearchActionBudgetExhaustedTotal.WithLabelValues(string(action)).Inc()
+}
+
+func ObserveScenarioSearchDuration[A ~string](action A, generator string, result string, duration time.Duration) {
+	scenarioSearchDurationSeconds.WithLabelValues(string(action), generator, result).Observe(duration.Seconds())
+}
+
+func IncScenarioSearchScenario[A ~string](action A, generator string, state string) {
+	scenarioSearchScenariosTotal.WithLabelValues(string(action), generator, state).Inc()
 }
 
 // Duration get the time since specified start

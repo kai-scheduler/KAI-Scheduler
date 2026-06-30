@@ -50,6 +50,22 @@ import (
 
 var server *PluginServer
 
+type ScenarioGeneratorContext interface {
+	Action() ActionType
+}
+
+type ScenarioGenerator interface {
+	Name() string
+	Next() api.ScenarioInfo
+}
+
+type ScenarioGeneratorFactory func(ctx ScenarioGeneratorContext) ScenarioGenerator
+
+type ScenarioGeneratorRegistration struct {
+	Name    string
+	Factory ScenarioGeneratorFactory
+}
+
 type Session struct {
 	ID    string
 	Cache cache.Cache
@@ -82,6 +98,7 @@ type Session struct {
 	BindRequestMutateFns                  []api.BindRequestMutateFn
 	NumaPlacementFn                       api.NumaPlacementFn
 	PreJobAllocationFns                   []api.PreJobAllocationFn
+	ScenarioGeneratorRegistrations        []ScenarioGeneratorRegistration
 
 	Config          *conf.SchedulerConfiguration
 	plugins         map[string]Plugin
@@ -368,13 +385,45 @@ func (ssn *Session) updatePodOnSession(pod *pod_info.PodInfo, status pod_status.
 }
 
 func (ssn *Session) clear() {
-	ssn.ClusterInfo.PodGroupInfos = nil
-	ssn.ClusterInfo.Nodes = nil
+	ssn.ClusterInfo = nil
 	ssn.plugins = nil
 	ssn.eventHandlers = nil
-	ssn.TaskOrderFns = nil
-	ssn.SubGroupOrderFns = nil
+	ssn.GpuOrderFns = nil
+	ssn.NodePreOrderFns = nil
+	ssn.NodeOrderFns = nil
 	ssn.JobOrderFns = nil
+	ssn.SubGroupOrderFns = nil
+	ssn.TaskOrderFns = nil
+	ssn.QueueOrderFns = nil
+	ssn.CanReclaimResourcesFns = nil
+	ssn.ReclaimVictimFilterFns = nil
+	ssn.PreemptVictimFilterFns = nil
+	ssn.ReclaimScenarioValidatorFns = nil
+	ssn.PreemptScenarioValidatorFns = nil
+	ssn.OnJobSolutionStartFns = nil
+	ssn.GetQueueAllocatedResourcesFns = nil
+	ssn.GetQueueDeservedResourcesFns = nil
+	ssn.GetQueueFairShareFns = nil
+	ssn.IsNonPreemptibleJobOverQueueQuotaFns = nil
+	ssn.IsJobOverCapacityFns = nil
+	ssn.IsTaskAllocationOnNodeOverCapacityFns = nil
+	ssn.SubsetNodesFns = nil
+	ssn.PrePredicateFns = nil
+	ssn.VictimInvariantPrePredicateFns = nil
+	ssn.PredicateFns = nil
+	ssn.BindRequestMutateFns = nil
+	ssn.NumaPlacementFn = nil
+	ssn.PreJobAllocationFns = nil
+	ssn.Config = nil
+	ssn.k8sResourceStateCache = sync.Map{}
+}
+
+func (ssn *Session) releaseNodeScoringPool() {
+	if ssn.nodeScoringPool != nil {
+		ssn.nodeScoringPool.Release()
+		ssn.nodeScoringPool = nil
+	}
+	ssn.scoringPoolWorkerCount = 0
 }
 
 func (ssn *Session) InitNodeScoringPool() error {
@@ -385,12 +434,6 @@ func (ssn *Session) InitNodeScoringPool() error {
 	}
 	ssn.nodeScoringPool = pool
 	ssn.scoringPoolWorkerCount = numWorkers
-	runtime.SetFinalizer(ssn, func(s *Session) {
-		if s.nodeScoringPool != nil {
-			s.nodeScoringPool.Release()
-			s.nodeScoringPool = nil
-		}
-	})
 	return nil
 }
 
@@ -414,6 +457,7 @@ func openSession(cache cache.Cache, sessionId string, schedulerParams conf.Sched
 	log.InfraLogger.V(2).Infof("Taking cluster snapshot ...")
 	snapshot, err := cache.Snapshot()
 	if err != nil {
+		ssn.releaseNodeScoringPool()
 		return nil, err
 	}
 
@@ -436,9 +480,7 @@ func closeSession(ssn *Session) {
 		}
 	}
 
-	ssn.nodeScoringPool.Release()
-	ssn.nodeScoringPool = nil
-	ssn.scoringPoolWorkerCount = 0
+	ssn.releaseNodeScoringPool()
 	ssn.clear()
 	stopCh := make(chan struct{})
 	ssn.Cache.WaitForWorkers(stopCh)

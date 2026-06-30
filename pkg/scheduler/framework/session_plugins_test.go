@@ -9,15 +9,47 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 )
+
+type testScenarioGeneratorContext struct {
+	action ActionType
+}
+
+func (ctx testScenarioGeneratorContext) Action() ActionType {
+	return ctx.action
+}
+
+type testScenarioGenerator struct {
+	name string
+}
+
+func (generator *testScenarioGenerator) Name() string {
+	return generator.name
+}
+
+func (generator *testScenarioGenerator) Next() api.ScenarioInfo {
+	return nil
+}
+
+func newTestScenarioGenerator(name string) ScenarioGeneratorFactory {
+	return func(_ ScenarioGeneratorContext) ScenarioGenerator {
+		return &testScenarioGenerator{name: name}
+	}
+}
 
 func TestMutateBindRequestAnnotations(t *testing.T) {
 	tests := []struct {
@@ -198,4 +230,67 @@ func TestVictimInvariantPrePredicateFailure(t *testing.T) {
 		}
 		assert.False(t, secondCalled)
 	})
+}
+
+func TestAddScenarioGeneratorPreservesOrder(t *testing.T) {
+	ssn := &Session{}
+
+	ssn.AddScenarioGenerator("first", newTestScenarioGenerator("first"))
+	ssn.AddScenarioGenerator("second", newTestScenarioGenerator("second"))
+	ssn.AddScenarioGenerator("third", newTestScenarioGenerator("third"))
+
+	require.Len(t, ssn.ScenarioGeneratorRegistrations, 3)
+	require.Equal(t, "first", ssn.ScenarioGeneratorRegistrations[0].Name)
+	require.Equal(t, "second", ssn.ScenarioGeneratorRegistrations[1].Name)
+	require.Equal(t, "third", ssn.ScenarioGeneratorRegistrations[2].Name)
+
+	generator := ssn.ScenarioGeneratorRegistrations[0].Factory(testScenarioGeneratorContext{action: Reclaim})
+	require.Equal(t, "first", generator.Name())
+}
+
+func TestValidateScenarioGeneratorBudgetKeys(t *testing.T) {
+	ssn := &Session{
+		Config: &conf.SchedulerConfiguration{
+			ScenarioSearchBudgets: &kaiv1.ScenarioSearchBudgets{
+				MaxGeneratorSearchDuration: map[string]metav1.Duration{
+					constants.ActionDefault: scenarioSearchDurationForTest("1s"),
+					"first":                 scenarioSearchDurationForTest("2s"),
+				},
+			},
+		},
+	}
+	ssn.AddScenarioGenerator("first", newTestScenarioGenerator("first"))
+
+	require.NoError(t, ssn.ValidateScenarioGeneratorBudgetKeys())
+
+	ssn.Config.ScenarioSearchBudgets.MaxGeneratorSearchDuration["missing"] = scenarioSearchDurationForTest("3s")
+	require.EqualError(t, ssn.ValidateScenarioGeneratorBudgetKeys(),
+		`unknown scenario generator budget key "missing"`)
+}
+
+func TestValidateScenarioGeneratorBudgetKeysAcceptsBuiltInGeneratorsWithoutPlugins(t *testing.T) {
+	ssn := &Session{
+		Config: &conf.SchedulerConfiguration{
+			ScenarioSearchBudgets: &kaiv1.ScenarioSearchBudgets{
+				MaxGeneratorSearchDuration: map[string]metav1.Duration{
+					constants.GeneratorNodeLocalGreedy: scenarioSearchDurationForTest("30s"),
+					constants.GeneratorMultiNodeGang:   scenarioSearchDurationForTest("2m"),
+				},
+			},
+		},
+	}
+
+	require.NoError(t, ssn.ValidateScenarioGeneratorBudgetKeys())
+
+	ssn.Config.ScenarioSearchBudgets.MaxGeneratorSearchDuration["missing"] = scenarioSearchDurationForTest("3s")
+	require.EqualError(t, ssn.ValidateScenarioGeneratorBudgetKeys(),
+		`unknown scenario generator budget key "missing"`)
+}
+
+func scenarioSearchDurationForTest(value string) metav1.Duration {
+	duration, err := time.ParseDuration(value)
+	if err != nil {
+		panic(err)
+	}
+	return metav1.Duration{Duration: duration}
 }

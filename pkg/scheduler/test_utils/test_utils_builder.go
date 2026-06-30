@@ -64,13 +64,14 @@ func CreateFakeSession(schedulerConfig *TestSessionConfig,
 			},
 		},
 		ClusterInfo: &api.ClusterInfo{
-			Nodes:             nodesInfoMap,
-			Queues:            queueInfoMap,
-			PodGroupInfos:     jobInfoMap,
-			ResourceClaims:    getResourceClaims(testMetadata),
-			Topologies:        topologies,
-			MinNodeGPUMemory:  node_info.DefaultGpuMemory,
-			ResourceVectorMap: vectorMap,
+			Nodes:               nodesInfoMap,
+			Queues:              queueInfoMap,
+			PodGroupInfos:       jobInfoMap,
+			ResourceClaims:      getResourceClaims(testMetadata),
+			Topologies:          topologies,
+			MinNodeGPUMemoryMiB: computeMinNodeGPUMemory(nodesInfoMap),
+			MaxNodeGPUMemoryMiB: computeMaxNodeGPUMemory(nodesInfoMap),
+			ResourceVectorMap:   vectorMap,
 		},
 		SchedulerParams: conf.SchedulerParams{
 			QueueLabelKey: constants.DefaultQueueLabel,
@@ -324,6 +325,38 @@ func addSessionPlugins(ssn *framework.Session, tiers []conf.Tier, cacheMockExist
 			pluginObj.OnSessionOpen(ssn)
 		}
 	}
+}
+
+func computeMinNodeGPUMemory(nodes map[string]*node_info.NodeInfo) *int64 {
+	var min *int64
+	for _, n := range nodes {
+		gpuMem := n.MemoryOfEveryGpuOnNode
+		if gpuMem > node_info.DefaultGpuMemory {
+			if min == nil || *min > gpuMem {
+				min = ptr.To(gpuMem)
+			}
+		}
+	}
+	if min == nil {
+		return ptr.To[int64](node_info.DefaultGpuMemory)
+	}
+	return min
+}
+
+func computeMaxNodeGPUMemory(nodes map[string]*node_info.NodeInfo) *int64 {
+	var max *int64
+	for _, n := range nodes {
+		gpuMem := n.MemoryOfEveryGpuOnNode
+		if gpuMem > node_info.DefaultGpuMemory {
+			if max == nil || *max < gpuMem {
+				max = ptr.To(gpuMem)
+			}
+		}
+	}
+	if max == nil {
+		return ptr.To[int64](node_info.DefaultGpuMemory)
+	}
+	return max
 }
 
 func getDRAObjects(testMetadata TestTopologyBasic) []runtime.Object {

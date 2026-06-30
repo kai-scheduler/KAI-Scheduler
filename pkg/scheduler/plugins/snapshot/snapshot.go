@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 
+	nrtv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 	v1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
 	v14 "k8s.io/api/scheduling/v1"
@@ -35,22 +36,23 @@ const (
 
 // RawKubernetesObjects contains the raw Kubernetes objects from the cluster
 type RawKubernetesObjects struct {
-	Pods                   []*v1.Pod                         `json:"pods"`
-	Nodes                  []*v1.Node                        `json:"nodes"`
-	Queues                 []*enginev2.Queue                 `json:"queues"`
-	PodGroups              []*enginev2alpha2.PodGroup        `json:"podGroups"`
-	BindRequests           []*schedulingv1alpha2.BindRequest `json:"bindRequests"`
-	PriorityClasses        []*v14.PriorityClass              `json:"priorityClasses"`
-	ConfigMaps             []*v1.ConfigMap                   `json:"configMaps"`
-	PersistentVolumes      []*v1.PersistentVolume            `json:"persistentVolumes"`
-	PersistentVolumeClaims []*v1.PersistentVolumeClaim       `json:"persistentVolumeClaims"`
-	CSIStorageCapacities   []*storage.CSIStorageCapacity     `json:"csiStorageCapacities"`
-	StorageClasses         []*storage.StorageClass           `json:"storageClasses"`
-	CSIDrivers             []*storage.CSIDriver              `json:"csiDrivers"`
-	ResourceClaims         []*resourceapi.ResourceClaim      `json:"resourceClaims"`
-	ResourceSlices         []*resourceapi.ResourceSlice      `json:"resourceSlices"`
-	DeviceClasses          []*resourceapi.DeviceClass        `json:"deviceClasses"`
-	Topologies             []*kaiv1alpha1.Topology           `json:"topologies"`
+	Pods                   []*v1.Pod                           `json:"pods"`
+	Nodes                  []*v1.Node                          `json:"nodes"`
+	Queues                 []*enginev2.Queue                   `json:"queues"`
+	PodGroups              []*enginev2alpha2.PodGroup          `json:"podGroups"`
+	BindRequests           []*schedulingv1alpha2.BindRequest   `json:"bindRequests"`
+	PriorityClasses        []*v14.PriorityClass                `json:"priorityClasses"`
+	ConfigMaps             []*v1.ConfigMap                     `json:"configMaps"`
+	PersistentVolumes      []*v1.PersistentVolume              `json:"persistentVolumes"`
+	PersistentVolumeClaims []*v1.PersistentVolumeClaim         `json:"persistentVolumeClaims"`
+	CSIStorageCapacities   []*storage.CSIStorageCapacity       `json:"csiStorageCapacities"`
+	StorageClasses         []*storage.StorageClass             `json:"storageClasses"`
+	CSIDrivers             []*storage.CSIDriver                `json:"csiDrivers"`
+	ResourceClaims         []*resourceapi.ResourceClaim        `json:"resourceClaims"`
+	ResourceSlices         []*resourceapi.ResourceSlice        `json:"resourceSlices"`
+	DeviceClasses          []*resourceapi.DeviceClass          `json:"deviceClasses"`
+	Topologies             []*kaiv1alpha1.Topology             `json:"topologies"`
+	NodeResourceTopologies []*nrtv1alpha2.NodeResourceTopology `json:"nodeResourceTopologies"`
 }
 
 type DiscoverySnapshot struct {
@@ -155,6 +157,8 @@ func (sp *snapshotPlugin) writeRawObjects(stream *jsonStream) error {
 			listedSliceField("resourceSlices", dataLister.ListResourceSlices, "Error getting raw resource slices"),
 			listedSliceField("deviceClasses", dataLister.ListDeviceClasses, "Error getting raw device classes"),
 			listedSliceField("topologies", dataLister.ListTopologies, "Error getting raw topologies"),
+			listedSliceField("nodeResourceTopologies", dataLister.ListNodeResourceTopologies,
+				"Error getting raw node resource topologies"),
 		)
 	})
 }

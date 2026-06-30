@@ -80,6 +80,7 @@ manifests: controller-gen kustomize ## Generate ClusterRole and CustomResourceDe
 	$(CONTROLLER_GEN) rbac:roleName=queuecontroller,headerFile="./hack/boilerplate.yaml.txt" paths="./pkg/queuecontroller/..." paths="./cmd/queuecontroller/..." output:stdout > deployments/kai-scheduler/templates/rbac/queuecontroller.yaml
 	$(CONTROLLER_GEN) rbac:roleName=kai-admission,headerFile="./hack/boilerplate.yaml.txt" paths="./pkg/admission/..." paths="./cmd/admission/..." output:stdout > deployments/kai-scheduler/templates/rbac/admission.yaml
 	$(CONTROLLER_GEN) rbac:roleName=kai-operator,headerFile="./hack/boilerplate.yaml.txt" paths="./pkg/operator/..." paths="./cmd/operator/..." output:stdout > deployments/kai-scheduler/templates/rbac/operator.yaml
+	$(CONTROLLER_GEN) rbac:roleName=kai-numa-placement-exporter,headerFile="./hack/boilerplate.yaml.txt" paths="./pkg/npe/..." paths="./cmd/numa-placement-exporter/..." output:stdout > deployments/kai-scheduler/templates/rbac/numa-placement-exporter.yaml
 
 	# Add Kubernetes copyright to files derived from Kubernetes projects
 	@for f in $(K8S_COPYRIGHTED_MANIFEST_FILES); do \

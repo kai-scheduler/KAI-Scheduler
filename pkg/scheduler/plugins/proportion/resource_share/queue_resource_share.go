@@ -22,6 +22,7 @@ const (
 type QueueAttributes struct {
 	UID               common_info.QueueID
 	Name              string
+	DisplayName       string
 	ParentQueue       common_info.QueueID
 	ChildQueues       []common_info.QueueID
 	CreationTimestamp metav1.Time
@@ -33,6 +34,7 @@ func (q *QueueAttributes) Clone() *QueueAttributes {
 	return &QueueAttributes{
 		UID:                q.UID,
 		Name:               q.Name,
+		DisplayName:        q.DisplayName,
 		ParentQueue:        q.ParentQueue,
 		ChildQueues:        slices.Clone(q.ChildQueues),
 		CreationTimestamp:  q.CreationTimestamp,
