@@ -117,7 +117,7 @@ func (su *defaultStatusUpdater) Evicted(
 		message)
 
 	nodepool := utils.GetNodePoolNameFromLabels(evictedPodGroup.Labels, su.nodePoolLabelKey)
-	metrics.RecordPodGroupEvictedPods(
+	metrics.IncPodGroupEvictedPods(
 		evictedPodGroup.Name,
 		evictedPodGroup.Namespace,
 		string(evictedPodGroup.UID),
