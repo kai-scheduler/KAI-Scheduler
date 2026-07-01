@@ -406,6 +406,60 @@ func TestValidateGpuRequests(t *testing.T) {
 			},
 			error: nil,
 		},
+		{
+			name: "Block NaN fraction value",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						constants.GpuFraction: "NaN",
+					},
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Resources: v1.ResourceRequirements{},
+						},
+					},
+				},
+			},
+			error: fmt.Errorf("gpu-fraction annotation value must be a valid number. NaN is not allowed"),
+		},
+		{
+			name: "Allow Scientific notation fraction value",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						constants.GpuFraction: "1.2e-10",
+					},
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Resources: v1.ResourceRequirements{},
+						},
+					},
+				},
+			},
+			error: nil,
+		},
+		{
+			name: "Block hex float fraction value",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						constants.GpuFraction: "0x1p-1",
+					},
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Resources: v1.ResourceRequirements{},
+						},
+					},
+				},
+			},
+			error: fmt.Errorf("gpu-fraction annotation value must be a float written with a decimal point or a scientific notation .given value: 0x1p-1"),
+		},
 	}
 
 	for _, tt := range tests {
