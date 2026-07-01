@@ -4,7 +4,6 @@
 package reclaim
 
 import (
-	"fmt"
 	"testing"
 	"time"
 
@@ -16,25 +15,9 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 )
-
-type unschedulableDistributedReclaimParams struct {
-	NumNodes                int
-	GPUsPerNode             int
-	PodsPerDistributedJob   int
-	RunningJobsPerNode      int
-	Queue0DeservedGPUs      int
-	Queue1DeservedGPUs      int
-	NumberOfCacheBinds      int
-	NumberOfCacheEvictions  int
-	NumberOfPipelineActions int
-}
 
 const (
 	unschedulableDistributedJobName = "unschedulable-distributed-job"
@@ -47,7 +30,7 @@ func TestUnschedulableDistributedReclaimTopology(t *testing.T) {
 	defer ctrl.Finish()
 
 	params := defaultUnschedulableDistributedReclaimParams(10)
-	topology := buildUnschedulableDistributedReclaimTopology(params)
+	topology := buildLargeJobReclaimTopology(params)
 
 	ssn := test_utils.BuildSession(topology, ctrl)
 	onJobSolutionStartCalls := 0
@@ -67,9 +50,9 @@ func TestUnschedulableDistributedReclaimTopology(t *testing.T) {
 		t.Fatalf("expected reclaim to attempt solving for the distributed job")
 	}
 
-	if len(job.PodStatusIndex[pod_status.Pending]) != params.PodsPerDistributedJob {
+	if len(job.PodStatusIndex[pod_status.Pending]) != params.PendingJobTasks {
 		t.Fatalf("expected %d pending distributed-job tasks, got %d",
-			params.PodsPerDistributedJob, len(job.PodStatusIndex[pod_status.Pending]))
+			params.PendingJobTasks, len(job.PodStatusIndex[pod_status.Pending]))
 	}
 
 	for _, clusterJob := range ssn.ClusterInfo.PodGroupInfos {
@@ -91,7 +74,7 @@ func TestDefaultGeneratorPortfolioPreservesTopologyReclaimCoverage(t *testing.T)
 	defer ctrl.Finish()
 
 	params := defaultUnschedulableDistributedReclaimParams(10)
-	topology := buildUnschedulableDistributedReclaimTopology(params)
+	topology := buildLargeJobReclaimTopology(params)
 
 	ssn := test_utils.BuildSession(topology, ctrl)
 	assertDefaultScenarioGeneratorPortfolio(t, ssn)
@@ -109,102 +92,28 @@ func TestDefaultGeneratorPortfolioPreservesTopologyReclaimCoverage(t *testing.T)
 	if job == nil {
 		t.Fatalf("expected distributed job %q in session", unschedulableDistributedJobName)
 	}
-	if len(job.PodStatusIndex[pod_status.Pending]) != params.PodsPerDistributedJob {
+	if len(job.PodStatusIndex[pod_status.Pending]) != params.PendingJobTasks {
 		t.Fatalf("expected %d pending distributed-job tasks, got %d",
-			params.PodsPerDistributedJob, len(job.PodStatusIndex[pod_status.Pending]))
+			params.PendingJobTasks, len(job.PodStatusIndex[pod_status.Pending]))
 	}
 }
 
-func defaultUnschedulableDistributedReclaimParams(numNodes int) unschedulableDistributedReclaimParams {
-	return unschedulableDistributedReclaimParams{
+func defaultUnschedulableDistributedReclaimParams(numNodes int) largeJobReclaimParams {
+	return largeJobReclaimParams{
+		TopologyName:            "unschedulable distributed reclaim topology",
+		PendingJobName:          unschedulableDistributedJobName,
 		NumNodes:                numNodes,
 		GPUsPerNode:             8,
-		PodsPerDistributedJob:   10,
-		RunningJobsPerNode:      8,
+		NumRunningJobs:          numNodes * 8,
+		RunningJobGPUsPerTask:   1,
+		PendingJobGPUsPerTask:   8,
+		PendingJobTasks:         10,
 		Queue0DeservedGPUs:      (numNodes * 8) - (10 * 8) + 1,
 		Queue1DeservedGPUs:      10 * 8,
 		NumberOfCacheBinds:      0,
 		NumberOfCacheEvictions:  0,
 		NumberOfPipelineActions: 0,
 	}
-}
-
-func buildUnschedulableDistributedReclaimTopology(
-	params unschedulableDistributedReclaimParams,
-) test_utils.TestTopologyBasic {
-	return test_utils.TestTopologyBasic{
-		Name:  "unschedulable distributed reclaim topology",
-		Nodes: buildUnschedulableDistributedReclaimNodes(params),
-		Jobs:  buildUnschedulableDistributedReclaimJobs(params),
-		Queues: []test_utils.TestQueueBasic{
-			{
-				Name:               "queue-0",
-				DeservedGPUs:       float64(params.Queue0DeservedGPUs),
-				GPUOverQuotaWeight: 0,
-			},
-			{
-				Name:               "queue-1",
-				DeservedGPUs:       float64(params.Queue1DeservedGPUs),
-				GPUOverQuotaWeight: 0,
-			},
-		},
-		Mocks: &test_utils.TestMock{
-			CacheRequirements: &test_utils.CacheMocking{
-				NumberOfCacheBinds:      params.NumberOfCacheBinds,
-				NumberOfCacheEvictions:  params.NumberOfCacheEvictions,
-				NumberOfPipelineActions: params.NumberOfPipelineActions,
-			},
-		},
-	}
-}
-
-func buildUnschedulableDistributedReclaimNodes(
-	params unschedulableDistributedReclaimParams,
-) map[string]nodes_fake.TestNodeBasic {
-	nodes := make(map[string]nodes_fake.TestNodeBasic, params.NumNodes)
-	for i := 0; i < params.NumNodes; i++ {
-		nodes[fmt.Sprintf("node%d", i)] = nodes_fake.TestNodeBasic{
-			GPUs: params.GPUsPerNode,
-		}
-	}
-	return nodes
-}
-
-func buildUnschedulableDistributedReclaimJobs(
-	params unschedulableDistributedReclaimParams,
-) []*jobs_fake.TestJobBasic {
-	runningJobCount := params.NumNodes * params.RunningJobsPerNode
-	jobs := make([]*jobs_fake.TestJobBasic, 0, runningJobCount+1)
-	for i := 0; i < runningJobCount; i++ {
-		jobs = append(jobs, &jobs_fake.TestJobBasic{
-			Name:                fmt.Sprintf("running-job-%d", i),
-			RequiredGPUsPerTask: 1,
-			Priority:            constants.PriorityTrainNumber,
-			QueueName:           "queue-0",
-			Tasks: []*tasks_fake.TestTaskBasic{
-				{
-					NodeName: fmt.Sprintf("node%d", i%params.NumNodes),
-					State:    pod_status.Running,
-				},
-			},
-		})
-	}
-
-	distributedJob := &jobs_fake.TestJobBasic{
-		Name:                unschedulableDistributedJobName,
-		RequiredGPUsPerTask: float64(params.GPUsPerNode),
-		Priority:            constants.PriorityTrainNumber,
-		QueueName:           "queue-1",
-		Tasks:               make([]*tasks_fake.TestTaskBasic, params.PodsPerDistributedJob),
-	}
-	for i := 0; i < params.PodsPerDistributedJob; i++ {
-		distributedJob.Tasks[i] = &tasks_fake.TestTaskBasic{
-			State: pod_status.Pending,
-		}
-	}
-
-	jobs = append(jobs, distributedJob)
-	return jobs
 }
 
 func assertDefaultScenarioGeneratorPortfolio(t *testing.T, ssn *framework.Session) {
