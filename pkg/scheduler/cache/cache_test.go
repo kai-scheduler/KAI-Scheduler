@@ -22,6 +22,7 @@ package cache
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -56,6 +57,52 @@ func TestCache(t *testing.T) {
 
 var _ = Describe("Cache", func() {
 	Describe("New", func() {
+		Context("Pod informer filtering", func() {
+			It("should filter terminal pods without filtering pods by scheduler name", func() {
+				kubeClient := fake.NewSimpleClientset()
+				cache := New(&SchedulerCacheParams{
+					KubeClient:         kubeClient,
+					KAISchedulerClient: kubeaischedulerfake.NewSimpleClientset(),
+					NodePoolParams:     &conf.SchedulingNodePoolParams{},
+					DiscoveryClient:    kubeClient.Discovery(),
+				})
+
+				stopCh := make(chan struct{})
+				defer close(stopCh)
+				cache.Run(stopCh)
+				cache.WaitForCacheSync(stopCh)
+
+				podSelectors := []string{}
+				nonPodSelectors := map[string][]string{}
+				for _, action := range kubeClient.Actions() {
+					switch typedAction := action.(type) {
+					case faketesting.ListAction:
+						selector := typedAction.GetListRestrictions().Fields.String()
+						if action.GetResource().Resource == "pods" {
+							podSelectors = append(podSelectors, selector)
+						} else if selector != "" {
+							nonPodSelectors[action.GetResource().Resource] = append(nonPodSelectors[action.GetResource().Resource], selector)
+						}
+					case faketesting.WatchAction:
+						selector := typedAction.GetWatchRestrictions().Fields.String()
+						if action.GetResource().Resource == "pods" {
+							podSelectors = append(podSelectors, selector)
+						} else if selector != "" {
+							nonPodSelectors[action.GetResource().Resource] = append(nonPodSelectors[action.GetResource().Resource], selector)
+						}
+					}
+				}
+
+				Expect(podSelectors).NotTo(BeEmpty())
+				for _, selector := range podSelectors {
+					Expect(selector).To(ContainSubstring("status.phase!=Succeeded"))
+					Expect(selector).To(ContainSubstring("status.phase!=Failed"))
+					Expect(selector).NotTo(ContainSubstring("spec.schedulerName"))
+				}
+				Expect(nonPodSelectors).To(BeEmpty())
+			})
+		})
+
 		Context("DRA Feature Gate", func() {
 			DescribeTable("should record DRA availability based on Kubernetes version and resource API availability",
 				func(serverMajor, serverMinor string, resourceGroupVersions []string, expectDRAAvailable bool) {
@@ -88,6 +135,189 @@ var _ = Describe("Cache", func() {
 				Entry("edge case version (1.31) with resource API should not enable DRA", "1", "31", []string{resourcev1alhpa3.SchemeGroupVersion.String()}, false),
 				Entry("higher compatible version (1.35) with resource API should enable DRA", "1", "34", []string{resourcev1.SchemeGroupVersion.String()}, true),
 			)
+		})
+
+		Context("Pod informer transform", func() {
+			It("should strip unused pod fields while preserving scheduler-relevant data", func() {
+				pod := &v1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "pod-1",
+						Namespace: "namespace-1",
+						UID:       types.UID("pod-uid"),
+						Labels: map[string]string{
+							"app": "test",
+						},
+						Annotations: map[string]string{
+							"runai/shared-gpu-configmap": "shared-gpu-configmap-prefix",
+						},
+					},
+					Spec: v1.PodSpec{
+						NodeName:          "node-1",
+						PriorityClassName: "priority-class-1",
+						Priority:          ptr.To(int32(7)),
+						SchedulerName:     "kai-scheduler",
+						RestartPolicy:     v1.RestartPolicyAlways,
+						NodeSelector:      map[string]string{"kai.scheduler/node-pool": "pool-a"},
+						SchedulingGates:   []v1.PodSchedulingGate{{Name: "gate-1"}},
+						RuntimeClassName:  ptr.To("nvidia"),
+						Overhead:          v1.ResourceList{v1.ResourceCPU: resource.MustParse("100m")},
+						Affinity: &v1.Affinity{
+							NodeAffinity: &v1.NodeAffinity{
+								RequiredDuringSchedulingIgnoredDuringExecution: &v1.NodeSelector{
+									NodeSelectorTerms: []v1.NodeSelectorTerm{{
+										MatchExpressions: []v1.NodeSelectorRequirement{{
+											Key:      "kai.scheduler/node-pool",
+											Operator: v1.NodeSelectorOpIn,
+											Values:   []string{"pool-a"},
+										}},
+									}},
+								},
+							},
+						},
+						Tolerations: []v1.Toleration{{
+							Key:      "kai.scheduler/node-pool",
+							Operator: v1.TolerationOpEqual,
+							Value:    "pool-a",
+							Effect:   v1.TaintEffectNoSchedule,
+						}},
+						TopologySpreadConstraints: []v1.TopologySpreadConstraint{{
+							MaxSkew:           1,
+							TopologyKey:       "topology.kubernetes.io/zone",
+							WhenUnsatisfiable: v1.DoNotSchedule,
+						}},
+						Volumes: []v1.Volume{
+							{
+								Name: "config-volume",
+								VolumeSource: v1.VolumeSource{
+									ConfigMap: &v1.ConfigMapVolumeSource{
+										LocalObjectReference: v1.LocalObjectReference{Name: "config-map"},
+									},
+								},
+							},
+							{
+								Name: "pvc-volume",
+								VolumeSource: v1.VolumeSource{
+									PersistentVolumeClaim: &v1.PersistentVolumeClaimVolumeSource{
+										ClaimName: "claim-1",
+									},
+								},
+							},
+						},
+						InitContainers: []v1.Container{{
+							Name:  "init-1",
+							Image: "busybox:latest",
+							Ports: []v1.ContainerPort{{Name: "http", HostPort: 3000, ContainerPort: 80}},
+							Env: []v1.EnvVar{
+								{Name: "BIG_VALUE", Value: strings.Repeat("x", 1024)},
+								{
+									Name: "CONFIG_REF",
+									ValueFrom: &v1.EnvVarSource{
+										ConfigMapKeyRef: &v1.ConfigMapKeySelector{
+											LocalObjectReference: v1.LocalObjectReference{Name: "env-config"},
+											Key:                  "value",
+										},
+									},
+								},
+							},
+							EnvFrom: []v1.EnvFromSource{{
+								ConfigMapRef: &v1.ConfigMapEnvSource{
+									LocalObjectReference: v1.LocalObjectReference{Name: "env-from-config"},
+								},
+							}},
+							Resources: v1.ResourceRequirements{
+								Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("500m")},
+							},
+							VolumeMounts: []v1.VolumeMount{{Name: "config-volume", MountPath: "/config"}},
+						}},
+						Containers: []v1.Container{{
+							Name:  "main",
+							Image: "busybox:latest",
+							Ports: []v1.ContainerPort{{Name: "http", HostPort: 4000, ContainerPort: 8080}},
+							Env: []v1.EnvVar{
+								{Name: "BIG_VALUE", Value: strings.Repeat("y", 1024)},
+								{
+									Name: "CONFIG_REF",
+									ValueFrom: &v1.EnvVarSource{
+										ConfigMapKeyRef: &v1.ConfigMapKeySelector{
+											LocalObjectReference: v1.LocalObjectReference{Name: "env-config"},
+											Key:                  "value",
+										},
+									},
+								},
+							},
+							EnvFrom: []v1.EnvFromSource{{
+								ConfigMapRef: &v1.ConfigMapEnvSource{
+									LocalObjectReference: v1.LocalObjectReference{Name: "env-from-config"},
+								},
+							}},
+							Resources: v1.ResourceRequirements{
+								Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1000m")},
+							},
+							VolumeMounts: []v1.VolumeMount{{Name: "config-volume", MountPath: "/config"}},
+						}},
+						EphemeralContainers: []v1.EphemeralContainer{{
+							EphemeralContainerCommon: v1.EphemeralContainerCommon{
+								Name:  "debugger",
+								Image: "busybox:latest",
+								Env: []v1.EnvVar{
+									{Name: "BIG_VALUE", Value: strings.Repeat("z", 1024)},
+									{
+										Name: "CONFIG_REF",
+										ValueFrom: &v1.EnvVarSource{
+											ConfigMapKeyRef: &v1.ConfigMapKeySelector{
+												LocalObjectReference: v1.LocalObjectReference{Name: "env-config"},
+												Key:                  "value",
+											},
+										},
+									},
+								},
+								EnvFrom: []v1.EnvFromSource{{
+									ConfigMapRef: &v1.ConfigMapEnvSource{
+										LocalObjectReference: v1.LocalObjectReference{Name: "env-from-config"},
+									},
+								}},
+								VolumeMounts: []v1.VolumeMount{{Name: "config-volume", MountPath: "/debug-config"}},
+							},
+						}},
+					},
+				}
+
+				cache, stopCh := setupCacheWithObjects(true, []runtime.Object{pod}, &schedulingv1alpha2.BindRequest{})
+				defer close(stopCh)
+
+				storedPod, err := cache.(*SchedulerCache).KubeInformerFactory().Core().V1().Pods().Lister().
+					Pods(pod.Namespace).Get(pod.Name)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(storedPod.ManagedFields).To(BeNil())
+				Expect(storedPod.Spec.Containers).To(HaveLen(1))
+				Expect(storedPod.Spec.Containers[0].Env).To(HaveLen(1))
+				Expect(storedPod.Spec.Containers[0].Env[0].Name).To(Equal("CONFIG_REF"))
+				Expect(storedPod.Spec.Containers[0].Env[0].ValueFrom).NotTo(BeNil())
+				Expect(storedPod.Spec.Containers[0].Env[0].ValueFrom.ConfigMapKeyRef).NotTo(BeNil())
+				Expect(storedPod.Spec.Containers[0].Env[0].Value).To(BeEmpty())
+				Expect(storedPod.Spec.Containers[0].EnvFrom).To(HaveLen(1))
+				Expect(storedPod.Spec.Containers[0].VolumeMounts).To(HaveLen(1))
+				Expect(storedPod.Spec.Containers[0].Ports).To(HaveLen(1))
+				Expect(storedPod.Spec.Containers[0].Ports[0].HostPort).To(Equal(int32(4000)))
+				Expect(storedPod.Spec.InitContainers).To(HaveLen(1))
+				Expect(storedPod.Spec.InitContainers[0].Env).To(HaveLen(1))
+				Expect(storedPod.Spec.InitContainers[0].Env[0].Name).To(Equal("CONFIG_REF"))
+				Expect(storedPod.Spec.InitContainers[0].Ports[0].HostPort).To(Equal(int32(3000)))
+				Expect(storedPod.Spec.EphemeralContainers).To(HaveLen(1))
+				Expect(storedPod.Spec.EphemeralContainers[0].Env).To(HaveLen(1))
+				Expect(storedPod.Spec.EphemeralContainers[0].Env[0].Name).To(Equal("CONFIG_REF"))
+				Expect(storedPod.Spec.EphemeralContainers[0].VolumeMounts).To(HaveLen(1))
+				Expect(storedPod.Spec.Volumes).To(HaveLen(2))
+				Expect(storedPod.Spec.Affinity).NotTo(BeNil())
+				Expect(storedPod.Spec.NodeSelector).To(HaveKeyWithValue("kai.scheduler/node-pool", "pool-a"))
+				Expect(storedPod.Spec.Tolerations).To(HaveLen(1))
+				Expect(storedPod.Spec.TopologySpreadConstraints).To(HaveLen(1))
+				Expect(storedPod.Spec.PriorityClassName).To(Equal("priority-class-1"))
+				Expect(storedPod.Spec.Priority).NotTo(BeNil())
+				Expect(storedPod.Spec.SchedulingGates).To(HaveLen(1))
+				Expect(storedPod.Spec.RuntimeClassName).NotTo(BeNil())
+				Expect(*storedPod.Spec.RuntimeClassName).To(Equal("nvidia"))
+			})
 		})
 	})
 	Describe("Bind", func() {

@@ -20,7 +20,7 @@ jobs:
       code: ${{ steps.filter.outputs.code }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Check changed files
         uses: dorny/paths-filter@v3
@@ -43,10 +43,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Cache Go build cache (Docker-mounted)
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cache/go-build-docker-gocache
@@ -109,7 +109,7 @@ jobs:
           name: total-coverage
           path: coverage-summary
       - name: Download coverage badge branch
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: coverage-badge
           path: coverage-badge
@@ -121,21 +121,22 @@ jobs:
 
           BASELINE_COVERAGE=$(grep -oE '[0-9]+\.[0-9]+%' coverage-badge/badges/coverage.svg | head -1 | tr -d '%')
           echo "baseline=$BASELINE_COVERAGE" >> $GITHUB_OUTPUT
+
+          DELTA=$(awk -v pr="$PR_COVERAGE" -v baseline="$BASELINE_COVERAGE" 'BEGIN { printf "%.2f", pr - baseline }')
+          echo "delta=$DELTA" >> $GITHUB_OUTPUT
       - name: Save coverage report to file
         env:
           REPORT_BODY: ${{ steps.coverage_reporter.outputs.coverage_report }}
           BASELINE_COVERAGE: ${{ steps.coverage_totals.outputs.baseline }}
           PR_COVERAGE: ${{ steps.coverage_totals.outputs.pr }}
+          COVERAGE_DELTA: ${{ steps.coverage_totals.outputs.delta }}
         run: |
-          if [ -z "$REPORT_BODY" ]; then
-            : > coverage-report.txt
-            exit 0
-          fi
-
           {
-            echo "**Total coverage:** ${BASELINE_COVERAGE}% -> ${PR_COVERAGE}%"
-            echo ""
-            echo "$REPORT_BODY"
+            echo "**Total coverage:** ${BASELINE_COVERAGE}% -> ${PR_COVERAGE}% (delta ${COVERAGE_DELTA}%)"
+            if [ -n "$REPORT_BODY" ]; then
+              echo ""
+              echo "$REPORT_BODY"
+            fi
           } > coverage-report.txt
       - name: Upload coverage report
         uses: actions/upload-artifact@v7
@@ -159,7 +160,7 @@ jobs:
       package_version: ${{ steps.package_version.outputs.PACKAGE_VERSION }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Extract package version
         id: package_version
@@ -171,7 +172,7 @@ jobs:
           echo $PACKAGE_VERSION
 
       - name: Cache Go build cache (Docker-mounted)
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cache/go-build-docker-gocache
@@ -203,7 +204,7 @@ jobs:
           sudo chown -R $USER:$USER /mnt/images
 
       - name: Cache for docker images and helm chart
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: /mnt/images
           key:  images-${{ github.sha }}
@@ -237,7 +238,7 @@ jobs:
       actions: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup e2e cluster
         uses: ./.github/actions/setup-e2e-cluster
@@ -256,7 +257,7 @@ jobs:
           PACKAGE_VERSION: ${{ needs.build.outputs.package_version }}
         run: |
           helm upgrade -i kai-scheduler /mnt/images/kai-scheduler-$PACKAGE_VERSION.tgz -n kai-scheduler --create-namespace \
-            --set "global.gpuSharing=true" --set "global.registry=localhost:30100" --debug --wait
+            --set "global.gpuSharing=true" --set "global.registry=localhost:30100" --set "prometheus.enabled=true" --debug --wait
           kubectl create clusterrole pods-patcher --verb=patch --resource=pods
           kubectl create rolebinding fake-status-updater --clusterrole=pods-patcher --serviceaccount=gpu-operator:status-updater -n kai-resource-reservation
 
@@ -294,7 +295,7 @@ jobs:
       actions: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Resolve upgrade-from version
         id: resolve_version
@@ -367,7 +368,7 @@ jobs:
       FOSSA_API_KEY: 577e3d21c48454822ae8ea496209a505 # This is a push-only token that is safe to be exposed.
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Run FOSSA analysis and validate status
         uses: fossa-contrib/fossa-action@v3.0.1

@@ -25,6 +25,7 @@ import (
 	"strconv"
 	"strings"
 
+	nrtv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 	"go.uber.org/multierr"
 	"golang.org/x/exp/maps"
 	v1 "k8s.io/api/core/v1"
@@ -85,6 +86,10 @@ type NodeInfo struct {
 
 	// HasDRAGPUs indicates GPUs were added via DRA ResourceSlices. Temporary fix - remove when device-plugin pods are supported on DRA nodes.
 	HasDRAGPUs bool
+
+	NodeResourceTopology *nrtv1alpha2.NodeResourceTopology
+
+	NumaTopology *NumaTopology
 
 	PodAffinityInfo pod_affinity.NodePodAffinityInfo
 
@@ -150,7 +155,7 @@ func (ni *NodeInfo) NonAllocatedResource(resourceType v1.ResourceName) float64 {
 
 func (ni *NodeInfo) IsTaskAllocatable(task *pod_info.PodInfo) bool {
 	if isBestEffortJob := task.GpuRequirement.IsEmpty() && task.ResReqVector.IsZero() &&
-		(len(task.GetAllStorageClaims()) == 0) && !task.IsMemoryRequest(); isBestEffortJob {
+		(len(task.GetAllStorageClaims()) == 0) && !task.IsGpuMemoryRequest(); isBestEffortJob {
 		return true
 	}
 

@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/selection"
 
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
 	usagedbapi "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
 )
 
@@ -59,6 +60,8 @@ type SchedulerConfiguration struct {
 
 	// UsageDBConfig defines configuration for the usage db client
 	UsageDBConfig *usagedbapi.UsageDBConfig `yaml:"usageDBConfig,omitempty" json:"usageDBConfig,omitempty"`
+
+	ScenarioSearchBudgets *kaiv1.ScenarioSearchBudgets `json:"scenarioSearchBudgets,omitempty" yaml:"scenarioSearchBudgets,omitempty"`
 }
 
 // Tier defines plugin tier

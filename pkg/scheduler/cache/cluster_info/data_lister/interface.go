@@ -4,6 +4,7 @@
 package data_lister
 
 import (
+	nrtv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 	v1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
 	scheduling "k8s.io/api/scheduling/v1"
@@ -32,8 +33,8 @@ type DataLister interface {
 	ListBindRequests() ([]*schedulingv1alpha2.BindRequest, error)
 	ListConfigMaps() ([]*v1.ConfigMap, error)
 	ListTopologies() ([]*kaiv1alpha1.Topology, error)
+	ListNodeResourceTopologies() ([]*nrtv1alpha2.NodeResourceTopology, error)
 	ListResourceUsage() (*queue_info.ClusterUsage, error)
-	// ListResourceSlicesByNode returns ResourceSlices grouped by node name.
 	ListResourceSlicesByNode() (map[string][]*resourceapi.ResourceSlice, error)
 	ListResourceClaims() ([]*resourceapi.ResourceClaim, error)
 	ListResourceSlices() ([]*resourceapi.ResourceSlice, error)

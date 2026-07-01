@@ -9,6 +9,7 @@ const (
 	AppLabelName              = "app"
 	NvidiaGpuResource         = "nvidia.com/gpu"
 	NvidiaGpuMemory           = "nvidia.com/gpu.memory"
+	NvidiaMigResourcePrefix   = "nvidia.com/mig-"
 	GpuResource               = "gpu"
 	UnlimitedResourceQuantity = float64(-1)
 
@@ -25,6 +26,21 @@ const (
 	DefaultNodePoolLabelKey               = "kai.scheduler/node-pool"
 	DefaultRuntimeClassName               = "nvidia"
 	DefaultStuckInReleasingThreshold      = 2 * time.Minute
+
+	ActionDefault       = "default"
+	ActionReclaim       = "reclaim"
+	ActionPreempt       = "preempt"
+	ActionConsolidation = "consolidation"
+
+	GeneratorNodeLocalGreedy = "NodeLocalGreedy"
+	GeneratorMultiNodeGang   = "MultiNodeGang"
+
+	DefaultActionBudget    = "5m"
+	DefaultJobBudget       = "4m"
+	DefaultMinJobBudget    = "0s"
+	DefaultGeneratorBudget = "2m"
+	DefaultNodeLocalGreedy = "30s"
+	DefaultMultiNodeGang   = "2m"
 
 	DefaultCPUWorkerNodeLabelKey = "node-role.kubernetes.io/cpu-worker"
 	DefaultGPUWorkerNodeLabelKey = "node-role.kubernetes.io/gpu-worker"
@@ -47,6 +63,7 @@ const (
 	LastStartTimeStamp            = "kai.scheduler/last-start-timestamp"
 	GpuSharingConfigMapAnnotation = "runai/shared-gpu-configmap"
 	NvidiaVisibleDevices          = "NVIDIA_VISIBLE_DEVICES"
+	NumaPlacementObserved         = "kai.scheduler/numa-placement-observed"
 
 	// UsageDB Prometheus Selector
 	DefaultAccountingLabelKey   = "kai.scheduler/accounting"

@@ -1,0 +1,57 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+suite: test default SchedulingShard configuration
+
+templates:
+  - default-shard.yaml
+tests:
+  - it: should render the default SchedulingShard by default
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: SchedulingShard
+      - equal:
+          path: metadata.name
+          value: default
+
+  - it: should render the default SchedulingShard when explicitly enabled
+    set:
+      defaultShard.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: SchedulingShard
+
+  - it: should not render the default SchedulingShard when disabled
+    set:
+      defaultShard.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: should render scenario search budgets
+    set:
+      scheduler:
+        scenarioSearchBudgets:
+          maxActionSearchDuration:
+            reclaim: "2s"
+          maxJobSearchDuration: "250ms"
+          minJobSearchDuration: "0s"
+          maxGeneratorSearchDuration:
+            NodeLocalGreedy: "50ms"
+    asserts:
+      - equal:
+          path: spec.scenarioSearchBudgets.maxActionSearchDuration.reclaim
+          value: 2s
+      - equal:
+          path: spec.scenarioSearchBudgets.maxJobSearchDuration
+          value: 250ms
+      - equal:
+          path: spec.scenarioSearchBudgets.minJobSearchDuration
+          value: 0s
+      - equal:
+          path: spec.scenarioSearchBudgets.maxGeneratorSearchDuration.NodeLocalGreedy
+          value: 50ms

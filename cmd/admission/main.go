@@ -11,6 +11,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/cmd/admission/app"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/admission/plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/admission/webhook/v1alpha2/deviceaccess"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/admission/webhook/v1alpha2/gpusharing"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/admission/webhook/v1alpha2/hamicore"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/admission/webhook/v1alpha2/runtimeenforcement"
@@ -50,8 +51,12 @@ func registerPlugins(app *app.App) error {
 		admissionPlugins.RegisterPlugin(hamicore.New())
 	}
 
-	if app.Options.GPUPodRuntimeClassName != "" {
-		admissionRuntimeEnforcementPlugin := runtimeenforcement.New(app.Options.GPUPodRuntimeClassName)
+	if app.Options.BlockNvidiaVisibleDevices {
+		admissionPlugins.RegisterPlugin(deviceaccess.New())
+	}
+
+	if rc := app.Options.ResolvedGPUFractionRuntimeClassName(); rc != "" {
+		admissionRuntimeEnforcementPlugin := runtimeenforcement.New(rc)
 		admissionPlugins.RegisterPlugin(admissionRuntimeEnforcementPlugin)
 	}
 

@@ -993,7 +993,7 @@ func TestNodeInfo_isTaskAllocatableOnNonAllocatedResources(t *testing.T) {
 							Namespace: "n1",
 							Annotations: map[string]string{
 								commonconstants.PodGroupAnnotationForPod: "pg1",
-								pod_info.GpuMemoryAnnotationName:         "1500",
+								commonconstants.GpuMemory:                "1500",
 							},
 						},
 						Spec: v1.PodSpec{
@@ -1039,7 +1039,7 @@ func TestNodeInfo_isTaskAllocatableOnNonAllocatedResources(t *testing.T) {
 							Namespace: "n1",
 							Annotations: map[string]string{
 								commonconstants.PodGroupAnnotationForPod: "pg1",
-								pod_info.GpuMemoryAnnotationName:         "1000",
+								commonconstants.GpuMemory:                "1000",
 							},
 						},
 						Spec: v1.PodSpec{

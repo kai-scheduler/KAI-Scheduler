@@ -6,9 +6,11 @@ global:
   tag: ""
   imagePullPolicy: IfNotPresent
   securityContext: {}
+  podSecurityContext: {}
   imagePullSecrets: [] # format: [{name: secret1}, {name: secret2}]
   leaderElection: false
   gpuSharing: false
+  blockNvidiaVisibleDevices: false
   clusterAutoscaling: false
   nodeSelector: {}
   affinity: {}
@@ -16,6 +18,7 @@ global:
   tolerations: []
   namespaceLabelSelector: {}
   podLabelSelector: {}
+  nodePoolLabelKey: ""
   jsonLog: false
   vpa:
     enabled: false
@@ -35,6 +38,8 @@ global:
     namespace: kai-resource-reservation
     serviceAccount: kai-resource-reservation
     appLabel: kai-resource-reservation
+    namespaceLabels: {}
+    createNamespace: true
 
 operator:
   image:
@@ -146,6 +151,30 @@ scheduler:
   #   mycustomaction:
   #     priority: 150
   actions: {}
+  # Alpha/experimental scenario search time budgets. Values are Go duration strings.
+  scenarioSearchBudgets: {}
+
+# defaultShard controls the chart-managed "default" SchedulingShard CR,
+# whose spec is populated from the scheduler.* values above.
+# Disable to install KAI without deploying the default SchedulingShard
+# (e.g. to manage shards out-of-band).
+defaultShard:
+  enabled: true
+
+numaPlacementExporter:
+  image:
+    name: numa-placement-exporter
+    pullPolicy: IfNotPresent
+    # tag: ""  # Optional: Override global.tag or Chart.AppVersion
+  # nodeSelector targets the DaemonSet at specific nodes (e.g. GPU/NUMA nodes). The global
+  # nodeSelector is intentionally NOT applied to this DaemonSet.
+  nodeSelector: {}
+  # tolerations let the DaemonSet run on tainted worker nodes (merged with global.daemonsetsTolerations).
+  tolerations: []
+  affinity: {}
+  resources: {}
+  # pollInterval: 1s
+  # driftResyncInterval: 60s
 
 queuecontroller:
   enabled: true
@@ -153,7 +182,6 @@ queuecontroller:
     name: queuecontroller
     pullPolicy: IfNotPresent
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
-  certSecretName: queuecontroller-webhook-tls-secret
   affinity: {}
 
 admission:
@@ -163,13 +191,12 @@ admission:
     name: admission
     pullPolicy: IfNotPresent
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
-  certSecretName: admission-webhook-tls-secret
   ports:
     webhookPort: 9443
     metricsPort: 8080
     probePort: 8081
   cdi: false
-  gpuPodRuntimeClassName: nvidia
+  gpuFractionRuntimeClassName: nvidia
   affinity: {}
   podDisruptionBudget:
     enabled: true
@@ -186,6 +213,7 @@ nodescaleadjuster:
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   scalingPodNamespace: kai-scale-adjust
   affinity: {}
+  labels: {}
 
 crdupgrader:
   image:
@@ -193,6 +221,19 @@ crdupgrader:
     pullPolicy: IfNotPresent
     # registry: ""  # Optional: Override global.registry (e.g. to mirror only the hook image)
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
+  resources: {}
+
+kaiConfigDeployer:
+  # Post-install/post-upgrade hook that applies the kai-config CR out-of-release (#1536).
+  # Disable to manage the kai-config CR outside of this chart. When disabled, the chart
+  # neither creates kai-config nor deletes it during post-delete cleanup.
+  enabled: true
+  image:
+    name: crd-upgrader
+    pullPolicy: IfNotPresent
+    # registry: ""  # Optional: Override global.registry (e.g. to mirror only the hook image)
+    # tag: ""  # Optional: Override global.tag or Chart.AppVersion
+  resources: {}
 
 topologyMigration:
   # Enable migration of Kueue Topology CRs to KAI Topology CRs
@@ -205,6 +246,7 @@ topologyMigration:
     name: crd-upgrader
     pullPolicy: IfNotPresent
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
+  resources: {}
 
 postCleanup:
   enabled: true
@@ -214,6 +256,13 @@ postCleanup:
     pullPolicy: IfNotPresent
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   serviceAccountName: post-delete-cleanup
+  resources: {}
+
+# defaultPriorityClasses controls the chart-managed build, train, inference, and
+# build-preemptible PriorityClasses. Disable when these cluster-scoped resources
+# are managed externally.
+defaultPriorityClasses:
+  enabled: true
 
 prometheus:
   # Enable Prometheus integration for time-aware fairness features.

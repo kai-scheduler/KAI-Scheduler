@@ -61,7 +61,7 @@ type proportionPlugin struct {
 	allowConsolidatingReclaim     bool
 	relcaimerSaturationMultiplier float64
 	kValue                        float64
-	minNodeGPUMemory              int64
+	minNodeGPUMemory              *int64
 }
 
 func New(arguments framework.PluginArguments) framework.Plugin {
@@ -100,11 +100,12 @@ func (pp *proportionPlugin) OnSessionOpen(ssn *framework.Session) {
 	pp.calculateResourcesProportion(ssn)
 	pp.subGroupOrderFn = ssn.SubGroupOrderFn
 	pp.taskOrderFunc = ssn.TaskOrderFn
-	pp.minNodeGPUMemory = ssn.ClusterInfo.MinNodeGPUMemory
+	pp.minNodeGPUMemory = ssn.ClusterInfo.MinNodeGPUMemoryMiB
 	pp.reclaimablePlugin = rec.New(pp.relcaimerSaturationMultiplier)
-	capacityPolicy := cp.New(pp.queues)
+	capacityPolicy := cp.New(pp.queues, ssn.ClusterInfo.MaxNodeGPUMemoryMiB)
 	ssn.AddQueueOrderFn(pp.queueOrder)
 	ssn.AddCanReclaimResourcesFn(pp.CanReclaimResourcesFn)
+	ssn.AddReclaimVictimFilterFn(pp.reclaimVictimFilterFn)
 	ssn.AddReclaimScenarioValidatorFn(pp.reclaimableFn)
 	ssn.AddOnJobSolutionStartFn(pp.OnJobSolutionStartFn)
 	ssn.AddIsNonPreemptibleJobOverQueueQuotaFns(capacityPolicy.IsNonPreemptibleJobOverQuota)
@@ -138,6 +139,13 @@ func (pp *proportionPlugin) OnJobSolutionStartFn() {
 func (pp *proportionPlugin) CanReclaimResourcesFn(reclaimer *podgroup_info.PodGroupInfo) bool {
 	reclaimerInfo := pp.buildReclaimerInfo(reclaimer, pp.minNodeGPUMemory)
 	return pp.reclaimablePlugin.CanReclaimResources(pp.queues, reclaimerInfo)
+}
+
+func (pp *proportionPlugin) reclaimVictimFilterFn(
+	reclaimer *podgroup_info.PodGroupInfo, victim *podgroup_info.PodGroupInfo,
+) bool {
+	reclaimerInfo := pp.buildReclaimerInfo(reclaimer, pp.minNodeGPUMemory)
+	return pp.reclaimablePlugin.FilterVictim(pp.queues, reclaimerInfo, victim.Queue)
 }
 
 func (pp *proportionPlugin) reclaimableFn(
@@ -295,14 +303,15 @@ func (pp *proportionPlugin) createQueueAttributes(ssn *framework.Session) {
 	pp.setFairShare()
 }
 
-func (pp *proportionPlugin) buildReclaimerInfo(reclaimer *podgroup_info.PodGroupInfo, minNodeGPUMemory int64) *rec.ReclaimerInfo {
+func (pp *proportionPlugin) buildReclaimerInfo(reclaimer *podgroup_info.PodGroupInfo, minNodeGPUMemory *int64) *rec.ReclaimerInfo {
 	return &rec.ReclaimerInfo{
-		Name:              reclaimer.Name,
-		Namespace:         reclaimer.Namespace,
-		Queue:             reclaimer.Queue,
-		IsPreemptable:     reclaimer.IsPreemptibleJob(),
-		RequiredResources: podgroup_info.GetTasksToAllocateInitResourceVector(reclaimer, pp.subGroupOrderFn, pp.taskOrderFunc, false, minNodeGPUMemory),
-		VectorMap:         reclaimer.VectorMap,
+		Name:          reclaimer.Name,
+		Namespace:     reclaimer.Namespace,
+		Queue:         reclaimer.Queue,
+		IsPreemptable: reclaimer.IsPreemptibleJob(),
+		RequiredResources: podgroup_info.GetTasksToAllocateInitResourceVector(reclaimer, pp.subGroupOrderFn, pp.taskOrderFunc,
+			false, minNodeGPUMemory),
+		VectorMap: reclaimer.VectorMap,
 	}
 }
 
@@ -311,6 +320,7 @@ func (pp *proportionPlugin) createQueueResourceAttrs(ssn *framework.Session) {
 		queueAttributes := &rs.QueueAttributes{
 			UID:               queue.UID,
 			Name:              queue.Name,
+			DisplayName:       queue.DisplayName,
 			ParentQueue:       queue.ParentQueue,
 			ChildQueues:       queue.ChildQueues,
 			CreationTimestamp: queue.CreationTimestamp,
@@ -361,9 +371,9 @@ func (pp *proportionPlugin) updateQueuesCurrentResourceUsage(ssn *framework.Sess
 			} else if status == pod_status.Pending {
 				for _, t := range tasks {
 					resources := utils.QuantifyVector(t.ResReqVector, t.VectorMap)
-					if t.IsMemoryRequest() {
+					if t.IsGpuMemoryRequest() && ssn.ClusterInfo.MinNodeGPUMemoryMiB != nil {
 						resources.Add(rs.ResourceQuantities{
-							rs.GpuResource: float64(t.GpuRequirement.GetNumOfGpuDevices()) * (float64(t.GpuRequirement.GpuMemory()) / float64(ssn.ClusterInfo.MinNodeGPUMemory)),
+							rs.GpuResource: t.GpuRequirement.GpuMemoryAsGpuFraction(*ssn.ClusterInfo.MinNodeGPUMemoryMiB),
 						})
 					}
 					pp.updateQueuesResourceUsageForPendingJob(job.Queue, resources)
@@ -490,7 +500,7 @@ func (pp *proportionPlugin) deallocateHandlerFn(ssn *framework.Session) func(eve
 	}
 }
 
-func (pp *proportionPlugin) queueOrder(lQ, rQ *queue_info.QueueInfo, lJob, rJob *podgroup_info.PodGroupInfo, lVictims, rVictims []*podgroup_info.PodGroupInfo, minNodeGPUMemory int64) int {
+func (pp *proportionPlugin) queueOrder(lQ, rQ *queue_info.QueueInfo, lJob, rJob *podgroup_info.PodGroupInfo, lVictims, rVictims []*podgroup_info.PodGroupInfo, minNodeGPUMemory *int64) int {
 	lQueueAttributes, found := pp.queues[lQ.UID]
 	if !found {
 		log.InfraLogger.Errorf("Failed to find queue: <%v>", lQ.Name)

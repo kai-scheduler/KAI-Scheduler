@@ -188,12 +188,12 @@ if [ "$LOCAL_IMAGES_BUILD" = "true" ]; then
     # Package and install helm chart
     helm package ./deployments/kai-scheduler -d ./charts --app-version $PACKAGE_VERSION --version $PACKAGE_VERSION
     helm upgrade -i kai-scheduler ./charts/kai-scheduler-$PACKAGE_VERSION.tgz -n kai-scheduler --create-namespace \
-        --set "global.gpuSharing=true" --set "global.registry=localhost:30100" --debug --wait
+        --set "global.gpuSharing=true" --set "global.registry=localhost:30100" --set "prometheus.enabled=true" --debug --wait
     rm -rf ./charts/kai-scheduler-$PACKAGE_VERSION.tgz
     cd ${REPO_ROOT}/hack
 else
     helm upgrade -i kai-scheduler oci://ghcr.io/kai-scheduler/kai-scheduler/kai-scheduler -n kai-scheduler --create-namespace \
-        --set "global.gpuSharing=true" --wait --version "$PACKAGE_VERSION"
+        --set "global.gpuSharing=true" --set "prometheus.enabled=true" --wait --version "$PACKAGE_VERSION"
 fi
 
 # Create RBAC for fake-gpu-operator status updates

@@ -284,6 +284,24 @@ var _ = Describe("PodAccumulatedScenarioBuilder", func() {
 			Expect(numberOfGeneratedScenarios).To(Equal(len(potentialVictimsPerScenario)))
 		})
 	})
+
+	Context("preemptor with no tasks to allocate - nil scenario", func() {
+		BeforeEach(func() {
+			ssn, _ = initializeSession(0, 0)
+			submitQueue := createQueue("team-a")
+			ssn.ClusterInfo.Queues[submitQueue.UID] = submitQueue
+			// Running tasks are not allocatable, so the job has no tasks to allocate.
+			reclaimerJob, _ = createJobWithTasks(1, 1, "team-a", v1.PodRunning, []v1.ResourceRequirements{})
+			recordedVictimsJobs := []*podgroup_info.PodGroupInfo{}
+			victimsQueue := utils.GetVictimsQueue(ssn, nil)
+
+			scenarioBuilder = NewPodAccumulatedScenarioBuilder(ssn, reclaimerJob, recordedVictimsJobs, victimsQueue, ssn.ClusterInfo.Nodes)
+		})
+		It("does not panic and yields no scenario", func() {
+			Expect(scenarioBuilder.GetValidScenario()).To(BeNil())
+			Expect(scenarioBuilder.GetNextScenario()).To(BeNil())
+		})
+	})
 })
 
 func initializeSession(jobsCount, tasksPerJob int) (*framework.Session, []*pod_info.PodInfo) {

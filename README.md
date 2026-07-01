@@ -97,9 +97,10 @@ Follow the instructions [here](docs/developer/building-from-source.md)
 When `gpu-operator` <v25.10.0 is installed, the following flag should be added to the installation command:
 
 ```
---set admission.gpuPodRuntimeClassName=null
+--set admission.gpuFractionRuntimeClassName=null
 ```
-If CDI is enabled also add `--set binder.cdiEnabled=true`.
+If CDI is enabled, add `--set binder.cdiEnabled=true` to the installation command.
+
 ## Support & Breaking changes
 
 For details on our release lifecycle, LTS versions, and supported releases, see the [Support Policy](SUPPORT.md).
@@ -109,6 +110,10 @@ Refer to the [Breaking Changes](https://github.com/kai-scheduler/KAI-scheduler/b
 ## Quick Start
 
 To start scheduling workloads with KAI Scheduler, please continue to [Quick Start example](docs/quickstart/README.md)
+
+## Agent Skills
+
+Repo-local agent skills live under [`.agents/`](.agents/README.md). This directory is the shared source of truth for reusable agent workflows in this repository, including Codex and Claude Code integrations.
 
 ## Roadmap
 

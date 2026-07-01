@@ -19,7 +19,7 @@ jobs:
       package_version: ${{ steps.package_version.outputs.PACKAGE_VERSION }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Extract package version
         id: package_version
@@ -50,7 +50,7 @@ jobs:
           sudo chown -R $USER:$USER /mnt/images
 
       - name: Cache for docker images and helm chart
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: /mnt/images
           key: images-${{ github.sha }}
@@ -86,7 +86,9 @@ jobs:
           # Update with each release to match the current k8s support window.
           # Verify patch versions at https://github.com/kubernetes-sigs/kind/releases
           # DRA feature config is only relevant for v1.32 (v1beta1) and v1.33 (v1beta2).
-          # v1.34+ has DRA GA; v1.31 predates the DRA beta.
+          # v1.34+ has DRA GA; v1.31 and earlier predate the DRA beta.
+          - k8s_version: v1.36.1
+            feature_config: default
           - k8s_version: v1.35.0
             feature_config: default
           - k8s_version: v1.34.0
@@ -101,9 +103,15 @@ jobs:
             feature_config: dra-enabled
           - k8s_version: v1.31.6
             feature_config: default
+          - k8s_version: v1.30.4
+            feature_config: default
+          - k8s_version: v1.29.8
+            feature_config: default
+          - k8s_version: v1.28.13
+            feature_config: default
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup e2e cluster
         uses: ./.github/actions/setup-e2e-cluster
@@ -117,7 +125,7 @@ jobs:
           PACKAGE_VERSION: ${{ needs.build-and-push.outputs.package_version }}
         run: |
           helm upgrade -i kai-scheduler /mnt/images/kai-scheduler-$PACKAGE_VERSION.tgz -n kai-scheduler --create-namespace \
-            --set "global.gpuSharing=true" --set "global.registry=localhost:30100" --debug --wait
+            --set "global.gpuSharing=true" --set "global.registry=localhost:30100" --set "prometheus.enabled=true" --debug --wait
           kubectl create clusterrole pods-patcher --verb=patch --resource=pods
           kubectl create rolebinding fake-status-updater --clusterrole=pods-patcher --serviceaccount=gpu-operator:status-updater -n kai-resource-reservation
 

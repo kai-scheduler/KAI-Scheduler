@@ -18,7 +18,6 @@ import (
 
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 )
@@ -258,7 +257,7 @@ func Test_podToMaxNodeResourcesFiltering(t *testing.T) {
 						Namespace: "n1",
 						Annotations: map[string]string{
 							commonconstants.PodGroupAnnotationForPod: "pg1",
-							common_info.GPUFraction:                  "0.5",
+							commonconstants.GpuFraction:              "0.5",
 						},
 					},
 					Spec: v1.PodSpec{

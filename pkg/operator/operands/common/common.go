@@ -28,6 +28,11 @@ import (
 
 var controllerTypes = []string{"Deployment", "DaemonSet"}
 
+const (
+	OperatorManagedByLabelKey   = "app.kubernetes.io/managed-by"
+	OperatorManagedByLabelValue = "kai-operator"
+)
+
 // PodDisruptionBudgetImplementedServices lists operand resource names with operator-side PDB creation.
 var PodDisruptionBudgetImplementedServices = map[string]struct{}{
 	"admission": {},
@@ -139,6 +144,7 @@ func DeploymentForKAIConfig(
 		return nil, err
 	}
 	deployment := deploymentObj.(*appsv1.Deployment)
+	deployment.Labels[OperatorManagedByLabelKey] = OperatorManagedByLabelValue
 	deployment.TypeMeta = metav1.TypeMeta{
 		Kind:       "Deployment",
 		APIVersion: "apps/v1",
@@ -177,6 +183,57 @@ func DeploymentForKAIConfig(
 	deployment.Spec.Template.Spec.ImagePullSecrets = kaiConfigUtils.GetGlobalImagePullSecrets(kaiConfig.Spec.Global)
 
 	return deployment, nil
+}
+
+// DaemonSetForKAIConfig builds a DaemonSet for an operand. Unlike DeploymentForKAIConfig it does NOT
+// apply the global NodeSelector or merge the global Affinity: those confine KAI management pods to
+// management nodes, the opposite of what a node-local DaemonSet (e.g. the NUMA placement exporter)
+// needs. Targeting comes from the operand's own nodeSelector/affinity; tolerations merge the
+// daemonset-specific global tolerations with the operand's.
+func DaemonSetForKAIConfig(
+	ctx context.Context, runtimeClient client.Reader, kaiConfig *kaiv1.Config, service *kaiv1common.Service,
+	nodeSelector map[string]string, tolerations []v1.Toleration, name string,
+) (*appsv1.DaemonSet, error) {
+	dsObj, err := ObjectForKAIConfig(ctx, runtimeClient, &appsv1.DaemonSet{}, name, kaiConfig.Spec.Namespace)
+	if err != nil {
+		return nil, err
+	}
+	ds := dsObj.(*appsv1.DaemonSet)
+	ds.TypeMeta = metav1.TypeMeta{
+		Kind:       "DaemonSet",
+		APIVersion: "apps/v1",
+	}
+
+	ds.Spec.Selector = &metav1.LabelSelector{
+		MatchLabels: map[string]string{
+			"app": name,
+		},
+	}
+
+	if ds.Spec.Template.Labels == nil {
+		ds.Spec.Template.Labels = map[string]string{}
+	}
+	ds.Spec.Template.Labels["app"] = name
+
+	ds.Spec.Template.Spec.ServiceAccountName = name
+	ds.Spec.Template.Spec.NodeSelector = nodeSelector
+	ds.Spec.Template.Spec.Affinity = service.Affinity
+	ds.Spec.Template.Spec.Tolerations = append(
+		append([]v1.Toleration{}, kaiConfig.Spec.Global.DaemonsetsTolerations...), tolerations...)
+
+	ds.Spec.Template.Spec.Containers = []v1.Container{
+		{
+			Name:            name,
+			Image:           service.Image.Url(),
+			ImagePullPolicy: *service.Image.PullPolicy,
+			Resources:       v1.ResourceRequirements(*service.Resources),
+			SecurityContext: kaiConfig.Spec.Global.GetSecurityContext(),
+		},
+	}
+
+	ds.Spec.Template.Spec.ImagePullSecrets = kaiConfigUtils.GetGlobalImagePullSecrets(kaiConfig.Spec.Global)
+
+	return ds, nil
 }
 
 func ShouldCreatePodDisruptionBudget(replicas *int32, service *kaiv1common.Service) bool {

@@ -18,16 +18,17 @@ import (
 type capacityCheckFn func(requestedShare rs.ResourceQuantities, job *podgroup_info.PodGroupInfo) *api.SchedulableResult
 
 type CapacityPolicy struct {
-	queues map[common_info.QueueID]*rs.QueueAttributes
+	queues              map[common_info.QueueID]*rs.QueueAttributes
+	maxNodeGPUMemoryMiB *int64
 }
 
-func New(queues map[common_info.QueueID]*rs.QueueAttributes) *CapacityPolicy {
-	return &CapacityPolicy{queues}
+func New(queues map[common_info.QueueID]*rs.QueueAttributes, maxNodeGPUMemoryMiB *int64) *CapacityPolicy {
+	return &CapacityPolicy{queues, maxNodeGPUMemoryMiB}
 }
 
 func (cp *CapacityPolicy) IsJobOverQueueCapacity(job *podgroup_info.PodGroupInfo,
 	tasksToAllocate []*pod_info.PodInfo) *api.SchedulableResult {
-	requestedShareQuantities := getRequiredQuota(tasksToAllocate)
+	requestedShareQuantities := getRequiredQuota(tasksToAllocate, cp.maxNodeGPUMemoryMiB)
 
 	checkFns := []capacityCheckFn{cp.resultsOverLimit, cp.resultsWithNonPreemptibleOverQuota}
 	return cp.isJobOverCapacity(requestedShareQuantities, job, checkFns)
@@ -36,7 +37,7 @@ func (cp *CapacityPolicy) IsJobOverQueueCapacity(job *podgroup_info.PodGroupInfo
 func (cp *CapacityPolicy) IsNonPreemptibleJobOverQuota(job *podgroup_info.PodGroupInfo,
 	tasksToAllocate []*pod_info.PodInfo) *api.SchedulableResult {
 
-	requestedShareQuantities := getRequiredQuota(tasksToAllocate)
+	requestedShareQuantities := getRequiredQuota(tasksToAllocate, cp.maxNodeGPUMemoryMiB)
 
 	checkFns := []capacityCheckFn{cp.resultsWithNonPreemptibleOverQuota}
 	return cp.isJobOverCapacity(requestedShareQuantities, job, checkFns)
@@ -67,13 +68,22 @@ func (cp *CapacityPolicy) isJobOverCapacity(requestedShare rs.ResourceQuantities
 	return Schedulable()
 }
 
-func getRequiredQuota(tasksToAllocate []*pod_info.PodInfo) rs.ResourceQuantities {
+// getRequiredQuota calculates the required quota for a job based on the tasks to allocate and the max node GPU memory.
+// The function uses max gpu memory seen in the cluster to calculate the most conservative option for a quota of a work with gpu memory request.
+// max divisor → smallest fraction. If even the smallest fraction is passed the limit, we can say that the pod is over the limit right now, without simulations.
+func getRequiredQuota(tasksToAllocate []*pod_info.PodInfo, maxNodeGPUMemory *int64) rs.ResourceQuantities {
 	quota := rs.EmptyResourceQuantities()
 	for _, pod := range tasksToAllocate {
 		quantities := utils.QuantifyVector(pod.ResReqVector, pod.VectorMap)
-		quota[rs.GpuResource] += quantities[rs.GpuResource]
 		quota[rs.CpuResource] += quantities[rs.CpuResource]
 		quota[rs.MemoryResource] += quantities[rs.MemoryResource]
+		if pod.IsGpuMemoryRequest() {
+			if maxNodeGPUMemory != nil {
+				quota[rs.GpuResource] += pod.GpuRequirement.GpuMemoryAsGpuFraction(*maxNodeGPUMemory)
+			}
+		} else {
+			quota[rs.GpuResource] += quantities[rs.GpuResource]
+		}
 	}
 	return quota
 }

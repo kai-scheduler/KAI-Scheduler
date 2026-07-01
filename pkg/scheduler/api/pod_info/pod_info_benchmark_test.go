@@ -84,7 +84,7 @@ func createPodInfoWithGPU() *PodInfo {
 			Name:      "gpu-pod",
 			Namespace: "default",
 			Annotations: map[string]string{
-				common_info.GPUFraction: "0.5",
+				constants.GpuFraction: "0.5",
 			},
 			Labels: map[string]string{
 				GPUGroup: "group-1",
@@ -119,7 +119,7 @@ func createPodInfoWithMultipleGPUs() *PodInfo {
 			Namespace: "default",
 			Annotations: map[string]string{
 				constants.GpuFractionsNumDevices: "3",
-				common_info.GPUFraction:          "0.5",
+				constants.GpuFraction:            "0.5",
 			},
 			Labels: map[string]string{
 				constants.MultiGpuGroupLabelPrefix + "gpu-group-0": "group-0",

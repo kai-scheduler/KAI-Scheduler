@@ -85,6 +85,8 @@ type OnJobSolutionStartFn func()
 // BindRequestMutateFn allows plugins to add annotations before BindRequest creation.
 type BindRequestMutateFn func(pod *pod_info.PodInfo, nodeName string) map[string]string
 
+type NumaPlacementFn func(task *pod_info.PodInfo, node *node_info.NodeInfo) pod_info.NUMAPlacement
+
 // PreJobAllocationFn is used for notifying on job allocation start
 type PreJobAllocationFn func(job *podgroup_info.PodGroupInfo)
 
@@ -93,7 +95,7 @@ type CompareQueueFn func(
 	lQ, rQ *queue_info.QueueInfo,
 	lJob, rJob *podgroup_info.PodGroupInfo,
 	lVictims, rVictims []*podgroup_info.PodGroupInfo,
-	minNodeGPUMemory int64,
+	minNodeGPUMemory *int64,
 ) int
 
 type SchedulableResult struct {

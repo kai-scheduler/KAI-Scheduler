@@ -102,6 +102,18 @@ func (asb *PodAccumulatedScenarioBuilder) GetNextScenario() *solverscenario.ByNo
 	return asb.iterate(true)
 }
 
+// GetValidAccumulatedScenario returns the current filter-valid accumulated outer
+// scenario without expanding it into sub-scenarios.
+func (asb *PodAccumulatedScenarioBuilder) GetValidAccumulatedScenario() *solverscenario.ByNodeScenario {
+	return asb.iterateAccumulated(false)
+}
+
+// GetNextAccumulatedScenario advances the victim queue and returns the next
+// filter-valid accumulated outer scenario without expanding it into sub-scenarios.
+func (asb *PodAccumulatedScenarioBuilder) GetNextAccumulatedScenario() *solverscenario.ByNodeScenario {
+	return asb.iterateAccumulated(true)
+}
+
 // iterate is the unified driver behind GetValidScenario / GetNextScenario.
 //
 // The pipeline runs as a single loop with three exit points:
@@ -115,6 +127,9 @@ func (asb *PodAccumulatedScenarioBuilder) GetNextScenario() *solverscenario.ByNo
 // outer state. advanceFirst controls whether the first pass starts by popping a
 // victim or by evaluating the current state as-is.
 func (asb *PodAccumulatedScenarioBuilder) iterate(advanceFirst bool) *solverscenario.ByNodeScenario {
+	if asb.lastScenario == nil {
+		return nil
+	}
 	needAdvance := advanceFirst
 	for {
 		if sub := asb.nextFromSubEmitter(); sub != nil {
@@ -137,6 +152,29 @@ func (asb *PodAccumulatedScenarioBuilder) iterate(advanceFirst bool) *solverscen
 			return asb.lastScenario
 		}
 		asb.subEmitter = newSubScenarioEmitter(asb.session, asb.lastScenario, asb.feasibleNodes)
+	}
+}
+
+func (asb *PodAccumulatedScenarioBuilder) iterateAccumulated(advanceFirst bool) *solverscenario.ByNodeScenario {
+	if asb.lastScenario == nil {
+		return nil
+	}
+	needAdvance := advanceFirst
+	for {
+		if needAdvance {
+			if asb.victimsJobsQueue.IsEmpty() {
+				return nil
+			}
+			if !asb.addNextPotentialVictims() {
+				continue
+			}
+		}
+		needAdvance = true
+
+		if !asb.outerScenarioValid() {
+			continue
+		}
+		return asb.lastScenario
 	}
 }
 

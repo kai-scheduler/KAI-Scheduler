@@ -42,7 +42,6 @@ import (
 )
 
 const (
-	GpuMemoryAnnotationName            = "gpu-memory"
 	GPUGroup                           = "runai-gpu-group"
 	ReceivedResourceTypeAnnotationName = "received-resource-type"
 	WholeGpuIndicator                  = "-2"
@@ -92,6 +91,8 @@ type PodInfo struct {
 	schedulingConstraintsSignature common_info.SchedulingConstraintsSignature
 
 	GPUGroups []string
+
+	NUMAPlacement NUMAPlacement
 
 	NodeName        string
 	Status          pod_status.PodStatus
@@ -295,6 +296,7 @@ func (pi *PodInfo) Clone() *PodInfo {
 		AcceptedResourceVector: acceptedResourceVectorClone,
 		VectorMap:              pi.VectorMap,
 		GPUGroups:              pi.GPUGroups,
+		NUMAPlacement:          pi.NUMAPlacement.Clone(),
 		ResourceClaimInfo:      pi.ResourceClaimInfo.Clone(),
 		ResourceRequestType:    pi.ResourceRequestType,
 		ResourceReceivedType:   pi.ResourceReceivedType,
@@ -334,7 +336,7 @@ func (pi *PodInfo) IsMigCandidate() bool {
 	return pi.ResourceRequestType == RequestTypeMigInstance
 }
 
-func (pi *PodInfo) IsMemoryRequest() bool {
+func (pi *PodInfo) IsGpuMemoryRequest() bool {
 	return pi.ResourceRequestType == RequestTypeGpuMemory
 }
 
@@ -343,7 +345,7 @@ func (pi *PodInfo) IsRegularGPURequest() bool {
 }
 
 func (pi *PodInfo) IsSharedGPURequest() bool {
-	return pi.IsFractionRequest() || pi.IsMemoryRequest()
+	return pi.IsFractionRequest() || pi.IsGpuMemoryRequest()
 }
 
 func (pi *PodInfo) IsSharedGPUAllocation() bool {
@@ -356,7 +358,7 @@ func (pi *PodInfo) IsCPUOnlyRequest() bool {
 
 func (pi *PodInfo) IsRequireAnyKindOfGPU() bool {
 	return pi.GpuRequirement.GPUs() > 0 || pi.GpuRequirement.GetDraGpusCount() > 0 ||
-		pi.IsMemoryRequest() || pi.IsMigProfileRequest()
+		pi.IsGpuMemoryRequest() || pi.IsMigProfileRequest()
 }
 
 func (pi *PodInfo) GetSchedulingConstraintsSignature() common_info.SchedulingConstraintsSignature {
@@ -501,13 +503,13 @@ func (pi *PodInfo) updatePodAdditionalFields(bindRequest *bindrequest_info.BindR
 		}
 	}
 
-	gpuMemory, err := strconv.ParseInt(pi.Pod.Annotations[GpuMemoryAnnotationName], 10, 64)
+	gpuMemory, err := strconv.ParseInt(pi.Pod.Annotations[commonconstants.GpuMemory], 10, 64)
 	if err == nil && gpuMemory > 0 {
 		pi.GpuRequirement = *resource_info.NewGpuResourceRequirementWithGpus(0, gpuMemory)
 		pi.ResourceRequestType = RequestTypeGpuMemory
 	}
 
-	gpuFractionString := pi.Pod.Annotations[common_info.GPUFraction]
+	gpuFractionString := pi.Pod.Annotations[commonconstants.GpuFraction]
 	gpuFraction, GPUFractionErr := strconv.ParseFloat(gpuFractionString, 64)
 	if !(gpuFraction <= 0 || gpuFraction > 1 || GPUFractionErr != nil) {
 		pi.GpuRequirement = *resource_info.NewGpuResourceRequirementWithGpus(gpuFraction, 0)

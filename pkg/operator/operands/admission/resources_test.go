@@ -139,11 +139,11 @@ func TestDeploymentForKAIConfig(t *testing.T) {
 				"--health-probe-bind-address", ":8081",
 				"--metrics-bind-address", ":8080",
 				"--leader-elect",
-				"--gpu-pod-runtime-class-name", constants.DefaultRuntimeClassName,
+				"--gpu-fraction-runtime-class-name", constants.DefaultRuntimeClassName,
 			},
 		},
 		{
-			name: "configuration with custom gpu pod runtime class",
+			name: "configuration with custom gpu fraction runtime class",
 			config: &kaiv1.Config{
 				Spec: kaiv1.ConfigSpec{
 					Namespace: constants.DefaultKAINamespace,
@@ -158,7 +158,7 @@ func TestDeploymentForKAIConfig(t *testing.T) {
 							ProbePort:   ptr.To(8081),
 							MetricsPort: ptr.To(8080),
 						},
-						GPUPodRuntimeClassName: ptr.To("custom-runtime-class"),
+						GPUFractionRuntimeClassName: ptr.To("custom-runtime-class"),
 					},
 				},
 			},
@@ -168,11 +168,11 @@ func TestDeploymentForKAIConfig(t *testing.T) {
 				"--health-probe-bind-address", ":8081",
 				"--metrics-bind-address", ":8080",
 				"--leader-elect",
-				"--gpu-pod-runtime-class-name", "custom-runtime-class",
+				"--gpu-fraction-runtime-class-name", "custom-runtime-class",
 			},
 		},
 		{
-			name: "configuration with no gpu pod runtime class",
+			name: "configuration with deprecated gpu pod runtime class falls back",
 			config: &kaiv1.Config{
 				Spec: kaiv1.ConfigSpec{
 					Namespace: constants.DefaultKAINamespace,
@@ -187,7 +187,7 @@ func TestDeploymentForKAIConfig(t *testing.T) {
 							ProbePort:   ptr.To(8081),
 							MetricsPort: ptr.To(8080),
 						},
-						GPUPodRuntimeClassName: ptr.To(""),
+						GPUPodRuntimeClassName: ptr.To("legacy-runtime-class"),
 					},
 				},
 			},
@@ -197,7 +197,39 @@ func TestDeploymentForKAIConfig(t *testing.T) {
 				"--health-probe-bind-address", ":8081",
 				"--metrics-bind-address", ":8080",
 				"--leader-elect",
-				"--gpu-pod-runtime-class-name", "",
+				"--gpu-pod-runtime-class-name", "legacy-runtime-class",
+			},
+			notExpectedArgs: []string{
+				"--gpu-fraction-runtime-class-name", constants.DefaultRuntimeClassName,
+			},
+		},
+		{
+			name: "configuration with no gpu fraction runtime class",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Namespace: constants.DefaultKAINamespace,
+					Global: &kaiv1.GlobalConfig{
+						SchedulerName: ptr.To(constants.DefaultSchedulerName),
+					},
+					Admission: &admission.Admission{
+						Replicas:   ptr.To(int32(2)),
+						GPUSharing: ptr.To(false),
+						Webhook: &admission.Webhook{
+							TargetPort:  ptr.To(9443),
+							ProbePort:   ptr.To(8081),
+							MetricsPort: ptr.To(8080),
+						},
+						GPUFractionRuntimeClassName: ptr.To(""),
+					},
+				},
+			},
+			expectedArgs: []string{
+				"--scheduler-name", constants.DefaultSchedulerName,
+				"--webhook-addr", "9443",
+				"--health-probe-bind-address", ":8081",
+				"--metrics-bind-address", ":8080",
+				"--leader-elect",
+				"--gpu-fraction-runtime-class-name", "",
 			},
 		},
 		{
@@ -255,6 +287,54 @@ func TestDeploymentForKAIConfig(t *testing.T) {
 			},
 			notExpectedArgs: []string{
 				"--hami-core-enabled=true",
+				"--block-nvidia-visible-devices=true",
+			},
+		},
+		{
+			name: "block-nvidia-visible-devices enabled",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Namespace: constants.DefaultKAINamespace,
+					Global: &kaiv1.GlobalConfig{
+						SchedulerName: ptr.To(constants.DefaultSchedulerName),
+					},
+					Admission: &admission.Admission{
+						Replicas:                  ptr.To(int32(1)),
+						GPUSharing:                ptr.To(true),
+						BlockNvidiaVisibleDevices: ptr.To(true),
+						Webhook: &admission.Webhook{
+							TargetPort:  ptr.To(9443),
+							ProbePort:   ptr.To(8081),
+							MetricsPort: ptr.To(8080),
+						},
+					},
+				},
+			},
+			expectedArgs: []string{
+				"--block-nvidia-visible-devices=true",
+			},
+		},
+		{
+			name: "block-nvidia-visible-devices disabled by default",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Namespace: constants.DefaultKAINamespace,
+					Global: &kaiv1.GlobalConfig{
+						SchedulerName: ptr.To(constants.DefaultSchedulerName),
+					},
+					Admission: &admission.Admission{
+						Replicas:   ptr.To(int32(1)),
+						GPUSharing: ptr.To(true),
+						Webhook: &admission.Webhook{
+							TargetPort:  ptr.To(9443),
+							ProbePort:   ptr.To(8081),
+							MetricsPort: ptr.To(8080),
+						},
+					},
+				},
+			},
+			notExpectedArgs: []string{
+				"--block-nvidia-visible-devices=true",
 			},
 		},
 	}
