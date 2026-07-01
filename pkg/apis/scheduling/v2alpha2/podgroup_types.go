@@ -81,16 +81,19 @@ type PodGroupSpec struct {
 // Supported values are:
 // - `preemptible` - PodGroup can be preempted by higher-priority workloads
 // - `non-preemptible` - PodGroup runs to completion once scheduled
+// - `semi-preemptible` - PodGroup's minimal required shape (minMember pods per leaf, minSubGroup children per node)
+//   is non-preemptible and in-quota; anything beyond that minimum is elastic (over-quota, reclaimed first)
 //
 // Defaults to priority-based preemptibility determination (preemptible if priority < 100)
 //
-// +kubebuilder:validation:Enum=preemptible;non-preemptible
+// +kubebuilder:validation:Enum=preemptible;non-preemptible;semi-preemptible
 // +optional
 type Preemptibility string
 
 const (
-	Preemptible    Preemptibility = "preemptible"
-	NonPreemptible Preemptibility = "non-preemptible"
+	Preemptible     Preemptibility = "preemptible"
+	NonPreemptible  Preemptibility = "non-preemptible"
+	SemiPreemptible Preemptibility = "semi-preemptible"
 )
 
 func ParsePreemptibility(value string) (Preemptibility, error) {
@@ -99,6 +102,8 @@ func ParsePreemptibility(value string) (Preemptibility, error) {
 		return Preemptible, nil
 	case string(NonPreemptible):
 		return NonPreemptible, nil
+	case string(SemiPreemptible):
+		return SemiPreemptible, nil
 	case "":
 		// Empty value is valid and represents the default priority-based preemptibility
 		return "", nil
