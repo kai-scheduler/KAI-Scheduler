@@ -48,17 +48,11 @@ func collectCoreFromSubGroupSet(
 		return subGroupOrderFn(members[i], members[j])
 	})
 
-	// Take the k highest-priority members whose own minimum is satisfied; those form the core, recurse into each.
-	taken := 0
-	for _, member := range members {
-		if taken >= k {
-			break
-		}
-		if !isMemberMinSatisfied(member) {
-			continue
-		}
-		collectCoreFromMember(member, subGroupOrderFn, taskOrderFn, core)
-		taken++
+	// The k highest-priority members form the core (recurse into each); the rest are elastic surplus.
+	// Membership is by priority rank, not by satisfaction: a partially-filled core member's allocated
+	// pods are still protected (never elastic), matching the eviction protection logic.
+	for i := 0; i < k && i < len(members); i++ {
+		collectCoreFromMember(members[i], subGroupOrderFn, taskOrderFn, core)
 	}
 }
 
@@ -93,16 +87,6 @@ func collectCoreFromPodSet(
 	for i := 0; i < minMembers && i < len(allocated); i++ {
 		core[allocated[i].UID] = allocated[i]
 	}
-}
-
-func isMemberMinSatisfied(member subgroup_info.SubGroupMember) bool {
-	switch m := member.(type) {
-	case *subgroup_info.SubGroupSet:
-		return m.IsMinRequirementSatisfied()
-	case *subgroup_info.PodSet:
-		return m.GetNumActiveAllocatedTasks() >= int(m.GetMinAvailable())
-	}
-	return false
 }
 
 // IsMinRequirementSatisfied reports whether the job's root SubGroupSet has met its minimal shape,

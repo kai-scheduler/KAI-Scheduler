@@ -147,7 +147,9 @@ func shouldStopActionForSearchResult(result *solvers.SearchResult) bool {
 
 func buildFilterFuncForPreempt(ssn *framework.Session, preemptor *podgroup_info.PodGroupInfo) func(*podgroup_info.PodGroupInfo) bool {
 	return func(job *podgroup_info.PodGroupInfo) bool {
-		if !job.IsPreemptibleJob() {
+		// Semi-preemptible jobs are eligible preemption victims for their elastic surplus; their core is
+		// protected downstream by GetTasksToEvict.
+		if !job.IsPreemptibleJob() && !job.IsSemiPreemptibleJob() {
 			return false
 		}
 
