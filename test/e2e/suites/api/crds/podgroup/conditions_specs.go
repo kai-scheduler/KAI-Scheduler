@@ -126,7 +126,61 @@ func DescribeConditionsSpecs() bool {
 				})
 			})
 		})
+
+		Context("Recovering unschedulable Jobs", func() {
+			It("removes PodGroup scheduling conditions after the job is scheduled", func(ctx context.Context) {
+				schedulablePod := rd.CreatePodObject(testQueue, v1.ResourceRequirements{})
+				schedulablePod, err := rd.CreatePod(ctx, testCtx.KubeClientset, schedulablePod)
+				Expect(err).NotTo(HaveOccurred())
+				wait.ForPodScheduled(ctx, testCtx.ControllerClient, schedulablePod)
+				Expect(testCtx.ControllerClient.Get(ctx, runtimeClient.ObjectKeyFromObject(schedulablePod), schedulablePod)).
+					To(Succeed())
+				targetNodeName := schedulablePod.Spec.NodeName
+				Expect(testCtx.ControllerClient.Delete(ctx, schedulablePod)).To(Succeed())
+
+				node := &v1.Node{}
+				Expect(testCtx.ControllerClient.Get(ctx, runtimeClient.ObjectKey{Name: targetNodeName}, node)).To(Succeed())
+				labelKey := fmt.Sprintf("kai.scheduler/e2e-condition-cleanup-%s", utils.GenerateRandomK8sName(10))
+				labelValue := "true"
+				DeferCleanup(func(ctx context.Context) {
+					Expect(rd.UnLabelNode(ctx, testCtx.KubeClientset, node, labelKey)).To(Succeed())
+				})
+
+				pod := rd.CreatePodObject(testQueue, v1.ResourceRequirements{})
+				pod.Spec.Affinity = nodeAffinityForLabel(labelKey, labelValue)
+				createdPod, err := rd.CreatePod(ctx, testCtx.KubeClientset, pod)
+				Expect(err).NotTo(HaveOccurred())
+
+				podGroupName := SpecWaitForPGAnnotationOnPod(ctx, testCtx, createdPod)
+				wait.WaitForPodGroupToExist(ctx, testCtx.ControllerClient, createdPod.Namespace, podGroupName)
+				waitForPodGroupConditionType(ctx, testCtx, createdPod.Namespace, podGroupName, v2alpha2.UnschedulableOnNodePool)
+
+				Expect(rd.LabelNode(ctx, testCtx.KubeClientset, node, labelKey, labelValue)).To(Succeed())
+				wait.ForPodScheduled(ctx, testCtx.ControllerClient, createdPod)
+				waitForPodGroupSchedulingConditionsCleared(ctx, testCtx, createdPod.Namespace, podGroupName)
+			})
+		})
 	})
+}
+
+func nodeAffinityForLabel(labelKey, labelValue string) *v1.Affinity {
+	return &v1.Affinity{
+		NodeAffinity: &v1.NodeAffinity{
+			RequiredDuringSchedulingIgnoredDuringExecution: &v1.NodeSelector{
+				NodeSelectorTerms: []v1.NodeSelectorTerm{
+					{
+						MatchExpressions: []v1.NodeSelectorRequirement{
+							{
+								Key:      labelKey,
+								Operator: v1.NodeSelectorOpIn,
+								Values:   []string{labelValue},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
 }
 
 func SpecWaitForPGConditionReason(
@@ -153,6 +207,34 @@ func SpecWaitForPGConditionReason(
 	}, time.Minute, time.Millisecond*100).Should(BeTrue())
 
 	return podGroup
+}
+
+func waitForPodGroupConditionType(
+	ctx context.Context, testCtx *testcontext.TestContext, namespace, podGroupName string,
+	conditionType v2alpha2.SchedulingConditionType,
+) {
+	podGroup := &v2alpha2.PodGroup{}
+	Eventually(func() bool {
+		Expect(testCtx.ControllerClient.Get(ctx, runtimeClient.ObjectKey{Name: podGroupName, Namespace: namespace}, podGroup)).
+			To(Succeed())
+		for _, condition := range podGroup.Status.SchedulingConditions {
+			if condition.Type == conditionType {
+				return true
+			}
+		}
+		return false
+	}, time.Minute, time.Millisecond*100).Should(BeTrue())
+}
+
+func waitForPodGroupSchedulingConditionsCleared(
+	ctx context.Context, testCtx *testcontext.TestContext, namespace, podGroupName string,
+) {
+	podGroup := &v2alpha2.PodGroup{}
+	Eventually(func() []v2alpha2.SchedulingCondition {
+		Expect(testCtx.ControllerClient.Get(ctx, runtimeClient.ObjectKey{Name: podGroupName, Namespace: namespace}, podGroup)).
+			To(Succeed())
+		return podGroup.Status.SchedulingConditions
+	}, time.Minute, time.Millisecond*100).Should(BeEmpty())
 }
 
 func SpecWaitForPGAnnotationOnPod(ctx context.Context, testCtx *testcontext.TestContext, pod *v1.Pod) string {

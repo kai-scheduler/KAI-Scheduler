@@ -303,7 +303,7 @@ User-facing condition messages should describe the scheduling outcome, not the i
 
 If `reduced_budget=true`, the message should say that the scheduler could not find a valid scenario within the remaining configured search time because the action search budget was partly consumed by earlier jobs. This wording must only be used for jobs that actually received a reduced budget.
 
-Kubernetes Events may repeat the same human-readable message on the `PodGroup` and Pods, but they should use `ScenarioSearchUnresolved` as the event reason rather than `Unschedulable`. Events should not include generator names, probe sizes, scenario counts, or elapsed durations. Those details belong in metrics, logs, replay output, or future debug tooling.
+Kubernetes Events should continue to report the existing fundamental scheduling outcome, such as `Unschedulable`, rather than `ScenarioSearchUnresolved`. Scenario-search unresolved details are durable status conditions on the `PodGroup` and pending Pods, not additional scenario-search events. Events should not include generator names, probe sizes, scenario counts, or elapsed durations. Those details belong in metrics, logs, replay output, or future debug tooling.
 
 ### Integration Posture
 
@@ -366,7 +366,7 @@ Initial implementation criteria:
 Default tuning criteria:
 
 - Defaults are tuned against the 1000-node large-job benchmark and representative production-like snapshots.
-- `ScenarioSearchUnresolved` conditions and events are accurate, and reduced-budget wording is only emitted for reduced-budget jobs.
+- `ScenarioSearchUnresolved` conditions are accurate, and reduced-budget wording is only emitted for reduced-budget jobs.
 - Metrics show `deadline_exhausted`, `generators_exhausted`, `no_generator`, and `not_attempted` outcomes clearly by action and, where applicable, generator.
 - Legacy-equivalent configuration is documented as current emitter plus unlimited budgets; bounded-search misses are terminal for the current scheduling attempt.
 

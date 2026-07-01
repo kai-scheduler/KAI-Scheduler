@@ -102,9 +102,11 @@ func (ra *reclaimAction) Execute(ssn *framework.Session) {
 			if err := statement.Commit(); err != nil {
 				log.InfraLogger.Errorf("Failed to commit reclaim statement: %v", err)
 			}
-		} else if shouldStopActionForSearchResult(searchResult) {
-			return
 		} else {
+			solvers.RecordScenarioSearchUnresolved(job, searchResult)
+			if shouldStopActionForSearchResult(searchResult) {
+				return
+			}
 			log.InfraLogger.V(3).Infof("Didn't find a reclaim strategy for job <%s/%s>",
 				job.Namespace, job.Name)
 			smallestFailedJobs.UpdateRepresentative(job)
