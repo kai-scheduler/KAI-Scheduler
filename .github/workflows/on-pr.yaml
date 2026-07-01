@@ -371,7 +371,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Run FOSSA analysis and validate status
-        uses: fossa-contrib/fossa-action@v3.0.1
+        uses: fossa-contrib/fossa-action@v4.0.0
         with:
           fossa-api-key: ${{ env.FOSSA_API_KEY }}
           skip-test: false
