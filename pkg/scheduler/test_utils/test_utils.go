@@ -14,6 +14,7 @@ import (
 	// lint:ignore ST1001 we want to use gomock here
 	. "go.uber.org/mock/gomock"
 	"golang.org/x/exp/slices"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes/fake"
@@ -86,6 +87,7 @@ type TestQueueBasic struct {
 	GPUOverQuotaWeight          float64
 	ParentQueue                 string
 	InteractiveTimeoutInMinutes int64
+	ReclaimMinRuntime           *metav1.Duration
 	UseOnlyFreeCPUResources     bool
 	V1                          bool
 }

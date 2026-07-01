@@ -7,11 +7,14 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"go.uber.org/mock/gomock"
 	"gopkg.in/h2non/gock.v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils"
@@ -21,10 +24,11 @@ import (
 )
 
 type manySingleGPUJobsReclaimParams struct {
-	NumNodes        int
-	GPUsPerNode     int
-	RunningJobCount int
-	PendingJobCount int
+	NumNodes          int
+	GPUsPerNode       int
+	RunningJobCount   int
+	PendingJobCount   int
+	ReclaimMinRuntime *metav1.Duration
 }
 
 const (
@@ -40,8 +44,11 @@ func TestManySingleGPUJobsReclaimTopology(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	params := defaultManySingleGPUJobsReclaimParams(10)
+	params := manySingleGPUJobsReclaimParamsWithMinRuntime(10)
 	ssn := test_utils.BuildSession(buildManySingleGPUJobsReclaimTopology(params), ctrl)
+	if actual := ssn.ClusterInfo.Queues[common_info.QueueID(manySingleGPURunningQueueName)].ReclaimMinRuntime; actual == nil || *actual != *params.ReclaimMinRuntime {
+		t.Fatalf("expected running queue reclaim min-runtime %v, got %v", params.ReclaimMinRuntime, actual)
+	}
 
 	onJobSolutionStartCalls := 0
 	ssn.AddOnJobSolutionStartFn(func() {
@@ -91,6 +98,12 @@ func defaultManySingleGPUJobsReclaimParams(numNodes int) manySingleGPUJobsReclai
 	}
 }
 
+func manySingleGPUJobsReclaimParamsWithMinRuntime(numNodes int) manySingleGPUJobsReclaimParams {
+	params := defaultManySingleGPUJobsReclaimParams(numNodes)
+	params.ReclaimMinRuntime = &metav1.Duration{Duration: 30 * time.Second}
+	return params
+}
+
 func buildManySingleGPUJobsReclaimTopology(
 	params manySingleGPUJobsReclaimParams,
 ) test_utils.TestTopologyBasic {
@@ -127,7 +140,7 @@ func buildManySingleGPUJobsReclaimTopology(
 		Nodes: nodes,
 		Jobs:  jobs,
 		Queues: []test_utils.TestQueueBasic{
-			{Name: manySingleGPURunningQueueName, DeservedGPUs: 0, GPUOverQuotaWeight: 0},
+			{Name: manySingleGPURunningQueueName, DeservedGPUs: 0, GPUOverQuotaWeight: 0, ReclaimMinRuntime: params.ReclaimMinRuntime},
 			{Name: manySingleGPUPendingQueueName, DeservedGPUs: float64(params.PendingJobCount), GPUOverQuotaWeight: 0},
 		},
 		Mocks: &test_utils.TestMock{CacheRequirements: &test_utils.CacheMocking{

@@ -82,10 +82,18 @@ func BenchmarkReclaimManySingleGPUJobs_500Node(b *testing.B) {
 	benchmarkReclaimManySingleGPUJobs(b, 500)
 }
 
+func BenchmarkReclaimManySingleGPUJobsWithMinRuntime_500Node(b *testing.B) {
+	benchmarkReclaimManySingleGPUJobsWithParams(b, manySingleGPUJobsReclaimParamsWithMinRuntime(500))
+}
+
 func benchmarkReclaimManySingleGPUJobs(b *testing.B, numNodes int) {
+	benchmarkReclaimManySingleGPUJobsWithParams(b, defaultManySingleGPUJobsReclaimParams(numNodes))
+}
+
+func benchmarkReclaimManySingleGPUJobsWithParams(b *testing.B, params manySingleGPUJobsReclaimParams) {
 	defer gock.Off()
 
-	topology := buildManySingleGPUJobsReclaimTopology(defaultManySingleGPUJobsReclaimParams(numNodes))
+	topology := buildManySingleGPUJobsReclaimTopology(params)
 	b.ReportAllocs()
 
 	for b.Loop() {
