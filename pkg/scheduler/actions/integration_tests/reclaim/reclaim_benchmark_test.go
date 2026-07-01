@@ -62,6 +62,40 @@ func BenchmarkReclaimLargeJobs_1000Node(b *testing.B) {
 	benchmarkReclaimLargeJobs(b, 1000)
 }
 
+func BenchmarkReclaimManySingleGPUJobs_10Node(b *testing.B) {
+	benchmarkReclaimManySingleGPUJobs(b, 10)
+}
+
+func BenchmarkReclaimManySingleGPUJobs_50Node(b *testing.B) {
+	benchmarkReclaimManySingleGPUJobs(b, 50)
+}
+
+func BenchmarkReclaimManySingleGPUJobs_100Node(b *testing.B) {
+	benchmarkReclaimManySingleGPUJobs(b, 100)
+}
+
+func BenchmarkReclaimManySingleGPUJobs_200Node(b *testing.B) {
+	benchmarkReclaimManySingleGPUJobs(b, 200)
+}
+
+func BenchmarkReclaimManySingleGPUJobs_500Node(b *testing.B) {
+	benchmarkReclaimManySingleGPUJobs(b, 500)
+}
+
+func benchmarkReclaimManySingleGPUJobs(b *testing.B, numNodes int) {
+	defer gock.Off()
+
+	topology := buildManySingleGPUJobsReclaimTopology(defaultManySingleGPUJobsReclaimParams(numNodes))
+	b.ReportAllocs()
+
+	for b.Loop() {
+		ctrl := gomock.NewController(b)
+		ssn := test_utils.BuildSession(topology, ctrl)
+		reclaim.New().Execute(ssn)
+		ctrl.Finish()
+	}
+}
+
 func benchmarkReclaimLargeJobs(b *testing.B, numNodes int) {
 	defer gock.Off()
 
