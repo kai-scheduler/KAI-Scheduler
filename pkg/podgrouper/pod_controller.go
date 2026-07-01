@@ -128,6 +128,13 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		return ctrl.Result{}, nil
 	}
 
+	// Surface non-blocking grouper warnings (e.g. semi-preemptible + automatic segmentation) as Warning
+	// events on the pod. The PodGroup is still created.
+	for _, warning := range metadata.Warnings {
+		logger.V(1).Info("PodGrouper warning", "namespace", pod.Namespace, "name", pod.Name, "warning", warning)
+		r.eventRecorder.Event(&pod, v1.EventTypeWarning, constants.PodGrouperWarning, warning)
+	}
+
 	if len(r.configs.NodePoolLabelKey) > 0 {
 		addNodePoolLabel(metadata, &pod, r.configs.NodePoolLabelKey)
 	}
