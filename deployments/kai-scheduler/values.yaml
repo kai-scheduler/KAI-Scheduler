@@ -40,6 +40,7 @@ global:
     appLabel: kai-resource-reservation
     namespaceLabels: {}
     createNamespace: true
+    createServiceAccount: true
 
 operator:
   image:
