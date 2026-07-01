@@ -40,7 +40,7 @@ func (_ *PodGroup) ValidateCreate(ctx context.Context, podGroup *PodGroup) (admi
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
-func (_ *PodGroup) ValidateUpdate(ctx context.Context, _ *PodGroup, podGroup *PodGroup) (admission.Warnings, error) {
+func (_ *PodGroup) ValidateUpdate(ctx context.Context, oldPodGroup *PodGroup, podGroup *PodGroup) (admission.Warnings, error) {
 	logger := log.FromContext(ctx)
 	logger.Info("validate update", "namespace", podGroup.Namespace, "name", podGroup.Name)
 
@@ -51,12 +51,80 @@ func (_ *PodGroup) ValidateUpdate(ctx context.Context, _ *PodGroup, podGroup *Po
 			"namespace", podGroup.Namespace, "name", podGroup.Name, "error", validationErrors.structuralError)
 		return nil, validationErrors.structuralError
 	}
+
+	if oldPodGroup != nil && oldPodGroup.Spec.Preemptibility == SemiPreemptible {
+		if err := validateSemiPreemptibleImmutability(&oldPodGroup.Spec, &podGroup.Spec); err != nil {
+			logger.Info("PodGroup spec validation failed on semi-preemptible immutability",
+				"namespace", podGroup.Namespace, "name", podGroup.Name, "error", err)
+			return nil, err
+		}
+	}
+
 	if len(validationErrors.minDefinitionErrors) > 0 {
 		return handleMinDefinitionErrors(ctx, validationErrors.minDefinitionErrors, podGroup,
 			[]error{&parentMinMemberError{}, &minSubGroupExceedsChildCountError{}})
 	}
 
 	return nil, nil
+}
+
+// validateSemiPreemptibleImmutability rejects increases to minMember or minSubGroup at the root spec and
+// at every matching SubGroup entry (matched by name) on a semi-preemptible PodGroup. Decreases are allowed
+// (they only widen the elastic tier). A nil value is treated as unset and cannot be increased into.
+func validateSemiPreemptibleImmutability(old, updated *PodGroupSpec) error {
+	if increasedInt32(old.MinMember, updated.MinMember) {
+		return &semiPreemptibleImmutabilityError{msg: fmt.Sprintf(
+			"cannot increase minMember (%s -> %s) on a semi-preemptible PodGroup: it would reclassify running elastic pods as core",
+			formatInt32Ptr(old.MinMember), formatInt32Ptr(updated.MinMember))}
+	}
+	if increasedInt32(old.MinSubGroup, updated.MinSubGroup) {
+		return &semiPreemptibleImmutabilityError{msg: fmt.Sprintf(
+			"cannot increase minSubGroup (%s -> %s) on a semi-preemptible PodGroup: it would reclassify running elastic subgroups as core",
+			formatInt32Ptr(old.MinSubGroup), formatInt32Ptr(updated.MinSubGroup))}
+	}
+
+	oldSubGroups := map[string]*SubGroup{}
+	for i := range old.SubGroups {
+		oldSubGroups[old.SubGroups[i].Name] = &old.SubGroups[i]
+	}
+	for i := range updated.SubGroups {
+		newSG := &updated.SubGroups[i]
+		oldSG, found := oldSubGroups[newSG.Name]
+		if !found {
+			continue
+		}
+		if increasedInt32(oldSG.MinMember, newSG.MinMember) {
+			return &semiPreemptibleImmutabilityError{msg: fmt.Sprintf(
+				"cannot increase minMember (%s -> %s) on subgroup %q of a semi-preemptible PodGroup",
+				formatInt32Ptr(oldSG.MinMember), formatInt32Ptr(newSG.MinMember), newSG.Name)}
+		}
+		if increasedInt32(oldSG.MinSubGroup, newSG.MinSubGroup) {
+			return &semiPreemptibleImmutabilityError{msg: fmt.Sprintf(
+				"cannot increase minSubGroup (%s -> %s) on subgroup %q of a semi-preemptible PodGroup",
+				formatInt32Ptr(oldSG.MinSubGroup), formatInt32Ptr(newSG.MinSubGroup), newSG.Name)}
+		}
+	}
+
+	return nil
+}
+
+// increasedInt32 reports whether the value grew from old to updated. A nil old with a non-nil updated is
+// treated as an increase (unset -> set raises the minimal satisfying set); other transitions to nil are not.
+func increasedInt32(old, updated *int32) bool {
+	if updated == nil {
+		return false
+	}
+	if old == nil {
+		return true
+	}
+	return *updated > *old
+}
+
+func formatInt32Ptr(v *int32) string {
+	if v == nil {
+		return "unset"
+	}
+	return fmt.Sprintf("%d", *v)
 }
 
 func handleMinDefinitionErrors(ctx context.Context,
