@@ -79,10 +79,10 @@ type PodGroupSpec struct {
 // Preemptibility defines whether this PodGroup can be preempted
 //
 // Supported values are:
-// - `preemptible` - PodGroup can be preempted by higher-priority workloads
-// - `non-preemptible` - PodGroup runs to completion once scheduled
-// - `semi-preemptible` - PodGroup's minimal required shape (minMember pods per leaf, minSubGroup children per node)
-//   is non-preemptible and in-quota; anything beyond that minimum is elastic (over-quota, reclaimed first)
+//   - `preemptible` - PodGroup can be preempted by higher-priority workloads
+//   - `non-preemptible` - PodGroup runs to completion once scheduled
+//   - `semi-preemptible` - PodGroup's minimal required shape (minMember pods per leaf, minSubGroup children per node)
+//     is non-preemptible and in-quota; anything beyond that minimum is elastic (over-quota, reclaimed first)
 //
 // Defaults to priority-based preemptibility determination (preemptible if priority < 100)
 //
