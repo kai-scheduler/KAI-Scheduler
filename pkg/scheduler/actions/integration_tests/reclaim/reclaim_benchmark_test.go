@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"go.uber.org/mock/gomock"
 	"gopkg.in/h2non/gock.v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -89,8 +91,11 @@ func TestManySingleGPUJobsReclaimTopology(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	params := defaultManySingleGPUJobsReclaimParams(10)
+	params := manySingleGPUJobsReclaimParamsWithMinRuntime(10)
 	ssn := test_utils.BuildSession(buildManySingleGPUJobsReclaimTopology(params), ctrl)
+	if actual := ssn.ClusterInfo.Queues[common_info.QueueID(manySingleGPURunningQueueName)].ReclaimMinRuntime; actual == nil || *actual != *params.ReclaimMinRuntime {
+		t.Fatalf("expected running queue reclaim min-runtime %v, got %v", params.ReclaimMinRuntime, actual)
+	}
 
 	onJobSolutionStartCalls := 0
 	ssn.AddOnJobSolutionStartFn(func() {
@@ -142,10 +147,11 @@ type unschedulableDistributedReclaimParams struct {
 }
 
 type manySingleGPUJobsReclaimParams struct {
-	NumNodes        int
-	GPUsPerNode     int
-	RunningJobCount int
-	PendingJobCount int
+	NumNodes          int
+	GPUsPerNode       int
+	RunningJobCount   int
+	PendingJobCount   int
+	ReclaimMinRuntime *metav1.Duration
 }
 
 const (
@@ -201,10 +207,18 @@ func BenchmarkReclaimManySingleGPUJobs_500Node(b *testing.B) {
 	benchmarkReclaimManySingleGPUJobs(b, 500)
 }
 
+func BenchmarkReclaimManySingleGPUJobsWithMinRuntime_500Node(b *testing.B) {
+	benchmarkReclaimManySingleGPUJobsWithParams(b, manySingleGPUJobsReclaimParamsWithMinRuntime(500))
+}
+
 func benchmarkReclaimManySingleGPUJobs(b *testing.B, numNodes int) {
+	benchmarkReclaimManySingleGPUJobsWithParams(b, defaultManySingleGPUJobsReclaimParams(numNodes))
+}
+
+func benchmarkReclaimManySingleGPUJobsWithParams(b *testing.B, params manySingleGPUJobsReclaimParams) {
 	defer gock.Off()
 
-	topology := buildManySingleGPUJobsReclaimTopology(defaultManySingleGPUJobsReclaimParams(numNodes))
+	topology := buildManySingleGPUJobsReclaimTopology(params)
 	b.ReportAllocs()
 
 	for b.Loop() {
@@ -410,6 +424,12 @@ func defaultManySingleGPUJobsReclaimParams(numNodes int) manySingleGPUJobsReclai
 	}
 }
 
+func manySingleGPUJobsReclaimParamsWithMinRuntime(numNodes int) manySingleGPUJobsReclaimParams {
+	params := defaultManySingleGPUJobsReclaimParams(numNodes)
+	params.ReclaimMinRuntime = &metav1.Duration{Duration: 30 * time.Second}
+	return params
+}
+
 func buildManySingleGPUJobsReclaimTopology(
 	params manySingleGPUJobsReclaimParams,
 ) test_utils.TestTopologyBasic {
@@ -446,7 +466,7 @@ func buildManySingleGPUJobsReclaimTopology(
 		Nodes: nodes,
 		Jobs:  jobs,
 		Queues: []test_utils.TestQueueBasic{
-			{Name: manySingleGPURunningQueueName, DeservedGPUs: 0, GPUOverQuotaWeight: 0},
+			{Name: manySingleGPURunningQueueName, DeservedGPUs: 0, GPUOverQuotaWeight: 0, ReclaimMinRuntime: params.ReclaimMinRuntime},
 			{Name: manySingleGPUPendingQueueName, DeservedGPUs: float64(params.PendingJobCount), GPUOverQuotaWeight: 0},
 		},
 		Mocks: &test_utils.TestMock{CacheRequirements: &test_utils.CacheMocking{
