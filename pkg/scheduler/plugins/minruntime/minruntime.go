@@ -31,7 +31,6 @@ type minruntimePlugin struct {
 	queues                   map[common_info.QueueID]*queue_info.QueueInfo
 
 	preemptProtectionCache map[common_info.PodGroupID]bool
-	reclaimProtectionCache map[common_info.PodGroupID]map[common_info.PodGroupID]bool
 
 	resolver *resolver
 }
@@ -66,7 +65,6 @@ func New(arguments framework.PluginArguments) framework.Plugin {
 	}
 	// setup caches on plugin init, but they will be reset on session open anyway
 	plugin.preemptProtectionCache = make(map[common_info.PodGroupID]bool)
-	plugin.reclaimProtectionCache = make(map[common_info.PodGroupID]map[common_info.PodGroupID]bool)
 
 	return plugin
 }
@@ -82,14 +80,12 @@ func (mr *minruntimePlugin) OnSessionOpen(ssn *framework.Session) {
 	ssn.AddPreemptScenarioValidatorFn(mr.preemptScenarioValidatorFn)
 	mr.queues = ssn.ClusterInfo.Queues
 	mr.preemptProtectionCache = make(map[common_info.PodGroupID]bool)
-	mr.reclaimProtectionCache = make(map[common_info.PodGroupID]map[common_info.PodGroupID]bool)
 	mr.resolver = NewResolver(mr.queues, mr.defaultPreemptMinRuntime, mr.defaultReclaimMinRuntime)
 }
 
 func (mr *minruntimePlugin) OnSessionClose(ssn *framework.Session) {
 	mr.queues = nil
 	mr.preemptProtectionCache = nil
-	mr.reclaimProtectionCache = nil
 	mr.resolver = nil
 }
 
@@ -146,9 +142,6 @@ func (mr *minruntimePlugin) preemptScenarioValidatorFn(scenario api.ScenarioInfo
 }
 
 func (mr *minruntimePlugin) isReclaimMinRuntimeProtected(pendingJob *podgroup_info.PodGroupInfo, victim *podgroup_info.PodGroupInfo) bool {
-	if cached, ok := mr.reclaimProtectionCache[pendingJob.UID][victim.UID]; ok {
-		return cached
-	}
 	pendingQueue := mr.queues[pendingJob.Queue]
 	victimQueue := mr.queues[victim.Queue]
 
@@ -162,9 +155,7 @@ func (mr *minruntimePlugin) isReclaimMinRuntimeProtected(pendingJob *podgroup_in
 	// the victim is protected from reclaim
 	if victim.LastStartTimestamp != nil && !victim.LastStartTimestamp.IsZero() {
 		protectedUntil := victim.LastStartTimestamp.Add(minRuntime.Duration)
-		protected := time.Now().Before(protectedUntil)
-		mr.cacheReclaimProtection(pendingJob, victim, protected)
-		return protected
+		return time.Now().Before(protectedUntil)
 	}
 	return false
 }
@@ -195,13 +186,6 @@ func (mr *minruntimePlugin) isPreemptMinRuntimeProtected(_ *podgroup_info.PodGro
 
 func (mr *minruntimePlugin) cachePreemptProtection(victim *podgroup_info.PodGroupInfo, protected bool) {
 	mr.preemptProtectionCache[victim.UID] = protected
-}
-
-func (mr *minruntimePlugin) cacheReclaimProtection(pendingJob *podgroup_info.PodGroupInfo, victim *podgroup_info.PodGroupInfo, protected bool) {
-	if mr.reclaimProtectionCache[pendingJob.UID] == nil {
-		mr.reclaimProtectionCache[pendingJob.UID] = make(map[common_info.PodGroupID]bool)
-	}
-	mr.reclaimProtectionCache[pendingJob.UID][victim.UID] = protected
 }
 
 func validVictimForMinAvailable(victimInfo *api.VictimInfo) bool {
