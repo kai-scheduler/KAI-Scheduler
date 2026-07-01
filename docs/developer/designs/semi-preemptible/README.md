@@ -11,10 +11,11 @@ We want to add a new 3rd mode, named **semi-preemptible**, where the podgroup is
 **Goals**
 - Add a third preemptibility mode, `semi-preemptible`, on top of the **existing APIs** (the `preemptibility` field/label, `minMember`, `minSubGroup`) — no new API fields.
 - Keep a job's **minimum required shape** non-preemptible and in-quota; allow anything beyond it to run elastically (over-quota, reclaimed first).
-- Apply the core/elastic split at **every level** of the subgroup tree, and compose cleanly with [segmented subgroups](../segmented-subgroups/README.md).
+- Apply the core/elastic split at **every level** of the subgroup tree, so whole child subgroups burst elastically in the same manner as surplus pods do at a leaf — driven by `minSubGroup` on **hand-authored** subgroup trees.
 - Change nothing for existing workloads — the mode is strictly opt-in.
 
 **Non-Goals**
+- **Automated segmented subgroups** (the `kai.scheduler/segment-size` annotation path). Automated segmentation is **out of scope** and mutually exclusive with semi-preemptible; the combination is soft-enforced (see [Automated Segmentation](#automated-segmentation-out-of-scope)). Subgroup-level elasticity is supported only for **hand-authored** subgroup trees.
 - Solving queue **quota scale-down** in general for KAI Scheduler. If a queue's deserved quota drops below a running job's core allocation, the queue stays over-quota until the job releases resources on its own — exactly as a `non-preemptible` job behaves today. No new mitigation is introduced (see [Quota Scale-Down](#quota-scale-down)).
 - The `minNonPreemptible` field that would decouple the scheduling minimum from the non-preemptible threshold (see [Future Work](#future-work-minnonpreemptible-field)).
 
@@ -52,7 +53,7 @@ spec:
         kai.scheduler/preemptibility: "semi-preemptible"
 ```
 
-For multi-level trees, `minSubGroup` makes whole subgroups core vs. elastic — see [Interaction with Segmented Subgroups](#interaction-with-segmented-subgroups).
+For multi-level trees, `minSubGroup` makes whole subgroups core vs. elastic — see [Subgroups and Multi-Level Trees](#subgroups-and-multi-level-trees).
 
 ## Quota Requirements
 
@@ -79,34 +80,38 @@ Subgroups inherit the mode from the root: a `semi-preemptible` PodGroup makes th
 
 The scheduler already gates this way: allocation (`collectTasksFromSubGroupSet`) schedules the `minSubGroup` core children then bursts extras opportunistically, and eviction (`eviction_info.go`) protects exactly the core children (`GetMinMembersToSatisfy()`) and reclaims surplus whole. An elastic subgroup is deployed only if its pods can be gang-scheduled — otherwise it stays unsatisfied.
 
-## Immutability Constraint
-
-A validation webhook must **reject increases** to `minMember` or `minSubGroup` on a running semi-preemptible PodGroup (the root spec and every SubGroup entry). Raising either would reclassify already-running over-quota elastic pods/subgroups as core, silently growing the minimal satisfying set and breaking quota invariants without a rescheduling cycle. Decreasing is allowed — it can only widen the elastic tier.
-
-## Interaction with Segmented Subgroups
-
-[Segmented subgroups](../segmented-subgroups/README.md) auto-builds a fixed shape: a workload's replicas are split into `N` fixed-size **segments**, each emitted as a leaf PodSet with `minAvailable = segmentSize`, under a parent SubGroupSet that may carry a `minSubGroup`. Segmentation forces this shape so each segment lands in its own topology domain (e.g. a rack).
-
-Subgroup-level elasticity is what makes semi-preemptible **meaningful** here. Each segment is fully gang (`minAvailable == segmentSize`), so it has no pod-level surplus — under a pod-only model every segment would be core and the job would collapse to plain non-preemptible. With the tree-level model the parent's `minSubGroup` decides how many **segments** are core; the rest are elastic and reclaimed a **whole segment at a time**, so the forced topology shape is never torn apart.
-
-The elastic tier exists only when `minSubGroup < #segments`. Example — `minSubGroup: 2` over 4 segments: 2 segments core (in-quota), 2 elastic (over-quota, reclaimed first):
+**Example** — a hand-authored PodGroup of 4 fully-gang replica subgroups with `minSubGroup: 2`: 2 replicas are core (in-quota), the other 2 burst elastically (over-quota, reclaimed a whole replica at a time):
 
 ```yaml
 spec:
   preemptibility: "semi-preemptible"
-  minSubGroup: 2          # 2 of 4 segments are core; the rest are elastic
+  minSubGroup: 2          # 2 of 4 replica subgroups are core; the rest are elastic
   subGroups:
-    - name: segment-0     # core
-      minMember: 8        # fully gang: no pod-level elasticity inside a segment
-    - name: segment-1     # core
+    - name: replica-0     # core
+      minMember: 8        # fully gang: no pod-level elasticity inside the subgroup
+    - name: replica-1     # core
       minMember: 8
-    - name: segment-2     # elastic — evicted as a whole segment
+    - name: replica-2     # elastic — evicted as a whole subgroup
       minMember: 8
-    - name: segment-3     # elastic — evicted as a whole segment
+    - name: replica-3     # elastic — evicted as a whole subgroup
       minMember: 8
 ```
 
-If `minSubGroup` equals the segment count, no node has surplus and the job is effectively non-preemptible despite the setting — lower `minSubGroup` to create an elastic segment tier.
+Because each subgroup here is fully gang (`minMember == size`), there is no pod-level surplus inside a subgroup; `minSubGroup` is what creates the elastic tier. If `minSubGroup` equalled the subgroup count, no node would have surplus and the job would be effectively non-preemptible despite the setting.
+
+## Immutability Constraint
+
+A validation webhook must **reject increases** to `minMember` or `minSubGroup` on a running semi-preemptible PodGroup (the root spec and every SubGroup entry). Raising either would reclassify already-running over-quota elastic pods/subgroups as core, silently growing the minimal satisfying set and breaking quota invariants without a rescheduling cycle. Decreasing is allowed — it can only widen the elastic tier.
+
+## Automated Segmentation (Out of Scope)
+
+[Automated segmented subgroups](../segmented-subgroups/README.md) (the `kai.scheduler/segment-size` annotation, wired for PyTorchJob Worker replicas and LeaderWorkerSet) are **out of scope** for semi-preemptible and are **mutually exclusive** with it.
+
+Automated segmentation emits a **fully-gang** tree: every segment leaf gets `minAvailable = segmentSize`, with no `minSubGroup` and no `minMember = 0`. A fully-gang tree has no surplus at any level, so semi-preemptible has nothing to make elastic and silently collapses to plain non-preemptible. Rather than ship a combination that looks meaningful but is inert, the two are kept apart.
+
+This does **not** remove subgroup-level elasticity — it remains fully supported for **hand-authored** subgroup trees (see [Subgroups and Multi-Level Trees](#subgroups-and-multi-level-trees)), where the user sets `minSubGroup` below the number of child subgroups to create an elastic tier. The exclusion applies only to the automated, annotation-driven path.
+
+**Enforcement (soft).** When a workload requests both automated segmentation and `semi-preemptible`, the PodGrouper still creates the PodGroup but emits a `PodGrouperWarning` event on the pod, noting that the two are mutually exclusive and the workload will behave as non-preemptible. Enforcement lives in the PodGrouper rather than an admission webhook because only the grouper sees both the resolved preemptibility and the segmentation decision, and for auto-segmented workloads the user submits the source workload (PyTorchJob/LWS) — never the PodGroup — so a Warning event on the pod is more visible than a PodGroup-webhook rejection. Being non-blocking, it never breaks an existing workload that happens to set both.
 
 ## Simulation Considerations
 
