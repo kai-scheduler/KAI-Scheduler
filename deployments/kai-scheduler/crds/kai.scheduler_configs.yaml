@@ -5640,6 +5640,18 @@ spec:
                       exporter observes). The global nodeSelector is deliberately not applied — it is used to confine
                       management pods off worker nodes, the opposite of what the exporter needs.
                     type: object
+                  podResourcesHostPath:
+                    description: |-
+                      PodResourcesHostPath is the host directory hostPath-mounted for the podresources socket.
+                      Override to point the exporter at a non-kubelet podresources socket (e.g. a simulated one).
+                      PodResourcesSocket must resolve inside it. Defaults to /var/lib/kubelet/pod-resources.
+                    type: string
+                  podResourcesSocket:
+                    description: |-
+                      PodResourcesSocket is the podresources gRPC socket path the exporter dials. It must resolve
+                      inside PodResourcesHostPath (mounted at the same in-container path).
+                      Defaults to /var/lib/kubelet/pod-resources/kubelet.sock.
+                    type: string
                   pollInterval:
                     description: |-
                       PollInterval is how often the exporter reads placement from the local kubelet podresources API.
@@ -6683,6 +6695,11 @@ spec:
                             type: object
                         type: object
                     type: object
+                  sysfsHostPath:
+                    description: |-
+                      SysfsHostPath is the host sysfs directory hostPath-mounted for CPU-to-NUMA resolution.
+                      Override to point the exporter at a synthetic sysfs tree. Defaults to /sys.
+                    type: string
                   tolerations:
                     description: |-
                       Tolerations let the DaemonSet run on tainted worker nodes. Merged with the global daemonset
