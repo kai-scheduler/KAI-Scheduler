@@ -131,15 +131,10 @@ func (ssn *Session) AddPreJobAllocationFn(fn api.PreJobAllocationFn) {
 	ssn.PreJobAllocationFns = append(ssn.PreJobAllocationFns, fn)
 }
 
-func (ssn *Session) AddScenarioGenerator(name string, factory ScenarioGeneratorFactory, applies ...ActionType) {
-	actions := map[ActionType]struct{}{}
-	for _, action := range applies {
-		actions[action] = struct{}{}
-	}
+func (ssn *Session) AddScenarioGenerator(name string, factory ScenarioGeneratorFactory) {
 	ssn.ScenarioGeneratorRegistrations = append(ssn.ScenarioGeneratorRegistrations, ScenarioGeneratorRegistration{
 		Name:    name,
 		Factory: factory,
-		Actions: actions,
 	})
 }
 
@@ -322,7 +317,7 @@ func (ssn *Session) SubGroupOrderFn(l, r interface{}) bool {
 func (ssn *Session) QueueOrderFn(lQ, rQ *queue_info.QueueInfo, lJob, rJob *podgroup_info.PodGroupInfo,
 	lVictims, rVictims []*podgroup_info.PodGroupInfo,
 ) bool {
-	minNodeGPUMemory := ssn.ClusterInfo.MinNodeGPUMemory
+	minNodeGPUMemory := ssn.ClusterInfo.MinNodeGPUMemoryMiB
 	for _, qof := range ssn.QueueOrderFns {
 		if j := qof(lQ, rQ, lJob, rJob, lVictims, rVictims, minNodeGPUMemory); j != 0 {
 			return j < 0
@@ -404,16 +399,19 @@ func (ssn *Session) SubsetNodesFn(
 }
 
 func logNodeSetsPluginResult(subsetNodesFn api.SubsetNodesFn, podGroup *podgroup_info.PodGroupInfo, nodeSets []node_info.NodeSet) {
-	nodeSetsByNames := make([]node_info.NodeSet, 0, len(nodeSets))
+	if !log.InfraLogger.IsVerbose(7) {
+		return
+	}
+	nodeSetNames := make([][]string, 0, len(nodeSets))
 	for _, nodeSet := range nodeSets {
-		nodeSetNodeNames := make([]string, 0, len(nodeSets))
+		names := make([]string, 0, len(nodeSet))
 		for _, node := range nodeSet {
-			nodeSetNodeNames = append(nodeSetNodeNames, node.Name)
+			names = append(names, node.Name)
 		}
-		nodeSetsByNames = append(nodeSetsByNames, nodeSet)
+		nodeSetNames = append(nodeSetNames, names)
 	}
 	log.InfraLogger.V(7).Infof(
-		"Result of plugin func <%v> on podGroup <%s/%s> is %v", subsetNodesFn, podGroup.Namespace, podGroup.Namespace, nodeSetsByNames)
+		"Result of plugin func <%v> on podGroup <%s/%s> is %v", subsetNodesFn, podGroup.Namespace, podGroup.Namespace, nodeSetNames)
 }
 
 func (ssn *Session) PrePredicateFn(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo) error {

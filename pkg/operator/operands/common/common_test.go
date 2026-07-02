@@ -24,6 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
 	kaiv1common "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
 )
 
@@ -31,6 +32,27 @@ func TestCommon(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Common Functions Suite")
 }
+
+var _ = Describe("DeploymentForKAIConfig", func() {
+	It("labels operator-generated deployments for cleanup", func() {
+		config := &kaiv1.Config{Spec: kaiv1.ConfigSpec{Namespace: "kai-scheduler"}}
+		config.Spec.SetDefaultsWhereNeeded()
+		fakeKubeClient := fake.NewClientBuilder().WithObjects(&appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "binder",
+				Namespace: config.Spec.Namespace,
+				Labels:    map[string]string{"existing-label": "preserved"},
+			},
+		}).Build()
+
+		deployment, err := DeploymentForKAIConfig(
+			context.Background(), fakeKubeClient, config, config.Spec.Binder.Service, "binder",
+		)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(deployment.Labels).To(HaveKeyWithValue(OperatorManagedByLabelKey, OperatorManagedByLabelValue))
+		Expect(deployment.Labels).To(HaveKeyWithValue("existing-label", "preserved"))
+	})
+})
 
 var _ = Describe("AllControllersAvailable", func() {
 	Context("No api errors", func() {

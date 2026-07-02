@@ -21,7 +21,8 @@ func TestNodeLocalGreedyPluginRegistersNodeLocalGenerator(t *testing.T) {
 	require.Equal(t, Name, plugin.Name())
 	require.Len(t, ssn.ScenarioGeneratorRegistrations, 1)
 	require.Equal(t, constants.GeneratorNodeLocalGreedy, ssn.ScenarioGeneratorRegistrations[0].Name)
-	require.Contains(t, ssn.ScenarioGeneratorRegistrations[0].Actions, framework.Reclaim)
-	require.Contains(t, ssn.ScenarioGeneratorRegistrations[0].Actions, framework.Preempt)
-	require.Contains(t, ssn.ScenarioGeneratorRegistrations[0].Actions, framework.Consolidation)
+}
+
+func TestNodeLocalGreedyGeneratorConstructorLivesInPluginPackage(t *testing.T) {
+	require.Nil(t, NewNodeLocalGreedyGenerator(nil))
 }

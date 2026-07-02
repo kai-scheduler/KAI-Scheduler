@@ -18,6 +18,7 @@ global:
   tolerations: []
   namespaceLabelSelector: {}
   podLabelSelector: {}
+  nodePoolLabelKey: ""
   jsonLog: false
   vpa:
     enabled: false
@@ -38,6 +39,8 @@ global:
     serviceAccount: kai-resource-reservation
     appLabel: kai-resource-reservation
     namespaceLabels: {}
+    createNamespace: true
+    createServiceAccount: true
 
 operator:
   image:
@@ -180,7 +183,6 @@ queuecontroller:
     name: queuecontroller
     pullPolicy: IfNotPresent
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
-  certSecretName: queuecontroller-webhook-tls-secret
   affinity: {}
 
 admission:
@@ -190,7 +192,6 @@ admission:
     name: admission
     pullPolicy: IfNotPresent
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
-  certSecretName: admission-webhook-tls-secret
   ports:
     webhookPort: 9443
     metricsPort: 8080
@@ -225,7 +226,8 @@ crdupgrader:
 
 kaiConfigDeployer:
   # Post-install/post-upgrade hook that applies the kai-config CR out-of-release (#1536).
-  # Disable to manage the kai-config CR outside of this chart.
+  # Disable to manage the kai-config CR outside of this chart. When disabled, the chart
+  # neither creates kai-config nor deletes it during post-delete cleanup.
   enabled: true
   image:
     name: crd-upgrader
@@ -256,6 +258,12 @@ postCleanup:
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   serviceAccountName: post-delete-cleanup
   resources: {}
+
+# defaultPriorityClasses controls the chart-managed build, train, inference, and
+# build-preemptible PriorityClasses. Disable when these cluster-scoped resources
+# are managed externally.
+defaultPriorityClasses:
+  enabled: true
 
 prometheus:
   # Enable Prometheus integration for time-aware fairness features.

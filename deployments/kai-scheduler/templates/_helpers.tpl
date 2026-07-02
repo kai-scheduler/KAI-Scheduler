@@ -19,6 +19,9 @@ spec:
     podLabelSelector:
       {{- toYaml .Values.global.podLabelSelector | nindent 6 }}
     {{- end }}
+    {{- if .Values.global.nodePoolLabelKey }}
+    nodePoolLabelKey: {{ .Values.global.nodePoolLabelKey | quote }}
+    {{- end }}
     {{- if .Values.global.jsonLog }}
     jsonLog: true
     {{- end }}

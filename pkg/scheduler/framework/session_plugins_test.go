@@ -232,23 +232,17 @@ func TestVictimInvariantPrePredicateFailure(t *testing.T) {
 	})
 }
 
-func TestAddScenarioGeneratorPreservesOrderAndActions(t *testing.T) {
+func TestAddScenarioGeneratorPreservesOrder(t *testing.T) {
 	ssn := &Session{}
 
-	ssn.AddScenarioGenerator("first", newTestScenarioGenerator("first"), Reclaim, Preempt)
-	ssn.AddScenarioGenerator("second", newTestScenarioGenerator("second"), Consolidation)
+	ssn.AddScenarioGenerator("first", newTestScenarioGenerator("first"))
+	ssn.AddScenarioGenerator("second", newTestScenarioGenerator("second"))
 	ssn.AddScenarioGenerator("third", newTestScenarioGenerator("third"))
 
 	require.Len(t, ssn.ScenarioGeneratorRegistrations, 3)
 	require.Equal(t, "first", ssn.ScenarioGeneratorRegistrations[0].Name)
 	require.Equal(t, "second", ssn.ScenarioGeneratorRegistrations[1].Name)
 	require.Equal(t, "third", ssn.ScenarioGeneratorRegistrations[2].Name)
-
-	require.Contains(t, ssn.ScenarioGeneratorRegistrations[0].Actions, Reclaim)
-	require.Contains(t, ssn.ScenarioGeneratorRegistrations[0].Actions, Preempt)
-	require.NotContains(t, ssn.ScenarioGeneratorRegistrations[0].Actions, Consolidation)
-	require.Contains(t, ssn.ScenarioGeneratorRegistrations[1].Actions, Consolidation)
-	require.Empty(t, ssn.ScenarioGeneratorRegistrations[2].Actions)
 
 	generator := ssn.ScenarioGeneratorRegistrations[0].Factory(testScenarioGeneratorContext{action: Reclaim})
 	require.Equal(t, "first", generator.Name())

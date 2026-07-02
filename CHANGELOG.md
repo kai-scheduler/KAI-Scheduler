@@ -7,6 +7,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Added `global.resourceReservation.createNamespace` Helm value (default `true`) to allow disabling creation of the resource-reservation namespace, for embedding KAI in a parent chart that creates the namespace itself.
+- Added `global.resourceReservation.createServiceAccount` Helm value (default `true`) to allow disabling creation of the resource-reservation ServiceAccount, for embedding KAI in a parent chart that creates the ServiceAccount itself.
+- Added `defaultPriorityClasses.enabled` Helm value (default `true`) for installations that manage KAI PriorityClasses externally.
+
+### Changed
+- Removed unused `queuecontroller.certSecretName` and `admission.certSecretName` Helm values; webhook TLS secrets are created and managed by the operator (`queue-webhook-tls-secret`, `kai-admission-webhook-tls-secret`). [#1791](https://github.com/kai-scheduler/KAI-Scheduler/pull/1791) [dttung2905](https://github.com/dttung2905)
+- Podgrouper now preserves an existing PodGroup's topology constraint when the workload does not specify one, so an externally-assigned topology is not overwritten. Workload topology annotations still take precedence when present.
+
+### Fixed
+- Fixed reclaim abandoning valid over-quota victims when an unrelated under-deserved queue appeared earlier in victim ordering. [#1750](https://github.com/kai-scheduler/KAI-Scheduler/issues/1750)
+- Restricted Helm post-delete cleanup to KAI operator-managed Deployments and preserved externally managed `kai-config` resources when `kaiConfigDeployer.enabled=false`.
+- Scheduler cache now filters terminal Pods at watch time to reduce memory use, while still watching Pods bound by other schedulers so their resource usage is counted in allocatable calculations. [#1645](https://github.com/kai-scheduler/KAI-Scheduler/issues/1645) [enoodle](https://github.com/enoodle)
+- Fix the MinNodeGPUMemoryMiB calculation in the scheduler. This affected allocations for fractional pod requesting gpu "gpu-memory". [#1792](https://github.com/kai-scheduler/KAI-Scheduler/issues/1792) [davidLif](https://github.com/davidLif)
+- Use the maximum gpu size ine the cluster rather then the minimum when checking a potential overLimit or isNonPreemptebleOverquota for a pod. [#1792](https://github.com/kai-scheduler/KAI-Scheduler/issues/1792) [davidLif](https://github.com/davidLif)
+- Reduced allocation churn in the scheduler hot path: cached `Schedulable()` result as a package-level singleton and guarded `logNodeSetsPluginResult` node-name collection behind an `IsVerbose(7)` check to avoid building slices on non-verbose runs
+- Block NaN value for fraction in the pod admission [#1798](https://github.com/kai-scheduler/KAI-Scheduler/issues/1798) [davidLif](https://github.com/davidLif)
+- In the fractional admission checks, check that the fractional value can be parsed as a quantity. [#1798](https://github.com/kai-scheduler/KAI-Scheduler/issues/1798) [davidLif](https://github.com/davidLif)
+- Fixed GPU-sharing pods with dotted pod names generating invalid ConfigMap-backed volume names. Volume names are now sanitized to valid DNS labels while preserving original ConfigMap references used for shared-GPU injection.
+
+
+## [v0.16.0] - 2026-06-24
+
+### Added
+- Added a bounded scenario generator portfolio for reclaim, preempt, and consolidation search, with `SchedulingShard.spec.scenarioSearchBudgets` time-budget configuration and production scenario-search metrics.
+- Added `global.nodePoolLabelKey` Helm value to configure `spec.global.nodePoolLabelKey` in the Config CR for KAI sharding [#1774](https://github.com/kai-scheduler/KAI-Scheduler/issues/1774).
 - Added an opt-in `deviceaccess` admission plugin (`--block-nvidia-visible-devices`, config field `admission.blockNvidiaVisibleDevices`, default disabled) that (1) rejects pods overriding the `NVIDIA_VISIBLE_DEVICES` environment variable with values other than `void`/`none` (or via a `valueFrom` reference), and (2) injects `NVIDIA_VISIBLE_DEVICES=void` into containers that do not request a GPU, blocking their access to GPUs on the node.
 - Added support for configuring admission Pod Disruption Budget via Helm values (`admission.podDisruptionBudget`) [#1490](https://github.com/kai-scheduler/KAI-Scheduler/pull/1490) [dttung2905](https://github.com/dttung2905)
 - Added an opt-in `hamicore` binder plugin (depends on `gpusharing`) to write the HAMI-core GPU memory limit (`CUDA_DEVICE_MEMORY_LIMIT`) for fractional GPU pods.
@@ -22,11 +47,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Updated Go toolchain and base build images to v1.26.3.
 - **Breaking:** The podgroup produced for JobSet is now produces as a single PodGroup per JobSet with a two-level SubGroup hierarchy (one parent SubGroup per `replicatedJob`, one leaf SubGroup per replica) regardless of `startupPolicyOrder`. The `kai.scheduler/batch-min-member` annotation on the JobSet now overrides the root `minSubGroup`; the same annotation on `replicatedJobs[].template.metadata.annotations` overrides the leaf `minMember` (defaulting to `template.spec.parallelism`). [#1617](https://github.com/kai-scheduler/KAI-Scheduler/pull/1617) [davidLif](https://github.com/davidLif)
 
+### Removed
+- Removed the never-populated `status.phase`, `status.running`, `status.succeeded`, `status.failed`, and `status.pending` fields (and the `PodGroupPhase` type) from the `PodGroup` (`scheduling.run.ai/v2alpha2`) schema. No controller ever wrote them; use `status.resourcesStatus` and `status.schedulingConditions` to determine PodGroup liveness. [#1650](https://github.com/kai-scheduler/KAI-Scheduler/issues/1650) [david-gang](https://github.com/david-gang)
+
 ### Fixed
-- Fixed GPU-sharing pods with dotted pod names generating invalid ConfigMap-backed volume names. Volume names are now sanitized to valid DNS labels while preserving original ConfigMap references used for shared-GPU injection.
+- Fixed Helm chart always creating the resource-reservation ServiceAccount and scaling pod namespace even when they already exist in the cluster, causing install/upgrade failures on GitOps or pre-provisioned clusters (now skips creation via `lookup`, matching the reservation namespace template) [#1732](https://github.com/kai-scheduler/KAI-Scheduler/issues/1732) [dttung2905](https://github.com/dttung2905)
 - Reduced scheduler heap retention after scheduling cycles by clearing completed session snapshots and callback references, and by releasing the node scoring pool without waiting for finalizers.
 - Fixed Helm chart prometheus RBAC always being installed when `prometheus.enabled` is false, and the `kai-prometheus` ClusterRoleBinding referencing the `prometheus` ServiceAccount in hardcoded `kai-scheduler` namespace instead of the Helm release namespace [#1684](https://github.com/kai-scheduler/KAI-Scheduler/pull/1684) [dttung2905](https://github.com/dttung2905)
 - Fixed post-delete cleanup hook hardcoding `kai-scheduler` namespace instead of Helm release namespace on `helm uninstall` [#1619](https://github.com/kai-scheduler/KAI-Scheduler/pull/1619) [dttung2905](https://github.com/dttung2905)
+- Fixed scheduler pod cache memory growth by transforming cached Pods to retain only scheduler-relevant container fields while stripping large literal env values and managed fields [#1646](https://github.com/kai-scheduler/KAI-Scheduler/issues/1646)
 - Improved solver performance in some large reclaim scenarios [#1627](https://github.com/kai-scheduler/KAI-Scheduler/pull/1627) [itsomri](https://github.com/itsomri)
 - Grove grouper now sets `minSubGroup` (equal to the number of child SubGroups) instead of `minMember=0` on parent SubGroups generated from `topologyConstraintGroupConfigs` [#1639](https://github.com/kai-scheduler/KAI-Scheduler/issues/1639) [davidLif](https://github.com/davidLif)
 - Fixed Helm chart not wiring `podgrouper.queueLabelKey` into `spec.global.queueLabelKey` on the Config CR, so custom queue label keys were ignored at install time [#1655](https://github.com/kai-scheduler/KAI-Scheduler/pull/1655) [dttung2905](https://github.com/dttung2905)

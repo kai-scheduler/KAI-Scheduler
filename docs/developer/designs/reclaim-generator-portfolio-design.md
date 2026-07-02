@@ -61,7 +61,7 @@ The current reclaim path can spend unbounded synchronous scheduler time trying t
 
 ## Proposal
 
-Move scenario generation behind a bounded generator portfolio owned by the shared `JobSolver` path used by reclaim, preempt, and consolidation. Each applicable generator yields `ByNodeScenario` candidates incrementally. The driver simulates candidates through the existing solver, validates accepted solutions with the existing post-simulation validator, and stops when a solution is found, all generators are exhausted, or the effective time budget expires.
+Move scenario generation behind a bounded generator portfolio owned by the shared `JobSolver` path used by reclaim, preempt, and consolidation. Each available generator yields `ByNodeScenario` candidates incrementally. The driver simulates candidates through the existing solver, validates accepted solutions with the existing post-simulation validator, and stops when a solution is found, all generators are exhausted, or the effective time budget expires.
 
 The initial portfolio is:
 
@@ -106,11 +106,11 @@ The negative result is intentionally approximate when produced by the bounded po
 
 ### Mechanism
 
-`solvePartialJob` keeps its simulation and validation skeleton. The scenario source changes from a single exhaustive emitter to an ordered portfolio of generators. The portfolio owns generator iteration, action filtering, budget checks, and stop reasons.
+`solvePartialJob` keeps its simulation and validation skeleton. The scenario source changes from a single exhaustive emitter to an ordered portfolio of generators. The portfolio owns generator iteration, budget checks, and stop reasons.
 
-Generator iteration happens at pending-job granularity, not at `probeSize` granularity. For one pending job, the driver selects the first applicable generator and lets that generator attempt own the complete `searchMaxSolvableK` progression: exponential probes, binary-search probes, and the full-job probe when the partial search succeeds. Only after that generator attempt exhausts candidates or reaches its generator deadline does the driver start over with the next applicable generator. The driver must not restart the whole generator portfolio for every partial gang size, because that discards the intended progression from smaller successful probes to larger probes and can let an earlier generator repeatedly consume the shared job/action budget before a later generator gets its own search.
+Generator iteration happens at pending-job granularity, not at `probeSize` granularity. For one pending job, the driver selects the first available generator and lets that generator attempt own the complete `searchMaxSolvableK` progression: exponential probes, binary-search probes, and the full-job probe when the partial search succeeds. Only after that generator attempt exhausts candidates or reaches its generator deadline does the driver start over with the next available generator. The driver must not restart the whole generator portfolio for every partial gang size, because that discards the intended progression from smaller successful probes to larger probes and can let an earlier generator repeatedly consume the shared job/action budget before a later generator gets its own search.
 
-When the driver reaches the effective deadline without a validated solution, the action reports "no solution" as an incomplete result. The result reason must distinguish at least deadline exhaustion, generator exhaustion, no applicable generator, and not-attempted jobs so metrics and reduced-budget messages are accurate.
+When the driver reaches the effective deadline without a validated solution, the action reports "no solution" as an incomplete result. The result reason must distinguish at least deadline exhaustion, generator exhaustion, no available generator, and not-attempted jobs so metrics and reduced-budget messages are accurate.
 
 ### Search Result Contract
 
@@ -120,11 +120,11 @@ The driver returns a structured result, not just `nil`. The result reason is the
 | --- | --- | --- |
 | `solved` | a fully simulated, validator-approved scenario was found | yes |
 | `deadline_exhausted` | the action or job deadline expired before a solution was found | yes, if at least one candidate was requested or the job received a search attempt |
-| `generators_exhausted` | all applicable generators were exhausted or reached their own generator deadline before a solution was found | yes |
-| `no_generator` | no registered generator applies to this action/job shape | no |
+| `generators_exhausted` | all available generators were exhausted or reached their own generator deadline before a solution was found | yes |
+| `no_generator` | no scenario generator is available | no |
 | `not_attempted` | the job was skipped before any generator attempt, usually because no search budget remained | no |
 
-Generator deadlines bound one generator attempt, not the whole job search. A generator's `maxGeneratorSearchDuration` covers all partial gang probes it owns for that pending job. When that generator attempt reaches its deadline, the portfolio moves to the next applicable generator and restarts the pending-job partial-gang search with that generator. The whole-job result is `generators_exhausted` only after all applicable generators have either exhausted their candidates or reached their generator deadline. User-facing messages may still say "no valid reclaim scenario was found," but metrics should use the concrete result reason rather than a vague `no_solution_found` value.
+Generator deadlines bound one generator attempt, not the whole job search. A generator's `maxGeneratorSearchDuration` covers all partial gang probes it owns for that pending job. When that generator attempt reaches its deadline, the portfolio moves to the next available generator and restarts the pending-job partial-gang search with that generator. The whole-job result is `generators_exhausted` only after all available generators have either exhausted their candidates or reached their generator deadline. User-facing messages may still say "no valid reclaim scenario was found," but metrics should use the concrete result reason rather than a vague `no_solution_found` value.
 
 ### Generator Abstraction
 
@@ -148,18 +148,18 @@ Accumulated scenario filters are the Phase 1 mechanism for these cheap validity 
 
 ### Plugin Registration and Ordering
 
-`NewJobsSolver`, `solvePartialJob`, and scenario generation are shared by reclaim, preempt, and consolidation. The proposal adds a session extension point that lets plugins register generators for one or more action types:
+`NewJobsSolver`, `solvePartialJob`, and scenario generation are shared by reclaim, preempt, and consolidation. The proposal adds a session extension point that lets plugins register generators:
 
 ```go
 type ScenarioGeneratorFactory func(ctx *solvers.SolveContext) solvers.ScenarioGenerator
 
 func (ssn *Session) AddScenarioGenerator(
+    name string,
     f ScenarioGeneratorFactory,
-    applies ...framework.ActionType,
 )
 ```
 
-Generator order is derived from scheduler plugin execution order. `OpenSession` calls plugin `OnSessionOpen` hooks in configured plugin order, and each hook appends its generators by calling `AddScenarioGenerator`. If a plugin registers multiple generators, their relative order is the order of its `AddScenarioGenerator` calls. `JobSolver` filters registered generators by the current action and tries them in registration order at generator-attempt granularity: each generator gets the complete partial-gang search for the pending job before the next generator starts.
+Generator order is derived from scheduler plugin execution order. `OpenSession` calls plugin `OnSessionOpen` hooks in configured plugin order, and each hook appends its generators by calling `AddScenarioGenerator`. If a plugin registers multiple generators, their relative order is the order of its `AddScenarioGenerator` calls. `JobSolver` tries available generators in registration order at generator-attempt granularity: each generator gets the complete partial-gang search for the pending job before the next generator starts.
 
 Generator selection is controlled by normal scheduler plugin enablement and plugin order; this is not an alpha mechanism. The new time-budget knobs are alpha/experimental controls for KAI development, support, and experiments while defaults are tuned.
 
@@ -207,9 +207,9 @@ All values are strings parsed with Go's standard `time.ParseDuration`, which sup
 
 ```go
 budget := newSearchBudget(actionDeadline, jobDeadline, generatorDeadlines)
-generators := applicableGenerators(ssn, action, pendingJob)
+availableGenerators := ssn.ScenarioGeneratorRegistrations
 
-for _, generatorFactory := range generators {
+for _, generatorFactory := range availableGenerators {
     generatorBudget := budget.beginGenerator(generatorFactory.Name())
     result := searchMaxSolvableKWithGenerator(
         ssn, pendingJob, state, feasibleNodeMap, generatorFactory, generatorBudget,
@@ -261,7 +261,7 @@ The exact deduplication design should be specified and implemented separately. T
 
 #### Smart Generator Selection
 
-Phase 1 drains applicable generators in normal scheduler plugin order. A later generator-selection policy may choose, skip, or reorder registered generators per job based on job shape and, if useful, cluster state. It must preserve the generator-attempt boundary unless a separate design explains how per-probe switching preserves search continuity and budget fairness. That future policy should be designed from replay and production evidence showing which generator families solve which workload shapes; it should not be implicit in the Phase 1 plugin-registration mechanism.
+Phase 1 drains available generators in normal scheduler plugin order. A later generator-selection policy may choose, skip, or reorder registered generators per job based on job shape and, if useful, cluster state. It must preserve the generator-attempt boundary unless a separate design explains how per-probe switching preserves search continuity and budget fairness. That future policy should be designed from replay and production evidence showing which generator families solve which workload shapes; it should not be implicit in the Phase 1 plugin-registration mechanism.
 
 #### Generator Checkpointing Across Scheduling Sessions
 
@@ -290,7 +290,7 @@ For reduced-budget jobs, the `ScenarioSearchUnresolved` detail should say that t
 
 Bounded scenario search outcomes must be visible to job submitters without changing the meaning of Kubernetes `Unschedulable`. The allocate action can continue to set the existing `Unschedulable` condition and events for ordinary allocation failures. An unresolved scenario-search attempt is a separate scheduler outcome and must not overload that signal, because other Kubernetes components, including autoscaling integrations, already use `Unschedulable` semantics.
 
-When reclaim, preempt, or consolidation reaches a bounded-search terminal result for a pending job, the scheduler should set a dedicated `ScenarioSearchUnresolved` condition on both the `PodGroup` and its pending Pods. The `PodGroup` condition is the authoritative job-level explanation. Pod conditions provide a direct answer for users who inspect only the submitted Pods. The condition should be emitted once for the job scheduling outcome, not once per generator, probe, or scenario. `Unresolved` is intentionally broader than `exhausted`: it covers jobs where all configured generator attempts were drained, jobs where the time budget expired before a complete answer, jobs skipped because no budget remained, and jobs with no applicable generator.
+When reclaim, preempt, or consolidation reaches a bounded-search terminal result for a pending job, the scheduler should set a dedicated `ScenarioSearchUnresolved` condition on both the `PodGroup` and its pending Pods. The `PodGroup` condition is the authoritative job-level explanation. Pod conditions provide a direct answer for users who inspect only the submitted Pods. The condition should be emitted once for the job scheduling outcome, not once per generator, probe, or scenario. `Unresolved` is intentionally broader than `exhausted`: it covers jobs where all configured generator attempts were drained, jobs where the time budget expired before a complete answer, jobs skipped because no budget remained, and jobs with no available generator.
 
 User-facing condition messages should describe the scheduling outcome, not the internal generator mechanics:
 
@@ -299,7 +299,7 @@ User-facing condition messages should describe the scheduling outcome, not the i
 | `deadline_exhausted` | `KAI could not find a valid reclaim scenario within the configured search budget for this scheduling attempt. The job remains pending and may be retried in a later scheduling cycle.` |
 | `generators_exhausted` | `KAI tried the configured scenario-search policy and found no valid reclaim scenario for this scheduling attempt. The job remains pending and may be retried in a later scheduling cycle.` |
 | `not_attempted` | `KAI did not attempt scenario search for this job in this scheduling cycle because the configured search budget was already exhausted.` |
-| `no_generator` | `KAI did not attempt scenario search for this job because no configured scenario generator applies to this action.` |
+| `no_generator` | `KAI did not attempt scenario search for this job because no scenario generator is available.` |
 
 If `reduced_budget=true`, the message should say that the scheduler could not find a valid scenario within the remaining configured search time because the action search budget was partly consumed by earlier jobs. This wording must only be used for jobs that actually received a reduced budget.
 
@@ -342,7 +342,7 @@ The Phase 1 production metrics do not export per-job generator attribution such 
 
 ## Test Plan
 
-- Unit-test portfolio ordering, applicable-action filtering, stop reasons, and deadline handling.
+- Unit-test portfolio ordering, stop reasons, and deadline handling.
 - Unit-test that one generator owns the complete partial-gang search for a pending job before the next generator is tried.
 - Unit-test `NodeLocalGreedy` candidate construction, pre-#1537 node-local scenario shape, and whole victim-job handling.
 - Unit-test `MultiNodeGang` as a wrapper over the existing builder/emitter.

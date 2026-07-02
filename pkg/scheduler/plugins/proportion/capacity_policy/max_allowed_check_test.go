@@ -19,6 +19,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	rs "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
+	"k8s.io/utils/ptr"
 )
 
 var _ = Describe("Max Allowed Policy Check", func() {
@@ -439,7 +440,7 @@ var _ = Describe("Max Allowed Policy Check", func() {
 				testName := name
 				testData := data
 				It(testName, func() {
-					capacityPolicy := New(testData.queues, node_info.DefaultGpuMemory)
+					capacityPolicy := New(testData.queues, ptr.To[int64](node_info.DefaultGpuMemory))
 					result := capacityPolicy.resultsOverLimit(testData.requestedShare, testData.job)
 					Expect(result.IsSchedulable).To(Equal(testData.expectedResult))
 					if testData.expectedDetails != nil {

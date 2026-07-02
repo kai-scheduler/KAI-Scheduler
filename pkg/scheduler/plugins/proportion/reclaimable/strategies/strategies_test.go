@@ -22,6 +22,69 @@ func TestReclaimStrategies(t *testing.T) {
 var testVectorMap = resource_info.NewResourceVectorMap()
 
 var _ = Describe("Reclaim strategies", func() {
+	Context("Reclaim strategy predicates", func() {
+		It("checks maintain fair share against allocatable share", func() {
+			reclaimeeQueue := &rs.QueueAttributes{
+				Name: "p2",
+				QueueResourceShare: rs.QueueResourceShare{
+					GPU: rs.ResourceShare{
+						Deserved:   2,
+						FairShare:  4,
+						MaxAllowed: commonconstants.UnlimitedResourceQuantity,
+					},
+					CPU:    rs.ResourceShare{},
+					Memory: rs.ResourceShare{},
+				},
+			}
+
+			Expect(FitsMaintainFairShare(
+				reclaimeeQueue, rs.NewResourceQuantities(0, 0, 3),
+			)).To(BeFalse())
+			Expect(FitsMaintainFairShare(
+				reclaimeeQueue, rs.NewResourceQuantities(0, 0, 5),
+			)).To(BeTrue())
+		})
+
+		It("checks deserved quota strategy boundaries", func() {
+			reclaimerQueue := &rs.QueueAttributes{
+				Name: "p1",
+				QueueResourceShare: rs.QueueResourceShare{
+					GPU: rs.ResourceShare{
+						Deserved:  4,
+						FairShare: 4,
+						Allocated: 2,
+					},
+					CPU:    rs.ResourceShare{},
+					Memory: rs.ResourceShare{},
+				},
+			}
+			reclaimeeQueue := &rs.QueueAttributes{
+				Name: "p2",
+				QueueResourceShare: rs.QueueResourceShare{
+					GPU: rs.ResourceShare{
+						Deserved:  2,
+						FairShare: 4,
+					},
+					CPU:    rs.ResourceShare{},
+					Memory: rs.ResourceShare{},
+				},
+			}
+
+			Expect(ReclaimerFitsDeservedQuota(
+				resource_info.NewResource(0, 0, 2).ToVector(testVectorMap), testVectorMap, reclaimerQueue,
+			)).To(BeTrue())
+			Expect(ReclaimerFitsDeservedQuota(
+				resource_info.NewResource(0, 0, 3).ToVector(testVectorMap), testVectorMap, reclaimerQueue,
+			)).To(BeFalse())
+			Expect(ReclaimeeExceedsDeservedQuota(
+				reclaimeeQueue, rs.NewResourceQuantities(0, 0, 3),
+			)).To(BeTrue())
+			Expect(ReclaimeeExceedsDeservedQuota(
+				reclaimeeQueue, rs.NewResourceQuantities(0, 0, 2),
+			)).To(BeFalse())
+		})
+	})
+
 	Context("Maintain Fair Share Strategy", func() {
 		tests := map[string]struct {
 			reclaimerQueue *rs.QueueAttributes

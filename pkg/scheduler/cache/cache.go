@@ -22,6 +22,7 @@ package cache
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -34,9 +35,11 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/informers"
+	corev1informers "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	listv1 "k8s.io/client-go/listers/core/v1"
+	k8scache "k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	ksf "k8s.io/kube-scheduler/framework"
 
@@ -72,6 +75,36 @@ func init() {
 	}
 
 	utilruntime.Must(schemeBuilder.AddToScheme(kubeaischedulerschema.Scheme))
+}
+
+var terminalPodPhases = []v1.PodPhase{
+	v1.PodSucceeded,
+	v1.PodFailed,
+}
+
+func filterTerminalPods(options *metav1.ListOptions) {
+	selectors := make([]string, 0, len(terminalPodPhases))
+	for _, phase := range terminalPodPhases {
+		selectors = append(selectors, fmt.Sprintf("status.phase!=%s", phase))
+	}
+	selector := strings.Join(selectors, ",")
+	if options.FieldSelector == "" {
+		options.FieldSelector = selector
+		return
+	}
+	options.FieldSelector = fmt.Sprintf("%s,%s", options.FieldSelector, selector)
+}
+
+func registerSchedulerPodInformer(informerFactory informers.SharedInformerFactory) {
+	informerFactory.InformerFor(&v1.Pod{}, func(client kubernetes.Interface, resyncPeriod time.Duration) k8scache.SharedIndexInformer {
+		return corev1informers.NewFilteredPodInformer(
+			client,
+			metav1.NamespaceAll,
+			resyncPeriod,
+			k8scache.Indexers{k8scache.NamespaceIndex: k8scache.MetaNamespaceIndexFunc},
+			filterTerminalPods,
+		)
+	})
 }
 
 // New returns a Cache implementation.
@@ -156,6 +189,11 @@ func newSchedulerCache(schedulerCacheParams *SchedulerCacheParams) *SchedulerCac
 	)
 
 	sc.informerFactory = informers.NewSharedInformerFactory(sc.kubeClient, 0)
+	registerSchedulerPodInformer(sc.informerFactory)
+	if err := setSchedulerPodTransform(sc.informerFactory.Core().V1().Pods().Informer()); err != nil {
+		log.InfraLogger.Errorf("Failed to set scheduler pod transform: %v", err)
+		return nil
+	}
 	sc.kubeAiSchedulerInformerFactory = kubeaischedulerinfo.NewSharedInformerFactory(sc.kubeAiSchedulerClient, 0)
 
 	featuregates.SetDRAFeatureGate(schedulerCacheParams.DiscoveryClient)
@@ -439,7 +477,12 @@ func (sc *SchedulerCache) cleanStaleBindRequest(
 }
 
 func isTerminated(phase v1.PodPhase) bool {
-	return phase == v1.PodFailed || phase == v1.PodSucceeded
+	for _, terminalPhase := range terminalPodPhases {
+		if phase == terminalPhase {
+			return true
+		}
+	}
+	return false
 }
 
 func (sc *SchedulerCache) KubeClient() kubernetes.Interface {

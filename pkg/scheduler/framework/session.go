@@ -64,7 +64,6 @@ type ScenarioGeneratorFactory func(ctx ScenarioGeneratorContext) ScenarioGenerat
 type ScenarioGeneratorRegistration struct {
 	Name    string
 	Factory ScenarioGeneratorFactory
-	Actions map[ActionType]struct{}
 }
 
 type Session struct {
