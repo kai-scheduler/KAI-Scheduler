@@ -204,6 +204,10 @@ func buildDomainCapacity(
 	domainCapacity := make(map[TopologyDomainKey]float64)
 	nodeToTopologyDomains := make(map[string][]TopologyDomainKey)
 
+	// Constraint level strings are already resolved to canonical node label keys at snapshot time
+	// (see PodGroupInfo.ResolveTopologyAliases), so RequiredLevel can be used directly as a node
+	// label key below without any alias handling here.
+	//
 	// Deduplicate constraint keys across subgroups so each node's GPUs are counted once per domain.
 	constraintKeys := make(map[constraintGroupKey]bool)
 	for _, subgroup := range subgroupsWithRequired {
