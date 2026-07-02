@@ -76,6 +76,7 @@ KAI Scheduler can be installed:
 
 - **From Production (Recommended)**
 - **From Source (Build it Yourself)**
+- **With ArgoCD (GitOps)** - see the [GitOps installation guide](docs/gitops/README.md)
 
 #### Install from Production
 

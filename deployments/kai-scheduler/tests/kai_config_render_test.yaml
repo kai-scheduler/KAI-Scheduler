@@ -1,0 +1,50 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+suite: test kaiConfig.render inline rendering
+
+templates:
+  - kai-config.yaml
+tests:
+  - it: should not render the kai-config CR by default
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: should render the kai-config CR as a release resource in GitOps mode
+    set:
+      kaiConfigDeployer.enabled: false
+      kaiConfig.render: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Config
+      # Guards against template whitespace chomping gluing the apiVersion
+      # line onto the preceding license comment.
+      - isAPIVersion:
+          of: kai.scheduler/v1
+      - equal:
+          path: metadata.name
+          value: kai-config
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/sync-options"]
+          value: SkipDryRunOnMissingResource=true,ServerSideApply=true
+      - notExists:
+          path: metadata.annotations["helm.sh/resource-policy"]
+
+  - it: should not render the kai-config CR when both mechanisms are disabled
+    set:
+      kaiConfigDeployer.enabled: false
+      kaiConfig.render: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: should fail when both kaiConfig.render and kaiConfigDeployer.enabled are set
+    set:
+      kaiConfigDeployer.enabled: true
+      kaiConfig.render: true
+    asserts:
+      - failedTemplate:
+          errorPattern: mutually exclusive

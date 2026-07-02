@@ -8,6 +8,7 @@ metadata:
   name: default
   annotations:
     helm.sh/resource-policy: keep
+    argocd.argoproj.io/sync-options: Prune=false
 spec:
   partitionLabelValue: ""
   {{- if .Values.scheduler.args }}

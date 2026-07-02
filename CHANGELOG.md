@@ -10,8 +10,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Added `global.resourceReservation.createNamespace` Helm value (default `true`) to allow disabling creation of the resource-reservation namespace, for embedding KAI in a parent chart that creates the namespace itself.
 - Added `global.resourceReservation.createServiceAccount` Helm value (default `true`) to allow disabling creation of the resource-reservation ServiceAccount, for embedding KAI in a parent chart that creates the ServiceAccount itself.
 - Added `defaultPriorityClasses.enabled` Helm value (default `true`) for installations that manage KAI PriorityClasses externally.
+- Added `kaiConfig.render` Helm value (default `false`) to render the `kai-config` Config CR inline as a tracked release resource for GitOps/ArgoCD installs, with a new [GitOps installation guide](docs/gitops/README.md). Mutually exclusive with `kaiConfigDeployer.enabled`. [#1794](https://github.com/kai-scheduler/KAI-Scheduler/issues/1794) [#1751](https://github.com/kai-scheduler/KAI-Scheduler/issues/1751)
+- Added `openshift` Helm value (default `false`) to force OpenShift mode where `lookup`-based auto-detection is unavailable (offline rendering, e.g. ArgoCD). [#1794](https://github.com/kai-scheduler/KAI-Scheduler/issues/1794)
+- Added ArgoCD `PostDelete` hook annotations to the post-delete cleanup Job and its RBAC resources (requires ArgoCD >= 2.10), and `Prune=false` sync-options next to existing `helm.sh/resource-policy: keep` annotations. [#1794](https://github.com/kai-scheduler/KAI-Scheduler/issues/1794)
 
 ### Changed
+- Chart rendering now fails fast when `kaiConfig.render` and `kaiConfigDeployer.enabled` are both enabled. Removed the internal `_test.renderKaiConfig` value in favor of `kaiConfig.render`. [#1794](https://github.com/kai-scheduler/KAI-Scheduler/issues/1794)
 - Removed unused `queuecontroller.certSecretName` and `admission.certSecretName` Helm values; webhook TLS secrets are created and managed by the operator (`queue-webhook-tls-secret`, `kai-admission-webhook-tls-secret`). [#1791](https://github.com/kai-scheduler/KAI-Scheduler/pull/1791) [dttung2905](https://github.com/dttung2905)
 - Podgrouper now preserves an existing PodGroup's topology constraint when the workload does not specify one, so an externally-assigned topology is not overwritten. Workload topology annotations still take precedence when present.
 

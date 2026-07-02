@@ -9,6 +9,10 @@ metadata:
   annotations:
     "helm.sh/hook": post-delete
     "helm.sh/hook-delete-policy": hook-succeeded
+    # PostDelete requires ArgoCD >= 2.10. Without these annotations ArgoCD
+    # treats Helm hook resources as regular sync-phase resources.
+    argocd.argoproj.io/hook: PostDelete
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
 subjects:
   - kind: ServiceAccount
     name: post-delete-cleanup
