@@ -20,6 +20,10 @@ tests:
           count: 1
       - isKind:
           of: Config
+      # Guards against template whitespace chomping gluing the apiVersion
+      # line onto the preceding license comment.
+      - isAPIVersion:
+          of: kai.scheduler/v1
       - equal:
           path: metadata.name
           value: kai-config
