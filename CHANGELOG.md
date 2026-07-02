@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 - Block NaN value for fraction in the pod admission [#1798](https://github.com/kai-scheduler/KAI-Scheduler/issues/1798) [davidLif](https://github.com/davidLif)
 - In the fractional admission checks, check that the fractional value can be parsed as a quantity. [#1798](https://github.com/kai-scheduler/KAI-Scheduler/issues/1798) [davidLif](https://github.com/davidLif)
+- Fixed GPU-sharing pods with dotted pod names generating invalid ConfigMap-backed volume names. Volume names are now sanitized to valid DNS labels while preserving original ConfigMap references used for shared-GPU injection.
 
 ## [v0.9.20] - 2026-06-22
 
