@@ -34,3 +34,4 @@ Other agent harnesses should treat `.agents/skills/` as the source of truth and 
 ## Current Skills
 
 - [`snapshots`](skills/snapshots/SKILL.md): capture KAI Scheduler snapshots, inspect archives, replay them with `snapshot-tool`, and compare behavior across refs.
+- [`kai-pending`](skills/kai-pending/SKILL.md): diagnose why a pod or PodGroup is stuck Pending — read the scheduling verdict (queue, quota, limit, gates) and, for node-fit causes, compute per-node free capacity.
