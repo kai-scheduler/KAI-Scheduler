@@ -4,6 +4,7 @@
 package numa_test
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -12,6 +13,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/sets"
 
+	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	schedapi "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
@@ -41,8 +44,18 @@ func singleTask(job *podgroup_info.PodGroupInfo) *pod_info.PodInfo {
 	return nil
 }
 
-func cpuPlacement(zoneIndex int, cpu string) pod_info.NUMAPlacement {
-	return pod_info.NUMAPlacement{{ZoneIndex: zoneIndex, Amount: v1.ResourceList{"cpu": resource.MustParse(cpu)}}}
+// setObservedPlacement stamps the pod's observed NUMA placement record, from which OnSessionOpen
+// seeds the task's NUMAPlacement and reconstructs the zone's Available.
+func setObservedPlacement(task *pod_info.PodInfo, zoneID, cpu string) {
+	record := []schedulingv1alpha2.NUMAZonePlacement{{Zone: zoneID, Amount: v1.ResourceList{"cpu": resource.MustParse(cpu)}}}
+	raw, err := json.Marshal(record)
+	if err != nil {
+		panic(err)
+	}
+	if task.Pod.Annotations == nil {
+		task.Pod.Annotations = map[string]string{}
+	}
+	task.Pod.Annotations[commonconstants.NumaPlacementObserved] = string(raw)
 }
 
 // TestReclaimRepipelineDoesNotGoNegative reproduces the preemption bookkeeping bug through the real
@@ -91,8 +104,10 @@ func TestReclaimRepipelineDoesNotGoNegative(t *testing.T) {
 	for _, task := range []*pod_info.PodInfo{victim0, victim1, preemptor} {
 		task.Pod.Status.QOSClass = v1.PodQOSGuaranteed
 	}
-	victim0.NUMAPlacement = cpuPlacement(0, "3")
-	victim1.NUMAPlacement = cpuPlacement(1, "3")
+	// Victims carry observed placement records: OnSessionOpen seeds each task's NUMAPlacement from
+	// them and reconstructs zone Available (4 allocatable - 3 observed = 1 per zone).
+	setObservedPlacement(victim0, "node-0", "3")
+	setObservedPlacement(victim1, "node-1", "3")
 
 	ssn := &framework.Session{
 		ClusterInfo: &schedapi.ClusterInfo{PodGroupInfos: jobsInfoMap, Nodes: nodesInfoMap},

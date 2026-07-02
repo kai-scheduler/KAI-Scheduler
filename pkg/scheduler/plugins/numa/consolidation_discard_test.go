@@ -75,8 +75,10 @@ func newScenarioFixture(t *testing.T) *scenarioFixture {
 	for _, task := range []*pod_info.PodInfo{victim0, victim1, preemptor} {
 		task.Pod.Status.QOSClass = v1.PodQOSGuaranteed
 	}
-	victim0.NUMAPlacement = cpuPlacement(0, "3")
-	victim1.NUMAPlacement = cpuPlacement(1, "3")
+	// Victims carry observed placement records: OnSessionOpen seeds each task's NUMAPlacement from
+	// them and reconstructs zone Available (4 allocatable - 3 observed = 1 per zone).
+	setObservedPlacement(victim0, "node-0", "3")
+	setObservedPlacement(victim1, "node-1", "3")
 
 	ssn := &framework.Session{
 		ClusterInfo: &schedapi.ClusterInfo{PodGroupInfos: jobsInfoMap, Nodes: nodesInfoMap},
