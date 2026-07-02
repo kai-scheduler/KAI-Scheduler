@@ -136,6 +136,7 @@ func generateConfigMapNamePrefix(pod *v1.Pod, containerIndex int) string {
 	if len(baseName) > maxBaseNameLength {
 		baseName = baseName[:maxBaseNameLength]
 	}
+	baseName = strings.TrimRight(baseName, ".-")
 	return fmt.Sprintf("%v-%v-%v", baseName,
 		utilrand.String(configMapNameNumRandomChars), GPUSharingConfigMap)
 }
