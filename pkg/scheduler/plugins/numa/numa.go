@@ -80,9 +80,18 @@ func (pp *numaPlugin) evaluate(task *pod_info.PodInfo, node *node_info.NodeInfo)
 		return nil, true
 	}
 	topo := node.NumaTopology
-	placement, admit := evaluatorFor(topo.Policy).evaluate(topo, pp.ignoreList, requestUnits(task, topo.Scope))
+	eval := evaluatorFor(topo.Policy)
+	concurrent, serial := requestUnits(task, topo.Scope)
+	placement, admit := eval.evaluate(topo, pp.ignoreList, concurrent)
 	if !admit {
 		return nil, false
+	}
+	// Ordinary init containers run serially before the app containers and free their resources
+	// first, so each must be alignable on its own but is not accumulated into the placement.
+	for _, unit := range serial {
+		if _, ok := eval.evaluate(topo, pp.ignoreList, []v1.ResourceList{unit}); !ok {
+			return nil, false
+		}
 	}
 	return placement, true
 }

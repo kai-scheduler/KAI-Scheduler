@@ -11,34 +11,37 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 )
 
-// requestUnits decomposes a task into the alignment units the kubelet Topology
-// Manager hints for, under the node's scope: one unit for the whole pod (pod
-// scope) or one per concurrently-running container (container scope). Each unit
-// is a request the evaluator places on NUMA zone(s); the evaluator intersects it
-// with the node's topology-aware resources, so non-aligned resources drop out.
-func requestUnits(task *pod_info.PodInfo, scope node_info.TopologyManagerScope) []v1.ResourceList {
+// requestUnits decomposes a task into the alignment units the kubelet Topology Manager hints for,
+// under the node's scope. It returns the concurrently-running units, which are charged against the
+// per-zone ledger, and the serial init-container units, which must each be alignable on their own
+// but are not accumulated (an ordinary init container completes and frees its resources before the
+// app containers run). The evaluator intersects each unit with the node's topology-aware resources,
+// so non-aligned resources drop out.
+func requestUnits(task *pod_info.PodInfo, scope node_info.TopologyManagerScope) (concurrent, serial []v1.ResourceList) {
 	if scope == node_info.TopologyScopePod {
-		return []v1.ResourceList{toAmounts(resourcehelper.PodRequests(task.Pod, resourcehelper.PodResourcesOptions{}))}
+		return []v1.ResourceList{toAmounts(resourcehelper.PodRequests(task.Pod, resourcehelper.PodResourcesOptions{}))}, nil
 	}
 	return containerUnits(task.Pod)
 }
 
-// containerUnits returns one request per concurrently-running container: the
-// regular containers plus native sidecars (restartable init containers). Ordinary
-// init containers run serially before the app containers and are not modeled here
-// (see follow-ups); the common single-container and sidecar cases are exact.
-func containerUnits(pod *v1.Pod) []v1.ResourceList {
-	units := make([]v1.ResourceList, 0, len(pod.Spec.Containers)+len(pod.Spec.InitContainers))
+// containerUnits splits a pod into container-scope alignment units. Native sidecars (restartable
+// init containers) keep running alongside the app containers, so they are concurrent and
+// accumulated. An ordinary init container runs serially before the app containers and frees its
+// resources first, so it is returned as a serial unit: checked for alignability on its own, never
+// accumulated into the concurrent set.
+func containerUnits(pod *v1.Pod) (concurrent, serial []v1.ResourceList) {
 	for i := range pod.Spec.InitContainers {
 		c := &pod.Spec.InitContainers[i]
 		if c.RestartPolicy != nil && *c.RestartPolicy == v1.ContainerRestartPolicyAlways {
-			units = append(units, toAmounts(c.Resources.Requests))
+			concurrent = append(concurrent, toAmounts(c.Resources.Requests))
+		} else {
+			serial = append(serial, toAmounts(c.Resources.Requests))
 		}
 	}
 	for i := range pod.Spec.Containers {
-		units = append(units, toAmounts(pod.Spec.Containers[i].Resources.Requests))
+		concurrent = append(concurrent, toAmounts(pod.Spec.Containers[i].Resources.Requests))
 	}
-	return units
+	return concurrent, serial
 }
 
 func toAmounts(list v1.ResourceList) v1.ResourceList {

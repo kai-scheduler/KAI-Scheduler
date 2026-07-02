@@ -14,6 +14,8 @@ import (
 	// lint:ignore ST1001 we want to use gomock here
 	. "go.uber.org/mock/gomock"
 	"golang.org/x/exp/slices"
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes/fake"
@@ -23,6 +25,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
@@ -113,11 +116,17 @@ type TestExpectedResultBasic struct {
 	DontValidateGPUGroup        bool
 	LastStartTimestampOlderThan *time.Duration
 	ExpectedErrorMessage        string
+	// NUMAZones, when non-nil, asserts the task's resulting NUMA placement zone indices
+	// (order-insensitive). An empty (non-nil) slice asserts the task has no NUMA placement.
+	NUMAZones []int
 }
 
 type TestExpectedNodesResources struct {
 	ReleasingGPUs float64
 	IdleGPUs      float64
+	// NUMAZonesAvailable, when non-nil, asserts each zone's per-resource Available ledger after
+	// scheduling: zone index to resource name to quantity string.
+	NUMAZonesAvailable map[int]map[v1.ResourceName]string
 }
 
 func MatchExpectedAndRealTasks(t *testing.T, testNumber int, testMetadata TestTopologyBasic, ssn *framework.Session) {
@@ -142,6 +151,10 @@ func MatchExpectedAndRealTasks(t *testing.T, testNumber int, testMetadata TestTo
 
 			if len(jobExpectedResult.NodeName) > 0 && taskInfo.NodeName != jobExpectedResult.NodeName {
 				t.Errorf("Test number: %d, name: %s, has failed. Task name: %s, actual uses node: %s, was expecting node: %s", testNumber, testMetadata.Name, taskInfo.Name, taskInfo.NodeName, jobExpectedResult.NodeName)
+			}
+
+			if jobExpectedResult.NUMAZones != nil && !sameZoneIndices(taskInfo.NUMAPlacement.ZoneIndices(), jobExpectedResult.NUMAZones) {
+				t.Errorf("Test number: %d, name: %s, has failed. Task name: %s, actual NUMA zones: %v, was expecting zones: %v", testNumber, testMetadata.Name, taskInfo.Name, taskInfo.NUMAPlacement.ZoneIndices(), jobExpectedResult.NUMAZones)
 			}
 
 			sumOfJobRequestedGPU += taskInfo.GpuRequirement.GPUs()
@@ -313,6 +326,44 @@ func MatchExpectedAndRealTasks(t *testing.T, testNumber int, testMetadata TestTo
 		if nodeExpectedResources.IdleGPUs != ssnNode.IdleVector.Get(gpuIdx) {
 			t.Errorf("Test number: %d, name: %v, has failed. Node name: %v, actual Idle GPUs: %v, was expecting Idle GPUs: %v", testNumber, testMetadata.Name, nodeName, ssnNode.IdleVector.Get(gpuIdx), nodeExpectedResources.IdleGPUs)
 		}
+
+		matchNUMAZonesAvailable(t, testNumber, testMetadata.Name, nodeName, ssnNode, nodeExpectedResources.NUMAZonesAvailable)
+	}
+}
+
+// sameZoneIndices reports whether two zone-index slices hold the same indices, ignoring order.
+func sameZoneIndices(got, want []int) bool {
+	gotSorted := append([]int(nil), got...)
+	wantSorted := append([]int(nil), want...)
+	slices.Sort(gotSorted)
+	slices.Sort(wantSorted)
+	return slices.Equal(gotSorted, wantSorted)
+}
+
+func matchNUMAZonesAvailable(
+	t *testing.T, testNumber int, testName, nodeName string,
+	ssnNode *node_info.NodeInfo, expected map[int]map[v1.ResourceName]string,
+) {
+	if expected == nil {
+		return
+	}
+	if ssnNode.NumaTopology == nil {
+		t.Errorf("Test number: %d, name: %v, has failed. Node %v has no NumaTopology but NUMAZonesAvailable was expected", testNumber, testName, nodeName)
+		return
+	}
+	for zoneIndex, resources := range expected {
+		if zoneIndex < 0 || zoneIndex >= len(ssnNode.NumaTopology.Zones) {
+			t.Errorf("Test number: %d, name: %v, has failed. Node %v zone index %d out of range (%d zones)", testNumber, testName, nodeName, zoneIndex, len(ssnNode.NumaTopology.Zones))
+			continue
+		}
+		zone := ssnNode.NumaTopology.Zones[zoneIndex]
+		for name, want := range resources {
+			expectedQty := resource.MustParse(want)
+			actualQty := zone.Available[name]
+			if actualQty.Cmp(expectedQty) != 0 {
+				t.Errorf("Test number: %d, name: %v, has failed. Node %v zone %d resource %v: actual Available %v, was expecting %v", testNumber, testName, nodeName, zoneIndex, name, actualQty.String(), want)
+			}
+		}
 	}
 }
 
@@ -327,7 +378,7 @@ func GetTestCacheMock(
 	}
 
 	if cacheRequirements.NumberOfCacheBinds != 0 {
-		cacheMock.EXPECT().Bind(Any(), Any(), Any()).Return(nil).MaxTimes(cacheRequirements.NumberOfCacheBinds)
+		cacheMock.EXPECT().Bind(Any(), Any(), Any(), Any()).Return(nil).MaxTimes(cacheRequirements.NumberOfCacheBinds)
 	}
 
 	fakeClient := fake.NewSimpleClientset(additionalObjects...)
