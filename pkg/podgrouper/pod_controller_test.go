@@ -14,6 +14,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
@@ -22,6 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
 )
@@ -159,6 +161,56 @@ func TestEventOnFailure(t *testing.T) {
 		t.Errorf("expected 1 event, got %d", len(fakeEventRecorder.Events))
 	}
 
+}
+
+func TestReconcileEmitsMetadataWarnings(t *testing.T) {
+	pod := v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-pod",
+			Namespace: "my-namespace",
+		},
+		Spec: v1.PodSpec{
+			SchedulerName: "kai-scheduler",
+		},
+	}
+
+	s := runtime.NewScheme()
+	assert.NoError(t, scheme.AddToScheme(s))
+	assert.NoError(t, v2alpha2.AddToScheme(s))
+	fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(&pod).Build()
+
+	fakeGrouper := &fakePodGrouper{
+		getPodOwnersFn: func(ctx context.Context, pod *v1.Pod) (*unstructured.Unstructured, []*metav1.PartialObjectMetadata, error) {
+			return nil, []*metav1.PartialObjectMetadata{{ObjectMeta: metav1.ObjectMeta{}}}, nil
+		},
+		getPGMetadataFn: func(ctx context.Context, pod *v1.Pod, topOwner *unstructured.Unstructured, allOwners []*metav1.PartialObjectMetadata) (*podgroup.Metadata, error) {
+			return &podgroup.Metadata{
+				Name:         "my-pod-pg",
+				Namespace:    "my-namespace",
+				MinAvailable: 1,
+				Owner:        metav1.OwnerReference{APIVersion: "v1", Kind: "Pod", Name: "owner", UID: "owner-uid"},
+				Warnings:     []string{"semi-preemptible and segmented are mutually exclusive"},
+			}, nil
+		},
+	}
+
+	fakeEventRecorder := record.NewFakeRecorder(10)
+	podReconciler := PodReconciler{
+		Client:          fakeClient,
+		Scheme:          s,
+		podGrouper:      fakeGrouper,
+		PodGroupHandler: podgroup.NewHandler(fakeClient, "", ""),
+		configs: Configs{
+			SchedulerName: "kai-scheduler",
+		},
+		eventRecorder: fakeEventRecorder,
+	}
+
+	_, err := podReconciler.Reconcile(context.TODO(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Namespace: pod.Namespace, Name: pod.Name},
+	})
+	assert.NoError(t, err)
+	assert.Len(t, fakeEventRecorder.Events, 1)
 }
 
 type fakePodGrouper struct {

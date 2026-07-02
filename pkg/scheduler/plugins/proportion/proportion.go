@@ -62,6 +62,11 @@ type proportionPlugin struct {
 	relcaimerSaturationMultiplier float64
 	kValue                        float64
 	minNodeGPUMemory              *int64
+	// lastSemiPreemptibleCore tracks, per semi-preemptible job, the core (non-preemptible) resource
+	// quantities last counted into AllocatedNotPreemptible. The allocate/deallocate handlers recompute
+	// the tree-aware core set and apply only the delta, so quota stays correct as elastic subgroups
+	// fill in and "flip" from transient-core to elastic.
+	lastSemiPreemptibleCore map[common_info.PodGroupID]rs.ResourceQuantities
 }
 
 func New(arguments framework.PluginArguments) framework.Plugin {
@@ -97,6 +102,7 @@ func (pp *proportionPlugin) Name() string {
 }
 
 func (pp *proportionPlugin) OnSessionOpen(ssn *framework.Session) {
+	pp.lastSemiPreemptibleCore = map[common_info.PodGroupID]rs.ResourceQuantities{}
 	pp.calculateResourcesProportion(ssn)
 	pp.subGroupOrderFn = ssn.SubGroupOrderFn
 	pp.taskOrderFunc = ssn.TaskOrderFn
@@ -172,7 +178,7 @@ func (pp *proportionPlugin) reclaimableFn(
 func (pp *proportionPlugin) getVictimResources(victim *api.VictimInfo) []resource_info.ResourceVector {
 	var victimResources []resource_info.ResourceVector
 
-	elasticTasks, coreTasks := splitVictimTasks(victim.Tasks, victim.Job.GetAllPodSets())
+	elasticTasks, coreTasks := pp.splitVictimTasks(victim)
 
 	// Process elastic tasks individually
 	for _, task := range elasticTasks {
@@ -192,9 +198,37 @@ func (pp *proportionPlugin) getVictimResources(victim *api.VictimInfo) []resourc
 	return victimResources
 }
 
-// splitVictimTasks safely splits victim tasks into elastic and core tasks
+// splitVictimTasks splits victim tasks into (elastic, core). Semi-preemptible jobs use the tree-aware
+// core set (minimal satisfying set honoring minSubGroup + minMember), so a whole elastic subgroup
+// (e.g. a segment internally at its minMember) is correctly treated as elastic. All other jobs keep
+// the per-PodSet minMember split.
+func (pp *proportionPlugin) splitVictimTasks(victim *api.VictimInfo) ([]*pod_info.PodInfo, []*pod_info.PodInfo) {
+	if victim.Job.IsSemiPreemptibleJob() {
+		coreSet := podgroup_info.GetCoreTasks(victim.Job, pp.subGroupOrderFn, pp.taskOrderFunc)
+		return splitVictimTasksByCoreSet(victim.Tasks, coreSet)
+	}
+	return splitVictimTasksByPodSet(victim.Tasks, victim.Job.GetAllPodSets())
+}
+
+// splitVictimTasksByCoreSet classifies a task as core iff it belongs to the job's tree-aware core set.
+func splitVictimTasksByCoreSet(
+	tasks []*pod_info.PodInfo, coreSet map[common_info.PodID]*pod_info.PodInfo,
+) ([]*pod_info.PodInfo, []*pod_info.PodInfo) {
+	coreTasks := []*pod_info.PodInfo{}
+	elasticTasks := []*pod_info.PodInfo{}
+	for _, task := range tasks {
+		if _, isCore := coreSet[task.UID]; isCore {
+			coreTasks = append(coreTasks, task)
+		} else {
+			elasticTasks = append(elasticTasks, task)
+		}
+	}
+	return elasticTasks, coreTasks
+}
+
+// splitVictimTasksByPodSet safely splits victim tasks into elastic and core tasks per PodSet.
 // Returns (elasticTasks, coreTasks)
-func splitVictimTasks(tasks []*pod_info.PodInfo, subGroups map[string]*subgroup_info.PodSet) ([]*pod_info.PodInfo, []*pod_info.PodInfo) {
+func splitVictimTasksByPodSet(tasks []*pod_info.PodInfo, subGroups map[string]*subgroup_info.PodSet) ([]*pod_info.PodInfo, []*pod_info.PodInfo) {
 	subGroupsToTasks := map[string][]*pod_info.PodInfo{}
 	for _, task := range tasks {
 		subGroupName := podgroup_info.DefaultSubGroup
@@ -361,12 +395,28 @@ func (pp *proportionPlugin) updateQueuesCurrentResourceUsage(ssn *framework.Sess
 		log.InfraLogger.V(7).Infof("Updateding queue consumed resources based on job <%s/%s>.",
 			job.Namespace, job.Name)
 
+		// For semi-preemptible jobs the non-preemptible "core" is the tree's minimal satisfying set
+		// (minSubGroup children + minMember pods, honored at every level), not the per-PodSet minMember
+		// sum. Seed the baseline core vector here so the allocate/deallocate handlers can apply deltas.
+		var semiPreemptibleCore map[common_info.PodID]*pod_info.PodInfo
+		if job.IsSemiPreemptibleJob() {
+			semiPreemptibleCore = podgroup_info.GetCoreTasks(job, pp.subGroupOrderFn, pp.taskOrderFunc)
+			pp.lastSemiPreemptibleCore[job.UID] = rs.EmptyResourceQuantities()
+		}
+
 		for status, tasks := range job.PodStatusIndex {
 			if pod_status.AllocatedStatus(status) {
 				for _, t := range tasks {
 					resources := utils.QuantifyVector(t.AcceptedResourceVector, t.VectorMap)
-					isPreemptible := job.IsPreemptibleJob()
-					pp.updateQueuesResourceUsageForAllocatedJob(job.Queue, resources, isPreemptible)
+					if job.IsSemiPreemptibleJob() {
+						_, isCore := semiPreemptibleCore[t.UID]
+						if isCore {
+							pp.lastSemiPreemptibleCore[job.UID].Add(resources)
+						}
+						pp.updateQueuesResourceUsageForAllocatedJob(job.Queue, resources, !isCore)
+						continue
+					}
+					pp.updateQueuesResourceUsageForAllocatedJob(job.Queue, resources, job.IsPreemptibleJob())
 				}
 			} else if status == pod_status.Pending {
 				for _, t := range tasks {
@@ -452,22 +502,53 @@ func (pp *proportionPlugin) getChildQueues(parentQueue *rs.QueueAttributes) map[
 	return childQueues
 }
 
+// coreResourceQuantities sums the resources of a semi-preemptible job's tree-aware core set
+// (the minimal satisfying set honoring minSubGroup + minMember at every level).
+func (pp *proportionPlugin) coreResourceQuantities(job *podgroup_info.PodGroupInfo) rs.ResourceQuantities {
+	total := rs.EmptyResourceQuantities()
+	for _, task := range podgroup_info.GetCoreTasks(job, pp.subGroupOrderFn, pp.taskOrderFunc) {
+		total.Add(utils.QuantifyVector(task.AcceptedResourceVector, task.VectorMap))
+	}
+	return total
+}
+
+// semiPreemptibleCoreDelta recomputes the job's core vector, returns the signed delta versus the
+// last recorded value, and stores the new value. This keeps AllocatedNotPreemptible correct as
+// elastic subgroups fill in and pods "flip" between transient-core and elastic.
+func (pp *proportionPlugin) semiPreemptibleCoreDelta(job *podgroup_info.PodGroupInfo) rs.ResourceQuantities {
+	newCore := pp.coreResourceQuantities(job)
+	delta := newCore.Clone()
+	if last, ok := pp.lastSemiPreemptibleCore[job.UID]; ok {
+		delta.Sub(last)
+	}
+	pp.lastSemiPreemptibleCore[job.UID] = newCore
+	return delta
+}
+
+// addToQueues walks the queue hierarchy from queueId to the root, applying the given signed deltas
+// to Allocated and AllocatedNotPreemptible.
+func (pp *proportionPlugin) addToQueues(queueId common_info.QueueID, allocated, notPreemptible rs.ResourceQuantities) {
+	for queue, ok := pp.queues[queueId]; ok; queue, ok = pp.queues[queue.ParentQueue] {
+		for _, resource := range rs.AllResources {
+			resourceShare := queue.ResourceShare(resource)
+			resourceShare.Allocated += allocated[resource]
+			resourceShare.AllocatedNotPreemptible += notPreemptible[resource]
+		}
+	}
+}
+
 func (pp *proportionPlugin) allocateHandlerFn(ssn *framework.Session) func(event *framework.Event) {
 	return func(event *framework.Event) {
 		job := ssn.ClusterInfo.PodGroupInfos[event.Task.Job]
-		isPreemptibleJob := job.IsPreemptibleJob()
 		taskResources := utils.QuantifyVector(event.Task.AcceptedResourceVector, event.Task.VectorMap)
 
-		for queue, ok := pp.queues[job.Queue]; ok; queue, ok = pp.queues[queue.ParentQueue] {
-			for _, resource := range rs.AllResources {
-				resourceShare := queue.ResourceShare(resource)
-				resourceShare.Allocated += taskResources[resource]
-
-				if !isPreemptibleJob {
-					resourceShare.AllocatedNotPreemptible += taskResources[resource]
-				}
-			}
+		notPreemptible := rs.EmptyResourceQuantities()
+		if job.IsSemiPreemptibleJob() {
+			notPreemptible = pp.semiPreemptibleCoreDelta(job)
+		} else if !job.IsPreemptibleJob() {
+			notPreemptible = taskResources
 		}
+		pp.addToQueues(job.Queue, taskResources, notPreemptible)
 
 		leafQueue := pp.queues[job.Queue]
 		log.InfraLogger.V(7).Infof("Proportion AllocateFunc: job <%v/%v>, task resources <%s>, "+
@@ -479,19 +560,19 @@ func (pp *proportionPlugin) allocateHandlerFn(ssn *framework.Session) func(event
 func (pp *proportionPlugin) deallocateHandlerFn(ssn *framework.Session) func(event *framework.Event) {
 	return func(event *framework.Event) {
 		job := ssn.ClusterInfo.PodGroupInfos[event.Task.Job]
-		isPreemptibleJob := job.IsPreemptibleJob()
 		taskResources := utils.QuantifyVector(event.Task.AcceptedResourceVector, event.Task.VectorMap)
 
-		for queue, ok := pp.queues[job.Queue]; ok; queue, ok = pp.queues[queue.ParentQueue] {
-			for _, resource := range rs.AllResources {
-				resourceShare := queue.ResourceShare(resource)
-				resourceShare.Allocated -= taskResources[resource]
+		allocatedDelta := rs.EmptyResourceQuantities()
+		allocatedDelta.Sub(taskResources)
 
-				if !isPreemptibleJob {
-					resourceShare.AllocatedNotPreemptible -= taskResources[resource]
-				}
-			}
+		notPreemptible := rs.EmptyResourceQuantities()
+		if job.IsSemiPreemptibleJob() {
+			// Recomputed after the task was removed; negative when a core slot was freed.
+			notPreemptible = pp.semiPreemptibleCoreDelta(job)
+		} else if !job.IsPreemptibleJob() {
+			notPreemptible = allocatedDelta
 		}
+		pp.addToQueues(job.Queue, allocatedDelta, notPreemptible)
 
 		leafQueue := pp.queues[job.Queue]
 		log.InfraLogger.V(7).Infof("Proportion DeallocateFunc: job <%v/%v>, task resources <%s>, "+

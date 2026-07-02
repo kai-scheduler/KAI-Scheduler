@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"k8s.io/utils/ptr"
 
+	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
@@ -412,4 +413,53 @@ func TestGetTasksToEvict_HierarchicalTree(t *testing.T) {
 			}
 		})
 	}
+}
+
+// twoSegmentJob builds a root with minSubGroup=k over 2 fully-gang segments (minAvailable=2 each,
+// both allocated). With k=1 there is one surplus (elastic) segment; with k=2 both are core.
+func twoSegmentJob(k int32, preemptibility enginev2alpha2.Preemptibility) *PodGroupInfo {
+	seg0 := subgroup_info.NewPodSet("segment-0", 2, nil)
+	seg0.AssignTask(simpleTask("segment-0-p0", "segment-0", pod_status.Running))
+	seg0.AssignTask(simpleTask("segment-0-p1", "segment-0", pod_status.Running))
+
+	seg1 := subgroup_info.NewPodSet("segment-1", 2, nil)
+	seg1.AssignTask(simpleTask("segment-1-p0", "segment-1", pod_status.Running))
+	seg1.AssignTask(simpleTask("segment-1-p1", "segment-1", pod_status.Running))
+
+	root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+	root.SetMinSubGroup(ptr.To(k))
+	root.AddPodSet(seg0)
+	root.AddPodSet(seg1)
+
+	return &PodGroupInfo{
+		Preemptibility:  preemptibility,
+		RootSubGroupSet: root,
+		PodSets:         root.GetDescendantPodSets(),
+	}
+}
+
+func TestGetTasksToEvict_SemiPreemptibleProtectsCore(t *testing.T) {
+	t.Run("SemiPreemptible_NoSurplus_ProtectsCore", func(t *testing.T) {
+		// minSubGroup=2 over 2 segments → both core, no elastic surplus. The whole job is core.
+		job := twoSegmentJob(2, enginev2alpha2.SemiPreemptible)
+		tasks, hasMore := GetTasksToEvict(job, subGroupMemberOrderFn, tasksOrderFn)
+		assert.Empty(t, tasks, "semi-preemptible core must never be offered as a victim")
+		assert.False(t, hasMore)
+	})
+
+	t.Run("Preemptible_NoSurplus_FullEvictionFallback", func(t *testing.T) {
+		// Same shape but preemptible: phase-3 fallback evicts the whole job.
+		job := twoSegmentJob(2, enginev2alpha2.Preemptible)
+		tasks, _ := GetTasksToEvict(job, subGroupMemberOrderFn, tasksOrderFn)
+		assert.Len(t, tasks, 4)
+	})
+
+	t.Run("SemiPreemptible_WithSurplus_EvictsWholeElasticSegment", func(t *testing.T) {
+		// minSubGroup=1 over 2 segments → 1 elastic surplus segment, evicted as a whole.
+		job := twoSegmentJob(1, enginev2alpha2.SemiPreemptible)
+		tasks, _ := GetTasksToEvict(job, subGroupMemberOrderFn, tasksOrderFn)
+		assert.Len(t, tasks, 2, "a whole elastic segment is evicted, never split")
+		assert.ElementsMatch(t, []string{"segment-1-p0", "segment-1-p1"},
+			[]string{tasks[0].Name, tasks[1].Name})
+	})
 }

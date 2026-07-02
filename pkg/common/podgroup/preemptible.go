@@ -17,6 +17,8 @@ func CalculatePreemptibility(preemptibility v2alpha2.Preemptibility, priority in
 		return v2alpha2.Preemptible
 	case v2alpha2.NonPreemptible:
 		return v2alpha2.NonPreemptible
+	case v2alpha2.SemiPreemptible:
+		return v2alpha2.SemiPreemptible
 	}
 
 	if priority < nonPreemptiblePriorityThreshold {

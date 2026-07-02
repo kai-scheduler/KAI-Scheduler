@@ -357,6 +357,68 @@ func findSubGroupByName(subGroups []*podgroup.SubGroupMetadata, name string) *po
 	return nil
 }
 
+func TestGetPodGroupMetadata_SemiPreemptible_Segmented_Warns(t *testing.T) {
+	pytorchJob := getPytorchJobWithSegments(1, 4, "2")
+	pod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-job-worker-0",
+			Namespace: "test_namespace",
+			Labels: map[string]string{
+				replicaTypeLabel:                      "worker",
+				"training.kubeflow.org/replica-index": "0",
+				"kai.scheduler/preemptibility":        "semi-preemptible",
+			},
+			Annotations: map[string]string{
+				"kai.scheduler/segment-size": "2",
+			},
+		},
+	}
+	grouper := newTestPyTorchGrouper()
+	metadata, err := grouper.GetPodGroupMetadata(pytorchJob, pod)
+	assert.Nil(t, err)
+	assert.Len(t, metadata.Warnings, 1)
+}
+
+func TestGetPodGroupMetadata_SemiPreemptible_NotSegmented_NoWarning(t *testing.T) {
+	pytorchJob := getBasicPytorchJob()
+	pod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod-worker-0",
+			Namespace: "test_namespace",
+			Labels: map[string]string{
+				replicaTypeLabel:               "worker",
+				"kai.scheduler/preemptibility": "semi-preemptible",
+			},
+		},
+	}
+	grouper := newTestPyTorchGrouper()
+	metadata, err := grouper.GetPodGroupMetadata(pytorchJob, pod)
+	assert.Nil(t, err)
+	assert.Empty(t, metadata.Warnings)
+}
+
+func TestGetPodGroupMetadata_Segmented_NotSemiPreemptible_NoWarning(t *testing.T) {
+	pytorchJob := getPytorchJobWithSegments(1, 4, "2")
+	pod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-job-worker-0",
+			Namespace: "test_namespace",
+			Labels: map[string]string{
+				replicaTypeLabel:                      "worker",
+				"training.kubeflow.org/replica-index": "0",
+				"kai.scheduler/preemptibility":        "preemptible",
+			},
+			Annotations: map[string]string{
+				"kai.scheduler/segment-size": "2",
+			},
+		},
+	}
+	grouper := newTestPyTorchGrouper()
+	metadata, err := grouper.GetPodGroupMetadata(pytorchJob, pod)
+	assert.Nil(t, err)
+	assert.Empty(t, metadata.Warnings)
+}
+
 func TestGetPodGroupMetadata_Segments_HappyFlow_4Workers_2PerSegment(t *testing.T) {
 	pytorchJob := getPytorchJobWithSegments(1, 4, "2")
 	grouper := newTestPyTorchGrouper()

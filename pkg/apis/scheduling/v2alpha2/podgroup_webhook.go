@@ -40,7 +40,7 @@ func (_ *PodGroup) ValidateCreate(ctx context.Context, podGroup *PodGroup) (admi
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
-func (_ *PodGroup) ValidateUpdate(ctx context.Context, _ *PodGroup, podGroup *PodGroup) (admission.Warnings, error) {
+func (_ *PodGroup) ValidateUpdate(ctx context.Context, oldObj *PodGroup, podGroup *PodGroup) (admission.Warnings, error) {
 	logger := log.FromContext(ctx)
 	logger.Info("validate update", "namespace", podGroup.Namespace, "name", podGroup.Name)
 
@@ -51,12 +51,64 @@ func (_ *PodGroup) ValidateUpdate(ctx context.Context, _ *PodGroup, podGroup *Po
 			"namespace", podGroup.Namespace, "name", podGroup.Name, "error", validationErrors.structuralError)
 		return nil, validationErrors.structuralError
 	}
+
+	if oldObj.Spec.Preemptibility == SemiPreemptible {
+		if errs := validateSemiPreemptibleImmutability(&oldObj.Spec, &podGroup.Spec); len(errs) > 0 {
+			logger.Info("PodGroup spec validation failed on semi-preemptible immutability",
+				"namespace", podGroup.Namespace, "name", podGroup.Name, "errors", errs)
+			return nil, errors.Join(errs...)
+		}
+	}
+
 	if len(validationErrors.minDefinitionErrors) > 0 {
 		return handleMinDefinitionErrors(ctx, validationErrors.minDefinitionErrors, podGroup,
 			[]error{&parentMinMemberError{}, &minSubGroupExceedsChildCountError{}})
 	}
 
 	return nil, nil
+}
+
+// validateSemiPreemptibleImmutability returns errors for any increases to minMember or minSubGroup
+// on a semi-preemptible PodGroup. Increases would reclassify over-quota elastic pods as core pods.
+func validateSemiPreemptibleImmutability(old, new *PodGroupSpec) []error {
+	var errs []error
+
+	if old.MinMember != nil && new.MinMember != nil && *new.MinMember > *old.MinMember {
+		errs = append(errs, &semiPreemptibleMinMemberIncreaseError{msg: fmt.Sprintf(
+			"minMember cannot increase on a semi-preemptible PodGroup (was %d, got %d): "+
+				"increasing minMember would reclassify elastic over-quota pods as non-preemptible core pods",
+			*old.MinMember, *new.MinMember)})
+	}
+	if old.MinSubGroup != nil && new.MinSubGroup != nil && *new.MinSubGroup > *old.MinSubGroup {
+		errs = append(errs, &semiPreemptibleMinSubGroupIncreaseError{msg: fmt.Sprintf(
+			"minSubGroup cannot increase on a semi-preemptible PodGroup (was %d, got %d): "+
+				"increasing minSubGroup would expand the non-preemptible scheduling gate",
+			*old.MinSubGroup, *new.MinSubGroup)})
+	}
+
+	oldSubGroups := map[string]*SubGroup{}
+	for i := range old.SubGroups {
+		oldSubGroups[old.SubGroups[i].Name] = &old.SubGroups[i]
+	}
+	for i := range new.SubGroups {
+		newSG := &new.SubGroups[i]
+		oldSG, found := oldSubGroups[newSG.Name]
+		if !found {
+			continue
+		}
+		if oldSG.MinMember != nil && newSG.MinMember != nil && *newSG.MinMember > *oldSG.MinMember {
+			errs = append(errs, &semiPreemptibleMinMemberIncreaseError{msg: fmt.Sprintf(
+				"subgroup %q: minMember cannot increase on a semi-preemptible PodGroup (was %d, got %d)",
+				newSG.Name, *oldSG.MinMember, *newSG.MinMember)})
+		}
+		if oldSG.MinSubGroup != nil && newSG.MinSubGroup != nil && *newSG.MinSubGroup > *oldSG.MinSubGroup {
+			errs = append(errs, &semiPreemptibleMinSubGroupIncreaseError{msg: fmt.Sprintf(
+				"subgroup %q: minSubGroup cannot increase on a semi-preemptible PodGroup (was %d, got %d)",
+				newSG.Name, *oldSG.MinSubGroup, *newSG.MinSubGroup)})
+		}
+	}
+
+	return errs
 }
 
 func handleMinDefinitionErrors(ctx context.Context,

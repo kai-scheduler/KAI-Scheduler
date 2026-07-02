@@ -46,3 +46,15 @@ func (e *missingMinMemberError) Error() string { return e.msg }
 type subGroupGraphError struct{ msg string }
 
 func (e *subGroupGraphError) Error() string { return e.msg }
+
+// semiPreemptibleMinMemberIncreaseError is returned when an update increases minMember
+// on a semi-preemptible PodGroup, which would violate quota invariants.
+type semiPreemptibleMinMemberIncreaseError struct{ msg string }
+
+func (e *semiPreemptibleMinMemberIncreaseError) Error() string { return e.msg }
+
+// semiPreemptibleMinSubGroupIncreaseError is returned when an update increases minSubGroup
+// on a semi-preemptible PodGroup, which would violate quota invariants.
+type semiPreemptibleMinSubGroupIncreaseError struct{ msg string }
+
+func (e *semiPreemptibleMinSubGroupIncreaseError) Error() string { return e.msg }
