@@ -110,3 +110,7 @@ Helm `lookup` calls return nothing when ArgoCD renders the chart, so:
 - The resource-reservation namespace and ServiceAccount are always rendered. If they are managed elsewhere, set `global.resourceReservation.createNamespace=false` / `global.resourceReservation.createServiceAccount=false`.
 - The scaling-pod namespace (`nodescaleadjuster.scalingPodNamespace`) is always rendered when `global.clusterAutoscaling=true`, and ArgoCD adopts a pre-existing one.
 - The Config CR has no custom ArgoCD health check; the application can report `Healthy` before the operator finishes reconciling the CR.
+
+## Testing
+
+GitOps mode is covered end-to-end by `test/e2e/suites/gitops` (install via a live ArgoCD Application, selfHeal of a deleted Config CR, PostDelete cleanup on Application deletion). Run it locally with `hack/run-e2e-gitops-kind.sh --local-images-build`.
