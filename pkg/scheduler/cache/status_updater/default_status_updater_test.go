@@ -5,14 +5,18 @@ package status_updater
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
 	faketesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/record"
@@ -23,6 +27,7 @@ import (
 	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
@@ -820,4 +825,123 @@ func waitForIncrease(callCount *int) error {
 		return nil
 	}
 	return errors.New("update calls did not increase")
+}
+
+type annotatedEvent struct {
+	eventType   string
+	reason      string
+	message     string
+	annotations map[string]string
+}
+
+type annotationCapturingRecorder struct {
+	events []annotatedEvent
+}
+
+func (r *annotationCapturingRecorder) Event(_ runtime.Object, _, _, _ string) {}
+
+func (r *annotationCapturingRecorder) Eventf(_ runtime.Object, _, _, _ string, _ ...interface{}) {
+}
+
+func (r *annotationCapturingRecorder) AnnotatedEventf(_ runtime.Object, annotations map[string]string, eventtype, reason, messageFmt string, args ...interface{}) {
+	r.events = append(r.events, annotatedEvent{
+		eventType:   eventtype,
+		reason:      reason,
+		message:     fmt.Sprintf(messageFmt, args...),
+		annotations: annotations,
+	})
+}
+
+func newEvictionTestStatusUpdater() *defaultStatusUpdater {
+	kubeClient := fake.NewSimpleClientset()
+	kubeAiSchedClient := kubeaischedfake.NewSimpleClientset()
+	recorder := record.NewFakeRecorder(100)
+	return New(kubeClient, kubeAiSchedClient, recorder, 1, false, nodePoolLabelKey)
+}
+
+func makeEvictionPodGroup(t *testing.T, suffix string) *enginev2alpha2.PodGroup {
+	tag := fmt.Sprintf("%s-%s", t.Name(), suffix)
+	return &enginev2alpha2.PodGroup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pg-" + tag,
+			Namespace: "ns-" + tag,
+			UID:       types.UID("uid-" + tag),
+		},
+	}
+}
+
+func getEvictedPodsCounterValue(t *testing.T, name, namespace, uid, nodepool, action string) (float64, bool) {
+	families, err := prometheus.DefaultGatherer.Gather()
+	require.NoError(t, err)
+	for _, family := range families {
+		if family.GetName() != "pod_group_evicted_pods_total" {
+			continue
+		}
+		for _, m := range family.GetMetric() {
+			labels := map[string]string{}
+			for _, lp := range m.GetLabel() {
+				labels[lp.GetName()] = lp.GetValue()
+			}
+			if labels["podgroup"] == name && labels["namespace"] == namespace &&
+				labels["uid"] == uid && labels["nodepool"] == nodepool && labels["action"] == action {
+				return m.GetCounter().GetValue(), true
+			}
+		}
+	}
+	return 0, false
+}
+
+func TestEvicted_IncrementsCounterByOnePerCall(t *testing.T) {
+	tests := []struct {
+		name             string
+		callCount        int
+		evictionGangSize int
+	}{
+		{name: "one call, gang size 1", callCount: 1, evictionGangSize: 1},
+		{name: "one call, gang size 4", callCount: 1, evictionGangSize: 4},
+		{name: "four calls, gang size 4", callCount: 4, evictionGangSize: 4},
+		{name: "three calls, gang size 10", callCount: 3, evictionGangSize: 10},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			pg := makeEvictionPodGroup(t, tc.name)
+			statusUpdater := newEvictionTestStatusUpdater()
+
+			for i := 0; i < tc.callCount; i++ {
+				statusUpdater.Evicted(pg, eviction_info.EvictionMetadata{
+					Action:           "preempt",
+					EvictionGangSize: tc.evictionGangSize,
+				}, "evicted")
+			}
+
+			value, found := getEvictedPodsCounterValue(t, pg.Name, pg.Namespace, string(pg.UID), "default", "preempt")
+			require.True(t, found, "counter sample was not emitted")
+			assert.Equal(t, float64(tc.callCount), value)
+		})
+	}
+}
+
+func TestEvicted_EmitsAnnotatedEventWithMetadata(t *testing.T) {
+	pg := makeEvictionPodGroup(t, "event")
+	recorder := &annotationCapturingRecorder{}
+	kubeClient := fake.NewSimpleClientset()
+	kubeAiSchedClient := kubeaischedfake.NewSimpleClientset()
+	statusUpdater := New(kubeClient, kubeAiSchedClient, recorder, 1, false, nodePoolLabelKey)
+
+	statusUpdater.Evicted(pg, eviction_info.EvictionMetadata{
+		Action:           "preempt",
+		EvictionGangSize: 5,
+		Preemptor:        &types.NamespacedName{Namespace: "preemptor-ns", Name: "preemptor"},
+	}, "pod evicted")
+
+	require.Len(t, recorder.events, 1)
+	event := recorder.events[0]
+	assert.Equal(t, v1.EventTypeNormal, event.eventType)
+	assert.Equal(t, "Evict", event.reason)
+	assert.Equal(t, "pod evicted", event.message)
+	assert.Equal(t, "5", event.annotations[evictionGangSize])
+	assert.Equal(t, "preempt", event.annotations[evictorActionType])
+	assert.Equal(t, "preemptor", event.annotations[evictorPodGroupNameAnnotations])
+	assert.Equal(t, "preemptor-ns", event.annotations[evictorPodGroupNamespaceAnnotations])
 }
