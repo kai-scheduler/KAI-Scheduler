@@ -12,6 +12,6 @@ are untracked (no drift detection, no selfHeal). See docs/gitops/README.md.
 {{- if and $kaiConfig.render .Values.kaiConfigDeployer.enabled -}}
 {{- fail "kaiConfig.render and kaiConfigDeployer.enabled are mutually exclusive. For GitOps/ArgoCD set kaiConfigDeployer.enabled=false and kaiConfig.render=true. See docs/gitops/README.md." -}}
 {{- end -}}
-{{- if $kaiConfig.render -}}
+{{- if $kaiConfig.render }}
 {{ include "kai-scheduler.kai-config" . }}
 {{- end -}}
