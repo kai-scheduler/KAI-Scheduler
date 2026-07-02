@@ -422,7 +422,7 @@ func TestValidateGpuRequests(t *testing.T) {
 					},
 				},
 			},
-			error: fmt.Errorf("gpu-fraction annotation value must be a valid number. NaN is not allowed"),
+			error: fmt.Errorf("gpu-fraction annotation value must be a float written with a decimal point or a scientific notation .given value: NaN"),
 		},
 		{
 			name: "Allow Scientific notation fraction value",
