@@ -2,16 +2,16 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 :root {
-  --bg:       #0d1117;
-  --surface:  #161b22;
-  --surface2: #21262d;
-  --border:   #30363d;
+  --bg:       #0c1524;
+  --surface:  #111e2f;
+  --surface2: #182436;
+  --border:   #1f3450;
   --text:     #e6edf3;
-  --muted:    #8b949e;
+  --muted:    #7a8fa6;
   --pass:     #3fb950;
   --fail:     #f85149;
   --skip:     #d29922;
-  --accent:   #58a6ff;
+  --accent:   #e8196c;
   --radius:   6px;
 }
 
@@ -295,6 +295,20 @@ main { padding: 16px 24px; max-width: 1280px; margin: 0 auto; }
 }
 .spec-meta { display: flex; gap: 14px; margin-top: 3px; font-size: 11px; color: var(--muted); }
 .spec-meta .mono { font-family: monospace; }
+.spec-metrics { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.spec-metrics span {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  background: rgba(232, 25, 108, 0.12);
+  border: 1px solid rgba(232, 25, 108, 0.35);
+  border-radius: 12px;
+  font-size: 11px;
+  font-family: monospace;
+  font-weight: 600;
+  color: var(--accent);
+}
+.spec-metrics .sep-dot { display: none; }
 
 .detail-btn {
   flex-shrink: 0;
@@ -432,3 +446,35 @@ main { padding: 16px 24px; max-width: 1280px; margin: 0 auto; }
 .chart-wrapper canvas {
   max-height: 100%;
 }
+
+/* ── Light mode ──────────────────────────────────────────────────────────── */
+
+[data-theme="light"] {
+  --bg:       #f0f4f8;
+  --surface:  #ffffff;
+  --surface2: #e4eaf1;
+  --border:   #9db4c8;
+  --text:     #1a2540;
+  --muted:    #4a6070;
+  --pass:     #1a8f37;
+  --fail:     #d13027;
+  --skip:     #a07010;
+}
+
+/* ── Theme toggle button ─────────────────────────────────────────────────── */
+
+.theme-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--muted);
+  font-size: 14px;
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: color 0.1s, border-color 0.1s;
+  flex-shrink: 0;
+}
+.theme-btn:hover { color: var(--text); border-color: var(--accent); }
+:root .theme-btn::before, [data-theme="dark"] .theme-btn::before { content: "☀"; }
+[data-theme="light"] .theme-btn::before { content: "☽"; }
+

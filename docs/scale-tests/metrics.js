@@ -3,6 +3,11 @@
 
 'use strict';
 
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+
 // ── Metric extraction mappings ────────────────────────────────────────────
 
 // Map test names to chart configurations
@@ -180,7 +185,7 @@ function groupByLegend(dataPoints) {
 
 // Dark theme colors for Chart.js
 const CHART_COLORS = [
-  '#58a6ff', // accent blue
+  '#e8196c', // KAI pink
   '#3fb950', // pass green
   '#d29922', // skip yellow
   '#f85149', // fail red
@@ -217,62 +222,18 @@ function createChart(canvasId, dataPoints, config) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      interaction: {
-        mode: 'nearest',
-        axis: 'x',
-        intersect: false,
-      },
       plugins: {
         legend: {
           display: true,
           position: 'top',
           labels: {
-            color: '#e6edf3',
+            color: cssVar('--text'),
             font: { size: 11 },
             padding: 10,
             usePointStyle: true,
           },
         },
-        tooltip: {
-          backgroundColor: '#161b22',
-          titleColor: '#e6edf3',
-          bodyColor: '#e6edf3',
-          borderColor: '#30363d',
-          borderWidth: 1,
-          padding: 10,
-          displayColors: true,
-          callbacks: {
-            title: (items) => {
-              if (items[0]) {
-                const lines = [
-                  new Date(items[0].parsed.x).toLocaleDateString('en-US', {
-                    year: 'numeric',
-                    month: 'short',
-                    day: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })
-                ];
-
-                // Access commit from raw data
-                const datasetIndex = items[0].datasetIndex;
-                const dataIndex = items[0].dataIndex;
-                const rawData = items[0].chart.data.datasets[datasetIndex].data[dataIndex];
-
-                if (rawData.commit) {
-                  lines.push(`Commit: ${rawData.commit.substring(0, 8)}`);
-                }
-
-                return lines;
-              }
-              return '';
-            },
-            label: (context) => {
-              const value = context.parsed.y;
-              return `${context.dataset.label}: ${value.toFixed(3)}s`;
-            },
-          },
-        },
+        tooltip: { enabled: false },
       },
       scales: {
         x: {
@@ -284,11 +245,11 @@ function createChart(canvasId, dataPoints, config) {
             },
           },
           grid: {
-            color: '#30363d',
+            color: cssVar('--border'),
             drawBorder: false,
           },
           ticks: {
-            color: '#8b949e',
+            color: cssVar('--muted'),
             font: { size: 10 },
           },
         },
@@ -296,24 +257,25 @@ function createChart(canvasId, dataPoints, config) {
           beginAtZero: false,
           grace: '10%',
           grid: {
-            color: '#30363d',
+            color: cssVar('--border'),
             drawBorder: false,
           },
           ticks: {
-            color: '#8b949e',
+            color: cssVar('--muted'),
             font: { size: 10 },
             callback: (value) => `${value.toFixed(3)}s`,
           },
           title: {
             display: true,
             text: config.label,
-            color: '#8b949e',
+            color: cssVar('--muted'),
             font: { size: 11 },
           },
         },
       },
     },
   });
+
 }
 
 // ── Initialization ─────────────────────────────────────────────────────────
@@ -378,7 +340,7 @@ window.addEventListener('scale-tests:data-loaded', () => {
   // If metrics tab is currently visible, initialize now
   const metricsTab = document.getElementById('metrics-main');
   if (metricsTab && !metricsTab.classList.contains('hidden')) {
-    window._metricsInitialized = false;  // Reset flag to allow initialization
+    window._metricsInitialized = true;
     initializeMetrics();
   }
 });
