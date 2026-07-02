@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Added `global.resourceReservation.createNamespace` Helm value (default `true`) to allow disabling creation of the resource-reservation namespace, for embedding KAI in a parent chart that creates the namespace itself.
 - Added `global.resourceReservation.createServiceAccount` Helm value (default `true`) to allow disabling creation of the resource-reservation ServiceAccount, for embedding KAI in a parent chart that creates the ServiceAccount itself.
 - Added `defaultPriorityClasses.enabled` Helm value (default `true`) for installations that manage KAI PriorityClasses externally.
+- Extended the opt-in queue validator (`--enable-quota-validation`) to warn when a resource `limit` is set below its `quota`, on invalid negative `quota`/`limit`/`overQuotaWeight` values, and when child GPU or Memory quota sums exceed the parent (previously only CPU was summed on create). Warning-only; default behavior is unchanged. [#1783](https://github.com/kai-scheduler/KAI-Scheduler/issues/1783) [thc1006](https://github.com/thc1006)
 
 ### Changed
 - Removed unused `queuecontroller.certSecretName` and `admission.certSecretName` Helm values; webhook TLS secrets are created and managed by the operator (`queue-webhook-tls-secret`, `kai-admission-webhook-tls-secret`). [#1791](https://github.com/kai-scheduler/KAI-Scheduler/pull/1791) [dttung2905](https://github.com/dttung2905)
