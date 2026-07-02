@@ -5,10 +5,13 @@ package reclaim
 
 import (
 	"fmt"
+	"strings"
 	"testing"
+	"time"
 
 	"go.uber.org/mock/gomock"
 	"gopkg.in/h2non/gock.v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -82,6 +85,55 @@ func TestUnschedulableDistributedReclaimTopology(t *testing.T) {
 	}
 }
 
+func TestManySingleGPUJobsReclaimTopology(t *testing.T) {
+	defer gock.Off()
+
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	params := manySingleGPUJobsReclaimParamsWithMinRuntime(10)
+	ssn := test_utils.BuildSession(buildManySingleGPUJobsReclaimTopology(params), ctrl)
+	if actual := ssn.ClusterInfo.Queues[common_info.QueueID(manySingleGPURunningQueueName)].ReclaimMinRuntime; actual == nil || *actual != *params.ReclaimMinRuntime {
+		t.Fatalf("expected running queue reclaim min-runtime %v, got %v", params.ReclaimMinRuntime, actual)
+	}
+
+	onJobSolutionStartCalls := 0
+	ssn.AddOnJobSolutionStartFn(func() {
+		onJobSolutionStartCalls++
+	})
+
+	reclaim.New().Execute(ssn)
+
+	expectedTasks := params.NumNodes * params.GPUsPerNode
+	if onJobSolutionStartCalls == 0 {
+		t.Fatal("expected reclaim to attempt solving pending jobs")
+	}
+
+	runningJobs := 0
+	pendingJobs := 0
+	for _, job := range ssn.ClusterInfo.PodGroupInfos {
+		switch {
+		case strings.HasPrefix(job.Name, manySingleGPURunningJobPrefix):
+			runningJobs++
+			if len(job.PodStatusIndex[pod_status.Releasing]) != 1 {
+				t.Fatalf("expected running job %q to have one releasing task", job.Name)
+			}
+		case strings.HasPrefix(job.Name, manySingleGPUPendingJobPrefix):
+			pendingJobs++
+			if len(job.PodStatusIndex[pod_status.Pipelined]) != 1 {
+				t.Fatalf("expected pending job %q to have one pipelined task", job.Name)
+			}
+		}
+	}
+
+	if runningJobs != expectedTasks {
+		t.Fatalf("expected %d reclaimed running jobs, got %d", expectedTasks, runningJobs)
+	}
+	if pendingJobs != expectedTasks {
+		t.Fatalf("expected %d pipelined pending jobs, got %d", expectedTasks, pendingJobs)
+	}
+}
+
 type unschedulableDistributedReclaimParams struct {
 	NumNodes                int
 	GPUsPerNode             int
@@ -94,8 +146,21 @@ type unschedulableDistributedReclaimParams struct {
 	NumberOfPipelineActions int
 }
 
+type manySingleGPUJobsReclaimParams struct {
+	NumNodes          int
+	GPUsPerNode       int
+	RunningJobCount   int
+	PendingJobCount   int
+	ReclaimMinRuntime *metav1.Duration
+}
+
 const (
 	unschedulableDistributedJobName = "unschedulable-distributed-job"
+
+	manySingleGPURunningQueueName = "many-single-gpu-running-queue"
+	manySingleGPUPendingQueueName = "many-single-gpu-pending-queue"
+	manySingleGPURunningJobPrefix = "many-single-gpu-running-job-"
+	manySingleGPUPendingJobPrefix = "many-single-gpu-pending-job-"
 )
 
 func BenchmarkReclaimLargeJobs_10Node(b *testing.B) {
@@ -120,6 +185,48 @@ func BenchmarkReclaimLargeJobs_500Node(b *testing.B) {
 
 func BenchmarkReclaimLargeJobs_1000Node(b *testing.B) {
 	benchmarkReclaimLargeJobs(b, 1000)
+}
+
+func BenchmarkReclaimManySingleGPUJobs_10Node(b *testing.B) {
+	benchmarkReclaimManySingleGPUJobs(b, 10)
+}
+
+func BenchmarkReclaimManySingleGPUJobs_50Node(b *testing.B) {
+	benchmarkReclaimManySingleGPUJobs(b, 50)
+}
+
+func BenchmarkReclaimManySingleGPUJobs_100Node(b *testing.B) {
+	benchmarkReclaimManySingleGPUJobs(b, 100)
+}
+
+func BenchmarkReclaimManySingleGPUJobs_200Node(b *testing.B) {
+	benchmarkReclaimManySingleGPUJobs(b, 200)
+}
+
+func BenchmarkReclaimManySingleGPUJobs_500Node(b *testing.B) {
+	benchmarkReclaimManySingleGPUJobs(b, 500)
+}
+
+func BenchmarkReclaimManySingleGPUJobsWithMinRuntime_500Node(b *testing.B) {
+	benchmarkReclaimManySingleGPUJobsWithParams(b, manySingleGPUJobsReclaimParamsWithMinRuntime(500))
+}
+
+func benchmarkReclaimManySingleGPUJobs(b *testing.B, numNodes int) {
+	benchmarkReclaimManySingleGPUJobsWithParams(b, defaultManySingleGPUJobsReclaimParams(numNodes))
+}
+
+func benchmarkReclaimManySingleGPUJobsWithParams(b *testing.B, params manySingleGPUJobsReclaimParams) {
+	defer gock.Off()
+
+	topology := buildManySingleGPUJobsReclaimTopology(params)
+	b.ReportAllocs()
+
+	for b.Loop() {
+		ctrl := gomock.NewController(b)
+		ssn := test_utils.BuildSession(topology, ctrl)
+		reclaim.New().Execute(ssn)
+		ctrl.Finish()
+	}
 }
 
 func benchmarkReclaimLargeJobs(b *testing.B, numNodes int) {
@@ -304,4 +411,67 @@ func buildUnschedulableDistributedReclaimJobs(
 
 	jobs = append(jobs, distributedJob)
 	return jobs
+}
+
+func defaultManySingleGPUJobsReclaimParams(numNodes int) manySingleGPUJobsReclaimParams {
+	const gpusPerNode = 8
+	jobCount := numNodes * gpusPerNode
+	return manySingleGPUJobsReclaimParams{
+		NumNodes:        numNodes,
+		GPUsPerNode:     gpusPerNode,
+		RunningJobCount: jobCount,
+		PendingJobCount: jobCount,
+	}
+}
+
+func manySingleGPUJobsReclaimParamsWithMinRuntime(numNodes int) manySingleGPUJobsReclaimParams {
+	params := defaultManySingleGPUJobsReclaimParams(numNodes)
+	params.ReclaimMinRuntime = &metav1.Duration{Duration: 30 * time.Second}
+	return params
+}
+
+func buildManySingleGPUJobsReclaimTopology(
+	params manySingleGPUJobsReclaimParams,
+) test_utils.TestTopologyBasic {
+	nodes := make(map[string]nodes_fake.TestNodeBasic, params.NumNodes)
+	for i := 0; i < params.NumNodes; i++ {
+		nodes[fmt.Sprintf("node%d", i)] = nodes_fake.TestNodeBasic{GPUs: params.GPUsPerNode}
+	}
+
+	jobs := make([]*jobs_fake.TestJobBasic, 0, params.RunningJobCount+params.PendingJobCount)
+	for i := 0; i < params.RunningJobCount; i++ {
+		jobs = append(jobs, &jobs_fake.TestJobBasic{
+			Name:                fmt.Sprintf("%s%d", manySingleGPURunningJobPrefix, i),
+			RequiredGPUsPerTask: 1,
+			Priority:            constants.PriorityTrainNumber,
+			QueueName:           manySingleGPURunningQueueName,
+			Tasks: []*tasks_fake.TestTaskBasic{{
+				NodeName: fmt.Sprintf("node%d", i%params.NumNodes),
+				State:    pod_status.Running,
+			}},
+		})
+	}
+	for i := 0; i < params.PendingJobCount; i++ {
+		jobs = append(jobs, &jobs_fake.TestJobBasic{
+			Name:                fmt.Sprintf("%s%d", manySingleGPUPendingJobPrefix, i),
+			RequiredGPUsPerTask: 1,
+			Priority:            constants.PriorityTrainNumber,
+			QueueName:           manySingleGPUPendingQueueName,
+			Tasks:               []*tasks_fake.TestTaskBasic{{State: pod_status.Pending}},
+		})
+	}
+
+	return test_utils.TestTopologyBasic{
+		Name:  "many single GPU jobs reclaim benchmark",
+		Nodes: nodes,
+		Jobs:  jobs,
+		Queues: []test_utils.TestQueueBasic{
+			{Name: manySingleGPURunningQueueName, DeservedGPUs: 0, GPUOverQuotaWeight: 0, ReclaimMinRuntime: params.ReclaimMinRuntime},
+			{Name: manySingleGPUPendingQueueName, DeservedGPUs: float64(params.PendingJobCount), GPUOverQuotaWeight: 0},
+		},
+		Mocks: &test_utils.TestMock{CacheRequirements: &test_utils.CacheMocking{
+			NumberOfCacheEvictions:  params.RunningJobCount,
+			NumberOfPipelineActions: params.PendingJobCount,
+		}},
+	}
 }
