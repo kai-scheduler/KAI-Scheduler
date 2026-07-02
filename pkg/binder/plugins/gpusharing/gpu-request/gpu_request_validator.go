@@ -5,7 +5,6 @@ package gpurequesthandler
 
 import (
 	"fmt"
-	"math"
 	"strconv"
 
 	v1 "k8s.io/api/core/v1"
@@ -81,9 +80,6 @@ func validateGpuFractionAnnotation(hasGpuFractionAnnotation bool, gpuFractionFro
 	if gpuFractionErr != nil || gpuFraction <= 0 || gpuFraction >= 1 {
 		return fmt.Errorf(
 			"gpu-fraction annotation value must be a positive number smaller than 1.0")
-	}
-	if math.IsNaN(gpuFraction) {
-		return fmt.Errorf("gpu-fraction annotation value must be a valid number. NaN is not allowed")
 	}
 	_, err := resource.ParseQuantity(gpuFractionFromAnnotation)
 	if err != nil {
