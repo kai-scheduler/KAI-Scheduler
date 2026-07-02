@@ -4,8 +4,10 @@
 suite: test block nvidia visible devices configuration
 
 set:
-  _test:
-    renderKaiConfig: true
+  kaiConfigDeployer:
+    enabled: false
+  kaiConfig:
+    render: true
 templates:
   - kai-config.yaml
 tests:

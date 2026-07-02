@@ -67,6 +67,29 @@ jobs:
       - name: Run tests
         run: make test
 
+      - name: Chart install-mode render matrix
+        run: |
+          set -euo pipefail
+          CHART=./deployments/kai-scheduler
+
+          # default: deployer hook present, no Config document in the release
+          DEFAULT=$(helm template kai-scheduler "$CHART")
+          echo "$DEFAULT" | grep -q "name: kai-config-deployer"
+          ! echo "$DEFAULT" | grep -q "^kind: Config$"
+
+          # gitops mode: exactly one Config document, no deployer resources
+          GITOPS=$(helm template kai-scheduler "$CHART" --set kaiConfigDeployer.enabled=false --set kaiConfig.render=true)
+          [ "$(echo "$GITOPS" | grep -c "^kind: Config$")" = "1" ]
+          ! echo "$GITOPS" | grep -q "name: kai-config-deployer"
+
+          # external management: neither
+          NONE=$(helm template kai-scheduler "$CHART" --set kaiConfigDeployer.enabled=false --set kaiConfig.render=false)
+          ! echo "$NONE" | grep -q "^kind: Config$"
+          ! echo "$NONE" | grep -q "name: kai-config-deployer"
+
+          # mutually exclusive flags: rendering must fail
+          ! helm template kai-scheduler "$CHART" --set kaiConfigDeployer.enabled=true --set kaiConfig.render=true
+
       - name: Archive code coverage results
         uses: actions/upload-artifact@v7
         with:
