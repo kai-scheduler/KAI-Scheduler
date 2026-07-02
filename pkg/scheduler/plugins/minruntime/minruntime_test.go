@@ -89,7 +89,6 @@ var _ = Describe("MinRuntime Plugin", func() {
 			defaultPreemptMinRuntime: defaultPreemptDuration,
 			defaultReclaimMinRuntime: defaultReclaimDuration,
 			reclaimResolveMethod:     resolveMethodLCA,
-			preemptProtectionCache:   make(map[common_info.PodGroupID]bool),
 			resolver:                 NewResolver(queues, defaultPreemptDuration, defaultReclaimDuration),
 		}
 	})
@@ -136,6 +135,19 @@ var _ = Describe("MinRuntime Plugin", func() {
 
 				result := plugin.preemptFilterFn(pendingJob, victim)
 				Expect(result).To(BeTrue(), "Job with no start time should not be protected")
+			})
+
+			It("re-evaluates protection for a previously checked victim", func() {
+				pendingJob := createPodGroup("pending-job", "dev-team1", nil, 1, 1)
+				recentStart := time.Now().Add(-10 * time.Second)
+				victim := createPodGroup("victim-job", "prod-team2", &recentStart, 1, 1)
+
+				Expect(plugin.preemptFilterFn(pendingJob, victim)).To(BeFalse())
+
+				oldStart := time.Now().Add(-30 * time.Second)
+				victim.LastStartTimestamp = &oldStart
+
+				Expect(plugin.preemptFilterFn(pendingJob, victim)).To(BeTrue())
 			})
 		})
 	})
