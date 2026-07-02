@@ -29,6 +29,9 @@ const (
 	leaderSubGroupSize = 1
 	leaderIndex        = "0"
 
+	minWorkerIndex         = 0
+	maxAllowedSegmentation = 10000
+
 	// LWS annotation and label keys
 	lwsSizeAnnotation   = "leaderworkerset.sigs.k8s.io/size"
 	lwsGroupIndexLabel  = "leaderworkerset.sigs.k8s.io/group-index"
@@ -67,6 +70,10 @@ func (lwsg *LwsGrouper) GetPodGroupMetadata(
 
 	startupPolicy, err := getStartupPolicy(lwsJob)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := validateWorkerIndex(pod); err != nil {
 		return nil, err
 	}
 
@@ -122,6 +129,19 @@ func getStartupPolicy(lwsJob *unstructured.Unstructured) (string, error) {
 	return policy, nil
 }
 
+func validateWorkerIndex(pod *v1.Pod) error {
+	if workerIndex, hasWorkerIndex := pod.Labels[lwsWorkerIndexLabel]; hasWorkerIndex {
+		podWorkerIndex, err := strconv.Atoi(workerIndex)
+		if err != nil {
+			return fmt.Errorf("failed to get worker index from pod %s/%s: %w", pod.Namespace, pod.Name, err)
+		}
+		if podWorkerIndex < minWorkerIndex {
+			return fmt.Errorf("workerIndex %s is not valid. It must be bigger than 0", workerIndex)
+		}
+	}
+	return nil
+}
+
 func calcLeaderReadyMinAvailable(pod *v1.Pod, fallbackSize int32) int32 {
 	groupSize := fallbackSize
 
@@ -152,6 +172,12 @@ func (lwsg *LwsGrouper) buildSubGroups(lwsJob *unstructured.Unstructured, pod *v
 	if segmentationPolicy == nil {
 		return buildSubGroupsWithoutSegmentation(replicasSize, pod), nil
 	}
+
+	// Validate num of subgroups created for the segmentation
+	if numOfSegmentSubgroups := getNumOfSegmentSubgroups(replicasSize, int(*segmentationPolicy.SubGroupSize)); numOfSegmentSubgroups > maxAllowedSegmentation {
+		return nil, fmt.Errorf("number of subgroups segments %d is greater than max allowed segmentation %d", numOfSegmentSubgroups, maxAllowedSegmentation)
+	}
+
 	topologyConstraints, err := getSegmentTopologyConstraints(pod, lwsJob)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get segment topology constraints for LWS %s/%s: %w", lwsJob.GetNamespace(), lwsJob.GetName(), err)
@@ -340,8 +366,7 @@ func buildSubGroupsWithSegmentation(
 
 func createSegmentSubgroups(topologyConstraints *podgroup.TopologyConstraintMetadata, replicasSize int, segmentSize int) []*podgroup.SubGroupMetadata {
 	subGroups := []*podgroup.SubGroupMetadata{}
-	maxWorkerIndex := replicasSize - leaderSubGroupSize
-	numOfSegmentSubgroups := getSegmentIndex(maxWorkerIndex, replicasSize, segmentSize) + 1
+	numOfSegmentSubgroups := getNumOfSegmentSubgroups(replicasSize, segmentSize)
 	for segmentIndex := 0; segmentIndex < numOfSegmentSubgroups; segmentIndex++ {
 		subGroups = append(subGroups, &podgroup.SubGroupMetadata{
 			Name:                fmt.Sprintf("segment-%d", segmentIndex),
@@ -353,6 +378,12 @@ func createSegmentSubgroups(topologyConstraints *podgroup.TopologyConstraintMeta
 
 	fixLastSegmentSize(replicasSize, segmentSize, subGroups)
 	return subGroups
+}
+
+func getNumOfSegmentSubgroups(replicasSize int, segmentSize int) int {
+	maxWorkerIndex := replicasSize - leaderSubGroupSize
+	numOfSegmentSubgroups := getSegmentIndex(maxWorkerIndex, replicasSize, segmentSize) + 1
+	return numOfSegmentSubgroups
 }
 
 // The last segment might contain less pods then the other segments.

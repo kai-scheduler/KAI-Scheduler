@@ -259,6 +259,28 @@ func TestGetPodGroupMetadata_SubGroups_OnlyLeader(t *testing.T) {
 	assert.Equal(t, "lws-single-0-0", leaderSubGroup.PodsReferences[0])
 }
 
+func TestGetPodGroupMetadata_NegativeWorkerIndex(t *testing.T) {
+	owner := lwsOwner("lws-invalid", "LeaderCreated", 3, nil, nil, nil)
+	pod := makeLwsPod("lws-invalid-0-1", "-1")
+
+	lwsGrouper := NewLwsGrouper(defaultgrouper.NewDefaultGrouper("", "", fake.NewFakeClient()))
+	_, err := lwsGrouper.GetPodGroupMetadata(owner, pod)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "is not valid. It must be bigger than 0")
+}
+
+func TestBuildSubGroups_Segmentation_ExceedsMaxAllowedSegmentation(t *testing.T) {
+	replicasSize := int64(maxAllowedSegmentation)*2 + 3
+	lwsJob := lwsOwner("lws-seg-cap", "LeaderCreated", replicasSize, ptr.To(int64(2)), nil, nil)
+	pod := makeLwsPod("lws-seg-cap-0-0", "0")
+	grouper := NewLwsGrouper(defaultgrouper.NewDefaultGrouper("", "", fake.NewFakeClient()))
+
+	_, err := grouper.buildSubGroups(lwsJob, pod, int(replicasSize))
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "greater than max allowed segmentation")
+}
+
 func findSubGroupByName(subGroups []*podgroup.SubGroupMetadata, name string) *podgroup.SubGroupMetadata {
 	for _, sg := range subGroups {
 		if sg.Name == name {
