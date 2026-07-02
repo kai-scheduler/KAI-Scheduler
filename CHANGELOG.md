@@ -7,7 +7,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Fixed
-- Scheduler cache now filters terminal Pods at watch time to reduce memory use, while still watching Pods bound by other schedulers so their resource usage is counted in allocatable calculations. [#1645](https://github.com/kai-scheduler/KAI-Scheduler/issues/1645) [enoodle](https://github.com/enoodle)
 - Block NaN value for fraction in the pod admission [#1798](https://github.com/kai-scheduler/KAI-Scheduler/issues/1798) [davidLif](https://github.com/davidLif)
 - In the fractional admission checks, check that the fractional value can be parsed as a quantity. [#1798](https://github.com/kai-scheduler/KAI-Scheduler/issues/1798) [davidLif](https://github.com/davidLif)
 
