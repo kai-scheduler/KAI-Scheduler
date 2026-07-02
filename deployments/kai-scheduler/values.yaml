@@ -18,6 +18,7 @@ global:
   tolerations: []
   namespaceLabelSelector: {}
   podLabelSelector: {}
+  nodePoolLabelKey: ""
   jsonLog: false
   vpa:
     enabled: false
