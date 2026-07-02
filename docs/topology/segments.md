@@ -197,4 +197,5 @@ This lets a job start as soon as its mandatory segments fit, while still attempt
 - **`LeaderExcluded` requires divisibility.** For LeaderWorkerSet, `LeaderExcluded` requires `(size - 1)` to be divisible by `subGroupSize`.
 - **Topology required.** If `kai.scheduler/topology` cannot be resolved (neither on the workload nor on the PodTemplate), segment annotations are silently ignored.
 - **Limited workload coverage.** Today only `PyTorchJob` (Worker replica) and `LeaderWorkerSet` honour these annotations. For other workloads, define segments explicitly via the `PodGroup` API — see [Multi-Level Topology Aware Scheduling](multilevel.md).
+- **Mutually exclusive with semi-preemptible.** Automatic segmentation is incompatible with the [semi-preemptible](../elastic/README.md#semi-preemptible-workloads) mode — an auto-segmented tree is fully gang and has no elastic surplus. Combining `segment-size` with `preemptibility: semi-preemptible` is allowed but warned (the PodGrouper emits a `PodGrouperWarning` event), and the workload behaves as non-preemptible.
 

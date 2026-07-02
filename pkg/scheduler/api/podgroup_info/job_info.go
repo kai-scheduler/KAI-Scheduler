@@ -169,6 +169,14 @@ func (pgi *PodGroupInfo) IsPreemptibleJob() bool {
 	return pgi.Preemptibility == enginev2alpha2.Preemptible
 }
 
+func (pgi *PodGroupInfo) IsSemiPreemptibleJob() bool {
+	return pgi.Preemptibility == enginev2alpha2.SemiPreemptible
+}
+
+func (pgi *PodGroupInfo) IsNonPreemptibleJob() bool {
+	return pgi.Preemptibility == enginev2alpha2.NonPreemptible
+}
+
 func (pgi *PodGroupInfo) SetPodGroup(pg *enginev2alpha2.PodGroup) {
 	pgi.Name = pg.Name
 	pgi.Namespace = pg.Namespace

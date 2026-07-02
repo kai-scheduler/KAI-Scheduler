@@ -29,7 +29,14 @@ func GetTasksToEvict(job *PodGroupInfo, subGroupOrderFn, taskOrderFn common_info
 		}
 	}
 
-	tasks := collectTasksToEvictFromSubGroupSet(root, reverseSubGroupOrderFn, reverseTaskOrderFn)
+	var tasks []*pod_info.PodInfo
+	if job.IsSemiPreemptibleJob() {
+		// Semi-preemptible jobs offer only their elastic surplus as victims; the core (minimal
+		// satisfying shape) is never evicted, so the phase-3 full-eviction fallback is skipped.
+		tasks = collectElasticEvictionFromSubGroupSet(root, reverseSubGroupOrderFn, reverseTaskOrderFn)
+	} else {
+		tasks = collectTasksToEvictFromSubGroupSet(root, reverseSubGroupOrderFn, reverseTaskOrderFn)
+	}
 
 	jobHasMoreActiveTasksAfterEviction := len(tasks) < job.GetActiveAllocatedTasksCount()
 	return tasks, jobHasMoreActiveTasksAfterEviction

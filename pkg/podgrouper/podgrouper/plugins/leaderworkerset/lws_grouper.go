@@ -79,11 +79,12 @@ func (lwsg *LwsGrouper) GetPodGroupMetadata(
 		return nil, fmt.Errorf("unknown startupPolicy: %s", startupPolicy)
 	}
 
-	subGroups, err := lwsg.buildSubGroups(lwsJob, pod, int(podGroupMetadata.MinAvailable))
+	subGroups, segmented, err := lwsg.buildSubGroups(lwsJob, pod, int(podGroupMetadata.MinAvailable))
 	if err != nil {
 		return nil, err
 	}
 	podGroupMetadata.SubGroups = subGroups
+	podGroupMetadata.WarnIfSemiPreemptibleSegmented(segmented)
 
 	if groupIndexStr, ok := pod.Labels[lwsGroupIndexLabel]; ok {
 		if groupIndex, err := strconv.Atoi(groupIndexStr); err == nil {
@@ -144,19 +145,21 @@ func calcLeaderReadyMinAvailable(pod *v1.Pod, fallbackSize int32) int32 {
 	return groupSize
 }
 
-func (lwsg *LwsGrouper) buildSubGroups(lwsJob *unstructured.Unstructured, pod *v1.Pod, replicasSize int) ([]*podgroup.SubGroupMetadata, error) {
+// buildSubGroups returns the subgroup metadata and whether the tree was built via automated segmentation.
+func (lwsg *LwsGrouper) buildSubGroups(lwsJob *unstructured.Unstructured, pod *v1.Pod, replicasSize int) ([]*podgroup.SubGroupMetadata, bool, error) {
 	segmentationPolicy, err := getSegmentationPolicy(lwsJob, replicasSize)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get sub group policy for LWS %s/%s: %w", lwsJob.GetNamespace(), lwsJob.GetName(), err)
+		return nil, false, fmt.Errorf("failed to get sub group policy for LWS %s/%s: %w", lwsJob.GetNamespace(), lwsJob.GetName(), err)
 	}
 	if segmentationPolicy == nil {
-		return buildSubGroupsWithoutSegmentation(replicasSize, pod), nil
+		return buildSubGroupsWithoutSegmentation(replicasSize, pod), false, nil
 	}
 	topologyConstraints, err := getSegmentTopologyConstraints(pod, lwsJob)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get segment topology constraints for LWS %s/%s: %w", lwsJob.GetNamespace(), lwsJob.GetName(), err)
+		return nil, true, fmt.Errorf("failed to get segment topology constraints for LWS %s/%s: %w", lwsJob.GetNamespace(), lwsJob.GetName(), err)
 	}
-	return buildSubGroupsWithSegmentation(segmentationPolicy, topologyConstraints, replicasSize, pod)
+	subGroups, err := buildSubGroupsWithSegmentation(segmentationPolicy, topologyConstraints, replicasSize, pod)
+	return subGroups, true, err
 }
 
 func getSegmentTopologyConstraints(pod *v1.Pod, lwsJob *unstructured.Unstructured) (*podgroup.TopologyConstraintMetadata, error) {
