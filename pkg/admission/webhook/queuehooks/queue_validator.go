@@ -6,17 +6,30 @@ package queuehooks
 import (
 	"context"
 	"fmt"
+	"math"
+	"strconv"
+	"strings"
 
+	v1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
 var queueValidatorLog = logf.Log.WithName("queue-validator")
 
-const missingResourcesError = "resources must be specified"
+const (
+	missingResourcesError = "resources must be specified"
+
+	// Spec quotas/limits use millicpu for CPU and megabytes for Memory, while the queue status stores
+	// allocation in cores and bytes; these convert spec values into the status units for comparison.
+	milliCPUToCPU     = 1000
+	megabytesToBytes  = 1000000
+	gpuResourceSuffix = "/gpu"
+)
 
 type QueueValidator interface {
 	ValidateCreate(ctx context.Context, obj *v2.Queue) (warnings admission.Warnings, err error)
@@ -27,12 +40,14 @@ type QueueValidator interface {
 type queueValidator struct {
 	kubeClient            client.Client
 	enableQuotaValidation bool
+	strictQuotaValidation bool
 }
 
-func NewQueueValidator(kubeClient client.Client, enableQuotaValidation bool) QueueValidator {
+func NewQueueValidator(kubeClient client.Client, enableQuotaValidation, strictQuotaValidation bool) QueueValidator {
 	return &queueValidator{
 		kubeClient:            kubeClient,
 		enableQuotaValidation: enableQuotaValidation,
+		strictQuotaValidation: strictQuotaValidation,
 	}
 }
 
@@ -57,26 +72,39 @@ func (v *queueValidator) ValidateUpdate(ctx context.Context, oldQueue, newQueue 
 		return []string{missingResourcesError}, fmt.Errorf(missingResourcesError)
 	}
 
-	if !v.enableQuotaValidation {
-		return nil, nil
-	}
-
 	var warnings admission.Warnings
 
-	if newQueue.Spec.ParentQueue != "" {
-		parentWarnings, err := v.validateParentChildQuota(ctx, newQueue)
-		if err != nil {
-			return parentWarnings, err
+	// Guard against reducing a limit below what the queue already has allocated, or a quota below its
+	// non-preemptible allocation (which the scheduler cannot reclaim). The strict flag rejects such an update;
+	// with only quota validation enabled it is surfaced as a warning. With neither flag set the check is
+	// skipped, preserving the default behavior.
+	if v.enableQuotaValidation || v.strictQuotaValidation {
+		if violations := allocationReductionViolations(oldQueue, newQueue); len(violations) > 0 {
+			if v.strictQuotaValidation {
+				return append(warnings, violations...), fmt.Errorf("queue %s update rejected: %s",
+					newQueue.Name, strings.Join(violations, "; "))
+			}
+			warnings = append(warnings, violations...)
 		}
-		warnings = append(warnings, parentWarnings...)
 	}
 
-	if len(oldQueue.Status.ChildQueues) > 0 {
-		childWarnings, err := v.validateChildrenQuotaSum(ctx, newQueue)
-		if err != nil {
-			return childWarnings, err
+	// Opt-in parent/child quota-relationship warnings.
+	if v.enableQuotaValidation {
+		if newQueue.Spec.ParentQueue != "" {
+			parentWarnings, err := v.validateParentChildQuota(ctx, newQueue)
+			if err != nil {
+				return append(warnings, parentWarnings...), err
+			}
+			warnings = append(warnings, parentWarnings...)
 		}
-		warnings = append(warnings, childWarnings...)
+
+		if len(oldQueue.Status.ChildQueues) > 0 {
+			childWarnings, err := v.validateChildrenQuotaSum(ctx, newQueue)
+			if err != nil {
+				return append(warnings, childWarnings...), err
+			}
+			warnings = append(warnings, childWarnings...)
+		}
 	}
 
 	return warnings, nil
@@ -90,6 +118,106 @@ func (v *queueValidator) ValidateDelete(ctx context.Context, queue *v2.Queue) (a
 	}
 
 	return nil, nil
+}
+
+// allocationReductionViolations reports where the update lowers a resource limit below the amount already
+// allocated to the queue, or lowers a quota below the amount allocated to non-preemptible workloads (which the
+// scheduler cannot reclaim). Only genuine reductions are flagged: an unchanged or increased value never trips
+// the check, so edits to unrelated fields on an already-over-limit queue are left alone. Allocation is read
+// from the queue's own status (last value persisted by the controller); a missing entry counts as zero, so
+// freshly created or unreconciled queues are never flagged. Spec values (millicpu, megabytes, GPU fraction) are
+// converted into the status units (cores, bytes, GPU fraction) and both sides are rounded to the queue-metrics
+// precision before comparison, so a value set equal to the current allocation is not tripped by float rounding.
+func allocationReductionViolations(oldQueue, newQueue *v2.Queue) admission.Warnings {
+	newSpec := newQueue.Spec.Resources
+	oldSpec := oldQueue.Spec.Resources
+	if newSpec == nil || oldSpec == nil {
+		return nil
+	}
+	status := oldQueue.Status
+
+	perResource := []struct {
+		name       string
+		unit       string
+		factor     float64
+		newLimit   float64
+		oldLimit   float64
+		newQuota   float64
+		oldQuota   float64
+		allocated  float64
+		nonPreempt float64
+	}{
+		{"GPU", "", 1, newSpec.GPU.Limit, oldSpec.GPU.Limit, newSpec.GPU.Quota, oldSpec.GPU.Quota,
+			gpuAllocated(status.Allocated), gpuAllocated(status.AllocatedNonPreemptible)},
+		{"CPU", " cores", 1.0 / milliCPUToCPU, newSpec.CPU.Limit, oldSpec.CPU.Limit, newSpec.CPU.Quota, oldSpec.CPU.Quota,
+			cpuAllocated(status.Allocated), cpuAllocated(status.AllocatedNonPreemptible)},
+		{"Memory", " bytes", megabytesToBytes, newSpec.Memory.Limit, oldSpec.Memory.Limit, newSpec.Memory.Quota, oldSpec.Memory.Quota,
+			memoryAllocated(status.Allocated), memoryAllocated(status.AllocatedNonPreemptible)},
+	}
+
+	var violations admission.Warnings
+	for _, r := range perResource {
+		if isReduction(r.oldLimit, r.newLimit) {
+			newLimit, allocated := round4(r.newLimit*r.factor), round4(r.allocated)
+			if newLimit < allocated {
+				violations = append(violations, fmt.Sprintf("%s limit (%s%s) is below the currently allocated %s%s",
+					r.name, fmtNum(newLimit), r.unit, fmtNum(allocated), r.unit))
+			}
+		}
+		if isReduction(r.oldQuota, r.newQuota) {
+			newQuota, nonPreempt := round4(r.newQuota*r.factor), round4(r.nonPreempt)
+			if newQuota < nonPreempt {
+				violations = append(violations, fmt.Sprintf("%s quota (%s%s) is below the non-preemptible allocation (%s%s)",
+					r.name, fmtNum(newQuota), r.unit, fmtNum(nonPreempt), r.unit))
+			}
+		}
+	}
+	return violations
+}
+
+// isReduction reports whether newValue lowers a resource bound relative to oldValue. A new value of 0 (unset)
+// or -1 (unlimited) imposes no upper bound and is never a reduction; an old value of -1 (unlimited) makes any
+// positive new bound a reduction.
+func isReduction(oldValue, newValue float64) bool {
+	if newValue <= 0 {
+		return false
+	}
+	if oldValue == constants.UnlimitedResourceQuantity {
+		return true
+	}
+	return newValue < oldValue
+}
+
+func round4(value float64) float64 {
+	return math.Round(value*10000) / 10000
+}
+
+func gpuAllocated(list v1.ResourceList) float64 {
+	for name, quantity := range list {
+		if strings.HasSuffix(string(name), gpuResourceSuffix) {
+			return quantity.AsApproximateFloat64()
+		}
+	}
+	return 0
+}
+
+func cpuAllocated(list v1.ResourceList) float64 {
+	return quantityValue(list, v1.ResourceCPU)
+}
+
+func memoryAllocated(list v1.ResourceList) float64 {
+	return quantityValue(list, v1.ResourceMemory)
+}
+
+func quantityValue(list v1.ResourceList, name v1.ResourceName) float64 {
+	if quantity, ok := list[name]; ok {
+		return quantity.AsApproximateFloat64()
+	}
+	return 0
+}
+
+func fmtNum(value float64) string {
+	return strconv.FormatFloat(value, 'f', -1, 64)
 }
 
 func (v *queueValidator) validateParentChildQuota(ctx context.Context, childQueue *v2.Queue) (admission.Warnings, error) {

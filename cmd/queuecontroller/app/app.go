@@ -71,7 +71,7 @@ func Run(opts *Options, clientConfig *rest.Config, ctx context.Context) error {
 
 	if opts.EnableWebhook {
 		if err = ctrl.NewWebhookManagedBy(mgr, &v2.Queue{}).
-			WithValidator(queuehooks.NewQueueValidator(mgr.GetClient(), opts.EnableQuotaValidation)).
+			WithValidator(queuehooks.NewQueueValidator(mgr.GetClient(), opts.EnableQuotaValidation, opts.StrictQuotaValidation)).
 			Complete(); err != nil {
 			setupLog.Error(err, "unable to create webhook for queue v2", "webhook", "Queue")
 			return nil

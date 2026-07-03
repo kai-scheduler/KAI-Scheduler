@@ -19,6 +19,7 @@ type Options struct {
 	EnableWebhook                bool
 	SkipControllerNameValidation bool // Set true for env tests
 	EnableQuotaValidation        bool // Enable validation warnings for queue quota relationships
+	StrictQuotaValidation        bool // Reject (instead of warn) updates that reduce a limit/quota below allocation
 
 	MetricsAddress                 string
 	MetricsNamespace               string
@@ -37,6 +38,7 @@ func InitOptions(fs *flag.FlagSet) *Options {
 	fs.BoolVar(&o.EnableWebhook, "enable-webhook", true, "Enable webhook for controller manager.")
 	fs.BoolVar(&o.SkipControllerNameValidation, "skip-controller-name-validation", false, "Skip controller name validation.")
 	fs.BoolVar(&o.EnableQuotaValidation, "enable-quota-validation", false, "Enable validation warnings for queue quota relationships (opt-in).")
+	fs.BoolVar(&o.StrictQuotaValidation, "strict-queue-validation", false, "Reject queue updates that reduce a resource limit below its currently allocated amount, or a quota below its non-preemptible allocation. When disabled, such updates are allowed with a warning (opt-in).")
 	fs.StringVar(&o.MetricsAddress, "metrics-listen-address", defaultMetricsAddress, "The address the metrics endpoint binds to.")
 	fs.StringVar(&o.MetricsNamespace, "metrics-namespace", constants.DefaultMetricsNamespace, "Metrics namespace.")
 	fs.Var(&o.QueueLabelToMetricLabel, "queue-label-to-metric-label", "Map of queue label keys to metric label keys, e.g. 'foo=bar,baz=qux'.")
