@@ -80,7 +80,9 @@ jobs:
           # gitops mode: exactly one complete Config document, no deployer resources
           GITOPS=$(helm template kai-scheduler "$CHART" --set kaiConfigDeployer.enabled=false --set kaiConfig.render=true)
           [ "$(echo "$GITOPS" | grep -c "^kind: Config$")" = "1" ]
-          [ "$(echo "$GITOPS" | grep -c "^apiVersion: kai.scheduler/v1$")" = "1" ]
+          # the Config document renders apiVersion on its own line (the
+          # SchedulingShard shares this apiVersion, hence the -A1 pairing)
+          echo "$GITOPS" | grep -A1 "^apiVersion: kai.scheduler/v1$" | grep -q "^kind: Config$"
           ! echo "$GITOPS" | grep -q "name: kai-config-deployer"
 
           # external management: neither
