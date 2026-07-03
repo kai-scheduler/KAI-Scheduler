@@ -245,7 +245,6 @@ var _ = Describe("QueueController", Ordered, func() {
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "pod-group-2", Namespace: "default"}, createdPodGroup2)).Should(Succeed())
 
 			createdPodGroup1.Status = v2alpha2.PodGroupStatus{
-				Running: 1,
 				ResourcesStatus: v2alpha2.PodGroupResourcesStatus{
 					Allocated: v1.ResourceList{
 						"cpu":    resource.MustParse("2"),
@@ -264,7 +263,6 @@ var _ = Describe("QueueController", Ordered, func() {
 			Expect(k8sClient.Status().Update(ctx, createdPodGroup1)).Should(Succeed())
 
 			createdPodGroup2.Status = v2alpha2.PodGroupStatus{
-				Running: 1,
 				ResourcesStatus: v2alpha2.PodGroupResourcesStatus{
 					Allocated: v1.ResourceList{
 						"nvidia.com/gpu": resource.MustParse("2"),

@@ -212,17 +212,6 @@ spec:
                       type: string
                   type: object
                 type: array
-              failed:
-                description: The number of pods which reached phase Failed.
-                format: int32
-                type: integer
-              pending:
-                description: The number of pods which reached phase Pending.
-                format: int32
-                type: integer
-              phase:
-                description: Current phase of PodGroup.
-                type: string
               resourcesStatus:
                 description: Status of resources related to pods connected to this
                   pod group.
@@ -261,10 +250,6 @@ spec:
                       by all running and pending jobs in queue and child queues
                     type: object
                 type: object
-              running:
-                description: The number of actively running pods.
-                format: int32
-                type: integer
               schedulingConditions:
                 description: The scheduling conditions of PodGroup.
                 items:
@@ -410,10 +395,6 @@ spec:
                       type: string
                   type: object
                 type: array
-              succeeded:
-                description: The number of pods which reached phase Succeeded.
-                format: int32
-                type: integer
             type: object
         type: object
     served: true
