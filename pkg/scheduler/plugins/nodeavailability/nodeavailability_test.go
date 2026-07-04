@@ -9,6 +9,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/require"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -19,6 +20,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/cluster_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/nodeavailability"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/scores"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
@@ -28,6 +30,29 @@ import (
 func TestNodeAvailabilityPlugin(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Node Availability Plugin test")
+}
+
+func TestNodeOrderFnDoesNotAllocateWhenVerboseLoggingIsDisabled(t *testing.T) {
+	require.NoError(t, log.InitLoggers(3, true))
+
+	plugin := nodeavailability.New(map[string]string{})
+	session := framework.Session{}
+	plugin.OnSessionOpen(&session)
+	nodeOrderFn := session.NodeOrderFns[len(session.NodeOrderFns)-1]
+
+	task := createFakeTask("task-1")
+	setTaskResources(task, 1)
+	node := createFakeNode("node-1", 1)
+
+	var score float64
+	var err error
+	allocations := testing.AllocsPerRun(100, func() {
+		score, err = nodeOrderFn(task, node)
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, float64(scores.Availability), score)
+	require.Zero(t, allocations)
 }
 
 var _ = Describe("NodeAvailability", func() {
