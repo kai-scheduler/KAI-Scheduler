@@ -109,7 +109,7 @@ function createChart(config, observations, migrationTimestamp) {
           ticks: {
             color: '#8b949e',
             font: { size: 10 },
-            callback: value => `${Number(value).toFixed(3)}s`,
+            callback: ScaleTestMetrics.formatDuration,
           },
           title: { display: true, text: config.label, color: '#8b949e', font: { size: 11 } },
         },

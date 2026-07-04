@@ -9,17 +9,17 @@
   root.ScaleTestMetrics = api;
 })(typeof globalThis !== 'undefined' ? globalThis : window, function createMetricsDataApi() {
   const CHART_CONFIGS = [
-    { id: 'fill-cluster', title: 'Fill Cluster with Single-GPU Jobs', label: 'Time (seconds)' },
-    { id: 'fill-cluster-pending', title: 'Fill Cluster with Pending Tasks', label: 'Time (seconds)' },
-    { id: 'topology-preferred', title: 'Allocate with Preferred Topology', label: 'Time (seconds)' },
-    { id: 'topology-none', title: 'Allocate without Preferred Topology', label: 'Time (seconds)' },
-    { id: 'unschedulable-delay', title: 'Distributed Job Unschedulable Delay', label: 'Time (seconds)' },
-    { id: 'reclaim-large-job', title: 'Reclaim Time for One Very Large Job', label: 'Time (seconds)' },
-    { id: 'reclaim-single-gpu', title: 'Single-GPU Reclaim Latency', label: 'Time (seconds)' },
-    { id: 'reclaim-all-single-gpu', title: 'Reclaim All Single-GPU Jobs', label: 'Time (seconds)' },
-    { id: 'reclaim-distributed', title: 'Multi-Node Distributed Reclaim', label: 'Time (seconds)' },
-    { id: 'consolidation', title: 'Consolidation for Distributed Jobs', label: 'Time (seconds)' },
-    { id: 'nccl-empty-cluster', title: 'NCCL Simulation on Empty Cluster', label: 'Time (seconds)' },
+    { id: 'fill-cluster', title: 'Fill Cluster with Single-GPU Jobs', label: 'Duration' },
+    { id: 'fill-cluster-pending', title: 'Fill Cluster with Pending Tasks', label: 'Duration' },
+    { id: 'topology-preferred', title: 'Allocate with Preferred Topology', label: 'Duration' },
+    { id: 'topology-none', title: 'Allocate without Preferred Topology', label: 'Duration' },
+    { id: 'unschedulable-delay', title: 'Distributed Job Unschedulable Delay', label: 'Duration' },
+    { id: 'reclaim-large-job', title: 'Reclaim Time for One Very Large Job', label: 'Duration' },
+    { id: 'reclaim-single-gpu', title: 'Single-GPU Reclaim Latency', label: 'Duration' },
+    { id: 'reclaim-all-single-gpu', title: 'Reclaim All Single-GPU Jobs', label: 'Duration' },
+    { id: 'reclaim-distributed', title: 'Multi-Node Distributed Reclaim', label: 'Duration' },
+    { id: 'consolidation', title: 'Consolidation for Distributed Jobs', label: 'Duration' },
+    { id: 'nccl-empty-cluster', title: 'NCCL Simulation on Empty Cluster', label: 'Duration' },
   ];
 
   const TEST_CASES = [
@@ -138,6 +138,24 @@
     const match = value.trim().match(/^(?:(\d+)h)?(?:(\d+)m)?(?:([\d.]+)s)?$/);
     if (!match || (!match[1] && !match[2] && !match[3])) return null;
     return Number(match[1] || 0) * 3600 + Number(match[2] || 0) * 60 + Number(match[3] || 0);
+  }
+
+  function formatDuration(value) {
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) return String(value);
+
+    const sign = numericValue < 0 ? '-' : '';
+    let remainder = Math.round(Math.abs(numericValue) * 1000) / 1000;
+    const hours = Math.floor(remainder / 3600);
+    remainder -= hours * 3600;
+    const minutes = Math.floor(remainder / 60);
+    const seconds = Number((remainder - minutes * 60).toFixed(3));
+    const parts = [];
+
+    if (hours) parts.push(`${hours}h`);
+    if (minutes) parts.push(`${minutes}m`);
+    if (seconds || parts.length === 0) parts.push(`${seconds}s`);
+    return `${sign}${parts.join(' ')}`;
   }
 
   function stableValue(value) {
@@ -332,6 +350,7 @@
     extractChartObservations,
     findMetrics,
     findMigrationTimestamp,
+    formatDuration,
     groupCompatibleObservations,
     parseDuration,
     parseMetricsFromOutput,

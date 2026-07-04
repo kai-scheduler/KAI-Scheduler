@@ -15,6 +15,7 @@ const {
   buildTooltipLines,
   extractChartObservations,
   findMigrationTimestamp,
+  formatDuration,
   groupCompatibleObservations,
   parseDuration,
   parseMetricsFromOutput,
@@ -149,6 +150,15 @@ test('parses every supported timing representation', () => {
   assert.equal(parseDuration('6m36.5s'), 396.5);
   assert.equal(parseDuration('48.25s'), 48.25);
   assert.equal(parseDuration(8.34), 8.34);
+});
+
+test('formats chart durations with compact seconds, minutes, and hours', () => {
+  assert.equal(formatDuration(0), '0s');
+  assert.equal(formatDuration(45.234), '45.234s');
+  assert.equal(formatDuration(60), '1m');
+  assert.equal(formatDuration(396.5), '6m 36.5s');
+  assert.equal(formatDuration(3600), '1h');
+  assert.equal(formatDuration(3930.5), '1h 5m 30.5s');
 });
 
 test('marks the first scale-results run only when both formats are loaded', () => {

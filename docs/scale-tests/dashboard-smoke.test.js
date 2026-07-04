@@ -153,4 +153,7 @@ test('renders both result formats and eleven unified charts', async () => {
     chart.config.options.plugins.migrationLine.timestamp === '2026-06-29T08:42:33Z'
   )));
   assert.equal(browser.renderedCharts.flatMap(chart => chart.config.data.datasets).length, 17);
+  const durationAxis = browser.renderedCharts[0].config.options.scales.y;
+  assert.equal(durationAxis.title.text, 'Duration');
+  assert.equal(durationAxis.ticks.callback(396.5), '6m 36.5s');
 });
