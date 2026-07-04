@@ -4,6 +4,8 @@
 package strategies
 
 import (
+	"go.uber.org/zap"
+
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	rs "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
@@ -48,11 +50,13 @@ func (mfss *MaintainFairShareStrategy) Reclaimable(
 	reclaimeeRemainingShare rs.ResourceQuantities) bool {
 	// This strategy allows to reclaim if reclaimee is currently over allowed fair share
 
-	log.InfraLogger.V(6).Infof("Checking if reclaim is possible for reclaimer <%s> and reclaimee <%s> in order "+
-		"to maintain fair share. Reclaimee requested: <%s>, deserved: <%s>, fairShare: <%s>, "+
-		"reclaimeeRemainingShare: <%s>",
-		reclaimerQueue.Name, reclaimeeQueue.Name, reclaimeeQueue.GetRequestableShare(), reclaimeeQueue.GetDeservedShare(),
-		reclaimeeQueue.GetFairShare(), reclaimeeRemainingShare)
+	log.InfraLogger.V(6).Do(func(logger *zap.SugaredLogger) {
+		logger.Infof("Checking if reclaim is possible for reclaimer <%s> and reclaimee <%s> in order "+
+			"to maintain fair share. Reclaimee requested: <%s>, deserved: <%s>, fairShare: <%s>, "+
+			"reclaimeeRemainingShare: <%s>",
+			reclaimerQueue.Name, reclaimeeQueue.Name, reclaimeeQueue.GetRequestableShare(), reclaimeeQueue.GetDeservedShare(),
+			reclaimeeQueue.GetFairShare(), reclaimeeRemainingShare)
+	})
 
 	return FitsMaintainFairShare(reclaimeeQueue, reclaimeeRemainingShare)
 }
@@ -65,13 +69,15 @@ func (gdqs *GuaranteeDeservedQuotaStrategy) Reclaimable(
 	reclaimeeRemainingShare rs.ResourceQuantities) bool {
 	// This strategy allows to reclaim if reclaimer is under deserved quota ("starved") and reclaimer is above quota
 
-	log.InfraLogger.V(6).Infof("Checking if reclaim is possible for reclaimer <%s> and reclaimee <%s> in order to "+
-		"Guarantee deserved quota. "+
-		"Reclaimee requested: <%s>, deserved: <%s>, fairShare: <%s>, reclaimeeRemainingShare: <%s> "+
-		"Reclaimer requested: <%s>, deserved: <%s>, fairShare: <%s>",
-		reclaimerQueue.Name, reclaimeeQueue.Name, reclaimeeQueue.GetRequestableShare(), reclaimeeQueue.GetDeservedShare(),
-		reclaimeeQueue.GetFairShare(), reclaimeeRemainingShare, reclaimerQueue.GetRequestableShare(),
-		reclaimerQueue.GetDeservedShare(), reclaimerQueue.GetFairShare())
+	log.InfraLogger.V(6).Do(func(logger *zap.SugaredLogger) {
+		logger.Infof("Checking if reclaim is possible for reclaimer <%s> and reclaimee <%s> in order to "+
+			"Guarantee deserved quota. "+
+			"Reclaimee requested: <%s>, deserved: <%s>, fairShare: <%s>, reclaimeeRemainingShare: <%s> "+
+			"Reclaimer requested: <%s>, deserved: <%s>, fairShare: <%s>",
+			reclaimerQueue.Name, reclaimeeQueue.Name, reclaimeeQueue.GetRequestableShare(), reclaimeeQueue.GetDeservedShare(),
+			reclaimeeQueue.GetFairShare(), reclaimeeRemainingShare, reclaimerQueue.GetRequestableShare(),
+			reclaimerQueue.GetDeservedShare(), reclaimerQueue.GetFairShare())
+	})
 
 	// reclaimer has to be under (or equal) deserved quota in all resources (cpu, mem, gpu)
 	if !ReclaimerFitsDeservedQuota(reclaimerResources, vectorMap, reclaimerQueue) {

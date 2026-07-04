@@ -43,6 +43,78 @@ func TestReclaimerFitsDeservedQuotaDoesNotAllocate(t *testing.T) {
 	}
 }
 
+func TestMaintainFairShareStrategyDoesNotAllocateWhenVerboseLoggingIsDisabled(t *testing.T) {
+	reclaimerQueue := &rs.QueueAttributes{Name: "reclaimer"}
+	reclaimeeQueue := &rs.QueueAttributes{
+		Name: "reclaimee",
+		QueueResourceShare: rs.QueueResourceShare{
+			CPU: rs.ResourceShare{
+				Deserved:   1,
+				FairShare:  1,
+				MaxAllowed: commonconstants.UnlimitedResourceQuantity,
+			},
+			Memory: rs.ResourceShare{
+				Deserved:   1,
+				FairShare:  1,
+				MaxAllowed: commonconstants.UnlimitedResourceQuantity,
+			},
+			GPU: rs.ResourceShare{
+				Deserved:   1,
+				FairShare:  1,
+				MaxAllowed: commonconstants.UnlimitedResourceQuantity,
+			},
+		},
+	}
+	remaining := rs.NewResourceQuantities(2, 0, 0)
+	strategy := &MaintainFairShareStrategy{}
+	var result bool
+
+	allocations := testing.AllocsPerRun(100, func() {
+		result = strategy.Reclaimable(nil, testVectorMap, reclaimerQueue, reclaimeeQueue, remaining)
+	})
+
+	if !result {
+		t.Fatal("expected maintain-fair-share strategy to allow reclaim")
+	}
+	if allocations != 0 {
+		t.Fatalf("expected zero allocations, got %v", allocations)
+	}
+}
+
+func TestGuaranteeDeservedQuotaStrategyDoesNotAllocateWhenVerboseLoggingIsDisabled(t *testing.T) {
+	reclaimerQueue := &rs.QueueAttributes{
+		Name: "reclaimer",
+		QueueResourceShare: rs.QueueResourceShare{
+			CPU:    rs.ResourceShare{Deserved: 1},
+			Memory: rs.ResourceShare{Deserved: 1},
+			GPU:    rs.ResourceShare{Deserved: 1},
+		},
+	}
+	reclaimeeQueue := &rs.QueueAttributes{
+		Name: "reclaimee",
+		QueueResourceShare: rs.QueueResourceShare{
+			CPU:    rs.ResourceShare{Deserved: 1},
+			Memory: rs.ResourceShare{Deserved: 1},
+			GPU:    rs.ResourceShare{Deserved: 1},
+		},
+	}
+	resources := resource_info.NewResourceVectorWithValues(1, 0, 0, testVectorMap)
+	remaining := rs.NewResourceQuantities(2, 0, 0)
+	strategy := &GuaranteeDeservedQuotaStrategy{}
+	var result bool
+
+	allocations := testing.AllocsPerRun(100, func() {
+		result = strategy.Reclaimable(resources, testVectorMap, reclaimerQueue, reclaimeeQueue, remaining)
+	})
+
+	if !result {
+		t.Fatal("expected guarantee-deserved-quota strategy to allow reclaim")
+	}
+	if allocations != 0 {
+		t.Fatalf("expected zero allocations, got %v", allocations)
+	}
+}
+
 var testVectorMap = resource_info.NewResourceVectorMap()
 
 var _ = Describe("Reclaim strategies", func() {
