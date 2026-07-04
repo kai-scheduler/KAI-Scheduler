@@ -42,12 +42,12 @@
 
 <!-- ── Tab navigation ──────────────────────────────────────────────── -->
 <nav class="tabs">
-  <button class="tab active" data-tab="runs">Test Runs</button>
-  <button class="tab" data-tab="metrics">Metrics</button>
+  <button class="tab" data-tab="runs">Test Runs</button>
+  <button class="tab active" data-tab="metrics">Metrics</button>
 </nav>
 
 <!-- ── Controls (Test Runs tab) ────────────────────────────────────────── -->
-<div class="controls tab-content" data-content="runs">
+<div class="controls tab-content hidden" data-content="runs">
   <div class="search-wrap">
     <svg class="search-icon" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
       <path fill="var(--muted)" d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398l3.85 3.85a1 1 0 0 0 1.415-1.415l-3.868-3.833zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/>
@@ -75,15 +75,15 @@
 </div>
 
 <!-- ── Summary strip ───────────────────────────────────────────────────── -->
-<div class="summary tab-content" data-content="runs" id="summary" aria-live="polite">Loading…</div>
+<div class="summary tab-content hidden" data-content="runs" id="summary" aria-live="polite">Loading…</div>
 
 <!-- ── Run list ────────────────────────────────────────────────────────── -->
-<main id="main" class="tab-content" data-content="runs">
+<main id="main" class="tab-content hidden" data-content="runs">
   <div class="msg"><div class="spinner"></div><br>Fetching scale test results…</div>
 </main>
 
 <!-- ── Metrics view ────────────────────────────────────────────────────── -->
-<main id="metrics-main" class="tab-content hidden" data-content="metrics">
+<main id="metrics-main" class="tab-content" data-content="metrics">
   <div class="metrics-grid" id="metrics-grid"></div>
 </main>
 

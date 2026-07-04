@@ -54,16 +54,17 @@ function createBrowserContext(scalePayload, ginkgoPayload) {
 
   const runsTab = element('runs-tab');
   runsTab.dataset.tab = 'runs';
-  runsTab.classList.add('active');
   const metricsTab = element('metrics-tab');
   metricsTab.dataset.tab = 'metrics';
+  metricsTab.classList.add('active');
   const summary = element('summary');
   summary.dataset.content = 'runs';
+  summary.classList.add('hidden');
   const main = element('main');
   main.dataset.content = 'runs';
+  main.classList.add('hidden');
   const metricsMain = element('metrics-main');
   metricsMain.dataset.content = 'metrics';
-  metricsMain.classList.add('hidden');
 
   ['search', 'sort-dir', 'fp-pass', 'fp-fail', 'fp-skip', 'header-stats', 'metrics-grid'].forEach(element);
 
@@ -118,6 +119,17 @@ async function waitFor(predicate) {
   throw new Error('Dashboard did not finish loading');
 }
 
+test('opens the metrics tab by default', () => {
+  const html = readFileSync(join(__dirname, 'index.html'), 'utf8');
+
+  assert.match(html, /<button class="tab" data-tab="runs">Test Runs<\/button>/);
+  assert.match(html, /<button class="tab active" data-tab="metrics">Metrics<\/button>/);
+  assert.match(html, /<div class="controls tab-content hidden" data-content="runs">/);
+  assert.match(html, /<div class="summary tab-content hidden" data-content="runs" id="summary"/);
+  assert.match(html, /<main id="main" class="tab-content hidden" data-content="runs">/);
+  assert.match(html, /<main id="metrics-main" class="tab-content" data-content="metrics">/);
+});
+
 test('renders both result formats and eleven unified charts', async () => {
   const scalePayload = JSON.parse(readFileSync(join(__dirname, 'example-results.json'), 'utf8'));
   const ginkgoPayload = JSON.parse(readFileSync(join(__dirname, 'example-report.json'), 'utf8'));
@@ -136,7 +148,6 @@ test('renders both result formats and eleven unified charts', async () => {
   assert.doesNotMatch(browser.elements.get('main').innerHTML, /kai_commit_hash/);
   assert.doesNotMatch(browser.elements.get('main').innerHTML, /test_focus/);
 
-  browser.metricsTab.click();
   assert.equal(browser.renderedCharts.length, 11);
   assert.ok(browser.renderedCharts.every(chart => (
     chart.config.options.plugins.migrationLine.timestamp === '2026-06-29T08:42:33Z'
