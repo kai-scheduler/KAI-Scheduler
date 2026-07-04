@@ -19,6 +19,30 @@ func TestReclaimStrategies(t *testing.T) {
 	RunSpecs(t, "Reclaim strategies tests")
 }
 
+func TestReclaimerFitsDeservedQuotaDoesNotAllocate(t *testing.T) {
+	vectorMap := resource_info.NewResourceVectorMap()
+	resources := resource_info.NewResourceVectorWithValues(1, 2, 3, vectorMap)
+	queue := &rs.QueueAttributes{
+		QueueResourceShare: rs.QueueResourceShare{
+			CPU:    rs.ResourceShare{Allocated: 1, Deserved: 2},
+			Memory: rs.ResourceShare{Allocated: 2, Deserved: 4},
+			GPU:    rs.ResourceShare{Allocated: 3, Deserved: 6},
+		},
+	}
+	var result bool
+
+	allocations := testing.AllocsPerRun(100, func() {
+		result = ReclaimerFitsDeservedQuota(resources, vectorMap, queue)
+	})
+
+	if !result {
+		t.Fatal("expected reclaimer to fit deserved quota")
+	}
+	if allocations != 0 {
+		t.Fatalf("expected zero allocations, got %v", allocations)
+	}
+}
+
 var testVectorMap = resource_info.NewResourceVectorMap()
 
 var _ = Describe("Reclaim strategies", func() {

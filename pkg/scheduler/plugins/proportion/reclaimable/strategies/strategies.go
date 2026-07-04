@@ -7,7 +7,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	rs "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/utils"
 )
 
 type MaintainFairShareStrategy struct{}
@@ -89,7 +88,7 @@ func (gdqs *GuaranteeDeservedQuotaStrategy) Reclaimable(
 
 // FitsMaintainFairShare returns true when the reclaimee remains over its allocatable share.
 func FitsMaintainFairShare(reclaimeeQueue *rs.QueueAttributes, reclaimeeRemainingShare rs.ResourceQuantities) bool {
-	return !reclaimeeRemainingShare.LessEqual(reclaimeeQueue.GetAllocatableShare())
+	return !reclaimeeQueue.QuantitiesLessEqualAllocatable(reclaimeeRemainingShare)
 }
 
 // ReclaimerFitsDeservedQuota returns true when adding the reclaimer keeps its queue within deserved quota.
@@ -98,10 +97,7 @@ func ReclaimerFitsDeservedQuota(
 	vectorMap *resource_info.ResourceVectorMap,
 	reclaimerQueue *rs.QueueAttributes,
 ) bool {
-	reclaimerRequestedQuota := reclaimerQueue.GetAllocatedShare()
-	reclaimerRequestedQuota.Add(utils.QuantifyVector(reclaimerResources, vectorMap))
-
-	return reclaimerRequestedQuota.LessEqual(reclaimerQueue.GetDeservedShare())
+	return reclaimerQueue.AllocatedPlusResourcesLessEqualDeserved(reclaimerResources, vectorMap)
 }
 
 // ReclaimeeExceedsDeservedQuota returns true when the reclaimee remains over deserved quota.

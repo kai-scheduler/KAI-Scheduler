@@ -138,14 +138,14 @@ func (pp *proportionPlugin) OnJobSolutionStartFn() {
 
 func (pp *proportionPlugin) CanReclaimResourcesFn(reclaimer *podgroup_info.PodGroupInfo) bool {
 	reclaimerInfo := pp.buildReclaimerInfo(reclaimer, pp.minNodeGPUMemory)
-	return pp.reclaimablePlugin.CanReclaimResources(pp.queues, reclaimerInfo)
+	return pp.reclaimablePlugin.CanReclaimResources(pp.queues, &reclaimerInfo)
 }
 
 func (pp *proportionPlugin) reclaimVictimFilterFn(
 	reclaimer *podgroup_info.PodGroupInfo, victim *podgroup_info.PodGroupInfo,
 ) bool {
 	reclaimerInfo := pp.buildReclaimerInfo(reclaimer, pp.minNodeGPUMemory)
-	return pp.reclaimablePlugin.FilterVictim(pp.queues, reclaimerInfo, victim.Queue)
+	return pp.reclaimablePlugin.FilterVictim(pp.queues, &reclaimerInfo, victim.Queue)
 }
 
 func (pp *proportionPlugin) reclaimableFn(
@@ -166,7 +166,7 @@ func (pp *proportionPlugin) reclaimableFn(
 		)
 	}
 
-	return pp.reclaimablePlugin.Reclaimable(pp.jobSimulationQueues, reclaimerInfo, totalVictimsResources)
+	return pp.reclaimablePlugin.Reclaimable(pp.jobSimulationQueues, &reclaimerInfo, totalVictimsResources)
 }
 
 func (pp *proportionPlugin) getVictimResources(victim *api.VictimInfo) []resource_info.ResourceVector {
@@ -303,8 +303,8 @@ func (pp *proportionPlugin) createQueueAttributes(ssn *framework.Session) {
 	pp.setFairShare()
 }
 
-func (pp *proportionPlugin) buildReclaimerInfo(reclaimer *podgroup_info.PodGroupInfo, minNodeGPUMemory *int64) *rec.ReclaimerInfo {
-	return &rec.ReclaimerInfo{
+func (pp *proportionPlugin) buildReclaimerInfo(reclaimer *podgroup_info.PodGroupInfo, minNodeGPUMemory *int64) rec.ReclaimerInfo {
+	return rec.ReclaimerInfo{
 		Name:          reclaimer.Name,
 		Namespace:     reclaimer.Namespace,
 		Queue:         reclaimer.Queue,
