@@ -94,6 +94,28 @@ test('series identity ignores timing and source but includes details and metadat
   );
 });
 
+test('NCCL series identity ignores completed pods but retains the result in point details', () => {
+  const earlierPayload = structuredClone(payload);
+  const laterPayload = structuredClone(payload);
+  const earlierResult = earlierPayload.results.tests.find(result => result.test_name === 'NCCL Simulation on empty cluster');
+  const laterResult = laterPayload.results.tests.find(result => result.test_name === 'NCCL Simulation on empty cluster');
+  laterResult.details['completed pods'] = earlierResult.details['completed pods'] + 37;
+  laterResult.details['time(seconds)'] = earlierResult.details['time(seconds)'] + 1;
+
+  const earlierRun = loadRun(earlierPayload, { ...meta, timestamp: '2026-07-03T08:39:44Z' });
+  const laterRun = loadRun(laterPayload, { ...meta, timestamp: '2026-07-04T08:39:44Z' });
+  const observations = extractChartObservations([earlierRun, laterRun])
+    .filter(point => point.testId === 'nccl-empty-cluster');
+  const groups = groupCompatibleObservations(observations);
+
+  assert.equal(observations.length, 2);
+  assert.equal(observations[0].seriesKey, observations[1].seriesKey);
+  assert.equal(groups.length, 1);
+  assert.ok(!groups[0].seriesLabel.includes('completed pods'));
+  assert.equal(observations[1].details['completed pods'], laterResult.details['completed pods']);
+  assert.ok(buildTooltipLines(observations[1]).includes(`completed pods: ${laterResult.details['completed pods']}`));
+});
+
 test('groups pending-task results when newer metadata is a compatible superset', () => {
   const currentRun = loadRun(payload, { ...meta, timestamp: '2026-07-03T08:39:44Z' });
   const earlierRun = loadRun(results, { ...meta, timestamp: '2026-07-01T08:38:52Z' });

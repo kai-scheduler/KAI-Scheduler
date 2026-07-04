@@ -82,6 +82,7 @@
     },
     {
       id: 'nccl-empty-cluster', chartId: 'nccl-empty-cluster', timingField: 'time(seconds)',
+      ignoredSeriesFields: ['completed pods'],
       scale: name => name === 'NCCL Simulation on empty cluster',
       legacy: name => /Runs NCCL Simulation on empty cluster/i.test(name),
     },
@@ -147,19 +148,21 @@
     return value;
   }
 
-  function seriesDetails(details, timingField) {
+  function seriesDetails(details, timingField, ignoredFields = []) {
+    const excludedFields = new Set([timingField, ...ignoredFields]);
     return Object.fromEntries(
       Object.entries(details || {})
-        .filter(([key]) => key !== timingField)
+        .filter(([key]) => !excludedFields.has(key))
         .sort(([left], [right]) => left.localeCompare(right))
         .map(([key, value]) => [key, stableValue(value)]),
     );
   }
 
   function buildSeriesIdentity({ testId, timingField, details, metadata }) {
+    const testCase = TEST_CASES.find(candidate => candidate.id === testId);
     return {
       testId,
-      details: seriesDetails(details, timingField),
+      details: seriesDetails(details, timingField, testCase?.ignoredSeriesFields),
       metadata: stableValue(metadata || {}),
     };
   }
@@ -236,7 +239,7 @@
   }
 
   function buildSeriesLabel(testCase, details, metadata) {
-    const dimensions = seriesDetails(details, testCase.timingField);
+    const dimensions = seriesDetails(details, testCase.timingField, testCase.ignoredSeriesFields);
     const suffix = Object.entries(dimensions).map(([key, value]) => `${key}=${formatDetailValue(value)}`).join(' · ');
     const detailsLabel = suffix ? `${testCase.id} · ${suffix}` : testCase.id;
     return `${detailsLabel} · ${metadataLabel(metadata)}`;
