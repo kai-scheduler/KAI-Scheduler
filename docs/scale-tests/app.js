@@ -14,7 +14,7 @@ const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
 // ── State ──────────────────────────────────────────────────────────────────
 
-let allRuns    = [];   // { timestamp, path, suite, specs }[]  (populated progressively)
+let allRuns    = [];
 let sortKey    = 'time';
 let sortAsc    = false;
 let filterPass = true;
@@ -64,6 +64,12 @@ function stateIcon(state) {
   }
 }
 
+function resultState(status) {
+  if (status === 'success') return 'passed';
+  if (status === 'failure') return 'failed';
+  return 'skipped';
+}
+
 function badgeHtml(state) {
   const cls = state === 'passed' ? 'pass' : state === 'failed' ? 'fail' : 'skip';
   return `<span class="badge badge-${cls}">${stateIcon(state)} ${esc(state)}</span>`;
@@ -97,6 +103,25 @@ function specVisible(spec) {
   if (!filterSkip && (spec.State === 'skipped' || spec.State === 'pending')) return false;
   if (searchQuery && !specSearchable(spec).includes(searchQuery.toLowerCase())) return false;
   return true;
+}
+
+function scaleResultVisible(result) {
+  return ScaleTestResultsView.isResultVisible(result, {
+    pass: filterPass,
+    fail: filterFail,
+    skip: filterSkip,
+    query: searchQuery,
+  });
+}
+
+function ginkgoSuite(run) {
+  return ScaleTestResults.getGinkgoSuite(run) || {};
+}
+
+function ginkgoSpecs(run) {
+  return (ginkgoSuite(run).SpecReports || []).filter(
+    spec => spec.LeafNodeType === 'It' || spec.State === 'failed',
+  );
 }
 
 // ── Rendering ──────────────────────────────────────────────────────────────
@@ -228,6 +253,58 @@ function renderSuiteMeta(suite) {
     </div>`;
 }
 
+function renderScaleResult(result) {
+  if (!scaleResultVisible(result)) return '';
+
+  const testCase = ScaleTestMetrics.resolveTestCase('scale-results', result.test_name);
+  const timingField = testCase?.timingField;
+  const details = ScaleTestResultsView.detailEntries(result.details);
+  const timingValue = timingField && result.details && Object.hasOwn(result.details, timingField)
+    ? result.details[timingField]
+    : null;
+  const remaining = details.filter(([key]) => key !== timingField);
+  const detailHtml = remaining.map(([key, value]) => `
+    <div class="result-detail">
+      <span class="result-detail-key">${esc(key)}</span>
+      <span class="result-detail-value">${esc(value)}</span>
+    </div>`).join('');
+  const state = resultState(result.status);
+
+  return `
+    <div class="spec-row result-row">
+      <div class="spec-state-icon">${stateIcon(state)}</div>
+      <div class="spec-body">
+        <div class="spec-leaf${state === 'failed' ? ' c-fail' : ''}">${esc(result.test_name || 'Unnamed test')}</div>
+        <div class="result-overview">
+          ${timingValue !== null ? `
+            <div class="result-primary">
+              <span class="result-primary-label">${esc(timingField)}</span>
+              <strong>${esc(timingValue)}</strong>
+            </div>` : ''}
+          ${detailHtml ? `<div class="result-details">${detailHtml}</div>` : ''}
+        </div>
+      </div>
+      ${badgeHtml(state)}
+    </div>`;
+}
+
+function sortedScaleResults(results) {
+  const copy = [...results];
+  if (sortKey === 'name') {
+    copy.sort((left, right) => {
+      const diff = (left.test_name || '').localeCompare(right.test_name || '');
+      return sortAsc ? diff : -diff;
+    });
+  } else if (sortKey === 'status') {
+    copy.sort((left, right) => {
+      const order = { failure: 0, success: 1 };
+      const diff = (order[left.status] ?? 2) - (order[right.status] ?? 2);
+      return sortAsc ? -diff : diff;
+    });
+  }
+  return copy;
+}
+
 // ── Sorting ────────────────────────────────────────────────────────────────
 
 function sortedSpecs(specs) {
@@ -252,19 +329,21 @@ function sortedRuns() {
   const copy = [...allRuns];
   if (sortKey === 'time') {
     copy.sort((a, b) => {
-      const diff = new Date(a.timestamp) - new Date(b.timestamp);
+      const diff = new Date(a.meta.timestamp) - new Date(b.meta.timestamp);
       return sortAsc ? diff : -diff;
     });
   } else if (sortKey === 'status') {
     copy.sort((a, b) => {
-      const af   = a.specs.some(s => s.State === 'failed') ? 0 : 1;
-      const bf   = b.specs.some(s => s.State === 'failed') ? 0 : 1;
+      const af = ScaleTestResultsView.summarizeRun(a).failed > 0 ? 0 : 1;
+      const bf = ScaleTestResultsView.summarizeRun(b).failed > 0 ? 0 : 1;
       const diff = af - bf;
       return sortAsc ? -diff : diff;
     });
   } else if (sortKey === 'name') {
     copy.sort((a, b) => {
-      const diff = (a.suite?.SuiteDescription || '').localeCompare(b.suite?.SuiteDescription || '');
+      const aName = a.kind === 'scale-results' ? 'Scale Results' : ginkgoSuite(a).SuiteDescription || 'Scale Suite';
+      const bName = b.kind === 'scale-results' ? 'Scale Results' : ginkgoSuite(b).SuiteDescription || 'Scale Suite';
+      const diff = aName.localeCompare(bName);
       return sortAsc ? diff : -diff;
     });
   }
@@ -273,57 +352,110 @@ function sortedRuns() {
 
 // ── Run card ───────────────────────────────────────────────────────────────
 
-function renderRun(run, runIdx) {
-  const specs    = sortedSpecs(run.specs);
-  const specHtml = specs.map(renderSpec).join('');
-  if (!specHtml) return '';
-
-  const tsStr  = fmtDate(run.timestamp);
-  const commit = run.commit;
-  const commitHtml = commit
+function renderCommit(commit) {
+  return commit
     ? `<a href="https://github.com/kai-scheduler/KAI-Scheduler/commit/${esc(commit)}"
-         target="_blank"
-         class="commit-link"
+         target="_blank" rel="noreferrer" class="commit-link"
          title="${esc(commit)}">${esc(commit.substring(0, 8))}</a>`
     : '<span class="commit-na">N/A</span>';
-  const passed  = run.specs.filter(s => s.State === 'passed').length;
-  const failed  = run.specs.filter(s => s.State === 'failed').length;
-  const skipped = run.specs.filter(s => s.State === 'skipped' || s.State === 'pending').length;
-  const overall = failed > 0 ? 'failed' : 'passed';
-  const autoOpen = searchQuery.length > 0 || failed > 0;
-  const runId  = `run-${runIdx}`;
+}
 
-  return `
-    <div class="run-card${autoOpen ? ' open' : ''}" id="${runId}">
+function renderRunHeader(run, runIdx, title, duration, summary) {
+  const overall = summary.failed > 0 ? 'failed' : 'passed';
+  const autoOpen = searchQuery.length > 0 || summary.failed > 0;
+  const runId = `run-${runIdx}`;
+  const source = run.kind === 'scale-results' ? 'results' : 'legacy Ginkgo';
+
+  return {
+    autoOpen,
+    runId,
+    html: `
       <div class="run-header" onclick="toggleRun('${runId}')" role="button" tabindex="0"
            aria-expanded="${autoOpen}" onkeydown="if(event.key==='Enter'||event.key===' ')toggleRun('${runId}')">
         <span class="chevron" aria-hidden="true">▶</span>
-        <span class="run-ts">${esc(tsStr)}</span>
-        <span class="commit-display">${commitHtml}</span>
-        <span class="run-desc">${esc(run.suite?.SuiteDescription || 'Scale Suite')}</span>
-        <span class="run-dur">${esc(nsToHuman(run.suite?.RunTime))}</span>
+        <span class="run-ts">${esc(fmtDate(run.meta.timestamp))}</span>
+        <span class="commit-display">${renderCommit(run.meta.commit)}</span>
+        <span class="source-badge source-${run.kind === 'scale-results' ? 'results' : 'legacy'}">${source}</span>
+        <span class="run-desc">${esc(title)}</span>
+        <span class="run-dur">${esc(duration)}</span>
         <div class="run-counts">
-          ${passed  > 0 ? `<span class="c-pass">✓ ${passed}</span>`  : ''}
-          ${failed  > 0 ? `<span class="c-fail">✗ ${failed}</span>`  : ''}
-          ${skipped > 0 ? `<span class="c-skip">— ${skipped}</span>` : ''}
+          ${summary.passed > 0 ? `<span class="c-pass">✓ ${summary.passed}</span>` : ''}
+          ${summary.failed > 0 ? `<span class="c-fail">✗ ${summary.failed}</span>` : ''}
+          ${summary.skipped > 0 ? `<span class="c-skip">— ${summary.skipped}</span>` : ''}
           ${badgeHtml(overall)}
         </div>
-      </div>
+      </div>`,
+  };
+}
+
+function renderGinkgoRun(run, runIdx) {
+  const suite = ginkgoSuite(run);
+  const specs = sortedSpecs(ginkgoSpecs(run));
+  const specHtml = specs.map(renderSpec).join('');
+  if (!specHtml) return '';
+
+  const summary = ScaleTestResultsView.summarizeRun(run);
+  const header = renderRunHeader(run, runIdx, suite.SuiteDescription || 'Scale Suite', nsToHuman(suite.RunTime), summary);
+
+  return `
+    <div class="run-card${header.autoOpen ? ' open' : ''}" id="${header.runId}">
+      ${header.html}
       <div class="run-body">
-        ${renderSuiteMeta(run.suite || {})}
+        ${renderSuiteMeta(suite)}
         <div class="specs-container">${specHtml}</div>
       </div>
     </div>`;
 }
 
+function renderScaleRun(run, runIdx) {
+  const results = sortedScaleResults(run.result.tests || []);
+  const resultHtml = results.map(renderScaleResult).join('');
+  if (!resultHtml) return '';
+
+  const summary = ScaleTestResultsView.summarizeRun(run);
+  const header = renderRunHeader(run, runIdx, 'Scale Results', '—', summary);
+  const mismatch = summary.mismatch ? `
+    <span class="suite-warn">Top-level status ${esc(run.result.status)} disagrees with test results</span>` : '';
+  const metadata = ScaleTestResultsView.detailEntries(run.metadata);
+  const metadataHtml = metadata.map(([key, value]) => `
+    <div class="result-detail">
+      <span class="result-detail-key">${esc(key)}</span>
+      <span class="result-detail-value">${esc(value)}</span>
+    </div>`).join('');
+
+  return `
+    <div class="run-card${header.autoOpen ? ' open' : ''}" id="${header.runId}">
+      ${header.html}
+      <div class="run-body">
+        <div class="suite-meta">
+          <span>Result status: <strong>${esc(run.result.status)}</strong></span>
+          <span>Tests: <strong>${summary.total}</strong></span>
+          ${mismatch}
+        </div>
+        ${metadataHtml ? `
+          <div class="run-metadata">
+            <div class="detail-title">Run metadata</div>
+            <div class="result-details">${metadataHtml}</div>
+          </div>` : ''}
+        <div class="specs-container">${resultHtml}</div>
+      </div>
+    </div>`;
+}
+
+function renderRun(run, runIdx) {
+  return run.kind === 'scale-results' ? renderScaleRun(run, runIdx) : renderGinkgoRun(run, runIdx);
+}
+
 // ── Page render ────────────────────────────────────────────────────────────
 
 function renderAll() {
-  const sorted  = sortedRuns();
-  const visible = sorted.filter(r => r.specs.some(specVisible));
+  const sorted = sortedRuns();
+  const visible = sorted.filter(run => run.kind === 'scale-results'
+    ? run.result.tests.some(scaleResultVisible)
+    : ginkgoSpecs(run).some(specVisible));
 
-  const totalRuns  = allRuns.length;
-  const passedRuns = allRuns.filter(r => !r.specs.some(s => s.State === 'failed')).length;
+  const totalRuns = allRuns.length;
+  const passedRuns = allRuns.filter(run => ScaleTestResultsView.summarizeRun(run).failed === 0).length;
   const failedRuns = totalRuns - passedRuns;
   document.getElementById('header-stats').innerHTML = `
     <div class="header-stat">
@@ -339,10 +471,10 @@ function renderAll() {
       with failures
     </div>` : ''}`;
 
-  const totalSpecs = allRuns.reduce((n, r) => n + r.specs.length, 0);
+  const totalSpecs = allRuns.reduce((count, run) => count + ScaleTestResultsView.summarizeRun(run).total, 0);
   document.getElementById('summary').innerHTML =
     `Showing <strong>${visible.length}</strong> of <strong>${totalRuns}</strong> runs
-     &nbsp;·&nbsp; <strong>${totalSpecs}</strong> total specs
+     &nbsp;·&nbsp; <strong>${totalSpecs}</strong> total tests
      ${searchQuery ? `&nbsp;·&nbsp; filtering by <strong>"${esc(searchQuery)}"</strong>` : ''}`;
 
   const html = visible.map((r, i) => renderRun(r, i)).join('');
@@ -372,21 +504,10 @@ async function loadManifest() {
   return res.json();
 }
 
-async function loadReport(path) {
+async function loadResult(path) {
   const res = await fetch(`${S3_BASE_URL}/${path}`, { cache: 'no-cache' });
   if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`);
   return res.json();
-}
-
-function processReport(reportJson, meta) {
-  // ginkgo --json-report produces an array of Report objects
-  const reports = Array.isArray(reportJson) ? reportJson : [reportJson];
-  const suite   = reports[0] || {};
-  // Show "It" specs plus any non-It nodes that failed (e.g. BeforeAll failures)
-  const specs   = (suite.SpecReports || []).filter(
-    s => s.LeafNodeType === 'It' || s.State === 'failed'
-  );
-  return { timestamp: meta.timestamp, path: meta.path, commit: meta.commit, suite, specs };
 }
 
 async function init() {
@@ -406,19 +527,23 @@ async function init() {
       return;
     }
 
-    // Fetch reports in batches and render progressively
+    // Fetch results in batches and render progressively.
     const BATCH = 5;
     for (let i = 0; i < recent.length; i += BATCH) {
       const batch   = recent.slice(i, i + BATCH);
-      const results = await Promise.allSettled(batch.map(r => loadReport(r.path)));
+      const results = await Promise.allSettled(batch.map(r => loadResult(r.path)));
       results.forEach((result, j) => {
         if (result.status === 'fulfilled') {
-          allRuns.push(processReport(result.value, batch[j]));
+          try {
+            allRuns.push(ScaleTestResults.loadRun(result.value, batch[j]));
+          } catch (error) {
+            console.warn('[scale-tests] Failed to parse result:', batch[j].path, error);
+          }
         } else {
-          console.warn('[scale-tests] Failed to load report:', batch[j].path, result.reason);
+          console.warn('[scale-tests] Failed to load result:', batch[j].path, result.reason);
         }
       });
-      window.allRuns = allRuns;  // Export for metrics.js
+      window.allRuns = allRuns;
       renderAll();
     }
 

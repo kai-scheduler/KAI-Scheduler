@@ -1,0 +1,190 @@
+{
+  "metadata": {
+    "kai_scheduler_ref": "main",
+    "kai_commit_hash": "ab86e6c0426d4180767e33ca2553fd265d71c5ba",
+    "kwok_node_count": 500,
+    "cluster_node_count": 5,
+    "test_focus": "",
+    "timestamp": "2026-07-03T08:39:43Z",
+    "service_resources": {
+      "scheduler": {
+        "limits": {
+          "cpu": "5",
+          "memory": "7Gi"
+        },
+        "requests": {
+          "cpu": "3",
+          "memory": "7Gi"
+        }
+      },
+      "binder": {
+        "limits": {
+          "cpu": "400m",
+          "memory": "2500Mi"
+        },
+        "requests": {
+          "cpu": "100m",
+          "memory": "2500Mi"
+        }
+      },
+      "podGroupController": {
+        "limits": {
+          "cpu": "200m",
+          "memory": "8000Mi"
+        },
+        "requests": {
+          "cpu": "50m",
+          "memory": "8000Mi"
+        }
+      },
+      "queueController": {
+        "limits": {
+          "cpu": "200m",
+          "memory": "200Mi"
+        },
+        "requests": {
+          "cpu": "50m",
+          "memory": "200Mi"
+        }
+      },
+      "podGrouper": {
+        "limits": {
+          "cpu": "200m",
+          "memory": "2000Mi"
+        },
+        "requests": {
+          "cpu": "50m",
+          "memory": "2000Mi"
+        }
+      }
+    }
+  },
+  "results": {
+    "status": "success",
+    "tests": [
+      {
+        "test_name": "Allocate with preferred topology",
+        "status": "success",
+        "details": {
+          "distributed jobs": 1,
+          "nodes": 512,
+          "pods": 512,
+          "time": "48.722995576s"
+        }
+      },
+      {
+        "test_name": "Allocate without preferred topology",
+        "status": "success",
+        "details": {
+          "distributed jobs": 1,
+          "nodes": 512,
+          "pods": 512,
+          "time": "49.426854935s"
+        }
+      },
+      {
+        "test_name": "Fill Cluster with single GPU Jobs",
+        "status": "success",
+        "details": {
+          "jobs": 4000,
+          "nodes": 500,
+          "time": "6m37.770565662s"
+        }
+      },
+      {
+        "test_name": "Fill Cluster with single GPU Jobs - scheduler is running while submitting jobs",
+        "status": "success",
+        "details": {
+          "jobs": 4000,
+          "nodes": 500,
+          "time": "7m40.527539676s"
+        }
+      },
+      {
+        "test_name": "Fill Cluster with single GPU Jobs with 400 pending tasks in background",
+        "status": "success",
+        "details": {
+          "jobs": 4000,
+          "nodes": 500,
+          "time": "6m38.070285147s"
+        }
+      },
+      {
+        "test_name": "Average time to unschedulable for distributed job",
+        "status": "success",
+        "details": {
+          "average time to unschedulable (seconds)": 249.5,
+          "nodes": 500,
+          "pods": 10,
+          "total requested gpus": 80
+        }
+      },
+      {
+        "test_name": "Reclaim time for one very large job",
+        "status": "success",
+        "details": {
+          "number of pods": 250,
+          "time to reclaim (seconds)": 102,
+          "total requested gpus": 2000
+        }
+      },
+      {
+        "test_name": "Measuring reclaim time for single GPU",
+        "status": "success",
+        "details": {
+          "average time to reclaim single GPU (seconds)": 13.9281538813,
+          "running jobs": 4000
+        }
+      },
+      {
+        "test_name": "Reclaim 4000 single GPU Jobs",
+        "status": "success",
+        "details": {
+          "jobs": 4000,
+          "nodes": 500,
+          "time": "11m34.491068786s"
+        }
+      },
+      {
+        "test_name": "Multi Node Reclaim for distributed jobs",
+        "status": "success",
+        "details": {
+          "distributed jobs": 50,
+          "nodes": 500,
+          "pods": 500,
+          "time": "11m56.874118188s"
+        }
+      },
+      {
+        "test_name": "Consolidation to run multiple distributed jobs",
+        "status": "success",
+        "details": {
+          "distributed jobs": 41,
+          "nodes": 500,
+          "pods": 410,
+          "time": "7m35.679944886s"
+        }
+      },
+      {
+        "test_name": "Reclaim time for one very large job",
+        "status": "success",
+        "details": {
+          "number of pods": 500,
+          "time to reclaim (seconds)": 85,
+          "total requested gpus": 4000
+        }
+      },
+      {
+        "test_name": "NCCL Simulation on empty cluster",
+        "status": "success",
+        "details": {
+          "completed pods": 12651,
+          "nodes": 500,
+          "pending pods": 0,
+          "time(seconds)": 5098.691694779,
+          "total pods": 45990
+        }
+      }
+    ]
+  }
+}

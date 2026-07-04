@@ -14,12 +14,19 @@
 #
 # S3 bucket layout:
 #   Public/manifest.json                   — index of all runs
-#   Public/<run-id>/report.json            — ginkgo --json-report output for that run
+#   Public/<run-id>/results.json           — test/e2e/scale result for that run
+#
+# Legacy Ginkgo report objects are supported until 2026-07-30. The manifest
+# contract does not change; the dashboard detects the payload at each run path.
 #
 # manifest.json format:
 #   {
 #     "runs": [
-#       { "timestamp": "2024-01-15T10:00:00Z", "path": "Public/<run-id>/report.json" }
+#       {
+#         "timestamp": "2026-06-29T08:42:33Z",
+#         "path": "Public/<run-id>/results.json",
+#         "commit": "aa514fc997453d075067e4aceae9319909c92ed6"
+#       }
 #     ]
 #   }
 
@@ -48,6 +55,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+
+      - name: Test dashboard
+        run: node --test docs/scale-tests/*.test.js
 
       - name: Inject S3 base URL
         env:
