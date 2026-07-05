@@ -86,6 +86,11 @@ fi
 
 echo "Running gitops tests..."
 export GITOPS_CHART_VERSION=$PACKAGE_VERSION
+# Locally-built images live in the in-cluster registry; released images are
+# pulled from the chart's default (release) registry.
+if [ "$LOCAL_IMAGES_BUILD" = "true" ]; then
+    export GITOPS_KAI_REGISTRY=localhost:30100
+fi
 ${GOBIN}/ginkgo -r --keep-going --trace -vv --label-filter 'gitops' ${REPO_ROOT}/test/e2e/suites/gitops
 
 # Cleanup

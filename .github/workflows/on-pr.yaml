@@ -72,26 +72,40 @@ jobs:
           set -euo pipefail
           CHART=./deployments/kai-scheduler
 
+          # set -e ignores a failing `! cmd`, so absence is asserted with an
+          # explicit if/exit instead of negated pipelines.
+          assert_absent() {
+            if grep -q "$1" <<< "$2"; then
+              echo "FAIL: found '$1' in the $3 render" >&2
+              exit 1
+            fi
+          }
+
           # default: deployer hook present, no Config document in the release
           DEFAULT=$(helm template kai-scheduler "$CHART")
-          echo "$DEFAULT" | grep -q "name: kai-config-deployer"
-          ! echo "$DEFAULT" | grep -q "^kind: Config$"
+          grep -q "name: kai-config-deployer" <<< "$DEFAULT"
+          assert_absent "^kind: Config$" "$DEFAULT" "default"
 
           # gitops mode: exactly one complete Config document, no deployer resources
           GITOPS=$(helm template kai-scheduler "$CHART" --set kaiConfigDeployer.enabled=false --set kaiConfig.render=true)
-          [ "$(echo "$GITOPS" | grep -c "^kind: Config$")" = "1" ]
-          # the Config document renders apiVersion on its own line (the
-          # SchedulingShard shares this apiVersion, hence the -A1 pairing)
-          echo "$GITOPS" | grep -A1 "^apiVersion: kai.scheduler/v1$" | grep -q "^kind: Config$"
-          ! echo "$GITOPS" | grep -q "name: kai-config-deployer"
+          [ "$(grep -c "^kind: Config$" <<< "$GITOPS")" = "1" ]
+          assert_absent "name: kai-config-deployer" "$GITOPS" "gitops"
+          # apiVersion must render on its own line (guards the license-comment
+          # newline-chomping regression); isolate the Config document to check
+          CONFIG_DOC=$(helm template kai-scheduler "$CHART" --set kaiConfigDeployer.enabled=false --set kaiConfig.render=true --show-only templates/kai-config.yaml)
+          grep -q "^apiVersion: kai.scheduler/v1$" <<< "$CONFIG_DOC"
+          grep -q "^kind: Config$" <<< "$CONFIG_DOC"
 
           # external management: neither
           NONE=$(helm template kai-scheduler "$CHART" --set kaiConfigDeployer.enabled=false --set kaiConfig.render=false)
-          ! echo "$NONE" | grep -q "^kind: Config$"
-          ! echo "$NONE" | grep -q "name: kai-config-deployer"
+          assert_absent "^kind: Config$" "$NONE" "external-management"
+          assert_absent "name: kai-config-deployer" "$NONE" "external-management"
 
           # mutually exclusive flags: rendering must fail
-          ! helm template kai-scheduler "$CHART" --set kaiConfigDeployer.enabled=true --set kaiConfig.render=true
+          if helm template kai-scheduler "$CHART" --set kaiConfigDeployer.enabled=true --set kaiConfig.render=true > /dev/null 2>&1; then
+            echo "FAIL: rendering must fail when kaiConfigDeployer.enabled and kaiConfig.render are both set" >&2
+            exit 1
+          fi
 
       - name: Archive code coverage results
         uses: actions/upload-artifact@v7
@@ -397,13 +411,17 @@ jobs:
       - name: Run gitops e2e tests
         env:
           GITOPS_CHART_VERSION: ${{ needs.build.outputs.package_version }}
+          # CI images are pushed to the in-cluster registry by setup-e2e-cluster
+          GITOPS_KAI_REGISTRY: localhost:30100
         run: |
           ginkgo -r --keep-going --trace -vv --label-filter 'gitops' --output-dir=. --json-report=e2e-gitops-report.json ./test/e2e/suites/gitops
 
   cleanup-images-cache:
     name: Cleanup Images Cache
     needs: [ e2e-tests, e2e-upgrade-tests, e2e-gitops-tests, check-build-and-test-required ]
-    if: always() && needs.check-build-and-test-required.outputs.code == 'true'
+    # No always(): a failed e2e job must keep the cache so "Re-run failed
+    # jobs" can restore images; stale entries fall to GitHub cache eviction.
+    if: success() && needs.check-build-and-test-required.outputs.code == 'true'
     runs-on: ubuntu-latest
     permissions:
       actions: write

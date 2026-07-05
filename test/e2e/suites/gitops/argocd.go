@@ -6,9 +6,7 @@ package gitops
 
 import (
 	"context"
-	"fmt"
 	"os"
-	"strings"
 	"time"
 
 	. "github.com/onsi/gomega"
@@ -16,7 +14,6 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/tools/clientcmd"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -39,27 +36,18 @@ var applicationGVK = schema.GroupVersionKind{
 	Kind:    "Application",
 }
 
-// newRawClient builds a controller-runtime client independent of
-// testcontext.GetConnectivity, whose preflight lists Queues and therefore
-// fails before the Application has installed the KAI CRDs.
-func newRawClient() runtimeClient.Client {
-	kubeconfig := os.Getenv("KUBECONFIG")
-	if kubeconfig == "" {
-		kubeconfig = fmt.Sprintf("%s/.kube/config", os.Getenv("HOME"))
-	}
-	kubeconfig = strings.Split(kubeconfig, ":")[0]
-
-	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
-	Expect(err).NotTo(HaveOccurred(), "failed to load kubeconfig")
-
-	c, err := runtimeClient.New(config, runtimeClient.Options{})
-	Expect(err).NotTo(HaveOccurred(), "failed to create client")
-	return c
-}
-
 // kaiApplication mirrors the Application example in docs/gitops/README.md,
-// plus e2e-cluster values (local registry, gpu sharing, prometheus).
+// plus e2e-cluster values (gpu sharing, prometheus). GITOPS_KAI_REGISTRY
+// overrides the chart's image registry when the images were loaded into the
+// in-cluster registry (CI, local --local-images-build runs); when unset the
+// chart default (the release registry) is used.
 func kaiApplication(chartVersion string) *unstructured.Unstructured {
+	global := map[string]interface{}{
+		"gpuSharing": true,
+	}
+	if registry := os.Getenv("GITOPS_KAI_REGISTRY"); registry != "" {
+		global["registry"] = registry
+	}
 	app := &unstructured.Unstructured{
 		Object: map[string]interface{}{
 			"metadata": map[string]interface{}{
@@ -77,11 +65,8 @@ func kaiApplication(chartVersion string) *unstructured.Unstructured {
 						"valuesObject": map[string]interface{}{
 							"kaiConfigDeployer": map[string]interface{}{"enabled": false},
 							"kaiConfig":         map[string]interface{}{"render": true},
-							"global": map[string]interface{}{
-								"registry":   "localhost:30100",
-								"gpuSharing": true,
-							},
-							"prometheus": map[string]interface{}{"enabled": true},
+							"global":            global,
+							"prometheus":        map[string]interface{}{"enabled": true},
 						},
 					},
 				},

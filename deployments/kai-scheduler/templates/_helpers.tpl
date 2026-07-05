@@ -11,6 +11,19 @@ true
 {{- end -}}
 
 {{/*
+Annotations shared by the post-delete cleanup Job and its ServiceAccount and
+RBAC resources. PostDelete requires ArgoCD >= 2.10; without the
+argocd.argoproj.io annotations ArgoCD treats Helm hook resources as regular
+sync-phase resources.
+*/}}
+{{- define "kai-scheduler.post-delete-hook-annotations" -}}
+"helm.sh/hook": post-delete
+"helm.sh/hook-delete-policy": hook-succeeded
+argocd.argoproj.io/hook: PostDelete
+argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+{{- end -}}
+
+{{/*
 Renders the kai-config Config CR. Used by the kai-config-deployer hook
 ConfigMap so the operator's input config can be applied via kubectl
 out-of-band of the Helm release, and rendered inline as a release resource

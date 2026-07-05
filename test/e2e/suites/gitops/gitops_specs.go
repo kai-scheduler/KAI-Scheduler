@@ -42,6 +42,12 @@ const (
 	// Application deletion prunes all resources and runs the PostDelete
 	// cleanup hook before the finalizer is removed.
 	uninstallTimeout = 10 * time.Minute
+	// Fail-safe deadline for AfterAll's leftover-Application cleanup,
+	// deliberately shorter than uninstallTimeout: it only runs after a
+	// failed spec, the cluster is about to be discarded, and a stuck
+	// deletion is force-unblocked rather than waited out (a re-created
+	// Application converges any half-pruned leftovers).
+	cleanupForceStripTimeout = 3 * time.Minute
 )
 
 func DescribeGitOpsSpecs() bool {
@@ -56,10 +62,10 @@ func DescribeGitOpsSpecs() bool {
 			Expect(chartVersion).NotTo(BeEmpty(),
 				"GITOPS_CHART_VERSION environment variable must be set to the chart version served by the in-cluster chart repo")
 
-			// testcontext.GetConnectivity is deferred until after the first
-			// sync: its preflight lists Queues, whose CRD is installed by the
-			// Application itself.
-			rawClient = newRawClient()
+			// GetConnectivity works before the Application installs the KAI
+			// CRDs: its preflight treats a missing Queue CRD as proof of a
+			// clean test cluster.
+			rawClient = testcontext.GetConnectivity(ctx, Default).ControllerClient
 
 			By("Creating the ArgoCD Application for the KAI chart in GitOps mode")
 			err := rawClient.Create(ctx, kaiApplication(chartVersion))
@@ -83,7 +89,7 @@ func DescribeGitOpsSpecs() bool {
 				_, err := getApplication(ctx, rawClient)
 				return errors.IsNotFound(err)
 			}
-			deadline := time.Now().Add(selfHealDetectTimeout)
+			deadline := time.Now().Add(cleanupForceStripTimeout)
 			for !appGone() && time.Now().Before(deadline) {
 				time.Sleep(statusPollInterval)
 			}
