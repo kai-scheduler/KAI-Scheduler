@@ -25,7 +25,7 @@ else
 DOCKER_BUILD_ADDITIONAL_ARGS=--target prod
 endif
 
-DOCKER_BUILDX_ADDITIONAL_ARGS=
+DOCKER_BUILDX_ADDITIONAL_ARGS?=
 
 ################### OS DEPENDENCY ##########################
 # Build the project
