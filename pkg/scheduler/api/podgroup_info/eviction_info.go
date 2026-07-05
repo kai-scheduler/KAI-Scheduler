@@ -29,8 +29,16 @@ func GetTasksToEvict(job *PodGroupInfo, subGroupOrderFn, taskOrderFn common_info
 		}
 	}
 
-	tasks := collectTasksToEvictFromSubGroupSet(root, reverseSubGroupOrderFn, reverseTaskOrderFn)
+	// Semi-preemptible jobs are non-preemptible up to their minimal satisfying set: only the elastic
+	// surplus may ever be evicted. Skipping the phase-3 full-eviction fallback guarantees the core
+	// (minSubGroup children + minMember pods) is never offered as a victim. The empty-result guard
+	// avoids re-queuing a core-only job, which the scenario builder would otherwise re-push forever.
+	if job.IsSemiPreemptibleJob() {
+		tasks := collectElasticEvictionFromSubGroupSet(root, reverseSubGroupOrderFn, reverseTaskOrderFn)
+		return tasks, len(tasks) > 0 && len(tasks) < job.GetActiveAllocatedTasksCount()
+	}
 
+	tasks := collectTasksToEvictFromSubGroupSet(root, reverseSubGroupOrderFn, reverseTaskOrderFn)
 	jobHasMoreActiveTasksAfterEviction := len(tasks) < job.GetActiveAllocatedTasksCount()
 	return tasks, jobHasMoreActiveTasksAfterEviction
 }

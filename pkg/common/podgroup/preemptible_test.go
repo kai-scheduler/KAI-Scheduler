@@ -83,6 +83,13 @@ func TestCalculatePreemptibility(t *testing.T) {
 			expectedResult: v2alpha2.Preemptible,
 			expectedError:  false,
 		},
+		{
+			name:           "explicitly semi-preemptible passes through regardless of priority",
+			preemptibility: v2alpha2.SemiPreemptible,
+			priority:       1000,
+			expectedResult: v2alpha2.SemiPreemptible,
+			expectedError:  false,
+		},
 	}
 
 	for _, tt := range tests {

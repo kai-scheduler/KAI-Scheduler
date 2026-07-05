@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Semi-Preemptible PodGroups — KAI Scheduler</title>
+<style>
+  :root {
+    --bg: #0b0f0c;
+    --bg-soft: #11161300;
+    --panel: #141a16;
+    --panel-2: #1a221c;
+    --ink: #e9f1ea;
+    --muted: #9bb0a0;
+    --line: #243029;
+    --green: #76b900;        /* NVIDIA green */
+    --green-soft: #a6e22e;
+    --amber: #f5a623;
+    --amber-soft: #ffca6b;
+    --blue: #5cc8ff;
+    --radius: 14px;
+    --maxw: 1080px;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background:
+      radial-gradient(1200px 600px at 80% -10%, rgba(118,185,0,0.12), transparent 60%),
+      radial-gradient(900px 500px at -10% 10%, rgba(92,200,255,0.08), transparent 55%),
+      var(--bg);
+    color: var(--ink);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  code, .mono { font-family: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace; }
+  code {
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    padding: 0.08em 0.4em;
+    border-radius: 6px;
+    font-size: 0.86em;
+    color: var(--green-soft);
+  }
+  a { color: var(--green-soft); text-decoration: none; }
+
+  /* ---- top nav ---- */
+  nav {
+    position: sticky; top: 0; z-index: 50;
+    backdrop-filter: blur(10px);
+    background: rgba(11,15,12,0.72);
+    border-bottom: 1px solid var(--line);
+  }
+  nav .wrap {
+    max-width: var(--maxw); margin: 0 auto; padding: 14px 24px;
+    display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+  }
+  nav .brand { font-weight: 800; letter-spacing: 0.3px; }
+  nav .brand .dot { color: var(--green); }
+  nav .links { display: flex; gap: 18px; margin-left: auto; flex-wrap: wrap; }
+  nav .links a { color: var(--muted); font-size: 0.92rem; font-weight: 600; }
+  nav .links a:hover { color: var(--ink); }
+
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
+
+  /* ---- hero ---- */
+  header.hero { padding: 80px 0 48px; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 8px;
+    border: 1px solid var(--line); background: var(--panel);
+    color: var(--muted); font-size: 0.8rem; font-weight: 700;
+    padding: 6px 14px; border-radius: 999px; letter-spacing: 0.4px;
+    text-transform: uppercase;
+  }
+  .pill .blip { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 12px var(--green); }
+  h1 {
+    font-size: clamp(2.4rem, 5vw, 3.8rem);
+    line-height: 1.05; margin: 22px 0 10px; font-weight: 850; letter-spacing: -1px;
+  }
+  h1 .grad {
+    background: linear-gradient(100deg, var(--green-soft), var(--blue));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .lede { font-size: clamp(1.05rem, 2vw, 1.3rem); color: var(--muted); max-width: 680px; }
+  .lede strong { color: var(--ink); font-weight: 700; }
+
+  /* ---- sections ---- */
+  section { padding: 46px 0; border-top: 1px solid var(--line); }
+  .eyebrow { color: var(--green); font-weight: 800; font-size: 0.8rem; letter-spacing: 1.4px; text-transform: uppercase; }
+  h2 { font-size: clamp(1.6rem, 3vw, 2.2rem); margin: 8px 0 6px; letter-spacing: -0.5px; }
+  h3 { font-size: 1.15rem; margin: 0 0 6px; }
+  p.sub { color: var(--muted); max-width: 720px; margin-top: 0; }
+
+  .grid { display: grid; gap: 18px; }
+  .g2 { grid-template-columns: repeat(2, 1fr); }
+  .g3 { grid-template-columns: repeat(3, 1fr); }
+  @media (max-width: 820px) { .g2, .g3 { grid-template-columns: 1fr; } }
+
+  .card {
+    background: linear-gradient(180deg, var(--panel), var(--bg-soft));
+    border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 22px; position: relative; overflow: hidden;
+  }
+  .card .ic { font-size: 1.5rem; margin-bottom: 8px; display: block; }
+  .card h3 { color: var(--ink); }
+  .card p { color: var(--muted); margin: 6px 0 0; font-size: 0.96rem; }
+  .card.accent { border-color: rgba(118,185,0,0.4); box-shadow: inset 0 0 40px rgba(118,185,0,0.05); }
+
+  /* ---- pod diagram ---- */
+  .diagram {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 28px 24px 22px;
+  }
+  .pods { display: flex; gap: 12px; flex-wrap: wrap; align-items: stretch; }
+  .pod {
+    width: 86px; height: 86px; border-radius: 12px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 0.78rem; text-align: center; gap: 4px;
+  }
+  .pod small { font-weight: 600; font-size: 0.62rem; opacity: 0.85; }
+  .pod.core {
+    background: linear-gradient(160deg, rgba(118,185,0,0.22), rgba(118,185,0,0.06));
+    border: 2px solid var(--green); color: var(--green-soft);
+  }
+  .pod.elastic {
+    background: repeating-linear-gradient(45deg, rgba(245,166,35,0.10), rgba(245,166,35,0.10) 8px, transparent 8px, transparent 16px);
+    border: 2px dashed var(--amber); color: var(--amber-soft);
+  }
+  .pod .lock { font-size: 1rem; }
+  .threshold { display: flex; align-items: center; gap: 14px; margin: 18px 0 4px; flex-wrap: wrap; }
+  .legend { display: flex; gap: 22px; flex-wrap: wrap; margin-top: 16px; font-size: 0.86rem; color: var(--muted); }
+  .legend .key { display: inline-flex; align-items: center; gap: 8px; }
+  .swatch { width: 16px; height: 16px; border-radius: 5px; }
+  .swatch.core { border: 2px solid var(--green); background: rgba(118,185,0,0.18); }
+  .swatch.elastic { border: 2px dashed var(--amber); background: rgba(245,166,35,0.08); }
+  .brace { color: var(--muted); font-size: 0.85rem; font-weight: 700; letter-spacing: 0.4px; }
+
+  /* ---- equation strip ---- */
+  .eq {
+    display: flex; flex-wrap: wrap; gap: 12px; margin-top: 18px;
+  }
+  .eq .chip {
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px 16px; font-size: 0.9rem; color: var(--muted);
+  }
+  .eq .chip b { color: var(--ink); }
+
+  /* ---- comparison table ---- */
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 0.95rem; }
+  th, td { text-align: left; padding: 13px 14px; border-bottom: 1px solid var(--line); }
+  th { color: var(--green); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.8px; }
+  td:first-child { font-weight: 700; }
+  tr:hover td { background: rgba(255,255,255,0.015); }
+
+  /* ---- list rows ---- */
+  .row { display: flex; gap: 14px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+  .row:last-child { border-bottom: 0; }
+  .row .mark {
+    flex: 0 0 auto; width: 30px; height: 30px; border-radius: 8px;
+    display: grid; place-items: center; font-weight: 800; font-size: 0.9rem;
+    background: rgba(118,185,0,0.12); border: 1px solid rgba(118,185,0,0.4); color: var(--green-soft);
+  }
+  .row .mark.warn { background: rgba(245,166,35,0.12); border-color: rgba(245,166,35,0.4); color: var(--amber-soft); }
+  .row .body h3 { margin: 2px 0 2px; font-size: 1.02rem; }
+  .row .body p { margin: 0; color: var(--muted); font-size: 0.94rem; }
+
+  .note {
+    border-left: 3px solid var(--green); background: rgba(118,185,0,0.06);
+    padding: 14px 18px; border-radius: 0 10px 10px 0; color: var(--muted); margin-top: 16px;
+  }
+  .note.amber { border-left-color: var(--amber); background: rgba(245,166,35,0.06); }
+  .note b { color: var(--ink); }
+
+  .tag { display: inline-block; font-size: 0.72rem; font-weight: 700; padding: 3px 9px; border-radius: 999px; letter-spacing: 0.4px; text-transform: uppercase; }
+  .tag.future { background: rgba(92,200,255,0.12); border: 1px solid rgba(92,200,255,0.35); color: var(--blue); }
+
+  footer { padding: 50px 0 70px; color: var(--muted); border-top: 1px solid var(--line); }
+  footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; align-items: center; }
+
+  .stepflow { counter-reset: step; }
+  .stepflow .row .mark { counter-increment: step; }
+  .stepflow .row .mark::before { content: counter(step); }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <span class="brand">KAI Scheduler<span class="dot"> •</span> Design</span>
+    <span class="links">
+      <a href="#overview">Overview</a>
+      <a href="#how">How it works</a>
+      <a href="#identify">Identifying elastic</a>
+      <a href="#quota">Quota</a>
+      <a href="#trees">Subgroups</a>
+      <a href="#rules">Constraints</a>
+      <a href="#impl">Implementation</a>
+      <a href="#future">Future</a>
+    </span>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <span class="pill"><span class="blip"></span> New preemption mode · Design proposal</span>
+    <h1>Semi-Preemptible <span class="grad">PodGroups</span></h1>
+    <p class="lede">
+      A third preemption mode that lets a workload guarantee a <strong>minimum core</strong> of
+      protected pods while <strong>bursting opportunistically</strong> with elastic pods that can be
+      reclaimed at any time. One PodGroup — assured capacity <em>and</em> on-demand scale.
+    </p>
+  </div>
+</header>
+
+<!-- OVERVIEW -->
+<section id="overview">
+  <div class="wrap">
+    <span class="eyebrow">The gap</span>
+    <h2>Today it's all-or-nothing</h2>
+    <p class="sub">
+      Since v0.10, Priority and Preemption are independent — but Preemption has only two modes.
+      Real AI workloads want both behaviors at once.
+    </p>
+    <div class="grid g3" style="margin-top:22px">
+      <div class="card">
+        <span class="ic">🔒</span>
+        <h3>Non-preemptible</h3>
+        <p>Every pod is protected. Safe, but greedy — it can never give back idle capacity, even temporarily.</p>
+      </div>
+      <div class="card">
+        <span class="ic">💨</span>
+        <h3>Preemptible</h3>
+        <p>Every pod can be reclaimed. Flexible, but offers <em>zero</em> guarantee — unsuitable for critical services.</p>
+      </div>
+      <div class="card accent">
+        <span class="ic">🧩</span>
+        <h3>Semi-preemptible <span class="tag future">new</span></h3>
+        <p>Non-preemptible up to <code>minMember</code> per leaf PodSet; every extra pod is elastic and reclaimable.</p>
+      </div>
+    </div>
+
+    <div class="note">
+      <b>Use case.</b> Inference and elastic distributed training with a <code>minReplicas</code>:
+      run the critical minimum with assured resources, and let everything above it ride on
+availability-based, on-demand capacity.
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section id="how">
+  <div class="wrap">
+    <span class="eyebrow">The model</span>
+    <h2>Core pods are locked. Extra pods float.</h2>
+    <p class="sub">
+      The split is decided by a single, familiar threshold: <code>minMember</code> on each leaf PodSet.
+      Pods at or below it are <strong>core</strong>; pods above it are <strong>elastic</strong>.
+    </p>
+
+    <div class="diagram" style="margin-top:22px">
+      <div class="brace">A leaf PodSet with <code>minMember = 3</code>, running 5 pods — sorted by preemption priority →</div>
+      <div class="pods" style="margin-top:14px">
+        <div class="pod core"><span class="lock">🔒</span>core<small>rank 1</small></div>
+        <div class="pod core"><span class="lock">🔒</span>core<small>rank 2</small></div>
+        <div class="pod core"><span class="lock">🔒</span>core<small>rank 3</small></div>
+        <div class="pod elastic">💨 elastic<small>rank 4</small></div>
+        <div class="pod elastic">💨 elastic<small>rank 5</small></div>
+      </div>
+      <div class="legend">
+        <span class="key"><span class="swatch core"></span> Core — the top <code>minMember</code> by order: in-quota, protected from eviction</span>
+        <span class="key"><span class="swatch elastic"></span> Elastic — everything below the line: may be over-quota, reclaimed first</span>
+      </div>
+      <p style="color:var(--muted); font-size:0.88rem; margin:14px 0 0">
+        The "core/elastic" line is <strong>positional, not an identity</strong>: it's a threshold over an
+        ordering, not a tag on a specific pod. The guarantee is <em>"at least <code>minMember</code> survive,"</em>
+        never <em>"this exact pod is safe."</em>
+      </p>
+    </div>
+
+    <div class="eq">
+      <div class="chip">total pods = <b>minMember</b> &nbsp;→&nbsp; behaves like a <b>non-preemptible</b> job</div>
+      <div class="chip"><b>minMember = 0</b> &nbsp;→&nbsp; behaves like a <b>preemptible</b> job</div>
+    </div>
+  </div>
+</section>
+
+<!-- IDENTIFYING ELASTIC -->
+<section id="identify">
+  <div class="wrap">
+    <span class="eyebrow">The key mechanism</span>
+    <h2>How do we identify the elastic pods?</h2>
+    <p class="sub">
+      We don't tag them. There is no per-pod "elastic" flag. The split is derived <strong>dynamically every
+      scheduling cycle</strong> by two independent, count/order-based mechanisms — both reusing logic that already exists.
+    </p>
+
+    <div class="grid g2" style="margin-top:22px">
+      <div class="card accent">
+        <span class="ic">🗑️</span>
+        <h3>Eviction — which pods are reclaimable</h3>
+        <p>At a leaf PodSet: if active pods ≤ <code>minMember</code>, protect everything. Otherwise sort all active pods by the scheduler's standard task-order comparator and evict from the bottom.</p>
+        <p style="margin-top:10px">Elastic set = the lowest-ranked <code>count − minMember</code> pods, computed live. Reuses the existing <code>minAvailable</code> eviction guard — no new logic.</p>
+      </div>
+      <div class="card accent">
+        <span class="ic">🧮</span>
+        <h3>Quota — which pods count against quota</h3>
+        <p>A running counter marks the first <code>minMember</code> allocated pods per PodSet as core (<code>AllocatedNotPreemptible</code>).</p>
+        <p style="margin-top:10px">Identity is irrelevant here — only the <strong>aggregate resource quantity</strong> feeds the quota check, so any <code>minMember</code> pods give the same number.</p>
+      </div>
+    </div>
+
+    <h3 style="margin-top:30px">Consequences worth naming</h3>
+    <div style="margin-top:6px">
+      <div class="row">
+        <span class="mark warn">!</span>
+        <div class="body">
+          <h3>Determinism rides on the task-order comparator</h3>
+          <p>If two pods tie under the ordering (same priority, no stable tiebreaker), which one floats can flip between cycles → core-membership churn. A stable final tiebreaker (e.g. UID) keeps the set steady.</p>
+        </div>
+      </div>
+      <div class="row">
+        <span class="mark warn">≡</span>
+        <div class="body">
+          <h3>Quota counting assumes homogeneous pods per PodSet</h3>
+          <p>"First <code>minMember</code> pods" yields a well-defined core resource sum only when pods in the set request the same resources. Heterogeneous PodSets make the core quota ambiguous.</p>
+        </div>
+      </div>
+      <div class="row">
+        <span class="mark">👁️</span>
+        <div class="body">
+          <h3>No per-pod observability</h3>
+          <p>Nothing on the pod tells an operator its tier — it's an emergent scheduler property. Adding a label/condition is exactly the work the Phase 2 third tier would require.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- QUOTA -->
+<section id="quota">
+  <div class="wrap">
+    <span class="eyebrow">Quota</span>
+    <h2>Core counts against quota. Elastic doesn't.</h2>
+    <p class="sub">
+      Core pods must be in-quota when allocated. Extra pods may be allocated over-quota — but
+      <em>all</em> pods still respect the queue's hard <code>Limit</code>.
+    </p>
+
+    <div class="grid g3" style="margin-top:22px">
+      <div class="card">
+        <span class="ic">✅</span>
+        <h3>Core → quota</h3>
+        <p>Only core pods accrue to the queue's <code>AllocatedNotPreemptible</code>. A core pod is allocated only if it fits within deserved quota.</p>
+      </div>
+      <div class="card">
+        <span class="ic">📈</span>
+        <h3>Elastic → over-quota OK</h3>
+        <p>Extra pods can borrow unused cluster capacity beyond the queue's quota — opportunistically.</p>
+      </div>
+      <div class="card">
+        <span class="ic">⛔</span>
+        <h3>Limit → hard ceiling</h3>
+        <p>Total allocation (core + elastic) never exceeds the queue's <code>MaxAllowed</code> limit.</p>
+      </div>
+    </div>
+
+    <h3 style="margin-top:30px">Edge case: quota scale-down</h3>
+    <div class="note amber">
+      If a queue's quota drops below a running job's <b>core</b> allocation, reclaim evicts the
+      <b>elastic</b> pods first; core pods stay (protected by the existing <code>minAvailable</code> guard) and the
+      queue sits over-quota until the job ends. This is <b>accepted</b> — identical to how a fully
+      non-preemptible job behaves today. Conditional-reclaim and a queue quota-floor webhook are
+      recorded as deferred future options.
+    </div>
+  </div>
+</section>
+
+<!-- SUBGROUPS / TREES -->
+<section id="trees">
+  <div class="wrap">
+    <span class="eyebrow">Subgroups &amp; multi-level trees</span>
+    <h2>Elasticity is a pod-level concept</h2>
+    <div class="grid g2" style="margin-top:22px">
+      <div>
+        <div class="row">
+          <span class="mark">↳</span>
+          <div class="body">
+            <h3>Subgroups are atomic</h3>
+            <p>There is no "semi-elastic subgroup". A subgroup is scheduled as a whole — the core/elastic split applies only to pods.</p>
+          </div>
+        </div>
+        <div class="row">
+          <span class="mark">↳</span>
+          <div class="body">
+            <h3>Mode is inherited</h3>
+            <p>If the root PodGroup is semi-preemptible, all of its subgroups are semi-preemptible.</p>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="row">
+          <span class="mark">↳</span>
+          <div class="body">
+            <h3><code>minMember</code> vs <code>minSubGroups</code></h3>
+            <p>The split is decided only at leaf PodSets that set <code>minMember</code>. Intermediate <code>minSubGroups</code> nodes are a scheduling gate — they don't define a non-preemptible pod threshold.</p>
+          </div>
+        </div>
+        <div class="row">
+          <span class="mark">Σ</span>
+          <div class="body">
+            <h3>Non-preemptible resource count</h3>
+            <p class="mono">sum( minMember × pod request ) across all scheduled leaf PodSets.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CONSTRAINTS -->
+<section id="rules">
+  <div class="wrap">
+    <span class="eyebrow">Constraints</span>
+    <h2>Immutability keeps quota honest</h2>
+    <p class="sub">A validating webhook enforces these on semi-preemptible PodGroups.</p>
+    <div style="margin-top:14px">
+      <div class="row">
+        <span class="mark warn">!</span>
+        <div class="body">
+          <h3>No increasing <code>minMember</code> / <code>minSubGroups</code> after creation</h3>
+          <p>Growing the threshold would silently reclassify already-running over-quota elastic pods as protected core pods — violating quota invariants without a rescheduling cycle. Applies to the root spec and every subgroup.</p>
+        </div>
+      </div>
+      <div class="row">
+        <span class="mark">✓</span>
+        <div class="body">
+          <h3>Decreasing is allowed</h3>
+          <p>Lowering the threshold can only widen the elastic tier — always safe.</p>
+        </div>
+      </div>
+      <div class="row">
+        <span class="mark">≈</span>
+        <div class="body">
+          <h3>Simulation considers only the extra pods as victims</h3>
+          <p>Per leaf PodSet, only <code>n − minMember</code> pods are candidate victims, applied independently per PodSet. Simple and sufficient for the MVP.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- IMPLEMENTATION -->
+<section id="impl">
+  <div class="wrap">
+    <span class="eyebrow">Implementation</span>
+    <h2>Small, surgical, opt-in</h2>
+    <p class="sub">
+      Zero impact when no semi-preemptible jobs exist. Core-pod protection reuses logic that already exists.
+    </p>
+    <table>
+      <thead>
+        <tr><th>Area</th><th>Change</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>API</td>
+          <td><code>semi-preemptible</code> added to the <code>Preemptibility</code> enum; kubebuilder validation marker updated.</td>
+        </tr>
+        <tr>
+          <td>Victim selection</td>
+          <td>Job-level filter now admits semi-preemptible jobs into victim pools. Core protection handled downstream by the <strong>existing</strong> <code>minAvailable</code> eviction guard — no new eviction logic.</td>
+        </tr>
+        <tr>
+          <td>Quota check</td>
+          <td>The non-preemptible quota check uses a <code>coreRequiredQuota</code> (≤ <code>minMember</code> per PodSet); the <code>MaxAllowed</code> check still uses the full request.</td>
+        </tr>
+        <tr>
+          <td>Quota accounting</td>
+          <td>Allocate/dealloc handlers track <code>AllocatedNotPreemptible</code> per task — a task is core if its PodSet's allocated count is ≤ <code>minAvailable</code>. Session init seeds counts from already-running jobs.</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="note">
+      <b>Reclaim performance.</b> A semi-preemptible job contributes at most <code>n − minMember</code> elastic
+      victims — bounded by a fully-preemptible job of that smaller size. No combinatorial blow-up; the feature is inherently opt-in.
+    </div>
+  </div>
+</section>
+
+<!-- FUTURE -->
+<section id="future">
+  <div class="wrap">
+    <span class="eyebrow">Future work</span>
+    <h2>Decoupling with <code>minNonPreemptible</code> <span class="tag future">phase 2</span></h2>
+    <p class="sub">
+      Today <code>minMember</code> is both the scheduling minimum and the non-preemptible threshold.
+      A future <code>minNonPreemptible</code> field would separate them — e.g. <code>minMember = 4</code>,
+      <code>minNonPreemptible = 2</code>: needs 4 pods to start, but only 2 are protected.
+    </p>
+    <div class="note">
+      <b>Key complexity:</b> introduces a third pod tier — "required to schedule, but elastic for preemption" —
+      between core and extra-elastic. Pod ordering today has two tiers; this adds a third, requiring explicit
+      tier identification. Deferred out of the MVP.
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span>KAI Scheduler — GPU-aware batch scheduling for Kubernetes</span>
+    <span class="mono" style="color:var(--muted)">Semi-Preemptible PodGroups · Design groundwork</span>
+  </div>
+</footer>
+
+</body>
+</html>

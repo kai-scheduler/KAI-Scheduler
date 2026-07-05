@@ -29,7 +29,7 @@ func (jobsOrder *JobsOrderByQueues) InitializeWithJobs(
 			continue
 		}
 
-		if jobsOrder.options.FilterNonPreemptible && !job.IsPreemptibleJob() {
+		if jobsOrder.options.FilterNonPreemptible && !job.IsPreemptibleJob() && !job.IsSemiPreemptibleJob() {
 			continue
 		}
 

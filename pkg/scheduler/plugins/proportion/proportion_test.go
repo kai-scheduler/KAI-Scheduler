@@ -16,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -818,28 +819,10 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 
 	Context("getVictimResources", func() {
 		It("should handle case where MinAvailable is greater than number of tasks (panic fix)", func() {
-			plugin := &proportionPlugin{
-				allowConsolidatingReclaim: true,
-			}
+			plugin := newVictimSplitPlugin()
 
-			// Create a victim with only 1 task but MinAvailable = 2
-			// This should cause a slice bounds panic without the fix
-			victim := &api.VictimInfo{
-				Job: &podgroup_info.PodGroupInfo{
-					PodSets: map[string]*subgroup_info.PodSet{
-						podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(
-							podgroup_info.DefaultSubGroup, 2, nil,
-						),
-					},
-				},
-				Tasks: []*pod_info.PodInfo{
-					{
-						Status:                 pod_status.Pending,
-						AcceptedResourceVector: common_info.BuildResourceRequirements("1", "1Gi").ToVector(testVectorMap),
-						VectorMap:              testVectorMap,
-					},
-				},
-			}
+			// 1 allocated task but MinAvailable = 2 — the single task is core (minimal satisfying set).
+			victim := buildFlatVictim(2, 1)
 
 			// This should not panic
 			result := plugin.getVictimResources(victim)
@@ -850,37 +833,10 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 		})
 
 		It("should correctly split elastic and core tasks when MinAvailable is less than task count", func() {
-			plugin := &proportionPlugin{
-				allowConsolidatingReclaim: true,
-			}
+			plugin := newVictimSplitPlugin()
 
-			// Create a victim with 3 tasks but MinAvailable = 1
-			victim := &api.VictimInfo{
-				Job: &podgroup_info.PodGroupInfo{
-					PodSets: map[string]*subgroup_info.PodSet{
-						podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(
-							podgroup_info.DefaultSubGroup, 1, nil,
-						),
-					},
-				},
-				Tasks: []*pod_info.PodInfo{
-					{
-						Status:                 pod_status.Pending,
-						AcceptedResourceVector: common_info.BuildResourceRequirements("1", "1Gi").ToVector(testVectorMap),
-						VectorMap:              testVectorMap,
-					},
-					{
-						Status:                 pod_status.Pending,
-						AcceptedResourceVector: common_info.BuildResourceRequirements("1", "1Gi").ToVector(testVectorMap),
-						VectorMap:              testVectorMap,
-					},
-					{
-						Status:                 pod_status.Pending,
-						AcceptedResourceVector: common_info.BuildResourceRequirements("1", "1Gi").ToVector(testVectorMap),
-						VectorMap:              testVectorMap,
-					},
-				},
-			}
+			// 3 allocated tasks, MinAvailable = 1 → 1 core, 2 elastic.
+			victim := buildFlatVictim(1, 3)
 
 			result := plugin.getVictimResources(victim)
 
@@ -893,32 +849,10 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 		})
 
 		It("should handle case where MinAvailable equals task count", func() {
-			plugin := &proportionPlugin{
-				allowConsolidatingReclaim: true,
-			}
+			plugin := newVictimSplitPlugin()
 
-			// Create a victim with 2 tasks and MinAvailable = 2
-			victim := &api.VictimInfo{
-				Job: &podgroup_info.PodGroupInfo{
-					PodSets: map[string]*subgroup_info.PodSet{
-						podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(
-							podgroup_info.DefaultSubGroup, 2, nil,
-						),
-					},
-				},
-				Tasks: []*pod_info.PodInfo{
-					{
-						Status:                 pod_status.Pending,
-						AcceptedResourceVector: common_info.BuildResourceRequirements("1", "1Gi").ToVector(testVectorMap),
-						VectorMap:              testVectorMap,
-					},
-					{
-						Status:                 pod_status.Pending,
-						AcceptedResourceVector: common_info.BuildResourceRequirements("1", "1Gi").ToVector(testVectorMap),
-						VectorMap:              testVectorMap,
-					},
-				},
-			}
+			// 2 allocated tasks, MinAvailable = 2 → both core, no elastic.
+			victim := buildFlatVictim(2, 2)
 
 			result := plugin.getVictimResources(victim)
 
@@ -929,31 +863,10 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 		})
 
 		It("should handle zero MinAvailable", func() {
-			plugin := &proportionPlugin{
-				allowConsolidatingReclaim: true,
-			}
+			plugin := newVictimSplitPlugin()
 
-			victim := &api.VictimInfo{
-				Job: &podgroup_info.PodGroupInfo{
-					PodSets: map[string]*subgroup_info.PodSet{
-						podgroup_info.DefaultSubGroup: subgroup_info.NewPodSet(
-							podgroup_info.DefaultSubGroup, 0, nil,
-						),
-					},
-				},
-				Tasks: []*pod_info.PodInfo{
-					{
-						Status:                 pod_status.Pending,
-						AcceptedResourceVector: common_info.BuildResourceRequirements("1", "1Gi").ToVector(testVectorMap),
-						VectorMap:              testVectorMap,
-					},
-					{
-						Status:                 pod_status.Pending,
-						AcceptedResourceVector: common_info.BuildResourceRequirements("1", "1Gi").ToVector(testVectorMap),
-						VectorMap:              testVectorMap,
-					},
-				},
-			}
+			// MinAvailable = 0 → no core, both tasks elastic.
+			victim := buildFlatVictim(0, 2)
 
 			result := plugin.getVictimResources(victim)
 
@@ -964,8 +877,85 @@ var _ = Describe("Set Fair Share in Proportion", func() {
 				Expect(res.Get(resource_info.CPUIndex)).To(Equal(1000.0))
 			}
 		})
+
+		It("treats whole elastic subgroups as elastic, not core (tree-aware)", func() {
+			plugin := newVictimSplitPlugin()
+
+			// minSubGroup=1 over 2 fully-gang segments (minAvailable=2 each, both allocated).
+			// Only 1 segment is core; the other segment's 2 pods are elastic even though that
+			// segment is internally at its minMember — the leaf-only split would mis-mark them core.
+			victim := buildSegmentedVictim(1, 2, 2)
+
+			result := plugin.getVictimResources(victim)
+
+			// 2 elastic pods (the surplus segment) individually + 1 core group (the core segment).
+			Expect(len(result)).To(Equal(3))
+		})
 	})
 })
+
+// newVictimSplitPlugin builds a plugin with order functions set and consolidating-reclaim disabled,
+// so getVictimResources can classify allocated victim tasks via the tree-aware core set.
+func newVictimSplitPlugin() *proportionPlugin {
+	return &proportionPlugin{
+		allowConsolidatingReclaim: false,
+		subGroupOrderFn:           func(l, r interface{}) bool { return false },
+		taskOrderFunc:             func(l, r interface{}) bool { return false },
+	}
+}
+
+// buildFlatVictim builds a victim whose job is a single default PodSet with numTasks allocated tasks.
+func buildFlatVictim(minAvailable int32, numTasks int) *api.VictimInfo {
+	ps := subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, minAvailable, nil)
+	tasks := make([]*pod_info.PodInfo, 0, numTasks)
+	for i := 0; i < numTasks; i++ {
+		t := newAllocatedVictimTask(fmt.Sprintf("task-%d", i), podgroup_info.DefaultSubGroup)
+		ps.AssignTask(t)
+		tasks = append(tasks, t)
+	}
+	return &api.VictimInfo{
+		Job: &podgroup_info.PodGroupInfo{
+			PodSets: map[string]*subgroup_info.PodSet{podgroup_info.DefaultSubGroup: ps},
+		},
+		Tasks: tasks,
+	}
+}
+
+// buildSegmentedVictim builds a victim whose job is a root SubGroupSet with minSubGroup=k over
+// numSegments fully-gang leaf PodSets (each minAvailable=segmentSize, fully allocated).
+func buildSegmentedVictim(k int32, numSegments, segmentSize int) *api.VictimInfo {
+	root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+	root.SetMinSubGroup(&k)
+	var tasks []*pod_info.PodInfo
+	for s := 0; s < numSegments; s++ {
+		segName := fmt.Sprintf("segment-%d", s)
+		ps := subgroup_info.NewPodSet(segName, int32(segmentSize), nil)
+		for p := 0; p < segmentSize; p++ {
+			t := newAllocatedVictimTask(fmt.Sprintf("%s-p%d", segName, p), segName)
+			ps.AssignTask(t)
+			tasks = append(tasks, t)
+		}
+		root.AddPodSet(ps)
+	}
+	return &api.VictimInfo{
+		Job: &podgroup_info.PodGroupInfo{
+			Preemptibility:  v2alpha2.SemiPreemptible,
+			RootSubGroupSet: root,
+			PodSets:         root.GetDescendantPodSets(),
+		},
+		Tasks: tasks,
+	}
+}
+
+func newAllocatedVictimTask(uid, subGroupName string) *pod_info.PodInfo {
+	return &pod_info.PodInfo{
+		UID:                    common_info.PodID(uid),
+		SubGroupName:           subGroupName,
+		Status:                 pod_status.Running,
+		AcceptedResourceVector: common_info.BuildResourceRequirements("1", "1Gi").ToVector(testVectorMap),
+		VectorMap:              testVectorMap,
+	}
+}
 
 var _ = Describe("New", func() {
 	Context("Initializing proportion plugin", func() {

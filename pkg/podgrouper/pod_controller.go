@@ -128,6 +128,11 @@ func (r *PodReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		return ctrl.Result{}, nil
 	}
 
+	for _, warning := range metadata.Warnings {
+		logger.V(1).Info("PodGroup metadata warning", "namespace", metadata.Namespace, "name", metadata.Name, "warning", warning)
+		r.eventRecorder.Event(&pod, v1.EventTypeWarning, constants.PodGrouperWarning, warning)
+	}
+
 	if len(r.configs.NodePoolLabelKey) > 0 {
 		addNodePoolLabel(metadata, &pod, r.configs.NodePoolLabelKey)
 	}

@@ -39,6 +39,25 @@ type Metadata struct {
 	PreferredTopologyLevel string
 	RequiredTopologyLevel  string
 	Topology               string
+
+	// Warnings holds soft-validation messages raised while building the PodGroup. The controller
+	// surfaces them as Warning events on the pod; they never block PodGroup creation.
+	Warnings []string
+}
+
+// semiPreemptibleSegmentationWarning is raised when an automatically segmented workload is also
+// semi-preemptible. The two are mutually exclusive: segmentation produces a fully-gang tree with no
+// elastic surplus, so semi-preemptible is inert and the workload is scheduled as non-preemptible.
+const semiPreemptibleSegmentationWarning = "PodGroup is both semi-preemptible and automatically segmented; " +
+	"these are mutually exclusive. Semi-preemptible has no effect on a segmented (fully-gang) workload, " +
+	"which will be scheduled as non-preemptible."
+
+// WarnIfSemiPreemptibleSegmented records the semi-preemptible/segmentation conflict warning when the
+// workload was auto-segmented and is also semi-preemptible.
+func (m *Metadata) WarnIfSemiPreemptibleSegmented(segmented bool) {
+	if segmented && m.Preemptibility == v2alpha2.SemiPreemptible {
+		m.Warnings = append(m.Warnings, semiPreemptibleSegmentationWarning)
+	}
 }
 
 func (m *Metadata) FindSubGroupForPod(podNamespace, podName string) *SubGroupMetadata {

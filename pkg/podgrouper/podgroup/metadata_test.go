@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 )
 
 func TestFindSubGroupForPod(t *testing.T) {
@@ -128,6 +130,33 @@ func TestFindSubGroupForPod(t *testing.T) {
 			} else {
 				assert.NotNil(t, result)
 				assert.Equal(t, tt.expectedSubGroup.Name, result.Name)
+			}
+		})
+	}
+}
+
+func TestWarnIfSemiPreemptibleSegmented(t *testing.T) {
+	tests := []struct {
+		name           string
+		preemptibility v2alpha2.Preemptibility
+		segmented      bool
+		expectWarning  bool
+	}{
+		{name: "semi-preemptible and segmented warns", preemptibility: v2alpha2.SemiPreemptible, segmented: true, expectWarning: true},
+		{name: "semi-preemptible but not segmented", preemptibility: v2alpha2.SemiPreemptible, segmented: false, expectWarning: false},
+		{name: "segmented but preemptible", preemptibility: v2alpha2.Preemptible, segmented: true, expectWarning: false},
+		{name: "segmented but non-preemptible", preemptibility: v2alpha2.NonPreemptible, segmented: true, expectWarning: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := &Metadata{Preemptibility: tt.preemptibility}
+			m.WarnIfSemiPreemptibleSegmented(tt.segmented)
+			if tt.expectWarning {
+				assert.Len(t, m.Warnings, 1)
+				assert.Equal(t, semiPreemptibleSegmentationWarning, m.Warnings[0])
+			} else {
+				assert.Empty(t, m.Warnings)
 			}
 		})
 	}

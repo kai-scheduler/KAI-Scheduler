@@ -30,8 +30,16 @@ func (cp *CapacityPolicy) IsJobOverQueueCapacity(job *podgroup_info.PodGroupInfo
 	tasksToAllocate []*pod_info.PodInfo) *api.SchedulableResult {
 	requestedShareQuantities := getRequiredQuota(tasksToAllocate, cp.maxNodeGPUMemoryMiB)
 
-	checkFns := []capacityCheckFn{cp.resultsOverLimit, cp.resultsWithNonPreemptibleOverQuota}
-	return cp.isJobOverCapacity(requestedShareQuantities, job, checkFns)
+	if result := cp.resultsOverLimit(requestedShareQuantities, job); !result.IsSchedulable {
+		return result
+	}
+
+	// Semi-preemptible jobs only count core pod resources against non-preemptible quota.
+	nonPreemptibleShare := requestedShareQuantities
+	if job.IsSemiPreemptibleJob() {
+		nonPreemptibleShare = cp.getCoreRequiredQuota(tasksToAllocate, job)
+	}
+	return cp.resultsWithNonPreemptibleOverQuota(nonPreemptibleShare, job)
 }
 
 func (cp *CapacityPolicy) IsNonPreemptibleJobOverQuota(job *podgroup_info.PodGroupInfo,
@@ -39,6 +47,10 @@ func (cp *CapacityPolicy) IsNonPreemptibleJobOverQuota(job *podgroup_info.PodGro
 
 	requestedShareQuantities := getRequiredQuota(tasksToAllocate, cp.maxNodeGPUMemoryMiB)
 
+	// Semi-preemptible jobs only count core pod resources against non-preemptible quota.
+	if job.IsSemiPreemptibleJob() {
+		requestedShareQuantities = cp.getCoreRequiredQuota(tasksToAllocate, job)
+	}
 	checkFns := []capacityCheckFn{cp.resultsWithNonPreemptibleOverQuota}
 	return cp.isJobOverCapacity(requestedShareQuantities, job, checkFns)
 }
@@ -51,6 +63,11 @@ func (cp *CapacityPolicy) IsTaskAllocationOnNodeOverCapacity(task *pod_info.PodI
 		requiredInitQuota[resource_info.MemoryIndex],
 		requiredInitQuota[resource_info.GPUIndex])
 
+	// Elastic tasks of a semi-preemptible job (allocated beyond its minimal satisfying set) are not
+	// subject to non-preemptible quota.
+	if job.IsSemiPreemptibleJob() && podgroup_info.IsMinRequirementSatisfied(job) {
+		return cp.resultsOverLimit(requestedShare, job)
+	}
 	checkFns := []capacityCheckFn{cp.resultsOverLimit, cp.resultsWithNonPreemptibleOverQuota}
 	return cp.isJobOverCapacity(requestedShare, job, checkFns)
 }
@@ -66,6 +83,17 @@ func (cp *CapacityPolicy) isJobOverCapacity(requestedShare rs.ResourceQuantities
 	}
 
 	return Schedulable()
+}
+
+// getCoreRequiredQuota computes the non-preemptible resource quota for a semi-preemptible job.
+// tasksToAllocate is a single batch from GetTasksToAllocate: a gang-phase batch (the whole minimal
+// satisfying set being assembled, all core) while the job's minimum is unmet, or an elastic burst
+// (none core) once it is met. This matches the tree-aware core set used for accounting and eviction.
+func (cp *CapacityPolicy) getCoreRequiredQuota(tasksToAllocate []*pod_info.PodInfo, job *podgroup_info.PodGroupInfo) rs.ResourceQuantities {
+	if podgroup_info.IsMinRequirementSatisfied(job) {
+		return rs.EmptyResourceQuantities()
+	}
+	return getRequiredQuota(tasksToAllocate, cp.maxNodeGPUMemoryMiB)
 }
 
 // getRequiredQuota calculates the required quota for a job based on the tasks to allocate and the max node GPU memory.
