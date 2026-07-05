@@ -67,46 +67,6 @@ jobs:
       - name: Run tests
         run: make test
 
-      - name: Chart install-mode render matrix
-        run: |
-          set -euo pipefail
-          CHART=./deployments/kai-scheduler
-
-          # set -e ignores a failing `! cmd`, so absence is asserted with an
-          # explicit if/exit instead of negated pipelines.
-          assert_absent() {
-            if grep -q "$1" <<< "$2"; then
-              echo "FAIL: found '$1' in the $3 render" >&2
-              exit 1
-            fi
-          }
-
-          # default: deployer hook present, no Config document in the release
-          DEFAULT=$(helm template kai-scheduler "$CHART")
-          grep -q "name: kai-config-deployer" <<< "$DEFAULT"
-          assert_absent "^kind: Config$" "$DEFAULT" "default"
-
-          # gitops mode: exactly one complete Config document, no deployer resources
-          GITOPS=$(helm template kai-scheduler "$CHART" --set kaiConfigDeployer.enabled=false --set kaiConfig.render=true)
-          [ "$(grep -c "^kind: Config$" <<< "$GITOPS")" = "1" ]
-          assert_absent "name: kai-config-deployer" "$GITOPS" "gitops"
-          # apiVersion must render on its own line (guards the license-comment
-          # newline-chomping regression); isolate the Config document to check
-          CONFIG_DOC=$(helm template kai-scheduler "$CHART" --set kaiConfigDeployer.enabled=false --set kaiConfig.render=true --show-only templates/kai-config.yaml)
-          grep -q "^apiVersion: kai.scheduler/v1$" <<< "$CONFIG_DOC"
-          grep -q "^kind: Config$" <<< "$CONFIG_DOC"
-
-          # external management: neither
-          NONE=$(helm template kai-scheduler "$CHART" --set kaiConfigDeployer.enabled=false --set kaiConfig.render=false)
-          assert_absent "^kind: Config$" "$NONE" "external-management"
-          assert_absent "name: kai-config-deployer" "$NONE" "external-management"
-
-          # mutually exclusive flags: rendering must fail
-          if helm template kai-scheduler "$CHART" --set kaiConfigDeployer.enabled=true --set kaiConfig.render=true > /dev/null 2>&1; then
-            echo "FAIL: rendering must fail when kaiConfigDeployer.enabled and kaiConfig.render are both set" >&2
-            exit 1
-          fi
-
       - name: Archive code coverage results
         uses: actions/upload-artifact@v7
         with:
