@@ -1,41 +1,45 @@
-# fair-share / contention
+# fair-share: capacity held by others
 
-There is **no typed reason** here - the verdict is the same generic `PodSchedulingErrors` as a node
-shortage, but capacity exists and is just held by others. You're further back than them: over-quota
-capacity is split between sibling queues by `overQuotaWeight` + priority.
+No typed reason - the verdict stays generic `PodSchedulingErrors` while capacity is held by
+others. Grep scheduler log for additional information, live tail only. Scheduler retries scheduling cycle every `schedule-period` (default=1s) and re-logs the full decision at default verbosity (`-v=3`). 
 
-## Steps
+Per-job lines are keyed by PodGroup name (`$PG` from skill step 2), per-queue lines by queue name.
 
-Read **live** `Queue.status` (not the spec - the spec is only the configured weights, it cannot
-tell you who is holding capacity right now):
+## 1. Verdict - grep by `$PG`
 
 ```bash
-kubectl get queues -o json | jq -r '.items[] | "\(.metadata.name) parent=\(.spec.parentQueue) quota=\(.spec.resources.gpu.quota // 0) alloc=\(.status.allocated["nvidia.com/gpu"] // 0) req=\(.status.requested["nvidia.com/gpu"] // 0)"'
+kubectl -n <kai-ns> logs deploy/<scheduler> --tail=100000 | grep "$PG" | tail -30
 ```
 
-(`quota` is from the **spec** - status has no deserved/quota field, only `allocated` / `requested`.)
+`Attempting to allocate job:` must repeat across recent timestamps. Absent ->
+no verdict, never conclude from an empty grep. Then match:
 
-1. Your queue shows `allocated` ~0 while `requested` > 0; a **sibling** (same `parentQueue`) whose
-   `allocated` holds the GPUs = fair-share starvation, working as designed.
-2. `overQuotaWeight` / priority (from the spec) only explain **why** the split landed that way. The
-   same live numbers are also exported as Prometheus metrics; with no metrics stack, read them
-   directly from the scheduler pod - it logs the per-queue allocation each session.
+- `Reclaimed resources for job` / `Successfully preempted for job` -> eviction fired, job is
+  pipelined until victims terminate (`Pipelined` event on the pod).
+- `Attempting to reclaim for job` + `Didn't find a reclaim strategy` -> queue has enough `fairShare`,
+  but no viable victims.
+- `Skipping reclaim ... is not easier to reclaim for than: <other>` -> smaller same-queue job
+  already failed -> diagnose `<other>`.
+- allocate repeats, **no reclaim line at all** -> entry gate: `allocated + request > fairShare`
+  -> step 2.
+- `Attempting to preempt ... priority: <N>` + `Didn't find a preemption strategy` -> in-queue
+  mechanism: no preemptible job strictly below `<N>` in the job's own queue.
 
-## Why the holder isn't evicted for you
+Evictions also leave events that survive log rotation: `Evict` on the victim's PodGroup names
+the beneficiary.
 
-KAI evicts a holder only if it is **preemptible** (priorityClass `value < 100`), you **outrank** it,
-and it has run past its protection window. So the pod stays Pending when the holder is
-non-preemptible (`value >= 100`, never evicted), or preemptible but still young - check the holder's
-`spec.priorityClassName` -> `value` and the queue's `preemptMinRuntime` / `reclaimMinRuntime`.
+## 2. Over fair share - explain with the scheduler's numbers
 
-## Fix
+```bash
+kubectl -n <kai-ns> logs deploy/<scheduler> --tail=100000 | grep "Resource division result for queue <$QUEUE>" | tail -1
+```
 
-Compare `quota` to `requested`: the excess (`requested - quota`) is over-quota and starves;
-`overQuotaWeight` only re-divides it, never reclaims.
+Prints deserved / requested / maxAllowed / allocated / historicalUsage / fairShare per resource;
+the divided pool is `Total allocatable resources are <...>`.
+`fairShare = min(quota, requested) + weighted surplus slice`, capped by maxAllowed (queue `limit`), recomputed top-down each cycle. 
+Explain the number from its inputs (e.g. quota 0 + low overQuotaWeight -> thin surplus slice). changing it = Queue spec knobs
+(admin) - `docs/queues/README.md`, theory: `docs/scheduling-deep-dive/`.
+priorityClass helps only against the own queue's lower-priority preemptible jobs (preempt);
+cross-queue reclaim ignores it, and `>= 100` makes the pod non-preemptible (gated to deserved).
 
-- `quota` < request -> raise `quota` to cover it (admin; bounded by parent quota + real capacity).
-- `quota` >= request but still Pending -> not fair-share -> recheck step 4 / protection window /
-  non-preemptible holders.
-- else -> wait (siblings finish), or raise priorityClass for ordering.
-
-It's a derived conclusion, not a typed reason - say so.
+Report it as a derived conclusion, not a typed reason.
