@@ -30,10 +30,12 @@ the beneficiary.
 
 ## 2. Over fair share - explain with the scheduler's numbers
 
-Grep the same log for `Resource division result for queue <$QUEUE>`, last match is current.
+Grep the same log for `Resource division result for queue <$QUEUE>` and for the divided pool -
+`Total allocatable resources are` (once per cycle, with node/queue counts); last matches are
+current, same `sessionID` = same cycle.
 
-Prints deserved / requested / maxAllowed / allocated / historicalUsage / fairShare per resource;
-the divided pool is `Total allocatable resources are <...>`.
+The division line prints deserved / requested / maxAllowed / allocated / historicalUsage /
+fairShare per resource.
 `fairShare = min(quota, requested) + weighted surplus slice`, capped by maxAllowed (queue `limit`), recomputed top-down each cycle. 
 Explain the number from its inputs (e.g. quota 0 + low overQuotaWeight -> thin surplus slice). changing it = Queue spec knobs
 (admin) - `docs/queues/README.md`, theory: `docs/scheduling-deep-dive/`.
