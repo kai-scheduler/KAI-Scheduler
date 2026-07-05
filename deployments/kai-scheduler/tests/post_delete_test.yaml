@@ -32,14 +32,14 @@ tests:
           path: spec.template.spec.containers[0].command[2]
           pattern: kubectl delete Config kai-config
 
-  - it: should delete kai-config in GitOps mode
+  - it: should not delete kai-config in GitOps mode (pruned as a tracked release resource)
     set:
       kaiConfigDeployer.enabled: false
       kaiConfig.render: true
     asserts:
-      - matchRegex:
+      - notMatchRegex:
           path: spec.template.spec.containers[0].command[2]
-          pattern: kubectl delete Config kai-config --ignore-not-found
+          pattern: kubectl delete Config kai-config
 
   - it: should carry the ArgoCD PostDelete hook annotations
     asserts:
