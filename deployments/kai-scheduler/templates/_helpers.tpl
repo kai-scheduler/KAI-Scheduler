@@ -1,13 +1,48 @@
 {{/*
+Returns a non-empty string when installing on OpenShift: either forced via
+.Values.openshift or auto-detected from the ClusterVersion CRD. Autodetection
+relies on lookup, which returns nil under offline rendering (helm template,
+GitOps tools such as ArgoCD) - set openshift=true explicitly there.
+*/}}
+{{- define "kai-scheduler.openshift" -}}
+{{- if or .Values.openshift (lookup "apiextensions.k8s.io/v1" "CustomResourceDefinition" "" "clusterversions.config.openshift.io") -}}
+true
+{{- end -}}
+{{- end -}}
+
+{{/*
+Annotations shared by the post-delete cleanup Job and its ServiceAccount and
+RBAC resources. PostDelete requires ArgoCD >= 2.10; without the
+argocd.argoproj.io annotations ArgoCD treats Helm hook resources as regular
+sync-phase resources.
+*/}}
+{{- define "kai-scheduler.post-delete-hook-annotations" -}}
+"helm.sh/hook": post-delete
+"helm.sh/hook-delete-policy": hook-succeeded
+argocd.argoproj.io/hook: PostDelete
+argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+{{- end -}}
+
+{{/*
 Renders the kai-config Config CR. Used by the kai-config-deployer hook
 ConfigMap so the operator's input config can be applied via kubectl
-out-of-band of the Helm release. See deployments/kai-scheduler/templates/hooks/post/kai-config-deployer/.
+out-of-band of the Helm release, and rendered inline as a release resource
+when kaiConfig.render=true (GitOps/ArgoCD installs, see docs/gitops/README.md).
+See deployments/kai-scheduler/templates/hooks/post/kai-config-deployer/.
 */}}
 {{- define "kai-scheduler.kai-config" -}}
 apiVersion: kai.scheduler/v1
 kind: Config
 metadata:
   name: kai-config
+  {{- if (.Values.kaiConfig | default dict).render }}
+  annotations:
+    # SkipDryRunOnMissingResource: ArgoCD dry-runs sync-phase resources before
+    # any hook runs; on a fresh cluster the Config CRD is not established yet.
+    # ServerSideApply: avoids client-side last-applied size limits on the large
+    # CR and adopts a CR previously field-managed by kai-config-deployer.
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true,ServerSideApply=true
+  {{- end }}
 spec:
   namespace: {{ .Release.Namespace }}
   global:

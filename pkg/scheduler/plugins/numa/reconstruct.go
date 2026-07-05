@@ -13,13 +13,13 @@ import (
 )
 
 // reconstructNodeAvailable discards each modeled node's NRT-reported per-zone Available and
-// recomputes it as Allocatable minus the observed placements of the pods currently consuming the
-// node. NRT Available lags across cycles (the exporter republishes on a delay, in both directions —
-// missing a just-bound pod or still counting a just-deleted one); Allocatable is static and the pod
-// set is read from the live snapshot, so the reconstructed Available reflects the node's real free
-// capacity with no lag. Each pod's zone comes from its observed (agent-published) record; a pod with
-// no observed record contributes nothing — never guess a zone. Gated by the reconstructAvailable
-// flag, which the operator sets when the placement agent (the observed-placement source) is deployed.
+// recomputes it as Allocatable minus the placements of the pods currently consuming the node. NRT
+// Available lags across cycles (the exporter republishes on a delay, in both directions — missing a
+// just-bound pod or still counting a just-deleted one); Allocatable is static and the pod set is read
+// from the live snapshot, so the reconstructed Available reflects the node's real free capacity with
+// no lag. Each pod's zone comes from its placement record (observed > BindRequest > predicted); a pod
+// with no record contributes nothing — never guess a zone. Gated by the reconstructAvailable flag,
+// which the operator sets when the placement agent (the observed-placement source) is deployed.
 func (pp *numaPlugin) reconstructNodeAvailable(ssn *framework.Session) {
 	for _, node := range ssn.ClusterInfo.Nodes {
 		topo := node.NumaTopology
@@ -31,7 +31,8 @@ func (pp *numaPlugin) reconstructNodeAvailable(ssn *framework.Session) {
 			if !pod_status.IsActiveAllocatedStatus(task.Status) {
 				continue
 			}
-			numaAllocate(topo, placementFromRecord(observedRecord(task.Pod), topo))
+			record := resolvePlacementRecord(task.Pod, bindRequestZones(ssn, task.Pod))
+			numaAllocate(topo, placementFromRecord(record, topo))
 		}
 	}
 }

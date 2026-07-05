@@ -7,8 +7,7 @@ metadata:
   name: post-delete-cleanup
   namespace: {{ .Release.Namespace }}
   annotations:
-    "helm.sh/hook": post-delete
-    "helm.sh/hook-delete-policy": hook-succeeded
+    {{- include "kai-scheduler.post-delete-hook-annotations" . | nindent 4 }}
 spec:
   template:
     metadata:
@@ -20,7 +19,7 @@ spec:
       imagePullSecrets:
         {{- toYaml .Values.global.imagePullSecrets | nindent 8 }}
       {{- end }}
-      {{- if (lookup "apiextensions.k8s.io/v1" "CustomResourceDefinition" "" "clusterversions.config.openshift.io") }}
+      {{- if (include "kai-scheduler.openshift" .) }}
       securityContext:
         runAsUser: 10000
         runAsNonRoot: true
@@ -63,6 +62,8 @@ spec:
               echo "Deleting KAI operator-managed deployments..."
               kubectl -n {{ .Release.Namespace }} delete deployment --selector=app.kubernetes.io/managed-by=kai-operator --ignore-not-found=true
 
+              {{- /* In render mode the CR is a tracked release resource:
+              Helm/ArgoCD deletes it before this hook runs. */}}
               {{- if .Values.kaiConfigDeployer.enabled }}
               echo "Deleting kai-config..."
               kubectl delete Config kai-config --ignore-not-found

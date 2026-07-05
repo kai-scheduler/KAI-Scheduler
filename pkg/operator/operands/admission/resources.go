@@ -318,6 +318,26 @@ func (a *Admission) validatingWCForKAIConfig(
 				},
 			},
 		},
+		{
+			// Topology is cluster-scoped and unrelated to pods, so it uses neither the pod
+			// namespace/object selectors nor the scheduler-name match conditions.
+			Name:                    fmt.Sprintf("topology.%s", webhookName),
+			AdmissionReviewVersions: []string{"v1"},
+			SideEffects:             common.PtrFrom(admissionv1.SideEffectClassNone),
+			FailurePolicy:           common.PtrFrom(admissionv1.Fail),
+			ClientConfig:            a.buildWebhookClientConfig(kaiConfig, secret, "/validate-kai-scheduler-v1alpha1-topology"),
+			Rules: []admissionv1.RuleWithOperations{
+				{
+					Operations: []admissionv1.OperationType{admissionv1.Create, admissionv1.Update},
+					Rule: admissionv1.Rule{
+						APIGroups:   []string{"kai.scheduler"},
+						APIVersions: []string{"v1alpha1"},
+						Resources:   []string{"topologies"},
+						Scope:       common.PtrFrom(admissionv1.ClusterScope),
+					},
+				},
+			},
+		},
 	}
 
 	return []client.Object{validatingWebhookConfiguration}, nil

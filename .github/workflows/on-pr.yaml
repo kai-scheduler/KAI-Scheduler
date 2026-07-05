@@ -234,8 +234,6 @@ jobs:
     needs: [ build, check-build-and-test-required ]
     if: needs.check-build-and-test-required.outputs.code == 'true'
     runs-on: ubuntu-latest
-    permissions:
-      actions: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -244,13 +242,6 @@ jobs:
         uses: ./.github/actions/setup-e2e-cluster
         with:
           package_version: ${{ needs.build.outputs.package_version }}
-
-      - name: Delete restored cache
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh cache delete "images-${{ github.sha }}" --repo ${{ github.repository }}
 
       - name: Install KAI-scheduler
         env:
@@ -263,7 +254,7 @@ jobs:
 
       - name: Run e2e tests
         run: |
-          ginkgo -r --keep-going --randomize-all --randomize-suites --trace -vv --label-filter '!autoscale && !scale && !upgrade' --output-dir=. --json-report=e2e-report.json ./test/e2e/suites
+          ginkgo -r --keep-going --randomize-all --randomize-suites --trace -vv --label-filter '!autoscale && !scale && !upgrade && !gitops' --output-dir=. --json-report=e2e-report.json ./test/e2e/suites
           echo ""
           echo "=== Skipped Tests ==="
           jq -r '.[].SpecReports[] | select(.State == "skipped") | ([.ContainerHierarchyTexts[], .LeafNodeText] | join(" > "))' e2e-report.json 2>/dev/null || echo "No skipped tests found"
@@ -356,6 +347,51 @@ jobs:
           UPGRADE_CHART_PATH: /mnt/images/kai-scheduler-${{ needs.build.outputs.package_version }}.tgz
         run: |
           ginkgo -r --keep-going --trace -vv --label-filter 'upgrade' --output-dir=. --json-report=e2e-upgrade-report.json ./test/e2e/suites/upgrade
+
+  e2e-gitops-tests:
+    name: Run E2E GitOps Tests
+    needs: [ build, check-build-and-test-required ]
+    if: needs.check-build-and-test-required.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup e2e cluster
+        uses: ./.github/actions/setup-e2e-cluster
+        with:
+          package_version: ${{ needs.build.outputs.package_version }}
+
+      - name: Install ArgoCD and in-cluster chart repo
+        env:
+          PACKAGE_VERSION: ${{ needs.build.outputs.package_version }}
+        run: |
+          ./hack/setup-gitops-e2e.sh --chart-tgz /mnt/images/kai-scheduler-$PACKAGE_VERSION.tgz
+
+      - name: Run gitops e2e tests
+        env:
+          GITOPS_CHART_VERSION: ${{ needs.build.outputs.package_version }}
+          # CI images are pushed to the in-cluster registry by setup-e2e-cluster
+          GITOPS_KAI_REGISTRY: localhost:30100
+        run: |
+          ginkgo -r --keep-going --trace -vv --label-filter 'gitops' --output-dir=. --json-report=e2e-gitops-report.json ./test/e2e/suites/gitops
+
+  cleanup-images-cache:
+    name: Cleanup Images Cache
+    needs: [ e2e-tests, e2e-upgrade-tests, e2e-gitops-tests, check-build-and-test-required ]
+    # No always(): a failed e2e job must keep the cache so "Re-run failed
+    # jobs" can restore images; stale entries fall to GitHub cache eviction.
+    if: success() && needs.check-build-and-test-required.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Delete images cache
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh cache delete "images-${{ github.sha }}" --repo ${{ github.repository }}
 
   fossa-validate:
     needs: [ build, check-build-and-test-required ]

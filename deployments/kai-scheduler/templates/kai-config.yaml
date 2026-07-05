@@ -1,14 +1,17 @@
 # Copyright 2025 NVIDIA CORPORATION
 # SPDX-License-Identifier: Apache-2.0
 {{- /*
-This template is intentionally empty in production. The kai-config CR is
-applied by the post-install/post-upgrade hook Job (see hooks/post/kai-config-deployer/)
+By default this template is empty: the kai-config CR is applied by the
+post-install/post-upgrade hook Job (see hooks/post/kai-config-deployer/)
 using kubectl apply --server-side, so it is NOT a Helm release resource.
-The chart unit tests under tests/ render the kai-config body to assert
-chart values flow correctly into the operator's input config; they enable
-the standalone render via .Values._test.renderKaiConfig=true.
+With kaiConfig.render=true the CR is rendered inline as a regular release
+resource instead, for GitOps/ArgoCD installs where hook-applied resources
+are untracked (no drift detection, no selfHeal). See docs/gitops/README.md.
 */ -}}
-{{- $testCfg := .Values._test | default dict -}}
-{{- if $testCfg.renderKaiConfig -}}
+{{- $kaiConfig := .Values.kaiConfig | default dict -}}
+{{- if and $kaiConfig.render .Values.kaiConfigDeployer.enabled -}}
+{{- fail "kaiConfig.render and kaiConfigDeployer.enabled are mutually exclusive. For GitOps/ArgoCD set kaiConfigDeployer.enabled=false and kaiConfig.render=true. See docs/gitops/README.md." -}}
+{{- end -}}
+{{- if $kaiConfig.render }}
 {{ include "kai-scheduler.kai-config" . }}
 {{- end -}}

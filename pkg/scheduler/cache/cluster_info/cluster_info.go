@@ -233,6 +233,14 @@ func (c *ClusterInfo) Snapshot() (*api.ClusterInfo, error) {
 		log.InfraLogger.V(7).Infof("Advanced CSI scheduling not enabled - not snapshotting CSI storage objects")
 	}
 
+	// Resolve topology-constraint aliases to canonical node labels once, before constraint signatures
+	// are computed below, so every downstream consumer (topology plugin, solvers) reads canonical labels.
+	if aliasesByTopology := buildAliasMapsByTopology(snapshot.Topologies); len(aliasesByTopology) > 0 {
+		for _, pg := range snapshot.PodGroupInfos {
+			pg.ResolveTopologyAliases(aliasesByTopology)
+		}
+	}
+
 	for _, pg := range snapshot.PodGroupInfos {
 		log.InfraLogger.V(6).Infof("Scheduling constraints signature for podgroup %s/%s: %s",
 			pg.Namespace, pg.Name, pg.GetSchedulingConstraintsSignature())
@@ -552,6 +560,28 @@ func (c *ClusterInfo) snapshotTopologies() ([]*kaiv1alpha1.Topology, error) {
 		return nil, fmt.Errorf("error listing topologies: %w", err)
 	}
 	return topologies, nil
+}
+
+// buildAliasMapsByTopology returns, per topology name, its alias->nodeLabel map. Only topologies that
+// declare at least one level alias are included; the result is empty when no aliases are in use.
+func buildAliasMapsByTopology(topologies []*kaiv1alpha1.Topology) map[string]map[string]string {
+	result := map[string]map[string]string{}
+	for _, topology := range topologies {
+		var aliases map[string]string
+		for _, level := range topology.Spec.Levels {
+			if level.Alias == "" {
+				continue
+			}
+			if aliases == nil {
+				aliases = map[string]string{}
+			}
+			aliases[level.Alias] = level.NodeLabel
+		}
+		if len(aliases) > 0 {
+			result[topology.Name] = aliases
+		}
+	}
+	return result
 }
 
 func getDefaultPriority(dataLister data_lister.DataLister) (int32, error) {

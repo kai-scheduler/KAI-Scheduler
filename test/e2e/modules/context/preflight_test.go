@@ -10,9 +10,13 @@ import (
 	"sync"
 	"testing"
 
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 	fakeClient "sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
@@ -60,6 +64,17 @@ func TestCheckForeignQueuesUnlabeled(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "prod") {
 		t.Errorf("error should name offending queue, got %q", err.Error())
+	}
+}
+
+func TestCheckForeignQueuesMissingCRD(t *testing.T) {
+	cli := fakeClientWith(t).WithInterceptorFuncs(interceptor.Funcs{
+		List: func(goctx.Context, runtimeClient.WithWatch, runtimeClient.ObjectList, ...runtimeClient.ListOption) error {
+			return &meta.NoKindMatchError{GroupKind: schema.GroupKind{Group: v2.GroupVersion.Group, Kind: "Queue"}}
+		},
+	}).Build()
+	if err := checkForeignQueues(goctx.Background(), cli); err != nil {
+		t.Errorf("missing Queue CRD (KAI not installed) should pass preflight: %v", err)
 	}
 }
 
