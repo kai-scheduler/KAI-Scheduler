@@ -15,6 +15,7 @@ import (
 	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	schedapi "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -205,22 +206,70 @@ func TestRequestUnits(t *testing.T) {
 	}}}
 
 	t.Run("pod scope aggregates into one unit", func(t *testing.T) {
-		units := requestUnits(task, node_info.TopologyScopePod)
-		assert.Len(t, units, 1)
+		concurrent, serial := requestUnits(task, node_info.TopologyScopePod)
+		assert.Len(t, concurrent, 1)
+		assert.Empty(t, serial, "pod scope folds init containers into the effective pod request")
 		// PodRequests = max(init peak 10, sidecar+regulars 1+2+2=5) = 10.
-		got := units[0]["cpu"]
+		got := concurrent[0]["cpu"]
 		assert.Equal(t, int64(10), got.Value())
 	})
 
-	t.Run("container scope yields one unit per concurrent container", func(t *testing.T) {
-		units := requestUnits(task, node_info.TopologyScopeContainer)
-		assert.Len(t, units, 3, "native sidecar + two regular containers (ordinary init excluded)")
+	t.Run("container scope splits concurrent and serial units", func(t *testing.T) {
+		concurrent, serial := requestUnits(task, node_info.TopologyScopeContainer)
+		assert.Len(t, concurrent, 3, "native sidecar + two regular containers")
 		var total int64
-		for _, u := range units {
+		for _, u := range concurrent {
 			q := u["cpu"]
 			total += q.Value()
 		}
 		assert.Equal(t, int64(5), total, "1 (sidecar) + 2 + 2")
+
+		assert.Len(t, serial, 1, "the ordinary init container is a serial unit")
+		initCPU := serial[0]["cpu"]
+		assert.Equal(t, int64(10), initCPU.Value())
+	})
+}
+
+// TestPredicateOrdinaryInitContainer verifies an ordinary init container is checked for
+// alignability on its own (rejected if it cannot fit a zone) but is not accumulated into the
+// concurrent app containers' headroom.
+func TestPredicateOrdinaryInitContainer(t *testing.T) {
+	always := v1.ContainerRestartPolicyAlways
+	cpu := func(q string) v1.ResourceRequirements {
+		return v1.ResourceRequirements{Requests: v1.ResourceList{"cpu": resource.MustParse(q)}}
+	}
+	build := func(initCPU string, restartable bool) *pod_info.PodInfo {
+		init := v1.Container{Resources: cpu(initCPU)}
+		if restartable {
+			init.RestartPolicy = &always
+		}
+		return &pod_info.PodInfo{Pod: &v1.Pod{
+			Status: v1.PodStatus{QOSClass: v1.PodQOSGuaranteed},
+			Spec: v1.PodSpec{
+				InitContainers: []v1.Container{init},
+				Containers:     []v1.Container{{Resources: cpu("2")}},
+			},
+		}}
+	}
+
+	t.Run("ordinary init within a zone is admitted, not accumulated", func(t *testing.T) {
+		pp, _, node := wiredPlugin(singleNUMANodeTopology(node_info.TopologyScopeContainer,
+			numaZone("node-0", map[string]string{"cpu": "4"}),
+			numaZone("node-1", map[string]string{"cpu": "4"}),
+		))
+		// init wants 4 (fits a 4-CPU zone alone); app wants 2. If init were accumulated with the
+		// app container, the two together (6) would not fit a single zone — admission proves it isn't.
+		_, admit := pp.evaluate(build("4", false), node)
+		assert.True(t, admit)
+	})
+
+	t.Run("ordinary init larger than any zone is rejected", func(t *testing.T) {
+		pp, _, node := wiredPlugin(singleNUMANodeTopology(node_info.TopologyScopeContainer,
+			numaZone("node-0", map[string]string{"cpu": "4"}),
+			numaZone("node-1", map[string]string{"cpu": "4"}),
+		))
+		_, admit := pp.evaluate(build("5", false), node)
+		assert.False(t, admit, "an init container that fits no single zone cannot be NUMA-aligned")
 	})
 }
 
@@ -308,23 +357,72 @@ func TestPlacementFromObserved(t *testing.T) {
 	})
 }
 
+// TestResolvePlacementRecord covers the precedence the plugin applies when reconstructing a pod's
+// durable placement: observed annotation > BindRequest zones > predicted annotation > nil.
+func TestResolvePlacementRecord(t *testing.T) {
+	observed := []schedulingv1alpha2.NUMAZonePlacement{observedZone("node-0", "1")}
+	predicted := []schedulingv1alpha2.NUMAZonePlacement{observedZone("node-1", "2")}
+	bindReq := []schedulingv1alpha2.NUMAZonePlacement{observedZone("node-2", "3")}
+
+	podWith := func(ann map[string]string) *v1.Pod {
+		pod := &v1.Pod{}
+		pod.Annotations = ann
+		return pod
+	}
+
+	t.Run("observed annotation wins over everything", func(t *testing.T) {
+		pod := podWith(map[string]string{
+			commonconstants.NumaPlacementObserved:  observedAnnotation(observed...),
+			commonconstants.NumaPlacementPredicted: observedAnnotation(predicted...),
+		})
+		assert.Equal(t, "node-0", resolvePlacementRecord(pod, bindReq)[0].Zone)
+	})
+
+	t.Run("BindRequest beats predicted annotation when no observed", func(t *testing.T) {
+		pod := podWith(map[string]string{commonconstants.NumaPlacementPredicted: observedAnnotation(predicted...)})
+		assert.Equal(t, "node-2", resolvePlacementRecord(pod, bindReq)[0].Zone, "BindRequest is the freshest prediction")
+	})
+
+	t.Run("predicted annotation used when no observed and no BindRequest", func(t *testing.T) {
+		pod := podWith(map[string]string{commonconstants.NumaPlacementPredicted: observedAnnotation(predicted...)})
+		assert.Equal(t, "node-1", resolvePlacementRecord(pod, nil)[0].Zone)
+	})
+
+	t.Run("none present yields nil", func(t *testing.T) {
+		assert.Nil(t, resolvePlacementRecord(podWith(nil), nil))
+	})
+
+	t.Run("malformed observed is ignored, falls through to predicted", func(t *testing.T) {
+		pod := podWith(map[string]string{
+			commonconstants.NumaPlacementObserved:  "{not json",
+			commonconstants.NumaPlacementPredicted: observedAnnotation(predicted...),
+		})
+		assert.Equal(t, "node-1", resolvePlacementRecord(pod, nil)[0].Zone, "malformed observed ignored, predicted used")
+	})
+}
+
 func TestSeedObservedPlacements(t *testing.T) {
 	topo := singleNUMANodeTopology(node_info.TopologyScopePod,
 		numaZone("node-0", map[string]string{"cpu": "4"}),
 		numaZone("node-1", map[string]string{"cpu": "4"}),
 	)
 
+	// Seeded from the observed annotation.
 	withObserved := gPod("observed", map[string]string{"cpu": "2"})
 	withObserved.Pod.Annotations = map[string]string{commonconstants.NumaPlacementObserved: observedAnnotation(observedZone("node-1", "2"))}
+
+	// Seeded from the BindRequest (no annotation), read via the session's clone-independent map.
+	fromBindRequest := gPod("from-bind-request", map[string]string{"cpu": "2"})
+	fromBindRequest.Pod.Namespace, fromBindRequest.Pod.Name = "ns", "from-bind-request"
 
 	alreadyPlaced := gPod("already", map[string]string{"cpu": "2"})
 	alreadyPlaced.Pod.Annotations = map[string]string{commonconstants.NumaPlacementObserved: observedAnnotation(observedZone("node-1", "2"))}
 	alreadyPlaced.NUMAPlacement = pod_info.NUMAPlacement{{ZoneIndex: 0, Amount: v1.ResourceList{"cpu": resource.MustParse("2")}}}
 
-	noAnnotation := gPod("none", map[string]string{"cpu": "2"})
+	noRecord := gPod("none", map[string]string{"cpu": "2"})
 
-	malformed := gPod("malformed", map[string]string{"cpu": "2"})
-	malformed.Pod.Annotations = map[string]string{commonconstants.NumaPlacementObserved: "{not json"}
+	unknownZone := gPod("unknown-zone", map[string]string{"cpu": "2"})
+	unknownZone.Pod.Annotations = map[string]string{commonconstants.NumaPlacementObserved: observedAnnotation(observedZone("node-9", "2"))}
 
 	burstable := gPod("burstable", map[string]string{"cpu": "2"})
 	burstable.Pod.Status.QOSClass = v1.PodQOSBurstable
@@ -342,21 +440,31 @@ func TestSeedObservedPlacements(t *testing.T) {
 		NumaTopology: topo,
 		PodInfos:     map[common_info.PodID]*pod_info.PodInfo{withObserved.UID: nodeCopy},
 	}
-	job := podgroup_info.NewPodGroupInfo("job", withObserved, alreadyPlaced, noAnnotation, malformed, burstable, pending)
+	job := podgroup_info.NewPodGroupInfo("job", withObserved, fromBindRequest, alreadyPlaced, noRecord, unknownZone, burstable, pending)
 
 	pp := &numaPlugin{ignoreList: sets.New[v1.ResourceName]()}
 	ssn := &framework.Session{ClusterInfo: &schedapi.ClusterInfo{
 		Nodes:         map[string]*node_info.NodeInfo{"node-a": node},
 		PodGroupInfos: map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{"job": job},
+		BindRequests: bindrequest_info.BindRequestMap{
+			bindrequest_info.NewKeyFromPod(fromBindRequest.Pod): &bindrequest_info.BindRequestInfo{
+				BindRequest: &schedulingv1alpha2.BindRequest{
+					Spec: schedulingv1alpha2.BindRequestSpec{
+						PredictedNUMAZones: []schedulingv1alpha2.NUMAZonePlacement{observedZone("node-0", "2")},
+					},
+				},
+			},
+		},
 	}}
 
 	pp.seedPlacements(ssn)
 
 	assert.Equal(t, []int{1}, withObserved.NUMAPlacement.ZoneIndices(), "observed annotation translated onto the canonical job task")
+	assert.Equal(t, []int{0}, fromBindRequest.NUMAPlacement.ZoneIndices(), "BindRequest zones seeded when no annotation")
 	assert.Empty(t, nodeCopy.NUMAPlacement, "the node's clone is not the seed target (job task is)")
 	assert.Equal(t, []int{0}, alreadyPlaced.NUMAPlacement.ZoneIndices(), "existing placement not overwritten")
-	assert.Empty(t, noAnnotation.NUMAPlacement, "no annotation ⇒ unaccounted")
-	assert.Empty(t, malformed.NUMAPlacement, "malformed annotation ⇒ unaccounted")
+	assert.Empty(t, noRecord.NUMAPlacement, "no record ⇒ unaccounted")
+	assert.Empty(t, unknownZone.NUMAPlacement, "record naming an unknown zone ⇒ unaccounted")
 	assert.Empty(t, burstable.NUMAPlacement, "non-Guaranteed pod is not seeded")
 	assert.Empty(t, pending.NUMAPlacement, "pending pod (no node assigned) is not seeded")
 }

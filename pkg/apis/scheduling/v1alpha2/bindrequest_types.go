@@ -29,6 +29,10 @@ type BindRequestSpec struct {
 	// ResourceClaims is the list of resource claims that need to be bound for this pod
 	ResourceClaimAllocations []ResourceClaimAllocation `json:"resourceClaimAllocations,omitempty"`
 
+	// PredictedNUMAZones is the scheduler's predicted NUMA placement of the pod's resources on the
+	// selected node.
+	PredictedNUMAZones []NUMAZonePlacement `json:"predictedNUMAZones,omitempty"`
+
 	// BackoffLimit is the number of retries before giving up
 	BackoffLimit *int32 `json:"backoffLimit,omitempty"`
 }

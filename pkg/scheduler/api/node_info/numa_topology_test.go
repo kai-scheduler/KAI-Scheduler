@@ -212,6 +212,26 @@ func TestNumaTopologyClone(t *testing.T) {
 	assert.Nil(t, (*NumaTopology)(nil).Clone())
 }
 
+func TestZoneIDIndexTranslation(t *testing.T) {
+	topo := &NumaTopology{Zones: []*NumaZone{{ID: "node-0"}, {ID: "node-1"}}}
+
+	idx, ok := topo.ZoneIndexByID("node-1")
+	assert.True(t, ok)
+	assert.Equal(t, 1, idx)
+
+	_, ok = topo.ZoneIndexByID("node-9")
+	assert.False(t, ok, "unknown id")
+
+	id, ok := topo.ZoneID(0)
+	assert.True(t, ok)
+	assert.Equal(t, "node-0", id)
+
+	_, ok = topo.ZoneID(5)
+	assert.False(t, ok, "index out of range")
+	_, ok = topo.ZoneID(-1)
+	assert.False(t, ok, "negative index")
+}
+
 func TestNumaNodeID(t *testing.T) {
 	tests := map[string]struct {
 		expectedID int

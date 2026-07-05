@@ -78,6 +78,15 @@ func (t *NumaTopology) ZoneIndexByID(id string) (int, bool) {
 	return -1, false
 }
 
+// ZoneID returns the durable id of the zone at the given index, or false if out of range. Used to
+// translate the internal index representation to the persisted (id-based) placement at bind.
+func (t *NumaTopology) ZoneID(index int) (string, bool) {
+	if index < 0 || index >= len(t.Zones) {
+		return "", false
+	}
+	return t.Zones[index].ID, true
+}
+
 func (t *NumaTopology) Clone() *NumaTopology {
 	if t == nil {
 		return nil
