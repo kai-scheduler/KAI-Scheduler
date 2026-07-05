@@ -89,8 +89,6 @@ var _ = Describe("MinRuntime Plugin", func() {
 			defaultPreemptMinRuntime: defaultPreemptDuration,
 			defaultReclaimMinRuntime: defaultReclaimDuration,
 			reclaimResolveMethod:     resolveMethodLCA,
-			preemptProtectionCache:   make(map[common_info.PodGroupID]bool),
-			reclaimProtectionCache:   make(map[common_info.PodGroupID]map[common_info.PodGroupID]bool),
 			resolver:                 NewResolver(queues, defaultPreemptDuration, defaultReclaimDuration),
 		}
 	})
@@ -138,6 +136,19 @@ var _ = Describe("MinRuntime Plugin", func() {
 				result := plugin.preemptFilterFn(pendingJob, victim)
 				Expect(result).To(BeTrue(), "Job with no start time should not be protected")
 			})
+
+			It("re-evaluates protection for a previously checked victim", func() {
+				pendingJob := createPodGroup("pending-job", "dev-team1", nil, 1, 1)
+				recentStart := time.Now().Add(-10 * time.Second)
+				victim := createPodGroup("victim-job", "prod-team2", &recentStart, 1, 1)
+
+				Expect(plugin.preemptFilterFn(pendingJob, victim)).To(BeFalse())
+
+				oldStart := time.Now().Add(-30 * time.Second)
+				victim.LastStartTimestamp = &oldStart
+
+				Expect(plugin.preemptFilterFn(pendingJob, victim)).To(BeTrue())
+			})
 		})
 	})
 
@@ -172,6 +183,19 @@ var _ = Describe("MinRuntime Plugin", func() {
 				// The reclaim min runtime for prod-team2 is 35s, so 40s is past protection period
 				result := plugin.reclaimFilterFn(pendingJob, victim)
 				Expect(result).To(BeTrue(), "Job 'old-victim' should not be protected from reclaim")
+			})
+
+			It("re-evaluates protection for a previously checked job pair", func() {
+				pendingJob := createPodGroup("pending-job", "dev-team1", nil, 1, 1)
+				recentStart := time.Now().Add(-20 * time.Second)
+				victim := createPodGroup("victim-job", "prod-team2", &recentStart, 1, 1)
+
+				Expect(plugin.reclaimFilterFn(pendingJob, victim)).To(BeFalse())
+
+				oldStart := time.Now().Add(-40 * time.Second)
+				victim.LastStartTimestamp = &oldStart
+
+				Expect(plugin.reclaimFilterFn(pendingJob, victim)).To(BeTrue())
 			})
 		})
 

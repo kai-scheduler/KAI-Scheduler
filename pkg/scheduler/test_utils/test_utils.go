@@ -14,10 +14,12 @@ import (
 	// lint:ignore ST1001 we want to use gomock here
 	. "go.uber.org/mock/gomock"
 	"golang.org/x/exp/slices"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes/fake"
 
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
 	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions"
@@ -85,6 +87,7 @@ type TestQueueBasic struct {
 	GPUOverQuotaWeight          float64
 	ParentQueue                 string
 	InteractiveTimeoutInMinutes int64
+	ReclaimMinRuntime           *metav1.Duration
 	UseOnlyFreeCPUResources     bool
 	V1                          bool
 }
@@ -98,8 +101,9 @@ type TestDepartmentBasic struct {
 }
 
 type TestSessionConfig struct {
-	Plugins      []conf.Tier
-	CachePlugins map[string]bool
+	Plugins               []conf.Tier
+	CachePlugins          map[string]bool
+	ScenarioSearchBudgets *kaiv1.ScenarioSearchBudgets
 }
 
 type TestExpectedResultBasic struct {
