@@ -4,8 +4,6 @@
 package strategies
 
 import (
-	"go.uber.org/zap"
-
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	rs "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
@@ -50,8 +48,8 @@ func (mfss *MaintainFairShareStrategy) Reclaimable(
 	reclaimeeRemainingShare rs.ResourceQuantities) bool {
 	// This strategy allows to reclaim if reclaimee is currently over allowed fair share
 
-	log.InfraLogger.V(6).Do(func(logger *zap.SugaredLogger) {
-		logger.Infof("Checking if reclaim is possible for reclaimer <%s> and reclaimee <%s> in order "+
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.V(6).Infof("Checking if reclaim is possible for reclaimer <%s> and reclaimee <%s> in order "+
 			"to maintain fair share. Reclaimee requested: <%s>, deserved: <%s>, fairShare: <%s>, "+
 			"reclaimeeRemainingShare: <%s>",
 			reclaimerQueue.Name, reclaimeeQueue.Name, reclaimeeQueue.GetRequestableShare(), reclaimeeQueue.GetDeservedShare(),
@@ -69,8 +67,8 @@ func (gdqs *GuaranteeDeservedQuotaStrategy) Reclaimable(
 	reclaimeeRemainingShare rs.ResourceQuantities) bool {
 	// This strategy allows to reclaim if reclaimer is under deserved quota ("starved") and reclaimer is above quota
 
-	log.InfraLogger.V(6).Do(func(logger *zap.SugaredLogger) {
-		logger.Infof("Checking if reclaim is possible for reclaimer <%s> and reclaimee <%s> in order to "+
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.V(6).Infof("Checking if reclaim is possible for reclaimer <%s> and reclaimee <%s> in order to "+
 			"Guarantee deserved quota. "+
 			"Reclaimee requested: <%s>, deserved: <%s>, fairShare: <%s>, reclaimeeRemainingShare: <%s> "+
 			"Reclaimer requested: <%s>, deserved: <%s>, fairShare: <%s>",

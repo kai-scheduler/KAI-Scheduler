@@ -4,8 +4,6 @@
 package nodeavailability
 
 import (
-	"go.uber.org/zap"
-
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
@@ -35,8 +33,8 @@ func (pp *nodeAvailabilityPlugin) nodeOrderFn(task *pod_info.PodInfo, node *node
 		score = scores.Availability
 	}
 
-	log.InfraLogger.V(7).Do(func(logger *zap.SugaredLogger) {
-		logger.Infof(
+	log.InfraLogger.V(7).Do(func() {
+		log.InfraLogger.V(7).Infof(
 			"Estimating Task: <%v/%v> Job: <%v> for node: <%s> that has <%f> idle GPUs and <%f> releasing GPUs and <%f> allocated GPUs. Score: %f",
 			task.Namespace, task.Name, task.Job, node.Name,
 			node.IdleVector.Get(resource_info.GPUIndex),

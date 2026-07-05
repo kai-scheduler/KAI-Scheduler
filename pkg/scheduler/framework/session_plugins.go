@@ -24,8 +24,6 @@ import (
 	"maps"
 	"net/http"
 
-	"go.uber.org/zap"
-
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -401,7 +399,7 @@ func (ssn *Session) SubsetNodesFn(
 }
 
 func logNodeSetsPluginResult(subsetNodesFn api.SubsetNodesFn, podGroup *podgroup_info.PodGroupInfo, nodeSets []node_info.NodeSet) {
-	log.InfraLogger.V(7).Do(func(logger *zap.SugaredLogger) {
+	log.InfraLogger.V(7).Do(func() {
 		nodeSetNames := make([][]string, 0, len(nodeSets))
 		for _, nodeSet := range nodeSets {
 			names := make([]string, 0, len(nodeSet))
@@ -410,7 +408,7 @@ func logNodeSetsPluginResult(subsetNodesFn api.SubsetNodesFn, podGroup *podgroup
 			}
 			nodeSetNames = append(nodeSetNames, names)
 		}
-		logger.Infof(
+		log.InfraLogger.V(7).Infof(
 			"Result of plugin func <%v> on podGroup <%s/%s> is %v", subsetNodesFn, podGroup.Namespace, podGroup.Namespace,
 			nodeSetNames)
 	})

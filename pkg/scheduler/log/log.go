@@ -40,9 +40,9 @@ type VerboseLogger struct {
 }
 
 // Do invokes logFn only when the verbosity level is enabled.
-func (logger VerboseLogger) Do(logFn func(*zap.SugaredLogger)) {
+func (logger VerboseLogger) Do(logFn func()) {
 	if logger.enabled {
-		logFn(logger.SugaredLogger)
+		logFn()
 	}
 }
 

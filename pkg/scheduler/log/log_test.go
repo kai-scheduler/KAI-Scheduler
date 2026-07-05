@@ -26,10 +26,10 @@ func TestVerboseLoggerDoRunsOnlyWhenEnabled(t *testing.T) {
 	enabledCalls := 0
 	disabledCalls := 0
 
-	logger.V(3).Do(func(_ *zap.SugaredLogger) {
+	logger.V(3).Do(func() {
 		enabledCalls++
 	})
-	logger.V(4).Do(func(_ *zap.SugaredLogger) {
+	logger.V(4).Do(func() {
 		disabledCalls++
 	})
 
