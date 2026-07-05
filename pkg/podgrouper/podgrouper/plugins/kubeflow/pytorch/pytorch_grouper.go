@@ -25,6 +25,8 @@ const (
 
 	replicaTypeMaster = string(pytorchv1.PyTorchJobReplicaTypeMaster)
 	replicaTypeWorker = string(pytorchv1.PyTorchJobReplicaTypeWorker)
+
+	maxAllowedSegmentation = 10000
 )
 
 type PyTorchGrouper struct {
@@ -162,6 +164,12 @@ func buildWorkerSubGroups(
 	if partialSegmentSize != 0 {
 		numSegments++
 	}
+	// Validate num of subgroups created for the segmentation
+	if numSegments > maxAllowedSegmentation {
+		return nil, fmt.Errorf("number of subgroups created for the segmentation %d is greater than max allowed segmentation %d",
+			numSegments, maxAllowedSegmentation)
+	}
+
 	segmentIndex, err := getPodSegmentIndex(pod, segmentSize)
 	if err != nil {
 		return nil, err
@@ -206,6 +214,9 @@ func getPodSegmentIndex(pod *v1.Pod, segmentSize int) (int, error) {
 	index, err := strconv.Atoi(indexLabel)
 	if err != nil {
 		return -1, fmt.Errorf("invalid replica index %s, err: %w", indexLabel, err)
+	}
+	if index < 0 {
+		return -1, fmt.Errorf("replica index %s is not valid. It must be bigger than 0", indexLabel)
 	}
 	return index / segmentSize, nil
 }
