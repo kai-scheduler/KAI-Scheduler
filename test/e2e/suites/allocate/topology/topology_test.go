@@ -251,9 +251,6 @@ var _ = Describe("Topology", Ordered, func() {
 		})
 	})
 
-	// Thin end-to-end check that a Topology level alias resolves through the real scheduler.
-	// The test Topology carries an alias on the rack level (see rd.CreateRackZoneTopology);
-	// one-to-one validation is covered by unit tests.
 	Context("Topology - alias resolution", func() {
 		const numNodesInTestTopology = 4
 
