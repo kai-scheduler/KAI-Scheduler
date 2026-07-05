@@ -35,6 +35,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/numa"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
 )
@@ -92,11 +93,26 @@ func CreateFakeSession(schedulerConfig *TestSessionConfig,
 		addSessionPlugins(&ssn, schedulerConfig.Plugins, createCacheMockIfNotExists, schedulerConfig.CachePlugins)
 	}
 
+	// The numa plugin isn't in the default test config; enable it whenever a node carries a
+	// NumaTopology so NUMA scenarios are driven purely by node/job metadata. Inert otherwise.
+	if anyNodeHasNumaTopology(nodesInfoMap) {
+		numa.New(framework.PluginArguments{}).OnSessionOpen(&ssn)
+	}
+
 	// Some plugins are using informers wrappers (such as the DRA manager) which require a moment to sync
 	// without this some tests might have flaky results.
 	time.Sleep(time.Millisecond)
 
 	return &ssn
+}
+
+func anyNodeHasNumaTopology(nodesInfoMap map[string]*node_info.NodeInfo) bool {
+	for _, node := range nodesInfoMap {
+		if node.NumaTopology != nil {
+			return true
+		}
+	}
+	return false
 }
 
 func BuildQueueInfoMap(testMetadata TestTopologyBasic) map[common_info.QueueID]*queue_info.QueueInfo {
