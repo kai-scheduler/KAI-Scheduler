@@ -135,6 +135,15 @@ function initializeMetrics() {
   });
 }
 
+function initializeVisibleMetrics() {
+  const metricsMain = document.getElementById('metrics-main');
+  if (!metricsMain || metricsMain.classList.contains('hidden') || !window.allRuns?.length) return false;
+
+  window._metricsInitialized = true;
+  initializeMetrics();
+  return true;
+}
+
 function initializeTabs() {
   const tabs = document.querySelectorAll('.tab');
   const contents = document.querySelectorAll('.tab-content');
@@ -146,22 +155,14 @@ function initializeTabs() {
       tab.classList.add('active');
       contents.forEach(content => content.classList.toggle('hidden', content.dataset.content !== targetTab));
 
-      if (targetTab === 'metrics' && !window._metricsInitialized) {
-        window._metricsInitialized = true;
-        initializeMetrics();
-      }
+      if (targetTab === 'metrics' && !window._metricsInitialized) initializeVisibleMetrics();
     });
   });
 }
 
 initializeTabs();
+initializeVisibleMetrics();
 
 window.addEventListener('scale-tests:data-loaded', () => {
-  const metricsTab = document.getElementById('metrics-main');
-  if (metricsTab && !metricsTab.classList.contains('hidden')) {
-    window._metricsInitialized = true;
-    initializeMetrics();
-  } else {
-    window._metricsInitialized = false;
-  }
+  if (!initializeVisibleMetrics()) window._metricsInitialized = false;
 });

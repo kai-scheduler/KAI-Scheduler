@@ -135,11 +135,13 @@ test('renders both result formats and eleven unified charts', async () => {
   const ginkgoPayload = JSON.parse(readFileSync(join(__dirname, 'example-report.json'), 'utf8'));
   const browser = createBrowserContext(scalePayload, ginkgoPayload);
 
-  for (const file of ['results.js', 'results-view.js', 'metrics-data.js', 'app.js', 'metrics.js']) {
+  for (const file of ['results.js', 'results-view.js', 'metrics-data.js', 'app.js']) {
     vm.runInContext(readFileSync(join(__dirname, file), 'utf8'), browser.context, { filename: file });
   }
 
   await waitFor(() => browser.context.window.allRuns?.length === 2);
+  assert.equal(browser.renderedCharts.length, 0);
+  vm.runInContext(readFileSync(join(__dirname, 'metrics.js'), 'utf8'), browser.context, { filename: 'metrics.js' });
   assert.match(browser.elements.get('main').innerHTML, /source-results/);
   assert.match(browser.elements.get('main').innerHTML, /source-legacy/);
   assert.match(browser.elements.get('main').innerHTML, /total requested gpus/);
