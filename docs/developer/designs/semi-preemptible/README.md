@@ -117,7 +117,35 @@ This does **not** remove subgroup-level elasticity — it remains fully supporte
 
 Victim selection considers only the **surplus** of each node: the "extra" (`n - minMember`) pods at a leaf PodSet, and the extra (`scheduled - minSubGroup`) child subgroups at an intermediate node (evicted whole). This is applied independently per node; no cross-subgroup victim selection is needed. This approach may miss some solutions when checking all orderings, but the added complexity is not justified for the MVP.
 
-This implies that pods are treated equally within the same subgroup for eviction, prompting the user to use the subgroup API to specify any ordering or hierarchy for pod eviction.
+This implies that pods are treated equally within the same subgroup for eviction, prompting the user to use the subgroup API to specify any ordering or hierarchy for pod eviction (see [Footnote: Eviction Randomness](#footnote-eviction-randomness)).
+
+
+## Footnote: Eviction Randomness
+
+In a `Semi-Preemptible` PodGroup / SubGroup, Pods are NOT "colored out" as preemptible — there is no election of individual pods. All pods within a subgroup are treated equally, and when surplus must be reclaimed the victims are chosen arbitrarily.
+
+A non-homogeneous subgroup / podgroup with the semi-preemptible attribute might therefore experience reduced service because the "wrong" pods are evicted. This is amended by correctly configuring subgroups and grouping similar pods into logical structures.
+
+**Unadvised**— one master pod and three workers mixed in a single leaf PodSet with `minMember: 2`. Any 2 of the 4 pods are kept as core; because pods are indistinguishable to eviction, the master is not guaranteed to survive, and the job can be left with 2 workers and no master:
+
+```yaml
+spec:
+  preemptibility: "semi-preemptible"
+  minMember: 2            # keeps ANY 2 of {master, worker, worker, worker} — master may be evicted
+```
+
+**Aligned with API** — separate master and workers into their own subgroups so eviction can only target the surplus workers, never the master:
+
+```yaml
+spec:
+  preemptibility: "semi-preemptible"
+  minSubGroup: 2          # both subgroups below are core
+  subGroups:
+    - name: master        # core — never evicted
+      minMember: 1
+    - name: workers       # 2 workers core; extra workers are elastic
+      minMember: 2
+```
 
 ## Future Work: `minNonPreemptible` field
 
