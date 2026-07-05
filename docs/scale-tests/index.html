@@ -11,7 +11,11 @@
   Format:
     {
       "runs": [
-        { "timestamp": "2026-06-29T08:42:33Z", "path": "Public/<run-id>/results.json", "commit": "..." }
+        {
+          "timestamp": "2026-06-29T08:42:33Z",
+          "path": "Public/results_main_<timestamp>_<commit>_<run-id>.json",
+          "commit": "..."
+        }
       ]
     }
 
@@ -27,7 +31,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>KAI Scheduler — Scale Tests</title>
   <link rel="icon" type="image/x-icon" href="favicon.ico">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=__ASSET_VERSION__">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
 </head>
@@ -87,10 +91,10 @@
   <div class="metrics-grid" id="metrics-grid"></div>
 </main>
 
-<script src="results.js"></script>
-<script src="results-view.js"></script>
-<script src="metrics-data.js"></script>
-<script src="app.js"></script>
-<script src="metrics.js"></script>
+<script src="results.js?v=__ASSET_VERSION__"></script>
+<script src="results-view.js?v=__ASSET_VERSION__"></script>
+<script src="metrics-data.js?v=__ASSET_VERSION__"></script>
+<script src="app.js?v=__ASSET_VERSION__"></script>
+<script src="metrics.js?v=__ASSET_VERSION__"></script>
 </body>
 </html>

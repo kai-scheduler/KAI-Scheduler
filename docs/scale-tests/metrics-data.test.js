@@ -150,6 +150,7 @@ test('parses every supported timing representation', () => {
   assert.equal(parseDuration('6m36.5s'), 396.5);
   assert.equal(parseDuration('48.25s'), 48.25);
   assert.equal(parseDuration(8.34), 8.34);
+  assert.equal(parseDuration('1..2s'), null);
 });
 
 test('formats chart durations with compact seconds, minutes, and hours', () => {

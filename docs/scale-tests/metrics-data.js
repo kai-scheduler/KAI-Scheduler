@@ -135,7 +135,7 @@
   function parseDuration(value) {
     if (typeof value === 'number') return Number.isFinite(value) ? value : null;
     if (typeof value !== 'string' || !value.trim()) return null;
-    const match = value.trim().match(/^(?:(\d+)h)?(?:(\d+)m)?(?:([\d.]+)s)?$/);
+    const match = value.trim().match(/^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+(?:\.\d+)?)s)?$/);
     if (!match || (!match[1] && !match[2] && !match[3])) return null;
     return Number(match[1] || 0) * 3600 + Number(match[2] || 0) * 60 + Number(match[3] || 0);
   }

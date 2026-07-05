@@ -130,6 +130,15 @@ test('opens the metrics tab by default', () => {
   assert.match(html, /<main id="metrics-main" class="tab-content" data-content="metrics">/);
 });
 
+test('versions local dashboard assets with the deployed commit', () => {
+  const html = readFileSync(join(__dirname, 'index.html'), 'utf8');
+  const workflow = readFileSync(join(__dirname, '../../.github/workflows/deploy-scale-tests-page.yaml'), 'utf8');
+  const assets = ['styles.css', 'results.js', 'results-view.js', 'metrics-data.js', 'app.js', 'metrics.js'];
+
+  assets.forEach(asset => assert.ok(html.includes(`${asset}?v=__ASSET_VERSION__`), asset));
+  assert.match(workflow, /__ASSET_VERSION__.*GITHUB_SHA/);
+});
+
 test('renders both result formats and eleven unified charts', async () => {
   const scalePayload = JSON.parse(readFileSync(join(__dirname, 'example-results.json'), 'utf8'));
   const ginkgoPayload = JSON.parse(readFileSync(join(__dirname, 'example-report.json'), 'utf8'));

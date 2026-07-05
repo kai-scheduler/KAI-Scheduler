@@ -14,7 +14,7 @@
 #
 # S3 bucket layout:
 #   Public/manifest.json                   — index of all runs
-#   Public/<run-id>/results.json           — test/e2e/scale result for that run
+#   Public/<result-object>.json             — result object referenced by the manifest
 #
 # Legacy Ginkgo report objects are supported until 2026-07-30. The manifest
 # contract does not change; the dashboard detects the payload at each run path.
@@ -24,7 +24,7 @@
 #     "runs": [
 #       {
 #         "timestamp": "2026-06-29T08:42:33Z",
-#         "path": "Public/<run-id>/results.json",
+#         "path": "Public/results_main_<timestamp>_<commit>_<run-id>.json",
 #         "commit": "aa514fc997453d075067e4aceae9319909c92ed6"
 #       }
 #     ]
@@ -59,7 +59,7 @@ jobs:
       - name: Test dashboard
         run: node --test docs/scale-tests/*.test.js
 
-      - name: Inject S3 base URL
+      - name: Inject dashboard configuration
         env:
           S3_URL: ${{ vars.SCALE_TESTS_S3_URL }}
         run: |
@@ -68,6 +68,7 @@ jobs:
             exit 1
           fi
           sed -i "s|__S3_BASE_URL__|${S3_URL}|g" docs/scale-tests/app.js
+          sed -i "s|__ASSET_VERSION__|${GITHUB_SHA}|g" docs/scale-tests/index.html
 
       - name: Deploy to gh-pages branch
         uses: peaceiris/actions-gh-pages@v4
