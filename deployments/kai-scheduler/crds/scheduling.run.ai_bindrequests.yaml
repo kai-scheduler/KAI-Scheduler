@@ -52,6 +52,33 @@ spec:
               podName:
                 description: PodName is the name of the pod to bind
                 type: string
+              predictedNUMAZones:
+                description: |-
+                  PredictedNUMAZones is the scheduler's predicted NUMA placement of the pod's resources on the
+                  selected node.
+                items:
+                  description: |-
+                    NUMAZonePlacement is a pod's durable per-zone placement record: the NRT zone id and the
+                    per-resource amounts placed there. Serialized to kai.scheduler/numa-placement-observed and
+                    kai.scheduler/numa-placement-predicted.
+                  properties:
+                    amount:
+                      additionalProperties:
+                        anyOf:
+                        - type: integer
+                        - type: string
+                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                        x-kubernetes-int-or-string: true
+                      description: ResourceList is a set of (resource name, quantity)
+                        pairs.
+                      type: object
+                    zone:
+                      type: string
+                  required:
+                  - amount
+                  - zone
+                  type: object
+                type: array
               receivedGPU:
                 description: ReceivedGPU is the amount of GPUs that were received
                 properties:

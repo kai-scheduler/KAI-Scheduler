@@ -25,6 +25,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	ksf "k8s.io/kube-scheduler/framework"
 
+	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -37,7 +38,7 @@ type Cache interface {
 	Run(stopCh <-chan struct{})
 	Snapshot() (*api.ClusterInfo, error)
 	WaitForCacheSync(stopCh <-chan struct{})
-	Bind(podInfo *pod_info.PodInfo, hostname string, bindRequestAnnotations map[string]string) error
+	Bind(podInfo *pod_info.PodInfo, hostname string, bindRequestAnnotations map[string]string, predictedNUMAZones []schedulingv1alpha2.NUMAZonePlacement) error
 	Evict(ssnPod *v1.Pod, job *podgroup_info.PodGroupInfo, evictionMetadata eviction_info.EvictionMetadata, message string) error
 	RecordJobStatusEvent(job *podgroup_info.PodGroupInfo) error
 	TaskPipelined(task *pod_info.PodInfo, message string)

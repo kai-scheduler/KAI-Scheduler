@@ -11,12 +11,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Added `global.resourceReservation.createServiceAccount` Helm value (default `true`) to allow disabling creation of the resource-reservation ServiceAccount, for embedding KAI in a parent chart that creates the ServiceAccount itself.
 - Added `defaultPriorityClasses.enabled` Helm value (default `true`) for installations that manage KAI PriorityClasses externally.
 - Added GitOps/ArgoCD install support ([guide](docs/gitops/README.md)): `kaiConfig.render` Helm value (default `false`) renders the `kai-config` Config CR inline as a tracked release resource (mutually exclusive with `kaiConfigDeployer.enabled`), `openshift` value (default `false`) forces OpenShift mode where `lookup` auto-detection is unavailable under offline rendering, and ArgoCD `PostDelete` hook and `Prune=false` annotations (requires ArgoCD >= 2.10). [#1794](https://github.com/kai-scheduler/KAI-Scheduler/issues/1794) [#1751](https://github.com/kai-scheduler/KAI-Scheduler/issues/1751)
+- Added **topology level aliases**: a `Topology` level may declare an `alias` (e.g. `rack`), usable in place of the raw node label key in a workload's `requiredTopologyLevel`/`preferredTopologyLevel`. Aliases are one-to-one (unique within the Topology and must not collide with a `nodeLabel`, enforced by a new Topology validating webhook) and may be edited freely (the `levels` immutability rule now freezes only the `nodeLabel` structure). When a level has no alias, behavior is unchanged and raw label keys keep working. [#1498](https://github.com/kai-scheduler/KAI-Scheduler/issues/1498)
 
 ### Changed
 - Removed unused `queuecontroller.certSecretName` and `admission.certSecretName` Helm values; webhook TLS secrets are created and managed by the operator (`queue-webhook-tls-secret`, `kai-admission-webhook-tls-secret`). [#1791](https://github.com/kai-scheduler/KAI-Scheduler/pull/1791) [dttung2905](https://github.com/dttung2905)
 - Podgrouper now preserves an existing PodGroup's topology constraint when the workload does not specify one, so an externally-assigned topology is not overwritten. Workload topology annotations still take precedence when present.
 
 ### Fixed
+- Scheduler now exits on 401 Unauthorized API responses instead of retrying indefinitely with a stale ServiceAccount token. [#1817](https://github.com/kai-scheduler/KAI-Scheduler/issues/1817)
+- Reduced scheduler memory use during large reclaim operations by removing redundant per-job-pair min-runtime protection caching; effective min-runtime durations remain cached per queue pair. [#1808](https://github.com/kai-scheduler/KAI-Scheduler/issues/1808)
 - Fixed reclaim abandoning valid over-quota victims when an unrelated under-deserved queue appeared earlier in victim ordering. [#1750](https://github.com/kai-scheduler/KAI-Scheduler/issues/1750)
 - Restricted Helm post-delete cleanup to KAI operator-managed Deployments and preserved externally managed `kai-config` resources when `kaiConfigDeployer.enabled=false`.
 - Scheduler cache now filters terminal Pods at watch time to reduce memory use, while still watching Pods bound by other schedulers so their resource usage is counted in allocatable calculations. [#1645](https://github.com/kai-scheduler/KAI-Scheduler/issues/1645) [enoodle](https://github.com/enoodle)
@@ -25,6 +28,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Reduced allocation churn in the scheduler hot path: cached `Schedulable()` result as a package-level singleton and guarded `logNodeSetsPluginResult` node-name collection behind an `IsVerbose(7)` check to avoid building slices on non-verbose runs
 - Block NaN value for fraction in the pod admission [#1798](https://github.com/kai-scheduler/KAI-Scheduler/issues/1798) [davidLif](https://github.com/davidLif)
 - In the fractional admission checks, check that the fractional value can be parsed as a quantity. [#1798](https://github.com/kai-scheduler/KAI-Scheduler/issues/1798) [davidLif](https://github.com/davidLif)
+- Podgrouper now rejects negative PyTorch replica indexes and LWS worker indexes, and caps the number of subgroups created for block-level segmentation at 10000 to avoid unbounded PodGroup fan-out. [davidLif](https://github.com/davidLif)
+- Fixed GPU-sharing pods with dotted pod names generating invalid ConfigMap-backed volume names. Volume names are now sanitized to valid DNS labels while preserving original ConfigMap references used for shared-GPU injection.
 
 
 ## [v0.16.0] - 2026-06-24

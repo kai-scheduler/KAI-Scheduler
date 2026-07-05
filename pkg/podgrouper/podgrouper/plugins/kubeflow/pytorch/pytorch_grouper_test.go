@@ -575,6 +575,52 @@ func TestGetPodGroupMetadata_Segments_SegmentSizeFromPodTemplate(t *testing.T) {
 	assert.Equal(t, "test-job-worker-1", workerSegment0.PodsReferences[0])
 }
 
+func TestGetPodGroupMetadata_Segments_NegativeReplicaIndex(t *testing.T) {
+	pytorchJob := getPytorchJobWithSegments(1, 4, "2")
+	grouper := newTestPyTorchGrouper()
+
+	workerPod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-job-worker-negative",
+			Namespace: "test_namespace",
+			Labels: map[string]string{
+				replicaTypeLabel:                      "worker",
+				"training.kubeflow.org/replica-index": "-1",
+			},
+			Annotations: map[string]string{
+				"kai.scheduler/segment-size": "2",
+			},
+		},
+	}
+
+	_, err := grouper.GetPodGroupMetadata(pytorchJob, workerPod)
+	assert.NotNil(t, err)
+	assert.Contains(t, err.Error(), "is not valid. It must be bigger than 0")
+}
+
+func TestGetPodGroupMetadata_Segments_ExceedsMaxAllowedSegmentation(t *testing.T) {
+	pytorchJob := getPytorchJobWithSegments(1, int64(maxAllowedSegmentation+1), "1")
+	grouper := newTestPyTorchGrouper()
+
+	workerPod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-job-worker-0",
+			Namespace: "test_namespace",
+			Labels: map[string]string{
+				replicaTypeLabel:                      "worker",
+				"training.kubeflow.org/replica-index": "0",
+			},
+			Annotations: map[string]string{
+				"kai.scheduler/segment-size": "1",
+			},
+		},
+	}
+
+	_, err := grouper.GetPodGroupMetadata(pytorchJob, workerPod)
+	assert.NotNil(t, err)
+	assert.Contains(t, err.Error(), "greater than max allowed segmentation")
+}
+
 func getPytorchJobWithSegments(masterReplicas, workerReplicas int64, segmentSize string) *unstructured.Unstructured {
 	return &unstructured.Unstructured{
 		Object: map[string]interface{}{
