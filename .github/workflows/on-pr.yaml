@@ -18,6 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       code: ${{ steps.filter.outputs.code }}
+      scale_tests: ${{ steps.filter.outputs.scale_tests }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -35,6 +36,20 @@ jobs:
               - '**'
               - '!**/*.md'
               - '!docs/**'
+            scale_tests:
+              - 'docs/scale-tests/**'
+
+  scale-tests-dashboard:
+    needs: [ check-build-and-test-required ]
+    if: needs.check-build-and-test-required.outputs.scale_tests == 'true'
+    name: Test Scale Tests Dashboard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Test dashboard
+        run: node --test docs/scale-tests/*.test.js
 
   validate-and-test:
     needs: [ check-build-and-test-required ]
