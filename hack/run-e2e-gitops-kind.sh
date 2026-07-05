@@ -77,14 +77,6 @@ if [ ! -f "$CHART_TGZ" ]; then
     helm pull oci://ghcr.io/kai-scheduler/kai-scheduler/kai-scheduler --version "$PACKAGE_VERSION" -d ${REPO_ROOT}/charts
 fi
 
-# The suite installs with kaiConfig.render=true; charts released before that
-# value existed cannot work in GitOps mode.
-if ! helm show values "$CHART_TGZ" | grep -q '^kaiConfig:'; then
-    echo "Error: chart $PACKAGE_VERSION does not support kaiConfig.render (GitOps mode)."
-    echo "Use --local-images-build, or set PACKAGE_VERSION to a release that includes it."
-    exit 1
-fi
-
 ${REPO_ROOT}/hack/setup-gitops-e2e.sh --chart-tgz "$CHART_TGZ"
 
 # Install ginkgo if it's not installed
