@@ -1,0 +1,3 @@
+kind: Fixed
+body: |-
+  Restricted Helm post-delete cleanup to KAI operator-managed Deployments and preserved externally managed `kai-config` resources when `kaiConfigDeployer.enabled=false`.

@@ -20,6 +20,7 @@ Fixes #
 - [ ] Self-reviewed
 - [ ] Added/updated tests (if needed)
 - [ ] Updated documentation (if needed)
+- [ ] Added a changelog fragment via `make changelog` (or applied the `skip-changelog` label). Do not edit `CHANGELOG.md` directly — it is generated from `.changes/` fragments.
 
 ## Breaking Changes
 
