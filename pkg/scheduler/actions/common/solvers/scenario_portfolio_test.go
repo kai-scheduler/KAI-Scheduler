@@ -183,12 +183,12 @@ func TestScenarioPortfolioSkipsRecordedDuplicateScenarios(t *testing.T) {
 	)
 
 	require.Same(t, first, portfolio.Next())
-	portfolio.MarkCurrentScenarioFailed()
+	portfolio.ObserveCurrentAttempt(scenarioSearchResultUnsolved)
 	require.Same(t, second, portfolio.Next())
 	require.Equal(t, before+1, scenarioSearchCounterValue(t, "scenario_search_scenarios_total", labels))
 }
 
-func TestScenarioPortfolioDoesNotSkipUnrecordedDuplicates(t *testing.T) {
+func TestScenarioPortfolioDoesNotSkipDuplicatesOfSolvedScenarios(t *testing.T) {
 	ctx, victimTasks, pendingTasks := newPortfolioDedupTestContext(t)
 	first := scenario.NewByNodeScenario(ctx.Session, ctx.PartialPendingJob, pendingTasks, victimTasks, nil)
 	firstEquivalent := scenario.NewByNodeScenario(ctx.Session, ctx.PartialPendingJob, pendingTasks, victimTasks, nil)
@@ -204,7 +204,10 @@ func TestScenarioPortfolioDoesNotSkipUnrecordedDuplicates(t *testing.T) {
 		ctx, newUnlimitedActionSearchBudget(framework.Reclaim).BeginJob(), newScenarioDedupCache(),
 	)
 
+	// A solved scenario must remain re-emittable: the final probe rebuilds the
+	// winning statement by re-running the generator.
 	require.Same(t, first, portfolio.Next())
+	portfolio.ObserveCurrentAttempt(string(SearchResultSolved))
 	require.Same(t, firstEquivalent, portfolio.Next())
 	require.Equal(t, before, scenarioSearchCounterValue(t, "scenario_search_scenarios_total", labels))
 }
@@ -227,9 +230,9 @@ func TestScenarioPortfolioDoesNotDedupeDifferentSimulationContexts(t *testing.T)
 	)
 
 	require.Same(t, first, portfolio.Next())
-	portfolio.MarkCurrentScenarioFailed()
+	portfolio.ObserveCurrentAttempt(scenarioSearchResultUnsolved)
 	require.Same(t, differentPending, portfolio.Next())
-	portfolio.MarkCurrentScenarioFailed()
+	portfolio.ObserveCurrentAttempt(scenarioSearchResultUnsolved)
 	require.Same(t, differentRecorded, portfolio.Next())
 }
 
@@ -252,7 +255,7 @@ func TestScenarioPortfolioDedupsAcrossGenerators(t *testing.T) {
 	)
 
 	require.Same(t, first, portfolio.Next())
-	portfolio.MarkCurrentScenarioFailed()
+	portfolio.ObserveCurrentAttempt(scenarioSearchResultUnsolved)
 	require.Same(t, second, portfolio.Next())
 	require.Equal(t, before+1, scenarioSearchCounterValue(t, "scenario_search_scenarios_total", labels))
 }
@@ -279,7 +282,7 @@ func TestScenarioPortfolioSharedCacheDedupsAcrossPortfolios(t *testing.T) {
 		ctx, newUnlimitedActionSearchBudget(framework.Reclaim).BeginJob(), firstRegistration, nil, sharedCache,
 	)
 	require.Same(t, first, firstPortfolio.Next())
-	firstPortfolio.MarkCurrentScenarioFailed()
+	firstPortfolio.ObserveCurrentAttempt(scenarioSearchResultUnsolved)
 
 	secondPortfolio := newSingleGeneratorScenarioPortfolio(
 		ctx, newUnlimitedActionSearchBudget(framework.Reclaim).BeginJob(), secondRegistration, nil, sharedCache,
@@ -299,7 +302,7 @@ func TestScenarioPortfolioNilCacheDisablesDedup(t *testing.T) {
 	portfolio := newScenarioPortfolio(ctx, newUnlimitedActionSearchBudget(framework.Reclaim).BeginJob(), nil)
 
 	require.Same(t, first, portfolio.Next())
-	portfolio.MarkCurrentScenarioFailed()
+	portfolio.ObserveCurrentAttempt(scenarioSearchResultUnsolved)
 	require.Same(t, firstEquivalent, portfolio.Next())
 }
 
@@ -317,8 +320,7 @@ func newPortfolioDedupTestContext(t *testing.T) (*SolveContext, []*pod_info.PodI
 		GenerateVictimsQueue: generatorTestVictimsQueueFactory(ssn),
 		FeasibleNodes:        ssn.ClusterInfo.Nodes,
 	}
-	pendingTasks := podgroup_info.GetTasksToAllocate(pendingJob, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false)
-	return ctx, victimTasks, pendingTasks
+	return ctx, victimTasks, dedupCacheTestPendingTasks(ssn, pendingJob)
 }
 
 func newScenarioPortfolioTestContext(

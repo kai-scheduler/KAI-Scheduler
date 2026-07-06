@@ -103,8 +103,7 @@ func benchmarkReclaimUnschedulableDistributedJobWithParams(
 	topology := buildUnschedulableDistributedReclaimBenchmarkTopology(params)
 	action := reclaim.New()
 
-	simulatedBefore := reclaimScenarioStateTotal("simulated")
-	duplicateBefore := reclaimScenarioStateTotal("duplicate")
+	before := reclaimScenarioStateTotals(b, "simulated", "duplicate")
 
 	for b.Loop() {
 		controller := NewController(b)
@@ -113,9 +112,10 @@ func benchmarkReclaimUnschedulableDistributedJobWithParams(
 		controller.Finish()
 	}
 
+	after := reclaimScenarioStateTotals(b, "simulated", "duplicate")
 	iterations := float64(b.N)
-	b.ReportMetric((reclaimScenarioStateTotal("simulated")-simulatedBefore)/iterations, "simulated/op")
-	b.ReportMetric((reclaimScenarioStateTotal("duplicate")-duplicateBefore)/iterations, "duplicate/op")
+	b.ReportMetric((after["simulated"]-before["simulated"])/iterations, "simulated/op")
+	b.ReportMetric((after["duplicate"]-before["duplicate"])/iterations, "duplicate/op")
 }
 
 func TestReclaimSkipsDuplicateScenariosBeforeSimulation(t *testing.T) {
@@ -126,25 +126,28 @@ func TestReclaimSkipsDuplicateScenariosBeforeSimulation(t *testing.T) {
 		defaultUnschedulableDistributedReclaimBenchmarkParams(50),
 	)
 	action := reclaim.New()
-	duplicateBefore := reclaimScenarioStateTotal("duplicate")
+	duplicateBefore := reclaimScenarioStateTotals(t, "duplicate")["duplicate"]
 
 	controller := NewController(t)
 	ssn := test_utils.BuildSession(topology, controller)
 	action.Execute(ssn)
 	controller.Finish()
 
-	require.Greater(t, reclaimScenarioStateTotal("duplicate"), duplicateBefore)
+	require.Greater(t, reclaimScenarioStateTotals(t, "duplicate")["duplicate"], duplicateBefore)
 }
 
-// reclaimScenarioStateTotal sums scenario_search_scenarios_total for the
-// reclaim action across all generators for the given state.
-func reclaimScenarioStateTotal(state string) float64 {
-	families, err := prometheus.DefaultGatherer.Gather()
-	if err != nil {
-		return 0
-	}
+// reclaimScenarioStateTotals sums scenario_search_scenarios_total for the
+// reclaim action across all generators, keyed by the requested states.
+func reclaimScenarioStateTotals(tb testing.TB, states ...string) map[string]float64 {
+	tb.Helper()
 
-	var total float64
+	families, err := prometheus.DefaultGatherer.Gather()
+	require.NoError(tb, err)
+
+	totals := make(map[string]float64, len(states))
+	for _, state := range states {
+		totals[state] = 0
+	}
 	for _, family := range families {
 		if family.GetName() != "scenario_search_scenarios_total" {
 			continue
@@ -154,12 +157,15 @@ func reclaimScenarioStateTotal(state string) float64 {
 			for _, label := range metric.GetLabel() {
 				labels[label.GetName()] = label.GetValue()
 			}
-			if labels["action"] == "reclaim" && labels["state"] == state {
-				total += metric.GetCounter().GetValue()
+			if labels["action"] != "reclaim" {
+				continue
+			}
+			if _, wanted := totals[labels["state"]]; wanted {
+				totals[labels["state"]] += metric.GetCounter().GetValue()
 			}
 		}
 	}
-	return total
+	return totals
 }
 
 func defaultUnschedulableDistributedReclaimBenchmarkParams(numNodes int) unschedulableDistributedReclaimBenchmarkParams {

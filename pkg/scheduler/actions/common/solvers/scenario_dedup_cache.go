@@ -4,9 +4,11 @@
 package solvers
 
 import (
+	"cmp"
 	"crypto/sha256"
-	"sort"
-	"strings"
+	"hash"
+	"io"
+	"slices"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -23,50 +25,65 @@ const (
 // fingerprintScenario returns a canonical, order-independent identity for the
 // simulation input of a ByNodeScenario. Two scenarios with the same fingerprint
 // produce the same simulation outcome within a single JobSolver.SolveWithResult
-// call: the fingerprint covers every variable simulation input — the preemptor,
-// the pending task set (which differs between probes at different k), the
-// recorded victims (which also determine the probe's feasible-node additions),
-// and the potential victim tasks with their node assignments. The remaining
-// simulation inputs (feasible nodes, plugin configuration) are constant across
-// one job solve.
+// call: the fingerprint covers the pending task set (which differs between
+// probes at different k), the recorded victims (which also determine the
+// probe's feasible-node additions), and the potential victim tasks with their
+// node assignments. The remaining simulation inputs (feasible nodes, plugin
+// configuration) are constant across one job solve, as is the preemptor UID,
+// which is included only as insurance against future cache-scope widening.
+// Generators must embed the solve context's recorded victims into emitted
+// scenarios for the recorded section to be meaningful; all in-tree generators
+// do.
 func fingerprintScenario(sn *scenario.ByNodeScenario) scenarioFingerprint {
-	var builder strings.Builder
+	digest := sha256.New()
 
-	builder.WriteString(string(sn.GetPreemptor().UID))
-	builder.WriteString(fingerprintSectionSeparator)
-	writeTaskUIDs(&builder, sn.PendingTasks())
-	builder.WriteString(fingerprintSectionSeparator)
-	writeTaskUIDs(&builder, sn.RecordedVictimsTasks())
-	builder.WriteString(fingerprintSectionSeparator)
-	writeTaskUIDsWithNodes(&builder, sn.PotentialVictimsTasks())
-
-	return sha256.Sum256([]byte(builder.String()))
-}
-
-func writeTaskUIDs(builder *strings.Builder, tasks []*pod_info.PodInfo) {
-	elements := make([]string, 0, len(tasks))
-	for _, task := range tasks {
-		elements = append(elements, string(task.UID))
+	if preemptor := sn.GetPreemptor(); preemptor != nil {
+		writeString(digest, string(preemptor.UID))
 	}
-	writeSorted(builder, elements)
+	writeString(digest, fingerprintSectionSeparator)
+	writeTaskUIDs(digest, sn.PendingTasks())
+	writeString(digest, fingerprintSectionSeparator)
+	writeTaskUIDs(digest, sn.RecordedVictimsTasks())
+	writeString(digest, fingerprintSectionSeparator)
+	writeTaskUIDsWithNodes(digest, sn.PotentialVictimsTasks())
+
+	var fingerprint scenarioFingerprint
+	digest.Sum(fingerprint[:0])
+	return fingerprint
 }
 
-func writeTaskUIDsWithNodes(builder *strings.Builder, tasks []*pod_info.PodInfo) {
-	elements := make([]string, 0, len(tasks))
+func writeTaskUIDs(digest hash.Hash, tasks []*pod_info.PodInfo) {
+	uids := make([]string, 0, len(tasks))
 	for _, task := range tasks {
-		elements = append(elements, string(task.UID)+fingerprintFieldSeparator+task.NodeName)
+		uids = append(uids, string(task.UID))
 	}
-	writeSorted(builder, elements)
-}
-
-func writeSorted(builder *strings.Builder, elements []string) {
-	sort.Strings(elements)
-	for index, element := range elements {
+	slices.Sort(uids)
+	for index, uid := range uids {
 		if index > 0 {
-			builder.WriteString(fingerprintElementSeparator)
+			writeString(digest, fingerprintElementSeparator)
 		}
-		builder.WriteString(element)
+		writeString(digest, uid)
 	}
+}
+
+func writeTaskUIDsWithNodes(digest hash.Hash, tasks []*pod_info.PodInfo) {
+	sorted := slices.Clone(tasks)
+	slices.SortFunc(sorted, func(a, b *pod_info.PodInfo) int {
+		return cmp.Compare(a.UID, b.UID)
+	})
+	for index, task := range sorted {
+		if index > 0 {
+			writeString(digest, fingerprintElementSeparator)
+		}
+		writeString(digest, string(task.UID))
+		writeString(digest, fingerprintFieldSeparator)
+		writeString(digest, task.NodeName)
+	}
+}
+
+func writeString(digest hash.Hash, value string) {
+	// hash.Hash writes never return an error.
+	_, _ = io.WriteString(digest, value)
 }
 
 // scenarioDedupCache skips re-simulation of equivalent scenario candidates
@@ -74,13 +91,10 @@ func writeSorted(builder *strings.Builder, elements []string) {
 // across generators. Only scenarios that were simulated and failed are
 // recorded: a solved scenario must remain re-emittable because the final probe
 // re-runs the generator to rebuild the winning statement after search probes
-// discarded theirs. Skipping repeated failures is sound because simulation is
-// deterministic for identical fingerprint inputs, with one known pre-existing
-// exception: byPodSolver.solve skips feasibleNodesRollback on
-// validator-rejected and error paths, so the probe's feasible-node map can grow
-// mid-probe and a previously failed scenario could in theory succeed later.
-// That is at worst a missed solution, which the bounded scenario search already
-// accepts by design.
+// discarded theirs. Skipping repeated failures is sound because a simulation's
+// outcome is determined by the fingerprint inputs: session state is restored
+// after every failed simulation, and the probe's feasible-node set stays
+// derived from the solver's constant node set plus the recorded victims.
 type scenarioDedupCache struct {
 	seen map[scenarioFingerprint]struct{}
 }

@@ -27,7 +27,9 @@ type JobSolver struct {
 	generateVictimsQueue GenerateVictimsQueue
 	actionType           framework.ActionType
 	actionBudget         *ActionSearchBudget
-	dedupCache           *scenarioDedupCache
+	// dedupCache spans one SolveWithResult call, where it is reassigned;
+	// concurrent or reentrant solves on one instance are unsupported.
+	dedupCache *scenarioDedupCache
 }
 
 type solvingState struct {
@@ -353,7 +355,6 @@ func (s *JobSolver) solvePartialJob(
 			portfolio.ObserveCurrentAttempt(string(SearchResultSolved))
 			return solvedSearchResult(result, jobBudget.ReducedBudget())
 		}
-		portfolio.MarkCurrentScenarioFailed()
 		portfolio.ObserveCurrentAttempt(attemptResult)
 	}
 

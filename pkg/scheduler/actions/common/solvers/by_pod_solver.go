@@ -85,6 +85,12 @@ func (s *byPodSolver) solve(session *framework.Session, scenario *scenario.ByNod
 
 	result := s.runSimulation(session, scenario, statement, allVictims, maps.Values(s.feasibleNodes))
 	if result != nil {
+		// Roll back on validator-rejected and error results too: the map is
+		// shared across the probe's scenarios, and scenario dedup relies on it
+		// staying derived from the recorded victims alone.
+		if !result.solved {
+			s.feasibleNodesRollback(newFeasibleNodes)
+		}
 		return result
 	}
 

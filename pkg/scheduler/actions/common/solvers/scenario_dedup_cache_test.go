@@ -4,6 +4,7 @@
 package solvers
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -82,9 +83,7 @@ func dedupCacheTestPendingTasks(ssn *framework.Session, pendingJob *podgroup_inf
 }
 
 func reversedTasks(tasks []*pod_info.PodInfo) []*pod_info.PodInfo {
-	reversed := make([]*pod_info.PodInfo, 0, len(tasks))
-	for index := len(tasks) - 1; index >= 0; index-- {
-		reversed = append(reversed, tasks[index])
-	}
+	reversed := slices.Clone(tasks)
+	slices.Reverse(reversed)
 	return reversed
 }

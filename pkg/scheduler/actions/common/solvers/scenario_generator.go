@@ -134,13 +134,8 @@ func (p *scenarioPortfolio) Next() *scenario.ByNodeScenario {
 		generatorName := generator.Name()
 		attemptStartedAt := time.Now()
 		sn := generator.Next()
-		if sn == nil {
-			p.observeGeneratorAttempt(generatorName, string(SearchResultGeneratorsExhausted), attemptStartedAt)
-			p.moveToNextGenerator()
-			continue
-		}
 		byNodeScenario, ok := sn.(*scenario.ByNodeScenario)
-		if !ok {
+		if sn != nil && !ok {
 			p.observeGeneratorAttempt(generatorName, "unsupported", attemptStartedAt)
 			log.InfraLogger.V(4).Infof(
 				"Scenario generator <%s> returned unsupported scenario type %T",
@@ -150,7 +145,7 @@ func (p *scenarioPortfolio) Next() *scenario.ByNodeScenario {
 			continue
 		}
 		if byNodeScenario == nil {
-			// Generators may signal exhaustion with a typed-nil scenario.
+			// Exhaustion arrives as nil or, defensively, as a typed-nil scenario.
 			p.observeGeneratorAttempt(generatorName, string(SearchResultGeneratorsExhausted), attemptStartedAt)
 			p.moveToNextGenerator()
 			continue
@@ -182,24 +177,23 @@ func (p *scenarioPortfolio) CurrentGeneratorName() string {
 	return p.currentName
 }
 
+// ObserveCurrentAttempt finalizes the last emitted scenario's attempt: it
+// observes the attempt duration and, for failed simulations, records the
+// scenario's fingerprint so equivalent candidates are skipped for the rest of
+// this job's search. Only failed simulations are recorded: a solved scenario
+// must remain re-emittable because the final probe rebuilds the winning
+// statement from scratch.
 func (p *scenarioPortfolio) ObserveCurrentAttempt(result string) {
 	if p == nil || p.currentStartedAt.IsZero() {
 		return
 	}
 	p.observeGeneratorAttempt(p.currentName, result, p.currentStartedAt)
 	p.currentStartedAt = time.Time{}
-}
 
-// MarkCurrentScenarioFailed records the last emitted scenario's fingerprint so
-// equivalent candidates are skipped for the rest of this job's search. Only
-// failed simulations may be recorded: a solved scenario must remain
-// re-emittable because the final probe rebuilds the winning statement from
-// scratch.
-func (p *scenarioPortfolio) MarkCurrentScenarioFailed() {
-	if p == nil || !p.currentFingerprintSet {
-		return
+	if p.currentFingerprintSet &&
+		(result == scenarioSearchResultUnsolved || result == scenarioSearchResultValidatorRejected) {
+		p.dedupCache.recordFailed(p.currentFingerprint)
 	}
-	p.dedupCache.recordFailed(p.currentFingerprint)
 	p.currentFingerprintSet = false
 }
 
