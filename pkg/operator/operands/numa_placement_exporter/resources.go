@@ -51,17 +51,20 @@ func (e *NumaPlacementExporter) daemonSetForKAIConfig(
 		RunAsUser:    ptr.To(int64(0)),
 		RunAsNonRoot: ptr.To(false),
 	}
+	podResHostPath := effectivePodResourcesDir(config)
+	sysHostPath := effectiveSysfsHostPath(config)
+
 	container.VolumeMounts = []v1.VolumeMount{
-		{Name: "podresources", MountPath: podResourcesDir, ReadOnly: true},
+		{Name: "podresources", MountPath: podResHostPath, ReadOnly: true},
 		{Name: "sysfs", MountPath: sysfsMountPath, ReadOnly: true},
 	}
 
 	hostPathDir := v1.HostPathDirectory
 	ds.Spec.Template.Spec.Volumes = []v1.Volume{
 		{Name: "podresources", VolumeSource: v1.VolumeSource{
-			HostPath: &v1.HostPathVolumeSource{Path: podResourcesDir, Type: &hostPathDir}}},
+			HostPath: &v1.HostPathVolumeSource{Path: podResHostPath, Type: &hostPathDir}}},
 		{Name: "sysfs", VolumeSource: v1.VolumeSource{
-			HostPath: &v1.HostPathVolumeSource{Path: sysfsHostPath, Type: &hostPathDir}}},
+			HostPath: &v1.HostPathVolumeSource{Path: sysHostPath, Type: &hostPathDir}}},
 	}
 
 	return []client.Object{ds}, nil
@@ -71,7 +74,7 @@ func (e *NumaPlacementExporter) daemonSetForKAIConfig(
 // unset intervals fall through to the binary defaults.
 func buildArgsList(config *npeapi.NumaPlacementExporter) []string {
 	args := []string{
-		fmt.Sprintf("--podresources-socket=%s", consts.DefaultPodResourcesSocket),
+		fmt.Sprintf("--podresources-socket=%s", effectivePodResourcesSocket(config)),
 		fmt.Sprintf("--sysfs-root=%s", sysfsMountPath),
 	}
 	if config.PollInterval != nil {
@@ -96,4 +99,28 @@ func (e *NumaPlacementExporter) serviceAccountForKAIConfig(
 		APIVersion: "v1",
 	}
 	return []client.Object{sa}, nil
+}
+
+// effectivePodResourcesDir returns the configured podresources host directory, or the kubelet default.
+func effectivePodResourcesDir(config *npeapi.NumaPlacementExporter) string {
+	if config.PodResourcesHostPath != "" {
+		return config.PodResourcesHostPath
+	}
+	return podResourcesDir
+}
+
+// effectivePodResourcesSocket returns the configured podresources socket, or the kubelet default.
+func effectivePodResourcesSocket(config *npeapi.NumaPlacementExporter) string {
+	if config.PodResourcesSocket != "" {
+		return config.PodResourcesSocket
+	}
+	return consts.DefaultPodResourcesSocket
+}
+
+// effectiveSysfsHostPath returns the configured sysfs host path, or /sys.
+func effectiveSysfsHostPath(config *npeapi.NumaPlacementExporter) string {
+	if config.SysfsHostPath != "" {
+		return config.SysfsHostPath
+	}
+	return sysfsHostPath
 }

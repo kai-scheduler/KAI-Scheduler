@@ -135,6 +135,45 @@ var _ = Describe("NumaPlacementExporter DesiredState", func() {
 		Expect(envNames).To(ContainElement("NODE_NAME"))
 	})
 
+	It("honors configured podResources/sysfs path overrides", func(ctx context.Context) {
+		cfg.Spec.NumaPlacementExporter.Service.Enabled = ptr.To(true)
+		cfg.Spec.NumaPlacementExporter.PodResourcesHostPath = "/var/lib/fake-gpu-operator/pod-resources"
+		cfg.Spec.NumaPlacementExporter.PodResourcesSocket = "/var/lib/fake-gpu-operator/pod-resources/kubelet.sock"
+		cfg.Spec.NumaPlacementExporter.SysfsHostPath = "/var/lib/fake-gpu-operator/sys"
+
+		objects, err := (&NumaPlacementExporter{}).DesiredState(ctx, fakeClient(), cfg)
+		Expect(err).To(BeNil())
+
+		var ds *appsv1.DaemonSet
+		for _, o := range objects {
+			if d, ok := o.(*appsv1.DaemonSet); ok {
+				ds = d
+			}
+		}
+		Expect(ds).ToNot(BeNil())
+
+		container := ds.Spec.Template.Spec.Containers[0]
+		Expect(container.Args).To(ContainElement("--podresources-socket=/var/lib/fake-gpu-operator/pod-resources/kubelet.sock"))
+		Expect(container.Args).To(ContainElement("--sysfs-root=" + sysfsMountPath))
+
+		var podResMount string
+		for _, m := range container.VolumeMounts {
+			if m.Name == "podresources" {
+				podResMount = m.MountPath
+			}
+		}
+		Expect(podResMount).To(Equal("/var/lib/fake-gpu-operator/pod-resources"))
+
+		hostPaths := map[string]string{}
+		for _, v := range ds.Spec.Template.Spec.Volumes {
+			if v.HostPath != nil {
+				hostPaths[v.Name] = v.HostPath.Path
+			}
+		}
+		Expect(hostPaths["podresources"]).To(Equal("/var/lib/fake-gpu-operator/pod-resources"))
+		Expect(hostPaths["sysfs"]).To(Equal("/var/lib/fake-gpu-operator/sys"))
+	})
+
 	It("is idempotent across reconciles (no duplicate volumes/mounts)", func(ctx context.Context) {
 		cfg.Spec.NumaPlacementExporter.Service.Enabled = ptr.To(true)
 		c := fakeClient()
