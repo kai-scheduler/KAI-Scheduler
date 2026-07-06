@@ -186,6 +186,20 @@ function renderSpecDetail(spec, detailId) {
   return `<div class="spec-detail" id="${detailId}">${sections.join('')}</div>`;
 }
 
+function specMetricsHtml(spec) {
+  const m = (typeof findMetrics === 'function' && findMetrics(spec.ReportEntries))
+    || (typeof parseMetricsFromOutput === 'function' && parseMetricsFromOutput(spec.CapturedGinkgoWriterOutput));
+  if (!m) return '';
+  const parts = [];
+  if (m.nodes != null) parts.push(`${m.nodes} nodes`);
+  const jobs = m.jobs ?? m['distributed jobs'] ?? m['distributed-jobs'];
+  if (jobs != null) parts.push(`${jobs} jobs`);
+  const t = m.total_time || m.time;
+  if (t != null && t !== '') parts.push(String(t));
+  if (!parts.length) return '';
+  return `<div class="spec-metrics">${parts.map(p => `<span>${esc(p)}</span>`).join('<span class="sep-dot">·</span>')}</div>`;
+}
+
 function renderSpec(spec) {
   if (!specVisible(spec)) return '';
 
@@ -207,6 +221,7 @@ function renderSpec(spec) {
           <span>${esc(fmtTime(spec.StartTime))}</span>
           ${spec.NumAttempts > 1 ? `<span class="c-skip">${spec.NumAttempts} attempts</span>` : ''}
         </div>
+        ${specMetricsHtml(spec)}
         ${detail}
       </div>
       ${detail ? `<button class="detail-btn" onclick="toggleDetail('${detailId}')">details</button>` : ''}
@@ -479,3 +494,15 @@ document.getElementById('sort-dir').addEventListener('click', () => {
 });
 
 init();
+
+// ── Theme toggle ───────────────────────────────────────────────────────────
+
+(function () {
+  const btn = document.getElementById('theme-toggle');
+
+  btn.addEventListener('click', () => {
+    const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('kai-theme', next);
+  });
+})();
