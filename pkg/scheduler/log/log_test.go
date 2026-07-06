@@ -6,12 +6,36 @@ package log
 import (
 	"bytes"
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
+
+func TestSchedulerLoggerDoesNotExposeIsVerbose(t *testing.T) {
+	loggerType := reflect.TypeOf((*SchedulerLogger)(nil)).Elem()
+	_, found := loggerType.MethodByName("IsVerbose")
+	require.False(t, found)
+}
+
+func TestVerboseLoggerDoRunsOnlyWhenEnabled(t *testing.T) {
+	logger := newSchedulerLogger(3, zap.NewNop().Sugar())
+	enabledCalls := 0
+	disabledCalls := 0
+
+	logger.V(3).Do(func() {
+		enabledCalls++
+	})
+	logger.V(4).Do(func() {
+		disabledCalls++
+	})
+
+	require.Equal(t, 1, enabledCalls)
+	require.Zero(t, disabledCalls)
+}
 
 func TestNewBaseLoggerJSONOutput(t *testing.T) {
 	var buf bytes.Buffer

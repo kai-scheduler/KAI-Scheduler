@@ -33,10 +33,15 @@ func (pp *nodeAvailabilityPlugin) nodeOrderFn(task *pod_info.PodInfo, node *node
 		score = scores.Availability
 	}
 
-	log.InfraLogger.V(7).Infof(
-		"Estimating Task: <%v/%v> Job: <%v> for node: <%s> that has <%f> idle GPUs and <%f> releasing GPUs and <%f> allocated GPUs. Score: %f",
-		task.Namespace, task.Name, task.Job, node.Name, node.IdleVector.Get(resource_info.GPUIndex), node.ReleasingVector.Get(resource_info.GPUIndex),
-		node.UsedVector.Get(resource_info.GPUIndex), score)
+	log.InfraLogger.V(7).Do(func() {
+		log.InfraLogger.V(7).Infof(
+			"Estimating Task: <%v/%v> Job: <%v> for node: <%s> that has <%f> idle GPUs and <%f> releasing GPUs and <%f> allocated GPUs. Score: %f",
+			task.Namespace, task.Name, task.Job, node.Name,
+			node.IdleVector.Get(resource_info.GPUIndex),
+			node.ReleasingVector.Get(resource_info.GPUIndex),
+			node.UsedVector.Get(resource_info.GPUIndex),
+			score)
+	})
 	return score, nil
 }
 

@@ -6,7 +6,6 @@ package reclaimable
 import (
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/reclaimable/strategies"
 	rs "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
 )
@@ -36,19 +35,20 @@ func (r *Reclaimable) FilterVictim(
 func canBeDeservedQuotaReclaimCandidate(
 	reclaimer *ReclaimerInfo, reclaimeeQueue *rs.QueueAttributes,
 ) bool {
-	allocated := reclaimeeQueue.GetAllocatedShare()
-	deserved := reclaimeeQueue.GetDeservedShare()
-	involvedResources := getInvolvedResourcesNames([]resource_info.ResourceVector{reclaimer.RequiredResources}, reclaimer.VectorMap)
-
 	hasUnderDeservedResource := false
-	for resource := range involvedResources {
-		if deserved[resource] == commonconstants.UnlimitedResourceQuantity {
+	for _, resource := range rs.AllResources {
+		if rs.ResourceQuantityFromVector(resource, reclaimer.RequiredResources, reclaimer.VectorMap) <= 0 {
 			continue
 		}
-		if allocated[resource] > deserved[resource] {
+
+		resourceShare := reclaimeeQueue.ResourceShare(resource)
+		if resourceShare.Deserved == commonconstants.UnlimitedResourceQuantity {
+			continue
+		}
+		if resourceShare.Allocated > resourceShare.Deserved {
 			return true
 		}
-		if allocated[resource] < deserved[resource] {
+		if resourceShare.Allocated < resourceShare.Deserved {
 			hasUnderDeservedResource = true
 		}
 	}

@@ -51,6 +51,17 @@ func newTestScenarioGenerator(name string) ScenarioGeneratorFactory {
 	}
 }
 
+func TestLogNodeSetsPluginResultDoesNotAllocateWhenVerboseLoggingIsDisabled(t *testing.T) {
+	podGroup := podgroup_info.NewPodGroupInfo("pod-group")
+	nodeSets := []node_info.NodeSet{{{Name: "node-a"}}}
+
+	allocations := testing.AllocsPerRun(100, func() {
+		logNodeSetsPluginResult(nil, podGroup, nodeSets)
+	})
+
+	assert.Zero(t, allocations)
+}
+
 func TestMutateBindRequestAnnotations(t *testing.T) {
 	tests := []struct {
 		name                string
