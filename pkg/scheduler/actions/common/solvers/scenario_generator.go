@@ -18,6 +18,7 @@ import (
 
 const scenarioSearchResultUnsolved = "unsolved"
 const scenarioSearchResultValidatorRejected = "validator_rejected"
+const scenarioStateDuplicate = "duplicate"
 
 type SolveContext struct {
 	Session              *framework.Session
@@ -36,17 +37,22 @@ func (ctx *SolveContext) Action() framework.ActionType {
 }
 
 type scenarioPortfolio struct {
-	ctx              *SolveContext
-	generators       []framework.ScenarioGenerator
-	jobBudget        *jobSearchBudget
-	currentIndex     int
-	currentBudget    *generatorSearchBudget
-	currentName      string
-	currentStartedAt time.Time
-	stopReason       SearchResultReason
+	ctx                   *SolveContext
+	generators            []framework.ScenarioGenerator
+	jobBudget             *jobSearchBudget
+	currentIndex          int
+	currentBudget         *generatorSearchBudget
+	currentName           string
+	currentStartedAt      time.Time
+	stopReason            SearchResultReason
+	dedupCache            *scenarioDedupCache
+	currentFingerprint    scenarioFingerprint
+	currentFingerprintSet bool
 }
 
-func newScenarioPortfolio(ctx *SolveContext, jobBudget *jobSearchBudget) *scenarioPortfolio {
+func newScenarioPortfolio(
+	ctx *SolveContext, jobBudget *jobSearchBudget, dedupCache *scenarioDedupCache,
+) *scenarioPortfolio {
 	if ctx == nil || ctx.Session == nil {
 		return &scenarioPortfolio{
 			ctx:        ctx,
@@ -58,6 +64,7 @@ func newScenarioPortfolio(ctx *SolveContext, jobBudget *jobSearchBudget) *scenar
 		ctx, jobBudget,
 		ctx.Session.ScenarioGeneratorRegistrations,
 		nil,
+		dedupCache,
 	)
 }
 
@@ -66,9 +73,10 @@ func newSingleGeneratorScenarioPortfolio(
 	jobBudget *jobSearchBudget,
 	availableGenerator framework.ScenarioGeneratorRegistration,
 	generatorBudget *generatorSearchBudget,
+	dedupCache *scenarioDedupCache,
 ) *scenarioPortfolio {
 	return newScenarioPortfolioForAvailableGenerators(
-		ctx, jobBudget, []framework.ScenarioGeneratorRegistration{availableGenerator}, generatorBudget,
+		ctx, jobBudget, []framework.ScenarioGeneratorRegistration{availableGenerator}, generatorBudget, dedupCache,
 	)
 }
 
@@ -77,12 +85,14 @@ func newScenarioPortfolioForAvailableGenerators(
 	jobBudget *jobSearchBudget,
 	availableGenerators []framework.ScenarioGeneratorRegistration,
 	generatorBudget *generatorSearchBudget,
+	dedupCache *scenarioDedupCache,
 ) *scenarioPortfolio {
 	portfolio := &scenarioPortfolio{
 		ctx:           ctx,
 		jobBudget:     jobBudget,
 		currentBudget: generatorBudget,
 		stopReason:    SearchResultGeneratorsExhausted,
+		dedupCache:    dedupCache,
 	}
 	if ctx == nil || ctx.Session == nil {
 		portfolio.stopReason = SearchResultNoGenerator
@@ -139,6 +149,25 @@ func (p *scenarioPortfolio) Next() *scenario.ByNodeScenario {
 			p.moveToNextGenerator()
 			continue
 		}
+		if byNodeScenario == nil {
+			// Generators may signal exhaustion with a typed-nil scenario.
+			p.observeGeneratorAttempt(generatorName, string(SearchResultGeneratorsExhausted), attemptStartedAt)
+			p.moveToNextGenerator()
+			continue
+		}
+		p.currentFingerprintSet = false
+		if p.dedupCache != nil {
+			// Fingerprint at emission time: generators may return a shared
+			// scenario object that is mutated by later accumulation steps.
+			fingerprint := fingerprintScenario(byNodeScenario)
+			if p.dedupCache.isDuplicate(fingerprint) {
+				metrics.IncScenarioSearchScenario(p.ctx.ActionType, generatorName, scenarioStateDuplicate)
+				p.observeGeneratorAttempt(generatorName, scenarioStateDuplicate, attemptStartedAt)
+				continue
+			}
+			p.currentFingerprint = fingerprint
+			p.currentFingerprintSet = true
+		}
 		p.currentName = generatorName
 		p.currentStartedAt = attemptStartedAt
 		metrics.IncScenarioSearchScenario(p.ctx.ActionType, generatorName, "emitted")
@@ -161,6 +190,19 @@ func (p *scenarioPortfolio) ObserveCurrentAttempt(result string) {
 	p.currentStartedAt = time.Time{}
 }
 
+// MarkCurrentScenarioFailed records the last emitted scenario's fingerprint so
+// equivalent candidates are skipped for the rest of this job's search. Only
+// failed simulations may be recorded: a solved scenario must remain
+// re-emittable because the final probe rebuilds the winning statement from
+// scratch.
+func (p *scenarioPortfolio) MarkCurrentScenarioFailed() {
+	if p == nil || !p.currentFingerprintSet {
+		return
+	}
+	p.dedupCache.recordFailed(p.currentFingerprint)
+	p.currentFingerprintSet = false
+}
+
 func (p *scenarioPortfolio) StopReason() SearchResultReason {
 	if p == nil {
 		return SearchResultNoGenerator
@@ -180,6 +222,7 @@ func (p *scenarioPortfolio) moveToNextGenerator() {
 	p.currentBudget = nil
 	p.currentName = ""
 	p.currentStartedAt = time.Time{}
+	p.currentFingerprintSet = false
 }
 
 func (p *scenarioPortfolio) observeGeneratorAttempt(generator string, result string, startedAt time.Time) {

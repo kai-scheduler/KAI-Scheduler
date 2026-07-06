@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Added **topology level aliases**: a `Topology` level may declare an `alias` (e.g. `rack`), usable in place of the raw node label key in a workload's `requiredTopologyLevel`/`preferredTopologyLevel`. Aliases are one-to-one (unique within the Topology and must not collide with a `nodeLabel`, enforced by a new Topology validating webhook) and may be edited freely (the `levels` immutability rule now freezes only the `nodeLabel` structure). When a level has no alias, behavior is unchanged and raw label keys keep working. [#1498](https://github.com/kai-scheduler/KAI-Scheduler/issues/1498)
 
 ### Changed
+- Scenario search now skips re-simulating equivalent victim-set candidates that already failed simulation for the same pending job (reclaim, preempt, consolidation). Skipped candidates are recorded as `state="duplicate"` in `scenario_search_scenarios_total`. [#1719](https://github.com/kai-scheduler/KAI-Scheduler/issues/1719)
 - Removed unused `queuecontroller.certSecretName` and `admission.certSecretName` Helm values; webhook TLS secrets are created and managed by the operator (`queue-webhook-tls-secret`, `kai-admission-webhook-tls-secret`). [#1791](https://github.com/kai-scheduler/KAI-Scheduler/pull/1791) [dttung2905](https://github.com/dttung2905)
 - Podgrouper now preserves an existing PodGroup's topology constraint when the workload does not specify one, so an externally-assigned topology is not overwritten. Workload topology annotations still take precedence when present.
 

@@ -27,6 +27,7 @@ type JobSolver struct {
 	generateVictimsQueue GenerateVictimsQueue
 	actionType           framework.ActionType
 	actionBudget         *ActionSearchBudget
+	dedupCache           *scenarioDedupCache
 }
 
 type solvingState struct {
@@ -115,6 +116,8 @@ func (s *JobSolver) SolveWithResult(
 	if len(availableGenerators) == 0 {
 		return false, nil, nil, terminalSearchResult(SearchResultNoGenerator, jobBudget.ReducedBudget())
 	}
+
+	s.dedupCache = newScenarioDedupCache()
 
 	var lastVictimTasks []*pod_info.PodInfo
 	var lastResult *SearchResult
@@ -320,7 +323,7 @@ func (s *JobSolver) solvePartialJob(
 		FeasibleNodes:        feasibleNodeMap,
 		ProbeK:               probeK,
 	}
-	portfolio := newSingleGeneratorScenarioPortfolio(solveCtx, jobBudget, availableGenerator, generatorBudget)
+	portfolio := newSingleGeneratorScenarioPortfolio(solveCtx, jobBudget, availableGenerator, generatorBudget, s.dedupCache)
 
 	for {
 		if jobBudget.Exhausted() {
@@ -350,6 +353,7 @@ func (s *JobSolver) solvePartialJob(
 			portfolio.ObserveCurrentAttempt(string(SearchResultSolved))
 			return solvedSearchResult(result, jobBudget.ReducedBudget())
 		}
+		portfolio.MarkCurrentScenarioFailed()
 		portfolio.ObserveCurrentAttempt(attemptResult)
 	}
 

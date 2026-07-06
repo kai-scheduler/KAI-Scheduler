@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/stretchr/testify/require"
 	. "go.uber.org/mock/gomock"
 	"gopkg.in/h2non/gock.v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -101,12 +103,63 @@ func benchmarkReclaimUnschedulableDistributedJobWithParams(
 	topology := buildUnschedulableDistributedReclaimBenchmarkTopology(params)
 	action := reclaim.New()
 
+	simulatedBefore := reclaimScenarioStateTotal("simulated")
+	duplicateBefore := reclaimScenarioStateTotal("duplicate")
+
 	for b.Loop() {
 		controller := NewController(b)
 		ssn := test_utils.BuildSession(topology, controller)
 		action.Execute(ssn)
 		controller.Finish()
 	}
+
+	iterations := float64(b.N)
+	b.ReportMetric((reclaimScenarioStateTotal("simulated")-simulatedBefore)/iterations, "simulated/op")
+	b.ReportMetric((reclaimScenarioStateTotal("duplicate")-duplicateBefore)/iterations, "duplicate/op")
+}
+
+func TestReclaimSkipsDuplicateScenariosBeforeSimulation(t *testing.T) {
+	defer gock.Off()
+
+	test_utils.InitTestingInfrastructure()
+	topology := buildUnschedulableDistributedReclaimBenchmarkTopology(
+		defaultUnschedulableDistributedReclaimBenchmarkParams(50),
+	)
+	action := reclaim.New()
+	duplicateBefore := reclaimScenarioStateTotal("duplicate")
+
+	controller := NewController(t)
+	ssn := test_utils.BuildSession(topology, controller)
+	action.Execute(ssn)
+	controller.Finish()
+
+	require.Greater(t, reclaimScenarioStateTotal("duplicate"), duplicateBefore)
+}
+
+// reclaimScenarioStateTotal sums scenario_search_scenarios_total for the
+// reclaim action across all generators for the given state.
+func reclaimScenarioStateTotal(state string) float64 {
+	families, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		return 0
+	}
+
+	var total float64
+	for _, family := range families {
+		if family.GetName() != "scenario_search_scenarios_total" {
+			continue
+		}
+		for _, metric := range family.GetMetric() {
+			labels := map[string]string{}
+			for _, label := range metric.GetLabel() {
+				labels[label.GetName()] = label.GetValue()
+			}
+			if labels["action"] == "reclaim" && labels["state"] == state {
+				total += metric.GetCounter().GetValue()
+			}
+		}
+	}
+	return total
 }
 
 func defaultUnschedulableDistributedReclaimBenchmarkParams(numNodes int) unschedulableDistributedReclaimBenchmarkParams {

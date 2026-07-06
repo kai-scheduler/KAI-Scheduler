@@ -17,8 +17,8 @@
   - [Configuration](#configuration)
   - [Driver Loop and Budget](#driver-loop-and-budget)
   - [Initial Shipped Plugin Policy](#initial-shipped-plugin-policy)
+  - [Scenario Deduplication Cache](#scenario-deduplication-cache)
   - [Future Enhancements](#future-enhancements)
-    - [Scenario Deduplication Cache](#scenario-deduplication-cache)
     - [Smart Generator Selection](#smart-generator-selection)
     - [Generator Checkpointing Across Scheduling Sessions](#generator-checkpointing-across-scheduling-sessions)
     - [Possible Future Generators](#possible-future-generators)
@@ -245,19 +245,18 @@ Internal work-unit budgets such as victim-count, node-count, victim-by-node prod
 
 `NodeLocalGreedy` is expected to handle the common single-pod-per-node reclaimee case and the known scale-test failure. `MultiNodeGang` remains necessary for true gangs that need several nodes freed simultaneously. A topology-specific generator may later preserve the same correctness case more directly, but #1537 regression coverage remains required either way.
 
+### Scenario Deduplication Cache
+
+Generators can rediscover the same effective victim set — within one generator across accumulation steps, and across generators such as `NodeLocalGreedy` and `MultiNodeGang` that reach the same set through different heuristics. The portfolio deduplicates equivalent candidates at its single emission choke point, before simulation:
+
+- The cache is a new, small per-job structure in the solvers package; it does not wrap an existing helper. `NodeLocalGreedy`'s internal per-base `seen` map remains as an unrelated cheap pre-filter that avoids constructing duplicate scenario objects inside one accumulation step.
+- The canonical fingerprint is a sha256 hash over four sections: preemptor UID, pending task UIDs, recorded-victim task UIDs, and potential-victim task UIDs paired with their node assignments. These are exactly the variable simulation inputs: the pending set distinguishes probes at different partial-job sizes, and the recorded set changes both the eviction set and the probe's feasible nodes.
+- Equivalent victim sets emitted in different orders or with different per-job batching map to the same fingerprint because each section is sorted before hashing.
+- The portfolio computes the fingerprint at emission time, since generators may mutate a returned scenario object during later accumulation. A duplicate candidate is skipped without reaching the solver and recorded as the `duplicate` state in `scenario_search_scenarios_total` plus a `duplicate` result observation in `scenario_search_duration_seconds`.
+- The cache lives for one job solve and is shared across that job's probes and generators; it is never global scheduler state.
+- Only scenarios that were simulated and failed (unsolved or validator-rejected) are recorded. Solved scenarios must remain re-emittable because search probes discard their statements and the final probe re-runs the generator to rebuild the winning statement. Skipping repeated failures relies on in-session simulation determinism for identical fingerprint inputs; the known feasible-node-map drift on validator-rejected paths can at worst hide a late solution, which stays within the approximation contract.
+
 ### Future Enhancements
-
-#### Scenario Deduplication Cache
-
-The generator portfolio needs a scenario deduplication mechanism so generators cannot repeatedly simulate equivalent victim sets. This is necessary both within one generator and across different generators: `NodeLocalGreedy`, `MultiNodeGang`, and future case-specific generators may overlap when they discover the same victim set through different heuristics.
-
-The exact deduplication design should be specified and implemented separately. That follow-up design must define:
-
-- whether the cache is new or wraps an existing helper;
-- the canonical scenario fingerprint, including victim tasks/jobs and node assignment data that affects simulation;
-- how equivalent victim sets emitted in different orders map to the same fingerprint;
-- where deduplication metrics are recorded, including the `duplicate` state in `scenario_search_scenarios_total`;
-- how long the cache lives, expected to be per job/probe rather than global scheduler state.
 
 #### Smart Generator Selection
 
@@ -327,7 +326,7 @@ Production metrics to add:
 - `scenario_search_generator_budget_configured_seconds{generator}`: configured generator budget.
 - `scenario_search_action_budget_exhausted_total{action}`: count action-level budget exhaustion.
 - `scenario_search_duration_seconds{action,generator,result}`: Prometheus histogram of elapsed generator-search duration. `result` uses the same result-reason values as `scenario_search_jobs_total` when the attempt maps to a whole-job outcome.
-- `scenario_search_scenarios_total{action,generator,state}`: count scenarios by `state`. `state` values: `emitted`, `simulated`, `validator_rejected`.
+- `scenario_search_scenarios_total{action,generator,state}`: count scenarios by `state`. `state` values: `emitted`, `simulated`, `validator_rejected`, `duplicate`.
 
 The `scenario_search_duration_seconds` histogram `_sum` and `_count` series are cumulative and are expected to grow after each scheduling session. Dashboards should use `rate()` or `increase()`. The histogram `_count` is the per-generator attempt count. Sum by `action` to get total generator-search time spent by an action.
 
