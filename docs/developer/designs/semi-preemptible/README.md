@@ -117,16 +117,16 @@ This does **not** remove subgroup-level elasticity — it remains fully supporte
 
 Victim selection considers only the **surplus** of each node: the "extra" (`n - minMember`) pods at a leaf PodSet, and the extra (`scheduled - minSubGroup`) child subgroups at an intermediate node (evicted whole). This is applied independently per node; no cross-subgroup victim selection is needed. This approach may miss some solutions when checking all orderings, but the added complexity is not justified for the MVP.
 
-This implies that pods are treated equally within the same subgroup for eviction, prompting the user to use the subgroup API to specify any ordering or hierarchy for pod eviction (see [Footnote: Eviction Randomness](#footnote-eviction-randomness)).
+This implies that pods are treated equally within the same subgroup for eviction, prompting the user to use the subgroup API to specify any ordering or hierarchy for pod eviction (see [Footnote: Eviction Ordering](#footnote-eviction-ordering)).
 
 
-## Footnote: Eviction Randomness
+## Footnote: Eviction Ordering
 
-In a `Semi-Preemptible` PodGroup / SubGroup, Pods are NOT "colored out" as preemptible — there is no election of individual pods. All pods within a subgroup are treated equally, and when surplus must be reclaimed the victims are chosen arbitrarily.
+In a `Semi-Preemptible` PodGroup / SubGroup, pods are NOT "colored out" as preemptible — there is no election of individual pods. All pods within a subgroup are treated equally: victims are drawn from the surplus using the **existing pod eviction ordering** (the same ordering used elsewhere in preemption), which is role-agnostic. It does not know that one pod is a master and another is a worker.
 
-A non-homogeneous subgroup / podgroup with the semi-preemptible attribute might therefore experience reduced service because the "wrong" pods are evicted. This is amended by correctly configuring subgroups and grouping similar pods into logical structures.
+A non-homogeneous subgroup / podgroup with the semi-preemptible attribute might therefore experience reduced service because the "wrong" pods are evicted — the ordering has no notion of the user's intended hierarchy. This is amended by correctly configuring subgroups and grouping similar pods into logical structures.
 
-**Unadvised**— one master pod and three workers mixed in a single leaf PodSet with `minMember: 2`. Any 2 of the 4 pods are kept as core; because pods are indistinguishable to eviction, the master is not guaranteed to survive, and the job can be left with 2 workers and no master:
+**Unadvised** — one master pod and three workers mixed in a single leaf PodSet with `minMember: 2`. Any 2 of the 4 pods are kept as core; because eviction ordering does not distinguish roles, the master is not guaranteed to survive, and the job can be left with 2 workers and no master:
 
 ```yaml
 spec:
