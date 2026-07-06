@@ -71,6 +71,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Fixed scheduler nil-pointer panic in the preempt scenario builder when a (partial) job has no tasks to allocate (`NewIdleGpusFilter` dereferenced a nil scenario); added the missing nil-guard matching the sibling filters [#1664](https://github.com/kai-scheduler/KAI-Scheduler/issues/1664) [sam-huang1223](https://github.com/sam-huang1223)
 - Fixed default node-scale-adjuster image name (`node-scale-adjuster` → `nodescaleadjuster`) so it matches the image published to GHCR
 - Fixed duplicate GPU reservation pods being created for a single `gpu-group` on a node (each reserving a different physical GPU), which corrupted the scheduler's fractional-GPU accounting and left devices unschedulable. Reservation pods are now named deterministically per (node, gpu-group) and treat AlreadyExists as success, so concurrent or retried binds collide on one object instead of duplicating [#1673](https://github.com/kai-scheduler/KAI-Scheduler/issues/1673)
+- Fixed `kai_pod_group_evicted_pods_total` counter being inflated by gang size. The metric was incremented by `EvictionGangSize` (= N) on every per-pod eviction emit, so an N-pod gang eviction wrote N² to the counter instead of N (and a cross-PodGroup batch of size N inflated each PG's counter by `tasks_in_pg × N`). All eviction-emitting actions (preempt, reclaim, consolidation, stalegangeviction) were affected. [#1620](https://github.com/kai-scheduler/KAI-Scheduler/issues/1620)
 
 ## [v0.15.0] - 2026-05-20
 
