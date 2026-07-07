@@ -4,7 +4,6 @@
 package solvers
 
 import (
-	"cmp"
 	"crypto/sha256"
 	"hash"
 	"io"
@@ -19,7 +18,6 @@ type scenarioFingerprint [sha256.Size]byte
 const (
 	fingerprintSectionSeparator = "\x1f"
 	fingerprintElementSeparator = "\x00"
-	fingerprintFieldSeparator   = "\x01"
 )
 
 // fingerprintScenario returns a canonical, order-independent identity for the
@@ -27,13 +25,16 @@ const (
 // produce the same simulation outcome within a single JobSolver.SolveWithResult
 // call: the fingerprint covers the pending task set (which differs between
 // probes at different k), the recorded victims (which also determine the
-// probe's feasible-node additions), and the potential victim tasks with their
-// node assignments. The remaining simulation inputs (feasible nodes, plugin
-// configuration) are constant across one job solve, as is the preemptor UID,
-// which is included only as insurance against future cache-scope widening.
-// Generators must embed the solve context's recorded victims into emitted
-// scenarios for the recorded section to be meaningful; all in-tree generators
-// do.
+// probe's feasible-node additions), and the potential victim tasks. Task UIDs
+// stand in for node placements: within one session a task's placement is
+// fixed, so the victim UIDs determine which nodes the evictions free. A cache
+// that outlives a session, or scenarios that carry hypothetical placements,
+// must add node assignments to the key. The remaining simulation inputs
+// (feasible nodes, plugin configuration) are constant across one job solve, as
+// is the preemptor UID, which is included only as insurance against future
+// cache-scope widening. Generators must embed the solve context's recorded
+// victims into emitted scenarios for the recorded section to be meaningful;
+// all in-tree generators do.
 func fingerprintScenario(sn *scenario.ByNodeScenario) scenarioFingerprint {
 	digest := sha256.New()
 
@@ -45,7 +46,7 @@ func fingerprintScenario(sn *scenario.ByNodeScenario) scenarioFingerprint {
 	writeString(digest, fingerprintSectionSeparator)
 	writeTaskUIDs(digest, sn.RecordedVictimsTasks())
 	writeString(digest, fingerprintSectionSeparator)
-	writeTaskUIDsWithNodes(digest, sn.PotentialVictimsTasks())
+	writeTaskUIDs(digest, sn.PotentialVictimsTasks())
 
 	var fingerprint scenarioFingerprint
 	digest.Sum(fingerprint[:0])
@@ -63,21 +64,6 @@ func writeTaskUIDs(digest hash.Hash, tasks []*pod_info.PodInfo) {
 			writeString(digest, fingerprintElementSeparator)
 		}
 		writeString(digest, uid)
-	}
-}
-
-func writeTaskUIDsWithNodes(digest hash.Hash, tasks []*pod_info.PodInfo) {
-	sorted := slices.Clone(tasks)
-	slices.SortFunc(sorted, func(a, b *pod_info.PodInfo) int {
-		return cmp.Compare(a.UID, b.UID)
-	})
-	for index, task := range sorted {
-		if index > 0 {
-			writeString(digest, fingerprintElementSeparator)
-		}
-		writeString(digest, string(task.UID))
-		writeString(digest, fingerprintFieldSeparator)
-		writeString(digest, task.NodeName)
 	}
 }
 
