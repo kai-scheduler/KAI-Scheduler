@@ -4,6 +4,7 @@
 package solvers
 
 import (
+	"crypto/sha256"
 	"slices"
 	"testing"
 
@@ -29,6 +30,23 @@ func TestFingerprintScenarioIsOrderIndependent(t *testing.T) {
 	}
 
 	require.Equal(t, fingerprintScenario(allAtOnce), fingerprintScenario(oneByOneReversed))
+}
+
+func TestFingerprintScenarioEncodesCanonicalSections(t *testing.T) {
+	ssn, pendingJob, victimTasks := newDedupCacheTestSession(t)
+	pendingTasks := dedupCacheTestPendingTasks(ssn, pendingJob)
+	recordedJob, _ := addGeneratorTestJob(t, ssn, 1, 30, "team-recorded", "node-3")
+
+	sn := scenario.NewByNodeScenario(
+		ssn, pendingJob, pendingTasks, victimTasks, []*podgroup_info.PodGroupInfo{recordedJob},
+	)
+
+	payload := "10" + // preemptor job UID
+		"\x1f" + "20" + "\x00" + "21" + // pending task UIDs
+		"\x1f" + "30" + // recorded victim task UIDs
+		"\x1f" + "40" + "\x00" + "41" // potential victim task UIDs
+
+	require.Equal(t, scenarioFingerprint(sha256.Sum256([]byte(payload))), fingerprintScenario(sn))
 }
 
 func TestFingerprintScenarioDistinguishesInputs(t *testing.T) {
