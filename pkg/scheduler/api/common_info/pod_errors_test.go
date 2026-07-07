@@ -130,6 +130,18 @@ func TestAddNodeErrorDoesNotFormatStructuredFitError(t *testing.T) {
 	}
 }
 
+func TestAddNodeErrorIgnoresTypedNilFitError(t *testing.T) {
+	fitErrors := NewFitErrors()
+	var fitError *TasksFitError
+	var err error = fitError
+
+	fitErrors.AddNodeError(err)
+
+	if fitErrors.HasNodeErrors() {
+		t.Fatal("HasNodeErrors() = true after typed nil error, want false")
+	}
+}
+
 func TestNewFitErrorInsufficientResource(t *testing.T) {
 	vectorMap := resource_info.NewResourceVectorMap()
 	type args struct {

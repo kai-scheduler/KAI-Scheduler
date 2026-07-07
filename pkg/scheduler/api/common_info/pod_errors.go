@@ -203,6 +203,9 @@ func (f *TasksFitErrors) AddNodeError(err error) {
 	}
 	var reasons []string
 	if fitError, ok := err.(*TasksFitError); ok {
+		if fitError == nil {
+			return
+		}
 		reasons = fitError.Reasons
 	} else {
 		reasons = []string{err.Error()}

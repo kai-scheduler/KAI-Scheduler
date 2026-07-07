@@ -232,7 +232,7 @@ func (ssn *Session) FittingNode(
 		task.Namespace, task.Name, node.Name, task.ResReqVector, node.IdleVector)
 	allocatable, fitError := ssn.isTaskAllocatableOnNode(task, job, node, collectFitError)
 	if !allocatable {
-		if collectFitError {
+		if collectFitError && fitError != nil {
 			return false, fitError
 		}
 		return false, nil
