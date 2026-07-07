@@ -53,6 +53,7 @@ import (
 	draversionawareclient "github.com/kai-scheduler/KAI-scheduler/pkg/common/resources/dra_version_aware_client"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
@@ -424,8 +425,14 @@ func (sc *SchedulerCache) String() string {
 }
 
 // RecordJobStatusEvent records related events according to job status.
-func (sc *SchedulerCache) RecordJobStatusEvent(job *podgroup_info.PodGroupInfo) error {
-	return sc.StatusUpdater.RecordJobStatusEvent(job)
+func (sc *SchedulerCache) RecordJobStatusEvent(
+	job *podgroup_info.PodGroupInfo,
+	resolveDetailedFitErrors func(
+		*podgroup_info.PodGroupInfo,
+		*pod_info.PodInfo,
+	) ([]*common_info.TasksFitError, error),
+) error {
+	return sc.StatusUpdater.RecordJobStatusEvent(job, resolveDetailedFitErrors)
 }
 
 func (sc *SchedulerCache) TaskPipelined(task *pod_info.PodInfo, message string) {

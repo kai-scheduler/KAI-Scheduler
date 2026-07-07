@@ -371,7 +371,7 @@ func TestRecordJobStatusEvent(t *testing.T) {
 				podGroupInfo.AddSimpleJobFitError(explanation.Reason, explanation.Message)
 			}
 
-			err := cache.RecordJobStatusEvent(podGroupInfo)
+			err := cache.RecordJobStatusEvent(podGroupInfo, nil)
 			assert.Nil(t, err)
 
 			newPodGroupObj, err := waitForCondition(func() (runtime.Object, error) {
@@ -519,7 +519,7 @@ func TestRecordJobStatusEventInvalidSubGroupPod(t *testing.T) {
 	job.AddTaskInfo(pod_info.NewTaskInfo(validPod, vectorMap))
 	job.AddTaskInfo(pod_info.NewTaskInfo(invalidPod, vectorMap))
 
-	err := cache.RecordJobStatusEvent(job)
+	err := cache.RecordJobStatusEvent(job, nil)
 	assert.NoError(t, err)
 
 	invalidPodObj, err := waitForCondition(func() (runtime.Object, error) {
