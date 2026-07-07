@@ -53,26 +53,3 @@ func writeTaskUIDs(digest hash.Hash, tasks []*pod_info.PodInfo) {
 func writeString(digest hash.Hash, value string) {
 	_, _ = io.WriteString(digest, value)
 }
-
-type scenarioDedupCache struct {
-	seen map[scenarioFingerprint]struct{}
-}
-
-func newScenarioDedupCache() *scenarioDedupCache {
-	return &scenarioDedupCache{seen: map[scenarioFingerprint]struct{}{}}
-}
-
-func (c *scenarioDedupCache) isDuplicate(fingerprint scenarioFingerprint) bool {
-	if c == nil {
-		return false
-	}
-	_, found := c.seen[fingerprint]
-	return found
-}
-
-func (c *scenarioDedupCache) recordFailed(fingerprint scenarioFingerprint) {
-	if c == nil {
-		return
-	}
-	c.seen[fingerprint] = struct{}{}
-}

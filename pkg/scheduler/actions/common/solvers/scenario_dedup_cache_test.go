@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"k8s.io/apimachinery/pkg/util/sets"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
@@ -54,19 +55,10 @@ func TestScenarioDedupCacheRecordsAndMatches(t *testing.T) {
 	pendingTasks := dedupCacheTestPendingTasks(ssn, pendingJob)
 	fingerprint := fingerprintScenario(scenario.NewByNodeScenario(ssn, pendingJob, pendingTasks, victimTasks, nil))
 
-	cache := newScenarioDedupCache()
-	require.False(t, cache.isDuplicate(fingerprint))
-	cache.recordFailed(fingerprint)
-	require.True(t, cache.isDuplicate(fingerprint))
-}
-
-func TestScenarioDedupCacheNilIsSafe(t *testing.T) {
-	var cache *scenarioDedupCache
-
-	require.NotPanics(t, func() {
-		cache.recordFailed(scenarioFingerprint{})
-	})
-	require.False(t, cache.isDuplicate(scenarioFingerprint{}))
+	cache := sets.New[scenarioFingerprint]()
+	require.False(t, cache.Has(fingerprint))
+	cache.Insert(fingerprint)
+	require.True(t, cache.Has(fingerprint))
 }
 
 func TestSolvePartialJobSkipsRecordedDuplicates(t *testing.T) {
@@ -84,7 +76,7 @@ func TestSolvePartialJobSkipsRecordedDuplicates(t *testing.T) {
 	require.Equal(t, SearchResultSolved, result.Reason())
 	result.solution.statement.Discard()
 	require.Equal(t, before+1, scenarioSearchCounterValue(t, "scenario_search_scenarios_total", labels))
-	require.True(t, solver.dedupCache.isDuplicate(fingerprintScenario(failing)))
+	require.True(t, solver.failedScenarios.Has(fingerprintScenario(failing)))
 }
 
 func TestSolvePartialJobDoesNotRecordSolvedScenarios(t *testing.T) {
@@ -98,12 +90,12 @@ func TestSolvePartialJobDoesNotRecordSolvedScenarios(t *testing.T) {
 
 	require.Equal(t, SearchResultSolved, result.Reason())
 	result.solution.statement.Discard()
-	require.False(t, solver.dedupCache.isDuplicate(solvedFingerprint))
+	require.False(t, solver.failedScenarios.Has(solvedFingerprint))
 }
 
 func TestSolvePartialJobNilCacheDisablesDedup(t *testing.T) {
 	ssn, solver, pendingJob, _ := newSolverDedupTestSetup(t)
-	solver.dedupCache = nil
+	solver.failedScenarios = nil
 	pendingTasks := dedupCacheTestPendingTasks(ssn, pendingJob)
 	failing := scenario.NewByNodeScenario(ssn, pendingJob, pendingTasks, nil, nil)
 	failingEquivalent := scenario.NewByNodeScenario(ssn, pendingJob, pendingTasks, nil, nil)
@@ -174,7 +166,7 @@ func newSolverDedupTestSetup(t *testing.T) (*framework.Session, *JobSolver, *pod
 	solver := NewJobsSolver(
 		jobSolverResultTestFeasibleNodes(ssn), nil, generatorTestVictimsQueueFactory(ssn), framework.Reclaim, nil,
 	)
-	solver.dedupCache = newScenarioDedupCache()
+	solver.failedScenarios = sets.New[scenarioFingerprint]()
 	return ssn, solver, pendingJob, victimTasks
 }
 
