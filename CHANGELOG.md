@@ -19,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 - Scenario search no longer leaks a rejected scenario's victim nodes into the probe's feasible-node set: the solver now rolls back feasible-node additions after validator-rejected and errored simulations, not only after cleanly unsolved ones. [#1719](https://github.com/kai-scheduler/KAI-Scheduler/issues/1719)
+- Scoped the operator's informer cache for Pods, Leases and EndpointSlices to the KAI namespace and stripped managed fields from cached objects. Since v0.15.0 the operator cached every such object in the cluster, so its memory grew with cluster size and exceeded the default 256Mi limit on large clusters. [#1780](https://github.com/kai-scheduler/KAI-Scheduler/issues/1780)
 - Reduced transient scheduler allocations during large reclaim operations by comparing proportion queue state and cached resource vectors directly instead of repeatedly materializing resource maps.
 - Scheduler now exits on 401 Unauthorized API responses instead of retrying indefinitely with a stale ServiceAccount token. [#1817](https://github.com/kai-scheduler/KAI-Scheduler/issues/1817)
 - Reduced scheduler memory use during large reclaim operations by removing redundant per-job-pair min-runtime protection caching; effective min-runtime durations remain cached per queue pair. [#1808](https://github.com/kai-scheduler/KAI-Scheduler/issues/1808)
