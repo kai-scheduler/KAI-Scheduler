@@ -19,7 +19,7 @@ topology:
       numa:
         zones: 2
         topologyManagerPolicy: restricted
-        cpuPerZone: "4"
+        cpuPerZone: "1"
         memPerZone: 2Gi
         distances:
           self: 10
@@ -39,7 +39,7 @@ topology:
       numa:
         zones: 2
         topologyManagerPolicy: single-numa-node
-        cpuPerZone: "4"
+        cpuPerZone: "1"
         memPerZone: 2Gi
         distances:
           self: 10
@@ -56,7 +56,7 @@ topology:
       numa:
         zones: 2
         topologyManagerPolicy: best-effort
-        cpuPerZone: "4"
+        cpuPerZone: "1"
         memPerZone: 2Gi
         distances:
           self: 10
