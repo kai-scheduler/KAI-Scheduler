@@ -205,9 +205,11 @@ func (f *TasksFitErrors) AddNodeError(err error) {
 	if f.reasonCounts == nil {
 		f.reasonCounts = make(map[string]int)
 	}
-	reasons := []string{err.Error()}
+	var reasons []string
 	if fitError, ok := err.(*TasksFitError); ok {
 		reasons = fitError.Reasons
+	} else {
+		reasons = []string{err.Error()}
 	}
 	for _, reason := range reasons {
 		f.reasonCounts[reason]++

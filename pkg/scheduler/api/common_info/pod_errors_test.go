@@ -117,6 +117,19 @@ func TestFitErrorsDetailedErrorUsesTransientNodeErrors(t *testing.T) {
 	}
 }
 
+func TestAddNodeErrorDoesNotFormatStructuredFitError(t *testing.T) {
+	fitErrors := NewFitErrors()
+	fitError := NewFitError("pod", "namespace", "node-a", "MissingGPU")
+	fitErrors.AddNodeError(fitError)
+
+	allocations := testing.AllocsPerRun(100, func() {
+		fitErrors.AddNodeError(fitError)
+	})
+	if allocations != 0 {
+		t.Fatalf("AddNodeError() allocations = %v, want 0", allocations)
+	}
+}
+
 func TestNewFitErrorInsufficientResource(t *testing.T) {
 	vectorMap := resource_info.NewResourceVectorMap()
 	type args struct {
