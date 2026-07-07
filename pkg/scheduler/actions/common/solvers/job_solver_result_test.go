@@ -288,9 +288,6 @@ func TestSolveWithResultStillSolvesWhenGeneratorRepeatsScenarios(t *testing.T) {
 	victimJob, victimTasks := addGeneratorTestJob(t, ssn, 3, 20, "team-victim", "node-1", "node-2", "node-3")
 	generatorName := "dedup-e2e"
 
-	// Every probe emits a failing scenario, an equivalent duplicate of it, and a
-	// solving scenario. The duplicate must be skipped after the first fails, and
-	// the final probe must still rebuild a live solving statement.
 	ssn.AddScenarioGenerator(generatorName, func(ctx framework.ScenarioGeneratorContext) framework.ScenarioGenerator {
 		solveCtx := ctx.(*SolveContext)
 		pendingTasks := podgroup_info.GetTasksToAllocate(

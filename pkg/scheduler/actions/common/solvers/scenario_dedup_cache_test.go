@@ -96,8 +96,6 @@ func TestSolvePartialJobDoesNotRecordSolvedScenarios(t *testing.T) {
 	result := solvePartialJobForDedupTest(t, solver, ssn, pendingJob, "dedup-solved",
 		[]api.ScenarioInfo{solving})
 
-	// The solved scenario must stay re-emittable: the final probe rebuilds the
-	// winning statement by re-running the generator.
 	require.Equal(t, SearchResultSolved, result.Reason())
 	result.solution.statement.Discard()
 	require.False(t, solver.dedupCache.isDuplicate(solvedFingerprint))
@@ -161,8 +159,6 @@ func TestSolveWithResultDedupsAcrossGenerators(t *testing.T) {
 		defer statement.Discard()
 	}
 
-	// cross-second's first candidate repeats the victim set cross-first already
-	// failed with, so the shared per-job cache skips it before simulation.
 	require.True(t, solved)
 	require.Equal(t, SearchResultSolved, result.Reason())
 	require.Equal(t, before+1, scenarioSearchCounterValue(t, "scenario_search_scenarios_total", labels))

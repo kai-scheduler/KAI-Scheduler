@@ -136,7 +136,6 @@ func (p *scenarioPortfolio) Next() *scenario.ByNodeScenario {
 			continue
 		}
 		if byNodeScenario == nil {
-			// Exhaustion arrives as nil or, defensively, as a typed-nil scenario.
 			p.observeGeneratorAttempt(generatorName, string(SearchResultGeneratorsExhausted), attemptStartedAt)
 			p.moveToNextGenerator()
 			continue

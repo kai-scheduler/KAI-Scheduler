@@ -51,7 +51,6 @@ func (g *multiNodeGangGenerator) Next() api.ScenarioInfo {
 		sn = g.builder.GetNextScenario()
 	}
 	if sn == nil {
-		// Return an untyped nil so exhaustion is not hidden in a typed-nil interface.
 		return nil
 	}
 	return sn

@@ -21,21 +21,6 @@ const (
 	fingerprintElementSeparator = "\x00"
 )
 
-// fingerprintScenario returns a canonical, order-independent identity for the
-// simulation input of a ByNodeScenario. Two scenarios with the same fingerprint
-// produce the same simulation outcome within a single JobSolver.SolveWithResult
-// call: the fingerprint covers the pending task set (which differs between
-// probes at different k), the recorded victims (which also determine the
-// probe's feasible-node additions), and the potential victim tasks. Task UIDs
-// stand in for node placements: within one session a task's placement is
-// fixed, so the victim UIDs determine which nodes the evictions free. A cache
-// that outlives a session, or scenarios that carry hypothetical placements,
-// must add node assignments to the key. The remaining simulation inputs
-// (feasible nodes, plugin configuration) are constant across one job solve, as
-// is the preemptor UID, which is included only as insurance against future
-// cache-scope widening. Generators must embed the solve context's recorded
-// victims into emitted scenarios for the recorded section to be meaningful;
-// all in-tree generators do.
 func fingerprintScenario(sn *scenario.ByNodeScenario) scenarioFingerprint {
 	digest := sha256.New()
 
@@ -66,19 +51,9 @@ func writeTaskUIDs(digest hash.Hash, tasks []*pod_info.PodInfo) {
 }
 
 func writeString(digest hash.Hash, value string) {
-	// hash.Hash writes never return an error.
 	_, _ = io.WriteString(digest, value)
 }
 
-// scenarioDedupCache skips re-simulation of equivalent scenario candidates
-// within one JobSolver.SolveWithResult call, both within a single generator and
-// across generators. Only scenarios that were simulated and failed are
-// recorded: a solved scenario must remain re-emittable because the final probe
-// re-runs the generator to rebuild the winning statement after search probes
-// discarded theirs. Skipping repeated failures is sound because a simulation's
-// outcome is determined by the fingerprint inputs: session state is restored
-// after every failed simulation, and the probe's feasible-node set stays
-// derived from the solver's constant node set plus the recorded victims.
 type scenarioDedupCache struct {
 	seen map[scenarioFingerprint]struct{}
 }

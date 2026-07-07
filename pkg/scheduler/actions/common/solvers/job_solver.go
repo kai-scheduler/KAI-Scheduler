@@ -27,9 +27,7 @@ type JobSolver struct {
 	generateVictimsQueue GenerateVictimsQueue
 	actionType           framework.ActionType
 	actionBudget         *ActionSearchBudget
-	// dedupCache spans one SolveWithResult call, where it is reassigned;
-	// concurrent or reentrant solves on one instance are unsupported.
-	dedupCache *scenarioDedupCache
+	dedupCache           *scenarioDedupCache
 }
 
 type solvingState struct {
@@ -338,8 +336,6 @@ func (s *JobSolver) solvePartialJob(
 		}
 		generatorName := portfolio.CurrentGeneratorName()
 
-		// Fingerprint before simulating: generators may mutate a shared
-		// scenario object on their next accumulation step.
 		var fingerprint scenarioFingerprint
 		if s.dedupCache != nil {
 			fingerprint = fingerprintScenario(scenarioToSolve)
@@ -368,8 +364,6 @@ func (s *JobSolver) solvePartialJob(
 			portfolio.ObserveCurrentAttempt(string(SearchResultSolved))
 			return solvedSearchResult(result, jobBudget.ReducedBudget())
 		}
-		// Record failures only: a solved scenario must stay re-emittable for
-		// the final probe, which rebuilds the winning statement.
 		s.dedupCache.recordFailed(fingerprint)
 		portfolio.ObserveCurrentAttempt(attemptResult)
 	}

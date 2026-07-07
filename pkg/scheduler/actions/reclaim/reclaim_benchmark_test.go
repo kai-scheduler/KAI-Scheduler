@@ -136,8 +136,6 @@ func TestReclaimSkipsDuplicateScenariosBeforeSimulation(t *testing.T) {
 	require.Greater(t, reclaimScenarioStateTotals(t, "duplicate")["duplicate"], duplicateBefore)
 }
 
-// reclaimScenarioStateTotals sums scenario_search_scenarios_total for the
-// reclaim action across all generators, keyed by the requested states.
 func reclaimScenarioStateTotals(tb testing.TB, states ...string) map[string]float64 {
 	tb.Helper()
 
