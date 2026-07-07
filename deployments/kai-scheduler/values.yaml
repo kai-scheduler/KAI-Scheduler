@@ -181,6 +181,12 @@ numaPlacementExporter:
   resources: {}
   # pollInterval: 1s
   # driftResyncInterval: 60s
+  # Override the podresources socket / sysfs paths to point the exporter at a non-kubelet source
+  # (e.g. the fake-gpu-operator's simulated podresources + sysfs on kind). podResourcesSocket must
+  # resolve inside podResourcesHostPath. Defaults target the real kubelet.
+  # podResourcesHostPath: /var/lib/kubelet/pod-resources
+  # podResourcesSocket: /var/lib/kubelet/pod-resources/kubelet.sock
+  # sysfsHostPath: /sys
 
 queuecontroller:
   enabled: true

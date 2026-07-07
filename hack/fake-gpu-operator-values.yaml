@@ -4,14 +4,63 @@
 topology:
   # nodePools is a map of node pool name to node pool configuration.
   # Nodes are assigned to node pools based on the node pool label's value (key is configurable via nodePoolLabelKey).
-  # 
-  # For example, nodes that have the label "run.ai/simulated-gpu-node-pool: default"
-  # will be assigned to the "default" node pool.
+  # default kind layout labels every GPU worker "default"; the "numa-full"
+  # layout (nightly) also populates numa-single/numa-besteffort.
   nodePools:
     default:
-      gpuProduct: Tesla-K80
-      gpuCount: 8
-      gpuMemory: 11441
+      gpu:
+        backend: fake
+        overrides:
+          device_defaults:
+            name: Tesla-K80
+            memory:
+              total_bytes: 11996758016   # 11441 MiB
+          devices: [ {}, {}, {}, {}, {}, {}, {}, {} ]
+      numa:
+        zones: 2
+        topologyManagerPolicy: restricted
+        cpuPerZone: "4"
+        memPerZone: 2Gi
+        distances:
+          self: 10
+          remote: 21
+    # single-numa-node & best-effort pools are only populated by the numa-full kind
+    # layout (nightly); on the default layout no node carries their label, so they
+    # publish no NRTs.
+    numa-single:
+      gpu:
+        backend: fake
+        overrides:
+          device_defaults:
+            name: Tesla-K80
+            memory:
+              total_bytes: 11996758016   # 11441 MiB
+          devices: [ {}, {}, {}, {}, {}, {}, {}, {} ]
+      numa:
+        zones: 2
+        topologyManagerPolicy: single-numa-node
+        cpuPerZone: "4"
+        memPerZone: 2Gi
+        distances:
+          self: 10
+          remote: 21
+    numa-besteffort:
+      gpu:
+        backend: fake
+        overrides:
+          device_defaults:
+            name: Tesla-K80
+            memory:
+              total_bytes: 11996758016   # 11441 MiB
+          devices: [ {}, {}, {}, {}, {}, {}, {}, {} ]
+      numa:
+        zones: 2
+        topologyManagerPolicy: best-effort
+        cpuPerZone: "4"
+        memPerZone: 2Gi
+        distances:
+          self: 10
+          remote: 21
   nodePoolLabelKey: run.ai/simulated-gpu-node-pool
 
 environment:
@@ -20,5 +69,11 @@ environment:
 statusUpdater:
   disableNodeLabeling: true
 
+statusExporter:
+  nodeResourceTopology:
+    enabled: true
+    installCRD: true
+  podResources:
+    enabled: true
 draPlugin:
   enabled: true

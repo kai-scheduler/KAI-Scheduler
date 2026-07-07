@@ -263,6 +263,7 @@ jobs:
           PACKAGE_VERSION: ${{ needs.build.outputs.package_version }}
         run: |
           helm upgrade -i kai-scheduler /mnt/images/kai-scheduler-$PACKAGE_VERSION.tgz -n kai-scheduler --create-namespace \
+            --values ./hack/kai-scheduler-fake-npe-values.yaml \
             --set "global.gpuSharing=true" --set "global.registry=localhost:30100" --set "prometheus.enabled=true" --debug --wait
           kubectl create clusterrole pods-patcher --verb=patch --resource=pods
           kubectl create rolebinding fake-status-updater --clusterrole=pods-patcher --serviceaccount=gpu-operator:status-updater -n kai-resource-reservation

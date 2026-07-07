@@ -314,4 +314,13 @@ spec:
     {{- if .Values.numaPlacementExporter.driftResyncInterval }}
     driftResyncInterval: {{ .Values.numaPlacementExporter.driftResyncInterval | quote }}
     {{- end }}
+    {{- if .Values.numaPlacementExporter.podResourcesHostPath }}
+    podResourcesHostPath: {{ .Values.numaPlacementExporter.podResourcesHostPath | quote }}
+    {{- end }}
+    {{- if .Values.numaPlacementExporter.podResourcesSocket }}
+    podResourcesSocket: {{ .Values.numaPlacementExporter.podResourcesSocket | quote }}
+    {{- end }}
+    {{- if .Values.numaPlacementExporter.sysfsHostPath }}
+    sysfsHostPath: {{ .Values.numaPlacementExporter.sysfsHostPath | quote }}
+    {{- end }}
 {{- end -}}

@@ -67,7 +67,7 @@ while [[ $# -gt 0 ]]; do
       echo "  --local-images-build: Build and use local images instead of pulling from registry"
       echo "  --install-vpa: Install Vertical Pod Autoscaler and metrics-server"
       echo "  --skip-kai-install: Prepare the cluster (and images/chart with --local-images-build) without installing KAI (e.g. for gitops e2e tests)"
-      echo "  --feature-config: Feature configuration for kind cluster generation (default: \"default\")"
+      echo "  --feature-config: Feature configuration for kind cluster generation: default | dra-enabled | numa-full (default: \"default\")"
       echo "  --kind-config: Existing kind config file to use instead of generating one"
       exit 0
       ;;
@@ -111,7 +111,7 @@ if [ "$FEATURE_CONFIG" = "dra-enabled" ]; then
   DRA_PLUGIN_ENABLED="true"
 fi
 helm upgrade -i gpu-operator oci://ghcr.io/run-ai/fake-gpu-operator/fake-gpu-operator --namespace gpu-operator --create-namespace \
-    --version 0.0.74 --values ${REPO_ROOT}/hack/fake-gpu-operator-values.yaml --set "draPlugin.enabled=$DRA_PLUGIN_ENABLED" --wait
+    --version 0.2.0 --values ${REPO_ROOT}/hack/fake-gpu-operator-values.yaml --set "draPlugin.enabled=$DRA_PLUGIN_ENABLED" --wait
 
 # Deploy Prometheus Operator
 echo "Deploying Prometheus Operator..."
@@ -203,7 +203,8 @@ if [ "$LOCAL_IMAGES_BUILD" = "true" ]; then
         echo "Skipping KAI install; packaged chart kept at ./charts/kai-scheduler-$PACKAGE_VERSION.tgz"
     else
         helm upgrade -i kai-scheduler ./charts/kai-scheduler-$PACKAGE_VERSION.tgz -n kai-scheduler --create-namespace \
-            --set "global.gpuSharing=true" --set "global.registry=localhost:30100" --set "prometheus.enabled=true" --debug --wait
+        --values ${REPO_ROOT}/hack/kai-scheduler-fake-npe-values.yaml \
+        --set "global.gpuSharing=true" --set "global.registry=localhost:30100" --set "prometheus.enabled=true" --debug --wait
         rm -rf ./charts/kai-scheduler-$PACKAGE_VERSION.tgz
     fi
     cd ${REPO_ROOT}/hack
@@ -211,6 +212,7 @@ elif [ "$SKIP_KAI_INSTALL" = "true" ]; then
     echo "Skipping KAI install."
 else
     helm upgrade -i kai-scheduler oci://ghcr.io/kai-scheduler/kai-scheduler/kai-scheduler -n kai-scheduler --create-namespace \
+        --values ${REPO_ROOT}/hack/kai-scheduler-fake-npe-values.yaml \
         --set "global.gpuSharing=true" --set "prometheus.enabled=true" --wait --version "$PACKAGE_VERSION"
 fi
 

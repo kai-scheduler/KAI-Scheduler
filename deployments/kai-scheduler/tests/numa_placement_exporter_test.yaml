@@ -1,0 +1,48 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+suite: test numa placement exporter configuration
+
+set:
+  _test:
+    renderKaiConfig: true
+templates:
+  - kai-config.yaml
+tests:
+  - it: should not set service.enabled by default (auto - follow shards)
+    asserts:
+      - notExists:
+          path: spec.numaPlacementExporter.service.enabled
+      - equal:
+          path: spec.numaPlacementExporter.service.image.name
+          value: numa-placement-exporter
+
+  - it: should render service.enabled true when explicitly enabled
+    set:
+      numaPlacementExporter.enabled: true
+    asserts:
+      - equal:
+          path: spec.numaPlacementExporter.service.enabled
+          value: true
+
+  - it: should render service.enabled false when explicitly disabled
+    set:
+      numaPlacementExporter.enabled: false
+    asserts:
+      - equal:
+          path: spec.numaPlacementExporter.service.enabled
+          value: false
+
+  - it: should wire nodeSelector and tolerations onto the exporter
+    set:
+      numaPlacementExporter.nodeSelector:
+        nvidia.com/gpu.present: "true"
+      numaPlacementExporter.tolerations:
+        - operator: Exists
+    asserts:
+      - equal:
+          path: spec.numaPlacementExporter.nodeSelector["nvidia.com/gpu.present"]
+          value: "true"
+      - equal:
+          path: spec.numaPlacementExporter.tolerations[0].operator
+          value: Exists

@@ -18,7 +18,7 @@ while [[ $# -gt 0 ]]; do
     --output)         OUTPUT="$2"; shift 2;;
     -h|--help)
       echo "Usage: $0 --feature-config <config> --k8s-version <version> --output <path>"
-      echo "  --feature-config: default | dra-enabled"
+      echo "  --feature-config: default | dra-enabled | numa-full"
       echo "  --k8s-version:    kindest/node version tag, e.g. v1.34.0"
       echo "  --output:         path to write the generated kind config YAML"
       exit 0;;
@@ -84,12 +84,28 @@ esac
     echo "          runtime-config: \"$RUNTIME_CONFIG\""
   fi
 
+  # GPU worker pool assignment. On the default layout every worker joins the
+  # "default" pool (restricted Topology-Manager policy). The "numa-full" layout
+  # spreads workers across the numa pools so the numa suite can exercise every
+  # policy (single-numa-node, restricted, best-effort); the CPU node below stays
+  # NRT-less to cover the no-NRT pass-through case.
+  if [ "$FEATURE_CONFIG" = "numa-full" ]; then
+    WORKER_POOLS=(numa-single numa-single default numa-besteffort)
+  else
+    WORKER_POOLS=(default default default default)
+  fi
+
   echo "# Device plugin nodes"
-  for i in 1 2 3 4; do
+  for pool in "${WORKER_POOLS[@]}"; do
     echo "- role: worker"
     echo "  labels:"
-    echo "    run.ai/simulated-gpu-node-pool: default"
+    echo "    run.ai/simulated-gpu-node-pool: $pool"
     echo "    nvidia.com/gpu.deploy.device-plugin: \"true\""
+    # fake-gpu-operator's status-exporter (which publishes NodeResourceTopology)
+    # runs as the "nvidia-dcgm-exporter" DaemonSet gated on this label. With
+    # statusUpdater.disableNodeLabeling=true the operator never sets it itself,
+    # so it must be applied here or no NRTs are published.
+    echo "    nvidia.com/gpu.deploy.dcgm-exporter: \"true\""
     echo "    nvidia.com/gpu.memory: 11441"
   done
 
