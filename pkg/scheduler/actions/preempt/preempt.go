@@ -30,6 +30,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/scheduler_util"
 )
 
 type preemptAction struct {
@@ -178,9 +179,20 @@ func buildFilterFuncForPreempt(ssn *framework.Session, preemptor *podgroup_info.
 }
 
 func getOrderedVictimsQueue(ssn *framework.Session, preemptor *podgroup_info.PodGroupInfo) solvers.GenerateVictimsQueue {
+	// Victim filter results stay stable for one solver run; mutable queue state is rebuilt per generator.
+	var candidates map[common_info.PodGroupID]*podgroup_info.PodGroupInfo
 	return func() *utils.JobsOrderByQueues {
-		filter := buildFilterFuncForPreempt(ssn, preemptor)
-		victimsQueue := utils.GetVictimsQueue(ssn, filter)
-		return victimsQueue
+		if candidates == nil {
+			candidates = utils.GetVictimCandidates(ssn, buildFilterFuncForPreempt(ssn, preemptor))
+		}
+
+		victimsQueue := utils.NewJobsOrderByQueues(ssn, utils.JobsOrderInitOptions{
+			FilterNonPreemptible:     true,
+			FilterNonActiveAllocated: true,
+			VictimQueue:              true,
+			MaxJobsQueueDepth:        scheduler_util.QueueCapacityInfinite,
+		})
+		victimsQueue.InitializeWithJobs(candidates)
+		return &victimsQueue
 	}
 }

@@ -18,6 +18,20 @@ import (
 func GetVictimsQueue(
 	ssn *framework.Session,
 	filter func(*podgroup_info.PodGroupInfo) bool) *JobsOrderByQueues {
+	preemptees := GetVictimCandidates(ssn, filter)
+	victimsQueue := NewJobsOrderByQueues(ssn, JobsOrderInitOptions{
+		VictimQueue:       true,
+		MaxJobsQueueDepth: scheduler_util.QueueCapacityInfinite,
+	})
+	victimsQueue.InitializeWithJobs(preemptees)
+	return &victimsQueue
+}
+
+// GetVictimCandidates returns jobs with at least one live pod that pass filter.
+func GetVictimCandidates(
+	ssn *framework.Session,
+	filter func(*podgroup_info.PodGroupInfo) bool,
+) map[common_info.PodGroupID]*podgroup_info.PodGroupInfo {
 	preemptees := map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{}
 
 	for _, job := range ssn.ClusterInfo.PodGroupInfos {
@@ -38,12 +52,7 @@ func GetVictimsQueue(
 			preemptees[job.UID] = job
 		}
 	}
-	victimsQueue := NewJobsOrderByQueues(ssn, JobsOrderInitOptions{
-		VictimQueue:       true,
-		MaxJobsQueueDepth: scheduler_util.QueueCapacityInfinite,
-	})
-	victimsQueue.InitializeWithJobs(preemptees)
-	return &victimsQueue
+	return preemptees
 }
 
 func GetMessageOfEviction(ssn *framework.Session, actionType framework.ActionType, preempteeTask *pod_info.PodInfo,
