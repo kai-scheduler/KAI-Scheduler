@@ -54,12 +54,14 @@ type DistributedBatchJobOptions struct {
 	// PodSpecMutator is applied to the pod template spec after defaults are set. Scale
 	// tests use this to inject KWOK tolerations/affinity without importing scale into rd.
 	PodSpecMutator func(*v1.PodSpec)
-	// BackoffLimit on the Job. nil leaves the k8s default (6 retries).
-	// Set to ptr.To(int32(0)) for partial-reclaim/preemption tests where the
-	// scheduler deletes pods and the test expects them to stay deleted —
-	// BackoffLimit=0 marks the Job Failed on the first deletion so pod
-	// replacement stops while surviving pods keep running.
-	BackoffLimit *int32
+	// NonReplacing makes evicted pods stay gone instead of being recreated, while
+	// letting surviving pods keep running. Set for partial reclaim/preemption tests:
+	// the scheduler deletes some pods and the test asserts the remaining count.
+	// Implemented as an Indexed Job with BackoffLimitPerIndex=0, so each evicted
+	// pod-index fails without a replacement and without failing the whole Job. A
+	// global BackoffLimit=0 would instead mark the Job Failed on the first deletion
+	// and terminate the surviving pods too.
+	NonReplacing bool
 }
 
 // CreateDistributedBatchJob submits a batch Job annotated with kai.scheduler/batch-min-member
@@ -99,8 +101,9 @@ func buildDistributedBatchJob(
 	job.Name = opts.NamePrefix + job.Name
 	job.Spec.Parallelism = ptr.To(parallelism)
 	job.Spec.Completions = ptr.To(parallelism)
-	if opts.BackoffLimit != nil {
-		job.Spec.BackoffLimit = opts.BackoffLimit
+	if opts.NonReplacing {
+		job.Spec.CompletionMode = ptr.To(batchv1.IndexedCompletion)
+		job.Spec.BackoffLimitPerIndex = ptr.To(int32(0))
 	}
 
 	if job.Annotations == nil {

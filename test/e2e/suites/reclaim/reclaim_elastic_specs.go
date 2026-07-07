@@ -63,7 +63,7 @@ func DescribeReclaimElasticSpecs() bool {
 				rd.DistributedBatchJobOptions{
 					Parallelism:  ptr.To(int32(2)),
 					MinMember:    ptr.To(int32(1)),
-					BackoffLimit: ptr.To(int32(0)),
+					NonReplacing: true,
 					NamePrefix:   "elastic-reclaimee-1-",
 					Resources:    reclaimeePodRequirements,
 				})
@@ -73,7 +73,7 @@ func DescribeReclaimElasticSpecs() bool {
 				rd.DistributedBatchJobOptions{
 					Parallelism:  ptr.To(int32(2)),
 					MinMember:    ptr.To(int32(1)),
-					BackoffLimit: ptr.To(int32(0)),
+					NonReplacing: true,
 					NamePrefix:   "elastic-reclaimee-2-",
 					Resources:    reclaimeePodRequirements,
 				})
@@ -128,7 +128,7 @@ func DescribeReclaimElasticSpecs() bool {
 				rd.DistributedBatchJobOptions{
 					Parallelism:  ptr.To(int32(2)),
 					MinMember:    ptr.To(int32(1)),
-					BackoffLimit: ptr.To(int32(0)),
+					NonReplacing: true,
 					NamePrefix:   "elastic-reclaimee-",
 					Resources:    reclaimeePodRequirements,
 				})

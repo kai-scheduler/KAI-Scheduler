@@ -75,7 +75,7 @@ func DescribePreemptElasticSpecs() bool {
 				rd.DistributedBatchJobOptions{
 					Parallelism:       ptr.To(int32(2)),
 					MinMember:         ptr.To(int32(1)),
-					BackoffLimit:      ptr.To(int32(0)),
+					NonReplacing:      true,
 					NamePrefix:        "elastic-job-low-1-",
 					PriorityClassName: lowPriority,
 					Resources:         lowPodRequirements,
@@ -86,7 +86,7 @@ func DescribePreemptElasticSpecs() bool {
 				rd.DistributedBatchJobOptions{
 					Parallelism:       ptr.To(int32(2)),
 					MinMember:         ptr.To(int32(1)),
-					BackoffLimit:      ptr.To(int32(0)),
+					NonReplacing:      true,
 					NamePrefix:        "elastic-job-low-2-",
 					PriorityClassName: lowPriority,
 					Resources:         lowPodRequirements,
@@ -146,7 +146,7 @@ func DescribePreemptElasticSpecs() bool {
 				rd.DistributedBatchJobOptions{
 					Parallelism:       ptr.To(int32(2)),
 					MinMember:         ptr.To(int32(1)),
-					BackoffLimit:      ptr.To(int32(0)),
+					NonReplacing:      true,
 					NamePrefix:        "elastic-job-low-1-",
 					PriorityClassName: lowPriority,
 					Resources:         lowPodRequirements,

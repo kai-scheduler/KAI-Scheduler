@@ -67,7 +67,7 @@ var _ = Describe("Reclaim with Elastic Jobs", Ordered, func() {
 			rd.DistributedBatchJobOptions{
 				Parallelism:  ptr.To(int32(2)),
 				MinMember:    ptr.To(int32(1)),
-				BackoffLimit: ptr.To(int32(0)),
+				NonReplacing: true,
 				NamePrefix:   "elastic-reclaimee-",
 				Resources:    reclaimeePodRequirements,
 			})
@@ -113,7 +113,7 @@ var _ = Describe("Reclaim with Elastic Jobs", Ordered, func() {
 			rd.DistributedBatchJobOptions{
 				Parallelism:  ptr.To(int32(3)),
 				MinMember:    ptr.To(int32(1)),
-				BackoffLimit: ptr.To(int32(0)),
+				NonReplacing: true,
 				NamePrefix:   "elastic-reclaimee-",
 				Resources:    reclaimeePodRequirements,
 			})
@@ -162,7 +162,7 @@ var _ = Describe("Reclaim with Elastic Jobs", Ordered, func() {
 			rd.DistributedBatchJobOptions{
 				Parallelism:  ptr.To(int32(3)),
 				MinMember:    ptr.To(int32(1)),
-				BackoffLimit: ptr.To(int32(0)),
+				NonReplacing: true,
 				NamePrefix:   "elastic-reclaimee-",
 				Resources:    reclaimeePodRequirements,
 			})
