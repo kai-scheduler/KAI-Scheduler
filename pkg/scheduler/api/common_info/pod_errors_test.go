@@ -41,6 +41,30 @@ func TestFitErrors_Error(t *testing.T) {
 	}
 }
 
+func TestFitErrorsAggregatesNodeReasons(t *testing.T) {
+	fitErrors := NewFitErrors()
+	fitErrors.SetNodeError("node-a", NewFitErrorWithDetailedMessage(
+		"pod", "namespace", "node-a",
+		[]string{"node(s) didn't have enough resources: GPUs"},
+		"Node didn't have enough resources: GPUs, requested: 1, used: 8, capacity: 8",
+	))
+	fitErrors.SetNodeError("node-b", NewFitErrorWithDetailedMessage(
+		"pod", "namespace", "node-b",
+		[]string{
+			"node(s) didn't have enough resources: GPUs",
+			"node(s) didn't match Pod's node affinity/selector",
+		},
+		"Node didn't have enough resources: GPUs, requested: 1, used: 8, capacity: 8",
+		"node(s) didn't match Pod's node affinity/selector",
+	))
+
+	want := "no nodes with enough resources were found: 1 node(s) didn't match Pod's node affinity/selector. \n" +
+		"2 node(s) didn't have enough resources: GPUs."
+	if got := fitErrors.Error(); got != want {
+		t.Fatalf("Error() = %q, want %q", got, want)
+	}
+}
+
 func TestNewFitErrorInsufficientResource(t *testing.T) {
 	vectorMap := resource_info.NewResourceVectorMap()
 	type args struct {
