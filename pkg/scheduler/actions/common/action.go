@@ -99,7 +99,7 @@ func TryToVirtuallyAllocatePreemptorAndGetVictims(
 			jobToAllocate.Namespace, jobToAllocate.Name, resReq)
 
 		if jobToAllocate.UID != preemptor.UID {
-			if !AllocateJob(ssn, stmt, nodes, jobToAllocate, true) {
+			if !AllocateJob(ssn, stmt, nodes, jobToAllocate, true).Success {
 				tasksToAllocate := podgroup_info.GetTasksToAllocate(jobToAllocate, ssn.SubGroupOrderFn,
 					ssn.TaskOrderFn, false)
 				newVictims = append(newVictims, tasksToAllocate...)
@@ -107,8 +107,8 @@ func TryToVirtuallyAllocatePreemptorAndGetVictims(
 			continue
 		}
 
-		success := AllocateJob(ssn, stmt, nodes, jobToAllocate, true)
-		if !success {
+		result := AllocateJob(ssn, stmt, nodes, jobToAllocate, true)
+		if !result.Success {
 			return false, []*pod_info.PodInfo{}
 		}
 		preemptorAllocated = true

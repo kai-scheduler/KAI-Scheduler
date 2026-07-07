@@ -6,18 +6,23 @@ package allocate_test
 import (
 	"fmt"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/allocate"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils"
@@ -76,6 +81,121 @@ func TestAllocateFitErrorsReplacesRepeatedAttempt(t *testing.T) {
 
 	assertPendingFitErrorMessage(t, ssn, numNodes*fitErrorBenchmarkGPUsPerNode,
 		"no nodes with enough resources were found: 2 node(s) didn't have enough resources: GPUs.")
+}
+
+func TestAllocateJobDiscardsFailedAlternativeDiagnosticsAfterSuccess(t *testing.T) {
+	ssn, job, nodes := buildAlternativeAllocationSession(t, 2, 2)
+	addAlternativeNodeSets(ssn, nodes)
+	previousTask := job.GetAllPodsMap()["job-0"]
+	previousTaskError := common_info.NewFitErrors()
+	previousTaskError.SetError("previous allocation error")
+	previousJobError := common_info.NewJobFitError(
+		job.Name, podgroup_info.DefaultSubGroup, job.Namespace,
+		podgroup_info.PodSchedulingErrors, []string{"previous allocation error"},
+	)
+	job.ReplaceAllocationFitErrors(previousTask, previousTaskError, []common_info.JobFitError{previousJobError})
+
+	result := common.AllocateJob(ssn, ssn.Statement(), nodes, job, false)
+	result.PublishFitErrors(job)
+
+	require.True(t, result.Success)
+	require.Empty(t, job.TasksFitErrors)
+	require.Empty(t, job.JobFitErrors)
+}
+
+func TestAllocateJobPublishesBestFailedAlternative(t *testing.T) {
+	ssn, job, nodes := buildAlternativeAllocationSession(t, 3, 2)
+	addAlternativeNodeSets(ssn, nodes)
+
+	result := common.AllocateJob(ssn, ssn.Statement(), nodes, job, false)
+	result.PublishFitErrors(job)
+
+	require.False(t, result.Success)
+	require.Len(t, job.TasksFitErrors, 1)
+	for _, taskFitError := range job.TasksFitErrors {
+		require.Equal(t, 2, taskFitError.ReasonCount("node(s) didn't have enough resources: GPUs"))
+	}
+	require.Len(t, job.JobFitErrors, 1)
+	require.Contains(t, job.JobFitErrors[0].DetailedMessage(),
+		"Resources were found for 2 pods while 3 are required for gang scheduling")
+}
+
+func TestPipelineOnlyAllocateJobDoesNotMutateFitErrors(t *testing.T) {
+	ssn, job, nodes := buildAlternativeAllocationSession(t, 3, 2)
+	task := job.GetAllPodsMap()["job-0"]
+	existingTaskError := common_info.NewFitErrors()
+	existingTaskError.SetError("existing task error")
+	job.SetTaskFitErrors(task, existingTaskError)
+	existingJobError := common_info.NewJobFitError(
+		job.Name, podgroup_info.DefaultSubGroup, job.Namespace,
+		podgroup_info.PodSchedulingErrors, []string{"existing job error"},
+	)
+	job.AddJobFitError(existingJobError)
+
+	result := common.AllocateJob(ssn, ssn.Statement(), nodes, job, true)
+
+	require.False(t, result.Success)
+	require.Same(t, existingTaskError, job.TasksFitErrors[task.UID])
+	require.Equal(t, []common_info.JobFitError{existingJobError}, job.JobFitErrors)
+}
+
+func buildAlternativeAllocationSession(
+	t *testing.T,
+	taskCount int,
+	nodeCount int,
+) (*framework.Session, *podgroup_info.PodGroupInfo, []*node_info.NodeInfo) {
+	t.Helper()
+	test_utils.InitTestingInfrastructure()
+	controller := gomock.NewController(t)
+	t.Cleanup(controller.Finish)
+
+	root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+	root.AddPodSet(subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, int32(taskCount), nil))
+	tasks := make([]*tasks_fake.TestTaskBasic, taskCount)
+	for index := range tasks {
+		tasks[index] = &tasks_fake.TestTaskBasic{State: pod_status.Pending}
+	}
+	nodeSpecs := make(map[string]nodes_fake.TestNodeBasic, nodeCount)
+	for index := range nodeCount {
+		nodeSpecs[fmt.Sprintf("alternative-node-%d", index)] = nodes_fake.TestNodeBasic{GPUs: 1}
+	}
+	topology := test_utils.TestTopologyBasic{
+		Name:  "alternative allocation fit errors",
+		Nodes: nodeSpecs,
+		Jobs: []*jobs_fake.TestJobBasic{{
+			Name:                "job",
+			QueueName:           "queue",
+			Priority:            constants.PriorityTrainNumber,
+			RequiredGPUsPerTask: 1,
+			RootSubGroupSet:     root,
+			Tasks:               tasks,
+		}},
+		Queues: []test_utils.TestQueueBasic{{Name: "queue", DeservedGPUs: 100}},
+		Mocks:  &test_utils.TestMock{CacheRequirements: &test_utils.CacheMocking{}},
+	}
+	ssn := test_utils.BuildSession(topology, controller)
+	nodes := make([]*node_info.NodeInfo, 0, len(ssn.ClusterInfo.Nodes))
+	for _, node := range ssn.ClusterInfo.Nodes {
+		nodes = append(nodes, node)
+	}
+	sort.Slice(nodes, func(i, j int) bool { return nodes[i].Name < nodes[j].Name })
+	return ssn, ssn.ClusterInfo.PodGroupInfos["job"], nodes
+}
+
+func addAlternativeNodeSets(ssn *framework.Session, nodes []*node_info.NodeInfo) {
+	ssn.AddSubsetNodesFn(func(
+		_ *podgroup_info.PodGroupInfo,
+		subGroup *subgroup_info.SubGroupInfo,
+		_ map[string]*subgroup_info.PodSet,
+		_ []*pod_info.PodInfo,
+		nodeSet node_info.NodeSet,
+		_ bool,
+	) (api.SubsetNodesResult, error) {
+		if subGroup.GetName() != podgroup_info.DefaultSubGroup {
+			return api.SubsetNodesResult{NodeSets: []node_info.NodeSet{nodeSet}}, nil
+		}
+		return api.SubsetNodesResult{NodeSets: []node_info.NodeSet{nodes[:1], nodes}}, nil
+	})
 }
 
 func BenchmarkAllocateFitErrorsResourceFull_10Nodes(b *testing.B) {

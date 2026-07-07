@@ -93,6 +93,10 @@ type PodGroupInfo struct {
 	tasksToAllocateInitResourceVector resource_info.ResourceVector
 	PodStatusIndex                    map[pod_status.PodStatus]pod_info.PodsMap
 	activeAllocatedCount              *int
+	allocationTaskFitErrorID          common_info.PodID
+	allocationTaskFitError            *common_info.TasksFitErrors
+	allocationJobFitErrorsStart       int
+	allocationJobFitErrorsCount       int
 }
 
 func NewPodGroupInfo(uid common_info.PodGroupID, tasks ...*pod_info.PodInfo) *PodGroupInfo {
@@ -621,6 +625,42 @@ func (pgi *PodGroupInfo) AddTaskFitErrors(task *pod_info.PodInfo, fitErrors *com
 
 func (pgi *PodGroupInfo) SetTaskFitErrors(task *pod_info.PodInfo, fitErrors *common_info.TasksFitErrors) {
 	pgi.TasksFitErrors[task.UID] = fitErrors
+}
+
+// ReplaceAllocationFitErrors replaces diagnostics owned by the authoritative allocation attempt.
+func (pgi *PodGroupInfo) ReplaceAllocationFitErrors(
+	task *pod_info.PodInfo,
+	taskFitError *common_info.TasksFitErrors,
+	jobFitErrors []common_info.JobFitError,
+) {
+	if pgi.allocationTaskFitError != nil {
+		if current := pgi.TasksFitErrors[pgi.allocationTaskFitErrorID]; current == pgi.allocationTaskFitError {
+			delete(pgi.TasksFitErrors, pgi.allocationTaskFitErrorID)
+		}
+	}
+	pgi.allocationTaskFitErrorID = ""
+	pgi.allocationTaskFitError = nil
+
+	start := pgi.allocationJobFitErrorsStart
+	end := start + pgi.allocationJobFitErrorsCount
+	if start >= 0 && end >= start && end <= len(pgi.JobFitErrors) {
+		pgi.JobFitErrors = append(pgi.JobFitErrors[:start], pgi.JobFitErrors[end:]...)
+	}
+	pgi.allocationJobFitErrorsStart = len(pgi.JobFitErrors)
+	pgi.allocationJobFitErrorsCount = 0
+
+	if task != nil && taskFitError != nil {
+		if pgi.TasksFitErrors == nil {
+			pgi.TasksFitErrors = make(map[common_info.PodID]*common_info.TasksFitErrors)
+		}
+		pgi.TasksFitErrors[task.UID] = taskFitError
+		pgi.allocationTaskFitErrorID = task.UID
+		pgi.allocationTaskFitError = taskFitError
+	}
+
+	pgi.allocationJobFitErrorsStart = len(pgi.JobFitErrors)
+	pgi.JobFitErrors = append(pgi.JobFitErrors, jobFitErrors...)
+	pgi.allocationJobFitErrorsCount = len(jobFitErrors)
 }
 
 func (pgi *PodGroupInfo) GetInvalidSubGroupTasks() pod_info.PodsMap {

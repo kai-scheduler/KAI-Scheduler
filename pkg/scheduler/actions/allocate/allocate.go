@@ -85,7 +85,9 @@ func attemptToAllocateJob(ssn *framework.Session, stmt *framework.Statement, job
 		job.Namespace, job.Name, queue.Name, resReq)
 
 	nodes := maps.Values(ssn.ClusterInfo.Nodes)
-	if !common.AllocateJob(ssn, stmt, nodes, job, false) {
+	result := common.AllocateJob(ssn, stmt, nodes, job, false)
+	result.PublishFitErrors(job)
+	if !result.Success {
 		log.InfraLogger.V(3).Infof("Could not allocate resources for job: <%v/%v> of queue <%v>",
 			job.Namespace, job.Name, job.Queue)
 		return false, false

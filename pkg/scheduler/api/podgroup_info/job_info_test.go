@@ -1771,3 +1771,40 @@ func TestSetTaskFitErrorsReplacesPreviousAttempt(t *testing.T) {
 	assert.Equal(t, 0, job.TasksFitErrors[task.UID].ReasonCount("MissingGPU"))
 	assert.Equal(t, 1, job.TasksFitErrors[task.UID].ReasonCount("NoStorage"))
 }
+
+func TestReplaceAllocationFitErrorsPreservesOtherErrors(t *testing.T) {
+	job := NewPodGroupInfo("job")
+	allocationTask := &pod_info.PodInfo{UID: "allocation-task"}
+	otherTask := &pod_info.PodInfo{UID: "other-task"}
+	otherTaskError := common_info.NewFitErrors()
+	otherTaskError.SetError("other task error")
+	job.SetTaskFitErrors(otherTask, otherTaskError)
+	otherJobError := common_info.NewJobFitError(
+		job.Name, DefaultSubGroup, job.Namespace, PodSchedulingErrors, []string{"other job error"},
+	)
+	job.AddJobFitError(otherJobError)
+
+	firstTaskError := common_info.NewFitErrors()
+	firstTaskError.SetError("first allocation error")
+	firstJobError := common_info.NewJobFitError(
+		job.Name, DefaultSubGroup, job.Namespace, PodSchedulingErrors, []string{"first allocation error"},
+	)
+	job.ReplaceAllocationFitErrors(allocationTask, firstTaskError, []common_info.JobFitError{firstJobError})
+
+	secondTaskError := common_info.NewFitErrors()
+	secondTaskError.SetError("second allocation error")
+	secondJobError := common_info.NewJobFitError(
+		job.Name, DefaultSubGroup, job.Namespace, PodSchedulingErrors, []string{"second allocation error"},
+	)
+	job.ReplaceAllocationFitErrors(allocationTask, secondTaskError, []common_info.JobFitError{secondJobError})
+
+	assert.Same(t, otherTaskError, job.TasksFitErrors[otherTask.UID])
+	assert.Same(t, secondTaskError, job.TasksFitErrors[allocationTask.UID])
+	assert.Equal(t, []common_info.JobFitError{otherJobError, secondJobError}, job.JobFitErrors)
+
+	job.ReplaceAllocationFitErrors(nil, nil, nil)
+
+	assert.Same(t, otherTaskError, job.TasksFitErrors[otherTask.UID])
+	assert.NotContains(t, job.TasksFitErrors, allocationTask.UID)
+	assert.Equal(t, []common_info.JobFitError{otherJobError}, job.JobFitErrors)
+}

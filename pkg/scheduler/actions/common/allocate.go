@@ -17,53 +17,117 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 )
 
+// AllocationResult contains the outcome of one job allocation attempt.
+type AllocationResult struct {
+	Success     bool
+	diagnostics *allocationDiagnostics
+}
+
+// PublishFitErrors replaces diagnostics owned by the authoritative allocation attempt.
+func (r AllocationResult) PublishFitErrors(job *podgroup_info.PodGroupInfo) {
+	if r.diagnostics == nil {
+		return
+	}
+	job.ReplaceAllocationFitErrors(
+		r.diagnostics.failedTask,
+		r.diagnostics.taskFitError,
+		r.diagnostics.jobFitErrors,
+	)
+}
+
+type allocationDiagnostics struct {
+	failedTask   *pod_info.PodInfo
+	taskFitError *common_info.TasksFitErrors
+	jobFitErrors []common_info.JobFitError
+}
+
+type allocationOutcome struct {
+	success        bool
+	allocatedTasks int
+	diagnostics    *allocationDiagnostics
+}
+
+func selectOutcomeByAllocatedTasks(current, candidate allocationOutcome) allocationOutcome {
+	if candidate.allocatedTasks > current.allocatedTasks {
+		return candidate
+	}
+	return current
+}
+
 func AllocateJob(ssn *framework.Session, stmt *framework.Statement, nodes []*node_info.NodeInfo,
-	job *podgroup_info.PodGroupInfo, isPipelineOnly bool) bool {
+	job *podgroup_info.PodGroupInfo, isPipelineOnly bool) AllocationResult {
 	ssn.PreJobAllocation(job)
+	collectFitErrors := !isPipelineOnly
 
 	tasksToAllocate := podgroup_info.GetTasksToAllocate(job, ssn.SubGroupOrderFn, ssn.TaskOrderFn, !isPipelineOnly)
 	if len(tasksToAllocate) == 0 {
-		return false
+		return newAllocationResult(false, nil, collectFitErrors)
 	}
 
 	result := ssn.IsJobOverQueueCapacityFn(job, tasksToAllocate)
 	if !result.IsSchedulable {
-		if !isPipelineOnly {
-			job.AddJobFitError(common_info.NewJobFitErrorWithQueueContext(
-				job.Name, podgroup_info.DefaultSubGroup, job.Namespace,
-				result.Reason, result.Message, result.Details))
+		var diagnostics *allocationDiagnostics
+		if collectFitErrors {
+			diagnostics = &allocationDiagnostics{jobFitErrors: []common_info.JobFitError{
+				common_info.NewJobFitErrorWithQueueContext(
+					job.Name, podgroup_info.DefaultSubGroup, job.Namespace,
+					result.Reason, result.Message, result.Details),
+			}}
 		}
-		return false
+		return newAllocationResult(false, diagnostics, collectFitErrors)
 	}
-	return allocateSubGroupSet(ssn, stmt, nodes, job, job.RootSubGroupSet, tasksToAllocate, isPipelineOnly)
+	outcome := allocateSubGroupSet(ssn, stmt, nodes, job, job.RootSubGroupSet, tasksToAllocate, isPipelineOnly)
+	return newAllocationResult(outcome.success, outcome.diagnostics, collectFitErrors)
+}
+
+func newAllocationResult(success bool, diagnostics *allocationDiagnostics, collectFitErrors bool) AllocationResult {
+	if collectFitErrors && diagnostics == nil {
+		diagnostics = &allocationDiagnostics{}
+	}
+	return AllocationResult{Success: success, diagnostics: diagnostics}
 }
 
 func allocateSubGroupSet(ssn *framework.Session, stmt *framework.Statement, nodes []*node_info.NodeInfo,
 	job *podgroup_info.PodGroupInfo, subGroupSet *subgroup_info.SubGroupSet, subtreeTasksToAllocate []*pod_info.PodInfo,
 	isPipelineOnly bool,
-) bool {
+) allocationOutcome {
 	if len(subtreeTasksToAllocate) == 0 {
-		return true
+		return allocationOutcome{success: true}
 	}
 	relevantPodSets := subtreePodSetsContainingTasks(subGroupSet, subtreeTasksToAllocate)
-	nodeSets, err := ssn.SubsetNodesFn(job, &subGroupSet.SubGroupInfo, relevantPodSets, subtreeTasksToAllocate, nodes)
+	subsetResult, err := ssn.SubsetNodesFn(
+		job, &subGroupSet.SubGroupInfo, relevantPodSets, subtreeTasksToAllocate, nodes, !isPipelineOnly,
+	)
 	if err != nil {
 		log.InfraLogger.Errorf(
 			"Failed to run SubsetNodes on job <%s/%s>: %v", job.Namespace, job.Name, err)
-		return false
+		return allocationOutcome{}
+	}
+	nodeSets := subsetResult.NodeSets
+	if len(nodeSets) == 0 && len(subsetResult.FitErrors) != 0 {
+		return allocationOutcome{diagnostics: &allocationDiagnostics{jobFitErrors: subsetResult.FitErrors}}
 	}
 
+	var bestFailure allocationOutcome
+	hasFailure := false
 	for _, nodeSet := range nodeSets {
 		cp := stmt.Checkpoint()
-		if allocateMembersOnNodes(ssn, stmt, nodeSet, job, subGroupSet, subtreeTasksToAllocate, isPipelineOnly) {
-			return true
+		outcome := allocateMembersOnNodes(ssn, stmt, nodeSet, job, subGroupSet, subtreeTasksToAllocate, isPipelineOnly)
+		if outcome.success {
+			return outcome
 		}
 		if err := stmt.Rollback(cp); err != nil {
 			log.InfraLogger.Errorf("Failed to rollback statement in session %v, err: %v", ssn.ID, err)
 		}
+		if !hasFailure {
+			bestFailure = outcome
+			hasFailure = true
+		} else {
+			bestFailure = selectOutcomeByAllocatedTasks(bestFailure, outcome)
+		}
 	}
 
-	return false
+	return bestFailure
 }
 
 // allocateMembersOnNodes allocates the tasks that appear in subtreeTasksToAllocate by traversing the subtree rooted at subGroupSet.
@@ -72,22 +136,25 @@ func allocateSubGroupSet(ssn *framework.Session, stmt *framework.Statement, node
 func allocateMembersOnNodes(ssn *framework.Session, stmt *framework.Statement, nodes node_info.NodeSet,
 	job *podgroup_info.PodGroupInfo, subGroupSet *subgroup_info.SubGroupSet, subtreeTasksToAllocate []*pod_info.PodInfo,
 	isPipelineOnly bool,
-) bool {
+) allocationOutcome {
+	allocatedTasks := 0
 	for _, memberGeneric := range orderedMembers(ssn, subGroupSet.GetMembers()) {
+		var outcome allocationOutcome
 		switch member := memberGeneric.(type) {
 		case *subgroup_info.PodSet:
-			if !allocatePodSet(ssn, stmt, nodes, job, member,
-				filterTasksForPodSet(member, subtreeTasksToAllocate), isPipelineOnly) {
-				return false
-			}
+			outcome = allocatePodSet(ssn, stmt, nodes, job, member,
+				filterTasksForPodSet(member, subtreeTasksToAllocate), isPipelineOnly)
 		case *subgroup_info.SubGroupSet:
-			if !allocateSubGroupSet(ssn, stmt, nodes, job, member,
-				filterTasksForPodSets(member.GetDescendantPodSets(), subtreeTasksToAllocate), isPipelineOnly) {
-				return false
-			}
+			outcome = allocateSubGroupSet(ssn, stmt, nodes, job, member,
+				filterTasksForPodSets(member.GetDescendantPodSets(), subtreeTasksToAllocate), isPipelineOnly)
 		}
+		if !outcome.success {
+			outcome.allocatedTasks += allocatedTasks
+			return outcome
+		}
+		allocatedTasks += outcome.allocatedTasks
 	}
-	return true
+	return allocationOutcome{success: true, allocatedTasks: allocatedTasks}
 }
 
 // subtreePodSetsContainingTasks returns only the PodSets that are a descendant of the given SubGroupSet and that have at least one task in the list.
@@ -109,73 +176,98 @@ func subtreePodSetsContainingTasks(subGroupSet *subgroup_info.SubGroupSet, tasks
 func allocatePodSet(ssn *framework.Session, stmt *framework.Statement, nodes node_info.NodeSet,
 	job *podgroup_info.PodGroupInfo, podSet *subgroup_info.PodSet, podsetTasksToAllocate []*pod_info.PodInfo,
 	isPipelineOnly bool,
-) bool {
+) allocationOutcome {
 	if len(podsetTasksToAllocate) == 0 {
-		return true
+		return allocationOutcome{success: true}
 	}
 	podSets := map[string]*subgroup_info.PodSet{
 		podSet.GetName(): podSet,
 	}
-	nodeSets, err := ssn.SubsetNodesFn(job, &podSet.SubGroupInfo, podSets, podsetTasksToAllocate, nodes)
+	subsetResult, err := ssn.SubsetNodesFn(
+		job, &podSet.SubGroupInfo, podSets, podsetTasksToAllocate, nodes, !isPipelineOnly,
+	)
 	if err != nil {
 		log.InfraLogger.Errorf(
 			"Failed to run SubsetNodes on job <%s/%s>: %v", job.Namespace, job.Name, err)
-		return false
+		return allocationOutcome{}
+	}
+	nodeSets := subsetResult.NodeSets
+	if len(nodeSets) == 0 && len(subsetResult.FitErrors) != 0 {
+		return allocationOutcome{diagnostics: &allocationDiagnostics{jobFitErrors: subsetResult.FitErrors}}
 	}
 
+	var bestFailure allocationOutcome
+	hasFailure := false
 	for _, nodeSet := range nodeSets {
 		cp := stmt.Checkpoint()
-		if allocateTasksOnNodeSet(ssn, stmt, nodeSet, job, podsetTasksToAllocate, isPipelineOnly) {
-			return true
+		outcome := allocateTasksOnNodeSet(ssn, stmt, nodeSet, job, podsetTasksToAllocate, isPipelineOnly)
+		if outcome.success {
+			return outcome
 		}
 		if err := stmt.Rollback(cp); err != nil {
 			log.InfraLogger.Errorf("Failed to rollback statement in session %v, err: %v", ssn.ID, err)
 		}
+		if !hasFailure {
+			bestFailure = outcome
+			hasFailure = true
+		} else {
+			bestFailure = selectOutcomeByAllocatedTasks(bestFailure, outcome)
+		}
 	}
-	return false
+	return bestFailure
 }
 
 func allocateTasksOnNodeSet(ssn *framework.Session, stmt *framework.Statement, nodes node_info.NodeSet,
-	job *podgroup_info.PodGroupInfo, tasksToAllocate []*pod_info.PodInfo, isPipelineOnly bool) bool {
+	job *podgroup_info.PodGroupInfo, tasksToAllocate []*pod_info.PodInfo, isPipelineOnly bool) allocationOutcome {
 	for index, task := range tasksToAllocate {
-		success := allocateTask(ssn, stmt, nodes, task, isPipelineOnly)
+		success, taskFitError := allocateTask(ssn, stmt, nodes, task, isPipelineOnly)
 		if !success {
-			handleFailedTaskAllocation(job, task, index)
-			return false
+			var diagnostics *allocationDiagnostics
+			if !isPipelineOnly {
+				diagnostics = &allocationDiagnostics{
+					failedTask:   task,
+					taskFitError: taskFitError,
+					jobFitErrors: []common_info.JobFitError{
+						newFailedTaskAllocationError(job, task, index, taskFitError),
+					},
+				}
+			}
+			return allocationOutcome{allocatedTasks: index, diagnostics: diagnostics}
 		}
 	}
-	return true
+	return allocationOutcome{success: true, allocatedTasks: len(tasksToAllocate)}
 }
 
 func allocateTask(ssn *framework.Session, stmt *framework.Statement, nodes []*node_info.NodeInfo,
-	task *pod_info.PodInfo, isPipelineOnly bool) (success bool) {
+	task *pod_info.PodInfo, isPipelineOnly bool) (success bool, taskFitError *common_info.TasksFitErrors) {
 	job := ssn.ClusterInfo.PodGroupInfos[task.Job]
 	if job == nil {
 		log.InfraLogger.Errorf("Failed to find job <%s> in session <%s>", task.Job, ssn.ID)
-		return false
-	}
-	if !isPipelineOnly {
-		delete(job.TasksFitErrors, task.UID)
+		return false, nil
 	}
 	err := ssn.PrePredicateFn(task, job)
 	if err != nil {
 		log.InfraLogger.V(6).Infof("pre-predicates failed on task %s/%s. Error: %v",
 			task.Namespace, task.Name, err)
 
-		fitErrors := common_info.NewFitErrors()
-		fitErrors.SetError(err.Error())
-		job.SetTaskFitErrors(task, fitErrors)
-		return false
+		if !isPipelineOnly {
+			taskFitError = common_info.NewFitErrors()
+			taskFitError.SetError(err.Error())
+		}
+		return false, taskFitError
 	}
 
 	log.InfraLogger.V(6).Infof("Looking for best node for task - Task: <%s/%s>, init requested: <%v>.",
 		task.Namespace, task.Name, task.ResReqVector)
 
 	orderedNodes := ssn.OrderedNodesByTask(nodes, task)
-	fitErrors := common_info.NewFitErrors()
+	var fitErrors *common_info.TasksFitErrors
+	if !isPipelineOnly {
+		fitErrors = common_info.NewFitErrors()
+	}
 	for _, node := range orderedNodes {
 		fits, fitError := ssn.FittingNode(task, node, !isPipelineOnly)
-		if fitError != nil {
+		if fitErrors != nil && fitError != nil {
 			fitErrors.AddNodeError(fitError)
 		}
 		if !fits {
@@ -193,13 +285,13 @@ func allocateTask(ssn *framework.Session, stmt *framework.Statement, nodes []*no
 	if success {
 		log.InfraLogger.V(6).Infof("Allocation succeeded for task: <%v/%v>", task.Namespace, task.Name)
 	} else {
-		if !isPipelineOnly && fitErrors.HasNodeErrors() {
-			job.SetTaskFitErrors(task, fitErrors)
+		if fitErrors != nil && fitErrors.HasNodeErrors() {
+			taskFitError = fitErrors
 		}
 		log.InfraLogger.V(6).Infof("Failed statement allocate for task: <%v/%v>", task.Namespace, task.Name)
 	}
 
-	return success
+	return success, taskFitError
 }
 
 func allocateTaskToNode(ssn *framework.Session, stmt *framework.Statement, task *pod_info.PodInfo, node *node_info.NodeInfo, isPipelineOnly bool) bool {
@@ -237,10 +329,13 @@ func pipelineTaskToNode(ssn *framework.Session, stmt *framework.Statement, task 
 	return true
 }
 
-func handleFailedTaskAllocation(job *podgroup_info.PodGroupInfo, unschedulableTask *pod_info.PodInfo, numSchedulableTasks int) {
-	allocationError, found := job.TasksFitErrors[unschedulableTask.UID]
-
-	if !found {
+func newFailedTaskAllocationError(
+	job *podgroup_info.PodGroupInfo,
+	unschedulableTask *pod_info.PodInfo,
+	numSchedulableTasks int,
+	allocationError *common_info.TasksFitErrors,
+) common_info.JobFitError {
+	if allocationError == nil {
 		allocationError = common_info.NewFitErrors()
 		allocationError.SetError(common_info.DefaultPodError)
 	}
@@ -253,26 +348,30 @@ func handleFailedTaskAllocation(job *podgroup_info.PodGroupInfo, unschedulableTa
 	taskSubGroup := job.GetAllPodSets()[taskSubGroupName]
 
 	if !gangScheduling || taskSubGroup.GetNumActiveUsedTasks() >= int(taskSubGroup.GetMinAvailable()) {
-		job.AddSimpleJobFitError(
-			podgroup_info.PodSchedulingErrors,
-			fmt.Sprintf("Resources were not found for pod %s/%s due to: %s",
-				unschedulableTask.Namespace, unschedulableTask.Name, allocationError.Error()))
-		return
+		return newPodSchedulingJobFitError(job, fmt.Sprintf("Resources were not found for pod %s/%s due to: %s",
+			unschedulableTask.Namespace, unschedulableTask.Name, allocationError.Error()))
 	}
 
 	if len(job.GetAllPodSets()) == 1 && taskSubGroup.GetName() == podgroup_info.DefaultSubGroup {
-		job.AddSimpleJobFitError(
-			podgroup_info.PodSchedulingErrors,
+		return newPodSchedulingJobFitError(job,
 			fmt.Sprintf("Resources were found for %d pods while %d are required for gang scheduling. "+
 				"Additional pods cannot be scheduled due to: %s",
 				numSchedulableTasks, taskSubGroup.GetMinAvailable(), allocationError.Error()))
-		return
 	}
-	job.AddSimpleJobFitError(
-		podgroup_info.PodSchedulingErrors,
+	return newPodSchedulingJobFitError(job,
 		fmt.Sprintf("Resources were found for %d pods from all sub-groups while sub-group %s requires %d pods for gang scheduling. "+
 			"Additional pods cannot be scheduled in this sub-group due to: %s",
 			numSchedulableTasks, taskSubGroup.GetName(), taskSubGroup.GetMinAvailable(), allocationError.Error()))
+}
+
+func newPodSchedulingJobFitError(job *podgroup_info.PodGroupInfo, message string) common_info.JobFitError {
+	return common_info.NewJobFitError(
+		job.Name,
+		podgroup_info.DefaultSubGroup,
+		job.Namespace,
+		podgroup_info.PodSchedulingErrors,
+		[]string{message},
+	)
 }
 
 func isGangScheduling(job *podgroup_info.PodGroupInfo) bool {

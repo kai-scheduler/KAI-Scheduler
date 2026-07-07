@@ -21,6 +21,7 @@ package api
 
 import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
@@ -29,9 +30,16 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 )
 
+// SubsetNodesResult contains surviving node sets and diagnostics when none survive.
+type SubsetNodesResult struct {
+	NodeSets  []node_info.NodeSet
+	FitErrors []common_info.JobFitError
+}
+
 // SubsetNodesFn is used to divide the nodes into sets
 type SubsetNodesFn func(podGroup *podgroup_info.PodGroupInfo, subGroup *subgroup_info.SubGroupInfo,
-	podSets map[string]*subgroup_info.PodSet, tasks []*pod_info.PodInfo, nodeSet node_info.NodeSet) ([]node_info.NodeSet, error)
+	podSets map[string]*subgroup_info.PodSet, tasks []*pod_info.PodInfo, nodeSet node_info.NodeSet,
+	collectFitErrors bool) (SubsetNodesResult, error)
 
 // PredicateFn is used to predicate node for task.
 type PredicateFn func(*pod_info.PodInfo, *podgroup_info.PodGroupInfo, *node_info.NodeInfo) error
