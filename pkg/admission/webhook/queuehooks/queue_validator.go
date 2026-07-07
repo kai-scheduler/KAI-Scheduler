@@ -43,6 +43,10 @@ type queueValidator struct {
 	strictQuotaValidation bool
 }
 
+// NewQueueValidator builds a QueueValidator. enableQuotaValidation turns on non-blocking warnings for
+// parent/child quota relationships and for updates that reduce a limit below the current allocation or a
+// quota below the non-preemptible allocation; strictQuotaValidation rejects those allocation-reduction
+// updates outright instead of only warning.
 func NewQueueValidator(kubeClient client.Client, enableQuotaValidation, strictQuotaValidation bool) QueueValidator {
 	return &queueValidator{
 		kubeClient:            kubeClient,
@@ -192,13 +196,17 @@ func round4(value float64) float64 {
 	return math.Round(value*10000) / 10000
 }
 
+// gpuAllocated sums every resource whose name ends in the GPU suffix (e.g. "nvidia.com/gpu",
+// "amd.com/gpu"). Summing rather than returning the first match keeps the value deterministic when a
+// queue's allocation spans multiple GPU vendors, since Go map iteration order is randomized.
 func gpuAllocated(list v1.ResourceList) float64 {
+	var total float64
 	for name, quantity := range list {
 		if strings.HasSuffix(string(name), gpuResourceSuffix) {
-			return quantity.AsApproximateFloat64()
+			total += quantity.AsApproximateFloat64()
 		}
 	}
-	return 0
+	return total
 }
 
 func cpuAllocated(list v1.ResourceList) float64 {

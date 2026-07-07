@@ -312,5 +312,20 @@ var _ = Describe("Queue Validator", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(warnings).To(BeEmpty())
 		})
+
+		It("sums GPU allocation across multiple vendor resources when checking a limit reduction", func() {
+			validator = newValidator(true)
+			oldQueue := queueWith(
+				&v2.QueueResources{GPU: v2.QueueResource{Quota: 6, Limit: 6}},
+				v1.ResourceList{
+					"nvidia.com/gpu": resource.MustParse("3"),
+					"amd.com/gpu":    resource.MustParse("3"),
+				}, nil)
+			newQueue := spec(&v2.QueueResources{GPU: v2.QueueResource{Quota: 6, Limit: 4}})
+
+			_, err := validator.ValidateUpdate(ctx, oldQueue, newQueue)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("GPU limit (4) is below the currently allocated 6"))
+		})
 	})
 })
