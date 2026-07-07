@@ -1,0 +1,17 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# Fake-GPU-only overlay for KAI's numa-placement-exporter (NPE). Applied by the fake-GPU e2e setup
+# (setup-e2e-cluster.sh / the on-pr KAI install) and NEVER by real-environment installs, which keep
+# the chart defaults (real kubelet podresources socket + /sys).
+#
+# On kind there is no real kubelet podresources reporting fake-GPU NUMA placement, so the NPE is
+# pointed at the fake-gpu-operator's simulated socket + sysfs (statusExporter.podResources) instead.
+# The fake source is served by FGO's status-exporter DaemonSet, which runs on nodes labeled
+# nvidia.com/gpu.deploy.dcgm-exporter=true — the NPE is scoped to those same nodes.
+numaPlacementExporter:
+  podResourcesHostPath: /var/lib/fake-gpu-operator/pod-resources
+  podResourcesSocket: /var/lib/fake-gpu-operator/pod-resources/kubelet.sock
+  sysfsHostPath: /var/lib/fake-gpu-operator/sys
+  nodeSelector:
+    nvidia.com/gpu.deploy.dcgm-exporter: "true"

@@ -19,8 +19,10 @@ import (
 
 	nrtfake "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/fake"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	version "k8s.io/apimachinery/pkg/version"
 	fakediscovery "k8s.io/client-go/discovery/fake"
+	clientfeatures "k8s.io/client-go/features"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 
@@ -48,6 +50,8 @@ func main() {
 		fs.Usage()
 		return
 	}
+
+	disableWatchListClientForFakeReplay()
 
 	if err := log.InitLoggers(int(*verbosity), false); err != nil {
 		fmt.Printf("Failed to initialize logger: %v", err)
@@ -166,6 +170,25 @@ func printRunSummary(totalDuration time.Duration, actionDurations map[string]tim
 		return
 	}
 	fmt.Println(string(out))
+}
+
+// disableWatchListClientForFakeReplay turns off client-go's WatchListClient gate (default true since
+// client-go 1.35) before any client is built. Only the NodeResourceTopology client needs this: its
+// generated informer (noderesourcetopology-api, built against client-go v0.22) hangs under the
+// watch-list reflector when backed by a fake clientset, so replayed NRTs never sync. Other clients
+// (core/KAI/DRA, modern codegen) are unaffected, and the NRT client works against a real API server.
+// The alternative fix is regenerating that client against a current client-go; disabling the gate is
+// the cheaper replay-only workaround. See https://github.com/kubernetes/kubernetes/issues/129408.
+func disableWatchListClientForFakeReplay() {
+	featureGates, ok := clientfeatures.FeatureGates().(interface {
+		Set(clientfeatures.Feature, bool) error
+	})
+	if !ok {
+		return
+	}
+	if err := featureGates.Set(clientfeatures.WatchListClient, false); err != nil {
+		utilruntime.HandleError(err)
+	}
 }
 
 func loadSnapshot(filename string) (*snapshot.Snapshot, error) {

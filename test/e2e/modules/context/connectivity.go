@@ -9,14 +9,16 @@ import (
 	"os"
 	"strings"
 
-	lws "sigs.k8s.io/lws/api/leaderworkerset/v1"
-
+	nrtv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 	"k8s.io/api/node/v1alpha1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
+	kwokv1alpha1 "sigs.k8s.io/kwok/pkg/apis/v1alpha1"
+	lws "sigs.k8s.io/lws/api/leaderworkerset/v1"
 
+	kubeAiSchedClient "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned"
 	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
 	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
 	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
@@ -24,9 +26,6 @@ import (
 	kubeAiSchedulerV2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 
 	kwokopv1beta1 "github.com/run-ai/kwok-operator/api/v1beta1"
-
-	kubeAiSchedClient "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned"
-	kwokv1alpha1 "sigs.k8s.io/kwok/pkg/apis/v1alpha1"
 )
 
 var kubeConfig *rest.Config
@@ -79,6 +78,9 @@ func initConnectivity() error {
 		}
 		if err = kwokv1alpha1.AddToScheme(controllerClient.Scheme()); err != nil {
 			return fmt.Errorf("failed to add kwok v1alpha1 to scheme: %w", err)
+		}
+		if err = nrtv1alpha2.AddToScheme(controllerClient.Scheme()); err != nil {
+			return fmt.Errorf("failed to add noderesourcetopology v1alpha2 to scheme: %w", err)
 		}
 	}
 
