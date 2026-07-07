@@ -144,25 +144,37 @@ func shouldStopActionForSearchResult(result *solvers.SearchResult) bool {
 }
 
 func getOrderedVictimsQueue(ssn *framework.Session, reclaimer *podgroup_info.PodGroupInfo) solvers.GenerateVictimsQueue {
+	// Victim filter results stay stable for one solver run; mutable queue state is rebuilt per generator.
+	var candidates map[common_info.PodGroupID]*podgroup_info.PodGroupInfo
 	return func() *utils.JobsOrderByQueues {
+		if candidates == nil {
+			candidates = getReclaimVictimCandidates(ssn, reclaimer)
+		}
+
 		jobsOrderedByQueue := utils.NewJobsOrderByQueues(ssn, utils.JobsOrderInitOptions{
 			FilterNonPreemptible:     true,
 			FilterNonActiveAllocated: true,
 			VictimQueue:              true,
 			MaxJobsQueueDepth:        scheduler_util.QueueCapacityInfinite,
 		})
-		jobs := map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{}
-		for _, job := range ssn.ClusterInfo.PodGroupInfos {
-			if job.Queue == reclaimer.Queue {
-				continue
-			}
-			if !ssn.ReclaimVictimFilter(reclaimer, job) {
-				continue
-			}
-			jobs[job.UID] = job
-		}
-
-		jobsOrderedByQueue.InitializeWithJobs(jobs)
+		jobsOrderedByQueue.InitializeWithJobs(candidates)
 		return &jobsOrderedByQueue
 	}
+}
+
+func getReclaimVictimCandidates(
+	ssn *framework.Session,
+	reclaimer *podgroup_info.PodGroupInfo,
+) map[common_info.PodGroupID]*podgroup_info.PodGroupInfo {
+	jobs := make(map[common_info.PodGroupID]*podgroup_info.PodGroupInfo)
+	for _, job := range ssn.ClusterInfo.PodGroupInfos {
+		if job.Queue == reclaimer.Queue {
+			continue
+		}
+		if !ssn.ReclaimVictimFilter(reclaimer, job) {
+			continue
+		}
+		jobs[job.UID] = job
+	}
+	return jobs
 }
