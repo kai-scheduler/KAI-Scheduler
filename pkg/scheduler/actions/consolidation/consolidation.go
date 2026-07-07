@@ -10,11 +10,13 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/scheduler_util"
 )
 
 const noConsolidationPreempteesRestrcition = -1
@@ -116,7 +118,7 @@ func attemptToConsolidatePreemptor(
 	solver := solvers.NewJobsSolver(
 		feasibleNodes,
 		allPodsReallocated,
-		func() *utils.JobsOrderByQueues { return buildConsolidationVictimsQueue(ssn, preemptor) },
+		getOrderedVictimsQueue(ssn, preemptor),
 		framework.Consolidation,
 		actionBudget)
 
@@ -160,6 +162,33 @@ func allPodsReallocated(scenario api.ScenarioInfo) bool {
 func buildConsolidationVictimsQueue(ssn *framework.Session, preemptor *podgroup_info.PodGroupInfo) *utils.JobsOrderByQueues {
 	filter := buildPreemptibleFilterFunc(preemptor, ssn.GetMaxNumberConsolidationPreemptees())
 	return utils.GetVictimsQueue(ssn, filter)
+}
+
+func getOrderedVictimsQueue(ssn *framework.Session, preemptor *podgroup_info.PodGroupInfo) solvers.GenerateVictimsQueue {
+	maxPreempteesToTest := ssn.GetMaxNumberConsolidationPreemptees()
+	if maxPreempteesToTest != noConsolidationPreempteesRestrcition {
+		return func() *utils.JobsOrderByQueues {
+			return buildConsolidationVictimsQueue(ssn, preemptor)
+		}
+	}
+
+	// Unlimited candidate results stay stable for one solver run; mutable queue state is rebuilt per generator.
+	var candidates map[common_info.PodGroupID]*podgroup_info.PodGroupInfo
+	return func() *utils.JobsOrderByQueues {
+		if candidates == nil {
+			filter := buildPreemptibleFilterFunc(preemptor, maxPreempteesToTest)
+			candidates = utils.GetVictimCandidates(ssn, filter)
+		}
+
+		victimsQueue := utils.NewJobsOrderByQueues(ssn, utils.JobsOrderInitOptions{
+			FilterNonPreemptible:     true,
+			FilterNonActiveAllocated: true,
+			VictimQueue:              true,
+			MaxJobsQueueDepth:        scheduler_util.QueueCapacityInfinite,
+		})
+		victimsQueue.InitializeWithJobs(candidates)
+		return &victimsQueue
+	}
 }
 
 func buildPreemptibleFilterFunc(preemptor *podgroup_info.PodGroupInfo, maxPreempteesToTest int) func(*podgroup_info.PodGroupInfo) bool {

@@ -19,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Podgrouper now preserves an existing PodGroup's topology constraint when the workload does not specify one, so an externally-assigned topology is not overwritten. Workload topology annotations still take precedence when present.
 - Reduced reclaim solver allocation churn by caching victim candidates for each job solve while rebuilding mutable queue state for every scenario generator.
 - Reduced preempt solver allocation churn by caching victim candidates for each job solve while preserving fresh queue state and active-job filtering.
+- Reduced consolidation solver allocation churn in unlimited-candidate mode while preserving finite candidate-limit behavior.
 
 ### Fixed
 - Scenario search no longer leaks a rejected scenario's victim nodes into the probe's feasible-node set: the solver now rolls back feasible-node additions after validator-rejected and errored simulations, not only after cleanly unsolved ones. [#1719](https://github.com/kai-scheduler/KAI-Scheduler/issues/1719)
