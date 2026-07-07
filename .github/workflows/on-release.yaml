@@ -131,7 +131,7 @@ jobs:
 
       - name: Run e2e tests
         run: |
-          ginkgo -r --keep-going --randomize-all --randomize-suites --trace -vv --label-filter '!autoscale && !scale && !upgrade' --output-dir=. --json-report=e2e-report.json ./test/e2e/suites
+          ginkgo -r --keep-going --randomize-all --randomize-suites --trace -vv --label-filter '!autoscale && !scale && !upgrade && !gitops' --output-dir=. --json-report=e2e-report.json ./test/e2e/suites
 
       - name: Print test summary
         if: always()

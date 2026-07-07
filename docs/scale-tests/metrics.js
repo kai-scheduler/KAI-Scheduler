@@ -3,338 +3,146 @@
 
 'use strict';
 
-// ── Metric extraction mappings ────────────────────────────────────────────
-
-// Map test names to chart configurations
-const CHART_CONFIGS = [
-  {
-    id: 'chart-1',
-    testNamePattern: /^fill cluster with single GPU Jobs$/i,
-    excludePattern: /pending tasks/i,
-    extractMetric: (entries, metrics) => {
-      if (!metrics) metrics = findMetrics(entries);
-      return metrics?.time || metrics?.total_time ? parseDuration(metrics.time || metrics.total_time) : null;
-    },
-    label: 'Time (seconds)',
-    legendBuilder: (metrics, containerHierarchy) => {
-      const nodes = metrics.nodes || '?';
-      const jobs = metrics.jobs || '?';
-      // Use last container context to distinguish test variants
-      const context = containerHierarchy?.[containerHierarchy.length - 1] || '';
-      const variant = context.includes('scheduler disabled') ? 'scheduler disabled' :
-                      context.includes('running') ? 'scheduler running' : '';
-      return variant ? `${nodes} nodes, ${jobs} jobs (${variant})` : `${nodes} nodes, ${jobs} jobs`;
-    },
-  },
-  {
-    id: 'chart-2',
-    testNamePattern: /schedules jobs with pending tasks in background/i,
-    extractMetric: (entries, metrics) => {
-      if (!metrics) metrics = findMetrics(entries);
-      return metrics?.time || metrics?.total_time ? parseDuration(metrics.time || metrics.total_time) : null;
-    },
-    label: 'Time (seconds)',
-    legendBuilder: (metrics, containerHierarchy) => `${metrics.nodes || '?'} nodes, ${metrics.jobs || '?'} jobs`,
-  },
-  {
-    id: 'chart-3',
-    testNamePattern: /Allocate single distributed job with preferred topology/i,
-    extractMetric: (entries, metrics) => {
-      if (!metrics) metrics = findMetrics(entries);
-      return metrics?.time || metrics?.total_time || metrics?.duration ?
-             parseDuration(metrics.time || metrics.total_time) || metrics.duration : null;
-    },
-    label: 'Time (seconds)',
-    legendBuilder: (metrics, containerHierarchy) => `${metrics.nodes || '?'} nodes, ${metrics.jobs || '?'} jobs`,
-  },
-  {
-    id: 'chart-4',
-    testNamePattern: /Allocate single distributed job without preferred topology/i,
-    extractMetric: (entries, metrics) => {
-      if (!metrics) metrics = findMetrics(entries);
-      return metrics?.time || metrics?.total_time ? parseDuration(metrics.time || metrics.total_time) : null;
-    },
-    label: 'Time (seconds)',
-    legendBuilder: (metrics, containerHierarchy) => `${metrics.nodes || '?'} nodes, ${metrics.jobs || '?'} jobs`,
-  },
-];
-
-// ── Utilities ──────────────────────────────────────────────────────────────
-
-function findMetrics(reportEntries) {
-  if (!reportEntries || !Array.isArray(reportEntries)) return null;
-
-  for (const entry of reportEntries) {
-    if (entry.Name === 'Test Metrics' && entry.Value?.AsJSON) {
-      try {
-        return JSON.parse(entry.Value.AsJSON);
-      } catch (e) {
-        console.warn('Failed to parse metrics JSON:', e);
-      }
-    }
-  }
-  return null;
-}
-
-// Parse metrics from CapturedGinkgoWriterOutput log format
-// Example: "Total time"="6m36.848389057s" "nodes"=500 "jobs"=4000
-function parseMetricsFromOutput(output) {
-  if (!output) return null;
-
-  const metrics = {};
-
-  // Match key="value" or key=value patterns
-  const pattern = /"([^"]+)"=(?:"([^"]*)"|(\d+(?:\.\d+)?))/g;
-  let match;
-
-  while ((match = pattern.exec(output)) !== null) {
-    const key = match[1].toLowerCase().replace(/\s+/g, '_');
-    const value = match[2] || match[3];
-
-    // Try to parse as number, otherwise keep as string
-    const numValue = parseFloat(value);
-    metrics[key] = isNaN(numValue) ? value : numValue;
-  }
-
-  return Object.keys(metrics).length > 0 ? metrics : null;
-}
-
-function parseDuration(durationStr) {
-  if (!durationStr) return null;
-  if (typeof durationStr === 'number') return durationStr;
-
-  // Parse duration strings like "9m28.1s", "1h5m30s", "45.2s"
-  const parts = String(durationStr).match(/(?:(\d+)h)?(?:(\d+)m)?(?:([\d.]+)s)?/);
-  if (!parts) return null;
-
-  const hours = parseInt(parts[1] || 0);
-  const minutes = parseInt(parts[2] || 0);
-  const seconds = parseFloat(parts[3] || 0);
-
-  return hours * 3600 + minutes * 60 + seconds;
-}
-
-// ── Data extraction ────────────────────────────────────────────────────────
-
-function extractMetricsFromRuns(runs, config) {
-  const dataPoints = [];
-
-  runs.forEach(run => {
-    // Use suite.SpecReports which contains all test results
-    const specs = run.suite?.SpecReports || run.specs || [];
-    if (!Array.isArray(specs)) return;
-
-    specs.forEach(spec => {
-      const testName = spec.LeafNodeText || '';
-
-      // Check if this spec matches the pattern
-      if (!config.testNamePattern.test(testName)) return;
-      if (config.excludePattern && config.excludePattern.test(testName)) return;
-
-      // Only include passed tests for metrics
-      if (spec.State !== 'passed') return;
-
-      // Try ReportEntries first (new format), fall back to parsing output (current format)
-      let metrics = findMetrics(spec.ReportEntries);
-      if (!metrics) {
-        metrics = parseMetricsFromOutput(spec.CapturedGinkgoWriterOutput);
-      }
-
-      // Pass metrics to extractMetric for compatibility
-      const metric = config.extractMetric(spec.ReportEntries, metrics);
-      if (metric === null || metric === undefined) return;
-
-      // Include container hierarchy for distinguishing test variants
-      const legend = config.legendBuilder(metrics || {}, spec.ContainerHierarchyTexts);
-
-      dataPoints.push({
-        timestamp: new Date(run.timestamp),
-        value: metric,
-        legend: legend,
-        testName: testName,
-        commit: run.commit,
-      });
-    });
-  });
-
-  // Sort by timestamp
-  dataPoints.sort((a, b) => a.timestamp - b.timestamp);
-
-  return dataPoints;
-}
-
-function groupByLegend(dataPoints) {
-  const groups = {};
-
-  dataPoints.forEach(point => {
-    if (!groups[point.legend]) {
-      groups[point.legend] = [];
-    }
-    groups[point.legend].push(point);
-  });
-
-  return groups;
-}
-
-// ── Chart rendering ────────────────────────────────────────────────────────
-
-// Dark theme colors for Chart.js
 const CHART_COLORS = [
-  '#58a6ff', // accent blue
-  '#3fb950', // pass green
-  '#d29922', // skip yellow
-  '#f85149', // fail red
-  '#a371f7', // purple
-  '#ea6045', // orange
-  '#79c0ff', // light blue
-  '#56d364', // light green
+  '#58a6ff', '#3fb950', '#d29922', '#f85149', '#a371f7', '#ea6045',
+  '#79c0ff', '#56d364', '#e3b341', '#ff7b72', '#d2a8ff', '#ffa657',
 ];
 
-function createChart(canvasId, dataPoints, config) {
+const chartInstances = new Map();
+
+const migrationLinePlugin = {
+  id: 'migrationLine',
+  afterDatasetsDraw(chart, _args, options) {
+    if (!options?.timestamp) return;
+    const x = chart.scales.x.getPixelForValue(new Date(options.timestamp));
+    const { top, bottom, left, right } = chart.chartArea;
+    if (x < left || x > right) return;
+
+    const { ctx } = chart;
+    ctx.save();
+    ctx.strokeStyle = '#f0b429';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([5, 4]);
+    ctx.beginPath();
+    ctx.moveTo(x, top);
+    ctx.lineTo(x, bottom);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#f0b429';
+    ctx.font = '600 10px "IBM Plex Mono", monospace';
+    ctx.textAlign = x > right - 150 ? 'right' : 'left';
+    ctx.fillText('New results format', x + (ctx.textAlign === 'right' ? -6 : 6), top + 12);
+    ctx.restore();
+  },
+};
+
+Chart.register(migrationLinePlugin);
+
+function renderChartCards() {
+  const grid = document.getElementById('metrics-grid');
+  grid.innerHTML = ScaleTestMetrics.CHART_CONFIGS.map(config => `
+    <section class="chart-card">
+      <h3 class="chart-title">${config.title}</h3>
+      <div class="chart-wrapper"><canvas id="chart-${config.id}"></canvas></div>
+    </section>`).join('');
+}
+
+function tooltipDetails(context) {
+  return ScaleTestMetrics.buildTooltipLines(context.raw.observation);
+}
+
+function createChart(config, observations, migrationTimestamp) {
+  const canvasId = `chart-${config.id}`;
   const canvas = document.getElementById(canvasId);
-  if (!canvas) {
-    console.warn(`Canvas ${canvasId} not found`);
-    return;
-  }
+  if (!canvas) return;
 
-  const ctx = canvas.getContext('2d');
-  const grouped = groupByLegend(dataPoints);
-
-  const datasets = Object.entries(grouped).map(([legend, points], idx) => ({
-    label: legend,
-    data: points.map(p => ({ x: p.timestamp, y: p.value, commit: p.commit })),
-    borderColor: CHART_COLORS[idx % CHART_COLORS.length],
-    backgroundColor: CHART_COLORS[idx % CHART_COLORS.length] + '20',
+  chartInstances.get(config.id)?.destroy();
+  const groups = ScaleTestMetrics.groupCompatibleObservations(observations);
+  const datasets = groups.map((group, index) => ({
+    label: group.seriesLabel,
+    data: group.observations.map(observation => ({
+      x: new Date(observation.timestamp),
+      y: observation.timingSeconds,
+      observation,
+    })),
+    borderColor: CHART_COLORS[index % CHART_COLORS.length],
+    backgroundColor: `${CHART_COLORS[index % CHART_COLORS.length]}20`,
     borderWidth: 2,
     pointRadius: 4,
     pointHoverRadius: 6,
     tension: 0.1,
   }));
 
-  new Chart(ctx, {
+  const chart = new Chart(canvas.getContext('2d'), {
     type: 'line',
     data: { datasets },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      interaction: {
-        mode: 'nearest',
-        axis: 'x',
-        intersect: false,
-      },
+      interaction: { mode: 'nearest', intersect: false },
       plugins: {
         legend: {
           display: true,
-          position: 'top',
-          labels: {
-            color: '#e6edf3',
-            font: { size: 11 },
-            padding: 10,
-            usePointStyle: true,
-          },
+          position: 'bottom',
+          labels: { color: '#c9d1d9', boxWidth: 18, boxHeight: 2, font: { size: 10 } },
         },
+        migrationLine: { timestamp: migrationTimestamp },
         tooltip: {
-          backgroundColor: '#161b22',
-          titleColor: '#e6edf3',
-          bodyColor: '#e6edf3',
-          borderColor: '#30363d',
-          borderWidth: 1,
-          padding: 10,
-          displayColors: true,
           callbacks: {
-            title: (items) => {
-              if (items[0]) {
-                const lines = [
-                  new Date(items[0].parsed.x).toLocaleDateString('en-US', {
-                    year: 'numeric',
-                    month: 'short',
-                    day: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })
-                ];
-
-                // Access commit from raw data
-                const datasetIndex = items[0].datasetIndex;
-                const dataIndex = items[0].dataIndex;
-                const rawData = items[0].chart.data.datasets[datasetIndex].data[dataIndex];
-
-                if (rawData.commit) {
-                  lines.push(`Commit: ${rawData.commit.substring(0, 8)}`);
-                }
-
-                return lines;
-              }
-              return '';
-            },
-            label: (context) => {
-              const value = context.parsed.y;
-              return `${context.dataset.label}: ${value.toFixed(3)}s`;
-            },
+            title: items => items.length ? new Date(items[0].raw.x).toLocaleString() : '',
+            label: context => `${context.dataset.label}: ${context.raw.observation.rawTiming}`,
+            afterLabel: tooltipDetails,
           },
         },
       },
       scales: {
         x: {
           type: 'time',
-          time: {
-            unit: 'day',
-            displayFormats: {
-              day: 'MMM d',
-            },
-          },
-          grid: {
-            color: '#30363d',
-            drawBorder: false,
-          },
-          ticks: {
-            color: '#8b949e',
-            font: { size: 10 },
-          },
+          time: { unit: 'day', tooltipFormat: 'PPpp' },
+          grid: { color: '#30363d', drawBorder: false },
+          ticks: { color: '#8b949e', font: { size: 10 } },
         },
         y: {
           beginAtZero: false,
           grace: '10%',
-          grid: {
-            color: '#30363d',
-            drawBorder: false,
-          },
+          grid: { color: '#30363d', drawBorder: false },
           ticks: {
             color: '#8b949e',
             font: { size: 10 },
-            callback: (value) => `${value.toFixed(3)}s`,
+            callback: ScaleTestMetrics.formatDuration,
           },
-          title: {
-            display: true,
-            text: config.label,
-            color: '#8b949e',
-            font: { size: 11 },
-          },
+          title: { display: true, text: config.label, color: '#8b949e', font: { size: 11 } },
         },
       },
     },
   });
+  chartInstances.set(config.id, chart);
 }
 
-// ── Initialization ─────────────────────────────────────────────────────────
-
 function initializeMetrics() {
-  // Wait for data to be loaded from app.js
-  if (!window.allRuns || window.allRuns.length === 0) {
+  if (!window.allRuns?.length) {
     console.log('[metrics] No data available yet');
     return;
   }
 
-  console.log(`[metrics] Rendering charts from ${window.allRuns.length} runs`);
+  renderChartCards();
+  const observations = ScaleTestMetrics.extractChartObservations(window.allRuns);
+  const migrationTimestamp = ScaleTestMetrics.findMigrationTimestamp(window.allRuns);
 
-  CHART_CONFIGS.forEach(config => {
-    const dataPoints = extractMetricsFromRuns(window.allRuns, config);
-    console.log(`[metrics] ${config.id}: extracted ${dataPoints.length} data points`);
-    createChart(config.id, dataPoints, config);
+  ScaleTestMetrics.CHART_CONFIGS.forEach(config => {
+    const chartObservations = observations.filter(observation => observation.chartId === config.id);
+    createChart(config, chartObservations, migrationTimestamp);
   });
 }
 
-// ── Tab switching ──────────────────────────────────────────────────────────
+function initializeVisibleMetrics() {
+  const metricsMain = document.getElementById('metrics-main');
+  if (!metricsMain || metricsMain.classList.contains('hidden') || !window.allRuns?.length) return false;
+
+  window._metricsInitialized = true;
+  initializeMetrics();
+  return true;
+}
 
 function initializeTabs() {
   const tabs = document.querySelectorAll('.tab');
@@ -343,42 +151,18 @@ function initializeTabs() {
   tabs.forEach(tab => {
     tab.addEventListener('click', () => {
       const targetTab = tab.dataset.tab;
-
-      // Update active tab
-      tabs.forEach(t => t.classList.remove('active'));
+      tabs.forEach(item => item.classList.remove('active'));
       tab.classList.add('active');
+      contents.forEach(content => content.classList.toggle('hidden', content.dataset.content !== targetTab));
 
-      // Show/hide content
-      contents.forEach(content => {
-        if (content.dataset.content === targetTab) {
-          content.classList.remove('hidden');
-        } else {
-          content.classList.add('hidden');
-        }
-      });
-
-      // Initialize metrics on first view
-      if (targetTab === 'metrics' && !window._metricsInitialized) {
-        window._metricsInitialized = true;
-        initializeMetrics();
-      }
+      if (targetTab === 'metrics' && !window._metricsInitialized) initializeVisibleMetrics();
     });
   });
 }
 
-// ── Start ──────────────────────────────────────────────────────────────────
-
-// Initialize tabs immediately
 initializeTabs();
+initializeVisibleMetrics();
 
-// Listen for data loaded event from app.js
 window.addEventListener('scale-tests:data-loaded', () => {
-  console.log('[metrics] Data loaded event received');
-
-  // If metrics tab is currently visible, initialize now
-  const metricsTab = document.getElementById('metrics-main');
-  if (metricsTab && !metricsTab.classList.contains('hidden')) {
-    window._metricsInitialized = false;  // Reset flag to allow initialization
-    initializeMetrics();
-  }
+  if (!initializeVisibleMetrics()) window._metricsInitialized = false;
 });

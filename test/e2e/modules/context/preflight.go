@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"sync"
 
+	"k8s.io/apimachinery/pkg/api/meta"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
@@ -45,6 +46,12 @@ func runPreflight(ctx goctx.Context, cli runtimeClient.Client) error {
 func checkForeignQueues(ctx goctx.Context, cli runtimeClient.Client) error {
 	queues := &v2.QueueList{}
 	if err := cli.List(ctx, queues); err != nil {
+		// No Queue CRD means KAI is not installed, so there are no foreign
+		// Queues by definition (e.g. the gitops suite connects before its
+		// ArgoCD Application installs the CRDs).
+		if meta.IsNoMatchError(err) {
+			return nil
+		}
 		return fmt.Errorf("preflight: failed to list Queues: %w", err)
 	}
 

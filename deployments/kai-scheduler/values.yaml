@@ -1,6 +1,11 @@
 # Copyright 2025 NVIDIA CORPORATION
 # SPDX-License-Identifier: Apache-2.0
 
+# Force OpenShift mode (SecurityContextConstraints, hook pod securityContexts).
+# By default OpenShift is auto-detected via a cluster lookup, which does not
+# work under offline rendering (helm template, GitOps tools such as ArgoCD).
+openshift: false
+
 global:
   registry: registry/local/kai-scheduler
   tag: ""
@@ -224,10 +229,18 @@ crdupgrader:
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   resources: {}
 
+kaiConfig:
+  # Render the kai-config Config CR inline as a regular chart resource so it is
+  # tracked, drift-detected and self-healed by GitOps tools such as ArgoCD.
+  # Mutually exclusive with kaiConfigDeployer.enabled. See docs/gitops/README.md.
+  render: false
+
 kaiConfigDeployer:
   # Post-install/post-upgrade hook that applies the kai-config CR out-of-release (#1536).
   # Disable to manage the kai-config CR outside of this chart. When disabled, the chart
   # neither creates kai-config nor deletes it during post-delete cleanup.
+  # For GitOps/ArgoCD installs disable this and set kaiConfig.render=true instead
+  # (see docs/gitops/README.md).
   enabled: true
   image:
     name: crd-upgrader

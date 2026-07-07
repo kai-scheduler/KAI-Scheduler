@@ -32,6 +32,24 @@ tests:
           path: spec.template.spec.containers[0].command[2]
           pattern: kubectl delete Config kai-config
 
+  - it: should not delete kai-config in GitOps mode (pruned as a tracked release resource)
+    set:
+      kaiConfigDeployer.enabled: false
+      kaiConfig.render: true
+    asserts:
+      - notMatchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: kubectl delete Config kai-config
+
+  - it: should carry the ArgoCD PostDelete hook annotations
+    asserts:
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/hook"]
+          value: PostDelete
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/hook-delete-policy"]
+          value: BeforeHookCreation,HookSucceeded
+
   - it: should place the cleanup job in the release namespace
     release:
       namespace: custom-ns

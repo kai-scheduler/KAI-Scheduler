@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"k8s.io/apimachinery/pkg/util/sets"
+
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
@@ -27,6 +29,7 @@ type JobSolver struct {
 	generateVictimsQueue GenerateVictimsQueue
 	actionType           framework.ActionType
 	actionBudget         *ActionSearchBudget
+	failedScenarios      sets.Set[scenarioFingerprint]
 }
 
 type solvingState struct {
@@ -115,6 +118,8 @@ func (s *JobSolver) SolveWithResult(
 	if len(availableGenerators) == 0 {
 		return false, nil, nil, terminalSearchResult(SearchResultNoGenerator, jobBudget.ReducedBudget())
 	}
+
+	s.failedScenarios = sets.New[scenarioFingerprint]()
 
 	var lastVictimTasks []*pod_info.PodInfo
 	var lastResult *SearchResult
@@ -332,6 +337,17 @@ func (s *JobSolver) solvePartialJob(
 			break
 		}
 		generatorName := portfolio.CurrentGeneratorName()
+
+		var fingerprint scenarioFingerprint
+		if s.failedScenarios != nil {
+			fingerprint = fingerprintScenario(scenarioToSolve)
+			if s.failedScenarios.Has(fingerprint) {
+				metrics.IncScenarioSearchScenario(s.actionType, generatorName, scenarioStateDuplicate)
+				portfolio.ObserveCurrentAttempt(scenarioStateDuplicate)
+				continue
+			}
+		}
+
 		validatorRejected := false
 		scenarioSolver := newByPodSolver(feasibleNodeMap, s.solutionValidatorWithMetrics(generatorName, &validatorRejected),
 			ssn.AllowConsolidatingReclaim(),
@@ -349,6 +365,9 @@ func (s *JobSolver) solvePartialJob(
 		if result.solved {
 			portfolio.ObserveCurrentAttempt(string(SearchResultSolved))
 			return solvedSearchResult(result, jobBudget.ReducedBudget())
+		}
+		if s.failedScenarios != nil {
+			s.failedScenarios.Insert(fingerprint)
 		}
 		portfolio.ObserveCurrentAttempt(attemptResult)
 	}

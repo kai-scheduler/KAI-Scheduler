@@ -47,3 +47,25 @@ tests:
       - hasDocuments:
           count: 0
         template: hooks/post/kai-config-deployer/rbac.yaml
+
+  - it: should not add ArgoCD annotations to the hook-applied kai-config manifest
+    asserts:
+      - notMatchRegex:
+          path: data["kai-config.yaml"]
+          pattern: argocd\.argoproj\.io
+        template: hooks/post/kai-config-deployer/configmap.yaml
+
+  - it: should not render the deployer hook resources in GitOps mode
+    set:
+      kaiConfigDeployer.enabled: false
+      kaiConfig.render: true
+    asserts:
+      - hasDocuments:
+          count: 0
+        template: hooks/post/kai-config-deployer/job.yaml
+      - hasDocuments:
+          count: 0
+        template: hooks/post/kai-config-deployer/configmap.yaml
+      - hasDocuments:
+          count: 0
+        template: hooks/post/kai-config-deployer/rbac.yaml

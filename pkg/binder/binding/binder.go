@@ -62,9 +62,9 @@ func (b *Binder) Bind(ctx context.Context, pod *v1.Pod, node *v1.Node, bindReque
 		return err
 	}
 
-	err = b.patchResourceReceivedTypeAnnotation(ctx, pod, bindRequest)
+	err = b.patchBindAnnotations(ctx, pod, bindRequest)
 	if err != nil {
-		return fmt.Errorf("failed to patch pod <%s/%s> with resource receive type annotation: %w", pod.Namespace, pod.Name, err)
+		return fmt.Errorf("failed to patch pod <%s/%s> with bind annotations: %w", pod.Namespace, pod.Name, err)
 	}
 
 	logger.Info("Binding pod", "namespace", pod.Namespace, "name", pod.Name, "hostname", node.Name)
@@ -127,18 +127,27 @@ func (b *Binder) reserveGPUs(ctx context.Context, pod *v1.Pod, bindRequest *v1al
 	return gpuIndexes, nil
 }
 
-func (b *Binder) patchResourceReceivedTypeAnnotation(ctx context.Context, pod *v1.Pod, bindRequest *v1alpha2.BindRequest) error {
+func (b *Binder) patchBindAnnotations(ctx context.Context, pod *v1.Pod, bindRequest *v1alpha2.BindRequest) error {
+	annotations := map[string]string{
+		constants.ReceivedResourceType: bindRequest.Spec.ReceivedResourceType,
+	}
+
+	if len(bindRequest.Spec.PredictedNUMAZones) > 0 {
+		placement, err := json.Marshal(bindRequest.Spec.PredictedNUMAZones)
+		if err != nil {
+			return err
+		}
+		annotations[constants.NumaPlacementPredicted] = string(placement)
+	}
+
 	patchBytes, err := json.Marshal(map[string]interface{}{
 		"metadata": map[string]interface{}{
-			"annotations": map[string]string{
-				constants.ReceivedResourceType: bindRequest.Spec.ReceivedResourceType,
-			},
+			"annotations": annotations,
 		},
 	})
 	if err != nil {
 		return err
 	}
 
-	err = b.kubeClient.Patch(ctx, pod, client.RawPatch(types.MergePatchType, patchBytes))
-	return err
+	return b.kubeClient.Patch(ctx, pod, client.RawPatch(types.MergePatchType, patchBytes))
 }

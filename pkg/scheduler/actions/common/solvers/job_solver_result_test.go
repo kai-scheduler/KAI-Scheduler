@@ -276,6 +276,60 @@ func TestSolveWithResultRunsCompletePartialSearchForOneGeneratorBeforeNext(t *te
 	require.Equal(t, []string{"first:1", "second:1", "second:2", "second:3", "second:3"}, factoryCalls)
 }
 
+func TestSolveWithResultStillSolvesWhenGeneratorRepeatsScenarios(t *testing.T) {
+	ssn := newGeneratorTestSession(t, map[string]int{
+		"node-1": 1,
+		"node-2": 1,
+		"node-3": 1,
+	})
+	require.NoError(t, ssn.InitNodeScoringPool())
+	pendingJob := addGeneratorTestPendingJob(t, ssn, 3, 10, "team-pending")
+	setGeneratorTestMinAvailable(pendingJob, 3)
+	victimJob, victimTasks := addGeneratorTestJob(t, ssn, 3, 20, "team-victim", "node-1", "node-2", "node-3")
+	generatorName := "dedup-e2e"
+
+	ssn.AddScenarioGenerator(generatorName, func(ctx framework.ScenarioGeneratorContext) framework.ScenarioGenerator {
+		solveCtx := ctx.(*SolveContext)
+		pendingTasks := podgroup_info.GetTasksToAllocate(
+			solveCtx.PartialPendingJob, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false,
+		)
+		failing := scenario.NewByNodeScenario(
+			ssn, solveCtx.PartialPendingJob, pendingTasks, nil, solveCtx.RecordedVictimsJobs,
+		)
+		failingDuplicate := scenario.NewByNodeScenario(
+			ssn, solveCtx.PartialPendingJob, pendingTasks, nil, solveCtx.RecordedVictimsJobs,
+		)
+		solving := scenario.NewByNodeScenario(
+			ssn, solveCtx.PartialPendingJob, pendingTasks,
+			unrecordedVictimsForProbe(victimTasks, solveCtx.RecordedVictimsTasks, solveCtx.ProbeK),
+			solveCtx.RecordedVictimsJobs,
+		)
+		return &portfolioTestGenerator{
+			name:      generatorName,
+			scenarios: []api.ScenarioInfo{failing, failingDuplicate, solving},
+		}
+	})
+	labels := map[string]string{"action": "reclaim", "generator": generatorName, "state": scenarioStateDuplicate}
+	before := scenarioSearchCounterValue(t, "scenario_search_scenarios_total", labels)
+	solver := NewJobsSolver(
+		jobSolverResultTestFeasibleNodes(ssn),
+		nil,
+		generatorTestVictimsQueueFactory(ssn, victimJob),
+		framework.Reclaim,
+		nil,
+	)
+
+	solved, statement, _, result := solver.SolveWithResult(ssn, pendingJob)
+	if statement != nil {
+		defer statement.Discard()
+	}
+
+	require.True(t, solved)
+	require.NotNil(t, statement)
+	require.Equal(t, SearchResultSolved, result.Reason())
+	require.Greater(t, scenarioSearchCounterValue(t, "scenario_search_scenarios_total", labels), before)
+}
+
 func TestSearchMaxSolvableKStopsAfterTerminalPartialProbe(t *testing.T) {
 	probes := map[int]*SearchResult{
 		1: solvedSearchResult(&solutionResult{solved: true}, false),

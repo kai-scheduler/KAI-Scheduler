@@ -6,6 +6,7 @@ package multinodegang
 import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 )
@@ -42,9 +43,15 @@ func (g *multiNodeGangGenerator) Name() string {
 }
 
 func (g *multiNodeGangGenerator) Next() api.ScenarioInfo {
+	var sn *scenario.ByNodeScenario
 	if g.first {
 		g.first = false
-		return g.builder.GetValidScenario()
+		sn = g.builder.GetValidScenario()
+	} else {
+		sn = g.builder.GetNextScenario()
 	}
-	return g.builder.GetNextScenario()
+	if sn == nil {
+		return nil
+	}
+	return sn
 }

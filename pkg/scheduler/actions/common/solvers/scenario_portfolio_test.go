@@ -147,6 +147,21 @@ func TestScenarioPortfolioSkipsNonByNodeScenarios(t *testing.T) {
 	require.Equal(t, 1, secondGenerator.nextCalls)
 }
 
+func TestScenarioPortfolioTreatsTypedNilScenarioAsGeneratorExhaustion(t *testing.T) {
+	ctx, _, firstScenario := newScenarioPortfolioTestContext(t, framework.Reclaim)
+	var typedNil *scenario.ByNodeScenario
+	firstGenerator := &portfolioTestGenerator{name: "first", scenarios: []api.ScenarioInfo{typedNil}}
+	secondGenerator := &portfolioTestGenerator{name: "second", scenarios: []api.ScenarioInfo{firstScenario}}
+	ctx.Session.AddScenarioGenerator("first", portfolioTestFactory(firstGenerator))
+	ctx.Session.AddScenarioGenerator("second", portfolioTestFactory(secondGenerator))
+
+	portfolio := newScenarioPortfolio(ctx, newUnlimitedActionSearchBudget(framework.Reclaim).BeginJob())
+
+	require.Same(t, firstScenario, portfolio.Next())
+	require.Nil(t, portfolio.Next())
+	require.Equal(t, SearchResultGeneratorsExhausted, portfolio.StopReason())
+}
+
 func newScenarioPortfolioTestContext(
 	t *testing.T, action framework.ActionType,
 ) (*SolveContext, *podgroup_info.PodGroupInfo, *scenario.ByNodeScenario) {

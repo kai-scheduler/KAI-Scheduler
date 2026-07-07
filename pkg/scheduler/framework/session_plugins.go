@@ -399,19 +399,19 @@ func (ssn *Session) SubsetNodesFn(
 }
 
 func logNodeSetsPluginResult(subsetNodesFn api.SubsetNodesFn, podGroup *podgroup_info.PodGroupInfo, nodeSets []node_info.NodeSet) {
-	if !log.InfraLogger.IsVerbose(7) {
-		return
-	}
-	nodeSetNames := make([][]string, 0, len(nodeSets))
-	for _, nodeSet := range nodeSets {
-		names := make([]string, 0, len(nodeSet))
-		for _, node := range nodeSet {
-			names = append(names, node.Name)
+	log.InfraLogger.V(7).Do(func() {
+		nodeSetNames := make([][]string, 0, len(nodeSets))
+		for _, nodeSet := range nodeSets {
+			names := make([]string, 0, len(nodeSet))
+			for _, node := range nodeSet {
+				names = append(names, node.Name)
+			}
+			nodeSetNames = append(nodeSetNames, names)
 		}
-		nodeSetNames = append(nodeSetNames, names)
-	}
-	log.InfraLogger.V(7).Infof(
-		"Result of plugin func <%v> on podGroup <%s/%s> is %v", subsetNodesFn, podGroup.Namespace, podGroup.Namespace, nodeSetNames)
+		log.InfraLogger.V(7).Infof(
+			"Result of plugin func <%v> on podGroup <%s/%s> is %v", subsetNodesFn, podGroup.Namespace, podGroup.Namespace,
+			nodeSetNames)
+	})
 }
 
 func (ssn *Session) PrePredicateFn(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo) error {

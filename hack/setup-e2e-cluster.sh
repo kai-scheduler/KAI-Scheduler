@@ -33,6 +33,7 @@ trap cleanup EXIT
 TEST_THIRD_PARTY_INTEGRATIONS=${TEST_THIRD_PARTY_INTEGRATIONS:-"false"}
 LOCAL_IMAGES_BUILD=${LOCAL_IMAGES_BUILD:-"false"}
 INSTALL_VPA=${INSTALL_VPA:-"false"}
+SKIP_KAI_INSTALL=${SKIP_KAI_INSTALL:-"false"}
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -48,6 +49,10 @@ while [[ $# -gt 0 ]]; do
       INSTALL_VPA="true"
       shift
       ;;
+    --skip-kai-install)
+      SKIP_KAI_INSTALL="true"
+      shift
+      ;;
     --feature-config)
       FEATURE_CONFIG="$2"
       shift 2
@@ -57,10 +62,11 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     -h|--help)
-      echo "Usage: $0 [--test-third-party-integrations] [--local-images-build] [--install-vpa] [--feature-config <config>] [--kind-config <path>]"
+      echo "Usage: $0 [--test-third-party-integrations] [--local-images-build] [--install-vpa] [--skip-kai-install] [--feature-config <config>] [--kind-config <path>]"
       echo "  --test-third-party-integrations: Install third party operators for compatibility testing"
       echo "  --local-images-build: Build and use local images instead of pulling from registry"
       echo "  --install-vpa: Install Vertical Pod Autoscaler and metrics-server"
+      echo "  --skip-kai-install: Prepare the cluster (and images/chart with --local-images-build) without installing KAI (e.g. for gitops e2e tests)"
       echo "  --feature-config: Feature configuration for kind cluster generation (default: \"default\")"
       echo "  --kind-config: Existing kind config file to use instead of generating one"
       exit 0
@@ -171,6 +177,12 @@ if [ "$LOCAL_IMAGES_BUILD" = "true" ]; then
     # Probe whether docker push can reach the registry (fails on Docker Desktop where the
     # daemon runs in a VM and cannot reach the host-side port-forward on localhost).
     PROBE_IMAGE=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep "$PACKAGE_VERSION" | head -1)
+    if [ -z "$PROBE_IMAGE" ]; then
+        echo "Error: no images tagged $PACKAGE_VERSION in the docker daemon. If buildx uses a"
+        echo "docker-container driver the build result stays in the build cache; re-run with"
+        echo "DOCKER_BUILDX_ADDITIONAL_ARGS=\"--load\" so images are loaded into the daemon."
+        exit 1
+    fi
     if docker push "$PROBE_IMAGE" > /dev/null 2>&1; then
         echo "Pushing images to local registry via port-forward..."
         for image in $(docker images --format '{{.Repository}}:{{.Tag}}' | grep $PACKAGE_VERSION); do
@@ -185,19 +197,27 @@ if [ "$LOCAL_IMAGES_BUILD" = "true" ]; then
         done
     fi
 
-    # Package and install helm chart
+    # Package helm chart
     helm package ./deployments/kai-scheduler -d ./charts --app-version $PACKAGE_VERSION --version $PACKAGE_VERSION
-    helm upgrade -i kai-scheduler ./charts/kai-scheduler-$PACKAGE_VERSION.tgz -n kai-scheduler --create-namespace \
-        --set "global.gpuSharing=true" --set "global.registry=localhost:30100" --set "prometheus.enabled=true" --debug --wait
-    rm -rf ./charts/kai-scheduler-$PACKAGE_VERSION.tgz
+    if [ "$SKIP_KAI_INSTALL" = "true" ]; then
+        echo "Skipping KAI install; packaged chart kept at ./charts/kai-scheduler-$PACKAGE_VERSION.tgz"
+    else
+        helm upgrade -i kai-scheduler ./charts/kai-scheduler-$PACKAGE_VERSION.tgz -n kai-scheduler --create-namespace \
+            --set "global.gpuSharing=true" --set "global.registry=localhost:30100" --set "prometheus.enabled=true" --debug --wait
+        rm -rf ./charts/kai-scheduler-$PACKAGE_VERSION.tgz
+    fi
     cd ${REPO_ROOT}/hack
+elif [ "$SKIP_KAI_INSTALL" = "true" ]; then
+    echo "Skipping KAI install."
 else
     helm upgrade -i kai-scheduler oci://ghcr.io/kai-scheduler/kai-scheduler/kai-scheduler -n kai-scheduler --create-namespace \
         --set "global.gpuSharing=true" --set "prometheus.enabled=true" --wait --version "$PACKAGE_VERSION"
 fi
 
-# Create RBAC for fake-gpu-operator status updates
-kubectl create clusterrole pods-patcher --verb=patch --resource=pods
-kubectl create rolebinding fake-status-updater --clusterrole=pods-patcher --serviceaccount=gpu-operator:status-updater -n kai-resource-reservation
+if [ "$SKIP_KAI_INSTALL" != "true" ]; then
+    # Create RBAC for fake-gpu-operator status updates
+    kubectl create clusterrole pods-patcher --verb=patch --resource=pods
+    kubectl create rolebinding fake-status-updater --clusterrole=pods-patcher --serviceaccount=gpu-operator:status-updater -n kai-resource-reservation
+fi
 
 echo "Cluster setup complete. Cluster name: $CLUSTER_NAME"

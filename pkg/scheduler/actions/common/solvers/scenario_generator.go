@@ -18,6 +18,7 @@ import (
 
 const scenarioSearchResultUnsolved = "unsolved"
 const scenarioSearchResultValidatorRejected = "validator_rejected"
+const scenarioStateDuplicate = "duplicate"
 
 type SolveContext struct {
 	Session              *framework.Session
@@ -124,18 +125,18 @@ func (p *scenarioPortfolio) Next() *scenario.ByNodeScenario {
 		generatorName := generator.Name()
 		attemptStartedAt := time.Now()
 		sn := generator.Next()
-		if sn == nil {
-			p.observeGeneratorAttempt(generatorName, string(SearchResultGeneratorsExhausted), attemptStartedAt)
-			p.moveToNextGenerator()
-			continue
-		}
 		byNodeScenario, ok := sn.(*scenario.ByNodeScenario)
-		if !ok {
+		if sn != nil && !ok {
 			p.observeGeneratorAttempt(generatorName, "unsupported", attemptStartedAt)
 			log.InfraLogger.V(4).Infof(
 				"Scenario generator <%s> returned unsupported scenario type %T",
 				generatorName, sn,
 			)
+			p.moveToNextGenerator()
+			continue
+		}
+		if byNodeScenario == nil {
+			p.observeGeneratorAttempt(generatorName, string(SearchResultGeneratorsExhausted), attemptStartedAt)
 			p.moveToNextGenerator()
 			continue
 		}
