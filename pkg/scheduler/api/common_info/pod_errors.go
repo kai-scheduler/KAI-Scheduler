@@ -227,7 +227,7 @@ func (f *TasksFitErrors) UniqueReasonCount() int {
 	return len(f.reasonCounts)
 }
 
-func (f *TasksFitErrors) DetailedError(nodeErrors ...[]*TasksFitError) string {
+func (f *TasksFitErrors) DetailedError(nodeErrors []*TasksFitError) string {
 	baseError := f.err
 	if baseError == "" {
 		baseError = ResourcesWereNotFoundMsg
@@ -236,7 +236,7 @@ func (f *TasksFitErrors) DetailedError(nodeErrors ...[]*TasksFitError) string {
 	if len(nodeErrors) == 0 {
 		return strings.Join(reasonMessages, "")
 	}
-	for _, node := range nodeErrors[0] {
+	for _, node := range nodeErrors {
 		reasonMessages = append(reasonMessages,
 			fmt.Sprintf("\n<%v>: %v.", node.NodeName, strings.Join(node.DetailedReasons, ", ")))
 	}

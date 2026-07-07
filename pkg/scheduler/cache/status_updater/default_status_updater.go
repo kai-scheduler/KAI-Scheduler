@@ -399,7 +399,7 @@ func (su *defaultStatusUpdater) taskFitErrorMessage(
 	compactMessage := fitError.Error()
 	if !fitError.HasNodeErrors() {
 		if su.detailedFitErrors {
-			return fitError.DetailedError()
+			return fitError.DetailedError(nil)
 		}
 		return compactMessage
 	}
