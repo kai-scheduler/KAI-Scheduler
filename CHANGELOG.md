@@ -19,9 +19,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Podgrouper now preserves an existing PodGroup's topology constraint when the workload does not specify one, so an externally-assigned topology is not overwritten. Workload topology annotations still take precedence when present.
 
 ### Fixed
+- Scenario search no longer leaks a rejected scenario's victim nodes into the probe's feasible-node set: the solver now rolls back feasible-node additions after validator-rejected and errored simulations, not only after cleanly unsolved ones. [#1719](https://github.com/kai-scheduler/KAI-Scheduler/issues/1719)
 - Reduced transient scheduler allocations during large reclaim operations by comparing proportion queue state and cached resource vectors directly instead of repeatedly materializing resource maps.
 - Scheduler now exits on 401 Unauthorized API responses instead of retrying indefinitely with a stale ServiceAccount token. [#1817](https://github.com/kai-scheduler/KAI-Scheduler/issues/1817)
-- Scenario search no longer leaks a rejected scenario's victim nodes into the probe's feasible-node set: the solver now rolls back feasible-node additions after validator-rejected and errored simulations, not only after cleanly unsolved ones. [#1719](https://github.com/kai-scheduler/KAI-Scheduler/issues/1719)
 - Reduced scheduler memory use during large reclaim operations by removing redundant per-job-pair min-runtime protection caching; effective min-runtime durations remain cached per queue pair. [#1808](https://github.com/kai-scheduler/KAI-Scheduler/issues/1808)
 - Fixed reclaim abandoning valid over-quota victims when an unrelated under-deserved queue appeared earlier in victim ordering. [#1750](https://github.com/kai-scheduler/KAI-Scheduler/issues/1750)
 - Restricted Helm post-delete cleanup to KAI operator-managed Deployments and preserved externally managed `kai-config` resources when `kaiConfigDeployer.enabled=false`.
