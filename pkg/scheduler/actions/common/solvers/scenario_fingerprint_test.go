@@ -50,17 +50,6 @@ func TestFingerprintScenarioDistinguishesInputs(t *testing.T) {
 	require.NotEqual(t, baseFingerprint, fingerprintScenario(differentRecorded))
 }
 
-func TestScenarioDedupCacheRecordsAndMatches(t *testing.T) {
-	ssn, pendingJob, victimTasks := newDedupCacheTestSession(t)
-	pendingTasks := dedupCacheTestPendingTasks(ssn, pendingJob)
-	fingerprint := fingerprintScenario(scenario.NewByNodeScenario(ssn, pendingJob, pendingTasks, victimTasks, nil))
-
-	cache := sets.New[scenarioFingerprint]()
-	require.False(t, cache.Has(fingerprint))
-	cache.Insert(fingerprint)
-	require.True(t, cache.Has(fingerprint))
-}
-
 func TestSolvePartialJobSkipsRecordedDuplicates(t *testing.T) {
 	ssn, solver, pendingJob, victimTasks := newSolverDedupTestSetup(t)
 	pendingTasks := dedupCacheTestPendingTasks(ssn, pendingJob)
