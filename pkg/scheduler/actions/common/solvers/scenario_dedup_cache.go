@@ -8,6 +8,7 @@ import (
 	"hash"
 	"io"
 	"slices"
+	"strings"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -41,12 +42,14 @@ func fingerprintScenario(sn *scenario.ByNodeScenario) scenarioFingerprint {
 	if preemptor := sn.GetPreemptor(); preemptor != nil {
 		writeString(digest, string(preemptor.UID))
 	}
-	writeString(digest, fingerprintSectionSeparator)
-	writeTaskUIDs(digest, sn.PendingTasks())
-	writeString(digest, fingerprintSectionSeparator)
-	writeTaskUIDs(digest, sn.RecordedVictimsTasks())
-	writeString(digest, fingerprintSectionSeparator)
-	writeTaskUIDs(digest, sn.PotentialVictimsTasks())
+	for _, tasks := range [][]*pod_info.PodInfo{
+		sn.PendingTasks(),
+		sn.RecordedVictimsTasks(),
+		sn.PotentialVictimsTasks(),
+	} {
+		writeString(digest, fingerprintSectionSeparator)
+		writeTaskUIDs(digest, tasks)
+	}
 
 	var fingerprint scenarioFingerprint
 	digest.Sum(fingerprint[:0])
@@ -59,12 +62,7 @@ func writeTaskUIDs(digest hash.Hash, tasks []*pod_info.PodInfo) {
 		uids = append(uids, string(task.UID))
 	}
 	slices.Sort(uids)
-	for index, uid := range uids {
-		if index > 0 {
-			writeString(digest, fingerprintElementSeparator)
-		}
-		writeString(digest, uid)
-	}
+	writeString(digest, strings.Join(uids, fingerprintElementSeparator))
 }
 
 func writeString(digest hash.Hash, value string) {
