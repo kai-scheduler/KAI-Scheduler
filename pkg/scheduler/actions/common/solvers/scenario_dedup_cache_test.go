@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
@@ -66,6 +67,136 @@ func TestScenarioDedupCacheNilIsSafe(t *testing.T) {
 		cache.recordFailed(scenarioFingerprint{})
 	})
 	require.False(t, cache.isDuplicate(scenarioFingerprint{}))
+}
+
+func TestSolvePartialJobSkipsRecordedDuplicates(t *testing.T) {
+	ssn, solver, pendingJob, victimTasks := newSolverDedupTestSetup(t)
+	pendingTasks := dedupCacheTestPendingTasks(ssn, pendingJob)
+	failing := scenario.NewByNodeScenario(ssn, pendingJob, pendingTasks, nil, nil)
+	failingEquivalent := scenario.NewByNodeScenario(ssn, pendingJob, pendingTasks, nil, nil)
+	solving := scenario.NewByNodeScenario(ssn, pendingJob, pendingTasks, victimTasks, nil)
+	labels := map[string]string{"action": "reclaim", "generator": "dedup-skip", "state": scenarioStateDuplicate}
+	before := scenarioSearchCounterValue(t, "scenario_search_scenarios_total", labels)
+
+	result := solvePartialJobForDedupTest(t, solver, ssn, pendingJob, "dedup-skip",
+		[]api.ScenarioInfo{failing, failingEquivalent, solving})
+
+	require.Equal(t, SearchResultSolved, result.Reason())
+	result.solution.statement.Discard()
+	require.Equal(t, before+1, scenarioSearchCounterValue(t, "scenario_search_scenarios_total", labels))
+	require.True(t, solver.dedupCache.isDuplicate(fingerprintScenario(failing)))
+}
+
+func TestSolvePartialJobDoesNotRecordSolvedScenarios(t *testing.T) {
+	ssn, solver, pendingJob, victimTasks := newSolverDedupTestSetup(t)
+	pendingTasks := dedupCacheTestPendingTasks(ssn, pendingJob)
+	solving := scenario.NewByNodeScenario(ssn, pendingJob, pendingTasks, victimTasks, nil)
+	solvedFingerprint := fingerprintScenario(solving)
+
+	result := solvePartialJobForDedupTest(t, solver, ssn, pendingJob, "dedup-solved",
+		[]api.ScenarioInfo{solving})
+
+	// The solved scenario must stay re-emittable: the final probe rebuilds the
+	// winning statement by re-running the generator.
+	require.Equal(t, SearchResultSolved, result.Reason())
+	result.solution.statement.Discard()
+	require.False(t, solver.dedupCache.isDuplicate(solvedFingerprint))
+}
+
+func TestSolvePartialJobNilCacheDisablesDedup(t *testing.T) {
+	ssn, solver, pendingJob, _ := newSolverDedupTestSetup(t)
+	solver.dedupCache = nil
+	pendingTasks := dedupCacheTestPendingTasks(ssn, pendingJob)
+	failing := scenario.NewByNodeScenario(ssn, pendingJob, pendingTasks, nil, nil)
+	failingEquivalent := scenario.NewByNodeScenario(ssn, pendingJob, pendingTasks, nil, nil)
+	simulatedLabels := map[string]string{"action": "reclaim", "generator": "nil-cache", "state": "simulated"}
+	duplicateLabels := map[string]string{"action": "reclaim", "generator": "nil-cache", "state": scenarioStateDuplicate}
+	simulatedBefore := scenarioSearchCounterValue(t, "scenario_search_scenarios_total", simulatedLabels)
+	duplicateBefore := scenarioSearchCounterValue(t, "scenario_search_scenarios_total", duplicateLabels)
+
+	result := solvePartialJobForDedupTest(t, solver, ssn, pendingJob, "nil-cache",
+		[]api.ScenarioInfo{failing, failingEquivalent})
+
+	require.NotEqual(t, SearchResultSolved, result.Reason())
+	require.Equal(t, simulatedBefore+2, scenarioSearchCounterValue(t, "scenario_search_scenarios_total", simulatedLabels))
+	require.Equal(t, duplicateBefore, scenarioSearchCounterValue(t, "scenario_search_scenarios_total", duplicateLabels))
+}
+
+func TestSolveWithResultDedupsAcrossGenerators(t *testing.T) {
+	ssn := newGeneratorTestSession(t, map[string]int{"node-1": 1})
+	require.NoError(t, ssn.InitNodeScoringPool())
+	victimJob, victimTasks := addGeneratorTestJob(t, ssn, 1, 20, "team-victim", "node-1")
+	pendingJob := addGeneratorTestPendingJob(t, ssn, 1, 10, "team-pending")
+
+	ssn.AddScenarioGenerator("cross-first", func(ctx framework.ScenarioGeneratorContext) framework.ScenarioGenerator {
+		solveCtx := ctx.(*SolveContext)
+		pendingTasks := dedupCacheTestPendingTasks(ssn, solveCtx.PartialPendingJob)
+		failing := scenario.NewByNodeScenario(
+			ssn, solveCtx.PartialPendingJob, pendingTasks, nil, solveCtx.RecordedVictimsJobs,
+		)
+		return &portfolioTestGenerator{name: "cross-first", scenarios: []api.ScenarioInfo{failing}}
+	})
+	ssn.AddScenarioGenerator("cross-second", func(ctx framework.ScenarioGeneratorContext) framework.ScenarioGenerator {
+		solveCtx := ctx.(*SolveContext)
+		pendingTasks := dedupCacheTestPendingTasks(ssn, solveCtx.PartialPendingJob)
+		failingEquivalent := scenario.NewByNodeScenario(
+			ssn, solveCtx.PartialPendingJob, pendingTasks, nil, solveCtx.RecordedVictimsJobs,
+		)
+		solving := scenario.NewByNodeScenario(
+			ssn, solveCtx.PartialPendingJob, pendingTasks,
+			unrecordedVictimsForProbe(victimTasks, solveCtx.RecordedVictimsTasks, solveCtx.ProbeK),
+			solveCtx.RecordedVictimsJobs,
+		)
+		return &portfolioTestGenerator{name: "cross-second", scenarios: []api.ScenarioInfo{failingEquivalent, solving}}
+	})
+	solver := NewJobsSolver(
+		jobSolverResultTestFeasibleNodes(ssn), nil, generatorTestVictimsQueueFactory(ssn, victimJob),
+		framework.Reclaim, nil,
+	)
+	labels := map[string]string{"action": "reclaim", "generator": "cross-second", "state": scenarioStateDuplicate}
+	before := scenarioSearchCounterValue(t, "scenario_search_scenarios_total", labels)
+
+	solved, statement, _, result := solver.SolveWithResult(ssn, pendingJob)
+	if statement != nil {
+		defer statement.Discard()
+	}
+
+	// cross-second's first candidate repeats the victim set cross-first already
+	// failed with, so the shared per-job cache skips it before simulation.
+	require.True(t, solved)
+	require.Equal(t, SearchResultSolved, result.Reason())
+	require.Equal(t, before+1, scenarioSearchCounterValue(t, "scenario_search_scenarios_total", labels))
+}
+
+func newSolverDedupTestSetup(t *testing.T) (*framework.Session, *JobSolver, *podgroup_info.PodGroupInfo, []*pod_info.PodInfo) {
+	t.Helper()
+
+	ssn := newGeneratorTestSession(t, map[string]int{"node-1": 1})
+	require.NoError(t, ssn.InitNodeScoringPool())
+	_, victimTasks := addGeneratorTestJob(t, ssn, 1, 20, "team-victim", "node-1")
+	pendingJob := addGeneratorTestPendingJob(t, ssn, 1, 10, "team-pending")
+	solver := NewJobsSolver(
+		jobSolverResultTestFeasibleNodes(ssn), nil, generatorTestVictimsQueueFactory(ssn), framework.Reclaim, nil,
+	)
+	solver.dedupCache = newScenarioDedupCache()
+	return ssn, solver, pendingJob, victimTasks
+}
+
+func solvePartialJobForDedupTest(
+	t *testing.T, solver *JobSolver, ssn *framework.Session, pendingJob *podgroup_info.PodGroupInfo,
+	generatorName string, scenarios []api.ScenarioInfo,
+) *SearchResult {
+	t.Helper()
+
+	registration := framework.ScenarioGeneratorRegistration{
+		Name:    generatorName,
+		Factory: portfolioTestFactory(&portfolioTestGenerator{name: generatorName, scenarios: scenarios}),
+	}
+	return solver.solvePartialJob(
+		ssn, &solvingState{}, pendingJob,
+		newUnlimitedActionSearchBudget(framework.Reclaim).BeginJob(),
+		registration, nil, 1,
+	)
 }
 
 func newDedupCacheTestSession(t *testing.T) (*framework.Session, *podgroup_info.PodGroupInfo, []*pod_info.PodInfo) {

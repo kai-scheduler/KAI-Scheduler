@@ -325,7 +325,7 @@ func (s *JobSolver) solvePartialJob(
 		FeasibleNodes:        feasibleNodeMap,
 		ProbeK:               probeK,
 	}
-	portfolio := newSingleGeneratorScenarioPortfolio(solveCtx, jobBudget, availableGenerator, generatorBudget, s.dedupCache)
+	portfolio := newSingleGeneratorScenarioPortfolio(solveCtx, jobBudget, availableGenerator, generatorBudget)
 
 	for {
 		if jobBudget.Exhausted() {
@@ -337,6 +337,19 @@ func (s *JobSolver) solvePartialJob(
 			break
 		}
 		generatorName := portfolio.CurrentGeneratorName()
+
+		// Fingerprint before simulating: generators may mutate a shared
+		// scenario object on their next accumulation step.
+		var fingerprint scenarioFingerprint
+		if s.dedupCache != nil {
+			fingerprint = fingerprintScenario(scenarioToSolve)
+			if s.dedupCache.isDuplicate(fingerprint) {
+				metrics.IncScenarioSearchScenario(s.actionType, generatorName, scenarioStateDuplicate)
+				portfolio.ObserveCurrentAttempt(scenarioStateDuplicate)
+				continue
+			}
+		}
+
 		validatorRejected := false
 		scenarioSolver := newByPodSolver(feasibleNodeMap, s.solutionValidatorWithMetrics(generatorName, &validatorRejected),
 			ssn.AllowConsolidatingReclaim(),
@@ -355,6 +368,9 @@ func (s *JobSolver) solvePartialJob(
 			portfolio.ObserveCurrentAttempt(string(SearchResultSolved))
 			return solvedSearchResult(result, jobBudget.ReducedBudget())
 		}
+		// Record failures only: a solved scenario must stay re-emittable for
+		// the final probe, which rebuilds the winning statement.
+		s.dedupCache.recordFailed(fingerprint)
 		portfolio.ObserveCurrentAttempt(attemptResult)
 	}
 

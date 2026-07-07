@@ -15,7 +15,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 )
@@ -28,7 +27,7 @@ func TestScenarioPortfolioUsesRegistrationOrder(t *testing.T) {
 	ctx.Session.AddScenarioGenerator("first", portfolioTestFactory(firstGenerator))
 	ctx.Session.AddScenarioGenerator("second", portfolioTestFactory(secondGenerator))
 
-	portfolio := newScenarioPortfolio(ctx, newUnlimitedActionSearchBudget(framework.Reclaim).BeginJob(), nil)
+	portfolio := newScenarioPortfolio(ctx, newUnlimitedActionSearchBudget(framework.Reclaim).BeginJob())
 
 	require.Same(t, firstScenario, portfolio.Next())
 	require.Same(t, secondScenario, portfolio.Next())
@@ -69,7 +68,7 @@ func TestScenarioPortfolioDoesNotChargeGeneratorBuildTimeToGeneratorDeadline(t *
 	)
 	require.NoError(t, err)
 
-	portfolio := newScenarioPortfolio(ctx, actionBudget.BeginJob(), nil)
+	portfolio := newScenarioPortfolio(ctx, actionBudget.BeginJob())
 
 	require.Same(t, firstScenario, portfolio.Next())
 	require.Same(t, secondScenario, portfolio.Next())
@@ -103,14 +102,14 @@ func TestScenarioPortfolioDoesNotChargeGeneratorBuildTimeToJobDeadline(t *testin
 	)
 	require.NoError(t, err)
 
-	portfolio := newScenarioPortfolio(ctx, actionBudget.BeginJob(), nil)
+	portfolio := newScenarioPortfolio(ctx, actionBudget.BeginJob())
 
 	require.Same(t, firstScenario, portfolio.Next())
 }
 
 func TestScenarioPortfolioReturnsNoGeneratorWhenNoAvailableGenerators(t *testing.T) {
 	ctx, _, _ := newScenarioPortfolioTestContext(t, framework.Reclaim)
-	portfolio := newScenarioPortfolio(ctx, newUnlimitedActionSearchBudget(framework.Reclaim).BeginJob(), nil)
+	portfolio := newScenarioPortfolio(ctx, newUnlimitedActionSearchBudget(framework.Reclaim).BeginJob())
 
 	require.Nil(t, portfolio.Next())
 	require.Equal(t, SearchResultNoGenerator, portfolio.StopReason())
@@ -123,7 +122,7 @@ func TestScenarioPortfolioReturnsGeneratorsExhaustedAfterAllGeneratorsEnd(t *tes
 	ctx.Session.AddScenarioGenerator("first", portfolioTestFactory(firstGenerator))
 	ctx.Session.AddScenarioGenerator("second", portfolioTestFactory(secondGenerator))
 
-	portfolio := newScenarioPortfolio(ctx, newUnlimitedActionSearchBudget(framework.Reclaim).BeginJob(), nil)
+	portfolio := newScenarioPortfolio(ctx, newUnlimitedActionSearchBudget(framework.Reclaim).BeginJob())
 
 	require.Nil(t, portfolio.Next())
 	require.Equal(t, SearchResultGeneratorsExhausted, portfolio.StopReason())
@@ -141,7 +140,7 @@ func TestScenarioPortfolioSkipsNonByNodeScenarios(t *testing.T) {
 	ctx.Session.AddScenarioGenerator("first", portfolioTestFactory(firstGenerator))
 	ctx.Session.AddScenarioGenerator("second", portfolioTestFactory(secondGenerator))
 
-	portfolio := newScenarioPortfolio(ctx, newUnlimitedActionSearchBudget(framework.Reclaim).BeginJob(), nil)
+	portfolio := newScenarioPortfolio(ctx, newUnlimitedActionSearchBudget(framework.Reclaim).BeginJob())
 
 	require.Same(t, firstScenario, portfolio.Next())
 	require.Equal(t, 1, firstGenerator.nextCalls)
@@ -156,171 +155,11 @@ func TestScenarioPortfolioTreatsTypedNilScenarioAsGeneratorExhaustion(t *testing
 	ctx.Session.AddScenarioGenerator("first", portfolioTestFactory(firstGenerator))
 	ctx.Session.AddScenarioGenerator("second", portfolioTestFactory(secondGenerator))
 
-	portfolio := newScenarioPortfolio(
-		ctx, newUnlimitedActionSearchBudget(framework.Reclaim).BeginJob(), newScenarioDedupCache(),
-	)
+	portfolio := newScenarioPortfolio(ctx, newUnlimitedActionSearchBudget(framework.Reclaim).BeginJob())
 
 	require.Same(t, firstScenario, portfolio.Next())
 	require.Nil(t, portfolio.Next())
 	require.Equal(t, SearchResultGeneratorsExhausted, portfolio.StopReason())
-}
-
-func TestScenarioPortfolioSkipsRecordedDuplicateScenarios(t *testing.T) {
-	ctx, victimTasks, pendingTasks := newPortfolioDedupTestContext(t)
-	first := scenario.NewByNodeScenario(ctx.Session, ctx.PartialPendingJob, pendingTasks, victimTasks, nil)
-	firstEquivalent := scenario.NewByNodeScenario(ctx.Session, ctx.PartialPendingJob, pendingTasks, victimTasks, nil)
-	second := scenario.NewByNodeScenario(ctx.Session, ctx.PartialPendingJob, pendingTasks, victimTasks[:1], nil)
-	generatorName := "dedup-skip"
-	ctx.Session.AddScenarioGenerator(generatorName, portfolioTestFactory(&portfolioTestGenerator{
-		name:      generatorName,
-		scenarios: []api.ScenarioInfo{first, firstEquivalent, second},
-	}))
-	labels := map[string]string{"action": "reclaim", "generator": generatorName, "state": scenarioStateDuplicate}
-	before := scenarioSearchCounterValue(t, "scenario_search_scenarios_total", labels)
-
-	portfolio := newScenarioPortfolio(
-		ctx, newUnlimitedActionSearchBudget(framework.Reclaim).BeginJob(), newScenarioDedupCache(),
-	)
-
-	require.Same(t, first, portfolio.Next())
-	portfolio.ObserveCurrentAttempt(scenarioSearchResultUnsolved)
-	require.Same(t, second, portfolio.Next())
-	require.Equal(t, before+1, scenarioSearchCounterValue(t, "scenario_search_scenarios_total", labels))
-}
-
-func TestScenarioPortfolioDoesNotSkipDuplicatesOfSolvedScenarios(t *testing.T) {
-	ctx, victimTasks, pendingTasks := newPortfolioDedupTestContext(t)
-	first := scenario.NewByNodeScenario(ctx.Session, ctx.PartialPendingJob, pendingTasks, victimTasks, nil)
-	firstEquivalent := scenario.NewByNodeScenario(ctx.Session, ctx.PartialPendingJob, pendingTasks, victimTasks, nil)
-	generatorName := "dedup-solved"
-	ctx.Session.AddScenarioGenerator(generatorName, portfolioTestFactory(&portfolioTestGenerator{
-		name:      generatorName,
-		scenarios: []api.ScenarioInfo{first, firstEquivalent},
-	}))
-	labels := map[string]string{"action": "reclaim", "generator": generatorName, "state": scenarioStateDuplicate}
-	before := scenarioSearchCounterValue(t, "scenario_search_scenarios_total", labels)
-
-	portfolio := newScenarioPortfolio(
-		ctx, newUnlimitedActionSearchBudget(framework.Reclaim).BeginJob(), newScenarioDedupCache(),
-	)
-
-	// A solved scenario must remain re-emittable: the final probe rebuilds the
-	// winning statement by re-running the generator.
-	require.Same(t, first, portfolio.Next())
-	portfolio.ObserveCurrentAttempt(string(SearchResultSolved))
-	require.Same(t, firstEquivalent, portfolio.Next())
-	require.Equal(t, before, scenarioSearchCounterValue(t, "scenario_search_scenarios_total", labels))
-}
-
-func TestScenarioPortfolioDoesNotDedupeDifferentSimulationContexts(t *testing.T) {
-	ctx, victimTasks, pendingTasks := newPortfolioDedupTestContext(t)
-	recordedJob, _ := addGeneratorTestJob(t, ctx.Session, 1, 30, "team-recorded", "node-1")
-	first := scenario.NewByNodeScenario(ctx.Session, ctx.PartialPendingJob, pendingTasks, victimTasks, nil)
-	differentPending := scenario.NewByNodeScenario(ctx.Session, ctx.PartialPendingJob, pendingTasks[:1], victimTasks, nil)
-	differentRecorded := scenario.NewByNodeScenario(
-		ctx.Session, ctx.PartialPendingJob, pendingTasks, victimTasks, []*podgroup_info.PodGroupInfo{recordedJob},
-	)
-	ctx.Session.AddScenarioGenerator("dedup-context", portfolioTestFactory(&portfolioTestGenerator{
-		name:      "dedup-context",
-		scenarios: []api.ScenarioInfo{first, differentPending, differentRecorded},
-	}))
-
-	portfolio := newScenarioPortfolio(
-		ctx, newUnlimitedActionSearchBudget(framework.Reclaim).BeginJob(), newScenarioDedupCache(),
-	)
-
-	require.Same(t, first, portfolio.Next())
-	portfolio.ObserveCurrentAttempt(scenarioSearchResultUnsolved)
-	require.Same(t, differentPending, portfolio.Next())
-	portfolio.ObserveCurrentAttempt(scenarioSearchResultUnsolved)
-	require.Same(t, differentRecorded, portfolio.Next())
-}
-
-func TestScenarioPortfolioDedupsAcrossGenerators(t *testing.T) {
-	ctx, victimTasks, pendingTasks := newPortfolioDedupTestContext(t)
-	first := scenario.NewByNodeScenario(ctx.Session, ctx.PartialPendingJob, pendingTasks, victimTasks, nil)
-	firstEquivalent := scenario.NewByNodeScenario(ctx.Session, ctx.PartialPendingJob, pendingTasks, victimTasks, nil)
-	second := scenario.NewByNodeScenario(ctx.Session, ctx.PartialPendingJob, pendingTasks, victimTasks[:1], nil)
-	ctx.Session.AddScenarioGenerator("cross-first", portfolioTestFactory(&portfolioTestGenerator{
-		name: "cross-first", scenarios: []api.ScenarioInfo{first},
-	}))
-	ctx.Session.AddScenarioGenerator("cross-second", portfolioTestFactory(&portfolioTestGenerator{
-		name: "cross-second", scenarios: []api.ScenarioInfo{firstEquivalent, second},
-	}))
-	labels := map[string]string{"action": "reclaim", "generator": "cross-second", "state": scenarioStateDuplicate}
-	before := scenarioSearchCounterValue(t, "scenario_search_scenarios_total", labels)
-
-	portfolio := newScenarioPortfolio(
-		ctx, newUnlimitedActionSearchBudget(framework.Reclaim).BeginJob(), newScenarioDedupCache(),
-	)
-
-	require.Same(t, first, portfolio.Next())
-	portfolio.ObserveCurrentAttempt(scenarioSearchResultUnsolved)
-	require.Same(t, second, portfolio.Next())
-	require.Equal(t, before+1, scenarioSearchCounterValue(t, "scenario_search_scenarios_total", labels))
-}
-
-func TestScenarioPortfolioSharedCacheDedupsAcrossPortfolios(t *testing.T) {
-	ctx, victimTasks, pendingTasks := newPortfolioDedupTestContext(t)
-	first := scenario.NewByNodeScenario(ctx.Session, ctx.PartialPendingJob, pendingTasks, victimTasks, nil)
-	firstEquivalent := scenario.NewByNodeScenario(ctx.Session, ctx.PartialPendingJob, pendingTasks, victimTasks, nil)
-	firstRegistration := framework.ScenarioGeneratorRegistration{
-		Name: "portfolio-first",
-		Factory: portfolioTestFactory(&portfolioTestGenerator{
-			name: "portfolio-first", scenarios: []api.ScenarioInfo{first},
-		}),
-	}
-	secondRegistration := framework.ScenarioGeneratorRegistration{
-		Name: "portfolio-second",
-		Factory: portfolioTestFactory(&portfolioTestGenerator{
-			name: "portfolio-second", scenarios: []api.ScenarioInfo{firstEquivalent},
-		}),
-	}
-	sharedCache := newScenarioDedupCache()
-
-	firstPortfolio := newSingleGeneratorScenarioPortfolio(
-		ctx, newUnlimitedActionSearchBudget(framework.Reclaim).BeginJob(), firstRegistration, nil, sharedCache,
-	)
-	require.Same(t, first, firstPortfolio.Next())
-	firstPortfolio.ObserveCurrentAttempt(scenarioSearchResultUnsolved)
-
-	secondPortfolio := newSingleGeneratorScenarioPortfolio(
-		ctx, newUnlimitedActionSearchBudget(framework.Reclaim).BeginJob(), secondRegistration, nil, sharedCache,
-	)
-	require.Nil(t, secondPortfolio.Next())
-	require.Equal(t, SearchResultGeneratorsExhausted, secondPortfolio.StopReason())
-}
-
-func TestScenarioPortfolioNilCacheDisablesDedup(t *testing.T) {
-	ctx, victimTasks, pendingTasks := newPortfolioDedupTestContext(t)
-	first := scenario.NewByNodeScenario(ctx.Session, ctx.PartialPendingJob, pendingTasks, victimTasks, nil)
-	firstEquivalent := scenario.NewByNodeScenario(ctx.Session, ctx.PartialPendingJob, pendingTasks, victimTasks, nil)
-	ctx.Session.AddScenarioGenerator("nil-cache", portfolioTestFactory(&portfolioTestGenerator{
-		name: "nil-cache", scenarios: []api.ScenarioInfo{first, firstEquivalent},
-	}))
-
-	portfolio := newScenarioPortfolio(ctx, newUnlimitedActionSearchBudget(framework.Reclaim).BeginJob(), nil)
-
-	require.Same(t, first, portfolio.Next())
-	portfolio.ObserveCurrentAttempt(scenarioSearchResultUnsolved)
-	require.Same(t, firstEquivalent, portfolio.Next())
-}
-
-func newPortfolioDedupTestContext(t *testing.T) (*SolveContext, []*pod_info.PodInfo, []*pod_info.PodInfo) {
-	t.Helper()
-
-	ssn := newGeneratorTestSession(t, map[string]int{"node-1": 1})
-	pendingJob := addGeneratorTestPendingJob(t, ssn, 2, 10, "team-pending")
-	setGeneratorTestMinAvailable(pendingJob, 2)
-	_, victimTasks := addGeneratorTestJob(t, ssn, 2, 20, "team-victim", "node-1")
-	ctx := &SolveContext{
-		Session:              ssn,
-		ActionType:           framework.Reclaim,
-		PartialPendingJob:    pendingJob,
-		GenerateVictimsQueue: generatorTestVictimsQueueFactory(ssn),
-		FeasibleNodes:        ssn.ClusterInfo.Nodes,
-	}
-	return ctx, victimTasks, dedupCacheTestPendingTasks(ssn, pendingJob)
 }
 
 func newScenarioPortfolioTestContext(
