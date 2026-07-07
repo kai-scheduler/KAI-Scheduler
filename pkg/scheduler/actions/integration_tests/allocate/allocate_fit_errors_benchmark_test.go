@@ -63,6 +63,21 @@ func TestAllocateFitErrorsMixedPredicates(t *testing.T) {
 			"5 node(s) had no matching persistent volumes.")
 }
 
+func TestAllocateFitErrorsReplacesRepeatedAttempt(t *testing.T) {
+	test_utils.InitTestingInfrastructure()
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	const numNodes = 2
+	ssn := test_utils.BuildSession(buildResourceFullFitErrorTopology(numNodes), ctrl)
+	action := allocate.New()
+	action.Execute(ssn)
+	action.Execute(ssn)
+
+	assertPendingFitErrorMessage(t, ssn, numNodes*fitErrorBenchmarkGPUsPerNode,
+		"no nodes with enough resources were found: 2 node(s) didn't have enough resources: GPUs.")
+}
+
 func BenchmarkAllocateFitErrorsResourceFull_10Nodes(b *testing.B) {
 	benchmarkAllocateFitErrors(b, 10, buildResourceFullFitErrorTopology, nil)
 }

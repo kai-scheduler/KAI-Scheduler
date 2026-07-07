@@ -223,23 +223,19 @@ func (ssn *Session) sortGPUs(filteredGPUs []string, pod *pod_info.PodInfo, node 
 	return sortedGPUs
 }
 
-func (ssn *Session) FittingNode(task *pod_info.PodInfo, node *node_info.NodeInfo, writeFittingDelta bool) bool {
-	var fitErrors *common_info.TasksFitErrors
-	if writeFittingDelta {
-		fitErrors = common_info.NewFitErrors()
-	}
-
+func (ssn *Session) FittingNode(
+	task *pod_info.PodInfo, node *node_info.NodeInfo, collectFitError bool,
+) (bool, error) {
 	job := ssn.ClusterInfo.PodGroupInfos[task.Job]
 
 	log.InfraLogger.V(6).Infof("Checking if task <%v/%v> is allocatable on node <%v>: <%v> vs. <%v>",
 		task.Namespace, task.Name, node.Name, task.ResReqVector, node.IdleVector)
-	allocatable, fitError := ssn.isTaskAllocatableOnNode(task, job, node, writeFittingDelta)
+	allocatable, fitError := ssn.isTaskAllocatableOnNode(task, job, node, collectFitError)
 	if !allocatable {
-		if fitError != nil && writeFittingDelta {
-			fitErrors.SetNodeError(node.Name, fitError)
-			job.AddTaskFitErrors(task, fitErrors)
+		if collectFitError {
+			return false, fitError
 		}
-		return false
+		return false, nil
 	}
 
 	log.InfraLogger.V(6).Infof("Running predicates for task <%v/%v> on node <%v>",
@@ -247,13 +243,12 @@ func (ssn *Session) FittingNode(task *pod_info.PodInfo, node *node_info.NodeInfo
 	if err := ssn.PredicateFn(task, job, node); err != nil {
 		log.InfraLogger.V(6).Infof("Predicates failed for task <%s/%s> on node <%s>: %v",
 			task.Namespace, task.Name, node.Name, err)
-		if writeFittingDelta {
-			fitErrors.SetNodeError(node.Name, err)
-			job.AddTaskFitErrors(task, fitErrors)
+		if collectFitError {
+			return false, err
 		}
-		return false
+		return false, nil
 	}
-	return true
+	return true, nil
 }
 
 // OrderedNodesByTask scores nodes for a task and returns them in order of their scores

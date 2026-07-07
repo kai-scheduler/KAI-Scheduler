@@ -154,6 +154,9 @@ func allocateTask(ssn *framework.Session, stmt *framework.Statement, nodes []*no
 		log.InfraLogger.Errorf("Failed to find job <%s> in session <%s>", task.Job, ssn.ID)
 		return false
 	}
+	if !isPipelineOnly {
+		delete(job.TasksFitErrors, task.UID)
+	}
 	err := ssn.PrePredicateFn(task, job)
 	if err != nil {
 		log.InfraLogger.V(6).Infof("pre-predicates failed on task %s/%s. Error: %v",
@@ -161,7 +164,7 @@ func allocateTask(ssn *framework.Session, stmt *framework.Statement, nodes []*no
 
 		fitErrors := common_info.NewFitErrors()
 		fitErrors.SetError(err.Error())
-		job.AddTaskFitErrors(task, fitErrors)
+		job.SetTaskFitErrors(task, fitErrors)
 		return false
 	}
 
@@ -169,8 +172,13 @@ func allocateTask(ssn *framework.Session, stmt *framework.Statement, nodes []*no
 		task.Namespace, task.Name, task.ResReqVector)
 
 	orderedNodes := ssn.OrderedNodesByTask(nodes, task)
+	fitErrors := common_info.NewFitErrors()
 	for _, node := range orderedNodes {
-		if !ssn.FittingNode(task, node, !isPipelineOnly) {
+		fits, fitError := ssn.FittingNode(task, node, !isPipelineOnly)
+		if fitError != nil {
+			fitErrors.AddNodeError(fitError)
+		}
+		if !fits {
 			continue
 		}
 		success = allocateTaskToNode(ssn, stmt, task, node, isPipelineOnly)
@@ -185,6 +193,9 @@ func allocateTask(ssn *framework.Session, stmt *framework.Statement, nodes []*no
 	if success {
 		log.InfraLogger.V(6).Infof("Allocation succeeded for task: <%v/%v>", task.Namespace, task.Name)
 	} else {
+		if !isPipelineOnly && fitErrors.HasNodeErrors() {
+			job.SetTaskFitErrors(task, fitErrors)
+		}
 		log.InfraLogger.V(6).Infof("Failed statement allocate for task: <%v/%v>", task.Namespace, task.Name)
 	}
 

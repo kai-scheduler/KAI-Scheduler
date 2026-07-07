@@ -619,6 +619,10 @@ func (pgi *PodGroupInfo) AddTaskFitErrors(task *pod_info.PodInfo, fitErrors *com
 	}
 }
 
+func (pgi *PodGroupInfo) SetTaskFitErrors(task *pod_info.PodInfo, fitErrors *common_info.TasksFitErrors) {
+	pgi.TasksFitErrors[task.UID] = fitErrors
+}
+
 func (pgi *PodGroupInfo) GetInvalidSubGroupTasks() pod_info.PodsMap {
 	return pgi.InvalidSubGroupTasks
 }

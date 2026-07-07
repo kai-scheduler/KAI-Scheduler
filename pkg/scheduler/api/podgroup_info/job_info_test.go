@@ -1753,3 +1753,21 @@ func TestSetPodGroupLastEvictionTimestamp(t *testing.T) {
 		})
 	}
 }
+
+func TestSetTaskFitErrorsReplacesPreviousAttempt(t *testing.T) {
+	job := NewPodGroupInfo("job")
+	task := pod_info.NewTaskInfo(&v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{UID: "task", Name: "task", Namespace: "namespace"},
+	}, resource_info.NewResourceVectorMap())
+
+	first := common_info.NewFitErrors()
+	first.AddNodeError(common_info.NewFitError(task.Name, task.Namespace, "node-a", "MissingGPU"))
+	second := common_info.NewFitErrors()
+	second.AddNodeError(common_info.NewFitError(task.Name, task.Namespace, "node-a", "NoStorage"))
+
+	job.SetTaskFitErrors(task, first)
+	job.SetTaskFitErrors(task, second)
+
+	assert.Equal(t, 0, job.TasksFitErrors[task.UID].ReasonCount("MissingGPU"))
+	assert.Equal(t, 1, job.TasksFitErrors[task.UID].ReasonCount("NoStorage"))
+}
