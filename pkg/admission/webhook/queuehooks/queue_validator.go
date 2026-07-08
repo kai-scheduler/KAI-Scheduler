@@ -26,10 +26,41 @@ const (
 
 	// Spec quotas/limits use millicpu for CPU and megabytes for Memory, while the queue status stores
 	// allocation in cores and bytes; these convert spec values into the status units for comparison.
-	milliCPUToCPU     = 1000
-	megabytesToBytes  = 1000000
-	gpuResourceSuffix = "/gpu"
+	milliCPUToCPU    = 1000
+	megabytesToBytes = 1000000
 )
+
+// EnforcementMode selects how strictly the queue validator treats quota and limit violations.
+type EnforcementMode string
+
+const (
+	// EnforcementNone disables quota validation (default).
+	EnforcementNone EnforcementMode = "None"
+	// EnforcementWarning surfaces quota and limit violations as admission warnings.
+	EnforcementWarning EnforcementMode = "Warning"
+	// EnforcementBlock rejects updates that reduce a limit below the current allocation or a quota below the
+	// non-preemptible allocation.
+	EnforcementBlock EnforcementMode = "Block"
+)
+
+// ParseEnforcementMode normalizes a mode string (case-insensitive); an empty string maps to None.
+func ParseEnforcementMode(s string) (EnforcementMode, error) {
+	switch strings.ToLower(s) {
+	case "", "none":
+		return EnforcementNone, nil
+	case "warning":
+		return EnforcementWarning, nil
+	case "block":
+		return EnforcementBlock, nil
+	default:
+		return "", fmt.Errorf("invalid quota enforcement mode %q: must be one of None, Warning, Block", s)
+	}
+}
+
+// enabled reports whether the mode enforces allocation-reduction checks (Warning or Block).
+func (m EnforcementMode) enabled() bool {
+	return m == EnforcementWarning || m == EnforcementBlock
+}
 
 type QueueValidator interface {
 	ValidateCreate(ctx context.Context, obj *v2.Queue) (warnings admission.Warnings, err error)
@@ -40,18 +71,18 @@ type QueueValidator interface {
 type queueValidator struct {
 	kubeClient            client.Client
 	enableQuotaValidation bool
-	strictQuotaValidation bool
+	mode                  EnforcementMode
 }
 
-// NewQueueValidator builds a QueueValidator. enableQuotaValidation turns on non-blocking warnings for
-// parent/child quota relationships and for updates that reduce a limit below the current allocation or a
-// quota below the non-preemptible allocation; strictQuotaValidation rejects those allocation-reduction
-// updates outright instead of only warning.
-func NewQueueValidator(kubeClient client.Client, enableQuotaValidation, strictQuotaValidation bool) QueueValidator {
+// NewQueueValidator builds a QueueValidator. enableQuotaValidation turns on non-blocking parent/child
+// quota-relationship warnings. mode governs enforcement of updates that reduce a limit below the current
+// allocation or a quota below the non-preemptible allocation: None skips the check, Warning reports it as
+// an admission warning, and Block rejects the update.
+func NewQueueValidator(kubeClient client.Client, enableQuotaValidation bool, mode EnforcementMode) QueueValidator {
 	return &queueValidator{
 		kubeClient:            kubeClient,
 		enableQuotaValidation: enableQuotaValidation,
-		strictQuotaValidation: strictQuotaValidation,
+		mode:                  mode,
 	}
 }
 
@@ -78,13 +109,12 @@ func (v *queueValidator) ValidateUpdate(ctx context.Context, oldQueue, newQueue 
 
 	var warnings admission.Warnings
 
-	// Guard against reducing a limit below what the queue already has allocated, or a quota below its
-	// non-preemptible allocation (which the scheduler cannot reclaim). The strict flag rejects such an update;
-	// with only quota validation enabled it is surfaced as a warning. With neither flag set the check is
-	// skipped, preserving the default behavior.
-	if v.enableQuotaValidation || v.strictQuotaValidation {
+	// Enforce updates that reduce a limit below what the queue already has allocated, or a quota below its
+	// non-preemptible allocation (which the scheduler cannot reclaim), governed by --enforce-quota-violation.
+	// Block rejects such an update; Warning surfaces it as an admission warning.
+	if v.mode.enabled() {
 		if violations := allocationReductionViolations(oldQueue, newQueue); len(violations) > 0 {
-			if v.strictQuotaValidation {
+			if v.mode == EnforcementBlock {
 				return append(warnings, violations...), fmt.Errorf("queue %s update rejected: %s",
 					newQueue.Name, strings.Join(violations, "; "))
 			}
@@ -92,7 +122,7 @@ func (v *queueValidator) ValidateUpdate(ctx context.Context, oldQueue, newQueue 
 		}
 	}
 
-	// Opt-in parent/child quota-relationship warnings.
+	// Opt-in parent/child quota-relationship warnings, governed by --enable-quota-validation.
 	if v.enableQuotaValidation {
 		if newQueue.Spec.ParentQueue != "" {
 			parentWarnings, err := v.validateParentChildQuota(ctx, newQueue)
@@ -179,11 +209,13 @@ func allocationReductionViolations(oldQueue, newQueue *v2.Queue) admission.Warni
 	return violations
 }
 
-// isReduction reports whether newValue lowers a resource bound relative to oldValue. A new value of 0 (unset)
-// or -1 (unlimited) imposes no upper bound and is never a reduction; an old value of -1 (unlimited) makes any
-// positive new bound a reduction.
+// isReduction reports whether newValue lowers a resource bound relative to oldValue. Only -1
+// (constants.UnlimitedResourceQuantity) is unbounded: setting newValue to -1 removes the bound and is never
+// a reduction, while an old value of -1 makes any finite new bound a reduction. A value of 0 is a real bound
+// (a hard zero cap / zero quota, matching the scheduler), so lowering a positive bound to 0 is a reduction;
+// values below -1 are not unbounded and are compared as ordinary bounds.
 func isReduction(oldValue, newValue float64) bool {
-	if newValue <= 0 {
+	if newValue == constants.UnlimitedResourceQuantity {
 		return false
 	}
 	if oldValue == constants.UnlimitedResourceQuantity {
@@ -196,13 +228,14 @@ func round4(value float64) float64 {
 	return math.Round(value*10000) / 10000
 }
 
-// gpuAllocated sums every resource whose name ends in the GPU suffix (e.g. "nvidia.com/gpu",
-// "amd.com/gpu"). Summing rather than returning the first match keeps the value deterministic when a
-// queue's allocation spans multiple GPU vendors, since Go map iteration order is randomized.
+// gpuAllocated sums every GPU resource in the list, matching by the shared constants.GpuResource suffix
+// (e.g. "nvidia.com/gpu", "amd.com/gpu") the same way the scheduler's isGpuResource does. Summing rather
+// than returning the first match keeps the value deterministic when a queue's allocation spans multiple
+// GPU vendors, since Go map iteration order is randomized.
 func gpuAllocated(list v1.ResourceList) float64 {
 	var total float64
 	for name, quantity := range list {
-		if strings.HasSuffix(string(name), gpuResourceSuffix) {
+		if strings.HasSuffix(string(name), constants.GpuResource) {
 			total += quantity.AsApproximateFloat64()
 		}
 	}

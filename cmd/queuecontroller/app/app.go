@@ -69,9 +69,15 @@ func Run(opts *Options, clientConfig *rest.Config, ctx context.Context) error {
 		return nil
 	}
 
+	enforcementMode, err := queuehooks.ParseEnforcementMode(opts.EnforceQuotaViolation)
+	if err != nil {
+		setupLog.Error(err, "invalid quota enforcement mode", "value", opts.EnforceQuotaViolation)
+		return err
+	}
+
 	if opts.EnableWebhook {
 		if err = ctrl.NewWebhookManagedBy(mgr, &v2.Queue{}).
-			WithValidator(queuehooks.NewQueueValidator(mgr.GetClient(), opts.EnableQuotaValidation, opts.StrictQuotaValidation)).
+			WithValidator(queuehooks.NewQueueValidator(mgr.GetClient(), opts.EnableQuotaValidation, enforcementMode)).
 			Complete(); err != nil {
 			setupLog.Error(err, "unable to create webhook for queue v2", "webhook", "Queue")
 			return nil
