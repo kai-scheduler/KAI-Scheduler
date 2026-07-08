@@ -513,6 +513,275 @@
       ],
       "title": "Preemption and Evictions",
       "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$datasource"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 32
+      },
+      "id": 10,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "editorMode": "code",
+          "expr": "max by (action) (kai_scenario_search_action_budget_configured_seconds{namespace=~\"$namespace\", pod=~\"$pod\", action=~\"$action\"})",
+          "legendFormat": "action {{action}}",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "editorMode": "code",
+          "expr": "max by (generator) (kai_scenario_search_generator_budget_configured_seconds{namespace=~\"$namespace\", pod=~\"$pod\", generator=~\"$generator\"})",
+          "legendFormat": "generator {{generator}}",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "editorMode": "code",
+          "expr": "max by (pod) (kai_scenario_search_job_budget_configured_seconds{namespace=~\"$namespace\", pod=~\"$pod\"})",
+          "legendFormat": "job {{pod}}",
+          "range": true,
+          "refId": "C"
+        }
+      ],
+      "title": "Scenario Search Configured Budgets",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$datasource"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 32
+      },
+      "id": 11,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "editorMode": "code",
+          "expr": "sum by (action, result, reduced_budget) (rate(kai_scenario_search_jobs_total{namespace=~\"$namespace\", pod=~\"$pod\", action=~\"$action\", result=~\"$search_result\"}[$__rate_interval]))",
+          "legendFormat": "{{action}} {{result}} reduced={{reduced_budget}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Scenario Search Job Results",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$datasource"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 40
+      },
+      "id": 12,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.50, sum by (le, action, generator, result) (rate(kai_scenario_search_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\", action=~\"$action\", generator=~\"$generator\", result=~\"$search_result\"}[$__rate_interval])))",
+          "legendFormat": "p50 {{action}} {{generator}} {{result}}",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.90, sum by (le, action, generator, result) (rate(kai_scenario_search_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\", action=~\"$action\", generator=~\"$generator\", result=~\"$search_result\"}[$__rate_interval])))",
+          "legendFormat": "p90 {{action}} {{generator}} {{result}}",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.99, sum by (le, action, generator, result) (rate(kai_scenario_search_duration_seconds_bucket{namespace=~\"$namespace\", pod=~\"$pod\", action=~\"$action\", generator=~\"$generator\", result=~\"$search_result\"}[$__rate_interval])))",
+          "legendFormat": "p99 {{action}} {{generator}} {{result}}",
+          "range": true,
+          "refId": "C"
+        }
+      ],
+      "title": "Scenario Search Duration Quantiles",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$datasource"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 40
+      },
+      "id": 13,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "editorMode": "code",
+          "expr": "sum by (action, generator, state) (rate(kai_scenario_search_scenarios_total{namespace=~\"$namespace\", pod=~\"$pod\", action=~\"$action\", generator=~\"$generator\", state=~\"$scenario_state\"}[$__rate_interval]))",
+          "legendFormat": "{{action}} {{generator}} {{state}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Scenario Search Scenario States",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "$datasource"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 48
+      },
+      "id": 14,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "$datasource"
+          },
+          "editorMode": "code",
+          "expr": "sum by (action) (rate(kai_scenario_search_action_budget_exhausted_total{namespace=~\"$namespace\", pod=~\"$pod\", action=~\"$action\"}[$__rate_interval]))",
+          "legendFormat": "{{action}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Scenario Search Action Budget Exhaustion",
+      "type": "timeseries"
     }
   ],
   "refresh": "",
@@ -641,6 +910,87 @@
         "options": [],
         "query": {
           "query": "label_values(kai_plugin_scheduling_latency_milliseconds{namespace=~\"$namespace\"}, plugin)",
+          "refId": "StandardVariableQuery"
+        },
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "$datasource"
+        },
+        "definition": "label_values(kai_scenario_search_duration_seconds_count{namespace=~\"$namespace\"}, generator)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Scenario Generator",
+        "multi": true,
+        "name": "generator",
+        "options": [],
+        "query": {
+          "query": "label_values(kai_scenario_search_duration_seconds_count{namespace=~\"$namespace\"}, generator)",
+          "refId": "StandardVariableQuery"
+        },
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "$datasource"
+        },
+        "definition": "label_values(kai_scenario_search_duration_seconds_count{namespace=~\"$namespace\"}, result)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Scenario Search Result",
+        "multi": true,
+        "name": "search_result",
+        "options": [],
+        "query": {
+          "query": "label_values(kai_scenario_search_duration_seconds_count{namespace=~\"$namespace\"}, result)",
+          "refId": "StandardVariableQuery"
+        },
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "$datasource"
+        },
+        "definition": "label_values(kai_scenario_search_scenarios_total{namespace=~\"$namespace\"}, state)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Scenario State",
+        "multi": true,
+        "name": "scenario_state",
+        "options": [],
+        "query": {
+          "query": "label_values(kai_scenario_search_scenarios_total{namespace=~\"$namespace\"}, state)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 1,
