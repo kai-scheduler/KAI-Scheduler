@@ -149,7 +149,7 @@ func crossHierarchyReclaimScenarioSearchBudgets() *kaiv1.ScenarioSearchBudgets {
 		MaxGeneratorSearchDuration: map[string]metav1.Duration{
 			commonconstants.ActionDefault:            {Duration: generatorBudget},
 			commonconstants.GeneratorNodeLocalGreedy: {Duration: generatorBudget},
-			commonconstants.GeneratorMultiNodeGang:    {Duration: generatorBudget},
+			commonconstants.GeneratorMultiNodeGang:   {Duration: generatorBudget},
 		},
 	}
 }
