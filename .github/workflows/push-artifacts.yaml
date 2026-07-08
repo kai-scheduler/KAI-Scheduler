@@ -64,3 +64,41 @@ jobs:
       - name: Push Helm Chart
         run: |
           helm push ./charts/kai-scheduler-$PACKAGE_VERSION.tgz oci://${{ env.DOCKER_REGISTRY }}
+
+  build-and-push-fips:
+    name: Build & Push FIPS
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Extract package version from tag
+        run: |
+          PACKAGE_VERSION=${GITHUB_REF_NAME}
+          echo "PACKAGE_VERSION=$PACKAGE_VERSION" >> $GITHUB_ENV
+          echo $PACKAGE_VERSION
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.3'
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Docker build & push FIPS images
+        run: make build FIPS=1 DOCKER_BUILD_PLATFORM=linux/amd64,linux/arm64 DOCKER_REPO_BASE=${{ env.DOCKER_REGISTRY }} VERSION=$PACKAGE_VERSION DOCKER_BUILDX_ADDITIONAL_ARGS=--push
+
+      - name: Verify binaries are FIPS-enabled
+        run: |
+          for f in bin/*-amd64 bin/*-arm64; do
+            go version -m "$f" | grep -q 'GOFIPS140=v1.0.0' || { echo "$f is not FIPS-enabled"; exit 1; }
+          done

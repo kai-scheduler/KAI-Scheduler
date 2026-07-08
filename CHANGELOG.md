@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Publish FIPS-enabled image variants (`<version>-fips`) for every release, built with the Go toolchain's native FIPS 140-3 mode (`GOFIPS140`), and added a `global.fips` Helm value (default `false`) that appends `-fips` to every resolved image tag ([guide](docs/fips/README.md)). [#1867](https://github.com/kai-scheduler/KAI-Scheduler/issues/1867)
 - Added `global.resourceReservation.createNamespace` Helm value (default `true`) to allow disabling creation of the resource-reservation namespace, for embedding KAI in a parent chart that creates the namespace itself.
 - Added `global.resourceReservation.createServiceAccount` Helm value (default `true`) to allow disabling creation of the resource-reservation ServiceAccount, for embedding KAI in a parent chart that creates the ServiceAccount itself.
 - Added `defaultPriorityClasses.enabled` Helm value (default `true`) for installations that manage KAI PriorityClasses externally.

@@ -40,7 +40,7 @@ spec:
       {{- end }}
       containers:
       - name: migration
-        image: "{{ .Values.global.registry }}/{{ .Values.topologyMigration.image.name }}:{{ .Values.topologyMigration.image.tag | default .Values.global.tag | default .Chart.AppVersion }}"
+        image: "{{ .Values.global.registry }}/{{ .Values.topologyMigration.image.name }}:{{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.topologyMigration.image.tag) }}"
         imagePullPolicy: {{ .Values.topologyMigration.image.pullPolicy }}
         {{- with .Values.topologyMigration.resources }}
         resources:
