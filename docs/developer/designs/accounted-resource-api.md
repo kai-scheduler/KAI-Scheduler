@@ -618,9 +618,6 @@ Scheduler behavior:
   include the queue name and missing `resourceRef`.
 - The queue should get a condition such as
   `AccountedResourcesResolved=False`, reason `AccountedResourceNotFound`.
-- If an existing `AccountedResource` cannot be evaluated for a candidate because
-  selected runtime data is missing or unparsable, emit an event and skip
-  enforcement for that unresolved source or candidate in phase 1.
 - If usage can be evaluated and exceeds a finite limit, reject the candidate
   through the existing `OverLimit` path. The message should identify the queue,
   `resourceRef`, current usage, candidate request, and limit.
