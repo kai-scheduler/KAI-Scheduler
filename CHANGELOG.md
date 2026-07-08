@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Fixed
+- Scoped the operator's informer cache for Pods, Leases and EndpointSlices to the KAI namespace and stripped managed fields from cached objects. Since v0.15.0 the operator cached every such object in the cluster, so its memory grew with cluster size and exceeded the default 256Mi limit on large clusters. [#1780](https://github.com/kai-scheduler/KAI-Scheduler/issues/1780)
 - Block NaN value for fraction in the pod admission [#1798](https://github.com/kai-scheduler/KAI-Scheduler/issues/1798) [davidLif](https://github.com/davidLif)
 - In the fractional admission checks, check that the fractional value can be parsed as a quantity. [#1798](https://github.com/kai-scheduler/KAI-Scheduler/issues/1798) [davidLif](https://github.com/davidLif)
 - Added `global.nodePoolLabelKey` Helm value to configure `spec.global.nodePoolLabelKey` in the Config CR for KAI sharding [#1774](https://github.com/kai-scheduler/KAI-Scheduler/issues/1774).
