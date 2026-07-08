@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Fixed
+- Scoped the operator's informer cache for Pods, Leases and EndpointSlices to the KAI namespace and stripped managed fields from cached objects. Since v0.15.0 the operator cached every such object in the cluster, so its memory grew with cluster size and exceeded the default 256Mi limit on large clusters. [#1780](https://github.com/kai-scheduler/KAI-Scheduler/issues/1780)
 - Block NaN value for fraction in the pod admission [#1798](https://github.com/kai-scheduler/KAI-Scheduler/issues/1798) [davidLif](https://github.com/davidLif)
 - In the fractional admission checks, check that the fractional value can be parsed as a quantity. [#1798](https://github.com/kai-scheduler/KAI-Scheduler/issues/1798) [davidLif](https://github.com/davidLif)
 - Added `global.nodePoolLabelKey` Helm value to configure `spec.global.nodePoolLabelKey` in the Config CR for KAI sharding [#1774](https://github.com/kai-scheduler/KAI-Scheduler/issues/1774).
@@ -27,12 +28,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Podgrouper now preserves an existing PodGroup's topology constraint when the workload does not specify one, so an externally-assigned topology is not overwritten. Workload topology annotations still take precedence when present.
 
 ### Fixed
-- Scenario search no longer leaks a rejected scenario's victim nodes into the probe's feasible-node set: the solver now rolls back feasible-node additions after validator-rejected and errored simulations, not only after cleanly unsolved ones. [#1719](https://github.com/kai-scheduler/KAI-Scheduler/issues/1719)
-- Scoped the operator's informer cache for Pods, Leases and EndpointSlices to the KAI namespace and stripped managed fields from cached objects. Since v0.15.0 the operator cached every such object in the cluster, so its memory grew with cluster size and exceeded the default 256Mi limit on large clusters. [#1780](https://github.com/kai-scheduler/KAI-Scheduler/issues/1780)
-- Reduced transient scheduler allocations during large reclaim operations by comparing proportion queue state and cached resource vectors directly instead of repeatedly materializing resource maps.
-- Scheduler now exits on 401 Unauthorized API responses instead of retrying indefinitely with a stale ServiceAccount token. [#1817](https://github.com/kai-scheduler/KAI-Scheduler/issues/1817)
-- Reduced scheduler memory use during large reclaim operations by removing redundant per-job-pair min-runtime protection caching; effective min-runtime durations remain cached per queue pair. [#1808](https://github.com/kai-scheduler/KAI-Scheduler/issues/1808)
-- Fixed reclaim abandoning valid over-quota victims when an unrelated under-deserved queue appeared earlier in victim ordering. [#1750](https://github.com/kai-scheduler/KAI-Scheduler/issues/1750)
 - Restricted Helm post-delete cleanup to KAI operator-managed Deployments and preserved externally managed `kai-config` resources when `kaiConfigDeployer.enabled=false`.
 - Scheduler cache now filters terminal Pods at watch time to reduce memory use, while still watching Pods bound by other schedulers so their resource usage is counted in allocatable calculations. [#1645](https://github.com/kai-scheduler/KAI-Scheduler/issues/1645) [enoodle](https://github.com/enoodle)
 - Fixed reclaim abandoning valid over-quota victims when an unrelated under-deserved queue appeared earlier in victim ordering. [#1750](https://github.com/kai-scheduler/KAI-Scheduler/issues/1750)
