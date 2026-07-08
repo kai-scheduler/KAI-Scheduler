@@ -62,21 +62,27 @@ func GetMessageOfEviction(ssn *framework.Session, actionType framework.ActionTyp
 				"Failed to get preemptee job for task: <%s/%s>", preempteeTask.Namespace, preempteeTask.Name)
 			return ""
 		}
-		reclaimerQueue := ssn.ClusterInfo.Queues[preemptorJob.Queue]
-		reclaimerParentQueue := ssn.ClusterInfo.Queues[reclaimerQueue.ParentQueue]
-		reclaimeeQueue := ssn.ClusterInfo.Queues[preempteeJob.Queue]
-		reclaimeeParentQueue := ssn.ClusterInfo.Queues[reclaimeeQueue.ParentQueue]
+		reclaimerQueue, reclaimerFound := ssn.ClusterInfo.Queues[preemptorJob.Queue]
+		reclaimeeQueue, reclaimeeFound := ssn.ClusterInfo.Queues[preempteeJob.Queue]
 
 		msg := api.GetReclaimMessage(preempteeTask, preemptorJob)
 
-		var queueDetails string
-		if reclaimeeQueue.ParentQueue == reclaimerQueue.ParentQueue {
-			queueDetails = getReclaimMessageQueuesDetails(ssn, preempteeTask, preemptorJob,
-				reclaimerQueue, reclaimeeQueue)
-		} else {
-			queueDetails = getReclaimMessageQueuesDetails(ssn, preempteeTask, preemptorJob,
-				reclaimerParentQueue, reclaimeeParentQueue)
+		if !reclaimerFound || reclaimerQueue == nil || !reclaimeeFound || reclaimeeQueue == nil {
+			log.InfraLogger.Errorf(
+				"Failed to get reclaimer or reclaimee queue for task: <%s/%s>, reclaimer queue: <%v>, reclaimee queue: <%v>",
+				preempteeTask.Namespace, preempteeTask.Name, preemptorJob.Queue, preempteeJob.Queue)
+			return msg
 		}
+
+		reclaimerDetailsQueue := queueForReclaimDetails(ssn, reclaimerQueue)
+		reclaimeeDetailsQueue := queueForReclaimDetails(ssn, reclaimeeQueue)
+		if reclaimeeQueue.ParentQueue == reclaimerQueue.ParentQueue {
+			reclaimerDetailsQueue = reclaimerQueue
+			reclaimeeDetailsQueue = reclaimeeQueue
+		}
+
+		queueDetails := getReclaimMessageQueuesDetails(ssn, preempteeTask, preemptorJob,
+			reclaimerDetailsQueue, reclaimeeDetailsQueue)
 
 		msg += "\n" + queueDetails
 		return msg
@@ -85,6 +91,19 @@ func GetMessageOfEviction(ssn *framework.Session, actionType framework.ActionTyp
 	log.InfraLogger.Errorf("Unexpected action type: <%v>, task: <%v/%v>", actionType, preempteeTask.Namespace,
 		preempteeTask.Name)
 	return ""
+}
+
+func queueForReclaimDetails(ssn *framework.Session, q *queue_info.QueueInfo) *queue_info.QueueInfo {
+	if q == nil {
+		return nil
+	}
+	if q.ParentQueue == "" {
+		return q
+	}
+	if parent, found := ssn.ClusterInfo.Queues[q.ParentQueue]; found && parent != nil {
+		return parent
+	}
+	return q
 }
 
 func getReclaimMessageQueuesDetails(ssn *framework.Session, reclaimeeTask *pod_info.PodInfo,
