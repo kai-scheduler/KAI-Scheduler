@@ -1,0 +1,47 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# A semi-preemptible PodGroup with a single elastic group: 3 core (non-preemptible, in-quota) pods,
+# and any pod above minMember=3 is elastic (allocated over-quota, reclaimed/preempted first).
+---
+apiVersion: scheduling.run.ai/v2alpha2
+kind: PodGroup
+metadata:
+  name: elastic-inference
+  namespace: default
+  labels:
+    kai.scheduler/queue: default-queue
+spec:
+  queue: default-queue
+  preemptibility: "semi-preemptible"
+  minMember: 3
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: elastic-inference-workers
+  namespace: default
+  annotations:
+    kai.scheduler/skip-podgrouper: "true"
+spec:
+  parallelism: 5
+  completions: 5
+  template:
+    metadata:
+      annotations:
+        pod-group-name: elastic-inference
+      labels:
+        kai.scheduler/queue: default-queue
+    spec:
+      schedulerName: kai-scheduler
+      restartPolicy: Never
+      containers:
+        - name: worker
+          image: busybox:1.36
+          command: ["sh", "-c", "sleep 3600"]
+          resources:
+            requests:
+              cpu: "250m"
+            limits:
+              cpu: "250m"

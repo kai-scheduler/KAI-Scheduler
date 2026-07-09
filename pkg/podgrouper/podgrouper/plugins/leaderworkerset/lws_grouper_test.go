@@ -299,7 +299,7 @@ func TestBuildSubGroups_Segmentation_Divisible_LeaderPod(t *testing.T) {
 	pod := makeLwsPod("lws-seg-0-0", "0")
 	grouper := NewLwsGrouper(defaultgrouper.NewDefaultGrouper("", "", fake.NewFakeClient()))
 
-	subGroups, err := grouper.buildSubGroups(lwsJob, pod, 5)
+	subGroups, _, err := grouper.buildSubGroups(lwsJob, pod, 5)
 	assert.NoError(t, err)
 
 	assert.Len(t, subGroups, 4) // segment-0, segment-1, leader, workers
@@ -334,7 +334,7 @@ func TestBuildSubGroups_Segmentation_Divisible_WorkerInFirstSegment(t *testing.T
 	pod := makeLwsPod("lws-seg-0-1", "1")
 	grouper := NewLwsGrouper(defaultgrouper.NewDefaultGrouper("", "", fake.NewFakeClient()))
 
-	subGroups, err := grouper.buildSubGroups(lwsJob, pod, 5)
+	subGroups, _, err := grouper.buildSubGroups(lwsJob, pod, 5)
 	assert.NoError(t, err)
 
 	assert.Len(t, subGroups, 4)
@@ -365,7 +365,7 @@ func TestBuildSubGroups_Segmentation_Divisible_WorkerInLaterSegment(t *testing.T
 	pod := makeLwsPod("lws-seg-0-3", "3")
 	grouper := NewLwsGrouper(defaultgrouper.NewDefaultGrouper("", "", fake.NewFakeClient()))
 
-	subGroups, err := grouper.buildSubGroups(lwsJob, pod, 5)
+	subGroups, _, err := grouper.buildSubGroups(lwsJob, pod, 5)
 	assert.NoError(t, err)
 
 	assert.Len(t, subGroups, 4)
@@ -398,7 +398,7 @@ func TestBuildSubGroups_Segmentation_NotDivisible_LeaderPod(t *testing.T) {
 	pod := makeLwsPod("lws-seg-0-0", "0")
 	grouper := NewLwsGrouper(defaultgrouper.NewDefaultGrouper("", "", fake.NewFakeClient()))
 
-	subGroups, err := grouper.buildSubGroups(lwsJob, pod, 4)
+	subGroups, _, err := grouper.buildSubGroups(lwsJob, pod, 4)
 	assert.NoError(t, err)
 
 	assert.Len(t, subGroups, 4) // segment-0, segment-1, leader, workers
@@ -429,7 +429,7 @@ func TestBuildSubGroups_Segmentation_LeaderExcluded_WorkerInFirstSegment(t *test
 	pod := makeLwsPod("lws-seg-0-1", "1")
 	grouper := NewLwsGrouper(defaultgrouper.NewDefaultGrouper("", "", fake.NewFakeClient()))
 
-	subGroups, err := grouper.buildSubGroups(lwsJob, pod, 5)
+	subGroups, _, err := grouper.buildSubGroups(lwsJob, pod, 5)
 	assert.NoError(t, err)
 	// No nil entries on the LeaderExcluded path
 	assert.Len(t, subGroups, 3) // leader, segment-0, segment-1
@@ -455,7 +455,7 @@ func TestBuildSubGroups_Segmentation_LeaderExcluded_WorkerInLaterSegment(t *test
 	pod := makeLwsPod("lws-seg-0-3", "3")
 	grouper := NewLwsGrouper(defaultgrouper.NewDefaultGrouper("", "", fake.NewFakeClient()))
 
-	subGroups, err := grouper.buildSubGroups(lwsJob, pod, 5)
+	subGroups, _, err := grouper.buildSubGroups(lwsJob, pod, 5)
 	assert.NoError(t, err)
 	assert.Len(t, subGroups, 3)
 
@@ -487,7 +487,7 @@ func TestBuildSubGroups_Segmentation_TopologyPreferredOnly_LeaderIncluded_NotDiv
 	pod := makeLwsPod("lws-seg-0-1", "1")
 	grouper := NewLwsGrouper(defaultgrouper.NewDefaultGrouper("", "", fake.NewFakeClient()))
 
-	subGroups, err := grouper.buildSubGroups(lwsJob, pod, 5)
+	subGroups, _, err := grouper.buildSubGroups(lwsJob, pod, 5)
 	assert.NoError(t, err)
 	assert.Len(t, subGroups, 4) // segment-0, segment-1, leader, workers
 
@@ -531,7 +531,7 @@ func TestBuildSubGroups_Segmentation_TopologyBothPlacementKeys_LeaderExcluded(t 
 	pod := makeLwsPod("lws-seg-0-1", "1")
 	grouper := NewLwsGrouper(defaultgrouper.NewDefaultGrouper("", "", fake.NewFakeClient()))
 
-	subGroups, err := grouper.buildSubGroups(lwsJob, pod, 5)
+	subGroups, _, err := grouper.buildSubGroups(lwsJob, pod, 5)
 	assert.NoError(t, err)
 	assert.Len(t, subGroups, 3) // leader, segment-0, segment-1
 
@@ -572,7 +572,7 @@ func TestBuildSubGroups_SegmentSizeFromWorkerTemplateAnnotation(t *testing.T) {
 	pod := makeLwsPod("lws-seg-0-1", "1")
 	grouper := NewLwsGrouper(defaultgrouper.NewDefaultGrouper("", "", fake.NewFakeClient()))
 
-	subGroups, err := grouper.buildSubGroups(lwsJob, pod, 5)
+	subGroups, _, err := grouper.buildSubGroups(lwsJob, pod, 5)
 	assert.NoError(t, err)
 	assert.Len(t, subGroups, 4) // segment-0, segment-1, leader, workers
 

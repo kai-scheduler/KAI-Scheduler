@@ -39,6 +39,24 @@ type Metadata struct {
 	PreferredTopologyLevel string
 	RequiredTopologyLevel  string
 	Topology               string
+
+	// Warnings collects non-blocking messages surfaced as Warning events on the pod by the controller.
+	// It is an internal field, not part of any public API surface.
+	Warnings []string
+}
+
+// semiPreemptibleSegmentedWarning is emitted when a workload requests both automated segmentation and
+// semi-preemptible. The two are mutually exclusive: a fully-gang auto-segmented tree has no surplus, so
+// semi-preemptible is inert and the workload behaves as non-preemptible.
+const semiPreemptibleSegmentedWarning = "semi-preemptible is not compatible with automatic segmentation " +
+	"(kai.scheduler/segment-size): the segmented tree is fully gang and has no elastic surplus, so the " +
+	"workload will behave as non-preemptible"
+
+// WarnIfSemiPreemptibleSegmented appends a warning when a segmented workload is also semi-preemptible.
+func (m *Metadata) WarnIfSemiPreemptibleSegmented(segmented bool) {
+	if segmented && m.Preemptibility == v2alpha2.SemiPreemptible {
+		m.Warnings = append(m.Warnings, semiPreemptibleSegmentedWarning)
+	}
 }
 
 func (m *Metadata) FindSubGroupForPod(podNamespace, podName string) *SubGroupMetadata {

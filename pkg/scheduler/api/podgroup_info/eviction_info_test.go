@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"k8s.io/utils/ptr"
 
+	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
@@ -112,6 +113,83 @@ func TestGetTasksToEvict_Table(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tasksToEvict, hasMoreTasks := GetTasksToEvict(tt.job, subGroupOrderFn, tasksOrderFn)
+			assert.Equal(t, tt.expectedHasMoreTasks, hasMoreTasks)
+			assert.Equal(t, tt.numExpectTasks, len(tasksToEvict))
+		})
+	}
+}
+
+func TestGetTasksToEvict_SemiPreemptible(t *testing.T) {
+	tests := []struct {
+		name                 string
+		job                  *PodGroupInfo
+		expectedHasMoreTasks bool
+		numExpectTasks       int
+	}{
+		{
+			name: "SubgroupSurplus_EvictsWholeElasticSubgroupOnly",
+			job: func() *PodGroupInfo {
+				// 4 fully-gang leaf subgroups (minMember=2), minSubGroup=2 → 2 elastic subgroups.
+				root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+				root.SetMinSubGroup(ptr.To(int32(2)))
+				for _, name := range []string{"r0", "r1", "r2", "r3"} {
+					ps := subgroup_info.NewPodSet(name, 2, nil)
+					ps.AssignTask(simpleTask(name+"-p0", name, pod_status.Running))
+					ps.AssignTask(simpleTask(name+"-p1", name, pod_status.Running))
+					root.AddPodSet(ps)
+				}
+				return &PodGroupInfo{
+					Preemptibility:  enginev2alpha2.SemiPreemptible,
+					RootSubGroupSet: root,
+					PodSets:         root.GetDescendantPodSets(),
+				}
+			}(),
+			// One whole elastic subgroup (2 pods) offered; core (2 subgroups) protected.
+			expectedHasMoreTasks: true,
+			numExpectTasks:       2,
+		},
+		{
+			name: "NoSurplus_CoreProtected_NoVictims",
+			job: func() *PodGroupInfo {
+				// minSubGroup==children, all at min → no surplus. Phase-3 fallback must be skipped.
+				root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+				root.SetMinSubGroup(ptr.To(int32(2)))
+				for _, name := range []string{"r0", "r1"} {
+					ps := subgroup_info.NewPodSet(name, 2, nil)
+					ps.AssignTask(simpleTask(name+"-p0", name, pod_status.Running))
+					ps.AssignTask(simpleTask(name+"-p1", name, pod_status.Running))
+					root.AddPodSet(ps)
+				}
+				return &PodGroupInfo{
+					Preemptibility:  enginev2alpha2.SemiPreemptible,
+					RootSubGroupSet: root,
+					PodSets:         root.GetDescendantPodSets(),
+				}
+			}(),
+			expectedHasMoreTasks: true, // no eviction, all remain
+			numExpectTasks:       0,
+		},
+		{
+			name: "PodLevelSurplus_EvictsExtraPodsOnly",
+			job: &PodGroupInfo{
+				Preemptibility: enginev2alpha2.SemiPreemptible,
+				PodSets: map[string]*subgroup_info.PodSet{
+					DefaultSubGroup: subgroup_info.NewPodSet(DefaultSubGroup, 2, nil).WithPodInfos(pod_info.PodsMap{
+						"pod-a": simpleTask("pod-a", "", pod_status.Running),
+						"pod-b": simpleTask("pod-b", "", pod_status.Running),
+						"pod-c": simpleTask("pod-c", "", pod_status.Running),
+					}),
+				},
+			},
+			// minMember=2, 3 allocated → 1 elastic pod evictable, 2 core protected.
+			expectedHasMoreTasks: true,
+			numExpectTasks:       1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tasksToEvict, hasMoreTasks := GetTasksToEvict(tt.job, subGroupMemberOrderFn, tasksOrderFn)
 			assert.Equal(t, tt.expectedHasMoreTasks, hasMoreTasks)
 			assert.Equal(t, tt.numExpectTasks, len(tasksToEvict))
 		})

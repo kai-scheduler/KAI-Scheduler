@@ -29,7 +29,9 @@ func (jobsOrder *JobsOrderByQueues) InitializeWithJobs(
 			continue
 		}
 
-		if jobsOrder.options.FilterNonPreemptible && !job.IsPreemptibleJob() {
+		// Semi-preemptible jobs are eligible victim candidates: their elastic surplus can be evicted
+		// while their core is protected downstream by GetTasksToEvict.
+		if jobsOrder.options.FilterNonPreemptible && !job.IsPreemptibleJob() && !job.IsSemiPreemptibleJob() {
 			continue
 		}
 

@@ -41,6 +41,13 @@ type missingMinMemberError struct{ msg string }
 
 func (e *missingMinMemberError) Error() string { return e.msg }
 
+// semiPreemptibleImmutabilityError is returned when an update increases minMember or minSubGroup on a
+// semi-preemptible PodGroup. Raising either would reclassify already-running over-quota elastic
+// pods/subgroups as core, silently growing the minimal satisfying set and breaking quota invariants.
+type semiPreemptibleImmutabilityError struct{ msg string }
+
+func (e *semiPreemptibleImmutabilityError) Error() string { return e.msg }
+
 // subGroupGraphError is returned for structural issues in the subgroup DAG:
 // duplicate names, missing parents, or cycles.
 type subGroupGraphError struct{ msg string }
