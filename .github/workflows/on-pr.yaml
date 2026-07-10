@@ -311,7 +311,7 @@ jobs:
         run: |
           TARGET_BRANCH="${{ github.base_ref }}"
           if [[ "$TARGET_BRANCH" =~ v([0-9]+)\.([0-9]+) ]]; then
-            # Version branch: upgrade from the latest release of the previous minor
+            # Version branch: upgrade from the latest published release of the previous minor
             MAJOR="${BASH_REMATCH[1]}"
             MINOR="${BASH_REMATCH[2]}"
             if [ "$MINOR" -eq 0 ]; then
@@ -320,20 +320,36 @@ jobs:
               exit 0
             fi
             PREV_MINOR="${MAJOR}.$((MINOR - 1))"
-            UPGRADE_FROM=$(gh release list --limit 200 --json tagName -q '.[].tagName' | grep -E "^v${PREV_MINOR}\.[0-9]+$" | sort -V | tail -1)
-            if [ -z "$UPGRADE_FROM" ]; then
+            CANDIDATES=$(gh release list --limit 200 --json tagName -q '.[].tagName' | grep -E "^v${PREV_MINOR}\.[0-9]+$" | sort -rV)
+            if [ -z "$CANDIDATES" ]; then
               echo "No release found for v${PREV_MINOR}.x. Skipping upgrade tests."
               echo "skip=true" >> $GITHUB_OUTPUT
               exit 0
             fi
           else
-            # Main branch: upgrade from the latest release
-            UPGRADE_FROM=$(gh release list --limit 200 --json tagName -q '.[].tagName' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
-            if [ -z "$UPGRADE_FROM" ]; then
+            # Main branch: upgrade from the latest published release
+            CANDIDATES=$(gh release list --limit 200 --json tagName -q '.[].tagName' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -rV)
+            if [ -z "$CANDIDATES" ]; then
               echo "No releases found. Skipping upgrade tests."
               echo "skip=true" >> $GITHUB_OUTPUT
               exit 0
             fi
+          fi
+
+          UPGRADE_FROM=""
+          while IFS= read -r CANDIDATE; do
+            echo "Checking whether chart $CANDIDATE is published to ghcr..."
+            if helm show chart "oci://ghcr.io/kai-scheduler/kai-scheduler/kai-scheduler" --version "$CANDIDATE" >/dev/null 2>&1; then
+              UPGRADE_FROM="$CANDIDATE"
+              break
+            fi
+            echo "Chart for $CANDIDATE not yet available in ghcr, trying the next candidate..."
+          done <<< "$CANDIDATES"
+
+          if [ -z "$UPGRADE_FROM" ]; then
+            echo "No candidate release has a published chart yet (release workflow may still be running). Skipping upgrade tests."
+            echo "skip=true" >> $GITHUB_OUTPUT
+            exit 0
           fi
 
           echo "Upgrading from $UPGRADE_FROM"

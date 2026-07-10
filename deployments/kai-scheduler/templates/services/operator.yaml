@@ -21,7 +21,7 @@ spec:
       serviceAccountName: kai-operator
       containers:
       - name: operator
-        image: {{ .Values.global.registry }}/{{ .Values.operator.image.name }}:{{ .Values.operator.image.tag | default .Values.global.tag | default .Chart.AppVersion }}
+        image: {{ .Values.global.registry }}/{{ .Values.operator.image.name }}:{{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.operator.image.tag) }}
         imagePullPolicy: {{ .Values.operator.image.pullPolicy }}
         {{- with .Values.operator.resources }}
         resources:
@@ -52,7 +52,7 @@ spec:
         - name: MS_REPOSITORY
           value: {{ .Values.global.registry }}
         - name: MS_TAG
-          value: {{ .Values.operator.image.tag | default .Values.global.tag | default .Chart.AppVersion }}
+          value: {{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.operator.image.tag) }}
         ports:
         - containerPort: 8080
           name: metrics

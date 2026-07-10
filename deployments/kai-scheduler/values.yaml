@@ -9,6 +9,9 @@ openshift: false
 global:
   registry: registry/local/kai-scheduler
   tag: ""
+  # Use FIPS-enabled images: appends "-fips" to every resolved image tag
+  # (whether it comes from a per-service tag, global.tag or the chart version)
+  fips: false
   imagePullPolicy: IfNotPresent
   securityContext: {}
   podSecurityContext: {}
