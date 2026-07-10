@@ -11,6 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 ### Fixed
+- Fixed extended resources present on only a subset of nodes being reported as unavailable cluster-wide: `ResourceVector.SetMax` now grows the accumulator to the longer vector's length instead of silently dropping resource indices discovered after the first-iterated node, which caused pods requesting such resources to be rejected as unschedulable ("No node in the node-pool has X resources") depending on node map iteration order. [#1851](https://github.com/kai-scheduler/KAI-Scheduler/issues/1851)
 - Block NaN value for fraction in the pod admission [#1798](https://github.com/kai-scheduler/KAI-Scheduler/issues/1798) [davidLif](https://github.com/davidLif)
 - In the fractional admission checks, check that the fractional value can be parsed as a quantity. [#1798](https://github.com/kai-scheduler/KAI-Scheduler/issues/1798) [davidLif](https://github.com/davidLif)
 - Podgrouper now rejects negative PyTorch replica indexes and LWS worker indexes, and caps the number of subgroups created for block-level segmentation at 10000 to avoid unbounded PodGroup fan-out. [davidLif](https://github.com/davidLif)
