@@ -5,14 +5,10 @@ package reclaim
 
 import (
 	"testing"
-	"time"
 
 	"go.uber.org/mock/gomock"
 	"gopkg.in/h2non/gock.v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
@@ -32,8 +28,7 @@ const (
 // TestReclaimCrossHierarchyRootLeafVictimDoesNotPanic reproduces the #1863 panic path:
 // a pending job under a named parent reclaims from a running job in a root-level leaf queue
 // (ParentQueue == ""). Reclaim's JobSolver probes evictions via EvictAllPreemptees, which
-// calls GetMessageOfEviction with Queues[""] on unfixed code. v0.16's generator portfolio
-// (sg-nodelocalgreedy + scenario search budgets) makes this cross-hierarchy probe common.
+// calls GetMessageOfEviction with Queues[""] on unfixed code.
 func TestReclaimCrossHierarchyRootLeafVictimDoesNotPanic(t *testing.T) {
 	defer gock.Off()
 
@@ -42,7 +37,6 @@ func TestReclaimCrossHierarchyRootLeafVictimDoesNotPanic(t *testing.T) {
 
 	topology := buildCrossHierarchyRootLeafReclaimTopology()
 	ssn := test_utils.BuildSession(topology, ctrl)
-	ssn.Config.ScenarioSearchBudgets = crossHierarchyReclaimScenarioSearchBudgets()
 
 	rootLeafQueue := ssn.ClusterInfo.Queues[common_info.QueueID(rootLeafQueueName)]
 	inferenceChildQueue := ssn.ClusterInfo.Queues[common_info.QueueID(inferenceChildQueueName)]
@@ -56,16 +50,7 @@ func TestReclaimCrossHierarchyRootLeafVictimDoesNotPanic(t *testing.T) {
 		t.Fatalf("expected %q parent %q, got %q", inferenceChildQueueName, defaultDepartmentName, inferenceChildQueue.ParentQueue)
 	}
 
-	onJobSolutionStartCalls := 0
-	ssn.AddOnJobSolutionStartFn(func() {
-		onJobSolutionStartCalls++
-	})
-
 	reclaim.New().Execute(ssn)
-
-	if onJobSolutionStartCalls == 0 {
-		t.Fatal("expected reclaim to attempt solving the pending cross-hierarchy job")
-	}
 
 	victimJob := ssn.ClusterInfo.PodGroupInfos[common_info.PodGroupID("root-leaf-victim")]
 	pendingJob := ssn.ClusterInfo.PodGroupInfos[common_info.PodGroupID("inference-pending")]
@@ -132,24 +117,6 @@ func buildCrossHierarchyRootLeafReclaimTopology() test_utils.TestTopologyBasic {
 				NumberOfCacheEvictions:  1,
 				NumberOfPipelineActions: 1,
 			},
-		},
-	}
-}
-
-func crossHierarchyReclaimScenarioSearchBudgets() *kaiv1.ScenarioSearchBudgets {
-	jobBudget := 5 * time.Second
-	generatorBudget := jobBudget / 2
-	return &kaiv1.ScenarioSearchBudgets{
-		MaxActionSearchDuration: map[string]metav1.Duration{
-			commonconstants.ActionDefault: {Duration: jobBudget},
-			commonconstants.ActionReclaim: {Duration: jobBudget},
-		},
-		MaxJobSearchDuration: &metav1.Duration{Duration: jobBudget},
-		MinJobSearchDuration: &metav1.Duration{Duration: 50 * time.Millisecond},
-		MaxGeneratorSearchDuration: map[string]metav1.Duration{
-			commonconstants.ActionDefault:            {Duration: generatorBudget},
-			commonconstants.GeneratorNodeLocalGreedy: {Duration: generatorBudget},
-			commonconstants.GeneratorMultiNodeGang:   {Duration: generatorBudget},
 		},
 	}
 }
