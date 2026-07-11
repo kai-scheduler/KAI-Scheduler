@@ -411,6 +411,58 @@ var _ = Describe("Queue Validator", func() {
 			Expect(err.Error()).To(ContainSubstring("GPU limit (4) is below the currently allocated 6"))
 		})
 
+		It("counts DRA GPU allocation (DeviceClass-named resources) when checking a limit reduction", func() {
+			validator = newValidator(EnforcementBlock)
+			oldQueue := queueWith(
+				&v2.QueueResources{GPU: v2.QueueResource{Quota: 4, Limit: 4}},
+				v1.ResourceList{"gpu.nvidia.com": resource.MustParse("2")}, nil)
+			newQueue := spec(&v2.QueueResources{GPU: v2.QueueResource{Quota: 4, Limit: 1}})
+
+			_, err := validator.ValidateUpdate(ctx, oldQueue, newQueue)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("GPU limit (1) is below the currently allocated 2"))
+		})
+
+		It("counts DRA GPU allocation when checking a quota reduction below the non-preemptible allocation", func() {
+			validator = newValidator(EnforcementBlock)
+			oldQueue := queueWith(
+				&v2.QueueResources{GPU: v2.QueueResource{Quota: 4, Limit: 4}},
+				nil, v1.ResourceList{"gpu.nvidia.com": resource.MustParse("2")})
+			newQueue := spec(&v2.QueueResources{GPU: v2.QueueResource{Quota: 1, Limit: 4}})
+
+			_, err := validator.ValidateUpdate(ctx, oldQueue, newQueue)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("GPU quota (1) is below the non-preemptible allocation (2)"))
+		})
+
+		It("counts MIG GPU allocation (as GPU-slice portions) when checking a limit reduction", func() {
+			validator = newValidator(EnforcementBlock)
+			oldQueue := queueWith(
+				&v2.QueueResources{GPU: v2.QueueResource{Quota: 4, Limit: 4}},
+				v1.ResourceList{"nvidia.com/mig-1g.10gb": resource.MustParse("2")}, nil)
+			newQueue := spec(&v2.QueueResources{GPU: v2.QueueResource{Quota: 4, Limit: 1}})
+
+			_, err := validator.ValidateUpdate(ctx, oldQueue, newQueue)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("GPU limit (1) is below the currently allocated 2"))
+		})
+
+		It("sums standard, DRA and MIG GPU allocation together when checking a limit reduction", func() {
+			validator = newValidator(EnforcementBlock)
+			oldQueue := queueWith(
+				&v2.QueueResources{GPU: v2.QueueResource{Quota: 6, Limit: 6}},
+				v1.ResourceList{
+					"nvidia.com/gpu":         resource.MustParse("1"),
+					"gpu.nvidia.com":         resource.MustParse("2"),
+					"nvidia.com/mig-1g.10gb": resource.MustParse("1"),
+				}, nil)
+			newQueue := spec(&v2.QueueResources{GPU: v2.QueueResource{Quota: 6, Limit: 3}})
+
+			_, err := validator.ValidateUpdate(ctx, oldQueue, newQueue)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("GPU limit (3) is below the currently allocated 4"))
+		})
+
 		It("warns but does not block on parent/child overcommit when quota validation is enabled", func() {
 			parent := &v2.Queue{
 				ObjectMeta: metav1.ObjectMeta{Name: "parent-queue"},

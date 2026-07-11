@@ -17,6 +17,7 @@ import (
 
 	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	commonresources "github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 )
 
 var queueValidatorLog = logf.Log.WithName("queue-validator")
@@ -228,18 +229,11 @@ func round4(value float64) float64 {
 	return math.Round(value*10000) / 10000
 }
 
-// gpuAllocated sums every GPU resource in the list, matching by the shared constants.GpuResource suffix
-// (e.g. "nvidia.com/gpu", "amd.com/gpu") the same way the scheduler's isGpuResource does. Summing rather
-// than returning the first match keeps the value deterministic when a queue's allocation spans multiple
-// GPU vendors, since Go map iteration order is randomized.
+// gpuAllocated returns the queue's total GPU allocation from the status ResourceList, matching the
+// scheduler's GPU accounting: standard extended GPUs, DRA GPU device counts and MIG profiles, summed
+// across every vendor. See commonresources.SumGpuAllocation.
 func gpuAllocated(list v1.ResourceList) float64 {
-	var total float64
-	for name, quantity := range list {
-		if strings.HasSuffix(string(name), constants.GpuResource) {
-			total += quantity.AsApproximateFloat64()
-		}
-	}
-	return total
+	return commonresources.SumGpuAllocation(list)
 }
 
 func cpuAllocated(list v1.ResourceList) float64 {
