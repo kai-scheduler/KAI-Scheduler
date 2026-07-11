@@ -5,6 +5,7 @@ package scale
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -329,18 +330,29 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 			})
 
 			It("schedules jobs with pending tasks in background", func(ctx context.Context) {
+				creationErrors := make(chan error, pendingBackgroundTasks)
 				var wg sync.WaitGroup
 				for range pendingBackgroundTasks {
 					wg.Add(1)
 					go func() {
 						defer wg.Done()
-						createJobObjectForKwok(
+						_, err := createJobObjectForKwok(
 							ctx, testCtx, noGPUQuotaQueue,
 							SingleGPURequirement, map[string]string{},
 						)
+						if err != nil {
+							creationErrors <- err
+						}
 					}()
 				}
 				wg.Wait()
+				close(creationErrors)
+
+				var creationError error
+				for err := range creationErrors {
+					creationError = errors.Join(creationError, err)
+				}
+				Expect(creationError).NotTo(HaveOccurred(), "Failed to create some pending background jobs")
 
 				wait.ForAtLeastNPodCreation(ctx, testCtx.ControllerClient, metav1.LabelSelector{
 					MatchLabels: map[string]string{
@@ -393,7 +405,7 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 						It("measure time for reclaim to fail on distributed job last pod", func(ctx context.Context) {
 							averageTimeToUnschedulable := measureUnschedulableDelayInSeconds(
 								ctx, testCtx, reclaimSingleGPUJobsQueue,
-								func(ctx context.Context, testCtx *testcontext.TestContext, queue *v2.Queue) (*v2alpha2.PodGroup, []*v1.Pod, error) {
+								func(ctx context.Context, testCtx *testcontext.TestContext, queue *v2.Queue) (*rd.JobResult, error) {
 									return createDistributedJobForKwok(
 										ctx, testCtx, queue,
 										v1.ResourceRequirements{
