@@ -27,6 +27,7 @@ helm -n monitoring upgrade -i pyroscope grafana/pyroscope
 kubectl patch nodepool managed-nodepool -p '{"spec":{"nodeCount": 0, "nodeTemplate": {"metadata": {"labels": {"run.ai/simulated-gpu-node-pool": "default"}}}}}' --type merge
 
 kubectl apply -f "${SCALE_DIR}/scheduler-service-monitor.yaml"
+kubectl apply -f "${SCALE_DIR}/queue-controller-service-monitor.yaml"
 kubectl apply -f "${SCALE_DIR}/binder.yaml"
 
 kubectl delete stage pod-complete --ignore-not-found

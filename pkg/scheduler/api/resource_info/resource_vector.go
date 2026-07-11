@@ -258,10 +258,15 @@ func (r *ResourceRequirements) FromVector(vec ResourceVector, indexMap *Resource
 	}
 }
 
-func (v ResourceVector) SetMax(other ResourceVector) {
-	for i := range min(len(v), len(other)) {
-		if other[i] > v[i] {
-			v[i] = other[i]
+func (v *ResourceVector) SetMax(other ResourceVector) {
+	if len(*v) < len(other) {
+		extended := make(ResourceVector, len(other))
+		copy(extended, *v)
+		*v = extended
+	}
+	for i := range other {
+		if other[i] > (*v)[i] {
+			(*v)[i] = other[i]
 		}
 	}
 }
