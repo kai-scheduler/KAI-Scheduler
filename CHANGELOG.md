@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Added a Karta fallback podgrouper plugin that lets workload owners define gang-scheduling behavior declaratively via [Karta](https://github.com/run-ai/karta) definitions, without writing a native KAI plugin. The plugin translates a Karta `gangScheduling.podGroup` instruction into a KAI PodGroup with optional SubGroups and topology constraints; native KAI plugins take precedence, and the alpha `podGroups` instruction format remains supported for compatibility. [#1877](https://github.com/kai-scheduler/KAI-Scheduler/pull/1877) [davidLif](https://github.com/davidLif)
 - Publish FIPS-enabled image variants (`<version>-fips`) for every release, built with the Go toolchain's native FIPS 140-3 mode (`GOFIPS140`), and added a `global.fips` Helm value (default `false`) that appends `-fips` to every resolved image tag ([guide](docs/fips/README.md)). [#1867](https://github.com/kai-scheduler/KAI-Scheduler/issues/1867)
 - Added `global.resourceReservation.createNamespace` Helm value (default `true`) to allow disabling creation of the resource-reservation namespace, for embedding KAI in a parent chart that creates the namespace itself.
 - Added `global.resourceReservation.createServiceAccount` Helm value (default `true`) to allow disabling creation of the resource-reservation ServiceAccount, for embedding KAI in a parent chart that creates the ServiceAccount itself.
