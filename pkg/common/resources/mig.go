@@ -12,31 +12,29 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
+// migResourcePattern captures the GPU slice count and memory size of a MIG resource name.
+var migResourcePattern = regexp.MustCompile(`^nvidia.com/mig-(\d+)g\.(\d+)gb$`)
+
 // IsMigResource reports whether the given resource name is an NVIDIA MIG device
 // resource (e.g. "nvidia.com/mig-3g.20gb").
 func IsMigResource(name string) bool {
 	return strings.HasPrefix(name, constants.NvidiaMigResourcePrefix)
 }
 
-// ExtractGpuAndMemoryFromMigResourceName Returns memory in GB
-func ExtractGpuAndMemoryFromMigResourceName(migResourceName string) (int, int, error) {
-	return extractGpuAndMemoryFrom(`^nvidia.com/mig-(\d+)g\.(\d+)gb$`, migResourceName)
-}
-
-func extractGpuAndMemoryFrom(searchInPattern string, migString string) (int, int, error) {
-	matches := regexp.MustCompile(searchInPattern).FindStringSubmatch(migString)
+// migGpuSlices returns the GPU slice count encoded in a MIG resource name (e.g. 3 for
+// "nvidia.com/mig-3g.20gb"). Both numeric fields must parse, matching the scheduler's MIG name parsing, so
+// the queue webhook does not depend on scheduler packages.
+func migGpuSlices(name string) (int, error) {
+	matches := migResourcePattern.FindStringSubmatch(name)
 	if len(matches) < 3 {
-		return -1, -1, fmt.Errorf("failed to extract gpu/memory from %v", migString)
+		return 0, fmt.Errorf("not a MIG resource name: %v", name)
 	}
-
-	gpu, err := strconv.Atoi(matches[1])
+	slices, err := strconv.Atoi(matches[1])
 	if err != nil {
-		return -1, -1, fmt.Errorf("failed parsing %v to integer", matches[2])
+		return 0, err
 	}
-	mem, err := strconv.Atoi(matches[2])
-	if err != nil {
-		return -1, -1, fmt.Errorf("failed parsing %v to integer", matches[2])
+	if _, err := strconv.Atoi(matches[2]); err != nil {
+		return 0, err
 	}
-
-	return gpu, mem, nil
+	return slices, nil
 }

@@ -6,9 +6,9 @@ package metrics
 import (
 	"math"
 	"sort"
+	"strings"
 
 	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
-	commonresources "github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto" // auto-registry collectors in default registry
@@ -25,6 +25,8 @@ const (
 	queueNameLabel         = "queue_name"
 	queueMetadataNameLabel = "queue_metadata_name"
 	queueDisplayNameLabel  = "queue_display_name"
+
+	gpuResourceNameSuffix = "/gpu"
 )
 
 var (
@@ -218,7 +220,12 @@ func getMemoryQuotaBytes(queueSpecResources *v2.QueueResources) float64 {
 }
 
 func getAllocatedGpus(queueStatus v2.QueueStatus) float64 {
-	return math.Round(commonresources.SumGpuAllocation(queueStatus.Allocated)*10000) / 10000
+	for resourceName, quantity := range queueStatus.Allocated {
+		if strings.HasSuffix(string(resourceName), gpuResourceNameSuffix) {
+			return roundResourceQuantity(quantity)
+		}
+	}
+	return 0
 }
 
 func getAllocatedCpuCores(queueStatus v2.QueueStatus) float64 {

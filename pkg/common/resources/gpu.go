@@ -11,30 +11,20 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
-// SumGpuAllocation returns the total number of GPUs represented by a ResourceList, matching how KAI
-// records GPU allocation in a queue's status:
-//   - extended GPUs: any "*gpu"-suffixed resource (e.g. nvidia.com/gpu, amd.com/gpu), including
-//     fractional GPU-sharing values, summed across vendors;
-//   - DRA GPUs: device counts written under the GPU DeviceClass name (e.g. gpu.nvidia.com). DeviceClass
-//     names are Kubernetes object names and never contain "/", which distinguishes them from ordinary
-//     domain-qualified extended resources;
-//   - MIG: nvidia.com/mig-<slices>g.<mem>gb, counted as <slices> GPU portions each, matching the
-//     scheduler's MIG accounting.
-//
-// Domain-qualified extended resources that merely contain "gpu" in their name but are not a GPU count
-// (e.g. nvidia.com/gpu.memory, run.ai/gpu.memory, volcano.sh/vgpu-memory) are not counted: they carry a
-// "/" and match neither the "gpu" suffix nor the slash-free DeviceClass rule.
+// SumGpuAllocation returns the total GPU count in a queue-status ResourceList: "*gpu"-suffixed extended
+// resources across vendors (including GPU-sharing fractions), MIG profiles as GPU slices, and DRA device
+// counts under a slash-free GPU DeviceClass name (which excludes "*gpu.memory" and similar).
 func SumGpuAllocation(list v1.ResourceList) float64 {
 	var total float64
 	for name, quantity := range list {
 		n := string(name)
 		switch {
 		case IsMigResource(n):
-			gpuPortion, _, err := ExtractGpuAndMemoryFromMigResourceName(n)
+			slices, err := migGpuSlices(n)
 			if err != nil {
 				continue
 			}
-			total += float64(gpuPortion) * quantity.AsApproximateFloat64()
+			total += float64(slices) * quantity.AsApproximateFloat64()
 		case strings.HasSuffix(n, constants.GpuResource):
 			total += quantity.AsApproximateFloat64()
 		case !strings.Contains(n, "/") && IsGPUDeviceClass(n):

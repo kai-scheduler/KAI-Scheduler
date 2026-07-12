@@ -19,7 +19,7 @@ type Options struct {
 	EnableLeaderElection         bool
 	EnableWebhook                bool
 	SkipControllerNameValidation bool   // Set true for env tests
-	EnableQuotaValidation        bool   // Enable parent/child quota-relationship warnings
+	EnableQuotaValidation        bool   // Enable validation warnings for queue quota relationships
 	EnforceQuotaViolation        string // Allocation-reduction enforcement mode: None, Warning, or Block
 
 	MetricsAddress                 string

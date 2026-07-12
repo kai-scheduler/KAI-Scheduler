@@ -84,6 +84,11 @@ func TestSumGpuAllocation(t *testing.T) {
 			want: 0,
 		},
 		{
+			name: "MIG name with an out-of-range memory field is skipped",
+			list: v1.ResourceList{"nvidia.com/mig-1g.99999999999999999999gb": resource.MustParse("1")},
+			want: 0,
+		},
+		{
 			name: "Volcano vGPU memory is not counted as GPU",
 			list: v1.ResourceList{"volcano.sh/vgpu-memory": resource.MustParse("40960")},
 			want: 0,

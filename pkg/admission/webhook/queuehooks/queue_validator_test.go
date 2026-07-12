@@ -52,7 +52,7 @@ var _ = Describe("Queue Validator", func() {
 	Context("ValidateCreate", func() {
 		It("should reject queue without resources", func() {
 			client := fake.NewClientBuilder().WithScheme(scheme).Build()
-			validator = &queueValidator{kubeClient: client, mode: EnforcementNone}
+			validator = &queueValidator{kubeClient: client, quotaViolationMode: EnforcementNone}
 
 			queue := &v2.Queue{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-queue"},
@@ -67,7 +67,7 @@ var _ = Describe("Queue Validator", func() {
 
 		It("should accept queue with resources", func() {
 			client := fake.NewClientBuilder().WithScheme(scheme).Build()
-			validator = &queueValidator{kubeClient: client, mode: EnforcementNone}
+			validator = &queueValidator{kubeClient: client, quotaViolationMode: EnforcementNone}
 
 			queue := &v2.Queue{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-queue"},
@@ -89,7 +89,7 @@ var _ = Describe("Queue Validator", func() {
 	Context("ValidateDelete", func() {
 		It("should reject deletion of queue with children", func() {
 			client := fake.NewClientBuilder().WithScheme(scheme).Build()
-			validator = &queueValidator{kubeClient: client, mode: EnforcementNone}
+			validator = &queueValidator{kubeClient: client, quotaViolationMode: EnforcementNone}
 
 			queue := &v2.Queue{
 				ObjectMeta: metav1.ObjectMeta{Name: "parent-queue"},
@@ -106,7 +106,7 @@ var _ = Describe("Queue Validator", func() {
 
 		It("should allow deletion of queue without children", func() {
 			client := fake.NewClientBuilder().WithScheme(scheme).Build()
-			validator = &queueValidator{kubeClient: client, mode: EnforcementNone}
+			validator = &queueValidator{kubeClient: client, quotaViolationMode: EnforcementNone}
 
 			queue := &v2.Queue{
 				ObjectMeta: metav1.ObjectMeta{Name: "leaf-queue"},
@@ -122,9 +122,9 @@ var _ = Describe("Queue Validator", func() {
 	})
 
 	Context("ValidateUpdate allocation-reduction checks", func() {
-		newValidator := func(mode EnforcementMode) *queueValidator {
+		newValidator := func(quotaViolationMode EnforcementMode) *queueValidator {
 			c := fake.NewClientBuilder().WithScheme(scheme).Build()
-			return &queueValidator{kubeClient: c, mode: mode}
+			return &queueValidator{kubeClient: c, quotaViolationMode: quotaViolationMode}
 		}
 
 		// queueWith builds a queue carrying both a spec (old resources) and a status (last allocation).
@@ -157,8 +157,8 @@ var _ = Describe("Queue Validator", func() {
 
 		It("warns instead of rejecting in Warning mode", func() {
 			validator = &queueValidator{
-				kubeClient: fake.NewClientBuilder().WithScheme(scheme).Build(),
-				mode:       EnforcementWarning,
+				kubeClient:         fake.NewClientBuilder().WithScheme(scheme).Build(),
+				quotaViolationMode: EnforcementWarning,
 			}
 			oldQueue := queueWith(
 				&v2.QueueResources{CPU: v2.QueueResource{Quota: 2000, Limit: 4000}},
@@ -171,7 +171,7 @@ var _ = Describe("Queue Validator", func() {
 		})
 
 		It("neither warns nor blocks when no validation flag is set", func() {
-			validator = &queueValidator{kubeClient: fake.NewClientBuilder().WithScheme(scheme).Build(), mode: EnforcementNone}
+			validator = &queueValidator{kubeClient: fake.NewClientBuilder().WithScheme(scheme).Build(), quotaViolationMode: EnforcementNone}
 			oldQueue := queueWith(
 				&v2.QueueResources{CPU: v2.QueueResource{Quota: 2000, Limit: 4000}},
 				v1.ResourceList{v1.ResourceCPU: resource.MustParse("750m")}, nil)
@@ -481,7 +481,7 @@ var _ = Describe("Queue Validator", func() {
 				Spec:       v2.QueueSpec{Resources: &v2.QueueResources{CPU: v2.QueueResource{Quota: 1000}}},
 			}
 			c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(parent).Build()
-			validator = &queueValidator{kubeClient: c, enableQuotaValidation: true, mode: EnforcementBlock}
+			validator = &queueValidator{kubeClient: c, enableQuotaValidation: true, quotaViolationMode: EnforcementBlock}
 
 			child := &v2.Queue{
 				ObjectMeta: metav1.ObjectMeta{Name: "child-queue"},
@@ -500,7 +500,7 @@ var _ = Describe("Queue Validator", func() {
 			validator = &queueValidator{
 				kubeClient:            fake.NewClientBuilder().WithScheme(scheme).Build(),
 				enableQuotaValidation: true,
-				mode:                  EnforcementNone,
+				quotaViolationMode:    EnforcementNone,
 			}
 			oldQueue := queueWith(
 				&v2.QueueResources{CPU: v2.QueueResource{Quota: 2000, Limit: 4000}},
@@ -512,13 +512,29 @@ var _ = Describe("Queue Validator", func() {
 			Expect(warnings).To(BeEmpty())
 		})
 
+		DescribeTable("normalizes an unset or unknown mode to None",
+			func(mode EnforcementMode) {
+				v := NewQueueValidator(fake.NewClientBuilder().WithScheme(scheme).Build(), false, mode)
+				oldQueue := queueWith(
+					&v2.QueueResources{CPU: v2.QueueResource{Quota: 2000, Limit: 4000}},
+					v1.ResourceList{v1.ResourceCPU: resource.MustParse("750m")}, nil)
+				newQueue := spec(&v2.QueueResources{CPU: v2.QueueResource{Quota: 2000, Limit: 500}})
+
+				warnings, err := v.ValidateUpdate(ctx, oldQueue, newQueue)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(warnings).To(BeEmpty())
+			},
+			Entry("zero value", EnforcementMode("")),
+			Entry("unknown value", EnforcementMode("Bogus")),
+		)
+
 		It("does not run parent/child validation under enforcement mode alone", func() {
 			parent := &v2.Queue{
 				ObjectMeta: metav1.ObjectMeta{Name: "parent-queue"},
 				Spec:       v2.QueueSpec{Resources: &v2.QueueResources{CPU: v2.QueueResource{Quota: 1000}}},
 			}
 			c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(parent).Build()
-			validator = &queueValidator{kubeClient: c, enableQuotaValidation: false, mode: EnforcementBlock}
+			validator = &queueValidator{kubeClient: c, enableQuotaValidation: false, quotaViolationMode: EnforcementBlock}
 
 			child := &v2.Queue{
 				ObjectMeta: metav1.ObjectMeta{Name: "child-queue"},

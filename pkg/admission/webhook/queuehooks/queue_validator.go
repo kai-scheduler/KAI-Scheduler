@@ -58,11 +58,6 @@ func ParseEnforcementMode(s string) (EnforcementMode, error) {
 	}
 }
 
-// enabled reports whether the mode enforces allocation-reduction checks (Warning or Block).
-func (m EnforcementMode) enabled() bool {
-	return m == EnforcementWarning || m == EnforcementBlock
-}
-
 type QueueValidator interface {
 	ValidateCreate(ctx context.Context, obj *v2.Queue) (warnings admission.Warnings, err error)
 	ValidateUpdate(ctx context.Context, oldObj, newObj *v2.Queue) (warnings admission.Warnings, err error)
@@ -72,18 +67,20 @@ type QueueValidator interface {
 type queueValidator struct {
 	kubeClient            client.Client
 	enableQuotaValidation bool
-	mode                  EnforcementMode
+	quotaViolationMode    EnforcementMode
 }
 
-// NewQueueValidator builds a QueueValidator. enableQuotaValidation turns on non-blocking parent/child
-// quota-relationship warnings. mode governs enforcement of updates that reduce a limit below the current
-// allocation or a quota below the non-preemptible allocation: None skips the check, Warning reports it as
-// an admission warning, and Block rejects the update.
-func NewQueueValidator(kubeClient client.Client, enableQuotaValidation bool, mode EnforcementMode) QueueValidator {
+// NewQueueValidator builds a QueueValidator. enableQuotaValidation turns on the non-blocking parent/child
+// quota-relationship warnings; quotaViolationMode governs the allocation-reduction check. Any mode other than
+// Warning or Block, including the zero value, is normalized to None so that the check stays off by default.
+func NewQueueValidator(kubeClient client.Client, enableQuotaValidation bool, quotaViolationMode EnforcementMode) QueueValidator {
+	if quotaViolationMode != EnforcementWarning && quotaViolationMode != EnforcementBlock {
+		quotaViolationMode = EnforcementNone
+	}
 	return &queueValidator{
 		kubeClient:            kubeClient,
 		enableQuotaValidation: enableQuotaValidation,
-		mode:                  mode,
+		quotaViolationMode:    quotaViolationMode,
 	}
 }
 
@@ -110,12 +107,9 @@ func (v *queueValidator) ValidateUpdate(ctx context.Context, oldQueue, newQueue 
 
 	var warnings admission.Warnings
 
-	// Enforce updates that reduce a limit below what the queue already has allocated, or a quota below its
-	// non-preemptible allocation (which the scheduler cannot reclaim), governed by --enforce-quota-violation.
-	// Block rejects such an update; Warning surfaces it as an admission warning.
-	if v.mode.enabled() {
+	if v.quotaViolationMode != EnforcementNone {
 		if violations := allocationReductionViolations(oldQueue, newQueue); len(violations) > 0 {
-			if v.mode == EnforcementBlock {
+			if v.quotaViolationMode == EnforcementBlock {
 				return append(warnings, violations...), fmt.Errorf("queue %s update rejected: %s",
 					newQueue.Name, strings.Join(violations, "; "))
 			}
@@ -123,22 +117,35 @@ func (v *queueValidator) ValidateUpdate(ctx context.Context, oldQueue, newQueue 
 		}
 	}
 
-	// Opt-in parent/child quota-relationship warnings, governed by --enable-quota-validation.
 	if v.enableQuotaValidation {
-		if newQueue.Spec.ParentQueue != "" {
-			parentWarnings, err := v.validateParentChildQuota(ctx, newQueue)
-			if err != nil {
-				return append(warnings, parentWarnings...), err
-			}
-			warnings = append(warnings, parentWarnings...)
+		quotaWarnings, err := v.parentChildQuotaWarnings(ctx, oldQueue, newQueue)
+		warnings = append(warnings, quotaWarnings...)
+		if err != nil {
+			return warnings, err
 		}
+	}
 
-		if len(oldQueue.Status.ChildQueues) > 0 {
-			childWarnings, err := v.validateChildrenQuotaSum(ctx, newQueue)
-			if err != nil {
-				return append(warnings, childWarnings...), err
-			}
-			warnings = append(warnings, childWarnings...)
+	return warnings, nil
+}
+
+func (v *queueValidator) parentChildQuotaWarnings(
+	ctx context.Context, oldQueue, newQueue *v2.Queue,
+) (admission.Warnings, error) {
+	var warnings admission.Warnings
+
+	if newQueue.Spec.ParentQueue != "" {
+		parentWarnings, err := v.validateParentChildQuota(ctx, newQueue)
+		warnings = append(warnings, parentWarnings...)
+		if err != nil {
+			return warnings, err
+		}
+	}
+
+	if len(oldQueue.Status.ChildQueues) > 0 {
+		childWarnings, err := v.validateChildrenQuotaSum(ctx, newQueue)
+		warnings = append(warnings, childWarnings...)
+		if err != nil {
+			return warnings, err
 		}
 	}
 
@@ -155,14 +162,26 @@ func (v *queueValidator) ValidateDelete(ctx context.Context, queue *v2.Queue) (a
 	return nil, nil
 }
 
-// allocationReductionViolations reports where the update lowers a resource limit below the amount already
-// allocated to the queue, or lowers a quota below the amount allocated to non-preemptible workloads (which the
-// scheduler cannot reclaim). Only genuine reductions are flagged: an unchanged or increased value never trips
-// the check, so edits to unrelated fields on an already-over-limit queue are left alone. Allocation is read
-// from the queue's own status (last value persisted by the controller); a missing entry counts as zero, so
-// freshly created or unreconciled queues are never flagged. Spec values (millicpu, megabytes, GPU fraction) are
-// converted into the status units (cores, bytes, GPU fraction) and both sides are rounded to the queue-metrics
-// precision before comparison, so a value set equal to the current allocation is not tripped by float rounding.
+const (
+	limitViolationFormat = "%s limit (%s%s) is below the currently allocated %s%s"
+	quotaViolationFormat = "%s quota (%s%s) is below the non-preemptible allocation (%s%s)"
+)
+
+// allocationCheck is a single bound compared against the allocation it must not fall below. factor converts
+// the spec value (millicpu, megabytes) into the status unit (cores, bytes).
+type allocationCheck struct {
+	resource  string
+	unit      string
+	format    string
+	factor    float64
+	oldValue  float64
+	newValue  float64
+	allocated float64
+}
+
+// allocationReductionViolations reports updates that lower a limit below the queue's current allocation, or a
+// quota below its non-preemptible allocation. Only genuine reductions are flagged, and both sides are rounded
+// to the queue-metrics precision so a value set equal to the allocation is not tripped by float rounding.
 func allocationReductionViolations(oldQueue, newQueue *v2.Queue) admission.Warnings {
 	newSpec := newQueue.Spec.Resources
 	oldSpec := oldQueue.Spec.Resources
@@ -171,50 +190,38 @@ func allocationReductionViolations(oldQueue, newQueue *v2.Queue) admission.Warni
 	}
 	status := oldQueue.Status
 
-	perResource := []struct {
-		name       string
-		unit       string
-		factor     float64
-		newLimit   float64
-		oldLimit   float64
-		newQuota   float64
-		oldQuota   float64
-		allocated  float64
-		nonPreempt float64
-	}{
-		{"GPU", "", 1, newSpec.GPU.Limit, oldSpec.GPU.Limit, newSpec.GPU.Quota, oldSpec.GPU.Quota,
-			gpuAllocated(status.Allocated), gpuAllocated(status.AllocatedNonPreemptible)},
-		{"CPU", " cores", 1.0 / milliCPUToCPU, newSpec.CPU.Limit, oldSpec.CPU.Limit, newSpec.CPU.Quota, oldSpec.CPU.Quota,
-			cpuAllocated(status.Allocated), cpuAllocated(status.AllocatedNonPreemptible)},
-		{"Memory", " bytes", megabytesToBytes, newSpec.Memory.Limit, oldSpec.Memory.Limit, newSpec.Memory.Quota, oldSpec.Memory.Quota,
-			memoryAllocated(status.Allocated), memoryAllocated(status.AllocatedNonPreemptible)},
+	checks := []allocationCheck{
+		{"GPU", "", limitViolationFormat, 1,
+			oldSpec.GPU.Limit, newSpec.GPU.Limit, gpuAllocated(status.Allocated)},
+		{"GPU", "", quotaViolationFormat, 1,
+			oldSpec.GPU.Quota, newSpec.GPU.Quota, gpuAllocated(status.AllocatedNonPreemptible)},
+		{"CPU", " cores", limitViolationFormat, 1.0 / milliCPUToCPU,
+			oldSpec.CPU.Limit, newSpec.CPU.Limit, cpuAllocated(status.Allocated)},
+		{"CPU", " cores", quotaViolationFormat, 1.0 / milliCPUToCPU,
+			oldSpec.CPU.Quota, newSpec.CPU.Quota, cpuAllocated(status.AllocatedNonPreemptible)},
+		{"Memory", " bytes", limitViolationFormat, megabytesToBytes,
+			oldSpec.Memory.Limit, newSpec.Memory.Limit, memoryAllocated(status.Allocated)},
+		{"Memory", " bytes", quotaViolationFormat, megabytesToBytes,
+			oldSpec.Memory.Quota, newSpec.Memory.Quota, memoryAllocated(status.AllocatedNonPreemptible)},
 	}
 
 	var violations admission.Warnings
-	for _, r := range perResource {
-		if isReduction(r.oldLimit, r.newLimit) {
-			newLimit, allocated := round4(r.newLimit*r.factor), round4(r.allocated)
-			if newLimit < allocated {
-				violations = append(violations, fmt.Sprintf("%s limit (%s%s) is below the currently allocated %s%s",
-					r.name, fmtNum(newLimit), r.unit, fmtNum(allocated), r.unit))
-			}
+	for _, c := range checks {
+		if !isReduction(c.oldValue, c.newValue) {
+			continue
 		}
-		if isReduction(r.oldQuota, r.newQuota) {
-			newQuota, nonPreempt := round4(r.newQuota*r.factor), round4(r.nonPreempt)
-			if newQuota < nonPreempt {
-				violations = append(violations, fmt.Sprintf("%s quota (%s%s) is below the non-preemptible allocation (%s%s)",
-					r.name, fmtNum(newQuota), r.unit, fmtNum(nonPreempt), r.unit))
-			}
+		newValue, allocated := round4(c.newValue*c.factor), round4(c.allocated)
+		if newValue < allocated {
+			violations = append(violations, fmt.Sprintf(c.format, c.resource,
+				fmtNum(newValue), c.unit, fmtNum(allocated), c.unit))
 		}
 	}
 	return violations
 }
 
-// isReduction reports whether newValue lowers a resource bound relative to oldValue. Only -1
-// (constants.UnlimitedResourceQuantity) is unbounded: setting newValue to -1 removes the bound and is never
-// a reduction, while an old value of -1 makes any finite new bound a reduction. A value of 0 is a real bound
-// (a hard zero cap / zero quota, matching the scheduler), so lowering a positive bound to 0 is a reduction;
-// values below -1 are not unbounded and are compared as ordinary bounds.
+// isReduction reports whether newValue lowers a resource bound. Only -1
+// (constants.UnlimitedResourceQuantity) is unbounded: a new -1 is never a reduction, an old -1 makes any
+// finite new value one, and 0 is a real bound (so lowering a positive bound to 0 is a reduction).
 func isReduction(oldValue, newValue float64) bool {
 	if newValue == constants.UnlimitedResourceQuantity {
 		return false
@@ -229,9 +236,6 @@ func round4(value float64) float64 {
 	return math.Round(value*10000) / 10000
 }
 
-// gpuAllocated returns the queue's total GPU allocation from the status ResourceList, matching the
-// scheduler's GPU accounting: standard extended GPUs, DRA GPU device counts and MIG profiles, summed
-// across every vendor. See commonresources.SumGpuAllocation.
 func gpuAllocated(list v1.ResourceList) float64 {
 	return commonresources.SumGpuAllocation(list)
 }
