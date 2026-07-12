@@ -19,6 +19,19 @@ metadata:
 ```
 
 - Value: a non-negative Go duration (`"30s"`, `"5m"`, `"1h"`), matching the `metav1.Duration` format of the existing `preemptMinRuntime`/`reclaimMinRuntime` Queue fields. Missing → 0 (current behavior). Invalid values (including unit-less numbers) fall back to 0 with a log warning.
+
+On the PodGroup itself, a spec field — the podgrouper populates it from the label; workloads that create PodGroups directly set it explicitly (spec wins over label):
+
+```go
+type PodGroupSpec struct {
+    // PreemptionDelay is the minimal time the podgroup must be pending
+    // before it may trigger eviction of other workloads.
+    // +optional
+    PreemptionDelay *metav1.Duration `json:"preemptionDelay,omitempty"`
+}
+```
+
+The scheduler reads only the spec field, keeping a single source at scheduling time (same as `Preemptibility` and `PriorityClassName`).
 - Aggressor-side only: the delay restricts what the pending workload may do *to others*. It says nothing about the workload's own evictability — that remains `Preemptibility` (victim-side), and the two are orthogonal.
 
 ## Semantics
