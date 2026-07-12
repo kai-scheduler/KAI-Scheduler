@@ -1,4 +1,16 @@
 {{/*
+Resolves a component image tag: explicit tag, then global.tag, then the chart
+version. When global.fips is set, appends "-fips" to whatever tag resolves so
+the FIPS image variants are used. Usage:
+  {{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.<svc>.image.tag) }}
+*/}}
+{{- define "kai-scheduler.imageTag" -}}
+{{- $tag := .tag | default .root.Values.global.tag | default .root.Chart.AppVersion -}}
+{{- if .root.Values.global.fips -}}{{- $tag = printf "%s-fips" $tag -}}{{- end -}}
+{{- $tag -}}
+{{- end -}}
+
+{{/*
 Renders the kai-config Config CR. Used by the kai-config-deployer hook
 ConfigMap so the operator's input config can be applied via kubectl
 out-of-band of the Helm release. See deployments/kai-scheduler/templates/hooks/post/kai-config-deployer/.
@@ -65,7 +77,7 @@ spec:
       image:
         name: {{ .Values.binder.image.name }}
         repository: {{ .Values.global.registry }}
-        tag: {{ .Values.binder.image.tag | default .Values.global.tag | default .Chart.AppVersion }}
+        tag: {{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.binder.image.tag) }}
         pullPolicy: {{ .Values.binder.image.pullPolicy | default .Values.global.imagePullPolicy }}
       {{- if .Values.binder.resources }}
       resources:
@@ -92,7 +104,7 @@ spec:
       image:
         name: {{ .Values.binder.resourceReservationImage.name }}
         repository: {{ .Values.global.registry }}
-        tag: {{ .Values.binder.resourceReservationImage.tag | default .Values.global.tag | default .Chart.AppVersion }}
+        tag: {{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.binder.resourceReservationImage.tag) }}
         pullPolicy: {{ .Values.binder.resourceReservationImage.pullPolicy | default .Values.global.imagePullPolicy }}
       {{- if .Values.binder.resourceReservationPodResources }}
       podResources:
@@ -112,7 +124,7 @@ spec:
       image:
         name: {{ .Values.podgrouper.image.name }}
         repository: {{ .Values.global.registry }}
-        tag: {{ .Values.podgrouper.image.tag | default .Values.global.tag | default .Chart.AppVersion }}
+        tag: {{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.podgrouper.image.tag) }}
         pullPolicy: {{ .Values.podgrouper.image.pullPolicy | default .Values.global.imagePullPolicy }}
       {{- if .Values.podgrouper.resources }}
       resources:
@@ -129,7 +141,7 @@ spec:
       image:
         name: {{ .Values.podgroupcontroller.image.name }}
         repository: {{ .Values.global.registry }}
-        tag: {{ .Values.podgroupcontroller.image.tag | default .Values.global.tag | default .Chart.AppVersion }}
+        tag: {{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.podgroupcontroller.image.tag) }}
         pullPolicy: {{ .Values.podgroupcontroller.image.pullPolicy | default .Values.global.imagePullPolicy }}
       {{- if .Values.podgroupcontroller.resources }}
       resources:
@@ -146,7 +158,7 @@ spec:
       image:
         name: {{ .Values.queuecontroller.image.name }}
         repository: {{ .Values.global.registry }}
-        tag: {{ .Values.queuecontroller.image.tag | default .Values.global.tag | default .Chart.AppVersion }}
+        tag: {{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.queuecontroller.image.tag) }}
         pullPolicy: {{ .Values.queuecontroller.image.pullPolicy | default .Values.global.imagePullPolicy }}
       {{- if .Values.queuecontroller.resources }}
       resources:
@@ -163,7 +175,7 @@ spec:
       image:
         name: {{ .Values.admission.image.name }}
         repository: {{ .Values.global.registry }}
-        tag: {{ .Values.admission.image.tag | default .Values.global.tag | default .Chart.AppVersion }}
+        tag: {{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.admission.image.tag) }}
         pullPolicy: {{ .Values.admission.image.pullPolicy | default .Values.global.imagePullPolicy }}
       {{- if .Values.admission.resources }}
       resources:
@@ -200,7 +212,7 @@ spec:
       image:
         name: {{ .Values.nodescaleadjuster.image.name }}
         repository: {{ .Values.global.registry }}
-        tag: {{ .Values.nodescaleadjuster.image.tag | default .Values.global.tag | default .Chart.AppVersion }}
+        tag: {{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.nodescaleadjuster.image.tag) }}
         pullPolicy: {{ .Values.nodescaleadjuster.image.pullPolicy | default .Values.global.imagePullPolicy }}
       {{- if .Values.nodescaleadjuster.resources }}
       resources:
@@ -215,7 +227,7 @@ spec:
       scalingPodImage:
         name: {{ .Values.nodescaleadjuster.scalingPodImage.name }}
         repository: {{ .Values.global.registry }}
-        tag: {{ .Values.nodescaleadjuster.scalingPodImage.tag | default .Values.global.tag | default .Chart.AppVersion }}
+        tag: {{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.nodescaleadjuster.scalingPodImage.tag) }}
         pullPolicy: {{ .Values.nodescaleadjuster.scalingPodImage.pullPolicy | default .Values.global.imagePullPolicy }}
 
   scheduler:
@@ -224,7 +236,7 @@ spec:
       image:
         name: {{ .Values.scheduler.image.name }}
         repository: {{ .Values.global.registry }}
-        tag: {{ .Values.scheduler.image.tag | default .Values.global.tag | default .Chart.AppVersion }}
+        tag: {{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.scheduler.image.tag) }}
         pullPolicy: {{ .Values.scheduler.image.pullPolicy | default .Values.global.imagePullPolicy }}
       {{- if .Values.scheduler.resources }}
       resources:
@@ -255,7 +267,7 @@ spec:
       image:
         name: {{ .Values.numaPlacementExporter.image.name }}
         repository: {{ .Values.global.registry }}
-        tag: {{ .Values.numaPlacementExporter.image.tag | default .Values.global.tag | default .Chart.AppVersion }}
+        tag: {{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.numaPlacementExporter.image.tag) }}
         pullPolicy: {{ .Values.numaPlacementExporter.image.pullPolicy | default .Values.global.imagePullPolicy }}
       {{- if .Values.numaPlacementExporter.resources }}
       resources:
