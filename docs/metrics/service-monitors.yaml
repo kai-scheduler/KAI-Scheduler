@@ -9,7 +9,7 @@ metadata:
   labels:
     accounting: kai-scheduler
 spec:
-  jobLabel: binder
+  jobLabel: app
   namespaceSelector:
     matchNames:
       - kai-scheduler
@@ -23,18 +23,20 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: scheduler
+  name: scheduler-default
   namespace: kai-scheduler
   labels:
     accounting: kai-scheduler
 spec:
-  jobLabel: scheduler
+  jobLabel: app
   namespaceSelector:
     matchNames:
       - kai-scheduler
   selector:
     matchLabels:
-      app: scheduler
+      # The default SchedulingShard is named "default", and the scheduler
+      # service name is "<schedulerName>-<shardName>".
+      app: kai-scheduler-default
   endpoints:
     - port: http-metrics
       bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
@@ -47,7 +49,7 @@ metadata:
   labels:
     accounting: kai-scheduler
 spec:
-  jobLabel: queue-controller
+  jobLabel: app
   namespaceSelector:
     matchNames:
       - kai-scheduler
@@ -65,7 +67,7 @@ metadata:
   labels:
     accounting: kai-scheduler
 spec:
-  jobLabel: dcgm-exporter
+  jobLabel: app
   namespaceSelector:
     matchNames:
       - gpu-operator
@@ -83,7 +85,7 @@ metadata:
   labels:
     accounting: kai-scheduler
 spec:
-  jobLabel: kube-state-metrics
+  jobLabel: app.kubernetes.io/name
   namespaceSelector:
     matchNames:
       - monitoring

@@ -1,0 +1,20 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: queue-controller
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  jobLabel: queue-controller
+  namespaceSelector:
+    matchNames:
+      - kai-scheduler
+  selector:
+    matchLabels:
+      app: queue-controller
+  endpoints:
+    - port: metrics
