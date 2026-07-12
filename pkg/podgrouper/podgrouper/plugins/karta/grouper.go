@@ -194,6 +194,9 @@ func (g *KartaGrouper) getPodGroupMetadataAlpha(
 		return nil, err
 	}
 	podGroupMetadata.Name = g.calcPodGroupName(topOwner, groupingKeys)
+	if err := validatePodGroupNameFromGroupingKeys(podGroupMetadata.Name, groupingKeys); err != nil {
+		return nil, err
+	}
 
 	minAvailable, err := instructions.CalculateSubtreeScale(ctx, effectiveMemberDefinition.EffectiveComponent, podComponentInstance, componentFactory, g.kartaSummary)
 	if err != nil {

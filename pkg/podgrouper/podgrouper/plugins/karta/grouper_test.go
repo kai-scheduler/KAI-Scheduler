@@ -242,6 +242,40 @@ func TestGetPodGroupMetadata_AlphaPodGroups(t *testing.T) {
 	assert.Equal(t, fmt.Sprintf("pg-%s-%s", pyflow.GetUID(), workerPod.Labels["job-name"]), metadata.Name)
 }
 
+func TestGetPodGroupMetadata_AlphaPodGroupsFailsWhenGroupingKeysProduceInvalidName(t *testing.T) {
+	pyflow := getPyFlowObject()
+	workerPod := getPyFlowPod("worker")
+	workerPod.Labels["job-name"] = "Invalid_Name"
+	kt := getPyFlowKarta()
+	kt.Spec.Instructions = kartav1alpha1.OptimizationInstructions{
+		GangScheduling: &kartav1alpha1.GangSchedulingInstruction{
+			PodGroups: []kartav1alpha1.PodGroupDefinition{
+				{
+					Name: "job",
+					Members: []kartav1alpha1.PodGroupMemberDefinition{
+						{
+							ComponentName:   "pyflow",
+							GroupByKeyPaths: []string{".metadata.labels[\"job-name\"]"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	summary, err := instructions.NewStructureSummary(kt)
+	assert.NoError(t, err)
+	kartaGrouper := &KartaGrouper{
+		kartaSummary:   summary,
+		defaultGrouper: defaultGrouper,
+	}
+
+	metadata, err := kartaGrouper.GetPodGroupMetadata(pyflow, workerPod)
+	assert.Nil(t, metadata)
+	assert.ErrorContains(t, err, "Karta grouping keys [Invalid_Name] produce invalid Kubernetes PodGroup name")
+	assert.ErrorContains(t, err, "a lowercase RFC 1123 subdomain")
+}
+
 func TestGetPodGroupMetadata_AlphaPodGroupsFailsWhenPodDoesNotMatchAnyMember(t *testing.T) {
 	pyflow := getPyFlowObject()
 	workerPod := getPyFlowPod("worker")
