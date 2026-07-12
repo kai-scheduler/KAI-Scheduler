@@ -15,23 +15,10 @@ A label on the workload's pods, ingested by the podgrouper into the PodGroup (sa
 ```yaml
 metadata:
   labels:
-    kai.scheduler/preemption-delay: "5m"
+    kai.scheduler/preemption-delay-seconds: "300"
 ```
 
-- Value: a non-negative Go duration (`"30s"`, `"5m"`, `"1h"`), matching the `metav1.Duration` format of the existing `preemptMinRuntime`/`reclaimMinRuntime` Queue fields. Missing → 0 (current behavior). Invalid values (including unit-less numbers) fall back to 0 with a log warning.
-
-On the PodGroup itself, a spec field — the podgrouper populates it from the label; workloads that create PodGroups directly set it explicitly:
-
-```go
-type PodGroupSpec struct {
-    // PreemptionDelay is the minimal time the podgroup must be pending
-    // before it may trigger eviction of other workloads.
-    // +optional
-    PreemptionDelay *metav1.Duration `json:"preemptionDelay,omitempty"`
-}
-```
-
-The scheduler reads only the spec field, keeping a single source at scheduling time (same as `Preemptibility` and `PriorityClassName`).
+- Value: non-negative integer seconds. Missing → 0 (current behavior). Invalid values fall back to 0 with a log warning.
 - Aggressor-side only: the delay restricts what the pending workload may do *to others*. It says nothing about the workload's own evictability — that remains `Preemptibility` (victim-side), and the two are orthogonal.
 
 ## Semantics
@@ -42,7 +29,7 @@ A podgroup whose pending age is below its delay is skipped as an eviction trigge
 - It still appears as a pending unschedulable workload, so the cluster autoscaler (and `node-scale-adjuster` for GPU-sharing pods) reacts to it during the window.
 - Once the delay expires, the next scheduling cycle treats it as a normal eviction trigger.
 
-**Pending age anchor**: `max(PodGroup.CreationTimestamp, last eviction time)` — creation for new workloads, re-armed when a workload returns to pending after eviction, so each placement attempt gets a fresh autoscaler window. The eviction time comes from a **new** `kai.scheduler/last-eviction-timestamp` annotation introduced by this design: no such annotation exists today, and the scheduler will be extended to stamp it on the podgroup whenever it evicts it. It mirrors the existing `kai.scheduler/last-start-timestamp` annotation stamped on start (survives scheduler restarts; no new status semantics).
+**Pending age anchor**: measured from the podgroup's last transition into pending — creation for new workloads, re-armed when a workload returns to pending after eviction (each new placement attempt gets a fresh autoscaler window). Exact source field is an implementation detail.
 
 **Enforcement point**: a prefilter on the pending podgroup in the preempt, reclaim, and consolidation actions, before victim-scenario generation. The skip is surfaced through the podgroup's existing unschedulable-explanation status (updated on change, not re-emitted every cycle).
 
@@ -59,3 +46,8 @@ A podgroup whose pending age is below its delay is skipped as an eviction trigge
 ## Deferred: Native `preemptionPolicy`
 
 Support for the k8s `PriorityClass.preemptionPolicy` field (issues #1584, #1032) is deferred until a concrete request appears. The mechanism here is designed to absorb it: the field would resolve to the same per-podgroup trigger-delay value (`Never` = ∞), reusing the prefilter unchanged. The open questions it would reopen — source precedence vs. the label, unbounded-delay fair-share inflation, in-quota starvation of `Never` workloads — are documented in the git history of this design.
+
+## Testing
+
+- Unit: prefilter behavior per action; pending-age anchoring incl. re-arm after eviction; invalid label values.
+- e2e: a delayed workload does not evict within its window but allocates free capacity; it evicts normally after the window; eviction of a running delayed workload re-arms its delay.
