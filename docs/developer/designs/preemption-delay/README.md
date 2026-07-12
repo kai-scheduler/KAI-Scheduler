@@ -15,10 +15,10 @@ A label on the workload's pods, ingested by the podgrouper into the PodGroup (sa
 ```yaml
 metadata:
   labels:
-    kai.scheduler/preemption-delay-seconds: "300"
+    kai.scheduler/preemption-delay: "5m"
 ```
 
-- Value: non-negative integer seconds. Missing → 0 (current behavior). Invalid values fall back to 0 with a log warning.
+- Value: a non-negative Go duration (`"30s"`, `"5m"`, `"1h"`), matching the `metav1.Duration` format of the existing `preemptMinRuntime`/`reclaimMinRuntime` Queue fields. Missing → 0 (current behavior). Invalid values (including unit-less numbers) fall back to 0 with a log warning.
 - Aggressor-side only: the delay restricts what the pending workload may do *to others*. It says nothing about the workload's own evictability — that remains `Preemptibility` (victim-side), and the two are orthogonal.
 
 ## Semantics
