@@ -29,7 +29,7 @@ A podgroup whose pending age is below its delay is skipped as an eviction trigge
 - It still appears as a pending unschedulable workload, so the cluster autoscaler (and `node-scale-adjuster` for GPU-sharing pods) reacts to it during the window.
 - Once the delay expires, the next scheduling cycle treats it as a normal eviction trigger.
 
-**Pending age anchor**: measured from the podgroup's last transition into pending — creation for new workloads, re-armed when a workload returns to pending after eviction (each new placement attempt gets a fresh autoscaler window). Exact source field is an implementation detail.
+**Pending age anchor**: `max(PodGroup.CreationTimestamp, last eviction time)` — creation for new workloads, re-armed when a workload returns to pending after eviction, so each placement attempt gets a fresh autoscaler window. The scheduler stamps a `last-eviction-timestamp` annotation on the podgroup when evicting it, mirroring the existing `kai.scheduler/last-start-timestamp` annotation it stamps on start (survives scheduler restarts; no new status semantics).
 
 **Enforcement point**: a prefilter on the pending podgroup in the preempt, reclaim, and consolidation actions, before victim-scenario generation. The skip is surfaced through the podgroup's existing unschedulable-explanation status (updated on change, not re-emitted every cycle).
 
