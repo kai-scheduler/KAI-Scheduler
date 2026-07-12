@@ -10,7 +10,8 @@ SPDX-License-Identifier: Apache-2.0
 package v2alpha2
 
 import (
-	"k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 )
 
@@ -94,21 +95,21 @@ func (in *PodGroupResourcesStatus) DeepCopyInto(out *PodGroupResourcesStatus) {
 	*out = *in
 	if in.Allocated != nil {
 		in, out := &in.Allocated, &out.Allocated
-		*out = make(v1.ResourceList, len(*in))
+		*out = make(corev1.ResourceList, len(*in))
 		for key, val := range *in {
 			(*out)[key] = val.DeepCopy()
 		}
 	}
 	if in.AllocatedNonPreemptible != nil {
 		in, out := &in.AllocatedNonPreemptible, &out.AllocatedNonPreemptible
-		*out = make(v1.ResourceList, len(*in))
+		*out = make(corev1.ResourceList, len(*in))
 		for key, val := range *in {
 			(*out)[key] = val.DeepCopy()
 		}
 	}
 	if in.Requested != nil {
 		in, out := &in.Requested, &out.Requested
-		*out = make(v1.ResourceList, len(*in))
+		*out = make(corev1.ResourceList, len(*in))
 		for key, val := range *in {
 			(*out)[key] = val.DeepCopy()
 		}
@@ -154,6 +155,11 @@ func (in *PodGroupSpec) DeepCopyInto(out *PodGroupSpec) {
 	if in.SchedulingBackoff != nil {
 		in, out := &in.SchedulingBackoff, &out.SchedulingBackoff
 		*out = new(int32)
+		**out = **in
+	}
+	if in.PreemptionDelay != nil {
+		in, out := &in.PreemptionDelay, &out.PreemptionDelay
+		*out = new(v1.Duration)
 		**out = **in
 	}
 }
@@ -203,49 +209,49 @@ func (in *QuotaDetails) DeepCopyInto(out *QuotaDetails) {
 	*out = *in
 	if in.QueueRequestedResources != nil {
 		in, out := &in.QueueRequestedResources, &out.QueueRequestedResources
-		*out = make(v1.ResourceList, len(*in))
+		*out = make(corev1.ResourceList, len(*in))
 		for key, val := range *in {
 			(*out)[key] = val.DeepCopy()
 		}
 	}
 	if in.QueueDeservedResources != nil {
 		in, out := &in.QueueDeservedResources, &out.QueueDeservedResources
-		*out = make(v1.ResourceList, len(*in))
+		*out = make(corev1.ResourceList, len(*in))
 		for key, val := range *in {
 			(*out)[key] = val.DeepCopy()
 		}
 	}
 	if in.QueueAllocatedNonPreemptibleResources != nil {
 		in, out := &in.QueueAllocatedNonPreemptibleResources, &out.QueueAllocatedNonPreemptibleResources
-		*out = make(v1.ResourceList, len(*in))
+		*out = make(corev1.ResourceList, len(*in))
 		for key, val := range *in {
 			(*out)[key] = val.DeepCopy()
 		}
 	}
 	if in.PodGroupRequestedResources != nil {
 		in, out := &in.PodGroupRequestedResources, &out.PodGroupRequestedResources
-		*out = make(v1.ResourceList, len(*in))
+		*out = make(corev1.ResourceList, len(*in))
 		for key, val := range *in {
 			(*out)[key] = val.DeepCopy()
 		}
 	}
 	if in.PodGroupRequestedNonPreemptibleResources != nil {
 		in, out := &in.PodGroupRequestedNonPreemptibleResources, &out.PodGroupRequestedNonPreemptibleResources
-		*out = make(v1.ResourceList, len(*in))
+		*out = make(corev1.ResourceList, len(*in))
 		for key, val := range *in {
 			(*out)[key] = val.DeepCopy()
 		}
 	}
 	if in.QueueAllocatedResources != nil {
 		in, out := &in.QueueAllocatedResources, &out.QueueAllocatedResources
-		*out = make(v1.ResourceList, len(*in))
+		*out = make(corev1.ResourceList, len(*in))
 		for key, val := range *in {
 			(*out)[key] = val.DeepCopy()
 		}
 	}
 	if in.QueueResourceLimits != nil {
 		in, out := &in.QueueResourceLimits, &out.QueueResourceLimits
-		*out = make(v1.ResourceList, len(*in))
+		*out = make(corev1.ResourceList, len(*in))
 		for key, val := range *in {
 			(*out)[key] = val.DeepCopy()
 		}
