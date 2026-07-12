@@ -35,7 +35,7 @@ const (
 type EnforcementMode string
 
 const (
-	// EnforcementNone disables quota validation (default).
+	// EnforcementNone disables allocation-reduction enforcement (default).
 	EnforcementNone EnforcementMode = "None"
 	// EnforcementWarning surfaces quota and limit violations as admission warnings.
 	EnforcementWarning EnforcementMode = "Warning"
