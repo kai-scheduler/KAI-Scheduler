@@ -20,7 +20,7 @@ metadata:
 
 - Value: a non-negative Go duration (`"30s"`, `"5m"`, `"1h"`), matching the `metav1.Duration` format of the existing `preemptMinRuntime`/`reclaimMinRuntime` Queue fields. Missing → 0 (current behavior). Invalid values (including unit-less numbers) fall back to 0 with a log warning.
 
-On the PodGroup itself, a spec field — the podgrouper populates it from the label; workloads that create PodGroups directly set it explicitly (spec wins over label):
+On the PodGroup itself, a spec field — the podgrouper populates it from the label; workloads that create PodGroups directly set it explicitly:
 
 ```go
 type PodGroupSpec struct {
