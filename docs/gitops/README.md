@@ -72,7 +72,7 @@ Notes:
 
 ArgoCD has no built-in health assessment for the `kai.scheduler/v1` `Config` and `SchedulingShard` resources, so the Application can report `Healthy` while the operator is still reconciling the CR (or failing to). The operator records progress on the CR's status conditions (`Deployed`, `Available`, `DependenciesFulfilled`), which the e2e suite already gates on instead of Application health (see [#1751](https://github.com/kai-scheduler/KAI-scheduler/issues/1751)).
 
-Add a custom health check to `argocd-cm` so ArgoCD reflects the operator's own status. It reports `Healthy` only when all three conditions are `True` for the current `metadata.generation`, `Degraded` when one is `False` for the current generation, and `Progressing` otherwise (conditions not yet observed for the latest generation):
+Add a custom health check to `argocd-cm` so ArgoCD reflects the operator's own status. It reports `Healthy` only when all three conditions are `True` for the current `metadata.generation`, and `Degraded` when `DependenciesFulfilled` is `False` for the current generation, since that is the operator's signal that a required dependency is missing and needs attention. A `False` `Deployed` or `Available` is a normal transient state while pods roll out, so it stays `Progressing` to avoid health-degraded notifications on every install or upgrade:
 
 ```yaml
 apiVersion: v1
@@ -91,22 +91,28 @@ data:
     end
 
     local generation = obj.metadata.generation
-    local required = {"Deployed", "Available", "DependenciesFulfilled"}
     local byType = {}
     for _, condition in ipairs(obj.status.conditions) do
       byType[condition.type] = condition
     end
 
+    -- DependenciesFulfilled=False (reason dependencies_missing) is the only
+    -- condition that means a real, user-actionable dependency is absent, so map
+    -- it to Degraded. Deployed=False and Available=False are normal transient
+    -- states while pods roll out, so they stay Progressing.
+    local deps = byType["DependenciesFulfilled"]
+    if deps ~= nil and deps.observedGeneration == generation and deps.status == "False" then
+      hs.status = "Degraded"
+      hs.message = "DependenciesFulfilled: " .. (deps.message or deps.reason or "dependencies are missing")
+      return hs
+    end
+
+    local required = {"Deployed", "Available", "DependenciesFulfilled"}
     for _, name in ipairs(required) do
       local condition = byType[name]
       if condition == nil or condition.observedGeneration ~= generation then
         hs.status = "Progressing"
         hs.message = name .. " has not been observed for the current generation"
-        return hs
-      end
-      if condition.status == "False" then
-        hs.status = "Degraded"
-        hs.message = name .. ": " .. (condition.message or condition.reason or "condition is False")
         return hs
       end
       if condition.status ~= "True" then
