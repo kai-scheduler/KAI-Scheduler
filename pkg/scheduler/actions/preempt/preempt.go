@@ -54,9 +54,10 @@ func (alloc *preemptAction) Execute(ssn *framework.Session) {
 	}
 
 	jobsOrderByQueues := utils.NewJobsOrderByQueues(ssn, utils.JobsOrderInitOptions{
-		FilterNonPending:  true,
-		FilterUnready:     true,
-		MaxJobsQueueDepth: ssn.GetJobsDepth(framework.Preempt),
+		FilterNonPending:            true,
+		FilterUnready:               true,
+		FilterWithinPreemptionDelay: true,
+		MaxJobsQueueDepth:           ssn.GetJobsDepth(framework.Preempt),
 	})
 	jobsOrderByQueues.InitializeWithJobs(ssn.ClusterInfo.PodGroupInfos)
 

@@ -39,6 +39,7 @@ type TestJobBasic struct {
 	RequiredMultiFractionDevicesPerTask *uint64
 	Priority                            int32
 	Preemptibility                      enginev2alpha2.Preemptibility
+	PreemptionDelay                     *metav1.Duration
 	Name                                string
 	Namespace                           string
 	QueueName                           string
@@ -93,6 +94,7 @@ func BuildJobsAndTasksMaps(Jobs []*TestJobBasic, vectorMap *resource_info.Resour
 			jobName, job.Namespace, jobUID, job.RootSubGroupSet, taskInfos,
 			job.Priority, job.Preemptibility, queueUID, jobCreationTime, job.StaleDuration, vectorMap,
 		)
+		jobInfo.PodGroup.Spec.PreemptionDelay = job.PreemptionDelay
 		jobsInfoMap[common_info.PodGroupID(job.Name)] = jobInfo
 	}
 

@@ -45,10 +45,11 @@ func (alloc *consolidationAction) Execute(ssn *framework.Session) {
 	}
 
 	jobsOrderByQueues := utils.NewJobsOrderByQueues(ssn, utils.JobsOrderInitOptions{
-		FilterNonPending:     true,
-		FilterUnready:        true,
-		FilterNonPreemptible: true,
-		MaxJobsQueueDepth:    ssn.GetJobsDepth(framework.Consolidation),
+		FilterNonPending:            true,
+		FilterUnready:               true,
+		FilterNonPreemptible:        true,
+		FilterWithinPreemptionDelay: true,
+		MaxJobsQueueDepth:           ssn.GetJobsDepth(framework.Consolidation),
 	})
 	jobsOrderByQueues.InitializeWithJobs(ssn.ClusterInfo.PodGroupInfos)
 
