@@ -73,10 +73,11 @@ type PodGroupInfo struct {
 	AllocatedVector resource_info.ResourceVector
 	VectorMap       *resource_info.ResourceVectorMap
 
-	CreationTimestamp  metav1.Time
-	LastStartTimestamp *time.Time
-	PodGroup           *enginev2alpha2.PodGroup
-	PodGroupUID        types.UID
+	CreationTimestamp     metav1.Time
+	LastStartTimestamp    *time.Time
+	LastEvictionTimestamp *time.Time
+	PodGroup              *enginev2alpha2.PodGroup
+	PodGroupUID           types.UID
 
 	RootSubGroupSet      *subgroup_info.SubGroupSet
 	PodSets              map[string]*subgroup_info.PodSet
@@ -120,8 +121,9 @@ func NewPodGroupInfoWithVectorMap(uid common_info.PodGroupID, vectorMap *resourc
 		PodSets:              defaultSubGroupSet.GetDescendantPodSets(),
 		InvalidSubGroupTasks: pod_info.PodsMap{},
 
-		LastStartTimestamp:   nil,
-		activeAllocatedCount: ptr.To(0),
+		LastStartTimestamp:    nil,
+		LastEvictionTimestamp: nil,
+		activeAllocatedCount:  ptr.To(0),
 	}
 
 	for _, task := range tasks {
@@ -199,6 +201,26 @@ func (pgi *PodGroupInfo) IsPreemptibleJob() bool {
 	return pgi.Preemptibility == enginev2alpha2.Preemptible
 }
 
+// PreemptionDelayEnd returns the earliest time this podgroup may trigger eviction
+// of other workloads, or nil when no preemption delay is configured.
+func (pgi *PodGroupInfo) PreemptionDelayEnd() *time.Time {
+	if pgi.PodGroup == nil || pgi.PodGroup.Spec.PreemptionDelay == nil ||
+		pgi.PodGroup.Spec.PreemptionDelay.Duration <= 0 {
+		return nil
+	}
+	anchor := pgi.CreationTimestamp.Time
+	if pgi.LastEvictionTimestamp != nil && pgi.LastEvictionTimestamp.After(anchor) {
+		anchor = *pgi.LastEvictionTimestamp
+	}
+	end := anchor.Add(pgi.PodGroup.Spec.PreemptionDelay.Duration)
+	return &end
+}
+
+func (pgi *PodGroupInfo) IsWithinPreemptionDelay(now time.Time) bool {
+	end := pgi.PreemptionDelayEnd()
+	return end != nil && now.Before(*end)
+}
+
 func (pgi *PodGroupInfo) SetPodGroup(pg *enginev2alpha2.PodGroup) {
 	pgi.Name = pg.Name
 	pgi.Namespace = pg.Namespace
@@ -231,6 +253,16 @@ func (pgi *PodGroupInfo) SetPodGroup(pg *enginev2alpha2.PodGroup) {
 				pgi.NamespacedName, err)
 		} else {
 			pgi.LastStartTimestamp = &startTime
+		}
+	}
+
+	if pg.Annotations[commonconstants.LastEvictionTimeStamp] != "" {
+		evictionTime, err := time.Parse(time.RFC3339, pg.Annotations[commonconstants.LastEvictionTimeStamp])
+		if err != nil {
+			log.InfraLogger.V(7).Warnf("Failed to parse eviction timestamp for podgroup <%s> err: %v",
+				pgi.NamespacedName, err)
+		} else {
+			pgi.LastEvictionTimestamp = &evictionTime
 		}
 	}
 

@@ -406,7 +406,8 @@ func (su *defaultStatusUpdater) updatePodGroupAnnotations(job *podgroup_info.Pod
 	old := job.PodGroup.DeepCopy()
 	updatedStaleTime := setPodGroupStaleTimeStamp(job.PodGroup, job.StalenessInfo.TimeStamp)
 	updatedStartTime := setPodGroupLastStartTimeStamp(job.PodGroup, job.LastStartTimestamp)
-	if !updatedStaleTime && !updatedStartTime {
+	updatedEvictionTime := setPodGroupLastEvictionTimeStamp(job.PodGroup, job.LastEvictionTimestamp)
+	if !updatedStaleTime && !updatedStartTime && !updatedEvictionTime {
 		return nil, nil
 	}
 
@@ -510,6 +511,34 @@ func setPodGroupLastStartTimeStamp(podGroup *enginev2alpha2.PodGroup, startTimeS
 	}
 
 	podGroup.Annotations[commonconstants.LastStartTimeStamp] = startTimeStamp.Format(time.RFC3339)
+	return true
+}
+
+func setPodGroupLastEvictionTimeStamp(podGroup *enginev2alpha2.PodGroup, evictionTimeStamp *time.Time) bool {
+	if podGroup.Annotations == nil {
+		podGroup.Annotations = make(map[string]string)
+	}
+
+	if evictionTimeStamp == nil {
+		if _, found := podGroup.Annotations[commonconstants.LastEvictionTimeStamp]; !found {
+			return false
+		}
+
+		delete(podGroup.Annotations, commonconstants.LastEvictionTimeStamp)
+		return true
+	}
+
+	currTimeStamp, found := podGroup.Annotations[commonconstants.LastEvictionTimeStamp]
+	if !found {
+		podGroup.Annotations[commonconstants.LastEvictionTimeStamp] = evictionTimeStamp.UTC().Format(time.RFC3339)
+		return true
+	}
+
+	if currTimeStamp == evictionTimeStamp.UTC().Format(time.RFC3339) {
+		return false
+	}
+
+	podGroup.Annotations[commonconstants.LastEvictionTimeStamp] = evictionTimeStamp.UTC().Format(time.RFC3339)
 	return true
 }
 
