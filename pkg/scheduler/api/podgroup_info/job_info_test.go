@@ -22,6 +22,7 @@ package podgroup_info
 import (
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
@@ -1647,5 +1648,108 @@ func TestPodGroupInfo_IsStale(t *testing.T) {
 		if got != tt.expected {
 			t.Errorf("IsStale() for case '%s' got %v, want %v", tt.name, got, tt.expected)
 		}
+	}
+}
+
+func TestPreemptionDelayEnd(t *testing.T) {
+	creation := time.Date(2026, 7, 1, 10, 0, 0, 0, time.UTC)
+	eviction := creation.Add(30 * time.Minute)
+	beforeCreation := creation.Add(-time.Hour)
+	delay := &metav1.Duration{Duration: 10 * time.Minute}
+
+	tests := []struct {
+		name                  string
+		podGroup              *enginev2alpha2.PodGroup
+		lastEvictionTimestamp *time.Time
+		expectedEnd           *time.Time
+	}{
+		{
+			name:        "no podgroup",
+			podGroup:    nil,
+			expectedEnd: nil,
+		},
+		{
+			name:        "no delay configured",
+			podGroup:    &enginev2alpha2.PodGroup{},
+			expectedEnd: nil,
+		},
+		{
+			name: "zero delay",
+			podGroup: &enginev2alpha2.PodGroup{
+				Spec: enginev2alpha2.PodGroupSpec{PreemptionDelay: &metav1.Duration{}},
+			},
+			expectedEnd: nil,
+		},
+		{
+			name: "anchored at creation",
+			podGroup: &enginev2alpha2.PodGroup{
+				Spec: enginev2alpha2.PodGroupSpec{PreemptionDelay: delay},
+			},
+			expectedEnd: ptr.To(creation.Add(delay.Duration)),
+		},
+		{
+			name: "anchored at later eviction",
+			podGroup: &enginev2alpha2.PodGroup{
+				Spec: enginev2alpha2.PodGroupSpec{PreemptionDelay: delay},
+			},
+			lastEvictionTimestamp: &eviction,
+			expectedEnd:           ptr.To(eviction.Add(delay.Duration)),
+		},
+		{
+			name: "eviction before creation is ignored",
+			podGroup: &enginev2alpha2.PodGroup{
+				Spec: enginev2alpha2.PodGroupSpec{PreemptionDelay: delay},
+			},
+			lastEvictionTimestamp: &beforeCreation,
+			expectedEnd:           ptr.To(creation.Add(delay.Duration)),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pgi := &PodGroupInfo{
+				CreationTimestamp:     metav1.NewTime(creation),
+				PodGroup:              tt.podGroup,
+				LastEvictionTimestamp: tt.lastEvictionTimestamp,
+			}
+
+			end := pgi.PreemptionDelayEnd()
+			assert.Equal(t, tt.expectedEnd, end)
+
+			if tt.expectedEnd != nil {
+				assert.True(t, pgi.IsWithinPreemptionDelay(tt.expectedEnd.Add(-time.Second)))
+				assert.False(t, pgi.IsWithinPreemptionDelay(*tt.expectedEnd))
+			} else {
+				assert.False(t, pgi.IsWithinPreemptionDelay(creation))
+			}
+		})
+	}
+}
+
+func TestSetPodGroupLastEvictionTimestamp(t *testing.T) {
+	eviction := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name       string
+		annotation string
+		expected   *time.Time
+	}{
+		{name: "valid annotation", annotation: eviction.Format(time.RFC3339), expected: &eviction},
+		{name: "invalid annotation", annotation: "not-a-time", expected: nil},
+		{name: "missing annotation", annotation: "", expected: nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pg := &enginev2alpha2.PodGroup{}
+			if tt.annotation != "" {
+				pg.Annotations = map[string]string{commonconstants.LastEvictionTimeStamp: tt.annotation}
+			}
+
+			pgi := NewPodGroupInfo("test-uid")
+			pgi.SetPodGroup(pg)
+
+			assert.Equal(t, tt.expected, pgi.LastEvictionTimestamp)
+		})
 	}
 }

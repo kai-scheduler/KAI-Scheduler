@@ -945,3 +945,79 @@ func TestEvicted_EmitsAnnotatedEventWithMetadata(t *testing.T) {
 	assert.Equal(t, "preemptor", event.annotations[evictorPodGroupNameAnnotations])
 	assert.Equal(t, "preemptor-ns", event.annotations[evictorPodGroupNamespaceAnnotations])
 }
+
+func TestUpdatePodGroupLastEvictionTimeStamp(t *testing.T) {
+	for i, test := range []UpdatePodGroupStaleTimeStampTest{
+		{
+			name: "No eviction timestamp and no need to update",
+			podGroup: &enginev2alpha2.PodGroup{
+				ObjectMeta: metav1.ObjectMeta{},
+			},
+			staleTimeStamp:     nil,
+			expectedAnnotation: nil,
+			expectedUpdated:    false,
+		},
+		{
+			name: "No eviction timestamp annotation and need to add",
+			podGroup: &enginev2alpha2.PodGroup{
+				ObjectMeta: metav1.ObjectMeta{},
+			},
+			staleTimeStamp:     getTimePointer("2026-07-01T00:00:00Z"),
+			expectedAnnotation: ptr.To("2026-07-01T00:00:00Z"),
+			expectedUpdated:    true,
+		},
+		{
+			name: "Existing eviction timestamp, no need to update",
+			podGroup: &enginev2alpha2.PodGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						commonconstants.LastEvictionTimeStamp: "2026-07-01T00:00:00Z",
+					},
+				},
+			},
+			staleTimeStamp:     getTimePointer("2026-07-01T00:00:00Z"),
+			expectedAnnotation: ptr.To("2026-07-01T00:00:00Z"),
+			expectedUpdated:    false,
+		},
+		{
+			name: "Existing eviction timestamp, need to update",
+			podGroup: &enginev2alpha2.PodGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						commonconstants.LastEvictionTimeStamp: "2026-01-01T00:00:00Z",
+					},
+				},
+			},
+			staleTimeStamp:     getTimePointer("2026-07-01T00:00:00Z"),
+			expectedAnnotation: ptr.To("2026-07-01T00:00:00Z"),
+			expectedUpdated:    true,
+		},
+		{
+			name: "Existing eviction timestamp and need to remove",
+			podGroup: &enginev2alpha2.PodGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						commonconstants.LastEvictionTimeStamp: "2026-07-01T00:00:00Z",
+					},
+				},
+			},
+			staleTimeStamp:     nil,
+			expectedAnnotation: nil,
+			expectedUpdated:    true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Logf("Running test %d: %s", i, test.name)
+			updated := setPodGroupLastEvictionTimeStamp(test.podGroup, test.staleTimeStamp)
+
+			assert.Equal(t, test.expectedUpdated, updated)
+
+			value, found := test.podGroup.Annotations[commonconstants.LastEvictionTimeStamp]
+			if test.expectedAnnotation == nil {
+				assert.False(t, found, "Expected annotation not to be found")
+			} else {
+				assert.Equal(t, *test.expectedAnnotation, value, "Expected annotation value")
+			}
+		})
+	}
+}

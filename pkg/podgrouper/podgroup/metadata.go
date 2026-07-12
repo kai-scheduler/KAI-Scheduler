@@ -28,6 +28,7 @@ type Metadata struct {
 	Labels            map[string]string
 	PriorityClassName string
 	Preemptibility    v2alpha2.Preemptibility
+	PreemptionDelay   *metav1.Duration
 	Queue             string
 	Namespace         string
 	Name              string

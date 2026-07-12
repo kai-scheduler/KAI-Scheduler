@@ -22,6 +22,7 @@ package v2alpha2
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -74,6 +75,13 @@ type PodGroupSpec struct {
 
 	// The number of scheduling cycles to try before marking the pod group as UnschedulableOnNodePool. Currently only supporting -1 and 1
 	SchedulingBackoff *int32 `json:"schedulingBackoff,omitempty" protobuf:"varint,8,opt,name=schedulingBackoff"`
+
+	// PreemptionDelay is the minimal time the PodGroup must be pending, counted from
+	// max(creation time, last eviction time), before it may trigger eviction of other
+	// workloads (preempt, reclaim and consolidation actions). It does not affect plain
+	// allocation into free capacity, nor the PodGroup's own evictability.
+	// +optional
+	PreemptionDelay *metav1.Duration `json:"preemptionDelay,omitempty" protobuf:"bytes,9,opt,name=preemptionDelay"`
 }
 
 // Preemptibility defines whether this PodGroup can be preempted
@@ -105,6 +113,19 @@ func ParsePreemptibility(value string) (Preemptibility, error) {
 	default:
 		return "", fmt.Errorf("invalid preemptibility value: %s", value)
 	}
+}
+
+// ParsePreemptionDelay parses a preemption delay duration string (e.g. "30s", "5m").
+// Returns an error for invalid or negative values.
+func ParsePreemptionDelay(value string) (*metav1.Duration, error) {
+	delay, err := time.ParseDuration(value)
+	if err != nil {
+		return nil, err
+	}
+	if delay < 0 {
+		return nil, fmt.Errorf("preemption delay must be non-negative, got %s", value)
+	}
+	return &metav1.Duration{Duration: delay}, nil
 }
 
 type SubGroup struct {
@@ -334,6 +355,10 @@ const (
 
 	// OverLimit means that the pod group is not schedulable because scheduling it would exceed the queue's limits.
 	OverLimit UnschedulableReason = "OverLimit"
+
+	// PreemptionDelayNotElapsed means the pod group is within its preemption delay window
+	// and may not yet trigger eviction of other workloads.
+	PreemptionDelayNotElapsed UnschedulableReason = "PreemptionDelayNotElapsed"
 
 	// QueueDoesNotExist means the pod group references a queue that doesn't exist or has no parent queue.
 	QueueDoesNotExist UnschedulableReason = "QueueDoesNotExist"

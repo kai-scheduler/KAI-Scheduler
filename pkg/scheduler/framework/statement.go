@@ -21,6 +21,7 @@ package framework
 
 import (
 	"fmt"
+	"time"
 
 	"golang.org/x/exp/slices"
 
@@ -148,6 +149,9 @@ func (s *Statement) commitEvict(reclaimee *pod_info.PodInfo, evictOp evictOperat
 		return err
 	}
 	reclaimee.IsVirtualStatus = false
+
+	evictionTime := time.Now()
+	reclaimeePodGroup.LastEvictionTimestamp = &evictionTime
 
 	return nil
 }

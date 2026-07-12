@@ -55,9 +55,10 @@ func (ra *reclaimAction) Execute(ssn *framework.Session) {
 	}
 
 	jobsOrderByQueues := utils.NewJobsOrderByQueues(ssn, utils.JobsOrderInitOptions{
-		FilterNonPending:  true,
-		FilterUnready:     true,
-		MaxJobsQueueDepth: ssn.GetJobsDepth(framework.Reclaim),
+		FilterNonPending:            true,
+		FilterUnready:               true,
+		FilterWithinPreemptionDelay: true,
+		MaxJobsQueueDepth:           ssn.GetJobsDepth(framework.Reclaim),
 	})
 	jobsOrderByQueues.InitializeWithJobs(ssn.ClusterInfo.PodGroupInfos)
 

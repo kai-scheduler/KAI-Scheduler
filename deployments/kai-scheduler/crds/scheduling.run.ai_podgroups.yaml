@@ -74,6 +74,13 @@ spec:
                 - preemptible
                 - non-preemptible
                 type: string
+              preemptionDelay:
+                description: |-
+                  PreemptionDelay is the minimal time the PodGroup must be pending, counted from
+                  max(creation time, last eviction time), before it may trigger eviction of other
+                  workloads (preempt, reclaim and consolidation actions). It does not affect plain
+                  allocation into free capacity, nor the PodGroup's own evictability.
+                type: string
               priorityClassName:
                 description: |-
                   If specified, indicates the PodGroup's priority. "system-node-critical" and
