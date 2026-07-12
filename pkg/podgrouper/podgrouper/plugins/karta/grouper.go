@@ -5,7 +5,6 @@ package karta
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -40,12 +39,28 @@ func (g *KartaGrouper) Name() string {
 func (g *KartaGrouper) GetPodGroupMetadata(topOwner *unstructured.Unstructured, pod *v1.Pod, _ ...*metav1.PartialObjectMetadata) (*podgroup.Metadata, error) {
 	ctx := context.Background()
 
-	gangScheduling := g.kartaSummary.GetKarta().Spec.Instructions.GangScheduling
+	gangScheduling := g.getGangSchedulingInstructions()
+	if gangScheduling == nil {
+		return g.defaultGrouper.GetPodGroupMetadata(topOwner, pod)
+	}
 	if gangScheduling.PodGroup != nil {
 		return g.getPodGroupMetadataV2(ctx, topOwner, pod, gangScheduling.PodGroup)
 	}
 
 	return g.getPodGroupMetadataAlpha(ctx, topOwner, pod)
+}
+
+func (g *KartaGrouper) getGangSchedulingInstructions() *kartav1alpha1.GangSchedulingInstruction {
+	if g.kartaSummary == nil {
+		return nil
+	}
+
+	karta := g.kartaSummary.GetKarta()
+	if karta == nil {
+		return nil
+	}
+
+	return karta.Spec.Instructions.GangScheduling
 }
 
 func (g *KartaGrouper) getPodGroupMetadataV2(
@@ -149,7 +164,7 @@ func (g *KartaGrouper) getPodGroupMetadataAlpha(
 		return nil, err
 	}
 	if effectiveMemberDefinition == nil {
-		return g.getPodGroupMetadataFromPod(pod)
+		return nil, fmt.Errorf("pod %s/%s does not match any Karta pod group member definition", pod.Namespace, pod.Name)
 	}
 
 	componentFactory := resource.NewComponentFactoryFromObject(g.kartaSummary.GetKarta(), topOwner)
@@ -181,14 +196,6 @@ func (g *KartaGrouper) getPodGroupMetadataAlpha(
 	return podGroupMetadata, nil
 }
 
-func (g *KartaGrouper) getPodGroupMetadataFromPod(pod *v1.Pod) (*podgroup.Metadata, error) {
-	podAsOwner, err := g.convertPodToTopOwner(pod)
-	if err != nil {
-		return nil, err
-	}
-	return g.defaultGrouper.GetPodGroupMetadata(podAsOwner, pod)
-}
-
 func (g *KartaGrouper) calcPodGroupName(topOwner *unstructured.Unstructured, groupingKeys []string) string {
 	baseName := fmt.Sprintf("%s-%s", constants.PodGroupNamePrefix, topOwner.GetUID())
 
@@ -196,23 +203,4 @@ func (g *KartaGrouper) calcPodGroupName(topOwner *unstructured.Unstructured, gro
 		return baseName
 	}
 	return fmt.Sprintf("%s-%s", baseName, strings.Join(groupingKeys, "-"))
-}
-
-func (g *KartaGrouper) convertPodToTopOwner(pod *v1.Pod) (*unstructured.Unstructured, error) {
-	obj := &metav1.PartialObjectMetadata{}
-	obj.SetGroupVersionKind(pod.GroupVersionKind())
-	obj.TypeMeta = pod.TypeMeta
-	obj.ObjectMeta = pod.ObjectMeta
-
-	jsonData, err := json.Marshal(obj)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal partial object metadata: %w", err)
-	}
-
-	u := &unstructured.Unstructured{}
-	if err = json.Unmarshal(jsonData, u); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal to unstructured: %w", err)
-	}
-
-	return u, nil
 }

@@ -201,6 +201,59 @@ func TestGetPodGroupMetadata_AlphaPodGroups(t *testing.T) {
 	assert.Equal(t, fmt.Sprintf("pg-%s-%s", pyflow.GetUID(), workerPod.Labels["job-name"]), metadata.Name)
 }
 
+func TestGetPodGroupMetadata_AlphaPodGroupsFailsWhenPodDoesNotMatchAnyMember(t *testing.T) {
+	pyflow := getPyFlowObject()
+	workerPod := getPyFlowPod("worker")
+	kt := getPyFlowKarta()
+	kt.Spec.Instructions = kartav1alpha1.OptimizationInstructions{
+		GangScheduling: &kartav1alpha1.GangSchedulingInstruction{
+			PodGroups: []kartav1alpha1.PodGroupDefinition{
+				{
+					Name: "job",
+					Members: []kartav1alpha1.PodGroupMemberDefinition{
+						{
+							ComponentName: "pyflow",
+							Filters:       []string{`.metadata.labels.role == "master"`},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	summary, err := instructions.NewStructureSummary(kt)
+	assert.NoError(t, err)
+	kartaGrouper := &KartaGrouper{
+		kartaSummary:   summary,
+		defaultGrouper: defaultGrouper,
+	}
+
+	metadata, err := kartaGrouper.GetPodGroupMetadata(pyflow, workerPod)
+	assert.Nil(t, metadata)
+	assert.ErrorContains(t, err, "does not match any Karta pod group member definition")
+}
+
+func TestGetPodGroupMetadata_WithoutGangSchedulingFallsBackToDefaultGrouper(t *testing.T) {
+	pyflow := getPyFlowObject()
+	workerPod := getPyFlowPod("worker")
+	kt := getPyFlowKarta()
+	kt.Spec.Instructions.GangScheduling = nil
+
+	summary, err := instructions.NewStructureSummary(kt)
+	assert.NoError(t, err)
+	kartaGrouper := &KartaGrouper{
+		kartaSummary:   summary,
+		defaultGrouper: defaultGrouper,
+	}
+
+	metadata, err := kartaGrouper.GetPodGroupMetadata(pyflow, workerPod)
+	assert.NoError(t, err)
+
+	expectedMetadata, err := defaultGrouper.GetPodGroupMetadata(pyflow, workerPod)
+	assert.NoError(t, err)
+	assert.Equal(t, expectedMetadata, metadata)
+}
+
 func newFakeClientWithScheme(objs ...client.Object) client.Client {
 	scheme := runtime.NewScheme()
 	_ = kartav1alpha1.AddToScheme(scheme)

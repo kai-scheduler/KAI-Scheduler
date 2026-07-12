@@ -93,14 +93,14 @@ func (ph *DefaultPluginsHub) HasMatchingPlugin(gvk metav1.GroupVersionKind) bool
 }
 
 func (ph *DefaultPluginsHub) getRegularPlugin(gvk metav1.GroupVersionKind) (grouper.Grouper, bool) {
-	if _, found := ph.customPlugins[gvk]; found {
-		return ph.customPlugins[gvk], true
+	if f, found := ph.customPlugins[gvk]; found {
+		return f, true
 	}
 
 	// search using wildcard version
 	gvk.Version = "*"
-	if _, found := ph.customPlugins[gvk]; found {
-		return ph.customPlugins[gvk], true
+	if f, found := ph.customPlugins[gvk]; found {
+		return f, true
 	}
 	return nil, false
 }

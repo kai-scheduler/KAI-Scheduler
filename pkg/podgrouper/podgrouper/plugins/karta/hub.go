@@ -139,8 +139,7 @@ type missingCrd struct {
 }
 
 func (b *missingCrd) load() bool {
-	retryAfter := b.retryAfterUnixNano.Load()
-	return retryAfter > 0 && time.Now().UnixNano() < retryAfter
+	return time.Now().UnixNano() < b.retryAfterUnixNano.Load()
 }
 
 func (b *missingCrd) mark() {
