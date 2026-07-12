@@ -5,6 +5,7 @@ package defaultgrouper
 
 import (
 	"testing"
+	"time"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
@@ -1159,6 +1160,98 @@ func TestCalcPodGroupPreemptibility(t *testing.T) {
 			preemptibility := defaultGrouper.calcPodGroupPreemptibilityWithDefaults([]*v12.PartialObjectMetadata{ownerPartial}, pod, nil)
 
 			assert.Equal(t, tt.expectedResult, string(preemptibility))
+		})
+	}
+}
+
+func TestCalcPodGroupPreemptionDelay(t *testing.T) {
+	tests := []struct {
+		name        string
+		ownerLabels map[string]interface{}
+		podLabels   map[string]string
+		expected    *v12.Duration
+	}{
+		{
+			name: "valid delay from owner",
+			ownerLabels: map[string]interface{}{
+				"kai.scheduler/preemption-delay": "5m",
+			},
+			expected: &v12.Duration{Duration: 5 * time.Minute},
+		},
+		{
+			name: "valid delay from pod",
+			podLabels: map[string]string{
+				"kai.scheduler/preemption-delay": "90s",
+			},
+			expected: &v12.Duration{Duration: 90 * time.Second},
+		},
+		{
+			name: "owner overrides pod",
+			ownerLabels: map[string]interface{}{
+				"kai.scheduler/preemption-delay": "1h",
+			},
+			podLabels: map[string]string{
+				"kai.scheduler/preemption-delay": "5m",
+			},
+			expected: &v12.Duration{Duration: time.Hour},
+		},
+		{
+			name: "invalid owner value falls through to pod",
+			ownerLabels: map[string]interface{}{
+				"kai.scheduler/preemption-delay": "abc",
+			},
+			podLabels: map[string]string{
+				"kai.scheduler/preemption-delay": "30s",
+			},
+			expected: &v12.Duration{Duration: 30 * time.Second},
+		},
+		{
+			name: "unit-less number is invalid",
+			podLabels: map[string]string{
+				"kai.scheduler/preemption-delay": "5",
+			},
+			expected: nil,
+		},
+		{
+			name: "negative duration is invalid",
+			podLabels: map[string]string{
+				"kai.scheduler/preemption-delay": "-3m",
+			},
+			expected: nil,
+		},
+		{
+			name:     "no labels",
+			expected: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			owner := &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "test_kind",
+					"apiVersion": "test_version",
+					"metadata": map[string]interface{}{
+						"name":      "test_name",
+						"namespace": "test_namespace",
+						"uid":       "1",
+						"labels":    tt.ownerLabels,
+					},
+				},
+			}
+
+			pod := &v1.Pod{}
+			if tt.podLabels != nil {
+				pod.ObjectMeta = v12.ObjectMeta{
+					Labels: tt.podLabels,
+				}
+			}
+
+			defaultGrouper := NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, fake.NewFakeClient())
+			delay := defaultGrouper.calcPodGroupPreemptionDelay(
+				[]*v12.PartialObjectMetadata{convertOwnerToPartial(owner)}, pod)
+
+			assert.Equal(t, tt.expected, delay)
 		})
 	}
 }

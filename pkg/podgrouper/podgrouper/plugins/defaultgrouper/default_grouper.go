@@ -80,6 +80,7 @@ func (dg *DefaultGrouper) GetPodGroupMetadata(topOwner *unstructured.Unstructure
 		Queue:             dg.CalcPodGroupQueue(topOwner, pod),
 		PriorityClassName: priorityClassName,
 		Preemptibility:    preemptibility,
+		PreemptionDelay:   dg.calcPodGroupPreemptionDelay(allOwners, pod),
 		MinAvailable:      1,
 	}
 
@@ -270,6 +271,28 @@ func (dg *DefaultGrouper) calcPodGroupPreemptibilityWithDefaults(
 
 	logger.V(1).Info("No valid preemptibility label or default found", "pod", pod.GetName())
 	return ""
+}
+
+// calcPodGroupPreemptionDelay reads the preemption-delay label from owners then the pod.
+// First valid value wins; invalid or negative durations are ignored with a warning.
+func (dg *DefaultGrouper) calcPodGroupPreemptionDelay(allOwners []*metav1.PartialObjectMetadata, pod *v1.Pod) *metav1.Duration {
+	for _, owner := range allOwners {
+		if delayStr, found := owner.GetLabels()[constants.PreemptionDelayLabelKey]; found {
+			if delay, err := v2alpha2.ParsePreemptionDelay(delayStr); err == nil {
+				return delay
+			} else {
+				logger.Error(err, "Invalid preemption-delay label found on owner", "owner", owner.GetName(), "preemptionDelay", delayStr)
+			}
+		}
+	}
+	if delayStr, found := pod.GetLabels()[constants.PreemptionDelayLabelKey]; found {
+		if delay, err := v2alpha2.ParsePreemptionDelay(delayStr); err == nil {
+			return delay
+		} else {
+			logger.Error(err, "Invalid preemption-delay label found on pod", "pod", pod.GetName(), "preemptionDelay", delayStr)
+		}
+	}
+	return nil
 }
 
 func (dg *DefaultGrouper) calcPodGroupPriorityClass(owner *metav1.PartialObjectMetadata, pod *v1.Pod) string {
