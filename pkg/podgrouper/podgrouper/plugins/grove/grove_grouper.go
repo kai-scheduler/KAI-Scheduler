@@ -18,6 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const (
@@ -281,6 +282,14 @@ func (gg *GroveGrouper) parseMetadataFromTopOwner(metadata *podgroup.Metadata) (
 			return nil, fmt.Errorf("failed to parse preemptibility from top owner %s/%s. Err: %w", metadata.Namespace, metadata.Name, err)
 		}
 		metadata.Preemptibility = preemptibility
+	}
+	if delayStr, ok := metadata.Labels[constants.PreemptionDelayLabelKey]; ok {
+		if delay, err := v2alpha2.ParsePreemptionDelay(delayStr); err == nil {
+			metadata.PreemptionDelay = delay
+		} else {
+			log.FromContext(context.Background()).Error(err, "Invalid preemption-delay label found on top owner",
+				"namespace", metadata.Namespace, "name", metadata.Name, "preemptionDelay", delayStr)
+		}
 	}
 
 	// get Topology data from annotations similar to applyTopologyConstraints

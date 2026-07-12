@@ -106,6 +106,7 @@ func (h *Handler) createPodGroupForMetadata(podGroupMetadata Metadata) *scheduli
 			PriorityClassName: podGroupMetadata.PriorityClassName,
 			SubGroups:         []schedulingv2alpha2.SubGroup{},
 			Preemptibility:    podGroupMetadata.Preemptibility,
+			PreemptionDelay:   podGroupMetadata.PreemptionDelay,
 		},
 	}
 	if podGroupMetadata.MinSubGroup != nil {
