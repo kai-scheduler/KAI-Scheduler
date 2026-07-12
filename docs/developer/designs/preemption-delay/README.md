@@ -46,8 +46,3 @@ A podgroup whose pending age is below its delay is skipped as an eviction trigge
 ## Deferred: Native `preemptionPolicy`
 
 Support for the k8s `PriorityClass.preemptionPolicy` field (issues #1584, #1032) is deferred until a concrete request appears. The mechanism here is designed to absorb it: the field would resolve to the same per-podgroup trigger-delay value (`Never` = ∞), reusing the prefilter unchanged. The open questions it would reopen — source precedence vs. the label, unbounded-delay fair-share inflation, in-quota starvation of `Never` workloads — are documented in the git history of this design.
-
-## Testing
-
-- Unit: prefilter behavior per action; pending-age anchoring incl. re-arm after eviction; invalid label values.
-- e2e: a delayed workload does not evict within its window but allocates free capacity; it evicts normally after the window; eviction of a running delayed workload re-arms its delay.
