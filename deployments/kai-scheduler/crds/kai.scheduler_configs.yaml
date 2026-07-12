@@ -7972,6 +7972,11 @@ spec:
                           gang scheduling for Knative revisions. Default is true.
                           Disable to allow multiple nodepools per revision.
                         type: boolean
+                      genericKartaFallback:
+                        description: GenericKartaFallback specifies whether to enable
+                          Karta-backed generic pod grouping fallback for workload
+                          GVKs without native plugins. Default is true.
+                        type: boolean
                     type: object
                   k8sClientConfig:
                     description: ClientConfig specifies the configuration of k8s client

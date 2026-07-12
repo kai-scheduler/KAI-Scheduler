@@ -75,6 +75,19 @@ func TestKartaHub_GetPodGrouperPluginKartaFound(t *testing.T) {
 	assert.IsType(t, &KartaGrouper{}, result)
 }
 
+func TestKartaHub_GetPodGrouperPluginMultipleKartasForGvk(t *testing.T) {
+	gvk := createTestGVK()
+	firstKarta := createTestKartaWithNameAndUID(gvk, "first-karta", types.UID("first-karta-uid"))
+	secondKarta := createTestKartaWithNameAndUID(gvk, "second-karta", types.UID("second-karta-uid"))
+	kubeClient := newFakeClientWithScheme(firstKarta, secondKarta)
+	defaultPlugin := namedGrouper("Default Grouper")
+	plugin := NewKartaHub(kubeClient, defaultPlugin)
+
+	result := plugin.GetPodGrouperPlugin(gvk)
+
+	assert.Nil(t, result)
+}
+
 func TestKartaHub_GetPodGrouperPluginKartaFoundIsNotCached(t *testing.T) {
 	var listCalls int
 	gvk := createTestGVK()
@@ -131,6 +144,18 @@ func TestGetKartaForGvkInvalidKartaDoesNotBlockValidKarta(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Equal(t, validKarta.Name, result.Name)
+}
+
+func TestGetKartaForGvkMultipleKartasWithGangSchedulingInstructions(t *testing.T) {
+	gvk := createTestGVK()
+	firstKarta := createTestKartaWithNameAndUID(gvk, "first-karta", types.UID("first-karta-uid"))
+	secondKarta := createTestKartaWithNameAndUID(gvk, "second-karta", types.UID("second-karta-uid"))
+	kubeClient := newFakeClientWithScheme(firstKarta, secondKarta)
+
+	result, err := getKartaForGvk(context.Background(), kubeClient, gvk)
+
+	assert.Nil(t, result)
+	assert.ErrorContains(t, err, "found multiple Kartas with gang scheduling instructions")
 }
 
 func TestGetKartaForGvkWithDeletionTimestamp(t *testing.T) {

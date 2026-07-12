@@ -31,7 +31,6 @@ var logger = log.FromContext(context.Background())
 
 func NewKartaHub(client client.Client, defaultGrouper grouper.Grouper) *KartaHub {
 	isKartaCrdMissing := missingCrd{}
-	isKartaCrdMissing.load()
 
 	return &KartaHub{
 		client:            client,
@@ -82,6 +81,7 @@ func getKartaForGvk(ctx context.Context, kubeClient client.Client, gvk metav1.Gr
 		return nil, err
 	}
 
+	matchingKartas := []*kartav1alpha1.Karta{}
 	for index := range kartas.Items {
 		karta := &kartas.Items[index]
 		ktGvk := getGvkOfKarta(karta)
@@ -95,10 +95,17 @@ func getKartaForGvk(ctx context.Context, kubeClient client.Client, gvk metav1.Gr
 			logger.Error(err, "Invalid Karta, skipping generic GVK fallback", "karta", karta.GetName())
 			continue
 		}
-		return karta, nil
+		matchingKartas = append(matchingKartas, karta)
 	}
 
-	return nil, nil
+	if len(matchingKartas) > 1 {
+		return nil, fmt.Errorf("found multiple Kartas with gang scheduling instructions for gvk %s", gvk.String())
+	}
+	if len(matchingKartas) == 0 {
+		return nil, nil
+	}
+
+	return matchingKartas[0], nil
 }
 
 func getGvkOfKarta(kt *kartav1alpha1.Karta) *metav1.GroupVersionKind {

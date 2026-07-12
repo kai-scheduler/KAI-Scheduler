@@ -91,6 +91,47 @@ func TestGetPodGroupMetadata_PodGroupV2(t *testing.T) {
 	assert.Equal(t, "rack", metadata.SubGroups[1].TopologyConstraints.RequiredTopologyLevel)
 }
 
+func TestGetPodGroupMetadata_PodGroupV2WithoutSubGroups(t *testing.T) {
+	pyflow := getPyFlowObject()
+	err := unstructured.SetNestedField(pyflow.Object, int64(1), "spec", "worker", "replicas")
+	assert.NoError(t, err)
+	masterPod := getPyFlowPod("master")
+	masterPod.Name = "pyflow-master-pod"
+	workerPod := getPyFlowPod("worker")
+	workerPod.Name = "pyflow-worker-pod"
+	kt := getPyFlowKarta()
+	kt.Spec.Instructions = kartav1alpha1.OptimizationInstructions{
+		GangScheduling: &kartav1alpha1.GangSchedulingInstruction{
+			PodGroup: &kartav1alpha1.PodGroupComponentsMapping{
+				Name: "training",
+			},
+		},
+	}
+
+	summary, err := instructions.NewStructureSummary(kt)
+	assert.NoError(t, err)
+	kartaGrouper := &KartaGrouper{
+		kartaSummary:   summary,
+		defaultGrouper: defaultGrouper,
+	}
+
+	masterMetadata, err := kartaGrouper.GetPodGroupMetadata(pyflow, masterPod)
+	assert.NoError(t, err)
+	workerMetadata, err := kartaGrouper.GetPodGroupMetadata(pyflow, workerPod)
+	assert.NoError(t, err)
+
+	expectedName := fmt.Sprintf("pg-%s-training", pyflow.GetUID())
+	assert.Equal(t, expectedName, masterMetadata.Name)
+	assert.Equal(t, int32(2), masterMetadata.MinAvailable)
+	assert.Nil(t, masterMetadata.MinSubGroup)
+	assert.Empty(t, masterMetadata.SubGroups)
+
+	assert.Equal(t, expectedName, workerMetadata.Name)
+	assert.Equal(t, int32(2), workerMetadata.MinAvailable)
+	assert.Nil(t, workerMetadata.MinSubGroup)
+	assert.Empty(t, workerMetadata.SubGroups)
+}
+
 func TestGetPodGroupMetadata_PodGroupV2DoesNotRequireSpecDefinition(t *testing.T) {
 	pyflow := getPyFlowObject()
 	workerPod := getPyFlowPod("worker")

@@ -99,6 +99,14 @@ func (g *KartaGrouper) getPodGroupMetadataV2(
 	if len(podGroupMetadata.SubGroups) > 0 {
 		podGroupMetadata.MinSubGroup = ptr.To(int32(len(podGroupMetadata.SubGroups)))
 		podGroupMetadata.MinAvailable = 0
+	} else {
+		minAvailable, err := instructions.CalculateSubtreeScale(
+			ctx, g.kartaSummary.GetKarta().Spec.StructureDefinition.RootComponent.Name, nil, componentFactory, g.kartaSummary,
+		)
+		if err != nil {
+			return nil, err
+		}
+		podGroupMetadata.MinAvailable = minAvailable
 	}
 
 	return podGroupMetadata, nil
