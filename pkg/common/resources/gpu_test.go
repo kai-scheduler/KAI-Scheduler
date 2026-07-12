@@ -84,6 +84,21 @@ func TestSumGpuAllocation(t *testing.T) {
 			want: 0,
 		},
 		{
+			name: "Volcano vGPU memory is not counted as GPU",
+			list: v1.ResourceList{"volcano.sh/vgpu-memory": resource.MustParse("40960")},
+			want: 0,
+		},
+		{
+			name: "Volcano vGPU cores are not counted as GPU",
+			list: v1.ResourceList{"volcano.sh/vgpu-cores": resource.MustParse("50")},
+			want: 0,
+		},
+		{
+			name: "domain-qualified gpu-adjacent extended resource is ignored",
+			list: v1.ResourceList{"example.com/gpu-bandwidth": resource.MustParse("1000")},
+			want: 0,
+		},
+		{
 			name: "mixed extended, DRA and MIG GPUs are all summed",
 			list: v1.ResourceList{
 				"nvidia.com/gpu":         resource.MustParse("1"),

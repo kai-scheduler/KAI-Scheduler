@@ -463,6 +463,18 @@ var _ = Describe("Queue Validator", func() {
 			Expect(err.Error()).To(ContainSubstring("GPU limit (3) is below the currently allocated 4"))
 		})
 
+		It("does not count gpu-named non-GPU extended resources (e.g. Volcano vGPU memory) as GPU allocation", func() {
+			validator = newValidator(EnforcementBlock)
+			oldQueue := queueWith(
+				&v2.QueueResources{GPU: v2.QueueResource{Quota: 8, Limit: 8}},
+				v1.ResourceList{"volcano.sh/vgpu-memory": resource.MustParse("40960")}, nil)
+			newQueue := spec(&v2.QueueResources{GPU: v2.QueueResource{Quota: 8, Limit: 4}})
+
+			warnings, err := validator.ValidateUpdate(ctx, oldQueue, newQueue)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(warnings).To(BeEmpty())
+		})
+
 		It("warns but does not block on parent/child overcommit when quota validation is enabled", func() {
 			parent := &v2.Queue{
 				ObjectMeta: metav1.ObjectMeta{Name: "parent-queue"},

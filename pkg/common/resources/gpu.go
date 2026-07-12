@@ -11,24 +11,24 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
-// gpuMemorySuffix identifies GPU-memory resources (e.g. nvidia.com/gpu.memory, run.ai/gpu.memory),
-// which report memory rather than a GPU count and must not be summed as GPUs.
-const gpuMemorySuffix = "gpu.memory"
-
-// SumGpuAllocation returns the total number of GPUs represented by a ResourceList: whole and
-// fractional extended GPUs (any "*gpu"-suffixed resource such as nvidia.com/gpu or amd.com/gpu),
-// DRA GPU device counts (keyed by the GPU DeviceClass name, e.g. gpu.nvidia.com), and MIG profiles
-// (nvidia.com/mig-<slices>g.<mem>gb, counted as <slices> GPU portions each, matching the scheduler's
-// MIG accounting). GPU memory (any "*gpu.memory" resource) is excluded, since it reports memory
-// rather than a GPU count. Extended GPUs are matched by the same "gpu" suffix the queue metrics use,
-// so vendors beyond NVIDIA/AMD are counted too.
+// SumGpuAllocation returns the total number of GPUs represented by a ResourceList, matching how KAI
+// records GPU allocation in a queue's status:
+//   - extended GPUs: any "*gpu"-suffixed resource (e.g. nvidia.com/gpu, amd.com/gpu), including
+//     fractional GPU-sharing values, summed across vendors;
+//   - DRA GPUs: device counts written under the GPU DeviceClass name (e.g. gpu.nvidia.com). DeviceClass
+//     names are Kubernetes object names and never contain "/", which distinguishes them from ordinary
+//     domain-qualified extended resources;
+//   - MIG: nvidia.com/mig-<slices>g.<mem>gb, counted as <slices> GPU portions each, matching the
+//     scheduler's MIG accounting.
+//
+// Domain-qualified extended resources that merely contain "gpu" in their name but are not a GPU count
+// (e.g. nvidia.com/gpu.memory, run.ai/gpu.memory, volcano.sh/vgpu-memory) are not counted: they carry a
+// "/" and match neither the "gpu" suffix nor the slash-free DeviceClass rule.
 func SumGpuAllocation(list v1.ResourceList) float64 {
 	var total float64
 	for name, quantity := range list {
 		n := string(name)
 		switch {
-		case strings.HasSuffix(n, gpuMemorySuffix):
-			continue
 		case IsMigResource(n):
 			gpuPortion, _, err := ExtractGpuAndMemoryFromMigResourceName(n)
 			if err != nil {
@@ -37,7 +37,7 @@ func SumGpuAllocation(list v1.ResourceList) float64 {
 			total += float64(gpuPortion) * quantity.AsApproximateFloat64()
 		case strings.HasSuffix(n, constants.GpuResource):
 			total += quantity.AsApproximateFloat64()
-		case IsGPUDeviceClass(n):
+		case !strings.Contains(n, "/") && IsGPUDeviceClass(n):
 			total += quantity.AsApproximateFloat64()
 		}
 	}
