@@ -18,7 +18,10 @@ type Options struct {
 	EnableLeaderElection         bool
 	EnableWebhook                bool
 	SkipControllerNameValidation bool // Set true for env tests
-	EnableQuotaValidation        bool // Enable validation warnings for queue quota relationships
+
+	// LimitDescendentsOverSubscription controls admission enforcement when a child
+	// queue's quota exceeds its parent's quota (one of none, warning, block).
+	LimitDescendentsOverSubscription string
 
 	MetricsAddress                 string
 	MetricsNamespace               string
@@ -36,7 +39,9 @@ func InitOptions(fs *flag.FlagSet) *Options {
 	fs.BoolVar(&o.EnableLeaderElection, "leader-elect", false, "Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.")
 	fs.BoolVar(&o.EnableWebhook, "enable-webhook", true, "Enable webhook for controller manager.")
 	fs.BoolVar(&o.SkipControllerNameValidation, "skip-controller-name-validation", false, "Skip controller name validation.")
-	fs.BoolVar(&o.EnableQuotaValidation, "enable-quota-validation", false, "Enable validation warnings for queue quota relationships (opt-in).")
+	fs.StringVar(&o.LimitDescendentsOverSubscription, "limit-descendents-over-subscription", "none",
+		"Enforcement mode for descendent queue quota over-subscription (one of none, warning, block). "+
+			"'warning' emits admission warnings, 'block' rejects the request.")
 	fs.StringVar(&o.MetricsAddress, "metrics-listen-address", defaultMetricsAddress, "The address the metrics endpoint binds to.")
 	fs.StringVar(&o.MetricsNamespace, "metrics-namespace", constants.DefaultMetricsNamespace, "Metrics namespace.")
 	fs.Var(&o.QueueLabelToMetricLabel, "queue-label-to-metric-label", "Map of queue label keys to metric label keys, e.g. 'foo=bar,baz=qux'.")

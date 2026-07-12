@@ -9284,6 +9284,16 @@ spec:
                             type: integer
                         type: object
                     type: object
+                  limitDescendentsOverSubscription:
+                    description: |-
+                      LimitDescendentsOverSubscription controls admission enforcement when a child queue's quota
+                      exceeds its parent's quota (or sibling quotas oversubscribe the parent). "none" disables the
+                      checks, "warning" emits admission warnings, and "block" rejects the request.
+                    enum:
+                    - none
+                    - warning
+                    - block
+                    type: string
                   metricsNamespace:
                     description: MetricsNamespace specifies the namespace where metrics
                       are exposed for the queue controller

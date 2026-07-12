@@ -199,6 +199,12 @@ queuecontroller:
     pullPolicy: IfNotPresent
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   affinity: {}
+  # limitDescendentsOverSubscription controls admission enforcement when a child queue's
+  # quota exceeds its parent's quota (or sibling quotas oversubscribe the parent). One of:
+  #   none    - no checks (default, preserves existing behavior)
+  #   warning - the queue validation webhook emits admission warnings
+  #   block   - the queue validation webhook rejects the request
+  limitDescendentsOverSubscription: none
 
 admission:
   enabled: true

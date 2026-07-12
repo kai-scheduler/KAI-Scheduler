@@ -81,6 +81,11 @@ func (in *QueueController) DeepCopyInto(out *QueueController) {
 		*out = new(string)
 		**out = **in
 	}
+	if in.LimitDescendentsOverSubscription != nil {
+		in, out := &in.LimitDescendentsOverSubscription, &out.LimitDescendentsOverSubscription
+		*out = new(string)
+		**out = **in
+	}
 	if in.VPA != nil {
 		in, out := &in.VPA, &out.VPA
 		*out = new(common.VPASpec)

@@ -14,6 +14,9 @@ import (
 const (
 	imageName                      = "queuecontroller"
 	defaultValidatingWebhookPrefix = "kai-queue-validation-"
+
+	// LimitDescendentsOverSubscriptionNone disables descendent quota over-subscription checks.
+	LimitDescendentsOverSubscriptionNone = "none"
 )
 
 type QueueController struct {
@@ -42,6 +45,13 @@ type QueueController struct {
 	// QueueLabelToDefaultMetricValue maps queue label keys to default metric values when the label is absent
 	// +kubebuilder:validation:Optional
 	QueueLabelToDefaultMetricValue *string `json:"queueLabelToDefaultMetricValue,omitempty"`
+
+	// LimitDescendentsOverSubscription controls admission enforcement when a child queue's quota
+	// exceeds its parent's quota (or sibling quotas oversubscribe the parent). "none" disables the
+	// checks, "warning" emits admission warnings, and "block" rejects the request.
+	// +kubebuilder:validation:Enum=none;warning;block
+	// +kubebuilder:validation:Optional
+	LimitDescendentsOverSubscription *string `json:"limitDescendentsOverSubscription,omitempty"`
 
 	// VPA specifies Vertical Pod Autoscaler configuration for the queue controller
 	// +kubebuilder:validation:Optional
@@ -72,6 +82,9 @@ func (q *QueueController) SetDefaultsWhereNeeded(replicaCount *int32, globalVPA 
 
 	q.Webhooks = common.SetDefault(q.Webhooks, &QueueControllerWebhooks{})
 	q.Webhooks.SetDefaultsWhereNeeded()
+
+	q.LimitDescendentsOverSubscription = common.SetDefault(
+		q.LimitDescendentsOverSubscription, ptr.To(LimitDescendentsOverSubscriptionNone))
 
 	if q.VPA == nil {
 		q.VPA = globalVPA

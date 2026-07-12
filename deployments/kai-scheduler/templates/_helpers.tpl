@@ -190,6 +190,9 @@ spec:
       {{- end }}
 
   queueController:
+    {{- if .Values.queuecontroller.limitDescendentsOverSubscription }}
+    limitDescendentsOverSubscription: {{ .Values.queuecontroller.limitDescendentsOverSubscription }}
+    {{- end }}
     service:
       enabled: {{ .Values.queuecontroller.enabled }}
       image:

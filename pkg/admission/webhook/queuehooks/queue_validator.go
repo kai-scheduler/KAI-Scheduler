@@ -6,6 +6,7 @@ package queuehooks
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -18,6 +19,35 @@ var queueValidatorLog = logf.Log.WithName("queue-validator")
 
 const missingResourcesError = "resources must be specified"
 
+// OverSubscriptionMode controls how the validator reacts when a descendent
+// queue's quota exceeds its parent's quota (or siblings oversubscribe it).
+type OverSubscriptionMode string
+
+const (
+	// OverSubscriptionModeNone disables the descendent over-subscription checks.
+	OverSubscriptionModeNone OverSubscriptionMode = "none"
+	// OverSubscriptionModeWarning surfaces violations as admission warnings.
+	OverSubscriptionModeWarning OverSubscriptionMode = "warning"
+	// OverSubscriptionModeBlock rejects the request when violations are found.
+	OverSubscriptionModeBlock OverSubscriptionMode = "block"
+)
+
+// ParseOverSubscriptionMode normalizes a raw flag value into an
+// OverSubscriptionMode, defaulting to OverSubscriptionModeNone when empty and
+// erroring on unknown values.
+func ParseOverSubscriptionMode(value string) (OverSubscriptionMode, error) {
+	switch OverSubscriptionMode(value) {
+	case "", OverSubscriptionModeNone:
+		return OverSubscriptionModeNone, nil
+	case OverSubscriptionModeWarning:
+		return OverSubscriptionModeWarning, nil
+	case OverSubscriptionModeBlock:
+		return OverSubscriptionModeBlock, nil
+	default:
+		return "", fmt.Errorf("invalid over-subscription mode %q: must be one of none, warning, block", value)
+	}
+}
+
 type QueueValidator interface {
 	ValidateCreate(ctx context.Context, obj *v2.Queue) (warnings admission.Warnings, err error)
 	ValidateUpdate(ctx context.Context, oldObj, newObj *v2.Queue) (warnings admission.Warnings, err error)
@@ -25,14 +55,14 @@ type QueueValidator interface {
 }
 
 type queueValidator struct {
-	kubeClient            client.Client
-	enableQuotaValidation bool
+	kubeClient           client.Client
+	overSubscriptionMode OverSubscriptionMode
 }
 
-func NewQueueValidator(kubeClient client.Client, enableQuotaValidation bool) QueueValidator {
+func NewQueueValidator(kubeClient client.Client, overSubscriptionMode OverSubscriptionMode) QueueValidator {
 	return &queueValidator{
-		kubeClient:            kubeClient,
-		enableQuotaValidation: enableQuotaValidation,
+		kubeClient:           kubeClient,
+		overSubscriptionMode: overSubscriptionMode,
 	}
 }
 
@@ -43,11 +73,16 @@ func (v *queueValidator) ValidateCreate(ctx context.Context, queue *v2.Queue) (a
 		return []string{missingResourcesError}, fmt.Errorf(missingResourcesError)
 	}
 
-	if !v.enableQuotaValidation || queue.Spec.ParentQueue == "" {
+	if v.overSubscriptionMode == OverSubscriptionModeNone || queue.Spec.ParentQueue == "" {
 		return nil, nil
 	}
 
-	return v.validateParentChildQuota(ctx, queue)
+	violations, err := v.validateParentChildQuota(ctx, queue)
+	if err != nil {
+		return nil, err
+	}
+
+	return v.reportViolations(violations)
 }
 
 func (v *queueValidator) ValidateUpdate(ctx context.Context, oldQueue, newQueue *v2.Queue) (admission.Warnings, error) {
@@ -57,29 +92,44 @@ func (v *queueValidator) ValidateUpdate(ctx context.Context, oldQueue, newQueue 
 		return []string{missingResourcesError}, fmt.Errorf(missingResourcesError)
 	}
 
-	if !v.enableQuotaValidation {
+	if v.overSubscriptionMode == OverSubscriptionModeNone {
 		return nil, nil
 	}
 
-	var warnings admission.Warnings
+	var violations []string
 
 	if newQueue.Spec.ParentQueue != "" {
-		parentWarnings, err := v.validateParentChildQuota(ctx, newQueue)
+		parentViolations, err := v.validateParentChildQuota(ctx, newQueue)
 		if err != nil {
-			return parentWarnings, err
+			return nil, err
 		}
-		warnings = append(warnings, parentWarnings...)
+		violations = append(violations, parentViolations...)
 	}
 
 	if len(oldQueue.Status.ChildQueues) > 0 {
-		childWarnings, err := v.validateChildrenQuotaSum(ctx, newQueue)
+		childViolations, err := v.validateChildrenQuotaSum(ctx, newQueue)
 		if err != nil {
-			return childWarnings, err
+			return nil, err
 		}
-		warnings = append(warnings, childWarnings...)
+		violations = append(violations, childViolations...)
 	}
 
-	return warnings, nil
+	return v.reportViolations(violations)
+}
+
+// reportViolations maps collected quota violations to the configured
+// enforcement mode: warnings surface them as admission warnings, block rejects
+// the request with an aggregated error.
+func (v *queueValidator) reportViolations(violations []string) (admission.Warnings, error) {
+	if len(violations) == 0 {
+		return nil, nil
+	}
+
+	if v.overSubscriptionMode == OverSubscriptionModeBlock {
+		return nil, fmt.Errorf("queue quota over-subscription: %s", strings.Join(violations, "; "))
+	}
+
+	return violations, nil
 }
 
 func (v *queueValidator) ValidateDelete(ctx context.Context, queue *v2.Queue) (admission.Warnings, error) {
