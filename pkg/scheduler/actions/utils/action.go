@@ -74,11 +74,13 @@ func GetMessageOfEviction(ssn *framework.Session, actionType framework.ActionTyp
 			return msg
 		}
 
-		reclaimerDetailsQueue := queueForReclaimDetails(ssn, reclaimerQueue)
-		reclaimeeDetailsQueue := queueForReclaimDetails(ssn, reclaimeeQueue)
+		var reclaimerDetailsQueue, reclaimeeDetailsQueue *queue_info.QueueInfo
 		if reclaimeeQueue.ParentQueue == reclaimerQueue.ParentQueue {
 			reclaimerDetailsQueue = reclaimerQueue
 			reclaimeeDetailsQueue = reclaimeeQueue
+		} else {
+			reclaimerDetailsQueue = queueForReclaimDetails(ssn, reclaimerQueue)
+			reclaimeeDetailsQueue = queueForReclaimDetails(ssn, reclaimeeQueue)
 		}
 
 		queueDetails := getReclaimMessageQueuesDetails(ssn, preempteeTask, preemptorJob,
