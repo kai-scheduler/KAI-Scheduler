@@ -30,6 +30,8 @@ import (
 
 var _ = DescribePreemptSpecs()
 
+var _ = DescribePreemptDelaySpecs()
+
 var _ = Describe("Priority Preemption", Ordered, func() {
 	var (
 		testCtx                         *testcontext.TestContext
