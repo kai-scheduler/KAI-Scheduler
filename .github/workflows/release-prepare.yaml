@@ -9,9 +9,7 @@
 #
 # A maintainer reviews and merges that PR. Merging it triggers release-publish.yaml (step 2),
 # which tags the version and creates the GitHub Release.
-#
-# Uses KAIBOT_TOKEN so the pushed branch + PR are attributable to the bot and so downstream CI
-# runs. The PR is labeled `skip-changelog` (it deletes fragments and adds none) and `release`.
+
 name: Release — Prepare Changelog
 
 on:

@@ -6,11 +6,7 @@
 # Fires when a "release/prepare-*" PR from release-prepare.yaml is merged into main or a v*.*
 # branch. Reads the freshly-folded top section of CHANGELOG.md, creates the git tag, and creates
 # the GitHub Release with that section as the notes.
-#
-# The tag and Release are created with KAIBOT_TOKEN (a PAT) ON PURPOSE: refs created with the
-# default GITHUB_TOKEN do not trigger other workflows. Using the PAT lets:
-#   - the tag push trigger push-artifacts.yaml  (images + Helm chart -> GHCR), and
-#   - the Release creation trigger on-release.yaml (chart tarball asset + e2e matrix).
+
 name: Release — Tag & Publish
 
 on:

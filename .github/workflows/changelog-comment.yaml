@@ -5,10 +5,7 @@
 # link to each fragment. Pending fragments are folded into CHANGELOG.md at release time
 # (`make changelog-release`), so this confirms to the contributor that their entry was
 # recorded even though CHANGELOG.md did not change in the PR.
-#
-# Uses pull_request_target (so it also works for fork PRs and has access to KAIBOT_TOKEN),
-# but only ever reads the PR's file list via the API and posts a comment — it never checks
-# out or executes PR code, and never pushes to any branch. Required permission: comment.
+
 name: Changelog Comment
 
 on:
