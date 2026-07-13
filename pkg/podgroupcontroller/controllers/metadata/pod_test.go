@@ -83,21 +83,25 @@ func TestPodSteadyStateResources(t *testing.T) {
 					v1.ResourceCPU:                            resource.MustParse("100m"),
 					v1.ResourceName("nvidia.com/gpu"):         resource.MustParse("1"),
 					v1.ResourceName("amd.com/gpu"):            resource.MustParse("1"),
+					v1.ResourceName("somethingelse/gpu"):      resource.MustParse("1"),
 					v1.ResourceName("nvidia.com/mig-1g.10gb"): resource.MustParse("1"),
 				},
 			}},
 			want: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1100m")},
 		},
 		{
+			// Any name the queue counts as a GPU, not just the two the scheduler names. getAllocatedGpus
+			// matches on the "/gpu" suffix, so letting one of these in would move kai_queue_allocated_gpus.
 			name: "gpu requested by a native sidecar is not counted",
 			pod: &v1.Pod{Spec: v1.PodSpec{
 				InitContainers: []v1.Container{{
 					RestartPolicy: ptr.To(v1.ContainerRestartPolicyAlways),
 					Resources: v1.ResourceRequirements{
 						Requests: v1.ResourceList{
-							v1.ResourceCPU:                    resource.MustParse("250m"),
-							v1.ResourceName("nvidia.com/gpu"): resource.MustParse("1"),
-							v1.ResourceName("amd.com/gpu"):    resource.MustParse("1"),
+							v1.ResourceCPU:                       resource.MustParse("250m"),
+							v1.ResourceName("nvidia.com/gpu"):    resource.MustParse("1"),
+							v1.ResourceName("amd.com/gpu"):       resource.MustParse("1"),
+							v1.ResourceName("somethingelse/gpu"): resource.MustParse("2"),
 						},
 					},
 				}},
@@ -106,6 +110,23 @@ func TestPodSteadyStateResources(t *testing.T) {
 				},
 			}},
 			want: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1250m")},
+		},
+		{
+			// A sidecar-only vendor GPU: before this change the queue reported 0 GPUs for such a pod, and it
+			// still does. This is the invariant behind "kai_queue_allocated_gpus is unchanged".
+			name: "a sidecar's vendor gpu never reaches the status",
+			pod: &v1.Pod{Spec: v1.PodSpec{
+				InitContainers: []v1.Container{{
+					RestartPolicy: ptr.To(v1.ContainerRestartPolicyAlways),
+					Resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{v1.ResourceName("somethingelse/gpu"): resource.MustParse("2")},
+					},
+				}},
+				Containers: []v1.Container{
+					{Resources: v1.ResourceRequirements{Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1")}}},
+				},
+			}},
+			want: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1")},
 		},
 		{
 			name: "mig requested by a native sidecar is not counted",

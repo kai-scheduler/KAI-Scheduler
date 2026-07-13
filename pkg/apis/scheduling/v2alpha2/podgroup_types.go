@@ -181,8 +181,9 @@ type PodGroupResourcesStatus struct {
 	// Current allocated GPU (in fracions), CPU (in millicpus), Memory in megabytes and any extra resources in ints
 	// for all preemptible resources used by pods of this pod group.
 	// Counts each pod's regular containers, its native sidecars (init containers with restartPolicy Always) and
-	// its Pod overhead. An NVIDIA or AMD GPU, or a MIG device, asked for by a sidecar or set in a Pod overhead is
-	// not counted, and neither is the peak of a non-restartable init container.
+	// its Pod overhead. A resource the queue counts as a GPU (a name ending in /gpu, or a MIG device) is left out
+	// when a sidecar asks for it or a Pod overhead sets it, and so is the peak of a non-restartable init
+	// container.
 	// +optional
 	Allocated v1.ResourceList `json:"allocated,omitempty" protobuf:"bytes,1,rep,name=allocated,casttype=k8s.io/api/core/v1.ResourceList,castkey=k8s.io/api/core/v1.ResourceName"`
 
@@ -194,7 +195,9 @@ type PodGroupResourcesStatus struct {
 
 	// Current requested GPU (in fracions), CPU (in millicpus) and Memory in megabytes
 	// by all running and pending jobs in queue and child queues.
-	// Counted the same way as Allocated.
+	// Uses the same container, native-sidecar and Pod-overhead aggregation as Allocated. GPU-sharing requested
+	// and received resources are accounted on separate paths, so the two fields can differ by more than the set
+	// of pods they cover.
 	// +optional
 	Requested v1.ResourceList `json:"requested,omitempty" protobuf:"bytes,3,rep,name=requested,casttype=k8s.io/api/core/v1.ResourceList,castkey=k8s.io/api/core/v1.ResourceName"`
 }
