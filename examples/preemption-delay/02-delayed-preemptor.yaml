@@ -1,0 +1,30 @@
+# Higher-priority pod that must wait 2 minutes before it may evict anyone.
+# While the window runs:
+#   - this pod stays Pending (visible to autoscalers as unschedulable)
+#   - the victim keeps running
+#   - the podgroup status explains it:
+#       kubectl get podgroups -n delay-demo \
+#         -o jsonpath='{.items[*].status.schedulingConditions[*].message}'
+#     -> "Workload is within its preemption delay window (2m0s) and may not
+#         trigger evictions before <RFC3339>"
+# After the window expires, the victim is evicted on the next scheduling cycle
+# and this pod schedules; the victim's PodGroup gets the
+# kai.scheduler/last-eviction-timestamp annotation.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: delayed-preemptor
+  namespace: delay-demo
+  labels:
+    kai.scheduler/queue: delay-queue
+  annotations:
+    kai.scheduler/preemption-delay: "2m"
+spec:
+  schedulerName: kai-scheduler
+  priorityClassName: build-preemptible
+  containers:
+  - name: main
+    image: registry.k8s.io/pause:3.9
+    resources:
+      limits: {cpu: 500m}
+      requests: {cpu: 500m}

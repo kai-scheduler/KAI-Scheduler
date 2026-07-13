@@ -7,8 +7,8 @@ const (
 	PodGroupNamePrefix      = "pg"
 	ProjectLabelKey         = "project"
 	PriorityLabelKey        = "priorityClassName"
-	PreemptibilityLabelKey  = "kai.scheduler/preemptibility"
-	PreemptionDelayLabelKey = "kai.scheduler/preemption-delay"
+	PreemptibilityLabelKey       = "kai.scheduler/preemptibility"
+	PreemptionDelayAnnotationKey = "kai.scheduler/preemption-delay"
 	UserLabelKey            = "user"
 
 	BuildPriorityClass     = "build"
