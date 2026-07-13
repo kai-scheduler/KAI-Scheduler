@@ -30,7 +30,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/scheduler_util"
 )
 
 type reclaimAction struct {
@@ -144,22 +143,16 @@ func shouldStopActionForSearchResult(result *solvers.SearchResult) bool {
 }
 
 func getOrderedVictimsQueue(ssn *framework.Session, reclaimer *podgroup_info.PodGroupInfo) solvers.GenerateVictimsQueue {
-	// Victim filter results stay stable for one solver run; mutable queue state is rebuilt per generator.
-	var candidates map[common_info.PodGroupID]*podgroup_info.PodGroupInfo
-	return func() *utils.JobsOrderByQueues {
-		if candidates == nil {
-			candidates = getReclaimVictimCandidates(ssn, reclaimer)
-		}
-
-		jobsOrderedByQueue := utils.NewJobsOrderByQueues(ssn, utils.JobsOrderInitOptions{
+	return utils.NewCachedVictimsQueueGenerator(
+		ssn,
+		func() map[common_info.PodGroupID]*podgroup_info.PodGroupInfo {
+			return getReclaimVictimCandidates(ssn, reclaimer)
+		},
+		utils.JobsOrderInitOptions{
 			FilterNonPreemptible:     true,
 			FilterNonActiveAllocated: true,
-			VictimQueue:              true,
-			MaxJobsQueueDepth:        scheduler_util.QueueCapacityInfinite,
-		})
-		jobsOrderedByQueue.InitializeWithJobs(candidates)
-		return &jobsOrderedByQueue
-	}
+		},
+	)
 }
 
 func getReclaimVictimCandidates(
