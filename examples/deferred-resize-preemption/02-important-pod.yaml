@@ -1,0 +1,25 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# A higher-priority (build) workload we will scale up in place. It starts at 500m so it
+# and the victim exactly fill the node/quota; the NotRequired resize policy lets the
+# kubelet grow cpu without restarting the container.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: resize-important
+  namespace: resize-demo
+  labels:
+    kai.scheduler/queue: resize-queue
+spec:
+  schedulerName: kai-scheduler
+  priorityClassName: build
+  containers:
+  - name: main
+    image: registry.k8s.io/pause:3.9
+    resizePolicy:
+    - resourceName: cpu
+      restartPolicy: NotRequired
+    resources:
+      limits: {cpu: 500m}
+      requests: {cpu: 500m}

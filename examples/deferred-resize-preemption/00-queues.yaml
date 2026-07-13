@@ -1,0 +1,31 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# A queue pair. CPU quota/limit is sized so the important pod and the victim exactly
+# fill it at their initial sizes; scaling the important pod up therefore needs room
+# that only the victim's eviction can provide.
+apiVersion: scheduling.run.ai/v2
+kind: Queue
+metadata:
+  name: resize-parent
+spec:
+  resources:
+    cpu: {limit: 1000, overQuotaWeight: 1, quota: 1000}
+    gpu: {limit: -1, overQuotaWeight: 1, quota: 0}
+    memory: {limit: -1, overQuotaWeight: 1, quota: 0}
+---
+apiVersion: scheduling.run.ai/v2
+kind: Queue
+metadata:
+  name: resize-queue
+spec:
+  parentQueue: resize-parent
+  resources:
+    cpu: {limit: 1000, overQuotaWeight: 1, quota: 1000}
+    gpu: {limit: -1, overQuotaWeight: 1, quota: 0}
+    memory: {limit: -1, overQuotaWeight: 1, quota: 0}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: resize-demo

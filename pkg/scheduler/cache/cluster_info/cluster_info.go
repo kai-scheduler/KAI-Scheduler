@@ -27,6 +27,7 @@ import (
 	"github.com/pkg/errors"
 	v1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
@@ -190,6 +191,8 @@ func (c *ClusterInfo) Snapshot() (*api.ClusterInfo, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	InjectResizeReservations(snapshot)
 
 	snapshot.ConfigMaps, err = c.snapshotConfigMaps()
 	if err != nil {
@@ -397,6 +400,48 @@ func (c *ClusterInfo) snapshotBindRequests(nodes map[string]*node_info.NodeInfo)
 	}
 
 	return result, requestsForDeletedNodes, nil
+}
+
+// InjectResizeReservations adds, for every running pod whose in-place resize the kubelet has
+// deferred, a synthetic pending PodGroupInfo standing in for the resize's growth (see
+// pod_info.NewResizeReservationTask): a node-pinned reservation task requesting the resize delta,
+// in the resizing pod's queue and at its priority and preemptibility. The existing allocate /
+// preempt / reclaim actions then free room for it on the pod's node, subject to the queue's quota
+// and fairness, and never bind it. The resizing pod is already charged at its actual size, so the
+// growth is not double-counted.
+func InjectResizeReservations(snapshot *api.ClusterInfo) {
+	var reservations []*podgroup_info.PodGroupInfo
+	for _, job := range snapshot.PodGroupInfos {
+		for _, task := range job.GetAllPodsMap() {
+			reservationTask := pod_info.NewResizeReservationTask(task, snapshot.ResourceVectorMap)
+			if reservationTask == nil {
+				continue
+			}
+			reservation := podgroup_info.NewPodGroupInfoWithVectorMap(
+				reservationTask.Job, snapshot.ResourceVectorMap, reservationTask)
+			reservation.Name = reservationTask.Name
+			reservation.Namespace = reservationTask.Namespace
+			reservation.NamespacedName = reservationTask.Namespace + "/" + reservationTask.Name
+			reservation.Queue = job.Queue
+			reservation.Priority = job.Priority
+			reservation.Preemptibility = job.Preemptibility
+			// Inherit the resizing pod's age so the reservation competes with equal-priority peers by
+			// the pod's own seniority, exactly as the pod would (KAI breaks equal-priority ties by
+			// creation timestamp). Without this it would carry a zero timestamp and always sort first.
+			reservation.CreationTimestamp = job.CreationTimestamp
+			// A synthetic reservation has no real PodGroup CRD; give it a minimal non-nil PodGroup so
+			// the actions that assume job.PodGroup != nil (preemption-delay window, metrics, scenario
+			// validators) are safe. The valid default sub-group built above is left intact.
+			reservation.PodGroup = &enginev2alpha2.PodGroup{
+				ObjectMeta: metav1.ObjectMeta{Name: reservationTask.Name, Namespace: reservationTask.Namespace},
+				Spec:       enginev2alpha2.PodGroupSpec{Queue: string(job.Queue)},
+			}
+			reservations = append(reservations, reservation)
+		}
+	}
+	for _, reservation := range reservations {
+		snapshot.PodGroupInfos[reservation.UID] = reservation
+	}
 }
 
 func (c *ClusterInfo) snapshotPodGroups(

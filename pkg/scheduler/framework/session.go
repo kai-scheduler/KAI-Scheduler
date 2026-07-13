@@ -131,6 +131,13 @@ func (ssn *Session) GetNodes() []ksf.NodeInfo {
 }
 
 func (ssn *Session) BindPod(pod *pod_info.PodInfo) error {
+	// A resize reservation is a synthetic pending pod with no real workload behind it; it only
+	// holds resources on its node to drive eviction for a deferred in-place resize, so it is never
+	// bound. The kubelet actuates the real resize once room is freed.
+	if pod.IsResizeReservation {
+		return nil
+	}
+
 	bindRequestAnnotations := ssn.MutateBindRequestAnnotations(pod, pod.NodeName)
 	predictedNUMAZones := numaPlacementToZones(pod, ssn.ClusterInfo.Nodes[pod.NodeName])
 	if err := ssn.Cache.Bind(pod, pod.NodeName, bindRequestAnnotations, predictedNUMAZones); err != nil {

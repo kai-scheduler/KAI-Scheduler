@@ -40,6 +40,13 @@ type TestTaskBasic struct {
 	ResourceClaimNames         []string
 	PersistentVolumeClaimNames []string
 	Annotations                map[string]string
+
+	// ResizeDeferredActual, when set, builds the pod as a kubelet-deferred in-place resize
+	// (KEP-1287): the pod keeps its spec (desired) requests, gains a PodResizePending/Deferred
+	// condition, and reports these values as the resources actually granted in its container
+	// status. Only the changed (lowered) resources need be listed; unlisted resources default to
+	// the spec request, so the resize delta is spec minus these.
+	ResizeDeferredActual v1.ResourceList
 }
 
 func BuildPod(
@@ -140,6 +147,24 @@ func BuildPod(
 			Name:              templateName,
 			ResourceClaimName: &claimName,
 		})
+	}
+
+	if task.ResizeDeferredActual != nil {
+		pod.Status.Conditions = append(pod.Status.Conditions, v1.PodCondition{
+			Type:   v1.PodResizePending,
+			Reason: v1.PodReasonDeferred,
+			Status: v1.ConditionTrue,
+		})
+		// The kubelet reports every resource's granted value in status; start from the spec request
+		// and override only the resources the resize actually lowered, so unlisted resources have a
+		// zero delta.
+		actual := req.DeepCopy()
+		for name, quantity := range task.ResizeDeferredActual {
+			actual[name] = quantity
+		}
+		pod.Status.ContainerStatuses = []v1.ContainerStatus{{
+			Resources: &v1.ResourceRequirements{Requests: actual},
+		}}
 	}
 
 	return pod

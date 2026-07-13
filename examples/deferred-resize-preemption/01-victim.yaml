@@ -1,0 +1,21 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# A low-priority (train) neighbour sharing the node with the important pod. It is
+# preemptible, so when the important pod's resize needs room this is what gets evicted.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: resize-victim
+  namespace: resize-demo
+  labels:
+    kai.scheduler/queue: resize-queue
+spec:
+  schedulerName: kai-scheduler
+  priorityClassName: train
+  containers:
+  - name: main
+    image: registry.k8s.io/pause:3.9
+    resources:
+      limits: {cpu: 500m}
+      requests: {cpu: 500m}
