@@ -38,13 +38,16 @@ const (
 // OverSubscriptionMode, defaulting to OverSubscriptionModeNone when empty and
 // erroring on unknown values.
 func ParseOverSubscriptionMode(value string) (OverSubscriptionMode, error) {
-	switch OverSubscriptionMode(value) {
-	case "", OverSubscriptionModeNone:
-		return OverSubscriptionModeNone, nil
-	case OverSubscriptionModeWarning:
-		return OverSubscriptionModeWarning, nil
-	case OverSubscriptionModeBlock:
-		return OverSubscriptionModeBlock, nil
+	mode := OverSubscriptionMode(value)
+	if mode == "" {
+		mode = OverSubscriptionModeNone
+	}
+
+	switch mode {
+	case OverSubscriptionModeNone,
+		OverSubscriptionModeWarning,
+		OverSubscriptionModeBlock:
+		return mode, nil
 	default:
 		return "", fmt.Errorf("invalid over-subscription mode %q: must be one of none, warning, block", value)
 	}
