@@ -62,6 +62,9 @@ func buildArgsList(kaiConfig *kaiv1.Config) []string {
 	if config.Args.GangScheduleKnative != nil {
 		args = append(args, "--knative-gang-schedule="+strconv.FormatBool(*config.Args.GangScheduleKnative))
 	}
+	if config.Args.GenericKartaFallback != nil {
+		args = append(args, "--generic-karta-fallback="+strconv.FormatBool(*config.Args.GenericKartaFallback))
+	}
 
 	k8sClientConfig := config.K8sClientConfig
 	if k8sClientConfig.QPS != nil {

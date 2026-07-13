@@ -17,8 +17,8 @@ require (
 	github.com/k8stopologyawareschedwg/noderesourcetopology-api v0.1.2
 	github.com/kubeflow/mpi-operator v0.6.0
 	github.com/kubeflow/training-operator v1.9.3
-	github.com/onsi/ginkgo/v2 v2.28.1
-	github.com/onsi/gomega v1.39.1
+	github.com/onsi/ginkgo/v2 v2.32.0
+	github.com/onsi/gomega v1.40.0
 	github.com/openshift/api v0.0.0-20250602203052-b29811a290c7
 	github.com/panjf2000/ants/v2 v2.12.0
 	github.com/pkg/errors v0.9.1
@@ -27,8 +27,9 @@ require (
 	github.com/prometheus/client_model v0.6.2
 	github.com/prometheus/common v0.67.5
 	github.com/ray-project/kuberay/ray-operator v1.5.1
+	github.com/run-ai/karta v0.1.1-0.20260708043952-998140308a96
 	github.com/run-ai/kwok-operator v0.0.0-20240926063032-05b6364bc7c7
-	github.com/samber/lo v1.47.0
+	github.com/samber/lo v1.53.0
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.11.1
 	github.com/xhit/go-str2duration/v2 v2.1.0
@@ -37,16 +38,16 @@ require (
 	go.uber.org/multierr v1.11.0
 	go.uber.org/zap v1.27.1
 	golang.org/x/exp v0.0.0-20260218203240-3dfff04db8fa
-	golang.org/x/mod v0.35.0
+	golang.org/x/mod v0.36.0
 	gomodules.xyz/jsonpatch/v2 v2.5.0
 	google.golang.org/grpc v1.80.0
 	gopkg.in/h2non/gock.v1 v1.1.2
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
 	gotest.tools v2.2.0+incompatible
-	k8s.io/api v0.35.4
+	k8s.io/api v0.36.2
 	k8s.io/apiextensions-apiserver v0.35.4
-	k8s.io/apimachinery v0.35.4
+	k8s.io/apimachinery v0.36.2
 	k8s.io/apiserver v0.35.4
 	k8s.io/autoscaler/vertical-pod-autoscaler v1.5.1
 	k8s.io/cli-runtime v0.35.4
@@ -123,7 +124,7 @@ require (
 	github.com/google/cel-go v0.26.0 // indirect
 	github.com/google/gnostic-models v0.7.0 // indirect
 	github.com/google/go-containerregistry v0.20.5 // indirect
-	github.com/google/pprof v0.0.0-20260115054156-294ebfa9ad83 // indirect
+	github.com/google/pprof v0.0.0-20260402051712-545e8a4df936 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674 // indirect
 	github.com/grafana/pyroscope-go/godeltaprof v0.1.9 // indirect
@@ -131,6 +132,8 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0 // indirect
 	github.com/h2non/parth v0.0.0-20190131123155-b4df798d6542 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+	github.com/itchyny/gojq v0.12.19 // indirect
+	github.com/itchyny/timefmt-go v0.1.8 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.18.2 // indirect
@@ -174,15 +177,15 @@ require (
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/arch v0.22.0 // indirect
-	golang.org/x/crypto v0.52.0 // indirect
-	golang.org/x/net v0.55.0 // indirect
+	golang.org/x/crypto v0.53.0 // indirect
+	golang.org/x/net v0.56.0 // indirect
 	golang.org/x/oauth2 v0.35.0 // indirect
-	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.45.0 // indirect
-	golang.org/x/term v0.43.0 // indirect
-	golang.org/x/text v0.37.0 // indirect
+	golang.org/x/sync v0.21.0 // indirect
+	golang.org/x/sys v0.46.0 // indirect
+	golang.org/x/term v0.44.0 // indirect
+	golang.org/x/text v0.38.0 // indirect
 	golang.org/x/time v0.12.0 // indirect
-	golang.org/x/tools v0.44.0 // indirect
+	golang.org/x/tools v0.45.0 // indirect
 	google.golang.org/genproto v0.0.0-20250603155806-513f23925822 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260401024825-9d38bb4040a9 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260401024825-9d38bb4040a9 // indirect
@@ -193,15 +196,19 @@ require (
 	k8s.io/controller-manager v0.35.4 // indirect
 	k8s.io/cri-api v0.35.4 // indirect
 	k8s.io/csi-translation-lib v0.35.4 // indirect
-	k8s.io/kube-openapi v0.0.0-20250910181357-589584f1c912 // indirect
+	k8s.io/kube-openapi v0.0.0-20260317180543-43fb72c5454a // indirect
 	knative.dev/networking v0.0.0-20260120131110-a7cdca238a0d // indirect
 	sigs.k8s.io/gateway-api v1.4.0 // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
-	sigs.k8s.io/structured-merge-diff/v6 v6.3.2-0.20260122202528-d9cc6641c482 // indirect
+	sigs.k8s.io/structured-merge-diff/v6 v6.3.2 // indirect
 )
 
 retract (
 	v0.20.1
 	v0.20.0
 )
+
+replace k8s.io/api => k8s.io/api v0.35.4
+
+replace k8s.io/apimachinery => k8s.io/apimachinery v0.35.4

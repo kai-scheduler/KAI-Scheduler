@@ -6,6 +6,7 @@ package app
 import (
 	"flag"
 
+	kartav1alpha1 "github.com/run-ai/karta/pkg/api/runai/v1alpha1"
 	"go.uber.org/zap/zapcore"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -37,16 +38,15 @@ const (
 )
 
 var (
-	scheme   = runtime.NewScheme()
 	setupLog = ctrl.Log.WithName("setup")
 )
 
-func init() {
+func newScheme() *runtime.Scheme {
+	scheme := runtime.NewScheme()
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(v2.AddToScheme(scheme))
 	utilruntime.Must(kubeAiSchedulerV2alpha2.AddToScheme(scheme))
-
-	// +kubebuilder:scaffold:scheme
+	return scheme
 }
 
 type App struct {
@@ -67,7 +67,7 @@ func Run() error {
 }
 
 func New() (*App, error) {
-	return NewWithScheme(scheme)
+	return NewWithScheme(nil)
 }
 
 func NewWithScheme(mgrScheme *runtime.Scheme) (*App, error) {
@@ -77,10 +77,14 @@ func NewWithScheme(mgrScheme *runtime.Scheme) (*App, error) {
 	initLogger()
 
 	if mgrScheme == nil {
-		mgrScheme = scheme
+		mgrScheme = newScheme()
 	}
 
 	configs := opts.Configs()
+	if configs.GenericKartaFallback {
+		utilruntime.Must(kartav1alpha1.AddToScheme(mgrScheme))
+	}
+
 	mgr, err := ctrl.NewManager(getClientConfigOrDie(opts), ctrl.Options{
 		Scheme: mgrScheme,
 		Client: client.Options{
@@ -115,14 +119,13 @@ func NewWithScheme(mgrScheme *runtime.Scheme) (*App, error) {
 	}
 
 	defaultPluginsHub := pluginshub.NewDefaultPluginsHub(mgr.GetClient(), configs.SearchForLegacyPodGroups,
-		configs.KnativeGangSchedule, configs.SchedulingQueueLabelKey, configs.NodePoolLabelKey,
+		configs.KnativeGangSchedule, configs.GenericKartaFallback, configs.SchedulingQueueLabelKey, configs.NodePoolLabelKey,
 		configs.DefaultConfigPerTypeConfigMapName, configs.DefaultConfigPerTypeConfigMapNamespace)
 
 	app := &App{
 		Mgr:               mgr,
 		DefaultPluginsHub: defaultPluginsHub,
 		configs:           configs,
-		pluginsHub:        nil,
 	}
 	return app, nil
 }

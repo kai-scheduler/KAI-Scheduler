@@ -169,6 +169,8 @@ spec:
       affinity:
         {{- toYaml .Values.podgrouper.affinity | nindent 8 }}
       {{- end }}
+    args:
+      genericKartaFallback: {{ .Values.podgrouper.genericKartaFallback }}
 
   podGroupController:
     service:

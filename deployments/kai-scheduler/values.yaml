@@ -71,6 +71,7 @@ podgrouper:
     pullPolicy: IfNotPresent
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   queueLabelKey: "kai.scheduler/queue"
+  genericKartaFallback: true
   affinity: {}
 
 podgroupcontroller:
