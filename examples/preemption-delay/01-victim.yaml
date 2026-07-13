@@ -1,3 +1,6 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
 # Low-priority workload that fills the queue quota. Uses an explicit PodGroup
 # so the group survives eviction and the kai.scheduler/last-eviction-timestamp
 # annotation is observable afterwards:

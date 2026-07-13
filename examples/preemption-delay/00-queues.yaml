@@ -1,3 +1,6 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
 # Queue pair with a 500m CPU quota+limit, so a second 500m pod can only
 # get in by evicting the first.
 apiVersion: scheduling.run.ai/v2

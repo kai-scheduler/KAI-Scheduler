@@ -1,3 +1,6 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
 # Higher-priority pod that must wait 2 minutes before it may evict anyone.
 # While the window runs:
 #   - this pod stays Pending (visible to autoscalers as unschedulable)
