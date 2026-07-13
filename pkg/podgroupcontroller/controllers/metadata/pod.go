@@ -88,8 +88,8 @@ func isPodScheduled(pod *v1.Pod) bool {
 }
 
 // podSteadyStateResources sums what a pod holds concurrently while it runs: regular containers, native
-// sidecars (init containers with restartPolicy Always) and the Pod overhead the scheduler charges. The peak of
-// a plain init container is not included.
+// sidecars (init containers with restartPolicy Always) and Pod overhead. The peak of a plain init container is
+// not included, and neither is a GPU asked for by a sidecar or by an overhead, see withoutGpuRequirements.
 func podSteadyStateResources(pod *v1.Pod) v1.ResourceList {
 	total := v1.ResourceList{}
 	for _, container := range pod.Spec.Containers {
@@ -97,10 +97,10 @@ func podSteadyStateResources(pod *v1.Pod) v1.ResourceList {
 	}
 	for _, initContainer := range pod.Spec.InitContainers {
 		if isNativeSidecar(initContainer) {
-			total = resources.SumResources(total, initContainer.Resources.Requests)
+			total = resources.SumResources(total, withoutGpuRequirements(initContainer.Resources.Requests))
 		}
 	}
-	return resources.SumResources(total, chargedOverhead(pod))
+	return resources.SumResources(total, withoutGpuRequirements(pod.Spec.Overhead))
 }
 
 // isNativeSidecar reports whether an init container keeps running alongside the regular containers.
@@ -108,19 +108,21 @@ func isNativeSidecar(initContainer v1.Container) bool {
 	return initContainer.RestartPolicy != nil && *initContainer.RestartPolicy == v1.ContainerRestartPolicyAlways
 }
 
-// chargedOverhead returns the Pod overhead entries the scheduler charges to a pod. Keep the skipped names in
-// sync with resource_info.RequirementsFromResourceList, which routes them into the GPU requirement that
-// getPodResourceRequest leaves out of a pod's overhead.
-func chargedOverhead(pod *v1.Pod) v1.ResourceList {
-	overhead := v1.ResourceList{}
-	for name, quantity := range pod.Spec.Overhead {
+// withoutGpuRequirements drops the names resource_info.RequirementsFromResourceList routes into the scheduler's
+// GPU requirement instead of a pod's base resources. getPodResourceRequest charges only the base half of Pod
+// overhead, so an overhead GPU is never reserved. A sidecar GPU is dropped for a different reason: the
+// scheduler rebuilds a pod's GPU requirement from its fraction, gpu-memory or legacy MIG annotation and throws
+// the container request away, so counting one here without mirroring that would report a GPU nothing reserved.
+func withoutGpuRequirements(list v1.ResourceList) v1.ResourceList {
+	filtered := v1.ResourceList{}
+	for name, quantity := range list {
 		if name == constants.NvidiaGpuResource || name == constants.AmdGpuResource ||
 			commonresources.IsMigResource(string(name)) {
 			continue
 		}
-		overhead[name] = quantity.DeepCopy()
+		filtered[name] = quantity.DeepCopy()
 	}
-	return overhead
+	return filtered
 }
 
 func calculatedAllocatedResources(

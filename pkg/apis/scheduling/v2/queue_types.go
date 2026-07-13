@@ -60,15 +60,20 @@ type QueueStatus struct {
 	ChildQueues []string `json:"childQueues,omitempty"`
 
 	// Current allocated GPU (in fractions), CPU (in millicpus) and Memory in megabytes
-	// for all running jobs in queue and child queues
+	// for all running jobs in queue and child queues.
+	// Counts each pod's regular containers, its native sidecars (init containers with restartPolicy Always) and
+	// the non-GPU part of its Pod overhead. A GPU requested by a sidecar, and the peak of a non-restartable init
+	// container, are not counted.
 	Allocated v1.ResourceList `json:"allocated,omitempty"`
 
 	// Current allocated GPU (in fractions), CPU (in millicpus) and Memory in megabytes
-	// for all non-preemptible running jobs in queue and child queues
+	// for all non-preemptible running jobs in queue and child queues.
+	// Counted the same way as Allocated.
 	AllocatedNonPreemptible v1.ResourceList `json:"allocatedNonPreemptible,omitempty"`
 
 	// Current requested GPU (in fractions), CPU (in millicpus) and Memory in megabytes
-	// by all running and pending jobs in queue and child queues
+	// by all running and pending jobs in queue and child queues.
+	// Counted the same way as Allocated.
 	Requested v1.ResourceList `json:"requested,omitempty"`
 }
 

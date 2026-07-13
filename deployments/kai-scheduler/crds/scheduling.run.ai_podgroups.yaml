@@ -232,7 +232,10 @@ spec:
                       x-kubernetes-int-or-string: true
                     description: |-
                       Current allocated GPU (in fracions), CPU (in millicpus), Memory in megabytes and any extra resources in ints
-                      for all preemptible resources used by pods of this pod group
+                      for all preemptible resources used by pods of this pod group.
+                      Counts each pod's regular containers, its native sidecars (init containers with restartPolicy Always) and
+                      the non-GPU part of its Pod overhead. A GPU requested by a sidecar, and the peak of a non-restartable init
+                      container, are not counted.
                     type: object
                   allocatedNonPreemptible:
                     additionalProperties:
@@ -243,7 +246,8 @@ spec:
                       x-kubernetes-int-or-string: true
                     description: |-
                       Current allocated GPU (in fracions), CPU (in millicpus) and Memory in megabytes and any extra resources in ints
-                      for all non-preemptible resources used by pods of this pod group
+                      for all non-preemptible resources used by pods of this pod group.
+                      Counted the same way as Allocated.
                     type: object
                   requested:
                     additionalProperties:
@@ -254,7 +258,8 @@ spec:
                       x-kubernetes-int-or-string: true
                     description: |-
                       Current requested GPU (in fracions), CPU (in millicpus) and Memory in megabytes
-                      by all running and pending jobs in queue and child queues
+                      by all running and pending jobs in queue and child queues.
+                      Counted the same way as Allocated.
                     type: object
                 type: object
               schedulingConditions:

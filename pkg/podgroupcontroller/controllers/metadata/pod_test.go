@@ -16,6 +16,8 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
 func TestPodSteadyStateResources(t *testing.T) {
@@ -87,12 +89,52 @@ func TestPodSteadyStateResources(t *testing.T) {
 			want: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1100m")},
 		},
 		{
-			name: "gpu requested by a native sidecar is counted",
+			name: "gpu requested by a native sidecar is not counted",
 			pod: &v1.Pod{Spec: v1.PodSpec{
 				InitContainers: []v1.Container{{
 					RestartPolicy: ptr.To(v1.ContainerRestartPolicyAlways),
 					Resources: v1.ResourceRequirements{
-						Requests: v1.ResourceList{v1.ResourceName("nvidia.com/gpu"): resource.MustParse("1")},
+						Requests: v1.ResourceList{
+							v1.ResourceCPU:                    resource.MustParse("250m"),
+							v1.ResourceName("nvidia.com/gpu"): resource.MustParse("1"),
+							v1.ResourceName("amd.com/gpu"):    resource.MustParse("1"),
+						},
+					},
+				}},
+				Containers: []v1.Container{
+					{Resources: v1.ResourceRequirements{Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1")}}},
+				},
+			}},
+			want: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1250m")},
+		},
+		{
+			name: "mig requested by a native sidecar is not counted",
+			pod: &v1.Pod{Spec: v1.PodSpec{
+				InitContainers: []v1.Container{{
+					RestartPolicy: ptr.To(v1.ContainerRestartPolicyAlways),
+					Resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{
+							v1.ResourceCPU: resource.MustParse("250m"),
+							v1.ResourceName("nvidia.com/mig-1g.10gb"): resource.MustParse("1"),
+						},
+					},
+				}},
+				Containers: []v1.Container{
+					{Resources: v1.ResourceRequirements{Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1")}}},
+				},
+			}},
+			want: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1250m")},
+		},
+		{
+			name: "a sidecar's non-gpu extended resources are counted",
+			pod: &v1.Pod{Spec: v1.PodSpec{
+				InitContainers: []v1.Container{{
+					RestartPolicy: ptr.To(v1.ContainerRestartPolicyAlways),
+					Resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{
+							v1.ResourceEphemeralStorage:        resource.MustParse("1Gi"),
+							v1.ResourceName("example.com/foo"): resource.MustParse("2"),
+						},
 					},
 				}},
 				Containers: []v1.Container{
@@ -100,8 +142,9 @@ func TestPodSteadyStateResources(t *testing.T) {
 				},
 			}},
 			want: v1.ResourceList{
-				v1.ResourceCPU:                    resource.MustParse("1"),
-				v1.ResourceName("nvidia.com/gpu"): resource.MustParse("1"),
+				v1.ResourceCPU:                     resource.MustParse("1"),
+				v1.ResourceEphemeralStorage:        resource.MustParse("1Gi"),
+				v1.ResourceName("example.com/foo"): resource.MustParse("2"),
 			},
 		},
 		{
@@ -122,6 +165,132 @@ func TestPodSteadyStateResources(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestCalculateRequestedResources_GpuSharingAnnotations pins why a sidecar's GPU is left out. The scheduler
+// rebuilds a pod's GPU requirement from its GPU-sharing annotation and discards the container request, so
+// adding a sidecar GPU on top of the annotation would report a GPU that nothing reserved. Admission does not
+// catch the AMD case: getFirstGPULimit only looks for nvidia.com/gpu.
+func TestCalculateRequestedResources_GpuSharingAnnotations(t *testing.T) {
+	sidecarRequesting := func(requests v1.ResourceList) v1.Container {
+		return v1.Container{
+			Name:          "sidecar",
+			RestartPolicy: ptr.To(v1.ContainerRestartPolicyAlways),
+			Resources:     v1.ResourceRequirements{Requests: requests, Limits: requests},
+		}
+	}
+
+	tests := []struct {
+		name        string
+		annotations map[string]string
+		sidecar     v1.Container
+		want        v1.ResourceList
+	}{
+		{
+			name:        "amd gpu sidecar on a gpu-fraction pod",
+			annotations: map[string]string{constants.GpuFraction: "0.5"},
+			sidecar:     sidecarRequesting(v1.ResourceList{v1.ResourceName("amd.com/gpu"): resource.MustParse("1")}),
+			want: v1.ResourceList{
+				v1.ResourceCPU: resource.MustParse("1"),
+				v1.ResourceName(constants.NvidiaGpuResource): resource.MustParse("0.5"),
+			},
+		},
+		{
+			name:        "nvidia gpu sidecar on a gpu-fraction pod",
+			annotations: map[string]string{constants.GpuFraction: "0.5"},
+			sidecar: sidecarRequesting(
+				v1.ResourceList{v1.ResourceName(constants.NvidiaGpuResource): resource.MustParse("1")}),
+			want: v1.ResourceList{
+				v1.ResourceCPU: resource.MustParse("1"),
+				v1.ResourceName(constants.NvidiaGpuResource): resource.MustParse("0.5"),
+			},
+		},
+		{
+			name:        "whole gpu sidecar on a gpu-memory pod",
+			annotations: map[string]string{constants.GpuMemory: "2000"},
+			sidecar: sidecarRequesting(
+				v1.ResourceList{v1.ResourceName(constants.NvidiaGpuResource): resource.MustParse("1")}),
+			want: v1.ResourceList{
+				v1.ResourceCPU:                       resource.MustParse("1"),
+				v1.ResourceName("run.ai/gpu.memory"): resource.MustParse("2000"),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pod := &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "p", Namespace: "n", Annotations: tt.annotations},
+				Spec: v1.PodSpec{
+					InitContainers: []v1.Container{tt.sidecar},
+					Containers: []v1.Container{{
+						Resources: v1.ResourceRequirements{
+							Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1")},
+						},
+					}},
+				},
+			}
+
+			got, err := calculateRequestedResources(context.Background(), pod, nil, nil)
+			assert.NoError(t, err)
+			assert.Len(t, got, len(tt.want))
+			for name, want := range tt.want {
+				gotQuantity := got[name]
+				assert.Zero(t, gotQuantity.Cmp(want),
+					"resource %s: got %s, want %s", name, gotQuantity.String(), want.String())
+			}
+		})
+	}
+}
+
+func TestGetPodMetadata_SidecarAndOverhead(t *testing.T) {
+	podWithSidecar := func(phase v1.PodPhase, scheduled bool) *v1.Pod {
+		pod := &v1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "p", Namespace: "n"},
+			Spec: v1.PodSpec{
+				InitContainers: []v1.Container{{
+					Name:          "sidecar",
+					RestartPolicy: ptr.To(v1.ContainerRestartPolicyAlways),
+					Resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("500m")},
+					},
+				}},
+				Containers: []v1.Container{{
+					Resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1")},
+					},
+				}},
+				Overhead: v1.ResourceList{v1.ResourceCPU: resource.MustParse("500m")},
+			},
+			Status: v1.PodStatus{Phase: phase},
+		}
+		if scheduled {
+			pod.Status.Conditions = []v1.PodCondition{{Type: v1.PodScheduled, Status: v1.ConditionTrue}}
+		}
+		return pod
+	}
+
+	scheme := runtime.NewScheme()
+	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	kubeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+	twoCores := resource.MustParse("2")
+
+	t.Run("pending and unscheduled pod is requested but not allocated", func(t *testing.T) {
+		meta, err := GetPodMetadata(context.Background(), podWithSidecar(v1.PodPending, false), kubeClient, "V1")
+		assert.NoError(t, err)
+		requested := meta.RequestedResources[v1.ResourceCPU]
+		assert.Zero(t, requested.Cmp(twoCores), "requested cpu: got %s", requested.String())
+		assert.Empty(t, meta.AllocatedResources)
+	})
+
+	t.Run("running pod is both requested and allocated", func(t *testing.T) {
+		meta, err := GetPodMetadata(context.Background(), podWithSidecar(v1.PodRunning, true), kubeClient, "V1")
+		assert.NoError(t, err)
+		requested := meta.RequestedResources[v1.ResourceCPU]
+		allocated := meta.AllocatedResources[v1.ResourceCPU]
+		assert.Zero(t, requested.Cmp(twoCores), "requested cpu: got %s", requested.String())
+		assert.Zero(t, allocated.Cmp(twoCores), "allocated cpu: got %s", allocated.String())
+	})
 }
 
 func TestIsPodAllocated(t *testing.T) {
