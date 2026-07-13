@@ -212,9 +212,9 @@ func distributedJobsScaleTestInternal(
 
 func waitForDistributedJobsForKwok(
 	ctx context.Context, testCtx *testcontext.TestContext, jobs []*batchv1.Job,
-) {
+) []*v1.Pod {
 	if len(jobs) == 0 {
-		return
+		return nil
 	}
 
 	expectedPods := 0
@@ -239,6 +239,18 @@ func waitForDistributedJobsForKwok(
 		g.Expect(err).NotTo(HaveOccurred())
 		g.Expect(len(podGroups.Items)).To(Equal(len(jobs)))
 	}, maxFlowTimeoutMinutes*time.Minute, podsPollIntervalSeconds*time.Second).Should(Succeed())
+
+	pods := &v1.PodList{}
+	Expect(testCtx.ControllerClient.List(ctx, pods,
+		runtimeClient.InNamespace(jobs[0].Namespace),
+		runtimeClient.MatchingLabels{distributedJobBatchLabel: batchID},
+	)).To(Succeed())
+
+	result := make([]*v1.Pod, 0, len(pods.Items))
+	for i := range pods.Items {
+		result = append(result, &pods.Items[i])
+	}
+	return result
 }
 
 func consolidateScaleTest(
@@ -371,23 +383,32 @@ func runNCCLSimulation(
 ) (testSucceeded bool, totalPods int, completedPods int, pendingPods int, startTime time.Time) {
 	jobSizes := []int{1, 2, 4, 8, 16, 32, 64, 128, 256, 512}
 	startTime = time.Now()
-	var testPods []*v1.Pod
+	batchID := utils.GenerateRandomK8sName(10)
+	podLabels := map[string]string{
+		"burst-test":             "true",
+		distributedJobBatchLabel: batchID,
+	}
+	jobLabels := map[string]string{distributedJobBatchLabel: batchID}
+	var jobs []*batchv1.Job
+	var creationError error
 	for _, jobSize := range jobSizes {
 		if jobSize > numberOfNodes {
 			break
 		}
 		for range numberOfNCCLJobsPerSize {
-			result, err := createDistributedJobForKwok(
+			job, err := submitDistributedJobForKwok(
 				ctx, testCtx, testQueue, FullNodeGPURequirement, jobSize,
-				map[string]string{
-					"burst-test": "true",
-				},
-				nil,
+				podLabels, jobLabels, nil,
 			)
-			Expect(err).NotTo(HaveOccurred())
-			testPods = append(testPods, result.Pods...)
+			if err != nil {
+				creationError = errors.Join(creationError, err)
+				continue
+			}
+			jobs = append(jobs, job)
 		}
 	}
+	Expect(creationError).NotTo(HaveOccurred(), "Failed to create some NCCL jobs")
+	testPods := waitForDistributedJobsForKwok(ctx, testCtx, jobs)
 
 	totalPods = len(testPods)
 	completedPods = 0
