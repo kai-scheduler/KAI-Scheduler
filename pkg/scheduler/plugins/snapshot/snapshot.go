@@ -69,6 +69,7 @@ type Snapshot struct {
 
 type snapshotPlugin struct {
 	session *framework.Session
+	config  *conf.SchedulerConfiguration
 }
 
 type jsonStream struct {
@@ -89,6 +90,7 @@ func (sp *snapshotPlugin) Name() string {
 
 func (sp *snapshotPlugin) OnSessionOpen(ssn *framework.Session) {
 	sp.session = ssn
+	sp.config = ssn.Config
 	log.InfraLogger.V(3).Info("Snapshot plugin registering get-snapshot")
 	ssn.AddHttpHandler("/get-snapshot", sp.serveSnapshot)
 }
@@ -123,7 +125,7 @@ func (sp *snapshotPlugin) writeSnapshot(ctx context.Context, writer io.Writer) e
 	return stream.writeObject(func(object *jsonObjectWriter) error {
 		return writeFields(
 			object,
-			valueField("config", sp.session.Config),
+			valueField("config", sp.config),
 			valueField("schedulerParams", &sp.session.SchedulerParams),
 			streamedField("rawObjects", sp.writeRawObjects),
 			streamedField("discovery", func(stream *jsonStream) error {

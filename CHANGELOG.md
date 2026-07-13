@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- Scheduler snapshot now correctly captures the plugin configuration even when `/get-snapshot` is requested between scheduling cycles (previously the `config` field was written as `null`, causing snapshot-tool to panic on replay). [#1885](https://github.com/kai-scheduler/KAI-Scheduler/issues/1885)
+
 ## [v0.16.4] - 2026-07-12
 
 ### Added
