@@ -272,6 +272,57 @@ var _ = Describe("Queue Validator", func() {
 		})
 	})
 
+	Context("unlimited quota sentinel (-1)", func() {
+		It("should flag an unlimited child under a finite parent", func() {
+			parent := newQueueWithQuota("parent", "", 10, 10, 10)
+			child := newQueueWithQuota("child", "parent", -1, 0, 0)
+			client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(parent).Build()
+			validator = &queueValidator{kubeClient: client, overSubscriptionMode: OverSubscriptionModeWarning}
+
+			warnings, err := validator.ValidateCreate(ctx, child)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(warnings).To(ContainElement(ContainSubstring("child queue CPU quota (unlimited)")))
+		})
+
+		It("should not flag a finite child under an unlimited parent", func() {
+			parent := newQueueWithQuota("parent", "", -1, -1, -1)
+			child := newQueueWithQuota("child", "parent", 1000, 8, 8192)
+			client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(parent).Build()
+			validator = &queueValidator{kubeClient: client, overSubscriptionMode: OverSubscriptionModeBlock}
+
+			warnings, err := validator.ValidateCreate(ctx, child)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(warnings).To(BeEmpty())
+		})
+
+		It("should reject an unlimited child under a finite parent in block mode", func() {
+			parent := newQueueWithQuota("parent", "", 10, 10, 10)
+			child := newQueueWithQuota("child", "parent", -1, 0, 0)
+			client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(parent).Build()
+			validator = &queueValidator{kubeClient: client, overSubscriptionMode: OverSubscriptionModeBlock}
+
+			_, err := validator.ValidateCreate(ctx, child)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("CPU quota (unlimited)"))
+		})
+
+		It("should treat an unlimited child as making the children sum exceed a finite parent", func() {
+			// parent CPU=10, child-1 CPU=-1 (unlimited), child-2 CPU=5:
+			// naive addition gives 4 (<10) and masks the over-subscription.
+			parent := newQueueWithQuota("parent", "", 10, 10, 10)
+			parent.Status.ChildQueues = []string{"child-1", "child-2"}
+			child1 := newQueueWithQuota("child-1", "parent", -1, 0, 0)
+			child2 := newQueueWithQuota("child-2", "parent", 5, 0, 0)
+			oldParent := parent.DeepCopy()
+			client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(child1, child2).Build()
+			validator = &queueValidator{kubeClient: client, overSubscriptionMode: OverSubscriptionModeWarning}
+
+			warnings, err := validator.ValidateUpdate(ctx, oldParent, parent)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(warnings).To(ContainElement(ContainSubstring("total children CPU quota (unlimited)")))
+		})
+	})
+
 	Context("ParseOverSubscriptionMode", func() {
 		It("should default empty to none", func() {
 			mode, err := ParseOverSubscriptionMode("")

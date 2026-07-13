@@ -83,6 +83,28 @@ var _ = Describe("QueueValidator", func() {
 		Expect(warnings).To(BeEmpty())
 	})
 
+	It("treats an unlimited (-1) child as over-subscribing a finite parent in block mode", func(ctx context.Context) {
+		parent = newQueue("qv-parent", "", 10, 10, 10)
+		Expect(ctrlClient.Create(ctx, parent)).To(Succeed())
+		child = newQueue("qv-child", parent.Name, -1, 0, 0) // unlimited CPU
+
+		validator := queuehooks.NewQueueValidator(ctrlClient, queuehooks.OverSubscriptionModeBlock)
+		_, err := validator.ValidateCreate(ctx, child)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("CPU quota (unlimited)"))
+	})
+
+	It("does not flag a finite child under an unlimited (-1) parent in block mode", func(ctx context.Context) {
+		parent = newQueue("qv-parent", "", -1, -1, -1)
+		Expect(ctrlClient.Create(ctx, parent)).To(Succeed())
+		child = newQueue("qv-child", parent.Name, 1000, 8, 8192)
+
+		validator := queuehooks.NewQueueValidator(ctrlClient, queuehooks.OverSubscriptionModeBlock)
+		warnings, err := validator.ValidateCreate(ctx, child)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(warnings).To(BeEmpty())
+	})
+
 	It("rejects lowering a parent below its children's quota sum in block mode", func(ctx context.Context) {
 		parent = newQueue("qv-parent", "", 200, 8, 8192)
 		Expect(ctrlClient.Create(ctx, parent)).To(Succeed())
