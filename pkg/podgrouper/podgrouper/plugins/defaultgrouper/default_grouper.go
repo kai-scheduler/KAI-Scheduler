@@ -273,23 +273,23 @@ func (dg *DefaultGrouper) calcPodGroupPreemptibilityWithDefaults(
 	return ""
 }
 
-// calcPodGroupPreemptionDelay reads the preemption-delay label from owners then the pod.
+// calcPodGroupPreemptionDelay reads the preemption-delay annotation from owners then the pod.
 // First valid value wins; invalid or negative durations are ignored with a warning.
 func (dg *DefaultGrouper) calcPodGroupPreemptionDelay(allOwners []*metav1.PartialObjectMetadata, pod *v1.Pod) *metav1.Duration {
 	for _, owner := range allOwners {
-		if delayStr, found := owner.GetLabels()[constants.PreemptionDelayLabelKey]; found {
+		if delayStr, found := owner.GetAnnotations()[constants.PreemptionDelayAnnotationKey]; found {
 			if delay, err := v2alpha2.ParsePreemptionDelay(delayStr); err == nil {
 				return delay
 			} else {
-				logger.Error(err, "Invalid preemption-delay label found on owner", "owner", owner.GetName(), "preemptionDelay", delayStr)
+				logger.Error(err, "Invalid preemption-delay annotation found on owner", "owner", owner.GetName(), "preemptionDelay", delayStr)
 			}
 		}
 	}
-	if delayStr, found := pod.GetLabels()[constants.PreemptionDelayLabelKey]; found {
+	if delayStr, found := pod.GetAnnotations()[constants.PreemptionDelayAnnotationKey]; found {
 		if delay, err := v2alpha2.ParsePreemptionDelay(delayStr); err == nil {
 			return delay
 		} else {
-			logger.Error(err, "Invalid preemption-delay label found on pod", "pod", pod.GetName(), "preemptionDelay", delayStr)
+			logger.Error(err, "Invalid preemption-delay annotation found on pod", "pod", pod.GetName(), "preemptionDelay", delayStr)
 		}
 	}
 	return nil

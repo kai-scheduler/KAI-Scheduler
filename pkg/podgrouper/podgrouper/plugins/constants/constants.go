@@ -4,12 +4,11 @@
 package constants
 
 const (
-	PodGroupNamePrefix      = "pg"
-	ProjectLabelKey         = "project"
-	PriorityLabelKey        = "priorityClassName"
-	PreemptibilityLabelKey  = "kai.scheduler/preemptibility"
-	PreemptionDelayLabelKey = "kai.scheduler/preemption-delay"
-	UserLabelKey            = "user"
+	PodGroupNamePrefix     = "pg"
+	ProjectLabelKey        = "project"
+	PriorityLabelKey       = "priorityClassName"
+	PreemptibilityLabelKey = "kai.scheduler/preemptibility"
+	UserLabelKey           = "user"
 
 	BuildPriorityClass     = "build"
 	TrainPriorityClass     = "train"
@@ -28,4 +27,9 @@ const (
 	SegmentTopologyPreferredPlacementKey = "kai.scheduler/segment-topology-preferred-placement"
 
 	MinMemberOverrideKey = "kai.scheduler/batch-min-member"
+)
+
+// Annotation keys
+const (
+	PreemptionDelayAnnotationKey = "kai.scheduler/preemption-delay"
 )

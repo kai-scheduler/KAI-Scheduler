@@ -1,0 +1,27 @@
+# Queue pair with a 500m CPU quota+limit, so a second 500m pod can only
+# get in by evicting the first.
+apiVersion: scheduling.run.ai/v2
+kind: Queue
+metadata:
+  name: delay-parent
+spec:
+  resources:
+    cpu: {limit: 500, overQuotaWeight: 1, quota: 500}
+    gpu: {limit: -1, overQuotaWeight: 1, quota: 0}
+    memory: {limit: -1, overQuotaWeight: 1, quota: 0}
+---
+apiVersion: scheduling.run.ai/v2
+kind: Queue
+metadata:
+  name: delay-queue
+spec:
+  parentQueue: delay-parent
+  resources:
+    cpu: {limit: 500, overQuotaWeight: 1, quota: 500}
+    gpu: {limit: -1, overQuotaWeight: 1, quota: 0}
+    memory: {limit: -1, overQuotaWeight: 1, quota: 0}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: delay-demo

@@ -283,11 +283,11 @@ func (gg *GroveGrouper) parseMetadataFromTopOwner(metadata *podgroup.Metadata) (
 		}
 		metadata.Preemptibility = preemptibility
 	}
-	if delayStr, ok := metadata.Labels[constants.PreemptionDelayLabelKey]; ok {
+	if delayStr, ok := metadata.Annotations[constants.PreemptionDelayAnnotationKey]; ok {
 		if delay, err := v2alpha2.ParsePreemptionDelay(delayStr); err == nil {
 			metadata.PreemptionDelay = delay
 		} else {
-			log.FromContext(context.Background()).Error(err, "Invalid preemption-delay label found on top owner",
+			log.FromContext(context.Background()).Error(err, "Invalid preemption-delay annotation found on top owner",
 				"namespace", metadata.Namespace, "name", metadata.Name, "preemptionDelay", delayStr)
 		}
 	}

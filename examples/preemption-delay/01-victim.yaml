@@ -1,0 +1,34 @@
+# Low-priority workload that fills the queue quota. Uses an explicit PodGroup
+# so the group survives eviction and the kai.scheduler/last-eviction-timestamp
+# annotation is observable afterwards:
+#   kubectl get podgroup victim-gang -n delay-demo -o jsonpath='{.metadata.annotations}'
+apiVersion: scheduling.run.ai/v2alpha2
+kind: PodGroup
+metadata:
+  name: victim-gang
+  namespace: delay-demo
+  labels:
+    kai.scheduler/queue: delay-queue
+spec:
+  minMember: 1
+  queue: delay-queue
+  priorityClassName: train
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: victim-gang-pod
+  namespace: delay-demo
+  labels:
+    kai.scheduler/queue: delay-queue
+  annotations:
+    pod-group-name: victim-gang
+spec:
+  schedulerName: kai-scheduler
+  priorityClassName: train
+  containers:
+  - name: main
+    image: registry.k8s.io/pause:3.9
+    resources:
+      limits: {cpu: 500m}
+      requests: {cpu: 500m}
