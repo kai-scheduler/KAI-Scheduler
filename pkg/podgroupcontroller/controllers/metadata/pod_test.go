@@ -206,12 +206,8 @@ func TestPodSteadyStateResources(t *testing.T) {
 	}
 }
 
-// TestCalculateRequestedResources_GpuAnnotations pins why a sidecar's GPU is left out. The scheduler rebuilds a
-// pod's GPU requirement from a GPU-sharing or legacy MIG annotation and discards the container request, so
-// adding a sidecar GPU on top would report a GPU that nothing reserved. Two of these pods reach a live cluster:
-// getFirstGPULimit only looks for nvidia.com/gpu limits, so an amd.com/gpu sidecar is admitted, and it never
-// looks at MIG annotations at all. The nvidia-on-fraction pods are rejected by admission today and are here as
-// defense in depth.
+// TestCalculateRequestedResources_GpuAnnotations pins that a GPU-sharing or legacy MIG annotation alone decides
+// the pod's GPU in the status, and that a sidecar's GPU request never adds to it.
 func TestCalculateRequestedResources_GpuAnnotations(t *testing.T) {
 	sidecarRequesting := func(requests v1.ResourceList) v1.Container {
 		return v1.Container{

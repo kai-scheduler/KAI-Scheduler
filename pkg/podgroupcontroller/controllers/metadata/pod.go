@@ -13,13 +13,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	commonresources "github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgroupcontroller/controllers/resources"
 )
-
-// gpuResourceSuffix is how the queue accounting recognizes a GPU, matching getAllocatedGpus in the
-// queue-controller metrics.
-const gpuResourceSuffix = "/gpu"
 
 type PodMetadata struct {
 	RequestedResources v1.ResourceList
@@ -91,9 +88,11 @@ func isPodScheduled(pod *v1.Pod) bool {
 	return false
 }
 
-// podSteadyStateResources sums what a pod holds concurrently while it runs: regular containers, native
-// sidecars (init containers with restartPolicy Always) and Pod overhead. The peak of a plain init container is
-// not included, and neither is a GPU asked for by a sidecar or by an overhead, see withoutGpuRequirements.
+// podSteadyStateResources sums what a pod holds for as long as it runs: regular containers, native sidecars
+// (init containers with restartPolicy Always) and Pod overhead. The peak of a non-restartable init container is
+// left out, and so is a GPU asked for by a sidecar or set in an overhead, so this can report less than the
+// scheduler reserves. docs/queues/README.md#how-allocated-and-requested-are-counted has the reasons, and #1880
+// tracks closing the gap.
 func podSteadyStateResources(pod *v1.Pod) v1.ResourceList {
 	total := v1.ResourceList{}
 	for _, container := range pod.Spec.Containers {
@@ -112,16 +111,15 @@ func isNativeSidecar(initContainer v1.Container) bool {
 	return initContainer.RestartPolicy != nil && *initContainer.RestartPolicy == v1.ContainerRestartPolicyAlways
 }
 
-// withoutGpuResources drops every name the queue accounting counts as a GPU, which is the same rule
-// getAllocatedGpus uses. Two reasons to leave them out of a sidecar or an overhead, and both matter. The
-// scheduler rebuilds a pod's GPU requirement from a GPU-sharing or legacy MIG annotation and drops the
-// container request, so counting a sidecar GPU would report one nothing reserved. And getAllocatedGpus returns
-// the first "*/gpu" key it meets in map order, so putting a new one into the status would change, and could
-// destabilize, a metric that feeds the fairshare usage database. Both wait on #1880.
+// withoutGpuResources drops every name the queue accounting treats as a GPU, the same rule getAllocatedGpus
+// applies to Queue.status.allocated. On a pod carrying a GPU-sharing or legacy MIG annotation the scheduler
+// rebuilds the GPU requirement from that annotation and drops the container request, so letting a sidecar's GPU
+// through would report one that nothing reserved. It would also move a metric that feeds the fairshare usage
+// database.
 func withoutGpuResources(list v1.ResourceList) v1.ResourceList {
 	filtered := v1.ResourceList{}
 	for name, quantity := range list {
-		if strings.HasSuffix(string(name), gpuResourceSuffix) || commonresources.IsMigResource(string(name)) {
+		if strings.HasSuffix(string(name), constants.GpuResourceSuffix) || commonresources.IsMigResource(string(name)) {
 			continue
 		}
 		filtered[name] = quantity.DeepCopy()
