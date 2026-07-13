@@ -15,13 +15,10 @@ const (
 )
 
 type Options struct {
-	EnableLeaderElection         bool
-	EnableWebhook                bool
-	SkipControllerNameValidation bool // Set true for env tests
-
-	// LimitDescendentsOverSubscription controls admission enforcement when a child
-	// queue's quota exceeds its parent's quota (one of none, warning, block).
-	LimitDescendentsOverSubscription string
+	EnableLeaderElection             bool
+	EnableWebhook                    bool
+	SkipControllerNameValidation     bool   // Set true for env tests
+	LimitDescendentsOverSubscription string // One of none, warning, block; see flag doc below.
 
 	MetricsAddress                 string
 	MetricsNamespace               string

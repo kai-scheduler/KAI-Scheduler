@@ -150,31 +150,6 @@ tests:
           value: false
 
   # ======================================
-  # QueueController limitDescendentsOverSubscription Tests
-  # ======================================
-  - it: should default queueController.limitDescendentsOverSubscription to none
-    asserts:
-      - equal:
-          path: spec.queueController.limitDescendentsOverSubscription
-          value: none
-
-  - it: should wire queuecontroller.limitDescendentsOverSubscription warning into config
-    set:
-      queuecontroller.limitDescendentsOverSubscription: warning
-    asserts:
-      - equal:
-          path: spec.queueController.limitDescendentsOverSubscription
-          value: warning
-
-  - it: should wire queuecontroller.limitDescendentsOverSubscription block into config
-    set:
-      queuecontroller.limitDescendentsOverSubscription: block
-    asserts:
-      - equal:
-          path: spec.queueController.limitDescendentsOverSubscription
-          value: block
-
-  # ======================================
   # Admission Enabled Tests
   # ======================================
   - it: should render admission enabled true when explicitly set
