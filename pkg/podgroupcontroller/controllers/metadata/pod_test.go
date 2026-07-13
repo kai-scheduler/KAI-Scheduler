@@ -126,6 +126,24 @@ func TestPodSteadyStateResources(t *testing.T) {
 			want: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1250m")},
 		},
 		{
+			// The invariant that keeps every existing whole-GPU workload reporting the same number.
+			name: "a regular container's gpu is still counted",
+			pod: &v1.Pod{Spec: v1.PodSpec{
+				Containers: []v1.Container{{
+					Resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{
+							v1.ResourceCPU:                    resource.MustParse("1"),
+							v1.ResourceName("nvidia.com/gpu"): resource.MustParse("2"),
+						},
+					},
+				}},
+			}},
+			want: v1.ResourceList{
+				v1.ResourceCPU:                    resource.MustParse("1"),
+				v1.ResourceName("nvidia.com/gpu"): resource.MustParse("2"),
+			},
+		},
+		{
 			name: "a sidecar's non-gpu extended resources are counted",
 			pod: &v1.Pod{Spec: v1.PodSpec{
 				InitContainers: []v1.Container{{
@@ -167,11 +185,13 @@ func TestPodSteadyStateResources(t *testing.T) {
 	}
 }
 
-// TestCalculateRequestedResources_GpuSharingAnnotations pins why a sidecar's GPU is left out. The scheduler
-// rebuilds a pod's GPU requirement from its GPU-sharing annotation and discards the container request, so
-// adding a sidecar GPU on top of the annotation would report a GPU that nothing reserved. Admission does not
-// catch the AMD case: getFirstGPULimit only looks for nvidia.com/gpu.
-func TestCalculateRequestedResources_GpuSharingAnnotations(t *testing.T) {
+// TestCalculateRequestedResources_GpuAnnotations pins why a sidecar's GPU is left out. The scheduler rebuilds a
+// pod's GPU requirement from a GPU-sharing or legacy MIG annotation and discards the container request, so
+// adding a sidecar GPU on top would report a GPU that nothing reserved. Two of these pods reach a live cluster:
+// getFirstGPULimit only looks for nvidia.com/gpu limits, so an amd.com/gpu sidecar is admitted, and it never
+// looks at MIG annotations at all. The nvidia-on-fraction pods are rejected by admission today and are here as
+// defense in depth.
+func TestCalculateRequestedResources_GpuAnnotations(t *testing.T) {
 	sidecarRequesting := func(requests v1.ResourceList) v1.Container {
 		return v1.Container{
 			Name:          "sidecar",
@@ -214,6 +234,14 @@ func TestCalculateRequestedResources_GpuSharingAnnotations(t *testing.T) {
 				v1.ResourceCPU:                       resource.MustParse("1"),
 				v1.ResourceName("run.ai/gpu.memory"): resource.MustParse("2000"),
 			},
+		},
+		{
+			// Admission never inspects MIG annotations, so this one is reachable.
+			name:        "whole gpu sidecar on a legacy mig annotated pod",
+			annotations: map[string]string{"nvidia.com/mig-1g.10gb": "1"},
+			sidecar: sidecarRequesting(
+				v1.ResourceList{v1.ResourceName(constants.NvidiaGpuResource): resource.MustParse("1")}),
+			want: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1")},
 		},
 	}
 

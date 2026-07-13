@@ -109,10 +109,11 @@ func isNativeSidecar(initContainer v1.Container) bool {
 }
 
 // withoutGpuRequirements drops the names resource_info.RequirementsFromResourceList routes into the scheduler's
-// GPU requirement instead of a pod's base resources. getPodResourceRequest charges only the base half of Pod
-// overhead, so an overhead GPU is never reserved. A sidecar GPU is dropped for a different reason: the
-// scheduler rebuilds a pod's GPU requirement from its fraction, gpu-memory or legacy MIG annotation and throws
-// the container request away, so counting one here without mirroring that would report a GPU nothing reserved.
+// GPU requirement rather than into a pod's base resources. For a Pod overhead that mirrors getPodResourceRequest,
+// which charges only the base half. For a sidecar it is a deliberate undercount: on a pod carrying a GPU-sharing
+// or legacy MIG annotation the scheduler rebuilds the GPU requirement from that annotation and drops the
+// container request, so counting a sidecar GPU there would report a GPU nothing reserved. It is left out on
+// every pod rather than only on the annotated ones until #1880 shares the scheduler's normalization.
 func withoutGpuRequirements(list v1.ResourceList) v1.ResourceList {
 	filtered := v1.ResourceList{}
 	for name, quantity := range list {
