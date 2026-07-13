@@ -10,17 +10,17 @@ In autoscaled clusters, evictions race the cluster autoscaler: KAI preempts or r
 
 ## API
 
-A label on the workload's pods, ingested by the podgrouper into the PodGroup (same pattern as `kai.scheduler/preemptibility`):
+An annotation on the workload's pods (or owner), ingested by the podgrouper into the PodGroup (same flow as the `kai.scheduler/preemptibility` label):
 
 ```yaml
 metadata:
-  labels:
+  annotations:
     kai.scheduler/preemption-delay: "5m"
 ```
 
 - Value: a non-negative Go duration (`"30s"`, `"5m"`, `"1h"`), matching the `metav1.Duration` format of the existing `preemptMinRuntime`/`reclaimMinRuntime` Queue fields. Missing → 0 (current behavior). Invalid values (including unit-less numbers) fall back to 0 with a log warning.
 
-On the PodGroup itself, a spec field — the podgrouper populates it from the label; workloads that create PodGroups directly set it explicitly:
+On the PodGroup itself, a spec field — the podgrouper populates it from the annotation; workloads that create PodGroups directly set it explicitly:
 
 ```go
 type PodGroupSpec struct {
@@ -54,8 +54,8 @@ A podgroup whose pending age is below its delay is skipped as an eviction trigge
 | D2 | Reclaim is in scope from day one — most evictions in multi-tenant clusters are reclaim; a preempt-only delay would miss the motivation |
 | D3 | Consolidation is in scope — a delayed workload should not disrupt others in any way during its window; consolidation victims still restart and lose state even though they are re-placed with their resources |
 | D4 | Accounting unchanged: the pending demand counts in queue `Request` as usual. The fair-share inflation this implies is bounded by the delay duration (transient, unlike a permanent `Never`) and identical in kind to what any unschedulable pending pod causes today |
-| D6 | No global disable flag — the feature is opt-in per workload via the label; missing label means current behavior |
+| D6 | No global disable flag — the feature is opt-in per workload via the annotation; missing annotation means current behavior |
 
 ## Deferred: Native `preemptionPolicy`
 
-Support for the k8s `PriorityClass.preemptionPolicy` field (issues #1584, #1032) is deferred until a concrete request appears. The mechanism here is designed to absorb it: the field would resolve to the same per-podgroup trigger-delay value (`Never` = ∞), reusing the prefilter unchanged. The open questions it would reopen — source precedence vs. the label, unbounded-delay fair-share inflation, in-quota starvation of `Never` workloads — are documented in the git history of this design.
+Support for the k8s `PriorityClass.preemptionPolicy` field (issues #1584, #1032) is deferred until a concrete request appears. The mechanism here is designed to absorb it: the field would resolve to the same per-podgroup trigger-delay value (`Never` = ∞), reusing the prefilter unchanged. The open questions it would reopen — source precedence vs. the annotation, unbounded-delay fair-share inflation, in-quota starvation of `Never` workloads — are documented in the git history of this design.
