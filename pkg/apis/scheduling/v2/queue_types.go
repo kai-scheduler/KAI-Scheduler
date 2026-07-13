@@ -60,10 +60,11 @@ type QueueStatus struct {
 	ChildQueues []string `json:"childQueues,omitempty"`
 
 	// Current allocated GPU (in fractions), CPU (in millicpus) and Memory in megabytes
-	// for all running jobs in queue and child queues.
+	// for all running jobs, and scheduled pending jobs, in queue and child queues.
 	// Counts each pod's regular containers, its native sidecars (init containers with restartPolicy Always) and
-	// its Pod overhead. An NVIDIA or AMD GPU, or a MIG device, asked for by a sidecar or set in a Pod overhead is
-	// not counted, and neither is the peak of a non-restartable init container.
+	// its Pod overhead. A resource the queue counts as a GPU (a name ending in /gpu, or a MIG device) is left out
+	// when a sidecar asks for it or a Pod overhead sets it, and so is the peak of a non-restartable init
+	// container.
 	Allocated v1.ResourceList `json:"allocated,omitempty"`
 
 	// Current allocated GPU (in fractions), CPU (in millicpus) and Memory in megabytes
@@ -73,7 +74,9 @@ type QueueStatus struct {
 
 	// Current requested GPU (in fractions), CPU (in millicpus) and Memory in megabytes
 	// by all running and pending jobs in queue and child queues.
-	// Counted the same way as Allocated.
+	// Uses the same container, native-sidecar and Pod-overhead aggregation as Allocated. GPU-sharing requested
+	// and received resources are accounted on separate paths, so the two fields can differ by more than the set
+	// of pods they cover.
 	Requested v1.ResourceList `json:"requested,omitempty"`
 }
 
