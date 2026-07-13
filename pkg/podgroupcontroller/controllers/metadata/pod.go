@@ -12,6 +12,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	commonresources "github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgroupcontroller/controllers/resources"
 )
@@ -86,13 +87,46 @@ func isPodScheduled(pod *v1.Pod) bool {
 	return false
 }
 
+// podSteadyStateResources sums what a pod holds concurrently while it runs: regular containers, native
+// sidecars (init containers with restartPolicy Always) and the Pod overhead the scheduler charges. The peak of
+// a plain init container is not included.
+func podSteadyStateResources(pod *v1.Pod) v1.ResourceList {
+	total := v1.ResourceList{}
+	for _, container := range pod.Spec.Containers {
+		total = resources.SumResources(total, container.Resources.Requests)
+	}
+	for _, initContainer := range pod.Spec.InitContainers {
+		if isNativeSidecar(initContainer) {
+			total = resources.SumResources(total, initContainer.Resources.Requests)
+		}
+	}
+	return resources.SumResources(total, chargedOverhead(pod))
+}
+
+// isNativeSidecar reports whether an init container keeps running alongside the regular containers.
+func isNativeSidecar(initContainer v1.Container) bool {
+	return initContainer.RestartPolicy != nil && *initContainer.RestartPolicy == v1.ContainerRestartPolicyAlways
+}
+
+// chargedOverhead returns the Pod overhead entries the scheduler charges to a pod. Keep the skipped names in
+// sync with resource_info.RequirementsFromResourceList, which routes them into the GPU requirement that
+// getPodResourceRequest leaves out of a pod's overhead.
+func chargedOverhead(pod *v1.Pod) v1.ResourceList {
+	overhead := v1.ResourceList{}
+	for name, quantity := range pod.Spec.Overhead {
+		if name == constants.NvidiaGpuResource || name == constants.AmdGpuResource ||
+			commonresources.IsMigResource(string(name)) {
+			continue
+		}
+		overhead[name] = quantity.DeepCopy()
+	}
+	return overhead
+}
+
 func calculatedAllocatedResources(
 	ctx context.Context, pod *v1.Pod, kubeClient client.Client, draClaims []*resourceapi.ResourceClaim,
 ) (v1.ResourceList, error) {
-	allocatedResources := v1.ResourceList{}
-	for _, container := range pod.Spec.Containers {
-		allocatedResources = resources.SumResources(allocatedResources, container.Resources.Requests)
-	}
+	allocatedResources := podSteadyStateResources(pod)
 
 	gpuSharingReceivedResources, err := resources.ExtractGPUSharingReceivedResources(ctx, pod, kubeClient)
 	if err != nil {
@@ -112,10 +146,8 @@ func calculatedAllocatedResources(
 func calculateRequestedResources(
 	ctx context.Context, pod *v1.Pod, kubeClient client.Client, draClaims []*resourceapi.ResourceClaim,
 ) (v1.ResourceList, error) {
-	requestedResources := v1.ResourceList{}
-	for _, container := range pod.Spec.Containers {
-		requestedResources = resources.SumResources(requestedResources, container.Resources.Requests)
-	}
+	requestedResources := podSteadyStateResources(pod)
+
 	gpuSharingRequestedResources, err := resources.ExtractGPUSharingRequestedResources(pod)
 	if err != nil {
 		return nil, err

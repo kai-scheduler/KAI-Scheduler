@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -16,6 +17,112 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
+
+func TestPodSteadyStateResources(t *testing.T) {
+	tests := []struct {
+		name string
+		pod  *v1.Pod
+		want v1.ResourceList
+	}{
+		{
+			name: "regular containers are summed",
+			pod: &v1.Pod{Spec: v1.PodSpec{Containers: []v1.Container{
+				{Resources: v1.ResourceRequirements{Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1")}}},
+				{Resources: v1.ResourceRequirements{Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("500m")}}},
+			}}},
+			want: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1500m")},
+		},
+		{
+			name: "native sidecar is counted",
+			pod: &v1.Pod{Spec: v1.PodSpec{
+				InitContainers: []v1.Container{{
+					RestartPolicy: ptr.To(v1.ContainerRestartPolicyAlways),
+					Resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("250m")},
+					},
+				}},
+				Containers: []v1.Container{
+					{Resources: v1.ResourceRequirements{Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1")}}},
+				},
+			}},
+			want: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1250m")},
+		},
+		{
+			name: "plain init container is not counted",
+			pod: &v1.Pod{Spec: v1.PodSpec{
+				InitContainers: []v1.Container{{
+					Resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("8")},
+					},
+				}},
+				Containers: []v1.Container{
+					{Resources: v1.ResourceRequirements{Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1")}}},
+				},
+			}},
+			want: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1")},
+		},
+		{
+			name: "pod overhead is counted",
+			pod: &v1.Pod{Spec: v1.PodSpec{
+				Containers: []v1.Container{
+					{Resources: v1.ResourceRequirements{Requests: v1.ResourceList{v1.ResourceMemory: resource.MustParse("1Gi")}}},
+				},
+				Overhead: v1.ResourceList{v1.ResourceMemory: resource.MustParse("128Mi")},
+			}},
+			want: v1.ResourceList{v1.ResourceMemory: resource.MustParse("1152Mi")},
+		},
+		{
+			name: "gpu in pod overhead is not counted",
+			pod: &v1.Pod{Spec: v1.PodSpec{
+				Containers: []v1.Container{
+					{Resources: v1.ResourceRequirements{Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1")}}},
+				},
+				Overhead: v1.ResourceList{
+					v1.ResourceCPU:                            resource.MustParse("100m"),
+					v1.ResourceName("nvidia.com/gpu"):         resource.MustParse("1"),
+					v1.ResourceName("amd.com/gpu"):            resource.MustParse("1"),
+					v1.ResourceName("nvidia.com/mig-1g.10gb"): resource.MustParse("1"),
+				},
+			}},
+			want: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1100m")},
+		},
+		{
+			name: "gpu requested by a native sidecar is counted",
+			pod: &v1.Pod{Spec: v1.PodSpec{
+				InitContainers: []v1.Container{{
+					RestartPolicy: ptr.To(v1.ContainerRestartPolicyAlways),
+					Resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{v1.ResourceName("nvidia.com/gpu"): resource.MustParse("1")},
+					},
+				}},
+				Containers: []v1.Container{
+					{Resources: v1.ResourceRequirements{Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1")}}},
+				},
+			}},
+			want: v1.ResourceList{
+				v1.ResourceCPU:                    resource.MustParse("1"),
+				v1.ResourceName("nvidia.com/gpu"): resource.MustParse("1"),
+			},
+		},
+		{
+			name: "pod without requests",
+			pod:  &v1.Pod{},
+			want: v1.ResourceList{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := podSteadyStateResources(tt.pod)
+			assert.Len(t, got, len(tt.want))
+			for name, want := range tt.want {
+				gotQuantity := got[name]
+				assert.Zero(t, gotQuantity.Cmp(want),
+					"resource %s: got %s, want %s", name, gotQuantity.String(), want.String())
+			}
+		})
+	}
+}
 
 func TestIsPodAllocated(t *testing.T) {
 	tests := []struct {

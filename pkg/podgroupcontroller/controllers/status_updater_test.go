@@ -14,6 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -362,6 +363,106 @@ func Test_handlePodGroupStatus(t *testing.T) {
 					},
 					Requested: map[v1.ResourceName]resource.Quantity{
 						v1.ResourceCPU: resource.MustParse("1"),
+					},
+				},
+			},
+			false,
+		},
+		{
+			"Running pod with native sidecar and pod overhead",
+			Configs{},
+			clusterData{
+				&v2alpha2.PodGroup{
+					TypeMeta: metav1.TypeMeta{
+						APIVersion: "scheduling.run.ai/v2alpha2",
+						Kind:       "PodGroup",
+					},
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace:       "n1",
+						Name:            "pg1",
+						ResourceVersion: "999",
+					},
+					Spec: v2alpha2.PodGroupSpec{
+						PriorityClassName: "c2",
+					},
+				},
+				[]client.Object{
+					&v1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace:   "n1",
+							Name:        "pod1",
+							Annotations: map[string]string{"pod-group-name": "pg1"},
+						},
+						Spec: v1.PodSpec{
+							InitContainers: []v1.Container{
+								{
+									Name:          "sidecar",
+									RestartPolicy: ptr.To(v1.ContainerRestartPolicyAlways),
+									Resources: v1.ResourceRequirements{
+										Requests: v1.ResourceList{
+											v1.ResourceCPU:    resource.MustParse("500m"),
+											v1.ResourceMemory: resource.MustParse("512Mi"),
+										},
+									},
+								},
+								{
+									Name: "init",
+									Resources: v1.ResourceRequirements{
+										Requests: v1.ResourceList{
+											v1.ResourceCPU:    resource.MustParse("4"),
+											v1.ResourceMemory: resource.MustParse("8Gi"),
+										},
+									},
+								},
+							},
+							Containers: []v1.Container{
+								{
+									Resources: v1.ResourceRequirements{
+										Requests: v1.ResourceList{
+											v1.ResourceCPU:    resource.MustParse("1"),
+											v1.ResourceMemory: resource.MustParse("1Gi"),
+										},
+									},
+								},
+							},
+							Overhead: v1.ResourceList{
+								v1.ResourceCPU:    resource.MustParse("500m"),
+								v1.ResourceMemory: resource.MustParse("512Mi"),
+							},
+						},
+						Status: v1.PodStatus{
+							Phase: v1.PodRunning,
+							Conditions: []v1.PodCondition{
+								{
+									Type:   v1.PodScheduled,
+									Status: v1.ConditionTrue,
+								},
+							},
+						},
+					},
+				},
+				[]client.Object{
+					&schedulingv1.PriorityClass{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "c2",
+						},
+						Value: 100,
+					},
+				},
+			},
+			v2alpha2.PodGroupStatus{
+				ResourcesStatus: v2alpha2.PodGroupResourcesStatus{
+					Allocated: map[v1.ResourceName]resource.Quantity{
+						v1.ResourceCPU:    resource.MustParse("2"),
+						v1.ResourceMemory: resource.MustParse("2Gi"),
+					},
+					AllocatedNonPreemptible: map[v1.ResourceName]resource.Quantity{
+						v1.ResourceCPU:    resource.MustParse("2"),
+						v1.ResourceMemory: resource.MustParse("2Gi"),
+					},
+					Requested: map[v1.ResourceName]resource.Quantity{
+						v1.ResourceCPU:    resource.MustParse("2"),
+						v1.ResourceMemory: resource.MustParse("2Gi"),
 					},
 				},
 			},
