@@ -5,7 +5,6 @@ package rd
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -21,13 +20,8 @@ const (
 func CreateObjectWithRetries(
 	ctx context.Context, kubeClient runtimeClient.Client, obj runtimeClient.Object,
 ) error {
-	key := runtimeClient.ObjectKeyFromObject(obj)
-	err := kubeClient.Get(ctx, key, obj)
-	if err == nil {
-		return fmt.Errorf("object %v already exists in the cluster", key)
-	}
-
-	for i := 0; i < operationAttemptsRetries; i++ {
+	var err error
+	for range operationAttemptsRetries {
 		err = kubeClient.Create(ctx, obj)
 		if err == nil || errors.IsAlreadyExists(err) {
 			return nil
