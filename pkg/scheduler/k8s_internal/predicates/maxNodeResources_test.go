@@ -561,6 +561,142 @@ func TestMaxNodeResourcesPredicateDRA(t *testing.T) {
 	}
 }
 
+func buildTestNodesIncremental(scanOrder []string, nodesResourceLists map[string]v1.ResourceList) (
+	map[string]*node_info.NodeInfo, *resource_info.ResourceVectorMap) {
+	vm := resource_info.NewResourceVectorMap()
+	result := make(map[string]*node_info.NodeInfo, len(nodesResourceLists))
+	for _, name := range scanOrder {
+		rl := nodesResourceLists[name]
+		vm.AddResourceList(rl)
+		result[name] = &node_info.NodeInfo{
+			Name:              name,
+			AllocatableVector: resource_info.ResourceFromResourceList(rl).ToVector(vm),
+			VectorMap:         vm,
+		}
+	}
+	return result, vm
+}
+
+func buildPodRequestingResources(requests v1.ResourceList) *v1.Pod {
+	return &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "name1",
+			Namespace: "n1",
+		},
+		Spec: v1.PodSpec{
+			Containers: []v1.Container{
+				{
+					Name: "c1",
+					Resources: v1.ResourceRequirements{
+						Requests: requests,
+					},
+				},
+			},
+		},
+	}
+}
+
+const extendedResourceTestIterations = 20
+
+func Test_maxNodeResourcesExtendedResourceOnSubsetOfNodes(t *testing.T) {
+	fooResource := v1.ResourceName("example.com/foo")
+	coreOnly := v1.ResourceList{
+		v1.ResourceCPU:    resource.MustParse("4"),
+		v1.ResourceMemory: resource.MustParse("16Gi"),
+		v1.ResourcePods:   resource.MustParse("110"),
+	}
+	nodesResourceLists := map[string]v1.ResourceList{
+		"n1": coreOnly,
+		"n2": coreOnly,
+		"n3": coreOnly,
+		"n4": coreOnly,
+		"n5": {
+			v1.ResourceCPU:    resource.MustParse("4"),
+			v1.ResourceMemory: resource.MustParse("16Gi"),
+			v1.ResourcePods:   resource.MustParse("110"),
+			fooResource:       resource.MustParse("5"),
+		},
+	}
+	scanOrder := []string{"n1", "n2", "n3", "n4", "n5"}
+
+	t.Run("pod requesting the resource within capacity fits", func(t *testing.T) {
+		for i := 0; i < extendedResourceTestIterations; i++ {
+			nodesMap, _ := buildTestNodesIncremental(scanOrder, nodesResourceLists)
+			mnr := NewMaxNodeResourcesPredicate(nodesMap, nil, "")
+			pod := buildPodRequestingResources(v1.ResourceList{fooResource: resource.MustParse("1")})
+			_, status := mnr.PreFilter(context.TODO(), nil, pod, nil)
+			if status != nil {
+				t.Fatalf("iteration %d: PreFilter() = %v, want nil", i, status)
+			}
+		}
+	})
+
+	t.Run("pod requesting more than any node has is rejected", func(t *testing.T) {
+		for i := 0; i < extendedResourceTestIterations; i++ {
+			nodesMap, _ := buildTestNodesIncremental(scanOrder, nodesResourceLists)
+			mnr := NewMaxNodeResourcesPredicate(nodesMap, nil, "")
+			pod := buildPodRequestingResources(v1.ResourceList{fooResource: resource.MustParse("10")})
+			_, status := mnr.PreFilter(context.TODO(), nil, pod, nil)
+			if status == nil {
+				t.Fatalf("iteration %d: PreFilter() = nil, want rejection", i)
+			}
+			if status.Code() != ksf.UnschedulableAndUnresolvable {
+				t.Fatalf("iteration %d: PreFilter() code = %v, want UnschedulableAndUnresolvable", i, status.Code())
+			}
+			if !strings.Contains(status.Message(), string(fooResource)) {
+				t.Fatalf("iteration %d: PreFilter() = %v, message should mention %s", i, status, fooResource)
+			}
+		}
+	})
+
+	t.Run("max resources track the highest capacity across all nodes", func(t *testing.T) {
+		for i := 0; i < extendedResourceTestIterations; i++ {
+			nodesMap, vm := buildTestNodesIncremental(scanOrder, nodesResourceLists)
+			mnr := NewMaxNodeResourcesPredicate(nodesMap, nil, "")
+			fooIdx := vm.GetIndex(fooResource)
+			if fooIdx < 0 {
+				t.Fatalf("iteration %d: %s not registered in vector map", i, fooResource)
+			}
+			if got := mnr.maxResources.Get(fooIdx); got != 5000 {
+				t.Fatalf("iteration %d: maxResources[%s] = %v, want 5000", i, fooResource, got)
+			}
+		}
+	})
+}
+
+func Test_maxNodeResourcesExtendedResourceOnNoNode(t *testing.T) {
+	missingResource := v1.ResourceName("example.com/bar")
+	nodesResourceLists := map[string]v1.ResourceList{
+		"n1": {
+			v1.ResourceCPU:    resource.MustParse("4"),
+			v1.ResourceMemory: resource.MustParse("16Gi"),
+			v1.ResourcePods:   resource.MustParse("110"),
+		},
+		"n2": {
+			v1.ResourceCPU:    resource.MustParse("4"),
+			v1.ResourceMemory: resource.MustParse("16Gi"),
+			v1.ResourcePods:   resource.MustParse("110"),
+		},
+	}
+	pod := buildPodRequestingResources(v1.ResourceList{missingResource: resource.MustParse("1")})
+
+	nodesMap, vm := buildTestNodesIncremental([]string{"n1", "n2"}, nodesResourceLists)
+	vm.AddResourceList(pod.Spec.Containers[0].Resources.Requests)
+
+	mnr := NewMaxNodeResourcesPredicate(nodesMap, nil, "")
+	_, status := mnr.PreFilter(context.TODO(), nil, pod, nil)
+	if status == nil {
+		t.Fatal("PreFilter() = nil, want rejection")
+	}
+	if status.Code() != ksf.UnschedulableAndUnresolvable {
+		t.Fatalf("PreFilter() code = %v, want UnschedulableAndUnresolvable", status.Code())
+	}
+	expectedMessage := "No node in the default node-pool has example.com/bar resources"
+	if !strings.Contains(status.Message(), expectedMessage) {
+		t.Fatalf("PreFilter() = %v, message should contain %q", status, expectedMessage)
+	}
+}
+
 func statusEqual(a, b *ksf.Status) bool {
 	if a == nil && b == nil {
 		return true
