@@ -126,7 +126,8 @@ So a decision evicting M pods across K distinct PodGroups produces M increments 
 When the scheduler first observes a PodGroup (cache event-handler `OnAdd`), both counters are initialized to 0 across all label combinations that can ever fire for that PG. The series is then born at 0 in Prometheus and a first eviction takes it `0 → N`, making `rate()` / `increase()` correct from the first eviction onward.
 
 - **Events counter**: one series per `action` value (subgroup is not a label on this counter).
-- **Pods counter**: one series per `(action, leaf-subgroup)` combination. Leaf subgroups are declared upfront in `PodGroup.Spec.SubGroups`, so they can be enumerated at `OnAdd` time without waiting for pods. PodGroups with no `SubGroups` field pre-init a single `subgroup=""` series per action.
+- **Pods counter**: one series per `(action, leaf-subgroup)` combination from `PodGroup.Spec.SubGroups`, enumerated at `OnAdd` (or `subgroup=""` when Spec has no SubGroups). SubGroups may be added later; `OnUpdate` pre-inits series for newly added leaves.
+- **PodGroup delete**: drop all series for that `{namespace, podgroup}` from both counters (`DeletePartialMatch`).
 
 Pre-initialization is essential for the per-subgroup pods counter: without it, a JobSet whose first eviction lands on leaf `r2` would have the `subgroup="r2"` series born at the eviction value, hitting the first-sample-invisible problem the design is meant to fix.
 
@@ -325,7 +326,7 @@ The implementation lives in a follow-up PR; this document covers behavior and co
 
 - **Metrics registration**: update the existing pods counter (label set), add the new events counter, add an initializer that pre-creates series at 0 on PodGroup observation.
 - **Eviction emission**: route the pods counter through the existing per-pod emit point with the new labels; emit the events counter once per committed decision, after the scheduler's eviction statement commits.
-- **Cache wiring**: have the PodGroup add-event handler invoke the pre-initializer so the zero series exist before any eviction.
+- **Cache wiring**: invoke the pre-initializer from the PodGroup `OnAdd` and `OnUpdate` handlers (`OnUpdate` only for newly added leaves); invoke series deletion from `OnDelete`.
 
 Test coverage: unit tests for the new label shape, and an integration test that asserts `rate()` and `increase()` return non-zero for a workload that has been evicted exactly once.
 
