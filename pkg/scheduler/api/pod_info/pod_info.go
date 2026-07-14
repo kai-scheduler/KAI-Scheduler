@@ -99,6 +99,11 @@ type PodInfo struct {
 	IsVirtualStatus bool
 	IsLegacyMIGtask bool
 
+	// IsResizeReservation marks a synthetic, node-pinned pending pod that represents the growth of
+	// a kubelet-deferred in-place resize. It holds resources to drive eviction on the resizing pod's
+	// node but has no real pod behind it, so it must never be bound (see Session.BindPod).
+	IsResizeReservation bool
+
 	BindRequest *bindrequest_info.BindRequestInfo
 
 	ResourceClaimInfo bindrequest_info.ResourceClaimInfo
@@ -302,6 +307,7 @@ func (pi *PodInfo) Clone() *PodInfo {
 		ResourceReceivedType:   pi.ResourceReceivedType,
 		IsVirtualStatus:        pi.IsVirtualStatus,
 		IsLegacyMIGtask:        pi.IsLegacyMIGtask,
+		IsResizeReservation:    pi.IsResizeReservation,
 		storageClaims:          pi.storageClaims,
 		ownedStorageClaims:     pi.ownedStorageClaims,
 	}
@@ -433,18 +439,11 @@ func logIfErr(pod *v1.Pod, err error) {
 }
 
 // getPodResourceWithoutInitContainers returns Pod's resource request, it does not contain
-// init containers' resource request.
+// init containers' resource request. A pod with a kubelet-deferred in-place resize is charged
+// at its actually-granted (status) size rather than its larger desired (spec) request; see
+// regularContainerRequests.
 func getPodResourceWithoutInitContainers(pod *v1.Pod) *resource_info.ResourceRequirements {
-	podResourcesList := v1.ResourceList{}
-	for _, container := range pod.Spec.Containers {
-		for key := range container.Resources.Requests {
-			resourceSum := podResourcesList[key]
-			resourceSum.Add(container.Resources.Requests[key])
-			podResourcesList[key] = resourceSum
-		}
-	}
-
-	return resource_info.RequirementsFromResourceList(podResourcesList)
+	return resource_info.RequirementsFromResourceList(regularContainerRequests(pod))
 }
 
 func getTaskStatus(pod *v1.Pod, bindRequest *bindrequest_info.BindRequestInfo, stuckInReleasingThreshold time.Duration) pod_status.PodStatus {

@@ -302,6 +302,16 @@ func BuildSession(testMetadata TestTopologyBasic, controller *Controller) *frame
 
 	clusterPodAffinityInfo := cache.NewK8sClusterPodAffinityInfo()
 	nodesInfoMap := nodes_fake.BuildNodesInfoMap(testMetadata.Nodes, tasksToNodeMap, clusterPodAffinityInfo, vectorMap, getDRAObjects(testMetadata)...)
+
+	// Mirror production Snapshot(): turn any kubelet-deferred in-place resize into a node-pinned
+	// pending reservation before the session (and its plugins' fair share) are built. This is a
+	// no-op unless a pod carries a deferred resize.
+	cluster_info.InjectResizeReservations(&api.ClusterInfo{
+		PodGroupInfos:     jobsInfoMap,
+		Nodes:             nodesInfoMap,
+		ResourceVectorMap: vectorMap,
+	})
+
 	queueInfoMap := BuildQueueInfoMap(testMetadata)
 
 	departmentInfoMap := BuildDepartmentInfoMap(testMetadata)
