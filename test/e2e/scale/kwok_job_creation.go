@@ -30,19 +30,20 @@ func createJobObjectForKwok(
 	return job, rd.CreateObjectWithRetries(ctx, testCtx.ControllerClient, job)
 }
 
-func createDistributedJobForKwok(
-	ctx context.Context, testCtx *testcontext.TestContext,
-	jobQueue *v2.Queue, resourcesPerPod v1.ResourceRequirements, numberOfTasks int,
-	extraLabels map[string]string, topologyConstraint *v2alpha2.TopologyConstraint,
-) (*rd.JobResult, error) {
-	return rd.CreateDistributedBatchJob(ctx, testCtx.ControllerClient, jobQueue,
-		rd.DistributedBatchJobOptions{
-			Parallelism:        ptr.To(int32(numberOfTasks)),
-			Resources:          resourcesPerPod,
-			ExtraLabels:        extraLabels,
-			TopologyConstraint: topologyConstraint,
-			PodSpecMutator:     addKWOKTaintsAndAffinity,
-		})
+func singleJobSubmissionForKwok(
+	testCtx *testcontext.TestContext,
+	jobQueue *v2.Queue,
+	resources v1.ResourceRequirements,
+	extraLabels map[string]string,
+) jobSubmission {
+	return jobSubmission{
+		ExpectedPods: 1,
+		Submit: func(ctx context.Context, batchLabels map[string]string) (*batchv1.Job, error) {
+			labels := cloneStringMap(extraLabels)
+			maps.Copy(labels, batchLabels)
+			return createJobObjectForKwok(ctx, testCtx, jobQueue, resources, labels)
+		},
+	}
 }
 
 func submitDistributedJobForKwok(
@@ -59,4 +60,25 @@ func submitDistributedJobForKwok(
 			TopologyConstraint: topologyConstraint,
 			PodSpecMutator:     addKWOKTaintsAndAffinity,
 		})
+}
+
+func distributedJobSubmissionForKwok(
+	testCtx *testcontext.TestContext,
+	jobQueue *v2.Queue,
+	resourcesPerPod v1.ResourceRequirements,
+	numberOfTasks int,
+	extraPodLabels map[string]string,
+	topologyConstraint *v2alpha2.TopologyConstraint,
+) jobSubmission {
+	return jobSubmission{
+		ExpectedPods: numberOfTasks,
+		Submit: func(ctx context.Context, batchLabels map[string]string) (*batchv1.Job, error) {
+			podLabels := cloneStringMap(extraPodLabels)
+			maps.Copy(podLabels, batchLabels)
+			return submitDistributedJobForKwok(
+				ctx, testCtx, jobQueue, resourcesPerPod, numberOfTasks,
+				podLabels, batchLabels, topologyConstraint,
+			)
+		},
+	}
 }

@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"math"
-	"sync"
 	"time"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
@@ -24,9 +23,7 @@ import (
 	schedulerconfig "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/configurations"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/configurations/feature_flags"
 	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
-	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
-	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/testconfig"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/utils"
 	waitutils "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
 )
@@ -103,30 +100,13 @@ func fillClusterWithJobs(
 	gpusPerJob := int(gpuQuantity.Value())
 	totalNumberOfJobs = (numberOfNodes * gpusPerNode) / gpusPerJob
 
-	var wg sync.WaitGroup
-	var creationError error
-	var lock sync.Mutex
-	for range totalNumberOfJobs {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			_, err := createJobObjectForKwok(ctx, testCtx, testQueue, resourceRequirements, map[string]string{})
-			if err != nil {
-				lock.Lock()
-				creationError = errors.Join(creationError, err)
-				lock.Unlock()
-			}
-		}()
+	submissions := make([]jobSubmission, totalNumberOfJobs)
+	for i := range submissions {
+		submissions[i] = singleJobSubmissionForKwok(testCtx, testQueue, resourceRequirements, nil)
 	}
-	wg.Wait()
-	Expect(creationError).NotTo(HaveOccurred(), "Failed to create some jobs")
-
-	GinkgoLogr.Info("Waiting for pods creation")
-	waitutils.ForAtLeastNPodCreation(ctx, testCtx.ControllerClient, metav1.LabelSelector{
-		MatchLabels: map[string]string{
-			testconfig.GetConfig().QueueLabelKey: testQueue.Name,
-		},
-	}, totalNumberOfJobs)
+	tracker, err := submitJobBatch(ctx, testCtx, queue.GetConnectedNamespaceToQueue(testQueue), submissions)
+	Expect(err).NotTo(HaveOccurred(), "Failed to create Job batch")
+	defer tracker.Close()
 
 	if disableSchedulerForPodCreation {
 		startTime = time.Now()
@@ -134,7 +114,9 @@ func fillClusterWithJobs(
 	}
 
 	GinkgoLogr.Info("Waiting for pods scheduling")
-	return startTime, waitForAllJobsToSchedule(ctx, testCtx, testQueue, totalNumberOfJobs), totalNumberOfJobs
+	status, err := tracker.WaitForScheduled(ctx)
+	Expect(err).NotTo(HaveOccurred())
+	return startTime, status.LastScheduledAt, totalNumberOfJobs
 }
 
 func distributedJobsScaleTest(
@@ -157,44 +139,25 @@ func distributedJobsScaleTestInternal(
 	schedulerconfig.DisableScheduler(ctx, testCtx)
 	defer schedulerconfig.EnableScheduler(ctx, testCtx)
 
-	expectedNumberOfPods := numberOfDistributedJobs * podsPerDistributedJob
-	var wg sync.WaitGroup
-	var creationError error
-	var lock sync.Mutex
-	var jobs []*batchv1.Job
-	batchID := utils.GenerateRandomK8sName(10)
-	batchLabels := map[string]string{distributedJobBatchLabel: batchID}
-
-	for range numberOfDistributedJobs {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			job, err := submitDistributedJobForKwok(
-				ctx, testCtx, testQueue,
-				v1.ResourceRequirements{
-					Limits: map[v1.ResourceName]resource.Quantity{
-						constants.NvidiaGpuResource: *resource.NewQuantity(int64(gpuPerPod), resource.DecimalSI),
-					},
-				}, podsPerDistributedJob,
-				batchLabels, batchLabels, topologyConstraint,
-			)
-			lock.Lock()
-			defer lock.Unlock()
-			if err != nil {
-				creationError = errors.Join(creationError, err)
-				return
-			}
-			jobs = append(jobs, job)
-		}()
+	resources := v1.ResourceRequirements{Limits: map[v1.ResourceName]resource.Quantity{
+		constants.NvidiaGpuResource: *resource.NewQuantity(int64(gpuPerPod), resource.DecimalSI),
+	}}
+	submissions := make([]jobSubmission, numberOfDistributedJobs)
+	for i := range submissions {
+		submissions[i] = distributedJobSubmissionForKwok(
+			testCtx, testQueue, resources, podsPerDistributedJob, nil, topologyConstraint,
+		)
 	}
-	wg.Wait()
-	Expect(creationError).NotTo(HaveOccurred(), "Failed to create some distributed jobs")
-	waitForDistributedJobsForKwok(ctx, testCtx, jobs)
+	tracker, err := submitJobBatch(ctx, testCtx, queue.GetConnectedNamespaceToQueue(testQueue), submissions)
+	Expect(err).NotTo(HaveOccurred(), "Failed to create distributed Job batch")
+	defer tracker.Close()
 
 	startTime := time.Now()
 	schedulerconfig.EnableScheduler(ctx, testCtx)
 
-	endTime := waitForAllJobsToSchedule(ctx, testCtx, testQueue, expectedNumberOfPods)
+	status, err := tracker.WaitForScheduled(ctx)
+	Expect(err).NotTo(HaveOccurred())
+	endTime := status.LastScheduledAt
 
 	GinkgoLogr.Info(
 		"Scheduled pods", "Total time", endTime.Sub(startTime),
@@ -298,28 +261,22 @@ func measureReclaimSingleGPUJob(
 
 func measureUnschedulableDelayInSeconds(
 	ctx context.Context, testCtx *testcontext.TestContext, testQueue *v2.Queue,
-	createJob func(context.Context, *testcontext.TestContext, *v2.Queue) (*rd.JobResult, error),
+	resources v1.ResourceRequirements, numberOfPods int,
 ) float64 {
 	totalTime := time.Duration(0)
-	for i := 0; i < statusMeasuringSamples; i++ {
-		result, err := createJob(ctx, testCtx, testQueue)
+	for range statusMeasuringSamples {
+		tracker, err := submitJobBatch(ctx, testCtx, queue.GetConnectedNamespaceToQueue(testQueue), []jobSubmission{
+			distributedJobSubmissionForKwok(testCtx, testQueue, resources, numberOfPods, nil, nil),
+		})
 		Expect(err).NotTo(HaveOccurred())
-		pg := result.PodGroup
-		Eventually(func(g Gomega) bool {
-			updatedPodGroup := &v2alpha2.PodGroup{}
-			err := testCtx.ControllerClient.Get(ctx, runtimeClient.ObjectKeyFromObject(pg), updatedPodGroup)
-			g.Expect(err).NotTo(HaveOccurred())
+		timing, err := tracker.WaitForPodGroupCondition(ctx, v2alpha2.UnschedulableOnNodePool)
+		Expect(err).NotTo(HaveOccurred())
+		totalTime += timing.TransitionAt.Sub(timing.CreatedAt)
 
-			for _, condition := range updatedPodGroup.Status.SchedulingConditions {
-				if condition.Type == v2alpha2.UnschedulableOnNodePool {
-					totalTime += condition.LastTransitionTime.Time.Sub(pg.CreationTimestamp.Time)
-					return true
-				}
-			}
-			return false
-		}, maxFlowTimeoutMinutes*time.Minute, podsPollIntervalSeconds*time.Second).Should(BeTrue())
-
-		Expect(deleteObjectWithRetries(ctx, testCtx.ControllerClient, result.Job)).To(Succeed())
+		jobs := tracker.Jobs()
+		Expect(jobs).To(HaveLen(1))
+		Expect(deleteObjectWithRetries(ctx, testCtx.ControllerClient, jobs[0])).To(Succeed())
+		tracker.Close()
 	}
 
 	return totalTime.Seconds() / float64(statusMeasuringSamples)
@@ -327,52 +284,26 @@ func measureUnschedulableDelayInSeconds(
 
 // reclaimForOneLargeJob creates a distributed job with the specified number of pods, each requesting gpusPerNode GPUs
 func reclaimForOneLargeJob(ctx context.Context, testCtx *testcontext.TestContext, reclaimSingleGPUJobsQueue *v2.Queue, numberOfPods int) {
-	result, err := createDistributedJobForKwok(
-		ctx, testCtx, reclaimSingleGPUJobsQueue,
-		v1.ResourceRequirements{
-			Limits: map[v1.ResourceName]resource.Quantity{
-				constants.NvidiaGpuResource: *resource.NewQuantity(int64(gpusPerNode), resource.DecimalSI),
-			},
-		},
-		numberOfPods, map[string]string{},
-		nil,
-	)
+	resources := v1.ResourceRequirements{Limits: map[v1.ResourceName]resource.Quantity{
+		constants.NvidiaGpuResource: *resource.NewQuantity(int64(gpusPerNode), resource.DecimalSI),
+	}}
+	tracker, err := submitJobBatch(ctx, testCtx, queue.GetConnectedNamespaceToQueue(reclaimSingleGPUJobsQueue), []jobSubmission{
+		distributedJobSubmissionForKwok(testCtx, reclaimSingleGPUJobsQueue, resources, numberOfPods, nil, nil),
+	})
 	Expect(err).NotTo(HaveOccurred())
-	podGroup := result.PodGroup
-
-	podsList := &v1.PodList{}
-	Eventually(func(g Gomega) bool {
-		err := testCtx.ControllerClient.List(
-			ctx, podsList,
-			runtimeClient.InNamespace(queue.GetConnectedNamespaceToQueue(reclaimSingleGPUJobsQueue)),
-		)
-		g.Expect(err).To(Succeed())
-		g.Expect(len(podsList.Items)).To(Equal(numberOfPods))
-		for _, pod := range podsList.Items {
-			g.Expect(rd.IsPodRunning(&pod)).To(BeTrue())
-		}
-		return true
-	}, maxFlowTimeoutMinutes*time.Minute, podsPollIntervalSeconds*time.Second).Should(BeTrue())
-
-	Expect(testCtx.ControllerClient.Get(ctx, runtimeClient.ObjectKeyFromObject(podGroup), podGroup)).To(Succeed())
-	startTime := podGroup.CreationTimestamp.Time
-	endTime := startTime
-	for _, pod := range podsList.Items {
-		for _, condition := range pod.Status.Conditions {
-			if condition.Type == v1.PodScheduled && condition.Status == v1.ConditionTrue {
-				if condition.LastTransitionTime.After(endTime) {
-					endTime = condition.LastTransitionTime.Time
-				}
-			}
-		}
-	}
+	defer tracker.Close()
+	status, err := tracker.WaitForRunning(ctx)
+	Expect(err).NotTo(HaveOccurred())
+	startTime, err := tracker.WaitForSinglePodGroupCreation(ctx)
+	Expect(err).NotTo(HaveOccurred())
+	endTime := status.LastScheduledAt
 
 	Expect(writeTestResults(
 		"Reclaim time for one very large job", true,
 		map[string]interface{}{
 			"total requested gpus":      float64((numberOfPods) * gpusPerNode),
 			"time to reclaim (seconds)": endTime.Sub(startTime).Seconds(),
-			"number of pods":            float64(len(podsList.Items)),
+			"number of pods":            float64(status.ObservedPods),
 		},
 	))
 }
