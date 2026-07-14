@@ -5,18 +5,14 @@ package scale
 
 import (
 	"context"
-	"errors"
 	"math"
 	"time"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	batchv1 "k8s.io/api/batch/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
@@ -24,8 +20,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/configurations/feature_flags"
 	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
-	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/utils"
-	waitutils "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
 )
 
 const (
@@ -173,49 +167,6 @@ func distributedJobsScaleTestInternal(
 		})).To(Succeed())
 }
 
-func waitForDistributedJobsForKwok(
-	ctx context.Context, testCtx *testcontext.TestContext, jobs []*batchv1.Job,
-) []*v1.Pod {
-	if len(jobs) == 0 {
-		return nil
-	}
-
-	expectedPods := 0
-	for _, job := range jobs {
-		if job.Spec.Parallelism == nil {
-			expectedPods++
-		} else {
-			expectedPods += int(*job.Spec.Parallelism)
-		}
-	}
-
-	batchID := jobs[0].Labels[distributedJobBatchLabel]
-	selector := metav1.LabelSelector{MatchLabels: map[string]string{distributedJobBatchLabel: batchID}}
-	waitutils.ForAtLeastNPodCreation(ctx, testCtx.ControllerClient, selector, expectedPods)
-
-	Eventually(func(g Gomega) {
-		podGroups := &v2alpha2.PodGroupList{}
-		err := testCtx.ControllerClient.List(ctx, podGroups,
-			runtimeClient.InNamespace(jobs[0].Namespace),
-			runtimeClient.MatchingLabels{distributedJobBatchLabel: batchID},
-		)
-		g.Expect(err).NotTo(HaveOccurred())
-		g.Expect(len(podGroups.Items)).To(Equal(len(jobs)))
-	}, maxFlowTimeoutMinutes*time.Minute, podsPollIntervalSeconds*time.Second).Should(Succeed())
-
-	pods := &v1.PodList{}
-	Expect(testCtx.ControllerClient.List(ctx, pods,
-		runtimeClient.InNamespace(jobs[0].Namespace),
-		runtimeClient.MatchingLabels{distributedJobBatchLabel: batchID},
-	)).To(Succeed())
-
-	result := make([]*v1.Pod, 0, len(pods.Items))
-	for i := range pods.Items {
-		result = append(result, &pods.Items[i])
-	}
-	return result
-}
-
 func consolidateScaleTest(
 	ctx context.Context, testCtx *testcontext.TestContext, testQueue *v2.Queue, numberOfNodes int,
 ) {
@@ -314,70 +265,39 @@ func runNCCLSimulation(
 ) (testSucceeded bool, totalPods int, completedPods int, pendingPods int, startTime time.Time) {
 	jobSizes := []int{1, 2, 4, 8, 16, 32, 64, 128, 256, 512}
 	startTime = time.Now()
-	batchID := utils.GenerateRandomK8sName(10)
-	podLabels := map[string]string{
-		"burst-test":             "true",
-		distributedJobBatchLabel: batchID,
-	}
-	jobLabels := map[string]string{distributedJobBatchLabel: batchID}
-	var jobs []*batchv1.Job
-	var creationError error
+	podLabels := map[string]string{"burst-test": "true"}
+	var submissions []jobSubmission
 	for _, jobSize := range jobSizes {
 		if jobSize > numberOfNodes {
 			break
 		}
 		for range numberOfNCCLJobsPerSize {
-			job, err := submitDistributedJobForKwok(
-				ctx, testCtx, testQueue, FullNodeGPURequirement, jobSize,
-				podLabels, jobLabels, nil,
-			)
-			if err != nil {
-				creationError = errors.Join(creationError, err)
-				continue
-			}
-			jobs = append(jobs, job)
+			submissions = append(submissions, distributedJobSubmissionForKwok(
+				testCtx, testQueue, FullNodeGPURequirement, jobSize, podLabels, nil,
+			))
 		}
 	}
-	Expect(creationError).NotTo(HaveOccurred(), "Failed to create some NCCL jobs")
-	testPods := waitForDistributedJobsForKwok(ctx, testCtx, jobs)
+	tracker, err := submitJobBatch(ctx, testCtx, queue.GetConnectedNamespaceToQueue(testQueue), submissions)
+	Expect(err).NotTo(HaveOccurred(), "Failed to create NCCL Job batch")
+	defer tracker.Close()
+	completionCtx, cancelCompletion := context.WithTimeout(ctx, time.Duration(ncclTimeoutMinutes)*time.Minute)
+	defer cancelCompletion()
+	status, err := waitForNCCLCompletion(completionCtx, tracker)
+	Expect(err).NotTo(HaveOccurred())
 
-	totalPods = len(testPods)
-	completedPods = 0
-	pendingPods = 0
-
-	Eventually(func(g Gomega) bool {
-		queuePods := &v1.PodList{}
-		g.Expect(testCtx.ControllerClient.List(ctx, queuePods,
-			runtimeClient.InNamespace(queue.GetConnectedNamespaceToQueue(testQueue)),
-		)).To(Succeed())
-
-		currentCompletedPods := 0
-		currentPendingPods := 0
-
-		queuePodsByName := map[string]*v1.Pod{}
-		for i := range queuePods.Items {
-			pod := &queuePods.Items[i]
-			queuePodsByName[pod.Name] = pod
-			if pod.Status.Phase == v1.PodPending {
-				currentPendingPods++
-			}
-		}
-
-		for _, pod := range testPods {
-			queuePod, exists := queuePodsByName[pod.Name]
-			if exists && queuePod.Status.Phase == v1.PodSucceeded {
-				currentCompletedPods++
-			}
-		}
-		completedPods = currentCompletedPods
-		pendingPods = currentPendingPods
-
-		return len(testPods) == completedPods || currentPendingPods == 0
-	}, time.Duration(ncclTimeoutMinutes)*time.Minute, podsPollIntervalSeconds*time.Second).Should(BeTrue())
-
-	GinkgoLogr.Info("Finished NCCL test", "completedPods", completedPods, "len(testPods)", len(testPods), "pendingPods", pendingPods)
+	totalPods = status.ExpectedPods
+	completedPods = status.SucceededPods
+	pendingPods = status.PendingPods
+	GinkgoLogr.Info("Finished NCCL test", "completedPods", completedPods, "totalPods", totalPods, "pendingPods", pendingPods)
 
 	testSucceeded = true
 
 	return testSucceeded, totalPods, completedPods, pendingPods, startTime
+}
+
+func waitForNCCLCompletion(ctx context.Context, tracker *jobBatchTracker) (BatchStatus, error) {
+	return tracker.WaitForStatus(ctx, "NCCL batch completion", func(status BatchStatus) bool {
+		return status.SucceededPods == status.ExpectedPods ||
+			(status.ObservedPods == status.ExpectedPods && status.PendingPods == 0)
+	})
 }
