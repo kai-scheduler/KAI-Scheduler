@@ -41,8 +41,8 @@ Module `github.com/kai-scheduler/KAI-scheduler`, Go 1.26.3, `k8s.io/* v0.35.4`,
 **Generated code** (`pkg/apis/client/`): clientset (`versioned` + `fake` + `scheme`), listers, informers — a
 single clientset/informer factory spanning **both** groups.
 
-**Shared utilities** under `pkg/common/`: `constants`, `resources`, `podgroup`, `k8s_utils` (candidates to
-move) and `feature_gates`, `flags` (stay — runtime behavior, not API).
+**Shared utilities** under `pkg/common/`: `constants`, `resources`, `podgroup` (candidates to move) and
+`k8s_utils`, `feature_gates`, `flags` (stay — scheduler-framework glue / runtime behavior, not API).
 
 **Code generation** (`Makefile`):
 - `generate` → `controller-gen object:headerFile="./hack/boilerplate.go.txt" paths="./pkg/apis/..."` (deepcopy)
@@ -73,8 +73,7 @@ github.com/kai-scheduler/api
 ├── constants/                 # ← pkg/common/constants
 ├── utilities/
 │   ├── resources/             # ← pkg/common/resources
-│   ├── podgroup/              # ← pkg/common/podgroup
-│   └── k8s_utils/             # ← pkg/common/k8s_utils
+│   └── podgroup/              # ← pkg/common/podgroup
 ├── client/                    # generated clientset/listers/informers (scheduling + kai/v1alpha1)
 ├── config/crd/                # generated scheduling.run.ai_*.yaml + kai.scheduler_topologies.yaml
 └── hack/                      # boilerplate + update-client.sh
@@ -86,8 +85,9 @@ github.com/kai-scheduler/api
 controller-gen deepcopy (already needed for their CRDs) runs locally.
 
 Dependency edge is one-way (`kai-scheduler → api`). Confirmed safe: the moving utilities import only
-`scheduling/v2alpha2` (`pkg/common/podgroup/preemptible.go`); `constants`/`resources`/`k8s_utils` import no
-`pkg/apis`. Nothing in the moving set imports `kai/v1`, so the api module has no back-edge.
+`scheduling/v2alpha2` (`pkg/common/podgroup/preemptible.go`); `constants`/`resources` import no `pkg/apis`.
+Nothing in the moving set imports `kai/v1`, `feature_gates`, `flags`, or `k8s_utils`, so the api module has no
+back-edge.
 
 ---
 
@@ -104,8 +104,9 @@ config types stay.
 | `pkg/apis/kai/v1alpha1` (Topology) | **Move** | Runtime-consumed lister; has a generated client (see §4.1) |
 | `pkg/apis/client/*` (all) | **Move** | Generated clients cover both moving groups |
 | `pkg/common/constants` | **Move** | Shared API-level constants (labels/annotations) |
-| `pkg/common/{resources,podgroup,k8s_utils}` | **Move** | Leaf utilities consumed by external API users |
+| `pkg/common/{resources,podgroup}` | **Move** | Leaf utilities consumed by external API users |
 | `pkg/apis/kai/v1` (Config, SchedulingShard) | **Stay** | Operator-internal; controller-runtime only, no typed clients |
+| `pkg/common/k8s_utils` | **Stay** | Scheduler-framework glue; imports `feature_gates` (back-edge → cycle) and pulls `k8s.io/kubernetes`; only internal importers |
 | `pkg/common/{feature_gates,flags}` | **Stay** | Runtime behavior, not API contract |
 | Per-service RBAC generation | **Stay** | Derives from service packages, not API types |
 
@@ -144,7 +145,7 @@ The private repo already exists but its contents are re-seeded from scratch — 
    - `pkg/apis/scheduling/*` → `scheduling/*`
    - `pkg/apis/kai/v1alpha1` → `kai/v1alpha1`
    - `pkg/common/constants` → `constants`
-   - `pkg/common/{resources,podgroup,k8s_utils}` → `utilities/{resources,podgroup,k8s_utils}`
+   - `pkg/common/{resources,podgroup}` → `utilities/{resources,podgroup}`
 2. Rewrite intra-module imports inside the copied tree (same mapping as §5.4).
 3. `go mod init github.com/kai-scheduler/api`; set `go 1.26.3`; add the deps the moved code actually uses
    (`k8s.io/{api,apimachinery,client-go} v0.35.4`, `sigs.k8s.io/controller-runtime v0.23.3` for the webhook,
@@ -193,11 +194,10 @@ kai-scheduler's own `manifests` target.
      -e 's|kai-scheduler/KAI-scheduler/pkg/common/constants|kai-scheduler/api/constants|g' \
      -e 's|kai-scheduler/KAI-scheduler/pkg/common/resources|kai-scheduler/api/utilities/resources|g' \
      -e 's|kai-scheduler/KAI-scheduler/pkg/common/podgroup|kai-scheduler/api/utilities/podgroup|g' \
-     -e 's|kai-scheduler/KAI-scheduler/pkg/common/k8s_utils|kai-scheduler/api/utilities/k8s_utils|g' \
      {} +
    ```
    The `kai/v1alpha1` rule is intentionally version-specific — it does **not** match `pkg/apis/kai/v1` (Config,
-   SchedulingShard), which must stay. Leave `…/pkg/common/{feature_gates,flags}` untouched. Review the diff to
+   SchedulingShard), which must stay. Leave `…/pkg/common/{feature_gates,flags,k8s_utils}` untouched. Review the diff to
    confirm no `kai/v1` import was rewritten.
 3. **Remove moved code:** `git rm -r pkg/apis/scheduling pkg/apis/kai/v1alpha1 pkg/apis/client pkg/common/{constants,resources,podgroup,k8s_utils}`.
 4. **Webhook registration:** `cmd/podgroupcontroller/app/app.go:98`
