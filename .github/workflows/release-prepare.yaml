@@ -77,5 +77,4 @@ jobs:
             --head "$BRANCH" \
             --title "chore(release): prepare changelog for $VERSION" \
             --label skip-changelog \
-            --label release \
             --body-file "$BODY"
