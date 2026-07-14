@@ -387,6 +387,81 @@ func assertPodGroupConditions(t *testing.T, actualConditions, expectedConditions
 	}
 }
 
+type RemovePodGroupConditionTest struct {
+	name               string
+	podGroup           *enginev2alpha2.PodGroup
+	nodePool           string
+	expectedConditions []enginev2alpha2.SchedulingCondition
+	expectedUpdated    bool
+}
+
+func TestRemovePodGroupSchedulingCondition(t *testing.T) {
+	unschedulable := func(nodePool string) enginev2alpha2.SchedulingCondition {
+		return enginev2alpha2.SchedulingCondition{
+			Type:         enginev2alpha2.UnschedulableOnNodePool,
+			NodePool:     nodePool,
+			Reason:       enginev2alpha2.PodGroupReasonUnschedulable,
+			Message:      "message",
+			TransitionID: "1",
+			Status:       v1.ConditionTrue,
+		}
+	}
+
+	for i, test := range []RemovePodGroupConditionTest{
+		{
+			name: "No conditions - nothing to remove",
+			podGroup: &enginev2alpha2.PodGroup{
+				Status: enginev2alpha2.PodGroupStatus{
+					SchedulingConditions: []enginev2alpha2.SchedulingCondition{},
+				},
+			},
+			nodePool:           "default",
+			expectedConditions: []enginev2alpha2.SchedulingCondition{},
+			expectedUpdated:    false,
+		},
+		{
+			name: "Condition for node pool is removed once scheduled",
+			podGroup: &enginev2alpha2.PodGroup{
+				Status: enginev2alpha2.PodGroupStatus{
+					SchedulingConditions: []enginev2alpha2.SchedulingCondition{unschedulable("default")},
+				},
+			},
+			nodePool:           "default",
+			expectedConditions: []enginev2alpha2.SchedulingCondition{},
+			expectedUpdated:    true,
+		},
+		{
+			name: "Condition for a different node pool is left untouched",
+			podGroup: &enginev2alpha2.PodGroup{
+				Status: enginev2alpha2.PodGroupStatus{
+					SchedulingConditions: []enginev2alpha2.SchedulingCondition{unschedulable("pool-a")},
+				},
+			},
+			nodePool:           "default",
+			expectedConditions: []enginev2alpha2.SchedulingCondition{unschedulable("pool-a")},
+			expectedUpdated:    false,
+		},
+		{
+			name: "Only the matching node pool condition is removed",
+			podGroup: &enginev2alpha2.PodGroup{
+				Status: enginev2alpha2.PodGroupStatus{
+					SchedulingConditions: []enginev2alpha2.SchedulingCondition{unschedulable("default"), unschedulable("pool-b")},
+				},
+			},
+			nodePool:           "default",
+			expectedConditions: []enginev2alpha2.SchedulingCondition{unschedulable("pool-b")},
+			expectedUpdated:    true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Logf("Running test %d: %s", i, test.name)
+			updated := removePodGroupSchedulingCondition(test.podGroup, test.nodePool)
+			assert.Equal(t, test.expectedUpdated, updated)
+			assertPodGroupConditions(t, test.podGroup.Status.SchedulingConditions, test.expectedConditions)
+		})
+	}
+}
+
 type UpdatePodGroupStaleTimeStampTest struct {
 	name               string
 	podGroup           *enginev2alpha2.PodGroup

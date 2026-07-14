@@ -218,6 +218,8 @@ func (su *defaultStatusUpdater) RecordJobStatusEvent(job *podgroup_info.PodGroup
 			return err
 		}
 		updatePodgroupStatus = su.recordUnschedulablePodGroup(job)
+	} else {
+		updatePodgroupStatus = su.clearPodGroupSchedulingCondition(job)
 	}
 
 	if len(patchData) > 0 || updatePodgroupStatus {
@@ -448,6 +450,11 @@ func (su *defaultStatusUpdater) updatePodGroupSchedulingCondition(
 	return setPodGroupSchedulingCondition(podGroup, schedulingCondition)
 }
 
+func (su *defaultStatusUpdater) clearPodGroupSchedulingCondition(job *podgroup_info.PodGroupInfo) bool {
+	nodePool := utils.GetNodePoolNameFromLabels(job.PodGroup.Labels, su.nodePoolLabelKey)
+	return removePodGroupSchedulingCondition(job.PodGroup, nodePool)
+}
+
 func (su *defaultStatusUpdater) addNodePoolPrefixIfNeeded(job *podgroup_info.PodGroupInfo, msg string) string {
 	schedulingBackoff := utils.GetSchedulingBackoffValue(job.PodGroup.Spec.SchedulingBackoff)
 	if schedulingBackoff == utils.SingleSchedulingBackoff {
@@ -595,6 +602,21 @@ func equalSchedulingConditions(a, b *enginev2alpha2.SchedulingCondition) bool {
 		a.Reason == b.Reason &&
 		a.Message == b.Message &&
 		a.Status == b.Status
+}
+
+func removePodGroupSchedulingCondition(podGroup *enginev2alpha2.PodGroup, nodePool string) bool {
+	if utils.GetSchedulingConditionIndex(podGroup, nodePool) == -1 {
+		return false
+	}
+
+	var remainingConditions []enginev2alpha2.SchedulingCondition
+	for _, condition := range podGroup.Status.SchedulingConditions {
+		if condition.NodePool != nodePool {
+			remainingConditions = append(remainingConditions, condition)
+		}
+	}
+	podGroup.Status.SchedulingConditions = remainingConditions
+	return true
 }
 
 func squashAndAppendConditionsForNodepool(podGroup *enginev2alpha2.PodGroup, schedulingCondition *enginev2alpha2.SchedulingCondition) {
