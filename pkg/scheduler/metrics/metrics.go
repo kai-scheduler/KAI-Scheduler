@@ -365,9 +365,9 @@ func RegisterPreemptionAttempts() {
 	preemptionAttempts.Inc()
 }
 
-// RecordPodGroupEvictedPods records the number of pods evicted for a pod group
-func RecordPodGroupEvictedPods(name, namespace, uid, nodepool, action string, count int) {
-	podGroupEvictedPodsTotal.WithLabelValues(name, namespace, uid, nodepool, action).Add(float64(count))
+// IncPodGroupEvictedPods records a single pod eviction for a pod group.
+func IncPodGroupEvictedPods(name, namespace, uid, nodepool, action string) {
+	podGroupEvictedPodsTotal.WithLabelValues(name, namespace, uid, nodepool, action).Inc()
 }
 
 func IncScenarioSearchJobs[A ~string](action A, result string, reducedBudget bool) {
