@@ -451,6 +451,12 @@ func (su *defaultStatusUpdater) updatePodGroupSchedulingCondition(
 }
 
 func (su *defaultStatusUpdater) clearPodGroupSchedulingCondition(job *podgroup_info.PodGroupInfo) bool {
+	// Keep the condition until binding is confirmed, so a failed bind still leaves
+	// an explanation for why the pods were pending. An allocated/pipelined/binding
+	// task has a node assigned by the scheduler but is not yet bound.
+	if hasTasksAwaitingBind(job) {
+		return false
+	}
 	nodePool := utils.GetNodePoolNameFromLabels(job.PodGroup.Labels, su.nodePoolLabelKey)
 	return removePodGroupSchedulingCondition(job.PodGroup, nodePool)
 }
@@ -602,6 +608,23 @@ func equalSchedulingConditions(a, b *enginev2alpha2.SchedulingCondition) bool {
 		a.Reason == b.Reason &&
 		a.Message == b.Message &&
 		a.Status == b.Status
+}
+
+// bindInFlightStatuses are the states a task is in after the scheduler assigns it
+// a node but before binding is confirmed.
+var bindInFlightStatuses = []pod_status.PodStatus{
+	pod_status.Allocated,
+	pod_status.Pipelined,
+	pod_status.Binding,
+}
+
+func hasTasksAwaitingBind(job *podgroup_info.PodGroupInfo) bool {
+	for _, status := range bindInFlightStatuses {
+		if len(job.PodStatusIndex[status]) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func removePodGroupSchedulingCondition(podGroup *enginev2alpha2.PodGroup, nodePool string) bool {
