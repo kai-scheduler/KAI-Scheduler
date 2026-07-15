@@ -4,12 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [v0.16.4] - 2026-07-12
+
+### Added
+- Publish FIPS-enabled image variants (`<version>-fips`) for every release, built with the Go toolchain's native FIPS 140-3 mode (`GOFIPS140`), and added a `global.fips` Helm value (default `false`) that appends `-fips` to every resolved image tag ([guide](docs/fips/README.md)). [#1867](https://github.com/kai-scheduler/KAI-Scheduler/issues/1867)
+- Added `global.nodePoolLabelKey` Helm value to configure `spec.global.nodePoolLabelKey` in the Config CR for KAI sharding [#1774](https://github.com/kai-scheduler/KAI-Scheduler/issues/1774).
 
 ### Fixed
+- Scoped the operator's informer cache for Pods, Leases and EndpointSlices to the KAI namespace and stripped managed fields from cached objects. Since v0.15.0 the operator cached every such object in the cluster, so its memory grew with cluster size and exceeded the default 256Mi limit on large clusters. [#1780](https://github.com/kai-scheduler/KAI-Scheduler/issues/1780)
 - Block NaN value for fraction in the pod admission [#1798](https://github.com/kai-scheduler/KAI-Scheduler/issues/1798) [davidLif](https://github.com/davidLif)
 - In the fractional admission checks, check that the fractional value can be parsed as a quantity. [#1798](https://github.com/kai-scheduler/KAI-Scheduler/issues/1798) [davidLif](https://github.com/davidLif)
-- Added `global.nodePoolLabelKey` Helm value to configure `spec.global.nodePoolLabelKey` in the Config CR for KAI sharding [#1774](https://github.com/kai-scheduler/KAI-Scheduler/issues/1774).
 
 ### Changed
 - Podgrouper now rejects negative PyTorch replica indexes and LWS worker indexes, and caps the number of subgroups created for block-level segmentation at 10000 to avoid unbounded PodGroup fan-out. [davidLif](https://github.com/davidLif)
@@ -24,6 +28,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [v0.16.1] - 2026-06-28
 
 ### Added
+- Added `global.resourceReservation.createNamespace` Helm value (default `true`) to allow disabling creation of the resource-reservation namespace, for embedding KAI in a parent chart that creates the namespace itself.
+- Added `global.resourceReservation.createServiceAccount` Helm value (default `true`) to allow disabling creation of the resource-reservation ServiceAccount, for embedding KAI in a parent chart that creates the ServiceAccount itself.
 - Added `defaultPriorityClasses.enabled` Helm value (default `true`) for installations that manage KAI PriorityClasses externally.
 
 ### Changed
@@ -32,6 +38,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 - Restricted Helm post-delete cleanup to KAI operator-managed Deployments and preserved externally managed `kai-config` resources when `kaiConfigDeployer.enabled=false`.
 - Scheduler cache now filters terminal Pods at watch time to reduce memory use, while still watching Pods bound by other schedulers so their resource usage is counted in allocatable calculations. [#1645](https://github.com/kai-scheduler/KAI-Scheduler/issues/1645) [enoodle](https://github.com/enoodle)
+- Fixed reclaim abandoning valid over-quota victims when an unrelated under-deserved queue appeared earlier in victim ordering. [#1750](https://github.com/kai-scheduler/KAI-Scheduler/issues/1750)
 
 ## [v0.16.0] - 2026-06-24
 
@@ -62,6 +69,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Fixed scheduler nil-pointer panic in the preempt scenario builder when a (partial) job has no tasks to allocate (`NewIdleGpusFilter` dereferenced a nil scenario); added the missing nil-guard matching the sibling filters [#1664](https://github.com/kai-scheduler/KAI-Scheduler/issues/1664) [sam-huang1223](https://github.com/sam-huang1223)
 - Fixed default node-scale-adjuster image name (`node-scale-adjuster` → `nodescaleadjuster`) so it matches the image published to GHCR
 - Fixed duplicate GPU reservation pods being created for a single `gpu-group` on a node (each reserving a different physical GPU), which corrupted the scheduler's fractional-GPU accounting and left devices unschedulable. Reservation pods are now named deterministically per (node, gpu-group) and treat AlreadyExists as success, so concurrent or retried binds collide on one object instead of duplicating [#1673](https://github.com/kai-scheduler/KAI-Scheduler/issues/1673)
+- Fixed `kai_pod_group_evicted_pods_total` counter being inflated by gang size. The metric was incremented by `EvictionGangSize` (= N) on every per-pod eviction emit, so an N-pod gang eviction wrote N² to the counter instead of N (and a cross-PodGroup batch of size N inflated each PG's counter by `tasks_in_pg × N`). All eviction-emitting actions (preempt, reclaim, consolidation, stalegangeviction) were affected. [#1620](https://github.com/kai-scheduler/KAI-Scheduler/issues/1620)
 
 ## [v0.15.0] - 2026-05-20
 
@@ -412,7 +420,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Added [minruntime](docs/plugins/minruntime.md) plugin, allowing PodGroups to run for a configurable amount of time without being reclaimed/preempted.
 - PodGroup Controller that will update podgroups statuses with allocation data.
 - Queue Controller that will update queues statuses with allocation data.
-
 
 ## [v0.5.1] - 2025-05-20
 

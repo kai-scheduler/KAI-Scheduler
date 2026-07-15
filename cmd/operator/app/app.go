@@ -16,7 +16,12 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/controller"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands"
 
+	coordinationv1 "k8s.io/api/coordination/v1"
+	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
@@ -69,8 +74,21 @@ func New() (*App, error) {
 	clientConfig.QPS = float32(opts.Qps)
 	clientConfig.Burst = opts.Burst
 
+	// Pods, Leases and EndpointSlices are watched only to reconcile scheduler
+	// shards, and all relevant objects live in the KAI namespace. Without this
+	// scoping the shared cache stores every such object in the cluster, and
+	// operator memory grows linearly with cluster size.
+	kaiNamespace := map[string]cache.Config{opts.Namespace: {}}
 	mgr, err := ctrl.NewManager(clientConfig, ctrl.Options{
 		Scheme: scheme,
+		Cache: cache.Options{
+			DefaultTransform: cache.TransformStripManagedFields(),
+			ByObject: map[client.Object]cache.ByObject{
+				&corev1.Pod{}:                {Namespaces: kaiNamespace},
+				&coordinationv1.Lease{}:      {Namespaces: kaiNamespace},
+				&discoveryv1.EndpointSlice{}: {Namespaces: kaiNamespace},
+			},
+		},
 		Metrics: server.Options{
 			BindAddress: opts.MetricsAddr,
 		},

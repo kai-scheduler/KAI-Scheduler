@@ -47,6 +47,23 @@ type NumaPlacementExporter struct {
 	// Defaults to 60s when unset.
 	// +kubebuilder:validation:Optional
 	DriftResyncInterval *metav1.Duration `json:"driftResyncInterval,omitempty"`
+
+	// PodResourcesHostPath is the host directory hostPath-mounted for the podresources socket.
+	// Override to point the exporter at a non-kubelet podresources socket (e.g. a simulated one).
+	// PodResourcesSocket must resolve inside it. Defaults to /var/lib/kubelet/pod-resources.
+	// +kubebuilder:validation:Optional
+	PodResourcesHostPath string `json:"podResourcesHostPath,omitempty"`
+
+	// PodResourcesSocket is the podresources gRPC socket path the exporter dials. It must resolve
+	// inside PodResourcesHostPath (mounted at the same in-container path).
+	// Defaults to /var/lib/kubelet/pod-resources/kubelet.sock.
+	// +kubebuilder:validation:Optional
+	PodResourcesSocket string `json:"podResourcesSocket,omitempty"`
+
+	// SysfsHostPath is the host sysfs directory hostPath-mounted for CPU-to-NUMA resolution.
+	// Override to point the exporter at a synthetic sysfs tree. Defaults to /sys.
+	// +kubebuilder:validation:Optional
+	SysfsHostPath string `json:"sysfsHostPath,omitempty"`
 }
 
 func (n *NumaPlacementExporter) SetDefaultsWhereNeeded() {

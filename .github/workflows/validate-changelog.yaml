@@ -27,12 +27,14 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check CHANGELOG.md updated
+      # Changelog entries are managed as changie fragments (see CONTRIBUTING.md).
+      # A behavior-changing PR must add a fragment under .changes/unreleased/ (run `make changelog`).
+      - name: Check changelog fragment added
         if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'skip-changelog') && !contains(github.event.pull_request.labels.*.name, 'dependencies')
         run: |
-          if git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -q '^CHANGELOG.md$'; then
-            echo "CHANGELOG.md has been updated."
+          if git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -qE '^\.changes/unreleased/[^/]+\.yaml$'; then
+            echo "Changelog fragment added."
           else
-            echo "::error::CHANGELOG.md has not been updated. Please update the changelog or add the 'skip-changelog' label to opt out."
+            echo "::error::No changelog fragment found. Run 'make changelog' to add one, or add the 'skip-changelog' label to opt out."
             exit 1
           fi
