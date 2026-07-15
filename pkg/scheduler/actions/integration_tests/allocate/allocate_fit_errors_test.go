@@ -5,7 +5,6 @@ package allocate_test
 
 import (
 	"fmt"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -37,8 +36,6 @@ const (
 	fitErrorBenchmarkDepartment   = "fit-error-department"
 	fitErrorBenchmarkGPUsPerNode  = 8
 )
-
-var allocateFitErrorsBenchmarkKeepAlive *framework.Session
 
 func TestAllocateFitErrorsResourceFull(t *testing.T) {
 	test_utils.InitTestingInfrastructure()
@@ -196,81 +193,6 @@ func addAlternativeNodeSets(ssn *framework.Session, nodes []*node_info.NodeInfo)
 		}
 		return api.SubsetNodesResult{NodeSets: []node_info.NodeSet{nodes[:1], nodes}}, nil
 	})
-}
-
-func BenchmarkAllocateFitErrorsResourceFull_10Nodes(b *testing.B) {
-	benchmarkAllocateFitErrors(b, 10, buildResourceFullFitErrorTopology, nil)
-}
-
-func BenchmarkAllocateFitErrorsResourceFull_100Nodes(b *testing.B) {
-	benchmarkAllocateFitErrors(b, 100, buildResourceFullFitErrorTopology, nil)
-}
-
-func BenchmarkAllocateFitErrorsResourceFull_500Nodes(b *testing.B) {
-	benchmarkAllocateFitErrors(b, 500, buildResourceFullFitErrorTopology, nil)
-}
-
-func BenchmarkAllocateFitErrorsMixedPredicates_10Nodes(b *testing.B) {
-	benchmarkAllocateFitErrors(b, 10, buildPredicateFitErrorTopology, addMixedFailurePredicate)
-}
-
-func BenchmarkAllocateFitErrorsMixedPredicates_100Nodes(b *testing.B) {
-	benchmarkAllocateFitErrors(b, 100, buildPredicateFitErrorTopology, addMixedFailurePredicate)
-}
-
-func BenchmarkAllocateFitErrorsMixedPredicates_500Nodes(b *testing.B) {
-	benchmarkAllocateFitErrors(b, 500, buildPredicateFitErrorTopology, addMixedFailurePredicate)
-}
-
-func benchmarkAllocateFitErrors(
-	b *testing.B,
-	numNodes int,
-	buildTopology func(int) test_utils.TestTopologyBasic,
-	configureSession func(*framework.Session),
-) {
-	test_utils.InitTestingInfrastructure()
-	ctrl := gomock.NewController(b)
-	defer ctrl.Finish()
-
-	topology := buildTopology(numNodes)
-	action := allocate.New()
-	failedTasks := numNodes * fitErrorBenchmarkGPUsPerNode
-	recordedReasons := failedTasks
-	if configureSession != nil {
-		recordedReasons *= 2
-	}
-
-	b.ReportAllocs()
-	b.ResetTimer()
-	var heapLiveDelta uint64
-	for range b.N {
-		b.StopTimer()
-		runtime.GC()
-		var before runtime.MemStats
-		runtime.ReadMemStats(&before)
-		b.StartTimer()
-
-		ssn := test_utils.BuildSession(topology, ctrl)
-		if configureSession != nil {
-			configureSession(ssn)
-		}
-		action.Execute(ssn)
-		allocateFitErrorsBenchmarkKeepAlive = ssn
-
-		b.StopTimer()
-		var after runtime.MemStats
-		runtime.ReadMemStats(&after)
-		if after.HeapAlloc > before.HeapAlloc {
-			heapLiveDelta = after.HeapAlloc - before.HeapAlloc
-		} else {
-			heapLiveDelta = 0
-		}
-		b.StartTimer()
-	}
-	b.StopTimer()
-	b.ReportMetric(float64(failedTasks), "failed_tasks/op")
-	b.ReportMetric(float64(recordedReasons), "recorded_reasons/op")
-	b.ReportMetric(float64(heapLiveDelta), "heap_live_delta_bytes/op")
 }
 
 func buildResourceFullFitErrorTopology(numNodes int) test_utils.TestTopologyBasic {
