@@ -25,6 +25,7 @@ func createJobObjectForKwok(
 ) (*batchv1.Job, error) {
 	job := rd.CreateBatchJobObject(jobQueue, resources)
 	addKWOKTaintsAndAffinity(&job.Spec.Template.Spec)
+	maps.Copy(job.ObjectMeta.Labels, extraLabels)
 	maps.Copy(job.Spec.Template.ObjectMeta.Labels, extraLabels)
 
 	return job, rd.CreateObjectWithRetries(ctx, testCtx.ControllerClient, job)
