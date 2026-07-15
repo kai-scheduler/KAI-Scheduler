@@ -88,28 +88,43 @@ func isPodScheduled(pod *v1.Pod) bool {
 	return false
 }
 
-// podSteadyStateResources sums what a pod holds while it runs: regular containers, native sidecars
-// (init containers with restartPolicy Always) and Pod overhead, the way the scheduler counts a running pod.
-// The peak of a non-restartable init container is not folded in yet; #1880 tracks closing that gap.
-// A native sidecar's GPU is counted, since the scheduler counts it, unless the pod's GPU is rebuilt from an
-// annotation (see gpuIsRebuiltFromAnnotation), where the annotation decides and the container request is
-// dropped. Pod overhead never adds a GPU, since the scheduler adds only its base resources.
-func podSteadyStateResources(pod *v1.Pod) v1.ResourceList {
-	total := v1.ResourceList{}
+// podReservedResources returns what a pod reserves for its lifetime, the way the scheduler's
+// getPodResourceRequest counts it: the per-resource maximum of the steady state and the init phase, plus Pod
+// overhead. The steady state is every regular container's request plus every native sidecar's request (an init
+// container with restartPolicy Always). The init phase is the peak of a non-restartable init container, taken
+// as that container's request plus the native sidecars declared before it, since those are already running.
+// Init containers run one at a time, so the init phase is a max across them, not a sum.
+// A GPU asked for by a sidecar or by a non-restartable init container is counted, since the scheduler counts
+// it, unless the pod's GPU is rebuilt from an annotation (see gpuIsRebuiltFromAnnotation), where the annotation
+// decides and the container request is dropped. Pod overhead never adds a GPU, since the scheduler adds only
+// its base resources.
+func podReservedResources(pod *v1.Pod) v1.ResourceList {
+	dropInitGpu := gpuIsRebuiltFromAnnotation(pod)
+
+	steady := v1.ResourceList{}
 	for _, container := range pod.Spec.Containers {
-		total = resources.SumResources(total, container.Resources.Requests)
+		steady = resources.SumResources(steady, container.Resources.Requests)
 	}
-	dropSidecarGpu := gpuIsRebuiltFromAnnotation(pod)
+
+	sidecarSum := v1.ResourceList{}
+	initPhasePeak := v1.ResourceList{}
 	for _, initContainer := range pod.Spec.InitContainers {
-		if isNativeSidecar(initContainer) {
-			requests := initContainer.Resources.Requests
-			if dropSidecarGpu {
-				requests = withoutGpuResources(requests)
-			}
-			total = resources.SumResources(total, requests)
+		requests := initContainer.Resources.Requests
+		if dropInitGpu {
+			requests = withoutGpuResources(requests)
 		}
+		if isNativeSidecar(initContainer) {
+			sidecarSum = resources.SumResources(sidecarSum, requests)
+			continue
+		}
+		// A non-restartable init container runs alone, but alongside any native sidecars already started, so
+		// its peak is its own request plus those sidecars.
+		initPhasePeak = resources.MaxResources(initPhasePeak, resources.SumResources(requests, sidecarSum))
 	}
-	return resources.SumResources(total, withoutGpuResources(pod.Spec.Overhead))
+
+	steady = resources.SumResources(steady, sidecarSum)
+	reserved := resources.MaxResources(steady, initPhasePeak)
+	return resources.SumResources(reserved, withoutGpuResources(pod.Spec.Overhead))
 }
 
 // gpuIsRebuiltFromAnnotation reports whether the scheduler derives the pod's GPU from an annotation
@@ -151,7 +166,7 @@ func withoutGpuResources(list v1.ResourceList) v1.ResourceList {
 func calculatedAllocatedResources(
 	ctx context.Context, pod *v1.Pod, kubeClient client.Client, draClaims []*resourceapi.ResourceClaim,
 ) (v1.ResourceList, error) {
-	allocatedResources := podSteadyStateResources(pod)
+	allocatedResources := podReservedResources(pod)
 
 	gpuSharingReceivedResources, err := resources.ExtractGPUSharingReceivedResources(ctx, pod, kubeClient)
 	if err != nil {
@@ -171,7 +186,7 @@ func calculatedAllocatedResources(
 func calculateRequestedResources(
 	ctx context.Context, pod *v1.Pod, kubeClient client.Client, draClaims []*resourceapi.ResourceClaim,
 ) (v1.ResourceList, error) {
-	requestedResources := podSteadyStateResources(pod)
+	requestedResources := podReservedResources(pod)
 
 	gpuSharingRequestedResources, err := resources.ExtractGPUSharingRequestedResources(pod)
 	if err != nil {
