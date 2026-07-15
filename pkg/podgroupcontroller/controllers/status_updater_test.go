@@ -369,7 +369,7 @@ func Test_handlePodGroupStatus(t *testing.T) {
 			false,
 		},
 		{
-			"Running pod with native sidecar and pod overhead",
+			"Running pod with native sidecar, init peak, and pod overhead",
 			Configs{},
 			clusterData{
 				&v2alpha2.PodGroup{
@@ -452,17 +452,19 @@ func Test_handlePodGroupStatus(t *testing.T) {
 			},
 			v2alpha2.PodGroupStatus{
 				ResourcesStatus: v2alpha2.PodGroupResourcesStatus{
+					// max(regular 1 + sidecar 500m, init 4 + sidecar 500m) + overhead 500m = 5 CPU;
+					// max(1Gi + 512Mi, 8Gi + 512Mi) + 512Mi = 9Gi.
 					Allocated: map[v1.ResourceName]resource.Quantity{
-						v1.ResourceCPU:    resource.MustParse("2"),
-						v1.ResourceMemory: resource.MustParse("2Gi"),
+						v1.ResourceCPU:    resource.MustParse("5"),
+						v1.ResourceMemory: resource.MustParse("9Gi"),
 					},
 					AllocatedNonPreemptible: map[v1.ResourceName]resource.Quantity{
-						v1.ResourceCPU:    resource.MustParse("2"),
-						v1.ResourceMemory: resource.MustParse("2Gi"),
+						v1.ResourceCPU:    resource.MustParse("5"),
+						v1.ResourceMemory: resource.MustParse("9Gi"),
 					},
 					Requested: map[v1.ResourceName]resource.Quantity{
-						v1.ResourceCPU:    resource.MustParse("2"),
-						v1.ResourceMemory: resource.MustParse("2Gi"),
+						v1.ResourceCPU:    resource.MustParse("5"),
+						v1.ResourceMemory: resource.MustParse("9Gi"),
 					},
 				},
 			},

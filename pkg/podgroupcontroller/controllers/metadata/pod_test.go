@@ -20,7 +20,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
-func TestPodSteadyStateResources(t *testing.T) {
+func TestPodReservedResources(t *testing.T) {
 	tests := []struct {
 		name string
 		pod  *v1.Pod
@@ -50,7 +50,9 @@ func TestPodSteadyStateResources(t *testing.T) {
 			want: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1250m")},
 		},
 		{
-			name: "plain init container is not counted",
+			// The scheduler reserves max(regular + sidecars, init peak), so a large non-restartable init
+			// container is reflected while it runs.
+			name: "a non-restartable init container's peak is counted",
 			pod: &v1.Pod{Spec: v1.PodSpec{
 				InitContainers: []v1.Container{{
 					Resources: v1.ResourceRequirements{
@@ -61,7 +63,98 @@ func TestPodSteadyStateResources(t *testing.T) {
 					{Resources: v1.ResourceRequirements{Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1")}}},
 				},
 			}},
-			want: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1")},
+			want: v1.ResourceList{v1.ResourceCPU: resource.MustParse("8")},
+		},
+		{
+			// When the steady state is larger than the init peak, it wins.
+			name: "steady state above the init peak wins",
+			pod: &v1.Pod{Spec: v1.PodSpec{
+				InitContainers: []v1.Container{{
+					Resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1")},
+					},
+				}},
+				Containers: []v1.Container{
+					{Resources: v1.ResourceRequirements{Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("4")}}},
+				},
+			}},
+			want: v1.ResourceList{v1.ResourceCPU: resource.MustParse("4")},
+		},
+		{
+			// Init containers run one at a time, so the init phase is the max across them, not the sum.
+			name: "the init phase is a max across init containers, not a sum",
+			pod: &v1.Pod{Spec: v1.PodSpec{
+				InitContainers: []v1.Container{
+					{Resources: v1.ResourceRequirements{Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("3")}}},
+					{Resources: v1.ResourceRequirements{Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("5")}}},
+				},
+				Containers: []v1.Container{
+					{Resources: v1.ResourceRequirements{Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1")}}},
+				},
+			}},
+			want: v1.ResourceList{v1.ResourceCPU: resource.MustParse("5")},
+		},
+		{
+			// A native sidecar declared before a non-restartable init is already running when it runs, so the
+			// init peak includes that sidecar.
+			name: "the init peak includes a native sidecar that runs alongside it",
+			pod: &v1.Pod{Spec: v1.PodSpec{
+				InitContainers: []v1.Container{
+					{
+						RestartPolicy: ptr.To(v1.ContainerRestartPolicyAlways),
+						Resources:     v1.ResourceRequirements{Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("2")}},
+					},
+					{Resources: v1.ResourceRequirements{Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("5")}}},
+				},
+				Containers: []v1.Container{
+					{Resources: v1.ResourceRequirements{Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1")}}},
+				},
+			}},
+			want: v1.ResourceList{v1.ResourceCPU: resource.MustParse("7")},
+		},
+		{
+			// A GPU asked for by a non-restartable init container reaches the status on a pod with no GPU
+			// annotation, since the scheduler reserves it during the init phase.
+			name: "a non-restartable init container's gpu is counted",
+			pod: &v1.Pod{Spec: v1.PodSpec{
+				InitContainers: []v1.Container{{
+					Resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{
+							v1.ResourceCPU:                    resource.MustParse("4"),
+							v1.ResourceName("nvidia.com/gpu"): resource.MustParse("1"),
+						},
+					},
+				}},
+				Containers: []v1.Container{
+					{Resources: v1.ResourceRequirements{Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1")}}},
+				},
+			}},
+			want: v1.ResourceList{
+				v1.ResourceCPU:                    resource.MustParse("4"),
+				v1.ResourceName("nvidia.com/gpu"): resource.MustParse("1"),
+			},
+		},
+		{
+			// On a pod whose GPU is rebuilt from an annotation, a non-restartable init container's GPU is
+			// dropped like a sidecar's, since the annotation decides the pod's GPU.
+			name: "a non-restartable init container's gpu is dropped on an annotation pod",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{constants.GpuFraction: "0.5"}},
+				Spec: v1.PodSpec{
+					InitContainers: []v1.Container{{
+						Resources: v1.ResourceRequirements{
+							Requests: v1.ResourceList{
+								v1.ResourceCPU:                    resource.MustParse("4"),
+								v1.ResourceName("nvidia.com/gpu"): resource.MustParse("1"),
+							},
+						},
+					}},
+					Containers: []v1.Container{
+						{Resources: v1.ResourceRequirements{Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1")}}},
+					},
+				},
+			},
+			want: v1.ResourceList{v1.ResourceCPU: resource.MustParse("4")},
 		},
 		{
 			name: "pod overhead is counted",
@@ -208,7 +301,7 @@ func TestPodSteadyStateResources(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := podSteadyStateResources(tt.pod)
+			got := podReservedResources(tt.pod)
 			assert.Len(t, got, len(tt.want))
 			for name, want := range tt.want {
 				gotQuantity := got[name]
