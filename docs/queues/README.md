@@ -92,12 +92,14 @@ Per pod, the controller sums:
 
 GPU-sharing requests (the `gpu-fraction` and `gpu-memory` annotations) and DRA claims are added on their own paths.
 
-Two things are deliberately left out today:
+One thing is deliberately left out today:
 
-- **The peak of a non-restartable init container.** The scheduler reserves `max(regular + sidecars, init peak) + overhead`, so a pod whose init container is larger than its steady state holds more than the status reports, for as long as that init container runs.
-- **A GPU asked for by a sidecar, or set in a Pod overhead.** When a pod carries a GPU-sharing or legacy MIG annotation, the scheduler rebuilds the pod's GPU requirement from that annotation and discards the container request, so counting a sidecar's GPU on top of it would report a GPU that nothing reserved. A name counts as a GPU here if it ends in `/gpu` or is a MIG device, which is the rule `kai_queue_allocated_gpus` already applies. A GPU set in `spec.overhead` is reserved by neither side: the scheduler adds only the CPU and memory half of the overhead.
+- **The peak of a non-restartable init container.** The scheduler reserves `max(regular + sidecars, init peak) + overhead`, so a pod whose init container is larger than its steady state holds more than the status reports, for as long as that init container runs. This is tracked in [#1880](https://github.com/NVIDIA/KAI-Scheduler/issues/1880), which is about giving the scheduler and the queue controller one shared aggregation instead of two.
 
-Both gaps are tracked in [#1880](https://github.com/NVIDIA/KAI-Scheduler/issues/1880), which is about giving the scheduler and the queue controller one shared aggregation instead of two.
+Two GPU details follow the scheduler on purpose:
+
+- **A GPU set in `spec.overhead`** is not counted: the scheduler adds only the CPU and memory half of the overhead.
+- **A GPU on a pod whose GPU is rebuilt from an annotation** (`gpu-fraction`, `gpu-memory`, or a legacy MIG annotation) is not counted from the containers, since the annotation decides and the scheduler discards the container request. A regular container's or a native sidecar's GPU on any other pod is counted, matching the scheduler. A name counts as a GPU here if it ends in `/gpu` or is a MIG device, the rule `kai_queue_allocated_gpus` already applies.
 
 ## Examples
 
