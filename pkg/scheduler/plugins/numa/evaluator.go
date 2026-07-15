@@ -8,7 +8,6 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/util/sets"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -23,20 +22,12 @@ const stackZones = 16
 type zoneAllocation = map[int]resource_info.ResourceVector
 
 // effectiveAware returns the node's aware indices minus the ignored ones. When nothing is ignored
-// (the default) this is the topology's own AwareIndices.
+// (the default) this is the topology's own AwareIndices with no allocation or lookup.
 func (pp *numaPlugin) effectiveAware(node *node_info.NodeInfo) []int {
-	aware := node.NumaTopology.AwareIndices
-	if len(pp.ignoreList) == 0 {
-		return aware
+	if len(pp.ignoreIndices) == 0 {
+		return node.NumaTopology.AwareIndices
 	}
-	vectorMap := node.NumaTopology.VectorMap
-	ignore := sets.New[int]()
-	for name := range pp.ignoreList {
-		if idx := vectorMap.GetIndex(name); idx >= 0 {
-			ignore.Insert(idx)
-		}
-	}
-	return filterAware(aware, ignore)
+	return pp.effectiveAwareByNode[node.Name]
 }
 
 // allocatable reports whether the kubelet Topology Manager would align the task on the node. A task
@@ -64,7 +55,7 @@ func (pp *numaPlugin) solveTask(task *pod_info.PodInfo, node *node_info.NodeInfo
 	}
 	topo := node.NumaTopology
 	aware := pp.effectiveAware(node)
-	concurrent, serial := buildNumaRequests(task.Pod, topo.VectorMap).forScope(topo.Scope)
+	concurrent, serial := pp.numaRequestsFor(task, topo.VectorMap).forScope(topo.Scope)
 	return solve(topo, aware, concurrent, serial, alloc)
 }
 

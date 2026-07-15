@@ -7,7 +7,9 @@ import (
 	v1 "k8s.io/api/core/v1"
 	resourcehelper "k8s.io/component-helpers/resource"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 )
 
@@ -27,6 +29,20 @@ func (r *podNumaRequests) forScope(scope node_info.TopologyManagerScope) (concur
 		return r.podScope, nil
 	}
 	return r.concurrent, r.serial
+}
+
+// numaRequestsFor builds and caches the task's NUMA requests on first use. Not safe for concurrent
+// use: the predicate path is assumed serial.
+func (pp *numaPlugin) numaRequestsFor(task *pod_info.PodInfo, vectorMap *resource_info.ResourceVectorMap) *podNumaRequests {
+	if pp.numaRequestCache == nil {
+		pp.numaRequestCache = map[common_info.PodID]*podNumaRequests{}
+	}
+	if reqs, ok := pp.numaRequestCache[task.UID]; ok {
+		return reqs
+	}
+	reqs := buildNumaRequests(task.Pod, vectorMap)
+	pp.numaRequestCache[task.UID] = reqs
+	return reqs
 }
 
 func buildNumaRequests(pod *v1.Pod, vectorMap *resource_info.ResourceVectorMap) *podNumaRequests {

@@ -10,6 +10,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
@@ -39,6 +40,17 @@ type numaPlugin struct {
 	// ssn is the current session, set in OnSessionOpen and cleared in OnSessionClose, so the deferred
 	// callbacks (prePredicate, allocate, deallocate) reach the cluster snapshot without capturing it.
 	ssn *framework.Session
+
+	// numaRequestCache caches each task's NUMA request vectors, keyed by pod ID. Rebuilt each session.
+	numaRequestCache map[common_info.PodID]*podNumaRequests
+	// ignoreIndices is ignoreList projected to shared-map indices (empty in the common case).
+	ignoreIndices sets.Set[int]
+	// effectiveAwareByNode maps a node name to its aware indices minus ignoreIndices; populated only
+	// when ignoreIndices is non-empty (otherwise the topology's AwareIndices are used directly).
+	effectiveAwareByNode map[string][]int
+	// hasModeledNodes is false when no node carries a modeled-policy topology, letting the
+	// PrePredicateFn skip all per-task precompute.
+	hasModeledNodes bool
 }
 
 func New(arguments framework.PluginArguments) framework.Plugin {
@@ -68,13 +80,45 @@ func (pp *numaPlugin) OnSessionOpen(ssn *framework.Session) {
 	if pp.reconstructAvailable {
 		pp.reconstructNodeAvailable(ssn)
 	}
+	pp.initCaches(ssn)
 
+	ssn.AddPrePredicateFn(pp.prePredicate)
 	ssn.AddPredicateFn(pp.predicate)
 	ssn.AddNumaPlacementFn(pp.placement)
 	ssn.AddEventHandler(&framework.EventHandler{
 		AllocateFunc:   pp.allocate,
 		DeallocateFunc: pp.deallocate,
 	})
+}
+
+// initCaches (re)builds the per-session predicate fast-path state (see evaluator.go): the per-task
+// memo, the ignore indices, the per-node effective-aware indices, and hasModeledNodes.
+func (pp *numaPlugin) initCaches(ssn *framework.Session) {
+	pp.numaRequestCache = map[common_info.PodID]*podNumaRequests{}
+	pp.ignoreIndices = sets.New[int]()
+	pp.effectiveAwareByNode = nil
+	pp.hasModeledNodes = false
+
+	vectorMap := ssn.ClusterInfo.ResourceVectorMap
+	for name := range pp.ignoreList {
+		if idx := vectorMap.GetIndex(name); idx >= 0 {
+			pp.ignoreIndices.Insert(idx)
+		}
+	}
+
+	if pp.ignoreIndices.Len() > 0 {
+		pp.effectiveAwareByNode = map[string][]int{}
+	}
+	for _, node := range ssn.ClusterInfo.Nodes {
+		topo := node.NumaTopology
+		if topo == nil || !isModeledPolicy(topo.Policy) {
+			continue
+		}
+		pp.hasModeledNodes = true
+		if pp.effectiveAwareByNode != nil {
+			pp.effectiveAwareByNode[node.Name] = filterAware(topo.AwareIndices, pp.ignoreIndices)
+		}
+	}
 }
 
 // filterAware returns the aware indices with the ignored ones removed.
@@ -86,6 +130,17 @@ func filterAware(aware []int, ignore sets.Set[int]) []int {
 		}
 	}
 	return out
+}
+
+// prePredicate is the PrePredicateFn: it computes a task's NUMA requests once, before FittingNode runs
+// per node. Skipped when no modeled node exists or the task is not Guaranteed.
+func (pp *numaPlugin) prePredicate(task *pod_info.PodInfo, _ *podgroup_info.PodGroupInfo) error {
+	vectorMap := pp.ssn.ClusterInfo.ResourceVectorMap
+	if !pp.hasModeledNodes || vectorMap == nil || task.Pod == nil || task.Pod.Status.QOSClass != v1.PodQOSGuaranteed {
+		return nil // predicate builds the requests lazily against the node's (shared) map
+	}
+	pp.numaRequestsFor(task, vectorMap)
+	return nil
 }
 
 // placement is the session NumaPlacementFn: the task's expected NUMA placement on the node. Called
