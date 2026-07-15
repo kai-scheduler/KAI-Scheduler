@@ -94,7 +94,7 @@ GPU-sharing requests (the `gpu-fraction` and `gpu-memory` annotations) and DRA c
 
 One thing is deliberately left out today:
 
-- **The peak of a non-restartable init container.** The scheduler reserves `max(regular + sidecars, init peak) + overhead`, so a pod whose init container is larger than its steady state holds more than the status reports, for as long as that init container runs. This is tracked in [#1880](https://github.com/NVIDIA/KAI-Scheduler/issues/1880), which is about giving the scheduler and the queue controller one shared aggregation instead of two.
+- **The peak of a non-restartable init container.** The scheduler reserves `max(regular + sidecars, init peak) + overhead`, so a pod whose init container is larger than its steady state holds more than the status reports, for as long as that init container runs. This is tracked in [#1880](https://github.com/NVIDIA/KAI-Scheduler/issues/1880), which is about aligning the status with the resources the scheduler reserves.
 
 Two GPU details follow the scheduler on purpose:
 
