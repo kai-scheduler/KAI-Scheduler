@@ -12,6 +12,7 @@ import (
 	"golang.org/x/exp/maps"
 	v1 "k8s.io/api/core/v1"
 
+	commonmath "github.com/kai-scheduler/KAI-scheduler/pkg/common/math"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 )
@@ -132,7 +133,7 @@ func (g *GpuResourceRequirement) Add(gg *GpuResourceRequirement) error {
 		g.count += gg.count
 	}
 	for name, ggQuant := range gg.draGpuCounts {
-		g.draGpuCounts[name] += ggQuant
+		g.draGpuCounts[name] = commonmath.SaturatingAddInt64(g.draGpuCounts[name], ggQuant)
 	}
 	for name, ggQuant := range gg.migResources {
 		g.migResources[name] += ggQuant
@@ -203,7 +204,7 @@ func (g *GpuResourceRequirement) DraGpuCounts() map[string]int64 {
 func (g *GpuResourceRequirement) GetDraGpusCount() int64 {
 	count := int64(0)
 	for _, singleClaimCount := range g.draGpuCounts {
-		count += singleClaimCount
+		count = commonmath.SaturatingAddInt64(count, singleClaimCount)
 	}
 	return count
 }
