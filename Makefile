@@ -4,6 +4,7 @@ CONTROLLER_TOOLS_VERSION ?= v0.20.1
 MOCKGEN_VERSION ?= v0.6.0
 ADDLICENSE_VERSION ?= v1.1.1
 KUSTOMIZE_VERSION ?= v5.0.0
+CHANGIE_VERSION ?= v1.25.0
 
 LOCALBIN ?= $(shell pwd)/bin
 $(LOCALBIN):
@@ -13,6 +14,7 @@ CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 MOCKGEN ?= $(LOCALBIN)/mockgen
 ADDLICENSE ?= $(LOCALBIN)/addlicense
 KUSTOMIZE ?= $(LOCALBIN)/kustomize
+CHANGIE ?= $(LOCALBIN)/changie
 
 # Space seperated list of services to build by default
 # SERVICE_NAMES := service1 service2 service3
@@ -66,7 +68,7 @@ generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and
 
 .PHONY: gen-license
 gen-license: addlicense
-	$(ADDLICENSE) -c "NVIDIA CORPORATION" -s=only -l apache -v .
+	$(ADDLICENSE) -c "NVIDIA CORPORATION" -s=only -l apache -v -ignore '.changes/**' -ignore '.changie.yaml' .
 
 .PHONY: manifests
 manifests: controller-gen kustomize ## Generate ClusterRole and CustomResourceDefinition objects.
@@ -106,6 +108,25 @@ $(MOCKGEN): $(LOCALBIN)
 addlicense: $(ADDLICENSE) ## Download google-addlicense locally if necessary.
 $(ADDLICENSE): $(LOCALBIN)
 	test -s $(LOCALBIN)/addlicense || GOBIN=$(LOCALBIN) go install github.com/google/addlicense@$(ADDLICENSE_VERSION)
+
+.PHONY: changie
+changie: $(CHANGIE) ## Download changie locally if necessary.
+$(CHANGIE): $(LOCALBIN)
+	test -s $(LOCALBIN)/changie || GOBIN=$(LOCALBIN) go install github.com/miniscruff/changie@$(CHANGIE_VERSION)
+
+.PHONY: changelog
+changelog: changie ## Add a changelog entry as a fragment (interactive). Use instead of editing CHANGELOG.md.
+	$(CHANGIE) new
+
+.PHONY: changelog-release
+changelog-release: changie ## Fold unreleased fragments into CHANGELOG.md as VERSION and clear them. Usage: make changelog-release VERSION=v0.12.24
+	@test -n "$(VERSION)" || { echo "VERSION is required, e.g. make changelog-release VERSION=v0.12.24"; exit 1; }
+	CHANGIE=$(CHANGIE) bash hack/changelog-fold.sh $(VERSION)
+
+.PHONY: changelog-preview
+changelog-preview: changie ## Preview the next release section without writing anything. Usage: make changelog-preview VERSION=v0.12.24
+	@test -n "$(VERSION)" || { echo "VERSION is required, e.g. make changelog-preview VERSION=v0.12.24"; exit 1; }
+	$(CHANGIE) batch $(VERSION) --dry-run
 
 
 KUSTOMIZE_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"
