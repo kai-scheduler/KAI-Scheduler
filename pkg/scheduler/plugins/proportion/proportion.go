@@ -508,16 +508,37 @@ func (pp *proportionPlugin) queueOrder(lQ, rQ *queue_info.QueueInfo, lJob, rJob 
 }
 
 func (pp *proportionPlugin) getQueueDeservedResourcesFn(queue *queue_info.QueueInfo) *resource_info.ResourceRequirements {
-	queueAttributes := pp.queues[queue.UID]
+	if queue == nil {
+		return nil
+	}
+	queueAttributes, found := pp.queues[queue.UID]
+	if !found {
+		log.InfraLogger.Errorf("Failed to find queue attributes for queue: <%v>", queue.Name)
+		return nil
+	}
 	return utils.ResourceRequirementsFromQuantities(queueAttributes.GetDeservedShare())
 }
 
 func (pp *proportionPlugin) getQueueFairShareFn(queue *queue_info.QueueInfo) *resource_info.ResourceRequirements {
-	queueAttributes := pp.queues[queue.UID]
+	if queue == nil {
+		return nil
+	}
+	queueAttributes, found := pp.queues[queue.UID]
+	if !found {
+		log.InfraLogger.Errorf("Failed to find queue attributes for queue: <%v>", queue.Name)
+		return nil
+	}
 	return utils.ResourceRequirementsFromQuantities(queueAttributes.GetFairShare())
 }
 
 func (pp *proportionPlugin) getQueueAllocatedResourceFn(queue *queue_info.QueueInfo) *resource_info.ResourceRequirements {
-	queueAttributes := pp.queues[queue.UID]
+	if queue == nil {
+		return nil
+	}
+	queueAttributes, found := pp.queues[queue.UID]
+	if !found {
+		log.InfraLogger.Errorf("Failed to find queue attributes for queue: <%v>", queue.Name)
+		return nil
+	}
 	return utils.ResourceRequirementsFromQuantities(queueAttributes.GetAllocatedShare())
 }
