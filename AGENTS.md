@@ -157,8 +157,18 @@ PR titles must follow semantic format: `<type>(<scope>): <description>`
 When opening a PR, use the template in .github/pull_request_template.md for the PR description
 
 ### Changelog Requirements
-- You must update `CHANGELOG.md` for PRs to `main` or version branches (`v*.*`) for behavior changes: ones that add functionality, fix bugs, change APIs, or introduce significant performance improvements. Not needed for refactors, documentations, tests, and CI changes.
-- Add `skip-changelog` or `dependencies` label to skip this check
+
+Changelog entries are [changie](https://changie.dev) fragments. **Never edit `CHANGELOG.md` directly** — it is the source of truth for released versions and is only written at release time.
+
+```bash
+make changelog                          # add an entry: writes a fragment under .changes/unreleased/
+make changelog-preview VERSION=v0.16.5  # optional: preview what the next release section will look like
+```
+
+- Add a fragment on every PR that changes behavior (adds functionality, fixes a bug, changes an API, or gives a significant perf win). Skip it for refactors, docs, tests, and CI changes — apply the `skip-changelog` (or `dependencies`) label instead. CI fails a behavior PR that has neither.
+- Commit the fragment with your code. Fragments never conflict between PRs or backports, so no coordination is needed.
+
+**Releasing (maintainers):** don't fold the changelog by hand. Dispatch the **Release — Prepare Changelog** workflow with a version (e.g. `v0.16.5`) from this version branch. It folds the pending fragments into `CHANGELOG.md`, clears them, and opens a PR. Merging that PR auto-tags the version and publishes the GitHub Release.
 
 ### CI Checks (on-pr.yaml)
 PRs trigger: `make validate` → `make test` → `make build` → E2E tests

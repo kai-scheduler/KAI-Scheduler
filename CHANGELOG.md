@@ -425,7 +425,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - PodGroup Controller that will update podgroups statuses with allocation data.
 - Queue Controller that will update queues statuses with allocation data.
 
-
 ## [v0.5.1] - 2025-05-20
 
 ### Added
