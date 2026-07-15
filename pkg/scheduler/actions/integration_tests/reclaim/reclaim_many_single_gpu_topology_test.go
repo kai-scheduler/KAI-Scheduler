@@ -5,6 +5,7 @@ package reclaim
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -13,7 +14,6 @@ import (
 	"gopkg.in/h2non/gock.v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants"
@@ -22,6 +22,19 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 )
+
+func TestManySingleGPUJobsSchedulingCycleActions(t *testing.T) {
+	actions := manySingleGPUJobsSchedulingCycleActions()
+	actionNames := make([]string, 0, len(actions))
+	for _, action := range actions {
+		actionNames = append(actionNames, string(action.Name()))
+	}
+
+	expected := []string{"allocate", "consolidation", "reclaim", "preempt", "stalegangeviction"}
+	if !reflect.DeepEqual(actionNames, expected) {
+		t.Fatalf("scheduling cycle actions = %v, want %v", actionNames, expected)
+	}
+}
 
 type manySingleGPUJobsReclaimParams struct {
 	NumNodes          int
@@ -55,9 +68,16 @@ func TestManySingleGPUJobsReclaimTopology(t *testing.T) {
 		onJobSolutionStartCalls++
 	})
 
-	reclaim.New().Execute(ssn)
-
 	expectedTasks := params.NumNodes * params.GPUsPerNode
+	actions := manySingleGPUJobsSchedulingCycleActions()
+	actions[0].Execute(ssn)
+	if fitErrorTasks := countManySingleGPUFitErrorTasks(ssn); fitErrorTasks != expectedTasks {
+		t.Fatalf("expected %d tasks with fit errors after allocate, got %d", expectedTasks, fitErrorTasks)
+	}
+	for _, action := range actions[1:] {
+		action.Execute(ssn)
+	}
+
 	if onJobSolutionStartCalls == 0 {
 		t.Fatal("expected reclaim to attempt solving pending jobs")
 	}
