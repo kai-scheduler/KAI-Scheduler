@@ -90,9 +90,9 @@ func TestPodSteadyStateResources(t *testing.T) {
 			want: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1100m")},
 		},
 		{
-			// Any name the queue counts as a GPU, not just the two the scheduler names. getAllocatedGpus
-			// matches on the "/gpu" suffix, so letting one of these in would move kai_queue_allocated_gpus.
-			name: "gpu requested by a native sidecar is not counted",
+			// The scheduler counts a native sidecar's GPU, so the status does too, on a pod whose GPU is not
+			// rebuilt from an annotation. Admission blocks a whole nvidia.com/gpu next to a fraction.
+			name: "gpu requested by a native sidecar is counted",
 			pod: &v1.Pod{Spec: v1.PodSpec{
 				InitContainers: []v1.Container{{
 					RestartPolicy: ptr.To(v1.ContainerRestartPolicyAlways),
@@ -109,12 +109,17 @@ func TestPodSteadyStateResources(t *testing.T) {
 					{Resources: v1.ResourceRequirements{Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1")}}},
 				},
 			}},
-			want: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1250m")},
+			want: v1.ResourceList{
+				v1.ResourceCPU:                       resource.MustParse("1250m"),
+				v1.ResourceName("nvidia.com/gpu"):    resource.MustParse("1"),
+				v1.ResourceName("amd.com/gpu"):       resource.MustParse("1"),
+				v1.ResourceName("somethingelse/gpu"): resource.MustParse("2"),
+			},
 		},
 		{
-			// A sidecar-only vendor GPU: before this change the queue reported 0 GPUs for such a pod, and it
-			// still does. This is the invariant behind "kai_queue_allocated_gpus is unchanged".
-			name: "a sidecar's vendor gpu never reaches the status",
+			// A sidecar-only vendor GPU on a pod with no GPU annotation: the scheduler counts it, so it reaches
+			// the status. getAllocatedGpus counts any "/gpu" suffix, so kai_queue_allocated_gpus moves with it.
+			name: "a sidecar's vendor gpu reaches the status",
 			pod: &v1.Pod{Spec: v1.PodSpec{
 				InitContainers: []v1.Container{{
 					RestartPolicy: ptr.To(v1.ContainerRestartPolicyAlways),
@@ -126,10 +131,15 @@ func TestPodSteadyStateResources(t *testing.T) {
 					{Resources: v1.ResourceRequirements{Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1")}}},
 				},
 			}},
-			want: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1")},
+			want: v1.ResourceList{
+				v1.ResourceCPU:                       resource.MustParse("1"),
+				v1.ResourceName("somethingelse/gpu"): resource.MustParse("2"),
+			},
 		},
 		{
-			name: "mig requested by a native sidecar is not counted",
+			// A MIG resource requested directly by a sidecar, with no MIG annotation on the pod: the scheduler
+			// counts it, so the status does too.
+			name: "mig requested by a native sidecar is counted",
 			pod: &v1.Pod{Spec: v1.PodSpec{
 				InitContainers: []v1.Container{{
 					RestartPolicy: ptr.To(v1.ContainerRestartPolicyAlways),
@@ -144,7 +154,10 @@ func TestPodSteadyStateResources(t *testing.T) {
 					{Resources: v1.ResourceRequirements{Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1")}}},
 				},
 			}},
-			want: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1250m")},
+			want: v1.ResourceList{
+				v1.ResourceCPU: resource.MustParse("1250m"),
+				v1.ResourceName("nvidia.com/mig-1g.10gb"): resource.MustParse("1"),
+			},
 		},
 		{
 			// The invariant that keeps every existing whole-GPU workload reporting the same number.

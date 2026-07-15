@@ -88,22 +88,45 @@ func isPodScheduled(pod *v1.Pod) bool {
 	return false
 }
 
-// podSteadyStateResources sums what a pod holds for as long as it runs: regular containers, native sidecars
-// (init containers with restartPolicy Always) and Pod overhead. The peak of a non-restartable init container is
-// left out, and so is a GPU asked for by a sidecar or set in an overhead, so this can report less than the
-// scheduler reserves. docs/queues/README.md#how-allocated-and-requested-are-counted has the reasons, and #1880
-// tracks closing the gap.
+// podSteadyStateResources sums what a pod holds while it runs: regular containers, native sidecars
+// (init containers with restartPolicy Always) and Pod overhead, the way the scheduler counts a running pod.
+// The peak of a non-restartable init container is not folded in yet; #1880 tracks closing that gap.
+// A native sidecar's GPU is counted, since the scheduler counts it, unless the pod's GPU is rebuilt from an
+// annotation (see gpuIsRebuiltFromAnnotation), where the annotation decides and the container request is
+// dropped. Pod overhead never adds a GPU, since the scheduler adds only its base resources.
 func podSteadyStateResources(pod *v1.Pod) v1.ResourceList {
 	total := v1.ResourceList{}
 	for _, container := range pod.Spec.Containers {
 		total = resources.SumResources(total, container.Resources.Requests)
 	}
+	dropSidecarGpu := gpuIsRebuiltFromAnnotation(pod)
 	for _, initContainer := range pod.Spec.InitContainers {
 		if isNativeSidecar(initContainer) {
-			total = resources.SumResources(total, withoutGpuResources(initContainer.Resources.Requests))
+			requests := initContainer.Resources.Requests
+			if dropSidecarGpu {
+				requests = withoutGpuResources(requests)
+			}
+			total = resources.SumResources(total, requests)
 		}
 	}
 	return resources.SumResources(total, withoutGpuResources(pod.Spec.Overhead))
+}
+
+// gpuIsRebuiltFromAnnotation reports whether the scheduler derives the pod's GPU from an annotation
+// (a GPU fraction, gpu-memory, or a legacy MIG annotation) instead of from the container requests. For
+// those pods the scheduler drops the container GPU request and the annotation decides, so a sidecar's GPU
+// must not reach the status either. Admission rejects a whole nvidia.com/gpu next to a fraction, but it
+// does not inspect MIG annotations, so the MIG case is handled here.
+func gpuIsRebuiltFromAnnotation(pod *v1.Pod) bool {
+	if commonresources.RequestsGPUFraction(pod) {
+		return true
+	}
+	for name := range pod.Annotations {
+		if commonresources.IsMigResource(name) {
+			return true
+		}
+	}
+	return false
 }
 
 // isNativeSidecar reports whether an init container keeps running alongside the regular containers.
@@ -112,10 +135,8 @@ func isNativeSidecar(initContainer v1.Container) bool {
 }
 
 // withoutGpuResources drops every name the queue accounting treats as a GPU, the same rule getAllocatedGpus
-// applies to Queue.status.allocated. On a pod carrying a GPU-sharing or legacy MIG annotation the scheduler
-// rebuilds the GPU requirement from that annotation and drops the container request, so letting a sidecar's GPU
-// through would report one that nothing reserved. It would also move a metric that feeds the fairshare usage
-// database.
+// applies to Queue.status.allocated. It is applied to Pod overhead, which never contributes a GPU, and to a
+// native sidecar on a pod whose GPU is rebuilt from an annotation.
 func withoutGpuResources(list v1.ResourceList) v1.ResourceList {
 	filtered := v1.ResourceList{}
 	for name, quantity := range list {
