@@ -127,7 +127,8 @@ logger.Info("Binding pod", "namespace", pod.Namespace, "name", pod.Name)
 - Apache 2.0 + NVIDIA copyright headers on all files
 - GoDoc-style for exported functions/types
 - kubebuilder RBAC markers: `// +kubebuilder:rbac:groups=core,resources=pods,verbs=get`
-- Avoid obvious comments; explain "why" not "what"
+- DO NOT wrire obvious comments; explain "why" not "what"
+- Keep comments short, concise and to the point.
 
 ### General Patterns
 - Context as first parameter: `func Foo(ctx context.Context, ...)`
@@ -146,7 +147,7 @@ Test files (`*_test.go`) have relaxed rules for `goconst`, `errcheck`, `govet`.
 ## Pull Request Requirements
 
 ### PR Title Format (Conventional Commits)
-PR titles must follow semantic format: `<type>(<scope>): <description>`
+PR titles must follow conventional commit format: `<type>(<scope>): <description>`
 
 **Types**: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`
 
@@ -166,6 +167,7 @@ make changelog-preview VERSION=v0.17.0  # optional: preview what the next releas
 ```
 
 - Add a fragment on every PR that changes behavior (adds functionality, fixes a bug, changes an API, or gives a significant perf win). Skip it for refactors, docs, tests, and CI changes — apply the `skip-changelog` (or `dependencies`) label instead. CI fails a behavior PR that has neither.
+- fragment enries MUST be fewer than 20 words. Keep enries clear and concise. 
 - Commit the fragment with your code. Fragments never conflict between PRs or backports, so no coordination is needed.
 
 **Releasing (maintainers):** don't fold the changelog by hand. Dispatch the **Release — Prepare Changelog** workflow with a version (e.g. `v0.17.0`) from the target branch — `main` for a minor/major, a `v*.*` branch for a patch. It folds the pending fragments into `CHANGELOG.md`, clears them, and opens a PR. Merging that PR auto-tags the version and publishes the GitHub Release.
