@@ -8,8 +8,22 @@ import (
 
 	nrtv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 	"github.com/stretchr/testify/assert"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 )
+
+// zoneAmount reads a zone vector's amount for a resource in its natural unit (cpu in cores, others
+// by count), translating from the vector's milli-cpu storage.
+func zoneAmount(vec resource_info.ResourceVector, vm *resource_info.ResourceVectorMap, name v1.ResourceName) int64 {
+	idx := vm.GetIndex(name)
+	val := vec.Get(idx)
+	if idx == resource_info.CPUIndex {
+		return int64(val) / 1000
+	}
+	return int64(val)
+}
 
 func numaNodeZone(name string, available map[string]string) nrtv1alpha2.Zone {
 	return numaNodeZoneWithAllocatable(name, available, available)
@@ -122,14 +136,14 @@ func TestParsePolicyAndScope(t *testing.T) {
 
 func TestBuildNumaTopology(t *testing.T) {
 	t.Run("nil NRT returns nil", func(t *testing.T) {
-		assert.Nil(t, BuildNumaTopology(nil))
+		assert.Nil(t, BuildNumaTopology(nil, resource_info.NewResourceVectorMap()))
 	})
 
 	t.Run("no NUMA-node zones returns nil", func(t *testing.T) {
 		nrt := &nrtv1alpha2.NodeResourceTopology{
 			Zones: nrtv1alpha2.ZoneList{{Name: "socket-0", Type: "Socket"}},
 		}
-		assert.Nil(t, BuildNumaTopology(nrt))
+		assert.Nil(t, BuildNumaTopology(nrt, resource_info.NewResourceVectorMap()))
 	})
 
 	t.Run("zones, availability and reported resources are populated", func(t *testing.T) {
@@ -139,17 +153,14 @@ func TestBuildNumaTopology(t *testing.T) {
 			nrtv1alpha2.Zone{Name: "socket-0", Type: "Socket"}, // ignored
 		)
 
-		nt := BuildNumaTopology(nrt)
+		nt := BuildNumaTopology(nrt, resource_info.NewResourceVectorMap())
 
 		assert.NotNil(t, nt)
 		assert.Equal(t, TopologyPolicySingleNUMANode, nt.Policy)
 		assert.Len(t, nt.Zones, 2, "only NUMA-node zones are kept")
 
-		gpu := nt.Zones[0].Available["nvidia.com/gpu"]
-		assert.Equal(t, int64(2), gpu.Value())
-
-		gpuAlloc := nt.Zones[0].Allocatable["nvidia.com/gpu"]
-		assert.Equal(t, int64(2), gpuAlloc.Value(), "allocatable is populated")
+		assert.Equal(t, int64(2), zoneAmount(nt.Zones[0].Available, nt.VectorMap, "nvidia.com/gpu"))
+		assert.Equal(t, int64(2), zoneAmount(nt.Zones[0].Allocatable, nt.VectorMap, "nvidia.com/gpu"), "allocatable is populated")
 
 		assert.True(t, nt.Resources.HasAll("cpu", "memory", "nvidia.com/gpu"))
 		assert.Equal(t, 3, nt.Resources.Len())
@@ -165,12 +176,10 @@ func TestBuildNumaTopology(t *testing.T) {
 			),
 		)
 
-		nt := BuildNumaTopology(nrt)
+		nt := BuildNumaTopology(nrt, resource_info.NewResourceVectorMap())
 
-		avail := nt.Zones[0].Available["cpu"]
-		alloc := nt.Zones[0].Allocatable["cpu"]
-		assert.Equal(t, int64(4), avail.Value(), "available reflects free capacity")
-		assert.Equal(t, int64(8), alloc.Value(), "allocatable reflects total capacity")
+		assert.Equal(t, int64(4), zoneAmount(nt.Zones[0].Available, nt.VectorMap, "cpu"), "available reflects free capacity")
+		assert.Equal(t, int64(8), zoneAmount(nt.Zones[0].Allocatable, nt.VectorMap, "cpu"), "allocatable reflects total capacity")
 	})
 }
 
@@ -183,7 +192,7 @@ func TestBuildNumaTopologyOrdersZones(t *testing.T) {
 		numaNodeZone("node-0", map[string]string{"cpu": "1"}),
 	)
 
-	nt := BuildNumaTopology(nrt)
+	nt := BuildNumaTopology(nrt, resource_info.NewResourceVectorMap())
 
 	ids := []string{nt.Zones[0].ID, nt.Zones[1].ID, nt.Zones[2].ID}
 	assert.Equal(t, []string{"node-0", "node-2", "node-10"}, ids)
@@ -193,22 +202,16 @@ func TestNumaTopologyClone(t *testing.T) {
 	nrt := nrtWithAttributes(policyValueSingleNUMANode, scopeValueContainer,
 		numaNodeZone("node-0", map[string]string{"cpu": "4"}),
 	)
-	orig := BuildNumaTopology(nrt)
+	orig := BuildNumaTopology(nrt, resource_info.NewResourceVectorMap())
 	clone := orig.Clone()
 
 	// Mutating the clone's ledgers must not affect the original (deep copy).
-	cpu := clone.Zones[0].Available["cpu"]
-	cpu.Sub(resource.MustParse("1"))
-	clone.Zones[0].Available["cpu"] = cpu
+	cpuIdx := clone.VectorMap.GetIndex("cpu")
+	clone.Zones[0].Available[cpuIdx] -= 1000
+	clone.Zones[0].Allocatable[cpuIdx] -= 2000
 
-	allocCPU := clone.Zones[0].Allocatable["cpu"]
-	allocCPU.Sub(resource.MustParse("2"))
-	clone.Zones[0].Allocatable["cpu"] = allocCPU
-
-	origCPU := orig.Zones[0].Available["cpu"]
-	assert.Equal(t, int64(4), origCPU.Value(), "original available ledger unchanged")
-	origAllocCPU := orig.Zones[0].Allocatable["cpu"]
-	assert.Equal(t, int64(4), origAllocCPU.Value(), "original allocatable ledger unchanged")
+	assert.Equal(t, int64(4), zoneAmount(orig.Zones[0].Available, orig.VectorMap, "cpu"), "original available ledger unchanged")
+	assert.Equal(t, int64(4), zoneAmount(orig.Zones[0].Allocatable, orig.VectorMap, "cpu"), "original allocatable ledger unchanged")
 	assert.Nil(t, (*NumaTopology)(nil).Clone())
 }
 

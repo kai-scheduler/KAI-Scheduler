@@ -4,21 +4,21 @@
 package numa
 
 import (
+	"errors"
 	"strings"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 )
 
-// fitErrorMessage is the predicate rejection reason surfaced to the scheduler.
-const fitErrorMessage = "node cannot NUMA-align the pod's resources under its Topology Manager policy"
+var errNotNumaAligned = errors.New("node cannot NUMA-align the pod's resources under its Topology Manager policy")
 
 const (
 	pluginName              = "numa"
@@ -35,6 +35,10 @@ type numaPlugin struct {
 	// safer default. Set false to trust NRT Available (e.g. when the placement exporter is absent and
 	// predicted-only reconstruction is not wanted).
 	reconstructAvailable bool
+
+	// ssn is the current session, set in OnSessionOpen and cleared in OnSessionClose, so the deferred
+	// callbacks (prePredicate, allocate, deallocate) reach the cluster snapshot without capturing it.
+	ssn *framework.Session
 }
 
 func New(arguments framework.PluginArguments) framework.Plugin {
@@ -59,6 +63,7 @@ func (pp *numaPlugin) Name() string {
 }
 
 func (pp *numaPlugin) OnSessionOpen(ssn *framework.Session) {
+	pp.ssn = ssn
 	pp.seedPlacements(ssn)
 	if pp.reconstructAvailable {
 		pp.reconstructNodeAvailable(ssn)
@@ -67,53 +72,40 @@ func (pp *numaPlugin) OnSessionOpen(ssn *framework.Session) {
 	ssn.AddPredicateFn(pp.predicate)
 	ssn.AddNumaPlacementFn(pp.placement)
 	ssn.AddEventHandler(&framework.EventHandler{
-		AllocateFunc:   func(event *framework.Event) { pp.allocate(ssn, event) },
-		DeallocateFunc: func(event *framework.Event) { pp.deallocate(ssn, event) },
+		AllocateFunc:   pp.allocate,
+		DeallocateFunc: pp.deallocate,
 	})
 }
 
-// evaluate is the shared core of predicate and placement: it returns the task's expected NUMA
-// placement on the node and whether the kubelet's Topology Manager would admit it. A task the
-// plugin does not constrain (wrong policy/QoS, or no NRT) passes through as (nil, true).
-func (pp *numaPlugin) evaluate(task *pod_info.PodInfo, node *node_info.NodeInfo) (pod_info.NUMAPlacement, bool) {
-	if node == nil || !pp.shouldHandle(task, node.NumaTopology) {
-		return nil, true
-	}
-	topo := node.NumaTopology
-	eval := evaluatorFor(topo.Policy)
-	concurrent, serial := requestUnits(task, topo.Scope)
-	placement, admit := eval.evaluate(topo, pp.ignoreList, concurrent)
-	if !admit {
-		return nil, false
-	}
-	// Ordinary init containers run serially before the app containers and free their resources
-	// first, so each must be alignable on its own but is not accumulated into the placement.
-	for _, unit := range serial {
-		if _, ok := eval.evaluate(topo, pp.ignoreList, []v1.ResourceList{unit}); !ok {
-			return nil, false
+// filterAware returns the aware indices with the ignored ones removed.
+func filterAware(aware []int, ignore sets.Set[int]) []int {
+	out := make([]int, 0, len(aware))
+	for _, idx := range aware {
+		if !ignore.Has(idx) {
+			out = append(out, idx)
 		}
 	}
-	return placement, true
+	return out
 }
 
-// placement is the session NumaPlacementFn: the task's expected NUMA placement on the node. It's called
-// after the predicate, so it's expected to always return a placement - the error log is for safety.
+// placement is the session NumaPlacementFn: the task's expected NUMA placement on the node. Called
+// after the predicate, so it should always admit — the error log guards the unexpected case.
 func (pp *numaPlugin) placement(task *pod_info.PodInfo, node *node_info.NodeInfo) pod_info.NUMAPlacement {
-	placement, admit := pp.evaluate(task, node)
+	allocation, admit := pp.evaluate(task, node)
 	if !admit {
 		// FittingNode runs the predicate before the allocation path stamps the placement, so a
 		// rejection at stamp time is unexpected (the ledger changed between filter and stamp).
 		log.InfraLogger.Errorf("numa plugin: task <%s/%s> cannot be NUMA-aligned on node <%s>",
 			task.Namespace, task.Name, node.Name)
 	}
-	return placement
+	return placementFromAllocation(allocation, node.NumaTopology)
 }
 
 func (pp *numaPlugin) predicate(task *pod_info.PodInfo, _ *podgroup_info.PodGroupInfo, node *node_info.NodeInfo) error {
-	if _, admit := pp.evaluate(task, node); !admit {
-		log.InfraLogger.V(6).Infof("numa plugin: task <%s/%s> cannot be NUMA-aligned on node <%s>",
-			task.Namespace, task.Name, node.Name)
-		return common_info.NewFitError(task.Name, task.Namespace, node.Name, fitErrorMessage)
+	if !pp.allocatable(task, node) {
+		// FittingNode already logs this failure at V(6); the shared sentinel keeps the reject path
+		// allocation-free (see errNotNumaAligned).
+		return errNotNumaAligned
 	}
 	return nil
 }
@@ -122,9 +114,9 @@ func (pp *numaPlugin) predicate(task *pod_info.PodInfo, _ *podgroup_info.PodGrou
 // is decided before the statement op — stamped by the allocation path via the NumaPlacementFn, or
 // restored from the snapshot on eviction undo — so this handler only charges; it never evaluates.
 // An empty placement (non-NUMA pod, or unknown) is a no-op.
-func (pp *numaPlugin) allocate(ssn *framework.Session, event *framework.Event) {
+func (pp *numaPlugin) allocate(event *framework.Event) {
 	task := event.Task
-	node := ssn.ClusterInfo.Nodes[task.NodeName]
+	node := pp.ssn.ClusterInfo.Nodes[task.NodeName]
 	if node == nil || node.NumaTopology == nil {
 		return
 	}
@@ -132,12 +124,12 @@ func (pp *numaPlugin) allocate(ssn *framework.Session, event *framework.Event) {
 }
 
 // deallocate frees a task's NUMA placement, if it's known, from the node's numa topology resources.
-func (pp *numaPlugin) deallocate(ssn *framework.Session, event *framework.Event) {
+func (pp *numaPlugin) deallocate(event *framework.Event) {
 	task := event.Task
 	if len(task.NUMAPlacement) == 0 {
 		return
 	}
-	node := ssn.ClusterInfo.Nodes[task.NodeName]
+	node := pp.ssn.ClusterInfo.Nodes[task.NodeName]
 	if node == nil {
 		log.InfraLogger.Errorf("numa plugin: node <%s> not found in session", task.NodeName)
 		return
@@ -156,7 +148,8 @@ func numaAllocate(topo *node_info.NumaTopology, placement pod_info.NUMAPlacement
 			log.InfraLogger.Errorf("numa plugin: zone index <%d> out of range", zone.ZoneIndex)
 			continue
 		}
-		subtract(topo.Zones[zone.ZoneIndex].Available, zone.Amount)
+		delta := resource_info.NewResourceVectorFromResourceList(zone.Amount, topo.VectorMap)
+		topo.Zones[zone.ZoneIndex].Available.Sub(delta)
 	}
 }
 
@@ -166,11 +159,14 @@ func numaDeallocate(topo *node_info.NumaTopology, placement pod_info.NUMAPlaceme
 			log.InfraLogger.Errorf("numa plugin: zone index <%d> out of range", zone.ZoneIndex)
 			continue
 		}
-		add(topo.Zones[zone.ZoneIndex].Available, zone.Amount)
+		delta := resource_info.NewResourceVectorFromResourceList(zone.Amount, topo.VectorMap)
+		topo.Zones[zone.ZoneIndex].Available.Add(delta)
 	}
 }
 
-func (pp *numaPlugin) OnSessionClose(_ *framework.Session) {}
+func (pp *numaPlugin) OnSessionClose(_ *framework.Session) {
+	pp.ssn = nil
+}
 
 func parseIgnoreList(arguments framework.PluginArguments) sets.Set[v1.ResourceName] {
 	ignoreList := sets.New[v1.ResourceName]()

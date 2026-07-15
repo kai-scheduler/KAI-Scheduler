@@ -10,8 +10,9 @@ import (
 
 	nrtv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/sets"
+
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 )
 
 // TopologyManagerPolicy mirrors the kubelet Topology Manager policy reported per node via NRT.
@@ -59,12 +60,32 @@ type NumaTopology struct {
 	Scope     TopologyManagerScope
 	Zones     []*NumaZone
 	Resources sets.Set[v1.ResourceName]
+
+	VectorMap *resource_info.ResourceVectorMap
+	// AwareIndices holds the VectorMap indices of the zone-reported resources — the only ones the
+	// kubelet aligns. Sorted ascending.
+	AwareIndices []int
+	// AwareNames maps each aware index to the NRT-reported resource name, so placement amounts
+	// materialize under the durable name (e.g. nvidia.com/gpu) rather than the map's normalized "gpu".
+	AwareNames map[int]v1.ResourceName
+	// AllocatablePrefix holds, per aware index, the descending-sorted prefix sums of the zones'
+	// Allocatable: [idx][k] is the sum of the k+1 largest zone allocatables. Precomputed (Allocatable
+	// is static) so the restricted policy's preferred-width lookup is a prefix scan, no per-call sort.
+	AllocatablePrefix map[int][]float64
 }
 
+// NumaZone describes a single NUMA zone's per-resource Available and Allocatable amounts in a ResourceVector format.
 type NumaZone struct {
 	ID          string
-	Available   map[v1.ResourceName]resource.Quantity
-	Allocatable map[v1.ResourceName]resource.Quantity
+	Available   resource_info.ResourceVector
+	Allocatable resource_info.ResourceVector
+}
+
+// NumaZoneSpec describes a single NUMA zone's per-resource Available and Allocatable amounts in a non-vector (ResourceList) format.
+type NumaZoneSpec struct {
+	ID          string
+	Available   v1.ResourceList
+	Allocatable v1.ResourceList
 }
 
 // ZoneIndexByID returns the index of the zone with the given durable id, or false if no zone has
@@ -93,55 +114,127 @@ func (t *NumaTopology) Clone() *NumaTopology {
 	}
 	zones := make([]*NumaZone, len(t.Zones))
 	for i, zone := range t.Zones {
-		available := make(map[v1.ResourceName]resource.Quantity, len(zone.Available))
-		for r, qty := range zone.Available {
-			available[r] = qty.DeepCopy()
+		zones[i] = &NumaZone{
+			ID:          zone.ID,
+			Available:   zone.Available.Clone(),
+			Allocatable: zone.Allocatable.Clone(),
 		}
-		allocatable := make(map[v1.ResourceName]resource.Quantity, len(zone.Allocatable))
-		for r, qty := range zone.Allocatable {
-			allocatable[r] = qty.DeepCopy()
-		}
-		zones[i] = &NumaZone{ID: zone.ID, Available: available, Allocatable: allocatable}
 	}
 	return &NumaTopology{
-		Policy:    t.Policy,
-		Scope:     t.Scope,
-		Zones:     zones,
-		Resources: t.Resources.Clone(),
+		Policy:            t.Policy,
+		Scope:             t.Scope,
+		Zones:             zones,
+		Resources:         t.Resources.Clone(),
+		VectorMap:         t.VectorMap,         // shared, read-only during scoring
+		AwareIndices:      t.AwareIndices,      // shared, read-only
+		AwareNames:        t.AwareNames,        // shared, read-only
+		AllocatablePrefix: t.AllocatablePrefix, // shared, read-only (Allocatable is static)
 	}
 }
 
 // BuildNumaTopology derives a node's NumaTopology from its NodeResourceTopology object, or
-// returns nil when the object is absent or reports no NUMA-node zones.
-func BuildNumaTopology(nrt *nrtv1alpha2.NodeResourceTopology) *NumaTopology {
+// returns nil when the object is absent or reports no NUMA-node zones. The zone vectors and the
+// aware-index projection are built against vectorMap, the cluster-shared resource index map;
+// zone-reported resources absent from the map are ignored (see newNumaTopology).
+func BuildNumaTopology(nrt *nrtv1alpha2.NodeResourceTopology, vectorMap *resource_info.ResourceVectorMap) *NumaTopology {
 	if nrt == nil {
 		return nil
 	}
 
-	zones := buildZones(nrt.Zones)
-	if len(zones) == 0 {
+	specs := zoneSpecs(nrt.Zones)
+	if len(specs) == 0 {
 		return nil
 	}
 
 	policy, scope := parsePolicyAndScope(nrt)
+	return newNumaTopology(policy, scope, vectorMap, specs)
+}
 
+// newNumaTopology vectorizes the zone specs against the shared map and records the aware-resource
+// indices. A zone-reported resource absent from the shared map is ignored: the map is seeded from
+// the cluster's node resources, so its absence means the node does not actually expose that resource.
+// Zones are ordered by ascending NUMA-node id (see sortZones).
+func newNumaTopology(
+	policy TopologyManagerPolicy, scope TopologyManagerScope,
+	vectorMap *resource_info.ResourceVectorMap, specs []NumaZoneSpec,
+) *NumaTopology {
 	resources := sets.New[v1.ResourceName]()
-	for _, zone := range zones {
-		for name := range zone.Available {
-			resources.Insert(name)
+	for _, spec := range specs {
+		for name := range spec.Allocatable {
+			if vectorMap.GetIndex(name) >= 0 {
+				resources.Insert(name)
+			}
+		}
+		for name := range spec.Available {
+			if vectorMap.GetIndex(name) >= 0 {
+				resources.Insert(name)
+			}
 		}
 	}
 
+	zones := make([]*NumaZone, len(specs))
+	for i, spec := range specs {
+		zones[i] = &NumaZone{
+			ID:          spec.ID,
+			Available:   resource_info.NewResourceVectorFromResourceList(spec.Available, vectorMap),
+			Allocatable: resource_info.NewResourceVectorFromResourceList(spec.Allocatable, vectorMap),
+		}
+	}
+	sortZones(zones)
+
+	indices, names := awareIndices(resources, vectorMap)
 	return &NumaTopology{
-		Policy:    policy,
-		Scope:     scope,
-		Zones:     zones,
-		Resources: resources,
+		Policy:            policy,
+		Scope:             scope,
+		Zones:             zones,
+		Resources:         resources,
+		VectorMap:         vectorMap,
+		AwareIndices:      indices,
+		AwareNames:        names,
+		AllocatablePrefix: allocatablePrefixSums(zones, indices),
 	}
 }
 
-// buildZones keeps only NUMA-node zones (NRT Zone.Type == "Node") and their
-// per-resource Available and Allocatable quantities.
+// allocatablePrefixSums computes, per aware index, the descending-sorted prefix sums of the zones'
+// Allocatable for that resource (see NumaTopology.AllocatablePrefix).
+func allocatablePrefixSums(zones []*NumaZone, indices []int) map[int][]float64 {
+	prefix := make(map[int][]float64, len(indices))
+	for _, idx := range indices {
+		vals := make([]float64, len(zones))
+		for z, zone := range zones {
+			vals[z] = zone.Allocatable.Get(idx)
+		}
+		sort.Sort(sort.Reverse(sort.Float64Slice(vals)))
+		acc := 0.0
+		for k := range vals {
+			acc += vals[k]
+			vals[k] = acc
+		}
+		prefix[idx] = vals
+	}
+	return prefix
+}
+
+// awareIndices returns the sorted, deduplicated VectorMap indices of the given resource names, and
+// the reported name for each index. Distinct names that normalize to the same index (e.g. GPU
+// vendor variants) collapse to one entry; the reported name preserved is the last seen.
+func awareIndices(resources sets.Set[v1.ResourceName], vectorMap *resource_info.ResourceVectorMap) ([]int, map[int]v1.ResourceName) {
+	names := map[int]v1.ResourceName{}
+	for name := range resources {
+		if idx := vectorMap.GetIndex(name); idx >= 0 {
+			names[idx] = name
+		}
+	}
+	out := make([]int, 0, len(names))
+	for idx := range names {
+		out = append(out, idx)
+	}
+	sort.Ints(out)
+	return out, names
+}
+
+// zoneSpecs keeps only NUMA-node zones (NRT Zone.Type == "Node") and their per-resource Available
+// and Allocatable quantities.
 //
 // We deliberately model only the NUMA-node level and drop every other zone type
 // the NRT API can express (sockets, dies, ...). This is because the kubelet
@@ -153,30 +246,28 @@ func BuildNumaTopology(nrt *nrtv1alpha2.NodeResourceTopology) *NumaTopology {
 //   - upstream plugin skips zone.Type != "Node":
 //     sigs.k8s.io/scheduler-plugins/pkg/noderesourcetopology/pluginhelpers.go (createNUMANodeList)
 //   - rationale and history: docs/developer/designs/numa-topology/README.md
-func buildZones(nrtZones nrtv1alpha2.ZoneList) []*NumaZone {
-	var zones []*NumaZone
+func zoneSpecs(nrtZones nrtv1alpha2.ZoneList) []NumaZoneSpec {
+	var specs []NumaZoneSpec
 	for i := range nrtZones {
 		nrtZone := &nrtZones[i]
 		if nrtZone.Type != zoneTypeNode {
 			continue
 		}
 
-		available := make(map[v1.ResourceName]resource.Quantity, len(nrtZone.Resources))
-		allocatable := make(map[v1.ResourceName]resource.Quantity, len(nrtZone.Resources))
+		available := make(v1.ResourceList, len(nrtZone.Resources))
+		allocatable := make(v1.ResourceList, len(nrtZone.Resources))
 		for _, ri := range nrtZone.Resources {
-			available[v1.ResourceName(ri.Name)] = ri.Available.DeepCopy()
-			allocatable[v1.ResourceName(ri.Name)] = ri.Allocatable.DeepCopy()
+			available[v1.ResourceName(ri.Name)] = ri.Available
+			allocatable[v1.ResourceName(ri.Name)] = ri.Allocatable
 		}
 
-		zones = append(zones, &NumaZone{
+		specs = append(specs, NumaZoneSpec{
 			ID:          nrtZone.Name,
 			Available:   available,
 			Allocatable: allocatable,
 		})
 	}
-
-	sortZones(zones)
-	return zones
+	return specs
 }
 
 // sortZones orders the zones by ascending NUMA-node id so the evaluators' zone/mask selection

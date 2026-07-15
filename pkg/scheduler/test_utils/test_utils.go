@@ -361,11 +361,12 @@ func matchNUMAZonesAvailable(
 			continue
 		}
 		zone := ssnNode.NumaTopology.Zones[zoneIndex]
+		vectorMap := ssnNode.NumaTopology.VectorMap
 		for name, want := range resources {
-			expectedQty := resource.MustParse(want)
-			actualQty := zone.Available[name]
-			if actualQty.Cmp(expectedQty) != 0 {
-				t.Errorf("Test number: %d, name: %v, has failed. Node %v zone %d resource %v: actual Available %v, was expecting %v", testNumber, testName, nodeName, zoneIndex, name, actualQty.String(), want)
+			expected := resource_info.NewResourceVectorFromResourceList(v1.ResourceList{name: resource.MustParse(want)}, vectorMap)
+			idx := vectorMap.GetIndex(name)
+			if zone.Available.Get(idx) != expected.Get(idx) {
+				t.Errorf("Test number: %d, name: %v, has failed. Node %v zone %d resource %v: actual Available %v, was expecting %v", testNumber, testName, nodeName, zoneIndex, name, zone.Available.Get(idx), want)
 			}
 		}
 	}

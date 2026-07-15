@@ -12,156 +12,164 @@ import (
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 )
 
-// numaEvaluator decides whether a set of requests can be NUMA-aligned on a node and returns the
-// expected per-zone placement. Each request is one alignment unit — the whole pod under pod scope,
-// one container under container scope.
-type numaEvaluator interface {
-	evaluate(topo *node_info.NumaTopology, ignoreList sets.Set[v1.ResourceName], requests []v1.ResourceList) (placement pod_info.NUMAPlacement, admit bool)
-}
+// stackZones bounds the mask/scratch stack buffers; nodes with more NUMA zones fall back to heap.
+const stackZones = 16
 
-func evaluatorFor(policy node_info.TopologyManagerPolicy) numaEvaluator {
-	switch policy {
-	case node_info.TopologyPolicySingleNUMANode:
-		return singleNUMAEvaluator{}
-	case node_info.TopologyPolicyRestricted:
-		return restrictedEvaluator{}
-	default:
-		return nil
+// zoneAllocation accumulates, per zone index, the amounts to place there (as a ResourceVector delta).
+// placementFromAllocation materializes it into a pod_info.NUMAPlacement.
+type zoneAllocation = map[int]resource_info.ResourceVector
+
+// effectiveAware returns the node's aware indices minus the ignored ones. When nothing is ignored
+// (the default) this is the topology's own AwareIndices.
+func (pp *numaPlugin) effectiveAware(node *node_info.NodeInfo) []int {
+	aware := node.NumaTopology.AwareIndices
+	if len(pp.ignoreList) == 0 {
+		return aware
 	}
+	vectorMap := node.NumaTopology.VectorMap
+	ignore := sets.New[int]()
+	for name := range pp.ignoreList {
+		if idx := vectorMap.GetIndex(name); idx >= 0 {
+			ignore.Insert(idx)
+		}
+	}
+	return filterAware(aware, ignore)
 }
 
-// singleNUMAEvaluator requires each request to fit entirely within one NUMA zone (the lowest
-// that fits). Requests may land on different zones (container scope), but none may span zones.
+// allocatable reports whether the kubelet Topology Manager would align the task on the node. A task
+// the plugin does not constrain passes through as true.
+func (pp *numaPlugin) allocatable(task *pod_info.PodInfo, node *node_info.NodeInfo) bool {
+	return pp.solveTask(task, node, nil)
+}
+
+// evaluate returns the task's expected per-zone allocation on the node (nil for a task the plugin
+// does not constrain). Used by the placement path; the predicate uses allocatable (feasibility only).
+func (pp *numaPlugin) evaluate(task *pod_info.PodInfo, node *node_info.NodeInfo) (zoneAllocation, bool) {
+	alloc := zoneAllocation{}
+	if !pp.solveTask(task, node, alloc) {
+		return nil, false
+	}
+	return alloc, true
+}
+
+// solveTask resolves the task's requests and scope for the node and runs solve. A task the plugin
+// does not constrain passes through as admitted. When alloc is non-nil, solve records the placement
+// into it; when nil, it only decides feasibility (zero-allocation).
+func (pp *numaPlugin) solveTask(task *pod_info.PodInfo, node *node_info.NodeInfo, alloc zoneAllocation) bool {
+	if node == nil || !pp.shouldHandle(task, node.NumaTopology) {
+		return true
+	}
+	topo := node.NumaTopology
+	aware := pp.effectiveAware(node)
+	concurrent, serial := buildNumaRequests(task.Pod, topo.VectorMap).forScope(topo.Scope)
+	return solve(topo, aware, concurrent, serial, alloc)
+}
+
+// solve walks the concurrent and serial NUMA requests and reports whether the node can align them.
+// The concurrent requests share the per-zone ledger (native sidecars + app containers coexist), so
+// each reduces availability for the next; the serial (ordinary init) requests are each aligned
+// against the pristine availability, never accumulated. When alloc is non-nil the concurrent
+// requests' per-zone placement is recorded there; otherwise the walk is allocation-free (a `consumed`
+// scratch is taken only when a later request needs the reduced view).
+func solve(topo *node_info.NumaTopology, aware []int, concurrent, serial []resource_info.ResourceVector, alloc zoneAllocation) bool {
+	width := topo.VectorMap.Len()
+	var maskArr [stackZones]int
+	maskBuf := maskArr[:]
+	if len(topo.Zones) > stackZones {
+		maskBuf = make([]int, len(topo.Zones))
+	}
+
+	var consumed []float64
+	for i, req := range concurrent {
+		mask, ok := feasibleMask(topo, aware, req, consumed, width, maskBuf)
+		if !ok {
+			return false
+		}
+		last := i == len(concurrent)-1
+		if alloc == nil && last {
+			continue // nothing to record and no successor to reduce for
+		}
+		if consumed == nil && !last {
+			consumed = make([]float64, len(topo.Zones)*width)
+		}
+		drawAcrossMask(topo, aware, mask, req, consumed, alloc, width)
+	}
+	for _, req := range serial {
+		if _, ok := feasibleMask(topo, aware, req, nil, 0, nil); !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// feasibleMask picks the mask the policy's evaluator would choose for one request, under the current
+// availability view (Available minus consumed).
+func feasibleMask(topo *node_info.NumaTopology, aware []int, req resource_info.ResourceVector, consumed []float64, width int, maskBuf []int) ([]int, bool) {
+	if topo.Policy == node_info.TopologyPolicySingleNUMANode {
+		return singleNUMAEvaluator{}.fit(topo, aware, req, consumed, width, maskBuf)
+	}
+	return restrictedEvaluator{}.fit(topo, aware, req, consumed, width, maskBuf)
+}
+
+// singleNUMAEvaluator (single-numa-node) requires each request to fit entirely within one NUMA zone,
+// the lowest that holds it.
 type singleNUMAEvaluator struct{}
 
-func (singleNUMAEvaluator) evaluate(topo *node_info.NumaTopology, ignoreList sets.Set[v1.ResourceName], requests []v1.ResourceList) (pod_info.NUMAPlacement, bool) {
-	available := cloneAvailable(topo.Zones)
-	allocation := map[int]v1.ResourceList{}
-
-	for _, request := range requests {
-		req := extractNumaRequest(request, topo.Resources, ignoreList)
-		idx, ok := lowestZoneFitting(available, req)
-		if !ok {
-			return nil, false
+func (singleNUMAEvaluator) fit(topo *node_info.NumaTopology, aware []int, req resource_info.ResourceVector, consumed []float64, width int, maskBuf []int) ([]int, bool) {
+	for z := range topo.Zones {
+		if reqFitsZone(topo, aware, req, consumed, width, z) {
+			return oneZoneMask(maskBuf, z), true
 		}
-		subtract(available[idx], req)
-		addAllocation(allocation, idx, req)
 	}
-	return placementFromAllocation(allocation), true
+	return nil, false
 }
 
-// restrictedEvaluator reproduces the kubelet's hint merge: a request is admitted iff there is a
-// single minimal-width NUMA mask that is a preferred (minimal-width) satisfying hint for every
-// resource it requests. Equivalently, all per-resource minimal widths must agree and a mask of
-// that width must satisfy every resource at once. single-numa-node is the |mask|==1 case.
-//
-// Preferred width is computed from Allocatable (matching the kubelet device manager's
-// m.allDevices pass), while feasibility is checked against Available (matching the kubelet's
-// available-device pass). When some devices are already allocated the two can disagree: a
-// single-zone placement may be preferred by capacity but infeasible by availability, making the
-// only feasible mask (multi-zone) non-preferred → restricted rejects, matching kubelet behavior.
+// restrictedEvaluator reproduces the kubelet hint merge: all per-resource preferred widths (from
+// static Allocatable) must agree, and a mask of that width must satisfy every resource against
+// Available. single-numa-node is the width==1 case.
 type restrictedEvaluator struct{}
 
-func (restrictedEvaluator) evaluate(topo *node_info.NumaTopology, ignoreList sets.Set[v1.ResourceName], requests []v1.ResourceList) (pod_info.NUMAPlacement, bool) {
-	available := cloneAvailable(topo.Zones)
-	allocatable := cloneAllocatable(topo.Zones)
-	allocation := map[int]v1.ResourceList{}
-
-	for _, request := range requests {
-		req := extractNumaRequest(request, topo.Resources, ignoreList)
-		mask, ok := preferredCommonMask(available, allocatable, req)
+func (restrictedEvaluator) fit(topo *node_info.NumaTopology, aware []int, req resource_info.ResourceVector, consumed []float64, width int, maskBuf []int) ([]int, bool) {
+	w := -1
+	for _, idx := range aware {
+		need := req.Get(idx)
+		if need <= 0 {
+			continue
+		}
+		k, ok := minWidthFromPrefix(topo.AllocatablePrefix[idx], need)
 		if !ok {
 			return nil, false
 		}
-		for idx, amt := range splitAcrossMask(available, mask, req) {
-			subtract(available[idx], amt)
-			addAllocation(allocation, idx, amt)
-		}
-	}
-	return placementFromAllocation(allocation), true
-}
-
-// placementFromAllocation converts the evaluator's zone-index→amounts accumulation into a
-// pod_info.NUMAPlacement, ordered by zone index for a deterministic placement (so the eviction
-// dedup's comparison is stable). Index-keyed: the internal scheduler representation. Translation
-// to the durable zone id happens only at the persistence boundary (BindRequest / annotation).
-func placementFromAllocation(allocation map[int]v1.ResourceList) pod_info.NUMAPlacement {
-	indices := make([]int, 0, len(allocation))
-	for idx := range allocation {
-		indices = append(indices, idx)
-	}
-	sort.Ints(indices)
-
-	placement := make(pod_info.NUMAPlacement, 0, len(indices))
-	for _, idx := range indices {
-		placement = append(placement, pod_info.ZonePlacement{
-			ZoneIndex: idx,
-			Amount:    allocation[idx],
-		})
-	}
-	return placement
-}
-
-// preferredCommonMask finds the lowest minimal-width NUMA mask that satisfies every requested
-// resource, or reports false. It rejects when per-resource minimal widths disagree.
-//
-// allocatable is used for min-width (preferred) computation; scratch (available) is used for
-// feasibility. This matches the kubelet device manager, which uses m.allDevices for
-// minAffinitySize and the available set for the per-mask device count check.
-func preferredCommonMask(available, allocatable []v1.ResourceList, req v1.ResourceList) ([]int, bool) {
-	width := -1
-	for r, qty := range req {
-		w, ok := minWidthForResource(allocatable, r, qty)
-		if !ok {
-			return nil, false
-		}
-		if width == -1 {
-			width = w
-		} else if w != width {
+		if w == -1 {
+			w = k
+		} else if k != w {
 			return nil, false
 		}
 	}
-	if width <= 0 {
-		return []int{}, true
+	if w <= 0 {
+		return maskBuf[:0], true // no positive aware requests: trivially aligned (nil-safe)
 	}
-	return lowestSatisfyingMask(available, req, width)
-}
-
-// minWidthForResource is the fewest zones whose largest Available values sum to at least qty,
-// i.e. the resource's preferred (minimal) NUMA-node count. Reports false when even all zones
-// together cannot satisfy qty.
-func minWidthForResource(scratch []v1.ResourceList, r v1.ResourceName, qty resource.Quantity) (int, bool) {
-	vals := make([]resource.Quantity, len(scratch))
-	total := resource.Quantity{}
-	for i := range scratch {
-		v := amountOf(scratch[i], r)
-		vals[i] = v
-		total.Add(v)
-	}
-	if total.Cmp(qty) < 0 {
-		return 0, false
-	}
-
-	sort.Slice(vals, func(i, j int) bool { return vals[i].Cmp(vals[j]) > 0 })
-	acc := resource.Quantity{}
-	for k := range vals {
-		acc.Add(vals[k])
-		if acc.Cmp(qty) >= 0 {
-			return k + 1, true
+	if w == 1 {
+		for z := range topo.Zones {
+			if reqFitsZone(topo, aware, req, consumed, width, z) {
+				return oneZoneMask(maskBuf, z), true
+			}
 		}
+		return nil, false
 	}
-	return 0, false
+	return lowestSatisfyingReqMask(topo, aware, req, consumed, width, w, maskBuf)
 }
 
-// lowestSatisfyingMask returns the lexicographically-lowest width-sized zone mask whose summed
+// lowestSatisfyingReqMask returns the lexicographically-lowest width-w zone mask whose summed
 // Available satisfies every requested resource.
-func lowestSatisfyingMask(available []v1.ResourceList, req v1.ResourceList, width int) ([]int, bool) {
+func lowestSatisfyingReqMask(topo *node_info.NumaTopology, aware []int, req resource_info.ResourceVector, consumed []float64, width, w int, maskBuf []int) ([]int, bool) {
 	var found []int
-	combinations(len(available), width, func(mask []int) bool {
-		if maskSatisfies(available, req, mask) {
-			found = append([]int(nil), mask...)
+	combinations(len(topo.Zones), w, func(mask []int) bool {
+		if maskSatisfiesReq(topo, aware, req, consumed, width, mask) {
+			found = append(maskBuf[:0], mask...)
 			return false
 		}
 		return true
@@ -169,52 +177,116 @@ func lowestSatisfyingMask(available []v1.ResourceList, req v1.ResourceList, widt
 	return found, found != nil
 }
 
-func maskSatisfies(available []v1.ResourceList, req v1.ResourceList, mask []int) bool {
-	for r, qty := range req {
-		sum := resource.Quantity{}
-		for _, i := range mask {
-			sum.Add(amountOf(available[i], r))
+// reqFitsZone reports whether zone z alone satisfies every requested resource of the request.
+func reqFitsZone(topo *node_info.NumaTopology, aware []int, req resource_info.ResourceVector, consumed []float64, width, z int) bool {
+	for _, idx := range aware {
+		need := req.Get(idx)
+		if need <= 0 {
+			continue
 		}
-		if sum.Cmp(qty) < 0 {
+		if availableAt(topo, consumed, width, z, idx) < need {
 			return false
 		}
 	}
 	return true
 }
 
-// splitAcrossMask distributes each resource greedily across the mask's zones (lowest first),
-// producing the per-zone amounts to allocate. The kubelet does not fix the per-zone split at
-// admission, so any split drawing each resource entirely from the mask is acceptable; this is
-// internal accounting only.
-func splitAcrossMask(scratch []v1.ResourceList, mask []int, req v1.ResourceList) map[int]v1.ResourceList {
-	split := map[int]v1.ResourceList{}
-	for r, qty := range req {
-		remaining := qty.DeepCopy()
-		for _, i := range mask {
-			if remaining.Sign() <= 0 {
-				break
-			}
-			take := amountOf(scratch[i], r)
-			if take.Cmp(remaining) > 0 {
-				take = remaining.DeepCopy()
-			}
-			if take.Sign() <= 0 {
-				continue
-			}
-			if split[i] == nil {
-				split[i] = v1.ResourceList{}
-			}
-			cur := amountOf(split[i], r)
-			cur.Add(take)
-			split[i][r] = cur
-			remaining.Sub(take)
+// maskSatisfiesReq reports whether the summed Available over the mask's zones satisfies every
+// requested resource of the request.
+func maskSatisfiesReq(topo *node_info.NumaTopology, aware []int, req resource_info.ResourceVector, consumed []float64, width int, mask []int) bool {
+	for _, idx := range aware {
+		need := req.Get(idx)
+		if need <= 0 {
+			continue
+		}
+		sum := 0.0
+		for _, z := range mask {
+			sum += availableAt(topo, consumed, width, z, idx)
+		}
+		if sum < need {
+			return false
 		}
 	}
-	return split
+	return true
 }
 
-// combinations yields every size-k subset of [0,n) as ascending index slices, in
-// lexicographic order, until yield returns false.
+// drawAcrossMask draws req greedily (lowest zone first) across its mask. It reduces `consumed` (when
+// non-nil) so the next concurrent request sees the draw, and records the per-zone amounts into
+// `alloc` (when non-nil) for the placement path. The kubelet does not fix the per-zone split at
+// admission, so any split drawing each resource entirely from the mask is acceptable.
+func drawAcrossMask(topo *node_info.NumaTopology, aware []int, mask []int, req resource_info.ResourceVector, consumed []float64, alloc zoneAllocation, width int) {
+	for _, idx := range aware {
+		remaining := req.Get(idx)
+		if remaining <= 0 {
+			continue
+		}
+		for _, z := range mask {
+			if remaining <= 0 {
+				break
+			}
+			take := availableAt(topo, consumed, width, z, idx)
+			if take > remaining {
+				take = remaining
+			}
+			if take <= 0 {
+				continue
+			}
+			if consumed != nil {
+				consumed[z*width+idx] += take
+			}
+			if alloc != nil {
+				recordAlloc(alloc, z, idx, take, topo.VectorMap)
+			}
+			remaining -= take
+		}
+	}
+}
+
+func recordAlloc(alloc zoneAllocation, z, idx int, amount float64, vectorMap *resource_info.ResourceVectorMap) {
+	vec := alloc[z]
+	if vec == nil {
+		vec = resource_info.NewResourceVector(vectorMap)
+		alloc[z] = vec
+	}
+	vec[idx] += amount
+}
+
+// availableAt is zone z's Available for resource idx, minus what prior requests in this evaluation
+// already consumed (consumed nil = pristine availability).
+func availableAt(topo *node_info.NumaTopology, consumed []float64, width, z, idx int) float64 {
+	v := topo.Zones[z].Available.Get(idx)
+	if consumed != nil {
+		v -= consumed[z*width+idx]
+	}
+	return v
+}
+
+// minWidthFromPrefix returns the fewest zones whose largest Allocatable values sum to at least need
+// (the resource's preferred NUMA width), from precomputed descending prefix sums.
+func minWidthFromPrefix(prefix []float64, need float64) (int, bool) {
+	if len(prefix) == 0 || prefix[len(prefix)-1] < need {
+		return 0, false
+	}
+	for k, sum := range prefix {
+		if sum >= need {
+			return k + 1, true
+		}
+	}
+	return 0, false
+}
+
+// oneZoneMask writes a single-zone mask into buf (reusing its backing array, no allocation) and
+// returns it. buf is nil only for serial requests, whose returned mask the caller ignores.
+func oneZoneMask(buf []int, z int) []int {
+	if buf == nil {
+		return nil
+	}
+	buf[0] = z
+	return buf[:1]
+}
+
+// combinations yields every size-k subset of [0,n) as ascending index slices, in lexicographic
+// order, until yield returns false.
 func combinations(n, k int, yield func([]int) bool) {
 	if k <= 0 || k > n {
 		return
@@ -241,92 +313,43 @@ func combinations(n, k int, yield func([]int) bool) {
 	}
 }
 
-// extractNumaRequest keeps only the resources that constrain zone selection: those reported per-zone
-// (aware) and not ignored, dropping zero-quantity entries. ignoreList is applied here rather
-// than at ingestion because it is plugin configuration, unknown to the topology builder.
-func extractNumaRequest(request v1.ResourceList, aware, ignoreList sets.Set[v1.ResourceName]) v1.ResourceList {
+// placementFromAllocation converts the zone-index→amounts accumulation into a pod_info.NUMAPlacement,
+// ordered by zone index for a deterministic placement (so the eviction dedup's comparison is stable).
+// Index-keyed: the internal scheduler representation; translation to the durable zone id happens only
+// at the persistence boundary (BindRequest / annotation).
+func placementFromAllocation(allocation zoneAllocation, topo *node_info.NumaTopology) pod_info.NUMAPlacement {
+	indices := make([]int, 0, len(allocation))
+	for idx := range allocation {
+		indices = append(indices, idx)
+	}
+	sort.Ints(indices)
+
+	placement := make(pod_info.NUMAPlacement, 0, len(indices))
+	for _, idx := range indices {
+		placement = append(placement, pod_info.ZonePlacement{
+			ZoneIndex: idx,
+			Amount:    vectorToResourceList(allocation[idx], topo),
+		})
+	}
+	return placement
+}
+
+// vectorToResourceList materializes a zone's allocated amounts into a ResourceList at the placement
+// boundary: CPU as a milli quantity, every other aware resource as a plain integer quantity. The
+// resource name is the NRT-reported one (AwareNames), not the shared map's normalized name.
+func vectorToResourceList(vec resource_info.ResourceVector, topo *node_info.NumaTopology) v1.ResourceList {
 	out := v1.ResourceList{}
-	for r, qty := range request {
-		if qty.Sign() == 0 || !aware.Has(r) || ignoreList.Has(r) {
+	for _, idx := range topo.AwareIndices {
+		val := vec.Get(idx)
+		if val <= 0 {
 			continue
 		}
-		out[r] = qty.DeepCopy()
+		name := topo.AwareNames[idx]
+		if idx == resource_info.CPUIndex {
+			out[name] = *resource.NewMilliQuantity(int64(val), resource.DecimalSI)
+		} else {
+			out[name] = *resource.NewQuantity(int64(val), resource.DecimalSI)
+		}
 	}
 	return out
-}
-
-func cloneAvailable(zones []*node_info.NumaZone) []v1.ResourceList {
-	available := make([]v1.ResourceList, len(zones))
-	for i, zone := range zones {
-		amounts := make(v1.ResourceList, len(zone.Available))
-		for r, qty := range zone.Available {
-			amounts[r] = qty.DeepCopy()
-		}
-		available[i] = amounts
-	}
-	return available
-}
-
-func cloneAllocatable(zones []*node_info.NumaZone) []v1.ResourceList {
-	allocatable := make([]v1.ResourceList, len(zones))
-	for i, zone := range zones {
-		amounts := make(v1.ResourceList, len(zone.Allocatable))
-		for r, qty := range zone.Allocatable {
-			amounts[r] = qty.DeepCopy()
-		}
-		allocatable[i] = amounts
-	}
-	return allocatable
-}
-
-func lowestZoneFitting(scratch []v1.ResourceList, req v1.ResourceList) (int, bool) {
-	for i := range scratch {
-		fits := true
-		for r, qty := range req {
-			if avail := amountOf(scratch[i], r); avail.Cmp(qty) < 0 {
-				fits = false
-				break
-			}
-		}
-		if fits {
-			return i, true
-		}
-	}
-	return 0, false
-}
-
-func subtract(amounts, delta v1.ResourceList) {
-	for r, qty := range delta {
-		v := amountOf(amounts, r)
-		v.Sub(qty)
-		amounts[r] = v
-	}
-}
-
-func add(amounts, delta v1.ResourceList) {
-	for r, qty := range delta {
-		v := amountOf(amounts, r)
-		v.Add(qty)
-		amounts[r] = v
-	}
-}
-
-func addAllocation(allocation map[int]v1.ResourceList, idx int, amt v1.ResourceList) {
-	cur := allocation[idx]
-	if cur == nil {
-		cur = v1.ResourceList{}
-		allocation[idx] = cur
-	}
-	for r, qty := range amt {
-		v := amountOf(cur, r)
-		v.Add(qty)
-		cur[r] = v
-	}
-}
-
-func amountOf(amounts v1.ResourceList, r v1.ResourceName) resource.Quantity {
-	if qty, ok := amounts[r]; ok {
-		return qty.DeepCopy()
-	}
-	return resource.Quantity{}
 }
