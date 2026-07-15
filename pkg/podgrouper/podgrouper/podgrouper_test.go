@@ -18,10 +18,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	commonconsts "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgroup"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper"
-	pluginshub "github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/hub"
+	commonconsts "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper"
+	pluginshub "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/hub"
 )
 
 const (
@@ -121,7 +121,7 @@ func TestNewPodgrouper(t *testing.T) {
 	resources := append(nativeK8sTestResources, testResources...)
 	client := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(resources...).Build()
 
-	pluginsHub := pluginshub.NewDefaultPluginsHub(client, false, true,
+	pluginsHub := pluginshub.NewDefaultPluginsHub(client, false, true, false,
 		queueLabelKey, nodePoolLabelKey, "", "")
 	grouper := podgrouper.NewPodgrouper(client, client, pluginsHub)
 
@@ -318,6 +318,7 @@ kind: Pod
 			pluginsHub := pluginshub.NewDefaultPluginsHub(client,
 				tt.podGrouperOptions.searchForLegacyPodGroups,
 				tt.podGrouperOptions.gangScheduleKnative,
+				false,
 				queueLabelKey,
 				nodePoolLabelKey,
 				"",

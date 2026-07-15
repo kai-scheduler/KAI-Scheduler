@@ -8,15 +8,15 @@ import (
 
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/eviction_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/scheduler_util"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/scheduler_util"
 )
 
 func EvictAllPreemptees(ssn *framework.Session, preempteeTasks []*pod_info.PodInfo,
@@ -93,14 +93,14 @@ func TryToVirtuallyAllocatePreemptorAndGetVictims(
 			continue
 		}
 
-		resReq := podgroup_info.GetTasksToAllocateInitResource(
-			jobToAllocate, ssn.PodSetOrderFn, ssn.TaskOrderFn, false, ssn.ClusterInfo.MinNodeGPUMemory)
+		resReq := podgroup_info.GetTasksToAllocateInitResourceVector(
+			jobToAllocate, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false, ssn.ClusterInfo.MinNodeGPUMemoryMiB)
 		log.InfraLogger.V(6).Infof("Trying to pipeline job: <%s/%s>. resources required: %v",
 			jobToAllocate.Namespace, jobToAllocate.Name, resReq)
 
 		if jobToAllocate.UID != preemptor.UID {
 			if !AllocateJob(ssn, stmt, nodes, jobToAllocate, true) {
-				tasksToAllocate := podgroup_info.GetTasksToAllocate(jobToAllocate, ssn.PodSetOrderFn,
+				tasksToAllocate := podgroup_info.GetTasksToAllocate(jobToAllocate, ssn.SubGroupOrderFn,
 					ssn.TaskOrderFn, false)
 				newVictims = append(newVictims, tasksToAllocate...)
 			}

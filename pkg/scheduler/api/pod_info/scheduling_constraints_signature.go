@@ -5,14 +5,15 @@ package pod_info
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/storageclaim_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/storageclaim_info"
 )
 
 func schedulingConstraintsSignature(pod *v1.Pod, storageClaims map[storageclaim_info.Key]*storageclaim_info.StorageClaimInfo) common_info.SchedulingConstraintsSignature {
@@ -51,7 +52,7 @@ func schedulingConstraintsSignature(pod *v1.Pod, storageClaims map[storageclaim_
 	// Priority
 	hash.Write([]byte(pod.Spec.PriorityClassName))
 	if pod.Spec.Priority != nil {
-		hash.Write([]byte{byte(*pod.Spec.Priority)})
+		_ = binary.Write(hash, binary.LittleEndian, *pod.Spec.Priority)
 	}
 
 	//TopologySpreadConstraints
@@ -91,7 +92,7 @@ func schedulingConstraintsSignature(pod *v1.Pod, storageClaims map[storageclaim_
 	// Ports
 	for _, container := range append(pod.Spec.Containers, pod.Spec.InitContainers...) {
 		for _, port := range container.Ports {
-			hash.Write([]byte{byte(port.HostPort)})
+			_ = binary.Write(hash, binary.LittleEndian, port.HostPort)
 		}
 	}
 

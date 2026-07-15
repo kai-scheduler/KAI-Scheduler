@@ -14,11 +14,11 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/common"
-	kaiv1common "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/common"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/pod_grouper"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
+	kaiv1common "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/pod_grouper"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
 func TestBuildArgsList(t *testing.T) {
@@ -158,6 +158,31 @@ func TestBuildArgsList(t *testing.T) {
 			},
 		},
 		{
+			name: "with generic Karta fallback disabled",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Global: &kaiv1.GlobalConfig{
+						SchedulerName:    ptr.To(constants.DefaultSchedulerName),
+						QueueLabelKey:    ptr.To(constants.DefaultQueueLabel),
+						NodePoolLabelKey: ptr.To(constants.DefaultNodePoolLabelKey),
+					},
+					PodGrouper: &pod_grouper.PodGrouper{
+						Replicas: ptr.To(int32(1)),
+						Args: &pod_grouper.Args{
+							GenericKartaFallback: ptr.To(false),
+						},
+						K8sClientConfig: &common.K8sClientConfig{},
+					},
+				},
+			},
+			expected: []string{
+				"--scheduler-name", constants.DefaultSchedulerName,
+				"--queue-label-key", constants.DefaultQueueLabel,
+				"--nodepool-label-key", constants.DefaultNodePoolLabelKey,
+				"--generic-karta-fallback=false",
+			},
+		},
+		{
 			name: "with leader election",
 			config: &kaiv1.Config{
 				Spec: kaiv1.ConfigSpec{
@@ -178,6 +203,30 @@ func TestBuildArgsList(t *testing.T) {
 				"--queue-label-key", constants.DefaultQueueLabel,
 				"--nodepool-label-key", constants.DefaultNodePoolLabelKey,
 				"--leader-elect",
+			},
+		},
+		{
+			name: "with json logging",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Global: &kaiv1.GlobalConfig{
+						SchedulerName:    ptr.To(constants.DefaultSchedulerName),
+						QueueLabelKey:    ptr.To(constants.DefaultQueueLabel),
+						NodePoolLabelKey: ptr.To(constants.DefaultNodePoolLabelKey),
+						JSONLog:          ptr.To(true),
+					},
+					PodGrouper: &pod_grouper.PodGrouper{
+						Replicas:        ptr.To(int32(1)),
+						Args:            &pod_grouper.Args{},
+						K8sClientConfig: &common.K8sClientConfig{},
+					},
+				},
+			},
+			expected: []string{
+				"--scheduler-name", constants.DefaultSchedulerName,
+				"--queue-label-key", constants.DefaultQueueLabel,
+				"--nodepool-label-key", constants.DefaultNodePoolLabelKey,
+				"--zap-devel=false",
 			},
 		},
 	}
@@ -328,6 +377,7 @@ func TestDeploymentForKAIConfig(t *testing.T) {
 	assert.Contains(t, args, "--scheduler-name")
 	assert.Contains(t, args, "--queue-label-key")
 	assert.Contains(t, args, "--nodepool-label-key")
+	assert.Contains(t, args, "--generic-karta-fallback=true")
 }
 
 func TestServiceAccountForKAIConfig(t *testing.T) {

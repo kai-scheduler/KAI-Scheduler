@@ -12,10 +12,11 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	schedulingv2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
+	schedulingv2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
 )
 
 const (
@@ -180,6 +181,72 @@ var (
 						"groupName":   "cpu-workers",
 						"replicas":    int64(3),
 						"minReplicas": int64(1),
+					},
+				},
+			},
+		},
+	}
+
+	rayClusterWithTopologyAnnotations = &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"kind":       "RayCluster",
+			"apiVersion": "ray.io/v1",
+			"metadata": map[string]interface{}{
+				"name":      "topology_ray_cluster",
+				"namespace": "test_namespace",
+				"uid":       "2",
+			},
+			"spec": map[string]interface{}{
+				"headGroupSpec": map[string]interface{}{
+					"template": map[string]interface{}{
+						"metadata": map[string]interface{}{
+							"annotations": map[string]interface{}{
+								"kai.scheduler/topology":                     "test-topology",
+								"kai.scheduler/topology-required-placement":  "rack",
+								"kai.scheduler/topology-preferred-placement": "node",
+							},
+						},
+					},
+				},
+				"workerGroupSpecs": []interface{}{
+					map[string]interface{}{
+						"groupName":   "gpu-workers",
+						"replicas":    int64(3),
+						"minReplicas": int64(2),
+						"template": map[string]interface{}{
+							"metadata": map[string]interface{}{
+								"annotations": map[string]interface{}{
+									"kai.scheduler/topology":                     "test-topology",
+									"kai.scheduler/topology-required-placement":  "zone",
+									"kai.scheduler/topology-preferred-placement": "rack",
+								},
+							},
+						},
+					},
+					map[string]interface{}{
+						"groupName":   "cpu-workers",
+						"replicas":    int64(1),
+						"minReplicas": int64(1),
+						"template": map[string]interface{}{
+							"metadata": map[string]interface{}{
+								"annotations": map[string]interface{}{
+									"kai.scheduler/topology":                     "test-topology",
+									"kai.scheduler/topology-preferred-placement": "host",
+								},
+							},
+						},
+					},
+					map[string]interface{}{
+						"groupName":   "best-effort-workers",
+						"replicas":    int64(1),
+						"minReplicas": int64(1),
+						"template": map[string]interface{}{
+							"metadata": map[string]interface{}{
+								"annotations": map[string]interface{}{
+									"kai.scheduler/topology": "test-topology",
+								},
+							},
+						},
 					},
 				},
 			},
@@ -494,6 +561,44 @@ func TestGetPodGroupMetadata_RayCluster_SuspendedWorkers_SubGroups(t *testing.T)
 	assert.Equal(t, int32(2), podGroupMetadata.SubGroups[1].MinAvailable)
 }
 
+func TestGetPodGroupMetadata_RayCluster_SubGroups_WithTopologyConstraints(t *testing.T) {
+	pod := &v1.Pod{}
+
+	client := fake.NewClientBuilder().WithScheme(scheme.Scheme).WithRuntimeObjects(rayClusterWithTopologyAnnotations).Build()
+	rayGrouper := NewRayGrouper(client, defaultgrouper.NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, client))
+	grouper := NewRayClusterGrouper(rayGrouper)
+
+	podGroupMetadata, err := grouper.GetPodGroupMetadata(rayClusterWithTopologyAnnotations, pod)
+
+	assert.Nil(t, err)
+	assert.Equal(t, 4, len(podGroupMetadata.SubGroups))
+
+	headGroup := podGroupMetadata.SubGroups[0]
+	assert.Equal(t, "headgroup", headGroup.Name)
+	assert.NotNil(t, headGroup.TopologyConstraints)
+	assert.Equal(t, "test-topology", headGroup.TopologyConstraints.Topology)
+	assert.Equal(t, "rack", headGroup.TopologyConstraints.RequiredTopologyLevel)
+	assert.Equal(t, "node", headGroup.TopologyConstraints.PreferredTopologyLevel)
+
+	workerGroup0 := podGroupMetadata.SubGroups[1]
+	assert.Equal(t, "gpu-workers", workerGroup0.Name)
+	assert.NotNil(t, workerGroup0.TopologyConstraints)
+	assert.Equal(t, "test-topology", workerGroup0.TopologyConstraints.Topology)
+	assert.Equal(t, "zone", workerGroup0.TopologyConstraints.RequiredTopologyLevel)
+	assert.Equal(t, "rack", workerGroup0.TopologyConstraints.PreferredTopologyLevel)
+
+	workerGroup1 := podGroupMetadata.SubGroups[2]
+	assert.Equal(t, "cpu-workers", workerGroup1.Name)
+	assert.NotNil(t, workerGroup1.TopologyConstraints)
+	assert.Equal(t, "test-topology", workerGroup1.TopologyConstraints.Topology)
+	assert.Equal(t, "", workerGroup1.TopologyConstraints.RequiredTopologyLevel)
+	assert.Equal(t, "host", workerGroup1.TopologyConstraints.PreferredTopologyLevel)
+
+	workerGroup2 := podGroupMetadata.SubGroups[3]
+	assert.Equal(t, "best-effort-workers", workerGroup2.Name)
+	assert.Nil(t, workerGroup2.TopologyConstraints)
+}
+
 // Tests for backwards compatibility with existing PodGroups
 
 func buildSchemeWithPodGroup() *runtime.Scheme {
@@ -539,7 +644,7 @@ func TestGetPodGroupMetadata_BackwardsCompatibility_ExistingPodGroupWithoutSubGr
 			Namespace: autoScalingRayCluster.GetNamespace(),
 		},
 		Spec: schedulingv2alpha2.PodGroupSpec{
-			MinMember: 4,
+			MinMember: ptr.To(int32(4)),
 			// No SubGroups - legacy format
 		},
 	}
@@ -579,11 +684,11 @@ func TestGetPodGroupMetadata_BackwardsCompatibility_ExistingPodGroupWithSubGroup
 			Namespace: autoScalingRayCluster.GetNamespace(),
 		},
 		Spec: schedulingv2alpha2.PodGroupSpec{
-			MinMember: 4,
+			MinMember: ptr.To(int32(4)),
 			SubGroups: []schedulingv2alpha2.SubGroup{
-				{Name: "headgroup", MinMember: 1},
-				{Name: "worker-group-0", MinMember: 2},
-				{Name: "worker-group-1", MinMember: 1},
+				{Name: "headgroup", MinMember: ptr.To(int32(1))},
+				{Name: "worker-group-0", MinMember: ptr.To(int32(2))},
+				{Name: "worker-group-1", MinMember: ptr.To(int32(1))},
 			},
 		},
 	}
@@ -618,7 +723,7 @@ func TestShouldUseSubGroups_PodGroupExistsWithoutSubGroups(t *testing.T) {
 			Namespace: "test-ns",
 		},
 		Spec: schedulingv2alpha2.PodGroupSpec{
-			MinMember: 2,
+			MinMember: ptr.To(int32(2)),
 		},
 	}
 	client := fake.NewClientBuilder().WithScheme(s).WithRuntimeObjects(existingPodGroup).Build()
@@ -637,9 +742,9 @@ func TestShouldUseSubGroups_PodGroupExistsWithSubGroups(t *testing.T) {
 			Namespace: "test-ns",
 		},
 		Spec: schedulingv2alpha2.PodGroupSpec{
-			MinMember: 2,
+			MinMember: ptr.To(int32(2)),
 			SubGroups: []schedulingv2alpha2.SubGroup{
-				{Name: "headgroup", MinMember: 1},
+				{Name: "headgroup", MinMember: ptr.To(int32(1))},
 			},
 		},
 	}

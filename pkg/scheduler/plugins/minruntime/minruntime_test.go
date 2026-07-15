@@ -11,14 +11,14 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/queue_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 )
 
 type TestScenario struct {
@@ -89,8 +89,6 @@ var _ = Describe("MinRuntime Plugin", func() {
 			defaultPreemptMinRuntime: defaultPreemptDuration,
 			defaultReclaimMinRuntime: defaultReclaimDuration,
 			reclaimResolveMethod:     resolveMethodLCA,
-			preemptProtectionCache:   make(map[common_info.PodGroupID]bool),
-			reclaimProtectionCache:   make(map[common_info.PodGroupID]map[common_info.PodGroupID]bool),
 			resolver:                 NewResolver(queues, defaultPreemptDuration, defaultReclaimDuration),
 		}
 	})
@@ -138,6 +136,19 @@ var _ = Describe("MinRuntime Plugin", func() {
 				result := plugin.preemptFilterFn(pendingJob, victim)
 				Expect(result).To(BeTrue(), "Job with no start time should not be protected")
 			})
+
+			It("re-evaluates protection for a previously checked victim", func() {
+				pendingJob := createPodGroup("pending-job", "dev-team1", nil, 1, 1)
+				recentStart := time.Now().Add(-10 * time.Second)
+				victim := createPodGroup("victim-job", "prod-team2", &recentStart, 1, 1)
+
+				Expect(plugin.preemptFilterFn(pendingJob, victim)).To(BeFalse())
+
+				oldStart := time.Now().Add(-30 * time.Second)
+				victim.LastStartTimestamp = &oldStart
+
+				Expect(plugin.preemptFilterFn(pendingJob, victim)).To(BeTrue())
+			})
 		})
 	})
 
@@ -172,6 +183,19 @@ var _ = Describe("MinRuntime Plugin", func() {
 				// The reclaim min runtime for prod-team2 is 35s, so 40s is past protection period
 				result := plugin.reclaimFilterFn(pendingJob, victim)
 				Expect(result).To(BeTrue(), "Job 'old-victim' should not be protected from reclaim")
+			})
+
+			It("re-evaluates protection for a previously checked job pair", func() {
+				pendingJob := createPodGroup("pending-job", "dev-team1", nil, 1, 1)
+				recentStart := time.Now().Add(-20 * time.Second)
+				victim := createPodGroup("victim-job", "prod-team2", &recentStart, 1, 1)
+
+				Expect(plugin.reclaimFilterFn(pendingJob, victim)).To(BeFalse())
+
+				oldStart := time.Now().Add(-40 * time.Second)
+				victim.LastStartTimestamp = &oldStart
+
+				Expect(plugin.reclaimFilterFn(pendingJob, victim)).To(BeTrue())
 			})
 		})
 

@@ -18,12 +18,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	commonconsts "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	commonconsts "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgroup"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/topowner"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/topowner"
 )
 
 var (
@@ -80,6 +80,7 @@ func (dg *DefaultGrouper) GetPodGroupMetadata(topOwner *unstructured.Unstructure
 		Queue:             dg.CalcPodGroupQueue(topOwner, pod),
 		PriorityClassName: priorityClassName,
 		Preemptibility:    preemptibility,
+		PreemptionDelay:   dg.calcPodGroupPreemptionDelay(allOwners, pod),
 		MinAvailable:      1,
 	}
 
@@ -272,6 +273,28 @@ func (dg *DefaultGrouper) calcPodGroupPreemptibilityWithDefaults(
 	return ""
 }
 
+// calcPodGroupPreemptionDelay reads the preemption-delay annotation from owners then the pod.
+// First valid value wins; invalid or negative durations are ignored with a warning.
+func (dg *DefaultGrouper) calcPodGroupPreemptionDelay(allOwners []*metav1.PartialObjectMetadata, pod *v1.Pod) *metav1.Duration {
+	for _, owner := range allOwners {
+		if delayStr, found := owner.GetAnnotations()[constants.PreemptionDelayAnnotationKey]; found {
+			if delay, err := v2alpha2.ParsePreemptionDelay(delayStr); err == nil {
+				return delay
+			} else {
+				logger.Error(err, "Invalid preemption-delay annotation found on owner", "owner", owner.GetName(), "preemptionDelay", delayStr)
+			}
+		}
+	}
+	if delayStr, found := pod.GetAnnotations()[constants.PreemptionDelayAnnotationKey]; found {
+		if delay, err := v2alpha2.ParsePreemptionDelay(delayStr); err == nil {
+			return delay
+		} else {
+			logger.Error(err, "Invalid preemption-delay annotation found on pod", "pod", pod.GetName(), "preemptionDelay", delayStr)
+		}
+	}
+	return nil
+}
+
 func (dg *DefaultGrouper) calcPodGroupPriorityClass(owner *metav1.PartialObjectMetadata, pod *v1.Pod) string {
 	if priorityClassName, found := owner.GetLabels()[constants.PriorityLabelKey]; found {
 		return priorityClassName
@@ -315,6 +338,25 @@ func (dg *DefaultGrouper) getDefaultPriorityClassNameForKind(groupKind *schema.G
 	}
 
 	return ""
+}
+
+func (dg *DefaultGrouper) ResolveDefaultsForKind(groupKind schema.GroupKind) (string, string, error) {
+	defaults, err := dg.getDefaultConfigsPerTypeMapping()
+	if err != nil {
+		return "", "", err
+	}
+
+	defaultConfig, found := selectDefaultsForKind(defaults, &groupKind)
+	if !found {
+		return "", "", nil
+	}
+
+	priorityClassName := defaultConfig.PriorityName
+	if !dg.validatePriorityClassExists(priorityClassName) {
+		priorityClassName = ""
+	}
+
+	return priorityClassName, defaultConfig.Preemptibility, nil
 }
 
 // getDefaultConfigsPerTypeMapping - returns a map of workload groupKind to default workload-type config (priorityClassName and preemptibility).

@@ -25,23 +25,22 @@ import (
 	"strconv"
 	"strings"
 
+	nrtv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 	"go.uber.org/multierr"
 	"golang.org/x/exp/maps"
 	v1 "k8s.io/api/core/v1"
 
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info/resources"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_affinity"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	sc_info "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/storagecapacity_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/storageclaim_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_affinity"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	sc_info "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/storagecapacity_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/storageclaim_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 )
 
 const (
@@ -69,15 +68,13 @@ type NodeInfo struct {
 	Name string
 	Node *v1.Node
 
-	// The releasing resource on that node (excluding shared GPUs)
-	Releasing *resource_info.Resource
-	// The idle resource on that node (excluding shared GPUs)
-	Idle *resource_info.Resource
-	// The used resource on that node, including running and terminating
-	// pods (excluding shared GPUs)
-	Used *resource_info.Resource
+	AllocatableVector resource_info.ResourceVector
+	IdleVector        resource_info.ResourceVector
+	UsedVector        resource_info.ResourceVector
+	ReleasingVector   resource_info.ResourceVector
 
-	Allocatable *resource_info.Resource
+	// Shared resource vector index map for this node
+	VectorMap *resource_info.ResourceVectorMap
 
 	AccessibleStorageCapacities map[common_info.StorageClassID][]*sc_info.StorageCapacityInfo
 
@@ -90,23 +87,32 @@ type NodeInfo struct {
 	// HasDRAGPUs indicates GPUs were added via DRA ResourceSlices. Temporary fix - remove when device-plugin pods are supported on DRA nodes.
 	HasDRAGPUs bool
 
+	NodeResourceTopology *nrtv1alpha2.NodeResourceTopology
+
+	NumaTopology *NumaTopology
+
 	PodAffinityInfo pod_affinity.NodePodAffinityInfo
 
 	GpuSharingNodeInfo
 }
 
-func NewNodeInfo(node *v1.Node, podAffinityInfo pod_affinity.NodePodAffinityInfo) *NodeInfo {
+func NewNodeInfo(node *v1.Node, podAffinityInfo pod_affinity.NodePodAffinityInfo, vectorMap *resource_info.ResourceVectorMap) *NodeInfo {
 	gpuMemory, exists := getNodeGpuMemory(node)
+
+	allocatableVector := resource_info.ResourceFromResourceList(node.Status.Allocatable).ToVector(vectorMap)
+	idleVector := allocatableVector.Clone()
+	usedVector := resource_info.NewResourceVector(vectorMap)
+	releasingVector := resource_info.NewResourceVector(vectorMap)
 
 	nodeInfo := &NodeInfo{
 		Name: node.Name,
 		Node: node,
 
-		Releasing: resource_info.EmptyResource(),
-		Idle:      resource_info.ResourceFromResourceList(node.Status.Allocatable),
-		Used:      resource_info.EmptyResource(),
-
-		Allocatable: resource_info.ResourceFromResourceList(node.Status.Allocatable),
+		AllocatableVector: allocatableVector,
+		IdleVector:        idleVector,
+		UsedVector:        usedVector,
+		ReleasingVector:   releasingVector,
+		VectorMap:         vectorMap,
 
 		AccessibleStorageCapacities: map[common_info.StorageClassID][]*sc_info.StorageCapacityInfo{},
 
@@ -122,34 +128,38 @@ func NewNodeInfo(node *v1.Node, podAffinityInfo pod_affinity.NodePodAffinityInfo
 	numTasks := node.Status.Allocatable[v1.ResourcePods]
 	nodeInfo.MaxTaskNum = int(numTasks.Value())
 
-	capacity := resource_info.ResourceFromResourceList(node.Status.Capacity)
-	if capacity.GPUs() != nodeInfo.Allocatable.GPUs() {
+	capacityVec := resource_info.ResourceFromResourceList(node.Status.Capacity).ToVector(vectorMap)
+	gpuIdx := resource_info.GPUIndex
+	if capacityVec.Get(gpuIdx) != allocatableVector.Get(gpuIdx) {
 		log.InfraLogger.V(2).Warnf(
 			"For node %s, the capacity and allocatable are different. Capacity %v, Allocatable %v",
-			node.Name, capacity.DetailedString(), nodeInfo.Allocatable.DetailedString())
+			node.Name, capacityVec.ToResourceQuantities(vectorMap), allocatableVector.ToResourceQuantities(vectorMap))
 	}
 
 	return nodeInfo
 }
 
-func (ni *NodeInfo) NonAllocatedResources() *resource_info.Resource {
-	nonAllocatedResource := resource_info.EmptyResource()
-	nonAllocatedResource.Add(ni.Idle)
-	nonAllocatedResource.Add(ni.Releasing)
-	return nonAllocatedResource
+func (ni *NodeInfo) nonAllocatedVector() resource_info.ResourceVector {
+	v := ni.IdleVector.Clone()
+	v.Add(ni.ReleasingVector)
+	return v
 }
 
 func (ni *NodeInfo) NonAllocatedResource(resourceType v1.ResourceName) float64 {
-	return ni.Idle.Get(resourceType) + ni.Releasing.Get(resourceType)
+	idx := ni.VectorMap.GetIndex(resourceType)
+	if idx < 0 {
+		return 0
+	}
+	return ni.IdleVector.Get(idx) + ni.ReleasingVector.Get(idx)
 }
 
 func (ni *NodeInfo) IsTaskAllocatable(task *pod_info.PodInfo) bool {
-	if isBestEffortJob := task.ResReq.IsEmpty() &&
-		(len(task.GetAllStorageClaims()) == 0) && !task.IsMemoryRequest(); isBestEffortJob {
+	if isBestEffortJob := task.GpuRequirement.IsEmpty() && task.ResReqVector.IsZero() &&
+		(len(task.GetAllStorageClaims()) == 0) && !task.IsGpuMemoryRequest(); isBestEffortJob {
 		return true
 	}
 
-	if allocatable := ni.isTaskAllocatableOnNonAllocatedResources(task, ni.Idle); !allocatable {
+	if allocatable := ni.isTaskAllocatableOnNonAllocatedResources(task, ni.IdleVector); !allocatable {
 		log.InfraLogger.V(7).Infof("Task GPU %s/%s is not allocatable on node %s",
 			task.Namespace, task.Name, ni.Name)
 		return false
@@ -166,9 +176,9 @@ func (ni *NodeInfo) IsTaskAllocatable(task *pod_info.PodInfo) bool {
 }
 
 func (ni *NodeInfo) IsTaskAllocatableOnReleasingOrIdle(task *pod_info.PodInfo) bool {
-	nodeNonAllocatedResources := ni.NonAllocatedResources()
+	nodeNonAllocatedVector := ni.nonAllocatedVector()
 
-	if allocatable := ni.isTaskAllocatableOnNonAllocatedResources(task, nodeNonAllocatedResources); !allocatable {
+	if allocatable := ni.isTaskAllocatableOnNonAllocatedResources(task, nodeNonAllocatedVector); !allocatable {
 		log.InfraLogger.V(7).Infof("Task GPU %s/%s is not allocatable on node %s",
 			task.Namespace, task.Name, ni.Name)
 		return false
@@ -250,34 +260,34 @@ func (ni *NodeInfo) isTaskStorageAllocatableOnReleasingOrIdle(task *pod_info.Pod
 }
 
 func (ni *NodeInfo) FittingError(task *pod_info.PodInfo, isGangTask bool) *common_info.TasksFitError {
-	enoughResources := ni.lessEqualTaskToNodeResources(task.ResReq, ni.Idle)
+	enoughResources := ni.lessEqualTaskToNodeResources(task, ni.IdleVector)
 	if !enoughResources {
-		totalUsed := ni.Used.Clone()
-		totalUsed.AddGPUs(float64(ni.getNumberOfUsedSharedGPUs()))
-		totalCapability := ni.Allocatable.Clone()
+		totalUsedVector := ni.UsedVector.Clone()
+		totalUsedVector.Set(resource_info.GPUIndex, totalUsedVector.Get(resource_info.GPUIndex)+float64(ni.getNumberOfUsedSharedGPUs()))
+		totalCapabilityVector := ni.AllocatableVector.Clone()
 
-		requestedResources := task.ResReq.Clone()
-		if requestedResources.GpuMemory() > 0 {
-			// This helps to add an appropriate fit error message in case of a gp memory request
-			requestedResources.GpuResourceRequirement = *resource_info.NewGpuResourceRequirementWithMultiFraction(
-				task.ResReq.GetNumOfGpuDevices(), ni.getResourceGpuPortion(task.ResReq), requestedResources.GpuMemory())
+		requestedGpuReq := task.GpuRequirement.Clone()
+		if requestedGpuReq.GpuMemory() > 0 {
+			// This helps to add an appropriate fit error message in case of a gpu memory request
+			requestedGpuReq = resource_info.NewGpuResourceRequirementWithMultiFraction(
+				task.GpuRequirement.GetNumOfGpuDevices(), ni.getResourceGpuPortion(&task.GpuRequirement), requestedGpuReq.GpuMemory())
 		}
 
 		messageSuffix := ""
 		if len(task.Pod.Spec.Overhead) > 0 {
 			// Adding to node idle instead of subtracting from pod requested resources
-			idleResourcesWithOverhead := ni.Idle.Clone()
-			idleResourcesWithOverhead.Add(resource_info.ResourceFromResourceList(task.Pod.Spec.Overhead))
-			enoughResourcesWithoutOverhead := ni.lessEqualTaskToNodeResources(task.ResReq, idleResourcesWithOverhead)
-			if enoughResourcesWithoutOverhead {
+			overheadVector := resource_info.NewResourceVectorFromResourceList(task.Pod.Spec.Overhead, ni.VectorMap)
+			idleWithOverhead := ni.IdleVector.Clone()
+			idleWithOverhead.Add(overheadVector)
+			if ni.lessEqualTaskToNodeResources(task, idleWithOverhead) {
 				messageSuffix = fmt.Sprintf("%s. The overhead resources are %v", common_info.OverheadMessage,
 					k8s_utils.StringResourceList(task.Pod.Spec.Overhead))
 			}
 		}
 
 		fitError := common_info.NewFitErrorInsufficientResource(
-			task.Name, task.Namespace, ni.Name, task.ResReq, totalUsed, totalCapability, ni.MemoryOfEveryGpuOnNode,
-			isGangTask, messageSuffix)
+			task.Name, task.Namespace, ni.Name, requestedGpuReq, task.ResReqVector, totalUsedVector, totalCapabilityVector, ni.VectorMap,
+			ni.MemoryOfEveryGpuOnNode, isGangTask, messageSuffix)
 
 		return fitError
 	}
@@ -303,7 +313,7 @@ func (ni *NodeInfo) PredicateByNodeResourcesType(task *pod_info.PodInfo) error {
 
 	// Temporary fix: Reject device-plugin GPU requests on DRA-only nodes.
 	// Remove when device-plugin pods are supported on DRA nodes.
-	if task.ResReq.GPUs() > 0 && ni.HasDRAGPUs {
+	if task.GpuRequirement.GPUs() > 0 && ni.HasDRAGPUs {
 		log.InfraLogger.V(4).Infof("Task %s/%s rejected on node %s: device-plugin GPU request on DRA-only node",
 			task.Namespace, task.Name, ni.Name)
 		return common_info.NewFitError(task.Name, task.Namespace, ni.Name,
@@ -337,30 +347,38 @@ func (ni *NodeInfo) PredicateByNodeResourcesType(task *pod_info.PodInfo) error {
 }
 
 func (ni *NodeInfo) isTaskAllocatableOnNonAllocatedResources(
-	task *pod_info.PodInfo, nodeNonAllocatedResources *resource_info.Resource,
+	task *pod_info.PodInfo, nodeNonAllocatedVector resource_info.ResourceVector,
 ) bool {
 	if task.IsRegularGPURequest() || task.IsMigProfileRequest() {
-		return ni.lessEqualTaskToNodeResources(task.ResReq, nodeNonAllocatedResources)
+		return ni.lessEqualTaskToNodeResources(task, nodeNonAllocatedVector)
 	}
 
-	if !task.ResReq.BaseResource.LessEqual(&nodeNonAllocatedResources.BaseResource) {
+	if !ni.lessEqualVectorsExcludingGPU(task.ResReqVector, nodeNonAllocatedVector) {
 		return false
 	}
 
-	if !ni.isValidGpuPortion(task.ResReq) {
+	if !ni.isValidGpuPortion(&task.GpuRequirement) {
 		return false
 	}
-	nodeIdleOrReleasingWholeGpus := int64(math.Floor(nodeNonAllocatedResources.GPUs()))
+	nodeIdleOrReleasingWholeGpus := int64(math.Floor(nodeNonAllocatedVector.Get(resource_info.GPUIndex)))
 	nodeNonAllocatedResourcesMatchingSharedGpus := ni.fractionTaskGpusAllocatableDeviceCount(task)
-	if nodeIdleOrReleasingWholeGpus+nodeNonAllocatedResourcesMatchingSharedGpus >= task.ResReq.GetNumOfGpuDevices() {
+	if nodeIdleOrReleasingWholeGpus+nodeNonAllocatedResourcesMatchingSharedGpus >= task.GpuRequirement.GetNumOfGpuDevices() {
 		return true
 	}
 
 	return false
 }
 
-func (ni *NodeInfo) shouldAddTaskResources(task *pod_info.PodInfo) bool {
-	return !pod_info.IsResourceReservationTask(task.Pod)
+func (ni *NodeInfo) lessEqualVectorsExcludingGPU(a, b resource_info.ResourceVector) bool {
+	for i := 0; i < len(a); i++ {
+		if i == resource_info.GPUIndex {
+			continue
+		}
+		if a.Get(i) > b.Get(i) {
+			return false
+		}
+	}
+	return true
 }
 
 func (ni *NodeInfo) AddTask(task *pod_info.PodInfo) error {
@@ -437,31 +455,30 @@ func (ni *NodeInfo) addTaskStorage(task *pod_info.PodInfo) {
 }
 
 func (ni *NodeInfo) addTaskResources(task *pod_info.PodInfo) {
-	if !ni.shouldAddTaskResources(task) {
-		return
-	}
-
 	log.InfraLogger.V(7).Infof("About to add podsInfo: <%v/%v>, status: <%v>, node: <%s>",
 		task.Namespace, task.Name, task.Status, ni.Name)
 	log.InfraLogger.V(7).Infof("Node info: %+v", ni)
 
-	requestedResourceWithoutSharedGPU := getAcceptedTaskResourceWithoutSharedGPU(task)
+	resourcesToTrackVector := getAcceptedTaskResourceVectorWithoutSharedGPU(task, ni.VectorMap)
 
-	// the added task will be the only one allocated on the GPU
-	ni.Used.Add(requestedResourceWithoutSharedGPU)
+	if pod_info.IsResourceReservationTask(task.Pod) {
+		// Reservation pod: track all resources except GPUs
+		resourcesToTrackVector.Set(resource_info.GPUIndex, 0)
+	}
+
+	ni.UsedVector.Add(resourcesToTrackVector)
 
 	switch task.Status {
 	case pod_status.Releasing:
-		ni.Releasing.Add(requestedResourceWithoutSharedGPU)
-		ni.Idle.Sub(requestedResourceWithoutSharedGPU)
+		ni.ReleasingVector.Add(resourcesToTrackVector)
+		ni.IdleVector.Sub(resourcesToTrackVector)
 	case pod_status.Pipelined:
-		ni.Releasing.Sub(requestedResourceWithoutSharedGPU)
-
+		ni.ReleasingVector.Sub(resourcesToTrackVector)
 	default:
-		ni.Idle.Sub(requestedResourceWithoutSharedGPU)
+		ni.IdleVector.Sub(resourcesToTrackVector)
 	}
 
-	ni.addSharedTaskResources(task)
+	ni.addSharedGPUTaskResources(task)
 
 	log.InfraLogger.V(8).Infof("Added podsInfo: <%v/%v>, status: <%v>, node: <%+v>",
 		task.Namespace, task.Name, task.Status, ni)
@@ -488,27 +505,27 @@ func (ni *NodeInfo) RemoveTask(ti *pod_info.PodInfo) error {
 }
 
 func (ni *NodeInfo) removeTaskResources(task *pod_info.PodInfo) {
-	if !ni.shouldAddTaskResources(task) {
-		return
-	}
-
 	log.InfraLogger.V(7).Infof("About to remove podsInfo: <%v/%v>, status: <%v>, node: <%s>",
 		task.Namespace, task.Name, task.Status, ni.Name)
 	log.InfraLogger.V(7).Infof("NodeInfo: %+v", ni)
 
-	requestedResourceWithoutSharedGPU := getAcceptedTaskResourceWithoutSharedGPU(task)
+	resourcesToTrackVector := getAcceptedTaskResourceVectorWithoutSharedGPU(task, ni.VectorMap)
 
-	// the removed task in the only one currently allocated on the GPU
-	ni.Used.Sub(requestedResourceWithoutSharedGPU)
+	if pod_info.IsResourceReservationTask(task.Pod) {
+		// Reservation pod: untrack all resources except GPUs
+		resourcesToTrackVector.Set(resource_info.GPUIndex, 0)
+	}
+
+	ni.UsedVector.Sub(resourcesToTrackVector)
 
 	switch task.Status {
 	case pod_status.Releasing:
-		ni.Releasing.Sub(requestedResourceWithoutSharedGPU)
-		ni.Idle.Add(requestedResourceWithoutSharedGPU)
+		ni.ReleasingVector.Sub(resourcesToTrackVector)
+		ni.IdleVector.Add(resourcesToTrackVector)
 	case pod_status.Pipelined:
-		ni.Releasing.Add(requestedResourceWithoutSharedGPU)
+		ni.ReleasingVector.Add(resourcesToTrackVector)
 	default:
-		ni.Idle.Add(requestedResourceWithoutSharedGPU)
+		ni.IdleVector.Add(resourcesToTrackVector)
 	}
 
 	ni.removeSharedTaskResources(task)
@@ -552,45 +569,19 @@ func (ni *NodeInfo) String() string {
 	}
 
 	return fmt.Sprintf("Node (%s): idle <%v>, used <%v>, releasing <%v>, taints <%v>%s",
-		ni.Name, ni.Idle, ni.Used, ni.Releasing, ni.Node.Spec.Taints, res)
+		ni.Name, ni.IdleVector, ni.UsedVector, ni.ReleasingVector, ni.Node.Spec.Taints, res)
 
 }
 
 func (ni *NodeInfo) GetSumOfIdleGPUs() (float64, int64) {
 	sumOfSharedGPUs, sumOfSharedGPUsMemory := ni.getSumOfAvailableSharedGPUs()
-	idleGPUs := ni.Idle.GPUs()
-
-	for resourceName, qty := range ni.Idle.ScalarResources() {
-		if !isMigResource(resourceName.String()) {
-			continue
-		}
-		gpuPortion, _, err := resources.ExtractGpuAndMemoryFromMigResourceName(resourceName.String())
-		if err != nil {
-			log.InfraLogger.Errorf("failed to evaluate device portion for resource %v: %v", resourceName, err)
-			continue
-		}
-		idleGPUs += float64(int64(gpuPortion) * qty)
-	}
-
+	idleGPUs := ni.IdleVector.TotalGPUs(ni.VectorMap)
 	return sumOfSharedGPUs + idleGPUs, sumOfSharedGPUsMemory + (int64(idleGPUs) * ni.MemoryOfEveryGpuOnNode)
 }
 
 func (ni *NodeInfo) GetSumOfReleasingGPUs() (float64, int64) {
 	sumOfSharedGPUs, sumOfSharedGPUsMemory := ni.getSumOfReleasingSharedGPUs()
-	releasingGPUs := ni.Releasing.GPUs()
-
-	for resourceName, qty := range ni.Releasing.ScalarResources() {
-		if !isMigResource(resourceName.String()) {
-			continue
-		}
-		gpuPortion, _, err := resources.ExtractGpuAndMemoryFromMigResourceName(resourceName.String())
-		if err != nil {
-			log.InfraLogger.Errorf("failed to evaluate device portion for resource %v: %v", resourceName, err)
-			continue
-		}
-		releasingGPUs += float64(int64(gpuPortion) * qty)
-	}
-
+	releasingGPUs := ni.ReleasingVector.TotalGPUs(ni.VectorMap)
 	return sumOfSharedGPUs + releasingGPUs, sumOfSharedGPUsMemory + (int64(releasingGPUs) * ni.MemoryOfEveryGpuOnNode)
 }
 
@@ -612,12 +603,12 @@ func (ni *NodeInfo) GetNumberOfGPUsInNode() int64 {
 	numberOfGPUs, err := ni.getNodeGpuCountLabelValue()
 	if err != nil {
 		log.InfraLogger.V(6).Infof("Node: <%v> had no annotations of nvidia.com/gpu.count", ni.Name)
-		return int64(ni.Allocatable.GPUs())
+		return int64(ni.AllocatableVector.Get(resource_info.GPUIndex))
 	}
 	return int64(numberOfGPUs)
 }
 
-func (ni *NodeInfo) GetResourceGpuMemory(res *resource_info.ResourceRequirements) int64 {
+func (ni *NodeInfo) GetResourceGpuMemory(res *resource_info.GpuResourceRequirement) int64 {
 	if res.GpuMemory() > 0 {
 		return res.GpuMemory()
 	} else {
@@ -625,14 +616,14 @@ func (ni *NodeInfo) GetResourceGpuMemory(res *resource_info.ResourceRequirements
 	}
 }
 
-func (ni *NodeInfo) getResourceGpuPortion(res *resource_info.ResourceRequirements) float64 {
+func (ni *NodeInfo) getResourceGpuPortion(res *resource_info.GpuResourceRequirement) float64 {
 	if res.GpuMemory() > 0 {
 		return ni.getGpuMemoryFractionalOnNode(res.GpuMemory())
 	}
 	return res.GpuFractionalPortion()
 }
 
-func (ni *NodeInfo) isValidGpuPortion(res *resource_info.ResourceRequirements) bool {
+func (ni *NodeInfo) isValidGpuPortion(res *resource_info.GpuResourceRequirement) bool {
 	gpuPortion := ni.getResourceGpuPortion(res)
 	return gpuPortion <= 1 || gpuPortion == float64(int(gpuPortion))
 }
@@ -665,7 +656,7 @@ func (ni *NodeInfo) IsCPUOnlyNode() bool {
 	if ni.IsMIGEnabled() {
 		return false
 	}
-	return ni.Allocatable.GPUs() <= 0 && !ni.HasDRAGPUs
+	return ni.AllocatableVector.Get(resource_info.GPUIndex) <= 0 && !ni.HasDRAGPUs
 }
 
 func (ni *NodeInfo) IsMIGEnabled() bool {
@@ -675,8 +666,9 @@ func (ni *NodeInfo) IsMIGEnabled() bool {
 		isMig, err := strconv.ParseBool(enabled)
 		return err == nil && isMig
 	}
-	for nodeResource := range ni.Allocatable.ScalarResources() {
-		if isMigResource(nodeResource.String()) {
+	for i := range ni.VectorMap.Len() {
+		name := ni.VectorMap.ResourceAt(i)
+		if isMigResource(name) && ni.AllocatableVector.Get(i) > 0 {
 			return true
 		}
 	}
@@ -698,16 +690,14 @@ func (ni *NodeInfo) GetMigStrategy() MigStrategy {
 	return MigStrategy(migStrategy)
 }
 
-func (ni *NodeInfo) GetRequiredInitQuota(pi *pod_info.PodInfo) *podgroup_info.JobRequirement {
-	quota := podgroup_info.JobRequirement{}
-	if len(pi.ResReq.MigResources()) != 0 {
-		quota.GPU = pi.ResReq.GetGpusQuota()
+func (ni *NodeInfo) GetRequiredInitQuota(pi *pod_info.PodInfo) resource_info.ResourceVector {
+	result := pi.ResReqVector.Clone()
+	if len(pi.GpuRequirement.MigResources()) != 0 {
+		result.Set(resource_info.GPUIndex, pi.GpuRequirement.GetGpusQuota())
 	} else {
-		quota.GPU = ni.getGpuMemoryFractionalOnNode(ni.GetResourceGpuMemory(pi.ResReq))
+		result.Set(resource_info.GPUIndex, float64(pi.GpuRequirement.GetNumOfGpuDevices())*ni.getGpuMemoryFractionalOnNode(ni.GetResourceGpuMemory(&pi.GpuRequirement)))
 	}
-	quota.MilliCPU = pi.ResReq.Cpu()
-	quota.Memory = pi.ResReq.Memory()
-	return &quota
+	return result
 }
 
 func (ni *NodeInfo) setAcceptedResources(pi *pod_info.PodInfo) {
@@ -715,37 +705,43 @@ func (ni *NodeInfo) setAcceptedResources(pi *pod_info.PodInfo) {
 		return
 	}
 
-	pi.AcceptedResource = pi.ResReq.Clone()
 	if pi.IsMigCandidate() {
 		pi.ResourceReceivedType = pod_info.ReceivedTypeMigInstance
-		pi.AcceptedResource.GpuResourceRequirement =
-			*resource_info.NewGpuResourceRequirementWithMig(pi.ResReq.MigResources())
+		pi.AcceptedGpuRequirement =
+			*resource_info.NewGpuResourceRequirementWithMig(pi.GpuRequirement.MigResources())
 	} else if pi.IsFractionCandidate() {
 		pi.ResourceReceivedType = pod_info.ReceivedTypeFraction
-		pi.AcceptedResource.GpuResourceRequirement = *resource_info.NewGpuResourceRequirementWithMultiFraction(
-			pi.ResReq.GetNumOfGpuDevices(), ni.getResourceGpuPortion(pi.ResReq), ni.GetResourceGpuMemory(pi.ResReq))
+		pi.AcceptedGpuRequirement = *resource_info.NewGpuResourceRequirementWithMultiFraction(
+			pi.GpuRequirement.GetNumOfGpuDevices(), ni.getResourceGpuPortion(&pi.GpuRequirement), ni.GetResourceGpuMemory(&pi.GpuRequirement))
 	} else {
 		pi.ResourceReceivedType = pod_info.ReceivedTypeRegular
-		pi.AcceptedResource.GpuResourceRequirement = *resource_info.NewGpuResourceRequirementWithGpus(
-			pi.ResReq.GPUs(), 0)
+		pi.AcceptedGpuRequirement = *resource_info.NewGpuResourceRequirementWithGpus(
+			pi.GpuRequirement.GPUs(), 0)
 
 		// TODO: improve by getting claims actual status. This approach doesn't support FirstAvailable requests.
-		pi.AcceptedResource.SetDraGpus(pi.ResReq.DraGpuCounts())
+		pi.AcceptedGpuRequirement.SetDraGpus(pi.GpuRequirement.DraGpuCounts())
 	}
-
+	// AcceptedResourceVector starts from ResReqVector (same base resources) with GPU set from accepted
+	pi.AcceptedResourceVector = pi.ResReqVector.Clone()
+	pi.AcceptedResourceVector.Set(resource_info.GPUIndex, pi.AcceptedGpuRequirement.GPUs()+float64(pi.AcceptedGpuRequirement.GetDraGpusCount()))
+	for migName, migCount := range pi.AcceptedGpuRequirement.MigResources() {
+		if idx := pi.VectorMap.GetIndex(migName); idx >= 0 {
+			pi.AcceptedResourceVector.Set(idx, float64(migCount))
+		}
+	}
 }
 
 func (ni *NodeInfo) lessEqualTaskToNodeResources(
-	taskResources *resource_info.ResourceRequirements, nodeResources *resource_info.Resource,
+	task *pod_info.PodInfo, nodeResourcesVector resource_info.ResourceVector,
 ) bool {
-	if !ni.isValidGpuPortion(taskResources) {
+	if !ni.isValidGpuPortion(&task.GpuRequirement) {
 		return false
 	}
-	return taskResources.LessEqualResource(nodeResources)
+	return task.ResReqVector.LessEqual(nodeResourcesVector)
 }
 
-func isMigResource(rName string) bool {
-	return strings.HasPrefix(rName, migResourcePrefix)
+func isMigResource(rName v1.ResourceName) bool {
+	return strings.HasPrefix(string(rName), migResourcePrefix)
 }
 
 // AddDRAGPUs adds DRA-based GPU capacity from ResourceSlices to this node's GPU pool.
@@ -755,6 +751,6 @@ func (ni *NodeInfo) AddDRAGPUs(draGPUs float64) {
 		return
 	}
 
-	ni.Allocatable.AddGPUs(draGPUs)
-	ni.Idle.AddGPUs(draGPUs)
+	ni.AllocatableVector.Set(resource_info.GPUIndex, ni.AllocatableVector.Get(resource_info.GPUIndex)+draGPUs)
+	ni.IdleVector.Set(resource_info.GPUIndex, ni.IdleVector.Get(resource_info.GPUIndex)+draGPUs)
 }

@@ -9,9 +9,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	rs "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	rs "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
 )
 
 func TestReclaimStrategies(t *testing.T) {
@@ -19,7 +19,168 @@ func TestReclaimStrategies(t *testing.T) {
 	RunSpecs(t, "Reclaim strategies tests")
 }
 
+func TestReclaimerFitsDeservedQuotaDoesNotAllocate(t *testing.T) {
+	vectorMap := resource_info.NewResourceVectorMap()
+	resources := resource_info.NewResourceVectorWithValues(1, 2, 3, vectorMap)
+	queue := &rs.QueueAttributes{
+		QueueResourceShare: rs.QueueResourceShare{
+			CPU:    rs.ResourceShare{Allocated: 1, Deserved: 2},
+			Memory: rs.ResourceShare{Allocated: 2, Deserved: 4},
+			GPU:    rs.ResourceShare{Allocated: 3, Deserved: 6},
+		},
+	}
+	var result bool
+
+	allocations := testing.AllocsPerRun(100, func() {
+		result = ReclaimerFitsDeservedQuota(resources, vectorMap, queue)
+	})
+
+	if !result {
+		t.Fatal("expected reclaimer to fit deserved quota")
+	}
+	if allocations != 0 {
+		t.Fatalf("expected zero allocations, got %v", allocations)
+	}
+}
+
+func TestMaintainFairShareStrategyDoesNotAllocateWhenVerboseLoggingIsDisabled(t *testing.T) {
+	reclaimerQueue := &rs.QueueAttributes{Name: "reclaimer"}
+	reclaimeeQueue := &rs.QueueAttributes{
+		Name: "reclaimee",
+		QueueResourceShare: rs.QueueResourceShare{
+			CPU: rs.ResourceShare{
+				Deserved:   1,
+				FairShare:  1,
+				MaxAllowed: commonconstants.UnlimitedResourceQuantity,
+			},
+			Memory: rs.ResourceShare{
+				Deserved:   1,
+				FairShare:  1,
+				MaxAllowed: commonconstants.UnlimitedResourceQuantity,
+			},
+			GPU: rs.ResourceShare{
+				Deserved:   1,
+				FairShare:  1,
+				MaxAllowed: commonconstants.UnlimitedResourceQuantity,
+			},
+		},
+	}
+	remaining := rs.NewResourceQuantities(2, 0, 0)
+	strategy := &MaintainFairShareStrategy{}
+	var result bool
+
+	allocations := testing.AllocsPerRun(100, func() {
+		result = strategy.Reclaimable(nil, testVectorMap, reclaimerQueue, reclaimeeQueue, remaining)
+	})
+
+	if !result {
+		t.Fatal("expected maintain-fair-share strategy to allow reclaim")
+	}
+	if allocations != 0 {
+		t.Fatalf("expected zero allocations, got %v", allocations)
+	}
+}
+
+func TestGuaranteeDeservedQuotaStrategyDoesNotAllocateWhenVerboseLoggingIsDisabled(t *testing.T) {
+	reclaimerQueue := &rs.QueueAttributes{
+		Name: "reclaimer",
+		QueueResourceShare: rs.QueueResourceShare{
+			CPU:    rs.ResourceShare{Deserved: 1},
+			Memory: rs.ResourceShare{Deserved: 1},
+			GPU:    rs.ResourceShare{Deserved: 1},
+		},
+	}
+	reclaimeeQueue := &rs.QueueAttributes{
+		Name: "reclaimee",
+		QueueResourceShare: rs.QueueResourceShare{
+			CPU:    rs.ResourceShare{Deserved: 1},
+			Memory: rs.ResourceShare{Deserved: 1},
+			GPU:    rs.ResourceShare{Deserved: 1},
+		},
+	}
+	resources := resource_info.NewResourceVectorWithValues(1, 0, 0, testVectorMap)
+	remaining := rs.NewResourceQuantities(2, 0, 0)
+	strategy := &GuaranteeDeservedQuotaStrategy{}
+	var result bool
+
+	allocations := testing.AllocsPerRun(100, func() {
+		result = strategy.Reclaimable(resources, testVectorMap, reclaimerQueue, reclaimeeQueue, remaining)
+	})
+
+	if !result {
+		t.Fatal("expected guarantee-deserved-quota strategy to allow reclaim")
+	}
+	if allocations != 0 {
+		t.Fatalf("expected zero allocations, got %v", allocations)
+	}
+}
+
+var testVectorMap = resource_info.NewResourceVectorMap()
+
 var _ = Describe("Reclaim strategies", func() {
+	Context("Reclaim strategy predicates", func() {
+		It("checks maintain fair share against allocatable share", func() {
+			reclaimeeQueue := &rs.QueueAttributes{
+				Name: "p2",
+				QueueResourceShare: rs.QueueResourceShare{
+					GPU: rs.ResourceShare{
+						Deserved:   2,
+						FairShare:  4,
+						MaxAllowed: commonconstants.UnlimitedResourceQuantity,
+					},
+					CPU:    rs.ResourceShare{},
+					Memory: rs.ResourceShare{},
+				},
+			}
+
+			Expect(FitsMaintainFairShare(
+				reclaimeeQueue, rs.NewResourceQuantities(0, 0, 3),
+			)).To(BeFalse())
+			Expect(FitsMaintainFairShare(
+				reclaimeeQueue, rs.NewResourceQuantities(0, 0, 5),
+			)).To(BeTrue())
+		})
+
+		It("checks deserved quota strategy boundaries", func() {
+			reclaimerQueue := &rs.QueueAttributes{
+				Name: "p1",
+				QueueResourceShare: rs.QueueResourceShare{
+					GPU: rs.ResourceShare{
+						Deserved:  4,
+						FairShare: 4,
+						Allocated: 2,
+					},
+					CPU:    rs.ResourceShare{},
+					Memory: rs.ResourceShare{},
+				},
+			}
+			reclaimeeQueue := &rs.QueueAttributes{
+				Name: "p2",
+				QueueResourceShare: rs.QueueResourceShare{
+					GPU: rs.ResourceShare{
+						Deserved:  2,
+						FairShare: 4,
+					},
+					CPU:    rs.ResourceShare{},
+					Memory: rs.ResourceShare{},
+				},
+			}
+
+			Expect(ReclaimerFitsDeservedQuota(
+				resource_info.NewResource(0, 0, 2).ToVector(testVectorMap), testVectorMap, reclaimerQueue,
+			)).To(BeTrue())
+			Expect(ReclaimerFitsDeservedQuota(
+				resource_info.NewResource(0, 0, 3).ToVector(testVectorMap), testVectorMap, reclaimerQueue,
+			)).To(BeFalse())
+			Expect(ReclaimeeExceedsDeservedQuota(
+				reclaimeeQueue, rs.NewResourceQuantities(0, 0, 3),
+			)).To(BeTrue())
+			Expect(ReclaimeeExceedsDeservedQuota(
+				reclaimeeQueue, rs.NewResourceQuantities(0, 0, 2),
+			)).To(BeFalse())
+		})
+	})
+
 	Context("Maintain Fair Share Strategy", func() {
 		tests := map[string]struct {
 			reclaimerQueue *rs.QueueAttributes
@@ -180,7 +341,7 @@ var _ = Describe("Reclaim strategies", func() {
 			testData := testData
 			It(testName, func() {
 				remainingResourceShare := testData.reclaimeeQueue.GetAllocatedShare()
-				reclaimable := strategy.Reclaimable(nil, testData.reclaimerQueue, testData.reclaimeeQueue,
+				reclaimable := strategy.Reclaimable(nil, testVectorMap, testData.reclaimerQueue, testData.reclaimeeQueue,
 					remainingResourceShare)
 				Expect(testData.expected).To(Equal(reclaimable))
 			})
@@ -542,7 +703,7 @@ var _ = Describe("Reclaim strategies", func() {
 			testName := testName
 			testData := testData
 			It(testName, func() {
-				reclaimable := strategy.Reclaimable(nil, testData.reclaimerQueue, testData.reclaimeeQueue,
+				reclaimable := strategy.Reclaimable(nil, testVectorMap, testData.reclaimerQueue, testData.reclaimeeQueue,
 					testData.remainingResourceShare)
 				Expect(reclaimable).To(Equal(testData.expected))
 			})
@@ -551,13 +712,13 @@ var _ = Describe("Reclaim strategies", func() {
 
 	Context("Guarantee Deserved Quota Strategy", func() {
 		tests := map[string]struct {
-			reclaimerResources *resource_info.Resource
+			reclaimerResources resource_info.ResourceVector
 			reclaimerQueue     *rs.QueueAttributes
 			reclaimeeQueue     *rs.QueueAttributes
 			expected           bool
 		}{
 			"Reclaimer is above deserved quota and reclaimee above deserved quota": {
-				reclaimerResources: resource_info.NewResource(0, 0, 2),
+				reclaimerResources: resource_info.NewResource(0, 0, 2).ToVector(testVectorMap),
 				reclaimerQueue: &rs.QueueAttributes{
 					Name: "p1",
 					QueueResourceShare: rs.QueueResourceShare{
@@ -585,7 +746,7 @@ var _ = Describe("Reclaim strategies", func() {
 				expected: false,
 			},
 			"Reclaimer reaches exactly deserved quota and reclaimee above deserved quota": {
-				reclaimerResources: resource_info.NewResource(0, 0, 2),
+				reclaimerResources: resource_info.NewResource(0, 0, 2).ToVector(testVectorMap),
 				reclaimerQueue: &rs.QueueAttributes{
 					Name: "p1",
 					QueueResourceShare: rs.QueueResourceShare{
@@ -613,7 +774,7 @@ var _ = Describe("Reclaim strategies", func() {
 				expected: true,
 			},
 			"Reclaimer gets exactly deserved quota and reclaimee remains with exactly deserved quota": {
-				reclaimerResources: resource_info.NewResource(0, 0, 2),
+				reclaimerResources: resource_info.NewResource(0, 0, 2).ToVector(testVectorMap),
 				reclaimerQueue: &rs.QueueAttributes{
 					Name: "p1",
 					QueueResourceShare: rs.QueueResourceShare{
@@ -641,7 +802,7 @@ var _ = Describe("Reclaim strategies", func() {
 				expected: true,
 			},
 			"Reclaimer gets exactly deserved quota and reclaimee goes below deserved quota": {
-				reclaimerResources: resource_info.NewResource(0, 0, 2),
+				reclaimerResources: resource_info.NewResource(0, 0, 2).ToVector(testVectorMap),
 				reclaimerQueue: &rs.QueueAttributes{
 					Name: "p1",
 					QueueResourceShare: rs.QueueResourceShare{
@@ -677,7 +838,7 @@ var _ = Describe("Reclaim strategies", func() {
 				expected: true,
 			},
 			"Reclaimer is below deserved quota and reclaimee is above deserved quota in *only one* of the resources": {
-				reclaimerResources: resource_info.NewResource(0, 0, 2),
+				reclaimerResources: resource_info.NewResource(0, 0, 2).ToVector(testVectorMap),
 				reclaimerQueue: &rs.QueueAttributes{
 					Name: "p1",
 					QueueResourceShare: rs.QueueResourceShare{
@@ -708,7 +869,7 @@ var _ = Describe("Reclaim strategies", func() {
 				expected: true,
 			},
 			"Reclaimer is below deserved quota and reclaimee has exactly deserved quota": {
-				reclaimerResources: resource_info.NewResource(0, 0, 2),
+				reclaimerResources: resource_info.NewResource(0, 0, 2).ToVector(testVectorMap),
 				reclaimerQueue: &rs.QueueAttributes{
 					Name: "p1",
 					QueueResourceShare: rs.QueueResourceShare{
@@ -736,7 +897,7 @@ var _ = Describe("Reclaim strategies", func() {
 				expected: false,
 			},
 			"Reclaimer is below deserved quota and reclaimee is below deserved quota": {
-				reclaimerResources: resource_info.NewResource(0, 0, 2),
+				reclaimerResources: resource_info.NewResource(0, 0, 2).ToVector(testVectorMap),
 				reclaimerQueue: &rs.QueueAttributes{
 					Name: "p1",
 					QueueResourceShare: rs.QueueResourceShare{
@@ -764,7 +925,7 @@ var _ = Describe("Reclaim strategies", func() {
 				expected: false,
 			},
 			"Zero quota queue gives up on all resources in favor of a starved queue": {
-				reclaimerResources: resource_info.NewResource(0, 0, 2),
+				reclaimerResources: resource_info.NewResource(0, 0, 2).ToVector(testVectorMap),
 				reclaimerQueue: &rs.QueueAttributes{
 					Name: "p1",
 					QueueResourceShare: rs.QueueResourceShare{
@@ -798,7 +959,7 @@ var _ = Describe("Reclaim strategies", func() {
 			testName := testName
 			testData := testData
 			It(testName, func() {
-				reclaimable := strategy.Reclaimable(testData.reclaimerResources, testData.reclaimerQueue,
+				reclaimable := strategy.Reclaimable(testData.reclaimerResources, testVectorMap, testData.reclaimerQueue,
 					testData.reclaimeeQueue, testData.reclaimeeQueue.GetAllocatedShare())
 				Expect(testData.expected).To(Equal(reclaimable))
 			})

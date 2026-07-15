@@ -4,11 +4,11 @@
 package gpusharingorder
 
 import (
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/scores"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/scores"
 )
 
 type gpuSharingOrderPlugin struct {
@@ -29,7 +29,7 @@ func (g *gpuSharingOrderPlugin) OnSessionOpen(ssn *framework.Session) {
 func (g *gpuSharingOrderPlugin) nodeOrderFn(pod *pod_info.PodInfo, node *node_info.NodeInfo) (float64, error) {
 	score := 0.0
 	for gpuGroup := range node.UsedSharedGPUsMemory {
-		if !node.IsTaskFitOnGpuGroup(pod.ResReq, gpuGroup) {
+		if !node.IsTaskFitOnGpuGroup(&pod.GpuRequirement, gpuGroup) {
 			continue
 		}
 

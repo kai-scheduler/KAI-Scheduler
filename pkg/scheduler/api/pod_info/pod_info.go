@@ -23,23 +23,25 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	v1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
+	"k8s.io/apimachinery/pkg/types"
 	clientcache "k8s.io/client-go/tools/cache"
 
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/resources"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/storageclaim_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
+	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/storageclaim_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 )
 
 const (
-	GpuMemoryAnnotationName            = "gpu-memory"
 	GPUGroup                           = "runai-gpu-group"
 	ReceivedResourceTypeAnnotationName = "received-resource-type"
 	WholeGpuIndicator                  = "-2"
@@ -77,13 +79,20 @@ type PodInfo struct {
 	ResourceRequestType  ResourceRequestType
 	ResourceReceivedType ResourceReceivedType
 
-	// ResReq are the minimal resources that needed to launch a pod. (includes init containers resources)
-	ResReq           *resource_info.ResourceRequirements
-	AcceptedResource *resource_info.ResourceRequirements
+	// Vector representation of resource requirements
+	ResReqVector           resource_info.ResourceVector
+	AcceptedResourceVector resource_info.ResourceVector
+	VectorMap              *resource_info.ResourceVectorMap
+
+	// GPU-specific resource requirements (portion, count, gpu memory, MIG resources)
+	GpuRequirement         resource_info.GpuResourceRequirement
+	AcceptedGpuRequirement resource_info.GpuResourceRequirement
 
 	schedulingConstraintsSignature common_info.SchedulingConstraintsSignature
 
 	GPUGroups []string
+
+	NUMAPlacement NUMAPlacement
 
 	NodeName        string
 	Status          pod_status.PodStatus
@@ -103,6 +112,12 @@ type PodInfo struct {
 	storageClaims map[storageclaim_info.Key]*storageclaim_info.StorageClaimInfo
 
 	Pod *v1.Pod
+}
+
+type TaskInfoOptions struct {
+	BindRequest               *bindrequest_info.BindRequestInfo
+	DraPodClaims              []*resourceapi.ResourceClaim
+	StuckInReleasingThreshold time.Duration
 }
 
 func (pi *PodInfo) GetAllStorageClaims() map[storageclaim_info.Key]*storageclaim_info.StorageClaimInfo {
@@ -161,16 +176,20 @@ func (pi *PodInfo) UpsertStorageClaim(claimInfo *storageclaim_info.StorageClaimI
 	pi.storageClaims[claimInfo.Key] = claimInfo
 }
 
-func NewTaskInfo(pod *v1.Pod, draPodClaims ...*resourceapi.ResourceClaim) *PodInfo {
-	return NewTaskInfoWithBindRequest(pod, nil, draPodClaims...)
-}
+func NewTaskInfo(pod *v1.Pod, vectorMap *resource_info.ResourceVectorMap, opts ...TaskInfoOptions) *PodInfo {
+	options := TaskInfoOptions{StuckInReleasingThreshold: commonconstants.DefaultStuckInReleasingThreshold}
+	options.ApplyOptions(opts...)
 
-func NewTaskInfoWithBindRequest(pod *v1.Pod, bindRequest *bindrequest_info.BindRequestInfo, draPodClaims ...*resourceapi.ResourceClaim) *PodInfo {
 	initResreq := getPodResourceRequest(pod)
 
 	nodeName := pod.Spec.NodeName
-	if nodeName == "" && bindRequest != nil {
-		nodeName = bindRequest.BindRequest.Spec.SelectedNode
+	if nodeName == "" && options.BindRequest != nil {
+		nodeName = options.BindRequest.BindRequest.Spec.SelectedNode
+	}
+
+	resourceClaimInfo, err := resourceClaimInfoFromPodClaims(options.DraPodClaims, pod, options.BindRequest)
+	if err != nil {
+		log.InfraLogger.Errorf("PodInfo ctor failure - failed to calculate resource claim info for pod %s/%s: %v", pod.Namespace, pod.Name, err)
 	}
 
 	podInfo := &PodInfo{
@@ -180,51 +199,117 @@ func NewTaskInfoWithBindRequest(pod *v1.Pod, bindRequest *bindrequest_info.BindR
 		Namespace:                      pod.Namespace,
 		SubGroupName:                   pod.Labels[commonconstants.SubGroupLabelKey],
 		NodeName:                       nodeName,
-		Status:                         getTaskStatus(pod, bindRequest),
+		Status:                         getTaskStatus(pod, options.BindRequest, options.StuckInReleasingThreshold),
 		IsVirtualStatus:                false,
 		IsLegacyMIGtask:                false,
 		Pod:                            pod,
-		ResReq:                         initResreq,
-		AcceptedResource:               resource_info.EmptyResourceRequirements(),
+		GpuRequirement:                 initResreq.GpuResourceRequirement,
+		AcceptedGpuRequirement:         *resource_info.NewGpuResourceRequirement(),
+		ResReqVector:                   initResreq.ToVector(vectorMap),
+		AcceptedResourceVector:         resource_info.NewResourceVector(vectorMap),
+		VectorMap:                      vectorMap,
 		GPUGroups:                      []string{},
 		ResourceRequestType:            RequestTypeRegular,
 		ResourceReceivedType:           ReceivedTypeNone,
-		BindRequest:                    bindRequest,
+		BindRequest:                    options.BindRequest,
+		ResourceClaimInfo:              resourceClaimInfo,
 		schedulingConstraintsSignature: "",
 		storageClaims:                  map[storageclaim_info.Key]*storageclaim_info.StorageClaimInfo{},
 		ownedStorageClaims:             map[storageclaim_info.Key]*storageclaim_info.StorageClaimInfo{},
 	}
 
-	podInfo.updatePodAdditionalFields(bindRequest, draPodClaims...)
+	podInfo.updatePodAdditionalFields(options.BindRequest, options.DraPodClaims...)
+
 	return podInfo
 }
 
+func resourceClaimInfoFromPodClaims(draPodClaims []*resourceapi.ResourceClaim, pod *v1.Pod, bindRequest *bindrequest_info.BindRequestInfo) (bindrequest_info.ResourceClaimInfo, error) {
+	resourceClaimInfo := make(bindrequest_info.ResourceClaimInfo)
+
+	bindingRequestClaimUpdates := make(map[string]*schedulingv1alpha2.ResourceClaimAllocation)
+	if bindRequest != nil {
+		for _, claimAllocation := range bindRequest.BindRequest.Spec.ResourceClaimAllocations {
+			bindingRequestClaimUpdates[claimAllocation.Name] = &schedulingv1alpha2.ResourceClaimAllocation{
+				Name:       claimAllocation.Name,
+				Allocation: claimAllocation.Allocation.DeepCopy(),
+			}
+		}
+	}
+
+	draPodClaimsMap := resource_info.ResourceClaimSliceToMap(draPodClaims)
+	for _, podClaim := range pod.Spec.ResourceClaims {
+		claimName, err := resources.GetResourceClaimName(pod, &podClaim)
+		if err != nil {
+			if podClaim.ResourceClaimTemplateName != nil {
+				continue // The dra controller might not have created the claim yet - this is a valid state. The will fail on the dra plugin.
+			}
+			return resourceClaimInfo, fmt.Errorf("PodInfo ctor failure - failed to get resource claim name for pod %s/%s, claim %s: %v", pod.Namespace, pod.Name, podClaim.Name, err)
+		}
+		claim, found := draPodClaimsMap[types.NamespacedName{Namespace: pod.Namespace, Name: claimName}.String()]
+		if !found || claim == nil {
+			if podClaim.ResourceClaimTemplateName != nil {
+				continue // The dra controller might not have created the claim yet - this is a valid state. The will fail on the dra plugin.
+			}
+			return resourceClaimInfo, fmt.Errorf("PodInfo ctor failure - failed to get claim from draPodClaimsMap for pod %s/%s, claim %s", pod.Namespace, pod.Name, podClaim.Name)
+		}
+		resourceClaimInfo[podClaim.Name] = &schedulingv1alpha2.ResourceClaimAllocation{
+			Name:       podClaim.Name,
+			Allocation: claim.Status.Allocation,
+		}
+
+		// If a binding claim already exists, assume this is the allocation that will happen for the pod
+		if claimUpdate, found := bindingRequestClaimUpdates[podClaim.Name]; found {
+			resourceClaimInfo[podClaim.Name].Allocation = claimUpdate.Allocation
+		}
+	}
+	return resourceClaimInfo, nil
+}
+
+func (pi *PodInfo) SetVectorMap(vectorMap *resource_info.ResourceVectorMap) {
+	pi.VectorMap = vectorMap
+	// Rebuild vectors from pod spec - ResReqVector was already computed from the pod resource request
+	// AcceptedResourceVector stays as-is since it's set by setAcceptedResources
+}
+
 func (pi *PodInfo) Clone() *PodInfo {
+	var resReqVectorClone resource_info.ResourceVector
+	if pi.ResReqVector != nil {
+		resReqVectorClone = pi.ResReqVector.Clone()
+	}
+	var acceptedResourceVectorClone resource_info.ResourceVector
+	if pi.AcceptedResourceVector != nil {
+		acceptedResourceVectorClone = pi.AcceptedResourceVector.Clone()
+	}
+
 	return &PodInfo{
-		UID:                  pi.UID,
-		Job:                  pi.Job,
-		Name:                 pi.Name,
-		Namespace:            pi.Namespace,
-		SubGroupName:         pi.SubGroupName,
-		NodeName:             pi.NodeName,
-		Status:               pi.Status,
-		Pod:                  pi.Pod,
-		ResReq:               pi.ResReq.Clone(),
-		AcceptedResource:     pi.AcceptedResource.Clone(),
-		GPUGroups:            pi.GPUGroups,
-		ResourceClaimInfo:    pi.ResourceClaimInfo.Clone(),
-		ResourceRequestType:  pi.ResourceRequestType,
-		ResourceReceivedType: pi.ResourceReceivedType,
-		IsVirtualStatus:      pi.IsVirtualStatus,
-		IsLegacyMIGtask:      pi.IsLegacyMIGtask,
-		storageClaims:        pi.storageClaims,
-		ownedStorageClaims:   pi.ownedStorageClaims,
+		UID:                    pi.UID,
+		Job:                    pi.Job,
+		Name:                   pi.Name,
+		Namespace:              pi.Namespace,
+		SubGroupName:           pi.SubGroupName,
+		NodeName:               pi.NodeName,
+		Status:                 pi.Status,
+		Pod:                    pi.Pod,
+		GpuRequirement:         *pi.GpuRequirement.Clone(),
+		AcceptedGpuRequirement: *pi.AcceptedGpuRequirement.Clone(),
+		ResReqVector:           resReqVectorClone,
+		AcceptedResourceVector: acceptedResourceVectorClone,
+		VectorMap:              pi.VectorMap,
+		GPUGroups:              pi.GPUGroups,
+		NUMAPlacement:          pi.NUMAPlacement.Clone(),
+		ResourceClaimInfo:      pi.ResourceClaimInfo.Clone(),
+		ResourceRequestType:    pi.ResourceRequestType,
+		ResourceReceivedType:   pi.ResourceReceivedType,
+		IsVirtualStatus:        pi.IsVirtualStatus,
+		IsLegacyMIGtask:        pi.IsLegacyMIGtask,
+		storageClaims:          pi.storageClaims,
+		ownedStorageClaims:     pi.ownedStorageClaims,
 	}
 }
 
 func (pi PodInfo) String() string {
-	return fmt.Sprintf("Pod (%v:%v/%v): job %v, status %v, resreq %v",
-		pi.UID, pi.Namespace, pi.Name, pi.Job, pi.Status, pi.ResReq)
+	return fmt.Sprintf("Pod (%v:%v/%v): job %v, status %v, resreq %v, gpu %v",
+		pi.UID, pi.Namespace, pi.Name, pi.Job, pi.Status, pi.ResReqVector, pi.GpuRequirement.GpusAsString())
 }
 
 func (pi *PodInfo) IsMigProfileRequest() bool {
@@ -251,7 +336,7 @@ func (pi *PodInfo) IsMigCandidate() bool {
 	return pi.ResourceRequestType == RequestTypeMigInstance
 }
 
-func (pi *PodInfo) IsMemoryRequest() bool {
+func (pi *PodInfo) IsGpuMemoryRequest() bool {
 	return pi.ResourceRequestType == RequestTypeGpuMemory
 }
 
@@ -260,7 +345,7 @@ func (pi *PodInfo) IsRegularGPURequest() bool {
 }
 
 func (pi *PodInfo) IsSharedGPURequest() bool {
-	return pi.IsFractionRequest() || pi.IsMemoryRequest()
+	return pi.IsFractionRequest() || pi.IsGpuMemoryRequest()
 }
 
 func (pi *PodInfo) IsSharedGPUAllocation() bool {
@@ -272,8 +357,8 @@ func (pi *PodInfo) IsCPUOnlyRequest() bool {
 }
 
 func (pi *PodInfo) IsRequireAnyKindOfGPU() bool {
-	return pi.ResReq.GPUs() > 0 || pi.ResReq.GpuResourceRequirement.GetDraGpusCount() > 0 ||
-		pi.IsMemoryRequest() || pi.IsMigProfileRequest()
+	return pi.GpuRequirement.GPUs() > 0 || pi.GpuRequirement.GetDraGpusCount() > 0 ||
+		pi.IsGpuMemoryRequest() || pi.IsMigProfileRequest()
 }
 
 func (pi *PodInfo) GetSchedulingConstraintsSignature() common_info.SchedulingConstraintsSignature {
@@ -303,21 +388,48 @@ func getPodGroupID(pod *v1.Pod) common_info.PodGroupID {
 func getPodResourceRequest(pod *v1.Pod) *resource_info.ResourceRequirements {
 	result := getPodResourceWithoutInitContainers(pod)
 
-	// take max_resource(sum_pod, any_init_container)
-	for _, container := range pod.Spec.InitContainers {
-		err := result.SetMaxResource(resource_info.RequirementsFromResourceList(container.Resources.Requests))
-		if err != nil {
-			log.InfraLogger.Errorf("Failed to calculate pod required resources for pod %s/%s. Error: %s",
-				pod.Namespace, pod.Name, err.Error())
-		}
-	}
+	sidecarSum, initPhasePeak := initContainerEffects(pod)
+	logIfErr(pod, result.Add(sidecarSum))
+	logIfErr(pod, result.SetMaxResource(initPhasePeak))
 
 	if pod.Spec.Overhead != nil {
 		overheadReq := resource_info.RequirementsFromResourceList(pod.Spec.Overhead)
-		result.Add(&overheadReq.BaseResource)
+		result.BaseResource.Add(&overheadReq.BaseResource)
 	}
 
+	result.ScalarResources()[resource_info.PodsResourceName] = 1
+
 	return result
+}
+
+// initContainerEffects returns the contributions of `pod`'s init containers to
+// pod resource accounting, mirroring kubelet's `AggregateContainerRequests`:
+//   - sidecarSum: total request of native sidecars (initContainers with
+//     `restartPolicy: Always`, KEP-753), which run concurrently with regular
+//     containers and add to the steady-state sum.
+//   - initPhasePeak: max over each non-restartable init of `init.Requests +
+//     sum(native sidecars declared before it)`, since those sidecars are
+//     already running when the init runs.
+func initContainerEffects(pod *v1.Pod) (sidecarSum, initPhasePeak *resource_info.ResourceRequirements) {
+	sidecarSum = resource_info.EmptyResourceRequirements()
+	initPhasePeak = resource_info.EmptyResourceRequirements()
+	for _, container := range pod.Spec.InitContainers {
+		containerReq := resource_info.RequirementsFromResourceList(container.Resources.Requests)
+		if container.RestartPolicy != nil && *container.RestartPolicy == v1.ContainerRestartPolicyAlways {
+			logIfErr(pod, sidecarSum.Add(containerReq))
+			continue
+		}
+		logIfErr(pod, containerReq.Add(sidecarSum))
+		logIfErr(pod, initPhasePeak.SetMaxResource(containerReq))
+	}
+	return sidecarSum, initPhasePeak
+}
+
+func logIfErr(pod *v1.Pod, err error) {
+	if err != nil {
+		log.InfraLogger.Errorf("Failed to calculate pod required resources for pod %s/%s. Error: %s",
+			pod.Namespace, pod.Name, err.Error())
+	}
 }
 
 // getPodResourceWithoutInitContainers returns Pod's resource request, it does not contain
@@ -335,10 +447,13 @@ func getPodResourceWithoutInitContainers(pod *v1.Pod) *resource_info.ResourceReq
 	return resource_info.RequirementsFromResourceList(podResourcesList)
 }
 
-func getTaskStatus(pod *v1.Pod, bindRequest *bindrequest_info.BindRequestInfo) pod_status.PodStatus {
+func getTaskStatus(pod *v1.Pod, bindRequest *bindrequest_info.BindRequestInfo, stuckInReleasingThreshold time.Duration) pod_status.PodStatus {
 	switch pod.Status.Phase {
 	case v1.PodRunning:
 		if pod.DeletionTimestamp != nil {
+			if time.Since(pod.DeletionTimestamp.Time) > stuckInReleasingThreshold {
+				return pod_status.StuckInReleasing
+			}
 			return pod_status.Releasing
 		}
 
@@ -388,17 +503,16 @@ func (pi *PodInfo) updatePodAdditionalFields(bindRequest *bindrequest_info.BindR
 		}
 	}
 
-	gpuMemory, err := strconv.ParseInt(pi.Pod.Annotations[GpuMemoryAnnotationName], 10, 64)
+	gpuMemory, err := strconv.ParseInt(pi.Pod.Annotations[commonconstants.GpuMemory], 10, 64)
 	if err == nil && gpuMemory > 0 {
-		pi.ResReq.GpuResourceRequirement =
-			*resource_info.NewGpuResourceRequirementWithGpus(0, gpuMemory)
+		pi.GpuRequirement = *resource_info.NewGpuResourceRequirementWithGpus(0, gpuMemory)
 		pi.ResourceRequestType = RequestTypeGpuMemory
 	}
 
-	gpuFractionString := pi.Pod.Annotations[common_info.GPUFraction]
+	gpuFractionString := pi.Pod.Annotations[commonconstants.GpuFraction]
 	gpuFraction, GPUFractionErr := strconv.ParseFloat(gpuFractionString, 64)
 	if !(gpuFraction <= 0 || gpuFraction > 1 || GPUFractionErr != nil) {
-		pi.ResReq.GpuResourceRequirement = *resource_info.NewGpuResourceRequirementWithGpus(gpuFraction, 0)
+		pi.GpuRequirement = *resource_info.NewGpuResourceRequirementWithGpus(gpuFraction, 0)
 		pi.ResourceRequestType = RequestTypeFraction
 	}
 
@@ -407,7 +521,7 @@ func (pi *PodInfo) updatePodAdditionalFields(bindRequest *bindrequest_info.BindR
 		if found && numFractionDevicesStr != "" {
 			numFractionDevices, numFractionDevicesErr := strconv.ParseInt(numFractionDevicesStr, 10, 64)
 			if numFractionDevicesErr == nil {
-				pi.ResReq.GpuResourceRequirement = *resource_info.NewGpuResourceRequirementWithMultiFraction(
+				pi.GpuRequirement = *resource_info.NewGpuResourceRequirementWithMultiFraction(
 					numFractionDevices, gpuFraction, gpuMemory)
 			}
 		}
@@ -415,13 +529,14 @@ func (pi *PodInfo) updatePodAdditionalFields(bindRequest *bindrequest_info.BindR
 
 	if len(draPodClaims) > 0 {
 		draGpus := resources.ExtractDRAGPUResourcesFromClaims(draPodClaims)
-		pi.ResReq.GpuResourceRequirement.SetDraGpus(draGpus)
+		pi.GpuRequirement.SetDraGpus(draGpus)
 	}
 
 	pi.updateLegacyMigResourceRequestFromAnnotations()
-	if len(pi.ResReq.MigResources()) > 0 {
+	if len(pi.GpuRequirement.MigResources()) > 0 {
 		pi.ResourceRequestType = RequestTypeMigInstance
 	}
+	pi.rebuildResReqVector()
 }
 
 // updateLegacyMigResourceRequestFromAnnotations updates the mig resource request of legacy MIG pods
@@ -436,8 +551,18 @@ func (pi *PodInfo) updateLegacyMigResourceRequestFromAnnotations() {
 			migResources := map[v1.ResourceName]int64{
 				v1.ResourceName(annotationName): value,
 			}
-			pi.ResReq.GpuResourceRequirement = *resource_info.NewGpuResourceRequirementWithMig(migResources)
+			pi.GpuRequirement = *resource_info.NewGpuResourceRequirementWithMig(migResources)
 			pi.IsLegacyMIGtask = true
+		}
+	}
+}
+
+// rebuildResReqVector rebuilds ResReqVector from the current vector base resources and GpuRequirement.
+func (pi *PodInfo) rebuildResReqVector() {
+	pi.ResReqVector.Set(resource_info.GPUIndex, pi.GpuRequirement.GPUs()+float64(pi.GpuRequirement.GetDraGpusCount()))
+	for migName, migCount := range pi.GpuRequirement.MigResources() {
+		if idx := pi.VectorMap.GetIndex(migName); idx >= 0 {
+			pi.ResReqVector.Set(idx, float64(migCount))
 		}
 	}
 }
@@ -445,4 +570,23 @@ func (pi *PodInfo) updateLegacyMigResourceRequestFromAnnotations() {
 func (pi *PodInfo) ShouldAllocate(isRealAllocation bool) bool {
 	return pi.Status == pod_status.Pending ||
 		(!isRealAllocation && pi.Status == pod_status.Releasing && pi.IsVirtualStatus)
+}
+
+func (o *TaskInfoOptions) ApplyOptions(opts ...TaskInfoOptions) *TaskInfoOptions {
+	for _, opt := range opts {
+		o.ApplyToList(opt)
+	}
+	return o
+}
+
+func (o *TaskInfoOptions) ApplyToList(inputOptions TaskInfoOptions) {
+	if inputOptions.BindRequest != nil {
+		o.BindRequest = inputOptions.BindRequest
+	}
+	if len(inputOptions.DraPodClaims) > 0 {
+		o.DraPodClaims = inputOptions.DraPodClaims
+	}
+	if inputOptions.StuckInReleasingThreshold > 0 {
+		o.StuckInReleasingThreshold = inputOptions.StuckInReleasingThreshold
+	}
 }

@@ -6,13 +6,13 @@ package preempt_test
 import (
 	"testing"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/integration_tests/integration_tests_utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/integration_tests_utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 )
 
 func TestPreemptIntegrationTest(t *testing.T) {
@@ -494,6 +494,123 @@ func getPreemptTestsMetadata() []integration_tests_utils.TestTopologyMetadata {
 						NodeName:     "node0",
 						GPUsRequired: 1,
 						Status:       pod_status.Running,
+					},
+				},
+			},
+		},
+		{
+			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Name: "Job with a StuckInReleasing pod is not a preempt victim",
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:                "stuck_victim_job",
+						RequiredGPUsPerTask: 1,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "queue0",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								NodeName: "node0",
+								State:    pod_status.StuckInReleasing,
+							},
+						},
+					},
+					{
+						Name:                "preemptor_job",
+						RequiredGPUsPerTask: 1,
+						Priority:            constants.PriorityBuildNumber,
+						QueueName:           "queue0",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								State: pod_status.Pending,
+							},
+						},
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node0": {GPUs: 1},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{Name: "queue0", DeservedGPUs: 1},
+				},
+				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"stuck_victim_job": {
+						NodeName:     "node0",
+						GPUsRequired: 1,
+						Status:       pod_status.StuckInReleasing,
+					},
+					"preemptor_job": {
+						GPUsRequired: 1,
+						Status:       pod_status.Pending,
+					},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{
+						NumberOfCacheBinds:      0,
+						NumberOfCacheEvictions:  0,
+						NumberOfPipelineActions: 0,
+					},
+				},
+			},
+		},
+		{
+			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Name: "Job with a Running pod and a StuckInReleasing pod - preempt evicts the Running sibling",
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:                "preemptor_job",
+						RequiredGPUsPerTask: 1,
+						Priority:            constants.PriorityBuildNumber,
+						QueueName:           "queue0",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								State: pod_status.Pending,
+							},
+						},
+					},
+					{
+						Name:                "mixed_victim_job",
+						RequiredGPUsPerTask: 1,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "queue0",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								NodeName: "node0",
+								State:    pod_status.Running,
+							},
+							{
+								NodeName: "node0",
+								State:    pod_status.StuckInReleasing,
+							},
+						},
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node0": {GPUs: 2},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{Name: "queue0", DeservedGPUs: 2},
+				},
+				TaskExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"preemptor_job-0": {
+						NodeName:     "node0",
+						GPUsRequired: 1,
+						Status:       pod_status.Running,
+					},
+					"mixed_victim_job-0": {
+						GPUsRequired: 1,
+						Status:       pod_status.Pending,
+					},
+					"mixed_victim_job-1": {
+						NodeName:     "node0",
+						GPUsRequired: 1,
+						Status:       pod_status.StuckInReleasing,
+					},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{
+						NumberOfCacheBinds:      1,
+						NumberOfCacheEvictions:  1,
+						NumberOfPipelineActions: 1,
 					},
 				},
 			},

@@ -24,17 +24,18 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 
-	kaiv1alpha1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1alpha1"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/configmap_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/csidriver_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/queue_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/storagecapacity_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/storageclaim_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/storageclass_info"
+	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/configmap_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/csidriver_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/storagecapacity_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/storageclaim_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/storageclass_info"
 	resourceapi "k8s.io/api/resource/v1"
 )
 
@@ -44,6 +45,8 @@ type ClusterInfo struct {
 	PodGroupInfos               map[common_info.PodGroupID]*podgroup_info.PodGroupInfo
 	Nodes                       map[string]*node_info.NodeInfo
 	ResourceClaims              []*resourceapi.ResourceClaim
+	ResourceSlices              []*resourceapi.ResourceSlice
+	DeviceClasses               []*resourceapi.DeviceClass
 	BindRequests                bindrequest_info.BindRequestMap
 	BindRequestsForDeletedNodes []*bindrequest_info.BindRequestInfo
 	Queues                      map[common_info.QueueID]*queue_info.QueueInfo
@@ -56,7 +59,11 @@ type ClusterInfo struct {
 	ConfigMaps                  map[common_info.ConfigMapID]*configmap_info.ConfigMapInfo
 	Topologies                  []*kaiv1alpha1.Topology
 
-	MinNodeGPUMemory int64
+	MinNodeGPUMemoryMiB *int64 // nil if no node has GPUs
+	MaxNodeGPUMemoryMiB *int64 // nil if no node has GPUs
+
+	// Shared resource vector index map for this scheduling cycle
+	ResourceVectorMap *resource_info.ResourceVectorMap
 }
 
 func NewClusterInfo() *ClusterInfo {
@@ -83,7 +90,7 @@ func (ci ClusterInfo) String() string {
 		str = str + "Nodes:\n"
 		for _, n := range ci.Nodes {
 			str = str + fmt.Sprintf("\t %s: idle(%v) used(%v) allocatable(%v) pods(%d)\n",
-				n.Name, n.Idle, n.Used, n.Allocatable, len(n.PodInfos))
+				n.Name, n.IdleVector, n.UsedVector, n.AllocatableVector, len(n.PodInfos))
 
 			i := 0
 			for _, p := range n.PodInfos {
@@ -99,7 +106,7 @@ func (ci ClusterInfo) String() string {
 			str = str + fmt.Sprintf("\t Job(%s) name(%s)\n",
 				job.UID, job.Name)
 
-			for _, subGroup := range job.GetSubGroups() {
+			for _, subGroup := range job.GetAllPodSets() {
 				str = str + fmt.Sprintf("\t\t subGroup(%s), minAvailable(%v)\n",
 					subGroup.GetName(), subGroup.GetMinAvailable())
 			}

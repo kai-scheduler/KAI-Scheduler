@@ -8,13 +8,13 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/scores"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/scores"
 )
 
 func (pp *nodePlacementPlugin) nodeResourcePack(resourceName v1.ResourceName) api.NodeOrderFn {
@@ -22,7 +22,7 @@ func (pp *nodePlacementPlugin) nodeResourcePack(resourceName v1.ResourceName) ap
 		podAllocationRange := pp.podAllocatableRange[string(task.UID)]
 		currentNodeNonAllocated := node.NonAllocatedResource(resourceName)
 
-		nodeOverall := node.Allocatable.Get(resourceName)
+		nodeOverall := node.AllocatableVector.Get(node.VectorMap.GetIndex(resourceName))
 		score := getScoreOfCurrentNode(podAllocationRange.minAllocatable, podAllocationRange.maxAllocatable,
 			currentNodeNonAllocated, nodeOverall)
 		log.InfraLogger.V(7).Infof("Estimating Task: <%v/%v> Job: <%v> for node: <%s> "+
@@ -69,7 +69,7 @@ func getMinMaxPerNode(resourceName v1.ResourceName, nodes []*node_info.NodeInfo)
 	for _, node := range nodes {
 		current := node.NonAllocatedResource(resourceName)
 		// We don't want to consider nodes with none of that resource type
-		if node.Allocatable.Get(resourceName) == 0 {
+		if node.AllocatableVector.Get(node.VectorMap.GetIndex(resourceName)) == 0 {
 			continue
 		}
 

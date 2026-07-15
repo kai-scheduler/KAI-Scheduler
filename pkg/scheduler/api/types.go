@@ -20,13 +20,13 @@ limitations under the License.
 package api
 
 import (
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/queue_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 )
 
 // SubsetNodesFn is used to divide the nodes into sets
@@ -38,6 +38,18 @@ type PredicateFn func(*pod_info.PodInfo, *podgroup_info.PodGroupInfo, *node_info
 
 // PrePredicateFn is used to prepare for predicate on pod.
 type PrePredicateFn func(*pod_info.PodInfo, *podgroup_info.PodGroupInfo) error
+
+// VictimInvariantPrePredicateFailure is an action-level pre-predicate blocker
+// that cannot be resolved by changing the victim set in the current session.
+type VictimInvariantPrePredicateFailure struct {
+	Err error
+}
+
+// VictimInvariantPrePredicateFn returns a victim-invariant blocker for a task,
+// or nil when action handling should continue normally.
+type VictimInvariantPrePredicateFn func(
+	*pod_info.PodInfo,
+) *VictimInvariantPrePredicateFailure
 
 // CanReclaimResourcesFn is a function that determines if a reclaimer can get more resources
 type CanReclaimResourcesFn func(pendingJob *podgroup_info.PodGroupInfo) bool
@@ -73,6 +85,8 @@ type OnJobSolutionStartFn func()
 // BindRequestMutateFn allows plugins to add annotations before BindRequest creation.
 type BindRequestMutateFn func(pod *pod_info.PodInfo, nodeName string) map[string]string
 
+type NumaPlacementFn func(task *pod_info.PodInfo, node *node_info.NodeInfo) pod_info.NUMAPlacement
+
 // PreJobAllocationFn is used for notifying on job allocation start
 type PreJobAllocationFn func(job *podgroup_info.PodGroupInfo)
 
@@ -81,7 +95,7 @@ type CompareQueueFn func(
 	lQ, rQ *queue_info.QueueInfo,
 	lJob, rJob *podgroup_info.PodGroupInfo,
 	lVictims, rVictims []*podgroup_info.PodGroupInfo,
-	minNodeGPUMemory int64,
+	minNodeGPUMemory *int64,
 ) int
 
 type SchedulableResult struct {

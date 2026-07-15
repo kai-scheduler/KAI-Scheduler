@@ -7,7 +7,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 )
 
 type TopologyConstraintInfo struct {
@@ -16,6 +16,27 @@ type TopologyConstraintInfo struct {
 	Topology       string
 
 	schedulingConstraintsSignature common_info.SchedulingConstraintsSignature
+}
+
+// ResolveAliases rewrites the constraint's level strings to the canonical node label keys using the
+// given alias->nodeLabel map for this constraint's topology. An alias resolves to its label; any
+// other string (including a raw node label) passes through unchanged. Resolving at the source means
+// every downstream consumer reads canonical labels and never has to resolve aliases itself.
+func (tc *TopologyConstraintInfo) ResolveAliases(aliases map[string]string) {
+	if tc == nil || len(aliases) == 0 {
+		return
+	}
+	tc.RequiredLevel = resolveAlias(aliases, tc.RequiredLevel)
+	tc.PreferredLevel = resolveAlias(aliases, tc.PreferredLevel)
+	// Invalidate the cached signature so it is recomputed from the canonical levels.
+	tc.schedulingConstraintsSignature = ""
+}
+
+func resolveAlias(aliases map[string]string, level string) string {
+	if label, ok := aliases[level]; ok {
+		return label
+	}
+	return level
 }
 
 func (tc *TopologyConstraintInfo) GetSchedulingConstraintsSignature() common_info.SchedulingConstraintsSignature {

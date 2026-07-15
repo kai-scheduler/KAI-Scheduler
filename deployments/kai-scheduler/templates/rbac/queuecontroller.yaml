@@ -11,9 +11,9 @@ metadata:
   name: queuecontroller
 rules:
 - apiGroups:
-  - coordination.k8s.io
+  - ""
   resources:
-  - leases
+  - configmaps
   verbs:
   - create
   - delete
@@ -23,9 +23,9 @@ rules:
   - update
   - watch
 - apiGroups:
-  - ""
+  - coordination.k8s.io
   resources:
-  - configmaps
+  - leases
   verbs:
   - create
   - delete

@@ -19,22 +19,27 @@ package controller
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"golang.org/x/exp/slices"
 	admissionv1 "k8s.io/api/admissionregistration/v1"
+	coordinationv1 "k8s.io/api/coordination/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	vpav1 "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/controller/status_reconciler"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/deployable"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/known_types"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/scheduler"
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/controller/status_reconciler"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/deployable"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/known_types"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/scheduler"
 )
 
 func OperandsForShard(shard *kaiv1.SchedulingShard) []operands.Operand {
@@ -91,6 +96,8 @@ func (r *SchedulingShardReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		known_types.ValidatingWebhookConfigurationFieldInherit)
 	r.deployablePerShard[shard.Name].RegisterFieldsInheritFromClusterObjects(&admissionv1.MutatingWebhookConfiguration{},
 		known_types.MutatingWebhookConfigurationFieldInherit)
+	r.deployablePerShard[shard.Name].RegisterFieldsInheritFromClusterObjects(&vpav1.VerticalPodAutoscaler{},
+		known_types.VPAFieldInherit)
 	r.statusReconcilers[shard.Name] = status_reconciler.New(r.Client, r.deployablePerShard[shard.Name])
 
 	deployable := r.deployablePerShard[shard.Name]
@@ -152,32 +159,117 @@ func (r *SchedulingShardReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.deployablePerShard = map[string]*deployable.DeployableOperands{}
 	r.statusReconcilers = map[string]*status_reconciler.StatusReconciler{}
 
-	builder := ctrl.NewControllerManagedBy(mgr).
+	b := ctrl.NewControllerManagedBy(mgr).
 		For(&kaiv1.SchedulingShard{}).
-		Watches(&kaiv1.Config{}, handler.EnqueueRequestsFromMapFunc(r.requestAllSchedulingShards))
+		Watches(&kaiv1.Config{}, handler.EnqueueRequestsFromMapFunc(r.requestAllSchedulingShards)).
+		Watches(&coordinationv1.Lease{}, handler.EnqueueRequestsFromMapFunc(r.requestShardsForLease)).
+		Watches(&corev1.Pod{}, handler.EnqueueRequestsFromMapFunc(r.requestShardsForPod))
 
 	for _, collectable := range known_types.SchedulingShardRegisteredCollectable {
-		builder = collectable.InitWithBuilder(builder)
+		b = collectable.InitWithBuilder(b)
 	}
-	return builder.Complete(r)
+	return b.Complete(r)
+}
+
+// requestShardsForPod enqueues the SchedulingShard whose Deployment owns the
+// event Pod, matched on the pod's "app" label produced by deploymentForShard.
+// Because Pod IP can be assigned after leader is acquired, we need to reconcile the shard on the deployment pod change.
+func (r *SchedulingShardReconciler) requestShardsForPod(ctx context.Context, obj client.Object) []reconcile.Request {
+	pod, ok := obj.(*corev1.Pod)
+	if !ok {
+		return nil
+	}
+	appLabel := pod.Labels[constants.AppLabelName]
+	if appLabel == "" {
+		return nil
+	}
+
+	kaiConfig := r.getKaiConfig(ctx)
+	if kaiConfig == nil {
+		return nil
+	}
+	// Basic validation to ensure the pod is related to one of the deployments of the schedulers
+	if !strings.HasPrefix(appLabel, *kaiConfig.Spec.Global.SchedulerName) {
+		return nil
+	}
+
+	shardList := r.getSchedulingShards(ctx)
+	if shardList == nil {
+		return nil
+	}
+	for i := range shardList.Items {
+		shard := &shardList.Items[i]
+		if appLabel == scheduler.DeploymentName(kaiConfig, shard) {
+			return []reconcile.Request{{NamespacedName: client.ObjectKeyFromObject(shard)}}
+		}
+	}
+	return nil
+}
+
+// requestShardsForLease enqueues the SchedulingShard whose leader-election
+// Lease matches the event Lease, by exact name.
+func (r *SchedulingShardReconciler) requestShardsForLease(ctx context.Context, obj client.Object) []reconcile.Request {
+	if _, ok := obj.(*coordinationv1.Lease); !ok {
+		return nil
+	}
+
+	kaiConfig := r.getKaiConfig(ctx)
+	if kaiConfig == nil {
+		return nil
+	}
+	// Basic validation to ensure the lease is related to one of the schedulers
+	if !strings.HasPrefix(obj.GetName(), *kaiConfig.Spec.Global.SchedulerName) {
+		return nil
+	}
+
+	shardList := r.getSchedulingShards(ctx)
+	if shardList == nil {
+		return nil
+	}
+	for i := range shardList.Items {
+		shard := &shardList.Items[i]
+		if obj.GetName() == scheduler.LeaseName(kaiConfig, shard) {
+			return []reconcile.Request{{NamespacedName: client.ObjectKeyFromObject(shard)}}
+		}
+	}
+	return nil
 }
 
 // requestAllSchedulingShards returns all SchedulingShards making each change to the kai config reconcile every scheduling shard
-func (r *SchedulingShardReconciler) requestAllSchedulingShards(_ context.Context, obj client.Object) []reconcile.Request {
-	ctx := context.Background()
-	logger := log.FromContext(ctx)
-
-	shedulingShards := &kaiv1.SchedulingShardList{}
-	if err := r.Client.List(ctx, shedulingShards); err != nil {
-		logger.Error(err, "failed to list SchedulingShards")
+func (r *SchedulingShardReconciler) requestAllSchedulingShards(ctx context.Context, obj client.Object) []reconcile.Request {
+	shardList := r.getSchedulingShards(ctx)
+	if shardList == nil {
 		return nil
 	}
 
 	requests := []reconcile.Request{}
-	for _, si := range shedulingShards.Items {
+	for _, si := range shardList.Items {
 		requests = append(
 			requests, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&si)})
 	}
 
 	return requests
+}
+
+func (r *SchedulingShardReconciler) getSchedulingShards(ctx context.Context) *kaiv1.SchedulingShardList {
+	logger := log.FromContext(ctx)
+
+	shardList := &kaiv1.SchedulingShardList{}
+	if err := r.Client.List(ctx, shardList); err != nil {
+		logger.V(1).Info("failed to list SchedulingShards from watch mapper", "error", err)
+		return nil
+	}
+	return shardList
+}
+
+func (r *SchedulingShardReconciler) getKaiConfig(ctx context.Context) *kaiv1.Config {
+	logger := log.FromContext(ctx)
+
+	kaiConfig := &kaiv1.Config{}
+	if err := r.Client.Get(ctx, client.ObjectKey{Name: known_types.SingletonInstanceName}, kaiConfig); err != nil {
+		logger.V(1).Info("failed to get KAI Config singleton from watch mapper", "error", err)
+		return nil
+	}
+	kaiConfig.Spec.SetDefaultsWhereNeeded()
+	return kaiConfig
 }

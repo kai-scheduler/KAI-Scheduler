@@ -10,14 +10,15 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/constant"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/testconfig"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/utils"
 )
 
 const DeploymentAppLabel = "deployment-app-name"
 
 func CreateDeploymentObject(namespace, queueName string) *appsv1.Deployment {
+	cfg := testconfig.GetConfig()
 	matchLabelValue := utils.GenerateRandomK8sName(10)
 
 	return &appsv1.Deployment{
@@ -42,13 +43,13 @@ func CreateDeploymentObject(namespace, queueName string) *appsv1.Deployment {
 					Labels: map[string]string{
 						constants.AppLabelName: "engine-e2e",
 						DeploymentAppLabel:     matchLabelValue,
-						"kai.scheduler/queue":  queueName,
+						cfg.QueueLabelKey:      queueName,
 					},
 				},
 				Spec: v1.PodSpec{
 					Containers: []v1.Container{
 						{
-							Image: "ubuntu",
+							Image: cfg.ContainerImage,
 							Name:  "ubuntu-container",
 							Args: []string{
 								"sleep",
@@ -58,7 +59,7 @@ func CreateDeploymentObject(namespace, queueName string) *appsv1.Deployment {
 						},
 					},
 					TerminationGracePeriodSeconds: ptr.To(int64(0)),
-					SchedulerName:                 constant.SchedulerName,
+					SchedulerName:                 cfg.SchedulerName,
 					Tolerations: []v1.Toleration{
 						{
 							Key:      "nvidia.com/gpu",

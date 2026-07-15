@@ -18,17 +18,17 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/record"
 
-	kai "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned"
-	enginev2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/eviction_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_internal"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/metrics"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/utils"
+	kai "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned"
+	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/utils"
 )
 
 const (
@@ -117,13 +117,12 @@ func (su *defaultStatusUpdater) Evicted(
 		message)
 
 	nodepool := utils.GetNodePoolNameFromLabels(evictedPodGroup.Labels, su.nodePoolLabelKey)
-	metrics.RecordPodGroupEvictedPods(
+	metrics.IncPodGroupEvictedPods(
 		evictedPodGroup.Name,
 		evictedPodGroup.Namespace,
 		string(evictedPodGroup.UID),
 		nodepool,
 		evictionMetadata.Action,
-		evictionMetadata.EvictionGangSize,
 	)
 }
 
@@ -205,6 +204,9 @@ func (su *defaultStatusUpdater) RecordJobStatusEvent(job *podgroup_info.PodGroup
 	if job.StalenessInfo.Stale {
 		su.recordStaleJobEvent(job)
 	}
+	if err := su.recordInvalidSubGroupPodsEvents(job); err != nil {
+		return err
+	}
 
 	updatePodgroupStatus := false
 	if job.GetNumPendingTasks() > 0 || job.GetNumGatedTasks() > 0 {
@@ -258,7 +260,7 @@ func (su *defaultStatusUpdater) recordStaleJobEvent(job *podgroup_info.PodGroupI
 
 	totalActivePods := 0
 	totalMinAvailable := int32(0)
-	for _, subGroup := range job.GetSubGroups() {
+	for _, subGroup := range job.GetAllPodSets() {
 		activeTasks := subGroup.GetNumActiveUsedTasks()
 		minAvailable := subGroup.GetMinAvailable()
 		totalActivePods += activeTasks
@@ -277,7 +279,7 @@ func (su *defaultStatusUpdater) recordStaleJobEvent(job *podgroup_info.PodGroupI
 
 func (su *defaultStatusUpdater) recordJobNotReadyEvent(job *podgroup_info.PodGroupInfo) {
 	message := fmt.Sprintf("Job is not ready for scheduling.")
-	for _, subGroup := range job.GetSubGroups() {
+	for _, subGroup := range job.GetAllPodSets() {
 		if !subGroup.IsReadyForScheduling() {
 			if subGroup.GetName() == podgroup_info.DefaultSubGroup {
 				message = message + fmt.Sprintf(" Waiting for %d pods, currently %d exist, %d are gated",
@@ -348,6 +350,10 @@ func (su *defaultStatusUpdater) recordUnschedulablePodsEvents(job *podgroup_info
 	// Update podCondition for tasks Allocated and Pending before job discarded
 	var errs []error
 	for _, taskInfo := range job.PodStatusIndex[pod_status.Pending] {
+		if job.IsInvalidSubGroupTask(taskInfo.UID) {
+			continue
+		}
+
 		msg := common_info.DefaultPodError
 		fitError := job.TasksFitErrors[taskInfo.UID]
 		if fitError != nil {
@@ -374,11 +380,34 @@ func (su *defaultStatusUpdater) recordUnschedulablePodsEvents(job *podgroup_info
 	return errors.Join(errs...)
 }
 
+func (su *defaultStatusUpdater) recordInvalidSubGroupPodsEvents(job *podgroup_info.PodGroupInfo) error {
+	var errs []error
+
+	for _, taskInfo := range job.GetInvalidSubGroupTasks() {
+		msg := common_info.DefaultPodError
+		if fitError := job.TasksFitErrors[taskInfo.UID]; fitError != nil {
+			msg = fitError.Error()
+			if su.detailedFitErrors {
+				msg = fitError.DetailedError()
+			}
+		}
+
+		msg = su.addNodePoolPrefixIfNeeded(job, msg)
+		if err := su.markTaskUnschedulable(taskInfo.Pod, msg, true); err != nil {
+			errs = append(errs, fmt.Errorf("failed to update invalid subgroup task status <%s/%s>: %v",
+				taskInfo.Namespace, taskInfo.Name, err))
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
 func (su *defaultStatusUpdater) updatePodGroupAnnotations(job *podgroup_info.PodGroupInfo) ([]byte, error) {
 	old := job.PodGroup.DeepCopy()
 	updatedStaleTime := setPodGroupStaleTimeStamp(job.PodGroup, job.StalenessInfo.TimeStamp)
 	updatedStartTime := setPodGroupLastStartTimeStamp(job.PodGroup, job.LastStartTimestamp)
-	if !updatedStaleTime && !updatedStartTime {
+	updatedEvictionTime := setPodGroupLastEvictionTimeStamp(job.PodGroup, job.LastEvictionTimestamp)
+	if !updatedStaleTime && !updatedStartTime && !updatedEvictionTime {
 		return nil, nil
 	}
 
@@ -482,6 +511,34 @@ func setPodGroupLastStartTimeStamp(podGroup *enginev2alpha2.PodGroup, startTimeS
 	}
 
 	podGroup.Annotations[commonconstants.LastStartTimeStamp] = startTimeStamp.Format(time.RFC3339)
+	return true
+}
+
+func setPodGroupLastEvictionTimeStamp(podGroup *enginev2alpha2.PodGroup, evictionTimeStamp *time.Time) bool {
+	if podGroup.Annotations == nil {
+		podGroup.Annotations = make(map[string]string)
+	}
+
+	if evictionTimeStamp == nil {
+		if _, found := podGroup.Annotations[commonconstants.LastEvictionTimeStamp]; !found {
+			return false
+		}
+
+		delete(podGroup.Annotations, commonconstants.LastEvictionTimeStamp)
+		return true
+	}
+
+	currTimeStamp, found := podGroup.Annotations[commonconstants.LastEvictionTimeStamp]
+	if !found {
+		podGroup.Annotations[commonconstants.LastEvictionTimeStamp] = evictionTimeStamp.UTC().Format(time.RFC3339)
+		return true
+	}
+
+	if currTimeStamp == evictionTimeStamp.UTC().Format(time.RFC3339) {
+		return false
+	}
+
+	podGroup.Annotations[commonconstants.LastEvictionTimeStamp] = evictionTimeStamp.UTC().Format(time.RFC3339)
 	return true
 }
 

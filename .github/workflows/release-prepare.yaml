@@ -1,0 +1,80 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# Release, step 1 of 2 — Prepare Changelog (manual dispatch).
+#
+# Folds the pending changie fragments (.changes/unreleased/*.yaml) into CHANGELOG.md as a new
+# "## [VERSION]" section, clears the fragments, and opens a PR against the branch this workflow
+# was dispatched on (main for minors/majors, a v*.* branch for patches).
+#
+# A maintainer reviews and merges that PR. Merging it triggers release-publish.yaml (step 2),
+# which tags the version and creates the GitHub Release.
+
+name: Release — Prepare Changelog
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, e.g. v0.17.0 (minors/majors from main, patches from a v*.* branch)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  prepare:
+    name: Fold changelog & open PR
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout ${{ github.ref_name }}
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.KAIBOT_TOKEN }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.3'
+
+      - name: Fold fragments into CHANGELOG.md
+        run: make changelog-release VERSION="${{ inputs.version }}"
+
+      - name: Open release PR
+        env:
+          GH_TOKEN: ${{ secrets.KAIBOT_TOKEN }}
+          VERSION: ${{ inputs.version }}
+          BASE: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          BRANCH="release/prepare-$VERSION"
+
+          git config --local user.name "kai-release-bot"
+          git config --local user.email "action@github.com"
+
+          git switch -c "$BRANCH"
+          git add -A
+          git commit -s -m "chore(release): prepare changelog for $VERSION"
+          git push --force-with-lease -u origin "$BRANCH"
+
+          BODY="${RUNNER_TEMP:-/tmp}/pr-body.md"
+          {
+            echo "Automated by the **Release — Prepare Changelog** workflow."
+            echo
+            echo "Folds the pending \`.changes/unreleased/\` fragments into \`CHANGELOG.md\` as \`## [$VERSION]\` and clears them. \`CHANGELOG.md\` is the source of truth."
+            echo
+            echo "**Merging this PR** triggers \`release-publish.yaml\`, which tags \`$VERSION\` and creates the GitHub Release from this changelog section."
+            echo
+            echo "- Review the new \`## [$VERSION]\` section for accuracy."
+            echo "- Target branch: \`$BASE\`."
+          } > "$BODY"
+
+          gh pr create \
+            --base "$BASE" \
+            --head "$BRANCH" \
+            --title "chore(release): prepare changelog for $VERSION" \
+            --label skip-changelog \
+            --body-file "$BODY"

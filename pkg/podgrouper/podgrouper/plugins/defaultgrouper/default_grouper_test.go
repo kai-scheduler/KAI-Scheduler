@@ -5,9 +5,10 @@ package defaultgrouper
 
 import (
 	"testing"
+	"time"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
 	schedulingv1 "k8s.io/api/scheduling/v1"
@@ -30,9 +31,10 @@ func convertOwnerToPartial(owner *unstructured.Unstructured) *v12.PartialObjectM
 			Kind:       owner.GetKind(),
 		},
 		ObjectMeta: v12.ObjectMeta{
-			Name:      owner.GetName(),
-			Namespace: owner.GetNamespace(),
-			Labels:    owner.GetLabels(),
+			Name:        owner.GetName(),
+			Namespace:   owner.GetNamespace(),
+			Labels:      owner.GetLabels(),
+			Annotations: owner.GetAnnotations(),
 		},
 	}
 }
@@ -1159,6 +1161,98 @@ func TestCalcPodGroupPreemptibility(t *testing.T) {
 			preemptibility := defaultGrouper.calcPodGroupPreemptibilityWithDefaults([]*v12.PartialObjectMetadata{ownerPartial}, pod, nil)
 
 			assert.Equal(t, tt.expectedResult, string(preemptibility))
+		})
+	}
+}
+
+func TestCalcPodGroupPreemptionDelay(t *testing.T) {
+	tests := []struct {
+		name             string
+		ownerAnnotations map[string]interface{}
+		podAnnotations   map[string]string
+		expected         *v12.Duration
+	}{
+		{
+			name: "valid delay from owner",
+			ownerAnnotations: map[string]interface{}{
+				"kai.scheduler/preemption-delay": "5m",
+			},
+			expected: &v12.Duration{Duration: 5 * time.Minute},
+		},
+		{
+			name: "valid delay from pod",
+			podAnnotations: map[string]string{
+				"kai.scheduler/preemption-delay": "90s",
+			},
+			expected: &v12.Duration{Duration: 90 * time.Second},
+		},
+		{
+			name: "owner overrides pod",
+			ownerAnnotations: map[string]interface{}{
+				"kai.scheduler/preemption-delay": "1h",
+			},
+			podAnnotations: map[string]string{
+				"kai.scheduler/preemption-delay": "5m",
+			},
+			expected: &v12.Duration{Duration: time.Hour},
+		},
+		{
+			name: "invalid owner value falls through to pod",
+			ownerAnnotations: map[string]interface{}{
+				"kai.scheduler/preemption-delay": "abc",
+			},
+			podAnnotations: map[string]string{
+				"kai.scheduler/preemption-delay": "30s",
+			},
+			expected: &v12.Duration{Duration: 30 * time.Second},
+		},
+		{
+			name: "unit-less number is invalid",
+			podAnnotations: map[string]string{
+				"kai.scheduler/preemption-delay": "5",
+			},
+			expected: nil,
+		},
+		{
+			name: "negative duration is invalid",
+			podAnnotations: map[string]string{
+				"kai.scheduler/preemption-delay": "-3m",
+			},
+			expected: nil,
+		},
+		{
+			name:     "no labels",
+			expected: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			owner := &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "test_kind",
+					"apiVersion": "test_version",
+					"metadata": map[string]interface{}{
+						"name":        "test_name",
+						"namespace":   "test_namespace",
+						"uid":         "1",
+						"annotations": tt.ownerAnnotations,
+					},
+				},
+			}
+
+			pod := &v1.Pod{}
+			if tt.podAnnotations != nil {
+				pod.ObjectMeta = v12.ObjectMeta{
+					Annotations: tt.podAnnotations,
+				}
+			}
+
+			defaultGrouper := NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, fake.NewFakeClient())
+			delay := defaultGrouper.calcPodGroupPreemptionDelay(
+				[]*v12.PartialObjectMetadata{convertOwnerToPartial(owner)}, pod)
+
+			assert.Equal(t, tt.expected, delay)
 		})
 	}
 }

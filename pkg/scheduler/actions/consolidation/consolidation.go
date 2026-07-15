@@ -6,15 +6,15 @@ package consolidation
 import (
 	"golang.org/x/exp/maps"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/common"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/common/solvers"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/metrics"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
 )
 
 const noConsolidationPreempteesRestrcition = -1
@@ -33,16 +33,23 @@ func (alloc *consolidationAction) Execute(ssn *framework.Session) {
 	log.InfraLogger.V(2).Infof("Enter Consolidation ...")
 	defer log.InfraLogger.V(2).Infof("Leaving Consolidation ...")
 
+	actionBudget, err := solvers.NewActionSearchBudget(ssn, framework.Consolidation)
+	if err != nil {
+		log.InfraLogger.Errorf("Invalid scenario search budget for consolidation: %v", err)
+		return
+	}
+
 	if ssn.GetMaxNumberConsolidationPreemptees() == 0 {
 		log.InfraLogger.V(4).Infof("Consolidation is disabled, skipping")
 		return
 	}
 
 	jobsOrderByQueues := utils.NewJobsOrderByQueues(ssn, utils.JobsOrderInitOptions{
-		FilterNonPending:     true,
-		FilterUnready:        true,
-		FilterNonPreemptible: true,
-		MaxJobsQueueDepth:    ssn.GetJobsDepth(framework.Consolidation),
+		FilterNonPending:            true,
+		FilterUnready:               true,
+		FilterNonPreemptible:        true,
+		FilterWithinPreemptionDelay: true,
+		MaxJobsQueueDepth:           ssn.GetJobsDepth(framework.Consolidation),
 	})
 	jobsOrderByQueues.InitializeWithJobs(ssn.ClusterInfo.PodGroupInfos)
 
@@ -63,14 +70,21 @@ func (alloc *consolidationAction) Execute(ssn *framework.Session) {
 				continue
 			}
 		}
+		tasks := podgroup_info.GetTasksToAllocate(job, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false)
+		if task, failure := common.VictimInvariantPrePredicateFailureForTasks(ssn, tasks); failure != nil {
+			common.RecordVictimInvariantPrePredicateFailure(job, task, failure)
+			continue
+		}
 
 		metrics.IncPodgroupsConsideredByAction()
-		if succeeded, stmt := attemptToConsolidateForPreemptor(ssn, job); succeeded {
+		if succeeded, stmt, searchResult := attemptToConsolidateForPreemptor(ssn, job, actionBudget); succeeded {
 			metrics.IncPodgroupScheduledByAction()
 			err := stmt.Commit()
 			if err != nil {
 				log.InfraLogger.Errorf("Failed to commit consolidation statement: %v", err)
 			}
+		} else if shouldStopActionForSearchResult(searchResult) {
+			return
 		} else {
 			smallestFailedJobs.UpdateRepresentative(job)
 		}
@@ -78,8 +92,10 @@ func (alloc *consolidationAction) Execute(ssn *framework.Session) {
 }
 
 func attemptToConsolidateForPreemptor(
-	ssn *framework.Session, job *podgroup_info.PodGroupInfo) (bool, *framework.Statement) {
-	resReq := podgroup_info.GetTasksToAllocateInitResource(job, ssn.PodSetOrderFn, ssn.TaskOrderFn, false, ssn.ClusterInfo.MinNodeGPUMemory)
+	ssn *framework.Session, job *podgroup_info.PodGroupInfo, actionBudget *solvers.ActionSearchBudget,
+) (bool, *framework.Statement, *solvers.SearchResult) {
+	resReq := podgroup_info.GetTasksToAllocateInitResourceVector(job, ssn.SubGroupOrderFn, ssn.TaskOrderFn,
+		false, ssn.ClusterInfo.MinNodeGPUMemoryMiB)
 	log.InfraLogger.V(3).Infof(
 		"Attempting to consolidate running jobs in order to make room for job: <%s/%s>, resources: <%v>",
 		job.Namespace, job.Name, resReq)
@@ -87,32 +103,47 @@ func attemptToConsolidateForPreemptor(
 		log.InfraLogger.V(3).Infof(
 			"Can't consolidate for job: <%v/%v>, not enough allocatable GPUs in the cluster",
 			job.Namespace, job.Name)
-		return false, nil
+		return false, nil, nil
 	}
-	success, stmt := attemptToConsolidatePreemptor(ssn, job)
-	return success, stmt
+	success, stmt, searchResult := attemptToConsolidatePreemptor(ssn, job, actionBudget)
+	return success, stmt, searchResult
 }
 
 func attemptToConsolidatePreemptor(
-	ssn *framework.Session, preemptor *podgroup_info.PodGroupInfo) (bool, *framework.Statement) {
+	ssn *framework.Session, preemptor *podgroup_info.PodGroupInfo, actionBudget *solvers.ActionSearchBudget,
+) (bool, *framework.Statement, *solvers.SearchResult) {
 	feasibleNodes := common.FeasibleNodesForJob(maps.Values(ssn.ClusterInfo.Nodes), preemptor)
 	solver := solvers.NewJobsSolver(
 		feasibleNodes,
 		allPodsReallocated,
 		func() *utils.JobsOrderByQueues { return buildConsolidationVictimsQueue(ssn, preemptor) },
-		framework.Consolidation)
+		framework.Consolidation,
+		actionBudget)
 
-	isScenarioFeasible, stmt, victimsTasksNames := solver.Solve(ssn, preemptor)
+	isScenarioFeasible, stmt, victimsTasksNames, searchResult := solver.SolveWithResult(ssn, preemptor)
 	if isScenarioFeasible {
 		log.InfraLogger.V(3).Infof(
 			"Sucesfully consolidated for job: <%s/%s>, and about to reallocate victims: <%v>",
 			preemptor.Namespace, preemptor.Name, victimsTasksNames)
-		return true, stmt
+		return true, stmt, searchResult
+	}
+
+	if shouldStopActionForSearchResult(searchResult) {
+		return false, nil, searchResult
 	}
 
 	log.InfraLogger.V(3).Infof("Didn't find a consolidation strategy for job: <%v/%v>",
 		preemptor.Namespace, preemptor.Name)
-	return false, nil
+	return false, nil, searchResult
+}
+
+func shouldStopActionForSearchResult(result *solvers.SearchResult) bool {
+	switch result.Reason() {
+	case solvers.SearchResultDeadlineExhausted, solvers.SearchResultNotAttempted:
+		return true
+	default:
+		return false
+	}
 }
 
 func allPodsReallocated(scenario api.ScenarioInfo) bool {

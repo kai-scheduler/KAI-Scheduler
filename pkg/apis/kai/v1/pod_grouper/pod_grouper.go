@@ -7,7 +7,7 @@ package pod_grouper
 import (
 	"k8s.io/utils/ptr"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
@@ -33,6 +33,10 @@ type PodGrouper struct {
 	// Replicas specifies the number of replicas of the pod-grouper controller
 	// +kubebuilder:validation:Optional
 	Replicas *int32 `json:"replicas,omitempty"`
+
+	// VPA specifies Vertical Pod Autoscaler configuration for the pod-grouper
+	// +kubebuilder:validation:Optional
+	VPA *common.VPASpec `json:"vpa,omitempty"`
 }
 
 // Args defines command line arguments for the pod-grouper
@@ -40,6 +44,10 @@ type Args struct {
 	// GangScheduleKnative specifies whether to enable gang scheduling for Knative revisions. Default is true. Disable to allow multiple nodepools per revision.
 	// +kubebuilder:validation:Optional
 	GangScheduleKnative *bool `json:"gangScheduleKnative,omitempty"`
+
+	// GenericKartaFallback specifies whether to enable Karta-backed generic pod grouping fallback for workload GVKs without native plugins. Default is true.
+	// +kubebuilder:validation:Optional
+	GenericKartaFallback *bool `json:"genericKartaFallback,omitempty"`
 
 	// DefaultPrioritiesConfigMapName The name of the configmap that contains default priorities for pod groups
 	// +kubebuilder:validation:Optional
@@ -50,7 +58,7 @@ type Args struct {
 	DefaultPrioritiesConfigMapNamespace *string `json:"defaultPrioritiesConfigMapNamespace,omitempty"`
 }
 
-func (pg *PodGrouper) SetDefaultsWhereNeeded(replicaCount *int32) {
+func (pg *PodGrouper) SetDefaultsWhereNeeded(replicaCount *int32, globalVPA *common.VPASpec) {
 	pg.Service = common.SetDefault(pg.Service, &common.Service{})
 	pg.Service.SetDefaultsWhereNeeded(imageName)
 
@@ -68,6 +76,11 @@ func (pg *PodGrouper) SetDefaultsWhereNeeded(replicaCount *int32) {
 	}
 
 	pg.Args = common.SetDefault(pg.Args, &Args{})
+	pg.Args.GenericKartaFallback = common.SetDefault(pg.Args.GenericKartaFallback, ptr.To(true))
 	pg.Replicas = common.SetDefault(pg.Replicas, ptr.To(ptr.Deref(replicaCount, 1)))
 	pg.K8sClientConfig = common.SetDefault(pg.K8sClientConfig, &common.K8sClientConfig{})
+
+	if pg.VPA == nil {
+		pg.VPA = globalVPA
+	}
 }

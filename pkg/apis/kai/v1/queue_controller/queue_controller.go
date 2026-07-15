@@ -5,7 +5,7 @@
 package queue_controller
 
 import (
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/utils/ptr"
@@ -42,9 +42,13 @@ type QueueController struct {
 	// QueueLabelToDefaultMetricValue maps queue label keys to default metric values when the label is absent
 	// +kubebuilder:validation:Optional
 	QueueLabelToDefaultMetricValue *string `json:"queueLabelToDefaultMetricValue,omitempty"`
+
+	// VPA specifies Vertical Pod Autoscaler configuration for the queue controller
+	// +kubebuilder:validation:Optional
+	VPA *common.VPASpec `json:"vpa,omitempty"`
 }
 
-func (q *QueueController) SetDefaultsWhereNeeded(replicaCount *int32) {
+func (q *QueueController) SetDefaultsWhereNeeded(replicaCount *int32, globalVPA *common.VPASpec) {
 	q.Service = common.SetDefault(q.Service, &common.Service{})
 	q.Service.SetDefaultsWhereNeeded(imageName)
 
@@ -68,6 +72,10 @@ func (q *QueueController) SetDefaultsWhereNeeded(replicaCount *int32) {
 
 	q.Webhooks = common.SetDefault(q.Webhooks, &QueueControllerWebhooks{})
 	q.Webhooks.SetDefaultsWhereNeeded()
+
+	if q.VPA == nil {
+		q.VPA = globalVPA
+	}
 }
 
 type Service struct {

@@ -17,12 +17,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	v2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	testcontext "github.com/NVIDIA/KAI-scheduler/test/e2e/modules/context"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/queue"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/wait"
+	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/testconfig"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
 )
 
 const (
@@ -40,24 +41,6 @@ var (
 		Effect: v1.TaintEffectNoSchedule,
 	}
 )
-
-func createObjectWithRetries(ctx context.Context, kubeClient runtimeClient.Client, obj runtimeClient.Object) error {
-	key := runtimeClient.ObjectKeyFromObject(obj)
-	err := kubeClient.Get(ctx, key, obj)
-	if err == nil {
-		// object is not expected to exist in the cluster
-		return fmt.Errorf("object %v already exists in the cluster", key)
-	}
-
-	for i := 0; i < operationAttemptsRetries; i++ {
-		err = kubeClient.Create(ctx, obj)
-		if err == nil || errors.IsAlreadyExists(err) {
-			return nil
-		}
-		time.Sleep(retryInterval)
-	}
-	return err
-}
 
 func deleteObjectWithRetries(
 	ctx context.Context, kubeClient runtimeClient.Client,
@@ -160,9 +143,10 @@ func waitForAllJobsToSchedule(
 	ctx context.Context, testCtx *testcontext.TestContext,
 	testQueue *v2.Queue, expectedNumberOfPods int,
 ) time.Time {
+	queueLabelKey := testconfig.GetConfig().QueueLabelKey
 	selector := metav1.LabelSelector{
 		MatchLabels: map[string]string{
-			"runai/queue": testQueue.Name,
+			queueLabelKey: testQueue.Name,
 		},
 	}
 	wait.ForAtLeastNPodCreation(ctx, testCtx.ControllerClient, selector, expectedNumberOfPods)
@@ -174,7 +158,7 @@ func waitForAllJobsToSchedule(
 		err := testCtx.ControllerClient.List(ctx, podsList,
 			runtimeClient.InNamespace(namespace),
 			runtimeClient.MatchingLabels(map[string]string{
-				"runai/queue": testQueue.Name,
+				queueLabelKey: testQueue.Name,
 			}))
 		g.Expect(err).NotTo(HaveOccurred())
 		g.Expect(len(podsList.Items)).To(Equal(expectedNumberOfPods))
@@ -210,7 +194,7 @@ func deleteJobsFromAllNodes(ctx context.Context, testCtx *testcontext.TestContex
 	err := testCtx.ControllerClient.List(ctx, pods,
 		runtimeClient.InNamespace(queue.GetConnectedNamespaceToQueue(testQueue)),
 		runtimeClient.MatchingLabels(map[string]string{
-			"runai/queue": testQueue.Name,
+			testconfig.GetConfig().QueueLabelKey: testQueue.Name,
 		}))
 	Expect(err).NotTo(HaveOccurred())
 

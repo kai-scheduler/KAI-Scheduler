@@ -11,7 +11,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	generate "github.com/NVIDIA/KAI-scheduler/pkg/operator/cert-utils"
+	generate "github.com/kai-scheduler/KAI-scheduler/pkg/operator/cert-utils"
 )
 
 func TestCert(t *testing.T) {

@@ -9,13 +9,13 @@ import (
 	rand "math/rand/v2"
 	"slices"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/capacity"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/capacity"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
-	kaiclientset "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned"
-	kaiv1alpha1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1alpha1"
+	kaiclientset "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned"
+	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -29,6 +29,7 @@ const (
 	TestZoneLabelKey = "e2e-topology-label/zone"
 	TestRackLabelKey = "e2e-topology-label/rack"
 	NodeNameLabelKey = "kubernetes.io/hostname"
+	TestRackAlias    = "rack"
 )
 
 type TestTopologyData struct {
@@ -65,7 +66,7 @@ func CreateRackZoneTopology(
 		Spec: kaiv1alpha1.TopologySpec{
 			Levels: []kaiv1alpha1.TopologyLevel{
 				{NodeLabel: TestZoneLabelKey},
-				{NodeLabel: TestRackLabelKey},
+				{NodeLabel: TestRackLabelKey, Alias: TestRackAlias},
 				{NodeLabel: NodeNameLabelKey},
 			},
 		},
@@ -80,7 +81,7 @@ func CreateRackZoneTopology(
 
 	gpuNodesMap := map[int][]string{}
 	for _, node := range nodes.Items {
-		gpuCountQuantity := node.Status.Allocatable[v1.ResourceName(constants.GpuResource)]
+		gpuCountQuantity := node.Status.Allocatable[v1.ResourceName(constants.NvidiaGpuResource)]
 		gpuCount := int(gpuCountQuantity.Value())
 		if gpuCount == 0 {
 			continue // skip nodes without GPUs

@@ -7,12 +7,13 @@ import (
 	"context"
 	"testing"
 
-	nvidiav1 "github.com/NVIDIA/gpu-operator/api/nvidia/v1"
+	nvidiav1 "github.com/kai-scheduler/KAI-scheduler/third_party/nvidia/gpu-operator/api/nvidia/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -22,12 +23,36 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	kaiv1common "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
 )
 
 func TestCommon(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Common Functions Suite")
 }
+
+var _ = Describe("DeploymentForKAIConfig", func() {
+	It("labels operator-generated deployments for cleanup", func() {
+		config := &kaiv1.Config{Spec: kaiv1.ConfigSpec{Namespace: "kai-scheduler"}}
+		config.Spec.SetDefaultsWhereNeeded()
+		fakeKubeClient := fake.NewClientBuilder().WithObjects(&appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "binder",
+				Namespace: config.Spec.Namespace,
+				Labels:    map[string]string{"existing-label": "preserved"},
+			},
+		}).Build()
+
+		deployment, err := DeploymentForKAIConfig(
+			context.Background(), fakeKubeClient, config, config.Spec.Binder.Service, "binder",
+		)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(deployment.Labels).To(HaveKeyWithValue(OperatorManagedByLabelKey, OperatorManagedByLabelValue))
+		Expect(deployment.Labels).To(HaveKeyWithValue("existing-label", "preserved"))
+	})
+})
 
 var _ = Describe("AllControllersAvailable", func() {
 	Context("No api errors", func() {
@@ -332,6 +357,28 @@ var _ = Describe("AllObjectsExists", func() {
 	})
 })
 
+var _ = Describe("JSON logging args", func() {
+	DescribeTable(
+		"adds controller-runtime JSON logging arg only when enabled",
+		func(jsonLog *bool, expected []string) {
+			Expect(AddControllerRuntimeJSONLogArg(jsonLog, []string{"--existing"})).To(Equal(expected))
+		},
+		Entry("nil", nil, []string{"--existing"}),
+		Entry("disabled", ptr.To(false), []string{"--existing"}),
+		Entry("enabled", ptr.To(true), []string{"--existing", "--zap-devel=false"}),
+	)
+
+	DescribeTable(
+		"adds scheduler JSON logging arg only when enabled",
+		func(jsonLog *bool, expected []string) {
+			Expect(AddSchedulerJSONLogArg(jsonLog, []string{"--existing"})).To(Equal(expected))
+		},
+		Entry("nil", nil, []string{"--existing"}),
+		Entry("disabled", ptr.To(false), []string{"--existing"}),
+		Entry("enabled", ptr.To(true), []string{"--existing", "--log-json"}),
+	)
+})
+
 var _ = Describe("MergeAffinities", func() {
 	It("should return globalAffinity when localAffinity is nil", func() {
 		globalAffinity := &v1.Affinity{
@@ -417,5 +464,83 @@ var _ = Describe("MergeAffinities", func() {
 		Expect(result.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution[0].Weight).To(Equal(int32(100)))
 		Expect(result.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution[0].PodAffinityTerm.LabelSelector.MatchLabels).To(Equal(labelMap))
 		Expect(result.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution[0].PodAffinityTerm.TopologyKey).To(Equal("kubernetes.io/hostname"))
+	})
+})
+
+var _ = Describe("PodDisruptionBudgetForKAIConfig", func() {
+	It("creates PDB for multi-replica enabled service", func() {
+		fakeKubeClient := fake.NewClientBuilder().Build()
+		service := &kaiv1common.Service{
+			PodDisruptionBudget: &kaiv1common.PodDisruptionBudget{
+				Enabled:        ptr.To(true),
+				MaxUnavailable: ptr.To(int32(1)),
+			},
+		}
+
+		obj, err := PodDisruptionBudgetForKAIConfig(
+			context.Background(),
+			fakeKubeClient,
+			"default",
+			"admission",
+			ptr.To(int32(2)),
+			service,
+		)
+		Expect(err).To(BeNil())
+		Expect(obj).ToNot(BeNil())
+	})
+
+	It("defaults maxUnavailable to 1 when omitted", func() {
+		fakeKubeClient := fake.NewClientBuilder().Build()
+		service := &kaiv1common.Service{
+			PodDisruptionBudget: &kaiv1common.PodDisruptionBudget{
+				Enabled: ptr.To(true),
+			},
+		}
+
+		obj, err := PodDisruptionBudgetForKAIConfig(
+			context.Background(),
+			fakeKubeClient,
+			"default",
+			"admission",
+			ptr.To(int32(2)),
+			service,
+		)
+		Expect(err).To(BeNil())
+		Expect(obj).ToNot(BeNil())
+		pdb, ok := obj.(*policyv1.PodDisruptionBudget)
+		Expect(ok).To(BeTrue())
+		Expect(pdb.Spec.MaxUnavailable).ToNot(BeNil())
+		Expect(pdb.Spec.MaxUnavailable.IntVal).To(Equal(int32(1)))
+	})
+
+	It("does not create PDB for single replica service", func() {
+		fakeKubeClient := fake.NewClientBuilder().Build()
+		service := &kaiv1common.Service{
+			PodDisruptionBudget: &kaiv1common.PodDisruptionBudget{
+				Enabled:        ptr.To(true),
+				MaxUnavailable: ptr.To(int32(1)),
+			},
+		}
+
+		obj, err := PodDisruptionBudgetForKAIConfig(
+			context.Background(),
+			fakeKubeClient,
+			"default",
+			"admission",
+			ptr.To(int32(1)),
+			service,
+		)
+		Expect(err).To(BeNil())
+		Expect(obj).To(BeNil())
+	})
+
+})
+
+var _ = Describe("PodDisruptionBudgetImplementedServices", func() {
+	It("only lists operands with operator-side PDB creation", func() {
+		Expect(PodDisruptionBudgetImplementedServices).To(HaveLen(1))
+		Expect(PodDisruptionBudgetImplemented("admission")).To(BeTrue())
+		Expect(PodDisruptionBudgetImplemented("binder")).To(BeFalse())
+		Expect(PodDisruptionBudgetImplemented("scheduler")).To(BeFalse())
 	})
 })

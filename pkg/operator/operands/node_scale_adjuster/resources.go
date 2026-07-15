@@ -9,14 +9,14 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/node_scale_adjuster"
-	kaiConfigUtils "github.com/NVIDIA/KAI-scheduler/pkg/operator/config"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/node_scale_adjuster"
+	kaiConfigUtils "github.com/kai-scheduler/KAI-scheduler/pkg/operator/config"
 
 	v1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/common"
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common"
 )
 
 const (
@@ -33,7 +33,11 @@ func deploymentForKAIConfig(
 		return nil, err
 	}
 
-	deployment.Spec.Template.Spec.Containers[0].Args = argsForKAIConfig(kaiConfig.Spec.NodeScaleAdjuster, *kaiConfig.Spec.Global.SchedulerName)
+	deployment.Spec.Template.Spec.Containers[0].Args = argsForKAIConfig(
+		kaiConfig.Spec.NodeScaleAdjuster,
+		*kaiConfig.Spec.Global.SchedulerName,
+		kaiConfig.Spec.Global.JSONLog,
+	)
 
 	return deployment, nil
 }
@@ -76,7 +80,7 @@ func scalingPodServiceAccountForKAIConfig(
 	return sa, err
 }
 
-func argsForKAIConfig(config *node_scale_adjuster.NodeScaleAdjuster, schedulerName string) []string {
+func argsForKAIConfig(config *node_scale_adjuster.NodeScaleAdjuster, schedulerName string, jsonLog *bool) []string {
 	args := []string{
 		"--scheduler-name", schedulerName,
 	}
@@ -98,5 +102,5 @@ func argsForKAIConfig(config *node_scale_adjuster.NodeScaleAdjuster, schedulerNa
 			fmt.Sprintf("%f", *config.Args.GPUMemoryToFractionRatio))
 	}
 
-	return args
+	return common.AddControllerRuntimeJSONLogArg(jsonLog, args)
 }

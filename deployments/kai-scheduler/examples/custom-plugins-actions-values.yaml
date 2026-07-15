@@ -1,0 +1,53 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# Example values file demonstrating scheduler plugin and action customization
+# Usage: helm install kai-scheduler . -f examples/custom-plugins-actions-values.yaml
+
+scheduler:
+  placementStrategy: spread
+
+  # Plugin configuration examples
+  plugins:
+    # Disable a built-in plugin
+    elastic:
+      enabled: false
+
+    # Change plugin priority (reordering)
+    predicates:
+      priority: 50  # Run predicates after most other plugins
+
+    # Override plugin arguments
+    proportion:
+      arguments:
+        kValue: "2.0"  # Adjust fair-share quota allocation
+
+    # Add a custom plugin
+    mycustomplugin:
+      priority: 1050
+      enabled: true
+      arguments:
+        customKey: "customValue"
+        anotherKey: "anotherValue"
+
+    # Independent node-level and device-level placement
+    # Spread across nodes but pack within each node's GPUs
+    gpuspread:
+      enabled: false
+    gpupack:
+      enabled: true
+
+  # Action configuration examples
+  actions:
+    # Disable consolidation action
+    consolidation:
+      enabled: false
+
+    # Change action priority (reordering)
+    allocate:
+      priority: 600  # Run allocate before default priority
+
+    # Add a custom action
+    mycustomaction:
+      priority: 150
+      enabled: true

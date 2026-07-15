@@ -11,7 +11,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
 var (
@@ -26,10 +26,10 @@ func RequestsGPUFraction(pod *v1.Pod) bool {
 
 func RequestsWholeGPU(pod *v1.Pod) bool {
 	for _, container := range pod.Spec.Containers {
-		if _, ok := container.Resources.Requests[constants.GpuResource]; ok {
+		if _, ok := container.Resources.Requests[constants.NvidiaGpuResource]; ok {
 			return true
 		}
-		if _, ok := container.Resources.Limits[constants.GpuResource]; ok {
+		if _, ok := container.Resources.Limits[constants.NvidiaGpuResource]; ok {
 			return true
 		}
 	}

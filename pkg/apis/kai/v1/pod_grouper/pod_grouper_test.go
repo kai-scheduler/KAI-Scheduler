@@ -21,16 +21,17 @@ var _ = Describe("PodGrouper", func() {
 		podGrouper := &PodGrouper{}
 		var replicaCount int32
 		replicaCount = 1
-		podGrouper.SetDefaultsWhereNeeded(&replicaCount)
+		podGrouper.SetDefaultsWhereNeeded(&replicaCount, nil)
 		Expect(*podGrouper.Service.Enabled).To(Equal(true))
 		Expect(*podGrouper.Service.Image.Name).To(Equal("podgrouper"))
 		Expect(*podGrouper.Replicas).To(Equal(int32(1)))
+		Expect(*podGrouper.Args.GenericKartaFallback).To(Equal(true))
 	})
 	It("Set Defaults with replicas", func(ctx context.Context) {
 		podGrouper := &PodGrouper{}
 		var replicaCount int32
 		replicaCount = 3
-		podGrouper.SetDefaultsWhereNeeded(&replicaCount)
+		podGrouper.SetDefaultsWhereNeeded(&replicaCount, nil)
 		Expect(*podGrouper.Replicas).To(Equal(int32(3)))
 	})
 })

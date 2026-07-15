@@ -23,8 +23,8 @@ SPDX-License-Identifier: Apache-2.0
 package fake
 
 import (
-	schedulingv2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned/typed/scheduling/v2alpha2"
-	v2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	schedulingv2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/typed/scheduling/v2alpha2"
+	v2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	gentype "k8s.io/client-go/gentype"
 )
 

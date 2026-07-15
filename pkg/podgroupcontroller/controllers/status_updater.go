@@ -14,11 +14,11 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgroupcontroller/controllers/cluster_relations"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgroupcontroller/controllers/metadata"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgroupcontroller/controllers/patcher"
-	utilities "github.com/NVIDIA/KAI-scheduler/pkg/podgroupcontroller/utilities/pod-group"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgroupcontroller/controllers/cluster_relations"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgroupcontroller/controllers/metadata"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgroupcontroller/controllers/patcher"
+	utilities "github.com/kai-scheduler/KAI-scheduler/pkg/podgroupcontroller/utilities/pod-group"
 )
 
 func (r *PodGroupReconciler) handlePodGroupStatus(ctx context.Context, podGroup *v2alpha2.PodGroup) (
@@ -74,7 +74,7 @@ func (r *PodGroupReconciler) calculatePodGroupMetadata(
 	}
 
 	for _, relatedPod := range relatedPods.Items {
-		if err := addPodMetadata(ctx, podGroupMetadata, relatedPod, r.Client); err != nil {
+		if err := addPodMetadata(ctx, podGroupMetadata, relatedPod, r.Client, r.DRAAPIVersion); err != nil {
 			return nil, err
 		}
 	}
@@ -83,11 +83,12 @@ func (r *PodGroupReconciler) calculatePodGroupMetadata(
 }
 
 func addPodMetadata(
-	ctx context.Context, podGroupMetadata *metadata.PodGroupMetadata, pod v1.Pod, kubeclient client.Client,
+	ctx context.Context, podGroupMetadata *metadata.PodGroupMetadata, pod v1.Pod,
+	kubeclient client.Client, draAPIVersion string,
 ) error {
 	logger := log.FromContext(ctx)
 
-	podMetadata, err := metadata.GetPodMetadata(ctx, &pod, kubeclient)
+	podMetadata, err := metadata.GetPodMetadata(ctx, &pod, kubeclient, draAPIVersion)
 	if err != nil {
 		logger.Error(err, fmt.Sprintf("Failed to calculate metadata for pod %s/%s", pod.Namespace, pod.Name))
 		return err

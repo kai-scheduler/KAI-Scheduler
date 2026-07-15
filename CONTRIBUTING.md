@@ -26,11 +26,11 @@ Open an issue with a clear description, steps to reproduce, and relevant environ
 ### Improving Documentation
 Help us keep the docs clear and useful by fixing typos, updating outdated information, or adding examples.
 
-### Contributing changes
+### Contributing Changes
 - Fork and Clone – Begin by forking the repository and cloning it to your local machine.
 - Create a Branch – Use a descriptive branch name, such as feature/add-cool-feature or bugfix/fix-issue123.
 - Make Changes – Keep your commits small, focused, and well-documented. For detailed build and test instructions, refer to [Building from Source](docs/developer/building-from-source.md).
-- Log Changes – For behavior-affecting changes (features, fixes, API changes), update the [changelog](CHANGELOG.md) file under the "Unreleased" section. Follow the format at [keepachangelog.com](https://keepachangelog.com/en/1.1.0/). Skip logging internal changes like refactoring or tests. CI checks for changelog updates; add the `skip-changelog` label to your PR to skip if your change doesn't require a changelog entry.
+- Log Changes – For behavior-affecting changes (features, fixes, API changes), add a changelog entry by running `make changelog` (powered by [changie](https://changie.dev)). This creates a small fragment file under `.changes/unreleased/` instead of editing `CHANGELOG.md` directly, so entries never conflict between PRs or backports. `CHANGELOG.md` is the source of truth for released versions (following [keepachangelog.com](https://keepachangelog.com/en/1.1.0/)); your fragment stays in `.changes/unreleased/` until a maintainer cuts the next release, which folds the pending fragments into `CHANGELOG.md` and clears them. Skip logging internal changes like refactoring or tests. CI checks for a fragment; add the `skip-changelog` label to your PR to skip if your change doesn't require a changelog entry.
 - Submit a PR – Open a pull request and reference any relevant issues or discussions.
 - Approval Policy – PRs from external contributors require approval from 2 trusted reviewers (organization members or collaborators) before merging.
 - Coverage - Please look at the coverage change details and create unit tests, integration tests or end-to-end tests to cover new functionality or changes.
@@ -101,13 +101,33 @@ Each pull request should meet the following requirements:
 - All tests pass – Run the full test suite locally with: `make build validate test`
 - Test coverage – Add or update tests for any affected code.
 - Documentation – Update relevant documentation to reflect your changes.
-- Changes logged - If your changes warrant logging - like behavior changes (including bugfixes) or new features - add them to the [Changelog](CHANGELOG.md). Use the `skip-changelog` label to opt out if not needed.
+- Changes logged - If your changes warrant logging - like behavior changes (including bugfixes) or new features - run `make changelog` to add a changelog fragment (do not edit `CHANGELOG.md` directly). Use the `skip-changelog` label to opt out if not needed.
 - PR description – Fill out the pull request template completely
 
 ## Getting Help
 Need support or have a question? We're here to help:
-- Report issues or ask questions by [opening an issue on GitHub](https://github.com/NVIDIA/KAI-Scheduler/issues).
+- Report issues or ask questions by [opening an issue on GitHub](https://github.com/kai-scheduler/KAI-scheduler/issues).
 - Join the conversation in the [#batch-wg](https://cloud-native.slack.com/archives/C02Q5DFF3MM) Slack channel to connect with the community and contributors.
+
+## Developer Certificate of Origin (DCO)
+
+All commits must be signed off to certify you authored the change and agree to the [DCO](https://developercertificate.org/). Add `-s` to your commit command:
+
+```bash
+git commit -s -m "feat: my change"
+```
+
+This appends a `Signed-off-by: Your Name <your@email.com>` line to the commit message.
+
+**Fixing unsigned commits:**
+
+```bash
+# Amend the last commit
+git commit --amend -s
+
+# Sign all commits on your branch at once
+git rebase --signoff origin/main
+```
 
 ## License
 By contributing, you agree that your contributions will be licensed under the Apache License 2.0.

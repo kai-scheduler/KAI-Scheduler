@@ -25,21 +25,22 @@ import (
 	"net/http"
 	"time"
 
+	nrtclientset "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
-	kubeaischedulerver "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned"
-	schedcache "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/usagedb"
-	api "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
-	usagedbapi "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf_util"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/metrics"
+	kubeaischedulerver "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned"
+	schedcache "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb"
+	api "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
+	usagedbapi "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf_util"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
 )
 
 type Scheduler struct {
@@ -57,6 +58,11 @@ func NewScheduler(
 	mux *http.ServeMux,
 ) (*Scheduler, error) {
 	kubeClient, kubeAiSchedulerClient := newClients(config)
+
+	nrtClient, err := nrtclientset.NewForConfig(config)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to create NodeResourceTopology client: %v", err)
+	}
 
 	discoveryClient, err := discovery.NewDiscoveryClientForConfig(config)
 	if err != nil {
@@ -76,6 +82,7 @@ func NewScheduler(
 	schedulerCacheParams := &schedcache.SchedulerCacheParams{
 		KubeClient:                  kubeClient,
 		KAISchedulerClient:          kubeAiSchedulerClient,
+		NRTClient:                   nrtClient,
 		UsageDBParams:               usageDBParams,
 		UsageDBClient:               usageDBClient,
 		SchedulerName:               schedulerParams.SchedulerName,
@@ -86,6 +93,7 @@ func NewScheduler(
 		FullHierarchyFairness:       schedulerParams.FullHierarchyFairness,
 		NumOfStatusRecordingWorkers: schedulerParams.NumOfStatusRecordingWorkers,
 		UpdatePodEvictionCondition:  schedulerParams.UpdatePodEvictionCondition,
+		StuckInReleasingThreshold:   schedulerParams.StuckInReleasingThreshold,
 		DiscoveryClient:             discoveryClient,
 	}
 

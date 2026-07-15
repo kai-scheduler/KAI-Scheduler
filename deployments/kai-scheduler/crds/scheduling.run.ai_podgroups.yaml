@@ -9,7 +9,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.16.1
+    controller-gen.kubebuilder.io/version: v0.20.1
   name: podgroups.scheduling.run.ai
 spec:
   group: scheduling.run.ai
@@ -47,16 +47,6 @@ spec:
           spec:
             description: PodGroupSpec defines the desired state of PodGroup
             properties:
-              backoffLimit:
-                description: The number of failed pods required for this podgroup
-                  to move to 'Failed' phase.
-                format: int32
-                type: integer
-              completions:
-                description: The number of successful pods required for this podgroup
-                  to move to 'Successful' phase.
-                format: int32
-                type: integer
               markUnschedulable:
                 description: Should add "Unschedulable" event to the pods or not.
                 type: boolean
@@ -64,12 +54,17 @@ spec:
                 description: |-
                   MinMember defines the minimal number of members to run the PodGroup;
                   if there are not enough resources to start all required members, the scheduler will not start anyone.
+                  Mutually exclusive with MinSubGroup.
                 format: int32
                 minimum: 1
                 type: integer
-              parallelism:
-                description: The number of pods which will try to run at any instant.
+              minSubGroup:
+                description: |-
+                  MinSubGroup defines the minimal number of direct child SubGroups required for this PodGroup to be schedulable.
+                  Only applicable when SubGroups are defined.
+                  Mutually exclusive with MinMember.
                 format: int32
+                minimum: 1
                 type: integer
               preemptibility:
                 description: |-
@@ -78,6 +73,13 @@ spec:
                 enum:
                 - preemptible
                 - non-preemptible
+                type: string
+              preemptionDelay:
+                description: |-
+                  PreemptionDelay is the minimal time the PodGroup must be pending, counted from
+                  max(creation time, last eviction time), before it may trigger eviction of other
+                  workloads (preempt, reclaim and consolidation actions). It does not affect plain
+                  allocation into free capacity, nor the PodGroup's own evictability.
                 type: string
               priorityClassName:
                 description: |-
@@ -108,17 +110,30 @@ spec:
                       description: |-
                         MinMember defines the minimal number of members to run this SubGroup;
                         if there are not enough resources to start all required members, the scheduler will not start anyone.
+                        Mutually exclusive with MinSubGroup.
                       format: int32
-                      minimum: 1
+                      minimum: 0
+                      type: integer
+                    minSubGroup:
+                      description: |-
+                        MinSubGroup defines the minimal number of direct child SubGroups required for this SubGroup to be schedulable.
+                        Only applicable when this SubGroup has child SubGroups.
+                        Mutually exclusive with MinMember.
+                      format: int32
+                      minimum: 0
                       type: integer
                     name:
-                      description: Name uniquely identifies the SubGroup within the
-                        PodGroup.
+                      description: |-
+                        Name uniquely identifies the SubGroup within the PodGroup.
+                        Must be a valid DNS label (RFC 1123).
                       minLength: 1
+                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                       type: string
                     parent:
-                      description: Parent is an optional attribute that specifies
-                        the name of the parent SubGroup
+                      description: |-
+                        Parent is an optional attribute that specifies the name of the parent SubGroup.
+                        Must be a valid DNS label (RFC 1123).
+                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                       type: string
                     topologyConstraint:
                       description: TopologyConstraint defines the topology constraints
@@ -204,17 +219,6 @@ spec:
                       type: string
                   type: object
                 type: array
-              failed:
-                description: The number of pods which reached phase Failed.
-                format: int32
-                type: integer
-              pending:
-                description: The number of pods which reached phase Pending.
-                format: int32
-                type: integer
-              phase:
-                description: Current phase of PodGroup.
-                type: string
               resourcesStatus:
                 description: Status of resources related to pods connected to this
                   pod group.
@@ -253,10 +257,6 @@ spec:
                       by all running and pending jobs in queue and child queues
                     type: object
                 type: object
-              running:
-                description: The number of actively running pods.
-                format: int32
-                type: integer
               schedulingConditions:
                 description: The scheduling conditions of PodGroup.
                 items:
@@ -402,10 +402,6 @@ spec:
                       type: string
                   type: object
                 type: array
-              succeeded:
-                description: The number of pods which reached phase Succeeded.
-                format: int32
-                type: integer
             type: object
         type: object
     served: true

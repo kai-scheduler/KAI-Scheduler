@@ -16,11 +16,11 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/pod_group_controller"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	generate "github.com/NVIDIA/KAI-scheduler/pkg/operator/cert-utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/common"
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/pod_group_controller"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	generate "github.com/kai-scheduler/KAI-scheduler/pkg/operator/cert-utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common"
 )
 
 const (
@@ -47,7 +47,11 @@ func (p *PodGroupController) deploymentForKAIConfig(
 	}
 
 	deployment.Spec.Replicas = config.Replicas
-	deployment.Spec.Template.Spec.Containers[0].Args = buildArgsList(config, *kaiConfig.Spec.Global.SchedulerName)
+	deployment.Spec.Template.Spec.Containers[0].Args = buildArgsList(
+		config,
+		*kaiConfig.Spec.Global.SchedulerName,
+		kaiConfig.Spec.Global.JSONLog,
+	)
 	deployment.Spec.Template.Spec.Containers[0].VolumeMounts = []v1.VolumeMount{
 		{
 			Name:      "cert",
@@ -219,7 +223,7 @@ func (p *PodGroupController) webhookClientConfig(namespace, path string, cabundl
 	}
 }
 
-func buildArgsList(config *pod_group_controller.PodGroupController, schedulerName string) []string {
+func buildArgsList(config *pod_group_controller.PodGroupController, schedulerName string, jsonLog *bool) []string {
 	args := []string{
 		"--scheduler-name", schedulerName,
 	}
@@ -234,5 +238,5 @@ func buildArgsList(config *pod_group_controller.PodGroupController, schedulerNam
 		args = append(args, "--leader-elect")
 	}
 
-	return args
+	return common.AddControllerRuntimeJSONLogArg(jsonLog, args)
 }

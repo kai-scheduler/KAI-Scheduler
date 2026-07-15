@@ -1,14 +1,24 @@
 # Copyright 2025 NVIDIA CORPORATION
 # SPDX-License-Identifier: Apache-2.0
 
+# Force OpenShift mode (SecurityContextConstraints, hook pod securityContexts).
+# By default OpenShift is auto-detected via a cluster lookup, which does not
+# work under offline rendering (helm template, GitOps tools such as ArgoCD).
+openshift: false
+
 global:
   registry: registry/local/kai-scheduler
   tag: ""
+  # Use FIPS-enabled images: appends "-fips" to every resolved image tag
+  # (whether it comes from a per-service tag, global.tag or the chart version)
+  fips: false
   imagePullPolicy: IfNotPresent
   securityContext: {}
-  imagePullSecrets: []
+  podSecurityContext: {}
+  imagePullSecrets: [] # format: [{name: secret1}, {name: secret2}]
   leaderElection: false
   gpuSharing: false
+  blockNvidiaVisibleDevices: false
   clusterAutoscaling: false
   nodeSelector: {}
   affinity: {}
@@ -16,10 +26,29 @@ global:
   tolerations: []
   namespaceLabelSelector: {}
   podLabelSelector: {}
+  nodePoolLabelKey: ""
+  jsonLog: false
+  vpa:
+    enabled: false
+    updatePolicy:
+      updateMode: InPlaceOrRecreate
+      minReplicas: 1
+    resourcePolicy:
+      containerPolicies:
+        - containerName: "*"
+          minAllowed:
+            cpu: 50m
+            memory: 500Mi
+          maxAllowed:
+            cpu: 2
+            memory: 5Gi
   resourceReservation:
     namespace: kai-resource-reservation
     serviceAccount: kai-resource-reservation
     appLabel: kai-resource-reservation
+    namespaceLabels: {}
+    createNamespace: true
+    createServiceAccount: true
 
 operator:
   image:
@@ -31,22 +60,29 @@ operator:
   probeBindAddress: ":8081"
   qps: 50
   burst: 300
+  # Log level for the operator (currently mapped to controller-runtime --zap-log-level). Leave empty to use binary defaults.
+  # When set: debug, info, error, panic. Example: "info"
+  logLevel: ""
 
 podgrouper:
+  enabled: true
   image:
     name: podgrouper
     pullPolicy: IfNotPresent
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   queueLabelKey: "kai.scheduler/queue"
+  genericKartaFallback: true
   affinity: {}
 
 podgroupcontroller:
+  enabled: true
   image:
     name: podgroupcontroller
     pullPolicy: IfNotPresent
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   affinity: {}
 binder:
+  enabled: true
   name: binder
   image:
     name: binder
@@ -70,7 +106,19 @@ binder:
   ports:
     metricsPort: 8080
   affinity: {}
+  # plugins allows overriding binder plugin configuration.
+  # Built-in plugins can be disabled, reordered, or have their arguments changed.
+  # Default plugins and priorities: volumebinding=300, dynamicresources=200, gpusharing=100.
+  # Example:
+  # plugins:
+  #   gpusharing:
+  #     enabled: false
+  #   volumebinding:
+  #     arguments:
+  #       bindTimeoutSeconds: "60"
+  plugins: {}
 scheduler:
+  enabled: true
   image:
     name: scheduler
     pullPolicy: IfNotPresent
@@ -78,29 +126,97 @@ scheduler:
   placementStrategy: binpack
   ports:
     metricsPort: 8080
+  # args allows passing scheduler CLI flags through the default SchedulingShard spec.args map.
+  # Values must be strings because SchedulingShard.spec.args is map[string]string.
+  # Example:
+  # args:
+  #   v: "0"
+  args: {}
+  # plugins allows overriding or adding custom scheduler plugins
+  # Built-in plugins can be disabled, reordered, or have their arguments changed.
+  # New plugins can be added by specifying a name not in the default set.
+  # Example:
+  # plugins:
+  #   elastic:
+  #     enabled: false
+  #   predicates:
+  #     priority: 50
+  #   proportion:
+  #     arguments:
+  #       kValue: "2.0"
+  #   mycustomplugin:
+  #     priority: 1050
+  #     arguments:
+  #       key: value
+  plugins: {}
+  # actions allows overriding or adding custom scheduler actions
+  # Built-in actions can be disabled or reordered.
+  # New actions can be added by specifying a name not in the default set.
+  # Example:
+  # actions:
+  #   consolidation:
+  #     enabled: false
+  #   allocate:
+  #     priority: 600
+  #   mycustomaction:
+  #     priority: 150
+  actions: {}
+  # Alpha/experimental scenario search time budgets. Values are Go duration strings.
+  scenarioSearchBudgets: {}
+
+# defaultShard controls the chart-managed "default" SchedulingShard CR,
+# whose spec is populated from the scheduler.* values above.
+# Disable to install KAI without deploying the default SchedulingShard
+# (e.g. to manage shards out-of-band).
+defaultShard:
+  enabled: true
+
+numaPlacementExporter:
+  image:
+    name: numa-placement-exporter
+    pullPolicy: IfNotPresent
+    # tag: ""  # Optional: Override global.tag or Chart.AppVersion
+  # nodeSelector targets the DaemonSet at specific nodes (e.g. GPU/NUMA nodes). The global
+  # nodeSelector is intentionally NOT applied to this DaemonSet.
+  nodeSelector: {}
+  # tolerations let the DaemonSet run on tainted worker nodes (merged with global.daemonsetsTolerations).
+  tolerations: []
+  affinity: {}
+  resources: {}
+  # pollInterval: 1s
+  # driftResyncInterval: 60s
+  # Override the podresources socket / sysfs paths to point the exporter at a non-kubelet source
+  # (e.g. the fake-gpu-operator's simulated podresources + sysfs on kind). podResourcesSocket must
+  # resolve inside podResourcesHostPath. Defaults target the real kubelet.
+  # podResourcesHostPath: /var/lib/kubelet/pod-resources
+  # podResourcesSocket: /var/lib/kubelet/pod-resources/kubelet.sock
+  # sysfsHostPath: /sys
 
 queuecontroller:
+  enabled: true
   image:
     name: queuecontroller
     pullPolicy: IfNotPresent
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
-  certSecretName: queuecontroller-webhook-tls-secret
   affinity: {}
 
 admission:
+  enabled: true
   name: kai-admission
   image:
     name: admission
     pullPolicy: IfNotPresent
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
-  certSecretName: admission-webhook-tls-secret
   ports:
     webhookPort: 9443
     metricsPort: 8080
     probePort: 8081
   cdi: false
-  gpuPodRuntimeClassName: nvidia
+  gpuFractionRuntimeClassName: nvidia
   affinity: {}
+  podDisruptionBudget:
+    enabled: true
+    maxUnavailable: 1
 
 nodescaleadjuster:
   image:
@@ -113,12 +229,35 @@ nodescaleadjuster:
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   scalingPodNamespace: kai-scale-adjust
   affinity: {}
+  labels: {}
 
 crdupgrader:
   image:
     name: crd-upgrader
     pullPolicy: IfNotPresent
+    # registry: ""  # Optional: Override global.registry (e.g. to mirror only the hook image)
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
+  resources: {}
+
+kaiConfig:
+  # Render the kai-config Config CR inline as a regular chart resource so it is
+  # tracked, drift-detected and self-healed by GitOps tools such as ArgoCD.
+  # Mutually exclusive with kaiConfigDeployer.enabled. See docs/gitops/README.md.
+  render: false
+
+kaiConfigDeployer:
+  # Post-install/post-upgrade hook that applies the kai-config CR out-of-release (#1536).
+  # Disable to manage the kai-config CR outside of this chart. When disabled, the chart
+  # neither creates kai-config nor deletes it during post-delete cleanup.
+  # For GitOps/ArgoCD installs disable this and set kaiConfig.render=true instead
+  # (see docs/gitops/README.md).
+  enabled: true
+  image:
+    name: crd-upgrader
+    pullPolicy: IfNotPresent
+    # registry: ""  # Optional: Override global.registry (e.g. to mirror only the hook image)
+    # tag: ""  # Optional: Override global.tag or Chart.AppVersion
+  resources: {}
 
 topologyMigration:
   # Enable migration of Kueue Topology CRs to KAI Topology CRs
@@ -131,6 +270,7 @@ topologyMigration:
     name: crd-upgrader
     pullPolicy: IfNotPresent
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
+  resources: {}
 
 postCleanup:
   enabled: true
@@ -140,6 +280,21 @@ postCleanup:
     pullPolicy: IfNotPresent
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   serviceAccountName: post-delete-cleanup
+  resources: {}
+
+# defaultPriorityClasses controls the chart-managed build, train, inference, and
+# build-preemptible PriorityClasses. Disable when these cluster-scoped resources
+# are managed externally.
+defaultPriorityClasses:
+  enabled: true
+
+prometheus:
+  # Enable Prometheus integration for time-aware fairness features.
+  enabled: false
+  # URL of an external Prometheus instance. When set, KAI will not deploy its own
+  # Prometheus but will use the external instance for usage metrics.
+  # Example: http://prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090
+  # externalPrometheusUrl: ""
 
 defaultQueue:
   createDefaultQueue: true

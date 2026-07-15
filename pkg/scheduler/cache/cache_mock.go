@@ -12,17 +12,18 @@ package cache
 import (
 	reflect "reflect"
 
-	api "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	eviction_info "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/eviction_info"
-	pod_info "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	podgroup_info "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	data_lister "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/cluster_info/data_lister"
-	plugins "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_internal/plugins"
+	v1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	api "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	eviction_info "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
+	pod_info "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	podgroup_info "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	data_lister "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/cluster_info/data_lister"
+	plugins "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal/plugins"
 	gomock "go.uber.org/mock/gomock"
 	v1 "k8s.io/api/core/v1"
 	informers "k8s.io/client-go/informers"
 	kubernetes "k8s.io/client-go/kubernetes"
-	framework "k8s.io/kubernetes/pkg/scheduler/framework"
+	framework "k8s.io/kube-scheduler/framework"
 )
 
 // MockCache is a mock of Cache interface.
@@ -50,17 +51,17 @@ func (m *MockCache) EXPECT() *MockCacheMockRecorder {
 }
 
 // Bind mocks base method.
-func (m *MockCache) Bind(podInfo *pod_info.PodInfo, hostname string, bindRequestAnnotations map[string]string) error {
+func (m *MockCache) Bind(podInfo *pod_info.PodInfo, hostname string, bindRequestAnnotations map[string]string, predictedNUMAZones []v1alpha2.NUMAZonePlacement) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Bind", podInfo, hostname, bindRequestAnnotations)
+	ret := m.ctrl.Call(m, "Bind", podInfo, hostname, bindRequestAnnotations, predictedNUMAZones)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Bind indicates an expected call of Bind.
-func (mr *MockCacheMockRecorder) Bind(podInfo, hostname, bindRequestAnnotations any) *gomock.Call {
+func (mr *MockCacheMockRecorder) Bind(podInfo, hostname, bindRequestAnnotations, predictedNUMAZones any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Bind", reflect.TypeOf((*MockCache)(nil).Bind), podInfo, hostname, bindRequestAnnotations)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Bind", reflect.TypeOf((*MockCache)(nil).Bind), podInfo, hostname, bindRequestAnnotations, predictedNUMAZones)
 }
 
 // Evict mocks base method.

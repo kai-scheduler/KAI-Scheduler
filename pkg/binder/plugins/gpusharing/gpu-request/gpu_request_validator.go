@@ -10,7 +10,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
 func ValidateGpuRequests(pod *v1.Pod) error {
@@ -81,6 +81,12 @@ func validateGpuFractionAnnotation(hasGpuFractionAnnotation bool, gpuFractionFro
 		return fmt.Errorf(
 			"gpu-fraction annotation value must be a positive number smaller than 1.0")
 	}
+	_, err := resource.ParseQuantity(gpuFractionFromAnnotation)
+	if err != nil {
+		return fmt.Errorf(
+			"gpu-fraction annotation value must be a float written with a decimal point or a scientific notation .given value: %s",
+			gpuFractionFromAnnotation)
+	}
 	return nil
 }
 
@@ -99,7 +105,7 @@ func validateMultiFractionRequest(hasGpuFractionsCount bool, gpuFractionsCountFr
 func getFirstGPULimit(pod *v1.Pod) *resource.Quantity {
 	containers := append(pod.Spec.Containers, pod.Spec.InitContainers...)
 	for _, container := range containers {
-		if limit, ok := container.Resources.Limits[constants.GpuResource]; ok {
+		if limit, ok := container.Resources.Limits[constants.NvidiaGpuResource]; ok {
 			return &limit
 		}
 	}

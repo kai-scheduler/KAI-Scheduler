@@ -10,6 +10,8 @@ const (
 	PreemptibilityLabelKey = "kai.scheduler/preemptibility"
 	UserLabelKey           = "user"
 
+	PreemptionDelayAnnotationKey = "kai.scheduler/preemption-delay"
+
 	BuildPriorityClass     = "build"
 	TrainPriorityClass     = "train"
 	InferencePriorityClass = "inference"
@@ -21,4 +23,10 @@ const (
 	TopologyKey                   = "kai.scheduler/topology"
 	TopologyRequiredPlacementKey  = "kai.scheduler/topology-required-placement"
 	TopologyPreferredPlacementKey = "kai.scheduler/topology-preferred-placement"
+
+	SegmentSizeKey                       = "kai.scheduler/segment-size"
+	SegmentTopologyRequiredPlacementKey  = "kai.scheduler/segment-topology-required-placement"
+	SegmentTopologyPreferredPlacementKey = "kai.scheduler/segment-topology-preferred-placement"
+
+	MinMemberOverrideKey = "kai.scheduler/batch-min-member"
 )

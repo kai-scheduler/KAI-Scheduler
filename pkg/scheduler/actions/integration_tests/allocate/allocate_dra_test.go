@@ -9,20 +9,18 @@ import (
 
 	. "go.uber.org/mock/gomock"
 	resourceapi "k8s.io/api/resource/v1"
-	utilfeature "k8s.io/apiserver/pkg/util/feature"
-	featuregate "k8s.io/component-base/featuregate/testing"
-	"k8s.io/kubernetes/pkg/features"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/integration_tests/integration_tests_utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/dra_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	featuregates "github.com/kai-scheduler/KAI-scheduler/pkg/common/feature_gates"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/integration_tests_utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/dra_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 )
 
 func TestDRAAllocation(t *testing.T) {
@@ -31,7 +29,10 @@ func TestDRAAllocation(t *testing.T) {
 	controller := NewController(t)
 	defer controller.Finish()
 
-	featuregate.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, features.DynamicResourceAllocation, true)
+	featuregates.SetDynamicResourcesEnabledForTest(true)
+	t.Cleanup(func() {
+		featuregates.SetDynamicResourcesEnabledForTest(false)
+	})
 
 	for testNumber, testData := range []integration_tests_utils.TestTopologyMetadata{
 		{

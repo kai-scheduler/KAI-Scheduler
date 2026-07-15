@@ -4,7 +4,8 @@
 package common
 
 import (
-	"fmt"
+	"regexp"
+	"strings"
 
 	"k8s.io/api/core/v1"
 )
@@ -40,6 +41,11 @@ func addConfigMapVolume(podSpec *v1.PodSpec, volumeName string, configMapName st
 	podSpec.Volumes = append(podSpec.Volumes, volume)
 }
 
+var invalidDNSLabelChars = regexp.MustCompile(`[^a-z0-9-]+`)
+
 func GetConfigVolumeName(configMapName string) string {
-	return fmt.Sprintf("%v-vol", configMapName)
+	// ConfigMap names may be DNS subdomains, but volume names must be DNS labels.
+	volumeName := strings.ToLower(configMapName + "-vol")
+	volumeName = invalidDNSLabelChars.ReplaceAllString(volumeName, "-")
+	return strings.Trim(volumeName, "-")
 }

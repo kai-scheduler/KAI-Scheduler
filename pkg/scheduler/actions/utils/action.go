@@ -4,15 +4,15 @@
 package utils
 
 import (
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/queue_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/scheduler_util"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/scheduler_util"
 )
 
 func GetVictimsQueue(
@@ -62,21 +62,29 @@ func GetMessageOfEviction(ssn *framework.Session, actionType framework.ActionTyp
 				"Failed to get preemptee job for task: <%s/%s>", preempteeTask.Namespace, preempteeTask.Name)
 			return ""
 		}
-		reclaimerQueue := ssn.ClusterInfo.Queues[preemptorJob.Queue]
-		reclaimerParentQueue := ssn.ClusterInfo.Queues[reclaimerQueue.ParentQueue]
-		reclaimeeQueue := ssn.ClusterInfo.Queues[preempteeJob.Queue]
-		reclaimeeParentQueue := ssn.ClusterInfo.Queues[reclaimeeQueue.ParentQueue]
+		reclaimerQueue, reclaimerFound := ssn.ClusterInfo.Queues[preemptorJob.Queue]
+		reclaimeeQueue, reclaimeeFound := ssn.ClusterInfo.Queues[preempteeJob.Queue]
 
 		msg := api.GetReclaimMessage(preempteeTask, preemptorJob)
 
-		var queueDetails string
-		if reclaimeeQueue.ParentQueue == reclaimerQueue.ParentQueue {
-			queueDetails = getReclaimMessageQueuesDetails(ssn, preempteeTask, preemptorJob,
-				reclaimerQueue, reclaimeeQueue)
-		} else {
-			queueDetails = getReclaimMessageQueuesDetails(ssn, preempteeTask, preemptorJob,
-				reclaimerParentQueue, reclaimeeParentQueue)
+		if !reclaimerFound || reclaimerQueue == nil || !reclaimeeFound || reclaimeeQueue == nil {
+			log.InfraLogger.Errorf(
+				"Failed to get reclaimer or reclaimee queue for task: <%s/%s>, reclaimer queue: <%v>, reclaimee queue: <%v>",
+				preempteeTask.Namespace, preempteeTask.Name, preemptorJob.Queue, preempteeJob.Queue)
+			return msg
 		}
+
+		var reclaimerDetailsQueue, reclaimeeDetailsQueue *queue_info.QueueInfo
+		if reclaimeeQueue.ParentQueue == reclaimerQueue.ParentQueue {
+			reclaimerDetailsQueue = reclaimerQueue
+			reclaimeeDetailsQueue = reclaimeeQueue
+		} else {
+			reclaimerDetailsQueue = queueForReclaimDetails(ssn, reclaimerQueue)
+			reclaimeeDetailsQueue = queueForReclaimDetails(ssn, reclaimeeQueue)
+		}
+
+		queueDetails := getReclaimMessageQueuesDetails(ssn, preempteeTask, preemptorJob,
+			reclaimerDetailsQueue, reclaimeeDetailsQueue)
 
 		msg += "\n" + queueDetails
 		return msg
@@ -85,6 +93,19 @@ func GetMessageOfEviction(ssn *framework.Session, actionType framework.ActionTyp
 	log.InfraLogger.Errorf("Unexpected action type: <%v>, task: <%v/%v>", actionType, preempteeTask.Namespace,
 		preempteeTask.Name)
 	return ""
+}
+
+func queueForReclaimDetails(ssn *framework.Session, q *queue_info.QueueInfo) *queue_info.QueueInfo {
+	if q == nil {
+		return nil
+	}
+	if q.ParentQueue == "" {
+		return q
+	}
+	if parent, found := ssn.ClusterInfo.Queues[q.ParentQueue]; found && parent != nil {
+		return parent
+	}
+	return q
 }
 
 func getReclaimMessageQueuesDetails(ssn *framework.Session, reclaimeeTask *pod_info.PodInfo,
@@ -130,9 +151,10 @@ func GetAllPendingJobs(ssn *framework.Session) map[common_info.PodGroupID]*podgr
 
 func IsEnoughGPUsAllocatableForJob(job *podgroup_info.PodGroupInfo, ssn *framework.Session, isRealAllocation bool) bool {
 	sumOfAllAllocatableGPUs, sumOfAllAllocatableGPUsMemory := getSumOfAvailableGPUs(ssn)
-	requestedGPUs, requestedGpuMemory := podgroup_info.GetTasksToAllocateRequestedGPUs(job, ssn.PodSetOrderFn,
+	requestedGPUs, requestedGpuMemory := podgroup_info.GetTasksToAllocateRequestedGPUs(job, ssn.SubGroupOrderFn,
 		ssn.TaskOrderFn, isRealAllocation)
-	resReq := podgroup_info.GetTasksToAllocateInitResource(job, ssn.PodSetOrderFn, ssn.TaskOrderFn, isRealAllocation, ssn.ClusterInfo.MinNodeGPUMemory)
+	resReq := podgroup_info.GetTasksToAllocateInitResourceVector(job, ssn.SubGroupOrderFn, ssn.TaskOrderFn, isRealAllocation,
+		ssn.ClusterInfo.MinNodeGPUMemoryMiB)
 	log.InfraLogger.V(7).Infof(
 		"Task: <%v/%v> resources requires: <%v>, sumOfAllAllocatableGPUs: <%v, %v mb>",
 		job.Namespace, job.Name, resReq, sumOfAllAllocatableGPUs, sumOfAllAllocatableGPUsMemory)

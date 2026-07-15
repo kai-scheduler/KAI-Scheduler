@@ -25,8 +25,8 @@ package v1alpha1
 import (
 	http "net/http"
 
-	scheme "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned/scheme"
-	kaiv1alpha1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1alpha1"
+	scheme "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/scheme"
+	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
 	rest "k8s.io/client-go/rest"
 )
 

@@ -2,6 +2,9 @@
 # Copyright 2025 NVIDIA CORPORATION
 # SPDX-License-Identifier: Apache-2.0
 
+# kube_codegen installs tools from the module cache, which has no VCS metadata.
+export GOFLAGS="${GOFLAGS:+$GOFLAGS }-buildvcs=false"
+
 # Creating an import file got code-generator
 
 cat <<EOF > generate-dep.go
@@ -22,7 +25,7 @@ kube::codegen::gen_client \
   --boilerplate ${SDK_HACK_DIR}/boilerplate.go.kb.txt \
   --with-watch \
   --output-dir ${SDK_HACK_DIR}/../pkg/apis/client \
-  --output-pkg github.com/NVIDIA/KAI-scheduler/pkg/apis/client \
+  --output-pkg github.com/kai-scheduler/KAI-scheduler/pkg/apis/client \
   ${SDK_HACK_DIR}/../pkg/apis
 
 rm -f generate-dep.go && go mod tidy

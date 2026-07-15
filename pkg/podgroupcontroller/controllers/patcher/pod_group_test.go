@@ -15,8 +15,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/podgroupcontroller/controllers/metadata"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgroupcontroller/controllers/metadata"
 )
 
 func TestShouldUpdatePodGroupStatus(t *testing.T) {
@@ -80,7 +80,7 @@ func TestShouldUpdatePodGroupStatus(t *testing.T) {
 			args{
 				podGroup: &v2alpha2.PodGroup{
 					Status: v2alpha2.PodGroupStatus{
-						Running: 3,
+						Conditions: []v2alpha2.PodGroupCondition{{Type: "c1"}},
 						ResourcesStatus: v2alpha2.PodGroupResourcesStatus{
 							Requested: map[v1.ResourceName]resource.Quantity{
 								"cpu": resource.MustParse("1"),
@@ -130,7 +130,7 @@ func TestUpdatePodGroupStatus(t *testing.T) {
 						Name:      "m1",
 					},
 					Status: v2alpha2.PodGroupStatus{
-						Phase: v2alpha2.PodGroupPhase("p1"),
+						Conditions: []v2alpha2.PodGroupCondition{{Type: "c1"}},
 					},
 				},
 				&metadata.PodGroupMetadata{
@@ -141,7 +141,7 @@ func TestUpdatePodGroupStatus(t *testing.T) {
 			},
 			false,
 			&v2alpha2.PodGroupStatus{
-				Phase: v2alpha2.PodGroupPhase("p1"),
+				Conditions: []v2alpha2.PodGroupCondition{{Type: "c1"}},
 				ResourcesStatus: v2alpha2.PodGroupResourcesStatus{
 					Requested: map[v1.ResourceName]resource.Quantity{
 						"cpu": resource.MustParse("1"),
@@ -158,7 +158,7 @@ func TestUpdatePodGroupStatus(t *testing.T) {
 						Name:      "m1",
 					},
 					Status: v2alpha2.PodGroupStatus{
-						Phase: v2alpha2.PodGroupPhase("p1"),
+						Conditions: []v2alpha2.PodGroupCondition{{Type: "c1"}},
 					},
 				},
 				&metadata.PodGroupMetadata{
@@ -174,7 +174,7 @@ func TestUpdatePodGroupStatus(t *testing.T) {
 			},
 			false,
 			&v2alpha2.PodGroupStatus{
-				Phase: v2alpha2.PodGroupPhase("p1"),
+				Conditions: []v2alpha2.PodGroupCondition{{Type: "c1"}},
 				ResourcesStatus: v2alpha2.PodGroupResourcesStatus{
 					Requested: map[v1.ResourceName]resource.Quantity{
 						"cpu": resource.MustParse("1"),
@@ -195,7 +195,7 @@ func TestUpdatePodGroupStatus(t *testing.T) {
 						Name:      "m1",
 					},
 					Status: v2alpha2.PodGroupStatus{
-						Phase: v2alpha2.PodGroupPhase("p1"),
+						Conditions: []v2alpha2.PodGroupCondition{{Type: "c1"}},
 					},
 				},
 				&metadata.PodGroupMetadata{
@@ -211,7 +211,7 @@ func TestUpdatePodGroupStatus(t *testing.T) {
 			},
 			false,
 			&v2alpha2.PodGroupStatus{
-				Phase: v2alpha2.PodGroupPhase("p1"),
+				Conditions: []v2alpha2.PodGroupCondition{{Type: "c1"}},
 				ResourcesStatus: v2alpha2.PodGroupResourcesStatus{
 					Requested: map[v1.ResourceName]resource.Quantity{
 						"cpu": resource.MustParse("1"),

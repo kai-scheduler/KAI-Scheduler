@@ -21,7 +21,7 @@ spec:
       serviceAccountName: kai-operator
       containers:
       - name: operator
-        image: {{ .Values.global.registry }}/{{ .Values.operator.image.name }}:{{ .Values.operator.image.tag | default .Values.global.tag | default .Chart.AppVersion }}
+        image: {{ .Values.global.registry }}/{{ .Values.operator.image.name }}:{{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.operator.image.tag) }}
         imagePullPolicy: {{ .Values.operator.image.pullPolicy }}
         {{- with .Values.operator.resources }}
         resources:
@@ -30,10 +30,16 @@ spec:
         args:
           - --metrics-bind-address={{ .Values.operator.metricsBindAddress | default ":8080" }}
           - --health-probe-bind-address={{ .Values.operator.probeBindAddress | default ":8081" }}
-          - --leader-elect={{ .Values.global.leaderElection | default false }}
+          - --leader-elect={{ or .Values.global.leaderElection (gt (int .Values.operator.replicaCount) 1) }}
           - --qps={{ .Values.operator.qps | default 50 }}
           - --burst={{ .Values.operator.burst | default 300 }}
           - --namespace={{ .Release.Namespace }}
+          {{- if .Values.operator.logLevel }}
+          - --zap-log-level={{ .Values.operator.logLevel }}
+          {{- end }}
+          {{- if .Values.global.jsonLog }}
+          - --zap-devel=false
+          {{- end }}
         env:
         - name: WATCH_NAMESPACE
           value: {{ .Release.Namespace }}
@@ -46,7 +52,7 @@ spec:
         - name: MS_REPOSITORY
           value: {{ .Values.global.registry }}
         - name: MS_TAG
-          value: {{ .Values.operator.image.tag | default .Values.global.tag | default .Chart.AppVersion }}
+          value: {{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.operator.image.tag) }}
         ports:
         - containerPort: 8080
           name: metrics
@@ -64,6 +70,10 @@ spec:
             port: 8081
           initialDelaySeconds: 5
           periodSeconds: 10
+        {{- with .Values.global.securityContext }}
+        securityContext:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
       {{- if .Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml .Values.global.imagePullSecrets | nindent 8 }}
@@ -79,4 +89,8 @@ spec:
       {{- if .Values.global.nodeSelector }}
       nodeSelector:
         {{- toYaml .Values.global.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- with .Values.global.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
       {{- end }}

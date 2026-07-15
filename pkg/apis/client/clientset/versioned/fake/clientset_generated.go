@@ -23,15 +23,15 @@ SPDX-License-Identifier: Apache-2.0
 package fake
 
 import (
-	clientset "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned"
-	kaiv1alpha1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned/typed/kai/v1alpha1"
-	fakekaiv1alpha1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned/typed/kai/v1alpha1/fake"
-	schedulingv1alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned/typed/scheduling/v1alpha2"
-	fakeschedulingv1alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned/typed/scheduling/v1alpha2/fake"
-	schedulingv2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned/typed/scheduling/v2"
-	fakeschedulingv2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned/typed/scheduling/v2/fake"
-	schedulingv2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned/typed/scheduling/v2alpha2"
-	fakeschedulingv2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned/typed/scheduling/v2alpha2/fake"
+	clientset "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned"
+	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/typed/kai/v1alpha1"
+	fakekaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/typed/kai/v1alpha1/fake"
+	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/typed/scheduling/v1alpha2"
+	fakeschedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/typed/scheduling/v1alpha2/fake"
+	schedulingv2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/typed/scheduling/v2"
+	fakeschedulingv2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/typed/scheduling/v2/fake"
+	schedulingv2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/typed/scheduling/v2alpha2"
+	fakeschedulingv2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/typed/scheduling/v2alpha2/fake"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
@@ -44,10 +44,6 @@ import (
 // It's backed by a very simple object tracker that processes creates, updates and deletions as-is,
 // without applying any field management, validations and/or defaults. It shouldn't be considered a replacement
 // for a real clientset and is mostly useful in simple unit tests.
-//
-// DEPRECATED: NewClientset replaces this with support for field management, which significantly improves
-// server side apply testing. NewClientset is only available when apply configurations are generated (e.g.
-// via --with-applyconfig).
 func NewSimpleClientset(objects ...runtime.Object) *Clientset {
 	o := testing.NewObjectTracker(scheme, codecs.UniversalDecoder())
 	for _, obj := range objects {
@@ -61,8 +57,8 @@ func NewSimpleClientset(objects ...runtime.Object) *Clientset {
 	cs.AddReactor("*", "*", testing.ObjectReaction(o))
 	cs.AddWatchReactor("*", func(action testing.Action) (handled bool, ret watch.Interface, err error) {
 		var opts metav1.ListOptions
-		if watchActcion, ok := action.(testing.WatchActionImpl); ok {
-			opts = watchActcion.ListOptions
+		if watchAction, ok := action.(testing.WatchActionImpl); ok {
+			opts = watchAction.ListOptions
 		}
 		gvr := action.GetResource()
 		ns := action.GetNamespace()
@@ -91,6 +87,17 @@ func (c *Clientset) Discovery() discovery.DiscoveryInterface {
 
 func (c *Clientset) Tracker() testing.ObjectTracker {
 	return c.tracker
+}
+
+// IsWatchListSemanticsSupported informs the reflector that this client
+// doesn't support WatchList semantics.
+//
+// This is a synthetic method whose sole purpose is to satisfy the optional
+// interface check performed by the reflector.
+// Returning true signals that WatchList can NOT be used.
+// No additional logic is implemented here.
+func (c *Clientset) IsWatchListSemanticsUnSupported() bool {
+	return true
 }
 
 var (

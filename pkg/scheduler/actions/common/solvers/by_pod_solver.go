@@ -6,16 +6,16 @@ package solvers
 import (
 	"golang.org/x/exp/maps"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/common"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 )
 
 type SolutionValidator func(scenario api.ScenarioInfo) bool
@@ -60,86 +60,57 @@ func newByPodSolver(
 	}
 }
 
-func (s *byPodSolver) solve(
-	session *framework.Session, scenario *scenario.ByNodeScenario,
-) *solutionResult {
+// solve evaluates a scenario's feasibility by simulating it: evicting its victims and simulating the allocation loop.
+// This simulates allocation order, node sorting, predicates, and all relevant scheduling logic, so the scheduler will
+// not perform evictions that will not result in successful allocation of the pending job. This also helps the scheduler
+// avoid evictions which are not relevant to the specific scenario.
+func (s *byPodSolver) solve(session *framework.Session, scenario *scenario.ByNodeScenario) *solutionResult {
 	statement := session.Statement()
 
 	pendingJob := scenario.GetPreemptor()
 	nextTaskToFindAllocation := scenario.PendingTasks()[len(scenario.PendingTasks())-1]
-	latestPotentialVictim := scenario.LatestPotentialVictim()
 
-	err := common.EvictAllPreemptees(session, scenario.RecordedVictimsTasks(), pendingJob, statement, s.actionType)
-	if err != nil {
+	allVictims := getVictimTasks(scenario.RecordedVictimsTasks(), scenario.PotentialVictimsTasks())
+
+	if len(allVictims) == 0 {
+		statement.Discard()
+		return &solutionResult{false, nil, nil, nil}
+	}
+
+	checkpoint := statement.Checkpoint()
+	if err := common.EvictAllPreemptees(session, allVictims, pendingJob, statement, s.actionType); err != nil {
 		return handleSolveError(pendingJob, nextTaskToFindAllocation, err, statement)
 	}
+	newFeasibleNodes := s.updateFeasibleNodes(session, allVictims)
 
-	if latestPotentialVictim == nil {
-		if hasRecordedVictimsForSimulation(scenario) {
-			log.InfraLogger.V(6).Infof("Trying to solve scenario with priviously calculated victims only")
-			result := s.runSimulation(session, scenario, statement, scenario.RecordedVictimsTasks())
-			if result != nil {
-				return result
-			}
+	result := s.runSimulation(session, scenario, statement, allVictims, maps.Values(s.feasibleNodes))
+	if result != nil {
+		// Roll back on validator-rejected and error results too: the map is
+		// shared across the probe's scenarios and must stay derived from the
+		// solver's node set plus the recorded victims.
+		if !result.solved {
+			s.feasibleNodesRollback(newFeasibleNodes)
 		}
-	} else {
-		potentialVictimNodes := getNodesOfJob(latestPotentialVictim)
-		result, err := s.solveOnPotentialNodes(session, scenario, statement, potentialVictimNodes)
-		if err != nil {
-			return handleSolveError(pendingJob, nextTaskToFindAllocation, err, statement)
-		}
-		if result != nil {
-			return result
-		}
+		return result
 	}
 
-	statement.Discard() // No solution for scenario
+	s.feasibleNodesRollback(newFeasibleNodes)
+	if err := statement.Rollback(checkpoint); err != nil {
+		return handleSolveError(pendingJob, nextTaskToFindAllocation, err, statement)
+	}
+	statement.Discard()
 	return &solutionResult{false, nil, nil, nil}
 }
 
 func (s *byPodSolver) runSimulation(
 	session *framework.Session, scenario *scenario.ByNodeScenario, statement *framework.Statement,
-	victimTasks []*pod_info.PodInfo) *solutionResult {
-	pendingJob := scenario.GetPreemptor()
-	nextTaskToFindAllocation := scenario.PendingTasks()[len(scenario.PendingTasks())-1]
-
-	successfulSimulation, solutionVictims, err :=
-		s.tryScenarioWithEvictedVictims(session, scenario, statement, victimTasks)
-
-	if err != nil {
-		return handleSolveError(pendingJob, nextTaskToFindAllocation, err, statement)
-	}
+	victimTasks []*pod_info.PodInfo, nodes []*node_info.NodeInfo) *solutionResult {
+	successfulSimulation, solutionVictims :=
+		s.tryScenarioWithEvictedVictims(session, scenario, statement, victimTasks, nodes)
 	if successfulSimulation {
 		return s.handleScenarioSolution(scenario, statement, solutionVictims)
 	}
 	return nil
-}
-
-func (s *byPodSolver) solveOnPotentialNodes(ssn *framework.Session, scenario *scenario.ByNodeScenario,
-	statement *framework.Statement, potentialVictimNodeNames []string) (*solutionResult, error) {
-	for _, nodeToTest := range potentialVictimNodeNames {
-		log.InfraLogger.V(6).Infof(
-			"Trying to solve scenario with potantial victims from node: %s", nodeToTest)
-
-		nodeVictimsEvictionCheckpoint, potentialVictimsTasks, err :=
-			s.evictPotentialVictimsFromNode(ssn, scenario, statement, nodeToTest)
-		if err != nil {
-			return nil, err
-		}
-		newFeasibleNodes := s.updateFeasibleNodes(ssn, potentialVictimsTasks)
-
-		victimTasks := getVictimTasks(scenario.RecordedVictimsTasks(), potentialVictimsTasks)
-		result := s.runSimulation(ssn, scenario, statement, victimTasks)
-		if result != nil {
-			return result, nil
-		}
-
-		s.feasibleNodesRollback(newFeasibleNodes)
-		if err = statement.Rollback(*nodeVictimsEvictionCheckpoint); err != nil {
-			return nil, err
-		}
-	}
-	return nil, nil
 }
 
 func (s *byPodSolver) feasibleNodesRollback(newFeasibleNodes map[string]bool) {
@@ -160,26 +131,11 @@ func (s *byPodSolver) updateFeasibleNodes(ssn *framework.Session, victimTasks []
 	return newFeasibleNodes
 }
 
-func (s *byPodSolver) evictPotentialVictimsFromNode(
-	session *framework.Session, scenario *scenario.ByNodeScenario, statement *framework.Statement, nodeToTest string,
-) (*framework.Checkpoint, []*pod_info.PodInfo, error) {
-	recordedVictimsCheckpoint := statement.Checkpoint()
-	pendingJob := scenario.GetPreemptor()
-
-	potentialVictimsTasks := scenario.VictimsTasksFromNodes([]string{nodeToTest})
-	if err := common.EvictAllPreemptees(session, potentialVictimsTasks, pendingJob, statement, s.actionType); err != nil {
-		return nil, nil, err
-	}
-	return &recordedVictimsCheckpoint, potentialVictimsTasks, nil
-}
-
 func (s *byPodSolver) handleScenarioSolution(
 	scenario *scenario.ByNodeScenario, statement *framework.Statement, solutionVictims *simulationVictims,
 ) *solutionResult {
 	victimsTasks := make([]*pod_info.PodInfo, len(solutionVictims.preemptedVictims))
-	for i := 0; i < len(solutionVictims.preemptedVictims); i++ {
-		victimsTasks[i] = solutionVictims.preemptedVictims[i]
-	}
+	copy(victimsTasks, solutionVictims.preemptedVictims)
 	if !s.allowVictimConsolidation {
 		victimsTasks = append(victimsTasks, solutionVictims.pipelinedVictims...)
 	}
@@ -201,41 +157,28 @@ func (s *byPodSolver) handleScenarioSolution(
 	return &solutionResult{true, victimsTasks, actualVictimJobs, statement}
 }
 
-func getNodesOfJob(pj *podgroup_info.PodGroupInfo) []string {
-	if pj == nil {
-		return []string{}
-	}
-
-	pjNodeNames := map[string]string{}
-	for _, latestPotentialVictimTask := range pj.GetAllPodsMap() {
-		pjNodeNames[latestPotentialVictimTask.NodeName] = latestPotentialVictimTask.NodeName
-	}
-	return maps.Keys(pjNodeNames)
-}
-
 func (s *byPodSolver) tryScenarioWithEvictedVictims(ssn *framework.Session, scenario *scenario.ByNodeScenario,
-	statement *framework.Statement, victimTasks []*pod_info.PodInfo) (bool, *simulationVictims, error) {
+	statement *framework.Statement, victimTasks []*pod_info.PodInfo, nodes []*node_info.NodeInfo) (bool, *simulationVictims) {
 	pendingJob := scenario.GetPreemptor()
 
-	nodes := maps.Values(s.feasibleNodes)
 	jobsToAllocate := common.GetJobsToAllocate(ssn, victimTasks, pendingJob)
 	isSuccessfulAllocations, _ :=
 		common.TryToVirtuallyAllocatePreemptorAndGetVictims(ssn, statement, nodes, pendingJob,
 			jobsToAllocate, victimTasks)
 
 	if !isSuccessfulAllocations {
-		return false, nil, nil
-	} else {
-		actualVictims := newCalculatedVictimsStruct()
-		for _, victimTask := range victimTasks {
-			if victimTask.Status == pod_status.Releasing {
-				actualVictims.preemptedVictims = append(actualVictims.preemptedVictims, victimTask)
-			} else if victimTask.Status == pod_status.Pipelined {
-				actualVictims.pipelinedVictims = append(actualVictims.pipelinedVictims, victimTask)
-			}
-		}
-		return isSuccessfulAllocations, actualVictims, nil
+		return false, nil
 	}
+	actualVictims := newCalculatedVictimsStruct()
+	for _, victimTask := range victimTasks {
+		switch victimTask.Status {
+		case pod_status.Releasing:
+			actualVictims.preemptedVictims = append(actualVictims.preemptedVictims, victimTask)
+		case pod_status.Pipelined:
+			actualVictims.pipelinedVictims = append(actualVictims.pipelinedVictims, victimTask)
+		}
+	}
+	return isSuccessfulAllocations, actualVictims
 }
 
 func getVictimJobsFromVictimTasks(
@@ -293,6 +236,8 @@ func handleSolveError(pendingJob *podgroup_info.PodGroupInfo, nextTaskToFindAllo
 	return &solutionResult{false, nil, nil, nil}
 }
 
-func hasRecordedVictimsForSimulation(scenario *scenario.ByNodeScenario) bool {
-	return len(scenario.RecordedVictimsTasks()) > 0
+func nodeIdleOrReleasingGpus(ni *node_info.NodeInfo) float64 {
+	idle, _ := ni.GetSumOfIdleGPUs()
+	releasing, _ := ni.GetSumOfReleasingGPUs()
+	return idle + releasing
 }

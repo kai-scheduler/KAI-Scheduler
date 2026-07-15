@@ -14,6 +14,11 @@ CRD_UPGRADER_DOCKERFILE_PATH=./deployments/crd-upgrader/Dockerfile
 DOCKER_TAG?=0.0.0
 VERSION?=${DOCKER_TAG}
 
+FIPS?=0
+ifeq ($(FIPS), 1)
+override VERSION := ${VERSION}-fips
+endif
+
 DOCKER_REPO_BASE?=registry/local/kai-scheduler
 DOCKER_REPO_FULL?=${DOCKER_REPO_BASE}/${SERVICE_NAME}
 DOCKER_IMAGE_NAME?=${DOCKER_REPO_FULL}:${VERSION}
@@ -25,7 +30,7 @@ else
 DOCKER_BUILD_ADDITIONAL_ARGS=--target prod
 endif
 
-DOCKER_BUILDX_ADDITIONAL_ARGS=
+DOCKER_BUILDX_ADDITIONAL_ARGS?=
 
 ################### OS DEPENDENCY ##########################
 # Build the project

@@ -8,26 +8,27 @@ import (
 	"time"
 
 	"gopkg.in/h2non/gock.v1"
-	utilfeature "k8s.io/apiserver/pkg/util/feature"
-	featuregate "k8s.io/component-base/featuregate/testing"
-	"k8s.io/kubernetes/pkg/features"
 
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	integration_tests_utils "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/integration_tests/integration_tests_utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/dra_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	featuregates "github.com/kai-scheduler/KAI-scheduler/pkg/common/feature_gates"
+	integration_tests_utils "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/integration_tests_utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/dra_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 	resourceapi "k8s.io/api/resource/v1"
 )
 
 func TestReclaimGpuDRAIntegrationTest(t *testing.T) {
 	defer gock.Off()
 
-	featuregate.SetFeatureGateDuringTest(t, utilfeature.DefaultFeatureGate, features.DynamicResourceAllocation, true)
+	featuregates.SetDynamicResourcesEnabledForTest(true)
+	t.Cleanup(func() {
+		featuregates.SetDynamicResourcesEnabledForTest(false)
+	})
 
 	// NOTE: These tests currently fail because reclaim with DRA resources may not be fully implemented yet.
 	// The tests are correctly structured and should pass once DRA reclaim support is complete.

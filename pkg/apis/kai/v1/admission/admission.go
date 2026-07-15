@@ -7,8 +7,8 @@ package admission
 import (
 	"k8s.io/utils/ptr"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/common"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
 const (
@@ -32,6 +32,11 @@ type Admission struct {
 	// +kubebuilder:validation:Optional
 	GPUSharing *bool `json:"gpuSharing,omitempty"`
 
+	// BlockNvidiaVisibleDevices prevents pods from overriding the NVIDIA_VISIBLE_DEVICES
+	// environment variable, which would conflict with NVIDIA's device plugin.
+	// +kubebuilder:validation:Optional
+	BlockNvidiaVisibleDevices *bool `json:"blockNvidiaVisibleDevices,omitempty"`
+
 	// QueueLabelSelector enables the queue label MatchExpression in webhooks
 	// +kubebuilder:validation:Optional
 	QueueLabelSelector *bool `json:"queueLabelSelector,omitempty"`
@@ -44,13 +49,26 @@ type Admission struct {
 	// +kubebuilder:validation:Optional
 	MutatingWebhookConfigurationName *string `json:"mutatingWebhookConfigurationName,omitempty"`
 
-	// GPUPodRuntimeClassName specifies the runtime class to be set for GPU pods
-	// set to empty string to disable
+	// GPUPodRuntimeClassName specifies the runtime class to be set for GPU
+	// fraction pods.
+	// Deprecated: use GPUFractionRuntimeClassName. If both are set,
+	// GPUFractionRuntimeClassName wins.
 	// +kubebuilder:validation:Optional
 	GPUPodRuntimeClassName *string `json:"gpuPodRuntimeClassName,omitempty"`
+
+	// GPUFractionRuntimeClassName specifies the runtime class to be set for
+	// GPU fraction pods (those requesting GPU via the gpu-fraction or
+	// gpu-memory annotations). Whole-GPU pods are not affected.
+	// Set to empty string to disable.
+	// +kubebuilder:validation:Optional
+	GPUFractionRuntimeClassName *string `json:"gpuFractionRuntimeClassName,omitempty"`
+
+	// VPA specifies Vertical Pod Autoscaler configuration for the admission service
+	// +kubebuilder:validation:Optional
+	VPA *common.VPASpec `json:"vpa,omitempty"`
 }
 
-func (b *Admission) SetDefaultsWhereNeeded(replicaCount *int32) {
+func (b *Admission) SetDefaultsWhereNeeded(replicaCount *int32, globalVPA *common.VPASpec) {
 	b.Service = common.SetDefault(b.Service, &common.Service{})
 	b.Service.SetDefaultsWhereNeeded(imageName)
 
@@ -63,11 +81,21 @@ func (b *Admission) SetDefaultsWhereNeeded(replicaCount *int32) {
 	b.Replicas = common.SetDefault(b.Replicas, ptr.To(ptr.Deref(replicaCount, 1)))
 	b.GPUSharing = common.SetDefault(b.GPUSharing, ptr.To(false))
 	b.QueueLabelSelector = common.SetDefault(b.QueueLabelSelector, ptr.To(false))
+	b.BlockNvidiaVisibleDevices = common.SetDefault(b.BlockNvidiaVisibleDevices, ptr.To(false))
 
 	b.ValidatingWebhookConfigurationName = common.SetDefault(b.ValidatingWebhookConfigurationName, ptr.To(defaultValidatingWebhookName))
 	b.MutatingWebhookConfigurationName = common.SetDefault(b.MutatingWebhookConfigurationName, ptr.To(defaultMutatingWebhookName))
 
-	b.GPUPodRuntimeClassName = common.SetDefault(b.GPUPodRuntimeClassName, ptr.To(constants.DefaultRuntimeClassName))
+	if b.GPUFractionRuntimeClassName == nil {
+		if b.GPUPodRuntimeClassName == nil {
+			// set GPUFractionRuntimeClassName default only if the deprecated field is not set
+			b.GPUFractionRuntimeClassName = ptr.To(constants.DefaultRuntimeClassName)
+		}
+	}
+
+	if b.VPA == nil {
+		b.VPA = globalVPA
+	}
 }
 
 // Webhook defines configuration for the admission webhook

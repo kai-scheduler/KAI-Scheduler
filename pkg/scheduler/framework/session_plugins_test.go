@@ -6,17 +6,61 @@ SPDX-License-Identifier: Apache-2.0
 package framework
 
 import (
+	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 )
+
+type testScenarioGeneratorContext struct {
+	action ActionType
+}
+
+func (ctx testScenarioGeneratorContext) Action() ActionType {
+	return ctx.action
+}
+
+type testScenarioGenerator struct {
+	name string
+}
+
+func (generator *testScenarioGenerator) Name() string {
+	return generator.name
+}
+
+func (generator *testScenarioGenerator) Next() api.ScenarioInfo {
+	return nil
+}
+
+func newTestScenarioGenerator(name string) ScenarioGeneratorFactory {
+	return func(_ ScenarioGeneratorContext) ScenarioGenerator {
+		return &testScenarioGenerator{name: name}
+	}
+}
+
+func TestLogNodeSetsPluginResultDoesNotAllocateWhenVerboseLoggingIsDisabled(t *testing.T) {
+	podGroup := podgroup_info.NewPodGroupInfo("pod-group")
+	nodeSets := []node_info.NodeSet{{{Name: "node-a"}}}
+
+	allocations := testing.AllocsPerRun(100, func() {
+		logNodeSetsPluginResult(nil, podGroup, nodeSets)
+	})
+
+	assert.Zero(t, allocations)
+}
 
 func TestMutateBindRequestAnnotations(t *testing.T) {
 	tests := []struct {
@@ -161,4 +205,103 @@ func TestPartitionMultiImplementation(t *testing.T) {
 	assert.Equal(t, len(partitions[3]), 2)
 	assert.Equal(t, partitions[3][0].Name, "cluster1rack1-1")
 	assert.Equal(t, partitions[3][1].Name, "cluster1rack1-2")
+}
+
+func TestVictimInvariantPrePredicateFailure(t *testing.T) {
+	task := &pod_info.PodInfo{Name: "task-1"}
+	expectedErr := errors.New("missing pvc")
+
+	t.Run("returns nil when no functions are registered", func(t *testing.T) {
+		ssn := &Session{}
+		assert.Nil(t, ssn.VictimInvariantPrePredicateFailure(task))
+	})
+
+	t.Run("returns the first non-nil failure", func(t *testing.T) {
+		ssn := &Session{}
+		secondCalled := false
+		ssn.AddVictimInvariantPrePredicateFn(func(_ *pod_info.PodInfo) *api.VictimInvariantPrePredicateFailure {
+			return nil
+		})
+		ssn.AddVictimInvariantPrePredicateFn(func(gotTask *pod_info.PodInfo) *api.VictimInvariantPrePredicateFailure {
+			assert.Same(t, task, gotTask)
+			return &api.VictimInvariantPrePredicateFailure{
+				Err: expectedErr,
+			}
+		})
+		ssn.AddVictimInvariantPrePredicateFn(func(_ *pod_info.PodInfo) *api.VictimInvariantPrePredicateFailure {
+			secondCalled = true
+			return &api.VictimInvariantPrePredicateFailure{
+				Err: errors.New("should not be returned"),
+			}
+		})
+
+		failure := ssn.VictimInvariantPrePredicateFailure(task)
+		if assert.NotNil(t, failure) {
+			assert.Same(t, expectedErr, failure.Err)
+		}
+		assert.False(t, secondCalled)
+	})
+}
+
+func TestAddScenarioGeneratorPreservesOrder(t *testing.T) {
+	ssn := &Session{}
+
+	ssn.AddScenarioGenerator("first", newTestScenarioGenerator("first"))
+	ssn.AddScenarioGenerator("second", newTestScenarioGenerator("second"))
+	ssn.AddScenarioGenerator("third", newTestScenarioGenerator("third"))
+
+	require.Len(t, ssn.ScenarioGeneratorRegistrations, 3)
+	require.Equal(t, "first", ssn.ScenarioGeneratorRegistrations[0].Name)
+	require.Equal(t, "second", ssn.ScenarioGeneratorRegistrations[1].Name)
+	require.Equal(t, "third", ssn.ScenarioGeneratorRegistrations[2].Name)
+
+	generator := ssn.ScenarioGeneratorRegistrations[0].Factory(testScenarioGeneratorContext{action: Reclaim})
+	require.Equal(t, "first", generator.Name())
+}
+
+func TestValidateScenarioGeneratorBudgetKeys(t *testing.T) {
+	ssn := &Session{
+		Config: &conf.SchedulerConfiguration{
+			ScenarioSearchBudgets: &kaiv1.ScenarioSearchBudgets{
+				MaxGeneratorSearchDuration: map[string]metav1.Duration{
+					constants.ActionDefault: scenarioSearchDurationForTest("1s"),
+					"first":                 scenarioSearchDurationForTest("2s"),
+				},
+			},
+		},
+	}
+	ssn.AddScenarioGenerator("first", newTestScenarioGenerator("first"))
+
+	require.NoError(t, ssn.ValidateScenarioGeneratorBudgetKeys())
+
+	ssn.Config.ScenarioSearchBudgets.MaxGeneratorSearchDuration["missing"] = scenarioSearchDurationForTest("3s")
+	require.EqualError(t, ssn.ValidateScenarioGeneratorBudgetKeys(),
+		`unknown scenario generator budget key "missing"`)
+}
+
+func TestValidateScenarioGeneratorBudgetKeysAcceptsBuiltInGeneratorsWithoutPlugins(t *testing.T) {
+	ssn := &Session{
+		Config: &conf.SchedulerConfiguration{
+			ScenarioSearchBudgets: &kaiv1.ScenarioSearchBudgets{
+				MaxGeneratorSearchDuration: map[string]metav1.Duration{
+					constants.GeneratorNodeLocalGreedy: scenarioSearchDurationForTest("30s"),
+					constants.GeneratorMultiNodeGang:   scenarioSearchDurationForTest("2m"),
+				},
+			},
+		},
+	}
+
+	require.NoError(t, ssn.ValidateScenarioGeneratorBudgetKeys())
+
+	ssn.Config.ScenarioSearchBudgets.MaxGeneratorSearchDuration["missing"] = scenarioSearchDurationForTest("3s")
+	require.EqualError(t, ssn.ValidateScenarioGeneratorBudgetKeys(),
+		`unknown scenario generator budget key "missing"`)
+}
+
+func scenarioSearchDurationForTest(value string) metav1.Duration {
+	duration, err := time.ParseDuration(value)
+	if err != nil {
+		panic(err)
+	}
+	return metav1.Duration{Duration: duration}
 }

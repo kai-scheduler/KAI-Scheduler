@@ -10,7 +10,7 @@ SPDX-License-Identifier: Apache-2.0
 package scheduler
 
 import (
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
 	"k8s.io/api/core/v1"
 )
 
@@ -36,6 +36,11 @@ func (in *Scheduler) DeepCopyInto(out *Scheduler) {
 		in, out := &in.Replicas, &out.Replicas
 		*out = new(int32)
 		**out = **in
+	}
+	if in.VPA != nil {
+		in, out := &in.VPA, &out.VPA
+		*out = new(common.VPASpec)
+		(*in).DeepCopyInto(*out)
 	}
 }
 

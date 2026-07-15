@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"time"
 
-	kaiv1alpha1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1alpha1"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 
 	. "go.uber.org/mock/gomock"
 	"gopkg.in/yaml.v2"
@@ -20,22 +20,24 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
-	enginev2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	_ "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/queue_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/cluster_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf_util"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
+	enginev2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	_ "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/cluster_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf_util"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/numa"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
 )
 
 const (
@@ -52,6 +54,7 @@ func CreateFakeSession(schedulerConfig *TestSessionConfig,
 	createCacheMockIfNotExists bool,
 	topologies []*kaiv1alpha1.Topology,
 	clusterPodAffinityInfo *cache.K8sClusterPodAffinityInfo,
+	vectorMap *resource_info.ResourceVectorMap,
 ) *framework.Session {
 	ssn := framework.Session{
 		Config: &conf.SchedulerConfiguration{
@@ -62,16 +65,21 @@ func CreateFakeSession(schedulerConfig *TestSessionConfig,
 			},
 		},
 		ClusterInfo: &api.ClusterInfo{
-			Nodes:            nodesInfoMap,
-			Queues:           queueInfoMap,
-			PodGroupInfos:    jobInfoMap,
-			ResourceClaims:   getResourceClaims(testMetadata),
-			Topologies:       topologies,
-			MinNodeGPUMemory: node_info.DefaultGpuMemory,
+			Nodes:               nodesInfoMap,
+			Queues:              queueInfoMap,
+			PodGroupInfos:       jobInfoMap,
+			ResourceClaims:      getResourceClaims(testMetadata),
+			Topologies:          topologies,
+			MinNodeGPUMemoryMiB: computeMinNodeGPUMemory(nodesInfoMap),
+			MaxNodeGPUMemoryMiB: computeMaxNodeGPUMemory(nodesInfoMap),
+			ResourceVectorMap:   vectorMap,
 		},
 		SchedulerParams: conf.SchedulerParams{
 			QueueLabelKey: constants.DefaultQueueLabel,
 		},
+	}
+	if err := ssn.InitNodeScoringPool(); err != nil {
+		panic(err)
 	}
 	ssn.OverrideMaxNumberConsolidationPreemptees(-1)
 	ssn.OverrideAllowConsolidatingReclaim(true)
@@ -82,7 +90,14 @@ func CreateFakeSession(schedulerConfig *TestSessionConfig,
 	}
 
 	if schedulerConfig != nil {
+		ssn.Config.ScenarioSearchBudgets = schedulerConfig.ScenarioSearchBudgets
 		addSessionPlugins(&ssn, schedulerConfig.Plugins, createCacheMockIfNotExists, schedulerConfig.CachePlugins)
+	}
+
+	// The numa plugin isn't in the default test config; enable it whenever a node carries a
+	// NumaTopology so NUMA scenarios are driven purely by node/job metadata. Inert otherwise.
+	if anyNodeHasNumaTopology(nodesInfoMap) {
+		numa.New(framework.PluginArguments{}).OnSessionOpen(&ssn)
 	}
 
 	// Some plugins are using informers wrappers (such as the DRA manager) which require a moment to sync
@@ -90,6 +105,15 @@ func CreateFakeSession(schedulerConfig *TestSessionConfig,
 	time.Sleep(time.Millisecond)
 
 	return &ssn
+}
+
+func anyNodeHasNumaTopology(nodesInfoMap map[string]*node_info.NodeInfo) bool {
+	for _, node := range nodesInfoMap {
+		if node.NumaTopology != nil {
+			return true
+		}
+	}
+	return false
 }
 
 func BuildQueueInfoMap(testMetadata TestTopologyBasic) map[common_info.QueueID]*queue_info.QueueInfo {
@@ -107,9 +131,10 @@ func BuildQueueInfoMap(testMetadata TestTopologyBasic) map[common_info.QueueID]*
 				CreationTimestamp: metav1.Time{Time: time.Now().Add(time.Minute * time.Duration(queueIndex))},
 			},
 			Spec: enginev2.QueueSpec{
-				DisplayName: queue.Name,
-				ParentQueue: queue.ParentQueue,
-				Priority:    queue.Priority,
+				DisplayName:       queue.Name,
+				ParentQueue:       queue.ParentQueue,
+				Priority:          queue.Priority,
+				ReclaimMinRuntime: queue.ReclaimMinRuntime,
 				Resources: &enginev2.QueueResources{
 					GPU: enginev2.QueueResource{
 						Quota:           queue.DeservedGPUs,
@@ -224,6 +249,10 @@ func BuildDepartmentInfoMap(testMetadata TestTopologyBasic) map[common_info.Queu
 }
 
 func BuildPlugins(testMetadata TestTopologyBasic) []conf.Tier {
+	return buildSchedulerConfiguration(testMetadata).Tiers
+}
+
+func buildSchedulerConfiguration(testMetadata TestTopologyBasic) *conf.SchedulerConfiguration {
 	plugins.InitDefaultPlugins()
 	confFileName := ""
 
@@ -253,23 +282,26 @@ func BuildPlugins(testMetadata TestTopologyBasic) []conf.Tier {
 		panic(err)
 	}
 
-	return config.Tiers
+	return config
 }
 
 func BuildSession(testMetadata TestTopologyBasic, controller *Controller) *framework.Session {
-	confPlugins := BuildPlugins(testMetadata)
+	config := buildSchedulerConfiguration(testMetadata)
 	schedulerConfig := TestSessionConfig{
-		Plugins: confPlugins,
+		Plugins: config.Tiers,
 		CachePlugins: map[string]bool{
 			"predicates": true,
 		},
+		ScenarioSearchBudgets: config.ScenarioSearchBudgets,
 	}
 
 	addDefaultDepartmentIfNeeded(&testMetadata)
-	jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(testMetadata.Jobs, getDRAObjects(testMetadata)...)
+
+	vectorMap := resource_info.NewResourceVectorMap()
+	jobsInfoMap, tasksToNodeMap, _ := jobs_fake.BuildJobsAndTasksMaps(testMetadata.Jobs, vectorMap, getDRAObjects(testMetadata)...)
 
 	clusterPodAffinityInfo := cache.NewK8sClusterPodAffinityInfo()
-	nodesInfoMap := nodes_fake.BuildNodesInfoMap(testMetadata.Nodes, tasksToNodeMap, clusterPodAffinityInfo, getDRAObjects(testMetadata)...)
+	nodesInfoMap := nodes_fake.BuildNodesInfoMap(testMetadata.Nodes, tasksToNodeMap, clusterPodAffinityInfo, vectorMap, getDRAObjects(testMetadata)...)
 	queueInfoMap := BuildQueueInfoMap(testMetadata)
 
 	departmentInfoMap := BuildDepartmentInfoMap(testMetadata)
@@ -282,7 +314,7 @@ func BuildSession(testMetadata TestTopologyBasic, controller *Controller) *frame
 		testMetadata.Mocks.Cache == nil
 
 	return CreateFakeSession(&schedulerConfig, nodesInfoMap, jobsInfoMap, queueInfoMap, testMetadata,
-		controller, createCacheMockIfNotExists, testMetadata.Topologies, clusterPodAffinityInfo)
+		controller, createCacheMockIfNotExists, testMetadata.Topologies, clusterPodAffinityInfo, vectorMap)
 }
 
 func mergeQueues(queuesMaps ...map[common_info.QueueID]*queue_info.QueueInfo) map[common_info.QueueID]*queue_info.QueueInfo {
@@ -316,6 +348,38 @@ func addSessionPlugins(ssn *framework.Session, tiers []conf.Tier, cacheMockExist
 			pluginObj.OnSessionOpen(ssn)
 		}
 	}
+}
+
+func computeMinNodeGPUMemory(nodes map[string]*node_info.NodeInfo) *int64 {
+	var min *int64
+	for _, n := range nodes {
+		gpuMem := n.MemoryOfEveryGpuOnNode
+		if gpuMem > node_info.DefaultGpuMemory {
+			if min == nil || *min > gpuMem {
+				min = ptr.To(gpuMem)
+			}
+		}
+	}
+	if min == nil {
+		return ptr.To[int64](node_info.DefaultGpuMemory)
+	}
+	return min
+}
+
+func computeMaxNodeGPUMemory(nodes map[string]*node_info.NodeInfo) *int64 {
+	var max *int64
+	for _, n := range nodes {
+		gpuMem := n.MemoryOfEveryGpuOnNode
+		if gpuMem > node_info.DefaultGpuMemory {
+			if max == nil || *max < gpuMem {
+				max = ptr.To(gpuMem)
+			}
+		}
+	}
+	if max == nil {
+		return ptr.To[int64](node_info.DefaultGpuMemory)
+	}
+	return max
 }
 
 func getDRAObjects(testMetadata TestTopologyBasic) []runtime.Object {
@@ -376,6 +440,11 @@ func getResourceClaims(testMetadata TestTopologyBasic) []*resourceapi.ResourceCl
 }
 
 func getResourceSlices(testMetadata TestTopologyBasic) []*resourceapi.ResourceSlice {
+	poolSliceCounts := map[string]int64{}
+	for _, resourceSlice := range testMetadata.ResourceSlices {
+		poolSliceCounts[resourceSlice.NodeName]++
+	}
+
 	var objects []*resourceapi.ResourceSlice
 	for _, resourceSlice := range testMetadata.ResourceSlices {
 		resourceSliceObject := resourceapi.ResourceSlice{
@@ -391,7 +460,7 @@ func getResourceSlices(testMetadata TestTopologyBasic) []*resourceapi.ResourceSl
 				Driver: "nvidia.com/gpu",
 				Pool: resourceapi.ResourcePool{
 					Name:               resourceSlice.NodeName,
-					ResourceSliceCount: int64(len(testMetadata.ResourceSlices)),
+					ResourceSliceCount: poolSliceCounts[resourceSlice.NodeName],
 				},
 				NodeSelector: resourceSlice.NodeSelector,
 				NodeName:     ptr.To(resourceSlice.NodeName),

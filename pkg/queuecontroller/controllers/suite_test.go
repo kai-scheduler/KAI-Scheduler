@@ -32,6 +32,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
@@ -42,9 +43,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
-	v2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/queuecontroller/metrics"
+	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/queuecontroller/metrics"
 )
 
 const (
@@ -129,7 +130,7 @@ var _ = Describe("QueueController", Ordered, func() {
 			Scheme: mgr.GetScheme(),
 		}
 
-		err = controller.SetupWithManager(mgr, "kai.scheduler/queue", false)
+		err = controller.SetupWithManager(mgr, false)
 		Expect(err).ToNot(HaveOccurred())
 
 		managerDone = make(chan struct{})
@@ -217,7 +218,7 @@ var _ = Describe("QueueController", Ordered, func() {
 				},
 				Spec: v2alpha2.PodGroupSpec{
 					Queue:     "resource-queue",
-					MinMember: 1,
+					MinMember: ptr.To(int32(1)),
 				},
 			}
 			Expect(k8sClient.Create(ctx, podGroup1)).Should(Succeed())
@@ -232,7 +233,7 @@ var _ = Describe("QueueController", Ordered, func() {
 				},
 				Spec: v2alpha2.PodGroupSpec{
 					Queue:     "resource-queue",
-					MinMember: 1,
+					MinMember: ptr.To(int32(1)),
 				},
 			}
 			Expect(k8sClient.Create(ctx, podGroup2)).Should(Succeed())
@@ -244,7 +245,6 @@ var _ = Describe("QueueController", Ordered, func() {
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "pod-group-2", Namespace: "default"}, createdPodGroup2)).Should(Succeed())
 
 			createdPodGroup1.Status = v2alpha2.PodGroupStatus{
-				Running: 1,
 				ResourcesStatus: v2alpha2.PodGroupResourcesStatus{
 					Allocated: v1.ResourceList{
 						"cpu":    resource.MustParse("2"),
@@ -263,7 +263,6 @@ var _ = Describe("QueueController", Ordered, func() {
 			Expect(k8sClient.Status().Update(ctx, createdPodGroup1)).Should(Succeed())
 
 			createdPodGroup2.Status = v2alpha2.PodGroupStatus{
-				Running: 1,
 				ResourcesStatus: v2alpha2.PodGroupResourcesStatus{
 					Allocated: v1.ResourceList{
 						"nvidia.com/gpu": resource.MustParse("2"),
@@ -303,7 +302,13 @@ var _ = Describe("QueueController", Ordered, func() {
 				q.Expect(updatedQueue.Status.Requested["memory"]).To(Equal(resource.MustParse("10Gi")))
 				q.Expect(updatedQueue.Status.Requested["nvidia.com/gpu"]).To(Equal(resource.MustParse("2")))
 
-				labels := []string{"resource-queue", "normal", ""}
+				labels := prometheus.Labels{
+					"queue_name":          "resource-queue",
+					"queue_metadata_name": "resource-queue",
+					"queue_display_name":  "",
+					"queue_priority":      "normal",
+					"some_other_label":    "",
+				}
 				expectMetricValue(q, metrics.GetQueueAllocatedGPUsMetric(), labels, 2)
 				expectMetricValue(q, metrics.GetQueueAllocatedCPUMetric(), labels, 5)
 				expectMetricValue(q, metrics.GetQueueAllocatedMemoryMetric(), labels, 10737418240)
@@ -333,7 +338,13 @@ var _ = Describe("QueueController", Ordered, func() {
 			}
 			Expect(k8sClient.Create(ctx, queue)).Should(Succeed())
 
-			labels := []string{"test-queue", "high", ""}
+			labels := prometheus.Labels{
+				"queue_name":          "test-queue",
+				"queue_metadata_name": "test-queue",
+				"queue_display_name":  "",
+				"queue_priority":      "high",
+				"some_other_label":    "",
+			}
 
 			Eventually(func(q gomega.Gomega) {
 				expectMetricValue(q, metrics.GetQueueInfoMetric(), labels, 1)
@@ -365,8 +376,8 @@ var _ = Describe("QueueController", Ordered, func() {
 	})
 })
 
-func expectMetricValue(q gomega.Gomega, gauge *prometheus.GaugeVec, labels []string, expected float64) {
-	metricGauge, err := gauge.GetMetricWithLabelValues(labels...)
+func expectMetricValue(q gomega.Gomega, gauge *prometheus.GaugeVec, labels prometheus.Labels, expected float64) {
+	metricGauge, err := gauge.GetMetricWith(labels)
 	q.ExpectWithOffset(1, err).To(BeNil())
 	q.ExpectWithOffset(1, metricGauge).ToNot(BeNil())
 	q.ExpectWithOffset(1, testutil.ToFloat64(metricGauge)).To(BeEquivalentTo(expected))

@@ -9,13 +9,13 @@ import (
 
 	"golang.org/x/exp/maps"
 
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/metrics"
-	rs "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/scheduler_util"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
+	rs "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/scheduler_util"
 )
 
 type remainingRequestedResource struct {
@@ -49,6 +49,8 @@ func reportDivisionResult(queues map[common_info.QueueID]*rs.QueueAttributes) {
 
 		metrics.UpdateQueueFairShare(
 			queue.Name,
+			string(queue.UID),
+			queue.DisplayName,
 			cpuResourceShare.FairShare/resource_info.MilliCPUToCores,
 			memoryResourceShare.FairShare/resource_info.MemoryToGB,
 			gpuResourceShare.FairShare,
@@ -56,6 +58,8 @@ func reportDivisionResult(queues map[common_info.QueueID]*rs.QueueAttributes) {
 
 		metrics.UpdateQueueUsage(
 			queue.Name,
+			string(queue.UID),
+			queue.DisplayName,
 			cpuResourceShare.GetUsage(),
 			memoryResourceShare.GetUsage(),
 			gpuResourceShare.GetUsage(),

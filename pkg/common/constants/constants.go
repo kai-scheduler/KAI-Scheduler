@@ -3,10 +3,14 @@
 
 package constants
 
+import "time"
+
 const (
 	AppLabelName              = "app"
-	GpuResource               = "nvidia.com/gpu"
+	NvidiaGpuResource         = "nvidia.com/gpu"
 	NvidiaGpuMemory           = "nvidia.com/gpu.memory"
+	NvidiaMigResourcePrefix   = "nvidia.com/mig-"
+	GpuResource               = "gpu"
 	UnlimitedResourceQuantity = float64(-1)
 
 	DefaultQueuePriority                  = 100
@@ -21,6 +25,22 @@ const (
 	DefaultKAIConfigSingeltonInstanceName = "kai-config"
 	DefaultNodePoolLabelKey               = "kai.scheduler/node-pool"
 	DefaultRuntimeClassName               = "nvidia"
+	DefaultStuckInReleasingThreshold      = 2 * time.Minute
+
+	ActionDefault       = "default"
+	ActionReclaim       = "reclaim"
+	ActionPreempt       = "preempt"
+	ActionConsolidation = "consolidation"
+
+	GeneratorNodeLocalGreedy = "NodeLocalGreedy"
+	GeneratorMultiNodeGang   = "MultiNodeGang"
+
+	DefaultActionBudget    = "5m"
+	DefaultJobBudget       = "4m"
+	DefaultMinJobBudget    = "0s"
+	DefaultGeneratorBudget = "2m"
+	DefaultNodeLocalGreedy = "30s"
+	DefaultMultiNodeGang   = "2m"
 
 	DefaultCPUWorkerNodeLabelKey = "node-role.kubernetes.io/cpu-worker"
 	DefaultGPUWorkerNodeLabelKey = "node-role.kubernetes.io/gpu-worker"
@@ -32,6 +52,7 @@ const (
 
 	// Annotations
 	PodGroupAnnotationForPod      = "pod-group-name"
+	SkipPodGrouperAnnotation      = "kai.scheduler/skip-podgrouper"
 	GpuFraction                   = "gpu-fraction"
 	GpuFractionContainerName      = "gpu-fraction-container-name"
 	GpuMemory                     = "gpu-memory"
@@ -40,8 +61,11 @@ const (
 	MpsAnnotation                 = "mps"
 	StalePodgroupTimeStamp        = "kai.scheduler/stale-podgroup-timestamp"
 	LastStartTimeStamp            = "kai.scheduler/last-start-timestamp"
+	LastEvictionTimeStamp         = "kai.scheduler/last-eviction-timestamp"
 	GpuSharingConfigMapAnnotation = "runai/shared-gpu-configmap"
 	NvidiaVisibleDevices          = "NVIDIA_VISIBLE_DEVICES"
+	NumaPlacementPredicted        = "kai.scheduler/numa-placement-predicted"
+	NumaPlacementObserved         = "kai.scheduler/numa-placement-observed"
 
 	// UsageDB Prometheus Selector
 	DefaultAccountingLabelKey   = "kai.scheduler/accounting"

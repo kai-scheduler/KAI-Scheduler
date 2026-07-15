@@ -20,18 +20,20 @@ limitations under the License.
 package framework
 
 import (
+	"fmt"
 	"maps"
 	"net/http"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/queue_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 )
 
 func (ssn *Session) AddGPUOrderFn(gof api.GpuOrderFn) {
@@ -50,6 +52,10 @@ func (ssn *Session) AddPrePredicateFn(pf api.PrePredicateFn) {
 	ssn.PrePredicateFns = append(ssn.PrePredicateFns, pf)
 }
 
+func (ssn *Session) AddVictimInvariantPrePredicateFn(pf api.VictimInvariantPrePredicateFn) {
+	ssn.VictimInvariantPrePredicateFns = append(ssn.VictimInvariantPrePredicateFns, pf)
+}
+
 func (ssn *Session) AddSubsetNodesFn(snf api.SubsetNodesFn) {
 	ssn.SubsetNodesFns = append(ssn.SubsetNodesFns, snf)
 }
@@ -66,12 +72,8 @@ func (ssn *Session) AddTaskOrderFn(tof common_info.CompareFn) {
 	ssn.TaskOrderFns = append(ssn.TaskOrderFns, tof)
 }
 
-func (ssn *Session) AddPodSetOrderFn(psof common_info.CompareFn) {
-	ssn.PodSetOrderFns = append(ssn.PodSetOrderFns, psof)
-}
-
-func (ssn *Session) AddSubGroupSetOrderFn(ssof common_info.CompareFn) {
-	ssn.SubGroupSetOrderFns = append(ssn.SubGroupSetOrderFns, ssof)
+func (ssn *Session) AddSubGroupOrderFn(ssof common_info.CompareFn) {
+	ssn.SubGroupOrderFns = append(ssn.SubGroupOrderFns, ssof)
 }
 
 func (ssn *Session) AddQueueOrderFn(qof api.CompareQueueFn) {
@@ -110,8 +112,50 @@ func (ssn *Session) AddBindRequestMutateFn(fn api.BindRequestMutateFn) {
 	ssn.BindRequestMutateFns = append(ssn.BindRequestMutateFns, fn)
 }
 
+func (ssn *Session) AddNumaPlacementFn(fn api.NumaPlacementFn) {
+	if ssn.NumaPlacementFn != nil {
+		log.InfraLogger.Errorf("NumaPlacementFn already registered; ignoring duplicate registration")
+		return
+	}
+	ssn.NumaPlacementFn = fn
+}
+
+func (ssn *Session) GetNumaPlacement(task *pod_info.PodInfo, node *node_info.NodeInfo) pod_info.NUMAPlacement {
+	if ssn.NumaPlacementFn == nil {
+		return nil
+	}
+	return ssn.NumaPlacementFn(task, node)
+}
+
 func (ssn *Session) AddPreJobAllocationFn(fn api.PreJobAllocationFn) {
 	ssn.PreJobAllocationFns = append(ssn.PreJobAllocationFns, fn)
+}
+
+func (ssn *Session) AddScenarioGenerator(name string, factory ScenarioGeneratorFactory) {
+	ssn.ScenarioGeneratorRegistrations = append(ssn.ScenarioGeneratorRegistrations, ScenarioGeneratorRegistration{
+		Name:    name,
+		Factory: factory,
+	})
+}
+
+func (ssn *Session) ValidateScenarioGeneratorBudgetKeys() error {
+	if ssn.Config == nil || ssn.Config.ScenarioSearchBudgets == nil {
+		return nil
+	}
+	known := map[string]struct{}{
+		constants.ActionDefault:            {},
+		constants.GeneratorNodeLocalGreedy: {},
+		constants.GeneratorMultiNodeGang:   {},
+	}
+	for _, registration := range ssn.ScenarioGeneratorRegistrations {
+		known[registration.Name] = struct{}{}
+	}
+	for name := range ssn.Config.ScenarioSearchBudgets.MaxGeneratorSearchDuration {
+		if _, ok := known[name]; !ok {
+			return fmt.Errorf("unknown scenario generator budget key %q", name)
+		}
+	}
+	return nil
 }
 
 func (ssn *Session) CanReclaimResources(reclaimer *podgroup_info.PodGroupInfo) bool {
@@ -259,21 +303,10 @@ func (ssn *Session) TaskOrderFn(l, r interface{}) bool {
 	}
 }
 
-func (ssn *Session) PodSetOrderFn(l, r interface{}) bool {
-	lSubGroup := l.(*subgroup_info.PodSet)
-	rSubGroup := r.(*subgroup_info.PodSet)
-	for _, compareFn := range ssn.PodSetOrderFns {
-		if comparison := compareFn(lSubGroup, rSubGroup); comparison != 0 {
-			return comparison < 0
-		}
-	}
-	return lSubGroup.GetName() < rSubGroup.GetName()
-}
-
-func (ssn *Session) SubGroupSetOrderFn(l, r interface{}) bool {
-	lSubGroupSet := l.(*subgroup_info.SubGroupSet)
-	rSubGroupSet := r.(*subgroup_info.SubGroupSet)
-	for _, compareFn := range ssn.SubGroupSetOrderFns {
+func (ssn *Session) SubGroupOrderFn(l, r interface{}) bool {
+	lSubGroupSet := l.(subgroup_info.SubGroupMember)
+	rSubGroupSet := r.(subgroup_info.SubGroupMember)
+	for _, compareFn := range ssn.SubGroupOrderFns {
 		if comparison := compareFn(lSubGroupSet, rSubGroupSet); comparison != 0 {
 			return comparison < 0
 		}
@@ -284,7 +317,7 @@ func (ssn *Session) SubGroupSetOrderFn(l, r interface{}) bool {
 func (ssn *Session) QueueOrderFn(lQ, rQ *queue_info.QueueInfo, lJob, rJob *podgroup_info.PodGroupInfo,
 	lVictims, rVictims []*podgroup_info.PodGroupInfo,
 ) bool {
-	minNodeGPUMemory := ssn.ClusterInfo.MinNodeGPUMemory
+	minNodeGPUMemory := ssn.ClusterInfo.MinNodeGPUMemoryMiB
 	for _, qof := range ssn.QueueOrderFns {
 		if j := qof(lQ, rQ, lJob, rJob, lVictims, rVictims, minNodeGPUMemory); j != 0 {
 			return j < 0
@@ -366,16 +399,19 @@ func (ssn *Session) SubsetNodesFn(
 }
 
 func logNodeSetsPluginResult(subsetNodesFn api.SubsetNodesFn, podGroup *podgroup_info.PodGroupInfo, nodeSets []node_info.NodeSet) {
-	nodeSetsByNames := make([]node_info.NodeSet, 0, len(nodeSets))
-	for _, nodeSet := range nodeSets {
-		nodeSetNodeNames := make([]string, 0, len(nodeSets))
-		for _, node := range nodeSet {
-			nodeSetNodeNames = append(nodeSetNodeNames, node.Name)
+	log.InfraLogger.V(7).Do(func() {
+		nodeSetNames := make([][]string, 0, len(nodeSets))
+		for _, nodeSet := range nodeSets {
+			names := make([]string, 0, len(nodeSet))
+			for _, node := range nodeSet {
+				names = append(names, node.Name)
+			}
+			nodeSetNames = append(nodeSetNames, names)
 		}
-		nodeSetsByNames = append(nodeSetsByNames, nodeSet)
-	}
-	log.InfraLogger.V(7).Infof(
-		"Result of plugin func <%v> on podGroup <%s/%s> is %v", subsetNodesFn, podGroup.Namespace, podGroup.Namespace, nodeSetsByNames)
+		log.InfraLogger.V(7).Infof(
+			"Result of plugin func <%v> on podGroup <%s/%s> is %v", subsetNodesFn, podGroup.Namespace, podGroup.Namespace,
+			nodeSetNames)
+	})
 }
 
 func (ssn *Session) PrePredicateFn(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo) error {
@@ -387,6 +423,18 @@ func (ssn *Session) PrePredicateFn(task *pod_info.PodInfo, job *podgroup_info.Po
 			return err
 		}
 	}
+	return nil
+}
+
+func (ssn *Session) VictimInvariantPrePredicateFailure(
+	task *pod_info.PodInfo,
+) *api.VictimInvariantPrePredicateFailure {
+	for _, prePredicate := range ssn.VictimInvariantPrePredicateFns {
+		if failure := prePredicate(task); failure != nil {
+			return failure
+		}
+	}
+
 	return nil
 }
 

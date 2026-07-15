@@ -7,6 +7,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 )
 
 func TestQueueResourceShare_ResourceShare(t *testing.T) {
@@ -116,6 +119,117 @@ func TestQueueResourceShare_SetQuotaResources(t *testing.T) {
 	assert.Equal(t, 8.8, qrs.CPU.Deserved)
 	assert.Equal(t, 9.9, qrs.CPU.MaxAllowed)
 	assert.Equal(t, 1.1, qrs.CPU.OverQuotaWeight)
+}
+
+func TestQueueResourceShare_FairShareLessThanAllocated(t *testing.T) {
+	tests := []struct {
+		name     string
+		share    QueueResourceShare
+		expected bool
+	}{
+		{
+			name: "allocated is above fair share in every resource",
+			share: QueueResourceShare{
+				CPU:    ResourceShare{FairShare: 1, Allocated: 2},
+				Memory: ResourceShare{FairShare: 3, Allocated: 4},
+				GPU:    ResourceShare{FairShare: 5, Allocated: 6},
+			},
+			expected: true,
+		},
+		{
+			name: "one equal resource keeps the strict comparison false",
+			share: QueueResourceShare{
+				CPU:    ResourceShare{FairShare: 1, Allocated: 2},
+				Memory: ResourceShare{FairShare: 3, Allocated: 3},
+				GPU:    ResourceShare{FairShare: 5, Allocated: 6},
+			},
+			expected: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assert.Equal(t, test.expected, test.share.FairShareLessThanAllocated())
+		})
+	}
+}
+
+func TestQueueResourceShare_AllocatedPlusResourcesLessEqualDeserved(t *testing.T) {
+	vectorMap := resource_info.NewResourceVectorMap()
+	resources := resource_info.NewResourceVectorWithValues(2, 3, 4, vectorMap)
+
+	tests := []struct {
+		name     string
+		share    QueueResourceShare
+		expected bool
+	}{
+		{
+			name: "allocated plus resources fits exactly",
+			share: QueueResourceShare{
+				CPU:    ResourceShare{Allocated: 1, Deserved: 3},
+				Memory: ResourceShare{Allocated: 2, Deserved: 5},
+				GPU:    ResourceShare{Allocated: 3, Deserved: 7},
+			},
+			expected: true,
+		},
+		{
+			name: "one resource exceeds deserved",
+			share: QueueResourceShare{
+				CPU:    ResourceShare{Allocated: 1, Deserved: 3},
+				Memory: ResourceShare{Allocated: 3, Deserved: 5},
+				GPU:    ResourceShare{Allocated: 3, Deserved: 7},
+			},
+			expected: false,
+		},
+		{
+			name: "unlimited deserved accepts any quantity",
+			share: QueueResourceShare{
+				CPU:    ResourceShare{Allocated: 1, Deserved: 3},
+				Memory: ResourceShare{Allocated: 2, Deserved: 5},
+				GPU: ResourceShare{
+					Allocated: 3,
+					Deserved:  commonconstants.UnlimitedResourceQuantity,
+				},
+			},
+			expected: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assert.Equal(t, test.expected, test.share.AllocatedPlusResourcesLessEqualDeserved(resources, vectorMap))
+		})
+	}
+}
+
+func TestQueueResourceShare_AllocatedPlusNoResourcesLessEqualDeserved(t *testing.T) {
+	share := QueueResourceShare{
+		CPU:    ResourceShare{Allocated: 1, Deserved: 1},
+		Memory: ResourceShare{Allocated: 2, Deserved: 2},
+		GPU:    ResourceShare{Allocated: 3, Deserved: 3},
+	}
+
+	assert.True(t, share.AllocatedPlusResourcesLessEqualDeserved(nil, nil))
+}
+
+func TestQueueResourceShare_DirectComparisonsDoNotAllocate(t *testing.T) {
+	vectorMap := resource_info.NewResourceVectorMap()
+	resources := resource_info.NewResourceVectorWithValues(2, 3, 4, vectorMap)
+	share := QueueResourceShare{
+		CPU:    ResourceShare{FairShare: 1, Allocated: 2, Deserved: 4},
+		Memory: ResourceShare{FairShare: 2, Allocated: 3, Deserved: 6},
+		GPU:    ResourceShare{FairShare: 3, Allocated: 4, Deserved: 8},
+	}
+	var fairShareResult, deservedResult bool
+
+	allocations := testing.AllocsPerRun(100, func() {
+		fairShareResult = share.FairShareLessThanAllocated()
+		deservedResult = share.AllocatedPlusResourcesLessEqualDeserved(resources, vectorMap)
+	})
+
+	assert.True(t, fairShareResult)
+	assert.True(t, deservedResult)
+	assert.Zero(t, allocations)
 }
 
 func createQueueResourceShare() *QueueResourceShare {

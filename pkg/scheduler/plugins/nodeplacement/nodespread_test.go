@@ -10,11 +10,11 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/nodeplacement"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/nodeplacement"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -65,10 +65,17 @@ var _ = Describe("NodeSpread", func() {
 				},
 			}
 
+			vectorMap := resource_info.NewResourceVectorMap()
+
 			for _, c := range cases {
 				task := &pod_info.PodInfo{
-					ResReq: resource_info.NewResourceRequirementsWithGpus(1),
+					GpuRequirement: *resource_info.NewGpuResourceRequirementWithGpus(1, 0),
+					ResReqVector:   resource_info.NewResourceVectorWithValues(0, 0, 1, vectorMap),
+					VectorMap:      vectorMap,
 				}
+
+				idle := resource_info.NewResource(0, 0, c.nonAllocated)
+				releasing := resource_info.EmptyResource()
 
 				node := &node_info.NodeInfo{
 					Node: &corev1.Node{
@@ -78,8 +85,9 @@ var _ = Describe("NodeSpread", func() {
 							},
 						},
 					},
-					Idle:      resource_info.NewResource(0, 0, c.nonAllocated),
-					Releasing: resource_info.EmptyResource(),
+					IdleVector:      idle.ToVector(vectorMap),
+					ReleasingVector: releasing.ToVector(vectorMap),
+					VectorMap:       vectorMap,
 				}
 
 				plugin := nodeplacement.New(map[string]string{
@@ -97,14 +105,20 @@ var _ = Describe("NodeSpread", func() {
 				Expect(actual).To(Equal(c.expected))
 
 				task = &pod_info.PodInfo{
-					ResReq: resource_info.NewResourceRequirements(0, 1, 0),
+					ResReqVector: resource_info.NewResourceVectorWithValues(1, 0, 0, vectorMap),
+					VectorMap:    vectorMap,
 				}
 
+				idle2 := resource_info.NewResource(c.nonAllocated, 0, 0)
+				allocatable := resource_info.NewResource(float64(c.gpuCount), 0, 0)
+				releasing2 := resource_info.EmptyResource()
+
 				node = &node_info.NodeInfo{
-					Node:        &corev1.Node{},
-					Idle:        resource_info.NewResource(c.nonAllocated, 0, 0),
-					Allocatable: resource_info.NewResource(float64(c.gpuCount), 0, 0),
-					Releasing:   resource_info.EmptyResource(),
+					Node:              &corev1.Node{},
+					IdleVector:        idle2.ToVector(vectorMap),
+					AllocatableVector: allocatable.ToVector(vectorMap),
+					ReleasingVector:   releasing2.ToVector(vectorMap),
+					VectorMap:         vectorMap,
 				}
 
 				actual, err = nof(task, node)

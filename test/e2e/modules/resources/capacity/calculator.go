@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/constant"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/constant"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -53,7 +53,7 @@ func GetNodesAllocatableResources(clientset kubernetes.Interface) (map[string]*R
 		perNodeResources[node.Name] = &ResourceList{
 			Cpu:            node.Status.Allocatable.Cpu().DeepCopy(),
 			Memory:         node.Status.Allocatable.Memory().DeepCopy(),
-			Gpu:            node.Status.Allocatable[constants.GpuResource].DeepCopy(),
+			Gpu:            node.Status.Allocatable[constants.NvidiaGpuResource].DeepCopy(),
 			GpuMemory:      calcNodeGpuMemory(node),
 			PodCount:       int(node.Status.Allocatable.Pods().Value()),
 			OtherResources: getOtherResourcesFromResourceList(node.Status.Allocatable),
@@ -113,7 +113,7 @@ func calcNodesResources(podList *corev1.PodList, nodeList *corev1.NodeList) map[
 		perNodeResources[node.Name] = &ResourceList{
 			Cpu:            node.Status.Allocatable.Cpu().DeepCopy(),
 			Memory:         node.Status.Allocatable.Memory().DeepCopy(),
-			Gpu:            node.Status.Allocatable[constants.GpuResource].DeepCopy(),
+			Gpu:            node.Status.Allocatable[constants.NvidiaGpuResource].DeepCopy(),
 			GpuMemory:      calcNodeGpuMemory(node),
 			PodCount:       int(node.Status.Allocatable.Pods().Value()),
 			OtherResources: getOtherResourcesFromResourceList(node.Status.Allocatable),
@@ -132,7 +132,7 @@ func calcNodesResources(podList *corev1.PodList, nodeList *corev1.NodeList) map[
 
 func calcNodeGpuMemory(node corev1.Node) resource.Quantity {
 	var nodeGpusMemory resource.Quantity
-	nodeGpus := node.Status.Allocatable[constants.GpuResource]
+	nodeGpus := node.Status.Allocatable[constants.NvidiaGpuResource]
 	if nodeGpusMemoryStr := node.Labels[constant.NvidiaGPUMemoryLabelName]; nodeGpusMemoryStr != "" {
 		singleGpuMemory, _ := strconv.Atoi(nodeGpusMemoryStr)
 		totalNodeGpuMemory := strconv.Itoa(singleGpuMemory * int(nodeGpus.Value()))
@@ -163,7 +163,7 @@ func ResourcesRequestToList(req corev1.ResourceList, podAnnotations map[string]s
 }
 
 func calcPodGpus(podAnnotations map[string]string, req corev1.ResourceList) resource.Quantity {
-	gpuReq := req[constants.GpuResource].DeepCopy()
+	gpuReq := req[constants.NvidiaGpuResource].DeepCopy()
 
 	if fractionalGpuStr := podAnnotations[constants.GpuFraction]; fractionalGpuStr != "" {
 		fractionalGpu := resource.MustParse(fractionalGpuStr)
@@ -187,7 +187,7 @@ func getOtherResourcesFromResourceList(list corev1.ResourceList) map[corev1.Reso
 		if key == corev1.ResourceCPU ||
 			key == corev1.ResourceMemory ||
 			key == corev1.ResourcePods ||
-			key == constants.GpuResource {
+			key == constants.NvidiaGpuResource {
 			continue
 		}
 		otherResources[key] = value

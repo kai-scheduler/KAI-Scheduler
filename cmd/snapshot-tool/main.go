@@ -12,24 +12,30 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"runtime"
 	"runtime/pprof"
 	"syscall"
 	"time"
 
+	nrtfake "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/fake"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	featureutil "k8s.io/apiserver/pkg/util/feature"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	version "k8s.io/apimachinery/pkg/version"
+	fakediscovery "k8s.io/client-go/discovery/fake"
+	clientfeatures "k8s.io/client-go/features"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
-	"k8s.io/kubernetes/pkg/features"
 
-	kaischedulerfake "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned/fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf_util"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/metrics"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/snapshot"
+	kaischedulerfake "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/fake"
+	draversionawareclient "github.com/kai-scheduler/KAI-scheduler/pkg/common/resources/dra_version_aware_client"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf_util"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/snapshot"
 )
 
 func main() {
@@ -37,13 +43,17 @@ func main() {
 	verbosity := fs.Int("verbosity", 4, "logging verbosity")
 	filename := fs.String("filename", "", "location of the zipped JSON file")
 	cpuprofile := fs.String("cpuprofile", "", "write cpu profile to file")
+	memprofile := fs.String("memprofile", "", "write memory profile to file")
+
 	_ = fs.Parse(os.Args[1:])
 	if filename == nil || len(*filename) == 0 {
 		fs.Usage()
 		return
 	}
 
-	if err := log.InitLoggers(int(*verbosity)); err != nil {
+	disableWatchListClientForFakeReplay()
+
+	if err := log.InitLoggers(int(*verbosity), false); err != nil {
 		fmt.Printf("Failed to initialize logger: %v", err)
 		return
 	}
@@ -55,6 +65,8 @@ func main() {
 	}()
 	log.InfraLogger.SetSessionID("snapshot-runner")
 
+	runStart := time.Now()
+
 	snapshot, err := loadSnapshot(*filename)
 	if err != nil {
 		log.InfraLogger.Fatalf(err.Error(), err)
@@ -63,11 +75,12 @@ func main() {
 	actions.InitDefaultActions()
 	plugins.InitDefaultPlugins()
 
-	kubeClient, kaiClient := loadClientsWithSnapshot(snapshot.RawObjects)
+	kubeClient, kaiClient, nrtClient := loadClientsWithSnapshot(snapshot.RawObjects, snapshot.Discovery)
 
 	schedulerCacheParams := &cache.SchedulerCacheParams{
 		KubeClient:                  kubeClient,
 		KAISchedulerClient:          kaiClient,
+		NRTClient:                   nrtClient,
 		SchedulerName:               snapshot.SchedulerParams.SchedulerName,
 		NodePoolParams:              snapshot.SchedulerParams.PartitionParams,
 		RestrictNodeScheduling:      snapshot.SchedulerParams.RestrictSchedulingNodes,
@@ -76,6 +89,7 @@ func main() {
 		FullHierarchyFairness:       snapshot.SchedulerParams.FullHierarchyFairness,
 		AllowConsolidatingReclaim:   snapshot.SchedulerParams.AllowConsolidatingReclaim,
 		NumOfStatusRecordingWorkers: snapshot.SchedulerParams.NumOfStatusRecordingWorkers,
+		StuckInReleasingThreshold:   snapshot.SchedulerParams.StuckInReleasingThreshold,
 		DiscoveryClient:             kubeClient.Discovery(),
 	}
 
@@ -83,10 +97,6 @@ func main() {
 	stopCh := make(chan struct{})
 	schedulerCache.Run(stopCh)
 	schedulerCache.WaitForCacheSync(stopCh)
-
-	if err := enableDRAFeatureGate(); err != nil {
-		log.InfraLogger.V(2).Warnf("Failed to enable DRA feature gate: %v", err)
-	}
 
 	if *cpuprofile != "" {
 		f, err := os.Create(*cpuprofile)
@@ -109,13 +119,75 @@ func main() {
 	}
 	defer framework.CloseSession(ssn)
 
+	actionDurations := make(map[string]time.Duration)
 	actions, _ := conf_util.GetActionsFromConfig(snapshot.Config)
 	for _, action := range actions {
 		log.InfraLogger.SetAction(string(action.Name()))
 		metrics.SetCurrentAction(string(action.Name()))
 		actionStartTime := time.Now()
 		action.Execute(ssn)
+		elapsed := time.Since(actionStartTime)
 		metrics.UpdateActionDuration(string(action.Name()), metrics.Duration(actionStartTime))
+		log.InfraLogger.V(2).Infof("Action <%s> completed in %v", action.Name(), elapsed)
+		actionDurations[string(action.Name())] = elapsed
+	}
+
+	if *memprofile != "" {
+		f, err := os.Create(*memprofile)
+		if err != nil {
+			log.InfraLogger.Errorf("Failed to create memory profile file: %v", err)
+		} else {
+			runtime.GC()
+			if err := pprof.WriteHeapProfile(f); err != nil {
+				log.InfraLogger.Errorf("Failed to write memory profile: %v", err)
+			}
+			f.Close()
+		}
+	}
+
+	totalDuration := time.Since(runStart)
+	log.InfraLogger.V(2).Infof("Snapshot tool run completed in %v", totalDuration)
+	printRunSummary(totalDuration, actionDurations)
+}
+
+type runSummary struct {
+	TotalDurationMs   int64            `json:"total_duration_ms"`
+	ActionDurationsMs map[string]int64 `json:"action_durations_ms"`
+}
+
+func printRunSummary(totalDuration time.Duration, actionDurations map[string]time.Duration) {
+	actionMs := make(map[string]int64, len(actionDurations))
+	for name, d := range actionDurations {
+		actionMs[name] = d.Milliseconds()
+	}
+	summary := runSummary{
+		TotalDurationMs:   totalDuration.Milliseconds(),
+		ActionDurationsMs: actionMs,
+	}
+	out, err := json.MarshalIndent(summary, "", "  ")
+	if err != nil {
+		log.InfraLogger.Errorf("Failed to marshal run summary: %v", err)
+		return
+	}
+	fmt.Println(string(out))
+}
+
+// disableWatchListClientForFakeReplay turns off client-go's WatchListClient gate (default true since
+// client-go 1.35) before any client is built. Only the NodeResourceTopology client needs this: its
+// generated informer (noderesourcetopology-api, built against client-go v0.22) hangs under the
+// watch-list reflector when backed by a fake clientset, so replayed NRTs never sync. Other clients
+// (core/KAI/DRA, modern codegen) are unaffected, and the NRT client works against a real API server.
+// The alternative fix is regenerating that client against a current client-go; disabling the gate is
+// the cheaper replay-only workaround. See https://github.com/kubernetes/kubernetes/issues/129408.
+func disableWatchListClientForFakeReplay() {
+	featureGates, ok := clientfeatures.FeatureGates().(interface {
+		Set(clientfeatures.Feature, bool) error
+	})
+	if !ok {
+		return
+	}
+	if err := featureGates.Set(clientfeatures.WatchListClient, false); err != nil {
+		utilruntime.HandleError(err)
 	}
 }
 
@@ -147,9 +219,15 @@ func loadSnapshot(filename string) (*snapshot.Snapshot, error) {
 	return nil, os.ErrNotExist
 }
 
-func loadClientsWithSnapshot(rawObjects *snapshot.RawKubernetesObjects) (*fake.Clientset, *kaischedulerfake.Clientset) {
+func loadClientsWithSnapshot(rawObjects *snapshot.RawKubernetesObjects, discoverySnapshot *snapshot.DiscoverySnapshot) (kubernetes.Interface, *kaischedulerfake.Clientset, *nrtfake.Clientset) {
 	kubeClient := fake.NewSimpleClientset()
 	kaiClient := kaischedulerfake.NewSimpleClientset()
+	nrtClient := nrtfake.NewSimpleClientset()
+
+	if discoverySnapshot == nil {
+		discoverySnapshot = synthesizeDiscoveryFromSnapshot(rawObjects)
+	}
+	applyDiscoverySnapshot(kubeClient, discoverySnapshot)
 
 	for _, pod := range rawObjects.Pods {
 		_, err := kubeClient.CoreV1().Pods(pod.Namespace).Create(context.TODO(), pod, v1.CreateOptions{})
@@ -200,6 +278,13 @@ func loadClientsWithSnapshot(rawObjects *snapshot.RawKubernetesObjects) (*fake.C
 		}
 	}
 
+	for _, persistentVolume := range rawObjects.PersistentVolumes {
+		_, err := kubeClient.CoreV1().PersistentVolumes().Create(context.TODO(), persistentVolume, v1.CreateOptions{})
+		if err != nil {
+			log.InfraLogger.Errorf("Failed to create persistent volume: %v", err)
+		}
+	}
+
 	for _, persistentVolumeClaim := range rawObjects.PersistentVolumeClaims {
 		_, err := kubeClient.CoreV1().PersistentVolumeClaims(persistentVolumeClaim.Namespace).Create(context.TODO(), persistentVolumeClaim, v1.CreateOptions{})
 		if err != nil {
@@ -235,31 +320,95 @@ func loadClientsWithSnapshot(rawObjects *snapshot.RawKubernetesObjects) (*fake.C
 		}
 	}
 
+	for _, nrt := range rawObjects.NodeResourceTopologies {
+		_, err := nrtClient.TopologyV1alpha2().NodeResourceTopologies().Create(context.TODO(), nrt, v1.CreateOptions{})
+		if err != nil {
+			log.InfraLogger.Errorf("Failed to create node resource topology: %v", err)
+		}
+	}
+
+	draClient := draversionawareclient.NewDRAAwareClient(kubeClient)
+
 	for _, resourceClaim := range rawObjects.ResourceClaims {
-		_, err := kubeClient.ResourceV1().ResourceClaims(resourceClaim.Namespace).Create(context.TODO(), resourceClaim, v1.CreateOptions{})
+		_, err := draClient.ResourceV1().ResourceClaims(resourceClaim.Namespace).Create(context.TODO(), resourceClaim, v1.CreateOptions{})
 		if err != nil {
 			log.InfraLogger.Errorf("Failed to create resource claim: %v", err)
 		}
 	}
 
 	for _, resourceSlice := range rawObjects.ResourceSlices {
-		_, err := kubeClient.ResourceV1().ResourceSlices().Create(context.TODO(), resourceSlice, v1.CreateOptions{})
+		_, err := draClient.ResourceV1().ResourceSlices().Create(context.TODO(), resourceSlice, v1.CreateOptions{})
 		if err != nil {
 			log.InfraLogger.Errorf("Failed to create resource slice: %v", err)
 		}
 	}
 
 	for _, deviceClass := range rawObjects.DeviceClasses {
-		_, err := kubeClient.ResourceV1().DeviceClasses().Create(context.TODO(), deviceClass, v1.CreateOptions{})
+		_, err := draClient.ResourceV1().DeviceClasses().Create(context.TODO(), deviceClass, v1.CreateOptions{})
 		if err != nil {
 			log.InfraLogger.Errorf("Failed to create device class: %v", err)
 		}
 	}
 
-	return kubeClient, kaiClient
+	return draClient, kaiClient, nrtClient
 }
 
-func enableDRAFeatureGate() error {
-	return featureutil.DefaultMutableFeatureGate.SetFromMap(
-		map[string]bool{string(features.DynamicResourceAllocation): true})
+func synthesizeDiscoveryFromSnapshot(rawObjects *snapshot.RawKubernetesObjects) *snapshot.DiscoverySnapshot {
+	hasDRAResources := len(rawObjects.ResourceClaims) > 0 ||
+		len(rawObjects.ResourceSlices) > 0 ||
+		len(rawObjects.DeviceClasses) > 0
+	hasNRTResources := len(rawObjects.NodeResourceTopologies) > 0
+
+	if !hasDRAResources && !hasNRTResources {
+		return nil
+	}
+
+	discoverySnapshot := &snapshot.DiscoverySnapshot{
+		ServerVersion: &version.Info{Major: "1", Minor: "32"},
+	}
+
+	if hasDRAResources {
+		log.InfraLogger.V(2).Infof("Synthesizing discovery data from snapshot DRA resources")
+		discoverySnapshot.Resources = append(discoverySnapshot.Resources, &v1.APIResourceList{
+			GroupVersion: "resource.k8s.io/v1",
+			APIResources: []v1.APIResource{
+				{Name: "resourceclaims", Kind: "ResourceClaim", Namespaced: true},
+				{Name: "resourceslices", Kind: "ResourceSlice"},
+				{Name: "deviceclasses", Kind: "DeviceClass"},
+			},
+		})
+	}
+
+	if hasNRTResources {
+		log.InfraLogger.V(2).Infof("Synthesizing discovery data from snapshot NRT resources")
+		discoverySnapshot.Resources = append(discoverySnapshot.Resources, &v1.APIResourceList{
+			GroupVersion: "topology.node.k8s.io/v1alpha2",
+			APIResources: []v1.APIResource{
+				{Name: "noderesourcetopologies", Kind: "NodeResourceTopology"},
+			},
+		})
+	}
+
+	return discoverySnapshot
+}
+
+func applyDiscoverySnapshot(kubeClient *fake.Clientset, discoverySnapshot *snapshot.DiscoverySnapshot) {
+	if kubeClient == nil || discoverySnapshot == nil {
+		return
+	}
+
+	fakeDiscoveryClient, ok := kubeClient.Discovery().(*fakediscovery.FakeDiscovery)
+	if !ok {
+		return
+	}
+
+	if discoverySnapshot.ServerVersion != nil {
+		fakeDiscoveryClient.FakedServerVersion = &version.Info{
+			Major: discoverySnapshot.ServerVersion.Major,
+			Minor: discoverySnapshot.ServerVersion.Minor,
+		}
+	}
+	if discoverySnapshot.Resources != nil {
+		kubeClient.Resources = discoverySnapshot.Resources
+	}
 }

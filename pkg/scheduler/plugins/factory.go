@@ -20,28 +20,31 @@ limitations under the License.
 package plugins
 
 import (
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/dynamicresources"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/elastic"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/gpupack"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/gpusharingorder"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/gpuspread"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/kubeflow"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/minruntime"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/nodeavailability"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/nodeplacement"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/nominatednode"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/podaffinity"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/predicates"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/priority"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/proportion"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/ray"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/reflectjoborder"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/resourcetype"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/snapshot"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/subgrouporder"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/taskorder"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/topology"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/dynamicresources"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/elastic"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/gpupack"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/gpusharingorder"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/gpuspread"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/kubeflow"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/minruntime"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/multinodegang"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/nodeavailability"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/nodelocalgreedy"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/nodeplacement"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/nominatednode"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/numa"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/podaffinity"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/predicates"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/priority"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/ray"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/reflectjoborder"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/resourcetype"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/snapshot"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/subgrouporder"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/taskorder"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/topology"
 )
 
 func InitDefaultPlugins() {
@@ -50,6 +53,7 @@ func InitDefaultPlugins() {
 	framework.RegisterPluginBuilder("priority", priority.New)
 	framework.RegisterPluginBuilder("nodeplacement", nodeplacement.New)
 	framework.RegisterPluginBuilder("nominatednode", nominatednode.New)
+	framework.RegisterPluginBuilder("numa", numa.New)
 	framework.RegisterPluginBuilder("nodeavailability", nodeavailability.New)
 	framework.RegisterPluginBuilder("gpusharingorder", gpusharingorder.New)
 	framework.RegisterPluginBuilder("gpupack", gpupack.New)
@@ -70,6 +74,8 @@ func InitDefaultPlugins() {
 
 	// Other Plugins
 	framework.RegisterPluginBuilder("snapshot", snapshot.New)
+	framework.RegisterPluginBuilder(nodelocalgreedy.Name, nodelocalgreedy.New)
+	framework.RegisterPluginBuilder(multinodegang.Name, multinodegang.New)
 
 	// Always register the Job Order Plugin last.
 	framework.RegisterPluginBuilder("reflectjoborder", reflectjoborder.New)

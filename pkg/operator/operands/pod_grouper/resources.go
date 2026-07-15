@@ -12,8 +12,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/common"
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common"
 )
 
 const (
@@ -62,6 +62,9 @@ func buildArgsList(kaiConfig *kaiv1.Config) []string {
 	if config.Args.GangScheduleKnative != nil {
 		args = append(args, "--knative-gang-schedule="+strconv.FormatBool(*config.Args.GangScheduleKnative))
 	}
+	if config.Args.GenericKartaFallback != nil {
+		args = append(args, "--generic-karta-fallback="+strconv.FormatBool(*config.Args.GenericKartaFallback))
+	}
 
 	k8sClientConfig := config.K8sClientConfig
 	if k8sClientConfig.QPS != nil {
@@ -91,7 +94,7 @@ func buildArgsList(kaiConfig *kaiv1.Config) []string {
 		args = append(args, "--pod-label-selector", formatLabelSelector(kaiConfig.Spec.Global.PodLabelSelector))
 	}
 
-	return args
+	return common.AddControllerRuntimeJSONLogArg(kaiConfig.Spec.Global.JSONLog, args)
 }
 
 func formatLabelSelector(selector map[string]string) string {

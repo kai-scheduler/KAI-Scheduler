@@ -8,15 +8,16 @@ import (
 
 	. "go.uber.org/mock/gomock"
 	"gopkg.in/h2non/gock.v1"
+	"k8s.io/utils/ptr"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/allocate"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions/integration_tests/integration_tests_utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/allocate"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/integration_tests_utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 )
 
 func TestHandleMemoryGPUAllocation(t *testing.T) {
@@ -75,16 +76,19 @@ func getMemoryGPUTestsMetadata() []integration_tests_utils.TestTopologyMetadata 
 						DeservedGPUs: 1,
 					},
 				},
+				// 3 tasks × 40 MiB ≈ 120 MiB, each gpu in the unitests is 100 MiB,
+				// so the required 1.2 GPU-equivalents exceeds the queue's deserved quota of 1.
+				// A non-preemptible job must not exceed deserved quota, so the
+				// job-level capacity check blocks it (same as for fraction requests).
 				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
 					"pending_job-0": {
 						Status:       pod_status.Pending,
-						GPUsAccepted: 0.8,
-						GPUGroups:    []string{"0"},
+						GPUsAccepted: 0,
 					},
 				},
 				Mocks: &test_utils.TestMock{
 					CacheRequirements: &test_utils.CacheMocking{
-						NumberOfCacheBinds: 5,
+						NumberOfCacheBinds: 0,
 					},
 				},
 			},
@@ -126,16 +130,19 @@ func getMemoryGPUTestsMetadata() []integration_tests_utils.TestTopologyMetadata 
 						MaxAllowedGPUs: 1,
 					},
 				},
+				// 3 tasks × 40 MiB ≈ 120 MiB, each gpu in the unitests is 100 MiB,
+				// so the required 1.2 GPU-equivalents exceeds the queue's hard limit (MaxAllowed) of 1.
+				// Even a preemptible job cannot exceed the limit, so the
+				// job-level capacity check blocks it (same as for fraction requests).
 				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
 					"pending_job-0": {
 						Status:       pod_status.Pending,
-						GPUsAccepted: 0.8,
-						GPUGroups:    []string{"0"},
+						GPUsAccepted: 0,
 					},
 				},
 				Mocks: &test_utils.TestMock{
 					CacheRequirements: &test_utils.CacheMocking{
-						NumberOfCacheBinds: 5,
+						NumberOfCacheBinds: 0,
 					},
 				},
 			},
@@ -409,6 +416,145 @@ func getMemoryGPUTestsMetadata() []integration_tests_utils.TestTopologyMetadata 
 					CacheRequirements: &test_utils.CacheMocking{
 						NumberOfCacheBinds:      0,
 						NumberOfPipelineActions: 1,
+					},
+				},
+			},
+		},
+		{
+			// 3 nodes with different GPU memory sizes per GPU.
+			// running-job takes all 2 GPUs of node-large (2000 MiB/GPU, the largest).
+			// pending-job requests 350 MiB and cannot be scheduled:
+			//   - node-small (400 MiB): 350/400 = 0.875 > 0.5 deserved → overlimit
+			//   - node-medium (600 MiB): 350/600 ≈ 0.583 > 0.5 → overlimit
+			//   - node-large (2000 MiB): 350/2000 = 0.175 < 0.5 → NOT overlimit, but full
+			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Name: "pending job requests gpu memory - overlimit on available nodes, not overlimit on full largest-memory node",
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:                "running-job",
+						RequiredGPUsPerTask: 1,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "queue1",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								NodeName: "node-large",
+								State:    pod_status.Running,
+							},
+							{
+								NodeName: "node-large",
+								State:    pod_status.Running,
+							},
+						},
+					},
+					{
+						Name:              "pending-job",
+						RequiredGpuMemory: 350,
+						Priority:          constants.PriorityBuildNumber,
+						QueueName:         "queue0",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								State: pod_status.Pending,
+							},
+						},
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node-small": {
+						GPUs:      1,
+						GPUMemory: 400,
+					},
+					"node-medium": {
+						GPUs:      1,
+						GPUMemory: 600,
+					},
+					"node-large": {
+						GPUs:      2,
+						GPUMemory: 2000,
+					},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{
+						Name:         "queue0",
+						DeservedGPUs: 0.5,
+					},
+					{
+						Name:         "queue1",
+						DeservedGPUs: 2,
+					},
+				},
+				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"running-job": {
+						NodeName:     "node-large",
+						GPUsRequired: 2,
+						Status:       pod_status.Running,
+					},
+					"pending-job": {
+						Status: pod_status.Pending,
+						ExpectedErrorMessage: "\nPodSchedulingErrors.\nResources were not found for pod /pending-job-0 due to: " +
+							"no nodes with enough resources were found: " +
+							"1 node does not have enough capacity. Reason: NonPreemptibleOverQuota, Details: " +
+							"Non-preemptible workload is over quota. Workload requested 0.59 GPUs, but queue0 quota is 0.5 GPUs, " +
+							"while 0 GPUs are already allocated for non-preemptible pods. Use a preemptible workload to go over quota.. \n" +
+							"1 node does not have enough capacity. Reason: NonPreemptibleOverQuota, Details: " +
+							"Non-preemptible workload is over quota. Workload requested 0.88 GPUs, but queue0 quota is 0.5 GPUs, " +
+							"while 0 GPUs are already allocated for non-preemptible pods. Use a preemptible workload to go over quota...",
+					},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{
+						NumberOfCacheBinds: 0,
+					},
+				},
+			},
+		},
+		{
+			// A task requesting 2 GPU-memory devices (2×60 MiB) needs 1.2 GPU-fraction units
+			// (2 × 60/100). With DeservedGPUs=1 the job must stay pending.
+			//
+			// IsJobOverQueueCapacity always passes (ResReqVector[GPU]=0 for memory requests).
+			// IsTaskAllocationOnNodeOverCapacity is the only gate, via GetRequiredInitQuota.
+			//
+			// Bug: GetRequiredInitQuota returns per-device fraction (0.6) instead of total
+			// (1.2 = 2 × 0.6), so the check sees 0+0.6=0.6 < 1 → wrongly schedulable.
+			// The node has 2 GPUs so the physical fit check would also pass (each device gets
+			// its own GPU), meaning only the quota check can block this job.
+			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Name: "2-device GPU memory job blocked by non-preemptible quota",
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:                                "pending_job",
+						RequiredGpuMemory:                   60,
+						RequiredMultiFractionDevicesPerTask: ptr.To(uint64(2)),
+						Priority:                            constants.PriorityBuildNumber,
+						QueueName:                           "queue0",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								State: pod_status.Pending,
+							},
+						},
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node0": {
+						GPUs:      2,
+						GPUMemory: 100,
+					},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{
+						Name:         "queue0",
+						DeservedGPUs: 1,
+					},
+				},
+				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"pending_job": {
+						GPUsAccepted: 0,
+						Status:       pod_status.Pending,
+					},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{
+						NumberOfCacheBinds: 0,
 					},
 				},
 			},

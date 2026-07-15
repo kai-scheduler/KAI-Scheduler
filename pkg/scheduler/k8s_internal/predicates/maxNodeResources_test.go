@@ -6,6 +6,7 @@ package predicates
 import (
 	"context"
 	"strconv"
+	"strings"
 	"testing"
 
 	v1 "k8s.io/api/core/v1"
@@ -15,22 +16,39 @@ import (
 	ksf "k8s.io/kube-scheduler/framework"
 	"k8s.io/utils/ptr"
 
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/resources"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 )
+
+func buildTestNodes(nodesResourceLists map[string]v1.ResourceList) map[string]*node_info.NodeInfo {
+	var allLists []v1.ResourceList
+	for _, rl := range nodesResourceLists {
+		allLists = append(allLists, rl)
+	}
+	vm := resource_info.BuildResourceVectorMap(allLists)
+	result := make(map[string]*node_info.NodeInfo, len(nodesResourceLists))
+	for name, rl := range nodesResourceLists {
+		result[name] = &node_info.NodeInfo{
+			AllocatableVector: resource_info.NewResourceVectorFromResourceList(rl, vm),
+			VectorMap:         vm,
+		}
+	}
+	return result
+}
 
 func Test_podToMaxNodeResourcesFiltering(t *testing.T) {
 	type args struct {
-		nodePoolName   string
-		nodesMap       map[string]*node_info.NodeInfo
-		resourceClaims []*resourceapi.ResourceClaim
-		pod            *v1.Pod
+		nodePoolName       string
+		nodesResourceLists map[string]v1.ResourceList
+		resourceClaims     []*resourceapi.ResourceClaim
+		pod                *v1.Pod
 	}
 	type expected struct {
-		status *ksf.Status
+		status         *ksf.Status
+		skipExactMatch bool
+		partialReasons []string
 	}
 	tests := []struct {
 		name     string
@@ -40,14 +58,13 @@ func Test_podToMaxNodeResourcesFiltering(t *testing.T) {
 		{
 			"small pod",
 			args{
-				nodesMap: map[string]*node_info.NodeInfo{
+				nodesResourceLists: map[string]v1.ResourceList{
 					"n1": {
-						Allocatable: resource_info.ResourceFromResourceList(v1.ResourceList{
-							v1.ResourceCPU:                resource.MustParse("100m"),
-							v1.ResourceMemory:             resource.MustParse("200Mi"),
-							resource_info.GPUResourceName: resource.MustParse("1"),
-							"kai.scheduler/r1":            resource.MustParse("2"),
-						}),
+						v1.ResourceCPU:                resource.MustParse("100m"),
+						v1.ResourceMemory:             resource.MustParse("200Mi"),
+						resource_info.GPUResourceName: resource.MustParse("1"),
+						"kai.scheduler/r1":            resource.MustParse("2"),
+						v1.ResourcePods:               resource.MustParse("110"),
 					},
 				},
 				resourceClaims: []*resourceapi.ResourceClaim{},
@@ -72,27 +89,27 @@ func Test_podToMaxNodeResourcesFiltering(t *testing.T) {
 			},
 			expected{
 				nil,
+				false,
+				nil,
 			},
 		},
 		{
 			"not enough cpu",
 			args{
-				nodesMap: map[string]*node_info.NodeInfo{
+				nodesResourceLists: map[string]v1.ResourceList{
 					"n1": {
-						Allocatable: resource_info.ResourceFromResourceList(v1.ResourceList{
-							v1.ResourceCPU:                resource.MustParse("100m"),
-							v1.ResourceMemory:             resource.MustParse("200Mi"),
-							resource_info.GPUResourceName: resource.MustParse("1"),
-							"kai.scheduler/r1":            resource.MustParse("2"),
-						}),
+						v1.ResourceCPU:                resource.MustParse("100m"),
+						v1.ResourceMemory:             resource.MustParse("200Mi"),
+						resource_info.GPUResourceName: resource.MustParse("1"),
+						"kai.scheduler/r1":            resource.MustParse("2"),
+						v1.ResourcePods:               resource.MustParse("110"),
 					},
 					"n2": {
-						Allocatable: resource_info.ResourceFromResourceList(v1.ResourceList{
-							v1.ResourceCPU:                resource.MustParse("500m"),
-							v1.ResourceMemory:             resource.MustParse("200Mi"),
-							resource_info.GPUResourceName: resource.MustParse("1"),
-							"kai.scheduler/r1":            resource.MustParse("2"),
-						}),
+						v1.ResourceCPU:                resource.MustParse("500m"),
+						v1.ResourceMemory:             resource.MustParse("200Mi"),
+						resource_info.GPUResourceName: resource.MustParse("1"),
+						"kai.scheduler/r1":            resource.MustParse("2"),
+						v1.ResourcePods:               resource.MustParse("110"),
 					},
 				},
 				resourceClaims: []*resourceapi.ResourceClaim{},
@@ -116,29 +133,29 @@ func Test_podToMaxNodeResourcesFiltering(t *testing.T) {
 				},
 			},
 			expected{
-				ksf.NewStatus(ksf.Unschedulable,
-					"The pod n1/name1 requires GPU: 0, CPU: 1 (cores), memory: 0 (GB). Max CPU resources available in a single node in the default node-pool is topped at 0.5 cores"),
+				ksf.NewStatus(ksf.UnschedulableAndUnresolvable,
+					"The pod n1/name1 requires GPU: 0, CPU: 1 (cores), memory: 0 (GB), pods: 1. Max CPU resources available in a single node in the default node-pool is topped at 0.5 cores"),
+				false,
+				nil,
 			},
 		},
 		{
 			"not enough memory",
 			args{
-				nodesMap: map[string]*node_info.NodeInfo{
+				nodesResourceLists: map[string]v1.ResourceList{
 					"n1": {
-						Allocatable: resource_info.ResourceFromResourceList(v1.ResourceList{
-							v1.ResourceCPU:                resource.MustParse("100m"),
-							v1.ResourceMemory:             resource.MustParse("400Mi"),
-							resource_info.GPUResourceName: resource.MustParse("1"),
-							"kai.scheduler/r1":            resource.MustParse("2"),
-						}),
+						v1.ResourceCPU:                resource.MustParse("100m"),
+						v1.ResourceMemory:             resource.MustParse("400Mi"),
+						resource_info.GPUResourceName: resource.MustParse("1"),
+						"kai.scheduler/r1":            resource.MustParse("2"),
+						v1.ResourcePods:               resource.MustParse("110"),
 					},
 					"n2": {
-						Allocatable: resource_info.ResourceFromResourceList(v1.ResourceList{
-							v1.ResourceCPU:                resource.MustParse("500m"),
-							v1.ResourceMemory:             resource.MustParse("200Mi"),
-							resource_info.GPUResourceName: resource.MustParse("1"),
-							"kai.scheduler/r1":            resource.MustParse("2"),
-						}),
+						v1.ResourceCPU:                resource.MustParse("500m"),
+						v1.ResourceMemory:             resource.MustParse("200Mi"),
+						resource_info.GPUResourceName: resource.MustParse("1"),
+						"kai.scheduler/r1":            resource.MustParse("2"),
+						v1.ResourcePods:               resource.MustParse("110"),
 					},
 				},
 				resourceClaims: []*resourceapi.ResourceClaim{},
@@ -162,29 +179,29 @@ func Test_podToMaxNodeResourcesFiltering(t *testing.T) {
 				},
 			},
 			expected{
-				ksf.NewStatus(ksf.Unschedulable,
-					"The pod n1/name1 requires GPU: 0, CPU: 0 (cores), memory: 1 (GB). Max memory resources available in a single node in the default node-pool is topped at 0.419 GB"),
+				ksf.NewStatus(ksf.UnschedulableAndUnresolvable,
+					"The pod n1/name1 requires GPU: 0, CPU: 0 (cores), memory: 1 (GB), pods: 1. Max memory resources available in a single node in the default node-pool is topped at 0.419 GB"),
+				false,
+				nil,
 			},
 		},
 		{
 			"not enough whole gpus",
 			args{
-				nodesMap: map[string]*node_info.NodeInfo{
+				nodesResourceLists: map[string]v1.ResourceList{
 					"n1": {
-						Allocatable: resource_info.ResourceFromResourceList(v1.ResourceList{
-							v1.ResourceCPU:                resource.MustParse("100m"),
-							v1.ResourceMemory:             resource.MustParse("200Mi"),
-							resource_info.GPUResourceName: resource.MustParse("1"),
-							"kai.scheduler/r1":            resource.MustParse("2"),
-						}),
+						v1.ResourceCPU:                resource.MustParse("100m"),
+						v1.ResourceMemory:             resource.MustParse("200Mi"),
+						resource_info.GPUResourceName: resource.MustParse("1"),
+						"kai.scheduler/r1":            resource.MustParse("2"),
+						v1.ResourcePods:               resource.MustParse("110"),
 					},
 					"n2": {
-						Allocatable: resource_info.ResourceFromResourceList(v1.ResourceList{
-							v1.ResourceCPU:                resource.MustParse("500m"),
-							v1.ResourceMemory:             resource.MustParse("200Mi"),
-							resource_info.GPUResourceName: resource.MustParse("1"),
-							"kai.scheduler/r1":            resource.MustParse("2"),
-						}),
+						v1.ResourceCPU:                resource.MustParse("500m"),
+						v1.ResourceMemory:             resource.MustParse("200Mi"),
+						resource_info.GPUResourceName: resource.MustParse("1"),
+						"kai.scheduler/r1":            resource.MustParse("2"),
+						v1.ResourcePods:               resource.MustParse("110"),
 					},
 				},
 				resourceClaims: []*resourceapi.ResourceClaim{},
@@ -208,29 +225,29 @@ func Test_podToMaxNodeResourcesFiltering(t *testing.T) {
 				},
 			},
 			expected{
-				ksf.NewStatus(ksf.Unschedulable,
-					"The pod n1/name1 requires GPU: 2, CPU: 0 (cores), memory: 0 (GB). Max GPU resources available in a single node in the default node-pool is topped at 1"),
+				ksf.NewStatus(ksf.UnschedulableAndUnresolvable,
+					"The pod n1/name1 requires GPU: 2, CPU: 0 (cores), memory: 0 (GB), pods: 1. Max GPU resources available in a single node in the default node-pool is topped at 1"),
+				false,
+				nil,
 			},
 		},
 		{
 			"not enough fraction gpu",
 			args{
-				nodesMap: map[string]*node_info.NodeInfo{
+				nodesResourceLists: map[string]v1.ResourceList{
 					"n1": {
-						Allocatable: resource_info.ResourceFromResourceList(v1.ResourceList{
-							v1.ResourceCPU:                resource.MustParse("100m"),
-							v1.ResourceMemory:             resource.MustParse("200Mi"),
-							resource_info.GPUResourceName: resource.MustParse("0"),
-							"kai.scheduler/r1":            resource.MustParse("2"),
-						}),
+						v1.ResourceCPU:                resource.MustParse("100m"),
+						v1.ResourceMemory:             resource.MustParse("200Mi"),
+						resource_info.GPUResourceName: resource.MustParse("0"),
+						"kai.scheduler/r1":            resource.MustParse("2"),
+						v1.ResourcePods:               resource.MustParse("110"),
 					},
 					"n2": {
-						Allocatable: resource_info.ResourceFromResourceList(v1.ResourceList{
-							v1.ResourceCPU:                resource.MustParse("500m"),
-							v1.ResourceMemory:             resource.MustParse("200Mi"),
-							resource_info.GPUResourceName: resource.MustParse("0"),
-							"kai.scheduler/r1":            resource.MustParse("2"),
-						}),
+						v1.ResourceCPU:                resource.MustParse("500m"),
+						v1.ResourceMemory:             resource.MustParse("200Mi"),
+						resource_info.GPUResourceName: resource.MustParse("0"),
+						"kai.scheduler/r1":            resource.MustParse("2"),
+						v1.ResourcePods:               resource.MustParse("110"),
 					},
 				},
 				resourceClaims: []*resourceapi.ResourceClaim{},
@@ -240,7 +257,7 @@ func Test_podToMaxNodeResourcesFiltering(t *testing.T) {
 						Namespace: "n1",
 						Annotations: map[string]string{
 							commonconstants.PodGroupAnnotationForPod: "pg1",
-							common_info.GPUFraction:                  "0.5",
+							commonconstants.GpuFraction:              "0.5",
 						},
 					},
 					Spec: v1.PodSpec{
@@ -253,31 +270,31 @@ func Test_podToMaxNodeResourcesFiltering(t *testing.T) {
 				},
 			},
 			expected{
-				ksf.NewStatus(ksf.Unschedulable,
-					"The pod n1/name1 requires GPU: 0.5, CPU: 0 (cores), memory: 0 (GB). No node in the default node-pool has GPU resources"),
+				ksf.NewStatus(ksf.UnschedulableAndUnresolvable,
+					"The pod n1/name1 requires GPU: 0.5, CPU: 0 (cores), memory: 0 (GB), pods: 1. No node in the default node-pool has GPU resources"),
+				false,
+				nil,
 			},
 		},
 		{
 			"not enough ephemeral storage",
 			args{
-				nodesMap: map[string]*node_info.NodeInfo{
+				nodesResourceLists: map[string]v1.ResourceList{
 					"n1": {
-						Allocatable: resource_info.ResourceFromResourceList(v1.ResourceList{
-							v1.ResourceCPU:                resource.MustParse("100m"),
-							v1.ResourceMemory:             resource.MustParse("200Mi"),
-							resource_info.GPUResourceName: resource.MustParse("1"),
-							"kai.scheduler/r1":            resource.MustParse("2"),
-							v1.ResourceEphemeralStorage:   resource.MustParse("10Gi"),
-						}),
+						v1.ResourceCPU:                resource.MustParse("100m"),
+						v1.ResourceMemory:             resource.MustParse("200Mi"),
+						resource_info.GPUResourceName: resource.MustParse("1"),
+						"kai.scheduler/r1":            resource.MustParse("2"),
+						v1.ResourcePods:               resource.MustParse("110"),
+						v1.ResourceEphemeralStorage:   resource.MustParse("10Gi"),
 					},
 					"n2": {
-						Allocatable: resource_info.ResourceFromResourceList(v1.ResourceList{
-							v1.ResourceCPU:                resource.MustParse("500m"),
-							v1.ResourceMemory:             resource.MustParse("200Mi"),
-							resource_info.GPUResourceName: resource.MustParse("1"),
-							"kai.scheduler/r1":            resource.MustParse("2"),
-							v1.ResourceEphemeralStorage:   resource.MustParse("20Gi"),
-						}),
+						v1.ResourceCPU:                resource.MustParse("500m"),
+						v1.ResourceMemory:             resource.MustParse("200Mi"),
+						resource_info.GPUResourceName: resource.MustParse("1"),
+						"kai.scheduler/r1":            resource.MustParse("2"),
+						v1.ResourcePods:               resource.MustParse("110"),
+						v1.ResourceEphemeralStorage:   resource.MustParse("20Gi"),
 					},
 				},
 				resourceClaims: []*resourceapi.ResourceClaim{},
@@ -301,18 +318,31 @@ func Test_podToMaxNodeResourcesFiltering(t *testing.T) {
 				},
 			},
 			expected{
-				ksf.NewStatus(ksf.Unschedulable,
-					"The pod n1/name1 requires GPU: 0, CPU: 0 (cores), memory: 0 (GB), ephemeral-storage: 25 (GB). "+
-						"Max ephemeral-storage resources available in a single node in the default node-pool is topped at 21.474 GB"),
+				nil,
+				true,
+				[]string{
+					"The pod n1/name1 requires",
+					"ephemeral-storage: 25 (GB)",
+					"pods: 1",
+				},
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mnr := NewMaxNodeResourcesPredicate(tt.args.nodesMap, tt.args.resourceClaims, tt.args.nodePoolName)
+			nodesMap := buildTestNodes(tt.args.nodesResourceLists)
+			mnr := NewMaxNodeResourcesPredicate(nodesMap, tt.args.resourceClaims, tt.args.nodePoolName)
 			_, status := mnr.PreFilter(context.TODO(), nil, tt.args.pod, nil)
-			if !statusEqual(status, tt.expected.status) {
+			if !tt.expected.skipExactMatch && !statusEqual(status, tt.expected.status) {
 				t.Errorf("PreFilter() = %v, want %v", status, tt.expected.status)
+			}
+			if len(tt.expected.partialReasons) > 0 && status == nil {
+				t.Fatalf("PreFilter() returned nil status, but expected partial reasons: %v", strings.Join(tt.expected.partialReasons, ", "))
+			}
+			for _, partialReason := range tt.expected.partialReasons {
+				if !strings.Contains(status.Message(), partialReason) {
+					t.Errorf("PreFilter() = %v, missing partial reason: %v", status.Message(), partialReason)
+				}
 			}
 		})
 	}
@@ -340,16 +370,21 @@ func buildNodesFromResourceSlices(slices []*resourceapi.ResourceSlice, nodeBases
 			slicesByNode[*slice.Spec.NodeName] = append(slicesByNode[*slice.Spec.NodeName], slice)
 		}
 	}
+	var allLists []v1.ResourceList
+	for _, rl := range nodeBases {
+		allLists = append(allLists, rl)
+	}
+	vm := resource_info.BuildResourceVectorMap(allLists)
 	nodesMap := make(map[string]*node_info.NodeInfo)
 	for nodeName, baseList := range nodeBases {
-		allocatable := resource_info.ResourceFromResourceList(baseList)
-		idle := allocatable.Clone()
+		allocVec := resource_info.NewResourceVectorFromResourceList(baseList, vm)
 		ni := &node_info.NodeInfo{
-			Name:        nodeName,
-			Allocatable: allocatable,
-			Idle:        idle,
-			Releasing:   resource_info.EmptyResource(),
-			Used:        resource_info.EmptyResource(),
+			Name:              nodeName,
+			AllocatableVector: allocVec,
+			IdleVector:        allocVec.Clone(),
+			ReleasingVector:   resource_info.NewResourceVector(vm),
+			UsedVector:        resource_info.NewResourceVector(vm),
+			VectorMap:         vm,
 		}
 		var draGPUCount int64
 		for _, slice := range slicesByNode[nodeName] {
@@ -392,11 +427,13 @@ func TestMaxNodeResourcesPredicateDRA(t *testing.T) {
 							v1.ResourceCPU:     resource.MustParse("100m"),
 							v1.ResourceMemory:  resource.MustParse("200Mi"),
 							"kai.scheduler/r1": resource.MustParse("2"),
+							"pods":             resource.MustParse("110"),
 						},
 						"n2": {
 							v1.ResourceCPU:     resource.MustParse("500m"),
 							v1.ResourceMemory:  resource.MustParse("200Mi"),
 							"kai.scheduler/r1": resource.MustParse("2"),
+							"pods":             resource.MustParse("110"),
 						},
 					},
 				),
@@ -457,11 +494,13 @@ func TestMaxNodeResourcesPredicateDRA(t *testing.T) {
 							v1.ResourceCPU:     resource.MustParse("100m"),
 							v1.ResourceMemory:  resource.MustParse("200Mi"),
 							"kai.scheduler/r1": resource.MustParse("2"),
+							"pods":             resource.MustParse("110"),
 						},
 						"n2": {
 							v1.ResourceCPU:     resource.MustParse("500m"),
 							v1.ResourceMemory:  resource.MustParse("200Mi"),
 							"kai.scheduler/r1": resource.MustParse("2"),
+							"pods":             resource.MustParse("110"),
 						},
 					},
 				),
@@ -507,8 +546,8 @@ func TestMaxNodeResourcesPredicateDRA(t *testing.T) {
 					},
 				},
 			},
-			ksf.NewStatus(ksf.Unschedulable,
-				"The pod n1/name1 requires GPU: 2, CPU: 0 (cores), memory: 0 (GB). Max GPU resources available in a single node in the default node-pool is topped at 1"),
+			ksf.NewStatus(ksf.UnschedulableAndUnresolvable,
+				"The pod n1/name1 requires GPU: 2, CPU: 0 (cores), memory: 0 (GB), pods: 1. Max GPU resources available in a single node in the default node-pool is topped at 1"),
 		},
 	}
 	for _, tt := range tests {
@@ -519,6 +558,142 @@ func TestMaxNodeResourcesPredicateDRA(t *testing.T) {
 				t.Errorf("PreFilter() = %v, want %v", status, tt.expected)
 			}
 		})
+	}
+}
+
+func buildTestNodesIncremental(scanOrder []string, nodesResourceLists map[string]v1.ResourceList) (
+	map[string]*node_info.NodeInfo, *resource_info.ResourceVectorMap) {
+	vm := resource_info.NewResourceVectorMap()
+	result := make(map[string]*node_info.NodeInfo, len(nodesResourceLists))
+	for _, name := range scanOrder {
+		rl := nodesResourceLists[name]
+		vm.AddResourceList(rl)
+		result[name] = &node_info.NodeInfo{
+			Name:              name,
+			AllocatableVector: resource_info.ResourceFromResourceList(rl).ToVector(vm),
+			VectorMap:         vm,
+		}
+	}
+	return result, vm
+}
+
+func buildPodRequestingResources(requests v1.ResourceList) *v1.Pod {
+	return &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "name1",
+			Namespace: "n1",
+		},
+		Spec: v1.PodSpec{
+			Containers: []v1.Container{
+				{
+					Name: "c1",
+					Resources: v1.ResourceRequirements{
+						Requests: requests,
+					},
+				},
+			},
+		},
+	}
+}
+
+const extendedResourceTestIterations = 20
+
+func Test_maxNodeResourcesExtendedResourceOnSubsetOfNodes(t *testing.T) {
+	fooResource := v1.ResourceName("example.com/foo")
+	coreOnly := v1.ResourceList{
+		v1.ResourceCPU:    resource.MustParse("4"),
+		v1.ResourceMemory: resource.MustParse("16Gi"),
+		v1.ResourcePods:   resource.MustParse("110"),
+	}
+	nodesResourceLists := map[string]v1.ResourceList{
+		"n1": coreOnly,
+		"n2": coreOnly,
+		"n3": coreOnly,
+		"n4": coreOnly,
+		"n5": {
+			v1.ResourceCPU:    resource.MustParse("4"),
+			v1.ResourceMemory: resource.MustParse("16Gi"),
+			v1.ResourcePods:   resource.MustParse("110"),
+			fooResource:       resource.MustParse("5"),
+		},
+	}
+	scanOrder := []string{"n1", "n2", "n3", "n4", "n5"}
+
+	t.Run("pod requesting the resource within capacity fits", func(t *testing.T) {
+		for i := 0; i < extendedResourceTestIterations; i++ {
+			nodesMap, _ := buildTestNodesIncremental(scanOrder, nodesResourceLists)
+			mnr := NewMaxNodeResourcesPredicate(nodesMap, nil, "")
+			pod := buildPodRequestingResources(v1.ResourceList{fooResource: resource.MustParse("1")})
+			_, status := mnr.PreFilter(context.TODO(), nil, pod, nil)
+			if status != nil {
+				t.Fatalf("iteration %d: PreFilter() = %v, want nil", i, status)
+			}
+		}
+	})
+
+	t.Run("pod requesting more than any node has is rejected", func(t *testing.T) {
+		for i := 0; i < extendedResourceTestIterations; i++ {
+			nodesMap, _ := buildTestNodesIncremental(scanOrder, nodesResourceLists)
+			mnr := NewMaxNodeResourcesPredicate(nodesMap, nil, "")
+			pod := buildPodRequestingResources(v1.ResourceList{fooResource: resource.MustParse("10")})
+			_, status := mnr.PreFilter(context.TODO(), nil, pod, nil)
+			if status == nil {
+				t.Fatalf("iteration %d: PreFilter() = nil, want rejection", i)
+			}
+			if status.Code() != ksf.UnschedulableAndUnresolvable {
+				t.Fatalf("iteration %d: PreFilter() code = %v, want UnschedulableAndUnresolvable", i, status.Code())
+			}
+			if !strings.Contains(status.Message(), string(fooResource)) {
+				t.Fatalf("iteration %d: PreFilter() = %v, message should mention %s", i, status, fooResource)
+			}
+		}
+	})
+
+	t.Run("max resources track the highest capacity across all nodes", func(t *testing.T) {
+		for i := 0; i < extendedResourceTestIterations; i++ {
+			nodesMap, vm := buildTestNodesIncremental(scanOrder, nodesResourceLists)
+			mnr := NewMaxNodeResourcesPredicate(nodesMap, nil, "")
+			fooIdx := vm.GetIndex(fooResource)
+			if fooIdx < 0 {
+				t.Fatalf("iteration %d: %s not registered in vector map", i, fooResource)
+			}
+			if got := mnr.maxResources.Get(fooIdx); got != 5000 {
+				t.Fatalf("iteration %d: maxResources[%s] = %v, want 5000", i, fooResource, got)
+			}
+		}
+	})
+}
+
+func Test_maxNodeResourcesExtendedResourceOnNoNode(t *testing.T) {
+	missingResource := v1.ResourceName("example.com/bar")
+	nodesResourceLists := map[string]v1.ResourceList{
+		"n1": {
+			v1.ResourceCPU:    resource.MustParse("4"),
+			v1.ResourceMemory: resource.MustParse("16Gi"),
+			v1.ResourcePods:   resource.MustParse("110"),
+		},
+		"n2": {
+			v1.ResourceCPU:    resource.MustParse("4"),
+			v1.ResourceMemory: resource.MustParse("16Gi"),
+			v1.ResourcePods:   resource.MustParse("110"),
+		},
+	}
+	pod := buildPodRequestingResources(v1.ResourceList{missingResource: resource.MustParse("1")})
+
+	nodesMap, vm := buildTestNodesIncremental([]string{"n1", "n2"}, nodesResourceLists)
+	vm.AddResourceList(pod.Spec.Containers[0].Resources.Requests)
+
+	mnr := NewMaxNodeResourcesPredicate(nodesMap, nil, "")
+	_, status := mnr.PreFilter(context.TODO(), nil, pod, nil)
+	if status == nil {
+		t.Fatal("PreFilter() = nil, want rejection")
+	}
+	if status.Code() != ksf.UnschedulableAndUnresolvable {
+		t.Fatalf("PreFilter() code = %v, want UnschedulableAndUnresolvable", status.Code())
+	}
+	expectedMessage := "No node in the default node-pool has example.com/bar resources"
+	if !strings.Contains(status.Message(), expectedMessage) {
+		t.Fatalf("PreFilter() = %v, message should contain %q", status, expectedMessage)
 	}
 }
 

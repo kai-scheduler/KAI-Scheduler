@@ -1,9 +1,10 @@
 include build/makefile/index.mk
 
-CONTROLLER_TOOLS_VERSION ?= v0.16.1
-MOCKGEN_VERSION ?= v0.5.0
-ADDLICENSE_VERSION ?= v1.1.1
+CONTROLLER_TOOLS_VERSION ?= v0.20.1
+MOCKGEN_VERSION ?= v0.6.0
+ADDLICENSE_VERSION ?= v1.2.0
 KUSTOMIZE_VERSION ?= v5.0.0
+CHANGIE_VERSION ?= v1.25.0
 
 LOCALBIN ?= $(shell pwd)/bin
 $(LOCALBIN):
@@ -13,10 +14,11 @@ CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 MOCKGEN ?= $(LOCALBIN)/mockgen
 ADDLICENSE ?= $(LOCALBIN)/addlicense
 KUSTOMIZE ?= $(LOCALBIN)/kustomize
+CHANGIE ?= $(LOCALBIN)/changie
 
 # Space seperated list of services to build by default
 # SERVICE_NAMES := service1 service2 service3
-SERVICE_NAMES := podgrouper scheduler binder resourcereservation snapshot-tool scalingpod nodescaleadjuster podgroupcontroller queuecontroller fairshare-simulator admission operator time-based-fairshare-simulator
+SERVICE_NAMES := podgrouper scheduler binder resourcereservation snapshot-tool scalingpod nodescaleadjuster podgroupcontroller queuecontroller fairshare-simulator admission operator time-based-fairshare-simulator numa-placement-exporter
 
 # Kubernetes manifest files that require Kubernetes copyright header (space-separated)
 K8S_COPYRIGHTED_MANIFEST_FILES := deployments/kai-scheduler/crds/kai.scheduler_topologies.yaml
@@ -66,7 +68,7 @@ generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and
 
 .PHONY: gen-license
 gen-license: addlicense
-	$(ADDLICENSE) -c "NVIDIA CORPORATION" -s=only -l apache -v .
+	$(ADDLICENSE) -c "NVIDIA CORPORATION" -s=only -l apache -v -ignore '.changes/**' -ignore '.changie.yaml' .
 
 .PHONY: manifests
 manifests: controller-gen kustomize ## Generate ClusterRole and CustomResourceDefinition objects.
@@ -80,6 +82,7 @@ manifests: controller-gen kustomize ## Generate ClusterRole and CustomResourceDe
 	$(CONTROLLER_GEN) rbac:roleName=queuecontroller,headerFile="./hack/boilerplate.yaml.txt" paths="./pkg/queuecontroller/..." paths="./cmd/queuecontroller/..." output:stdout > deployments/kai-scheduler/templates/rbac/queuecontroller.yaml
 	$(CONTROLLER_GEN) rbac:roleName=kai-admission,headerFile="./hack/boilerplate.yaml.txt" paths="./pkg/admission/..." paths="./cmd/admission/..." output:stdout > deployments/kai-scheduler/templates/rbac/admission.yaml
 	$(CONTROLLER_GEN) rbac:roleName=kai-operator,headerFile="./hack/boilerplate.yaml.txt" paths="./pkg/operator/..." paths="./cmd/operator/..." output:stdout > deployments/kai-scheduler/templates/rbac/operator.yaml
+	$(CONTROLLER_GEN) rbac:roleName=kai-numa-placement-exporter,headerFile="./hack/boilerplate.yaml.txt" paths="./pkg/npe/..." paths="./cmd/numa-placement-exporter/..." output:stdout > deployments/kai-scheduler/templates/rbac/numa-placement-exporter.yaml
 
 	# Add Kubernetes copyright to files derived from Kubernetes projects
 	@for f in $(K8S_COPYRIGHTED_MANIFEST_FILES); do \
@@ -107,6 +110,25 @@ addlicense: $(ADDLICENSE) ## Download google-addlicense locally if necessary.
 $(ADDLICENSE): $(LOCALBIN)
 	test -s $(LOCALBIN)/addlicense || GOBIN=$(LOCALBIN) go install github.com/google/addlicense@$(ADDLICENSE_VERSION)
 
+.PHONY: changie
+changie: $(CHANGIE) ## Download changie locally if necessary.
+$(CHANGIE): $(LOCALBIN)
+	test -s $(LOCALBIN)/changie || GOBIN=$(LOCALBIN) go install github.com/miniscruff/changie@$(CHANGIE_VERSION)
+
+.PHONY: changelog
+changelog: changie ## Add a changelog entry as a fragment (interactive). Use instead of editing CHANGELOG.md.
+	$(CHANGIE) new
+
+.PHONY: changelog-release
+changelog-release: changie ## Fold unreleased fragments into CHANGELOG.md as VERSION and clear them. Usage: make changelog-release VERSION=v0.17.0
+	@test -n "$(VERSION)" || { echo "VERSION is required, e.g. make changelog-release VERSION=v0.17.0"; exit 1; }
+	CHANGIE=$(CHANGIE) bash hack/changelog-fold.sh $(VERSION)
+
+.PHONY: changelog-preview
+changelog-preview: changie ## Preview the next release section without writing anything. Usage: make changelog-preview VERSION=v0.17.0
+	@test -n "$(VERSION)" || { echo "VERSION is required, e.g. make changelog-preview VERSION=v0.17.0"; exit 1; }
+	$(CHANGIE) batch $(VERSION) --dry-run
+
 
 KUSTOMIZE_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"
 .PHONY: kustomize
@@ -117,6 +139,11 @@ $(KUSTOMIZE): $(LOCALBIN)
 # Benchmark targets
 BENCHSTAT ?= $(LOCALBIN)/benchstat
 BENCH_OUTPUT ?= benchmark-results.txt
+# pkg/scheduler/actions/reclaim is excluded from the default benchmark sweep
+# because some reclaim benchmarks require -benchtime=1x and only a curated subset
+# should run in CI.
+BENCH_SPECIAL_PACKAGES := ./pkg/scheduler/actions/reclaim
+BENCH_SPECIAL_REGEX := '^BenchmarkReclaim(WithMissingPVCJobs|UnschedulableDistributedJob_(10|50|100)Node)$$'
 
 .PHONY: benchstat
 benchstat: $(BENCHSTAT)
@@ -126,8 +153,11 @@ $(BENCHSTAT): $(LOCALBIN)
 .PHONY: benchmark
 benchmark: envtest ## Run benchmarks and output results (use BENCH_OUTPUT=file.txt to customize output)
 	@echo "Running benchmarks..."
+	@action_pkgs="$$(go list ./pkg/scheduler/actions/... | grep -vE '/pkg/scheduler/actions/reclaim$$')"; \
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path --bin-dir $(LOCALBIN))" \
-	go test -bench=. -benchmem -count=6 -run=^$$ ./pkg/scheduler/actions/... | tee $(BENCH_OUTPUT)
+	go test -bench=. -benchmem -count=6 -run=^$$ $$action_pkgs | tee $(BENCH_OUTPUT); \
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path --bin-dir $(LOCALBIN))" \
+	go test -bench=$(BENCH_SPECIAL_REGEX) -benchmem -benchtime=1x -count=6 -run=^$$ $(BENCH_SPECIAL_PACKAGES) | tee -a $(BENCH_OUTPUT)
 
 .PHONY: benchmark-docker
 benchmark-docker: builder gocache ## Run benchmarks in Docker

@@ -9,7 +9,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/utils/ptr"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
 )
 
 const (
@@ -35,9 +35,13 @@ type PodGroupController struct {
 	// Replicas specifies the number podgroup controller replicas
 	// +kubebuilder:validation:Optional
 	Replicas *int32 `json:"replicas,omitempty"`
+
+	// VPA specifies Vertical Pod Autoscaler configuration for the pod group controller
+	// +kubebuilder:validation:Optional
+	VPA *common.VPASpec `json:"vpa,omitempty"`
 }
 
-func (pg *PodGroupController) SetDefaultsWhereNeeded(replicaCount *int32) {
+func (pg *PodGroupController) SetDefaultsWhereNeeded(replicaCount *int32, globalVPA *common.VPASpec) {
 	pg.Service = common.SetDefault(pg.Service, &common.Service{})
 	pg.Service.SetDefaultsWhereNeeded(imageName)
 
@@ -61,6 +65,10 @@ func (pg *PodGroupController) SetDefaultsWhereNeeded(replicaCount *int32) {
 
 	pg.Webhooks = common.SetDefault(pg.Webhooks, &PodGroupControllerWebhooks{})
 	pg.Webhooks.SetDefaultsWhereNeeded()
+
+	if pg.VPA == nil {
+		pg.VPA = globalVPA
+	}
 }
 
 type Service struct {

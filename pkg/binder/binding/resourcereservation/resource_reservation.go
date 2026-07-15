@@ -5,6 +5,8 @@ package resourcereservation
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -17,15 +19,15 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/apimachinery/pkg/watch"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/binding/resourcereservation/group_mutex"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/resources"
+	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding/resourcereservation/group_mutex"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 )
 
 type Interface interface {
@@ -37,26 +39,27 @@ type Interface interface {
 }
 
 const (
-	resourceReservation            = "resource-reservation"
-	gpuReservationPodPrefix        = "gpu-reservation"
-	gpuIndexAnnotationName         = "run.ai/reserve_for_gpu_index"
-	numberOfGPUsToReserve          = 1
-	reservationPodRandomCharacters = 5
-	unknownGpuIndicator            = "-1"
+	resourceReservation     = "resource-reservation"
+	gpuReservationPodPrefix = "gpu-reservation"
+	gpuIndexAnnotationName  = "run.ai/reserve_for_gpu_index"
+	numberOfGPUsToReserve   = 1
+	unknownGpuIndicator     = "-1"
 )
 
 type service struct {
-	fakeGPuNodes        bool
-	kubeClient          client.WithWatch
-	reservationPodImage string
-	allocationTimeout   time.Duration
-	gpuGroupMutex       *group_mutex.GroupMutex
-	namespace           string
-	serviceAccountName  string
-	appLabelValue       string
-	scalingPodNamespace string
-	runtimeClassName    string
-	podResources        *v1.ResourceRequirements
+	fakeGPuNodes                        bool
+	kubeClient                          client.WithWatch
+	reservationPodImage                 string
+	allocationTimeout                   time.Duration
+	gpuGroupMutex                       *group_mutex.GroupMutex
+	namespace                           string
+	serviceAccountName                  string
+	appLabelValue                       string
+	scalingPodNamespace                 string
+	runtimeClassName                    string
+	podResources                        *v1.ResourceRequirements
+	reservationPodSecurityContext       *v1.PodSecurityContext
+	reservationContainerSecurityContext *v1.SecurityContext
 }
 
 func NewService(
@@ -70,19 +73,23 @@ func NewService(
 	scalingPodNamespace string,
 	runtimeClassName string,
 	podResources *v1.ResourceRequirements,
+	reservationPodSecurityContext *v1.PodSecurityContext,
+	reservationContainerSecurityContext *v1.SecurityContext,
 ) *service {
 	return &service{
-		fakeGPuNodes:        fakeGPuNodes,
-		kubeClient:          kubeClient,
-		reservationPodImage: reservationPodImage,
-		allocationTimeout:   allocationTimeout,
-		gpuGroupMutex:       group_mutex.NewGroupMutex(),
-		namespace:           namespace,
-		serviceAccountName:  serviceAccountName,
-		appLabelValue:       appLabelValue,
-		scalingPodNamespace: scalingPodNamespace,
-		runtimeClassName:    runtimeClassName,
-		podResources:        podResources,
+		fakeGPuNodes:                        fakeGPuNodes,
+		kubeClient:                          kubeClient,
+		reservationPodImage:                 reservationPodImage,
+		allocationTimeout:                   allocationTimeout,
+		gpuGroupMutex:                       group_mutex.NewGroupMutex(),
+		namespace:                           namespace,
+		serviceAccountName:                  serviceAccountName,
+		appLabelValue:                       appLabelValue,
+		scalingPodNamespace:                 scalingPodNamespace,
+		runtimeClassName:                    runtimeClassName,
+		podResources:                        podResources,
+		reservationPodSecurityContext:       reservationPodSecurityContext,
+		reservationContainerSecurityContext: reservationContainerSecurityContext,
 	}
 }
 
@@ -196,9 +203,20 @@ func (rsc *service) syncForPods(ctx context.Context, pods []*v1.Pod, gpuGroupToS
 
 	for gpuGroup, reservationPod := range reservationPods {
 		if _, found := fractionPods[gpuGroup]; !found {
+			hasActive, err := rsc.hasActiveBindRequestsForGpuGroup(ctx, gpuGroup)
+			if err != nil {
+				logger.Error(err, "Failed to check active BindRequests for gpu group",
+					"gpuGroup", gpuGroup)
+				return err
+			}
+			if hasActive {
+				logger.Info("Skipping reservation pod deletion, active BindRequests exist",
+					"gpuGroup", gpuGroup)
+				continue
+			}
 			logger.Info("Did not find fraction pod for gpu group, deleting reservation pod",
 				"gpuGroup", gpuGroup)
-			err := rsc.deleteReservationPod(ctx, reservationPod)
+			err = rsc.deleteReservationPod(ctx, reservationPod)
 			if err != nil {
 				return err
 			}
@@ -208,6 +226,26 @@ func (rsc *service) syncForPods(ctx context.Context, pods []*v1.Pod, gpuGroupToS
 	return nil
 }
 
+// hasActiveBindRequestsForGpuGroup checks if any non-terminal BindRequests reference
+// the given GPU group. This prevents premature reservation pod deletion when the
+// informer cache has not yet propagated GPU group labels on recently-bound fraction pods.
+func (rsc *service) hasActiveBindRequestsForGpuGroup(ctx context.Context, gpuGroup string) (bool, error) {
+	bindRequestList := &schedulingv1alpha2.BindRequestList{}
+	if err := rsc.kubeClient.List(ctx, bindRequestList); err != nil {
+		return false, fmt.Errorf("failed to list BindRequests: %w", err)
+	}
+
+	for _, br := range bindRequestList.Items {
+		if br.Status.Phase == schedulingv1alpha2.BindRequestPhaseSucceeded ||
+			br.Status.Phase == schedulingv1alpha2.BindRequestPhaseFailed {
+			continue
+		}
+		if slices.Contains(br.Spec.SelectedGPUGroups, gpuGroup) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
 func (rsc *service) ReserveGpuDevice(ctx context.Context, pod *v1.Pod, nodeName string, gpuGroup string) (string, error) {
 	logger := log.FromContext(ctx)
 
@@ -389,31 +427,40 @@ func (rsc *service) createGPUReservationPod(ctx context.Context, nodeName, gpuGr
 		return nil, fmt.Errorf("cluster is scaling up, could not create reservation pod")
 	}
 
-	podName := fmt.Sprintf("%s-%s-%s", gpuReservationPodPrefix, nodeName, rand.String(reservationPodRandomCharacters))
+	podName := reservationPodName(nodeName, gpuGroup)
 
 	// Build resource requirements starting with GPU resources
 	resources := v1.ResourceRequirements{
 		Limits: v1.ResourceList{
-			constants.GpuResource: *resource.NewQuantity(numberOfGPUsToReserve, resource.DecimalSI),
+			constants.NvidiaGpuResource: *resource.NewQuantity(numberOfGPUsToReserve, resource.DecimalSI),
 		},
 		Requests: v1.ResourceList{
-			constants.GpuResource: *resource.NewQuantity(numberOfGPUsToReserve, resource.DecimalSI),
+			constants.NvidiaGpuResource: *resource.NewQuantity(numberOfGPUsToReserve, resource.DecimalSI),
 		},
 	}
 
 	if rsc.podResources != nil {
 		if rsc.podResources.Limits != nil {
-			delete(rsc.podResources.Limits, constants.GpuResource)
+			delete(rsc.podResources.Limits, constants.NvidiaGpuResource)
 			maps.Copy(resources.Limits, rsc.podResources.Limits)
 		}
 		if rsc.podResources.Requests != nil {
-			delete(rsc.podResources.Requests, constants.GpuResource)
+			delete(rsc.podResources.Requests, constants.NvidiaGpuResource)
 			maps.Copy(resources.Requests, rsc.podResources.Requests)
 		}
 	}
 
 	pod, err := rsc.createResourceReservationPod(nodeName, gpuGroup, podName, resources)
 	if err != nil {
+		// The reservation pod name is deterministic per (node, gpu-group). AlreadyExists
+		// means another actor (a concurrent bind, a retry, or another binder replica)
+		// already created the reservation pod for this gpu-group, so reuse it rather than
+		// creating a duplicate on a different physical GPU.
+		if apierrors.IsAlreadyExists(err) {
+			logger.Info("GPU reservation pod already exists for gpu group, reusing",
+				"nodeName", nodeName, "namespace", rsc.namespace, "name", podName, "gpuGroup", gpuGroup)
+			return pod, nil
+		}
 		logger.Error(err, "Failed to create GPU reservation pod on node",
 			"nodeName", nodeName, "namespace", rsc.namespace, "name", podName)
 		return nil, err
@@ -500,6 +547,7 @@ func (rsc *service) createResourceReservationPod(
 				}
 				return &rsc.runtimeClassName
 			}(),
+			SecurityContext:    rsc.reservationPodSecurityContext,
 			ServiceAccountName: rsc.serviceAccountName,
 			Containers: []v1.Container{
 				{
@@ -507,6 +555,7 @@ func (rsc *service) createResourceReservationPod(
 					Image:           rsc.reservationPodImage,
 					ImagePullPolicy: v1.PullIfNotPresent,
 					Resources:       resources,
+					SecurityContext: rsc.reservationContainerSecurityContext,
 					Env: []v1.EnvVar{
 						{
 							Name: "POD_NAME",
@@ -572,4 +621,13 @@ func (rsc *service) isScalingUp(ctx context.Context) bool {
 
 func IsGPUReservationPod(pod *v1.Pod) bool {
 	return strings.HasPrefix(pod.Name, gpuReservationPodPrefix)
+}
+
+// reservationPodName derives a deterministic reservation pod name from the node and
+// gpu-group, so concurrent or retried creates for the same gpu-group collide on a
+// single API-server object (AlreadyExists) instead of producing duplicate reservation
+// pods on different physical GPUs.
+func reservationPodName(nodeName, gpuGroup string) string {
+	hash := sha256.Sum256([]byte(nodeName + "/" + gpuGroup))
+	return fmt.Sprintf("%s-%s", gpuReservationPodPrefix, hex.EncodeToString(hash[:8]))
 }

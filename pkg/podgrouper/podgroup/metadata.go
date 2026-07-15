@@ -4,7 +4,7 @@
 package podgroup
 
 import (
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -17,6 +17,7 @@ type TopologyConstraintMetadata struct {
 type SubGroupMetadata struct {
 	Name                string
 	MinAvailable        int32
+	MinSubGroup         *int32
 	Parent              *string
 	PodsReferences      []string
 	TopologyConstraints *TopologyConstraintMetadata
@@ -27,10 +28,12 @@ type Metadata struct {
 	Labels            map[string]string
 	PriorityClassName string
 	Preemptibility    v2alpha2.Preemptibility
+	PreemptionDelay   *metav1.Duration
 	Queue             string
 	Namespace         string
 	Name              string
 	MinAvailable      int32
+	MinSubGroup       *int32
 	Owner             metav1.OwnerReference
 	SubGroups         []*SubGroupMetadata
 

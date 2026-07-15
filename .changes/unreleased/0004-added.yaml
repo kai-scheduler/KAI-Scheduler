@@ -1,0 +1,3 @@
+kind: Added
+body: |-
+  Added GitOps/ArgoCD install support ([guide](docs/gitops/README.md)): `kaiConfig.render` Helm value (default `false`) renders the `kai-config` Config CR inline as a tracked release resource (mutually exclusive with `kaiConfigDeployer.enabled`), `openshift` value (default `false`) forces OpenShift mode where `lookup` auto-detection is unavailable under offline rendering, and ArgoCD `PostDelete` hook and `Prune=false` annotations (requires ArgoCD >= 2.10). [#1794](https://github.com/kai-scheduler/KAI-Scheduler/issues/1794) [#1751](https://github.com/kai-scheduler/KAI-Scheduler/issues/1751)

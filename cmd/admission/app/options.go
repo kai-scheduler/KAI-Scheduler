@@ -6,7 +6,7 @@ package app
 import (
 	"fmt"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/spf13/pflag"
 
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
@@ -24,7 +24,23 @@ type Options struct {
 	WebhookPort                 int
 	FakeGPUNodes                bool
 	GPUSharingEnabled           bool
+	HamiCoreEnabled             bool
+	BlockNvidiaVisibleDevices   bool
 	GPUPodRuntimeClassName      string
+	GPUFractionRuntimeClassName string
+}
+
+// ResolvedGPUFractionRuntimeClassName returns the effective runtime class name
+// for fraction pods, preferring the new flag and falling back to the deprecated
+// alias when only the deprecated one was set explicitly.
+func (o *Options) ResolvedGPUFractionRuntimeClassName() string {
+	if pflag.CommandLine.Changed("gpu-fraction-runtime-class-name") {
+		return o.GPUFractionRuntimeClassName
+	}
+	if pflag.CommandLine.Changed("gpu-pod-runtime-class-name") {
+		return o.GPUPodRuntimeClassName
+	}
+	return o.GPUFractionRuntimeClassName
 }
 
 func InitOptions() *Options {
@@ -66,9 +82,23 @@ func InitOptions() *Options {
 	fs.BoolVar(&options.GPUSharingEnabled,
 		"gpu-sharing-enabled", false,
 		"Specifies if the GPU sharing is enabled")
+	fs.BoolVar(&options.HamiCoreEnabled,
+		"hami-core-enabled", false,
+		"Specifies if the HAMI-core GPU memory limit injection is enabled")
+	fs.BoolVar(&options.BlockNvidiaVisibleDevices,
+		"block-nvidia-visible-devices", false,
+		"Reject pods that set the NVIDIA_VISIBLE_DEVICES environment variable to values "+
+			"that conflict with NVIDIA's device plugin (only 'void'/'none' are allowed)")
 	fs.StringVar(&options.GPUPodRuntimeClassName,
 		"gpu-pod-runtime-class-name", constants.DefaultRuntimeClassName,
-		fmt.Sprintf("Runtime class to be set for GPU pods (defaults to %s) Set to empty string to disable", constants.DefaultRuntimeClassName))
+		fmt.Sprintf("Deprecated: use --gpu-fraction-runtime-class-name. "+
+			"Runtime class for GPU fraction pods (defaults to %s). "+
+			"Set to empty string to disable.", constants.DefaultRuntimeClassName))
+	fs.StringVar(&options.GPUFractionRuntimeClassName,
+		"gpu-fraction-runtime-class-name", constants.DefaultRuntimeClassName,
+		fmt.Sprintf("Runtime class to be set for GPU fraction pods (defaults to %s). "+
+			"Whole-GPU pods are not affected. Set to empty string to disable.",
+			constants.DefaultRuntimeClassName))
 
 	utilfeature.DefaultMutableFeatureGate.AddFlag(fs)
 

@@ -104,7 +104,7 @@ import (
     "sigs.k8s.io/controller-runtime/pkg/client"
 
     // 3. Internal packages
-    "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
+    "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 )
 ```
 
@@ -127,7 +127,8 @@ logger.Info("Binding pod", "namespace", pod.Namespace, "name", pod.Name)
 - Apache 2.0 + NVIDIA copyright headers on all files
 - GoDoc-style for exported functions/types
 - kubebuilder RBAC markers: `// +kubebuilder:rbac:groups=core,resources=pods,verbs=get`
-- Avoid obvious comments; explain "why" not "what"
+- DO NOT wrire obvious comments; explain "why" not "what"
+- Keep comments short, concise and to the point.
 
 ### General Patterns
 - Context as first parameter: `func Foo(ctx context.Context, ...)`
@@ -138,7 +139,7 @@ logger.Info("Binding pod", "namespace", pod.Namespace, "name", pod.Name)
 
 ## Linter Configuration
 
-Enabled linters (see `build/lint/.golangci.yaml`):
+Enabled linters (see `.golangci.yaml`):
 - `gofmt` `unused` `goconst` `errcheck` `govet`
 
 Test files (`*_test.go`) have relaxed rules for `goconst`, `errcheck`, `govet`.
@@ -146,7 +147,7 @@ Test files (`*_test.go`) have relaxed rules for `goconst`, `errcheck`, `govet`.
 ## Pull Request Requirements
 
 ### PR Title Format (Conventional Commits)
-PR titles must follow semantic format: `<type>(<scope>): <description>`
+PR titles must follow conventional commit format: `<type>(<scope>): <description>`
 
 **Types**: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`
 
@@ -157,8 +158,19 @@ PR titles must follow semantic format: `<type>(<scope>): <description>`
 When opening a PR, use the template in .github/pull_request_template.md for the PR description
 
 ### Changelog Requirements
-- You must update `CHANGELOG.md` for PRs to `main` or version branches (`v*.*`) for behavior changes: ones that add functionality, fix bugs, change APIs, or introduce significant performance improvements. Not needed for refactors, documentations, tests, and CI changes.
-- Add `skip-changelog` or `dependencies` label to skip this check
+
+Changelog entries are [changie](https://changie.dev) fragments. **Never edit `CHANGELOG.md` directly** — it is the source of truth for released versions and is only written at release time.
+
+```bash
+make changelog                          # add an entry: writes a fragment under .changes/unreleased/
+make changelog-preview VERSION=v0.17.0  # optional: preview what the next release section will look like
+```
+
+- Add a fragment on every PR that changes behavior (adds functionality, fixes a bug, changes an API, or gives a significant perf win). Skip it for refactors, docs, tests, and CI changes — apply the `skip-changelog` (or `dependencies`) label instead. CI fails a behavior PR that has neither.
+- fragment enries MUST be fewer than 20 words. Keep enries clear and concise. 
+- Commit the fragment with your code. Fragments never conflict between PRs or backports, so no coordination is needed.
+
+**Releasing (maintainers):** don't fold the changelog by hand. Dispatch the **Release — Prepare Changelog** workflow with a version (e.g. `v0.17.0`) from the target branch — `main` for a minor/major, a `v*.*` branch for a patch. It folds the pending fragments into `CHANGELOG.md`, clears them, and opens a PR. Merging that PR auto-tags the version and publishes the GitHub Release.
 
 ### CI Checks (on-pr.yaml)
 PRs trigger: `make validate` → `make test` → `make build` → E2E tests
@@ -168,7 +180,7 @@ PRs trigger: `make validate` → `make test` → `make build` → E2E tests
 ## General Rules
 - Use `git mv` when moving files to preserve history
 - DO NOT add obvious comments that duplicate the code.
-    - Write comments ONLY when ABSOLUTELY nessessary
+    - Write comments ONLY when ABSOLUTELY necessary
     - Keep Comments short, explicit and concise
     - DO NOT use `I`, `we` or any other pronoun
 - When performing a major change, run `make validate` after changes

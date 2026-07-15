@@ -6,10 +6,10 @@ package gpu_sharing
 import (
 	"k8s.io/apimachinery/pkg/util/uuid"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 )
 
 type nodeGpuForSharing struct {
@@ -20,7 +20,7 @@ type nodeGpuForSharing struct {
 func AllocateFractionalGPUTaskToNode(ssn *framework.Session, stmt *framework.Statement, pod *pod_info.PodInfo,
 	node *node_info.NodeInfo, isPipelineOnly bool) bool {
 	fittingGPUs := ssn.FittingGPUs(node, pod)
-	gpuForSharing := getNodePreferableGpuForSharing(fittingGPUs, node, pod, isPipelineOnly)
+	gpuForSharing := GetNodePreferableGpuForSharing(fittingGPUs, node, pod, isPipelineOnly)
 	if gpuForSharing == nil {
 		return false
 	}
@@ -35,7 +35,7 @@ func AllocateFractionalGPUTaskToNode(ssn *framework.Session, stmt *framework.Sta
 	return success
 }
 
-func getNodePreferableGpuForSharing(fittingGPUsOnNode []string, node *node_info.NodeInfo, pod *pod_info.PodInfo,
+func GetNodePreferableGpuForSharing(fittingGPUsOnNode []string, node *node_info.NodeInfo, pod *pod_info.PodInfo,
 	isPipelineOnly bool) *nodeGpuForSharing {
 
 	nodeGpusSharing := &nodeGpuForSharing{
@@ -43,7 +43,7 @@ func getNodePreferableGpuForSharing(fittingGPUsOnNode []string, node *node_info.
 		IsReleasing: false,
 	}
 
-	deviceCounts := pod.ResReq.GetNumOfGpuDevices()
+	deviceCounts := pod.GpuRequirement.GetNumOfGpuDevices()
 	for _, gpuIdx := range fittingGPUsOnNode {
 		if gpuIdx == pod_info.WholeGpuIndicator {
 			if wholeGpuForSharing := findGpuForSharingOnNode(pod, node, isPipelineOnly); wholeGpuForSharing != nil {
@@ -54,7 +54,7 @@ func getNodePreferableGpuForSharing(fittingGPUsOnNode []string, node *node_info.
 		} else {
 			nodeGpusSharing.IsReleasing =
 				nodeGpusSharing.IsReleasing ||
-					!node.EnoughIdleResourcesOnGpu(pod.ResReq, gpuIdx) ||
+					!node.EnoughIdleResourcesOnGpu(&pod.GpuRequirement, gpuIdx) ||
 					!node.IsTaskAllocatable(pod)
 			nodeGpusSharing.Groups = append(nodeGpusSharing.Groups, gpuIdx)
 		}
@@ -83,7 +83,7 @@ func allocateSharedGPUTask(ssn *framework.Session, stmt *framework.Statement, no
 		log.InfraLogger.V(6).Infof(
 			"Pipelining Task <%v/%v> to node <%v> gpuGroup: <%v>, requires: <%v, %v mb> GPUs",
 			task.Namespace, task.Name, node.Name,
-			task.GPUGroups, task.ResReq.GPUs(), task.ResReq.GpuMemory())
+			task.GPUGroups, task.GpuRequirement.GPUs(), task.GpuRequirement.GpuMemory())
 		if err := stmt.Pipeline(task, node.Name, !isPipelineOnly); err != nil {
 			log.InfraLogger.V(6).Infof("Failed to pipeline Task: <%s/%s> on Node: <%s>, due to an error: %v",
 				task.Namespace, task.Name, node.Name, err)

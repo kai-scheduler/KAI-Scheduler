@@ -16,6 +16,9 @@ const (
 
 	SchedulerDeploymentName = "kai-scheduler-default"
 	SchedulerContainerName  = "scheduler"
+	AdmissionDeploymentName = "admission"
 	AppLabelName            = "app"
 	KaiReservationNamespace = "kai-resource-reservation"
+
+	GPUDeviceClassName = "gpu.nvidia.com"
 )

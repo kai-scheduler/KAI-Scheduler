@@ -21,15 +21,17 @@ package framework
 
 import (
 	"fmt"
+	"time"
 
 	"golang.org/x/exp/slices"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/eviction_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 )
 
 type Statement struct {
@@ -77,7 +79,13 @@ func (s *Statement) Evict(reclaimeeTask *pod_info.PodInfo, message string,
 
 	previousStatus := reclaimeeTask.Status
 	previousGpuGroup := reclaimeeTask.GPUGroups
+	previousNumaPlacement := reclaimeeTask.NUMAPlacement.Clone()
 	previousIsVirtualStatus := reclaimeeTask.IsVirtualStatus
+	var previousResourceClaimInfo bindrequest_info.ResourceClaimInfo
+	if reclaimeeTask.ResourceClaimInfo != nil {
+		previousResourceClaimInfo = reclaimeeTask.ResourceClaimInfo.Clone()
+	}
+
 	if err := job.UpdateTaskStatus(reclaimeeTask, pod_status.Releasing); err != nil {
 		log.InfraLogger.Errorf("Failed to update task <%v/%v> status to %v in Session <%v>: %v",
 			reclaimeeTask.Namespace, reclaimeeTask.Name, pod_status.Releasing, s.sessionID, err)
@@ -99,14 +107,15 @@ func (s *Statement) Evict(reclaimeeTask *pod_info.PodInfo, message string,
 
 	s.operations = append(s.operations,
 		evictOperation{
-			taskInfo:          reclaimeeTask,
-			previousStatus:    previousStatus,
-			previousNode:      node,
-			previousGpuGroups: previousGpuGroup,
-			message:           message,
-			evictionMetadata:  evictionMetadata,
+			taskInfo:              reclaimeeTask,
+			previousStatus:        previousStatus,
+			previousNode:          node,
+			previousGpuGroups:     previousGpuGroup,
+			previousNumaPlacement: previousNumaPlacement,
+			message:               message,
+			evictionMetadata:      evictionMetadata,
 			reverseOperation: func() error {
-				return s.unevict(reclaimeeTask, previousStatus, node, previousGpuGroup, previousIsVirtualStatus)
+				return s.unevict(reclaimeeTask, previousStatus, node, previousGpuGroup, previousNumaPlacement, previousResourceClaimInfo, previousIsVirtualStatus)
 			},
 		},
 	)
@@ -127,10 +136,12 @@ func (s *Statement) commitEvict(reclaimee *pod_info.PodInfo, evictOp evictOperat
 
 	previousStatus := reclaimee.Status
 	previousGpuGroup := reclaimee.GPUGroups
+	previousNumaPlacement := reclaimee.NUMAPlacement.Clone()
+	previousResourceClaimInfo := reclaimee.ResourceClaimInfo
 	previousIsVirtualStatus := reclaimee.IsVirtualStatus
 	if err := s.ssn.Cache.Evict(reclaimee.Pod, reclaimeePodGroup, evictOp.evictionMetadata, evictOp.message); err != nil {
 		log.InfraLogger.Errorf("Failed to evict task <%v/%v>: %v.", reclaimee.Namespace, reclaimee.Name, err)
-		if e := s.unevict(reclaimee, previousStatus, evictOp.previousNode, previousGpuGroup,
+		if e := s.unevict(reclaimee, previousStatus, evictOp.previousNode, previousGpuGroup, previousNumaPlacement, previousResourceClaimInfo,
 			previousIsVirtualStatus); e != nil {
 			log.InfraLogger.Errorf("Failed to un-evict task <%v/%v>: %v.",
 				reclaimee.Namespace, reclaimee.Name, e)
@@ -139,12 +150,16 @@ func (s *Statement) commitEvict(reclaimee *pod_info.PodInfo, evictOp evictOperat
 	}
 	reclaimee.IsVirtualStatus = false
 
+	evictionTime := time.Now()
+	reclaimeePodGroup.LastEvictionTimestamp = &evictionTime
+
 	return nil
 }
 
 func (s *Statement) unevict(
 	reclaimee *pod_info.PodInfo, previousStatus pod_status.PodStatus, node *node_info.NodeInfo,
-	previousGpuGroups []string, previousIsVirtualStatus bool) error {
+	previousGpuGroups []string, previousNumaPlacement pod_info.NUMAPlacement,
+	previousResourceClaimInfo bindrequest_info.ResourceClaimInfo, previousIsVirtualStatus bool) error {
 	// Update status in session
 	job, found := s.ssn.ClusterInfo.PodGroupInfos[reclaimee.Job]
 	if found {
@@ -157,7 +172,9 @@ func (s *Statement) unevict(
 			reclaimee.Job, s.sessionID)
 	}
 	reclaimee.GPUGroups = previousGpuGroups
+	reclaimee.NUMAPlacement = previousNumaPlacement.Clone()
 	reclaimee.IsVirtualStatus = previousIsVirtualStatus
+	reclaimee.ResourceClaimInfo = previousResourceClaimInfo.Clone()
 
 	// Update task in node.
 	if node != nil {
@@ -197,17 +214,21 @@ func (s *Statement) Pipeline(task *pod_info.PodInfo, hostname string, updateTask
 
 	taskKey := pod_info.PodKey(task.Pod)
 	taskOnNode, foundOnNode := node.PodInfos[taskKey]
-	isSharedAndMoveToDifferentGPU := false
+	gpuPlacementChanged := false
+	numaPlacementChanged := false
 	if foundOnNode {
-		isSharedAndMoveToDifferentGPU = len(task.GPUGroups) > 0 && task.IsSharedGPUAllocation() &&
+		gpuPlacementChanged = len(task.GPUGroups) > 0 && task.IsSharedGPUAllocation() &&
 			!slices.Equal(task.GPUGroups, []string{"-1"}) && !slices.Equal(task.GPUGroups, taskOnNode.GPUGroups)
+		numaPlacementChanged = len(task.NUMAPlacement) > 0 &&
+			!task.NUMAPlacement.Equal(taskOnNode.NUMAPlacement)
 	}
 
 	// If the task already exist on the node, we assume it was evicted before.
 	// If task already exist on the node, and we didn't ask to update if on the node,
 	// and there is no special reason we should update on the node, then we need to unevict instead of pipelining it.
-	if foundOnNode && !updateTaskIfExistsOnNode && !isSharedAndMoveToDifferentGPU {
+	if foundOnNode && !updateTaskIfExistsOnNode && !gpuPlacementChanged && !numaPlacementChanged {
 		task.GPUGroups = taskOnNode.GPUGroups
+		task.NUMAPlacement = taskOnNode.NUMAPlacement.Clone()
 		log.InfraLogger.V(6).Infof("Task: <%v/%v> already exists on node: <%v>, unevicting it", task.Namespace, task.Name, hostname)
 		if err := s.Unevict(task); err != nil {
 			log.InfraLogger.Errorf("Failed to unevict task <%v/%v> to node <%v> in Session <%v>: %v",
@@ -226,8 +247,18 @@ func (s *Statement) Pipeline(task *pod_info.PodInfo, hostname string, updateTask
 	previousNode := task.NodeName
 	task.NodeName = hostname
 	previousGpuGroup := task.GPUGroups
+
+	previousNumaPlacement := task.NUMAPlacement.Clone()
+	if numaPlacementChanged {
+		previousNumaPlacement = taskOnNode.NUMAPlacement.Clone()
+	}
 	previousIsVirtualStatus := task.IsVirtualStatus
-	if isSharedAndMoveToDifferentGPU {
+	var previousResourceClaimInfo bindrequest_info.ResourceClaimInfo
+	if task.ResourceClaimInfo != nil {
+		previousResourceClaimInfo = task.ResourceClaimInfo.Clone()
+	}
+
+	if gpuPlacementChanged {
 		log.InfraLogger.V(6).Infof(
 			"Task: <%v/%v> already exists on node: <%v> on gpu index of: <%v>, moving it to index: <%v>",
 			task.Namespace, task.Name, hostname, taskOnNode.GPUGroups, task.GPUGroups)
@@ -249,7 +280,7 @@ func (s *Statement) Pipeline(task *pod_info.PodInfo, hostname string, updateTask
 	}
 
 	log.InfraLogger.V(6).Infof("After pipelined Task <%v/%v> to Node <%v>: idle <%v>, used <%v>, releasing <%v>",
-		task.Namespace, task.Name, node.Name, node.Idle, node.Used, node.Releasing)
+		task.Namespace, task.Name, node.Name, node.IdleVector, node.UsedVector, node.ReleasingVector)
 
 	for _, eh := range s.ssn.eventHandlers {
 		if eh.AllocateFunc != nil {
@@ -260,14 +291,16 @@ func (s *Statement) Pipeline(task *pod_info.PodInfo, hostname string, updateTask
 	}
 
 	s.operations = append(s.operations, pipelineOperation{
-		taskInfo:          task,
-		previousStatus:    previousStatus,
-		previousNode:      previousNode,
-		previousGpuGroups: previousGpuGroup,
-		nextNode:          hostname,
-		message:           fmt.Sprintf("Pod %s/%s was pipelined to node %s", task.Namespace, task.Name, node.Name),
+		taskInfo:                  task,
+		previousStatus:            previousStatus,
+		previousNode:              previousNode,
+		previousGpuGroups:         previousGpuGroup,
+		previousNumaPlacement:     previousNumaPlacement,
+		previousResourceClaimInfo: previousResourceClaimInfo,
+		nextNode:                  hostname,
+		message:                   fmt.Sprintf("Pod %s/%s was pipelined to node %s", task.Namespace, task.Name, node.Name),
 		reverseOperation: func() error {
-			return s.unpipeline(task, previousNode, previousStatus, previousGpuGroup, previousIsVirtualStatus)
+			return s.unpipeline(task, previousNode, previousStatus, previousGpuGroup, previousNumaPlacement, previousResourceClaimInfo, previousIsVirtualStatus)
 		},
 	})
 	task.IsVirtualStatus = true
@@ -306,12 +339,16 @@ func (s *Statement) Allocate(task *pod_info.PodInfo, hostname string) error {
 		}
 		log.InfraLogger.V(5).Infof(
 			"After allocated Task <%v/%v> to Node <%v>: idle <%v>, used <%v>, releasing <%v>",
-			task.Namespace, task.Name, node.Name, node.Idle, node.Used, node.Releasing)
+			task.Namespace, task.Name, node.Name, node.IdleVector, node.UsedVector, node.ReleasingVector)
 	} else {
 		log.InfraLogger.Errorf("Failed to find Node <%s> in Session <%s> index when binding.",
 			hostname, s.sessionID)
 		return fmt.Errorf("failed to find node %s", hostname)
 	}
+
+	// Snapshot the placement before AllocateFunc sets it, so unallocate can restore
+	// it (the plugin's AllocateFunc fills NUMAPlacement for a fresh task).
+	previousNumaPlacement := task.NUMAPlacement.Clone()
 
 	// Callbacks
 	for _, eh := range s.ssn.eventHandlers {
@@ -329,7 +366,7 @@ func (s *Statement) Allocate(task *pod_info.PodInfo, hostname string) error {
 			taskInfo: task.Clone(),
 			nextNode: node.Name,
 			reverseOperation: func() error {
-				return s.unallocate(task, node.Name, previousIsVirtualStatus)
+				return s.unallocate(task, node.Name, previousNumaPlacement, previousIsVirtualStatus)
 			},
 		},
 	)
@@ -374,7 +411,8 @@ func (s *Statement) commitAllocate(task *pod_info.PodInfo) error {
 }
 
 // unallocate the pod for task
-func (s *Statement) unallocate(task *pod_info.PodInfo, previousNodeName string, previousIsVirtualStatus bool) error {
+func (s *Statement) unallocate(task *pod_info.PodInfo, previousNodeName string,
+	previousNumaPlacement pod_info.NUMAPlacement, previousIsVirtualStatus bool) error {
 	// Update status in session
 	job, found := s.ssn.ClusterInfo.PodGroupInfos[task.Job]
 	if found {
@@ -398,7 +436,6 @@ func (s *Statement) unallocate(task *pod_info.PodInfo, previousNodeName string, 
 		return fmt.Errorf("node doesn't exist on cluster")
 	}
 
-	task.NodeName = ""
 	task.IsVirtualStatus = previousIsVirtualStatus
 
 	for _, eh := range s.ssn.eventHandlers {
@@ -408,6 +445,9 @@ func (s *Statement) unallocate(task *pod_info.PodInfo, previousNodeName string, 
 			})
 		}
 	}
+
+	task.NodeName = ""
+	task.NUMAPlacement = previousNumaPlacement.Clone()
 	return nil
 }
 
@@ -417,6 +457,8 @@ func (s *Statement) commitPipeline(task *pod_info.PodInfo, message string) {
 
 func (s *Statement) unpipeline(
 	task *pod_info.PodInfo, previousNode string, previousStatus pod_status.PodStatus, previousGpuGroups []string,
+	previousNumaPlacement pod_info.NUMAPlacement,
+	previousResourceClaimInfo bindrequest_info.ResourceClaimInfo,
 	previousIsVirtualStatus bool) error {
 	// Only update status in session
 	job, found := s.ssn.ClusterInfo.PodGroupInfos[task.Job]
@@ -432,8 +474,8 @@ func (s *Statement) unpipeline(
 	}
 
 	hostname := task.NodeName
-	task.NodeName = previousNode
 	task.GPUGroups = previousGpuGroups
+	task.ResourceClaimInfo = previousResourceClaimInfo.Clone()
 	task.IsVirtualStatus = previousIsVirtualStatus
 
 	if node, found := s.ssn.ClusterInfo.Nodes[hostname]; found {
@@ -454,6 +496,9 @@ func (s *Statement) unpipeline(
 			})
 		}
 	}
+
+	task.NodeName = previousNode
+	task.NUMAPlacement = previousNumaPlacement.Clone()
 
 	return nil
 }
@@ -476,7 +521,9 @@ func (s *Statement) ConvertAllAllocatedToPipelined(jobID common_info.PodGroupID)
 		allocateOp := op.(allocateOperation)
 
 		nodeName := currentTaskInOperations.NodeName
-		err := s.unallocate(currentTaskInOperations, allocateOp.nextNode, true)
+		// Keep the placement: the task is immediately re-pipelined to the same node,
+		// which re-charges it (restore-to-self after the credit).
+		err := s.unallocate(currentTaskInOperations, allocateOp.nextNode, currentTaskInOperations.NUMAPlacement, true)
 		if err != nil {
 			return err
 		}
@@ -630,7 +677,8 @@ func (s *Statement) cleanupFailedAllocation(task *pod_info.PodInfo, node *node_i
 	log.InfraLogger.V(4).Infof("Cleaning up for failed allocation for task: <%v/%v> on node: %v",
 		task.Namespace, task.Name, node.Name)
 
-	_ = s.unallocate(task, node.Name, false)
+	// Failed allocation: clear the placement so a retry re-evaluates.
+	_ = s.unallocate(task, node.Name, nil, false)
 }
 
 func (s *Statement) operationValid(i int) bool {

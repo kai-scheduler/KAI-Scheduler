@@ -8,7 +8,7 @@ import (
 	"context"
 	"time"
 
-	testcontext "github.com/NVIDIA/KAI-scheduler/test/e2e/modules/context"
+	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apiextensions "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"

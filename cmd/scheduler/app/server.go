@@ -44,16 +44,16 @@ import (
 	"k8s.io/client-go/tools/record"
 	clientconfig "sigs.k8s.io/controller-runtime/pkg/client/config"
 
-	"github.com/NVIDIA/KAI-scheduler/cmd/scheduler/app/options"
-	"github.com/NVIDIA/KAI-scheduler/cmd/scheduler/profiling"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf_util"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/metrics"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/version"
+	"github.com/kai-scheduler/KAI-scheduler/cmd/scheduler/app/options"
+	"github.com/kai-scheduler/KAI-scheduler/cmd/scheduler/profiling"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf_util"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/version"
 )
 
 const (
@@ -63,6 +63,23 @@ const (
 )
 
 var logFlushFreq = pflag.Duration("log-flush-frequency", 5*time.Second, "Maximum number of seconds between log flushes")
+
+type unauthorizedRoundTripper struct {
+	rt http.RoundTripper
+}
+
+func (t *unauthorizedRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.rt.RoundTrip(req)
+	if err == nil && resp.StatusCode == http.StatusUnauthorized {
+		log.InfraLogger.Errorf("API server returned 401 Unauthorized, exiting to trigger pod restart")
+		os.Exit(1)
+	}
+	return resp, err
+}
+
+func wrapExitOnUnauthorized(rt http.RoundTripper) http.RoundTripper {
+	return &unauthorizedRoundTripper{rt: rt}
+}
 
 func flushLogs() {
 	if err := log.InfraLogger.Sync(); err != nil &&
@@ -90,6 +107,7 @@ func BuildSchedulerParams(opt *options.ServerOption) *conf.SchedulerParams {
 		NumOfStatusRecordingWorkers:       opt.NumOfStatusRecordingWorkers,
 		GlobalDefaultStalenessGracePeriod: opt.GlobalDefaultStalenessGracePeriod,
 		SchedulePeriod:                    opt.SchedulePeriod,
+		StuckInReleasingThreshold:         opt.StuckInReleasingThreshold,
 		DetailedFitErrors:                 opt.DetailedFitErrors,
 		UpdatePodEvictionCondition:        opt.UpdatePodEvictionCondition,
 		QueueLabelKey:                     opt.QueueLabelKey,
@@ -120,6 +138,7 @@ func RunApp() error {
 	config := clientconfig.GetConfigOrDie()
 	config.QPS = float32(so.QPS)
 	config.Burst = so.Burst
+	config.Wrap(wrapExitOnUnauthorized)
 
 	return Run(so, config, mux)
 }
@@ -138,7 +157,7 @@ func setupProfiling(so *options.ServerOption) {
 }
 
 func setupLogging(so *options.ServerOption) error {
-	if err := log.InitLoggers(so.Verbosity); err != nil {
+	if err := log.InitLoggers(so.Verbosity, so.JSONLog); err != nil {
 		return err
 	}
 

@@ -17,10 +17,11 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
-	kaiv1admission "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/admission"
-	generate "github.com/NVIDIA/KAI-scheduler/pkg/operator/cert-utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/common"
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	kaiv1admission "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/admission"
+	kaiv1binder "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/binder"
+	generate "github.com/kai-scheduler/KAI-scheduler/pkg/operator/cert-utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common"
 )
 
 const (
@@ -137,6 +138,28 @@ func (a *Admission) serviceForKAIConfig(
 	service.Spec.Type = v1.ServiceTypeClusterIP
 
 	return []client.Object{service}, nil
+}
+
+func (a *Admission) podDisruptionBudgetForKAIConfig(
+	ctx context.Context, runtimeClient client.Reader, kaiConfig *kaiv1.Config,
+) ([]client.Object, error) {
+	config := kaiConfig.Spec.Admission
+	pdbObj, err := common.PodDisruptionBudgetForKAIConfig(
+		ctx,
+		runtimeClient,
+		kaiConfig.Spec.Namespace,
+		a.BaseResourceName,
+		config.Replicas,
+		config.Service,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if pdbObj == nil {
+		return nil, nil
+	}
+
+	return []client.Object{pdbObj}, nil
 }
 
 func buildWebhookSelectors(kaiConfig *kaiv1.Config) (namespaceSelector *metav1.LabelSelector, objectSelector *metav1.LabelSelector) {
@@ -295,6 +318,26 @@ func (a *Admission) validatingWCForKAIConfig(
 				},
 			},
 		},
+		{
+			// Topology is cluster-scoped and unrelated to pods, so it uses neither the pod
+			// namespace/object selectors nor the scheduler-name match conditions.
+			Name:                    fmt.Sprintf("topology.%s", webhookName),
+			AdmissionReviewVersions: []string{"v1"},
+			SideEffects:             common.PtrFrom(admissionv1.SideEffectClassNone),
+			FailurePolicy:           common.PtrFrom(admissionv1.Fail),
+			ClientConfig:            a.buildWebhookClientConfig(kaiConfig, secret, "/validate-kai-scheduler-v1alpha1-topology"),
+			Rules: []admissionv1.RuleWithOperations{
+				{
+					Operations: []admissionv1.OperationType{admissionv1.Create, admissionv1.Update},
+					Rule: admissionv1.Rule{
+						APIGroups:   []string{"kai.scheduler"},
+						APIVersions: []string{"v1alpha1"},
+						Resources:   []string{"topologies"},
+						Scope:       common.PtrFrom(admissionv1.ClusterScope),
+					},
+				},
+			},
+		},
 	}
 
 	return []client.Object{validatingWebhookConfiguration}, nil
@@ -355,15 +398,36 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1admission.Admission) []
 		args = append(args, "--gpu-sharing-enabled=true")
 	}
 
+	if isHamiCoreEnabled(kaiConfig) {
+		args = append(args, "--hami-core-enabled=true")
+	}
+
+	if config.BlockNvidiaVisibleDevices != nil && *config.BlockNvidiaVisibleDevices {
+		args = append(args, "--block-nvidia-visible-devices=true")
+	}
+
 	if config.Replicas != nil && *config.Replicas > 1 {
 		args = append(args, "--leader-elect")
 	}
 
+	if config.GPUFractionRuntimeClassName != nil {
+		args = append(args, "--gpu-fraction-runtime-class-name", *config.GPUFractionRuntimeClassName)
+	}
 	if config.GPUPodRuntimeClassName != nil {
 		args = append(args, "--gpu-pod-runtime-class-name", *config.GPUPodRuntimeClassName)
 	}
 
 	common.AddK8sClientConfigToArgs(config.Service.K8sClientConfig, args)
+	return common.AddControllerRuntimeJSONLogArg(kaiConfig.Spec.Global.JSONLog, args)
+}
 
-	return args
+func isHamiCoreEnabled(kaiConfig *kaiv1.Config) bool {
+	if kaiConfig.Spec.Binder == nil {
+		return false
+	}
+	pluginCfg, found := kaiConfig.Spec.Binder.Plugins[kaiv1binder.HamiCorePluginName]
+	if !found {
+		return false
+	}
+	return ptr.Deref(pluginCfg.Enabled, false)
 }

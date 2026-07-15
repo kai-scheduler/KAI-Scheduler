@@ -8,19 +8,20 @@ import (
 	"errors"
 	"testing"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"golang.org/x/exp/maps"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/known_types"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/known_types"
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	vpav1 "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -53,6 +54,7 @@ var _ = Describe("Deployable", func() {
 		Expect(kaiv1.AddToScheme(testScheme)).To(Succeed())
 		Expect(apiextensionsv1.AddToScheme(testScheme)).To(Succeed())
 		Expect(monitoringv1.AddToScheme(testScheme)).To(Succeed())
+		Expect(vpav1.AddToScheme(testScheme)).To(Succeed())
 
 		fakeClientBuilder = fake.NewClientBuilder().
 			WithScheme(testScheme).

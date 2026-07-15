@@ -14,25 +14,32 @@ import (
 	// lint:ignore ST1001 we want to use gomock here
 	. "go.uber.org/mock/gomock"
 	"golang.org/x/exp/slices"
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes/fake"
 
-	kaiv1alpha1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1alpha1"
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	k8splugins "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_internal/plugins"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/dra_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions"
+
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	k8splugins "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal/plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/dra_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
 )
 
 var SchedulerVerbosity = flag.String("vv", "", "Scheduler's verbosity")
@@ -83,6 +90,7 @@ type TestQueueBasic struct {
 	GPUOverQuotaWeight          float64
 	ParentQueue                 string
 	InteractiveTimeoutInMinutes int64
+	ReclaimMinRuntime           *metav1.Duration
 	UseOnlyFreeCPUResources     bool
 	V1                          bool
 }
@@ -96,8 +104,9 @@ type TestDepartmentBasic struct {
 }
 
 type TestSessionConfig struct {
-	Plugins      []conf.Tier
-	CachePlugins map[string]bool
+	Plugins               []conf.Tier
+	CachePlugins          map[string]bool
+	ScenarioSearchBudgets *kaiv1.ScenarioSearchBudgets
 }
 
 type TestExpectedResultBasic struct {
@@ -111,11 +120,17 @@ type TestExpectedResultBasic struct {
 	DontValidateGPUGroup        bool
 	LastStartTimestampOlderThan *time.Duration
 	ExpectedErrorMessage        string
+	// NUMAZones, when non-nil, asserts the task's resulting NUMA placement zone indices
+	// (order-insensitive). An empty (non-nil) slice asserts the task has no NUMA placement.
+	NUMAZones []int
 }
 
 type TestExpectedNodesResources struct {
 	ReleasingGPUs float64
 	IdleGPUs      float64
+	// NUMAZonesAvailable, when non-nil, asserts each zone's per-resource Available ledger after
+	// scheduling: zone index to resource name to quantity string.
+	NUMAZonesAvailable map[int]map[v1.ResourceName]string
 }
 
 func MatchExpectedAndRealTasks(t *testing.T, testNumber int, testMetadata TestTopologyBasic, ssn *framework.Session) {
@@ -142,10 +157,14 @@ func MatchExpectedAndRealTasks(t *testing.T, testNumber int, testMetadata TestTo
 				t.Errorf("Test number: %d, name: %s, has failed. Task name: %s, actual uses node: %s, was expecting node: %s", testNumber, testMetadata.Name, taskInfo.Name, taskInfo.NodeName, jobExpectedResult.NodeName)
 			}
 
-			sumOfJobRequestedGPU += taskInfo.ResReq.GPUs()
-			sumOfJobRequestedMillisCpu += taskInfo.ResReq.Cpu()
-			sumOfJobRequestedMemory += taskInfo.ResReq.Memory()
-			sumOfAcceptedGpus += taskInfo.AcceptedResource.GPUs()
+			if jobExpectedResult.NUMAZones != nil && !sameZoneIndices(taskInfo.NUMAPlacement.ZoneIndices(), jobExpectedResult.NUMAZones) {
+				t.Errorf("Test number: %d, name: %s, has failed. Task name: %s, actual NUMA zones: %v, was expecting zones: %v", testNumber, testMetadata.Name, taskInfo.Name, taskInfo.NUMAPlacement.ZoneIndices(), jobExpectedResult.NUMAZones)
+			}
+
+			sumOfJobRequestedGPU += taskInfo.GpuRequirement.GPUs()
+			sumOfJobRequestedMillisCpu += taskInfo.ResReqVector.Get(resource_info.CPUIndex)
+			sumOfJobRequestedMemory += taskInfo.ResReqVector.Get(resource_info.MemoryIndex)
+			sumOfAcceptedGpus += taskInfo.AcceptedGpuRequirement.GPUs()
 
 			// verify fractional GPUs index
 			if pod_status.IsActiveUsedStatus(taskInfo.Status) &&
@@ -230,28 +249,28 @@ func MatchExpectedAndRealTasks(t *testing.T, testNumber int, testMetadata TestTo
 						taskExpectedResult.NodeName)
 				}
 
-				acceptedGPUs := task.AcceptedResource.GPUs()
+				acceptedGPUs := task.AcceptedGpuRequirement.GPUs()
 				if taskExpectedResult.GPUsAccepted != 0 && acceptedGPUs != taskExpectedResult.GPUsAccepted {
 					t.Errorf("Test number: %d, name: %v, has failed. Task name: %v, actual accept GPUs: %v, "+
 						"was expecting GPUs: %v", testNumber, testMetadata.Name, taskId, acceptedGPUs,
 						taskExpectedResult.GPUsAccepted)
 				}
 
-				requestedGPUs := task.ResReq.GPUs()
+				requestedGPUs := task.GpuRequirement.GPUs()
 				if requestedGPUs != taskExpectedResult.GPUsRequired {
 					t.Errorf("Test number: %d, name: %v, has failed. Task name: %v, actual uses  GPUs: %v, "+
 						"was expecting GPUs: %v", testNumber, testMetadata.Name, taskId, requestedGPUs,
 						taskExpectedResult.GPUsRequired)
 				}
 
-				requestedMilliCPUs := task.ResReq.Cpu()
+				requestedMilliCPUs := task.ResReqVector.Get(resource_info.CPUIndex)
 				if taskExpectedResult.MilliCpuRequired != 0 && requestedMilliCPUs != taskExpectedResult.MilliCpuRequired {
 					t.Errorf("Test number: %d, name: %v, has failed. Task name: %v, actual uses MilliCpu: %v, "+
 						"was expecting MilliCpu: %v", testNumber, testMetadata.Name, taskId, requestedMilliCPUs,
 						taskExpectedResult.MilliCpuRequired)
 				}
 
-				requestedMemory := task.ResReq.Memory()
+				requestedMemory := task.ResReqVector.Get(resource_info.MemoryIndex)
 				if taskExpectedResult.MemoryRequired != 0 && requestedMemory != taskExpectedResult.MemoryRequired {
 					t.Errorf("Test number: %d, name: %v, has failed. Task name: %v, actual uses Memory: %v, "+
 						"was expecting Memory: %v", testNumber, testMetadata.Name, taskId, requestedMemory,
@@ -303,12 +322,51 @@ func MatchExpectedAndRealTasks(t *testing.T, testNumber int, testMetadata TestTo
 			t.Errorf("Test number: %d, name: %v, has failed. Couldn't find node: %v for expected nodes resources.", testNumber, testMetadata.Name, nodeName)
 		}
 
-		if nodeExpectedResources.ReleasingGPUs != ssnNode.Releasing.GPUs() {
-			t.Errorf("Test number: %d, name: %v, has failed. Node name: %v, actual Releasing GPUs: %v, was expecting Releasing GPUs: %v", testNumber, testMetadata.Name, nodeName, ssnNode.Releasing.GPUs(), nodeExpectedResources.ReleasingGPUs)
+		gpuIdx := resource_info.GPUIndex
+		if nodeExpectedResources.ReleasingGPUs != ssnNode.ReleasingVector.Get(gpuIdx) {
+			t.Errorf("Test number: %d, name: %v, has failed. Node name: %v, actual Releasing GPUs: %v, was expecting Releasing GPUs: %v", testNumber, testMetadata.Name, nodeName, ssnNode.ReleasingVector.Get(gpuIdx), nodeExpectedResources.ReleasingGPUs)
 		}
 
-		if nodeExpectedResources.IdleGPUs != ssnNode.Idle.GPUs() {
-			t.Errorf("Test number: %d, name: %v, has failed. Node name: %v, actual Idle GPUs: %v, was expecting Idle GPUs: %v", testNumber, testMetadata.Name, nodeName, ssnNode.Idle.GPUs(), nodeExpectedResources.IdleGPUs)
+		if nodeExpectedResources.IdleGPUs != ssnNode.IdleVector.Get(gpuIdx) {
+			t.Errorf("Test number: %d, name: %v, has failed. Node name: %v, actual Idle GPUs: %v, was expecting Idle GPUs: %v", testNumber, testMetadata.Name, nodeName, ssnNode.IdleVector.Get(gpuIdx), nodeExpectedResources.IdleGPUs)
+		}
+
+		matchNUMAZonesAvailable(t, testNumber, testMetadata.Name, nodeName, ssnNode, nodeExpectedResources.NUMAZonesAvailable)
+	}
+}
+
+// sameZoneIndices reports whether two zone-index slices hold the same indices, ignoring order.
+func sameZoneIndices(got, want []int) bool {
+	gotSorted := append([]int(nil), got...)
+	wantSorted := append([]int(nil), want...)
+	slices.Sort(gotSorted)
+	slices.Sort(wantSorted)
+	return slices.Equal(gotSorted, wantSorted)
+}
+
+func matchNUMAZonesAvailable(
+	t *testing.T, testNumber int, testName, nodeName string,
+	ssnNode *node_info.NodeInfo, expected map[int]map[v1.ResourceName]string,
+) {
+	if expected == nil {
+		return
+	}
+	if ssnNode.NumaTopology == nil {
+		t.Errorf("Test number: %d, name: %v, has failed. Node %v has no NumaTopology but NUMAZonesAvailable was expected", testNumber, testName, nodeName)
+		return
+	}
+	for zoneIndex, resources := range expected {
+		if zoneIndex < 0 || zoneIndex >= len(ssnNode.NumaTopology.Zones) {
+			t.Errorf("Test number: %d, name: %v, has failed. Node %v zone index %d out of range (%d zones)", testNumber, testName, nodeName, zoneIndex, len(ssnNode.NumaTopology.Zones))
+			continue
+		}
+		zone := ssnNode.NumaTopology.Zones[zoneIndex]
+		for name, want := range resources {
+			expectedQty := resource.MustParse(want)
+			actualQty := zone.Available[name]
+			if actualQty.Cmp(expectedQty) != 0 {
+				t.Errorf("Test number: %d, name: %v, has failed. Node %v zone %d resource %v: actual Available %v, was expecting %v", testNumber, testName, nodeName, zoneIndex, name, actualQty.String(), want)
+			}
 		}
 	}
 }
@@ -324,7 +382,7 @@ func GetTestCacheMock(
 	}
 
 	if cacheRequirements.NumberOfCacheBinds != 0 {
-		cacheMock.EXPECT().Bind(Any(), Any(), Any()).Return(nil).MaxTimes(cacheRequirements.NumberOfCacheBinds)
+		cacheMock.EXPECT().Bind(Any(), Any(), Any(), Any()).Return(nil).MaxTimes(cacheRequirements.NumberOfCacheBinds)
 	}
 
 	fakeClient := fake.NewSimpleClientset(additionalObjects...)
@@ -376,7 +434,7 @@ func InitTestingInfrastructure() {
 	if *SchedulerVerbosity != "" {
 		verbosity, err := strconv.Atoi(*SchedulerVerbosity)
 		if err == nil {
-			if err := log.InitLoggers(verbosity); err != nil {
+			if err := log.InitLoggers(verbosity, false); err != nil {
 				fmt.Printf("Failed to initialize loggers: %v", err)
 			}
 		}

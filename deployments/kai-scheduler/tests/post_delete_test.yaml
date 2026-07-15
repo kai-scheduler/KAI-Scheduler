@@ -1,0 +1,66 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+suite: test post-delete cleanup hook
+templates:
+  - hooks/post/post-delete-job.yaml
+tests:
+  - it: should delete only operator-managed deployments in the release namespace
+    release:
+      namespace: custom-ns
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: kubectl -n custom-ns delete deployment --selector=app.kubernetes.io/managed-by=kai-operator --ignore-not-found=true
+      - notMatchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: delete deployments? --all
+
+  - it: should delete kai-config when the config deployer is enabled
+    set:
+      kaiConfigDeployer.enabled: true
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: kubectl delete Config kai-config --ignore-not-found
+
+  - it: should preserve kai-config when the config deployer is disabled
+    set:
+      kaiConfigDeployer.enabled: false
+    asserts:
+      - notMatchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: kubectl delete Config kai-config
+
+  - it: should not delete kai-config in GitOps mode (pruned as a tracked release resource)
+    set:
+      kaiConfigDeployer.enabled: false
+      kaiConfig.render: true
+    asserts:
+      - notMatchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: kubectl delete Config kai-config
+
+  - it: should carry the ArgoCD PostDelete hook annotations
+    asserts:
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/hook"]
+          value: PostDelete
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/hook-delete-policy"]
+          value: BeforeHookCreation,HookSucceeded
+
+  - it: should place the cleanup job in the release namespace
+    release:
+      namespace: custom-ns
+    asserts:
+      - equal:
+          path: metadata.namespace
+          value: custom-ns
+
+  - it: should not render when postCleanup is disabled
+    set:
+      postCleanup.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0

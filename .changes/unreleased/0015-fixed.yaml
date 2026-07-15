@@ -1,0 +1,3 @@
+kind: Fixed
+body: |-
+  Reduced allocation churn in the scheduler hot path: cached `Schedulable()` result as a package-level singleton and lazily formatted `logNodeSetsPluginResult` node names only when verbose logging is enabled.

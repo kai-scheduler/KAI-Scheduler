@@ -6,16 +6,22 @@ package app
 import (
 	"os"
 
-	nvidiav1 "github.com/NVIDIA/gpu-operator/api/nvidia/v1"
+	nvidiav1 "github.com/kai-scheduler/KAI-scheduler/third_party/nvidia/gpu-operator/api/nvidia/v1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	vpav1 "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 
-	"github.com/NVIDIA/KAI-scheduler/cmd/operator/config"
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
-	kaiv1alpha1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1alpha1"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/controller"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands"
+	"github.com/kai-scheduler/KAI-scheduler/cmd/operator/config"
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/controller"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands"
 
+	coordinationv1 "k8s.io/api/coordination/v1"
+	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
@@ -45,6 +51,7 @@ func init() {
 	utilruntime.Must(kaiv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(nvidiav1.AddToScheme(scheme))
 	utilruntime.Must(monitoringv1.AddToScheme(scheme))
+	utilruntime.Must(vpav1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -67,8 +74,21 @@ func New() (*App, error) {
 	clientConfig.QPS = float32(opts.Qps)
 	clientConfig.Burst = opts.Burst
 
+	// Pods, Leases and EndpointSlices are watched only to reconcile scheduler
+	// shards, and all relevant objects live in the KAI namespace. Without this
+	// scoping the shared cache stores every such object in the cluster, and
+	// operator memory grows linearly with cluster size.
+	kaiNamespace := map[string]cache.Config{opts.Namespace: {}}
 	mgr, err := ctrl.NewManager(clientConfig, ctrl.Options{
 		Scheme: scheme,
+		Cache: cache.Options{
+			DefaultTransform: cache.TransformStripManagedFields(),
+			ByObject: map[client.Object]cache.ByObject{
+				&corev1.Pod{}:                {Namespaces: kaiNamespace},
+				&coordinationv1.Lease{}:      {Namespaces: kaiNamespace},
+				&discoveryv1.EndpointSlice{}: {Namespaces: kaiNamespace},
+			},
+		},
 		Metrics: server.Options{
 			BindAddress: opts.MetricsAddr,
 		},
@@ -113,6 +133,9 @@ func (app *App) InitOperands(configOperands []operands.Operand, shardOperandsFor
 }
 
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch;update
+// +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
+// +kubebuilder:rbac:groups=discovery.k8s.io,resources=endpointslices,verbs=get;list;watch;create;update;patch;delete
 
 func (app *App) Run() error {
 

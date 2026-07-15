@@ -7,13 +7,13 @@ import (
 	"context"
 	"os"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
-	kaiv1binder "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/binder"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	kaiv1binder "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/binder"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	nvidiav1 "github.com/NVIDIA/gpu-operator/api/nvidia/v1"
+	nvidiav1 "github.com/kai-scheduler/KAI-scheduler/third_party/nvidia/gpu-operator/api/nvidia/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -21,12 +21,12 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	v1common "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/common"
+	v1common "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
 )
 
 const (
 	githubRoot = "../../../../"
-	repository = "ghcr.io/nvidia/kai-scheduler"
+	repository = "ghcr.io/kai-scheduler/kai-scheduler"
 	tag        = "latest"
 )
 

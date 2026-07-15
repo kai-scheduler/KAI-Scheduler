@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -42,11 +42,13 @@ func init() {
 	registerServiceAccounts()
 	registerConfigmaps()
 	registerServices()
+	registerEndpointSlices()
 	registerSecrets()
 	registerMutatingWebhookConfigurations()
 	registerValidatingWebhookConfigurations()
 	registerCustomResourceDefinitions()
 	registerPrometheus()
+	registerVerticalPodAutoscalers()
 }
 
 func SetupKAIConfigOwned(fn *Collectable) {

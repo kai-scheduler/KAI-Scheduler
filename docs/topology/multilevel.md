@@ -2,23 +2,30 @@
 
 ## Overview
 Modern distributed workloads often have heterogeneous topology requirements. For instance, large-scale AI inference pipelines, data analytics workflows, or disaggregated microservices may consist of multiple components (or *roles*), each with different locality and resource needs.
-The Multi-Level Topology Aware Scheduling mechanism enables fine-grained topology control for such workloads by allowing each subgroup of a workload to specify its own topology constraints while still adhering to an overall scheduling policy defined at the workload level.
-This is achieved through an extended PodGroup API that supports nested subgroups, cross-subgroup constraints, and multi-level topology hierarchies.
+The Multi-Level Topology Aware Scheduling mechanism enables fine-grained topology control for such workloads by allowing each SubGroup of a workload to specify its own topology constraints while still adhering to scheduling thresholds defined at each hierarchy level.
+This is achieved through an extended PodGroup API that supports nested SubGroups, subgroup-level gang thresholds, and multi-level topology hierarchies.
 
 ---
 
 ## Key Concepts
 
 ### PodGroup
-A PodGroup represents a logical collection of pods that should be scheduled in a coordinated manner. It enables gang scheduling semantics, ensuring that a defined minimum number of pods (`minMember`) are gang-scheduled before any are launched.
+A PodGroup represents a logical collection of pods that should be scheduled in a coordinated manner. It enables gang scheduling semantics, ensuring that the configured minimum threshold is available before the workload starts.
 In addition, it allows control over the placement of all the pods within the workload by specifying topology constraints.
 
-### Subgroups
-A PodGroup can contain one or more subgroup, representing logical subsets of pods that share a common role or function within the workload.
-Each subgroup can define:
-- A `minMember` value to control gang scheduling at the subgroup level (on the lowest level of the subgroup hierarchy).
-- A `topologyConstraint` to specify how pods or subgroups at the lower level that are associated with this subgroup should be co-located in the cluster.
+A PodGroup can express the threshold in one of two mutually exclusive ways:
+- `minMember`: Minimum number of pods required for flat PodGroups.
+- `minSubGroup`: Minimum number of direct child SubGroups required for hierarchical or replica-based PodGroups.
+
+### SubGroups
+A PodGroup can contain one or more SubGroups, representing logical subsets of pods that share a common role or function within the workload.
+Each SubGroup can define:
+- A `minMember` value to control gang scheduling at leaf SubGroups.
+- A `minSubGroup` value to control how many direct child SubGroups are required at mid-level SubGroups. When `minSubGroup` is omitted, all direct child SubGroups are required.
+- A `topologyConstraint` to specify how pods or SubGroups at the lower level should be co-located in the cluster.
 - An optional `parent` to establish hierarchical or cross-subgroup relationships.
+
+Pods are assigned only to leaf SubGroups using the `kai.scheduler/subgroup-name` label.
 
 ### Topology Constraints
 The `topologyConstraint` section defines where and how pods should be placed relative to cluster topology.  
@@ -36,9 +43,9 @@ A topology constraint includes:
 ---
 
 ## Example: Independent Subgroup Constraints
-The following example defines a PodGroup with two independent subgroups (`subgroup-a` and `subgroup-b`).
+The following example defines a PodGroup with two independent SubGroups (`subgroup-a` and `subgroup-b`).
 
-Each subgroup:
+Each SubGroup:
 - Has its own `minMember` requirement for gang scheduling.
 - Requires all its pods to be scheduled on the same rack, defined by the topology key `topology/rack`.
 
@@ -50,7 +57,8 @@ metadata:
 spec:
   queue: test
   priorityClassName: inference
-  subgroups:
+  minSubGroup: 2
+  subGroups:
     - name: subgroup-a
       minMember: 2
       topologyConstraint:
@@ -63,10 +71,10 @@ spec:
         requiredTopologyLevel: "topology/rack"
 ```
 
-The desired scheduling result is that pods of each subgroup are scheduled on the same rack, possibly on different racks for each subgroup.
+The desired scheduling result is that both SubGroups are required, and pods of each SubGroup are scheduled on the same rack, possibly on different racks for each SubGroup.
 
 ### Example Pods
-The following pod examples reference the sample1 PodGroup and are associated with their respective subgroups:
+The following pod examples reference the sample1 PodGroup and are associated with their respective SubGroups:
 
 ```yaml
 apiVersion: v1
@@ -102,13 +110,13 @@ spec:
 
 ---
 
-## Advanced Example: Cross-Subgroup and Hierarchical Constraints
-More complex scheduling scenarios require coordination across subgroups to enforce locality at multiple topology levels.
+## Advanced Example: Cross-SubGroup and Hierarchical Constraints
+More complex scheduling scenarios require coordination across SubGroups to enforce locality at multiple topology levels.
 For example:
 - The entire workload is scheduled within a single zone.
-- Subgroups A and B must be co-located under the same spine (assuming spine is a higher-level topology domain).
-- Each subgroup must still ensure its pods are placed within the same rack.
-- Another subgroup (C) can operate independently under a different rack-level constraint.
+- SubGroups A and B must be co-located under the same spine (assuming spine is a higher-level topology domain).
+- Each leaf SubGroup must still ensure its pods are placed within the same rack.
+- Another SubGroup (C) can operate independently under a different rack-level constraint.
 
 The example below illustrates this configuration:
 
@@ -120,11 +128,13 @@ metadata:
 spec:
   queue: test
   priorityClassName: inference
+  minSubGroup: 2
   topologyConstraint:
     topology: "cluster-topology"
     requiredTopologyLevel: "topology/zone"
-  subgroups:
+  subGroups:
     - name: subgroup-ab
+      minSubGroup: 2
       topologyConstraint:
         topology: "cluster-topology"
         requiredTopologyLevel: "topology/spine"
@@ -154,7 +164,7 @@ Each pod specifies:
 - The annotation `pod-group-name` to associate with the PodGroup.
 - The label `kai.scheduler/subgroup-name` to specify the subgroup membership.
 
-The scheduler activates placement once the `minMember` condition for each subgroup is met.
+The scheduler activates placement once the PodGroup and SubGroup thresholds are met. In `sample2`, `minSubGroup: 2` at the PodGroup level requires both direct children (`subgroup-ab` and `subgroup-c`), and `minSubGroup: 2` on `subgroup-ab` requires both `subgroup-a` and `subgroup-b`.
 
 ```yaml
 # Subgroup A

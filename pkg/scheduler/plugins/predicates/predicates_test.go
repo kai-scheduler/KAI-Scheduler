@@ -10,20 +10,32 @@ import (
 	"strings"
 	"testing"
 
+	"go.uber.org/mock/gomock"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
+	ksf "k8s.io/kube-scheduler/framework"
+	"k8s.io/utils/ptr"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_internal"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_internal/predicates"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/plugins_fake/predicates_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_affinity"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal/predicates"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/plugins_fake/predicates_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 )
 
 func Test_evaluateTaskOnPrePredicate(t *testing.T) {
@@ -149,8 +161,11 @@ func Test_evaluateTaskOnPrePredicate(t *testing.T) {
 	for _, tt := range tests {
 		t.Logf("Running test: %s", tt.name)
 		t.Run(tt.name, func(t *testing.T) {
-			skipPredicates := SkipPredicates{}
-			got := evaluateTaskOnPrePredicate(tt.args.task, tt.args.k8sPredicates, skipPredicates)
+			pp := &predicatesPlugin{
+				skipPredicates:    SkipPredicates{},
+				prePredicateCache: map[prePredicateCacheKey]cachedPrePredicateResult{},
+			}
+			got := pp.evaluateTaskOnPrePredicate(tt.args.task, tt.args.k8sPredicates)
 
 			// I use this weird way to compare the 2 errors because sometimes the line order in
 			// the returning error will change
@@ -177,6 +192,340 @@ func Test_evaluateTaskOnPrePredicate(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestClassifyVictimInvariantPrePredicateFailure(t *testing.T) {
+	tests := []struct {
+		name          string
+		predicateName k8s_internal.PredicateName
+		status        *ksf.Status
+		wantFailure   bool
+		wantErrorPart string
+	}{
+		{
+			name:          "supported predicate with unresolvable failure",
+			predicateName: predicates.VolumeBinding,
+			status:        ksf.NewStatus(ksf.UnschedulableAndUnresolvable, "persistentvolumeclaim \"missing\" not found"),
+			wantFailure:   true,
+			wantErrorPart: "persistentvolumeclaim \"missing\" not found",
+		},
+		{
+			name:          "supported predicate with resolvable status is ignored",
+			predicateName: predicates.VolumeBinding,
+			status:        ksf.NewStatus(ksf.Unschedulable, "resolvable later"),
+			wantFailure:   false,
+		},
+		{
+			name:          "unsupported predicate is ignored",
+			predicateName: predicates.PodAffinity,
+			status:        ksf.NewStatus(ksf.UnschedulableAndUnresolvable, "not used by the action guard"),
+			wantFailure:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			failure := classifyVictimInvariantPrePredicateFailure(tt.predicateName, tt.status)
+			if tt.wantFailure {
+				if failure == nil {
+					t.Fatal("classifyVictimInvariantPrePredicateFailure() returned nil, want failure")
+				}
+				if !strings.Contains(failure.Err.Error(), tt.wantErrorPart) {
+					t.Fatalf("classifyVictimInvariantPrePredicateFailure() error = %q, want substring %q",
+						failure.Err.Error(), tt.wantErrorPart)
+				}
+				return
+			}
+
+			if failure != nil {
+				t.Fatalf("classifyVictimInvariantPrePredicateFailure() = %v, want nil", failure)
+			}
+		})
+	}
+}
+
+func TestEvaluateTaskOnVictimInvariantPrePredicates(t *testing.T) {
+	task := &pod_info.PodInfo{
+		UID:       common_info.PodID(types.UID("pod-1")),
+		Name:      "p1",
+		Namespace: "ns1",
+		Pod:       &v1.Pod{},
+	}
+
+	configMapCalled := false
+	maxNodeResourcesCalled := false
+	pp := &predicatesPlugin{
+		skipPredicates:    SkipPredicates{},
+		prePredicateCache: map[prePredicateCacheKey]cachedPrePredicateResult{},
+	}
+	k8sPredicates := k8s_internal.SessionPredicates{
+		predicates.VolumeBinding: {
+			IsPreFilterRequired: func(_ *v1.Pod) bool { return true },
+			PreFilter: func(_ *v1.Pod) (sets.Set[string], *ksf.Status) {
+				return nil, ksf.NewStatus(ksf.Skip)
+			},
+		},
+		predicates.ConfigMap: {
+			IsPreFilterRequired: func(_ *v1.Pod) bool { return true },
+			PreFilter: func(_ *v1.Pod) (sets.Set[string], *ksf.Status) {
+				configMapCalled = true
+				return nil, ksf.NewStatus(ksf.UnschedulableAndUnresolvable, "Missing required configmaps: [required-cm]")
+			},
+		},
+		predicates.MaxNodePoolResources: {
+			IsPreFilterRequired: func(_ *v1.Pod) bool { return true },
+			PreFilter: func(_ *v1.Pod) (sets.Set[string], *ksf.Status) {
+				maxNodeResourcesCalled = true
+				return nil, ksf.NewStatus(ksf.UnschedulableAndUnresolvable, "should not be reached")
+			},
+		},
+	}
+
+	failure := pp.evaluateTaskOnVictimInvariantPrePredicates(task, k8sPredicates)
+	if failure == nil {
+		t.Fatal("evaluateTaskOnVictimInvariantPrePredicates() returned nil, want failure")
+	}
+	if !strings.Contains(failure.Err.Error(), "Missing required configmaps") {
+		t.Fatalf("evaluateTaskOnVictimInvariantPrePredicates() error = %q, want configmap failure",
+			failure.Err.Error())
+	}
+	if !configMapCalled {
+		t.Fatal("evaluateTaskOnVictimInvariantPrePredicates() did not evaluate the ConfigMap candidate")
+	}
+	if maxNodeResourcesCalled {
+		t.Fatal("evaluateTaskOnVictimInvariantPrePredicates() continued after the first failure")
+	}
+	if !pp.skipPredicates.ShouldSKip(task.UID, predicates.VolumeBinding) {
+		t.Fatal("evaluateTaskOnVictimInvariantPrePredicates() did not record a skip status for VolumeBinding")
+	}
+}
+
+func TestPredicatesPluginCachesPrePredicateResultsBetweenGuardAndRegularPath(t *testing.T) {
+	task := &pod_info.PodInfo{
+		UID:       common_info.PodID(types.UID("pod-1")),
+		Name:      "p1",
+		Namespace: "ns1",
+		Pod:       &v1.Pod{},
+	}
+	preFilterCalls := 0
+	pp := &predicatesPlugin{
+		skipPredicates:    SkipPredicates{},
+		prePredicateCache: map[prePredicateCacheKey]cachedPrePredicateResult{},
+	}
+	k8sPredicates := k8s_internal.SessionPredicates{
+		predicates.ConfigMap: {
+			IsPreFilterRequired: func(_ *v1.Pod) bool { return true },
+			PreFilter: func(_ *v1.Pod) (sets.Set[string], *ksf.Status) {
+				preFilterCalls++
+				return nil, nil
+			},
+		},
+	}
+
+	failure := pp.evaluateTaskOnVictimInvariantPrePredicates(task, k8sPredicates)
+	if failure != nil {
+		t.Fatalf("evaluateTaskOnVictimInvariantPrePredicates() = %v, want nil", failure)
+	}
+	err := pp.evaluateTaskOnPrePredicate(task, k8sPredicates)
+	if err != nil {
+		t.Fatalf("evaluateTaskOnPrePredicate() = %v, want nil", err)
+	}
+	if preFilterCalls != 1 {
+		t.Fatalf("PreFilter() call count = %d, want 1", preFilterCalls)
+	}
+}
+
+func TestPredicatesPluginCachesPrePredicateResultsBetweenRegularAndGuardPath(t *testing.T) {
+	task := &pod_info.PodInfo{
+		UID:       common_info.PodID(types.UID("pod-1")),
+		Name:      "p1",
+		Namespace: "ns1",
+		Pod:       &v1.Pod{},
+	}
+	preFilterCalls := 0
+	pp := &predicatesPlugin{
+		skipPredicates:    SkipPredicates{},
+		prePredicateCache: map[prePredicateCacheKey]cachedPrePredicateResult{},
+	}
+	k8sPredicates := k8s_internal.SessionPredicates{
+		predicates.ConfigMap: {
+			IsPreFilterRequired: func(_ *v1.Pod) bool { return true },
+			PreFilter: func(_ *v1.Pod) (sets.Set[string], *ksf.Status) {
+				preFilterCalls++
+				return nil, nil
+			},
+		},
+	}
+
+	err := pp.evaluateTaskOnPrePredicate(task, k8sPredicates)
+	if err != nil {
+		t.Fatalf("evaluateTaskOnPrePredicate() = %v, want nil", err)
+	}
+	failure := pp.evaluateTaskOnVictimInvariantPrePredicates(task, k8sPredicates)
+	if failure != nil {
+		t.Fatalf("evaluateTaskOnVictimInvariantPrePredicates() = %v, want nil", failure)
+	}
+	if preFilterCalls != 1 {
+		t.Fatalf("PreFilter() call count = %d, want 1", preFilterCalls)
+	}
+}
+
+func TestPredicatesPluginCachedSkipStatusUpdatesSkipPredicates(t *testing.T) {
+	task := &pod_info.PodInfo{
+		UID: common_info.PodID(types.UID("pod-1")),
+		Pod: &v1.Pod{},
+	}
+	pp := &predicatesPlugin{
+		skipPredicates: SkipPredicates{},
+		prePredicateCache: map[prePredicateCacheKey]cachedPrePredicateResult{
+			{podID: task.UID, predicateName: predicates.VolumeBinding}: {
+				required: true,
+				status:   ksf.NewStatus(ksf.Skip),
+			},
+		},
+	}
+
+	_, status, required := pp.evaluateSinglePrePredicate(task, predicates.VolumeBinding, k8s_internal.SessionPredicate{
+		IsPreFilterRequired: func(_ *v1.Pod) bool { return true },
+		PreFilter: func(_ *v1.Pod) (sets.Set[string], *ksf.Status) {
+			t.Fatal("PreFilter() should not be called on a cache hit")
+			return nil, nil
+		},
+	})
+	if !required {
+		t.Fatal("evaluateSinglePrePredicate() required = false, want true")
+	}
+	if status == nil || !status.IsSkip() {
+		t.Fatalf("evaluateSinglePrePredicate() status = %v, want skip status", status)
+	}
+	if !pp.skipPredicates.ShouldSKip(task.UID, predicates.VolumeBinding) {
+		t.Fatal("evaluateSinglePrePredicate() did not update skipPredicates on cached skip status")
+	}
+}
+
+func TestPredicatesPluginDoesNotCacheNonCandidatePrePredicates(t *testing.T) {
+	task := &pod_info.PodInfo{
+		UID:       common_info.PodID(types.UID("pod-1")),
+		Name:      "p1",
+		Namespace: "ns1",
+		Pod:       &v1.Pod{},
+	}
+	preFilterCalls := 0
+	pp := &predicatesPlugin{
+		skipPredicates:    SkipPredicates{},
+		prePredicateCache: map[prePredicateCacheKey]cachedPrePredicateResult{},
+	}
+	nonCandidateName := k8s_internal.PredicateName(predicates.PodAffinity)
+	predicate := k8s_internal.SessionPredicate{
+		IsPreFilterRequired: func(_ *v1.Pod) bool { return true },
+		PreFilter: func(_ *v1.Pod) (sets.Set[string], *ksf.Status) {
+			preFilterCalls++
+			return nil, nil
+		},
+	}
+
+	_, _, required := pp.evaluateSinglePrePredicate(task, nonCandidateName, predicate)
+	if !required {
+		t.Fatal("evaluateSinglePrePredicate() required = false, want true")
+	}
+	_, _, required = pp.evaluateSinglePrePredicate(task, nonCandidateName, predicate)
+	if !required {
+		t.Fatal("evaluateSinglePrePredicate() required = false on second call, want true")
+	}
+	if preFilterCalls != 2 {
+		t.Fatalf("PreFilter() call count = %d, want 2", preFilterCalls)
+	}
+	if len(pp.prePredicateCache) != 0 {
+		t.Fatalf("prePredicateCache size = %d, want 0 for non-candidate predicate", len(pp.prePredicateCache))
+	}
+}
+
+func TestPredicatesPluginResetPrePredicateCache(t *testing.T) {
+	pp := &predicatesPlugin{
+		prePredicateCache: map[prePredicateCacheKey]cachedPrePredicateResult{
+			{podID: common_info.PodID("stale-pod"), predicateName: predicates.ConfigMap}: {required: true},
+		},
+	}
+
+	pp.resetPrePredicateCache()
+
+	if len(pp.prePredicateCache) != 0 {
+		t.Fatalf("resetPrePredicateCache() cache size = %d, want 0", len(pp.prePredicateCache))
+	}
+}
+
+func TestMaxPodsWithReleasingPods(t *testing.T) {
+	// Test that releasing pods don't count toward the max pods limit
+	node := common_info.BuildNode("n1", common_info.BuildResourceList("16000m", "32G"))
+	node.Status.Allocatable[v1.ResourcePods] = *resource.NewQuantity(110, resource.DecimalSI)
+
+	// Create 109 running pods and 1 releasing pod
+	runningPods := make([]*v1.Pod, 109)
+	for i := 0; i < 109; i++ {
+		runningPods[i] = common_info.BuildPod("default", fmt.Sprintf("running-pod-%d", i), "n1",
+			v1.PodRunning, common_info.BuildResourceList("100m", "100M"),
+			[]metav1.OwnerReference{}, map[string]string{},
+			map[string]string{commonconstants.PodGroupAnnotationForPod: "job1"})
+	}
+
+	releasingPod := common_info.BuildPod("default", "releasing-pod", "n1",
+		v1.PodRunning, common_info.BuildResourceList("100m", "100M"),
+		[]metav1.OwnerReference{}, map[string]string{},
+		map[string]string{commonconstants.PodGroupAnnotationForPod: "job1"})
+
+	preemptorPod := common_info.BuildPod("default", "preemptor-pod", "",
+		v1.PodPending, common_info.BuildResourceList("100m", "100M"),
+		[]metav1.OwnerReference{}, map[string]string{},
+		map[string]string{commonconstants.PodGroupAnnotationForPod: "job2"})
+
+	// Create node info and add pods
+	nodePodAffinityInfo := pod_affinity.NewMockNodePodAffinityInfo(gomock.NewController(t))
+	nodePodAffinityInfo.EXPECT().AddPod(gomock.Any()).AnyTimes()
+
+	vectorMap := resource_info.NewResourceVectorMap()
+	ni := node_info.NewNodeInfo(node, nodePodAffinityInfo, vectorMap)
+
+	// Add running pods
+	for _, pod := range runningPods {
+		task := pod_info.NewTaskInfo(pod, vectorMap)
+		task.Status = pod_status.Running
+		err := ni.AddTask(task)
+		if err != nil {
+			t.Fatalf("Failed to add running pod: %v", err)
+		}
+	}
+
+	// Add releasing pod
+	releasingTask := pod_info.NewTaskInfo(releasingPod, vectorMap)
+	releasingTask.Status = pod_status.Releasing
+	err := ni.AddTask(releasingTask)
+	if err != nil {
+		t.Fatalf("Failed to add releasing pod: %v", err)
+	}
+
+	// Now try to allocate the preemptor pod - it should succeed because
+	// the releasing pod's resources (including its pod count) are available
+	preemptorTask := pod_info.NewTaskInfo(preemptorPod, vectorMap)
+	preemptorTask.Status = pod_status.Pending
+
+	// Check if the task is allocatable
+	allocatable := ni.IsTaskAllocatableOnReleasingOrIdle(preemptorTask)
+
+	// Debug output
+	podsIdx := ni.VectorMap.GetIndex(v1.ResourcePods)
+	t.Logf("Node Allocatable pods: %v", ni.AllocatableVector.Get(podsIdx))
+	t.Logf("Node Idle pods: %v", ni.IdleVector.Get(podsIdx))
+	t.Logf("Node Used pods: %v", ni.UsedVector.Get(podsIdx))
+	t.Logf("Node Releasing pods: %v", ni.ReleasingVector.Get(podsIdx))
+	t.Logf("Preemptor ResReqVector: %v", preemptorTask.ResReqVector)
+
+	if !allocatable {
+		t.Errorf("Preemptor pod should be allocatable (109 Running + 1 Releasing + 1 new = 110 total, but Releasing pod resources are available)")
+		t.Logf("Node IdleVector: %v", ni.IdleVector)
+		t.Logf("Node UsedVector: %v", ni.UsedVector)
+		t.Logf("Node ReleasingVector: %v", ni.ReleasingVector)
+		t.Logf("Preemptor ResReqVector: %v", preemptorTask.ResReqVector)
 	}
 }
 
@@ -939,7 +1288,7 @@ func Test_predicatesPlugin_evaluateTaskOnPredicates(t *testing.T) {
 				},
 				nodes: map[string]nodes_fake.TestNodeBasic{
 					"n1": {
-						GpuMemorySynced: pointer.Bool(false),
+						GpuMemorySynced: ptr.To(false),
 					},
 				},
 				isRestrictNodeSchedulingEnabled: func() bool {
@@ -980,7 +1329,7 @@ func Test_predicatesPlugin_evaluateTaskOnPredicates(t *testing.T) {
 				},
 				nodes: map[string]nodes_fake.TestNodeBasic{
 					"n1": {
-						MaxTaskNum: pointer.Int(0),
+						MaxTaskNum: ptr.To(0),
 					},
 				},
 				isRestrictNodeSchedulingEnabled: func() bool {
@@ -1020,7 +1369,7 @@ func Test_predicatesPlugin_evaluateTaskOnPredicates(t *testing.T) {
 				},
 				nodes: map[string]nodes_fake.TestNodeBasic{
 					"n1": {
-						MaxTaskNum: pointer.Int(1),
+						MaxTaskNum: ptr.To(1),
 					},
 				},
 				isRestrictNodeSchedulingEnabled: func() bool {
@@ -1107,13 +1456,22 @@ func Test_predicatesPlugin_evaluateTaskOnPredicates(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			vectorMap := resource_info.NewResourceVectorMap()
+			jobsMap, tasksMap, _ := jobs_fake.BuildJobsAndTasksMaps(tt.clusterData.jobs, vectorMap)
+			nodesMap := nodes_fake.BuildNodesInfoMap(tt.clusterData.nodes, tasksMap, nil, vectorMap)
+			ssn := &framework.Session{
+				ClusterInfo: &api.ClusterInfo{
+					Nodes:         nodesMap,
+					PodGroupInfos: jobsMap,
+					Queues:        map[common_info.QueueID]*queue_info.QueueInfo{},
+				},
+			}
 			pp := &predicatesPlugin{
 				storageSchedulingEnabled: tt.args.storageSchedulingEnabled,
+				ssn:                      ssn,
 			}
 			skipPredicates := SkipPredicates{}
 
-			jobsMap, tasksMap, _ := jobs_fake.BuildJobsAndTasksMaps(tt.clusterData.jobs)
-			nodesMap := nodes_fake.BuildNodesInfoMap(tt.clusterData.nodes, tasksMap, nil)
 			task := jobsMap[tt.args.jobName].GetAllPodsMap()[tt.args.taskName]
 			job := jobsMap[tt.args.jobName]
 			node := nodesMap[tt.args.nodeName]

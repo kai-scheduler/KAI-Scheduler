@@ -24,14 +24,15 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	enginev2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
+	enginev2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 )
 
 type QueueInfo struct {
 	UID               common_info.QueueID
 	Name              string
+	DisplayName       string
 	ParentQueue       common_info.QueueID
 	ChildQueues       []common_info.QueueID
 	Resources         QueueQuota
@@ -56,6 +57,7 @@ func NewQueueInfo(queue *enginev2.Queue) *QueueInfo {
 	return &QueueInfo{
 		UID:               common_info.QueueID(queue.Name),
 		Name:              queueName,
+		DisplayName:       queue.Spec.DisplayName,
 		ParentQueue:       common_info.QueueID(queue.Spec.ParentQueue),
 		ChildQueues:       []common_info.QueueID{},
 		Resources:         getQueueQuota(*queue),

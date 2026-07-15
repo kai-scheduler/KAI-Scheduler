@@ -12,7 +12,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -61,7 +61,7 @@ var _ = Describe("Scheduler", func() {
 	It("Should maintain existing annotations", func(ctx context.Context) {
 		existingDeployment := &appsv1.Deployment{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      deploymentName(kaiConfig, shard),
+				Name:      DeploymentName(kaiConfig, shard),
 				Namespace: kaiConfig.Spec.Namespace,
 				Annotations: map[string]string{
 					"bla": "bla",
@@ -138,6 +138,15 @@ var _ = Describe("Scheduler", func() {
 
 			Expect(err).To(BeNil())
 			Expect(cm.Data["config.yaml"]).To(MatchYAML(`actions: allocate, consolidation, reclaim, preempt, stalegangeviction
+scenarioSearchBudgets:
+    maxActionSearchDuration:
+        default: 5m0s
+    maxGeneratorSearchDuration:
+        MultiNodeGang: 2m0s
+        NodeLocalGreedy: 30s
+        default: 2m0s
+    maxJobSearchDuration: 4m0s
+    minJobSearchDuration: 0s
 tiers:
     - plugins:
         - name: predicates
@@ -156,6 +165,8 @@ tiers:
         - name: minruntime
         - name: topology
         - name: snapshot
+        - name: sg-nodelocalgreedy
+        - name: sg-multinodegang
         - name: gpupack
         - name: nodeplacement
           arguments:
@@ -166,17 +177,33 @@ tiers:
 		})
 
 		It("Should create different configmap for spread", func(ctx context.Context) {
-			spreadShard := shard.DeepCopy()
-			spreadShard.Spec.PlacementStrategy = &kaiv1.PlacementStrategy{
-				CPU: ptr.To("spread"),
-				GPU: ptr.To("spread"),
+			spreadShard := &kaiv1.SchedulingShard{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "default",
+				},
+				Spec: kaiv1.SchedulingShardSpec{
+					PlacementStrategy: &kaiv1.PlacementStrategy{
+						CPU: ptr.To("spread"),
+						GPU: ptr.To("spread"),
+					},
+				},
 			}
-			s := NewSchedulerForShard(shard)
+			spreadShard.Spec.SetDefaultsWhereNeeded()
+			s := NewSchedulerForShard(spreadShard)
 			cmObj, err := s.configMapForShard(ctx, fakeClient, kaiConfig, spreadShard)
 			cm := cmObj.(*v1.ConfigMap)
 
 			Expect(err).To(BeNil())
 			Expect(cm.Data["config.yaml"]).To(MatchYAML(`actions: allocate, reclaim, preempt, stalegangeviction
+scenarioSearchBudgets:
+    maxActionSearchDuration:
+        default: 5m0s
+    maxGeneratorSearchDuration:
+        MultiNodeGang: 2m0s
+        NodeLocalGreedy: 30s
+        default: 2m0s
+    maxJobSearchDuration: 4m0s
+    minJobSearchDuration: 0s
 tiers:
     - plugins:
         - name: predicates
@@ -195,6 +222,8 @@ tiers:
         - name: minruntime
         - name: topology
         - name: snapshot
+        - name: sg-nodelocalgreedy
+        - name: sg-multinodegang
         - name: gpuspread
         - name: nodeplacement
           arguments:

@@ -4,22 +4,20 @@
 package capacity_policy
 
 import (
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	rs "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/proportion/utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	rs "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/utils"
 )
 
+var schedulableResult = &api.SchedulableResult{IsSchedulable: true}
+
 func Schedulable() *api.SchedulableResult {
-	return &api.SchedulableResult{
-		IsSchedulable: true,
-		Reason:        "",
-		Message:       "",
-		Details:       nil,
-	}
+	return schedulableResult
 }
 
 func (cp *CapacityPolicy) resultsWithNonPreemptibleOverQuota(requestedShare rs.ResourceQuantities,
@@ -80,11 +78,11 @@ func getNonPreemptibleJobOverQuotaError(queueAttributes *rs.QueueAttributes, req
 	exceedingResourceName rs.ResourceName) string {
 	deserved := queueAttributes.GetDeservedShare()[exceedingResourceName]
 	allocatedNonPreemptible := queueAttributes.GetAllocatedNonPreemptible()[exceedingResourceName]
-	jobReq := podgroup_info.JobRequirement{
-		GPU:      requestedQuota[rs.GpuResource],
-		MilliCPU: requestedQuota[rs.CpuResource],
-		Memory:   requestedQuota[rs.MemoryResource],
-	}
+	vectorMap := resource_info.NewResourceVectorMap()
+	vec := resource_info.NewResourceVector(vectorMap)
+	vec.Set(resource_info.GPUIndex, requestedQuota[rs.GpuResource])
+	vec.Set(resource_info.CPUIndex, requestedQuota[rs.CpuResource])
+	vec.Set(resource_info.MemoryIndex, requestedQuota[rs.MemoryResource])
 	return api.GetBuildOverCapacityMessageForQueue(queueAttributes.Name, string(exceedingResourceName), deserved,
-		allocatedNonPreemptible, &jobReq)
+		allocatedNonPreemptible, vec, vectorMap)
 }

@@ -14,10 +14,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
-	kaiv1admission "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/admission"
-	kaiv1common "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/common"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/common/test_utils"
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	kaiv1admission "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/admission"
+	kaiv1common "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common/test_utils"
 
 	admissionv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -83,11 +83,14 @@ var _ = Describe("Admission", func() {
 				Expect(mutatingWebhook.Webhooks).To(HaveLen(1))
 				Expect(mutatingWebhook.Webhooks[0].ClientConfig.CABundle).To(Equal(secret.Data[certKey]))
 
-				Expect(validatingWebhook.Webhooks).To(HaveLen(1))
-				Expect(validatingWebhook.Webhooks[0].ClientConfig.CABundle).To(Equal(secret.Data[certKey]))
+				// One webhook for pods, one for the Topology one-to-one alias validation.
+				Expect(validatingWebhook.Webhooks).To(HaveLen(2))
+				for _, wh := range validatingWebhook.Webhooks {
+					Expect(wh.ClientConfig.CABundle).To(Equal(secret.Data[certKey]))
+					Expect(wh.ClientConfig.Service.Name).To(Equal(defaultResourceName))
+				}
 
 				Expect(mutatingWebhook.Webhooks[0].ClientConfig.Service.Name).To(Equal(defaultResourceName))
-				Expect(validatingWebhook.Webhooks[0].ClientConfig.Service.Name).To(Equal(defaultResourceName))
 			})
 
 			It("should preserve existing deployment labels", func() {

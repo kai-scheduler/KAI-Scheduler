@@ -10,12 +10,13 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_internal"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal"
 )
 
 const (
 	GPUResourceName    = "nvidia.com/gpu"
 	amdGpuResourceName = "amd.com/gpu"
+	PodsResourceName   = v1.ResourcePods
 )
 
 type ResourceRequirements struct {
@@ -108,6 +109,16 @@ func (r *ResourceRequirements) SetMaxResource(rr *ResourceRequirements) error {
 	return r.GpuResourceRequirement.SetMaxResource(&rr.GpuResourceRequirement)
 }
 
+// Add sums `rr` into `r` across both `BaseResource` and
+// `GpuResourceRequirement`.
+func (r *ResourceRequirements) Add(rr *ResourceRequirements) error {
+	if r == nil || rr == nil {
+		return nil
+	}
+	r.BaseResource.Add(&rr.BaseResource)
+	return r.GpuResourceRequirement.Add(&rr.GpuResourceRequirement)
+}
+
 func (r *ResourceRequirements) LessInAtLeastOneResource(rr *ResourceRequirements) bool {
 	return !rr.LessEqual(r)
 }
@@ -153,10 +164,13 @@ func (r *ResourceRequirements) DetailedString() string {
 	messageBuilder.WriteString(r.String())
 
 	for rName, rQuant := range r.scalarResources {
-		if rName == v1.ResourceEphemeralStorage || rName == v1.ResourceStorage {
+		switch rName {
+		case v1.ResourceEphemeralStorage, v1.ResourceStorage:
 			rQuant = rQuant / int64(MemoryToGB) // convert from milli-bytes to GB
+			messageBuilder.WriteString(fmt.Sprintf(", %s: %v (GB)", rName, rQuant))
+		default:
+			messageBuilder.WriteString(fmt.Sprintf(", %s: %v", rName, rQuant))
 		}
-		messageBuilder.WriteString(fmt.Sprintf(", %s: %v (GB)", rName, rQuant))
 	}
 	for migName, migQuant := range r.MigResources() {
 		messageBuilder.WriteString(fmt.Sprintf(", mig %s: %d", migName, migQuant))

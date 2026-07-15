@@ -5,14 +5,16 @@ package binder
 
 import (
 	"context"
+	"strconv"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/utils/ptr"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
 )
 
 func TestBinder(t *testing.T) {
@@ -23,26 +25,77 @@ func TestBinder(t *testing.T) {
 var _ = Describe("Binder", func() {
 	It("Set Defaults", func(ctx context.Context) {
 		binder := &Binder{}
-		binder.SetDefaultsWhereNeeded(nil)
+		binder.SetDefaultsWhereNeeded(nil, nil)
 		Expect(*binder.Service.Enabled).To(Equal(true))
 		Expect(*binder.Service.Image.Name).To(Equal("binder"))
 		Expect(binder.Service.Resources.Requests[v1.ResourceCPU]).To(Equal(resource.MustParse("50m")))
 		Expect(binder.Service.Resources.Requests[v1.ResourceMemory]).To(Equal(resource.MustParse("200Mi")))
 		Expect(binder.Service.Resources.Limits[v1.ResourceCPU]).To(Equal(resource.MustParse("100m")))
 		Expect(binder.Service.Resources.Limits[v1.ResourceMemory]).To(Equal(resource.MustParse("200Mi")))
+		Expect(binder.Plugins).To(HaveLen(4))
+		Expect(*binder.Plugins[VolumeBindingPluginName].Priority).To(Equal(defaultPluginPriorities[VolumeBindingPluginName]))
+		Expect(*binder.Plugins[DynamicResourcesPluginName].Priority).To(Equal(defaultPluginPriorities[DynamicResourcesPluginName]))
+		Expect(*binder.Plugins[GPUSharingPluginName].Priority).To(Equal(defaultPluginPriorities[GPUSharingPluginName]))
+		Expect(binder.Plugins[VolumeBindingPluginName].Arguments[BindTimeoutSecondsArgument]).
+			To(Equal(strconv.Itoa(DefaultBindTimeoutSeconds)))
+		Expect(binder.Plugins[DynamicResourcesPluginName].Arguments[BindTimeoutSecondsArgument]).
+			To(Equal(strconv.Itoa(DefaultBindTimeoutSeconds)))
+		// CDIEnabled is intentionally not baked into the gpusharing plugin args
+		// when Binder.CDIEnabled is unset; the operator resolves it at deploy time.
+		_, hasCDIArg := binder.Plugins[GPUSharingPluginName].Arguments[CDIEnabledArgument]
+		Expect(hasCDIArg).To(BeFalse())
 	})
+
+	It("Set Defaults bakes CDI flag when Binder.CDIEnabled is set", func(ctx context.Context) {
+		binder := &Binder{CDIEnabled: ptr.To(true)}
+		binder.SetDefaultsWhereNeeded(nil, nil)
+		Expect(binder.Plugins[GPUSharingPluginName].Arguments[CDIEnabledArgument]).
+			To(Equal(strconv.FormatBool(true)))
+		Expect(binder.Plugins[HamiCorePluginName].Enabled).NotTo(BeNil())
+		Expect(*binder.Plugins[HamiCorePluginName].Enabled).To(BeFalse())
+	})
+
+	It("Set Defaults With Plugin Overrides", func(ctx context.Context) {
+		binder := &Binder{
+			VolumeBindingTimeoutSeconds: ptr.To(45),
+			Plugins: map[string]PluginConfig{
+				GPUSharingPluginName: {
+					Enabled: ptr.To(false),
+				},
+				VolumeBindingPluginName: {
+					Arguments: map[string]string{
+						BindTimeoutSecondsArgument: "30",
+					},
+				},
+				"custom": {
+					Enabled:  ptr.To(true),
+					Priority: ptr.To(250),
+				},
+			},
+		}
+
+		binder.SetDefaultsWhereNeeded(nil, nil)
+
+		Expect(*binder.Plugins[GPUSharingPluginName].Enabled).To(BeFalse())
+		Expect(*binder.Plugins[VolumeBindingPluginName].Priority).To(Equal(defaultPluginPriorities[VolumeBindingPluginName]))
+		Expect(binder.Plugins[VolumeBindingPluginName].Arguments[BindTimeoutSecondsArgument]).To(Equal("30"))
+		Expect(binder.Plugins[DynamicResourcesPluginName].Arguments[BindTimeoutSecondsArgument]).To(Equal("45"))
+		Expect(*binder.Plugins["custom"].Enabled).To(BeTrue())
+		Expect(*binder.Plugins["custom"].Priority).To(Equal(250))
+	})
+
 	It("Set Defaults With Replica Count", func(ctx context.Context) {
 		binder := &Binder{}
 		var replicaCount int32
 		replicaCount = 3
-		binder.SetDefaultsWhereNeeded(&replicaCount)
+		binder.SetDefaultsWhereNeeded(&replicaCount, nil)
 		Expect(*binder.Replicas).To(Equal(int32(3)))
 	})
 
 	Context("ResourceReservation PodResources configuration", func() {
 		It("should not set default PodResources when not configured", func(ctx context.Context) {
 			binder := &Binder{}
-			binder.SetDefaultsWhereNeeded(nil)
+			binder.SetDefaultsWhereNeeded(nil, nil)
 
 			// PodResources should be nil when not configured
 			Expect(binder.ResourceReservation.PodResources).To(BeNil())
@@ -64,7 +117,7 @@ var _ = Describe("Binder", func() {
 					PodResources: podResources,
 				},
 			}
-			binder.SetDefaultsWhereNeeded(nil)
+			binder.SetDefaultsWhereNeeded(nil, nil)
 
 			// Configured values should be preserved
 			Expect(binder.ResourceReservation.PodResources).NotTo(BeNil())
@@ -88,7 +141,7 @@ var _ = Describe("Binder", func() {
 					PodResources: podResources,
 				},
 			}
-			binder.SetDefaultsWhereNeeded(nil)
+			binder.SetDefaultsWhereNeeded(nil, nil)
 
 			// Only CPU should be set
 			Expect(binder.ResourceReservation.PodResources).NotTo(BeNil())

@@ -10,15 +10,18 @@ import (
 	"testing"
 	"time"
 
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/spf13/pflag"
 
-	"github.com/NVIDIA/KAI-scheduler/cmd/scheduler/app/options"
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
-	kaiprometheus "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/prometheus"
-	kaiv1qc "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/queue_controller"
-	kaiv1scheduler "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/scheduler"
-	usagedbapi "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/cmd/scheduler/app/options"
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	kaiprometheus "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/prometheus"
+	kaiv1qc "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/queue_controller"
+	kaiv1scheduler "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/scheduler"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	operatorcommon "github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common"
+	usagedbapi "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -134,8 +137,10 @@ func TestDeploymentForShard(t *testing.T) {
 			deploy, ok := deployment.(*appsv1.Deployment)
 			require.True(t, ok, "Expected *appsv1.Deployment")
 
-			assert.Equal(t, deploymentName(tt.config, tt.shard), deploy.Name)
+			assert.Equal(t, DeploymentName(tt.config, tt.shard), deploy.Name)
 			assert.Equal(t, tt.config.Spec.Namespace, deploy.Namespace)
+			assert.Equal(t, operatorcommon.OperatorManagedByLabelValue,
+				deploy.Labels[operatorcommon.OperatorManagedByLabelKey])
 
 			container := deploy.Spec.Template.Spec.Containers[0]
 			args := container.Args
@@ -197,6 +202,104 @@ func TestValidateJobDepthMap(t *testing.T) {
 			err := validateJobDepthMap(tt.shard, innerConfig, tt.actions)
 			if tt.expectError {
 				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestValidateScenarioSearchBudgets(t *testing.T) {
+	tests := []struct {
+		name        string
+		config      *kaiv1.ScenarioSearchBudgets
+		expectError bool
+		errorText   []string
+	}{
+		{
+			name:        "nil config",
+			config:      nil,
+			expectError: false,
+		},
+		{
+			name: "valid config allows defaults for disabled consolidation",
+			config: &kaiv1.ScenarioSearchBudgets{
+				MaxActionSearchDuration: map[string]metav1.Duration{
+					constants.ActionDefault:       scenarioSearchDuration("1s"),
+					constants.ActionReclaim:       scenarioSearchDuration("2s"),
+					constants.ActionPreempt:       scenarioSearchDuration("1s"),
+					constants.ActionConsolidation: scenarioSearchDuration("1s"),
+				},
+				MaxJobSearchDuration: scenarioSearchDurationPtr("250ms"),
+				MinJobSearchDuration: scenarioSearchDurationPtr("0s"),
+				MaxGeneratorSearchDuration: map[string]metav1.Duration{
+					constants.ActionDefault:                scenarioSearchDuration("250ms"),
+					constants.GeneratorNodeLocalGreedy:     scenarioSearchDuration("50ms"),
+					constants.GeneratorMultiNodeGang:       scenarioSearchDuration("250ms"),
+					"PluginProvidedGeneratorFromScheduler": scenarioSearchDuration("1s"),
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "invalid action budget key",
+			config: &kaiv1.ScenarioSearchBudgets{
+				MaxActionSearchDuration: map[string]metav1.Duration{"allocate": scenarioSearchDuration("1s")},
+			},
+			expectError: true,
+			errorText: []string{
+				"maxActionSearchDuration",
+				"allocate",
+				"valid action keys: default, reclaim, preempt, consolidation",
+			},
+		},
+		{
+			name: "negative duration",
+			config: &kaiv1.ScenarioSearchBudgets{
+				MaxGeneratorSearchDuration: map[string]metav1.Duration{
+					constants.GeneratorNodeLocalGreedy: scenarioSearchDuration("-1s"),
+				},
+			},
+			expectError: true,
+		},
+		{
+			name: "min job budget must be less than max job budget",
+			config: &kaiv1.ScenarioSearchBudgets{
+				MaxJobSearchDuration: scenarioSearchDurationPtr("100ms"),
+				MinJobSearchDuration: scenarioSearchDurationPtr("100ms"),
+			},
+			expectError: true,
+		},
+		{
+			name: "zero max job budget disables min max ordering",
+			config: &kaiv1.ScenarioSearchBudgets{
+				MaxJobSearchDuration: scenarioSearchDurationPtr("0s"),
+				MinJobSearchDuration: scenarioSearchDurationPtr("1s"),
+			},
+			expectError: false,
+		},
+		{
+			name: "zero duration map values are valid explicit budgets",
+			config: &kaiv1.ScenarioSearchBudgets{
+				MaxActionSearchDuration: map[string]metav1.Duration{
+					constants.ActionReclaim: scenarioSearchDuration("0s"),
+				},
+				MaxGeneratorSearchDuration: map[string]metav1.Duration{
+					constants.GeneratorNodeLocalGreedy: scenarioSearchDuration("0s"),
+				},
+			},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateScenarioSearchBudgets(tt.config)
+			if tt.expectError {
+				require.Error(t, err)
+				for _, expectedText := range tt.errorText {
+					assert.Contains(t, err.Error(), expectedText)
+				}
 			} else {
 				require.NoError(t, err)
 			}
@@ -273,6 +376,30 @@ func TestBuildArgsList(t *testing.T) {
 				"metrics-namespace": "monitoring",
 			},
 			notExpected: []string{"leader-elect"},
+		},
+		{
+			name: "with json logging",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Global: &kaiv1.GlobalConfig{
+						SchedulerName: ptr.To("test-scheduler"),
+						JSONLog:       ptr.To(true),
+					},
+					Namespace: "kai-system",
+					Scheduler: &kaiv1scheduler.Scheduler{
+						Replicas: ptr.To(int32(1)),
+					},
+				},
+			},
+			shard: &kaiv1.SchedulingShard{
+				Spec: kaiv1.SchedulingShardSpec{},
+			},
+			expected: map[string]string{
+				"scheduler-conf": "config.yaml",
+				"scheduler-name": "test-scheduler",
+				"namespace":      "kai-system",
+				"log-json":       "true",
+			},
 		},
 	}
 
@@ -357,6 +484,8 @@ tiers:
   - name: minruntime
   - name: topology
   - name: snapshot
+  - name: sg-nodelocalgreedy
+  - name: sg-multinodegang
   - name: gpupack
   - name: nodeplacement
     arguments:
@@ -409,6 +538,8 @@ tiers:
   - name: minruntime
   - name: topology
   - name: snapshot
+  - name: sg-nodelocalgreedy
+  - name: sg-multinodegang
   - name: gpuspread
   - name: nodeplacement
     arguments:
@@ -435,6 +566,328 @@ tiers:
 			expectedErr: true,
 		},
 		{
+			name: "scenario search budget configuration",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Scheduler: &kaiv1scheduler.Scheduler{
+						Replicas: ptr.To(int32(1)),
+					},
+				},
+			},
+			shard: &kaiv1.SchedulingShard{
+				Spec: kaiv1.SchedulingShardSpec{
+					PlacementStrategy: &kaiv1.PlacementStrategy{
+						GPU: ptr.To(binpackStrategy),
+						CPU: ptr.To(binpackStrategy),
+					},
+					ScenarioSearchBudgets: &kaiv1.ScenarioSearchBudgets{
+						MaxActionSearchDuration: map[string]metav1.Duration{
+							constants.ActionReclaim: scenarioSearchDuration("3s"),
+						},
+						MaxJobSearchDuration: scenarioSearchDurationPtr("500ms"),
+						MinJobSearchDuration: scenarioSearchDurationPtr("50ms"),
+						MaxGeneratorSearchDuration: map[string]metav1.Duration{
+							constants.GeneratorNodeLocalGreedy: scenarioSearchDuration("75ms"),
+						},
+					},
+				},
+			},
+			expected: map[string]string{
+				"config.yaml": `actions: allocate,consolidation,reclaim,preempt,stalegangeviction
+scenarioSearchBudgets:
+  maxActionSearchDuration:
+    default: 5m
+    reclaim: 3s
+  maxGeneratorSearchDuration:
+    MultiNodeGang: 2m
+    NodeLocalGreedy: 75ms
+    default: 2m
+  maxJobSearchDuration: 500ms
+  minJobSearchDuration: 50ms
+tiers:
+- plugins:
+  - name: predicates
+  - name: proportion
+  - name: priority
+  - name: nodeavailability
+  - name: resourcetype
+  - name: podaffinity
+  - name: elastic
+  - name: kubeflow
+  - name: ray
+  - name: subgrouporder
+  - name: taskorder
+  - name: nominatednode
+  - name: dynamicresources
+  - name: minruntime
+  - name: topology
+  - name: snapshot
+  - name: sg-nodelocalgreedy
+  - name: sg-multinodegang
+  - name: gpupack
+  - name: nodeplacement
+    arguments:
+      cpu: binpack
+      gpu: binpack
+  - name: gpusharingorder`,
+			},
+		},
+		{
+			name: "plugin disable: elastic disabled via override",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Scheduler: &kaiv1scheduler.Scheduler{
+						Replicas: ptr.To(int32(1)),
+					},
+				},
+			},
+			shard: &kaiv1.SchedulingShard{
+				Spec: kaiv1.SchedulingShardSpec{
+					PlacementStrategy: &kaiv1.PlacementStrategy{
+						GPU: ptr.To(binpackStrategy),
+						CPU: ptr.To(binpackStrategy),
+					},
+					Plugins: map[string]kaiv1.PluginConfig{
+						"elastic": {Enabled: ptr.To(false)},
+					},
+				},
+			},
+			expected: map[string]string{
+				"config.yaml": `actions: allocate,consolidation,reclaim,preempt,stalegangeviction
+tiers:
+- plugins:
+  - name: predicates
+  - name: proportion
+  - name: priority
+  - name: nodeavailability
+  - name: resourcetype
+  - name: podaffinity
+  - name: kubeflow
+  - name: ray
+  - name: subgrouporder
+  - name: taskorder
+  - name: nominatednode
+  - name: dynamicresources
+  - name: minruntime
+  - name: topology
+  - name: snapshot
+  - name: sg-nodelocalgreedy
+  - name: sg-multinodegang
+  - name: gpupack
+  - name: nodeplacement
+    arguments:
+      cpu: binpack
+      gpu: binpack
+  - name: gpusharingorder`,
+			},
+		},
+		{
+			name: "action disable: consolidation disabled via override",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Scheduler: &kaiv1scheduler.Scheduler{
+						Replicas: ptr.To(int32(1)),
+					},
+				},
+			},
+			shard: &kaiv1.SchedulingShard{
+				Spec: kaiv1.SchedulingShardSpec{
+					PlacementStrategy: &kaiv1.PlacementStrategy{
+						GPU: ptr.To(binpackStrategy),
+						CPU: ptr.To(binpackStrategy),
+					},
+					Actions: map[string]kaiv1.ActionConfig{
+						"consolidation": {Enabled: ptr.To(false)},
+					},
+				},
+			},
+			expected: map[string]string{
+				"config.yaml": `actions: allocate,reclaim,preempt,stalegangeviction
+tiers:
+- plugins:
+  - name: predicates
+  - name: proportion
+  - name: priority
+  - name: nodeavailability
+  - name: resourcetype
+  - name: podaffinity
+  - name: elastic
+  - name: kubeflow
+  - name: ray
+  - name: subgrouporder
+  - name: taskorder
+  - name: nominatednode
+  - name: dynamicresources
+  - name: minruntime
+  - name: topology
+  - name: snapshot
+  - name: sg-nodelocalgreedy
+  - name: sg-multinodegang
+  - name: gpupack
+  - name: nodeplacement
+    arguments:
+      cpu: binpack
+      gpu: binpack
+  - name: gpusharingorder`,
+			},
+		},
+		{
+			name: "plugin argument override: user kValue overrides spec kValue",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Scheduler: &kaiv1scheduler.Scheduler{
+						Replicas: ptr.To(int32(1)),
+					},
+				},
+			},
+			shard: &kaiv1.SchedulingShard{
+				Spec: kaiv1.SchedulingShardSpec{
+					PlacementStrategy: &kaiv1.PlacementStrategy{
+						GPU: ptr.To(binpackStrategy),
+						CPU: ptr.To(binpackStrategy),
+					},
+					KValue: ptr.To(1.5),
+					Plugins: map[string]kaiv1.PluginConfig{
+						"proportion": {Arguments: map[string]string{"kValue": "3.0"}},
+					},
+				},
+			},
+			expected: map[string]string{
+				"config.yaml": `actions: allocate,consolidation,reclaim,preempt,stalegangeviction
+tiers:
+- plugins:
+  - name: predicates
+  - name: proportion
+    arguments:
+      kValue: "3.0"
+  - name: priority
+  - name: nodeavailability
+  - name: resourcetype
+  - name: podaffinity
+  - name: elastic
+  - name: kubeflow
+  - name: ray
+  - name: subgrouporder
+  - name: taskorder
+  - name: nominatednode
+  - name: dynamicresources
+  - name: minruntime
+  - name: topology
+  - name: snapshot
+  - name: sg-nodelocalgreedy
+  - name: sg-multinodegang
+  - name: gpupack
+  - name: nodeplacement
+    arguments:
+      cpu: binpack
+      gpu: binpack
+  - name: gpusharingorder`,
+			},
+		},
+		{
+			name: "custom plugin: added via override with priority and arguments",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Scheduler: &kaiv1scheduler.Scheduler{
+						Replicas: ptr.To(int32(1)),
+					},
+				},
+			},
+			shard: &kaiv1.SchedulingShard{
+				Spec: kaiv1.SchedulingShardSpec{
+					PlacementStrategy: &kaiv1.PlacementStrategy{
+						GPU: ptr.To(binpackStrategy),
+						CPU: ptr.To(binpackStrategy),
+					},
+					Plugins: map[string]kaiv1.PluginConfig{
+						"myplugin": {Priority: ptr.To(1050), Arguments: map[string]string{"key": "val"}},
+					},
+				},
+			},
+			expected: map[string]string{
+				"config.yaml": `actions: allocate,consolidation,reclaim,preempt,stalegangeviction
+tiers:
+- plugins:
+  - name: predicates
+  - name: proportion
+  - name: priority
+  - name: nodeavailability
+  - name: resourcetype
+  - name: podaffinity
+  - name: elastic
+  - name: kubeflow
+  - name: ray
+  - name: myplugin
+    arguments:
+      key: val
+  - name: subgrouporder
+  - name: taskorder
+  - name: nominatednode
+  - name: dynamicresources
+  - name: minruntime
+  - name: topology
+  - name: snapshot
+  - name: sg-nodelocalgreedy
+  - name: sg-multinodegang
+  - name: gpupack
+  - name: nodeplacement
+    arguments:
+      cpu: binpack
+      gpu: binpack
+  - name: gpusharingorder`,
+			},
+		},
+		{
+			name: "spread nodes with pack devices via plugin override",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Scheduler: &kaiv1scheduler.Scheduler{
+						Replicas: ptr.To(int32(1)),
+					},
+				},
+			},
+			shard: &kaiv1.SchedulingShard{
+				Spec: kaiv1.SchedulingShardSpec{
+					PlacementStrategy: &kaiv1.PlacementStrategy{
+						GPU: ptr.To(spreadStrategy),
+						CPU: ptr.To(binpackStrategy),
+					},
+					Plugins: map[string]kaiv1.PluginConfig{
+						"gpuspread": {Enabled: ptr.To(false)},
+						"gpupack":   {Enabled: ptr.To(true)},
+					},
+				},
+			},
+			expected: map[string]string{
+				"config.yaml": `actions: allocate,reclaim,preempt,stalegangeviction
+tiers:
+- plugins:
+  - name: predicates
+  - name: proportion
+  - name: priority
+  - name: nodeavailability
+  - name: resourcetype
+  - name: podaffinity
+  - name: elastic
+  - name: kubeflow
+  - name: ray
+  - name: subgrouporder
+  - name: taskorder
+  - name: nominatednode
+  - name: dynamicresources
+  - name: minruntime
+  - name: topology
+  - name: snapshot
+  - name: sg-nodelocalgreedy
+  - name: sg-multinodegang
+  - name: gpupack
+  - name: nodeplacement
+    arguments:
+      cpu: binpack
+      gpu: spread`,
+			},
+		},
+		{
 			name: "usage DB configuration",
 			config: &kaiv1.Config{
 				Spec: kaiv1.ConfigSpec{},
@@ -446,7 +899,7 @@ tiers:
 						ConnectionString: "http://prometheus-operated.kai-scheduler.svc.cluster.local:9090",
 						UsageParams: &usagedbapi.UsageParams{
 							HalfLifePeriod: &metav1.Duration{Duration: 10 * time.Minute},
-							WindowSize:     &metav1.Duration{Duration: 10 * time.Minute},
+							WindowSize:     monitoringv1.DurationPointer("10m"),
 							WindowType:     ptr.To(usagedbapi.SlidingWindow),
 						},
 					},
@@ -472,6 +925,8 @@ tiers:
   - name: minruntime
   - name: topology
   - name: snapshot
+  - name: sg-nodelocalgreedy
+  - name: sg-multinodegang
   - name: gpupack
   - name: nodeplacement
     arguments:
@@ -525,6 +980,9 @@ usageDBConfig:
 				// Compare the configuration structs
 				assert.Equal(t, expectedConfig.Tiers, actualConfig.Tiers, "ConfigMap Tiers content mismatch")
 				assert.Equal(t, expectedConfig.QueueDepthPerAction, actualConfig.QueueDepthPerAction, "ConfigMap QueueDepthPerAction content mismatch")
+				if expectedConfig.ScenarioSearchBudgets != nil {
+					assert.Equal(t, expectedConfig.ScenarioSearchBudgets, actualConfig.ScenarioSearchBudgets, "ConfigMap ScenarioSearchBudgets content mismatch")
+				}
 				// Trim and split actions
 				expectedActions := make([]string, 0, len(expectedConfig.Actions))
 				for _, action := range strings.Split(expectedConfig.Actions, ",") {
@@ -541,6 +999,18 @@ usageDBConfig:
 			}
 		})
 	}
+}
+
+func scenarioSearchDuration(value string) metav1.Duration {
+	duration, err := time.ParseDuration(value)
+	if err != nil {
+		panic(err)
+	}
+	return metav1.Duration{Duration: duration}
+}
+
+func scenarioSearchDurationPtr(value string) *metav1.Duration {
+	return ptr.To(scenarioSearchDuration(value))
 }
 
 func TestServiceForShard(t *testing.T) {
@@ -702,6 +1172,8 @@ tiers:
   - name: minruntime
   - name: topology
   - name: snapshot
+  - name: sg-nodelocalgreedy
+  - name: sg-multinodegang
   - name: gpupack
   - name: nodeplacement
     arguments:
@@ -906,7 +1378,7 @@ func TestGetUsageDBConfig(t *testing.T) {
 						ConnectionString: "http://prometheus:9090",
 						UsageParams: &usagedbapi.UsageParams{
 							HalfLifePeriod: &metav1.Duration{Duration: 10 * time.Minute},
-							WindowSize:     &metav1.Duration{Duration: 20 * time.Minute},
+							WindowSize:     monitoringv1.DurationPointer("20m"),
 						},
 					},
 				},
@@ -917,7 +1389,7 @@ func TestGetUsageDBConfig(t *testing.T) {
 				assert.NotNil(t, result)
 				assert.NotNil(t, result.UsageParams)
 				assert.Equal(t, 10*time.Minute, result.UsageParams.HalfLifePeriod.Duration)
-				assert.Equal(t, 20*time.Minute, result.UsageParams.WindowSize.Duration)
+				assert.Equal(t, monitoringv1.Duration("20m"), *result.UsageParams.WindowSize)
 				assert.Equal(t, "http://prometheus:9090", result.ConnectionString)
 			},
 		},

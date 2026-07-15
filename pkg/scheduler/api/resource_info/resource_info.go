@@ -26,9 +26,9 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info/resources"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_internal"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info/resources"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 )
 
 type Resource struct {
@@ -53,6 +53,9 @@ func NewResource(milliCPU float64, memory float64, gpus float64) *Resource {
 func ResourceFromResourceList(rList v1.ResourceList) *Resource {
 	r := EmptyResource()
 	for rName, rQuant := range rList {
+		if rQuant.IsZero() {
+			continue
+		}
 		switch rName {
 		case v1.ResourceCPU:
 			r.milliCpu += float64(rQuant.MilliValue())
@@ -60,6 +63,8 @@ func ResourceFromResourceList(rList v1.ResourceList) *Resource {
 			r.memory += float64(rQuant.Value())
 		case GPUResourceName, amdGpuResourceName:
 			r.gpus += float64(rQuant.Value())
+		case v1.ResourcePods:
+			r.scalarResources[rName] += rQuant.Value()
 		default:
 			if IsMigResource(rName) {
 				r.scalarResources[rName] += rQuant.Value()
@@ -150,6 +155,26 @@ func (r *Resource) AddResourceRequirements(req *ResourceRequirements) {
 	}
 }
 
+func (r *Resource) AddVectorAndGpuReq(vec ResourceVector, vectorMap *ResourceVectorMap, gpuReq *GpuResourceRequirement) {
+	r.milliCpu += vec.Get(CPUIndex)
+	r.memory += vec.Get(MemoryIndex)
+	r.gpus += gpuReq.GPUs()
+
+	for i := 0; i < vectorMap.Len(); i++ {
+		if i == CPUIndex || i == MemoryIndex || i == GPUIndex {
+			continue
+		}
+		val := vec.Get(i)
+		if val != 0 {
+			rName := v1.ResourceName(vectorMap.ResourceAt(i))
+			r.BaseResource.scalarResources[rName] += int64(val)
+		}
+	}
+	for migProfile, migCount := range gpuReq.MigResources() {
+		r.BaseResource.scalarResources[migProfile] += migCount
+	}
+}
+
 func (r *Resource) SubResourceRequirements(req *ResourceRequirements) {
 	r.BaseResource.Sub(&req.BaseResource)
 	r.gpus -= req.GPUs()
@@ -157,6 +182,26 @@ func (r *Resource) SubResourceRequirements(req *ResourceRequirements) {
 		r.gpus -= float64(rQuant)
 	}
 	for migProfile, migCount := range req.MigResources() {
+		r.BaseResource.scalarResources[migProfile] -= migCount
+	}
+}
+
+func (r *Resource) SubVectorAndGpuReq(vec ResourceVector, vectorMap *ResourceVectorMap, gpuReq *GpuResourceRequirement) {
+	r.milliCpu -= vec.Get(CPUIndex)
+	r.memory -= vec.Get(MemoryIndex)
+	r.gpus -= gpuReq.GPUs()
+
+	for i := 0; i < vectorMap.Len(); i++ {
+		if i == CPUIndex || i == MemoryIndex || i == GPUIndex {
+			continue
+		}
+		val := vec.Get(i)
+		if val != 0 {
+			rName := v1.ResourceName(vectorMap.ResourceAt(i))
+			r.BaseResource.scalarResources[rName] -= int64(val)
+		}
+	}
+	for migProfile, migCount := range gpuReq.MigResources() {
 		r.BaseResource.scalarResources[migProfile] -= migCount
 	}
 }

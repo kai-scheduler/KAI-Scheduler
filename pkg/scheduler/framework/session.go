@@ -22,30 +22,49 @@ package framework
 import (
 	"fmt"
 	"net/http"
+	"runtime"
 	"sort"
 	"sync"
 	"time"
 
+	"github.com/panjf2000/ants/v2"
 	"k8s.io/apimachinery/pkg/types"
 	ksf "k8s.io/kube-scheduler/framework"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/eviction_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_internal"
-	k8splugins "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_internal/plugins"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/metrics"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/scheduler_util"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal"
+	k8splugins "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal/plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/scheduler_util"
 )
 
 var server *PluginServer
+
+type ScenarioGeneratorContext interface {
+	Action() ActionType
+}
+
+type ScenarioGenerator interface {
+	Name() string
+	Next() api.ScenarioInfo
+}
+
+type ScenarioGeneratorFactory func(ctx ScenarioGeneratorContext) ScenarioGenerator
+
+type ScenarioGeneratorRegistration struct {
+	Name    string
+	Factory ScenarioGeneratorFactory
+}
 
 type Session struct {
 	ID    string
@@ -57,8 +76,7 @@ type Session struct {
 	NodePreOrderFns                       []api.NodePreOrderFn
 	NodeOrderFns                          []api.NodeOrderFn
 	JobOrderFns                           []common_info.CompareFn
-	PodSetOrderFns                        []common_info.CompareFn
-	SubGroupSetOrderFns                   []common_info.CompareFn
+	SubGroupOrderFns                      []common_info.CompareFn
 	TaskOrderFns                          []common_info.CompareFn
 	QueueOrderFns                         []api.CompareQueueFn
 	CanReclaimResourcesFns                []api.CanReclaimResourcesFn
@@ -75,9 +93,12 @@ type Session struct {
 	IsTaskAllocationOnNodeOverCapacityFns []api.IsTaskAllocationOverCapacityFn
 	SubsetNodesFns                        []api.SubsetNodesFn
 	PrePredicateFns                       []api.PrePredicateFn
+	VictimInvariantPrePredicateFns        []api.VictimInvariantPrePredicateFn
 	PredicateFns                          []api.PredicateFn
 	BindRequestMutateFns                  []api.BindRequestMutateFn
+	NumaPlacementFn                       api.NumaPlacementFn
 	PreJobAllocationFns                   []api.PreJobAllocationFn
+	ScenarioGeneratorRegistrations        []ScenarioGeneratorRegistration
 
 	Config          *conf.SchedulerConfiguration
 	plugins         map[string]Plugin
@@ -85,7 +106,9 @@ type Session struct {
 	SchedulerParams conf.SchedulerParams
 	mux             *http.ServeMux
 
-	k8sResourceStateCache sync.Map
+	k8sResourceStateCache  sync.Map
+	nodeScoringPool        *ants.Pool
+	scoringPoolWorkerCount int
 }
 
 func (ssn *Session) Statement() *Statement {
@@ -109,7 +132,8 @@ func (ssn *Session) GetNodes() []ksf.NodeInfo {
 
 func (ssn *Session) BindPod(pod *pod_info.PodInfo) error {
 	bindRequestAnnotations := ssn.MutateBindRequestAnnotations(pod, pod.NodeName)
-	if err := ssn.Cache.Bind(pod, pod.NodeName, bindRequestAnnotations); err != nil {
+	predictedNUMAZones := numaPlacementToZones(pod, ssn.ClusterInfo.Nodes[pod.NodeName])
+	if err := ssn.Cache.Bind(pod, pod.NodeName, bindRequestAnnotations, predictedNUMAZones); err != nil {
 		return err
 	}
 
@@ -169,12 +193,14 @@ func (ssn *Session) FittingGPUs(node *node_info.NodeInfo, pod *pod_info.PodInfo)
 func filterGpusByEnoughResources(node *node_info.NodeInfo, pod *pod_info.PodInfo) []string {
 	filteredGPUs := []string{}
 	for gpuIdx := range node.UsedSharedGPUsMemory {
-		if node.IsTaskFitOnGpuGroup(pod.ResReq, gpuIdx) {
+		if node.IsTaskFitOnGpuGroup(&pod.GpuRequirement, gpuIdx) {
 			filteredGPUs = append(filteredGPUs, gpuIdx)
 		}
 	}
-	if node.Idle.GPUs() > 0 || node.Releasing.GPUs() > 0 {
-		for range int(node.Idle.GPUs()) + int(node.Releasing.GPUs()) {
+	idleGPUs := node.IdleVector.Get(resource_info.GPUIndex)
+	releasingGPUs := node.ReleasingVector.Get(resource_info.GPUIndex)
+	if idleGPUs > 0 || releasingGPUs > 0 {
+		for range int(idleGPUs) + int(releasingGPUs) {
 			filteredGPUs = append(filteredGPUs, pod_info.WholeGpuIndicator)
 		}
 	}
@@ -206,7 +232,7 @@ func (ssn *Session) FittingNode(task *pod_info.PodInfo, node *node_info.NodeInfo
 	job := ssn.ClusterInfo.PodGroupInfos[task.Job]
 
 	log.InfraLogger.V(6).Infof("Checking if task <%v/%v> is allocatable on node <%v>: <%v> vs. <%v>",
-		task.Namespace, task.Name, node.Name, task.ResReq, node.Idle)
+		task.Namespace, task.Name, node.Name, task.ResReqVector, node.IdleVector)
 	allocatable, fitError := ssn.isTaskAllocatableOnNode(task, job, node, writeFittingDelta)
 	if !allocatable {
 		if fitError != nil && writeFittingDelta {
@@ -230,36 +256,69 @@ func (ssn *Session) FittingNode(task *pod_info.PodInfo, node *node_info.NodeInfo
 	return true
 }
 
+// OrderedNodesByTask scores nodes for a task and returns them in order of their scores
+// The function is parallelized using multiple workers to speed up the scoring process
 func (ssn *Session) OrderedNodesByTask(nodes []*node_info.NodeInfo, task *pod_info.PodInfo) []*node_info.NodeInfo {
-	var (
-		nodeScores = make(map[float64][]*node_info.NodeInfo)
-		mutex      sync.Mutex
-		wg         sync.WaitGroup
-	)
-
 	ssn.NodePreOrderFn(task, nodes)
 
-	for _, node := range nodes {
-		wg.Add(1)
-		go func(node *node_info.NodeInfo) {
-			defer wg.Done()
-			score, err := ssn.NodeOrderFn(task, node)
-			if err != nil {
-				log.InfraLogger.Errorf("Error in Calculating Priority for the node:%v", err)
-				return
-			}
+	numWorkersToUseInParallel := max(min(ssn.scoringPoolWorkerCount, len(nodes)), 1)
+	workerLocalScores := make([]map[float64][]*node_info.NodeInfo, numWorkersToUseInParallel)
 
-			mutex.Lock()
-			nodeScores[score] = append(nodeScores[score], node)
-			mutex.Unlock()
-
-			log.InfraLogger.V(5).Infof("Overall priority node score of node <%v> for task <%v/%v> is: %f",
-				node.Name, task.Namespace, task.Name, score)
-		}(node)
+	var wg sync.WaitGroup
+	chunkSize := (len(nodes) + numWorkersToUseInParallel - 1) / numWorkersToUseInParallel
+	scoreChunk := func(idx int) {
+		workerNodes := ssn.getWorkerNodes(nodes, idx, chunkSize)
+		if workerNodes == nil {
+			return
+		}
+		workerLocalScores[idx] = ssn.scoreNodes(workerNodes, task)
 	}
-
+	for workerIdx := range numWorkersToUseInParallel {
+		wg.Add(1)
+		idx := workerIdx
+		err := ssn.nodeScoringPool.Submit(func() {
+			defer wg.Done()
+			scoreChunk(idx)
+		})
+		if err != nil {
+			defer wg.Done()
+			log.InfraLogger.Errorf("Failed to submit node scoring task, running sequentially: %v", err)
+			scoreChunk(idx)
+		}
+	}
 	wg.Wait()
+
+	nodeScores := workerLocalScores[0]
+	for _, m := range workerLocalScores[1:] {
+		for score, ns := range m {
+			nodeScores[score] = append(nodeScores[score], ns...)
+		}
+	}
 	return sortNodesByScore(nodeScores)
+}
+
+func (ssn *Session) getWorkerNodes(nodes []*node_info.NodeInfo, workerIdx int, chunkSize int) []*node_info.NodeInfo {
+	start := workerIdx * chunkSize
+	end := min(start+chunkSize, len(nodes))
+	if start >= end {
+		return nil
+	}
+	return nodes[start:end]
+}
+
+func (ssn *Session) scoreNodes(nodes []*node_info.NodeInfo, task *pod_info.PodInfo) map[float64][]*node_info.NodeInfo {
+	workerScores := make(map[float64][]*node_info.NodeInfo)
+	for _, node := range nodes {
+		score, err := ssn.NodeOrderFn(task, node)
+		if err != nil {
+			log.InfraLogger.Errorf("Error in Calculating Priority for the node:%v", err)
+			continue
+		}
+		workerScores[score] = append(workerScores[score], node)
+		log.InfraLogger.V(5).Infof("Overall priority node score of node <%v> for task <%v/%v> is: %f",
+			node.Name, task.Namespace, task.Name, score)
+	}
+	return workerScores
 }
 
 func (ssn *Session) isTaskAllocatableOnNode(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo,
@@ -271,7 +330,7 @@ func (ssn *Session) isTaskAllocatableOnNode(task *pod_info.PodInfo, job *podgrou
 		allocatable = false
 		log.InfraLogger.V(6).Infof("Not enough resources for task: <%s/%s>, init requested: <%v>. "+
 			"Node <%s> with limited resources, releasing: <%v>, idle: <%v>",
-			task.Namespace, task.Name, task.ResReq, node.Name, node.Releasing, node.Idle)
+			task.Namespace, task.Name, task.ResReqVector, node.Name, node.ReleasingVector, node.IdleVector)
 		if writeFittingDelta {
 			if taskAllocatable := node.IsTaskAllocatable(task); !taskAllocatable {
 				fitError = node.FittingError(task, len(job.GetAllPodsMap()) > 1)
@@ -327,14 +386,56 @@ func (ssn *Session) updatePodOnSession(pod *pod_info.PodInfo, status pod_status.
 }
 
 func (ssn *Session) clear() {
-	ssn.ClusterInfo.PodGroupInfos = nil
-	ssn.ClusterInfo.Nodes = nil
+	ssn.ClusterInfo = nil
 	ssn.plugins = nil
 	ssn.eventHandlers = nil
-	ssn.TaskOrderFns = nil
-	ssn.PodSetOrderFns = nil
-	ssn.SubGroupSetOrderFns = nil
+	ssn.GpuOrderFns = nil
+	ssn.NodePreOrderFns = nil
+	ssn.NodeOrderFns = nil
 	ssn.JobOrderFns = nil
+	ssn.SubGroupOrderFns = nil
+	ssn.TaskOrderFns = nil
+	ssn.QueueOrderFns = nil
+	ssn.CanReclaimResourcesFns = nil
+	ssn.ReclaimVictimFilterFns = nil
+	ssn.PreemptVictimFilterFns = nil
+	ssn.ReclaimScenarioValidatorFns = nil
+	ssn.PreemptScenarioValidatorFns = nil
+	ssn.OnJobSolutionStartFns = nil
+	ssn.GetQueueAllocatedResourcesFns = nil
+	ssn.GetQueueDeservedResourcesFns = nil
+	ssn.GetQueueFairShareFns = nil
+	ssn.IsNonPreemptibleJobOverQueueQuotaFns = nil
+	ssn.IsJobOverCapacityFns = nil
+	ssn.IsTaskAllocationOnNodeOverCapacityFns = nil
+	ssn.SubsetNodesFns = nil
+	ssn.PrePredicateFns = nil
+	ssn.VictimInvariantPrePredicateFns = nil
+	ssn.PredicateFns = nil
+	ssn.BindRequestMutateFns = nil
+	ssn.NumaPlacementFn = nil
+	ssn.PreJobAllocationFns = nil
+	ssn.Config = nil
+	ssn.k8sResourceStateCache = sync.Map{}
+}
+
+func (ssn *Session) releaseNodeScoringPool() {
+	if ssn.nodeScoringPool != nil {
+		ssn.nodeScoringPool.Release()
+		ssn.nodeScoringPool = nil
+	}
+	ssn.scoringPoolWorkerCount = 0
+}
+
+func (ssn *Session) InitNodeScoringPool() error {
+	numWorkers := max(runtime.GOMAXPROCS(0), 1)
+	pool, err := ants.NewPool(numWorkers)
+	if err != nil {
+		return fmt.Errorf("failed to create node scoring pool: %w", err)
+	}
+	ssn.nodeScoringPool = pool
+	ssn.scoringPoolWorkerCount = numWorkers
+	return nil
 }
 
 func openSession(cache cache.Cache, sessionId string, schedulerParams conf.SchedulerParams, mux *http.ServeMux) (*Session, error) {
@@ -350,9 +451,14 @@ func openSession(cache cache.Cache, sessionId string, schedulerParams conf.Sched
 		k8sResourceStateCache: sync.Map{},
 	}
 
+	if err := ssn.InitNodeScoringPool(); err != nil {
+		return nil, err
+	}
+
 	log.InfraLogger.V(2).Infof("Taking cluster snapshot ...")
 	snapshot, err := cache.Snapshot()
 	if err != nil {
+		ssn.releaseNodeScoringPool()
 		return nil, err
 	}
 
@@ -375,6 +481,7 @@ func closeSession(ssn *Session) {
 		}
 	}
 
+	ssn.releaseNodeScoringPool()
 	ssn.clear()
 	stopCh := make(chan struct{})
 	ssn.Cache.WaitForWorkers(stopCh)
@@ -451,6 +558,15 @@ func (ssn *Session) OverrideSchedulerName(name string) {
 
 func (ssn *Session) InternalK8sPlugins() *k8splugins.K8sPlugins {
 	return ssn.Cache.InternalK8sPlugins()
+}
+
+// ResourceVectorMap returns the shared vector index map for this scheduling cycle.
+// All vectors created during this cycle use the same map for consistent indexing.
+func (ssn *Session) ResourceVectorMap() *resource_info.ResourceVectorMap {
+	if ssn.ClusterInfo == nil {
+		return resource_info.NewResourceVectorMap()
+	}
+	return ssn.ClusterInfo.ResourceVectorMap
 }
 
 func sortNodesByScore(nodeScores map[float64][]*node_info.NodeInfo) []*node_info.NodeInfo {

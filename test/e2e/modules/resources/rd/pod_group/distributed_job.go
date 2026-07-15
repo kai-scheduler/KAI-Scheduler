@@ -10,13 +10,14 @@ import (
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/utils/ptr"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	v2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/queue"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/utils"
+	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/utils"
 )
 
 func CreateDistributedJob(
@@ -35,7 +36,7 @@ func CreatePrefixedDistributedJob(
 	podGroup := Create(
 		queue.GetConnectedNamespaceToQueue(ownerQueue), "distributed-pod-group"+utils.GenerateRandomK8sName(10), ownerQueue.Name)
 	podGroup.Spec.PriorityClassName = priorityClassName
-	podGroup.Spec.MinMember = int32(count)
+	podGroup.Spec.MinMember = ptr.To(int32(count))
 
 	pods := []*v1.Pod{}
 

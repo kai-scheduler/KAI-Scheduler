@@ -17,16 +17,67 @@ limitations under the License.
 package v1
 
 import (
+	"strconv"
+	"time"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1/common"
-	usagedbapi "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	usagedbapi "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
 )
 
 const (
 	binpackStrategy = "binpack"
+	spreadStrategy  = "spread"
 )
+
+// PluginConfig allows overriding plugin settings in the scheduler configuration.
+type PluginConfig struct {
+	// Enabled controls whether this plugin is active. Defaults to true.
+	// +kubebuilder:validation:Optional
+	Enabled *bool `json:"enabled,omitempty"`
+
+	// Priority controls the ordering of this plugin. Higher values run first.
+	// Built-in plugins use priorities in the range 0-10000, spaced by 100.
+	// +kubebuilder:validation:Optional
+	Priority *int `json:"priority,omitempty"`
+
+	// Arguments are key-value pairs passed to the plugin. When specified, they fully replace
+	// the default arguments for the plugin.
+	// +kubebuilder:validation:Optional
+	Arguments map[string]string `json:"arguments,omitempty"`
+}
+
+// ActionConfig allows overriding action settings in the scheduler configuration.
+type ActionConfig struct {
+	// Enabled controls whether this action is active. Defaults to true.
+	// +kubebuilder:validation:Optional
+	Enabled *bool `json:"enabled,omitempty"`
+
+	// Priority controls the ordering of this action. Higher values run first.
+	// Built-in actions use priorities in the range 0-10000, spaced by 100.
+	// +kubebuilder:validation:Optional
+	Priority *int `json:"priority,omitempty"`
+}
+
+type ScenarioSearchBudgets struct {
+	// MaxActionSearchDuration limits total scenario search time per scheduler action.
+	// Keys are action names, with "default" used as the fallback budget.
+	MaxActionSearchDuration map[string]metav1.Duration `json:"maxActionSearchDuration,omitempty"`
+
+	// MaxJobSearchDuration limits total scenario search time per pending job.
+	MaxJobSearchDuration *metav1.Duration `json:"maxJobSearchDuration,omitempty"`
+
+	// MinJobSearchDuration guarantees each pending job this much scenario search time
+	// before action and generator budgets can stop the job's search.
+	MinJobSearchDuration *metav1.Duration `json:"minJobSearchDuration,omitempty"`
+
+	// MaxGeneratorSearchDuration limits scenario search time per generator attempt.
+	// Keys are generator names, with "default" used as the fallback budget.
+	MaxGeneratorSearchDuration map[string]metav1.Duration `json:"maxGeneratorSearchDuration,omitempty"`
+}
 
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
@@ -67,11 +118,202 @@ type SchedulingShardSpec struct {
 	// UsageDBConfig defines configuration for the usage db client
 	// +kubebuilder:validation:Optional
 	UsageDBConfig *usagedbapi.UsageDBConfig `yaml:"usageDBConfig,omitempty" json:"usageDBConfig,omitempty"`
+
+	// ScenarioSearchBudgets configures alpha/experimental time budgets for scenario search.
+	// +kubebuilder:validation:Optional
+	ScenarioSearchBudgets *ScenarioSearchBudgets `json:"scenarioSearchBudgets,omitempty"`
+
+	// Plugins allows overriding plugin configuration. Keys are plugin names.
+	// Built-in plugins can be disabled, reordered, or have their arguments changed.
+	// New plugins can be added by specifying a name not in the default set.
+	// Default plugins and their priorities (higher runs first):
+	// predicates=1900, proportion=1800, priority=1700, nodeavailability=1600,
+	// resourcetype=1500, podaffinity=1400, elastic=1300, kubeflow=1200,
+	// ray=1100, subgrouporder=1000, taskorder=900, nominatednode=800,
+	// dynamicresources=700, minruntime=600, topology=500, snapshot=400,
+	// sg-nodelocalgreedy=360, sg-multinodegang=350, gpupack/gpuspread=300,
+	// nodeplacement=200, gpusharingorder=100.
+	// +kubebuilder:validation:Optional
+	Plugins map[string]PluginConfig `json:"plugins,omitempty"`
+
+	// Actions allows overriding action configuration. Keys are action names.
+	// Built-in actions can be disabled or reordered.
+	// New actions can be added by specifying a name not in the default set.
+	// Default actions and their priorities (higher runs first):
+	// allocate=500, consolidation=400, reclaim=300, preempt=200, stalegangeviction=100.
+	// +kubebuilder:validation:Optional
+	Actions map[string]ActionConfig `json:"actions,omitempty"`
 }
 
 func (s *SchedulingShardSpec) SetDefaultsWhereNeeded() {
 	s.PlacementStrategy = common.SetDefault(s.PlacementStrategy, &PlacementStrategy{})
 	s.PlacementStrategy.SetDefaultWhereNeeded()
+
+	s.setDefaultPlugins()
+	s.setDefaultActions()
+	s.ScenarioSearchBudgets = DefaultScenarioSearchBudgets(s.ScenarioSearchBudgets)
+}
+
+func DefaultScenarioSearchBudgets(config *ScenarioSearchBudgets) *ScenarioSearchBudgets {
+	if config == nil {
+		config = &ScenarioSearchBudgets{}
+	}
+	if config.MaxActionSearchDuration == nil {
+		config.MaxActionSearchDuration = map[string]metav1.Duration{}
+	}
+	if _, found := config.MaxActionSearchDuration[constants.ActionDefault]; !found {
+		config.MaxActionSearchDuration[constants.ActionDefault] = mustParseScenarioSearchDuration(constants.DefaultActionBudget)
+	}
+	if config.MaxJobSearchDuration == nil {
+		config.MaxJobSearchDuration = ptr.To(mustParseScenarioSearchDuration(constants.DefaultJobBudget))
+	}
+	if config.MinJobSearchDuration == nil {
+		config.MinJobSearchDuration = ptr.To(mustParseScenarioSearchDuration(constants.DefaultMinJobBudget))
+	}
+	if config.MaxGeneratorSearchDuration == nil {
+		config.MaxGeneratorSearchDuration = map[string]metav1.Duration{}
+	}
+	if _, found := config.MaxGeneratorSearchDuration[constants.ActionDefault]; !found {
+		config.MaxGeneratorSearchDuration[constants.ActionDefault] = mustParseScenarioSearchDuration(constants.DefaultGeneratorBudget)
+	}
+	if _, found := config.MaxGeneratorSearchDuration[constants.GeneratorNodeLocalGreedy]; !found {
+		config.MaxGeneratorSearchDuration[constants.GeneratorNodeLocalGreedy] = mustParseScenarioSearchDuration(constants.DefaultNodeLocalGreedy)
+	}
+	if _, found := config.MaxGeneratorSearchDuration[constants.GeneratorMultiNodeGang]; !found {
+		config.MaxGeneratorSearchDuration[constants.GeneratorMultiNodeGang] = mustParseScenarioSearchDuration(constants.DefaultMultiNodeGang)
+	}
+	return config
+}
+
+func mustParseScenarioSearchDuration(value string) metav1.Duration {
+	duration, err := time.ParseDuration(value)
+	if err != nil {
+		panic(err)
+	}
+	return metav1.Duration{Duration: duration}
+}
+
+// Default priorities preserve the current hardcoded ordering.
+// Higher priority = runs first. Spaced by 100.
+var defaultPluginPriorities = map[string]int{
+	"predicates":         1900,
+	"proportion":         1800,
+	"priority":           1700,
+	"nodeavailability":   1600,
+	"resourcetype":       1500,
+	"podaffinity":        1400,
+	"elastic":            1300,
+	"kubeflow":           1200,
+	"ray":                1100,
+	"subgrouporder":      1000,
+	"taskorder":          900,
+	"nominatednode":      800,
+	"dynamicresources":   700,
+	"minruntime":         600,
+	"topology":           500,
+	"snapshot":           400,
+	"sg-nodelocalgreedy": 360,
+	"sg-multinodegang":   350,
+	"gpupack":            300,
+	"gpuspread":          300,
+	"nodeplacement":      200,
+	"gpusharingorder":    100,
+}
+
+var defaultActionPriorities = map[string]int{
+	"allocate":          500,
+	"consolidation":     400,
+	"reclaim":           300,
+	"preempt":           200,
+	"stalegangeviction": 100,
+}
+
+func (s *SchedulingShardSpec) setDefaultPlugins() {
+	defaults := make(map[string]PluginConfig)
+
+	for pName, pPriority := range defaultPluginPriorities {
+		defaults[pName] = PluginConfig{
+			Enabled:   ptr.To(true),
+			Priority:  ptr.To(pPriority),
+			Arguments: make(map[string]string),
+		}
+	}
+
+	isGpuBinpackStrategy := *s.PlacementStrategy.GPU == binpackStrategy
+	updateMap(defaults, "gpusharingorder", func(o *PluginConfig) { o.Enabled = ptr.To(isGpuBinpackStrategy) })
+	updateMap(defaults, "gpupack", func(o *PluginConfig) { o.Enabled = ptr.To(isGpuBinpackStrategy) })
+	updateMap(defaults, "gpuspread", func(o *PluginConfig) { o.Enabled = ptr.To(!isGpuBinpackStrategy) })
+
+	if s.KValue != nil {
+		defaults["proportion"].Arguments["kValue"] = strconv.FormatFloat(*s.KValue, 'f', -1, 64)
+	}
+
+	if s.MinRuntime != nil {
+		if s.MinRuntime.PreemptMinRuntime != nil {
+			defaults["minruntime"].Arguments["defaultPreemptMinRuntime"] = *s.MinRuntime.PreemptMinRuntime
+		}
+		if s.MinRuntime.ReclaimMinRuntime != nil {
+			defaults["minruntime"].Arguments["defaultReclaimMinRuntime"] = *s.MinRuntime.ReclaimMinRuntime
+		}
+	}
+
+	defaults["nodeplacement"].Arguments["gpu"] = *s.PlacementStrategy.GPU
+	defaults["nodeplacement"].Arguments["cpu"] = *s.PlacementStrategy.CPU
+
+	// Merge user overrides
+	for name, override := range s.Plugins {
+		existing, found := defaults[name]
+		if !found {
+			existing = PluginConfig{Enabled: ptr.To(true), Priority: ptr.To(0)}
+		}
+		if override.Enabled != nil {
+			existing.Enabled = override.Enabled
+		}
+		if override.Priority != nil {
+			existing.Priority = override.Priority
+		}
+		if override.Arguments != nil {
+			existing.Arguments = override.Arguments
+		}
+		defaults[name] = existing
+	}
+
+	s.Plugins = defaults
+}
+
+func (s *SchedulingShardSpec) setDefaultActions() {
+	defaults := make(map[string]ActionConfig)
+
+	for aName, aPriority := range defaultActionPriorities {
+		defaults[aName] = ActionConfig{
+			Enabled:  ptr.To(true),
+			Priority: ptr.To(aPriority),
+		}
+	}
+
+	isConsolidationEnabled := *s.PlacementStrategy.GPU != spreadStrategy && *s.PlacementStrategy.CPU != spreadStrategy
+	updateMap(defaults, "consolidation", func(o *ActionConfig) { o.Enabled = ptr.To(isConsolidationEnabled) })
+
+	// Merge user overrides
+	for name, override := range s.Actions {
+		existing, found := defaults[name]
+		if !found {
+			// New action: default priority 0, enabled true
+			existing = ActionConfig{
+				Enabled:  ptr.To(true),
+				Priority: ptr.To(0),
+			}
+		}
+		if override.Enabled != nil {
+			existing.Enabled = override.Enabled
+		}
+		if override.Priority != nil {
+			existing.Priority = override.Priority
+		}
+		defaults[name] = existing
+	}
+
+	s.Actions = defaults
 }
 
 type MinRuntime struct {

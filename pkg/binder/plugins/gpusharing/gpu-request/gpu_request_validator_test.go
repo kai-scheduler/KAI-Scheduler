@@ -11,7 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
 func TestValidateGpuRequests(t *testing.T) {
@@ -54,7 +54,7 @@ func TestValidateGpuRequests(t *testing.T) {
 						{
 							Resources: v1.ResourceRequirements{
 								Limits: v1.ResourceList{
-									constants.GpuResource: resource.MustParse("1"),
+									constants.NvidiaGpuResource: resource.MustParse("1"),
 								},
 							},
 						},
@@ -113,7 +113,7 @@ func TestValidateGpuRequests(t *testing.T) {
 						{
 							Resources: v1.ResourceRequirements{
 								Limits: v1.ResourceList{
-									constants.GpuResource: *resource.NewMilliQuantity(2, resource.DecimalSI),
+									constants.NvidiaGpuResource: *resource.NewMilliQuantity(2, resource.DecimalSI),
 								},
 							},
 						},
@@ -151,7 +151,7 @@ func TestValidateGpuRequests(t *testing.T) {
 						{
 							Resources: v1.ResourceRequirements{
 								Limits: v1.ResourceList{
-									constants.GpuResource: resource.MustParse("2"),
+									constants.NvidiaGpuResource: resource.MustParse("2"),
 								},
 							},
 						},
@@ -171,7 +171,7 @@ func TestValidateGpuRequests(t *testing.T) {
 						{
 							Resources: v1.ResourceRequirements{
 								Limits: v1.ResourceList{
-									constants.GpuResource: *resource.NewMilliQuantity(2000, resource.DecimalSI),
+									constants.NvidiaGpuResource: *resource.NewMilliQuantity(2000, resource.DecimalSI),
 								},
 							},
 						},
@@ -210,14 +210,14 @@ func TestValidateGpuRequests(t *testing.T) {
 						{
 							Resources: v1.ResourceRequirements{
 								Limits: v1.ResourceList{
-									constants.GpuResource: resource.MustParse("1"),
+									constants.NvidiaGpuResource: resource.MustParse("1"),
 								},
 							},
 						},
 						{
 							Resources: v1.ResourceRequirements{
 								Limits: v1.ResourceList{
-									constants.GpuResource: resource.MustParse("2"),
+									constants.NvidiaGpuResource: resource.MustParse("2"),
 								},
 							},
 						},
@@ -239,7 +239,7 @@ func TestValidateGpuRequests(t *testing.T) {
 						{
 							Resources: v1.ResourceRequirements{
 								Limits: v1.ResourceList{
-									constants.GpuResource: *resource.NewMilliQuantity(1, resource.DecimalSI),
+									constants.NvidiaGpuResource: *resource.NewMilliQuantity(1, resource.DecimalSI),
 								},
 							},
 						},
@@ -266,7 +266,7 @@ func TestValidateGpuRequests(t *testing.T) {
 							Name: "SneakyGPUContainer",
 							Resources: v1.ResourceRequirements{
 								Limits: v1.ResourceList{
-									constants.GpuResource: *resource.NewMilliQuantity(1, resource.DecimalSI),
+									constants.NvidiaGpuResource: *resource.NewMilliQuantity(1, resource.DecimalSI),
 								},
 							},
 						},
@@ -405,6 +405,60 @@ func TestValidateGpuRequests(t *testing.T) {
 				},
 			},
 			error: nil,
+		},
+		{
+			name: "Block NaN fraction value",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						constants.GpuFraction: "NaN",
+					},
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Resources: v1.ResourceRequirements{},
+						},
+					},
+				},
+			},
+			error: fmt.Errorf("gpu-fraction annotation value must be a float written with a decimal point or a scientific notation .given value: NaN"),
+		},
+		{
+			name: "Allow Scientific notation fraction value",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						constants.GpuFraction: "1.2e-10",
+					},
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Resources: v1.ResourceRequirements{},
+						},
+					},
+				},
+			},
+			error: nil,
+		},
+		{
+			name: "Block hex float fraction value",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						constants.GpuFraction: "0x1p-1",
+					},
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Resources: v1.ResourceRequirements{},
+						},
+					},
+				},
+			},
+			error: fmt.Errorf("gpu-fraction annotation value must be a float written with a decimal point or a scientific notation .given value: 0x1p-1"),
 		},
 	}
 

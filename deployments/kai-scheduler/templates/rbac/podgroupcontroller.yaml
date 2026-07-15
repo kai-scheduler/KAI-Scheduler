@@ -13,17 +13,7 @@ rules:
 - apiGroups:
   - ""
   resources:
-  - nodes
-  - pods
-  - pods/status
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - coordination.k8s.io
-  resources:
-  - leases
+  - configmaps
   verbs:
   - create
   - delete
@@ -35,7 +25,17 @@ rules:
 - apiGroups:
   - ""
   resources:
-  - configmaps
+  - nodes
+  - pods
+  - pods/status
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
   verbs:
   - create
   - delete

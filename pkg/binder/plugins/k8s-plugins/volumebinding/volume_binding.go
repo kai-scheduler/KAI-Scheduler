@@ -15,8 +15,8 @@ import (
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/volumebinding"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	plugins "github.com/NVIDIA/KAI-scheduler/pkg/binder/plugins/k8s-plugins/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	plugins "github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/k8s-plugins/common"
 )
 
 type volumeBindingPlugin struct {
@@ -24,7 +24,7 @@ type volumeBindingPlugin struct {
 }
 
 func NewVolumeBindingPlugin(
-	k8sFramework k8sframework.Handle,
+	k8sFramework ksf.Handle,
 	features *k8splfeature.Features,
 	bindTimeoutSeconds int64,
 ) (plugins.K8sPlugin, error) {

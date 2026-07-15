@@ -21,23 +21,27 @@ package predicates
 
 import (
 	"fmt"
+	"slices"
+	"strconv"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/util/sets"
 	ksf "k8s.io/kube-scheduler/framework"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/cluster_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_internal"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/k8s_internal/predicates"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/scheduler_util"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/cluster_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/gpu_sharing"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal/predicates"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/scheduler_util"
 )
 
 const (
@@ -45,6 +49,12 @@ const (
 	prePredicateErrorFormat   = "%s: %v.%s\n"
 	prePredicateReasonsFormat = " Reasons: %s"
 )
+
+var victimInvariantPrePredicateCandidates = []k8s_internal.PredicateName{
+	predicates.VolumeBinding,
+	predicates.ConfigMap,
+	predicates.MaxNodePoolResources,
+}
 
 type prePredicateError struct {
 	name    string
@@ -85,10 +95,23 @@ func (sp SkipPredicates) ShouldSKip(podID common_info.PodID, predicateName k8s_i
 	return skip && found
 }
 
+type cachedPrePredicateResult struct {
+	required bool
+	nodes    sets.Set[string]
+	status   *ksf.Status
+}
+
+type prePredicateCacheKey struct {
+	podID         common_info.PodID
+	predicateName k8s_internal.PredicateName
+}
+
 type predicatesPlugin struct {
 	storageSchedulingEnabled bool
 
-	skipPredicates SkipPredicates
+	skipPredicates    SkipPredicates
+	prePredicateCache map[prePredicateCacheKey]cachedPrePredicateResult
+	ssn               *framework.Session
 }
 
 func New(_ framework.PluginArguments) framework.Plugin {
@@ -101,12 +124,18 @@ func (pp *predicatesPlugin) Name() string {
 
 func (pp *predicatesPlugin) OnSessionOpen(ssn *framework.Session) {
 	k8sPredicates := predicates.NewSessionPredicates(ssn)
+	pp.initializeK8sNodeInfos(ssn)
 
 	pp.storageSchedulingEnabled = ssn.ScheduleCSIStorage()
 	pp.skipPredicates = SkipPredicates{}
+	pp.resetPrePredicateCache()
+	pp.ssn = ssn
 
 	ssn.AddPrePredicateFn(func(task *pod_info.PodInfo, _ *podgroup_info.PodGroupInfo) error {
-		return evaluateTaskOnPrePredicate(task, k8sPredicates, pp.skipPredicates)
+		return pp.evaluateTaskOnPrePredicate(task, k8sPredicates)
+	})
+	ssn.AddVictimInvariantPrePredicateFn(func(task *pod_info.PodInfo) *api.VictimInvariantPrePredicateFailure {
+		return pp.evaluateTaskOnVictimInvariantPrePredicates(task, k8sPredicates)
 	})
 
 	ssn.AddPredicateFn(func(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo) error {
@@ -115,21 +144,79 @@ func (pp *predicatesPlugin) OnSessionOpen(ssn *framework.Session) {
 	})
 }
 
-func evaluateTaskOnPrePredicate(task *pod_info.PodInfo, k8sPredicates k8s_internal.SessionPredicates,
-	skipPredicates SkipPredicates,
+func (pp *predicatesPlugin) initializeK8sNodeInfos(ssn *framework.Session) {
+	for _, nodeInfo := range ssn.ClusterInfo.Nodes {
+		podAffinityInfo, ok := nodeInfo.PodAffinityInfo.(*cluster_info.K8sNodePodAffinityInfo)
+		if !ok || podAffinityInfo == nil || podAffinityInfo.NodeInfo == nil {
+			log.InfraLogger.Warningf("Node %s has no pod affinity info", nodeInfo.Name)
+			continue
+		}
+
+		podAffinityInfo.NodeInfo.SetNode(nodeInfo.Node)
+	}
+}
+
+func (pp *predicatesPlugin) evaluateSinglePrePredicate(
+	task *pod_info.PodInfo,
+	predicateName k8s_internal.PredicateName,
+	predicate k8s_internal.SessionPredicate,
+) (sets.Set[string], *ksf.Status, bool) {
+	cacheKey := prePredicateCacheKey{podID: task.UID, predicateName: predicateName}
+	shouldCache := isVictimInvariantPrePredicateCandidate(predicateName)
+	if shouldCache {
+		if cachedResult, found := pp.prePredicateCache[cacheKey]; found {
+			if cachedResult.status != nil && cachedResult.status.IsSkip() {
+				pp.skipPredicates.Add(task.UID, predicateName)
+			}
+			return cachedResult.nodes, cachedResult.status, cachedResult.required
+		}
+	}
+
+	if !predicate.IsPreFilterRequired(task.Pod) {
+		if shouldCache {
+			pp.storePrePredicateResult(cacheKey, cachedPrePredicateResult{required: false})
+		}
+		return nil, nil, false
+	}
+
+	nodes, status := predicate.PreFilter(task.Pod)
+	if status != nil && status.IsSkip() {
+		pp.skipPredicates.Add(task.UID, predicateName)
+	}
+	if shouldCache {
+		pp.storePrePredicateResult(cacheKey, cachedPrePredicateResult{
+			required: true,
+			nodes:    nodes,
+			status:   status,
+		})
+	}
+	return nodes, status, true
+}
+
+func (pp *predicatesPlugin) storePrePredicateResult(
+	cacheKey prePredicateCacheKey,
+	result cachedPrePredicateResult,
+) {
+	pp.prePredicateCache[cacheKey] = result
+}
+
+func (pp *predicatesPlugin) resetPrePredicateCache() {
+	pp.prePredicateCache = map[prePredicateCacheKey]cachedPrePredicateResult{}
+}
+
+func (pp *predicatesPlugin) evaluateTaskOnPrePredicate(
+	task *pod_info.PodInfo,
+	k8sPredicates k8s_internal.SessionPredicates,
 ) error {
 	var allErrors []prePredicateError
 	var allowedNodes sets.Set[string] = nil
 	for name, predicate := range k8sPredicates {
-		if !predicate.IsPreFilterRequired(task.Pod) {
+		nodes, status, required := pp.evaluateSinglePrePredicate(task, name, predicate)
+		if !required {
 			continue
 		}
-		nodes, status := predicate.PreFilter(task.Pod)
-		if status.IsSkip() {
-			skipPredicates.Add(task.UID, name)
-		}
 
-		if status.AsError() != nil {
+		if status != nil && status.AsError() != nil {
 			allErrors = append(allErrors, newPrePredicateError(string(name), *status))
 		} else {
 			if allowedNodes == nil {
@@ -147,6 +234,54 @@ func evaluateTaskOnPrePredicate(task *pod_info.PodInfo, k8sPredicates k8s_intern
 	}
 
 	return nil
+}
+
+func (pp *predicatesPlugin) evaluateTaskOnVictimInvariantPrePredicates(
+	task *pod_info.PodInfo,
+	k8sPredicates k8s_internal.SessionPredicates,
+) *api.VictimInvariantPrePredicateFailure {
+	for _, name := range victimInvariantPrePredicateCandidates {
+		predicate, found := k8sPredicates[name]
+		if !found {
+			continue
+		}
+
+		_, status, required := pp.evaluateSinglePrePredicate(task, name, predicate)
+		if !required || status == nil || status.IsSkip() {
+			continue
+		}
+
+		if failure := classifyVictimInvariantPrePredicateFailure(name, status); failure != nil {
+			return failure
+		}
+	}
+
+	return nil
+}
+
+func classifyVictimInvariantPrePredicateFailure(
+	predicateName k8s_internal.PredicateName,
+	status *ksf.Status,
+) *api.VictimInvariantPrePredicateFailure {
+	if !isVictimInvariantPrePredicateCandidate(predicateName) || status == nil {
+		return nil
+	}
+
+	if status.Code() != ksf.UnschedulableAndUnresolvable {
+		return nil
+	}
+
+	if err := status.AsError(); err != nil {
+		return &api.VictimInvariantPrePredicateFailure{
+			Err: err,
+		}
+	}
+
+	return nil
+}
+
+func isVictimInvariantPrePredicateCandidate(predicateName k8s_internal.PredicateName) bool {
+	return slices.Contains(victimInvariantPrePredicateCandidates, predicateName)
 }
 
 func generateErrorLog(allErrors []prePredicateError) string {
@@ -183,7 +318,6 @@ func (pp *predicatesPlugin) evaluateTaskOnPredicates(
 	}()
 
 	k8sNodeInfo := node.PodAffinityInfo.(*cluster_info.K8sNodePodAffinityInfo).NodeInfo
-	k8sNodeInfo.SetNode(node.Node)
 
 	if result := isTaskAllocationOnNodeOverCapacityFn(task, job, node); !result.IsSchedulable {
 		return common_info.NewFitError(task.Name, task.Namespace, node.Name,
@@ -196,20 +330,14 @@ func (pp *predicatesPlugin) evaluateTaskOnPredicates(
 		return fitError
 	}
 
-	if task.ResReq.GpuMemory() > 0 && !node.GpuMemorySynced {
+	if task.GpuRequirement.GpuMemory() > 0 && !node.GpuMemorySynced {
 		return common_info.NewFitError(task.Name, task.Namespace, node.Name,
 			fmt.Sprintf("node is not a gpu node or the gpu memory count on the node was not synced yet,"+
 				" task: <%v/%v>, node: <%v>", task.Namespace, task.Name, node.Name))
 	}
 
-	podsCountForTask := 1
-	if task.IsSharedGPURequest() {
-		podsCountForTask += 1 // we need to include a *potential* reservation pod for fraction
-	}
-	if len(k8sNodeInfo.Pods)+podsCountForTask > node.MaxTaskNum {
-		log.InfraLogger.V(6).Infof("NodePodNumber predicates Task <%s/%s> on Node <%s> failed",
-			task.Namespace, task.Name, node.Name)
-		return common_info.NewFitError(task.Name, task.Namespace, node.Name, api.NodePodNumberExceeded)
+	if err := pp.checkMaxPodsWithGpuGroupReservation(task, node); err != nil {
+		return err
 	}
 
 	fit, reasons, err := scheduler_util.CheckNodeConditionPredicate(node.Node)
@@ -260,6 +388,71 @@ func (pp *predicatesPlugin) evaluateTaskOnPredicates(
 	}
 
 	return nil
+}
+
+func (pp *predicatesPlugin) checkMaxPodsWithGpuGroupReservation(
+	task *pod_info.PodInfo, node *node_info.NodeInfo) error {
+	availablePods := node.IdleVector.Get(resource_info.PodsIndex) + node.ReleasingVector.Get(resource_info.PodsIndex)
+
+	if !task.IsSharedGPURequest() {
+		if availablePods > 0 {
+			return nil
+		}
+		return common_info.NewFitError(task.Name, task.Namespace, node.Name, api.NodePodNumberExceeded)
+	}
+
+	needsNewGpuGroup := pp.willCreateNewGpuGroup(task, node)
+	if !needsNewGpuGroup {
+		return nil
+	}
+
+	if availablePods < 2 {
+		return common_info.NewFitError(task.Name, task.Namespace, node.Name, api.NodePodNumberExceeded)
+	}
+
+	return nil
+}
+
+// willCreateNewGpuGroup determines if allocating this task will create a new GPU group
+// (and thus require a new reservation pod).
+func (pp *predicatesPlugin) willCreateNewGpuGroup(task *pod_info.PodInfo, node *node_info.NodeInfo) bool {
+	if pp.ssn == nil {
+		return true
+	}
+
+	fittingGPUs := pp.ssn.FittingGPUs(node, task)
+	gpuForSharingImmediate := gpu_sharing.GetNodePreferableGpuForSharing(fittingGPUs, node, task, false)
+
+	if gpuForSharingImmediate != nil && !gpuForSharingImmediate.IsReleasing {
+		return containsNewGpuGroup(gpuForSharingImmediate.Groups)
+	}
+
+	gpuForSharingPipelined := gpu_sharing.GetNodePreferableGpuForSharing(fittingGPUs, node, task, true)
+
+	if gpuForSharingPipelined != nil {
+		return containsNewGpuGroup(gpuForSharingPipelined.Groups)
+	}
+
+	// No GPU assignment possible - conservatively assume new group would be needed
+	return true
+}
+
+// containsNewGpuGroup checks if any of the GPU groups is a newly created one (UUID format).
+func containsNewGpuGroup(groups []string) bool {
+	for _, gpuGroup := range groups {
+		if isNewGpuGroup(gpuGroup) {
+			return true
+		}
+	}
+	return false
+}
+
+// isNewGpuGroup determines if a GPU group ID represents a new group (UUID) vs an existing one (numeric).
+func isNewGpuGroup(gpuGroup string) bool {
+	// New GPU groups are UUIDs (e.g., "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx")
+	// Existing GPU groups are numeric strings ("0", "1", "2", etc.)
+	_, err := strconv.Atoi(gpuGroup)
+	return err != nil // If not a number, it's a UUID = new group
 }
 
 func (pp *predicatesPlugin) OnSessionClose(_ *framework.Session) {}

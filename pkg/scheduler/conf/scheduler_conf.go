@@ -25,7 +25,8 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/selection"
 
-	usagedbapi "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	usagedbapi "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
 )
 
 type SchedulerParams struct {
@@ -40,6 +41,7 @@ type SchedulerParams struct {
 	NumOfStatusRecordingWorkers       int                       `json:"numOfStatusRecordingWorkers,omitempty"`
 	GlobalDefaultStalenessGracePeriod time.Duration             `json:"globalDefaultStalenessGracePeriod,omitempty"`
 	SchedulePeriod                    time.Duration             `json:"schedulePeriod,omitempty"`
+	StuckInReleasingThreshold         time.Duration             `json:"stuckInReleasingThreshold,omitempty"`
 	DetailedFitErrors                 bool                      `json:"detailedFitErrors,omitempty"`
 	UpdatePodEvictionCondition        bool                      `json:"updatePodEvictionCondition,omitempty"`
 	QueueLabelKey                     string                    `json:"queueLabelKey,omitempty"`
@@ -58,6 +60,8 @@ type SchedulerConfiguration struct {
 
 	// UsageDBConfig defines configuration for the usage db client
 	UsageDBConfig *usagedbapi.UsageDBConfig `yaml:"usageDBConfig,omitempty" json:"usageDBConfig,omitempty"`
+
+	ScenarioSearchBudgets *kaiv1.ScenarioSearchBudgets `json:"scenarioSearchBudgets,omitempty" yaml:"scenarioSearchBudgets,omitempty"`
 }
 
 // Tier defines plugin tier

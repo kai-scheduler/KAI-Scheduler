@@ -21,8 +21,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/capacity"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/capacity"
 )
 
 const draDriverName = "gpu.nvidia.com"
@@ -84,7 +84,7 @@ func FindNodeWithNoGPU(ctx context.Context, client runtimeClient.Client, kubeCli
 		if len(node.Spec.Taints) > 0 {
 			continue
 		}
-		gpuResource := node.Status.Capacity[constants.GpuResource]
+		gpuResource := node.Status.Capacity[constants.NvidiaGpuResource]
 		hasDevicePluginGPUs := gpuResource.CmpInt64(0) > 0
 		hasDRAGPUs := draDevicesByNode[node.Name] > 0
 		if !hasDevicePluginGPUs && !hasDRAGPUs {
@@ -98,7 +98,7 @@ func FindNodeWithEnoughGPUs(ctx context.Context, client runtimeClient.Client, nu
 	allNodes := corev1.NodeList{}
 	Expect(client.List(ctx, &allNodes)).To(Succeed())
 	for _, node := range allNodes.Items {
-		gpusQty, found := node.Status.Allocatable[constants.GpuResource]
+		gpusQty, found := node.Status.Allocatable[constants.NvidiaGpuResource]
 		if !found {
 			continue
 		}
@@ -115,7 +115,7 @@ func FindNodesWithEnoughGPUs(ctx context.Context, client runtimeClient.Client, n
 	var gpuNodes []*corev1.Node
 	Expect(client.List(ctx, &allNodes)).To(Succeed())
 	for index, node := range allNodes.Items {
-		gpusQty, found := node.Status.Allocatable[constants.GpuResource]
+		gpusQty, found := node.Status.Allocatable[constants.NvidiaGpuResource]
 		if !found || gpusQty.IsZero() {
 			continue
 		}
@@ -132,7 +132,7 @@ func FindNodesWithExactGPUs(ctx context.Context, client runtimeClient.Client, nu
 	var gpuNodes []*corev1.Node
 	Expect(client.List(ctx, &allNodes)).To(Succeed())
 	for index, node := range allNodes.Items {
-		gpusQty, found := node.Status.Allocatable[constants.GpuResource]
+		gpusQty, found := node.Status.Allocatable[constants.NvidiaGpuResource]
 		if !found || gpusQty.IsZero() {
 			continue
 		}

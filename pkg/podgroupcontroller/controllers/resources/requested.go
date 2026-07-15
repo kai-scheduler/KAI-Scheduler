@@ -9,7 +9,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
 const (
@@ -52,7 +52,7 @@ func ExtractGPUSharingRequestedResources(pod *v1.Pod) (v1.ResourceList, error) {
 					"Please check resource.Quantity restrictions. fraction <%s>, count: %d",
 					gpuFractionStr, fractionsCount)
 		}
-		resources[v1.ResourceName(constants.GpuResource)] = quantity
+		resources[v1.ResourceName(constants.NvidiaGpuResource)] = quantity
 	}
 
 	gpuMemoryStr, hasAnnotation := pod.Annotations[constants.GpuMemory]

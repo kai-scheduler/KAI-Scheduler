@@ -32,6 +32,7 @@ jobs:
             operator
             queue-controller
             pod-group-controller
+            numa-placement-exporter
             resource-reservation
             chart
             api

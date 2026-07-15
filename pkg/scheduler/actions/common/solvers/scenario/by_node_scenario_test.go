@@ -10,18 +10,19 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 )
 
 func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 	type fields struct {
 		session               *framework.Session
-		pendingTasksAsJob     *podgroup_info.PodGroupInfo
+		pendingJob            *podgroup_info.PodGroupInfo
 		potentialVictimsTasks []*pod_info.PodInfo
 		recordedVictimsJobs   []*podgroup_info.PodGroupInfo
 	}
@@ -55,7 +56,7 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 								Status: v1.PodStatus{
 									Phase: v1.PodRunning,
 								},
-							}),
+							}, resource_info.NewResourceVectorMap()),
 							pod_info.NewTaskInfo(&v1.Pod{
 								ObjectMeta: metav1.ObjectMeta{
 									Name:      "name2",
@@ -70,7 +71,7 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 								Status: v1.PodStatus{
 									Phase: v1.PodRunning,
 								},
-							}),
+							}, resource_info.NewResourceVectorMap()),
 						),
 						"pg2": podgroup_info.NewPodGroupInfo("pg2", pod_info.NewTaskInfo(&v1.Pod{
 							ObjectMeta: metav1.ObjectMeta{
@@ -86,10 +87,10 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 							Status: v1.PodStatus{
 								Phase: v1.PodRunning,
 							},
-						})),
+						}, resource_info.NewResourceVectorMap())),
 					}},
 				},
-				pendingTasksAsJob: podgroup_info.NewPodGroupInfo("123"),
+				pendingJob: podgroup_info.NewPodGroupInfo("123"),
 				potentialVictimsTasks: []*pod_info.PodInfo{
 					pod_info.NewTaskInfo(&v1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
@@ -105,7 +106,7 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 						Status: v1.PodStatus{
 							Phase: v1.PodRunning,
 						},
-					}),
+					}, resource_info.NewResourceVectorMap()),
 					pod_info.NewTaskInfo(&v1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "name2",
@@ -120,7 +121,7 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 						Status: v1.PodStatus{
 							Phase: v1.PodRunning,
 						},
-					}),
+					}, resource_info.NewResourceVectorMap()),
 				},
 			},
 			args: args{
@@ -142,7 +143,7 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 					Status: v1.PodStatus{
 						Phase: v1.PodRunning,
 					},
-				}),
+				}, resource_info.NewResourceVectorMap()),
 				pod_info.NewTaskInfo(&v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "name2",
@@ -157,7 +158,7 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 					Status: v1.PodStatus{
 						Phase: v1.PodRunning,
 					},
-				}),
+				}, resource_info.NewResourceVectorMap()),
 			},
 		},
 		{
@@ -180,7 +181,7 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 								Status: v1.PodStatus{
 									Phase: v1.PodRunning,
 								},
-							}),
+							}, resource_info.NewResourceVectorMap()),
 							pod_info.NewTaskInfo(&v1.Pod{
 								ObjectMeta: metav1.ObjectMeta{
 									Name:      "name2",
@@ -195,7 +196,7 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 								Status: v1.PodStatus{
 									Phase: v1.PodRunning,
 								},
-							}),
+							}, resource_info.NewResourceVectorMap()),
 						),
 						"pg2": podgroup_info.NewPodGroupInfo("pg2", pod_info.NewTaskInfo(&v1.Pod{
 							ObjectMeta: metav1.ObjectMeta{
@@ -211,10 +212,10 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 							Status: v1.PodStatus{
 								Phase: v1.PodRunning,
 							},
-						})),
+						}, resource_info.NewResourceVectorMap())),
 					}},
 				},
-				pendingTasksAsJob: podgroup_info.NewPodGroupInfo("123"),
+				pendingJob: podgroup_info.NewPodGroupInfo("123"),
 				potentialVictimsTasks: []*pod_info.PodInfo{
 					pod_info.NewTaskInfo(&v1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
@@ -230,7 +231,7 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 						Status: v1.PodStatus{
 							Phase: v1.PodRunning,
 						},
-					}),
+					}, resource_info.NewResourceVectorMap()),
 					pod_info.NewTaskInfo(&v1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "name2",
@@ -245,7 +246,7 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 						Status: v1.PodStatus{
 							Phase: v1.PodRunning,
 						},
-					}),
+					}, resource_info.NewResourceVectorMap()),
 				},
 			},
 			args: args{
@@ -274,7 +275,7 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 								Status: v1.PodStatus{
 									Phase: v1.PodRunning,
 								},
-							}),
+							}, resource_info.NewResourceVectorMap()),
 							pod_info.NewTaskInfo(&v1.Pod{
 								ObjectMeta: metav1.ObjectMeta{
 									Name:      "name2",
@@ -289,7 +290,7 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 								Status: v1.PodStatus{
 									Phase: v1.PodRunning,
 								},
-							}),
+							}, resource_info.NewResourceVectorMap()),
 						),
 						"pg2": podgroup_info.NewPodGroupInfo("pg2", pod_info.NewTaskInfo(&v1.Pod{
 							ObjectMeta: metav1.ObjectMeta{
@@ -305,10 +306,10 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 							Status: v1.PodStatus{
 								Phase: v1.PodRunning,
 							},
-						})),
+						}, resource_info.NewResourceVectorMap())),
 					}},
 				},
-				pendingTasksAsJob: podgroup_info.NewPodGroupInfo("123"),
+				pendingJob: podgroup_info.NewPodGroupInfo("123"),
 				potentialVictimsTasks: []*pod_info.PodInfo{
 					pod_info.NewTaskInfo(&v1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
@@ -324,7 +325,7 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 						Status: v1.PodStatus{
 							Phase: v1.PodRunning,
 						},
-					}),
+					}, resource_info.NewResourceVectorMap()),
 					pod_info.NewTaskInfo(&v1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "name2",
@@ -339,7 +340,7 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 						Status: v1.PodStatus{
 							Phase: v1.PodRunning,
 						},
-					}),
+					}, resource_info.NewResourceVectorMap()),
 				},
 			},
 			args: args{
@@ -361,7 +362,7 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 					Status: v1.PodStatus{
 						Phase: v1.PodRunning,
 					},
-				}),
+				}, resource_info.NewResourceVectorMap()),
 				pod_info.NewTaskInfo(&v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "name2",
@@ -376,7 +377,7 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 					Status: v1.PodStatus{
 						Phase: v1.PodRunning,
 					},
-				}),
+				}, resource_info.NewResourceVectorMap()),
 			},
 		},
 		{
@@ -399,7 +400,7 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 								Status: v1.PodStatus{
 									Phase: v1.PodRunning,
 								},
-							}),
+							}, resource_info.NewResourceVectorMap()),
 							pod_info.NewTaskInfo(&v1.Pod{
 								ObjectMeta: metav1.ObjectMeta{
 									Name:      "name2",
@@ -414,7 +415,7 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 								Status: v1.PodStatus{
 									Phase: v1.PodRunning,
 								},
-							}),
+							}, resource_info.NewResourceVectorMap()),
 						),
 						"pg2": podgroup_info.NewPodGroupInfo("pg2", pod_info.NewTaskInfo(&v1.Pod{
 							ObjectMeta: metav1.ObjectMeta{
@@ -430,10 +431,10 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 							Status: v1.PodStatus{
 								Phase: v1.PodRunning,
 							},
-						})),
+						}, resource_info.NewResourceVectorMap())),
 					}},
 				},
-				pendingTasksAsJob: podgroup_info.NewPodGroupInfo("123"),
+				pendingJob: podgroup_info.NewPodGroupInfo("123"),
 				potentialVictimsTasks: []*pod_info.PodInfo{
 					pod_info.NewTaskInfo(&v1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
@@ -449,7 +450,7 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 						Status: v1.PodStatus{
 							Phase: v1.PodRunning,
 						},
-					}),
+					}, resource_info.NewResourceVectorMap()),
 				},
 			},
 			args: args{
@@ -468,7 +469,7 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 						Status: v1.PodStatus{
 							Phase: v1.PodRunning,
 						},
-					}),
+					}, resource_info.NewResourceVectorMap()),
 				},
 				nodeNames: []string{"node1"},
 			},
@@ -487,7 +488,7 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 					Status: v1.PodStatus{
 						Phase: v1.PodRunning,
 					},
-				}),
+				}, resource_info.NewResourceVectorMap()),
 				pod_info.NewTaskInfo(&v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "name2",
@@ -502,13 +503,17 @@ func TestPodByNodeScenario_VictimsTasksFromNodes(t *testing.T) {
 					Status: v1.PodStatus{
 						Phase: v1.PodRunning,
 					},
-				}),
+				}, resource_info.NewResourceVectorMap()),
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			bns := NewByNodeScenario(tt.fields.session, tt.fields.pendingTasksAsJob, tt.fields.pendingTasksAsJob, tt.fields.potentialVictimsTasks,
+			pendingTasks := []*pod_info.PodInfo{}
+			for _, task := range tt.fields.pendingJob.GetAllPodsMap() {
+				pendingTasks = append(pendingTasks, task)
+			}
+			bns := NewByNodeScenario(tt.fields.session, tt.fields.pendingJob, pendingTasks, tt.fields.potentialVictimsTasks,
 				tt.fields.recordedVictimsJobs)
 			if tt.args.tasks != nil {
 				bns.AddPotentialVictimsTasks(tt.args.tasks)

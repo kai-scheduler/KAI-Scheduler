@@ -11,11 +11,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/resources"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 )
 
 const (
@@ -39,6 +38,8 @@ type TestTaskBasic struct {
 	IsLegacyMigTask            bool
 	ResourceClaimTemplates     map[string]string
 	ResourceClaimNames         []string
+	PersistentVolumeClaimNames []string
+	Annotations                map[string]string
 }
 
 func BuildPod(
@@ -66,8 +67,8 @@ func BuildPod(
 				return baseLabels
 			}(),
 			Annotations: map[string]string{
-				common_info.GPUFraction:                  gpuFraction,
-				pod_info.GpuMemoryAnnotationName:         gpuMemory,
+				commonconstants.GpuFraction:              gpuFraction,
+				commonconstants.GpuMemory:                gpuMemory,
 				commonconstants.PodGroupAnnotationForPod: jobName,
 			},
 		},
@@ -120,6 +121,8 @@ func BuildPod(
 	for migInstance, count := range task.RequiredMigInstances {
 		pod.Annotations[migInstance.String()] = fmt.Sprintf("%d", count)
 	}
+
+	maps.Copy(pod.Annotations, task.Annotations)
 
 	for _, claimName := range task.ResourceClaimNames {
 		pod.Spec.ResourceClaims = append(pod.Spec.ResourceClaims, v1.PodResourceClaim{

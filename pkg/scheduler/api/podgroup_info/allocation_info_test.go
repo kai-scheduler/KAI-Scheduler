@@ -10,12 +10,12 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/scheduler_util"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/scheduler_util"
 )
 
 func simpleTask(name string, subGroupName string, status pod_status.PodStatus) *pod_info.PodInfo {
@@ -23,7 +23,7 @@ func simpleTask(name string, subGroupName string, status pod_status.PodStatus) *
 		common_info.BuildResourceList("1", "1G"),
 		nil, nil, nil,
 	)
-	info := pod_info.NewTaskInfo(pod)
+	info := pod_info.NewTaskInfo(pod, resource_info.NewResourceVectorMap())
 	info.Status = status
 	info.SubGroupName = subGroupName
 	return info
@@ -195,10 +195,14 @@ func Test_GetTasksToAllocate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			pg := NewPodGroupInfo("pg")
+			// Replace the default root so only the test's PodSets are members.
+			root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+			pg.RootSubGroupSet = root
+			pg.PodSets = make(map[string]*subgroup_info.PodSet)
 			for subGroupName, pods := range tt.subGroupTasks {
-				if _, exists := pg.GetSubGroups()[subGroupName]; !exists {
-					pg.PodSets[subGroupName] = subgroup_info.NewPodSet(subGroupName, tt.minAvailMap[subGroupName], nil)
-				}
+				ps := subgroup_info.NewPodSet(subGroupName, tt.minAvailMap[subGroupName], nil)
+				root.AddPodSet(ps)
+				pg.PodSets[subGroupName] = ps
 				for _, pod := range pods {
 					pg.AddTaskInfo(pod)
 				}
@@ -216,12 +220,85 @@ func Test_GetTasksToAllocate(t *testing.T) {
 	}
 }
 
+func Test_GetTasksToAllocate_MinSubGroupZero(t *testing.T) {
+	tests := []struct {
+		name          string
+		subGroupTasks map[string][]*pod_info.PodInfo
+		minAvailMap   map[string]int32
+		wantNumTasks  int
+	}{
+		{
+			name: "root minSubGroup=0, all children unsatisfied: gang skipped, elastic returns one child's tasks",
+			subGroupTasks: map[string][]*pod_info.PodInfo{
+				"sgA": {
+					simpleTask("taskA1", "sgA", pod_status.Pending),
+				},
+				"sgB": {
+					simpleTask("taskB1", "sgB", pod_status.Pending),
+				},
+			},
+			minAvailMap:  map[string]int32{"sgA": 1, "sgB": 1},
+			wantNumTasks: 1,
+		},
+		{
+			name: "root minSubGroup=0, all children satisfied: elastic returns no tasks",
+			subGroupTasks: map[string][]*pod_info.PodInfo{
+				"sgA": {
+					simpleTask("taskA1", "sgA", pod_status.Running),
+				},
+				"sgB": {
+					simpleTask("taskB1", "sgB", pod_status.Running),
+				},
+			},
+			minAvailMap:  map[string]int32{"sgA": 1, "sgB": 1},
+			wantNumTasks: 0,
+		},
+		{
+			name: "root minSubGroup=0, one satisfied + one with elastic surplus: returns one elastic task",
+			subGroupTasks: map[string][]*pod_info.PodInfo{
+				"sgA": {
+					simpleTask("taskA1", "sgA", pod_status.Running),
+				},
+				"sgB": {
+					simpleTask("taskB1", "sgB", pod_status.Running),
+					simpleTask("taskB2", "sgB", pod_status.Pending),
+				},
+			},
+			minAvailMap:  map[string]int32{"sgA": 1, "sgB": 1},
+			wantNumTasks: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pg := NewPodGroupInfo("pg")
+			root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+			min := int32(0)
+			root.SetMinSubGroup(&min)
+			pg.RootSubGroupSet = root
+			pg.PodSets = make(map[string]*subgroup_info.PodSet)
+			for subGroupName, pods := range tt.subGroupTasks {
+				ps := subgroup_info.NewPodSet(subGroupName, tt.minAvailMap[subGroupName], nil)
+				root.AddPodSet(ps)
+				pg.PodSets[subGroupName] = ps
+				for _, pod := range pods {
+					pg.AddTaskInfo(pod)
+				}
+			}
+			gotTasks := GetTasksToAllocate(pg, subGroupOrderFn, tasksOrderFn, true)
+			if len(gotTasks) != tt.wantNumTasks {
+				t.Errorf("GetTasksToAllocate len = %d, want %d", len(gotTasks), tt.wantNumTasks)
+			}
+		})
+	}
+}
+
 func Test_GetTasksToAllocateRequestedGPUs(t *testing.T) {
 	pg := NewPodGroupInfo("test-podgroup")
-	pg.GetSubGroups()[DefaultSubGroup].SetMinAvailable(1)
+	pg.GetAllPodSets()[DefaultSubGroup].SetMinAvailable(1)
 	task := simpleTask("p1", "", pod_status.Pending)
-	// manually set up a fake ResReq that returns 2 for GPUs and 1000 for GpuMemory
-	task.ResReq = resource_info.NewResourceRequirements(2, 1000, 2000)
+	// manually set up a fake GpuRequirement that returns 2 for GPUs
+	task.GpuRequirement = *resource_info.NewGpuResourceRequirementWithGpus(2, 0)
 	pg.AddTaskInfo(task)
 	gpus, _ := GetTasksToAllocateRequestedGPUs(pg, subGroupOrderFn, tasksOrderFn, true)
 	if gpus != 2 {
@@ -229,27 +306,55 @@ func Test_GetTasksToAllocateRequestedGPUs(t *testing.T) {
 	}
 }
 
-func Test_GetTasksToAllocateInitResource(t *testing.T) {
-	pg := NewPodGroupInfo("ri")
+func Test_GetTasksToAllocateInitResourceVector(t *testing.T) {
 	// Nil case
-	res := GetTasksToAllocateInitResource(nil, subGroupOrderFn, tasksOrderFn, true, 0)
-	if !res.IsEmpty() {
-		t.Error("empty resource expected for nil pg")
+	res := GetTasksToAllocateInitResourceVector(nil, subGroupOrderFn, tasksOrderFn, true, nil)
+	if res != nil {
+		t.Error("nil expected for nil pg")
 	}
 
-	pg.GetSubGroups()[DefaultSubGroup].SetMinAvailable(1)
-	task := simpleTask("p", "", pod_status.Pending)
-	task.ResReq = resource_info.NewResourceRequirements(0, 5000, 0)
-	pg.AddTaskInfo(task)
-	resource := GetTasksToAllocateInitResource(pg, subGroupOrderFn, tasksOrderFn, true, 0)
-	cpu := resource.BaseResource.Get(v1.ResourceCPU)
-	if cpu != 5000 {
-		t.Fatalf("want cpu=5, got %v", cpu)
+	vectorMap := resource_info.NewResourceVectorMap()
+	pg := NewPodGroupInfoWithVectorMap("ri-vec", vectorMap)
+	pg.GetAllPodSets()[DefaultSubGroup].SetMinAvailable(2)
+
+	task1 := simpleTask("p1", "", pod_status.Pending)
+	req1 := resource_info.NewResourceRequirements(1, 2000, 4000)
+	task1.GpuRequirement = req1.GpuResourceRequirement
+	task1.ResReqVector = req1.ToVector(vectorMap)
+	task1.VectorMap = vectorMap
+	pg.AddTaskInfo(task1)
+
+	task2 := simpleTask("p2", "", pod_status.Pending)
+	req2 := resource_info.NewResourceRequirements(2, 3000, 5000)
+	task2.GpuRequirement = req2.GpuResourceRequirement
+	task2.ResReqVector = req2.ToVector(vectorMap)
+	task2.VectorMap = vectorMap
+	pg.AddTaskInfo(task2)
+
+	vec := GetTasksToAllocateInitResourceVector(pg, subGroupOrderFn, tasksOrderFn, true, nil)
+	cpuIdx := resource_info.CPUIndex
+	memIdx := resource_info.MemoryIndex
+	gpuIdx := resource_info.GPUIndex
+
+	if vec.Get(cpuIdx) != 5000 {
+		t.Errorf("want cpu=5000, got %v", vec.Get(cpuIdx))
 	}
-	// Memoization/second call should return r
-	newResource := GetTasksToAllocateInitResource(pg, subGroupOrderFn, tasksOrderFn, true, 0)
-	if newResource != resource {
-		t.Error("cached resource pointer mismatch")
+	if vec.Get(memIdx) != 9000 {
+		t.Errorf("want mem=9000, got %v", vec.Get(memIdx))
+	}
+	if vec.Get(gpuIdx) != 3 {
+		t.Errorf("want gpu=3, got %v", vec.Get(gpuIdx))
+	}
+
+	// Caching: second call should return same slice
+	vec2 := GetTasksToAllocateInitResourceVector(pg, subGroupOrderFn, tasksOrderFn, true, nil)
+	if len(vec) != len(vec2) {
+		t.Fatal("cached vector length mismatch")
+	}
+	for i := range vec {
+		if vec[i] != vec2[i] {
+			t.Errorf("cached vector mismatch at index %d: %v != %v", i, vec[i], vec2[i])
+		}
 	}
 }
 
@@ -611,7 +716,7 @@ func Test_getNumOfAllocatedTasks(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			pg := NewPodGroupInfo("u1")
 			for i, pod := range tt.args.pods {
-				pi := pod_info.NewTaskInfo(pod)
+				pi := pod_info.NewTaskInfo(pod, resource_info.NewResourceVectorMap())
 				pg.AddTaskInfo(pi)
 
 				if tt.args.overridingStatus != nil {

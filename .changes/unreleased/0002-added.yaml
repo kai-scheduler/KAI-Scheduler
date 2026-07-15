@@ -1,0 +1,3 @@
+kind: Added
+body: |-
+  Added `global.resourceReservation.createServiceAccount` Helm value (default `true`) to allow disabling creation of the resource-reservation ServiceAccount, for embedding KAI in a parent chart that creates the ServiceAccount itself.

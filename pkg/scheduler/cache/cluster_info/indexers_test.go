@@ -10,7 +10,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	v12 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
 func TestPodByPodGroupIndexerValidPod(t *testing.T) {

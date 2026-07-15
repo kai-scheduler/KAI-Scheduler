@@ -5,9 +5,9 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: post-delete-cleanup
+  namespace: {{ .Release.Namespace }}
   annotations:
-    "helm.sh/hook": post-delete
-    "helm.sh/hook-delete-policy": hook-succeeded
+    {{- include "kai-scheduler.post-delete-hook-annotations" . | nindent 4 }}
 spec:
   template:
     metadata:
@@ -15,19 +15,58 @@ spec:
         app.kubernetes.io/name: post-delete-cleanup
     spec:
       serviceAccountName: {{ .Values.postCleanup.serviceAccountName }}
+      {{- if .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml .Values.global.imagePullSecrets | nindent 8 }}
+      {{- end }}
+      {{- if (include "kai-scheduler.openshift" .) }}
+      securityContext:
+        runAsUser: 10000
+        runAsNonRoot: true
+        fsGroup: 10000
+      {{- else }}
+      {{- with .Values.global.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- end }}
       restartPolicy: Never
+      {{- if .Values.global.nodeSelector }}
+      nodeSelector:
+        {{- toYaml .Values.global.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- if .Values.global.affinity }}
+      affinity:
+        {{- toYaml .Values.global.affinity | nindent 8 }}
+      {{- end }}
+      {{- if .Values.global.tolerations }}
+      tolerations:
+        {{- toYaml .Values.global.tolerations | nindent 8 }}
+      {{- end }}
       containers:
         - name: deleter
-          image: "{{ .Values.global.registry }}/{{ .Values.postCleanup.image.name }}:{{ .Values.postCleanup.image.tag | default .Values.global.tag | default .Chart.AppVersion }}"
+          image: "{{ .Values.global.registry }}/{{ .Values.postCleanup.image.name }}:{{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.postCleanup.image.tag) }}"
           imagePullPolicy: {{ .Values.postCleanup.image.pullPolicy }}
+          {{- with .Values.postCleanup.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if .Values.global.securityContext }}
+          securityContext:
+            {{- toYaml .Values.global.securityContext | nindent 12 }}
+          {{- end }}
           command:
             - /bin/sh
             - -c
             - |
-              echo "Deleting deployments..."
-              kubectl -n kai-scheduler delete deployment --all --ignore-not-found=true
+              echo "Deleting KAI operator-managed deployments..."
+              kubectl -n {{ .Release.Namespace }} delete deployment --selector=app.kubernetes.io/managed-by=kai-operator --ignore-not-found=true
 
+              {{- /* In render mode the CR is a tracked release resource:
+              Helm/ArgoCD deletes it before this hook runs. */}}
+              {{- if .Values.kaiConfigDeployer.enabled }}
               echo "Deleting kai-config..."
               kubectl delete Config kai-config --ignore-not-found
+              {{- end }}
               echo "Cleanup complete."
 {{- end }}

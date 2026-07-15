@@ -2,6 +2,12 @@
 # SPDX-License-Identifier: Apache-2.0
 
 suite: test service resources configuration
+
+set:
+  kaiConfigDeployer:
+    enabled: false
+  kaiConfig:
+    render: true
 templates:
   - kai-config.yaml
 tests:

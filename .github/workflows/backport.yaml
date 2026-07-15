@@ -15,9 +15,12 @@ jobs:
     # Don't run on closed unmerged pull requests
     if: github.event.pull_request.merged
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Create backport pull requests
-        uses: korthout/backport-action@v3
+        uses: korthout/backport-action@v4
         with:
           github_token: ${{ secrets.KAIBOT_TOKEN }}
           pull_title: "${pull_title}"
+          # Backports carry the original PR's changie fragment (a new file, so no conflict).
+          # Propagate changelog-exemption labels so exempt PRs still pass validate-changelog.
+          copy_labels_pattern: "skip-changelog|dependencies"

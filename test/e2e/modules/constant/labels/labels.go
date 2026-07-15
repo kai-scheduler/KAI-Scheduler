@@ -10,4 +10,6 @@ const (
 	Scale          = "scale"
 	Autoscale      = "autoscale"
 	NCCL           = "nccl"
+	Upgrade        = "upgrade"
+	GitOps         = "gitops"
 )

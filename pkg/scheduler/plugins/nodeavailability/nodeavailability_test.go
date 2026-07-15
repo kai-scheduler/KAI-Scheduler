@@ -9,25 +9,50 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/require"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/resource_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/cluster_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/nodeavailability"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins/scores"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/resources_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/cluster_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/nodeavailability"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/scores"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/resources_fake"
 )
 
 func TestNodeAvailabilityPlugin(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Node Availability Plugin test")
+}
+
+func TestNodeOrderFnDoesNotAllocateWhenVerboseLoggingIsDisabled(t *testing.T) {
+	require.NoError(t, log.InitLoggers(3, true))
+
+	plugin := nodeavailability.New(map[string]string{})
+	session := framework.Session{}
+	plugin.OnSessionOpen(&session)
+	nodeOrderFn := session.NodeOrderFns[len(session.NodeOrderFns)-1]
+
+	task := createFakeTask("task-1")
+	setTaskResources(task, 1)
+	node := createFakeNode("node-1", 1)
+
+	var score float64
+	var err error
+	allocations := testing.AllocsPerRun(100, func() {
+		score, err = nodeOrderFn(task, node)
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, float64(scores.Availability), score)
+	require.Zero(t, allocations)
 }
 
 var _ = Describe("NodeAvailability", func() {
@@ -50,7 +75,7 @@ var _ = Describe("NodeAvailability", func() {
 			Context("scoring a node for a task", func() {
 				It("Returns 10 score if node can allocate", func() {
 					task := createFakeTask("task-1")
-					task.ResReq = createResource(1)
+					setTaskResources(task, 1)
 					node := createFakeNode("node-1", 1)
 					score, _ := nodeOrderFn(task, node)
 					Expect(score).To(Equal(float64(scores.Availability)))
@@ -58,7 +83,7 @@ var _ = Describe("NodeAvailability", func() {
 
 				It("Returns 0 score if node cannot allocate", func() {
 					task := createFakeTask("task-1")
-					task.ResReq = createResource(2)
+					setTaskResources(task, 2)
 					node := createFakeNode("node-1", 1)
 					score, _ := nodeOrderFn(task, node)
 					Expect(score).To(Equal(0.0))
@@ -68,10 +93,12 @@ var _ = Describe("NodeAvailability", func() {
 	})
 })
 
+var testVectorMap = resource_info.NewResourceVectorMap()
+
 func createFakeTask(taskName string) *pod_info.PodInfo {
 	return &pod_info.PodInfo{
-		Name:   taskName,
-		ResReq: createResource(0),
+		Name:      taskName,
+		VectorMap: testVectorMap,
 		Pod: &v1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
 				CreationTimestamp: metav1.Now(),
@@ -88,9 +115,14 @@ func createFakeNode(nodeName string, idleGpu int) *node_info.NodeInfo {
 	node := nodes_fake.BuildNode(nodeName, nodeResource, nodeIdleResource)
 	clusterPodAffinityInfo := cache.NewK8sClusterPodAffinityInfo()
 	podAffinityInfo := cluster_info.NewK8sNodePodAffinityInfo(node, clusterPodAffinityInfo)
-	return node_info.NewNodeInfo(node, podAffinityInfo)
+	vectorMap := resource_info.NewResourceVectorMap()
+	for resourceName := range node.Status.Allocatable {
+		vectorMap.AddResource(resourceName)
+	}
+	return node_info.NewNodeInfo(node, podAffinityInfo, vectorMap)
 }
 
-func createResource(gpu float64) *resource_info.ResourceRequirements {
-	return resource_info.NewResourceRequirementsWithGpus(gpu)
+func setTaskResources(task *pod_info.PodInfo, gpu float64) {
+	task.GpuRequirement = *resource_info.NewGpuResourceRequirementWithGpus(gpu, 0)
+	task.ResReqVector = resource_info.NewResourceVectorWithValues(0, 0, gpu, testVectorMap)
 }

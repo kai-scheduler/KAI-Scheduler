@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"time"
 
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	"github.com/prometheus/common/model"
 	"github.com/xyproto/randomstring"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -18,25 +20,25 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/utils/ptr"
 
-	kaiv1alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	schedulingv2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	schedulingv2alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/env-tests/binder"
-	"github.com/NVIDIA/KAI-scheduler/pkg/env-tests/podgroupcontroller"
-	"github.com/NVIDIA/KAI-scheduler/pkg/env-tests/queuecontroller"
-	"github.com/NVIDIA/KAI-scheduler/pkg/env-tests/scheduler"
-	"github.com/NVIDIA/KAI-scheduler/pkg/env-tests/schedulerplugins"
-	"github.com/NVIDIA/KAI-scheduler/pkg/env-tests/utils"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/actions"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/queue_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/usagedb/fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf_util"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/framework"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/plugins"
+	kaiv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	schedulingv2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	schedulingv2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/env-tests/binder"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/env-tests/podgroupcontroller"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/env-tests/queuecontroller"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/env-tests/scheduler"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/env-tests/schedulerplugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/env-tests/utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb/fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf_util"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins"
 )
 
 const simulationCycleInterval = time.Millisecond * 10
@@ -120,7 +122,7 @@ func setupControllers(backgroundCtx context.Context, cfg *rest.Config,
 		ClientType:       "fake-with-history",
 		ConnectionString: "fake-connection",
 		UsageParams: &api.UsageParams{
-			WindowSize:     &metav1.Duration{Duration: time.Second * time.Duration(*windowSize)},
+			WindowSize:     monitoringv1.DurationPointer(model.Duration(time.Second * time.Duration(*windowSize)).String()),
 			FetchInterval:  &metav1.Duration{Duration: time.Millisecond},
 			HalfLifePeriod: &metav1.Duration{Duration: time.Second * time.Duration(*halfLifePeriod)},
 		},
@@ -281,7 +283,7 @@ func RunSimulation(
 		a := map[common_info.QueueID]SimulationDataPoint{}
 		for queueID, fairshare := range fairshares {
 			a[queueID] = SimulationDataPoint{
-				Allocation: allocations[queueID][constants.GpuResource],
+				Allocation: allocations[queueID][constants.NvidiaGpuResource],
 				FairShare:  fairshare.GPUs(),
 			}
 		}
@@ -378,7 +380,7 @@ func queueJob(ctx context.Context, ctrlClient client.Client, namespace, queueNam
 		name := randomstring.HumanFriendlyEnglishString(10)
 		testPod := utils.CreatePodObject(namespace, name, corev1.ResourceRequirements{
 			Limits: corev1.ResourceList{
-				constants.GpuResource: resource.MustParse(fmt.Sprintf("%d", gpus)),
+				constants.NvidiaGpuResource: resource.MustParse(fmt.Sprintf("%d", gpus)),
 			},
 		})
 		err := ctrlClient.Create(ctx, testPod)

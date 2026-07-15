@@ -5,6 +5,7 @@ package scale
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -20,21 +21,22 @@ import (
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
-	kaiv1alpha1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1alpha1"
-	v2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	schedulerconfig "github.com/NVIDIA/KAI-scheduler/test/e2e/modules/configurations"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/constant/labels"
-	testcontext "github.com/NVIDIA/KAI-scheduler/test/e2e/modules/context"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/fillers"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/crd"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/queue"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/utils"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/wait"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/wait/watcher"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/scale/topology"
+	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
+	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	schedulerconfig "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/configurations"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/constant/labels"
+	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/fillers"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/crd"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/testconfig"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/utils"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait/watcher"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/scale/topology"
 )
 
 var _ = ReportAfterSuite("report failed test suite if needed", func(report Report) {
@@ -199,6 +201,11 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 			wait.ForAtLeastNNodes(ctx, testCtx.ControllerClient, map[string]string{"test": "topology-e2e"}, len(topologyNodePools))
 			duration = time.Since(startTime)
 			GinkgoLogr.Info("Time to wait for topology nodes to be ready", "duration", duration)
+
+			startTime = time.Now()
+			wait.ForGPUOPeratorUpdateOnKWOKNodes(ctx, testCtx.ControllerClient, totalNodes, gpusPerNode)
+			duration = time.Since(startTime)
+			GinkgoLogr.Info("Time to wait for GPU operator to update topology nodes", "duration", duration)
 		})
 
 		AfterAll(func(ctx context.Context) {
@@ -323,22 +330,33 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 			})
 
 			It("schedules jobs with pending tasks in background", func(ctx context.Context) {
+				creationErrors := make(chan error, pendingBackgroundTasks)
 				var wg sync.WaitGroup
 				for range pendingBackgroundTasks {
 					wg.Add(1)
 					go func() {
 						defer wg.Done()
-						createJobObjectForKwok(
+						_, err := createJobObjectForKwok(
 							ctx, testCtx, noGPUQuotaQueue,
 							SingleGPURequirement, map[string]string{},
 						)
+						if err != nil {
+							creationErrors <- err
+						}
 					}()
 				}
 				wg.Wait()
+				close(creationErrors)
+
+				var creationError error
+				for err := range creationErrors {
+					creationError = errors.Join(creationError, err)
+				}
+				Expect(creationError).NotTo(HaveOccurred(), "Failed to create some pending background jobs")
 
 				wait.ForAtLeastNPodCreation(ctx, testCtx.ControllerClient, metav1.LabelSelector{
 					MatchLabels: map[string]string{
-						"runai/queue": noGPUQuotaQueue.Name,
+						testconfig.GetConfig().QueueLabelKey: noGPUQuotaQueue.Name,
 					},
 				}, pendingBackgroundTasks)
 
@@ -370,6 +388,7 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 
 					Context("measure reclaim failure time", func() {
 						BeforeAll(func(ctx context.Context) {
+							Expect(testCtx.ControllerClient.Get(ctx, runtimeClient.ObjectKeyFromObject(sanityTestQueue), sanityTestQueue)).To(Succeed())
 							sanityTestQueue.Spec.Resources.GPU.Quota = float64((numberOfNodes * gpusPerNode) - (defaultPodsPerDistributedJob * gpusPerNode) + 1)
 							Expect(testCtx.ControllerClient.Update(ctx, sanityTestQueue)).To(Succeed())
 						})
@@ -378,6 +397,7 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 							if CurrentSpecReport().Failed() {
 								return
 							}
+							Expect(testCtx.ControllerClient.Get(ctx, runtimeClient.ObjectKeyFromObject(sanityTestQueue), sanityTestQueue)).To(Succeed())
 							sanityTestQueue.Spec.Resources.GPU.Quota = 0
 							Expect(testCtx.ControllerClient.Update(ctx, sanityTestQueue)).To(Succeed())
 						})
@@ -385,12 +405,12 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 						It("measure time for reclaim to fail on distributed job last pod", func(ctx context.Context) {
 							averageTimeToUnschedulable := measureUnschedulableDelayInSeconds(
 								ctx, testCtx, reclaimSingleGPUJobsQueue,
-								func(ctx context.Context, testCtx *testcontext.TestContext, queue *v2.Queue) (*v2alpha2.PodGroup, []*v1.Pod, error) {
+								func(ctx context.Context, testCtx *testcontext.TestContext, queue *v2.Queue) (*rd.JobResult, error) {
 									return createDistributedJobForKwok(
 										ctx, testCtx, queue,
 										v1.ResourceRequirements{
 											Limits: map[v1.ResourceName]resource.Quantity{
-												constants.GpuResource: *resource.NewQuantity(int64(gpusPerNode), resource.DecimalSI),
+												constants.NvidiaGpuResource: *resource.NewQuantity(int64(gpusPerNode), resource.DecimalSI),
 											},
 										}, defaultPodsPerDistributedJob,
 										map[string]string{}, nil,

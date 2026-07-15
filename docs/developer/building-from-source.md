@@ -3,7 +3,7 @@ To build and deploy KAI Scheduler from source, follow these steps:
 
 1. Clone the repository:
    ```sh
-   git clone git@github.com:NVIDIA/KAI-scheduler.git
+   git clone git@github.com:kai-scheduler/KAI-scheduler.git
    cd KAI-scheduler
    ```
 

@@ -8,17 +8,17 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 
-	"github.com/NVIDIA/KAI-scheduler/pkg/binder/plugins/state"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/state"
 )
 
 type Plugin interface {
 	Name() string
 	PreBind(ctx context.Context, pod *v1.Pod, node *v1.Node, bindRequest *v1alpha2.BindRequest,
-		state *state.BindingState) error
+		bindingState *state.BindingState) error
 	PostBind(ctx context.Context, pod *v1.Pod, node *v1.Node, bindRequest *v1alpha2.BindRequest,
-		state *state.BindingState)
+		bindingState *state.BindingState)
 	Rollback(ctx context.Context, pod *v1.Pod, node *v1.Node, bindRequest *v1alpha2.BindRequest,
-		state *state.BindingState) error
+		bindingState *state.BindingState) error
 }

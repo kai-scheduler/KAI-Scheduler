@@ -10,10 +10,10 @@ import (
 	context "context"
 	time "time"
 
-	versioned "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/clientset/versioned"
-	internalinterfaces "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/informers/externalversions/internalinterfaces"
-	schedulingv1alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/client/listers/scheduling/v1alpha2"
-	apisschedulingv1alpha2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	versioned "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned"
+	internalinterfaces "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/informers/externalversions/internalinterfaces"
+	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/listers/scheduling/v1alpha2"
+	apisschedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -45,7 +45,7 @@ func NewBindRequestInformer(client versioned.Interface, namespace string, resync
 // one. This reduces memory footprint and number of connections to the server.
 func NewFilteredBindRequestInformer(client versioned.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
-		&cache.ListWatch{
+		cache.ToListWatcherWithWatchListSemantics(&cache.ListWatch{
 			ListFunc: func(options v1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
@@ -70,7 +70,7 @@ func NewFilteredBindRequestInformer(client versioned.Interface, namespace string
 				}
 				return client.SchedulingV1alpha2().BindRequests(namespace).Watch(ctx, options)
 			},
-		},
+		}, client),
 		&apisschedulingv1alpha2.BindRequest{},
 		resyncPeriod,
 		indexers,

@@ -8,8 +8,8 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/common"
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common"
 )
 
 type Admission struct {
@@ -43,6 +43,7 @@ func (a *Admission) DesiredState(
 	objects := []client.Object{secret}
 	for _, resourceFunc := range []resourceForKAIConfig{
 		a.deploymentForKAIConfig,
+		a.podDisruptionBudgetForKAIConfig,
 		a.serviceAccountForKAIConfig,
 		a.serviceForKAIConfig,
 		func(_ context.Context, _ client.Reader, _ *kaiv1.Config) ([]client.Object, error) {
@@ -60,6 +61,10 @@ func (a *Admission) DesiredState(
 			return nil, err
 		}
 		objects = append(objects, newResources...)
+	}
+
+	if vpa := common.BuildVPAFromObjects(kaiConfig.Spec.Admission.VPA, objects, kaiConfig.Spec.Namespace); vpa != nil {
+		objects = append(objects, vpa)
 	}
 
 	a.lastDesiredState = objects

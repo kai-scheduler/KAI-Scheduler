@@ -13,18 +13,22 @@ import (
 	"golang.org/x/exp/slices"
 
 	v1 "k8s.io/api/apps/v1"
+	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
-	"github.com/NVIDIA/KAI-scheduler/cmd/scheduler/app/options"
-	kaiv1 "github.com/NVIDIA/KAI-scheduler/pkg/apis/kai/v1"
-	kaiConfigUtils "github.com/NVIDIA/KAI-scheduler/pkg/operator/config"
-	"github.com/NVIDIA/KAI-scheduler/pkg/operator/operands/common"
-	usagedbapi "github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/cmd/scheduler/app/options"
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common"
+	usagedbapi "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 )
 
 const (
@@ -35,7 +39,7 @@ func (s *SchedulerForShard) deploymentForShard(
 	ctx context.Context, readerClient client.Reader,
 	kaiConfig *kaiv1.Config, shard *kaiv1.SchedulingShard,
 ) (client.Object, error) {
-	shardDeploymentName := deploymentName(kaiConfig, shard)
+	shardDeploymentName := DeploymentName(kaiConfig, shard)
 	config := kaiConfig.Spec.Scheduler
 
 	deployment, err := common.DeploymentForKAIConfig(ctx, readerClient, kaiConfig, config.Service, shardDeploymentName)
@@ -126,64 +130,17 @@ func (s *SchedulerForShard) configMapForShard(
 		Kind:       "ConfigMap",
 		APIVersion: "v1",
 	}
-	placementArguments := calculatePlacementArguments(shard.Spec.PlacementStrategy)
 	innerConfig := conf.SchedulerConfiguration{}
 
-	actions := []string{"allocate"}
-	if placementArguments[gpuResource] != spreadStrategy && placementArguments[cpuResource] != spreadStrategy {
-		actions = append(actions, "consolidation")
-	}
-	actions = append(actions, []string{"reclaim", "preempt", "stalegangeviction"}...)
-
+	innerConfig.Tiers = []conf.Tier{{Plugins: resolvePlugins(shard.Spec.Plugins)}}
+	actions := resolveActions(shard.Spec.Actions)
 	innerConfig.Actions = strings.Join(actions, ", ")
-
-	var proportionArgs map[string]string
-	if shard.Spec.KValue != nil {
-		proportionArgs = map[string]string{
-			"kValue": strconv.FormatFloat(*shard.Spec.KValue, 'f', -1, 64),
-		}
+	if err = validateScenarioSearchBudgets(shard.Spec.ScenarioSearchBudgets); err != nil {
+		return nil, err
 	}
-
-	innerConfig.Tiers = []conf.Tier{
-		{
-			Plugins: []conf.PluginOption{
-				{Name: "predicates"},
-				{Name: "proportion", Arguments: proportionArgs},
-				{Name: "priority"},
-				{Name: "nodeavailability"},
-				{Name: "resourcetype"},
-				{Name: "podaffinity"},
-				{Name: "elastic"},
-				{Name: "kubeflow"},
-				{Name: "ray"},
-				{Name: "subgrouporder"},
-				{Name: "taskorder"},
-				{Name: "nominatednode"},
-				{Name: "dynamicresources"},
-				{Name: "minruntime"},
-				{Name: "topology"},
-				{Name: "snapshot"},
-			},
-		},
+	if shard.Spec.ScenarioSearchBudgets != nil {
+		innerConfig.ScenarioSearchBudgets = shard.Spec.ScenarioSearchBudgets.DeepCopy()
 	}
-
-	innerConfig.Tiers[0].Plugins = append(
-		innerConfig.Tiers[0].Plugins,
-		conf.PluginOption{Name: fmt.Sprintf("gpu%s", strings.Replace(placementArguments[gpuResource], "bin", "", 1))},
-		conf.PluginOption{
-			Name:      "nodeplacement",
-			Arguments: placementArguments,
-		},
-	)
-
-	if placementArguments[gpuResource] == binpackStrategy {
-		innerConfig.Tiers[0].Plugins = append(
-			innerConfig.Tiers[0].Plugins,
-			conf.PluginOption{Name: "gpusharingorder"},
-		)
-	}
-
-	addMinRuntimePluginIfNeeded(&innerConfig.Tiers[0].Plugins, shard.Spec.MinRuntime)
 
 	if len(shard.Spec.QueueDepthPerAction) > 0 {
 		if err = validateJobDepthMap(shard, innerConfig, actions); err != nil {
@@ -215,6 +172,72 @@ func validateJobDepthMap(shard *kaiv1.SchedulingShard, innerConfig conf.Schedule
 		if !slices.Contains(actions, actionToConfigure) {
 			return fmt.Errorf(invalidJobDepthMapError, innerConfig.Actions, actionToConfigure)
 		}
+	}
+	return nil
+}
+
+var validScenarioSearchActionKeys = []string{
+	constants.ActionDefault,
+	constants.ActionReclaim,
+	constants.ActionPreempt,
+	constants.ActionConsolidation,
+}
+
+func validateScenarioSearchBudgets(config *kaiv1.ScenarioSearchBudgets) error {
+	if config == nil {
+		return nil
+	}
+	if err := validateDurationMap(
+		"maxActionSearchDuration", config.MaxActionSearchDuration, validScenarioSearchActionKeySet(), validScenarioSearchActionKeys,
+	); err != nil {
+		return err
+	}
+	if err := validateDurationMap("maxGeneratorSearchDuration", config.MaxGeneratorSearchDuration, nil, nil); err != nil {
+		return err
+	}
+	return validateMinJobBudget(config.MinJobSearchDuration, config.MaxJobSearchDuration)
+}
+
+func validScenarioSearchActionKeySet() map[string]struct{} {
+	validKeys := make(map[string]struct{}, len(validScenarioSearchActionKeys))
+	for _, key := range validScenarioSearchActionKeys {
+		validKeys[key] = struct{}{}
+	}
+	return validKeys
+}
+
+func validateDurationMap(fieldName string, durations map[string]metav1.Duration, validKeys map[string]struct{}, validKeyNames []string) error {
+	for key, duration := range durations {
+		if validKeys != nil {
+			if _, found := validKeys[key]; !found {
+				return fmt.Errorf(
+					"%s contains invalid action key %q; valid action keys: %s",
+					fieldName, key, strings.Join(validKeyNames, ", "),
+				)
+			}
+		}
+		if duration.Duration < 0 {
+			return fmt.Errorf("%s[%q] must be non-negative", fieldName, key)
+		}
+	}
+	return nil
+}
+
+func validateMinJobBudget(minJobBudget, maxJobBudget *metav1.Duration) error {
+	if minJobBudget == nil || maxJobBudget == nil {
+		return nil
+	}
+	if maxJobBudget.Duration < 0 {
+		return fmt.Errorf("maxJobSearchDuration must be non-negative")
+	}
+	if minJobBudget.Duration < 0 {
+		return fmt.Errorf("minJobSearchDuration must be non-negative")
+	}
+	if maxJobBudget.Duration == 0 {
+		return nil
+	}
+	if minJobBudget.Duration >= maxJobBudget.Duration {
+		return fmt.Errorf("minJobSearchDuration must be less than maxJobSearchDuration")
 	}
 	return nil
 }
@@ -286,8 +309,16 @@ func (s *SchedulerForShard) serviceForShard(
 			TargetPort: intstr.FromInt(*schedulerConfig.SchedulerService.TargetPort),
 		},
 	}
-	service.Spec.Selector = map[string]string{
-		"app": serviceName,
+	// With more than one replica, the operator maintains a custom EndpointSlice
+	// pointing at the leader-election lease holder, so the Service must be
+	// selectorless. With a single replica there is no leader election, so the
+	// usual label-based selector is sufficient.
+	if schedulerConfig.Replicas != nil && *schedulerConfig.Replicas > 1 {
+		service.Spec.Selector = nil
+	} else {
+		service.Spec.Selector = map[string]string{
+			"app": serviceName,
+		}
 	}
 	service.Spec.SessionAffinity = corev1.ServiceAffinityNone
 	service.Spec.Type = *schedulerConfig.SchedulerService.Type
@@ -328,46 +359,113 @@ func buildArgsList(
 		}
 	})
 
-	if featureGates := kaiConfigUtils.FeatureGatesArg(); featureGates != "" {
-		args = append(args, featureGates)
-	}
 	schedulerConfig := kaiConfig.Spec.Scheduler
 	if schedulerConfig.Replicas != nil && *schedulerConfig.Replicas > 1 {
 		args = append(args, "--leader-elect=true")
 	}
 
-	return args, nil
-}
-
-func calculatePlacementArguments(placementStrategy *kaiv1.PlacementStrategy) map[string]string {
-	return map[string]string{
-		gpuResource: *placementStrategy.GPU, cpuResource: *placementStrategy.CPU,
-	}
-}
-
-func addMinRuntimePluginIfNeeded(plugins *[]conf.PluginOption, minRuntime *kaiv1.MinRuntime) {
-	if minRuntime == nil || (minRuntime.PreemptMinRuntime == nil && minRuntime.ReclaimMinRuntime == nil) {
-		return
-	}
-
-	minRuntimeArgs := make(map[string]string)
-
-	if minRuntime.PreemptMinRuntime != nil {
-		minRuntimeArgs["defaultPreemptMinRuntime"] = *minRuntime.PreemptMinRuntime
-	}
-	if minRuntime.ReclaimMinRuntime != nil {
-		minRuntimeArgs["defaultReclaimMinRuntime"] = *minRuntime.ReclaimMinRuntime
-	}
-
-	minRuntimePlugin := conf.PluginOption{Name: "minruntime", Arguments: minRuntimeArgs}
-
-	*plugins = append(*plugins, minRuntimePlugin)
+	return common.AddSchedulerJSONLogArg(kaiConfig.Spec.Global.JSONLog, args), nil
 }
 
 func configMapName(config *kaiv1.Config, shard *kaiv1.SchedulingShard) string {
 	return fmt.Sprintf("%s-%s", *config.Spec.Global.SchedulerName, shard.Name)
 }
 
-func deploymentName(config *kaiv1.Config, shard *kaiv1.SchedulingShard) string {
+func DeploymentName(config *kaiv1.Config, shard *kaiv1.SchedulingShard) string {
 	return fmt.Sprintf("%s-%s", *config.Spec.Global.SchedulerName, shard.Name)
+}
+
+// serviceName for the per-shard scheduler Service.
+func serviceName(config *kaiv1.Config, shard *kaiv1.SchedulingShard) string {
+	return fmt.Sprintf("%s-%s", *config.Spec.Global.SchedulerName, shard.Name)
+}
+
+func LeaseName(config *kaiv1.Config, shard *kaiv1.SchedulingShard) string {
+	if shard.Spec.PartitionLabelValue != "" {
+		return fmt.Sprintf("%s-%s", *config.Spec.Global.SchedulerName, shard.Spec.PartitionLabelValue)
+	}
+	return *config.Spec.Global.SchedulerName
+}
+
+// endpointSliceForShard produces an EndpointSlice pointing at the current
+// leader-election Lease holder's pod IP. Returns (nil, nil) when leader
+// election is not in use (replicas <= 1), in which case the Service's label
+// selector populates endpoints normally.
+//
+// HolderIdentity contract with the scheduler: "<podName>_<uuid>" — see
+// cmd/scheduler/app/server.go.
+func (s *SchedulerForShard) endpointSliceForShard(
+	ctx context.Context, readerClient client.Reader,
+	kaiConfig *kaiv1.Config, shard *kaiv1.SchedulingShard,
+) (client.Object, error) {
+	schedulerConfig := kaiConfig.Spec.Scheduler
+	if schedulerConfig.Replicas == nil || *schedulerConfig.Replicas <= 1 {
+		return nil, nil
+	}
+
+	svcName := serviceName(kaiConfig, shard)
+	namespace := kaiConfig.Spec.Namespace
+	port := int32(*schedulerConfig.SchedulerService.Port)
+
+	es := &discoveryv1.EndpointSlice{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "EndpointSlice",
+			APIVersion: discoveryv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      svcName + "-leader",
+			Namespace: namespace,
+			Labels: map[string]string{
+				discoveryv1.LabelServiceName: svcName,
+				discoveryv1.LabelManagedBy:   "kai-operator",
+			},
+		},
+		AddressType: discoveryv1.AddressTypeIPv4,
+		Ports: []discoveryv1.EndpointPort{
+			{
+				Name:     ptr.To("http-metrics"),
+				Port:     ptr.To(port),
+				Protocol: ptr.To(corev1.ProtocolTCP),
+			},
+		},
+		Endpoints: []discoveryv1.Endpoint{},
+	}
+
+	lease := &coordinationv1.Lease{}
+	leaseKey := client.ObjectKey{Namespace: namespace, Name: LeaseName(kaiConfig, shard)}
+	if err := readerClient.Get(ctx, leaseKey, lease); err != nil {
+		if apierrors.IsNotFound(err) {
+			return es, nil
+		}
+		return nil, err
+	}
+	if lease.Spec.HolderIdentity == nil || *lease.Spec.HolderIdentity == "" {
+		return es, nil
+	}
+	podName := strings.SplitN(*lease.Spec.HolderIdentity, "_", 2)[0]
+
+	pod := &corev1.Pod{}
+	if err := readerClient.Get(ctx, client.ObjectKey{Namespace: namespace, Name: podName}, pod); err != nil {
+		if apierrors.IsNotFound(err) {
+			return es, nil
+		}
+		return nil, err
+	}
+	if pod.Status.PodIP == "" || pod.DeletionTimestamp != nil {
+		return es, nil
+	}
+
+	es.Endpoints = []discoveryv1.Endpoint{
+		{
+			Addresses:  []string{pod.Status.PodIP},
+			Conditions: discoveryv1.EndpointConditions{Ready: ptr.To(true)},
+			TargetRef: &corev1.ObjectReference{
+				Kind:      "Pod",
+				Namespace: namespace,
+				Name:      podName,
+				UID:       pod.UID,
+			},
+		},
+	}
+	return es, nil
 }

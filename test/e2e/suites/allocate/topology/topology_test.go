@@ -9,22 +9,22 @@ import (
 	"context"
 	"fmt"
 
-	v2 "github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/configurations/feature_flags"
-	testcontext "github.com/NVIDIA/KAI-scheduler/test/e2e/modules/context"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/pod_group"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/resources/rd/queue"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/utils"
-	"github.com/NVIDIA/KAI-scheduler/test/e2e/modules/wait"
+	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/configurations/feature_flags"
+	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/utils"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 )
 
 var _ = Describe("Topology", Ordered, func() {
@@ -82,9 +82,9 @@ var _ = Describe("Topology", Ordered, func() {
 			}
 
 			gpusPerNode := testTopologyData.TopologyNodes[gpuNodesNames[0]].
-				Status.Allocatable[v1.ResourceName(constants.GpuResource)]
+				Status.Allocatable[v1.ResourceName(constants.NvidiaGpuResource)]
 			podResource := v1.ResourceList{
-				v1.ResourceName(constants.GpuResource): gpusPerNode,
+				v1.ResourceName(constants.NvidiaGpuResource): gpusPerNode,
 			}
 
 			pods := createDistributedWorkload(ctx, testCtx, 2, podResource, topologyConstraint)
@@ -111,9 +111,9 @@ var _ = Describe("Topology", Ordered, func() {
 			}
 
 			gpusPerNode := testTopologyData.TopologyNodes[gpuNodesNames[0]].
-				Status.Allocatable[v1.ResourceName(constants.GpuResource)]
+				Status.Allocatable[v1.ResourceName(constants.NvidiaGpuResource)]
 			podResource := v1.ResourceList{
-				v1.ResourceName(constants.GpuResource): gpusPerNode,
+				v1.ResourceName(constants.NvidiaGpuResource): gpusPerNode,
 			}
 
 			pods := createDistributedWorkload(ctx, testCtx, 2, podResource, topologyConstraint)
@@ -141,10 +141,10 @@ var _ = Describe("Topology", Ordered, func() {
 			}
 
 			gpusPerNode := testTopologyData.TopologyNodes[gpuNodesNames[0]].
-				Status.Allocatable[v1.ResourceName(constants.GpuResource)]
+				Status.Allocatable[v1.ResourceName(constants.NvidiaGpuResource)]
 			halfGpusPerNode := int64(gpusPerNode.AsFloat64Slow() / 2)
 			podResource := v1.ResourceList{
-				v1.ResourceName(constants.GpuResource): *resource.NewQuantity(halfGpusPerNode, resource.DecimalSI),
+				v1.ResourceName(constants.NvidiaGpuResource): *resource.NewQuantity(halfGpusPerNode, resource.DecimalSI),
 			}
 
 			pods := createDistributedWorkload(ctx, testCtx, 2, podResource, topologyConstraint)
@@ -171,9 +171,9 @@ var _ = Describe("Topology", Ordered, func() {
 			}
 
 			gpusPerNode := testTopologyData.TopologyNodes[gpuNodesNames[0]].
-				Status.Allocatable[v1.ResourceName(constants.GpuResource)]
+				Status.Allocatable[v1.ResourceName(constants.NvidiaGpuResource)]
 			podResource := v1.ResourceList{
-				v1.ResourceName(constants.GpuResource): gpusPerNode,
+				v1.ResourceName(constants.NvidiaGpuResource): gpusPerNode,
 			}
 
 			pods := createDistributedWorkload(ctx, testCtx, 2, podResource, topologyConstraint)
@@ -224,9 +224,9 @@ var _ = Describe("Topology", Ordered, func() {
 			}
 
 			gpusPerNode := testTopologyData.TopologyNodes[gpuNodesNames[0]].
-				Status.Allocatable[v1.ResourceName(constants.GpuResource)]
+				Status.Allocatable[v1.ResourceName(constants.NvidiaGpuResource)]
 			podResource := v1.ResourceList{
-				v1.ResourceName(constants.GpuResource): gpusPerNode,
+				v1.ResourceName(constants.NvidiaGpuResource): gpusPerNode,
 			}
 
 			pods := createDistributedWorkload(ctx, testCtx, 4, podResource, topologyConstraint)
@@ -250,6 +250,54 @@ var _ = Describe("Topology", Ordered, func() {
 		})
 	})
 
+	Context("Topology - alias resolution", func() {
+		const numNodesInTestTopology = 4
+
+		BeforeEach(func(ctx context.Context) {
+			testTopologyData, gpuNodesNames = rd.CreateRackZoneTopology(ctx, testCtx.KubeClientset, testCtx.KubeConfig, numNodesInTestTopology, 2)
+			DeferCleanup(func(ctx context.Context) {
+				rd.CleanRackZoneTopology(ctx, testTopologyData, testCtx.KubeConfig)
+			})
+
+			rd.AssignNodesToTestTopology(ctx, testCtx.ControllerClient, gpuNodesNames, testTopologyData, numNodesInTestTopology, false)
+			DeferCleanup(func(ctx context.Context) {
+				rd.CleanNodesFromTopology(ctx, testCtx.ControllerClient, testTopologyData)
+			})
+		})
+
+		AfterEach(func(ctx context.Context) {
+			testCtx.TestContextCleanup(ctx)
+		})
+
+		It("schedules a workload that references the rack level by alias", func(ctx context.Context) {
+			namespace := queue.GetConnectedNamespaceToQueue(testCtx.Queues[0])
+			topologyConstraint := v2alpha2.TopologyConstraint{
+				RequiredTopologyLevel: rd.TestRackAlias, // alias resolves to rd.TestRackLabelKey
+				Topology:              "e2e-topology-tree",
+			}
+
+			gpusPerNode := testTopologyData.TopologyNodes[gpuNodesNames[0]].
+				Status.Allocatable[v1.ResourceName(constants.NvidiaGpuResource)]
+			podResource := v1.ResourceList{
+				v1.ResourceName(constants.NvidiaGpuResource): gpusPerNode,
+			}
+
+			pods := createDistributedWorkload(ctx, testCtx, 2, podResource, topologyConstraint)
+			wait.ForPodsScheduled(ctx, testCtx.ControllerClient, namespace, pods)
+
+			podList, err := testCtx.KubeClientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
+			Expect(err).NotTo(HaveOccurred(), "Failed to list pods")
+
+			scheduledRacks := map[string][]string{}
+			for _, pod := range podList.Items {
+				podRack := testTopologyData.TopologyNodes[pod.Spec.NodeName].Labels[rd.TestRackLabelKey]
+				scheduledRacks[podRack] = append(scheduledRacks[podRack], pod.Name)
+			}
+
+			Expect(len(scheduledRacks)).To(Equal(1), "Expected all pods scheduled to one rack via alias, got %v", scheduledRacks)
+		})
+	})
+
 	Context("Empty context to jump over ginkgo bug", func() {
 		It("should not create test suite while ensuring that the test suite is executed", func(ctx context.Context) {
 			Expect(true).To(BeTrue())
@@ -259,24 +307,13 @@ var _ = Describe("Topology", Ordered, func() {
 
 func createDistributedWorkload(ctx context.Context, testCtx *testcontext.TestContext,
 	podCount int, podResource v1.ResourceList, topologyConstraint v2alpha2.TopologyConstraint) []*v1.Pod {
-	namespace := queue.GetConnectedNamespaceToQueue(testCtx.Queues[0])
-	queueName := testCtx.Queues[0].Name
-
-	podGroup := pod_group.Create(namespace, "distributed-pod-group"+utils.GenerateRandomK8sName(10), queueName)
-	podGroup.Spec.MinMember = int32(podCount)
-	podGroup.Spec.TopologyConstraint = topologyConstraint
-
-	pods := []*v1.Pod{}
-	Expect(testCtx.ControllerClient.Create(ctx, podGroup)).To(Succeed())
-	for i := 0; i < podCount; i++ {
-		pod := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{Requests: podResource, Limits: podResource})
-		pod.Name = "distributed-pod-" + utils.GenerateRandomK8sName(10)
-		pod.Annotations[pod_group.PodGroupNameAnnotation] = podGroup.Name
-		pod.Labels[pod_group.PodGroupNameAnnotation] = podGroup.Name
-		_, err := rd.CreatePod(ctx, testCtx.KubeClientset, pod)
-		Expect(err).To(Succeed())
-		pods = append(pods, pod)
-	}
-
-	return pods
+	result, err := rd.CreateDistributedBatchJob(ctx, testCtx.ControllerClient, testCtx.Queues[0],
+		rd.DistributedBatchJobOptions{
+			Parallelism:        ptr.To(int32(podCount)),
+			NamePrefix:         "distributed-" + utils.GenerateRandomK8sName(5) + "-",
+			Resources:          v1.ResourceRequirements{Requests: podResource, Limits: podResource},
+			TopologyConstraint: &topologyConstraint,
+		})
+	Expect(err).To(Succeed())
+	return result.Pods
 }

@@ -4,26 +4,31 @@
 package nodes_fake
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strconv"
 
 	v1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/sets"
 
-	commonconstants "github.com/NVIDIA/KAI-scheduler/pkg/common/constants"
-	"github.com/NVIDIA/KAI-scheduler/pkg/common/resources"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/common_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/node_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/cache/cluster_info"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/log"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/resources_fake"
-	"github.com/NVIDIA/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
+	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/cluster_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/resources_fake"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 )
 
 const (
@@ -51,15 +56,42 @@ type TestNodeBasic struct {
 	GpuMemorySynced *bool
 	MaxTaskNum      *int
 	Labels          map[string]string
+	NumaTopology    *node_info.NumaTopology
 }
 
 func BuildNodesInfoMap(
 	Nodes map[string]TestNodeBasic, tasksToNodeMap map[string]pod_info.PodsMap,
-	clusterPodAffinityInfo *cache.K8sClusterPodAffinityInfo, draClusterObjects ...runtime.Object) map[string]*node_info.NodeInfo {
+	clusterPodAffinityInfo *cache.K8sClusterPodAffinityInfo, vectorMap *resource_info.ResourceVectorMap,
+	draClusterObjects ...runtime.Object,
+) map[string]*node_info.NodeInfo {
 	if clusterPodAffinityInfo == nil {
 		clusterPodAffinityInfo = cache.NewK8sClusterPodAffinityInfo()
 	}
 	slicesByNode := calcResourceSlicesMap(draClusterObjects)
+
+	for _, nodeMetadata := range Nodes {
+		nodeGpuCount := strconv.Itoa(nodeMetadata.GPUs)
+		nodeAllocatableGPUs := nodeGpuCount
+		if nodeMetadata.MigStrategy == node_info.MigStrategyMixed {
+			nodeAllocatableGPUs = "0"
+		}
+
+		cpuMilliAllocatableVal := cpuMilliAllocatable
+		memoryAllocatableVal := memoryAllocatable
+
+		if nodeMetadata.CPUMillis > 0 {
+			cpuMilliAllocatableVal = strconv.FormatFloat(nodeMetadata.CPUMillis, 'f', -1, 64)
+		}
+
+		if nodeMetadata.CPUMemory > 0 {
+			memoryAllocatableVal = strconv.FormatFloat(nodeMetadata.CPUMemory, 'f', -1, 64)
+		}
+
+		nodeResourceAllocatable := resources_fake.BuildResourceList(&cpuMilliAllocatableVal, &memoryAllocatableVal,
+			&nodeAllocatableGPUs, nodeMetadata.MigInstances)
+		vectorMap.AddResourceList(*nodeResourceAllocatable)
+	}
+
 	nodesInfoMap := map[string]*node_info.NodeInfo{}
 
 	for nodeName, nodeMetadata := range Nodes {
@@ -68,12 +100,20 @@ func BuildNodesInfoMap(
 			tasksOfNode = tasksToNodeMap[nodeName]
 		}
 
-		nodeInfo := buildNodeInfo(nodeName, &nodeMetadata, tasksOfNode, clusterPodAffinityInfo, slicesByNode)
+		nodeInfo := buildNodeInfo(nodeName, &nodeMetadata, tasksOfNode, clusterPodAffinityInfo, slicesByNode, vectorMap)
 		if nodeMetadata.GpuMemorySynced != nil {
 			nodeInfo.GpuMemorySynced = *nodeMetadata.GpuMemorySynced
 		}
 		if nodeMetadata.MaxTaskNum != nil {
 			nodeInfo.MaxTaskNum = *nodeMetadata.MaxTaskNum
+			podsIdx := resource_info.PodsIndex
+			nodeInfo.AllocatableVector.Set(podsIdx, float64(*nodeMetadata.MaxTaskNum))
+			usedPods := nodeInfo.UsedVector.Get(podsIdx)
+			availablePods := float64(*nodeMetadata.MaxTaskNum) - usedPods
+			if availablePods < 0 {
+				availablePods = 0
+			}
+			nodeInfo.IdleVector.Set(podsIdx, availablePods)
 		}
 		nodesInfoMap[nodeName] = nodeInfo
 	}
@@ -107,6 +147,7 @@ func BuildNode(node string, capacity *v1.ResourceList, allocatable *v1.ResourceL
 func buildNodeInfo(
 	nodeName string, nodeMetadata *TestNodeBasic, tasksOfNode pod_info.PodsMap,
 	clusterPodAffinityInfo *cache.K8sClusterPodAffinityInfo, slicesByNode map[string][]*resourceapi.ResourceSlice,
+	vectorMap *resource_info.ResourceVectorMap,
 ) *node_info.NodeInfo {
 	nodeGpuCount := strconv.Itoa(nodeMetadata.GPUs)
 	nodeAllocatableGPUs := nodeGpuCount
@@ -132,11 +173,17 @@ func buildNodeInfo(
 		migEnabledLabel = "true"
 	}
 
-	nodeResource := resources_fake.BuildResourceList(&cpuMilliOverallVal, &memoryOverallVal, &nodeGpuCount,
+	nodeResource := *resources_fake.BuildResourceList(&cpuMilliOverallVal, &memoryOverallVal, &nodeGpuCount,
 		nodeMetadata.MigInstances)
-	nodeResourceAllocatable := resources_fake.BuildResourceList(&cpuMilliAllocatableVal, &memoryAllocatableVal,
+	if _, found := nodeResource[v1.ResourcePods]; !found {
+		nodeResource[v1.ResourcePods] = resource.MustParse("110")
+	}
+	nodeResourceAllocatable := *resources_fake.BuildResourceList(&cpuMilliAllocatableVal, &memoryAllocatableVal,
 		&nodeAllocatableGPUs, nodeMetadata.MigInstances)
-	node := BuildNode(nodeName, nodeResource, nodeResourceAllocatable)
+	if _, found := nodeResourceAllocatable[v1.ResourcePods]; !found {
+		nodeResourceAllocatable[v1.ResourcePods] = resource.MustParse("110")
+	}
+	node := BuildNode(nodeName, &nodeResource, &nodeResourceAllocatable)
 	node.Labels = map[string]string{
 		commonconstants.GpuCountLabel:    nodeGpuCount,
 		node_info.GpuMemoryLabel:         strconv.Itoa(node_info.DefaultGpuMemory),
@@ -151,7 +198,8 @@ func buildNodeInfo(
 		node.Labels[node_info.GpuMemoryLabel] = strconv.Itoa(nodeMetadata.GPUMemory)
 	}
 	podAffinityInfo := cluster_info.NewK8sNodePodAffinityInfo(node, clusterPodAffinityInfo)
-	nodeInfo := node_info.NewNodeInfo(node, podAffinityInfo)
+	nodeInfo := node_info.NewNodeInfo(node, podAffinityInfo, vectorMap)
+	nodeInfo.NumaTopology = nodeMetadata.NumaTopology
 
 	// Count GPUs from node-specific slices
 	var draGPUCount int64
@@ -199,4 +247,56 @@ func toSorted(tasks pod_info.PodsMap) []*pod_info.PodInfo {
 	}
 
 	return sortedTasks
+}
+
+// NewNumaZone builds a NUMA zone whose Allocatable equals its Available (no in-flight usage).
+// Amounts are resource-name to quantity-string, e.g. {"cpu": "4", "memory": "16Gi"}.
+func NewNumaZone(id string, available map[v1.ResourceName]string) *node_info.NumaZone {
+	return NewNumaZoneWithAllocatable(id, available, available)
+}
+
+// NewNumaZoneWithAllocatable builds a NUMA zone with distinct static capacity (allocatable) and
+// current headroom (available) — used to model zones already partly consumed by running pods.
+func NewNumaZoneWithAllocatable(id string, allocatable, available map[v1.ResourceName]string) *node_info.NumaZone {
+	return &node_info.NumaZone{
+		ID:          id,
+		Allocatable: parseQuantities(allocatable),
+		Available:   parseQuantities(available),
+	}
+}
+
+// NewNumaTopology builds a NumaTopology, deriving the per-zone Resources set from the zones.
+func NewNumaTopology(
+	policy node_info.TopologyManagerPolicy, scope node_info.TopologyManagerScope, zones ...*node_info.NumaZone,
+) *node_info.NumaTopology {
+	resources := sets.New[v1.ResourceName]()
+	for _, zone := range zones {
+		for name := range zone.Available {
+			resources.Insert(name)
+		}
+	}
+	return &node_info.NumaTopology{Policy: policy, Scope: scope, Zones: zones, Resources: resources}
+}
+
+func parseQuantities(amounts map[v1.ResourceName]string) map[v1.ResourceName]resource.Quantity {
+	out := make(map[v1.ResourceName]resource.Quantity, len(amounts))
+	for name, qty := range amounts {
+		out[name] = resource.MustParse(qty)
+	}
+	return out
+}
+
+// NumaObservedPlacementAnnotation builds the kai.scheduler/numa-placement-observed pod annotation
+// (zone id to per-resource amount) the binder would have persisted for a running pod. The numa
+// plugin reconstructs the pod's NUMAPlacement from it at session open. Merge it via TestTaskBasic.Annotations.
+func NumaObservedPlacementAnnotation(zonePlacements map[string]map[v1.ResourceName]string) map[string]string {
+	record := make([]schedulingv1alpha2.NUMAZonePlacement, 0, len(zonePlacements))
+	for zoneID, amounts := range zonePlacements {
+		record = append(record, schedulingv1alpha2.NUMAZonePlacement{Zone: zoneID, Amount: parseQuantities(amounts)})
+	}
+	data, err := json.Marshal(record)
+	if err != nil {
+		panic(err)
+	}
+	return map[string]string{commonconstants.NumaPlacementObserved: string(data)}
 }

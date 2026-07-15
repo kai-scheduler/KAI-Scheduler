@@ -17,18 +17,18 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
-          go-version: '1.24.4'
+          go-version: '1.26.3'
 
       - name: Run tests with coverage
         run: make test
 
       - name: Archive code coverage results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: code-coverage
           path: coverage/coverage.out
