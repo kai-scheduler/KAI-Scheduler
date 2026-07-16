@@ -1,0 +1,6 @@
+kind: Changed
+body: Reject negative PyTorch replica and LWS worker indexes, and cap block-level segmentation at 10,000 subgroups to prevent unbounded PodGroup fan-out.
+time: 2026-07-16T11:36:56.132637462+02:00
+custom:
+    Author: davidLif
+    Issue: "1816"
