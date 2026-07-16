@@ -177,16 +177,41 @@ Negative `IdleVector` values are not merely cosmetic: `calcSubTreeFreeResources`
 
 Fix: in `addTaskResources` and `removeTaskResources`, before applying the vector to `UsedVector` / `IdleVector` / `ReleasingVector`, zero out any scalar dimension `i > PodsIndex` where `ni.AllocatableVector.Get(i) == 0`. This condition reliably identifies resources for which KAI delegates capacity decisions to the DRA allocator — no DeviceClass cache lookup is needed at this layer. CPU, memory, GPU, and pods always have non-zero allocatable on real nodes, so they are unaffected.
 
+### BindRequest Extension
+
+The scheduler communicates allocation results to the binder by creating a `BindRequest` CR in the API server. Existing DRA claims are carried in `BindRequestSpec.ResourceClaimAllocations`, keyed by `podClaim.Name` (the name of the entry in `pod.Spec.ResourceClaims`).
+
+The special claim has no corresponding entry in `pod.Spec.ResourceClaims`, so the existing field cannot carry it. `BindRequestSpec` needs a new field:
+
+```go
+// ExtendedResourceClaimAllocation carries the scheduler's allocation result
+// for the DRA-backed extended resource special claim, if any.
+ExtendedResourceClaimAllocation *ExtendedResourceClaimAllocation `json:"extendedResourceClaimAllocation,omitempty"`
+```
+
+```go
+type ExtendedResourceClaimAllocation struct {
+    // Allocation is the AllocationResult from the DRA structured allocator.
+    Allocation *v1.AllocationResult `json:"allocation"`
+    // DeviceRequests is the Spec.Devices.Requests to set on the created ResourceClaim.
+    DeviceRequests []v1.DeviceRequest `json:"deviceRequests"`
+    // ContainerMappings is the container→request mapping for pod.Status.ExtendedResourceClaimStatus.
+    ContainerMappings []v1.ContainerExtendedResourceRequest `json:"containerMappings"`
+}
+```
+
+The scheduler populates `ExtendedResourceClaimAllocation` from the node-specific result stored during Filter before creating the BindRequest.
+
 ### Binder — PreBind / Bind
 
-At bind time the binder creates the real ResourceClaim and wires it to the pod:
+At bind time the binder reads `ExtendedResourceClaimAllocation` from the BindRequest and:
 
-1. **Create ResourceClaim** in the API server using `GenerateName` (`<pod-name>-extended-resources-`), the `resource.kubernetes.io/extended-resource-claim: true` annotation, and the pod as owner reference. The `Spec.Devices.Requests` is taken from the node-specific allocation result stored during Filter.
-2. **Patch claim status**: add the built-in finalizer, set `Status.Allocation` from the allocator result, and add the pod to `Status.ReservedFor`.
-3. **Patch `pod.Status.ExtendedResourceClaimStatus`**: record the generated claim name and the container→request mappings so the kubelet knows which devices to inject.
+1. **Create ResourceClaim** in the API server using `GenerateName` (`<pod-name>-extended-resources-`), the `resource.kubernetes.io/extended-resource-claim: true` annotation, the pod as owner reference, and `DeviceRequests` as `Spec.Devices.Requests`.
+2. **Patch claim status**: add the built-in finalizer, set `Status.Allocation` from `Allocation`, and add the pod to `Status.ReservedFor`.
+3. **Patch `pod.Status.ExtendedResourceClaimStatus`**: record the generated claim name and `ContainerMappings` so the kubelet knows which devices to inject.
 4. **Bind pod to node** via the standard BindRequest flow.
 
-For idempotency, the binder uses `GenerateName` with a deterministic base so that a second attempt (e.g. after a status patch failure) can find the existing claim via `findExtendedResourceClaim` rather than creating a duplicate.
+For idempotency, if `findExtendedResourceClaim` finds an existing claim for the pod (prior attempt that created the claim but failed to patch pod status), the binder skips claim creation and proceeds from step 2.
 
 The upstream reference is `createExtendedResourceClaimInAPI` and `patchPodExtendedResourceClaimStatus` in `extendeddynamicresources.go`.
 
@@ -207,7 +232,8 @@ The upstream reference is `createExtendedResourceClaimInAPI` and `patchPodExtend
 | `dynamicresources` scheduler plugin | Detect extended-resource requests backed by DRA; synthesize and allocate in-memory special claim |
 | `node_info.go` | Remove temporary guard at line 316 |
 | `resource_info` / `dra_resource_utils.go` | Skip `extended-resource-claim`-annotated claims in claim extraction |
-| binder `dynamicresources` plugin | Create real ResourceClaim in API, patch pod status at bind time |
+| `bindrequest_types.go` | Add `ExtendedResourceClaimAllocation` field to `BindRequestSpec` |
+| binder `dynamicresources` plugin | Read `ExtendedResourceClaimAllocation` from BindRequest; create real ResourceClaim in API, patch pod status at bind time |
 
 ## Open Questions
 
