@@ -216,18 +216,24 @@ func measureUnschedulableDelayInSeconds(
 ) float64 {
 	totalTime := time.Duration(0)
 	for range statusMeasuringSamples {
-		tracker, err := submitJobBatch(ctx, testCtx, queue.GetConnectedNamespaceToQueue(testQueue), []jobSubmission{
-			distributedJobSubmissionForKwok(testCtx, testQueue, resources, numberOfPods, nil, nil),
-		})
-		Expect(err).NotTo(HaveOccurred())
-		timing, err := tracker.WaitForPodGroupCondition(ctx, v2alpha2.UnschedulableOnNodePool)
-		Expect(err).NotTo(HaveOccurred())
-		totalTime += timing.TransitionAt.Sub(timing.CreatedAt)
+		func() {
+			measurementCtx, cancel := context.WithTimeout(ctx, maxFlowTimeoutMinutes*time.Minute)
+			defer cancel()
 
-		jobs := tracker.Jobs()
-		Expect(jobs).To(HaveLen(1))
-		Expect(deleteObjectWithRetries(ctx, testCtx.ControllerClient, jobs[0])).To(Succeed())
-		tracker.Close()
+			tracker, err := submitJobBatch(measurementCtx, testCtx, queue.GetConnectedNamespaceToQueue(testQueue), []jobSubmission{
+				distributedJobSubmissionForKwok(testCtx, testQueue, resources, numberOfPods, nil, nil),
+			})
+			Expect(err).NotTo(HaveOccurred())
+			defer tracker.Close()
+
+			timing, err := tracker.WaitForPodGroupCondition(measurementCtx, v2alpha2.UnschedulableOnNodePool)
+			Expect(err).NotTo(HaveOccurred())
+			totalTime += timing.TransitionAt.Sub(timing.CreatedAt)
+
+			jobs := tracker.Jobs()
+			Expect(jobs).To(HaveLen(1))
+			Expect(deleteObjectWithRetries(measurementCtx, testCtx.ControllerClient, jobs[0])).To(Succeed())
+		}()
 	}
 
 	return totalTime.Seconds() / float64(statusMeasuringSamples)
