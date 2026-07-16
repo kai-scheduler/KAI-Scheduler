@@ -35,7 +35,7 @@ In simulations, I would consider "possible victims" only the last `n-m` ("the ex
 - **For podgroup and queue statuses**: consider only the `min-member` resources for the non-preemptible counting. Like the scheduler, they should know the pod order to know which pods are considered "core", and which pods are "extra".
 - "Fully preemptible" representative job for solver simulations containing the "extra" pods of a semi-preemptible job.
 
-## Non-Preemptible Accounting API (Option A)
+## Non-Preemptible Accounting API
 
 ### Problem
 
@@ -127,21 +127,6 @@ if state := originalStatus.SchedulingState; state != nil && state.NonPreemptible
 	updatedStatus.ResourcesStatus.AllocatedNonPreemptible = metaData.Allocated // legacy fallback
 }
 ```
-
-### Why a nested block (designed for expansion)
-
-`schedulingState` is a namespace for scheduler-authoritative accounting so future needs land without
-further top-level status churn. Illustrative future fields (not built now):
-
-```go
-// ElasticAllocated        v1.ResourceList // surplus beyond core (reclaimed first)
-// MinRequirementSatisfied *bool           // job has reached its minimal shape
-// CoreSubGroups           []string        // which subgroups the scheduler counts as core (debug/observability)
-// LastEvaluatedSession    string          // scheduler session id/generation for staleness detection
-```
-
-Intended invariant once `ElasticAllocated` exists:
-`NonPreemptibleAllocated + ElasticAllocated == ResourcesStatus.Allocated`.
 
 ### Notes / trade-offs
 
