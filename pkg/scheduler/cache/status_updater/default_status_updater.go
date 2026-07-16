@@ -457,8 +457,7 @@ func (su *defaultStatusUpdater) clearPodGroupSchedulingCondition(job *podgroup_i
 	if hasTasksAwaitingBind(job) {
 		return false
 	}
-	nodePool := utils.GetNodePoolNameFromLabels(job.PodGroup.Labels, su.nodePoolLabelKey)
-	return removePodGroupSchedulingCondition(job.PodGroup, nodePool)
+	return removePodGroupSchedulingCondition(job.PodGroup)
 }
 
 func (su *defaultStatusUpdater) addNodePoolPrefixIfNeeded(job *podgroup_info.PodGroupInfo, msg string) string {
@@ -627,18 +626,11 @@ func hasTasksAwaitingBind(job *podgroup_info.PodGroupInfo) bool {
 	return false
 }
 
-func removePodGroupSchedulingCondition(podGroup *enginev2alpha2.PodGroup, nodePool string) bool {
-	if utils.GetSchedulingConditionIndex(podGroup, nodePool) == -1 {
+func removePodGroupSchedulingCondition(podGroup *enginev2alpha2.PodGroup) bool {
+	if len(podGroup.Status.SchedulingConditions) == 0 {
 		return false
 	}
-
-	var remainingConditions []enginev2alpha2.SchedulingCondition
-	for _, condition := range podGroup.Status.SchedulingConditions {
-		if condition.NodePool != nodePool {
-			remainingConditions = append(remainingConditions, condition)
-		}
-	}
-	podGroup.Status.SchedulingConditions = remainingConditions
+	podGroup.Status.SchedulingConditions = nil
 	return true
 }
 
