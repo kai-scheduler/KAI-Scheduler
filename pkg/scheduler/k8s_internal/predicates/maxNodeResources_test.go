@@ -16,10 +16,10 @@ import (
 	ksf "k8s.io/kube-scheduler/framework"
 	"k8s.io/utils/ptr"
 
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	commonconstants "github.com/kai-scheduler/api/constants"
+	"github.com/kai-scheduler/api/utilities/resources"
 )
 
 func buildTestNodes(nodesResourceLists map[string]v1.ResourceList) map[string]*node_info.NodeInfo {

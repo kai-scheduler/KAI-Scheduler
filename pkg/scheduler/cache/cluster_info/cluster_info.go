@@ -31,12 +31,6 @@ import (
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
 
-	kubeAiSchedulerinfo "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/informers/externalversions"
-	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
-	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
-	pg "github.com/kai-scheduler/KAI-scheduler/pkg/common/podgroup"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -53,6 +47,12 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/utils"
+	kubeAiSchedulerinfo "github.com/kai-scheduler/api/client/informers/externalversions"
+	"github.com/kai-scheduler/api/constants"
+	kaiv1alpha1 "github.com/kai-scheduler/api/kai/v1alpha1"
+	enginev2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
+	pg "github.com/kai-scheduler/api/utilities/podgroup"
+	"github.com/kai-scheduler/api/utilities/resources"
 )
 
 type ClusterInfo struct {

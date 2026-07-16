@@ -20,7 +20,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/admission"
 	kaiv1binder "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/binder"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/api/constants"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 

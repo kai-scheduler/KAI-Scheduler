@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	resourceapi "k8s.io/api/resource/v1"
 
-	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -23,6 +22,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
+	schedulingv1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
 )
 
 func TestStatement_Evict_Unevict(t *testing.T) {

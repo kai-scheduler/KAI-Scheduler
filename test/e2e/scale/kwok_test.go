@@ -21,10 +21,6 @@ import (
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
-	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
-	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	schedulerconfig "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/configurations"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/constant/labels"
 	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
@@ -37,6 +33,10 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait/watcher"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/scale/topology"
+	"github.com/kai-scheduler/api/constants"
+	kaiv1alpha1 "github.com/kai-scheduler/api/kai/v1alpha1"
+	v2 "github.com/kai-scheduler/api/scheduling/v2"
+	"github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
 var _ = ReportAfterSuite("report failed test suite if needed", func(report Report) {

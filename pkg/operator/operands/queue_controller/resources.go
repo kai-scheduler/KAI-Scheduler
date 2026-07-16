@@ -8,9 +8,9 @@ import (
 	"fmt"
 
 	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	generate "github.com/kai-scheduler/KAI-scheduler/pkg/operator/cert-utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common"
+	"github.com/kai-scheduler/api/constants"
 
 	admissionv1 "k8s.io/api/admissionregistration/v1"
 	v1 "k8s.io/api/core/v1"

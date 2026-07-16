@@ -15,11 +15,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	kaiv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	schedulingv2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/env-tests/binder"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/env-tests/utils"
+	"github.com/kai-scheduler/api/constants"
+	kaiv1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
+	schedulingv2 "github.com/kai-scheduler/api/scheduling/v2"
 )
 
 // This test reproduces a race condition in the binder's resource reservation

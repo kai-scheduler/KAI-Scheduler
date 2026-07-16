@@ -28,8 +28,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
-	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	kaiv1alpha1 "github.com/kai-scheduler/api/kai/v1alpha1"
+	schedulingv1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
 
 	admissionplugins "github.com/kai-scheduler/KAI-scheduler/pkg/admission/plugins"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/admission/webhook/topologyhooks"

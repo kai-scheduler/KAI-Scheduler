@@ -23,8 +23,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	kubeaischedulerscheme "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/scheme"
-	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	kubeaischedulerscheme "github.com/kai-scheduler/api/client/clientset/versioned/scheme"
+	schedulingv1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding"
 	mock_binder "github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding/mock"

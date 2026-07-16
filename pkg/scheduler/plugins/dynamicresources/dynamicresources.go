@@ -15,16 +15,16 @@ import (
 	"k8s.io/dynamic-resource-allocation/structured"
 	ksf "k8s.io/kube-scheduler/framework"
 
-	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	featuregates "github.com/kai-scheduler/KAI-scheduler/pkg/common/feature_gates"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/k8s_utils"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/api/constants"
+	schedulingv1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
+	"github.com/kai-scheduler/api/utilities/resources"
 )
 
 const (

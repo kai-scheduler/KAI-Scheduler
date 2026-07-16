@@ -10,7 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/common"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/api/constants"
 )
 
 func TestMutate(t *testing.T) {

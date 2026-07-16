@@ -18,7 +18,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
 	kaiv1common "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/pod_grouper"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/api/constants"
 )
 
 func TestBuildArgsList(t *testing.T) {

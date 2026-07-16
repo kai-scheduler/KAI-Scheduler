@@ -14,7 +14,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/prometheus"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/queue_controller"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/scheduler"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/api/constants"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )

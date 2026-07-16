@@ -34,12 +34,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/controller/status_reconciler"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/deployable"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/known_types"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/scheduler"
+	"github.com/kai-scheduler/api/constants"
 )
 
 func OperandsForShard(shard *kaiv1.SchedulingShard) []operands.Operand {
