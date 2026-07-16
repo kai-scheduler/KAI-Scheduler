@@ -390,7 +390,6 @@ func assertPodGroupConditions(t *testing.T, actualConditions, expectedConditions
 type RemovePodGroupConditionTest struct {
 	name               string
 	podGroup           *enginev2alpha2.PodGroup
-	nodePool           string
 	expectedConditions []enginev2alpha2.SchedulingCondition
 	expectedUpdated    bool
 }
@@ -415,47 +414,33 @@ func TestRemovePodGroupSchedulingCondition(t *testing.T) {
 					SchedulingConditions: []enginev2alpha2.SchedulingCondition{},
 				},
 			},
-			nodePool:           "default",
 			expectedConditions: []enginev2alpha2.SchedulingCondition{},
 			expectedUpdated:    false,
 		},
 		{
-			name: "Condition for node pool is removed once scheduled",
+			name: "Single condition is removed once scheduled",
 			podGroup: &enginev2alpha2.PodGroup{
 				Status: enginev2alpha2.PodGroupStatus{
 					SchedulingConditions: []enginev2alpha2.SchedulingCondition{unschedulable("default")},
 				},
 			},
-			nodePool:           "default",
 			expectedConditions: []enginev2alpha2.SchedulingCondition{},
 			expectedUpdated:    true,
 		},
 		{
-			name: "Condition for a different node pool is left untouched",
-			podGroup: &enginev2alpha2.PodGroup{
-				Status: enginev2alpha2.PodGroupStatus{
-					SchedulingConditions: []enginev2alpha2.SchedulingCondition{unschedulable("pool-a")},
-				},
-			},
-			nodePool:           "default",
-			expectedConditions: []enginev2alpha2.SchedulingCondition{unschedulable("pool-a")},
-			expectedUpdated:    false,
-		},
-		{
-			name: "Only the matching node pool condition is removed",
+			name: "All conditions across node pools are removed",
 			podGroup: &enginev2alpha2.PodGroup{
 				Status: enginev2alpha2.PodGroupStatus{
 					SchedulingConditions: []enginev2alpha2.SchedulingCondition{unschedulable("default"), unschedulable("pool-b")},
 				},
 			},
-			nodePool:           "default",
-			expectedConditions: []enginev2alpha2.SchedulingCondition{unschedulable("pool-b")},
+			expectedConditions: []enginev2alpha2.SchedulingCondition{},
 			expectedUpdated:    true,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Logf("Running test %d: %s", i, test.name)
-			updated := removePodGroupSchedulingCondition(test.podGroup, test.nodePool)
+			updated := removePodGroupSchedulingCondition(test.podGroup)
 			assert.Equal(t, test.expectedUpdated, updated)
 			assertPodGroupConditions(t, test.podGroup.Status.SchedulingConditions, test.expectedConditions)
 		})
