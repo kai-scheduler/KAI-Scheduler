@@ -9,7 +9,6 @@ import (
 
 	"gopkg.in/h2non/gock.v1"
 
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	featuregates "github.com/kai-scheduler/KAI-scheduler/pkg/common/feature_gates"
 	integration_tests_utils "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/integration_tests_utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
@@ -19,6 +18,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
+	commonconstants "github.com/kai-scheduler/api/constants"
 	resourceapi "k8s.io/api/resource/v1"
 )
 

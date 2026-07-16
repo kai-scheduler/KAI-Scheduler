@@ -18,11 +18,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
+	commonconstants "github.com/kai-scheduler/api/constants"
+	"github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
 const (

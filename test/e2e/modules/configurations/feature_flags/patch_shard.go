@@ -14,11 +14,11 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/configurations"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/constant"
 	testContext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
+	"github.com/kai-scheduler/api/constants"
 )
 
 type patchCallback func(shard *kaiv1.SchedulingShard)

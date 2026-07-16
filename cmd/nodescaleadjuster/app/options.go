@@ -7,8 +7,8 @@ import (
 	"flag"
 	"fmt"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/nodescaleadjuster/consts"
+	"github.com/kai-scheduler/api/constants"
 )
 
 type Options struct {

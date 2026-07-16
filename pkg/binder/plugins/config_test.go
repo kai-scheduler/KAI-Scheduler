@@ -11,8 +11,8 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/state"
+	"github.com/kai-scheduler/api/scheduling/v1alpha2"
 )
 
 func TestDefaultConfig(t *testing.T) {

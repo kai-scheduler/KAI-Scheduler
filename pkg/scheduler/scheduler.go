@@ -31,7 +31,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
-	kubeaischedulerver "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned"
 	schedcache "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb"
 	api "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
@@ -41,6 +40,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
+	kubeaischedulerver "github.com/kai-scheduler/api/client/clientset/versioned"
 )
 
 type Scheduler struct {

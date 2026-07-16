@@ -15,13 +15,13 @@ import (
 	"sigs.k8s.io/yaml"
 
 	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/multinodegang"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/nodelocalgreedy"
+	"github.com/kai-scheduler/api/constants"
 )
 
 func TestResolveConfigurationFromFile(t *testing.T) {

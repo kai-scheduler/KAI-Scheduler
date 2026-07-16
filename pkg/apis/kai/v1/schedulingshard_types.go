@@ -24,8 +24,8 @@ import (
 	"k8s.io/utils/ptr"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	usagedbapi "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
+	"github.com/kai-scheduler/api/constants"
 )
 
 const (

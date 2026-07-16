@@ -18,12 +18,12 @@ import (
 	kwokv1alpha1 "sigs.k8s.io/kwok/pkg/apis/v1alpha1"
 	lws "sigs.k8s.io/lws/api/leaderworkerset/v1"
 
-	kubeAiSchedClient "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned"
 	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
-	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
-	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	kubeAiSchedulerV2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	kubeAiSchedClient "github.com/kai-scheduler/api/client/clientset/versioned"
+	kaiv1alpha1 "github.com/kai-scheduler/api/kai/v1alpha1"
+	v2 "github.com/kai-scheduler/api/scheduling/v2"
+	"github.com/kai-scheduler/api/scheduling/v2alpha2"
+	kubeAiSchedulerV2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
 
 	kwokopv1beta1 "github.com/run-ai/kwok-operator/api/v1beta1"
 )
