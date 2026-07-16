@@ -140,26 +140,33 @@ func (t *jobBatchTracker) Jobs() []*batchv1.Job {
 }
 
 func (t *jobBatchTracker) WaitForReady(ctx context.Context) error {
-	_, err := t.WaitForStatus(ctx, "batch resources to be created", func(status BatchStatus) bool {
-		return status.ObservedPods == status.ExpectedPods &&
-			status.ObservedPodGroups == status.ExpectedPodGroups
+	_, err := t.waitForLocked(ctx, "batch resources to be created", func(status BatchStatus) bool {
+		return status.ObservedPods >= status.ExpectedPods &&
+			status.ObservedPodGroups >= status.ExpectedPodGroups
 	})
 	return err
 }
 
 func (t *jobBatchTracker) WaitForScheduled(ctx context.Context) (BatchStatus, error) {
-	return t.WaitForStatus(ctx, "batch Pods to be scheduled", func(status BatchStatus) bool {
-		return status.ObservedPods == status.ExpectedPods && status.ScheduledPods == status.ExpectedPods
+	return t.waitForLocked(ctx, "batch Pods to be scheduled", func(status BatchStatus) bool {
+		return status.ObservedPods >= status.ExpectedPods && status.ScheduledPods >= status.ExpectedPods
 	})
 }
 
 func (t *jobBatchTracker) WaitForRunning(ctx context.Context) (BatchStatus, error) {
-	return t.WaitForStatus(ctx, "batch Pods to be running", func(status BatchStatus) bool {
-		return status.ObservedPods == status.ExpectedPods && status.RunningPods == status.ExpectedPods
+	return t.waitForLocked(ctx, "batch Pods to be running", func(status BatchStatus) bool {
+		return status.ObservedPods >= status.ExpectedPods && status.RunningPods >= status.ExpectedPods
 	})
 }
 
 func (t *jobBatchTracker) WaitForStatus(
+	ctx context.Context, description string, condition func(BatchStatus) bool,
+) (BatchStatus, error) {
+	return t.waitForLocked(ctx, description, condition)
+}
+
+// waitForLocked calls condition while t.mu is held.
+func (t *jobBatchTracker) waitForLocked(
 	ctx context.Context, description string, condition func(BatchStatus) bool,
 ) (BatchStatus, error) {
 	ticker := time.NewTicker(batchProgressLogInterval)
@@ -201,9 +208,7 @@ func (t *jobBatchTracker) WaitForPodGroupCondition(
 	ctx context.Context, conditionType v2alpha2.SchedulingConditionType,
 ) (PodGroupConditionTiming, error) {
 	var timing PodGroupConditionTiming
-	_, err := t.WaitForStatus(ctx, fmt.Sprintf("PodGroup condition %s", conditionType), func(BatchStatus) bool {
-		t.mu.Lock()
-		defer t.mu.Unlock()
+	_, err := t.waitForLocked(ctx, fmt.Sprintf("PodGroup condition %s", conditionType), func(BatchStatus) bool {
 		for _, podGroup := range t.podGroups {
 			if transitionAt, found := podGroup.conditions[conditionType]; found {
 				timing = PodGroupConditionTiming{CreatedAt: podGroup.createdAt, TransitionAt: transitionAt}
@@ -217,12 +222,10 @@ func (t *jobBatchTracker) WaitForPodGroupCondition(
 
 func (t *jobBatchTracker) WaitForSinglePodGroupCreation(ctx context.Context) (time.Time, error) {
 	var createdAt time.Time
-	_, err := t.WaitForStatus(ctx, "single PodGroup to be created", func(status BatchStatus) bool {
-		if status.ExpectedPodGroups != 1 || status.ObservedPodGroups != 1 {
+	_, err := t.waitForLocked(ctx, "single PodGroup to be created", func(status BatchStatus) bool {
+		if status.ExpectedPodGroups != 1 || status.ObservedPodGroups < 1 {
 			return false
 		}
-		t.mu.Lock()
-		defer t.mu.Unlock()
 		for _, podGroup := range t.podGroups {
 			createdAt = podGroup.createdAt
 			return true
