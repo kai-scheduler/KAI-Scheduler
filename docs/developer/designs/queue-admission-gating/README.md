@@ -1,0 +1,130 @@
+# Queue Admission Gating
+
+*Status: Proposed*
+
+Related issues: [#1615](https://github.com/kai-scheduler/KAI-Scheduler/issues/1615) (request), [#1783](https://github.com/kai-scheduler/KAI-Scheduler/issues/1783) (quota-change semantics — interacts, see below)
+
+## Motivation
+
+Queue quota and limits are enforced only at allocation time (`capacity_policy`). Pods blocked purely by queue policy are still created, marked `Unschedulable`, and re-examined every session. Two costs follow:
+
+1. **Autoscaler waste.** Cluster autoscalers (Karpenter, CA) treat `Unschedulable` pods as demand and provision nodes for workloads that will never be admitted. On GPU instance types this is expensive, and the nodes sit idle until scale-down. Volcano and Kueue both hold quota-blocked pods back from autoscaler visibility; KAI does not.
+2. **Scheduler load scales with submissions, not capacity.** Every session's snapshot, podgroup construction, and job ordering carry all submitted pods — O(pods submitted), not O(pods schedulable). A single tenant submitting far beyond quota degrades session latency for every queue. Scheduling signatures deduplicate repeated *scheduling attempts* within a session, but do not shrink the snapshot or the job-order heap, and do not hide pods from autoscalers.
+
+The proposal: hold quota-blocked pods with a Kubernetes scheduling gate. Gated pods are invisible to autoscalers (no `Unschedulable` condition is ever written) and are already excluded from session readiness by existing machinery, so both costs disappear using mechanisms Kubernetes and KAI already have.
+
+**Core principle: the gate is a cache of the existing quota verdict, never a new enforcement mechanism.** Allocation-time enforcement is unchanged. A pod stays gated iff `IsJobOverQueueCapacityFn` would reject its podgroup today. Webhook outage, manual gate removal, or disabling the feature all degrade to exactly today's behavior — never to a quota violation.
+
+## API
+
+Gate on the pod:
+
+```yaml
+spec:
+  schedulingGates:
+    - name: kai.scheduler/queue-admission
+```
+
+Opt-in per queue via a label on the Queue CR (no CRD change; graduation to a spec field is an open question):
+
+```yaml
+metadata:
+  labels:
+    kai.scheduler/queue-admission-gating: "true"
+```
+
+Global feature toggle in the Config CR, default off. The operator fans one knob out to both sides — the admission flag and the scheduler flag plus the `ungate` action — so webhook and scheduler cannot disagree across upgrades:
+
+```yaml
+spec:
+  global:
+    queueAdmissionGating:
+      enabled: false
+```
+
+## Semantics
+
+### Gate addition — deliberately dumb
+
+A new mutating-admission plugin in the existing pod-mutator chain appends the gate at pod CREATE (gates are create-only in Kubernetes) to pods with `schedulerName: kai-scheduler` whose queue opts in. The webhook performs **no quota computation** — queue usage is not reliably knowable at admission time (pods may be created before anything in the queue has been scheduled, and the PodGroup may not exist yet). All quota intelligence stays in the scheduler, evaluated on a consistent session snapshot. Cost: admissible pods in opted-in queues pay one extra scheduling cycle before allocation.
+
+### Gate removal — the `ungate` action
+
+A new scheduler action, appended last in the action list so it observes end-of-session queue state (including this session's allocations and evictions). Per session:
+
+1. Collect podgroups with gated tasks whose **only** gate is the KAI gate. Any foreign gate present → leave the pod untouched (its gate owner keeps control).
+2. Order podgroups with the existing queue/job ordering, so fairness ordering is preserved. Podgroups with partially removed gates (see gang semantics) are admitted first.
+3. Greedily admit against the quota oracle (below), committing each admission into simulated queue shares before evaluating the next — N admissions never collectively exceed quota.
+4. Admitted → enqueue gate-removal patches for the admitted pod set through the scheduler's existing async pod-patch queue (remove only the KAI gate entry, conflict-retried). Not admitted → record the quota reason on the podgroup (conditions below).
+
+Gated pods already flow correctly through the scheduler: they map to the `Gated` task status, are excluded from readiness (`alive − gated ≥ minAvailable`) and from allocation candidates, and all-gated podgroups are filtered before actions run. The O(schedulable) win reuses this path; no new scheduler fast-path is introduced.
+
+### Quota oracle and the Reserved bucket
+
+Admissibility mirrors the two existing capacity checks (non-preemptible over deserved quota; anyone over limit), with one addition. Quota is consumed only at allocation, so a podgroup ungated in session N that cannot yet allocate (e.g. waiting for node provisioning) would consume nothing in session N+1, and a second podgroup could be admitted against the same quota. To close this, pending **ungated** demand is counted as a `Reserved` bucket in queue attributes:
+
+- non-preemptible: admissible iff `Deserved ≥ AllocatedNotPreemptible + ReservedNotPreemptible + requested`
+- limit: admissible iff `MaxAllowed ≥ Allocated + Reserved + requested`
+
+Reserved is recomputed from cluster state each session ("admitted" ≡ pending without the KAI gate) — no persisted or in-memory-only state, so a scheduler restart loses nothing. It is deliberately conservative: pods pending for non-quota reasons also hold reservation; conservatism can only delay admission, never violate quota, and self-heals when those pods schedule or are deleted.
+
+### Autoscaler signal — no reservation pods
+
+Earlier discussion in #1615 proposed dummy "reservation" pods so autoscalers see admissible-but-capacity-starved demand. This design needs none: ungating is decided on **quota** admissibility, not node fit. An ungated pod that lacks node capacity becomes a real `Unschedulable` pending pod — the autoscaler's native signal, with true resources, affinity, and tolerations, and no double-count with a proxy. Gated pods (which could never run) are never marked `Unschedulable`, so autoscalers ignore them — precisely the #1615 fix. `node-scale-adjuster` keys off the `Unschedulable` condition and therefore needs zero changes; its fractional-GPU flow works unchanged after ungating.
+
+Cost: one extra cycle between quota becoming available and ungating, one more to allocate — bounded by the scheduling period.
+
+### Gang and elastic semantics
+
+- The ungate **decision** is per podgroup, all-or-nothing for the gang minimum. **Execution** is per pod and may be torn by a crash; re-decision is deterministic, and partially ungated podgroups are admitted first in the next session's greedy order, so a torn gang always converges instead of being starved by later arrivals.
+- A gang below `minAvailable` that is fully gated stays out of sessions entirely (existing readiness filter) — partially created gangs never occupy session time.
+- Elastic growth: new pods of a running podgroup arrive gated (webhook is unconditional) while siblings run; readiness holds since `alive − gated ≥ minAvailable`. The increment is admitted per pod — it consumes quota now, so evaluating the delta at ungate time is correct, and over-quota elastic tails no longer generate autoscaler noise.
+
+### Preempt / reclaim soundness
+
+Gating exactly the `IsJobOverQueueCapacity`-rejected set removes no eviction capability: preempt already rejects non-preemptible over-quota preemptors, and preemptible jobs are gated only when over **limit**, where reclaim is equally impossible. Quota freed by reclaim or completion is visible to the ungate pass within one session. Gated pods cannot be victims (not running).
+
+### Fair-share parity
+
+Queue `Request` today counts allocated and pending tasks; gated tasks are skipped. Left as is, gating would silently remove a queue's backlog from fair-share division. Gated demand is therefore counted into `Request` exactly like pending demand — fair-share outcomes are identical with and without gating.
+
+### Observability
+
+A gated-blocked podgroup carries a scheduling condition with the existing quota reasons (`NonPreemptibleOverQuota` / `OverLimit`) plus a distinct gated marker and event, written through the existing status pipeline (updated on change, not re-emitted every cycle). On admission, a superseding condition and an `Admitted` event are written in the same transition — stale gated conditions are never left behind (avoiding the [#1888](https://github.com/kai-scheduler/KAI-Scheduler/issues/1888) pattern). New metrics: gauge of gated pods per queue; ungate-rate counter.
+
+### Failure modes
+
+| Failure | Behavior |
+|---|---|
+| Webhook unavailable / plugin disabled | Pods created ungated → exactly today's behavior (enforcement is unchanged at allocation) |
+| Scheduler crash mid-gang ungate | Torn gang re-decided next session; partial-first ordering guarantees convergence |
+| Manual gate removal by user | Harmless bypass of noise suppression only; allocation-time capacity check still enforces quota |
+| Quota reduced after ungating | Gates cannot be re-added (Kubernetes one-way ratchet); pods degrade to today's allocation-time blocking. Accepted semantics; composes with #1783 |
+| Queue deleted / never existed | Pods stay gated with a distinct condition — ungating them would recreate the autoscaler over-provisioning for pods that can never schedule. Recovery on queue (re)creation or pod deletion |
+| Feature disabled with gated pods present | Scheduler mass-ungates all KAI-gated pods — rollback and downgrade need no operator choreography |
+| Scheduler restart | All state (gates, phases, specs) reconstructible from cluster state; nothing persisted |
+
+## Decided Points
+
+| # | Decision |
+|---|---|
+| D1 | The gate caches the allocation-time quota verdict; enforcement never moves to admission. Invariant: a pod stays gated iff `IsJobOverQueueCapacityFn` would reject its podgroup |
+| D2 | Gate addition is unconditional for opted-in queues; no quota computation in the webhook |
+| D3 | Gate removal lives in the scheduler (new terminal `ungate` action), not the binder — gated pods can never reach binding, and the scheduler already owns the quota verdict and an async pod-patch channel |
+| D4 | No reservation/dummy pods; real ungated pods are the autoscaler signal. `node-scale-adjuster` unchanged |
+| D5 | Pod-level scheduling gates, not workload-level `spec.suspend` — suspend is bypassed by workload-internal autoscaling (e.g. RayCluster growing after unsuspension); gates catch every pod at creation |
+| D6 | Pending ungated demand reserves quota (Reserved bucket) so cross-session admissions never collectively exceed quota |
+| D7 | Gated demand counts into queue `Request` — fair-share division identical with and without gating |
+| D8 | Strictly opt-in: global Config toggle (default off) fanned out by the operator to webhook and scheduler together, plus per-queue label |
+| D9 | Foreign gates are never touched; pods with any non-KAI gate are ignored by the ungate action |
+
+## Open Questions
+
+1. Queue opt-in surface: label (no CRD churn) vs `QueueSpec` field?
+2. Gate and action naming: `kai.scheduler/queue-admission` / `ungate` vs alternatives (`admit`)?
+3. Behavior when the pod's queue does not exist at admission: gate (safe for autoscalers, but hides typo'd queues) or skip (proposed default)?
+4. Ungate hysteresis or rate-limiting after a large quota increase (thundering herd of ungates)?
+5. Max-gate-age escape hatch for orphaned gated pods (queue deleted, podgroup never created)?
+6. Should hierarchical (parent-queue) limits factor into the greedy admission order differently than leaf quota?
+7. Interaction with usage-based / time-based fairness: should gated time be visible to usage history?
+8. Scale evidence to attach: session duration and API write volume with a large over-quota backlog (e.g. 50k pods), gated vs ungated, per the scale-test methodology.
