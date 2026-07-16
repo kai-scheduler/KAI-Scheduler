@@ -69,36 +69,35 @@ func BenchmarkReclaimLargeJobs_1000Node(b *testing.B) {
 	benchmarkReclaimLargeJobs(b, 1000)
 }
 
-func BenchmarkReclaimManySingleGPUJobs_10Node(b *testing.B) {
-	benchmarkReclaimManySingleGPUJobs(b, 10)
+func BenchmarkReclaimManySingleGPUJobsFullCycle_10Node(b *testing.B) {
+	benchmarkReclaimManySingleGPUJobsFullCycle(b, 10)
 }
 
-func BenchmarkReclaimManySingleGPUJobs_50Node(b *testing.B) {
-	benchmarkReclaimManySingleGPUJobs(b, 50)
+func BenchmarkReclaimManySingleGPUJobsFullCycle_50Node(b *testing.B) {
+	benchmarkReclaimManySingleGPUJobsFullCycle(b, 50)
 }
 
-func BenchmarkReclaimManySingleGPUJobs_100Node(b *testing.B) {
-	benchmarkReclaimManySingleGPUJobs(b, 100)
+func BenchmarkReclaimManySingleGPUJobsFullCycle_100Node(b *testing.B) {
+	benchmarkReclaimManySingleGPUJobsFullCycle(b, 100)
 }
 
-func BenchmarkReclaimManySingleGPUJobs_200Node(b *testing.B) {
-	benchmarkReclaimManySingleGPUJobs(b, 200)
+func BenchmarkReclaimManySingleGPUJobsFullCycle_200Node(b *testing.B) {
+	benchmarkReclaimManySingleGPUJobsFullCycle(b, 200)
 }
 
-func BenchmarkReclaimManySingleGPUJobs_500Node(b *testing.B) {
-	benchmarkReclaimManySingleGPUJobsWithParams(b, defaultManySingleGPUJobsReclaimParams(500), true)
+func BenchmarkReclaimManySingleGPUJobsFullCycle_500Node(b *testing.B) {
+	benchmarkReclaimManySingleGPUJobsFullCycleWithParams(b, defaultManySingleGPUJobsReclaimParams(500), true)
 }
 
-func BenchmarkReclaimManySingleGPUJobsWithMinRuntime_500Node(b *testing.B) {
-	benchmarkReclaimManySingleGPUJobsWithParams(b, manySingleGPUJobsReclaimParamsWithMinRuntime(500), false)
+func BenchmarkReclaimManySingleGPUJobsFullCycleWithMinRuntime_500Node(b *testing.B) {
+	benchmarkReclaimManySingleGPUJobsFullCycleWithParams(b, manySingleGPUJobsReclaimParamsWithMinRuntime(500), false)
 }
 
-func benchmarkReclaimManySingleGPUJobs(b *testing.B, numNodes int) {
-	benchmarkReclaimManySingleGPUJobsWithParams(b, defaultManySingleGPUJobsReclaimParams(numNodes), false)
+func benchmarkReclaimManySingleGPUJobsFullCycle(b *testing.B, numNodes int) {
+	benchmarkReclaimManySingleGPUJobsFullCycleWithParams(b, defaultManySingleGPUJobsReclaimParams(numNodes), false)
 }
 
-// ReclaimManySingleGPUJobs names identify the matching scale-test scenario. Each benchmark runs a full scheduling cycle.
-func benchmarkReclaimManySingleGPUJobsWithParams(
+func benchmarkReclaimManySingleGPUJobsFullCycleWithParams(
 	b *testing.B,
 	params manySingleGPUJobsReclaimParams,
 	measureLiveHeap bool,
