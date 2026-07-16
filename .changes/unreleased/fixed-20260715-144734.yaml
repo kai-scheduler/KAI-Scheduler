@@ -1,0 +1,5 @@
+kind: Fixed
+body: |-
+  Fixed scheduler panic during reclaim when building eviction messages for jobs in root-level queues (ParentQueue empty) that reclaim across hierarchy branches.
+custom:
+  Issue: "1863"
