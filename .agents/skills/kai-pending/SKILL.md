@@ -39,14 +39,19 @@ kubectl get podgroup "$PG" -n <ns> -o json \
 - populated -> `reasons[]` repeats per cycle; `unique_by(.message)` dedupes, the richest message
   (e.g. `MaxNodePoolResources`) is the verdict. Take `.reason` -> step 3.
 
-## 3. Act on the reason - read its `.message`, then:
+## 3. Explain the reason to the user - read its `.message`, then:
 
-- `QueueDoesNotExist` -> set the `kai.scheduler/queue` label to an existing queue, or create it
-  (+ parent). (`default-queue` named = no label at all.)
-- `OverLimit` (`allocated + requested > limit`) -> wait, lower the request, or raise the limit.
-- `NonPreemptibleOverQuota` (`allocatedNP + requestedNP > deserved`) -> raise `quota`, or use a
-  preemptible class (`value < 100`).
-- `PodSchedulingErrors` -> umbrella, no `queueDetails` -> step 4.
+For these reasons, guide the user (do not apply changes yourself):
+
+- `QueueDoesNotExist` -> suggest setting the `kai.scheduler/queue` label to an existing
+  queue, or creating it (+ parent). (`default-queue` named = no label at all.)
+- `OverLimit` (`allocated + requested > limit`) -> suggest waiting, lowering the request,
+  or raising the limit.
+- `NonPreemptibleOverQuota` (`allocatedNP + requestedNP > deserved`) -> suggest raising
+  `quota`, or making the workload preemptible. If preemptibility is not explicitly set,
+  suggest using a priority class with `value < 100`.
+
+For the reason `PodSchedulingErrors` go to step 4.
 
 ## 4. PodSchedulingErrors - read the per-node fit detail
 

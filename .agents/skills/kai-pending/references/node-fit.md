@@ -1,12 +1,9 @@
 # node-fit: too big for any single node
 
 Verdict message: e.g. `... in a single node ... topped at N` / `MaxNodePoolResources`. The pod is
-bigger than any single node, and a pod cannot span nodes.
-
-## Steps
-
-1. Compare `requests: gpu=N` against the largest node's `capacity` in the step 4 fit detail.
-2. Check the CPU / memory reasons too - the blocker may be CPU or memory, not GPU.
+bigger than any single node, and a pod cannot span nodes. The message names the blocking
+resource and the pod's full request - it can be CPU, memory, or an extended resource, not
+only GPU. For extended resources, verify the reported reason against node `allocatable`.
 
 ## Fix
 

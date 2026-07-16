@@ -1,13 +1,12 @@
 # gang: can't assemble
 
-Verdict message: `Resources were found for N pods while M are required for gang scheduling`.
-Gang is all-or-nothing - KAI places the PodGroup only if `>= minMember` pods fit **at once**; here
-each pod fits alone but the cluster can't host `minMember` together.
+Gang is all-or-nothing - KAI places the PodGroup only when enough pods fit simultaneously.
 
 ## Steps
 
-1. Read `M - N` from the message = how many more simultaneous slots are needed.
-2. Count nodes with free GPU (`capacity - used`, step 4 detail) >= per-pod request; compare to `minMember`.
+When the verdict says that fewer pods fit than required for gang scheduling, read the embedded
+fit error explaining why the next pod could not be placed. Do not infer the missing capacity by
+counting nodes or GPUs.
 
 ## Fix (any of)
 
