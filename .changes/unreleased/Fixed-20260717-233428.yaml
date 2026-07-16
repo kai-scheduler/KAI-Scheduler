@@ -1,0 +1,6 @@
+kind: Fixed
+body: Count a GPU shared by multiple pods through one DRA ResourceClaim once per node, preventing negative idle GPUs.
+time: 2026-07-17T23:34:28.999387137Z
+custom:
+    Author: TensorRaya
+    Issue: "1930"
