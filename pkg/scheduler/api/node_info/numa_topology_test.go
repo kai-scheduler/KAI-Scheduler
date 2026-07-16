@@ -16,13 +16,13 @@ import (
 
 // zoneAmount reads a zone vector's amount for a resource in its natural unit (cpu in cores, others
 // by count), translating from the vector's milli-cpu storage.
-func zoneAmount(vec resource_info.ResourceVector, vm *resource_info.ResourceVectorMap, name v1.ResourceName) int64 {
+func zoneAmount(vec resource_info.ResourceVector, vm *resource_info.ResourceVectorMap, name v1.ResourceName) float64 {
 	idx := vm.GetIndex(name)
 	val := vec.Get(idx)
 	if idx == resource_info.CPUIndex {
-		return int64(val) / 1000
+		return val / 1000
 	}
-	return int64(val)
+	return val
 }
 
 func numaNodeZone(name string, available map[string]string) nrtv1alpha2.Zone {
@@ -159,8 +159,8 @@ func TestBuildNumaTopology(t *testing.T) {
 		assert.Equal(t, TopologyPolicySingleNUMANode, nt.Policy)
 		assert.Len(t, nt.Zones, 2, "only NUMA-node zones are kept")
 
-		assert.Equal(t, int64(2), zoneAmount(nt.Zones[0].Available, nt.VectorMap, "nvidia.com/gpu"))
-		assert.Equal(t, int64(2), zoneAmount(nt.Zones[0].Allocatable, nt.VectorMap, "nvidia.com/gpu"), "allocatable is populated")
+		assert.Equal(t, float64(2), zoneAmount(nt.Zones[0].Available, nt.VectorMap, "nvidia.com/gpu"))
+		assert.Equal(t, float64(2), zoneAmount(nt.Zones[0].Allocatable, nt.VectorMap, "nvidia.com/gpu"), "allocatable is populated")
 
 		assert.True(t, nt.Resources.HasAll("cpu", "memory", "nvidia.com/gpu"))
 		assert.Equal(t, 3, nt.Resources.Len())
@@ -178,8 +178,8 @@ func TestBuildNumaTopology(t *testing.T) {
 
 		nt := BuildNumaTopology(nrt, resource_info.NewResourceVectorMap())
 
-		assert.Equal(t, int64(4), zoneAmount(nt.Zones[0].Available, nt.VectorMap, "cpu"), "available reflects free capacity")
-		assert.Equal(t, int64(8), zoneAmount(nt.Zones[0].Allocatable, nt.VectorMap, "cpu"), "allocatable reflects total capacity")
+		assert.Equal(t, float64(4), zoneAmount(nt.Zones[0].Available, nt.VectorMap, "cpu"), "available reflects free capacity")
+		assert.Equal(t, float64(8), zoneAmount(nt.Zones[0].Allocatable, nt.VectorMap, "cpu"), "allocatable reflects total capacity")
 	})
 }
 
@@ -210,8 +210,8 @@ func TestNumaTopologyClone(t *testing.T) {
 	clone.Zones[0].Available[cpuIdx] -= 1000
 	clone.Zones[0].Allocatable[cpuIdx] -= 2000
 
-	assert.Equal(t, int64(4), zoneAmount(orig.Zones[0].Available, orig.VectorMap, "cpu"), "original available ledger unchanged")
-	assert.Equal(t, int64(4), zoneAmount(orig.Zones[0].Allocatable, orig.VectorMap, "cpu"), "original allocatable ledger unchanged")
+	assert.Equal(t, float64(4), zoneAmount(orig.Zones[0].Available, orig.VectorMap, "cpu"), "original available ledger unchanged")
+	assert.Equal(t, float64(4), zoneAmount(orig.Zones[0].Allocatable, orig.VectorMap, "cpu"), "original allocatable ledger unchanged")
 	assert.Nil(t, (*NumaTopology)(nil).Clone())
 }
 

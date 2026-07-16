@@ -4,6 +4,7 @@
 package node_info
 
 import (
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -220,7 +221,9 @@ func allocatablePrefixSums(zones []*NumaZone, indices []int) map[int][]float64 {
 // vendor variants) collapse to one entry; the reported name preserved is the last seen.
 func awareIndices(resources sets.Set[v1.ResourceName], vectorMap *resource_info.ResourceVectorMap) ([]int, map[int]v1.ResourceName) {
 	names := map[int]v1.ResourceName{}
-	for name := range resources {
+	resourceNames := sets.List(resources)
+	slices.Sort(resourceNames)
+	for _, name := range resourceNames {
 		if idx := vectorMap.GetIndex(name); idx >= 0 {
 			names[idx] = name
 		}

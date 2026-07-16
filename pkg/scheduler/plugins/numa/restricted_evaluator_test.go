@@ -61,7 +61,7 @@ func assertPlacement(t *testing.T, placement pod_info.NUMAPlacement, want map[in
 		assert.Lenf(t, got, len(amounts), "resource count on zone %d", z)
 		for name, wantQty := range amounts {
 			gotQty := got[name]
-			assert.Equalf(t, wantQty.Value(), gotQty.Value(), "zone %d resource %s", z, name)
+			assert.Equalf(t, 0, gotQty.Cmp(wantQty), "zone %d resource %s", z, name)
 		}
 	}
 }
