@@ -10,8 +10,8 @@ import (
 	"k8s.io/utils/pointer"
 	jobsetv1alpha2 "sigs.k8s.io/jobset/api/jobset/v1alpha2"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/testconfig"
+	"github.com/kai-scheduler/api/constants"
 )
 
 func NewJobSet(name, namespace, queueName string, spec jobsetv1alpha2.JobSetSpec) *jobsetv1alpha2.JobSet {

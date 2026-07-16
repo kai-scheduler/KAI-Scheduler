@@ -10,8 +10,8 @@ import (
 	"github.com/spf13/pflag"
 
 	binderplugins "github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/flags"
+	"github.com/kai-scheduler/api/constants"
 )
 
 type Options struct {
