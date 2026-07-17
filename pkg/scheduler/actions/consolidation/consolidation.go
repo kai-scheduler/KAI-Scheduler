@@ -123,7 +123,7 @@ func attemptToConsolidatePreemptor(
 	isScenarioFeasible, stmt, victimsTasksNames, searchResult := solver.SolveWithResult(ssn, preemptor)
 	if isScenarioFeasible {
 		log.InfraLogger.V(3).Infof(
-			"Sucesfully consolidated for job: <%s/%s>, and about to reallocate victims: <%v>",
+			"Successfully consolidated for job: <%s/%s>, and about to reallocate victims: <%v>",
 			preemptor.Namespace, preemptor.Name, victimsTasksNames)
 		return true, stmt, searchResult
 	}
