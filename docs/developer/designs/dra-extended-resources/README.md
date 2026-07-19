@@ -31,6 +31,71 @@ KAI needs to support this flow so that workloads using extended-resource syntax 
 - Fractional / GPU-sharing requests on DRA-backed extended resources (phase 2; the existing DRA consumable-capacity path handles that separately).
 - MIG resources via DRA extended-resource bridge (can be added when a DeviceClass → MIG-profile mapping is defined upstream).
 
+## Kubernetes API
+
+KEP-5004 adds three API surfaces that KAI builds on.
+
+### Extended Resource Name Mapping
+
+Every DeviceClass exposes two extended resource names — one implicit, one optional explicit.
+
+**Implicit name** — always active, no configuration required:
+
+```
+deviceclass.resource.kubernetes.io/<class-name>
+```
+
+A DeviceClass named `nvidia-gpu` is automatically reachable as `deviceclass.resource.kubernetes.io/nvidia-gpu`. Any pod requesting that resource name is routed through the DRA path without any cluster-admin action beyond creating the DeviceClass.
+
+```yaml
+# Pod using implicit extended resource name — no DeviceClass configuration needed
+containers:
+- name: trainer
+  resources:
+    limits:
+      deviceclass.resource.kubernetes.io/nvidia-gpu: "1"
+```
+
+**Explicit name** — set by the cluster admin to expose a human-readable or backward-compatible name:
+
+```yaml
+apiVersion: resource.k8s.io/v1
+kind: DeviceClass
+metadata:
+  name: nvidia-gpu
+spec:
+  extendedResourceName: nvidia.com/gpu   # optional
+```
+
+With this field set, pods can use `nvidia.com/gpu: 1` — the familiar device-plugin name — and the scheduler routes allocation through DRA. This is the primary migration path: existing workloads require no changes.
+
+Both names are registered in the `ExtendedResourceCache` simultaneously. The implicit name is always unique (DeviceClass names are unique and validation prevents another class from claiming it as its explicit name). If two DeviceClasses set the same explicit `ExtendedResourceName`, the newer one wins; the implicit names remain independent.
+
+### Special ResourceClaim
+
+The scheduler synthesizes a special ResourceClaim named `<extended-resources>` in memory during scheduling. This claim:
+
+- Is never written to the API server during the scheduling phase.
+- Starts with an empty `Spec.Devices.Requests` at PreFilter.
+- Is substituted per-node at Filter with a node-specific variant whose `Spec.Devices.Requests` carries one `DeviceRequest` per (container, resource type) combination, named `container-{i}-request-{j}`.
+- Is written to the API server by the **binder** after scheduling, using `generateName: <pod-name>-extended-resources-` and the annotation `resource.kubernetes.io/extended-resource-claim: "true"`.
+
+### `Pod.Status.ExtendedResourceClaimStatuses`
+
+A new field on Pod status written by the binder that tells the kubelet which ResourceClaim holds the device allocation and how to map each allocated device to a container:
+
+```yaml
+status:
+  extendedResourceClaimStatuses:
+  - name: trainer-0-extended-resources-x7k9p
+    requestMappings:
+    - containerName: trainer
+      resourceName: nvidia.com/gpu
+      requestName: container-0-request-0
+```
+
+The kubelet reads `requestMappings[i].requestName`, looks up the matching entry in `claim.Status.Allocation.Devices.Results`, then calls the DRA kubelet plugin to inject that device into the named container.
+
 ## Overview
 
 ```mermaid
@@ -240,3 +305,18 @@ The upstream reference is `createExtendedResourceClaimInAPI` and `patchPodExtend
 - **Multi-resource extended resources**: a pod requesting multiple DRA-backed extended resource types produces a single special claim whose `Spec.Devices.Requests` contains one entry per (container, resource type) combination, named `container-{i}-request-{j}`. The allocator handles all resource types in a single `Allocate` call.
 - **Binder idempotency**: if the ResourceClaim is created but the pod status patch fails, the binder must not create a second claim. Use deterministic naming (e.g., `<pod-name>-extended-resources-`) matching upstream, so a second attempt finds the existing claim via `findExtendedResourceClaim`.
 - **Quota for generated claims**: generated claims should not count toward queue claim quotas (if any such limit is added). Filter by annotation.
+
+## Follow-ups
+
+### NUMA Topology Alignment for DRA-Backed Extended Resources
+
+KAI's NUMA plugin uses the NodeResourceTopology (NRT) API for per-zone capacity data. NRT reports per-zone `Allocatable` and `Available` only for resources present in `node.Status.Allocatable`. DRA-only nodes carry no entry for `nvidia.com/gpu` in Allocatable, so NRT has no per-zone GPU data either.
+
+The NUMA evaluator intersects each pod's requests with `topo.Resources` (the NRT-reported topology-aware resource set). For DRA-backed extended resources, the resource name drops out of this intersection and the NUMA plugin applies no alignment constraint for it. NUMA alignment for the selected device is instead handled by the DRA allocator (which can use topology attributes in ResourceSlices when selecting devices) and the kubelet's Topology Manager at bind time.
+
+**Impact**: KAI's in-scheduler NUMA ledger (`PredictedNUMAZones`, per-zone Available reconstruction) does not account for DRA-allocated GPU placement. This is a scheduling quality gap — not a correctness issue — but it means:
+
+- The NRT exporter does not receive GPU NUMA placement hints for DRA-bound pods, so subsequent cycles may over-estimate per-zone GPU availability and make suboptimal co-location decisions.
+- KAI's NUMA-aware consolidation and preemption may not model GPU NUMA affinity correctly for DRA workloads.
+
+**Future work**: once the NVIDIA DRA driver publishes NUMA node affinity attributes in ResourceSlices (e.g., `numaNode: 0` per device), KAI can correlate the DRA allocator's selected device with the matching NRT zone and produce accurate `PredictedNUMAZones` entries for DRA-backed GPUs. This requires the NUMA plugin to consume `ExtendedResourceClaimAllocation` from the allocation result and map device NUMA attributes to zone indices at reservation time.
