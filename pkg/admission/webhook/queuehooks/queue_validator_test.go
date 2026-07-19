@@ -129,6 +129,34 @@ var _ = Describe("Queue Validator", func() {
 			Expect(warnings).To(BeEmpty())
 		})
 
+		It("should warn when sibling GPU sum exceeds parent even if each child is within quota", func() {
+			// each child GPU (3) is under parent (4), but the sibling sum (6) exceeds it.
+			parent := newQueueWithQuota("parent", "", 1000, 4, 100000)
+			parent.Status.ChildQueues = []string{"existing-child"}
+			existing := newQueueWithQuota("existing-child", "parent", 10, 3, 100)
+			child := newQueueWithQuota("new-child", "parent", 10, 3, 100)
+			client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(parent, existing).Build()
+			validator = &queueValidator{kubeClient: client, overSubscriptionMode: OverSubscriptionModeWarning}
+
+			warnings, err := validator.ValidateCreate(ctx, child)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(warnings).To(ContainElement(ContainSubstring("total children GPU quota")))
+			Expect(warnings).NotTo(ContainElement(ContainSubstring("child queue GPU quota")))
+		})
+
+		It("should warn when sibling Memory sum exceeds parent even if each child is within quota", func() {
+			parent := newQueueWithQuota("parent", "", 1000, 100, 100000)
+			parent.Status.ChildQueues = []string{"existing-child"}
+			existing := newQueueWithQuota("existing-child", "parent", 10, 1, 60000)
+			child := newQueueWithQuota("new-child", "parent", 10, 1, 60000)
+			client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(parent, existing).Build()
+			validator = &queueValidator{kubeClient: client, overSubscriptionMode: OverSubscriptionModeBlock}
+
+			_, err := validator.ValidateCreate(ctx, child)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("total children Memory quota"))
+		})
+
 		It("should warn on GPU-only over-subscription", func() {
 			parent := newQueueWithQuota("parent", "", 1000, 1, 8192)
 			child := newQueueWithQuota("child", "parent", 10, 4, 100)
