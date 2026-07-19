@@ -7,9 +7,9 @@ package math
 
 import stdmath "math"
 
-// SaturatingAddInt64 returns a + b, clamped to [math.MinInt64, math.MaxInt64]
+// SaturatingAdd returns a + b, clamped to [math.MinInt64, math.MaxInt64]
 // on overflow instead of wrapping around to the opposite sign.
-func SaturatingAddInt64(a, b int64) int64 {
+func SaturatingAdd(a, b int64) int64 {
 	sum := a + b
 	// Overflow can only happen when both operands share a sign and the sign of
 	// the result flips.

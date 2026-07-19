@@ -131,7 +131,7 @@ func ExtractDRAGPUResourcesFromClaims(podResourceClaims []*resourceapi.ResourceC
 			// Find the DeviceClassName for this claim
 			deviceClassName := getGPUDeviceClassNameFromClaim(claim)
 			if deviceClassName != "" {
-				deviceClassCounts[deviceClassName] = commonmath.SaturatingAddInt64(deviceClassCounts[deviceClassName], gpuCount)
+				deviceClassCounts[deviceClassName] = commonmath.SaturatingAdd(deviceClassCounts[deviceClassName], gpuCount)
 			}
 		}
 	}
@@ -167,7 +167,7 @@ func getGPUDeviceClassNameFromClaim(claim *resourceapi.ResourceClaim) string {
 // Returns the total count of GPU devices requested by this claim.
 //
 // Exactly.Count is user-controlled (the apiserver only enforces > 0), so counts
-// are summed with SaturatingAddInt64 to keep a very large total from wrapping
+// are summed with SaturatingAdd to keep a very large total from wrapping
 // into a negative GPU request in downstream quota accounting.
 func countGPUDevicesFromClaim(claim *resourceapi.ResourceClaim) int64 {
 	totalCount := int64(0)
@@ -184,16 +184,16 @@ func countGPUDevicesFromClaim(claim *resourceapi.ResourceClaim) int64 {
 		switch request.Exactly.AllocationMode {
 		case resourceapi.DeviceAllocationModeExactCount:
 			if request.Exactly.Count > 0 {
-				totalCount = commonmath.SaturatingAddInt64(totalCount, request.Exactly.Count)
+				totalCount = commonmath.SaturatingAdd(totalCount, request.Exactly.Count)
 			} else {
 				// Default to 1 if Count is not specified for ExactCount mode
-				totalCount = commonmath.SaturatingAddInt64(totalCount, 1)
+				totalCount = commonmath.SaturatingAdd(totalCount, 1)
 			}
 		case resourceapi.DeviceAllocationModeAll:
 			// For "All" mode, we can't determine the exact count without allocation info.
 			// For bookkeeping purposes, we'll treat it as requesting 1 device.
 			// This is a conservative estimate for queue resource tracking.
-			totalCount = commonmath.SaturatingAddInt64(totalCount, 1)
+			totalCount = commonmath.SaturatingAdd(totalCount, 1)
 		default:
 			// Unknown allocation mode, skip this request
 			continue

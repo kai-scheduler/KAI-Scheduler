@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestSaturatingAddInt64(t *testing.T) {
+func TestSaturatingAdd(t *testing.T) {
 	cases := []struct {
 		name string
 		a, b int64
@@ -22,8 +22,8 @@ func TestSaturatingAddInt64(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := SaturatingAddInt64(tc.a, tc.b); got != tc.want {
-				t.Fatalf("SaturatingAddInt64(%d, %d) = %d, want %d", tc.a, tc.b, got, tc.want)
+			if got := SaturatingAdd(tc.a, tc.b); got != tc.want {
+				t.Fatalf("SaturatingAdd(%d, %d) = %d, want %d", tc.a, tc.b, got, tc.want)
 			}
 		})
 	}

@@ -133,7 +133,7 @@ func (g *GpuResourceRequirement) Add(gg *GpuResourceRequirement) error {
 		g.count += gg.count
 	}
 	for name, ggQuant := range gg.draGpuCounts {
-		g.draGpuCounts[name] = commonmath.SaturatingAddInt64(g.draGpuCounts[name], ggQuant)
+		g.draGpuCounts[name] = commonmath.SaturatingAdd(g.draGpuCounts[name], ggQuant)
 	}
 	for name, ggQuant := range gg.migResources {
 		g.migResources[name] += ggQuant
@@ -204,7 +204,7 @@ func (g *GpuResourceRequirement) DraGpuCounts() map[string]int64 {
 func (g *GpuResourceRequirement) GetDraGpusCount() int64 {
 	count := int64(0)
 	for _, singleClaimCount := range g.draGpuCounts {
-		count = commonmath.SaturatingAddInt64(count, singleClaimCount)
+		count = commonmath.SaturatingAdd(count, singleClaimCount)
 	}
 	return count
 }
