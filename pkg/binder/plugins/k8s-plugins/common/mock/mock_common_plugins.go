@@ -86,17 +86,17 @@ func (mr *MockK8sPluginMockRecorder) Filter(ctx, pod, node, state any) *gomock.C
 }
 
 // IsRelevant mocks base method.
-func (m *MockK8sPlugin) IsRelevant(pod *v1.Pod) bool {
+func (m *MockK8sPlugin) IsRelevant(pod *v1.Pod, request *v1alpha2.BindRequest) bool {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "IsRelevant", pod)
+	ret := m.ctrl.Call(m, "IsRelevant", pod, request)
 	ret0, _ := ret[0].(bool)
 	return ret0
 }
 
 // IsRelevant indicates an expected call of IsRelevant.
-func (mr *MockK8sPluginMockRecorder) IsRelevant(pod any) *gomock.Call {
+func (mr *MockK8sPluginMockRecorder) IsRelevant(pod, request any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsRelevant", reflect.TypeOf((*MockK8sPlugin)(nil).IsRelevant), pod)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsRelevant", reflect.TypeOf((*MockK8sPlugin)(nil).IsRelevant), pod, request)
 }
 
 // Name mocks base method.

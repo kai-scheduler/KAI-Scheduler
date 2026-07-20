@@ -2191,7 +2191,7 @@ func TestTopologyPlugin_getJobAllocatableDomains(t *testing.T) {
 
 			result, err := plugin.getJobAllocatableDomains(job, &job.RootSubGroupSet.SubGroupInfo,
 				job.RootSubGroupSet.GetDescendantPodSets(), tasksResources.ToVector(testVectorMap), tasksCount,
-				tt.topologyTree)
+				tt.topologyTree, nil)
 
 			// Check error
 			if tt.expectedError != "" {

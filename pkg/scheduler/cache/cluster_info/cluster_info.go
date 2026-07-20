@@ -37,6 +37,9 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	pg "github.com/kai-scheduler/KAI-scheduler/pkg/common/podgroup"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
+	"k8s.io/dynamic-resource-allocation/deviceclass/extendedresourcecache"
+	klog "k8s.io/klog/v2"
+
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -157,6 +160,16 @@ func (c *ClusterInfo) Snapshot() (*api.ClusterInfo, error) {
 		err = errors.WithStack(fmt.Errorf("error listing device classes: %w", err))
 		return nil, err
 	}
+
+	erc := extendedresourcecache.NewExtendedResourceCache(klog.Background())
+	for _, dc := range snapshot.DeviceClasses {
+		erc.OnAdd(dc, false)
+	}
+	snapshot.DeviceClassByResource = erc
+	for _, ni := range snapshot.Nodes {
+		ni.DeviceClassByResource = erc
+	}
+
 	snapshot.BindRequests, snapshot.BindRequestsForDeletedNodes, err = c.snapshotBindRequests(snapshot.Nodes)
 	if err != nil {
 		err = errors.WithStack(fmt.Errorf("error snapshotting bind requests: %w", err))

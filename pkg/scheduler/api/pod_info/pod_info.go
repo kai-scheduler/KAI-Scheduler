@@ -103,6 +103,10 @@ type PodInfo struct {
 
 	ResourceClaimInfo bindrequest_info.ResourceClaimInfo
 
+	// ExtendedResourceClaimAllocation holds the allocation for the synthetic DRA claim
+	// backing DRA-extended-resource requests. Set by the scheduler DRA plugin.
+	ExtendedResourceClaimAllocation *schedulingv1alpha2.ExtendedResourceClaimAllocation
+
 	// OwnedStorageClaims are StorageClaims that are owned exclusively by the pod, and we can count on them being deleted
 	// if the pod is evicted
 	ownedStorageClaims map[storageclaim_info.Key]*storageclaim_info.StorageClaimInfo
@@ -282,28 +286,29 @@ func (pi *PodInfo) Clone() *PodInfo {
 	}
 
 	return &PodInfo{
-		UID:                    pi.UID,
-		Job:                    pi.Job,
-		Name:                   pi.Name,
-		Namespace:              pi.Namespace,
-		SubGroupName:           pi.SubGroupName,
-		NodeName:               pi.NodeName,
-		Status:                 pi.Status,
-		Pod:                    pi.Pod,
-		GpuRequirement:         *pi.GpuRequirement.Clone(),
-		AcceptedGpuRequirement: *pi.AcceptedGpuRequirement.Clone(),
-		ResReqVector:           resReqVectorClone,
-		AcceptedResourceVector: acceptedResourceVectorClone,
-		VectorMap:              pi.VectorMap,
-		GPUGroups:              pi.GPUGroups,
-		NUMAPlacement:          pi.NUMAPlacement.Clone(),
-		ResourceClaimInfo:      pi.ResourceClaimInfo.Clone(),
-		ResourceRequestType:    pi.ResourceRequestType,
-		ResourceReceivedType:   pi.ResourceReceivedType,
-		IsVirtualStatus:        pi.IsVirtualStatus,
-		IsLegacyMIGtask:        pi.IsLegacyMIGtask,
-		storageClaims:          pi.storageClaims,
-		ownedStorageClaims:     pi.ownedStorageClaims,
+		UID:                             pi.UID,
+		Job:                             pi.Job,
+		Name:                            pi.Name,
+		Namespace:                       pi.Namespace,
+		SubGroupName:                    pi.SubGroupName,
+		NodeName:                        pi.NodeName,
+		Status:                          pi.Status,
+		Pod:                             pi.Pod,
+		GpuRequirement:                  *pi.GpuRequirement.Clone(),
+		AcceptedGpuRequirement:          *pi.AcceptedGpuRequirement.Clone(),
+		ResReqVector:                    resReqVectorClone,
+		AcceptedResourceVector:          acceptedResourceVectorClone,
+		VectorMap:                       pi.VectorMap,
+		GPUGroups:                       pi.GPUGroups,
+		NUMAPlacement:                   pi.NUMAPlacement.Clone(),
+		ResourceClaimInfo:               pi.ResourceClaimInfo.Clone(),
+		ExtendedResourceClaimAllocation: pi.ExtendedResourceClaimAllocation,
+		ResourceRequestType:             pi.ResourceRequestType,
+		ResourceReceivedType:            pi.ResourceReceivedType,
+		IsVirtualStatus:                 pi.IsVirtualStatus,
+		IsLegacyMIGtask:                 pi.IsLegacyMIGtask,
+		storageClaims:                   pi.storageClaims,
+		ownedStorageClaims:              pi.ownedStorageClaims,
 	}
 }
 

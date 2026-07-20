@@ -373,8 +373,9 @@ func (sc *SchedulerCache) createBindRequest(podInfo *pod_info.PodInfo, nodeName 
 				Count:   int(podInfo.AcceptedGpuRequirement.GetNumOfGpuDevices()),
 				Portion: fmt.Sprintf("%.2f", podInfo.AcceptedGpuRequirement.GpuFractionalPortion()),
 			},
-			ResourceClaimAllocations: podInfo.ResourceClaimInfo.ToSlice(),
-			PredictedNUMAZones:       predictedNUMAZones,
+			ResourceClaimAllocations:        podInfo.ResourceClaimInfo.ToSlice(),
+			ExtendedResourceClaimAllocation: podInfo.ExtendedResourceClaimAllocation,
+			PredictedNUMAZones:              predictedNUMAZones,
 		},
 	}
 

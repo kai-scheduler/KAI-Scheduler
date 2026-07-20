@@ -12,6 +12,7 @@ import (
 	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/component-helpers/scheduling/corev1/nodeaffinity"
 	"k8s.io/dynamic-resource-allocation/cel"
+	"k8s.io/dynamic-resource-allocation/deviceclass/extendedresourcecache"
 	"k8s.io/dynamic-resource-allocation/structured"
 	ksf "k8s.io/kube-scheduler/framework"
 
@@ -33,9 +34,10 @@ const (
 )
 
 type draPlugin struct {
-	manager       ksf.SharedDRAManager
-	celCache      *cel.Cache
-	queueLabelKey string
+	manager               ksf.SharedDRAManager
+	celCache              *cel.Cache
+	queueLabelKey         string
+	deviceClassByResource *extendedresourcecache.ExtendedResourceCache
 }
 
 // +kubebuilder:rbac:groups="resource.k8s.io",resources=deviceclasses;resourceslices;resourceclaims,verbs=get;list;watch
@@ -59,6 +61,7 @@ func (drap *draPlugin) Name() string {
 
 func (drap *draPlugin) OnSessionOpen(ssn *framework.Session) {
 	drap.queueLabelKey = ssn.SchedulerParams.QueueLabelKey
+	drap.deviceClassByResource = ssn.ClusterInfo.DeviceClassByResource
 
 	k8sPlugins := ssn.InternalK8sPlugins()
 	if k8sPlugins != nil && k8sPlugins.ResourceSliceTracker != nil {
@@ -138,7 +141,10 @@ func (drap *draPlugin) assumePendingClaim(claim *schedulingv1alpha2.ResourceClai
 func (drap *draPlugin) preFilter(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo) error {
 	pod := task.Pod
 
-	if len(pod.Spec.ResourceClaims) == 0 {
+	hasStandardClaims := len(pod.Spec.ResourceClaims) > 0
+	hasDRAExtResources := hasDeviceClassMappedExtendedResources(pod, drap.deviceClassByResource)
+
+	if !hasStandardClaims && !hasDRAExtResources {
 		return nil
 	}
 
@@ -193,12 +199,24 @@ func (drap *draPlugin) preFilter(task *pod_info.PodInfo, job *podgroup_info.PodG
 		}
 	}
 
+	if hasDRAExtResources {
+		// Check for a stale extended resource claim from a prior (failed) scheduling cycle.
+		if staleClaim := findExtendedResourceClaim(pod, drap.manager); staleClaim != nil {
+			return fmt.Errorf("pod %s/%s has a stale extended resource claim %s from a prior scheduling cycle",
+				task.Namespace, task.Name, staleClaim.Name)
+		}
+		// Mark the task as needing extended resource DRA allocation.
+		task.ExtendedResourceClaimAllocation = &schedulingv1alpha2.ExtendedResourceClaimAllocation{}
+	}
+
 	return nil
 }
 
 func (drap *draPlugin) filter(task *pod_info.PodInfo, _ *podgroup_info.PodGroupInfo, nodeInfo *node_info.NodeInfo) error {
 	pod := task.Pod
-	if len(pod.Spec.ResourceClaims) == 0 || drap.manager == nil {
+
+	hasDRAExtResources := task.ExtendedResourceClaimAllocation != nil
+	if !hasDRAExtResources && (len(pod.Spec.ResourceClaims) == 0 || drap.manager == nil) {
 		return nil
 	}
 
@@ -230,6 +248,17 @@ func (drap *draPlugin) filter(task *pod_info.PodInfo, _ *podgroup_info.PodGroupI
 		}
 
 		claimsToAllocate = append(claimsToAllocate, claim)
+	}
+
+	// Build a synthetic claim for DRA-backed extended resources if needed.
+	if hasDRAExtResources {
+		extResources := podExtendedResourcesNeedingDRA(task, nodeInfo, drap.deviceClassByResource)
+		if len(extResources) > 0 {
+			deviceRequests, _ := createRequestsAndMappings(pod, extResources, drap.deviceClassByResource)
+			specialClaim := buildSpecialClaim(pod)
+			specialClaim.Spec.Devices.Requests = deviceRequests
+			claimsToAllocate = append(claimsToAllocate, specialClaim)
+		}
 	}
 
 	if len(claimsToAllocate) == 0 {
@@ -307,6 +336,7 @@ func (drap *draPlugin) allocateHandlerFn(ssn *framework.Session) func(event *fra
 		pod := event.Task.Pod
 		nodeName := event.Task.NodeName
 		node := ssn.ClusterInfo.Nodes[nodeName].Node
+		nodeInfo := ssn.ClusterInfo.Nodes[nodeName]
 
 		for _, podClaim := range pod.Spec.ResourceClaims {
 			err := drap.allocateResourceClaim(event.Task, &podClaim, node)
@@ -315,7 +345,63 @@ func (drap *draPlugin) allocateHandlerFn(ssn *framework.Session) func(event *fra
 				continue
 			}
 		}
+
+		if event.Task.ExtendedResourceClaimAllocation != nil {
+			if err := drap.allocateExtendedResourceClaim(event.Task, node, nodeInfo); err != nil {
+				log.InfraLogger.Errorf("Failed to allocate extended resource claim for pod %s/%s: %v", pod.Namespace, pod.Name, err)
+			}
+		}
 	}
+}
+
+func (drap *draPlugin) allocateExtendedResourceClaim(task *pod_info.PodInfo, node *v1.Node, nodeInfo *node_info.NodeInfo) error {
+	extResources := podExtendedResourcesNeedingDRA(task, nodeInfo, drap.deviceClassByResource)
+	if len(extResources) == 0 {
+		return nil
+	}
+
+	deviceRequests, containerMappings := createRequestsAndMappings(task.Pod, extResources, drap.deviceClassByResource)
+	specialClaim := buildSpecialClaim(task.Pod)
+	specialClaim.Spec.Devices.Requests = deviceRequests
+
+	allocatedState, err := drap.manager.ResourceClaims().GatherAllocatedState()
+	if err != nil {
+		return fmt.Errorf("failed to gather allocated device state: %v", err)
+	}
+
+	slices, err := drap.manager.ResourceSlices().ListWithDeviceTaintRules()
+	if err != nil {
+		return fmt.Errorf("failed to list resource slices: %v", err)
+	}
+
+	allocator, err := structured.NewAllocator(
+		context.Background(), structured.Features{},
+		*allocatedState,
+		drap.manager.DeviceClasses(),
+		slices,
+		drap.celCache,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create allocator: %v", err)
+	}
+
+	results, err := allocator.Allocate(context.Background(), node, []*resourceapi.ResourceClaim{specialClaim})
+	if err != nil || len(results) == 0 {
+		return fmt.Errorf("failed to allocate extended resources on node %s: %v", node.Name, err)
+	}
+
+	specialClaim.Status.Allocation = &results[0]
+	if err := drap.manager.ResourceClaims().SignalClaimPendingAllocation(specialClaim.UID, specialClaim); err != nil {
+		log.InfraLogger.Warningf("Failed to signal pending allocation for extended resource claim of pod %s/%s: %v",
+			task.Namespace, task.Name, err)
+	}
+
+	task.ExtendedResourceClaimAllocation = &schedulingv1alpha2.ExtendedResourceClaimAllocation{
+		Allocation:        specialClaim.Status.Allocation,
+		DeviceRequests:    deviceRequests,
+		ContainerMappings: containerMappings,
+	}
+	return nil
 }
 
 func (drap *draPlugin) deallocateHandlerFn(_ *framework.Session) func(event *framework.Event) {
@@ -328,6 +414,10 @@ func (drap *draPlugin) deallocateHandlerFn(_ *framework.Session) func(event *fra
 				log.InfraLogger.Errorf("Failed to deallocate resource claim %s for pod %s/%s: %v", podClaim.Name, pod.Namespace, pod.Name, err)
 				continue
 			}
+		}
+
+		if event.Task.ExtendedResourceClaimAllocation != nil {
+			event.Task.ExtendedResourceClaimAllocation = nil
 		}
 	}
 }

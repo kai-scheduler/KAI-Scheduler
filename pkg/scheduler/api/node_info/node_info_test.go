@@ -1360,7 +1360,7 @@ func TestPredicateByNodeResourcesType_DRA(t *testing.T) {
 		expectError bool
 		errorMsg    string
 	}{
-		"Device-plugin GPU request on DRA-only node": {
+		"Extended resource request on DRA-only node is allowed by PredicateByNodeResourcesType": {
 			nodeInfo: &NodeInfo{
 				Name:       "dra-node",
 				HasDRAGPUs: true,
@@ -1370,8 +1370,9 @@ func TestPredicateByNodeResourcesType_DRA(t *testing.T) {
 			},
 			allocatable: common_info.BuildResourceWithGpu("1000m", "1G", "4", "110"),
 			task:        createPod("default", "gpu-pod", podCreationOptions{GPUs: 1}),
-			expectError: true,
-			errorMsg:    "device-plugin GPU requests cannot be scheduled on DRA-only nodes",
+			// PredicateByNodeResourcesType no longer rejects device-plugin GPU requests on DRA
+			// nodes; fit checking is delegated to the DRA scheduler plugin.
+			expectError: false,
 		},
 		"CPU-only request on DRA-only node": {
 			nodeInfo: &NodeInfo{
