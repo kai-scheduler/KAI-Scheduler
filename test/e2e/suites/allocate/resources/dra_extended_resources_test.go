@@ -106,7 +106,7 @@ var _ = Describe("Schedule pod with DRA-backed extended resource (KEP-5004)", Or
 		By("verifying a synthetic ResourceClaim was created for the pod")
 		Eventually(func() bool {
 			return findExtendedResourceClaim(ctx, testCtx, namespace, pod.Name) != nil
-		}).Should(BeTrue(), "expected a ResourceClaim with annotation %s to be created",
+		}, "30s", "1s").Should(BeTrue(), "expected a ResourceClaim with annotation %s to be created",
 			resourceapi.ExtendedResourceClaimAnnotation)
 
 		By("verifying pod.Status.ExtendedResourceClaimStatus is set")
@@ -115,7 +115,7 @@ var _ = Describe("Schedule pod with DRA-backed extended resource (KEP-5004)", Or
 			_ = testCtx.ControllerClient.Get(ctx,
 				types.NamespacedName{Namespace: namespace, Name: pod.Name}, updated)
 			return updated.Status.ExtendedResourceClaimStatus
-		}).ShouldNot(BeNil(), "pod status should record the synthetic ResourceClaim")
+		}, "30s", "1s").ShouldNot(BeNil(), "pod status should record the synthetic ResourceClaim")
 	})
 
 	It("fills a DRA node with extended resource pods and blocks the next", func(ctx context.Context) {

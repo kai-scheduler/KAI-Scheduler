@@ -40,6 +40,10 @@ fi
 
 # Resolve version-specific settings for each feature config
 ENABLE_DRA_FEATURE_GATE=false
+# DRAExtendedResource is alpha in 1.32 (off by default); enable it explicitly for the
+# dra-enabled config so that DeviceClass.spec.extendedResourceName is persisted by the
+# apiserver. It remains alpha/beta through 1.35 and is not on by default.
+ENABLE_DRA_EXTENDED_RESOURCE_GATE=false
 RUNTIME_CONFIG=""
 
 case "$FEATURE_CONFIG" in
@@ -52,7 +56,9 @@ case "$FEATURE_CONFIG" in
       RUNTIME_CONFIG="resource.k8s.io/v1beta1=true,resource.k8s.io/v1beta2=true"
     fi
     # k8s <= 1.31: DRA is alpha only (v1alpha3), no v1beta support
-    # k8s >= 1.34: DRA is GA (v1), feature gate on by default, no runtime-config needed
+    # k8s >= 1.34: DRA is GA (v1), DynamicResourceAllocation gate on by default
+    # DRAExtendedResource is alpha in 1.32+ and must be enabled explicitly on all versions
+    ENABLE_DRA_EXTENDED_RESOURCE_GATE=true
     ;;
   default|*)
     ;;
@@ -67,9 +73,14 @@ esac
   echo "kind: Cluster"
   echo "apiVersion: kind.x-k8s.io/v1alpha4"
 
-  if [ "$ENABLE_DRA_FEATURE_GATE" = "true" ]; then
+  if [ "$ENABLE_DRA_FEATURE_GATE" = "true" ] || [ "$ENABLE_DRA_EXTENDED_RESOURCE_GATE" = "true" ]; then
     echo "featureGates:"
-    echo "  DynamicResourceAllocation: true"
+    if [ "$ENABLE_DRA_FEATURE_GATE" = "true" ]; then
+      echo "  DynamicResourceAllocation: true"
+    fi
+    if [ "$ENABLE_DRA_EXTENDED_RESOURCE_GATE" = "true" ]; then
+      echo "  DRAExtendedResource: true"
+    fi
   fi
 
   echo "nodes:"
