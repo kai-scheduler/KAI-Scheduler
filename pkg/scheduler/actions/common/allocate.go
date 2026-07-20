@@ -50,7 +50,11 @@ func AllocateJob(ssn *framework.Session, stmt *framework.Statement, nodes []*nod
 		}
 		return false
 	}
-	return allocateSubGroupSet(ssn, stmt, nodes, job, job.RootSubGroupSet, tasksToAllocate, isPipelineOnly).success
+	outcome := allocateSubGroupSet(ssn, stmt, nodes, job, job.RootSubGroupSet, tasksToAllocate, isPipelineOnly)
+	if !outcome.success && !isPipelineOnly {
+		publishFitErrors(job, outcome)
+	}
+	return outcome.success
 }
 
 func publishFitErrors(job *podgroup_info.PodGroupInfo, outcome allocationOutcome) {
@@ -80,9 +84,7 @@ func allocateSubGroupSet(ssn *framework.Session, stmt *framework.Statement, node
 	}
 	nodeSets := subsetResult.NodeSets
 	if len(nodeSets) == 0 && len(subsetResult.FitErrors) != 0 {
-		outcome := allocationOutcome{jobFitErrors: subsetResult.FitErrors}
-		publishFitErrors(job, outcome)
-		return outcome
+		return allocationOutcome{jobFitErrors: subsetResult.FitErrors}
 	}
 
 	var bestFailure allocationOutcome
@@ -170,9 +172,7 @@ func allocatePodSet(ssn *framework.Session, stmt *framework.Statement, nodes nod
 	}
 	nodeSets := subsetResult.NodeSets
 	if len(nodeSets) == 0 && len(subsetResult.FitErrors) != 0 {
-		outcome := allocationOutcome{jobFitErrors: subsetResult.FitErrors}
-		publishFitErrors(job, outcome)
-		return outcome
+		return allocationOutcome{jobFitErrors: subsetResult.FitErrors}
 	}
 
 	var bestFailure allocationOutcome
@@ -209,7 +209,6 @@ func allocateTasksOnNodeSet(ssn *framework.Session, stmt *framework.Statement, n
 					newFailedTaskAllocationError(job, task, index, taskFitError),
 				}
 			}
-			publishFitErrors(job, outcome)
 			return outcome
 		}
 	}
