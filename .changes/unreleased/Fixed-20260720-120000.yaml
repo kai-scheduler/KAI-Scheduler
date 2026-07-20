@@ -1,0 +1,6 @@
+kind: Fixed
+body: Clear PodGroup UnschedulableOnNodePool condition after all tasks are bound so running workloads no longer appear unschedulable.
+time: 2026-07-20T12:00:00.000000000Z
+custom:
+    Author: Thezone-1
+    Issue: "1888"
