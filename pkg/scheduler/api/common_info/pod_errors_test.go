@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 )
 
@@ -39,6 +41,15 @@ func TestFitErrors_Error(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestFitErrorsSetNodeErrorIgnoresTypedNil(t *testing.T) {
+	fitErrors := NewFitErrors()
+	var fitError *TasksFitError
+
+	fitErrors.SetNodeError("node-a", fitError)
+
+	assert.Equal(t, ResourcesWereNotFoundMsg, fitErrors.Error())
 }
 
 func TestNewFitErrorInsufficientResource(t *testing.T) {
