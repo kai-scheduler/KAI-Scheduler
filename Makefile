@@ -116,8 +116,18 @@ $(CHANGIE): $(LOCALBIN)
 	test -s $(LOCALBIN)/changie || GOBIN=$(LOCALBIN) go install github.com/miniscruff/changie@$(CHANGIE_VERSION)
 
 .PHONY: changelog
-changelog: changie ## Add a changelog entry as a fragment (interactive). Use instead of editing CHANGELOG.md.
-	$(CHANGIE) new
+changelog: changie ## Add a changelog entry. Agents: make changelog KIND=Fixed BODY="...". Humans: make changelog (interactive).
+	@if [ -n "$(KIND)" ] && [ -n "$(BODY)" ]; then \
+		kind_lower=$$(echo "$(KIND)" | tr '[:upper:]' '[:lower:]'); \
+		ts=$$(date '+%Y%m%d-%H%M%S'); \
+		out=".changes/unreleased/$${kind_lower}-$${ts}.yaml"; \
+		printf 'kind: %s\nbody: |-\n  %s\n' "$(KIND)" "$(BODY)" > "$${out}"; \
+		echo "Created $${out}"; \
+	elif [ -n "$(KIND)" ] || [ -n "$(BODY)" ]; then \
+		echo "Both KIND and BODY must be set for non-interactive mode"; exit 1; \
+	else \
+		$(CHANGIE) new; \
+	fi
 
 .PHONY: changelog-release
 changelog-release: changie ## Fold unreleased fragments into CHANGELOG.md as VERSION and clear them. Usage: make changelog-release VERSION=v0.17.0
@@ -128,6 +138,7 @@ changelog-release: changie ## Fold unreleased fragments into CHANGELOG.md as VER
 changelog-preview: changie ## Preview the next release section without writing anything. Usage: make changelog-preview VERSION=v0.17.0
 	@test -n "$(VERSION)" || { echo "VERSION is required, e.g. make changelog-preview VERSION=v0.17.0"; exit 1; }
 	$(CHANGIE) batch $(VERSION) --dry-run
+
 
 
 KUSTOMIZE_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"
