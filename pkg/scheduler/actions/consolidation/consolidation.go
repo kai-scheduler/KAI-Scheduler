@@ -83,9 +83,11 @@ func (alloc *consolidationAction) Execute(ssn *framework.Session) {
 			if err != nil {
 				log.InfraLogger.Errorf("Failed to commit consolidation statement: %v", err)
 			}
-		} else if shouldStopActionForSearchResult(searchResult) {
-			return
 		} else {
+			solvers.RecordScenarioSearchUnresolved(job, searchResult)
+			if shouldStopActionForSearchResult(searchResult) {
+				return
+			}
 			smallestFailedJobs.UpdateRepresentative(job)
 		}
 	}

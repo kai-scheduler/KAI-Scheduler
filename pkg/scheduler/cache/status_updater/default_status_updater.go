@@ -23,6 +23,7 @@ import (
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal"
@@ -217,7 +218,15 @@ func (su *defaultStatusUpdater) RecordJobStatusEvent(job *podgroup_info.PodGroup
 		if err := su.recordUnschedulablePodsEvents(job); err != nil {
 			return err
 		}
-		updatePodgroupStatus = su.recordUnschedulablePodGroup(job)
+		if job.ScenarioSearchUnresolved != nil {
+			if err := su.recordScenarioSearchUnresolvedPodsConditions(job); err != nil {
+				return err
+			}
+			updatePodgroupStatus = su.recordScenarioSearchUnresolvedPodGroup(job)
+		}
+		updatePodgroupStatus = su.recordUnschedulablePodGroup(job) || updatePodgroupStatus
+	} else {
+		updatePodgroupStatus = clearPodGroupSchedulingConditions(job.PodGroup)
 	}
 
 	if len(patchData) > 0 || updatePodgroupStatus {
@@ -253,6 +262,17 @@ func (su *defaultStatusUpdater) markTaskUnschedulable(pod *v1.Pod, message strin
 	}
 
 	return nil
+}
+
+func (su *defaultStatusUpdater) markTaskScenarioSearchUnresolvedCondition(pod *v1.Pod, message string) error {
+	log.InfraLogger.V(6).Infof("setting scenario search unresolved message for task: %v", pod.Name)
+
+	return su.updatePodCondition(pod, &v1.PodCondition{
+		Type:    v1.PodConditionType(enginev2alpha2.ScenarioSearchUnresolved),
+		Status:  v1.ConditionTrue,
+		Reason:  string(enginev2alpha2.ScenarioSearchUnresolved),
+		Message: message,
+	})
 }
 
 func (su *defaultStatusUpdater) recordStaleJobEvent(job *podgroup_info.PodGroupInfo) {
@@ -317,13 +337,23 @@ func (su *defaultStatusUpdater) markPodGroupUnschedulable(job *podgroup_info.Pod
 	})
 }
 
+func (su *defaultStatusUpdater) markPodGroupScenarioSearchUnresolved(job *podgroup_info.PodGroupInfo, message string) bool {
+	return su.updatePodGroupSchedulingCondition(job.PodGroup, &enginev2alpha2.SchedulingCondition{
+		Type:     enginev2alpha2.ScenarioSearchUnresolved,
+		NodePool: utils.GetNodePoolNameFromLabels(job.PodGroup.Labels, su.nodePoolLabelKey),
+		Reason:   string(enginev2alpha2.ScenarioSearchUnresolved),
+		Message:  message,
+		Status:   v1.ConditionTrue,
+	})
+}
+
 func (su *defaultStatusUpdater) updatePodCondition(pod *v1.Pod, condition *v1.PodCondition) error {
 	log.InfraLogger.V(6).Infof(
 		"Updating pod condition for %s/%s to (%s==%s)",
 		pod.Namespace, pod.Name, condition.Type, condition.Status)
 	if k8s_internal.UpdatePodCondition(&pod.Status, condition) {
 		statusPatchBaseObject := v1.PodStatus{}
-		statusPatchBaseObject.Conditions = []v1.PodCondition{*condition}
+		statusPatchBaseObject.Conditions = pod.Status.Conditions
 		podStatusPatchBytes, err := json.Marshal(statusPatchBaseObject)
 		if err != nil {
 			return err
@@ -354,25 +384,47 @@ func (su *defaultStatusUpdater) recordUnschedulablePodsEvents(job *podgroup_info
 			continue
 		}
 
-		msg := common_info.DefaultPodError
-		fitError := job.TasksFitErrors[taskInfo.UID]
-		if fitError != nil {
-			msg = fitError.Error()
-
-			if su.detailedFitErrors {
-				msg = fitError.DetailedError()
-			} else {
-				log.InfraLogger.V(6).Infof("Full fit error: %s", fitError.DetailedError())
-			}
-		} else if len(job.JobFitErrors) > 0 {
-			msg = fmt.Sprintf("%s", common_info.JobFitErrorsToMessage(job.JobFitErrors))
-		}
-
-		msg = su.addNodePoolPrefixIfNeeded(job, msg)
+		msg := su.unschedulableTaskMessage(job, taskInfo)
 		log.InfraLogger.V(6).Infof("setting message for task: %v, %v", taskInfo.Name, msg)
 		updatePodCondition := utils.GetMarkUnschedulableValue(job.PodGroup.Spec.MarkUnschedulable)
 		if err := su.markTaskUnschedulable(taskInfo.Pod, msg, updatePodCondition); err != nil {
 			errs = append(errs, fmt.Errorf("failed to update unschedulable task status <%s/%s>: %v",
+				taskInfo.Namespace, taskInfo.Name, err))
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
+func (su *defaultStatusUpdater) unschedulableTaskMessage(
+	job *podgroup_info.PodGroupInfo, taskInfo *pod_info.PodInfo,
+) string {
+	msg := common_info.DefaultPodError
+	fitError := job.TasksFitErrors[taskInfo.UID]
+	if fitError != nil {
+		msg = fitError.Error()
+
+		if su.detailedFitErrors {
+			msg = fitError.DetailedError()
+		} else {
+			log.InfraLogger.V(6).Infof("Full fit error: %s", fitError.DetailedError())
+		}
+	} else if len(job.JobFitErrors) > 0 {
+		msg = fmt.Sprintf("%s", common_info.JobFitErrorsToMessage(job.JobFitErrors))
+	}
+
+	return su.addNodePoolPrefixIfNeeded(job, msg)
+}
+
+func (su *defaultStatusUpdater) recordScenarioSearchUnresolvedPodsConditions(job *podgroup_info.PodGroupInfo) error {
+	var errs []error
+	message := scenarioSearchUnresolvedMessage(job.ScenarioSearchUnresolved)
+	for _, taskInfo := range job.PodStatusIndex[pod_status.Pending] {
+		if job.IsInvalidSubGroupTask(taskInfo.UID) {
+			continue
+		}
+		if err := su.markTaskScenarioSearchUnresolvedCondition(taskInfo.Pod, message); err != nil {
+			errs = append(errs, fmt.Errorf("failed to update scenario search unresolved task status <%s/%s>: %v",
 				taskInfo.Namespace, taskInfo.Name, err))
 		}
 	}
@@ -437,6 +489,31 @@ func (su *defaultStatusUpdater) recordUnschedulablePodGroup(job *podgroup_info.P
 
 	msg = su.addNodePoolPrefixIfNeeded(job, msg)
 	return su.markPodGroupUnschedulable(job, msg)
+}
+
+func (su *defaultStatusUpdater) recordScenarioSearchUnresolvedPodGroup(job *podgroup_info.PodGroupInfo) bool {
+	return su.markPodGroupScenarioSearchUnresolved(job, scenarioSearchUnresolvedMessage(job.ScenarioSearchUnresolved))
+}
+
+func scenarioSearchUnresolvedMessage(unresolved *podgroup_info.ScenarioSearchUnresolved) string {
+	if unresolved != nil && unresolved.ReducedBudget {
+		return "KAI could not find a valid scenario within the remaining configured search time for this scheduling attempt because the action search budget was partly consumed by earlier jobs. The job remains pending and may be retried in a later scheduling cycle."
+	}
+	if unresolved == nil {
+		return ""
+	}
+	switch unresolved.Reason {
+	case podgroup_info.ScenarioSearchResultDeadlineExhausted:
+		return "KAI could not find a valid reclaim scenario within the configured search budget for this scheduling attempt. The job remains pending and may be retried in a later scheduling cycle."
+	case podgroup_info.ScenarioSearchResultGeneratorsExhausted:
+		return "KAI tried the configured scenario-search policy and found no valid reclaim scenario for this scheduling attempt. The job remains pending and may be retried in a later scheduling cycle."
+	case podgroup_info.ScenarioSearchResultNotAttempted:
+		return "KAI did not attempt scenario search for this job in this scheduling cycle because the configured search budget was already exhausted."
+	case podgroup_info.ScenarioSearchResultNoGenerator:
+		return "KAI did not attempt scenario search for this job because no configured scenario generator applies to this action."
+	default:
+		return "KAI tried the configured scenario-search policy and found no valid reclaim scenario for this scheduling attempt. The job remains pending and may be retried in a later scheduling cycle."
+	}
 }
 
 func (su *defaultStatusUpdater) updatePodGroupSchedulingCondition(
@@ -543,7 +620,7 @@ func setPodGroupLastEvictionTimeStamp(podGroup *enginev2alpha2.PodGroup, evictio
 }
 
 func setPodGroupSchedulingCondition(podGroup *enginev2alpha2.PodGroup, schedulingCondition *enginev2alpha2.SchedulingCondition) bool {
-	currentSchedulingConditionIndex := utils.GetSchedulingConditionIndex(podGroup, schedulingCondition.NodePool)
+	currentSchedulingConditionIndex := getSchedulingConditionIndex(podGroup, schedulingCondition)
 	lastSchedulingCondition := utils.GetLastSchedulingCondition(podGroup)
 
 	setTransitionID(podGroup, schedulingCondition, lastSchedulingCondition)
@@ -553,9 +630,29 @@ func setPodGroupSchedulingCondition(podGroup *enginev2alpha2.PodGroup, schedulin
 	}
 
 	// BC: older versions of pod group assigner rely on the most recent condition to be the last in the list.
-	// We want to squash all conditions of the same node pool and append ours to the end.
-	squashAndAppendConditionsForNodepool(podGroup, schedulingCondition)
+	// Squash conditions of the same node pool and type and append ours to the end.
+	squashAndAppendSchedulingCondition(podGroup, schedulingCondition)
 	return true
+}
+
+func clearPodGroupSchedulingConditions(podGroup *enginev2alpha2.PodGroup) bool {
+	if len(podGroup.Status.SchedulingConditions) == 0 {
+		return false
+	}
+	podGroup.Status.SchedulingConditions = nil
+	return true
+}
+
+func getSchedulingConditionIndex(
+	podGroup *enginev2alpha2.PodGroup, schedulingCondition *enginev2alpha2.SchedulingCondition,
+) int {
+	for i, condition := range podGroup.Status.SchedulingConditions {
+		if condition.NodePool == schedulingCondition.NodePool && condition.Type == schedulingCondition.Type {
+			return i
+		}
+	}
+
+	return -1
 }
 
 func setTransitionID(podGroup *enginev2alpha2.PodGroup, schedulingCondition, lastSchedulingCondition *enginev2alpha2.SchedulingCondition) {
@@ -597,10 +694,10 @@ func equalSchedulingConditions(a, b *enginev2alpha2.SchedulingCondition) bool {
 		a.Status == b.Status
 }
 
-func squashAndAppendConditionsForNodepool(podGroup *enginev2alpha2.PodGroup, schedulingCondition *enginev2alpha2.SchedulingCondition) {
+func squashAndAppendSchedulingCondition(podGroup *enginev2alpha2.PodGroup, schedulingCondition *enginev2alpha2.SchedulingCondition) {
 	var squashedConditions []enginev2alpha2.SchedulingCondition
 	for _, condition := range podGroup.Status.SchedulingConditions {
-		if condition.NodePool != schedulingCondition.NodePool {
+		if condition.NodePool != schedulingCondition.NodePool || condition.Type != schedulingCondition.Type {
 			squashedConditions = append(squashedConditions, condition)
 		}
 	}
