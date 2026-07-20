@@ -351,6 +351,16 @@ func (ni *NodeInfo) isTaskAllocatableOnNonAllocatedResources(
 		return false
 	}
 
+	// Shared/fractional GPU requests rely on device-plugin capacity (memory tracking,
+	// per-device sharing state). DRA-only nodes do not expose GPUs via Status.Allocatable,
+	// so the device-plugin sharing infrastructure is absent.
+	if ni.HasDRAGPUs {
+		gpuAllocatable := ni.Node.Status.Allocatable[v1.ResourceName(commonconstants.GpuResource)]
+		if gpuAllocatable.IsZero() {
+			return false
+		}
+	}
+
 	if !ni.isValidGpuPortion(&task.GpuRequirement) {
 		return false
 	}

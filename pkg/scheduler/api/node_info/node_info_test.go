@@ -1591,3 +1591,82 @@ func TestResourceReservationPodConsumesMaxPods(t *testing.T) {
 		})
 	}
 }
+
+// TestIsTaskAllocatable_SharedGPU_DRANode verifies that fractional / GPU-memory pods
+// are rejected on DRA-only nodes (which have no device-plugin allocatable capacity)
+// but accepted on device-plugin nodes that have the same GPU count.
+func TestIsTaskAllocatable_SharedGPU_DRANode(t *testing.T) {
+	// DRA-only node: no nvidia.com/gpu in Status.Allocatable; GPUs come from ResourceSlices.
+	draNode := common_info.BuildNode("dra-node", common_info.BuildResourceList("16000m", "32G"))
+
+	// Device-plugin node: nvidia.com/gpu is present in Status.Allocatable.
+	dpNode := common_info.BuildNode("dp-node", common_info.BuildResourceListWithGPUAndPods("16000m", "32G", "4", "110"))
+
+	tests := []struct {
+		name          string
+		node          *v1.Node
+		draGPUs       float64
+		podResources  v1.ResourceList
+		podAnnotation map[string]string
+		expected      bool
+	}{
+		{
+			name:         "fraction pod rejected on DRA-only node",
+			node:         draNode,
+			draGPUs:      4,
+			podResources: common_info.BuildResourceListWithGPU("1000m", "1G", "500m"),
+			expected:     false,
+		},
+		{
+			name:    "gpu-memory pod rejected on DRA-only node",
+			node:    draNode,
+			draGPUs: 4,
+			// gpu-memory pods are specified via annotation; BuildPod handles integer GPU normally,
+			// so set the annotation directly and use CPU-only resources.
+			podResources:  common_info.BuildResourceList("1000m", "1G"),
+			podAnnotation: map[string]string{commonconstants.GpuMemory: "2000"},
+			expected:      false,
+		},
+		{
+			name:         "fraction pod accepted on device-plugin node",
+			node:         dpNode,
+			draGPUs:      0,
+			podResources: common_info.BuildResourceListWithGPU("1000m", "1G", "500m"),
+			expected:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := NewController(t)
+			nodePodAffinity := pod_affinity.NewMockNodePodAffinityInfo(ctrl)
+			nodePodAffinity.EXPECT().AddPod(Any()).AnyTimes()
+
+			vectorMap := testVectorMapFromNode(tt.node)
+			for resourceName := range tt.podResources {
+				vectorMap.AddResource(resourceName)
+			}
+
+			ni := NewNodeInfo(tt.node, nodePodAffinity, vectorMap)
+			if tt.draGPUs > 0 {
+				ni.AddDRAGPUs(tt.draGPUs)
+				ni.HasDRAGPUs = true
+			}
+
+			annotations := map[string]string{}
+			for k, v := range tt.podAnnotation {
+				annotations[k] = v
+			}
+			pod := common_info.BuildPod(
+				"test-pod", "ns", tt.node.Name, v1.PodRunning,
+				tt.podResources, []metav1.OwnerReference{}, map[string]string{}, annotations)
+			addJobAnnotation(pod)
+			task := pod_info.NewTaskInfo(pod, vectorMap)
+
+			got := ni.IsTaskAllocatable(task)
+			if got != tt.expected {
+				t.Errorf("IsTaskAllocatable = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
