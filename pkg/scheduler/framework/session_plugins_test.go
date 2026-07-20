@@ -157,7 +157,7 @@ func TestPartitionMultiImplementation(t *testing.T) {
 		},
 	}
 
-	shardClusterSubseting := func(_ *podgroup_info.PodGroupInfo, _ *subgroup_info.SubGroupInfo, _ map[string]*subgroup_info.PodSet, _ []*pod_info.PodInfo, nodeset node_info.NodeSet) ([]node_info.NodeSet, error) {
+	shardClusterSubseting := func(_ *podgroup_info.PodGroupInfo, _ *subgroup_info.SubGroupInfo, _ map[string]*subgroup_info.PodSet, _ []*pod_info.PodInfo, nodeset node_info.NodeSet, _ bool) (api.SubsetNodesResult, error) {
 		var subset1 []*node_info.NodeInfo
 		var subset2 []*node_info.NodeInfo
 		for _, node := range nodeset {
@@ -167,10 +167,10 @@ func TestPartitionMultiImplementation(t *testing.T) {
 				subset2 = append(subset2, node)
 			}
 		}
-		return []node_info.NodeSet{subset1, subset2}, nil
+		return api.SubsetNodesResult{NodeSets: []node_info.NodeSet{subset1, subset2}}, nil
 	}
 
-	topologySubseting := func(_ *podgroup_info.PodGroupInfo, _ *subgroup_info.SubGroupInfo, _ map[string]*subgroup_info.PodSet, _ []*pod_info.PodInfo, nodeset node_info.NodeSet) ([]node_info.NodeSet, error) {
+	topologySubseting := func(_ *podgroup_info.PodGroupInfo, _ *subgroup_info.SubGroupInfo, _ map[string]*subgroup_info.PodSet, _ []*pod_info.PodInfo, nodeset node_info.NodeSet, _ bool) (api.SubsetNodesResult, error) {
 		var subset1 []*node_info.NodeInfo
 		var subset2 []*node_info.NodeInfo
 		for _, node := range nodeset {
@@ -180,7 +180,7 @@ func TestPartitionMultiImplementation(t *testing.T) {
 				subset2 = append(subset2, node)
 			}
 		}
-		return []node_info.NodeSet{subset1, subset2}, nil
+		return api.SubsetNodesResult{NodeSets: []node_info.NodeSet{subset1, subset2}}, nil
 	}
 
 	ssn := &Session{}
@@ -188,7 +188,8 @@ func TestPartitionMultiImplementation(t *testing.T) {
 	ssn.AddSubsetNodesFn(shardClusterSubseting)
 	ssn.AddSubsetNodesFn(topologySubseting)
 
-	partitions, _ := ssn.SubsetNodesFn(podgroup_info.NewPodGroupInfo("a"), nil, nil, nil, nodes)
+	result, _ := ssn.SubsetNodesFn(podgroup_info.NewPodGroupInfo("a"), nil, nil, nil, nodes, false)
+	partitions := result.NodeSets
 
 	assert.Equal(t, 4, len(partitions))
 

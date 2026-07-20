@@ -15,6 +15,7 @@ import (
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/allocate"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -177,11 +178,12 @@ func addAlternativeNodeSets(ssn *framework.Session, nodes []*node_info.NodeInfo)
 		_ map[string]*subgroup_info.PodSet,
 		_ []*pod_info.PodInfo,
 		nodeSet node_info.NodeSet,
-	) ([]node_info.NodeSet, error) {
+		_ bool,
+	) (api.SubsetNodesResult, error) {
 		if subGroup.GetName() != podgroup_info.DefaultSubGroup {
-			return []node_info.NodeSet{nodeSet}, nil
+			return api.SubsetNodesResult{NodeSets: []node_info.NodeSet{nodeSet}}, nil
 		}
-		return []node_info.NodeSet{nodes[:1], nodes}, nil
+		return api.SubsetNodesResult{NodeSets: []node_info.NodeSet{nodes[:1], nodes}}, nil
 	})
 }
 

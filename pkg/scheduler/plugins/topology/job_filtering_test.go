@@ -602,9 +602,10 @@ func TestTopologyPlugin_subsetNodesFn(t *testing.T) {
 			}
 
 			// Call the function under test
-			subsets, err := plugin.subSetNodesFn(job, &job.RootSubGroupSet.SubGroupInfo,
+			result, err := plugin.subSetNodesFn(job, &job.RootSubGroupSet.SubGroupInfo,
 				job.RootSubGroupSet.GetDescendantPodSets(), podgroup_info.GetTasksToAllocate(job, nil, nil, true),
-				maps.Values(nodesInfoMap))
+				maps.Values(nodesInfoMap), true)
+			subsets := result.NodeSets
 
 			// Check error
 			if tt.expectedError != "" {
@@ -619,12 +620,20 @@ func TestTopologyPlugin_subsetNodesFn(t *testing.T) {
 			}
 
 			if tt.expectedJobFitError != "" {
-				if len(job.JobFitErrors) == 0 {
+				if len(result.FitErrors) == 0 {
 					t.Errorf("expected job fit error '%s', but got nil", tt.expectedJobFitError)
 				}
-				if job.JobFitErrors[0].Messages()[0] != tt.expectedJobFitError {
-					t.Errorf("expected job fit error '%s', but got '%s'", tt.expectedJobFitError, job.JobFitErrors[0].Messages()[0])
+				if result.FitErrors[0].Messages()[0] != tt.expectedJobFitError {
+					t.Errorf("expected job fit error '%s', but got '%s'", tt.expectedJobFitError, result.FitErrors[0].Messages()[0])
 				}
+				assert.Empty(t, job.JobFitErrors)
+
+				withoutFitErrors, disabledErr := plugin.subSetNodesFn(job, &job.RootSubGroupSet.SubGroupInfo,
+					job.RootSubGroupSet.GetDescendantPodSets(), podgroup_info.GetTasksToAllocate(job, nil, nil, true),
+					maps.Values(nodesInfoMap), false)
+				assert.NoError(t, disabledErr)
+				assert.Empty(t, withoutFitErrors.FitErrors)
+				assert.Empty(t, job.JobFitErrors)
 			}
 
 			if err != nil {
@@ -2189,9 +2198,9 @@ func TestTopologyPlugin_getJobAllocatableDomains(t *testing.T) {
 			}
 			tasksCount := len(tasks)
 
-			result, err := plugin.getJobAllocatableDomains(job, &job.RootSubGroupSet.SubGroupInfo,
+			result, fitErrors, err := plugin.getJobAllocatableDomains(job, &job.RootSubGroupSet.SubGroupInfo,
 				job.RootSubGroupSet.GetDescendantPodSets(), tasksResources.ToVector(testVectorMap), tasksCount,
-				tt.topologyTree)
+				tt.topologyTree, true)
 
 			// Check error
 			if tt.expectedError != "" {
@@ -2202,12 +2211,12 @@ func TestTopologyPlugin_getJobAllocatableDomains(t *testing.T) {
 				if err.Error() != tt.expectedError {
 					t.Errorf("expected error '%s', but got '%s'", tt.expectedError, err.Error())
 				}
-				if len(job.JobFitErrors) != len(tt.expectedFitErrors) {
-					t.Errorf("expected %d fit errors, but got %d", len(tt.expectedFitErrors), len(job.JobFitErrors))
+				if len(fitErrors) != len(tt.expectedFitErrors) {
+					t.Errorf("expected %d fit errors, but got %d", len(tt.expectedFitErrors), len(fitErrors))
 				}
 				if len(tt.expectedFitErrors) > 0 {
 					for i, expectedFitError := range tt.expectedFitErrors {
-						actualFitError := job.JobFitErrors[i]
+						actualFitError := fitErrors[i]
 						if !slices.Equal(expectedFitError.Messages(), actualFitError.Messages()) {
 							t.Errorf("expected fit error %d: messages %v, but got %v", i, expectedFitError.Messages(), actualFitError.Messages())
 						}
@@ -2223,7 +2232,6 @@ func TestTopologyPlugin_getJobAllocatableDomains(t *testing.T) {
 				t.Errorf("unexpected error: %v", err)
 				return
 			}
-
 			// Check result
 			if len(result) != len(tt.expectedDomains) {
 				t.Errorf("expected %d domains, but got %d", len(tt.expectedDomains), len(result))
@@ -2258,4 +2266,19 @@ func TestTopologyPlugin_getJobAllocatableDomains(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestJobFitsDomainDoesNotAllocateDiagnostics(t *testing.T) {
+	vectorMap := resource_info.NewResourceVectorMap()
+	domain := &DomainInfo{
+		AllocatablePods:       allocatablePodsNotSet,
+		IdleOrReleasingVector: resource_info.NewResource(0, 0, 1).ToVector(vectorMap),
+	}
+	requested := resource_info.NewResource(0, 0, 2).ToVector(vectorMap)
+
+	allocations := testing.AllocsPerRun(100, func() {
+		assert.False(t, jobFitsDomain(requested, 1, domain, vectorMap))
+	})
+
+	assert.Zero(t, allocations)
 }
