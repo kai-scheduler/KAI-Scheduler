@@ -237,7 +237,20 @@ func calcNodeAccommodation(jobAllocationMetaData *jobAllocationMetaData, node *n
 		nonAllocated.Set(resource_info.GPUIndex, nonAllocated.Get(resource_info.GPUIndex)+node.AvailableSharedGPUFractions())
 	}
 
-	if !maxPodVector.LessEqual(nonAllocated) {
+	// Zero out DRA-backed dims in a copy before the LessEqual check.
+	// On DRA-only nodes these dims have no device-plugin allocatable capacity, so
+	// leaving them in would always fail the check even when DRA can satisfy the request.
+	cmpMax := maxPodVector.Clone()
+	cmpFree := nonAllocated.Clone()
+	if node.DeviceClassByResource != nil {
+		for i := 0; i < len(cmpMax); i++ {
+			if node.DeviceClassByResource.GetDeviceClass(node.VectorMap.ResourceAt(i)) != nil {
+				cmpMax.Set(i, 0)
+				cmpFree.Set(i, 0)
+			}
+		}
+	}
+	if !cmpMax.LessEqual(cmpFree) {
 		return 0
 	}
 
@@ -247,8 +260,7 @@ func calcNodeAccommodation(jobAllocationMetaData *jobAllocationMetaData, node *n
 			continue
 		}
 		// Skip DRA-backed dims; they are not tracked in node vectors.
-		if i > resource_info.PodsIndex &&
-			node.DeviceClassByResource != nil &&
+		if node.DeviceClassByResource != nil &&
 			node.DeviceClassByResource.GetDeviceClass(node.VectorMap.ResourceAt(i)) != nil {
 			continue
 		}

@@ -156,6 +156,7 @@ func (drp *dynamicResourcesPlugin) bindExtendedResourceClaim(
 			ObjectMeta: metav1.ObjectMeta{
 				GenerateName: pod.Name + "-extended-resources-",
 				Namespace:    pod.Namespace,
+				Finalizers:   []string{resourceapi.Finalizer},
 				Annotations: map[string]string{
 					resourceapi.ExtendedResourceClaimAnnotation: "true",
 				},

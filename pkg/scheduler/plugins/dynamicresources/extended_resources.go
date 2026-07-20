@@ -18,7 +18,6 @@ import (
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 )
 
 // specialClaimInMemName is the placeholder name for an in-memory synthetic claim.
@@ -90,23 +89,34 @@ func buildSpecialClaim(pod *v1.Pod) *resourceapi.ResourceClaim {
 // podExtendedResourcesNeedingDRA returns the set of extended resources that need
 // DRA allocation on the given node (i.e., they are DRA-backed AND the node has no
 // device-plugin capacity for them).
+// We scan raw pod container requests rather than the resource vector because some
+// DRA-backed resources (e.g. nvidia.com/gpu at GPUIndex) live below PodsIndex and
+// would be silently skipped by a vector-index scan starting at PodsIndex+1.
 func podExtendedResourcesNeedingDRA(
 	task *pod_info.PodInfo,
 	nodeInfo *node_info.NodeInfo,
 	dbc *extendedresourcecache.ExtendedResourceCache,
 ) map[v1.ResourceName]int64 {
 	result := make(map[v1.ResourceName]int64)
-	for i := resource_info.PodsIndex + 1; i < len(task.ResReqVector); i++ {
-		val := task.ResReqVector.Get(i)
-		if val == 0 {
-			continue
-		}
-		name := nodeInfo.VectorMap.ResourceAt(i)
-		if dbc.GetDeviceClass(name) == nil {
-			continue
-		}
-		if nodeInfo.AllocatableVector.Get(i) == 0 {
-			result[name] = int64(val)
+	allocatable := nodeInfo.Node.Status.Allocatable
+	containers := append(task.Pod.Spec.InitContainers, task.Pod.Spec.Containers...) //nolint:gocritic
+	for _, c := range containers {
+		for rName, rQuant := range c.Resources.Requests {
+			if dbc.GetDeviceClass(rName) == nil {
+				continue
+			}
+			// If the node advertises device-plugin capacity for this resource it is
+			// not a DRA-only dimension on this node; skip.
+			if allocAmt, ok := allocatable[rName]; ok && !allocAmt.IsZero() {
+				continue
+			}
+			crq, ok := rQuant.AsInt64()
+			if !ok || crq <= 0 {
+				continue
+			}
+			if crq > result[rName] {
+				result[rName] = crq
+			}
 		}
 	}
 	return result

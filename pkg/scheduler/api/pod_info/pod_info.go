@@ -107,6 +107,11 @@ type PodInfo struct {
 	// backing DRA-extended-resource requests. Set by the scheduler DRA plugin.
 	ExtendedResourceClaimAllocation *schedulingv1alpha2.ExtendedResourceClaimAllocation
 
+	// ExtendedResourceClaimUID is the UID of the in-memory synthetic ResourceClaim
+	// registered via SignalClaimPendingAllocation. Used to remove the pending allocation
+	// registration during rollback.
+	ExtendedResourceClaimUID types.UID
+
 	// OwnedStorageClaims are StorageClaims that are owned exclusively by the pod, and we can count on them being deleted
 	// if the pod is evicted
 	ownedStorageClaims map[storageclaim_info.Key]*storageclaim_info.StorageClaimInfo
