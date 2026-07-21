@@ -1,0 +1,9 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+kind: Fixed
+body: Reduce retained scheduler memory with compact fit-error counts and on-demand details.
+time: 2026-07-18T00:47:52+02:00
+custom:
+    Author: enoodle
+    Issue: "1827"

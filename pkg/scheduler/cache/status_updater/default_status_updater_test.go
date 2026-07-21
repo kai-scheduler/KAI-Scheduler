@@ -33,6 +33,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 )
@@ -646,7 +647,7 @@ func TestDefaultStatusUpdater_RecordJobStatusEvent(t *testing.T) {
 			stopCh := make(chan struct{})
 			statusUpdater.Run(stopCh)
 
-			statusUpdater.RecordJobStatusEvent(jobInfos["test-job"])
+			statusUpdater.RecordJobStatusEvent(jobInfos["test-job"], nil)
 
 			events := []string{}
 			close(recorder.Events)
@@ -807,6 +808,113 @@ func TestDefaultStatusUpdater_RetryAfterError(t *testing.T) {
 
 	// Wait for a retry after error
 	assert.NoError(t, waitForIncrease(&updateCalls), "update was not retried after error")
+}
+
+func TestTaskFitErrorMessageDoesNotResolveCompactMessage(t *testing.T) {
+	su := &defaultStatusUpdater{detailedFitErrors: false}
+	job, task, fitErrors := taskFitErrorMessageFixture()
+	resolverCalls := 0
+	resolve := func(
+		*podgroup_info.PodGroupInfo, *pod_info.PodInfo,
+	) ([]*common_info.TasksFitError, error) {
+		resolverCalls++
+		return nil, nil
+	}
+
+	message := su.taskFitErrorMessage(job, task, fitErrors, resolve)
+
+	assert.Equal(t, "no nodes with enough resources were found: 1 MissingGPU.", message)
+	assert.Zero(t, resolverCalls)
+}
+
+func TestTaskFitErrorMessageResolvesDetailedMessage(t *testing.T) {
+	su := &defaultStatusUpdater{detailedFitErrors: true}
+	job, task, fitErrors := taskFitErrorMessageFixture()
+	resolverCalls := 0
+	resolve := func(
+		*podgroup_info.PodGroupInfo, *pod_info.PodInfo,
+	) ([]*common_info.TasksFitError, error) {
+		resolverCalls++
+		return []*common_info.TasksFitError{
+			common_info.NewFitErrorWithDetailedMessage(
+				task.Name, task.Namespace, "node-a", []string{"MissingGPU"}, "node-a GPU details"),
+		}, nil
+	}
+
+	message := su.taskFitErrorMessage(job, task, fitErrors, resolve)
+
+	assert.Equal(t, "\n<node-a>: node-a GPU details.\nno nodes with enough resources were found.", message)
+	assert.Equal(t, 1, resolverCalls)
+}
+
+func TestTaskFitErrorMessageFallsBackWhenDetailedResolutionFails(t *testing.T) {
+	su := &defaultStatusUpdater{detailedFitErrors: true}
+	job, task, fitErrors := taskFitErrorMessageFixture()
+	resolve := func(
+		*podgroup_info.PodGroupInfo, *pod_info.PodInfo,
+	) ([]*common_info.TasksFitError, error) {
+		return nil, errors.New("recompute failed")
+	}
+
+	message := su.taskFitErrorMessage(job, task, fitErrors, resolve)
+
+	assert.Equal(t, "no nodes with enough resources were found: 1 MissingGPU.", message)
+}
+
+func TestTaskFitErrorMessageResolvesOnlyForEnabledVerboseLog(t *testing.T) {
+	require.NoError(t, log.InitLoggers(6, false))
+	t.Cleanup(func() {
+		require.NoError(t, log.InitLoggers(3, false))
+	})
+
+	su := &defaultStatusUpdater{detailedFitErrors: false}
+	job, task, fitErrors := taskFitErrorMessageFixture()
+	resolverCalls := 0
+	resolve := func(
+		*podgroup_info.PodGroupInfo, *pod_info.PodInfo,
+	) ([]*common_info.TasksFitError, error) {
+		resolverCalls++
+		return []*common_info.TasksFitError{
+			common_info.NewFitErrorWithDetailedMessage(
+				task.Name, task.Namespace, "node-a", []string{"MissingGPU"}, "node-a GPU details"),
+		}, nil
+	}
+
+	message := su.taskFitErrorMessage(job, task, fitErrors, resolve)
+
+	assert.Equal(t, "no nodes with enough resources were found: 1 MissingGPU.", message)
+	assert.Equal(t, 1, resolverCalls)
+}
+
+func TestTaskFitErrorMessageKeepsDirectDetailedError(t *testing.T) {
+	su := &defaultStatusUpdater{detailedFitErrors: true}
+	job, task, _ := taskFitErrorMessageFixture()
+	fitErrors := common_info.NewFitErrors()
+	fitErrors.SetError("direct pre-filter error")
+	resolverCalls := 0
+	resolve := func(
+		*podgroup_info.PodGroupInfo, *pod_info.PodInfo,
+	) ([]*common_info.TasksFitError, error) {
+		resolverCalls++
+		return nil, nil
+	}
+
+	message := su.taskFitErrorMessage(job, task, fitErrors, resolve)
+
+	assert.Equal(t, "\ndirect pre-filter error.", message)
+	assert.Zero(t, resolverCalls)
+}
+
+func taskFitErrorMessageFixture() (
+	*podgroup_info.PodGroupInfo, *pod_info.PodInfo, *common_info.TasksFitErrors,
+) {
+	task := pod_info.NewTaskInfo(&v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "pod", Namespace: "namespace", UID: "pod"},
+	}, resource_info.NewResourceVectorMap())
+	job := podgroup_info.NewPodGroupInfo("job", task)
+	fitErrors := common_info.NewFitErrors()
+	fitErrors.AddNodeError(common_info.NewFitError(task.Name, task.Namespace, "node-a", "MissingGPU"))
+	return job, task, fitErrors
 }
 
 func waitForIncrease(callCount *int) error {
