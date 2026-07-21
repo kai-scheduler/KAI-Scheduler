@@ -8,6 +8,30 @@ User overrides are merged with defaults:
 - `arguments` fully replaces the default arguments when specified.
 - New plugins/actions added by future KAI upgrades are automatically included.
 
+## Scheduler arguments
+
+The default `SchedulingShard` also accepts scheduler command-line arguments through its `args` field. When using Helm, configure the same arguments under `scheduler.args`.
+
+### Detailed fit errors
+
+Set `detailed-fit-errors` to `"true"` to include node-by-node fit diagnostics in unschedulable pod status and events. Detailed PodGroup errors can also include job-level diagnostics, such as topology-domain constraints.
+
+```yaml
+# SchedulingShard
+spec:
+  args:
+    detailed-fit-errors: "true"
+```
+
+```yaml
+# Helm values
+scheduler:
+  args:
+    detailed-fit-errors: "true"
+```
+
+This option is disabled by default. Enable it when investigating unschedulable workloads, then disable it after collecting the needed diagnostics. Generating detailed errors re-evaluates failed tasks against candidate nodes during status reporting. On large clusters with many pending unschedulable tasks, this adds scheduler CPU work and can increase scheduling-cycle latency.
+
 ## Default Plugins
 
 | Plugin | Priority | Description |
