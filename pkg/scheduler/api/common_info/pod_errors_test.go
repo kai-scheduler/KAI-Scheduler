@@ -39,17 +39,6 @@ func TestFitErrors_Error(t *testing.T) {
 	}
 }
 
-func TestFitErrorsAddNodeErrorIgnoresTypedNil(t *testing.T) {
-	fitErrors := NewFitErrors()
-	var fitError *TasksFitError
-
-	fitErrors.AddNodeError(fitError)
-
-	if got := fitErrors.Error(); got != ResourcesWereNotFoundMsg {
-		t.Fatalf("Error() = %q, want %q", got, ResourcesWereNotFoundMsg)
-	}
-}
-
 func TestFitErrorsAggregatesNodeReasons(t *testing.T) {
 	fitErrors := NewFitErrors()
 	fitErrors.AddNodeError(NewFitErrorWithDetailedMessage(
@@ -71,38 +60,14 @@ func TestFitErrorsAggregatesNodeReasons(t *testing.T) {
 	if got := fitErrors.Error(); got != want {
 		t.Fatalf("Error() = %q, want %q", got, want)
 	}
-}
-
-func TestFitErrorsStoresCompactReasonCounts(t *testing.T) {
-	fitErrors := NewFitErrors()
-	fitErrors.AddNodeError(NewFitErrorWithDetailedMessage(
-		"pod", "namespace", "node-a",
-		[]string{"MissingGPU"},
-		"node-a detailed GPU message",
-	))
-	fitErrors.AddNodeError(NewFitErrorWithDetailedMessage(
-		"pod", "namespace", "node-b",
-		[]string{"MissingGPU", "NoStorage"},
-		"node-b detailed GPU message",
-		"node-b detailed storage message",
-	))
-
-	if got := fitErrors.ReasonCount("MissingGPU"); got != 2 {
-		t.Fatalf("ReasonCount(MissingGPU) = %d, want 2", got)
-	}
-	if got := fitErrors.ReasonCount("NoStorage"); got != 1 {
-		t.Fatalf("ReasonCount(NoStorage) = %d, want 1", got)
+	if got := fitErrors.ReasonCount("node(s) didn't have enough resources: GPUs"); got != 2 {
+		t.Fatalf("ReasonCount(GPUs) = %d, want 2", got)
 	}
 	if got := fitErrors.UniqueReasonCount(); got != 2 {
 		t.Fatalf("UniqueReasonCount() = %d, want 2", got)
 	}
 	if !fitErrors.HasNodeErrors() {
 		t.Fatal("HasNodeErrors() = false, want true")
-	}
-
-	want := "no nodes with enough resources were found: 1 NoStorage. \n2 MissingGPU."
-	if got := fitErrors.Error(); got != want {
-		t.Fatalf("Error() = %q, want %q", got, want)
 	}
 }
 
@@ -149,6 +114,9 @@ func TestAddNodeErrorIgnoresTypedNilFitError(t *testing.T) {
 
 	if fitErrors.HasNodeErrors() {
 		t.Fatal("HasNodeErrors() = true after typed nil error, want false")
+	}
+	if got := fitErrors.Error(); got != ResourcesWereNotFoundMsg {
+		t.Fatalf("Error() = %q, want %q", got, ResourcesWereNotFoundMsg)
 	}
 }
 

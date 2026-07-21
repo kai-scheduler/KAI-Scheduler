@@ -99,6 +99,10 @@ func TestRecomputeDetailedFitErrorsBuildsCurrentResourceDetails(t *testing.T) {
 	for _, node := range ssn.ClusterInfo.Nodes {
 		node.IdleVector.Set(resource_info.GPUIndex, 0)
 		node.UsedVector.Set(resource_info.GPUIndex, 1)
+		require.False(t, ssn.FittingNode(task, node, true))
+
+		node.IdleVector.Set(resource_info.GPUIndex, 0.5)
+		node.UsedVector.Set(resource_info.GPUIndex, 0.5)
 	}
 
 	nodeErrors, err := ssn.RecomputeDetailedFitErrors(job, task)
@@ -107,8 +111,9 @@ func TestRecomputeDetailedFitErrorsBuildsCurrentResourceDetails(t *testing.T) {
 	for _, fitError := range nodeErrors {
 		require.Len(t, fitError.DetailedReasons, 1)
 		require.True(t, strings.Contains(fitError.DetailedReasons[0], "requested: 1"))
-		require.True(t, strings.Contains(fitError.DetailedReasons[0], "used: 1"))
+		require.True(t, strings.Contains(fitError.DetailedReasons[0], "used: 0.5"))
 		require.True(t, strings.Contains(fitError.DetailedReasons[0], "capacity: 1"))
+		require.NotContains(t, fitError.DetailedReasons[0], "used: 1")
 	}
 }
 
