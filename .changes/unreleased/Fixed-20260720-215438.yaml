@@ -1,0 +1,3 @@
+kind: Fixed
+body: |-
+  Fixed a PodGroup's `UnschedulableOnNodePool` scheduling conditions persisting after the workload schedules: `RecordJobStatusEvent` now clears the group's scheduling conditions once its tasks are bound, so status consumers no longer see a running workload as unschedulable. The conditions are kept while any task is still awaiting bind, so a failed bind still leaves an explanation for why the pods were pending. [#1888](https://github.com/kai-scheduler/KAI-Scheduler/issues/1888) [Thezone-1](https://github.com/Thezone-1)
