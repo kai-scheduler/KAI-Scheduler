@@ -596,6 +596,28 @@ Phase 1 should reuse KAI's existing GPU accounting logic:
 No `AccountedResource.status` field is required in phase 1 to expose this
 classification.
 
+## Shared DRA ResourceClaims
+
+DRA `ResourceClaim`s may be shared by more than one pod. For
+`AccountedResource` accounting, KAI should only allow a shared `ResourceClaim`
+to be used by pods that belong to the same KAI queue.
+
+If a pod references an already allocated or shared `ResourceClaim` that is also
+used by a pod from another queue, KAI should reject scheduling that pod. This
+keeps `AccountedResource` usage attribution unambiguous and prevents one queue
+from consuming another queue's accounted allocation.
+
+When multiple pods in the same queue share the same allocated `ResourceClaim`,
+KAI should account the selected devices and capacities once for that queue,
+based on the claim allocation, rather than multiplying the same claim allocation
+by the number of pods referencing it.
+
+The same rule applies to all DRA-backed `AccountedResource` sources, including
+GPU count, typed GPU resources, GPU memory, GPU compute, and other future
+DRA-backed resources. The exact scheduler cache and indexing mechanism for
+detecting shared `ResourceClaim` consumers is an implementation detail for the
+lower-level scheduler design.
+
 ## Validation And User Feedback
 
 Validation is layered:
@@ -621,6 +643,10 @@ Scheduler behavior:
 - If usage can be evaluated and exceeds a finite limit, reject the candidate
   through the existing `OverLimit` path. The message should identify the queue,
   `resourceRef`, current usage, candidate request, and limit.
+- If a pod references a shared DRA `ResourceClaim` already used by a pod from a
+  different queue, reject the candidate with a distinct scheduling reason such
+  as `SharedResourceClaimAcrossQueues`. The message should include the claim
+  name and both queues when known.
 
 ## Queue Admission Signaling
 
