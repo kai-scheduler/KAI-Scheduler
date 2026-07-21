@@ -90,20 +90,48 @@ func TestParseIgnoreList(t *testing.T) {
 	}
 }
 
+// testVectorMap is the shared resource-vector map used to project test task requests; the core
+// indices (cpu/memory/gpu/pods) are seeded by NewResourceVectorMap, matching a topology's fresh map.
+var testVectorMap = resource_info.NewResourceVectorMap()
+
 // makeTask builds a minimal task with the given QoS, request type and whole-GPU count.
 func makeTask(qos v1.PodQOSClass, reqType pod_info.ResourceRequestType, gpus float64) *pod_info.PodInfo {
+	requests := v1.ResourceList{}
+	if gpus > 0 {
+		requests[gpu] = *resource.NewQuantity(int64(gpus), resource.DecimalSI)
+	}
 	return &pod_info.PodInfo{
 		ResourceRequestType: reqType,
 		GpuRequirement:      *resource_info.NewGpuResourceRequirementWithGpus(gpus, 0),
-		Pod:                 &v1.Pod{Status: v1.PodStatus{QOSClass: qos}},
+		VectorMap:           testVectorMap,
+		ResReqVector:        resource_info.NewResourceVectorFromResourceList(requests, testVectorMap),
+		Pod: &v1.Pod{
+			Status: v1.PodStatus{QOSClass: qos},
+			Spec:   v1.PodSpec{Containers: []v1.Container{{Resources: v1.ResourceRequirements{Requests: requests, Limits: requests}}}},
+		},
+	}
+}
+
+// burstableTask builds a Burstable pod (requests only) with the given container requests.
+func burstableTask(requests v1.ResourceList) *pod_info.PodInfo {
+	return &pod_info.PodInfo{
+		VectorMap:    testVectorMap,
+		ResReqVector: resource_info.NewResourceVectorFromResourceList(requests, testVectorMap),
+		Pod: &v1.Pod{
+			Status: v1.PodStatus{QOSClass: v1.PodQOSBurstable},
+			Spec:   v1.PodSpec{Containers: []v1.Container{{Resources: v1.ResourceRequirements{Requests: requests}}}},
+		},
 	}
 }
 
 func TestShouldHandle(t *testing.T) {
 	plugin := &numaPlugin{}
-	singleNUMA := &node_info.NumaTopology{Policy: node_info.TopologyPolicySingleNUMANode}
-	restricted := &node_info.NumaTopology{Policy: node_info.TopologyPolicyRestricted}
-	bestEffort := &node_info.NumaTopology{Policy: node_info.TopologyPolicyBestEffort}
+	gpuCPUZones := []node_info.NumaZoneSpec{numaZone("node-0", map[string]string{gpu: "4", "cpu": "8"})}
+	singleNUMA := numaTopology(node_info.TopologyPolicySingleNUMANode, node_info.TopologyScopePod, gpuCPUZones...)
+	restricted := numaTopology(node_info.TopologyPolicyRestricted, node_info.TopologyScopePod, gpuCPUZones...)
+	bestEffort := numaTopology(node_info.TopologyPolicyBestEffort, node_info.TopologyScopePod, gpuCPUZones...)
+	cpuOnlyNode := numaTopology(node_info.TopologyPolicyRestricted, node_info.TopologyScopePod,
+		numaZone("node-0", map[string]string{"cpu": "8"}))
 
 	tests := map[string]struct {
 		task     *pod_info.PodInfo
@@ -122,8 +150,14 @@ func TestShouldHandle(t *testing.T) {
 		"best-effort policy passes through": {
 			task: makeTask(v1.PodQOSGuaranteed, pod_info.RequestTypeRegular, 1), topo: bestEffort, expected: false,
 		},
-		"non-guaranteed QoS passes through": {
-			task: makeTask(v1.PodQOSBurstable, pod_info.RequestTypeRegular, 1), topo: singleNUMA, expected: false,
+		"non-guaranteed GPU pod is handled (device alignment is QoS-independent)": {
+			task: makeTask(v1.PodQOSBurstable, pod_info.RequestTypeRegular, 1), topo: singleNUMA, expected: true,
+		},
+		"non-guaranteed cpu-only pod passes through (cpu aligns only for Guaranteed)": {
+			task: burstableTask(v1.ResourceList{v1.ResourceCPU: resource.MustParse("2")}), topo: restricted, expected: false,
+		},
+		"non-guaranteed GPU pod on a node that doesn't track gpu per-zone passes through": {
+			task: makeTask(v1.PodQOSBurstable, pod_info.RequestTypeRegular, 1), topo: cpuOnlyNode, expected: false,
 		},
 		"best-effort QoS passes through": {
 			task: makeTask(v1.PodQOSBestEffort, pod_info.RequestTypeRegular, 0), topo: singleNUMA, expected: false,
@@ -190,6 +224,25 @@ func gPod(uid string, requests map[string]string) *pod_info.PodInfo {
 			Spec:   v1.PodSpec{Containers: []v1.Container{{Resources: v1.ResourceRequirements{Requests: rl}}}},
 		},
 	}
+}
+
+// TestNonGuaranteedIgnoresCPU verifies the evaluator drops cpu/memory for a non-Guaranteed task (the
+// kubelet aligns them only for Guaranteed pods) and constrains only devices: a GPU+cpu request whose
+// widths disagree rejects as Guaranteed but admits as Burstable, where only the GPU is aligned.
+func TestNonGuaranteedIgnoresCPU(t *testing.T) {
+	pp, _, node := wiredPlugin(numaTopology(node_info.TopologyPolicyRestricted, node_info.TopologyScopePod,
+		numaZone("node-0", map[string]string{gpu: "4", "cpu": "8"}),
+		numaZone("node-1", map[string]string{gpu: "4", "cpu": "8"}),
+	))
+
+	t.Run("guaranteed rejects on gpu/cpu width disagreement", func(t *testing.T) {
+		// 6 GPU -> width 2, 4 cpu -> width 1: no common width.
+		assert.False(t, pp.allocatable(gPod("g", map[string]string{gpu: "6", "cpu": "4"}), node))
+	})
+	t.Run("burstable admits: cpu is not kubelet-aligned, only gpu constrains", func(t *testing.T) {
+		assert.True(t, pp.allocatable(burstableTask(req(gpu, "6", "cpu", "4")), node),
+			"cpu must be ignored for a non-Guaranteed pod, leaving only the width-2 GPU request")
+	})
 }
 
 func TestBuildNumaRequests(t *testing.T) {
