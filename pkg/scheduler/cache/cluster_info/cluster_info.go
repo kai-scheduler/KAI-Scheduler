@@ -304,7 +304,7 @@ func (c *ClusterInfo) populateNodeResourceTopologies(nodes map[string]*node_info
 			continue
 		}
 		nodeInfo.NodeResourceTopology = nrt
-		nodeInfo.NumaTopology = node_info.BuildNumaTopology(nrt)
+		nodeInfo.NumaTopology = node_info.BuildNumaTopology(nrt, nodeInfo.VectorMap)
 	}
 }
 

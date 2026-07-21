@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/util/sets"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common"
 	schedapi "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
@@ -60,12 +59,10 @@ func newScenarioFixture(t *testing.T) *scenarioFixture {
 		tasksToNodeMap, nil, vectorMap)
 	node := nodesInfoMap["node0"]
 
-	node.NumaTopology = &node_info.NumaTopology{
-		Policy:    node_info.TopologyPolicySingleNUMANode,
-		Scope:     node_info.TopologyScopePod,
-		Zones:     []*node_info.NumaZone{cpuZone("node-0", "4", "1"), cpuZone("node-1", "4", "1")},
-		Resources: sets.New[v1.ResourceName]("cpu"),
-	}
+	node.NumaTopology = nodes_fake.NewNumaTopologyWithMap(
+		node_info.TopologyPolicySingleNUMANode, node_info.TopologyScopePod, vectorMap,
+		cpuZone("node-0", "4", "1"), cpuZone("node-1", "4", "1"),
+	)
 
 	victim0 := singleTask(jobsInfoMap["victim0"])
 	victim1 := singleTask(jobsInfoMap["victim1"])
@@ -100,8 +97,8 @@ func newScenarioFixture(t *testing.T) *scenarioFixture {
 }
 
 func (f *scenarioFixture) zone(i int) int64 {
-	q := f.node.NumaTopology.Zones[i].Available["cpu"]
-	return q.Value()
+	idx := f.node.NumaTopology.VectorMap.GetIndex("cpu")
+	return int64(f.node.NumaTopology.Zones[i].Available.Get(idx)) / 1000
 }
 
 // runScenario simulates the scenario by evicting the victims and allocating the preemptor.

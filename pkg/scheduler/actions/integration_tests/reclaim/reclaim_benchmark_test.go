@@ -6,6 +6,7 @@ package reclaim
 import (
 	"flag"
 	"fmt"
+	"runtime"
 	"testing"
 	"time"
 
@@ -15,7 +16,11 @@ import (
 
 	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/allocate"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/consolidation"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/preempt"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/stalegangeviction"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
@@ -33,6 +38,8 @@ var reclaimLargeJobNodeLocalGreedyBudget = flag.String(
 	"",
 	"optional NodeLocalGreedy generator budget override for BenchmarkReclaimLargeJobs",
 )
+
+var manySingleGPUJobsBenchmarkKeepAlive *framework.Session
 
 func init() {
 	test_utils.InitTestingInfrastructure()
@@ -62,46 +69,116 @@ func BenchmarkReclaimLargeJobs_1000Node(b *testing.B) {
 	benchmarkReclaimLargeJobs(b, 1000)
 }
 
-func BenchmarkReclaimManySingleGPUJobs_10Node(b *testing.B) {
-	benchmarkReclaimManySingleGPUJobs(b, 10)
+func BenchmarkReclaimManySingleGPUJobsFullCycle_10Node(b *testing.B) {
+	benchmarkReclaimManySingleGPUJobsFullCycle(b, 10)
 }
 
-func BenchmarkReclaimManySingleGPUJobs_50Node(b *testing.B) {
-	benchmarkReclaimManySingleGPUJobs(b, 50)
+func BenchmarkReclaimManySingleGPUJobsFullCycle_50Node(b *testing.B) {
+	benchmarkReclaimManySingleGPUJobsFullCycle(b, 50)
 }
 
-func BenchmarkReclaimManySingleGPUJobs_100Node(b *testing.B) {
-	benchmarkReclaimManySingleGPUJobs(b, 100)
+func BenchmarkReclaimManySingleGPUJobsFullCycle_100Node(b *testing.B) {
+	benchmarkReclaimManySingleGPUJobsFullCycle(b, 100)
 }
 
-func BenchmarkReclaimManySingleGPUJobs_200Node(b *testing.B) {
-	benchmarkReclaimManySingleGPUJobs(b, 200)
+func BenchmarkReclaimManySingleGPUJobsFullCycle_200Node(b *testing.B) {
+	benchmarkReclaimManySingleGPUJobsFullCycle(b, 200)
 }
 
-func BenchmarkReclaimManySingleGPUJobs_500Node(b *testing.B) {
-	benchmarkReclaimManySingleGPUJobs(b, 500)
+func BenchmarkReclaimManySingleGPUJobsFullCycle_500Node(b *testing.B) {
+	benchmarkReclaimManySingleGPUJobsFullCycleWithParams(b, defaultManySingleGPUJobsReclaimParams(500), true)
 }
 
-func BenchmarkReclaimManySingleGPUJobsWithMinRuntime_500Node(b *testing.B) {
-	benchmarkReclaimManySingleGPUJobsWithParams(b, manySingleGPUJobsReclaimParamsWithMinRuntime(500))
+func BenchmarkReclaimManySingleGPUJobsFullCycleWithMinRuntime_500Node(b *testing.B) {
+	benchmarkReclaimManySingleGPUJobsFullCycleWithParams(b, manySingleGPUJobsReclaimParamsWithMinRuntime(500), false)
 }
 
-func benchmarkReclaimManySingleGPUJobs(b *testing.B, numNodes int) {
-	benchmarkReclaimManySingleGPUJobsWithParams(b, defaultManySingleGPUJobsReclaimParams(numNodes))
+func benchmarkReclaimManySingleGPUJobsFullCycle(b *testing.B, numNodes int) {
+	benchmarkReclaimManySingleGPUJobsFullCycleWithParams(b, defaultManySingleGPUJobsReclaimParams(numNodes), false)
 }
 
-func benchmarkReclaimManySingleGPUJobsWithParams(b *testing.B, params manySingleGPUJobsReclaimParams) {
+func benchmarkReclaimManySingleGPUJobsFullCycleWithParams(
+	b *testing.B,
+	params manySingleGPUJobsReclaimParams,
+	measureLiveHeap bool,
+) {
 	defer gock.Off()
 
 	topology := buildManySingleGPUJobsReclaimTopology(params)
+	actions := manySingleGPUJobsSchedulingCycleActions()
 	b.ReportAllocs()
+	var heapAfterAllocate uint64
+	var heapAfterCycle uint64
+	var fitErrorTasks int
 
 	for b.Loop() {
+		var before runtime.MemStats
+		if measureLiveHeap {
+			b.StopTimer()
+			runtime.GC()
+			runtime.ReadMemStats(&before)
+			b.StartTimer()
+		}
+
 		ctrl := gomock.NewController(b)
 		ssn := test_utils.BuildSession(topology, ctrl)
-		reclaim.New().Execute(ssn)
+		for actionIndex, action := range actions {
+			action.Execute(ssn)
+			if measureLiveHeap && actionIndex == 0 {
+				fitErrorTasks += countManySingleGPUFitErrorTasks(ssn)
+				manySingleGPUJobsBenchmarkKeepAlive = ssn
+				b.StopTimer()
+				runtime.GC()
+				var after runtime.MemStats
+				runtime.ReadMemStats(&after)
+				heapAfterAllocate += heapDelta(before.HeapAlloc, after.HeapAlloc)
+				b.StartTimer()
+			}
+		}
+		if measureLiveHeap {
+			manySingleGPUJobsBenchmarkKeepAlive = ssn
+			b.StopTimer()
+			runtime.GC()
+			var after runtime.MemStats
+			runtime.ReadMemStats(&after)
+			heapAfterCycle += heapDelta(before.HeapAlloc, after.HeapAlloc)
+			b.StartTimer()
+		}
 		ctrl.Finish()
 	}
+	b.StopTimer()
+	b.ReportMetric(1, "full_cycles/op")
+	if measureLiveHeap {
+		iterations := uint64(b.N)
+		b.ReportMetric(float64(fitErrorTasks)/float64(iterations), "fit_error_tasks_after_allocate/op")
+		b.ReportMetric(float64(heapAfterAllocate/iterations), "heap_live_after_allocate_bytes/op")
+		b.ReportMetric(float64(heapAfterCycle/iterations), "heap_live_after_cycle_bytes/op")
+	}
+}
+
+func manySingleGPUJobsSchedulingCycleActions() []framework.Action {
+	return []framework.Action{
+		allocate.New(),
+		consolidation.New(),
+		reclaim.New(),
+		preempt.New(),
+		stalegangeviction.New(),
+	}
+}
+
+func countManySingleGPUFitErrorTasks(ssn *framework.Session) int {
+	fitErrorTasks := 0
+	for _, job := range ssn.ClusterInfo.PodGroupInfos {
+		fitErrorTasks += len(job.TasksFitErrors)
+	}
+	return fitErrorTasks
+}
+
+func heapDelta(before, after uint64) uint64 {
+	if after <= before {
+		return 0
+	}
+	return after - before
 }
 
 func benchmarkReclaimLargeJobs(b *testing.B, numNodes int) {

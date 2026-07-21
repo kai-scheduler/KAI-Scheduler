@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/util/sets"
 
 	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
@@ -29,11 +28,11 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 )
 
-func cpuZone(id, allocatable, available string) *node_info.NumaZone {
-	return &node_info.NumaZone{
+func cpuZone(id, allocatable, available string) node_info.NumaZoneSpec {
+	return node_info.NumaZoneSpec{
 		ID:          id,
-		Allocatable: map[v1.ResourceName]resource.Quantity{"cpu": resource.MustParse(allocatable)},
-		Available:   map[v1.ResourceName]resource.Quantity{"cpu": resource.MustParse(available)},
+		Allocatable: v1.ResourceList{"cpu": resource.MustParse(allocatable)},
+		Available:   v1.ResourceList{"cpu": resource.MustParse(available)},
 	}
 }
 
@@ -89,12 +88,10 @@ func TestReclaimRepipelineDoesNotGoNegative(t *testing.T) {
 		tasksToNodeMap, nil, vectorMap)
 	node := nodesInfoMap["node0"]
 
-	node.NumaTopology = &node_info.NumaTopology{
-		Policy:    node_info.TopologyPolicySingleNUMANode,
-		Scope:     node_info.TopologyScopePod,
-		Zones:     []*node_info.NumaZone{cpuZone("node-0", "4", "1"), cpuZone("node-1", "4", "1")},
-		Resources: sets.New[v1.ResourceName]("cpu"),
-	}
+	node.NumaTopology = nodes_fake.NewNumaTopologyWithMap(
+		node_info.TopologyPolicySingleNUMANode, node_info.TopologyScopePod, vectorMap,
+		cpuZone("node-0", "4", "1"), cpuZone("node-1", "4", "1"),
+	)
 
 	victim0 := singleTask(jobsInfoMap["victim0"])
 	victim1 := singleTask(jobsInfoMap["victim1"])
@@ -114,7 +111,8 @@ func TestReclaimRepipelineDoesNotGoNegative(t *testing.T) {
 	}
 	numa.New(framework.PluginArguments{}).OnSessionOpen(ssn) // registers the charge/credit EventHandler
 
-	zone := func(i int) int64 { q := node.NumaTopology.Zones[i].Available["cpu"]; return q.Value() }
+	cpuIdx := vectorMap.GetIndex("cpu")
+	zone := func(i int) int64 { return int64(node.NumaTopology.Zones[i].Available.Get(cpuIdx)) / 1000 }
 	stmt := ssn.Statement()
 
 	// pipeline mirrors allocateTaskToNode: the allocation path stamps the task's NUMA placement for

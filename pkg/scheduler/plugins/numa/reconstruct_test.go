@@ -19,8 +19,8 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 )
 
-func cpuMap(q string) map[v1.ResourceName]resource.Quantity {
-	return map[v1.ResourceName]resource.Quantity{"cpu": resource.MustParse(q)}
+func cpuList(q string) v1.ResourceList {
+	return v1.ResourceList{"cpu": resource.MustParse(q)}
 }
 
 func TestNewReconstructAvailableFlag(t *testing.T) {
@@ -34,14 +34,11 @@ func TestNewReconstructAvailableFlag(t *testing.T) {
 func TestReconstructNodeAvailable(t *testing.T) {
 	// Two zones, Allocatable 4 CPU each. Available is deliberately stale (99) to prove reconstruction
 	// discards the NRT-reported value and rebuilds from Allocatable.
-	topo := &node_info.NumaTopology{
-		Policy: node_info.TopologyPolicySingleNUMANode,
-		Scope:  node_info.TopologyScopePod,
-		Zones: []*node_info.NumaZone{
-			{ID: "node-0", Allocatable: cpuMap("4"), Available: cpuMap("99")},
-			{ID: "node-1", Allocatable: cpuMap("4"), Available: cpuMap("99")},
-		},
-	}
+	topo := numaTopology(
+		node_info.TopologyPolicySingleNUMANode, node_info.TopologyScopePod,
+		node_info.NumaZoneSpec{ID: "node-0", Allocatable: cpuList("4"), Available: cpuList("99")},
+		node_info.NumaZoneSpec{ID: "node-1", Allocatable: cpuList("4"), Available: cpuList("99")},
+	)
 
 	// Bound pod observed on node-1 (cpu 2) → subtracted.
 	bound := gPod("bound", map[string]string{"cpu": "2"})
@@ -76,8 +73,9 @@ func TestReconstructNodeAvailable(t *testing.T) {
 
 	pp.reconstructNodeAvailable(ssn)
 
-	z0 := topo.Zones[0].Available["cpu"]
-	z1 := topo.Zones[1].Available["cpu"]
-	assert.Equal(t, int64(2), z0.Value(), "node-0: Allocatable 4 minus pipelined 2 (pending excluded, stale 99 discarded)")
-	assert.Equal(t, int64(2), z1.Value(), "node-1: Allocatable 4 minus the running pod's observed 2")
+	cpuIdx := topo.VectorMap.GetIndex("cpu")
+	z0 := int64(topo.Zones[0].Available.Get(cpuIdx)) / 1000
+	z1 := int64(topo.Zones[1].Available.Get(cpuIdx)) / 1000
+	assert.Equal(t, int64(2), z0, "node-0: Allocatable 4 minus pipelined 2 (pending excluded, stale 99 discarded)")
+	assert.Equal(t, int64(2), z1, "node-1: Allocatable 4 minus the running pod's observed 2")
 }

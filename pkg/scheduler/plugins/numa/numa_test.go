@@ -22,45 +22,45 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
 )
 
-// numaZone builds a NUMA zone with the given per-resource Available quantities.
-func numaZone(id string, available map[string]string) *node_info.NumaZone {
-	a := map[v1.ResourceName]resource.Quantity{}
+// numaZone builds a NUMA zone spec with the given per-resource Available quantities. In tests all
+// zones are at full capacity (no pre-existing allocations), so Allocatable == Available.
+func numaZone(id string, available map[string]string) node_info.NumaZoneSpec {
+	list := v1.ResourceList{}
 	for name, qty := range available {
-		a[v1.ResourceName(name)] = resource.MustParse(qty)
+		list[v1.ResourceName(name)] = resource.MustParse(qty)
 	}
-	// In tests all zones are at full capacity (no pre-existing allocations), so
-	// Allocatable == Available.
-	alloc := map[v1.ResourceName]resource.Quantity{}
-	for r, qty := range a {
-		alloc[r] = qty.DeepCopy()
-	}
-	return &node_info.NumaZone{ID: id, Available: a, Allocatable: alloc}
+	return node_info.NumaZoneSpec{ID: id, Available: list, Allocatable: list}
 }
 
-// numaTopology builds a NumaTopology directly (no NRT round-trip), computing the reported
-// resource set from the zones.
-func numaTopology(policy node_info.TopologyManagerPolicy, scope node_info.TopologyManagerScope, zones ...*node_info.NumaZone) *node_info.NumaTopology {
-	resources := sets.New[v1.ResourceName]()
-	for _, z := range zones {
-		for r := range z.Available {
-			resources.Insert(r)
-		}
-	}
-	return &node_info.NumaTopology{Policy: policy, Scope: scope, Zones: zones, Resources: resources}
+// numaTopology builds a NumaTopology from zone specs against a fresh seeded map.
+func numaTopology(policy node_info.TopologyManagerPolicy, scope node_info.TopologyManagerScope, zones ...node_info.NumaZoneSpec) *node_info.NumaTopology {
+	return nodes_fake.NewNumaTopology(policy, scope, zones...)
 }
 
-func singleNUMANodeTopology(scope node_info.TopologyManagerScope, zones ...*node_info.NumaZone) *node_info.NumaTopology {
+func singleNUMANodeTopology(scope node_info.TopologyManagerScope, zones ...node_info.NumaZoneSpec) *node_info.NumaTopology {
 	return numaTopology(node_info.TopologyPolicySingleNUMANode, scope, zones...)
+}
+
+// zoneAvail reads a zone's Available amount for a resource in the request's natural unit (cpu in
+// cores, others by count), translating from the vector's milli-cpu storage.
+func zoneAvail(topo *node_info.NumaTopology, zoneIdx int, name v1.ResourceName) int64 {
+	idx := topo.VectorMap.GetIndex(name)
+	val := topo.Zones[zoneIdx].Available.Get(idx)
+	if idx == resource_info.CPUIndex {
+		return int64(val) / 1000
+	}
+	return int64(val)
 }
 
 // wiredPlugin returns a plugin, a session whose node map holds a single node-a carrying topo,
 // and that node (the same object the plugin charges, so predicate observes the in-cycle ledger).
 func wiredPlugin(topo *node_info.NumaTopology) (*numaPlugin, *framework.Session, *node_info.NodeInfo) {
 	node := &node_info.NodeInfo{Name: "node-a", NumaTopology: topo}
-	pp := &numaPlugin{ignoreList: sets.New[v1.ResourceName]()}
 	ssn := &framework.Session{ClusterInfo: &schedapi.ClusterInfo{Nodes: map[string]*node_info.NodeInfo{"node-a": node}}}
+	pp := &numaPlugin{ignoreList: sets.New[v1.ResourceName](), ssn: ssn}
 	return pp, ssn, node
 }
 
@@ -158,8 +158,8 @@ func TestOnSessionOpenRegistersWithoutState(t *testing.T) {
 	plugin := New(framework.PluginArguments{}).(*numaPlugin)
 	ssn := &framework.Session{ClusterInfo: &schedapi.ClusterInfo{Nodes: nodes}}
 
-	// The plugin is stateless across sessions: OnSessionOpen only registers callbacks (it holds no
-	// node map), so open/close are safe no-ops on plugin state.
+	// OnSessionOpen registers callbacks and records the session; OnSessionClose clears it. No state
+	// leaks across sessions, so open/close are safe.
 	plugin.OnSessionOpen(ssn)
 	plugin.OnSessionClose(ssn)
 
@@ -192,41 +192,40 @@ func gPod(uid string, requests map[string]string) *pod_info.PodInfo {
 	}
 }
 
-func TestRequestUnits(t *testing.T) {
+func TestBuildNumaRequests(t *testing.T) {
 	always := v1.ContainerRestartPolicyAlways
 	cpu := func(q string) v1.ResourceRequirements {
 		return v1.ResourceRequirements{Requests: v1.ResourceList{"cpu": resource.MustParse(q)}}
 	}
-	task := &pod_info.PodInfo{Pod: &v1.Pod{Spec: v1.PodSpec{
+	pod := &v1.Pod{Spec: v1.PodSpec{
 		InitContainers: []v1.Container{
-			{Resources: cpu("10")},                        // ordinary init: not a steady-state unit
-			{Resources: cpu("1"), RestartPolicy: &always}, // native sidecar: a steady-state unit
+			{Resources: cpu("10")},                        // ordinary init: not a steady-state request
+			{Resources: cpu("1"), RestartPolicy: &always}, // native sidecar: a steady-state request
 		},
 		Containers: []v1.Container{{Resources: cpu("2")}, {Resources: cpu("2")}},
-	}}}
+	}}
+	reqs := buildNumaRequests(pod, resource_info.NewResourceVectorMap())
+	cores := func(v resource_info.ResourceVector) int64 { return int64(v.Get(resource_info.CPUIndex)) / 1000 }
 
-	t.Run("pod scope aggregates into one unit", func(t *testing.T) {
-		concurrent, serial := requestUnits(task, node_info.TopologyScopePod)
+	t.Run("pod scope aggregates into one request", func(t *testing.T) {
+		concurrent, serial := reqs.forScope(node_info.TopologyScopePod)
 		assert.Len(t, concurrent, 1)
 		assert.Empty(t, serial, "pod scope folds init containers into the effective pod request")
 		// PodRequests = max(init peak 10, sidecar+regulars 1+2+2=5) = 10.
-		got := concurrent[0]["cpu"]
-		assert.Equal(t, int64(10), got.Value())
+		assert.Equal(t, int64(10), cores(concurrent[0]))
 	})
 
-	t.Run("container scope splits concurrent and serial units", func(t *testing.T) {
-		concurrent, serial := requestUnits(task, node_info.TopologyScopeContainer)
+	t.Run("container scope splits concurrent and serial requests", func(t *testing.T) {
+		concurrent, serial := reqs.forScope(node_info.TopologyScopeContainer)
 		assert.Len(t, concurrent, 3, "native sidecar + two regular containers")
 		var total int64
 		for _, u := range concurrent {
-			q := u["cpu"]
-			total += q.Value()
+			total += cores(u)
 		}
 		assert.Equal(t, int64(5), total, "1 (sidecar) + 2 + 2")
 
-		assert.Len(t, serial, 1, "the ordinary init container is a serial unit")
-		initCPU := serial[0]["cpu"]
-		assert.Equal(t, int64(10), initCPU.Value())
+		assert.Len(t, serial, 1, "the ordinary init container is a serial request")
+		assert.Equal(t, int64(10), cores(serial[0]))
 	})
 }
 
@@ -288,21 +287,21 @@ func TestPredicate(t *testing.T) {
 }
 
 func TestInCycleReservation(t *testing.T) {
-	pp, ssn, node := wiredPlugin(singleNUMANodeTopology(node_info.TopologyScopePod,
+	pp, _, node := wiredPlugin(singleNUMANodeTopology(node_info.TopologyScopePod,
 		numaZone("node-0", map[string]string{"cpu": "4"}),
 	))
-	avail := func() int64 { q := node.NumaTopology.Zones[0].Available["cpu"]; return q.Value() }
+	avail := func() int64 { return zoneAvail(node.NumaTopology, 0, "cpu") }
 
 	first := gPod("first", map[string]string{"cpu": "3"})
 	first.NUMAPlacement = pp.placement(first, node) // stamped before the op, as the allocation path does
-	pp.allocate(ssn, &framework.Event{Task: first})
+	pp.allocate(&framework.Event{Task: first})
 	assert.Equal(t, int64(1), avail(), "zone charged by the first pod")
 	assert.Equal(t, []int{0}, first.NUMAPlacement.ZoneIndices(), "placement recorded on the task (zone 0)")
 
 	second := gPod("second", map[string]string{"cpu": "3"})
 	assert.Error(t, pp.predicate(second, nil, node), "only 1 cpu left in the single zone")
 
-	pp.deallocate(ssn, &framework.Event{Task: first})
+	pp.deallocate(&framework.Event{Task: first})
 	assert.Equal(t, int64(4), avail(), "zone credited back exactly on rollback")
 	assert.NoError(t, pp.predicate(second, nil, node), "zone freed, second pod now fits")
 }
@@ -311,7 +310,7 @@ func TestAllocateReusesExistingPlacement(t *testing.T) {
 	// A task arrives with a placement already set (restored on unevict, or seeded from
 	// the annotation). allocate must charge THAT placement, not re-evaluate — a fresh
 	// evaluate would pick the lowest zone (node-0), but the placement says node-1.
-	pp, ssn, node := wiredPlugin(singleNUMANodeTopology(node_info.TopologyScopePod,
+	pp, _, node := wiredPlugin(singleNUMANodeTopology(node_info.TopologyScopePod,
 		numaZone("node-0", map[string]string{"cpu": "4"}),
 		numaZone("node-1", map[string]string{"cpu": "4"}),
 	))
@@ -320,15 +319,15 @@ func TestAllocateReusesExistingPlacement(t *testing.T) {
 		{ZoneIndex: 1, Amount: v1.ResourceList{"cpu": resource.MustParse("3")}},
 	}
 
-	pp.allocate(ssn, &framework.Event{Task: task})
-	n0, n1 := node.NumaTopology.Zones[0].Available["cpu"], node.NumaTopology.Zones[1].Available["cpu"]
-	assert.Equal(t, int64(4), n0.Value(), "node-0 untouched (no re-evaluation)")
-	assert.Equal(t, int64(1), n1.Value(), "the existing placement on zone 1 is charged")
+	pp.allocate(&framework.Event{Task: task})
+	n0, n1 := zoneAvail(node.NumaTopology, 0, "cpu"), zoneAvail(node.NumaTopology, 1, "cpu")
+	assert.Equal(t, int64(4), n0, "node-0 untouched (no re-evaluation)")
+	assert.Equal(t, int64(1), n1, "the existing placement on zone 1 is charged")
 	assert.Equal(t, []int{1}, task.NUMAPlacement.ZoneIndices(), "placement unchanged")
 
-	pp.deallocate(ssn, &framework.Event{Task: task})
-	n1 = node.NumaTopology.Zones[1].Available["cpu"]
-	assert.Equal(t, int64(4), n1.Value(), "credited back to node-1")
+	pp.deallocate(&framework.Event{Task: task})
+	n1 = zoneAvail(node.NumaTopology, 1, "cpu")
+	assert.Equal(t, int64(4), n1, "credited back to node-1")
 }
 
 func observedZone(zone, cpu string) schedulingv1alpha2.NUMAZonePlacement {

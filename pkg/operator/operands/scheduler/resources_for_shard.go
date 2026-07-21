@@ -375,6 +375,21 @@ func DeploymentName(config *kaiv1.Config, shard *kaiv1.SchedulingShard) string {
 	return fmt.Sprintf("%s-%s", *config.Spec.Global.SchedulerName, shard.Name)
 }
 
+func (s *SchedulerForShard) podDisruptionBudgetForShard(
+	ctx context.Context, readerClient client.Reader,
+	kaiConfig *kaiv1.Config, shard *kaiv1.SchedulingShard,
+) (client.Object, error) {
+	config := kaiConfig.Spec.Scheduler
+	return common.PodDisruptionBudgetForKAIConfig(
+		ctx,
+		readerClient,
+		kaiConfig.Spec.Namespace,
+		DeploymentName(kaiConfig, shard),
+		config.Replicas,
+		config.Service,
+	)
+}
+
 // serviceName for the per-shard scheduler Service.
 func serviceName(config *kaiv1.Config, shard *kaiv1.SchedulingShard) string {
 	return fmt.Sprintf("%s-%s", *config.Spec.Global.SchedulerName, shard.Name)
