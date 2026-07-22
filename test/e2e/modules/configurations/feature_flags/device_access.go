@@ -13,12 +13,12 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	kaiadmission "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/admission"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/configurations"
 	testContext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/testconfig"
+	kaiadmission "github.com/kai-scheduler/api/kai/v1/admission"
 
-	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	kaiv1 "github.com/kai-scheduler/api/kai/v1"
 )
 
 const blockNvidiaVisibleDevicesArg = "--block-nvidia-visible-devices=true"

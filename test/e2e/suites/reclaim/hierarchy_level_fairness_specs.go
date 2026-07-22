@@ -15,7 +15,6 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/configurations/feature_flags"
 	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/capacity"
@@ -26,6 +25,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/utils"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
 	"github.com/kai-scheduler/api/constants"
+	kaiv1 "github.com/kai-scheduler/api/kai/v1"
 	v2 "github.com/kai-scheduler/api/scheduling/v2"
 )
 

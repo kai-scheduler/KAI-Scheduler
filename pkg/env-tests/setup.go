@@ -14,7 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
 	"github.com/kai-scheduler/KAI-scheduler/deployments/kai-scheduler/crds"
-	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	kaiv1 "github.com/kai-scheduler/api/kai/v1"
 	kaiv1alpha1 "github.com/kai-scheduler/api/kai/v1alpha1"
 	kaiv1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
 	kaiv2 "github.com/kai-scheduler/api/scheduling/v2"

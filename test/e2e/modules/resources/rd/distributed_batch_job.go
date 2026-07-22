@@ -17,7 +17,7 @@ import (
 	"k8s.io/utils/ptr"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	pgconstants "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
+	pgconstants "github.com/kai-scheduler/api/podgrouper/constants"
 	v2 "github.com/kai-scheduler/api/scheduling/v2"
 	"github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
