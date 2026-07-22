@@ -201,12 +201,6 @@ sequenceDiagram
         B->>K: Patch pod.Status.ExtendedResourceClaimStatus
         B->>K: Bind pod to node
     end
-
-    rect
-        note over S,K: One-time guard removals
-        note over N: Remove guard node_info.go:316
-        note over S: Skip extended-resource-claim claims in ExtractDRAGPUResourcesFromClaims
-    end
 ```
 
 ## Design
