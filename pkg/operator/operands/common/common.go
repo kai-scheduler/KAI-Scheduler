@@ -35,8 +35,8 @@ const (
 
 // PodDisruptionBudgetImplementedServices lists operand resource names with operator-side PDB creation.
 var PodDisruptionBudgetImplementedServices = map[string]struct{}{
-	"admission":    {},
-	"scheduler":    {},
+	"admission":   {},
+	"scheduler":   {},
 	"pod-grouper": {},
 }
 
