@@ -103,8 +103,8 @@ spec:
                 type: integer
               stalenessGracePeriod:
                 description: |-
-                  StalenessGracePeriod is the minimum duration a stale PodGroup must remain in stale
-                  status before stale workloads may be evicted to make room. Negative values disable
+                  StalenessGracePeriod is the minimum duration a stale PodGroup it allowed to remain in stale
+                  status before stale workloads may be evicted to make room. Negative values disable stale gang
                   eviction for this PodGroup. Defaults to the scheduler's global staleness grace period.
                 type: string
               subGroups:

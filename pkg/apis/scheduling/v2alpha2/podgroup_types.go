@@ -83,8 +83,8 @@ type PodGroupSpec struct {
 	// +optional
 	PreemptionDelay *metav1.Duration `json:"preemptionDelay,omitempty" protobuf:"bytes,9,opt,name=preemptionDelay"`
 
-	// StalenessGracePeriod is the minimum duration a stale PodGroup must remain in stale
-	// status before stale workloads may be evicted to make room. Negative values disable
+	// StalenessGracePeriod is the minimum duration a stale PodGroup it allowed to remain in stale
+	// status before stale workloads may be evicted to make room. Negative values disable stale gang
 	// eviction for this PodGroup. Defaults to the scheduler's global staleness grace period.
 	// +optional
 	StalenessGracePeriod *metav1.Duration `json:"stalenessGracePeriod,omitempty" protobuf:"bytes,10,opt,name=stalenessGracePeriod"`

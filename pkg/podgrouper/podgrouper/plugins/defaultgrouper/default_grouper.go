@@ -297,8 +297,8 @@ func (dg *DefaultGrouper) calcPodGroupPreemptionDelay(allOwners []*metav1.Partia
 	return nil
 }
 
-// calcPodGroupPreemptionDelay reads the preemption-delay annotation from owners then the pod.
-// First valid value wins; invalid or negative durations are ignored with a warning.
+// calcPodGroupPreemptionDelay reads the staleness-grace-period annotation from owners then the pod.
+// First valid value wins; invalid durations are ignored with a warning.
 func (dg *DefaultGrouper) calcStalenessGracePeriod(allOwners []*metav1.PartialObjectMetadata, pod *v1.Pod) *metav1.Duration {
 	for _, owner := range allOwners {
 		if staleStr, found := owner.GetAnnotations()[constants.StalenessGracePeriodAnnotationKey]; found {
