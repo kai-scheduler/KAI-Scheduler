@@ -170,4 +170,60 @@ var _ = Describe("Status Updater Concurrency - large scale: increase queue size"
 			// Expected - queue is empty, meaning no retry was scheduled
 		}
 	})
+
+	It("updatePodGroup - No retry after NotFound error on a deleted pod group", func() {
+		patchCalls := 0
+
+		// The pod group was deleted: both status and patch writes return NotFound.
+		notFound := func(action faketesting.Action) (handled bool, ret runtime.Object, err error) {
+			return true, nil, apierrors.NewNotFound(
+				schema.GroupResource{Group: "scheduling.run.ai", Resource: "podgroups"}, "test-pg")
+		}
+		kubeAiSchedClient.SchedulingV2alpha2().(*fakeschedulingv2alpha2.FakeSchedulingV2alpha2).PrependReactor(
+			"update", "podgroups", notFound)
+		kubeAiSchedClient.SchedulingV2alpha2().(*fakeschedulingv2alpha2.FakeSchedulingV2alpha2).PrependReactor(
+			"patch", "podgroups", func(action faketesting.Action) (handled bool, ret runtime.Object, err error) {
+				patchCalls++
+				return notFound(action)
+			},
+		)
+
+		job := &enginev2alpha2.PodGroup{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-pg",
+				Namespace: "test-ns",
+				UID:       "test-uid",
+			},
+		}
+
+		key := statusUpdater.keyForPodGroupPayload(job.Name, job.Namespace, job.UID)
+		updateData := &inflightUpdate{
+			object:       job,
+			patchData:    []byte(`[{"op":"add","path":"/metadata/annotations/foo","value":"bar"}]`),
+			updateStatus: true,
+			subResources: nil,
+		}
+
+		statusUpdater.inFlightPodGroups.Store(key, updateData)
+		statusUpdater.Run(make(chan struct{}))
+
+		ctx := context.Background()
+		statusUpdater.updatePodGroup(ctx, key, updateData)
+
+		Expect(patchCalls).To(Equal(1), "Patch should be attempted once")
+
+		// The in-flight entry must be dropped so it is never re-enqueued.
+		_, inFlightExists := statusUpdater.inFlightPodGroups.Load(key)
+		Expect(inFlightExists).To(BeFalse(), "In-flight update should be dropped after NotFound error")
+		_, appliedExists := statusUpdater.appliedPodGroupUpdates.Load(key)
+		Expect(appliedExists).To(BeFalse(), "Update should not be in applied cache after NotFound error")
+
+		// No retry should be queued for a deleted pod group.
+		select {
+		case <-statusUpdater.updateQueueOut:
+			Fail("Update queue should be empty - no retry should be queued for NotFound errors")
+		case <-time.After(100 * time.Millisecond):
+			// Expected - queue is empty, meaning no retry was scheduled
+		}
+	})
 })
