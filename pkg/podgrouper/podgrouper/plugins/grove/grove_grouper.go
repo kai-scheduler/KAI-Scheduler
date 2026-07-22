@@ -8,8 +8,8 @@ import (
 	"fmt"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
+	"github.com/kai-scheduler/api/podgrouper/constants"
 	"github.com/kai-scheduler/api/scheduling/v2alpha2"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
