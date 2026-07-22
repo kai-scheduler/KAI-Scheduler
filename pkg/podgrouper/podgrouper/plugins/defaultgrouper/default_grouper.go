@@ -22,8 +22,8 @@ import (
 	"github.com/kai-scheduler/api/scheduling/v2alpha2"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/topowner"
+	"github.com/kai-scheduler/api/podgrouper/constants"
 )
 
 var (

@@ -6,8 +6,8 @@ package feature_flags
 import (
 	"context"
 
-	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
 	testContext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
+	kaiv1 "github.com/kai-scheduler/api/kai/v1"
 	"k8s.io/utils/ptr"
 )
 

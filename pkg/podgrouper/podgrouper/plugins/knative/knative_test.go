@@ -17,9 +17,9 @@ import (
 	knative "knative.dev/serving/pkg/apis/serving/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
 	commonconstants "github.com/kai-scheduler/api/constants"
+	"github.com/kai-scheduler/api/podgrouper/constants"
 	"github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
