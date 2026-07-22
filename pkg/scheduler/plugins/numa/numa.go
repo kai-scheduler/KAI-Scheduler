@@ -236,15 +236,46 @@ func parseIgnoreList(arguments framework.PluginArguments) sets.Set[v1.ResourceNa
 	return ignoreList
 }
 
-// shouldHandle engages the plugin for any Guaranteed task on a rejecting-policy node: the
-// kubelet aligns every Guaranteed pod (fractional/MIG included, on cpu/memory). The request
-// intersection in the evaluator decides which resources actually constrain each task.
+// shouldHandle engages the plugin on a rejecting-policy node for any task the kubelet would
+// NUMA-align. Guaranteed tasks are always handled. A non-Guaranteed task is handled if it requests a
+// topology-aware device.
 func (pp *numaPlugin) shouldHandle(task *pod_info.PodInfo, topo *node_info.NumaTopology) bool {
-	if topo == nil || !isModeledPolicy(topo.Policy) {
+	if topo == nil || !isModeledPolicy(topo.Policy) || task.Pod == nil {
 		return false
 	}
+	if isGuaranteed(task) {
+		return true
+	}
+	return pp.requestsAlignedDevice(task, topo)
+}
 
+// isGuaranteed reports whether the task's pod is Guaranteed QoS.
+func isGuaranteed(task *pod_info.PodInfo) bool {
 	return task.Pod != nil && task.Pod.Status.QOSClass == v1.PodQOSGuaranteed
+}
+
+// isQoSGatedResource reports whether a resource is NUMA-aligned by the kubelet only for Guaranteed
+// pods (cpu via CPU Manager, memory/hugepages via Memory Manager).
+func isQoSGatedResource(name v1.ResourceName) bool {
+	return name == v1.ResourceCPU || name == v1.ResourceMemory ||
+		strings.HasPrefix(string(name), string(v1.ResourceHugePagesPrefix))
+}
+
+// requestsAlignedDevice reports whether the task requests a topology-aware device resource the node
+// tracks per zone (a non cpu/memory/hugepages aware resource, minus the ignoreList). The kubelet's
+// device manager aligns these regardless of QoS, so a non-Guaranteed task that requests one must be
+// evaluated. Reads the task's precomputed request vector by shared-map index.
+func (pp *numaPlugin) requestsAlignedDevice(task *pod_info.PodInfo, topo *node_info.NumaTopology) bool {
+	for _, idx := range topo.AwareIndices {
+		name := topo.AwareNames[idx]
+		if isQoSGatedResource(name) || pp.ignoreList.Has(name) {
+			continue
+		}
+		if task.ResReqVector.Get(idx) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // isModeledPolicy reports whether the plugin engages for a node with this policy.
