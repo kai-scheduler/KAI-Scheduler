@@ -23,9 +23,27 @@ jobs:
         run: echo "Changelog was already validated before entering merge queue"
 
       - uses: actions/checkout@v7
-        if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'skip-changelog') && !contains(github.event.pull_request.labels.*.name, 'dependencies')
+        if: github.event_name == 'pull_request'
         with:
           fetch-depth: 0
+
+      - name: Reject unauthorized CHANGELOG.md changes
+        if: github.event_name == 'pull_request'
+        env:
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          if git diff --quiet "origin/${{ github.base_ref }}...HEAD" -- CHANGELOG.md; then
+            echo "CHANGELOG.md was not changed."
+            exit 0
+          fi
+
+          if [ "$PR_AUTHOR" = "KaiPilotBot" ] || sed -nE 's|.*github\.com/([^)]*).*|\1|p' MAINTAINERS.md | grep -Fxq "$PR_AUTHOR"; then
+            echo "CHANGELOG.md change authorized for $PR_AUTHOR."
+            exit 0
+          fi
+
+          echo "::error::Only maintainers listed in MAINTAINERS.md or KaiPilotBot may modify CHANGELOG.md. Add a changelog fragment under .changes/unreleased/ instead."
+          exit 1
 
       # Changelog entries are managed as changie fragments (see CONTRIBUTING.md).
       # A behavior-changing PR must add a fragment under .changes/unreleased/ (run `make changelog`).

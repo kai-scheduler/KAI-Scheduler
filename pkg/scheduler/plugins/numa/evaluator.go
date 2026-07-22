@@ -30,6 +30,25 @@ func (pp *numaPlugin) effectiveAware(node *node_info.NodeInfo) []int {
 	return pp.effectiveAwareByNode[node.Name]
 }
 
+// alignedAware returns the aware indices the kubelet aligns for this task: effectiveAware for a
+// Guaranteed task, and for a non-Guaranteed task the same minus the cpu/memory/hugepages indices
+// (those align only for Guaranteed pods; devices align for every QoS class).
+func (pp *numaPlugin) alignedAware(task *pod_info.PodInfo, node *node_info.NodeInfo) []int {
+	aware := pp.effectiveAware(node)
+	if isGuaranteed(task) {
+		return aware
+	}
+	topo := node.NumaTopology
+	out := make([]int, 0, len(aware))
+	for _, idx := range aware {
+		if isQoSGatedResource(topo.AwareNames[idx]) {
+			continue
+		}
+		out = append(out, idx)
+	}
+	return out
+}
+
 // allocatable reports whether the kubelet Topology Manager would align the task on the node. A task
 // the plugin does not constrain passes through as true.
 func (pp *numaPlugin) allocatable(task *pod_info.PodInfo, node *node_info.NodeInfo) bool {
@@ -54,7 +73,7 @@ func (pp *numaPlugin) solveTask(task *pod_info.PodInfo, node *node_info.NodeInfo
 		return true
 	}
 	topo := node.NumaTopology
-	aware := pp.effectiveAware(node)
+	aware := pp.alignedAware(task, node)
 	concurrent, serial := pp.numaRequestsFor(task, topo.VectorMap).forScope(topo.Scope)
 	return solve(topo, aware, concurrent, serial, alloc)
 }
