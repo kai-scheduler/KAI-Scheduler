@@ -169,6 +169,15 @@ spec:
       affinity:
         {{- toYaml .Values.podgrouper.affinity | nindent 8 }}
       {{- end }}
+      {{- if .Values.podgrouper.podDisruptionBudget }}
+      podDisruptionBudget:
+        {{- if hasKey .Values.podgrouper.podDisruptionBudget "enabled" }}
+        enabled: {{ .Values.podgrouper.podDisruptionBudget.enabled }}
+        {{- end }}
+        {{- if hasKey .Values.podgrouper.podDisruptionBudget "maxUnavailable" }}
+        maxUnavailable: {{ .Values.podgrouper.podDisruptionBudget.maxUnavailable }}
+        {{- end }}
+      {{- end }}
     args:
       genericKartaFallback: {{ .Values.podgrouper.genericKartaFallback }}
 

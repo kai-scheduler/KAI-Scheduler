@@ -73,6 +73,11 @@ podgrouper:
   queueLabelKey: "kai.scheduler/queue"
   genericKartaFallback: true
   affinity: {}
+  # PDB is created only when pod-grouper replicas > 1 (operator.replicaCount / podGrouper.replicas).
+  # For HA: set operator.replicaCount: 2 (or override podGrouper.replicas in Config).
+  podDisruptionBudget:
+    enabled: true
+    maxUnavailable: 1
 
 podgroupcontroller:
   enabled: true

@@ -51,6 +51,20 @@ func (p *PodGrouper) serviceAccountForKAIConfig(
 	return sa, err
 }
 
+func (p *PodGrouper) podDisruptionBudgetForKAIConfig(
+	ctx context.Context, runtimeClient client.Reader, kaiConfig *kaiv1.Config,
+) (client.Object, error) {
+	config := kaiConfig.Spec.PodGrouper
+	return common.PodDisruptionBudgetForKAIConfig(
+		ctx,
+		runtimeClient,
+		kaiConfig.Spec.Namespace,
+		p.BaseResourceName,
+		config.Replicas,
+		config.Service,
+	)
+}
+
 func buildArgsList(kaiConfig *kaiv1.Config) []string {
 	config := kaiConfig.Spec.PodGrouper
 	args := []string{
