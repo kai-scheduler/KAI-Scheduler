@@ -613,7 +613,7 @@ func (pgi *PodGroupInfo) String() string {
 func (pgi *PodGroupInfo) AddTaskFitErrors(task *pod_info.PodInfo, fitErrors *common_info.TasksFitErrors) {
 	existingFitErrors, found := pgi.TasksFitErrors[task.UID]
 	if found {
-		existingFitErrors.AddNodeErrors(fitErrors)
+		existingFitErrors.AddReasonCounts(fitErrors)
 	} else {
 		pgi.TasksFitErrors[task.UID] = fitErrors
 	}
