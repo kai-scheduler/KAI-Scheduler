@@ -47,7 +47,10 @@ func (drp *dynamicResourcesPlugin) Name() string {
 
 // IsRelevant checks if the pod is relevant to the K8sPlugin
 func (drp *dynamicResourcesPlugin) IsRelevant(pod *corev1.Pod, request *v1alpha2.BindRequest) bool {
-	return len(pod.Spec.ResourceClaims) > 0 || (request != nil && request.Spec.ExtendedResourceClaimAllocation != nil)
+	hasExtendedResourceAlloc := request != nil &&
+		request.Spec.ExtendedResourceClaimAllocation != nil &&
+		request.Spec.ExtendedResourceClaimAllocation.Allocation != nil
+	return len(pod.Spec.ResourceClaims) > 0 || hasExtendedResourceAlloc
 }
 
 // PreFilter fetches pod Resource Claims and writes them to state, checking if the pod can be scheduled
@@ -155,6 +158,10 @@ func (drp *dynamicResourcesPlugin) bindExtendedResourceClaim(
 	alloc *v1alpha2.ExtendedResourceClaimAllocation,
 	pod *corev1.Pod,
 ) error {
+	if alloc.Allocation == nil {
+		return fmt.Errorf("empty allocation in extended resource bind request for pod %s/%s",
+			pod.Namespace, pod.Name)
+	}
 	// Idempotency: if claim already exists (e.g., from a prior partial bind), skip creation.
 	existing, err := drp.findExtendedResourceClaim(ctx, pod)
 	if err != nil {

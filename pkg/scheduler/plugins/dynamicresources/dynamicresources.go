@@ -352,6 +352,9 @@ func (drap *draPlugin) allocateHandlerFn(ssn *framework.Session) func(event *fra
 func (drap *draPlugin) allocateExtendedResourceClaim(task *pod_info.PodInfo, node *v1.Node, nodeInfo *node_info.NodeInfo) error {
 	extResources := podExtendedResourcesNeedingDRA(task, nodeInfo, drap.deviceClassByResource)
 	if len(extResources) == 0 {
+		// Device-plugin handles the resource on this node; no DRA allocation needed.
+		// Clear the marker set at PreFilter so the BindRequest omits the field entirely.
+		task.ExtendedResourceClaim = nil
 		return nil
 	}
 

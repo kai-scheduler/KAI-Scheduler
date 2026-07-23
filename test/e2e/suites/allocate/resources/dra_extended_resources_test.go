@@ -7,6 +7,7 @@ package resources
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
 	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
@@ -37,6 +38,9 @@ const (
 	// Only these nodes expose GPUs via ResourceSlices; device-plugin nodes use
 	// node.Status.Allocatable instead and must not be used for DRA extended resource tests.
 	draNodeLabel = "nvidia.com/gpu.deploy.dra-plugin-gpu"
+	// devicePluginNodeLabel is set on kind workers that run the fake-gpu-operator device plugin.
+	// These nodes expose nvidia.com/gpu via node.Status.Allocatable, not via ResourceSlices.
+	devicePluginNodeLabel = "nvidia.com/gpu.deploy.device-plugin"
 )
 
 var _ = Describe("Schedule pod with DRA-backed extended resource (KEP-5004)", Ordered, func() {
@@ -241,6 +245,34 @@ var _ = Describe("Schedule pod with DRA-backed extended resource (KEP-5004)", Or
 		// Should schedule: max(init=1, main=1) = 1 device needed, 1 available.
 		wait.ForPodScheduled(ctx, testCtx.ControllerClient, pod)
 	})
+
+	It("schedules a pod on a device-plugin node when the resource is also DRA-backed on other nodes", func(ctx context.Context) {
+		// Verifies that a pod requesting nvidia.com/gpu (DRA-backed via DeviceClass
+		// extendedResourceName) lands cleanly on a device-plugin node where the resource
+		// is available via node.Status.Allocatable. The binder must not create a synthetic
+		// ResourceClaim for such a pod (it has no DRA allocation in the BindRequest).
+		dpNode := firstDevicePluginNodeWithGPU(testCtx)
+		if dpNode == "" {
+			Skip("no device-plugin node with " + extendedResourceName + " in allocatable found, skipping")
+		}
+
+		pod := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{
+			Requests: v1.ResourceList{v1.ResourceName(extendedResourceName): resource.MustParse("1")},
+			Limits:   v1.ResourceList{v1.ResourceName(extendedResourceName): resource.MustParse("1")},
+		})
+		requireDevicePluginNode(pod)
+
+		_, err := rd.CreatePod(ctx, testCtx.KubeClientset, pod)
+		Expect(err).NotTo(HaveOccurred())
+
+		wait.ForPodScheduled(ctx, testCtx.ControllerClient, pod)
+
+		By("verifying no synthetic ResourceClaim was created for the pod")
+		Consistently(func() bool {
+			return findExtendedResourceClaim(ctx, testCtx, namespace, pod.Name) == nil
+		}, "10s", "1s").Should(BeTrue(),
+			"binder must not create a ResourceClaim for a pod bound via the device-plugin path")
+	})
 })
 
 // firstDRANode returns the name of any node that has DRA devices for draDeviceClassName.
@@ -287,6 +319,42 @@ func pinPodToNode(pod *v1.Pod, nodeName string) {
 			},
 		},
 	}
+}
+
+// requireDevicePluginNode adds a required NodeAffinity so the pod lands only on a
+// device-plugin node. This forces the classic allocatable path rather than DRA,
+// even when the requested resource is also DRA-backed on other nodes.
+func requireDevicePluginNode(pod *v1.Pod) {
+	pod.Spec.Affinity = &v1.Affinity{
+		NodeAffinity: &v1.NodeAffinity{
+			RequiredDuringSchedulingIgnoredDuringExecution: &v1.NodeSelector{
+				NodeSelectorTerms: []v1.NodeSelectorTerm{{
+					MatchExpressions: []v1.NodeSelectorRequirement{{
+						Key:      devicePluginNodeLabel,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{"true"},
+					}},
+				}},
+			},
+		},
+	}
+}
+
+// firstDevicePluginNodeWithGPU returns the name of a device-plugin node that
+// advertises extendedResourceName in Status.Allocatable, or "" if none exists.
+func firstDevicePluginNodeWithGPU(testCtx *testcontext.TestContext) string {
+	nodes, err := testCtx.KubeClientset.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{
+		LabelSelector: fmt.Sprintf("%s=true", devicePluginNodeLabel),
+	})
+	if err != nil || len(nodes.Items) == 0 {
+		return ""
+	}
+	for _, node := range nodes.Items {
+		if qty, ok := node.Status.Allocatable[v1.ResourceName(extendedResourceName)]; ok && !qty.IsZero() {
+			return node.Name
+		}
+	}
+	return ""
 }
 
 // findExtendedResourceClaim returns the synthetic ResourceClaim created for podName
