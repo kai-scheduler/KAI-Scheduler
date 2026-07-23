@@ -33,3 +33,10 @@ tests:
       - equal:
           path: spec.scheduler.service.podDisruptionBudget.enabled
           value: false
+
+  - it: omits podDisruptionBudget when the values map is absent
+    set:
+      scheduler.podDisruptionBudget: null
+    asserts:
+      - isNull:
+          path: spec.scheduler.service.podDisruptionBudget
