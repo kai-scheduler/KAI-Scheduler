@@ -33,6 +33,10 @@ const (
 	// via spec.extendedResourceName. Pods use this to request DRA-backed GPUs without
 	// listing a ResourceClaim in spec.resourceClaims (KEP-5004).
 	extendedResourceName = "nvidia.com/gpu"
+	// draNodeLabel is set on kind workers that run the fake-gpu-operator DRA plugin.
+	// Only these nodes expose GPUs via ResourceSlices; device-plugin nodes use
+	// node.Status.Allocatable instead and must not be used for DRA extended resource tests.
+	draNodeLabel = "nvidia.com/gpu.deploy.dra-plugin-gpu"
 )
 
 var _ = Describe("Schedule pod with DRA-backed extended resource (KEP-5004)", Ordered, func() {
@@ -184,12 +188,14 @@ var _ = Describe("Schedule pod with DRA-backed extended resource (KEP-5004)", Or
 		pg, err := testCtx.KubeAiSchedClientset.SchedulingV2alpha2().PodGroups(namespace).Create(ctx, pg, metav1.CreateOptions{})
 		Expect(err).NotTo(HaveOccurred())
 
-		// Pods are not pinned to a node — the scheduler must place them across DRA nodes.
+		// Pods are constrained to DRA nodes so the scheduler must exercise the
+		// extended resource → DRA path rather than falling back to device-plugin nodes.
 		var pods []*v1.Pod
 		for range 2 {
 			pod := rd.CreatePodObject(testCtx.Queues[0], gpuReq)
 			pod.Annotations[pod_group.PodGroupNameAnnotation] = pgName
 			pod.Labels[pod_group.PodGroupNameAnnotation] = pgName
+			requireDRANode(pod)
 			pod, err = rd.CreatePod(ctx, testCtx.KubeClientset, pod)
 			Expect(err).NotTo(HaveOccurred())
 			pods = append(pods, pod)
@@ -245,6 +251,25 @@ func firstDRANode(testCtx *testcontext.TestContext) string {
 	}
 	Fail("no DRA-capable node found")
 	return ""
+}
+
+// requireDRANode adds a required NodeAffinity so the pod is only placed on a DRA node
+// (one running the fake-gpu-operator DRA plugin). This forces the extended resource → DRA
+// code path and prevents the scheduler from falling back to device-plugin nodes.
+func requireDRANode(pod *v1.Pod) {
+	pod.Spec.Affinity = &v1.Affinity{
+		NodeAffinity: &v1.NodeAffinity{
+			RequiredDuringSchedulingIgnoredDuringExecution: &v1.NodeSelector{
+				NodeSelectorTerms: []v1.NodeSelectorTerm{{
+					MatchExpressions: []v1.NodeSelectorRequirement{{
+						Key:      draNodeLabel,
+						Operator: v1.NodeSelectorOpIn,
+						Values:   []string{"true"},
+					}},
+				}},
+			},
+		},
+	}
 }
 
 // pinPodToNode adds a required NodeAffinity so the pod runs only on nodeName.
