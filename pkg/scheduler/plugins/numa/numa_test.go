@@ -124,7 +124,7 @@ func makeBurstableTask(requests v1.ResourceList) *pod_info.PodInfo {
 	}
 }
 
-func TestShouldHandle(t *testing.T) {
+func TestShouldFilter(t *testing.T) {
 	plugin := &numaPlugin{}
 	gpuCPUZones := []node_info.NumaZoneSpec{numaZone("node-0", map[string]string{gpu: "4", "cpu": "8"})}
 	singleNUMA := numaTopology(node_info.TopologyPolicySingleNUMANode, node_info.TopologyScopePod, gpuCPUZones...)
@@ -175,7 +175,7 @@ func TestShouldHandle(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			assert.Equal(t, test.expected, plugin.shouldHandle(test.task, test.topo))
+			assert.Equal(t, test.expected, plugin.shouldFilter(test.task, test.topo))
 		})
 	}
 }
@@ -197,11 +197,11 @@ func TestOnSessionOpenRegistersWithoutState(t *testing.T) {
 	plugin.OnSessionOpen(ssn)
 	plugin.OnSessionClose(ssn)
 
-	assert.True(t, plugin.shouldHandle(
+	assert.True(t, plugin.shouldFilter(
 		makeTask(v1.PodQOSGuaranteed, pod_info.RequestTypeRegular, 1),
 		nodes["with-single-numa"].NumaTopology,
 	))
-	assert.False(t, plugin.shouldHandle(
+	assert.False(t, plugin.shouldFilter(
 		makeTask(v1.PodQOSGuaranteed, pod_info.RequestTypeRegular, 1),
 		nodes["without-nrt"].NumaTopology,
 	), "node without topology is a pass-through")
