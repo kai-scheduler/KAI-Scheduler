@@ -25,6 +25,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/dynamic-resource-allocation/deviceclass/extendedresourcecache"
+	"k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
 
 	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
@@ -488,7 +490,7 @@ func TestSnapshotNodes(t *testing.T) {
 
 			allPods, _ := clusterInfo.dataLister.ListPods()
 			vectorMap := resource_info.NewResourceVectorMap()
-			nodes, _, _, err := clusterInfo.snapshotNodes(clusterPodAffinityInfo, vectorMap)
+			nodes, _, _, err := clusterInfo.snapshotNodes(clusterPodAffinityInfo, vectorMap, extendedresourcecache.NewExtendedResourceCache(klog.Background()))
 			if err != nil {
 				assert.FailNow(t, fmt.Sprintf("SnapshotNode got error in test %s", t.Name()), err)
 			}
@@ -2174,8 +2176,9 @@ func TestSnapshotWithListerErrors(t *testing.T) {
 	}{
 		"listNodes": {
 			func(mdl *data_lister.MockDataLister) {
-				mdl.EXPECT().ListNodes().Return(nil, fmt.Errorf(successErrorMsg))
 				mdl.EXPECT().ListPods().Return(nil, nil)
+				mdl.EXPECT().ListDeviceClasses().Return([]*resourceapi.DeviceClass{}, nil)
+				mdl.EXPECT().ListNodes().Return(nil, fmt.Errorf(successErrorMsg))
 			},
 		},
 		"listPods": {
@@ -2600,7 +2603,7 @@ func TestSnapshotNodesWithDRAGPUs(t *testing.T) {
 			}
 
 			vectorMap := resource_info.NewResourceVectorMap()
-			nodes, _, _, err := ci.snapshotNodes(clusterPodAffinityInfo, vectorMap)
+			nodes, _, _, err := ci.snapshotNodes(clusterPodAffinityInfo, vectorMap, extendedresourcecache.NewExtendedResourceCache(klog.Background()))
 			assert.NoError(t, err)
 
 			for nodeName, expectedGPUs := range test.expectedDRAGPUs {
@@ -2646,7 +2649,7 @@ func TestSnapshotNodesWithNodeResourceTopology(t *testing.T) {
 		clusterPodAffinityInfo: clusterPodAffinityInfo,
 	}
 
-	result, _, _, err := ci.snapshotNodes(clusterPodAffinityInfo, resource_info.NewResourceVectorMap())
+	result, _, _, err := ci.snapshotNodes(clusterPodAffinityInfo, resource_info.NewResourceVectorMap(), extendedresourcecache.NewExtendedResourceCache(klog.Background()))
 	assert.NoError(t, err)
 
 	assert.NotNil(t, result["node-a"].NodeResourceTopology, "NRT should be attached to node-a")

@@ -49,6 +49,902 @@ spec:
                 description: BackoffLimit is the number of retries before giving up
                 format: int32
                 type: integer
+              extendedResourceClaimAllocation:
+                description: |-
+                  ExtendedResourceClaimAllocation holds the allocation for the synthetic DRA claim
+                  created to satisfy extended resource requests backed by a DeviceClass.
+                properties:
+                  allocation:
+                    description: Allocation is the allocation result from the DRA
+                      allocator.
+                    properties:
+                      allocationTimestamp:
+                        description: |-
+                          AllocationTimestamp stores the time when the resources were allocated.
+                          This field is not guaranteed to be set, in which case that time is unknown.
+
+                          This is an alpha field and requires enabling the DRADeviceBindingConditions and DRAResourceClaimDeviceStatus
+                          feature gate.
+                        format: date-time
+                        type: string
+                      devices:
+                        description: Devices is the result of allocating devices.
+                        properties:
+                          config:
+                            description: |-
+                              This field is a combination of all the claim and class configuration parameters.
+                              Drivers can distinguish between those based on a flag.
+
+                              This includes configuration parameters for drivers which have no allocated
+                              devices in the result because it is up to the drivers which configuration
+                              parameters they support. They can silently ignore unknown configuration
+                              parameters.
+                            items:
+                              description: DeviceAllocationConfiguration gets embedded
+                                in an AllocationResult.
+                              properties:
+                                opaque:
+                                  description: Opaque provides driver-specific configuration
+                                    parameters.
+                                  properties:
+                                    driver:
+                                      description: |-
+                                        Driver is used to determine which kubelet plugin needs
+                                        to be passed these configuration parameters.
+
+                                        An admission policy provided by the driver developer could use this
+                                        to decide whether it needs to validate them.
+
+                                        Must be a DNS subdomain and should end with a DNS domain owned by the
+                                        vendor of the driver. It should use only lower case characters.
+                                      type: string
+                                    parameters:
+                                      description: |-
+                                        Parameters can contain arbitrary data. It is the responsibility of
+                                        the driver developer to handle validation and versioning. Typically this
+                                        includes self-identification and a version ("kind" + "apiVersion" for
+                                        Kubernetes types), with conversion between different versions.
+
+                                        The length of the raw data must be smaller or equal to 10 Ki.
+                                      type: object
+                                      x-kubernetes-preserve-unknown-fields: true
+                                  required:
+                                  - driver
+                                  - parameters
+                                  type: object
+                                requests:
+                                  description: |-
+                                    Requests lists the names of requests where the configuration applies.
+                                    If empty, its applies to all requests.
+
+                                    References to subrequests must include the name of the main request
+                                    and may include the subrequest using the format <main request>[/<subrequest>]. If just
+                                    the main request is given, the configuration applies to all subrequests.
+                                  items:
+                                    type: string
+                                  type: array
+                                  x-kubernetes-list-type: atomic
+                                source:
+                                  description: |-
+                                    Source records whether the configuration comes from a class and thus
+                                    is not something that a normal user would have been able to set
+                                    or from a claim.
+                                  type: string
+                              required:
+                              - source
+                              type: object
+                            type: array
+                            x-kubernetes-list-type: atomic
+                          results:
+                            description: Results lists all allocated devices.
+                            items:
+                              description: DeviceRequestAllocationResult contains
+                                the allocation result for one request.
+                              properties:
+                                adminAccess:
+                                  description: |-
+                                    AdminAccess indicates that this device was allocated for
+                                    administrative access. See the corresponding request field
+                                    for a definition of mode.
+
+                                    This is an alpha field and requires enabling the DRAAdminAccess
+                                    feature gate. Admin access is disabled if this field is unset or
+                                    set to false, otherwise it is enabled.
+                                  type: boolean
+                                bindingConditions:
+                                  description: |-
+                                    BindingConditions contains a copy of the BindingConditions
+                                    from the corresponding ResourceSlice at the time of allocation.
+
+                                    This is an alpha field and requires enabling the DRADeviceBindingConditions and DRAResourceClaimDeviceStatus
+                                    feature gates.
+                                  items:
+                                    type: string
+                                  type: array
+                                  x-kubernetes-list-type: atomic
+                                bindingFailureConditions:
+                                  description: |-
+                                    BindingFailureConditions contains a copy of the BindingFailureConditions
+                                    from the corresponding ResourceSlice at the time of allocation.
+
+                                    This is an alpha field and requires enabling the DRADeviceBindingConditions and DRAResourceClaimDeviceStatus
+                                    feature gates.
+                                  items:
+                                    type: string
+                                  type: array
+                                  x-kubernetes-list-type: atomic
+                                consumedCapacity:
+                                  additionalProperties:
+                                    anyOf:
+                                    - type: integer
+                                    - type: string
+                                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                    x-kubernetes-int-or-string: true
+                                  description: |-
+                                    ConsumedCapacity tracks the amount of capacity consumed per device as part of the claim request.
+                                    The consumed amount may differ from the requested amount: it is rounded up to the nearest valid
+                                    value based on the device’s requestPolicy if applicable (i.e., may not be less than the requested amount).
+
+                                    The total consumed capacity for each device must not exceed the DeviceCapacity's Value.
+
+                                    This field is populated only for devices that allow multiple allocations.
+                                    All capacity entries are included, even if the consumed amount is zero.
+                                  type: object
+                                device:
+                                  description: |-
+                                    Device references one device instance via its name in the driver's
+                                    resource pool. It must be a DNS label.
+                                  type: string
+                                driver:
+                                  description: |-
+                                    Driver specifies the name of the DRA driver whose kubelet
+                                    plugin should be invoked to process the allocation once the claim is
+                                    needed on a node.
+
+                                    Must be a DNS subdomain and should end with a DNS domain owned by the
+                                    vendor of the driver. It should use only lower case characters.
+                                  type: string
+                                pool:
+                                  description: |-
+                                    This name together with the driver name and the device name field
+                                    identify which device was allocated (`<driver name>/<pool name>/<device name>`).
+
+                                    Must not be longer than 253 characters and may contain one or more
+                                    DNS sub-domains separated by slashes.
+                                  type: string
+                                request:
+                                  description: |-
+                                    Request is the name of the request in the claim which caused this
+                                    device to be allocated. If it references a subrequest in the
+                                    firstAvailable list on a DeviceRequest, this field must
+                                    include both the name of the main request and the subrequest
+                                    using the format <main request>/<subrequest>.
+
+                                    Multiple devices may have been allocated per request.
+                                  type: string
+                                shareID:
+                                  description: |-
+                                    ShareID uniquely identifies an individual allocation share of the device,
+                                    used when the device supports multiple simultaneous allocations.
+                                    It serves as an additional map key to differentiate concurrent shares
+                                    of the same device.
+                                  type: string
+                                tolerations:
+                                  description: |-
+                                    A copy of all tolerations specified in the request at the time
+                                    when the device got allocated.
+
+                                    The maximum number of tolerations is 16.
+
+                                    This is an alpha field and requires enabling the DRADeviceTaints
+                                    feature gate.
+                                  items:
+                                    description: |-
+                                      The ResourceClaim this DeviceToleration is attached to tolerates any taint that matches
+                                      the triple <key,value,effect> using the matching operator <operator>.
+                                    properties:
+                                      effect:
+                                        description: |-
+                                          Effect indicates the taint effect to match. Empty means match all taint effects.
+                                          When specified, allowed values are NoSchedule and NoExecute.
+                                        type: string
+                                      key:
+                                        description: |-
+                                          Key is the taint key that the toleration applies to. Empty means match all taint keys.
+                                          If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+                                          Must be a label name.
+                                        type: string
+                                      operator:
+                                        default: Equal
+                                        description: |-
+                                          Operator represents a key's relationship to the value.
+                                          Valid operators are Exists and Equal. Defaults to Equal.
+                                          Exists is equivalent to wildcard for value, so that a ResourceClaim can
+                                          tolerate all taints of a particular category.
+                                        type: string
+                                      tolerationSeconds:
+                                        description: |-
+                                          TolerationSeconds represents the period of time the toleration (which must be
+                                          of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
+                                          it is not set, which means tolerate the taint forever (do not evict). Zero and
+                                          negative values will be treated as 0 (evict immediately) by the system.
+                                          If larger than zero, the time when the pod needs to be evicted is calculated as <time when
+                                          taint was adedd> + <toleration seconds>.
+                                        format: int64
+                                        type: integer
+                                      value:
+                                        description: |-
+                                          Value is the taint value the toleration matches to.
+                                          If the operator is Exists, the value must be empty, otherwise just a regular string.
+                                          Must be a label value.
+                                        type: string
+                                    type: object
+                                  type: array
+                                  x-kubernetes-list-type: atomic
+                              required:
+                              - device
+                              - driver
+                              - pool
+                              - request
+                              type: object
+                            type: array
+                            x-kubernetes-list-type: atomic
+                        type: object
+                      nodeSelector:
+                        description: |-
+                          NodeSelector defines where the allocated resources are available. If
+                          unset, they are available everywhere.
+                        properties:
+                          nodeSelectorTerms:
+                            description: Required. A list of node selector terms.
+                              The terms are ORed.
+                            items:
+                              description: |-
+                                A null or empty node selector term matches no objects. The requirements of
+                                them are ANDed.
+                                The TopologySelectorTerm type implements a subset of the NodeSelectorTerm.
+                              properties:
+                                matchExpressions:
+                                  description: A list of node selector requirements
+                                    by node's labels.
+                                  items:
+                                    description: |-
+                                      A node selector requirement is a selector that contains values, a key, and an operator
+                                      that relates the key and values.
+                                    properties:
+                                      key:
+                                        description: The label key that the selector
+                                          applies to.
+                                        type: string
+                                      operator:
+                                        description: |-
+                                          Represents a key's relationship to a set of values.
+                                          Valid operators are In, NotIn, Exists, DoesNotExist. Gt, and Lt.
+                                        type: string
+                                      values:
+                                        description: |-
+                                          An array of string values. If the operator is In or NotIn,
+                                          the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                          the values array must be empty. If the operator is Gt or Lt, the values
+                                          array must have a single element, which will be interpreted as an integer.
+                                          This array is replaced during a strategic merge patch.
+                                        items:
+                                          type: string
+                                        type: array
+                                        x-kubernetes-list-type: atomic
+                                    required:
+                                    - key
+                                    - operator
+                                    type: object
+                                  type: array
+                                  x-kubernetes-list-type: atomic
+                                matchFields:
+                                  description: A list of node selector requirements
+                                    by node's fields.
+                                  items:
+                                    description: |-
+                                      A node selector requirement is a selector that contains values, a key, and an operator
+                                      that relates the key and values.
+                                    properties:
+                                      key:
+                                        description: The label key that the selector
+                                          applies to.
+                                        type: string
+                                      operator:
+                                        description: |-
+                                          Represents a key's relationship to a set of values.
+                                          Valid operators are In, NotIn, Exists, DoesNotExist. Gt, and Lt.
+                                        type: string
+                                      values:
+                                        description: |-
+                                          An array of string values. If the operator is In or NotIn,
+                                          the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                          the values array must be empty. If the operator is Gt or Lt, the values
+                                          array must have a single element, which will be interpreted as an integer.
+                                          This array is replaced during a strategic merge patch.
+                                        items:
+                                          type: string
+                                        type: array
+                                        x-kubernetes-list-type: atomic
+                                    required:
+                                    - key
+                                    - operator
+                                    type: object
+                                  type: array
+                                  x-kubernetes-list-type: atomic
+                              type: object
+                              x-kubernetes-map-type: atomic
+                            type: array
+                            x-kubernetes-list-type: atomic
+                        required:
+                        - nodeSelectorTerms
+                        type: object
+                        x-kubernetes-map-type: atomic
+                    type: object
+                  containerMappings:
+                    description: ContainerMappings maps each container's extended
+                      resource request to a DeviceRequest name.
+                    items:
+                      description: |-
+                        ContainerExtendedResourceRequest has the mapping of container name,
+                        extended resource name to the device request name.
+                      properties:
+                        containerName:
+                          description: The name of the container requesting resources.
+                          type: string
+                        requestName:
+                          description: The name of the request in the special ResourceClaim
+                            which corresponds to the extended resource.
+                          type: string
+                        resourceName:
+                          description: The name of the extended resource in that container
+                            which gets backed by DRA.
+                          type: string
+                      required:
+                      - containerName
+                      - requestName
+                      - resourceName
+                      type: object
+                    type: array
+                  deviceRequests:
+                    description: DeviceRequests are the per-container device requests
+                      placed in the claim Spec.
+                    items:
+                      description: |-
+                        DeviceRequest is a request for devices required for a claim.
+                        This is typically a request for a single resource like a device, but can
+                        also ask for several identical devices. With FirstAvailable it is also
+                        possible to provide a prioritized list of requests.
+                      properties:
+                        exactly:
+                          description: |-
+                            Exactly specifies the details for a single request that must
+                            be met exactly for the request to be satisfied.
+
+                            One of Exactly or FirstAvailable must be set.
+                          properties:
+                            adminAccess:
+                              description: |-
+                                AdminAccess indicates that this is a claim for administrative access
+                                to the device(s). Claims with AdminAccess are expected to be used for
+                                monitoring or other management services for a device.  They ignore
+                                all ordinary claims to the device with respect to access modes and
+                                any resource allocations.
+
+                                This is an alpha field and requires enabling the DRAAdminAccess
+                                feature gate. Admin access is disabled if this field is unset or
+                                set to false, otherwise it is enabled.
+                              type: boolean
+                            allocationMode:
+                              description: |-
+                                AllocationMode and its related fields define how devices are allocated
+                                to satisfy this request. Supported values are:
+
+                                - ExactCount: This request is for a specific number of devices.
+                                  This is the default. The exact number is provided in the
+                                  count field.
+
+                                - All: This request is for all of the matching devices in a pool.
+                                  At least one device must exist on the node for the allocation to succeed.
+                                  Allocation will fail if some devices are already allocated,
+                                  unless adminAccess is requested.
+
+                                If AllocationMode is not specified, the default mode is ExactCount. If
+                                the mode is ExactCount and count is not specified, the default count is
+                                one. Any other requests must specify this field.
+
+                                More modes may get added in the future. Clients must refuse to handle
+                                requests with unknown modes.
+                              type: string
+                            capacity:
+                              description: |-
+                                Capacity define resource requirements against each capacity.
+
+                                If this field is unset and the device supports multiple allocations,
+                                the default value will be applied to each capacity according to requestPolicy.
+                                For the capacity that has no requestPolicy, default is the full capacity value.
+
+                                Applies to each device allocation.
+                                If Count > 1,
+                                the request fails if there aren't enough devices that meet the requirements.
+                                If AllocationMode is set to All,
+                                the request fails if there are devices that otherwise match the request,
+                                and have this capacity, with a value >= the requested amount, but which cannot be allocated to this request.
+                              properties:
+                                requests:
+                                  additionalProperties:
+                                    anyOf:
+                                    - type: integer
+                                    - type: string
+                                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                    x-kubernetes-int-or-string: true
+                                  description: |-
+                                    Requests represent individual device resource requests for distinct resources,
+                                    all of which must be provided by the device.
+
+                                    This value is used as an additional filtering condition against the available capacity on the device.
+                                    This is semantically equivalent to a CEL selector with
+                                    `device.capacity[<domain>].<name>.compareTo(quantity(<request quantity>)) >= 0`.
+                                    For example, device.capacity['test-driver.cdi.k8s.io'].counters.compareTo(quantity('2')) >= 0.
+
+                                    When a requestPolicy is defined, the requested amount is adjusted upward
+                                    to the nearest valid value based on the policy.
+                                    If the requested amount cannot be adjusted to a valid value—because it exceeds what the requestPolicy allows—
+                                    the device is considered ineligible for allocation.
+
+                                    For any capacity that is not explicitly requested:
+                                    - If no requestPolicy is set, the default consumed capacity is equal to the full device capacity
+                                      (i.e., the whole device is claimed).
+                                    - If a requestPolicy is set, the default consumed capacity is determined according to that policy.
+
+                                    If the device allows multiple allocation,
+                                    the aggregated amount across all requests must not exceed the capacity value.
+                                    The consumed capacity, which may be adjusted based on the requestPolicy if defined,
+                                    is recorded in the resource claim’s status.devices[*].consumedCapacity field.
+                                  type: object
+                              type: object
+                            count:
+                              description: |-
+                                Count is used only when the count mode is "ExactCount". Must be greater than zero.
+                                If AllocationMode is ExactCount and this field is not specified, the default is one.
+                              format: int64
+                              type: integer
+                            deviceClassName:
+                              description: |-
+                                DeviceClassName references a specific DeviceClass, which can define
+                                additional configuration and selectors to be inherited by this
+                                request.
+
+                                A DeviceClassName is required.
+
+                                Administrators may use this to restrict which devices may get
+                                requested by only installing classes with selectors for permitted
+                                devices. If users are free to request anything without restrictions,
+                                then administrators can create an empty DeviceClass for users
+                                to reference.
+                              type: string
+                            selectors:
+                              description: |-
+                                Selectors define criteria which must be satisfied by a specific
+                                device in order for that device to be considered for this
+                                request. All selectors must be satisfied for a device to be
+                                considered.
+                              items:
+                                description: DeviceSelector must have exactly one
+                                  field set.
+                                properties:
+                                  cel:
+                                    description: CEL contains a CEL expression for
+                                      selecting a device.
+                                    properties:
+                                      expression:
+                                        description: |-
+                                          Expression is a CEL expression which evaluates a single device. It
+                                          must evaluate to true when the device under consideration satisfies
+                                          the desired criteria, and false when it does not. Any other result
+                                          is an error and causes allocation of devices to abort.
+
+                                          The expression's input is an object named "device", which carries
+                                          the following properties:
+                                           - driver (string): the name of the driver which defines this device.
+                                           - attributes (map[string]object): the device's attributes, grouped by prefix
+                                             (e.g. device.attributes["dra.example.com"] evaluates to an object with all
+                                             of the attributes which were prefixed by "dra.example.com".
+                                           - capacity (map[string]object): the device's capacities, grouped by prefix.
+                                           - allowMultipleAllocations (bool): the allowMultipleAllocations property of the device
+                                             (v1.34+ with the DRAConsumableCapacity feature enabled).
+
+                                          Example: Consider a device with driver="dra.example.com", which exposes
+                                          two attributes named "model" and "ext.example.com/family" and which
+                                          exposes one capacity named "modules". This input to this expression
+                                          would have the following fields:
+
+                                              device.driver
+                                              device.attributes["dra.example.com"].model
+                                              device.attributes["ext.example.com"].family
+                                              device.capacity["dra.example.com"].modules
+
+                                          The device.driver field can be used to check for a specific driver,
+                                          either as a high-level precondition (i.e. you only want to consider
+                                          devices from this driver) or as part of a multi-clause expression
+                                          that is meant to consider devices from different drivers.
+
+                                          The value type of each attribute is defined by the device
+                                          definition, and users who write these expressions must consult the
+                                          documentation for their specific drivers. The value type of each
+                                          capacity is Quantity.
+
+                                          If an unknown prefix is used as a lookup in either device.attributes
+                                          or device.capacity, an empty map will be returned. Any reference to
+                                          an unknown field will cause an evaluation error and allocation to
+                                          abort.
+
+                                          A robust expression should check for the existence of attributes
+                                          before referencing them.
+
+                                          For ease of use, the cel.bind() function is enabled, and can be used
+                                          to simplify expressions that access multiple attributes with the
+                                          same domain. For example:
+
+                                              cel.bind(dra, device.attributes["dra.example.com"], dra.someBool && dra.anotherBool)
+
+                                          The length of the expression must be smaller or equal to 10 Ki. The
+                                          cost of evaluating it is also limited based on the estimated number
+                                          of logical steps.
+                                        type: string
+                                    required:
+                                    - expression
+                                    type: object
+                                type: object
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            tolerations:
+                              description: |-
+                                If specified, the request's tolerations.
+
+                                Tolerations for NoSchedule are required to allocate a
+                                device which has a taint with that effect. The same applies
+                                to NoExecute.
+
+                                In addition, should any of the allocated devices get tainted
+                                with NoExecute after allocation and that effect is not tolerated,
+                                then all pods consuming the ResourceClaim get deleted to evict
+                                them. The scheduler will not let new pods reserve the claim while
+                                it has these tainted devices. Once all pods are evicted, the
+                                claim will get deallocated.
+
+                                The maximum number of tolerations is 16.
+
+                                This is an alpha field and requires enabling the DRADeviceTaints
+                                feature gate.
+                              items:
+                                description: |-
+                                  The ResourceClaim this DeviceToleration is attached to tolerates any taint that matches
+                                  the triple <key,value,effect> using the matching operator <operator>.
+                                properties:
+                                  effect:
+                                    description: |-
+                                      Effect indicates the taint effect to match. Empty means match all taint effects.
+                                      When specified, allowed values are NoSchedule and NoExecute.
+                                    type: string
+                                  key:
+                                    description: |-
+                                      Key is the taint key that the toleration applies to. Empty means match all taint keys.
+                                      If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+                                      Must be a label name.
+                                    type: string
+                                  operator:
+                                    default: Equal
+                                    description: |-
+                                      Operator represents a key's relationship to the value.
+                                      Valid operators are Exists and Equal. Defaults to Equal.
+                                      Exists is equivalent to wildcard for value, so that a ResourceClaim can
+                                      tolerate all taints of a particular category.
+                                    type: string
+                                  tolerationSeconds:
+                                    description: |-
+                                      TolerationSeconds represents the period of time the toleration (which must be
+                                      of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
+                                      it is not set, which means tolerate the taint forever (do not evict). Zero and
+                                      negative values will be treated as 0 (evict immediately) by the system.
+                                      If larger than zero, the time when the pod needs to be evicted is calculated as <time when
+                                      taint was adedd> + <toleration seconds>.
+                                    format: int64
+                                    type: integer
+                                  value:
+                                    description: |-
+                                      Value is the taint value the toleration matches to.
+                                      If the operator is Exists, the value must be empty, otherwise just a regular string.
+                                      Must be a label value.
+                                    type: string
+                                type: object
+                              type: array
+                              x-kubernetes-list-type: atomic
+                          required:
+                          - deviceClassName
+                          type: object
+                        firstAvailable:
+                          description: |-
+                            FirstAvailable contains subrequests, of which exactly one will be
+                            selected by the scheduler. It tries to
+                            satisfy them in the order in which they are listed here. So if
+                            there are two entries in the list, the scheduler will only check
+                            the second one if it determines that the first one can not be used.
+
+                            DRA does not yet implement scoring, so the scheduler will
+                            select the first set of devices that satisfies all the
+                            requests in the claim. And if the requirements can
+                            be satisfied on more than one node, other scheduling features
+                            will determine which node is chosen. This means that the set of
+                            devices allocated to a claim might not be the optimal set
+                            available to the cluster. Scoring will be implemented later.
+                          items:
+                            description: |-
+                              DeviceSubRequest describes a request for device provided in the
+                              claim.spec.devices.requests[].firstAvailable array. Each
+                              is typically a request for a single resource like a device, but can
+                              also ask for several identical devices.
+
+                              DeviceSubRequest is similar to ExactDeviceRequest, but doesn't expose the
+                              AdminAccess field as that one is only supported when requesting a
+                              specific device.
+                            properties:
+                              allocationMode:
+                                description: |-
+                                  AllocationMode and its related fields define how devices are allocated
+                                  to satisfy this subrequest. Supported values are:
+
+                                  - ExactCount: This request is for a specific number of devices.
+                                    This is the default. The exact number is provided in the
+                                    count field.
+
+                                  - All: This subrequest is for all of the matching devices in a pool.
+                                    Allocation will fail if some devices are already allocated,
+                                    unless adminAccess is requested.
+
+                                  If AllocationMode is not specified, the default mode is ExactCount. If
+                                  the mode is ExactCount and count is not specified, the default count is
+                                  one. Any other subrequests must specify this field.
+
+                                  More modes may get added in the future. Clients must refuse to handle
+                                  requests with unknown modes.
+                                type: string
+                              capacity:
+                                description: |-
+                                  Capacity define resource requirements against each capacity.
+
+                                  If this field is unset and the device supports multiple allocations,
+                                  the default value will be applied to each capacity according to requestPolicy.
+                                  For the capacity that has no requestPolicy, default is the full capacity value.
+
+                                  Applies to each device allocation.
+                                  If Count > 1,
+                                  the request fails if there aren't enough devices that meet the requirements.
+                                  If AllocationMode is set to All,
+                                  the request fails if there are devices that otherwise match the request,
+                                  and have this capacity, with a value >= the requested amount, but which cannot be allocated to this request.
+                                properties:
+                                  requests:
+                                    additionalProperties:
+                                      anyOf:
+                                      - type: integer
+                                      - type: string
+                                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                      x-kubernetes-int-or-string: true
+                                    description: |-
+                                      Requests represent individual device resource requests for distinct resources,
+                                      all of which must be provided by the device.
+
+                                      This value is used as an additional filtering condition against the available capacity on the device.
+                                      This is semantically equivalent to a CEL selector with
+                                      `device.capacity[<domain>].<name>.compareTo(quantity(<request quantity>)) >= 0`.
+                                      For example, device.capacity['test-driver.cdi.k8s.io'].counters.compareTo(quantity('2')) >= 0.
+
+                                      When a requestPolicy is defined, the requested amount is adjusted upward
+                                      to the nearest valid value based on the policy.
+                                      If the requested amount cannot be adjusted to a valid value—because it exceeds what the requestPolicy allows—
+                                      the device is considered ineligible for allocation.
+
+                                      For any capacity that is not explicitly requested:
+                                      - If no requestPolicy is set, the default consumed capacity is equal to the full device capacity
+                                        (i.e., the whole device is claimed).
+                                      - If a requestPolicy is set, the default consumed capacity is determined according to that policy.
+
+                                      If the device allows multiple allocation,
+                                      the aggregated amount across all requests must not exceed the capacity value.
+                                      The consumed capacity, which may be adjusted based on the requestPolicy if defined,
+                                      is recorded in the resource claim’s status.devices[*].consumedCapacity field.
+                                    type: object
+                                type: object
+                              count:
+                                description: |-
+                                  Count is used only when the count mode is "ExactCount". Must be greater than zero.
+                                  If AllocationMode is ExactCount and this field is not specified, the default is one.
+                                format: int64
+                                type: integer
+                              deviceClassName:
+                                description: |-
+                                  DeviceClassName references a specific DeviceClass, which can define
+                                  additional configuration and selectors to be inherited by this
+                                  subrequest.
+
+                                  A class is required. Which classes are available depends on the cluster.
+
+                                  Administrators may use this to restrict which devices may get
+                                  requested by only installing classes with selectors for permitted
+                                  devices. If users are free to request anything without restrictions,
+                                  then administrators can create an empty DeviceClass for users
+                                  to reference.
+                                type: string
+                              name:
+                                description: |-
+                                  Name can be used to reference this subrequest in the list of constraints
+                                  or the list of configurations for the claim. References must use the
+                                  format <main request>/<subrequest>.
+
+                                  Must be a DNS label.
+                                type: string
+                              selectors:
+                                description: |-
+                                  Selectors define criteria which must be satisfied by a specific
+                                  device in order for that device to be considered for this
+                                  subrequest. All selectors must be satisfied for a device to be
+                                  considered.
+                                items:
+                                  description: DeviceSelector must have exactly one
+                                    field set.
+                                  properties:
+                                    cel:
+                                      description: CEL contains a CEL expression for
+                                        selecting a device.
+                                      properties:
+                                        expression:
+                                          description: |-
+                                            Expression is a CEL expression which evaluates a single device. It
+                                            must evaluate to true when the device under consideration satisfies
+                                            the desired criteria, and false when it does not. Any other result
+                                            is an error and causes allocation of devices to abort.
+
+                                            The expression's input is an object named "device", which carries
+                                            the following properties:
+                                             - driver (string): the name of the driver which defines this device.
+                                             - attributes (map[string]object): the device's attributes, grouped by prefix
+                                               (e.g. device.attributes["dra.example.com"] evaluates to an object with all
+                                               of the attributes which were prefixed by "dra.example.com".
+                                             - capacity (map[string]object): the device's capacities, grouped by prefix.
+                                             - allowMultipleAllocations (bool): the allowMultipleAllocations property of the device
+                                               (v1.34+ with the DRAConsumableCapacity feature enabled).
+
+                                            Example: Consider a device with driver="dra.example.com", which exposes
+                                            two attributes named "model" and "ext.example.com/family" and which
+                                            exposes one capacity named "modules". This input to this expression
+                                            would have the following fields:
+
+                                                device.driver
+                                                device.attributes["dra.example.com"].model
+                                                device.attributes["ext.example.com"].family
+                                                device.capacity["dra.example.com"].modules
+
+                                            The device.driver field can be used to check for a specific driver,
+                                            either as a high-level precondition (i.e. you only want to consider
+                                            devices from this driver) or as part of a multi-clause expression
+                                            that is meant to consider devices from different drivers.
+
+                                            The value type of each attribute is defined by the device
+                                            definition, and users who write these expressions must consult the
+                                            documentation for their specific drivers. The value type of each
+                                            capacity is Quantity.
+
+                                            If an unknown prefix is used as a lookup in either device.attributes
+                                            or device.capacity, an empty map will be returned. Any reference to
+                                            an unknown field will cause an evaluation error and allocation to
+                                            abort.
+
+                                            A robust expression should check for the existence of attributes
+                                            before referencing them.
+
+                                            For ease of use, the cel.bind() function is enabled, and can be used
+                                            to simplify expressions that access multiple attributes with the
+                                            same domain. For example:
+
+                                                cel.bind(dra, device.attributes["dra.example.com"], dra.someBool && dra.anotherBool)
+
+                                            The length of the expression must be smaller or equal to 10 Ki. The
+                                            cost of evaluating it is also limited based on the estimated number
+                                            of logical steps.
+                                          type: string
+                                      required:
+                                      - expression
+                                      type: object
+                                  type: object
+                                type: array
+                                x-kubernetes-list-type: atomic
+                              tolerations:
+                                description: |-
+                                  If specified, the request's tolerations.
+
+                                  Tolerations for NoSchedule are required to allocate a
+                                  device which has a taint with that effect. The same applies
+                                  to NoExecute.
+
+                                  In addition, should any of the allocated devices get tainted
+                                  with NoExecute after allocation and that effect is not tolerated,
+                                  then all pods consuming the ResourceClaim get deleted to evict
+                                  them. The scheduler will not let new pods reserve the claim while
+                                  it has these tainted devices. Once all pods are evicted, the
+                                  claim will get deallocated.
+
+                                  The maximum number of tolerations is 16.
+
+                                  This is an alpha field and requires enabling the DRADeviceTaints
+                                  feature gate.
+                                items:
+                                  description: |-
+                                    The ResourceClaim this DeviceToleration is attached to tolerates any taint that matches
+                                    the triple <key,value,effect> using the matching operator <operator>.
+                                  properties:
+                                    effect:
+                                      description: |-
+                                        Effect indicates the taint effect to match. Empty means match all taint effects.
+                                        When specified, allowed values are NoSchedule and NoExecute.
+                                      type: string
+                                    key:
+                                      description: |-
+                                        Key is the taint key that the toleration applies to. Empty means match all taint keys.
+                                        If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+                                        Must be a label name.
+                                      type: string
+                                    operator:
+                                      default: Equal
+                                      description: |-
+                                        Operator represents a key's relationship to the value.
+                                        Valid operators are Exists and Equal. Defaults to Equal.
+                                        Exists is equivalent to wildcard for value, so that a ResourceClaim can
+                                        tolerate all taints of a particular category.
+                                      type: string
+                                    tolerationSeconds:
+                                      description: |-
+                                        TolerationSeconds represents the period of time the toleration (which must be
+                                        of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
+                                        it is not set, which means tolerate the taint forever (do not evict). Zero and
+                                        negative values will be treated as 0 (evict immediately) by the system.
+                                        If larger than zero, the time when the pod needs to be evicted is calculated as <time when
+                                        taint was adedd> + <toleration seconds>.
+                                      format: int64
+                                      type: integer
+                                    value:
+                                      description: |-
+                                        Value is the taint value the toleration matches to.
+                                        If the operator is Exists, the value must be empty, otherwise just a regular string.
+                                        Must be a label value.
+                                      type: string
+                                  type: object
+                                type: array
+                                x-kubernetes-list-type: atomic
+                            required:
+                            - deviceClassName
+                            - name
+                            type: object
+                          type: array
+                          x-kubernetes-list-type: atomic
+                        name:
+                          description: |-
+                            Name can be used to reference this request in a pod.spec.containers[].resources.claims
+                            entry and in a constraint of the claim.
+
+                            References using the name in the DeviceRequest will uniquely
+                            identify a request when the Exactly field is set. When the
+                            FirstAvailable field is set, a reference to the name of the
+                            DeviceRequest will match whatever subrequest is chosen by the
+                            scheduler.
+
+                            Must be a DNS label.
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    type: array
+                type: object
               podName:
                 description: PodName is the name of the pod to bind
                 type: string

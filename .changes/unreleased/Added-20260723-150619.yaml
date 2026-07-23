@@ -1,0 +1,7 @@
+kind: Added
+body: |
+Added support for DRA-backed extended resources (KEP-5004). Pods can request a `DeviceClass`'s `extendedResourceName` (e.g. `nvidia.com/gpu: N`) without a `ResourceClaim`, and the scheduler routes it through DRA. See the design [DRA-backed extended resources](docs/developer/designs/dra-extended-resources/README.md).
+time: 2026-07-23T15:06:19.870923+03:00
+custom:
+    Author: gshaibi
+    Issue: "1943"

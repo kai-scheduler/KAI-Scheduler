@@ -6,12 +6,14 @@ package preempt
 
 import (
 	"context"
+	"encoding/json"
 
 	"k8s.io/utils/ptr"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"
+	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -95,12 +97,11 @@ var _ = Describe("Priority Preemption", Ordered, func() {
 
 	Context("Dynamic Resources", func() {
 		var (
-			deviceClassName = constant.GPUDeviceClassName
-			namespace       string
+			namespace string
 		)
 
 		BeforeAll(func(ctx context.Context) {
-			capacity.SkipIfInsufficientDynamicResources(testCtx.KubeClientset, deviceClassName, 1, 1)
+			capacity.SkipIfInsufficientDynamicResources(testCtx.KubeClientset, constant.GPUDeviceClassName, 1, 1)
 			namespace = queue.GetConnectedNamespaceToQueue(testCtx.Queues[0])
 		})
 
@@ -111,7 +112,7 @@ var _ = Describe("Priority Preemption", Ordered, func() {
 		It("Preempts a pod based on DRA contention - dra template claims", func(ctx context.Context) {
 			nodeName := ""
 			devices := 0
-			nodesMap := capacity.ListDevicesByNode(testCtx.KubeClientset, deviceClassName)
+			nodesMap := capacity.ListDevicesByNode(testCtx.KubeClientset, constant.GPUDeviceClassName)
 			for name, deviceCount := range nodesMap {
 				if deviceCount <= 1 {
 					continue
@@ -121,7 +122,7 @@ var _ = Describe("Priority Preemption", Ordered, func() {
 			}
 			Expect(nodeName).ToNot(Equal(""), "failed to find a node with multiple devices")
 
-			claimTemplate := rd.CreateResourceClaimTemplate(namespace, testCtx.Queues[0].Name, deviceClassName, 1)
+			claimTemplate := rd.CreateResourceClaimTemplate(namespace, testCtx.Queues[0].Name, constant.GPUDeviceClassName, 1)
 			claimTemplate, err := testCtx.KubeClientset.ResourceV1().ResourceClaimTemplates(namespace).Create(ctx, claimTemplate, metav1.CreateOptions{})
 			Expect(err).To(BeNil())
 
@@ -242,6 +243,116 @@ var _ = Describe("Priority Preemption", Ordered, func() {
 
 			wait.ForPodScheduled(ctx, testCtx.ControllerClient, schedulablePod)
 			wait.ForPodReady(ctx, testCtx.ControllerClient, schedulablePod)
+		})
+	})
+
+	Context("Dynamic Resources - Extended Resources", func() {
+		// Tests KEP-5004: classic nvidia.com/gpu syntax routed through DRA.
+		var (
+			namespace                   string
+			extResourcePreemptClassName = ""
+		)
+
+		BeforeAll(func(ctx context.Context) {
+			capacity.SkipIfInsufficientDynamicResources(testCtx.KubeClientset, constant.GPUDeviceClassName, 1, 2)
+			namespace = queue.GetConnectedNamespaceToQueue(testCtx.Queues[0])
+
+			By("patching DeviceClass to advertise extendedResourceName")
+			patch, _ := json.Marshal(map[string]any{
+				"spec": map[string]any{"extendedResourceName": constant.NvidiaGPUResource},
+			})
+			_, err := testCtx.KubeClientset.ResourceV1().DeviceClasses().Patch(
+				ctx, constant.GPUDeviceClassName, types.MergePatchType, patch, metav1.PatchOptions{})
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		AfterAll(func(ctx context.Context) {
+			By("reverting DeviceClass extendedResourceName")
+			patch, _ := json.Marshal(map[string]any{
+				"spec": map[string]any{"extendedResourceName": nil},
+			})
+			_, _ = testCtx.KubeClientset.ResourceV1().DeviceClasses().Patch(
+				ctx, constant.GPUDeviceClassName, types.MergePatchType, patch, metav1.PatchOptions{})
+
+			if extResourcePreemptClassName != "" {
+				_ = testCtx.KubeClientset.SchedulingV1().PriorityClasses().Delete(
+					context.Background(), extResourcePreemptClassName, metav1.DeleteOptions{})
+			}
+		})
+
+		AfterEach(func(ctx context.Context) {
+			capacity.CleanupResourceClaims(ctx, testCtx.KubeClientset, namespace)
+		})
+
+		It("preempts an extended-resource pod using classic nvidia.com/gpu syntax", func(ctx context.Context) {
+			nodesMap := capacity.ListDevicesByNode(testCtx.KubeClientset, constant.GPUDeviceClassName)
+			var nodeName string
+			var devices int
+			for name, count := range nodesMap {
+				if count >= 2 {
+					nodeName = name
+					devices = count
+					break
+				}
+			}
+			if nodeName == "" {
+				Skip("no DRA node with ≥ 2 devices found")
+			}
+
+			// Give the preemptor strictly higher priority than the fillers.
+			extResourcePreemptClassName = utils.GenerateRandomK8sName(10)
+			_, err := testCtx.KubeClientset.SchedulingV1().PriorityClasses().Create(
+				ctx, rd.CreatePriorityClass(extResourcePreemptClassName, constant.NonPreemptiblePriorityThreshold-1),
+				metav1.CreateOptions{})
+			Expect(err).NotTo(HaveOccurred())
+
+			gpuReq := v1.ResourceRequirements{
+				Requests: v1.ResourceList{v1.ResourceName(constant.NvidiaGPUResource): resource.MustParse("1")},
+				Limits:   v1.ResourceList{v1.ResourceName(constant.NvidiaGPUResource): resource.MustParse("1")},
+			}
+
+			By("filling the node with low-priority extended-resource pods")
+			var fillers []*v1.Pod
+			for range devices {
+				pod := rd.CreatePodObject(testCtx.Queues[0], gpuReq)
+				pod.Spec.Affinity = rd.NodeAffinity(nodeName, v1.NodeSelectorOpIn)
+				pod.Spec.PriorityClassName = lowPreemptiblePriorityClass
+				pod, err = rd.CreatePod(ctx, testCtx.KubeClientset, pod)
+				Expect(err).NotTo(HaveOccurred())
+				fillers = append(fillers, pod)
+			}
+			wait.ForPodsScheduled(ctx, testCtx.ControllerClient, namespace, fillers)
+			wait.ForPodsReady(ctx, testCtx.ControllerClient, namespace, fillers)
+
+			By("creating a higher-priority extended-resource pod that must preempt")
+			preemptor := rd.CreatePodObject(testCtx.Queues[0], gpuReq)
+			preemptor.Spec.Affinity = rd.NodeAffinity(nodeName, v1.NodeSelectorOpIn)
+			preemptor.Spec.PriorityClassName = extResourcePreemptClassName
+			preemptor, err = rd.CreatePod(ctx, testCtx.KubeClientset, preemptor)
+			Expect(err).NotTo(HaveOccurred())
+
+			wait.ForPodScheduled(ctx, testCtx.ControllerClient, preemptor)
+			wait.ForPodReady(ctx, testCtx.ControllerClient, preemptor)
+
+			By("verifying the preemptor has a synthetic ResourceClaim")
+			Eventually(func() bool {
+				claims, err := testCtx.KubeClientset.ResourceV1().ResourceClaims(namespace).List(ctx, metav1.ListOptions{})
+				if err != nil {
+					return false
+				}
+				for i := range claims.Items {
+					c := &claims.Items[i]
+					if c.Annotations[resourceapi.ExtendedResourceClaimAnnotation] != "true" {
+						continue
+					}
+					for _, ref := range c.OwnerReferences {
+						if ref.Name == preemptor.Name && ref.Controller != nil && *ref.Controller {
+							return true
+						}
+					}
+				}
+				return false
+			}, "30s", "1s").Should(BeTrue(), "preemptor should have a synthetic ResourceClaim")
 		})
 	})
 

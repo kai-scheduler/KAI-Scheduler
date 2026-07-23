@@ -42,7 +42,7 @@ func (vb *volumeBindingPlugin) Name() string {
 }
 
 // IsRelevant checks if the pod is relevant to the K8sPlugin
-func (vb *volumeBindingPlugin) IsRelevant(pod *corev1.Pod) bool {
+func (vb *volumeBindingPlugin) IsRelevant(pod *corev1.Pod, _ *v1alpha2.BindRequest) bool {
 	return len(pod.Spec.Volumes) > 0
 }
 

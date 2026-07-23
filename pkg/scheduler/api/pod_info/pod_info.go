@@ -65,6 +65,11 @@ const (
 	ReceivedTypeNone        ResourceReceivedType = ""
 )
 
+type ExtendedResourceClaim struct {
+	UID        types.UID
+	Allocation *schedulingv1alpha2.ExtendedResourceClaimAllocation
+}
+
 type PodsMap map[common_info.PodID]*PodInfo
 
 type PodInfo struct {
@@ -102,6 +107,8 @@ type PodInfo struct {
 	BindRequest *bindrequest_info.BindRequestInfo
 
 	ResourceClaimInfo bindrequest_info.ResourceClaimInfo
+
+	ExtendedResourceClaim *ExtendedResourceClaim
 
 	// OwnedStorageClaims are StorageClaims that are owned exclusively by the pod, and we can count on them being deleted
 	// if the pod is evicted
@@ -298,6 +305,7 @@ func (pi *PodInfo) Clone() *PodInfo {
 		GPUGroups:              pi.GPUGroups,
 		NUMAPlacement:          pi.NUMAPlacement.Clone(),
 		ResourceClaimInfo:      pi.ResourceClaimInfo.Clone(),
+		ExtendedResourceClaim:  pi.ExtendedResourceClaim,
 		ResourceRequestType:    pi.ResourceRequestType,
 		ResourceReceivedType:   pi.ResourceReceivedType,
 		IsVirtualStatus:        pi.IsVirtualStatus,
@@ -359,6 +367,13 @@ func (pi *PodInfo) IsCPUOnlyRequest() bool {
 func (pi *PodInfo) IsRequireAnyKindOfGPU() bool {
 	return pi.GpuRequirement.GPUs() > 0 || pi.GpuRequirement.GetDraGpusCount() > 0 ||
 		pi.IsGpuMemoryRequest() || pi.IsMigProfileRequest()
+}
+
+func (pi *PodInfo) ExtendedResourceClaimAllocation() *schedulingv1alpha2.ExtendedResourceClaimAllocation {
+	if pi.ExtendedResourceClaim == nil {
+		return nil
+	}
+	return pi.ExtendedResourceClaim.Allocation
 }
 
 func (pi *PodInfo) GetSchedulingConstraintsSignature() common_info.SchedulingConstraintsSignature {

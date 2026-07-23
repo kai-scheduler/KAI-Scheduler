@@ -4,7 +4,8 @@
 package v1alpha2
 
 import (
-	v1 "k8s.io/api/resource/v1"
+	corev1 "k8s.io/api/core/v1"
+	resourceapi "k8s.io/api/resource/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -29,6 +30,10 @@ type BindRequestSpec struct {
 	// ResourceClaims is the list of resource claims that need to be bound for this pod
 	ResourceClaimAllocations []ResourceClaimAllocation `json:"resourceClaimAllocations,omitempty"`
 
+	// ExtendedResourceClaimAllocation holds the allocation for the synthetic DRA claim
+	// created to satisfy extended resource requests backed by a DeviceClass.
+	ExtendedResourceClaimAllocation *ExtendedResourceClaimAllocation `json:"extendedResourceClaimAllocation,omitempty"`
+
 	// PredictedNUMAZones is the scheduler's predicted NUMA placement of the pod's resources on the
 	// selected node.
 	PredictedNUMAZones []NUMAZonePlacement `json:"predictedNUMAZones,omitempty"`
@@ -51,7 +56,20 @@ type ResourceClaimAllocation struct {
 	Name string `json:"name,omitempty"`
 
 	// Allocation is the desired allocation of the resource claim
-	Allocation *v1.AllocationResult `json:"allocation,omitempty"`
+	Allocation *resourceapi.AllocationResult `json:"allocation,omitempty"`
+}
+
+// ExtendedResourceClaimAllocation carries the scheduler's allocation decision for
+// the synthetic ResourceClaim created to back DRA-extended-resource requests.
+type ExtendedResourceClaimAllocation struct {
+	// Allocation is the allocation result from the DRA allocator.
+	Allocation *resourceapi.AllocationResult `json:"allocation,omitempty"`
+
+	// DeviceRequests are the per-container device requests placed in the claim Spec.
+	DeviceRequests []resourceapi.DeviceRequest `json:"deviceRequests,omitempty"`
+
+	// ContainerMappings maps each container's extended resource request to a DeviceRequest name.
+	ContainerMappings []corev1.ContainerExtendedResourceRequest `json:"containerMappings,omitempty"`
 }
 
 const (

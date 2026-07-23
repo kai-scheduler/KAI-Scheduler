@@ -61,7 +61,7 @@ var _ = Describe("k8sPlugins", func() {
 		})
 
 		It("Skips all calls for non relevant plugins", func() {
-			plugin1.EXPECT().IsRelevant(gomock.Any()).Return(false).Times(2)
+			plugin1.EXPECT().IsRelevant(gomock.Any(), gomock.Any()).Return(false).Times(2)
 			happyFlowExpect(plugin2, pod, node)
 
 			err, _ := invokePlugins(context.TODO(), pod, node, k8sPlugins)
@@ -69,7 +69,7 @@ var _ = Describe("k8sPlugins", func() {
 		})
 
 		It("Skips the rest of the calls if PreFilter returns skip", func() {
-			plugin1.EXPECT().IsRelevant(pod).Return(true).Times(2)
+			plugin1.EXPECT().IsRelevant(pod, gomock.Any()).Return(true).Times(2)
 			plugin1.EXPECT().PreFilter(context.TODO(), pod, gomock.Any()).Return(nil, true).Times(1)
 			happyFlowExpect(plugin2, pod, node)
 
@@ -81,7 +81,7 @@ var _ = Describe("k8sPlugins", func() {
 
 	Context("error flow", func() {
 		It("calls UnAllocate for all plugins if one fails", func() {
-			plugin1.EXPECT().IsRelevant(pod).Return(true).Times(1)
+			plugin1.EXPECT().IsRelevant(pod, gomock.Any()).Return(true).Times(1)
 			call := plugin1.EXPECT().PreFilter(context.TODO(), pod, gomock.Any()).Return(nil, false).Times(1)
 			call = plugin1.EXPECT().Filter(context.TODO(), pod, node, gomock.Any()).Return(nil).After(call).Times(1)
 			call = plugin1.EXPECT().Allocate(context.TODO(), pod, node.Name, gomock.Any()).Return(nil).After(call).Times(1)
@@ -89,7 +89,7 @@ var _ = Describe("k8sPlugins", func() {
 			plugin1.EXPECT().PostBind(context.TODO(), pod, node.Name, gomock.Any()).AnyTimes().After(call)
 			plugin1.EXPECT().UnAllocate(context.TODO(), pod, node.Name, gomock.Any()).Times(1)
 
-			plugin2.EXPECT().IsRelevant(pod).Return(true).Times(1)
+			plugin2.EXPECT().IsRelevant(pod, gomock.Any()).Return(true).Times(1)
 			call = plugin2.EXPECT().PreFilter(context.TODO(), pod, gomock.Any()).Return(nil, false).Times(1)
 			call = plugin2.EXPECT().Filter(context.TODO(), pod, node, gomock.Any()).Return(nil).After(call).Times(1)
 			call = plugin2.EXPECT().Allocate(context.TODO(), pod, node.Name, gomock.Any()).Return(nil).After(call).Times(1)
@@ -115,7 +115,7 @@ func invokePlugins(ctx context.Context, pod *v1.Pod, node *v1.Node, k8sPlugins *
 }
 
 func happyFlowExpect(plugin *MockK8sPluigns.MockK8sPlugin, pod *v1.Pod, node *v1.Node) {
-	plugin.EXPECT().IsRelevant(pod).Return(true).Times(2)
+	plugin.EXPECT().IsRelevant(pod, gomock.Any()).Return(true).Times(2)
 	call := plugin.EXPECT().PreFilter(context.TODO(), pod, gomock.Any()).Return(nil, false).Times(1)
 	call = plugin.EXPECT().Filter(context.TODO(), pod, node, gomock.Any()).Return(nil).After(call).Times(1)
 	call = plugin.EXPECT().Allocate(context.TODO(), pod, node.Name, gomock.Any()).Return(nil).After(call).Times(1)
