@@ -863,11 +863,11 @@ func TestDefaultStatusUpdater_RetryAfterError(t *testing.T) {
 	statusUpdater := New(kubeClient, kubeAiSchedClient, recorder, 1, false, nodePoolLabelKey)
 
 	updateCalls := 0
-	// wait with pod groups update until signal is given.
+	// Return a transient error so the update is retried.
 	kubeAiSchedClient.SchedulingV2alpha2().(*fakeschedulingv2alpha2.FakeSchedulingV2alpha2).PrependReactor(
 		"update", "podgroups", func(action faketesting.Action) (handled bool, ret runtime.Object, err error) {
 			updateCalls += 1
-			return false, nil, errors.New("test")
+			return true, nil, errors.New("test")
 		},
 	)
 

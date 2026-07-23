@@ -103,17 +103,25 @@ func (su *defaultStatusUpdater) updatePodGroup(
 	}
 
 	if statusErr != nil || patchErr != nil {
+		// Terminal errors can never succeed on retry. Drop the update; a fresh one is
+		// enqueued next scheduling cycle if still required.
+		statusRetryable := statusErr != nil && !isTerminalUpdateError(statusErr)
+		patchRetryable := patchErr != nil && !isTerminalUpdateError(patchErr)
+
+		if !statusRetryable && !patchRetryable {
+			if statusErr != nil {
+				log.StatusUpdaterLogger.V(5).Infof("Dropping non-retryable pod group status update %s/%s: %v",
+					podGroup.Namespace, podGroup.Name, statusErr)
+			}
+			if patchErr != nil {
+				log.StatusUpdaterLogger.V(5).Infof("Dropping non-retryable pod group patch %s/%s: %v",
+					podGroup.Namespace, podGroup.Name, patchErr)
+			}
+			su.inFlightPodGroups.Delete(key)
+			return
+		}
 
 		if statusErr != nil {
-			if apierrors.IsConflict(statusErr) {
-				// Don't retry this update if the resource version is outdated - The status update cannot be updated with the given object.
-				// If a pod group status update is required (e.g. a scheduling condition) a new status update with an updated object
-				//  will be enqueued in the next scheduling cycle.
-				log.StatusUpdaterLogger.V(5).Infof("Conflict updating pod group status %s/%s, will retry in next cycle: %v",
-					podGroup.Namespace, podGroup.Name, statusErr)
-				su.inFlightPodGroups.Delete(key)
-				return
-			}
 			log.StatusUpdaterLogger.V(1).Errorf("Failed to update pod group status %s/%s: %v",
 				podGroup.Namespace, podGroup.Name, statusErr)
 		}
@@ -139,6 +147,11 @@ func (su *defaultStatusUpdater) updatePodGroup(
 	if !loaded {
 		su.appliedPodGroupUpdates.Delete(key)
 	}
+}
+
+// isTerminalUpdateError reports whether an update error can never succeed on retry.
+func isTerminalUpdateError(err error) bool {
+	return apierrors.IsNotFound(err) || apierrors.IsConflict(err)
 }
 
 func (su *defaultStatusUpdater) updateInFlightObject(key updatePayloadKey, objectType string, object *inflightUpdate) {
