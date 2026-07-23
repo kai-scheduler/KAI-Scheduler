@@ -159,7 +159,7 @@ func (drap *draPlugin) preFilter(task *pod_info.PodInfo, job *podgroup_info.PodG
 	}
 
 	if drap.manager == nil {
-		return fmt.Errorf("pod %s/%s has resource claims but DRA manager is not initialized",
+		return fmt.Errorf("pod %s/%s requires DRA (resource claims or DRA-backed extended resources) but DRA manager is not initialized",
 			task.Namespace, task.Name)
 	}
 
@@ -200,15 +200,7 @@ func (drap *draPlugin) preFilter(task *pod_info.PodInfo, job *podgroup_info.PodG
 	}
 
 	if hasDRAExtResources {
-		// Remove any stale in-memory pending allocation left over from a prior
-		// scheduling cycle (e.g. after preemption rolled back without cleanup).
-		if staleClaim := findExtendedResourceClaim(pod, drap.manager); staleClaim != nil {
-			drap.manager.ResourceClaims().RemoveClaimPendingAllocation(staleClaim.UID)
-			log.InfraLogger.V(4).Infof("Removed stale extended resource claim pending allocation for pod %s/%s (claim %s)",
-				task.Namespace, task.Name, staleClaim.Name)
-		}
-		// Mark the task as needing extended resource DRA allocation.
-		task.ExtendedResourceClaimAllocation = &schedulingv1alpha2.ExtendedResourceClaimAllocation{}
+		task.ExtendedResourceClaim = &pod_info.ExtendedResourceClaim{}
 	}
 
 	return nil
@@ -217,7 +209,7 @@ func (drap *draPlugin) preFilter(task *pod_info.PodInfo, job *podgroup_info.PodG
 func (drap *draPlugin) filter(task *pod_info.PodInfo, _ *podgroup_info.PodGroupInfo, nodeInfo *node_info.NodeInfo) error {
 	pod := task.Pod
 
-	hasDRAExtResources := task.ExtendedResourceClaimAllocation != nil
+	hasDRAExtResources := task.ExtendedResourceClaim != nil
 	if !hasDRAExtResources && (len(pod.Spec.ResourceClaims) == 0 || drap.manager == nil) {
 		return nil
 	}
@@ -348,7 +340,7 @@ func (drap *draPlugin) allocateHandlerFn(ssn *framework.Session) func(event *fra
 			}
 		}
 
-		if event.Task.ExtendedResourceClaimAllocation != nil {
+		if event.Task.ExtendedResourceClaim != nil {
 			if err := drap.allocateExtendedResourceClaim(event.Task, node, nodeInfo); err != nil {
 				log.InfraLogger.Errorf("Failed to allocate extended resource claim for pod %s/%s: %v", pod.Namespace, pod.Name, err)
 			}
@@ -397,12 +389,13 @@ func (drap *draPlugin) allocateExtendedResourceClaim(task *pod_info.PodInfo, nod
 		log.InfraLogger.Warningf("Failed to signal pending allocation for extended resource claim of pod %s/%s: %v",
 			task.Namespace, task.Name, err)
 	}
-	task.ExtendedResourceClaimUID = specialClaim.UID
-
-	task.ExtendedResourceClaimAllocation = &schedulingv1alpha2.ExtendedResourceClaimAllocation{
-		Allocation:        specialClaim.Status.Allocation,
-		DeviceRequests:    deviceRequests,
-		ContainerMappings: containerMappings,
+	task.ExtendedResourceClaim = &pod_info.ExtendedResourceClaim{
+		UID: specialClaim.UID,
+		Allocation: &schedulingv1alpha2.ExtendedResourceClaimAllocation{
+			Allocation:        specialClaim.Status.Allocation,
+			DeviceRequests:    deviceRequests,
+			ContainerMappings: containerMappings,
+		},
 	}
 	return nil
 }
@@ -419,12 +412,11 @@ func (drap *draPlugin) deallocateHandlerFn(_ *framework.Session) func(event *fra
 			}
 		}
 
-		if event.Task.ExtendedResourceClaimAllocation != nil {
-			if event.Task.ExtendedResourceClaimUID != "" {
-				drap.manager.ResourceClaims().RemoveClaimPendingAllocation(event.Task.ExtendedResourceClaimUID)
+		if event.Task.ExtendedResourceClaim != nil {
+			if event.Task.ExtendedResourceClaim.UID != "" {
+				drap.manager.ResourceClaims().RemoveClaimPendingAllocation(event.Task.ExtendedResourceClaim.UID)
 			}
-			event.Task.ExtendedResourceClaimAllocation = nil
-			event.Task.ExtendedResourceClaimUID = ""
+			event.Task.ExtendedResourceClaim = nil
 		}
 	}
 }

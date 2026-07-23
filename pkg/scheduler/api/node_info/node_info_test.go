@@ -1370,8 +1370,6 @@ func TestPredicateByNodeResourcesType_DRA(t *testing.T) {
 			},
 			allocatable: common_info.BuildResourceWithGpu("1000m", "1G", "4", "110"),
 			task:        createPod("default", "gpu-pod", podCreationOptions{GPUs: 1}),
-			// PredicateByNodeResourcesType no longer rejects device-plugin GPU requests on DRA
-			// nodes; fit checking is delegated to the DRA scheduler plugin.
 			expectError: false,
 		},
 		"CPU-only request on DRA-only node": {
@@ -1592,10 +1590,9 @@ func TestResourceReservationPodConsumesMaxPods(t *testing.T) {
 	}
 }
 
-// TestIsTaskAllocatable_SharedGPU_DRANode verifies that fractional / GPU-memory pods
-// are rejected on DRA-only nodes (which have no device-plugin allocatable capacity)
-// but accepted on device-plugin nodes that have the same GPU count.
-func TestIsTaskAllocatable_SharedGPU_DRANode(t *testing.T) {
+// TestPredicateByNodeResourcesType_SharedGPU_DRANode verifies that fractional / GPU-memory
+// pods are rejected on DRA-only nodes and accepted on device-plugin nodes.
+func TestPredicateByNodeResourcesType_SharedGPU_DRANode(t *testing.T) {
 	// DRA-only node: no nvidia.com/gpu in Status.Allocatable; GPUs come from ResourceSlices.
 	draNode := common_info.BuildNode("dra-node", common_info.BuildResourceList("16000m", "32G"))
 
@@ -1608,31 +1605,37 @@ func TestIsTaskAllocatable_SharedGPU_DRANode(t *testing.T) {
 		draGPUs       float64
 		podResources  v1.ResourceList
 		podAnnotation map[string]string
-		expected      bool
+		wantErr       bool
 	}{
 		{
 			name:         "fraction pod rejected on DRA-only node",
 			node:         draNode,
 			draGPUs:      4,
 			podResources: common_info.BuildResourceListWithGPU("1000m", "1G", "500m"),
-			expected:     false,
+			wantErr:      true,
 		},
 		{
 			name:    "gpu-memory pod rejected on DRA-only node",
 			node:    draNode,
 			draGPUs: 4,
-			// gpu-memory pods are specified via annotation; BuildPod handles integer GPU normally,
-			// so set the annotation directly and use CPU-only resources.
+			// gpu-memory pods use an annotation; set it directly with CPU-only resources.
 			podResources:  common_info.BuildResourceList("1000m", "1G"),
 			podAnnotation: map[string]string{commonconstants.GpuMemory: "2000"},
-			expected:      false,
+			wantErr:       true,
+		},
+		{
+			name:         "cpu-only pod accepted on DRA-only node",
+			node:         draNode,
+			draGPUs:      4,
+			podResources: common_info.BuildResourceList("1000m", "1G"),
+			wantErr:      false,
 		},
 		{
 			name:         "fraction pod accepted on device-plugin node",
 			node:         dpNode,
 			draGPUs:      0,
 			podResources: common_info.BuildResourceListWithGPU("1000m", "1G", "500m"),
-			expected:     true,
+			wantErr:      false,
 		},
 	}
 
@@ -1663,9 +1666,9 @@ func TestIsTaskAllocatable_SharedGPU_DRANode(t *testing.T) {
 			addJobAnnotation(pod)
 			task := pod_info.NewTaskInfo(pod, vectorMap)
 
-			got := ni.IsTaskAllocatable(task)
-			if got != tt.expected {
-				t.Errorf("IsTaskAllocatable = %v, want %v", got, tt.expected)
+			err := ni.PredicateByNodeResourcesType(task)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("PredicateByNodeResourcesType error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}

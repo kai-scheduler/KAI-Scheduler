@@ -314,6 +314,11 @@ func (ni *NodeInfo) PredicateByNodeResourcesType(task *pod_info.PodInfo) error {
 		return nil
 	}
 
+	if ni.HasDRAGPUs && task.IsSharedGPURequest() {
+		return common_info.NewFitError(task.Name, task.Namespace, ni.Name,
+			"fractional/shared GPU pods are not yet supported on DRA-only nodes")
+	}
+
 	migNode := ni.IsMIGEnabled()
 	if !migNode && task.IsMigCandidate() {
 		return common_info.NewFitError(task.Name, task.Namespace, ni.Name,
@@ -351,16 +356,6 @@ func (ni *NodeInfo) isTaskAllocatableOnNonAllocatedResources(
 		return false
 	}
 
-	// Shared/fractional GPU requests rely on device-plugin capacity (memory tracking,
-	// per-device sharing state). DRA-only nodes do not expose GPUs via Status.Allocatable,
-	// so the device-plugin sharing infrastructure is absent.
-	if ni.HasDRAGPUs {
-		gpuAllocatable := ni.Node.Status.Allocatable[v1.ResourceName(commonconstants.GpuResource)]
-		if gpuAllocatable.IsZero() {
-			return false
-		}
-	}
-
 	if !ni.isValidGpuPortion(&task.GpuRequirement) {
 		return false
 	}
@@ -374,15 +369,14 @@ func (ni *NodeInfo) isTaskAllocatableOnNonAllocatedResources(
 }
 
 func (ni *NodeInfo) lessEqualVectorsExcludingGPU(a, b resource_info.ResourceVector) bool {
-	for i := 0; i < len(a); i++ {
+	for i := range len(a) {
 		if i == resource_info.GPUIndex {
 			continue
 		}
-		// Skip scalar dims backed by DRA: the node has zero allocatable for them
+
+		// Skip dims backed by DRA: the node has zero allocatable for them
 		// and the DRA plugin handles fit-checking for those resources.
-		if i > resource_info.PodsIndex &&
-			ni.AllocatableVector.Get(i) == 0 &&
-			ni.DeviceClassByResource != nil &&
+		if ni.AllocatableVector.Get(i) == 0 &&
 			ni.DeviceClassByResource.GetDeviceClass(ni.VectorMap.ResourceAt(i)) != nil {
 			continue
 		}
@@ -478,10 +472,10 @@ func (ni *NodeInfo) addTaskResources(task *pod_info.PodInfo) {
 		resourcesToTrackVector.Set(resource_info.GPUIndex, 0)
 	}
 
-	// Zero out scalar dims that this node has no allocatable capacity for.
+	// Zero out dims that this node has no allocatable capacity for.
 	// DRA-backed extended resources are absent from node.Status.Allocatable and must
 	// not be charged against the node's vector — the DRA allocator handles them.
-	for i := resource_info.PodsIndex + 1; i < len(resourcesToTrackVector); i++ {
+	for i := range len(resourcesToTrackVector) {
 		if ni.AllocatableVector.Get(i) == 0 {
 			resourcesToTrackVector.Set(i, 0)
 		}
@@ -538,7 +532,7 @@ func (ni *NodeInfo) removeTaskResources(task *pod_info.PodInfo) {
 	}
 
 	// Mirror the zeroing done in addTaskResources so vectors stay consistent.
-	for i := resource_info.PodsIndex + 1; i < len(resourcesToTrackVector); i++ {
+	for i := range len(resourcesToTrackVector) {
 		if ni.AllocatableVector.Get(i) == 0 {
 			resourcesToTrackVector.Set(i, 0)
 		}

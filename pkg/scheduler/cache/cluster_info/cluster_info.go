@@ -139,8 +139,20 @@ func (c *ClusterInfo) Snapshot() (*api.ClusterInfo, error) {
 
 	snapshot.ResourceVectorMap = resource_info.NewResourceVectorMap()
 
+	snapshot.DeviceClasses, err = c.dataLister.ListDeviceClasses()
+	if err != nil {
+		err = errors.WithStack(fmt.Errorf("error listing device classes: %w", err))
+		return nil, err
+	}
+
+	erc := extendedresourcecache.NewExtendedResourceCache(klog.Background().WithName("extended-resource-cache"))
+	for _, dc := range snapshot.DeviceClasses {
+		erc.OnAdd(dc, false)
+	}
+	snapshot.DeviceClassByResource = erc
+
 	snapshot.Nodes, snapshot.MinNodeGPUMemoryMiB, snapshot.MaxNodeGPUMemoryMiB, err = c.snapshotNodes(
-		c.clusterPodAffinityInfo, snapshot.ResourceVectorMap)
+		c.clusterPodAffinityInfo, snapshot.ResourceVectorMap, erc)
 	if err != nil {
 		err = errors.WithStack(fmt.Errorf("error snapshotting nodes: %w", err))
 		return nil, err
@@ -154,20 +166,6 @@ func (c *ClusterInfo) Snapshot() (*api.ClusterInfo, error) {
 	if err != nil {
 		err = errors.WithStack(fmt.Errorf("error listing resource slices: %w", err))
 		return nil, err
-	}
-	snapshot.DeviceClasses, err = c.dataLister.ListDeviceClasses()
-	if err != nil {
-		err = errors.WithStack(fmt.Errorf("error listing device classes: %w", err))
-		return nil, err
-	}
-
-	erc := extendedresourcecache.NewExtendedResourceCache(klog.Background())
-	for _, dc := range snapshot.DeviceClasses {
-		erc.OnAdd(dc, false)
-	}
-	snapshot.DeviceClassByResource = erc
-	for _, ni := range snapshot.Nodes {
-		ni.DeviceClassByResource = erc
 	}
 
 	snapshot.BindRequests, snapshot.BindRequestsForDeletedNodes, err = c.snapshotBindRequests(snapshot.Nodes)
@@ -268,6 +266,7 @@ func (c *ClusterInfo) Snapshot() (*api.ClusterInfo, error) {
 func (c *ClusterInfo) snapshotNodes(
 	clusterPodAffinityInfo pod_affinity.ClusterPodAffinityInfo,
 	vectorMap *resource_info.ResourceVectorMap,
+	erc *extendedresourcecache.ExtendedResourceCache,
 ) (nodesMap map[string]*node_info.NodeInfo, minimalNodeGPUMemory *int64, maximalNodeGPUMemory *int64, err error) {
 	nodes, err := c.dataLister.ListNodes()
 	if err != nil {
@@ -285,7 +284,9 @@ func (c *ClusterInfo) snapshotNodes(
 		vectorMap.AddResourceList(node.Status.Allocatable)
 
 		podAffinityInfo := NewK8sNodePodAffinityInfo(node, clusterPodAffinityInfo)
-		resultNodes[node.Name] = node_info.NewNodeInfo(node, podAffinityInfo, vectorMap)
+		ni := node_info.NewNodeInfo(node, podAffinityInfo, vectorMap)
+		ni.DeviceClassByResource = erc
+		resultNodes[node.Name] = ni
 		nodeGPUMemory := resultNodes[node.Name].MemoryOfEveryGpuOnNode
 		if nodeGPUMemory > node_info.DefaultGpuMemory {
 			if minimalNodeGPUMemory == nil || *minimalNodeGPUMemory > nodeGPUMemory {

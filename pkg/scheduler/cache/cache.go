@@ -374,7 +374,7 @@ func (sc *SchedulerCache) createBindRequest(podInfo *pod_info.PodInfo, nodeName 
 				Portion: fmt.Sprintf("%.2f", podInfo.AcceptedGpuRequirement.GpuFractionalPortion()),
 			},
 			ResourceClaimAllocations:        podInfo.ResourceClaimInfo.ToSlice(),
-			ExtendedResourceClaimAllocation: podInfo.ExtendedResourceClaimAllocation,
+			ExtendedResourceClaimAllocation: podInfo.ExtendedResourceClaimAllocation(),
 			PredictedNUMAZones:              predictedNUMAZones,
 		},
 	}

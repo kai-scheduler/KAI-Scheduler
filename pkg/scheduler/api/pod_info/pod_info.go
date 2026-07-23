@@ -65,6 +65,11 @@ const (
 	ReceivedTypeNone        ResourceReceivedType = ""
 )
 
+type ExtendedResourceClaim struct {
+	UID        types.UID
+	Allocation *schedulingv1alpha2.ExtendedResourceClaimAllocation
+}
+
 type PodsMap map[common_info.PodID]*PodInfo
 
 type PodInfo struct {
@@ -103,14 +108,7 @@ type PodInfo struct {
 
 	ResourceClaimInfo bindrequest_info.ResourceClaimInfo
 
-	// ExtendedResourceClaimAllocation holds the allocation for the synthetic DRA claim
-	// backing DRA-extended-resource requests. Set by the scheduler DRA plugin.
-	ExtendedResourceClaimAllocation *schedulingv1alpha2.ExtendedResourceClaimAllocation
-
-	// ExtendedResourceClaimUID is the UID of the in-memory synthetic ResourceClaim
-	// registered via SignalClaimPendingAllocation. Used to remove the pending allocation
-	// registration during rollback.
-	ExtendedResourceClaimUID types.UID
+	ExtendedResourceClaim *ExtendedResourceClaim
 
 	// OwnedStorageClaims are StorageClaims that are owned exclusively by the pod, and we can count on them being deleted
 	// if the pod is evicted
@@ -307,7 +305,7 @@ func (pi *PodInfo) Clone() *PodInfo {
 		GPUGroups:                       pi.GPUGroups,
 		NUMAPlacement:                   pi.NUMAPlacement.Clone(),
 		ResourceClaimInfo:               pi.ResourceClaimInfo.Clone(),
-		ExtendedResourceClaimAllocation: pi.ExtendedResourceClaimAllocation,
+		ExtendedResourceClaim:           pi.ExtendedResourceClaim,
 		ResourceRequestType:             pi.ResourceRequestType,
 		ResourceReceivedType:            pi.ResourceReceivedType,
 		IsVirtualStatus:                 pi.IsVirtualStatus,
@@ -369,6 +367,13 @@ func (pi *PodInfo) IsCPUOnlyRequest() bool {
 func (pi *PodInfo) IsRequireAnyKindOfGPU() bool {
 	return pi.GpuRequirement.GPUs() > 0 || pi.GpuRequirement.GetDraGpusCount() > 0 ||
 		pi.IsGpuMemoryRequest() || pi.IsMigProfileRequest()
+}
+
+func (pi *PodInfo) ExtendedResourceClaimAllocation() *schedulingv1alpha2.ExtendedResourceClaimAllocation {
+	if pi.ExtendedResourceClaim == nil {
+		return nil
+	}
+	return pi.ExtendedResourceClaim.Allocation
 }
 
 func (pi *PodInfo) GetSchedulingConstraintsSignature() common_info.SchedulingConstraintsSignature {
