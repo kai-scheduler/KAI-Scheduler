@@ -10,6 +10,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
@@ -116,7 +117,7 @@ func attemptToConsolidatePreemptor(
 	solver := solvers.NewJobsSolver(
 		feasibleNodes,
 		allPodsReallocated,
-		func() *utils.JobsOrderByQueues { return buildConsolidationVictimsQueue(ssn, preemptor) },
+		getOrderedVictimsQueue(ssn, preemptor),
 		framework.Consolidation,
 		actionBudget)
 
@@ -160,6 +161,27 @@ func allPodsReallocated(scenario api.ScenarioInfo) bool {
 func buildConsolidationVictimsQueue(ssn *framework.Session, preemptor *podgroup_info.PodGroupInfo) *utils.JobsOrderByQueues {
 	filter := buildPreemptibleFilterFunc(preemptor, ssn.GetMaxNumberConsolidationPreemptees())
 	return utils.GetVictimsQueue(ssn, filter)
+}
+
+func getOrderedVictimsQueue(ssn *framework.Session, preemptor *podgroup_info.PodGroupInfo) solvers.GenerateVictimsQueue {
+	maxPreempteesToTest := ssn.GetMaxNumberConsolidationPreemptees()
+	if maxPreempteesToTest != noConsolidationPreempteesRestrcition {
+		return func() *utils.JobsOrderByQueues {
+			return buildConsolidationVictimsQueue(ssn, preemptor)
+		}
+	}
+
+	return utils.NewCachedVictimsQueueGenerator(
+		ssn,
+		func() map[common_info.PodGroupID]*podgroup_info.PodGroupInfo {
+			filter := buildPreemptibleFilterFunc(preemptor, maxPreempteesToTest)
+			return utils.GetVictimCandidates(ssn, filter)
+		},
+		utils.JobsOrderInitOptions{
+			FilterNonPreemptible:     true,
+			FilterNonActiveAllocated: true,
+		},
+	)
 }
 
 func buildPreemptibleFilterFunc(preemptor *podgroup_info.PodGroupInfo, maxPreempteesToTest int) func(*podgroup_info.PodGroupInfo) bool {

@@ -30,7 +30,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/scheduler_util"
 )
 
 type reclaimAction struct {
@@ -144,25 +143,31 @@ func shouldStopActionForSearchResult(result *solvers.SearchResult) bool {
 }
 
 func getOrderedVictimsQueue(ssn *framework.Session, reclaimer *podgroup_info.PodGroupInfo) solvers.GenerateVictimsQueue {
-	return func() *utils.JobsOrderByQueues {
-		jobsOrderedByQueue := utils.NewJobsOrderByQueues(ssn, utils.JobsOrderInitOptions{
+	return utils.NewCachedVictimsQueueGenerator(
+		ssn,
+		func() map[common_info.PodGroupID]*podgroup_info.PodGroupInfo {
+			return getReclaimVictimCandidates(ssn, reclaimer)
+		},
+		utils.JobsOrderInitOptions{
 			FilterNonPreemptible:     true,
 			FilterNonActiveAllocated: true,
-			VictimQueue:              true,
-			MaxJobsQueueDepth:        scheduler_util.QueueCapacityInfinite,
-		})
-		jobs := map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{}
-		for _, job := range ssn.ClusterInfo.PodGroupInfos {
-			if job.Queue == reclaimer.Queue {
-				continue
-			}
-			if !ssn.ReclaimVictimFilter(reclaimer, job) {
-				continue
-			}
-			jobs[job.UID] = job
-		}
+		},
+	)
+}
 
-		jobsOrderedByQueue.InitializeWithJobs(jobs)
-		return &jobsOrderedByQueue
+func getReclaimVictimCandidates(
+	ssn *framework.Session,
+	reclaimer *podgroup_info.PodGroupInfo,
+) map[common_info.PodGroupID]*podgroup_info.PodGroupInfo {
+	jobs := make(map[common_info.PodGroupID]*podgroup_info.PodGroupInfo)
+	for _, job := range ssn.ClusterInfo.PodGroupInfos {
+		if job.Queue == reclaimer.Queue {
+			continue
+		}
+		if !ssn.ReclaimVictimFilter(reclaimer, job) {
+			continue
+		}
+		jobs[job.UID] = job
 	}
+	return jobs
 }
