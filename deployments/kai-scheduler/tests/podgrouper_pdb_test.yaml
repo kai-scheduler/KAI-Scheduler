@@ -1,0 +1,68 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+suite: podgrouper podDisruptionBudget in kai-config
+
+set:
+  kaiConfigDeployer:
+    enabled: false
+  kaiConfig:
+    render: true
+
+templates:
+  - kai-config.yaml
+tests:
+  - it: renders podgrouper podDisruptionBudget from values
+    set:
+      podgrouper.podDisruptionBudget:
+        enabled: true
+        maxUnavailable: 1
+    asserts:
+      - equal:
+          path: spec.podGrouper.service.podDisruptionBudget.enabled
+          value: true
+      - equal:
+          path: spec.podGrouper.service.podDisruptionBudget.maxUnavailable
+          value: 1
+
+  - it: renders disabled PDB when enabled is false
+    set:
+      podgrouper.podDisruptionBudget:
+        enabled: false
+    asserts:
+      - equal:
+          path: spec.podGrouper.service.podDisruptionBudget.enabled
+          value: false
+
+  - it: omits podDisruptionBudget when the values map is absent
+    set:
+      podgrouper.podDisruptionBudget: null
+    asserts:
+      - isNull:
+          path: spec.podGrouper.service.podDisruptionBudget
+
+  - it: renders explicit zero maxUnavailable
+    set:
+      podgrouper.podDisruptionBudget:
+        enabled: true
+        maxUnavailable: 0
+    asserts:
+      - equal:
+          path: spec.podGrouper.service.podDisruptionBudget.enabled
+          value: true
+      - equal:
+          path: spec.podGrouper.service.podDisruptionBudget.maxUnavailable
+          value: 0
+
+  - it: renders custom maxUnavailable
+    set:
+      podgrouper.podDisruptionBudget:
+        enabled: true
+        maxUnavailable: 2
+    asserts:
+      - equal:
+          path: spec.podGrouper.service.podDisruptionBudget.enabled
+          value: true
+      - equal:
+          path: spec.podGrouper.service.podDisruptionBudget.maxUnavailable
+          value: 2
