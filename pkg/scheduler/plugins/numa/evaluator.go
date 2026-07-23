@@ -4,6 +4,7 @@
 package numa
 
 import (
+	"math"
 	"sort"
 
 	v1 "k8s.io/api/core/v1"
@@ -14,8 +15,11 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 )
 
-// stackZones bounds the mask/scratch stack buffers; nodes with more NUMA zones fall back to heap.
-const stackZones = 16
+// stackZones and stackAware bound the mask/scratch stack buffers; larger nodes fall back to heap.
+const (
+	stackZones = 16
+	stackAware = 16
+)
 
 // zoneAllocation accumulates, per zone index, the amounts to place there (as a ResourceVector delta).
 // placementFromAllocation materializes it into a pod_info.NUMAPlacement.
@@ -49,15 +53,21 @@ func (pp *numaPlugin) alignedAware(task *pod_info.PodInfo, node *node_info.NodeI
 	return out
 }
 
-// allocatable reports whether the kubelet Topology Manager would align the task on the node. A task
-// the plugin does not constrain passes through as true.
+// allocatable reports whether the kubelet Topology Manager would align the task on the node (the
+// predicate). A task the plugin does not filter passes through as true.
 func (pp *numaPlugin) allocatable(task *pod_info.PodInfo, node *node_info.NodeInfo) bool {
+	if node == nil || !pp.shouldFilter(task, node.NumaTopology) {
+		return true
+	}
 	return pp.solveTask(task, node, nil)
 }
 
 // evaluate returns the task's expected per-zone allocation on the node (nil for a task the plugin
-// does not constrain). Used by the placement path; the predicate uses allocatable (feasibility only).
+// does not account for). Used by the placement and scoring paths.
 func (pp *numaPlugin) evaluate(task *pod_info.PodInfo, node *node_info.NodeInfo) (zoneAllocation, bool) {
+	if node == nil || !pp.shouldScore(task, node.NumaTopology) {
+		return nil, true
+	}
 	alloc := zoneAllocation{}
 	if !pp.solveTask(task, node, alloc) {
 		return nil, false
@@ -65,13 +75,9 @@ func (pp *numaPlugin) evaluate(task *pod_info.PodInfo, node *node_info.NodeInfo)
 	return alloc, true
 }
 
-// solveTask resolves the task's requests and scope for the node and runs solve. A task the plugin
-// does not constrain passes through as admitted. When alloc is non-nil, solve records the placement
-// into it; when nil, it only decides feasibility (zero-allocation).
+// solveTask runs the evaluator on a node the caller has already gated. When alloc is non-nil, solve
+// records the placement into it; when nil, it only decides feasibility (zero-allocation).
 func (pp *numaPlugin) solveTask(task *pod_info.PodInfo, node *node_info.NodeInfo, alloc zoneAllocation) bool {
-	if node == nil || !pp.shouldHandle(task, node.NumaTopology) {
-		return true
-	}
 	topo := node.NumaTopology
 	aware := pp.alignedAware(task, node)
 	concurrent, serial := pp.numaRequestsFor(task, topo.VectorMap).forScope(topo.Scope)
@@ -118,10 +124,14 @@ func solve(topo *node_info.NumaTopology, aware []int, concurrent, serial []resou
 // feasibleMask picks the mask the policy's evaluator would choose for one request, under the current
 // availability view (Available minus consumed).
 func feasibleMask(topo *node_info.NumaTopology, aware []int, req resource_info.ResourceVector, consumed []float64, width int, maskBuf []int) ([]int, bool) {
-	if topo.Policy == node_info.TopologyPolicySingleNUMANode {
+	switch topo.Policy {
+	case node_info.TopologyPolicySingleNUMANode:
 		return singleNUMAEvaluator{}.fit(topo, aware, req, consumed, width, maskBuf)
+	case node_info.TopologyPolicyBestEffort:
+		return bestEffortEvaluator{}.fit(topo, aware, req, consumed, width, maskBuf)
+	default:
+		return restrictedEvaluator{}.fit(topo, aware, req, consumed, width, maskBuf)
 	}
-	return restrictedEvaluator{}.fit(topo, aware, req, consumed, width, maskBuf)
 }
 
 // singleNUMAEvaluator (single-numa-node) requires each request to fit entirely within one NUMA zone,
@@ -135,6 +145,72 @@ func (singleNUMAEvaluator) fit(topo *node_info.NumaTopology, aware []int, req re
 		}
 	}
 	return nil, false
+}
+
+// bestEffortEvaluator (best-effort) greedily builds the narrowest zone mask whose summed Available
+// covers the request, adding at each step the zone that covers the most unmet demand. best-effort
+// never rejects, so the result feeds scoring and the in-cycle ledger, not an admit decision; the
+// greedy width approximates the kubelet's best-effort span (exact when one resource dominates).
+type bestEffortEvaluator struct{}
+
+func (bestEffortEvaluator) fit(topo *node_info.NumaTopology, aware []int, req resource_info.ResourceVector, consumed []float64, width int, maskBuf []int) ([]int, bool) {
+	var remArr [stackAware]float64
+	remaining := remArr[:0]
+	if len(aware) > stackAware {
+		remaining = make([]float64, 0, len(aware))
+	}
+	for _, idx := range aware {
+		remaining = append(remaining, req.Get(idx))
+	}
+	var usedArr [stackZones]bool
+	used := usedArr[:len(topo.Zones)]
+	if len(topo.Zones) > stackZones {
+		used = make([]bool, len(topo.Zones))
+	}
+
+	mask := maskBuf[:0]
+	for len(mask) < len(topo.Zones) {
+		if allMet(remaining) {
+			return mask, true
+		}
+		best, bestCover := -1, 0.0
+		for z := range topo.Zones {
+			if used[z] {
+				continue
+			}
+			cover := 0.0
+			for i, idx := range aware {
+				if remaining[i] <= 0 {
+					continue
+				}
+				cover += math.Min(remaining[i], availableAt(topo, consumed, width, z, idx))
+			}
+			if cover > bestCover {
+				best, bestCover = z, cover
+			}
+		}
+		if best < 0 {
+			break
+		}
+		used[best] = true
+		mask = append(mask, best)
+		for i, idx := range aware {
+			remaining[i] -= availableAt(topo, consumed, width, best, idx)
+		}
+	}
+	if allMet(remaining) {
+		return mask, true
+	}
+	return nil, false
+}
+
+func allMet(remaining []float64) bool {
+	for _, r := range remaining {
+		if r > 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // restrictedEvaluator reproduces the kubelet hint merge: all per-resource preferred widths (from

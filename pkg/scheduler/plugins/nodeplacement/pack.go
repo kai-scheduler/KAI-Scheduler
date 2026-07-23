@@ -26,7 +26,7 @@ func (pp *nodePlacementPlugin) nodeResourcePack(resourceName v1.ResourceName) ap
 		score := getScoreOfCurrentNode(podAllocationRange.minAllocatable, podAllocationRange.maxAllocatable,
 			currentNodeNonAllocated, nodeOverall)
 		log.InfraLogger.V(7).Infof("Estimating Task: <%v/%v> Job: <%v> for node: <%s> "+
-			"that has <%f> non allocated %v. Score: %f",
+			"that has <%f> non al located %v. Score: %f",
 			task.Namespace, task.Name, task.Job, node.Name, currentNodeNonAllocated, resourceName, score)
 		return score, nil
 	}
