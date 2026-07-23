@@ -1,0 +1,6 @@
+kind: Added
+body: Skill to diagnose why a pod is pending
+time: 2026-07-17T10:06:18.983665+03:00
+custom:
+    Author: somanythingstodo
+    Issue: "1731"
