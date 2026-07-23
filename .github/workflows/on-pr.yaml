@@ -29,10 +29,12 @@ jobs:
             docs:
               - '**/*.md'
               - 'docs/**'
+              - '.changes/**'
             code:
               - '**'
               - '!**/*.md'
               - '!docs/**'
+              - '!.changes/**'
   validate-and-test:
     needs: [ check-build-and-test-required ]
     if: needs.check-build-and-test-required.outputs.code == 'true'
