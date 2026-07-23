@@ -32,10 +32,12 @@ jobs:
             docs:
               - '**/*.md'
               - 'docs/**'
+              - '.changes/**'
             code:
               - '**'
               - '!**/*.md'
               - '!docs/**'
+              - '!.changes/**'
             scale_tests:
               - 'docs/scale-tests/**'
 
