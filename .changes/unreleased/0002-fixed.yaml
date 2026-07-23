@@ -1,3 +1,0 @@
-kind: Fixed
-body: |-
-  Scheduler snapshot now correctly captures the plugin configuration even when `/get-snapshot` is requested between scheduling cycles (previously the `config` field was written as `null`, causing snapshot-tool to panic on replay). [#1885](https://github.com/kai-scheduler/KAI-Scheduler/issues/1885)

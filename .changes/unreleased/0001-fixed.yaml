@@ -1,3 +1,0 @@
-kind: Fixed
-body: |-
-  Fixed extended resources present on only a subset of nodes being reported as unavailable cluster-wide: `ResourceVector.SetMax` now grows the accumulator to the longer vector's length instead of silently dropping resource indices discovered after the first-iterated node, which caused pods requesting such resources to be rejected as unschedulable ("No node in the node-pool has X resources") depending on node map iteration order. [#1851](https://github.com/kai-scheduler/KAI-Scheduler/issues/1851)

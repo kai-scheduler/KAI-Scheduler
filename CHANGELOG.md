@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.16.5] - 2026-07-23
+
+### Changed
+- Reject negative PyTorch replica and LWS worker indexes, and cap block-level segmentation at 10,000 subgroups to prevent unbounded PodGroup fan-out. [#1816](https://github.com/kai-scheduler/KAI-Scheduler/issues/1816) [davidLif](https://github.com/davidLif)
+
+### Fixed
+- Fixed extended resources present on only a subset of nodes being reported as unavailable cluster-wide: `ResourceVector.SetMax` now grows the accumulator to the longer vector's length instead of silently dropping resource indices discovered after the first-iterated node, which caused pods requesting such resources to be rejected as unschedulable ("No node in the node-pool has X resources") depending on node map iteration order. [#1851](https://github.com/kai-scheduler/KAI-Scheduler/issues/1851)
+- Scheduler snapshot now correctly captures the plugin configuration even when `/get-snapshot` is requested between scheduling cycles (previously the `config` field was written as `null`, causing snapshot-tool to panic on replay). [#1885](https://github.com/kai-scheduler/KAI-Scheduler/issues/1885)
+- Fixed scheduler panic during reclaim when building eviction messages for jobs in root-level queues (ParentQueue empty) that reclaim across hierarchy branches. [#1863](https://github.com/kai-scheduler/KAI-Scheduler/issues/1863)
+- Sanitize GPU-sharing volume names for pods with dots while preserving their ConfigMap references. [#1728](https://github.com/kai-scheduler/KAI-Scheduler/issues/1728)
+
 ## [v0.16.4] - 2026-07-12
 
 ### Added
