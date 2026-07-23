@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -31,48 +32,54 @@ type jobAllocationMetaData struct {
 
 func (t *topologyPlugin) subSetNodesFn(
 	job *podgroup_info.PodGroupInfo, subGroup *subgroup_info.SubGroupInfo, podSets map[string]*subgroup_info.PodSet,
-	tasks []*pod_info.PodInfo, nodeSet node_info.NodeSet,
-) ([]node_info.NodeSet, error) {
+	tasks []*pod_info.PodInfo, nodeSet node_info.NodeSet, collectFitErrors bool,
+) (api.SubsetNodesResult, error) {
 	topologyTree, found := t.getJobTopology(subGroup)
 	if !found {
-		job.AddSimpleJobFitError(
-			podgroup_info.PodSchedulingErrors,
-			fmt.Sprintf("Requested topology %s does not exist", subGroup.GetTopologyConstraint().Topology))
-		return []node_info.NodeSet{}, nil
+		result := api.SubsetNodesResult{}
+		if collectFitErrors {
+			result.FitErrors = []common_info.JobFitError{newTopologyPodSchedulingError(
+				job, fmt.Sprintf("Requested topology %s does not exist", subGroup.GetTopologyConstraint().Topology),
+			)}
+		}
+		return result, nil
 	}
 	if topologyTree == nil || len(tasks) == 0 {
-		return []node_info.NodeSet{nodeSet}, nil
+		return api.SubsetNodesResult{NodeSets: []node_info.NodeSet{nodeSet}}, nil
 	}
 
 	id, level, validNodes := lowestCommonDomainID(nodeSet, topologyTree.TopologyResource.Spec.Levels, subGroup.GetTopologyConstraint())
 	domain, ok := topologyTree.DomainsByLevel[level][id]
 	if !ok {
-		return nil, fmt.Errorf("domain not found for node set in topology %s", topologyTree.Name)
+		return api.SubsetNodesResult{}, fmt.Errorf("domain not found for node set in topology %s", topologyTree.Name)
 	}
 
 	t.treeAllocatableCleanup(topologyTree)
 	calcSubTreeFreeResources(domain)
 	if useRepresentorPodsAccounting(tasks) {
 		if err := t.calcTreeAllocatable(tasks, domain); err != nil {
-			return nil, err
+			return api.SubsetNodesResult{}, err
 		}
 	}
 
 	tasksResources, tasksCount := getTasksAllocationMetadata(tasks)
 
-	if err := checkJobDomainFit(job, subGroup, tasksResources, tasksCount, domain, topologyTree.VectorMap); err != nil {
-		if domain.ID == rootDomainId {
-			job.AddSimpleJobFitError(
-				podgroup_info.PodSchedulingErrors,
-				getNoTopologyMatchError(job, subGroup, topologyTree, "not enough resources in the cluster to allocate the job").Error())
-
-		} else {
-			job.AddSimpleJobFitError(
-				podgroup_info.PodSchedulingErrors,
-				getNoTopologyMatchError(job, subGroup, topologyTree,
-					fmt.Sprintf("not enough resources in %s to allocate the job", string(domain.ID))).Error())
+	if !jobFitsDomain(tasksResources, tasksCount, domain, topologyTree.VectorMap) {
+		result := api.SubsetNodesResult{}
+		if !collectFitErrors {
+			return result, nil
 		}
-		return []node_info.NodeSet{}, nil
+		var message string
+		if domain.ID == rootDomainId {
+			message = getNoTopologyMatchError(
+				job, subGroup, topologyTree, "not enough resources in the cluster to allocate the job",
+			).Error()
+		} else {
+			message = getNoTopologyMatchError(job, subGroup, topologyTree,
+				fmt.Sprintf("not enough resources in %s to allocate the job", string(domain.ID))).Error()
+		}
+		result.FitErrors = []common_info.JobFitError{newTopologyPodSchedulingError(job, message)}
+		return result, nil
 	}
 
 	// Sorting the tree for both packing and closest preferred level domain scoring
@@ -87,9 +94,11 @@ func (t *topologyPlugin) subSetNodesFn(
 		t.subGroupNodeScores[subGroup.GetName()] = calculateNodeScores(domain, preferredLevel)
 	}
 
-	jobAllocatableDomains, err := t.getJobAllocatableDomains(job, subGroup, podSets, tasksResources, tasksCount, topologyTree)
+	jobAllocatableDomains, fitErrors, err := t.getJobAllocatableDomains(
+		job, subGroup, podSets, tasksResources, tasksCount, topologyTree, collectFitErrors,
+	)
 	if err != nil {
-		return nil, err
+		return api.SubsetNodesResult{}, err
 	}
 
 	jobAllocatableDomains = sortDomainInfos(topologyTree, jobAllocatableDomains)
@@ -106,7 +115,17 @@ func (t *topologyPlugin) subSetNodesFn(
 		domainNodeSets = append(domainNodeSets, domainNodeSet)
 	}
 
-	return domainNodeSets, nil
+	return api.SubsetNodesResult{NodeSets: domainNodeSets, FitErrors: fitErrors}, nil
+}
+
+func newTopologyPodSchedulingError(job *podgroup_info.PodGroupInfo, message string) common_info.JobFitError {
+	return common_info.NewJobFitError(
+		job.Name,
+		podgroup_info.DefaultSubGroup,
+		job.Namespace,
+		podgroup_info.PodSchedulingErrors,
+		[]string{message},
+	)
 }
 
 func getTasksAllocationMetadata(tasks []*pod_info.PodInfo) (resource_info.ResourceVector, int) {
@@ -254,11 +273,11 @@ func calcNodeAccommodation(jobAllocationMetaData *jobAllocationMetaData, node *n
 
 func (t *topologyPlugin) getJobAllocatableDomains(
 	job *podgroup_info.PodGroupInfo, subGroup *subgroup_info.SubGroupInfo, podSets map[string]*subgroup_info.PodSet,
-	tasksResources resource_info.ResourceVector, tasksCount int, topologyTree *Info,
-) ([]*DomainInfo, error) {
+	tasksResources resource_info.ResourceVector, tasksCount int, topologyTree *Info, collectFitErrors bool,
+) ([]*DomainInfo, []common_info.JobFitError, error) {
 	relevantLevels, err := t.calculateRelevantDomainLevels(subGroup, topologyTree)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Validate that the domains do not clash with the chosen domain for active pods of the job
@@ -274,10 +293,10 @@ func (t *topologyPlugin) getJobAllocatableDomains(
 	var topLevelFitErrors []common_info.JobFitError
 	for levelIndex, level := range relevantLevels {
 		for _, domain := range relevantDomainsByLevel[level] {
-			err := checkJobDomainFit(job, subGroup, tasksResources, tasksCount, domain, topologyTree.VectorMap)
-			if err != nil { // Filter domains that cannot allocate the job
-				if levelIndex == len(relevantLevels)-1 {
-					topLevelFitErrors = append(topLevelFitErrors, err)
+			if !jobFitsDomain(tasksResources, tasksCount, domain, topologyTree.VectorMap) {
+				if collectFitErrors && levelIndex == len(relevantLevels)-1 {
+					topLevelFitErrors = append(topLevelFitErrors,
+						checkJobDomainFit(job, subGroup, tasksResources, tasksCount, domain, topologyTree.VectorMap))
 				}
 				continue
 			}
@@ -287,16 +306,15 @@ func (t *topologyPlugin) getJobAllocatableDomains(
 	}
 
 	if len(domains) == 0 {
-		for _, fitError := range topLevelFitErrors {
-			job.AddJobFitError(fitError)
+		if !collectFitErrors {
+			return []*DomainInfo{}, nil, nil
 		}
-		job.AddSimpleJobFitError(
-			podgroup_info.PodSchedulingErrors,
-			getNoTopologyMatchError(job, subGroup, topologyTree).Error())
-		return []*DomainInfo{}, nil
+		topLevelFitErrors = append(topLevelFitErrors,
+			newTopologyPodSchedulingError(job, getNoTopologyMatchError(job, subGroup, topologyTree).Error()))
+		return []*DomainInfo{}, topLevelFitErrors, nil
 	}
 
-	return domains, nil
+	return domains, nil, nil
 }
 
 func hasActiveAllocatedTasks(podSets map[string]*subgroup_info.PodSet) bool {
@@ -352,21 +370,29 @@ func hasTopologyRequiredConstraint(subGroup *subgroup_info.SubGroupInfo) bool {
 func checkJobDomainFit(job *podgroup_info.PodGroupInfo, subGroup *subgroup_info.SubGroupInfo,
 	tasksResources resource_info.ResourceVector, tasksCount int, domain *DomainInfo,
 	vectorMap *resource_info.ResourceVectorMap) *common_info.TopologyFitError {
-	if domain.AllocatablePods != allocatablePodsNotSet {
-		if domain.AllocatablePods < tasksCount {
-			return common_info.NewTopologyFitError(
-				job.Name, subGroup.GetName(), job.Namespace, string(domain.ID), common_info.UnschedulableWorkloadReason,
-				[]string{fmt.Sprintf("node-group %s can allocate only %d of %d required pods", domain.ID, domain.AllocatablePods, tasksCount)})
-		}
+	if jobFitsDomain(tasksResources, tasksCount, domain, vectorMap) {
 		return nil
 	}
-
-	if getJobRatioToFreeResources(tasksResources, domain, vectorMap) > maxAllocatableTasksRatio {
-		err := common_info.NewTopologyInsufficientResourcesError(
-			job.Name, subGroup.GetName(), job.Namespace, string(domain.ID), tasksResources, domain.IdleOrReleasingVector, vectorMap)
-		return err
+	if domain.AllocatablePods != allocatablePodsNotSet {
+		return common_info.NewTopologyFitError(
+			job.Name, subGroup.GetName(), job.Namespace, string(domain.ID), common_info.UnschedulableWorkloadReason,
+			[]string{fmt.Sprintf("node-group %s can allocate only %d of %d required pods", domain.ID, domain.AllocatablePods, tasksCount)})
 	}
-	return nil
+
+	return common_info.NewTopologyInsufficientResourcesError(
+		job.Name, subGroup.GetName(), job.Namespace, string(domain.ID), tasksResources, domain.IdleOrReleasingVector, vectorMap)
+}
+
+func jobFitsDomain(
+	tasksResources resource_info.ResourceVector,
+	tasksCount int,
+	domain *DomainInfo,
+	vectorMap *resource_info.ResourceVectorMap,
+) bool {
+	if domain.AllocatablePods != allocatablePodsNotSet {
+		return domain.AllocatablePods >= tasksCount
+	}
+	return getJobRatioToFreeResources(tasksResources, domain, vectorMap) <= maxAllocatableTasksRatio
 }
 
 func (*topologyPlugin) calculateRelevantDomainLevels(

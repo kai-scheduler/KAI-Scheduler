@@ -378,24 +378,30 @@ func (ssn *Session) IsTaskAllocationOnNodeOverCapacityFn(task *pod_info.PodInfo,
 func (ssn *Session) SubsetNodesFn(
 	podGroup *podgroup_info.PodGroupInfo, subGroupInfo *subgroup_info.SubGroupInfo,
 	podSets map[string]*subgroup_info.PodSet, tasks []*pod_info.PodInfo, initNodeSet node_info.NodeSet,
-) ([]node_info.NodeSet, error) {
+	collectFitErrors bool,
+) (api.SubsetNodesResult, error) {
 	nodeSets := []node_info.NodeSet{initNodeSet}
 	for _, subsetNodesFn := range ssn.SubsetNodesFns {
 		log.InfraLogger.V(7).Infof(
 			"Running plugin func <%v> on podGroup <%s/%s>", subsetNodesFn, podGroup.Namespace, podGroup.Namespace)
 		var newNodeSets []node_info.NodeSet
+		var fitErrors []common_info.JobFitError
 		for _, nodeSet := range nodeSets {
-			nodeSubsets, err := subsetNodesFn(podGroup, subGroupInfo, podSets, tasks, nodeSet)
+			result, err := subsetNodesFn(podGroup, subGroupInfo, podSets, tasks, nodeSet, collectFitErrors)
 			if err != nil {
-				return nil, err
+				return api.SubsetNodesResult{}, err
 			}
-			newNodeSets = append(newNodeSets, nodeSubsets...)
+			newNodeSets = append(newNodeSets, result.NodeSets...)
+			fitErrors = append(fitErrors, result.FitErrors...)
 		}
 		nodeSets = newNodeSets
+		if len(nodeSets) == 0 {
+			return api.SubsetNodesResult{FitErrors: fitErrors}, nil
+		}
 
 		logNodeSetsPluginResult(subsetNodesFn, podGroup, nodeSets)
 	}
-	return nodeSets, nil
+	return api.SubsetNodesResult{NodeSets: nodeSets}, nil
 }
 
 func logNodeSetsPluginResult(subsetNodesFn api.SubsetNodesFn, podGroup *podgroup_info.PodGroupInfo, nodeSets []node_info.NodeSet) {

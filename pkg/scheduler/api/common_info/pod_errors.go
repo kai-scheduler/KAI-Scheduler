@@ -188,6 +188,9 @@ func (f *TasksFitErrors) SetNodeError(nodeName string, err error) {
 	var fe *TasksFitError
 	switch obj := err.(type) {
 	case *TasksFitError:
+		if obj == nil {
+			return
+		}
 		obj.NodeName = nodeName
 		fe = obj
 	default:
