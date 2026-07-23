@@ -13,6 +13,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/watch"
@@ -22,6 +23,11 @@ import (
 )
 
 const batchProgressLogInterval = 30 * time.Second
+
+const (
+	watchRestartInitialBackoff = time.Second
+	watchRestartMaxBackoff     = 30 * time.Second
+)
 
 // BatchStatus is the aggregate state of one scale-test Job batch.
 type BatchStatus struct {
@@ -241,13 +247,8 @@ func (t *jobBatchTracker) Close() {
 }
 
 func (t *jobBatchTracker) watchAndListPods() (watch.Interface, error) {
-	podWatch, err := t.client.Watch(t.ctx, &v1.PodList{}, runtimeClient.InNamespace(t.namespace), runtimeClient.MatchingLabels(t.batchLabels))
-	if err != nil {
-		return nil, err
-	}
 	pods := &v1.PodList{}
 	if err := t.client.List(t.ctx, pods, runtimeClient.InNamespace(t.namespace), runtimeClient.MatchingLabels(t.batchLabels)); err != nil {
-		podWatch.Stop()
 		return nil, err
 	}
 
@@ -260,17 +261,13 @@ func (t *jobBatchTracker) watchAndListPods() (watch.Interface, error) {
 	}
 	t.notifyLocked()
 	t.mu.Unlock()
-	return podWatch, nil
+
+	return t.client.Watch(t.ctx, &v1.PodList{}, t.watchOptions(pods.ResourceVersion)...)
 }
 
 func (t *jobBatchTracker) watchAndListPodGroups() (watch.Interface, error) {
-	podGroupWatch, err := t.client.Watch(t.ctx, &v2alpha2.PodGroupList{}, runtimeClient.InNamespace(t.namespace), runtimeClient.MatchingLabels(t.batchLabels))
-	if err != nil {
-		return nil, err
-	}
 	podGroups := &v2alpha2.PodGroupList{}
 	if err := t.client.List(t.ctx, podGroups, runtimeClient.InNamespace(t.namespace), runtimeClient.MatchingLabels(t.batchLabels)); err != nil {
-		podGroupWatch.Stop()
 		return nil, err
 	}
 
@@ -281,7 +278,16 @@ func (t *jobBatchTracker) watchAndListPodGroups() (watch.Interface, error) {
 	}
 	t.notifyLocked()
 	t.mu.Unlock()
-	return podGroupWatch, nil
+
+	return t.client.Watch(t.ctx, &v2alpha2.PodGroupList{}, t.watchOptions(podGroups.ResourceVersion)...)
+}
+
+func (t *jobBatchTracker) watchOptions(resourceVersion string) []runtimeClient.ListOption {
+	return []runtimeClient.ListOption{
+		runtimeClient.InNamespace(t.namespace),
+		runtimeClient.MatchingLabels(t.batchLabels),
+		&runtimeClient.ListOptions{Raw: &metav1.ListOptions{ResourceVersion: resourceVersion}},
+	}
 }
 
 func (t *jobBatchTracker) runWatch(
@@ -291,21 +297,50 @@ func (t *jobBatchTracker) runWatch(
 	update func(runtime.Object, watch.EventType) error,
 ) {
 	defer t.wg.Done()
+	backoff := watchRestartInitialBackoff
 	for {
 		err := t.consumeWatch(resourceWatch, update)
 		resourceWatch.Stop()
 		if t.ctx.Err() != nil {
 			return
 		}
-		if err != nil {
+		if err != nil && !isRecoverableWatchError(err) {
 			t.setTerminalError(fmt.Errorf("watch %s: %w", resource, err))
 			return
 		}
-		resourceWatch, err = restart()
 		if err != nil {
+			GinkgoLogr.Error(err, "Restarting scale Job batch watch", "batchID", t.batchID, "resource", resource)
+			if !t.waitForWatchRestart(backoff) {
+				return
+			}
+			backoff = min(backoff*2, watchRestartMaxBackoff)
+		}
+
+		resourceWatch, err = restart()
+		if err == nil {
+			backoff = watchRestartInitialBackoff
+			continue
+		}
+		if !isRecoverableWatchError(err) {
 			t.setTerminalError(fmt.Errorf("restart %s watch: %w", resource, err))
 			return
 		}
+		GinkgoLogr.Error(err, "Retrying scale Job batch watch restart", "batchID", t.batchID, "resource", resource)
+		if !t.waitForWatchRestart(backoff) {
+			return
+		}
+		backoff = min(backoff*2, watchRestartMaxBackoff)
+	}
+}
+
+func (t *jobBatchTracker) waitForWatchRestart(backoff time.Duration) bool {
+	timer := time.NewTimer(backoff)
+	defer timer.Stop()
+	select {
+	case <-t.ctx.Done():
+		return false
+	case <-timer.C:
+		return true
 	}
 }
 
@@ -465,4 +500,11 @@ func watchEventError(obj runtime.Object) error {
 		return err
 	}
 	return fmt.Errorf("Kubernetes watch returned an error event")
+}
+
+func isRecoverableWatchError(err error) bool {
+	return apierrors.IsResourceExpired(err) ||
+		apierrors.IsTimeout(err) ||
+		apierrors.IsServerTimeout(err) ||
+		apierrors.IsTooManyRequests(err)
 }
