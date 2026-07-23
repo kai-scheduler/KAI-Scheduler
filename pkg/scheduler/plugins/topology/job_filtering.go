@@ -244,7 +244,7 @@ func calcNodeAccommodation(jobAllocationMetaData *jobAllocationMetaData, node *n
 	cmpFree := nonAllocated.Clone()
 	if node.DeviceClassByResource != nil {
 		for i := 0; i < len(cmpMax); i++ {
-			if node.DeviceClassByResource.GetDeviceClass(node.VectorMap.ResourceAt(i)) != nil {
+			if i != resource_info.GPUIndex && node.DeviceClassByResource.GetDeviceClass(node.VectorMap.ResourceAt(i)) != nil {
 				cmpMax.Set(i, 0)
 				cmpFree.Set(i, 0)
 			}
@@ -259,8 +259,8 @@ func calcNodeAccommodation(jobAllocationMetaData *jobAllocationMetaData, node *n
 		if maxPodVector[i] <= 0 {
 			continue
 		}
-		// Skip DRA-backed dims; they are not tracked in node vectors.
-		if node.DeviceClassByResource != nil &&
+		// Skip non-GPU DRA-backed dims; they are not tracked in node vectors.
+		if i != resource_info.GPUIndex && node.DeviceClassByResource != nil &&
 			node.DeviceClassByResource.GetDeviceClass(node.VectorMap.ResourceAt(i)) != nil {
 			continue
 		}
@@ -527,9 +527,9 @@ func getJobRatioToFreeResources(tasksResources resource_info.ResourceVector, dom
 		if i == resource_info.PodsIndex {
 			continue
 		}
-		// DRA-backed extended resources are not tracked in domain vectors; the DRA
+		// Non-GPU DRA-backed extended resources are not tracked in domain vectors; the DRA
 		// allocator handles fit — skip them to avoid falsely rejecting domains.
-		if i > resource_info.PodsIndex && dbc != nil && dbc.GetDeviceClass(vectorMap.ResourceAt(i)) != nil {
+		if i != resource_info.GPUIndex && i > resource_info.PodsIndex && dbc != nil && dbc.GetDeviceClass(vectorMap.ResourceAt(i)) != nil {
 			continue
 		}
 		var resourceRatio float64

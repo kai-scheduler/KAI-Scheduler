@@ -9,6 +9,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
+	resourcehelper "k8s.io/component-helpers/resource"
 	"k8s.io/dynamic-resource-allocation/deviceclass/extendedresourcecache"
 	"k8s.io/utils/ptr"
 
@@ -73,27 +74,25 @@ func podExtendedResourcesNeedingDRA(
 	nodeInfo *node_info.NodeInfo,
 	dbc *extendedresourcecache.ExtendedResourceCache,
 ) map[v1.ResourceName]int64 {
-	result := make(map[v1.ResourceName]int64)
+	// PodRequests aggregates correctly: sum for regular/sidecar containers,
+	// max for non-restartable init containers (which run sequentially).
+	podReqs := resourcehelper.PodRequests(task.Pod, resourcehelper.PodResourcesOptions{})
 	allocatable := nodeInfo.Node.Status.Allocatable
-	containers := append(task.Pod.Spec.InitContainers, task.Pod.Spec.Containers...) //nolint:gocritic
-	for _, c := range containers {
-		for rName, rQuant := range c.Resources.Requests {
-			if dbc.GetDeviceClass(rName) == nil {
-				continue
-			}
-			// If the node advertises device-plugin capacity for this resource it is
-			// not a DRA-only dimension on this node; skip.
-			if allocAmt, ok := allocatable[rName]; ok && !allocAmt.IsZero() {
-				continue
-			}
-			crq, ok := rQuant.AsInt64()
-			if !ok || crq <= 0 {
-				continue
-			}
-			if crq > result[rName] {
-				result[rName] = crq
-			}
+	result := make(map[v1.ResourceName]int64)
+	for rName, rQuant := range podReqs {
+		if dbc.GetDeviceClass(rName) == nil {
+			continue
 		}
+		// If the node advertises device-plugin capacity for this resource it is
+		// not a DRA-only dimension on this node; skip.
+		if allocAmt, ok := allocatable[rName]; ok && !allocAmt.IsZero() {
+			continue
+		}
+		crq, ok := rQuant.AsInt64()
+		if !ok || crq <= 0 {
+			continue
+		}
+		result[rName] = crq
 	}
 	return result
 }

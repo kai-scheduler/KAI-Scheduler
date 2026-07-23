@@ -248,6 +248,7 @@ func (drap *draPlugin) filter(task *pod_info.PodInfo, _ *podgroup_info.PodGroupI
 	if hasDRAExtResources {
 		extResources := podExtendedResourcesNeedingDRA(task, nodeInfo, drap.deviceClassByResource)
 		if len(extResources) > 0 {
+			// containerMappings are not needed for fit-checking; they are recomputed in allocateExtendedResourceClaim.
 			deviceRequests, _ := createRequestsAndMappings(pod, extResources, drap.deviceClassByResource)
 			specialClaim := buildSpecialClaim(pod)
 			specialClaim.Spec.Devices.Requests = deviceRequests
@@ -358,28 +359,7 @@ func (drap *draPlugin) allocateExtendedResourceClaim(task *pod_info.PodInfo, nod
 	specialClaim := buildSpecialClaim(task.Pod)
 	specialClaim.Spec.Devices.Requests = deviceRequests
 
-	allocatedState, err := drap.manager.ResourceClaims().GatherAllocatedState()
-	if err != nil {
-		return fmt.Errorf("failed to gather allocated device state: %v", err)
-	}
-
-	slices, err := drap.manager.ResourceSlices().ListWithDeviceTaintRules()
-	if err != nil {
-		return fmt.Errorf("failed to list resource slices: %v", err)
-	}
-
-	allocator, err := structured.NewAllocator(
-		context.Background(), structured.Features{},
-		*allocatedState,
-		drap.manager.DeviceClasses(),
-		slices,
-		drap.celCache,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create allocator: %v", err)
-	}
-
-	results, err := allocator.Allocate(context.Background(), node, []*resourceapi.ResourceClaim{specialClaim})
+	results, err := drap.allocate(node, []*resourceapi.ResourceClaim{specialClaim})
 	if err != nil || len(results) == 0 {
 		return fmt.Errorf("failed to allocate extended resources on node %s: %v", node.Name, err)
 	}
@@ -423,6 +403,28 @@ func (drap *draPlugin) deallocateHandlerFn(_ *framework.Session) func(event *fra
 
 func (drap *draPlugin) OnSessionClose(_ *framework.Session) {}
 
+func (drap *draPlugin) allocate(node *v1.Node, claims []*resourceapi.ResourceClaim) ([]resourceapi.AllocationResult, error) {
+	allocatedState, err := drap.manager.ResourceClaims().GatherAllocatedState()
+	if err != nil {
+		return nil, fmt.Errorf("failed to gather allocated device state: %v", err)
+	}
+	slices, err := drap.manager.ResourceSlices().ListWithDeviceTaintRules()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list resource slices: %v", err)
+	}
+	allocator, err := structured.NewAllocator(
+		context.Background(), structured.Features{},
+		*allocatedState,
+		drap.manager.DeviceClasses(),
+		slices,
+		drap.celCache,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create allocator: %v", err)
+	}
+	return allocator.Allocate(context.Background(), node, claims)
+}
+
 func (drap *draPlugin) allocateResourceClaim(task *pod_info.PodInfo, podClaim *v1.PodResourceClaim, node *v1.Node) error {
 	claimName, err := resources.GetResourceClaimName(task.Pod, podClaim)
 	if err != nil {
@@ -446,37 +448,13 @@ func (drap *draPlugin) allocateResourceClaim(task *pod_info.PodInfo, podClaim *v
 	}
 
 	if claim.Status.Allocation == nil {
-		allocatedState, err := drap.manager.ResourceClaims().GatherAllocatedState()
-		if err != nil {
-			return fmt.Errorf("failed to list all allocated devices: %v", err)
-		}
-
-		resourceSlices, err := drap.manager.ResourceSlices().ListWithDeviceTaintRules()
-		if err != nil {
-			return fmt.Errorf("failed to list all resource slices: %v", err)
-		}
-
-		allocator, err := structured.NewAllocator(
-			context.Background(), structured.Features{},
-			*allocatedState,
-			drap.manager.DeviceClasses(),
-			resourceSlices,
-			drap.celCache,
-		)
-
-		if err != nil {
-			return fmt.Errorf("failed to create allocator: %v", err)
-		}
-
-		result, err := allocator.Allocate(context.Background(), node, []*resourceapi.ResourceClaim{claim})
+		result, err := drap.allocate(node, []*resourceapi.ResourceClaim{claim})
 		if err != nil {
 			return fmt.Errorf("failed to allocate resources: %v", err)
-
 		}
 		if result == nil {
 			return fmt.Errorf("failed to allocate resources: no allocation result")
 		}
-
 		claim.Status.Allocation = &result[0]
 	}
 
