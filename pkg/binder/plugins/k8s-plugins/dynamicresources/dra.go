@@ -68,13 +68,27 @@ func (drp *dynamicResourcesPlugin) Allocate(
 	return nil
 }
 
-// UnAllocate deletes the extended-resource claim created during Bind, if any.
+// UnAllocate deletes the extended-resource claim created during Bind, if any,
+// and clears the corresponding pod status field.
 func (drp *dynamicResourcesPlugin) UnAllocate(ctx context.Context, pod *corev1.Pod, _ string, _ ksf.CycleState) {
 	claim, err := drp.findExtendedResourceClaim(ctx, pod)
 	if err != nil || claim == nil {
 		return
 	}
 	_ = drp.client.ResourceV1().ResourceClaims(pod.Namespace).Delete(ctx, claim.Name, metav1.DeleteOptions{})
+	_ = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		current, err := drp.client.CoreV1().Pods(pod.Namespace).Get(ctx, pod.Name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		if current.Status.ExtendedResourceClaimStatus == nil {
+			return nil
+		}
+		updated := current.DeepCopy()
+		updated.Status.ExtendedResourceClaimStatus = nil
+		_, err = drp.client.CoreV1().Pods(pod.Namespace).UpdateStatus(ctx, updated, metav1.UpdateOptions{})
+		return err
+	})
 }
 
 // Bind binds Resource Claims to the task according to the allocation status from the bind request

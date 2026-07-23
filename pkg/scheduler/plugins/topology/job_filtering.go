@@ -62,10 +62,7 @@ func (t *topologyPlugin) subSetNodesFn(
 
 	tasksResources, tasksCount := getTasksAllocationMetadata(tasks)
 
-	var dbc *extendedresourcecache.ExtendedResourceCache
-	if t.session != nil {
-		dbc = t.session.ClusterInfo.DeviceClassByResource
-	}
+	dbc := t.session.ClusterInfo.DeviceClassByResource
 	if err := checkJobDomainFit(job, subGroup, tasksResources, tasksCount, domain, topologyTree.VectorMap, dbc); err != nil {
 		if domain.ID == rootDomainId {
 			job.AddSimpleJobFitError(
@@ -215,7 +212,7 @@ func calcSubTreeFreeResources(domain *DomainInfo) resource_info.ResourceVector {
 }
 
 func calcNodeAccommodation(jobAllocationMetaData *jobAllocationMetaData, node *node_info.NodeInfo) int {
-	maxPodVector := jobAllocationMetaData.maxPodResourcesVector
+	maxPodVector := jobAllocationMetaData.maxPodResourcesVector.Clone()
 
 	onePodOnlyVector := resource_info.NewResourceVector(node.VectorMap)
 	onePodOnlyVector.Set(resource_info.PodsIndex, 1)
@@ -237,31 +234,23 @@ func calcNodeAccommodation(jobAllocationMetaData *jobAllocationMetaData, node *n
 		nonAllocated.Set(resource_info.GPUIndex, nonAllocated.Get(resource_info.GPUIndex)+node.AvailableSharedGPUFractions())
 	}
 
-	// Zero out DRA-backed dims in a copy before the LessEqual check.
-	// On DRA-only nodes these dims have no device-plugin allocatable capacity, so
-	// leaving them in would always fail the check even when DRA can satisfy the request.
-	cmpMax := maxPodVector.Clone()
-	cmpFree := nonAllocated.Clone()
+	// Zero non-GPU DRA-backed dims: they are not tracked in node vectors, so leaving
+	// them in would always fail the check even when DRA can satisfy the request.
 	if node.DeviceClassByResource != nil {
-		for i := 0; i < len(cmpMax); i++ {
+		for i := 0; i < len(maxPodVector); i++ {
 			if i != resource_info.GPUIndex && node.DeviceClassByResource.GetDeviceClass(node.VectorMap.ResourceAt(i)) != nil {
-				cmpMax.Set(i, 0)
-				cmpFree.Set(i, 0)
+				maxPodVector.Set(i, 0)
+				nonAllocated.Set(i, 0)
 			}
 		}
 	}
-	if !cmpMax.LessEqual(cmpFree) {
+	if !maxPodVector.LessEqual(nonAllocated) {
 		return 0
 	}
 
 	minPods := math.MaxInt
 	for i := 0; i < len(maxPodVector); i++ {
 		if maxPodVector[i] <= 0 {
-			continue
-		}
-		// Skip non-GPU DRA-backed dims; they are not tracked in node vectors.
-		if i != resource_info.GPUIndex && node.DeviceClassByResource != nil &&
-			node.DeviceClassByResource.GetDeviceClass(node.VectorMap.ResourceAt(i)) != nil {
 			continue
 		}
 		pods := int(nonAllocated[i] / maxPodVector[i])
@@ -527,9 +516,9 @@ func getJobRatioToFreeResources(tasksResources resource_info.ResourceVector, dom
 		if i == resource_info.PodsIndex {
 			continue
 		}
-		// Non-GPU DRA-backed extended resources are not tracked in domain vectors; the DRA
+		// Non-GPU DRA-backed resources are not tracked in domain vectors; the DRA
 		// allocator handles fit — skip them to avoid falsely rejecting domains.
-		if i != resource_info.GPUIndex && i > resource_info.PodsIndex && dbc != nil && dbc.GetDeviceClass(vectorMap.ResourceAt(i)) != nil {
+		if i != resource_info.GPUIndex && dbc != nil && dbc.GetDeviceClass(vectorMap.ResourceAt(i)) != nil {
 			continue
 		}
 		var resourceRatio float64
