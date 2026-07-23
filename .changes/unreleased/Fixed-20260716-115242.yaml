@@ -1,6 +1,0 @@
-kind: Fixed
-body: Sanitize GPU-sharing volume names for pods with dots while preserving their ConfigMap references.
-time: 2026-07-16T11:52:42.597846522+02:00
-custom:
-    Author: ""
-    Issue: "1728"
