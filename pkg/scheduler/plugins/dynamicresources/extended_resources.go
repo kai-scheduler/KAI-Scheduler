@@ -96,4 +96,3 @@ func podExtendedResourcesNeedingDRA(
 	}
 	return result
 }
-
