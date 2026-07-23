@@ -21,8 +21,6 @@ import (
 // Not a valid API name, so it cannot conflict with real claims.
 const specialClaimInMemName = "<extended-resources>"
 
-// hasDeviceClassMappedExtendedResources returns true when any container in the pod
-// requests a resource that is mapped to a DeviceClass in dbc.
 func hasDeviceClassMappedExtendedResources(pod *v1.Pod, dbc *extendedresourcecache.ExtendedResourceCache) bool {
 	if dbc == nil {
 		return false
@@ -38,7 +36,6 @@ func hasDeviceClassMappedExtendedResources(pod *v1.Pod, dbc *extendedresourcecac
 	return false
 }
 
-// buildSpecialClaim creates the in-memory synthetic ResourceClaim for the pod.
 func buildSpecialClaim(pod *v1.Pod) *resourceapi.ResourceClaim {
 	return &resourceapi.ResourceClaim{
 		ObjectMeta: metav1.ObjectMeta{

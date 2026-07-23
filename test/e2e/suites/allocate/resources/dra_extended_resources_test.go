@@ -28,7 +28,6 @@ import (
 )
 
 const (
-	// draDeviceClassName is the driver name used by the fake-gpu-operator DRA plugin.
 	draDeviceClassName = "gpu.nvidia.com"
 	// extendedResourceName is the classic resource name advertised by the DeviceClass
 	// via spec.extendedResourceName. Pods use this to request DRA-backed GPUs without
@@ -56,11 +55,8 @@ var _ = Describe("Schedule pod with DRA-backed extended resource (KEP-5004)", Or
 		testCtx.InitQueues([]*v2.Queue{childQueue, parentQueue})
 		namespace = queue.GetConnectedNamespaceToQueue(childQueue)
 
-		// Require at least one DRA-capable node with ≥ 1 device.
 		capacity.SkipIfInsufficientDynamicResources(testCtx.KubeClientset, draDeviceClassName, 1, 1)
 
-		// Patch the DeviceClass to declare the extended resource name so that classic
-		// `nvidia.com/gpu: N` pod requests are routed through DRA on DRA-only nodes.
 		By("patching DeviceClass to set extendedResourceName")
 		patch, _ := json.Marshal(map[string]any{
 			"spec": map[string]any{
@@ -73,7 +69,6 @@ var _ = Describe("Schedule pod with DRA-backed extended resource (KEP-5004)", Or
 	})
 
 	AfterAll(func(ctx context.Context) {
-		// Revert the DeviceClass patch.
 		By("reverting DeviceClass extendedResourceName patch")
 		patch, _ := json.Marshal(map[string]any{
 			"spec": map[string]any{
@@ -177,8 +172,6 @@ var _ = Describe("Schedule pod with DRA-backed extended resource (KEP-5004)", Or
 	})
 
 	It("schedules a gang job (minMember=2) using extended resource syntax across DRA nodes", func(ctx context.Context) {
-		// Exercises the topology calcNodeAccommodation fix: non-GPU DRA extended resources
-		// must be zeroed in the capacity vector while GPU entries remain tracked.
 		capacity.SkipIfInsufficientDynamicResources(testCtx.KubeClientset, draDeviceClassName, 2, 1)
 
 		gpuReq := v1.ResourceRequirements{
@@ -246,15 +239,10 @@ var _ = Describe("Schedule pod with DRA-backed extended resource (KEP-5004)", Or
 		_, err := rd.CreatePod(ctx, testCtx.KubeClientset, pod)
 		Expect(err).NotTo(HaveOccurred())
 
-		// Should schedule: max(init=N, main=N) = N devices needed, N available.
 		wait.ForPodScheduled(ctx, testCtx.ControllerClient, pod)
 	})
 
 	It("schedules a pod on a device-plugin node when the resource is also DRA-backed on other nodes", func(ctx context.Context) {
-		// Verifies that a pod requesting nvidia.com/gpu (DRA-backed via DeviceClass
-		// extendedResourceName) lands cleanly on a device-plugin node where the resource
-		// is available via node.Status.Allocatable. The binder must not create a synthetic
-		// ResourceClaim for such a pod (it has no DRA allocation in the BindRequest).
 		dpNode := firstDevicePluginNodeWithGPU(testCtx)
 		if dpNode == "" {
 			Skip("no device-plugin node with " + extendedResourceName + " in allocatable found, skipping")
@@ -279,7 +267,6 @@ var _ = Describe("Schedule pod with DRA-backed extended resource (KEP-5004)", Or
 	})
 })
 
-// firstDRANode returns the name of any node that has DRA devices for draDeviceClassName.
 func firstDRANode(testCtx *testcontext.TestContext) string {
 	nodesMap := capacity.ListDevicesByNode(testCtx.KubeClientset, draDeviceClassName)
 	for name := range nodesMap {
@@ -289,9 +276,6 @@ func firstDRANode(testCtx *testcontext.TestContext) string {
 	return ""
 }
 
-// requireDRANode adds a required NodeAffinity so the pod is only placed on a DRA node
-// (one running the fake-gpu-operator DRA plugin). This forces the extended resource → DRA
-// code path and prevents the scheduler from falling back to device-plugin nodes.
 func requireDRANode(pod *v1.Pod) {
 	pod.Spec.Affinity = &v1.Affinity{
 		NodeAffinity: &v1.NodeAffinity{
@@ -308,7 +292,6 @@ func requireDRANode(pod *v1.Pod) {
 	}
 }
 
-// pinPodToNode adds a required NodeAffinity so the pod runs only on nodeName.
 func pinPodToNode(pod *v1.Pod, nodeName string) {
 	pod.Spec.Affinity = &v1.Affinity{
 		NodeAffinity: &v1.NodeAffinity{
@@ -325,9 +308,6 @@ func pinPodToNode(pod *v1.Pod, nodeName string) {
 	}
 }
 
-// requireDevicePluginNode adds a required NodeAffinity so the pod lands only on a
-// device-plugin node. This forces the classic allocatable path rather than DRA,
-// even when the requested resource is also DRA-backed on other nodes.
 func requireDevicePluginNode(pod *v1.Pod) {
 	pod.Spec.Affinity = &v1.Affinity{
 		NodeAffinity: &v1.NodeAffinity{
@@ -344,8 +324,6 @@ func requireDevicePluginNode(pod *v1.Pod) {
 	}
 }
 
-// firstDevicePluginNodeWithGPU returns the name of a device-plugin node that
-// advertises extendedResourceName in Status.Allocatable, or "" if none exists.
 func firstDevicePluginNodeWithGPU(testCtx *testcontext.TestContext) string {
 	nodes, err := testCtx.KubeClientset.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{
 		LabelSelector: fmt.Sprintf("%s=true", devicePluginNodeLabel),
@@ -361,8 +339,6 @@ func firstDevicePluginNodeWithGPU(testCtx *testcontext.TestContext) string {
 	return ""
 }
 
-// findExtendedResourceClaim returns the synthetic ResourceClaim created for podName
-// (annotated with ExtendedResourceClaimAnnotation), or nil if none exists yet.
 func findExtendedResourceClaim(ctx context.Context, testCtx *testcontext.TestContext, namespace, podName string) *resourceapi.ResourceClaim {
 	claims, err := testCtx.KubeClientset.ResourceV1().ResourceClaims(namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {

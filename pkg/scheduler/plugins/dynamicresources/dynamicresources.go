@@ -244,7 +244,6 @@ func (drap *draPlugin) filter(task *pod_info.PodInfo, _ *podgroup_info.PodGroupI
 		claimsToAllocate = append(claimsToAllocate, claim)
 	}
 
-	// Build a synthetic claim for DRA-backed extended resources if needed.
 	if hasDRAExtResources {
 		extResources := podExtendedResourcesNeedingDRA(task, nodeInfo, drap.deviceClassByResource)
 		if len(extResources) > 0 {

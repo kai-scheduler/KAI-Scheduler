@@ -472,7 +472,6 @@ func (ni *NodeInfo) addTaskResources(task *pod_info.PodInfo) {
 		resourcesToTrackVector.Set(resource_info.GPUIndex, 0)
 	}
 
-	// Zero out dims that this node has no allocatable capacity for.
 	// DRA-backed extended resources are absent from node.Status.Allocatable and must
 	// not be charged against the node's vector — the DRA allocator handles them.
 	for i := range len(resourcesToTrackVector) {

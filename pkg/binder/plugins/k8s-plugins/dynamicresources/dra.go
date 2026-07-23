@@ -206,7 +206,6 @@ func (drp *dynamicResourcesPlugin) bindExtendedResourceClaim(
 		claimName = created.Name
 	}
 
-	// Set allocation and ReservedFor on the claim status.
 	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		current, err := drp.client.ResourceV1().ResourceClaims(pod.Namespace).Get(ctx, claimName, metav1.GetOptions{})
 		if err != nil {
