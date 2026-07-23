@@ -71,8 +71,6 @@ func (drp *dynamicResourcesPlugin) Allocate(
 	return nil
 }
 
-// UnAllocate deletes the extended-resource claim created during Bind, if any,
-// and clears the corresponding pod status field.
 func (drp *dynamicResourcesPlugin) UnAllocate(ctx context.Context, pod *corev1.Pod, _ string, _ ksf.CycleState) {
 	claim, err := drp.findExtendedResourceClaim(ctx, pod)
 	if err != nil || claim == nil {

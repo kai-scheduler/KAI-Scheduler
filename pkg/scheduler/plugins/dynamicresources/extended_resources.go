@@ -63,16 +63,11 @@ func buildSpecialClaim(pod *v1.Pod) *resourceapi.ResourceClaim {
 // podExtendedResourcesNeedingDRA returns the set of extended resources that need
 // DRA allocation on the given node (i.e., they are DRA-backed AND the node has no
 // device-plugin capacity for them).
-// We scan raw pod container requests rather than the resource vector because some
-// DRA-backed resources (e.g. nvidia.com/gpu at GPUIndex) live below PodsIndex and
-// would be silently skipped by a vector-index scan starting at PodsIndex+1.
 func podExtendedResourcesNeedingDRA(
 	task *pod_info.PodInfo,
 	nodeInfo *node_info.NodeInfo,
 	dbc *extendedresourcecache.ExtendedResourceCache,
 ) map[v1.ResourceName]int64 {
-	// PodRequests aggregates correctly: sum for regular/sidecar containers,
-	// max for non-restartable init containers (which run sequentially).
 	podReqs := resourcehelper.PodRequests(task.Pod, resourcehelper.PodResourcesOptions{})
 	allocatable := nodeInfo.Node.Status.Allocatable
 	result := make(map[v1.ResourceName]int64)
@@ -80,8 +75,6 @@ func podExtendedResourcesNeedingDRA(
 		if dbc.GetDeviceClass(rName) == nil {
 			continue
 		}
-		// If the node advertises device-plugin capacity for this resource it is
-		// not a DRA-only dimension on this node; skip.
 		if allocAmt, ok := allocatable[rName]; ok && !allocAmt.IsZero() {
 			continue
 		}
