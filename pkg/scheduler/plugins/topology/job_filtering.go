@@ -62,7 +62,10 @@ func (t *topologyPlugin) subSetNodesFn(
 
 	tasksResources, tasksCount := getTasksAllocationMetadata(tasks)
 
-	dbc := t.session.ClusterInfo.DeviceClassByResource
+	var dbc *extendedresourcecache.ExtendedResourceCache
+	if t.session != nil {
+		dbc = t.session.ClusterInfo.DeviceClassByResource
+	}
 	if err := checkJobDomainFit(job, subGroup, tasksResources, tasksCount, domain, topologyTree.VectorMap, dbc); err != nil {
 		if domain.ID == rootDomainId {
 			job.AddSimpleJobFitError(
