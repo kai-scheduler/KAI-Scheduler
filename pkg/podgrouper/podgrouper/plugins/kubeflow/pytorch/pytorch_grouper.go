@@ -170,6 +170,15 @@ func buildWorkerSubGroups(
 			numSegments, maxAllowedSegmentation)
 	}
 
+	// No segment children — keep worker as a leaf so webhook leaf rules apply.
+	if numSegments == 0 {
+		return []*podgroup.SubGroupMetadata{{
+			Name:           strings.ToLower(replicaTypeWorker),
+			MinAvailable:   workerMinAvailable,
+			PodsReferences: podReferences,
+		}}, nil
+	}
+
 	segmentIndex, err := getPodSegmentIndex(pod, segmentSize)
 	if err != nil {
 		return nil, err
@@ -177,9 +186,10 @@ func buildWorkerSubGroups(
 
 	topologyConstraints := getSegmentTopologyConstraints(pod, replicaSpecs, topOwner)
 
+	// Parent SubGroups must use MinSubGroup (webhook rejects minMember on non-leaf).
 	subGroups := []*podgroup.SubGroupMetadata{{
-		Name:         strings.ToLower(replicaTypeWorker),
-		MinAvailable: workerMinAvailable,
+		Name:        strings.ToLower(replicaTypeWorker),
+		MinSubGroup: ptr.To(int32(numSegments)),
 	}}
 	for i := range numSegments {
 		subGroup := &podgroup.SubGroupMetadata{
