@@ -209,40 +209,44 @@ var _ = Describe("Schedule pod with DRA-backed extended resource (KEP-5004)", Or
 	})
 
 	It("aggregates init-container GPU requests correctly (max, not sum)", func(ctx context.Context) {
-		// PodRequests returns max(init containers) vs sum(regular containers).
-		// A pod with init=1 GPU and main=1 GPU needs only 1 device (max=1), not 2.
-		// This test verifies that podExtendedResourcesNeedingDRA uses PodRequests correctly.
+		// PodRequests uses max(init, main) not sum. Pick the DRA node with the fewest
+		// devices (N) and request N GPUs in both the init and main containers.
+		// Correct aggregation: max(N, N) = N ≤ N available → schedules.
+		// Incorrect sum:       N + N = 2N > N available → unschedulable.
 		nodesMap := capacity.ListDevicesByNode(testCtx.KubeClientset, draDeviceClassName)
-		var singleDeviceNode string
+		var targetNode string
+		deviceCount := 0
 		for name, count := range nodesMap {
-			if count == 1 {
-				singleDeviceNode = name
-				break
+			if targetNode == "" || count < deviceCount {
+				targetNode = name
+				deviceCount = count
 			}
 		}
-		if singleDeviceNode == "" {
-			Skip("no DRA node with exactly 1 device found; skipping init-container aggregation test")
+		if targetNode == "" {
+			Skip("no DRA nodes found; skipping init-container aggregation test")
 		}
 
-		gpu1 := v1.ResourceList{v1.ResourceName(extendedResourceName): resource.MustParse("1")}
+		gpuN := v1.ResourceList{
+			v1.ResourceName(extendedResourceName): resource.MustParse(fmt.Sprintf("%d", deviceCount)),
+		}
 		pod := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{
-			Requests: gpu1,
-			Limits:   gpu1,
+			Requests: gpuN,
+			Limits:   gpuN,
 		})
 		pod.Spec.InitContainers = []v1.Container{{
 			Name:            "init",
 			Image:           pod.Spec.Containers[0].Image,
 			Args:            []string{"true"},
-			Resources:       v1.ResourceRequirements{Requests: gpu1, Limits: gpu1},
+			Resources:       v1.ResourceRequirements{Requests: gpuN, Limits: gpuN},
 			SecurityContext: pod.Spec.Containers[0].SecurityContext,
 			ImagePullPolicy: v1.PullIfNotPresent,
 		}}
-		pinPodToNode(pod, singleDeviceNode)
+		pinPodToNode(pod, targetNode)
 
 		_, err := rd.CreatePod(ctx, testCtx.KubeClientset, pod)
 		Expect(err).NotTo(HaveOccurred())
 
-		// Should schedule: max(init=1, main=1) = 1 device needed, 1 available.
+		// Should schedule: max(init=N, main=N) = N devices needed, N available.
 		wait.ForPodScheduled(ctx, testCtx.ControllerClient, pod)
 	})
 
