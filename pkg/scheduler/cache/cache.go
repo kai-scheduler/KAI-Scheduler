@@ -43,14 +43,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	ksf "k8s.io/kube-scheduler/framework"
 
-	kubeaischedulerver "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned"
-	kubeaischedulerschema "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/scheme"
-	kubeaischedulerinfo "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/informers/externalversions"
-	enginelisters "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/listers/scheduling/v2alpha2"
-	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	featuregates "github.com/kai-scheduler/KAI-scheduler/pkg/common/feature_gates"
-	draversionawareclient "github.com/kai-scheduler/KAI-scheduler/pkg/common/resources/dra_version_aware_client"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
@@ -67,6 +60,13 @@ import (
 	k8splugins "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal/plugins"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
+	kubeaischedulerver "github.com/kai-scheduler/api/client/clientset/versioned"
+	kubeaischedulerschema "github.com/kai-scheduler/api/client/clientset/versioned/scheme"
+	kubeaischedulerinfo "github.com/kai-scheduler/api/client/informers/externalversions"
+	enginelisters "github.com/kai-scheduler/api/client/listers/scheduling/v2alpha2"
+	schedulingv1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
+	enginev2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
+	draversionawareclient "github.com/kai-scheduler/api/utilities/resources/dra_version_aware_client"
 )
 
 func init() {

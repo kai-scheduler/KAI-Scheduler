@@ -12,13 +12,13 @@ package cache
 import (
 	reflect "reflect"
 
-	v1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	api "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	eviction_info "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
 	pod_info "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	podgroup_info "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	data_lister "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/cluster_info/data_lister"
 	plugins "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal/plugins"
+	v1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
 	gomock "go.uber.org/mock/gomock"
 	v1 "k8s.io/api/core/v1"
 	informers "k8s.io/client-go/informers"
