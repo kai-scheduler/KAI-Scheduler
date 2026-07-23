@@ -103,10 +103,8 @@ func (su *defaultStatusUpdater) updatePodGroup(
 	}
 
 	if statusErr != nil || patchErr != nil {
-		// A NotFound (the pod group was deleted) or Conflict (the write targets a stale
-		// resource version) can never succeed on retry. Re-enqueuing such updates spins a
-		// tight retry loop that floods logs and the API server (#1945). Drop them; if a
-		// status update is still required, a fresh one is enqueued next scheduling cycle.
+		// Terminal errors can never succeed on retry. Drop the update; a fresh one is
+		// enqueued next scheduling cycle if still required.
 		statusRetryable := statusErr != nil && !isTerminalUpdateError(statusErr)
 		patchRetryable := patchErr != nil && !isTerminalUpdateError(patchErr)
 
@@ -151,9 +149,7 @@ func (su *defaultStatusUpdater) updatePodGroup(
 	}
 }
 
-// isTerminalUpdateError reports whether an error from a pod group status/patch write can
-// never succeed on retry: NotFound (the pod group was deleted) or Conflict (the write
-// targets a stale resource version).
+// isTerminalUpdateError reports whether an update error can never succeed on retry.
 func isTerminalUpdateError(err error) bool {
 	return apierrors.IsNotFound(err) || apierrors.IsConflict(err)
 }
