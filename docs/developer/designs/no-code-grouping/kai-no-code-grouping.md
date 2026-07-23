@@ -26,6 +26,15 @@ The Karta plugin translates the matched Karta definition into regular KAI
 PodGroup fields. KAI scheduling continues to operate on the generated PodGroup
 and does not need Karta-specific scheduling primitives.
 
+KAI imports Karta API and helper packages directly. It reads discovered Karta
+objects as Karta's `v1alpha1.Karta` type, builds a Karta
+`instructions.StructureSummary`, and delegates component inference, group-key
+extraction, filter evaluation, and scale calculation to Karta.
+
+KAI resolves `github.com/run-ai/karta` from the upstream module source and keeps
+Kubernetes API compatibility through v0.35 replaces for `k8s.io/api` and
+`k8s.io/apimachinery`.
+
 ## API Shape
 
 The Karta gang-scheduling instruction keeps the alpha `podGroups` format for
@@ -38,16 +47,23 @@ When both fields are present, `podGroup` takes precedence.
 
 package v1alpha1
 
+type OptimizationInstructions struct {
+	// GangScheduling defines how components should be grouped for gang scheduling.
+	// +kubebuilder:validation:Optional
+	GangScheduling *GangSchedulingInstruction `json:"gangScheduling,omitempty"`
+}
+
 type GangSchedulingInstruction struct {
 	// PodGroups defines the alpha grouping format that KAI still supports.
+	// This is deprecated and will be removed in a future release.
+	// Deprecated: Please use gangScheduling.podGroup instead.
 	// +listType=map
 	// +listMapKey=name
 	PodGroups []PodGroupDefinition `json:"podGroups,omitempty"`
 
-	// PodGroup defines the grouping, subgroup, and topology behavior used by
-	// the KAI-native Karta integration.
+	// PodGroupComponentsMapping defines the grouping, subgroup, and topology behavior.
 	// +kubebuilder:validation:Optional
-	PodGroup *PodGroupDefinitionV2 `json:"podGroup,omitempty"`
+	PodGroup *PodGroupComponentsMapping `json:"podGroup,omitempty"`
 }
 
 // PodGroupDefinition defines the alpha grouping format that KAI still supports.
@@ -81,24 +97,24 @@ type PodGroupMemberDefinition struct {
 	Filters []string `json:"filters,omitempty" jq:"validate"`
 }
 
-// PodGroupDefinitionV2 defines the KAI-native grouping format.
-type PodGroupDefinitionV2 struct {
+// PodGroupComponentsMapping defines how to create a pod group from a set of components.
+type PodGroupComponentsMapping struct {
 	// Name is the unique identifier for this pod group.
 	// +kubebuilder:validation:Required
 	Name string `json:"name"`
 
-	// SubGroups defines which Karta components should become KAI SubGroups.
+	// SubGroups defines which Karta components should become subGroups.
 	// +kubebuilder:validation:Optional
 	// +listType=map
 	// +listMapKey=componentName
-	SubGroups []SubGroupDefinition `json:"subGroups,omitempty"`
+	SubGroups []SubGroupComponentMapping `json:"subGroups,omitempty"`
 
 	// Topology defines the topology constraint for all workload pods.
 	// +kubebuilder:validation:Optional
 	Topology *TopologyConstraint `json:"topology,omitempty"`
 }
 
-type SubGroupDefinition struct {
+type SubGroupComponentMapping struct {
 	// ComponentName references a component defined in the Karta structure.
 	// +kubebuilder:validation:Required
 	ComponentName string `json:"componentName"`
@@ -132,13 +148,17 @@ type TopologyConstraint struct {
 | `podGroup.name` | PodGroup name suffix or grouping identity | The exact name still follows KAI pod-grouper naming rules. |
 | `podGroup.topology` | PodGroup topology constraint | Applies to all pods in the generated PodGroup. |
 | `podGroup.subGroups[].componentName` | SubGroup name and pod membership | One direct SubGroup is generated per listed component. |
-| Component `scaleDefinition.replicasPath` | SubGroup `minMember` | The component replica count defines the required members for that SubGroup. |
+| Component `scaleDefinition.minReplicasPath` or `scaleDefinition.replicasPath` | SubGroup `minMember` | Karta evaluates scale paths; KAI uses min replicas when available, otherwise replicas. |
 | Number of items in the list `podGroup.subGroups[]` | PodGroup `minSubGroup` | Set only when SubGroups are generated. |
 | `podGroup.subGroups[].topology` | SubGroup topology constraint | Applies only to pods that belong to the matching component. |
 
 KAI also preserves the standard metadata handled by the pod-grouper, including
 namespace, owner references, queue, priority, labels, annotations, and
 preemptibility.
+
+JQ paths are not evaluated by KAI code. They are part of the imported Karta API
+objects and are evaluated by Karta helpers such as `resource.PodQuerier`,
+`resource.ComponentFactory`, and `instructions.CalculateSubtreeScale`.
 
 ## Topology Behavior
 

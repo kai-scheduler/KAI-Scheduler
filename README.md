@@ -36,7 +36,7 @@ It can run alongside other schedulers installed on the cluster.
 - Bin Packing & Spread Scheduling: Optimize node usage either by minimizing fragmentation (bin-packing) or increasing resiliency and load balancing (spread scheduling).
 - [Workload Priority](docs/priority/README.md): Prioritize workloads effectively within queues.
 - [Separation of workload priority and preemptibility](https://github.com/kai-scheduler/KAI-scheduler/tree/main/docs/developer/designs/priority-preemptibility-separation): supports separation of workload priority and workloads preemptibility as two independent policies
-- [Hierarchical Queues](docs/queues/README.md): Manage workloads with two-level queue hierarchies for flexible organizational control.
+- [Hierarchical Queues](docs/queues/README.md): Apply quotas, limits, priorities, and fairness policies across multi-level queue hierarchies for flexible organizational control.
 - [Resource distribution](docs/fairness/README.md#resource-division-algorithm): Customize quotas, over-quota weights, limits, and priorities per queue.
 - [Fairness Policies](docs/fairness/README.md#reclaim-strategies): Ensure equitable resource distribution using Dominant Resource Fairness (DRF) and resource reclamation across queues.
 - [Time-based Fairshare](https://github.com/kai-scheduler/KAI-scheduler/tree/main/docs/time-based-fairshare): Over-time fair usage of resources, considering historical usage, time decay, and other parameters for fine-tuning.

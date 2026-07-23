@@ -169,6 +169,8 @@ spec:
       affinity:
         {{- toYaml .Values.podgrouper.affinity | nindent 8 }}
       {{- end }}
+    args:
+      genericKartaFallback: {{ .Values.podgrouper.genericKartaFallback }}
 
   podGroupController:
     service:
@@ -281,6 +283,13 @@ spec:
       affinity:
         {{- toYaml .Values.scheduler.affinity | nindent 8 }}
       {{- end }}
+      podDisruptionBudget:
+        {{- if hasKey .Values.scheduler.podDisruptionBudget "enabled" }}
+        enabled: {{ .Values.scheduler.podDisruptionBudget.enabled }}
+        {{- end }}
+        {{- if hasKey .Values.scheduler.podDisruptionBudget "maxUnavailable" }}
+        maxUnavailable: {{ .Values.scheduler.podDisruptionBudget.maxUnavailable }}
+        {{- end }}
     {{- if and .Values.scheduler.ports .Values.scheduler.ports.metricsPort }}
     schedulerService:
       port: {{ .Values.scheduler.ports.metricsPort }}

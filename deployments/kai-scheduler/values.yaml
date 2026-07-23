@@ -71,6 +71,7 @@ podgrouper:
     pullPolicy: IfNotPresent
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   queueLabelKey: "kai.scheduler/queue"
+  genericKartaFallback: true
   affinity: {}
 
 podgroupcontroller:
@@ -162,6 +163,11 @@ scheduler:
   actions: {}
   # Alpha/experimental scenario search time budgets. Values are Go duration strings.
   scenarioSearchBudgets: {}
+  # PDB is created only when scheduler replicas > 1 (global.replicaCount / scheduler.replicas).
+  # For HA: set operator.replicaCount: 2 (or override scheduler.replicas in Config).
+  podDisruptionBudget:
+    enabled: true
+    maxUnavailable: 1
 
 # defaultShard controls the chart-managed "default" SchedulingShard CR,
 # whose spec is populated from the scheduler.* values above.

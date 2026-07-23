@@ -158,6 +158,31 @@ func TestBuildArgsList(t *testing.T) {
 			},
 		},
 		{
+			name: "with generic Karta fallback disabled",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Global: &kaiv1.GlobalConfig{
+						SchedulerName:    ptr.To(constants.DefaultSchedulerName),
+						QueueLabelKey:    ptr.To(constants.DefaultQueueLabel),
+						NodePoolLabelKey: ptr.To(constants.DefaultNodePoolLabelKey),
+					},
+					PodGrouper: &pod_grouper.PodGrouper{
+						Replicas: ptr.To(int32(1)),
+						Args: &pod_grouper.Args{
+							GenericKartaFallback: ptr.To(false),
+						},
+						K8sClientConfig: &common.K8sClientConfig{},
+					},
+				},
+			},
+			expected: []string{
+				"--scheduler-name", constants.DefaultSchedulerName,
+				"--queue-label-key", constants.DefaultQueueLabel,
+				"--nodepool-label-key", constants.DefaultNodePoolLabelKey,
+				"--generic-karta-fallback=false",
+			},
+		},
+		{
 			name: "with leader election",
 			config: &kaiv1.Config{
 				Spec: kaiv1.ConfigSpec{
@@ -352,6 +377,7 @@ func TestDeploymentForKAIConfig(t *testing.T) {
 	assert.Contains(t, args, "--scheduler-name")
 	assert.Contains(t, args, "--queue-label-key")
 	assert.Contains(t, args, "--nodepool-label-key")
+	assert.Contains(t, args, "--generic-karta-fallback=true")
 }
 
 func TestServiceAccountForKAIConfig(t *testing.T) {

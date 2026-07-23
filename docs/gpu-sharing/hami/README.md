@@ -41,8 +41,8 @@ KAI Scheduler's GPU sharing feature allows multiple pods to share a single GPU, 
 
   ```bash
   helm install kai-scheduler oci://ghcr.io/nvidia/kai-scheduler \
-    --set scheduler.gpuSharing.enabled=true \
-    --set scheduler.gpuSharing.hamicoreEnabled=true \
+    --set global.gpuSharing=true \
+    --set binder.plugins.hamicore.enabled=true \
     --namespace kai-scheduler --create-namespace
   ```
 

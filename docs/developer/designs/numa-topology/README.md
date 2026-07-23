@@ -3,8 +3,9 @@
 ## Summary
 
 This document describes a v1 design for making KAI-Scheduler aware of per-NUMA-node
-resource topology, so that **Guaranteed-QoS workloads** are placed only on nodes where the
-kubelet's Topology Manager can actually align their resources.
+resource topology, so that workloads are placed only on nodes where the kubelet's Topology Manager
+can actually align their resources (devices/GPUs for any QoS class; cpu/memory only for
+Guaranteed-QoS pods).
 
 The scheduler consumes the [`NodeResourceTopology`][nrt-api] (NRT) CRD, which is published
 per-node by an external exporter (NFD topology-updater or the resource-topology-exporter).
@@ -226,12 +227,19 @@ the kubelet, which aligns them only for Guaranteed QoS.)
 
 ### `shouldHandle` gate
 
-The plugin engages for a task only when **both** hold (otherwise the predicate passes
-through):
+The plugin engages for a task on a `single-numa-node`/`restricted` node when the kubelet would
+NUMA-align any of its resources:
 
-- the node has a `NumaTopology` whose policy is `single-numa-node` or `restricted`, and
-- `task.Pod.Status.QOSClass == Guaranteed` — the QoS for which the kubelet Topology Manager runs
-  alignment at all.
+- **devices** (GPUs and other topology device-plugin resources) are aligned for **all** QoS classes,
+  so a non-Guaranteed task that requests one *is* handled (`requestsAlignedDevice` checks its
+  request vector against the node's non-cpu/memory `AwareIndices`); and
+- **cpu / memory / hugepages** are aligned only for **Guaranteed** pods.
+
+So `shouldHandle` engages a Guaranteed task unconditionally (it aligns on cpu at least) and a
+non-Guaranteed task iff it requests a topology-aware device. `alignedAware` then drops the
+cpu/memory/hugepages indices for non-Guaranteed tasks, so the evaluator constrains only what the
+kubelet actually aligns — exactly the `suitable(qos, r, ...)` rule below. (Gating the whole pod on
+`QOSClass == Guaranteed` was a bug: a Burstable GPU pod is kubelet-aligned but was passed through.)
 
 At this stage, aligning the GPU *fraction* (where relevant) itself is out of scope (see *Non-Goals*),
 but is feasible in the future.

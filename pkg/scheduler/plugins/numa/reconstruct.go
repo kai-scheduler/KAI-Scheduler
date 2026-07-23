@@ -4,9 +4,6 @@
 package numa
 
 import (
-	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
-
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
@@ -41,10 +38,6 @@ func (pp *numaPlugin) reconstructNodeAvailable(ssn *framework.Session) {
 // the starting point from which reconstructNodeAvailable subtracts pod placements.
 func resetAvailableToAllocatable(topo *node_info.NumaTopology) {
 	for _, zone := range topo.Zones {
-		available := make(map[v1.ResourceName]resource.Quantity, len(zone.Allocatable))
-		for r, qty := range zone.Allocatable {
-			available[r] = qty.DeepCopy()
-		}
-		zone.Available = available
+		zone.Available = zone.Allocatable.Clone()
 	}
 }

@@ -1,0 +1,3 @@
+kind: Fixed
+body: |-
+  Fix the MinNodeGPUMemoryMiB calculation in the scheduler. This affected allocations for fractional pod requesting gpu "gpu-memory". [#1792](https://github.com/kai-scheduler/KAI-Scheduler/issues/1792) [davidLif](https://github.com/davidLif)

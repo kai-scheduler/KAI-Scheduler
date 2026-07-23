@@ -23,6 +23,8 @@ import (
 	draclient "k8s.io/dynamic-resource-allocation/client"
 	resourceinstall "k8s.io/kubernetes/pkg/apis/resource/install"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	commonmath "github.com/kai-scheduler/KAI-scheduler/pkg/common/math"
 )
 
 func GetResourceClaimName(pod *v1.Pod, podClaim *v1.PodResourceClaim) (string, error) {
@@ -133,7 +135,7 @@ func ExtractDRAGPUResourcesFromClaims(podResourceClaims []*resourceapi.ResourceC
 			// Find the DeviceClassName for this claim
 			deviceClassName := getGPUDeviceClassNameFromClaim(claim)
 			if deviceClassName != "" {
-				deviceClassCounts[deviceClassName] += gpuCount
+				deviceClassCounts[deviceClassName] = commonmath.SaturatingAdd(deviceClassCounts[deviceClassName], gpuCount)
 			}
 		}
 	}
@@ -167,6 +169,10 @@ func getGPUDeviceClassNameFromClaim(claim *resourceapi.ResourceClaim) string {
 
 // countGPUDevicesFromClaim counts GPU devices from a ResourceClaim.
 // Returns the total count of GPU devices requested by this claim.
+//
+// Exactly.Count is user-controlled (the apiserver only enforces > 0), so counts
+// are summed with SaturatingAdd to keep a very large total from wrapping
+// into a negative GPU request in downstream quota accounting.
 func countGPUDevicesFromClaim(claim *resourceapi.ResourceClaim) int64 {
 	totalCount := int64(0)
 
@@ -182,16 +188,16 @@ func countGPUDevicesFromClaim(claim *resourceapi.ResourceClaim) int64 {
 		switch request.Exactly.AllocationMode {
 		case resourceapi.DeviceAllocationModeExactCount:
 			if request.Exactly.Count > 0 {
-				totalCount += request.Exactly.Count
+				totalCount = commonmath.SaturatingAdd(totalCount, request.Exactly.Count)
 			} else {
 				// Default to 1 if Count is not specified for ExactCount mode
-				totalCount += 1
+				totalCount = commonmath.SaturatingAdd(totalCount, 1)
 			}
 		case resourceapi.DeviceAllocationModeAll:
 			// For "All" mode, we can't determine the exact count without allocation info.
 			// For bookkeeping purposes, we'll treat it as requesting 1 device.
 			// This is a conservative estimate for queue resource tracking.
-			totalCount += 1
+			totalCount = commonmath.SaturatingAdd(totalCount, 1)
 		default:
 			// Unknown allocation mode, skip this request
 			continue

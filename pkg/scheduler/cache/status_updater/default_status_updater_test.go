@@ -387,6 +387,114 @@ func assertPodGroupConditions(t *testing.T, actualConditions, expectedConditions
 	}
 }
 
+type RemovePodGroupConditionTest struct {
+	name               string
+	podGroup           *enginev2alpha2.PodGroup
+	expectedConditions []enginev2alpha2.SchedulingCondition
+	expectedUpdated    bool
+}
+
+func TestRemovePodGroupSchedulingCondition(t *testing.T) {
+	unschedulable := func(nodePool string) enginev2alpha2.SchedulingCondition {
+		return enginev2alpha2.SchedulingCondition{
+			Type:         enginev2alpha2.UnschedulableOnNodePool,
+			NodePool:     nodePool,
+			Reason:       enginev2alpha2.PodGroupReasonUnschedulable,
+			Message:      "message",
+			TransitionID: "1",
+			Status:       v1.ConditionTrue,
+		}
+	}
+
+	for i, test := range []RemovePodGroupConditionTest{
+		{
+			name: "No conditions - nothing to remove",
+			podGroup: &enginev2alpha2.PodGroup{
+				Status: enginev2alpha2.PodGroupStatus{
+					SchedulingConditions: []enginev2alpha2.SchedulingCondition{},
+				},
+			},
+			expectedConditions: []enginev2alpha2.SchedulingCondition{},
+			expectedUpdated:    false,
+		},
+		{
+			name: "Single condition is removed once scheduled",
+			podGroup: &enginev2alpha2.PodGroup{
+				Status: enginev2alpha2.PodGroupStatus{
+					SchedulingConditions: []enginev2alpha2.SchedulingCondition{unschedulable("default")},
+				},
+			},
+			expectedConditions: []enginev2alpha2.SchedulingCondition{},
+			expectedUpdated:    true,
+		},
+		{
+			name: "All conditions across node pools are removed",
+			podGroup: &enginev2alpha2.PodGroup{
+				Status: enginev2alpha2.PodGroupStatus{
+					SchedulingConditions: []enginev2alpha2.SchedulingCondition{unschedulable("default"), unschedulable("pool-b")},
+				},
+			},
+			expectedConditions: []enginev2alpha2.SchedulingCondition{},
+			expectedUpdated:    true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Logf("Running test %d: %s", i, test.name)
+			updated := removePodGroupSchedulingCondition(test.podGroup)
+			assert.Equal(t, test.expectedUpdated, updated)
+			assertPodGroupConditions(t, test.podGroup.Status.SchedulingConditions, test.expectedConditions)
+		})
+	}
+}
+
+func TestClearPodGroupSchedulingCondition(t *testing.T) {
+	unschedulable := enginev2alpha2.SchedulingCondition{
+		Type:         enginev2alpha2.UnschedulableOnNodePool,
+		NodePool:     commonconstants.DefaultNodePoolName,
+		Reason:       enginev2alpha2.PodGroupReasonUnschedulable,
+		Message:      "message",
+		TransitionID: "1",
+		Status:       v1.ConditionTrue,
+	}
+
+	su := &defaultStatusUpdater{nodePoolLabelKey: nodePoolLabelKey}
+
+	for i, test := range []struct {
+		name            string
+		taskStatus      pod_status.PodStatus
+		expectedCleared bool
+	}{
+		{"allocated task keeps the condition until binding is confirmed", pod_status.Allocated, false},
+		{"binding task keeps the condition until binding is confirmed", pod_status.Binding, false},
+		{"pipelined task keeps the condition until binding is confirmed", pod_status.Pipelined, false},
+		{"bound task clears the condition", pod_status.Bound, true},
+		{"running task clears the condition", pod_status.Running, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Logf("Running test %d: %s", i, test.name)
+			job := &podgroup_info.PodGroupInfo{
+				PodGroup: &enginev2alpha2.PodGroup{
+					Status: enginev2alpha2.PodGroupStatus{
+						SchedulingConditions: []enginev2alpha2.SchedulingCondition{*unschedulable.DeepCopy()},
+					},
+				},
+				PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{
+					test.taskStatus: {"task-1": &pod_info.PodInfo{UID: "task-1", Status: test.taskStatus}},
+				},
+			}
+
+			cleared := su.clearPodGroupSchedulingCondition(job)
+
+			assert.Equal(t, test.expectedCleared, cleared)
+			if test.expectedCleared {
+				assert.Empty(t, job.PodGroup.Status.SchedulingConditions)
+			} else {
+				assert.Len(t, job.PodGroup.Status.SchedulingConditions, 1)
+			}
+		})
+	}
+}
+
 type UpdatePodGroupStaleTimeStampTest struct {
 	name               string
 	podGroup           *enginev2alpha2.PodGroup

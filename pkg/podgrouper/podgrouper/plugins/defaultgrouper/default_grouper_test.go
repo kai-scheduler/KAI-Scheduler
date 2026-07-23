@@ -31,9 +31,10 @@ func convertOwnerToPartial(owner *unstructured.Unstructured) *v12.PartialObjectM
 			Kind:       owner.GetKind(),
 		},
 		ObjectMeta: v12.ObjectMeta{
-			Name:      owner.GetName(),
-			Namespace: owner.GetNamespace(),
-			Labels:    owner.GetLabels(),
+			Name:        owner.GetName(),
+			Namespace:   owner.GetNamespace(),
+			Labels:      owner.GetLabels(),
+			Annotations: owner.GetAnnotations(),
 		},
 	}
 }
@@ -1166,55 +1167,55 @@ func TestCalcPodGroupPreemptibility(t *testing.T) {
 
 func TestCalcPodGroupPreemptionDelay(t *testing.T) {
 	tests := []struct {
-		name        string
-		ownerLabels map[string]interface{}
-		podLabels   map[string]string
-		expected    *v12.Duration
+		name             string
+		ownerAnnotations map[string]interface{}
+		podAnnotations   map[string]string
+		expected         *v12.Duration
 	}{
 		{
 			name: "valid delay from owner",
-			ownerLabels: map[string]interface{}{
+			ownerAnnotations: map[string]interface{}{
 				"kai.scheduler/preemption-delay": "5m",
 			},
 			expected: &v12.Duration{Duration: 5 * time.Minute},
 		},
 		{
 			name: "valid delay from pod",
-			podLabels: map[string]string{
+			podAnnotations: map[string]string{
 				"kai.scheduler/preemption-delay": "90s",
 			},
 			expected: &v12.Duration{Duration: 90 * time.Second},
 		},
 		{
 			name: "owner overrides pod",
-			ownerLabels: map[string]interface{}{
+			ownerAnnotations: map[string]interface{}{
 				"kai.scheduler/preemption-delay": "1h",
 			},
-			podLabels: map[string]string{
+			podAnnotations: map[string]string{
 				"kai.scheduler/preemption-delay": "5m",
 			},
 			expected: &v12.Duration{Duration: time.Hour},
 		},
 		{
 			name: "invalid owner value falls through to pod",
-			ownerLabels: map[string]interface{}{
+			ownerAnnotations: map[string]interface{}{
 				"kai.scheduler/preemption-delay": "abc",
 			},
-			podLabels: map[string]string{
+			podAnnotations: map[string]string{
 				"kai.scheduler/preemption-delay": "30s",
 			},
 			expected: &v12.Duration{Duration: 30 * time.Second},
 		},
 		{
 			name: "unit-less number is invalid",
-			podLabels: map[string]string{
+			podAnnotations: map[string]string{
 				"kai.scheduler/preemption-delay": "5",
 			},
 			expected: nil,
 		},
 		{
 			name: "negative duration is invalid",
-			podLabels: map[string]string{
+			podAnnotations: map[string]string{
 				"kai.scheduler/preemption-delay": "-3m",
 			},
 			expected: nil,
@@ -1232,18 +1233,18 @@ func TestCalcPodGroupPreemptionDelay(t *testing.T) {
 					"kind":       "test_kind",
 					"apiVersion": "test_version",
 					"metadata": map[string]interface{}{
-						"name":      "test_name",
-						"namespace": "test_namespace",
-						"uid":       "1",
-						"labels":    tt.ownerLabels,
+						"name":        "test_name",
+						"namespace":   "test_namespace",
+						"uid":         "1",
+						"annotations": tt.ownerAnnotations,
 					},
 				},
 			}
 
 			pod := &v1.Pod{}
-			if tt.podLabels != nil {
+			if tt.podAnnotations != nil {
 				pod.ObjectMeta = v12.ObjectMeta{
-					Labels: tt.podLabels,
+					Annotations: tt.podAnnotations,
 				}
 			}
 

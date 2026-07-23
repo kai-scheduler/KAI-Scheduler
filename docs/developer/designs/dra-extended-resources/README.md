@@ -149,7 +149,7 @@ sequenceDiagram
     participant B as Binder
     participant K as Kubernetes API
 
-    rect rgb(220, 230, 245)
+    rect
         note over S,K: Session Init
         S->>K: List DeviceClasses
         K-->>S: DeviceClasses with ExtendedResourceName
@@ -159,7 +159,7 @@ sequenceDiagram
         S->>N: AddDRAGPUs(count) for GPU DeviceClasses
     end
 
-    rect rgb(220, 230, 245)
+    rect
         note over S,K: PreFilter / Allocate Entry (per pod)
         S->>C: GetDeviceClass(resourceName) per container request
         C-->>S: non-nil means resource is DRA-backed
@@ -173,7 +173,7 @@ sequenceDiagram
         end
     end
 
-    rect rgb(220, 230, 245)
+    rect
         note over S,K: Filter / Fit Check (per node)
         S->>N: lessEqualVectorsExcludingGPU(task, node)
         N->>C: GetDeviceClass(dim) per scalar dim
@@ -186,13 +186,13 @@ sequenceDiagram
         D-->>S: allocation result node-specific
     end
 
-    rect rgb(220, 230, 245)
+    rect
         note over S,K: Reserve / addTaskResources
         S->>N: addTaskResources(task)
         note over N: Zero out dims where AllocatableVector==0 before subtracting from IdleVector
     end
 
-    rect rgb(210, 240, 210)
+    rect
         note over S,K: Binder — PreBind / Bind
         note over B: Receive BindRequest
         B->>K: Create ResourceClaim with annotation and pod owner
@@ -200,12 +200,6 @@ sequenceDiagram
         B->>K: Patch claim status — finalizer, allocation, pod reservation
         B->>K: Patch pod.Status.ExtendedResourceClaimStatus
         B->>K: Bind pod to node
-    end
-
-    rect rgb(255, 250, 220)
-        note over S,K: One-time guard removals
-        note over N: Remove guard node_info.go:316
-        note over S: Skip extended-resource-claim claims in ExtractDRAGPUResourcesFromClaims
     end
 ```
 

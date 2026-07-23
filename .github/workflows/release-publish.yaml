@@ -1,0 +1,90 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# Release, step 2 of 2 — Tag & Publish (automatic).
+#
+# Fires when a "release/prepare-*" PR from release-prepare.yaml is merged into main or a v*.*
+# branch. Reads the freshly-folded top section of CHANGELOG.md, creates the git tag, and creates
+# the GitHub Release with that section as the notes.
+
+name: Release — Tag & Publish
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+      - 'v*.*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Tag & create GitHub Release
+    if: >-
+      github.event.pull_request.merged == true &&
+      startsWith(github.event.pull_request.head.ref, 'release/prepare-')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout merged ${{ github.event.pull_request.base.ref }}
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+          fetch-depth: 0
+          fetch-tags: true
+          token: ${{ secrets.KAIBOT_TOKEN }}
+
+      - name: Derive version and release notes from CHANGELOG.md
+        id: notes
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+
+          # Top "## [VERSION] - date" heading is the version this PR just folded in.
+          VERSION="$(grep -m1 -oE '^## \[[^]]+\]' CHANGELOG.md | sed -E 's/^## \[(.+)\]/\1/')"
+          BRANCH_VERSION="${HEAD_REF#release/prepare-}"
+          if [ -z "$VERSION" ]; then
+            echo "::error::Could not read a version heading from CHANGELOG.md"; exit 1
+          fi
+          if [ "$VERSION" != "$BRANCH_VERSION" ]; then
+            echo "::error::CHANGELOG top version ($VERSION) != branch version ($BRANCH_VERSION)"; exit 1
+          fi
+          if git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null; then
+            echo "::error::Tag $VERSION already exists"; exit 1
+          fi
+
+          # Extract the body of the top section (everything after its heading, up to the next
+          # "## [" heading), trimming leading blank lines.
+          awk '
+            /^## \[/ { n++; if (n==1) next; if (n==2) exit }
+            n==1 { print }
+          ' CHANGELOG.md | sed '/./,$!d' > "${RUNNER_TEMP:-/tmp}/notes.md"
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Release $VERSION notes:"; cat "${RUNNER_TEMP:-/tmp}/notes.md"
+
+      - name: Create and push tag
+        env:
+          VERSION: ${{ steps.notes.outputs.version }}
+        run: |
+          set -euo pipefail
+          git config --local user.name "kai-release-bot"
+          git config --local user.email "action@github.com"
+          git tag "$VERSION"
+          git push origin "refs/tags/$VERSION"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.KAIBOT_TOKEN }}
+          VERSION: ${{ steps.notes.outputs.version }}
+        run: |
+          set -euo pipefail
+          gh release create "$VERSION" \
+            --title "$VERSION" \
+            --notes-file "${RUNNER_TEMP:-/tmp}/notes.md"

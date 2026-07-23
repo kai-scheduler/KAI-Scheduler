@@ -218,6 +218,8 @@ func (su *defaultStatusUpdater) RecordJobStatusEvent(job *podgroup_info.PodGroup
 			return err
 		}
 		updatePodgroupStatus = su.recordUnschedulablePodGroup(job)
+	} else {
+		updatePodgroupStatus = su.clearPodGroupSchedulingCondition(job)
 	}
 
 	if len(patchData) > 0 || updatePodgroupStatus {
@@ -448,6 +450,16 @@ func (su *defaultStatusUpdater) updatePodGroupSchedulingCondition(
 	return setPodGroupSchedulingCondition(podGroup, schedulingCondition)
 }
 
+func (su *defaultStatusUpdater) clearPodGroupSchedulingCondition(job *podgroup_info.PodGroupInfo) bool {
+	// Keep the condition until binding is confirmed, so a failed bind still leaves
+	// an explanation for why the pods were pending. An allocated/pipelined/binding
+	// task has a node assigned by the scheduler but is not yet bound.
+	if hasTasksAwaitingBind(job) {
+		return false
+	}
+	return removePodGroupSchedulingCondition(job.PodGroup)
+}
+
 func (su *defaultStatusUpdater) addNodePoolPrefixIfNeeded(job *podgroup_info.PodGroupInfo, msg string) string {
 	schedulingBackoff := utils.GetSchedulingBackoffValue(job.PodGroup.Spec.SchedulingBackoff)
 	if schedulingBackoff == utils.SingleSchedulingBackoff {
@@ -595,6 +607,31 @@ func equalSchedulingConditions(a, b *enginev2alpha2.SchedulingCondition) bool {
 		a.Reason == b.Reason &&
 		a.Message == b.Message &&
 		a.Status == b.Status
+}
+
+// bindInFlightStatuses are the states a task is in after the scheduler assigns it
+// a node but before binding is confirmed.
+var bindInFlightStatuses = []pod_status.PodStatus{
+	pod_status.Allocated,
+	pod_status.Pipelined,
+	pod_status.Binding,
+}
+
+func hasTasksAwaitingBind(job *podgroup_info.PodGroupInfo) bool {
+	for _, status := range bindInFlightStatuses {
+		if len(job.PodStatusIndex[status]) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func removePodGroupSchedulingCondition(podGroup *enginev2alpha2.PodGroup) bool {
+	if len(podGroup.Status.SchedulingConditions) == 0 {
+		return false
+	}
+	podGroup.Status.SchedulingConditions = nil
+	return true
 }
 
 func squashAndAppendConditionsForNodepool(podGroup *enginev2alpha2.PodGroup, schedulingCondition *enginev2alpha2.SchedulingCondition) {

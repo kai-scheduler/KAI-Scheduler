@@ -307,7 +307,7 @@ var _ = Describe("Topology", Ordered, func() {
 
 func createDistributedWorkload(ctx context.Context, testCtx *testcontext.TestContext,
 	podCount int, podResource v1.ResourceList, topologyConstraint v2alpha2.TopologyConstraint) []*v1.Pod {
-	_, _, pods, err := rd.CreateDistributedBatchJob(ctx, testCtx.ControllerClient, testCtx.Queues[0],
+	result, err := rd.CreateDistributedBatchJob(ctx, testCtx.ControllerClient, testCtx.Queues[0],
 		rd.DistributedBatchJobOptions{
 			Parallelism:        ptr.To(int32(podCount)),
 			NamePrefix:         "distributed-" + utils.GenerateRandomK8sName(5) + "-",
@@ -315,5 +315,5 @@ func createDistributedWorkload(ctx context.Context, testCtx *testcontext.TestCon
 			TopologyConstraint: &topologyConstraint,
 		})
 	Expect(err).To(Succeed())
-	return pods
+	return result.Pods
 }

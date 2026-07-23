@@ -26,6 +26,9 @@ tests:
           path: spec.podGrouper.service.enabled
           value: true
       - equal:
+          path: spec.podGrouper.args.genericKartaFallback
+          value: true
+      - equal:
           path: spec.podGroupController.service.enabled
           value: true
       - equal:
@@ -98,6 +101,14 @@ tests:
     asserts:
       - equal:
           path: spec.podGrouper.service.enabled
+          value: false
+
+  - it: should render podGrouper generic Karta fallback false when disabled
+    set:
+      podgrouper.genericKartaFallback: false
+    asserts:
+      - equal:
+          path: spec.podGrouper.args.genericKartaFallback
           value: false
 
   # ======================================

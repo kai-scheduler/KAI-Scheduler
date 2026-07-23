@@ -26,9 +26,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/topowner"
 )
 
-var (
-	logger = log.FromContext(context.Background())
-)
+var logger = log.FromContext(context.Background())
 
 type DefaultGrouper struct {
 	queueLabelKey    string
@@ -73,15 +71,16 @@ func (dg *DefaultGrouper) GetPodGroupMetadata(topOwner *unstructured.Unstructure
 			Name:       topOwner.GetName(),
 			UID:        topOwner.GetUID(),
 		},
-		Namespace:         pod.GetNamespace(),
-		Name:              dg.CalcPodGroupName(topOwner),
-		Annotations:       dg.CalcPodGroupAnnotations(topOwner, pod),
-		Labels:            dg.CalcPodGroupLabels(topOwner, pod),
-		Queue:             dg.CalcPodGroupQueue(topOwner, pod),
-		PriorityClassName: priorityClassName,
-		Preemptibility:    preemptibility,
-		PreemptionDelay:   dg.calcPodGroupPreemptionDelay(allOwners, pod),
-		MinAvailable:      1,
+		Namespace:            pod.GetNamespace(),
+		Name:                 dg.CalcPodGroupName(topOwner),
+		Annotations:          dg.CalcPodGroupAnnotations(topOwner, pod),
+		Labels:               dg.CalcPodGroupLabels(topOwner, pod),
+		Queue:                dg.CalcPodGroupQueue(topOwner, pod),
+		PriorityClassName:    priorityClassName,
+		Preemptibility:       preemptibility,
+		PreemptionDelay:      dg.calcPodGroupPreemptionDelay(allOwners, pod),
+		StalenessGracePeriod: dg.calcStalenessGracePeriod(allOwners, pod),
+		MinAvailable:         1,
 	}
 
 	annotations := topOwner.GetAnnotations()
@@ -167,7 +166,8 @@ func (dg *DefaultGrouper) calculateQueueName(topOwner *unstructured.Unstructured
 }
 
 func (dg *DefaultGrouper) CalcPodGroupPriorityClass(topOwner *unstructured.Unstructured, pod *v1.Pod,
-	defaultPriorityClassForJob string) string {
+	defaultPriorityClassForJob string,
+) string {
 	// Convert topOwner to PartialObjectMetadata for compatibility
 	ownerPartial := &metav1.PartialObjectMetadata{
 		TypeMeta: metav1.TypeMeta{
@@ -190,7 +190,8 @@ func (dg *DefaultGrouper) CalcPodGroupPriorityClass(topOwner *unstructured.Unstr
 // 3) final fallback to defaultPriorityClassForJob
 // Returns the resolved priority class name and the defaults mapping used (if any).
 func (dg *DefaultGrouper) calcPriorityClassWithDefaults(allOwners []*metav1.PartialObjectMetadata, pod *v1.Pod,
-	defaultPriorityClassForJob string) (string, map[string]workloadTypePriorityConfig) {
+	defaultPriorityClassForJob string,
+) (string, map[string]workloadTypePriorityConfig) {
 	// First, try to get priority class from explicit labels (owners/pod)
 	for _, owner := range allOwners {
 		priorityClassName := dg.calcPodGroupPriorityClass(owner, pod)
@@ -227,7 +228,8 @@ func (dg *DefaultGrouper) calcPriorityClassWithDefaults(allOwners []*metav1.Part
 func (dg *DefaultGrouper) calcPodGroupPreemptibilityWithDefaults(
 	allOwners []*metav1.PartialObjectMetadata,
 	pod *v1.Pod,
-	defaults map[string]workloadTypePriorityConfig) v2alpha2.Preemptibility {
+	defaults map[string]workloadTypePriorityConfig,
+) v2alpha2.Preemptibility {
 	// First, try to get preemptibility from explicit labels (owners/pod)
 	for _, owner := range allOwners {
 		if preemptibilityStr, found := owner.GetLabels()[constants.PreemptibilityLabelKey]; found {
@@ -273,23 +275,45 @@ func (dg *DefaultGrouper) calcPodGroupPreemptibilityWithDefaults(
 	return ""
 }
 
-// calcPodGroupPreemptionDelay reads the preemption-delay label from owners then the pod.
+// calcPodGroupPreemptionDelay reads the preemption-delay annotation from owners then the pod.
 // First valid value wins; invalid or negative durations are ignored with a warning.
 func (dg *DefaultGrouper) calcPodGroupPreemptionDelay(allOwners []*metav1.PartialObjectMetadata, pod *v1.Pod) *metav1.Duration {
 	for _, owner := range allOwners {
-		if delayStr, found := owner.GetLabels()[constants.PreemptionDelayLabelKey]; found {
+		if delayStr, found := owner.GetAnnotations()[constants.PreemptionDelayAnnotationKey]; found {
 			if delay, err := v2alpha2.ParsePreemptionDelay(delayStr); err == nil {
 				return delay
 			} else {
-				logger.Error(err, "Invalid preemption-delay label found on owner", "owner", owner.GetName(), "preemptionDelay", delayStr)
+				logger.Error(err, "Invalid preemption-delay annotation found on owner", "owner", owner.GetName(), "preemptionDelay", delayStr)
 			}
 		}
 	}
-	if delayStr, found := pod.GetLabels()[constants.PreemptionDelayLabelKey]; found {
+	if delayStr, found := pod.GetAnnotations()[constants.PreemptionDelayAnnotationKey]; found {
 		if delay, err := v2alpha2.ParsePreemptionDelay(delayStr); err == nil {
 			return delay
 		} else {
-			logger.Error(err, "Invalid preemption-delay label found on pod", "pod", pod.GetName(), "preemptionDelay", delayStr)
+			logger.Error(err, "Invalid preemption-delay annotation found on pod", "pod", pod.GetName(), "preemptionDelay", delayStr)
+		}
+	}
+	return nil
+}
+
+// calcPodGroupPreemptionDelay reads the staleness-grace-period annotation from owners then the pod.
+// First valid value wins; invalid durations are ignored with a warning.
+func (dg *DefaultGrouper) calcStalenessGracePeriod(allOwners []*metav1.PartialObjectMetadata, pod *v1.Pod) *metav1.Duration {
+	for _, owner := range allOwners {
+		if staleStr, found := owner.GetAnnotations()[constants.StalenessGracePeriodAnnotationKey]; found {
+			if stale, err := v2alpha2.ParseStalenessGracePeriod(staleStr); err == nil {
+				return stale
+			} else {
+				logger.Error(err, "Invalid staleness-grace-period annotation found on owner", "owner", owner.GetName(), "stalenessGracePeriod", staleStr)
+			}
+		}
+	}
+	if staleStr, found := pod.GetAnnotations()[constants.StalenessGracePeriodAnnotationKey]; found {
+		if stale, err := v2alpha2.ParseStalenessGracePeriod(staleStr); err == nil {
+			return stale
+		} else {
+			logger.Error(err, "Invalid staleness-grace-period annotation found on pod", "pod", pod.GetName(), "stalenessGracePeriod", staleStr)
 		}
 	}
 	return nil
