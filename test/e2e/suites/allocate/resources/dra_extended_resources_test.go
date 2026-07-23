@@ -12,6 +12,7 @@ import (
 	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/capacity"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/pod_group"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/utils"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
@@ -22,6 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -164,6 +166,74 @@ var _ = Describe("Schedule pod with DRA-backed extended resource (KEP-5004)", Or
 		_, err := rd.CreatePod(ctx, testCtx.KubeClientset, extra)
 		Expect(err).NotTo(HaveOccurred())
 		wait.ForPodUnschedulable(ctx, testCtx.ControllerClient, extra)
+	})
+
+	It("schedules a gang job (minMember=2) using extended resource syntax across DRA nodes", func(ctx context.Context) {
+		// Exercises the topology calcNodeAccommodation fix: non-GPU DRA extended resources
+		// must be zeroed in the capacity vector while GPU entries remain tracked.
+		capacity.SkipIfInsufficientDynamicResources(testCtx.KubeClientset, draDeviceClassName, 2, 1)
+
+		gpuReq := v1.ResourceRequirements{
+			Requests: v1.ResourceList{v1.ResourceName(extendedResourceName): resource.MustParse("1")},
+			Limits:   v1.ResourceList{v1.ResourceName(extendedResourceName): resource.MustParse("1")},
+		}
+
+		pgName := utils.GenerateRandomK8sName(10)
+		pg := pod_group.Create(namespace, pgName, testCtx.Queues[0].Name)
+		pg.Spec.MinMember = ptr.To(int32(2))
+		pg, err := testCtx.KubeAiSchedClientset.SchedulingV2alpha2().PodGroups(namespace).Create(ctx, pg, metav1.CreateOptions{})
+		Expect(err).NotTo(HaveOccurred())
+
+		// Pods are not pinned to a node — the scheduler must place them across DRA nodes.
+		var pods []*v1.Pod
+		for range 2 {
+			pod := rd.CreatePodObject(testCtx.Queues[0], gpuReq)
+			pod.Annotations[pod_group.PodGroupNameAnnotation] = pgName
+			pod.Labels[pod_group.PodGroupNameAnnotation] = pgName
+			pod, err = rd.CreatePod(ctx, testCtx.KubeClientset, pod)
+			Expect(err).NotTo(HaveOccurred())
+			pods = append(pods, pod)
+		}
+
+		wait.ForPodsScheduled(ctx, testCtx.ControllerClient, namespace, pods)
+	})
+
+	It("aggregates init-container GPU requests correctly (max, not sum)", func(ctx context.Context) {
+		// PodRequests returns max(init containers) vs sum(regular containers).
+		// A pod with init=1 GPU and main=1 GPU needs only 1 device (max=1), not 2.
+		// This test verifies that podExtendedResourcesNeedingDRA uses PodRequests correctly.
+		nodesMap := capacity.ListDevicesByNode(testCtx.KubeClientset, draDeviceClassName)
+		var singleDeviceNode string
+		for name, count := range nodesMap {
+			if count == 1 {
+				singleDeviceNode = name
+				break
+			}
+		}
+		if singleDeviceNode == "" {
+			Skip("no DRA node with exactly 1 device found; skipping init-container aggregation test")
+		}
+
+		gpu1 := v1.ResourceList{v1.ResourceName(extendedResourceName): resource.MustParse("1")}
+		pod := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{
+			Requests: gpu1,
+			Limits:   gpu1,
+		})
+		pod.Spec.InitContainers = []v1.Container{{
+			Name:            "init",
+			Image:           pod.Spec.Containers[0].Image,
+			Args:            []string{"true"},
+			Resources:       v1.ResourceRequirements{Requests: gpu1, Limits: gpu1},
+			SecurityContext: pod.Spec.Containers[0].SecurityContext,
+			ImagePullPolicy: v1.PullIfNotPresent,
+		}}
+		pinPodToNode(pod, singleDeviceNode)
+
+		_, err := rd.CreatePod(ctx, testCtx.KubeClientset, pod)
+		Expect(err).NotTo(HaveOccurred())
+
+		// Should schedule: max(init=1, main=1) = 1 device needed, 1 available.
+		wait.ForPodScheduled(ctx, testCtx.ControllerClient, pod)
 	})
 })
 
