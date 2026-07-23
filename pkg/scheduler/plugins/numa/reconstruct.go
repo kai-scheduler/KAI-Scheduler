@@ -9,7 +9,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 )
 
-// reconstructNodeAvailable discards each modeled node's NRT-reported per-zone Available and
+// reconstructNodeAvailable discards each scored node's NRT-reported per-zone Available and
 // recomputes it as Allocatable minus the placements of the pods currently consuming the node. NRT
 // Available lags across cycles (the exporter republishes on a delay, in both directions — missing a
 // just-bound pod or still counting a just-deleted one); Allocatable is static and the pod set is read
@@ -20,7 +20,7 @@ import (
 func (pp *numaPlugin) reconstructNodeAvailable(ssn *framework.Session) {
 	for _, node := range ssn.ClusterInfo.Nodes {
 		topo := node.NumaTopology
-		if topo == nil || !isModeledPolicy(topo.Policy) {
+		if topo == nil || !isScoredPolicy(topo.Policy) {
 			continue
 		}
 		resetAvailableToAllocatable(topo)
