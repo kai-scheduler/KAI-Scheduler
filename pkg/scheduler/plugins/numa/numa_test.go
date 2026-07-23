@@ -90,20 +90,48 @@ func TestParseIgnoreList(t *testing.T) {
 	}
 }
 
+// testVectorMap is the shared resource-vector map used to project test task requests; the core
+// indices (cpu/memory/gpu/pods) are seeded by NewResourceVectorMap, matching a topology's fresh map.
+var testVectorMap = resource_info.NewResourceVectorMap()
+
 // makeTask builds a minimal task with the given QoS, request type and whole-GPU count.
 func makeTask(qos v1.PodQOSClass, reqType pod_info.ResourceRequestType, gpus float64) *pod_info.PodInfo {
+	requests := v1.ResourceList{}
+	if gpus > 0 {
+		requests[gpu] = *resource.NewQuantity(int64(gpus), resource.DecimalSI)
+	}
 	return &pod_info.PodInfo{
 		ResourceRequestType: reqType,
 		GpuRequirement:      *resource_info.NewGpuResourceRequirementWithGpus(gpus, 0),
-		Pod:                 &v1.Pod{Status: v1.PodStatus{QOSClass: qos}},
+		VectorMap:           testVectorMap,
+		ResReqVector:        resource_info.NewResourceVectorFromResourceList(requests, testVectorMap),
+		Pod: &v1.Pod{
+			Status: v1.PodStatus{QOSClass: qos},
+			Spec:   v1.PodSpec{Containers: []v1.Container{{Resources: v1.ResourceRequirements{Requests: requests, Limits: requests}}}},
+		},
+	}
+}
+
+// makeBurstableTask builds a Burstable pod (requests only) with the given container requests.
+func makeBurstableTask(requests v1.ResourceList) *pod_info.PodInfo {
+	return &pod_info.PodInfo{
+		VectorMap:    testVectorMap,
+		ResReqVector: resource_info.NewResourceVectorFromResourceList(requests, testVectorMap),
+		Pod: &v1.Pod{
+			Status: v1.PodStatus{QOSClass: v1.PodQOSBurstable},
+			Spec:   v1.PodSpec{Containers: []v1.Container{{Resources: v1.ResourceRequirements{Requests: requests}}}},
+		},
 	}
 }
 
 func TestShouldHandle(t *testing.T) {
 	plugin := &numaPlugin{}
-	singleNUMA := &node_info.NumaTopology{Policy: node_info.TopologyPolicySingleNUMANode}
-	restricted := &node_info.NumaTopology{Policy: node_info.TopologyPolicyRestricted}
-	bestEffort := &node_info.NumaTopology{Policy: node_info.TopologyPolicyBestEffort}
+	gpuCPUZones := []node_info.NumaZoneSpec{numaZone("node-0", map[string]string{gpu: "4", "cpu": "8"})}
+	singleNUMA := numaTopology(node_info.TopologyPolicySingleNUMANode, node_info.TopologyScopePod, gpuCPUZones...)
+	restricted := numaTopology(node_info.TopologyPolicyRestricted, node_info.TopologyScopePod, gpuCPUZones...)
+	bestEffort := numaTopology(node_info.TopologyPolicyBestEffort, node_info.TopologyScopePod, gpuCPUZones...)
+	cpuOnlyNode := numaTopology(node_info.TopologyPolicyRestricted, node_info.TopologyScopePod,
+		numaZone("node-0", map[string]string{"cpu": "8"}))
 
 	tests := map[string]struct {
 		task     *pod_info.PodInfo
@@ -122,8 +150,14 @@ func TestShouldHandle(t *testing.T) {
 		"best-effort policy passes through": {
 			task: makeTask(v1.PodQOSGuaranteed, pod_info.RequestTypeRegular, 1), topo: bestEffort, expected: false,
 		},
-		"non-guaranteed QoS passes through": {
-			task: makeTask(v1.PodQOSBurstable, pod_info.RequestTypeRegular, 1), topo: singleNUMA, expected: false,
+		"non-guaranteed GPU pod is handled (device alignment is QoS-independent)": {
+			task: makeTask(v1.PodQOSBurstable, pod_info.RequestTypeRegular, 1), topo: singleNUMA, expected: true,
+		},
+		"non-guaranteed cpu-only pod passes through (cpu aligns only for Guaranteed)": {
+			task: makeBurstableTask(v1.ResourceList{v1.ResourceCPU: resource.MustParse("2")}), topo: restricted, expected: false,
+		},
+		"non-guaranteed GPU pod on a node that doesn't track gpu per-zone passes through": {
+			task: makeTask(v1.PodQOSBurstable, pod_info.RequestTypeRegular, 1), topo: cpuOnlyNode, expected: false,
 		},
 		"best-effort QoS passes through": {
 			task: makeTask(v1.PodQOSBestEffort, pod_info.RequestTypeRegular, 0), topo: singleNUMA, expected: false,
@@ -173,8 +207,8 @@ func TestOnSessionOpenRegistersWithoutState(t *testing.T) {
 	), "node without topology is a pass-through")
 }
 
-// gPod builds a Guaranteed single-container task on node-a with the given requests.
-func gPod(uid string, requests map[string]string) *pod_info.PodInfo {
+// makeGuaranteedTask builds a Guaranteed single-container task on node-a with the given requests.
+func makeGuaranteedTask(uid string, requests map[string]string) *pod_info.PodInfo {
 	rl := v1.ResourceList{}
 	for name, qty := range requests {
 		rl[v1.ResourceName(name)] = resource.MustParse(qty)
@@ -190,6 +224,25 @@ func gPod(uid string, requests map[string]string) *pod_info.PodInfo {
 			Spec:   v1.PodSpec{Containers: []v1.Container{{Resources: v1.ResourceRequirements{Requests: rl}}}},
 		},
 	}
+}
+
+// TestNonGuaranteedIgnoresCPU verifies the evaluator drops cpu/memory for a non-Guaranteed task (the
+// kubelet aligns them only for Guaranteed pods) and constrains only devices: a GPU+cpu request whose
+// widths disagree rejects as Guaranteed but admits as Burstable, where only the GPU is aligned.
+func TestNonGuaranteedIgnoresCPU(t *testing.T) {
+	pp, _, node := wiredPlugin(numaTopology(node_info.TopologyPolicyRestricted, node_info.TopologyScopePod,
+		numaZone("node-0", map[string]string{gpu: "4", "cpu": "8"}),
+		numaZone("node-1", map[string]string{gpu: "4", "cpu": "8"}),
+	))
+
+	t.Run("guaranteed rejects on gpu/cpu width disagreement", func(t *testing.T) {
+		// 6 GPU -> width 2, 4 cpu -> width 1: no common width.
+		assert.False(t, pp.allocatable(makeGuaranteedTask("g", map[string]string{gpu: "6", "cpu": "4"}), node))
+	})
+	t.Run("burstable admits: cpu is not kubelet-aligned, only gpu constrains", func(t *testing.T) {
+		assert.True(t, pp.allocatable(makeBurstableTask(req(gpu, "6", "cpu", "4")), node),
+			"cpu must be ignored for a non-Guaranteed pod, leaving only the width-2 GPU request")
+	})
 }
 
 func TestBuildNumaRequests(t *testing.T) {
@@ -278,11 +331,11 @@ func TestPredicate(t *testing.T) {
 		numaZone("node-1", map[string]string{"cpu": "4"}),
 	))
 
-	assert.NoError(t, pp.predicate(gPod("fits", map[string]string{"cpu": "3"}), nil, node))
-	assert.Error(t, pp.predicate(gPod("too-big", map[string]string{"cpu": "5"}), nil, node),
+	assert.NoError(t, pp.predicate(makeGuaranteedTask("fits", map[string]string{"cpu": "3"}), nil, node))
+	assert.Error(t, pp.predicate(makeGuaranteedTask("too-big", map[string]string{"cpu": "5"}), nil, node),
 		"5 cpu cannot fit a single 4-cpu NUMA zone under single-numa-node")
 
-	assert.NoError(t, pp.predicate(gPod("nonode", map[string]string{"cpu": "5"}), nil, &node_info.NodeInfo{Name: "no-topology"}),
+	assert.NoError(t, pp.predicate(makeGuaranteedTask("nonode", map[string]string{"cpu": "5"}), nil, &node_info.NodeInfo{Name: "no-topology"}),
 		"nodes without NRT pass through")
 }
 
@@ -292,13 +345,13 @@ func TestInCycleReservation(t *testing.T) {
 	))
 	avail := func() int64 { return zoneAvail(node.NumaTopology, 0, "cpu") }
 
-	first := gPod("first", map[string]string{"cpu": "3"})
+	first := makeGuaranteedTask("first", map[string]string{"cpu": "3"})
 	first.NUMAPlacement = pp.placement(first, node) // stamped before the op, as the allocation path does
 	pp.allocate(&framework.Event{Task: first})
 	assert.Equal(t, int64(1), avail(), "zone charged by the first pod")
 	assert.Equal(t, []int{0}, first.NUMAPlacement.ZoneIndices(), "placement recorded on the task (zone 0)")
 
-	second := gPod("second", map[string]string{"cpu": "3"})
+	second := makeGuaranteedTask("second", map[string]string{"cpu": "3"})
 	assert.Error(t, pp.predicate(second, nil, node), "only 1 cpu left in the single zone")
 
 	pp.deallocate(&framework.Event{Task: first})
@@ -314,7 +367,7 @@ func TestAllocateReusesExistingPlacement(t *testing.T) {
 		numaZone("node-0", map[string]string{"cpu": "4"}),
 		numaZone("node-1", map[string]string{"cpu": "4"}),
 	))
-	task := gPod("seeded", map[string]string{"cpu": "3"})
+	task := makeGuaranteedTask("seeded", map[string]string{"cpu": "3"})
 	task.NUMAPlacement = pod_info.NUMAPlacement{
 		{ZoneIndex: 1, Amount: v1.ResourceList{"cpu": resource.MustParse("3")}},
 	}
@@ -407,27 +460,27 @@ func TestSeedObservedPlacements(t *testing.T) {
 	)
 
 	// Seeded from the observed annotation.
-	withObserved := gPod("observed", map[string]string{"cpu": "2"})
+	withObserved := makeGuaranteedTask("observed", map[string]string{"cpu": "2"})
 	withObserved.Pod.Annotations = map[string]string{commonconstants.NumaPlacementObserved: observedAnnotation(observedZone("node-1", "2"))}
 
 	// Seeded from the BindRequest (no annotation), read via the session's clone-independent map.
-	fromBindRequest := gPod("from-bind-request", map[string]string{"cpu": "2"})
+	fromBindRequest := makeGuaranteedTask("from-bind-request", map[string]string{"cpu": "2"})
 	fromBindRequest.Pod.Namespace, fromBindRequest.Pod.Name = "ns", "from-bind-request"
 
-	alreadyPlaced := gPod("already", map[string]string{"cpu": "2"})
+	alreadyPlaced := makeGuaranteedTask("already", map[string]string{"cpu": "2"})
 	alreadyPlaced.Pod.Annotations = map[string]string{commonconstants.NumaPlacementObserved: observedAnnotation(observedZone("node-1", "2"))}
 	alreadyPlaced.NUMAPlacement = pod_info.NUMAPlacement{{ZoneIndex: 0, Amount: v1.ResourceList{"cpu": resource.MustParse("2")}}}
 
-	noRecord := gPod("none", map[string]string{"cpu": "2"})
+	noRecord := makeGuaranteedTask("none", map[string]string{"cpu": "2"})
 
-	unknownZone := gPod("unknown-zone", map[string]string{"cpu": "2"})
+	unknownZone := makeGuaranteedTask("unknown-zone", map[string]string{"cpu": "2"})
 	unknownZone.Pod.Annotations = map[string]string{commonconstants.NumaPlacementObserved: observedAnnotation(observedZone("node-9", "2"))}
 
-	burstable := gPod("burstable", map[string]string{"cpu": "2"})
+	burstable := makeGuaranteedTask("burstable", map[string]string{"cpu": "2"})
 	burstable.Pod.Status.QOSClass = v1.PodQOSBurstable
 	burstable.Pod.Annotations = map[string]string{commonconstants.NumaPlacementObserved: observedAnnotation(observedZone("node-1", "2"))}
 
-	pending := gPod("pending", map[string]string{"cpu": "2"})
+	pending := makeGuaranteedTask("pending", map[string]string{"cpu": "2"})
 	pending.NodeName = ""
 	pending.Pod.Annotations = map[string]string{commonconstants.NumaPlacementObserved: observedAnnotation(observedZone("node-1", "2"))}
 
