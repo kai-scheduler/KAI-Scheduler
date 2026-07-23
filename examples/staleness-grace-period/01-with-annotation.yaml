@@ -1,0 +1,24 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: stale-grace-annotation-demo
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: stale-gang-ann-pod-0
+  namespace: stale-grace-annotation-demo
+  labels:
+    kai.scheduler/queue: default-queue
+  annotations:
+    kai.scheduler/staleness-grace-period: "5s"
+spec:
+  schedulerName: kai-scheduler
+  containers:
+    - name: main
+      image: registry.k8s.io/pause:3.9
+      resources:
+        requests: { cpu: 100m, memory: 64Mi }
+        limits: { cpu: 100m, memory: 64Mi }

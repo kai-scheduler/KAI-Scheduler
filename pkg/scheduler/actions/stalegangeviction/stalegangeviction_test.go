@@ -9,6 +9,7 @@ import (
 
 	. "go.uber.org/mock/gomock"
 	"gopkg.in/h2non/gock.v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/stalegangeviction"
@@ -396,6 +397,314 @@ func TestStaleGangEviction(t *testing.T) {
 				Mocks: &test_utils.TestMock{
 					CacheRequirements: &test_utils.CacheMocking{
 						NumberOfCacheEvictions: 0,
+					},
+				},
+			},
+		},
+		{
+			name: "Per-job grace period shorter than global default - evict",
+			topology: test_utils.TestTopologyBasic{
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:      "job-1",
+						QueueName: "q-1",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								Name:     "job-1-0",
+								State:    pod_status.Running,
+								NodeName: "node-1",
+							},
+							{
+								Name:     "job-1-1",
+								State:    pod_status.Failed,
+								NodeName: "node-1",
+							},
+						},
+						StaleDuration:              pointer.Duration(30 * time.Second),
+						PerJobStalenessGracePeriod: &metav1.Duration{Duration: 10 * time.Second},
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node-1": {},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{
+						Name:        "q-1",
+						ParentQueue: "d-1",
+					},
+				},
+				Departments: []test_utils.TestDepartmentBasic{
+					{
+						Name: "d-1",
+					},
+				},
+				TaskExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"job-1-0": {
+						NodeName: "node-1",
+						Status:   pod_status.Releasing,
+					},
+					"job-1-1": {
+						NodeName: "node-1",
+						Status:   pod_status.Failed,
+					},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{
+						NumberOfCacheBinds:      0,
+						NumberOfCacheEvictions:  1,
+						NumberOfPipelineActions: 0,
+					},
+				},
+			},
+		},
+		{
+			name: "Per-job grace period longer than global default - no evict",
+			topology: test_utils.TestTopologyBasic{
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:      "job-1",
+						QueueName: "q-1",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								Name:     "job-1-0",
+								State:    pod_status.Running,
+								NodeName: "node-1",
+							},
+							{
+								Name:     "job-1-1",
+								State:    pod_status.Failed,
+								NodeName: "node-1",
+							},
+						},
+						StaleDuration:              pointer.Duration(61 * time.Second),
+						PerJobStalenessGracePeriod: &metav1.Duration{Duration: 120 * time.Second},
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node-1": {},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{
+						Name:        "q-1",
+						ParentQueue: "d-1",
+					},
+				},
+				Departments: []test_utils.TestDepartmentBasic{
+					{
+						Name: "d-1",
+					},
+				},
+				TaskExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"job-1-0": {
+						NodeName: "node-1",
+						Status:   pod_status.Running,
+					},
+					"job-1-1": {
+						NodeName: "node-1",
+						Status:   pod_status.Failed,
+					},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{
+						NumberOfCacheBinds:      0,
+						NumberOfCacheEvictions:  0,
+						NumberOfPipelineActions: 0,
+					},
+				},
+			},
+		},
+		{
+			name: "Negative per-job grace period - no evict",
+			topology: test_utils.TestTopologyBasic{
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:      "job-1",
+						QueueName: "q-1",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								Name:     "job-1-0",
+								State:    pod_status.Running,
+								NodeName: "node-1",
+							},
+							{
+								Name:     "job-1-1",
+								State:    pod_status.Failed,
+								NodeName: "node-1",
+							},
+						},
+						StaleDuration:              pointer.Duration(120 * time.Second),
+						PerJobStalenessGracePeriod: &metav1.Duration{Duration: -1 * time.Second},
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node-1": {},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{
+						Name:        "q-1",
+						ParentQueue: "d-1",
+					},
+				},
+				Departments: []test_utils.TestDepartmentBasic{
+					{
+						Name: "d-1",
+					},
+				},
+				TaskExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"job-1-0": {
+						NodeName: "node-1",
+						Status:   pod_status.Running,
+					},
+					"job-1-1": {
+						NodeName: "node-1",
+						Status:   pod_status.Failed,
+					},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{
+						NumberOfCacheBinds:      0,
+						NumberOfCacheEvictions:  0,
+						NumberOfPipelineActions: 0,
+					},
+				},
+			},
+		},
+		{
+			name: "Zero per-job grace period - immediate evict",
+			topology: test_utils.TestTopologyBasic{
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:      "job-1",
+						QueueName: "q-1",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								Name:     "job-1-0",
+								State:    pod_status.Running,
+								NodeName: "node-1",
+							},
+							{
+								Name:     "job-1-1",
+								State:    pod_status.Failed,
+								NodeName: "node-1",
+							},
+						},
+						StaleDuration:              pointer.Duration(1 * time.Second),
+						PerJobStalenessGracePeriod: &metav1.Duration{Duration: 0},
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node-1": {},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{
+						Name:        "q-1",
+						ParentQueue: "d-1",
+					},
+				},
+				Departments: []test_utils.TestDepartmentBasic{
+					{
+						Name: "d-1",
+					},
+				},
+				TaskExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"job-1-0": {
+						NodeName: "node-1",
+						Status:   pod_status.Releasing,
+					},
+					"job-1-1": {
+						NodeName: "node-1",
+						Status:   pod_status.Failed,
+					},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{
+						NumberOfCacheBinds:      0,
+						NumberOfCacheEvictions:  1,
+						NumberOfPipelineActions: 0,
+					},
+				},
+			},
+		},
+		{
+			name: "Per-job grace period with subgroups - evict only allocated",
+			topology: test_utils.TestTopologyBasic{
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:      "job-1",
+						QueueName: "q-1",
+						RootSubGroupSet: func() *subgroup_info.SubGroupSet {
+							root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+							root.AddPodSet(subgroup_info.NewPodSet("sub-group-0", 2, nil))
+							root.AddPodSet(subgroup_info.NewPodSet("sub-group-1", 1, nil))
+							return root
+						}(),
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								Name:         "job-1-0",
+								SubGroupName: "sub-group-0",
+								State:        pod_status.Running,
+								NodeName:     "node-1",
+							},
+							{
+								Name:         "job-1-1",
+								SubGroupName: "sub-group-0",
+								State:        pod_status.Running,
+								NodeName:     "node-1",
+							},
+							{
+								Name:         "job-1-2",
+								SubGroupName: "sub-group-0",
+								State:        pod_status.Running,
+								NodeName:     "node-1",
+							},
+							{
+								Name:         "job-1-3",
+								SubGroupName: "sub-group-1",
+								State:        pod_status.Failed,
+								NodeName:     "node-1",
+							},
+						},
+						StaleDuration:              pointer.Duration(61 * time.Second),
+						PerJobStalenessGracePeriod: &metav1.Duration{Duration: 5 * time.Second},
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node-1": {},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{
+						Name:        "q-1",
+						ParentQueue: "d-1",
+					},
+				},
+				Departments: []test_utils.TestDepartmentBasic{
+					{
+						Name: "d-1",
+					},
+				},
+				TaskExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"job-1-0": {
+						NodeName: "node-1",
+						Status:   pod_status.Releasing,
+					},
+					"job-1-1": {
+						NodeName: "node-1",
+						Status:   pod_status.Releasing,
+					},
+					"job-1-2": {
+						NodeName: "node-1",
+						Status:   pod_status.Releasing,
+					},
+					"job-1-3": {
+						NodeName: "node-1",
+						Status:   pod_status.Failed,
+					},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{
+						NumberOfCacheBinds:      0,
+						NumberOfCacheEvictions:  3,
+						NumberOfPipelineActions: 0,
 					},
 				},
 			},

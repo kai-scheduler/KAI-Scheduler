@@ -1,0 +1,6 @@
+kind: Added
+body: override stale gang eviction grace period
+time: 2026-07-19T11:43:07.795476145+02:00
+custom:
+    Author: thebhdn
+    Issue: "1913"
