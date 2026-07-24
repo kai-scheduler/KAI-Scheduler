@@ -97,8 +97,8 @@ To use KAI scheduler with your workloads, configure the following fields in your
 | [TFJob](#tfjob-kubeflow-training-operator) | Gang | Kubeflow Training Operator | [tfjob.yaml](../../examples/batch/tfjob.yaml) |
 | [XGBoostJob](#xgboostjob-kubeflow-training-operator) | Gang | Kubeflow Training Operator | [xgboostjob.yaml](../../examples/batch/xgboostjob.yaml) |
 | [JAXJob](#jaxjob-kubeflow-training-operator) | Gang | Kubeflow Training Operator | [jaxjob.yaml](../../examples/batch/jaxjob.yaml) |
-| [RayJob](#rayjob-kuberay-operator) | Gang | KubeRay Operator | [rayjob.yaml](../../examples/batch/rayjob.yaml) |
-| [RayCluster](#raycluster-kuberay-operator) | Gang | KubeRay Operator | [raycluster.yaml](../../examples/batch/raycluster.yaml) |
+| [RayJob](#rayjob-kuberay-operator) | Gang | KubeRay Operator | [rayjob.yaml](../../examples/ray/rayjob.yaml) |
+| [RayCluster](#raycluster-kuberay-operator) | Gang | KubeRay Operator | [raycluster.yaml](../../examples/ray/raycluster.yaml) |
 | [JobSet](#jobset-kubernetes-sig) | Gang | JobSet Controller | [jobset.yaml](../../examples/batch/jobset.yaml) |
 | [TrainJob](#trainjob-kubeflow-trainer-v2) | Gang | Kubeflow Trainer v2 | [jobset.yaml](../../examples/batch/jobset.yaml) *(JobSet reference)* |
 | [SparkApplication](#sparkapplication-spark-operator) | Gang | Spark Operator | [sparkapplication.yaml](../../examples/batch/sparkapplication.yaml) |
@@ -163,8 +163,8 @@ RayJob enables distributed computing and machine learning workloads using the Ra
 
 - **Scheduling Behavior:** Gang scheduling (all pods in the Ray cluster scheduled together)
 - **External Requirements:** Requires [KubeRay Operator](https://docs.ray.io/en/latest/cluster/kubernetes/index.html) - See [installation guide](https://docs.ray.io/en/latest/cluster/kubernetes/getting-started/kuberay-operator-installation.html)
-- **Example:** [examples/batch/rayjob.yaml](../../examples/batch/rayjob.yaml)
-- **Apply:** `kubectl apply -f examples/batch/rayjob.yaml`
+- **Example:** [examples/ray/rayjob.yaml](../../examples/ray/rayjob.yaml)
+- **Apply:** `kubectl apply -f examples/ray/rayjob.yaml`
 - **Detailed setup:** [KubeRay with KAI Scheduler](../../examples/ray/README.md)
 
 ### RayCluster (KubeRay Operator)
@@ -173,8 +173,8 @@ RayCluster enables long-running Ray clusters for distributed computing and machi
 
 - **Scheduling Behavior:** Gang scheduling (all pods in the Ray cluster scheduled together)
 - **External Requirements:** Requires [KubeRay Operator](https://docs.ray.io/en/latest/cluster/kubernetes/index.html) - See installation instructions above
-- **Example:** [examples/batch/raycluster.yaml](../../examples/batch/raycluster.yaml)
-- **Apply:** `kubectl apply -f examples/batch/raycluster.yaml`
+- **Example:** [examples/ray/raycluster.yaml](../../examples/ray/raycluster.yaml)
+- **Apply:** `kubectl apply -f examples/ray/raycluster.yaml`
 - **Detailed setup:** [KubeRay with KAI Scheduler](../../examples/ray/README.md)
 
 ### JobSet (Kubernetes SIG)

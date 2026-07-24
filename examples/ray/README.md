@@ -28,8 +28,8 @@ To use KAI scheduler with your Ray workloads, configure the pod templates in you
 
 ### Examples
 
-- **RayJob**: [`../batch/rayjob.yaml`](../batch/rayjob.yaml)
-- **RayCluster**: [`../batch/raycluster.yaml`](../batch/raycluster.yaml)
+- **RayJob**: [`rayjob.yaml`](rayjob.yaml)
+- **RayCluster**: [`raycluster.yaml`](raycluster.yaml)
 
 ## Configuration Summary
 
