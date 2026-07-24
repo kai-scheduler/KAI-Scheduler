@@ -35,10 +35,29 @@ ginkgo -v --focus "TestHandleAllocation" ./pkg/scheduler/actions/allocate
 # Run tests with Ginkgo (for integration tests)
 ginkgo -v --focus "test name pattern" ./pkg/binder/controllers/integration_tests
 
-# Run tests with envtest (requires setup-envtest)
+# Run tests with envtest (requires setup-envtest; K8s version from build/makefile/testenv.mk ENVTEST_K8S_VERSION)
 make envtest
 KUBEBUILDER_ASSETS="$(bin/setup-envtest use 1.34.0 -p path --bin-dir bin)" go test ./pkg/... -timeout 30m
 ```
+
+#### Running tests when Docker is unavailable or credential helper fails
+
+When Docker works, use `make test`. If it fails (e.g. WSL: `docker-credential-desktop.exe` not in PATH):
+
+- **Fix Docker (WSL):** Backup and clear config, then `make test`. Restore for private registry: `cp ~/.docker/config.json.bak ~/.docker/config.json`.
+  ```bash
+  cp ~/.docker/config.json ~/.docker/config.json.bak
+  echo '{}' > ~/.docker/config.json
+  ```
+  See [Docker Desktop WSL](https://docs.docker.com/desktop/wsl/).
+
+- **Without Docker:** Unit: `go test ./pkg/... ./cmd/... -count=1 -short` (exit 1 if envtest packages fail). Integration: use `ENVTEST_K8S_VERSION` from `build/makefile/testenv.mk` (not `latest`):
+  ```bash
+  make envtest
+  KUBEBUILDER_ASSETS="$(bin/setup-envtest use 1.34.0 -p path --bin-dir bin)" go test ./pkg/... -timeout 30m
+  ```
+  Full validation: `make validate`, `make lint`, unit tests, then envtest. Helm: `helm unittest` or CI.
+
 #### E2E tests
 
 E2E tests run against a real Kubernetes using [`kind`](https://kind.sigs.k8s.io/) cluster and are located in `test/e2e/suites/`.
