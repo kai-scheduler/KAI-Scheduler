@@ -1,0 +1,19 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# Topology resource defining the hierarchy for topology-aware scheduling
+# Levels are ordered from top (broadest) to bottom (narrowest)
+# Your nodes must have labels matching these nodeLabel values
+---
+apiVersion: kai.scheduler/v1alpha1
+kind: Topology
+metadata:
+  name: default
+spec:
+  levels:
+    # Top level - block (e.g., a group of racks)
+    - nodeLabel: topology.kai.io/block
+    # Second level - rack
+    - nodeLabel: topology.kai.io/rack
+    # Lowest level - individual node (optional, but recommended)
+    - nodeLabel: kubernetes.io/hostname
