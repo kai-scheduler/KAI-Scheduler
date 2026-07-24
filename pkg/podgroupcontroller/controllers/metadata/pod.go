@@ -6,12 +6,14 @@ package metadata
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	v1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	commonresources "github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgroupcontroller/controllers/resources"
 )
@@ -86,13 +88,85 @@ func isPodScheduled(pod *v1.Pod) bool {
 	return false
 }
 
+// podReservedResources returns what a pod reserves for its lifetime, the way the scheduler's
+// getPodResourceRequest counts it: the per-resource maximum of the steady state and the init phase, plus Pod
+// overhead. The steady state is every regular container's request plus every native sidecar's request (an init
+// container with restartPolicy Always). The init phase is the peak of a non-restartable init container, taken
+// as that container's request plus the native sidecars declared before it, since those are already running.
+// Init containers run one at a time, so the init phase is a max across them, not a sum.
+// A GPU asked for by a sidecar or by a non-restartable init container is counted, since the scheduler counts
+// it, unless the pod's GPU is rebuilt from an annotation (see gpuIsRebuiltFromAnnotation), where the annotation
+// decides and the container request is dropped. Pod overhead never adds a GPU, since the scheduler adds only
+// its base resources.
+func podReservedResources(pod *v1.Pod) v1.ResourceList {
+	dropInitGpu := gpuIsRebuiltFromAnnotation(pod)
+
+	steady := v1.ResourceList{}
+	for _, container := range pod.Spec.Containers {
+		steady = resources.SumResources(steady, container.Resources.Requests)
+	}
+
+	sidecarSum := v1.ResourceList{}
+	initPhasePeak := v1.ResourceList{}
+	for _, initContainer := range pod.Spec.InitContainers {
+		requests := initContainer.Resources.Requests
+		if dropInitGpu {
+			requests = withoutGpuResources(requests)
+		}
+		if isNativeSidecar(initContainer) {
+			sidecarSum = resources.SumResources(sidecarSum, requests)
+			continue
+		}
+		// A non-restartable init container runs alone, but alongside any native sidecars already started, so
+		// its peak is its own request plus those sidecars.
+		initPhasePeak = resources.MaxResources(initPhasePeak, resources.SumResources(requests, sidecarSum))
+	}
+
+	steady = resources.SumResources(steady, sidecarSum)
+	reserved := resources.MaxResources(steady, initPhasePeak)
+	return resources.SumResources(reserved, withoutGpuResources(pod.Spec.Overhead))
+}
+
+// gpuIsRebuiltFromAnnotation reports whether the scheduler derives the pod's GPU from an annotation
+// (a GPU fraction, gpu-memory, or a legacy MIG annotation) instead of from the container requests. For
+// those pods the scheduler drops the container GPU request and the annotation decides, so a sidecar's GPU
+// must not reach the status either. Admission rejects a whole nvidia.com/gpu next to a fraction, but it
+// does not inspect MIG annotations, so the MIG case is handled here.
+func gpuIsRebuiltFromAnnotation(pod *v1.Pod) bool {
+	if commonresources.RequestsGPUFraction(pod) {
+		return true
+	}
+	for name := range pod.Annotations {
+		if commonresources.IsMigResource(name) {
+			return true
+		}
+	}
+	return false
+}
+
+// isNativeSidecar reports whether an init container keeps running alongside the regular containers.
+func isNativeSidecar(initContainer v1.Container) bool {
+	return initContainer.RestartPolicy != nil && *initContainer.RestartPolicy == v1.ContainerRestartPolicyAlways
+}
+
+// withoutGpuResources drops every name the queue accounting treats as a GPU, the same rule getAllocatedGpus
+// applies to Queue.status.allocated. It is applied to Pod overhead, which never contributes a GPU, and to a
+// native sidecar on a pod whose GPU is rebuilt from an annotation.
+func withoutGpuResources(list v1.ResourceList) v1.ResourceList {
+	filtered := v1.ResourceList{}
+	for name, quantity := range list {
+		if strings.HasSuffix(string(name), constants.GpuResourceSuffix) || commonresources.IsMigResource(string(name)) {
+			continue
+		}
+		filtered[name] = quantity.DeepCopy()
+	}
+	return filtered
+}
+
 func calculatedAllocatedResources(
 	ctx context.Context, pod *v1.Pod, kubeClient client.Client, draClaims []*resourceapi.ResourceClaim,
 ) (v1.ResourceList, error) {
-	allocatedResources := v1.ResourceList{}
-	for _, container := range pod.Spec.Containers {
-		allocatedResources = resources.SumResources(allocatedResources, container.Resources.Requests)
-	}
+	allocatedResources := podReservedResources(pod)
 
 	gpuSharingReceivedResources, err := resources.ExtractGPUSharingReceivedResources(ctx, pod, kubeClient)
 	if err != nil {
@@ -112,10 +186,8 @@ func calculatedAllocatedResources(
 func calculateRequestedResources(
 	ctx context.Context, pod *v1.Pod, kubeClient client.Client, draClaims []*resourceapi.ResourceClaim,
 ) (v1.ResourceList, error) {
-	requestedResources := v1.ResourceList{}
-	for _, container := range pod.Spec.Containers {
-		requestedResources = resources.SumResources(requestedResources, container.Resources.Requests)
-	}
+	requestedResources := podReservedResources(pod)
+
 	gpuSharingRequestedResources, err := resources.ExtractGPUSharingRequestedResources(pod)
 	if err != nil {
 		return nil, err

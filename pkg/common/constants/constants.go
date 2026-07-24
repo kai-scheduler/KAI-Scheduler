@@ -11,6 +11,7 @@ const (
 	NvidiaGpuMemory           = "nvidia.com/gpu.memory"
 	NvidiaMigResourcePrefix   = "nvidia.com/mig-"
 	GpuResource               = "gpu"
+	GpuResourceSuffix         = "/" + GpuResource
 	UnlimitedResourceQuantity = float64(-1)
 
 	DefaultQueuePriority                  = 100
