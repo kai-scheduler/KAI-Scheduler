@@ -1,6 +1,22 @@
 # Copyright 2025 NVIDIA CORPORATION
 # SPDX-License-Identifier: Apache-2.0
 
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rayjob-example-code
+data:
+  sample_code.py: |
+    import ray
+
+    ray.init()
+
+    @ray.remote
+    def square(value):
+        return value * value
+
+    print(ray.get([square.remote(value) for value in range(5)]))
+---
 apiVersion: ray.io/v1
 kind: RayJob
 metadata:
@@ -9,6 +25,8 @@ metadata:
     kai.scheduler/queue: default-queue
 spec:
   entrypoint: python /home/ray/samples/sample_code.py
+  shutdownAfterJobFinishes: true
+  ttlSecondsAfterFinished: 300
   rayClusterSpec:
     rayVersion: '2.46.0'
     headGroupSpec:
@@ -19,6 +37,9 @@ spec:
           containers:
           - name: ray-head
             image: rayproject/ray:2.46.0
+            volumeMounts:
+            - name: rayjob-code
+              mountPath: /home/ray/samples
             resources:
               limits:
                 cpu: "1"
@@ -26,6 +47,13 @@ spec:
               requests:
                 cpu: "200m"
                 memory: "256Mi"
+          volumes:
+          - name: rayjob-code
+            configMap:
+              name: rayjob-example-code
+              items:
+              - key: sample_code.py
+                path: sample_code.py
     workerGroupSpecs:
     - replicas: 2
       minReplicas: 1

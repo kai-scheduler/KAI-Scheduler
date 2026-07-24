@@ -17,19 +17,13 @@ spec:
           schedulerName: kai-scheduler
           containers:
             - name: jax
-              image: docker.io/kubeflow/jax-mnist:latest
+              image: ghcr.io/kubeflow/training-v1/jaxjob-simple:latest
+              command:
+                - python3
+                - train.py
               ports:
                 - containerPort: 6666
                   name: jaxjob-port
-              env:
-                - name: JAX_COORDINATOR_PORT
-                  value: "6666"
-                - name: JAX_NUM_PROCESSES
-                  value: "4"
-              args:
-                - "--num-epochs=10"
-                - "--batch-size=128"
-                - "--learning-rate=0.001"
               resources:
                 requests:
                   cpu: "1"

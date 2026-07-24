@@ -21,6 +21,7 @@ spec:
               image: mpioperator/mpi-pi:openmpi
               command:
                 - mpirun
+                - --allow-run-as-root
                 - -n
                 - "2"
                 - /home/mpiuser/pi
