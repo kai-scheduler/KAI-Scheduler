@@ -1,0 +1,31 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: batch-job-example
+  labels:
+    kai.scheduler/queue: default-queue
+spec:
+  parallelism: 2
+  completions: 2
+  template:
+    spec:
+      schedulerName: kai-scheduler
+      restartPolicy: OnFailure
+      containers:
+        - name: worker
+          image: ubuntu:latest
+          command: ["/bin/bash"]
+          args:
+            - -c
+            - |
+              echo "Starting batch job worker"
+              echo "Processing task $HOSTNAME"
+              sleep 30
+              echo "Task completed successfully"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
