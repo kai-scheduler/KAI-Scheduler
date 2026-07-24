@@ -85,20 +85,23 @@ To use KAI scheduler with your workloads, configure the following fields in your
 
 ## Supported Workload Types
 
+> **Note:** All `kubectl apply` and example file paths below are relative to the repository root.
+
 ### Quick Reference
 
 | Workload Type | Scheduling | Operator Required | Example |
 |---------------|-----------|-------------------|---------|
-| [Standard Kubernetes Job](#standard-kubernetes-job) | Independent | None (native K8s) | [job.yaml](examples/job.yaml) |
-| [PyTorchJob](#pytorchjob-kubeflow-training-operator) | Gang | Kubeflow Training Operator | [pytorchjob.yaml](examples/pytorchjob.yaml) |
-| [MPIJob](#mpijob-kubeflow-training-operator) | Gang | Kubeflow Training Operator / MPI Operator | [mpijob.yaml](examples/mpijob.yaml) |
-| [TFJob](#tfjob-kubeflow-training-operator) | Gang | Kubeflow Training Operator | [tfjob.yaml](examples/tfjob.yaml) |
-| [XGBoostJob](#xgboostjob-kubeflow-training-operator) | Gang | Kubeflow Training Operator | [xgboostjob.yaml](examples/xgboostjob.yaml) |
-| [JAXJob](#jaxjob-kubeflow-training-operator) | Gang | Kubeflow Training Operator | [jaxjob.yaml](examples/jaxjob.yaml) |
-| [RayJob](#rayjob-kuberay-operator) | Gang | KubeRay Operator | [rayjob.yaml](examples/rayjob.yaml) |
-| [RayCluster](#raycluster-kuberay-operator) | Gang | KubeRay Operator | [raycluster.yaml](examples/raycluster.yaml) |
-| [JobSet](#jobset-kubernetes-sig) | Gang | JobSet Controller | [jobset.yaml](examples/jobset.yaml) |
-| [SparkApplication](#sparkapplication-spark-operator) | Gang | Spark Operator | [sparkapplication.yaml](examples/sparkapplication.yaml) |
+| [Standard Kubernetes Job](#standard-kubernetes-job) | Independent | None (native K8s) | [job.yaml](../../examples/batch/job.yaml) |
+| [PyTorchJob](#pytorchjob-kubeflow-training-operator) | Gang | Kubeflow Training Operator | [pytorchjob.yaml](../../examples/batch/pytorchjob.yaml) |
+| [MPIJob](#mpijob-kubeflow-training-operator) | Gang | Kubeflow Training Operator / MPI Operator | [mpijob.yaml](../../examples/batch/mpijob.yaml) |
+| [TFJob](#tfjob-kubeflow-training-operator) | Gang | Kubeflow Training Operator | [tfjob.yaml](../../examples/batch/tfjob.yaml) |
+| [XGBoostJob](#xgboostjob-kubeflow-training-operator) | Gang | Kubeflow Training Operator | [xgboostjob.yaml](../../examples/batch/xgboostjob.yaml) |
+| [JAXJob](#jaxjob-kubeflow-training-operator) | Gang | Kubeflow Training Operator | [jaxjob.yaml](../../examples/batch/jaxjob.yaml) |
+| [RayJob](#rayjob-kuberay-operator) | Gang | KubeRay Operator | [rayjob.yaml](../../examples/batch/rayjob.yaml) |
+| [RayCluster](#raycluster-kuberay-operator) | Gang | KubeRay Operator | [raycluster.yaml](../../examples/batch/raycluster.yaml) |
+| [JobSet](#jobset-kubernetes-sig) | Gang | JobSet Controller | [jobset.yaml](../../examples/batch/jobset.yaml) |
+| [TrainJob](#trainjob-kubeflow-trainer-v2) | Gang | Kubeflow Trainer v2 | [jobset.yaml](../../examples/batch/jobset.yaml) *(JobSet reference)* |
+| [SparkApplication](#sparkapplication-spark-operator) | Gang | Spark Operator | [sparkapplication.yaml](../../examples/batch/sparkapplication.yaml) |
 
 ### Standard Kubernetes Job
 
@@ -106,53 +109,53 @@ Standard Kubernetes Jobs run batch workloads where pods can be scheduled indepen
 
 - **Scheduling Behavior:** Independent scheduling (pods scheduled independently)
 - **External Requirements:** None (native Kubernetes resource)
-- **Example:** [examples/job.yaml](examples/job.yaml)
-- **Apply:** `kubectl apply -f docs/batch/examples/job.yaml`
+- **Example:** [examples/batch/job.yaml](../../examples/batch/job.yaml)
+- **Apply:** `kubectl apply -f examples/batch/job.yaml`
 
 ### PyTorchJob (Kubeflow Training Operator)
 
 PyTorchJob enables distributed PyTorch training across multiple GPUs and nodes using the Kubeflow Training Operator.
 
 - **Scheduling Behavior:** Gang scheduling (all pods scheduled together)
-- **External Requirements:** Requires [Kubeflow Training Operator](https://www.kubeflow.org/docs/components/training/) - See [installation guide](https://github.com/kubeflow/training-operator#installation)
-- **Example:** [examples/pytorchjob.yaml](examples/pytorchjob.yaml)
-- **Apply:** `kubectl apply -f docs/batch/examples/pytorchjob.yaml`
+- **External Requirements:** Requires [Kubeflow Training Operator](https://www.kubeflow.org/docs/components/training/) - See [installation guide](https://github.com/kubeflow/training-operator#installation) and [PyTorchJob user guide](https://trainer.kubeflow.org/en/latest/legacy-v1/user-guides/pytorch.html)
+- **Example:** [examples/batch/pytorchjob.yaml](../../examples/batch/pytorchjob.yaml)
+- **Apply:** `kubectl apply -f examples/batch/pytorchjob.yaml`
 
 ### MPIJob (Kubeflow Training Operator)
 
 MPIJob enables distributed training and HPC workloads using the Message Passing Interface (MPI) protocol.
 
 - **Scheduling Behavior:** Gang scheduling (all pods scheduled together)
-- **External Requirements:** Requires [Kubeflow Training Operator](https://www.kubeflow.org/docs/components/training/mpi/) - See [installation guide](https://github.com/kubeflow/training-operator#installation)
-- **Example:** [examples/mpijob.yaml](examples/mpijob.yaml)
-- **Apply:** `kubectl apply -f docs/batch/examples/mpijob.yaml`
+- **External Requirements:** Requires [Kubeflow Training Operator](https://www.kubeflow.org/docs/components/training/mpi/) - See [installation guide](https://github.com/kubeflow/training-operator#installation) and [MPIJob user guide](https://trainer.kubeflow.org/en/latest/legacy-v1/user-guides/mpi.html)
+- **Example:** [examples/batch/mpijob.yaml](../../examples/batch/mpijob.yaml)
+- **Apply:** `kubectl apply -f examples/batch/mpijob.yaml`
 
 ### TFJob (Kubeflow Training Operator)
 
 TFJob enables distributed TensorFlow training across multiple nodes.
 
 - **Scheduling Behavior:** Gang scheduling (all pods scheduled together)
-- **External Requirements:** Requires [Kubeflow Training Operator](https://www.kubeflow.org/docs/components/training/tftraining/) - See [installation guide](https://github.com/kubeflow/training-operator#installation)
-- **Example:** [examples/tfjob.yaml](examples/tfjob.yaml)
-- **Apply:** `kubectl apply -f docs/batch/examples/tfjob.yaml`
+- **External Requirements:** Requires [Kubeflow Training Operator](https://www.kubeflow.org/docs/components/training/tftraining/) - See [installation guide](https://github.com/kubeflow/training-operator#installation) and [TFJob user guide](https://trainer.kubeflow.org/en/latest/legacy-v1/user-guides/tensorflow.html)
+- **Example:** [examples/batch/tfjob.yaml](../../examples/batch/tfjob.yaml)
+- **Apply:** `kubectl apply -f examples/batch/tfjob.yaml`
 
 ### XGBoostJob (Kubeflow Training Operator)
 
 XGBoostJob enables distributed XGBoost training for gradient boosting workloads.
 
 - **Scheduling Behavior:** Gang scheduling (all pods scheduled together)
-- **External Requirements:** Requires [Kubeflow Training Operator](https://www.kubeflow.org/docs/components/training/xgboost/) - See [installation guide](https://github.com/kubeflow/training-operator#installation)
-- **Example:** [examples/xgboostjob.yaml](examples/xgboostjob.yaml)
-- **Apply:** `kubectl apply -f docs/batch/examples/xgboostjob.yaml`
+- **External Requirements:** Requires [Kubeflow Training Operator](https://www.kubeflow.org/docs/components/training/xgboost/) - See [installation guide](https://github.com/kubeflow/training-operator#installation) and [XGBoostJob user guide](https://trainer.kubeflow.org/en/latest/legacy-v1/user-guides/xgboost.html)
+- **Example:** [examples/batch/xgboostjob.yaml](../../examples/batch/xgboostjob.yaml)
+- **Apply:** `kubectl apply -f examples/batch/xgboostjob.yaml`
 
 ### JAXJob (Kubeflow Training Operator)
 
 JAXJob enables distributed JAX training workloads using JAX's native distributed capabilities.
 
 - **Scheduling Behavior:** Gang scheduling (all pods scheduled together)
-- **External Requirements:** Requires [Kubeflow Training Operator](https://www.kubeflow.org/docs/components/training/) - See [installation guide](https://github.com/kubeflow/training-operator#installation)
-- **Example:** [examples/jaxjob.yaml](examples/jaxjob.yaml)
-- **Apply:** `kubectl apply -f docs/batch/examples/jaxjob.yaml`
+- **External Requirements:** Requires [Kubeflow Training Operator](https://www.kubeflow.org/docs/components/training/) - See the [installation guide](https://github.com/kubeflow/training-operator#installation) and [JAXJob user guide](https://trainer.kubeflow.org/en/latest/legacy-v1/user-guides/jax.html)
+- **Example:** [examples/batch/jaxjob.yaml](../../examples/batch/jaxjob.yaml)
+- **Apply:** `kubectl apply -f examples/batch/jaxjob.yaml`
 
 ### RayJob (KubeRay Operator)
 
@@ -160,8 +163,9 @@ RayJob enables distributed computing and machine learning workloads using the Ra
 
 - **Scheduling Behavior:** Gang scheduling (all pods in the Ray cluster scheduled together)
 - **External Requirements:** Requires [KubeRay Operator](https://docs.ray.io/en/latest/cluster/kubernetes/index.html) - See [installation guide](https://docs.ray.io/en/latest/cluster/kubernetes/getting-started/kuberay-operator-installation.html)
-- **Example:** [examples/rayjob.yaml](examples/rayjob.yaml)
-- **Apply:** `kubectl apply -f docs/batch/examples/rayjob.yaml`
+- **Example:** [examples/batch/rayjob.yaml](../../examples/batch/rayjob.yaml)
+- **Apply:** `kubectl apply -f examples/batch/rayjob.yaml`
+- **Detailed setup:** [KubeRay with KAI Scheduler](../../examples/ray/README.md)
 
 ### RayCluster (KubeRay Operator)
 
@@ -169,8 +173,9 @@ RayCluster enables long-running Ray clusters for distributed computing and machi
 
 - **Scheduling Behavior:** Gang scheduling (all pods in the Ray cluster scheduled together)
 - **External Requirements:** Requires [KubeRay Operator](https://docs.ray.io/en/latest/cluster/kubernetes/index.html) - See installation instructions above
-- **Example:** [examples/raycluster.yaml](examples/raycluster.yaml)
-- **Apply:** `kubectl apply -f docs/batch/examples/raycluster.yaml`
+- **Example:** [examples/batch/raycluster.yaml](../../examples/batch/raycluster.yaml)
+- **Apply:** `kubectl apply -f examples/batch/raycluster.yaml`
+- **Detailed setup:** [KubeRay with KAI Scheduler](../../examples/ray/README.md)
 
 ### JobSet (Kubernetes SIG)
 
@@ -178,10 +183,20 @@ JobSet manages a group of Jobs as a single unit, enabling complex multi-job work
 
 - **Scheduling Behavior:** Gang scheduling per replicatedJob or for all jobs (depends on startup policy)
 - **External Requirements:** Requires [JobSet Controller](https://github.com/kubernetes-sigs/jobset) - See [installation guide](https://github.com/kubernetes-sigs/jobset#installation)
-- **Example:** [examples/jobset.yaml](examples/jobset.yaml)
-- **Apply:** `kubectl apply -f docs/batch/examples/jobset.yaml`
+- **Example:** [examples/batch/jobset.yaml](../../examples/batch/jobset.yaml)
+- **Apply:** `kubectl apply -f examples/batch/jobset.yaml`
 
 **Note:** With `startupPolicyOrder: AnyOrder`, KAI creates one PodGroup for all jobs together. If you use `startupPolicyOrder: InOrder`, KAI creates separate PodGroups to avoid sequencing deadlocks.
+
+### TrainJob (Kubeflow Trainer v2)
+
+TrainJob is the Kubeflow Trainer v2 API for distributed training. KAI Scheduler delegates TrainJob scheduling to the underlying JobSet that Trainer v2 creates, so gang scheduling behavior is inherited from JobSet.
+
+- **Scheduling Behavior:** Gang scheduling (via JobSet delegation)
+- **External Requirements:** Requires [Kubeflow Trainer v2](https://github.com/kubeflow/trainer) - See [installation guide](https://github.com/kubeflow/trainer?tab=readme-ov-file#installation)
+- **Example:** [examples/batch/jobset.yaml](../../examples/batch/jobset.yaml) (TrainJob wraps a JobSet; use the JobSet example as a reference)
+
+**Note:** KAI Scheduler registers a `skipTopOwnerGrouper` for TrainJob, meaning it skips the TrainJob and applies grouping logic directly to the underlying JobSet resources.
 
 ### SparkApplication (Spark Operator)
 
@@ -189,8 +204,8 @@ SparkApplication enables running Apache Spark workloads on Kubernetes.
 
 - **Scheduling Behavior:** Gang scheduling (driver and executors scheduled together)
 - **External Requirements:** Requires [Spark Operator](https://github.com/GoogleCloudPlatform/spark-on-k8s-operator) - See [installation guide](https://github.com/GoogleCloudPlatform/spark-on-k8s-operator#installation)
-- **Example:** [examples/sparkapplication.yaml](examples/sparkapplication.yaml)
-- **Apply:** `kubectl apply -f docs/batch/examples/sparkapplication.yaml`
+- **Example:** [examples/batch/sparkapplication.yaml](../../examples/batch/sparkapplication.yaml)
+- **Apply:** `kubectl apply -f examples/batch/sparkapplication.yaml`
 
 **Note:** You must create a `spark` service account with appropriate RBAC permissions before running Spark applications.
 
