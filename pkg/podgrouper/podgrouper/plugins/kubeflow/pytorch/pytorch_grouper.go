@@ -191,6 +191,9 @@ func buildWorkerSubGroups(
 		Name:        strings.ToLower(replicaTypeWorker),
 		MinSubGroup: ptr.To(int32(numSegments)),
 	}}
+	// Segments whose first pod index is within workerMinAvailable are mandatory;
+	// the rest are elastic and must not block scheduling.
+	mandatorySegments := (int(workerMinAvailable) + segmentSize - 1) / segmentSize
 	for i := range numSegments {
 		subGroup := &podgroup.SubGroupMetadata{
 			Name:                fmt.Sprintf("worker-%d", i),
@@ -201,7 +204,9 @@ func buildWorkerSubGroups(
 		if i == segmentIndex {
 			subGroup.PodsReferences = podReferences
 		}
-		if partialSegmentSize != 0 && i == numSegments-1 {
+		if i >= mandatorySegments {
+			subGroup.MinAvailable = 0
+		} else if partialSegmentSize != 0 && i == numSegments-1 {
 			subGroup.MinAvailable = int32(partialSegmentSize)
 		}
 		subGroups = append(subGroups, subGroup)
