@@ -11,9 +11,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ksf "k8s.io/kube-scheduler/framework"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/configmap_info"
+	"github.com/kai-scheduler/api/constants"
 )
 
 func TestIsPreFilterRequired(t *testing.T) {

@@ -27,15 +27,8 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/utils/ptr"
 
-	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
+	kaiv1alpha1 "github.com/kai-scheduler/api/kai/v1alpha1"
 
-	kubeAiSchedulerClient "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned"
-	kubeAiSchedulerClientFake "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/fake"
-	kubeAiSchedulerInfo "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/informers/externalversions"
-	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	enginev2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
-	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_affinity"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -51,6 +44,13 @@ import (
 	fakeusage "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb/fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/utils"
+	kubeAiSchedulerClient "github.com/kai-scheduler/api/client/clientset/versioned"
+	kubeAiSchedulerClientFake "github.com/kai-scheduler/api/client/clientset/versioned/fake"
+	kubeAiSchedulerInfo "github.com/kai-scheduler/api/client/informers/externalversions"
+	commonconstants "github.com/kai-scheduler/api/constants"
+	schedulingv1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
+	enginev2 "github.com/kai-scheduler/api/scheduling/v2"
+	enginev2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
 const (

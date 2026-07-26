@@ -17,10 +17,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
-	kaiv1binder "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/binder"
 	binderplugins "github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common/test_utils"
+	kaiv1 "github.com/kai-scheduler/api/kai/v1"
+	kaiv1binder "github.com/kai-scheduler/api/kai/v1/binder"
 
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
