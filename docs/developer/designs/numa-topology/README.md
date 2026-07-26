@@ -601,38 +601,59 @@ regardless; Appendix A is the in-plugin fallback if the assumption proves insuff
 
 ## v2: Optimization & scoring
 
-v1 decides *feasibility* — can this node host the pod without a `TopologyAffinityError`. v2
-decides *which feasible node is best*, via a node score (`AddNodeOrderFn`, a new band in
-`scores/scores.go`). It reuses v1's evaluators and per-zone model unchanged: it only **ranks**
-nodes, never alters the admit decision.
+v2 adds scoring based on NUMA placement: nodes that can fit a NUMA-sensitive task in fewer zones
+are ranked higher. Nodes that can't admit the task are ranked lower. This enables us to support
+`best-effort` mode better.
+
+The upstream scheduler numa plugin supports different scoring strategies - `LeastNUMANodes`, 
+`BalancedAllocation`, `LeastAllocated` and `MostAllocated` - the last three are only relevant to 
+`single-numa-node` mode. `LeastNUMANodes` seems the most relevant for our use cases, but we can
+support more modes, and welcome community feedback on this.
 
 ### What scoring adds
 
 - **Optimize `best-effort` performance.** On a `best-effort` node the kubelet never rejects — it
   silently runs the pod *unaligned* when it can't fit a NUMA node, costing throughput. v1 does
   nothing for `best-effort` (there is no admission error to prevent). v2 **scores** `best-effort`
-  nodes by whether the pod's resources *can* be aligned there, steering it toward a node where
-  the kubelet's best-effort alignment will actually succeed — turning a silent performance loss
-  into a good placement. This is the primary motivation for v2.
-- **Prefer tighter, less-fragmented fit** on feasible `single-numa-node` / `restricted` nodes, so
-  later pods still find aligned room, and multi-NUMA pods span the fewest zones.
+  nodes by how few zones the pod's resources *can* be aligned to there, steering it toward a node
+  where the kubelet's best-effort alignment will actually succeed. This is the primary motivation for v2.
+- **Prefer tighter, fewer-zone fit** on feasible `restricted` nodes, where the kubelet forces the
+  pod to span its preferred width `w` (which differs per node by per-zone `Allocatable`): rank
+  nodes by `w` so a pod that aligns to one zone on node A beats spanning two on node B.
+- **Sink infeasible nodes so the predicate short-circuits.** `OrderedNodesByTask` scores *every*
+  candidate node — including ones the predicate will reject — and the action then runs `FittingNode`
+  (the predicate) lazily **in score order**, stopping at the first fit. So ranking a node the
+  kubelet can't NUMA-align *below* one it can makes the predicate hit a feasible node first and skip
+  evaluating the infeasible ones. This applies to **`single-numa-node`** too: its feasible span is
+  always 1, but feasibility itself is a ranking signal, so scoring is *not* a no-op there — it
+  front-loads the alignable nodes. (Correctness still rests on the predicate; the score only reorders.)
 
-### Scoring strategies
+### The fewest-zones span, per policy
 
-Reusing the upstream NodeResourceTopology scoring vocabulary, computed over the plugin's per-zone
-model:
+Scoring routes every candidate node through one reusable function, `alignmentSpan(task, node) →
+(zones int, aligned bool)`, and the score is a function of **both** outputs: `aligned=false` sinks
+the node (worst score), and among aligned nodes fewer `zones` scores higher.
 
-- **LeastNUMANodes** (policy-agnostic) — prefer nodes where the pod spans the fewest NUMA nodes
-  (ideally one). This is the core `best-effort` steering and the multi-NUMA-span minimizer.
-- **LeastAllocated / MostAllocated / BalancedAllocation** — spread vs. bin-pack vs. balance
-  per-zone utilization, for fragmentation control on the aligned policies; selectable via config.
+| Policy | `alignmentSpan` when aligned | `aligned=false` when | Predicate outcome |
+| --- | --- | --- | --- |
+| `single-numa-node` | `1` | no single zone fits by `Available` | rejects (filtered) |
+| `restricted` | the forced preferred width `w` | preferred widths disagree, or no width-`w` mask fits | rejects (filtered) |
+| `best-effort` | greedy narrowest zone mask that fits by `Available` (width = span) | even all N zones can't cover the request (pod runs unaligned) | passes (best-effort never rejects) |
+
+For the two rejecting policies, `aligned` is the *same bit the predicate computes*, so a sunk node
+is one the predicate would filter — the score just reorders the funnel. For `best-effort`,
+`aligned=false` is the unaligned case: still selectable (worst-but-finite score), because
+`best-effort` offers no other node any guarantee.
 
 ### Notes
 
 - Scoring runs on the same predicted per-zone state as v1, so the prediction caveats carry over —
   but a score is only a *preference*, so a misprediction costs ranking quality, never correctness.
-- `best-effort` scoring is the one place the plugin touches `best-effort` nodes at all; v1 leaves
-  them untouched, and the admit decision for `single-numa-node` / `restricted` is unchanged.
+- The span metric is pure zone-count and policy-agnostic, so span-1 scores identically across
+  `single-numa-node`, `restricted`, and `best-effort` — a mixed-policy candidate set ranks coherently.
+- **No NUMA-distance awareness in v2.** The score is zone *count* only; inter-zone distance
+  (`Zone.Costs`) is not ingested and no scoring seam is reserved for it. A distance metric (e.g. a
+  v3 "minimax") would be a separate axis added later if pursued.
 
 ## v3: Pod-level NUMA policy (scheduler-enforced)
 
