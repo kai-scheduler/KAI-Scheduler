@@ -147,12 +147,19 @@ func (singleNUMAEvaluator) fit(topo *node_info.NumaTopology, aware []int, req re
 	return nil, false
 }
 
-// bestEffortEvaluator (best-effort) greedily builds the narrowest zone mask whose summed Available
-// covers the request, adding at each step the zone that covers the most unmet demand. best-effort
-// never rejects, so the result feeds scoring and the in-cycle ledger, not an admit decision; the
-// greedy width approximates the kubelet's best-effort span (exact when one resource dominates).
+// bestEffortEvaluator implements the best-effort policy, which never rejects, so its result feeds
+// scoring and the in-cycle ledger, never an admit decision.
 type bestEffortEvaluator struct{}
 
+// fit greedily grows a zone mask until it covers the request, returning the mask and whether it fits:
+//  1. Start with no zones; the unmet demand is the full request.
+//  2. Each round, add the unused zone that covers the most unmet demand (the sum, over
+//     still-needed resources, of min(remaining, available in that zone)), then subtract that zone's
+//     availability from the demand.
+//  3. Stop when every resource is met (fits) or no remaining zone can help (does not fit).
+//
+// The number of zones picked is the span. Taking the most-covering zone first yields the fewest
+// zones exactly when one resource dominates.
 func (bestEffortEvaluator) fit(topo *node_info.NumaTopology, aware []int, req resource_info.ResourceVector, consumed []float64, width int, maskBuf []int) ([]int, bool) {
 	var remArr [stackAware]float64
 	remaining := remArr[:0]
