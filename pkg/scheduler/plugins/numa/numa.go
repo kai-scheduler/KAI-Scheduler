@@ -169,7 +169,7 @@ func (pp *numaPlugin) prePredicate(task *pod_info.PodInfo, _ *podgroup_info.PodG
 	return nil
 }
 
-// nodePreOrder it warms per-task scoring state. Skipped for non-NUMA-sensitive tasks.
+// nodePreOrder warms per-task scoring state. Skipped for non-NUMA-sensitive tasks.
 func (pp *numaPlugin) nodePreOrder(task *pod_info.PodInfo, _ []*node_info.NodeInfo) error {
 	vectorMap := pp.ssn.ClusterInfo.ResourceVectorMap
 	if pp.maxZones == 0 || vectorMap == nil || !pp.wantsNuma(task) {
@@ -193,9 +193,8 @@ func (pp *numaPlugin) nodeScore(task *pod_info.PodInfo, node *node_info.NodeInfo
 }
 
 // assumedSpan returns the number of NUMA zones the task is expected to occupy on the node. ok is
-// false for an infeasible modeled node, which must sink below every scorable node (score 0). Nodes
-// with no topology assume the cluster's worst zone count; unmanaged (none) or not-aligned-here nodes
-// assume worst-case full spread.
+// false for an infeasible modeled node. Nodes with no topology assume the cluster's worst zone
+// count; unmanaged (none) or not-aligned-here nodes assume worst-case full spread.
 func (pp *numaPlugin) assumedSpan(task *pod_info.PodInfo, node *node_info.NodeInfo) (int, bool) {
 	topo := node.NumaTopology
 	if topo == nil || len(topo.Zones) == 0 {

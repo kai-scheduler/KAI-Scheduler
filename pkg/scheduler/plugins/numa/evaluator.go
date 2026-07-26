@@ -163,7 +163,7 @@ func (bestEffortEvaluator) fit(topo *node_info.NumaTopology, aware []int, req re
 		remaining = append(remaining, req.Get(idx))
 	}
 	var usedArr [stackZones]bool
-	used := usedArr[:len(topo.Zones)]
+	used := usedArr[:]
 	if len(topo.Zones) > stackZones {
 		used = make([]bool, len(topo.Zones))
 	}

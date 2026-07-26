@@ -4,6 +4,7 @@
 package numa
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -53,6 +54,19 @@ func TestBestEffortEvaluatorSpan(t *testing.T) {
 			assert.Len(t, placement, test.wantSpan)
 		})
 	}
+}
+
+func TestBestEffortEvaluatorMoreThanStackZones(t *testing.T) {
+	zones := make([]node_info.NumaZoneSpec, stackZones+1)
+	for i := range zones {
+		zones[i] = numaZone(fmt.Sprintf("node-%d", i), map[string]string{gpu: "1"})
+	}
+	node := numaTopology(node_info.TopologyPolicyBestEffort, node_info.TopologyScopeContainer, zones...)
+
+	placement, ok := evalPlacement(node, noIgnoreList, []v1.ResourceList{req(gpu, fmt.Sprintf("%d", len(zones)))})
+
+	assert.True(t, ok)
+	assert.Len(t, placement, len(zones))
 }
 
 func TestNodeScoreTiers(t *testing.T) {
