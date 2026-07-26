@@ -511,6 +511,50 @@ func TestGetPodGroupMetadata_Segments_5Workers_2PerSegment(t *testing.T) {
 	assert.Equal(t, "test-job-worker-4", workerSegment2.PodsReferences[0])
 }
 
+func TestGetPodGroupMetadata_Segments_ElasticMinReplicas(t *testing.T) {
+	// 1 master + 8 workers, minReplicas=5, segment size 2 → 4 segments, 2 mandatory
+	pytorchJob := getPytorchJobWithSegments(1, 8, "2")
+	err := unstructured.SetNestedField(pytorchJob.Object, int64(5), "spec", "elasticPolicy", "minReplicas")
+	assert.Nil(t, err)
+	grouper := newTestPyTorchGrouper()
+
+	workerPod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-job-worker-0",
+			Namespace: "test_namespace",
+			Labels: map[string]string{
+				replicaTypeLabel:                      "worker",
+				"training.kubeflow.org/replica-index": "0",
+			},
+			Annotations: map[string]string{
+				"kai.scheduler/segment-size": "2",
+			},
+		},
+	}
+
+	metadata, err := grouper.GetPodGroupMetadata(pytorchJob, workerPod)
+	assert.Nil(t, err)
+	assert.Equal(t, int32(5), metadata.MinAvailable)
+
+	workerParent := findSubGroupByName(metadata.SubGroups, strings.ToLower(replicaTypeWorker))
+	assert.NotNil(t, workerParent)
+	assert.Equal(t, ptr.To(int32(4)), workerParent.MinSubGroup)
+
+	for _, tc := range []struct {
+		name         string
+		minAvailable int32
+	}{
+		{"worker-0", 2},
+		{"worker-1", 2},
+		{"worker-2", 0},
+		{"worker-3", 0},
+	} {
+		sg := findSubGroupByName(metadata.SubGroups, tc.name)
+		assert.NotNil(t, sg, "segment %s not found", tc.name)
+		assert.Equal(t, tc.minAvailable, sg.MinAvailable, "segment %s MinAvailable", tc.name)
+	}
+}
+
 func TestGetPodGroupMetadata_Segments_MalformedAnnotation(t *testing.T) {
 	pytorchJob := getPytorchJobWithSegments(1, 4, "invalid")
 	grouper := newTestPyTorchGrouper()
