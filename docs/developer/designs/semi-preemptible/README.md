@@ -103,16 +103,6 @@ Because each subgroup here is fully gang (`minMember == size`), there is no pod-
 
 A validation webhook must **reject increases** to `minMember` or `minSubGroup` on a running semi-preemptible PodGroup (the root spec and every SubGroup entry). Raising either would reclassify already-running over-quota elastic pods/subgroups as core, silently growing the minimal satisfying set and breaking quota invariants without a rescheduling cycle. Decreasing is allowed — it can only widen the elastic tier.
 
-## Automated Segmentation (Out of Scope)
-
-[Automated segmented subgroups](../segmented-subgroups/README.md) (the `kai.scheduler/segment-size` annotation, wired for PyTorchJob Worker replicas and LeaderWorkerSet) are **out of scope** for semi-preemptible and are **mutually exclusive** with it.
-
-Automated segmentation emits a **fully-gang** tree: every segment leaf gets `minAvailable = segmentSize`, with no `minSubGroup` and no `minMember = 0`. A fully-gang tree has no surplus at any level, so semi-preemptible has nothing to make elastic and silently collapses to plain non-preemptible. Rather than ship a combination that looks meaningful but is inert, the two are kept apart.
-
-This does **not** remove subgroup-level elasticity — it remains fully supported for **hand-authored** subgroup trees (see [Subgroups and Multi-Level Trees](#subgroups-and-multi-level-trees)), where the user sets `minSubGroup` below the number of child subgroups to create an elastic tier. The exclusion applies only to the automated, annotation-driven path.
-
-**Enforcement (soft).** When a workload requests both automated segmentation and `semi-preemptible`, the PodGrouper still creates the PodGroup but emits a `PodGrouperWarning` event on the pod, noting that the two are mutually exclusive and the workload will behave as non-preemptible. Enforcement lives in the PodGrouper rather than an admission webhook because only the grouper sees both the resolved preemptibility and the segmentation decision, and for auto-segmented workloads the user submits the source workload (PyTorchJob/LWS) — never the PodGroup — so a Warning event on the pod is more visible than a PodGroup-webhook rejection. Being non-blocking, it never breaks an existing workload that happens to set both.
-
 ## Simulation Considerations
 
 Victim selection considers only the **surplus** of each node: the "extra" (`n - minMember`) pods at a leaf PodSet, and the extra (`scheduled - minSubGroup`) child subgroups at an intermediate node (evicted whole). This is applied independently per node; no cross-subgroup victim selection is needed. This approach may miss some solutions when checking all orderings, but the added complexity is not justified for the MVP.
