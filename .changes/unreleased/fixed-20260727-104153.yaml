@@ -1,0 +1,3 @@
+kind: Fixed
+body: |-
+  Retry queue creation when admission webhook is not yet ready after install
