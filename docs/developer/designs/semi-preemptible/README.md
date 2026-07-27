@@ -120,7 +120,7 @@ Victim selection considers only the **surplus** of each node: the "extra" (`n - 
 This implies that pods are treated equally within the same subgroup for eviction, prompting the user to use the subgroup API to specify any ordering or hierarchy for pod eviction (see [Footnote: Eviction Ordering](#footnote-eviction-ordering)).
 
 
-## Non-Preemptible Accounting API (Option A)
+## Non-Preemptible Accounting API
 
 ### Problem
 
