@@ -1,0 +1,3 @@
+kind: Fixed
+body: |-
+  Removed unnecessary pod-affinity pre-score allocation churn
