@@ -3,12 +3,11 @@
 
 // Functions in this file are ported from:
 // k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources/extendeddynamicresources.go
+// We couldn't import them and had to copy since they are private in the upstream dynamic resources packages.
 //
 // Signatures are adapted to use *extendedresourcecache.ExtendedResourceCache in place of
 // fwk.DeviceClassResolver, and to drop klog.Logger and *stateData parameters that are
 // not needed in KAI's scheduling context.
-//
-// When upgrading Kubernetes, replace this file wholesale with the updated upstream logic.
 
 package dynamicresources
 
