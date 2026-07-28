@@ -137,6 +137,12 @@ scheduler:
   # args:
   #   v: "0"
   args: {}
+  # goMemLimitRatio reserves container-memory headroom from Go's memory limit.
+  # The scheduler defaults to 0.9 when this value is omitted.
+  goMemLimitRatio: 0.9
+  # goMemLimit overrides automatic cgroup-derived GOMEMLIMIT for the default shard.
+  # Example: 6Gi
+  # goMemLimit: ""
   # plugins allows overriding or adding custom scheduler plugins
   # Built-in plugins can be disabled, reordered, or have their arguments changed.
   # New plugins can be added by specifying a name not in the default set.

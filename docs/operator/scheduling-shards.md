@@ -62,6 +62,24 @@ spec:
 The `args` field maps directly to scheduler CLI flags (`--<flag>=<value>`), for example `v`, `qps`, `burst`, and `leader-elect`.
 When installing with Helm, configure these via `scheduler.args` in your values file (for example `scheduler.args.v: "3"`).
 
+## Go memory limit
+
+Each scheduler shard derives Go's memory limit from its effective cgroup memory limit. Set `goMemLimitRatio` to reserve headroom for memory not managed by the Go runtime; it defaults to `0.9` and is refreshed every 15 seconds when the cgroup limit changes.
+
+Set `goMemLimit` only to override automatic calculation for a shard. It is passed to the scheduler as `GOMEMLIMIT` and disables automatic updates.
+
+```yaml
+apiVersion: kai.scheduler/v1
+kind: SchedulingShard
+metadata:
+  name: gpu-shard
+spec:
+  goMemLimitRatio: 0.85
+  # goMemLimit: 6Gi
+```
+
+The scheduler warns and preserves its existing Go memory limit when its cgroup limit is unavailable or unlimited. An abrupt VPA memory decrease can still OOM the process before the next refresh.
+
 For customizing which plugins and actions run in a shard (disabling, reordering, overriding arguments), see [Scheduler Config Customization](./scheduler-config-customization.md).
 
 ## Node Preparation

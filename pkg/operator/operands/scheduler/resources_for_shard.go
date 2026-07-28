@@ -33,6 +33,7 @@ import (
 
 const (
 	invalidJobDepthMapError = "the scheduler's actions are %s. %s isn't one of them, making the queueDepthPerAction invalid"
+	goMemLimitRatioEnv      = "KAI_GOMEMLIMIT_RATIO"
 )
 
 func (s *SchedulerForShard) deploymentForShard(
@@ -85,10 +86,18 @@ func (s *SchedulerForShard) deploymentForShard(
 			SubPath:   "config.yaml",
 		},
 	}
-	deployment.Spec.Template.Spec.Containers[0].Env = []corev1.EnvVar{
+	goMemLimitRatio := 0.9
+	if shard.Spec.GoMemLimitRatio != nil {
+		goMemLimitRatio = *shard.Spec.GoMemLimitRatio
+	}
+	env := []corev1.EnvVar{
 		{
 			Name:  "GOGC",
 			Value: fmt.Sprintf("%d", *config.GOGC),
+		},
+		{
+			Name:  goMemLimitRatioEnv,
+			Value: strconv.FormatFloat(goMemLimitRatio, 'f', -1, 64),
 		},
 		{
 			Name: "NAMESPACE",
@@ -99,6 +108,17 @@ func (s *SchedulerForShard) deploymentForShard(
 			},
 		},
 	}
+	if shard.Spec.GoMemLimit != nil {
+		goMemLimit := shard.Spec.GoMemLimit.Value()
+		if goMemLimit <= 0 {
+			return nil, fmt.Errorf("goMemLimit must be greater than zero")
+		}
+		env = append(env, corev1.EnvVar{
+			Name:  "GOMEMLIMIT",
+			Value: strconv.FormatInt(goMemLimit, 10),
+		})
+	}
+	deployment.Spec.Template.Spec.Containers[0].Env = env
 	deployment.Spec.Template.Spec.Containers[0].Args = containerArgs
 	deployment.Spec.Template.Spec.Volumes = []corev1.Volume{
 		{
