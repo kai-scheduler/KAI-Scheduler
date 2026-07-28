@@ -27,10 +27,12 @@ import (
 )
 
 const (
-	// A disaggregated inference deployment: prefill fills exactly one rack, decode spreads over a few
-	// racks of the same block, and the front-end is GPU-less.
+	// A disaggregated inference deployment: prefill fills exactly one rack, decode one more, and the
+	// front-end is GPU-less. Two racks per deployment tiles the topology tree exactly — a ragged
+	// deployment size fragments the free capacity and leaves the last deployment unschedulable under
+	// the pod group's required zone constraint.
 	inferencePrefillPods  = 2
-	inferenceDecodePods   = 8
+	inferenceDecodePods   = 4
 	inferenceDecodeGPUs   = 4
 	inferenceFrontendPods = 2
 
@@ -129,8 +131,6 @@ func disaggregatedInferenceAllocate(
 	ctx context.Context, testCtx *testcontext.TestContext, testQueue *v2.Queue,
 	totalNodes int, topologyName, zoneLevel, blockLevel, rackLevel string,
 ) {
-	// Fills the cluster exactly, which assumes the scheduler packs the identically shaped deployments
-	// rack-aligned. Lower the divisor if the fleet needs slack.
 	deployments := totalNodes / inferenceNodesPerDeployment
 	expectedPods := deployments * inferencePodsPerDeployment
 
