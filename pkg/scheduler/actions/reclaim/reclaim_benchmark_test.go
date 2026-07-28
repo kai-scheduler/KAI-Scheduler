@@ -18,6 +18,8 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/topology_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf_util"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
@@ -239,6 +241,10 @@ func buildUnschedulableDistributedReclaimBenchmarkTopology(
 	}
 
 	jobs = append(jobs, distributedJob)
+	var schedulerConfig *conf.SchedulerConfiguration
+	if params.FailureMode == unschedulableDistributedReclaimAntiAffinity {
+		schedulerConfig = schedulerConfigWithPodAffinity()
+	}
 
 	return test_utils.TestTopologyBasic{
 		Name:       "unschedulable distributed reclaim benchmark",
@@ -259,8 +265,19 @@ func buildUnschedulableDistributedReclaimBenchmarkTopology(
 		},
 		Mocks: &test_utils.TestMock{
 			CacheRequirements: &test_utils.CacheMocking{},
+			SchedulerConf:     schedulerConfig,
 		},
 	}
+}
+
+func schedulerConfigWithPodAffinity() *conf.SchedulerConfiguration {
+	config, err := conf_util.GetDefaultSchedulerConf()
+	if err != nil {
+		panic(err)
+	}
+	config.ScenarioSearchBudgets = nil
+	config.Tiers[0].Plugins = append(config.Tiers[0].Plugins, conf.PluginOption{Name: "podaffinity"})
+	return config
 }
 
 func unschedulableDistributedRackCount(params unschedulableDistributedReclaimBenchmarkParams) int {
