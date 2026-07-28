@@ -54,4 +54,4 @@ kubectl patch config.kai.scheduler kai-config --type merge -p '{"spec":{"podGrou
 kubectl patch config.kai.scheduler kai-config --type merge -p '{"spec":{"queueController":{"service":{"resources":{"requests":{"cpu":"50m","memory":"1000Mi"},"limits":{"cpu":"200m","memory":"200Mi"}}}}}}'
 
 # pod grouper
-kubectl patch config.kai.scheduler kai-config --type merge -p '{"spec":{"podGrouper":{"service":{"resources":{"requests":{"cpu":"50m","memory":"2000Mi"},"limits":{"cpu":"200m","memory":"2000Mi"}}}}}}'
+kubectl patch config.kai.scheduler kai-config --type merge -p '{"spec":{"podGrouper":{"service":{"resources":{"requests":{"cpu":"1","memory":"2Gi"},"limits":{"cpu":"2","memory":"2Gi"}}},"maxConcurrentReconciles":50,"k8sClientConfig":{"qps":500,"burst":1000}}}}'
