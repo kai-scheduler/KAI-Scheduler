@@ -1,0 +1,6 @@
+kind: Fixed
+body: stalegangeviction no longer evicts remaining pods of a gang whose pods complete successfully
+time: 2026-07-28T18:12:25.0211683+05:30
+custom:
+    Author: Thezone-1
+    Issue: "1968"
