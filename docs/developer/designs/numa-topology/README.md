@@ -119,7 +119,7 @@ usable.
 
 ## Design Details
 
-The work is staged into two phases (plus a v3 idea, and a default-on cross-cycle staleness correction
+The work is staged into three phases (plus a default-on cross-cycle staleness correction
 — exact with the exporter, predicted-record fallback without it, [Appendix A](#appendix-a-cross-cycle-staleness-compensation)):
 
 - **v1 — correctness (this section).** A **filter** that predicts the kubelet's admission verdict
@@ -136,6 +136,9 @@ The work is staged into two phases (plus a v3 idea, and a default-on cross-cycle
   *performance*: ranks feasible nodes (least fragmentation / fewest NUMA nodes) and steers
   `best-effort` workloads toward nodes where alignment will actually succeed. It reuses v1's
   evaluators and per-zone model and only **ranks** — it never changes the admit decision.
+- **v3 — pod-level NUMA requirement** ([`max-numa-spread`](#v3-pod-level-numa-requirement-max-numa-spread)).
+  Moves NUMA intent from the node to the workload: a pod annotates the widest NUMA span it tolerates
+  and the scheduler enforces that ceiling by placement, reusing v2's span computation.
 
 The rest of this section describes **v1**.
 
@@ -655,44 +658,186 @@ is one the predicate would filter — the score just reorders the funnel. For `b
   (`Zone.Costs`) is not ingested and no scoring seam is reserved for it. A distance metric (e.g. a
   v3 "minimax") would be a separate axis added later if pursued.
 
-## v3: Pod-level NUMA policy (scheduler-enforced)
+## v3: Pod-level NUMA requirement (`max-numa-spread`)
 
-*A direction for future discussion — not yet designed. API and mechanics are open; this section
-only records the idea.*
+v1 filters where the kubelet would reject; v2 ranks by how few NUMA zones a pod would span. Both
+take NUMA intent from the **node** — the kubelet's Topology Manager policy applies to every pod on
+it, all-or-nothing. That leaves two gaps: `best-effort` and `none` give no alignment guarantee to a
+workload that wants one, while `restricted` / `single-numa-node` force alignment on *every*
+Guaranteed pod, including ones that do not care.
 
-Today NUMA intent is a property of the **node**: the kubelet's Topology Manager policy applies to
-every pod on it, all-or-nothing. That leaves two gaps — `best-effort` gives no alignment guarantee
-to workloads that want one, while `restricted` / `single-numa-node` force alignment on *every*
-Guaranteed pod (including ones that don't care) and carry the request-inflation quirk.
+v3 makes NUMA intent a property of the **workload**. A pod declares the widest NUMA span it
+tolerates, and the scheduler enforces that by placement while other pods on the same node stay
+unconstrained. It reuses v2's span machinery unchanged — the same computation, now compared against
+a per-pod ceiling instead of only feeding a score.
 
-v3 would make NUMA intent a property of the **workload**: on a permissive (`best-effort` / `none`)
-node, a performance-sensitive pod declares its own NUMA constraint and the scheduler enforces it by
-placement, while other pods on the same node stay unconstrained. Mechanically this reuses v1's
-machinery — drive the evaluator from a per-pod declaration instead of the node policy — and relies
-on the kubelet's `best-effort` aligner (which still aligns when it can) to deliver the pinning.
+### API
 
-Two properties make it attractive:
+```yaml
+metadata:
+  annotations:
+    kai.scheduler/max-numa-spread: "1"   # positive integer: max NUMA zones the pod may span
+```
 
-- **Softer failure mode than v1.** A `best-effort` kubelet never rejects, so a scheduler
-  misprediction yields an *unaligned* pod (a throughput hit), never a `TopologyAffinityError` or a
-  stuck `Pending`.
-- **Pod-granularity NUMA requirements.** Like network topology, the sensitivity to NUMA placement 
-  should be a property of the workload, and specifically, of the pod. This implementation lets
-  the users express their workloads' requirements, instead of having the admin config this globally.
-- **Per-resource granularity.** A workload could ask to align only what it cares about (e.g. GPU
-  and NIC, not CPU), sidestepping the node-level all-resource merge that drives `restricted`'s
-  request-inflation quirk.
+- **Value** is a positive integer — the maximum number of NUMA zones the pod's *kubelet-aligned*
+  resources may occupy. `1` means "everything on one NUMA node": the `single-numa-node` guarantee,
+  scheduler-enforced, on a node that does not enforce it. No annotation = unconstrained, i.e.
+  exactly v2 behavior.
+- **What the ceiling covers** is the pod's aligned resource set as v1 already computes it
+  (`alignedAware`): devices for every QoS class, `cpu`/`memory`/`hugepages` only for Guaranteed pods.
+- **It is a ceiling, not a preference.** v2's `1/span` score already prefers the tightest placement
+  *below* the ceiling, so `max-numa-spread: 2` reads as "prefer 1, tolerate 2" with no extra API.
+  There is deliberately no `preferred` variant (see *Alternatives considered*).
+- **It can only tighten, never relax.** The kubelet remains the enforcement point: on a
+  `single-numa-node` node a pod annotated `"4"` is still held to one zone, and still rejected if it
+  does not fit there. The annotation never widens what the kubelet allows.
 
-**Honest limitation — not a hard guarantee.** Because a `best-effort` kubelet never rejects, the
-scheduler cannot provide a *kubelet-enforced* guarantee; it offers a strong placement preference
-(place only where alignment is achievable, plus reservation) and the kubelet best-effort path
-delivers it. A true "align or don't run" guarantee would additionally need the
-[placement exporter](../numa-placement-exporter/README.md) to observe actual placement and re-place on a
-miss (verify-and-heal).
+### Enforcement: a predicate with two different bounds
 
-This also lines up with where Kubernetes is heading — **DRA**, where workloads express device and
-topology constraints and the scheduler allocates against them; v3 is a KAI-native precursor to that
-model.
+The ceiling is enforced as a **filter** (`PredicateFn`). The subtlety is that v2's `best-effort`
+span comes from `bestEffortEvaluator`, a *greedy approximation* that can overshoot the true minimum
+by one zone (~1% of cases; see `best_effort_fidelity_test.go`). That is harmless while it only feeds
+a score, but a hard filter driven by an overshooting span would **reject a pod that could actually
+have run** — reintroducing the stuck-`Pending` failure this feature exists to eliminate.
+
+So accept and reject are decided by two *different* bounds, each sound in its own direction:
+
+| Condition | Decision | Why it is sound |
+| --- | --- | --- |
+| `greedySpan ≤ max` | **accept** | greedy returns a real witness mask, so a placement of that width provably exists |
+| `lowerBound > max` | **reject** | no feasible mask can be narrower than `lowerBound`, so the pod provably cannot meet the ceiling |
+| `lowerBound ≤ max < greedySpan` | **accept** (permissive) | rare ambiguous band: admitting risks a wider-than-requested placement (a soft miss on a policy that never rejects); rejecting risks a stuck pod |
+
+`lowerBound` is the per-resource minimum width: for each requested resource, the fewest zones whose
+`Available` (sorted descending) sum to the request; the bound is the maximum over resources. Any
+feasible mask must contain at least that many zones for the binding resource. This is the existing
+`minWidthFromPrefix` computation applied to `Available` instead of `Allocatable`.
+
+Net effect: **the approximation can never cause a false rejection.** It survives only as a rare
+missed opportunity to tighten, on a policy that offers no guarantee anyway.
+
+### Per-policy behavior
+
+| Node | Span the pod will get | Filter |
+| --- | --- | --- |
+| `single-numa-node` | `1`, kubelet-forced | never filters (any `max ≥ 1` is satisfied) |
+| `restricted` | `w`, kubelet-forced from `Allocatable` | reject if `w > max` |
+| `best-effort` | predicted (greedy / lower bound) | the two-bound rule above |
+| `none` | unaligned | accept only if *trivially satisfiable*; else reject |
+| no NRT object | unknown | reject — with one cluster-wide exception |
+
+The `restricted` row is the one place the scheduler is **stricter than the kubelet**: the kubelet
+would admit the pod at width `w`, and v3 rejects it because the workload asked for less. That is the
+point of the feature, but it means an annotated pod can be unschedulable on nodes that would
+otherwise have taken it — worth stating plainly in user-facing docs.
+
+**Trivially satisfiable.** If the pod's aligned set cannot span more than one zone — a single
+indivisible aligned unit, e.g. a Burstable pod requesting one device and nothing else the kubelet
+aligns — its span is `1` on *any* node under *any* policy, because one device sits on one NUMA node.
+Such a pod satisfies every `max ≥ 1` and is never filtered, including on `none` and no-NRT nodes.
+This check runs first, so the annotation never blocks a pod it could not possibly constrain.
+
+**Unverifiable nodes fail closed.** Where the ceiling is a requirement and the scheduler cannot
+verify it — a node with no NRT object, or a `none` node for a pod with more than one aligned unit —
+the node is rejected rather than gambled on. **Exception:** when *no* node in the cluster publishes
+NRT (`maxZones == 0`), failing closed would make every annotated pod unschedulable everywhere behind
+an opaque `Pending`. In that case the annotation is treated as **inert** and a warning is logged, so
+a cluster without the NUMA stack degrades to current behavior instead of deadlocking.
+
+### Topology Manager scope
+
+The ceiling applies to the pod's **union** span — the set of distinct zones its containers occupy —
+under both `pod` and `container` scope. Under container scope the kubelet aligns each container
+separately, so two span-1 containers on different zones give a union span of 2; the union is what a
+user means by "my pod sits on N NUMA nodes", and it is what v2 already computes (`len(alloc)`).
+Per-container ceilings are deferred until there is demand.
+
+This makes one existing modelling gap load-bearing: v1 builds a container-scope request for **every**
+container, including ones the kubelet does not align (a fractional-CPU sidecar gets shared-pool CPU
+and no alignment at all). Such a container can be assigned its own zone and inflate the union —
+harmless noise for a score, but a false rejection for a ceiling. v3 therefore skips containers with
+no kubelet-aligned resources when building container-scope requests.
+
+### Explainability
+
+An unsatisfiable ceiling has to say so, or it reintroduces the mystery-`Pending` this feature
+exists to remove. A `max-numa-spread` rejection carries a typed error holding the requested `max`
+and the computed span, formatted at the fit-error boundary — not per candidate node, so the v1
+reject path stays allocation-free on its shared sentinel:
+
+```
+node-7: pod requires ≤1 NUMA zone; minimum feasible span is 3
+```
+
+Together with the `maxZones == 0` warning above, both failure modes are visible: "the annotation is
+doing nothing" and "the annotation is rejecting everything".
+
+### Validation
+
+The admission pod validator (`pkg/admission/webhook/v1alpha2/podhooks`, alongside the existing
+`gpusharing` / `deviceaccess` plugins) rejects a malformed value — non-integer, zero, or negative.
+A *vacuous* annotation (present on a pod with no kubelet-aligned resources) is **warned, not
+rejected**: it is a harmless mistake, and failing admission for it would be user-hostile.
+
+### Not a kubelet-enforced guarantee
+
+On `best-effort` and `none` the kubelet never rejects, so v3 delivers a strong *placement*
+guarantee, not an admission one: the scheduler places only where the ceiling is achievable and
+reserves the zones in-cycle, and the kubelet's best-effort aligner does the pinning. Concurrency,
+foreign pods, or a misprediction can still leave a pod wider than its ceiling. A true "align or do
+not run" guarantee additionally needs the [placement exporter](../numa-placement-exporter/README.md)
+to observe the actual placement and re-place on a miss (verify-and-heal) — out of scope here, and
+the natural follow-up. The failure mode is soft by construction: a miss costs throughput, never a
+`TopologyAffinityError` or a stuck `Pending`.
+
+### Alternatives considered
+
+- **A `preferred` variant** (Kueue splits `podset-required-topology` / `podset-preferred-topology`).
+  Rejected: v2's `1/span` score already supplies the soft preference, so a ceiling plus the existing
+  score expresses "prefer tightest, tolerate up to K", and "prefer tightest, tolerate anything" is
+  simply the default with no annotation.
+- **A policy-name value** (Volcano's `volcano.sh/numa-topology-policy` takes `single-numa-node`,
+  `best-effort`, …). Rejected: an integer generalizes (1, 2, 4…), maps directly onto the span the
+  plugin already computes, and avoids overloading kubelet policy names with scheduler-side meaning.
+- **Per-resource granularity** ("align GPU and NIC but not CPU"). Deferred: it is a different axis
+  from a span ceiling, and the kubelet merges all participating hint providers anyway, so the
+  scheduler cannot honor a partial merge on the rejecting policies. Revisit on demand.
+- **A NUMA-distance ceiling** ("minimax": the largest inter-zone distance tolerated). Deferred along
+  with v2's decision not to ingest `Zone.Costs`. If added it becomes a **separate** annotation that
+  ANDs with this one, never a reinterpretation of this key.
+
+### Related work
+
+| System | Pod/job-level API | Shape |
+| --- | --- | --- |
+| [Volcano][volcano-numa] | `volcano.sh/numa-topology-policy` | kubelet policy name, enforced by the scheduler independently of the node's policy |
+| [Kueue TAS][kueue-tas] | `podset-required-topology` / `podset-preferred-topology` | topology *level*, split into hard and soft annotations |
+| [Slurm][slurm-gres] | `--gres-flags=enforce-binding` / `disable-binding` | boolean, plus an explicit *relax* escape hatch |
+| [DRA][dra-constraints] | `constraints.matchAttribute` | declarative "all devices share this attribute" (devices only, not cpu/memory) |
+| [YARN][yarn-numa] | — | node-level only; the NodeManager pins each container to one NUMA node |
+
+Volcano is the closest precedent and validates the core bet: pod-declared NUMA intent, enforced by
+the scheduler independently of the node's kubelet policy. Two deliberate divergences — v3 uses an
+integer span rather than a policy name, and v2 scores on *absolute* span where Volcano normalizes by
+the node's zone count (`weight × (100 − 100 × numaNodeNum / maxNumaNodeNum)`), which would rank a
+3-of-8 placement above a 2-of-4 one.
+
+Upstream is converging on the same shape from the node side: [KEP-5526][kep-5526] extends the
+Topology/CPU/Memory Managers to pod-level resources, and DRA lets workloads express device topology
+constraints directly. v3 is a KAI-native precursor to that model.
+
+### Open questions
+
+- **Gang authoring.** The ceiling is enforced per pod. Most gang workload types (PyTorchJob, MPIJob,
+  LeaderWorkerSet) already carry separate templates for master and worker, so a per-pod annotation
+  naturally expresses "workers need alignment, the master does not" — and PodGroup-level propagation
+  would destroy that asymmetry by forcing one value on both roles. The open question is therefore
+  narrower: do we want a **PodGroup- or queue-level default** that individual pods can override?
+- **Per-container ceilings** under container scope, if the union turns out to be too strict.
+- **Verify-and-heal** on `best-effort`: should an observed placement wider than the ceiling trigger
+  eviction and re-placement, or only a metric?
+- **Preemption coverage.** The ceiling rides the predicate, so preemption scenarios already respect
+  it; needs explicit tests that an annotated pod preempts for a *narrow enough* slot, not any slot.
 
 ## Appendix A: cross-cycle staleness compensation
 
@@ -818,4 +963,10 @@ in the [Operator Deployment design](./operator-deployment.md).
 [nrt-api]: https://github.com/k8stopologyawareschedwg/noderesourcetopology-api
 [nfd-tu]: https://github.com/kubernetes-sigs/node-feature-discovery/blob/master/pkg/nfd-topology-updater/kubeletnotifier/kubeletnotifier.go
 [fgo]: https://github.com/run-ai/fake-gpu-operator
+[volcano-numa]: https://github.com/volcano-sh/volcano/blob/master/docs/design/numa-aware.md
+[kueue-tas]: https://kueue.sigs.k8s.io/docs/concepts/topology_aware_scheduling/
+[slurm-gres]: https://slurm.schedmd.com/gres.html
+[dra-constraints]: https://kubernetes.io/blog/2026/05/07/kubernetes-v1-36-dra-136-updates/
+[yarn-numa]: https://hadoop.apache.org/docs/current/hadoop-yarn/hadoop-yarn-site/UsingNuma.html
+[kep-5526]: https://github.com/kubernetes/enhancements/tree/master/keps/sig-node/5526-pod-level-resource-managers
 [rte]: https://github.com/k8stopologyawareschedwg/resource-topology-exporter/blob/main/pkg/notification/notification.go
