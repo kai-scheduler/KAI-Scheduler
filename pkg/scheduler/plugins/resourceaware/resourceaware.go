@@ -31,6 +31,10 @@ func (rp *resourceAwarePlugin) JobOrderFn(l, r interface{}) int {
 	lv := l.(*podgroup_info.PodGroupInfo)
 	rv := r.(*podgroup_info.PodGroupInfo)
 
+	if lv.Priority != rv.Priority {
+		return 0
+	}
+
 	lGPU := lv.GetAliveTasksRequestedGPUs()
 	rGPU := rv.GetAliveTasksRequestedGPUs()
 

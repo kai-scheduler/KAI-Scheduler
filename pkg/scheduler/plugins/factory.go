@@ -45,12 +45,14 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/subgrouporder"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/taskorder"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/topology"
+        "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/resourceaware"
 )
 
 func InitDefaultPlugins() {
 	// Plugins for PodGroupInfos
 	framework.RegisterPluginBuilder("predicates", predicates.New)
 	framework.RegisterPluginBuilder("priority", priority.New)
+	framework.RegisterPluginBuilder("resourceaware", resourceaware.New)
 	framework.RegisterPluginBuilder("nodeplacement", nodeplacement.New)
 	framework.RegisterPluginBuilder("nominatednode", nominatednode.New)
 	framework.RegisterPluginBuilder("numa", numa.New)
