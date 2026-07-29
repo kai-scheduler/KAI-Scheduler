@@ -24,6 +24,9 @@ global:
   affinity: {}
   requireDefaultPodAntiAffinityTerm: false
   tolerations: []
+  # Applies to the operator and every operator-managed service. Empty leaves pods
+  # without a priority class. Example: system-cluster-critical
+  priorityClassName: ""
   namespaceLabelSelector: {}
   podLabelSelector: {}
   nodePoolLabelKey: ""
