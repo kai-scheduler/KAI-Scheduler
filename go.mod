@@ -3,6 +3,7 @@ module github.com/kai-scheduler/KAI-scheduler
 go 1.26.3
 
 require (
+	github.com/KimMachineGun/automemlimit v0.7.5
 	github.com/NVIDIA/go-nvml v0.13.0-1
 	github.com/aptible/supercronic v0.2.44
 	github.com/argoproj/argo-workflows/v3 v3.7.14
@@ -151,6 +152,7 @@ require (
 	github.com/mxk/go-flowrate v0.0.0-20140419014527-cca7078d478f // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/selinux v1.13.0 // indirect
+	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/prometheus/procfs v0.20.1 // indirect

@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/signal"
 	"syscall"
 	"time"
 
@@ -133,6 +134,11 @@ func RunApp() error {
 	} else {
 		defer flushLogs()
 	}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	if err := startMemoryLimitManager(ctx); err != nil {
+		return fmt.Errorf("configure Go memory limit: %w", err)
+	}
 	setConfig(so)
 
 	config := clientconfig.GetConfigOrDie()
@@ -140,7 +146,7 @@ func RunApp() error {
 	config.Burst = so.Burst
 	config.Wrap(wrapExitOnUnauthorized)
 
-	return Run(so, config, mux)
+	return Run(ctx, so, config, mux)
 }
 
 func setupProfiling(so *options.ServerOption) {
@@ -177,7 +183,7 @@ func setConfig(so *options.ServerOption) {
 // +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
 
-func Run(opt *options.ServerOption, config *restclient.Config, mux *http.ServeMux) error {
+func Run(ctx context.Context, opt *options.ServerOption, config *restclient.Config, mux *http.ServeMux) error {
 	if opt.PrintVersion {
 		version.PrintVersion()
 	}
@@ -212,7 +218,7 @@ func Run(opt *options.ServerOption, config *restclient.Config, mux *http.ServeMu
 	}
 
 	if !opt.EnableLeaderElection {
-		run(context.TODO())
+		run(ctx)
 		return fmt.Errorf("finished without leader elect")
 	}
 
@@ -250,7 +256,7 @@ func Run(opt *options.ServerOption, config *restclient.Config, mux *http.ServeMu
 		return fmt.Errorf("couldn't create resource lock: %v", err)
 	}
 
-	leaderelection.RunOrDie(context.TODO(), leaderelection.LeaderElectionConfig{
+	leaderelection.RunOrDie(ctx, leaderelection.LeaderElectionConfig{
 		Lock:          rl,
 		LeaseDuration: leaseDuration,
 		RenewDeadline: renewDeadline,

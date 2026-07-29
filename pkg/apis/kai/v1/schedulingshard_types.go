@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"time"
 
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
@@ -95,6 +96,18 @@ type SchedulingShardSpec struct {
 	// +kubebuilder:validation:Optional
 	Args map[string]string `json:"args,omitempty"`
 
+	// GoMemLimitRatio is the fraction of the scheduler container memory limit
+	// applied as GOMEMLIMIT. Defaults to 0.9.
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:ExclusiveMinimum=true
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=1
+	GoMemLimitRatio *float64 `json:"goMemLimitRatio,omitempty"`
+
+	// GoMemLimit overrides automatic cgroup-derived GOMEMLIMIT for this shard.
+	// +kubebuilder:validation:Optional
+	GoMemLimit *resource.Quantity `json:"goMemLimit,omitempty"`
+
 	// PlacementStrategy is the placement scheduler strategy
 	// +kubebuilder:validation:Optional
 	PlacementStrategy *PlacementStrategy `json:"placementStrategy,omitempty"`
@@ -146,6 +159,8 @@ type SchedulingShardSpec struct {
 }
 
 func (s *SchedulingShardSpec) SetDefaultsWhereNeeded() {
+	s.GoMemLimitRatio = common.SetDefault(s.GoMemLimitRatio, ptr.To(0.9))
+
 	s.PlacementStrategy = common.SetDefault(s.PlacementStrategy, &PlacementStrategy{})
 	s.PlacementStrategy.SetDefaultWhereNeeded()
 

@@ -55,3 +55,16 @@ tests:
       - equal:
           path: spec.scenarioSearchBudgets.maxGeneratorSearchDuration.NodeLocalGreedy
           value: 50ms
+
+  - it: should render Go memory limit configuration
+    set:
+      scheduler:
+        goMemLimitRatio: 0.85
+        goMemLimit: 6Gi
+    asserts:
+      - equal:
+          path: spec.goMemLimitRatio
+          value: 0.85
+      - equal:
+          path: spec.goMemLimit
+          value: 6Gi
