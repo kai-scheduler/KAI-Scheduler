@@ -1,0 +1,6 @@
+kind: Fixed
+body: Guard custom scalingpod namespaces and resource-reservation ServiceAccounts in the Helm chart
+time: 2026-07-29T10:45:49.529295176+02:00
+custom:
+    Author: dttung2905
+    Issue: "1733"
