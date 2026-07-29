@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.16.8] - 2026-07-29
+
+### Fixed
+- Guard custom scalingpod namespaces and resource-reservation ServiceAccounts in the Helm chart [#1733](https://github.com/kai-scheduler/KAI-Scheduler/issues/1733) [dttung2905](https://github.com/dttung2905)
+
 ## [v0.16.7] - 2026-07-26
 
 ### Fixed
