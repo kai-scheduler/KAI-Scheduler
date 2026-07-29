@@ -10,7 +10,7 @@ SCALE_DIR="${REPO_ROOT}/test/e2e/scale"
 KWOK_LATEST_RELEASE=v0.6.1
 kubectl apply -f "https://github.com/kubernetes-sigs/kwok/releases/download/${KWOK_LATEST_RELEASE}/kwok.yaml"
 kubectl apply -f "https://github.com/kubernetes-sigs/kwok/releases/download/${KWOK_LATEST_RELEASE}/stage-fast.yaml"
-kubectl apply --server-side -f https://github.com/run-ai/kwok-operator/releases/download/1.0.1/kwok-operator.yaml
+kubectl apply --server-side -f https://github.com/run-ai/kwok-operator/releases/download/1.0.4/kwok-operator.yaml
 kubectl apply -f "${SCALE_DIR}/base_kwok_managed_nodepool.yaml"
 
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
