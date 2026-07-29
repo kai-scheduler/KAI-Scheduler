@@ -1,0 +1,3 @@
+kind: Fixed
+body: |-
+  Helm chart skips creating resource-reservation ServiceAccount and scaling pod namespace when they already exist
