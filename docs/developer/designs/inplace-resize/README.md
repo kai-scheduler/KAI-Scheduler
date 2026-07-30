@@ -200,7 +200,9 @@ effective request against what was recorded at scheduling time, which is not
 currently tracked. Resize conditions can serve as a proxy but only while the
 condition is still present.
 
-## Follow-Up: Deferred Resize Preemption (#1872)
+## Follow-Ups
+
+### Deferred Resize Preemption (#1872)
 
 This must follow accounting and strict admission. Without them, KAI could
 evict workloads to help a resize that never passed quota checks.
@@ -227,3 +229,31 @@ mark the resize complete — the kubelet decides that.
 
 This is best-effort. There may be no eligible victims, or kubelet constraints
 (topology, memory manager) may block the resize even after capacity is freed.
+
+### Upstream Scheduler Gate for Resize
+
+The webhook admission approach has an inherent race: the queue controller can
+reconcile from a stale pod cache and overwrite the webhook's `Queue.status.allocated`
+update before the pod informer delivers the resize event. The detect-and-block
+mitigation in the Violations section handles this, but does not eliminate it.
+
+If operational experience shows the race causes persistent violations, a
+Kubernetes KEP proposing a scheduler-native gate for `pods/resize` — analogous
+to `schedulingGates` for initial scheduling — would address it more cleanly.
+Such a gate would let the scheduler block a resize at the API server before
+it is persisted, removing the webhook-vs-reconciler race entirely. This would
+require changes to how `kube-apiserver` handles the `pods/resize` subresource
+and would benefit any multi-tenant scheduler, not only KAI.
+
+### VPA Integration
+
+VPA in `InPlace` update mode is the most common source of `pods/resize` requests.
+The admission webhook handles VPA reactively — it rejects out-of-quota resizes
+after VPA has already decided what to request.
+
+A proactive alternative: KAI watches Queue headroom and patches
+`VPA.spec.resourcePolicy.containerPolicies[].maxAllowed` to cap VPA's
+recommendations to what the queue allows. VPA will then never ask for more
+than the queue permits, eliminating unnecessary resize attempts and webhook
+rejections. The trade-off is a new dependency on VPA objects, additional RBAC,
+and bounds that lag slightly behind real-time headroom.
