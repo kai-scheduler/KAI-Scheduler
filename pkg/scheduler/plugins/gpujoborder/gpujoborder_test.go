@@ -1,4 +1,4 @@
-package resourceaware
+package gpujoborder
 
 import (
 	"testing"
@@ -22,15 +22,15 @@ func makeGPUPodGroup(uid string, priority int32, gpuCount float64, vm *resource_
 	return pg
 }
 
-func newPlugin(t *testing.T, mode string) *resourceAwarePlugin {
+func newPlugin(t *testing.T, mode string) *gpuJobOrderPlugin {
 	t.Helper()
 	args := framework.PluginArguments{}
 	if mode != "" {
 		args["mode"] = mode
 	}
-	rp, ok := New(args).(*resourceAwarePlugin)
+	rp, ok := New(args).(*gpuJobOrderPlugin)
 	if !ok {
-		t.Fatalf("New() did not return *resourceAwarePlugin")
+		t.Fatalf("New() did not return *gpuJobOrderPlugin")
 	}
 	return rp
 }
