@@ -45,7 +45,7 @@ kubectl patch config.kai.scheduler kai-config --type merge -p '{"spec":{"admissi
 kubectl patch config.kai.scheduler kai-config --type merge -p '{"spec":{"scheduler":{"service":{"resources":{"requests":{"cpu":"3","memory":"7Gi"},"limits":{"cpu":"5","memory":"7Gi"}}}}}}'
 
 # Binder
-kubectl patch config.kai.scheduler kai-config --type merge -p '{"spec":{"binder":{"service":{"resources":{"requests":{"cpu":"100m","memory":"2500Mi"},"limits":{"cpu":"400m","memory":"2500Mi"}}},"args":{"maxConcurrentReconciles": 100, "qps": 500, "burst": 2000}}}}'
+kubectl patch config.kai.scheduler kai-config --type merge -p '{"spec":{"binder":{"service":{"resources":{"requests":{"cpu":"1","memory":"8Gi"},"limits":{"cpu":"2","memory":"8Gi"}}},"args":{"maxConcurrentReconciles": 100, "qps": 500, "burst": 2000}}}}'
 
 # pod group controller
 kubectl patch config.kai.scheduler kai-config --type merge -p '{"spec":{"podGroupController":{"service":{"resources":{"requests":{"cpu":"50m","memory":"8000Mi"},"limits":{"cpu":"200m","memory":"8000Mi"}}}}}}'
