@@ -1,0 +1,3 @@
+kind: Fixed
+body: |-
+  Clean deleted Pod status updates
