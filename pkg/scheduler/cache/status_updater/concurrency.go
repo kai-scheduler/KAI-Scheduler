@@ -131,8 +131,14 @@ func (su *defaultStatusUpdater) updatePodGroup(
 				podGroup.Namespace, podGroup.Name, statusErr)
 		}
 		if patchErr != nil {
-			log.StatusUpdaterLogger.V(1).Errorf("Failed to patch pod group %s/%s: %v",
-				podGroup.Namespace, podGroup.Name, patchErr)
+			errStatus, ok := patchErr.(apierrors.APIStatus)
+			if ok {
+				log.StatusUpdaterLogger.V(1).Errorf("Failed to patch pod group %s/%s: %v",
+					podGroup.Namespace, podGroup.Name, errStatus.Status())
+			} else {
+				log.StatusUpdaterLogger.V(1).Errorf("Failed to patch pod group %s/%s: %v",
+					podGroup.Namespace, podGroup.Name, patchErr)
+			}
 		}
 
 		su.pushToUpdateQueue(
@@ -156,7 +162,7 @@ func (su *defaultStatusUpdater) updatePodGroup(
 
 // isTerminalUpdateError reports whether an update error can never succeed on retry.
 func isTerminalUpdateError(err error) bool {
-	return apierrors.IsNotFound(err) || apierrors.IsConflict(err)
+	return apierrors.IsNotFound(err) || apierrors.IsConflict(err) || apierrors.IsInvalid(err)
 }
 
 func (su *defaultStatusUpdater) updateInFlightObject(key updatePayloadKey, objectType string, object *inflightUpdate) {
