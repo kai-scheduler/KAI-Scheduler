@@ -1,0 +1,6 @@
+kind: Added
+body: Added support for configuring pod-grouper Pod Disruption Budget via Helm values (`podgrouper.podDisruptionBudget`) when running multiple replicas
+time: 2026-07-22T21:05:57.616499816+01:00
+custom:
+    Author: dttung2905
+    Issue: "1477"

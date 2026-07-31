@@ -1,0 +1,5 @@
+kind: Fixed
+body: Segmented PyTorch and LWS PodGrouper now uses minSubGroup on parent SubGroups, fixing admission webhook rejection.
+time: 2026-07-21T17:48:44.000000000Z
+custom:
+    Issue: "1927"

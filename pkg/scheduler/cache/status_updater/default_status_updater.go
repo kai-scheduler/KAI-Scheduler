@@ -23,6 +23,7 @@ import (
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal"
@@ -195,7 +196,13 @@ func (su *defaultStatusUpdater) PatchPodLabels(pod *v1.Pod, labels map[string]an
 	)
 }
 
-func (su *defaultStatusUpdater) RecordJobStatusEvent(job *podgroup_info.PodGroupInfo) error {
+func (su *defaultStatusUpdater) RecordJobStatusEvent(
+	job *podgroup_info.PodGroupInfo,
+	resolveDetailedFitErrors func(
+		*podgroup_info.PodGroupInfo,
+		*pod_info.PodInfo,
+	) ([]*common_info.TasksFitError, error),
+) error {
 	var err error
 	var patchData []byte
 	if patchData, err = su.updatePodGroupAnnotations(job); err != nil {
@@ -204,7 +211,7 @@ func (su *defaultStatusUpdater) RecordJobStatusEvent(job *podgroup_info.PodGroup
 	if job.StalenessInfo.Stale {
 		su.recordStaleJobEvent(job)
 	}
-	if err := su.recordInvalidSubGroupPodsEvents(job); err != nil {
+	if err := su.recordInvalidSubGroupPodsEvents(job, resolveDetailedFitErrors); err != nil {
 		return err
 	}
 
@@ -214,10 +221,12 @@ func (su *defaultStatusUpdater) RecordJobStatusEvent(job *podgroup_info.PodGroup
 			su.recordJobNotReadyEvent(job)
 			return nil
 		}
-		if err := su.recordUnschedulablePodsEvents(job); err != nil {
+		if err := su.recordUnschedulablePodsEvents(job, resolveDetailedFitErrors); err != nil {
 			return err
 		}
 		updatePodgroupStatus = su.recordUnschedulablePodGroup(job)
+	} else {
+		updatePodgroupStatus = su.clearPodGroupSchedulingCondition(job)
 	}
 
 	if len(patchData) > 0 || updatePodgroupStatus {
@@ -346,7 +355,13 @@ func (su *defaultStatusUpdater) updatePodCondition(pod *v1.Pod, condition *v1.Po
 	return nil
 }
 
-func (su *defaultStatusUpdater) recordUnschedulablePodsEvents(job *podgroup_info.PodGroupInfo) error {
+func (su *defaultStatusUpdater) recordUnschedulablePodsEvents(
+	job *podgroup_info.PodGroupInfo,
+	resolveDetailedFitErrors func(
+		*podgroup_info.PodGroupInfo,
+		*pod_info.PodInfo,
+	) ([]*common_info.TasksFitError, error),
+) error {
 	// Update podCondition for tasks Allocated and Pending before job discarded
 	var errs []error
 	for _, taskInfo := range job.PodStatusIndex[pod_status.Pending] {
@@ -357,13 +372,7 @@ func (su *defaultStatusUpdater) recordUnschedulablePodsEvents(job *podgroup_info
 		msg := common_info.DefaultPodError
 		fitError := job.TasksFitErrors[taskInfo.UID]
 		if fitError != nil {
-			msg = fitError.Error()
-
-			if su.detailedFitErrors {
-				msg = fitError.DetailedError()
-			} else {
-				log.InfraLogger.V(6).Infof("Full fit error: %s", fitError.DetailedError())
-			}
+			msg = su.taskFitErrorMessage(job, taskInfo, fitError, resolveDetailedFitErrors)
 		} else if len(job.JobFitErrors) > 0 {
 			msg = fmt.Sprintf("%s", common_info.JobFitErrorsToMessage(job.JobFitErrors))
 		}
@@ -380,16 +389,60 @@ func (su *defaultStatusUpdater) recordUnschedulablePodsEvents(job *podgroup_info
 	return errors.Join(errs...)
 }
 
-func (su *defaultStatusUpdater) recordInvalidSubGroupPodsEvents(job *podgroup_info.PodGroupInfo) error {
+func (su *defaultStatusUpdater) taskFitErrorMessage(
+	job *podgroup_info.PodGroupInfo,
+	task *pod_info.PodInfo,
+	fitError *common_info.TasksFitErrors,
+	resolveDetailedFitErrors func(
+		*podgroup_info.PodGroupInfo,
+		*pod_info.PodInfo,
+	) ([]*common_info.TasksFitError, error),
+) string {
+	compactMessage := fitError.Error()
+	if !fitError.HasNodeErrors() {
+		if su.detailedFitErrors {
+			return fitError.DetailedError(nil)
+		}
+		return compactMessage
+	}
+
+	if su.detailedFitErrors {
+		if resolveDetailedFitErrors == nil {
+			return compactMessage
+		}
+		nodeErrors, err := resolveDetailedFitErrors(job, task)
+		if err != nil || len(nodeErrors) == 0 {
+			return compactMessage
+		}
+		return fitError.DetailedError(nodeErrors)
+	}
+
+	log.InfraLogger.V(6).Do(func() {
+		if resolveDetailedFitErrors == nil {
+			return
+		}
+		nodeErrors, err := resolveDetailedFitErrors(job, task)
+		if err != nil || len(nodeErrors) == 0 {
+			return
+		}
+		log.InfraLogger.V(6).Infof("Full fit error: %s", fitError.DetailedError(nodeErrors))
+	})
+	return compactMessage
+}
+
+func (su *defaultStatusUpdater) recordInvalidSubGroupPodsEvents(
+	job *podgroup_info.PodGroupInfo,
+	resolveDetailedFitErrors func(
+		*podgroup_info.PodGroupInfo,
+		*pod_info.PodInfo,
+	) ([]*common_info.TasksFitError, error),
+) error {
 	var errs []error
 
 	for _, taskInfo := range job.GetInvalidSubGroupTasks() {
 		msg := common_info.DefaultPodError
 		if fitError := job.TasksFitErrors[taskInfo.UID]; fitError != nil {
-			msg = fitError.Error()
-			if su.detailedFitErrors {
-				msg = fitError.DetailedError()
-			}
+			msg = su.taskFitErrorMessage(job, taskInfo, fitError, resolveDetailedFitErrors)
 		}
 
 		msg = su.addNodePoolPrefixIfNeeded(job, msg)
@@ -446,6 +499,16 @@ func (su *defaultStatusUpdater) updatePodGroupSchedulingCondition(
 		"Updating pod group scheduling condition for %s/%s to (%s,nodepool=%s)",
 		podGroup.Namespace, podGroup.Name, schedulingCondition.Type, schedulingCondition.NodePool)
 	return setPodGroupSchedulingCondition(podGroup, schedulingCondition)
+}
+
+func (su *defaultStatusUpdater) clearPodGroupSchedulingCondition(job *podgroup_info.PodGroupInfo) bool {
+	// Keep the condition until binding is confirmed, so a failed bind still leaves
+	// an explanation for why the pods were pending. An allocated/pipelined/binding
+	// task has a node assigned by the scheduler but is not yet bound.
+	if hasTasksAwaitingBind(job) {
+		return false
+	}
+	return removePodGroupSchedulingCondition(job.PodGroup)
 }
 
 func (su *defaultStatusUpdater) addNodePoolPrefixIfNeeded(job *podgroup_info.PodGroupInfo, msg string) string {
@@ -595,6 +658,31 @@ func equalSchedulingConditions(a, b *enginev2alpha2.SchedulingCondition) bool {
 		a.Reason == b.Reason &&
 		a.Message == b.Message &&
 		a.Status == b.Status
+}
+
+// bindInFlightStatuses are the states a task is in after the scheduler assigns it
+// a node but before binding is confirmed.
+var bindInFlightStatuses = []pod_status.PodStatus{
+	pod_status.Allocated,
+	pod_status.Pipelined,
+	pod_status.Binding,
+}
+
+func hasTasksAwaitingBind(job *podgroup_info.PodGroupInfo) bool {
+	for _, status := range bindInFlightStatuses {
+		if len(job.PodStatusIndex[status]) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func removePodGroupSchedulingCondition(podGroup *enginev2alpha2.PodGroup) bool {
+	if len(podGroup.Status.SchedulingConditions) == 0 {
+		return false
+	}
+	podGroup.Status.SchedulingConditions = nil
+	return true
 }
 
 func squashAndAppendConditionsForNodepool(podGroup *enginev2alpha2.PodGroup, schedulingCondition *enginev2alpha2.SchedulingCondition) {

@@ -1,0 +1,3 @@
+kind: Fixed
+body: |-
+  NUMA plugin now aligns non-Guaranteed pods that request GPUs, matching the kubelet's device manager (device alignment is QoS-independent).

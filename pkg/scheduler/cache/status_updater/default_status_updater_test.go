@@ -33,6 +33,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 )
@@ -387,6 +388,114 @@ func assertPodGroupConditions(t *testing.T, actualConditions, expectedConditions
 	}
 }
 
+type RemovePodGroupConditionTest struct {
+	name               string
+	podGroup           *enginev2alpha2.PodGroup
+	expectedConditions []enginev2alpha2.SchedulingCondition
+	expectedUpdated    bool
+}
+
+func TestRemovePodGroupSchedulingCondition(t *testing.T) {
+	unschedulable := func(nodePool string) enginev2alpha2.SchedulingCondition {
+		return enginev2alpha2.SchedulingCondition{
+			Type:         enginev2alpha2.UnschedulableOnNodePool,
+			NodePool:     nodePool,
+			Reason:       enginev2alpha2.PodGroupReasonUnschedulable,
+			Message:      "message",
+			TransitionID: "1",
+			Status:       v1.ConditionTrue,
+		}
+	}
+
+	for i, test := range []RemovePodGroupConditionTest{
+		{
+			name: "No conditions - nothing to remove",
+			podGroup: &enginev2alpha2.PodGroup{
+				Status: enginev2alpha2.PodGroupStatus{
+					SchedulingConditions: []enginev2alpha2.SchedulingCondition{},
+				},
+			},
+			expectedConditions: []enginev2alpha2.SchedulingCondition{},
+			expectedUpdated:    false,
+		},
+		{
+			name: "Single condition is removed once scheduled",
+			podGroup: &enginev2alpha2.PodGroup{
+				Status: enginev2alpha2.PodGroupStatus{
+					SchedulingConditions: []enginev2alpha2.SchedulingCondition{unschedulable("default")},
+				},
+			},
+			expectedConditions: []enginev2alpha2.SchedulingCondition{},
+			expectedUpdated:    true,
+		},
+		{
+			name: "All conditions across node pools are removed",
+			podGroup: &enginev2alpha2.PodGroup{
+				Status: enginev2alpha2.PodGroupStatus{
+					SchedulingConditions: []enginev2alpha2.SchedulingCondition{unschedulable("default"), unschedulable("pool-b")},
+				},
+			},
+			expectedConditions: []enginev2alpha2.SchedulingCondition{},
+			expectedUpdated:    true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Logf("Running test %d: %s", i, test.name)
+			updated := removePodGroupSchedulingCondition(test.podGroup)
+			assert.Equal(t, test.expectedUpdated, updated)
+			assertPodGroupConditions(t, test.podGroup.Status.SchedulingConditions, test.expectedConditions)
+		})
+	}
+}
+
+func TestClearPodGroupSchedulingCondition(t *testing.T) {
+	unschedulable := enginev2alpha2.SchedulingCondition{
+		Type:         enginev2alpha2.UnschedulableOnNodePool,
+		NodePool:     commonconstants.DefaultNodePoolName,
+		Reason:       enginev2alpha2.PodGroupReasonUnschedulable,
+		Message:      "message",
+		TransitionID: "1",
+		Status:       v1.ConditionTrue,
+	}
+
+	su := &defaultStatusUpdater{nodePoolLabelKey: nodePoolLabelKey}
+
+	for i, test := range []struct {
+		name            string
+		taskStatus      pod_status.PodStatus
+		expectedCleared bool
+	}{
+		{"allocated task keeps the condition until binding is confirmed", pod_status.Allocated, false},
+		{"binding task keeps the condition until binding is confirmed", pod_status.Binding, false},
+		{"pipelined task keeps the condition until binding is confirmed", pod_status.Pipelined, false},
+		{"bound task clears the condition", pod_status.Bound, true},
+		{"running task clears the condition", pod_status.Running, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Logf("Running test %d: %s", i, test.name)
+			job := &podgroup_info.PodGroupInfo{
+				PodGroup: &enginev2alpha2.PodGroup{
+					Status: enginev2alpha2.PodGroupStatus{
+						SchedulingConditions: []enginev2alpha2.SchedulingCondition{*unschedulable.DeepCopy()},
+					},
+				},
+				PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{
+					test.taskStatus: {"task-1": &pod_info.PodInfo{UID: "task-1", Status: test.taskStatus}},
+				},
+			}
+
+			cleared := su.clearPodGroupSchedulingCondition(job)
+
+			assert.Equal(t, test.expectedCleared, cleared)
+			if test.expectedCleared {
+				assert.Empty(t, job.PodGroup.Status.SchedulingConditions)
+			} else {
+				assert.Len(t, job.PodGroup.Status.SchedulingConditions, 1)
+			}
+		})
+	}
+}
+
 type UpdatePodGroupStaleTimeStampTest struct {
 	name               string
 	podGroup           *enginev2alpha2.PodGroup
@@ -646,7 +755,7 @@ func TestDefaultStatusUpdater_RecordJobStatusEvent(t *testing.T) {
 			stopCh := make(chan struct{})
 			statusUpdater.Run(stopCh)
 
-			statusUpdater.RecordJobStatusEvent(jobInfos["test-job"])
+			statusUpdater.RecordJobStatusEvent(jobInfos["test-job"], nil)
 
 			events := []string{}
 			close(recorder.Events)
@@ -755,11 +864,11 @@ func TestDefaultStatusUpdater_RetryAfterError(t *testing.T) {
 	statusUpdater := New(kubeClient, kubeAiSchedClient, recorder, 1, false, nodePoolLabelKey)
 
 	updateCalls := 0
-	// wait with pod groups update until signal is given.
+	// Return a transient error so the update is retried.
 	kubeAiSchedClient.SchedulingV2alpha2().(*fakeschedulingv2alpha2.FakeSchedulingV2alpha2).PrependReactor(
 		"update", "podgroups", func(action faketesting.Action) (handled bool, ret runtime.Object, err error) {
 			updateCalls += 1
-			return false, nil, errors.New("test")
+			return true, nil, errors.New("test")
 		},
 	)
 
@@ -807,6 +916,113 @@ func TestDefaultStatusUpdater_RetryAfterError(t *testing.T) {
 
 	// Wait for a retry after error
 	assert.NoError(t, waitForIncrease(&updateCalls), "update was not retried after error")
+}
+
+func TestTaskFitErrorMessageDoesNotResolveCompactMessage(t *testing.T) {
+	su := &defaultStatusUpdater{detailedFitErrors: false}
+	job, task, fitErrors := taskFitErrorMessageFixture()
+	resolverCalls := 0
+	resolve := func(
+		*podgroup_info.PodGroupInfo, *pod_info.PodInfo,
+	) ([]*common_info.TasksFitError, error) {
+		resolverCalls++
+		return nil, nil
+	}
+
+	message := su.taskFitErrorMessage(job, task, fitErrors, resolve)
+
+	assert.Equal(t, "no nodes with enough resources were found: 1 MissingGPU.", message)
+	assert.Zero(t, resolverCalls)
+}
+
+func TestTaskFitErrorMessageResolvesDetailedMessage(t *testing.T) {
+	su := &defaultStatusUpdater{detailedFitErrors: true}
+	job, task, fitErrors := taskFitErrorMessageFixture()
+	resolverCalls := 0
+	resolve := func(
+		*podgroup_info.PodGroupInfo, *pod_info.PodInfo,
+	) ([]*common_info.TasksFitError, error) {
+		resolverCalls++
+		return []*common_info.TasksFitError{
+			common_info.NewFitErrorWithDetailedMessage(
+				task.Name, task.Namespace, "node-a", []string{"MissingGPU"}, "node-a GPU details"),
+		}, nil
+	}
+
+	message := su.taskFitErrorMessage(job, task, fitErrors, resolve)
+
+	assert.Equal(t, "\n<node-a>: node-a GPU details.\nno nodes with enough resources were found.", message)
+	assert.Equal(t, 1, resolverCalls)
+}
+
+func TestTaskFitErrorMessageFallsBackWhenDetailedResolutionFails(t *testing.T) {
+	su := &defaultStatusUpdater{detailedFitErrors: true}
+	job, task, fitErrors := taskFitErrorMessageFixture()
+	resolve := func(
+		*podgroup_info.PodGroupInfo, *pod_info.PodInfo,
+	) ([]*common_info.TasksFitError, error) {
+		return nil, errors.New("recompute failed")
+	}
+
+	message := su.taskFitErrorMessage(job, task, fitErrors, resolve)
+
+	assert.Equal(t, "no nodes with enough resources were found: 1 MissingGPU.", message)
+}
+
+func TestTaskFitErrorMessageResolvesOnlyForEnabledVerboseLog(t *testing.T) {
+	require.NoError(t, log.InitLoggers(6, false))
+	t.Cleanup(func() {
+		require.NoError(t, log.InitLoggers(3, false))
+	})
+
+	su := &defaultStatusUpdater{detailedFitErrors: false}
+	job, task, fitErrors := taskFitErrorMessageFixture()
+	resolverCalls := 0
+	resolve := func(
+		*podgroup_info.PodGroupInfo, *pod_info.PodInfo,
+	) ([]*common_info.TasksFitError, error) {
+		resolverCalls++
+		return []*common_info.TasksFitError{
+			common_info.NewFitErrorWithDetailedMessage(
+				task.Name, task.Namespace, "node-a", []string{"MissingGPU"}, "node-a GPU details"),
+		}, nil
+	}
+
+	message := su.taskFitErrorMessage(job, task, fitErrors, resolve)
+
+	assert.Equal(t, "no nodes with enough resources were found: 1 MissingGPU.", message)
+	assert.Equal(t, 1, resolverCalls)
+}
+
+func TestTaskFitErrorMessageKeepsDirectDetailedError(t *testing.T) {
+	su := &defaultStatusUpdater{detailedFitErrors: true}
+	job, task, _ := taskFitErrorMessageFixture()
+	fitErrors := common_info.NewFitErrors()
+	fitErrors.SetError("direct pre-filter error")
+	resolverCalls := 0
+	resolve := func(
+		*podgroup_info.PodGroupInfo, *pod_info.PodInfo,
+	) ([]*common_info.TasksFitError, error) {
+		resolverCalls++
+		return nil, nil
+	}
+
+	message := su.taskFitErrorMessage(job, task, fitErrors, resolve)
+
+	assert.Equal(t, "\ndirect pre-filter error.", message)
+	assert.Zero(t, resolverCalls)
+}
+
+func taskFitErrorMessageFixture() (
+	*podgroup_info.PodGroupInfo, *pod_info.PodInfo, *common_info.TasksFitErrors,
+) {
+	task := pod_info.NewTaskInfo(&v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "pod", Namespace: "namespace", UID: "pod"},
+	}, resource_info.NewResourceVectorMap())
+	job := podgroup_info.NewPodGroupInfo("job", task)
+	fitErrors := common_info.NewFitErrors()
+	fitErrors.AddNodeError(common_info.NewFitError(task.Name, task.Namespace, "node-a", "MissingGPU"))
+	return job, task, fitErrors
 }
 
 func waitForIncrease(callCount *int) error {

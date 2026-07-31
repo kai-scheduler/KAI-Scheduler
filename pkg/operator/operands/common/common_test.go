@@ -538,9 +538,10 @@ var _ = Describe("PodDisruptionBudgetForKAIConfig", func() {
 
 var _ = Describe("PodDisruptionBudgetImplementedServices", func() {
 	It("only lists operands with operator-side PDB creation", func() {
-		Expect(PodDisruptionBudgetImplementedServices).To(HaveLen(2))
+		Expect(PodDisruptionBudgetImplementedServices).To(HaveLen(3))
 		Expect(PodDisruptionBudgetImplemented("admission")).To(BeTrue())
 		Expect(PodDisruptionBudgetImplemented("scheduler")).To(BeTrue())
+		Expect(PodDisruptionBudgetImplemented("pod-grouper")).To(BeTrue())
 		Expect(PodDisruptionBudgetImplemented("binder")).To(BeFalse())
 	})
 })

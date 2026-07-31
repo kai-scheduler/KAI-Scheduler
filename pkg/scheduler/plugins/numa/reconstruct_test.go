@@ -41,22 +41,22 @@ func TestReconstructNodeAvailable(t *testing.T) {
 	)
 
 	// Bound pod observed on node-1 (cpu 2) → subtracted.
-	bound := gPod("bound", map[string]string{"cpu": "2"})
+	bound := makeGuaranteedTask("bound", map[string]string{"cpu": "2"})
 	bound.Status = pod_status.Running
 	bound.Pod.Annotations = map[string]string{commonconstants.NumaPlacementObserved: observedAnnotation(observedZone("node-1", "2"))}
 
 	// Pipelined pod (scheduler-committed, incoming) with a record → counted (active-allocated).
-	pipelined := gPod("pipelined", map[string]string{"cpu": "2"})
+	pipelined := makeGuaranteedTask("pipelined", map[string]string{"cpu": "2"})
 	pipelined.Status = pod_status.Pipelined
 	pipelined.Pod.Annotations = map[string]string{commonconstants.NumaPlacementObserved: observedAnnotation(observedZone("node-0", "2"))}
 
 	// Pending pod (not active-allocated) with a record → ignored.
-	pending := gPod("pending", map[string]string{"cpu": "1"})
+	pending := makeGuaranteedTask("pending", map[string]string{"cpu": "1"})
 	pending.Status = pod_status.Pending
 	pending.Pod.Annotations = map[string]string{commonconstants.NumaPlacementObserved: observedAnnotation(observedZone("node-0", "1"))}
 
 	// Active pod with no record → contributes nothing (never guess a zone).
-	noRecord := gPod("norecord", map[string]string{"cpu": "2"})
+	noRecord := makeGuaranteedTask("norecord", map[string]string{"cpu": "2"})
 	noRecord.Status = pod_status.Running
 
 	node := &node_info.NodeInfo{

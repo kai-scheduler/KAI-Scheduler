@@ -6,9 +6,10 @@ package scores
 const (
 	MaxHighDensity = 9
 	ResourceType   = 10
-	Availability   = 100
-	GpuSharing     = 1000
-	Topology       = 10000
-	K8sPlugins     = 100000
-	NominatedNode  = 1000000
+	Numa           = 100
+	Availability   = 1000
+	GpuSharing     = 10000
+	Topology       = 100000
+	K8sPlugins     = 1000000
+	NominatedNode  = 10000000
 )

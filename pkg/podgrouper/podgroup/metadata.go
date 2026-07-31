@@ -24,18 +24,19 @@ type SubGroupMetadata struct {
 }
 
 type Metadata struct {
-	Annotations       map[string]string
-	Labels            map[string]string
-	PriorityClassName string
-	Preemptibility    v2alpha2.Preemptibility
-	PreemptionDelay   *metav1.Duration
-	Queue             string
-	Namespace         string
-	Name              string
-	MinAvailable      int32
-	MinSubGroup       *int32
-	Owner             metav1.OwnerReference
-	SubGroups         []*SubGroupMetadata
+	Annotations          map[string]string
+	Labels               map[string]string
+	PriorityClassName    string
+	Preemptibility       v2alpha2.Preemptibility
+	PreemptionDelay      *metav1.Duration
+	StalenessGracePeriod *metav1.Duration
+	Queue                string
+	Namespace            string
+	Name                 string
+	MinAvailable         int32
+	MinSubGroup          *int32
+	Owner                metav1.OwnerReference
+	SubGroups            []*SubGroupMetadata
 
 	PreferredTopologyLevel string
 	RequiredTopologyLevel  string

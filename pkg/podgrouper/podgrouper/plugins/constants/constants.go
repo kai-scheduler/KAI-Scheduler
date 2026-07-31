@@ -10,7 +10,8 @@ const (
 	PreemptibilityLabelKey = "kai.scheduler/preemptibility"
 	UserLabelKey           = "user"
 
-	PreemptionDelayAnnotationKey = "kai.scheduler/preemption-delay"
+	PreemptionDelayAnnotationKey      = "kai.scheduler/preemption-delay"
+	StalenessGracePeriodAnnotationKey = "kai.scheduler/staleness-grace-period"
 
 	BuildPriorityClass     = "build"
 	TrainPriorityClass     = "train"

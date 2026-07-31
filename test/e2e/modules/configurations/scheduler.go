@@ -37,6 +37,7 @@ func EnableScheduler(ctx context.Context, testCtx *testcontext.TestContext) {
 	if err != nil {
 		Fail(fmt.Sprintf("Failed to patch kai-config: %v", err))
 	}
+
+	// Config availability includes unrelated KAI services; wait only for the scheduler changed here.
 	wait.ForRunningSystemComponentEvent(ctx, testCtx.ControllerClient, testconfig.GetConfig().SchedulerDeploymentName)
-	wait.ForKAIConfigStatusOK(ctx, testCtx.ControllerClient)
 }

@@ -170,6 +170,15 @@ func buildWorkerSubGroups(
 			numSegments, maxAllowedSegmentation)
 	}
 
+	// No segment children — keep worker as a leaf so webhook leaf rules apply.
+	if numSegments == 0 {
+		return []*podgroup.SubGroupMetadata{{
+			Name:           strings.ToLower(replicaTypeWorker),
+			MinAvailable:   workerMinAvailable,
+			PodsReferences: podReferences,
+		}}, nil
+	}
+
 	segmentIndex, err := getPodSegmentIndex(pod, segmentSize)
 	if err != nil {
 		return nil, err
@@ -177,10 +186,14 @@ func buildWorkerSubGroups(
 
 	topologyConstraints := getSegmentTopologyConstraints(pod, replicaSpecs, topOwner)
 
+	// Parent SubGroups must use MinSubGroup (webhook rejects minMember on non-leaf).
 	subGroups := []*podgroup.SubGroupMetadata{{
-		Name:         strings.ToLower(replicaTypeWorker),
-		MinAvailable: workerMinAvailable,
+		Name:        strings.ToLower(replicaTypeWorker),
+		MinSubGroup: ptr.To(int32(numSegments)),
 	}}
+	// Segments whose first pod index is within workerMinAvailable are mandatory;
+	// the rest are elastic and must not block scheduling.
+	mandatorySegments := (int(workerMinAvailable) + segmentSize - 1) / segmentSize
 	for i := range numSegments {
 		subGroup := &podgroup.SubGroupMetadata{
 			Name:                fmt.Sprintf("worker-%d", i),
@@ -191,7 +204,9 @@ func buildWorkerSubGroups(
 		if i == segmentIndex {
 			subGroup.PodsReferences = podReferences
 		}
-		if partialSegmentSize != 0 && i == numSegments-1 {
+		if i >= mandatorySegments {
+			subGroup.MinAvailable = 0
+		} else if partialSegmentSize != 0 && i == numSegments-1 {
 			subGroup.MinAvailable = int32(partialSegmentSize)
 		}
 		subGroups = append(subGroups, subGroup)

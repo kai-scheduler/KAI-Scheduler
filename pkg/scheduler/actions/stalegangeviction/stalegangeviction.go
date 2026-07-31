@@ -15,8 +15,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 )
 
-type staleGangEviction struct {
-}
+type staleGangEviction struct{}
 
 func New() *staleGangEviction {
 	return &staleGangEviction{}
@@ -44,13 +43,19 @@ func handleStaleJob(ssn *framework.Session, job *podgroup_info.PodGroupInfo) {
 		job.StalenessInfo.TimeStamp = &timeNow
 	}
 
-	defaultGracePeriod := ssn.GetGlobalDefaultStalenessGracePeriod()
-	if defaultGracePeriod < 0 { // negative duration means no eviction
+	var gracePeriod time.Duration
+	if job.PodGroup.Spec.StalenessGracePeriod != nil {
+		gracePeriod = job.PodGroup.Spec.StalenessGracePeriod.Duration
+	} else {
+		gracePeriod = ssn.GetGlobalDefaultStalenessGracePeriod()
+	}
+
+	if gracePeriod < 0 { // negative duration means no eviction
 		return
 	}
 
 	timeInStaleStatus := time.Since(*job.StalenessInfo.TimeStamp)
-	if timeInStaleStatus < ssn.GetGlobalDefaultStalenessGracePeriod() {
+	if timeInStaleStatus < gracePeriod {
 		return
 	}
 

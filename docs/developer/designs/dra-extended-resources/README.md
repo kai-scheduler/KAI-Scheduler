@@ -1,0 +1,372 @@
+<!--
+Copyright 2026 NVIDIA CORPORATION
+SPDX-License-Identifier: Apache-2.0
+-->
+
+# DRA-Backed Extended Resources
+
+*Status: Draft*
+
+Related: [KEP-5004](https://kep.k8s.io/5004) (alpha v1.34, beta-on-by-default v1.36, GA v1.37)
+
+## Motivation
+
+Dynamic Resource Allocation (DRA) is the upstream path for managing GPU and other accelerator devices going forward. Cluster administrators who migrate device management to a DRA driver today break every existing workload that uses the classic extended-resource syntax (`nvidia.com/gpu: 2`), because DRA-only nodes carry no `nvidia.com/gpu` entry in `node.Status.Allocatable`.
+
+KEP-5004 solves this at the Kubernetes level: a DeviceClass can declare an `ExtendedResourceName`, and the scheduler synthesizes a special ResourceClaim for pods that use that name, routing allocation through the DRA machinery while the pod spec stays unchanged.
+
+KAI needs to support this flow so that workloads using extended-resource syntax can be scheduled onto DRA-managed nodes without modification, and so quota, fairshare, and preemption accounting remain correct throughout.
+
+## Goals / Non-Goals
+
+**Goals**
+
+- Accept `nvidia.com/gpu: N` on pods targeting DRA-only nodes, with correct quota, fairshare, fit, and preemption accounting.
+- Accept other DRA-backed extended resources on pods targeting DRA-only nodes (allocation via the DRA allocator; fit delegated to the allocator rather than KAI's vector check).
+- Work for any extended resource name without requiring changes to workload APIs or PodGroup schemas.
+
+**Non-Goals**
+
+- Quota and fairshare accounting for non-GPU DRA-backed extended resources (capacity injection from ResourceSlices deferred to a follow-up; GPU accounting is in scope because KAI's existing GPU vector is used cluster-wide for fairshare and preemption).
+- Fractional / GPU-sharing requests on DRA-backed extended resources.
+- MIG resources via DRA extended-resource bridge.
+- Queue-level resource accounting for DRA-backed extended resources beyond GPU (no ResourceSlice capacity injection into the proportion/fairshare plugins).
+
+## Kubernetes API
+
+KEP-5004 adds three API surfaces that KAI builds on.
+
+### Extended Resource Name Mapping
+
+Every DeviceClass exposes two extended resource names — one implicit, one optional explicit.
+
+**Implicit name** — always active, no configuration required:
+
+```
+deviceclass.resource.kubernetes.io/<class-name>
+```
+
+A DeviceClass named `nvidia-gpu` is automatically reachable as `deviceclass.resource.kubernetes.io/nvidia-gpu`. Any pod requesting that resource name is routed through the DRA path without any cluster-admin action beyond creating the DeviceClass.
+
+```yaml
+# Pod using implicit extended resource name — no DeviceClass configuration needed
+containers:
+- name: trainer
+  resources:
+    limits:
+      deviceclass.resource.kubernetes.io/nvidia-gpu: "1"
+```
+
+**Explicit name** — set by the cluster admin to expose a human-readable or backward-compatible name:
+
+```yaml
+apiVersion: resource.k8s.io/v1
+kind: DeviceClass
+metadata:
+  name: nvidia-gpu
+spec:
+  extendedResourceName: nvidia.com/gpu   # optional
+```
+
+With this field set, pods can use `nvidia.com/gpu: 1` — the familiar device-plugin name — and the scheduler routes allocation through DRA. This is the primary migration path: existing workloads require no changes.
+
+Both names are registered in the `DeviceClassByResource` simultaneously. The implicit name is always unique (DeviceClass names are unique and validation prevents another class from claiming it as its explicit name). If two DeviceClasses set the same explicit `ExtendedResourceName`, the newer one wins; the implicit names remain independent.
+
+### Special ResourceClaim
+
+The scheduler synthesizes a special ResourceClaim named `<extended-resources>` in memory during scheduling. This claim:
+
+- Is never written to the API server during the scheduling phase.
+- Starts with an empty `Spec.Devices.Requests` at PreFilter.
+- Is substituted per-node at Filter with a node-specific variant whose `Spec.Devices.Requests` carries one `DeviceRequest` per (container, resource type) combination, named `container-{i}-request-{j}`.
+- Is written to the API server by the **binder** after scheduling, using `generateName: <pod-name>-extended-resources-` and the annotation `resource.kubernetes.io/extended-resource-claim: "true"`.
+
+Example of the generated ResourceClaim after the binder patches its status (pod `trainer-0` requesting `nvidia.com/gpu: 1`):
+
+```yaml
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaim
+metadata:
+  name: trainer-0-extended-resources-x7k9p   # API server assigned via generateName
+  generateName: trainer-0-extended-resources-
+  namespace: default
+  annotations:
+    resource.kubernetes.io/extended-resource-claim: "true"
+  finalizers:
+  - resource.kubernetes.io/delete-protection
+  ownerReferences:
+  - apiVersion: v1
+    kind: Pod
+    name: trainer-0
+    uid: <pod-uid>
+    controller: true
+    blockOwnerDeletion: true
+spec:
+  devices:
+    requests:
+    - name: container-0-request-0
+      exactly:
+        deviceClassName: nvidia-gpu
+        count: 1
+status:
+  allocation:
+    devices:
+      results:
+      - request: container-0-request-0
+        driver: gpu.nvidia.com
+        pool: node-a
+        device: GPU-abc12345-6789-abcd-ef01-234567890abc
+  reservedFor:
+  - resource: pods
+    name: trainer-0
+    uid: <pod-uid>
+```
+
+### `Pod.Status.ExtendedResourceClaimStatuses`
+
+A new field on Pod status written by the binder that tells the kubelet which ResourceClaim holds the device allocation and how to map each allocated device to a container:
+
+```yaml
+status:
+  extendedResourceClaimStatuses:
+  - name: trainer-0-extended-resources-x7k9p
+    requestMappings:
+    - containerName: trainer
+      resourceName: nvidia.com/gpu
+      requestName: container-0-request-0
+```
+
+The kubelet reads `requestMappings[i].requestName`, looks up the matching entry in `claim.Status.Allocation.Devices.Results`, then calls the DRA kubelet plugin to inject that device into the named container.
+
+## Overview
+
+```mermaid
+sequenceDiagram
+    participant S as Scheduler
+    participant C as DeviceClassByResource
+    participant N as NodeInfo
+    participant D as DRA Allocator
+    participant B as Binder
+    participant K as Kubernetes API
+
+    rect
+        note over S,K: Session Init
+        S->>K: List DeviceClasses
+        K-->>S: DeviceClasses with ExtendedResourceName
+        S->>C: Build reverse index resourceName to DeviceClass
+        S->>K: List ResourceSlices by node
+        K-->>S: ResourceSlices
+        S->>N: AddDRAGPUs(count) for GPU DeviceClasses
+    end
+
+    rect
+        note over S,K: PreFilter / Allocate Entry (per pod)
+        S->>C: GetDeviceClass(resourceName) per container request
+        C-->>S: non-nil means resource is DRA-backed
+        S->>K: findExtendedResourceClaim(pod)
+        alt stale claim from prior cycle binding failure
+            K-->>S: existing claim with Spec.Devices.Requests already set
+            note over S: Return unschedulable — pod retried next cycle
+        else happy path
+            K-->>S: nil — no prior cycle claim
+            note over S: Build in-memory special claim, empty Spec
+        end
+    end
+
+    rect
+        note over S,K: Filter / Fit Check (per node)
+        S->>N: lessEqualVectorsExcludingGPU(task, node)
+        N->>C: GetDeviceClass(dim) per scalar dim
+        C-->>N: non-nil + AllocatableVector==0 means skip dim
+        N-->>S: fit — DRA dims skipped, GPU checked via GPUIndex
+        note over S: createRequestsAndMappings — build node-specific Spec.Devices.Requests
+        note over S: substitute empty special claim with node-specific variant
+        S->>D: Allocate(node, node-specific special claim)
+        note over D: Checks ResourceSlices on this node
+        D-->>S: allocation result node-specific
+    end
+
+    rect
+        note over S,K: Reserve / addTaskResources
+        S->>N: addTaskResources(task)
+        note over N: Zero out dims where AllocatableVector==0 before subtracting from IdleVector
+    end
+
+    rect
+        note over S,K: Binder — PreBind / Bind
+        note over B: Receive BindRequest
+        B->>K: Create ResourceClaim with annotation and pod owner
+        K-->>B: createdClaim
+        B->>K: Patch claim status — finalizer, allocation, pod reservation
+        B->>K: Patch pod.Status.ExtendedResourceClaimStatus
+        B->>K: Bind pod to node
+    end
+```
+
+## Design
+
+Most of the infrastructure for this feature is already in place. The table below summarises what exists today:
+
+| Layer | Existing mechanism |
+|---|---|
+| Node capacity (GPU) | `AddDRAGPUs` injects DRA GPU count into `AllocatableVector` / `IdleVector` at `GPUIndex`, counted from ResourceSlices in `cluster_info.go` |
+| Task request (GPU) | `ExtractDRAGPUResourcesFromClaims` + `GpuRequirement.SetDraGpus` unifies DRA claim GPUs into `ResReqVector[GPUIndex]` |
+| Task request (all other scalars) | Extended-resource container requests flow through `ResourceFromResourceList` → `scalarResources` map → `ResReqVector` via `ToVector` |
+| Fit check (scalars) | `lessEqualVectorsExcludingGPU` does element-wise vector comparison for all dimensions including scalar extended resources |
+| Quota / fairshare | `AcceptedResourceVector` / `ResReqVector` are consumed by proportion and capacity plugins — no resource-specific logic |
+| DRA allocator | `pkg/scheduler/plugins/dynamicresources` already calls `structured.NewAllocator` and handles claim allocation / deallocation |
+| API types | `DeviceClass.Spec.ExtendedResourceName`, `Pod.Status.ExtendedResourceClaimStatus`, and the `resource.kubernetes.io/extended-resource-claim` annotation are all present in `k8s.io/api@v0.35.4` |
+| Helper library | `k8s.io/dynamic-resource-allocation/deviceclass/extendedresourcecache` (already a dependency) maintains the `extendedResourceName → DeviceClass` reverse index |
+
+There is also an explicit temporary guard ([`node_info.go:316`](../../pkg/scheduler/api/node_info/node_info.go)) that rejects extended-resource GPU requests on DRA-only nodes, with a comment marking it for removal once this feature exists.
+
+### Session Init
+
+Two changes at session startup:
+
+**Build `DeviceClassByResource`** from the DeviceClass informer. The cache maintains a reverse index from `extendedResourceName → DeviceClass`, answering `GetDeviceClass(resourceName)` in O(1). It is built once per session and shared across the fit check and the dynamicresources plugin.
+
+**Generalize `populateDRAGPUs`** to also handle `ExtendedResourceName`-mapped DeviceClasses. GPU extended resources are a special case: KAI's own GPU accounting (`GPUIndex` in the resource vector) is used for quota, fairshare, preemption, and GPU-sharing decisions across the entire scheduler, so it must remain correct when GPUs are managed by DRA.
+
+The existing loop already counts all devices from node-local ResourceSlices with no selector evaluation — matching the behaviour of today's `populateDRAGPUs`. The same approach is kept here:
+
+```
+for each DeviceClass with ExtendedResourceName:
+  if extendedResourceName already in node.Status.Allocatable: skip
+  if extendedResourceName is a GPU resource:
+    for each ResourceSlice on this node:
+      gpuCount += len(slice.Spec.Devices)
+  nodeInfo.AddDRAGPUs(gpuCount)
+```
+
+`HasDRAGPUs` is kept to drive the GPU-sharing guard until GPU sharing via DRA is implemented.
+
+### PreFilter / Allocate Entry
+
+The dynamicresources plugin's entry point (PreFilter / `allocateHandlerFn`) is extended to handle pods that have no `pod.Spec.ResourceClaims` but whose container requests include a DRA-backed extended resource.
+
+**Detect DRA-backed requests** using `hasDeviceClassMappedExtendedResource`: iterate container resource requests and call `DeviceClassByResource.GetDeviceClass(resourceName)` for each. A non-nil result means the resource is DRA-backed.
+
+**Find or create the special claim.** `findExtendedResourceClaim` searches the API for a ResourceClaim annotated `resource.kubernetes.io/extended-resource-claim: true` and owned by this pod:
+
+- **Happy path** (nil returned): no prior claim exists. Build an in-memory special claim named `<extended-resources>` with an empty `Spec` and a temporary UID. This claim is never written to the API server during scheduling.
+- **Recovery path** (non-nil returned): a claim was created by the binder in a prior scheduling cycle but binding ultimately failed and the binder's rollback deleted the claim. If the claim still exists (rollback did not complete), the pod is returned Unschedulable and re-queued; on the next cycle, if the binder has by then deleted the claim, scheduling proceeds normally.
+
+### Filter / Fit Check
+
+Two things happen per node:
+
+**Fit check skip.** Upstream (`noderesources/fit.go:shouldDelegateResourceToDRA`) skips the vector fit check for any extended resource that is not in `node.Status.Allocatable` and has a DeviceClass mapping — the DRA allocator is the sole source of truth for those resources. KAI adopts the same approach in `lessEqualVectorsExcludingGPU`: for each scalar resource dimension, if `DeviceClassByResource.GetDeviceClass(resourceName) != nil` and the resource is absent from the node's `AllocatableVector`, skip that dimension. GPU resources are not skipped here — they are checked normally via `GPUIndex`, which was injected by `populateDRAGPUs` at session init.
+
+Note that `GetDeviceClass` is a cluster-wide lookup; it does not check whether the specific node has ResourceSlices for that DeviceClass. Node-specific device availability is determined by the DRA allocator in the next step.
+
+**Special claim synthesis and allocation.** `filterExtendedResources` determines which resources need DRA allocation on this specific node by checking each resource against `node.Status.Allocatable`: resources absent from Allocatable are DRA-backed on this node; resources present are served by the device plugin and excluded from the special claim. This per-node determination matters in heterogeneous clusters where a resource may be device-plugin on some nodes and DRA-backed on others.
+
+`createRequestsAndMappings` then builds the node-specific `Spec.Devices.Requests` — one `DeviceRequest` per (container, resource type) combination, named deterministically as `container-{i}-request-{j}`. A single special claim covers all DRA-backed extended resource types requested by the pod; no separate claim is created per resource type.
+
+The empty in-memory special claim is substituted with this node-specific variant before being passed to `structured.NewAllocator`. The allocator checks the node's ResourceSlices and returns an allocation result if devices are available.
+
+The upstream reference for `filterExtendedResources` and `createRequestsAndMappings` is `k8s.io/kubernetes@v1.35.4/pkg/scheduler/framework/plugins/dynamicresources/extendeddynamicresources.go`. These functions can be ported into KAI with minimal adaptation.
+
+### Reserve / addTaskResources
+
+When a pod with a non-GPU DRA-backed extended resource is assigned to a node, `addTaskResources` subtracts its request from `IdleVector`. Because `AllocatableVector` has 0 for resources not in `node.Status.Allocatable`, this drives `IdleVector` negative for those dimensions.
+
+Fix: in `addTaskResources` and `removeTaskResources`, before applying the vector to `UsedVector` / `IdleVector` / `ReleasingVector`, zero out any scalar dimension `i > PodsIndex` where `ni.AllocatableVector.Get(i) == 0`. This condition reliably identifies resources for which KAI delegates capacity decisions to the DRA allocator — no DeviceClass cache lookup is needed at this layer. CPU, memory, GPU, and pods always have non-zero allocatable on real nodes, so they are unaffected.
+
+### BindRequest Extension
+
+The scheduler communicates allocation results to the binder by creating a `BindRequest` CR in the API server. Existing DRA claims are carried in `BindRequestSpec.ResourceClaimAllocations`, keyed by `podClaim.Name` (the name of the entry in `pod.Spec.ResourceClaims`).
+
+The special claim has no corresponding entry in `pod.Spec.ResourceClaims`, so the existing field cannot carry it. `BindRequestSpec` needs a new field:
+
+```go
+// ExtendedResourceClaimAllocation carries the scheduler's allocation result
+// for the DRA-backed extended resource special claim, if any.
+ExtendedResourceClaimAllocation *ExtendedResourceClaimAllocation `json:"extendedResourceClaimAllocation,omitempty"`
+```
+
+```go
+type ExtendedResourceClaimAllocation struct {
+    // Allocation is the AllocationResult from the DRA structured allocator.
+    Allocation *v1.AllocationResult `json:"allocation"`
+    // DeviceRequests is the Spec.Devices.Requests to set on the created ResourceClaim.
+    DeviceRequests []v1.DeviceRequest `json:"deviceRequests"`
+    // ContainerMappings is the container→request mapping for pod.Status.ExtendedResourceClaimStatus.
+    ContainerMappings []v1.ContainerExtendedResourceRequest `json:"containerMappings"`
+}
+```
+
+The scheduler populates `ExtendedResourceClaimAllocation` from the node-specific result stored during Filter before creating the BindRequest.
+
+### Binder — PreBind / Bind
+
+At bind time the binder reads `ExtendedResourceClaimAllocation` from the BindRequest and:
+
+1. **Create ResourceClaim** in the API server using `GenerateName` (`<pod-name>-extended-resources-`), the `resource.kubernetes.io/extended-resource-claim: true` annotation, the pod as owner reference, and `DeviceRequests` as `Spec.Devices.Requests`.
+2. **Patch claim status**: set `Status.Allocation` from `Allocation`, and add the pod to `Status.ReservedFor`.
+3. **Patch `pod.Status.ExtendedResourceClaimStatus`**: record the generated claim name and `ContainerMappings` so the kubelet knows which devices to inject.
+4. **Bind pod to node** via the standard BindRequest flow.
+
+For idempotency, if `findExtendedResourceClaim` finds an existing claim for the pod (prior attempt that created the claim but failed to patch pod status), the binder skips claim creation and proceeds from step 2.
+
+The upstream reference is `createExtendedResourceClaimInAPI` and `patchPodExtendedResourceClaimStatus` in `extendeddynamicresources.go`.
+
+**Rollback**: if any step after claim creation fails, the binder's `Rollback` must delete the ResourceClaim.
+
+**Lifecycle**: on normal pod completion, eviction, or deletion, Kubernetes GC deletes the claim via its pod `ownerReference`. The `delete-protection` finalizer (managed by `resource-claim-controller`) blocks deletion until the DRA driver deallocates the device and clears `Status.Allocation`.
+
+### One-time Guard Removals
+
+**Remove guard at `node_info.go:316`**: this temporary guard rejects extended-resource GPU requests on DRA-only nodes. Once the fit-check skip and DRA allocator path are in place it is no longer needed; its comment already marks it for removal.
+
+**Skip annotated claims in `ExtractDRAGPUResourcesFromClaims`**: pods bound via the extended-resource bridge have both a container extended-resource request and a generated ResourceClaim. Claims carrying the `resource.kubernetes.io/extended-resource-claim` annotation must be skipped in claim extraction so the GPU is counted only once — from the container request, not the claim.
+
+## Component Summary
+
+| Component | Change |
+|---|---|
+| `node_info.go` — `lessEqualVectorsExcludingGPU` | Skip scalar dimensions backed by a DRA DeviceClass and absent from `node.Status.Allocatable` |
+| `node_info.go` — `addTaskResources` / `removeTaskResources` | Zero out scalar dimensions where `AllocatableVector[i] == 0` before applying to `UsedVector` / `IdleVector` / `ReleasingVector` |
+| `cluster_info.go` — `populateDRAGPUs` | Generalize to handle GPU DeviceClasses with `ExtendedResourceName`; wire `DeviceClassByResource` |
+| `cluster_info.go` — session init | Build `DeviceClassByResource` from DeviceClass informer |
+| `dynamicresources` scheduler plugin | Detect extended-resource requests backed by DRA; synthesize and allocate in-memory special claim |
+| `node_info.go` | Remove temporary guard at line 316 |
+| `resource_info` / `dra_resource_utils.go` | Skip `extended-resource-claim`-annotated claims in claim extraction |
+| `bindrequest_types.go` | Add `ExtendedResourceClaimAllocation` field to `BindRequestSpec` |
+| binder `dynamicresources` plugin | Read `ExtendedResourceClaimAllocation` from BindRequest; create real ResourceClaim in API, patch pod status at bind time; delete claim on rollback |
+| topology plugin — `getJobRatioToFreeResources` / `calcNodeAccommodation` | Skip DRA-backed extended resource dimensions (where `AllocatableVector[i] == 0`) in domain fitness comparisons |
+
+## Deployment Scenarios
+
+| Setup | Behavior |
+|---|---|
+| **Pure device-plugin cluster** | Feature is a no-op. `GetDeviceClass` returns nil for all resources; no DRA path is activated. |
+| **Pure DRA cluster** | Full feature path. Extended-resource pods are routed through DRA allocation on every node. |
+| **Mixed cluster** (device-plugin on some nodes, DRA on others) | Determined per node at Filter: if the resource is absent from `node.Status.Allocatable`, the DRA path is used; if present, the device-plugin path is used. A pod can be scheduled on either node type without any workload change. |
+| **Rolling migration** (nodes transitioning one-by-one) | Same as mixed cluster. Pods already bound to device-plugin nodes are unaffected. New pods land on either node type based on normal scheduling; the correct path is selected per node automatically. |
+| **GPU sharing on a DRA node** | Rejected at PreFilter by the existing `HasDRAGPUs` guard until GPU sharing via DRA is implemented (Non-Goal). |
+| **Two DeviceClasses with the same `ExtendedResourceName`** | The newer DeviceClass wins in `DeviceClassByResource`; the older is silently shadowed. Avoid this configuration. |
+
+## Implications
+
+Both of these stem from the same root cause: DRA-backed extended resources are absent from `node.Status.Allocatable`, so `AllocatableVector[i] == 0` for those dimensions throughout KAI's resource vectors.
+
+### Negative IdleVector on Allocation
+
+When a pod is assigned to a node, `addTaskResources` subtracts its request from `IdleVector`. For DRA-backed resources, `AllocatableVector[i] == 0`, so subtracting any non-zero request drives `IdleVector` negative. Negative values propagate into topology domain fitness checks and cause false rejections.
+
+Fix is in the Reserve section above: zero out those dimensions in `addTaskResources` / `removeTaskResources` before applying to the vectors.
+
+### Topology Domain Fitness
+
+The topology plugin uses `getJobRatioToFreeResources` and `calcNodeAccommodation` to determine whether a job fits within a topology domain. Both compare pod requests against `IdleOrReleasingVector` / `IdleVector`. For DRA-backed resources these are 0 even before any allocation, so every domain is falsely rejected: `getJobRatioToFreeResources` assigns `requiredResourceNotInDomainRatio` when `freeVal <= 0`, and `calcNodeAccommodation` returns 0 when `LessEqual` fails.
+
+Fix: skip dimension `i` in both functions when `DeviceClassByResource.GetDeviceClass(resourceName) != nil`. This is the same condition used in `lessEqualVectorsExcludingGPU` at the node level. Domain fitness becomes an approximation for DRA-backed resources; exact per-node availability is determined at Filter time by either the vector check (device-plugin nodes) or the DRA allocator (DRA nodes). GPU is unaffected because it is handled via `GPUIndex`, not as a scalar extended resource dimension.
+
+## Follow-ups
+
+- **Vectorizing DRA capacity**: inject non-GPU DRA device counts from ResourceSlices into `AllocatableVector` at session init, enabling queue-level quota, fairshare, topology domain fitness, and preemption accounting for non-GPU DRA extended resources.
+- **Implicit extended resource name GPU accounting**: pods using the implicit name (`deviceclass.resource.kubernetes.io/<class-name>`) instead of the explicit `ExtendedResourceName` have their GPU request land in a scalar vector dimension rather than `GPUIndex`, making it invisible to GPU-aware fairshare and preemption. Fix: at session start, iterate tasks in the snapshot and remap any scalar dimension where `DeviceClassByResource.GetDeviceClass(name) != nil && IsGPUDeviceClass(dc.Name)` to `GPUIndex`. This keeps accounting consistent with the session's DeviceClass snapshot and handles runtime DeviceClass changes automatically.
+- **Fractional workloads on DRA nodes**: support GPU-sharing requests on DRA-managed nodes. Two approaches: (1) NVIDIA DRA driver exposes fractions as discrete devices in ResourceSlices; or (2) extend the reservation pod mechanism — the reservation pod acquires a ResourceClaim (via the default scheduler or binder-side allocation), and its claim is deducted from node accounting on de-allocation.
+

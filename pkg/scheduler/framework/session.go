@@ -236,7 +236,7 @@ func (ssn *Session) FittingNode(task *pod_info.PodInfo, node *node_info.NodeInfo
 	allocatable, fitError := ssn.isTaskAllocatableOnNode(task, job, node, writeFittingDelta)
 	if !allocatable {
 		if fitError != nil && writeFittingDelta {
-			fitErrors.SetNodeError(node.Name, fitError)
+			fitErrors.AddNodeError(fitError)
 			job.AddTaskFitErrors(task, fitErrors)
 		}
 		return false
@@ -248,7 +248,7 @@ func (ssn *Session) FittingNode(task *pod_info.PodInfo, node *node_info.NodeInfo
 		log.InfraLogger.V(6).Infof("Predicates failed for task <%s/%s> on node <%s>: %v",
 			task.Namespace, task.Name, node.Name, err)
 		if writeFittingDelta {
-			fitErrors.SetNodeError(node.Name, err)
+			fitErrors.AddNodeError(err)
 			job.AddTaskFitErrors(task, fitErrors)
 		}
 		return false
@@ -338,6 +338,47 @@ func (ssn *Session) isTaskAllocatableOnNode(task *pod_info.PodInfo, job *podgrou
 		}
 	}
 	return allocatable, fitError
+}
+
+func (ssn *Session) RecomputeDetailedFitErrors(
+	job *podgroup_info.PodGroupInfo, task *pod_info.PodInfo,
+) ([]*common_info.TasksFitError, error) {
+	if err := ssn.PrePredicateFn(task, job); err != nil {
+		return nil, nil
+	}
+
+	nodeErrors := make([]*common_info.TasksFitError, 0)
+	for _, node := range ssn.ClusterInfo.Nodes {
+		allocatable, fitError := ssn.isTaskAllocatableOnNode(task, job, node, true)
+		if !allocatable {
+			if fitError != nil {
+				nodeErrors = append(nodeErrors, fitError)
+			}
+			continue
+		}
+		if err := ssn.PredicateFn(task, job, node); err != nil {
+			if fitError := taskFitErrorFromError(task, node, err); fitError != nil {
+				nodeErrors = append(nodeErrors, fitError)
+			}
+		}
+	}
+	return nodeErrors, nil
+}
+
+func taskFitErrorFromError(
+	task *pod_info.PodInfo, node *node_info.NodeInfo, err error,
+) *common_info.TasksFitError {
+	if fitError, ok := err.(*common_info.TasksFitError); ok {
+		if fitError == nil {
+			return nil
+		}
+		fitErrorCopy := *fitError
+		fitErrorCopy.NodeName = node.Name
+		fitErrorCopy.Reasons = append([]string(nil), fitError.Reasons...)
+		fitErrorCopy.DetailedReasons = append([]string(nil), fitError.DetailedReasons...)
+		return &fitErrorCopy
+	}
+	return common_info.NewFitError(task.Name, task.Namespace, node.Name, err.Error())
 }
 
 func (ssn *Session) String() string {
@@ -475,8 +516,9 @@ func closeSession(ssn *Session) {
 		ssn.ID, len(ssn.ClusterInfo.PodGroupInfos), len(ssn.ClusterInfo.Queues))
 
 	// Push all jobs for status update into the channel
+	resolveDetailedFitErrors := ssn.RecomputeDetailedFitErrors
 	for _, job := range ssn.ClusterInfo.PodGroupInfos {
-		if err := ssn.Cache.RecordJobStatusEvent(job); err != nil {
+		if err := ssn.Cache.RecordJobStatusEvent(job, resolveDetailedFitErrors); err != nil {
 			log.InfraLogger.Errorf("Failed to record job status event for job <%s>: %v", job.Name, err)
 		}
 	}

@@ -73,6 +73,11 @@ podgrouper:
   queueLabelKey: "kai.scheduler/queue"
   genericKartaFallback: true
   affinity: {}
+  # PDB is created only when pod-grouper replicas > 1 (operator.replicaCount / podGrouper.replicas).
+  # For HA: set operator.replicaCount: 2 (or override podGrouper.replicas in Config).
+  podDisruptionBudget:
+    enabled: true
+    maxUnavailable: 1
 
 podgroupcontroller:
   enabled: true
@@ -132,6 +137,12 @@ scheduler:
   # args:
   #   v: "0"
   args: {}
+  # goMemLimitRatio reserves container-memory headroom from Go's memory limit.
+  # The scheduler defaults to 0.9 when this value is omitted.
+  goMemLimitRatio: 0.9
+  # goMemLimit overrides automatic cgroup-derived GOMEMLIMIT for the default shard.
+  # Example: 6Gi
+  # goMemLimit: ""
   # plugins allows overriding or adding custom scheduler plugins
   # Built-in plugins can be disabled, reordered, or have their arguments changed.
   # New plugins can be added by specifying a name not in the default set.

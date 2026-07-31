@@ -39,8 +39,6 @@ var reclaimLargeJobNodeLocalGreedyBudget = flag.String(
 	"optional NodeLocalGreedy generator budget override for BenchmarkReclaimLargeJobs",
 )
 
-var manySingleGPUJobsBenchmarkKeepAlive *framework.Session
-
 func init() {
 	test_utils.InitTestingInfrastructure()
 }
@@ -126,21 +124,21 @@ func benchmarkReclaimManySingleGPUJobsFullCycleWithParams(
 			action.Execute(ssn)
 			if measureLiveHeap && actionIndex == 0 {
 				fitErrorTasks += countManySingleGPUFitErrorTasks(ssn)
-				manySingleGPUJobsBenchmarkKeepAlive = ssn
 				b.StopTimer()
 				runtime.GC()
 				var after runtime.MemStats
 				runtime.ReadMemStats(&after)
+				runtime.KeepAlive(ssn)
 				heapAfterAllocate += heapDelta(before.HeapAlloc, after.HeapAlloc)
 				b.StartTimer()
 			}
 		}
 		if measureLiveHeap {
-			manySingleGPUJobsBenchmarkKeepAlive = ssn
 			b.StopTimer()
 			runtime.GC()
 			var after runtime.MemStats
 			runtime.ReadMemStats(&after)
+			runtime.KeepAlive(ssn)
 			heapAfterCycle += heapDelta(before.HeapAlloc, after.HeapAlloc)
 			b.StartTimer()
 		}

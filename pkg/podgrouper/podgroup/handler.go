@@ -102,11 +102,12 @@ func (h *Handler) createPodGroupForMetadata(podGroupMetadata Metadata) *scheduli
 			},
 		},
 		Spec: schedulingv2alpha2.PodGroupSpec{
-			Queue:             podGroupMetadata.Queue,
-			PriorityClassName: podGroupMetadata.PriorityClassName,
-			SubGroups:         []schedulingv2alpha2.SubGroup{},
-			Preemptibility:    podGroupMetadata.Preemptibility,
-			PreemptionDelay:   podGroupMetadata.PreemptionDelay,
+			Queue:                podGroupMetadata.Queue,
+			PriorityClassName:    podGroupMetadata.PriorityClassName,
+			SubGroups:            []schedulingv2alpha2.SubGroup{},
+			Preemptibility:       podGroupMetadata.Preemptibility,
+			PreemptionDelay:      podGroupMetadata.PreemptionDelay,
+			StalenessGracePeriod: podGroupMetadata.StalenessGracePeriod,
 		},
 	}
 	if podGroupMetadata.MinSubGroup != nil {

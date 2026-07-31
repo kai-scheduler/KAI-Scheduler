@@ -32,6 +32,8 @@ import (
 
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"k8s.io/dynamic-resource-allocation/deviceclass/extendedresourcecache"
+
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_affinity"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
@@ -74,7 +76,8 @@ type NodeInfo struct {
 	ReleasingVector   resource_info.ResourceVector
 
 	// Shared resource vector index map for this node
-	VectorMap *resource_info.ResourceVectorMap
+	VectorMap             *resource_info.ResourceVectorMap
+	DeviceClassByResource *extendedresourcecache.ExtendedResourceCache
 
 	AccessibleStorageCapacities map[common_info.StorageClassID][]*sc_info.StorageCapacityInfo
 
@@ -311,13 +314,9 @@ func (ni *NodeInfo) PredicateByNodeResourcesType(task *pod_info.PodInfo) error {
 		return nil
 	}
 
-	// Temporary fix: Reject device-plugin GPU requests on DRA-only nodes.
-	// Remove when device-plugin pods are supported on DRA nodes.
-	if task.GpuRequirement.GPUs() > 0 && ni.HasDRAGPUs {
-		log.InfraLogger.V(4).Infof("Task %s/%s rejected on node %s: device-plugin GPU request on DRA-only node",
-			task.Namespace, task.Name, ni.Name)
+	if ni.HasDRAGPUs && task.IsSharedGPURequest() {
 		return common_info.NewFitError(task.Name, task.Namespace, ni.Name,
-			"device-plugin GPU requests cannot be scheduled on DRA-only nodes")
+			"fractional/shared GPU pods are not yet supported on DRA-only nodes")
 	}
 
 	migNode := ni.IsMIGEnabled()
@@ -370,8 +369,15 @@ func (ni *NodeInfo) isTaskAllocatableOnNonAllocatedResources(
 }
 
 func (ni *NodeInfo) lessEqualVectorsExcludingGPU(a, b resource_info.ResourceVector) bool {
-	for i := 0; i < len(a); i++ {
+	for i := range len(a) {
 		if i == resource_info.GPUIndex {
+			continue
+		}
+
+		// Skip dims backed by DRA: the node has zero allocatable for them
+		// and the DRA plugin handles fit-checking for those resources.
+		if ni.AllocatableVector.Get(i) == 0 &&
+			ni.DeviceClassByResource.GetDeviceClass(ni.VectorMap.ResourceAt(i)) != nil {
 			continue
 		}
 		if a.Get(i) > b.Get(i) {
@@ -466,6 +472,14 @@ func (ni *NodeInfo) addTaskResources(task *pod_info.PodInfo) {
 		resourcesToTrackVector.Set(resource_info.GPUIndex, 0)
 	}
 
+	// DRA-backed extended resources are absent from node.Status.Allocatable and must
+	// not be charged against the node's vector — the DRA allocator handles them.
+	for i := range len(resourcesToTrackVector) {
+		if ni.AllocatableVector.Get(i) == 0 {
+			resourcesToTrackVector.Set(i, 0)
+		}
+	}
+
 	ni.UsedVector.Add(resourcesToTrackVector)
 
 	switch task.Status {
@@ -514,6 +528,13 @@ func (ni *NodeInfo) removeTaskResources(task *pod_info.PodInfo) {
 	if pod_info.IsResourceReservationTask(task.Pod) {
 		// Reservation pod: untrack all resources except GPUs
 		resourcesToTrackVector.Set(resource_info.GPUIndex, 0)
+	}
+
+	// Mirror the zeroing done in addTaskResources so vectors stay consistent.
+	for i := range len(resourcesToTrackVector) {
+		if ni.AllocatableVector.Get(i) == 0 {
+			resourcesToTrackVector.Set(i, 0)
+		}
 	}
 
 	ni.UsedVector.Sub(resourcesToTrackVector)

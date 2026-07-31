@@ -147,7 +147,7 @@ func (p *K8sPlugins) PreBind(ctx context.Context, pod *v1.Pod, node *v1.Node, re
 	return nil
 }
 
-func (p *K8sPlugins) PostBind(ctx context.Context, pod *v1.Pod, node *v1.Node, _ *v1alpha2.BindRequest,
+func (p *K8sPlugins) PostBind(ctx context.Context, pod *v1.Pod, node *v1.Node, request *v1alpha2.BindRequest,
 	_ *state.BindingState) {
 	podStateAny, found := p.states.LoadAndDelete(pod.UID)
 	if !found {
@@ -159,14 +159,14 @@ func (p *K8sPlugins) PostBind(ctx context.Context, pod *v1.Pod, node *v1.Node, _
 	podState := podStateAny.(*PodState)
 
 	for _, plugin := range p.plugins {
-		if !plugin.IsRelevant(pod) || podState.skip[plugin.Name()] {
+		if !plugin.IsRelevant(pod, request) || podState.skip[plugin.Name()] {
 			continue
 		}
 		plugin.PostBind(ctx, pod, node.Name, podState.states[plugin.Name()])
 	}
 }
 
-func (p *K8sPlugins) Rollback(ctx context.Context, pod *v1.Pod, node *v1.Node, _ *v1alpha2.BindRequest,
+func (p *K8sPlugins) Rollback(ctx context.Context, pod *v1.Pod, node *v1.Node, request *v1alpha2.BindRequest,
 	_ *state.BindingState) error {
 	logger := log.FromContext(ctx)
 
@@ -179,7 +179,7 @@ func (p *K8sPlugins) Rollback(ctx context.Context, pod *v1.Pod, node *v1.Node, _
 	podState := podStateAny.(*PodState)
 
 	for _, plugin := range p.plugins {
-		if !plugin.IsRelevant(pod) || podState.skip[plugin.Name()] {
+		if !plugin.IsRelevant(pod, request) || podState.skip[plugin.Name()] {
 			continue
 		}
 		plugin.UnAllocate(ctx, pod, node.Name, podState.states[plugin.Name()])
@@ -194,7 +194,7 @@ func (p *K8sPlugins) bindPluginWrapper(
 	ctx context.Context, plugin common.K8sPlugin, pod *v1.Pod, node *v1.Node, request *v1alpha2.BindRequest, podState *PodState,
 ) (error, ksf.CycleState) {
 	state := common.NewState()
-	if !plugin.IsRelevant(pod) {
+	if !plugin.IsRelevant(pod, request) {
 		return nil, state
 	}
 	err, skip := plugin.PreFilter(ctx, pod, state)

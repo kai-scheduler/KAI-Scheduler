@@ -1360,7 +1360,7 @@ func TestPredicateByNodeResourcesType_DRA(t *testing.T) {
 		expectError bool
 		errorMsg    string
 	}{
-		"Device-plugin GPU request on DRA-only node": {
+		"Extended resource request on DRA-only node is allowed by PredicateByNodeResourcesType": {
 			nodeInfo: &NodeInfo{
 				Name:       "dra-node",
 				HasDRAGPUs: true,
@@ -1370,8 +1370,7 @@ func TestPredicateByNodeResourcesType_DRA(t *testing.T) {
 			},
 			allocatable: common_info.BuildResourceWithGpu("1000m", "1G", "4", "110"),
 			task:        createPod("default", "gpu-pod", podCreationOptions{GPUs: 1}),
-			expectError: true,
-			errorMsg:    "device-plugin GPU requests cannot be scheduled on DRA-only nodes",
+			expectError: false,
 		},
 		"CPU-only request on DRA-only node": {
 			nodeInfo: &NodeInfo{
@@ -1586,6 +1585,90 @@ func TestResourceReservationPodConsumesMaxPods(t *testing.T) {
 			if !reflect.DeepEqual(ni.ReleasingVector, expectedReleasingVector) {
 				t.Errorf("ReleasingVector mismatch:\nexpected: %v\ngot: %v",
 					expectedReleasingVector, ni.ReleasingVector)
+			}
+		})
+	}
+}
+
+// TestPredicateByNodeResourcesType_SharedGPU_DRANode verifies that fractional / GPU-memory
+// pods are rejected on DRA-only nodes and accepted on device-plugin nodes.
+func TestPredicateByNodeResourcesType_SharedGPU_DRANode(t *testing.T) {
+	// DRA-only node: no nvidia.com/gpu in Status.Allocatable; GPUs come from ResourceSlices.
+	draNode := common_info.BuildNode("dra-node", common_info.BuildResourceList("16000m", "32G"))
+
+	// Device-plugin node: nvidia.com/gpu is present in Status.Allocatable.
+	dpNode := common_info.BuildNode("dp-node", common_info.BuildResourceListWithGPUAndPods("16000m", "32G", "4", "110"))
+
+	tests := []struct {
+		name          string
+		node          *v1.Node
+		draGPUs       float64
+		podResources  v1.ResourceList
+		podAnnotation map[string]string
+		wantErr       bool
+	}{
+		{
+			name:         "fraction pod rejected on DRA-only node",
+			node:         draNode,
+			draGPUs:      4,
+			podResources: common_info.BuildResourceListWithGPU("1000m", "1G", "500m"),
+			wantErr:      true,
+		},
+		{
+			name:    "gpu-memory pod rejected on DRA-only node",
+			node:    draNode,
+			draGPUs: 4,
+			// gpu-memory pods use an annotation; set it directly with CPU-only resources.
+			podResources:  common_info.BuildResourceList("1000m", "1G"),
+			podAnnotation: map[string]string{commonconstants.GpuMemory: "2000"},
+			wantErr:       true,
+		},
+		{
+			name:         "cpu-only pod accepted on DRA-only node",
+			node:         draNode,
+			draGPUs:      4,
+			podResources: common_info.BuildResourceList("1000m", "1G"),
+			wantErr:      false,
+		},
+		{
+			name:         "fraction pod accepted on device-plugin node",
+			node:         dpNode,
+			draGPUs:      0,
+			podResources: common_info.BuildResourceListWithGPU("1000m", "1G", "500m"),
+			wantErr:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := NewController(t)
+			nodePodAffinity := pod_affinity.NewMockNodePodAffinityInfo(ctrl)
+			nodePodAffinity.EXPECT().AddPod(Any()).AnyTimes()
+
+			vectorMap := testVectorMapFromNode(tt.node)
+			for resourceName := range tt.podResources {
+				vectorMap.AddResource(resourceName)
+			}
+
+			ni := NewNodeInfo(tt.node, nodePodAffinity, vectorMap)
+			if tt.draGPUs > 0 {
+				ni.AddDRAGPUs(tt.draGPUs)
+				ni.HasDRAGPUs = true
+			}
+
+			annotations := map[string]string{}
+			for k, v := range tt.podAnnotation {
+				annotations[k] = v
+			}
+			pod := common_info.BuildPod(
+				"test-pod", "ns", tt.node.Name, v1.PodRunning,
+				tt.podResources, []metav1.OwnerReference{}, map[string]string{}, annotations)
+			addJobAnnotation(pod)
+			task := pod_info.NewTaskInfo(pod, vectorMap)
+
+			err := ni.PredicateByNodeResourcesType(task)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("PredicateByNodeResourcesType error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}

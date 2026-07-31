@@ -169,6 +169,15 @@ spec:
       affinity:
         {{- toYaml .Values.podgrouper.affinity | nindent 8 }}
       {{- end }}
+      {{- if .Values.podgrouper.podDisruptionBudget }}
+      podDisruptionBudget:
+        {{- if hasKey .Values.podgrouper.podDisruptionBudget "enabled" }}
+        enabled: {{ .Values.podgrouper.podDisruptionBudget.enabled }}
+        {{- end }}
+        {{- if hasKey .Values.podgrouper.podDisruptionBudget "maxUnavailable" }}
+        maxUnavailable: {{ .Values.podgrouper.podDisruptionBudget.maxUnavailable }}
+        {{- end }}
+      {{- end }}
     args:
       genericKartaFallback: {{ .Values.podgrouper.genericKartaFallback }}
 
@@ -225,6 +234,7 @@ spec:
       affinity:
         {{- toYaml .Values.admission.affinity | nindent 8 }}
       {{- end }}
+      {{- if .Values.admission.podDisruptionBudget }}
       podDisruptionBudget:
         {{- if hasKey .Values.admission.podDisruptionBudget "enabled" }}
         enabled: {{ .Values.admission.podDisruptionBudget.enabled }}
@@ -232,6 +242,7 @@ spec:
         {{- if hasKey .Values.admission.podDisruptionBudget "maxUnavailable" }}
         maxUnavailable: {{ .Values.admission.podDisruptionBudget.maxUnavailable }}
         {{- end }}
+      {{- end }}
     gpuSharing: {{ .Values.global.gpuSharing | default false }}
     blockNvidiaVisibleDevices: {{ .Values.global.blockNvidiaVisibleDevices | default false }}
     queueLabelSelector: false
@@ -286,6 +297,7 @@ spec:
       affinity:
         {{- toYaml .Values.scheduler.affinity | nindent 8 }}
       {{- end }}
+      {{- if .Values.scheduler.podDisruptionBudget }}
       podDisruptionBudget:
         {{- if hasKey .Values.scheduler.podDisruptionBudget "enabled" }}
         enabled: {{ .Values.scheduler.podDisruptionBudget.enabled }}
@@ -293,6 +305,7 @@ spec:
         {{- if hasKey .Values.scheduler.podDisruptionBudget "maxUnavailable" }}
         maxUnavailable: {{ .Values.scheduler.podDisruptionBudget.maxUnavailable }}
         {{- end }}
+      {{- end }}
     {{- if and .Values.scheduler.ports .Values.scheduler.ports.metricsPort }}
     schedulerService:
       port: {{ .Values.scheduler.ports.metricsPort }}

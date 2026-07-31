@@ -50,6 +50,7 @@ type TestJobBasic struct {
 	Tasks                               []*tasks_fake.TestTaskBasic
 	RootSubGroupSet                     *subgroup_info.SubGroupSet
 	StaleDuration                       *time.Duration
+	PerJobStalenessGracePeriod          *metav1.Duration
 	QOSClass                            v1.PodQOSClass
 }
 
@@ -92,7 +93,7 @@ func BuildJobsAndTasksMaps(Jobs []*TestJobBasic, vectorMap *resource_info.Resour
 
 		jobInfo := BuildJobInfo(
 			jobName, job.Namespace, jobUID, job.RootSubGroupSet, taskInfos,
-			job.Priority, job.Preemptibility, queueUID, jobCreationTime, job.StaleDuration, vectorMap,
+			job.Priority, job.Preemptibility, queueUID, jobCreationTime, job.StaleDuration, job.PerJobStalenessGracePeriod, vectorMap,
 		)
 		jobInfo.PodGroup.Spec.PreemptionDelay = job.PreemptionDelay
 		jobsInfoMap[common_info.PodGroupID(job.Name)] = jobInfo
@@ -105,7 +106,8 @@ func BuildJobInfo(
 	name, namespace string, uid common_info.PodGroupID,
 	rootSubGroupSet *subgroup_info.SubGroupSet, taskInfos []*pod_info.PodInfo,
 	priority int32, preemptibility enginev2alpha2.Preemptibility, queueUID common_info.QueueID,
-	jobCreationTime time.Time, staleDuration *time.Duration, vectorMap *resource_info.ResourceVectorMap,
+	jobCreationTime time.Time, staleDuration *time.Duration, stalenessGracePeriod *metav1.Duration,
+	vectorMap *resource_info.ResourceVectorMap,
 ) *podgroup_info.PodGroupInfo {
 	allTasks := pod_info.PodsMap{}
 	taskStatusIndex := map[pod_status.PodStatus]pod_info.PodsMap{}
@@ -180,6 +182,9 @@ func BuildJobInfo(
 	if result.LastStartTimestamp == nil && result.GetNumAllocatedTasks() > 0 {
 		startTime := time.Now().Add(-1 * time.Minute * 1)
 		result.LastStartTimestamp = &startTime
+	}
+	if stalenessGracePeriod != nil {
+		result.PodGroup.Spec.StalenessGracePeriod = stalenessGracePeriod
 	}
 	return result
 }

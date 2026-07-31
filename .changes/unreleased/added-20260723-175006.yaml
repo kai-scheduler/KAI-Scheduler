@@ -1,0 +1,3 @@
+kind: Added
+body: |-
+  NUMA-aware node scoring preferring fewest-NUMA-zone placement

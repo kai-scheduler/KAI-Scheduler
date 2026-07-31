@@ -20,7 +20,7 @@ func NewState() ksf.CycleState {
 
 type K8sPlugin interface {
 	Name() string
-	IsRelevant(pod *v1.Pod) bool
+	IsRelevant(pod *v1.Pod, request *v1alpha2.BindRequest) bool
 	PreFilter(ctx context.Context, pod *v1.Pod, state ksf.CycleState) (error, bool)
 	Filter(ctx context.Context, pod *v1.Pod, node *v1.Node, state ksf.CycleState) error
 	Allocate(ctx context.Context, pod *v1.Pod, hostname string, state ksf.CycleState) error
