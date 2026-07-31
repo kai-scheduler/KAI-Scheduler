@@ -178,6 +178,35 @@ func TestAddTaskInfoTracksInvalidSubGroupTask(t *testing.T) {
 	assert.Contains(t, info.TasksFitErrors[task.UID].Error(), `missing-subgroup`)
 }
 
+func TestSetPodGroupMinMember(t *testing.T) {
+	tests := []struct {
+		name             string
+		minMember        *int32
+		expectedMinAvail int32
+	}{
+		{"nil minMember defaults to 1", nil, 1},
+		{"zero minMember is honored", ptr.To(int32(0)), 0},
+		{"positive minMember is honored", ptr.To(int32(3)), 3},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			info := NewPodGroupInfo("group-1")
+			info.SetPodGroup(&enginev2alpha2.PodGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "group-1",
+					Namespace: "ns-1",
+				},
+				Spec: enginev2alpha2.PodGroupSpec{
+					Queue:     "queue-1",
+					MinMember: test.minMember,
+				},
+			})
+
+			assert.Equal(t, test.expectedMinAvail, info.PodSets[DefaultSubGroup].GetMinAvailable())
+		})
+	}
+}
+
 func TestDeleteTaskInfo(t *testing.T) {
 	// case1
 	case01_uid := common_info.PodGroupID("owner1")
