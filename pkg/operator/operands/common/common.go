@@ -166,6 +166,7 @@ func DeploymentForKAIConfig(
 	deployment.Spec.Template.Spec.ServiceAccountName = deploymentName
 	deployment.Spec.Template.Spec.NodeSelector = kaiConfig.Spec.Global.NodeSelector
 	deployment.Spec.Template.Spec.Tolerations = kaiConfig.Spec.Global.Tolerations
+	deployment.Spec.Template.Spec.PriorityClassName = ptr.Deref(kaiConfig.Spec.Global.PriorityClassName, "")
 
 	deployment.Spec.Template.Spec.Affinity = MergeAffinities(service.Affinity,
 		kaiConfig.Spec.Global.Affinity,
@@ -222,6 +223,7 @@ func DaemonSetForKAIConfig(
 	ds.Spec.Template.Spec.Affinity = service.Affinity
 	ds.Spec.Template.Spec.Tolerations = append(
 		append([]v1.Toleration{}, kaiConfig.Spec.Global.DaemonsetsTolerations...), tolerations...)
+	ds.Spec.Template.Spec.PriorityClassName = ptr.Deref(kaiConfig.Spec.Global.PriorityClassName, "")
 
 	ds.Spec.Template.Spec.Containers = []v1.Container{
 		{

@@ -255,6 +255,11 @@ func (in *GlobalConfig) DeepCopyInto(out *GlobalConfig) {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
+	if in.PriorityClassName != nil {
+		in, out := &in.PriorityClassName, &out.PriorityClassName
+		*out = new(string)
+		**out = **in
+	}
 	if in.ReplicaCount != nil {
 		in, out := &in.ReplicaCount, &out.ReplicaCount
 		*out = new(int32)

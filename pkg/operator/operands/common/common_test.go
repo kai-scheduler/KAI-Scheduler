@@ -52,6 +52,44 @@ var _ = Describe("DeploymentForKAIConfig", func() {
 		Expect(deployment.Labels).To(HaveKeyWithValue(OperatorManagedByLabelKey, OperatorManagedByLabelValue))
 		Expect(deployment.Labels).To(HaveKeyWithValue("existing-label", "preserved"))
 	})
+
+	It("leaves the priority class empty by default", func() {
+		config := &kaiv1.Config{Spec: kaiv1.ConfigSpec{Namespace: "kai-scheduler"}}
+		config.Spec.SetDefaultsWhereNeeded()
+
+		deployment, err := DeploymentForKAIConfig(
+			context.Background(), fake.NewClientBuilder().Build(), config, config.Spec.Binder.Service, "binder",
+		)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(deployment.Spec.Template.Spec.PriorityClassName).To(BeEmpty())
+	})
+
+	It("applies the global priority class", func() {
+		config := &kaiv1.Config{Spec: kaiv1.ConfigSpec{Namespace: "kai-scheduler"}}
+		config.Spec.SetDefaultsWhereNeeded()
+		config.Spec.Global.PriorityClassName = ptr.To("system-cluster-critical")
+
+		deployment, err := DeploymentForKAIConfig(
+			context.Background(), fake.NewClientBuilder().Build(), config, config.Spec.Binder.Service, "binder",
+		)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(deployment.Spec.Template.Spec.PriorityClassName).To(Equal("system-cluster-critical"))
+	})
+})
+
+var _ = Describe("DaemonSetForKAIConfig", func() {
+	It("applies the global priority class", func() {
+		config := &kaiv1.Config{Spec: kaiv1.ConfigSpec{Namespace: "kai-scheduler"}}
+		config.Spec.SetDefaultsWhereNeeded()
+		config.Spec.Global.PriorityClassName = ptr.To("system-node-critical")
+
+		ds, err := DaemonSetForKAIConfig(
+			context.Background(), fake.NewClientBuilder().Build(), config,
+			config.Spec.NumaPlacementExporter.Service, nil, nil, "numa-placement-exporter",
+		)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(ds.Spec.Template.Spec.PriorityClassName).To(Equal("system-node-critical"))
+	})
 })
 
 var _ = Describe("AllControllersAvailable", func() {

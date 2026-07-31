@@ -87,6 +87,9 @@ spec:
     tolerations:
       {{- toYaml .Values.global.tolerations | nindent 6 }}
     {{- end }}
+    {{- if .Values.global.priorityClassName }}
+    priorityClassName: {{ .Values.global.priorityClassName | quote }}
+    {{- end }}
     {{- if .Values.global.securityContext }}
     securityContext:
       {{- toYaml .Values.global.securityContext | nindent 6 }}
