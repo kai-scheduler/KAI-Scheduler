@@ -23,6 +23,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/dynamicresources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/elastic"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/gpujoborder"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/gpupack"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/gpusharingorder"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/gpuspread"
@@ -45,7 +46,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/subgrouporder"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/taskorder"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/topology"
-        "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/gpujoborder"
 )
 
 func InitDefaultPlugins() {
