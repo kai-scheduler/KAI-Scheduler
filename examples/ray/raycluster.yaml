@@ -6,7 +6,7 @@ kind: RayCluster
 metadata:
   name: raycluster-sample
   labels:
-    kai.scheduler/queue: default-queue
+    kai.scheduler/queue: default-queue              # KAI queue name
 spec:
   rayVersion: '2.46.0'
   headGroupSpec:
@@ -14,7 +14,7 @@ spec:
       dashboard-host: '0.0.0.0'
     template:
       spec:
-        schedulerName: kai-scheduler
+        schedulerName: kai-scheduler                 # Use KAI scheduler
         containers:
         - name: ray-head
           image: rayproject/ray:2.46.0
@@ -31,13 +31,13 @@ spec:
     rayStartParams: {}
     template:
       spec:
-        schedulerName: kai-scheduler
+        schedulerName: kai-scheduler                 # Use KAI scheduler
         containers:
         - name: ray-worker
           image: rayproject/ray:2.46.0
           resources:
             limits:
-              nvidia.com/gpu: "1"
+              nvidia.com/gpu: "1"                    # Optional: GPU resources per worker
             requests:
               cpu: "500m"
               memory: "1Gi"

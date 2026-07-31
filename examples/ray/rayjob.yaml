@@ -22,7 +22,7 @@ kind: RayJob
 metadata:
   name: rayjob-example
   labels:
-    kai.scheduler/queue: default-queue
+    kai.scheduler/queue: default-queue              # KAI queue name
 spec:
   entrypoint: python /home/ray/samples/sample_code.py
   shutdownAfterJobFinishes: true
@@ -33,7 +33,7 @@ spec:
       rayStartParams: {}
       template:
         spec:
-          schedulerName: kai-scheduler
+          schedulerName: kai-scheduler               # Use KAI scheduler
           containers:
           - name: ray-head
             image: rayproject/ray:2.46.0
@@ -43,8 +43,7 @@ spec:
             resources:
               limits:
                 cpu: "1"
-                # Optional: remove this limit for CPU-only clusters.
-                nvidia.com/gpu: "1"
+                nvidia.com/gpu: "1"                  # Optional: GPU resources
               requests:
                 cpu: "200m"
                 memory: "256Mi"
@@ -63,15 +62,14 @@ spec:
       rayStartParams: {}
       template:
         spec:
-          schedulerName: kai-scheduler
+          schedulerName: kai-scheduler               # Use KAI scheduler
           containers:
           - name: ray-worker
             image: rayproject/ray:2.46.0
             resources:
               limits:
                 cpu: "1"
-                # Optional: remove this limit for CPU-only clusters.
-                nvidia.com/gpu: "1"
+                nvidia.com/gpu: "1"                  # Optional: GPU resources per worker
               requests:
                 cpu: "200m"
                 memory: "256Mi"
