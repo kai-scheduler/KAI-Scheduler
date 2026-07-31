@@ -43,6 +43,7 @@ spec:
             resources:
               limits:
                 cpu: "1"
+                # Optional: remove this limit for CPU-only clusters.
                 nvidia.com/gpu: "1"
               requests:
                 cpu: "200m"
@@ -69,6 +70,7 @@ spec:
             resources:
               limits:
                 cpu: "1"
+                # Optional: remove this limit for CPU-only clusters.
                 nvidia.com/gpu: "1"
               requests:
                 cpu: "200m"

@@ -38,4 +38,40 @@ To use KAI scheduler with your Ray workloads, configure the pod templates in you
 | `kai.scheduler/queue` | `metadata.labels` (on RayJob/RayCluster) | Queue name (e.g., `default-queue`) | Assigns workload to a KAI queue |
 | `schedulerName` | Pod template spec (head group and each worker group) | `kai-scheduler` | Routes pods to KAI scheduler |
 
+## Topology-Aware Scheduling (Optional)
+
+To control Ray subgroup placement, add topology annotations to the head and worker pod templates:
+
+- `spec.headGroupSpec.template.metadata.annotations`
+- `spec.workerGroupSpecs[*].template.metadata.annotations`
+
+Supported annotations:
+
+- `kai.scheduler/topology`
+- `kai.scheduler/topology-required-placement`
+- `kai.scheduler/topology-preferred-placement`
+
+Set `kai.scheduler/topology` whenever either placement annotation is used. The following annotations-only patch requires each Ray subgroup to remain within a zone while preferring rack-local placement; add it to the existing head and worker pod templates in [raycluster.yaml](raycluster.yaml):
+
+```yaml
+spec:
+  headGroupSpec:
+    template:
+      metadata:
+        annotations:
+          kai.scheduler/topology: cluster-topology
+          kai.scheduler/topology-required-placement: topology.kubernetes.io/zone
+          kai.scheduler/topology-preferred-placement: topology.kubernetes.io/rack
+  workerGroupSpecs:
+  - groupName: gpu-workers
+    template:
+      metadata:
+        annotations:
+          kai.scheduler/topology: cluster-topology
+          kai.scheduler/topology-required-placement: topology.kubernetes.io/zone
+          kai.scheduler/topology-preferred-placement: topology.kubernetes.io/rack
+```
+
+See [raycluster.yaml](raycluster.yaml) for a complete RayCluster and [Topology-Aware Scheduling](../../docs/topology/README.md) for topology configuration and scheduling behavior.
+
 For a full overview of gang scheduling behavior and all supported workload types, see the [Batch and Gang Scheduling guide](../../docs/batch/README.md).
