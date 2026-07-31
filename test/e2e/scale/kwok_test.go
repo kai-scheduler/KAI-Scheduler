@@ -17,9 +17,11 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
 	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
 	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
@@ -482,15 +484,32 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 
 			Context("Burst Jobs", func() {
 				BeforeAll(func(ctx context.Context) {
+					Expect(schedulerconfig.PatchSchedulingShard(ctx, testCtx, "default", func(shard *kaiv1.SchedulingShard) {
+						if shard.Spec.Actions == nil {
+							shard.Spec.Actions = map[string]kaiv1.ActionConfig{}
+						}
+						shard.Spec.Actions["stalegangeviction"] = kaiv1.ActionConfig{Enabled: ptr.To(false)}
+					})).To(Succeed(), "Failed to disable stale gang eviction for NCCL simulation")
+					wait.ForSchedulingShardStatusOK(ctx, testCtx.ControllerClient, "default")
+					engineConfig := &kaiv1.Config{}
+					Expect(testCtx.ControllerClient.Get(ctx, runtimeClient.ObjectKey{
+						Name: constants.DefaultKAIConfigSingeltonInstanceName,
+					}, engineConfig)).To(Succeed())
+
+					schedulerAppName := "kai-scheduler-default"
+					err := testCtx.ControllerClient.DeleteAllOf(
+						ctx, &v1.Pod{},
+						runtimeClient.InNamespace(engineConfig.Spec.Namespace),
+						runtimeClient.MatchingLabels{constants.AppLabelName: schedulerAppName},
+						runtimeClient.GracePeriodSeconds(0),
+					)
+					Expect(runtimeClient.IgnoreNotFound(err)).To(Succeed())
+					wait.ForRunningSystemComponentEvent(ctx, testCtx.ControllerClient, schedulerAppName)
+
 					Expect(createPodCompletionStage(
 						ctx, testCtx.ControllerClient,
 						time.Second*20, time.Second*40,
 					)).To(Succeed())
-				})
-				AfterAll(func(ctx context.Context) {
-					Expect(deletePodCompletionStage(
-						ctx, testCtx.ControllerClient),
-					).To(Succeed())
 				})
 
 				It("Runs NCCL Simulation on empty cluster", Label(labels.NCCL), func(ctx context.Context) {
