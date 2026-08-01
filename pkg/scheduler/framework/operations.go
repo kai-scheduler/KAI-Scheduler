@@ -47,13 +47,14 @@ type Operation interface {
 type ReverseOperation func() error
 
 type evictOperation struct {
-	taskInfo          *pod_info.PodInfo
-	previousStatus    pod_status.PodStatus
-	previousNode      *node_info.NodeInfo
-	previousGpuGroups []string
-	message           string
-	evictionMetadata  eviction_info.EvictionMetadata
-	reverseOperation  ReverseOperation
+	taskInfo              *pod_info.PodInfo
+	previousStatus        pod_status.PodStatus
+	previousNode          *node_info.NodeInfo
+	previousGpuGroups     []string
+	previousNumaPlacement pod_info.NUMAPlacement
+	message               string
+	evictionMetadata      eviction_info.EvictionMetadata
+	reverseOperation      ReverseOperation
 }
 
 func (op evictOperation) Name() string {
@@ -91,6 +92,7 @@ type pipelineOperation struct {
 	previousStatus            pod_status.PodStatus
 	previousNode              string
 	previousGpuGroups         []string
+	previousNumaPlacement     pod_info.NUMAPlacement
 	previousResourceClaimInfo bindrequest_info.ResourceClaimInfo
 	nextNode                  string
 	message                   string

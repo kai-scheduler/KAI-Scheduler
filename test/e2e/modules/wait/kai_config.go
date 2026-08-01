@@ -21,6 +21,25 @@ const (
 	defaultStatusPollInterval     = 5 * time.Second
 )
 
+// GetKAIConfigGeneration returns the current metadata.generation of the KAIConfig singleton.
+func GetKAIConfigGeneration(ctx context.Context, runtimeClient client.Client) int64 {
+	kaiConfig := &kaiv1.Config{}
+	Expect(runtimeClient.Get(ctx, client.ObjectKey{Name: constants.DefaultKAIConfigSingeltonInstanceName}, kaiConfig)).To(Succeed())
+	return kaiConfig.Generation
+}
+
+// ForKAIConfigGenerationAfter waits until the KAIConfig singleton's metadata.generation
+// advances beyond prevGeneration, i.e. the post-upgrade hook Job has applied the new spec.
+func ForKAIConfigGenerationAfter(ctx context.Context, runtimeClient client.Client, prevGeneration int64, timeout time.Duration) {
+	Eventually(func(g Gomega) {
+		kaiConfig := &kaiv1.Config{}
+		err := runtimeClient.Get(ctx, client.ObjectKey{Name: constants.DefaultKAIConfigSingeltonInstanceName}, kaiConfig)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(kaiConfig.Generation).To(BeNumerically(">", prevGeneration),
+			"Expected kai-config generation to advance after the post-upgrade hook applied the new spec")
+	}, timeout, defaultStatusPollInterval).Should(Succeed())
+}
+
 // ForKAIConfigStatusOK waits until the KAIConfig singleton has all status conditions
 // (Deployed, Available, DependenciesFulfilled) set to True for the current generation.
 func ForKAIConfigStatusOK(ctx context.Context, runtimeClient client.Client) {

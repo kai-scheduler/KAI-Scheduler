@@ -47,10 +47,17 @@ func (alloc *preemptAction) Execute(ssn *framework.Session) {
 	log.InfraLogger.V(2).Infof("Enter Preempt ...")
 	defer log.InfraLogger.V(2).Infof("Leaving Preempt ...")
 
+	actionBudget, err := solvers.NewActionSearchBudget(ssn, framework.Preempt)
+	if err != nil {
+		log.InfraLogger.Errorf("Invalid scenario search budget for preempt: %v", err)
+		return
+	}
+
 	jobsOrderByQueues := utils.NewJobsOrderByQueues(ssn, utils.JobsOrderInitOptions{
-		FilterNonPending:  true,
-		FilterUnready:     true,
-		MaxJobsQueueDepth: ssn.GetJobsDepth(framework.Preempt),
+		FilterNonPending:            true,
+		FilterUnready:               true,
+		FilterWithinPreemptionDelay: true,
+		MaxJobsQueueDepth:           ssn.GetJobsDepth(framework.Preempt),
 	})
 	jobsOrderByQueues.InitializeWithJobs(ssn.ClusterInfo.PodGroupInfos)
 
@@ -83,7 +90,7 @@ func (alloc *preemptAction) Execute(ssn *framework.Session) {
 		}
 
 		metrics.IncPodgroupsConsideredByAction()
-		succeeded, statement, preemptedTasksNames := attemptToPreemptForPreemptor(ssn, job)
+		succeeded, statement, preemptedTasksNames, searchResult := attemptToPreemptForPreemptor(ssn, job, actionBudget)
 		if succeeded {
 			metrics.RegisterPreemptionAttempts()
 			metrics.IncPodgroupScheduledByAction()
@@ -93,6 +100,8 @@ func (alloc *preemptAction) Execute(ssn *framework.Session) {
 			if err := statement.Commit(); err != nil {
 				log.InfraLogger.Errorf("Failed to commit preemption statement: %v", err)
 			}
+		} else if shouldStopActionForSearchResult(searchResult) {
+			return
 		} else {
 			log.InfraLogger.V(3).Infof("Didn't find a preemption strategy for job <%s/%s>",
 				job.Namespace, job.Name)
@@ -102,9 +111,10 @@ func (alloc *preemptAction) Execute(ssn *framework.Session) {
 }
 
 func attemptToPreemptForPreemptor(
-	ssn *framework.Session, preemptor *podgroup_info.PodGroupInfo,
-) (bool, *framework.Statement, []string) {
-	resReq := podgroup_info.GetTasksToAllocateInitResourceVector(preemptor, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false, ssn.ClusterInfo.MinNodeGPUMemory)
+	ssn *framework.Session, preemptor *podgroup_info.PodGroupInfo, actionBudget *solvers.ActionSearchBudget,
+) (bool, *framework.Statement, []string, *solvers.SearchResult) {
+	resReq := podgroup_info.GetTasksToAllocateInitResourceVector(preemptor, ssn.SubGroupOrderFn, ssn.TaskOrderFn,
+		false, ssn.ClusterInfo.MinNodeGPUMemoryMiB)
 	log.InfraLogger.V(3).Infof(
 		"Attempting to preempt for job: <%v/%v>, priority: <%v>, queue: <%v>, resources: <%v>",
 		preemptor.Namespace, preemptor.Name, preemptor.Priority, preemptor.Queue, resReq)
@@ -113,7 +123,7 @@ func attemptToPreemptForPreemptor(
 	if result := ssn.IsNonPreemptibleJobOverQueueQuotaFn(preemptor, preemptorTasks); !result.IsSchedulable {
 		log.InfraLogger.V(3).Infof("Job <%v/%v> would have placed the queue resources over quota",
 			preemptor.Namespace, preemptor.Name)
-		return false, nil, nil
+		return false, nil, nil, nil
 	}
 
 	feasibleNodes := common.FeasibleNodesForJob(maps.Values(ssn.ClusterInfo.Nodes), preemptor)
@@ -122,8 +132,18 @@ func attemptToPreemptForPreemptor(
 		ssn.PreemptScenarioValidator,
 		getOrderedVictimsQueue(ssn, preemptor),
 		framework.Preempt,
+		actionBudget,
 	)
-	return solver.Solve(ssn, preemptor)
+	return solver.SolveWithResult(ssn, preemptor)
+}
+
+func shouldStopActionForSearchResult(result *solvers.SearchResult) bool {
+	switch result.Reason() {
+	case solvers.SearchResultDeadlineExhausted, solvers.SearchResultNotAttempted:
+		return true
+	default:
+		return false
+	}
 }
 
 func buildFilterFuncForPreempt(ssn *framework.Session, preemptor *podgroup_info.PodGroupInfo) func(*podgroup_info.PodGroupInfo) bool {
@@ -158,9 +178,14 @@ func buildFilterFuncForPreempt(ssn *framework.Session, preemptor *podgroup_info.
 }
 
 func getOrderedVictimsQueue(ssn *framework.Session, preemptor *podgroup_info.PodGroupInfo) solvers.GenerateVictimsQueue {
-	return func() *utils.JobsOrderByQueues {
-		filter := buildFilterFuncForPreempt(ssn, preemptor)
-		victimsQueue := utils.GetVictimsQueue(ssn, filter)
-		return victimsQueue
-	}
+	return utils.NewCachedVictimsQueueGenerator(
+		ssn,
+		func() map[common_info.PodGroupID]*podgroup_info.PodGroupInfo {
+			return utils.GetVictimCandidates(ssn, buildFilterFuncForPreempt(ssn, preemptor))
+		},
+		utils.JobsOrderInitOptions{
+			FilterNonPreemptible:     true,
+			FilterNonActiveAllocated: true,
+		},
+	)
 }

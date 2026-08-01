@@ -22,10 +22,12 @@ package framework
 import (
 	"fmt"
 	"net/http"
+	"runtime"
 	"sort"
 	"sync"
 	"time"
 
+	"github.com/panjf2000/ants/v2"
 	"k8s.io/apimachinery/pkg/types"
 	ksf "k8s.io/kube-scheduler/framework"
 
@@ -47,6 +49,22 @@ import (
 )
 
 var server *PluginServer
+
+type ScenarioGeneratorContext interface {
+	Action() ActionType
+}
+
+type ScenarioGenerator interface {
+	Name() string
+	Next() api.ScenarioInfo
+}
+
+type ScenarioGeneratorFactory func(ctx ScenarioGeneratorContext) ScenarioGenerator
+
+type ScenarioGeneratorRegistration struct {
+	Name    string
+	Factory ScenarioGeneratorFactory
+}
 
 type Session struct {
 	ID    string
@@ -78,7 +96,9 @@ type Session struct {
 	VictimInvariantPrePredicateFns        []api.VictimInvariantPrePredicateFn
 	PredicateFns                          []api.PredicateFn
 	BindRequestMutateFns                  []api.BindRequestMutateFn
+	NumaPlacementFn                       api.NumaPlacementFn
 	PreJobAllocationFns                   []api.PreJobAllocationFn
+	ScenarioGeneratorRegistrations        []ScenarioGeneratorRegistration
 
 	Config          *conf.SchedulerConfiguration
 	plugins         map[string]Plugin
@@ -86,7 +106,9 @@ type Session struct {
 	SchedulerParams conf.SchedulerParams
 	mux             *http.ServeMux
 
-	k8sResourceStateCache sync.Map
+	k8sResourceStateCache  sync.Map
+	nodeScoringPool        *ants.Pool
+	scoringPoolWorkerCount int
 }
 
 func (ssn *Session) Statement() *Statement {
@@ -110,7 +132,8 @@ func (ssn *Session) GetNodes() []ksf.NodeInfo {
 
 func (ssn *Session) BindPod(pod *pod_info.PodInfo) error {
 	bindRequestAnnotations := ssn.MutateBindRequestAnnotations(pod, pod.NodeName)
-	if err := ssn.Cache.Bind(pod, pod.NodeName, bindRequestAnnotations); err != nil {
+	predictedNUMAZones := numaPlacementToZones(pod, ssn.ClusterInfo.Nodes[pod.NodeName])
+	if err := ssn.Cache.Bind(pod, pod.NodeName, bindRequestAnnotations, predictedNUMAZones); err != nil {
 		return err
 	}
 
@@ -213,7 +236,7 @@ func (ssn *Session) FittingNode(task *pod_info.PodInfo, node *node_info.NodeInfo
 	allocatable, fitError := ssn.isTaskAllocatableOnNode(task, job, node, writeFittingDelta)
 	if !allocatable {
 		if fitError != nil && writeFittingDelta {
-			fitErrors.SetNodeError(node.Name, fitError)
+			fitErrors.AddNodeError(fitError)
 			job.AddTaskFitErrors(task, fitErrors)
 		}
 		return false
@@ -225,7 +248,7 @@ func (ssn *Session) FittingNode(task *pod_info.PodInfo, node *node_info.NodeInfo
 		log.InfraLogger.V(6).Infof("Predicates failed for task <%s/%s> on node <%s>: %v",
 			task.Namespace, task.Name, node.Name, err)
 		if writeFittingDelta {
-			fitErrors.SetNodeError(node.Name, err)
+			fitErrors.AddNodeError(err)
 			job.AddTaskFitErrors(task, fitErrors)
 		}
 		return false
@@ -233,36 +256,69 @@ func (ssn *Session) FittingNode(task *pod_info.PodInfo, node *node_info.NodeInfo
 	return true
 }
 
+// OrderedNodesByTask scores nodes for a task and returns them in order of their scores
+// The function is parallelized using multiple workers to speed up the scoring process
 func (ssn *Session) OrderedNodesByTask(nodes []*node_info.NodeInfo, task *pod_info.PodInfo) []*node_info.NodeInfo {
-	var (
-		nodeScores = make(map[float64][]*node_info.NodeInfo)
-		mutex      sync.Mutex
-		wg         sync.WaitGroup
-	)
-
 	ssn.NodePreOrderFn(task, nodes)
 
-	for _, node := range nodes {
-		wg.Add(1)
-		go func(node *node_info.NodeInfo) {
-			defer wg.Done()
-			score, err := ssn.NodeOrderFn(task, node)
-			if err != nil {
-				log.InfraLogger.Errorf("Error in Calculating Priority for the node:%v", err)
-				return
-			}
+	numWorkersToUseInParallel := max(min(ssn.scoringPoolWorkerCount, len(nodes)), 1)
+	workerLocalScores := make([]map[float64][]*node_info.NodeInfo, numWorkersToUseInParallel)
 
-			mutex.Lock()
-			nodeScores[score] = append(nodeScores[score], node)
-			mutex.Unlock()
-
-			log.InfraLogger.V(5).Infof("Overall priority node score of node <%v> for task <%v/%v> is: %f",
-				node.Name, task.Namespace, task.Name, score)
-		}(node)
+	var wg sync.WaitGroup
+	chunkSize := (len(nodes) + numWorkersToUseInParallel - 1) / numWorkersToUseInParallel
+	scoreChunk := func(idx int) {
+		workerNodes := ssn.getWorkerNodes(nodes, idx, chunkSize)
+		if workerNodes == nil {
+			return
+		}
+		workerLocalScores[idx] = ssn.scoreNodes(workerNodes, task)
 	}
-
+	for workerIdx := range numWorkersToUseInParallel {
+		wg.Add(1)
+		idx := workerIdx
+		err := ssn.nodeScoringPool.Submit(func() {
+			defer wg.Done()
+			scoreChunk(idx)
+		})
+		if err != nil {
+			defer wg.Done()
+			log.InfraLogger.Errorf("Failed to submit node scoring task, running sequentially: %v", err)
+			scoreChunk(idx)
+		}
+	}
 	wg.Wait()
+
+	nodeScores := workerLocalScores[0]
+	for _, m := range workerLocalScores[1:] {
+		for score, ns := range m {
+			nodeScores[score] = append(nodeScores[score], ns...)
+		}
+	}
 	return sortNodesByScore(nodeScores)
+}
+
+func (ssn *Session) getWorkerNodes(nodes []*node_info.NodeInfo, workerIdx int, chunkSize int) []*node_info.NodeInfo {
+	start := workerIdx * chunkSize
+	end := min(start+chunkSize, len(nodes))
+	if start >= end {
+		return nil
+	}
+	return nodes[start:end]
+}
+
+func (ssn *Session) scoreNodes(nodes []*node_info.NodeInfo, task *pod_info.PodInfo) map[float64][]*node_info.NodeInfo {
+	workerScores := make(map[float64][]*node_info.NodeInfo)
+	for _, node := range nodes {
+		score, err := ssn.NodeOrderFn(task, node)
+		if err != nil {
+			log.InfraLogger.Errorf("Error in Calculating Priority for the node:%v", err)
+			continue
+		}
+		workerScores[score] = append(workerScores[score], node)
+		log.InfraLogger.V(5).Infof("Overall priority node score of node <%v> for task <%v/%v> is: %f",
+			node.Name, task.Namespace, task.Name, score)
+	}
+	return workerScores
 }
 
 func (ssn *Session) isTaskAllocatableOnNode(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo,
@@ -282,6 +338,47 @@ func (ssn *Session) isTaskAllocatableOnNode(task *pod_info.PodInfo, job *podgrou
 		}
 	}
 	return allocatable, fitError
+}
+
+func (ssn *Session) RecomputeDetailedFitErrors(
+	job *podgroup_info.PodGroupInfo, task *pod_info.PodInfo,
+) ([]*common_info.TasksFitError, error) {
+	if err := ssn.PrePredicateFn(task, job); err != nil {
+		return nil, nil
+	}
+
+	nodeErrors := make([]*common_info.TasksFitError, 0)
+	for _, node := range ssn.ClusterInfo.Nodes {
+		allocatable, fitError := ssn.isTaskAllocatableOnNode(task, job, node, true)
+		if !allocatable {
+			if fitError != nil {
+				nodeErrors = append(nodeErrors, fitError)
+			}
+			continue
+		}
+		if err := ssn.PredicateFn(task, job, node); err != nil {
+			if fitError := taskFitErrorFromError(task, node, err); fitError != nil {
+				nodeErrors = append(nodeErrors, fitError)
+			}
+		}
+	}
+	return nodeErrors, nil
+}
+
+func taskFitErrorFromError(
+	task *pod_info.PodInfo, node *node_info.NodeInfo, err error,
+) *common_info.TasksFitError {
+	if fitError, ok := err.(*common_info.TasksFitError); ok {
+		if fitError == nil {
+			return nil
+		}
+		fitErrorCopy := *fitError
+		fitErrorCopy.NodeName = node.Name
+		fitErrorCopy.Reasons = append([]string(nil), fitError.Reasons...)
+		fitErrorCopy.DetailedReasons = append([]string(nil), fitError.DetailedReasons...)
+		return &fitErrorCopy
+	}
+	return common_info.NewFitError(task.Name, task.Namespace, node.Name, err.Error())
 }
 
 func (ssn *Session) String() string {
@@ -330,13 +427,56 @@ func (ssn *Session) updatePodOnSession(pod *pod_info.PodInfo, status pod_status.
 }
 
 func (ssn *Session) clear() {
-	ssn.ClusterInfo.PodGroupInfos = nil
-	ssn.ClusterInfo.Nodes = nil
+	ssn.ClusterInfo = nil
 	ssn.plugins = nil
 	ssn.eventHandlers = nil
-	ssn.TaskOrderFns = nil
-	ssn.SubGroupOrderFns = nil
+	ssn.GpuOrderFns = nil
+	ssn.NodePreOrderFns = nil
+	ssn.NodeOrderFns = nil
 	ssn.JobOrderFns = nil
+	ssn.SubGroupOrderFns = nil
+	ssn.TaskOrderFns = nil
+	ssn.QueueOrderFns = nil
+	ssn.CanReclaimResourcesFns = nil
+	ssn.ReclaimVictimFilterFns = nil
+	ssn.PreemptVictimFilterFns = nil
+	ssn.ReclaimScenarioValidatorFns = nil
+	ssn.PreemptScenarioValidatorFns = nil
+	ssn.OnJobSolutionStartFns = nil
+	ssn.GetQueueAllocatedResourcesFns = nil
+	ssn.GetQueueDeservedResourcesFns = nil
+	ssn.GetQueueFairShareFns = nil
+	ssn.IsNonPreemptibleJobOverQueueQuotaFns = nil
+	ssn.IsJobOverCapacityFns = nil
+	ssn.IsTaskAllocationOnNodeOverCapacityFns = nil
+	ssn.SubsetNodesFns = nil
+	ssn.PrePredicateFns = nil
+	ssn.VictimInvariantPrePredicateFns = nil
+	ssn.PredicateFns = nil
+	ssn.BindRequestMutateFns = nil
+	ssn.NumaPlacementFn = nil
+	ssn.PreJobAllocationFns = nil
+	ssn.Config = nil
+	ssn.k8sResourceStateCache = sync.Map{}
+}
+
+func (ssn *Session) releaseNodeScoringPool() {
+	if ssn.nodeScoringPool != nil {
+		ssn.nodeScoringPool.Release()
+		ssn.nodeScoringPool = nil
+	}
+	ssn.scoringPoolWorkerCount = 0
+}
+
+func (ssn *Session) InitNodeScoringPool() error {
+	numWorkers := max(runtime.GOMAXPROCS(0), 1)
+	pool, err := ants.NewPool(numWorkers)
+	if err != nil {
+		return fmt.Errorf("failed to create node scoring pool: %w", err)
+	}
+	ssn.nodeScoringPool = pool
+	ssn.scoringPoolWorkerCount = numWorkers
+	return nil
 }
 
 func openSession(cache cache.Cache, sessionId string, schedulerParams conf.SchedulerParams, mux *http.ServeMux) (*Session, error) {
@@ -352,9 +492,14 @@ func openSession(cache cache.Cache, sessionId string, schedulerParams conf.Sched
 		k8sResourceStateCache: sync.Map{},
 	}
 
+	if err := ssn.InitNodeScoringPool(); err != nil {
+		return nil, err
+	}
+
 	log.InfraLogger.V(2).Infof("Taking cluster snapshot ...")
 	snapshot, err := cache.Snapshot()
 	if err != nil {
+		ssn.releaseNodeScoringPool()
 		return nil, err
 	}
 
@@ -371,12 +516,14 @@ func closeSession(ssn *Session) {
 		ssn.ID, len(ssn.ClusterInfo.PodGroupInfos), len(ssn.ClusterInfo.Queues))
 
 	// Push all jobs for status update into the channel
+	resolveDetailedFitErrors := ssn.RecomputeDetailedFitErrors
 	for _, job := range ssn.ClusterInfo.PodGroupInfos {
-		if err := ssn.Cache.RecordJobStatusEvent(job); err != nil {
+		if err := ssn.Cache.RecordJobStatusEvent(job, resolveDetailedFitErrors); err != nil {
 			log.InfraLogger.Errorf("Failed to record job status event for job <%s>: %v", job.Name, err)
 		}
 	}
 
+	ssn.releaseNodeScoringPool()
 	ssn.clear()
 	stopCh := make(chan struct{})
 	ssn.Cache.WaitForWorkers(stopCh)

@@ -4,14 +4,18 @@
 package known_types
 
 import (
+	"context"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	admissionv1 "k8s.io/api/admissionregistration/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	vpav1 "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
 )
@@ -79,6 +83,103 @@ var _ = Describe("vpaIndexer", func() {
 		keys := vpaIndexer(vpa)
 		Expect(keys).To(BeNil())
 	})
+})
+
+var _ = Describe("PodDisruptionBudget collection", func() {
+	It("indexes PDBs controlled by KAI resources", func() {
+		pdb := &policyv1.PodDisruptionBudget{
+			ObjectMeta: metav1.ObjectMeta{
+				OwnerReferences: []metav1.OwnerReference{{
+					APIVersion: kaiv1.GroupVersion.String(),
+					Kind:       "Config",
+					Name:       SingletonInstanceName,
+					Controller: ptrBool(true),
+				}},
+			},
+		}
+
+		Expect(podDisruptionBudgetIndexer(pdb)).To(Equal([]string{
+			GetKey(kaiv1.GroupVersion.WithKind("Config"), "", SingletonInstanceName),
+		}))
+	})
+
+	It("does not index unowned or non-KAI PDBs", func() {
+		Expect(podDisruptionBudgetIndexer(&policyv1.PodDisruptionBudget{})).To(BeNil())
+
+		pdb := &policyv1.PodDisruptionBudget{
+			ObjectMeta: metav1.ObjectMeta{
+				OwnerReferences: []metav1.OwnerReference{{
+					APIVersion: "apps/v1",
+					Kind:       "Deployment",
+					Name:       "scheduler",
+					Controller: ptrBool(true),
+				}},
+			},
+		}
+		Expect(podDisruptionBudgetIndexer(pdb)).To(BeNil())
+	})
+
+	DescribeTable("collects only PDBs owned by the reconciled resource",
+		func(ownerKind string) {
+			scheme := runtime.NewScheme()
+			Expect(kaiv1.AddToScheme(scheme)).To(Succeed())
+			Expect(policyv1.AddToScheme(scheme)).To(Succeed())
+
+			reconcilerName := SingletonInstanceName
+			if ownerKind == "SchedulingShard" {
+				reconcilerName = "default"
+			}
+			reconciler := &kaiv1.Config{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: kaiv1.GroupVersion.String(),
+					Kind:       ownerKind,
+				},
+				ObjectMeta: metav1.ObjectMeta{Name: reconcilerName},
+			}
+
+			ownedPDB := &policyv1.PodDisruptionBudget{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "owned",
+					Namespace: "kai-scheduler",
+					OwnerReferences: []metav1.OwnerReference{{
+						APIVersion: kaiv1.GroupVersion.String(),
+						Kind:       ownerKind,
+						Name:       reconcilerName,
+						Controller: ptrBool(true),
+					}},
+				},
+			}
+			otherPDB := &policyv1.PodDisruptionBudget{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "other",
+					Namespace: "kai-scheduler",
+					OwnerReferences: []metav1.OwnerReference{{
+						APIVersion: kaiv1.GroupVersion.String(),
+						Kind:       ownerKind,
+						Name:       "other-owner",
+						Controller: ptrBool(true),
+					}},
+				},
+			}
+
+			runtimeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(ownedPDB, otherPDB).
+				WithIndex(&policyv1.PodDisruptionBudget{}, CollectableOwnerKey, podDisruptionBudgetIndexer).
+				Build()
+
+			state, err := getCurrentPodDisruptionBudgetsState(context.Background(), runtimeClient, reconciler)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(state).To(HaveLen(1))
+			Expect(state).To(HaveKey(GetKey(
+				policyv1.SchemeGroupVersion.WithKind("PodDisruptionBudget"),
+				ownedPDB.Namespace,
+				ownedPDB.Name,
+			)))
+		},
+		Entry("for Config owners", "Config"),
+		Entry("for SchedulingShard owners", "SchedulingShard"),
+	)
 })
 
 var _ = Describe("VPAFieldInherit", func() {

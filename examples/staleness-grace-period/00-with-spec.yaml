@@ -1,0 +1,54 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: stale-grace-demo
+---
+apiVersion: scheduling.run.ai/v2alpha2
+kind: PodGroup
+metadata:
+  name: stale-gang
+  namespace: stale-grace-demo
+  labels:
+    kai.scheduler/queue: default-queue
+spec:
+  queue: default-queue
+  minMember: 2
+  stalenessGracePeriod: 30s
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: stale-gang-pod-0
+  namespace: stale-grace-demo
+  labels:
+    kai.scheduler/queue: default-queue
+  annotations:
+    pod-group-name: stale-gang
+spec:
+  schedulerName: kai-scheduler
+  containers:
+    - name: main
+      image: registry.k8s.io/pause:3.9
+      resources:
+        requests: { cpu: 100m, memory: 64Mi }
+        limits: { cpu: 100m, memory: 64Mi }
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: stale-gang-pod-1
+  namespace: stale-grace-demo
+  labels:
+    kai.scheduler/queue: default-queue
+  annotations:
+    pod-group-name: stale-gang
+spec:
+  schedulerName: kai-scheduler
+  containers:
+    - name: main
+      image: registry.k8s.io/pause:3.9
+      resources:
+        requests: { cpu: 100m, memory: 64Mi }
+        limits: { cpu: 100m, memory: 64Mi }

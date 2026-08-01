@@ -21,3 +21,6 @@ jobs:
         with:
           github_token: ${{ secrets.KAIBOT_TOKEN }}
           pull_title: "${pull_title}"
+          # Backports carry the original PR's changie fragment (a new file, so no conflict).
+          # Propagate changelog-exemption labels so exempt PRs still pass validate-changelog.
+          copy_labels_pattern: "skip-changelog|dependencies"

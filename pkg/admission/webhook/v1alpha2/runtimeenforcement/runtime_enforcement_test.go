@@ -22,22 +22,22 @@ func TestMutate(t *testing.T) {
 	utilruntime.Must(ocpconf.AddToScheme(sc))
 
 	tests := []struct {
-		name                   string
-		gpuPodRuntimeClassName string
-		incomingPod            *v1.Pod
-		expectedOutboundPod    *v1.Pod
-		expectedError          error
+		name                        string
+		gpuFractionRuntimeClassName string
+		incomingPod                 *v1.Pod
+		expectedOutboundPod         *v1.Pod
+		expectedError               error
 	}{
 		{
-			name:                   "pod without GPU requests",
-			gpuPodRuntimeClassName: constants.DefaultRuntimeClassName,
-			incomingPod:            &v1.Pod{},
-			expectedOutboundPod:    &v1.Pod{},
-			expectedError:          nil,
+			name:                        "pod without GPU requests",
+			gpuFractionRuntimeClassName: constants.DefaultRuntimeClassName,
+			incomingPod:                 &v1.Pod{},
+			expectedOutboundPod:         &v1.Pod{},
+			expectedError:               nil,
 		},
 		{
-			name:                   "pod with a fractional GPU request",
-			gpuPodRuntimeClassName: constants.DefaultRuntimeClassName,
+			name:                        "pod with a fractional GPU request",
+			gpuFractionRuntimeClassName: constants.DefaultRuntimeClassName,
 			incomingPod: &v1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{constants.GpuFraction: "0.5"},
@@ -54,36 +54,26 @@ func TestMutate(t *testing.T) {
 			expectedError: nil,
 		},
 		{
-			name:                   "pod with a whole GPU request",
-			gpuPodRuntimeClassName: constants.DefaultRuntimeClassName,
+			name:                        "pod with a gpu-memory annotation",
+			gpuFractionRuntimeClassName: constants.DefaultRuntimeClassName,
 			incomingPod: &v1.Pod{
-				Spec: v1.PodSpec{
-					Containers: []v1.Container{
-						{
-							Resources: v1.ResourceRequirements{
-								Limits: v1.ResourceList{constants.NvidiaGpuResource: resource.MustParse("1")},
-							},
-						},
-					},
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{constants.GpuMemory: "2048"},
 				},
 			},
 			expectedOutboundPod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{constants.GpuMemory: "2048"},
+				},
 				Spec: v1.PodSpec{
 					RuntimeClassName: ptr.To(constants.DefaultRuntimeClassName),
-					Containers: []v1.Container{
-						{
-							Resources: v1.ResourceRequirements{
-								Limits: v1.ResourceList{constants.NvidiaGpuResource: resource.MustParse("1")},
-							},
-						},
-					},
 				},
 			},
 			expectedError: nil,
 		},
 		{
-			name:                   "empty gpuPodRuntimeClassName skips runtimeClass injection",
-			gpuPodRuntimeClassName: "",
+			name:                        "whole-GPU pod is not mutated",
+			gpuFractionRuntimeClassName: constants.DefaultRuntimeClassName,
 			incomingPod: &v1.Pod{
 				Spec: v1.PodSpec{
 					Containers: []v1.Container{
@@ -109,30 +99,37 @@ func TestMutate(t *testing.T) {
 			expectedError: nil,
 		},
 		{
-			name:                   "pod with GPU request and runtimeClassName set",
-			gpuPodRuntimeClassName: constants.DefaultRuntimeClassName,
+			name:                        "empty gpuFractionRuntimeClassName skips runtimeClass injection",
+			gpuFractionRuntimeClassName: "",
 			incomingPod: &v1.Pod{
-				Spec: v1.PodSpec{
-					RuntimeClassName: ptr.To("custom-runtime"),
-					Containers: []v1.Container{
-						{
-							Resources: v1.ResourceRequirements{
-								Limits: v1.ResourceList{constants.NvidiaGpuResource: resource.MustParse("1")},
-							},
-						},
-					},
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{constants.GpuFraction: "0.5"},
 				},
 			},
 			expectedOutboundPod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{constants.GpuFraction: "0.5"},
+				},
+			},
+			expectedError: nil,
+		},
+		{
+			name:                        "fraction pod with runtimeClassName already set is preserved",
+			gpuFractionRuntimeClassName: constants.DefaultRuntimeClassName,
+			incomingPod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{constants.GpuFraction: "0.5"},
+				},
 				Spec: v1.PodSpec{
 					RuntimeClassName: ptr.To("custom-runtime"),
-					Containers: []v1.Container{
-						{
-							Resources: v1.ResourceRequirements{
-								Limits: v1.ResourceList{constants.NvidiaGpuResource: resource.MustParse("1")},
-							},
-						},
-					},
+				},
+			},
+			expectedOutboundPod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{constants.GpuFraction: "0.5"},
+				},
+				Spec: v1.PodSpec{
+					RuntimeClassName: ptr.To("custom-runtime"),
 				},
 			},
 			expectedError: nil,
@@ -141,7 +138,7 @@ func TestMutate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := New(tt.gpuPodRuntimeClassName)
+			p := New(tt.gpuFractionRuntimeClassName)
 			err := p.Mutate(tt.incomingPod)
 			if tt.expectedError != nil {
 				assert.Error(t, err)

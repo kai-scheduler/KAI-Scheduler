@@ -45,6 +45,10 @@ type Args struct {
 	// +kubebuilder:validation:Optional
 	GangScheduleKnative *bool `json:"gangScheduleKnative,omitempty"`
 
+	// GenericKartaFallback specifies whether to enable Karta-backed generic pod grouping fallback for workload GVKs without native plugins. Default is true.
+	// +kubebuilder:validation:Optional
+	GenericKartaFallback *bool `json:"genericKartaFallback,omitempty"`
+
 	// DefaultPrioritiesConfigMapName The name of the configmap that contains default priorities for pod groups
 	// +kubebuilder:validation:Optional
 	DefaultPrioritiesConfigMapName *string `json:"defaultPrioritiesConfigMapName,omitempty"`
@@ -72,6 +76,7 @@ func (pg *PodGrouper) SetDefaultsWhereNeeded(replicaCount *int32, globalVPA *com
 	}
 
 	pg.Args = common.SetDefault(pg.Args, &Args{})
+	pg.Args.GenericKartaFallback = common.SetDefault(pg.Args.GenericKartaFallback, ptr.To(true))
 	pg.Replicas = common.SetDefault(pg.Replicas, ptr.To(ptr.Deref(replicaCount, 1)))
 	pg.K8sClientConfig = common.SetDefault(pg.K8sClientConfig, &common.K8sClientConfig{})
 

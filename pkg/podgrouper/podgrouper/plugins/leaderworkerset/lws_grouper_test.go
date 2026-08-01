@@ -259,6 +259,28 @@ func TestGetPodGroupMetadata_SubGroups_OnlyLeader(t *testing.T) {
 	assert.Equal(t, "lws-single-0-0", leaderSubGroup.PodsReferences[0])
 }
 
+func TestGetPodGroupMetadata_NegativeWorkerIndex(t *testing.T) {
+	owner := lwsOwner("lws-invalid", "LeaderCreated", 3, nil, nil, nil)
+	pod := makeLwsPod("lws-invalid-0-1", "-1")
+
+	lwsGrouper := NewLwsGrouper(defaultgrouper.NewDefaultGrouper("", "", fake.NewFakeClient()))
+	_, err := lwsGrouper.GetPodGroupMetadata(owner, pod)
+
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "is not valid. It must be bigger than 0")
+}
+
+func TestBuildSubGroups_Segmentation_ExceedsMaxAllowedSegmentation(t *testing.T) {
+	replicasSize := int64(maxAllowedSegmentation)*2 + 3
+	lwsJob := lwsOwner("lws-seg-cap", "LeaderCreated", replicasSize, ptr.To(int64(2)), nil, nil)
+	pod := makeLwsPod("lws-seg-cap-0-0", "0")
+	grouper := NewLwsGrouper(defaultgrouper.NewDefaultGrouper("", "", fake.NewFakeClient()))
+
+	_, err := grouper.buildSubGroups(lwsJob, pod, int(replicasSize))
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "greater than max allowed segmentation")
+}
+
 func findSubGroupByName(subGroups []*podgroup.SubGroupMetadata, name string) *podgroup.SubGroupMetadata {
 	for _, sg := range subGroups {
 		if sg.Name == name {
@@ -284,7 +306,8 @@ func TestBuildSubGroups_Segmentation_Divisible_LeaderPod(t *testing.T) {
 
 	seg0 := findSubGroupByName(subGroups, "segment-0")
 	assert.NotNil(t, seg0)
-	assert.Equal(t, int32(3), seg0.MinAvailable) // segmentSize(2) + leader(1)
+	assert.Equal(t, int32(0), seg0.MinAvailable)
+	assert.Equal(t, ptr.To(int32(2)), seg0.MinSubGroup) // leader + workers
 	assert.Empty(t, seg0.PodsReferences)
 
 	seg1 := findSubGroupByName(subGroups, "segment-1")
@@ -318,7 +341,8 @@ func TestBuildSubGroups_Segmentation_Divisible_WorkerInFirstSegment(t *testing.T
 	assert.Len(t, subGroups, 4)
 
 	seg0 := findSubGroupByName(subGroups, "segment-0")
-	assert.Equal(t, int32(3), seg0.MinAvailable) // segmentSize(2) + leader(1)
+	assert.Equal(t, int32(0), seg0.MinAvailable)
+	assert.Equal(t, ptr.To(int32(2)), seg0.MinSubGroup)
 	assert.Empty(t, seg0.PodsReferences)
 
 	seg1 := findSubGroupByName(subGroups, "segment-1")
@@ -350,7 +374,8 @@ func TestBuildSubGroups_Segmentation_Divisible_WorkerInLaterSegment(t *testing.T
 
 	seg0 := findSubGroupByName(subGroups, "segment-0")
 	assert.NotNil(t, seg0)
-	assert.Equal(t, int32(3), seg0.MinAvailable) // segmentSize(2) + leader(1)
+	assert.Equal(t, int32(0), seg0.MinAvailable)
+	assert.Equal(t, ptr.To(int32(2)), seg0.MinSubGroup)
 	assert.Empty(t, seg0.PodsReferences)
 
 	seg1 := findSubGroupByName(subGroups, "segment-1")
@@ -382,7 +407,8 @@ func TestBuildSubGroups_Segmentation_NotDivisible_LeaderPod(t *testing.T) {
 	assert.Len(t, subGroups, 4) // segment-0, segment-1, leader, workers
 
 	seg0 := findSubGroupByName(subGroups, "segment-0")
-	assert.Equal(t, int32(2), seg0.MinAvailable) // not expanded
+	assert.Equal(t, int32(0), seg0.MinAvailable)
+	assert.Equal(t, ptr.To(int32(2)), seg0.MinSubGroup)
 	assert.Empty(t, seg0.PodsReferences)
 
 	seg1 := findSubGroupByName(subGroups, "segment-1")
@@ -471,7 +497,8 @@ func TestBuildSubGroups_Segmentation_TopologyPreferredOnly_LeaderIncluded_NotDiv
 
 	seg0 := findSubGroupByName(subGroups, "segment-0")
 	assert.NotNil(t, seg0)
-	assert.Equal(t, int32(3), seg0.MinAvailable) // not expanded (not divisible)
+	assert.Equal(t, int32(0), seg0.MinAvailable)
+	assert.Equal(t, ptr.To(int32(2)), seg0.MinSubGroup)
 	assert.Equal(t, topology, seg0.TopologyConstraints)
 
 	seg1 := findSubGroupByName(subGroups, "segment-1")
@@ -562,7 +589,8 @@ func TestBuildSubGroups_SegmentSizeFromWorkerTemplateAnnotation(t *testing.T) {
 
 	seg0 := findSubGroupByName(subGroups, "segment-0")
 	assert.NotNil(t, seg0)
-	assert.Equal(t, int32(3), seg0.MinAvailable) // segmentSize(2) + leader(1)
+	assert.Equal(t, int32(0), seg0.MinAvailable)
+	assert.Equal(t, ptr.To(int32(2)), seg0.MinSubGroup)
 	assert.Equal(t, expectedTopology, seg0.TopologyConstraints)
 
 	seg1 := findSubGroupByName(subGroups, "segment-1")

@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/signal"
 	"syscall"
 	"time"
 
@@ -64,6 +65,23 @@ const (
 
 var logFlushFreq = pflag.Duration("log-flush-frequency", 5*time.Second, "Maximum number of seconds between log flushes")
 
+type unauthorizedRoundTripper struct {
+	rt http.RoundTripper
+}
+
+func (t *unauthorizedRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.rt.RoundTrip(req)
+	if err == nil && resp.StatusCode == http.StatusUnauthorized {
+		log.InfraLogger.Errorf("API server returned 401 Unauthorized, exiting to trigger pod restart")
+		os.Exit(1)
+	}
+	return resp, err
+}
+
+func wrapExitOnUnauthorized(rt http.RoundTripper) http.RoundTripper {
+	return &unauthorizedRoundTripper{rt: rt}
+}
+
 func flushLogs() {
 	if err := log.InfraLogger.Sync(); err != nil &&
 		!errors.Is(err, syscall.ENOTTY) && // https://github.com/uber-go/zap/issues/991#issuecomment-962098428
@@ -90,6 +108,7 @@ func BuildSchedulerParams(opt *options.ServerOption) *conf.SchedulerParams {
 		NumOfStatusRecordingWorkers:       opt.NumOfStatusRecordingWorkers,
 		GlobalDefaultStalenessGracePeriod: opt.GlobalDefaultStalenessGracePeriod,
 		SchedulePeriod:                    opt.SchedulePeriod,
+		StuckInReleasingThreshold:         opt.StuckInReleasingThreshold,
 		DetailedFitErrors:                 opt.DetailedFitErrors,
 		UpdatePodEvictionCondition:        opt.UpdatePodEvictionCondition,
 		QueueLabelKey:                     opt.QueueLabelKey,
@@ -115,13 +134,19 @@ func RunApp() error {
 	} else {
 		defer flushLogs()
 	}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	if err := startMemoryLimitManager(ctx); err != nil {
+		return fmt.Errorf("configure Go memory limit: %w", err)
+	}
 	setConfig(so)
 
 	config := clientconfig.GetConfigOrDie()
 	config.QPS = float32(so.QPS)
 	config.Burst = so.Burst
+	config.Wrap(wrapExitOnUnauthorized)
 
-	return Run(so, config, mux)
+	return Run(ctx, so, config, mux)
 }
 
 func setupProfiling(so *options.ServerOption) {
@@ -138,7 +163,7 @@ func setupProfiling(so *options.ServerOption) {
 }
 
 func setupLogging(so *options.ServerOption) error {
-	if err := log.InitLoggers(so.Verbosity); err != nil {
+	if err := log.InitLoggers(so.Verbosity, so.JSONLog); err != nil {
 		return err
 	}
 
@@ -158,7 +183,7 @@ func setConfig(so *options.ServerOption) {
 // +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
 
-func Run(opt *options.ServerOption, config *restclient.Config, mux *http.ServeMux) error {
+func Run(ctx context.Context, opt *options.ServerOption, config *restclient.Config, mux *http.ServeMux) error {
 	if opt.PrintVersion {
 		version.PrintVersion()
 	}
@@ -193,7 +218,7 @@ func Run(opt *options.ServerOption, config *restclient.Config, mux *http.ServeMu
 	}
 
 	if !opt.EnableLeaderElection {
-		run(context.TODO())
+		run(ctx)
 		return fmt.Errorf("finished without leader elect")
 	}
 
@@ -231,7 +256,7 @@ func Run(opt *options.ServerOption, config *restclient.Config, mux *http.ServeMu
 		return fmt.Errorf("couldn't create resource lock: %v", err)
 	}
 
-	leaderelection.RunOrDie(context.TODO(), leaderelection.LeaderElectionConfig{
+	leaderelection.RunOrDie(ctx, leaderelection.LeaderElectionConfig{
 		Lock:          rl,
 		LeaseDuration: leaseDuration,
 		RenewDeadline: renewDeadline,

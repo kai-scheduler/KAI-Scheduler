@@ -58,7 +58,7 @@ func TestPodSimpleScenario_AddPotentialVictimsTasks(t *testing.T) {
 							},
 						},
 						Spec: v1.PodSpec{},
-					}, nil, resource_info.NewResourceVectorMap()),
+					}, resource_info.NewResourceVectorMap()),
 				},
 				recordedVictimsJobs: []*podgroup_info.PodGroupInfo{},
 			},
@@ -76,7 +76,7 @@ func TestPodSimpleScenario_AddPotentialVictimsTasks(t *testing.T) {
 							},
 						},
 						Spec: v1.PodSpec{},
-					}, nil, resource_info.NewResourceVectorMap()),
+					}, resource_info.NewResourceVectorMap()),
 				},
 				victimsJobsTaskGroups: map[common_info.PodGroupID][]*podgroup_info.PodGroupInfo{
 					"pg1": {
@@ -105,7 +105,7 @@ func TestPodSimpleScenario_AddPotentialVictimsTasks(t *testing.T) {
 							},
 						},
 						Spec: v1.PodSpec{},
-					}, nil, resource_info.NewResourceVectorMap()),
+					}, resource_info.NewResourceVectorMap()),
 				},
 				recordedVictimsJobs: []*podgroup_info.PodGroupInfo{},
 			},
@@ -120,7 +120,7 @@ func TestPodSimpleScenario_AddPotentialVictimsTasks(t *testing.T) {
 							},
 						},
 						Spec: v1.PodSpec{},
-					}, nil, resource_info.NewResourceVectorMap()),
+					}, resource_info.NewResourceVectorMap()),
 				},
 			},
 			expected: expected{
@@ -134,7 +134,7 @@ func TestPodSimpleScenario_AddPotentialVictimsTasks(t *testing.T) {
 							},
 						},
 						Spec: v1.PodSpec{},
-					}, nil, resource_info.NewResourceVectorMap()),
+					}, resource_info.NewResourceVectorMap()),
 					pod_info.NewTaskInfo(&v1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "name2",
@@ -144,7 +144,7 @@ func TestPodSimpleScenario_AddPotentialVictimsTasks(t *testing.T) {
 							},
 						},
 						Spec: v1.PodSpec{},
-					}, nil, resource_info.NewResourceVectorMap()),
+					}, resource_info.NewResourceVectorMap()),
 				},
 				victimsJobsTaskGroups: map[common_info.PodGroupID][]*podgroup_info.PodGroupInfo{
 					"pg1": {
@@ -176,7 +176,7 @@ func TestPodSimpleScenario_AddPotentialVictimsTasks(t *testing.T) {
 							},
 						},
 						Spec: v1.PodSpec{},
-					}, nil, resource_info.NewResourceVectorMap()),
+					}, resource_info.NewResourceVectorMap()),
 				},
 				recordedVictimsJobs: []*podgroup_info.PodGroupInfo{
 					podgroup_info.NewPodGroupInfo("pg2", pod_info.NewTaskInfo(&v1.Pod{
@@ -188,7 +188,7 @@ func TestPodSimpleScenario_AddPotentialVictimsTasks(t *testing.T) {
 							},
 						},
 						Spec: v1.PodSpec{},
-					}, nil, resource_info.NewResourceVectorMap())),
+					}, resource_info.NewResourceVectorMap())),
 				},
 			},
 			args: args{
@@ -205,7 +205,7 @@ func TestPodSimpleScenario_AddPotentialVictimsTasks(t *testing.T) {
 							},
 						},
 						Spec: v1.PodSpec{},
-					}, nil, resource_info.NewResourceVectorMap()),
+					}, resource_info.NewResourceVectorMap()),
 				},
 				victimsJobsTaskGroups: map[common_info.PodGroupID][]*podgroup_info.PodGroupInfo{
 					"pg1": {
@@ -276,7 +276,7 @@ func TestPodSimpleScenario_GetVictimJobRepresentativeById(t *testing.T) {
 								},
 							},
 							Spec: v1.PodSpec{},
-						}, nil, resource_info.NewResourceVectorMap())),
+						}, resource_info.NewResourceVectorMap())),
 						"pg2": podgroup_info.NewPodGroupInfo("pg2", pod_info.NewTaskInfo(&v1.Pod{
 							ObjectMeta: metav1.ObjectMeta{
 								Name:      "name2",
@@ -286,7 +286,7 @@ func TestPodSimpleScenario_GetVictimJobRepresentativeById(t *testing.T) {
 								},
 							},
 							Spec: v1.PodSpec{},
-						}, nil, resource_info.NewResourceVectorMap())),
+						}, resource_info.NewResourceVectorMap())),
 					}},
 				},
 				pendingJob: podgroup_info.NewPodGroupInfo("123"),
@@ -300,7 +300,7 @@ func TestPodSimpleScenario_GetVictimJobRepresentativeById(t *testing.T) {
 							},
 						},
 						Spec: v1.PodSpec{},
-					}, nil, resource_info.NewResourceVectorMap()),
+					}, resource_info.NewResourceVectorMap()),
 				},
 				recordedVictimsJobs: []*podgroup_info.PodGroupInfo{
 					podgroup_info.NewPodGroupInfo("pg2", pod_info.NewTaskInfo(&v1.Pod{
@@ -312,7 +312,7 @@ func TestPodSimpleScenario_GetVictimJobRepresentativeById(t *testing.T) {
 							},
 						},
 						Spec: v1.PodSpec{},
-					}, nil, resource_info.NewResourceVectorMap())),
+					}, resource_info.NewResourceVectorMap())),
 				},
 			},
 			args: args{
@@ -325,7 +325,7 @@ func TestPodSimpleScenario_GetVictimJobRepresentativeById(t *testing.T) {
 						},
 					},
 					Spec: v1.PodSpec{},
-				}, nil, resource_info.NewResourceVectorMap()),
+				}, resource_info.NewResourceVectorMap()),
 				tasks: make([]*pod_info.PodInfo, 0),
 			},
 			want: podgroup_info.NewPodGroupInfo("pg1", pod_info.NewTaskInfo(&v1.Pod{
@@ -337,7 +337,7 @@ func TestPodSimpleScenario_GetVictimJobRepresentativeById(t *testing.T) {
 					},
 				},
 				Spec: v1.PodSpec{},
-			}, nil, resource_info.NewResourceVectorMap())),
+			}, resource_info.NewResourceVectorMap())),
 		},
 		{
 			name: "Task not given to the scenario",
@@ -353,7 +353,7 @@ func TestPodSimpleScenario_GetVictimJobRepresentativeById(t *testing.T) {
 								},
 							},
 							Spec: v1.PodSpec{},
-						}, nil, resource_info.NewResourceVectorMap())),
+						}, resource_info.NewResourceVectorMap())),
 						"pg2": podgroup_info.NewPodGroupInfo("pg2", pod_info.NewTaskInfo(&v1.Pod{
 							ObjectMeta: metav1.ObjectMeta{
 								Name:      "name2",
@@ -363,7 +363,7 @@ func TestPodSimpleScenario_GetVictimJobRepresentativeById(t *testing.T) {
 								},
 							},
 							Spec: v1.PodSpec{},
-						}, nil, resource_info.NewResourceVectorMap())),
+						}, resource_info.NewResourceVectorMap())),
 					}},
 				},
 				pendingJob: podgroup_info.NewPodGroupInfo("123"),
@@ -377,7 +377,7 @@ func TestPodSimpleScenario_GetVictimJobRepresentativeById(t *testing.T) {
 							},
 						},
 						Spec: v1.PodSpec{},
-					}, nil, resource_info.NewResourceVectorMap()),
+					}, resource_info.NewResourceVectorMap()),
 				},
 				recordedVictimsJobs: []*podgroup_info.PodGroupInfo{
 					podgroup_info.NewPodGroupInfo("pg2", pod_info.NewTaskInfo(&v1.Pod{
@@ -389,7 +389,7 @@ func TestPodSimpleScenario_GetVictimJobRepresentativeById(t *testing.T) {
 							},
 						},
 						Spec: v1.PodSpec{},
-					}, nil, resource_info.NewResourceVectorMap())),
+					}, resource_info.NewResourceVectorMap())),
 				},
 			},
 			args: args{
@@ -402,7 +402,7 @@ func TestPodSimpleScenario_GetVictimJobRepresentativeById(t *testing.T) {
 						},
 					},
 					Spec: v1.PodSpec{},
-				}, nil, resource_info.NewResourceVectorMap()),
+				}, resource_info.NewResourceVectorMap()),
 				tasks: make([]*pod_info.PodInfo, 0),
 			},
 			want: nil,
@@ -421,7 +421,7 @@ func TestPodSimpleScenario_GetVictimJobRepresentativeById(t *testing.T) {
 								},
 							},
 							Spec: v1.PodSpec{},
-						}, nil, resource_info.NewResourceVectorMap())),
+						}, resource_info.NewResourceVectorMap())),
 						"pg2": podgroup_info.NewPodGroupInfo("pg2", pod_info.NewTaskInfo(&v1.Pod{
 							ObjectMeta: metav1.ObjectMeta{
 								Name:      "name2",
@@ -431,7 +431,7 @@ func TestPodSimpleScenario_GetVictimJobRepresentativeById(t *testing.T) {
 								},
 							},
 							Spec: v1.PodSpec{},
-						}, nil, resource_info.NewResourceVectorMap())),
+						}, resource_info.NewResourceVectorMap())),
 					}},
 				},
 				pendingJob: podgroup_info.NewPodGroupInfo("123"),
@@ -445,7 +445,7 @@ func TestPodSimpleScenario_GetVictimJobRepresentativeById(t *testing.T) {
 							},
 						},
 						Spec: v1.PodSpec{},
-					}, nil, resource_info.NewResourceVectorMap()),
+					}, resource_info.NewResourceVectorMap()),
 				},
 				recordedVictimsJobs: []*podgroup_info.PodGroupInfo{
 					podgroup_info.NewPodGroupInfo("pg2", pod_info.NewTaskInfo(&v1.Pod{
@@ -457,7 +457,7 @@ func TestPodSimpleScenario_GetVictimJobRepresentativeById(t *testing.T) {
 							},
 						},
 						Spec: v1.PodSpec{},
-					}, nil, resource_info.NewResourceVectorMap())),
+					}, resource_info.NewResourceVectorMap())),
 				},
 			},
 			args: args{
@@ -470,7 +470,7 @@ func TestPodSimpleScenario_GetVictimJobRepresentativeById(t *testing.T) {
 						},
 					},
 					Spec: v1.PodSpec{},
-				}, nil, resource_info.NewResourceVectorMap()),
+				}, resource_info.NewResourceVectorMap()),
 				tasks: []*pod_info.PodInfo{
 					pod_info.NewTaskInfo(&v1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
@@ -481,7 +481,7 @@ func TestPodSimpleScenario_GetVictimJobRepresentativeById(t *testing.T) {
 							},
 						},
 						Spec: v1.PodSpec{},
-					}, nil, resource_info.NewResourceVectorMap()),
+					}, resource_info.NewResourceVectorMap()),
 				},
 			},
 			want: podgroup_info.NewPodGroupInfo("pg1", pod_info.NewTaskInfo(&v1.Pod{
@@ -493,7 +493,7 @@ func TestPodSimpleScenario_GetVictimJobRepresentativeById(t *testing.T) {
 					},
 				},
 				Spec: v1.PodSpec{},
-			}, nil, resource_info.NewResourceVectorMap())),
+			}, resource_info.NewResourceVectorMap())),
 		},
 	}
 	for _, tt := range tests {
@@ -549,7 +549,7 @@ func TestPodSimpleScenario_LatestPotentialVictim(t *testing.T) {
 								},
 							},
 							Spec: v1.PodSpec{},
-						}, nil, resource_info.NewResourceVectorMap())),
+						}, resource_info.NewResourceVectorMap())),
 						"pg2": podgroup_info.NewPodGroupInfo("pg2", pod_info.NewTaskInfo(&v1.Pod{
 							ObjectMeta: metav1.ObjectMeta{
 								Name:      "name2",
@@ -559,7 +559,7 @@ func TestPodSimpleScenario_LatestPotentialVictim(t *testing.T) {
 								},
 							},
 							Spec: v1.PodSpec{},
-						}, nil, resource_info.NewResourceVectorMap())),
+						}, resource_info.NewResourceVectorMap())),
 					}},
 				},
 				pendingJob: podgroup_info.NewPodGroupInfo("123"),
@@ -573,7 +573,7 @@ func TestPodSimpleScenario_LatestPotentialVictim(t *testing.T) {
 							},
 						},
 						Spec: v1.PodSpec{},
-					}, nil, resource_info.NewResourceVectorMap()),
+					}, resource_info.NewResourceVectorMap()),
 				},
 			},
 			args: args{},
@@ -586,7 +586,7 @@ func TestPodSimpleScenario_LatestPotentialVictim(t *testing.T) {
 					},
 				},
 				Spec: v1.PodSpec{},
-			}, nil, resource_info.NewResourceVectorMap())),
+			}, resource_info.NewResourceVectorMap())),
 		},
 		{
 			name: "return latest task from AddPotentialVictimsTasks",
@@ -602,7 +602,7 @@ func TestPodSimpleScenario_LatestPotentialVictim(t *testing.T) {
 								},
 							},
 							Spec: v1.PodSpec{},
-						}, nil, resource_info.NewResourceVectorMap()), pod_info.NewTaskInfo(&v1.Pod{
+						}, resource_info.NewResourceVectorMap()), pod_info.NewTaskInfo(&v1.Pod{
 							ObjectMeta: metav1.ObjectMeta{
 								Name:      "name2",
 								Namespace: "n1",
@@ -611,7 +611,7 @@ func TestPodSimpleScenario_LatestPotentialVictim(t *testing.T) {
 								},
 							},
 							Spec: v1.PodSpec{},
-						}, nil, resource_info.NewResourceVectorMap())),
+						}, resource_info.NewResourceVectorMap())),
 						"pg2": podgroup_info.NewPodGroupInfo("pg2", pod_info.NewTaskInfo(&v1.Pod{
 							ObjectMeta: metav1.ObjectMeta{
 								Name:      "name2",
@@ -621,7 +621,7 @@ func TestPodSimpleScenario_LatestPotentialVictim(t *testing.T) {
 								},
 							},
 							Spec: v1.PodSpec{},
-						}, nil, resource_info.NewResourceVectorMap())),
+						}, resource_info.NewResourceVectorMap())),
 					}},
 				},
 				pendingJob: podgroup_info.NewPodGroupInfo("123"),
@@ -635,7 +635,7 @@ func TestPodSimpleScenario_LatestPotentialVictim(t *testing.T) {
 							},
 						},
 						Spec: v1.PodSpec{},
-					}, nil, resource_info.NewResourceVectorMap()),
+					}, resource_info.NewResourceVectorMap()),
 				},
 			},
 			args: args{
@@ -649,7 +649,7 @@ func TestPodSimpleScenario_LatestPotentialVictim(t *testing.T) {
 							},
 						},
 						Spec: v1.PodSpec{},
-					}, nil, resource_info.NewResourceVectorMap()),
+					}, resource_info.NewResourceVectorMap()),
 				},
 			},
 			want: podgroup_info.NewPodGroupInfo("pg1", pod_info.NewTaskInfo(&v1.Pod{
@@ -661,7 +661,7 @@ func TestPodSimpleScenario_LatestPotentialVictim(t *testing.T) {
 					},
 				},
 				Spec: v1.PodSpec{},
-			}, nil, resource_info.NewResourceVectorMap()), pod_info.NewTaskInfo(&v1.Pod{
+			}, resource_info.NewResourceVectorMap()), pod_info.NewTaskInfo(&v1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "name2",
 					Namespace: "n1",
@@ -670,7 +670,7 @@ func TestPodSimpleScenario_LatestPotentialVictim(t *testing.T) {
 					},
 				},
 				Spec: v1.PodSpec{},
-			}, nil, resource_info.NewResourceVectorMap())),
+			}, resource_info.NewResourceVectorMap())),
 		},
 	}
 	for _, tt := range tests {

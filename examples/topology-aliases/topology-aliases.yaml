@@ -1,0 +1,68 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# Topology level aliases let a workload reference a topology level by a friendly name
+# (e.g. "rack") instead of the verbose node label key. Aliases are defined on the Topology
+# CRD (one per level) and are one-to-one: each alias resolves to exactly one node label, and
+# no two aliases may resolve to the same label. When a level has no alias, only its raw
+# nodeLabel is usable. Raw label keys always keep working (pass-through).
+
+---
+apiVersion: kai.scheduler/v1alpha1
+kind: Topology
+metadata:
+  name: network
+spec:
+  levels:
+    - nodeLabel: accelerator.nvidia.com/rack
+      alias: rack
+    - nodeLabel: kubernetes.io/hostname
+      alias: node
+
+---
+apiVersion: scheduling.run.ai/v2alpha2
+kind: PodGroup
+metadata:
+  name: aliased-topology-job
+  namespace: default
+  labels:
+    kai.scheduler/queue: default-queue
+spec:
+  queue: default-queue
+  minMember: 3
+  topologyConstraint:
+    topology: network
+    # Reference the level by alias. "accelerator.nvidia.com/rack" still works too (pass-through).
+    requiredTopologyLevel: rack
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: aliased-topology-job
+  namespace: default
+  annotations:
+    kai.scheduler/skip-podgrouper: "true"
+spec:
+  parallelism: 3
+  completions: 3
+  template:
+    metadata:
+      annotations:
+        pod-group-name: aliased-topology-job
+      labels:
+        kai.scheduler/queue: default-queue
+    spec:
+      schedulerName: kai-scheduler
+      restartPolicy: Never
+      containers:
+        - name: worker
+          image: busybox:1.36
+          command: ["sh", "-c", "sleep 3600"]
+          resources:
+            requests:
+              cpu: "250m"
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "250m"
+              nvidia.com/gpu: "1"

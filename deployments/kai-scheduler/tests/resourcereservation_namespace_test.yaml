@@ -1,0 +1,60 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+suite: test resource reservation Namespace template
+templates:
+  - services/resourcereservation-namespace.yaml
+kubernetesProvider:
+  scheme:
+    v1/Namespace:
+      gvr:
+        version: v1
+        resource: namespaces
+      namespaced: false
+tests:
+  - it: should render namespace by default when it does not already exist
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: metadata.name
+          value: kai-resource-reservation
+
+  - it: should not render namespace when createNamespace is false
+    set:
+      global.resourceReservation.createNamespace: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: should not render namespace when it already exists
+    kubernetesProvider:
+      objects:
+        - kind: Namespace
+          apiVersion: v1
+          metadata:
+            name: kai-resource-reservation
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: should use custom reservation namespace value
+    set:
+      global.resourceReservation.namespace: custom-reservation-ns
+    asserts:
+      - equal:
+          path: metadata.name
+          value: custom-reservation-ns
+
+  - it: should render namespace labels when configured
+    set:
+      global.resourceReservation.namespaceLabels:
+        team: platform
+        env: staging
+    asserts:
+      - equal:
+          path: metadata.labels.team
+          value: platform
+      - equal:
+          path: metadata.labels.env
+          value: staging

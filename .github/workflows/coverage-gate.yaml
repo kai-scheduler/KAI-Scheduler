@@ -1,0 +1,109 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+name: KAI Scheduler - Coverage Gate
+
+on:
+  workflow_run:
+    workflows: ["KAI Scheduler - Pull Request"]
+    types:
+      - completed
+  pull_request:
+    types: [labeled, unlabeled]
+
+jobs:
+  coverage-gate:
+    name: Coverage Gate
+    runs-on: ubuntu-latest
+    if: >-
+      (github.event_name == 'workflow_run' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success') ||
+      github.event_name == 'pull_request'
+    permissions:
+      actions: read
+      contents: read
+      issues: read
+      pull-requests: read
+
+    steps:
+      - name: Download PR number artifact
+        if: github.event_name == 'workflow_run'
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: pr-number-for-comment
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download coverage report artifact
+        if: github.event_name == 'workflow_run'
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: coverage-report-for-comment
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve coverage gate state
+        id: coverage_state
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          GH_TOKEN: ${{ github.token }}
+          LABEL_EVENT_PR_NUMBER: ${{ github.event.pull_request.number }}
+          LABEL_EVENT_HAS_SKIP_LABEL: ${{ github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'skip-coverage-gate') }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            if [ ! -s pr_number.txt ] || [ ! -s coverage-report.txt ]; then
+              echo "No coverage report artifact found. Skipping coverage gate."
+              echo "has_delta=false" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+
+            PR_NUMBER=$(cat pr_number.txt)
+            DELTA=$(grep -Eo 'delta -?[0-9]+([.][0-9]+)?%' coverage-report.txt | head -1 | grep -Eo -- '-?[0-9]+([.][0-9]+)?' || true)
+
+            if gh api "repos/${REPOSITORY}/issues/${PR_NUMBER}" --jq '.labels[].name' | grep -Fxq 'skip-coverage-gate'; then
+              HAS_SKIP_LABEL=true
+            else
+              HAS_SKIP_LABEL=false
+            fi
+          else
+            PR_NUMBER="$LABEL_EVENT_PR_NUMBER"
+            HAS_SKIP_LABEL="$LABEL_EVENT_HAS_SKIP_LABEL"
+            COMMENTS=$(gh api "repos/${REPOSITORY}/issues/${PR_NUMBER}/comments" --paginate)
+            DELTA=$(echo "$COMMENTS" | jq -r '
+              [
+                .[]
+                | select(.user.login == "github-actions[bot]")
+                | select(.body | contains("<!-- code-coverage-report-comment -->"))
+              ]
+              | sort_by(.updated_at)
+              | last
+              | .body? // ""
+              | (capture("delta (?<delta>-?[0-9]+([.][0-9]+)?)%")? // {})
+              | .delta // empty
+            ')
+          fi
+
+          if [ -z "$DELTA" ] || [ "$DELTA" = "null" ]; then
+            echo "No existing coverage delta found. Coverage will be evaluated on the next code-change run."
+            exit 0
+          fi
+
+          echo "delta=$DELTA" >> $GITHUB_OUTPUT
+          echo "has_skip_label=$HAS_SKIP_LABEL" >> $GITHUB_OUTPUT
+
+          if awk -v delta="$DELTA" 'BEGIN { exit !((delta + 0) < 0) }'; then
+            echo "delta_negative=true" >> $GITHUB_OUTPUT
+          else
+            echo "delta_negative=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Fail on coverage regression
+        if: steps.coverage_state.outputs.delta_negative == 'true' && steps.coverage_state.outputs.has_skip_label != 'true'
+        run: |
+          echo "Coverage regression detected: delta=${{ steps.coverage_state.outputs.delta }}%"
+          echo "Add the skip-coverage-gate label to bypass this gate when appropriate."
+          exit 1

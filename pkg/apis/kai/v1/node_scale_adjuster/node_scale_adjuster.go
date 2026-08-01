@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	imageName           = "node-scale-adjuster"
+	imageName           = "nodescaleadjuster"
 	scalingPodImageName = "scalingpod"
 )
 

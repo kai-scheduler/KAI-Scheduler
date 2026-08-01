@@ -10,6 +10,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
@@ -33,16 +34,23 @@ func (alloc *consolidationAction) Execute(ssn *framework.Session) {
 	log.InfraLogger.V(2).Infof("Enter Consolidation ...")
 	defer log.InfraLogger.V(2).Infof("Leaving Consolidation ...")
 
+	actionBudget, err := solvers.NewActionSearchBudget(ssn, framework.Consolidation)
+	if err != nil {
+		log.InfraLogger.Errorf("Invalid scenario search budget for consolidation: %v", err)
+		return
+	}
+
 	if ssn.GetMaxNumberConsolidationPreemptees() == 0 {
 		log.InfraLogger.V(4).Infof("Consolidation is disabled, skipping")
 		return
 	}
 
 	jobsOrderByQueues := utils.NewJobsOrderByQueues(ssn, utils.JobsOrderInitOptions{
-		FilterNonPending:     true,
-		FilterUnready:        true,
-		FilterNonPreemptible: true,
-		MaxJobsQueueDepth:    ssn.GetJobsDepth(framework.Consolidation),
+		FilterNonPending:            true,
+		FilterUnready:               true,
+		FilterNonPreemptible:        true,
+		FilterWithinPreemptionDelay: true,
+		MaxJobsQueueDepth:           ssn.GetJobsDepth(framework.Consolidation),
 	})
 	jobsOrderByQueues.InitializeWithJobs(ssn.ClusterInfo.PodGroupInfos)
 
@@ -70,12 +78,14 @@ func (alloc *consolidationAction) Execute(ssn *framework.Session) {
 		}
 
 		metrics.IncPodgroupsConsideredByAction()
-		if succeeded, stmt := attemptToConsolidateForPreemptor(ssn, job); succeeded {
+		if succeeded, stmt, searchResult := attemptToConsolidateForPreemptor(ssn, job, actionBudget); succeeded {
 			metrics.IncPodgroupScheduledByAction()
 			err := stmt.Commit()
 			if err != nil {
 				log.InfraLogger.Errorf("Failed to commit consolidation statement: %v", err)
 			}
+		} else if shouldStopActionForSearchResult(searchResult) {
+			return
 		} else {
 			smallestFailedJobs.UpdateRepresentative(job)
 		}
@@ -83,8 +93,10 @@ func (alloc *consolidationAction) Execute(ssn *framework.Session) {
 }
 
 func attemptToConsolidateForPreemptor(
-	ssn *framework.Session, job *podgroup_info.PodGroupInfo) (bool, *framework.Statement) {
-	resReq := podgroup_info.GetTasksToAllocateInitResourceVector(job, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false, ssn.ClusterInfo.MinNodeGPUMemory)
+	ssn *framework.Session, job *podgroup_info.PodGroupInfo, actionBudget *solvers.ActionSearchBudget,
+) (bool, *framework.Statement, *solvers.SearchResult) {
+	resReq := podgroup_info.GetTasksToAllocateInitResourceVector(job, ssn.SubGroupOrderFn, ssn.TaskOrderFn,
+		false, ssn.ClusterInfo.MinNodeGPUMemoryMiB)
 	log.InfraLogger.V(3).Infof(
 		"Attempting to consolidate running jobs in order to make room for job: <%s/%s>, resources: <%v>",
 		job.Namespace, job.Name, resReq)
@@ -92,32 +104,47 @@ func attemptToConsolidateForPreemptor(
 		log.InfraLogger.V(3).Infof(
 			"Can't consolidate for job: <%v/%v>, not enough allocatable GPUs in the cluster",
 			job.Namespace, job.Name)
-		return false, nil
+		return false, nil, nil
 	}
-	success, stmt := attemptToConsolidatePreemptor(ssn, job)
-	return success, stmt
+	success, stmt, searchResult := attemptToConsolidatePreemptor(ssn, job, actionBudget)
+	return success, stmt, searchResult
 }
 
 func attemptToConsolidatePreemptor(
-	ssn *framework.Session, preemptor *podgroup_info.PodGroupInfo) (bool, *framework.Statement) {
+	ssn *framework.Session, preemptor *podgroup_info.PodGroupInfo, actionBudget *solvers.ActionSearchBudget,
+) (bool, *framework.Statement, *solvers.SearchResult) {
 	feasibleNodes := common.FeasibleNodesForJob(maps.Values(ssn.ClusterInfo.Nodes), preemptor)
 	solver := solvers.NewJobsSolver(
 		feasibleNodes,
 		allPodsReallocated,
-		func() *utils.JobsOrderByQueues { return buildConsolidationVictimsQueue(ssn, preemptor) },
-		framework.Consolidation)
+		getOrderedVictimsQueue(ssn, preemptor),
+		framework.Consolidation,
+		actionBudget)
 
-	isScenarioFeasible, stmt, victimsTasksNames := solver.Solve(ssn, preemptor)
+	isScenarioFeasible, stmt, victimsTasksNames, searchResult := solver.SolveWithResult(ssn, preemptor)
 	if isScenarioFeasible {
 		log.InfraLogger.V(3).Infof(
 			"Sucesfully consolidated for job: <%s/%s>, and about to reallocate victims: <%v>",
 			preemptor.Namespace, preemptor.Name, victimsTasksNames)
-		return true, stmt
+		return true, stmt, searchResult
+	}
+
+	if shouldStopActionForSearchResult(searchResult) {
+		return false, nil, searchResult
 	}
 
 	log.InfraLogger.V(3).Infof("Didn't find a consolidation strategy for job: <%v/%v>",
 		preemptor.Namespace, preemptor.Name)
-	return false, nil
+	return false, nil, searchResult
+}
+
+func shouldStopActionForSearchResult(result *solvers.SearchResult) bool {
+	switch result.Reason() {
+	case solvers.SearchResultDeadlineExhausted, solvers.SearchResultNotAttempted:
+		return true
+	default:
+		return false
+	}
 }
 
 func allPodsReallocated(scenario api.ScenarioInfo) bool {
@@ -134,6 +161,27 @@ func allPodsReallocated(scenario api.ScenarioInfo) bool {
 func buildConsolidationVictimsQueue(ssn *framework.Session, preemptor *podgroup_info.PodGroupInfo) *utils.JobsOrderByQueues {
 	filter := buildPreemptibleFilterFunc(preemptor, ssn.GetMaxNumberConsolidationPreemptees())
 	return utils.GetVictimsQueue(ssn, filter)
+}
+
+func getOrderedVictimsQueue(ssn *framework.Session, preemptor *podgroup_info.PodGroupInfo) solvers.GenerateVictimsQueue {
+	maxPreempteesToTest := ssn.GetMaxNumberConsolidationPreemptees()
+	if maxPreempteesToTest != noConsolidationPreempteesRestrcition {
+		return func() *utils.JobsOrderByQueues {
+			return buildConsolidationVictimsQueue(ssn, preemptor)
+		}
+	}
+
+	return utils.NewCachedVictimsQueueGenerator(
+		ssn,
+		func() map[common_info.PodGroupID]*podgroup_info.PodGroupInfo {
+			filter := buildPreemptibleFilterFunc(preemptor, maxPreempteesToTest)
+			return utils.GetVictimCandidates(ssn, filter)
+		},
+		utils.JobsOrderInitOptions{
+			FilterNonPreemptible:     true,
+			FilterNonActiveAllocated: true,
+		},
+	)
 }
 
 func buildPreemptibleFilterFunc(preemptor *podgroup_info.PodGroupInfo, maxPreempteesToTest int) func(*podgroup_info.PodGroupInfo) bool {

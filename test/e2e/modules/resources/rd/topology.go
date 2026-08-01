@@ -29,6 +29,7 @@ const (
 	TestZoneLabelKey = "e2e-topology-label/zone"
 	TestRackLabelKey = "e2e-topology-label/rack"
 	NodeNameLabelKey = "kubernetes.io/hostname"
+	TestRackAlias    = "rack"
 )
 
 type TestTopologyData struct {
@@ -65,7 +66,7 @@ func CreateRackZoneTopology(
 		Spec: kaiv1alpha1.TopologySpec{
 			Levels: []kaiv1alpha1.TopologyLevel{
 				{NodeLabel: TestZoneLabelKey},
-				{NodeLabel: TestRackLabelKey},
+				{NodeLabel: TestRackLabelKey, Alias: TestRackAlias},
 				{NodeLabel: NodeNameLabelKey},
 			},
 		},

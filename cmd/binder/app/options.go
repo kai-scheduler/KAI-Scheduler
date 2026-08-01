@@ -108,7 +108,7 @@ func InitOptions(fs *pflag.FlagSet) *Options {
 		"JSON-serialized binder plugin configuration keyed by plugin name")
 	fs.StringVar(&options.RuntimeClassName,
 		"runtime-class-name", "",
-		"Runtime class for reservation pods")
+		"Runtime class for GPU reservation pods. Defaults to empty (no runtime class).")
 
 	utilfeature.DefaultMutableFeatureGate.AddFlag(fs)
 

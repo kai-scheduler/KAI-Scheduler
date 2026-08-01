@@ -36,7 +36,7 @@ It can run alongside other schedulers installed on the cluster.
 - Bin Packing & Spread Scheduling: Optimize node usage either by minimizing fragmentation (bin-packing) or increasing resiliency and load balancing (spread scheduling).
 - [Workload Priority](docs/priority/README.md): Prioritize workloads effectively within queues.
 - [Separation of workload priority and preemptibility](https://github.com/kai-scheduler/KAI-scheduler/tree/main/docs/developer/designs/priority-preemptibility-separation): supports separation of workload priority and workloads preemptibility as two independent policies
-- [Hierarchical Queues](docs/queues/README.md): Manage workloads with two-level queue hierarchies for flexible organizational control.
+- [Hierarchical Queues](docs/queues/README.md): Apply quotas, limits, priorities, and fairness policies across multi-level queue hierarchies for flexible organizational control.
 - [Resource distribution](docs/fairness/README.md#resource-division-algorithm): Customize quotas, over-quota weights, limits, and priorities per queue.
 - [Fairness Policies](docs/fairness/README.md#reclaim-strategies): Ensure equitable resource distribution using Dominant Resource Fairness (DRF) and resource reclamation across queues.
 - [Time-based Fairshare](https://github.com/kai-scheduler/KAI-scheduler/tree/main/docs/time-based-fairshare): Over-time fair usage of resources, considering historical usage, time decay, and other parameters for fine-tuning.
@@ -76,6 +76,7 @@ KAI Scheduler can be installed:
 
 - **From Production (Recommended)**
 - **From Source (Build it Yourself)**
+- **With ArgoCD (GitOps)** - see the [GitOps installation guide](docs/gitops/README.md)
 
 #### Install from Production
 
@@ -97,9 +98,10 @@ Follow the instructions [here](docs/developer/building-from-source.md)
 When `gpu-operator` <v25.10.0 is installed, the following flag should be added to the installation command:
 
 ```
---set admission.gpuPodRuntimeClassName=null
+--set admission.gpuFractionRuntimeClassName=null
 ```
-If CDI is enabled also add `--set binder.cdiEnabled=true`.
+If CDI is enabled, add `--set binder.cdiEnabled=true` to the installation command.
+
 ## Support & Breaking changes
 
 For details on our release lifecycle, LTS versions, and supported releases, see the [Support Policy](SUPPORT.md).
@@ -109,6 +111,10 @@ Refer to the [Breaking Changes](https://github.com/kai-scheduler/KAI-scheduler/b
 ## Quick Start
 
 To start scheduling workloads with KAI Scheduler, please continue to [Quick Start example](docs/quickstart/README.md)
+
+## Agent Skills
+
+Repo-local agent skills live under [`.agents/`](.agents/README.md). This directory is the shared source of truth for reusable agent workflows in this repository, including Codex and Claude Code integrations.
 
 ## Roadmap
 

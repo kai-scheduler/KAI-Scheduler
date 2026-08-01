@@ -4508,5 +4508,62 @@ func getReclaimTestsMetadata() []integration_tests_utils.TestTopologyMetadata {
 				},
 			},
 		},
+		{
+			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Name: "Job with a StuckInReleasing pod is not a reclaim victim",
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:                "stuck_over_quota_job",
+						RequiredGPUsPerTask: 1,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "queue1",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								NodeName: "node0",
+								State:    pod_status.StuckInReleasing,
+							},
+						},
+					},
+					{
+						Name:                "reclaimer_job",
+						RequiredGPUsPerTask: 1,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "queue0",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								State: pod_status.Pending,
+							},
+						},
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node0": {GPUs: 1},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{Name: "queue0", DeservedGPUs: 1, GPUOverQuotaWeight: 1},
+					{Name: "queue1", DeservedGPUs: 0, GPUOverQuotaWeight: 1},
+				},
+				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"stuck_over_quota_job": {
+						NodeName:             "node0",
+						GPUsRequired:         1,
+						Status:               pod_status.StuckInReleasing,
+						DontValidateGPUGroup: true,
+					},
+					"reclaimer_job": {
+						GPUsRequired:         1,
+						Status:               pod_status.Pending,
+						DontValidateGPUGroup: true,
+					},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{
+						NumberOfCacheBinds:      0,
+						NumberOfCacheEvictions:  0,
+						NumberOfPipelineActions: 0,
+					},
+				},
+			},
+		},
 	}
 }

@@ -29,6 +29,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	k8splugins "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal/plugins"
+	rec "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/reclaimable"
 	rs "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
 )
 
@@ -39,6 +40,27 @@ var testVectorMap = resource_info.NewResourceVectorMap()
 func TestSetFairShare(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Proportion Suite")
+}
+
+func TestBuildReclaimerInfoDoesNotAllocate(t *testing.T) {
+	vectorMap := resource_info.NewResourceVectorMap()
+	reclaimer := podgroup_info.NewPodGroupInfoWithVectorMap("reclaimer", vectorMap)
+	reclaimer.Name = "reclaimer"
+	reclaimer.Namespace = "namespace"
+	reclaimer.Queue = "queue"
+	plugin := &proportionPlugin{}
+	var info rec.ReclaimerInfo
+
+	allocations := testing.AllocsPerRun(100, func() {
+		info = plugin.buildReclaimerInfo(reclaimer, nil)
+	})
+
+	if info.Name != reclaimer.Name || info.Namespace != reclaimer.Namespace || info.Queue != reclaimer.Queue {
+		t.Fatalf("unexpected reclaimer info: %#v", info)
+	}
+	if allocations != 0 {
+		t.Fatalf("expected zero allocations, got %v", allocations)
+	}
 }
 
 var _ = Describe("Set Fair Share in Proportion", func() {

@@ -12,7 +12,9 @@ package cache
 import (
 	reflect "reflect"
 
+	v1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	api "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	common_info "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	eviction_info "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
 	pod_info "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	podgroup_info "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
@@ -50,17 +52,17 @@ func (m *MockCache) EXPECT() *MockCacheMockRecorder {
 }
 
 // Bind mocks base method.
-func (m *MockCache) Bind(podInfo *pod_info.PodInfo, hostname string, bindRequestAnnotations map[string]string) error {
+func (m *MockCache) Bind(podInfo *pod_info.PodInfo, hostname string, bindRequestAnnotations map[string]string, predictedNUMAZones []v1alpha2.NUMAZonePlacement) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Bind", podInfo, hostname, bindRequestAnnotations)
+	ret := m.ctrl.Call(m, "Bind", podInfo, hostname, bindRequestAnnotations, predictedNUMAZones)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Bind indicates an expected call of Bind.
-func (mr *MockCacheMockRecorder) Bind(podInfo, hostname, bindRequestAnnotations any) *gomock.Call {
+func (mr *MockCacheMockRecorder) Bind(podInfo, hostname, bindRequestAnnotations, predictedNUMAZones any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Bind", reflect.TypeOf((*MockCache)(nil).Bind), podInfo, hostname, bindRequestAnnotations)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Bind", reflect.TypeOf((*MockCache)(nil).Bind), podInfo, hostname, bindRequestAnnotations, predictedNUMAZones)
 }
 
 // Evict mocks base method.
@@ -134,17 +136,17 @@ func (mr *MockCacheMockRecorder) KubeInformerFactory() *gomock.Call {
 }
 
 // RecordJobStatusEvent mocks base method.
-func (m *MockCache) RecordJobStatusEvent(job *podgroup_info.PodGroupInfo) error {
+func (m *MockCache) RecordJobStatusEvent(job *podgroup_info.PodGroupInfo, resolveDetailedFitErrors func(*podgroup_info.PodGroupInfo, *pod_info.PodInfo) ([]*common_info.TasksFitError, error)) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RecordJobStatusEvent", job)
+	ret := m.ctrl.Call(m, "RecordJobStatusEvent", job, resolveDetailedFitErrors)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // RecordJobStatusEvent indicates an expected call of RecordJobStatusEvent.
-func (mr *MockCacheMockRecorder) RecordJobStatusEvent(job any) *gomock.Call {
+func (mr *MockCacheMockRecorder) RecordJobStatusEvent(job, resolveDetailedFitErrors any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RecordJobStatusEvent", reflect.TypeOf((*MockCache)(nil).RecordJobStatusEvent), job)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RecordJobStatusEvent", reflect.TypeOf((*MockCache)(nil).RecordJobStatusEvent), job, resolveDetailedFitErrors)
 }
 
 // Run mocks base method.

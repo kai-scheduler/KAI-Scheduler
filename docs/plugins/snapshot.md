@@ -31,18 +31,47 @@ The snapshot plugin is a framework plugin that provides an HTTP endpoint to capt
 
 The plugin registers an HTTP endpoint `/get-snapshot` that returns a ZIP file containing a JSON snapshot of the cluster state.
 
-To capture a snapshot, port-forward to the scheduler pod and call the endpoint:
+To capture a snapshot, port-forward to the scheduler Deployment and call the endpoint:
+
 ```bash
 kubectl port-forward -n kai-scheduler deployment/kai-scheduler-default 8081 &
 sleep 2
-curl -vv "localhost:8081/get-snapshot" > snapshot.gzip
+curl -sSf "localhost:8081/get-snapshot" -o snapshot.zip
 ```
+
+#### Capturing a Snapshot with Multiple Replicas
+
+When the scheduler Deployment has more than one replica, resolve the leader from the scheduler
+lease and port-forward directly to its pod:
+
+```bash
+LEADER=$(kubectl get lease -n kai-scheduler kai-scheduler \
+           -o jsonpath='{.spec.holderIdentity}' | cut -d'_' -f1)
+
+kubectl port-forward -n kai-scheduler "pod/$LEADER" 8081:8081 &
+sleep 2
+curl -sSf "localhost:8081/get-snapshot" -o snapshot.zip
+```
+
+The lease is named after the scheduler (`kai-scheduler` by default). A shard that sets
+`partitionLabelValue` uses `<scheduler-name>-<partition-label-value>` instead — for example
+`kai-scheduler-dra`.
 
 ### Analyzing a Snapshot
 
-Use the snapshot tool to analyze a captured snapshot:
+Build the snapshot tool:
+
 ```bash
-./bin/snapshot-tool-amd64 --filename snapshot.gzip --verbosity 8
+make build-go SERVICE_NAME=snapshot-tool
+```
+
+See [Building from Source](../developer/building-from-source.md) for more details. There is no
+published `snapshot-tool` release artifact.
+
+Then use the tool to analyze a captured snapshot:
+
+```bash
+./bin/snapshot-tool-amd64 --filename snapshot.zip --verbosity 8
 ```
 
 See the [Snapshot Tool](#snapshot-tool) section below for more details.

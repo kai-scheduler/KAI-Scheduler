@@ -121,7 +121,7 @@ func TestNewPodgrouper(t *testing.T) {
 	resources := append(nativeK8sTestResources, testResources...)
 	client := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(resources...).Build()
 
-	pluginsHub := pluginshub.NewDefaultPluginsHub(client, false, true,
+	pluginsHub := pluginshub.NewDefaultPluginsHub(client, false, true, false,
 		queueLabelKey, nodePoolLabelKey, "", "")
 	grouper := podgrouper.NewPodgrouper(client, client, pluginsHub)
 
@@ -318,6 +318,7 @@ kind: Pod
 			pluginsHub := pluginshub.NewDefaultPluginsHub(client,
 				tt.podGrouperOptions.searchForLegacyPodGroups,
 				tt.podGrouperOptions.gangScheduleKnative,
+				false,
 				queueLabelKey,
 				nodePoolLabelKey,
 				"",

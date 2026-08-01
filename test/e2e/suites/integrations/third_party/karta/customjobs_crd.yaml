@@ -1,0 +1,49 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: customjobs.e2e.example.com
+spec:
+  group: e2e.example.com
+  names:
+    kind: CustomJob
+    plural: customjobs
+    singular: customjob
+  scope: Namespaced
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              type: object
+              properties:
+                coordinator:
+                  type: object
+                  properties:
+                    replicas:
+                      type: integer
+                      minimum: 1
+                    template:
+                      type: object
+                      x-kubernetes-preserve-unknown-fields: true
+                worker:
+                  type: object
+                  properties:
+                    replicas:
+                      type: integer
+                      minimum: 1
+                    template:
+                      type: object
+                      x-kubernetes-preserve-unknown-fields: true

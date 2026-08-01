@@ -1,0 +1,3 @@
+kind: Fixed
+body: |-
+  Prevent some scheduler OOM kills by setting Go's memory limit

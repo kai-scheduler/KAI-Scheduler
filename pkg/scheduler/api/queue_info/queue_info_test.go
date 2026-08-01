@@ -37,6 +37,7 @@ func TestNewQueueInfo(t *testing.T) {
 			expected: QueueInfo{
 				UID:               "queue",
 				Name:              "display-queue",
+				DisplayName:       "display-queue",
 				ParentQueue:       "",
 				ChildQueues:       []common_info.QueueID{},
 				Resources:         QueueQuota{},

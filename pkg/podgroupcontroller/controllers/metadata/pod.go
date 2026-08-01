@@ -26,6 +26,15 @@ func GetPodMetadata(
 ) (*PodMetadata, error) {
 	var err error
 
+	if isTerminalPod(pod) {
+		// DRA ResourceClaims of terminal pods are deleted by the DRA driver, and
+		// the pod no longer requests or holds any resources, so skip the lookup.
+		return &PodMetadata{
+			RequestedResources: v1.ResourceList{},
+			AllocatedResources: v1.ResourceList{},
+		}, nil
+	}
+
 	draClaims, err := commonresources.FetchPodResourceClaims(ctx, pod, kubeClient, draAPIVersion)
 	if err != nil {
 		return nil, err
@@ -55,6 +64,10 @@ func GetPodMetadata(
 
 func isActivePod(pod *v1.Pod) bool {
 	return pod.Status.Phase == v1.PodPending || pod.Status.Phase == v1.PodRunning
+}
+
+func isTerminalPod(pod *v1.Pod) bool {
+	return pod.Status.Phase == v1.PodSucceeded || pod.Status.Phase == v1.PodFailed
 }
 
 func isAllocatedPod(pod *v1.Pod) bool {

@@ -72,7 +72,7 @@ var _ = Describe("GpuSpread scoring", func() {
 		},
 	}
 
-	task := pod_info.NewTaskInfo(&v1.Pod{}, nil, resource_info.NewResourceVectorMap())
+	task := pod_info.NewTaskInfo(&v1.Pod{}, resource_info.NewResourceVectorMap())
 
 	for caseName, caseSpec := range cases {
 		caseName := caseName

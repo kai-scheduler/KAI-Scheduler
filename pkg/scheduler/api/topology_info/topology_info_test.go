@@ -57,3 +57,51 @@ func TestTopologyConstraintInfo_GetSchedulingConstraintsSignature(t *testing.T) 
 		})
 	}
 }
+
+func TestResolveAliases(t *testing.T) {
+	aliases := map[string]string{
+		"rack": "accelerator.nvidia.com/rack",
+		"node": "kubernetes.io/hostname",
+	}
+
+	tc := &TopologyConstraintInfo{Topology: "network", RequiredLevel: "rack", PreferredLevel: "node"}
+	tc.ResolveAliases(aliases)
+
+	assert.Equal(t, "accelerator.nvidia.com/rack", tc.RequiredLevel)
+	assert.Equal(t, "kubernetes.io/hostname", tc.PreferredLevel)
+	assert.Equal(t, "network", tc.Topology)
+}
+
+func TestResolveAliases_PassThroughAndPartial(t *testing.T) {
+	aliases := map[string]string{"rack": "accelerator.nvidia.com/rack"}
+
+	tc := &TopologyConstraintInfo{
+		Topology:       "network",
+		RequiredLevel:  "accelerator.nvidia.com/rack", // raw label, not an alias key
+		PreferredLevel: "",                            // empty stays empty
+	}
+	tc.ResolveAliases(aliases)
+
+	assert.Equal(t, "accelerator.nvidia.com/rack", tc.RequiredLevel)
+	assert.Equal(t, "", tc.PreferredLevel)
+}
+
+func TestResolveAliases_InvalidatesSignature(t *testing.T) {
+	aliases := map[string]string{"rack": "accelerator.nvidia.com/rack"}
+	tc := &TopologyConstraintInfo{Topology: "network", RequiredLevel: "rack"}
+
+	before := tc.GetSchedulingConstraintsSignature() // computed from the alias
+	tc.ResolveAliases(aliases)
+	after := tc.GetSchedulingConstraintsSignature() // recomputed from the canonical label
+
+	assert.Assert(t, before != after, "signature must be recomputed from the canonical level")
+}
+
+func TestResolveAliases_NilSafeAndNoAliases(t *testing.T) {
+	var nilTC *TopologyConstraintInfo
+	nilTC.ResolveAliases(map[string]string{"rack": "x"}) // must not panic
+
+	tc := &TopologyConstraintInfo{Topology: "network", RequiredLevel: "rack"}
+	tc.ResolveAliases(nil)
+	assert.Equal(t, "rack", tc.RequiredLevel) // no aliases configured ⇒ unchanged
+}

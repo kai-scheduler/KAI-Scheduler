@@ -4,16 +4,20 @@
 package nodes_fake
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strconv"
 
+	nrtv1alpha2 "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/apis/topology/v1alpha2"
 	v1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/sets"
 
+	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -53,6 +57,7 @@ type TestNodeBasic struct {
 	GpuMemorySynced *bool
 	MaxTaskNum      *int
 	Labels          map[string]string
+	NumaTopology    *node_info.NumaTopology
 }
 
 func BuildNodesInfoMap(
@@ -195,6 +200,7 @@ func buildNodeInfo(
 	}
 	podAffinityInfo := cluster_info.NewK8sNodePodAffinityInfo(node, clusterPodAffinityInfo)
 	nodeInfo := node_info.NewNodeInfo(node, podAffinityInfo, vectorMap)
+	nodeInfo.NumaTopology = nodeMetadata.NumaTopology
 
 	// Count GPUs from node-specific slices
 	var draGPUCount int64
@@ -242,4 +248,121 @@ func toSorted(tasks pod_info.PodsMap) []*pod_info.PodInfo {
 	}
 
 	return sortedTasks
+}
+
+// NewNumaZone builds a NUMA zone spec whose Allocatable equals its Available (no in-flight usage).
+// Amounts are resource-name to quantity-string, e.g. {"cpu": "4", "memory": "16Gi"}.
+func NewNumaZone(id string, available map[v1.ResourceName]string) node_info.NumaZoneSpec {
+	return NewNumaZoneWithAllocatable(id, available, available)
+}
+
+// NewNumaZoneWithAllocatable builds a NUMA zone spec with distinct static capacity (allocatable)
+// and current headroom (available) — used to model zones already partly consumed by running pods.
+func NewNumaZoneWithAllocatable(id string, allocatable, available map[v1.ResourceName]string) node_info.NumaZoneSpec {
+	return node_info.NumaZoneSpec{
+		ID:          id,
+		Allocatable: parseQuantities(allocatable),
+		Available:   parseQuantities(available),
+	}
+}
+
+// NewNumaTopology builds a NumaTopology from zone specs against a fresh resource map seeded with the
+// zones' resources, mirroring production where the cluster map is populated from node resources
+// before topologies are built. Goes through the real NRT path (BuildNumaTopology).
+func NewNumaTopology(
+	policy node_info.TopologyManagerPolicy, scope node_info.TopologyManagerScope, zones ...node_info.NumaZoneSpec,
+) *node_info.NumaTopology {
+	vectorMap := resource_info.NewResourceVectorMap()
+	for _, zone := range zones {
+		vectorMap.AddResourceList(zone.Allocatable)
+		vectorMap.AddResourceList(zone.Available)
+	}
+	return NewNumaTopologyWithMap(policy, scope, vectorMap, zones...)
+}
+
+// NewNumaTopologyWithMap builds a NumaTopology against a caller-provided resource map, for tests
+// that index tasks and zones through one shared map. Zone-reported resources absent from the map
+// are ignored, matching production BuildNumaTopology.
+func NewNumaTopologyWithMap(
+	policy node_info.TopologyManagerPolicy, scope node_info.TopologyManagerScope,
+	vectorMap *resource_info.ResourceVectorMap, zones ...node_info.NumaZoneSpec,
+) *node_info.NumaTopology {
+	return node_info.BuildNumaTopology(numaTopologyNRT(policy, scope, zones), vectorMap)
+}
+
+// numaTopologyNRT renders zone specs as the NodeResourceTopology object an exporter would publish,
+// so tests exercise the same parsing path as production. Policy/scope map to the canonical kubelet
+// attribute strings; zone type "Node" is the only level BuildNumaTopology models.
+func numaTopologyNRT(
+	policy node_info.TopologyManagerPolicy, scope node_info.TopologyManagerScope, zones []node_info.NumaZoneSpec,
+) *nrtv1alpha2.NodeResourceTopology {
+	nrtZones := make(nrtv1alpha2.ZoneList, len(zones))
+	for i, zone := range zones {
+		names := sets.New[v1.ResourceName]()
+		for name := range zone.Allocatable {
+			names.Insert(name)
+		}
+		for name := range zone.Available {
+			names.Insert(name)
+		}
+		resources := make(nrtv1alpha2.ResourceInfoList, 0, len(names))
+		for name := range names {
+			resources = append(resources, nrtv1alpha2.ResourceInfo{
+				Name:        string(name),
+				Allocatable: zone.Allocatable[name],
+				Available:   zone.Available[name],
+			})
+		}
+		nrtZones[i] = nrtv1alpha2.Zone{Name: zone.ID, Type: "Node", Resources: resources}
+	}
+	return &nrtv1alpha2.NodeResourceTopology{
+		Attributes: nrtv1alpha2.AttributeList{
+			{Name: "topologyManagerPolicy", Value: numaPolicyAttr(policy)},
+			{Name: "topologyManagerScope", Value: numaScopeAttr(scope)},
+		},
+		Zones: nrtZones,
+	}
+}
+
+func numaPolicyAttr(policy node_info.TopologyManagerPolicy) string {
+	switch policy {
+	case node_info.TopologyPolicySingleNUMANode:
+		return "single-numa-node"
+	case node_info.TopologyPolicyRestricted:
+		return "restricted"
+	case node_info.TopologyPolicyBestEffort:
+		return "best-effort"
+	default:
+		return "none"
+	}
+}
+
+func numaScopeAttr(scope node_info.TopologyManagerScope) string {
+	if scope == node_info.TopologyScopePod {
+		return "pod"
+	}
+	return "container"
+}
+
+func parseQuantities(amounts map[v1.ResourceName]string) v1.ResourceList {
+	out := make(v1.ResourceList, len(amounts))
+	for name, qty := range amounts {
+		out[name] = resource.MustParse(qty)
+	}
+	return out
+}
+
+// NumaObservedPlacementAnnotation builds the kai.scheduler/numa-placement-observed pod annotation
+// (zone id to per-resource amount) the binder would have persisted for a running pod. The numa
+// plugin reconstructs the pod's NUMAPlacement from it at session open. Merge it via TestTaskBasic.Annotations.
+func NumaObservedPlacementAnnotation(zonePlacements map[string]map[v1.ResourceName]string) map[string]string {
+	record := make([]schedulingv1alpha2.NUMAZonePlacement, 0, len(zonePlacements))
+	for zoneID, amounts := range zonePlacements {
+		record = append(record, schedulingv1alpha2.NUMAZonePlacement{Zone: zoneID, Amount: parseQuantities(amounts)})
+	}
+	data, err := json.Marshal(record)
+	if err != nil {
+		panic(err)
+	}
+	return map[string]string{commonconstants.NumaPlacementObserved: string(data)}
 }

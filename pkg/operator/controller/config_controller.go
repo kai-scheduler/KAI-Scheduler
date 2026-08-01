@@ -29,7 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	nvidiav1 "github.com/NVIDIA/gpu-operator/api/nvidia/v1"
+	nvidiav1 "github.com/kai-scheduler/KAI-scheduler/third_party/nvidia/gpu-operator/api/nvidia/v1"
 
 	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
 
@@ -41,6 +41,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/deployable"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/known_types"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/node_scale_adjuster"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/numa_placement_exporter"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/pod_group_controller"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/pod_grouper"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/prometheus"
@@ -57,6 +58,7 @@ var ConfigReconcilerOperands = []operands.Operand{
 	&admission.Admission{},
 	&prometheus.Prometheus{},
 	&scheduler.SchedulerForConfig{},
+	&numa_placement_exporter.NumaPlacementExporter{},
 }
 
 // ConfigReconciler reconciles a Config object
@@ -85,6 +87,7 @@ func (r *ConfigReconciler) SetOperands(ops []operands.Operand) {
 // +kubebuilder:rbac:groups="monitoring.coreos.com",resources=prometheuses;servicemonitors,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="scheduling.run.ai",resources=queues,verbs=get;list;watch
 // +kubebuilder:rbac:groups="autoscaling.k8s.io",resources=verticalpodautoscalers,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="policy",resources=poddisruptionbudgets,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -159,6 +162,8 @@ func (r *ConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if checkForClusterPolicy(mgr) {
 		builder = builder.Watches(&nvidiav1.ClusterPolicy{}, handler.EnqueueRequestsFromMapFunc(enqueueWatched))
 	}
+
+	builder = builder.Watches(&kaiv1.SchedulingShard{}, handler.EnqueueRequestsFromMapFunc(enqueueWatched))
 
 	for _, collectable := range known_types.KAIConfigRegisteredCollectible {
 		builder = collectable.InitWithBuilder(builder)

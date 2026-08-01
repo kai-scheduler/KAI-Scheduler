@@ -15,9 +15,20 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/scheduler_util"
 )
 
+// GetVictimsQueue discovers candidates immediately and returns one mutable victim queue.
+// Use NewCachedVictimsQueueGenerator when discovery should run once for multiple independent queues.
 func GetVictimsQueue(
 	ssn *framework.Session,
 	filter func(*podgroup_info.PodGroupInfo) bool) *JobsOrderByQueues {
+	preemptees := GetVictimCandidates(ssn, filter)
+	return newVictimsQueueFromCandidates(ssn, preemptees, JobsOrderInitOptions{})
+}
+
+// GetVictimCandidates returns jobs with at least one live pod that pass filter.
+func GetVictimCandidates(
+	ssn *framework.Session,
+	filter func(*podgroup_info.PodGroupInfo) bool,
+) map[common_info.PodGroupID]*podgroup_info.PodGroupInfo {
 	preemptees := map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{}
 
 	for _, job := range ssn.ClusterInfo.PodGroupInfos {
@@ -38,12 +49,36 @@ func GetVictimsQueue(
 			preemptees[job.UID] = job
 		}
 	}
-	victimsQueue := NewJobsOrderByQueues(ssn, JobsOrderInitOptions{
-		VictimQueue:       true,
-		MaxJobsQueueDepth: scheduler_util.QueueCapacityInfinite,
-	})
-	victimsQueue.InitializeWithJobs(preemptees)
+	return preemptees
+}
+
+func newVictimsQueueFromCandidates(
+	ssn *framework.Session,
+	candidates map[common_info.PodGroupID]*podgroup_info.PodGroupInfo,
+	options JobsOrderInitOptions,
+) *JobsOrderByQueues {
+	options.VictimQueue = true
+	options.MaxJobsQueueDepth = scheduler_util.QueueCapacityInfinite
+	victimsQueue := NewJobsOrderByQueues(ssn, options)
+	victimsQueue.InitializeWithJobs(candidates)
 	return &victimsQueue
+}
+
+// NewCachedVictimsQueueGenerator discovers candidates once and creates a fresh mutable queue for each call.
+func NewCachedVictimsQueueGenerator(
+	ssn *framework.Session,
+	getCandidates func() map[common_info.PodGroupID]*podgroup_info.PodGroupInfo,
+	options JobsOrderInitOptions,
+) func() *JobsOrderByQueues {
+	var candidates map[common_info.PodGroupID]*podgroup_info.PodGroupInfo
+	initialized := false
+	return func() *JobsOrderByQueues {
+		if !initialized {
+			candidates = getCandidates()
+			initialized = true
+		}
+		return newVictimsQueueFromCandidates(ssn, candidates, options)
+	}
 }
 
 func GetMessageOfEviction(ssn *framework.Session, actionType framework.ActionType, preempteeTask *pod_info.PodInfo,
@@ -62,21 +97,29 @@ func GetMessageOfEviction(ssn *framework.Session, actionType framework.ActionTyp
 				"Failed to get preemptee job for task: <%s/%s>", preempteeTask.Namespace, preempteeTask.Name)
 			return ""
 		}
-		reclaimerQueue := ssn.ClusterInfo.Queues[preemptorJob.Queue]
-		reclaimerParentQueue := ssn.ClusterInfo.Queues[reclaimerQueue.ParentQueue]
-		reclaimeeQueue := ssn.ClusterInfo.Queues[preempteeJob.Queue]
-		reclaimeeParentQueue := ssn.ClusterInfo.Queues[reclaimeeQueue.ParentQueue]
+		reclaimerQueue, reclaimerFound := ssn.ClusterInfo.Queues[preemptorJob.Queue]
+		reclaimeeQueue, reclaimeeFound := ssn.ClusterInfo.Queues[preempteeJob.Queue]
 
 		msg := api.GetReclaimMessage(preempteeTask, preemptorJob)
 
-		var queueDetails string
-		if reclaimeeQueue.ParentQueue == reclaimerQueue.ParentQueue {
-			queueDetails = getReclaimMessageQueuesDetails(ssn, preempteeTask, preemptorJob,
-				reclaimerQueue, reclaimeeQueue)
-		} else {
-			queueDetails = getReclaimMessageQueuesDetails(ssn, preempteeTask, preemptorJob,
-				reclaimerParentQueue, reclaimeeParentQueue)
+		if !reclaimerFound || reclaimerQueue == nil || !reclaimeeFound || reclaimeeQueue == nil {
+			log.InfraLogger.Errorf(
+				"Failed to get reclaimer or reclaimee queue for task: <%s/%s>, reclaimer queue: <%v>, reclaimee queue: <%v>",
+				preempteeTask.Namespace, preempteeTask.Name, preemptorJob.Queue, preempteeJob.Queue)
+			return msg
 		}
+
+		var reclaimerDetailsQueue, reclaimeeDetailsQueue *queue_info.QueueInfo
+		if reclaimeeQueue.ParentQueue == reclaimerQueue.ParentQueue {
+			reclaimerDetailsQueue = reclaimerQueue
+			reclaimeeDetailsQueue = reclaimeeQueue
+		} else {
+			reclaimerDetailsQueue = queueForReclaimDetails(ssn, reclaimerQueue)
+			reclaimeeDetailsQueue = queueForReclaimDetails(ssn, reclaimeeQueue)
+		}
+
+		queueDetails := getReclaimMessageQueuesDetails(ssn, preempteeTask, preemptorJob,
+			reclaimerDetailsQueue, reclaimeeDetailsQueue)
 
 		msg += "\n" + queueDetails
 		return msg
@@ -85,6 +128,19 @@ func GetMessageOfEviction(ssn *framework.Session, actionType framework.ActionTyp
 	log.InfraLogger.Errorf("Unexpected action type: <%v>, task: <%v/%v>", actionType, preempteeTask.Namespace,
 		preempteeTask.Name)
 	return ""
+}
+
+func queueForReclaimDetails(ssn *framework.Session, q *queue_info.QueueInfo) *queue_info.QueueInfo {
+	if q == nil {
+		return nil
+	}
+	if q.ParentQueue == "" {
+		return q
+	}
+	if parent, found := ssn.ClusterInfo.Queues[q.ParentQueue]; found && parent != nil {
+		return parent
+	}
+	return q
 }
 
 func getReclaimMessageQueuesDetails(ssn *framework.Session, reclaimeeTask *pod_info.PodInfo,
@@ -132,7 +188,8 @@ func IsEnoughGPUsAllocatableForJob(job *podgroup_info.PodGroupInfo, ssn *framewo
 	sumOfAllAllocatableGPUs, sumOfAllAllocatableGPUsMemory := getSumOfAvailableGPUs(ssn)
 	requestedGPUs, requestedGpuMemory := podgroup_info.GetTasksToAllocateRequestedGPUs(job, ssn.SubGroupOrderFn,
 		ssn.TaskOrderFn, isRealAllocation)
-	resReq := podgroup_info.GetTasksToAllocateInitResourceVector(job, ssn.SubGroupOrderFn, ssn.TaskOrderFn, isRealAllocation, ssn.ClusterInfo.MinNodeGPUMemory)
+	resReq := podgroup_info.GetTasksToAllocateInitResourceVector(job, ssn.SubGroupOrderFn, ssn.TaskOrderFn, isRealAllocation,
+		ssn.ClusterInfo.MinNodeGPUMemoryMiB)
 	log.InfraLogger.V(7).Infof(
 		"Task: <%v/%v> resources requires: <%v>, sumOfAllAllocatableGPUs: <%v, %v mb>",
 		job.Namespace, job.Name, resReq, sumOfAllAllocatableGPUs, sumOfAllAllocatableGPUsMemory)

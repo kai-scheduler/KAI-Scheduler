@@ -25,7 +25,6 @@ import (
 
 	kubeaischedulerscheme "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned/scheme"
 	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding"
 	mock_binder "github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding/mock"
@@ -89,7 +88,7 @@ var _ = Describe("BindRequest Controller", func() {
 		binderPlugins.RegisterPlugin(fakePlugin)
 
 		rrs := resourcereservation.NewService(false, fakeClient, "", 40*time.Second,
-			resourceReservationNameSpace, resourceReservationServiceAccount, resourceReservationAppLabelValue, scalingPodsNamespace, constants.DefaultRuntimeClassName,
+			resourceReservationNameSpace, resourceReservationServiceAccount, resourceReservationAppLabelValue, scalingPodsNamespace, "",
 			nil, nil, nil)
 		binder := binding.NewBinder(fakeClient, rrs, binderPlugins)
 		reconciler = NewBindRequestReconciler(fakeClient, testScheme, fakeEventRecorder, params,

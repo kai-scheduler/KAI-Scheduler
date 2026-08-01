@@ -61,7 +61,7 @@ func (h *Handler) ApplyToCluster(ctx context.Context, pgMetadata Metadata) error
 }
 
 func (h *Handler) ignoreFields(oldPodGroup, newPodGroup *schedulingv2alpha2.PodGroup) *schedulingv2alpha2.PodGroup {
-	// to avoid overriding the fields that the pod-group-assigner is responsible for
+	// to avoid overriding the fields that external services are responsible for
 	newPodGroupCopy := newPodGroup.DeepCopy()
 
 	newPodGroupCopy.Spec.MarkUnschedulable = oldPodGroup.Spec.MarkUnschedulable
@@ -83,6 +83,10 @@ func (h *Handler) ignoreFields(oldPodGroup, newPodGroup *schedulingv2alpha2.PodG
 		newPodGroupCopy.Labels[h.queueLabelKey] = queueName
 	}
 
+	if newPodGroupCopy.Spec.TopologyConstraint.Topology == "" {
+		newPodGroupCopy.Spec.TopologyConstraint = oldPodGroup.Spec.TopologyConstraint
+	}
+
 	return newPodGroupCopy
 }
 
@@ -98,12 +102,18 @@ func (h *Handler) createPodGroupForMetadata(podGroupMetadata Metadata) *scheduli
 			},
 		},
 		Spec: schedulingv2alpha2.PodGroupSpec{
-			MinMember:         ptr.To(podGroupMetadata.MinAvailable),
-			Queue:             podGroupMetadata.Queue,
-			PriorityClassName: podGroupMetadata.PriorityClassName,
-			SubGroups:         []schedulingv2alpha2.SubGroup{},
-			Preemptibility:    podGroupMetadata.Preemptibility,
+			Queue:                podGroupMetadata.Queue,
+			PriorityClassName:    podGroupMetadata.PriorityClassName,
+			SubGroups:            []schedulingv2alpha2.SubGroup{},
+			Preemptibility:       podGroupMetadata.Preemptibility,
+			PreemptionDelay:      podGroupMetadata.PreemptionDelay,
+			StalenessGracePeriod: podGroupMetadata.StalenessGracePeriod,
 		},
+	}
+	if podGroupMetadata.MinSubGroup != nil {
+		pg.Spec.MinSubGroup = podGroupMetadata.MinSubGroup
+	} else {
+		pg.Spec.MinMember = ptr.To(podGroupMetadata.MinAvailable)
 	}
 
 	for _, subGroup := range podGroupMetadata.SubGroups {
@@ -115,13 +125,17 @@ func (h *Handler) createPodGroupForMetadata(podGroupMetadata Metadata) *scheduli
 				Topology:               subGroup.TopologyConstraints.Topology,
 			}
 		}
-		pg.Spec.SubGroups = append(pg.Spec.SubGroups,
-			schedulingv2alpha2.SubGroup{
-				Name:               subGroup.Name,
-				MinMember:          ptr.To(subGroup.MinAvailable),
-				Parent:             subGroup.Parent,
-				TopologyConstraint: topologyConstraint,
-			})
+		newSubGroup := schedulingv2alpha2.SubGroup{
+			Name:               subGroup.Name,
+			Parent:             subGroup.Parent,
+			TopologyConstraint: topologyConstraint,
+		}
+		if subGroup.MinSubGroup != nil {
+			newSubGroup.MinSubGroup = subGroup.MinSubGroup
+		} else {
+			newSubGroup.MinMember = ptr.To(subGroup.MinAvailable)
+		}
+		pg.Spec.SubGroups = append(pg.Spec.SubGroups, newSubGroup)
 	}
 
 	pg.Spec.TopologyConstraint = schedulingv2alpha2.TopologyConstraint{

@@ -275,6 +275,5 @@ func buildArgsList(kaiConfig *kaiv1.Config) []string {
 	}
 
 	common.AddK8sClientConfigToArgs(config.Service.K8sClientConfig, args)
-
-	return args
+	return common.AddControllerRuntimeJSONLogArg(kaiConfig.Spec.Global.JSONLog, args)
 }

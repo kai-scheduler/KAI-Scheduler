@@ -25,15 +25,15 @@ jobs:
       contents: read
     steps:
       - name: Checkout PR branch
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
-          go-version: '1.26.1'
+          go-version: '1.26.3'
           cache: true
 
       - name: Install benchstat

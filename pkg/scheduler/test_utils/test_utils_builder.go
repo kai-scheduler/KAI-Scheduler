@@ -35,6 +35,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/numa"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
 )
@@ -64,17 +65,21 @@ func CreateFakeSession(schedulerConfig *TestSessionConfig,
 			},
 		},
 		ClusterInfo: &api.ClusterInfo{
-			Nodes:             nodesInfoMap,
-			Queues:            queueInfoMap,
-			PodGroupInfos:     jobInfoMap,
-			ResourceClaims:    getResourceClaims(testMetadata),
-			Topologies:        topologies,
-			MinNodeGPUMemory:  node_info.DefaultGpuMemory,
-			ResourceVectorMap: vectorMap,
+			Nodes:               nodesInfoMap,
+			Queues:              queueInfoMap,
+			PodGroupInfos:       jobInfoMap,
+			ResourceClaims:      getResourceClaims(testMetadata),
+			Topologies:          topologies,
+			MinNodeGPUMemoryMiB: computeMinNodeGPUMemory(nodesInfoMap),
+			MaxNodeGPUMemoryMiB: computeMaxNodeGPUMemory(nodesInfoMap),
+			ResourceVectorMap:   vectorMap,
 		},
 		SchedulerParams: conf.SchedulerParams{
 			QueueLabelKey: constants.DefaultQueueLabel,
 		},
+	}
+	if err := ssn.InitNodeScoringPool(); err != nil {
+		panic(err)
 	}
 	ssn.OverrideMaxNumberConsolidationPreemptees(-1)
 	ssn.OverrideAllowConsolidatingReclaim(true)
@@ -85,7 +90,14 @@ func CreateFakeSession(schedulerConfig *TestSessionConfig,
 	}
 
 	if schedulerConfig != nil {
+		ssn.Config.ScenarioSearchBudgets = schedulerConfig.ScenarioSearchBudgets
 		addSessionPlugins(&ssn, schedulerConfig.Plugins, createCacheMockIfNotExists, schedulerConfig.CachePlugins)
+	}
+
+	// The numa plugin isn't in the default test config; enable it whenever a node carries a
+	// NumaTopology so NUMA scenarios are driven purely by node/job metadata. Inert otherwise.
+	if anyNodeHasNumaTopology(nodesInfoMap) {
+		numa.New(framework.PluginArguments{}).OnSessionOpen(&ssn)
 	}
 
 	// Some plugins are using informers wrappers (such as the DRA manager) which require a moment to sync
@@ -93,6 +105,15 @@ func CreateFakeSession(schedulerConfig *TestSessionConfig,
 	time.Sleep(time.Millisecond)
 
 	return &ssn
+}
+
+func anyNodeHasNumaTopology(nodesInfoMap map[string]*node_info.NodeInfo) bool {
+	for _, node := range nodesInfoMap {
+		if node.NumaTopology != nil {
+			return true
+		}
+	}
+	return false
 }
 
 func BuildQueueInfoMap(testMetadata TestTopologyBasic) map[common_info.QueueID]*queue_info.QueueInfo {
@@ -110,9 +131,10 @@ func BuildQueueInfoMap(testMetadata TestTopologyBasic) map[common_info.QueueID]*
 				CreationTimestamp: metav1.Time{Time: time.Now().Add(time.Minute * time.Duration(queueIndex))},
 			},
 			Spec: enginev2.QueueSpec{
-				DisplayName: queue.Name,
-				ParentQueue: queue.ParentQueue,
-				Priority:    queue.Priority,
+				DisplayName:       queue.Name,
+				ParentQueue:       queue.ParentQueue,
+				Priority:          queue.Priority,
+				ReclaimMinRuntime: queue.ReclaimMinRuntime,
 				Resources: &enginev2.QueueResources{
 					GPU: enginev2.QueueResource{
 						Quota:           queue.DeservedGPUs,
@@ -227,6 +249,10 @@ func BuildDepartmentInfoMap(testMetadata TestTopologyBasic) map[common_info.Queu
 }
 
 func BuildPlugins(testMetadata TestTopologyBasic) []conf.Tier {
+	return buildSchedulerConfiguration(testMetadata).Tiers
+}
+
+func buildSchedulerConfiguration(testMetadata TestTopologyBasic) *conf.SchedulerConfiguration {
 	plugins.InitDefaultPlugins()
 	confFileName := ""
 
@@ -256,16 +282,17 @@ func BuildPlugins(testMetadata TestTopologyBasic) []conf.Tier {
 		panic(err)
 	}
 
-	return config.Tiers
+	return config
 }
 
 func BuildSession(testMetadata TestTopologyBasic, controller *Controller) *framework.Session {
-	confPlugins := BuildPlugins(testMetadata)
+	config := buildSchedulerConfiguration(testMetadata)
 	schedulerConfig := TestSessionConfig{
-		Plugins: confPlugins,
+		Plugins: config.Tiers,
 		CachePlugins: map[string]bool{
 			"predicates": true,
 		},
+		ScenarioSearchBudgets: config.ScenarioSearchBudgets,
 	}
 
 	addDefaultDepartmentIfNeeded(&testMetadata)
@@ -321,6 +348,38 @@ func addSessionPlugins(ssn *framework.Session, tiers []conf.Tier, cacheMockExist
 			pluginObj.OnSessionOpen(ssn)
 		}
 	}
+}
+
+func computeMinNodeGPUMemory(nodes map[string]*node_info.NodeInfo) *int64 {
+	var min *int64
+	for _, n := range nodes {
+		gpuMem := n.MemoryOfEveryGpuOnNode
+		if gpuMem > node_info.DefaultGpuMemory {
+			if min == nil || *min > gpuMem {
+				min = ptr.To(gpuMem)
+			}
+		}
+	}
+	if min == nil {
+		return ptr.To[int64](node_info.DefaultGpuMemory)
+	}
+	return min
+}
+
+func computeMaxNodeGPUMemory(nodes map[string]*node_info.NodeInfo) *int64 {
+	var max *int64
+	for _, n := range nodes {
+		gpuMem := n.MemoryOfEveryGpuOnNode
+		if gpuMem > node_info.DefaultGpuMemory {
+			if max == nil || *max < gpuMem {
+				max = ptr.To(gpuMem)
+			}
+		}
+	}
+	if max == nil {
+		return ptr.To[int64](node_info.DefaultGpuMemory)
+	}
+	return max
 }
 
 func getDRAObjects(testMetadata TestTopologyBasic) []runtime.Object {

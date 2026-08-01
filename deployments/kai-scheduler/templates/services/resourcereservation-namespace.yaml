@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 {{- $ns := .Values.global.resourceReservation.namespace }}
+{{- if .Values.global.resourceReservation.createNamespace }}
 {{ if not (lookup "v1" "Namespace" "" $ns) -}}
 apiVersion: v1
 kind: Namespace
@@ -9,4 +10,10 @@ metadata:
   name: {{ .Values.global.resourceReservation.namespace }}
   annotations:
     helm.sh/resource-policy: keep
+    argocd.argoproj.io/sync-options: Prune=false
+  {{- with .Values.global.resourceReservation.namespaceLabels }}
+  labels:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}
 {{- end }}

@@ -311,8 +311,8 @@ func getTestsScatteredNodesForGangMetadata() []integration_tests_utils.TestTopol
 			Mocks: &test_utils.TestMock{
 				CacheRequirements: &test_utils.CacheMocking{
 					NumberOfCacheBinds:      2,
-					NumberOfCacheEvictions:  200,
-					NumberOfPipelineActions: 2,
+					NumberOfCacheEvictions:  4,
+					NumberOfPipelineActions: 4,
 				},
 			},
 		},

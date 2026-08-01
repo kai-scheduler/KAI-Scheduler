@@ -28,9 +28,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
+	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
 	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 
 	admissionplugins "github.com/kai-scheduler/KAI-scheduler/pkg/admission/plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/admission/webhook/topologyhooks"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/controllers"
 )
 
@@ -42,6 +44,7 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(schedulingv1alpha2.AddToScheme(scheme))
+	utilruntime.Must(kaiv1alpha1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -57,6 +60,7 @@ type App struct {
 
 // +kubebuilder:webhook:path=/mutate--v1-pod,mutating=true,failurePolicy=fail,sideEffects=None,resources=pods,verbs=create,groups=core,versions=v1,name=admission.run.ai,admissionReviewVersions=v1,reinvocationPolicy=IfNeeded
 // +kubebuilder:webhook:path=/validate--v1-pod,mutating=false,failurePolicy=fail,sideEffects=None,resources=pods,verbs=create;update,groups=core,versions=v1,name=admission.run.ai,admissionReviewVersions=v1
+// +kubebuilder:webhook:path=/validate-kai-scheduler-v1alpha1-topology,mutating=false,failurePolicy=fail,sideEffects=None,resources=topologies,verbs=create;update,groups=kai.scheduler,versions=v1alpha1,name=topology.admission.run.ai,admissionReviewVersions=v1
 
 func New() (*App, error) {
 	options := InitOptions()
@@ -152,6 +156,12 @@ func (app *App) Run() error {
 		WithDefaulter(admissionhooks.NewPodMutator(app.manager.GetClient(), app.admissionPlugins, app.Options.SchedulerName)).
 		WithValidator(admissionhooks.NewPodValidator(app.manager.GetClient(), app.admissionPlugins, app.Options.SchedulerName)).Complete(); err != nil {
 		setupLog.Error(err, "unable to create pod webhooks", "webhook", "Pod")
+		return err
+	}
+
+	if err = ctrl.NewWebhookManagedBy(app.manager, &kaiv1alpha1.Topology{}).
+		WithValidator(topologyhooks.NewTopologyValidator()).Complete(); err != nil {
+		setupLog.Error(err, "unable to create topology webhook", "webhook", "Topology")
 		return err
 	}
 

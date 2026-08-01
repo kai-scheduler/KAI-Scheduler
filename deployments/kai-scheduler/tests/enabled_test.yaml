@@ -2,6 +2,12 @@
 # SPDX-License-Identifier: Apache-2.0
 
 suite: test service enabled configuration
+
+set:
+  kaiConfigDeployer:
+    enabled: false
+  kaiConfig:
+    render: true
 templates:
   - kai-config.yaml
 tests:
@@ -11,10 +17,16 @@ tests:
   - it: should enable all services by default
     asserts:
       - equal:
+          path: spec.global.queueLabelKey
+          value: "kai.scheduler/queue"
+      - equal:
           path: spec.binder.service.enabled
           value: true
       - equal:
           path: spec.podGrouper.service.enabled
+          value: true
+      - equal:
+          path: spec.podGrouper.args.genericKartaFallback
           value: true
       - equal:
           path: spec.podGroupController.service.enabled
@@ -28,6 +40,30 @@ tests:
       - equal:
           path: spec.scheduler.service.enabled
           value: true
+      - notExists:
+          path: spec.global.nodePoolLabelKey
+
+  # ======================================
+  # Global queueLabelKey Tests
+  # ======================================
+  - it: should wire podgrouper.queueLabelKey into spec.global.queueLabelKey
+    set:
+      podgrouper.queueLabelKey: "runai/queue"
+    asserts:
+      - equal:
+          path: spec.global.queueLabelKey
+          value: "runai/queue"
+
+  # ======================================
+  # Global nodePoolLabelKey Tests
+  # ======================================
+  - it: should wire global.nodePoolLabelKey into spec.global.nodePoolLabelKey
+    set:
+      global.nodePoolLabelKey: "runai/node-pool"
+    asserts:
+      - equal:
+          path: spec.global.nodePoolLabelKey
+          value: "runai/node-pool"
 
   # ======================================
   # Binder Enabled Tests
@@ -65,6 +101,14 @@ tests:
     asserts:
       - equal:
           path: spec.podGrouper.service.enabled
+          value: false
+
+  - it: should render podGrouper generic Karta fallback false when disabled
+    set:
+      podgrouper.genericKartaFallback: false
+    asserts:
+      - equal:
+          path: spec.podGrouper.args.genericKartaFallback
           value: false
 
   # ======================================

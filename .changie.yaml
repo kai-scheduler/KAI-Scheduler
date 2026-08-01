@@ -1,0 +1,29 @@
+changesDir: .changes
+unreleasedDir: unreleased
+headerPath: header.tpl.md
+changelogPath: CHANGELOG.md
+versionExt: md
+# Timestamped, non-serial filenames so concurrent PRs and backports never collide.
+fragmentFileFormat: '{{.Kind}}-{{.Time.Format "20060102-150405"}}'
+versionFormat: '## [{{.Version}}] - {{.Time.Format "2006-01-02"}}'
+kindFormat: '### {{.Kind}}'
+changeFormat: '- {{.Body}}{{if .Custom.Issue}} [#{{.Custom.Issue}}](https://github.com/kai-scheduler/KAI-Scheduler/issues/{{.Custom.Issue}}){{end}}{{if .Custom.Author}} [{{.Custom.Author}}](https://github.com/{{.Custom.Author}}){{end}}'
+kinds:
+  - label: Added
+  - label: Changed
+  - label: Fixed
+  - label: Removed
+custom:
+  - key: Issue
+    label: Issue or PR number (optional, e.g. 1817)
+    type: string
+    optional: true
+  - key: Author
+    label: GitHub username to credit (optional)
+    type: string
+    optional: true
+newlines:
+  afterChangelogHeader: 0
+  beforeChangelogVersion: 1
+  beforeKind: 1
+  endOfVersion: 1

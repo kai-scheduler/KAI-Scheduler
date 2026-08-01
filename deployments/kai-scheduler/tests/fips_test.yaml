@@ -1,0 +1,80 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+suite: test global.fips image tag suffix
+
+set:
+  kaiConfigDeployer:
+    enabled: false
+  kaiConfig:
+    render: true
+templates:
+  - kai-config.yaml
+  - services/operator.yaml
+  - hooks/pre/crd-upgrader.yaml
+tests:
+  - it: should not suffix image tags by default
+    asserts:
+      - equal:
+          path: spec.scheduler.service.image.tag
+          value: 0.0.0
+        template: kai-config.yaml
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: registry/local/kai-scheduler/operator:0.0.0
+        template: services/operator.yaml
+        documentSelector:
+          path: kind
+          value: Deployment
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: registry/local/kai-scheduler/crd-upgrader:0.0.0
+        template: hooks/pre/crd-upgrader.yaml
+
+  - it: should suffix all image tags when global.fips is enabled
+    set:
+      global.fips: true
+    asserts:
+      - equal:
+          path: spec.scheduler.service.image.tag
+          value: 0.0.0-fips
+        template: kai-config.yaml
+      - equal:
+          path: spec.binder.resourceReservation.image.tag
+          value: 0.0.0-fips
+        template: kai-config.yaml
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: registry/local/kai-scheduler/operator:0.0.0-fips
+        template: services/operator.yaml
+        documentSelector:
+          path: kind
+          value: Deployment
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: MS_TAG
+            value: 0.0.0-fips
+        template: services/operator.yaml
+        documentSelector:
+          path: kind
+          value: Deployment
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: registry/local/kai-scheduler/crd-upgrader:0.0.0-fips
+        template: hooks/pre/crd-upgrader.yaml
+
+  - it: should suffix explicit per-service and global tags when global.fips is enabled
+    set:
+      global.fips: true
+      global.tag: v1.2.3
+      scheduler.image.tag: v9.9.9
+    asserts:
+      - equal:
+          path: spec.scheduler.service.image.tag
+          value: v9.9.9-fips
+        template: kai-config.yaml
+      - equal:
+          path: spec.binder.service.image.tag
+          value: v1.2.3-fips
+        template: kai-config.yaml

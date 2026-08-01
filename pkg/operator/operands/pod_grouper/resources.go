@@ -51,6 +51,20 @@ func (p *PodGrouper) serviceAccountForKAIConfig(
 	return sa, err
 }
 
+func (p *PodGrouper) podDisruptionBudgetForKAIConfig(
+	ctx context.Context, runtimeClient client.Reader, kaiConfig *kaiv1.Config,
+) (client.Object, error) {
+	config := kaiConfig.Spec.PodGrouper
+	return common.PodDisruptionBudgetForKAIConfig(
+		ctx,
+		runtimeClient,
+		kaiConfig.Spec.Namespace,
+		p.BaseResourceName,
+		config.Replicas,
+		config.Service,
+	)
+}
+
 func buildArgsList(kaiConfig *kaiv1.Config) []string {
 	config := kaiConfig.Spec.PodGrouper
 	args := []string{
@@ -61,6 +75,9 @@ func buildArgsList(kaiConfig *kaiv1.Config) []string {
 
 	if config.Args.GangScheduleKnative != nil {
 		args = append(args, "--knative-gang-schedule="+strconv.FormatBool(*config.Args.GangScheduleKnative))
+	}
+	if config.Args.GenericKartaFallback != nil {
+		args = append(args, "--generic-karta-fallback="+strconv.FormatBool(*config.Args.GenericKartaFallback))
 	}
 
 	k8sClientConfig := config.K8sClientConfig
@@ -91,7 +108,7 @@ func buildArgsList(kaiConfig *kaiv1.Config) []string {
 		args = append(args, "--pod-label-selector", formatLabelSelector(kaiConfig.Spec.Global.PodLabelSelector))
 	}
 
-	return args
+	return common.AddControllerRuntimeJSONLogArg(kaiConfig.Spec.Global.JSONLog, args)
 }
 
 func formatLabelSelector(selector map[string]string) string {

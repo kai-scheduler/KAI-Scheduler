@@ -68,7 +68,9 @@ func (mnr *MaxNodeResourcesPredicate) PreFilter(_ context.Context, _ ksf.CycleSt
 	*ksf.PreFilterResult, *ksf.Status) {
 
 	draPodClaims := resource_info.GetDraPodClaims(pod, mnr.resourceClaimsMap, mnr.podsToClaimsMap)
-	podInfo := pod_info.NewTaskInfo(pod, draPodClaims, mnr.vectorMap)
+	podInfo := pod_info.NewTaskInfo(pod, mnr.vectorMap, pod_info.TaskInfoOptions{
+		DraPodClaims: draPodClaims,
+	})
 	gpuIdx := resource_info.GPUIndex
 	cpuIdx := resource_info.CPUIndex
 	memIdx := resource_info.MemoryIndex

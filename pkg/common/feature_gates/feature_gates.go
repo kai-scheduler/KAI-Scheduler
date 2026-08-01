@@ -16,6 +16,8 @@ import (
 
 const (
 	minimalSupportedVersion = "v1beta1"
+
+	nodeResourceTopologyGroup = "topology.node.k8s.io"
 )
 
 // dynamicResourcesEnabled is the process-wide decision on whether DRA is usable,
@@ -41,6 +43,39 @@ func DynamicResourcesEnabled() bool {
 // SetDRAFeatureGate (which requires a discovery client).
 func SetDynamicResourcesEnabledForTest(enabled bool) {
 	dynamicResourcesEnabled.Store(enabled)
+}
+
+var nodeResourceTopologyEnabled atomic.Bool
+
+func SetNodeResourceTopologyFeatureGate(discoveryClient discovery.DiscoveryInterface) {
+	nodeResourceTopologyEnabled.Store(IsNodeResourceTopologyEnabled(discoveryClient))
+}
+
+func NodeResourceTopologyEnabled() bool {
+	return nodeResourceTopologyEnabled.Load()
+}
+
+func SetNodeResourceTopologyEnabledForTest(enabled bool) {
+	nodeResourceTopologyEnabled.Store(enabled)
+}
+
+// IsNodeResourceTopologyEnabled reports whether the cluster serves the
+// topology.node.k8s.io API group (the NodeResourceTopology CRD).
+func IsNodeResourceTopologyEnabled(discoveryClient discovery.DiscoveryInterface) bool {
+	logger := log.Log.WithName("feature-gates")
+
+	serverGroups, err := discoveryClient.ServerGroups()
+	if err != nil {
+		logger.Error(err, "Failed to get server groups")
+		return false
+	}
+
+	for _, group := range serverGroups.Groups {
+		if group.Name == nodeResourceTopologyGroup {
+			return true
+		}
+	}
+	return false
 }
 
 func IsDynamicResourcesEnabled(discoveryClient discovery.DiscoveryInterface) bool {

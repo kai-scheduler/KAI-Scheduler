@@ -17,6 +17,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/subgrouporder"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/taskorder"
+	"k8s.io/utils/ptr"
 )
 
 type testMetadata struct {
@@ -27,7 +28,7 @@ type testMetadata struct {
 	rJobInfo         *podgroup_info.PodGroupInfo
 	expectedResult   int
 	totalResources   resource_share.ResourceQuantities
-	minNodeGPUMemory int64
+	minNodeGPUMemory *int64
 }
 
 var testVectorMap = resource_info.NewResourceVectorMap()
@@ -56,6 +57,58 @@ func createPodGroupWithGpuMemoryTask(name string, numDevices int64, gpuMemory in
 
 func emptyPodGroup(name string) *podgroup_info.PodGroupInfo {
 	return podgroup_info.NewPodGroupInfoWithVectorMap(common_info.PodGroupID(name), testVectorMap)
+}
+
+func TestPrioritizeUnderUtilizedDoesNotAllocate(t *testing.T) {
+	lQueue := &resource_share.QueueAttributes{
+		QueueResourceShare: resource_share.QueueResourceShare{
+			CPU:    resource_share.ResourceShare{FairShare: 1, Allocated: 1},
+			Memory: resource_share.ResourceShare{FairShare: 1, Allocated: 1},
+			GPU:    resource_share.ResourceShare{FairShare: 1, Allocated: 1},
+		},
+	}
+	rQueue := &resource_share.QueueAttributes{
+		QueueResourceShare: resource_share.QueueResourceShare{
+			CPU:    resource_share.ResourceShare{FairShare: 1, Allocated: 2},
+			Memory: resource_share.ResourceShare{FairShare: 1, Allocated: 2},
+			GPU:    resource_share.ResourceShare{FairShare: 1, Allocated: 2},
+		},
+	}
+	var result int
+
+	allocations := testing.AllocsPerRun(100, func() {
+		result = prioritizeUnderUtilized(lQueue, rQueue)
+	})
+
+	assert.Equal(t, lQueuePrioritized, result)
+	assert.Zero(t, allocations)
+}
+
+func TestPrioritizeUnderQuotaWithJobDoesNotAllocate(t *testing.T) {
+	lQueue := &resource_share.QueueAttributes{
+		QueueResourceShare: resource_share.QueueResourceShare{
+			CPU:    resource_share.ResourceShare{Deserved: 1},
+			Memory: resource_share.ResourceShare{Deserved: 1},
+			GPU:    resource_share.ResourceShare{Deserved: 1},
+		},
+	}
+	rQueue := &resource_share.QueueAttributes{
+		QueueResourceShare: resource_share.QueueResourceShare{
+			CPU:    resource_share.ResourceShare{Allocated: 2, Deserved: 1},
+			Memory: resource_share.ResourceShare{Allocated: 2, Deserved: 1},
+			GPU:    resource_share.ResourceShare{Allocated: 2, Deserved: 1},
+		},
+	}
+	lJob := emptyPodGroup("lJob")
+	rJob := emptyPodGroup("rJob")
+	var result int
+
+	allocations := testing.AllocsPerRun(100, func() {
+		result = prioritizeUnderQuotaWithJob(lQueue, rQueue, lJob, rJob, nil, nil, nil)
+	})
+
+	assert.Equal(t, lQueuePrioritized, result)
+	assert.Zero(t, allocations)
 }
 
 func TestGetQueueOrderResult(t *testing.T) {
@@ -258,7 +311,7 @@ func TestGetQueueOrderResult(t *testing.T) {
 			rJobInfo:         createPodGroupWithGpuMemoryTask("rJob", 2, 10000),
 			expectedResult:   lQueuePrioritized,
 			totalResources:   resource_share.ResourceQuantities{resource_share.GpuResource: 100},
-			minNodeGPUMemory: 10000,
+			minNodeGPUMemory: ptr.To(int64(10000)),
 		},
 		{
 			Name: "GPU memory affects queue order - higher memory request deprioritized",
@@ -300,7 +353,7 @@ func TestGetQueueOrderResult(t *testing.T) {
 			rJobInfo:         createPodGroupWithGpuMemoryTask("rJobLow", 4, 2000),
 			expectedResult:   rQueuePrioritized,
 			totalResources:   resource_share.ResourceQuantities{resource_share.GpuResource: 100},
-			minNodeGPUMemory: 10000,
+			minNodeGPUMemory: ptr.To(int64(10000)),
 		},
 	}
 

@@ -15,9 +15,12 @@ import (
 
 	"github.com/kai-scheduler/KAI-scheduler/cmd/scheduler/app/options"
 	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
 	kaiprometheus "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/prometheus"
 	kaiv1qc "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/queue_controller"
 	kaiv1scheduler "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/scheduler"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	operatorcommon "github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common"
 	usagedbapi "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 
@@ -25,6 +28,8 @@ import (
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -135,8 +140,10 @@ func TestDeploymentForShard(t *testing.T) {
 			deploy, ok := deployment.(*appsv1.Deployment)
 			require.True(t, ok, "Expected *appsv1.Deployment")
 
-			assert.Equal(t, deploymentName(tt.config, tt.shard), deploy.Name)
+			assert.Equal(t, DeploymentName(tt.config, tt.shard), deploy.Name)
 			assert.Equal(t, tt.config.Spec.Namespace, deploy.Namespace)
+			assert.Equal(t, operatorcommon.OperatorManagedByLabelValue,
+				deploy.Labels[operatorcommon.OperatorManagedByLabelKey])
 
 			container := deploy.Spec.Template.Spec.Containers[0]
 			args := container.Args
@@ -152,6 +159,36 @@ func TestDeploymentForShard(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDeploymentForShardGoMemLimit(t *testing.T) {
+	ctx := context.Background()
+	client := fake.NewClientBuilder().Build()
+	config := &kaiv1.Config{Spec: kaiv1.ConfigSpec{
+		Global:    &kaiv1.GlobalConfig{},
+		Namespace: "default",
+		Scheduler: &kaiv1scheduler.Scheduler{},
+	}}
+	config.Spec.SetDefaultsWhereNeeded()
+	shard := &kaiv1.SchedulingShard{Spec: kaiv1.SchedulingShardSpec{
+		GoMemLimitRatio: ptr.To(0.85),
+		GoMemLimit:      ptr.To(resource.MustParse("6Gi")),
+	}}
+
+	deployment, err := NewSchedulerForShard(shard).deploymentForShard(ctx, client, config, shard)
+	require.NoError(t, err)
+	container := deployment.(*appsv1.Deployment).Spec.Template.Spec.Containers[0]
+	assert.Equal(t, []corev1.EnvVar{
+		{Name: "GOGC", Value: "400"},
+		{Name: goMemLimitRatioEnv, Value: "0.85"},
+		{
+			Name: "NAMESPACE",
+			ValueFrom: &corev1.EnvVarSource{FieldRef: &corev1.ObjectFieldSelector{
+				FieldPath: "metadata.namespace",
+			}},
+		},
+		{Name: "GOMEMLIMIT", Value: "6442450944"},
+	}, container.Env)
 }
 
 func TestValidateJobDepthMap(t *testing.T) {
@@ -198,6 +235,104 @@ func TestValidateJobDepthMap(t *testing.T) {
 			err := validateJobDepthMap(tt.shard, innerConfig, tt.actions)
 			if tt.expectError {
 				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestValidateScenarioSearchBudgets(t *testing.T) {
+	tests := []struct {
+		name        string
+		config      *kaiv1.ScenarioSearchBudgets
+		expectError bool
+		errorText   []string
+	}{
+		{
+			name:        "nil config",
+			config:      nil,
+			expectError: false,
+		},
+		{
+			name: "valid config allows defaults for disabled consolidation",
+			config: &kaiv1.ScenarioSearchBudgets{
+				MaxActionSearchDuration: map[string]metav1.Duration{
+					constants.ActionDefault:       scenarioSearchDuration("1s"),
+					constants.ActionReclaim:       scenarioSearchDuration("2s"),
+					constants.ActionPreempt:       scenarioSearchDuration("1s"),
+					constants.ActionConsolidation: scenarioSearchDuration("1s"),
+				},
+				MaxJobSearchDuration: scenarioSearchDurationPtr("250ms"),
+				MinJobSearchDuration: scenarioSearchDurationPtr("0s"),
+				MaxGeneratorSearchDuration: map[string]metav1.Duration{
+					constants.ActionDefault:                scenarioSearchDuration("250ms"),
+					constants.GeneratorNodeLocalGreedy:     scenarioSearchDuration("50ms"),
+					constants.GeneratorMultiNodeGang:       scenarioSearchDuration("250ms"),
+					"PluginProvidedGeneratorFromScheduler": scenarioSearchDuration("1s"),
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "invalid action budget key",
+			config: &kaiv1.ScenarioSearchBudgets{
+				MaxActionSearchDuration: map[string]metav1.Duration{"allocate": scenarioSearchDuration("1s")},
+			},
+			expectError: true,
+			errorText: []string{
+				"maxActionSearchDuration",
+				"allocate",
+				"valid action keys: default, reclaim, preempt, consolidation",
+			},
+		},
+		{
+			name: "negative duration",
+			config: &kaiv1.ScenarioSearchBudgets{
+				MaxGeneratorSearchDuration: map[string]metav1.Duration{
+					constants.GeneratorNodeLocalGreedy: scenarioSearchDuration("-1s"),
+				},
+			},
+			expectError: true,
+		},
+		{
+			name: "min job budget must be less than max job budget",
+			config: &kaiv1.ScenarioSearchBudgets{
+				MaxJobSearchDuration: scenarioSearchDurationPtr("100ms"),
+				MinJobSearchDuration: scenarioSearchDurationPtr("100ms"),
+			},
+			expectError: true,
+		},
+		{
+			name: "zero max job budget disables min max ordering",
+			config: &kaiv1.ScenarioSearchBudgets{
+				MaxJobSearchDuration: scenarioSearchDurationPtr("0s"),
+				MinJobSearchDuration: scenarioSearchDurationPtr("1s"),
+			},
+			expectError: false,
+		},
+		{
+			name: "zero duration map values are valid explicit budgets",
+			config: &kaiv1.ScenarioSearchBudgets{
+				MaxActionSearchDuration: map[string]metav1.Duration{
+					constants.ActionReclaim: scenarioSearchDuration("0s"),
+				},
+				MaxGeneratorSearchDuration: map[string]metav1.Duration{
+					constants.GeneratorNodeLocalGreedy: scenarioSearchDuration("0s"),
+				},
+			},
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateScenarioSearchBudgets(tt.config)
+			if tt.expectError {
+				require.Error(t, err)
+				for _, expectedText := range tt.errorText {
+					assert.Contains(t, err.Error(), expectedText)
+				}
 			} else {
 				require.NoError(t, err)
 			}
@@ -274,6 +409,30 @@ func TestBuildArgsList(t *testing.T) {
 				"metrics-namespace": "monitoring",
 			},
 			notExpected: []string{"leader-elect"},
+		},
+		{
+			name: "with json logging",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Global: &kaiv1.GlobalConfig{
+						SchedulerName: ptr.To("test-scheduler"),
+						JSONLog:       ptr.To(true),
+					},
+					Namespace: "kai-system",
+					Scheduler: &kaiv1scheduler.Scheduler{
+						Replicas: ptr.To(int32(1)),
+					},
+				},
+			},
+			shard: &kaiv1.SchedulingShard{
+				Spec: kaiv1.SchedulingShardSpec{},
+			},
+			expected: map[string]string{
+				"scheduler-conf": "config.yaml",
+				"scheduler-name": "test-scheduler",
+				"namespace":      "kai-system",
+				"log-json":       "true",
+			},
 		},
 	}
 
@@ -358,6 +517,8 @@ tiers:
   - name: minruntime
   - name: topology
   - name: snapshot
+  - name: sg-nodelocalgreedy
+  - name: sg-multinodegang
   - name: gpupack
   - name: nodeplacement
     arguments:
@@ -410,6 +571,8 @@ tiers:
   - name: minruntime
   - name: topology
   - name: snapshot
+  - name: sg-nodelocalgreedy
+  - name: sg-multinodegang
   - name: gpuspread
   - name: nodeplacement
     arguments:
@@ -434,6 +597,73 @@ tiers:
 				},
 			},
 			expectedErr: true,
+		},
+		{
+			name: "scenario search budget configuration",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Scheduler: &kaiv1scheduler.Scheduler{
+						Replicas: ptr.To(int32(1)),
+					},
+				},
+			},
+			shard: &kaiv1.SchedulingShard{
+				Spec: kaiv1.SchedulingShardSpec{
+					PlacementStrategy: &kaiv1.PlacementStrategy{
+						GPU: ptr.To(binpackStrategy),
+						CPU: ptr.To(binpackStrategy),
+					},
+					ScenarioSearchBudgets: &kaiv1.ScenarioSearchBudgets{
+						MaxActionSearchDuration: map[string]metav1.Duration{
+							constants.ActionReclaim: scenarioSearchDuration("3s"),
+						},
+						MaxJobSearchDuration: scenarioSearchDurationPtr("500ms"),
+						MinJobSearchDuration: scenarioSearchDurationPtr("50ms"),
+						MaxGeneratorSearchDuration: map[string]metav1.Duration{
+							constants.GeneratorNodeLocalGreedy: scenarioSearchDuration("75ms"),
+						},
+					},
+				},
+			},
+			expected: map[string]string{
+				"config.yaml": `actions: allocate,consolidation,reclaim,preempt,stalegangeviction
+scenarioSearchBudgets:
+  maxActionSearchDuration:
+    default: 5m
+    reclaim: 3s
+  maxGeneratorSearchDuration:
+    MultiNodeGang: 2m
+    NodeLocalGreedy: 75ms
+    default: 2m
+  maxJobSearchDuration: 500ms
+  minJobSearchDuration: 50ms
+tiers:
+- plugins:
+  - name: predicates
+  - name: proportion
+  - name: priority
+  - name: nodeavailability
+  - name: resourcetype
+  - name: podaffinity
+  - name: elastic
+  - name: kubeflow
+  - name: ray
+  - name: subgrouporder
+  - name: taskorder
+  - name: nominatednode
+  - name: dynamicresources
+  - name: minruntime
+  - name: topology
+  - name: snapshot
+  - name: sg-nodelocalgreedy
+  - name: sg-multinodegang
+  - name: gpupack
+  - name: nodeplacement
+    arguments:
+      cpu: binpack
+      gpu: binpack
+  - name: gpusharingorder`,
+			},
 		},
 		{
 			name: "plugin disable: elastic disabled via override",
@@ -474,6 +704,8 @@ tiers:
   - name: minruntime
   - name: topology
   - name: snapshot
+  - name: sg-nodelocalgreedy
+  - name: sg-multinodegang
   - name: gpupack
   - name: nodeplacement
     arguments:
@@ -522,6 +754,8 @@ tiers:
   - name: minruntime
   - name: topology
   - name: snapshot
+  - name: sg-nodelocalgreedy
+  - name: sg-multinodegang
   - name: gpupack
   - name: nodeplacement
     arguments:
@@ -573,6 +807,8 @@ tiers:
   - name: minruntime
   - name: topology
   - name: snapshot
+  - name: sg-nodelocalgreedy
+  - name: sg-multinodegang
   - name: gpupack
   - name: nodeplacement
     arguments:
@@ -624,6 +860,8 @@ tiers:
   - name: minruntime
   - name: topology
   - name: snapshot
+  - name: sg-nodelocalgreedy
+  - name: sg-multinodegang
   - name: gpupack
   - name: nodeplacement
     arguments:
@@ -673,6 +911,8 @@ tiers:
   - name: minruntime
   - name: topology
   - name: snapshot
+  - name: sg-nodelocalgreedy
+  - name: sg-multinodegang
   - name: gpupack
   - name: nodeplacement
     arguments:
@@ -718,6 +958,8 @@ tiers:
   - name: minruntime
   - name: topology
   - name: snapshot
+  - name: sg-nodelocalgreedy
+  - name: sg-multinodegang
   - name: gpupack
   - name: nodeplacement
     arguments:
@@ -771,6 +1013,9 @@ usageDBConfig:
 				// Compare the configuration structs
 				assert.Equal(t, expectedConfig.Tiers, actualConfig.Tiers, "ConfigMap Tiers content mismatch")
 				assert.Equal(t, expectedConfig.QueueDepthPerAction, actualConfig.QueueDepthPerAction, "ConfigMap QueueDepthPerAction content mismatch")
+				if expectedConfig.ScenarioSearchBudgets != nil {
+					assert.Equal(t, expectedConfig.ScenarioSearchBudgets, actualConfig.ScenarioSearchBudgets, "ConfigMap ScenarioSearchBudgets content mismatch")
+				}
 				// Trim and split actions
 				expectedActions := make([]string, 0, len(expectedConfig.Actions))
 				for _, action := range strings.Split(expectedConfig.Actions, ",") {
@@ -787,6 +1032,18 @@ usageDBConfig:
 			}
 		})
 	}
+}
+
+func scenarioSearchDuration(value string) metav1.Duration {
+	duration, err := time.ParseDuration(value)
+	if err != nil {
+		panic(err)
+	}
+	return metav1.Duration{Duration: duration}
+}
+
+func scenarioSearchDurationPtr(value string) *metav1.Duration {
+	return ptr.To(scenarioSearchDuration(value))
 }
 
 func TestServiceForShard(t *testing.T) {
@@ -948,6 +1205,8 @@ tiers:
   - name: minruntime
   - name: topology
   - name: snapshot
+  - name: sg-nodelocalgreedy
+  - name: sg-multinodegang
   - name: gpupack
   - name: nodeplacement
     arguments:
@@ -1184,6 +1443,84 @@ func TestGetUsageDBConfig(t *testing.T) {
 					tt.validate(t, result)
 				}
 			}
+		})
+	}
+}
+
+func TestPodDisruptionBudgetForShard(t *testing.T) {
+	ctx := context.Background()
+	client := fake.NewClientBuilder().Build()
+
+	shard := &kaiv1.SchedulingShard{
+		ObjectMeta: metav1.ObjectMeta{Name: "default"},
+	}
+	shard.Spec.SetDefaultsWhereNeeded()
+
+	tests := []struct {
+		name              string
+		replicas          int32
+		pdbEnabled        bool
+		maxUnavailable    int32
+		expectPDBCreation bool
+	}{
+		{
+			name:              "skip PDB when replicas is one",
+			replicas:          1,
+			pdbEnabled:        true,
+			maxUnavailable:    1,
+			expectPDBCreation: false,
+		},
+		{
+			name:              "create PDB when replicas greater than one and enabled",
+			replicas:          2,
+			pdbEnabled:        true,
+			maxUnavailable:    1,
+			expectPDBCreation: true,
+		},
+		{
+			name:              "skip PDB when disabled",
+			replicas:          3,
+			pdbEnabled:        false,
+			maxUnavailable:    1,
+			expectPDBCreation: false,
+		},
+		{
+			name:              "custom maxUnavailable",
+			replicas:          2,
+			pdbEnabled:        true,
+			maxUnavailable:    2,
+			expectPDBCreation: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &kaiv1.Config{}
+			config.Spec.SetDefaultsWhereNeeded()
+			config.Spec.Scheduler.Replicas = ptr.To(tt.replicas)
+			config.Spec.Scheduler.Service.PodDisruptionBudget = &common.PodDisruptionBudget{
+				Enabled:        ptr.To(tt.pdbEnabled),
+				MaxUnavailable: ptr.To(tt.maxUnavailable),
+			}
+
+			s := NewSchedulerForShard(shard)
+			obj, err := s.podDisruptionBudgetForShard(ctx, client, config, shard)
+			require.NoError(t, err)
+
+			if !tt.expectPDBCreation {
+				assert.Nil(t, obj)
+				return
+			}
+
+			require.NotNil(t, obj)
+			pdb, ok := obj.(*policyv1.PodDisruptionBudget)
+			require.True(t, ok, "object should be PodDisruptionBudget")
+			assert.Equal(t, "kai-scheduler-default", pdb.Name)
+			assert.Equal(t, constants.DefaultKAINamespace, pdb.Namespace)
+			require.NotNil(t, pdb.Spec.MaxUnavailable)
+			assert.Equal(t, tt.maxUnavailable, pdb.Spec.MaxUnavailable.IntVal)
+			require.NotNil(t, pdb.Spec.Selector)
+			assert.Equal(t, "kai-scheduler-default", pdb.Spec.Selector.MatchLabels["app"])
 		})
 	}
 }

@@ -193,7 +193,7 @@ func TestTopologyAwareIdleGpus_WithVictimTasks(t *testing.T) {
 	}, topologyLabelsPerNodes)
 
 	victimPod := createRunningPodWithGpus("victim-1", "default", "node-2", 8)
-	victimTask := pod_info.NewTaskInfo(victimPod, nil, vectorMap)
+	victimTask := pod_info.NewTaskInfo(victimPod, vectorMap)
 	nodes["node-2"].AddTask(victimTask)
 
 	rootSubGroupSet := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
@@ -252,7 +252,7 @@ func TestTopologyAwareIdleGpus_VictimNotDoubleCountedAcrossFilterCalls(t *testin
 	}, topologyLabelsPerNodes)
 
 	victimPod := createRunningPodWithGpus("victim-1", "default", "node-1", 4)
-	victimTask := pod_info.NewTaskInfo(victimPod, nil, vectorMap)
+	victimTask := pod_info.NewTaskInfo(victimPod, vectorMap)
 	nodes["node-1"].AddTask(victimTask)
 
 	rootSubGroupSet := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
@@ -313,7 +313,7 @@ func TestTopologyAwareIdleGpus_RecordedVictimsCountedTowardCapacity(t *testing.T
 	}, topologyLabelsPerNodes)
 
 	victimPod := createRunningPodWithGpus("victim-1", "default", "node-1", 8)
-	victimTask := pod_info.NewTaskInfo(victimPod, nil, vectorMap)
+	victimTask := pod_info.NewTaskInfo(victimPod, vectorMap)
 	nodes["node-1"].AddTask(victimTask)
 
 	rootSubGroupSet := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
@@ -435,7 +435,7 @@ func TestTopologyAwareIdleGpus_FilterDomainMovesTwoStepsLeft(t *testing.T) {
 	}, topologyLabels)
 
 	victimPod := createRunningPodWithGpus("victim-1", "default", "node-3", 5)
-	victimTask := pod_info.NewTaskInfo(victimPod, nil, vectorMap)
+	victimTask := pod_info.NewTaskInfo(victimPod, vectorMap)
 	nodes["node-3"].AddTask(victimTask)
 
 	rootSubGroupSet := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)

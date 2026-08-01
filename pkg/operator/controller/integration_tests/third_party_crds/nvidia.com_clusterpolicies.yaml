@@ -2319,16 +2319,12 @@ spec:
                     description: NVIDIA vGPU Manager image tag
                     type: string
                 type: object
-            required:
-            - daemonsets
-            - dcgm
-            - dcgmExporter
-            - devicePlugin
-            - driver
-            - gfd
-            - nodeStatusExporter
-            - operator
-            - toolkit
+            # The operands below are required by the upstream gpu-operator CRD
+            # but are intentionally not modeled by the local ClusterPolicy mirror
+            # (third_party/nvidia/gpu-operator/api/nvidia/v1) — the operator only
+            # ever reads this resource in production, where gpu-operator owns and
+            # populates it. The list is relaxed here so the integration test can
+            # create a minimal ClusterPolicy.
             type: object
           status:
             description: ClusterPolicyStatus defines the observed state of ClusterPolicy

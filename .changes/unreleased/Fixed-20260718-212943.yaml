@@ -1,0 +1,6 @@
+kind: Fixed
+body: Fixed admission and scheduler PodDisruptionBudget reconciliation, including drift recovery and cleanup when no longer desired.
+time: 2026-07-18T21:29:43.130860557+01:00
+custom:
+    Author: dttung2905
+    Issue: "1477"

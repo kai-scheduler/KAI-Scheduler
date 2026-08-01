@@ -17,9 +17,12 @@ import (
 	"syscall"
 	"time"
 
+	nrtfake "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/clientset/versioned/fake"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	version "k8s.io/apimachinery/pkg/version"
 	fakediscovery "k8s.io/client-go/discovery/fake"
+	clientfeatures "k8s.io/client-go/features"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 
@@ -48,7 +51,9 @@ func main() {
 		return
 	}
 
-	if err := log.InitLoggers(int(*verbosity)); err != nil {
+	disableWatchListClientForFakeReplay()
+
+	if err := log.InitLoggers(int(*verbosity), false); err != nil {
 		fmt.Printf("Failed to initialize logger: %v", err)
 		return
 	}
@@ -70,11 +75,12 @@ func main() {
 	actions.InitDefaultActions()
 	plugins.InitDefaultPlugins()
 
-	kubeClient, kaiClient := loadClientsWithSnapshot(snapshot.RawObjects, snapshot.Discovery)
+	kubeClient, kaiClient, nrtClient := loadClientsWithSnapshot(snapshot.RawObjects, snapshot.Discovery)
 
 	schedulerCacheParams := &cache.SchedulerCacheParams{
 		KubeClient:                  kubeClient,
 		KAISchedulerClient:          kaiClient,
+		NRTClient:                   nrtClient,
 		SchedulerName:               snapshot.SchedulerParams.SchedulerName,
 		NodePoolParams:              snapshot.SchedulerParams.PartitionParams,
 		RestrictNodeScheduling:      snapshot.SchedulerParams.RestrictSchedulingNodes,
@@ -83,6 +89,7 @@ func main() {
 		FullHierarchyFairness:       snapshot.SchedulerParams.FullHierarchyFairness,
 		AllowConsolidatingReclaim:   snapshot.SchedulerParams.AllowConsolidatingReclaim,
 		NumOfStatusRecordingWorkers: snapshot.SchedulerParams.NumOfStatusRecordingWorkers,
+		StuckInReleasingThreshold:   snapshot.SchedulerParams.StuckInReleasingThreshold,
 		DiscoveryClient:             kubeClient.Discovery(),
 	}
 
@@ -165,6 +172,25 @@ func printRunSummary(totalDuration time.Duration, actionDurations map[string]tim
 	fmt.Println(string(out))
 }
 
+// disableWatchListClientForFakeReplay turns off client-go's WatchListClient gate (default true since
+// client-go 1.35) before any client is built. Only the NodeResourceTopology client needs this: its
+// generated informer (noderesourcetopology-api, built against client-go v0.22) hangs under the
+// watch-list reflector when backed by a fake clientset, so replayed NRTs never sync. Other clients
+// (core/KAI/DRA, modern codegen) are unaffected, and the NRT client works against a real API server.
+// The alternative fix is regenerating that client against a current client-go; disabling the gate is
+// the cheaper replay-only workaround. See https://github.com/kubernetes/kubernetes/issues/129408.
+func disableWatchListClientForFakeReplay() {
+	featureGates, ok := clientfeatures.FeatureGates().(interface {
+		Set(clientfeatures.Feature, bool) error
+	})
+	if !ok {
+		return
+	}
+	if err := featureGates.Set(clientfeatures.WatchListClient, false); err != nil {
+		utilruntime.HandleError(err)
+	}
+}
+
 func loadSnapshot(filename string) (*snapshot.Snapshot, error) {
 	zipFile, err := zip.OpenReader(filename)
 	if err != nil {
@@ -193,9 +219,10 @@ func loadSnapshot(filename string) (*snapshot.Snapshot, error) {
 	return nil, os.ErrNotExist
 }
 
-func loadClientsWithSnapshot(rawObjects *snapshot.RawKubernetesObjects, discoverySnapshot *snapshot.DiscoverySnapshot) (kubernetes.Interface, *kaischedulerfake.Clientset) {
+func loadClientsWithSnapshot(rawObjects *snapshot.RawKubernetesObjects, discoverySnapshot *snapshot.DiscoverySnapshot) (kubernetes.Interface, *kaischedulerfake.Clientset, *nrtfake.Clientset) {
 	kubeClient := fake.NewSimpleClientset()
 	kaiClient := kaischedulerfake.NewSimpleClientset()
+	nrtClient := nrtfake.NewSimpleClientset()
 
 	if discoverySnapshot == nil {
 		discoverySnapshot = synthesizeDiscoveryFromSnapshot(rawObjects)
@@ -293,6 +320,13 @@ func loadClientsWithSnapshot(rawObjects *snapshot.RawKubernetesObjects, discover
 		}
 	}
 
+	for _, nrt := range rawObjects.NodeResourceTopologies {
+		_, err := nrtClient.TopologyV1alpha2().NodeResourceTopologies().Create(context.TODO(), nrt, v1.CreateOptions{})
+		if err != nil {
+			log.InfraLogger.Errorf("Failed to create node resource topology: %v", err)
+		}
+	}
+
 	draClient := draversionawareclient.NewDRAAwareClient(kubeClient)
 
 	for _, resourceClaim := range rawObjects.ResourceClaims {
@@ -316,31 +350,46 @@ func loadClientsWithSnapshot(rawObjects *snapshot.RawKubernetesObjects, discover
 		}
 	}
 
-	return draClient, kaiClient
+	return draClient, kaiClient, nrtClient
 }
 
 func synthesizeDiscoveryFromSnapshot(rawObjects *snapshot.RawKubernetesObjects) *snapshot.DiscoverySnapshot {
 	hasDRAResources := len(rawObjects.ResourceClaims) > 0 ||
 		len(rawObjects.ResourceSlices) > 0 ||
 		len(rawObjects.DeviceClasses) > 0
-	if !hasDRAResources {
+	hasNRTResources := len(rawObjects.NodeResourceTopologies) > 0
+
+	if !hasDRAResources && !hasNRTResources {
 		return nil
 	}
 
-	log.InfraLogger.V(2).Infof("Synthesizing discovery data from snapshot DRA resources")
-	return &snapshot.DiscoverySnapshot{
+	discoverySnapshot := &snapshot.DiscoverySnapshot{
 		ServerVersion: &version.Info{Major: "1", Minor: "32"},
-		Resources: []*v1.APIResourceList{
-			{
-				GroupVersion: "resource.k8s.io/v1",
-				APIResources: []v1.APIResource{
-					{Name: "resourceclaims", Kind: "ResourceClaim", Namespaced: true},
-					{Name: "resourceslices", Kind: "ResourceSlice"},
-					{Name: "deviceclasses", Kind: "DeviceClass"},
-				},
-			},
-		},
 	}
+
+	if hasDRAResources {
+		log.InfraLogger.V(2).Infof("Synthesizing discovery data from snapshot DRA resources")
+		discoverySnapshot.Resources = append(discoverySnapshot.Resources, &v1.APIResourceList{
+			GroupVersion: "resource.k8s.io/v1",
+			APIResources: []v1.APIResource{
+				{Name: "resourceclaims", Kind: "ResourceClaim", Namespaced: true},
+				{Name: "resourceslices", Kind: "ResourceSlice"},
+				{Name: "deviceclasses", Kind: "DeviceClass"},
+			},
+		})
+	}
+
+	if hasNRTResources {
+		log.InfraLogger.V(2).Infof("Synthesizing discovery data from snapshot NRT resources")
+		discoverySnapshot.Resources = append(discoverySnapshot.Resources, &v1.APIResourceList{
+			GroupVersion: "topology.node.k8s.io/v1alpha2",
+			APIResources: []v1.APIResource{
+				{Name: "noderesourcetopologies", Kind: "NodeResourceTopology"},
+			},
+		})
+	}
+
+	return discoverySnapshot
 }
 
 func applyDiscoverySnapshot(kubeClient *fake.Clientset, discoverySnapshot *snapshot.DiscoverySnapshot) {

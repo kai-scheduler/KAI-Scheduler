@@ -1,0 +1,43 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# This example demonstrates how to use an externally-created PodGroup with a
+# batch Job. The PodGroup is created explicitly and the Job opts out of
+# podgrouper reconciliation while attaching its pods to the external PodGroup.
+
+apiVersion: scheduling.run.ai/v2alpha2
+kind: PodGroup
+metadata:
+  name: external-batch-job
+spec:
+  minMember: 2
+  queue: default-queue
+  subGroups:
+    - name: workers
+      minMember: 2
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: external-batch-job
+  annotations:
+    kai.scheduler/skip-podgrouper: "true"
+spec:
+  parallelism: 2
+  completions: 2
+  template:
+    metadata:
+      annotations:
+        pod-group-name: external-batch-job
+      labels:
+        kai.scheduler/subgroup-name: workers
+    spec:
+      schedulerName: kai-scheduler
+      restartPolicy: Never
+      containers:
+        - name: main
+          image: ubuntu
+          args: ["sleep", "infinity"]
+          resources:
+            limits:
+              nvidia.com/gpu: "1"

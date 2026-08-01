@@ -57,8 +57,8 @@ type TopologySpec struct {
 	// +listType=atomic
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=16
-	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="field is immutable"
-	// +kubebuilder:validation:XValidation:rule="size(self.filter(i, size(self.filter(j, j == i)) > 1)) == 0",message="must be unique"
+	// +kubebuilder:validation:XValidation:rule="self.map(l, l.nodeLabel) == oldSelf.map(l, l.nodeLabel)",message="nodeLabel structure is immutable; only aliases may be edited"
+	// +kubebuilder:validation:XValidation:rule="size(self.filter(i, size(self.filter(j, j.nodeLabel == i.nodeLabel)) > 1)) == 0",message="nodeLabel must be unique"
 	// +kubebuilder:validation:XValidation:rule="size(self.filter(i, i.nodeLabel == 'kubernetes.io/hostname')) == 0 || self[size(self) - 1].nodeLabel == 'kubernetes.io/hostname'",message="the kubernetes.io/hostname label can only be used at the lowest level of topology"
 	Levels []TopologyLevel `json:"levels,omitempty"`
 }
@@ -78,6 +78,17 @@ type TopologyLevel struct {
 	// +kubebuilder:validation:MaxLength=316
 	// +kubebuilder:validation:Pattern=`^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$`
 	NodeLabel string `json:"nodeLabel"`
+
+	// alias is an optional user-friendly name for this level, usable in place of nodeLabel when
+	// expressing a workload's topology constraint (requiredTopologyLevel / preferredTopologyLevel).
+	// Must be unique within the Topology and must not collide with any nodeLabel (enforced by the
+	// validating webhook). Aliases may be edited freely. When empty, only the raw nodeLabel is usable.
+	//
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=316
+	// +kubebuilder:validation:Pattern=`^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$`
+	Alias string `json:"alias,omitempty"`
 }
 
 func init() {

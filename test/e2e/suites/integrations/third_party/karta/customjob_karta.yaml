@@ -1,0 +1,49 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: run.ai/v1alpha1
+kind: Karta
+metadata:
+  name: e2e-example-com-v1-customjob
+  labels:
+    run.ai/karta-group: e2e.example.com
+    run.ai/karta-version: v1
+    run.ai/karta-kind: CustomJob
+spec:
+  structureDefinition:
+    rootComponent:
+      name: customjob
+      kind:
+        group: e2e.example.com
+        version: v1
+        kind: CustomJob
+      statusDefinition:
+        statusMappings: {}
+    childComponents:
+      - name: coordinator
+        ownerRef: customjob
+        specDefinition:
+          podTemplateSpecPath: .spec.coordinator.template
+        scaleDefinition:
+          replicasPath: .spec.coordinator.replicas
+        podSelector:
+          componentTypeSelector:
+            keyPath: .metadata.labels["e2e.example.com/role"]
+            value: coordinator
+      - name: worker
+        ownerRef: customjob
+        specDefinition:
+          podTemplateSpecPath: .spec.worker.template
+        scaleDefinition:
+          replicasPath: .spec.worker.replicas
+        podSelector:
+          componentTypeSelector:
+            keyPath: .metadata.labels["e2e.example.com/role"]
+            value: worker
+  optimizationInstructions:
+    gangScheduling:
+      podGroup:
+        name: customjob
+        subGroups:
+          - componentName: coordinator
+          - componentName: worker

@@ -61,6 +61,10 @@ func OpenSession(cache cache.Cache, config *conf.SchedulerConfiguration,
 		}
 	}
 
+	if err := ssn.ValidateScenarioGeneratorBudgetKeys(); err != nil {
+		return nil, err
+	}
+
 	return ssn, nil
 }
 

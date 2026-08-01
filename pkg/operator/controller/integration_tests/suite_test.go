@@ -29,11 +29,14 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/controller"
 
-	nvidiav1 "github.com/NVIDIA/gpu-operator/api/nvidia/v1"
+	nvidiav1 "github.com/kai-scheduler/KAI-scheduler/third_party/nvidia/gpu-operator/api/nvidia/v1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	admissionv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
+	coordinationv1 "k8s.io/api/coordination/v1"
 	v1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -73,6 +76,9 @@ var _ = BeforeSuite(func() {
 	Expect(appsv1.AddToScheme(scheme)).To(Succeed())
 	Expect(apiserver.AddToScheme(scheme)).To(Succeed())
 	Expect(admissionv1.AddToScheme(scheme)).To(Succeed())
+	Expect(coordinationv1.AddToScheme(scheme)).To(Succeed())
+	Expect(discoveryv1.AddToScheme(scheme)).To(Succeed())
+	Expect(policyv1.AddToScheme(scheme)).To(Succeed())
 	Expect(apiextensionsv1.AddToScheme(scheme)).To(Succeed())
 
 	By("bootstrapping test environment")
@@ -123,6 +129,14 @@ var _ = BeforeSuite(func() {
 	}
 	configReconciler.SetOperands(controller.ConfigReconcilerOperands)
 	err = configReconciler.SetupWithManager(k8sManager)
+	Expect(err).NotTo(HaveOccurred())
+
+	shardReconciler := controller.NewSchedulingShardReconciler(
+		k8sManager.GetClient(),
+		k8sManager.GetScheme(),
+	)
+	shardReconciler.SetOperands(controller.OperandsForShard)
+	err = shardReconciler.SetupWithManager(k8sManager)
 	Expect(err).NotTo(HaveOccurred())
 
 	go func() {

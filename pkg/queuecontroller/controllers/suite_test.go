@@ -245,7 +245,6 @@ var _ = Describe("QueueController", Ordered, func() {
 			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "pod-group-2", Namespace: "default"}, createdPodGroup2)).Should(Succeed())
 
 			createdPodGroup1.Status = v2alpha2.PodGroupStatus{
-				Running: 1,
 				ResourcesStatus: v2alpha2.PodGroupResourcesStatus{
 					Allocated: v1.ResourceList{
 						"cpu":    resource.MustParse("2"),
@@ -264,7 +263,6 @@ var _ = Describe("QueueController", Ordered, func() {
 			Expect(k8sClient.Status().Update(ctx, createdPodGroup1)).Should(Succeed())
 
 			createdPodGroup2.Status = v2alpha2.PodGroupStatus{
-				Running: 1,
 				ResourcesStatus: v2alpha2.PodGroupResourcesStatus{
 					Allocated: v1.ResourceList{
 						"nvidia.com/gpu": resource.MustParse("2"),
@@ -304,7 +302,13 @@ var _ = Describe("QueueController", Ordered, func() {
 				q.Expect(updatedQueue.Status.Requested["memory"]).To(Equal(resource.MustParse("10Gi")))
 				q.Expect(updatedQueue.Status.Requested["nvidia.com/gpu"]).To(Equal(resource.MustParse("2")))
 
-				labels := []string{"resource-queue", "normal", ""}
+				labels := prometheus.Labels{
+					"queue_name":          "resource-queue",
+					"queue_metadata_name": "resource-queue",
+					"queue_display_name":  "",
+					"queue_priority":      "normal",
+					"some_other_label":    "",
+				}
 				expectMetricValue(q, metrics.GetQueueAllocatedGPUsMetric(), labels, 2)
 				expectMetricValue(q, metrics.GetQueueAllocatedCPUMetric(), labels, 5)
 				expectMetricValue(q, metrics.GetQueueAllocatedMemoryMetric(), labels, 10737418240)
@@ -334,7 +338,13 @@ var _ = Describe("QueueController", Ordered, func() {
 			}
 			Expect(k8sClient.Create(ctx, queue)).Should(Succeed())
 
-			labels := []string{"test-queue", "high", ""}
+			labels := prometheus.Labels{
+				"queue_name":          "test-queue",
+				"queue_metadata_name": "test-queue",
+				"queue_display_name":  "",
+				"queue_priority":      "high",
+				"some_other_label":    "",
+			}
 
 			Eventually(func(q gomega.Gomega) {
 				expectMetricValue(q, metrics.GetQueueInfoMetric(), labels, 1)
@@ -366,8 +376,8 @@ var _ = Describe("QueueController", Ordered, func() {
 	})
 })
 
-func expectMetricValue(q gomega.Gomega, gauge *prometheus.GaugeVec, labels []string, expected float64) {
-	metricGauge, err := gauge.GetMetricWithLabelValues(labels...)
+func expectMetricValue(q gomega.Gomega, gauge *prometheus.GaugeVec, labels prometheus.Labels, expected float64) {
+	metricGauge, err := gauge.GetMetricWith(labels)
 	q.ExpectWithOffset(1, err).To(BeNil())
 	q.ExpectWithOffset(1, metricGauge).ToNot(BeNil())
 	q.ExpectWithOffset(1, testutil.ToFloat64(metricGauge)).To(BeEquivalentTo(expected))

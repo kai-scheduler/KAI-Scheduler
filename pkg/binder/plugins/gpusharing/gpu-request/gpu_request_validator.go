@@ -81,6 +81,12 @@ func validateGpuFractionAnnotation(hasGpuFractionAnnotation bool, gpuFractionFro
 		return fmt.Errorf(
 			"gpu-fraction annotation value must be a positive number smaller than 1.0")
 	}
+	_, err := resource.ParseQuantity(gpuFractionFromAnnotation)
+	if err != nil {
+		return fmt.Errorf(
+			"gpu-fraction annotation value must be a float written with a decimal point or a scientific notation .given value: %s",
+			gpuFractionFromAnnotation)
+	}
 	return nil
 }
 

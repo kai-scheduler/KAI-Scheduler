@@ -8,6 +8,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/binder"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/node_scale_adjuster"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/numa_placement_exporter"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/pod_group_controller"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/pod_grouper"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/prometheus"
@@ -87,6 +88,10 @@ type ConfigSpec struct {
 	// Prometheus specifies configuration for Prometheus monitoring
 	// +kubebuilder:validation:Optional
 	Prometheus *prometheus.Prometheus `json:"prometheus,omitempty"`
+
+	// NumaPlacementExporter specifies configuration for the NUMA placement exporter DaemonSet
+	// +kubebuilder:validation:Optional
+	NumaPlacementExporter *numa_placement_exporter.NumaPlacementExporter `json:"numaPlacementExporter,omitempty"`
 }
 
 func (c *ConfigSpec) SetDefaultsWhereNeeded() {
@@ -119,6 +124,9 @@ func (c *ConfigSpec) SetDefaultsWhereNeeded() {
 
 	c.Prometheus = common.SetDefault(c.Prometheus, &prometheus.Prometheus{})
 	c.Prometheus.SetDefaultsWhereNeeded()
+
+	c.NumaPlacementExporter = common.SetDefault(c.NumaPlacementExporter, &numa_placement_exporter.NumaPlacementExporter{})
+	c.NumaPlacementExporter.SetDefaultsWhereNeeded()
 }
 
 // ConfigStatus defines the observed state of Config

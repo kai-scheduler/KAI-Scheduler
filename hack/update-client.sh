@@ -2,6 +2,9 @@
 # Copyright 2025 NVIDIA CORPORATION
 # SPDX-License-Identifier: Apache-2.0
 
+# kube_codegen installs tools from the module cache, which has no VCS metadata.
+export GOFLAGS="${GOFLAGS:+$GOFLAGS }-buildvcs=false"
+
 # Creating an import file got code-generator
 
 cat <<EOF > generate-dep.go

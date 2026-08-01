@@ -7,8 +7,7 @@ kind: ClusterRole
 metadata:
   name: post-delete-cleanup
   annotations:
-    "helm.sh/hook": post-delete
-    "helm.sh/hook-delete-policy": hook-succeeded
+    {{- include "kai-scheduler.post-delete-hook-annotations" . | nindent 4 }}
 rules:
 - apiGroups:
   - apps

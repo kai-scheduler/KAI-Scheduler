@@ -46,6 +46,10 @@ func GetConnectivity(ctx context.Context, asserter gomega.Gomega) *TestContext {
 		asserter.Expect(err).NotTo(gomega.HaveOccurred(), "client-sets validation failure")
 	}
 
+	if err = runPreflight(ctx, controllerClient); err != nil {
+		asserter.Expect(err).NotTo(gomega.HaveOccurred(), "preflight check failed")
+	}
+
 	return &TestContext{
 		KubeConfig:           kubeConfig,
 		KubeClientset:        kubeClientset,

@@ -2,6 +2,12 @@
 # SPDX-License-Identifier: Apache-2.0
 
 suite: test affinity configurations
+
+set:
+  kaiConfigDeployer:
+    enabled: false
+  kaiConfig:
+    render: true
 templates:
   - kai-config.yaml
   - services/operator.yaml

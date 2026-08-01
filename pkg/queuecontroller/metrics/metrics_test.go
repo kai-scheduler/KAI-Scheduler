@@ -58,9 +58,14 @@ var _ = Describe("Queue Metrics", Ordered, func() {
 		}
 		SetQueueMetrics(queue)
 
-		labels := []string{"test-queue", "high", "value"}
+		labels := prometheus.Labels{
+			queueNameLabel:         "test-queue",
+			queueMetadataNameLabel: "test-queue",
+			queueDisplayNameLabel:  "",
+			"queue_priority":       "high",
+			"some_other_label":     "value",
+		}
 
-		// Use the helper for all metrics
 		expectMetricValue(queueInfo, labels, 1)
 		expectMetricValue(queueDeservedGPUs, labels, 2)
 		expectMetricValue(queueQuotaCPU, labels, 0.5)
@@ -68,6 +73,34 @@ var _ = Describe("Queue Metrics", Ordered, func() {
 		expectMetricValue(queueAllocatedGpus, labels, 1.5)
 		expectMetricValue(queueAllocatedCpus, labels, 0.25)
 		expectMetricValue(queueAllocatedMemory, labels, 2147483648)
+	})
+
+	It("should populate queue_display_name when spec.displayName is set", func() {
+		queue = &v2.Queue{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "test-queue",
+			},
+			Spec: v2.QueueSpec{
+				DisplayName: "Pretty Display Name",
+				Resources: &v2.QueueResources{
+					GPU:    v2.QueueResource{Quota: 1},
+					CPU:    v2.QueueResource{Quota: 1000},
+					Memory: v2.QueueResource{Quota: 2},
+				},
+			},
+		}
+		SetQueueMetrics(queue)
+
+		labels := prometheus.Labels{
+			queueNameLabel:         "test-queue",
+			queueMetadataNameLabel: "test-queue",
+			queueDisplayNameLabel:  "Pretty Display Name",
+			"queue_priority":       "normal",
+			"some_other_label":     "",
+		}
+
+		expectMetricValue(queueInfo, labels, 1)
+		expectMetricValue(queueDeservedGPUs, labels, 1)
 	})
 
 	It("should use default label value if label is missing", func() {
@@ -92,7 +125,13 @@ var _ = Describe("Queue Metrics", Ordered, func() {
 		}
 		SetQueueMetrics(queue)
 
-		labels := []string{"test-queue", "normal", ""}
+		labels := prometheus.Labels{
+			queueNameLabel:         "test-queue",
+			queueMetadataNameLabel: "test-queue",
+			queueDisplayNameLabel:  "",
+			"queue_priority":       "normal",
+			"some_other_label":     "",
+		}
 
 		expectMetricValue(queueInfo, labels, 1)
 		expectMetricValue(queueDeservedGPUs, labels, 0.7)
@@ -121,7 +160,13 @@ var _ = Describe("Queue Metrics", Ordered, func() {
 		}
 		SetQueueMetrics(queue)
 
-		labels := []string{"test-queue", "normal", ""}
+		labels := prometheus.Labels{
+			queueNameLabel:         "test-queue",
+			queueMetadataNameLabel: "test-queue",
+			queueDisplayNameLabel:  "",
+			"queue_priority":       "normal",
+			"some_other_label":     "",
+		}
 
 		expectMetricValue(queueInfo, labels, 1)
 		expectMetricValue(queueDeservedGPUs, labels, 1)
@@ -174,8 +219,8 @@ var _ = Describe("Queue Metrics", Ordered, func() {
 	})
 })
 
-func expectMetricValue(gauge *prometheus.GaugeVec, labels []string, expected float64) {
-	metricGauge, err := gauge.GetMetricWithLabelValues(labels...)
+func expectMetricValue(gauge *prometheus.GaugeVec, labels prometheus.Labels, expected float64) {
+	metricGauge, err := gauge.GetMetricWith(labels)
 	Expect(err).To(BeNil())
 	Expect(metricGauge).ToNot(BeNil())
 	Expect(testutil.ToFloat64(metricGauge)).To(BeEquivalentTo(expected))

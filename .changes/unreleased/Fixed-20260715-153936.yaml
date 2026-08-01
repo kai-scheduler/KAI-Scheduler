@@ -1,0 +1,3 @@
+kind: Fixed
+body: |-
+  Saturated the DRA GPU device-count accumulation so a ResourceClaim requesting an oversized device count can no longer overflow the queue controller's int64 GPU total to a negative value. [#1873](https://github.com/kai-scheduler/KAI-Scheduler/issues/1873) [thc1006](https://github.com/thc1006)

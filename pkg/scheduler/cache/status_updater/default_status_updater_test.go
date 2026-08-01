@@ -5,14 +5,18 @@ package status_updater
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
 	faketesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/record"
@@ -23,11 +27,13 @@ import (
 	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 )
@@ -382,6 +388,114 @@ func assertPodGroupConditions(t *testing.T, actualConditions, expectedConditions
 	}
 }
 
+type RemovePodGroupConditionTest struct {
+	name               string
+	podGroup           *enginev2alpha2.PodGroup
+	expectedConditions []enginev2alpha2.SchedulingCondition
+	expectedUpdated    bool
+}
+
+func TestRemovePodGroupSchedulingCondition(t *testing.T) {
+	unschedulable := func(nodePool string) enginev2alpha2.SchedulingCondition {
+		return enginev2alpha2.SchedulingCondition{
+			Type:         enginev2alpha2.UnschedulableOnNodePool,
+			NodePool:     nodePool,
+			Reason:       enginev2alpha2.PodGroupReasonUnschedulable,
+			Message:      "message",
+			TransitionID: "1",
+			Status:       v1.ConditionTrue,
+		}
+	}
+
+	for i, test := range []RemovePodGroupConditionTest{
+		{
+			name: "No conditions - nothing to remove",
+			podGroup: &enginev2alpha2.PodGroup{
+				Status: enginev2alpha2.PodGroupStatus{
+					SchedulingConditions: []enginev2alpha2.SchedulingCondition{},
+				},
+			},
+			expectedConditions: []enginev2alpha2.SchedulingCondition{},
+			expectedUpdated:    false,
+		},
+		{
+			name: "Single condition is removed once scheduled",
+			podGroup: &enginev2alpha2.PodGroup{
+				Status: enginev2alpha2.PodGroupStatus{
+					SchedulingConditions: []enginev2alpha2.SchedulingCondition{unschedulable("default")},
+				},
+			},
+			expectedConditions: []enginev2alpha2.SchedulingCondition{},
+			expectedUpdated:    true,
+		},
+		{
+			name: "All conditions across node pools are removed",
+			podGroup: &enginev2alpha2.PodGroup{
+				Status: enginev2alpha2.PodGroupStatus{
+					SchedulingConditions: []enginev2alpha2.SchedulingCondition{unschedulable("default"), unschedulable("pool-b")},
+				},
+			},
+			expectedConditions: []enginev2alpha2.SchedulingCondition{},
+			expectedUpdated:    true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Logf("Running test %d: %s", i, test.name)
+			updated := removePodGroupSchedulingCondition(test.podGroup)
+			assert.Equal(t, test.expectedUpdated, updated)
+			assertPodGroupConditions(t, test.podGroup.Status.SchedulingConditions, test.expectedConditions)
+		})
+	}
+}
+
+func TestClearPodGroupSchedulingCondition(t *testing.T) {
+	unschedulable := enginev2alpha2.SchedulingCondition{
+		Type:         enginev2alpha2.UnschedulableOnNodePool,
+		NodePool:     commonconstants.DefaultNodePoolName,
+		Reason:       enginev2alpha2.PodGroupReasonUnschedulable,
+		Message:      "message",
+		TransitionID: "1",
+		Status:       v1.ConditionTrue,
+	}
+
+	su := &defaultStatusUpdater{nodePoolLabelKey: nodePoolLabelKey}
+
+	for i, test := range []struct {
+		name            string
+		taskStatus      pod_status.PodStatus
+		expectedCleared bool
+	}{
+		{"allocated task keeps the condition until binding is confirmed", pod_status.Allocated, false},
+		{"binding task keeps the condition until binding is confirmed", pod_status.Binding, false},
+		{"pipelined task keeps the condition until binding is confirmed", pod_status.Pipelined, false},
+		{"bound task clears the condition", pod_status.Bound, true},
+		{"running task clears the condition", pod_status.Running, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Logf("Running test %d: %s", i, test.name)
+			job := &podgroup_info.PodGroupInfo{
+				PodGroup: &enginev2alpha2.PodGroup{
+					Status: enginev2alpha2.PodGroupStatus{
+						SchedulingConditions: []enginev2alpha2.SchedulingCondition{*unschedulable.DeepCopy()},
+					},
+				},
+				PodStatusIndex: map[pod_status.PodStatus]pod_info.PodsMap{
+					test.taskStatus: {"task-1": &pod_info.PodInfo{UID: "task-1", Status: test.taskStatus}},
+				},
+			}
+
+			cleared := su.clearPodGroupSchedulingCondition(job)
+
+			assert.Equal(t, test.expectedCleared, cleared)
+			if test.expectedCleared {
+				assert.Empty(t, job.PodGroup.Status.SchedulingConditions)
+			} else {
+				assert.Len(t, job.PodGroup.Status.SchedulingConditions, 1)
+			}
+		})
+	}
+}
+
 type UpdatePodGroupStaleTimeStampTest struct {
 	name               string
 	podGroup           *enginev2alpha2.PodGroup
@@ -641,7 +755,7 @@ func TestDefaultStatusUpdater_RecordJobStatusEvent(t *testing.T) {
 			stopCh := make(chan struct{})
 			statusUpdater.Run(stopCh)
 
-			statusUpdater.RecordJobStatusEvent(jobInfos["test-job"])
+			statusUpdater.RecordJobStatusEvent(jobInfos["test-job"], nil)
 
 			events := []string{}
 			close(recorder.Events)
@@ -750,11 +864,11 @@ func TestDefaultStatusUpdater_RetryAfterError(t *testing.T) {
 	statusUpdater := New(kubeClient, kubeAiSchedClient, recorder, 1, false, nodePoolLabelKey)
 
 	updateCalls := 0
-	// wait with pod groups update until signal is given.
+	// Return a transient error so the update is retried.
 	kubeAiSchedClient.SchedulingV2alpha2().(*fakeschedulingv2alpha2.FakeSchedulingV2alpha2).PrependReactor(
 		"update", "podgroups", func(action faketesting.Action) (handled bool, ret runtime.Object, err error) {
 			updateCalls += 1
-			return false, nil, errors.New("test")
+			return true, nil, errors.New("test")
 		},
 	)
 
@@ -804,6 +918,113 @@ func TestDefaultStatusUpdater_RetryAfterError(t *testing.T) {
 	assert.NoError(t, waitForIncrease(&updateCalls), "update was not retried after error")
 }
 
+func TestTaskFitErrorMessageDoesNotResolveCompactMessage(t *testing.T) {
+	su := &defaultStatusUpdater{detailedFitErrors: false}
+	job, task, fitErrors := taskFitErrorMessageFixture()
+	resolverCalls := 0
+	resolve := func(
+		*podgroup_info.PodGroupInfo, *pod_info.PodInfo,
+	) ([]*common_info.TasksFitError, error) {
+		resolverCalls++
+		return nil, nil
+	}
+
+	message := su.taskFitErrorMessage(job, task, fitErrors, resolve)
+
+	assert.Equal(t, "no nodes with enough resources were found: 1 MissingGPU.", message)
+	assert.Zero(t, resolverCalls)
+}
+
+func TestTaskFitErrorMessageResolvesDetailedMessage(t *testing.T) {
+	su := &defaultStatusUpdater{detailedFitErrors: true}
+	job, task, fitErrors := taskFitErrorMessageFixture()
+	resolverCalls := 0
+	resolve := func(
+		*podgroup_info.PodGroupInfo, *pod_info.PodInfo,
+	) ([]*common_info.TasksFitError, error) {
+		resolverCalls++
+		return []*common_info.TasksFitError{
+			common_info.NewFitErrorWithDetailedMessage(
+				task.Name, task.Namespace, "node-a", []string{"MissingGPU"}, "node-a GPU details"),
+		}, nil
+	}
+
+	message := su.taskFitErrorMessage(job, task, fitErrors, resolve)
+
+	assert.Equal(t, "\n<node-a>: node-a GPU details.\nno nodes with enough resources were found.", message)
+	assert.Equal(t, 1, resolverCalls)
+}
+
+func TestTaskFitErrorMessageFallsBackWhenDetailedResolutionFails(t *testing.T) {
+	su := &defaultStatusUpdater{detailedFitErrors: true}
+	job, task, fitErrors := taskFitErrorMessageFixture()
+	resolve := func(
+		*podgroup_info.PodGroupInfo, *pod_info.PodInfo,
+	) ([]*common_info.TasksFitError, error) {
+		return nil, errors.New("recompute failed")
+	}
+
+	message := su.taskFitErrorMessage(job, task, fitErrors, resolve)
+
+	assert.Equal(t, "no nodes with enough resources were found: 1 MissingGPU.", message)
+}
+
+func TestTaskFitErrorMessageResolvesOnlyForEnabledVerboseLog(t *testing.T) {
+	require.NoError(t, log.InitLoggers(6, false))
+	t.Cleanup(func() {
+		require.NoError(t, log.InitLoggers(3, false))
+	})
+
+	su := &defaultStatusUpdater{detailedFitErrors: false}
+	job, task, fitErrors := taskFitErrorMessageFixture()
+	resolverCalls := 0
+	resolve := func(
+		*podgroup_info.PodGroupInfo, *pod_info.PodInfo,
+	) ([]*common_info.TasksFitError, error) {
+		resolverCalls++
+		return []*common_info.TasksFitError{
+			common_info.NewFitErrorWithDetailedMessage(
+				task.Name, task.Namespace, "node-a", []string{"MissingGPU"}, "node-a GPU details"),
+		}, nil
+	}
+
+	message := su.taskFitErrorMessage(job, task, fitErrors, resolve)
+
+	assert.Equal(t, "no nodes with enough resources were found: 1 MissingGPU.", message)
+	assert.Equal(t, 1, resolverCalls)
+}
+
+func TestTaskFitErrorMessageKeepsDirectDetailedError(t *testing.T) {
+	su := &defaultStatusUpdater{detailedFitErrors: true}
+	job, task, _ := taskFitErrorMessageFixture()
+	fitErrors := common_info.NewFitErrors()
+	fitErrors.SetError("direct pre-filter error")
+	resolverCalls := 0
+	resolve := func(
+		*podgroup_info.PodGroupInfo, *pod_info.PodInfo,
+	) ([]*common_info.TasksFitError, error) {
+		resolverCalls++
+		return nil, nil
+	}
+
+	message := su.taskFitErrorMessage(job, task, fitErrors, resolve)
+
+	assert.Equal(t, "\ndirect pre-filter error.", message)
+	assert.Zero(t, resolverCalls)
+}
+
+func taskFitErrorMessageFixture() (
+	*podgroup_info.PodGroupInfo, *pod_info.PodInfo, *common_info.TasksFitErrors,
+) {
+	task := pod_info.NewTaskInfo(&v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "pod", Namespace: "namespace", UID: "pod"},
+	}, resource_info.NewResourceVectorMap())
+	job := podgroup_info.NewPodGroupInfo("job", task)
+	fitErrors := common_info.NewFitErrors()
+	fitErrors.AddNodeError(common_info.NewFitError(task.Name, task.Namespace, "node-a", "MissingGPU"))
+	return job, task, fitErrors
+}
+
 func waitForIncrease(callCount *int) error {
 	originalValue := *callCount
 	startTime := time.Now()
@@ -820,4 +1041,199 @@ func waitForIncrease(callCount *int) error {
 		return nil
 	}
 	return errors.New("update calls did not increase")
+}
+
+type annotatedEvent struct {
+	eventType   string
+	reason      string
+	message     string
+	annotations map[string]string
+}
+
+type annotationCapturingRecorder struct {
+	events []annotatedEvent
+}
+
+func (r *annotationCapturingRecorder) Event(_ runtime.Object, _, _, _ string) {}
+
+func (r *annotationCapturingRecorder) Eventf(_ runtime.Object, _, _, _ string, _ ...interface{}) {
+}
+
+func (r *annotationCapturingRecorder) AnnotatedEventf(_ runtime.Object, annotations map[string]string, eventtype, reason, messageFmt string, args ...interface{}) {
+	r.events = append(r.events, annotatedEvent{
+		eventType:   eventtype,
+		reason:      reason,
+		message:     fmt.Sprintf(messageFmt, args...),
+		annotations: annotations,
+	})
+}
+
+func newEvictionTestStatusUpdater() *defaultStatusUpdater {
+	kubeClient := fake.NewSimpleClientset()
+	kubeAiSchedClient := kubeaischedfake.NewSimpleClientset()
+	recorder := record.NewFakeRecorder(100)
+	return New(kubeClient, kubeAiSchedClient, recorder, 1, false, nodePoolLabelKey)
+}
+
+func makeEvictionPodGroup(t *testing.T, suffix string) *enginev2alpha2.PodGroup {
+	tag := fmt.Sprintf("%s-%s", t.Name(), suffix)
+	return &enginev2alpha2.PodGroup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pg-" + tag,
+			Namespace: "ns-" + tag,
+			UID:       types.UID("uid-" + tag),
+		},
+	}
+}
+
+func getEvictedPodsCounterValue(t *testing.T, name, namespace, uid, nodepool, action string) (float64, bool) {
+	families, err := prometheus.DefaultGatherer.Gather()
+	require.NoError(t, err)
+	for _, family := range families {
+		if family.GetName() != "pod_group_evicted_pods_total" {
+			continue
+		}
+		for _, m := range family.GetMetric() {
+			labels := map[string]string{}
+			for _, lp := range m.GetLabel() {
+				labels[lp.GetName()] = lp.GetValue()
+			}
+			if labels["podgroup"] == name && labels["namespace"] == namespace &&
+				labels["uid"] == uid && labels["nodepool"] == nodepool && labels["action"] == action {
+				return m.GetCounter().GetValue(), true
+			}
+		}
+	}
+	return 0, false
+}
+
+func TestEvicted_IncrementsCounterByOnePerCall(t *testing.T) {
+	tests := []struct {
+		name             string
+		callCount        int
+		evictionGangSize int
+	}{
+		{name: "one call, gang size 1", callCount: 1, evictionGangSize: 1},
+		{name: "one call, gang size 4", callCount: 1, evictionGangSize: 4},
+		{name: "four calls, gang size 4", callCount: 4, evictionGangSize: 4},
+		{name: "three calls, gang size 10", callCount: 3, evictionGangSize: 10},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			pg := makeEvictionPodGroup(t, tc.name)
+			statusUpdater := newEvictionTestStatusUpdater()
+
+			for i := 0; i < tc.callCount; i++ {
+				statusUpdater.Evicted(pg, eviction_info.EvictionMetadata{
+					Action:           "preempt",
+					EvictionGangSize: tc.evictionGangSize,
+				}, "evicted")
+			}
+
+			value, found := getEvictedPodsCounterValue(t, pg.Name, pg.Namespace, string(pg.UID), "default", "preempt")
+			require.True(t, found, "counter sample was not emitted")
+			assert.Equal(t, float64(tc.callCount), value)
+		})
+	}
+}
+
+func TestEvicted_EmitsAnnotatedEventWithMetadata(t *testing.T) {
+	pg := makeEvictionPodGroup(t, "event")
+	recorder := &annotationCapturingRecorder{}
+	kubeClient := fake.NewSimpleClientset()
+	kubeAiSchedClient := kubeaischedfake.NewSimpleClientset()
+	statusUpdater := New(kubeClient, kubeAiSchedClient, recorder, 1, false, nodePoolLabelKey)
+
+	statusUpdater.Evicted(pg, eviction_info.EvictionMetadata{
+		Action:           "preempt",
+		EvictionGangSize: 5,
+		Preemptor:        &types.NamespacedName{Namespace: "preemptor-ns", Name: "preemptor"},
+	}, "pod evicted")
+
+	require.Len(t, recorder.events, 1)
+	event := recorder.events[0]
+	assert.Equal(t, v1.EventTypeNormal, event.eventType)
+	assert.Equal(t, "Evict", event.reason)
+	assert.Equal(t, "pod evicted", event.message)
+	assert.Equal(t, "5", event.annotations[evictionGangSize])
+	assert.Equal(t, "preempt", event.annotations[evictorActionType])
+	assert.Equal(t, "preemptor", event.annotations[evictorPodGroupNameAnnotations])
+	assert.Equal(t, "preemptor-ns", event.annotations[evictorPodGroupNamespaceAnnotations])
+}
+
+func TestUpdatePodGroupLastEvictionTimeStamp(t *testing.T) {
+	for i, test := range []UpdatePodGroupStaleTimeStampTest{
+		{
+			name: "No eviction timestamp and no need to update",
+			podGroup: &enginev2alpha2.PodGroup{
+				ObjectMeta: metav1.ObjectMeta{},
+			},
+			staleTimeStamp:     nil,
+			expectedAnnotation: nil,
+			expectedUpdated:    false,
+		},
+		{
+			name: "No eviction timestamp annotation and need to add",
+			podGroup: &enginev2alpha2.PodGroup{
+				ObjectMeta: metav1.ObjectMeta{},
+			},
+			staleTimeStamp:     getTimePointer("2026-07-01T00:00:00Z"),
+			expectedAnnotation: ptr.To("2026-07-01T00:00:00Z"),
+			expectedUpdated:    true,
+		},
+		{
+			name: "Existing eviction timestamp, no need to update",
+			podGroup: &enginev2alpha2.PodGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						commonconstants.LastEvictionTimeStamp: "2026-07-01T00:00:00Z",
+					},
+				},
+			},
+			staleTimeStamp:     getTimePointer("2026-07-01T00:00:00Z"),
+			expectedAnnotation: ptr.To("2026-07-01T00:00:00Z"),
+			expectedUpdated:    false,
+		},
+		{
+			name: "Existing eviction timestamp, need to update",
+			podGroup: &enginev2alpha2.PodGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						commonconstants.LastEvictionTimeStamp: "2026-01-01T00:00:00Z",
+					},
+				},
+			},
+			staleTimeStamp:     getTimePointer("2026-07-01T00:00:00Z"),
+			expectedAnnotation: ptr.To("2026-07-01T00:00:00Z"),
+			expectedUpdated:    true,
+		},
+		{
+			name: "Existing eviction timestamp and need to remove",
+			podGroup: &enginev2alpha2.PodGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						commonconstants.LastEvictionTimeStamp: "2026-07-01T00:00:00Z",
+					},
+				},
+			},
+			staleTimeStamp:     nil,
+			expectedAnnotation: nil,
+			expectedUpdated:    true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Logf("Running test %d: %s", i, test.name)
+			updated := setPodGroupLastEvictionTimeStamp(test.podGroup, test.staleTimeStamp)
+
+			assert.Equal(t, test.expectedUpdated, updated)
+
+			value, found := test.podGroup.Annotations[commonconstants.LastEvictionTimeStamp]
+			if test.expectedAnnotation == nil {
+				assert.False(t, found, "Expected annotation not to be found")
+			} else {
+				assert.Equal(t, *test.expectedAnnotation, value, "Expected annotation value")
+			}
+		})
+	}
 }

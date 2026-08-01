@@ -1,0 +1,61 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+suite: test priority classes configuration
+templates:
+  - priorityclasses/build.yaml
+  - priorityclasses/train.yaml
+  - priorityclasses/inference.yaml
+  - priorityclasses/build-preemptible.yaml
+tests:
+  - it: should render the existing priority classes by default
+    asserts:
+      - equal:
+          path: metadata.name
+          value: build
+        template: priorityclasses/build.yaml
+      - equal:
+          path: value
+          value: 100
+        template: priorityclasses/build.yaml
+      - equal:
+          path: metadata.name
+          value: train
+        template: priorityclasses/train.yaml
+      - equal:
+          path: value
+          value: 50
+        template: priorityclasses/train.yaml
+      - equal:
+          path: metadata.name
+          value: inference
+        template: priorityclasses/inference.yaml
+      - equal:
+          path: value
+          value: 125
+        template: priorityclasses/inference.yaml
+      - equal:
+          path: metadata.name
+          value: build-preemptible
+        template: priorityclasses/build-preemptible.yaml
+      - equal:
+          path: value
+          value: 75
+        template: priorityclasses/build-preemptible.yaml
+
+  - it: should not render priority classes when disabled
+    set:
+      defaultPriorityClasses.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+        template: priorityclasses/build.yaml
+      - hasDocuments:
+          count: 0
+        template: priorityclasses/train.yaml
+      - hasDocuments:
+          count: 0
+        template: priorityclasses/inference.yaml
+      - hasDocuments:
+          count: 0
+        template: priorityclasses/build-preemptible.yaml

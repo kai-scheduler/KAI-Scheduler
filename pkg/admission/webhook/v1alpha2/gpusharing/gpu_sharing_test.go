@@ -5,6 +5,7 @@ package gpusharing
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	v1 "k8s.io/api/core/v1"
@@ -347,6 +348,88 @@ func TestMutate(t *testing.T) {
 				container := pod.Spec.Containers[0]
 				if len(container.Env) == 0 {
 					t.Errorf("Expected env vars to be added")
+				}
+			},
+		},
+		{
+			name: "pod with dotted name keeps configmap refs and sanitizes volume name",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test.pod",
+					Namespace: "test-namespace",
+					Annotations: map[string]string{
+						constants.GpuFraction: "0.5",
+					},
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Name: "test-container",
+							Resources: v1.ResourceRequirements{
+								Limits: v1.ResourceList{},
+							},
+						},
+					},
+				},
+			},
+			expectError: false,
+			validateMutatedPod: func(t *testing.T, pod *v1.Pod) {
+				configMapPrefix, found := pod.Annotations["runai/shared-gpu-configmap"]
+				if !found {
+					t.Fatalf("Expected shared-gpu-configmap annotation to be added")
+				}
+				if !strings.Contains(configMapPrefix, ".") {
+					t.Fatalf("Expected configmap annotation to preserve dotted pod name, got %q", configMapPrefix)
+				}
+
+				expectedCapabilitiesConfigMapName := configMapPrefix + "-0"
+				expectedEnvVarsConfigMapName := expectedCapabilitiesConfigMapName + "-evar"
+
+				var configMapVolume *v1.Volume
+				for i := range pod.Spec.Volumes {
+					volume := &pod.Spec.Volumes[i]
+					if volume.ConfigMap != nil {
+						configMapVolume = volume
+						break
+					}
+				}
+				if configMapVolume == nil {
+					t.Fatalf("Expected ConfigMap volume to be added")
+				}
+				if strings.Contains(configMapVolume.Name, ".") {
+					t.Fatalf("Expected sanitized volume name, got %q", configMapVolume.Name)
+				}
+				if configMapVolume.ConfigMap.LocalObjectReference.Name != expectedCapabilitiesConfigMapName {
+					t.Fatalf("Expected volume configmap ref %q, got %q",
+						expectedCapabilitiesConfigMapName, configMapVolume.ConfigMap.LocalObjectReference.Name)
+				}
+
+				container := pod.Spec.Containers[0]
+				for _, env := range container.Env {
+					if env.ValueFrom == nil || env.ValueFrom.ConfigMapKeyRef == nil {
+						continue
+					}
+					if env.ValueFrom.ConfigMapKeyRef.LocalObjectReference.Name != expectedCapabilitiesConfigMapName {
+						t.Fatalf("Expected env var configmap ref %q, got %q",
+							expectedCapabilitiesConfigMapName,
+							env.ValueFrom.ConfigMapKeyRef.LocalObjectReference.Name)
+					}
+				}
+
+				foundEnvFrom := false
+				for _, envFrom := range container.EnvFrom {
+					if envFrom.ConfigMapRef == nil {
+						continue
+					}
+					foundEnvFrom = true
+					if envFrom.ConfigMapRef.LocalObjectReference.Name != expectedEnvVarsConfigMapName {
+						t.Fatalf("Expected EnvFrom configmap ref %q, got %q",
+							expectedEnvVarsConfigMapName,
+							envFrom.ConfigMapRef.LocalObjectReference.Name)
+					}
+				}
+				if !foundEnvFrom {
+					t.Fatalf("Expected ConfigMapRef in EnvFrom")
 				}
 			},
 		},

@@ -4,9 +4,14 @@
 package utils
 
 import (
+	"fmt"
+	"time"
+
+	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 )
 
 type JobsOrderInitOptions struct {
@@ -14,12 +19,16 @@ type JobsOrderInitOptions struct {
 	FilterNonPending         bool
 	FilterNonPreemptible     bool
 	FilterNonActiveAllocated bool
-	VictimQueue              bool
-	MaxJobsQueueDepth        int
+	// FilterWithinPreemptionDelay skips jobs that may not yet trigger eviction
+	// of other workloads. Set only by eviction-triggering actions.
+	FilterWithinPreemptionDelay bool
+	VictimQueue                 bool
+	MaxJobsQueueDepth           int
 }
 
 func (jobsOrder *JobsOrderByQueues) InitializeWithJobs(
 	jobsToOrder map[common_info.PodGroupID]*podgroup_info.PodGroupInfo) {
+	now := time.Now()
 	for _, job := range jobsToOrder {
 		if jobsOrder.options.FilterUnready && !job.IsReadyForScheduling() {
 			continue
@@ -63,6 +72,24 @@ func (jobsOrder *JobsOrderByQueues) InitializeWithJobs(
 			continue
 		}
 
+		if jobsOrder.options.FilterWithinPreemptionDelay && job.IsWithinPreemptionDelay(now) {
+			recordPreemptionDelayFitError(job)
+			log.InfraLogger.V(3).Infof("Job <%s> is within its preemption delay window, skipping as eviction trigger",
+				job.NamespacedName)
+			continue
+		}
+
 		jobsOrder.PushJob(job)
 	}
+}
+
+func recordPreemptionDelayFitError(job *podgroup_info.PodGroupInfo) {
+	for _, fitErr := range job.JobFitErrors {
+		if fitErr.Reason() == enginev2alpha2.PreemptionDelayNotElapsed {
+			return
+		}
+	}
+	job.AddSimpleJobFitError(enginev2alpha2.PreemptionDelayNotElapsed,
+		fmt.Sprintf("Workload is within its preemption delay window (%s) and may not trigger evictions before %s",
+			job.PodGroup.Spec.PreemptionDelay.Duration, job.PreemptionDelayEnd().UTC().Format(time.RFC3339)))
 }

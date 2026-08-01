@@ -14,6 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/informers"
 
+	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -794,4 +795,67 @@ func TestVictimQueue_TwoQueuesWithRunningJobs(t *testing.T) {
 	// Third pop should return nil
 	job3 := victimsQueue.PopNextJob()
 	assert.Nil(t, job3, "Third PopNextJob should return nil")
+}
+
+func TestInitializeWithJobs_PreemptionDelayFilter(t *testing.T) {
+	ssn := newPrioritySession(t)
+
+	ssn.ClusterInfo.Queues = map[common_info.QueueID]*queue_info.QueueInfo{
+		testQueue: {
+			UID:         testQueue,
+			ParentQueue: testParentQueue,
+		},
+		testParentQueue: {
+			UID:         testParentQueue,
+			ChildQueues: []common_info.QueueID{testQueue},
+		},
+	}
+
+	makeJob := func(name string, delay *metav1.Duration) *podgroup_info.PodGroupInfo {
+		job := podGroupForJobOrderTest(name, common_info.PodGroupID(name), 100)
+		job.CreationTimestamp = metav1.Now()
+		job.PodGroup = &enginev2alpha2.PodGroup{
+			Spec: enginev2alpha2.PodGroupSpec{PreemptionDelay: delay},
+		}
+		return job
+	}
+
+	delayedJob := makeJob("delayed", &metav1.Duration{Duration: 10 * time.Minute})
+	regularJob := makeJob("regular", nil)
+	jobs := map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{
+		"delayed": delayedJob,
+		"regular": regularJob,
+	}
+	ssn.ClusterInfo.PodGroupInfos = jobs
+
+	// Eviction-triggering actions set the filter: delayed job is skipped with a fit error.
+	jobsOrder := NewJobsOrderByQueues(ssn, JobsOrderInitOptions{
+		FilterNonPending:            true,
+		FilterWithinPreemptionDelay: true,
+		MaxJobsQueueDepth:           scheduler_util.QueueCapacityInfinite,
+	})
+	jobsOrder.InitializeWithJobs(jobs)
+
+	assert.Equal(t, "regular", jobsOrder.PopNextJob().Name)
+	assert.True(t, jobsOrder.IsEmpty())
+	assert.Len(t, delayedJob.JobFitErrors, 1)
+	assert.Equal(t, enginev2alpha2.PreemptionDelayNotElapsed, delayedJob.JobFitErrors[0].Reason())
+
+	// A second init in the same session (another action) does not duplicate the fit error.
+	jobsOrder = NewJobsOrderByQueues(ssn, JobsOrderInitOptions{
+		FilterNonPending:            true,
+		FilterWithinPreemptionDelay: true,
+		MaxJobsQueueDepth:           scheduler_util.QueueCapacityInfinite,
+	})
+	jobsOrder.InitializeWithJobs(jobs)
+	assert.Len(t, delayedJob.JobFitErrors, 1)
+
+	// Without the filter (allocate path), the delayed job is included.
+	jobsOrder = NewJobsOrderByQueues(ssn, JobsOrderInitOptions{
+		FilterNonPending:  true,
+		MaxJobsQueueDepth: scheduler_util.QueueCapacityInfinite,
+	})
+	jobsOrder.InitializeWithJobs(jobs)
+	popped := []string{jobsOrder.PopNextJob().Name, jobsOrder.PopNextJob().Name}
+	assert.ElementsMatch(t, []string{"delayed", "regular"}, popped)
 }

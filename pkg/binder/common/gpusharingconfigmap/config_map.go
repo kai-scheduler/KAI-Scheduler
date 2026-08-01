@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -140,6 +141,7 @@ func generateConfigMapNamePrefix(pod *v1.Pod, containerIndex int) string {
 	if len(baseName) > maxBaseNameLength {
 		baseName = baseName[:maxBaseNameLength]
 	}
+	baseName = strings.TrimRight(baseName, ".-")
 	return fmt.Sprintf("%v-%v-%v", baseName,
 		utilrand.String(configMapNameNumRandomChars), gpuSharingConfigMap)
 }

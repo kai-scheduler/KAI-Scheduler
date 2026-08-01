@@ -98,7 +98,7 @@ var _ = Describe("Status Updater - Pod Groups Syncing", func() {
 				job.StalenessInfo.Stale = true
 				job.LastStartTimestamp = ptr.To(time.Now())
 			}
-			Expect(statusUpdater.RecordJobStatusEvent(job)).To(Succeed())
+			Expect(statusUpdater.RecordJobStatusEvent(job, nil)).To(Succeed())
 		}
 	})
 

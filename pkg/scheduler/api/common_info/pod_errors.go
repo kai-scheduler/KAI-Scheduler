@@ -170,45 +170,73 @@ func (f *TasksFitError) Error() string {
 }
 
 type TasksFitErrors struct {
-	nodes map[string]*TasksFitError
-	err   string
+	reasonCounts map[string]int
+	err          string
 }
 
 func NewFitErrors() *TasksFitErrors {
-	f := new(TasksFitErrors)
-	f.nodes = make(map[string]*TasksFitError)
-	return f
+	return &TasksFitErrors{reasonCounts: make(map[string]int)}
 }
 
 func (f *TasksFitErrors) SetError(err string) {
 	f.err = err
 }
 
-func (f *TasksFitErrors) SetNodeError(nodeName string, err error) {
-	var fe *TasksFitError
-	switch obj := err.(type) {
-	case *TasksFitError:
-		obj.NodeName = nodeName
-		fe = obj
-	default:
-		fe = NewFitError("", "", nodeName, err.Error())
+func (f *TasksFitErrors) AddReasonCounts(errors *TasksFitErrors) {
+	if errors == nil {
+		return
 	}
-
-	f.nodes[nodeName] = fe
-}
-
-func (f *TasksFitErrors) AddNodeErrors(errors *TasksFitErrors) {
-	for nodeName, fitError := range errors.nodes {
-		f.nodes[nodeName] = fitError
+	if f.reasonCounts == nil {
+		f.reasonCounts = make(map[string]int)
+	}
+	for reason, count := range errors.reasonCounts {
+		f.reasonCounts[reason] += count
 	}
 }
 
-func (f *TasksFitErrors) DetailedError() string {
-	if f.err == "" {
-		f.err = ResourcesWereNotFoundMsg
+func (f *TasksFitErrors) AddNodeError(err error) {
+	if err == nil {
+		return
 	}
-	reasonMessages := []string{"\n" + f.err + "."}
-	for _, node := range f.nodes {
+	if f.reasonCounts == nil {
+		f.reasonCounts = make(map[string]int)
+	}
+	var reasons []string
+	if fitError, ok := err.(*TasksFitError); ok {
+		if fitError == nil {
+			return
+		}
+		reasons = fitError.Reasons
+	} else {
+		reasons = []string{err.Error()}
+	}
+	for _, reason := range reasons {
+		f.reasonCounts[reason]++
+	}
+}
+
+func (f *TasksFitErrors) HasNodeErrors() bool {
+	return len(f.reasonCounts) != 0
+}
+
+func (f *TasksFitErrors) ReasonCount(reason string) int {
+	return f.reasonCounts[reason]
+}
+
+func (f *TasksFitErrors) UniqueReasonCount() int {
+	return len(f.reasonCounts)
+}
+
+func (f *TasksFitErrors) DetailedError(nodeErrors []*TasksFitError) string {
+	baseError := f.err
+	if baseError == "" {
+		baseError = ResourcesWereNotFoundMsg
+	}
+	reasonMessages := []string{"\n" + baseError + "."}
+	if len(nodeErrors) == 0 {
+		return strings.Join(reasonMessages, "")
+	}
+	for _, node := range nodeErrors {
 		reasonMessages = append(reasonMessages,
 			fmt.Sprintf("\n<%v>: %v.", node.NodeName, strings.Join(node.DetailedReasons, ", ")))
 	}
@@ -217,32 +245,20 @@ func (f *TasksFitErrors) DetailedError() string {
 }
 
 func (f *TasksFitErrors) Error() string {
-	reasons := make(map[string]int)
-
-	sortReasonsHistogram := func() []string {
-		for _, node := range f.nodes {
-			for _, reason := range node.Reasons {
-				reasons[reason]++
-			}
-		}
-
-		var reasonStrings []string
-		for k, v := range reasons {
-			reasonStrings = append(reasonStrings, fmt.Sprintf("%v %v", v, k))
-		}
-		sort.Strings(reasonStrings)
-		return reasonStrings
+	reasonStrings := make([]string, 0, len(f.reasonCounts))
+	for reason, count := range f.reasonCounts {
+		reasonStrings = append(reasonStrings, fmt.Sprintf("%v %v", count, reason))
 	}
-	if f.err == "" {
-		f.err = ResourcesWereNotFoundMsg
-	}
-	reasonMsg := f.err
+	sort.Strings(reasonStrings)
 
-	nodeReasonsHistogram := sortReasonsHistogram()
-	if len(nodeReasonsHistogram) > 0 {
-		reasonMsg += fmt.Sprintf(": %v.", strings.Join(nodeReasonsHistogram, ". \n"))
+	baseError := f.err
+	if baseError == "" {
+		baseError = ResourcesWereNotFoundMsg
 	}
-	return reasonMsg
+	if len(reasonStrings) > 0 {
+		baseError += fmt.Sprintf(": %v.", strings.Join(reasonStrings, ". \n"))
+	}
+	return baseError
 }
 
 type NotFoundError struct {

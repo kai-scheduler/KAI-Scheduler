@@ -56,6 +56,11 @@ type GlobalConfig struct {
 	// +kubebuilder:validation:Optional
 	DaemonsetsTolerations []v1.Toleration `json:"daemonsetsTolerations,omitempty"`
 
+	// PriorityClassName defines the priority class for KAI operators & services.
+	// An empty value leaves the pods without a priority class.
+	// +kubebuilder:validation:Optional
+	PriorityClassName *string `json:"priorityClassName,omitempty"`
+
 	// ReplicaCount specifies the number of replicas of services that have no specific replicas configuration
 	// +kubebuilder:validation:Optional
 	ReplicaCount *int32 `json:"replicaCount,omitempty"`
@@ -80,6 +85,10 @@ type GlobalConfig struct {
 	// PodLabelSelector filters pods for webhooks and pod grouper
 	// +kubebuilder:validation:Optional
 	PodLabelSelector map[string]string `json:"podLabelSelector,omitempty"`
+
+	// JSONLog switches all services to JSON-formatted logging
+	// +kubebuilder:validation:Optional
+	JSONLog *bool `json:"jsonLog,omitempty"`
 }
 
 func (g *GlobalConfig) SetDefaultWhereNeeded() {
@@ -125,6 +134,8 @@ func (g *GlobalConfig) SetDefaultWhereNeeded() {
 	}
 
 	g.RequireDefaultPodAntiAffinityTerm = common.SetDefault(g.RequireDefaultPodAntiAffinityTerm, ptr.To(false))
+	g.JSONLog = common.SetDefault(g.JSONLog, ptr.To(false))
+	g.PriorityClassName = common.SetDefault(g.PriorityClassName, ptr.To(""))
 
 	if g.VPA == nil {
 		g.VPA = &common.VPASpec{}

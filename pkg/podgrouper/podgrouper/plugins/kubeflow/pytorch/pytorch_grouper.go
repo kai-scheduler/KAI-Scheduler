@@ -25,6 +25,8 @@ const (
 
 	replicaTypeMaster = string(pytorchv1.PyTorchJobReplicaTypeMaster)
 	replicaTypeWorker = string(pytorchv1.PyTorchJobReplicaTypeWorker)
+
+	maxAllowedSegmentation = 10000
 )
 
 type PyTorchGrouper struct {
@@ -162,6 +164,21 @@ func buildWorkerSubGroups(
 	if partialSegmentSize != 0 {
 		numSegments++
 	}
+	// Validate num of subgroups created for the segmentation
+	if numSegments > maxAllowedSegmentation {
+		return nil, fmt.Errorf("number of subgroups created for the segmentation %d is greater than max allowed segmentation %d",
+			numSegments, maxAllowedSegmentation)
+	}
+
+	// No segment children — keep worker as a leaf so webhook leaf rules apply.
+	if numSegments == 0 {
+		return []*podgroup.SubGroupMetadata{{
+			Name:           strings.ToLower(replicaTypeWorker),
+			MinAvailable:   workerMinAvailable,
+			PodsReferences: podReferences,
+		}}, nil
+	}
+
 	segmentIndex, err := getPodSegmentIndex(pod, segmentSize)
 	if err != nil {
 		return nil, err
@@ -169,10 +186,14 @@ func buildWorkerSubGroups(
 
 	topologyConstraints := getSegmentTopologyConstraints(pod, replicaSpecs, topOwner)
 
+	// Parent SubGroups must use MinSubGroup (webhook rejects minMember on non-leaf).
 	subGroups := []*podgroup.SubGroupMetadata{{
-		Name:         strings.ToLower(replicaTypeWorker),
-		MinAvailable: workerMinAvailable,
+		Name:        strings.ToLower(replicaTypeWorker),
+		MinSubGroup: ptr.To(int32(numSegments)),
 	}}
+	// Segments whose first pod index is within workerMinAvailable are mandatory;
+	// the rest are elastic and must not block scheduling.
+	mandatorySegments := (int(workerMinAvailable) + segmentSize - 1) / segmentSize
 	for i := range numSegments {
 		subGroup := &podgroup.SubGroupMetadata{
 			Name:                fmt.Sprintf("worker-%d", i),
@@ -183,7 +204,9 @@ func buildWorkerSubGroups(
 		if i == segmentIndex {
 			subGroup.PodsReferences = podReferences
 		}
-		if partialSegmentSize != 0 && i == numSegments-1 {
+		if i >= mandatorySegments {
+			subGroup.MinAvailable = 0
+		} else if partialSegmentSize != 0 && i == numSegments-1 {
 			subGroup.MinAvailable = int32(partialSegmentSize)
 		}
 		subGroups = append(subGroups, subGroup)
@@ -206,6 +229,9 @@ func getPodSegmentIndex(pod *v1.Pod, segmentSize int) (int, error) {
 	index, err := strconv.Atoi(indexLabel)
 	if err != nil {
 		return -1, fmt.Errorf("invalid replica index %s, err: %w", indexLabel, err)
+	}
+	if index < 0 {
+		return -1, fmt.Errorf("replica index %s is not valid. It must be bigger than 0", indexLabel)
 	}
 	return index / segmentSize, nil
 }

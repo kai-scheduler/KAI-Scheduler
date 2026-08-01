@@ -28,9 +28,12 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/gpuspread"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/kubeflow"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/minruntime"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/multinodegang"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/nodeavailability"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/nodelocalgreedy"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/nodeplacement"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/nominatednode"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/numa"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/podaffinity"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/predicates"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/priority"
@@ -50,6 +53,7 @@ func InitDefaultPlugins() {
 	framework.RegisterPluginBuilder("priority", priority.New)
 	framework.RegisterPluginBuilder("nodeplacement", nodeplacement.New)
 	framework.RegisterPluginBuilder("nominatednode", nominatednode.New)
+	framework.RegisterPluginBuilder("numa", numa.New)
 	framework.RegisterPluginBuilder("nodeavailability", nodeavailability.New)
 	framework.RegisterPluginBuilder("gpusharingorder", gpusharingorder.New)
 	framework.RegisterPluginBuilder("gpupack", gpupack.New)
@@ -70,6 +74,8 @@ func InitDefaultPlugins() {
 
 	// Other Plugins
 	framework.RegisterPluginBuilder("snapshot", snapshot.New)
+	framework.RegisterPluginBuilder(nodelocalgreedy.Name, nodelocalgreedy.New)
+	framework.RegisterPluginBuilder(multinodegang.Name, multinodegang.New)
 
 	// Always register the Job Order Plugin last.
 	framework.RegisterPluginBuilder("reflectjoborder", reflectjoborder.New)

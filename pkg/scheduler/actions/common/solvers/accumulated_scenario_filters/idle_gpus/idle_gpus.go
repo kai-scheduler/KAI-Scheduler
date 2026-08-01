@@ -53,6 +53,9 @@ type AccumulatedIdleGpus struct {
 
 func NewIdleGpusFilter(
 	scenario *scenario.ByNodeScenario, nodeInfosMap map[string]*node_info.NodeInfo) *AccumulatedIdleGpus {
+	if scenario == nil {
+		return nil
+	}
 	idleGpusMap, relevantNodesSorted := createGpuMap(nodeInfosMap, len(scenario.PendingTasks()))
 
 	filter := &AccumulatedIdleGpus{

@@ -102,6 +102,56 @@ var _ = Describe("ResourceVector", func() {
 		})
 	})
 
+	Describe("SetMax", func() {
+		It("should take element-wise maximum for vectors of equal length", func() {
+			vec1 := ResourceVector{vecValMedium, vecValMemSmall, gpuTwo}
+			vec2 := ResourceVector{vecValSmall, vecValMemMedium, gpuOne}
+
+			vec1.SetMax(vec2)
+			Expect(vec1).To(Equal(ResourceVector{vecValMedium, vecValMemMedium, gpuTwo}))
+		})
+
+		It("should extend shorter receiver and pick up values at extended indices", func() {
+			vec1 := ResourceVector{vecValMedium, vecValMemMedium}
+			vec2 := ResourceVector{vecValSmall, vecValMemSmall, gpuOne}
+
+			vec1.SetMax(vec2)
+			Expect(vec1).To(Equal(ResourceVector{vecValMedium, vecValMemMedium, gpuOne}))
+		})
+
+		It("should preserve receiver values beyond the other vector's length", func() {
+			vec1 := ResourceVector{vecValSmall, vecValMemSmall, gpuTwo}
+			vec2 := ResourceVector{vecValMedium, vecValMemMedium}
+
+			vec1.SetMax(vec2)
+			Expect(vec1).To(Equal(ResourceVector{vecValMedium, vecValMemMedium, gpuTwo}))
+		})
+
+		It("should leave receiver unchanged when other values are smaller", func() {
+			vec1 := ResourceVector{vecValMedium, vecValMemMedium, gpuTwo}
+			vec2 := ResourceVector{vecValSmall, vecValMemSmall, gpuOne}
+
+			vec1.SetMax(vec2)
+			Expect(vec1).To(Equal(ResourceVector{vecValMedium, vecValMemMedium, gpuTwo}))
+		})
+
+		It("should adopt the other vector when receiver is empty", func() {
+			vec1 := ResourceVector{}
+			vec2 := ResourceVector{vecValSmall, vecValMemSmall}
+
+			vec1.SetMax(vec2)
+			Expect(vec1).To(Equal(ResourceVector{vecValSmall, vecValMemSmall}))
+		})
+
+		It("should leave receiver unchanged when other vector is empty", func() {
+			vec1 := ResourceVector{vecValMedium, vecValMemMedium}
+			vec2 := ResourceVector{}
+
+			vec1.SetMax(vec2)
+			Expect(vec1).To(Equal(ResourceVector{vecValMedium, vecValMemMedium}))
+		})
+	})
+
 	Describe("Clone", func() {
 		It("should create a deep copy of the vector", func() {
 			original := ResourceVector{vecValMedium, vecValMemMedium, gpuTwo}

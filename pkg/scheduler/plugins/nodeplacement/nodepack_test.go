@@ -283,5 +283,5 @@ func createFakeTask(taskName string) *pod_info.PodInfo {
 				},
 			},
 		},
-	}, nil, resource_info.NewResourceVectorMap())
+	}, resource_info.NewResourceVectorMap())
 }

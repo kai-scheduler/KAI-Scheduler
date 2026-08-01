@@ -22,6 +22,16 @@ The Pod Grouper uses the PodGroup Custom Resource Definition (CRD) to represent 
 
 While users or third-party tools can manually create PodGroup resources, the Pod Grouper automates this process by analyzing incoming pods and applying appropriate grouping logic based on the pod's characteristics and ownership.
 
+### External PodGroups
+
+Podgrouper can also be told to leave PodGroup membership unchanged. When a pod or any readable object in its owner chain has `kai.scheduler/skip-podgrouper: "true"`, podgrouper does not create or update a PodGroup for that pod and does not patch `pod-group-name` or `kai.scheduler/subgroup-name`.
+
+This is the supported path for externally-created PodGroups. External controllers or manifests still need to:
+
+- Create the `PodGroup` resource explicitly.
+- Set `pod-group-name` on the pod template annotations.
+- Set `kai.scheduler/subgroup-name` on the pod template labels when using non-default subgroups.
+
 ## Plugin Architecture
 The Pod Grouper uses a plugin-based architecture similar to the scheduler's plugin framework. Each plugin implements specific grouping logic for different types of workloads:
 
@@ -95,16 +105,19 @@ For MPI workloads:
 - Use "Train" priority class by default
 
 ### JobSet Grouping
-For JobSet workloads:
-- When `startupPolicy.order` is "InOrder" (default):
-  - Creates one PodGroup per replicatedJob to avoid sequencing deadlocks
-  - PodGroup name: `pg-<jobset-name>-<jobset-uid>-<replicatedjob-name>`
-  - MinAvailable: `replicas * min(parallelism, completions if set)`
-- When `startupPolicy.order` is not "InOrder":
-  - Creates a single PodGroup for all replicatedJobs
-  - PodGroup name: `pg-<jobset-name>-<jobset-uid>`
-  - MinAvailable: sum of all replicatedJobs' minAvailable
-- Uses default priority class from DefaultGrouper
+For JobSet workloads, a single PodGroup is created per JobSet with a two-level SubGroup hierarchy: one parent SubGroup per replicatedJob and one leaf SubGroup per replica. Pods are routed to their leaf via the standard JobSet labels `jobset.sigs.k8s.io/replicatedjob-name` and `jobset.sigs.k8s.io/job-index`.
+
+- PodGroup name: `pg-<jobset-name>-<jobset-uid>`
+- Root `minSubGroup`:
+  - `1` when `spec.startupPolicy.startupPolicyOrder` is `InOrder` (the JobSet controller creates one replicatedJob at a time; the scheduler must not block waiting on pods that don't exist yet).
+  - `len(spec.replicatedJobs)` otherwise.
+  - The user has the option to overridable via the `kai.scheduler/batch-min-member` annotation on the JobSet; 
+- Per-replicatedJob parent SubGroup name: `<replicatedJob-name>`, with `minSubGroup = replicas`.
+- Per-replica leaf SubGroup name: `<replicatedJob-name>-replica-<job-index>`, with `minMember` defaulting to `template.spec.parallelism`. Override per replicatedJob by setting `kai.scheduler/batch-min-member` on `replicatedJobs[].template.metadata.annotations`; values exceeding `parallelism` are accepted and logged.
+- Topology constraints are read from two scopes:
+  - On the JobSet's own `metadata.annotations` — `kai.scheduler/topology`, `kai.scheduler/topology-required-placement`, `kai.scheduler/topology-preferred-placement` — populate the root PodGroup's `topologyConstraint` (handled by the default grouper).
+  - On `replicatedJobs[].template.metadata.annotations` — the same three keys — populate every leaf SubGroup's `topologyConstraint` for that replicatedJob. Parent SubGroups never carry topology. The two scopes are independent: a JobSet can constrain the workload to one topology level while constraining each replica's gang to a tighter level.
+- Uses default priority class from DefaultGrouper.
 
 ### Pod Grouping
 For pods with no owner, a "Train"-priority PodGroup with MinMember=1 is created.

@@ -42,12 +42,14 @@ func init() {
 	registerServiceAccounts()
 	registerConfigmaps()
 	registerServices()
+	registerEndpointSlices()
 	registerSecrets()
 	registerMutatingWebhookConfigurations()
 	registerValidatingWebhookConfigurations()
 	registerCustomResourceDefinitions()
 	registerPrometheus()
 	registerVerticalPodAutoscalers()
+	registerPodDisruptionBudgets()
 }
 
 func SetupKAIConfigOwned(fn *Collectable) {

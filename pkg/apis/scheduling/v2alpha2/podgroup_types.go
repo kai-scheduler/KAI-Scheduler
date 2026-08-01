@@ -22,6 +22,7 @@ package v2alpha2
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -74,6 +75,19 @@ type PodGroupSpec struct {
 
 	// The number of scheduling cycles to try before marking the pod group as UnschedulableOnNodePool. Currently only supporting -1 and 1
 	SchedulingBackoff *int32 `json:"schedulingBackoff,omitempty" protobuf:"varint,8,opt,name=schedulingBackoff"`
+
+	// PreemptionDelay is the minimal time the PodGroup must be pending, counted from
+	// max(creation time, last eviction time), before it may trigger eviction of other
+	// workloads (preempt, reclaim and consolidation actions). It does not affect plain
+	// allocation into free capacity, nor the PodGroup's own evictability.
+	// +optional
+	PreemptionDelay *metav1.Duration `json:"preemptionDelay,omitempty" protobuf:"bytes,9,opt,name=preemptionDelay"`
+
+	// StalenessGracePeriod is the minimum duration a stale PodGroup it allowed to remain in stale
+	// status before stale workloads may be evicted to make room. Negative values disable stale gang
+	// eviction for this PodGroup. Defaults to the scheduler's global staleness grace period.
+	// +optional
+	StalenessGracePeriod *metav1.Duration `json:"stalenessGracePeriod,omitempty" protobuf:"bytes,10,opt,name=stalenessGracePeriod"`
 }
 
 // Preemptibility defines whether this PodGroup can be preempted
@@ -105,6 +119,29 @@ func ParsePreemptibility(value string) (Preemptibility, error) {
 	default:
 		return "", fmt.Errorf("invalid preemptibility value: %s", value)
 	}
+}
+
+// ParsePreemptionDelay parses a preemption delay duration string (e.g. "30s", "5m").
+// Returns an error for invalid or negative values.
+func ParsePreemptionDelay(value string) (*metav1.Duration, error) {
+	delay, err := time.ParseDuration(value)
+	if err != nil {
+		return nil, err
+	}
+	if delay < 0 {
+		return nil, fmt.Errorf("preemption delay must be non-negative, got %s", value)
+	}
+	return &metav1.Duration{Duration: delay}, nil
+}
+
+// ParseStalenessGracePeriod parses a staleness grace period string (e.g. "-10s" "30s", "5m").
+// Returns an error for invalid values.
+func ParseStalenessGracePeriod(value string) (*metav1.Duration, error) {
+	stale, err := time.ParseDuration(value)
+	if err != nil {
+		return nil, err
+	}
+	return &metav1.Duration{Duration: stale}, nil
 }
 
 type SubGroup struct {
@@ -140,28 +177,9 @@ type SubGroup struct {
 
 // PodGroupStatus defines the observed state of PodGroup
 type PodGroupStatus struct {
-	// Current phase of PodGroup.
-	Phase PodGroupPhase `json:"phase,omitempty" protobuf:"bytes,1,opt,name=phase"`
-
 	// The conditions of PodGroup.
 	// +optional
 	Conditions []PodGroupCondition `json:"conditions,omitempty" protobuf:"bytes,2,opt,name=conditions"`
-
-	// The number of actively running pods.
-	// +optional
-	Running int32 `json:"running,omitempty" protobuf:"varint,3,opt,name=running"`
-
-	// The number of pods which reached phase Succeeded.
-	// +optional
-	Succeeded int32 `json:"succeeded,omitempty" protobuf:"varint,4,opt,name=succeeded"`
-
-	// The number of pods which reached phase Failed.
-	// +optional
-	Failed int32 `json:"failed,omitempty" protobuf:"varint,5,opt,name=failed"`
-
-	// The number of pods which reached phase Pending.
-	// +optional
-	Pending int32 `json:"pending,omitempty" protobuf:"varint,6,opt,name=pending"`
 
 	// The scheduling conditions of PodGroup.
 	// +optional
@@ -171,9 +189,6 @@ type PodGroupStatus struct {
 	// +optional
 	ResourcesStatus PodGroupResourcesStatus `json:"resourcesStatus,omitempty" protobuf:"bytes,8,opt,name=resourcesStatus"`
 }
-
-// PodGroupPhase is the phase of a pod group at the current time.
-type PodGroupPhase string
 
 type PodGroupConditionType string
 
@@ -356,6 +371,10 @@ const (
 
 	// OverLimit means that the pod group is not schedulable because scheduling it would exceed the queue's limits.
 	OverLimit UnschedulableReason = "OverLimit"
+
+	// PreemptionDelayNotElapsed means the pod group is within its preemption delay window
+	// and may not yet trigger eviction of other workloads.
+	PreemptionDelayNotElapsed UnschedulableReason = "PreemptionDelayNotElapsed"
 
 	// QueueDoesNotExist means the pod group references a queue that doesn't exist or has no parent queue.
 	QueueDoesNotExist UnschedulableReason = "QueueDoesNotExist"

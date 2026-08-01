@@ -1,0 +1,6 @@
+kind: Added
+body: Added support for configuring scheduler Pod Disruption Budget via Helm values (`scheduler.podDisruptionBudget`) when running multiple replicas per scheduling shard.
+time: 2026-07-15T19:09:26.904171476+01:00
+custom:
+    Author: dttung2905
+    Issue: "1624"

@@ -73,13 +73,15 @@ type PodGroupInfo struct {
 	AllocatedVector resource_info.ResourceVector
 	VectorMap       *resource_info.ResourceVectorMap
 
-	CreationTimestamp  metav1.Time
-	LastStartTimestamp *time.Time
-	PodGroup           *enginev2alpha2.PodGroup
-	PodGroupUID        types.UID
+	CreationTimestamp     metav1.Time
+	LastStartTimestamp    *time.Time
+	LastEvictionTimestamp *time.Time
+	PodGroup              *enginev2alpha2.PodGroup
+	PodGroupUID           types.UID
 
-	RootSubGroupSet *subgroup_info.SubGroupSet
-	PodSets         map[string]*subgroup_info.PodSet
+	RootSubGroupSet      *subgroup_info.SubGroupSet
+	PodSets              map[string]*subgroup_info.PodSet
+	InvalidSubGroupTasks pod_info.PodsMap
 
 	StalenessInfo
 
@@ -115,11 +117,13 @@ func NewPodGroupInfoWithVectorMap(uid common_info.PodGroupID, vectorMap *resourc
 			TimeStamp: nil,
 			Stale:     false,
 		},
-		RootSubGroupSet: defaultSubGroupSet,
-		PodSets:         defaultSubGroupSet.GetDescendantPodSets(),
+		RootSubGroupSet:      defaultSubGroupSet,
+		PodSets:              defaultSubGroupSet.GetDescendantPodSets(),
+		InvalidSubGroupTasks: pod_info.PodsMap{},
 
-		LastStartTimestamp:   nil,
-		activeAllocatedCount: ptr.To(0),
+		LastStartTimestamp:    nil,
+		LastEvictionTimestamp: nil,
+		activeAllocatedCount:  ptr.To(0),
 	}
 
 	for _, task := range tasks {
@@ -163,8 +167,58 @@ func (pgi *PodGroupInfo) GetAllPodSets() map[string]*subgroup_info.PodSet {
 	return pgi.PodSets
 }
 
+// ResolveTopologyAliases rewrites every subgroup/podset topology constraint's level strings to the
+// canonical node labels, using per-topology alias maps (topology name -> alias -> nodeLabel). It is
+// applied once when the snapshot is built, so every downstream consumer (topology plugin, solvers)
+// reads canonical labels and never has to resolve aliases itself.
+func (pgi *PodGroupInfo) ResolveTopologyAliases(aliasesByTopology map[string]map[string]string) {
+	if pgi.RootSubGroupSet == nil || len(aliasesByTopology) == 0 {
+		return
+	}
+	resolveSubGroupSetTopologyAliases(pgi.RootSubGroupSet, aliasesByTopology)
+}
+
+func resolveSubGroupSetTopologyAliases(
+	subGroupSet *subgroup_info.SubGroupSet, aliasesByTopology map[string]map[string]string,
+) {
+	if subGroupSet == nil {
+		return
+	}
+	if constraint := subGroupSet.GetTopologyConstraint(); constraint != nil {
+		constraint.ResolveAliases(aliasesByTopology[constraint.Topology])
+	}
+	for _, podSet := range subGroupSet.GetDirectPodSets() {
+		if constraint := podSet.GetTopologyConstraint(); constraint != nil {
+			constraint.ResolveAliases(aliasesByTopology[constraint.Topology])
+		}
+	}
+	for _, child := range subGroupSet.GetDirectSubgroupsSets() {
+		resolveSubGroupSetTopologyAliases(child, aliasesByTopology)
+	}
+}
+
 func (pgi *PodGroupInfo) IsPreemptibleJob() bool {
 	return pgi.Preemptibility == enginev2alpha2.Preemptible
+}
+
+// PreemptionDelayEnd returns the earliest time this podgroup may trigger eviction
+// of other workloads, or nil when no preemption delay is configured.
+func (pgi *PodGroupInfo) PreemptionDelayEnd() *time.Time {
+	if pgi.PodGroup == nil || pgi.PodGroup.Spec.PreemptionDelay == nil ||
+		pgi.PodGroup.Spec.PreemptionDelay.Duration <= 0 {
+		return nil
+	}
+	anchor := pgi.CreationTimestamp.Time
+	if pgi.LastEvictionTimestamp != nil && pgi.LastEvictionTimestamp.After(anchor) {
+		anchor = *pgi.LastEvictionTimestamp
+	}
+	end := anchor.Add(pgi.PodGroup.Spec.PreemptionDelay.Duration)
+	return &end
+}
+
+func (pgi *PodGroupInfo) IsWithinPreemptionDelay(now time.Time) bool {
+	end := pgi.PreemptionDelayEnd()
+	return end != nil && now.Before(*end)
 }
 
 func (pgi *PodGroupInfo) SetPodGroup(pg *enginev2alpha2.PodGroup) {
@@ -199,6 +253,16 @@ func (pgi *PodGroupInfo) SetPodGroup(pg *enginev2alpha2.PodGroup) {
 				pgi.NamespacedName, err)
 		} else {
 			pgi.LastStartTimestamp = &startTime
+		}
+	}
+
+	if pg.Annotations[commonconstants.LastEvictionTimeStamp] != "" {
+		evictionTime, err := time.Parse(time.RFC3339, pg.Annotations[commonconstants.LastEvictionTimeStamp])
+		if err != nil {
+			log.InfraLogger.V(7).Warnf("Failed to parse eviction timestamp for podgroup <%s> err: %v",
+				pgi.NamespacedName, err)
+		} else {
+			pgi.LastEvictionTimestamp = &evictionTime
 		}
 	}
 
@@ -254,6 +318,7 @@ func (pgi *PodGroupInfo) AddTaskInfo(ti *pod_info.PodInfo) {
 	podSet, found := pgi.PodSets[taskSubGroupName]
 	if !found {
 		log.InfraLogger.Warningf("AddTaskInfo for task <%s/%s> of podGroup: <%s/%s>: SubGroup not found <%s>", ti.Namespace, ti.Name, pgi.Namespace, pgi.Name, taskSubGroupName)
+		pgi.addInvalidSubGroupTask(ti, taskSubGroupName)
 		return
 	}
 
@@ -511,6 +576,7 @@ func (pgi *PodGroupInfo) CloneWithTasks(tasks []*pod_info.PodInfo) *PodGroupInfo
 		PodGroupUID: pgi.PodGroupUID,
 
 		PodStatusIndex:       map[pod_status.PodStatus]pod_info.PodsMap{},
+		InvalidSubGroupTasks: pod_info.PodsMap{},
 		activeAllocatedCount: ptr.To(0),
 	}
 
@@ -547,10 +613,19 @@ func (pgi *PodGroupInfo) String() string {
 func (pgi *PodGroupInfo) AddTaskFitErrors(task *pod_info.PodInfo, fitErrors *common_info.TasksFitErrors) {
 	existingFitErrors, found := pgi.TasksFitErrors[task.UID]
 	if found {
-		existingFitErrors.AddNodeErrors(fitErrors)
+		existingFitErrors.AddReasonCounts(fitErrors)
 	} else {
 		pgi.TasksFitErrors[task.UID] = fitErrors
 	}
+}
+
+func (pgi *PodGroupInfo) GetInvalidSubGroupTasks() pod_info.PodsMap {
+	return pgi.InvalidSubGroupTasks
+}
+
+func (pgi *PodGroupInfo) IsInvalidSubGroupTask(taskID common_info.PodID) bool {
+	_, found := pgi.InvalidSubGroupTasks[taskID]
+	return found
 }
 
 func (pgi *PodGroupInfo) AddSimpleJobFitError(reason enginev2alpha2.UnschedulableReason, message string) {
@@ -584,4 +659,17 @@ func (pgi *PodGroupInfo) generateSchedulingConstraintsSignature() common_info.Sc
 	}
 
 	return common_info.SchedulingConstraintsSignature(fmt.Sprintf("%x", hash.Sum(nil)))
+}
+
+func (pgi *PodGroupInfo) addInvalidSubGroupTask(ti *pod_info.PodInfo, taskSubGroupName string) {
+	pgi.InvalidSubGroupTasks[ti.UID] = ti
+
+	fitErrors := common_info.NewFitErrors()
+	fitErrors.SetError(fmt.Sprintf(
+		"Pod references subgroup %q, which does not exist in PodGroup %s/%s",
+		taskSubGroupName,
+		pgi.Namespace,
+		pgi.Name,
+	))
+	pgi.AddTaskFitErrors(ti, fitErrors)
 }

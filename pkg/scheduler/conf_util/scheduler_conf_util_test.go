@@ -7,12 +7,21 @@ import (
 	"os"
 	"reflect"
 	"testing"
+	"time"
 
+	"github.com/stretchr/testify/require"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/yaml"
 
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/multinodegang"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/nodelocalgreedy"
 )
 
 func TestResolveConfigurationFromFile(t *testing.T) {
@@ -61,6 +70,7 @@ func TestResolveConfigurationFromFile(t *testing.T) {
 				QueueDepthPerAction: map[string]int{
 					"consolidation": 10,
 				},
+				ScenarioSearchBudgets: defaultScenarioSearchBudgetsForTest(),
 			},
 			wantErr: false,
 		},
@@ -91,6 +101,7 @@ func TestResolveConfigurationFromFile(t *testing.T) {
 						},
 					},
 				},
+				ScenarioSearchBudgets: defaultScenarioSearchBudgetsForTest(),
 			},
 			wantErr: false,
 		},
@@ -136,6 +147,7 @@ func TestResolveConfigurationFromFile(t *testing.T) {
 				t.Errorf("Tiers equal: %v", reflect.DeepEqual(got.Tiers, tt.want.Tiers))
 				t.Errorf("QueueDepthPerAction equal: %v", reflect.DeepEqual(got.QueueDepthPerAction, tt.want.QueueDepthPerAction))
 				t.Errorf("UsageDBConfig equal: %v", reflect.DeepEqual(got.UsageDBConfig, tt.want.UsageDBConfig))
+				t.Errorf("ScenarioSearchBudgets equal: %v", reflect.DeepEqual(got.ScenarioSearchBudgets, tt.want.ScenarioSearchBudgets))
 				if len(got.Tiers) > 0 && len(tt.want.Tiers) > 0 {
 					t.Errorf("First tier plugins equal: %v", reflect.DeepEqual(got.Tiers[0].Plugins, tt.want.Tiers[0].Plugins))
 					if len(got.Tiers[0].Plugins) > 0 && len(tt.want.Tiers[0].Plugins) > 0 {
@@ -149,6 +161,59 @@ func TestResolveConfigurationFromFile(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDefaultSchedulerConfRegistersScenarioGeneratorsForDefaultBudgets(t *testing.T) {
+	actions.InitDefaultActions()
+
+	schedulerConf, err := GetDefaultSchedulerConf()
+	require.NoError(t, err)
+
+	ssn := &framework.Session{Config: schedulerConf}
+	registeredPlugins := map[string]bool{}
+	for _, tier := range schedulerConf.Tiers {
+		for _, plugin := range tier.Plugins {
+			switch plugin.Name {
+			case nodelocalgreedy.Name:
+				nodelocalgreedy.New(plugin.Arguments).OnSessionOpen(ssn)
+				registeredPlugins[plugin.Name] = true
+			case multinodegang.Name:
+				multinodegang.New(plugin.Arguments).OnSessionOpen(ssn)
+				registeredPlugins[plugin.Name] = true
+			}
+		}
+	}
+
+	require.True(t, registeredPlugins[nodelocalgreedy.Name])
+	require.True(t, registeredPlugins[multinodegang.Name])
+	require.NoError(t, ssn.ValidateScenarioGeneratorBudgetKeys())
+}
+
+func defaultScenarioSearchBudgetsForTest() *kaiv1.ScenarioSearchBudgets {
+	return &kaiv1.ScenarioSearchBudgets{
+		MaxActionSearchDuration: map[string]metav1.Duration{
+			constants.ActionDefault: scenarioSearchDurationForTest(constants.DefaultActionBudget),
+		},
+		MaxJobSearchDuration: scenarioSearchDurationPtrForTest(constants.DefaultJobBudget),
+		MinJobSearchDuration: scenarioSearchDurationPtrForTest(constants.DefaultMinJobBudget),
+		MaxGeneratorSearchDuration: map[string]metav1.Duration{
+			constants.ActionDefault:            scenarioSearchDurationForTest(constants.DefaultGeneratorBudget),
+			constants.GeneratorNodeLocalGreedy: scenarioSearchDurationForTest(constants.DefaultNodeLocalGreedy),
+			constants.GeneratorMultiNodeGang:   scenarioSearchDurationForTest(constants.DefaultMultiNodeGang),
+		},
+	}
+}
+
+func scenarioSearchDurationForTest(value string) metav1.Duration {
+	duration, err := time.ParseDuration(value)
+	if err != nil {
+		panic(err)
+	}
+	return metav1.Duration{Duration: duration}
+}
+
+func scenarioSearchDurationPtrForTest(value string) *metav1.Duration {
+	return ptr.To(scenarioSearchDurationForTest(value))
 }
 
 func generateConfigFile(config *conf.SchedulerConfiguration) (*os.File, error) {

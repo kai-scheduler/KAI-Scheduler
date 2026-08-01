@@ -27,6 +27,12 @@ func TestDefaultConfig(t *testing.T) {
 	if got := config[GPUSharingPluginName].Arguments[CDIEnabledArgument]; got != "true" {
 		t.Fatalf("expected gpusharing CDI true, got %q", got)
 	}
+	if *config[HamiCorePluginName].Enabled {
+		t.Fatalf("expected hamicore to be disabled by default")
+	}
+	if got := len(config[HamiCorePluginName].Arguments); got != 0 {
+		t.Fatalf("expected hamicore to have no default arguments, got %d", got)
+	}
 
 	options := config.EnabledOptions()
 	if got := []string{options[0].Name, options[1].Name, options[2].Name}; !equalStrings(got,

@@ -11,14 +11,29 @@ CLUSTER_NAME=${CLUSTER_NAME:-e2e-kai-scheduler}
 
 REPO_ROOT=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )/..
 : ${FEATURE_CONFIG:="default"}
+KIND_CONFIG=${KIND_CONFIG:-""}
+GENERATED_KIND_CONFIG=""
+PORT_FORWARD_PID=""
 
 : ${KIND_K8S_TAG:="v1.35.0"}
 : ${KIND_IMAGE:="kindest/node:${KIND_K8S_TAG}"}
+
+cleanup() {
+  if [[ -n "$PORT_FORWARD_PID" ]]; then
+    kill "$PORT_FORWARD_PID" 2>/dev/null || true
+  fi
+  if [[ -n "$GENERATED_KIND_CONFIG" ]]; then
+    rm -f "$GENERATED_KIND_CONFIG"
+  fi
+}
+
+trap cleanup EXIT
 
 # Parse named parameters
 TEST_THIRD_PARTY_INTEGRATIONS=${TEST_THIRD_PARTY_INTEGRATIONS:-"false"}
 LOCAL_IMAGES_BUILD=${LOCAL_IMAGES_BUILD:-"false"}
 INSTALL_VPA=${INSTALL_VPA:-"false"}
+SKIP_KAI_INSTALL=${SKIP_KAI_INSTALL:-"false"}
 
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -34,16 +49,26 @@ while [[ $# -gt 0 ]]; do
       INSTALL_VPA="true"
       shift
       ;;
+    --skip-kai-install)
+      SKIP_KAI_INSTALL="true"
+      shift
+      ;;
     --feature-config)
       FEATURE_CONFIG="$2"
       shift 2
       ;;
+    --kind-config)
+      KIND_CONFIG="$2"
+      shift 2
+      ;;
     -h|--help)
-      echo "Usage: $0 [--test-third-party-integrations] [--local-images-build] [--install-vpa] [--feature-config <config>]"
+      echo "Usage: $0 [--test-third-party-integrations] [--local-images-build] [--install-vpa] [--skip-kai-install] [--feature-config <config>] [--kind-config <path>]"
       echo "  --test-third-party-integrations: Install third party operators for compatibility testing"
       echo "  --local-images-build: Build and use local images instead of pulling from registry"
       echo "  --install-vpa: Install Vertical Pod Autoscaler and metrics-server"
-      echo "  --feature-config: Feature configuration for kind cluster generation (default: \"default\")"
+      echo "  --skip-kai-install: Prepare the cluster (and images/chart with --local-images-build) without installing KAI (e.g. for gitops e2e tests)"
+      echo "  --feature-config: Feature configuration for kind cluster generation: default | dra-enabled | numa-full (default: \"default\")"
+      echo "  --kind-config: Existing kind config file to use instead of generating one"
       exit 0
       ;;
     *)
@@ -54,19 +79,26 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-GENERATED_KIND_CONFIG=$(mktemp "${TMPDIR:-/tmp}/kind-config-XXXXXX.yaml")
-trap "rm -f \"$GENERATED_KIND_CONFIG\"" EXIT
-${REPO_ROOT}/hack/generate-kind-config.sh \
-    --feature-config "$FEATURE_CONFIG" \
-    --k8s-version "$KIND_K8S_TAG" \
-    --output "$GENERATED_KIND_CONFIG"
+if [[ -n "$KIND_CONFIG" && "$FEATURE_CONFIG" != "default" ]]; then
+  echo "--feature-config cannot be used together with --kind-config"
+  exit 1
+fi
+
+if [[ -n "$KIND_CONFIG" ]]; then
+  CLUSTER_KIND_CONFIG="$KIND_CONFIG"
+else
+  GENERATED_KIND_CONFIG=$(mktemp "${TMPDIR:-/tmp}/kind-config-XXXXXX.yaml")
+  ${REPO_ROOT}/hack/generate-kind-config.sh \
+      --feature-config "$FEATURE_CONFIG" \
+      --k8s-version "$KIND_K8S_TAG" \
+      --output "$GENERATED_KIND_CONFIG"
+  CLUSTER_KIND_CONFIG="$GENERATED_KIND_CONFIG"
+fi
 
 kind create cluster \
-    --config "$GENERATED_KIND_CONFIG" \
+    --config "$CLUSTER_KIND_CONFIG" \
     --image "${KIND_IMAGE}" \
     --name "$CLUSTER_NAME"
-
-rm -f "$GENERATED_KIND_CONFIG"
 
 # Deploy local image registry
 echo "Deploying local image registry..."
@@ -79,7 +111,7 @@ if [ "$FEATURE_CONFIG" = "dra-enabled" ]; then
   DRA_PLUGIN_ENABLED="true"
 fi
 helm upgrade -i gpu-operator oci://ghcr.io/run-ai/fake-gpu-operator/fake-gpu-operator --namespace gpu-operator --create-namespace \
-    --version 0.0.74 --values ${REPO_ROOT}/hack/fake-gpu-operator-values.yaml --set "draPlugin.enabled=$DRA_PLUGIN_ENABLED" --wait
+    --version 0.2.0 --values ${REPO_ROOT}/hack/fake-gpu-operator-values.yaml --set "draPlugin.enabled=$DRA_PLUGIN_ENABLED" --wait
 
 # Deploy Prometheus Operator
 echo "Deploying Prometheus Operator..."
@@ -140,12 +172,17 @@ if [ "$LOCAL_IMAGES_BUILD" = "true" ]; then
     # Start port-forward to local registry
     kubectl port-forward -n kube-registry deploy/registry 30100:5000 &
     PORT_FORWARD_PID=$!
-    trap "kill $PORT_FORWARD_PID 2>/dev/null || true" EXIT
     sleep 2
 
     # Probe whether docker push can reach the registry (fails on Docker Desktop where the
     # daemon runs in a VM and cannot reach the host-side port-forward on localhost).
     PROBE_IMAGE=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep "$PACKAGE_VERSION" | head -1)
+    if [ -z "$PROBE_IMAGE" ]; then
+        echo "Error: no images tagged $PACKAGE_VERSION in the docker daemon. If buildx uses a"
+        echo "docker-container driver the build result stays in the build cache; re-run with"
+        echo "DOCKER_BUILDX_ADDITIONAL_ARGS=\"--load\" so images are loaded into the daemon."
+        exit 1
+    fi
     if docker push "$PROBE_IMAGE" > /dev/null 2>&1; then
         echo "Pushing images to local registry via port-forward..."
         for image in $(docker images --format '{{.Repository}}:{{.Tag}}' | grep $PACKAGE_VERSION); do
@@ -160,19 +197,29 @@ if [ "$LOCAL_IMAGES_BUILD" = "true" ]; then
         done
     fi
 
-    # Package and install helm chart
+    # Package helm chart
     helm package ./deployments/kai-scheduler -d ./charts --app-version $PACKAGE_VERSION --version $PACKAGE_VERSION
-    helm upgrade -i kai-scheduler ./charts/kai-scheduler-$PACKAGE_VERSION.tgz -n kai-scheduler --create-namespace \
-        --set "global.gpuSharing=true" --set "global.registry=localhost:30100" --debug --wait
-    rm -rf ./charts/kai-scheduler-$PACKAGE_VERSION.tgz
+    if [ "$SKIP_KAI_INSTALL" = "true" ]; then
+        echo "Skipping KAI install; packaged chart kept at ./charts/kai-scheduler-$PACKAGE_VERSION.tgz"
+    else
+        helm upgrade -i kai-scheduler ./charts/kai-scheduler-$PACKAGE_VERSION.tgz -n kai-scheduler --create-namespace \
+        --values ${REPO_ROOT}/hack/kai-scheduler-fake-npe-values.yaml \
+        --set "global.gpuSharing=true" --set "global.registry=localhost:30100" --set "prometheus.enabled=true" --debug --wait
+        rm -rf ./charts/kai-scheduler-$PACKAGE_VERSION.tgz
+    fi
     cd ${REPO_ROOT}/hack
+elif [ "$SKIP_KAI_INSTALL" = "true" ]; then
+    echo "Skipping KAI install."
 else
     helm upgrade -i kai-scheduler oci://ghcr.io/kai-scheduler/kai-scheduler/kai-scheduler -n kai-scheduler --create-namespace \
-        --set "global.gpuSharing=true" --wait --version "$PACKAGE_VERSION"
+        --values ${REPO_ROOT}/hack/kai-scheduler-fake-npe-values.yaml \
+        --set "global.gpuSharing=true" --set "prometheus.enabled=true" --wait --version "$PACKAGE_VERSION"
 fi
 
-# Create RBAC for fake-gpu-operator status updates
-kubectl create clusterrole pods-patcher --verb=patch --resource=pods
-kubectl create rolebinding fake-status-updater --clusterrole=pods-patcher --serviceaccount=gpu-operator:status-updater -n kai-resource-reservation
+if [ "$SKIP_KAI_INSTALL" != "true" ]; then
+    # Create RBAC for fake-gpu-operator status updates
+    kubectl create clusterrole pods-patcher --verb=patch --resource=pods
+    kubectl create rolebinding fake-status-updater --clusterrole=pods-patcher --serviceaccount=gpu-operator:status-updater -n kai-resource-reservation
+fi
 
 echo "Cluster setup complete. Cluster name: $CLUSTER_NAME"

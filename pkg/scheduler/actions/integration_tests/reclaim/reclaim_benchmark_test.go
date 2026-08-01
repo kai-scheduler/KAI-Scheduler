@@ -4,19 +4,39 @@
 package reclaim
 
 import (
+	"flag"
 	"fmt"
+	"runtime"
 	"testing"
+	"time"
 
 	"go.uber.org/mock/gomock"
 	"gopkg.in/h2non/gock.v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/allocate"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/consolidation"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/preempt"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/stalegangeviction"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
+)
+
+var reclaimLargeJobSearchBudget = flag.String(
+	"reclaim-large-job-search-budget",
+	"",
+	"scenario search job budget for BenchmarkReclaimLargeJobs; action uses the same budget and generators use half",
+)
+
+var reclaimLargeJobNodeLocalGreedyBudget = flag.String(
+	"reclaim-large-job-node-local-greedy-budget",
+	"",
+	"optional NodeLocalGreedy generator budget override for BenchmarkReclaimLargeJobs",
 )
 
 func init() {
@@ -47,108 +67,206 @@ func BenchmarkReclaimLargeJobs_1000Node(b *testing.B) {
 	benchmarkReclaimLargeJobs(b, 1000)
 }
 
-type VeryLargeJobReclaimParams struct {
-	NumNodes                int
-	GPUsPerNode             int
-	NumJobs                 int
-	GPUsPerTask             int
-	VeryLargeJobGPUsPerTask int
-	VeryLargeJobTasks       int
-	Queue0DeservedGPUs      int
-	Queue1DeservedGPUs      int
-	NumberOfCacheBinds      int
-	NumberOfCacheEvictions  int
-	NumberOfPipelineActions int
+func BenchmarkReclaimManySingleGPUJobsFullCycle_10Node(b *testing.B) {
+	benchmarkReclaimManySingleGPUJobsFullCycle(b, 10)
+}
+
+func BenchmarkReclaimManySingleGPUJobsFullCycle_50Node(b *testing.B) {
+	benchmarkReclaimManySingleGPUJobsFullCycle(b, 50)
+}
+
+func BenchmarkReclaimManySingleGPUJobsFullCycle_100Node(b *testing.B) {
+	benchmarkReclaimManySingleGPUJobsFullCycle(b, 100)
+}
+
+func BenchmarkReclaimManySingleGPUJobsFullCycle_200Node(b *testing.B) {
+	benchmarkReclaimManySingleGPUJobsFullCycle(b, 200)
+}
+
+func BenchmarkReclaimManySingleGPUJobsFullCycle_500Node(b *testing.B) {
+	benchmarkReclaimManySingleGPUJobsFullCycleWithParams(b, defaultManySingleGPUJobsReclaimParams(500), true)
+}
+
+func BenchmarkReclaimManySingleGPUJobsFullCycleWithMinRuntime_500Node(b *testing.B) {
+	benchmarkReclaimManySingleGPUJobsFullCycleWithParams(b, manySingleGPUJobsReclaimParamsWithMinRuntime(500), false)
+}
+
+func benchmarkReclaimManySingleGPUJobsFullCycle(b *testing.B, numNodes int) {
+	benchmarkReclaimManySingleGPUJobsFullCycleWithParams(b, defaultManySingleGPUJobsReclaimParams(numNodes), false)
+}
+
+func benchmarkReclaimManySingleGPUJobsFullCycleWithParams(
+	b *testing.B,
+	params manySingleGPUJobsReclaimParams,
+	measureLiveHeap bool,
+) {
+	defer gock.Off()
+
+	topology := buildManySingleGPUJobsReclaimTopology(params)
+	actions := manySingleGPUJobsSchedulingCycleActions()
+	b.ReportAllocs()
+	var heapAfterAllocate uint64
+	var heapAfterCycle uint64
+	var fitErrorTasks int
+
+	for b.Loop() {
+		var before runtime.MemStats
+		if measureLiveHeap {
+			b.StopTimer()
+			runtime.GC()
+			runtime.ReadMemStats(&before)
+			b.StartTimer()
+		}
+
+		ctrl := gomock.NewController(b)
+		ssn := test_utils.BuildSession(topology, ctrl)
+		for actionIndex, action := range actions {
+			action.Execute(ssn)
+			if measureLiveHeap && actionIndex == 0 {
+				fitErrorTasks += countManySingleGPUFitErrorTasks(ssn)
+				b.StopTimer()
+				runtime.GC()
+				var after runtime.MemStats
+				runtime.ReadMemStats(&after)
+				runtime.KeepAlive(ssn)
+				heapAfterAllocate += heapDelta(before.HeapAlloc, after.HeapAlloc)
+				b.StartTimer()
+			}
+		}
+		if measureLiveHeap {
+			b.StopTimer()
+			runtime.GC()
+			var after runtime.MemStats
+			runtime.ReadMemStats(&after)
+			runtime.KeepAlive(ssn)
+			heapAfterCycle += heapDelta(before.HeapAlloc, after.HeapAlloc)
+			b.StartTimer()
+		}
+		ctrl.Finish()
+	}
+	b.StopTimer()
+	b.ReportMetric(1, "full_cycles/op")
+	if measureLiveHeap {
+		iterations := uint64(b.N)
+		b.ReportMetric(float64(fitErrorTasks)/float64(iterations), "fit_error_tasks_after_allocate/op")
+		b.ReportMetric(float64(heapAfterAllocate/iterations), "heap_live_after_allocate_bytes/op")
+		b.ReportMetric(float64(heapAfterCycle/iterations), "heap_live_after_cycle_bytes/op")
+	}
+}
+
+func manySingleGPUJobsSchedulingCycleActions() []framework.Action {
+	return []framework.Action{
+		allocate.New(),
+		consolidation.New(),
+		reclaim.New(),
+		preempt.New(),
+		stalegangeviction.New(),
+	}
+}
+
+func countManySingleGPUFitErrorTasks(ssn *framework.Session) int {
+	fitErrorTasks := 0
+	for _, job := range ssn.ClusterInfo.PodGroupInfos {
+		fitErrorTasks += len(job.TasksFitErrors)
+	}
+	return fitErrorTasks
+}
+
+func heapDelta(before, after uint64) uint64 {
+	if after <= before {
+		return 0
+	}
+	return after - before
 }
 
 func benchmarkReclaimLargeJobs(b *testing.B, numNodes int) {
 	defer gock.Off()
 
-	params := VeryLargeJobReclaimParams{
+	params := largeJobReclaimParams{
+		TopologyName:            "very large job reclaim benchmark",
+		PendingJobName:          "very-large-job",
 		NumNodes:                numNodes,
 		GPUsPerNode:             8,
-		NumJobs:                 numNodes * 8,
-		GPUsPerTask:             1,
-		VeryLargeJobGPUsPerTask: 8,
-		VeryLargeJobTasks:       numNodes / 10,
+		NumRunningJobs:          numNodes * 8,
+		RunningJobGPUsPerTask:   1,
+		PendingJobGPUsPerTask:   8,
+		PendingJobTasks:         numNodes / 2,
 		Queue0DeservedGPUs:      0,
 		Queue1DeservedGPUs:      numNodes * 8,
 		NumberOfCacheBinds:      numNodes * 4,
-		NumberOfCacheEvictions:  numNodes * 4,
-		NumberOfPipelineActions: numNodes * 4,
+		NumberOfCacheEvictions:  numNodes * 10,
+		NumberOfPipelineActions: numNodes * 10,
 	}
 
-	topology := buildReclaimTopology(params)
+	topology := buildLargeJobReclaimTopology(params)
 
 	for b.Loop() {
 		ctrl := gomock.NewController(b)
 		ssn := test_utils.BuildSession(topology, ctrl)
+		if budgets := reclaimLargeJobScenarioSearchBudgets(); budgets != nil {
+			ssn.Config.ScenarioSearchBudgets = budgets
+		}
 		action := reclaim.New()
 		action.Execute(ssn)
+		assertVeryLargeJobReclaimed(b, ssn, params)
 		ctrl.Finish()
 	}
 }
 
-func buildReclaimTopology(params VeryLargeJobReclaimParams) test_utils.TestTopologyBasic {
-	nodes := make(map[string]nodes_fake.TestNodeBasic)
-	for i := 0; i < params.NumNodes; i++ {
-		nodes[fmt.Sprintf("node%d", i)] = nodes_fake.TestNodeBasic{
-			GPUs: params.GPUsPerNode,
-		}
+func reclaimLargeJobScenarioSearchBudgets() *kaiv1.ScenarioSearchBudgets {
+	if *reclaimLargeJobSearchBudget == "" {
+		return nil
 	}
-
-	jobs := make([]*jobs_fake.TestJobBasic, params.NumJobs)
-	for i := 0; i < params.NumJobs; i++ {
-		jobs[i] = &jobs_fake.TestJobBasic{
-			Name:                fmt.Sprintf("running-job-%d", i),
-			RequiredGPUsPerTask: float64(params.GPUsPerTask),
-			Priority:            constants.PriorityTrainNumber,
-			QueueName:           "queue-0",
-			Tasks: []*tasks_fake.TestTaskBasic{
-				{
-					NodeName: fmt.Sprintf("node%d", i%params.NumNodes),
-					State:    pod_status.Running,
-				},
-			},
-		}
+	jobBudget, err := time.ParseDuration(*reclaimLargeJobSearchBudget)
+	if err != nil {
+		panic(fmt.Sprintf("invalid reclaim-large-job-search-budget: %v", err))
 	}
-
-	jobs = append(jobs, &jobs_fake.TestJobBasic{
-		Name:                "very-large-job",
-		RequiredGPUsPerTask: float64(params.VeryLargeJobGPUsPerTask),
-		Priority:            constants.PriorityTrainNumber,
-		QueueName:           "queue-1",
-		Tasks:               make([]*tasks_fake.TestTaskBasic, params.VeryLargeJobTasks),
-	})
-
-	for i := 0; i < params.VeryLargeJobTasks; i++ {
-		jobs[params.NumJobs].Tasks[i] = &tasks_fake.TestTaskBasic{
-			State: pod_status.Pending,
+	generatorBudget := jobBudget / 2
+	nodeLocalGreedyBudget := generatorBudget
+	if *reclaimLargeJobNodeLocalGreedyBudget != "" {
+		parsedNodeLocalGreedyBudget, err := time.ParseDuration(*reclaimLargeJobNodeLocalGreedyBudget)
+		if err != nil {
+			panic(fmt.Sprintf("invalid reclaim-large-job-node-local-greedy-budget: %v", err))
 		}
+		nodeLocalGreedyBudget = parsedNodeLocalGreedyBudget
 	}
-
-	return test_utils.TestTopologyBasic{
-		Name:  "very large job reclaim benchmark",
-		Jobs:  jobs,
-		Nodes: nodes,
-		Queues: []test_utils.TestQueueBasic{
-			{
-				Name:               "queue-0",
-				DeservedGPUs:       float64(params.Queue0DeservedGPUs),
-				GPUOverQuotaWeight: 0,
-			},
-			{
-				Name:               "queue-1",
-				DeservedGPUs:       float64(params.Queue1DeservedGPUs),
-				GPUOverQuotaWeight: 0,
-			},
+	return &kaiv1.ScenarioSearchBudgets{
+		MaxActionSearchDuration: map[string]metav1.Duration{
+			commonconstants.ActionDefault: {Duration: jobBudget},
+			commonconstants.ActionReclaim: {Duration: jobBudget},
 		},
-		Mocks: &test_utils.TestMock{
-			CacheRequirements: &test_utils.CacheMocking{
-				NumberOfCacheBinds:      params.NumberOfCacheBinds,
-				NumberOfCacheEvictions:  params.NumberOfCacheEvictions,
-				NumberOfPipelineActions: params.NumberOfPipelineActions,
-			},
+		MaxJobSearchDuration: &metav1.Duration{Duration: jobBudget},
+		MinJobSearchDuration: &metav1.Duration{},
+		MaxGeneratorSearchDuration: map[string]metav1.Duration{
+			commonconstants.ActionDefault:            {Duration: generatorBudget},
+			commonconstants.GeneratorNodeLocalGreedy: {Duration: nodeLocalGreedyBudget},
+			commonconstants.GeneratorMultiNodeGang:   {Duration: generatorBudget},
 		},
+	}
+}
+
+func assertVeryLargeJobReclaimed(b *testing.B, ssn *framework.Session, params largeJobReclaimParams) {
+	b.Helper()
+
+	job := ssn.ClusterInfo.PodGroupInfos[common_info.PodGroupID(params.PendingJobName)]
+	if job == nil {
+		b.Fatalf("expected %s in session", params.PendingJobName)
+	}
+	if pending := len(job.PodStatusIndex[pod_status.Pending]); pending != 0 {
+		b.Fatalf("expected %s to have no pending tasks after reclaim, got %d", params.PendingJobName, pending)
+	}
+	if pipelined := len(job.PodStatusIndex[pod_status.Pipelined]); pipelined != params.PendingJobTasks {
+		b.Fatalf("expected %s to pipeline %d tasks, got %d", params.PendingJobName, params.PendingJobTasks, pipelined)
+	}
+
+	releasingTasks := 0
+	for _, clusterJob := range ssn.ClusterInfo.PodGroupInfos {
+		releasingTasks += len(clusterJob.PodStatusIndex[pod_status.Releasing])
+	}
+	expectedReleasingTasks := int(float64(params.PendingJobTasks) *
+		params.PendingJobGPUsPerTask / params.RunningJobGPUsPerTask)
+	if releasingTasks != expectedReleasingTasks {
+		b.Fatalf("expected %d victim tasks to be releasing after reclaim, got %d",
+			expectedReleasingTasks, releasingTasks)
 	}
 }

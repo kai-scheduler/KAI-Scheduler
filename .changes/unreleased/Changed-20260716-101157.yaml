@@ -1,0 +1,3 @@
+kind: Changed
+body: |-
+  Reduced scheduler memory allocations and improved performance on clusters using NUMA topology alignment.

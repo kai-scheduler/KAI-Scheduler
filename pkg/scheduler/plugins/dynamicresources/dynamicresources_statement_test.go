@@ -549,7 +549,10 @@ func TestStatementEvictUnevict_WithDRAClaims(t *testing.T) {
 
 			if test.bindRequest != nil {
 				bindRequestInfo := bindrequest_info.NewBindRequestInfo(test.bindRequest)
-				newTask := pod_info.NewTaskInfoWithBindRequest(task.Pod, bindRequestInfo, ssn.ClusterInfo.ResourceClaims, resource_info.NewResourceVectorMap())
+				newTask := pod_info.NewTaskInfo(task.Pod, resource_info.NewResourceVectorMap(), pod_info.TaskInfoOptions{
+					BindRequest:  bindRequestInfo,
+					DraPodClaims: ssn.ClusterInfo.ResourceClaims,
+				})
 
 				for _, podSet := range job.PodSets {
 					if _, exists := podSet.GetPodInfos()[task.UID]; exists {

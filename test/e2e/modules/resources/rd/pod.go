@@ -116,7 +116,8 @@ func CreatePod(ctx context.Context, client *kubernetes.Clientset, pod *v1.Pod) (
 	}
 
 	for range numCreatePodRetries {
-		actualPod, err := client.
+		var actualPod *v1.Pod
+		actualPod, err = client.
 			CoreV1().
 			Pods(pod.Namespace).
 			Create(ctx, pod, metav1.CreateOptions{})

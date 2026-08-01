@@ -21,7 +21,9 @@ package cluster_info
 
 import (
 	"fmt"
+	"time"
 
+	nrtinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
 	"github.com/pkg/errors"
 	v1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
@@ -35,6 +37,9 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	pg "github.com/kai-scheduler/KAI-scheduler/pkg/common/podgroup"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
+	"k8s.io/dynamic-resource-allocation/deviceclass/extendedresourcecache"
+	klog "k8s.io/klog/v2"
+
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -54,15 +59,16 @@ import (
 )
 
 type ClusterInfo struct {
-	dataLister               data_lister.DataLister
-	podGroupSync             status_updater.PodGroupsSync
-	nodePoolParams           *conf.SchedulingNodePoolParams
-	restrictNodeScheduling   bool
-	clusterPodAffinityInfo   pod_affinity.ClusterPodAffinityInfo
-	includeCSIStorageObjects bool
-	nodePoolSelector         labels.Selector
-	fairnessLevelType        FairnessLevelType
-	collectUsageData         bool
+	dataLister                data_lister.DataLister
+	podGroupSync              status_updater.PodGroupsSync
+	nodePoolParams            *conf.SchedulingNodePoolParams
+	restrictNodeScheduling    bool
+	clusterPodAffinityInfo    pod_affinity.ClusterPodAffinityInfo
+	includeCSIStorageObjects  bool
+	nodePoolSelector          labels.Selector
+	fairnessLevelType         FairnessLevelType
+	collectUsageData          bool
+	stuckInReleasingThreshold time.Duration
 }
 
 type FairnessLevelType string
@@ -77,6 +83,7 @@ const (
 func New(
 	informerFactory informers.SharedInformerFactory,
 	kubeAiSchedulerInformerFactory kubeAiSchedulerinfo.SharedInformerFactory,
+	nrtInformerFactory nrtinformers.SharedInformerFactory,
 	usageLister *usagedb.UsageLister,
 	nodePoolParams *conf.SchedulingNodePoolParams,
 	restrictNodeScheduling bool,
@@ -84,6 +91,7 @@ func New(
 	includeCSIStorageObjects bool,
 	fullHierarchyFairness bool,
 	podGroupSync status_updater.PodGroupsSync,
+	stuckInReleasingThreshold time.Duration,
 ) (*ClusterInfo, error) {
 	indexers := cache.Indexers{
 		podByPodGroupIndexerName: podByPodGroupIndexer,
@@ -103,15 +111,16 @@ func New(
 	}
 
 	return &ClusterInfo{
-		dataLister:               data_lister.New(informerFactory, kubeAiSchedulerInformerFactory, usageLister, nodePoolSelector),
-		nodePoolParams:           nodePoolParams,
-		restrictNodeScheduling:   restrictNodeScheduling,
-		clusterPodAffinityInfo:   clusterPodAffinityInfo,
-		includeCSIStorageObjects: includeCSIStorageObjects,
-		nodePoolSelector:         nodePoolSelector,
-		fairnessLevelType:        fairnessLevelType,
-		podGroupSync:             podGroupSync,
-		collectUsageData:         usageLister != nil,
+		dataLister:                data_lister.New(informerFactory, kubeAiSchedulerInformerFactory, nrtInformerFactory, usageLister, nodePoolSelector),
+		nodePoolParams:            nodePoolParams,
+		restrictNodeScheduling:    restrictNodeScheduling,
+		clusterPodAffinityInfo:    clusterPodAffinityInfo,
+		includeCSIStorageObjects:  includeCSIStorageObjects,
+		nodePoolSelector:          nodePoolSelector,
+		fairnessLevelType:         fairnessLevelType,
+		podGroupSync:              podGroupSync,
+		collectUsageData:          usageLister != nil,
+		stuckInReleasingThreshold: stuckInReleasingThreshold,
 	}, nil
 }
 
@@ -130,7 +139,20 @@ func (c *ClusterInfo) Snapshot() (*api.ClusterInfo, error) {
 
 	snapshot.ResourceVectorMap = resource_info.NewResourceVectorMap()
 
-	snapshot.Nodes, snapshot.MinNodeGPUMemory, err = c.snapshotNodes(c.clusterPodAffinityInfo, snapshot.ResourceVectorMap)
+	snapshot.DeviceClasses, err = c.dataLister.ListDeviceClasses()
+	if err != nil {
+		err = errors.WithStack(fmt.Errorf("error listing device classes: %w", err))
+		return nil, err
+	}
+
+	erc := extendedresourcecache.NewExtendedResourceCache(klog.Background().WithName("extended-resource-cache"))
+	for _, dc := range snapshot.DeviceClasses {
+		erc.OnAdd(dc, false)
+	}
+	snapshot.DeviceClassByResource = erc
+
+	snapshot.Nodes, snapshot.MinNodeGPUMemoryMiB, snapshot.MaxNodeGPUMemoryMiB, err = c.snapshotNodes(
+		c.clusterPodAffinityInfo, snapshot.ResourceVectorMap, erc)
 	if err != nil {
 		err = errors.WithStack(fmt.Errorf("error snapshotting nodes: %w", err))
 		return nil, err
@@ -145,11 +167,7 @@ func (c *ClusterInfo) Snapshot() (*api.ClusterInfo, error) {
 		err = errors.WithStack(fmt.Errorf("error listing resource slices: %w", err))
 		return nil, err
 	}
-	snapshot.DeviceClasses, err = c.dataLister.ListDeviceClasses()
-	if err != nil {
-		err = errors.WithStack(fmt.Errorf("error listing device classes: %w", err))
-		return nil, err
-	}
+
 	snapshot.BindRequests, snapshot.BindRequestsForDeletedNodes, err = c.snapshotBindRequests(snapshot.Nodes)
 	if err != nil {
 		err = errors.WithStack(fmt.Errorf("error snapshotting bind requests: %w", err))
@@ -226,6 +244,14 @@ func (c *ClusterInfo) Snapshot() (*api.ClusterInfo, error) {
 		log.InfraLogger.V(7).Infof("Advanced CSI scheduling not enabled - not snapshotting CSI storage objects")
 	}
 
+	// Resolve topology-constraint aliases to canonical node labels once, before constraint signatures
+	// are computed below, so every downstream consumer (topology plugin, solvers) reads canonical labels.
+	if aliasesByTopology := buildAliasMapsByTopology(snapshot.Topologies); len(aliasesByTopology) > 0 {
+		for _, pg := range snapshot.PodGroupInfos {
+			pg.ResolveTopologyAliases(aliasesByTopology)
+		}
+	}
+
 	for _, pg := range snapshot.PodGroupInfos {
 		log.InfraLogger.V(6).Infof("Scheduling constraints signature for podgroup %s/%s: %s",
 			pg.Namespace, pg.Name, pg.GetSchedulingConstraintsSignature())
@@ -240,31 +266,60 @@ func (c *ClusterInfo) Snapshot() (*api.ClusterInfo, error) {
 func (c *ClusterInfo) snapshotNodes(
 	clusterPodAffinityInfo pod_affinity.ClusterPodAffinityInfo,
 	vectorMap *resource_info.ResourceVectorMap,
-) (nodesMap map[string]*node_info.NodeInfo, minimalNodeGPUMemory int64, err error) {
+	erc *extendedresourcecache.ExtendedResourceCache,
+) (nodesMap map[string]*node_info.NodeInfo, minimalNodeGPUMemory *int64, maximalNodeGPUMemory *int64, err error) {
 	nodes, err := c.dataLister.ListNodes()
 	if err != nil {
-		return nil, 0, fmt.Errorf("error listing nodes: %w", err)
+		return nil, nil, nil, fmt.Errorf("error listing nodes: %w", err)
 	}
 	if c.restrictNodeScheduling {
 		nodes = filterUnmarkedNodes(nodes)
 	}
 
-	var minGPUMemory int64 = node_info.DefaultGpuMemory
+	minimalNodeGPUMemory = nil
+	maximalNodeGPUMemory = nil
 
 	resultNodes := map[string]*node_info.NodeInfo{}
 	for _, node := range nodes {
 		vectorMap.AddResourceList(node.Status.Allocatable)
 
 		podAffinityInfo := NewK8sNodePodAffinityInfo(node, clusterPodAffinityInfo)
-		resultNodes[node.Name] = node_info.NewNodeInfo(node, podAffinityInfo, vectorMap)
+		ni := node_info.NewNodeInfo(node, podAffinityInfo, vectorMap)
+		ni.DeviceClassByResource = erc
+		resultNodes[node.Name] = ni
 		nodeGPUMemory := resultNodes[node.Name].MemoryOfEveryGpuOnNode
 		if nodeGPUMemory > node_info.DefaultGpuMemory {
-			minGPUMemory = min(minGPUMemory, resultNodes[node.Name].MemoryOfEveryGpuOnNode)
+			if minimalNodeGPUMemory == nil || *minimalNodeGPUMemory > nodeGPUMemory {
+				minimalNodeGPUMemory = &nodeGPUMemory
+			}
+			if maximalNodeGPUMemory == nil || *maximalNodeGPUMemory < nodeGPUMemory {
+				maximalNodeGPUMemory = &nodeGPUMemory
+			}
 		}
 	}
 
 	c.populateDRAGPUs(resultNodes)
-	return resultNodes, minGPUMemory, nil
+	c.populateNodeResourceTopologies(resultNodes)
+	return resultNodes, minimalNodeGPUMemory, maximalNodeGPUMemory, nil
+}
+
+// populateNodeResourceTopologies attaches each node's NodeResourceTopology object to the corresponding NodeInfo.
+// It is a no-op when the NodeResourceTopology CRD is not served by the cluster.
+func (c *ClusterInfo) populateNodeResourceTopologies(nodes map[string]*node_info.NodeInfo) {
+	nrts, err := c.dataLister.ListNodeResourceTopologies()
+	if err != nil {
+		log.InfraLogger.V(6).Infof("Failed to list NodeResourceTopologies: %v", err)
+		return
+	}
+
+	for _, nrt := range nrts {
+		nodeInfo, found := nodes[nrt.Name]
+		if !found {
+			continue
+		}
+		nodeInfo.NodeResourceTopology = nrt
+		nodeInfo.NumaTopology = node_info.BuildNumaTopology(nrt, nodeInfo.VectorMap)
+	}
 }
 
 // populateDRAGPUs counts GPUs from DRA ResourceSlices for nodes that don't have extended resources.
@@ -452,7 +507,9 @@ func (c *ClusterInfo) getPodInfo(
 	if !found {
 		log.InfraLogger.V(6).Infof("Pod %s/%s/%s not found in existing pods, adding", pod.Namespace,
 			pod.Name, pod.UID)
-		podInfo = pod_info.NewTaskInfo(pod, nil, vectorMap)
+		podInfo = pod_info.NewTaskInfo(pod, vectorMap, pod_info.TaskInfoOptions{
+			StuckInReleasingThreshold: c.stuckInReleasingThreshold,
+		})
 		existingPods[common_info.PodID(pod.UID)] = podInfo
 	}
 	return podInfo
@@ -477,7 +534,11 @@ func (c *ClusterInfo) getNodeToPodInfosMap(allPods []*v1.Pod, bindRequests bindr
 
 		podBindRequest := bindRequests.GetBindRequestForPod(pod)
 		draPodClaims := resource_info.GetDraPodClaims(pod, draClaimMap, podsToClaimsMap)
-		podInfo := pod_info.NewTaskInfoWithBindRequest(pod, podBindRequest, draPodClaims, vectorMap)
+		podInfo := pod_info.NewTaskInfo(pod, vectorMap, pod_info.TaskInfoOptions{
+			BindRequest:               podBindRequest,
+			DraPodClaims:              draPodClaims,
+			StuckInReleasingThreshold: c.stuckInReleasingThreshold,
+		})
 
 		if pod_info.IsResourceReservationTask(podInfo.Pod) {
 			podInfos := nodeReservationPodInfosMap[podInfo.NodeName]
@@ -513,6 +574,28 @@ func (c *ClusterInfo) snapshotTopologies() ([]*kaiv1alpha1.Topology, error) {
 		return nil, fmt.Errorf("error listing topologies: %w", err)
 	}
 	return topologies, nil
+}
+
+// buildAliasMapsByTopology returns, per topology name, its alias->nodeLabel map. Only topologies that
+// declare at least one level alias are included; the result is empty when no aliases are in use.
+func buildAliasMapsByTopology(topologies []*kaiv1alpha1.Topology) map[string]map[string]string {
+	result := map[string]map[string]string{}
+	for _, topology := range topologies {
+		var aliases map[string]string
+		for _, level := range topology.Spec.Levels {
+			if level.Alias == "" {
+				continue
+			}
+			if aliases == nil {
+				aliases = map[string]string{}
+			}
+			aliases[level.Alias] = level.NodeLabel
+		}
+		if len(aliases) > 0 {
+			result[topology.Name] = aliases
+		}
+	}
+	return result
 }
 
 func getDefaultPriority(dataLister data_lister.DataLister) (int32, error) {

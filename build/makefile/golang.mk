@@ -3,7 +3,7 @@
 ## Paths
 BUILD_DIR=bin
 BUILD_DIR_ABS=$(shell pwd)/${BUILD_DIR}
-GOLANG_LINTER_CONFIG_PATH=build/lint/.golangci.yaml
+GOLANG_LINTER_CONFIG_PATH=.golangci.yaml
 BUILD_OUT_PATH_AMD=${BUILD_DIR}/${SERVICE_NAME}-amd64
 BUILD_OUT_PATH_ARM=${BUILD_DIR}/${SERVICE_NAME}-arm64
 BUILD_IN_PATH=cmd/${SERVICE_NAME}/main.go
@@ -21,12 +21,15 @@ DOCKER_GO_CACHING_VOLUME_AND_ENV += -e GOSUMDB=$(GOSUMDB)
 endif
 
 ## Version
-GO_VERSION=1.26.1
+GO_VERSION=1.26.3
 GO_IMAGE_VERSION=${GO_VERSION}-bookworm
 GOLANGCI_LINT_VERSION=v2.11.3
 
 ## Tool Versions
 CGO_ENABLED?=1
+
+## FIPS
+GOFIPS140_VERSION?=v1.0.0
 
 ## Version Variables
 BUILD_DATE := $(shell date -u +'%Y-%m-%dT%H:%M:%SZ')
@@ -43,6 +46,9 @@ LDFLAGS := -X '$(VERSION_PKG).buildDate=$(BUILD_DATE)' \
 
 ### GO
 DOCKER_GO_BASE_COMMAND=${DOCKER_COMMAND} -e CGO_ENABLED=${CGO_ENABLED} -e GO111MODULE=on ${DOCKER_GO_CACHING_VOLUME_AND_ENV}
+ifeq ($(FIPS), 1)
+DOCKER_GO_BASE_COMMAND += -e GOFIPS140=${GOFIPS140_VERSION}
+endif
 
 GO_ENV_ARCH_AMD=-e GOOS=linux -e GOARCH=amd64 -e CC=x86_64-linux-gnu-gcc -e CXX=x86_64-linux-gnu-g++
 GO_ENV_ARCH_ARM=-e GOOS=linux -e GOARCH=arm64 -e CC=aarch64-linux-gnu-gcc -e CXX=aarch64-linux-gnu-g++

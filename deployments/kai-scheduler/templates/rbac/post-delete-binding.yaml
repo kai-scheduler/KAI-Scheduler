@@ -7,8 +7,7 @@ kind: ClusterRoleBinding
 metadata:
   name: post-delete-cleanup
   annotations:
-    "helm.sh/hook": post-delete
-    "helm.sh/hook-delete-policy": hook-succeeded
+    {{- include "kai-scheduler.post-delete-hook-annotations" . | nindent 4 }}
 subjects:
   - kind: ServiceAccount
     name: post-delete-cleanup

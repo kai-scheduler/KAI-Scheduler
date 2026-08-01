@@ -424,5 +424,75 @@ func getReclaimGpuMemoryTestsMetadata() []integration_tests_utils.TestTopologyMe
 				},
 			},
 		},
+		{
+			// MinNodeGPUMemoryMiB is used by GetTasksToAllocateInitResourceVector to convert GPU-memory
+			// requests to GPU fractions for CanReclaimResources: allocated + fraction ≤ fairShare.
+			//
+			// The node has 800 MiB/GPU → minNodeGPUMemoryMiB=800 → reclaimer fraction = 320/800 = 0.40 ≤ 0.5
+			// → CanReclaimResources passes → reclaim proceeds.
+			//
+			// If minNodeGPUMemoryMiB were wrong (for example, 100):
+			//   fraction = 320/100 = 3.2 > 0.5 → CanReclaimResources returns false → reclaim blocked.
+			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Name: "reclaim enabled when min node GPU memory produces fraction within fair share",
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:              "q0_running",
+						RequiredGpuMemory: 720,
+						Priority:          constants.PriorityTrainNumber,
+						QueueName:         "queue0",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								NodeName:  "node0",
+								State:     pod_status.Running,
+								GPUGroups: []string{"0"},
+							},
+						},
+					},
+					{
+						Name:              "q1_pending",
+						RequiredGpuMemory: 320,
+						Priority:          constants.PriorityTrainNumber,
+						QueueName:         "queue1",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								State: pod_status.Pending,
+							},
+						},
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node0": {GPUs: 1, GPUMemory: 800},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{
+						Name:         "queue0",
+						DeservedGPUs: 0.5,
+					},
+					{
+						Name:         "queue1",
+						DeservedGPUs: 0.5,
+					},
+				},
+				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"q0_running": {
+						GPUsRequired: 0,
+						Status:       pod_status.Releasing,
+					},
+					"q1_pending": {
+						Status:               pod_status.Pipelined,
+						GPUsRequired:         0,
+						DontValidateGPUGroup: true,
+					},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{
+						NumberOfCacheEvictions:  1,
+						NumberOfCacheBinds:      5,
+						NumberOfPipelineActions: 1,
+					},
+				},
+			},
+		},
 	}
 }

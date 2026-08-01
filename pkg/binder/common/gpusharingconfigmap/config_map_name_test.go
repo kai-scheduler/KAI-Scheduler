@@ -6,8 +6,10 @@ package gpusharingconfigmap
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 type configMapNameTest struct {
@@ -27,9 +29,7 @@ func TestGetDesiredConfigMapName(t *testing.T) {
 					},
 				},
 				Spec: v1.PodSpec{
-					Containers: []v1.Container{
-						{},
-					},
+					Containers: []v1.Container{{}},
 				},
 			},
 			containerIndex:       0,
@@ -44,22 +44,18 @@ func TestGetDesiredConfigMapName(t *testing.T) {
 					},
 				},
 				Spec: v1.PodSpec{
-					Containers: []v1.Container{
-						{},
-						{},
-					},
-					Volumes: []v1.Volume{
-						{
-							Name: "config-map-vol",
-							VolumeSource: v1.VolumeSource{
-								ConfigMap: &v1.ConfigMapVolumeSource{
-									LocalObjectReference: v1.LocalObjectReference{
-										Name: "config-map-name-1",
-									},
+					Containers: []v1.Container{{}, {}},
+					Volumes: []v1.Volume{{
+						Name: "config-map-vol",
+						VolumeSource: v1.VolumeSource{
+							ConfigMap: &v1.ConfigMapVolumeSource{
+								LocalObjectReference: v1.LocalObjectReference{
+									Name: "config-map-name-1",
 								},
 							},
 						},
 					}},
+				},
 			},
 			containerIndex:       1,
 			desiredConfigMapName: "config-map-name-1",
@@ -84,4 +80,53 @@ func TestGetDesiredConfigMapName(t *testing.T) {
 			t.Errorf("Expected config map name %v but got %v", test.desiredConfigMapName, configMapName)
 		}
 	}
+}
+
+func TestSetGpuCapabilitiesConfigMapNameTrimsTrailingDotAfterTruncation(t *testing.T) {
+	pod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.b",
+		},
+		Spec: v1.PodSpec{
+			Containers: []v1.Container{{}},
+		},
+	}
+
+	containerRef := &PodContainerRef{
+		Container: &pod.Spec.Containers[0],
+		Index:     0,
+		Type:      RegularContainer,
+	}
+
+	configMapName := SetGpuCapabilitiesConfigMapName(pod, containerRef)
+
+	assert.Empty(t, validation.IsDNS1123Subdomain(configMapName))
+	assert.NotContains(t, configMapName, ".-")
+	assert.Equal(t, pod.Annotations[gpuSharingConfigMapAnnotation]+"-0", configMapName)
+}
+
+func TestSetGpuCapabilitiesConfigMapNameUsesOwnerRefAndTrimsTrailingHyphenAfterTruncation(t *testing.T) {
+	pod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "fallback-name",
+			OwnerReferences: []metav1.OwnerReference{{
+				Name: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-b",
+			}},
+		},
+		Spec: v1.PodSpec{
+			Containers: []v1.Container{{}},
+		},
+	}
+
+	containerRef := &PodContainerRef{
+		Container: &pod.Spec.Containers[0],
+		Index:     0,
+		Type:      RegularContainer,
+	}
+
+	configMapName := SetGpuCapabilitiesConfigMapName(pod, containerRef)
+
+	assert.Empty(t, validation.IsDNS1123Subdomain(configMapName))
+	assert.NotContains(t, configMapName, "--")
+	assert.Equal(t, pod.Annotations[gpuSharingConfigMapAnnotation]+"-0", configMapName)
 }

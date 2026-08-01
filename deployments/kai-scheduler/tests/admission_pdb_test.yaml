@@ -1,0 +1,42 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+suite: admission podDisruptionBudget in kai-config
+
+set:
+  kaiConfigDeployer:
+    enabled: false
+  kaiConfig:
+    render: true
+
+templates:
+  - kai-config.yaml
+tests:
+  - it: renders admission podDisruptionBudget from values
+    set:
+      admission.podDisruptionBudget:
+        enabled: true
+        maxUnavailable: 1
+    asserts:
+      - equal:
+          path: spec.admission.service.podDisruptionBudget.enabled
+          value: true
+      - equal:
+          path: spec.admission.service.podDisruptionBudget.maxUnavailable
+          value: 1
+
+  - it: renders disabled PDB when enabled is false
+    set:
+      admission.podDisruptionBudget:
+        enabled: false
+    asserts:
+      - equal:
+          path: spec.admission.service.podDisruptionBudget.enabled
+          value: false
+
+  - it: omits podDisruptionBudget when the values map is absent
+    set:
+      admission.podDisruptionBudget: null
+    asserts:
+      - isNull:
+          path: spec.admission.service.podDisruptionBudget
