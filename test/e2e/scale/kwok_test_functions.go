@@ -11,8 +11,10 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	batchv1 "k8s.io/api/batch/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/utils/ptr"
 
 	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
@@ -139,7 +141,7 @@ func distributedJobsScaleTestInternal(
 	submissions := make([]jobSubmission, numberOfDistributedJobs)
 	for i := range submissions {
 		submissions[i] = distributedJobSubmissionForKwok(
-			testCtx, testQueue, resources, podsPerDistributedJob, nil, topologyConstraint,
+			testCtx, testQueue, resources, podsPerDistributedJob, nil, topologyConstraint, nil,
 		)
 	}
 	tracker, err := submitJobBatch(ctx, testCtx, queue.GetConnectedNamespaceToQueue(testQueue), submissions)
@@ -221,7 +223,7 @@ func measureUnschedulableDelayInSeconds(
 			defer cancel()
 
 			tracker, err := submitJobBatch(measurementCtx, testCtx, queue.GetConnectedNamespaceToQueue(testQueue), []jobSubmission{
-				distributedJobSubmissionForKwok(testCtx, testQueue, resources, numberOfPods, nil, nil),
+				distributedJobSubmissionForKwok(testCtx, testQueue, resources, numberOfPods, nil, nil, nil),
 			})
 			Expect(err).NotTo(HaveOccurred())
 			defer tracker.Close()
@@ -245,7 +247,7 @@ func reclaimForOneLargeJob(ctx context.Context, testCtx *testcontext.TestContext
 		constants.NvidiaGpuResource: *resource.NewQuantity(int64(gpusPerNode), resource.DecimalSI),
 	}}
 	tracker, err := submitJobBatch(ctx, testCtx, queue.GetConnectedNamespaceToQueue(reclaimSingleGPUJobsQueue), []jobSubmission{
-		distributedJobSubmissionForKwok(testCtx, reclaimSingleGPUJobsQueue, resources, numberOfPods, nil, nil),
+		distributedJobSubmissionForKwok(testCtx, reclaimSingleGPUJobsQueue, resources, numberOfPods, nil, nil, nil),
 	})
 	Expect(err).NotTo(HaveOccurred())
 	defer tracker.Close()
@@ -280,6 +282,7 @@ func runNCCLSimulation(
 		for range numberOfNCCLJobsPerSize {
 			submissions = append(submissions, distributedJobSubmissionForKwok(
 				testCtx, testQueue, FullNodeGPURequirement, jobSize, podLabels, nil,
+				ptr.To(batchv1.Failed),
 			))
 		}
 	}

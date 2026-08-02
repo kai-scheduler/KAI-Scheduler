@@ -51,15 +51,17 @@ func submitDistributedJobForKwok(
 	ctx context.Context, testCtx *testcontext.TestContext,
 	jobQueue *v2.Queue, resourcesPerPod v1.ResourceRequirements, numberOfTasks int,
 	extraLabels, jobLabels map[string]string, topologyConstraint *v2alpha2.TopologyConstraint,
+	podReplacementPolicy *batchv1.PodReplacementPolicy,
 ) (*batchv1.Job, error) {
 	return rd.SubmitDistributedBatchJob(ctx, testCtx.ControllerClient, jobQueue,
 		rd.DistributedBatchJobOptions{
-			Parallelism:        ptr.To(int32(numberOfTasks)),
-			Resources:          resourcesPerPod,
-			ExtraLabels:        extraLabels,
-			JobLabels:          jobLabels,
-			TopologyConstraint: topologyConstraint,
-			PodSpecMutator:     addKWOKTaintsAndAffinity,
+			Parallelism:          ptr.To(int32(numberOfTasks)),
+			Resources:            resourcesPerPod,
+			ExtraLabels:          extraLabels,
+			JobLabels:            jobLabels,
+			TopologyConstraint:   topologyConstraint,
+			PodReplacementPolicy: podReplacementPolicy,
+			PodSpecMutator:       addKWOKTaintsAndAffinity,
 		})
 }
 
@@ -70,6 +72,7 @@ func distributedJobSubmissionForKwok(
 	numberOfTasks int,
 	extraPodLabels map[string]string,
 	topologyConstraint *v2alpha2.TopologyConstraint,
+	podReplacementPolicy *batchv1.PodReplacementPolicy,
 ) jobSubmission {
 	return jobSubmission{
 		ExpectedPods: numberOfTasks,
@@ -78,7 +81,7 @@ func distributedJobSubmissionForKwok(
 			maps.Copy(podLabels, batchLabels)
 			return submitDistributedJobForKwok(
 				ctx, testCtx, jobQueue, resourcesPerPod, numberOfTasks,
-				podLabels, batchLabels, topologyConstraint,
+				podLabels, batchLabels, topologyConstraint, podReplacementPolicy,
 			)
 		},
 	}

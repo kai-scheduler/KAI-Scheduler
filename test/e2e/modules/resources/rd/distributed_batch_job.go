@@ -53,6 +53,8 @@ type DistributedBatchJobOptions struct {
 	JobLabels map[string]string
 	// ExtraLabels are merged into pod template labels (e.g. for test filtering).
 	ExtraLabels map[string]string
+	// PodReplacementPolicy controls when the Job controller creates replacement Pods.
+	PodReplacementPolicy *batchv1.PodReplacementPolicy
 	// PodSpecMutator is applied to the pod template spec after defaults are set. Scale
 	// tests use this to inject KWOK tolerations/affinity without importing scale into rd.
 	PodSpecMutator func(*v1.PodSpec)
@@ -125,6 +127,7 @@ func buildDistributedBatchJob(
 	job.Name = opts.NamePrefix + job.Name
 	job.Spec.Parallelism = ptr.To(parallelism)
 	job.Spec.Completions = ptr.To(parallelism)
+	job.Spec.PodReplacementPolicy = opts.PodReplacementPolicy
 
 	if job.Annotations == nil {
 		job.Annotations = map[string]string{}
