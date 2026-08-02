@@ -1,3 +1,0 @@
-kind: Added
-body: |-
-  Helm value global.priorityClassName sets a PriorityClass on all KAI control-plane pods

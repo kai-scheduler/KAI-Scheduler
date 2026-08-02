@@ -1,3 +1,0 @@
-kind: Added
-body: |-
-  Added `global.resourceReservation.createNamespace` Helm value (default `true`) to allow disabling creation of the resource-reservation namespace, for embedding KAI in a parent chart that creates the namespace itself.
