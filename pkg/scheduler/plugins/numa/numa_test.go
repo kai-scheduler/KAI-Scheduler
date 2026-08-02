@@ -308,6 +308,7 @@ func TestBuildNumaRequestsNonIntegralCPU(t *testing.T) {
 	}
 
 	main := v1.Container{Resources: resources("44", "16Gi")}
+	fractionalMain := v1.Container{Resources: resources("700m", "16Gi")}
 	fractionalSidecar := v1.Container{Resources: resources("4500m", "2Gi")}
 	integralSidecar := v1.Container{Resources: resources("5", "2Gi")}
 
@@ -325,6 +326,17 @@ func TestBuildNumaRequestsNonIntegralCPU(t *testing.T) {
 			resource_info.NewResourceVectorMap())
 		concurrent, _ := reqs.forScope(node_info.TopologyScopePod)
 		assert.Equal(t, int64(49000), milliCores(concurrent[0]))
+	})
+
+	t.Run("integral sidecar is charged when the main container is fractional", func(t *testing.T) {
+		reqs := buildNumaRequests(podWith(v1.PodQOSGuaranteed, fractionalMain, integralSidecar),
+			resource_info.NewResourceVectorMap())
+		concurrent, _ := reqs.forScope(node_info.TopologyScopePod)
+		assert.Equal(t, int64(5000), milliCores(concurrent[0]))
+
+		concurrent, _ = reqs.forScope(node_info.TopologyScopeContainer)
+		assert.Zero(t, milliCores(concurrent[0]), "the main container stays in the shared cpu pool")
+		assert.Equal(t, int64(5000), milliCores(concurrent[1]))
 	})
 
 	t.Run("container scope zeroes only the fractional container's cpu", func(t *testing.T) {
