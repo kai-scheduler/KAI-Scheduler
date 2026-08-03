@@ -131,6 +131,71 @@ For the general override model, see [Scheduler Config Customization](../operator
 | `restricted` | Filters out nodes that cannot satisfy the kubelet's preferred minimal NUMA span for all relevant resources. It can select multiple NUMA zones when that is the minimal valid placement. | Avoids bindings that the kubelet is expected to reject while permitting correctly aligned multi-NUMA workloads, such as large training pods. |
 | `single-numa-node` | Filters out nodes unless every NUMA-relevant request fits within one NUMA zone. | Keeps the workload's relevant CPU, memory, and devices on one NUMA node; a pod that only fits across zones remains pending. |
 
+### Visual examples
+
+Each diagram uses a Guaranteed pod; its requested CPU, memory, and GPU resources are stated above the example. Each box shows the resources available in one NUMA zone; `✓` means KAI keeps the node eligible and `✗` means KAI filters it out.
+
+#### `best-effort`: prefer a local placement, but admit either node
+
+```mermaid
+flowchart LR
+    P["Pod<br/>4 CPU · 16 GiB · 1 GPU"]
+
+    subgraph A["Candidate A: local"]
+        A0["NUMA 0<br/>4 CPU · 16 GiB · 1 GPU"]
+        AOK["1 zone<br/>Preferred ✓"]
+        A0 --> AOK
+    end
+
+    subgraph B["Candidate B: split"]
+        B0["NUMA 0<br/>0 CPU · 0 GiB · 1 GPU"]
+        B1["NUMA 1<br/>4 CPU · 16 GiB · 0 GPU"]
+        BOK["2 zones<br/>Eligible ✓"]
+        B0 --> BOK
+        B1 --> BOK
+    end
+
+    P -->|"all resources"| A0
+    P -->|"GPU"| B0
+    P -->|"CPU + memory"| B1
+```
+
+KAI ranks Candidate A higher because it predicts a one-zone allocation. Candidate B remains eligible: if it is selected, the kubelet admits the pod even though its GPU is remote from its CPU and memory.
+
+#### `restricted`: admit the smallest valid NUMA span
+
+```mermaid
+flowchart LR
+    P["Pod<br/>6 CPU · 24 GiB · 1 GPU"]
+    N0["NUMA 0<br/>4 CPU · 16 GiB · 1 GPU"]
+    N1["NUMA 1<br/>4 CPU · 16 GiB · 0 GPU"]
+    OK["2 zones: smallest valid span<br/>Node eligible ✓"]
+
+    P -->|"4 CPU + 16 GiB + GPU"| N0
+    P -->|"2 CPU + 8 GiB"| N1
+    N0 --> OK
+    N1 --> OK
+```
+
+This policy rejects candidates that cannot meet the kubelet's minimal NUMA span, but it does not require every workload to fit in one zone.
+
+#### `single-numa-node`: require every relevant resource in one zone
+
+```mermaid
+flowchart LR
+    P["Pod<br/>6 CPU · 24 GiB · 1 GPU"]
+    N0["NUMA 0<br/>4 CPU · 16 GiB · 1 GPU"]
+    N1["NUMA 1<br/>4 CPU · 16 GiB · 0 GPU"]
+    NO["No NUMA zone fits every request<br/>Node filtered ✗"]
+    Pending["Pod remains Pending"]
+
+    P --> N0
+    P --> N1
+    N0 --> NO
+    N1 --> NO
+    NO --> Pending
+```
+
 For more information, check out the official docs on [topology-manager-policies](https://kubernetes.io/docs/tasks/administer-cluster/topology-manager/#topology-manager-policies).
 
 Nodes with `none`, missing NRT data, or no NUMA-relevant resources are not NUMA-filtered. For a workload, devices with topology are NUMA-relevant at any QoS class. CPU, memory, and hugepages are NUMA-relevant only for Guaranteed pods. If a node publishes CPU or memory per zone but its corresponding kubelet manager is not enabled, configure the plugin's `ignoreList` for that resource; otherwise KAI can conservatively reject capacity that the kubelet would permit.

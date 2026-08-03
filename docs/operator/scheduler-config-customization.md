@@ -115,6 +115,8 @@ spec:
 
 Custom plugins default to `enabled: true` and `priority: 0` if not specified.
 
+For NUMA-aware scheduling, see [NUMA-Aware Scheduling](../numa/README.md).
+
 ### Disable an action
 
 ```yaml
