@@ -11,7 +11,8 @@ global:
   tag: ""
   # Use FIPS-enabled images: appends "-fips" to every resolved image tag
   # (whether it comes from a per-service tag, global.tag or the chart version)
-  fips: false
+  # Valid values: "on" | "off"
+  fipsMode: "off"
   imagePullPolicy: IfNotPresent
   securityContext: {}
   podSecurityContext: {}

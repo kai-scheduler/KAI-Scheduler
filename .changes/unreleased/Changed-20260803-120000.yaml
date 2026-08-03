@@ -1,0 +1,5 @@
+kind: Changed
+body: Renamed Helm value global.fips to global.fipsMode with on/off options
+custom:
+  Issue: "1906"
+  Author: ""

@@ -25,13 +25,13 @@ argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
 
 {{/*
 Resolves a component image tag: explicit tag, then global.tag, then the chart
-version. When global.fips is set, appends "-fips" to whatever tag resolves so
+version. When global.fipsMode is "on", appends "-fips" to whatever tag resolves so
 the FIPS image variants are used. Usage:
   {{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.<svc>.image.tag) }}
 */}}
 {{- define "kai-scheduler.imageTag" -}}
 {{- $tag := .tag | default .root.Values.global.tag | default .root.Chart.AppVersion -}}
-{{- if .root.Values.global.fips -}}{{- $tag = printf "%s-fips" $tag -}}{{- end -}}
+{{- if eq .root.Values.global.fipsMode "on" -}}{{- $tag = printf "%s-fips" $tag -}}{{- end -}}
 {{- $tag -}}
 {{- end -}}
 
