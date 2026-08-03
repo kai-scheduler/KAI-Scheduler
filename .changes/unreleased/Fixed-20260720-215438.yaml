@@ -1,3 +1,0 @@
-kind: Fixed
-body: |-
-  Clear stale PodGroup `UnschedulableOnNodePool` conditions after workloads schedule.

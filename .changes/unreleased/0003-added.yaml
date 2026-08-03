@@ -1,3 +1,0 @@
-kind: Added
-body: |-
-  Added `defaultPriorityClasses.enabled` Helm value (default `true`) for installations that manage KAI PriorityClasses externally.

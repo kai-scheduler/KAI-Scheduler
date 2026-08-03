@@ -1,3 +1,0 @@
-kind: Added
-body: |-
-  Reservation pods inherit fractional pod tolerations

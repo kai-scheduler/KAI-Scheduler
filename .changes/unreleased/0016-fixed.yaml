@@ -1,3 +1,0 @@
-kind: Fixed
-body: |-
-  Block NaN value for fraction in the pod admission [#1798](https://github.com/kai-scheduler/KAI-Scheduler/issues/1798) [davidLif](https://github.com/davidLif)

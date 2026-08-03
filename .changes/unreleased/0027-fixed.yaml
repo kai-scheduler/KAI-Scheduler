@@ -1,3 +1,0 @@
-kind: Fixed
-body: |-
-  Reduced transient scheduler allocations during large reclaim operations by comparing proportion queue state and cached resource vectors directly instead of repeatedly materializing resource maps.

@@ -1,3 +1,0 @@
-kind: Fixed
-body: |-
-  Fixed scheduler panic during reclaim when building eviction messages for jobs in root-level queues (`ParentQueue` empty) that reclaim across hierarchy branches. [#1863](https://github.com/kai-scheduler/KAI-Scheduler/issues/1863)

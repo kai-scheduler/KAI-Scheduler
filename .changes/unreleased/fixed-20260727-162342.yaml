@@ -1,3 +1,0 @@
-kind: Fixed
-body: |-
-  NUMA plugin no longer counts non-integral container CPU toward NUMA alignment
