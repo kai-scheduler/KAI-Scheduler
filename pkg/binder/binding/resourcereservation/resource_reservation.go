@@ -252,7 +252,7 @@ func (rsc *service) ReserveGpuDevice(ctx context.Context, pod *v1.Pod, nodeName 
 	rsc.gpuGroupMutex.LockMutexForGroup(gpuGroup)
 	defer rsc.gpuGroupMutex.ReleaseMutex(gpuGroup)
 
-	gpuIndex, err := rsc.acquireGPUIndexByGroup(ctx, nodeName, gpuGroup)
+	gpuIndex, err := rsc.acquireGPUIndexByGroup(ctx, pod, nodeName, gpuGroup)
 	if err != nil {
 		return unknownGpuIndicator, err
 	}
@@ -332,7 +332,9 @@ func escapeJSONPointer(s string) string {
 	return s
 }
 
-func (rsc *service) acquireGPUIndexByGroup(ctx context.Context, nodeName, gpuGroup string) (string, error) {
+func (rsc *service) acquireGPUIndexByGroup(
+	ctx context.Context, sourcePod *v1.Pod, nodeName, gpuGroup string,
+) (string, error) {
 	gpuIndex, err := rsc.findGPUIndexByGroup(gpuGroup)
 	if err != nil {
 		return "", err
@@ -340,7 +342,7 @@ func (rsc *service) acquireGPUIndexByGroup(ctx context.Context, nodeName, gpuGro
 	if gpuIndex != "" {
 		return gpuIndex, err
 	}
-	return rsc.createGPUReservationPodAndGetIndex(ctx, nodeName, gpuGroup)
+	return rsc.createGPUReservationPodAndGetIndex(ctx, sourcePod, nodeName, gpuGroup)
 }
 
 func (rsc *service) findGPUIndexByGroup(gpuGroup string) (
@@ -366,10 +368,12 @@ func (rsc *service) findGPUIndexByGroup(gpuGroup string) (
 	return gpuIndex, nil
 }
 
-func (rsc *service) createGPUReservationPodAndGetIndex(ctx context.Context, nodeName, gpuGroup string) (
+func (rsc *service) createGPUReservationPodAndGetIndex(
+	ctx context.Context, sourcePod *v1.Pod, nodeName, gpuGroup string,
+) (
 	gpuIndex string, err error) {
 	logger := log.FromContext(ctx)
-	pod, err := rsc.createGPUReservationPod(ctx, nodeName, gpuGroup)
+	pod, err := rsc.createGPUReservationPod(ctx, sourcePod, nodeName, gpuGroup)
 	if err != nil {
 		return unknownGpuIndicator, err
 	}
@@ -421,7 +425,9 @@ func (rsc *service) deleteReservationPod(ctx context.Context, pod *v1.Pod) error
 	return nil
 }
 
-func (rsc *service) createGPUReservationPod(ctx context.Context, nodeName, gpuGroup string) (*v1.Pod, error) {
+func (rsc *service) createGPUReservationPod(
+	ctx context.Context, sourcePod *v1.Pod, nodeName, gpuGroup string,
+) (*v1.Pod, error) {
 	logger := log.FromContext(ctx)
 	if rsc.isScalingUp(ctx) {
 		return nil, fmt.Errorf("cluster is scaling up, could not create reservation pod")
@@ -450,7 +456,7 @@ func (rsc *service) createGPUReservationPod(ctx context.Context, nodeName, gpuGr
 		}
 	}
 
-	pod, err := rsc.createResourceReservationPod(nodeName, gpuGroup, podName, resources)
+	pod, err := rsc.createResourceReservationPod(sourcePod, nodeName, gpuGroup, podName, resources)
 	if err != nil {
 		// The reservation pod name is deterministic per (node, gpu-group). AlreadyExists
 		// means another actor (a concurrent bind, a retry, or another binder replica)
@@ -525,8 +531,14 @@ func (rsc *service) waitForGPUReservationPodAllocation(
 }
 
 func (rsc *service) createResourceReservationPod(
-	nodeName, gpuGroup, podName string, resources v1.ResourceRequirements,
+	sourcePod *v1.Pod, nodeName, gpuGroup, podName string, resources v1.ResourceRequirements,
 ) (*v1.Pod, error) {
+	var tolerations []v1.Toleration
+	if sourcePod != nil {
+		sourcePodSpec := sourcePod.Spec.DeepCopy()
+		tolerations = sourcePodSpec.Tolerations
+	}
+
 	podSpec := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      podName,
@@ -540,7 +552,8 @@ func (rsc *service) createResourceReservationPod(
 			},
 		},
 		Spec: v1.PodSpec{
-			NodeName: nodeName,
+			NodeName:    nodeName,
+			Tolerations: tolerations,
 			RuntimeClassName: func() *string {
 				if len(rsc.runtimeClassName) == 0 {
 					return nil

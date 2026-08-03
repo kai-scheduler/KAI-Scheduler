@@ -910,7 +910,7 @@ var _ = Describe("ResourceReservationService", func() {
 			gpuGroup := "test-group"
 			nodeName := "node-test"
 
-			pod, err := rsc.createResourceReservationPod(nodeName, gpuGroup, podName, resources)
+			pod, err := rsc.createResourceReservationPod(nil, nodeName, gpuGroup, podName, resources)
 			Expect(err).To(BeNil())
 			Expect(pod).NotTo(BeNil())
 
@@ -952,6 +952,35 @@ var _ = Describe("ResourceReservationService", func() {
 			}
 			Expect(container.Env).To(ContainElement(Equal(podNameEnv)))
 			Expect(container.Env).To(ContainElement(Equal(podNamespaceEnv)))
+		})
+
+		It("should copy tolerations from the source pod", func() {
+			rsc := &service{
+				namespace:           "kai-resource-reservation",
+				appLabelValue:       "kai-reservation",
+				serviceAccountName:  "kai-sa",
+				reservationPodImage: "nvidia/kai-reservation:latest",
+				kubeClient:          fake.NewClientBuilder().WithScheme(testScheme).Build(),
+			}
+			sourcePod := &v1.Pod{
+				Spec: v1.PodSpec{
+					Tolerations: []v1.Toleration{{
+						Key:      "hpc",
+						Operator: v1.TolerationOpEqual,
+						Value:    "true",
+						Effect:   v1.TaintEffectNoExecute,
+					}},
+				},
+			}
+
+			pod, err := rsc.createResourceReservationPod(
+				sourcePod, "node-test", "test-group", "reservation-test", v1.ResourceRequirements{},
+			)
+			Expect(err).To(Succeed())
+			Expect(pod.Spec.Tolerations).To(Equal(sourcePod.Spec.Tolerations))
+
+			sourcePod.Spec.Tolerations[0].Value = "changed"
+			Expect(pod.Spec.Tolerations[0].Value).To(Equal("true"))
 		})
 	})
 
@@ -1116,7 +1145,7 @@ var _ = Describe("ResourceReservationService", func() {
 				scalingPodNamespace: scalingPodsNamespace,
 			}
 
-			pod, err := rsc.createGPUReservationPod(context.TODO(), "test-node", "test-gpu-group")
+			pod, err := rsc.createGPUReservationPod(context.TODO(), nil, "test-node", "test-gpu-group")
 			Expect(err).To(BeNil())
 			Expect(pod).NotTo(BeNil())
 
@@ -1146,7 +1175,7 @@ var _ = Describe("ResourceReservationService", func() {
 				scalingPodNamespace: scalingPodsNamespace,
 			}
 
-			pod, err := rsc.createGPUReservationPod(context.TODO(), "test-node", "test-gpu-group")
+			pod, err := rsc.createGPUReservationPod(context.TODO(), nil, "test-node", "test-gpu-group")
 			Expect(err).To(BeNil())
 			Expect(pod).NotTo(BeNil())
 
@@ -1188,7 +1217,7 @@ var _ = Describe("ResourceReservationService", func() {
 				scalingPodNamespace: scalingPodsNamespace,
 			}
 
-			pod, err := rsc.createGPUReservationPod(context.TODO(), "test-node", "test-gpu-group")
+			pod, err := rsc.createGPUReservationPod(context.TODO(), nil, "test-node", "test-gpu-group")
 			Expect(err).To(BeNil())
 			Expect(pod).NotTo(BeNil())
 
@@ -1227,7 +1256,7 @@ var _ = Describe("ResourceReservationService", func() {
 				scalingPodNamespace: scalingPodsNamespace,
 			}
 
-			pod, err := rsc.createGPUReservationPod(context.TODO(), "test-node", "test-gpu-group")
+			pod, err := rsc.createGPUReservationPod(context.TODO(), nil, "test-node", "test-gpu-group")
 			Expect(err).To(BeNil())
 			Expect(pod).NotTo(BeNil())
 
@@ -1505,7 +1534,7 @@ var _ = Describe("Race condition: reservation pod deleted during concurrent bind
 				nil, podSecCtx, containerSecCtx)
 
 			pod, err := svc.createResourceReservationPod(
-				nodeName, gpuGroup, "test-reservation-pod",
+				nil, nodeName, gpuGroup, "test-reservation-pod",
 				v1.ResourceRequirements{
 					Limits:   v1.ResourceList{constants.NvidiaGpuResource: *resource.NewQuantity(1, resource.DecimalSI)},
 					Requests: v1.ResourceList{constants.NvidiaGpuResource: *resource.NewQuantity(1, resource.DecimalSI)},
@@ -1525,7 +1554,7 @@ var _ = Describe("Race condition: reservation pod deleted during concurrent bind
 				nil, nil, nil)
 
 			pod, err := svc.createResourceReservationPod(
-				nodeName, gpuGroup, "test-reservation-pod",
+				nil, nodeName, gpuGroup, "test-reservation-pod",
 				v1.ResourceRequirements{
 					Limits:   v1.ResourceList{constants.NvidiaGpuResource: *resource.NewQuantity(1, resource.DecimalSI)},
 					Requests: v1.ResourceList{constants.NvidiaGpuResource: *resource.NewQuantity(1, resource.DecimalSI)},
