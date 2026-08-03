@@ -1,3 +1,0 @@
-kind: Fixed
-body: |-
-  Scoped the operator's informer cache for Pods, Leases and EndpointSlices to the KAI namespace and stripped managed fields from cached objects. Since v0.15.0 the operator cached every such object in the cluster, so its memory grew with cluster size and exceeded the default 256Mi limit on large clusters. [#1780](https://github.com/kai-scheduler/KAI-Scheduler/issues/1780)

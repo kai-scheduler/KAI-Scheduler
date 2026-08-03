@@ -74,6 +74,13 @@ func (su *defaultStatusUpdater) updatePod(
 	)
 
 	if err != nil {
+		if isTerminalUpdateError(err) {
+			log.StatusUpdaterLogger.V(5).Do(func() {
+				log.StatusUpdaterLogger.V(5).Infof("Dropping non-retryable pod patch %s/%s: %v", pod.Namespace, pod.Name, err)
+			})
+			su.inFlightPods.Delete(key)
+			return
+		}
 		log.StatusUpdaterLogger.V(1).Errorf("Failed to patch pod %s/%s: %v", pod.Namespace, pod.Name, err)
 		return
 	}

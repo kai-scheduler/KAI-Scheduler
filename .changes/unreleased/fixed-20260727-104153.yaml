@@ -1,3 +1,0 @@
-kind: Fixed
-body: |-
-  Upgrade test suite retries queue creation when admission webhook is not yet ready

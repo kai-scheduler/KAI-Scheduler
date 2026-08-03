@@ -223,4 +223,25 @@ var _ = Describe("Status Updater Concurrency - large scale: increase queue size"
 			// Expected - queue is empty, meaning no retry was scheduled
 		}
 	})
+
+	It("updatePod - Drops in-flight update after NotFound error on a deleted pod", func() {
+		kubeClient.CoreV1().(*fakecorev1.FakeCoreV1).PrependReactor(
+			"patch", "pods", func(action faketesting.Action) (handled bool, ret runtime.Object, err error) {
+				return true, nil, apierrors.NewNotFound(schema.GroupResource{Resource: "pods"}, "test-pod")
+			},
+		)
+
+		pod := &v1.Pod{ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "test-ns",
+			UID:       "test-uid",
+		}}
+		key := statusUpdater.keyForPodLabelsPayload(pod.Name, pod.Namespace, pod.UID)
+		statusUpdater.inFlightPods.Store(key, &inflightUpdate{object: pod})
+
+		statusUpdater.updatePod(context.Background(), key, []byte(`{"metadata":{"labels":{"foo":"bar"}}}`), nil, pod)
+
+		_, inFlightExists := statusUpdater.inFlightPods.Load(key)
+		Expect(inFlightExists).To(BeFalse(), "In-flight update should be dropped after NotFound error")
+	})
 })

@@ -1,3 +1,0 @@
-kind: Changed
-body: |-
-  Scenario search now skips re-simulating equivalent victim-set candidates that already failed simulation for the same pending job (reclaim, preempt, consolidation). Skipped candidates are recorded as `state="duplicate"` in `scenario_search_scenarios_total`. [#1719](https://github.com/kai-scheduler/KAI-Scheduler/issues/1719)
