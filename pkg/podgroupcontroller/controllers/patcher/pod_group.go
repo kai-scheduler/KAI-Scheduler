@@ -42,7 +42,13 @@ func getStatusWithMetadata(
 
 	updatedStatus.ResourcesStatus.Requested = metaData.Requested
 	updatedStatus.ResourcesStatus.Allocated = metaData.Allocated
-	if !metaData.Preemptible {
+
+	// A semi-preemptible pod group protects only its core; the scheduler is the source of truth for
+	// which pods those are, so the controller sums exactly the set it published.
+	switch metaData.Preemptibility {
+	case v2alpha2.SemiPreemptible:
+		updatedStatus.ResourcesStatus.AllocatedNonPreemptible = metaData.CoreAllocated
+	case v2alpha2.NonPreemptible:
 		updatedStatus.ResourcesStatus.AllocatedNonPreemptible = metaData.Allocated
 	}
 

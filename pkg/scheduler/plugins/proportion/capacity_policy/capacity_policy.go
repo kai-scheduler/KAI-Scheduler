@@ -15,8 +15,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/utils"
 )
 
-type capacityCheckFn func(requestedShare rs.ResourceQuantities, job *podgroup_info.PodGroupInfo) *api.SchedulableResult
-
 type CapacityPolicy struct {
 	queues              map[common_info.QueueID]*rs.QueueAttributes
 	maxNodeGPUMemoryMiB *int64
@@ -30,17 +28,19 @@ func (cp *CapacityPolicy) IsJobOverQueueCapacity(job *podgroup_info.PodGroupInfo
 	tasksToAllocate []*pod_info.PodInfo) *api.SchedulableResult {
 	requestedShareQuantities := getRequiredQuota(tasksToAllocate, cp.maxNodeGPUMemoryMiB)
 
-	checkFns := []capacityCheckFn{cp.resultsOverLimit, cp.resultsWithNonPreemptibleOverQuota}
-	return cp.isJobOverCapacity(requestedShareQuantities, job, checkFns)
+	if result := cp.resultsOverLimit(requestedShareQuantities, job); !result.IsSchedulable {
+		return logOverCapacity(job, result)
+	}
+	return logOverCapacity(job, cp.resultsWithNonPreemptibleOverQuota(
+		coreRequiredQuota(requestedShareQuantities, job), job))
 }
 
 func (cp *CapacityPolicy) IsNonPreemptibleJobOverQuota(job *podgroup_info.PodGroupInfo,
 	tasksToAllocate []*pod_info.PodInfo) *api.SchedulableResult {
 
 	requestedShareQuantities := getRequiredQuota(tasksToAllocate, cp.maxNodeGPUMemoryMiB)
-
-	checkFns := []capacityCheckFn{cp.resultsWithNonPreemptibleOverQuota}
-	return cp.isJobOverCapacity(requestedShareQuantities, job, checkFns)
+	return logOverCapacity(job, cp.resultsWithNonPreemptibleOverQuota(
+		coreRequiredQuota(requestedShareQuantities, job), job))
 }
 
 func (cp *CapacityPolicy) IsTaskAllocationOnNodeOverCapacity(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo,
@@ -51,21 +51,28 @@ func (cp *CapacityPolicy) IsTaskAllocationOnNodeOverCapacity(task *pod_info.PodI
 		requiredInitQuota[resource_info.MemoryIndex],
 		requiredInitQuota[resource_info.GPUIndex])
 
-	checkFns := []capacityCheckFn{cp.resultsOverLimit, cp.resultsWithNonPreemptibleOverQuota}
-	return cp.isJobOverCapacity(requestedShare, job, checkFns)
+	if result := cp.resultsOverLimit(requestedShare, job); !result.IsSchedulable {
+		return logOverCapacity(job, result)
+	}
+	return logOverCapacity(job, cp.resultsWithNonPreemptibleOverQuota(
+		coreRequiredQuota(requestedShare, job), job))
 }
 
-func (cp *CapacityPolicy) isJobOverCapacity(requestedShare rs.ResourceQuantities, job *podgroup_info.PodGroupInfo,
-	checkFns []capacityCheckFn) *api.SchedulableResult {
-	for _, checkFn := range checkFns {
-		result := checkFn(requestedShare, job)
-		if !result.IsSchedulable {
-			log.InfraLogger.V(5).Infof("Job: <%v/%v> is over capacity. Reason: %v", job.Namespace, job.Name, result.Message)
-			return result
-		}
+// coreRequiredQuota is the share to charge against the not-preemptible quota. A semi-preemptible job
+// that already meets its minimum is bursting, so the incoming share is elastic and charges nothing;
+// otherwise (gang phase) the whole share is core.
+func coreRequiredQuota(requestedShare rs.ResourceQuantities, job *podgroup_info.PodGroupInfo) rs.ResourceQuantities {
+	if job.IsSemiPreemptibleJob() && podgroup_info.IsMinRequirementSatisfied(job) {
+		return rs.EmptyResourceQuantities()
 	}
+	return requestedShare
+}
 
-	return Schedulable()
+func logOverCapacity(job *podgroup_info.PodGroupInfo, result *api.SchedulableResult) *api.SchedulableResult {
+	if !result.IsSchedulable {
+		log.InfraLogger.V(5).Infof("Job: <%v/%v> is over capacity. Reason: %v", job.Namespace, job.Name, result.Message)
+	}
+	return result
 }
 
 // getRequiredQuota calculates the required quota for a job based on the tasks to allocate and the max node GPU memory.

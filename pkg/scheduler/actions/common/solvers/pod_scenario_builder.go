@@ -230,7 +230,9 @@ func (asb *PodAccumulatedScenarioBuilder) addNextPotentialVictims() bool {
 		}
 	}
 
-	if jobHasMoreTasks {
+	// A job that yielded no victims will yield none again, so re-pushing it would leave the queue
+	// unable to drain. Semi-preemptible jobs sitting at their core are the case that hits this.
+	if jobHasMoreTasks && len(potentialVictimTasks) > 0 {
 		var remainingTasks []*pod_info.PodInfo
 		for _, task := range nextVictimJob.GetAllPodsMap() {
 			if !slices.Contains(potentialVictimTasks, task) {

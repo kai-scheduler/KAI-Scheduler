@@ -83,6 +83,10 @@ type PodGroupInfo struct {
 	PodSets              map[string]*subgroup_info.PodSet
 	InvalidSubGroupTasks pod_info.PodsMap
 
+	// CorePodNames is the sorted core (minimal satisfying) pod set published to the PodGroup status
+	// for semi-preemptible jobs. Filled at session close; nil for all other jobs.
+	CorePodNames []string
+
 	StalenessInfo
 
 	schedulingConstraintsSignature common_info.SchedulingConstraintsSignature
@@ -219,6 +223,14 @@ func (pgi *PodGroupInfo) PreemptionDelayEnd() *time.Time {
 func (pgi *PodGroupInfo) IsWithinPreemptionDelay(now time.Time) bool {
 	end := pgi.PreemptionDelayEnd()
 	return end != nil && now.Before(*end)
+}
+
+func (pgi *PodGroupInfo) IsSemiPreemptibleJob() bool {
+	return pgi.Preemptibility == enginev2alpha2.SemiPreemptible
+}
+
+func (pgi *PodGroupInfo) HasEvictableTasks() bool {
+	return pgi.IsPreemptibleJob() || pgi.IsSemiPreemptibleJob()
 }
 
 func (pgi *PodGroupInfo) SetPodGroup(pg *enginev2alpha2.PodGroup) {

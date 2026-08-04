@@ -38,7 +38,7 @@ func (jobsOrder *JobsOrderByQueues) InitializeWithJobs(
 			continue
 		}
 
-		if jobsOrder.options.FilterNonPreemptible && !job.IsPreemptibleJob() {
+		if jobsOrder.options.FilterNonPreemptible && !job.HasEvictableTasks() {
 			continue
 		}
 
