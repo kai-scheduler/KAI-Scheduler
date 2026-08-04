@@ -93,18 +93,21 @@ type PodGroupSpec struct {
 // Preemptibility defines whether this PodGroup can be preempted
 //
 // Supported values are:
-// - `preemptible` - PodGroup can be preempted by higher-priority workloads
-// - `non-preemptible` - PodGroup runs to completion once scheduled
+//   - `preemptible` - PodGroup can be preempted by higher-priority workloads
+//   - `non-preemptible` - PodGroup runs to completion once scheduled
+//   - `semi-preemptible` - PodGroup's minimal required shape (minMember pods per leaf, minSubGroup children per node)
+//     is non-preemptible and in-quota; anything beyond that minimum is elastic (over-quota, reclaimed first)
 //
 // Defaults to priority-based preemptibility determination (preemptible if priority < 100)
 //
-// +kubebuilder:validation:Enum=preemptible;non-preemptible
+// +kubebuilder:validation:Enum=preemptible;non-preemptible;semi-preemptible
 // +optional
 type Preemptibility string
 
 const (
-	Preemptible    Preemptibility = "preemptible"
-	NonPreemptible Preemptibility = "non-preemptible"
+	Preemptible     Preemptibility = "preemptible"
+	NonPreemptible  Preemptibility = "non-preemptible"
+	SemiPreemptible Preemptibility = "semi-preemptible"
 )
 
 func ParsePreemptibility(value string) (Preemptibility, error) {
@@ -113,6 +116,8 @@ func ParsePreemptibility(value string) (Preemptibility, error) {
 		return Preemptible, nil
 	case string(NonPreemptible):
 		return NonPreemptible, nil
+	case string(SemiPreemptible):
+		return SemiPreemptible, nil
 	case "":
 		// Empty value is valid and represents the default priority-based preemptibility
 		return "", nil
@@ -188,6 +193,21 @@ type PodGroupStatus struct {
 	// Status of resources related to pods connected to this pod group.
 	// +optional
 	ResourcesStatus PodGroupResourcesStatus `json:"resourcesStatus,omitempty" protobuf:"bytes,8,opt,name=resourcesStatus"`
+
+	// SchedulingState is the scheduler's authoritative view of this pod group. Read-only for
+	// non-scheduler components.
+	// +optional
+	SchedulingState *PodGroupSchedulingState `json:"schedulingState,omitempty" protobuf:"bytes,9,opt,name=schedulingState"`
+}
+
+// PodGroupSchedulingState carries the scheduler's authoritative accounting for this pod group.
+// It is populated exclusively by the scheduler; all other controllers MUST treat it as read-only.
+type PodGroupSchedulingState struct {
+	// CorePods names the allocated pods the scheduler protects from preemption and reclaim (the
+	// "core", i.e. the job's minimal satisfying set). Written only for semi-preemptible pod groups,
+	// where the pods outside this set are elastic surplus.
+	// +optional
+	CorePods []string `json:"corePods,omitempty" protobuf:"bytes,1,rep,name=corePods"`
 }
 
 type PodGroupConditionType string

@@ -73,6 +73,7 @@ spec:
                 enum:
                 - preemptible
                 - non-preemptible
+                - semi-preemptible
                 type: string
               preemptionDelay:
                 description: |-
@@ -408,6 +409,20 @@ spec:
                       type: string
                   type: object
                 type: array
+              schedulingState:
+                description: |-
+                  SchedulingState is the scheduler's authoritative view of this pod group. Read-only for
+                  non-scheduler components.
+                properties:
+                  corePods:
+                    description: |-
+                      CorePods names the allocated pods the scheduler protects from preemption and reclaim (the
+                      "core", i.e. the job's minimal satisfying set). Written only for semi-preemptible pod groups,
+                      where the pods outside this set are elastic surplus.
+                    items:
+                      type: string
+                    type: array
+                type: object
             type: object
         type: object
     served: true
