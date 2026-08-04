@@ -15,7 +15,7 @@ We want to add a new 3rd mode, named **semi-preemptible**, where the podgroup is
 - Change nothing for existing workloads — the mode is strictly opt-in.
 
 **Non-Goals**
-- **Automated segmented subgroups** (the `kai.scheduler/segment-size` annotation path). Automated segmentation is **out of scope** and mutually exclusive with semi-preemptible; the combination is soft-enforced (see [Automated Segmentation](#automated-segmentation-out-of-scope)). Subgroup-level elasticity is supported only for **hand-authored** subgroup trees.
+- **Automated segmented subgroups** (the `kai.scheduler/segment-size` annotation path) are not a design target: the core/elastic split is specified against **hand-authored** subgroup trees. The two are not rejected or warned, and the outcome follows from the tree each grouper emits. A LeaderWorkerSet segmented tree is fully gang (every segment's `minAvailable` equals its size), so there is no surplus and semi-preemptible is inert. A segmented `PyTorchJob` with `minReplicas` leaves its trailing segments at `minAvailable: 0`, so those pods are elastic and semi-preemptible behaves as designed.
 - Solving queue **quota scale-down** in general for KAI Scheduler. If a queue's deserved quota drops below a running job's core allocation, the queue stays over-quota until the job releases resources on its own — exactly as a `non-preemptible` job behaves today. No new mitigation is introduced (see [Quota Scale-Down](#quota-scale-down)).
 - The `minNonPreemptible` field that would decouple the scheduling minimum from the non-preemptible threshold (see [Future Work](#future-work-minnonpreemptible-field)).
 
@@ -109,6 +109,20 @@ Victim selection considers only the **surplus** of each node: the "extra" (`n - 
 
 This implies that pods are treated equally within the same subgroup for eviction, prompting the user to use the subgroup API to specify any ordering or hierarchy for pod eviction (see [Footnote: Eviction Ordering](#footnote-eviction-ordering)).
 
+### Core Selection Ordering
+
+Which children of a node are core is decided by a dedicated ordering — **satisfied members first, then by name** — applied independently at every `SubGroupSet` in the tree. It is deliberately **not** the scheduler's subgroup ordering, which ranks *unsatisfied* members first because it answers a different question: "which subgroup should receive the next pod?" That is correct for filling a gang and exactly inverted for protecting one.
+
+Two properties matter:
+
+**Satisfied first.** A partially-filled subgroup must not take a core slot ahead of a complete one. With `minSubGroup: 2` over A=1/2, B=2/2, C=2/2, ranking by neediness protects A's orphan pod — which delivers no gang on its own — and leaves the complete C evictable. The job then reports three protected pods spanning a single working subgroup.
+
+**Name breaks ties, not allocation.** The core set has to be *sticky*: recomputing it each session must not move it, or eviction chases it and unravels the gang. Four fully-gang replicas with `minSubGroup: 2` make this concrete. Core is replica-0 and replica-1; replica-3 is evicted as a unit, correctly. Under a neediness ordering replica-3 is now 0/2 — maximally unsatisfied — so the next session ranks it *first* and hands it a core slot holding zero pods, pushing replica-1 out to elastic. Evict again and the job walks itself down to a "core" of empty subgroups while every live pod sits in the elastic tier.
+
+Because a `SubGroupSet` counts as satisfied when enough of its *children* are, protection composes upward: eviction never touches a core member at any depth, so a core subtree keeps enough satisfied children to stay satisfied itself, so it keeps its slot in its parent's core. Note that being core does not protect a subgroup's own surplus — a core subgroup still exposes its non-core children as elastic, which is what makes the mode useful in deep trees.
+
+When fewer than `minSubGroup` children are satisfied the remaining slots are filled from the unsatisfied ones by name, so a job still assembling its gang protects what it has already landed. A satisfied member can never be displaced this way.
+
 
 ## Non-Preemptible Accounting API
 
@@ -135,11 +149,25 @@ reconciles because core membership was ranked by live allocation ratio.
 
 ### Chosen approach
 
-The **scheduler is the single source of truth** for the core amount. It already computes the core
-resource vector per job (`coreResourceQuantities` in the proportion plugin). It publishes that
-amount at the **PodGroup level**, and the podgroupcontroller **consumes** it instead of re-deriving
-which pods are "core". This removes the divergence and the flip by construction, and stays fully
-**Pod-agnostic** — no pod-level labels or markers (an anti-pattern for this feature).
+The **scheduler is the single source of truth** for *which pods are core*; the podgroupcontroller
+remains the single source of truth for *how much those pods cost*. The scheduler publishes the core
+pod names at the PodGroup level, and the controller sums exactly that set through its existing
+per-pod accounting path. This removes the divergence and the flip by construction.
+
+The scheduler deliberately does **not** publish a resource amount, even though it has one
+(`coreResourceQuantities` in the proportion plugin). That vector is `rs.ResourceQuantities` — CPU in
+millicores, memory in MB, GPU as fractions, and only those three dimensions — whereas
+`ResourcesStatus.Allocated` is a `v1.ResourceList` in native pod-request units, built by
+`metadata.calculatedAllocatedResources`, carrying GPU-sharing and DRA extras the scheduler's vector
+does not model. Publishing the scheduler's vector into `AllocatedNonPreemptible` would place two
+incompatible unit systems in sibling fields of the same struct, and `queuecontroller` **sums** both
+into the queue rollup — so the mismatch would not merely lose fidelity, it would produce a wrong
+rollup. Naming pods keeps the resource math in the one component that owns the units.
+
+Pod *names* are not pod *markers*: nothing is written to the pods themselves, so the feature stays
+Pod-agnostic (pod-level labels or annotations remain an anti-pattern here). The published set is
+also directly debuggable — `kubectl get podgroup -o yaml` shows which pods are protected, which a
+resource vector never could.
 
 ### API shape
 
@@ -150,17 +178,12 @@ controller-owned `ResourcesStatus` — so each struct keeps a single writer:
 ```go
 // PodGroupSchedulingState carries the scheduler's authoritative accounting for this pod group.
 // It is populated exclusively by the scheduler; all other controllers MUST treat it as read-only.
-// This is the single source of truth for resource classifications that depend on scheduling order
-// (e.g. which portion of a semi-preemptible job's allocation is "core").
 type PodGroupSchedulingState struct {
-	// NonPreemptibleAllocated is the portion of this pod group's current allocation that the
-	// scheduler protects from preemption/reclaim (the "core", i.e. the minimal-satisfying set).
-	//   - preemptible      pod group -> empty
-	//   - non-preemptible  pod group -> equals total allocation
-	//   - semi-preemptible pod group -> the core only (excludes elastic burst)
-	// Expressed in the same units as ResourcesStatus (GPU fractions, CPU millicpus, Memory MB).
+	// CorePods names the allocated pods the scheduler protects from preemption and reclaim (the
+	// "core", i.e. the job's minimal satisfying set). Written only for semi-preemptible pod groups,
+	// where the pods outside this set are elastic surplus.
 	// +optional
-	NonPreemptibleAllocated v1.ResourceList `json:"nonPreemptibleAllocated,omitempty"`
+	CorePods []string `json:"corePods,omitempty"`
 }
 
 type PodGroupStatus struct {
@@ -180,26 +203,33 @@ version), so the change is additive and needs no conversion webhook.
 ### Data flow
 
 ```
-scheduler (proportion.coreResourceQuantities)
-    → convert rs.ResourceQuantities → v1.ResourceList
-    → publish PodGroup.Status.SchedulingState.NonPreemptibleAllocated   [scheduler-owned]
+scheduler closeSession → GetCorePodNames(job)                    [sorted, for stable comparison]
+    → publish PodGroup.Status.SchedulingState.CorePods           [scheduler-owned]
                                    │
                                    ▼
-podgroupcontroller.getStatusWithMetadata
-    → PodGroup.Status.ResourcesStatus.AllocatedNonPreemptible           [controller-owned]
+podgroupcontroller.calculatePodGroupMetadata
+    → sums the named pods into PodGroupMetadata.CoreAllocated    [native units, per-pod path]
+    → PodGroup.Status.ResourcesStatus.AllocatedNonPreemptible    [controller-owned]
                                    │
                                    ▼
 queuecontroller.sumPodGroupsResources
-    → Queue.Status.AllocatedNonPreemptible                              [unchanged rollup]
+    → Queue.Status.AllocatedNonPreemptible                       [unchanged rollup]
 ```
 
-Controller consumption changes its *source*, not its output field:
+Publication happens in `closeSession` — the only place holding both the job and the session ordering
+functions `GetCoreTasks` needs — and is guarded by a `slices.Equal` comparison against the currently
+published set, because the podgroup status write is a full `UpdateStatus` of the snapshot object.
+Without the guard every session would issue a write.
+
+Controller consumption switches on the resolved preemptibility rather than on whether `CorePods` is
+populated, since a semi-preemptible group may legitimately have an empty core:
 
 ```go
-if state := originalStatus.SchedulingState; state != nil && state.NonPreemptibleAllocated != nil {
-	updatedStatus.ResourcesStatus.AllocatedNonPreemptible = state.NonPreemptibleAllocated
-} else if !metaData.Preemptible {
-	updatedStatus.ResourcesStatus.AllocatedNonPreemptible = metaData.Allocated // legacy fallback
+switch metaData.Preemptibility {
+case v2alpha2.SemiPreemptible:
+	updatedStatus.ResourcesStatus.AllocatedNonPreemptible = metaData.CoreAllocated
+case v2alpha2.NonPreemptible:
+	updatedStatus.ResourcesStatus.AllocatedNonPreemptible = metaData.Allocated
 }
 ```
 
@@ -209,31 +239,25 @@ if state := originalStatus.SchedulingState; state != nil && state.NonPreemptible
 further top-level status churn. Illustrative future fields (not built now):
 
 ```go
-// ElasticAllocated        v1.ResourceList // surplus beyond core (reclaimed first)
-// MinRequirementSatisfied *bool           // job has reached its minimal shape
-// CoreSubGroups           []string        // which subgroups the scheduler counts as core (debug/observability)
-// LastEvaluatedSession    string          // scheduler session id/generation for staleness detection
+// CoreSubGroups           []string // which subgroups the scheduler counts as core (debug/observability)
+// MinRequirementSatisfied *bool    // job has reached its minimal shape
+// LastEvaluatedSession    string   // scheduler session id/generation for staleness detection
 ```
-
-Intended invariant once `ElasticAllocated` exists:
-`NonPreemptibleAllocated + ElasticAllocated == ResourcesStatus.Allocated`.
 
 ### Notes / trade-offs
 
-- **Fidelity**: the scheduler's quota vector tracks CPU/Memory/GPU only, whereas the controller's
-  `Allocated` is a full `v1.ResourceList` (may include extended resources). `NonPreemptibleAllocated`
-  reflects the scheduler's quota dimensions — acceptable, since non-preemptible quota is
-  CPU/Mem/GPU-based. For this reason the field is set for semi-preemptible jobs first; for other
-  modes the controller keeps its existing fallback until the producer is broadened.
 - **Ownership**: the scheduler and controller already patch `PodGroup.Status` on disjoint paths
   (`schedulingConditions` / annotations vs `resourcesStatus`); adding scheduler-written
   `schedulingState` introduces no new write-conflict class.
-- **Staleness**: the value refreshes each scheduler session and only changes when allocation changes
-  (which is scheduler-driven). `LastEvaluatedSession` is the future hook if staleness detection is
-  ever needed.
-- **Defense-in-depth**: Option A removes the need for both sides to recompute core independently. If
-  they ever must, core ordering should be deterministic *and reproducible* — rank by static priority
-  then name rather than by live allocation ratio (the root cause of the flip).
+- **Staleness**: the set refreshes each scheduler session and only changes when core membership
+  changes (which is scheduler-driven). A pod named in `CorePods` that the controller no longer sees
+  simply contributes nothing to the sum. `LastEvaluatedSession` is the future hook if explicit
+  staleness detection is ever needed.
+- **Ordering**: `GetCorePodNames` sorts its output so the published set can be compared for equality
+  across sessions. Core membership itself is still selected by the session's task ordering.
+- **Defense-in-depth**: this removes the need for both sides to recompute core independently. If they
+  ever must, core ordering should be deterministic *and reproducible* — rank by static priority then
+  name rather than by live allocation ratio (the root cause of the flip).
 
 ## Footnote: Eviction Ordering
 

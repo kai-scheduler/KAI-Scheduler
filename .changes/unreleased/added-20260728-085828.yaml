@@ -1,0 +1,3 @@
+kind: Added
+body: |-
+  Semi-preemptible mode: minimal shape is non-preemptible and in-quota, surplus is elastic; gang staleness now respects minSubGroup
