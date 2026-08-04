@@ -531,10 +531,7 @@ func (pgi *PodGroupInfo) IsStale() bool {
 }
 
 func (pgi *PodGroupInfo) IsGangSatisfied() bool {
-	if pgi.RootSubGroupSet == nil {
-		return false
-	}
-	return pgi.RootSubGroupSet.IsGangSatisfied()
+	return rootSubGroupSet(pgi).IsGangSatisfied()
 }
 
 func (pgi *PodGroupInfo) ShouldPipelineJob() bool {
