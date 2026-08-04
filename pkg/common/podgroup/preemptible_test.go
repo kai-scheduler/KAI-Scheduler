@@ -35,6 +35,20 @@ func TestCalculatePreemptibility(t *testing.T) {
 			expectedError:  false,
 		},
 		{
+			name:           "explicitly semi-preemptible with low priority",
+			preemptibility: v2alpha2.SemiPreemptible,
+			priority:       50,
+			expectedResult: v2alpha2.SemiPreemptible,
+			expectedError:  false,
+		},
+		{
+			name:           "explicitly semi-preemptible with high priority",
+			preemptibility: v2alpha2.SemiPreemptible,
+			priority:       1000,
+			expectedResult: v2alpha2.SemiPreemptible,
+			expectedError:  false,
+		},
+		{
 			name:           "unspecified with high priority (non-preemptible)",
 			preemptibility: "",
 			priority:       1000,

@@ -1237,3 +1237,43 @@ func TestUpdatePodGroupLastEvictionTimeStamp(t *testing.T) {
 		})
 	}
 }
+
+func TestUpdateCorePods(t *testing.T) {
+	semiPreemptibleJob := func(published, current []string) *podgroup_info.PodGroupInfo {
+		podGroup := &enginev2alpha2.PodGroup{}
+		if published != nil {
+			podGroup.Status.SchedulingState = &enginev2alpha2.PodGroupSchedulingState{CorePods: published}
+		}
+		return &podgroup_info.PodGroupInfo{
+			Preemptibility: enginev2alpha2.SemiPreemptible,
+			PodGroup:       podGroup,
+			CorePodNames:   current,
+		}
+	}
+
+	t.Run("publishes the core set on first sight", func(t *testing.T) {
+		job := semiPreemptibleJob(nil, []string{"pod-a", "pod-b"})
+		assert.True(t, updateCorePods(job))
+		assert.Equal(t, []string{"pod-a", "pod-b"}, job.PodGroup.Status.SchedulingState.CorePods)
+	})
+
+	t.Run("does not republish an unchanged core set", func(t *testing.T) {
+		job := semiPreemptibleJob([]string{"pod-a", "pod-b"}, []string{"pod-a", "pod-b"})
+		assert.False(t, updateCorePods(job))
+	})
+
+	t.Run("republishes when core membership changes", func(t *testing.T) {
+		job := semiPreemptibleJob([]string{"pod-a", "pod-b"}, []string{"pod-a", "pod-c"})
+		assert.True(t, updateCorePods(job))
+		assert.Equal(t, []string{"pod-a", "pod-c"}, job.PodGroup.Status.SchedulingState.CorePods)
+	})
+
+	t.Run("ignores non semi-preemptible jobs", func(t *testing.T) {
+		job := &podgroup_info.PodGroupInfo{
+			Preemptibility: enginev2alpha2.NonPreemptible,
+			PodGroup:       &enginev2alpha2.PodGroup{},
+		}
+		assert.False(t, updateCorePods(job))
+		assert.Nil(t, job.PodGroup.Status.SchedulingState)
+	})
+}
