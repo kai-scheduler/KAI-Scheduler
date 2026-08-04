@@ -4,6 +4,7 @@
 package podgroup_info
 
 import (
+	"slices"
 	"sort"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -21,18 +22,66 @@ func GetTasksToEvict(job *PodGroupInfo, subGroupOrderFn, taskOrderFn common_info
 		return subGroupOrderFn(r, l)
 	}
 
-	root := job.RootSubGroupSet
-	if root == nil {
-		root = subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
-		for _, ps := range job.PodSets {
-			root.AddPodSet(ps)
-		}
-	}
+	root := rootSubGroupSet(job)
 
-	tasks := collectTasksToEvictFromSubGroupSet(root, reverseSubGroupOrderFn, reverseTaskOrderFn)
+	var tasks []*pod_info.PodInfo
+	if job.IsSemiPreemptibleJob() {
+		// Semi-preemptible jobs offer only their elastic surplus as victims; the core (minimal
+		// satisfying shape) is never evicted, so the phase-3 full-eviction fallback is skipped.
+		// Orphans go first: they are neither surplus nor core, so no elastic phase can reach them.
+		tasks = collectOrphanEviction(root, reverseTaskOrderFn)
+		if len(tasks) == 0 {
+			tasks = collectElasticEvictionFromSubGroupSet(root, reverseSubGroupOrderFn, reverseTaskOrderFn)
+		}
+
+		// The collection above ranks members by the allocation ordering, which is not the ordering
+		// GetCoreTasks protects by. Today the two happen to agree, but only as a side effect of phase 1
+		// consuming every above-threshold member first. Filter against the core set so agreement is a
+		// guarantee: dropping a batch entirely is the safe direction, since under-evicting only leaves
+		// surplus behind while evicting a core task breaks the gang.
+		core := GetCoreTasks(job, taskOrderFn)
+		tasks = slices.DeleteFunc(tasks, func(task *pod_info.PodInfo) bool {
+			_, isCore := core[task.UID]
+			return isCore
+		})
+	} else {
+		tasks = collectTasksToEvictFromSubGroupSet(root, reverseSubGroupOrderFn, reverseTaskOrderFn)
+	}
 
 	jobHasMoreActiveTasksAfterEviction := len(tasks) < job.GetActiveAllocatedTasksCount()
 	return tasks, jobHasMoreActiveTasksAfterEviction
+}
+
+// collectOrphanEviction returns the allocated tasks of a member that holds no core slot and has not
+// formed its gang. Those pods deliver nothing - no gang of their own, no core slot - so a
+// semi-preemptible job gives them up before any real surplus. Recurses into core SubGroupSets, where
+// the same rule applies one level down.
+func collectOrphanEviction(
+	sgs *subgroup_info.SubGroupSet, reverseTaskOrderFn common_info.LessFn,
+) []*pod_info.PodInfo {
+	// A job still reaching its minimum has its partial members filling core slots by name, and any
+	// beyond that fill are still growing towards it. Nothing is an orphan until the gang has formed.
+	if !sgs.IsMinRequirementSatisfied() {
+		return nil
+	}
+
+	core, nonCore := partitionCoreMembers(sgs)
+	for _, member := range nonCore {
+		if isMemberSatisfied(member) {
+			continue // real surplus - phases 1 and 2 own it
+		}
+		if tasks := collectGangEvictionFromMember(member, reverseTaskOrderFn); len(tasks) > 0 {
+			return tasks
+		}
+	}
+	for _, member := range core {
+		if sub, ok := member.(*subgroup_info.SubGroupSet); ok {
+			if tasks := collectOrphanEviction(sub, reverseTaskOrderFn); len(tasks) > 0 {
+				return tasks
+			}
+		}
+	}
+	return nil
 }
 
 // collectTasksToEvictFromSubGroupSet runs phases 1+2 (elastic), then falls back to phase 3 (full eviction).
