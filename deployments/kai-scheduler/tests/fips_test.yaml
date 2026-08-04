@@ -1,7 +1,7 @@
 # Copyright 2026 NVIDIA CORPORATION
 # SPDX-License-Identifier: Apache-2.0
 
-suite: test global.fips image tag suffix
+suite: test global.fipsMode image tag suffix
 
 set:
   kaiConfigDeployer:
@@ -31,9 +31,9 @@ tests:
           value: registry/local/kai-scheduler/crd-upgrader:0.0.0
         template: hooks/pre/crd-upgrader.yaml
 
-  - it: should suffix all image tags when global.fips is enabled
+  - it: should suffix all image tags when global.fipsMode is on
     set:
-      global.fips: true
+      global.fipsMode: "on"
     asserts:
       - equal:
           path: spec.scheduler.service.image.tag
@@ -64,9 +64,9 @@ tests:
           value: registry/local/kai-scheduler/crd-upgrader:0.0.0-fips
         template: hooks/pre/crd-upgrader.yaml
 
-  - it: should suffix explicit per-service and global tags when global.fips is enabled
+  - it: should suffix explicit per-service and global tags when global.fipsMode is on
     set:
-      global.fips: true
+      global.fipsMode: "on"
       global.tag: v1.2.3
       scheduler.image.tag: v9.9.9
     asserts:
