@@ -22,6 +22,8 @@ KAI Scheduler's GPU sharing feature allows multiple pods to share a single GPU, 
 │  3. Mutating webhook injects:                            │
 │     - hostPath volume mount (/usr/local/vgpu)            │
 │     - /etc/ld.so.preload → libvgpu.so                    │
+│     - POD_UID / CONTAINER_NAME / CONTAINER_VGPU_MOUNT    │
+│       (for per-container VRAM metrics)                   │
 └─────────────────────────────────────────────────────────┘
                            │
                            ▼
@@ -33,32 +35,46 @@ KAI Scheduler's GPU sharing feature allows multiple pods to share a single GPU, 
 └─────────────────────────────────────────────────────────┘
 ```
 
+`kai-resource-isolator` combines:
+
+| Component | Role |
+|---|---|
+| DaemonSet (libsync) | Copies `libvgpu.so` (HAMi-core) to `/usr/local/vgpu` on every GPU node |
+| Mutating webhook | Injects the `libvgpu` hostPath volume and `ld.so.preload` into pods that request GPU sharing |
+| DaemonSet (monitor, optional) | Reads per-container shared-memory caches and exposes HAMi-compatible VRAM metrics on `:9394` |
+
 ![Architecture](https://github.com/user-attachments/assets/ac7566fe-f79c-45fc-b3a1-24bc18ea6bc9)
 
 ## Prerequisites
 
+- **KAI-Scheduler version**: ≥ v0.17.0
 - KAI-Scheduler deployed with GPU sharing and the `hamicore` plugin enabled:
 
   ```bash
-  helm install kai-scheduler oci://ghcr.io/nvidia/kai-scheduler \
+  helm install kai-scheduler oci://ghcr.io/kai-scheduler/kai-scheduler/kai-scheduler \
     --set global.gpuSharing=true \
     --set binder.plugins.hamicore.enabled=true \
-    --namespace kai-scheduler --create-namespace
+    --namespace kai-scheduler --create-namespace \
+    --version v0.17.0
   ```
 
 ## Installation
 
-Deploy kai-resource-isolator:
+Deploy kai-resource-isolator (with optional per-container VRAM metrics):
 
 ```bash
 helm install kai-resource-isolator oci://docker.io/projecthami/kai-resource-isolator \
   --namespace kai-resource-isolator --create-namespace \
-  --version 1.0.0-chart
+  --set monitor.enabled=true \
+  --set monitor.serviceMonitor.enabled=true \
+  --version 1.1.0-chart
 ```
 
-Chart versions carry a `-chart` suffix (e.g. `1.0.0-chart`). Available versions are listed on [Docker Hub](https://hub.docker.com/r/projecthami/kai-resource-isolator/tags).
+Chart versions carry a `-chart` suffix (e.g. `1.1.0-chart`). Available versions are listed on [Docker Hub](https://hub.docker.com/r/projecthami/kai-resource-isolator/tags).
 
-For Customization or detailed information, please refer to [kai-resource-isolator](https://github.com/Project-HAMi/KAI-resource-isolator)
+The default `monitor.nodeSelector` is `nvidia.com/gpu.present: "true"` (NVIDIA GPU feature discovery). Set `monitor.runtimeClassName=nvidia` if NVML is only available through the NVIDIA runtime handler in your cluster.
+
+For customization or more detail, see [kai-resource-isolator](https://github.com/Project-HAMi/KAI-resource-isolator).
 
 ## Usage
 
@@ -105,6 +121,21 @@ After the pod starts, `nvidia-smi` inside the container will show only the alloc
 +-----------------------------------------------------------------------------------------+
 ```
 
+### Per-container VRAM metrics
+
+When `monitor.enabled=true`, `kai-vgpu-monitor` reads the shared-memory cache that `libvgpu.so` writes for each GPU container and exposes HAMi-compatible gauges such as:
+
+- `hami_vgpu_memory_used_bytes`
+- `hami_vgpu_memory_limit_bytes`
+- `hami_container_device_utilization_ratio`
+
+Scrape them with:
+
+```bash
+curl {pod-ip}:9394/metrics
+```
+
+
 ### Opt-out
 
 - **Per pod**: add annotation `kai-resource-isolator.io/inject: "false"`
@@ -113,4 +144,3 @@ After the pod starts, `nvidia-smi` inside the container will show only the alloc
 ### Memory value precision
 
 The `gpu-memory` annotation accepts an **integer in MiB** (no unit suffix). Internally, KAI-Scheduler converts this to a GPU fraction with 2-decimal precision, which is then multiplied against the total GPU memory to compute the actual limit. As a result, the value seen in `nvidia-smi` may differ slightly from the requested value. For example, requesting `4096` MiB on a `15360` MiB GPU (T4) rounds to a `0.27` fraction, yielding `4147m` as the enforced limit.
-
