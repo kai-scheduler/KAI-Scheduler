@@ -22,6 +22,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/configurations/feature_flags"
 	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/utils"
 )
 
 const (
@@ -141,7 +142,7 @@ func distributedJobsScaleTestInternal(
 	submissions := make([]jobSubmission, numberOfDistributedJobs)
 	for i := range submissions {
 		submissions[i] = distributedJobSubmissionForKwok(
-			testCtx, testQueue, resources, podsPerDistributedJob, nil, topologyConstraint, nil,
+			testCtx, testQueue, resources, podsPerDistributedJob, nil, topologyConstraint, nil, nil,
 		)
 	}
 	tracker, err := submitJobBatch(ctx, testCtx, queue.GetConnectedNamespaceToQueue(testQueue), submissions)
@@ -223,7 +224,7 @@ func measureUnschedulableDelayInSeconds(
 			defer cancel()
 
 			tracker, err := submitJobBatch(measurementCtx, testCtx, queue.GetConnectedNamespaceToQueue(testQueue), []jobSubmission{
-				distributedJobSubmissionForKwok(testCtx, testQueue, resources, numberOfPods, nil, nil, nil),
+				distributedJobSubmissionForKwok(testCtx, testQueue, resources, numberOfPods, nil, nil, nil, nil),
 			})
 			Expect(err).NotTo(HaveOccurred())
 			defer tracker.Close()
@@ -247,7 +248,7 @@ func reclaimForOneLargeJob(ctx context.Context, testCtx *testcontext.TestContext
 		constants.NvidiaGpuResource: *resource.NewQuantity(int64(gpusPerNode), resource.DecimalSI),
 	}}
 	tracker, err := submitJobBatch(ctx, testCtx, queue.GetConnectedNamespaceToQueue(reclaimSingleGPUJobsQueue), []jobSubmission{
-		distributedJobSubmissionForKwok(testCtx, reclaimSingleGPUJobsQueue, resources, numberOfPods, nil, nil, nil),
+		distributedJobSubmissionForKwok(testCtx, reclaimSingleGPUJobsQueue, resources, numberOfPods, nil, nil, nil, nil),
 	})
 	Expect(err).NotTo(HaveOccurred())
 	defer tracker.Close()
@@ -273,6 +274,16 @@ func runNCCLSimulation(
 ) (testSucceeded bool, totalPods int, completedPods int, pendingPods int, startTime time.Time) {
 	jobSizes := []int{1, 2, 4, 8, 16, 32, 64, 128, 256, 512}
 	startTime = time.Now()
+	namespace := queue.GetConnectedNamespaceToQueue(testQueue)
+	batchID := utils.GenerateRandomK8sName(10)
+	finalizerController, err := newNCCLFinalizerController(testCtx, namespace, batchID)
+	Expect(err).NotTo(HaveOccurred(), "Failed to create NCCL finalizer controller")
+	Expect(finalizerController.Setup(ctx)).To(Succeed(), "Failed to protect NCCL Pods from KWOK cleanup")
+	DeferCleanup(func(cleanupCtx context.Context) {
+		Expect(finalizerController.Cleanup(cleanupCtx)).To(Succeed(), "Failed to clean up NCCL Pod finalizers")
+	})
+	finalizerController.Start(ctx)
+
 	podLabels := map[string]string{"burst-test": "true"}
 	var submissions []jobSubmission
 	for _, jobSize := range jobSizes {
@@ -282,16 +293,16 @@ func runNCCLSimulation(
 		for range numberOfNCCLJobsPerSize {
 			submissions = append(submissions, distributedJobSubmissionForKwok(
 				testCtx, testQueue, FullNodeGPURequirement, jobSize, podLabels, nil,
-				ptr.To(batchv1.Failed),
+				ptr.To(batchv1.Failed), []string{ncclPodFinalizer},
 			))
 		}
 	}
-	tracker, err := submitJobBatch(ctx, testCtx, queue.GetConnectedNamespaceToQueue(testQueue), submissions)
+	tracker, err := submitJobBatchWithID(ctx, testCtx, namespace, submissions, batchID)
 	Expect(err).NotTo(HaveOccurred(), "Failed to create NCCL Job batch")
 	defer tracker.Close()
 	completionCtx, cancelCompletion := context.WithTimeout(ctx, time.Duration(ncclTimeoutMinutes)*time.Minute)
 	defer cancelCompletion()
-	status, err := waitForNCCLCompletion(completionCtx, tracker)
+	status, err := waitForNCCLCompletion(completionCtx, tracker, finalizerController)
 	Expect(err).NotTo(HaveOccurred())
 
 	totalPods = status.ExpectedPods
@@ -304,9 +315,13 @@ func runNCCLSimulation(
 	return testSucceeded, totalPods, completedPods, pendingPods, startTime
 }
 
-func waitForNCCLCompletion(ctx context.Context, tracker *jobBatchTracker) (BatchStatus, error) {
-	return tracker.WaitForStatus(ctx, "NCCL batch completion", func(status BatchStatus) bool {
-		return status.SucceededPods == status.ExpectedPods ||
-			(status.ObservedPods == status.ExpectedPods && status.PendingPods == 0)
-	})
+func waitForNCCLCompletion(
+	ctx context.Context,
+	tracker *jobBatchTracker,
+	finalizerController *ncclFinalizerController,
+) (BatchStatus, error) {
+	succeededPods, err := finalizerController.WaitForCompletion(ctx, tracker.expectedPods)
+	status := tracker.Status()
+	status.SucceededPods = succeededPods
+	return status, err
 }

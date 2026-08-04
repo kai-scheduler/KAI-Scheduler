@@ -50,8 +50,21 @@ func submitJobBatch(
 	namespace string,
 	submissions []jobSubmission,
 ) (*jobBatchTracker, error) {
+	return submitJobBatchWithID(ctx, testCtx, namespace, submissions, utils.GenerateRandomK8sName(10))
+}
+
+func submitJobBatchWithID(
+	ctx context.Context,
+	testCtx *testcontext.TestContext,
+	namespace string,
+	submissions []jobSubmission,
+	batchID string,
+) (*jobBatchTracker, error) {
 	if len(submissions) == 0 {
 		return nil, fmt.Errorf("cannot submit an empty Job batch")
+	}
+	if batchID == "" {
+		return nil, fmt.Errorf("Job batch ID must not be empty")
 	}
 	expectedPods := 0
 	for _, submission := range submissions {
@@ -61,7 +74,6 @@ func submitJobBatch(
 		expectedPods += submission.ExpectedPods
 	}
 
-	batchID := utils.GenerateRandomK8sName(10)
 	batchLabels := map[string]string{distributedJobBatchLabel: batchID}
 	tracker, err := newJobBatchTracker(ctx, testCtx.ControllerClient, namespace, batchID, batchLabels, expectedPods, len(submissions))
 	if err != nil {

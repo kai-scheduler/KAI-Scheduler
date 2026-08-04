@@ -55,6 +55,8 @@ type DistributedBatchJobOptions struct {
 	ExtraLabels map[string]string
 	// PodReplacementPolicy controls when the Job controller creates replacement Pods.
 	PodReplacementPolicy *batchv1.PodReplacementPolicy
+	// PodTemplateFinalizers are added to every Pod created by the Job.
+	PodTemplateFinalizers []string
 	// PodSpecMutator is applied to the pod template spec after defaults are set. Scale
 	// tests use this to inject KWOK tolerations/affinity without importing scale into rd.
 	PodSpecMutator func(*v1.PodSpec)
@@ -128,6 +130,10 @@ func buildDistributedBatchJob(
 	job.Spec.Parallelism = ptr.To(parallelism)
 	job.Spec.Completions = ptr.To(parallelism)
 	job.Spec.PodReplacementPolicy = opts.PodReplacementPolicy
+	job.Spec.Template.Finalizers = append(
+		append([]string(nil), job.Spec.Template.Finalizers...),
+		opts.PodTemplateFinalizers...,
+	)
 
 	if job.Annotations == nil {
 		job.Annotations = map[string]string{}

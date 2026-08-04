@@ -145,6 +145,12 @@ func (t *jobBatchTracker) Jobs() []*batchv1.Job {
 	return jobs
 }
 
+func (t *jobBatchTracker) Status() BatchStatus {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.statusLocked()
+}
+
 func (t *jobBatchTracker) WaitForReady(ctx context.Context) error {
 	_, err := t.waitForLocked(ctx, "batch resources to be created", func(status BatchStatus) bool {
 		return status.ObservedPods >= status.ExpectedPods &&

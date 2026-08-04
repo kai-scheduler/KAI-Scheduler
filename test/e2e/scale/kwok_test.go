@@ -512,6 +512,10 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 					)).To(Succeed())
 				})
 
+				AfterAll(func(ctx context.Context) {
+					Expect(runtimeClient.IgnoreNotFound(deletePodCompletionStage(ctx, testCtx.ControllerClient))).To(Succeed())
+				})
+
 				It("Runs NCCL Simulation on empty cluster", Label(labels.NCCL), func(ctx context.Context) {
 					testSucceeded, totalPods, completedPods, pendingPods, startTime := runNCCLSimulation(ctx, testCtx, sanityTestQueue, numberOfNodes)
 					writeTestResults(
