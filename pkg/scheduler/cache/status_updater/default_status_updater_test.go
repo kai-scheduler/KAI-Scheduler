@@ -828,6 +828,36 @@ func TestDefaultStatusUpdater_RecordStaleJobEvent(t *testing.T) {
 			},
 			expectedEvent: "Normal StaleJob Job is stale. 2 pods are active, minMember is 3, subGroup sub-group-1 minMember is 2 and 1 pods are active",
 		},
+		{
+			// A minSubGroup job never had to reach the sum of every leaf's minMember, so the message
+			// names the requirement it does have.
+			name: "stale pod group with minSubGroup",
+			job: func() *podgroup_info.PodGroupInfo {
+				root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+				root.SetMinSubGroup(ptr.To(int32(3)))
+				for _, spec := range []struct {
+					name    string
+					running int
+				}{{"sub-group-0", 2}, {"sub-group-1", 2}, {"sub-group-2", 1}} {
+					podSet := subgroup_info.NewPodSet(spec.name, 2, nil)
+					for i := 0; i < spec.running; i++ {
+						podSet.AssignTask(&pod_info.PodInfo{
+							UID:    common_info.PodID(fmt.Sprintf("%s-%d", spec.name, i)),
+							Status: pod_status.Running,
+						})
+					}
+					root.AddPodSet(podSet)
+				}
+				return &podgroup_info.PodGroupInfo{
+					Name:            "job-pg",
+					Namespace:       "job-ns",
+					UID:             "job-uid",
+					RootSubGroupSet: root,
+					PodSets:         root.GetDescendantPodSets(),
+				}
+			}(),
+			expectedEvent: "Normal StaleJob Job is stale. 5 pods are active, 2 of 3 required subGroups are satisfied, subGroup sub-group-2 minMember is 2 and 1 pods are active",
+		},
 	}
 
 	for _, test := range tests {

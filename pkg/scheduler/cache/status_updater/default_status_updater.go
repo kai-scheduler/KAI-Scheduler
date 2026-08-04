@@ -305,7 +305,15 @@ func (su *defaultStatusUpdater) recordStaleJobEvent(job *podgroup_info.PodGroupI
 		}
 	}
 
-	message := fmt.Sprintf("Job is stale. %d pods are active, minMember is %d", totalActivePods, totalMinAvailable) + subGroupMessages
+	// A minSubGroup job never had to reach the sum of every leaf's minMember, so reporting that sum
+	// names a requirement it does not have. Report the requirement it does.
+	header := fmt.Sprintf("Job is stale. %d pods are active, minMember is %d", totalActivePods, totalMinAvailable)
+	if root := job.RootSubGroupSet; root != nil && root.GetMinSubGroup() != nil {
+		header = fmt.Sprintf("Job is stale. %d pods are active, %d of %d required subGroups are satisfied",
+			totalActivePods, root.GetNumGangSatisfiedMembers(), root.GetMinMembersToSatisfy())
+	}
+
+	message := header + subGroupMessages
 
 	su.recorder.Eventf(job.PodGroup, v1.EventTypeNormal, "StaleJob", message)
 }

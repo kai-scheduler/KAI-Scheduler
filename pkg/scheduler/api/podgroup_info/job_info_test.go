@@ -20,6 +20,7 @@ limitations under the License.
 package podgroup_info
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
@@ -1460,6 +1461,41 @@ func TestPodGroupInfo_GetSchedulingConstraintsSignature(t *testing.T) {
 	}
 }
 
+// addRunningTasks adds count Running pods labelled for subGroup.
+func addRunningTasks(pgi *PodGroupInfo, subGroup string, count int) {
+	for i := 0; i < count; i++ {
+		name := fmt.Sprintf("%s-%d", subGroup, i)
+		pgi.AddTaskInfo(pod_info.NewTaskInfo(&v1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				UID:       types.UID(name),
+				Namespace: "ns",
+				Name:      name,
+				Labels:    map[string]string{commonconstants.SubGroupLabelKey: subGroup},
+			},
+			Status: v1.PodStatus{Phase: v1.PodRunning},
+		}, resource_info.NewResourceVectorMap()))
+	}
+}
+
+// flatStaleTestJob builds a job of leaf PodSets under a root, deriving PodSets from the tree the way
+// setSubGroups does. Assigning PodGroupInfo.PodSets directly leaves the tree behind and produces a
+// shape production never creates.
+func flatStaleTestJob(minSubGroup *int32, minAvailable int32, running map[string]int) *PodGroupInfo {
+	pgi := NewPodGroupInfo("test-podgroup")
+	root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+	root.SetMinSubGroup(minSubGroup)
+	for name := range running {
+		root.AddPodSet(subgroup_info.NewPodSet(name, minAvailable, nil))
+	}
+	pgi.RootSubGroupSet = root
+	pgi.PodSets = root.GetDescendantPodSets()
+
+	for name, count := range running {
+		addRunningTasks(pgi, name, count)
+	}
+	return pgi
+}
+
 func TestPodGroupInfo_IsStale(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -1557,86 +1593,54 @@ func TestPodGroupInfo_IsStale(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "activeUsedTasks >= minAvailable, subgroups gang NOT satisfied, stale",
-			job: func() *PodGroupInfo {
-				pgi := NewPodGroupInfo("test-podgroup")
-
-				sg1 := subgroup_info.NewPodSet("sg1", 1, nil)
-				pgi.PodSets["sg1"] = sg1
-
-				sg2 := subgroup_info.NewPodSet("sg2", 1, nil)
-				pgi.PodSets["sg2"] = sg2
-
-				task1 := pod_info.NewTaskInfo(&v1.Pod{
-					ObjectMeta: metav1.ObjectMeta{
-						UID:       "1",
-						Namespace: "ns",
-						Name:      "task1",
-						Labels: map[string]string{
-							commonconstants.SubGroupLabelKey: "sg1",
-						},
-					},
-					Status: v1.PodStatus{Phase: v1.PodRunning},
-				}, resource_info.NewResourceVectorMap())
-
-				task2 := pod_info.NewTaskInfo(&v1.Pod{
-					ObjectMeta: metav1.ObjectMeta{
-						UID:       "2",
-						Namespace: "ns",
-						Name:      "task2",
-						Labels: map[string]string{
-							commonconstants.SubGroupLabelKey: "sg1",
-						},
-					},
-					Status: v1.PodStatus{Phase: v1.PodRunning},
-				}, resource_info.NewResourceVectorMap())
-
-				pgi.AddTaskInfo(task1)
-				pgi.AddTaskInfo(task2)
-
-				return pgi
-			}(),
+			name:     "activeUsedTasks >= minAvailable, subgroups gang NOT satisfied, stale",
+			job:      flatStaleTestJob(nil, 1, map[string]int{"sg1": 2, "sg2": 0}),
 			expected: true,
 		},
 		{
-			name: "activeUsedTasks >= minAvailable, subgroups gang satisfied, not stale",
+			name:     "activeUsedTasks >= minAvailable, subgroups gang satisfied, not stale",
+			job:      flatStaleTestJob(nil, 1, map[string]int{"sg1": 1, "sg2": 1}),
+			expected: false,
+		},
+		{
+			// The demo's shape: minSubGroup 2 of 3, two subgroups formed. The job meets its
+			// requirement, so the unformed third must not make it stale.
+			name:     "minSubGroup satisfied with one subgroup short, not stale",
+			job:      flatStaleTestJob(ptr.To(int32(2)), 2, map[string]int{"a": 2, "b": 2, "c": 1}),
+			expected: false,
+		},
+		{
+			name:     "minSubGroup not reached, stale",
+			job:      flatStaleTestJob(ptr.To(int32(2)), 2, map[string]int{"a": 2, "b": 1, "c": 1}),
+			expected: true,
+		},
+		{
+			name:     "minSubGroup demands every child, stale",
+			job:      flatStaleTestJob(ptr.To(int32(3)), 2, map[string]int{"a": 2, "b": 2, "c": 1}),
+			expected: true,
+		},
+		{
+			// Nested: x is satisfied by 2 of its 3 children, so the root sees 2 of 2 members.
+			name: "nested minSubGroup satisfied, not stale",
 			job: func() *PodGroupInfo {
 				pgi := NewPodGroupInfo("test-podgroup")
+				root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+				root.SetMinSubGroup(ptr.To(int32(2)))
 
-				sg1 := subgroup_info.NewPodSet("sg1", 1, nil)
-				sg2 := subgroup_info.NewPodSet("sg2", 1, nil)
-				pgi.PodSets = map[string]*subgroup_info.PodSet{
-					"sg1": sg1,
-					"sg2": sg2,
+				x := subgroup_info.NewSubGroupSet("x", nil)
+				x.SetMinSubGroup(ptr.To(int32(2)))
+				for _, name := range []string{"x0", "x1", "x2"} {
+					x.AddPodSet(subgroup_info.NewPodSet(name, 2, nil))
 				}
+				root.AddSubGroup(x)
+				root.AddPodSet(subgroup_info.NewPodSet("y", 2, nil))
 
-				task1 := pod_info.NewTaskInfo(&v1.Pod{
-					ObjectMeta: metav1.ObjectMeta{
-						UID:       "1",
-						Namespace: "ns",
-						Name:      "task1",
-						Labels: map[string]string{
-							commonconstants.SubGroupLabelKey: "sg1",
-						},
-					},
-					Status: v1.PodStatus{Phase: v1.PodRunning},
-				}, resource_info.NewResourceVectorMap())
+				pgi.RootSubGroupSet = root
+				pgi.PodSets = root.GetDescendantPodSets()
 
-				task2 := pod_info.NewTaskInfo(&v1.Pod{
-					ObjectMeta: metav1.ObjectMeta{
-						UID:       "2",
-						Namespace: "ns",
-						Name:      "task2",
-						Labels: map[string]string{
-							commonconstants.SubGroupLabelKey: "sg2",
-						},
-					},
-					Status: v1.PodStatus{Phase: v1.PodRunning},
-				}, resource_info.NewResourceVectorMap())
-
-				pgi.AddTaskInfo(task1)
-				pgi.AddTaskInfo(task2)
-
+				for name, count := range map[string]int{"x0": 2, "x1": 2, "x2": 1, "y": 2} {
+					addRunningTasks(pgi, name, count)
+				}
 				return pgi
 			}(),
 			expected: false,

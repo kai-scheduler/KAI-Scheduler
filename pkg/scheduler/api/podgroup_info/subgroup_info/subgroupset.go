@@ -130,6 +130,34 @@ func (sgs *SubGroupSet) IsReadyForScheduling() bool {
 	return membersReadyForScheduling >= sgs.GetMinMembersToSatisfy()
 }
 
+// IsGangSatisfied reports whether enough direct members have formed their own gang, honoring
+// minSubGroup: a set needs GetMinMembersToSatisfy() satisfied children, not all of them. With no
+// minSubGroup that count is every direct member, so flat jobs keep requiring all of them.
+//
+// Counts active-used pods (PodSet.IsGangSatisfied), unlike IsMinRequirementSatisfied which counts
+// active-allocated. Staleness has always been a used-status question and must stay one.
+func (sgs *SubGroupSet) IsGangSatisfied() bool {
+	return sgs.GetNumGangSatisfiedMembers() >= sgs.GetMinMembersToSatisfy()
+}
+
+// GetNumGangSatisfiedMembers counts the direct members that have formed their own gang.
+func (sgs *SubGroupSet) GetNumGangSatisfiedMembers() int {
+	satisfied := 0
+	for _, member := range sgs.GetMembers() {
+		switch m := member.(type) {
+		case *SubGroupSet:
+			if m.IsGangSatisfied() {
+				satisfied++
+			}
+		case *PodSet:
+			if m.IsGangSatisfied() {
+				satisfied++
+			}
+		}
+	}
+	return satisfied
+}
+
 func (sgs *SubGroupSet) IsMinRequirementSatisfied() bool {
 	return sgs.GetNumActiveAllocatedDirectSubGroups() >= sgs.GetMinMembersToSatisfy()
 }
