@@ -250,6 +250,17 @@ func TestValidatePodGroupSpec(t *testing.T) {
 			want: nil,
 		},
 		{
+			name: "Valid: minSubGroup of 0 (no gang requirement)",
+			spec: PodGroupSpec{
+				MinSubGroup: ptr.To(int32(0)),
+				SubGroups: []SubGroup{
+					{Name: "a", MinMember: ptr.To(int32(4))},
+					{Name: "b", MinMember: ptr.To(int32(4))},
+				},
+			},
+			want: nil,
+		},
+		{
 			name: "Invalid: both minMember and minSubGroup set on PodGroup",
 			spec: PodGroupSpec{
 				MinMember:   ptr.To(int32(24)),

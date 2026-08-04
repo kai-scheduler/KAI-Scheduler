@@ -35,16 +35,18 @@ import (
 type PodGroupSpec struct {
 	// MinMember defines the minimal number of members to run the PodGroup;
 	// if there are not enough resources to start all required members, the scheduler will not start anyone.
+	// A value of 0 means no gang requirement: all pods are scheduled elastically (e.g. scale-to-zero workloads).
 	// Mutually exclusive with MinSubGroup.
 	// +kubebuilder:validation:Nullable
-	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Minimum=0
 	MinMember *int32 `json:"minMember,omitempty" protobuf:"varint,1,opt,name=minMember"`
 
 	// MinSubGroup defines the minimal number of direct child SubGroups required for this PodGroup to be schedulable.
+	// A value of 0 means no gang requirement: all SubGroups are scheduled elastically.
 	// Only applicable when SubGroups are defined.
 	// Mutually exclusive with MinMember.
 	// +kubebuilder:validation:Optional
-	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Minimum=0
 	MinSubGroup *int32 `json:"minSubGroup,omitempty"`
 
 	// Queue defines the queue to allocate resource for PodGroup; if queue does not exist,

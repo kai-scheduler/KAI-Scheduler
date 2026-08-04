@@ -284,7 +284,7 @@ func (pgi *PodGroupInfo) setSubGroups(podGroup *enginev2alpha2.PodGroup) error {
 		if defaultPodSet, found := pgi.PodSets[DefaultSubGroup]; found {
 			minAvail := int32(1)
 			if podGroup.Spec.MinMember != nil {
-				minAvail = max(*podGroup.Spec.MinMember, 1)
+				minAvail = *podGroup.Spec.MinMember
 			}
 			defaultPodSet.SetMinAvailable(minAvail)
 			rootSubGroupSet.AddPodSet(defaultPodSet)
