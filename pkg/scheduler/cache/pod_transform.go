@@ -33,8 +33,6 @@ func compactSchedulerPod(obj any) (any, error) {
 	return compact, nil
 }
 
-// A succeeded pod is never placed on a node or counted towards node resources, so only the
-// identity, podgroup, subgroup, app and phase that snapshot assembly reads are retained.
 func compactSucceededPod(pod *v1.Pod) *v1.Pod {
 	compact := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -50,15 +48,8 @@ func compactSucceededPod(pod *v1.Pod) *v1.Pod {
 	if podGroup, found := pod.Annotations[commonconstants.PodGroupAnnotationForPod]; found {
 		compact.Annotations = map[string]string{commonconstants.PodGroupAnnotationForPod: podGroup}
 	}
-	for _, key := range []string{commonconstants.SubGroupLabelKey, commonconstants.AppLabelName} {
-		value, found := pod.Labels[key]
-		if !found {
-			continue
-		}
-		if compact.Labels == nil {
-			compact.Labels = map[string]string{}
-		}
-		compact.Labels[key] = value
+	if subGroup, found := pod.Labels[commonconstants.SubGroupLabelKey]; found {
+		compact.Labels = map[string]string{commonconstants.SubGroupLabelKey: subGroup}
 	}
 
 	return compact
