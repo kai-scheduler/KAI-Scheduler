@@ -1,0 +1,3 @@
+kind: Changed
+body: |-
+  Avoid duplicate binder reconciliation events
