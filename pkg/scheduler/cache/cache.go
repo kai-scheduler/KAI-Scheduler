@@ -83,7 +83,6 @@ var terminalPodPhases = []v1.PodPhase{
 	v1.PodFailed,
 }
 
-// Succeeded pods are watched so PodGroupInfo.IsStale can tell a completing gang from a stalled one.
 var watchFilteredPodPhases = []v1.PodPhase{
 	v1.PodFailed,
 }

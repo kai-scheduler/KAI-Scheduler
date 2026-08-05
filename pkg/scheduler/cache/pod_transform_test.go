@@ -25,7 +25,7 @@ var _ = Describe("compactSchedulerPod", func() {
 				Namespace: "team-a",
 				UID:       "worker-0-uid",
 				Annotations: map[string]string{
-					commonconstants.PodGroupAnnotationForPod: "pg-1",
+					commonconstants.PodGroupAnnotationForPod:           "pg-1",
 					"kubectl.kubernetes.io/last-applied-configuration": "{...}",
 				},
 				Labels: map[string]string{
@@ -56,7 +56,7 @@ var _ = Describe("compactSchedulerPod", func() {
 	}
 
 	Context("succeeded pods", func() {
-		It("retains identity, podgroup, subgroup, app and phase", func() {
+		It("retains identity, podgroup, subgroup and phase", func() {
 			transformed, err := compactSchedulerPod(succeededPod())
 			Expect(err).NotTo(HaveOccurred())
 
@@ -67,7 +67,6 @@ var _ = Describe("compactSchedulerPod", func() {
 			Expect(compact.UID).To(BeEquivalentTo("worker-0-uid"))
 			Expect(compact.Annotations).To(HaveKeyWithValue(commonconstants.PodGroupAnnotationForPod, "pg-1"))
 			Expect(compact.Labels).To(HaveKeyWithValue(commonconstants.SubGroupLabelKey, "workers"))
-			Expect(compact.Labels).To(HaveKeyWithValue(commonconstants.AppLabelName, "trainer"))
 			Expect(compact.Status.Phase).To(Equal(v1.PodSucceeded))
 		})
 
@@ -77,7 +76,7 @@ var _ = Describe("compactSchedulerPod", func() {
 
 			compact := transformed.(*v1.Pod)
 			Expect(compact.Annotations).To(HaveLen(1))
-			Expect(compact.Labels).To(HaveLen(2))
+			Expect(compact.Labels).To(HaveLen(1))
 			Expect(compact.ManagedFields).To(BeNil())
 			Expect(compact.Spec).To(Equal(v1.PodSpec{}))
 			Expect(compact.Status.PodIP).To(BeEmpty())
