@@ -12,6 +12,7 @@ import (
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/utils/ptr"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
@@ -20,7 +21,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/capacity"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/fillers"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd"
-	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/pod_group"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
 )
@@ -96,10 +96,13 @@ func DescribeReclaimDistributedSpecs() bool {
 				reclaimerResources.Requests[constants.NvidiaGpuResource] = resource.MustParse(fmt.Sprintf("%d", reclaimerGPUs))
 				reclaimerResources.Limits[constants.NvidiaGpuResource] = resource.MustParse(fmt.Sprintf("%d", reclaimerGPUs))
 
-				_, pods := pod_group.CreateDistributedJob(
-					ctx, testCtx.KubeClientset, testCtx.ControllerClient,
-					reclaimerQueue, 2, *reclaimerResources, lowPriority,
-				)
+				_, _, pods, err := rd.CreateDistributedBatchJob(ctx, testCtx.ControllerClient, reclaimerQueue,
+					rd.DistributedBatchJobOptions{
+						Parallelism:       ptr.To(int32(2)),
+						Resources:         *reclaimerResources,
+						PriorityClassName: lowPriority,
+					})
+				Expect(err).To(Succeed())
 				namespace := queue.GetConnectedNamespaceToQueue(reclaimerQueue)
 				wait.ForAtLeastNPodsScheduled(ctx, testCtx.ControllerClient, namespace, pods, 2)
 			})
