@@ -440,6 +440,15 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1admission.Admission) []
 		args = append(args, "--gpu-pod-runtime-class-name", *config.GPUPodRuntimeClassName)
 	}
 
+	if ippr := config.InPlacePodResize; ippr != nil {
+		if ippr.ValidateQuota != nil && !*ippr.ValidateQuota {
+			args = append(args, "--validate-pod-resize-quota=false")
+		}
+		if ippr.BlockUpsizeOnBoundedQueues != nil && *ippr.BlockUpsizeOnBoundedQueues {
+			args = append(args, "--block-upsize-on-bounded-queues=true")
+		}
+	}
+
 	common.AddK8sClientConfigToArgs(config.Service.K8sClientConfig, args)
 	return common.AddControllerRuntimeJSONLogArg(kaiConfig.Spec.Global.JSONLog, args)
 }

@@ -32,18 +32,28 @@ const memoryLimitBytesPerUnit = 1_000_000
 // not push any queue on the pod's hierarchy over its configured limit (all workloads)
 // or over its deserved quota for non-preemptible workloads.
 type PodResizeValidator struct {
-	kubeClient    client.Client
-	schedulerName string
-	decoder       admission.Decoder
+	kubeClient                 client.Client
+	schedulerName              string
+	decoder                    admission.Decoder
+	validateQuota              bool
+	blockUpsizeOnBoundedQueues bool
 }
 
 // NewPodResizeValidator creates a PodResizeValidator. The scheme is used to decode
 // pod objects from the admission request.
-func NewPodResizeValidator(kubeClient client.Client, scheme *runtime.Scheme, schedulerName string) *PodResizeValidator {
+func NewPodResizeValidator(
+	kubeClient client.Client,
+	scheme *runtime.Scheme,
+	schedulerName string,
+	validateQuota bool,
+	blockUpsizeOnBoundedQueues bool,
+) *PodResizeValidator {
 	return &PodResizeValidator{
-		kubeClient:    kubeClient,
-		schedulerName: schedulerName,
-		decoder:       admission.NewDecoder(scheme),
+		kubeClient:                 kubeClient,
+		schedulerName:              schedulerName,
+		decoder:                    admission.NewDecoder(scheme),
+		validateQuota:              validateQuota,
+		blockUpsizeOnBoundedQueues: blockUpsizeOnBoundedQueues,
 	}
 }
 
@@ -69,6 +79,10 @@ func (v *PodResizeValidator) Handle(ctx context.Context, req admission.Request) 
 }
 
 func (v *PodResizeValidator) validateResize(ctx context.Context, oldPod, newPod *corev1.Pod) error {
+	if !v.validateQuota {
+		return nil
+	}
+
 	pgName, ok := oldPod.Annotations[commonconstants.PodGroupAnnotationForPod]
 	if !ok || pgName == "" {
 		return nil
@@ -99,7 +113,7 @@ func (v *PodResizeValidator) validateResize(ctx context.Context, oldPod, newPod 
 			return nil // best-effort: allow on lookup failure
 		}
 
-		if err := checkQueueCapacity(queue, delta, isPreemptible, oldPod, pg); err != nil {
+		if err := checkQueueCapacity(queue, delta, isPreemptible, v.blockUpsizeOnBoundedQueues, oldPod, pg); err != nil {
 			return err
 		}
 
@@ -185,11 +199,18 @@ func checkQueueCapacity(
 	queue *v2.Queue,
 	delta corev1.ResourceList,
 	isPreemptible bool,
+	blockUpsizeOnBoundedQueues bool,
 	pod *corev1.Pod,
 	pg *v2alpha2.PodGroup,
 ) error {
 	if queue.Spec.Resources == nil {
 		return nil
+	}
+
+	if blockUpsizeOnBoundedQueues {
+		if err := checkBlockUpsizeOnBoundedQueue(queue, delta, isPreemptible, pod, pg); err != nil {
+			return err
+		}
 	}
 
 	// Check hard limit for all workloads.
@@ -201,6 +222,53 @@ func checkQueueCapacity(
 	if !isPreemptible {
 		if err := checkNonPreemptibleQuota(queue, delta, pod, pg); err != nil {
 			return err
+		}
+	}
+
+	return nil
+}
+
+// checkBlockUpsizeOnBoundedQueue rejects any upsize when a queue has a finite
+// limit (all workloads) or a finite quota (non-preemptible workloads), regardless
+// of current allocation. This prevents races between concurrent resize requests.
+func checkBlockUpsizeOnBoundedQueue(
+	queue *v2.Queue,
+	delta corev1.ResourceList,
+	isPreemptible bool,
+	pod *corev1.Pod,
+	pg *v2alpha2.PodGroup,
+) error {
+	res := queue.Spec.Resources
+
+	if _, ok := delta[corev1.ResourceCPU]; ok {
+		if res.CPU.Limit >= 0 {
+			return fmt.Errorf(
+				"resize rejected: pod %s/%s (PodGroup %s) CPU upsize not permitted on queue %s with finite CPU limit (%.0fm)",
+				pod.Namespace, pod.Name, pg.Name, queue.Name, res.CPU.Limit,
+			)
+		}
+		if !isPreemptible && res.CPU.Quota >= 0 {
+			return fmt.Errorf(
+				"resize rejected: pod %s/%s (PodGroup %s) non-preemptible CPU upsize not permitted on queue %s with finite CPU quota (%.0fm)",
+				pod.Namespace, pod.Name, pg.Name, queue.Name, res.CPU.Quota,
+			)
+		}
+	}
+
+	if _, ok := delta[corev1.ResourceMemory]; ok {
+		if res.Memory.Limit >= 0 {
+			limitBytes := int64(res.Memory.Limit * memoryLimitBytesPerUnit)
+			return fmt.Errorf(
+				"resize rejected: pod %s/%s (PodGroup %s) memory upsize not permitted on queue %s with finite memory limit (%d bytes)",
+				pod.Namespace, pod.Name, pg.Name, queue.Name, limitBytes,
+			)
+		}
+		if !isPreemptible && res.Memory.Quota >= 0 {
+			quotaBytes := int64(res.Memory.Quota * memoryLimitBytesPerUnit)
+			return fmt.Errorf(
+				"resize rejected: pod %s/%s (PodGroup %s) non-preemptible memory upsize not permitted on queue %s with finite memory quota (%d bytes)",
+				pod.Namespace, pod.Name, pg.Name, queue.Name, quotaBytes,
+			)
 		}
 	}
 

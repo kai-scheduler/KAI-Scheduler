@@ -175,6 +175,8 @@ func (app *App) Run() error {
 				app.manager.GetClient(),
 				app.manager.GetScheme(),
 				app.Options.SchedulerName,
+				app.Options.ValidatePodResizeQuota,
+				app.Options.BlockUpsizeOnBoundedQueues,
 			),
 		},
 	)

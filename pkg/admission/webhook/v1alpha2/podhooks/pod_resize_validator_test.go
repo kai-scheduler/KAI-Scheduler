@@ -114,7 +114,7 @@ func podWithRequests(namespace, name, pgName, schedulerName, cpu, memory string)
 
 func TestPodResizeValidator_AllowedWhenNotKAIPod(t *testing.T) {
 	scheme := buildScheme()
-	v := NewPodResizeValidator(fake.NewClientBuilder().WithScheme(scheme).Build(), scheme, testSchedulerName)
+	v := NewPodResizeValidator(fake.NewClientBuilder().WithScheme(scheme).Build(), scheme, testSchedulerName, true, false)
 
 	oldPod := podWithRequests("ns", "p", "pg", "other-scheduler", "1", "1Gi")
 	newPod := podWithRequests("ns", "p", "pg", "other-scheduler", "2", "2Gi")
@@ -124,7 +124,7 @@ func TestPodResizeValidator_AllowedWhenNotKAIPod(t *testing.T) {
 
 func TestPodResizeValidator_AllowedWhenNoPodGroup(t *testing.T) {
 	scheme := buildScheme()
-	v := NewPodResizeValidator(fake.NewClientBuilder().WithScheme(scheme).Build(), scheme, testSchedulerName)
+	v := NewPodResizeValidator(fake.NewClientBuilder().WithScheme(scheme).Build(), scheme, testSchedulerName, true, false)
 
 	oldPod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: "p", Namespace: "ns"},
@@ -140,7 +140,7 @@ func TestPodResizeValidator_AllowedOnDownsize(t *testing.T) {
 	queue := newQueue("q", 4000, 4096, 0, "2", "2Gi")
 	pg := newPodGroup("pg", "ns", "q")
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(queue, pg).Build()
-	v := NewPodResizeValidator(c, scheme, testSchedulerName)
+	v := NewPodResizeValidator(c, scheme, testSchedulerName, true, false)
 
 	oldPod := podWithRequests("ns", "p", "pg", testSchedulerName, "2", "2Gi")
 	newPod := podWithRequests("ns", "p", "pg", testSchedulerName, "1", "1Gi") // downsize
@@ -154,7 +154,7 @@ func TestPodResizeValidator_DeniedWhenCPULimitExceeded(t *testing.T) {
 	queue := newQueue("q", 4000, -1, 0, "2", "0")
 	pg := newPodGroup("pg", "ns", "q")
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(queue, pg).Build()
-	v := NewPodResizeValidator(c, scheme, testSchedulerName)
+	v := NewPodResizeValidator(c, scheme, testSchedulerName, true, false)
 
 	oldPod := podWithRequests("ns", "p", "pg", testSchedulerName, "1", "0")
 	// Upsize by 3 CPU → total would be 2+3 = 5, over limit of 4
@@ -169,7 +169,7 @@ func TestPodResizeValidator_AllowedWhenCPULimitNotExceeded(t *testing.T) {
 	queue := newQueue("q", 4000, -1, 0, "2", "0")
 	pg := newPodGroup("pg", "ns", "q")
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(queue, pg).Build()
-	v := NewPodResizeValidator(c, scheme, testSchedulerName)
+	v := NewPodResizeValidator(c, scheme, testSchedulerName, true, false)
 
 	oldPod := podWithRequests("ns", "p", "pg", testSchedulerName, "1", "0")
 	// Upsize by 1 CPU → total 2+1 = 3, under limit of 4
@@ -184,7 +184,7 @@ func TestPodResizeValidator_DeniedWhenMemoryLimitExceeded(t *testing.T) {
 	queue := newQueue("q", -1, 4096, 0, "0", "2Gi")
 	pg := newPodGroup("pg", "ns", "q")
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(queue, pg).Build()
-	v := NewPodResizeValidator(c, scheme, testSchedulerName)
+	v := NewPodResizeValidator(c, scheme, testSchedulerName, true, false)
 
 	oldPod := podWithRequests("ns", "p", "pg", testSchedulerName, "0", "1Gi")
 	// Upsize by 3Gi → total 2Gi + 3Gi = 5Gi > 4096MB
@@ -199,7 +199,7 @@ func TestPodResizeValidator_AllowedWhenLimitIsUnlimited(t *testing.T) {
 	queue := newQueue("q", -1, -1, 0, "100", "100Gi")
 	pg := newPodGroup("pg", "ns", "q")
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(queue, pg).Build()
-	v := NewPodResizeValidator(c, scheme, testSchedulerName)
+	v := NewPodResizeValidator(c, scheme, testSchedulerName, true, false)
 
 	oldPod := podWithRequests("ns", "p", "pg", testSchedulerName, "1", "1Gi")
 	newPod := podWithRequests("ns", "p", "pg", testSchedulerName, "50", "50Gi")
@@ -222,7 +222,7 @@ func TestPodResizeValidator_NonPreemptible_DeniedWhenQuotaExceeded(t *testing.T)
 		},
 	}
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(queue, pg).Build()
-	v := NewPodResizeValidator(c, scheme, testSchedulerName)
+	v := NewPodResizeValidator(c, scheme, testSchedulerName, true, false)
 
 	oldPod := podWithRequests("ns", "p", "pg", testSchedulerName, "1", "0")
 	// Upsize by 2 → non-preemptible total = 3+2 = 5 > quota 4
@@ -239,7 +239,7 @@ func TestPodResizeValidator_InfeasibleOldSpec_DeltaUsesEnacted(t *testing.T) {
 	queue := newQueue("q", 4000, -1, 0, "1", "0") // limit=4000m, allocated=1000m
 	pg := newPodGroup("pg", "ns", "q")
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(queue, pg).Build()
-	v := NewPodResizeValidator(c, scheme, testSchedulerName)
+	v := NewPodResizeValidator(c, scheme, testSchedulerName, true, false)
 
 	// Old pod: spec=4 CPU (infeasible target), enacted=1 CPU.
 	oldPod := podWithRequests("ns", "p", "pg", testSchedulerName, "4", "0")
@@ -266,7 +266,7 @@ func TestPodResizeValidator_UnchangedResourceNotCounted(t *testing.T) {
 	queue := newQueue("q", 4000, 4096, 0, "1", "1Gi")
 	pg := newPodGroup("pg", "ns", "q")
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(queue, pg).Build()
-	v := NewPodResizeValidator(c, scheme, testSchedulerName)
+	v := NewPodResizeValidator(c, scheme, testSchedulerName, true, false)
 
 	// Old pod: CPU spec=4 (infeasible), memory spec=8Gi (infeasible). Enacted=1/1Gi.
 	oldPod := podWithRequests("ns", "p", "pg", testSchedulerName, "4", "8Gi")
@@ -307,7 +307,7 @@ func TestPodResizeValidator_ZeroQuota_NonPreemptibleDenied(t *testing.T) {
 		},
 	}
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(queue, pg).Build()
-	v := NewPodResizeValidator(c, scheme, testSchedulerName)
+	v := NewPodResizeValidator(c, scheme, testSchedulerName, true, false)
 
 	oldPod := podWithRequests("ns", "p", "pg", testSchedulerName, "1", "0")
 	newPod := podWithRequests("ns", "p", "pg", testSchedulerName, "2", "0")
@@ -327,10 +327,80 @@ func TestPodResizeValidator_Preemptible_AllowedWhenOnlyQuotaExceeded(t *testing.
 		},
 	}
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(queue, pg).Build()
-	v := NewPodResizeValidator(c, scheme, testSchedulerName)
+	v := NewPodResizeValidator(c, scheme, testSchedulerName, true, false)
 
 	oldPod := podWithRequests("ns", "p", "pg", testSchedulerName, "1", "0")
 	newPod := podWithRequests("ns", "p", "pg", testSchedulerName, "5", "0") // over quota, ok for preemptible
 	resp := v.Handle(context.Background(), makeRequest(t, oldPod, newPod))
 	assert.True(t, resp.Allowed, "preemptible upsize should not be blocked by quota alone")
+}
+
+// TestPodResizeValidator_ValidateQuotaFalse_AlwaysAllowed verifies that when
+// validateQuota=false the webhook admits all resizes without checking limits.
+func TestPodResizeValidator_ValidateQuotaFalse_AlwaysAllowed(t *testing.T) {
+	scheme := buildScheme()
+	// Queue limit = 4 CPU, allocated = 3 CPU. Upsize by 2 would exceed it.
+	queue := newQueue("q", 4000, -1, 0, "3", "0")
+	pg := newPodGroup("pg", "ns", "q")
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(queue, pg).Build()
+	v := NewPodResizeValidator(c, scheme, testSchedulerName, false /* validateQuota */, false)
+
+	oldPod := podWithRequests("ns", "p", "pg", testSchedulerName, "1", "0")
+	newPod := podWithRequests("ns", "p", "pg", testSchedulerName, "3", "0") // would exceed limit
+	resp := v.Handle(context.Background(), makeRequest(t, oldPod, newPod))
+	assert.True(t, resp.Allowed, "validateQuota=false should admit even limit-exceeding resizes")
+}
+
+// TestPodResizeValidator_BlockUpsizeOnBounded_DeniedWhenLimitSet verifies that when
+// blockUpsizeOnBoundedQueues=true any upsize on a queue with a finite limit is denied.
+func TestPodResizeValidator_BlockUpsizeOnBounded_DeniedWhenLimitSet(t *testing.T) {
+	scheme := buildScheme()
+	// Queue has a finite CPU limit but plenty of headroom.
+	queue := newQueue("q", 100000, -1, 0, "1", "0")
+	pg := newPodGroup("pg", "ns", "q")
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(queue, pg).Build()
+	v := NewPodResizeValidator(c, scheme, testSchedulerName, true, true /* blockUpsizeOnBoundedQueues */)
+
+	oldPod := podWithRequests("ns", "p", "pg", testSchedulerName, "1", "0")
+	newPod := podWithRequests("ns", "p", "pg", testSchedulerName, "2", "0")
+	resp := v.Handle(context.Background(), makeRequest(t, oldPod, newPod))
+	assert.False(t, resp.Allowed, "blockUpsizeOnBoundedQueues should deny any CPU upsize on bounded queue")
+}
+
+// TestPodResizeValidator_BlockUpsizeOnBounded_AllowedWhenUnlimited verifies that when
+// blockUpsizeOnBoundedQueues=true but the queue is fully unlimited, upsizes are allowed.
+func TestPodResizeValidator_BlockUpsizeOnBounded_AllowedWhenUnlimited(t *testing.T) {
+	scheme := buildScheme()
+	queue := newQueue("q", -1, -1, -1, "1", "0")
+	pg := newPodGroup("pg", "ns", "q")
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(queue, pg).Build()
+	v := NewPodResizeValidator(c, scheme, testSchedulerName, true, true /* blockUpsizeOnBoundedQueues */)
+
+	oldPod := podWithRequests("ns", "p", "pg", testSchedulerName, "1", "0")
+	newPod := podWithRequests("ns", "p", "pg", testSchedulerName, "50", "0")
+	resp := v.Handle(context.Background(), makeRequest(t, oldPod, newPod))
+	assert.True(t, resp.Allowed, "unlimited queue should never be blocked by blockUpsizeOnBoundedQueues")
+}
+
+// TestPodResizeValidator_BlockUpsizeOnBounded_NonPreemptibleQuota verifies that when
+// blockUpsizeOnBoundedQueues=true, a non-preemptible upsize on a queue with finite
+// quota is denied even when the limit is unlimited.
+func TestPodResizeValidator_BlockUpsizeOnBounded_NonPreemptibleQuota(t *testing.T) {
+	scheme := buildScheme()
+	// Limit is unlimited, but quota is finite → non-preemptible upsize should be blocked.
+	queue := newQueue("q", -1, -1, 4000, "0", "0")
+	pg := &schedulingv2alpha2.PodGroup{
+		ObjectMeta: metav1.ObjectMeta{Name: "pg", Namespace: "ns"},
+		Spec: schedulingv2alpha2.PodGroupSpec{
+			Queue:          "q",
+			Preemptibility: v2alpha2.NonPreemptible,
+		},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(queue, pg).Build()
+	v := NewPodResizeValidator(c, scheme, testSchedulerName, true, true /* blockUpsizeOnBoundedQueues */)
+
+	oldPod := podWithRequests("ns", "p", "pg", testSchedulerName, "1", "0")
+	newPod := podWithRequests("ns", "p", "pg", testSchedulerName, "2", "0")
+	resp := v.Handle(context.Background(), makeRequest(t, oldPod, newPod))
+	assert.False(t, resp.Allowed, "non-preemptible upsize on bounded quota should be denied")
 }
