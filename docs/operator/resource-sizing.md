@@ -7,6 +7,10 @@ Pods, larger jobs, or a larger submission backlog.
 This guide provides tested starting profiles and a simple scheduler-memory
 calculation for workloads outside those profiles.
 
+The [resource sizing calculator](https://kai-scheduler.github.io/KAI-Scheduler/resource-sizing/)
+applies the calculation and recommends Scheduler requests and limits. It runs
+entirely in the browser and does not send cluster information anywhere.
+
 ## Quick start
 
 1. Estimate the values below for each important workload scenario.
@@ -77,7 +81,7 @@ The calculation separates memory into two understandable parts:
 ### 1. Infer workload Pods and capacity
 
 ```text
-workloadPods = min(totalPods, workloads * averageWorkloadSize)
+workloadPods = min(totalPods, round up(workloads * averageWorkloadSize))
 
 workerCapacity = floor(totalGPUs / GPUsPerWorkerPod)
 backlogRatio = workloadPods / workerCapacity
