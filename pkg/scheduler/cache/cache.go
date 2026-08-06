@@ -83,9 +83,13 @@ var terminalPodPhases = []v1.PodPhase{
 	v1.PodFailed,
 }
 
-func filterTerminalPods(options *metav1.ListOptions) {
-	selectors := make([]string, 0, len(terminalPodPhases))
-	for _, phase := range terminalPodPhases {
+var watchFilteredPodPhases = []v1.PodPhase{
+	v1.PodFailed,
+}
+
+func filterFailedPods(options *metav1.ListOptions) {
+	selectors := make([]string, 0, len(watchFilteredPodPhases))
+	for _, phase := range watchFilteredPodPhases {
 		selectors = append(selectors, fmt.Sprintf("status.phase!=%s", phase))
 	}
 	selector := strings.Join(selectors, ",")
@@ -103,7 +107,7 @@ func registerSchedulerPodInformer(informerFactory informers.SharedInformerFactor
 			metav1.NamespaceAll,
 			resyncPeriod,
 			k8scache.Indexers{k8scache.NamespaceIndex: k8scache.MetaNamespaceIndexFunc},
-			filterTerminalPods,
+			filterFailedPods,
 		)
 	})
 }

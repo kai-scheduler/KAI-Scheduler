@@ -58,7 +58,7 @@ func TestCache(t *testing.T) {
 var _ = Describe("Cache", func() {
 	Describe("New", func() {
 		Context("Pod informer filtering", func() {
-			It("should filter terminal pods without filtering pods by scheduler name", func() {
+			It("should filter failed pods while keeping succeeded pods, without filtering by scheduler name", func() {
 				kubeClient := fake.NewSimpleClientset()
 				cache := New(&SchedulerCacheParams{
 					KubeClient:         kubeClient,
@@ -95,8 +95,8 @@ var _ = Describe("Cache", func() {
 
 				Expect(podSelectors).NotTo(BeEmpty())
 				for _, selector := range podSelectors {
-					Expect(selector).To(ContainSubstring("status.phase!=Succeeded"))
 					Expect(selector).To(ContainSubstring("status.phase!=Failed"))
+					Expect(selector).NotTo(ContainSubstring("status.phase!=Succeeded"))
 					Expect(selector).NotTo(ContainSubstring("spec.schedulerName"))
 				}
 				Expect(nonPodSelectors).To(BeEmpty())
