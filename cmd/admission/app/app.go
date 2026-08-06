@@ -8,6 +8,7 @@ import (
 	"flag"
 
 	admissionhooks "github.com/kai-scheduler/KAI-scheduler/pkg/admission/webhook/v1alpha2/podhooks"
+	admissionwebhook "sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -30,6 +31,8 @@ import (
 
 	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
 	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	schedulingv2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	schedulingv2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 
 	admissionplugins "github.com/kai-scheduler/KAI-scheduler/pkg/admission/plugins"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/admission/webhook/topologyhooks"
@@ -44,6 +47,8 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(schedulingv1alpha2.AddToScheme(scheme))
+	utilruntime.Must(schedulingv2.AddToScheme(scheme))
+	utilruntime.Must(schedulingv2alpha2.AddToScheme(scheme))
 	utilruntime.Must(kaiv1alpha1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
@@ -60,6 +65,7 @@ type App struct {
 
 // +kubebuilder:webhook:path=/mutate--v1-pod,mutating=true,failurePolicy=fail,sideEffects=None,resources=pods,verbs=create,groups=core,versions=v1,name=admission.run.ai,admissionReviewVersions=v1,reinvocationPolicy=IfNeeded
 // +kubebuilder:webhook:path=/validate--v1-pod,mutating=false,failurePolicy=fail,sideEffects=None,resources=pods,verbs=create;update,groups=core,versions=v1,name=admission.run.ai,admissionReviewVersions=v1
+// +kubebuilder:webhook:path=/validate--v1-pod-resize,mutating=false,failurePolicy=ignore,sideEffects=None,resources=pods/resize,verbs=update,groups=core,versions=v1,name=podresize.admission.run.ai,admissionReviewVersions=v1
 // +kubebuilder:webhook:path=/validate-kai-scheduler-v1alpha1-topology,mutating=false,failurePolicy=fail,sideEffects=None,resources=topologies,verbs=create;update,groups=kai.scheduler,versions=v1alpha1,name=topology.admission.run.ai,admissionReviewVersions=v1
 
 func New() (*App, error) {
@@ -143,6 +149,9 @@ func (app *App) RegisterPlugins(admissionPlugins *admissionplugins.KaiAdmissionP
 // +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch;update
+// +kubebuilder:rbac:groups="scheduling.run.ai",resources=podgroups,verbs=get;list;watch
+// +kubebuilder:rbac:groups="scheduling.run.ai",resources=queues,verbs=get;list;watch
+// +kubebuilder:rbac:groups="scheduling.k8s.io",resources=priorityclasses,verbs=get;list;watch
 
 func (app *App) Run() error {
 	var err error
@@ -158,6 +167,19 @@ func (app *App) Run() error {
 		setupLog.Error(err, "unable to create pod webhooks", "webhook", "Pod")
 		return err
 	}
+
+	app.manager.GetWebhookServer().Register(
+		"/validate--v1-pod-resize",
+		&admissionwebhook.Webhook{
+			Handler: admissionhooks.NewPodResizeValidator(
+				app.manager.GetClient(),
+				app.manager.GetScheme(),
+				app.Options.SchedulerName,
+				app.Options.ValidatePodResizeQuota,
+				app.Options.BlockUpsizeOnBoundedQueues,
+			),
+		},
+	)
 
 	if err = ctrl.NewWebhookManagedBy(app.manager, &kaiv1alpha1.Topology{}).
 		WithValidator(topologyhooks.NewTopologyValidator()).Complete(); err != nil {

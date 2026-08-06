@@ -425,15 +425,34 @@ func getPodResourceRequest(pod *v1.Pod) *resource_info.ResourceRequirements {
 //   - initPhasePeak: max over each non-restartable init of `init.Requests +
 //     sum(native sidecars declared before it)`, since those sidecars are
 //     already running when the init runs.
+//
+// Restartable init containers (sidecars) also apply the KEP-1287 effective-request
+// model so that an in-progress downsize is not undercounted.
 func initContainerEffects(pod *v1.Pod) (sidecarSum, initPhasePeak *resource_info.ResourceRequirements) {
+	infeasible := isPodResizeInfeasible(pod)
+	statusByName := make(map[string]*v1.ContainerStatus, len(pod.Status.InitContainerStatuses))
+	for i := range pod.Status.InitContainerStatuses {
+		statusByName[pod.Status.InitContainerStatuses[i].Name] = &pod.Status.InitContainerStatuses[i]
+	}
+
 	sidecarSum = resource_info.EmptyResourceRequirements()
 	initPhasePeak = resource_info.EmptyResourceRequirements()
-	for _, container := range pod.Spec.InitContainers {
-		containerReq := resource_info.RequirementsFromResourceList(container.Resources.Requests)
-		if container.RestartPolicy != nil && *container.RestartPolicy == v1.ContainerRestartPolicyAlways {
-			logIfErr(pod, sidecarSum.Add(containerReq))
+	for i := range pod.Spec.InitContainers {
+		c := &pod.Spec.InitContainers[i]
+		if c.RestartPolicy != nil && *c.RestartPolicy == v1.ContainerRestartPolicyAlways {
+			var reqs v1.ResourceList
+			cs := statusByName[c.Name]
+			if cs == nil || cs.Resources == nil {
+				reqs = c.Resources.Requests
+			} else if infeasible {
+				reqs = maxResourceList(cs.Resources.Requests, cs.AllocatedResources)
+			} else {
+				reqs = maxResourceList(c.Resources.Requests, cs.Resources.Requests, cs.AllocatedResources)
+			}
+			logIfErr(pod, sidecarSum.Add(resource_info.RequirementsFromResourceList(reqs)))
 			continue
 		}
+		containerReq := resource_info.RequirementsFromResourceList(c.Resources.Requests)
 		logIfErr(pod, containerReq.Add(sidecarSum))
 		logIfErr(pod, initPhasePeak.SetMaxResource(containerReq))
 	}
@@ -449,13 +468,31 @@ func logIfErr(pod *v1.Pod, err error) {
 
 // getPodResourceWithoutInitContainers returns Pod's resource request, it does not contain
 // init containers' resource request.
+// Uses the effective-request model (KEP-1287): for running pods with an in-place resize in
+// progress, the effective request is max(spec, enacted, allocated) per container/resource.
 func getPodResourceWithoutInitContainers(pod *v1.Pod) *resource_info.ResourceRequirements {
+	infeasible := isPodResizeInfeasible(pod)
+	statusByName := make(map[string]*v1.ContainerStatus, len(pod.Status.ContainerStatuses))
+	for i := range pod.Status.ContainerStatuses {
+		statusByName[pod.Status.ContainerStatuses[i].Name] = &pod.Status.ContainerStatuses[i]
+	}
+
 	podResourcesList := v1.ResourceList{}
-	for _, container := range pod.Spec.Containers {
-		for key := range container.Resources.Requests {
-			resourceSum := podResourcesList[key]
-			resourceSum.Add(container.Resources.Requests[key])
-			podResourcesList[key] = resourceSum
+	for i := range pod.Spec.Containers {
+		c := &pod.Spec.Containers[i]
+		var reqs v1.ResourceList
+		cs := statusByName[c.Name]
+		if cs == nil || cs.Resources == nil {
+			reqs = c.Resources.Requests
+		} else if infeasible {
+			reqs = maxResourceList(cs.Resources.Requests, cs.AllocatedResources)
+		} else {
+			reqs = maxResourceList(c.Resources.Requests, cs.Resources.Requests, cs.AllocatedResources)
+		}
+		for key, qty := range reqs {
+			sum := podResourcesList[key]
+			sum.Add(qty)
+			podResourcesList[key] = sum
 		}
 	}
 

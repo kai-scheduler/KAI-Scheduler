@@ -1,0 +1,3 @@
+kind: Added
+body: |-
+  In-place pod resize accounting (KEP-1287) and queue admission webhook
