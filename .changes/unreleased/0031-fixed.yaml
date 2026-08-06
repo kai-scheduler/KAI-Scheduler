@@ -1,0 +1,3 @@
+kind: Fixed
+body: |-
+  Queue validator now sums GPU and memory quotas across sibling queues on the create path, mirroring the update path. Previously validateParentChildQuota only summed CPU, so a set of sibling queues whose combined GPU or memory quota exceeded the parent was caught on update but not on create. [#1923](https://github.com/kai-scheduler/KAI-Scheduler/issues/1923)

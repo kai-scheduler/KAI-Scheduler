@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	queuecontrollerconfig "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/queue_controller"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	generate "github.com/kai-scheduler/KAI-scheduler/pkg/operator/cert-utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common"
@@ -272,6 +273,11 @@ func buildArgsList(kaiConfig *kaiv1.Config) []string {
 
 	if config.QueueLabelToDefaultMetricValue != nil {
 		args = append(args, "--queue-label-to-default-metric-value", *config.QueueLabelToDefaultMetricValue)
+	}
+
+	if config.LimitDescendentsOverSubscription != nil &&
+		*config.LimitDescendentsOverSubscription != queuecontrollerconfig.LimitDescendentsOverSubscriptionNone {
+		args = append(args, "--limit-descendents-over-subscription", *config.LimitDescendentsOverSubscription)
 	}
 
 	common.AddK8sClientConfigToArgs(config.Service.K8sClientConfig, args)

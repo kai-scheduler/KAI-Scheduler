@@ -70,8 +70,13 @@ func Run(opts *Options, clientConfig *rest.Config, ctx context.Context) error {
 	}
 
 	if opts.EnableWebhook {
+		overSubscriptionMode, parseErr := queuehooks.ParseOverSubscriptionMode(opts.LimitDescendentsOverSubscription)
+		if parseErr != nil {
+			setupLog.Error(parseErr, "invalid limit-descendents-over-subscription value")
+			return parseErr
+		}
 		if err = ctrl.NewWebhookManagedBy(mgr, &v2.Queue{}).
-			WithValidator(queuehooks.NewQueueValidator(mgr.GetClient(), opts.EnableQuotaValidation)).
+			WithValidator(queuehooks.NewQueueValidator(mgr.GetClient(), overSubscriptionMode)).
 			Complete(); err != nil {
 			setupLog.Error(err, "unable to create webhook for queue v2", "webhook", "Queue")
 			return nil

@@ -6,17 +6,52 @@ package queuehooks
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
 var queueValidatorLog = logf.Log.WithName("queue-validator")
 
 const missingResourcesError = "resources must be specified"
+
+// OverSubscriptionMode controls how the validator reacts when a descendent
+// queue's quota exceeds its parent's quota (or siblings oversubscribe it).
+type OverSubscriptionMode string
+
+const (
+	// OverSubscriptionModeNone disables the descendent over-subscription checks.
+	OverSubscriptionModeNone OverSubscriptionMode = "none"
+	// OverSubscriptionModeWarning surfaces violations as admission warnings.
+	OverSubscriptionModeWarning OverSubscriptionMode = "warning"
+	// OverSubscriptionModeBlock rejects the request when violations are found.
+	OverSubscriptionModeBlock OverSubscriptionMode = "block"
+)
+
+// ParseOverSubscriptionMode normalizes a raw flag value into an
+// OverSubscriptionMode, defaulting to OverSubscriptionModeNone when empty and
+// erroring on unknown values.
+func ParseOverSubscriptionMode(value string) (OverSubscriptionMode, error) {
+	mode := OverSubscriptionMode(value)
+	if mode == "" {
+		mode = OverSubscriptionModeNone
+	}
+
+	switch mode {
+	case OverSubscriptionModeNone,
+		OverSubscriptionModeWarning,
+		OverSubscriptionModeBlock:
+		return mode, nil
+	default:
+		return "", fmt.Errorf("invalid over-subscription mode %q: must be one of none, warning, block", value)
+	}
+}
 
 type QueueValidator interface {
 	ValidateCreate(ctx context.Context, obj *v2.Queue) (warnings admission.Warnings, err error)
@@ -25,14 +60,14 @@ type QueueValidator interface {
 }
 
 type queueValidator struct {
-	kubeClient            client.Client
-	enableQuotaValidation bool
+	kubeClient           client.Client
+	overSubscriptionMode OverSubscriptionMode
 }
 
-func NewQueueValidator(kubeClient client.Client, enableQuotaValidation bool) QueueValidator {
+func NewQueueValidator(kubeClient client.Client, overSubscriptionMode OverSubscriptionMode) QueueValidator {
 	return &queueValidator{
-		kubeClient:            kubeClient,
-		enableQuotaValidation: enableQuotaValidation,
+		kubeClient:           kubeClient,
+		overSubscriptionMode: overSubscriptionMode,
 	}
 }
 
@@ -43,11 +78,16 @@ func (v *queueValidator) ValidateCreate(ctx context.Context, queue *v2.Queue) (a
 		return []string{missingResourcesError}, fmt.Errorf(missingResourcesError)
 	}
 
-	if !v.enableQuotaValidation || queue.Spec.ParentQueue == "" {
+	if v.overSubscriptionMode == OverSubscriptionModeNone || queue.Spec.ParentQueue == "" {
 		return nil, nil
 	}
 
-	return v.validateParentChildQuota(ctx, queue)
+	violations, err := v.validateParentChildQuota(ctx, queue)
+	if err != nil {
+		return nil, err
+	}
+
+	return v.reportViolations(violations)
 }
 
 func (v *queueValidator) ValidateUpdate(ctx context.Context, oldQueue, newQueue *v2.Queue) (admission.Warnings, error) {
@@ -57,29 +97,44 @@ func (v *queueValidator) ValidateUpdate(ctx context.Context, oldQueue, newQueue 
 		return []string{missingResourcesError}, fmt.Errorf(missingResourcesError)
 	}
 
-	if !v.enableQuotaValidation {
+	if v.overSubscriptionMode == OverSubscriptionModeNone {
 		return nil, nil
 	}
 
-	var warnings admission.Warnings
+	var violations []string
 
 	if newQueue.Spec.ParentQueue != "" {
-		parentWarnings, err := v.validateParentChildQuota(ctx, newQueue)
+		parentViolations, err := v.validateParentChildQuota(ctx, newQueue)
 		if err != nil {
-			return parentWarnings, err
+			return nil, err
 		}
-		warnings = append(warnings, parentWarnings...)
+		violations = append(violations, parentViolations...)
 	}
 
 	if len(oldQueue.Status.ChildQueues) > 0 {
-		childWarnings, err := v.validateChildrenQuotaSum(ctx, newQueue)
+		childViolations, err := v.validateChildrenQuotaSum(ctx, newQueue)
 		if err != nil {
-			return childWarnings, err
+			return nil, err
 		}
-		warnings = append(warnings, childWarnings...)
+		violations = append(violations, childViolations...)
 	}
 
-	return warnings, nil
+	return v.reportViolations(violations)
+}
+
+// reportViolations maps collected quota violations to the configured
+// enforcement mode: warnings surface them as admission warnings, block rejects
+// the request with an aggregated error.
+func (v *queueValidator) reportViolations(violations []string) (admission.Warnings, error) {
+	if len(violations) == 0 {
+		return nil, nil
+	}
+
+	if v.overSubscriptionMode == OverSubscriptionModeBlock {
+		return nil, fmt.Errorf("queue quota over-subscription: %s", strings.Join(violations, "; "))
+	}
+
+	return violations, nil
 }
 
 func (v *queueValidator) ValidateDelete(ctx context.Context, queue *v2.Queue) (admission.Warnings, error) {
@@ -106,14 +161,30 @@ func (v *queueValidator) validateParentChildQuota(ctx context.Context, childQueu
 	var warnings []string
 
 	childCPU := childQueue.Spec.Resources.CPU.Quota
+	childGPU := childQueue.Spec.Resources.GPU.Quota
+	childMemory := childQueue.Spec.Resources.Memory.Quota
 	parentCPU := parentQueue.Spec.Resources.CPU.Quota
+	parentGPU := parentQueue.Spec.Resources.GPU.Quota
+	parentMemory := parentQueue.Spec.Resources.Memory.Quota
 
-	if childCPU > parentCPU {
-		warnings = append(warnings, fmt.Sprintf("child queue CPU quota (%.0f) exceeds parent queue %s CPU quota (%.0f)",
-			childCPU, parentQueue.Name, parentCPU))
+	if quotaExceeds(childCPU, parentCPU) {
+		warnings = append(warnings, fmt.Sprintf("child queue CPU quota (%s) exceeds parent queue %s CPU quota (%s)",
+			formatQuota(childCPU), parentQueue.Name, formatQuota(parentCPU)))
+	}
+
+	if quotaExceeds(childGPU, parentGPU) {
+		warnings = append(warnings, fmt.Sprintf("child queue GPU quota (%s) exceeds parent queue %s GPU quota (%s)",
+			formatQuota(childGPU), parentQueue.Name, formatQuota(parentGPU)))
+	}
+
+	if quotaExceeds(childMemory, parentMemory) {
+		warnings = append(warnings, fmt.Sprintf("child queue Memory quota (%s) exceeds parent queue %s Memory quota (%s)",
+			formatQuota(childMemory), parentQueue.Name, formatQuota(parentMemory)))
 	}
 
 	totalChildrenCPU := childCPU
+	totalChildrenGPU := childGPU
+	totalChildrenMemory := childMemory
 	for _, childName := range parentQueue.Status.ChildQueues {
 		if childName == childQueue.Name {
 			continue
@@ -126,23 +197,25 @@ func (v *queueValidator) validateParentChildQuota(ctx context.Context, childQueu
 		}
 
 		if existingChild.Spec.Resources != nil {
-			totalChildrenCPU += existingChild.Spec.Resources.CPU.Quota
+			totalChildrenCPU = addQuota(totalChildrenCPU, existingChild.Spec.Resources.CPU.Quota)
+			totalChildrenGPU = addQuota(totalChildrenGPU, existingChild.Spec.Resources.GPU.Quota)
+			totalChildrenMemory = addQuota(totalChildrenMemory, existingChild.Spec.Resources.Memory.Quota)
 		}
 	}
 
-	if totalChildrenCPU > parentCPU {
-		warnings = append(warnings, fmt.Sprintf("total children CPU quota (%.0f) exceeds parent queue %s CPU quota (%.0f)",
-			totalChildrenCPU, parentQueue.Name, parentCPU))
+	if quotaExceeds(totalChildrenCPU, parentCPU) {
+		warnings = append(warnings, fmt.Sprintf("total children CPU quota (%s) exceeds parent queue %s CPU quota (%s)",
+			formatQuota(totalChildrenCPU), parentQueue.Name, formatQuota(parentCPU)))
 	}
 
-	if childQueue.Spec.Resources.GPU.Quota > parentQueue.Spec.Resources.GPU.Quota {
-		warnings = append(warnings, fmt.Sprintf("child queue GPU quota (%.2f) exceeds parent queue %s GPU quota (%.2f)",
-			childQueue.Spec.Resources.GPU.Quota, parentQueue.Name, parentQueue.Spec.Resources.GPU.Quota))
+	if quotaExceeds(totalChildrenGPU, parentGPU) {
+		warnings = append(warnings, fmt.Sprintf("total children GPU quota (%s) exceeds parent queue %s GPU quota (%s)",
+			formatQuota(totalChildrenGPU), parentQueue.Name, formatQuota(parentGPU)))
 	}
 
-	if childQueue.Spec.Resources.Memory.Quota > parentQueue.Spec.Resources.Memory.Quota {
-		warnings = append(warnings, fmt.Sprintf("child queue Memory quota (%.0f) exceeds parent queue %s Memory quota (%.0f)",
-			childQueue.Spec.Resources.Memory.Quota, parentQueue.Name, parentQueue.Spec.Resources.Memory.Quota))
+	if quotaExceeds(totalChildrenMemory, parentMemory) {
+		warnings = append(warnings, fmt.Sprintf("total children Memory quota (%s) exceeds parent queue %s Memory quota (%s)",
+			formatQuota(totalChildrenMemory), parentQueue.Name, formatQuota(parentMemory)))
 	}
 
 	return warnings, nil
@@ -167,30 +240,61 @@ func (v *queueValidator) validateChildrenQuotaSum(ctx context.Context, parentQue
 			continue
 		}
 
-		totalChildrenCPU += child.Spec.Resources.CPU.Quota
-		totalChildrenGPU += child.Spec.Resources.GPU.Quota
-		totalChildrenMemory += child.Spec.Resources.Memory.Quota
+		totalChildrenCPU = addQuota(totalChildrenCPU, child.Spec.Resources.CPU.Quota)
+		totalChildrenGPU = addQuota(totalChildrenGPU, child.Spec.Resources.GPU.Quota)
+		totalChildrenMemory = addQuota(totalChildrenMemory, child.Spec.Resources.Memory.Quota)
 
-		if child.Spec.Resources.CPU.Quota > parentQueue.Spec.Resources.CPU.Quota {
-			warnings = append(warnings, fmt.Sprintf("child queue %s CPU quota (%.0f) exceeds parent CPU quota (%.0f)",
-				childName, child.Spec.Resources.CPU.Quota, parentQueue.Spec.Resources.CPU.Quota))
+		if quotaExceeds(child.Spec.Resources.CPU.Quota, parentQueue.Spec.Resources.CPU.Quota) {
+			warnings = append(warnings, fmt.Sprintf("child queue %s CPU quota (%s) exceeds parent CPU quota (%s)",
+				childName, formatQuota(child.Spec.Resources.CPU.Quota), formatQuota(parentQueue.Spec.Resources.CPU.Quota)))
 		}
 	}
 
-	if totalChildrenCPU > parentQueue.Spec.Resources.CPU.Quota {
-		warnings = append(warnings, fmt.Sprintf("total children CPU quota (%.0f) exceeds parent CPU quota (%.0f)",
-			totalChildrenCPU, parentQueue.Spec.Resources.CPU.Quota))
+	if quotaExceeds(totalChildrenCPU, parentQueue.Spec.Resources.CPU.Quota) {
+		warnings = append(warnings, fmt.Sprintf("total children CPU quota (%s) exceeds parent CPU quota (%s)",
+			formatQuota(totalChildrenCPU), formatQuota(parentQueue.Spec.Resources.CPU.Quota)))
 	}
 
-	if totalChildrenGPU > parentQueue.Spec.Resources.GPU.Quota {
-		warnings = append(warnings, fmt.Sprintf("total children GPU quota (%.2f) exceeds parent GPU quota (%.2f)",
-			totalChildrenGPU, parentQueue.Spec.Resources.GPU.Quota))
+	if quotaExceeds(totalChildrenGPU, parentQueue.Spec.Resources.GPU.Quota) {
+		warnings = append(warnings, fmt.Sprintf("total children GPU quota (%s) exceeds parent GPU quota (%s)",
+			formatQuota(totalChildrenGPU), formatQuota(parentQueue.Spec.Resources.GPU.Quota)))
 	}
 
-	if totalChildrenMemory > parentQueue.Spec.Resources.Memory.Quota {
-		warnings = append(warnings, fmt.Sprintf("total children Memory quota (%.0f) exceeds parent Memory quota (%.0f)",
-			totalChildrenMemory, parentQueue.Spec.Resources.Memory.Quota))
+	if quotaExceeds(totalChildrenMemory, parentQueue.Spec.Resources.Memory.Quota) {
+		warnings = append(warnings, fmt.Sprintf("total children Memory quota (%s) exceeds parent Memory quota (%s)",
+			formatQuota(totalChildrenMemory), formatQuota(parentQueue.Spec.Resources.Memory.Quota)))
 	}
 
 	return warnings, nil
+}
+
+// quotaExceeds reports whether value exceeds limit, treating
+// constants.UnlimitedResourceQuantity (-1) as unbounded: an unlimited value
+// exceeds any finite limit, and nothing exceeds an unlimited limit.
+func quotaExceeds(value, limit float64) bool {
+	if limit == constants.UnlimitedResourceQuantity {
+		return false
+	}
+	if value == constants.UnlimitedResourceQuantity {
+		return true
+	}
+	return value > limit
+}
+
+// addQuota sums two quota values, treating constants.UnlimitedResourceQuantity
+// (-1) as absorbing: any unlimited operand makes the total unlimited.
+func addQuota(a, b float64) float64 {
+	if a == constants.UnlimitedResourceQuantity || b == constants.UnlimitedResourceQuantity {
+		return constants.UnlimitedResourceQuantity
+	}
+	return a + b
+}
+
+// formatQuota renders a quota value for warning messages, printing the
+// unlimited sentinel as "unlimited" rather than a meaningless -1.
+func formatQuota(value float64) string {
+	if value == constants.UnlimitedResourceQuantity {
+		return "unlimited"
+	}
+	return strconv.FormatFloat(value, 'f', -1, 64)
 }

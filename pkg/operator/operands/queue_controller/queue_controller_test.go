@@ -166,6 +166,26 @@ var _ = Describe("QueueController", func() {
 				Expect(validatingWebhookConfiguration.Labels).To(HaveKeyWithValue("foo", "bar"))
 			})
 		})
+		Context("buildArgsList", func() {
+			It("should not pass over-subscription flag when mode is none (default)", func() {
+				args := buildArgsList(kaiConfig)
+				Expect(args).NotTo(ContainElement("--limit-descendents-over-subscription"))
+			})
+
+			It("should pass over-subscription flag when mode is warning", func() {
+				cfg := kaiConfig.DeepCopy()
+				cfg.Spec.QueueController.LimitDescendentsOverSubscription = ptr.To("warning")
+				args := buildArgsList(cfg)
+				Expect(args).To(ContainElements("--limit-descendents-over-subscription", "warning"))
+			})
+
+			It("should pass over-subscription flag when mode is block", func() {
+				cfg := kaiConfig.DeepCopy()
+				cfg.Spec.QueueController.LimitDescendentsOverSubscription = ptr.To("block")
+				args := buildArgsList(cfg)
+				Expect(args).To(ContainElements("--limit-descendents-over-subscription", "block"))
+			})
+		})
 	})
 })
 

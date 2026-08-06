@@ -1,0 +1,3 @@
+kind: Fixed
+body: |-
+  Queue quota over-subscription validation now treats the `-1` unlimited sentinel correctly: an unlimited child (or children sum) exceeds any finite parent quota, and a finite child under an unlimited parent is no longer wrongly flagged. Warnings render the sentinel as `unlimited`. Previously plain `+`/`>` comparisons produced false negatives (silently admitting over-subscription under `block`) and false positives. [#1881](https://github.com/kai-scheduler/KAI-Scheduler/issues/1881)
