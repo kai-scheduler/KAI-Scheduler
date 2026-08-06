@@ -8,6 +8,7 @@ import (
 	"flag"
 
 	admissionhooks "github.com/kai-scheduler/KAI-scheduler/pkg/admission/webhook/v1alpha2/podhooks"
+	admissionwebhook "sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -60,6 +61,7 @@ type App struct {
 
 // +kubebuilder:webhook:path=/mutate--v1-pod,mutating=true,failurePolicy=fail,sideEffects=None,resources=pods,verbs=create,groups=core,versions=v1,name=admission.run.ai,admissionReviewVersions=v1,reinvocationPolicy=IfNeeded
 // +kubebuilder:webhook:path=/validate--v1-pod,mutating=false,failurePolicy=fail,sideEffects=None,resources=pods,verbs=create;update,groups=core,versions=v1,name=admission.run.ai,admissionReviewVersions=v1
+// +kubebuilder:webhook:path=/validate--v1-pod-resize,mutating=false,failurePolicy=ignore,sideEffects=None,resources=pods/resize,verbs=update,groups=core,versions=v1,name=podresize.admission.run.ai,admissionReviewVersions=v1
 // +kubebuilder:webhook:path=/validate-kai-scheduler-v1alpha1-topology,mutating=false,failurePolicy=fail,sideEffects=None,resources=topologies,verbs=create;update,groups=kai.scheduler,versions=v1alpha1,name=topology.admission.run.ai,admissionReviewVersions=v1
 
 func New() (*App, error) {
@@ -158,6 +160,17 @@ func (app *App) Run() error {
 		setupLog.Error(err, "unable to create pod webhooks", "webhook", "Pod")
 		return err
 	}
+
+	app.manager.GetWebhookServer().Register(
+		"/validate--v1-pod-resize",
+		&admissionwebhook.Webhook{
+			Handler: admissionhooks.NewPodResizeValidator(
+				app.manager.GetClient(),
+				app.manager.GetScheme(),
+				app.Options.SchedulerName,
+			),
+		},
+	)
 
 	if err = ctrl.NewWebhookManagedBy(app.manager, &kaiv1alpha1.Topology{}).
 		WithValidator(topologyhooks.NewTopologyValidator()).Complete(); err != nil {

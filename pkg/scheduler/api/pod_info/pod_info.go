@@ -449,13 +449,31 @@ func logIfErr(pod *v1.Pod, err error) {
 
 // getPodResourceWithoutInitContainers returns Pod's resource request, it does not contain
 // init containers' resource request.
+// Uses the effective-request model (KEP-1287): for running pods with an in-place resize in
+// progress, the effective request is max(spec, enacted, allocated) per container/resource.
 func getPodResourceWithoutInitContainers(pod *v1.Pod) *resource_info.ResourceRequirements {
+	infeasible := isPodResizeInfeasible(pod)
+	statusByName := make(map[string]*v1.ContainerStatus, len(pod.Status.ContainerStatuses))
+	for i := range pod.Status.ContainerStatuses {
+		statusByName[pod.Status.ContainerStatuses[i].Name] = &pod.Status.ContainerStatuses[i]
+	}
+
 	podResourcesList := v1.ResourceList{}
-	for _, container := range pod.Spec.Containers {
-		for key := range container.Resources.Requests {
-			resourceSum := podResourcesList[key]
-			resourceSum.Add(container.Resources.Requests[key])
-			podResourcesList[key] = resourceSum
+	for i := range pod.Spec.Containers {
+		c := &pod.Spec.Containers[i]
+		var reqs v1.ResourceList
+		cs := statusByName[c.Name]
+		if cs == nil || cs.Resources == nil {
+			reqs = c.Resources.Requests
+		} else if infeasible {
+			reqs = maxResourceList(cs.Resources.Requests, cs.AllocatedResources)
+		} else {
+			reqs = maxResourceList(c.Resources.Requests, cs.Resources.Requests, cs.AllocatedResources)
+		}
+		for key, qty := range reqs {
+			sum := podResourcesList[key]
+			sum.Add(qty)
+			podResourcesList[key] = sum
 		}
 	}
 
