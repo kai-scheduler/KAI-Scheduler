@@ -241,8 +241,11 @@ func TestPodResizeValidator_InfeasibleOldSpec_DeltaUsesEnacted(t *testing.T) {
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(queue, pg).Build()
 	v := NewPodResizeValidator(c, scheme, testSchedulerName, true, false)
 
-	// Old pod: spec=4 CPU (infeasible target), enacted=1 CPU.
+	// Old pod: spec=4 CPU (infeasible), enacted=1 CPU.
 	oldPod := podWithRequests("ns", "p", "pg", testSchedulerName, "4", "0")
+	oldPod.Status.Conditions = []corev1.PodCondition{
+		{Type: corev1.PodResizePending, Status: corev1.ConditionTrue, Reason: corev1.PodReasonInfeasible},
+	}
 	oldPod.Status.ContainerStatuses = []corev1.ContainerStatus{
 		{
 			Name: "main",
@@ -258,8 +261,9 @@ func TestPodResizeValidator_InfeasibleOldSpec_DeltaUsesEnacted(t *testing.T) {
 	assert.False(t, resp.Allowed, "delta should use enacted baseline, not infeasible spec")
 }
 
-// TestPodResizeValidator_UnchangedResourceNotCounted verifies that a resource not
-// touched by this resize (even with a stale infeasible spec) does not contribute to delta.
+// TestPodResizeValidator_UnchangedResourceNotCounted verifies that a resource whose
+// pod-level spec is unchanged by this resize does not contribute to delta, even when an
+// earlier infeasible attempt left a stale enacted value far below the old spec.
 func TestPodResizeValidator_UnchangedResourceNotCounted(t *testing.T) {
 	scheme := buildScheme()
 	// Limit: 4000m CPU, 4 GB memory. Allocated: 1000m CPU, 1 GB memory.
@@ -270,6 +274,9 @@ func TestPodResizeValidator_UnchangedResourceNotCounted(t *testing.T) {
 
 	// Old pod: CPU spec=4 (infeasible), memory spec=8Gi (infeasible). Enacted=1/1Gi.
 	oldPod := podWithRequests("ns", "p", "pg", testSchedulerName, "4", "8Gi")
+	oldPod.Status.Conditions = []corev1.PodCondition{
+		{Type: corev1.PodResizePending, Status: corev1.ConditionTrue, Reason: corev1.PodReasonInfeasible},
+	}
 	oldPod.Status.ContainerStatuses = []corev1.ContainerStatus{
 		{
 			Name: "main",
@@ -285,11 +292,11 @@ func TestPodResizeValidator_UnchangedResourceNotCounted(t *testing.T) {
 			},
 		},
 	}
-	// New resize only changes CPU (4→5); memory stays at 8Gi (unchanged spec).
-	// Delta = 5-1=4 CPU only; memory unchanged → delta_mem=0 → should be denied on CPU.
+	// This resize only changes CPU (4→5); memory spec stays at 8Gi (same as old spec).
+	// delta_cpu = 5-1=4 (infeasible baseline); delta_mem = 0 (pod-level spec unchanged).
+	// CPU: 1(alloc)+4(delta)=5 > 4000m limit → denied.
 	newPod := podWithRequests("ns", "p", "pg", testSchedulerName, "5", "8Gi")
 	resp := v.Handle(context.Background(), makeRequest(t, oldPod, newPod))
-	// CPU: 1(alloc)+4(delta)=5 > 4000m limit → denied
 	assert.False(t, resp.Allowed, "CPU upsize over limit should be denied")
 }
 
@@ -403,4 +410,112 @@ func TestPodResizeValidator_BlockUpsizeOnBounded_NonPreemptibleQuota(t *testing.
 	newPod := podWithRequests("ns", "p", "pg", testSchedulerName, "2", "0")
 	resp := v.Handle(context.Background(), makeRequest(t, oldPod, newPod))
 	assert.False(t, resp.Allowed, "non-preemptible upsize on bounded quota should be denied")
+}
+
+// TestPodResizeValidator_SidecarUpsize_DeniedWhenLimitExceeded verifies that a
+// restartable init container (sidecar) upsize is included in the delta and can be denied.
+func TestPodResizeValidator_SidecarUpsize_DeniedWhenLimitExceeded(t *testing.T) {
+	scheme := buildScheme()
+	// Queue: 3000m CPU limit, 2000m already allocated (from the sidecar).
+	queue := newQueue("q", 3000, -1, 0, "2", "0")
+	pg := newPodGroup("pg", "ns", "q")
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(queue, pg).Build()
+	v := NewPodResizeValidator(c, scheme, testSchedulerName, true, false)
+
+	restartAlways := corev1.ContainerRestartPolicyAlways
+	oldPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "p",
+			Namespace: "ns",
+			Annotations: map[string]string{
+				commonconstants.PodGroupAnnotationForPod: "pg",
+			},
+		},
+		Spec: corev1.PodSpec{
+			SchedulerName: testSchedulerName,
+			InitContainers: []corev1.Container{
+				{
+					Name:          "sidecar",
+					RestartPolicy: &restartAlways,
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2")},
+					},
+				},
+			},
+		},
+	}
+	newPod := oldPod.DeepCopy()
+	newPod.Spec.InitContainers[0].Resources.Requests[corev1.ResourceCPU] = resource.MustParse("4")
+	// Sidecar upsize 2→4: delta=2; queue 2+2=4 > limit 3 → denied.
+	resp := v.Handle(context.Background(), makeRequest(t, oldPod, newPod))
+	assert.False(t, resp.Allowed, "sidecar upsize over limit should be denied")
+}
+
+// TestPodResizeValidator_NonInfeasible_SpecIncludedInBaseline verifies that for a pod
+// in a normal / InProgress state the old spec is included in the effective-old baseline,
+// so that only the true net increase beyond what the queue already reflects is charged.
+func TestPodResizeValidator_NonInfeasible_SpecIncludedInBaseline(t *testing.T) {
+	scheme := buildScheme()
+	// Queue limit=6000m, allocated=4000m (reflects old spec of 4 CPU, not enacted).
+	queue := newQueue("q", 6000, -1, 0, "4", "0")
+	pg := newPodGroup("pg", "ns", "q")
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(queue, pg).Build()
+	v := NewPodResizeValidator(c, scheme, testSchedulerName, true, false)
+
+	// Old pod: spec=4 CPU, enacted=1 CPU — state is InProgress, NOT infeasible.
+	oldPod := podWithRequests("ns", "p", "pg", testSchedulerName, "4", "0")
+	oldPod.Status.ContainerStatuses = []corev1.ContainerStatus{
+		{
+			Name: "main",
+			Resources: &corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1")},
+			},
+			AllocatedResources: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1")},
+		},
+	}
+	// New spec=5 CPU. Effective-old = max(spec=4, enacted=1, alloc=1) = 4.
+	// delta=1; queue 4+1=5 < limit 6 → allowed.
+	newPod := podWithRequests("ns", "p", "pg", testSchedulerName, "5", "0")
+	resp := v.Handle(context.Background(), makeRequest(t, oldPod, newPod))
+	assert.True(t, resp.Allowed, "non-infeasible pod: effective-old should include old spec, reducing the delta")
+}
+
+// TestPodResizeValidator_Redistribution_AllowedAtLimit verifies that moving CPU from
+// one container to another (same total) produces a zero delta and is admitted even
+// when the queue is at its limit.
+func TestPodResizeValidator_Redistribution_AllowedAtLimit(t *testing.T) {
+	scheme := buildScheme()
+	// Queue at exactly its limit (4000m allocated = 4000m limit).
+	queue := newQueue("q", 4000, -1, 0, "4", "0")
+	pg := newPodGroup("pg", "ns", "q")
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(queue, pg).Build()
+	v := NewPodResizeValidator(c, scheme, testSchedulerName, true, false)
+
+	makePod := func(cpuA, cpuB string) *corev1.Pod {
+		return &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "p",
+				Namespace: "ns",
+				Annotations: map[string]string{
+					commonconstants.PodGroupAnnotationForPod: "pg",
+				},
+			},
+			Spec: corev1.PodSpec{
+				SchedulerName: testSchedulerName,
+				Containers: []corev1.Container{
+					{Name: "a", Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse(cpuA)},
+					}},
+					{Name: "b", Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse(cpuB)},
+					}},
+				},
+			},
+		}
+	}
+	// Move 1 CPU from container A to container B; pod total stays at 4 CPU.
+	oldPod := makePod("2", "2")
+	newPod := makePod("1", "3")
+	resp := v.Handle(context.Background(), makeRequest(t, oldPod, newPod))
+	assert.True(t, resp.Allowed, "CPU redistribution with unchanged pod total should be allowed even at limit")
 }
