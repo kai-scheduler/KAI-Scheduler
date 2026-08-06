@@ -231,6 +231,90 @@ func TestPodResizeValidator_NonPreemptible_DeniedWhenQuotaExceeded(t *testing.T)
 	assert.False(t, resp.Allowed, "non-preemptible upsize over quota should be denied")
 }
 
+// TestPodResizeValidator_InfeasibleOldSpec verifies that a pod with an infeasible resize
+// target (old spec=4, enacted=1) uses enacted as the delta baseline, not the spec.
+// Queue allocated=1, limit=4. New target=5 → delta should be 5-1=4, over limit → denied.
+func TestPodResizeValidator_InfeasibleOldSpec_DeltaUsesEnacted(t *testing.T) {
+	scheme := buildScheme()
+	queue := newQueue("q", 4000, -1, 0, "1", "0") // limit=4000m, allocated=1000m
+	pg := newPodGroup("pg", "ns", "q")
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(queue, pg).Build()
+	v := NewPodResizeValidator(c, scheme, testSchedulerName)
+
+	// Old pod: spec=4 CPU (infeasible target), enacted=1 CPU.
+	oldPod := podWithRequests("ns", "p", "pg", testSchedulerName, "4", "0")
+	oldPod.Status.ContainerStatuses = []corev1.ContainerStatus{
+		{
+			Name: "main",
+			Resources: &corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1")},
+			},
+			AllocatedResources: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1")},
+		},
+	}
+	// New target = 5 CPU. Correct delta = 5-1=4; queue 1+4=5 > limit 4 → denied.
+	newPod := podWithRequests("ns", "p", "pg", testSchedulerName, "5", "0")
+	resp := v.Handle(context.Background(), makeRequest(t, oldPod, newPod))
+	assert.False(t, resp.Allowed, "delta should use enacted baseline, not infeasible spec")
+}
+
+// TestPodResizeValidator_UnchangedResourceNotCounted verifies that a resource not
+// touched by this resize (even with a stale infeasible spec) does not contribute to delta.
+func TestPodResizeValidator_UnchangedResourceNotCounted(t *testing.T) {
+	scheme := buildScheme()
+	// Limit: 4000m CPU, 4 GB memory. Allocated: 1000m CPU, 1 GB memory.
+	queue := newQueue("q", 4000, 4096, 0, "1", "1Gi")
+	pg := newPodGroup("pg", "ns", "q")
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(queue, pg).Build()
+	v := NewPodResizeValidator(c, scheme, testSchedulerName)
+
+	// Old pod: CPU spec=4 (infeasible), memory spec=8Gi (infeasible). Enacted=1/1Gi.
+	oldPod := podWithRequests("ns", "p", "pg", testSchedulerName, "4", "8Gi")
+	oldPod.Status.ContainerStatuses = []corev1.ContainerStatus{
+		{
+			Name: "main",
+			Resources: &corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("1"),
+					corev1.ResourceMemory: resource.MustParse("1Gi"),
+				},
+			},
+			AllocatedResources: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("1"),
+				corev1.ResourceMemory: resource.MustParse("1Gi"),
+			},
+		},
+	}
+	// New resize only changes CPU (4→5); memory stays at 8Gi (unchanged spec).
+	// Delta = 5-1=4 CPU only; memory unchanged → delta_mem=0 → should be denied on CPU.
+	newPod := podWithRequests("ns", "p", "pg", testSchedulerName, "5", "8Gi")
+	resp := v.Handle(context.Background(), makeRequest(t, oldPod, newPod))
+	// CPU: 1(alloc)+4(delta)=5 > 4000m limit → denied
+	assert.False(t, resp.Allowed, "CPU upsize over limit should be denied")
+}
+
+// TestPodResizeValidator_ZeroQuota_NonPreemptibleDenied verifies that a queue with
+// quota=0 blocks non-preemptible upsizes (0 is a finite boundary, not unlimited).
+func TestPodResizeValidator_ZeroQuota_NonPreemptibleDenied(t *testing.T) {
+	scheme := buildScheme()
+	// Quota=0 means no non-preemptible capacity.
+	queue := newQueue("q", -1, -1, 0, "0", "0")
+	pg := &schedulingv2alpha2.PodGroup{
+		ObjectMeta: metav1.ObjectMeta{Name: "pg", Namespace: "ns"},
+		Spec: schedulingv2alpha2.PodGroupSpec{
+			Queue:          "q",
+			Preemptibility: v2alpha2.NonPreemptible,
+		},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(queue, pg).Build()
+	v := NewPodResizeValidator(c, scheme, testSchedulerName)
+
+	oldPod := podWithRequests("ns", "p", "pg", testSchedulerName, "1", "0")
+	newPod := podWithRequests("ns", "p", "pg", testSchedulerName, "2", "0")
+	resp := v.Handle(context.Background(), makeRequest(t, oldPod, newPod))
+	assert.False(t, resp.Allowed, "quota=0 should block non-preemptible upsize")
+}
+
 func TestPodResizeValidator_Preemptible_AllowedWhenOnlyQuotaExceeded(t *testing.T) {
 	scheme := buildScheme()
 	// Queue: unlimited limit, small quota. Preemptible pods are not quota-checked.

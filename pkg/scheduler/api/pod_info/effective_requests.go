@@ -43,7 +43,7 @@ func effectivePodContainerRequests(pod *v1.Pod) map[string]v1.ResourceList {
 func isPodResizeInfeasible(pod *v1.Pod) bool {
 	for _, c := range pod.Status.Conditions {
 		if c.Type == v1.PodResizePending {
-			return c.Reason == v1.PodReasonInfeasible
+			return c.Status == v1.ConditionTrue && c.Reason == v1.PodReasonInfeasible
 		}
 	}
 	return false

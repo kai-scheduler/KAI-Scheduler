@@ -141,8 +141,11 @@ func TestIsPodResizeInfeasible(t *testing.T) {
 			{Type: v1.PodResizePending, Reason: v1.PodReasonDeferred},
 		}, false},
 		{"Infeasible condition", []v1.PodCondition{
-			{Type: v1.PodResizePending, Reason: v1.PodReasonInfeasible},
+			{Type: v1.PodResizePending, Status: v1.ConditionTrue, Reason: v1.PodReasonInfeasible},
 		}, true},
+		{"Infeasible reason but Status not True", []v1.PodCondition{
+			{Type: v1.PodResizePending, Status: v1.ConditionFalse, Reason: v1.PodReasonInfeasible},
+		}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

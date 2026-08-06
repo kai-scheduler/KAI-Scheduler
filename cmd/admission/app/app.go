@@ -30,6 +30,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	kaiv1alpha1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1alpha1"
+	schedulingv2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
+	schedulingv2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 
 	admissionplugins "github.com/kai-scheduler/KAI-scheduler/pkg/admission/plugins"
@@ -45,6 +47,8 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(schedulingv1alpha2.AddToScheme(scheme))
+	utilruntime.Must(schedulingv2.AddToScheme(scheme))
+	utilruntime.Must(schedulingv2alpha2.AddToScheme(scheme))
 	utilruntime.Must(kaiv1alpha1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
@@ -145,6 +149,9 @@ func (app *App) RegisterPlugins(admissionPlugins *admissionplugins.KaiAdmissionP
 // +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch;update
+// +kubebuilder:rbac:groups="scheduling.run.ai",resources=podgroups,verbs=get;list;watch
+// +kubebuilder:rbac:groups="scheduling.run.ai",resources=queues,verbs=get;list;watch
+// +kubebuilder:rbac:groups="scheduling.k8s.io",resources=priorityclasses,verbs=get;list;watch
 
 func (app *App) Run() error {
 	var err error

@@ -86,12 +86,7 @@ func (v *PodResizeValidator) validateResize(ctx context.Context, oldPod, newPod 
 		isPreemptible = true // conservative: treat unknown as preemptible
 	}
 
-	// Old effective = max(spec, enacted, allocated) ignoring the infeasible condition
-	// (infeasible marks a previous-generation target, not the current occupancy).
-	oldEffective := specPodRequests(oldPod)
-	newEffective := specPodRequests(newPod)
-
-	delta := subResourceList(newEffective, oldEffective)
+	delta := podResizeDelta(oldPod, newPod)
 	if len(delta) == 0 {
 		return nil // downsize or no change
 	}
@@ -114,31 +109,73 @@ func (v *PodResizeValidator) validateResize(ctx context.Context, oldPod, newPod 
 	return nil
 }
 
-// specPodRequests sums spec.Containers[*].Resources.Requests across all containers.
-// For the webhook context, effective old = spec (what the kubelet has currently committed)
-// and effective new = proposed spec (what the resize targets).
-func specPodRequests(pod *corev1.Pod) corev1.ResourceList {
-	total := corev1.ResourceList{}
-	for _, c := range pod.Spec.Containers {
-		for name, qty := range c.Resources.Requests {
-			sum := total[name]
-			sum.Add(qty)
-			total[name] = sum
-		}
+// podResizeDelta computes the per-resource increase this resize introduces relative
+// to what the queue already accounts for.
+//
+// For each resource in each container:
+//   - Skip if the new spec matches the old spec (resource not changed in this resize).
+//   - Use max(enacted, allocated) from ContainerStatus as the effective old baseline,
+//     because that is what queue.Status.Allocated reflects. Falls back to old spec when
+//     no status is available (e.g., pending pod).
+//   - Only positive differences contribute (downsizes produce no delta).
+func podResizeDelta(oldPod, newPod *corev1.Pod) corev1.ResourceList {
+	statusByName := make(map[string]*corev1.ContainerStatus, len(oldPod.Status.ContainerStatuses))
+	for i := range oldPod.Status.ContainerStatuses {
+		statusByName[oldPod.Status.ContainerStatuses[i].Name] = &oldPod.Status.ContainerStatuses[i]
 	}
-	return total
-}
 
-// subResourceList computes max(proposed - current, 0) per resource.
-func subResourceList(proposed, current corev1.ResourceList) corev1.ResourceList {
+	oldByName := make(map[string]*corev1.Container, len(oldPod.Spec.Containers))
+	for i := range oldPod.Spec.Containers {
+		oldByName[oldPod.Spec.Containers[i].Name] = &oldPod.Spec.Containers[i]
+	}
+
 	zero := resource.MustParse("0")
 	delta := corev1.ResourceList{}
-	for name, qty := range proposed {
-		cur := current[name]
-		diff := qty.DeepCopy()
-		diff.Sub(cur)
-		if diff.Cmp(zero) > 0 {
-			delta[name] = diff
+	for i := range newPod.Spec.Containers {
+		newC := &newPod.Spec.Containers[i]
+		oldC := oldByName[newC.Name]
+		cs := statusByName[newC.Name]
+
+		for resName, newQty := range newC.Resources.Requests {
+			var oldQty resource.Quantity
+			if oldC != nil {
+				oldQty = oldC.Resources.Requests[resName]
+			}
+			if newQty.Cmp(oldQty) == 0 {
+				continue // resource unchanged in this resize
+			}
+
+			// Effective old: what the queue accounts for — max(enacted, allocated).
+			// We intentionally exclude old spec here: if the old spec was an infeasible
+			// target (e.g. 4 CPU), the queue only reflects what the kubelet actually
+			// committed (enacted/allocated, e.g. 1 CPU). Including the spec would
+			// undercount the true delta relative to queue accounting.
+			// Falls back to old spec only when no ContainerStatus is available.
+			effectiveOld := oldQty
+			if cs != nil {
+				var best *resource.Quantity
+				if cs.Resources != nil {
+					if enacted, ok := cs.Resources.Requests[resName]; ok {
+						best = &enacted
+					}
+				}
+				if alloc, ok := cs.AllocatedResources[resName]; ok {
+					if best == nil || alloc.Cmp(*best) > 0 {
+						best = &alloc
+					}
+				}
+				if best != nil {
+					effectiveOld = *best
+				}
+			}
+
+			diff := newQty.DeepCopy()
+			diff.Sub(effectiveOld)
+			if diff.Cmp(zero) > 0 {
+				cur := delta[resName]
+				cur.Add(diff)
+				delta[resName] = cur
+			}
 		}
 	}
 	return delta
@@ -204,7 +241,7 @@ func checkLimit(queue *v2.Queue, delta corev1.ResourceList, pod *corev1.Pod, pg 
 func checkNonPreemptibleQuota(queue *v2.Queue, delta corev1.ResourceList, pod *corev1.Pod, pg *v2alpha2.PodGroup) error {
 	res := queue.Spec.Resources
 
-	if deltaCPU, ok := delta[corev1.ResourceCPU]; ok && res.CPU.Quota > 0 {
+	if deltaCPU, ok := delta[corev1.ResourceCPU]; ok && res.CPU.Quota >= 0 {
 		allocated := queue.Status.AllocatedNonPreemptible[corev1.ResourceCPU]
 		newAlloc := float64(allocated.MilliValue() + deltaCPU.MilliValue())
 		if newAlloc > res.CPU.Quota {
@@ -216,7 +253,7 @@ func checkNonPreemptibleQuota(queue *v2.Queue, delta corev1.ResourceList, pod *c
 		}
 	}
 
-	if deltaMem, ok := delta[corev1.ResourceMemory]; ok && res.Memory.Quota > 0 {
+	if deltaMem, ok := delta[corev1.ResourceMemory]; ok && res.Memory.Quota >= 0 {
 		quotaBytes := int64(res.Memory.Quota * memoryLimitBytesPerUnit)
 		allocated := queue.Status.AllocatedNonPreemptible[corev1.ResourceMemory]
 		newAllocBytes := allocated.Value() + deltaMem.Value()
