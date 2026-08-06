@@ -5,7 +5,6 @@ package pod_info
 
 import (
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 // effectivePodContainerRequests returns the effective resource requests for each
@@ -63,17 +62,3 @@ func maxResourceList(lists ...v1.ResourceList) v1.ResourceList {
 	return result
 }
 
-// subResourceList computes max(a - b, 0) per resource — the non-negative delta
-// between a proposed resource list and a current one.
-func subResourceList(proposed, current v1.ResourceList) v1.ResourceList {
-	delta := make(v1.ResourceList)
-	for name, qty := range proposed {
-		cur := current[name]
-		diff := qty.DeepCopy()
-		diff.Sub(cur)
-		if diff.Cmp(resource.MustParse("0")) > 0 {
-			delta[name] = diff
-		}
-	}
-	return delta
-}
