@@ -61,4 +61,3 @@ func maxResourceList(lists ...v1.ResourceList) v1.ResourceList {
 	}
 	return result
 }
-

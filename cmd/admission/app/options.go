@@ -25,11 +25,11 @@ type Options struct {
 	FakeGPUNodes                bool
 	GPUSharingEnabled           bool
 	HamiCoreEnabled             bool
-	BlockNvidiaVisibleDevices      bool
-	GPUPodRuntimeClassName         string
-	GPUFractionRuntimeClassName    string
-	ValidatePodResizeQuota         bool
-	BlockUpsizeOnBoundedQueues     bool
+	BlockNvidiaVisibleDevices   bool
+	GPUPodRuntimeClassName      string
+	GPUFractionRuntimeClassName string
+	ValidatePodResizeQuota      bool
+	BlockUpsizeOnBoundedQueues  bool
 }
 
 // ResolvedGPUFractionRuntimeClassName returns the effective runtime class name
