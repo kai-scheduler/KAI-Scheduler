@@ -53,6 +53,9 @@ var _ = Describe("PodGrouper", func() {
 				deployment := *deploymentT
 				Expect(deployment).NotTo(BeNil())
 				Expect(deployment.Name).To(Equal(defaultResourceName))
+				Expect(deployment.Spec.Template.Spec.Containers[0].Args).To(ContainElements(
+					"--qps", "20", "--burst", "100",
+				))
 			})
 
 			It("the deployment should keep labels from existing deployment", func(ctx context.Context) {
