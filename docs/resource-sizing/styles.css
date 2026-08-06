@@ -62,7 +62,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -192,6 +193,7 @@ h3 {
 
 .input-panel,
 .results-panel,
+.apply-panel,
 .next-steps {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -200,7 +202,8 @@ h3 {
 }
 
 .input-panel,
-.results-panel {
+.results-panel,
+.apply-panel {
   padding: 28px;
 }
 
@@ -298,7 +301,9 @@ legend {
 .field select:focus,
 button:focus-visible,
 a:focus-visible,
-summary:focus-visible {
+summary:focus-visible,
+textarea:focus-visible,
+.resource-table-wrapper:focus-visible {
   outline: 3px solid color-mix(in srgb, var(--focus) 40%, transparent);
   outline-offset: 2px;
   border-color: var(--focus);
@@ -565,6 +570,130 @@ summary:focus-visible {
   white-space: nowrap;
 }
 
+.apply-panel {
+  margin-top: 24px;
+}
+
+.apply-panel > p {
+  max-width: 900px;
+  color: var(--muted);
+}
+
+.profile-warning {
+  padding: 12px 14px;
+  background: color-mix(in srgb, var(--headroom) 12%, var(--surface));
+  border-left: 4px solid var(--headroom);
+  border-radius: 0 8px 8px 0;
+}
+
+.resource-table-wrapper {
+  margin-top: 22px;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+
+.resource-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.resource-table th,
+.resource-table td {
+  padding: 11px 13px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.resource-table th {
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.resource-table td {
+  font-size: 0.86rem;
+}
+
+.resource-table td:first-child {
+  font-weight: 750;
+}
+
+.resource-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.command-card {
+  margin-top: 24px;
+  padding: 20px;
+  background: var(--surface-soft);
+  border-radius: 10px;
+}
+
+.config-name-field {
+  width: min(420px, 100%);
+  margin-bottom: 18px;
+}
+
+.config-name-field code,
+.managed-note code {
+  color: var(--text);
+}
+
+.command-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.88rem;
+  font-weight: 750;
+}
+
+#patch-command {
+  display: block;
+  width: 100%;
+  padding: 12px;
+  resize: vertical;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.command-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.command-actions .primary {
+  min-height: 40px;
+  padding: 8px 14px;
+}
+
+.command-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.copy-status {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.managed-note {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
 .next-steps {
   margin: 24px 0 56px;
   padding: 28px;
@@ -657,6 +786,7 @@ footer a {
 
   .input-panel,
   .results-panel,
+  .apply-panel,
   .next-steps {
     padding: 20px;
   }

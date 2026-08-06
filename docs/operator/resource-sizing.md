@@ -69,8 +69,9 @@ usage.
 ## Calculate scheduler memory
 
 Use the [resource sizing calculator](https://kai-scheduler.github.io/KAI-Scheduler/resource-sizing/)
-to get an initial Scheduler request and limit. It runs entirely in the browser
-and does not send cluster information anywhere.
+to get initial resources for the Scheduler, Binder, and controllers. It also
+generates a command that patches Config-managed services. The calculator runs
+entirely in the browser and does not send cluster information anywhere.
 
 For the formula, assumptions, pressure tiers, and a worked example, see the
 [scheduler memory sizing deep dive](./scheduler-memory-sizing.md).
@@ -94,6 +95,10 @@ PodGroup controller:
 Queue controller:
   64Mi + 20Mi * PodGroups / 1000
 ```
+
+The calculator rounds formula results up to 128 MiB, never below the selected
+profile request. When a formula raises a request, it preserves the profile's
+request-to-limit headroom.
 
 Use the deep dive's [`workloadPods`](./scheduler-memory-sizing.md#infer-workload-pods-and-capacity)
 as an initial BindRequest upper bound when no measurement is available. Do not
@@ -136,8 +141,9 @@ operator:
 ```
 
 Resources can also be managed through `spec.<service>.service.resources` on the
-Config custom resource. The operator itself is configured through Helm. Use
-one owner for each field so controllers do not overwrite each other.
+Config custom resource. The calculator generates this patch. The operator
+itself is configured through Helm at `operator.resources`. If Helm or GitOps
+owns the Config, update that source of truth instead of applying a direct patch.
 
 ## Validate and tune
 

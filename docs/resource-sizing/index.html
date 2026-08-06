@@ -213,11 +213,55 @@
       </aside>
     </section>
 
+    <section class="apply-panel" aria-labelledby="apply-title">
+      <div class="section-heading">
+        <div>
+          <p class="step">Step 3</p>
+          <h2 id="apply-title">Apply the recommendation</h2>
+        </div>
+        <span class="status" id="service-profile">—</span>
+      </div>
+
+      <p>Binder, pod grouper, PodGroup controller, and queue controller memory use the guide formulas, rounded up to 128 MiB. Tested profile requests are minimums, and their request-to-limit headroom is preserved.</p>
+      <p id="profile-warning" class="profile-warning" role="note" hidden>This scenario exceeds the tested 1000-node profile. Treat the CPU values and limits as conservative starting points and validate them under representative load.</p>
+
+      <div class="resource-table-wrapper" tabindex="0" aria-label="Recommended resources; scroll horizontally to see every column">
+        <table class="resource-table">
+          <thead>
+            <tr>
+              <th scope="col">Service</th>
+              <th scope="col">CPU request</th>
+              <th scope="col">CPU limit</th>
+              <th scope="col">Memory request</th>
+              <th scope="col">Memory limit</th>
+              <th scope="col">Managed by</th>
+            </tr>
+          </thead>
+          <tbody id="service-resources"></tbody>
+        </table>
+      </div>
+
+      <div class="command-card">
+        <div class="field config-name-field">
+          <label for="config-name">KAI Config name</label>
+          <input id="config-name" name="configName" type="text" value="kai-config" autocomplete="off" spellcheck="false" aria-describedby="config-name-help">
+          <small id="config-name-help">The Config resource is cluster-scoped. The Helm chart creates <code>kai-config</code> by default.</small>
+        </div>
+        <label class="command-label" for="patch-command">Patch command</label>
+        <textarea id="patch-command" rows="12" readonly spellcheck="false" aria-describedby="patch-help"></textarea>
+        <div class="command-actions">
+          <button class="primary" id="copy-command" type="button">Copy command</button>
+          <span id="copy-status" class="copy-status" role="status" aria-live="polite"></span>
+        </div>
+        <p id="patch-help" class="managed-note">The command patches Config-managed services. The Operator row is excluded; configure it with Helm under <code>operator.resources</code>. If Helm or GitOps manages the Config, apply these values to that source of truth because reconciliation or an upgrade can replace a direct patch.</p>
+      </div>
+    </section>
+
     <section class="next-steps" aria-labelledby="next-steps-title">
-      <p class="step">Step 3</p>
+      <p class="step">Step 4</p>
       <h2 id="next-steps-title">Validate before production</h2>
       <ol>
-        <li>Apply these values to the scheduler resource configuration.</li>
+        <li>Apply the Config patch or update the system that owns the Config.</li>
         <li>Run cluster fill, the largest jobs, a submission burst, and cleanup.</li>
         <li>Monitor complete-cycle memory, CPU throttling, restarts, and scheduling latency.</li>
         <li>Keep the calculated limit until measured peaks support changing it.</li>
