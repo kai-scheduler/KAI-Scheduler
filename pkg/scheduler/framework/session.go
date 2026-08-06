@@ -518,6 +518,9 @@ func closeSession(ssn *Session) {
 	// Push all jobs for status update into the channel
 	resolveDetailedFitErrors := ssn.RecomputeDetailedFitErrors
 	for _, job := range ssn.ClusterInfo.PodGroupInfos {
+		if job.IsSemiPreemptibleJob() {
+			job.CorePodNames = podgroup_info.GetCorePodNames(job, ssn.TaskOrderFn)
+		}
 		if err := ssn.Cache.RecordJobStatusEvent(job, resolveDetailedFitErrors); err != nil {
 			log.InfraLogger.Errorf("Failed to record job status event for job <%s>: %v", job.Name, err)
 		}

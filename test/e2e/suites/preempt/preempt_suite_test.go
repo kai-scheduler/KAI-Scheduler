@@ -17,6 +17,7 @@ var _ = DescribePreemptDistributedSpecs()
 var _ = DescribePreemptElasticSpecs()
 var _ = DescribePreemptMinSubGroupSpecs()
 var _ = DescribePreemptPodOrderSpecs()
+var _ = DescribePreemptSemiPreemptibleSpecs()
 
 func TestPreempt(t *testing.T) {
 	utils.SetLogger()

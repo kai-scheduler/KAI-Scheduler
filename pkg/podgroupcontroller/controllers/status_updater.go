@@ -66,15 +66,24 @@ func (r *PodGroupReconciler) calculatePodGroupMetadata(
 	logger := log.FromContext(ctx)
 	podGroupMetadata := metadata.NewPodGroupMetadata()
 
-	podGroupMetadata.Preemptible, err = utilities.IsPreemptible(ctx, podGroup, r.Client)
+	podGroupMetadata.Preemptibility, err = utilities.GetPreemptibility(ctx, podGroup, r.Client)
 	if err != nil {
 		logger.Error(err, fmt.Sprintf("Failed to calculate preemtability for pod-group %s/%s",
 			podGroup.Namespace, podGroup.Name))
 		return nil, err
 	}
 
+	corePods := map[string]bool{}
+	if podGroup.Status.SchedulingState != nil {
+		for _, name := range podGroup.Status.SchedulingState.CorePods {
+			corePods[name] = true
+		}
+	}
+
 	for _, relatedPod := range relatedPods.Items {
-		if err := addPodMetadata(ctx, podGroupMetadata, relatedPod, r.Client, r.DRAAPIVersion); err != nil {
+		if err := addPodMetadata(
+			ctx, podGroupMetadata, relatedPod, corePods[relatedPod.Name], r.Client, r.DRAAPIVersion,
+		); err != nil {
 			return nil, err
 		}
 	}
@@ -83,7 +92,7 @@ func (r *PodGroupReconciler) calculatePodGroupMetadata(
 }
 
 func addPodMetadata(
-	ctx context.Context, podGroupMetadata *metadata.PodGroupMetadata, pod v1.Pod,
+	ctx context.Context, podGroupMetadata *metadata.PodGroupMetadata, pod v1.Pod, isCore bool,
 	kubeclient client.Client, draAPIVersion string,
 ) error {
 	logger := log.FromContext(ctx)
@@ -96,6 +105,6 @@ func addPodMetadata(
 	logger.V(3).Info(fmt.Sprintf("For pod %s/%s calculated metadata %v",
 		pod.Namespace, pod.Name, podMetadata))
 
-	podGroupMetadata.AddPodMetadata(podMetadata)
+	podGroupMetadata.AddPodMetadata(podMetadata, isCore)
 	return nil
 }

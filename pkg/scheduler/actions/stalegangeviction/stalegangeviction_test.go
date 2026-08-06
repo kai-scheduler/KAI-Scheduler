@@ -709,6 +709,63 @@ func TestStaleGangEviction(t *testing.T) {
 				},
 			},
 		},
+		{
+			// minSubGroup 2 of 3: sub-group-2 never reaches its own minMember, but the job meets the
+			// requirement it actually has, so it is not stale and nothing may be evicted.
+			name: "minSubGroup satisfied with one sub-group short - no eviction",
+			topology: test_utils.TestTopologyBasic{
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:      "job-1",
+						QueueName: "q-1",
+						RootSubGroupSet: func() *subgroup_info.SubGroupSet {
+							root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+							root.SetMinSubGroup(pointer.Int32(2))
+							for _, name := range []string{"sub-group-0", "sub-group-1", "sub-group-2"} {
+								root.AddPodSet(subgroup_info.NewPodSet(name, 2, nil))
+							}
+							return root
+						}(),
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{Name: "job-1-0", SubGroupName: "sub-group-0", State: pod_status.Running, NodeName: "node-1"},
+							{Name: "job-1-1", SubGroupName: "sub-group-0", State: pod_status.Running, NodeName: "node-1"},
+							{Name: "job-1-2", SubGroupName: "sub-group-1", State: pod_status.Running, NodeName: "node-1"},
+							{Name: "job-1-3", SubGroupName: "sub-group-1", State: pod_status.Running, NodeName: "node-1"},
+							{Name: "job-1-4", SubGroupName: "sub-group-2", State: pod_status.Running, NodeName: "node-1"},
+						},
+						StaleDuration: pointer.Duration(120 * time.Second),
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node-1": {},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{
+						Name:        "q-1",
+						ParentQueue: "d-1",
+					},
+				},
+				Departments: []test_utils.TestDepartmentBasic{
+					{
+						Name: "d-1",
+					},
+				},
+				TaskExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"job-1-0": {NodeName: "node-1", Status: pod_status.Running},
+					"job-1-1": {NodeName: "node-1", Status: pod_status.Running},
+					"job-1-2": {NodeName: "node-1", Status: pod_status.Running},
+					"job-1-3": {NodeName: "node-1", Status: pod_status.Running},
+					"job-1-4": {NodeName: "node-1", Status: pod_status.Running},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{
+						NumberOfCacheBinds:      0,
+						NumberOfCacheEvictions:  0,
+						NumberOfPipelineActions: 0,
+					},
+				},
+			},
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Logf("Running test number: %v, test name: %v,", i, test.name)

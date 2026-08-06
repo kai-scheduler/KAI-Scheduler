@@ -4,11 +4,14 @@
 package podgroup_info
 
 import (
+	"fmt"
+	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"k8s.io/utils/ptr"
 
+	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
@@ -112,6 +115,83 @@ func TestGetTasksToEvict_Table(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tasksToEvict, hasMoreTasks := GetTasksToEvict(tt.job, subGroupOrderFn, tasksOrderFn)
+			assert.Equal(t, tt.expectedHasMoreTasks, hasMoreTasks)
+			assert.Equal(t, tt.numExpectTasks, len(tasksToEvict))
+		})
+	}
+}
+
+func TestGetTasksToEvict_SemiPreemptible(t *testing.T) {
+	tests := []struct {
+		name                 string
+		job                  *PodGroupInfo
+		expectedHasMoreTasks bool
+		numExpectTasks       int
+	}{
+		{
+			name: "SubgroupSurplus_EvictsWholeElasticSubgroupOnly",
+			job: func() *PodGroupInfo {
+				// 4 fully-gang leaf subgroups (minMember=2), minSubGroup=2 → 2 elastic subgroups.
+				root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+				root.SetMinSubGroup(ptr.To(int32(2)))
+				for _, name := range []string{"r0", "r1", "r2", "r3"} {
+					ps := subgroup_info.NewPodSet(name, 2, nil)
+					ps.AssignTask(simpleTask(name+"-p0", name, pod_status.Running))
+					ps.AssignTask(simpleTask(name+"-p1", name, pod_status.Running))
+					root.AddPodSet(ps)
+				}
+				return &PodGroupInfo{
+					Preemptibility:  enginev2alpha2.SemiPreemptible,
+					RootSubGroupSet: root,
+					PodSets:         root.GetDescendantPodSets(),
+				}
+			}(),
+			// One whole elastic subgroup (2 pods) offered; core (2 subgroups) protected.
+			expectedHasMoreTasks: true,
+			numExpectTasks:       2,
+		},
+		{
+			name: "NoSurplus_CoreProtected_NoVictims",
+			job: func() *PodGroupInfo {
+				// minSubGroup==children, all at min → no surplus. Phase-3 fallback must be skipped.
+				root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+				root.SetMinSubGroup(ptr.To(int32(2)))
+				for _, name := range []string{"r0", "r1"} {
+					ps := subgroup_info.NewPodSet(name, 2, nil)
+					ps.AssignTask(simpleTask(name+"-p0", name, pod_status.Running))
+					ps.AssignTask(simpleTask(name+"-p1", name, pod_status.Running))
+					root.AddPodSet(ps)
+				}
+				return &PodGroupInfo{
+					Preemptibility:  enginev2alpha2.SemiPreemptible,
+					RootSubGroupSet: root,
+					PodSets:         root.GetDescendantPodSets(),
+				}
+			}(),
+			expectedHasMoreTasks: true, // no eviction, all remain
+			numExpectTasks:       0,
+		},
+		{
+			name: "PodLevelSurplus_EvictsExtraPodsOnly",
+			job: &PodGroupInfo{
+				Preemptibility: enginev2alpha2.SemiPreemptible,
+				PodSets: map[string]*subgroup_info.PodSet{
+					DefaultSubGroup: subgroup_info.NewPodSet(DefaultSubGroup, 2, nil).WithPodInfos(pod_info.PodsMap{
+						"pod-a": simpleTask("pod-a", "", pod_status.Running),
+						"pod-b": simpleTask("pod-b", "", pod_status.Running),
+						"pod-c": simpleTask("pod-c", "", pod_status.Running),
+					}),
+				},
+			},
+			// minMember=2, 3 allocated → 1 elastic pod evictable, 2 core protected.
+			expectedHasMoreTasks: true,
+			numExpectTasks:       1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tasksToEvict, hasMoreTasks := GetTasksToEvict(tt.job, subGroupMemberOrderFn, tasksOrderFn)
 			assert.Equal(t, tt.expectedHasMoreTasks, hasMoreTasks)
 			assert.Equal(t, tt.numExpectTasks, len(tasksToEvict))
 		})
@@ -410,6 +490,181 @@ func TestGetTasksToEvict_HierarchicalTree(t *testing.T) {
 				}
 				assert.ElementsMatch(t, tt.expectedTaskNames, gotTaskNames)
 			}
+		})
+	}
+}
+
+// TestGetTasksToEvict_Orphans covers phase 0: a member that holds no core slot and has not formed its
+// gang is neither surplus nor core, so no elastic phase can reach it - yet the quota accounting
+// already counts it as reclaimable.
+func TestGetTasksToEvict_Orphans(t *testing.T) {
+	// flatJob lays out leaf subgroups of minMember=2 with the given allocated pod counts.
+	flatJob := func(preemptibility enginev2alpha2.Preemptibility, minSubGroup int32, allocated map[string]int) *PodGroupInfo {
+		root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+		root.SetMinSubGroup(ptr.To(minSubGroup))
+		names := make([]string, 0, len(allocated))
+		for name := range allocated {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			ps := subgroup_info.NewPodSet(name, 2, nil)
+			for i := 0; i < allocated[name]; i++ {
+				ps.AssignTask(simpleTask(fmt.Sprintf("%s-p%d", name, i), name, pod_status.Running))
+			}
+			root.AddPodSet(ps)
+		}
+		return &PodGroupInfo{
+			Preemptibility:  preemptibility,
+			RootSubGroupSet: root,
+			PodSets:         root.GetDescendantPodSets(),
+		}
+	}
+
+	tests := []struct {
+		name              string
+		job               *PodGroupInfo
+		expectedTaskNames []string
+	}{
+		{
+			// The reviewer's shape: "a" is below its own minMember and outranked for both core slots.
+			name:              "UnsatisfiedNonCoreMember_IsTheVictim",
+			job:               flatJob(enginev2alpha2.SemiPreemptible, 2, map[string]int{"a": 1, "b": 2, "c": 2}),
+			expectedTaskNames: []string{"a-p0"},
+		},
+		{
+			// Only "b" is satisfied, so "a" takes the second core slot by name and "z" is non-core
+			// while still growing. Without the min-requirement gate, z-p0 would be evicted.
+			name:              "RampUp_NothingIsAnOrphanYet",
+			job:               flatJob(enginev2alpha2.SemiPreemptible, 2, map[string]int{"a": 0, "b": 2, "z": 1}),
+			expectedTaskNames: []string{},
+		},
+		{
+			// The orphan delivers nothing; b-p2 is real surplus doing work. Orphan goes first.
+			name:              "OrphanOutranksSurplus",
+			job:               flatJob(enginev2alpha2.SemiPreemptible, 2, map[string]int{"a": 1, "b": 3, "c": 2}),
+			expectedTaskNames: []string{"a-p0"},
+		},
+		{
+			// Preemptible jobs still reach orphans through the phase-3 fallback, unchanged.
+			name:              "Preemptible_StillFullyEvicts",
+			job:               flatJob(enginev2alpha2.Preemptible, 2, map[string]int{"a": 1, "b": 2, "c": 2}),
+			expectedTaskNames: []string{"a-p0", "b-p0", "b-p1", "c-p0", "c-p1"},
+		},
+		{
+			name: "NestedOrphanUnderCoreSubGroup",
+			job: func() *PodGroupInfo {
+				// Core subgroup "x" is satisfied on x0+x1, so its own x2 is an orphan one level down.
+				x := subgroup_info.NewSubGroupSet("x", nil)
+				x.SetMinSubGroup(ptr.To(int32(2)))
+				for name, count := range map[string]int{"x0": 2, "x1": 2, "x2": 1} {
+					ps := subgroup_info.NewPodSet(name, 2, nil)
+					for i := 0; i < count; i++ {
+						ps.AssignTask(simpleTask(fmt.Sprintf("%s-p%d", name, i), name, pod_status.Running))
+					}
+					x.AddPodSet(ps)
+				}
+
+				y := subgroup_info.NewPodSet("y", 2, nil)
+				y.AssignTask(simpleTask("y-p0", "y", pod_status.Running))
+				y.AssignTask(simpleTask("y-p1", "y", pod_status.Running))
+
+				root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+				root.SetMinSubGroup(ptr.To(int32(2)))
+				root.AddSubGroup(x)
+				root.AddPodSet(y)
+
+				return &PodGroupInfo{
+					Preemptibility:  enginev2alpha2.SemiPreemptible,
+					RootSubGroupSet: root,
+					PodSets:         root.GetDescendantPodSets(),
+				}
+			}(),
+			expectedTaskNames: []string{"x2-p0"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tasksToEvict, _ := GetTasksToEvict(tt.job, subGroupMemberOrderFn, tasksOrderFn)
+			gotTaskNames := make([]string, 0, len(tasksToEvict))
+			for _, task := range tasksToEvict {
+				gotTaskNames = append(gotTaskNames, task.Name)
+			}
+			assert.ElementsMatch(t, tt.expectedTaskNames, gotTaskNames)
+		})
+	}
+}
+
+// TestGetTasksToEvict_NeverEvictsCore is the invariant the whole core/elastic split rests on:
+// whatever eviction offers up, it is disjoint from GetCoreTasks and leaves every core subgroup still
+// satisfied. Checked across the shapes that broke the old ordering rather than argued from the code.
+func TestGetTasksToEvict_NeverEvictsCore(t *testing.T) {
+	// buildJob lays out leaf subgroups of minMember=2 with the given allocated pod counts.
+	buildJob := func(minSubGroup int32, allocated map[string]int) *PodGroupInfo {
+		root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+		root.SetMinSubGroup(ptr.To(minSubGroup))
+		names := make([]string, 0, len(allocated))
+		for name := range allocated {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			ps := subgroup_info.NewPodSet(name, 2, nil)
+			for i := 0; i < allocated[name]; i++ {
+				ps.AssignTask(simpleTask(fmt.Sprintf("%s-p%d", name, i), name, pod_status.Running))
+			}
+			root.AddPodSet(ps)
+		}
+		return &PodGroupInfo{
+			Preemptibility:  enginev2alpha2.SemiPreemptible,
+			RootSubGroupSet: root,
+			PodSets:         root.GetDescendantPodSets(),
+		}
+	}
+
+	tests := []struct {
+		name        string
+		minSubGroup int32
+		allocated   map[string]int
+	}{
+		{"AllSatisfied", 2, map[string]int{"r0": 2, "r1": 2, "r2": 2, "r3": 2}},
+		{"AfterOneSubGroupEvicted", 2, map[string]int{"r0": 2, "r1": 2, "r2": 2, "r3": 0}},
+		{"DownToCore", 2, map[string]int{"r0": 2, "r1": 2, "r2": 0, "r3": 0}},
+		{"PartialSubGroupPresent", 2, map[string]int{"a": 1, "b": 2, "c": 2}},
+		{"PodSurplusInsideSubGroups", 2, map[string]int{"r0": 3, "r1": 2, "r2": 2}},
+		{"RampUp", 2, map[string]int{"a": 1, "b": 1}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			job := buildJob(tt.minSubGroup, tt.allocated)
+			core := GetCoreTasks(job, tasksOrderFn)
+
+			tasksToEvict, _ := GetTasksToEvict(job, subGroupMemberOrderFn, tasksOrderFn)
+			for _, task := range tasksToEvict {
+				_, isCore := core[task.UID]
+				assert.False(t, isCore, "eviction offered core task %s", task.Name)
+			}
+
+			// Applying the eviction must not drop the job below minSubGroup satisfied children — nor
+			// below where it already was, for a job that has not reached its minimum yet.
+			evicted := map[string]int{}
+			for _, task := range tasksToEvict {
+				evicted[task.SubGroupName]++
+			}
+			satisfiedBefore, satisfiedAfter := 0, 0
+			for name, count := range tt.allocated {
+				if count >= 2 {
+					satisfiedBefore++
+				}
+				if count-evicted[name] >= 2 {
+					satisfiedAfter++
+				}
+			}
+			floor := min(int(tt.minSubGroup), satisfiedBefore)
+			assert.GreaterOrEqual(t, satisfiedAfter, floor,
+				"eviction left %d satisfied subgroups, below the %d it must keep", satisfiedAfter, floor)
 		})
 	}
 }
