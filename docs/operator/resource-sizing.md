@@ -1,39 +1,38 @@
 # Resource sizing
 
-KAI Scheduler resource usage depends on Kubernetes object counts and scheduling
-pressure, not only on the number of nodes. Use this guide to select a starting
-profile, configure resources, and tune them with measurements from the target
-cluster.
+KAI Scheduler resource usage depends on cluster size and workload shape. A
+cluster with fewer nodes can require more scheduler memory when it has more
+Pods, larger jobs, or a larger submission backlog.
+
+This guide provides tested starting profiles and a simple scheduler-memory
+calculation for workloads outside those profiles.
 
 ## Quick start
 
-1. Record the expected workload envelope: nodes, Pods, Pending Pods,
-   PodGroups, BindRequests, and queues.
-2. Select the smallest profile below that covers every expected maximum.
-3. Apply the profile and run a representative workload lifecycle, including
-   cluster fill, large gangs, reclaim or preemption, and cleanup.
-4. Tune requests from sustained usage and limits from complete-cycle peaks.
+1. Estimate the values below for each important workload scenario.
+2. Use a tested profile when the complete scenario fits its envelope.
+3. Otherwise, calculate the scheduler memory limit and use the larger result.
+4. Run a representative workload lifecycle before production rollout.
 
-### Reference workload envelopes
+Do not combine unrelated maxima. For example, calculate a many-small-jobs
+scenario separately from a single-large-job scenario, then use the largest
+recommendation.
 
-The profiles in this guide were exercised against these approximate maximums:
+### Information to collect
 
-| Sizing input | 500-node profile | 1000-node profile |
-| --- | ---: | ---: |
-| Nodes per scheduler shard | 520 | 1,008 |
-| Total Pod objects | 46,000 | 90,000 |
-| Pending Pods | 38,000 | 77,000 |
-| Pending Pods x nodes[^pressure] | 20 million | 78 million |
-| PodGroups | 8,000 | 16,000 |
-| BindRequests | 14,000 | 14,000 |
-| Queues | 8 | 8 |
+| Input | Meaning |
+| --- | --- |
+| Nodes | Nodes usable by this scheduler shard |
+| Total Pods | Peak cluster-wide Pod objects, including non-KAI Pods |
+| Workloads | Peak simultaneously active KAI workloads |
+| Average workload size | Average schedulable Pods per workload |
+| Largest workload | Schedulable Pods in the largest workload |
+| Total GPUs | GPUs available to these workloads |
+| GPUs per worker Pod | Average GPU request per GPU worker Pod; use `1` when unsure |
+| Eligible nodes | Nodes where these workloads can run; use all nodes when unsure |
 
-[^pressure]: This is a conservative scheduler-pressure proxy. When available,
-    use attempted Pods multiplied by their effective candidate-node count.
-
-Use the next profile or run a dedicated scale test if any expected maximum is
-larger. A cluster with fewer nodes can still require the larger profile when it
-has more Pods, larger submission bursts, or more PodGroups.
+For CPU-only workloads, replace GPU capacity with the estimated maximum number
+of worker Pods that can run concurrently.
 
 ## Starting profiles
 
@@ -50,17 +49,181 @@ until an uncapped load test establishes actual demand.
 | Admission, per replica | `50m / 250m` | `64Mi / 128Mi` | `50m / 250m` | `64Mi / 128Mi` |
 | Operator | `25m / 100m` | `128Mi / 256Mi` | `25m / 100m` | `128Mi / 256Mi` |
 
-These are starting envelopes, not minimum requirements or capacity guarantees.
-Pod shape, scheduler plugins, storage integrations, DRA, GPU sharing, queue
-distribution, and event rate can change resource usage.
+The profiles were exercised across these workload shapes. The values are
+separate lifecycle maxima and did not all occur simultaneously.
 
-The profiles assume one default scheduler shard. Size each additional shard
-from its selected nodes and eligible workload. Admission values are per replica;
-size shared services for cluster-wide object counts.
+| Workload property | 500 profile | 1000 profile |
+| --- | ---: | ---: |
+| Nodes | 520 | 1,008 |
+| Total Pods | 46,000 | 90,000 |
+| Active workloads | 8,000 | 16,000 |
+| Largest workload | 500 Pods | 1,000 Pods |
+| Average workload in the largest burst | 57 Pods | 102 Pods |
+| GPUs | 4,000 | 8,000 |
 
-### Helm configuration
+Use the next profile or the calculation below when an expected scenario is
+larger. These values are starting points, not capacity guarantees. Pod shape,
+storage, DRA, topology constraints, GPU sharing, and enabled plugins can change
+resource usage.
 
-The following example applies the 1000-node profile:
+## Calculate scheduler memory
+
+The calculation separates memory into two understandable parts:
+
+- `cache`: cluster objects the scheduler keeps in memory;
+- `scheduling reserve`: temporary memory used while evaluating the largest job,
+  handling a backlog, and simulating reclaim or constrained placement.
+
+### 1. Infer workload Pods and capacity
+
+```text
+workloadPods = min(totalPods, workloads * averageWorkloadSize)
+
+workerCapacity = floor(totalGPUs / GPUsPerWorkerPod)
+backlogRatio = workloadPods / workerCapacity
+```
+
+The scheduler creates or reads several internal objects for a workload. Users
+do not need to count them. The calculation assumes approximately one PodGroup
+per workload and at most one active BindRequest per workload Pod. BindRequests
+are per Pod, not per workload.
+
+### 2. Calculate cached-object memory
+
+All values in this formula are GiB:
+
+```text
+cache = 1
+      + 0.16 * totalPods / 10,000
+      + 0.01 * workloads / 1,000
+      + 0.02 * eligibleNodes / 1,000
+      + 0.04 * workloadPods / 10,000
+```
+
+The 1-GiB base covers the scheduler process, informers, queues, plugins, and
+smaller Kubernetes objects. Every scheduler shard watches cluster-wide Pods,
+so sharding does not divide the `totalPods` term.
+
+### 3. Calculate scheduling reserve
+
+When scheduling a job, KAI evaluates its Pods against eligible nodes. A larger
+job or a larger node pool creates more temporary scoring, predicate, and
+simulation work.
+
+```text
+largestSearch = largestWorkloadPods * eligibleNodes
+```
+
+Use `largestSearch` to select a reserve:
+
+| Largest Pod-node search | Search reserve |
+| ---: | ---: |
+| Up to 4,000 | 0.5 GiB |
+| Up to 16,000 | 1 GiB |
+| Up to 64,000 | 1.5 GiB |
+| Up to 256,000 | 2 GiB |
+| Up to 1,024,000 | 2.5 GiB |
+| Each further 4x increase | Add 0.5 GiB |
+
+This is a pressure tier, not a retained `Pods x nodes` matrix. KAI processes
+tasks sequentially and can stop a job attempt after a failure. The tier leaves
+room for temporary allocations and garbage-collection delay without assuming
+that every task-node result remains in memory.
+
+Add a backlog reserve:
+
+| Backlog ratio | Backlog reserve |
+| ---: | ---: |
+| `<= 1` | 0 GiB |
+| `> 1` and `<= 4` | 0.5 GiB |
+| `> 4` | 1 GiB |
+
+Add a workload-complexity reserve:
+
+| Workload behavior | Complexity reserve |
+| --- | ---: |
+| Standard placement | 0 GiB |
+| Topology-heavy or frequently uses reclaim/preemption | 0.5 GiB |
+| Both, or uses advanced placement integrations extensively | 1 GiB |
+
+Topology-heavy includes strong affinity, anti-affinity, or topology
+constraints. Advanced placement includes large DRA, NUMA, or storage-aware
+workloads. Reclaim and preemption require KAI to simulate potential victims
+before changing the cluster.
+
+```text
+schedulingReserve = searchReserve
+                  + backlogReserve
+                  + complexityReserve
+```
+
+### 4. Calculate request and limit
+
+```text
+memoryLimitGiB = round up(1.25 * (cache + schedulingReserve))
+memoryRequestGiB = round up(0.75 * memoryLimitGiB)
+```
+
+The request is a conservative starting value when no measurements exist.
+Replace it with at least 15% above sustained p95 memory after observing a
+representative lifecycle. Keep the calculated limit until complete-cycle peaks
+support reducing it.
+
+### Example: 1000-node burst
+
+```text
+nodes and eligible nodes = 1,008
+total Pods = 90,193
+workloads = 900
+average workload = 102.3 Pods
+largest workload = 512 Pods
+total GPUs = 8,000
+GPUs per worker Pod = 8
+
+workloadPods = 90,193
+workerCapacity = 1,000
+backlogRatio = 90.2
+largestSearch = 516,096
+
+cache = 2.83 GiB
+search reserve = 2.5 GiB
+backlog reserve = 1 GiB
+complexity reserve = 0 GiB
+
+memory limit = round up(1.25 * (2.83 + 3.5)) = 8 GiB
+memory request = round up(0.75 * 8) = 6 GiB
+```
+
+This is an initial calculation. The tested 1000-node profile uses a 7-GiB
+request because sustained use in that environment was higher.
+
+## Size Binder and controllers
+
+Use these conservative initial memory requests. Round up and keep the selected
+profile's limit until a complete-cycle test supports changing it.
+
+```text
+Binder:
+  256Mi + max(50Mi * total Pods / 1000,
+              100Mi * outstanding BindRequests / 1000)
+
+Pod grouper:
+  256Mi + 25Mi * retained KAI Pods / 1000
+
+PodGroup controller:
+  256Mi + 35Mi * retained KAI Pods / 1000
+
+Queue controller:
+  64Mi + 20Mi * PodGroups / 1000
+```
+
+Use `workloadPods` as an initial BindRequest upper bound when no measurement is
+available. Do not add allowances for multiple dimensions that describe the
+same object population.
+
+## Configure resources
+
+The following example applies the tested 1000-node profile:
 
 ```yaml
 scheduler:
@@ -93,109 +256,22 @@ operator:
     limits: {cpu: 100m, memory: 256Mi}
 ```
 
-Operand resources can also be managed through the equivalent
-`spec.<service>.service.resources` fields on the Config custom resource. The
-operator itself is configured through the Helm chart. Use one owner for each
-field so Helm and another controller do not continuously overwrite each other.
+Resources can also be managed through `spec.<service>.service.resources` on the
+Config custom resource. The operator itself is configured through Helm. Use
+one owner for each field so controllers do not overwrite each other.
 
-## Adapt a profile
+## Validate and tune
 
-### Scheduler
-
-Scheduler memory has two parts:
-
-```text
-object footprint = base
-                 + non-terminal Pod memory
-                 + shard PodGroup memory
-                 + selected-node memory
-                 + BindRequest and other cached-object memory
-
-action pressure = C * attempted Pods * effective candidate nodes
-```
-
-`C` is workload-specific. It changes with the scheduling action, enabled
-plugins, Pod shape, gang structure, reclaim candidates, and Go garbage
-collection. PodGroups organize attempted Pods and should not be multiplied by
-the task-node product again.
-
-For capacity planning, use this conservative form:
-
-```text
-scheduler limit >= headroom * maximum over a complete scheduling session(
-    object footprint + action pressure
-)
-```
-
-When attempted-Pod or candidate-node metrics are unavailable, use
-`Pending Pods x nodes per shard` as an upper-bound pressure proxy. Use the
-maximum over the workload lifecycle rather than the value visible when memory
-peaks; a long scheduling session can retain an earlier object snapshot.
-
-If scheduler pressure exceeds the selected profile:
-
-- increase the memory limit for higher burst peaks and raise the request when
-  sustained usage also increases;
-- split selected nodes across scheduler shards to reduce candidate nodes per
-  task;
-- stagger large submissions or reduce the unschedulable backlog;
-- retest after enabling plugins or changing reclaim and preemption behavior.
-
-Every scheduler process caches cluster-wide non-terminal Pods. Sharding reduces
-node-evaluation work but does not divide that Pod-cache footprint.
-
-### Binder and controllers
-
-The following formulas provide conservative initial **memory requests**. Round
-up and keep the profile's limit until a complete-cycle test supports changing
-it.
-
-```text
-Binder:
-  256Mi + max(50Mi * total Pods / 1000,
-              100Mi * outstanding BindRequests / 1000)
-
-Pod grouper:
-  256Mi + 25Mi * retained KAI Pods / 1000
-
-PodGroup controller:
-  256Mi + 35Mi * retained KAI Pods / 1000
-
-Queue controller:
-  64Mi + 20Mi * PodGroups / 1000
-```
-
-Do not add allowances for multiple dimensions that describe the same object
-population. That double-counts correlated growth. Use retained objects rather
-than only Running Pods for controllers that retain terminal Pods.
-
-### Requests and limits
-
-For a workload not covered by a reference profile:
-
-1. Set memory requests at least 15% above the sustained p95 working set.
-2. Set memory limits at least 25% above the complete-cycle peak and round up.
-3. Set CPU requests at least 25% above uncapped p95 usage.
-4. Prefer no CPU limit for latency-sensitive controllers. If policy requires
-   one, measure demand without throttling first.
-5. Increase requests when workqueue depth or processing latency grows under a
-   steady load, even if average CPU or memory looks low.
-
-Repeat validation after KAI or Kubernetes upgrades and after changing shards,
-plugins, storage, DRA, GPU sharing, or workload submission patterns.
-
-## Validate and troubleshoot
-
-Monitor a complete workload lifecycle. At minimum, retain:
+Run cluster fill, the largest jobs, a submission burst, reclaim or preemption,
+and cleanup. Monitor:
 
 - container working set, RSS, and Go heap;
 - CPU usage and throttling;
 - restarts and termination reasons;
-- scheduler latency and Binder/controller workqueue depth;
-- Nodes, Pod phases, PodGroups, BindRequests, Jobs, queues, and storage/DRA
-  objects.
+- scheduling latency and controller workqueue depth;
+- Pods, Jobs, PodGroups, BindRequests, queues, and storage/DRA objects.
 
-Useful PromQL expressions include:
+Useful PromQL:
 
 ```promql
 max_over_time(container_memory_working_set_bytes{namespace="kai-scheduler",container!="POD"}[24h])
@@ -204,68 +280,43 @@ quantile_over_time(0.95, container_memory_working_set_bytes{namespace="kai-sched
 
 sum by (container) (rate(container_cpu_usage_seconds_total{namespace="kai-scheduler",container!="POD"}[5m]))
 
-sum by (container) (rate(container_cpu_cfs_throttled_periods_total{namespace="kai-scheduler",container!="POD"}[5m]))
-/
-sum by (container) (rate(container_cpu_cfs_periods_total{namespace="kai-scheduler",container!="POD"}[5m]))
-
-max by (pod) (process_resident_memory_bytes{namespace="kai-scheduler"})
-
 max by (name, pod) (workqueue_depth{namespace="kai-scheduler"})
-
-max by (resource) (apiserver_storage_objects{resource=~"pods|jobs.batch|podgroups.scheduling.run.ai|bindrequests.scheduling.run.ai|queues.scheduling.run.ai|nodes"})
 ```
 
-| Symptom | Recommended action |
+| Symptom | Action |
 | --- | --- |
-| Scheduler memory rises with a Pending-Pod burst | Increase the scheduler envelope, reduce nodes per shard, or stagger submissions. |
-| Scheduler remains large after cleanup | Wait for active scheduling sessions and GC; do not downsize from a short idle sample. |
-| Binder memory and BindRequest depth rise together | Increase Binder memory/CPU and investigate binding throughput, API throttling, volumes, and DRA. |
-| Controller workqueue grows while CPU is throttled | Raise the CPU request and remove or increase the CPU limit. |
-| Pod grouper or PodGroup controller grows with retained Pods | Clean up completed workloads where appropriate and apply the object-count formula. |
-| VPA recommends less than the validated limit | Use `RequestsOnly` and keep the static safety limit. |
+| Memory rises during a large job | Increase scheduler limit or reduce eligible nodes with scheduler sharding. |
+| Memory rises during submission bursts | Increase scheduler memory or reduce simultaneous submissions. |
+| Memory remains high after cleanup | Wait for active scheduling and garbage collection; use complete-cycle peaks. |
+| Binder memory and BindRequest depth rise together | Increase Binder resources and investigate binding throughput. |
+| Workqueue grows while CPU is throttled | Raise CPU request and remove or increase CPU limit. |
 
-The [scale-test guide](../developer/scale-tests.md) describes how to exercise a
-representative workload. The scale environment configuration is in
-[`hack/setup-scale-test-env.sh`](../../hack/setup-scale-test-env.sh).
+Prefer no CPU limit for latency-sensitive controllers. If policy requires one,
+measure demand without throttling first. Repeat validation after changing KAI,
+Kubernetes, shards, plugins, storage, DRA, GPU sharing, or workload shape.
+
+The [scale-test guide](../developer/scale-tests.md) describes representative
+workload testing.
 
 ## Vertical Pod Autoscaler
 
-KAI does not install Vertical Pod Autoscaler (VPA). When VPA is installed, KAI
-can create policies for its operands.
+KAI can create VPA policies when VPA is installed. Start with `updateMode: Off`
+and observe recommendations through a complete workload cycle. Set
+service-specific bounds and prefer `controlledValues: RequestsOnly` when
+keeping validated static limits.
 
-Use VPA safely:
+The default VPA maximum of 2 CPUs and 5 GiB is too low for the 1000-node
+scheduler profile. Scheduler shards derive `GOMEMLIMIT` from their memory limit
+using `goMemLimitRatio` (default `0.9`), so reduce scheduler limits carefully.
 
-1. Start with `updateMode: Off` and observe `target`, `lowerBound`,
-   `upperBound`, and `uncappedTarget` through a complete workload cycle.
-2. Set service-specific minimum and maximum bounds. The default global maximum
-   of 2 CPUs and 5 GiB is too low for the 1000-node scheduler profile, while its
-   500-MiB minimum is unnecessarily high for smaller services.
-3. Set `controlledValues` explicitly. Prefer `RequestsOnly` when retaining the
-   static limits from this guide.
-4. Enable `InPlaceOrRecreate` only after validating the policy and the
-   cluster's in-place resize support.
-5. Avoid sharp memory-limit reductions.
-
-Scheduler shards derive `GOMEMLIMIT` from their cgroup memory limit using
-`goMemLimitRatio` (default `0.9`) and refresh it every 15 seconds. A reduced
-container limit can take effect before the process releases enough memory.
-Other KAI operands do not currently set `GOMEMLIMIT` automatically and should
-be downscaled conservatively.
-
-The upstream [VPA mode documentation](https://github.com/kubernetes/autoscaler/blob/master/vertical-pod-autoscaler/docs/quickstart.md)
-describes `Off` and `InPlaceOrRecreate` behavior. See
-[Scheduling shards](./scheduling-shards.md#go-memory-limit) for scheduler
-Go-memory configuration.
+See the upstream [VPA mode documentation](https://github.com/kubernetes/autoscaler/blob/master/vertical-pod-autoscaler/docs/quickstart.md)
+and [Scheduling shards](./scheduling-shards.md#go-memory-limit).
 
 ## Optional operands
 
-Optional operands were not included in the reference profiles and must be
-validated separately:
+Optional operands were not included in the profiles:
 
-- The node scale adjuster caches Pods and scans for unschedulable fractional-GPU
-  work. Size it from total Pods and peak Pod-update rate.
-- The NUMA placement exporter runs once per selected node. Multiply its
-  per-Pod resources by the selected node count for cluster capacity planning.
-- Resource-reservation Pods are created for active node/GPU-group combinations.
-  Reserve their per-Pod resources multiplied by the maximum simultaneous
-  reservation-Pod count.
+- Size node scale adjuster from total Pods and peak Pod-update rate.
+- NUMA placement exporter runs once per selected node; multiply its resources
+  by selected node count.
+- Reserve capacity for the maximum simultaneous resource-reservation Pods.
