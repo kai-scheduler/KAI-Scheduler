@@ -16,7 +16,6 @@ import (
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/common/gpusharingconfigmap"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/common"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/state"
@@ -68,22 +67,8 @@ func (p *GPUSharing) PreBind(
 
 	nVisibleDevicesStr := strings.Join(reservedGPUIds, ",")
 
-	// For pods where NVIDIA_VISIBLE_DEVICES is sourced from a ConfigMapKeyRef (the standard
-	// path set up by the admission webhook), write all capabilities data in a single
-	// UpsertJobConfigMap call. This avoids a race condition between the informer-cache-backed
-	// client and the API server: if Create and a subsequent Get happen before the watch
-	// event updates the cache, the Get returns NotFound and the bind fails.
-	if nvidiaVisibleDevicesViaConfigMapRef(containerRef.Container) {
-		capabilitiesConfigMapName, err := gpusharingconfigmap.ExtractCapabilitiesConfigMapName(pod, containerRef)
-		if err != nil {
-			return fmt.Errorf("failed to get capabilities configmap name: %w", err)
-		}
-		data := map[string]string{
-			constants.NvidiaVisibleDevices: nVisibleDevicesStr,
-			common.NumOfGpusEnvVarBC:       bindRequest.Spec.ReceivedGPU.Portion,
-			common.GPUPortion:              bindRequest.Spec.ReceivedGPU.Portion,
-		}
-		return gpusharingconfigmap.UpsertJobConfigMap(ctx, p.kubeClient, pod, capabilitiesConfigMapName, data)
+	if common.NvidiaVisibleDevicesViaConfigMapRef(containerRef.Container) {
+		return common.UpsertCapabilitiesConfigMapData(ctx, p.kubeClient, pod, containerRef, nVisibleDevicesStr, bindRequest.Spec.ReceivedGPU.Portion)
 	}
 
 	// Backward compat: NVIDIA_VISIBLE_DEVICES is served via envFrom from the direct env vars ConfigMap.
@@ -98,18 +83,6 @@ func (p *GPUSharing) PreBind(
 		return err
 	}
 	return common.SetGPUPortion(ctx, p.kubeClient, pod, containerRef, bindRequest.Spec.ReceivedGPU.Portion)
-}
-
-// nvidiaVisibleDevicesViaConfigMapRef reports whether the container's NVIDIA_VISIBLE_DEVICES
-// env var is sourced from a ConfigMapKeyRef (i.e. the pod was admitted by the current webhook).
-func nvidiaVisibleDevicesViaConfigMapRef(container *v1.Container) bool {
-	for _, envVar := range container.Env {
-		if envVar.Name == constants.NvidiaVisibleDevices &&
-			envVar.ValueFrom != nil && envVar.ValueFrom.ConfigMapKeyRef != nil {
-			return true
-		}
-	}
-	return false
 }
 
 func (p *GPUSharing) createDirectEnvMapIfMissing(ctx context.Context, pod *v1.Pod,

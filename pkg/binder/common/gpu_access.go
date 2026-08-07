@@ -60,32 +60,49 @@ func AddGPUSharingEnvVars(container *v1.Container, sharedGpuConfigMapName string
 	})
 }
 
+// NvidiaVisibleDevicesViaConfigMapRef reports whether the container's NVIDIA_VISIBLE_DEVICES
+// env var is sourced from a ConfigMapKeyRef (i.e. the pod was admitted by the current webhook).
+func NvidiaVisibleDevicesViaConfigMapRef(container *v1.Container) bool {
+	for _, envVar := range container.Env {
+		if envVar.Name == constants.NvidiaVisibleDevices &&
+			envVar.ValueFrom != nil && envVar.ValueFrom.ConfigMapKeyRef != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// UpsertCapabilitiesConfigMapData writes all GPU capabilities data in a single upsert.
+// Use this for pods where NVIDIA_VISIBLE_DEVICES is sourced via ConfigMapKeyRef.
+func UpsertCapabilitiesConfigMapData(
+	ctx context.Context, kubeClient client.Client, pod *v1.Pod,
+	containerRef *gpusharingconfigmap.PodContainerRef,
+	visibleDevicesValue, gpuPortion string,
+) error {
+	capabilitiesConfigMapName, err := gpusharingconfigmap.ExtractCapabilitiesConfigMapName(pod, containerRef)
+	if err != nil {
+		return fmt.Errorf("failed to get capabilities configmap name: %w", err)
+	}
+	data := map[string]string{
+		constants.NvidiaVisibleDevices: visibleDevicesValue,
+		NumOfGpusEnvVarBC:              gpuPortion,
+		GPUPortion:                     gpuPortion,
+	}
+	return gpusharingconfigmap.UpsertJobConfigMap(ctx, kubeClient, pod, capabilitiesConfigMapName, data)
+}
+
+// SetNvidiaVisibleDevices updates NVIDIA_VISIBLE_DEVICES in the direct env vars ConfigMap.
+// Only used for the backward-compatibility path where NVIDIA_VISIBLE_DEVICES is served via envFrom.
 func SetNvidiaVisibleDevices(
 	ctx context.Context, kubeClient client.Client, pod *v1.Pod, containerRef *gpusharingconfigmap.PodContainerRef,
 	visibleDevicesValue string,
 ) error {
-	nvidiaVisibleDevicesDefinedInSpec := false
-	for _, envVar := range containerRef.Container.Env {
-		if envVar.Name == constants.NvidiaVisibleDevices && envVar.ValueFrom != nil &&
-			envVar.ValueFrom.ConfigMapKeyRef != nil {
-			nvidiaVisibleDevicesDefinedInSpec = true
-		}
-	}
-
-	var configMapName string
-	var err error
-	var updateFunc func(data map[string]string) error
-	if nvidiaVisibleDevicesDefinedInSpec {
-		configMapName, err = gpusharingconfigmap.ExtractCapabilitiesConfigMapName(pod, containerRef)
-	} else {
-		configMapName, err = gpusharingconfigmap.ExtractDirectEnvVarsConfigMapName(pod, containerRef)
-	}
+	configMapName, err := gpusharingconfigmap.ExtractDirectEnvVarsConfigMapName(pod, containerRef)
 	if err != nil {
 		return err
 	}
-	updateFunc = func(data map[string]string) error {
-		// BC for pods that were created with NVIDIA_VISIBLE_DEVICES env var
-		// with value from RUNAI-VISIBLE-DEVICES entry in GPU sharing configmap
+	updateFunc := func(data map[string]string) error {
+		// BC for pods with RUNAI-VISIBLE-DEVICES entry in GPU sharing configmap
 		if _, found := data[visibleDevicesBC]; found {
 			data[visibleDevicesBC] = visibleDevicesValue
 		}

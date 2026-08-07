@@ -69,11 +69,8 @@ func UpsertJobConfigMap(ctx context.Context,
 			return fmt.Errorf("failed to create configmap %s/%s for pod %s/%s, error: %v",
 				pod.Namespace, desiredConfigMap.Name, pod.Namespace, pod.Name, createErr)
 		}
-		// Concurrent create: another goroutine created it first; re-fetch for patching.
-		if err = kubeClient.Get(ctx, client.ObjectKey{Name: desiredConfigMap.Name, Namespace: pod.Namespace}, existingCm); err != nil {
-			return fmt.Errorf("failed to get concurrently created configmap %s/%s for pod %s/%s, error: %v",
-				pod.Namespace, desiredConfigMap.Name, pod.Namespace, pod.Name, err)
-		}
+		// Concurrent create: the other creator wrote the same data; nothing more to do.
+		return nil
 	}
 	logger.Info("Existing configmap was found for pod",
 		"namespace", pod.Namespace, "name", pod.Name, "configMapName", desiredConfigMap.Name)
