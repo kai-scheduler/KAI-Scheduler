@@ -7,6 +7,9 @@
 # "## [VERSION]" section, clears the fragments, and opens a PR against the branch this workflow
 # was dispatched on (main for minors/majors, a v*.* branch for patches).
 #
+# Leaving the version input empty on a v*.* branch releases the next patch of that branch
+# (highest existing vMAJOR.MINOR.PATCH tag + 1, or .0 if none). On main the version is required.
+#
 # A maintainer reviews and merges that PR. Merging it triggers release-publish.yaml (step 2),
 # which tags the version and creates the GitHub Release.
 
@@ -16,8 +19,8 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to release, e.g. v0.17.0 (minors/majors from main, patches from a v*.* branch)'
-        required: true
+        description: 'Version to release, e.g. v0.17.0. Leave empty on a v*.* branch for the next patch. Required on main.'
+        required: false
         type: string
 
 permissions:
@@ -33,7 +36,43 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          fetch-tags: true
           token: ${{ secrets.KAIBOT_TOKEN }}
+
+      - name: Resolve version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          VERSION="$(echo "$INPUT_VERSION" | tr -d '[:space:]')"
+
+          if [ -z "$VERSION" ]; then
+            # No version given: derive the next patch of the v*.* branch this ran on.
+            if ! echo "$BRANCH" | grep -qE '^v[0-9]+\.[0-9]+$'; then
+              echo "::error::Branch '$BRANCH' is not a v*.* release branch — pass the version input explicitly"; exit 1
+            fi
+            # Ignore pre-release tags (v0.16.1-rc.0) and the bare branch-shaped tag (v0.16).
+            LATEST="$(git tag -l "$BRANCH.*" | grep -E "^${BRANCH//./\\.}\.[0-9]+$" | sort -V | tail -1 || true)"
+            if [ -z "$LATEST" ]; then
+              VERSION="$BRANCH.0"
+            else
+              VERSION="$BRANCH.$(( ${LATEST##*.} + 1 ))"
+            fi
+            echo "Derived version $VERSION from branch $BRANCH (latest tag: ${LATEST:-none})"
+          fi
+
+          if ! echo "$VERSION" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+'; then
+            echo "::error::Version '$VERSION' is not of the form vMAJOR.MINOR.PATCH"; exit 1
+          fi
+          if git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null; then
+            echo "::error::Tag $VERSION already exists"; exit 1
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Preparing release $VERSION on $BRANCH"
 
       - name: Set up Go
         uses: actions/setup-go@v7
@@ -41,12 +80,12 @@ jobs:
           go-version: '1.26.3'
 
       - name: Fold fragments into CHANGELOG.md
-        run: make changelog-release VERSION="${{ inputs.version }}"
+        run: make changelog-release VERSION="${{ steps.version.outputs.version }}"
 
       - name: Open release PR
         env:
           GH_TOKEN: ${{ secrets.KAIBOT_TOKEN }}
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ steps.version.outputs.version }}
           BASE: ${{ github.ref_name }}
         run: |
           set -euo pipefail
