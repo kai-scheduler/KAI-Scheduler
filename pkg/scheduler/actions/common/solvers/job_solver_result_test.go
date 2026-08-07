@@ -330,6 +330,172 @@ func TestSolveWithResultStillSolvesWhenGeneratorRepeatsScenarios(t *testing.T) {
 	require.Greater(t, scenarioSearchCounterValue(t, "scenario_search_scenarios_total", labels), before)
 }
 
+func TestSolveWithResultResumesScenarioGeneratorCheckpointAcrossSessions(t *testing.T) {
+	const (
+		candidateCount = 3
+		generatorName  = "checkpoint-sequence"
+	)
+	budgets := &kaiv1.ScenarioSearchBudgets{
+		MaxActionSearchDuration: map[string]metav1.Duration{
+			constants.ActionReclaim: scenarioSearchDurationForTest("20ms"),
+		},
+		MaxJobSearchDuration: scenarioSearchDurationPtrForTest("20ms"),
+		MaxGeneratorSearchDuration: map[string]metav1.Duration{
+			generatorName: scenarioSearchDurationForTest("3ms"),
+		},
+	}
+	checkpoints := framework.NewScenarioCheckpointStore()
+
+	firstClock := &fakeClock{now: time.Unix(0, 0)}
+	var firstEmitted, firstValidated []int
+	firstSession, firstJob, firstCandidates := newCheckpointSequenceSession(
+		t, generatorName, candidateCount+1, firstClock, &firstEmitted,
+	)
+	firstSession.Config = sessionWithScenarioSearchBudgets(budgets).Config
+	firstSession.ScenarioCheckpointStore = checkpoints
+	firstBudget, err := newActionSearchBudgetWithClock(firstSession, framework.Reclaim, firstClock.Now)
+	require.NoError(t, err)
+	firstSolver := NewJobsSolver(
+		jobSolverResultTestFeasibleNodes(firstSession),
+		func(sn api.ScenarioInfo) bool {
+			firstValidated = append(firstValidated, checkpointCandidateIndex(t, sn, firstCandidates))
+			return false
+		},
+		generatorTestVictimsQueueFactory(firstSession),
+		framework.Reclaim,
+		firstBudget,
+	)
+
+	solved, statement, _, result := firstSolver.SolveWithResult(firstSession, firstJob)
+	require.False(t, solved)
+	require.Nil(t, statement)
+	require.Equal(t, SearchResultGeneratorsExhausted, result.Reason())
+	require.Equal(t, []int{1, 2, 3}, firstEmitted)
+	require.Equal(t, []int{1, 2, 3}, firstValidated)
+	checkpointKey := framework.ScenarioCheckpointKey{Action: framework.Reclaim, JobUID: firstJob.UID}
+	checkpoint, found := checkpoints.Load(checkpointKey)
+	require.True(t, found)
+	require.Equal(t, generatorName, checkpoint.GeneratorName)
+
+	secondClock := &fakeClock{now: time.Unix(0, 0)}
+	var secondEmitted, secondValidated []int
+	secondSession, secondJob, secondCandidates := newCheckpointSequenceSession(
+		t, generatorName, candidateCount+1, secondClock, &secondEmitted,
+	)
+	secondSession.Config = sessionWithScenarioSearchBudgets(budgets).Config
+	secondSession.ScenarioCheckpointStore = checkpoints
+	secondBudget, err := newActionSearchBudgetWithClock(secondSession, framework.Reclaim, secondClock.Now)
+	require.NoError(t, err)
+	secondSolver := NewJobsSolver(
+		jobSolverResultTestFeasibleNodes(secondSession),
+		func(sn api.ScenarioInfo) bool {
+			secondValidated = append(secondValidated, checkpointCandidateIndex(t, sn, secondCandidates))
+			return false
+		},
+		generatorTestVictimsQueueFactory(secondSession),
+		framework.Reclaim,
+		secondBudget,
+	)
+	simulatedLabels := map[string]string{
+		"action":    string(framework.Reclaim),
+		"generator": generatorName,
+		"state":     "simulated",
+	}
+	beforeSecondSimulation := scenarioSearchCounterValue(t, "scenario_search_scenarios_total", simulatedLabels)
+
+	solved, statement, _, result = secondSolver.SolveWithResult(secondSession, secondJob)
+	require.False(t, solved)
+	require.Nil(t, statement)
+	require.Equal(t, SearchResultGeneratorsExhausted, result.Reason())
+	require.Equal(t, []int{1, 2, 3, 4}, secondEmitted)
+	require.Equal(t, []int{4}, secondValidated)
+	require.Equal(t, beforeSecondSimulation+1,
+		scenarioSearchCounterValue(t, "scenario_search_scenarios_total", simulatedLabels))
+	_, found = checkpoints.Load(checkpointKey)
+	require.False(t, found)
+}
+
+func newCheckpointSequenceSession(
+	t *testing.T, generatorName string, candidateCount int, clock *fakeClock, emitted *[]int,
+) (*framework.Session, *podgroup_info.PodGroupInfo, map[common_info.PodID]int) {
+	t.Helper()
+
+	nodeGPUs := make(map[string]int, candidateCount)
+	nodeNames := make([]string, candidateCount)
+	for index := range candidateCount {
+		nodeNames[index] = fmt.Sprintf("node-%d", index+1)
+		nodeGPUs[nodeNames[index]] = 1
+	}
+	ssn := newGeneratorTestSession(t, nodeGPUs)
+	require.NoError(t, ssn.InitNodeScoringPool())
+	pendingJob := addGeneratorTestPendingJob(t, ssn, 1, 10, "team-pending")
+	_, victimTasks := addGeneratorTestJob(t, ssn, candidateCount, 20, "team-victim", nodeNames...)
+	candidateByTaskUID := make(map[common_info.PodID]int, candidateCount)
+	for index, task := range victimTasks {
+		candidateByTaskUID[task.UID] = index + 1
+	}
+
+	ssn.AddScenarioGenerator(generatorName, func(ctx framework.ScenarioGeneratorContext) framework.ScenarioGenerator {
+		solveCtx := ctx.(*SolveContext)
+		pendingTasks := podgroup_info.GetTasksToAllocate(
+			solveCtx.PartialPendingJob, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false,
+		)
+		scenarios := make([]api.ScenarioInfo, 0, len(victimTasks))
+		for _, task := range victimTasks {
+			scenarios = append(scenarios, scenario.NewByNodeScenario(
+				ssn,
+				solveCtx.PartialPendingJob,
+				pendingTasks,
+				[]*pod_info.PodInfo{task},
+				solveCtx.RecordedVictimsJobs,
+			))
+		}
+		return &checkpointSequenceGenerator{
+			name:           generatorName,
+			scenarios:      scenarios,
+			clock:          clock,
+			emitted:        emitted,
+			candidateByUID: candidateByTaskUID,
+		}
+	})
+	return ssn, pendingJob, candidateByTaskUID
+}
+
+func checkpointCandidateIndex(
+	t *testing.T, scenarioInfo api.ScenarioInfo, candidateByTaskUID map[common_info.PodID]int,
+) int {
+	t.Helper()
+	byNode, ok := scenarioInfo.(*scenario.ByNodeScenario)
+	require.True(t, ok)
+	potentialVictims := byNode.PotentialVictimsTasks()
+	require.Len(t, potentialVictims, 1)
+	return candidateByTaskUID[potentialVictims[0].UID]
+}
+
+type checkpointSequenceGenerator struct {
+	name           string
+	scenarios      []api.ScenarioInfo
+	clock          *fakeClock
+	emitted        *[]int
+	candidateByUID map[common_info.PodID]int
+}
+
+func (g *checkpointSequenceGenerator) Name() string {
+	return g.name
+}
+
+func (g *checkpointSequenceGenerator) Next() api.ScenarioInfo {
+	if len(g.scenarios) == 0 {
+		return nil
+	}
+	scenarioInfo := g.scenarios[0]
+	g.scenarios = g.scenarios[1:]
+	byNode := scenarioInfo.(*scenario.ByNodeScenario)
+	*g.emitted = append(*g.emitted, g.candidateByUID[byNode.PotentialVictimsTasks()[0].UID])
+	g.clock.Advance(time.Millisecond)
+	return scenarioInfo
+}
+
 func TestSearchMaxSolvableKStopsAfterTerminalPartialProbe(t *testing.T) {
 	probes := map[int]*SearchResult{
 		1: solvedSearchResult(&solutionResult{solved: true}, false),

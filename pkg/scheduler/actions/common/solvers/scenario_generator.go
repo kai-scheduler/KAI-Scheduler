@@ -161,6 +161,7 @@ func (p *scenarioPortfolio) Next() *scenario.ByNodeScenario {
 				continue
 			}
 			p.resumeCursor = nil
+			p.currentBudget = nil
 			continue
 		}
 		p.currentName = generatorName
