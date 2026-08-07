@@ -25,6 +25,7 @@ import (
 	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
 	kaiv1binder "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/binder"
 	binderplugins "github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/memorylimit"
 	kaiConfigUtils "github.com/kai-scheduler/KAI-scheduler/pkg/operator/config"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common"
 )
@@ -62,6 +63,19 @@ func (b *Binder) deploymentForKAIConfig(
 		return nil, fmt.Errorf("failed to build binder args: %w", err)
 	}
 	deployment.Spec.Template.Spec.Containers[0].Args = binderArgs
+	goMemLimitRatio := 0.85
+	if config.GoMemLimitRatio != nil {
+		goMemLimitRatio = *config.GoMemLimitRatio
+	}
+	env := []v1.EnvVar{{Name: memorylimit.RatioEnv, Value: strconv.FormatFloat(goMemLimitRatio, 'f', -1, 64)}}
+	if config.GoMemLimit != nil {
+		goMemLimit := config.GoMemLimit.Value()
+		if goMemLimit <= 0 {
+			return nil, fmt.Errorf("goMemLimit must be greater than zero")
+		}
+		env = append(env, v1.EnvVar{Name: "GOMEMLIMIT", Value: strconv.FormatInt(goMemLimit, 10)})
+	}
+	deployment.Spec.Template.Spec.Containers[0].Env = env
 
 	return []client.Object{deployment}, nil
 }
