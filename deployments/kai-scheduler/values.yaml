@@ -113,6 +113,11 @@ binder:
   ports:
     metricsPort: 8080
   affinity: {}
+  # PDB is created only when binder replicas > 1 (operator.replicaCount / binder.replicas).
+  # For HA: set operator.replicaCount: 2 (or override binder.replicas in Config).
+  podDisruptionBudget:
+    enabled: true
+    maxUnavailable: 1
   # plugins allows overriding binder plugin configuration.
   # Built-in plugins can be disabled, reordered, or have their arguments changed.
   # Default plugins and priorities: volumebinding=300, dynamicresources=200, gpusharing=100.
