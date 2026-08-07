@@ -228,7 +228,7 @@ func buildArgsList(config *pod_group_controller.PodGroupController, schedulerNam
 		"--scheduler-name", schedulerName,
 	}
 
-	common.AddK8sClientConfigToArgs(config.Service.K8sClientConfig, args)
+	args = common.AddK8sClientConfigToArgs(config.Service.K8sClientConfig, args)
 
 	if config.MaxConcurrentReconciles != nil {
 		args = append(args, "--max-concurrent-reconciles", strconv.Itoa(*config.MaxConcurrentReconciles))
