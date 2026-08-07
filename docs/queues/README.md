@@ -8,6 +8,7 @@ Only leaf queues (queues with no children) can be used for scheduling jobs. Pare
 - [Queue Attributes](#queue-attributes)
 - [API Reference](#api-reference)
 - [Resource Configuration](#resource-configuration)
+- [Queue Status](#queue-status)
 - [Examples](#examples)
 
 ## Queue Attributes
@@ -68,6 +69,33 @@ resources:
 - **CPU**: Millicores (1000 = 1 CPU core)
 - **Memory**: Megabytes (MB = 10⁶ bytes)
 - **GPU**: Units (1 = full GPU device)
+
+## Queue Status
+
+The queue controller reports consumption in `Queue.status`:
+
+| Field | Covers |
+|-------|--------|
+| `allocated` | Running pods, plus pending pods already scheduled to a node |
+| `allocatedNonPreemptible` | The same, restricted to non-preemptible pods |
+| `requested` | Running and pending pods |
+
+A queue's numbers are the sum over its own pod groups and its child queues. `PodGroup.status.resourcesStatus` carries the same numbers for a single pod group.
+
+### How allocated and requested are counted
+
+Per pod, the controller reports the larger, per resource, of the pod's steady state and its init phase, plus Pod overhead, the way the scheduler reserves them:
+
+- the steady state: every regular container's `resources.requests`, plus every native sidecar's `resources.requests` (an init container with `restartPolicy: Always`, [KEP-753](https://github.com/kubernetes/enhancements/issues/753)). A sidecar runs alongside the regular containers for the whole life of the pod, so its request is held the whole time
+- the init phase: the peak of a non-restartable init container, taken as that container's request plus the native sidecars declared before it, since those are already running. Init containers run one at a time, so this is a max across them, not a sum
+- `spec.overhead`, the per-pod cost a RuntimeClass adds for sandboxed runtimes such as Kata or gVisor, added on top
+
+GPU-sharing requests (the `gpu-fraction` and `gpu-memory` annotations) and DRA claims are added on their own paths.
+
+Two GPU details follow the scheduler on purpose:
+
+- **A GPU set in `spec.overhead`** is not counted: the scheduler adds only the CPU and memory half of the overhead.
+- **A GPU on a pod whose GPU is rebuilt from an annotation** (`gpu-fraction`, `gpu-memory`, or a legacy MIG annotation) is not counted from the containers, since the annotation decides and the scheduler discards the container request. A regular container's, a native sidecar's, or a non-restartable init container's GPU on any other pod is counted, matching the scheduler. A name counts as a GPU here if it ends in `/gpu` or is a MIG device, the rule `kai_queue_allocated_gpus` already applies.
 
 ## Examples
 
