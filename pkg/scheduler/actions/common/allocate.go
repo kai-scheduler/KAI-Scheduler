@@ -140,7 +140,10 @@ func allocateTasksOnNodeSet(ssn *framework.Session, stmt *framework.Statement, n
 	for index, task := range tasksToAllocate {
 		success := allocateTask(ssn, stmt, nodes, task, isPipelineOnly)
 		if !success {
-			handleFailedTaskAllocation(job, task, index)
+			// Skip job fit errors during pipeline-only simulations; see allocateTask (#1948).
+			if !isPipelineOnly {
+				handleFailedTaskAllocation(job, task, index)
+			}
 			return false
 		}
 	}
@@ -159,9 +162,15 @@ func allocateTask(ssn *framework.Session, stmt *framework.Statement, nodes []*no
 		log.InfraLogger.V(6).Infof("pre-predicates failed on task %s/%s. Error: %v",
 			task.Namespace, task.Name, err)
 
-		fitErrors := common_info.NewFitErrors()
-		fitErrors.SetError(err.Error())
-		job.AddTaskFitErrors(task, fitErrors)
+		// Pipeline-only allocation runs inside solver simulations that are rolled back.
+		// Statement.Rollback does not restore fit errors, so recording them here would leak
+		// simulation-only diagnostics onto the live job and mask the authoritative Allocate
+		// reason (#1948). Mirror FittingNode's writeFittingDelta=!isPipelineOnly behavior.
+		if !isPipelineOnly {
+			fitErrors := common_info.NewFitErrors()
+			fitErrors.SetError(err.Error())
+			job.AddTaskFitErrors(task, fitErrors)
+		}
 		return false
 	}
 
