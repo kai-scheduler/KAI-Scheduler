@@ -143,6 +143,7 @@ func (s *JobSolver) SolveWithResult(
 			log.InfraLogger.V(4).Infof(
 				"Scenario solved for %d tasks to allocate for %s. Victims: %s",
 				n, pendingJob.Name, victimPrintingStruct{solution.victimsTasks})
+			deleteScenarioCheckpointForJob(ssn, s.actionType, pendingJob)
 			return jobSolved, solution.statement, calcVictimNames(solution.victimsTasks), result
 		}
 
@@ -325,11 +326,20 @@ func (s *JobSolver) solvePartialJob(
 		FeasibleNodes:        feasibleNodeMap,
 		ProbeK:               probeK,
 	}
-	portfolio := newSingleGeneratorScenarioPortfolio(solveCtx, jobBudget, availableGenerator, generatorBudget)
+	if checkpointSkipsGenerator(solveCtx, availableGenerator.Name) {
+		return terminalSearchResult(SearchResultGeneratorsExhausted, jobBudget.ReducedBudget())
+	}
+	checkpoint := loadScenarioCheckpoint(solveCtx, availableGenerator.Name)
+	portfolio := newSingleGeneratorScenarioPortfolio(solveCtx, jobBudget, availableGenerator, generatorBudget, checkpoint)
+	var lastCursor scenarioFingerprint
+	hasLastCursor := false
 
 	for {
 		if jobBudget.Exhausted() {
 			s.observeActionBudgetExhausted()
+			if hasLastCursor {
+				saveScenarioCheckpoint(solveCtx, availableGenerator.Name, lastCursor, SearchResultDeadlineExhausted)
+			}
 			return terminalSearchResult(SearchResultDeadlineExhausted, jobBudget.ReducedBudget())
 		}
 		scenarioToSolve := portfolio.Next()
@@ -341,6 +351,8 @@ func (s *JobSolver) solvePartialJob(
 		var fingerprint scenarioFingerprint
 		if s.failedScenarios != nil {
 			fingerprint = fingerprintScenario(scenarioToSolve)
+			lastCursor = fingerprint
+			hasLastCursor = true
 			if s.failedScenarios.Has(fingerprint) {
 				metrics.IncScenarioSearchScenario(s.actionType, generatorName, scenarioStateDuplicate)
 				portfolio.ObserveCurrentAttempt(scenarioStateDuplicate)
@@ -364,6 +376,9 @@ func (s *JobSolver) solvePartialJob(
 		}
 		if result.solved {
 			portfolio.ObserveCurrentAttempt(string(SearchResultSolved))
+			if checkpoint != nil {
+				deleteScenarioCheckpoint(solveCtx)
+			}
 			return solvedSearchResult(result, jobBudget.ReducedBudget())
 		}
 		if s.failedScenarios != nil {
@@ -372,6 +387,12 @@ func (s *JobSolver) solvePartialJob(
 		portfolio.ObserveCurrentAttempt(attemptResult)
 	}
 
+	if portfolio.GeneratorBudgetExhausted() && hasLastCursor {
+		saveScenarioCheckpoint(solveCtx, availableGenerator.Name, lastCursor, SearchResultDeadlineExhausted)
+	}
+	if checkpoint != nil && !portfolio.GeneratorBudgetExhausted() {
+		deleteScenarioCheckpoint(solveCtx)
+	}
 	return terminalSearchResult(portfolio.StopReason(), jobBudget.ReducedBudget())
 }
 

@@ -37,14 +37,17 @@ func (ctx *SolveContext) Action() framework.ActionType {
 }
 
 type scenarioPortfolio struct {
-	ctx              *SolveContext
-	generators       []framework.ScenarioGenerator
-	jobBudget        *jobSearchBudget
-	currentIndex     int
-	currentBudget    *generatorSearchBudget
-	currentName      string
-	currentStartedAt time.Time
-	stopReason       SearchResultReason
+	ctx                      *SolveContext
+	generators               []framework.ScenarioGenerator
+	registrations            []framework.ScenarioGeneratorRegistration
+	jobBudget                *jobSearchBudget
+	currentIndex             int
+	currentBudget            *generatorSearchBudget
+	currentName              string
+	currentStartedAt         time.Time
+	resumeCursor             *scenarioFingerprint
+	generatorBudgetExhausted bool
+	stopReason               SearchResultReason
 }
 
 func newScenarioPortfolio(ctx *SolveContext, jobBudget *jobSearchBudget) *scenarioPortfolio {
@@ -67,10 +70,17 @@ func newSingleGeneratorScenarioPortfolio(
 	jobBudget *jobSearchBudget,
 	availableGenerator framework.ScenarioGeneratorRegistration,
 	generatorBudget *generatorSearchBudget,
+	checkpoint *framework.ScenarioCheckpoint,
 ) *scenarioPortfolio {
-	return newScenarioPortfolioForAvailableGenerators(
+	portfolio := newScenarioPortfolioForAvailableGenerators(
 		ctx, jobBudget, []framework.ScenarioGeneratorRegistration{availableGenerator}, generatorBudget,
 	)
+	if checkpoint != nil && len(portfolio.generators) == 1 &&
+		portfolio.generators[0].Name() == checkpoint.GeneratorName {
+		cursor := scenarioFingerprint(checkpoint.Cursor)
+		portfolio.resumeCursor = &cursor
+	}
+	return portfolio
 }
 
 func newScenarioPortfolioForAvailableGenerators(
@@ -99,6 +109,7 @@ func newScenarioPortfolioForAvailableGenerators(
 			continue
 		}
 		portfolio.generators = append(portfolio.generators, generator)
+		portfolio.registrations = append(portfolio.registrations, availableGenerator)
 	}
 	if len(portfolio.generators) == 0 {
 		if len(availableGenerators) == 0 {
@@ -118,6 +129,7 @@ func (p *scenarioPortfolio) Next() *scenario.ByNodeScenario {
 			p.currentBudget = p.jobBudget.BeginGenerator(generator.Name())
 		}
 		if p.currentBudget.Exhausted() {
+			p.generatorBudgetExhausted = true
 			p.moveToNextGenerator()
 			continue
 		}
@@ -136,8 +148,19 @@ func (p *scenarioPortfolio) Next() *scenario.ByNodeScenario {
 			continue
 		}
 		if byNodeScenario == nil {
+			if p.resumeCursor != nil {
+				p.restartCurrentGeneratorWithoutCheckpoint()
+				continue
+			}
 			p.observeGeneratorAttempt(generatorName, string(SearchResultGeneratorsExhausted), attemptStartedAt)
 			p.moveToNextGenerator()
+			continue
+		}
+		if p.resumeCursor != nil {
+			if fingerprintScenario(byNodeScenario) != *p.resumeCursor {
+				continue
+			}
+			p.resumeCursor = nil
 			continue
 		}
 		p.currentName = generatorName
@@ -169,6 +192,10 @@ func (p *scenarioPortfolio) StopReason() SearchResultReason {
 	return p.stopReason
 }
 
+func (p *scenarioPortfolio) GeneratorBudgetExhausted() bool {
+	return p != nil && p.generatorBudgetExhausted
+}
+
 func (p *scenarioPortfolio) currentGenerator() framework.ScenarioGenerator {
 	if p == nil || p.currentIndex >= len(p.generators) {
 		return nil
@@ -181,6 +208,28 @@ func (p *scenarioPortfolio) moveToNextGenerator() {
 	p.currentBudget = nil
 	p.currentName = ""
 	p.currentStartedAt = time.Time{}
+}
+
+func (p *scenarioPortfolio) restartCurrentGeneratorWithoutCheckpoint() {
+	if p == nil {
+		return
+	}
+	if p.currentIndex >= len(p.registrations) || p.ctx == nil {
+		p.moveToNextGenerator()
+		return
+	}
+	registration := p.registrations[p.currentIndex]
+	if registration.Factory == nil {
+		p.moveToNextGenerator()
+		return
+	}
+	generator := registration.Factory(p.ctx)
+	if generator == nil {
+		p.moveToNextGenerator()
+		return
+	}
+	p.generators[p.currentIndex] = generator
+	p.resumeCursor = nil
 }
 
 func (p *scenarioPortfolio) observeGeneratorAttempt(generator string, result string, startedAt time.Time) {

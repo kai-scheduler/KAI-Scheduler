@@ -18,9 +18,9 @@
   - [Driver Loop and Budget](#driver-loop-and-budget)
   - [Initial Shipped Plugin Policy](#initial-shipped-plugin-policy)
   - [Scenario Deduplication Cache](#scenario-deduplication-cache)
+  - [Generator Checkpointing Across Scheduling Sessions](#generator-checkpointing-across-scheduling-sessions)
   - [Future Enhancements](#future-enhancements)
     - [Smart Generator Selection](#smart-generator-selection)
-    - [Generator Checkpointing Across Scheduling Sessions](#generator-checkpointing-across-scheduling-sessions)
     - [Possible Future Generators](#possible-future-generators)
   - [Approximation Contract](#approximation-contract)
   - [Explainability](#explainability)
@@ -256,15 +256,19 @@ Generators can rediscover the same effective victim set — within one generator
 - The cache lives for one job solve and is shared across that job's probes and generators; it is never global scheduler state.
 - Only scenarios that were simulated and failed (unsolved or validator-rejected) are recorded. Solved scenarios must remain re-emittable because search probes discard their statements and the final probe re-runs the generator to rebuild the winning statement. Skipping repeated failures relies on in-session simulation determinism for identical fingerprint inputs; to keep that premise sound, the solver rolls back its per-scenario feasible-node additions on every failed simulation, including validator-rejected and error results, so the probe's feasible-node set stays derived from the recorded victims covered by the fingerprint.
 
+### Generator Checkpointing Across Scheduling Sessions
+
+Reclaim persists one bounded checkpoint per job across scheduling sessions when a job or generator budget stops a probe after at least one scenario was emitted. The next session rebuilds the generator and advances it without simulation until it reaches the saved scenario fingerprint, then resumes from the following candidate. If that cursor cannot be found, the generator is rebuilt again and starts normally.
+
+The checkpoint is deliberately small: job/action key, probe size, generator name, stop reason, and two SHA-256 fingerprints. It stores no snapshot references, scenario objects, queues, Pods, or victim lists. The scheduler store is capped at 4096 entries, so checkpoint memory remains bounded even when many jobs are pending.
+
+Before reuse, the solver recomputes an input fingerprint over the partial pending job, recorded victims, feasible-node state, registered generator order, configured plugins and scenario-search budgets, and current PodGroup/task state. Any mismatch discards the checkpoint and starts from the first candidate. Solved or fully exhausted checkpointed probes delete their checkpoint.
+
 ### Future Enhancements
 
 #### Smart Generator Selection
 
 Phase 1 drains available generators in normal scheduler plugin order. A later generator-selection policy may choose, skip, or reorder registered generators per job based on job shape and, if useful, cluster state. It must preserve the generator-attempt boundary unless a separate design explains how per-probe switching preserves search continuity and budget fairness. That future policy should be designed from replay and production evidence showing which generator families solve which workload shapes; it should not be implicit in the Phase 1 plugin-registration mechanism.
-
-#### Generator Checkpointing Across Scheduling Sessions
-
-A future portfolio can persist per-job generator progress across scheduling sessions so a job that exhausts its current budget can resume near the last tried scenario instead of restarting from the first generator candidate every session. The checkpoint should record enough state to resume safely, such as job/probe identity, generator name, generator cursor or last scenario fingerprint, budget stop reason, and an input fingerprint covering pending tasks, recorded victims, feasible nodes, plugin order, generator configuration, and relevant cluster state. If any fingerprint input changes, the checkpoint must be discarded and the next session should restart from the beginning rather than reuse stale generator state.
 
 #### Possible Future Generators
 

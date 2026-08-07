@@ -44,11 +44,12 @@ import (
 )
 
 type Scheduler struct {
-	cache           schedcache.Cache
-	config          *conf.SchedulerConfiguration
-	schedulerParams *conf.SchedulerParams
-	schedulePeriod  time.Duration
-	mux             *http.ServeMux
+	cache               schedcache.Cache
+	config              *conf.SchedulerConfiguration
+	schedulerParams     *conf.SchedulerParams
+	schedulePeriod      time.Duration
+	mux                 *http.ServeMux
+	scenarioCheckpoints *framework.ScenarioCheckpointStore
 }
 
 func NewScheduler(
@@ -98,11 +99,12 @@ func NewScheduler(
 	}
 
 	scheduler := &Scheduler{
-		config:          schedulerConf,
-		schedulerParams: schedulerParams,
-		cache:           schedcache.New(schedulerCacheParams),
-		schedulePeriod:  schedulerParams.SchedulePeriod,
-		mux:             mux,
+		config:              schedulerConf,
+		schedulerParams:     schedulerParams,
+		cache:               schedcache.New(schedulerCacheParams),
+		schedulePeriod:      schedulerParams.SchedulePeriod,
+		mux:                 mux,
+		scenarioCheckpoints: framework.NewScenarioCheckpointStore(),
 	}
 
 	return scheduler, nil
@@ -132,6 +134,7 @@ func (s *Scheduler) runOnce() {
 		log.InfraLogger.Errorf("Error while opening session, will try again next cycle. \nCause: %+v", err)
 		return
 	}
+	ssn.ScenarioCheckpointStore = s.scenarioCheckpoints
 	defer framework.CloseSession(ssn)
 
 	actions, _ := conf_util.GetActionsFromConfig(s.config)

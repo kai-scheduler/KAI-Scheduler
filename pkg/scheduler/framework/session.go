@@ -100,11 +100,12 @@ type Session struct {
 	PreJobAllocationFns                   []api.PreJobAllocationFn
 	ScenarioGeneratorRegistrations        []ScenarioGeneratorRegistration
 
-	Config          *conf.SchedulerConfiguration
-	plugins         map[string]Plugin
-	eventHandlers   []*EventHandler
-	SchedulerParams conf.SchedulerParams
-	mux             *http.ServeMux
+	Config                  *conf.SchedulerConfiguration
+	ScenarioCheckpointStore *ScenarioCheckpointStore
+	plugins                 map[string]Plugin
+	eventHandlers           []*EventHandler
+	SchedulerParams         conf.SchedulerParams
+	mux                     *http.ServeMux
 
 	k8sResourceStateCache  sync.Map
 	nodeScoringPool        *ants.Pool

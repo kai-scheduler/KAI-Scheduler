@@ -15,6 +15,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 )
@@ -160,6 +161,52 @@ func TestScenarioPortfolioTreatsTypedNilScenarioAsGeneratorExhaustion(t *testing
 	require.Same(t, firstScenario, portfolio.Next())
 	require.Nil(t, portfolio.Next())
 	require.Equal(t, SearchResultGeneratorsExhausted, portfolio.StopReason())
+}
+
+func TestScenarioPortfolioResumesAfterCheckpointCursor(t *testing.T) {
+	ctx, pendingJob, firstScenario := newScenarioPortfolioTestContext(t, framework.Reclaim)
+	secondScenario := scenario.NewByNodeScenario(
+		ctx.Session,
+		pendingJob,
+		podgroup_info.GetTasksToAllocate(pendingJob, ctx.Session.SubGroupOrderFn, ctx.Session.TaskOrderFn, false),
+		podgroup_info.GetTasksToAllocate(pendingJob, ctx.Session.SubGroupOrderFn, ctx.Session.TaskOrderFn, false),
+		nil,
+	)
+	registration := framework.ScenarioGeneratorRegistration{
+		Name: "resumable",
+		Factory: func(framework.ScenarioGeneratorContext) framework.ScenarioGenerator {
+			return &portfolioTestGenerator{
+				name:      "resumable",
+				scenarios: []api.ScenarioInfo{firstScenario, secondScenario},
+			}
+		},
+	}
+	checkpoint := &framework.ScenarioCheckpoint{
+		GeneratorName: "resumable",
+		Cursor:        [32]byte(fingerprintScenario(firstScenario)),
+	}
+
+	portfolio := newSingleGeneratorScenarioPortfolio(
+		ctx,
+		newUnlimitedActionSearchBudget(framework.Reclaim).BeginJob(),
+		registration,
+		nil,
+		checkpoint,
+	)
+
+	require.Same(t, secondScenario, portfolio.Next())
+}
+
+func TestScenarioCheckpointInputFingerprintChangesWithSearchInputs(t *testing.T) {
+	ctx, _, _ := newScenarioPortfolioTestContext(t, framework.Reclaim)
+	baseline := fingerprintScenarioCheckpointInput(ctx)
+
+	ctx.Session.AddScenarioGenerator("additional", portfolioTestFactory(&portfolioTestGenerator{name: "additional"}))
+	require.NotEqual(t, baseline, fingerprintScenarioCheckpointInput(ctx))
+
+	ctx.Session.ScenarioGeneratorRegistrations = ctx.Session.ScenarioGeneratorRegistrations[:1]
+	ctx.FeasibleNodes["node-2"] = &node_info.NodeInfo{Name: "node-2"}
+	require.NotEqual(t, baseline, fingerprintScenarioCheckpointInput(ctx))
 }
 
 func newScenarioPortfolioTestContext(
