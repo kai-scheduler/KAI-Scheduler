@@ -1,0 +1,48 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+name: Deploy Resource Sizing Calculator
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/resource-sizing/**"
+      - "docs/assets/kai-logo-dark.png"
+      - "docs/assets/kai-logo-light.png"
+      - ".github/workflows/deploy-resource-sizing-page.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to GitHub Pages
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Test calculator
+        run: node --test docs/resource-sizing/*.test.js
+
+      - name: Prepare site
+        run: |
+          cp -R docs/resource-sizing _site
+          cp docs/assets/kai-logo-dark.png _site/kai-logo-dark.png
+          cp docs/assets/kai-logo-light.png _site/kai-logo-light.png
+
+      - name: Deploy to gh-pages branch
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: _site
+          publish_branch: gh-pages
+          destination_dir: resource-sizing
+          exclude_assets: '*.test.js'
