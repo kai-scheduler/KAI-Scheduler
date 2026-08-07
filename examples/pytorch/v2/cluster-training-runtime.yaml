@@ -1,0 +1,33 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: trainer.kubeflow.org/v1alpha1
+kind: ClusterTrainingRuntime
+metadata:
+  name: torch-distributed-kai
+spec:
+  numNodes: 1
+  startupPolicy:
+    startupPolicyOrder: InOrder
+  replicatedJobs:
+    - name: node
+      template:
+        spec:
+          template:
+            spec:
+              schedulerName: kai-scheduler
+              containers:
+                - name: trainer
+                  image: ""
+                  env:
+                    - name: MASTER_ADDR
+                      value: "$(TORCH_MASTER_ADDR)"
+                    - name: MASTER_PORT
+                      value: "$(TORCH_MASTER_PORT)"
+                    - name: WORLD_SIZE
+                      value: "$(TORCH_WORLD_SIZE)"
+                    - name: RANK
+                      value: "$(TORCH_RANK)"
+                  ports:
+                    - containerPort: 29500
+                      name: torchrun
