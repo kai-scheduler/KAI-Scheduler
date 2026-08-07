@@ -51,6 +51,9 @@ var _ = Describe("QueueController", func() {
 
 		Context("Deployment", func() {
 			It("should return a Deployment in the objects list", func(ctx context.Context) {
+				kaiConfig.Spec.QueueController.Service.K8sClientConfig.QPS = ptr.To(42)
+				kaiConfig.Spec.QueueController.Service.K8sClientConfig.Burst = ptr.To(84)
+
 				objects, err := qc.DesiredState(ctx, fakeKubeClient, kaiConfig)
 				Expect(err).To(BeNil())
 				Expect(len(objects)).To(BeNumerically(">", 1))
@@ -60,6 +63,9 @@ var _ = Describe("QueueController", func() {
 				deployment := *deploymentT
 				Expect(deployment).NotTo(BeNil())
 				Expect(deployment.Name).To(Equal(defaultResourceName))
+				Expect(deployment.Spec.Template.Spec.Containers[0].Args).To(ContainElements(
+					"--qps", "42", "--burst", "84",
+				))
 			})
 
 			It("the deployment should keep labels from existing deployment", func(ctx context.Context) {
