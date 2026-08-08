@@ -61,12 +61,12 @@ func UpsertJobConfigMap(ctx context.Context,
 			return fmt.Errorf("failed to check if configmap %s/%s exists for pod %s/%s, error: %v",
 				pod.Namespace, desiredConfigMap.Name, pod.Namespace, pod.Name, err)
 		}
-		err := kubeClient.Create(ctx, desiredConfigMap)
-		if err != nil {
-			return fmt.Errorf("failed to create configmap %s/%s for pod %s/%s, error: %v",
-				pod.Namespace, desiredConfigMap.Name, pod.Namespace, pod.Name, err)
+		createErr := kubeClient.Create(ctx, desiredConfigMap)
+		if createErr == nil {
+			return nil
 		}
-		return nil
+		return fmt.Errorf("failed to create configmap %s/%s for pod %s/%s, error: %v",
+			pod.Namespace, desiredConfigMap.Name, pod.Namespace, pod.Name, createErr)
 	}
 	logger.Info("Existing configmap was found for pod",
 		"namespace", pod.Namespace, "name", pod.Name, "configMapName", desiredConfigMap.Name)
