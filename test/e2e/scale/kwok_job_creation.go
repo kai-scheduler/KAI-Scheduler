@@ -9,10 +9,9 @@ import (
 
 	batchv1 "k8s.io/api/batch/v1"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/utils/ptr"
 
 	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd"
 )
@@ -30,33 +29,36 @@ func createJobObjectForKwok(
 	return job, rd.CreateObjectWithRetries(ctx, testCtx.ControllerClient, job)
 }
 
+// createFractionJobForKwok creates a job whose pod requests a GPU fraction. Fractional requests are
+// expressed through an annotation rather than the resource list.
+func createFractionJobForKwok(
+	ctx context.Context, testCtx *testcontext.TestContext,
+	jobQueue *v2.Queue, fraction string, extraLabels map[string]string,
+) (*batchv1.Job, error) {
+	job := rd.CreateBatchJobObject(jobQueue, v1.ResourceRequirements{})
+	addKWOKTaintsAndAffinity(&job.Spec.Template.Spec)
+	job.Spec.Template.ObjectMeta.Annotations[constants.GpuFraction] = fraction
+	maps.Copy(job.Spec.Template.ObjectMeta.Labels, extraLabels)
+
+	return job, rd.CreateObjectWithRetries(ctx, testCtx.ControllerClient, job)
+}
+
+// kwokJobOpts pins every distributed job created by the scale suite to the simulated nodes.
+func kwokJobOpts(opts rd.DistributedBatchJobOptions) rd.DistributedBatchJobOptions {
+	opts.PodSpecMutator = addKWOKTaintsAndAffinity
+	return opts
+}
+
 func createDistributedJobForKwok(
 	ctx context.Context, testCtx *testcontext.TestContext,
-	jobQueue *v2.Queue, resourcesPerPod v1.ResourceRequirements, numberOfTasks int,
-	extraLabels map[string]string, topologyConstraint *v2alpha2.TopologyConstraint,
+	jobQueue *v2.Queue, opts rd.DistributedBatchJobOptions,
 ) (*rd.JobResult, error) {
-	return rd.CreateDistributedBatchJob(ctx, testCtx.ControllerClient, jobQueue,
-		rd.DistributedBatchJobOptions{
-			Parallelism:        ptr.To(int32(numberOfTasks)),
-			Resources:          resourcesPerPod,
-			ExtraLabels:        extraLabels,
-			TopologyConstraint: topologyConstraint,
-			PodSpecMutator:     addKWOKTaintsAndAffinity,
-		})
+	return rd.CreateDistributedBatchJob(ctx, testCtx.ControllerClient, jobQueue, kwokJobOpts(opts))
 }
 
 func submitDistributedJobForKwok(
 	ctx context.Context, testCtx *testcontext.TestContext,
-	jobQueue *v2.Queue, resourcesPerPod v1.ResourceRequirements, numberOfTasks int,
-	extraLabels, jobLabels map[string]string, topologyConstraint *v2alpha2.TopologyConstraint,
+	jobQueue *v2.Queue, opts rd.DistributedBatchJobOptions,
 ) (*batchv1.Job, error) {
-	return rd.SubmitDistributedBatchJob(ctx, testCtx.ControllerClient, jobQueue,
-		rd.DistributedBatchJobOptions{
-			Parallelism:        ptr.To(int32(numberOfTasks)),
-			Resources:          resourcesPerPod,
-			ExtraLabels:        extraLabels,
-			JobLabels:          jobLabels,
-			TopologyConstraint: topologyConstraint,
-			PodSpecMutator:     addKWOKTaintsAndAffinity,
-		})
+	return rd.SubmitDistributedBatchJob(ctx, testCtx.ControllerClient, jobQueue, kwokJobOpts(opts))
 }
