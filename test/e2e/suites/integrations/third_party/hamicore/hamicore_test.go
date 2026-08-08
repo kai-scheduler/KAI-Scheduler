@@ -5,17 +5,23 @@ SPDX-License-Identifier: Apache-2.0
 package hamicore
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/common/expfmt"
+	"github.com/prometheus/common/model"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/utils/ptr"
 
 	kaiv1binder "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/binder"
@@ -32,12 +38,50 @@ import (
 
 const (
 	kaiResourceIsolatorWebhookName = "kai-resource-isolator-mutating"
+	kaiResourceIsolatorNamespace   = "kai-resource-isolator"
+	kaiVGPUMonitorDaemonSetName    = "kai-resource-isolator-monitor"
+	kaiVGPUMonitorLabel            = "app.kubernetes.io/component=kai-vgpu-monitor"
+	kaiVGPUMonitorMetricsPort      = "9394"
 	binderDeploymentName           = "binder"
 	binderDeploymentNamespace      = "kai-scheduler"
 	binderPluginsFlag              = "--plugins"
 	cudaImage                      = "nvidia/cuda:12.6.0-base-ubuntu22.04"
-	gpuMemoryRequestMiB            = 2000
+	// devel image is needed so the metrics workload can nvcc a tiny cudaMalloc hold binary.
+	cudaDevelImage      = "nvidia/cuda:12.6.0-devel-ubuntu22.04"
+	gpuMemoryRequestMiB = 2000
+	cudaAllocHoldMiB    = 64
+	vgpuMetricsTimeout  = 60 * time.Second
+	vgpuMetricsInterval = 5 * time.Second
+	hamiVGPUMemoryUsed  = "hami_vgpu_memory_used_bytes"
 )
+
+// Compiles and runs a small CUDA alloc that holds memory so kai-vgpu-monitor can
+// scrape hami_vgpu_memory_used_bytes > 0. Kept as a container entrypoint (not
+// ExecInPod) so the allocation outlives the ready wait.
+const cudaAllocHoldScript = `set -euo pipefail
+cat >/tmp/hold.cu <<'EOF'
+#include <cuda_runtime.h>
+#include <stdio.h>
+#include <unistd.h>
+int main(void) {
+  void *p = NULL;
+  size_t bytes = (size_t)64 * 1024 * 1024;
+  cudaError_t err = cudaMalloc(&p, bytes);
+  if (err != cudaSuccess) {
+    fprintf(stderr, "cudaMalloc failed: %s\n", cudaGetErrorString(err));
+    return 1;
+  }
+  printf("allocated %zu bytes at %p\n", bytes, p);
+  fflush(stdout);
+  for (;;) {
+    sleep(3600);
+  }
+  return 0;
+}
+EOF
+nvcc -O0 -o /tmp/hold /tmp/hold.cu
+exec /tmp/hold
+`
 
 var _ = Describe("HAMi-core resource isolation", Ordered, func() {
 	var testCtx *testcontext.TestContext
@@ -191,6 +235,45 @@ var _ = Describe("HAMi-core resource isolation", Ordered, func() {
 				"nvidia-smi visible memory (%d MiB) should match CUDA_DEVICE_MEMORY_LIMIT (%d MiB)",
 				visibleMemMiB, limitMiB)
 		})
+
+	It("gpu-memory: kai-vgpu-monitor reports hami_vgpu_memory_used_bytes > 0",
+		Label(labels.ReservationPod), func(ctx context.Context) {
+			if !isKaiVGPUMonitorInstalled(ctx, testCtx.KubeClientset) {
+				Skip(fmt.Sprintf(
+					"kai-vgpu-monitor DaemonSet %q not found in namespace %q; "+
+						"install via hack/third_party_integrations/deploy_isolator.sh",
+					kaiVGPUMonitorDaemonSetName, kaiResourceIsolatorNamespace,
+				))
+			}
+
+			pod := rd.CreatePodObject(testCtx.Queues[0], v1.ResourceRequirements{})
+			pod.Annotations[constants.GpuMemory] = strconv.Itoa(gpuMemoryRequestMiB)
+			pod.Spec.Containers[0].Image = cudaDevelImage
+			pod.Spec.Containers[0].Command = []string{"bash", "-c"}
+			pod.Spec.Containers[0].Args = []string{cudaAllocHoldScript}
+
+			_, err := rd.CreatePod(ctx, testCtx.KubeClientset, pod)
+			Expect(err).NotTo(HaveOccurred())
+			wait.ForPodReady(ctx, testCtx.ControllerClient, pod)
+
+			pod, err = rd.GetPod(ctx, testCtx.KubeClientset, pod.Namespace, pod.Name)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(pod.Spec.NodeName).NotTo(BeEmpty(), "pod should be scheduled to a node")
+			containerName := pod.Spec.Containers[0].Name
+
+			By("waiting for kai-vgpu-monitor to expose hami_vgpu_memory_used_bytes for the workload")
+			Eventually(func(g Gomega) {
+				used, scrapeErr := scrapeHamiVGPUMemoryUsedBytes(
+					ctx, testCtx.KubeClientset, pod.Spec.NodeName, pod.Namespace, pod.Name, containerName,
+				)
+				g.Expect(scrapeErr).NotTo(HaveOccurred())
+				GinkgoLogr.Info("hami_vgpu_memory_used_bytes",
+					"namespace", pod.Namespace, "pod", pod.Name, "container", containerName, "bytes", used)
+				g.Expect(used).To(BeNumerically(">", 0),
+					"expected hami_vgpu_memory_used_bytes > 0 for %s/%s container %s (held ~%d MiB)",
+					pod.Namespace, pod.Name, containerName, cudaAllocHoldMiB)
+			}, vgpuMetricsTimeout, vgpuMetricsInterval).Should(Succeed())
+		})
 })
 
 func printNvidiaSmi(ctx context.Context, testCtx *testcontext.TestContext, pod *v1.Pod) {
@@ -261,4 +344,89 @@ func hamiCoreEnabledInPluginsJSON(raw string) bool {
 		return false
 	}
 	return ptr.Deref(cfg.Enabled, false)
+}
+
+func isKaiVGPUMonitorInstalled(ctx context.Context, client kubernetes.Interface) bool {
+	_, err := client.AppsV1().DaemonSets(kaiResourceIsolatorNamespace).
+		Get(ctx, kaiVGPUMonitorDaemonSetName, metav1.GetOptions{})
+	return err == nil
+}
+
+func scrapeHamiVGPUMemoryUsedBytes(
+	ctx context.Context,
+	client kubernetes.Interface,
+	nodeName, namespace, podName, containerName string,
+) (float64, error) {
+	monitorPod, err := findMonitorPodOnNode(ctx, client, nodeName)
+	if err != nil {
+		return 0, err
+	}
+
+	raw, err := client.CoreV1().Pods(monitorPod.Namespace).
+		ProxyGet("http", monitorPod.Name, kaiVGPUMonitorMetricsPort, "/metrics", nil).
+		DoRaw(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("proxy GET /metrics from monitor pod %s/%s: %w",
+			monitorPod.Namespace, monitorPod.Name, err)
+	}
+
+	parser := expfmt.NewTextParser(model.UTF8Validation)
+	families, err := parser.TextToMetricFamilies(bytes.NewReader(raw))
+	if err != nil {
+		return 0, fmt.Errorf("parse prometheus metrics: %w", err)
+	}
+
+	family, ok := families[hamiVGPUMemoryUsed]
+	if !ok {
+		return 0, fmt.Errorf("metric %s not present in monitor scrape", hamiVGPUMemoryUsed)
+	}
+
+	want := map[string]string{
+		"namespace": namespace,
+		"pod":       podName,
+		"container": containerName,
+	}
+	for _, metric := range family.GetMetric() {
+		if !metricHasLabels(metric, want) {
+			continue
+		}
+		if metric.GetGauge() == nil {
+			return 0, fmt.Errorf("metric %s for %v is not a gauge", hamiVGPUMemoryUsed, want)
+		}
+		return metric.GetGauge().GetValue(), nil
+	}
+	return 0, fmt.Errorf("metric %s with labels %v not found", hamiVGPUMemoryUsed, want)
+}
+
+func findMonitorPodOnNode(ctx context.Context, client kubernetes.Interface, nodeName string) (*v1.Pod, error) {
+	pods, err := client.CoreV1().Pods(kaiResourceIsolatorNamespace).List(ctx, metav1.ListOptions{
+		LabelSelector: kaiVGPUMonitorLabel,
+		FieldSelector: "spec.nodeName=" + nodeName,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list kai-vgpu-monitor pods on node %s: %w", nodeName, err)
+	}
+	for i := range pods.Items {
+		pod := &pods.Items[i]
+		if rd.IsPodReady(pod) {
+			return pod, nil
+		}
+	}
+	if len(pods.Items) == 0 {
+		return nil, fmt.Errorf("no kai-vgpu-monitor pods scheduled on node %s", nodeName)
+	}
+	return nil, fmt.Errorf("kai-vgpu-monitor pod(s) on node %s are not Ready", nodeName)
+}
+
+func metricHasLabels(metric *dto.Metric, want map[string]string) bool {
+	got := make(map[string]string, len(metric.GetLabel()))
+	for _, label := range metric.GetLabel() {
+		got[label.GetName()] = label.GetValue()
+	}
+	for k, v := range want {
+		if got[k] != v {
+			return false
+		}
+	}
+	return true
 }

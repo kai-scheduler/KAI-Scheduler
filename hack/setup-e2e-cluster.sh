@@ -147,6 +147,9 @@ if [ "$TEST_THIRD_PARTY_INTEGRATIONS" = "true" ]; then
     ${REPO_ROOT}/hack/third_party_integrations/deploy_knative.sh
     ${REPO_ROOT}/hack/third_party_integrations/deploy_lws.sh
     ${REPO_ROOT}/hack/third_party_integrations/deploy_jobset.sh
+    # HAMi-core / GPU-sharing isolation + optional VRAM metrics (:9394).
+    # Soft-gated in hamicore e2e when the webhook / monitor are absent.
+    ${REPO_ROOT}/hack/third_party_integrations/deploy_isolator.sh
 fi
 
 # Build and install kai-scheduler
