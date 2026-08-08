@@ -65,12 +65,8 @@ func UpsertJobConfigMap(ctx context.Context,
 		if createErr == nil {
 			return nil
 		}
-		if !errors.IsAlreadyExists(createErr) {
-			return fmt.Errorf("failed to create configmap %s/%s for pod %s/%s, error: %v",
-				pod.Namespace, desiredConfigMap.Name, pod.Namespace, pod.Name, createErr)
-		}
-		// Concurrent create: the other creator wrote the same data; nothing more to do.
-		return nil
+		return fmt.Errorf("failed to create configmap %s/%s for pod %s/%s, error: %v",
+			pod.Namespace, desiredConfigMap.Name, pod.Namespace, pod.Name, createErr)
 	}
 	logger.Info("Existing configmap was found for pod",
 		"namespace", pod.Namespace, "name", pod.Name, "configMapName", desiredConfigMap.Name)
