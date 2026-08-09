@@ -86,7 +86,6 @@ func compactResizeConditions(conditions []v1.PodCondition) []v1.PodCondition {
 	return nil
 }
 
-
 func compactContainers(containers []v1.Container) []v1.Container {
 	compact := make([]v1.Container, 0, len(containers))
 	for _, container := range containers {
