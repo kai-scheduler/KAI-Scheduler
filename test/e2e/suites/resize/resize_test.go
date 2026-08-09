@@ -33,10 +33,11 @@ const (
 )
 
 var _ = Describe("In-place pod resize", func() {
-	var testCtx *testcontext.TestContext
-
-	BeforeEach(func(ctx context.Context) {
-		testCtx = testcontext.GetConnectivity(ctx, Default)
+	// setupTest must run inside each It: GetConnectivity captures the node's
+	// context, which ginkgo cancels when the node exits, so a TestContext
+	// created in BeforeEach is unusable by the time the It body runs.
+	setupTest := func(ctx context.Context) *testcontext.TestContext {
+		testCtx := testcontext.GetConnectivity(ctx, Default)
 		skipIfNoResizeSupport(testCtx)
 		capacity.SkipIfInsufficientClusterResources(testCtx.KubeClientset,
 			&capacity.ResourceList{
@@ -44,13 +45,13 @@ var _ = Describe("In-place pod resize", func() {
 				PodCount: 1,
 			},
 		)
-	})
-
-	AfterEach(func(ctx context.Context) {
-		testCtx.ClusterCleanup(ctx)
-	})
+		return testCtx
+	}
 
 	It("rejects an upsize that exceeds the queue CPU limit", func(ctx context.Context) {
+		testCtx := setupTest(ctx)
+		defer testCtx.ClusterCleanup(ctx)
+
 		parentQueue := queue.CreateQueueObject(utils.GenerateRandomK8sName(10), "")
 		childQueue := queue.CreateQueueObject(utils.GenerateRandomK8sName(10), parentQueue.Name)
 		childQueue.Spec.Resources.CPU = v2.QueueResource{Quota: 500, OverQuotaWeight: 1, Limit: 2000}
@@ -64,6 +65,9 @@ var _ = Describe("In-place pod resize", func() {
 	})
 
 	It("allows upsizes within the queue limit and downsizes", func(ctx context.Context) {
+		testCtx := setupTest(ctx)
+		defer testCtx.ClusterCleanup(ctx)
+
 		parentQueue := queue.CreateQueueObject(utils.GenerateRandomK8sName(10), "")
 		childQueue := queue.CreateQueueObject(utils.GenerateRandomK8sName(10), parentQueue.Name)
 		childQueue.Spec.Resources.CPU = v2.QueueResource{Quota: 500, OverQuotaWeight: 1, Limit: 2000}
@@ -81,6 +85,9 @@ var _ = Describe("In-place pod resize", func() {
 	})
 
 	It("does not charge infeasible resize targets to the queue", func(ctx context.Context) {
+		testCtx := setupTest(ctx)
+		defer testCtx.ClusterCleanup(ctx)
+
 		parentQueue := queue.CreateQueueObject(utils.GenerateRandomK8sName(10), "")
 		childQueue := queue.CreateQueueObject(utils.GenerateRandomK8sName(10), parentQueue.Name)
 		testCtx.InitQueues([]*v2.Queue{childQueue, parentQueue})
