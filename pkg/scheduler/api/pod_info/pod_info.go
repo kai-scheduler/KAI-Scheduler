@@ -29,6 +29,7 @@ import (
 	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/types"
 	clientcache "k8s.io/client-go/tools/cache"
+	resourcehelpers "k8s.io/component-helpers/resource"
 
 	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
@@ -400,12 +401,17 @@ func getPodGroupID(pod *v1.Pod) common_info.PodGroupID {
 	return ""
 }
 
+// getPodResourceRequest returns the pod's total resource request.
+//
+// Aggregation is delegated to upstream k8s.io/component-helpers, which implements
+// both the sidecar formula (KEP-753) and the in-place resize effective-request
+// model (KEP-1287): max(spec, enacted, allocated), or max(enacted, allocated) when
+// the kubelet has marked the resize Infeasible.
 func getPodResourceRequest(pod *v1.Pod) *resource_info.ResourceRequirements {
-	result := getPodResourceWithoutInitContainers(pod)
-
-	sidecarSum, initPhasePeak := initContainerEffects(pod)
-	logIfErr(pod, result.Add(sidecarSum))
-	logIfErr(pod, result.SetMaxResource(initPhasePeak))
+	reqs := resourcehelpers.AggregateContainerRequests(pod, resourcehelpers.PodResourcesOptions{
+		UseStatusResources: true,
+	})
+	result := resource_info.RequirementsFromResourceList(reqs)
 
 	if pod.Spec.Overhead != nil {
 		overheadReq := resource_info.RequirementsFromResourceList(pod.Spec.Overhead)
@@ -415,88 +421,6 @@ func getPodResourceRequest(pod *v1.Pod) *resource_info.ResourceRequirements {
 	result.ScalarResources()[resource_info.PodsResourceName] = 1
 
 	return result
-}
-
-// initContainerEffects returns the contributions of `pod`'s init containers to
-// pod resource accounting, mirroring kubelet's `AggregateContainerRequests`:
-//   - sidecarSum: total request of native sidecars (initContainers with
-//     `restartPolicy: Always`, KEP-753), which run concurrently with regular
-//     containers and add to the steady-state sum.
-//   - initPhasePeak: max over each non-restartable init of `init.Requests +
-//     sum(native sidecars declared before it)`, since those sidecars are
-//     already running when the init runs.
-//
-// Restartable init containers (sidecars) also apply the KEP-1287 effective-request
-// model so that an in-progress downsize is not undercounted.
-func initContainerEffects(pod *v1.Pod) (sidecarSum, initPhasePeak *resource_info.ResourceRequirements) {
-	infeasible := isPodResizeInfeasible(pod)
-	statusByName := make(map[string]*v1.ContainerStatus, len(pod.Status.InitContainerStatuses))
-	for i := range pod.Status.InitContainerStatuses {
-		statusByName[pod.Status.InitContainerStatuses[i].Name] = &pod.Status.InitContainerStatuses[i]
-	}
-
-	sidecarSum = resource_info.EmptyResourceRequirements()
-	initPhasePeak = resource_info.EmptyResourceRequirements()
-	for i := range pod.Spec.InitContainers {
-		c := &pod.Spec.InitContainers[i]
-		if c.RestartPolicy != nil && *c.RestartPolicy == v1.ContainerRestartPolicyAlways {
-			var reqs v1.ResourceList
-			cs := statusByName[c.Name]
-			if cs == nil || cs.Resources == nil {
-				reqs = c.Resources.Requests
-			} else if infeasible {
-				reqs = maxResourceList(cs.Resources.Requests, cs.AllocatedResources)
-			} else {
-				reqs = maxResourceList(c.Resources.Requests, cs.Resources.Requests, cs.AllocatedResources)
-			}
-			logIfErr(pod, sidecarSum.Add(resource_info.RequirementsFromResourceList(reqs)))
-			continue
-		}
-		containerReq := resource_info.RequirementsFromResourceList(c.Resources.Requests)
-		logIfErr(pod, containerReq.Add(sidecarSum))
-		logIfErr(pod, initPhasePeak.SetMaxResource(containerReq))
-	}
-	return sidecarSum, initPhasePeak
-}
-
-func logIfErr(pod *v1.Pod, err error) {
-	if err != nil {
-		log.InfraLogger.Errorf("Failed to calculate pod required resources for pod %s/%s. Error: %s",
-			pod.Namespace, pod.Name, err.Error())
-	}
-}
-
-// getPodResourceWithoutInitContainers returns Pod's resource request, it does not contain
-// init containers' resource request.
-// Uses the effective-request model (KEP-1287): for running pods with an in-place resize in
-// progress, the effective request is max(spec, enacted, allocated) per container/resource.
-func getPodResourceWithoutInitContainers(pod *v1.Pod) *resource_info.ResourceRequirements {
-	infeasible := isPodResizeInfeasible(pod)
-	statusByName := make(map[string]*v1.ContainerStatus, len(pod.Status.ContainerStatuses))
-	for i := range pod.Status.ContainerStatuses {
-		statusByName[pod.Status.ContainerStatuses[i].Name] = &pod.Status.ContainerStatuses[i]
-	}
-
-	podResourcesList := v1.ResourceList{}
-	for i := range pod.Spec.Containers {
-		c := &pod.Spec.Containers[i]
-		var reqs v1.ResourceList
-		cs := statusByName[c.Name]
-		if cs == nil || cs.Resources == nil {
-			reqs = c.Resources.Requests
-		} else if infeasible {
-			reqs = maxResourceList(cs.Resources.Requests, cs.AllocatedResources)
-		} else {
-			reqs = maxResourceList(c.Resources.Requests, cs.Resources.Requests, cs.AllocatedResources)
-		}
-		for key, qty := range reqs {
-			sum := podResourcesList[key]
-			sum.Add(qty)
-			podResourcesList[key] = sum
-		}
-	}
-
-	return resource_info.RequirementsFromResourceList(podResourcesList)
 }
 
 func getTaskStatus(pod *v1.Pod, bindRequest *bindrequest_info.BindRequestInfo, stuckInReleasingThreshold time.Duration) pod_status.PodStatus {

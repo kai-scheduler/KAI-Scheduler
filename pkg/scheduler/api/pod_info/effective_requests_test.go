@@ -9,7 +9,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	resourcehelpers "k8s.io/component-helpers/resource"
 )
+
+// These tests pin the KEP-1287 effective-request semantics through the public
+// aggregation path (getPodResourceRequest). Aggregation itself is delegated to
+// k8s.io/component-helpers; these cases guard against a behavioural change if
+// that dependency is bumped.
 
 func newResourceList(cpu, memory string) v1.ResourceList {
 	rl := v1.ResourceList{}
@@ -46,17 +52,24 @@ func withInfeasibleCondition(pod *v1.Pod) *v1.Pod {
 	return pod
 }
 
-func TestEffectivePodContainerRequests_NoStatus(t *testing.T) {
+// assertCPUMem checks the aggregated pod request in millicpus and bytes.
+func assertCPUMem(t *testing.T, pod *v1.Pod, wantMilliCPU, wantMemBytes float64) {
+	t.Helper()
+	got := getPodResourceRequest(pod)
+	assert.Equal(t, wantMilliCPU, got.Get(v1.ResourceCPU), "cpu (millicpus)")
+	assert.Equal(t, wantMemBytes, got.Get(v1.ResourceMemory), "memory (bytes)")
+}
+
+func TestEffectiveRequests_NoStatus(t *testing.T) {
 	// No resize in progress — fall back to spec.
 	pod := podWithContainers([]v1.Container{
 		{Name: "c1", Resources: v1.ResourceRequirements{Requests: newResourceList("500m", "128Mi")}},
 	})
-	got := effectivePodContainerRequests(pod)
-	assert.Equal(t, newResourceList("500m", "128Mi"), got["c1"])
+	assertCPUMem(t, pod, 500, 128*1024*1024)
 }
 
-func TestEffectivePodContainerRequests_NormalResize_UsesMax(t *testing.T) {
-	// spec > enacted > allocated → effective = spec
+func TestEffectiveRequests_NormalResize_UsesMax(t *testing.T) {
+	// spec > enacted/allocated → effective = spec
 	pod := podWithContainers([]v1.Container{
 		{Name: "c1", Resources: v1.ResourceRequirements{Requests: newResourceList("2", "1Gi")}},
 	})
@@ -64,16 +77,10 @@ func TestEffectivePodContainerRequests_NormalResize_UsesMax(t *testing.T) {
 		newResourceList("1", "512Mi"), // enacted (lower)
 		newResourceList("1", "512Mi"), // allocated (lower)
 	)
-	got := effectivePodContainerRequests(pod)
-	wantCPU := resource.MustParse("2")
-	wantMem := resource.MustParse("1Gi")
-	gotCPU := got["c1"][v1.ResourceCPU]
-	gotMem := got["c1"][v1.ResourceMemory]
-	assert.Equal(t, 0, gotCPU.Cmp(wantCPU))
-	assert.Equal(t, 0, gotMem.Cmp(wantMem))
+	assertCPUMem(t, pod, 2000, 1024*1024*1024)
 }
 
-func TestEffectivePodContainerRequests_DownsizeInProgress_UsesEnacted(t *testing.T) {
+func TestEffectiveRequests_DownsizeInProgress_UsesEnacted(t *testing.T) {
 	// spec < enacted (downsize not yet completed) → effective = enacted
 	pod := podWithContainers([]v1.Container{
 		{Name: "c1", Resources: v1.ResourceRequirements{Requests: newResourceList("500m", "256Mi")}},
@@ -82,16 +89,10 @@ func TestEffectivePodContainerRequests_DownsizeInProgress_UsesEnacted(t *testing
 		newResourceList("1", "512Mi"), // enacted (higher, still running at old size)
 		newResourceList("1", "512Mi"), // allocated
 	)
-	got := effectivePodContainerRequests(pod)
-	wantCPU := resource.MustParse("1")
-	wantMem := resource.MustParse("512Mi")
-	gotCPU := got["c1"][v1.ResourceCPU]
-	gotMem := got["c1"][v1.ResourceMemory]
-	assert.Equal(t, 0, gotCPU.Cmp(wantCPU))
-	assert.Equal(t, 0, gotMem.Cmp(wantMem))
+	assertCPUMem(t, pod, 1000, 512*1024*1024)
 }
 
-func TestEffectivePodContainerRequests_Infeasible_ExcludesSpec(t *testing.T) {
+func TestEffectiveRequests_Infeasible_ExcludesSpec(t *testing.T) {
 	// Infeasible: kubelet can't satisfy the spec — charge only what's enacted/allocated.
 	pod := podWithContainers([]v1.Container{
 		{Name: "c1", Resources: v1.ResourceRequirements{Requests: newResourceList("8", "8Gi")}},
@@ -102,32 +103,43 @@ func TestEffectivePodContainerRequests_Infeasible_ExcludesSpec(t *testing.T) {
 	)
 	withInfeasibleCondition(pod)
 
-	got := effectivePodContainerRequests(pod)
-	wantCPU := resource.MustParse("1")
-	wantMem := resource.MustParse("1Gi")
-	gotCPU := got["c1"][v1.ResourceCPU]
-	gotMem := got["c1"][v1.ResourceMemory]
-	assert.Equal(t, 0, gotCPU.Cmp(wantCPU))
-	assert.Equal(t, 0, gotMem.Cmp(wantMem))
+	assertCPUMem(t, pod, 1000, 1024*1024*1024)
 }
 
-func TestEffectivePodContainerRequests_MultipleContainers(t *testing.T) {
-	// Each container uses its own effective request.
+func TestEffectiveRequests_MultipleContainers(t *testing.T) {
+	// Each container uses its own effective request; pod total is the sum.
 	pod := podWithContainers([]v1.Container{
 		{Name: "a", Resources: v1.ResourceRequirements{Requests: newResourceList("1", "")}},
 		{Name: "b", Resources: v1.ResourceRequirements{Requests: newResourceList("2", "")}},
 	})
+	// a: max(spec=1, enacted=500m, alloc=500m) = 1;  b: no status → spec = 2
 	withContainerStatus(pod, "a", newResourceList("500m", ""), newResourceList("500m", ""))
 
-	got := effectivePodContainerRequests(pod)
-	wantA := resource.MustParse("1")
-	wantB := resource.MustParse("2")
-	gotA := got["a"][v1.ResourceCPU]
-	gotB := got["b"][v1.ResourceCPU]
-	// Container "a": max(spec=1, enacted=500m, alloc=500m) = 1
-	assert.Equal(t, 0, gotA.Cmp(wantA))
-	// Container "b": no status → spec = 2
-	assert.Equal(t, 0, gotB.Cmp(wantB))
+	assertCPUMem(t, pod, 3000, 0)
+}
+
+func TestEffectiveRequests_Sidecar_DownsizeInProgress(t *testing.T) {
+	// Restartable init container (sidecar) mid-downsize must be charged at enacted.
+	restartAlways := v1.ContainerRestartPolicyAlways
+	pod := podWithContainers([]v1.Container{
+		{Name: "main", Resources: v1.ResourceRequirements{Requests: newResourceList("1", "")}},
+	})
+	pod.Spec.InitContainers = []v1.Container{
+		{
+			Name:          "sidecar",
+			RestartPolicy: &restartAlways,
+			Resources:     v1.ResourceRequirements{Requests: newResourceList("500m", "")},
+		},
+	}
+	pod.Status.InitContainerStatuses = []v1.ContainerStatus{
+		{
+			Name:               "sidecar",
+			Resources:          &v1.ResourceRequirements{Requests: newResourceList("2", "")},
+			AllocatedResources: newResourceList("2", ""),
+		},
+	}
+	// main(1) + sidecar effective max(500m, 2, 2)=2 → 3000m
+	assertCPUMem(t, pod, 3000, 0)
 }
 
 func TestIsPodResizeInfeasible(t *testing.T) {
@@ -150,19 +162,7 @@ func TestIsPodResizeInfeasible(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			pod := &v1.Pod{Status: v1.PodStatus{Conditions: tt.conditions}}
-			assert.Equal(t, tt.want, isPodResizeInfeasible(pod))
+			assert.Equal(t, tt.want, resourcehelpers.IsPodResizeInfeasible(pod))
 		})
 	}
-}
-
-func TestMaxResourceList(t *testing.T) {
-	a := newResourceList("1", "1Gi")
-	b := newResourceList("2", "512Mi")
-	got := maxResourceList(a, b)
-	wantCPU := resource.MustParse("2")
-	wantMem := resource.MustParse("1Gi")
-	gotCPU := got[v1.ResourceCPU]
-	gotMem := got[v1.ResourceMemory]
-	assert.Equal(t, 0, gotCPU.Cmp(wantCPU))
-	assert.Equal(t, 0, gotMem.Cmp(wantMem))
 }

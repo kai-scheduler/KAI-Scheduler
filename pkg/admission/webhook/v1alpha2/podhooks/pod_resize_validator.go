@@ -12,6 +12,7 @@ import (
 	schedulingv1 "k8s.io/api/scheduling/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
+	resourcehelpers "k8s.io/component-helpers/resource"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -23,15 +24,6 @@ import (
 )
 
 var resizeLog = logf.Log.WithName("pod-resize-validator")
-
-func isPodResizeInfeasible(pod *corev1.Pod) bool {
-	for _, c := range pod.Status.Conditions {
-		if c.Type == corev1.PodResizePending {
-			return c.Status == corev1.ConditionTrue && c.Reason == corev1.PodReasonInfeasible
-		}
-	}
-	return false
-}
 
 // memoryLimitBytesPerUnit converts a Queue Memory.Limit (in megabytes) to bytes.
 const memoryLimitBytesPerUnit = 1_000_000
@@ -156,7 +148,7 @@ func (v *PodResizeValidator) validateResize(ctx context.Context, oldPod, newPod 
 //     matching what the scheduler charges for those states.
 //   - Falls back to old spec when no ContainerStatus is available.
 func podResizeDelta(oldPod, newPod *corev1.Pod) corev1.ResourceList {
-	oldInfeasible := isPodResizeInfeasible(oldPod)
+	oldInfeasible := resourcehelpers.IsPodResizeInfeasible(oldPod)
 
 	statusByName := make(map[string]*corev1.ContainerStatus, len(oldPod.Status.ContainerStatuses))
 	for i := range oldPod.Status.ContainerStatuses {
