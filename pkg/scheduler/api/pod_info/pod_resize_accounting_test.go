@@ -12,10 +12,12 @@ import (
 	resourcehelpers "k8s.io/component-helpers/resource"
 )
 
-// These tests pin the KEP-1287 effective-request semantics through the public
-// aggregation path (getPodResourceRequest). Aggregation itself is delegated to
-// k8s.io/component-helpers; these cases guard against a behavioural change if
-// that dependency is bumped.
+// These tests cover in-place pod resize (KEP-1287) accounting through
+// getPodResourceRequest. Aggregation is delegated to k8s.io/component-helpers;
+// what is under test here is KAI's wiring of it: the UseStatusResources option,
+// the ResourceRequirements conversion, and the effective-request semantics that
+// queue accounting depends on. They also guard against behavioural drift if the
+// dependency is bumped.
 
 func newResourceList(cpu, memory string) v1.ResourceList {
 	rl := v1.ResourceList{}
