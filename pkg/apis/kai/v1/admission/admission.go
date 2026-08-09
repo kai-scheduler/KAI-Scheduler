@@ -76,7 +76,8 @@ type Admission struct {
 type InPlacePodResize struct {
 	// ValidateQuota enables best-effort hierarchical queue quota checks on
 	// pods/resize requests. When false, the webhook admits all resizes without
-	// checking queue limits or quota. Defaults to true.
+	// checking queue limits or quota, and BlockUpsizeOnBoundedQueues is ignored.
+	// Defaults to true.
 	// +kubebuilder:validation:Optional
 	ValidateQuota *bool `json:"validateQuota,omitempty"`
 
@@ -85,6 +86,7 @@ type InPlacePodResize struct {
 	// This prevents concurrent-resize races from exceeding hard limits.
 	// Disabled by default; enable only when strict race-free enforcement is
 	// required and best-effort checks are insufficient.
+	// Has no effect when ValidateQuota is false.
 	// +kubebuilder:validation:Optional
 	BlockUpsizeOnBoundedQueues *bool `json:"blockUpsizeOnBoundedQueues,omitempty"`
 }

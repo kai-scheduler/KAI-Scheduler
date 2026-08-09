@@ -32,7 +32,7 @@ func compactSchedulerPod(obj any) (any, error) {
 	compact.Spec.EphemeralContainers = compactEphemeralContainers(compact.Spec.EphemeralContainers)
 	compact.Status.ContainerStatuses = compactContainerStatuses(compact.Status.ContainerStatuses)
 	compact.Status.InitContainerStatuses = compactContainerStatuses(compact.Status.InitContainerStatuses)
-	compact.Status.Conditions = compactResizeConditions(compact.Status.Conditions)
+	compact.Status.Conditions = compactConditions(compact.Status.Conditions)
 	return compact, nil
 }
 
@@ -75,9 +75,9 @@ func compactContainerStatuses(statuses []v1.ContainerStatus) []v1.ContainerStatu
 	return compact
 }
 
-// compactResizeConditions keeps only the PodResizePending condition, which drives
-// generation-aware Infeasible accounting in the effective-request model.
-func compactResizeConditions(conditions []v1.PodCondition) []v1.PodCondition {
+// compactConditions keeps only the PodResizePending condition, which drives
+// Infeasible accounting in the effective-request model.
+func compactConditions(conditions []v1.PodCondition) []v1.PodCondition {
 	for _, c := range conditions {
 		if c.Type == v1.PodResizePending {
 			return []v1.PodCondition{c}
