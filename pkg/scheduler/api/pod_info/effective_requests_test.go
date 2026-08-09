@@ -142,6 +142,14 @@ func TestEffectiveRequests_Sidecar_DownsizeInProgress(t *testing.T) {
 	assertCPUMem(t, pod, 3000, 0)
 }
 
+// TestIsPodResizeInfeasible characterises upstream's IsPodResizeInfeasible.
+//
+// Upstream keys off Reason alone and ignores condition.Status, so a PodResizePending
+// condition carrying Reason=Infeasible is treated as infeasible even when Status is
+// False. In practice the kubelet deletes the condition rather than setting it False,
+// so this is not expected to be reachable — but the case is pinned here deliberately:
+// if upstream ever tightens the check, this test fails and the behaviour change
+// surfaces instead of passing silently.
 func TestIsPodResizeInfeasible(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -155,9 +163,9 @@ func TestIsPodResizeInfeasible(t *testing.T) {
 		{"Infeasible condition", []v1.PodCondition{
 			{Type: v1.PodResizePending, Status: v1.ConditionTrue, Reason: v1.PodReasonInfeasible},
 		}, true},
-		{"Infeasible reason but Status not True", []v1.PodCondition{
+		{"Infeasible reason with Status False is still infeasible upstream", []v1.PodCondition{
 			{Type: v1.PodResizePending, Status: v1.ConditionFalse, Reason: v1.PodReasonInfeasible},
-		}, false},
+		}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
