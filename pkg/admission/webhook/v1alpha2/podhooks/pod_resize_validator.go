@@ -10,8 +10,8 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	schedulingv1 "k8s.io/api/scheduling/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
+	resourcehelpers "k8s.io/component-helpers/resource"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -23,15 +23,6 @@ import (
 )
 
 var resizeLog = logf.Log.WithName("pod-resize-validator")
-
-func isPodResizeInfeasible(pod *corev1.Pod) bool {
-	for _, c := range pod.Status.Conditions {
-		if c.Type == corev1.PodResizePending {
-			return c.Status == corev1.ConditionTrue && c.Reason == corev1.PodReasonInfeasible
-		}
-	}
-	return false
-}
 
 // memoryLimitBytesPerUnit converts a Queue Memory.Limit (in megabytes) to bytes.
 const memoryLimitBytesPerUnit = 1_000_000
@@ -135,133 +126,38 @@ func (v *PodResizeValidator) validateResize(ctx context.Context, oldPod, newPod 
 // podResizeDelta computes the net per-resource increase this resize introduces
 // relative to what the queue already accounts for.
 //
-// The queue's Status.Allocated is a pod-level sum of per-container effective
-// requests, so the delta is computed at the same granularity:
+// All three aggregates come from the same upstream helper the scheduler uses in
+// getPodResourceRequest, so the delta baseline is guaranteed to match queue
+// accounting by construction rather than by parallel hand-written logic:
 //
-//  1. For each regular container and each restartable init container (sidecar),
-//     accumulate three pod-level sums: newSpecSum, oldSpecSum, effectiveOldSum.
-//  2. Skip a resource if its pod-level spec is unchanged (newSpecSum[r] ==
-//     oldSpecSum[r]) — that resource was not part of this resize request and
-//     must not generate spurious delta even when an earlier infeasible attempt
-//     left an unresolved stale spec.
-//  3. For changed resources, delta = max(0, newSpecSum[r] - effectiveOldSum[r]).
-//     Pod-level aggregation naturally handles CPU/memory moved between containers
-//     (redistribution produces zero net delta at the pod level).
+//   - newSpec      : the resize target (spec only)
+//   - oldSpec      : the pre-resize target (spec only)
+//   - effectiveOld : what the queue currently charges, i.e. the KEP-1287
+//     effective request max(spec, enacted, allocated), or max(enacted, allocated)
+//     when the kubelet marked the resize Infeasible
 //
-// Effective old baseline per container:
-//   - If old pod has a current Infeasible condition: max(enacted, allocated).
-//     The infeasible spec was never committed by the kubelet, so the queue only
-//     reflects enacted/allocated.
-//   - Otherwise (normal / Deferred / InProgress): max(spec, enacted, allocated),
-//     matching what the scheduler charges for those states.
-//   - Falls back to old spec when no ContainerStatus is available.
+// A resource whose spec is unchanged is skipped: it is not part of this resize,
+// and an unresolved Infeasible spec on it must not produce phantom delta.
 func podResizeDelta(oldPod, newPod *corev1.Pod) corev1.ResourceList {
-	oldInfeasible := isPodResizeInfeasible(oldPod)
+	specOnly := resourcehelpers.PodResourcesOptions{}
+	withStatus := resourcehelpers.PodResourcesOptions{UseStatusResources: true}
 
-	statusByName := make(map[string]*corev1.ContainerStatus, len(oldPod.Status.ContainerStatuses))
-	for i := range oldPod.Status.ContainerStatuses {
-		statusByName[oldPod.Status.ContainerStatuses[i].Name] = &oldPod.Status.ContainerStatuses[i]
-	}
-	oldByName := make(map[string]*corev1.Container, len(oldPod.Spec.Containers))
-	for i := range oldPod.Spec.Containers {
-		oldByName[oldPod.Spec.Containers[i].Name] = &oldPod.Spec.Containers[i]
-	}
+	newSpec := resourcehelpers.AggregateContainerRequests(newPod, specOnly)
+	oldSpec := resourcehelpers.AggregateContainerRequests(oldPod, specOnly)
+	effectiveOld := resourcehelpers.AggregateContainerRequests(oldPod, withStatus)
 
-	initStatusByName := make(map[string]*corev1.ContainerStatus, len(oldPod.Status.InitContainerStatuses))
-	for i := range oldPod.Status.InitContainerStatuses {
-		initStatusByName[oldPod.Status.InitContainerStatuses[i].Name] = &oldPod.Status.InitContainerStatuses[i]
-	}
-	oldInitByName := make(map[string]*corev1.Container, len(oldPod.Spec.InitContainers))
-	for i := range oldPod.Spec.InitContainers {
-		oldInitByName[oldPod.Spec.InitContainers[i].Name] = &oldPod.Spec.InitContainers[i]
-	}
-
-	newSpecSum := corev1.ResourceList{}
-	oldSpecSum := corev1.ResourceList{}
-	effectiveOldSum := corev1.ResourceList{}
-
-	for i := range newPod.Spec.Containers {
-		accumulateDeltaSums(&newPod.Spec.Containers[i], oldByName, statusByName, oldInfeasible, newSpecSum, oldSpecSum, effectiveOldSum)
-	}
-	for i := range newPod.Spec.InitContainers {
-		c := &newPod.Spec.InitContainers[i]
-		if c.RestartPolicy == nil || *c.RestartPolicy != corev1.ContainerRestartPolicyAlways {
-			continue
-		}
-		accumulateDeltaSums(c, oldInitByName, initStatusByName, oldInfeasible, newSpecSum, oldSpecSum, effectiveOldSum)
-	}
-
-	zero := resource.MustParse("0")
 	delta := corev1.ResourceList{}
-	for r, newQty := range newSpecSum {
-		if oldQty, ok := oldSpecSum[r]; ok && newQty.Cmp(oldQty) == 0 {
-			continue // resource not changed by this resize at the pod level
+	for resName, newQty := range newSpec {
+		if oldQty, ok := oldSpec[resName]; ok && newQty.Cmp(oldQty) == 0 {
+			continue // resource not changed by this resize
 		}
-		effectiveOld := effectiveOldSum[r]
 		diff := newQty.DeepCopy()
-		diff.Sub(effectiveOld)
-		if diff.Cmp(zero) > 0 {
-			delta[r] = diff
+		diff.Sub(effectiveOld[resName])
+		if diff.Sign() > 0 {
+			delta[resName] = diff
 		}
 	}
 	return delta
-}
-
-// accumulateDeltaSums accumulates one container's contribution into three pod-level
-// sums. The effective old baseline follows the queue's own accounting:
-//   - infeasible old pod: max(enacted, allocated)
-//   - otherwise:          max(old_spec, enacted, allocated)
-func accumulateDeltaSums(
-	newC *corev1.Container,
-	oldByName map[string]*corev1.Container,
-	statusByName map[string]*corev1.ContainerStatus,
-	oldInfeasible bool,
-	newSpecSum, oldSpecSum, effectiveOldSum corev1.ResourceList,
-) {
-	oldC := oldByName[newC.Name]
-	cs := statusByName[newC.Name]
-
-	for resName, newQty := range newC.Resources.Requests {
-		cur := newSpecSum[resName]
-		cur.Add(newQty)
-		newSpecSum[resName] = cur
-
-		var oldSpecQty resource.Quantity
-		if oldC != nil {
-			oldSpecQty = oldC.Resources.Requests[resName]
-		}
-		cur = oldSpecSum[resName]
-		cur.Add(oldSpecQty)
-		oldSpecSum[resName] = cur
-
-		effectiveOld := oldSpecQty
-		if cs != nil {
-			candidates := []resource.Quantity{}
-			if !oldInfeasible {
-				candidates = append(candidates, oldSpecQty)
-			}
-			if cs.Resources != nil {
-				if enacted, ok := cs.Resources.Requests[resName]; ok {
-					candidates = append(candidates, enacted)
-				}
-			}
-			if alloc, ok := cs.AllocatedResources[resName]; ok {
-				candidates = append(candidates, alloc)
-			}
-			if len(candidates) > 0 {
-				best := candidates[0]
-				for _, q := range candidates[1:] {
-					if q.Cmp(best) > 0 {
-						best = q
-					}
-				}
-				effectiveOld = best
-			}
-		}
-		cur = effectiveOldSum[resName]
-		cur.Add(effectiveOld)
-		effectiveOldSum[resName] = cur
-	}
 }
 
 func checkQueueCapacity(
