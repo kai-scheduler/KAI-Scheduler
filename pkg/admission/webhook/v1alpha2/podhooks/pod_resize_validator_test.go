@@ -519,3 +519,37 @@ func TestPodResizeValidator_Redistribution_AllowedAtLimit(t *testing.T) {
 	resp := v.Handle(context.Background(), makeRequest(t, oldPod, newPod))
 	assert.True(t, resp.Allowed, "CPU redistribution with unchanged pod total should be allowed even at limit")
 }
+
+// TestPodResizeValidator_InitPeakDominates_NoDelta covers a pod whose queue charge is
+// dominated by the init-phase peak rather than the steady-state sum. Resizing a regular
+// container below that peak does not change what the queue charges, so the delta must be
+// zero even though the container itself grew.
+func TestPodResizeValidator_InitPeakDominates_NoDelta(t *testing.T) {
+	scheme := buildScheme()
+	// Queue is exactly at its limit: 10 CPU limit, 10 CPU allocated (the init peak).
+	queue := newQueue("q", 10000, -1, 0, "10", "0")
+	pg := newPodGroup("pg", "ns", "q")
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(queue, pg).Build()
+	v := NewPodResizeValidator(c, scheme, testSchedulerName, true, false)
+
+	makePod := func(mainCPU string) *corev1.Pod {
+		p := podWithRequests("ns", "p", "pg", testSchedulerName, mainCPU, "0")
+		p.Spec.InitContainers = []corev1.Container{
+			{
+				Name: "heavy-init",
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10")},
+				},
+			},
+		}
+		return p
+	}
+	// Pod charge = max(steady, initPeak) = max(1,10) = 10 before, max(2,10) = 10 after.
+	oldPod := makePod("1")
+	newPod := makePod("2")
+
+	assert.Empty(t, podResizeDelta(oldPod, newPod), "init-peak-dominated resize should produce no delta")
+
+	resp := v.Handle(context.Background(), makeRequest(t, oldPod, newPod))
+	assert.True(t, resp.Allowed, "queue charge is unchanged, so the resize must be admitted at the limit")
+}
