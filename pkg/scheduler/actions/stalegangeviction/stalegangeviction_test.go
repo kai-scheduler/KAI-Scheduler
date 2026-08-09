@@ -709,6 +709,201 @@ func TestStaleGangEviction(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "Gang with a succeeded pod - no evict",
+			topology: test_utils.TestTopologyBasic{
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:            "job-1",
+						QueueName:       "q-1",
+						RootSubGroupSet: jobs_fake.DefaultSubGroup(3),
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								Name:  "job-1-0",
+								State: pod_status.Succeeded,
+							},
+							{
+								Name:     "job-1-1",
+								State:    pod_status.Running,
+								NodeName: "node-1",
+							},
+							{
+								Name:     "job-1-2",
+								State:    pod_status.Running,
+								NodeName: "node-1",
+							},
+						},
+						StaleDuration: pointer.Duration(61 * time.Second),
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node-1": {},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{
+						Name:        "q-1",
+						ParentQueue: "d-1",
+					},
+				},
+				Departments: []test_utils.TestDepartmentBasic{
+					{
+						Name: "d-1",
+					},
+				},
+				TaskExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"job-1-0": {
+						Status: pod_status.Succeeded,
+					},
+					"job-1-1": {
+						NodeName: "node-1",
+						Status:   pod_status.Running,
+					},
+					"job-1-2": {
+						NodeName: "node-1",
+						Status:   pod_status.Running,
+					},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{
+						NumberOfCacheBinds:      0,
+						NumberOfCacheEvictions:  0,
+						NumberOfPipelineActions: 0,
+					},
+				},
+			},
+		},
+		{
+			name: "Gang with only one pod left running - no evict",
+			topology: test_utils.TestTopologyBasic{
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:            "job-1",
+						QueueName:       "q-1",
+						RootSubGroupSet: jobs_fake.DefaultSubGroup(3),
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								Name:  "job-1-0",
+								State: pod_status.Succeeded,
+							},
+							{
+								Name:  "job-1-1",
+								State: pod_status.Succeeded,
+							},
+							{
+								Name:     "job-1-2",
+								State:    pod_status.Running,
+								NodeName: "node-1",
+							},
+						},
+						StaleDuration: pointer.Duration(61 * time.Second),
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node-1": {},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{
+						Name:        "q-1",
+						ParentQueue: "d-1",
+					},
+				},
+				Departments: []test_utils.TestDepartmentBasic{
+					{
+						Name: "d-1",
+					},
+				},
+				TaskExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"job-1-0": {
+						Status: pod_status.Succeeded,
+					},
+					"job-1-1": {
+						Status: pod_status.Succeeded,
+					},
+					"job-1-2": {
+						NodeName: "node-1",
+						Status:   pod_status.Running,
+					},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{
+						NumberOfCacheBinds:      0,
+						NumberOfCacheEvictions:  0,
+						NumberOfPipelineActions: 0,
+					},
+				},
+			},
+		},
+		{
+			name: "Gang with a succeeded pod in one sub group - no evict",
+			topology: test_utils.TestTopologyBasic{
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:      "job-1",
+						QueueName: "q-1",
+						RootSubGroupSet: func() *subgroup_info.SubGroupSet {
+							root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+							root.AddPodSet(subgroup_info.NewPodSet("sub-group-0", 2, nil))
+							root.AddPodSet(subgroup_info.NewPodSet("sub-group-1", 1, nil))
+							return root
+						}(),
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								Name:         "job-1-0",
+								SubGroupName: "sub-group-0",
+								State:        pod_status.Succeeded,
+							},
+							{
+								Name:         "job-1-1",
+								SubGroupName: "sub-group-0",
+								State:        pod_status.Running,
+								NodeName:     "node-1",
+							},
+							{
+								Name:         "job-1-2",
+								SubGroupName: "sub-group-1",
+								State:        pod_status.Running,
+								NodeName:     "node-1",
+							},
+						},
+						StaleDuration: pointer.Duration(61 * time.Second),
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node-1": {},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{
+						Name:        "q-1",
+						ParentQueue: "d-1",
+					},
+				},
+				Departments: []test_utils.TestDepartmentBasic{
+					{
+						Name: "d-1",
+					},
+				},
+				TaskExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"job-1-0": {
+						Status: pod_status.Succeeded,
+					},
+					"job-1-1": {
+						NodeName: "node-1",
+						Status:   pod_status.Running,
+					},
+					"job-1-2": {
+						NodeName: "node-1",
+						Status:   pod_status.Running,
+					},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{
+						NumberOfCacheBinds:      0,
+						NumberOfCacheEvictions:  0,
+						NumberOfPipelineActions: 0,
+					},
+				},
+			},
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Logf("Running test number: %v, test name: %v,", i, test.name)

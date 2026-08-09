@@ -5,7 +5,10 @@ package cache
 
 import (
 	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/cache"
+
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
 func setSchedulerPodTransform(informer cache.SharedIndexInformer) error {
@@ -18,6 +21,10 @@ func compactSchedulerPod(obj any) (any, error) {
 		return obj, nil
 	}
 
+	if pod.Status.Phase == v1.PodSucceeded {
+		return compactSucceededPod(pod), nil
+	}
+
 	compact := pod.DeepCopy()
 	compact.ManagedFields = nil
 	compact.Spec.Containers = compactContainers(compact.Spec.Containers)
@@ -27,6 +34,28 @@ func compactSchedulerPod(obj any) (any, error) {
 	compact.Status.InitContainerStatuses = compactContainerStatuses(compact.Status.InitContainerStatuses)
 	compact.Status.Conditions = compactResizeConditions(compact.Status.Conditions)
 	return compact, nil
+}
+
+func compactSucceededPod(pod *v1.Pod) *v1.Pod {
+	compact := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      pod.Name,
+			Namespace: pod.Namespace,
+			UID:       pod.UID,
+		},
+		Status: v1.PodStatus{
+			Phase: pod.Status.Phase,
+		},
+	}
+
+	if podGroup, found := pod.Annotations[commonconstants.PodGroupAnnotationForPod]; found {
+		compact.Annotations = map[string]string{commonconstants.PodGroupAnnotationForPod: podGroup}
+	}
+	if subGroup, found := pod.Labels[commonconstants.SubGroupLabelKey]; found {
+		compact.Labels = map[string]string{commonconstants.SubGroupLabelKey: subGroup}
+	}
+
+	return compact
 }
 
 // compactContainerStatuses retains only the resize-relevant fields from each ContainerStatus.
@@ -56,6 +85,7 @@ func compactResizeConditions(conditions []v1.PodCondition) []v1.PodCondition {
 	}
 	return nil
 }
+
 
 func compactContainers(containers []v1.Container) []v1.Container {
 	compact := make([]v1.Container, 0, len(containers))

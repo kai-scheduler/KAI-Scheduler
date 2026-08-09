@@ -449,7 +449,7 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1admission.Admission) []
 		}
 	}
 
-	common.AddK8sClientConfigToArgs(config.Service.K8sClientConfig, args)
+	args = common.AddK8sClientConfigToArgs(config.Service.K8sClientConfig, args)
 	return common.AddControllerRuntimeJSONLogArg(kaiConfig.Spec.Global.JSONLog, args)
 }
 
