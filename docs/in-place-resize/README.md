@@ -87,6 +87,6 @@ spec:
 
 ## Interaction with queue limits
 
-`limit: -1` on a queue resource means unbounded; any other value (including `0`) is a hard bound enforced on resize. The same convention applies to `quota` for non-preemptible workloads.
+`limit: -1` on a queue resource means unbounded; any other value (including `0`) is a hard bound enforced on resize. The same convention applies to `quota` for non-preemptible workloads. See [Queues](../queues/README.md) for how limits and quota are configured.
 
 Because checks walk the full queue hierarchy, an upsize must fit under every ancestor's limit, not just the leaf queue's.
