@@ -38,6 +38,7 @@ var PodDisruptionBudgetImplementedServices = map[string]struct{}{
 	"admission":   {},
 	"scheduler":   {},
 	"pod-grouper": {},
+	"binder":      {},
 }
 
 func PodDisruptionBudgetImplemented(serviceName string) bool {

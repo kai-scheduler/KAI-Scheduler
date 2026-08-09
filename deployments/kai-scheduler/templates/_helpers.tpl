@@ -125,6 +125,15 @@ spec:
       affinity:
         {{- toYaml .Values.binder.affinity | nindent 8 }}
       {{- end }}
+      {{- if .Values.binder.podDisruptionBudget }}
+      podDisruptionBudget:
+        {{- if hasKey .Values.binder.podDisruptionBudget "enabled" }}
+        enabled: {{ .Values.binder.podDisruptionBudget.enabled }}
+        {{- end }}
+        {{- if hasKey .Values.binder.podDisruptionBudget "maxUnavailable" }}
+        maxUnavailable: {{ .Values.binder.podDisruptionBudget.maxUnavailable }}
+        {{- end }}
+      {{- end }}
     metricsPort: {{ .Values.binder.ports.metricsPort }}
     resourceReservation:
       {{- if .Values.global.resourceReservation.namespace }}
