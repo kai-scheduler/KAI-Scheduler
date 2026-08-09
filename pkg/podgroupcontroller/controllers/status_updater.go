@@ -15,10 +15,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	commonpodgroup "github.com/kai-scheduler/KAI-scheduler/pkg/common/podgroup"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgroupcontroller/controllers/cluster_relations"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgroupcontroller/controllers/metadata"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgroupcontroller/controllers/patcher"
-	utilities "github.com/kai-scheduler/KAI-scheduler/pkg/podgroupcontroller/utilities/pod-group"
 )
 
 func (r *PodGroupReconciler) handlePodGroupStatus(ctx context.Context, podGroup *v2alpha2.PodGroup) (
@@ -66,7 +66,7 @@ func (r *PodGroupReconciler) calculatePodGroupMetadata(
 	logger := log.FromContext(ctx)
 	podGroupMetadata := metadata.NewPodGroupMetadata()
 
-	podGroupMetadata.Preemptible, err = utilities.IsPreemptible(ctx, podGroup, r.Client)
+	podGroupMetadata.Preemptible, err = commonpodgroup.IsPreemptible(ctx, podGroup, r.Client)
 	if err != nil {
 		logger.Error(err, fmt.Sprintf("Failed to calculate preemtability for pod-group %s/%s",
 			podGroup.Namespace, podGroup.Name))

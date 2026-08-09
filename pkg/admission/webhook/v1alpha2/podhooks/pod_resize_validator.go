@@ -9,7 +9,6 @@ import (
 	"net/http"
 
 	corev1 "k8s.io/api/core/v1"
-	schedulingv1 "k8s.io/api/scheduling/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	resourcehelpers "k8s.io/component-helpers/resource"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -94,7 +93,9 @@ func (v *PodResizeValidator) validateResize(ctx context.Context, oldPod, newPod 
 		return nil // best-effort: allow on lookup failure
 	}
 
-	isPreemptible, err := v.resolvePreemptibility(ctx, pg)
+	// Same resolution the podgroup-controller uses to populate
+	// AllocatedNonPreemptible — the checker and the accountant must agree.
+	isPreemptible, err := commonpodgroup.IsPreemptible(ctx, pg, v.kubeClient)
 	if err != nil {
 		resizeLog.Error(err, "failed to resolve preemptibility", "podgroup", pgName)
 		isPreemptible = true // conservative: treat unknown as preemptible
@@ -178,14 +179,18 @@ func checkQueueCapacity(
 		}
 	}
 
+	res := queue.Spec.Resources
+
 	// Check hard limit for all workloads.
-	if err := checkLimit(queue, delta, pod, pg); err != nil {
+	if err := checkCapacityBound("limit", res.CPU.Limit, res.Memory.Limit,
+		queue.Status.Allocated, "Allocated", delta, queue, pod, pg); err != nil {
 		return err
 	}
 
 	// Check deserved quota for non-preemptible workloads.
 	if !isPreemptible {
-		if err := checkNonPreemptibleQuota(queue, delta, pod, pg); err != nil {
+		if err := checkCapacityBound("quota", res.CPU.Quota, res.Memory.Quota,
+			queue.Status.AllocatedNonPreemptible, "AllocatedNonPreemptible", delta, queue, pod, pg); err != nil {
 			return err
 		}
 	}
@@ -240,91 +245,42 @@ func checkBlockUpsizeOnBoundedQueue(
 	return nil
 }
 
-func checkLimit(queue *v2.Queue, delta corev1.ResourceList, pod *corev1.Pod, pg *v2alpha2.PodGroup) error {
-	res := queue.Spec.Resources
-
-	if deltaCPU, ok := delta[corev1.ResourceCPU]; ok && res.CPU.Limit >= 0 {
-		allocated := queue.Status.Allocated[corev1.ResourceCPU]
-		newAlloc := float64(allocated.MilliValue() + deltaCPU.MilliValue())
-		if newAlloc > res.CPU.Limit {
+// checkCapacityBound rejects the resize when adding delta to the given allocated
+// pool would exceed a finite bound (-1 means unbounded). Shared by the limit check
+// (all workloads, Allocated) and the quota check (non-preemptible workloads,
+// AllocatedNonPreemptible).
+func checkCapacityBound(
+	boundKind string, // "limit" | "quota"
+	cpuBound, memBound float64,
+	allocated corev1.ResourceList,
+	allocatedLabel string, // "Allocated" | "AllocatedNonPreemptible"
+	delta corev1.ResourceList,
+	queue *v2.Queue,
+	pod *corev1.Pod,
+	pg *v2alpha2.PodGroup,
+) error {
+	if deltaCPU, ok := delta[corev1.ResourceCPU]; ok && cpuBound >= 0 {
+		alloc := allocated[corev1.ResourceCPU]
+		if float64(alloc.MilliValue()+deltaCPU.MilliValue()) > cpuBound {
 			return fmt.Errorf(
-				"resize rejected: pod %s/%s (PodGroup %s) CPU upsize would push queue %s Allocated (%.0fm + %.0fm) over limit (%.0fm)",
-				pod.Namespace, pod.Name, pg.Name, queue.Name,
-				float64(allocated.MilliValue()), float64(deltaCPU.MilliValue()), res.CPU.Limit,
+				"resize rejected: pod %s/%s (PodGroup %s) CPU upsize would push queue %s %s (%dm + %dm) over %s (%.0fm)",
+				pod.Namespace, pod.Name, pg.Name, queue.Name, allocatedLabel,
+				alloc.MilliValue(), deltaCPU.MilliValue(), boundKind, cpuBound,
 			)
 		}
 	}
 
-	if deltaMem, ok := delta[corev1.ResourceMemory]; ok && res.Memory.Limit >= 0 {
-		limitBytes := int64(res.Memory.Limit * memoryLimitBytesPerUnit)
-		allocated := queue.Status.Allocated[corev1.ResourceMemory]
-		newAllocBytes := allocated.Value() + deltaMem.Value()
-		if newAllocBytes > limitBytes {
+	if deltaMem, ok := delta[corev1.ResourceMemory]; ok && memBound >= 0 {
+		boundBytes := int64(memBound * memoryLimitBytesPerUnit)
+		alloc := allocated[corev1.ResourceMemory]
+		if alloc.Value()+deltaMem.Value() > boundBytes {
 			return fmt.Errorf(
-				"resize rejected: pod %s/%s (PodGroup %s) memory upsize would push queue %s Allocated (%d + %d bytes) over limit (%d bytes)",
-				pod.Namespace, pod.Name, pg.Name, queue.Name,
-				allocated.Value(), deltaMem.Value(), limitBytes,
-			)
-		}
-	}
-
-	return nil
-}
-
-func checkNonPreemptibleQuota(queue *v2.Queue, delta corev1.ResourceList, pod *corev1.Pod, pg *v2alpha2.PodGroup) error {
-	res := queue.Spec.Resources
-
-	if deltaCPU, ok := delta[corev1.ResourceCPU]; ok && res.CPU.Quota >= 0 {
-		allocated := queue.Status.AllocatedNonPreemptible[corev1.ResourceCPU]
-		newAlloc := float64(allocated.MilliValue() + deltaCPU.MilliValue())
-		if newAlloc > res.CPU.Quota {
-			return fmt.Errorf(
-				"resize rejected: pod %s/%s (PodGroup %s) non-preemptible CPU upsize would push queue %s AllocatedNonPreemptible (%.0fm + %.0fm) over quota (%.0fm)",
-				pod.Namespace, pod.Name, pg.Name, queue.Name,
-				float64(allocated.MilliValue()), float64(deltaCPU.MilliValue()), res.CPU.Quota,
-			)
-		}
-	}
-
-	if deltaMem, ok := delta[corev1.ResourceMemory]; ok && res.Memory.Quota >= 0 {
-		quotaBytes := int64(res.Memory.Quota * memoryLimitBytesPerUnit)
-		allocated := queue.Status.AllocatedNonPreemptible[corev1.ResourceMemory]
-		newAllocBytes := allocated.Value() + deltaMem.Value()
-		if newAllocBytes > quotaBytes {
-			return fmt.Errorf(
-				"resize rejected: pod %s/%s (PodGroup %s) non-preemptible memory upsize would push queue %s AllocatedNonPreemptible (%d + %d bytes) over quota (%d bytes)",
-				pod.Namespace, pod.Name, pg.Name, queue.Name,
-				allocated.Value(), deltaMem.Value(), quotaBytes,
+				"resize rejected: pod %s/%s (PodGroup %s) memory upsize would push queue %s %s (%d + %d bytes) over %s (%d bytes)",
+				pod.Namespace, pod.Name, pg.Name, queue.Name, allocatedLabel,
+				alloc.Value(), deltaMem.Value(), boundKind, boundBytes,
 			)
 		}
 	}
 
 	return nil
-}
-
-func (v *PodResizeValidator) resolvePreemptibility(ctx context.Context, pg *v2alpha2.PodGroup) (bool, error) {
-	preemptibility := pg.Spec.Preemptibility
-	if preemptibility == v2alpha2.Preemptible || preemptibility == v2alpha2.NonPreemptible {
-		return preemptibility == v2alpha2.Preemptible, nil
-	}
-
-	priority, err := v.resolvePriority(ctx, pg)
-	if err != nil {
-		return true, err
-	}
-
-	result := commonpodgroup.CalculatePreemptibility("", priority)
-	return result == v2alpha2.Preemptible, nil
-}
-
-func (v *PodResizeValidator) resolvePriority(ctx context.Context, pg *v2alpha2.PodGroup) (int32, error) {
-	if pg.Spec.PriorityClassName == "" {
-		return 0, nil
-	}
-
-	pc := &schedulingv1.PriorityClass{}
-	if err := v.kubeClient.Get(ctx, client.ObjectKey{Name: pg.Spec.PriorityClassName}, pc); err != nil {
-		return 0, fmt.Errorf("get PriorityClass %s: %w", pg.Spec.PriorityClassName, err)
-	}
-	return pc.Value, nil
 }
