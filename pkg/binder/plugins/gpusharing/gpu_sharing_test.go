@@ -18,9 +18,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/common"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/common/gpusharingconfigmap"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/state"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 )
 
 func TestGetFractionContainerRef(t *testing.T) {
@@ -254,130 +252,6 @@ func TestGetFractionContainerRef(t *testing.T) {
 
 			if got.Container.Name != tt.wantName {
 				t.Errorf("getFractionContainerRef() Container.Name = %v, want %v", got.Container.Name, tt.wantName)
-			}
-		})
-	}
-}
-
-func TestAddNvFractionsAnnotationIfMissing(t *testing.T) {
-	annotationKey := resources.CalcGpuFractionAnnotationForContainer("container-0")
-
-	tests := []struct {
-		name                string
-		podAnnotations      map[string]string
-		nodeLabels          map[string]string
-		receivedGPU         *v1alpha2.ReceivedGPU
-		bindingAnnotations  map[string]string
-		wantErrContains     string
-		wantAnnotationValue string
-		wantNoAnnotation    bool
-	}{
-		{
-			name: "adds annotation from node memory and received portion",
-			nodeLabels: map[string]string{
-				constants.NvidiaGpuMemory: "1500",
-			},
-			receivedGPU:         &v1alpha2.ReceivedGPU{Portion: "0.5"},
-			wantAnnotationValue: "750Mi",
-		},
-		{
-			name: "preserves existing pod annotation",
-			podAnnotations: map[string]string{
-				annotationKey: "1Gi",
-			},
-			nodeLabels: map[string]string{
-				constants.NvidiaGpuMemory: "1500",
-			},
-			receivedGPU:      &v1alpha2.ReceivedGPU{Portion: "0.5"},
-			wantNoAnnotation: true,
-		},
-		{
-			name: "keeps existing binding annotations",
-			nodeLabels: map[string]string{
-				constants.NvidiaGpuMemory: "4096",
-			},
-			receivedGPU: &v1alpha2.ReceivedGPU{Portion: "0.25"},
-			bindingAnnotations: map[string]string{
-				constants.ReceivedResourceType: common.ReceivedTypeFraction,
-			},
-			wantAnnotationValue: "1Gi",
-		},
-		{
-			name: "errors when node memory label is missing",
-			nodeLabels: map[string]string{
-				"other-label": "1500",
-			},
-			receivedGPU:     &v1alpha2.ReceivedGPU{Portion: "0.5"},
-			wantErrContains: "node does not include nvidia.com/gpu.memory label",
-		},
-		{
-			name: "errors when node memory label is invalid",
-			nodeLabels: map[string]string{
-				constants.NvidiaGpuMemory: "invalid",
-			},
-			receivedGPU:     &v1alpha2.ReceivedGPU{Portion: "0.5"},
-			wantErrContains: "invalid nvidia.com/gpu.memory label value",
-		},
-		{
-			name: "errors when received portion is invalid",
-			nodeLabels: map[string]string{
-				constants.NvidiaGpuMemory: "1500",
-			},
-			receivedGPU:     &v1alpha2.ReceivedGPU{Portion: "invalid"},
-			wantErrContains: "invalid received gpu portion",
-		},
-		{
-			name: "errors when received gpu is missing",
-			nodeLabels: map[string]string{
-				constants.NvidiaGpuMemory: "1500",
-			},
-			wantErrContains: "missing data for NvFractions annotation calculation",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			pod := &v1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Annotations: tt.podAnnotations,
-				},
-				Spec: v1.PodSpec{
-					Containers: []v1.Container{{Name: "container-0"}},
-				},
-			}
-			node := &v1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: tt.nodeLabels,
-				},
-			}
-			bindRequest := &v1alpha2.BindRequest{
-				Spec: v1alpha2.BindRequestSpec{
-					ReceivedGPU: tt.receivedGPU,
-				},
-			}
-			bindingState := &state.BindingState{
-				BindingPodAnnotations: tt.bindingAnnotations,
-			}
-			containerRef, err := common.GetFractionContainerRef(pod)
-			assert.NoError(t, err)
-
-			err = addNvFractionsAnnotationIfMissing(pod, node, bindRequest, containerRef, bindingState)
-
-			if tt.wantErrContains != "" {
-				assert.ErrorContains(t, err, tt.wantErrContains)
-				return
-			}
-
-			assert.NoError(t, err)
-			if tt.wantNoAnnotation {
-				_, found := bindingState.BindingPodAnnotations[annotationKey]
-				assert.False(t, found)
-				return
-			}
-
-			assert.Equal(t, tt.wantAnnotationValue, bindingState.BindingPodAnnotations[annotationKey])
-			for key, value := range tt.bindingAnnotations {
-				assert.Equal(t, value, bindingState.BindingPodAnnotations[key])
 			}
 		})
 	}

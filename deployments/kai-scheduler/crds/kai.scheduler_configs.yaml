@@ -3995,6 +3995,16 @@ spec:
                           type: string
                       type: object
                     type: array
+                  gpuSharingMode:
+                    description: |-
+                      GpuSharingMode selects a preset that sets defaults for GPU-sharing plugins
+                      across the admission and binder components.
+                    enum:
+                    - NonMemoryEnforced
+                    - HamiCore
+                    - NvFractions
+                    - Disabled
+                    type: string
                   imagesPullSecret:
                     description: |-
                       Deprecated: ImagePullSecret defines a single container registry secret credential.

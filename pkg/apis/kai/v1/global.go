@@ -89,6 +89,11 @@ type GlobalConfig struct {
 	// JSONLog switches all services to JSON-formatted logging
 	// +kubebuilder:validation:Optional
 	JSONLog *bool `json:"jsonLog,omitempty"`
+
+	// GpuSharingMode selects a preset that sets defaults for GPU-sharing plugins
+	// across the admission and binder components.
+	// +kubebuilder:validation:Optional
+	GpuSharingMode *common.GpuSharingMode `json:"gpuSharingMode,omitempty"`
 }
 
 func (g *GlobalConfig) SetDefaultWhereNeeded() {

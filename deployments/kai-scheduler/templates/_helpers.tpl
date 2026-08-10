@@ -108,6 +108,14 @@ spec:
     {{- if .Values.podgrouper.queueLabelKey }}
     queueLabelKey: {{ .Values.podgrouper.queueLabelKey | quote }}
     {{- end }}
+    {{- /* GpuSharingMode precedence: an explicit (non-empty) mode wins; otherwise a
+           legacy gpuSharing value is passed through (operator derives the mode); when
+           neither is set, default to NonMemoryEnforced. */}}
+    {{- if .Values.global.gpuSharingMode }}
+    gpuSharingMode: {{ .Values.global.gpuSharingMode }}
+    {{- else if not (hasKey .Values.global "gpuSharing") }}
+    gpuSharingMode: NonMemoryEnforced
+    {{- end }}
 
   binder:
     service:
@@ -252,7 +260,9 @@ spec:
         maxUnavailable: {{ .Values.admission.podDisruptionBudget.maxUnavailable }}
         {{- end }}
       {{- end }}
-    gpuSharing: {{ .Values.global.gpuSharing | default false }}
+    {{- if and (not .Values.global.gpuSharingMode) (hasKey .Values.global "gpuSharing") }}
+    gpuSharing: {{ .Values.global.gpuSharing }}
+    {{- end }}
     blockNvidiaVisibleDevices: {{ .Values.global.blockNvidiaVisibleDevices | default false }}
     queueLabelSelector: false
     webhook:
