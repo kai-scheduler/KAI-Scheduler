@@ -86,6 +86,33 @@ spec:
 | `validateQuota` | `true` | Master switch. When `false`, the webhook admits all resizes without any checks, and `blockUpsizeOnBoundedQueues` is ignored. |
 | `blockUpsizeOnBoundedQueues` | `false` | Strict mode: reject **any** upsize on a queue (or ancestor) that has a finite CPU or memory limit — regardless of free headroom — and, for non-preemptible workloads, on any queue with a finite quota. Closes the concurrent-resize race at the cost of disallowing upsizes on bounded queues entirely. |
 
+## Deferred resizes and eviction
+
+When a node lacks capacity for an upsize, the kubelet marks the resize `Deferred` (a
+`PodResizePending` pod condition) and enacts it once capacity frees up. By default KAI does not
+free capacity for deferred resizes — the resize waits until pods on the node terminate on their
+own.
+
+The optional `resizeeviction` scheduler action (disabled by default) evicts lower-priority or
+reclaimable workloads on the node to let a deferred resize complete, under the same rules that
+would apply to a new pod of that size: same-queue victims are preempted by priority, other-queue
+victims are reclaimed subject to fair-share. The eviction is all-or-nothing — if eligible victims
+cannot fully cover the missing capacity, nothing is evicted. Enable it per scheduling shard:
+
+```yaml
+apiVersion: kai.scheduler/v1
+kind: SchedulingShard
+metadata:
+  name: default
+spec:
+  actions:
+    resizeeviction:
+      enabled: true
+```
+
+See the [design document](../developer/designs/in-place-pod-resize/deferred-resize-eviction.md)
+for details.
+
 ## Interaction with queue limits
 
 `limit: -1` on a queue resource means unbounded; any other value (including `0`) is a hard bound enforced on resize. The same convention applies to `quota` for non-preemptible workloads. See [Queues](../queues/README.md) for how limits and quota are configured.

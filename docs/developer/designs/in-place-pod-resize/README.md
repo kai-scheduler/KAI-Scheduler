@@ -26,7 +26,8 @@ rescheduling. KAI has three gaps:
 3. **Deferred resize eviction.** When the kubelet marks a resize `Deferred`
    for node capacity, KAI does not preempt or reclaim on that node to make
    room. Out of scope here — tracked in
-   [#1872](https://github.com/kai-scheduler/KAI-Scheduler/issues/1872).
+   [#1872](https://github.com/kai-scheduler/KAI-Scheduler/issues/1872),
+   designed in [deferred-resize-eviction.md](deferred-resize-eviction.md).
 
 This design covers (1) and (2). Upstream ResourceQuota already admits resize
 via status-aware requests and a positive usage delta; KAI needs the same
@@ -127,7 +128,7 @@ Exact CR field names TBD at implementation.
 | Non-preemptible growth past quota | Reject at webhook; keep reject at allocate |
 | Concurrent-resize / scheduler races | Best effort; optional `blockUpsizeOnBoundedQueues`; reservation ledger only if a concrete issue appears |
 | Drain-until-under-limit action | Rejected — poor UX; reclaim stays demand-driven |
-| Deferred resize preemption | Separate track: [#1872](https://github.com/kai-scheduler/KAI-Scheduler/issues/1872) |
+| Deferred resize preemption | Separate track: [#1872](https://github.com/kai-scheduler/KAI-Scheduler/issues/1872), [deferred-resize-eviction.md](deferred-resize-eviction.md) |
 | Wait for upstream resize gates / KEP-5836 only | Rejected as sole plan — ship Goals accounting + admit now; upstream remains complementary ([kubernetes#131835](https://github.com/kubernetes/kubernetes/issues/131835)) |
 
 ## Known gaps

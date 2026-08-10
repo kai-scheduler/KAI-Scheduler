@@ -64,6 +64,7 @@ This option is disabled by default. Enable it when investigating unschedulable w
 | consolidation | 400 | Consolidate fragmented workloads (disabled when any placement strategy is spread) |
 | reclaim | 300 | Reclaim over-quota resources |
 | preempt | 200 | Preempt lower-priority jobs |
+| resizeeviction | 150 | Evict pods to enact deferred in-place resizes (disabled by default) |
 | stalegangeviction | 100 | Evict stale gang-scheduled pods |
 
 Higher priority values run first.
