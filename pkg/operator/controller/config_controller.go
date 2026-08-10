@@ -21,6 +21,7 @@ import (
 	"errors"
 
 	admissionv1 "k8s.io/api/admissionregistration/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	vpav1 "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
@@ -39,6 +40,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/binder"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/deployable"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/gpu_sharing"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/known_types"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/node_scale_adjuster"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/numa_placement_exporter"
@@ -57,6 +59,7 @@ var ConfigReconcilerOperands = []operands.Operand{
 	&node_scale_adjuster.NodeScaleAdjuster{},
 	&admission.Admission{},
 	&prometheus.Prometheus{},
+	&gpu_sharing.GpuSharing{},
 	&scheduler.SchedulerForConfig{},
 	&numa_placement_exporter.NumaPlacementExporter{},
 }
@@ -83,6 +86,7 @@ func (r *ConfigReconciler) SetOperands(ops []operands.Operand) {
 // +kubebuilder:rbac:groups="admissionregistration.k8s.io",resources=mutatingwebhookconfigurations;validatingwebhookconfigurations,verbs=get;list;watch;create
 // +kubebuilder:rbac:groups="apiextensions.k8s.io",resources=customresourcedefinitions,resourceNames=queues.scheduling.run.ai,verbs=delete;update;patch
 // +kubebuilder:rbac:groups="apiextensions.k8s.io",resources=customresourcedefinitions,verbs=get;list;watch;create
+// +kubebuilder:rbac:groups="gpu-sharing.kai.scheduler",resources=gpusharingconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups="nvidia.com",resources=clusterpolicies,verbs=get;list;watch
 // +kubebuilder:rbac:groups="monitoring.coreos.com",resources=prometheuses;servicemonitors,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="scheduling.run.ai",resources=queues,verbs=get;list;watch
@@ -141,6 +145,7 @@ func (r *ConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *ConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	logger := log.FromContext(context.Background())
 	for _, collectable := range known_types.KAIConfigRegisteredCollectible {
 		if err := collectable.InitWithManager(context.Background(), mgr); err != nil {
 			return err
@@ -159,8 +164,24 @@ func (r *ConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	builder := ctrl.NewControllerManagedBy(mgr).
 		For(&kaiv1.Config{})
 
-	if checkForClusterPolicy(mgr) {
+	clusterPolicyExists, err := common.CheckCRDsAvailable(
+		context.Background(), mgr.GetAPIReader(), "clusterpolicies.nvidia.com",
+	)
+	if err != nil {
+		logger.Info("Failed to check for ClusterPolicy CRD existence", "error", err)
+	} else if clusterPolicyExists {
 		builder = builder.Watches(&nvidiav1.ClusterPolicy{}, handler.EnqueueRequestsFromMapFunc(enqueueWatched))
+	}
+
+	gpuSharingConfigExists, err := common.CheckCRDsAvailable(
+		context.Background(), mgr.GetAPIReader(), gpu_sharing.GpuSharingConfigCRDName,
+	)
+	if err != nil {
+		logger.Info("Failed to check for GpuSharingConfig CRD existence", "error", err)
+	} else if gpuSharingConfigExists {
+		gpuSharingConfig := &unstructured.Unstructured{}
+		gpuSharingConfig.SetGroupVersionKind(gpu_sharing.GpuSharingConfigGVK)
+		builder = builder.Watches(gpuSharingConfig, handler.EnqueueRequestsFromMapFunc(enqueueWatched))
 	}
 
 	builder = builder.Watches(&kaiv1.SchedulingShard{}, handler.EnqueueRequestsFromMapFunc(enqueueWatched))
@@ -180,23 +201,4 @@ func enqueueWatched(_ context.Context, _ client.Object) []ctrl.Request {
 			},
 		},
 	}
-}
-
-func checkForClusterPolicy(mgr ctrl.Manager) bool {
-	logger := log.FromContext(context.Background())
-	tempClient, err := client.New(mgr.GetConfig(), client.Options{Scheme: mgr.GetScheme()})
-	if err != nil {
-		logger.Info("Failed to create temporary client to check for cluster policy", "error", err)
-		return false
-	}
-
-	clusterPolicyExists, err := common.CheckCRDsAvailable(
-		context.Background(), tempClient, "clusterpolicies.nvidia.com",
-	)
-	if err != nil {
-		logger.Info("Failed to check for ClusterPolicy CRD existence", "error", err)
-		return false
-	}
-
-	return clusterPolicyExists
 }
