@@ -119,18 +119,22 @@ func (b *Binder) Rollback(ctx context.Context, pod *v1.Pod, node *v1.Node, bindR
 }
 
 func (b *Binder) reserveGPUs(ctx context.Context, pod *v1.Pod, bindRequest *v1alpha2.BindRequest) ([]string, error) {
-	if len(bindRequest.Spec.SelectedGPUGroups) == 0 {
+	fractionalGpuGroups := bindRequest.Spec.SelectedFractionalGpuGroupsOrDefault()
+	if len(fractionalGpuGroups) == 0 {
 		// Old bindingRequest bad conversion. delete the binding request.
-		return nil, fmt.Errorf("no SelectedGPUGroups for fractional pod: %w", InvalidCrdWarning)
+		return nil, fmt.Errorf("no selected GPU groups for fractional pod: %w", InvalidCrdWarning)
 	}
 
 	var gpuIndexes []string
-	for _, gpuGroup := range bindRequest.Spec.SelectedGPUGroups {
-		gpuIndex, err := b.resourceReservationService.ReserveGpuDevice(ctx, pod, bindRequest.Spec.SelectedNode, gpuGroup)
+	for _, fractionalGpuGroup := range fractionalGpuGroups {
+		gpuIndex, err := b.resourceReservationService.ReserveGpuDevice(
+			ctx, pod, bindRequest.Spec.SelectedNode, fractionalGpuGroup)
 		if err != nil {
 			// Cleanup will be handled by the rollback function
 
-			return nil, fmt.Errorf("failed to reserve GPUs for pod <%s/%s> in gpu group <%s>: %w", pod.Namespace, pod.Name, gpuGroup, err)
+			return nil, fmt.Errorf(
+				"failed to reserve GPUs for pod <%s/%s> in gpu group <%s>: %w",
+				pod.Namespace, pod.Name, fractionalGpuGroup.ID, err)
 		}
 		gpuIndexes = append(gpuIndexes, gpuIndex)
 	}
