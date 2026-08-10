@@ -25,7 +25,12 @@ type BindRequestSpec struct {
 
 	// SelectedGPUGroups is the name of the selected GPU groups for fractional GPU resources.
 	// Only if the RecievedResourceType is "Fraction"
+	// Deprecated: Use SelectedFractionalGpuGroups instead
 	SelectedGPUGroups []string `json:"selectedGPUGroups,omitempty"`
+
+	// SelectedFractionalGpuGroups is the selected GPU groups for fractional GPU resources.
+	// Only if the RecievedResourceType is "Fraction"
+	SelectedFractionalGpuGroups []FractionalGpuGroup `json:"selectedFractionalGpuGroups,omitempty"`
 
 	// ResourceClaims is the list of resource claims that need to be bound for this pod
 	ResourceClaimAllocations []ResourceClaimAllocation `json:"resourceClaimAllocations,omitempty"`
@@ -40,6 +45,70 @@ type BindRequestSpec struct {
 
 	// BackoffLimit is the number of retries before giving up
 	BackoffLimit *int32 `json:"backoffLimit,omitempty"`
+}
+
+type GPUComputeSharingMode string
+
+const (
+	GPUComputeSharingModeTimeSlicing GPUComputeSharingMode = "time-slicing"
+	GPUComputeSharingModeSMSharing   GPUComputeSharingMode = "sm-sharing"
+)
+
+type FractionalGpuGroup struct {
+	ID                 string                `json:"id,omitempty"`
+	ComputeSharingMode GPUComputeSharingMode `json:"computeSharingMode,omitempty"`
+}
+
+func (group FractionalGpuGroup) WithDefaults() FractionalGpuGroup {
+	if group.ComputeSharingMode == "" {
+		group.ComputeSharingMode = GPUComputeSharingModeTimeSlicing
+	}
+	return group
+}
+
+func NewFractionalGpuGroups(gpuGroups []string, mode GPUComputeSharingMode) []FractionalGpuGroup {
+	if len(gpuGroups) == 0 {
+		return nil
+	}
+	mode = DefaultGPUComputeSharingMode(mode)
+	fractionalGpuGroups := make([]FractionalGpuGroup, 0, len(gpuGroups))
+	for _, gpuGroup := range gpuGroups {
+		fractionalGpuGroups = append(fractionalGpuGroups, FractionalGpuGroup{
+			ID:                 gpuGroup,
+			ComputeSharingMode: mode,
+		})
+	}
+	return fractionalGpuGroups
+}
+
+func DefaultGPUComputeSharingMode(mode GPUComputeSharingMode) GPUComputeSharingMode {
+	if mode == "" {
+		return GPUComputeSharingModeTimeSlicing
+	}
+	return mode
+}
+
+func (spec *BindRequestSpec) SelectedFractionalGpuGroupsOrDefault() []FractionalGpuGroup {
+	if len(spec.SelectedFractionalGpuGroups) > 0 {
+		fractionalGpuGroups := make([]FractionalGpuGroup, 0, len(spec.SelectedFractionalGpuGroups))
+		for _, fractionalGpuGroup := range spec.SelectedFractionalGpuGroups {
+			fractionalGpuGroups = append(fractionalGpuGroups, fractionalGpuGroup.WithDefaults())
+		}
+		return fractionalGpuGroups
+	}
+	return NewFractionalGpuGroups(spec.SelectedGPUGroups, GPUComputeSharingModeTimeSlicing)
+}
+
+func (spec *BindRequestSpec) SelectedFractionalGpuGroupIDs() []string {
+	fractionalGpuGroups := spec.SelectedFractionalGpuGroupsOrDefault()
+	if len(fractionalGpuGroups) == 0 {
+		return nil
+	}
+	gpuGroups := make([]string, 0, len(fractionalGpuGroups))
+	for _, fractionalGpuGroup := range fractionalGpuGroups {
+		gpuGroups = append(gpuGroups, fractionalGpuGroup.ID)
+	}
+	return gpuGroups
 }
 
 type ReceivedGPU struct {

@@ -1329,6 +1329,18 @@ spec:
                       type: string
                   type: object
                 type: array
+              selectedFractionalGpuGroups:
+                description: |-
+                  SelectedFractionalGpuGroups is the selected GPU groups for fractional GPU resources.
+                  Only if the RecievedResourceType is "Fraction"
+                items:
+                  properties:
+                    computeSharingMode:
+                      type: string
+                    id:
+                      type: string
+                  type: object
+                type: array
               selectedGPUGroups:
                 description: |-
                   SelectedGPUGroups is the name of the selected GPU groups for fractional GPU resources.
