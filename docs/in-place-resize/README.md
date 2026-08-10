@@ -61,6 +61,7 @@ Admission is a guardrail, not a transactional guarantee:
 - The webhook is registered with `failurePolicy: Ignore` — if the admission service is unavailable, resizes are admitted rather than blocked.
 - Lookup failures (queue, podgroup) admit the resize and log an error.
 - The check reads `Queue.status.allocated`, which trails actual scheduling decisions through the controller reconcile chain. A resize can therefore race concurrent activity on a nearly-full queue — another resize, or the scheduler placing new pods — and together exceed the limit. The reverse also holds: a recently freed queue may transiently over-deny a valid resize. The scheduler's own accounting stays correct either way and stops further allocation once over the limit.
+- A resize issued while the same pod's previous resize is still being enacted is checked against the transient charge. In particular, a pending downsize is still charged until the kubelet enacts it, so a follow-up upsize within that window can reclaim the not-yet-released capacity and settle above the limit.
 
 For workloads where the race above is unacceptable, see `blockUpsizeOnBoundedQueues` below.
 
