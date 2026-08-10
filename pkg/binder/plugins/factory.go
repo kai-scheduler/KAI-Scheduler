@@ -16,6 +16,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/gpusharing"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/hamicore"
 	k8splugins "github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/k8s-plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/nvfractions"
 )
 
 type PluginBuildContext struct {
@@ -51,6 +52,7 @@ func InitDefaultPlugins() {
 	RegisterPluginBuilder(DynamicResourcesPluginName, newDynamicResourcesPlugin)
 	RegisterPluginBuilder(GPUSharingPluginName, newGPUSharingPlugin)
 	RegisterPluginBuilder(HamiCorePluginName, newHamiCorePlugin)
+	RegisterPluginBuilder(NvFractionsPluginName, newNvFractionsPlugin)
 }
 
 func BuildConfiguredPlugins(buildContext PluginBuildContext, config Config) (*BinderPlugins, error) {
@@ -110,6 +112,14 @@ func newGPUSharingPlugin(buildContext PluginBuildContext, arguments map[string]s
 
 func newHamiCorePlugin(buildContext PluginBuildContext, _ map[string]string) (Plugin, error) {
 	return hamicore.New(buildContext.KubeClient), nil
+}
+
+func newNvFractionsPlugin(_ PluginBuildContext, arguments map[string]string) (Plugin, error) {
+	cdiEnabled, err := boolArgument(arguments, CDIEnabledArgument)
+	if err != nil {
+		return nil, err
+	}
+	return nvfractions.New(cdiEnabled), nil
 }
 
 func validateDependentPlugins(config Config) error {

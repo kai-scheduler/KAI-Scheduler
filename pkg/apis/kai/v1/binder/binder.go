@@ -23,6 +23,7 @@ const (
 	DynamicResourcesPluginName = "dynamicresources"
 	GPUSharingPluginName       = "gpusharing"
 	HamiCorePluginName         = "hamicore"
+	NvFractionsPluginName      = "nvfractions"
 
 	BindTimeoutSecondsArgument = "bindTimeoutSeconds"
 	CDIEnabledArgument         = "cdiEnabled"
@@ -35,6 +36,7 @@ var defaultPluginPriorities = map[string]int{
 	VolumeBindingPluginName:    300,
 	DynamicResourcesPluginName: 200,
 	GPUSharingPluginName:       100,
+	NvFractionsPluginName:      90,
 	HamiCorePluginName:         50,
 }
 
@@ -139,13 +141,16 @@ func (b *Binder) setDefaultPlugins() {
 	binderPluginConfig := DefaultPluginsConfig(ptr.Deref(b.VolumeBindingTimeoutSeconds, DefaultBindTimeoutSeconds),
 		ptr.Deref(b.CDIEnabled, DefaultCDIEnabled))
 
-	// When CDIEnabled is unset at the API level, leave the gpusharing cdiEnabled
-	// argument unbaked so the operator can resolve it (auto-detect) without
-	// having to distinguish a defaulted value from a user-supplied one.
+	// When CDIEnabled is unset at the API level, leave the cdiEnabled argument
+	// unbaked on the CDI-aware plugins (gpusharing, nvfractions) so the operator
+	// can resolve it (auto-detect) without having to distinguish a defaulted value
+	// from a user-supplied one.
 	if b.CDIEnabled == nil {
-		gpuSharingDefault := binderPluginConfig[GPUSharingPluginName]
-		delete(gpuSharingDefault.Arguments, CDIEnabledArgument)
-		binderPluginConfig[GPUSharingPluginName] = gpuSharingDefault
+		for _, name := range []string{GPUSharingPluginName, NvFractionsPluginName} {
+			pluginDefault := binderPluginConfig[name]
+			delete(pluginDefault.Arguments, CDIEnabledArgument)
+			binderPluginConfig[name] = pluginDefault
+		}
 	}
 
 	for name, userBinderConfig := range b.Plugins {
@@ -194,6 +199,13 @@ func DefaultPluginsConfig(bindTimeoutSeconds int, cdiEnabled bool) map[string]Pl
 		GPUSharingPluginName: {
 			Enabled:  ptr.To(true),
 			Priority: ptr.To(defaultPluginPriorities[GPUSharingPluginName]),
+			Arguments: map[string]string{
+				CDIEnabledArgument: strconv.FormatBool(cdiEnabled),
+			},
+		},
+		NvFractionsPluginName: {
+			Enabled:  ptr.To(false),
+			Priority: ptr.To(defaultPluginPriorities[NvFractionsPluginName]),
 			Arguments: map[string]string{
 				CDIEnabledArgument: strconv.FormatBool(cdiEnabled),
 			},

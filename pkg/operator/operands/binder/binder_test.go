@@ -175,6 +175,17 @@ var _ = Describe("Binder", func() {
 					expectGPUSharingCDI((*deploymentT).Spec.Template.Spec.Containers[0].Args, true)
 				})
 
+				It("resolves CDI flag for the nvfractions plugin from cluster policy, like gpusharing", func(ctx context.Context) {
+					kaiConfig = kaiConfigForBinderNvFractions()
+					Expect(fakeKubeClient.Create(ctx, clusterPolicy)).To(Succeed())
+					objects, err := b.DesiredState(ctx, fakeKubeClient, kaiConfig)
+					Expect(err).To(BeNil())
+
+					deploymentT := test_utils.FindTypeInObjects[*appsv1.Deployment](objects)
+					Expect(deploymentT).NotTo(BeNil())
+					expectNvFractionsCDI((*deploymentT).Spec.Template.Spec.Containers[0].Args, true)
+				})
+
 				It("sets CDI flag to false if not set by default cluser policy", func(ctx context.Context) {
 					clusterPolicy.Spec.CDI.Default = ptr.To(false)
 					Expect(fakeKubeClient.Create(ctx, clusterPolicy)).To(Succeed())
@@ -484,6 +495,25 @@ func expectGPUSharingCDI(args []string, enabled bool) {
 	pluginConfig := binderPluginsConfig(args)
 	Expect(pluginConfig[binderplugins.GPUSharingPluginName].Arguments[binderplugins.CDIEnabledArgument]).
 		To(Equal(strconv.FormatBool(enabled)))
+}
+
+func expectNvFractionsCDI(args []string, enabled bool) {
+	expectNoStandalonePluginArgs(args)
+	pluginConfig := binderPluginsConfig(args)
+	Expect(pluginConfig[binderplugins.NvFractionsPluginName].Arguments[binderplugins.CDIEnabledArgument]).
+		To(Equal(strconv.FormatBool(enabled)))
+}
+
+func kaiConfigForBinderNvFractions() *kaiv1.Config {
+	kaiConfig := &kaiv1.Config{}
+	kaiConfig.Spec.Binder = &kaiv1binder.Binder{
+		Plugins: map[string]kaiv1binder.PluginConfig{
+			kaiv1binder.NvFractionsPluginName: {Enabled: ptr.To(true)},
+		},
+	}
+	kaiConfig.Spec.SetDefaultsWhereNeeded()
+	kaiConfig.Spec.Binder.Service.Enabled = ptr.To(true)
+	return kaiConfig
 }
 
 func binderPluginsConfig(args []string) binderplugins.Config {
