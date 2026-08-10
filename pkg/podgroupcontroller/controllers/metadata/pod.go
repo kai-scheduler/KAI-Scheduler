@@ -115,7 +115,6 @@ func calculatedAllocatedResources(
 func calculateRequestedResources(
 	ctx context.Context, pod *v1.Pod, kubeClient client.Client, draClaims []*resourceapi.ResourceClaim,
 ) (v1.ResourceList, error) {
-	// Spec-only aggregation: requested reflects the desired target.
 	requestedResources := resourcehelpers.AggregateContainerRequests(pod, resourcehelpers.PodResourcesOptions{})
 	gpuSharingRequestedResources, err := resources.ExtractGPUSharingRequestedResources(pod)
 	if err != nil {

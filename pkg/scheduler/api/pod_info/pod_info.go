@@ -401,12 +401,6 @@ func getPodGroupID(pod *v1.Pod) common_info.PodGroupID {
 	return ""
 }
 
-// getPodResourceRequest returns the pod's total resource request.
-//
-// Aggregation is delegated to upstream k8s.io/component-helpers, which implements
-// both the sidecar formula (KEP-753) and the in-place resize effective-request
-// model (KEP-1287): max(spec, enacted, allocated), or max(enacted, allocated) when
-// the kubelet has marked the resize Infeasible.
 func getPodResourceRequest(pod *v1.Pod) *resource_info.ResourceRequirements {
 	reqs := resourcehelpers.AggregateContainerRequests(pod, resourcehelpers.PodResourcesOptions{
 		UseStatusResources: true,

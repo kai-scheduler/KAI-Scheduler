@@ -75,8 +75,6 @@ func compactContainerStatuses(statuses []v1.ContainerStatus) []v1.ContainerStatu
 	return compact
 }
 
-// compactConditions keeps only the PodResizePending condition, which drives
-// Infeasible accounting in the effective-request model.
 func compactConditions(conditions []v1.PodCondition) []v1.PodCondition {
 	for _, c := range conditions {
 		if c.Type == v1.PodResizePending {
