@@ -4,8 +4,8 @@
 suite: test gpu sharing mode configuration
 
 set:
-  _test:
-    renderKaiConfig: true
+  kaiConfigDeployer.enabled: false
+  kaiConfig.render: true
 templates:
   - kai-config.yaml
 tests:

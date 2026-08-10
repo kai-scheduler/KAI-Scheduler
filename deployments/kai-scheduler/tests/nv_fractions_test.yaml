@@ -1,0 +1,108 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+suite: test nvFractions subchart gating and validation
+
+tests:
+  - it: rejects nvFractions.set=true with a conflicting gpuSharingMode
+    templates:
+      - templates/validate.yaml
+    set:
+      global.nvFractions.set: true
+      global.gpuSharingMode: HamiCore
+    asserts:
+      - failedTemplate:
+          errorMessage: 'global.nvFractions.set=true requires global.gpuSharingMode to be empty or "NvFractions", got "HamiCore"'
+
+  - it: allows nvFractions.set=true with an explicit NvFractions mode
+    templates:
+      - templates/validate.yaml
+    set:
+      global.nvFractions.set: true
+      global.gpuSharingMode: NvFractions
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: allows nvFractions.set=true with an empty gpuSharingMode
+    templates:
+      - templates/validate.yaml
+    set:
+      global.nvFractions.set: true
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: allows gpuSharingMode NvFractions while the subchart is disabled
+    templates:
+      - templates/validate.yaml
+    set:
+      global.gpuSharingMode: NvFractions
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: nvFractions.set=true selects NvFractions and omits legacy gpuSharing
+    templates:
+      - kai-config.yaml
+    set:
+      kaiConfigDeployer.enabled: false
+      kaiConfig.render: true
+      global.nvFractions.set: true
+    asserts:
+      - equal:
+          path: spec.global.gpuSharingMode
+          value: NvFractions
+      - notExists:
+          path: spec.admission.gpuSharing
+
+  - it: nvFractions.set=true is not downgraded by a legacy gpuSharing value
+    templates:
+      - kai-config.yaml
+    set:
+      kaiConfigDeployer.enabled: false
+      kaiConfig.render: true
+      global.nvFractions.set: true
+      global.gpuSharing: false
+    asserts:
+      - equal:
+          path: spec.global.gpuSharingMode
+          value: NvFractions
+      - notExists:
+          path: spec.admission.gpuSharing
+
+  - it: nvFractions.set=true with an explicit NvFractions mode agrees
+    templates:
+      - kai-config.yaml
+    set:
+      kaiConfigDeployer.enabled: false
+      kaiConfig.render: true
+      global.nvFractions.set: true
+      global.gpuSharingMode: NvFractions
+    asserts:
+      - equal:
+          path: spec.global.gpuSharingMode
+          value: NvFractions
+
+  - it: default is unchanged when nvFractions.set is false
+    templates:
+      - kai-config.yaml
+    set:
+      kaiConfigDeployer.enabled: false
+      kaiConfig.render: true
+    asserts:
+      - equal:
+          path: spec.global.gpuSharingMode
+          value: NonMemoryEnforced
+
+  # No mirror-image test asserting the deployment is absent when nvFractions.set is false:
+  # helm-unittest treats a conditioned-out subchart template as "not exists or not selected"
+  # and errors instead of rendering zero documents. The off state is covered by Helm's
+  # condition: semantics and by the NonMemoryEnforced default asserted above.
+  - it: renders the gpu-sharing operator deployment when nvFractions.set is true
+    templates:
+      - charts/gpu-sharing/templates/deployment.yaml
+    set:
+      global.nvFractions.set: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Deployment

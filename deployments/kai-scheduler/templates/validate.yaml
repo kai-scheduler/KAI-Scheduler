@@ -1,0 +1,9 @@
+{{/*
+Copyright 2025 NVIDIA CORPORATION
+SPDX-License-Identifier: Apache-2.0
+*/}}
+{{- /* Renders no resource. Aborts the render when nvFractions.set asks for the gpu-sharing
+       operator while gpuSharingMode explicitly selects a different mode. */}}
+{{- if and .Values.global.nvFractions.set .Values.global.gpuSharingMode (ne .Values.global.gpuSharingMode "NvFractions") }}
+{{- fail (printf "global.nvFractions.set=true requires global.gpuSharingMode to be empty or \"NvFractions\", got %q" .Values.global.gpuSharingMode) }}
+{{- end }}

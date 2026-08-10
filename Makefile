@@ -27,8 +27,13 @@ K8S_COPYRIGHTED_MANIFEST_FILES := deployments/kai-scheduler/crds/kai.scheduler_t
 lint: fmt-go vet-go lint-go
 .PHONY: lint
 
+.PHONY: chart-deps
+chart-deps:
+	@echo "Fetching Helm chart dependencies: kai-scheduler"
+	helm dependency build ./deployments/kai-scheduler
+
 .PHONY: test-chart
-test-chart:
+test-chart: chart-deps
 	@echo "Running tests for Helm chart: kai-scheduler"
 	docker run -t --rm -v ./deployments/kai-scheduler:/apps helmunittest/helm-unittest:3.17.2-0.8.1 . -f 'tests/**/*_test.yaml'
 
