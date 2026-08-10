@@ -4023,6 +4023,16 @@ spec:
                       non-approved cryptographic algorithm is used - see
                       https://go.dev/doc/security/fips140#the-fips140-godebug-option.
                     type: boolean
+                  gpuSharingMode:
+                    description: |-
+                      GpuSharingMode selects a preset that sets defaults for GPU-sharing plugins
+                      across the admission and binder components.
+                    enum:
+                    - NonMemoryEnforced
+                    - HamiCore
+                    - NvFractions
+                    - Disabled
+                    type: string
                   imagesPullSecret:
                     description: |-
                       Deprecated: ImagePullSecret defines a single container registry secret credential.
