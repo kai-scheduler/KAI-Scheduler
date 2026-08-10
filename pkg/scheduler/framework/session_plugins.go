@@ -68,6 +68,15 @@ func (ssn *Session) AddJobOrderFn(jof common_info.CompareFn) {
 	ssn.JobOrderFns = append(ssn.JobOrderFns, jof)
 }
 
+// AddVictimOrderFn registers a comparator that applies ONLY when ordering
+// candidates for eviction (the victim queue), not for regular pending-job
+// allocation ordering. Unlike JobOrderFn, no external inversion is applied
+// to this comparator's result: a negative return means "l is the BETTER
+// victim (should be evicted first)", directly.
+func (ssn *Session) AddVictimOrderFn(vof common_info.CompareFn) {
+	ssn.VictimOrderFns = append(ssn.VictimOrderFns, vof)
+}
+
 func (ssn *Session) AddTaskOrderFn(tof common_info.CompareFn) {
 	ssn.TaskOrderFns = append(ssn.TaskOrderFns, tof)
 }
@@ -283,6 +292,21 @@ func (ssn *Session) JobOrderFn(l, r interface{}) bool {
 	} else {
 		return lv.CreationTimestamp.Before(&rv.CreationTimestamp)
 	}
+}
+
+// VictimOrderFn composes registered victim-specific comparators directly --
+// a negative result means "l is the BETTER victim", with no external
+// inversion needed or applied (unlike the old !JobOrderFn(l, r) pattern).
+// If no victim-specific comparators are registered, this falls back to the
+// existing !JobOrderFn(l, r) behavior, preserving exact current behavior
+// for any plugin that never needed the ordering/victim distinction.
+func (ssn *Session) VictimOrderFn(l, r interface{}) bool {
+	for _, vof := range ssn.VictimOrderFns {
+		if v := vof(l, r); v != 0 {
+			return v < 0
+		}
+	}
+	return !ssn.JobOrderFn(l, r)
 }
 
 func (ssn *Session) TaskOrderFn(l, r interface{}) bool {

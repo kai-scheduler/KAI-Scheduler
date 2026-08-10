@@ -255,7 +255,7 @@ func (jo *JobsOrderByQueues) createLeafNode(queue *queue_info.QueueInfo) *queueN
 		queue: queue,
 		children: scheduler_util.NewPriorityQueue(func(l, r interface{}) bool {
 			if jo.options.VictimQueue {
-				return !jo.ssn.JobOrderFn(l, r)
+				return jo.ssn.VictimOrderFn(l, r)
 			}
 			return jo.ssn.JobOrderFn(l, r)
 		}, jo.options.MaxJobsQueueDepth),

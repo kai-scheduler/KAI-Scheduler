@@ -31,11 +31,19 @@ func (rp *gpuJobOrderPlugin) Name() string {
 	return "gpujoborder"
 }
 
+// OnSessionOpen registers this plugin's comparator via AddVictimOrderFn,
+// NOT AddJobOrderFn. This plugin is scoped to victim/eviction selection
+// only, per the real, confirmed distinction between the ordering and
+// victim-selection paths (see VictimOrderFn in session_plugins.go) --
+// pending-job allocation ordering is intentionally left untouched.
 func (rp *gpuJobOrderPlugin) OnSessionOpen(ssn *framework.Session) {
-	ssn.AddJobOrderFn(rp.JobOrderFn)
+	ssn.AddVictimOrderFn(rp.VictimOrderFn)
 }
 
-func (rp *gpuJobOrderPlugin) JobOrderFn(l, r interface{}) int {
+// VictimOrderFn returns -1 when l is the BETTER victim (should be evicted
+// first), matching VictimOrderFn's direct (non-inverted) contract -- no
+// external sign flip is applied or needed here.
+func (rp *gpuJobOrderPlugin) VictimOrderFn(l, r interface{}) int {
 	lv := l.(*podgroup_info.PodGroupInfo)
 	rv := r.(*podgroup_info.PodGroupInfo)
 
