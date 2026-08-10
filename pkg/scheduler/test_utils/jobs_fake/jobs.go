@@ -226,7 +226,7 @@ func generateTasks(
 
 		taskInfo := pod_info.NewTaskInfo(podOfTask, vectorMap, pod_info.TaskInfoOptions{DraPodClaims: draPodClaims})
 		taskInfo.Status = task.State
-		taskInfo.GPUGroups = gpuGroups
+		taskInfo.SetGPUGroupIDs(gpuGroups)
 		taskInfo.SubGroupName = task.SubGroupName
 		taskInfo.IsLegacyMIGtask = task.IsLegacyMigTask
 		taskInfos = append(taskInfos, taskInfo)
@@ -243,7 +243,7 @@ func generateTasks(
 		}
 
 		if tasks_fake.IsTaskStartedStatus(taskInfo.Status) {
-			gpuName := taskInfo.NodeName + fmt.Sprint(taskInfo.GPUGroups)
+			gpuName := taskInfo.NodeName + fmt.Sprint(taskInfo.GPUGroupIDs())
 			if _, ok := allocatedGPUs[gpuName]; !ok {
 				var void interface{}
 				allocatedGPUs[gpuName] = void
