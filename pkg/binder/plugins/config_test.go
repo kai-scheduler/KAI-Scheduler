@@ -27,6 +27,9 @@ func TestDefaultConfig(t *testing.T) {
 	if got := config[GPUSharingPluginName].Arguments[CDIEnabledArgument]; got != "true" {
 		t.Fatalf("expected gpusharing CDI true, got %q", got)
 	}
+	if got := config[GPUSharingPluginName].Arguments[NRIPluginEnabledArgument]; got != "false" {
+		t.Fatalf("expected gpusharing NRI plugin false, got %q", got)
+	}
 	if *config[HamiCorePluginName].Enabled {
 		t.Fatalf("expected hamicore to be disabled by default")
 	}
@@ -122,6 +125,12 @@ func TestArgumentParsers(t *testing.T) {
 	}
 	if _, err := boolArgument(map[string]string{CDIEnabledArgument: "bad"}, CDIEnabledArgument); err == nil {
 		t.Fatalf("expected invalid bool argument error")
+	}
+	if got, err := boolArgumentOrDefault(map[string]string{}, NRIPluginEnabledArgument, false); err != nil || got {
+		t.Fatalf("expected missing optional bool argument to default false, got %t, err %v", got, err)
+	}
+	if _, err := boolArgumentOrDefault(map[string]string{NRIPluginEnabledArgument: "bad"}, NRIPluginEnabledArgument, false); err == nil {
+		t.Fatalf("expected invalid optional bool argument error")
 	}
 }
 

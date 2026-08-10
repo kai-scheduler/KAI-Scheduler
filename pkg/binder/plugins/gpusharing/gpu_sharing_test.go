@@ -18,6 +18,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/common"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/common/gpusharingconfigmap"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/state"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
@@ -431,7 +432,7 @@ func TestGPUSharingRollback(t *testing.T) {
 			kubeClient := clientBuilder.Build()
 
 			// Create GPUSharing plugin
-			plugin := New(kubeClient, false)
+			plugin := New(kubeClient, false, false)
 
 			// Execute rollback
 			err := plugin.Rollback(context.Background(), tt.pod, nil, tt.bindRequest, nil)
@@ -495,7 +496,7 @@ func TestGPUSharingRollbackDeleteConfigMap(t *testing.T) {
 			}
 			kubeClient := clientBuilder.Build()
 
-			plugin := New(kubeClient, false)
+			plugin := New(kubeClient, false, false)
 			err := plugin.deleteConfigMap(context.Background(), tt.namespace, tt.cmName)
 
 			if tt.expectError {
@@ -513,4 +514,46 @@ func TestGPUSharingRollbackDeleteConfigMap(t *testing.T) {
 			assert.True(t, client.IgnoreNotFound(err) == nil, "ConfigMap should not exist after deletion")
 		})
 	}
+}
+
+func TestGPUSharingPreBindUsesCDIAnnotationWhenNRIPluginEnabled(t *testing.T) {
+	pod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "test-ns",
+			Annotations: map[string]string{
+				constants.GpuFractionContainerName:      "gpu-container",
+				constants.GpuSharingConfigMapAnnotation: "test-shared-gpu",
+			},
+		},
+		Spec: v1.PodSpec{Containers: []v1.Container{{Name: "gpu-container"}}},
+	}
+	bindRequest := &v1alpha2.BindRequest{
+		Spec: v1alpha2.BindRequestSpec{
+			ReceivedResourceType: common.ReceivedTypeFraction,
+			ReceivedGPU:          &v1alpha2.ReceivedGPU{Portion: "0.5"},
+		},
+	}
+	bindingState := &state.BindingState{ReservedGPUIds: []string{"0", "1"}}
+
+	scheme := runtime.NewScheme()
+	_ = v1.AddToScheme(scheme)
+	kubeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(pod).Build()
+
+	err := New(kubeClient, false, true).PreBind(context.Background(), pod, nil, bindRequest, bindingState)
+	assert.NoError(t, err)
+	assert.Equal(t, "0,1", bindingState.BindingPodAnnotations["nvidia.cdi.k8s.io/container.gpu-container"])
+
+	capabilitiesConfigMapName, err := gpusharingconfigmap.ExtractCapabilitiesConfigMapName(
+		pod,
+		&gpusharingconfigmap.PodContainerRef{Container: &pod.Spec.Containers[0]},
+	)
+	assert.NoError(t, err)
+	configMap := &v1.ConfigMap{}
+	err = kubeClient.Get(context.Background(), types.NamespacedName{
+		Namespace: pod.Namespace,
+		Name:      capabilitiesConfigMapName,
+	}, configMap)
+	assert.NoError(t, err)
+	assert.NotContains(t, configMap.Data, constants.NvidiaVisibleDevices)
 }
