@@ -407,10 +407,6 @@ func getPodGroupID(pod *v1.Pod) common_info.PodGroupID {
 // both the sidecar formula (KEP-753) and the in-place resize effective-request
 // model (KEP-1287): max(spec, enacted, allocated), or max(enacted, allocated) when
 // the kubelet has marked the resize Infeasible.
-//
-// UseStatusResources is unconditionally true: the InPlacePodVerticalScaling gate
-// is GA-locked in k8s 1.35+, and on older gate-off clusters the status fields are
-// absent so the helper falls back to spec.
 func getPodResourceRequest(pod *v1.Pod) *resource_info.ResourceRequirements {
 	reqs := resourcehelpers.AggregateContainerRequests(pod, resourcehelpers.PodResourcesOptions{
 		UseStatusResources: true,
