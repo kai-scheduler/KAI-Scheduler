@@ -24,10 +24,6 @@ var resizeLog = logf.Log.WithName("pod-resize-validator")
 // memoryLimitBytesPerUnit converts a Queue Memory.Limit (in megabytes) to bytes.
 const memoryLimitBytesPerUnit = 1_000_000
 
-// PodResizeValidator enforces best-effort queue quota on pods/resize requests.
-// It checks that the resource delta of the resize would not push any queue on
-// the pod's hierarchy over its configured limit (all workloads) or over its
-// deserved quota for non-preemptible workloads.
 type PodResizeValidator struct {
 	kubeClient                 client.Client
 	schedulerName              string
@@ -58,8 +54,6 @@ func (v *PodResizeValidator) ValidateUpdate(ctx context.Context, oldPod, newPod 
 	return nil, v.validateResize(ctx, oldPod, newPod)
 }
 
-// ValidateCreate and ValidateDelete never fire: the webhook is registered only
-// for UPDATE operations on the pods/resize subresource.
 func (v *PodResizeValidator) ValidateCreate(context.Context, *corev1.Pod) (admission.Warnings, error) {
 	return nil, nil
 }
@@ -81,15 +75,13 @@ func (v *PodResizeValidator) validateResize(ctx context.Context, oldPod, newPod 
 	pg := &v2alpha2.PodGroup{}
 	if err := v.kubeClient.Get(ctx, client.ObjectKey{Namespace: oldPod.Namespace, Name: pgName}, pg); err != nil {
 		resizeLog.Error(err, "failed to get PodGroup", "namespace", oldPod.Namespace, "name", pgName)
-		return nil // best-effort: allow on lookup failure
+		return nil
 	}
 
-	// Same resolution the podgroup-controller uses to populate
-	// AllocatedNonPreemptible — the checker and the accountant must agree.
 	isPreemptible, err := commonpodgroup.IsPreemptible(ctx, pg, v.kubeClient)
 	if err != nil {
 		resizeLog.Error(err, "failed to resolve preemptibility", "podgroup", pgName)
-		isPreemptible = true // conservative: treat unknown as preemptible
+		isPreemptible = true
 	}
 
 	delta := podResizeDelta(oldPod, newPod)
@@ -102,7 +94,7 @@ func (v *PodResizeValidator) validateResize(ctx context.Context, oldPod, newPod 
 		queue := &v2.Queue{}
 		if err := v.kubeClient.Get(ctx, client.ObjectKey{Name: queueName}, queue); err != nil {
 			resizeLog.Error(err, "failed to get queue", "queue", queueName)
-			return nil // best-effort: allow on lookup failure
+			return nil
 		}
 
 		if err := checkQueueCapacity(queue, delta, isPreemptible, v.blockUpsizeOnBoundedQueues, oldPod, pg); err != nil {
@@ -115,12 +107,6 @@ func (v *PodResizeValidator) validateResize(ctx context.Context, oldPod, newPod 
 	return nil
 }
 
-// podResizeDelta computes the net per-resource increase this resize introduces
-// relative to what the queue already accounts for. All aggregates use the same
-// upstream helper as scheduler accounting, so the effectiveOld baseline matches
-// what the queue charges by construction. A resource whose pod-level spec is
-// unchanged is skipped: it is not part of this resize, and an unresolved
-// Infeasible spec on it must not produce phantom delta.
 func podResizeDelta(oldPod, newPod *corev1.Pod) corev1.ResourceList {
 	specOnly := resourcehelpers.PodResourcesOptions{}
 	withStatus := resourcehelpers.PodResourcesOptions{UseStatusResources: true}
@@ -178,9 +164,6 @@ func checkQueueCapacity(
 	return nil
 }
 
-// checkBlockUpsizeOnBoundedQueue rejects any upsize when a queue has a finite
-// limit (all workloads) or a finite quota (non-preemptible workloads), regardless
-// of current allocation. This prevents races between concurrent resize requests.
 func checkBlockUpsizeOnBoundedQueue(
 	queue *v2.Queue,
 	delta corev1.ResourceList,
@@ -225,13 +208,11 @@ func checkBlockUpsizeOnBoundedQueue(
 	return nil
 }
 
-// checkCapacityBound rejects the resize when adding delta to the given allocated
-// pool would exceed a finite bound (-1 means unbounded).
 func checkCapacityBound(
-	boundKind string, // "limit" | "quota"
+	boundKind string,
 	cpuBound, memBound float64,
 	allocated corev1.ResourceList,
-	allocatedLabel string, // "Allocated" | "AllocatedNonPreemptible"
+	allocatedLabel string,
 	delta corev1.ResourceList,
 	queue *v2.Queue,
 	pod *corev1.Pod,
