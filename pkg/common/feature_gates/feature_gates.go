@@ -27,9 +27,6 @@ const (
 // off to reflect server-side DRA availability.
 var dynamicResourcesEnabled atomic.Bool
 
-// SetDRAFeatureGate returns an error if DRA availability could not be determined.
-// Callers must treat that as fatal: the gate is evaluated once per process, so
-// defaulting to disabled would silently reject every DRA workload until restart.
 func SetDRAFeatureGate(discoveryClient discovery.DiscoveryInterface) error {
 	enabled, err := IsDynamicResourcesEnabled(discoveryClient)
 	if err != nil {
@@ -55,8 +52,6 @@ func SetDynamicResourcesEnabledForTest(enabled bool) {
 
 var nodeResourceTopologyEnabled atomic.Bool
 
-// SetNodeResourceTopologyFeatureGate returns an error if availability could not be
-// determined; see SetDRAFeatureGate for why callers must treat that as fatal.
 func SetNodeResourceTopologyFeatureGate(discoveryClient discovery.DiscoveryInterface) error {
 	enabled, err := IsNodeResourceTopologyEnabled(discoveryClient)
 	if err != nil {
@@ -75,8 +70,7 @@ func SetNodeResourceTopologyEnabledForTest(enabled bool) {
 }
 
 // IsNodeResourceTopologyEnabled reports whether the cluster serves the
-// topology.node.k8s.io API group (the NodeResourceTopology CRD). A discovery
-// failure is returned as an error rather than reported as "not served".
+// topology.node.k8s.io API group (the NodeResourceTopology CRD).
 func IsNodeResourceTopologyEnabled(discoveryClient discovery.DiscoveryInterface) (bool, error) {
 	serverGroups, err := discoveryClient.ServerGroups()
 	if err != nil {
@@ -91,8 +85,6 @@ func IsNodeResourceTopologyEnabled(discoveryClient discovery.DiscoveryInterface)
 	return false, nil
 }
 
-// IsDynamicResourcesEnabled reports whether the cluster supports DRA. A discovery
-// failure is returned as an error rather than reported as "not supported".
 func IsDynamicResourcesEnabled(discoveryClient discovery.DiscoveryInterface) (bool, error) {
 	// Get API server version
 	serverVersion, err := discoveryClient.ServerVersion()
