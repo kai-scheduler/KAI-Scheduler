@@ -23,6 +23,7 @@ type Options struct {
 	FakeGPUNodes                bool
 	GPUSharingEnabled           bool
 	HamiCoreEnabled             bool
+	NvFractionsEnabled          bool
 	BlockNvidiaVisibleDevices   bool
 	GPUPodRuntimeClassName      string
 	GPUFractionRuntimeClassName string
@@ -79,6 +80,9 @@ func InitOptions() *Options {
 	fs.BoolVar(&options.HamiCoreEnabled,
 		"hami-core-enabled", false,
 		"Specifies if the HAMI-core GPU memory limit injection is enabled")
+	fs.BoolVar(&options.NvFractionsEnabled,
+		"nv-fractions-enabled", false,
+		"Specifies if the NvFractions GPU-sharing admission plugin is enabled")
 	fs.BoolVar(&options.BlockNvidiaVisibleDevices,
 		"block-nvidia-visible-devices", false,
 		"Reject pods that set the NVIDIA_VISIBLE_DEVICES environment variable to values "+

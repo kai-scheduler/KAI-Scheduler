@@ -21,7 +21,13 @@ global:
   podSecurityContext: {}
   imagePullSecrets: [] # format: [{name: secret1}, {name: secret2}]
   leaderElection: false
-  gpuSharing: false
+  # gpuSharingMode selects the GPU sharing preset applied across admission and binder.
+  # One of: NonMemoryEnforced, HamiCore, NvFractions, Disabled. Leave empty to use the
+  # default (NonMemoryEnforced), or to preserve a legacy gpuSharing value on upgrade.
+  gpuSharingMode: ""
+  # Deprecated: gpuSharing is honored only for upgrades when gpuSharingMode is empty
+  # (true -> NonMemoryEnforced, false -> Disabled). Prefer gpuSharingMode.
+  # gpuSharing: false
   blockNvidiaVisibleDevices: false
   clusterAutoscaling: false
   nodeSelector: {}

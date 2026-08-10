@@ -290,6 +290,34 @@ func TestDeploymentForKAIConfig(t *testing.T) {
 			notExpectedArgs: []string{
 				"--hami-core-enabled=true",
 				"--block-nvidia-visible-devices=true",
+				"--nv-fractions-enabled=true",
+			},
+		},
+		{
+			name: "nv-fractions enabled emits flag",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Namespace: constants.DefaultKAINamespace,
+					Global: &kaiv1.GlobalConfig{
+						SchedulerName:  ptr.To(constants.DefaultSchedulerName),
+						GpuSharingMode: ptr.To(common.GpuSharingModeNvFractions),
+					},
+					Admission: &admission.Admission{
+						Replicas: ptr.To(int32(1)),
+						Webhook: &admission.Webhook{
+							TargetPort:  ptr.To(9443),
+							ProbePort:   ptr.To(8081),
+							MetricsPort: ptr.To(8080),
+						},
+					},
+				},
+			},
+			expectedArgs: []string{
+				"--nv-fractions-enabled=true",
+			},
+			notExpectedArgs: []string{
+				"--gpu-sharing-enabled=true",
+				"--hami-core-enabled=true",
 			},
 		},
 		{
