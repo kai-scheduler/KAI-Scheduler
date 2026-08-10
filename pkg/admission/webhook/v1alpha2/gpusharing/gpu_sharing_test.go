@@ -4,6 +4,7 @@
 package gpusharing
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -737,7 +738,7 @@ func TestValidate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			kubeClient := fake.NewClientBuilder().WithRuntimeObjects(tt.pod).Build()
 			gpuSharingPlugin := New(kubeClient, tt.GPUSharingEnabled, false)
-			err := gpuSharingPlugin.Validate(tt.pod)
+			err := gpuSharingPlugin.Validate(context.Background(), nil, tt.pod)
 			if err == nil && tt.error != nil {
 				t.Errorf("Validate() expected and error but actual is nil")
 				return
