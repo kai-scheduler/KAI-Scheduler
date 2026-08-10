@@ -43,7 +43,7 @@ Pod resource vector. Per container and resource, before Pod-level aggregation:
 normal / Deferred / in progress:
     effective = max(spec request, allocatedResources, status.resources)
 
-Infeasible (current generation only):
+Infeasible:
     effective = max(allocatedResources, status.resources)
 ```
 
@@ -53,14 +53,25 @@ vector. Do not plumb a separate desired-resource vector through the
 scheduler; read the raw spec only for intent (proposed target, user-facing
 desired fields, infeasible diagnostics).
 
-**Generation-aware `Infeasible`:** exclude the desired spec only when
-`PodResizePending=True`, reason `Infeasible`, `observedGeneration > 0`, and
-`observedGeneration == metadata.generation`. Ignore or sanitize stale
-conditions. On a new resize (new generation), an inherited `Infeasible` from
-the previous target must not hide the proposed spec until the kubelet reports
-that generation infeasible.
+**`Infeasible` detection** delegates to upstream
+`resource.IsPodResizeInfeasible`, which keys off the condition reason alone.
+The kubelet owns the condition lifecycle — it clears or replaces
+`PodResizePending` when a new resize is submitted — so generation tracking is
+not needed, and `observedGeneration` is only populated behind the non-GA
+`PodObservedGenerationTracking` gate (a guard on it would disable `Infeasible`
+handling on gate-off clusters). Upstream semantics are pinned by a
+characterization test so a future upstream tightening surfaces as a failure.
 
-Implementation: one helper around upstream `resource.PodRequests` (status
+The `Deferred` charge at `max(spec, actual)` is load-bearing beyond
+accounting: deferred-resize eviction
+([#1872](https://github.com/kai-scheduler/KAI-Scheduler/issues/1872),
+[#2051](https://github.com/kai-scheduler/KAI-Scheduler/pull/2051)) relies on
+the deferred target already being reserved in node and queue accounting, so
+capacity freed by evicting victims is not backfilled before the kubelet
+enacts the resize. Charging `Deferred` at actual only would reintroduce
+eviction thrash.
+
+Implementation: upstream `resource.AggregateContainerRequests` (status
 resources enabled), then KAI custom-resource logic.
 
 ### Best-effort resize quota admission
@@ -122,12 +133,12 @@ Exact CR field names TBD at implementation.
 
 | Topic | Decision |
 | --- | --- |
-| Accounting model | Upstream effective request; generation-aware `Infeasible` |
+| Accounting model | Upstream effective request; upstream reason-only `Infeasible` semantics (kubelet owns the condition lifecycle) |
 | Resize admit path | Keep native `pods/resize`; validate in webhook (do **not** convert to a KAI-owned scheduling API — breaks VPA / API contract) |
 | Non-preemptible growth past quota | Reject at webhook; keep reject at allocate |
 | Concurrent-resize / scheduler races | Best effort; optional `blockUpsizeOnBoundedQueues`; reservation ledger only if a concrete issue appears |
 | Drain-until-under-limit action | Rejected — poor UX; reclaim stays demand-driven |
-| Deferred resize preemption | Separate track: [#1872](https://github.com/kai-scheduler/KAI-Scheduler/issues/1872) |
+| Deferred resize preemption | Separate track: [#1872](https://github.com/kai-scheduler/KAI-Scheduler/issues/1872) / [#2051](https://github.com/kai-scheduler/KAI-Scheduler/pull/2051). Depends on `Deferred` charged at max(spec, actual) — the reserved target is its thrash safety |
 | Wait for upstream resize gates / KEP-5836 only | Rejected as sole plan — ship Goals accounting + admit now; upstream remains complementary ([kubernetes#131835](https://github.com/kubernetes/kubernetes/issues/131835)) |
 
 ## Known gaps
