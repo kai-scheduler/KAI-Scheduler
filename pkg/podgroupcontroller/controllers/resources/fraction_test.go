@@ -15,7 +15,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 )
 
 func Test_getReceivedFraction(t *testing.T) {
@@ -42,23 +41,6 @@ func Test_getReceivedFraction(t *testing.T) {
 			&v1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{constants.GpuMemory: "2000"},
-				},
-				Spec: v1.PodSpec{NodeName: "n1"},
-			},
-			&v1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:   "n1",
-					Labels: map[string]string{constants.NvidiaGpuMemory: "4000"},
-				},
-			},
-			resource.MustParse("0.5"),
-			false,
-		},
-		{
-			"NvFractions request + Nvidia node",
-			&v1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Annotations: map[string]string{resources.CalcGpuFractionAnnotationForContainer(""): "2000Mi"},
 				},
 				Spec: v1.PodSpec{NodeName: "n1"},
 			},

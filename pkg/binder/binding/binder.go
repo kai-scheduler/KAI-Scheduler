@@ -54,7 +54,17 @@ func (b *Binder) Bind(ctx context.Context, pod *v1.Pod, node *v1.Node, bindReque
 		}
 	}
 	bindingState := &state.BindingState{
+		BindingPodAnnotations: map[string]string{
+			constants.ReceivedResourceType: bindRequest.Spec.ReceivedResourceType,
+		},
 		ReservedGPUIds: reservedGPUIds,
+	}
+	if len(bindRequest.Spec.PredictedNUMAZones) > 0 {
+		placement, err := json.Marshal(bindRequest.Spec.PredictedNUMAZones)
+		if err != nil {
+			return err
+		}
+		bindingState.BindingPodAnnotations[constants.NumaPlacementPredicted] = string(placement)
 	}
 
 	err = b.plugins.PreBind(ctx, pod, node, bindRequest, bindingState)
@@ -62,7 +72,7 @@ func (b *Binder) Bind(ctx context.Context, pod *v1.Pod, node *v1.Node, bindReque
 		return err
 	}
 
-	err = b.patchBindAnnotations(ctx, pod, bindRequest)
+	err = b.patchPodBindingAnnotations(ctx, pod, bindingState)
 	if err != nil {
 		return fmt.Errorf("failed to patch pod <%s/%s> with bind annotations: %w", pod.Namespace, pod.Name, err)
 	}
@@ -127,22 +137,10 @@ func (b *Binder) reserveGPUs(ctx context.Context, pod *v1.Pod, bindRequest *v1al
 	return gpuIndexes, nil
 }
 
-func (b *Binder) patchBindAnnotations(ctx context.Context, pod *v1.Pod, bindRequest *v1alpha2.BindRequest) error {
-	annotations := map[string]string{
-		constants.ReceivedResourceType: bindRequest.Spec.ReceivedResourceType,
-	}
-
-	if len(bindRequest.Spec.PredictedNUMAZones) > 0 {
-		placement, err := json.Marshal(bindRequest.Spec.PredictedNUMAZones)
-		if err != nil {
-			return err
-		}
-		annotations[constants.NumaPlacementPredicted] = string(placement)
-	}
-
+func (b *Binder) patchPodBindingAnnotations(ctx context.Context, pod *v1.Pod, bindingState *state.BindingState) error {
 	patchBytes, err := json.Marshal(map[string]interface{}{
 		"metadata": map[string]interface{}{
-			"annotations": annotations,
+			"annotations": bindingState.BindingPodAnnotations,
 		},
 	})
 	if err != nil {
