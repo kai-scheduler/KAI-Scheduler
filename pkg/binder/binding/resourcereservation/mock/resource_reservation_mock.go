@@ -13,6 +13,7 @@ import (
 	context "context"
 	reflect "reflect"
 
+	v1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	gomock "go.uber.org/mock/gomock"
 	v1 "k8s.io/api/core/v1"
 )
@@ -56,18 +57,18 @@ func (mr *MockInterfaceMockRecorder) RemovePodGpuGroupsConnection(ctx, pod any) 
 }
 
 // ReserveGpuDevice mocks base method.
-func (m *MockInterface) ReserveGpuDevice(ctx context.Context, pod *v1.Pod, nodeName, gpuGroup string) (string, error) {
+func (m *MockInterface) ReserveGpuDevice(ctx context.Context, pod *v1.Pod, nodeName string, fractionalGpuGroup v1alpha2.FractionalGpuGroup) (string, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ReserveGpuDevice", ctx, pod, nodeName, gpuGroup)
+	ret := m.ctrl.Call(m, "ReserveGpuDevice", ctx, pod, nodeName, fractionalGpuGroup)
 	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // ReserveGpuDevice indicates an expected call of ReserveGpuDevice.
-func (mr *MockInterfaceMockRecorder) ReserveGpuDevice(ctx, pod, nodeName, gpuGroup any) *gomock.Call {
+func (mr *MockInterfaceMockRecorder) ReserveGpuDevice(ctx, pod, nodeName, fractionalGpuGroup any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReserveGpuDevice", reflect.TypeOf((*MockInterface)(nil).ReserveGpuDevice), ctx, pod, nodeName, gpuGroup)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReserveGpuDevice", reflect.TypeOf((*MockInterface)(nil).ReserveGpuDevice), ctx, pod, nodeName, fractionalGpuGroup)
 }
 
 // Sync mocks base method.
