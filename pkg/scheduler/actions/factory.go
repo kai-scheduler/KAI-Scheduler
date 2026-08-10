@@ -24,6 +24,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/consolidation"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/preempt"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/resizeeviction"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/stalegangeviction"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 )
@@ -34,4 +35,5 @@ func InitDefaultActions() {
 	framework.RegisterAction(preempt.New())
 	framework.RegisterAction(consolidation.New())
 	framework.RegisterAction(stalegangeviction.New())
+	framework.RegisterAction(resizeeviction.New())
 }
