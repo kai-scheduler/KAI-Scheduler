@@ -1,0 +1,6 @@
+dependencies:
+- name: gpu-sharing
+  repository: oci://ghcr.io/kai-scheduler/gpu-sharing
+  version: v0.1.0-alpha.1
+digest: sha256:c3d7f76c6d2b2fd7b256b7450fb435a82693e8acef1265d10a8d5270fcb028db
+generated: "2026-08-02T20:53:54.374149+03:00"

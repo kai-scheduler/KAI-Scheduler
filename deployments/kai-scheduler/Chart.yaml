@@ -7,3 +7,9 @@ description: KAI Scheduler by NVIDIA
 type: application
 version: 0.0.0
 appVersion: 0.0.0
+
+dependencies:
+  - name: gpu-sharing
+    version: v0.1.0-alpha.1
+    repository: oci://ghcr.io/kai-scheduler/gpu-sharing
+    condition: global.nvFractions.set
