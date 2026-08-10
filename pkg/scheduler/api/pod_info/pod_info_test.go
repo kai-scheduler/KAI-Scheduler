@@ -33,6 +33,7 @@ import (
 
 	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
@@ -345,7 +346,7 @@ func TestPodInfo_updatePodAdditionalFields(t *testing.T) {
 					nil,
 					map[string]string{},
 					map[string]string{
-						commonconstants.GpuMemory: "1024",
+						resources.CalcGpuFractionAnnotationForContainer("main"): "1Gi",
 					}),
 			},
 			expected{
@@ -369,8 +370,8 @@ func TestPodInfo_updatePodAdditionalFields(t *testing.T) {
 					nil,
 					map[string]string{},
 					map[string]string{
-						commonconstants.GpuMemory:              "1024",
-						commonconstants.GpuFractionsNumDevices: "2",
+						resources.CalcGpuFractionAnnotationForContainer("main"): "1Gi",
+						commonconstants.GpuFractionsNumDevices:                  "2",
 					}),
 			},
 			expected{
@@ -485,6 +486,30 @@ func TestPodInfo_updatePodAdditionalFields(t *testing.T) {
 				IsBound:              false,
 				IsChiefPod:           true,
 				GPUGroups:            nil,
+			},
+		},
+		{
+			"Legacy gpu-memory annotation fallback (pod predates NvFractions webhook)",
+			podFields{
+				Job:       common_info.FakePogGroupId,
+				Name:      "p1",
+				Namespace: "ns1",
+				Status:    pod_status.Pending,
+				Pod: common_info.BuildPod("ns1", "p1", "node1", v1.PodPending,
+					common_info.BuildResourceList("2000m", "2G"),
+					nil,
+					map[string]string{},
+					map[string]string{
+						commonconstants.GpuMemory: "2048",
+					}),
+			},
+			expected{
+				GpuRequirement:      *resource_info.NewGpuResourceRequirementWithGpus(0, 2048),
+				ResourceRequestType: "GpuMemory",
+				GPUGroups:           nil,
+				SelectedMigProfile:  "",
+				IsBound:             false,
+				IsChiefPod:          true,
 			},
 		},
 	}

@@ -14,6 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -1303,8 +1304,8 @@ func TestAccumulatedIdleGpus_Filter(t *testing.T) {
 						Name:      "pv1",
 						Namespace: "n2",
 						Annotations: map[string]string{
-							commonconstants.GpuMemory:                "20",
-							commonconstants.PodGroupAnnotationForPod: "potential_victims",
+							resources.CalcGpuFractionAnnotationForContainer("main"): "20Mi",
+							commonconstants.PodGroupAnnotationForPod:                "potential_victims",
 						},
 					},
 					Spec: v1.PodSpec{
