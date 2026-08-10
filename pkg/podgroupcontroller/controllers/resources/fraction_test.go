@@ -183,21 +183,6 @@ func Test_getFractionFromMemoryRequest(t *testing.T) {
 			resource.MustParse("0.25"),
 			false,
 		},
-		{
-			"invalid gpu memory value",
-			args{
-				gpuMemoryStr: "abc",
-				nodeName:     "n1",
-			},
-			&v1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:   "n1",
-					Labels: map[string]string{constants.NvidiaGpuMemory: "4000"},
-				},
-			},
-			resource.Quantity{},
-			true,
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -36,6 +36,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_affinity"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -992,8 +993,8 @@ func TestNodeInfo_isTaskAllocatableOnNonAllocatedResources(t *testing.T) {
 							Name:      "p1",
 							Namespace: "n1",
 							Annotations: map[string]string{
-								commonconstants.PodGroupAnnotationForPod: "pg1",
-								commonconstants.GpuMemory:                "1500",
+								commonconstants.PodGroupAnnotationForPod:              "pg1",
+								resources.CalcGpuFractionAnnotationForContainer("c1"): "1500Mi",
 							},
 						},
 						Spec: v1.PodSpec{
@@ -1038,8 +1039,8 @@ func TestNodeInfo_isTaskAllocatableOnNonAllocatedResources(t *testing.T) {
 							Name:      "p1",
 							Namespace: "n1",
 							Annotations: map[string]string{
-								commonconstants.PodGroupAnnotationForPod: "pg1",
-								commonconstants.GpuMemory:                "1000",
+								commonconstants.PodGroupAnnotationForPod:              "pg1",
+								resources.CalcGpuFractionAnnotationForContainer("c1"): "1000Mi",
 							},
 						},
 						Spec: v1.PodSpec{
