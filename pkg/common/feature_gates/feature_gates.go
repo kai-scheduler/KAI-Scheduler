@@ -4,6 +4,7 @@
 package featuregates
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -11,7 +12,6 @@ import (
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/version"
 	discovery "k8s.io/client-go/discovery"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const (
@@ -27,8 +27,16 @@ const (
 // off to reflect server-side DRA availability.
 var dynamicResourcesEnabled atomic.Bool
 
-func SetDRAFeatureGate(discoveryClient discovery.DiscoveryInterface) {
-	dynamicResourcesEnabled.Store(IsDynamicResourcesEnabled(discoveryClient))
+// SetDRAFeatureGate returns an error if DRA availability could not be determined.
+// Callers must treat that as fatal: the gate is evaluated once per process, so
+// defaulting to disabled would silently reject every DRA workload until restart.
+func SetDRAFeatureGate(discoveryClient discovery.DiscoveryInterface) error {
+	enabled, err := IsDynamicResourcesEnabled(discoveryClient)
+	if err != nil {
+		return err
+	}
+	dynamicResourcesEnabled.Store(enabled)
+	return nil
 }
 
 // DynamicResourcesEnabled reports whether DRA was determined to be usable
@@ -47,8 +55,15 @@ func SetDynamicResourcesEnabledForTest(enabled bool) {
 
 var nodeResourceTopologyEnabled atomic.Bool
 
-func SetNodeResourceTopologyFeatureGate(discoveryClient discovery.DiscoveryInterface) {
-	nodeResourceTopologyEnabled.Store(IsNodeResourceTopologyEnabled(discoveryClient))
+// SetNodeResourceTopologyFeatureGate returns an error if availability could not be
+// determined; see SetDRAFeatureGate for why callers must treat that as fatal.
+func SetNodeResourceTopologyFeatureGate(discoveryClient discovery.DiscoveryInterface) error {
+	enabled, err := IsNodeResourceTopologyEnabled(discoveryClient)
+	if err != nil {
+		return err
+	}
+	nodeResourceTopologyEnabled.Store(enabled)
+	return nil
 }
 
 func NodeResourceTopologyEnabled() bool {
@@ -60,44 +75,40 @@ func SetNodeResourceTopologyEnabledForTest(enabled bool) {
 }
 
 // IsNodeResourceTopologyEnabled reports whether the cluster serves the
-// topology.node.k8s.io API group (the NodeResourceTopology CRD).
-func IsNodeResourceTopologyEnabled(discoveryClient discovery.DiscoveryInterface) bool {
-	logger := log.Log.WithName("feature-gates")
-
+// topology.node.k8s.io API group (the NodeResourceTopology CRD). A discovery
+// failure is returned as an error rather than reported as "not served".
+func IsNodeResourceTopologyEnabled(discoveryClient discovery.DiscoveryInterface) (bool, error) {
 	serverGroups, err := discoveryClient.ServerGroups()
 	if err != nil {
-		logger.Error(err, "Failed to get server groups")
-		return false
+		return false, fmt.Errorf("failed to get server groups: %w", err)
 	}
 
 	for _, group := range serverGroups.Groups {
 		if group.Name == nodeResourceTopologyGroup {
-			return true
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
 }
 
-func IsDynamicResourcesEnabled(discoveryClient discovery.DiscoveryInterface) bool {
-	logger := log.Log.WithName("feature-gates")
-
+// IsDynamicResourcesEnabled reports whether the cluster supports DRA. A discovery
+// failure is returned as an error rather than reported as "not supported".
+func IsDynamicResourcesEnabled(discoveryClient discovery.DiscoveryInterface) (bool, error) {
 	// Get API server version
 	serverVersion, err := discoveryClient.ServerVersion()
 	if err != nil {
-		logger.Error(err, "Failed to get server version")
-		return false
+		return false, fmt.Errorf("failed to get server version: %w", err)
 	}
 
 	// Check if the API server version is compatible with DRA
 	if !isCompatibleDRAVersion(serverVersion) {
-		return false
+		return false, nil
 	}
 
 	// Get supported API versions
 	serverGroups, err := discoveryClient.ServerGroups()
 	if err != nil {
-		logger.Error(err, "Failed to get server groups")
-		return false
+		return false, fmt.Errorf("failed to get server groups: %w", err)
 	}
 
 	found := false
@@ -110,17 +121,17 @@ func IsDynamicResourcesEnabled(discoveryClient discovery.DiscoveryInterface) boo
 		}
 	}
 	if !found {
-		return false
+		return false, nil
 	}
 
 	// Check if the DRA API group is supported
 	for _, groupVersion := range resourceGroup.Versions {
 		if version.CompareKubeAwareVersionStrings(groupVersion.Version, minimalSupportedVersion) >= 0 {
-			return true
+			return true, nil
 		}
 	}
 
-	return false
+	return false, nil
 }
 
 func isCompatibleDRAVersion(serverVersion *version.Info) bool {
