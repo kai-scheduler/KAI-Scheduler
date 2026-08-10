@@ -41,6 +41,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal/predicates"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/gpusharingnodevalidation"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/scheduler_util"
 )
 
@@ -336,7 +337,7 @@ func (pp *predicatesPlugin) evaluateTaskOnPredicates(
 				" task: <%v/%v>, node: <%v>", task.Namespace, task.Name, node.Name))
 	}
 
-	if err := pp.checkMaxPodsWithGpuGroupReservation(task, node); err != nil {
+	if err := gpusharingnodevalidation.Validate(task, node, pp.ssn); err != nil {
 		return err
 	}
 
