@@ -363,6 +363,10 @@ func buildArgsList(
 		fmt.Sprintf("--%s=%s", "queue-label-key", *kaiConfig.Spec.Global.QueueLabelKey),
 	}
 
+	if kaiConfig.Spec.Global.GpuSharingMode != nil {
+		args = append(args, fmt.Sprintf("--%s=%s", "gpu-sharing-mode", *kaiConfig.Spec.Global.GpuSharingMode))
+	}
+
 	if kaiConfig.Spec.Scheduler.SchedulerService.Port != nil {
 		portNumberString := strconv.Itoa(*kaiConfig.Spec.Scheduler.SchedulerService.Port)
 		args = append(args, fmt.Sprintf("--%s=:%s", "listen-address", portNumberString))

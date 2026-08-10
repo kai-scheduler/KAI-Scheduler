@@ -8,7 +8,11 @@ import (
 
 	. "go.uber.org/mock/gomock"
 	"gopkg.in/h2non/gock.v1"
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/utils/ptr"
 
+	kaiv1common "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/allocate"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/integration_tests_utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
@@ -36,6 +40,75 @@ func TestHandleFractionalGPUAllocation(t *testing.T) {
 
 		test_utils.MatchExpectedAndRealTasks(t, testNumber, testMetadata.TestTopologyBasic, ssn)
 	}
+}
+
+func TestFractionalGPUAllocationUsesNodeConditionOverride(t *testing.T) {
+	test_utils.InitTestingInfrastructure()
+	controller := NewController(t)
+	defer controller.Finish()
+	defer gock.Off()
+
+	notReadyConditions := []v1.NodeCondition{
+		{
+			Type:   v1.NodeConditionType(commonconstants.NvFractionNodeReadyConditionType),
+			Status: v1.ConditionFalse,
+			Reason: "DevicePluginNotReady",
+		},
+	}
+	topology := test_utils.TestTopologyBasic{
+		Name: "fractional pod cannot allocate on gpu sharing unready node",
+		Jobs: []*jobs_fake.TestJobBasic{
+			{
+				Name:              "pending_job0",
+				RequiredGpuMemory: 50,
+				Priority:          constants.PriorityTrainNumber,
+				QueueName:         "queue0",
+				Tasks: []*tasks_fake.TestTaskBasic{
+					{
+						State: pod_status.Pending,
+					},
+				},
+			},
+		},
+		Nodes: map[string]nodes_fake.TestNodeBasic{
+			"node0": {
+				GPUs:       1,
+				Conditions: ptr.To(notReadyConditions),
+			},
+			"node1": {
+				GPUs:       1,
+				Conditions: ptr.To(notReadyConditions),
+			},
+		},
+		Queues: []test_utils.TestQueueBasic{
+			{
+				Name:         "queue0",
+				DeservedGPUs: 1,
+			},
+		},
+		JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+			"pending_job0": {
+				Status: pod_status.Pending,
+				ExpectedErrorMessage: "\nPodSchedulingErrors.\nResources were not found for pod /pending_job0-0 due to: " +
+					"no nodes with enough resources were found: 2 node is not ready for fractional GPU scheduling. " +
+					"Condition gpu-sharing.nvidia.com/Ready is False. Reason: DevicePluginNotReady. Message: ..",
+			},
+		},
+		Mocks: &test_utils.TestMock{
+			SchedulerConf: &conf.SchedulerConfiguration{
+				Actions: "allocate, consolidation, reclaim, preempt, stalegangeviction",
+			},
+			CacheRequirements: &test_utils.CacheMocking{
+				NumberOfCacheBinds: 0,
+			},
+		},
+	}
+
+	ssn := test_utils.BuildSession(topology, controller)
+	ssn.SchedulerParams.GpuSharingMode = ptr.To(kaiv1common.GpuSharingModeNvFractions)
+	allocate.New().Execute(ssn)
+
+	test_utils.MatchExpectedAndRealTasks(t, 0, topology, ssn)
 }
 
 func getFractionalGPUTestsMetadata() []integration_tests_utils.TestTopologyMetadata {
