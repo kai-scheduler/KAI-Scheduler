@@ -51,7 +51,8 @@ func registerPlugins(app *app.App) error {
 	if app.Options.NvFractionsEnabled {
 		admissionPlugins.RegisterPlugin(nvfractions.New())
 	} else {
-		admissionGpuSharingPlugin := gpusharing.New(app.Client, app.Options.GPUSharingEnabled)
+		admissionGpuSharingPlugin := gpusharing.New(
+			app.Client, app.Options.GPUSharingEnabled, app.Options.NRIPluginEnabled)
 		admissionPlugins.RegisterPlugin(admissionGpuSharingPlugin)
 	}
 

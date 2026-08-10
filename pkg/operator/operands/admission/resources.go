@@ -44,7 +44,11 @@ func (a *Admission) deploymentForKAIConfig(
 	deployment.Spec.Strategy.Type = appsv1.RecreateDeploymentStrategyType
 	deployment.Spec.Strategy.RollingUpdate = nil
 	deployment.Spec.Replicas = config.Replicas
-	deployment.Spec.Template.Spec.Containers[0].Args = buildArgsList(kaiConfig, config)
+	nriPluginEnabled, err := common.IsGPUOperatorNRIPluginEnabled(ctx, runtimeClient)
+	if err != nil {
+		return nil, err
+	}
+	deployment.Spec.Template.Spec.Containers[0].Args = buildArgsList(kaiConfig, config, nriPluginEnabled)
 	deployment.Spec.Template.Spec.Containers[0].VolumeMounts = []v1.VolumeMount{
 		{
 			Name:      "cert",
@@ -403,7 +407,7 @@ func calculateServiceUrl(serviceName, namespace string) string {
 	return fmt.Sprintf("%s.%s.svc", serviceName, namespace)
 }
 
-func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1admission.Admission) []string {
+func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1admission.Admission, nriPluginEnabled bool) []string {
 	args := []string{
 		"--scheduler-name",
 		*kaiConfig.Spec.Global.SchedulerName,
@@ -417,6 +421,9 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1admission.Admission) []
 
 	if config.GPUSharing != nil && *config.GPUSharing {
 		args = append(args, "--gpu-sharing-enabled=true")
+	}
+	if nriPluginEnabled {
+		args = append(args, "--nri-plugin-enabled=true")
 	}
 
 	if isHamiCoreEnabled(kaiConfig) {

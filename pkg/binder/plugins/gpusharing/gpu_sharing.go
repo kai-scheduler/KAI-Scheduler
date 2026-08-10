@@ -21,18 +21,21 @@ import (
 )
 
 const (
-	CdiDeviceNameBase = "k8s.device-plugin.nvidia.com/gpu=%s"
+	CdiDeviceNameBase      = "k8s.device-plugin.nvidia.com/gpu=%s"
+	cdiContainerAnnotation = "nvidia.cdi.k8s.io/container.%s"
 )
 
 type GPUSharing struct {
 	kubeClient             client.Client
 	gpuDevicePluginUsesCdi bool
+	nriPluginEnabled       bool
 }
 
-func New(kubeClient client.Client, gpuDevicePluginUsesCdi bool) *GPUSharing {
+func New(kubeClient client.Client, gpuDevicePluginUsesCdi bool, nriPluginEnabled bool) *GPUSharing {
 	return &GPUSharing{
 		kubeClient:             kubeClient,
 		gpuDevicePluginUsesCdi: gpuDevicePluginUsesCdi,
+		nriPluginEnabled:       nriPluginEnabled,
 	}
 }
 
@@ -70,12 +73,23 @@ func (p *GPUSharing) PreBind(
 	}
 
 	nVisibleDevicesStr := strings.Join(reservedGPUIds, ",")
-	err = common.SetNvidiaVisibleDevices(ctx, p.kubeClient, pod, containerRef, nVisibleDevicesStr)
-	if err != nil {
+	if err = p.setVisibleDevices(ctx, pod, containerRef, state, nVisibleDevicesStr); err != nil {
 		return err
 	}
 
 	return common.SetGPUPortion(ctx, p.kubeClient, pod, containerRef, bindRequest.Spec.ReceivedGPU.Portion)
+}
+
+func (p *GPUSharing) setVisibleDevices(ctx context.Context, pod *v1.Pod,
+	containerRef *gpusharingconfigmap.PodContainerRef, state *state.BindingState, visibleDevices string) error {
+	if !p.nriPluginEnabled {
+		return common.SetNvidiaVisibleDevices(ctx, p.kubeClient, pod, containerRef, visibleDevices)
+	}
+	if state.BindingPodAnnotations == nil {
+		state.BindingPodAnnotations = map[string]string{}
+	}
+	state.BindingPodAnnotations[fmt.Sprintf(cdiContainerAnnotation, containerRef.Container.Name)] = visibleDevices
+	return nil
 }
 
 func (p *GPUSharing) createCapabilitiesConfigMapIfMissing(ctx context.Context, pod *v1.Pod,

@@ -22,6 +22,7 @@ type Options struct {
 	WebhookPort                 int
 	FakeGPUNodes                bool
 	GPUSharingEnabled           bool
+	NRIPluginEnabled            bool
 	HamiCoreEnabled             bool
 	NvFractionsEnabled          bool
 	BlockNvidiaVisibleDevices   bool
@@ -77,6 +78,9 @@ func InitOptions() *Options {
 	fs.BoolVar(&options.GPUSharingEnabled,
 		"gpu-sharing-enabled", false,
 		"Specifies if the GPU sharing is enabled")
+	fs.BoolVar(&options.NRIPluginEnabled,
+		"nri-plugin-enabled", false,
+		"Specifies if the NVIDIA GPU Operator CDI NRI plugin is enabled")
 	fs.BoolVar(&options.HamiCoreEnabled,
 		"hami-core-enabled", false,
 		"Specifies if the HAMI-core GPU memory limit injection is enabled")

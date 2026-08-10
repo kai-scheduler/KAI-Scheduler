@@ -27,6 +27,7 @@ const (
 
 	BindTimeoutSecondsArgument = "bindTimeoutSeconds"
 	CDIEnabledArgument         = "cdiEnabled"
+	NRIPluginEnabledArgument   = "nriPluginEnabled"
 
 	DefaultBindTimeoutSeconds = 120
 	DefaultCDIEnabled         = false
@@ -145,6 +146,10 @@ func (b *Binder) setDefaultPlugins(gpuSharingMode common.GpuSharingMode) {
 	binderPluginConfig := DefaultPluginsConfig(ptr.Deref(b.VolumeBindingTimeoutSeconds, DefaultBindTimeoutSeconds),
 		ptr.Deref(b.CDIEnabled, DefaultCDIEnabled), gpuSharingEnabled, hamiCoreEnabled, nvFractionsEnabled)
 
+	gpuSharingDefault := binderPluginConfig[GPUSharingPluginName]
+	delete(gpuSharingDefault.Arguments, NRIPluginEnabledArgument)
+	binderPluginConfig[GPUSharingPluginName] = gpuSharingDefault
+
 	// When CDIEnabled is unset at the API level, leave the cdiEnabled argument
 	// unbaked on the CDI-aware plugins (gpusharing, nvfractions) so the operator
 	// can resolve it (auto-detect) without having to distinguish a defaulted value
@@ -205,7 +210,8 @@ func DefaultPluginsConfig(bindTimeoutSeconds int, cdiEnabled bool,
 			Enabled:  ptr.To(gpuSharingEnabled),
 			Priority: ptr.To(defaultPluginPriorities[GPUSharingPluginName]),
 			Arguments: map[string]string{
-				CDIEnabledArgument: strconv.FormatBool(cdiEnabled),
+				CDIEnabledArgument:       strconv.FormatBool(cdiEnabled),
+				NRIPluginEnabledArgument: strconv.FormatBool(false),
 			},
 		},
 		NvFractionsPluginName: {

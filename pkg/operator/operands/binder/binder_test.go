@@ -227,6 +227,19 @@ var _ = Describe("Binder", func() {
 					expectGPUSharingCDI((*deploymentT).Spec.Template.Spec.Containers[0].Args, false)
 				})
 
+				It("resolves NRI plugin flag from the gpu-operator cluster-policy", func(ctx context.Context) {
+					clusterPolicy.Name = "cluster-policy"
+					clusterPolicy.Spec.CDI.NRIPluginEnabled = ptr.To(true)
+					Expect(fakeKubeClient.Create(ctx, clusterPolicy)).To(Succeed())
+
+					objects, err := b.DesiredState(ctx, fakeKubeClient, kaiConfig)
+					Expect(err).To(BeNil())
+
+					deploymentT := test_utils.FindTypeInObjects[*appsv1.Deployment](objects)
+					Expect(deploymentT).NotTo(BeNil())
+					expectGPUSharingNRIPlugin((*deploymentT).Spec.Template.Spec.Containers[0].Args, true)
+				})
+
 				It("uses explicit CDIEnabled=true from config, ignoring ClusterPolicy", func(ctx context.Context) {
 					clusterPolicy.Spec.CDI.Default = ptr.To(false)
 					Expect(fakeKubeClient.Create(ctx, clusterPolicy)).To(Succeed())
@@ -501,6 +514,13 @@ func expectNvFractionsCDI(args []string, enabled bool) {
 	expectNoStandalonePluginArgs(args)
 	pluginConfig := binderPluginsConfig(args)
 	Expect(pluginConfig[binderplugins.NvFractionsPluginName].Arguments[binderplugins.CDIEnabledArgument]).
+		To(Equal(strconv.FormatBool(enabled)))
+}
+
+func expectGPUSharingNRIPlugin(args []string, enabled bool) {
+	expectNoStandalonePluginArgs(args)
+	pluginConfig := binderPluginsConfig(args)
+	Expect(pluginConfig[binderplugins.GPUSharingPluginName].Arguments[binderplugins.NRIPluginEnabledArgument]).
 		To(Equal(strconv.FormatBool(enabled)))
 }
 
