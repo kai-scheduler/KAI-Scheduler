@@ -233,6 +233,7 @@ jobs:
 
       - name: Build helm chart
         run: |
+          helm dependency build ./deployments/kai-scheduler
           helm package ./deployments/kai-scheduler -d ./charts --app-version $PACKAGE_VERSION --version $PACKAGE_VERSION
           cp charts/kai-scheduler-$PACKAGE_VERSION.tgz /mnt/images/
 

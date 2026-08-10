@@ -138,6 +138,7 @@ if [ "$LOCAL_IMAGES_BUILD" = "true" ]; then
 fi
 
 # Package the new helm chart
+helm dependency build ./deployments/kai-scheduler
 helm package ./deployments/kai-scheduler -d ./charts --app-version $PACKAGE_VERSION --version $PACKAGE_VERSION
 export UPGRADE_CHART_PATH=${REPO_ROOT}/charts/kai-scheduler-$PACKAGE_VERSION.tgz
 
