@@ -15,6 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 )
 
 func Test_getReceivedFraction(t *testing.T) {
@@ -41,6 +42,23 @@ func Test_getReceivedFraction(t *testing.T) {
 			&v1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{constants.GpuMemory: "2000"},
+				},
+				Spec: v1.PodSpec{NodeName: "n1"},
+			},
+			&v1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "n1",
+					Labels: map[string]string{constants.NvidiaGpuMemory: "4000"},
+				},
+			},
+			resource.MustParse("0.5"),
+			false,
+		},
+		{
+			"NvFractions request + Nvidia node",
+			&v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{resources.CalcGpuFractionAnnotationForContainer(""): "2000Mi"},
 				},
 				Spec: v1.PodSpec{NodeName: "n1"},
 			},
@@ -143,8 +161,8 @@ func Test_getReceivedFraction(t *testing.T) {
 
 func Test_getFractionFromMemoryRequest(t *testing.T) {
 	type args struct {
-		gpuMemoryStr string
-		nodeName     string
+		gpuMemory int64
+		nodeName  string
 	}
 	tests := []struct {
 		name    string
@@ -156,8 +174,8 @@ func Test_getFractionFromMemoryRequest(t *testing.T) {
 		{
 			"Node with Nvidia memory label",
 			args{
-				gpuMemoryStr: "2000",
-				nodeName:     "n1",
+				gpuMemory: 2000,
+				nodeName:  "n1",
 			},
 			&v1.Node{
 				ObjectMeta: metav1.ObjectMeta{
@@ -171,8 +189,8 @@ func Test_getFractionFromMemoryRequest(t *testing.T) {
 		{
 			"Node with Amd memory label",
 			args{
-				gpuMemoryStr: "4000",
-				nodeName:     "n1",
+				gpuMemory: 4000,
+				nodeName:  "n1",
 			},
 			&v1.Node{
 				ObjectMeta: metav1.ObjectMeta{
@@ -193,7 +211,7 @@ func Test_getFractionFromMemoryRequest(t *testing.T) {
 			}
 			kubeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(tt.node).Build()
 
-			got, err := getFractionFromMemoryRequest(context.TODO(), tt.args.gpuMemoryStr, tt.args.nodeName, kubeClient)
+			got, err := getFractionFromMemoryRequest(context.TODO(), tt.args.gpuMemory, tt.args.nodeName, kubeClient)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("getFractionFromMemoryRequest() error = %v, wantErr %v", err, tt.wantErr)
 				return

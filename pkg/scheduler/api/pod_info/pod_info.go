@@ -46,7 +46,6 @@ const (
 	GPUGroup                           = "runai-gpu-group"
 	ReceivedResourceTypeAnnotationName = "received-resource-type"
 	WholeGpuIndicator                  = "-2"
-	bytesPerMiB                        = int64(1024 * 1024)
 )
 
 type ResourceRequestType string
@@ -474,23 +473,26 @@ func (pi *PodInfo) updatePodAdditionalFields(bindRequest *bindrequest_info.BindR
 		}
 	}
 
-	gpuMemoryRequest := pi.updateGpuMemoryRequest()
-
-	gpuFractionString := pi.Pod.Annotations[commonconstants.GpuFraction]
-	gpuFraction, GPUFractionErr := strconv.ParseFloat(gpuFractionString, 64)
-	if !(gpuFraction <= 0 || gpuFraction > 1 || GPUFractionErr != nil) {
-		pi.GpuRequirement = *resource_info.NewGpuResourceRequirementWithGpus(gpuFraction, 0)
-		pi.ResourceRequestType = RequestTypeFraction
+	gpuFractionReq, err := resources.ParsePodGPUFractionRequest(pi.Pod)
+	if err != nil {
+		log.InfraLogger.Errorf("Failed to parse GPU fraction request for pod %s/%s: %s", pi.Pod.Namespace, pi.Pod.Name, err)
 	}
-
-	if pi.ResourceRequestType == RequestTypeFraction || pi.ResourceRequestType == RequestTypeGpuMemory {
-		numFractionDevicesStr, found := pi.Pod.Annotations[commonconstants.GpuFractionsNumDevices]
-		if found && numFractionDevicesStr != "" {
-			numFractionDevices, numFractionDevicesErr := strconv.ParseInt(numFractionDevicesStr, 10, 64)
-			if numFractionDevicesErr == nil {
-				pi.GpuRequirement = *resource_info.NewGpuResourceRequirementWithMultiFraction(
-					numFractionDevices, gpuFraction, gpuMemoryRequest)
+	if gpuFractionReq != nil {
+		if gpuFractionReq.Memory != nil {
+			pi.GpuRequirement = *resource_info.NewGpuResourceRequirementWithGpus(
+				0, gpuFractionReq.Memory.Value()/resources.BytesInMiB)
+			pi.ResourceRequestType = RequestTypeGpuMemory
+		} else if gpuFractionReq.Portion > 0 {
+			pi.GpuRequirement = *resource_info.NewGpuResourceRequirementWithGpus(gpuFractionReq.Portion, 0)
+			pi.ResourceRequestType = RequestTypeFraction
+		}
+		if gpuFractionReq.NumDevices > 1 {
+			memMiB := int64(0)
+			if gpuFractionReq.Memory != nil {
+				memMiB = gpuFractionReq.Memory.Value() / resources.BytesInMiB
 			}
+			pi.GpuRequirement = *resource_info.NewGpuResourceRequirementWithMultiFraction(
+				gpuFractionReq.NumDevices, gpuFractionReq.Portion, memMiB)
 		}
 	}
 
