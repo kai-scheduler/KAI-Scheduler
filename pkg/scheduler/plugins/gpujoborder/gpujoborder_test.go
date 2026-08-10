@@ -4,6 +4,7 @@
 package gpujoborder
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -148,7 +149,7 @@ func makeElasticJob(uid string, priority int32, minAvailable int32, allocatedTas
 
 	for i := 0; i < allocatedTasks; i++ {
 		task := &pod_info.PodInfo{
-			UID:          common_info.PodID(uid + "-task"),
+			UID:          common_info.PodID(fmt.Sprintf("%s-task-%d", uid, i)),
 			ResReqVector: resource_info.NewResourceVectorWithValues(0, 0, gpuPerTask, vm),
 			Status:       pod_status.Running,
 		}
