@@ -6,10 +6,8 @@ package podhooks
 import (
 	"context"
 	"fmt"
-	"net/http"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	resourcehelpers "k8s.io/component-helpers/resource"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -26,23 +24,21 @@ var resizeLog = logf.Log.WithName("pod-resize-validator")
 // memoryLimitBytesPerUnit converts a Queue Memory.Limit (in megabytes) to bytes.
 const memoryLimitBytesPerUnit = 1_000_000
 
-// PodResizeValidator is an admission.Handler that enforces best-effort queue quota
-// on pods/resize requests. It checks that the resource delta of the resize would
-// not push any queue on the pod's hierarchy over its configured limit (all workloads)
-// or over its deserved quota for non-preemptible workloads.
+// PodResizeValidator enforces best-effort queue quota on pods/resize requests.
+// It checks that the resource delta of the resize would not push any queue on
+// the pod's hierarchy over its configured limit (all workloads) or over its
+// deserved quota for non-preemptible workloads.
 type PodResizeValidator struct {
 	kubeClient                 client.Client
 	schedulerName              string
-	decoder                    admission.Decoder
 	validateQuota              bool
 	blockUpsizeOnBoundedQueues bool
 }
 
-// NewPodResizeValidator creates a PodResizeValidator. The scheme is used to decode
-// pod objects from the admission request.
+var _ admission.Validator[*corev1.Pod] = &PodResizeValidator{}
+
 func NewPodResizeValidator(
 	kubeClient client.Client,
-	scheme *runtime.Scheme,
 	schedulerName string,
 	validateQuota bool,
 	blockUpsizeOnBoundedQueues bool,
@@ -50,31 +46,26 @@ func NewPodResizeValidator(
 	return &PodResizeValidator{
 		kubeClient:                 kubeClient,
 		schedulerName:              schedulerName,
-		decoder:                    admission.NewDecoder(scheme),
 		validateQuota:              validateQuota,
 		blockUpsizeOnBoundedQueues: blockUpsizeOnBoundedQueues,
 	}
 }
 
-func (v *PodResizeValidator) Handle(ctx context.Context, req admission.Request) admission.Response {
-	newPod := &corev1.Pod{}
-	if err := v.decoder.DecodeRaw(req.Object, newPod); err != nil {
-		return admission.Errored(http.StatusBadRequest, fmt.Errorf("decode new pod: %w", err))
-	}
-
+func (v *PodResizeValidator) ValidateUpdate(ctx context.Context, oldPod, newPod *corev1.Pod) (admission.Warnings, error) {
 	if newPod.Spec.SchedulerName != v.schedulerName {
-		return admission.Allowed("")
+		return nil, nil
 	}
+	return nil, v.validateResize(ctx, oldPod, newPod)
+}
 
-	oldPod := &corev1.Pod{}
-	if err := v.decoder.DecodeRaw(req.OldObject, oldPod); err != nil {
-		return admission.Errored(http.StatusBadRequest, fmt.Errorf("decode old pod: %w", err))
-	}
+// ValidateCreate and ValidateDelete never fire: the webhook is registered only
+// for UPDATE operations on the pods/resize subresource.
+func (v *PodResizeValidator) ValidateCreate(context.Context, *corev1.Pod) (admission.Warnings, error) {
+	return nil, nil
+}
 
-	if err := v.validateResize(ctx, oldPod, newPod); err != nil {
-		return admission.Denied(err.Error())
-	}
-	return admission.Allowed("")
+func (v *PodResizeValidator) ValidateDelete(context.Context, *corev1.Pod) (admission.Warnings, error) {
+	return nil, nil
 }
 
 func (v *PodResizeValidator) validateResize(ctx context.Context, oldPod, newPod *corev1.Pod) error {

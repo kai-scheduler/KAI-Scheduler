@@ -8,7 +8,6 @@ import (
 	"flag"
 
 	admissionhooks "github.com/kai-scheduler/KAI-scheduler/pkg/admission/webhook/v1alpha2/podhooks"
-	admissionwebhook "sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -168,18 +167,21 @@ func (app *App) Run() error {
 		return err
 	}
 
-	app.manager.GetWebhookServer().Register(
-		"/validate--v1-pod-resize",
-		&admissionwebhook.Webhook{
-			Handler: admissionhooks.NewPodResizeValidator(
-				app.manager.GetClient(),
-				app.manager.GetScheme(),
-				app.Options.SchedulerName,
-				app.Options.ValidatePodResizeQuota,
-				app.Options.BlockUpsizeOnBoundedQueues,
-			),
-		},
-	)
+	// Second validating endpoint for the Pod type: the canonical
+	// /validate--v1-pod path is taken by the pod validator above, so this one
+	// registers under an explicit path scoped to the resize subresource.
+	if err = ctrl.NewWebhookManagedBy(app.manager, &corev1.Pod{}).
+		WithValidator(admissionhooks.NewPodResizeValidator(
+			app.manager.GetClient(),
+			app.Options.SchedulerName,
+			app.Options.ValidatePodResizeQuota,
+			app.Options.BlockUpsizeOnBoundedQueues,
+		)).
+		WithValidatorCustomPath("/validate--v1-pod-resize").
+		Complete(); err != nil {
+		setupLog.Error(err, "unable to create pod resize webhook", "webhook", "PodResize")
+		return err
+	}
 
 	if err = ctrl.NewWebhookManagedBy(app.manager, &kaiv1alpha1.Topology{}).
 		WithValidator(topologyhooks.NewTopologyValidator()).Complete(); err != nil {
