@@ -137,6 +137,14 @@ rules:
   - update
   - watch
 - apiGroups:
+  - gpu-sharing.kai.scheduler
+  resources:
+  - gpusharingconfigs
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - kai.scheduler
   resources:
   - configs

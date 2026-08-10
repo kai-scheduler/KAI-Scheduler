@@ -45,6 +45,7 @@ func checkNvFractionalGPUReadyCondition(task *pod_info.PodInfo, node *node_info.
 
 	conditionStatus := v1.ConditionUnknown
 	conditionReason := fractionalGPUReadyReasonMissing
+	conditionMessage := ""
 	for _, condition := range node.Node.Status.Conditions {
 		if condition.Type != fractionalGPUReadyConditionType {
 			continue
@@ -56,13 +57,16 @@ func checkNvFractionalGPUReadyCondition(task *pod_info.PodInfo, node *node_info.
 		if condition.Reason != "" {
 			conditionReason = condition.Reason
 		}
+		conditionMessage = condition.Message
 		break
 	}
 
-	return common_info.NewFitError(task.Name, task.Namespace, node.Name, fmt.Sprintf(
-		"node is not ready for fractional GPU scheduling. Condition %s is %s. Reason: %s",
-		fractionalGPUReadyConditionType, conditionStatus, conditionReason,
-	))
+	failureMessage := fmt.Sprintf(
+		"node is not ready for fractional GPU scheduling. Condition %s is %s. Reason: %s. Message: %s",
+		fractionalGPUReadyConditionType, conditionStatus, conditionReason, conditionMessage,
+	)
+
+	return common_info.NewFitError(task.Name, task.Namespace, node.Name, failureMessage)
 }
 
 func isNvFractionsMode(ssn *framework.Session) bool {
@@ -104,13 +108,13 @@ func willCreateNewGpuGroup(task *pod_info.PodInfo, node *node_info.NodeInfo, ssn
 	gpuForSharingImmediate := gpu_sharing.GetNodePreferableGpuForSharing(fittingGPUs, node, task, false)
 
 	if gpuForSharingImmediate != nil && !gpuForSharingImmediate.IsReleasing {
-		return containsNewGpuGroup(gpuForSharingImmediate.GroupIDs())
+		return containsNewGpuGroup(gpuForSharingImmediate.Groups)
 	}
 
 	gpuForSharingPipelined := gpu_sharing.GetNodePreferableGpuForSharing(fittingGPUs, node, task, true)
 
 	if gpuForSharingPipelined != nil {
-		return containsNewGpuGroup(gpuForSharingPipelined.GroupIDs())
+		return containsNewGpuGroup(gpuForSharingPipelined.Groups)
 	}
 
 	// No GPU assignment possible - conservatively assume new group would be needed

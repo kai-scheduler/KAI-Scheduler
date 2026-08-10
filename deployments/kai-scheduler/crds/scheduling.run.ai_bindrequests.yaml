@@ -1333,6 +1333,7 @@ spec:
                 description: |-
                   SelectedGPUGroups is the name of the selected GPU groups for fractional GPU resources.
                   Only if the RecievedResourceType is "Fraction"
+                  Deprecated: Use SelectedFractionalGpuGroups instead
                 items:
                   type: string
                 type: array

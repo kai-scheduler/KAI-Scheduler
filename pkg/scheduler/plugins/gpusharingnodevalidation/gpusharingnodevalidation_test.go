@@ -40,7 +40,7 @@ func TestCheckNvFractionalGPUReadyCondition(t *testing.T) {
 			},
 		},
 		{
-			name: "shared gpu task in NvFractions mode with false ready condition fails with condition reason",
+			name: "shared gpu task in NvFractions mode with false ready condition fails with condition reason and message",
 			task: &pod_info.PodInfo{
 				Name:                "shared-pod",
 				Namespace:           "ns",
@@ -48,10 +48,10 @@ func TestCheckNvFractionalGPUReadyCondition(t *testing.T) {
 			},
 			mode: kaiv1common.GpuSharingModeNvFractions,
 			conditions: []v1.NodeCondition{
-				newFractionalGPUReadyCondition(v1.ConditionFalse, "DevicePluginNotReady"),
+				newFractionalGPUReadyCondition(v1.ConditionFalse, "DevicePluginNotReady", "device plugin is not ready"),
 			},
 			expectedErr: common_info.NewFitError("shared-pod", "ns", "node-a",
-				"node is not ready for fractional GPU scheduling. Condition gpu-sharing.nvidia.com/Ready is False. Reason: DevicePluginNotReady"),
+				"node is not ready for fractional GPU scheduling. Condition gpu-sharing.nvidia.com/Ready is False. Reason: DevicePluginNotReady. Message: device plugin is not ready"),
 		},
 		{
 			name: "shared gpu task in NvFractions mode with missing ready condition fails",
@@ -62,7 +62,7 @@ func TestCheckNvFractionalGPUReadyCondition(t *testing.T) {
 			},
 			mode: kaiv1common.GpuSharingModeNvFractions,
 			expectedErr: common_info.NewFitError("shared-pod", "ns", "node-a",
-				"node is not ready for fractional GPU scheduling. Condition gpu-sharing.nvidia.com/Ready is Unknown. Reason: ConditionNotFound"),
+				"node is not ready for fractional GPU scheduling. Condition gpu-sharing.nvidia.com/Ready is Unknown. Reason: ConditionNotFound. Message: "),
 		},
 		{
 			name: "NvFractions-looking pod ignores false ready condition when config is not NvFractions mode",
@@ -118,6 +118,7 @@ func TestFractionalGPUReadyConditionUnschedulableMessageForTwoNodes(t *testing.T
 	}
 
 	fitErrors := common_info.NewFitErrors()
+	var nodeErrors []*common_info.TasksFitError
 	for _, node := range nodes {
 		err := checkNvFractionalGPUReadyCondition(
 			task, node, isNvFractionsMode(newSessionWithMode(kaiv1common.GpuSharingModeNvFractions)),
@@ -125,21 +126,26 @@ func TestFractionalGPUReadyConditionUnschedulableMessageForTwoNodes(t *testing.T
 		if err == nil {
 			t.Fatalf("checkNvFractionalGPUReadyCondition() on %s = nil, want error", node.Name)
 		}
-		fitErrors.SetNodeError(node.Name, err)
+		fitErrors.AddNodeError(err)
+		nodeError, ok := err.(*common_info.TasksFitError)
+		if !ok {
+			t.Fatalf("checkNvFractionalGPUReadyCondition() on %s = %T, want *TasksFitError", node.Name, err)
+		}
+		nodeErrors = append(nodeErrors, nodeError)
 	}
 
 	expectedMessage := "no nodes with enough resources were found: " +
-		"1 node is not ready for fractional GPU scheduling. Condition gpu-sharing.nvidia.com/Ready is False. Reason: DevicePluginNotReady. \n" +
-		"1 node is not ready for fractional GPU scheduling. Condition gpu-sharing.nvidia.com/Ready is False. Reason: NoConfigMap."
+		"1 node is not ready for fractional GPU scheduling. Condition gpu-sharing.nvidia.com/Ready is False. Reason: DevicePluginNotReady. Message: . \n" +
+		"1 node is not ready for fractional GPU scheduling. Condition gpu-sharing.nvidia.com/Ready is False. Reason: NoConfigMap. Message: ."
 	if fitErrors.Error() != expectedMessage {
 		t.Fatalf("fitErrors.Error():\n%q\nExpected:\n%q", fitErrors.Error(), expectedMessage)
 	}
 
-	expectedDetailedMessage := "\n<node0>: node is not ready for fractional GPU scheduling. Condition gpu-sharing.nvidia.com/Ready is False. Reason: DevicePluginNotReady." +
-		"\n<node1>: node is not ready for fractional GPU scheduling. Condition gpu-sharing.nvidia.com/Ready is False. Reason: NoConfigMap." +
+	expectedDetailedMessage := "\n<node0>: node is not ready for fractional GPU scheduling. Condition gpu-sharing.nvidia.com/Ready is False. Reason: DevicePluginNotReady. Message: ." +
+		"\n<node1>: node is not ready for fractional GPU scheduling. Condition gpu-sharing.nvidia.com/Ready is False. Reason: NoConfigMap. Message: ." +
 		"\nno nodes with enough resources were found."
-	if fitErrors.DetailedError() != expectedDetailedMessage {
-		t.Fatalf("fitErrors.DetailedError():\n%q\nExpected:\n%q", fitErrors.DetailedError(), expectedDetailedMessage)
+	if fitErrors.DetailedError(nodeErrors) != expectedDetailedMessage {
+		t.Fatalf("fitErrors.DetailedError():\n%q\nExpected:\n%q", fitErrors.DetailedError(nodeErrors), expectedDetailedMessage)
 	}
 }
 
@@ -163,11 +169,16 @@ func newNode(name string, conditions ...v1.NodeCondition) *node_info.NodeInfo {
 	}
 }
 
-func newFractionalGPUReadyCondition(status v1.ConditionStatus, reason string) v1.NodeCondition {
+func newFractionalGPUReadyCondition(status v1.ConditionStatus, reason string, message ...string) v1.NodeCondition {
+	conditionMessage := ""
+	if len(message) > 0 {
+		conditionMessage = message[0]
+	}
 	return v1.NodeCondition{
-		Type:   fractionalGPUReadyConditionType,
-		Status: status,
-		Reason: reason,
+		Type:    fractionalGPUReadyConditionType,
+		Status:  status,
+		Reason:  reason,
+		Message: conditionMessage,
 	}
 }
 
