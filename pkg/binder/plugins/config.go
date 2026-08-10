@@ -21,6 +21,7 @@ const (
 
 	BindTimeoutSecondsArgument = kaiv1binder.BindTimeoutSecondsArgument
 	CDIEnabledArgument         = kaiv1binder.CDIEnabledArgument
+	NRIPluginEnabledArgument   = kaiv1binder.NRIPluginEnabledArgument
 
 	DefaultBindTimeoutSeconds = kaiv1binder.DefaultBindTimeoutSeconds
 	DefaultCDIEnabled         = kaiv1binder.DefaultCDIEnabled

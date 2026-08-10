@@ -25,12 +25,14 @@ const (
 type GPUSharing struct {
 	kubeClient        client.Client
 	gpuSharingEnabled bool
+	nriPluginEnabled  bool
 }
 
-func New(kubeClient client.Client, gpuSharingEnabled bool) *GPUSharing {
+func New(kubeClient client.Client, gpuSharingEnabled bool, nriPluginEnabled bool) *GPUSharing {
 	return &GPUSharing{
 		kubeClient:        kubeClient,
 		gpuSharingEnabled: gpuSharingEnabled,
+		nriPluginEnabled:  nriPluginEnabled,
 	}
 }
 
@@ -73,9 +75,9 @@ func (p *GPUSharing) Mutate(pod *v1.Pod) error {
 		return err
 	}
 
-	common.AddGPUSharingEnvVars(containerRef.Container, capabilitiesConfigMapName)
-	common.SetConfigMapVolume(pod, capabilitiesConfigMapName)
-	common.AddDirectEnvVarsConfigMapSource(containerRef.Container, directEnvVarsMapName)
+	addGPUSharingEnvVars(containerRef.Container, capabilitiesConfigMapName, !p.nriPluginEnabled)
+	setConfigMapVolume(pod, capabilitiesConfigMapName)
+	addDirectEnvVarsConfigMapSource(containerRef.Container, directEnvVarsMapName)
 
 	return nil
 }

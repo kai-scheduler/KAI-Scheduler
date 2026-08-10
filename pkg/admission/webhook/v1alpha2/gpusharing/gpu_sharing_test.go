@@ -736,7 +736,7 @@ func TestValidate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			kubeClient := fake.NewClientBuilder().WithRuntimeObjects(tt.pod).Build()
-			gpuSharingPlugin := New(kubeClient, tt.GPUSharingEnabled)
+			gpuSharingPlugin := New(kubeClient, tt.GPUSharingEnabled, false)
 			err := gpuSharingPlugin.Validate(tt.pod)
 			if err == nil && tt.error != nil {
 				t.Errorf("Validate() expected and error but actual is nil")
@@ -751,6 +751,33 @@ func TestValidate(t *testing.T) {
 				return
 			}
 		})
+	}
+}
+
+func TestMutateDoesNotInjectNvidiaVisibleDevicesWhenNRIPluginEnabled(t *testing.T) {
+	pod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "test-namespace",
+			Annotations: map[string]string{
+				constants.GpuFraction:              "0.5",
+				constants.GpuFractionContainerName: "gpu-container",
+			},
+		},
+		Spec: v1.PodSpec{
+			Containers: []v1.Container{{Name: "gpu-container"}},
+		},
+	}
+	kubeClient := fake.NewClientBuilder().Build()
+
+	if err := New(kubeClient, true, true).Mutate(pod); err != nil {
+		t.Fatalf("expected mutate to succeed: %v", err)
+	}
+
+	for _, env := range pod.Spec.Containers[0].Env {
+		if env.Name == constants.NvidiaVisibleDevices {
+			t.Fatalf("did not expect %s env var when NRI plugin is enabled", constants.NvidiaVisibleDevices)
+		}
 	}
 }
 
@@ -1128,7 +1155,7 @@ func TestMutate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			kubeClient := fake.NewClientBuilder().Build()
-			gpuSharingPlugin := New(kubeClient, true)
+			gpuSharingPlugin := New(kubeClient, true, false)
 
 			err := gpuSharingPlugin.Mutate(tt.pod)
 

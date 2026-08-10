@@ -18,6 +18,7 @@ import (
 	kaiv1admission "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/admission"
 	kaiv1common "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common/test_utils"
+	nvidiav1 "github.com/kai-scheduler/KAI-scheduler/third_party/nvidia/gpu-operator/api/nvidia/v1"
 
 	admissionv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -45,6 +46,7 @@ var _ = Describe("Admission", func() {
 		ctx = context.Background()
 		testScheme := scheme.Scheme
 		utilruntime.Must(kaiv1.AddToScheme(testScheme))
+		utilruntime.Must(nvidiav1.AddToScheme(testScheme))
 
 		fakeKubeClient = fake.NewClientBuilder().WithScheme(testScheme).Build()
 		a = &Admission{}
