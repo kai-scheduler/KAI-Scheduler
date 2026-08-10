@@ -425,13 +425,13 @@ func (pp *predicatesPlugin) willCreateNewGpuGroup(task *pod_info.PodInfo, node *
 	gpuForSharingImmediate := gpu_sharing.GetNodePreferableGpuForSharing(fittingGPUs, node, task, false)
 
 	if gpuForSharingImmediate != nil && !gpuForSharingImmediate.IsReleasing {
-		return containsNewGpuGroup(gpuForSharingImmediate.Groups)
+		return containsNewGpuGroup(gpuForSharingImmediate.GroupIDs())
 	}
 
 	gpuForSharingPipelined := gpu_sharing.GetNodePreferableGpuForSharing(fittingGPUs, node, task, true)
 
 	if gpuForSharingPipelined != nil {
-		return containsNewGpuGroup(gpuForSharingPipelined.Groups)
+		return containsNewGpuGroup(gpuForSharingPipelined.GroupIDs())
 	}
 
 	// No GPU assignment possible - conservatively assume new group would be needed

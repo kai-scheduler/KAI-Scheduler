@@ -6,6 +6,7 @@ package gpu_sharing
 import (
 	"k8s.io/apimachinery/pkg/util/uuid"
 
+	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
@@ -13,8 +14,19 @@ import (
 )
 
 type nodeGpuForSharing struct {
-	Groups      []string
-	IsReleasing bool
+	FractionalGpuGroups []schedulingv1alpha2.FractionalGpuGroup
+	IsReleasing         bool
+}
+
+func (n *nodeGpuForSharing) GroupIDs() []string {
+	if n == nil {
+		return nil
+	}
+	groups := make([]string, 0, len(n.FractionalGpuGroups))
+	for _, fractionalGpuGroup := range n.FractionalGpuGroups {
+		groups = append(groups, fractionalGpuGroup.ID)
+	}
+	return groups
 }
 
 func AllocateFractionalGPUTaskToNode(ssn *framework.Session, stmt *framework.Statement, pod *pod_info.PodInfo,
@@ -25,12 +37,12 @@ func AllocateFractionalGPUTaskToNode(ssn *framework.Session, stmt *framework.Sta
 		return false
 	}
 
-	pod.GPUGroups = gpuForSharing.Groups
+	pod.SetFractionalGpuGroups(gpuForSharing.FractionalGpuGroups)
 
 	isPipelineOnly = isPipelineOnly || gpuForSharing.IsReleasing
 	success := allocateSharedGPUTask(ssn, stmt, node, pod, isPipelineOnly)
 	if !success {
-		pod.GPUGroups = nil
+		pod.FractionalGpuGroups = nil
 	}
 	return success
 }
@@ -39,8 +51,8 @@ func GetNodePreferableGpuForSharing(fittingGPUsOnNode []string, node *node_info.
 	isPipelineOnly bool) *nodeGpuForSharing {
 
 	nodeGpusSharing := &nodeGpuForSharing{
-		Groups:      []string{},
-		IsReleasing: false,
+		FractionalGpuGroups: []schedulingv1alpha2.FractionalGpuGroup{},
+		IsReleasing:         false,
 	}
 
 	deviceCounts := pod.GpuRequirement.GetNumOfGpuDevices()
@@ -49,17 +61,24 @@ func GetNodePreferableGpuForSharing(fittingGPUsOnNode []string, node *node_info.
 			if wholeGpuForSharing := findGpuForSharingOnNode(pod, node, isPipelineOnly); wholeGpuForSharing != nil {
 				nodeGpusSharing.IsReleasing =
 					nodeGpusSharing.IsReleasing || wholeGpuForSharing.IsReleasing
-				nodeGpusSharing.Groups = append(nodeGpusSharing.Groups, wholeGpuForSharing.Groups...)
+				nodeGpusSharing.FractionalGpuGroups = append(
+					nodeGpusSharing.FractionalGpuGroups, wholeGpuForSharing.FractionalGpuGroups...)
 			}
 		} else {
 			nodeGpusSharing.IsReleasing =
 				nodeGpusSharing.IsReleasing ||
 					!node.EnoughIdleResourcesOnGpu(&pod.GpuRequirement, gpuIdx) ||
 					!node.IsTaskAllocatable(pod)
-			nodeGpusSharing.Groups = append(nodeGpusSharing.Groups, gpuIdx)
+			nodeGpusSharing.FractionalGpuGroups = append(
+				nodeGpusSharing.FractionalGpuGroups,
+				schedulingv1alpha2.FractionalGpuGroup{
+					ID:                 gpuIdx,
+					ComputeSharingMode: pod.RequestedGPUComputeSharingMode(),
+				},
+			)
 		}
 
-		if len(nodeGpusSharing.Groups) == int(deviceCounts) {
+		if len(nodeGpusSharing.FractionalGpuGroups) == int(deviceCounts) {
 			return nodeGpusSharing
 		}
 	}
@@ -74,7 +93,15 @@ func findGpuForSharingOnNode(task *pod_info.PodInfo, node *node_info.NodeInfo, i
 			isReleasing = false
 		}
 	}
-	return &nodeGpuForSharing{Groups: []string{string(uuid.NewUUID())}, IsReleasing: isReleasing}
+	return &nodeGpuForSharing{
+		FractionalGpuGroups: []schedulingv1alpha2.FractionalGpuGroup{
+			{
+				ID:                 string(uuid.NewUUID()),
+				ComputeSharingMode: task.RequestedGPUComputeSharingMode(),
+			},
+		},
+		IsReleasing: isReleasing,
+	}
 }
 
 func allocateSharedGPUTask(ssn *framework.Session, stmt *framework.Statement, node *node_info.NodeInfo,
@@ -83,7 +110,7 @@ func allocateSharedGPUTask(ssn *framework.Session, stmt *framework.Statement, no
 		log.InfraLogger.V(6).Infof(
 			"Pipelining Task <%v/%v> to node <%v> gpuGroup: <%v>, requires: <%v, %v mb> GPUs",
 			task.Namespace, task.Name, node.Name,
-			task.GPUGroups, task.GpuRequirement.GPUs(), task.GpuRequirement.GpuMemory())
+			task.GPUGroupIDs(), task.GpuRequirement.GPUs(), task.GpuRequirement.GpuMemory())
 		if err := stmt.Pipeline(task, node.Name, !isPipelineOnly); err != nil {
 			log.InfraLogger.V(6).Infof("Failed to pipeline Task: <%s/%s> on Node: <%s>, due to an error: %v",
 				task.Namespace, task.Name, node.Name, err)

@@ -330,7 +330,7 @@ func (sc *SchedulerCache) Bind(taskInfo *pod_info.PodInfo, hostname string, bind
 
 	log.InfraLogger.V(3).Infof(
 		"Creating bind request for task <%v/%v> to node <%v> gpuGroup: <%v>, requires: <%v> GPUs",
-		taskInfo.Namespace, taskInfo.Name, hostname, taskInfo.GPUGroups, taskInfo.ResReqVector)
+		taskInfo.Namespace, taskInfo.Name, hostname, taskInfo.GPUGroupIDs(), taskInfo.ResReqVector)
 	if bindRequestError := sc.createBindRequest(taskInfo, hostname, bindRequestAnnotations, predictedNUMAZones); bindRequestError != nil {
 		return sc.StatusUpdater.Bound(taskInfo.Pod, hostname, bindRequestError, sc.getNodPoolName())
 	}
@@ -370,10 +370,11 @@ func (sc *SchedulerCache) createBindRequest(podInfo *pod_info.PodInfo, nodeName 
 			Labels:      labels,
 		},
 		Spec: schedulingv1alpha2.BindRequestSpec{
-			PodName:              podInfo.Name,
-			SelectedNode:         nodeName,
-			SelectedGPUGroups:    podInfo.GPUGroups,
-			ReceivedResourceType: string(podInfo.ResourceReceivedType),
+			PodName:                     podInfo.Name,
+			SelectedNode:                nodeName,
+			SelectedGPUGroups:           podInfo.GPUGroupIDs(),
+			SelectedFractionalGpuGroups: podInfo.FractionalGpuGroupsOrDefault(),
+			ReceivedResourceType:        string(podInfo.ResourceReceivedType),
 			ReceivedGPU: &schedulingv1alpha2.ReceivedGPU{
 				Count:   int(podInfo.AcceptedGpuRequirement.GetNumOfGpuDevices()),
 				Portion: fmt.Sprintf("%.2f", podInfo.AcceptedGpuRequirement.GpuFractionalPortion()),

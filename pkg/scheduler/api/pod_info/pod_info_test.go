@@ -596,7 +596,6 @@ func TestPodInfo_updatePodAdditionalFields(t *testing.T) {
 				Status:         tt.fields.Status,
 				Pod:            tt.fields.Pod,
 				GpuRequirement: *resource_info.NewGpuResourceRequirement(),
-				GPUGroups:      make([]string, 0),
 				VectorMap:      vectorMap,
 			}
 			pi.updatePodAdditionalFields(tt.fields.bindingRequest)
@@ -610,9 +609,9 @@ func TestPodInfo_updatePodAdditionalFields(t *testing.T) {
 					tt.name, tt.expected.AcceptedGpuRequirement, pi.AcceptedGpuRequirement)
 			}
 			assert.Equal(t, string(pi.ResourceRequestType), tt.expected.ResourceRequestType)
-			if !reflect.DeepEqual(pi.GPUGroups, tt.expected.GPUGroups) {
+			if !reflect.DeepEqual(pi.GPUGroupIDs(), tt.expected.GPUGroups) {
 				t.Errorf("case (%s) failed: GPUGroups \n expected %v, \n got: %v \n",
-					tt.name, tt.expected.GPUGroups, pi.GPUGroups)
+					tt.name, tt.expected.GPUGroups, pi.GPUGroupIDs())
 			}
 		})
 	}

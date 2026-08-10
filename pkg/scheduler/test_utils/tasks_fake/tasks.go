@@ -30,6 +30,7 @@ type TestTaskBasic struct {
 	State                      pod_status.PodStatus
 	NodeName                   string // Relevant if job is running
 	NodeAffinityNames          []string
+	Annotations                map[string]string
 	PodAffinityLabels          map[string]string
 	PodAffinityTopologyKey     string
 	PodAntiAffinityTopologyKey string
@@ -39,7 +40,6 @@ type TestTaskBasic struct {
 	ResourceClaimTemplates     map[string]string
 	ResourceClaimNames         []string
 	PersistentVolumeClaimNames []string
-	Annotations                map[string]string
 }
 
 func BuildPod(
@@ -87,6 +87,7 @@ func BuildPod(
 			SchedulerName: "kai-scheduler",
 		},
 	}
+	maps.Copy(pod.Annotations, task.Annotations)
 	if gpuMemoryMiB > 0 {
 		pod.Annotations[resources.CalcGpuFractionAnnotationForContainer("main")] = resources.GpuMemoryAnnotationToNvFractionsMemoryRequest(gpuMemoryMiB).String()
 	}

@@ -35,6 +35,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -657,7 +658,7 @@ func TestAddRemovePods(t *testing.T) {
 			for _, podInfoMetaData := range test.podsInfoMetadata {
 				pi := pod_info.NewTaskInfo(podInfoMetaData.pod, vectorMap)
 				pi.Status = podInfoMetaData.status
-				pi.GPUGroups = podInfoMetaData.gpuGroups
+				pi.SetGPUGroupIDs(podInfoMetaData.gpuGroups)
 				podsInfo = append(podsInfo, pi)
 			}
 
@@ -1359,6 +1360,89 @@ func TestNodeInfo_GetSumOfReleasingGPUs(t *testing.T) {
 	}
 }
 
+func TestIsGpuGroupComputeSharingModeCompatible_CurrentTaskNewGroup(t *testing.T) {
+	gpuGroup := "new-sm-sharing-group"
+	node := &NodeInfo{
+		PodInfos: map[common_info.PodID]*pod_info.PodInfo{},
+		GpuSharingNodeInfo: GpuSharingNodeInfo{
+			UsedSharedGPUsMemory: map[string]int64{
+				gpuGroup: 0,
+			},
+		},
+	}
+	task := &pod_info.PodInfo{
+		Pod: &v1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{
+					commonconstants.GpuComputeSharingMode: string(schedulingv1alpha2.GPUComputeSharingModeSMSharing),
+				},
+			},
+		},
+		FractionalGpuGroups: []schedulingv1alpha2.FractionalGpuGroup{
+			{
+				ID:                 gpuGroup,
+				ComputeSharingMode: schedulingv1alpha2.GPUComputeSharingModeSMSharing,
+			},
+		},
+	}
+	task.SetGPUGroupIDs([]string{gpuGroup})
+
+	assert.True(t, node.IsGpuGroupComputeSharingModeCompatible(gpuGroup, task))
+}
+
+func TestIsGpuGroupComputeSharingModeCompatible_ReservationPodIsSourceOfTruth(t *testing.T) {
+	gpuGroup := "reserved-group"
+	node := &NodeInfo{
+		PodInfos: map[common_info.PodID]*pod_info.PodInfo{
+			"reservation": {
+				Pod: &v1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: commonconstants.GPUReservationPodPrefix + "-node-a-abcde",
+						Labels: map[string]string{
+							commonconstants.GPUGroup: gpuGroup,
+						},
+						Annotations: map[string]string{
+							commonconstants.GpuComputeSharingMode: string(schedulingv1alpha2.GPUComputeSharingModeTimeSlicing),
+						},
+					},
+				},
+			},
+			"workload": {
+				Pod: &v1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Annotations: map[string]string{
+							commonconstants.GpuComputeSharingMode: string(schedulingv1alpha2.GPUComputeSharingModeSMSharing),
+						},
+					},
+				},
+				FractionalGpuGroups: []schedulingv1alpha2.FractionalGpuGroup{
+					{
+						ID:                 gpuGroup,
+						ComputeSharingMode: schedulingv1alpha2.GPUComputeSharingModeSMSharing,
+					},
+				},
+			},
+		},
+	}
+	task := &pod_info.PodInfo{
+		Pod: &v1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{
+					commonconstants.GpuComputeSharingMode: string(schedulingv1alpha2.GPUComputeSharingModeSMSharing),
+				},
+			},
+		},
+		FractionalGpuGroups: []schedulingv1alpha2.FractionalGpuGroup{
+			{
+				ID:                 gpuGroup,
+				ComputeSharingMode: schedulingv1alpha2.GPUComputeSharingModeSMSharing,
+			},
+		},
+	}
+
+	assert.False(t, node.IsGpuGroupComputeSharingModeCompatible(gpuGroup, task))
+}
+
 func createPod(namespace, name string, options podCreationOptions) *pod_info.PodInfo {
 	pod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1397,7 +1481,7 @@ func createPod(namespace, name string, options podCreationOptions) *pod_info.Pod
 	}
 
 	task := pod_info.NewTaskInfo(pod, resource_info.NewResourceVectorMap())
-	task.GPUGroups = []string{options.gpuGroup}
+	task.SetGPUGroupIDs([]string{options.gpuGroup})
 	return task
 }
 
