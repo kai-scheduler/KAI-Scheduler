@@ -82,6 +82,9 @@ const (
 	NvFractionsMemoryRequestSuffix  = ".gpu-memory.request"
 	NvFractionsMemoryLimitSuffix    = ".gpu-memory.limit"
 	NvFractionsVisibleDevicesSuffix = ".gpus.devices"
+
+	// gpu-sharing operator statuses
+	NvFractionNodeReadyConditionType = "gpu-sharing.nvidia.com/Ready"
 )
 
 // QueueValidatedVersions returns the list of queue versions that we validate with a webhook. This will be used by the
