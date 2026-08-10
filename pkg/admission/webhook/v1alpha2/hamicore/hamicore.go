@@ -4,6 +4,8 @@
 package hamicore
 
 import (
+	"context"
+
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
 
@@ -22,7 +24,7 @@ func (p *HamiCore) Name() string {
 	return "hamicore"
 }
 
-func (p *HamiCore) Validate(_ *v1.Pod) error {
+func (p *HamiCore) Validate(context.Context, *v1.Pod, *v1.Pod) error {
 	return nil
 }
 

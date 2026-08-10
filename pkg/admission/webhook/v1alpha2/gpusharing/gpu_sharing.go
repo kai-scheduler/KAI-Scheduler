@@ -4,6 +4,7 @@
 package gpusharing
 
 import (
+	"context"
 	"fmt"
 
 	"strconv"
@@ -40,7 +41,7 @@ func (p *GPUSharing) Name() string {
 	return "gpusharing"
 }
 
-func (p *GPUSharing) Validate(pod *v1.Pod) error {
+func (p *GPUSharing) Validate(_ context.Context, _, pod *v1.Pod) error {
 	if !p.gpuSharingEnabled && resources.RequestsGPUFraction(pod) {
 		return fmt.Errorf(
 			"attempting to create a pod %s/%s with gpu sharing request, while GPU sharing is disabled",

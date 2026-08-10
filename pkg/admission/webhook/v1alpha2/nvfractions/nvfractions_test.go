@@ -4,11 +4,15 @@
 package nvfractions
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	admissionv1 "k8s.io/api/admission/v1"
+	authenticationv1 "k8s.io/api/authentication/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
@@ -24,7 +28,7 @@ func TestMutateConvertsLegacyGpuMemoryWithoutConfigmap(t *testing.T) {
 		Spec:       v1.PodSpec{Containers: []v1.Container{{Name: "container-0"}}},
 	}
 
-	err := New().Mutate(pod)
+	err := New("").Mutate(pod)
 	assert.NoError(t, err)
 
 	assert.NotEmpty(t, pod.Annotations[nvFractionsRequestKey("container-0")])
@@ -46,7 +50,7 @@ func TestMutateConvertsLegacyGpuMemoryForNamedContainer(t *testing.T) {
 		Spec: v1.PodSpec{Containers: []v1.Container{{Name: "container-0"}, {Name: "container-1"}}},
 	}
 
-	err := New().Mutate(pod)
+	err := New("").Mutate(pod)
 	assert.NoError(t, err)
 
 	assert.NotEmpty(t, pod.Annotations[nvFractionsRequestKey("container-1")])
@@ -55,7 +59,7 @@ func TestMutateConvertsLegacyGpuMemoryForNamedContainer(t *testing.T) {
 
 func TestMutateNoOpWithoutFractionRequest(t *testing.T) {
 	pod := &v1.Pod{Spec: v1.PodSpec{Containers: []v1.Container{{Name: "container-0"}}}}
-	err := New().Mutate(pod)
+	err := New("").Mutate(pod)
 	assert.NoError(t, err)
 	assert.Empty(t, pod.Annotations)
 }
@@ -119,7 +123,7 @@ func TestValidate(t *testing.T) {
 				Spec:       v1.PodSpec{Containers: []v1.Container{{Name: "container-0"}}},
 			}
 
-			err := New().Validate(pod)
+			err := New("").Validate(context.Background(), nil, pod)
 			if tt.wantErrContains != "" {
 				assert.ErrorContains(t, err, tt.wantErrContains)
 				return
@@ -127,4 +131,53 @@ func TestValidate(t *testing.T) {
 			assert.NoError(t, err)
 		})
 	}
+}
+
+func TestValidateDeviceAnnotationAuthorization(t *testing.T) {
+	const binderUsername = "system:serviceaccount:kai-scheduler:binder"
+	deviceAnnotationKey := resources.CalcGpuVisibleDevicesAnnotationForContainer("container-0")
+	podWithDeviceAnnotation := func(value string) *v1.Pod {
+		return &v1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{
+				nvFractionsRequestKey("container-0"): "1Gi",
+				deviceAnnotationKey:                  value,
+			}},
+			Spec: v1.PodSpec{Containers: []v1.Container{{Name: "container-0"}}},
+		}
+	}
+
+	t.Run("rejects create by non-binder", func(t *testing.T) {
+		err := New(binderUsername).Validate(contextWithUser("alice"), nil, podWithDeviceAnnotation("GPU-0"))
+		assert.ErrorContains(t, err, ".gpus.devices annotations may only be modified")
+	})
+
+	t.Run("allows create by binder", func(t *testing.T) {
+		err := New(binderUsername).Validate(contextWithUser(binderUsername), nil, podWithDeviceAnnotation("GPU-0"))
+		assert.NoError(t, err)
+	})
+
+	t.Run("allows unchanged device annotation by non-binder", func(t *testing.T) {
+		oldPod := podWithDeviceAnnotation("GPU-0")
+		newPod := podWithDeviceAnnotation("GPU-0")
+		newPod.Labels = map[string]string{"foo": "bar"}
+
+		err := New(binderUsername).Validate(contextWithUser("alice"), oldPod, newPod)
+		assert.NoError(t, err)
+	})
+
+	t.Run("rejects changed device annotation by non-binder", func(t *testing.T) {
+		oldPod := podWithDeviceAnnotation("GPU-0")
+		newPod := podWithDeviceAnnotation("GPU-1")
+
+		err := New(binderUsername).Validate(contextWithUser("alice"), oldPod, newPod)
+		assert.ErrorContains(t, err, ".gpus.devices annotations may only be modified")
+	})
+}
+
+func contextWithUser(username string) context.Context {
+	return admission.NewContextWithRequest(context.Background(), admission.Request{
+		AdmissionRequest: admissionv1.AdmissionRequest{
+			UserInfo: authenticationv1.UserInfo{Username: username},
+		},
+	})
 }

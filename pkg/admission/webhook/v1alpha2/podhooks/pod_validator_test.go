@@ -17,6 +17,7 @@ limitations under the License.
 package podhooks
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -42,7 +43,7 @@ func (p *validatorPlugin) Mutate(pod *v1.Pod) error {
 	return nil
 }
 
-func (p *validatorPlugin) Validate(pod *v1.Pod) error {
+func (p *validatorPlugin) Validate(_ context.Context, _, pod *v1.Pod) error {
 	// validate that the pod has a label "foo"
 	if pod.Labels == nil {
 		return errors.New("pod has no labels")
@@ -83,7 +84,7 @@ var _ = Describe("KaiAdmission Webhook", func() {
 					Labels:    map[string]string{},
 				},
 			}
-			err := validator.plugins.Validate(pod)
+			err := validator.plugins.Validate(context.Background(), nil, pod)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("pod has no label 'foo'"))
 		})

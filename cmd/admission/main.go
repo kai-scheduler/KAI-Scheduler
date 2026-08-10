@@ -49,7 +49,7 @@ func registerPlugins(app *app.App) error {
 	// admission plugin: it owns validation and mutation for fraction pods and
 	// does not use the shared GPU configmap.
 	if app.Options.NvFractionsEnabled {
-		admissionPlugins.RegisterPlugin(nvfractions.New())
+		admissionPlugins.RegisterPlugin(nvfractions.New(app.Options.BinderServiceAccountUsername))
 	} else {
 		admissionGpuSharingPlugin := gpusharing.New(
 			app.Client, app.Options.GPUSharingEnabled, app.Options.NRIPluginEnabled)

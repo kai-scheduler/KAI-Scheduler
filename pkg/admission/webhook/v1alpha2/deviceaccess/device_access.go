@@ -4,6 +4,7 @@
 package deviceaccess
 
 import (
+	"context"
 	"fmt"
 	"slices"
 
@@ -27,7 +28,7 @@ func (da *DeviceAccess) Name() string {
 	return "deviceaccess"
 }
 
-func (da *DeviceAccess) Validate(pod *v1.Pod) error {
+func (da *DeviceAccess) Validate(_ context.Context, _, pod *v1.Pod) error {
 	containerRef, err := fractionContainerRef(pod)
 	if err != nil {
 		return err

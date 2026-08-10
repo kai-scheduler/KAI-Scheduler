@@ -26,6 +26,7 @@ import (
 
 const (
 	defaultResourceName           = "admission"
+	defaultBinderServiceAccount   = "binder"
 	kaiAdmissionWebhookSecretName = "kai-admission-webhook-tls-secret"
 	certKey                       = "tls.crt"
 	keyKey                        = "tls.key"
@@ -431,7 +432,11 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1admission.Admission, nr
 	}
 
 	if isNvFractionsEnabled(kaiConfig) {
-		args = append(args, "--nv-fractions-enabled=true")
+		args = append(args,
+			"--nv-fractions-enabled=true",
+			"--binder-service-account-username",
+			binderServiceAccountUsername(kaiConfig.Spec.Namespace),
+		)
 	}
 
 	if config.BlockNvidiaVisibleDevices != nil && *config.BlockNvidiaVisibleDevices {
@@ -460,6 +465,10 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1admission.Admission, nr
 
 	args = common.AddK8sClientConfigToArgs(config.Service.K8sClientConfig, args)
 	return common.AddControllerRuntimeJSONLogArg(kaiConfig.Spec.Global.JSONLog, args)
+}
+
+func binderServiceAccountUsername(namespace string) string {
+	return fmt.Sprintf("system:serviceaccount:%s:%s", namespace, defaultBinderServiceAccount)
 }
 
 func isHamiCoreEnabled(kaiConfig *kaiv1.Config) bool {

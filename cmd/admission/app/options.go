@@ -13,23 +13,24 @@ import (
 )
 
 type Options struct {
-	SchedulerName               string
-	QPS                         float64
-	Burst                       int
-	EnableLeaderElection        bool
-	MetricsAddr                 string
-	ProbeAddr                   string
-	WebhookPort                 int
-	FakeGPUNodes                bool
-	GPUSharingEnabled           bool
-	NRIPluginEnabled            bool
-	HamiCoreEnabled             bool
-	NvFractionsEnabled          bool
-	BlockNvidiaVisibleDevices   bool
-	GPUPodRuntimeClassName      string
-	GPUFractionRuntimeClassName string
-	ValidatePodResizeQuota      bool
-	BlockUpsizeOnBoundedQueues  bool
+	SchedulerName                string
+	QPS                          float64
+	Burst                        int
+	EnableLeaderElection         bool
+	MetricsAddr                  string
+	ProbeAddr                    string
+	WebhookPort                  int
+	FakeGPUNodes                 bool
+	GPUSharingEnabled            bool
+	NRIPluginEnabled             bool
+	HamiCoreEnabled              bool
+	NvFractionsEnabled           bool
+	BinderServiceAccountUsername string
+	BlockNvidiaVisibleDevices    bool
+	GPUPodRuntimeClassName       string
+	GPUFractionRuntimeClassName  string
+	ValidatePodResizeQuota       bool
+	BlockUpsizeOnBoundedQueues   bool
 }
 
 // ResolvedGPUFractionRuntimeClassName returns the effective runtime class name
@@ -87,6 +88,9 @@ func InitOptions() *Options {
 	fs.BoolVar(&options.NvFractionsEnabled,
 		"nv-fractions-enabled", false,
 		"Specifies if the NvFractions GPU-sharing admission plugin is enabled")
+	fs.StringVar(&options.BinderServiceAccountUsername,
+		"binder-service-account-username", "",
+		"The Kubernetes username allowed to write NvFractions device annotations")
 	fs.BoolVar(&options.BlockNvidiaVisibleDevices,
 		"block-nvidia-visible-devices", false,
 		"Reject pods that set the NVIDIA_VISIBLE_DEVICES environment variable to values "+

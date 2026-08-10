@@ -17,6 +17,7 @@ limitations under the License.
 package podhooks
 
 import (
+	"context"
 	"testing"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/admission/plugins"
@@ -46,7 +47,7 @@ func (p *fooLabelPlugin) Mutate(pod *v1.Pod) error {
 	return nil
 }
 
-func (p *fooLabelPlugin) Validate(pod *v1.Pod) error {
+func (p *fooLabelPlugin) Validate(context.Context, *v1.Pod, *v1.Pod) error {
 	return nil
 }
 

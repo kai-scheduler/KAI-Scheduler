@@ -348,6 +348,8 @@ func TestDeploymentForKAIConfig(t *testing.T) {
 			},
 			expectedArgs: []string{
 				"--nv-fractions-enabled=true",
+				"--binder-service-account-username",
+				"system:serviceaccount:kai-scheduler:binder",
 			},
 			notExpectedArgs: []string{
 				"--gpu-sharing-enabled=true",
