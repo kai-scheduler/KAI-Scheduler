@@ -1,0 +1,3 @@
+kind: Changed
+body: |-
+  Queue allocated status now includes init-container peak and sidecar requests
