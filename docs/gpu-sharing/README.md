@@ -325,6 +325,11 @@ metadata:
 
 KAI keeps pods with incompatible compute sharing modes out of the same fractional GPU group.
 
+`time-slicing` is the default. Use `sm-sharing` for workloads that need to run
+concurrently and have MPS configured. For guidance on choosing a mode, the
+memory request and limit semantics, and diagrams of both models, see
+[NvFractions GPU Sharing](nv-fraction/README.md).
+
 ## Troubleshooting
 
 ### Fractional GPU pod is rejected
