@@ -167,9 +167,8 @@ func (app *App) Run() error {
 		return err
 	}
 
-	// Second validating endpoint for the Pod type: the canonical
-	// /validate--v1-pod path is taken by the pod validator above, so this one
-	// registers under an explicit path scoped to the resize subresource.
+	// The canonical /validate--v1-pod path is taken by the pod validator above,
+	// so the resize endpoint registers under an explicit custom path.
 	if err = ctrl.NewWebhookManagedBy(app.manager, &corev1.Pod{}).
 		WithValidator(admissionhooks.NewPodResizeValidator(
 			app.manager.GetClient(),

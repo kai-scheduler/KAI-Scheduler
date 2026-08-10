@@ -90,10 +90,9 @@ func isPodScheduled(pod *v1.Pod) bool {
 func calculatedAllocatedResources(
 	ctx context.Context, pod *v1.Pod, kubeClient client.Client, draClaims []*resourceapi.ResourceClaim,
 ) (v1.ResourceList, error) {
-	// Same aggregation the scheduler charges internally: KEP-753 init/sidecar
-	// formula plus KEP-1287 effective requests (max(spec, enacted, allocated);
-	// Infeasible resizes exclude spec). Keeps Queue.Status.Allocated consistent
-	// with scheduler accounting and the resize webhook's delta baseline.
+	// Same aggregation the scheduler charges internally (KEP-753 sidecar formula,
+	// KEP-1287 effective requests), keeping queue status consistent with the
+	// resize webhook's delta baseline.
 	allocatedResources := resourcehelpers.AggregateContainerRequests(pod, resourcehelpers.PodResourcesOptions{
 		UseStatusResources: true,
 	})
@@ -116,8 +115,7 @@ func calculatedAllocatedResources(
 func calculateRequestedResources(
 	ctx context.Context, pod *v1.Pod, kubeClient client.Client, draClaims []*resourceapi.ResourceClaim,
 ) (v1.ResourceList, error) {
-	// Spec-only aggregation (no status): requested reflects the desired target,
-	// including the KEP-753 init/sidecar formula for consistency with allocated.
+	// Spec-only aggregation: requested reflects the desired target.
 	requestedResources := resourcehelpers.AggregateContainerRequests(pod, resourcehelpers.PodResourcesOptions{})
 	gpuSharingRequestedResources, err := resources.ExtractGPUSharingRequestedResources(pod)
 	if err != nil {

@@ -94,7 +94,7 @@ func (v *PodResizeValidator) validateResize(ctx context.Context, oldPod, newPod 
 
 	delta := podResizeDelta(oldPod, newPod)
 	if len(delta) == 0 {
-		return nil // downsize or no change
+		return nil
 	}
 
 	queueName := pg.Spec.Queue
@@ -116,20 +116,11 @@ func (v *PodResizeValidator) validateResize(ctx context.Context, oldPod, newPod 
 }
 
 // podResizeDelta computes the net per-resource increase this resize introduces
-// relative to what the queue already accounts for.
-//
-// All three aggregates come from the same upstream helper the scheduler uses in
-// getPodResourceRequest, so the delta baseline is guaranteed to match queue
-// accounting by construction rather than by parallel hand-written logic:
-//
-//   - newSpec      : the resize target (spec only)
-//   - oldSpec      : the pre-resize target (spec only)
-//   - effectiveOld : what the queue currently charges, i.e. the KEP-1287
-//     effective request max(spec, enacted, allocated), or max(enacted, allocated)
-//     when the kubelet marked the resize Infeasible
-//
-// A resource whose spec is unchanged is skipped: it is not part of this resize,
-// and an unresolved Infeasible spec on it must not produce phantom delta.
+// relative to what the queue already accounts for. All aggregates use the same
+// upstream helper as scheduler accounting, so the effectiveOld baseline matches
+// what the queue charges by construction. A resource whose pod-level spec is
+// unchanged is skipped: it is not part of this resize, and an unresolved
+// Infeasible spec on it must not produce phantom delta.
 func podResizeDelta(oldPod, newPod *corev1.Pod) corev1.ResourceList {
 	specOnly := resourcehelpers.PodResourcesOptions{}
 	withStatus := resourcehelpers.PodResourcesOptions{UseStatusResources: true}
@@ -141,7 +132,7 @@ func podResizeDelta(oldPod, newPod *corev1.Pod) corev1.ResourceList {
 	delta := corev1.ResourceList{}
 	for resName, newQty := range newSpec {
 		if oldQty, ok := oldSpec[resName]; ok && newQty.Cmp(oldQty) == 0 {
-			continue // resource not changed by this resize
+			continue
 		}
 		diff := newQty.DeepCopy()
 		diff.Sub(effectiveOld[resName])
@@ -172,13 +163,11 @@ func checkQueueCapacity(
 
 	res := queue.Spec.Resources
 
-	// Check hard limit for all workloads.
 	if err := checkCapacityBound("limit", res.CPU.Limit, res.Memory.Limit,
 		queue.Status.Allocated, "Allocated", delta, queue, pod, pg); err != nil {
 		return err
 	}
 
-	// Check deserved quota for non-preemptible workloads.
 	if !isPreemptible {
 		if err := checkCapacityBound("quota", res.CPU.Quota, res.Memory.Quota,
 			queue.Status.AllocatedNonPreemptible, "AllocatedNonPreemptible", delta, queue, pod, pg); err != nil {
@@ -237,9 +226,7 @@ func checkBlockUpsizeOnBoundedQueue(
 }
 
 // checkCapacityBound rejects the resize when adding delta to the given allocated
-// pool would exceed a finite bound (-1 means unbounded). Shared by the limit check
-// (all workloads, Allocated) and the quota check (non-preemptible workloads,
-// AllocatedNonPreemptible).
+// pool would exceed a finite bound (-1 means unbounded).
 func checkCapacityBound(
 	boundKind string, // "limit" | "quota"
 	cpuBound, memBound float64,
