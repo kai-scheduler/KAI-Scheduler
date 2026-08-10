@@ -45,6 +45,7 @@ const (
 	GPUGroup                           = "runai-gpu-group"
 	ReceivedResourceTypeAnnotationName = "received-resource-type"
 	WholeGpuIndicator                  = "-2"
+	bytesPerMiB                        = int64(1024 * 1024)
 )
 
 type ResourceRequestType string
@@ -518,11 +519,7 @@ func (pi *PodInfo) updatePodAdditionalFields(bindRequest *bindrequest_info.BindR
 		}
 	}
 
-	gpuMemory, err := strconv.ParseInt(pi.Pod.Annotations[commonconstants.GpuMemory], 10, 64)
-	if err == nil && gpuMemory > 0 {
-		pi.GpuRequirement = *resource_info.NewGpuResourceRequirementWithGpus(0, gpuMemory)
-		pi.ResourceRequestType = RequestTypeGpuMemory
-	}
+	gpuMemoryRequest := pi.updateGpuMemoryRequest()
 
 	gpuFractionString := pi.Pod.Annotations[commonconstants.GpuFraction]
 	gpuFraction, GPUFractionErr := strconv.ParseFloat(gpuFractionString, 64)
@@ -537,7 +534,7 @@ func (pi *PodInfo) updatePodAdditionalFields(bindRequest *bindrequest_info.BindR
 			numFractionDevices, numFractionDevicesErr := strconv.ParseInt(numFractionDevicesStr, 10, 64)
 			if numFractionDevicesErr == nil {
 				pi.GpuRequirement = *resource_info.NewGpuResourceRequirementWithMultiFraction(
-					numFractionDevices, gpuFraction, gpuMemory)
+					numFractionDevices, gpuFraction, gpuMemoryRequest)
 			}
 		}
 	}
@@ -552,6 +549,18 @@ func (pi *PodInfo) updatePodAdditionalFields(bindRequest *bindrequest_info.BindR
 		pi.ResourceRequestType = RequestTypeMigInstance
 	}
 	pi.rebuildResReqVector()
+}
+
+func (pi *PodInfo) updateGpuMemoryRequest() int64 {
+	gpuMemoryRequest, err := resources.GetGPUMemory(pi.Pod)
+	if err != nil {
+		log.InfraLogger.Errorf("Failed to get GPU memory for pod %s/%s. Error: %s", pi.Pod.Namespace, pi.Pod.Name, err.Error())
+	}
+	if gpuMemoryRequest > 0 {
+		pi.GpuRequirement = *resource_info.NewGpuResourceRequirementWithGpus(0, gpuMemoryRequest)
+		pi.ResourceRequestType = RequestTypeGpuMemory
+	}
+	return gpuMemoryRequest
 }
 
 // updateLegacyMigResourceRequestFromAnnotations updates the mig resource request of legacy MIG pods
