@@ -1,6 +1,6 @@
 # In-Place Pod Resize
 
-KAI Scheduler supports Kubernetes [in-place pod resize](https://kubernetes.io/docs/tasks/configure-pod-container/resize-container-resources/) (KEP-1287): changing a running pod's CPU and memory requests without restarting it. KAI keeps queue accounting accurate throughout a resize and validates resize requests against queue limits and quota before they are admitted.
+KAI Scheduler supports Kubernetes [in-place pod resize](https://kubernetes.io/docs/tasks/configure-pod-container/resize-container-resources/) (KEP-1287): changing a running pod's CPU and memory requests without restarting it. KAI keeps queue accounting consistent throughout a resize, and applies a best-effort admission check of resize requests against queue limits and quota — a guardrail rather than a strict guarantee (see [Best-effort semantics](#best-effort-semantics)).
 
 Requires Kubernetes 1.33 or newer (the `InPlacePodVerticalScaling` feature gate is enabled by default since 1.33 and GA since 1.35).
 
