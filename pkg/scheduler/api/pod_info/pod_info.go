@@ -508,18 +508,6 @@ func (pi *PodInfo) updatePodAdditionalFields(bindRequest *bindrequest_info.BindR
 	pi.rebuildResReqVector()
 }
 
-func (pi *PodInfo) updateGpuMemoryRequest() int64 {
-	gpuMemoryRequest, err := resources.GetGPUMemory(pi.Pod)
-	if err != nil {
-		log.InfraLogger.Errorf("Failed to get GPU memory for pod %s/%s. Error: %s", pi.Pod.Namespace, pi.Pod.Name, err.Error())
-	}
-	if gpuMemoryRequest > 0 {
-		pi.GpuRequirement = *resource_info.NewGpuResourceRequirementWithGpus(0, gpuMemoryRequest)
-		pi.ResourceRequestType = RequestTypeGpuMemory
-	}
-	return gpuMemoryRequest
-}
-
 // updateLegacyMigResourceRequestFromAnnotations updates the mig resource request of legacy MIG pods
 func (pi *PodInfo) updateLegacyMigResourceRequestFromAnnotations() {
 	for annotationName, annotationValue := range pi.Pod.Annotations {
