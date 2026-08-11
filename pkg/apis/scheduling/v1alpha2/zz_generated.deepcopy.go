@@ -11,7 +11,7 @@ package v1alpha2
 
 import (
 	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/api/resource/v1"
+	"k8s.io/api/resource/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 )
 
