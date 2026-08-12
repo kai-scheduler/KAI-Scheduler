@@ -42,6 +42,7 @@ const (
 	kindDistributedWorkload          = "DistributedWorkload"
 	kindInferenceWorkload            = "InferenceWorkload"
 	kindDistributedInferenceWorkload = "DistributedInferenceWorkload"
+	kindWorkloadRunner               = "WorkloadRunner"
 )
 
 // +kubebuilder:rbac:groups=apps,resources=replicasets;statefulsets,verbs=get;list;watch
@@ -57,7 +58,9 @@ const (
 // +kubebuilder:rbac:groups=tekton.dev,resources=pipelineruns;taskruns,verbs=get;list;watch
 // +kubebuilder:rbac:groups=tekton.dev,resources=pipelineruns/finalizers;taskruns/finalizers,verbs=patch;update;create
 // +kubebuilder:rbac:groups=run.ai,resources=trainingworkloads;interactiveworkloads;distributedworkloads;inferenceworkloads;distributedinferenceworkloads,verbs=get;list;watch
+// +kubebuilder:rbac:groups=run.ai,resources=workloadrunners,verbs=get;list;watch
 // +kubebuilder:rbac:groups=run.ai,resources=kartas,verbs=get;list;watch
+// +kubebuilder:rbac:groups=nvidia.com,resources=dynamographdeployments,verbs=get;list;watch
 // +kubebuilder:rbac:groups=trainer.kubeflow.org,resources=trainjobs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=trainer.kubeflow.org,resources=trainjobs/finalizers,verbs=patch;update;create
 
@@ -298,7 +301,19 @@ func NewDefaultPluginsHub(kubeClient client.Client, searchForLegacyPodGroups,
 		}: groveGrouper,
 	}
 
-	skipTopOwnerGrouper := skiptopowner.NewSkipTopOwnerGrouper(kubeClient, defaultGrouper, table)
+	hub := &DefaultPluginsHub{
+		defaultGroupingHandler: defaultGrouper,
+		customPlugins:          table,
+	}
+
+	// Resolve through the hub so a skipped owner picks the same plugin a top owner would,
+	// including the wildcard-version fallback and Karta. Bound lazily via the closure
+	// because the Karta fallback is assigned below.
+	skipTopOwnerGrouper := skiptopowner.NewSkipTopOwnerGrouper(kubeClient, defaultGrouper,
+		func(gvk metav1.GroupVersionKind) grouper.Grouper {
+			return hub.GetPodGrouperPlugin(gvk)
+		})
+
 	table[metav1.GroupVersionKind{
 		Group:   apiGroupArgo,
 		Version: "v1alpha1",
@@ -337,10 +352,15 @@ func NewDefaultPluginsHub(kubeClient client.Client, searchForLegacyPodGroups,
 		Kind:    "DynamoGraphDeployment",
 	}] = skipTopOwnerGrouper
 
-	hub := &DefaultPluginsHub{
-		defaultGroupingHandler: defaultGrouper,
-		customPlugins:          table,
-	}
+	// WorkloadRunner (Run:ai dromos) is a kind-agnostic wrapper that owns an arbitrary
+	// workload template; the real workload is its single child. Skip it so the wrapped
+	// kind's plugin (Grove/Dynamo, JobSet, LWS, Karta-backed, ...) decides the grouping
+	// instead of the default grouper flattening it to minMember 1.
+	table[metav1.GroupVersionKind{
+		Group:   apiGroupRunai,
+		Version: "*",
+		Kind:    kindWorkloadRunner,
+	}] = skipTopOwnerGrouper
 
 	if genericKartaFallback {
 		hub.kartaFallbackPlugin = kartaplugin.NewKartaHub(kubeClient, defaultGrouper)

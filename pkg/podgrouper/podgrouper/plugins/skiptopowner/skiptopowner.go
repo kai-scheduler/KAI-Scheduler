@@ -19,18 +19,24 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/grouper"
 )
 
+// GrouperResolver resolves the grouper handling a GVK, or nil when none matches.
+// The plugins hub implements it, so the skipped-owner delegation goes through the
+// same resolution as a top-level lookup - wildcard versions and Karta fallback
+// included - instead of an exact-GVK map lookup.
+type GrouperResolver func(gvk metav1.GroupVersionKind) grouper.Grouper
+
 type skipTopOwnerGrouper struct {
-	client        client.Client
-	defaultPlugin *defaultgrouper.DefaultGrouper
-	customPlugins map[metav1.GroupVersionKind]grouper.Grouper
+	client         client.Client
+	defaultPlugin  *defaultgrouper.DefaultGrouper
+	resolveGrouper GrouperResolver
 }
 
 func NewSkipTopOwnerGrouper(client client.Client, defaultGrouper *defaultgrouper.DefaultGrouper,
-	customPlugins map[metav1.GroupVersionKind]grouper.Grouper) *skipTopOwnerGrouper {
+	resolveGrouper GrouperResolver) *skipTopOwnerGrouper {
 	return &skipTopOwnerGrouper{
-		client:        client,
-		defaultPlugin: defaultGrouper,
-		customPlugins: customPlugins,
+		client:         client,
+		defaultPlugin:  defaultGrouper,
+		resolveGrouper: resolveGrouper,
 	}
 }
 
@@ -41,6 +47,12 @@ func (sk *skipTopOwnerGrouper) Name() string {
 func (sk *skipTopOwnerGrouper) GetPodGroupMetadata(
 	skippedOwner *unstructured.Unstructured, pod *v1.Pod, otherOwners ...*metav1.PartialObjectMetadata,
 ) (*podgroup.Metadata, error) {
+	// A skipped owner may itself resolve to this grouper (e.g. WorkloadRunner -> DGD ->
+	// PodCliqueSet). Each hop drops one owner, so bottoming out here terminates the chain.
+	if len(otherOwners) == 0 {
+		return sk.defaultPlugin.GetPodGroupMetadata(skippedOwner, pod)
+	}
+
 	var lastOwnerPartial *metav1.PartialObjectMetadata
 	if len(otherOwners) <= 1 {
 		lastOwnerPartial = &metav1.PartialObjectMetadata{
@@ -139,8 +151,10 @@ func (sk *skipTopOwnerGrouper) getSupportedTypePGMetadata(
 	lastOwner *unstructured.Unstructured, pod *v1.Pod, otherOwners ...*metav1.PartialObjectMetadata,
 ) (*podgroup.Metadata, error) {
 	ownerKind := metav1.GroupVersionKind(lastOwner.GroupVersionKind())
-	if grouper, found := sk.customPlugins[ownerKind]; found {
-		return grouper.GetPodGroupMetadata(lastOwner, pod, otherOwners...)
+	if sk.resolveGrouper != nil {
+		if resolved := sk.resolveGrouper(ownerKind); resolved != nil {
+			return resolved.GetPodGroupMetadata(lastOwner, pod, otherOwners...)
+		}
 	}
 	return sk.defaultPlugin.GetPodGroupMetadata(lastOwner, pod, otherOwners...)
 }

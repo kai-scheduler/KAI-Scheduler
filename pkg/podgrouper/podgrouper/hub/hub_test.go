@@ -86,6 +86,28 @@ var _ = Describe("SupportedTypes", func() {
 			Expect(hasPlugin).To(BeFalse())
 		})
 
+		It("should return skipTopOwner plugin for WorkloadRunner", func() {
+			gvk := metav1.GroupVersionKind{
+				Group:   "run.ai",
+				Version: "v1alpha1",
+				Kind:    "WorkloadRunner",
+			}
+			plugin := hub.GetPodGrouperPlugin(gvk)
+			Expect(plugin).NotTo(BeNil())
+			Expect(plugin.Name()).To(BeEquivalentTo("SkipTopOwner Grouper"))
+		})
+
+		It("should return skipTopOwner plugin for WorkloadRunner of any served version", func() {
+			gvk := metav1.GroupVersionKind{
+				Group:   "run.ai",
+				Version: "v2beta1",
+				Kind:    "WorkloadRunner",
+			}
+			plugin := hub.GetPodGrouperPlugin(gvk)
+			Expect(plugin).NotTo(BeNil())
+			Expect(plugin.Name()).To(BeEquivalentTo("SkipTopOwner Grouper"))
+		})
+
 		It("should return skipTopOwner plugin for TrainJob", func() {
 			gvk := metav1.GroupVersionKind{
 				Group:   "trainer.kubeflow.org",
