@@ -10,7 +10,10 @@ import (
 	. "github.com/onsi/gomega"
 	kartav1alpha1 "github.com/run-ai/karta/pkg/api/runai/v1alpha1"
 
+	appsv1 "k8s.io/api/apps/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
@@ -174,6 +177,58 @@ var _ = Describe("SupportedTypes", func() {
 
 			Expect(plugin).NotTo(BeNil())
 			Expect(plugin.Name()).To(BeEquivalentTo("Default Grouper"))
+		})
+	})
+
+	Context("Skip Top Owner Resolution Tests", func() {
+		// The skip path resolves the next owner through the hub, so a skipped owner
+		// reaches the same plugin a top owner would. Exercises the real wiring.
+		It("should resolve the owner below a skipped WorkloadRunner through the hub", func() {
+			statefulSet := &appsv1.StatefulSet{
+				TypeMeta: metav1.TypeMeta{APIVersion: "apps/v1", Kind: "StatefulSet"},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "wrapped-sts",
+					Namespace: "default",
+					Labels:    map[string]string{queueLabelKey: "wrapped-queue"},
+				},
+			}
+			kubeClient := fake.NewFakeClient(statefulSet)
+			hub := NewDefaultPluginsHub(
+				kubeClient, false, false, false, queueLabelKey, nodePoolLabelKey, "", "",
+			)
+
+			runner := &unstructured.Unstructured{}
+			runner.SetAPIVersion("run.ai/v1alpha1")
+			runner.SetKind("WorkloadRunner")
+			runner.SetNamespace("default")
+			runner.SetName("runner")
+
+			pod := &v1.Pod{
+				TypeMeta:   metav1.TypeMeta{APIVersion: "v1", Kind: "Pod"},
+				ObjectMeta: metav1.ObjectMeta{Name: "test-pod", Namespace: "default"},
+			}
+			owners := []*metav1.PartialObjectMetadata{
+				{
+					TypeMeta:   metav1.TypeMeta{APIVersion: "apps/v1", Kind: "StatefulSet"},
+					ObjectMeta: metav1.ObjectMeta{Name: "wrapped-sts", Namespace: "default"},
+				},
+				{
+					TypeMeta:   metav1.TypeMeta{APIVersion: "run.ai/v1alpha1", Kind: "WorkloadRunner"},
+					ObjectMeta: metav1.ObjectMeta{Name: "runner", Namespace: "default"},
+				},
+			}
+
+			plugin := hub.GetPodGrouperPlugin(metav1.GroupVersionKind{
+				Group: apiGroupRunai, Version: "v1alpha1", Kind: "WorkloadRunner",
+			})
+			Expect(plugin.Name()).To(BeEquivalentTo("SkipTopOwner Grouper"))
+
+			metadata, err := plugin.GetPodGroupMetadata(runner, pod, owners...)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(metadata).NotTo(BeNil())
+			Expect(metadata.Queue).To(Equal("wrapped-queue"))
+			Expect(metadata.Owner.Kind).To(Equal("StatefulSet"))
 		})
 	})
 

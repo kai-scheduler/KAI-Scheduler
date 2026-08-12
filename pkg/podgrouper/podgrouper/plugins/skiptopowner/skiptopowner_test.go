@@ -431,6 +431,22 @@ var _ = Describe("SkipTopOwnerGrouper", func() {
 			})
 		})
 
+		Context("when the skipped owner has no owner below it", func() {
+			It("falls back to the default grouper instead of panicking", func() {
+				skippedOwner := newUnstructured("run.ai/v1alpha1", "WorkloadRunner", "runner")
+				skippedOwner.SetLabels(map[string]string{queueLabelKey: queueName})
+				pod := examplePod.DeepCopy()
+				Expect(client.Create(context.TODO(), pod)).To(Succeed())
+				pod.TypeMeta = metav1.TypeMeta{Kind: examplePod.Kind, APIVersion: examplePod.APIVersion}
+
+				metadata, err := plugin.GetPodGroupMetadata(skippedOwner, pod)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(metadata).NotTo(BeNil())
+				Expect(metadata.Queue).To(Equal(queueName))
+			})
+		})
+
 		Context("chained skip-top-owner delegation", func() {
 			// RUN-42142: Run:ai wraps the workload in a WorkloadRunner, adding a level to the
 			// owner chain: Pod -> PodClique -> PodCliqueSet -> DGD -> WorkloadRunner. Both
