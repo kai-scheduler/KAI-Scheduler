@@ -98,11 +98,6 @@ func TestNew_UnrecognizedMode_FallsBackToEvictLargerFirst(t *testing.T) {
 	}
 }
 
-// TestGpujoborder_DoesNotAffect_PendingJobOrdering confirms gpujoborder
-// registers ONLY via AddVictimOrderFn, never AddJobOrderFn -- verifying
-// pending-job allocation ordering is byte-identical with or without the
-// plugin registered (the test gshaibi asked for on the original scoping
-// review comment).
 func TestGpujoborder_DoesNotAffect_PendingJobOrdering(t *testing.T) {
 	rp := newPlugin(t, "")
 
@@ -129,13 +124,6 @@ func TestGpujoborder_DoesNotAffect_PendingJobOrdering(t *testing.T) {
 	}
 }
 
-// makeElasticJob builds a same-priority job with one subgroup, letting the
-// caller specify how many tasks are allocated relative to the subgroup's
-// MinAvailable -- used to construct genuine at-min / above-min states for
-// elastic.JobOrderFn to evaluate. Uses the real constructor first (so
-// activeAllocatedCount and other internal fields are properly
-// initialized, avoiding a nil-pointer panic a raw struct literal would
-// risk), then swaps in a custom-MinAvailable subgroup before adding tasks.
 func makeElasticJob(uid string, priority int32, minAvailable int32, allocatedTasks int,
 	gpuPerTask float64, vm *resource_info.ResourceVectorMap) *podgroup_info.PodGroupInfo {
 
@@ -158,25 +146,11 @@ func makeElasticJob(uid string, priority int32, minAvailable int32, allocatedTas
 	return pg
 }
 
-// TestElasticProtection_OutranksGpujoborder is the test @gshaibi asked
-// for: confirms that when both elastic.JobOrderFn and gpujoborder's
-// VictimOrderFn are registered on a real Session, elastic's deliberate
-// at-min/above-min protection correctly outranks gpujoborder's raw
-// GPU-size comparison -- a smaller ABOVE-min job must be evicted before a
-// larger AT-min job, even though gpujoborder alone would prefer the
-// larger job as victim.
 func TestElasticProtection_OutranksGpujoborder(t *testing.T) {
-	rp := newPlugin(t, "") // evict-larger-first (default)
+	rp := newPlugin(t, "")
 
 	vm := resource_info.NewResourceVectorMap()
-	// At its minimum (2/2 allocated), 2 GPUs total -- LARGER, but must be
-	// protected per elastic's logic.
 	atMinLarge := makeElasticJob("at-min-large", 10, 2, 2, 1.0, vm)
-	// Above its minimum (2 allocated, min 1), 2 GPUs total via 2 tasks --
-	// wait: to keep this a clean, unconfounded test, above-min job uses
-	// FEWER total GPUs than the at-min job, so gpujoborder ALONE would
-	// prefer evicting the at-min job (it's larger) -- the opposite of
-	// what elastic's protection requires.
 	aboveMinSmall := makeElasticJob("above-min-small", 10, 1, 2, 0.5, vm)
 
 	ssn := &framework.Session{}

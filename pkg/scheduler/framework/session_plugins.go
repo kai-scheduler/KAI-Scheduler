@@ -68,11 +68,6 @@ func (ssn *Session) AddJobOrderFn(jof common_info.CompareFn) {
 	ssn.JobOrderFns = append(ssn.JobOrderFns, jof)
 }
 
-// AddVictimOrderFn registers a comparator that applies ONLY when ordering
-// candidates for eviction (the victim queue), not for regular pending-job
-// allocation ordering. Unlike JobOrderFn, no external inversion is applied
-// to this comparator's result: a negative return means "l is the BETTER
-// victim (should be evicted first)", directly.
 func (ssn *Session) AddVictimOrderFn(vof common_info.CompareFn) {
 	ssn.VictimOrderFns = append(ssn.VictimOrderFns, vof)
 }
@@ -277,10 +272,6 @@ func (ssn *Session) QueueAllocatedResources(queue *queue_info.QueueInfo) *resour
 	return nil
 }
 
-// jobOrderCreationFallback is the shared tiebreak used when no registered
-// comparator has an opinion: CreationTimestamp first, then UID. Extracted
-// so both JobOrderFn and VictimOrderFn can share it without duplicating
-// the comparison logic.
 func jobOrderCreationFallback(l, r interface{}) bool {
 	lv := l.(*podgroup_info.PodGroupInfo)
 	rv := r.(*podgroup_info.PodGroupInfo)
@@ -299,27 +290,6 @@ func (ssn *Session) JobOrderFn(l, r interface{}) bool {
 	return jobOrderCreationFallback(l, r)
 }
 
-// VictimOrderFn composes registered victim-specific comparators, but only
-// as a tiebreak AFTER the existing JobOrderFns chain (priority.go,
-// elastic.go, etc.) has had its say -- fixed per @gshaibi's review: the
-// original version checked VictimOrderFns first unconditionally, which
-// let a raw resource-size comparator (e.g. gpujoborder) outrank
-// elastic's deliberate at-min/above-min protection. Since JobOrderFn
-// itself always resolves via its own CreationTimestamp/UID fallback, the
-// raw JobOrderFns slice is iterated directly here (not the composed
-// method) so a genuine "no opinion" state (all registered JobOrderFns
-// return 0) can be detected before falling through to victim-specific
-// comparators.
-//
-// A negative result from a JobOrderFn means "l ordered first for
-// allocation" -- inverted here (j > 0) since a job LESS preferred for
-// allocation should be MORE preferred as a victim. VictimOrderFns use
-// direct (non-inverted) semantics: negative means "l is the better
-// victim". If neither chain has an opinion, falls back to the inverted
-// creation-timestamp order, preserving old behavior exactly.
-//
-// Path without any VictimOrderFns registered is byte-identical to the
-// original !JobOrderFn(l, r) behavior.
 func (ssn *Session) VictimOrderFn(l, r interface{}) bool {
 	for _, jof := range ssn.JobOrderFns {
 		if j := jof(l, r); j != 0 {
