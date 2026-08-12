@@ -16,8 +16,6 @@ type Options struct {
 	SchedulerName               string
 	QPS                         float64
 	Burst                       int
-	RateLimiterBaseDelaySeconds int
-	RateLimiterMaxDelaySeconds  int
 	EnableLeaderElection        bool
 	MetricsAddr                 string
 	ProbeAddr                   string
@@ -57,12 +55,6 @@ func InitOptions() *Options {
 	fs.IntVar(&options.Burst,
 		"burst", 300,
 		"Burst to the K8s API server")
-	fs.IntVar(&options.RateLimiterBaseDelaySeconds,
-		"rate-limiter-base-delay", 1,
-		"Base delay in seconds for the ExponentialFailureRateLimiter")
-	fs.IntVar(&options.RateLimiterMaxDelaySeconds,
-		"rate-limiter-max-delay", 60,
-		"Max delay in seconds for the ExponentialFailureRateLimiter")
 	fs.BoolVar(&options.EnableLeaderElection,
 		"leader-elect", false,
 		"Enable leader election for controller manager. "+

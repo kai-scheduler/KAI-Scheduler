@@ -33,7 +33,6 @@ import (
 
 	admissionplugins "github.com/kai-scheduler/KAI-scheduler/pkg/admission/plugins"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/admission/webhook/topologyhooks"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/controllers"
 )
 
 var (
@@ -54,7 +53,6 @@ type App struct {
 	InformerFactory  informers.SharedInformerFactory
 	Options          *Options
 	manager          manager.Manager
-	reconcilerParams *controllers.ReconcilerParams
 	admissionPlugins *admissionplugins.KaiAdmissionPlugins
 }
 
@@ -120,18 +118,12 @@ func New() (*App, error) {
 	kubeClient := kubernetes.NewForConfigOrDie(config)
 	informerFactory := informers.NewSharedInformerFactory(kubeClient, 0)
 
-	reconcilerParams := &controllers.ReconcilerParams{
-		RateLimiterBaseDelaySeconds: options.RateLimiterBaseDelaySeconds,
-		RateLimiterMaxDelaySeconds:  options.RateLimiterMaxDelaySeconds,
-	}
-
 	app := &App{
-		K8sInterface:     kubeClient,
-		Client:           clientWithWatch,
-		InformerFactory:  informerFactory,
-		Options:          options,
-		manager:          mgr,
-		reconcilerParams: reconcilerParams,
+		K8sInterface:    kubeClient,
+		Client:          clientWithWatch,
+		InformerFactory: informerFactory,
+		Options:         options,
+		manager:         mgr,
 	}
 	return app, nil
 }
