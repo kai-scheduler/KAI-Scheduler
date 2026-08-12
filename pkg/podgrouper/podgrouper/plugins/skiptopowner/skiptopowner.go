@@ -20,9 +20,6 @@ import (
 )
 
 // GrouperResolver resolves the grouper handling a GVK, or nil when none matches.
-// The plugins hub implements it, so the skipped-owner delegation goes through the
-// same resolution as a top-level lookup - wildcard versions and Karta fallback
-// included - instead of an exact-GVK map lookup.
 type GrouperResolver func(gvk metav1.GroupVersionKind) grouper.Grouper
 
 type skipTopOwnerGrouper struct {

@@ -432,9 +432,6 @@ var _ = Describe("SkipTopOwnerGrouper", func() {
 		})
 
 		Context("chained skip-top-owner delegation", func() {
-			// RUN-42142: Run:ai wraps the workload in a WorkloadRunner, adding a level to the
-			// owner chain: Pod -> PodClique -> PodCliqueSet -> DGD -> WorkloadRunner. Both
-			// wrapper levels must be skipped so the Grove grouper still produces the gang.
 			var (
 				groveGrouper   *recordingGrouper
 				workloadRunner *unstructured.Unstructured
@@ -559,7 +556,6 @@ var _ = Describe("SkipTopOwnerGrouper", func() {
 
 })
 
-// recordingGrouper stands in for a terminal plugin and captures the owner it was handed.
 type recordingGrouper struct {
 	name       string
 	calledWith *unstructured.Unstructured
@@ -583,7 +579,6 @@ func newUnstructured(apiVersion, kind, name string) *unstructured.Unstructured {
 	return obj
 }
 
-// resolverFromMap mirrors the hub's lookup: exact GVK first, then wildcard version.
 func resolverFromMap(table map[metav1.GroupVersionKind]grouperplugin.Grouper) GrouperResolver {
 	return func(gvk metav1.GroupVersionKind) grouperplugin.Grouper {
 		if g, found := table[gvk]; found {
