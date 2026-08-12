@@ -47,12 +47,6 @@ func (sk *skipTopOwnerGrouper) Name() string {
 func (sk *skipTopOwnerGrouper) GetPodGroupMetadata(
 	skippedOwner *unstructured.Unstructured, pod *v1.Pod, otherOwners ...*metav1.PartialObjectMetadata,
 ) (*podgroup.Metadata, error) {
-	// A skipped owner may itself resolve to this grouper (e.g. WorkloadRunner -> DGD ->
-	// PodCliqueSet). Each hop drops one owner, so bottoming out here terminates the chain.
-	if len(otherOwners) == 0 {
-		return sk.defaultPlugin.GetPodGroupMetadata(skippedOwner, pod)
-	}
-
 	var lastOwnerPartial *metav1.PartialObjectMetadata
 	if len(otherOwners) <= 1 {
 		lastOwnerPartial = &metav1.PartialObjectMetadata{
