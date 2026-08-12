@@ -181,8 +181,6 @@ var _ = Describe("SupportedTypes", func() {
 	})
 
 	Context("Skip Top Owner Resolution Tests", func() {
-		// The skip path resolves the next owner through the hub, so a skipped owner
-		// reaches the same plugin a top owner would. Exercises the real wiring.
 		It("should resolve the owner below a skipped WorkloadRunner through the hub", func() {
 			statefulSet := &appsv1.StatefulSet{
 				TypeMeta: metav1.TypeMeta{APIVersion: "apps/v1", Kind: "StatefulSet"},
