@@ -306,7 +306,8 @@ func NewDefaultPluginsHub(kubeClient client.Client, searchForLegacyPodGroups,
 		customPlugins:          table,
 	}
 
-	// Bound lazily: the Karta fallback is assigned below.
+	// hub is captured by pointer and read only when the closure runs, so the skip
+	// grouper still sees the table entries and Karta fallback assigned below.
 	skipTopOwnerGrouper := skiptopowner.NewSkipTopOwnerGrouper(kubeClient, defaultGrouper,
 		func(gvk metav1.GroupVersionKind) grouper.Grouper {
 			return hub.GetPodGrouperPlugin(gvk)
