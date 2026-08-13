@@ -6,6 +6,7 @@ package resources
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -18,6 +19,10 @@ import (
 // the gpu-fraction-container-name annotation, and NvFractions annotations. It is
 // configmap-agnostic and shared by the admission plugins.
 func ValidateGPUFractionRequest(pod *v1.Pod) error {
+	if err := validateGpuMemoryPortionLimitAnnotation(pod); err != nil {
+		return err
+	}
+
 	req, err := ParsePodGPUFractionRequest(pod)
 	if err != nil {
 		return err
@@ -86,6 +91,73 @@ func validateGpuMemoryNvFractionsConsistency(pod *v1.Pod) error {
 			"NvFractions memory request (%s) does not match %s annotation value (%d MiB)",
 			req.Memory.String(), constants.GpuMemory, legacyMemoryMiB,
 		)
+	}
+	return nil
+}
+
+// validateGpuMemoryPortionLimitAnnotation validates the kai.scheduler
+// gpu-memory.portion.limit annotation: it may only be used together with
+// gpu-fraction, on the same container, as a fraction strictly greater than
+// gpu-fraction and strictly smaller than 1.0, with at most 5 decimal digits.
+func validateGpuMemoryPortionLimitAnnotation(pod *v1.Pod) error {
+	containerName, rawValue, found := ExtractGpuMemoryPortionLimitAnnotation(pod)
+	if !found {
+		return nil
+	}
+	annotationKey := CalcGpuMemoryPortionLimitAnnotationForContainer(containerName)
+
+	gpuFractionStr, hasGpuFraction := pod.Annotations[constants.GpuFraction]
+	if !hasGpuFraction || gpuFractionStr == "" {
+		return fmt.Errorf("%s annotation can only be used together with the %s annotation",
+			annotationKey, constants.GpuFraction)
+	}
+
+	if err := validateGpuMemoryPortionLimitContainerName(pod, containerName, annotationKey); err != nil {
+		return err
+	}
+
+	gpuFraction, err := strconv.ParseFloat(gpuFractionStr, 64)
+	if err != nil {
+		return fmt.Errorf("gpu-fraction annotation value must be a positive number smaller than 1.0")
+	}
+
+	if err := validatePortionLimitDecimalPrecision(rawValue, annotationKey); err != nil {
+		return err
+	}
+
+	portionLimit, err := strconv.ParseFloat(rawValue, 64)
+	if err != nil || portionLimit <= 0 || portionLimit >= 1 {
+		return fmt.Errorf("%s annotation value must be a positive number smaller than 1.0", annotationKey)
+	}
+
+	if portionLimit <= gpuFraction {
+		return fmt.Errorf("%s annotation value (%s) must be greater than %s annotation value (%s)",
+			annotationKey, rawValue, constants.GpuFraction, gpuFractionStr)
+	}
+
+	return nil
+}
+
+func validateGpuMemoryPortionLimitContainerName(pod *v1.Pod, containerName, annotationKey string) error {
+	if legacyContainerName, hasGpuFractionContainerName := pod.Annotations[constants.GpuFractionContainerName]; hasGpuFractionContainerName {
+		if legacyContainerName != containerName {
+			return fmt.Errorf("%s annotation value %s does not match container name %s in %s annotation",
+				constants.GpuFractionContainerName, legacyContainerName, containerName, annotationKey)
+		}
+		return nil
+	}
+
+	if len(pod.Spec.Containers) == 0 || pod.Spec.Containers[0].Name != containerName {
+		return fmt.Errorf("%s annotation container name %s does not match the gpu-fraction target container",
+			annotationKey, containerName)
+	}
+	return nil
+}
+
+func validatePortionLimitDecimalPrecision(rawValue, annotationKey string) error {
+	_, fraction, hasDecimalPoint := strings.Cut(rawValue, ".")
+	if hasDecimalPoint && len(fraction) > 5 {
+		return fmt.Errorf("%s annotation value must have at most 5 digits after the decimal point", annotationKey)
 	}
 	return nil
 }

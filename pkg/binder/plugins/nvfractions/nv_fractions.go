@@ -61,6 +61,10 @@ func (p *Plugin) PreBind(
 		return fmt.Errorf("failed to set NvFractions memory annotation: %w", err)
 	}
 
+	if err := setGpuMemoryPortionLimitAnnotation(pod, node, containerRef.Container.Name, bindingState); err != nil {
+		return fmt.Errorf("failed to set NvFractions memory limit annotation: %w", err)
+	}
+
 	visibleDevices := bindingState.ReservedGPUIds
 	if p.gpuDevicePluginUsesCdi {
 		visibleDevices = make([]string, len(bindingState.ReservedGPUIds))
@@ -110,6 +114,48 @@ func setNvFractionsMemoryAnnotation(pod *v1.Pod, node *v1.Node, bindRequest *v1a
 	}
 
 	bindingState.BindingPodAnnotations[annotationKey] = resources.GpuMemoryAnnotationToNvFractionsMemoryRequest(gpuMemory).String()
+	return nil
+}
+
+// setGpuMemoryPortionLimitAnnotation translates the kai.scheduler
+// gpu-memory.portion.limit annotation into the NvFractions limit form,
+// without removing the source annotation.
+func setGpuMemoryPortionLimitAnnotation(pod *v1.Pod, node *v1.Node, containerName string, bindingState *state.BindingState) error {
+	_, rawPortionLimit, found := resources.ExtractGpuMemoryPortionLimitAnnotation(pod)
+	if !found {
+		return nil
+	}
+
+	annotationKey := resources.CalcGpuFractionLimitAnnotationForContainer(containerName)
+	if _, found := pod.Annotations[annotationKey]; found {
+		return nil
+	}
+
+	if node == nil {
+		return fmt.Errorf("missing node data for gpu-memory.portion.limit annotation calculation")
+	}
+
+	gpuMemoryStr, found := node.Labels[constants.NvidiaGpuMemory]
+	if !found {
+		return fmt.Errorf("node does not include %s label", constants.NvidiaGpuMemory)
+	}
+
+	totalGPUMemoryMiB, err := strconv.ParseFloat(gpuMemoryStr, 64)
+	if err != nil || totalGPUMemoryMiB <= 0 {
+		return fmt.Errorf("invalid %s label value %q", constants.NvidiaGpuMemory, gpuMemoryStr)
+	}
+
+	portionLimit, err := strconv.ParseFloat(rawPortionLimit, 64)
+	if err != nil || portionLimit <= 0 {
+		return fmt.Errorf("invalid gpu-memory.portion.limit annotation value %q", rawPortionLimit)
+	}
+
+	gpuMemoryLimit := uint64(totalGPUMemoryMiB * portionLimit)
+	if gpuMemoryLimit == 0 {
+		return fmt.Errorf("calculated gpu memory limit is zero")
+	}
+
+	bindingState.BindingPodAnnotations[annotationKey] = resources.GpuMemoryAnnotationToNvFractionsMemoryRequest(gpuMemoryLimit).String()
 	return nil
 }
 
