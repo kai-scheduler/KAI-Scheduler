@@ -24,6 +24,10 @@ func CalcGpuFractionAnnotationForContainer(containerName string) string {
 	return constants.NvFractionsAnnotationPrefix + containerName + constants.NvFractionsMemoryRequestSuffix
 }
 
+func CalcGpuFractionLimitAnnotationForContainer(containerName string) string {
+	return constants.NvFractionsAnnotationPrefix + containerName + constants.NvFractionsMemoryLimitSuffix
+}
+
 func CalcGpuVisibleDevicesAnnotationForContainer(containerName string) string {
 	return constants.NvFractionsAnnotationPrefix + containerName + constants.NvFractionsVisibleDevicesSuffix
 }

@@ -85,6 +85,9 @@ const (
 	NvFractionsMemoryLimitSuffix    = ".gpu-memory.limit"
 	NvFractionsVisibleDevicesSuffix = ".gpus.devices"
 
+	KaiFractionContainerAnnotationPrefix = "kai.scheduler/container."
+	GpuMemoryPortionLimitSuffix          = ".gpu-memory.portion.limit"
+
 	// gpu-sharing operator statuses
 	NvFractionNodeReadyConditionType = "gpu-sharing.nvidia.com/Ready"
 )
