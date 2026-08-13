@@ -1,0 +1,3 @@
+kind: Fixed
+body: |-
+  Podgrouper skips WorkloadRunner wrapper so wrapped workloads keep their gang grouping
