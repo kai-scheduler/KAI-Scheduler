@@ -260,7 +260,7 @@ Generators can rediscover the same effective victim set — within one generator
 
 Reclaim persists one bounded checkpoint per job across scheduling sessions when a job or generator budget stops a probe after at least one scenario was emitted. The next session rebuilds the generator and advances it without simulation until it reaches the saved scenario fingerprint, then resumes from the following candidate. If that cursor cannot be found, the generator is rebuilt again and starts normally.
 
-The checkpoint is deliberately small: job/action key, probe size, generator name, stop reason, and two SHA-256 fingerprints. It stores no snapshot references, scenario objects, queues, Pods, or victim lists. The scheduler store is capped at 4096 entries, so checkpoint memory remains bounded even when many jobs are pending.
+The checkpoint is deliberately small: job/action key, probe size, generator name, stop reason, and two SHA-256 fingerprints. It stores no snapshot references, scenario objects, queues, Pods, or victim lists. The scheduler store is capped at 4096 entries, so checkpoint memory remains bounded even when many jobs are pending. At capacity, new jobs do not receive a checkpoint; existing jobs retain and update theirs so they can make progress.
 
 Before reuse, the solver recomputes an input fingerprint over the partial pending job, recorded victims, feasible-node state, registered generator order, configured plugins and scenario-search budgets, and current PodGroup/task state. Any mismatch discards the checkpoint and starts from the first candidate. Solved or fully exhausted checkpointed probes delete their checkpoint.
 

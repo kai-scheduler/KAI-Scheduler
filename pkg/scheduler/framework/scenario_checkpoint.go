@@ -62,10 +62,7 @@ func (s *ScenarioCheckpointStore) Save(key ScenarioCheckpointKey, checkpoint Sce
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, found := s.entries[key]; !found && len(s.entries) >= s.capacity {
-		for evicted := range s.entries {
-			delete(s.entries, evicted)
-			break
-		}
+		return
 	}
 	s.entries[key] = checkpoint
 }
