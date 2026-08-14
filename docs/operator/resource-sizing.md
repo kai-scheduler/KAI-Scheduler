@@ -194,13 +194,18 @@ building representative workload tests.
 ## Vertical Pod Autoscaler
 
 KAI can create VPA policies when VPA is installed. Start with `updateMode: Off`
-and observe recommendations through a complete workload cycle. Set
-service-specific bounds and prefer `controlledValues: RequestsOnly` when
-keeping validated static limits.
+and observe recommendations through a complete workload cycle.
 
 The default VPA maximum of 2 CPUs and 5 GiB is too low for the 1000-node
-scheduler profile. Scheduler shards derive `GOMEMLIMIT` from their memory limit
-using `goMemLimitRatio` (default `0.9`), so reduce scheduler limits carefully.
+scheduler profile. Raise the service-specific bounds before enabling VPA for
+that profile.
+
+For the Scheduler, prefer `controlledValues: RequestsOnly` when keeping a
+validated static limit. If VPA lowers a scheduler Pod's memory limit in place,
+the cgroup limit can fall before the process has released memory. KAI updates
+the Go memory target after observing the cgroup change, but the Pod can be
+OOM-killed before garbage collection releases enough memory. Reduce the
+scheduler limit only after complete-cycle measurements show that it is safe.
 
 See the upstream [VPA mode documentation](https://github.com/kubernetes/autoscaler/blob/master/vertical-pod-autoscaler/docs/quickstart.md)
 and [Scheduling shards](./scheduling-shards.md#go-memory-limit).
