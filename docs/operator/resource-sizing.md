@@ -145,7 +145,15 @@ Config custom resource. The calculator generates this patch. The operator
 itself is configured through Helm at `operator.resources`. If Helm or GitOps
 owns the Config, update that source of truth instead of applying a direct patch.
 
-## Validate and tune
+## Validate in your environment
+
+The tested profiles and calculator results are starting points, not guarantees.
+Cluster administrators must validate them against a representative workload
+lifecycle before relying on them in production. Every deployment has different
+workload shapes, plugins, placement constraints, and submission patterns.
+
+This is deployment validation performed by the platform operator; it does not
+require running KAI's development scale-test suite.
 
 Run cluster fill, the largest jobs, a submission burst, reclaim or preemption,
 and cleanup. Monitor:
@@ -180,8 +188,8 @@ Prefer no CPU limit for latency-sensitive controllers. If policy requires one,
 measure demand without throttling first. Repeat validation after changing KAI,
 Kubernetes, shards, plugins, storage, DRA, GPU sharing, or workload shape.
 
-The [scale-test guide](../developer/scale-tests.md) describes representative
-workload testing.
+The [scale-test guide](../developer/scale-tests.md) provides examples for
+building representative workload tests.
 
 ## Vertical Pod Autoscaler
 
