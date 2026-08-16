@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.16.9] - 2026-08-16
+
+### Added
+- Reservation pods inherit fractional pod tolerations
+
+### Fixed
+- Allow PodGroup minMember and minSubGroup of 0 for workloads with no gang requirement
+- Propagate Kubernetes client QPS and burst settings to operator-managed controllers
+- Podgrouper skips WorkloadRunner wrapper so wrapped workloads keep their gang grouping
+
 ## [v0.16.8] - 2026-07-29
 
 ### Fixed
