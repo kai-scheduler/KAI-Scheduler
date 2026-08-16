@@ -334,9 +334,10 @@ func NewDefaultPluginsHub(kubeClient client.Client, searchForLegacyPodGroups,
 	}] = skipTopOwnerGrouper
 
 	// Dynamo uses Grove Grouper and needs to propagate metadata from DynamoGraphDeployment to PodGang and PodClique.
+	// Match every served version: v1alpha1 (Dynamo <=1.1.x) and v1beta1 (1.2.0+, which serves/owns the DGD).
 	table[metav1.GroupVersionKind{
 		Group:   "nvidia.com",
-		Version: "v1alpha1",
+		Version: "*",
 		Kind:    "DynamoGraphDeployment",
 	}] = skipTopOwnerGrouper
 
