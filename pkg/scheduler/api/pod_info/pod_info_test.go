@@ -41,6 +41,45 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/storageclaim_info"
 )
 
+func TestRequestedGPUComputeSharingMode(t *testing.T) {
+	tests := []struct {
+		name        string
+		annotations map[string]string
+		want        schedulingv1alpha2.GPUComputeSharingMode
+	}{
+		{
+			name:        "no annotations defaults to time-slicing",
+			annotations: map[string]string{},
+			want:        schedulingv1alpha2.GPUComputeSharingModeTimeSlicing,
+		},
+		{
+			name: "NvFractions pod honors the compute-mode annotation",
+			annotations: map[string]string{
+				resources.CalcGpuFractionAnnotationForContainer("main"):           "1Gi",
+				resources.CalcGpuComputeSharingModeAnnotationForContainer("main"): string(schedulingv1alpha2.GPUComputeSharingModeSMSharing),
+			},
+			want: schedulingv1alpha2.GPUComputeSharingModeSMSharing,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pi := &PodInfo{
+				Pod: &v1.Pod{
+					ObjectMeta: metav1.ObjectMeta{Annotations: tt.annotations},
+					Spec:       v1.PodSpec{Containers: []v1.Container{{Name: "main"}}},
+				},
+			}
+
+			got := pi.RequestedGPUComputeSharingMode()
+
+			if got != tt.want {
+				t.Errorf("RequestedGPUComputeSharingMode() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestGetPodResourceRequest(t *testing.T) {
 	tests := []struct {
 		name             string

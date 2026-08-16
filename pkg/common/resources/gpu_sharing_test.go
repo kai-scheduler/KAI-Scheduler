@@ -64,6 +64,16 @@ func TestParsePodGPUFractionRequest(t *testing.T) {
 			wantNumDevices:   3,
 		},
 		{
+			name: "gpu-compute.mode annotation does not break NvFractions parsing",
+			annotations: map[string]string{
+				constants.NvFractionsAnnotationPrefix + "main" + constants.NvFractionsMemoryRequestSuffix: "1Gi",
+				CalcGpuComputeSharingModeAnnotationForContainer("main"):                                   "sm-sharing",
+			},
+			wantFractionType: FractionTypeNvFractions,
+			wantMemory:       "1Gi",
+			wantNumDevices:   1,
+		},
+		{
 			name: "invalid legacy portion request",
 			annotations: map[string]string{
 				constants.GpuFraction: "1.2",

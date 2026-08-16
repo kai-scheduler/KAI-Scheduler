@@ -26,6 +26,7 @@ import (
 
 	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 )
 
 const (
@@ -905,7 +906,7 @@ var _ = Describe("ResourceReservationService", func() {
 				kubeClient:          fake.NewClientBuilder().WithScheme(testScheme).Build(),
 			}
 
-			resources := v1.ResourceRequirements{
+			containerResources := v1.ResourceRequirements{
 				Limits: v1.ResourceList{
 					"nvidia.com/gpu": resource.MustParse("1"),
 				},
@@ -918,7 +919,7 @@ var _ = Describe("ResourceReservationService", func() {
 			pod, err := rsc.createResourceReservationPod(nodeName, schedulingv1alpha2.FractionalGpuGroup{
 				ID:                 gpuGroup,
 				ComputeSharingMode: schedulingv1alpha2.GPUComputeSharingModeTimeSlicing,
-			}, podName, resources)
+			}, podName, containerResources)
 			Expect(err).To(BeNil())
 			Expect(pod).NotTo(BeNil())
 
@@ -927,7 +928,7 @@ var _ = Describe("ResourceReservationService", func() {
 			Expect(pod.Namespace).To(Equal("kai-resource-reservation"))
 			Expect(pod.Labels[constants.AppLabelName]).To(Equal("kai-reservation"))
 			Expect(pod.Labels[constants.GPUGroup]).To(Equal(gpuGroup))
-			Expect(pod.Annotations[constants.GpuComputeSharingMode]).To(Equal(
+			Expect(pod.Annotations[resources.CalcGpuComputeSharingModeAnnotationForContainer("resource-reservation")]).To(Equal(
 				string(schedulingv1alpha2.GPUComputeSharingModeTimeSlicing)))
 
 			// PodSpec checks
@@ -941,7 +942,7 @@ var _ = Describe("ResourceReservationService", func() {
 			Expect(container.Name).To(Equal("resource-reservation"))
 			Expect(container.Image).To(Equal("nvidia/kai-reservation:latest"))
 			Expect(container.ImagePullPolicy).To(Equal(v1.PullIfNotPresent))
-			Expect(container.Resources).To(Equal(resources))
+			Expect(container.Resources).To(Equal(containerResources))
 
 			// Check env vars
 			podNameEnv := v1.EnvVar{
@@ -983,7 +984,7 @@ var _ = Describe("ResourceReservationService", func() {
 				v1.ResourceRequirements{},
 			)
 			Expect(err).To(BeNil())
-			Expect(pod.Annotations[constants.GpuComputeSharingMode]).To(Equal(
+			Expect(pod.Annotations[resources.CalcGpuComputeSharingModeAnnotationForContainer("resource-reservation")]).To(Equal(
 				string(schedulingv1alpha2.GPUComputeSharingModeSMSharing)))
 		})
 	})

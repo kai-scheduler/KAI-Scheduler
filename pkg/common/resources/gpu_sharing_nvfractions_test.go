@@ -7,7 +7,9 @@ import (
 	"testing"
 
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/utils/ptr"
 
+	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
@@ -76,6 +78,31 @@ func TestExtractNvFractionsData(t *testing.T) {
 			},
 		},
 		{
+			name: "compute sharing mode annotation does not break extraction of a sibling container's request",
+			annotations: map[string]string{
+				constants.NvFractionsAnnotationPrefix + "main" + constants.NvFractionsMemoryRequestSuffix: "1Gi",
+				CalcGpuComputeSharingModeAnnotationForContainer("main"):                                   "sm-sharing",
+			},
+			want: map[string]NvFractionsContainerRequest{
+				"main": {
+					Request:     quantityPtr("1Gi"),
+					ComputeMode: ptr.To(schedulingv1alpha2.GPUComputeSharingModeSMSharing),
+				},
+			},
+		},
+		{
+			name: "skips device list annotation",
+			annotations: map[string]string{
+				constants.NvFractionsAnnotationPrefix + "main" + constants.NvFractionsMemoryRequestSuffix: "1Gi",
+				CalcGpuVisibleDevicesAnnotationForContainer("main"):                                       "gpu-0",
+			},
+			want: map[string]NvFractionsContainerRequest{
+				"main": {
+					Request: quantityPtr("1Gi"),
+				},
+			},
+		},
+		{
 			name: "rejects invalid annotation key",
 			annotations: map[string]string{
 				constants.NvFractionsAnnotationPrefix + "main.unknown": "1Gi",
@@ -129,6 +156,12 @@ func TestParseNvFractionsAnnotationKey(t *testing.T) {
 			annotationKey:     constants.NvFractionsAnnotationPrefix + "main" + constants.NvFractionsMemoryLimitSuffix,
 			wantContainerName: "main",
 			wantType:          nvFractionsLimitAnnotation,
+		},
+		{
+			name:              "compute sharing mode annotation",
+			annotationKey:     constants.NvFractionsAnnotationPrefix + "main" + constants.GpuComputeSharingModeSuffix,
+			wantContainerName: "main",
+			wantType:          nvFractionsComputeModeAnnotation,
 		},
 		{
 			name:              "invalid annotation",

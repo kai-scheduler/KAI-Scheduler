@@ -1,0 +1,3 @@
+kind: Changed
+body: |-
+  Renamed gpu-compute-sharing-mode annotation to per-container nvidia.com/container.<name>.gpu-compute.mode with validation

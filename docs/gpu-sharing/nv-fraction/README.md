@@ -66,16 +66,18 @@ Setting a `limit` is useful for pods that have occasional "bursts" of gpu memory
 ## Choose a compute-sharing mode
 
 GPU memory and GPU compute mode are selected independently. The
-`kai.scheduler/gpu-compute-sharing-mode` annotation chooses how workloads in
-the same fractional GPU group share compute. KAI supports these values:
+`nvidia.com/container.<container-name>.gpu-compute.mode` annotation chooses how
+workloads in the same fractional GPU group share compute. KAI supports these
+values:
 
 | Mode | How workloads run | Best fit |
 | --- | --- | --- |
 | `time-slicing` | Workloads take turns using the GPU. Unused time is available to other workloads. This is the default. | Bursty development, notebooks, and throughput-oriented or latency-tolerant inference. |
 | `sm-sharing` | Workloads run concurrently and share the GPU streaming multiprocessors (SMs). | Steady or latency-sensitive inference, and coordinated multi-GPU or multi-Pod workloads. Requires MPS. |
 
-Set `kai.scheduler/gpu-compute-sharing-mode` in the NvFractions Pod manifest.
-The [GPU Sharing guide](../README.md#compute-sharing-mode-within-a-fractional-gpu-group)
+Set `nvidia.com/container.<container-name>.gpu-compute.mode` in the NvFractions
+Pod manifest, using the same container name as the pod's other NvFractions
+annotations. The [GPU Sharing guide](../README.md#compute-sharing-mode-within-a-fractional-gpu-group)
 shows the annotation in context.
 
 ![Time-slicing and SM-sharing](compute-mode.png)

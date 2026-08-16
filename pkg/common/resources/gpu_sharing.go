@@ -12,6 +12,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
+	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
@@ -44,8 +45,9 @@ type PodGPUFractionRequest struct {
 }
 
 type NvFractionsContainerRequest struct {
-	Request *resource.Quantity
-	Limit   *resource.Quantity
+	Request     *resource.Quantity
+	Limit       *resource.Quantity
+	ComputeMode *schedulingv1alpha2.GPUComputeSharingMode
 }
 
 var (
@@ -242,4 +244,9 @@ func parseGpuFractionalMemory(pod *v1.Pod) (*resource.Quantity, bool, error) {
 func GpuMemoryAnnotationToNvFractionsMemoryRequest(gpuMemory uint64) *resource.Quantity {
 	memory := resource.MustParse(fmt.Sprintf("%dMi", gpuMemory))
 	return &memory
+}
+
+func IsValidGPUComputeSharingMode(mode string) bool {
+	return mode == string(schedulingv1alpha2.GPUComputeSharingModeTimeSlicing) ||
+		mode == string(schedulingv1alpha2.GPUComputeSharingModeSMSharing)
 }
