@@ -36,8 +36,8 @@ effective-request model and a hierarchical check.
 
 ### Effective accounting
 
-Use the upstream effective request (same pattern as Volcano) as KAI's default
-Pod resource vector. Per container and resource, before Pod-level aggregation:
+Use the upstream effective request as KAI's default Pod resource vector. Per
+container and resource, before Pod-level aggregation:
 
 ```text
 normal / Deferred / in progress:
