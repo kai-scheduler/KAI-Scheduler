@@ -1,0 +1,3 @@
+kind: Fixed
+body: |-
+  Consider termination grace period when marking pods StuckInReleasing
