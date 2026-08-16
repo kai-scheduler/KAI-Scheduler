@@ -47,15 +47,13 @@ The relationship between pods, input PodGroups, the `WorkloadGroup`, and the ren
 
 - All objects participating in a group are in the same namespace. Same-namespace actors are assumed to be mutually trusted.
 - An input PodGroup belongs to at most one `WorkloadGroup`.
-- Grouping intent must hold an input PodGroup from the moment it is created, before it can schedule independently, including when the `WorkloadGroup` or rendered PodGroup has not appeared yet. Adding the gate later cannot restore gang atomicity.
+- Grouping and scheduling behaviors must be consistent, independent of order-of-creation of the workloads/podgroups.
 - The controller must be able to determine when the input set is complete. Observing the currently available PodGroups is not sufficient by itself.
-- The relationship must resolve to a particular rendered PodGroup revision before the scheduler follows it.
+- The scheduler can only act on the finalized aggregated podgroup.
 - The controller must publish a mapping from each input PodGroup and local SubGroup to a rendered SubGroup. The mapping must be deterministic and stable across reconciles; the scheduler must not reproduce the controller's prefix, truncation, or hashing logic.
 - Input PodGroups keep their original ownership. Only the rendered PodGroup has a controller owner reference to the `WorkloadGroup`.
 
-Two main data models are under consideration.
-
-### Option A: input PodGroups point to the WorkloadGroup
+### PodGroups > WorkloadGroup
 
 Each input PodGroup identifies its `WorkloadGroup` through a typed field in its spec:
 
@@ -85,49 +83,7 @@ spec:
   expectedPodGroups: 3
 ```
 
-`expectedPodGroups` let's the workload controller know when it can start creating the actual gang PodGroup. Any less that that, the WorkloadGroup will wait. When there are enough podgroups, it will start rendering the gang podgroup. (Need to decide what to do if there are more: leaning towards not allowing it (reporting an error in status) unless we see a valid use case).
-
-### Option B: the WorkloadGroup lists input PodGroups
-
-The `WorkloadGroup` explicitly lists its expected PodGroups:
-
-```yaml
-apiVersion: scheduling.run.ai/v1alpha1
-kind: WorkloadGroup
-metadata:
-  name: rl-post-training
-  namespace: research
-spec:
-  podGroupRefs:
-    - apiVersion: scheduling.run.ai/v2alpha2
-      kind: PodGroup
-      name: policy-trainer
-    - apiVersion: scheduling.run.ai/v2alpha2
-      kind: PodGroup
-      name: rollout-workers
-    - apiVersion: scheduling.run.ai/v2alpha2
-      kind: PodGroup
-      name: reward-service
-```
-
-The explicit list closes membership and lets status identify a missing or invalid member. It also avoids needing a grouper-specific representation: references point to the PodGroup boundary regardless of who created each object.
-
-This model still needs a child-side scheduling gate. Otherwise an input PodGroup can be created and scheduled before the `WorkloadGroup` exists or before its controller has rendered the aggregate. 
-
-Any gate would work, might make sense to implement a pod-like scheduling gate list:
-
-```yaml
-apiVersion: scheduling.run.ai/v2alpha2
-kind: PodGroup
-metadata:
-  name: policy-trainer
-  namespace: research
-spec:
-  schedulingGates:
-  - workloadGroup
-```
-
-3rd-party podgroup creators will need to add this gate to prevent their podgroup from getting scheduled.
+`expectedPodGroups` lets the workload controller know when it can start creating the actual gang PodGroup. Any less that that, the WorkloadGroup will wait. When there are enough podgroups, it will start rendering the gang podgroup. (Need to decide what to do if there are more: leaning towards not allowing it (reporting an error in status) unless we see a valid use case).
 
 ## Rendering and pod resolution
 
@@ -158,14 +114,26 @@ status:
     - name: policy-trainer
       uid: 9b41aa46-18ab-4b33-b804-5997c0e05013
       observedGeneration: 2
+      owners:
+        - apiVersion: ray.io/v1
+          kind: RayJob
+          name: policy-trainer
       rootSubGroup: policy-trainer
     - name: rollout-workers
       uid: 80947a48-a889-4634-a459-5b7c810aa85f
       observedGeneration: 4
+      owners:
+        - apiVersion: ray.io/v1
+          kind: RayCluster
+          name: rollout-workers
       rootSubGroup: rollout-workers
     - name: reward-service
       uid: 0fbc89fa-5e4f-4214-bb66-af411453a7db
       observedGeneration: 1
+      owners:
+        - apiVersion: apps/v1
+          kind: Deployment
+          name: reward-service
       rootSubGroup: reward-service
   conditions:
     - type: InputsResolved
@@ -188,33 +156,31 @@ status:
       lastTransitionTime: "2026-08-12T08:00:02Z"
 ```
 
+The `owners` list is an informational snapshot of each input PodGroup's owner references. It makes the originating workload type and name visible to users, but is not used to determine membership or scheduling identity. The list may be empty for ownerless externally created PodGroups.
+
 ## Merge behavior
 
 The controller merges input PodGroup objects. The merge must be deterministic and idempotent. The initial merge policy is still partly open:
 
 | Field | Proposed behavior or decision required |
 | --- | --- |
-| `metadata.name` | Derive a scheduler-global collision-resistant name from the `WorkloadGroup`, for example `wg-<name>-<short-uid>`. The scheduler currently identifies PodGroups by name rather than namespaced name, so namespace uniqueness alone is insufficient. Alternatively, changing the scheduler to use namespaced or UID-based PodGroup identity must be part of the implementation. |
+| `metadata.name` | Derive a scheduler-global collision-resistant name from the `WorkloadGroup`, for example `wg-<name>`. The scheduler currently identifies PodGroups by name rather than namespaced name, which needs to be fixed internally. |
 | `metadata.namespace` | Use the `WorkloadGroup` namespace and require every input PodGroup and pod to use it. |
-| `metadata.ownerReferences` | Set the `WorkloadGroup` as the sole controller owner. Never adopt or modify ownership of input PodGroups. |
-| Annotations and labels | Start with `WorkloadGroup` metadata and add controller-owned provenance. Do not arbitrarily union input metadata. Resolve scheduler-significant labels such as node pool, user, tenant, and project explicitly and reject unsupported conflicts. |
-| `queue` | Prefer requiring all inputs to use the same queue. Decide whether a group-level value is only an assertion or may override input queues. Cross-queue grouping must not happen silently. |
-| `priorityClassName` | Use an explicit group value when configured. Otherwise define an aggregation rule for differing priorities. Choosing the maximum promotes every input to the highest member priority; choosing the minimum makes the entire aggregate wait at the lowest member priority. The selected rule must be documented and visible in the rendered spec. |
-| `preemptibility` | Use an explicit group value when configured. Otherwise define how mixed values collapse to one root policy; per-input preemptibility cannot be represented by the rendered PodGroup. |
-| `preemptionDelay` | Prefer an explicit group value. If inferred, the maximum prevents the aggregate from triggering eviction earlier than any input requested. |
-| `stalenessGracePeriod` | Prefer an explicit group value. If inferred, the longest grace period preserves every input's requested recovery window; a negative value should dominate finite values. |
-| `minMember` and `minSubGroup` | Use root `minSubGroup` for the input-wrapper threshold. Preserve each input root's effective minimum on its wrapper and preserve descendant minima. Do not sum input `minMember` values into the rendered root. |
+| `metadata.ownerReferences` | Set the `WorkloadGroup` as the sole controller owner. |
+| Annotations and labels | Do not inherit anything. |
+| `queue` | All input podgroups must belong to the same queue. |
+| `priorityClassName` | Use an explicit group value when configured. If not, use the minimum value of all participating podgroups. document this behavior in the CRD. |
+| `preemptibility` | Use an explicit group value when configured. Otherwise use the strictest of all participating podgroups. Document this behavior in the CRD. |
+| `preemptionDelay` | Prefer an explicit group value when configured. Otherwise use the min of all participating podgroups. |
+| `stalenessGracePeriod` | Prefer an explicit group value when configured. Otherwise use the max of all participating podgroups. |
+| `minMember` and `minSubGroup` | Use the expected number of podgroups in the root minSubGroup, use the value from each podgroup in its subgroup. |
 | `subGroups` | Deep-copy each input tree, prefix names, rewrite parents, preserve minima and topology, and sort deterministically. Reject invalid trees and name collisions that cannot be resolved deterministically. |
 | Root topology | Do not infer an aggregate topology constraint from one input. Preserve each input's root constraint on its wrapper. A constraint spanning all inputs must be explicit on the `WorkloadGroup`. |
 | `markUnschedulable` and `schedulingBackoff` | Define whether these are group overrides or merged values. They apply to the rendered scheduling unit and cannot retain different per-input semantics. |
 
-An input PodGroup with both root `minMember` and explicit SubGroups needs special validation. In the current scheduler, a PodGroup with SubGroups is represented by its SubGroup tree, and the root `minMember` is not an additional constraint. The renderer must preserve the scheduler's effective semantics and reject shapes it cannot normalize safely.
-
-The current generic PodGroup handler cannot be reused unchanged for the rendered object. It preserves the existing queue and node-pool on update, preserves old root topology when the newly generated topology is empty, and updates annotations and labels additively. The rendered PodGroup needs explicit controller field ownership so that removed or changed rendered values reconcile correctly.
-
 ## Status and accounting
 
-Input PodGroups continue to exist, so resource and scheduling status need a single authority to avoid misleading duplicate information.
+Input PodGroups continue to exist, so resource and scheduling status need to be handled accordingly.
 
 Today, PodGroup resource status is calculated from pods whose `pod-group-name` directly names that PodGroup. Under this design, input PodGroups therefore naturally retain resource totals while the rendered PodGroup has no directly annotated pods. The queue controller currently sums every PodGroup, so copying aggregate resources to the rendered object without filtering would double-count them.
 
@@ -231,23 +197,18 @@ If the rendered PodGroup owns aggregate resources, the PodGroup status controlle
 
 For explainability, the rendered PodGroup should carry the scheduler's aggregate scheduling conditions, and the `WorkloadGroup` should project those conditions into per-input status. A user inspecting the group should be able to tell that one input is locally ready but blocked by another input. Existing input scheduling conditions from a previous standalone period must be cleared or explicitly marked as superseded, and the input status should identify the rendered PodGroup under which it is scheduled. Controllers must patch only the status fields they own.
 
-## Constraints
+## Constraints and limitations
 
-- A `WorkloadGroup`, every input PodGroup, every participating pod, and the rendered PodGroup must be in the same namespace.
-- Input PodGroups remain owned and reconciled by their original creators. The `WorkloadGroup` owns only the rendered PodGroup.
+These are the constraints and limitations that the initial implementation will assume; some of these might be relaxed in later iterations.
+
+- A `WorkloadGroup`, every input PodGroup, every participating pod, and the rendered PodGroup must be in the same namespace and queue.
+- Input PodGroups remain owned and reconciled by their original creators. The `WorkloadGroup` owns only the aggregated PodGroup.
 - A grouped input PodGroup must not be scheduled independently while the relationship is unresolved or invalid.
 - The renderer, not the scheduler, owns all merge policy. The scheduler performs only relationship and SubGroup resolution.
+- All podgroups in a `WorkloadGroup` are ganged together, meaning they all must schedule together or not at all (minSubGroup = expectedPodGroups). If a use case calls for it, we can later have a finer granularity where some podgroups are not mandatory for the workload to run. (Require subgroup-level semantics for required subgroups to work with the semi-preemptible mode).
 
 ## Open questions
 
-- Which relationship model should be used: child discovery with `expectedPodGroups`, an explicit list with a child-side gate, or a hybrid?
-- Where should the active rendered reference, input identities, and local-to-rendered SubGroup mapping be stored?
-- When does the observed input set become immutable, and what happens when another input appears after activation?
 - May an already allocated PodGroup join a workload group, and if so, how is gang atomicity restored?
-- How should differing priority and preemptibility values be merged when the `WorkloadGroup` does not override them?
-- Should `queue` be inferred and required to match, or explicitly configured as an assertion or override?
-- Which object is authoritative for resource status and queue accounting?
+- How should differing priority and preemptibility values be merged when the `WorkloadGroup` does not explicitly override them?
 - Which input and group policy changes are allowed after the rendered PodGroup has allocated pods?
-- For Option A, who removes `workloadGroupName` after the `WorkloadGroup` is deleted or becomes invalid? Option B remains held until `hold` is explicitly removed.
-- What aggregate identity owns already allocated pods while a rendered revision is inactive or being replaced?
-- Should the MVP require every input, or support a separate `N of M` scheduling threshold?
