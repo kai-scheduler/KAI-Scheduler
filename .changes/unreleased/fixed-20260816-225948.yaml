@@ -1,3 +1,3 @@
 kind: Fixed
 body: |-
-  Consider termination grace period when marking pods StuckInReleasing
+  Add the pod termination grace period to the "stuckInReleasing" threshold when determining if the pod is still in a terminating state, or is it "StuckInReleasing"
