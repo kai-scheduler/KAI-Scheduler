@@ -103,7 +103,9 @@ func InitOptions() *Options {
 			constants.DefaultRuntimeClassName))
 	fs.BoolVar(&options.ValidatePodResizeQuota,
 		"validate-pod-resize-quota", true,
-		"Enable best-effort hierarchical queue quota checks on pods/resize requests. "+
+		"Enable hierarchical queue limit and quota checks on pods/resize requests. "+
+			"Checks are best-effort (fail-open): a resize is admitted rather than blocked when "+
+			"the webhook or its queue and podgroup lookups are unavailable. "+
 			"When false, the webhook admits all resizes without checking queue limits or quota, "+
 			"and --block-upsize-on-bounded-queues is ignored.")
 	fs.BoolVar(&options.BlockUpsizeOnBoundedQueues,
