@@ -343,12 +343,11 @@ func (pi *PodInfo) GPUGroupIDs() []string {
 }
 
 func (pi *PodInfo) RequestedGPUComputeSharingMode() schedulingv1alpha2.GPUComputeSharingMode {
-	if pi.Pod == nil || pi.Pod.Annotations == nil {
+	if pi.Pod == nil {
 		return schedulingv1alpha2.GPUComputeSharingModeTimeSlicing
 	}
-	return schedulingv1alpha2.DefaultGPUComputeSharingMode(
-		schedulingv1alpha2.GPUComputeSharingMode(pi.Pod.Annotations[commonconstants.GpuComputeSharingMode]),
-	)
+	_, rawMode, _ := resources.ExtractGpuComputeSharingModeAnnotation(pi.Pod)
+	return schedulingv1alpha2.DefaultGPUComputeSharingMode(schedulingv1alpha2.GPUComputeSharingMode(rawMode))
 }
 
 func (pi *PodInfo) FractionalGpuGroupsOrDefault() []schedulingv1alpha2.FractionalGpuGroup {

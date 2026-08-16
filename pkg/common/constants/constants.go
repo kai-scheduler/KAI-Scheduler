@@ -56,7 +56,6 @@ const (
 	SkipPodGrouperAnnotation      = "kai.scheduler/skip-podgrouper"
 	GpuFraction                   = "gpu-fraction"
 	GpuFractionContainerName      = "gpu-fraction-container-name"
-	GpuComputeSharingMode         = "kai.scheduler/gpu-compute-sharing-mode"
 	GpuMemory                     = "gpu-memory"
 	ReceivedResourceType          = "received-resource-type"
 	GpuFractionsNumDevices        = "gpu-fraction-num-devices"
@@ -84,6 +83,7 @@ const (
 	NvFractionsMemoryRequestSuffix  = ".gpu-memory.request"
 	NvFractionsMemoryLimitSuffix    = ".gpu-memory.limit"
 	NvFractionsVisibleDevicesSuffix = ".gpus.devices"
+	GpuComputeSharingModeSuffix     = ".gpu-compute.mode"
 
 	KaiFractionContainerAnnotationPrefix = "kai.scheduler/container."
 	GpuMemoryPortionLimitSuffix          = ".gpu-memory.portion.limit"
