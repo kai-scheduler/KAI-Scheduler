@@ -5,7 +5,7 @@ SPDX-License-Identifier: Apache-2.0
 
 # In-Place Pod Resize Accounting and Queue Admission
 
-*Status: Proposed*
+*Status: Implemented*
 
 Related issues: [#1906](https://github.com/kai-scheduler/KAI-Scheduler/issues/1906),
 [#1872](https://github.com/kai-scheduler/KAI-Scheduler/issues/1872) (deferred resize eviction — separate track)
