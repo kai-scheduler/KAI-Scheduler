@@ -869,6 +869,16 @@ func TestGetTaskStatusStuckInReleasing(t *testing.T) {
 		}
 	}
 
+	runningPodWithTerminationGracePeriod := func(deletionTime *metav1.Time) *v1.Pod {
+		return &v1.Pod{
+			Status:     v1.PodStatus{Phase: v1.PodRunning},
+			ObjectMeta: metav1.ObjectMeta{DeletionTimestamp: deletionTime},
+			Spec: v1.PodSpec{
+				TerminationGracePeriodSeconds: ptr.To(int64(300)),
+			},
+		}
+	}
+
 	tests := []struct {
 		name      string
 		pod       *v1.Pod
@@ -879,6 +889,8 @@ func TestGetTaskStatusStuckInReleasing(t *testing.T) {
 		{name: "old deletion over default threshold", pod: runningPod(&fiveMinAgo), threshold: 2 * time.Minute, expected: pod_status.StuckInReleasing},
 		{name: "old deletion under custom larger threshold", pod: runningPod(&fiveMinAgo), threshold: 10 * time.Minute, expected: pod_status.Releasing},
 		{name: "running without deletion", pod: runningPod(nil), threshold: 2 * time.Minute, expected: pod_status.Running},
+		{name: "old deletion over default threshold but under due to termination grace period",
+			pod: runningPodWithTerminationGracePeriod(&fiveMinAgo), threshold: 2 * time.Minute, expected: pod_status.Releasing},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

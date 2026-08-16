@@ -466,7 +466,11 @@ func getTaskStatus(pod *v1.Pod, bindRequest *bindrequest_info.BindRequestInfo, s
 	switch pod.Status.Phase {
 	case v1.PodRunning:
 		if pod.DeletionTimestamp != nil {
-			if time.Since(pod.DeletionTimestamp.Time) > stuckInReleasingThreshold {
+			terminationGracePeriod := time.Duration(0)
+			if pod.Spec.TerminationGracePeriodSeconds != nil {
+				terminationGracePeriod = time.Duration(*pod.Spec.TerminationGracePeriodSeconds) * time.Second
+			}
+			if time.Since(pod.DeletionTimestamp.Time) > stuckInReleasingThreshold+terminationGracePeriod {
 				return pod_status.StuckInReleasing
 			}
 			return pod_status.Releasing
