@@ -41,6 +41,7 @@ const (
 	kindDistributedWorkload          = "DistributedWorkload"
 	kindInferenceWorkload            = "InferenceWorkload"
 	kindDistributedInferenceWorkload = "DistributedInferenceWorkload"
+	kindWorkloadRunner               = "WorkloadRunner"
 )
 
 // +kubebuilder:rbac:groups=apps,resources=replicasets;statefulsets,verbs=get;list;watch
@@ -56,6 +57,8 @@ const (
 // +kubebuilder:rbac:groups=tekton.dev,resources=pipelineruns;taskruns,verbs=get;list;watch
 // +kubebuilder:rbac:groups=tekton.dev,resources=pipelineruns/finalizers;taskruns/finalizers,verbs=patch;update;create
 // +kubebuilder:rbac:groups=run.ai,resources=trainingworkloads;interactiveworkloads;distributedworkloads;inferenceworkloads;distributedinferenceworkloads,verbs=get;list;watch
+// +kubebuilder:rbac:groups=run.ai,resources=workloadrunners,verbs=get;list;watch
+// +kubebuilder:rbac:groups=nvidia.com,resources=dynamographdeployments,verbs=get;list;watch
 // +kubebuilder:rbac:groups=trainer.kubeflow.org,resources=trainjobs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=trainer.kubeflow.org,resources=trainjobs/finalizers,verbs=patch;update;create
 
@@ -291,7 +294,18 @@ func NewDefaultPluginsHub(kubeClient client.Client, searchForLegacyPodGroups,
 		}: groveGrouper,
 	}
 
-	skipTopOwnerGrouper := skiptopowner.NewSkipTopOwnerGrouper(kubeClient, defaultGrouper, table)
+	hub := &DefaultPluginsHub{
+		defaultPlugin: defaultGrouper,
+		customPlugins: table,
+	}
+
+	// hub is captured by pointer and read only when the closure runs, so the skip
+	// grouper still sees the table entries assigned below.
+	skipTopOwnerGrouper := skiptopowner.NewSkipTopOwnerGrouper(kubeClient, defaultGrouper,
+		func(gvk metav1.GroupVersionKind) grouper.Grouper {
+			return hub.GetPodGrouperPlugin(gvk)
+		})
+
 	table[metav1.GroupVersionKind{
 		Group:   apiGroupArgo,
 		Version: "v1alpha1",
@@ -320,14 +334,20 @@ func NewDefaultPluginsHub(kubeClient client.Client, searchForLegacyPodGroups,
 	}] = skipTopOwnerGrouper
 
 	// Dynamo uses Grove Grouper and needs to propagate metadata from DynamoGraphDeployment to PodGang and PodClique.
+	// Match every served version: v1alpha1 (Dynamo <=1.1.x) and v1beta1 (1.2.0+, which serves/owns the DGD).
 	table[metav1.GroupVersionKind{
 		Group:   "nvidia.com",
-		Version: "v1alpha1",
+		Version: "*",
 		Kind:    "DynamoGraphDeployment",
 	}] = skipTopOwnerGrouper
 
-	return &DefaultPluginsHub{
-		defaultPlugin: defaultGrouper,
-		customPlugins: table,
-	}
+	// WorkloadRunner is a kind-agnostic wrapper around an arbitrary workload template.
+	// Skip it so the wrapped kind's plugin decides the grouping.
+	table[metav1.GroupVersionKind{
+		Group:   apiGroupRunai,
+		Version: "*",
+		Kind:    kindWorkloadRunner,
+	}] = skipTopOwnerGrouper
+
+	return hub
 }

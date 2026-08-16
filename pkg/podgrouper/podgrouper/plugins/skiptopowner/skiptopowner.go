@@ -19,18 +19,21 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/grouper"
 )
 
+// GrouperResolver resolves the grouper handling a GVK, or nil when none matches.
+type GrouperResolver func(gvk metav1.GroupVersionKind) grouper.Grouper
+
 type skipTopOwnerGrouper struct {
-	client        client.Client
-	defaultPlugin *defaultgrouper.DefaultGrouper
-	customPlugins map[metav1.GroupVersionKind]grouper.Grouper
+	client         client.Client
+	defaultPlugin  *defaultgrouper.DefaultGrouper
+	resolveGrouper GrouperResolver
 }
 
 func NewSkipTopOwnerGrouper(client client.Client, defaultGrouper *defaultgrouper.DefaultGrouper,
-	customPlugins map[metav1.GroupVersionKind]grouper.Grouper) *skipTopOwnerGrouper {
+	resolveGrouper GrouperResolver) *skipTopOwnerGrouper {
 	return &skipTopOwnerGrouper{
-		client:        client,
-		defaultPlugin: defaultGrouper,
-		customPlugins: customPlugins,
+		client:         client,
+		defaultPlugin:  defaultGrouper,
+		resolveGrouper: resolveGrouper,
 	}
 }
 
@@ -139,8 +142,10 @@ func (sk *skipTopOwnerGrouper) getSupportedTypePGMetadata(
 	lastOwner *unstructured.Unstructured, pod *v1.Pod, otherOwners ...*metav1.PartialObjectMetadata,
 ) (*podgroup.Metadata, error) {
 	ownerKind := metav1.GroupVersionKind(lastOwner.GroupVersionKind())
-	if grouper, found := sk.customPlugins[ownerKind]; found {
-		return grouper.GetPodGroupMetadata(lastOwner, pod, otherOwners...)
+	if sk.resolveGrouper != nil {
+		if resolved := sk.resolveGrouper(ownerKind); resolved != nil {
+			return resolved.GetPodGroupMetadata(lastOwner, pod, otherOwners...)
+		}
 	}
 	return sk.defaultPlugin.GetPodGroupMetadata(lastOwner, pod, otherOwners...)
 }
