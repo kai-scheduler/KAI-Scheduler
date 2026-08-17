@@ -64,8 +64,9 @@ spec:
                 description: |-
                   MinMember defines the minimal number of members to run the PodGroup;
                   if there are not enough resources to start all required members, the scheduler will not start anyone.
+                  A value of 0 means no gang requirement: all pods are scheduled elastically (e.g. scale-to-zero workloads).
                 format: int32
-                minimum: 1
+                minimum: 0
                 type: integer
               parallelism:
                 description: The number of pods which will try to run at any instant.
