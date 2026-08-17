@@ -118,6 +118,32 @@ var _ = Describe("Knative integration", Ordered, func() {
 				"Expected minmember of podgroup to be 1")
 		})
 
+		It("knative service with scale-to-zero - minscale 0", func(ctx context.Context) {
+			namespace := queue.GetConnectedNamespaceToQueue(testCtx.Queues[0])
+			serviceName := "knative-service-" + utils.GenerateRandomK8sName(10)
+
+			knativeService := getKnativeServiceObject(serviceName, namespace, testCtx.Queues[0].Name)
+
+			knativeService.Spec.ConfigurationSpec.Template.Annotations[minScaleAnnotation] = "0"
+
+			Expect(testCtx.ControllerClient.Create(ctx, knativeService)).To(Succeed())
+			defer func() {
+				Expect(testCtx.ControllerClient.Delete(ctx, knativeService)).To(Succeed())
+			}()
+
+			// Knative still creates the initial pod on deployment even with min-scale 0
+			pods := getServicePods(ctx, testCtx, serviceName, namespace, 1)
+
+			wait.ForPodsScheduled(ctx, testCtx.ControllerClient, namespace, pods)
+
+			var podGroups v2alpha2.PodGroupList
+			Expect(testCtx.ControllerClient.List(ctx, &podGroups, client.InNamespace(namespace))).To(Succeed())
+			Expect(len(podGroups.Items)).To(Equal(1),
+				"Expected one podgroup for the revision")
+			Expect(podGroups.Items[0].Spec.MinMember).To(Equal(int32(0)),
+				"Expected minmember of podgroup to be 0")
+		})
+
 		Context("Non-Gang scheduling", func() {
 			BeforeAll(func(ctx context.Context) {
 				setKnativeGangAndWait(ctx, testCtx, pointer.Bool(false))
