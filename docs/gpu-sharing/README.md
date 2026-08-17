@@ -47,7 +47,7 @@ This mode keeps the legacy GPU-sharing behavior. It creates reservation pods in 
 
 ### Install with HAMi-core enforcement
 
-Use `HamiCore` when workloads should continue to use the legacy `gpu-fraction` and `gpu-memory` annotations, but GPU memory limits should be enforced by HAMi-core:
+Use `HamiCore` when workloads should continue to use the `gpu-fraction` and `gpu-memory` annotations, but GPU memory limits are be enforced by HAMi-core 
 
 ```bash
 helm upgrade -i kai-scheduler oci://ghcr.io/kai-scheduler/kai-scheduler/kai-scheduler \
@@ -55,15 +55,9 @@ helm upgrade -i kai-scheduler oci://ghcr.io/kai-scheduler/kai-scheduler/kai-sche
   --set global.gpuSharingMode=HamiCore
 ```
 
-Then install `kai-resource-isolator`:
+Then install [`kai-resource-isolator`](hami/README.md#installation).
 
-```bash
-helm install kai-resource-isolator oci://docker.io/projecthami/kai-resource-isolator \
-  --namespace kai-resource-isolator --create-namespace \
-  --version 1.0.0-chart
-```
-
-See [HAMi Resource Isolation](hami/README.md) for details and opt-out annotations.
+See [HAMi Resource Isolation](hami/README.md) for more details.
 
 ### Install with NvFractions
 
