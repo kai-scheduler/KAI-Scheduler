@@ -204,9 +204,9 @@ func (pgi *PodGroupInfo) setSubGroups(podGroup *enginev2alpha2.PodGroup) {
 	}
 	defaultSubGroup, found := pgi.SubGroups[DefaultSubGroup]
 	if !found {
-		pgi.SubGroups[DefaultSubGroup] = NewSubGroupInfo(DefaultSubGroup, max(podGroup.Spec.MinMember, 1))
+		pgi.SubGroups[DefaultSubGroup] = NewSubGroupInfo(DefaultSubGroup, max(podGroup.Spec.MinMember, 0))
 	} else {
-		defaultSubGroup.SetMinAvailable(max(podGroup.Spec.MinMember, 1))
+		defaultSubGroup.SetMinAvailable(max(podGroup.Spec.MinMember, 0))
 	}
 }
 

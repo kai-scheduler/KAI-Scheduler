@@ -1,0 +1,3 @@
+kind: Fixed
+body: |-
+  Allow PodGroup minMember of 0 for workloads with no gang requirement

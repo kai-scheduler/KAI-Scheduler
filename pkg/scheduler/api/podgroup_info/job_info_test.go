@@ -115,6 +115,36 @@ func TestAddTaskInfo(t *testing.T) {
 	}
 }
 
+func TestSetPodGroupMinMember(t *testing.T) {
+	tests := []struct {
+		name             string
+		minMember        int32
+		expectedMinAvail int32
+	}{
+		{"zero minMember is honored", 0, 0},
+		{"positive minMember is honored", 3, 3},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			info := NewPodGroupInfo("group-1")
+			info.SetPodGroup(&v2alpha2.PodGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "group-1",
+					Namespace: "ns-1",
+				},
+				Spec: v2alpha2.PodGroupSpec{
+					Queue:     "queue-1",
+					MinMember: test.minMember,
+				},
+			})
+
+			if got := info.SubGroups[DefaultSubGroup].GetMinAvailable(); got != test.expectedMinAvail {
+				t.Errorf("expected minAvailable %d, got %d", test.expectedMinAvail, got)
+			}
+		})
+	}
+}
+
 func TestDeleteTaskInfo(t *testing.T) {
 	// case1
 	case01_uid := common_info.PodGroupID("owner1")
