@@ -1,6 +1,6 @@
 # NvFractions GPU Sharing
 
-NvFractions is one of KAI Scheduler's operator-backed GPU-sharing mode. It uses CUDA
+NvFractions is one of KAI Scheduler's operator-backed GPU-sharing modes. It uses CUDA
 memory limits to enforce a GPU-memory boundary for each fractional workload.
 The `gpu-sharing` operator configures the runtime support for those limits and
 reports when GPU nodes are ready to accept NvFractions workloads. KAI uses the
@@ -47,7 +47,7 @@ Ready-to-apply examples are available in the parent directory:
 
 ### Dynamic fraction - Allow a workload to grow when memory is available
 
-nvFraction`request` and `limit` operate in a similar way to the standard k8s request and limit.
+NvFraction `request` and `limit` operate in a similar way to the standard k8s request and limit.
 Set a lower `request` and a higher `limit` when a workload has a known baseline
 but can make useful progress with spare GPU memory. The request is its
 guaranteed scheduling allocation; it may use memory up to its limit while that
@@ -80,9 +80,9 @@ shows the annotation in context.
 
 ![Time-slicing and SM-sharing](compute-mode.png)
 
-Two pods requiring diffrent gpu compute mode cannot share the same device.
+Two pods requiring different gpu compute mode cannot share the same device.
 Because of this, KAI keeps workloads that use different compute-sharing modes
-in separatefractional GPU groups. A pod that requests `sm-sharing` is therefore not
+in separate fractional GPU groups. A pod that requests `sm-sharing` is therefore not
 placed with a `time-slicing` pod, and the reverse is also true.
 
 ### Choosing the right compute mode
