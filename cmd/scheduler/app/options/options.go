@@ -126,7 +126,7 @@ func (s *ServerOption) AddFlags(fs *pflag.FlagSet) {
 	fs.BoolVar(&s.AllowConsolidatingReclaim, "allow-consolidating-reclaim", true, "Do not count pipelined pods towards 'reclaimed' resources")
 	fs.IntVar(&s.NumOfStatusRecordingWorkers, "num-of-status-recording-workers", defaultNumOfStatusRecordingWorkers, "specifies the max number of go routines spawned to update pod and podgroups conditions and events. Defaults to 5")
 	fs.DurationVar(&s.GlobalDefaultStalenessGracePeriod, "default-staleness-grace-period", defaultStalenessGracePeriod, "Global default staleness grace period duration. Negative values means infinite. Defaults to 60s")
-	fs.DurationVar(&s.StuckInReleasingThreshold, "stuck-in-releasing-threshold", constants.DefaultStuckInReleasingThreshold, "Duration after a Running pod's deletionTimestamp before its resources are excluded from pipelining. Defaults to 2m.")
+	fs.DurationVar(&s.StuckInReleasingThreshold, "stuck-in-releasing-threshold", constants.DefaultStuckInReleasingThreshold, "Duration after a Running pod's deletionTimestamp before its resources are excluded from pipelining. Defaults to 5m.")
 	fs.IntVar(&s.PluginServerPort, "plugin-server-port", 8081, "The port to bind for plugin server requests")
 	fs.StringVar(&s.CPUWorkerNodeLabelKey, "cpu-worker-node-label-key", constants.DefaultCPUWorkerNodeLabelKey, "The label key for CPU worker nodes")
 	fs.StringVar(&s.GPUWorkerNodeLabelKey, "gpu-worker-node-label-key", constants.DefaultGPUWorkerNodeLabelKey, "The label key for GPU worker nodes")
