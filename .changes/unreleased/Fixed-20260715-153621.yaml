@@ -1,0 +1,3 @@
+kind: Fixed
+body: |-
+  Queue and PodGroup resource status now counts native sidecars, the peak of a non-restartable init container, and Pod overhead, so a job that uses them no longer reports less than the scheduler reserves. [#1880](https://github.com/kai-scheduler/KAI-Scheduler/issues/1880) [thc1006](https://github.com/thc1006)
