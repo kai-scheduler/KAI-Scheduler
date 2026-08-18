@@ -30,6 +30,9 @@ func compactSchedulerPod(obj any) (any, error) {
 	compact.Spec.Containers = compactContainers(compact.Spec.Containers)
 	compact.Spec.InitContainers = compactInitContainers(compact.Spec.InitContainers)
 	compact.Spec.EphemeralContainers = compactEphemeralContainers(compact.Spec.EphemeralContainers)
+	compact.Status.ContainerStatuses = compactContainerStatuses(compact.Status.ContainerStatuses)
+	compact.Status.InitContainerStatuses = compactContainerStatuses(compact.Status.InitContainerStatuses)
+	compact.Status.Conditions = compactConditions(compact.Status.Conditions)
 	return compact, nil
 }
 
@@ -53,6 +56,32 @@ func compactSucceededPod(pod *v1.Pod) *v1.Pod {
 	}
 
 	return compact
+}
+
+// compactContainerStatuses retains only the resize-relevant fields from each ContainerStatus.
+// AllocatedResources and Resources are needed for effective-request accounting (KEP-1287).
+func compactContainerStatuses(statuses []v1.ContainerStatus) []v1.ContainerStatus {
+	compact := make([]v1.ContainerStatus, 0, len(statuses))
+	for _, cs := range statuses {
+		if cs.AllocatedResources == nil && cs.Resources == nil {
+			continue
+		}
+		compact = append(compact, v1.ContainerStatus{
+			Name:               cs.Name,
+			AllocatedResources: cs.AllocatedResources.DeepCopy(),
+			Resources:          cs.Resources.DeepCopy(),
+		})
+	}
+	return compact
+}
+
+func compactConditions(conditions []v1.PodCondition) []v1.PodCondition {
+	for _, c := range conditions {
+		if c.Type == v1.PodResizePending {
+			return []v1.PodCondition{c}
+		}
+	}
+	return nil
 }
 
 func compactContainers(containers []v1.Container) []v1.Container {

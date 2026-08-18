@@ -21,6 +21,7 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/yaml"
 )
 
 func TestScheduler(t *testing.T) {
@@ -306,6 +307,28 @@ tiers:
             cpu: spread
             gpu: spread
 `))
+		})
+
+		It("Should include resizeeviction after preempt when enabled", func(ctx context.Context) {
+			resizeShard := &kaiv1.SchedulingShard{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "default",
+				},
+				Spec: kaiv1.SchedulingShardSpec{
+					Actions: map[string]kaiv1.ActionConfig{
+						"resizeeviction": {Enabled: ptr.To(true)},
+					},
+				},
+			}
+			resizeShard.Spec.SetDefaultsWhereNeeded()
+			s := NewSchedulerForShard(resizeShard)
+			cmObj, err := s.configMapForShard(ctx, fakeClient, kaiConfig, resizeShard)
+			cm := cmObj.(*v1.ConfigMap)
+
+			Expect(err).To(BeNil())
+			var config map[string]interface{}
+			Expect(yaml.Unmarshal([]byte(cm.Data["config.yaml"]), &config)).To(Succeed())
+			Expect(config["actions"]).To(Equal("allocate, consolidation, reclaim, preempt, resizeeviction, stalegangeviction"))
 		})
 	})
 

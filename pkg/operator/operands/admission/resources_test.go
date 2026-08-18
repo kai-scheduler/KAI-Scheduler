@@ -606,6 +606,13 @@ func TestValidatingWCForKAIConfig(t *testing.T) {
 
 			webhook := objects[0].(*admissionv1.ValidatingWebhookConfiguration)
 			require.NotNil(t, webhook, "should have validating webhook configuration")
+			require.Len(t, webhook.Webhooks, 3, "expected pods, pods/resize, and topology webhooks")
+
+			// pods/resize webhook is second; verify it uses failurePolicy=Ignore.
+			resizeWebhook := webhook.Webhooks[1]
+			require.NotNil(t, resizeWebhook.FailurePolicy)
+			assert.Equal(t, admissionv1.Ignore, *resizeWebhook.FailurePolicy)
+			assert.Equal(t, []string{"pods/resize"}, resizeWebhook.Rules[0].Resources)
 
 			// Check namespace selector
 			namespaceSelector := webhook.Webhooks[0].NamespaceSelector

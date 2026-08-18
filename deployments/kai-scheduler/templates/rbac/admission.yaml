@@ -30,3 +30,20 @@ rules:
   - patch
   - update
   - watch
+- apiGroups:
+  - scheduling.k8s.io
+  resources:
+  - priorityclasses
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - scheduling.run.ai
+  resources:
+  - podgroups
+  - queues
+  verbs:
+  - get
+  - list
+  - watch

@@ -1,0 +1,3 @@
+kind: Added
+body: |-
+  Optional resizeeviction scheduler action evicts pods to enact deferred in-place resizes

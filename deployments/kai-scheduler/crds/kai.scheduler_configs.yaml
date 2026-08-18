@@ -71,6 +71,27 @@ spec:
                     description: GPUSharing enables GPU sharing functionality for
                       the admission service
                     type: boolean
+                  inPlacePodResize:
+                    description: InPlacePodResize configures in-place pod resize (KEP-1287)
+                      behaviour.
+                    properties:
+                      blockUpsizeOnBoundedQueues:
+                        description: |-
+                          BlockUpsizeOnBoundedQueues rejects any upsize on a queue (or ancestor)
+                          that has a finite CPU or memory limit, regardless of current allocation.
+                          This prevents concurrent-resize races from exceeding hard limits.
+                          Disabled by default; enable only when strict race-free enforcement is
+                          required and best-effort checks are insufficient.
+                          Has no effect when ValidateQuota is false.
+                        type: boolean
+                      validateQuota:
+                        description: |-
+                          ValidateQuota enables best-effort hierarchical queue quota checks on
+                          pods/resize requests. When false, the webhook admits all resizes without
+                          checking queue limits or quota, and BlockUpsizeOnBoundedQueues is ignored.
+                          Defaults to true.
+                        type: boolean
+                    type: object
                   mutatingWebhookConfigurationName:
                     description: MutatingWebhookConfigurationName is the name of the
                       MutatingWebhookConfiguration for the admission service

@@ -40,6 +40,10 @@ type TestTaskBasic struct {
 	ResourceClaimNames         []string
 	PersistentVolumeClaimNames []string
 	Annotations                map[string]string
+	// DeferredResizeActual marks the pod as having a Deferred in-place resize: the pod spec
+	// keeps the job's (target) requests while the container status reports these actual
+	// requests, and a PodResizePending/Deferred condition is set.
+	DeferredResizeActual v1.ResourceList
 }
 
 func BuildPod(
@@ -139,6 +143,18 @@ func BuildPod(
 		pod.Status.ResourceClaimStatuses = append(pod.Status.ResourceClaimStatuses, v1.PodResourceClaimStatus{
 			Name:              templateName,
 			ResourceClaimName: &claimName,
+		})
+	}
+
+	if task.DeferredResizeActual != nil {
+		pod.Status.ContainerStatuses = []v1.ContainerStatus{{
+			Name:      pod.Spec.Containers[0].Name,
+			Resources: &v1.ResourceRequirements{Requests: task.DeferredResizeActual},
+		}}
+		pod.Status.Conditions = append(pod.Status.Conditions, v1.PodCondition{
+			Type:   v1.PodResizePending,
+			Status: v1.ConditionTrue,
+			Reason: v1.PodReasonDeferred,
 		})
 	}
 
