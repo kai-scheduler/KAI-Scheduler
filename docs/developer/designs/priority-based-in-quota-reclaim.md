@@ -6,7 +6,7 @@
 1. Background
 2. Problem Statement
 3. Goals / Non-Goals
-4. Fairshare Model Validation
+4. Fairshare Model Calculation Changes
 5. Proposal
    1. Rule
    2. Hierarchy Scoping
@@ -28,7 +28,7 @@ Today, reclaim eligibility in the `proportion` plugin (`pkg/scheduler/plugins/pr
 
 Both require the victim queue to be over-quota in some sense. In-quota (`Allocated <= Deserved`) allocations are never reclaimable — this is documented as the "Quota Protection Guarantee" (`docs/scheduling-deep-dive/README.md`).
 
-Queue `Priority` (`pkg/apis/scheduling/v2/queue_types.go`) exists today but only affects (a) how over-quota surplus is divided among queues (`resource_division.go`) and (b) the iteration order used to pick which queue's job to try first for allocation and last for reclaim victim selection (`queue_order.go`).
+Queue `Priority` (`pkg/apis/scheduling/v2/queue_types.go`) exists today but only affects (a) how over-quota surplus is divided among queues (`resource_division.go`) and (b) the iteration order used to pick which queue's job to try first for allocation and last for reclaim victim selection (`queue_order.go`). This design adds a third, flag-gated use: ordering the deserved-quota computation itself (§4).
 
 ## 2. Problem Statement
 
@@ -48,24 +48,64 @@ This must be opt-in (per scheduling shard), since it weakens the quota protectio
 - Let a queue reclaim in-quota, preemptible allocations from strictly lower-priority queues, bounded by the reclaimer's own deserved quota.
 - Apply to the `reclaim` action. Apply to `consolidation` only in the sense described in §6 (no code change there).
 - Opt-in per scheduling shard, default off.
-- No change to how `Deserved` / `FairShare` are computed.
+- Make deserved-quota computation (`FairShare`'s phase 1, §4) priority-ordered and capacity-capped, matching the over-quota phase, so the accounting reflects real contention when the flag is on.
+- The new reclaim strategy's own eligibility check is based on the raw `Deserved` field, not `FairShare` — see §4 for why.
 
 ### Non-Goals
 - No protected floor for the victim (e.g., "never drain a queue below X% of its deserved quota"). Full drain of a lower-priority queue's in-quota allocation is accepted as intentional — priority governs access even within quota. A floor could be added later if operators need it.
 - No change to consolidation's victim-selection logic.
 - No change to `MaintainFairShareStrategy` / `GuaranteeDeservedQuotaStrategy` — this is purely additive.
+- No intra-tier fairness weighting for a deserved-quota shortfall (see §7) — over-engineering beyond what was asked.
 
-## 4. Fairshare Model Validation
+## 4. Fairshare Model Calculation Changes
 
-Validated: the current fairshare model requires **no changes**.
+`Deserved` is a static, per-queue configured input (`QueueResourceShare.SetQuotaResources`, from the Queue spec) — never computed, never touched by `resource_division.go`. `FairShare` is the derived, computed value, built in two phases:
 
-- `Deserved` and `FairShare` per queue are computed exactly as today (`resource_division.go`); this proposal doesn't touch that code path.
-- Queue `Priority` is already carried on `rs.QueueAttributes` (set from `queue.Priority` in `proportion.go`), and `Deserved` is already exposed via `QueueAttributes.GetDeservedShare()` / `AllocatedPlusResourcesLessEqualDeserved()`. Both pieces of state the new rule needs already exist.
-- The change is confined to reclaim *eligibility*: a third `ReclaimStrategy` that compares `Priority` and checks `ReclaimerFitsDeservedQuota` (already used by `GuaranteeDeservedQuotaStrategy`) — it does not consult or require the victim to be over its deserved quota.
+- **Phase 1 (`setDeservedResource`)** grants every queue `min(Deserved, Requested)` into its `FairShare` accumulator. Today this is a single unordered pass over *all* queues with **no cap against remaining capacity** — every queue gets its full `min(Deserved, Requested)` regardless of `Priority` or of what any other queue receives.
+- **Phase 2 (`divideOverQuotaResource`)** distributes whatever capacity is left (`remainingAmount`) among queues bucketed by `Priority`, highest bucket first, each bucket drawing from the same shared pool before the next lower bucket gets a turn (`getQueuesByPriority`).
 
-This confirms the request in the feature description: no changes to how fairshare/deserved are calculated, only to which strategy makes a victim eligible.
+**Validated gap**: because phase 1 has no capacity cap, if `sum(Deserved)` across queues exceeds real cluster capacity — the exact situation that motivates this feature, since it's what lets a lower-priority queue occupy capacity a higher-priority queue also deserves — phase 1 still credits *every* queue its full deserved amount into `FairShare`, as if there were no contention. Phase 2 already solves this correctly for the over-quota band (priority-ordered, capacity-capped); phase 1 does not do the equivalent for the deserved band. The fairshare model does need a change: phase 1 should be made priority-ordered and capacity-capped, the same way phase 2 already is, gated behind the feature flag so default (disabled) behavior is unchanged:
 
-Note: `docs/developer/designs/priority-based-fair-share.md` is a separate, older draft that takes a materially different approach — it changes how `FairShare` itself is computed (processing queues in priority buckets, so a lower-priority queue's *deserved* allocation can shrink before it's even allocated). That proposal is more invasive and changes the fairshare model. This design deliberately avoids that: `Deserved`/`FairShare` stay as computed today, and only the reclaim eligibility predicate changes. See §9.
+```go
+func setDeservedResource(
+    totalResourceAmount float64, queues map[common_info.QueueID]*rs.QueueAttributes,
+    resource rs.ResourceName, priorityOrdered bool,
+) (remainingAmount float64) {
+    remainingAmount = totalResourceAmount
+    if !priorityOrdered {
+        for _, queue := range queues {
+            remainingAmount = grantDeserved(queue, resource, totalResourceAmount, remainingAmount, false)
+        }
+        return remainingAmount
+    }
+    queuesByPriority, priorities := getQueuesByPriority(queues) // reuse the existing bucketing helper
+    for _, priority := range priorities {
+        for _, queue := range queuesByPriority[priority] {
+            remainingAmount = grantDeserved(queue, resource, totalResourceAmount, remainingAmount, true)
+        }
+    }
+    return remainingAmount
+}
+
+// grantDeserved adds min(Deserved, Requested) to FairShare, capped to what's left when priorityOrdered.
+func grantDeserved(queue *rs.QueueAttributes, resource rs.ResourceName, totalResourceAmount, remainingAmount float64, priorityOrdered bool) float64 {
+    resourceShare := queue.ResourceShare(resource)
+    deserved := resourceShare.Deserved
+    if deserved == commonconstants.UnlimitedResourceQuantity {
+        deserved = totalResourceAmount
+    }
+    amount := math.Min(deserved, resourceShare.GetRequestableShare())
+    if priorityOrdered {
+        amount = math.Max(0, math.Min(amount, remainingAmount))
+    }
+    queue.AddResourceShare(resource, amount)
+    return remainingAmount - amount
+}
+```
+
+`priorityOrdered` is threaded from the same feature flag as the rest of this design (§5.4). `getQueuesByPriority` already exists in the package for phase 2 and is reused as-is.
+
+The new reclaim strategy's own eligibility check is based on `Deserved`, not `FairShare` (§5.1/§5.3): the strategy operates pairwise, on the specific reclaimer/victim pair, and doesn't need to re-derive cluster-wide contention — that's already the pre-gate's job once phase 1 is ordered. The existing `GuaranteeDeservedQuotaStrategy` follows the same pattern (`ReclaimerFitsDeservedQuota` reads the raw `Deserved` field, not `FairShare`) — the new strategy is consistent with established precedent, not a new convention.
 
 ## 5. Proposal
 
@@ -81,7 +121,7 @@ AND
 victim task is preemptible (already enforced upstream by both actions)
 ```
 
-No requirement that the victim queue be over its own deserved quota — that is exactly the behavior change from today.
+No requirement that the victim queue be over its own deserved quota — that is exactly the behavior change from today. The check is against `Deserved`, not `FairShare` — see §4 for why.
 
 ### 5.2 Hierarchy Scoping
 
@@ -155,10 +195,10 @@ return canBeDeservedQuotaReclaimCandidate(reclaimer, reclaimeeQueue)
 
 ### 5.4 Configuration
 
-Follows the existing pattern used for `kValue` / `relcaimerSaturationMultiplier` (`proportion.go`): a new `proportion` plugin argument.
+Follows the existing pattern used for `kValue` / `relcaimerSaturationMultiplier` (`proportion.go`): a new `proportion` plugin argument, single flag controlling both the reclaim strategy (§5) and the phase-1 fairshare calculation change (§4).
 
 - Argument name: `queuePriorityInQuotaReclaim` (bool, default `false`).
-- Parsed in `proportion.go` alongside existing arguments, passed into `reclaimable.New(saturationMultiplier, priorityInQuotaReclaim)`.
+- Parsed in `proportion.go` alongside existing arguments, threaded into both `resource_division.SetResourcesShare` (as `priorityOrdered`, §4) and `reclaimable.New(saturationMultiplier, priorityInQuotaReclaim)` (§5).
 - Set per scheduling shard via `SchedulingShardSpec.Plugins["proportion"].Arguments` (`pkg/apis/kai/v1/schedulingshard_types.go`) — no CRD schema change needed, consistent with `docs/developer/designs/scheduler-config-customization.md`.
 
 ## 6. Consolidation
@@ -169,12 +209,15 @@ No code change. Consolidation (`pkg/scheduler/actions/consolidation/`) doesn't c
 
 - **Equal priority**: no reclaim via this path (`>` is strict). Existing strategies still apply unchanged.
 - **Full drain of a low-priority queue**: since there's no protected floor (Non-Goal), a lower-priority queue's entire in-quota allocation can be reclaimed if enough higher-priority demand exists across multiple reclaim rounds. This is the intended effect of the feature (priority governs access even within quota) but should be called out to operators enabling the flag.
+- **No intra-tier fairness for phase 1's shortfall**: unlike phase 2 (`divideUpToFairShare`, weighted by `OverQuotaWeight` and usage), the phase-1 change in §4 grants queues within the same priority bucket their deserved amount in a simple iteration order, not weighted. Two same-priority queues competing for the same scarce deserved capacity aren't proportionally balanced by this change. Acceptable for this feature (Non-Goal) but worth flagging for anyone reusing this code path.
 - **Saturation guard doesn't protect the victim**: `reclaimingQueuesRemainWithinBoundaries` compares the *reclaiming* queue's saturation against its own siblings — it doesn't rate-limit how much a single victim queue can be drained. No change proposed here; flagged as a known limitation, consistent with today's guard scope.
-- **Non-preemptible reclaimers**: `CanReclaimResources`'s existing additional check (`AllocatedNonPreemptible+Requested <= Deserved`) is unaffected — it runs before strategy selection.
+- **Non-preemptible reclaimers**: `CanReclaimResources`'s existing additional check (`AllocatedNonPreemptible+Requested <= Deserved`) is unaffected — §4 establishes the existing `FairShare` gate needs no change.
 - **Interaction with `GuaranteeDeservedQuotaStrategy`**: unchanged; if a lower-priority queue is over-quota, a higher-priority in-quota reclaimer can still reclaim it via the existing strategy regardless of this flag.
 
 ## 8. Testing Strategy
 
+- Unit tests in `resource_division_test.go` for the ordered/capped phase 1 (§4): capacity-constrained multi-tier scenarios, flag on vs off, unlimited-deserved edge case, and confirming `FairShare` never exceeds `Deserved` post-change.
+- Unit tests in `reclaimable_test.go` confirming `CanReclaimResources` needs no change: a job-sized request within the ordered `FairShare` ceiling passes, one that exceeds it (because a strictly-higher-priority queue's own deserved claim consumes the shared pool first) correctly fails.
 - Unit tests in `strategies/strategies_test.go` for `QueuePriorityStrategy` (priority equal/lower/higher, reclaimer over/under its own deserved).
 - Unit tests in `filter_victims_test.go` for the new coarse-filter branch.
 - Integration tests (`actions/reclaim`) with the flag on/off: verify a higher-priority in-quota job can evict a lower-priority in-quota preemptible job only when enabled, and that reclaim stops once the reclaimer would exceed its own deserved quota.
@@ -182,7 +225,8 @@ No code change. Consolidation (`pkg/scheduler/actions/consolidation/`) doesn't c
 
 ## 9. Alternatives Considered
 
-- **Change `FairShare` computation instead** (per-priority-bucket allocation, as in `priority-based-fair-share.md`): rejected for this feature. It changes the fairshare model itself (goes against the requirement to leave it untouched), affects allocation ordering and every consumer of `FairShare`/`Deserved`, and is a much larger surface than an additive reclaim strategy. That draft addresses a related but distinct problem (weight-0 queues never getting over-quota share); it isn't a substitute for or superseded by this design.
+- **Change `FairShare` computation instead of adding a strategy, and rely only on the existing `MaintainFairShareStrategy`**: once phase 1 is priority-ordered (§4), a lower-priority victim's `FairShare` can already drop below its actual allocation purely from the accounting change, which would make `MaintainFairShareStrategy` trigger without any new strategy at all. Rejected as the sole mechanism: it bounds the reclaimer only by "under `FairShare`," which includes over-quota entitlement — an already over-its-own-deserved-but-under-`FairShare` reclaimer could exploit it to take in-quota victims, violating requirement 2/3 in §2. The explicit `Deserved`-based `QueuePriorityStrategy` is still required to bound the reclaimer correctly.
+- **Full three-phase priority-bucket `FairShare` redesign** (`priority-based-fair-share.md`): rejected for this feature — larger surface, changes weight-0 over-quota compensation semantics unrelated to this problem. §4's phase-1 change is deliberately narrower.
 - **Priority as a full replacement for the two existing strategies**: rejected — additive OR keeps the change low-risk and fully backward compatible when disabled.
 
 ---
