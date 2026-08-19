@@ -1,3 +1,0 @@
-kind: Fixed
-body: |-
-  Allow creating PodGroups with an explicit minMember of 0
