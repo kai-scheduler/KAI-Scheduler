@@ -83,7 +83,8 @@ var _ = Describe("Admission", func() {
 				Expect(mutatingWebhook.Webhooks).To(HaveLen(1))
 				Expect(mutatingWebhook.Webhooks[0].ClientConfig.CABundle).To(Equal(secret.Data[certKey]))
 
-				// Webhooks: pods (Fail), pods/resize (Ignore), topology (Fail).
+				// failurePolicy per webhook: pods=Fail, topology=Fail, pods/resize=Ignore
+				// (fail-open: the apiserver admits the request if the webhook call fails).
 				Expect(validatingWebhook.Webhooks).To(HaveLen(3))
 				for _, wh := range validatingWebhook.Webhooks {
 					Expect(wh.ClientConfig.CABundle).To(Equal(secret.Data[certKey]))
