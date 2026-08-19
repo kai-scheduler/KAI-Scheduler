@@ -13,6 +13,8 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+var _ = DescribeResizeSpecs()
+
 func TestInPlacePodResize(t *testing.T) {
 	utils.SetLogger()
 	RegisterFailHandler(Fail)
