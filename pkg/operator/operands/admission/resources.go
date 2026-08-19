@@ -319,8 +319,6 @@ func (a *Admission) validatingWCForKAIConfig(
 			},
 		},
 		{
-			// pods/resize is best-effort: failurePolicy=Ignore so webhook unavailability
-			// never blocks a legitimate in-place pod resize.
 			Name:                    fmt.Sprintf("podresize.%s", webhookName),
 			AdmissionReviewVersions: []string{"v1"},
 			SideEffects:             common.PtrFrom(admissionv1.SideEffectClassNone),

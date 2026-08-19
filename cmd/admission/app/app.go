@@ -167,11 +167,7 @@ func (app *App) Run() error {
 		return err
 	}
 
-	// Separate endpoint, not an addition to the pod validator above: the rules
-	// are disjoint (this one matches only the pods/resize subresource, so no
-	// request is ever validated twice) and the failure policies differ (resize
-	// is fail-open Ignore, pod validation is Fail). The canonical
-	// /validate--v1-pod path is taken, hence the custom path.
+	// Add a new webhook for the resize subresource with Ignore failPolicy
 	if err = ctrl.NewWebhookManagedBy(app.manager, &corev1.Pod{}).
 		WithValidator(admissionhooks.NewPodResizeValidator(
 			app.manager.GetClient(),

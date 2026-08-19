@@ -103,16 +103,13 @@ func InitOptions() *Options {
 			constants.DefaultRuntimeClassName))
 	fs.BoolVar(&options.ValidatePodResizeQuota,
 		"validate-pod-resize-quota", true,
-		"Enable hierarchical queue limit and quota checks on pods/resize requests. "+
-			"Checks are best-effort (fail-open): a resize is admitted rather than blocked when "+
-			"the webhook or its queue and podgroup lookups are unavailable. "+
-			"When false, the webhook admits all resizes without checking queue limits or quota, "+
-			"and --block-upsize-on-bounded-queues is ignored.")
+		"Enable queue limit/quota checks on pod resize requests. "+
+			"Best-effort: if lookups fail, resize is admitted. "+
+			"Ignored if false, disables --block-upsize-on-bounded-queues.")
 	fs.BoolVar(&options.BlockUpsizeOnBoundedQueues,
 		"block-upsize-on-bounded-queues", false,
-		"Reject any upsize on a queue (or ancestor) with a finite CPU or memory limit, "+
-			"regardless of current allocation. Prevents concurrent-resize races from exceeding hard limits. "+
-			"Has no effect when --validate-pod-resize-quota is false.")
+		"Block pod upsize if queue or ancestor has a CPU/memory limit. "+
+			"No effect if --validate-pod-resize-quota is false.")
 
 	utilfeature.DefaultMutableFeatureGate.AddFlag(fs)
 
