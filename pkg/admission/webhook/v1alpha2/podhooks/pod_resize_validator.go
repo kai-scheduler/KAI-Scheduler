@@ -16,6 +16,7 @@ import (
 	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
 	v2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	commonpod "github.com/kai-scheduler/KAI-scheduler/pkg/common/pod"
 	commonpodgroup "github.com/kai-scheduler/KAI-scheduler/pkg/common/podgroup"
 )
 
@@ -64,6 +65,10 @@ func (v *PodResizeValidator) ValidateDelete(context.Context, *corev1.Pod) (admis
 
 func (v *PodResizeValidator) validateResize(ctx context.Context, oldPod, newPod *corev1.Pod) error {
 	if !v.validateQuota {
+		return nil
+	}
+
+	if !commonpod.IsAllocated(oldPod) {
 		return nil
 	}
 

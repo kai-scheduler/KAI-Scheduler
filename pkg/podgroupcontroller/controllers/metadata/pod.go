@@ -13,6 +13,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	commonpod "github.com/kai-scheduler/KAI-scheduler/pkg/common/pod"
 	commonresources "github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgroupcontroller/controllers/resources"
 )
@@ -50,7 +51,7 @@ func GetPodMetadata(
 	}
 
 	allocatedResources := v1.ResourceList{}
-	if isAllocatedPod(pod) {
+	if commonpod.IsAllocated(pod) {
 		allocatedResources, err = calculatedAllocatedResources(ctx, pod, kubeClient, draClaims)
 		if err != nil {
 			return nil, err
@@ -69,22 +70,6 @@ func isActivePod(pod *v1.Pod) bool {
 
 func isTerminalPod(pod *v1.Pod) bool {
 	return pod.Status.Phase == v1.PodSucceeded || pod.Status.Phase == v1.PodFailed
-}
-
-func isAllocatedPod(pod *v1.Pod) bool {
-	if pod.Status.Phase == v1.PodPending {
-		return isPodScheduled(pod)
-	}
-	return pod.Status.Phase == v1.PodRunning
-}
-
-func isPodScheduled(pod *v1.Pod) bool {
-	for _, condition := range pod.Status.Conditions {
-		if condition.Type == v1.PodScheduled {
-			return condition.Status == v1.ConditionTrue
-		}
-	}
-	return false
 }
 
 func calculatedAllocatedResources(

@@ -70,6 +70,7 @@ func podWithRequests(namespace, name, pgName, schedulerName, cpu, memory string)
 				commonconstants.PodGroupAnnotationForPod: pgName,
 			},
 		},
+		Status: corev1.PodStatus{Phase: corev1.PodRunning},
 		Spec: corev1.PodSpec{
 			SchedulerName: schedulerName,
 			Containers: []corev1.Container{
@@ -407,6 +408,7 @@ func TestPodResizeValidator_SidecarUpsize_DeniedWhenLimitExceeded(t *testing.T) 
 				commonconstants.PodGroupAnnotationForPod: "pg",
 			},
 		},
+		Status: corev1.PodStatus{Phase: corev1.PodRunning},
 		Spec: corev1.PodSpec{
 			SchedulerName: testSchedulerName,
 			InitContainers: []corev1.Container{
@@ -476,6 +478,7 @@ func TestPodResizeValidator_Redistribution_AllowedAtLimit(t *testing.T) {
 					commonconstants.PodGroupAnnotationForPod: "pg",
 				},
 			},
+			Status: corev1.PodStatus{Phase: corev1.PodRunning},
 			Spec: corev1.PodSpec{
 				SchedulerName: testSchedulerName,
 				Containers: []corev1.Container{
@@ -528,4 +531,38 @@ func TestPodResizeValidator_InitPeakDominates_NoDelta(t *testing.T) {
 
 	_, err := v.ValidateUpdate(context.Background(), oldPod, newPod)
 	assert.NoError(t, err, "queue charge is unchanged, so the resize must be admitted at the limit")
+}
+
+func TestPodResizeValidator_PendingUnscheduled_NotValidated(t *testing.T) {
+	scheme := buildScheme()
+	// Queue already at its limit — a checked upsize would be denied.
+	queue := newQueue("q", 2000, -1, 0, "2", "0")
+	pg := newPodGroup("pg", "ns", "q")
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(queue, pg).Build()
+	v := NewPodResizeValidator(c, testSchedulerName, true, false)
+
+	oldPod := podWithRequests("ns", "p", "pg", testSchedulerName, "1", "0")
+	oldPod.Status.Phase = corev1.PodPending
+	newPod := podWithRequests("ns", "p", "pg", testSchedulerName, "5", "0")
+
+	_, err := v.ValidateUpdate(context.Background(), oldPod, newPod)
+	assert.NoError(t, err, "unscheduled pending pod resize must not be quota-checked")
+}
+
+func TestPodResizeValidator_PendingScheduled_StillValidated(t *testing.T) {
+	scheme := buildScheme()
+	queue := newQueue("q", 2000, -1, 0, "2", "0")
+	pg := newPodGroup("pg", "ns", "q")
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(queue, pg).Build()
+	v := NewPodResizeValidator(c, testSchedulerName, true, false)
+
+	oldPod := podWithRequests("ns", "p", "pg", testSchedulerName, "1", "0")
+	oldPod.Status.Phase = corev1.PodPending
+	oldPod.Status.Conditions = []corev1.PodCondition{
+		{Type: corev1.PodScheduled, Status: corev1.ConditionTrue},
+	}
+	newPod := podWithRequests("ns", "p", "pg", testSchedulerName, "5", "0")
+
+	_, err := v.ValidateUpdate(context.Background(), oldPod, newPod)
+	assert.Error(t, err, "scheduled pending pod holds capacity and must be checked")
 }
