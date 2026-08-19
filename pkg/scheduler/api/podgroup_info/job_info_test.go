@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
+	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -129,6 +130,37 @@ func TestAddTaskInfo(t *testing.T) {
 			t.Errorf("podset info %d: \n expected: %v, \n got: %v \n",
 				i, test.expected, ps)
 		}
+	}
+}
+
+func TestSetPodGroupMinMember(t *testing.T) {
+	tests := []struct {
+		name             string
+		minMember        int32
+		expectedMinAvail int32
+	}{
+		// int32 cannot distinguish unset from explicit 0; both default to a gang of 1
+		{"zero or unset minMember defaults to 1", 0, 1},
+		{"positive minMember is honored", 3, 3},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			info := NewPodGroupInfo("group-1")
+			info.SetPodGroup(&enginev2alpha2.PodGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "group-1",
+					Namespace: "ns-1",
+				},
+				Spec: enginev2alpha2.PodGroupSpec{
+					Queue:     "queue-1",
+					MinMember: test.minMember,
+				},
+			})
+
+			if got := info.PodSets[DefaultSubGroup].GetMinAvailable(); got != test.expectedMinAvail {
+				t.Errorf("expected minAvailable %d, got %d", test.expectedMinAvail, got)
+			}
+		})
 	}
 }
 
