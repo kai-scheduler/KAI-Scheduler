@@ -1,3 +1,0 @@
-kind: Added
-body: |-
-  Added **preemption delay**: a `kai.scheduler/preemption-delay` pod annotation (or `preemptionDelay` PodGroup spec field, `metav1.Duration` format) defines a minimal pending time before a workload may trigger eviction of others via preempt, reclaim or consolidation — giving cluster autoscalers a window to provision nodes first. The window re-arms after each eviction (`kai.scheduler/last-eviction-timestamp` annotation); allocation into free capacity and the workload's own evictability are unaffected ([docs](docs/preemption-delay/README.md), [design](docs/developer/designs/preemption-delay/README.md)). [#1832](https://github.com/kai-scheduler/KAI-Scheduler/issues/1832)

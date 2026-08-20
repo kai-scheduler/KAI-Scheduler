@@ -29,6 +29,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -158,6 +159,36 @@ func TestDeploymentForShard(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDeploymentForShardGoMemLimit(t *testing.T) {
+	ctx := context.Background()
+	client := fake.NewClientBuilder().Build()
+	config := &kaiv1.Config{Spec: kaiv1.ConfigSpec{
+		Global:    &kaiv1.GlobalConfig{},
+		Namespace: "default",
+		Scheduler: &kaiv1scheduler.Scheduler{},
+	}}
+	config.Spec.SetDefaultsWhereNeeded()
+	shard := &kaiv1.SchedulingShard{Spec: kaiv1.SchedulingShardSpec{
+		GoMemLimitRatio: ptr.To(0.85),
+		GoMemLimit:      ptr.To(resource.MustParse("6Gi")),
+	}}
+
+	deployment, err := NewSchedulerForShard(shard).deploymentForShard(ctx, client, config, shard)
+	require.NoError(t, err)
+	container := deployment.(*appsv1.Deployment).Spec.Template.Spec.Containers[0]
+	assert.Equal(t, []corev1.EnvVar{
+		{Name: "GOGC", Value: "400"},
+		{Name: goMemLimitRatioEnv, Value: "0.85"},
+		{
+			Name: "NAMESPACE",
+			ValueFrom: &corev1.EnvVarSource{FieldRef: &corev1.ObjectFieldSelector{
+				FieldPath: "metadata.namespace",
+			}},
+		},
+		{Name: "GOMEMLIMIT", Value: "6442450944"},
+	}, container.Env)
 }
 
 func TestValidateJobDepthMap(t *testing.T) {

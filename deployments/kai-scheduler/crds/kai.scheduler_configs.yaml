@@ -4028,6 +4028,11 @@ spec:
                     description: PodLabelSelector filters pods for webhooks and pod
                       grouper
                     type: object
+                  priorityClassName:
+                    description: |-
+                      PriorityClassName defines the priority class for KAI operators & services.
+                      An empty value leaves the pods without a priority class.
+                    type: string
                   queueLabelKey:
                     description: QueueLabelKey specifies the pod label key whose value
                       will be the queue name of the pod.

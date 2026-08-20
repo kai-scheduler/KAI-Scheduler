@@ -55,6 +55,8 @@ func TestDeploymentForKAIConfig(t *testing.T) {
 				"--webhook-addr", "9443",
 				"--health-probe-bind-address", ":8081",
 				"--metrics-bind-address", ":8080",
+				"--qps", "20",
+				"--burst", "100",
 			},
 			notExpectedArgs: []string{
 				"--gpu-sharing-enabled=true",

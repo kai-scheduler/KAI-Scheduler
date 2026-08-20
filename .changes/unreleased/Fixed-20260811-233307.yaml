@@ -1,0 +1,6 @@
+kind: Fixed
+body: tighten configmap verb for admission, nodescaleadjuster, podgroupcontroller, podgrouper, queuecontroller, scheduler ClusterRole
+time: 2026-08-11T23:33:07.93807465+01:00
+custom:
+    Author: dttung2905
+    Issue: "2060"

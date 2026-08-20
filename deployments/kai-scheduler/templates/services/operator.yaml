@@ -90,6 +90,9 @@ spec:
       nodeSelector:
         {{- toYaml .Values.global.nodeSelector | nindent 8 }}
       {{- end }}
+      {{- if .Values.global.priorityClassName }}
+      priorityClassName: {{ .Values.global.priorityClassName | quote }}
+      {{- end }}
       {{- with .Values.global.podSecurityContext }}
       securityContext:
         {{- toYaml . | nindent 8 }}

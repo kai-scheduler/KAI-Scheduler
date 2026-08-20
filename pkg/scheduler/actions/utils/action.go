@@ -15,9 +15,20 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/scheduler_util"
 )
 
+// GetVictimsQueue discovers candidates immediately and returns one mutable victim queue.
+// Use NewCachedVictimsQueueGenerator when discovery should run once for multiple independent queues.
 func GetVictimsQueue(
 	ssn *framework.Session,
 	filter func(*podgroup_info.PodGroupInfo) bool) *JobsOrderByQueues {
+	preemptees := GetVictimCandidates(ssn, filter)
+	return newVictimsQueueFromCandidates(ssn, preemptees, JobsOrderInitOptions{})
+}
+
+// GetVictimCandidates returns jobs with at least one live pod that pass filter.
+func GetVictimCandidates(
+	ssn *framework.Session,
+	filter func(*podgroup_info.PodGroupInfo) bool,
+) map[common_info.PodGroupID]*podgroup_info.PodGroupInfo {
 	preemptees := map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{}
 
 	for _, job := range ssn.ClusterInfo.PodGroupInfos {
@@ -38,12 +49,36 @@ func GetVictimsQueue(
 			preemptees[job.UID] = job
 		}
 	}
-	victimsQueue := NewJobsOrderByQueues(ssn, JobsOrderInitOptions{
-		VictimQueue:       true,
-		MaxJobsQueueDepth: scheduler_util.QueueCapacityInfinite,
-	})
-	victimsQueue.InitializeWithJobs(preemptees)
+	return preemptees
+}
+
+func newVictimsQueueFromCandidates(
+	ssn *framework.Session,
+	candidates map[common_info.PodGroupID]*podgroup_info.PodGroupInfo,
+	options JobsOrderInitOptions,
+) *JobsOrderByQueues {
+	options.VictimQueue = true
+	options.MaxJobsQueueDepth = scheduler_util.QueueCapacityInfinite
+	victimsQueue := NewJobsOrderByQueues(ssn, options)
+	victimsQueue.InitializeWithJobs(candidates)
 	return &victimsQueue
+}
+
+// NewCachedVictimsQueueGenerator discovers candidates once and creates a fresh mutable queue for each call.
+func NewCachedVictimsQueueGenerator(
+	ssn *framework.Session,
+	getCandidates func() map[common_info.PodGroupID]*podgroup_info.PodGroupInfo,
+	options JobsOrderInitOptions,
+) func() *JobsOrderByQueues {
+	var candidates map[common_info.PodGroupID]*podgroup_info.PodGroupInfo
+	initialized := false
+	return func() *JobsOrderByQueues {
+		if !initialized {
+			candidates = getCandidates()
+			initialized = true
+		}
+		return newVictimsQueueFromCandidates(ssn, candidates, options)
+	}
 }
 
 func GetMessageOfEviction(ssn *framework.Session, actionType framework.ActionType, preempteeTask *pod_info.PodInfo,

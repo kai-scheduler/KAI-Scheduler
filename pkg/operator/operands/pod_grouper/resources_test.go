@@ -11,6 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
+	policyv1 "k8s.io/api/policy/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -400,4 +402,117 @@ func TestServiceAccountForKAIConfig(t *testing.T) {
 	assert.Equal(t, "pod-grouper", sa.GetName())
 	assert.Equal(t, constants.DefaultKAINamespace, sa.GetNamespace())
 	assert.Equal(t, "ServiceAccount", sa.GetObjectKind().GroupVersionKind().Kind)
+}
+
+func TestPodDisruptionBudgetForKAIConfig(t *testing.T) {
+	ctx := context.Background()
+	client := fake.NewClientBuilder().Build()
+
+	tests := []struct {
+		name              string
+		replicas          int32
+		pdbEnabled        bool
+		maxUnavailable    int32
+		expectPDBCreation bool
+	}{
+		{
+			name:              "create PDB when replicas greater than one and enabled",
+			replicas:          2,
+			pdbEnabled:        true,
+			maxUnavailable:    1,
+			expectPDBCreation: true,
+		},
+		{
+			name:              "skip PDB when replicas is one",
+			replicas:          1,
+			pdbEnabled:        true,
+			maxUnavailable:    1,
+			expectPDBCreation: false,
+		},
+		{
+			name:              "skip PDB when disabled",
+			replicas:          3,
+			pdbEnabled:        false,
+			maxUnavailable:    1,
+			expectPDBCreation: false,
+		},
+		{
+			name:              "custom maxUnavailable",
+			replicas:          2,
+			pdbEnabled:        true,
+			maxUnavailable:    2,
+			expectPDBCreation: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &kaiv1.Config{}
+			config.Spec.SetDefaultsWhereNeeded()
+			config.Spec.PodGrouper.Replicas = ptr.To(tt.replicas)
+			config.Spec.PodGrouper.Service.PodDisruptionBudget = &common.PodDisruptionBudget{
+				Enabled:        ptr.To(tt.pdbEnabled),
+				MaxUnavailable: ptr.To(tt.maxUnavailable),
+			}
+
+			pg := &PodGrouper{BaseResourceName: defaultResourceName}
+			obj, err := pg.podDisruptionBudgetForKAIConfig(ctx, client, config)
+			require.NoError(t, err)
+
+			if !tt.expectPDBCreation {
+				assert.Nil(t, obj)
+				return
+			}
+
+			require.NotNil(t, obj)
+			pdb, ok := obj.(*policyv1.PodDisruptionBudget)
+			require.True(t, ok, "object should be PodDisruptionBudget")
+			assert.Equal(t, defaultResourceName, pdb.Name)
+			assert.Equal(t, constants.DefaultKAINamespace, pdb.Namespace)
+			require.NotNil(t, pdb.Spec.MaxUnavailable)
+			assert.Equal(t, tt.maxUnavailable, pdb.Spec.MaxUnavailable.IntVal)
+			require.NotNil(t, pdb.Spec.Selector)
+			assert.Equal(t, defaultResourceName, pdb.Spec.Selector.MatchLabels["app"])
+
+			deploymentObj, err := pg.deploymentForKAIConfig(ctx, client, config)
+			require.NoError(t, err)
+			deployment := deploymentObj.(*appsv1.Deployment)
+			assert.Equal(t, deployment.Spec.Template.Labels["app"], pdb.Spec.Selector.MatchLabels["app"])
+		})
+	}
+}
+
+func TestPodDisruptionBudgetForKAIConfigPreservesResourceVersion(t *testing.T) {
+	ctx := context.Background()
+
+	existing := &policyv1.PodDisruptionBudget{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            defaultResourceName,
+			Namespace:       constants.DefaultKAINamespace,
+			ResourceVersion: "42",
+			Labels: map[string]string{
+				"app": defaultResourceName,
+			},
+		},
+	}
+	client := fake.NewClientBuilder().WithObjects(existing).Build()
+
+	config := &kaiv1.Config{}
+	config.Spec.SetDefaultsWhereNeeded()
+	config.Spec.PodGrouper.Replicas = ptr.To(int32(2))
+	config.Spec.PodGrouper.Service.PodDisruptionBudget = &common.PodDisruptionBudget{
+		Enabled:        ptr.To(true),
+		MaxUnavailable: ptr.To(int32(1)),
+	}
+
+	pg := &PodGrouper{BaseResourceName: defaultResourceName}
+	obj, err := pg.podDisruptionBudgetForKAIConfig(ctx, client, config)
+	require.NoError(t, err)
+	require.NotNil(t, obj)
+
+	pdb, ok := obj.(*policyv1.PodDisruptionBudget)
+	require.True(t, ok, "object should be PodDisruptionBudget")
+	assert.Equal(t, "42", pdb.ResourceVersion)
+	require.NotNil(t, pdb.Spec.MaxUnavailable)
+	assert.Equal(t, int32(1), pdb.Spec.MaxUnavailable.IntVal)
 }

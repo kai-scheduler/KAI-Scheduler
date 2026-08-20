@@ -14,6 +14,17 @@ rules:
   - ""
   resources:
   - configmaps
+  - namespaces
+  - nodes
+  - persistentvolumeclaims
+  - persistentvolumes
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
   - events
   - pods/status
   verbs:
@@ -23,17 +34,6 @@ rules:
   - list
   - patch
   - update
-  - watch
-- apiGroups:
-  - ""
-  resources:
-  - namespaces
-  - nodes
-  - persistentvolumeclaims
-  - persistentvolumes
-  verbs:
-  - get
-  - list
   - watch
 - apiGroups:
   - ""

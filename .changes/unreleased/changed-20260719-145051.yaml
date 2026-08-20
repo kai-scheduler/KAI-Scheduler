@@ -1,3 +1,0 @@
-kind: Changed
-body: |-
-  make changelog accepts KIND and BODY vars for non-interactive use by agents

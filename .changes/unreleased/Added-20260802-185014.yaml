@@ -1,0 +1,6 @@
+kind: Added
+body: Added support for configuring binder Pod Disruption Budget via Helm values (`binder.podDisruptionBudget`) when running multiple replicas
+time: 2026-08-02T18:50:14.477675704+01:00
+custom:
+    Author: dttung2905
+    Issue: "1477"

@@ -1,0 +1,6 @@
+kind: Fixed
+body: Render global.daemonsetsTolerations into kai-config
+time: 2026-08-15T19:02:34.96721934+01:00
+custom:
+    Author: dttung2905
+    Issue: ""

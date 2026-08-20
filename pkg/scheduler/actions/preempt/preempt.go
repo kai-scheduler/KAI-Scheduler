@@ -178,9 +178,14 @@ func buildFilterFuncForPreempt(ssn *framework.Session, preemptor *podgroup_info.
 }
 
 func getOrderedVictimsQueue(ssn *framework.Session, preemptor *podgroup_info.PodGroupInfo) solvers.GenerateVictimsQueue {
-	return func() *utils.JobsOrderByQueues {
-		filter := buildFilterFuncForPreempt(ssn, preemptor)
-		victimsQueue := utils.GetVictimsQueue(ssn, filter)
-		return victimsQueue
-	}
+	return utils.NewCachedVictimsQueueGenerator(
+		ssn,
+		func() map[common_info.PodGroupID]*podgroup_info.PodGroupInfo {
+			return utils.GetVictimCandidates(ssn, buildFilterFuncForPreempt(ssn, preemptor))
+		},
+		utils.JobsOrderInitOptions{
+			FilterNonPreemptible:     true,
+			FilterNonActiveAllocated: true,
+		},
+	)
 }

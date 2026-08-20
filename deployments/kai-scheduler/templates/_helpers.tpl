@@ -25,13 +25,13 @@ argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
 
 {{/*
 Resolves a component image tag: explicit tag, then global.tag, then the chart
-version. When global.fips is set, appends "-fips" to whatever tag resolves so
+version. When global.fipsMode is "on", appends "-fips" to whatever tag resolves so
 the FIPS image variants are used. Usage:
   {{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.<svc>.image.tag) }}
 */}}
 {{- define "kai-scheduler.imageTag" -}}
 {{- $tag := .tag | default .root.Values.global.tag | default .root.Chart.AppVersion -}}
-{{- if .root.Values.global.fips -}}{{- $tag = printf "%s-fips" $tag -}}{{- end -}}
+{{- if eq .root.Values.global.fipsMode "on" -}}{{- $tag = printf "%s-fips" $tag -}}{{- end -}}
 {{- $tag -}}
 {{- end -}}
 
@@ -87,6 +87,13 @@ spec:
     tolerations:
       {{- toYaml .Values.global.tolerations | nindent 6 }}
     {{- end }}
+    {{- if .Values.global.daemonsetsTolerations }}
+    daemonsetsTolerations:
+      {{- toYaml .Values.global.daemonsetsTolerations | nindent 6 }}
+    {{- end }}
+    {{- if .Values.global.priorityClassName }}
+    priorityClassName: {{ .Values.global.priorityClassName | quote }}
+    {{- end }}
     {{- if .Values.global.securityContext }}
     securityContext:
       {{- toYaml .Values.global.securityContext | nindent 6 }}
@@ -121,6 +128,15 @@ spec:
       {{- if .Values.binder.affinity }}
       affinity:
         {{- toYaml .Values.binder.affinity | nindent 8 }}
+      {{- end }}
+      {{- if .Values.binder.podDisruptionBudget }}
+      podDisruptionBudget:
+        {{- if hasKey .Values.binder.podDisruptionBudget "enabled" }}
+        enabled: {{ .Values.binder.podDisruptionBudget.enabled }}
+        {{- end }}
+        {{- if hasKey .Values.binder.podDisruptionBudget "maxUnavailable" }}
+        maxUnavailable: {{ .Values.binder.podDisruptionBudget.maxUnavailable }}
+        {{- end }}
       {{- end }}
     metricsPort: {{ .Values.binder.ports.metricsPort }}
     resourceReservation:
@@ -168,6 +184,15 @@ spec:
       {{- if .Values.podgrouper.affinity }}
       affinity:
         {{- toYaml .Values.podgrouper.affinity | nindent 8 }}
+      {{- end }}
+      {{- if .Values.podgrouper.podDisruptionBudget }}
+      podDisruptionBudget:
+        {{- if hasKey .Values.podgrouper.podDisruptionBudget "enabled" }}
+        enabled: {{ .Values.podgrouper.podDisruptionBudget.enabled }}
+        {{- end }}
+        {{- if hasKey .Values.podgrouper.podDisruptionBudget "maxUnavailable" }}
+        maxUnavailable: {{ .Values.podgrouper.podDisruptionBudget.maxUnavailable }}
+        {{- end }}
       {{- end }}
     args:
       genericKartaFallback: {{ .Values.podgrouper.genericKartaFallback }}
@@ -222,6 +247,7 @@ spec:
       affinity:
         {{- toYaml .Values.admission.affinity | nindent 8 }}
       {{- end }}
+      {{- if .Values.admission.podDisruptionBudget }}
       podDisruptionBudget:
         {{- if hasKey .Values.admission.podDisruptionBudget "enabled" }}
         enabled: {{ .Values.admission.podDisruptionBudget.enabled }}
@@ -229,6 +255,7 @@ spec:
         {{- if hasKey .Values.admission.podDisruptionBudget "maxUnavailable" }}
         maxUnavailable: {{ .Values.admission.podDisruptionBudget.maxUnavailable }}
         {{- end }}
+      {{- end }}
     gpuSharing: {{ .Values.global.gpuSharing | default false }}
     blockNvidiaVisibleDevices: {{ .Values.global.blockNvidiaVisibleDevices | default false }}
     queueLabelSelector: false
@@ -283,6 +310,7 @@ spec:
       affinity:
         {{- toYaml .Values.scheduler.affinity | nindent 8 }}
       {{- end }}
+      {{- if .Values.scheduler.podDisruptionBudget }}
       podDisruptionBudget:
         {{- if hasKey .Values.scheduler.podDisruptionBudget "enabled" }}
         enabled: {{ .Values.scheduler.podDisruptionBudget.enabled }}
@@ -290,6 +318,7 @@ spec:
         {{- if hasKey .Values.scheduler.podDisruptionBudget "maxUnavailable" }}
         maxUnavailable: {{ .Values.scheduler.podDisruptionBudget.maxUnavailable }}
         {{- end }}
+      {{- end }}
     {{- if and .Values.scheduler.ports .Values.scheduler.ports.metricsPort }}
     schedulerService:
       port: {{ .Values.scheduler.ports.metricsPort }}

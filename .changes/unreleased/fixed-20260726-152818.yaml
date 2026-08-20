@@ -1,3 +1,0 @@
-kind: Fixed
-body: |-
-  Segmented elastic PyTorchJob now respects minReplicas instead of requiring all worker segments

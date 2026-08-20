@@ -126,6 +126,10 @@ func ExtractDRAGPUResourcesFromClaims(podResourceClaims []*resourceapi.ResourceC
 	deviceClassCounts := make(map[string]int64)
 
 	for _, claim := range podResourceClaims {
+		// Skip synthetic extended-resource claims; their GPU count is already in pod.Spec.
+		if claim.Annotations[resourceapi.ExtendedResourceClaimAnnotation] == "true" {
+			continue
+		}
 		gpuCount := countGPUDevicesFromClaim(claim)
 		if gpuCount > 0 {
 			// Find the DeviceClassName for this claim

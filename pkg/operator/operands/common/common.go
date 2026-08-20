@@ -35,8 +35,10 @@ const (
 
 // PodDisruptionBudgetImplementedServices lists operand resource names with operator-side PDB creation.
 var PodDisruptionBudgetImplementedServices = map[string]struct{}{
-	"admission": {},
-	"scheduler": {},
+	"admission":   {},
+	"scheduler":   {},
+	"pod-grouper": {},
+	"binder":      {},
 }
 
 func PodDisruptionBudgetImplemented(serviceName string) bool {
@@ -165,6 +167,7 @@ func DeploymentForKAIConfig(
 	deployment.Spec.Template.Spec.ServiceAccountName = deploymentName
 	deployment.Spec.Template.Spec.NodeSelector = kaiConfig.Spec.Global.NodeSelector
 	deployment.Spec.Template.Spec.Tolerations = kaiConfig.Spec.Global.Tolerations
+	deployment.Spec.Template.Spec.PriorityClassName = ptr.Deref(kaiConfig.Spec.Global.PriorityClassName, "")
 
 	deployment.Spec.Template.Spec.Affinity = MergeAffinities(service.Affinity,
 		kaiConfig.Spec.Global.Affinity,
@@ -221,6 +224,7 @@ func DaemonSetForKAIConfig(
 	ds.Spec.Template.Spec.Affinity = service.Affinity
 	ds.Spec.Template.Spec.Tolerations = append(
 		append([]v1.Toleration{}, kaiConfig.Spec.Global.DaemonsetsTolerations...), tolerations...)
+	ds.Spec.Template.Spec.PriorityClassName = ptr.Deref(kaiConfig.Spec.Global.PriorityClassName, "")
 
 	ds.Spec.Template.Spec.Containers = []v1.Container{
 		{
@@ -324,7 +328,7 @@ func isControllerAvailable(obj client.Object, objKind string) (bool, error) {
 	return false, nil
 }
 
-func AddK8sClientConfigToArgs(k8sClientConfig *kaiv1common.K8sClientConfig, args []string) {
+func AddK8sClientConfigToArgs(k8sClientConfig *kaiv1common.K8sClientConfig, args []string) []string {
 	if k8sClientConfig != nil {
 		if k8sClientConfig.QPS != nil {
 			args = append(args, "--qps", strconv.Itoa(*k8sClientConfig.QPS))
@@ -333,6 +337,8 @@ func AddK8sClientConfigToArgs(k8sClientConfig *kaiv1common.K8sClientConfig, args
 			args = append(args, "--burst", strconv.Itoa(*k8sClientConfig.Burst))
 		}
 	}
+
+	return args
 }
 
 func AddControllerRuntimeJSONLogArg(jsonLog *bool, args []string) []string {

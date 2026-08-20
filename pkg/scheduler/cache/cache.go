@@ -83,9 +83,13 @@ var terminalPodPhases = []v1.PodPhase{
 	v1.PodFailed,
 }
 
-func filterTerminalPods(options *metav1.ListOptions) {
-	selectors := make([]string, 0, len(terminalPodPhases))
-	for _, phase := range terminalPodPhases {
+var watchFilteredPodPhases = []v1.PodPhase{
+	v1.PodFailed,
+}
+
+func filterFailedPods(options *metav1.ListOptions) {
+	selectors := make([]string, 0, len(watchFilteredPodPhases))
+	for _, phase := range watchFilteredPodPhases {
 		selectors = append(selectors, fmt.Sprintf("status.phase!=%s", phase))
 	}
 	selector := strings.Join(selectors, ",")
@@ -103,13 +107,13 @@ func registerSchedulerPodInformer(informerFactory informers.SharedInformerFactor
 			metav1.NamespaceAll,
 			resyncPeriod,
 			k8scache.Indexers{k8scache.NamespaceIndex: k8scache.MetaNamespaceIndexFunc},
-			filterTerminalPods,
+			filterFailedPods,
 		)
 	})
 }
 
 // New returns a Cache implementation.
-func New(schedulerCacheParams *SchedulerCacheParams) Cache {
+func New(schedulerCacheParams *SchedulerCacheParams) (Cache, error) {
 	return newSchedulerCache(schedulerCacheParams)
 }
 
@@ -160,7 +164,7 @@ type SchedulerCache struct {
 	K8sClusterPodAffinityInfo
 }
 
-func newSchedulerCache(schedulerCacheParams *SchedulerCacheParams) *SchedulerCache {
+func newSchedulerCache(schedulerCacheParams *SchedulerCacheParams) (*SchedulerCache, error) {
 	sc := &SchedulerCache{
 		schedulingNodePoolParams:  schedulerCacheParams.NodePoolParams,
 		restrictNodeScheduling:    schedulerCacheParams.RestrictNodeScheduling,
@@ -192,13 +196,16 @@ func newSchedulerCache(schedulerCacheParams *SchedulerCacheParams) *SchedulerCac
 	sc.informerFactory = informers.NewSharedInformerFactory(sc.kubeClient, 0)
 	registerSchedulerPodInformer(sc.informerFactory)
 	if err := setSchedulerPodTransform(sc.informerFactory.Core().V1().Pods().Informer()); err != nil {
-		log.InfraLogger.Errorf("Failed to set scheduler pod transform: %v", err)
-		return nil
+		return nil, fmt.Errorf("failed to set scheduler pod transform: %w", err)
 	}
 	sc.kubeAiSchedulerInformerFactory = kubeaischedulerinfo.NewSharedInformerFactory(sc.kubeAiSchedulerClient, 0)
 
-	featuregates.SetDRAFeatureGate(schedulerCacheParams.DiscoveryClient)
-	featuregates.SetNodeResourceTopologyFeatureGate(schedulerCacheParams.DiscoveryClient)
+	if err := featuregates.SetDRAFeatureGate(schedulerCacheParams.DiscoveryClient); err != nil {
+		return nil, fmt.Errorf("failed to determine dynamic resource allocation availability: %w", err)
+	}
+	if err := featuregates.SetNodeResourceTopologyFeatureGate(schedulerCacheParams.DiscoveryClient); err != nil {
+		return nil, fmt.Errorf("failed to determine node resource topology availability: %w", err)
+	}
 	if featuregates.NodeResourceTopologyEnabled() && schedulerCacheParams.NRTClient != nil {
 		sc.nrtInformerFactory = nrtinformers.NewSharedInformerFactory(schedulerCacheParams.NRTClient, 0)
 	}
@@ -219,12 +226,11 @@ func newSchedulerCache(schedulerCacheParams *SchedulerCacheParams) *SchedulerCac
 		sc.restrictNodeScheduling, &sc.K8sClusterPodAffinityInfo, sc.scheduleCSIStorage, sc.fullHierarchyFairness, sc.StatusUpdater, sc.stuckInReleasingThreshold)
 
 	if err != nil {
-		log.InfraLogger.Errorf("Failed to create cluster info object: %v", err)
-		return nil
+		return nil, fmt.Errorf("failed to create cluster info object: %w", err)
 	}
 	sc.clusterInfo = clusterInfo
 
-	return sc
+	return sc, nil
 }
 
 func (sc *SchedulerCache) Snapshot() (*api.ClusterInfo, error) {
@@ -374,8 +380,9 @@ func (sc *SchedulerCache) createBindRequest(podInfo *pod_info.PodInfo, nodeName 
 				Count:   int(podInfo.AcceptedGpuRequirement.GetNumOfGpuDevices()),
 				Portion: fmt.Sprintf("%.2f", podInfo.AcceptedGpuRequirement.GpuFractionalPortion()),
 			},
-			ResourceClaimAllocations: podInfo.ResourceClaimInfo.ToSlice(),
-			PredictedNUMAZones:       predictedNUMAZones,
+			ResourceClaimAllocations:        podInfo.ResourceClaimInfo.ToSlice(),
+			ExtendedResourceClaimAllocation: podInfo.ExtendedResourceClaimAllocation(),
+			PredictedNUMAZones:              predictedNUMAZones,
 		},
 	}
 

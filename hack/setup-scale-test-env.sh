@@ -10,7 +10,7 @@ SCALE_DIR="${REPO_ROOT}/test/e2e/scale"
 KWOK_LATEST_RELEASE=v0.6.1
 kubectl apply -f "https://github.com/kubernetes-sigs/kwok/releases/download/${KWOK_LATEST_RELEASE}/kwok.yaml"
 kubectl apply -f "https://github.com/kubernetes-sigs/kwok/releases/download/${KWOK_LATEST_RELEASE}/stage-fast.yaml"
-kubectl apply --server-side -f https://github.com/run-ai/kwok-operator/releases/download/1.0.1/kwok-operator.yaml
+kubectl apply --server-side -f https://github.com/run-ai/kwok-operator/releases/download/1.0.4/kwok-operator.yaml
 kubectl apply -f "${SCALE_DIR}/base_kwok_managed_nodepool.yaml"
 
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
@@ -45,7 +45,7 @@ kubectl patch config.kai.scheduler kai-config --type merge -p '{"spec":{"admissi
 kubectl patch config.kai.scheduler kai-config --type merge -p '{"spec":{"scheduler":{"service":{"resources":{"requests":{"cpu":"3","memory":"7Gi"},"limits":{"cpu":"5","memory":"7Gi"}}}}}}'
 
 # Binder
-kubectl patch config.kai.scheduler kai-config --type merge -p '{"spec":{"binder":{"service":{"resources":{"requests":{"cpu":"100m","memory":"2500Mi"},"limits":{"cpu":"400m","memory":"2500Mi"}}},"args":{"maxConcurrentReconciles": 100, "qps": 500, "burst": 2000}}}}'
+kubectl patch config.kai.scheduler kai-config --type merge -p '{"spec":{"binder":{"service":{"resources":{"requests":{"cpu":"1","memory":"8Gi"},"limits":{"cpu":"2","memory":"8Gi"}}},"args":{"maxConcurrentReconciles": 100, "qps": 500, "burst": 2000}}}}'
 
 # pod group controller
 kubectl patch config.kai.scheduler kai-config --type merge -p '{"spec":{"podGroupController":{"service":{"resources":{"requests":{"cpu":"50m","memory":"8000Mi"},"limits":{"cpu":"200m","memory":"8000Mi"}}}}}}'
@@ -54,4 +54,4 @@ kubectl patch config.kai.scheduler kai-config --type merge -p '{"spec":{"podGrou
 kubectl patch config.kai.scheduler kai-config --type merge -p '{"spec":{"queueController":{"service":{"resources":{"requests":{"cpu":"50m","memory":"1000Mi"},"limits":{"cpu":"200m","memory":"200Mi"}}}}}}'
 
 # pod grouper
-kubectl patch config.kai.scheduler kai-config --type merge -p '{"spec":{"podGrouper":{"service":{"resources":{"requests":{"cpu":"50m","memory":"2000Mi"},"limits":{"cpu":"200m","memory":"2000Mi"}}}}}}'
+kubectl patch config.kai.scheduler kai-config --type merge -p '{"spec":{"podGrouper":{"service":{"resources":{"requests":{"cpu":"1","memory":"2Gi"},"limits":{"cpu":"2","memory":"2Gi"}}},"maxConcurrentReconciles":50,"k8sClientConfig":{"qps":500,"burst":1000}}}}'

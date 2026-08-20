@@ -334,7 +334,7 @@ func TestRecordJobStatusEvent(t *testing.T) {
 				detailedFitErrors = *tt.detailedErrors
 			}
 
-			cache := New(&SchedulerCacheParams{
+			cache, err := New(&SchedulerCacheParams{
 				KubeClient:                  kubeClient,
 				KAISchedulerClient:          kubeAiSchedulerClient,
 				NodePoolParams:              &conf.SchedulingNodePoolParams{},
@@ -343,6 +343,7 @@ func TestRecordJobStatusEvent(t *testing.T) {
 				NumOfStatusRecordingWorkers: 4,
 				DiscoveryClient:             kubeClient.Discovery(),
 			})
+			assert.Nil(t, err)
 
 			stopCh := make(chan struct{})
 			cache.Run(stopCh)
@@ -371,7 +372,7 @@ func TestRecordJobStatusEvent(t *testing.T) {
 				podGroupInfo.AddSimpleJobFitError(explanation.Reason, explanation.Message)
 			}
 
-			err := cache.RecordJobStatusEvent(podGroupInfo, nil)
+			err = cache.RecordJobStatusEvent(podGroupInfo, nil)
 			assert.Nil(t, err)
 
 			newPodGroupObj, err := waitForCondition(func() (runtime.Object, error) {
@@ -498,7 +499,7 @@ func TestRecordJobStatusEventInvalidSubGroupPod(t *testing.T) {
 
 	kubeClient := fake.NewSimpleClientset(validPod, invalidPod)
 	kubeAiSchedulerClient := kubeaischedulerfake.NewSimpleClientset(podGroup)
-	cache := New(&SchedulerCacheParams{
+	cache, err := New(&SchedulerCacheParams{
 		KubeClient:                  kubeClient,
 		KAISchedulerClient:          kubeAiSchedulerClient,
 		NodePoolParams:              &conf.SchedulingNodePoolParams{},
@@ -507,6 +508,7 @@ func TestRecordJobStatusEventInvalidSubGroupPod(t *testing.T) {
 		NumOfStatusRecordingWorkers: 4,
 		DiscoveryClient:             kubeClient.Discovery(),
 	})
+	assert.Nil(t, err)
 
 	stopCh := make(chan struct{})
 	cache.Run(stopCh)
@@ -519,7 +521,7 @@ func TestRecordJobStatusEventInvalidSubGroupPod(t *testing.T) {
 	job.AddTaskInfo(pod_info.NewTaskInfo(validPod, vectorMap))
 	job.AddTaskInfo(pod_info.NewTaskInfo(invalidPod, vectorMap))
 
-	err := cache.RecordJobStatusEvent(job, nil)
+	err = cache.RecordJobStatusEvent(job, nil)
 	assert.NoError(t, err)
 
 	invalidPodObj, err := waitForCondition(func() (runtime.Object, error) {

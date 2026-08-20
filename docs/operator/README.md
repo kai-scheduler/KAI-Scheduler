@@ -70,6 +70,7 @@ spec:
 ```
 
 - [Scheduling Shards](./scheduling-shards.md) - Advanced cluster partitioning
+- [Resource sizing](./resource-sizing.md) - Requests, limits, and VPA guidance for large clusters
 
 ## Logging
 

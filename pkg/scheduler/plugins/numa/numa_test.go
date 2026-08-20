@@ -250,13 +250,16 @@ func TestBuildNumaRequests(t *testing.T) {
 	cpu := func(q string) v1.ResourceRequirements {
 		return v1.ResourceRequirements{Requests: v1.ResourceList{"cpu": resource.MustParse(q)}}
 	}
-	pod := &v1.Pod{Spec: v1.PodSpec{
-		InitContainers: []v1.Container{
-			{Resources: cpu("10")},                        // ordinary init: not a steady-state request
-			{Resources: cpu("1"), RestartPolicy: &always}, // native sidecar: a steady-state request
+	pod := &v1.Pod{
+		Status: v1.PodStatus{QOSClass: v1.PodQOSGuaranteed}, // cpu aligns only for a Guaranteed pod
+		Spec: v1.PodSpec{
+			InitContainers: []v1.Container{
+				{Resources: cpu("10")},                        // ordinary init: not a steady-state request
+				{Resources: cpu("1"), RestartPolicy: &always}, // native sidecar: a steady-state request
+			},
+			Containers: []v1.Container{{Resources: cpu("2")}, {Resources: cpu("2")}},
 		},
-		Containers: []v1.Container{{Resources: cpu("2")}, {Resources: cpu("2")}},
-	}}
+	}
 	reqs := buildNumaRequests(pod, resource_info.NewResourceVectorMap())
 	cores := func(v resource_info.ResourceVector) int64 { return int64(v.Get(resource_info.CPUIndex)) / 1000 }
 
@@ -280,6 +283,122 @@ func TestBuildNumaRequests(t *testing.T) {
 		assert.Len(t, serial, 1, "the ordinary init container is a serial request")
 		assert.Equal(t, int64(10), cores(serial[0]))
 	})
+}
+
+// TestBuildNumaRequestsNonIntegralCPU verifies the plugin charges NUMA zones only for the CPU the
+// kubelet actually pins. The CPU manager gives exclusive CPUs to whole-number requests in a
+// Guaranteed pod only (staticPolicy.guaranteedCPUs), so a sidecar requesting fractional CPU must
+// not inflate the request -- summing it would reject pods the kubelet admits.
+func TestBuildNumaRequestsNonIntegralCPU(t *testing.T) {
+	always := v1.ContainerRestartPolicyAlways
+	resources := func(cpu, mem string) v1.ResourceRequirements {
+		return v1.ResourceRequirements{Requests: v1.ResourceList{
+			"cpu": resource.MustParse(cpu), "memory": resource.MustParse(mem),
+		}}
+	}
+	podWith := func(qos v1.PodQOSClass, containers ...v1.Container) *v1.Pod {
+		return &v1.Pod{
+			Status: v1.PodStatus{QOSClass: qos},
+			Spec:   v1.PodSpec{Containers: containers},
+		}
+	}
+	milliCores := func(v resource_info.ResourceVector) int64 { return int64(v.Get(resource_info.CPUIndex)) }
+	memory := func(v resource_info.ResourceVector) int64 {
+		return int64(v.Get(resource_info.NewResourceVectorMap().GetIndex("memory")))
+	}
+
+	main := v1.Container{Resources: resources("44", "16Gi")}
+	fractionalMain := v1.Container{Resources: resources("700m", "16Gi")}
+	fractionalSidecar := v1.Container{Resources: resources("4500m", "2Gi")}
+	integralSidecar := v1.Container{Resources: resources("5", "2Gi")}
+
+	t.Run("fractional sidecar does not inflate the pod-scope cpu request", func(t *testing.T) {
+		reqs := buildNumaRequests(podWith(v1.PodQOSGuaranteed, main, fractionalSidecar),
+			resource_info.NewResourceVectorMap())
+		concurrent, _ := reqs.forScope(node_info.TopologyScopePod)
+		assert.Equal(t, int64(44000), milliCores(concurrent[0]), "only the main container's 44 integral cpus")
+		assert.Equal(t, int64(18)<<30, memory(concurrent[0]),
+			"memory is summed over every container: the memory manager applies no integrality filter")
+	})
+
+	t.Run("integral sidecar is charged in full", func(t *testing.T) {
+		reqs := buildNumaRequests(podWith(v1.PodQOSGuaranteed, main, integralSidecar),
+			resource_info.NewResourceVectorMap())
+		concurrent, _ := reqs.forScope(node_info.TopologyScopePod)
+		assert.Equal(t, int64(49000), milliCores(concurrent[0]))
+	})
+
+	t.Run("integral sidecar is charged when the main container is fractional", func(t *testing.T) {
+		reqs := buildNumaRequests(podWith(v1.PodQOSGuaranteed, fractionalMain, integralSidecar),
+			resource_info.NewResourceVectorMap())
+		concurrent, _ := reqs.forScope(node_info.TopologyScopePod)
+		assert.Equal(t, int64(5000), milliCores(concurrent[0]))
+
+		concurrent, _ = reqs.forScope(node_info.TopologyScopeContainer)
+		assert.Zero(t, milliCores(concurrent[0]), "the main container stays in the shared cpu pool")
+		assert.Equal(t, int64(5000), milliCores(concurrent[1]))
+	})
+
+	t.Run("container scope zeroes only the fractional container's cpu", func(t *testing.T) {
+		reqs := buildNumaRequests(podWith(v1.PodQOSGuaranteed, main, fractionalSidecar),
+			resource_info.NewResourceVectorMap())
+		concurrent, _ := reqs.forScope(node_info.TopologyScopeContainer)
+		assert.Equal(t, int64(44000), milliCores(concurrent[0]))
+		assert.Zero(t, milliCores(concurrent[1]), "the sidecar stays in the shared cpu pool")
+		assert.Equal(t, int64(2)<<30, memory(concurrent[1]),
+			"the sidecar is still a memory alignment unit of its own")
+	})
+
+	t.Run("non-Guaranteed pod aligns no cpu at all", func(t *testing.T) {
+		reqs := buildNumaRequests(podWith(v1.PodQOSBurstable, main, fractionalSidecar),
+			resource_info.NewResourceVectorMap())
+		concurrent, _ := reqs.forScope(node_info.TopologyScopePod)
+		assert.Zero(t, milliCores(concurrent[0]))
+	})
+
+	t.Run("fractional init containers are zeroed in both roles", func(t *testing.T) {
+		pod := &v1.Pod{
+			Status: v1.PodStatus{QOSClass: v1.PodQOSGuaranteed},
+			Spec: v1.PodSpec{
+				InitContainers: []v1.Container{
+					{Resources: resources("10500m", "1Gi")},
+					{Resources: resources("1500m", "1Gi"), RestartPolicy: &always},
+				},
+				Containers: []v1.Container{main},
+			},
+		}
+		reqs := buildNumaRequests(pod, resource_info.NewResourceVectorMap())
+		concurrent, serial := reqs.forScope(node_info.TopologyScopeContainer)
+		assert.Zero(t, milliCores(serial[0]), "ordinary init")
+		assert.Zero(t, milliCores(concurrent[0]), "native sidecar")
+
+		podConcurrent, _ := reqs.forScope(node_info.TopologyScopePod)
+		assert.Equal(t, int64(44000), milliCores(podConcurrent[0]),
+			"neither init container contributes to the pod-scope peak")
+	})
+}
+
+// TestFractionalSidecarAdmits is the unit-test form of examples/numa/sidecar-cpu-inflation: a 44-cpu
+// main container with a 4500m sidecar must admit (the kubelet asks for 44 exclusive cpus, which fit
+// one zone), while rounding that sidecar to an integral 5 cpus must reject (49 fits no zone).
+func TestFractionalSidecarAdmits(t *testing.T) {
+	pp, _, node := wiredPlugin(numaTopology(node_info.TopologyPolicySingleNUMANode, node_info.TopologyScopePod,
+		numaZone("node-0", map[string]string{gpu: "4", "cpu": "47"}),
+		numaZone("node-1", map[string]string{gpu: "4", "cpu": "48"}),
+	))
+
+	task := func(sidecarCPU string) *pod_info.PodInfo {
+		t := makeGuaranteedTask("task-"+sidecarCPU, map[string]string{gpu: "1", "cpu": "44"})
+		t.Pod.Spec.Containers = append(t.Pod.Spec.Containers, v1.Container{
+			Resources: v1.ResourceRequirements{Requests: v1.ResourceList{"cpu": resource.MustParse(sidecarCPU)}},
+		})
+		return t
+	}
+
+	assert.True(t, pp.allocatable(task("4500m"), node),
+		"a fractional sidecar is not pinned, so the pod still needs only 44 cpus in one zone")
+	assert.False(t, pp.allocatable(task("5"), node),
+		"an integral sidecar is pinned, pushing the pod to 49 cpus, which no zone has")
 }
 
 // TestPredicateOrdinaryInitContainer verifies an ordinary init container is checked for
