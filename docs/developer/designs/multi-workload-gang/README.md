@@ -184,12 +184,7 @@ Input PodGroups continue to exist, so resource and scheduling status need to be 
 
 Today, PodGroup resource status is calculated from pods whose `pod-group-name` directly names that PodGroup. Under this design, input PodGroups therefore naturally retain resource totals while the rendered PodGroup has no directly annotated pods. The queue controller currently sums every PodGroup, so copying aggregate resources to the rendered object without filtering would double-count them.
 
-Two accounting models are possible:
-
-- Input PodGroups remain authoritative for resource status and queue accounting; the rendered PodGroup is excluded from resource summation and owns aggregate scheduling conditions. If the rendered priority or preemptibility differs from the inputs, queue accounting must reclassify input resources using the effective rendered policy rather than summing each input's `allocatedNonPreemptible` value.
-- The rendered PodGroup reports aggregate resources and input PodGroups are excluded from queue accounting while grouped.
-
-The selected model must also account for the rendered priority and preemptibility. If these differ from an input PodGroup, resource classification based on the input policy can disagree with the scheduler's effective policy.
+To avoid ambiguity, resources should only be reported on one of the levels. Since the podgroups' preemptibility can differ from the leaf queues' in the merge, the resource accounting would make more sense in the top-level podgroup. To formalize: resource allocation is only reported on podgroups with no `workloadGroupName`.
 
 Regardless of which object is authoritative, every pod's resources must be counted exactly once. An inactive rendered revision must not be counted in addition to its inputs, and activating a rendered revision must switch accounting without treating both representations as independent workloads. The queue controller needs one canonical activation predicate: for example, count the rendered root only when its UID/revision is active and all recorded inputs match that revision; otherwise count the inputs and ignore the inactive root. Status propagation remains eventually consistent, but one reconcile must never deliberately sum both representations.
 
