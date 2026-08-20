@@ -54,8 +54,6 @@ This must be opt-in (per scheduling shard), since it weakens the quota protectio
 ### Non-Goals
 - No protected floor for the victim (e.g., "never drain a queue below X% of its deserved quota"). Full drain of a lower-priority queue's in-quota allocation is accepted as intentional — priority governs access even within quota. A floor could be added later if operators need it.
 - No change to consolidation's victim-selection logic.
-- No change to `MaintainFairShareStrategy` / `GuaranteeDeservedQuotaStrategy` — this is purely additive.
-- No intra-tier fairness weighting for a deserved-quota shortfall (see §7) — over-engineering beyond what was asked.
 
 ## 4. Fairshare Model Calculation Changes
 
@@ -141,6 +139,8 @@ No new code is needed for this — `getLeveledQueues` already returns the right 
 
 ### 5.3 Algorithm / Code Changes
 
+- No change to `MaintainFairShareStrategy` / `GuaranteeDeservedQuotaStrategy` — this is purely additive.
+
 `pkg/scheduler/plugins/proportion/reclaimable/strategies/strategies.go`:
 
 ```go
@@ -209,8 +209,6 @@ No code change. Consolidation (`pkg/scheduler/actions/consolidation/`) doesn't c
 
 - **Equal priority**: no reclaim via this path (`>` is strict). Existing strategies still apply unchanged.
 - **Full drain of a low-priority queue**: since there's no protected floor (Non-Goal), a lower-priority queue's entire in-quota allocation can be reclaimed if enough higher-priority demand exists across multiple reclaim rounds. This is the intended effect of the feature (priority governs access even within quota) but should be called out to operators enabling the flag.
-- **No intra-tier fairness for phase 1's shortfall**: unlike phase 2 (`divideUpToFairShare`, weighted by `OverQuotaWeight` and usage), the phase-1 change in §4 grants queues within the same priority bucket their deserved amount in a simple iteration order, not weighted. Two same-priority queues competing for the same scarce deserved capacity aren't proportionally balanced by this change. Acceptable for this feature (Non-Goal) but worth flagging for anyone reusing this code path.
-- **Saturation guard doesn't protect the victim**: `reclaimingQueuesRemainWithinBoundaries` compares the *reclaiming* queue's saturation against its own siblings — it doesn't rate-limit how much a single victim queue can be drained. No change proposed here; flagged as a known limitation, consistent with today's guard scope.
 - **Non-preemptible reclaimers**: `CanReclaimResources`'s existing additional check (`AllocatedNonPreemptible+Requested <= Deserved`) is unaffected — §4 establishes the existing `FairShare` gate needs no change.
 - **Interaction with `GuaranteeDeservedQuotaStrategy`**: unchanged; if a lower-priority queue is over-quota, a higher-priority in-quota reclaimer can still reclaim it via the existing strategy regardless of this flag.
 
@@ -226,8 +224,6 @@ No code change. Consolidation (`pkg/scheduler/actions/consolidation/`) doesn't c
 ## 9. Alternatives Considered
 
 - **Change `FairShare` computation instead of adding a strategy, and rely only on the existing `MaintainFairShareStrategy`**: once phase 1 is priority-ordered (§4), a lower-priority victim's `FairShare` can already drop below its actual allocation purely from the accounting change, which would make `MaintainFairShareStrategy` trigger without any new strategy at all. Rejected as the sole mechanism: it bounds the reclaimer only by "under `FairShare`," which includes over-quota entitlement — an already over-its-own-deserved-but-under-`FairShare` reclaimer could exploit it to take in-quota victims, violating requirement 2/3 in §2. The explicit `Deserved`-based `QueuePriorityStrategy` is still required to bound the reclaimer correctly.
-- **Full three-phase priority-bucket `FairShare` redesign** (`priority-based-fair-share.md`): rejected for this feature — larger surface, changes weight-0 over-quota compensation semantics unrelated to this problem. §4's phase-1 change is deliberately narrower.
-- **Priority as a full replacement for the two existing strategies**: rejected — additive OR keeps the change low-risk and fully backward compatible when disabled.
 
 ---
 
