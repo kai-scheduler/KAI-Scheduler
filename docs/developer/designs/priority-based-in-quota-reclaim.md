@@ -26,6 +26,13 @@ This must be opt-in (per scheduling shard), since it weakens the quota protectio
 These requirements come as a different approach to look at a queue's priority. Until now, a queues quota was stronger then any other parameter. 
 This allows the customer to decide if priority is more important to the cluster fairness state rather then quota, which until now, was absolute. 
 
+In this viewpoint, the desired allocation order is:
+
+1. High-priority queue, in quota
+2. Low-priority queue, in quota
+3. High-priority queue, over quota
+4. Low-priority queue, over quota
+
 
 ## 3. Reclaim Rules
 
@@ -48,7 +55,31 @@ A reclaim of a `InQuotaQueuePriorityStrategy` will happen only for a reclaimer t
 
 When queues sit in different branches of a hierarchy, whose priority should be compared, we will reuse the current logic of finding the lowest common ancestor, then compare the priority of the two branches one level below it (i.e., compare the child-of-LCA ancestors that contain each queue). The existing reclaim path already needs to compare a reclaimer and a reclaimee that may live in different branches, and already solves this via `Reclaimable.getLeveledQueues` (`reclaimable.go`): it walks both queues' ancestor paths and returns the pair of queues at the point they diverge from their lowest common ancestor (LCA). 
 
-### 6. Configuration
+## 6. Queue sorting function changes
+
+If the in-quota queue priority strategy is enabled, we must preserve the existing property - the reclaimer is ordered before its reclaimees. Otherwise, during allocation, some victims may be reallocated before the reclaimer gets a chance to use their resources. In that case, the re-reclaimed resources  will not help the reclaimer or the other victims it forces to move, meaning those earlier victims should not have been preempted in the first place.
+
+The proportion plugin’s current queue order is:
+1. Prefer queues not over fair share over queues over fair share.
+2. Prefer queues where allocated + candidate job <= deserved over queues where the candidate would go over deserved.
+3. Prefer higher queue priority.
+4. Penalize queues that would use a resource with zero allocatable share.
+5. Prefer lower dominant resource share after adding the pending job or subtracting victims.
+6. Prefer lower current dominant resource share.
+7. Prefer smaller allocatable share.
+8. Tie-break by earlier queue creation time.
+
+As I said before, the desired allocation priority is: high-priority in-quota, low-priority in-quota, high-priority over-quota, low-priority over-quota. 
+The suggested change is:
+
+Apply the change only if the `InQuotaQueuePriorityStrategy` is enabled.
+Compare if `allocated + job <= deserved` for both queues.
+ - If step one both queues are over their quota, `InQuotaQueuePriorityStrategy` is irrelevant and no change is required.
+ - If the higher queue is over-quota, `InQuotaQueuePriorityStrategy` is irrelevant and no change is required.
+ - If the higher queue is under quota and the lower queue is over-quota, previous step 1 will not prefer the lower queue and previous step 2 will prefer the higher priority queue.
+ - If both queues in quota, check which queue has higher priority (previously step 3) before starvation checks (previously steps 1,2)
+
+## 6. Configuration
 
 Follows the existing pattern used for `kValue` / `relcaimerSaturationMultiplier` (`proportion.go`): a new `proportion` plugin argument, single flag controlling both the reclaim strategy (§5) and the phase-1 fairshare calculation change (§4).
 
@@ -64,9 +95,5 @@ No code change. Consolidation (`pkg/scheduler/actions/consolidation/`) doesn't c
 - **Non-preemptible**: The weakness of the new approach layes in non-preemptable workloads. Now there is an incentive for the user to fill it's quota with Non-preemtible workloads.
 
 ---
-
-1- For queue order/ job order, the 4 stages needs to be reflected - first allocate from high priority queue deserved, the low priority queue deserved, then high priority queue overquota, then the low priority queue overquota.
-2- No need for fairshare changes
-3- Be more presice in the doc
 
 *End of document*
