@@ -321,7 +321,7 @@ func (c *ClusterInfo) snapshotPodGroups(
 
 	result := map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{}
 	for _, podGroup := range podGroups {
-		podGroupID := common_info.PodGroupID(podGroup.Name)
+		podGroupID := common_info.NewPodGroupID(podGroup.Namespace, podGroup.Name)
 		podGroupInfo := podgroup_info.NewPodGroupInfo(podGroupID)
 
 		if _, found := existingQueues[common_info.QueueID(podGroup.Spec.Queue)]; !found {
@@ -339,7 +339,7 @@ func (c *ClusterInfo) snapshotPodGroups(
 			podGroupInfo.Preemptibility)
 
 		c.setPodGroupWithIndex(podGroup, podGroupInfo)
-		rawPods, err := c.dataLister.ListPodByIndex(podByPodGroupIndexerName, podGroup.Name)
+		rawPods, err := c.dataLister.ListPodByIndex(podByPodGroupIndexerName, string(podGroupID))
 		if err != nil {
 			log.InfraLogger.Errorf("failed to get indexed pods: %s", err)
 			return nil, err
@@ -350,9 +350,11 @@ func (c *ClusterInfo) snapshotPodGroups(
 				log.InfraLogger.Errorf("Snapshot podGroups: Error getting pod from rawPod: %c", rawPod)
 			}
 			podInfo := c.getPodInfo(pod, existingPods)
+			podInfo.Job = podGroupID
 			podGroupInfo.AddTaskInfo(podInfo)
 		}
-		result[common_info.PodGroupID(podGroup.Name)] = podGroupInfo
+
+		result[podGroupID] = podGroupInfo
 	}
 
 	return result, nil
