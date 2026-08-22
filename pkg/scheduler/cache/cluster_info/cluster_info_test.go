@@ -1120,8 +1120,9 @@ func TestSnapshotPodGroups(t *testing.T) {
 			objs: []runtime.Object{
 				&enginev2alpha2.PodGroup{
 					ObjectMeta: metav1.ObjectMeta{
-						Name: "podGroup-0",
-						UID:  "ABC",
+						Namespace: testNamespace,
+						Name:      "podGroup-0",
+						UID:       "ABC",
 					},
 					Spec: enginev2alpha2.PodGroupSpec{
 						Queue:     "queue-0",
@@ -1191,8 +1192,9 @@ func TestSnapshotPodGroups(t *testing.T) {
 					subGroup1.AssignTask(&pod_info.PodInfo{UID: "pod-2", SubGroupName: "SubGroup-1"})
 
 					return &podgroup_info.PodGroupInfo{
-						Name:  "podGroup-0",
-						Queue: "queue-0",
+						Namespace: testNamespace,
+						Name:      "podGroup-0",
+						Queue:     "queue-0",
 						SubGroups: map[string]*podgroup_info.SubGroupInfo{
 							"SubGroup-0": subGroup0,
 							"SubGroup-1": subGroup1,
@@ -1222,7 +1224,8 @@ func TestSnapshotPodGroups(t *testing.T) {
 
 		assert.Equal(t, len(test.results), len(podGroups))
 		for _, expected := range test.results {
-			pg, found := podGroups[common_info.PodGroupID(expected.Name)]
+			podGroupID := common_info.NewPodGroupID(expected.Namespace, expected.Name)
+			pg, found := podGroups[podGroupID]
 			assert.True(t, found, "PodGroup not found", expected.Name)
 
 			assert.Equal(t, expected.Name, pg.Name)
@@ -1249,6 +1252,58 @@ func TestSnapshotPodGroups(t *testing.T) {
 	}
 }
 
+func TestSnapshotPodGroupsWithSameNameInDifferentNamespaces(t *testing.T) {
+	const podGroupName = "shared-name"
+	namespaces := []string{"live", "shadow"}
+
+	podGroups := make([]runtime.Object, 0, len(namespaces))
+	pods := make([]runtime.Object, 0, len(namespaces))
+	for _, namespace := range namespaces {
+		podGroups = append(podGroups, &enginev2alpha2.PodGroup{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: namespace,
+				Name:      podGroupName,
+				UID:       types.UID(namespace + "-podgroup"),
+			},
+			Spec: enginev2alpha2.PodGroupSpec{Queue: "queue-0"},
+		})
+		pods = append(pods, &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: namespace,
+				Name:      namespace + "-pod",
+				UID:       types.UID(namespace + "-pod"),
+				Annotations: map[string]string{
+					commonconstants.PodGroupAnnotationForPod: podGroupName,
+				},
+			},
+		})
+	}
+
+	clusterInfo := newClusterInfoTests(t, clusterInfoTestParams{
+		kubeObjects:         pods,
+		kaiSchedulerObjects: podGroups,
+	})
+	result, err := clusterInfo.snapshotPodGroups(
+		map[common_info.QueueID]*queue_info.QueueInfo{"queue-0": {Name: "queue-0"}},
+		map[common_info.PodID]*pod_info.PodInfo{},
+	)
+	assert.NoError(t, err)
+	assert.Len(t, result, len(namespaces))
+
+	for _, namespace := range namespaces {
+		podGroupID := common_info.NewPodGroupID(namespace, podGroupName)
+		podGroup, found := result[podGroupID]
+		if !assert.True(t, found, "PodGroup not found: %s", podGroupID) {
+			continue
+		}
+		assert.Equal(t, namespace, podGroup.Namespace)
+		assert.Len(t, podGroup.GetAllPodsMap(), 1)
+		for _, pod := range podGroup.GetAllPodsMap() {
+			assert.Equal(t, namespace, pod.Namespace)
+			assert.Equal(t, podGroupID, pod.Job)
+		}
+	}
+}
 func TestSnapshotQueues(t *testing.T) {
 	objs := []runtime.Object{
 		&enginev2.Queue{
@@ -1908,8 +1963,9 @@ func TestNotSchedulingPodWithTerminatingPVC(t *testing.T) {
 		},
 		&enginev2alpha2.PodGroup{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "podGroup-0",
-				UID:  "ABC",
+				Namespace: "test",
+				Name:      "podGroup-0",
+				UID:       "ABC",
 			},
 			Spec: enginev2alpha2.PodGroupSpec{
 				Queue: "queue-0",
@@ -1927,7 +1983,8 @@ func TestNotSchedulingPodWithTerminatingPVC(t *testing.T) {
 	snapshot, err := clusterInfo.Snapshot()
 	assert.Equal(t, nil, err)
 	node := snapshot.Nodes["node-1"]
-	task := snapshot.PodGroupInfos["podGroup-0"].GetAllPodsMap()["pod-1"]
+	podGroupID := common_info.NewPodGroupID("test", "podGroup-0")
+	task := snapshot.PodGroupInfos[podGroupID].GetAllPodsMap()["pod-1"]
 	assert.Equal(t, node.IsTaskAllocatable(task), false)
 
 	pvc.OwnerReferences = nil
@@ -1942,9 +1999,8 @@ func TestNotSchedulingPodWithTerminatingPVC(t *testing.T) {
 	snapshot, err = clusterInfo.Snapshot()
 	assert.Equal(t, nil, err)
 	node = snapshot.Nodes["node-1"]
-	task = snapshot.PodGroupInfos["podGroup-0"].GetAllPodsMap()["pod-1"]
-	assert.Equal(t, node.IsTaskAllocatable(task), true)
-
+	task = snapshot.PodGroupInfos[podGroupID].GetAllPodsMap()["pod-1"]
+	assert.Equal(t, node.IsTaskAllocatable(task), true, "Expected task to be allocatable, but got %v", node.IsTaskAllocatable(task))
 }
 
 func createFakePodGroup(name string, schedulingBackoff *int32, nodePoolName string,
