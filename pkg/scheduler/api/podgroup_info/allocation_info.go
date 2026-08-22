@@ -118,8 +118,11 @@ func collectTasksFromPodSet(ps *subgroup_info.PodSet, taskOrderFn common_info.Le
 	if taskPriorityQueue.Empty() {
 		return nil
 	}
-	maxNumOfTasksToAllocate := getNumTasksToAllocate(ps, isRealAllocation)
-	return getTasksFromQueue(taskPriorityQueue, maxNumOfTasksToAllocate)
+	numTasksToAllocate := getNumTasksToAllocate(ps, isRealAllocation)
+	if ps.GetNumActiveAllocatedTasks() < int(ps.GetMinAvailable()) && taskPriorityQueue.Len() < numTasksToAllocate {
+		return nil
+	}
+	return getTasksFromQueue(taskPriorityQueue, numTasksToAllocate)
 }
 
 func GetTasksToAllocateRequestedGPUs(

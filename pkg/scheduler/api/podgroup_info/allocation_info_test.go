@@ -92,6 +92,43 @@ func Test_GetTasksToAllocate(t *testing.T) {
 			wantNumTasks: 2,
 		},
 		{
+			name: "pending tasks below minAvailable",
+			subGroupTasks: map[string][]*pod_info.PodInfo{
+				"subGroup2": {
+					simpleTask("task1", "subGroup2", pod_status.Pending),
+				},
+			},
+			minAvailMap:  map[string]int32{"subGroup2": 2},
+			wantTasks:    []string{},
+			wantNumTasks: 0,
+		},
+		{
+			name: "three pending tasks below minAvailable four",
+			subGroupTasks: map[string][]*pod_info.PodInfo{
+				"subGroup4": {
+					simpleTask("task1", "subGroup4", pod_status.Pending),
+					simpleTask("task2", "subGroup4", pod_status.Pending),
+					simpleTask("task3", "subGroup4", pod_status.Pending),
+				},
+			},
+			minAvailMap:  map[string]int32{"subGroup4": 4},
+			wantTasks:    []string{},
+			wantNumTasks: 0,
+		},
+		{
+			name: "pending tasks below remaining minAvailable",
+			subGroupTasks: map[string][]*pod_info.PodInfo{
+				"subGroup4": {
+					simpleTask("task1", "subGroup4", pod_status.Allocated),
+					simpleTask("task2", "subGroup4", pod_status.Allocated),
+					simpleTask("task3", "subGroup4", pod_status.Pending),
+				},
+			},
+			minAvailMap:  map[string]int32{"subGroup4": 4},
+			wantTasks:    []string{},
+			wantNumTasks: 0,
+		},
+		{
 			name: "one allocated and one pending",
 			subGroupTasks: map[string][]*pod_info.PodInfo{
 				"subGroup3": {
