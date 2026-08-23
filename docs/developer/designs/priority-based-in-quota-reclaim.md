@@ -32,6 +32,10 @@ In this viewpoint, the desired allocation order is:
 2. Low-priority queue, in quota
 3. Regular over quota fairness
 
+### 2.1 Is proper quota split enough?
+
+Under ideal circumstances, if the sum of all the quotas would have been lower then the capacity, to satisfy any on the queues quota we would need to preempt only over-quota resources.  The scenario becomes more relevant when the reclaimer has additional constraints (for example, topology requirements) that block the use of other resources (over-quota or free nodes) in the cluster.
+
 
 ## 3. Reclaim Rules
 
