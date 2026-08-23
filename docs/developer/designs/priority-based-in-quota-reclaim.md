@@ -1,6 +1,6 @@
 # Priority-Based In-Quota Reclaim
 
-*Status: Draft*
+This feature will be implemented as alpha for v0.18.
 
 ## 1. Background
 
@@ -96,7 +96,3 @@ No code change. Consolidation (`pkg/scheduler/actions/consolidation/`) doesn't c
 
 ## 7. Edge Cases & Risks
 - **Non-preemptible**: The weakness of the new approach layes in non-preemptable workloads. Now there is an incentive for the user to fill it's quota with Non-preemtible workloads.
-
----
-
-*End of document*
