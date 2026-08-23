@@ -30,8 +30,7 @@ In this viewpoint, the desired allocation order is:
 
 1. High-priority queue, in quota
 2. Low-priority queue, in quota
-3. High-priority queue, over quota
-4. Low-priority queue, over quota
+3. Regular over quota fairness
 
 
 ## 3. Reclaim Rules
@@ -49,7 +48,7 @@ victim task is preemptible (already enforced upstream by both actions)
 
 ## 4. No Reclaim Loops
 
-A reclaim of a `InQuotaQueuePriorityStrategy` will happen only for a reclaimer that fits into the quota of the higher priority queue. This means that if a reclaim will happen, the higher queue will be in quota. Because all of the reclaimees of `InQuotaQueuePriorityStrategy` are from a queue with lower priority. The reclaimees won't be allegeable for a "back" reclaim for either `MaintainFairShareStrategy` or `GuaranteeDeservedQuotaStrategy` because the higher priority queue is in quota, and they won't be allegeable for `InQuotaQueuePriorityStrategy` bevause they come from a queue with lower priority.
+A reclaim of a `InQuotaQueuePriorityStrategy` will happen only for a reclaimer that fits into the quota of the higher priority queue. This means that if a reclaim will happen, the higher queue will be in quota. Because all of the reclaimees of `InQuotaQueuePriorityStrategy` are from a queue with lower priority. The reclaimees won't be allegeable for a "back" reclaim for either `MaintainFairShareStrategy` or `GuaranteeDeservedQuotaStrategy` because the higher priority queue is in quota, and they won't be allegeable for `InQuotaQueuePriorityStrategy` because they come from a queue with lower priority.
 
 ## 5. Hierarchy Scoping
 
@@ -69,7 +68,7 @@ The proportion plugin’s current queue order is:
 7. Prefer smaller allocatable share.
 8. Tie-break by earlier queue creation time.
 
-As I said before, the desired allocation priority is: high-priority in-quota, low-priority in-quota, high-priority over-quota, low-priority over-quota. 
+As I said before, the desired allocation priority is: high-priority in-quota, low-priority in-quota, regular over quota fairness. 
 The suggested change is:
 
 Apply the change only if the `InQuotaQueuePriorityStrategy` is enabled.
