@@ -46,7 +46,7 @@ spec:
       containers:
         - name: deleter
           image: "{{ .Values.global.registry }}/{{ .Values.postCleanup.image.name }}:{{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.postCleanup.image.tag) }}"
-          imagePullPolicy: {{ .Values.postCleanup.image.pullPolicy }}
+          imagePullPolicy: {{ .Values.postCleanup.image.pullPolicy | default .Values.global.imagePullPolicy }}
           {{- with .Values.postCleanup.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
