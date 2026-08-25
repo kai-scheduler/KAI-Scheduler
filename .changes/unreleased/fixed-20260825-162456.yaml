@@ -1,0 +1,3 @@
+kind: Fixed
+body: |-
+  DRA allocator now honors PartitionableDevices/ConsumableCapacity feature gates instead of hardcoded empty Features
