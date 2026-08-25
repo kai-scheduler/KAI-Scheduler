@@ -25,14 +25,26 @@ argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
 
 {{/*
 Resolves a component image tag: explicit tag, then global.tag, then the chart
-version. When global.fipsMode is "on", appends "-fips" to whatever tag resolves so
-the FIPS image variants are used. Usage:
+version. When global.fipsMode is "on" or "only", appends "-fips" to whatever tag
+resolves so the FIPS image variants are used. Usage:
   {{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.<svc>.image.tag) }}
 */}}
 {{- define "kai-scheduler.imageTag" -}}
 {{- $tag := .tag | default .root.Values.global.tag | default .root.Chart.AppVersion -}}
-{{- if eq .root.Values.global.fipsMode "on" -}}{{- $tag = printf "%s-fips" $tag -}}{{- end -}}
+{{- if ne .root.Values.global.fipsMode "off" -}}{{- $tag = printf "%s-fips" $tag -}}{{- end -}}
 {{- $tag -}}
+{{- end -}}
+
+{{/*
+Renders the GODEBUG env entry that forces FIPS 140-3 mode at runtime. Only set
+when global.fipsMode is "only" - see docs/fips/README.md for the runtime panic
+risk this carries. Usage: {{- include "kai-scheduler.fipsOnlyEnv" . }}
+*/}}
+{{- define "kai-scheduler.fipsOnlyEnv" -}}
+{{- if eq .Values.global.fipsMode "only" }}
+- name: GODEBUG
+  value: fips140=only
+{{- end -}}
 {{- end -}}
 
 {{/*
@@ -71,6 +83,9 @@ spec:
     {{- end }}
     {{- if .Values.global.jsonLog }}
     jsonLog: true
+    {{- end }}
+    {{- if eq .Values.global.fipsMode "only" }}
+    fipsOnly: true
     {{- end }}
     {{- if .Values.global.affinity }}
     affinity:

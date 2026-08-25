@@ -42,10 +42,10 @@ func (e *NumaPlacementExporter) daemonSetForKAIConfig(
 
 	container := &ds.Spec.Template.Spec.Containers[0]
 	container.Args = buildArgsList(config)
-	container.Env = []v1.EnvVar{{
+	container.Env = append(container.Env, v1.EnvVar{
 		Name:      "NODE_NAME",
 		ValueFrom: &v1.EnvVarSource{FieldRef: &v1.ObjectFieldSelector{FieldPath: "spec.nodeName"}},
-	}}
+	})
 	// The kubelet podresources socket and its parent directory are root-owned; read as root.
 	container.SecurityContext = &v1.SecurityContext{
 		RunAsUser:    ptr.To(int64(0)),

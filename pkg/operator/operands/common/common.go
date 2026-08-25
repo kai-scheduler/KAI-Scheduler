@@ -181,6 +181,7 @@ func DeploymentForKAIConfig(
 			ImagePullPolicy: *service.Image.PullPolicy,
 			Resources:       v1.ResourceRequirements(*service.Resources),
 			SecurityContext: kaiConfig.Spec.Global.GetSecurityContext(),
+			Env:             FIPSOnlyEnv(kaiConfig.Spec.Global),
 		},
 	}
 
@@ -233,12 +234,23 @@ func DaemonSetForKAIConfig(
 			ImagePullPolicy: *service.Image.PullPolicy,
 			Resources:       v1.ResourceRequirements(*service.Resources),
 			SecurityContext: kaiConfig.Spec.Global.GetSecurityContext(),
+			Env:             FIPSOnlyEnv(kaiConfig.Spec.Global),
 		},
 	}
 
 	ds.Spec.Template.Spec.ImagePullSecrets = kaiConfigUtils.GetGlobalImagePullSecrets(kaiConfig.Spec.Global)
 
 	return ds, nil
+}
+
+// FIPSOnlyEnv returns the GODEBUG env var that forces FIPS 140-3 mode at runtime when
+// global.FIPSOnly is set, or nil otherwise. See GlobalConfig.FIPSOnly for the runtime panic
+// risk this carries.
+func FIPSOnlyEnv(global *kaiv1.GlobalConfig) []v1.EnvVar {
+	if global == nil || !ptr.Deref(global.FIPSOnly, false) {
+		return nil
+	}
+	return []v1.EnvVar{{Name: "GODEBUG", Value: "fips140=only"}}
 }
 
 func ShouldCreatePodDisruptionBudget(replicas *int32, service *kaiv1common.Service) bool {

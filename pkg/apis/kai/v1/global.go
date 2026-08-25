@@ -89,6 +89,13 @@ type GlobalConfig struct {
 	// JSONLog switches all services to JSON-formatted logging
 	// +kubebuilder:validation:Optional
 	JSONLog *bool `json:"jsonLog,omitempty"`
+
+	// FIPSOnly sets GODEBUG=fips140=only on every KAI container, enforcing FIPS 140-3 mode
+	// at runtime instead of just using FIPS-built images. This can panic at runtime if any
+	// non-approved cryptographic algorithm is used - see
+	// https://go.dev/doc/security/fips140#the-fips140-godebug-option.
+	// +kubebuilder:validation:Optional
+	FIPSOnly *bool `json:"fipsOnly,omitempty"`
 }
 
 func (g *GlobalConfig) SetDefaultWhereNeeded() {
@@ -135,6 +142,7 @@ func (g *GlobalConfig) SetDefaultWhereNeeded() {
 
 	g.RequireDefaultPodAntiAffinityTerm = common.SetDefault(g.RequireDefaultPodAntiAffinityTerm, ptr.To(false))
 	g.JSONLog = common.SetDefault(g.JSONLog, ptr.To(false))
+	g.FIPSOnly = common.SetDefault(g.FIPSOnly, ptr.To(false))
 	g.PriorityClassName = common.SetDefault(g.PriorityClassName, ptr.To(""))
 
 	if g.VPA == nil {

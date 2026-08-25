@@ -1,7 +1,7 @@
 # Copyright 2026 NVIDIA CORPORATION
 # SPDX-License-Identifier: Apache-2.0
 
-suite: test global.fipsMode image tag suffix
+suite: test global.fipsMode image tag suffix and GODEBUG injection
 
 set:
   kaiConfigDeployer:
@@ -63,6 +63,18 @@ tests:
           path: spec.template.spec.containers[0].image
           value: registry/local/kai-scheduler/crd-upgrader:0.0.0-fips
         template: hooks/pre/crd-upgrader.yaml
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: GODEBUG
+            value: fips140=only
+        template: services/operator.yaml
+        documentSelector:
+          path: kind
+          value: Deployment
+      - notExists:
+          path: spec.global.fipsOnly
+        template: kai-config.yaml
 
   - it: should suffix explicit per-service and global tags when global.fipsMode is on
     set:
@@ -78,3 +90,42 @@ tests:
           path: spec.binder.service.image.tag
           value: v1.2.3-fips
         template: kai-config.yaml
+
+  - it: should suffix image tags and set GODEBUG=fips140=only when global.fipsMode is only
+    set:
+      global.fipsMode: "only"
+    asserts:
+      - equal:
+          path: spec.scheduler.service.image.tag
+          value: 0.0.0-fips
+        template: kai-config.yaml
+      - equal:
+          path: spec.global.fipsOnly
+          value: true
+        template: kai-config.yaml
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: registry/local/kai-scheduler/operator:0.0.0-fips
+        template: services/operator.yaml
+        documentSelector:
+          path: kind
+          value: Deployment
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: GODEBUG
+            value: fips140=only
+        template: services/operator.yaml
+        documentSelector:
+          path: kind
+          value: Deployment
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: registry/local/kai-scheduler/crd-upgrader:0.0.0-fips
+        template: hooks/pre/crd-upgrader.yaml
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: GODEBUG
+            value: fips140=only
+        template: hooks/pre/crd-upgrader.yaml
