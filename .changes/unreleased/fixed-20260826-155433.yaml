@@ -1,0 +1,3 @@
+kind: Fixed
+body: |-
+  Add resource-reservation service account to OpenShift SecurityContextConstraints
