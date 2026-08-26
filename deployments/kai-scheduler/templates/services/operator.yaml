@@ -53,6 +53,7 @@ spec:
           value: {{ .Values.global.registry }}
         - name: MS_TAG
           value: {{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.operator.image.tag) }}
+        {{- include "kai-scheduler.fipsOnlyEnv" . | nindent 8 }}
         ports:
         - containerPort: 8080
           name: metrics

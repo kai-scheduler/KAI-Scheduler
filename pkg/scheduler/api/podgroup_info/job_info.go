@@ -93,6 +93,7 @@ type PodGroupInfo struct {
 	tasksToAllocateInitResourceVector resource_info.ResourceVector
 	PodStatusIndex                    map[pod_status.PodStatus]pod_info.PodsMap
 	activeAllocatedCount              *int
+	aliveTasksRequestedGPUs           *float64
 }
 
 func NewPodGroupInfo(uid common_info.PodGroupID, tasks ...*pod_info.PodInfo) *PodGroupInfo {
@@ -365,6 +366,7 @@ func (pgi *PodGroupInfo) invalidateTasksCache() {
 	pgi.allPodsMap = nil
 	pgi.tasksToAllocate = nil
 	pgi.tasksToAllocateInitResourceVector = nil
+	pgi.aliveTasksRequestedGPUs = nil
 }
 
 func (pgi *PodGroupInfo) GetActiveAllocatedTasksCount() int {
@@ -456,14 +458,16 @@ func (pgi *PodGroupInfo) GetNumGatedTasks() int {
 }
 
 func (pgi *PodGroupInfo) GetAliveTasksRequestedGPUs() float64 {
-	tasksTotalRequestedGPUs := float64(0)
-	for _, task := range pgi.GetAllPodsMap() {
-		if pod_status.IsAliveStatus(task.Status) {
-			tasksTotalRequestedGPUs += task.ResReqVector.Get(resource_info.GPUIndex)
+	if pgi.aliveTasksRequestedGPUs == nil {
+		tasksTotalRequestedGPUs := float64(0)
+		for _, task := range pgi.GetAllPodsMap() {
+			if pod_status.IsAliveStatus(task.Status) {
+				tasksTotalRequestedGPUs += task.ResReqVector.Get(resource_info.GPUIndex)
+			}
 		}
+		pgi.aliveTasksRequestedGPUs = ptr.To(tasksTotalRequestedGPUs)
 	}
-
-	return tasksTotalRequestedGPUs
+	return *pgi.aliveTasksRequestedGPUs
 }
 
 func (pgi *PodGroupInfo) GetTasksActiveAllocatedReqResourceVector() resource_info.ResourceVector {

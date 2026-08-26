@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Scheduler and binder now fail fast when Kubernetes API discovery fails at startup, instead of silently disabling dynamic resource allocation and node resource topology for the lifetime of the process.
+custom:
+  Issue: "2038"
+  Author: hcnguyen-ai

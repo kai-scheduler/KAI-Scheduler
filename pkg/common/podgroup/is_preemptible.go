@@ -1,7 +1,7 @@
 // Copyright 2025 NVIDIA CORPORATION
 // SPDX-License-Identifier: Apache-2.0
 
-package pod_group
+package podgroup
 
 import (
 	"context"
@@ -16,7 +16,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
-	pg "github.com/kai-scheduler/KAI-scheduler/pkg/common/podgroup"
 )
 
 func IsPreemptible(ctx context.Context, podGroup *v2alpha2.PodGroup, kubeClient client.Client) (bool, error) {
@@ -24,7 +23,7 @@ func IsPreemptible(ctx context.Context, podGroup *v2alpha2.PodGroup, kubeClient 
 	if err != nil {
 		return false, fmt.Errorf("failed to determine podgroup's priority: %w", err)
 	}
-	preemptability := pg.CalculatePreemptibility(podGroup.Spec.Preemptibility, priority)
+	preemptability := CalculatePreemptibility(podGroup.Spec.Preemptibility, priority)
 
 	return preemptability == v2alpha2.Preemptible, nil
 }

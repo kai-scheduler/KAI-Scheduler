@@ -45,6 +45,10 @@ spec:
         resources:
           {{- toYaml . | nindent 10 }}
         {{- end }}
+        {{- if eq .Values.global.fipsMode "only" }}
+        env:
+        {{- include "kai-scheduler.fipsOnlyEnv" . | nindent 8 }}
+        {{- end }}
         {{- if (include "kai-scheduler.openshift" .) }}
         securityContext:
           runAsUser: 10000

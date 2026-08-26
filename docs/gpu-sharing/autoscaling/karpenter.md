@@ -11,7 +11,7 @@ When GPU-sharing pods are unschedulable, KAI's `node-scale-adjuster` creates tem
 ## Gpu Fractional Pods
 
 For fractional GPU workloads, KAI creates GPU reservation pods in the `kai-resource-reservation` namespace.
-These reservation pods have a normal `nvidia.com/gpu` request and are used by KAI to "reserve" gpus consumed by the fractional pods. They perevent double-booking of gpu devices. KAI annotates these reservation pods with Karpenter's `karpenter.sh/do-not-disrupt` annotation.
+These reservation pods have a normal `nvidia.com/gpu` request and are used by KAI to "reserve" GPUs consumed by the fractional pods. They prevent double-booking of GPU devices. KAI annotates these reservation pods with Karpenter's `karpenter.sh/do-not-disrupt` annotation.
 
 The annotation prevents Karpenter from disrupting nodes that host those pods in most voluntary disruption flows.
 Karpenter's disruption documentation states that pods that cannot be evicted cause Karpenter to ignore the node and try later during candidate selection.
