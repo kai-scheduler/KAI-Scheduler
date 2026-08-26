@@ -87,7 +87,6 @@ Compare if `allocated + job <= deserved` for both queues.
 Follows the existing pattern used for `kValue` / `relcaimerSaturationMultiplier` (`proportion.go`): a new `proportion` plugin argument, single flag controlling both the reclaim strategy (§5) and the phase-1 fairshare calculation change (§4).
 
 - Argument name: `queuePriorityInQuotaReclaim` (bool, default `false`).
-- Parsed in `proportion.go` alongside existing arguments, threaded into both `resource_division.SetResourcesShare` (as `priorityOrdered`, §4) and `reclaimable.New(saturationMultiplier, priorityInQuotaReclaim)` (§5).
 - Set per scheduling shard via `SchedulingShardSpec.Plugins["proportion"].Arguments` (`pkg/apis/kai/v1/schedulingshard_types.go`) — no CRD schema change needed, consistent with `docs/developer/designs/scheduler-config-customization.md`.
 
 ## 7. Consolidation
