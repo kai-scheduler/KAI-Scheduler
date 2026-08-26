@@ -29,6 +29,10 @@ func (r *Reclaimable) FilterVictim(
 		return strategies.FitsMaintainFairShare(reclaimeeQueue, reclaimeeQueue.GetAllocatedShare())
 	}
 
+	if r.queuePriorityInQuotaReclaim && reclaimerQueue.Priority > reclaimeeQueue.Priority {
+		return true
+	}
+
 	return canBeDeservedQuotaReclaimCandidate(reclaimer, reclaimeeQueue)
 }
 

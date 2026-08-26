@@ -1,0 +1,3 @@
+kind: Added
+body: |-
+  Add queuePriorityInQuotaReclaim strategy for reclaim. If it's enabled (off by default) higher priority queues can reclaim in-quota resources from lower priority queues.
