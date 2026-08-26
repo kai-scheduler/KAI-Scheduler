@@ -93,10 +93,20 @@ pluginArguments:
 
 ### Priority-Based In-Quota Reclaim
 
-Opt in to letting a strictly higher priority queue reclaim in-quota resources from a strictly lower priority queue, using `queuePriorityInQuotaReclaim`:
+Opt in to letting a strictly higher priority queue reclaim in-quota resources from a strictly lower priority queue, using `queuePriorityInQuotaReclaim`. This is a `proportion` plugin argument, set on the `SchedulingShard` this applies to (see [Scheduler Config Customization](../operator/scheduler-config-customization.md)):
 
 ```yaml
+# SchedulingShard
 spec:
+  plugins:
+    proportion:
+      arguments:
+        queuePriorityInQuotaReclaim: "true"
+```
+
+```yaml
+# Helm values — templated into the default SchedulingShard's spec.plugins
+scheduler:
   plugins:
     proportion:
       arguments:

@@ -106,11 +106,13 @@ For reclaim to occur:
 
 ### The Quota Protection Guarantee
 
-**In-quota resources are protected from reclamation by default.** The scheduler enforces two strategies:
+**In-quota resources are protected from reclamation by default.** The scheduler always enforces two strategies:
 - **MaintainFairShare**: the victim's queue must be above its allocatable fair-share
 - **GuaranteeDeservedQuota**: the reclaimer must be under its deserved quota, AND the victim's queue must be over its deserved quota
 
 This means a queue using only its guaranteed resources will **never** have workloads reclaimed, regardless of what other queues need — as long as this default behavior is in effect.
+
+There is an optional reclaim strategy, which relaxes this guarantee: **queuePriorityInQuotaReclaim**.
 
 #### Opt-in: priority-based in-quota reclaim
 
