@@ -60,11 +60,6 @@ func (p *GPUSharing) PreBind(
 		return fmt.Errorf("failed to get fraction container ref: %w", err)
 	}
 
-	err = p.createDirectEnvMapIfMissing(ctx, pod, containerRef)
-	if err != nil {
-		return fmt.Errorf("failed to create env configmap: %w", err)
-	}
-
 	nVisibleDevicesStr := strings.Join(reservedGPUIds, ",")
 
 	if common.NvidiaVisibleDevicesViaConfigMapRef(containerRef.Container) {
@@ -72,27 +67,7 @@ func (p *GPUSharing) PreBind(
 	}
 
 	// Backward compat: NVIDIA_VISIBLE_DEVICES is served via envFrom from the direct env vars ConfigMap.
-	capabilitiesConfigMapName, err := gpusharingconfigmap.ExtractCapabilitiesConfigMapName(pod, containerRef)
-	if err != nil {
-		return fmt.Errorf("failed to get capabilities configmap name: %w", err)
-	}
-	if err = gpusharingconfigmap.UpsertJobConfigMap(ctx, p.kubeClient, pod, capabilitiesConfigMapName, map[string]string{}); err != nil {
-		return fmt.Errorf("failed to create capabilities configmap: %w", err)
-	}
-	if err = common.SetNvidiaVisibleDevices(ctx, p.kubeClient, pod, containerRef, nVisibleDevicesStr); err != nil {
-		return err
-	}
-	return common.SetGPUPortion(ctx, p.kubeClient, pod, containerRef, bindRequest.Spec.ReceivedGPU.Portion)
-}
-
-func (p *GPUSharing) createDirectEnvMapIfMissing(ctx context.Context, pod *v1.Pod,
-	containerRef *gpusharingconfigmap.PodContainerRef) error {
-	directEnvVarsMapName, err := gpusharingconfigmap.ExtractDirectEnvVarsConfigMapName(pod, containerRef)
-	if err != nil {
-		return err
-	}
-	directEnvVars := make(map[string]string)
-	return gpusharingconfigmap.UpsertJobConfigMap(ctx, p.kubeClient, pod, directEnvVarsMapName, directEnvVars)
+	return common.UpsertBackwardCompatConfigMapData(ctx, p.kubeClient, pod, containerRef, nVisibleDevicesStr, bindRequest.Spec.ReceivedGPU.Portion)
 }
 
 func (p *GPUSharing) PostBind(
