@@ -4018,7 +4018,7 @@ spec:
                     type: array
                   fipsOnly:
                     description: |-
-                      FIPSOnly sets GODEBUG=fips140=on on every KAI container, enforcing FIPS 140-3 mode
+                      FIPSOnly sets GODEBUG=fips140=only on every KAI container, enforcing FIPS 140-3 mode
                       at runtime instead of just using FIPS-built images. This can panic at runtime if any
                       non-approved cryptographic algorithm is used - see
                       https://go.dev/doc/security/fips140#the-fips140-godebug-option. Enabling this is the

@@ -116,7 +116,7 @@ var _ = Describe("DaemonSetForKAIConfig", func() {
 		Expect(ds.Spec.Template.Spec.PriorityClassName).To(Equal("system-node-critical"))
 	})
 
-	It("sets GODEBUG=fips140=on when global.fipsOnly is enabled", func() {
+	It("sets GODEBUG=fips140=only when global.fipsOnly is enabled", func() {
 		config := &kaiv1.Config{Spec: kaiv1.ConfigSpec{Namespace: "kai-scheduler"}}
 		config.Spec.SetDefaultsWhereNeeded()
 		config.Spec.Global.FIPSOnly = ptr.To(true)
@@ -127,7 +127,7 @@ var _ = Describe("DaemonSetForKAIConfig", func() {
 		)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(ds.Spec.Template.Spec.Containers[0].Env).To(ContainElement(
-			v1.EnvVar{Name: "GODEBUG", Value: "fips140=on"},
+			v1.EnvVar{Name: "GODEBUG", Value: "fips140=only"},
 		))
 	})
 })
