@@ -1,0 +1,3 @@
+kind: Fixed
+body: |-
+  Disable TLS ML-KEM hybrid curve so fipsMode=only containers can complete TLS handshakes. See https://github.com/golang/go/issues/78298, https://github.com/kubernetes/kubernetes/issues/133743
