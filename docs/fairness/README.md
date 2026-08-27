@@ -118,7 +118,8 @@ scheduler:
 | `false` (default) | Only over-quota resources are ever reclaimed — the quota protection guarantee holds for every queue |
 | `true` | A queue can additionally reclaim in-quota resources from any strictly lower priority queue, provided the reclaimer stays within its own deserved quota |
 
-This is alpha functionality; enable it per scheduling shard only when queue `Priority` should outrank quota protection for lower-priority queues.
+This is alpha functionality, and the exact behavior of this feature might change in future releases. 
+Enable `queuePriorityInQuotaReclaim` per scheduling shard only when queue `Priority` should outrank quota protection for lower-priority queues.
 
 ## See Also
 
