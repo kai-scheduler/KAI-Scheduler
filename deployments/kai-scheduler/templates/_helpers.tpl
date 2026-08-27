@@ -38,12 +38,17 @@ resolves so the FIPS image variants are used. Usage:
 {{/*
 Renders the GODEBUG env entry that forces FIPS 140-3 mode at runtime. Only set
 when global.fipsMode is "only" - see docs/fips/README.md for the runtime panic
-risk this carries. Usage: {{- include "kai-scheduler.fipsOnlyEnv" . }}
+risk this carries. tlsmlkem=0 works around a crypto/tls gap where its default,
+FIPS-allowed X25519MLKEM768 curve preference internally calls the plain X25519
+primitive, which unconditionally errors under fips140=only - breaking every
+outbound TLS handshake unless the hybrid curve is disabled. See
+https://github.com/kubernetes/kubernetes/issues/133743.
+Usage: {{- include "kai-scheduler.fipsOnlyEnv" . }}
 */}}
 {{- define "kai-scheduler.fipsOnlyEnv" -}}
 {{- if eq .Values.global.fipsMode "only" }}
 - name: GODEBUG
-  value: fips140=only
+  value: fips140=only,tlsmlkem=0
 {{- end -}}
 {{- end -}}
 

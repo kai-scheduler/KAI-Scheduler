@@ -114,7 +114,7 @@ tests:
           path: spec.template.spec.containers[0].env
           content:
             name: GODEBUG
-            value: fips140=only
+            value: fips140=only,tlsmlkem=0
         template: services/operator.yaml
         documentSelector:
           path: kind
@@ -127,5 +127,5 @@ tests:
           path: spec.template.spec.containers[0].env
           content:
             name: GODEBUG
-            value: fips140=only
+            value: fips140=only,tlsmlkem=0
         template: hooks/pre/crd-upgrader.yaml

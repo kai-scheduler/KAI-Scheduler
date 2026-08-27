@@ -97,7 +97,7 @@ var _ = Describe("DeploymentForKAIConfig", func() {
 		)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(deployment.Spec.Template.Spec.Containers[0].Env).To(ContainElement(
-			v1.EnvVar{Name: "GODEBUG", Value: "fips140=only"},
+			v1.EnvVar{Name: "GODEBUG", Value: "fips140=only,tlsmlkem=0"},
 		))
 	})
 })
@@ -127,7 +127,7 @@ var _ = Describe("DaemonSetForKAIConfig", func() {
 		)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(ds.Spec.Template.Spec.Containers[0].Env).To(ContainElement(
-			v1.EnvVar{Name: "GODEBUG", Value: "fips140=only"},
+			v1.EnvVar{Name: "GODEBUG", Value: "fips140=only,tlsmlkem=0"},
 		))
 	})
 })
