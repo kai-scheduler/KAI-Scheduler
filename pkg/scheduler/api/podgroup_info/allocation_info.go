@@ -53,6 +53,10 @@ func collectTasksFromSubGroupSet(
 	sgs *subgroup_info.SubGroupSet, subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn,
 	isRealAllocation bool,
 ) []*pod_info.PodInfo {
+	if isRealAllocation && !sgs.IsReadyForScheduling() {
+		return nil
+	}
+
 	K := sgs.GetMinMembersToSatisfy()
 	children := sgs.GetMembers()
 	sort.Slice(children, func(i, j int) bool {
@@ -60,10 +64,15 @@ func collectTasksFromSubGroupSet(
 	})
 
 	if !sgs.IsMinRequirementSatisfied() {
-		// Get tasks from K most prioritized children, so sgs can satisfy its min requirement.
+		membersToCollect := K - sgs.GetNumActiveAllocatedDirectSubGroups()
 		var tasks []*pod_info.PodInfo
-		for i := 0; i < K && i < len(children); i++ {
-			tasks = append(tasks, collectFromChildInGangPhase(children[i], subGroupOrderFn, taskOrderFn, isRealAllocation)...)
+		for i := 0; i < len(children) && membersToCollect > 0; i++ {
+			childTasks := collectFromChildInGangPhase(children[i], subGroupOrderFn, taskOrderFn, isRealAllocation)
+			if len(childTasks) == 0 {
+				continue
+			}
+			tasks = append(tasks, childTasks...)
+			membersToCollect--
 		}
 		return tasks
 	}
@@ -119,7 +128,7 @@ func collectTasksFromPodSet(ps *subgroup_info.PodSet, taskOrderFn common_info.Le
 		return nil
 	}
 	numTasksToAllocate := getNumTasksToAllocate(ps, isRealAllocation)
-	if ps.GetNumActiveAllocatedTasks() < int(ps.GetMinAvailable()) && taskPriorityQueue.Len() < numTasksToAllocate {
+	if isRealAllocation && ps.GetNumActiveAllocatedTasks() < int(ps.GetMinAvailable()) && taskPriorityQueue.Len() < numTasksToAllocate {
 		return nil
 	}
 	return getTasksFromQueue(taskPriorityQueue, numTasksToAllocate)

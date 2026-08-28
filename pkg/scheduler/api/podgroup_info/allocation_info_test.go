@@ -129,6 +129,20 @@ func Test_GetTasksToAllocate(t *testing.T) {
 			wantNumTasks: 0,
 		},
 		{
+			name: "one pending task completes minAvailable",
+			subGroupTasks: map[string][]*pod_info.PodInfo{
+				"subGroup4": {
+					simpleTask("task1", "subGroup4", pod_status.Running),
+					simpleTask("task2", "subGroup4", pod_status.Running),
+					simpleTask("task3", "subGroup4", pod_status.Running),
+					simpleTask("task4", "subGroup4", pod_status.Pending),
+				},
+			},
+			minAvailMap:  map[string]int32{"subGroup4": 4},
+			wantTasks:    []string{"task4"},
+			wantNumTasks: 1,
+		},
+		{
 			name: "one allocated and one pending",
 			subGroupTasks: map[string][]*pod_info.PodInfo{
 				"subGroup3": {
@@ -254,6 +268,44 @@ func Test_GetTasksToAllocate(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func Test_GetTasksToAllocate_SkipsUnreadyChildInGangPhase(t *testing.T) {
+	pg := NewPodGroupInfo("pg")
+	root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+	minSubGroup := int32(1)
+	root.SetMinSubGroup(&minSubGroup)
+	pg.RootSubGroupSet = root
+	pg.PodSets = make(map[string]*subgroup_info.PodSet)
+
+	unreadyPodSet := subgroup_info.NewPodSet("a", 2, nil)
+	readyPodSet := subgroup_info.NewPodSet("b", 1, nil)
+	root.AddPodSet(unreadyPodSet)
+	root.AddPodSet(readyPodSet)
+	pg.PodSets[unreadyPodSet.GetName()] = unreadyPodSet
+	pg.PodSets[readyPodSet.GetName()] = readyPodSet
+	pg.AddTaskInfo(simpleTask("task-a", "a", pod_status.Pending))
+	pg.AddTaskInfo(simpleTask("task-b", "b", pod_status.Pending))
+
+	tasks := GetTasksToAllocate(pg, subGroupOrderFn, tasksOrderFn, true)
+	if len(tasks) != 1 || tasks[0].Pod.Name != "task-b" {
+		t.Fatalf("GetTasksToAllocate() = %v, want task-b", tasks)
+	}
+}
+
+func Test_GetTasksToAllocate_VirtualAllocationBelowMinAvailable(t *testing.T) {
+	pg := NewPodGroupInfo("pg")
+	pg.GetAllPodSets()[DefaultSubGroup].SetMinAvailable(4)
+	for i := 1; i <= 3; i++ {
+		task := simpleTask(fmt.Sprintf("task-%d", i), "", pod_status.Releasing)
+		task.IsVirtualStatus = true
+		pg.AddTaskInfo(task)
+	}
+
+	tasks := GetTasksToAllocate(pg, subGroupOrderFn, tasksOrderFn, false)
+	if len(tasks) != 3 {
+		t.Fatalf("GetTasksToAllocate() returned %d tasks, want 3", len(tasks))
 	}
 }
 
