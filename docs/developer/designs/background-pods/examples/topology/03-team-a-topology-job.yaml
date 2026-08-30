@@ -1,0 +1,49 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# team-a asks for 4 full nodes (4 x 8 GPUs = 32 GPUs, exactly its quota) and
+# prefers all pods inside a single rack.
+#
+# Each rack has only 2 fully-free nodes, because 2 nodes per rack hold a
+# background pod. Allocate runs before reclaim and finds a feasible placement
+# using the 4 fully-free nodes - 2 in each rack - so the job is admitted with a
+# split-rack placement and reclaim is never attempted.
+#
+# The optimal placement (evict 2 background pods in one rack, take all 4 nodes
+# there) is never explored.
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: team-a-topology
+  namespace: default
+  annotations:
+    kai.scheduler/batch-min-member: "4"
+    kai.scheduler/topology: "network"
+    # "rack" is the alias declared in 01-topology.yaml; the raw label
+    # "accelerator.nvidia.com/rack" works here too.
+    kai.scheduler/topology-preferred-placement: "rack"
+spec:
+  parallelism: 4
+  completions: 4
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        kai.scheduler/queue: team-a
+        app: user-workload
+    spec:
+      schedulerName: kai-scheduler
+      priorityClassName: train
+      restartPolicy: Never
+      containers:
+        - name: main
+          image: ubuntu
+          command: ["bash", "-c"]
+          args: ["trap 'exit 0' TERM; sleep infinity & wait"]
+          resources:
+            limits:
+              nvidia.com/gpu: "8"
+            requests:
+              cpu: 500m
+              memory: 512M
