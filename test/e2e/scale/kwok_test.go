@@ -5,7 +5,6 @@ package scale
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -32,7 +31,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/crd"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
-	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/testconfig"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/utils"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait/watcher"
@@ -330,35 +328,17 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 			})
 
 			It("schedules jobs with pending tasks in background", func(ctx context.Context) {
-				creationErrors := make(chan error, pendingBackgroundTasks)
-				var wg sync.WaitGroup
-				for range pendingBackgroundTasks {
-					wg.Add(1)
-					go func() {
-						defer wg.Done()
-						_, err := createJobObjectForKwok(
-							ctx, testCtx, noGPUQuotaQueue,
-							SingleGPURequirement, map[string]string{},
-						)
-						if err != nil {
-							creationErrors <- err
-						}
-					}()
+				submissions := make([]jobSubmission, pendingBackgroundTasks)
+				for i := range submissions {
+					submissions[i] = singleJobSubmissionForKwok(
+						testCtx, noGPUQuotaQueue, SingleGPURequirement, nil,
+					)
 				}
-				wg.Wait()
-				close(creationErrors)
-
-				var creationError error
-				for err := range creationErrors {
-					creationError = errors.Join(creationError, err)
-				}
-				Expect(creationError).NotTo(HaveOccurred(), "Failed to create some pending background jobs")
-
-				wait.ForAtLeastNPodCreation(ctx, testCtx.ControllerClient, metav1.LabelSelector{
-					MatchLabels: map[string]string{
-						testconfig.GetConfig().QueueLabelKey: noGPUQuotaQueue.Name,
-					},
-				}, pendingBackgroundTasks)
+				tracker, err := submitJobBatch(
+					ctx, testCtx, queue.GetConnectedNamespaceToQueue(noGPUQuotaQueue), submissions,
+				)
+				Expect(err).NotTo(HaveOccurred(), "Failed to create pending background Job batch")
+				defer tracker.Close()
 
 				basicScaleTest(
 					ctx, testCtx, fmt.Sprintf(
@@ -405,17 +385,9 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 						It("measure time for reclaim to fail on distributed job last pod", func(ctx context.Context) {
 							averageTimeToUnschedulable := measureUnschedulableDelayInSeconds(
 								ctx, testCtx, reclaimSingleGPUJobsQueue,
-								func(ctx context.Context, testCtx *testcontext.TestContext, queue *v2.Queue) (*rd.JobResult, error) {
-									return createDistributedJobForKwok(
-										ctx, testCtx, queue,
-										v1.ResourceRequirements{
-											Limits: map[v1.ResourceName]resource.Quantity{
-												constants.NvidiaGpuResource: *resource.NewQuantity(int64(gpusPerNode), resource.DecimalSI),
-											},
-										}, defaultPodsPerDistributedJob,
-										map[string]string{}, nil,
-									)
-								},
+								v1.ResourceRequirements{Limits: map[v1.ResourceName]resource.Quantity{
+									constants.NvidiaGpuResource: *resource.NewQuantity(int64(gpusPerNode), resource.DecimalSI),
+								}}, defaultPodsPerDistributedJob,
 							)
 							Expect(writeTestResults(
 								"Average time to unschedulable for distributed job", true,
