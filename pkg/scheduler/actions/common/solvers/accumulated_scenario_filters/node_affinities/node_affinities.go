@@ -13,6 +13,7 @@ import (
 	ksf "k8s.io/kube-scheduler/framework"
 	k8sframework "k8s.io/kubernetes/pkg/scheduler/framework"
 
+	inputfilters "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
@@ -26,11 +27,13 @@ const (
 )
 
 type NodeAffinitiesFilter struct {
-	allNodes           map[string]*v1.Node
-	allNodeInfos       map[string]*k8sframework.NodeInfo
-	feasibleNodes      map[string]*v1.Node
-	processedVictims   map[common_info.PodID]bool
-	nodeAffinityPlugin ksf.Plugin
+	allNodes               map[string]*v1.Node
+	allNodeInfos           map[string]*k8sframework.NodeInfo
+	feasibleNodes          map[string]*v1.Node
+	processedVictims       map[common_info.PodID]bool
+	recordedVictimsCursor  inputfilters.VictimTaskCursor
+	potentialVictimsCursor inputfilters.VictimTaskCursor
+	nodeAffinityPlugin     ksf.Plugin
 }
 
 func NewNodeAffinitiesFilter(
@@ -50,7 +53,7 @@ func NewNodeAffinitiesFilter(
 		nodeAffinityPlugin: session.Cache.InternalK8sPlugins().NodeAffinity,
 	}
 	nodeAffinitiesFilter.initNodeMaps(feasibleNodeInfos, session)
-	nodeAffinitiesFilter.updateStateWithScenario(scenario)
+	nodeAffinitiesFilter.updateStateWithScenario(inputfilters.NewFullScanScenarioInput(scenario))
 
 	return nodeAffinitiesFilter
 }
@@ -78,18 +81,23 @@ func (naf *NodeAffinitiesFilter) Name() string {
 	return nodeAffinitiesFilterName
 }
 
-func (naf *NodeAffinitiesFilter) Filter(scenario *scenario.ByNodeScenario) (bool, error) {
-	naf.updateStateWithScenario(scenario)
-	return naf.allPendingPodsHaveMatchingNodes(scenario), nil
+func (naf *NodeAffinitiesFilter) Filter(input inputfilters.AccumulatedScenarioInput) (bool, error) {
+	naf.updateStateWithScenario(input)
+	return naf.allPendingPodsHaveMatchingNodes(input.Scenario()), nil
 }
 
-func (naf *NodeAffinitiesFilter) updateStateWithScenario(scenario *scenario.ByNodeScenario) {
-	for _, task := range scenario.PotentialVictimsTasks() {
+func (naf *NodeAffinitiesFilter) updateStateWithScenario(input inputfilters.AccumulatedScenarioInput) {
+	potentialVictimsDelta := input.PotentialVictimsSince(naf.potentialVictimsCursor)
+	for _, task := range potentialVictimsDelta.Tasks {
 		naf.updateVictimNodesFromTask(task)
 	}
-	for _, task := range scenario.RecordedVictimsTasks() {
+	naf.potentialVictimsCursor = potentialVictimsDelta.Next
+
+	recordedVictimsDelta := input.RecordedVictimsSince(naf.recordedVictimsCursor)
+	for _, task := range recordedVictimsDelta.Tasks {
 		naf.updateVictimNodesFromTask(task)
 	}
+	naf.recordedVictimsCursor = recordedVictimsDelta.Next
 }
 
 func (naf *NodeAffinitiesFilter) updateVictimNodesFromTask(task *pod_info.PodInfo) {

@@ -21,6 +21,7 @@ import (
 	schedulingv2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
 	schedulingv2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
@@ -303,6 +304,39 @@ var _ = Describe("PodAccumulatedScenarioBuilder", func() {
 		})
 	})
 })
+
+func TestPodAccumulatedScenarioBuilderPassesMonotonicInputToFilters(t *testing.T) {
+	testScenario := scenario.NewByNodeScenario(nil, nil, nil, nil, nil)
+	filter := &recordingAccumulatedFilter{}
+	scenarioBuilder := &PodAccumulatedScenarioBuilder{
+		lastScenario:    testScenario,
+		scenarioFilters: []accumulated_scenario_filters.Interface{filter},
+	}
+
+	isValid, failedFilterName := scenarioBuilder.isScenarioValid()
+	if !isValid {
+		t.Fatalf("isScenarioValid() = false, failedFilterName = %q", failedFilterName)
+	}
+	if !filter.gotMonotonicInput {
+		t.Fatal("filter did not receive monotonic scenario input")
+	}
+}
+
+type recordingAccumulatedFilter struct {
+	gotMonotonicInput bool
+}
+
+func (filter *recordingAccumulatedFilter) Name() string {
+	return "recording"
+}
+
+func (filter *recordingAccumulatedFilter) Filter(
+	input accumulated_scenario_filters.AccumulatedScenarioInput,
+) (bool, error) {
+	delta := input.PotentialVictimsSince(accumulated_scenario_filters.VictimTaskCursor{})
+	filter.gotMonotonicInput = delta.Monotonic
+	return true, nil
+}
 
 func initializeSession(jobsCount, tasksPerJob int) (*framework.Session, []*pod_info.PodInfo) {
 	tasks := []*pod_info.PodInfo{}

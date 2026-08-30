@@ -6,6 +6,7 @@ package accumulated_scenario_filters
 import (
 	"sort"
 
+	inputfilters "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
@@ -39,7 +40,9 @@ type TopologyAwareIdleGpus struct {
 	domainsByConstraint map[constraintGroupKey][]TopologyDomainKey
 	// processedVictims tracks victim UIDs that have already had their freed GPUs applied to
 	// domainCapacity, preventing double-counting when the same victim appears across calls.
-	processedVictims map[common_info.PodID]bool
+	processedVictims       map[common_info.PodID]bool
+	recordedVictimsCursor  inputfilters.VictimTaskCursor
+	potentialVictimsCursor inputfilters.VictimTaskCursor
 }
 
 func NewTopologyAwareIdleGpusFilter(
@@ -66,17 +69,22 @@ func (taf *TopologyAwareIdleGpus) Name() string {
 	return topologyAwareIdleGpuFilterName
 }
 
-func (taf *TopologyAwareIdleGpus) Filter(scenario *scenario.ByNodeScenario) (bool, error) {
-	taf.updateDomainCapacityWithVictims(scenario)
+func (taf *TopologyAwareIdleGpus) Filter(input inputfilters.AccumulatedScenarioInput) (bool, error) {
+	taf.updateDomainCapacityWithVictims(input)
 	return taf.requiredTopologyCapacityExists(), nil
 }
 
 // updateDomainCapacityWithVictims updates domain capacities when new victims are added.
 // After each capacity increase it repositions the domain in the pre-sorted slice so the
 // slice stays ordered without a full re-sort.
-func (taf *TopologyAwareIdleGpus) updateDomainCapacityWithVictims(scenario *scenario.ByNodeScenario) {
-	taf.applyVictimTasks(scenario.RecordedVictimsTasks())
-	taf.applyVictimTasks(scenario.PotentialVictimsTasks())
+func (taf *TopologyAwareIdleGpus) updateDomainCapacityWithVictims(input inputfilters.AccumulatedScenarioInput) {
+	recordedVictimsDelta := input.RecordedVictimsSince(taf.recordedVictimsCursor)
+	taf.applyVictimTasks(recordedVictimsDelta.Tasks)
+	taf.recordedVictimsCursor = recordedVictimsDelta.Next
+
+	potentialVictimsDelta := input.PotentialVictimsSince(taf.potentialVictimsCursor)
+	taf.applyVictimTasks(potentialVictimsDelta.Tasks)
+	taf.potentialVictimsCursor = potentialVictimsDelta.Next
 }
 
 func (taf *TopologyAwareIdleGpus) applyVictimTasks(victimTasks []*pod_info.PodInfo) {
