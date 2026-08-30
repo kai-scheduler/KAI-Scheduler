@@ -9,7 +9,7 @@ This proposal lets a cluster administrator declare a set of pods as *background*
 KAI then treats the resources they hold as free when making scheduling decisions, and evicts them on demand when a real workload is placed on top of them.
 Background pods belong to no queue, contribute nothing to any queue's quota or fair share, and are never protected from displacement.
 
-The proposed mechanism is a virtual eviction: at the start of each scheduling session the scheduler removes background pods from its in-memory view of the cluster, schedules as if the nodes were empty, and then determines per node which of them can be restored and which must actually be evicted.
+The proposed mechanism is a virtual eviction: at the start of each scheduling session the scheduler removes background pods from its in-memory view of the cluster, schedules as if the nodes were empty, and then determines per node which of them can be restored and which must actually be evicted. It is implemented as a single scheduler plugin.
 
 ## Motivation
 
@@ -98,9 +98,10 @@ What the operator actually wants is for them not to be counted at all.
 
 ## Design
 
-At the start of every scheduling session the scheduler evicts all background pods from its in-memory snapshot, schedules as though they were never there, and then tries to allocate each of them back onto its own node.
-Those that no longer fit are the ones actually evicted, by the scheduler, once the session ends.
-The binder does not evict anything; it waits for the eviction to complete before binding the user's pod.
+At the start of every scheduling session the plugin evicts all background pods from the in-memory snapshot, without committing, so their capacity is accounted as *releasing*.
+The session then runs untouched: workloads that fit in idle capacity are allocated and bound as usual, and workloads that need background-held capacity are pipelined onto it, exactly as they would be over a preemption victim.
+At session close the plugin attempts to re-place every background pod its original node.
+Those that still fit are unevicted and are not disturbed; the rest have their evictions committed, and the pipelined workloads bind in a later session once they are gone.
 
 ### Selecting background pods
 
@@ -114,121 +115,74 @@ Open questions - possible validations needed:
 
 ### Virtual eviction
 
-At the start of each scheduling session, the scheduler evicts every background pod from its in-memory snapshot and records what it removed, per node.
-No API call is made and no pod object is touched.
-From this point the session proceeds normally: allocate, preempt, reclaim, and consolidate all see nodes as though the background pods were not there.
+`OnSessionOpen` creates a `Statement`, iterates the nodes, and calls `Statement.Evict` on every pod matching the selector, recording what it removed per node.
+(`Statement.Evict` only touches in-memory state). The resources used by background pods are considered as `Releasing`, so the scheduler is aware that any pods placed on them is actually pipelined.
 
-This solves two issues from the workaround:
-- Placement decisions such as topology domain selection, bin-packing, and node ordering are computed against real availability, so the scheduler picks the rack it should pick.
-- Displacing a background pod also costs no scenario search, because from the scheduler's point of view nothing is being displaced at all.
+This solves both problems the workaround has.
+Placement decisions such as topology domain selection and bin-packing are computed against real availability, so the scheduler picks the rack it should pick.
+Displacing a background pod also costs no scenario search, because from the session's point of view nothing is being displaced at all.
 
-What is needed is the in-memory half of eviction without the API call.
-`ssn.Evict` and `Statement.Evict` both reach `Cache.Evict`, so the plugin needs the node-state path (`NodeInfo.RemoveTask` and the session's pod-status update) without the eviction request.
+Only background pods that KAI scheduled can be handled: `Statement.Evict` needs the pod's PodGroup from the session, so pods with none are skipped.
+That is consistent with the pod-carried opt-in above, and it is what the deferred external-pod goal would have to change.
 
-### Re-placement
+### During the session
 
-Once the scheduler knows what it has committed to a node, it asks the inverse question: **which of the background pods removed from that node at session start can be allocated back onto it?**
+The plugin registers no hooks and takes no part in the actions.
 
-Each background pod is run through the usual allocation path: predicates, resource fit, and device assignment — restricted to its original node.
-A pod that allocates successfully is restored, and its eviction is cancelled before it was ever issued.
-A pod that fails to allocate is displaced, and gets evicted.
+Because the freed capacity is *releasing* rather than *idle*, a workload contending for it fails `IsTaskAllocatable` and passes `IsTaskAllocatableOnReleasingOrIdle`, which is the pipeline path.
+It is pipelined onto the node rather than allocated, and its demand is subtracted from `ReleasingVector`.
+A workload that fits in idle capacity is unaffected and binds in the same cycle.
 
-Reusing the allocation path is what makes this correct for constraints that are not quantities.
-Affinity, anti-affinity, topology spread, hostPorts, node selectors, and taints are all evaluated by the same predicates that placed the user's workload, so a background pod that no longer fits for any of those reasons is displaced without the plugin knowing anything about them.
-The same holds for placement inside a node: re-allocating a pod that held a GPU device, a MIG slice, a NUMA zone, or a DRA claim requires finding a concrete one, so if the user's workload took the one it had, re-allocation fails and the pod is displaced.
-No per-dimension special casing is needed anywhere.
+### Re-placement and commit
 
-It also makes the displaced set naturally minimal.
-Only pods that genuinely no longer fit are evicted, and background pods on nodes that received nothing are restored trivially, which is the common case: most nodes are untouched in any given session, and nothing on them is disrupted.
+`OnSessionClose` iterates each node's background pods in a deterministic order and asks whether each can stay (virtually re-allocate), using `IsTaskAllocatableOnReleasingOrIdle`: does the unclaimed capacity still cover it.
+
+A pod that fits is restored with `Statement.Unevict`, which marks its eviction operation undone.
+A pod that does not fit stays in the statement.
+`Statement.Commit()` then issues real eviction requests for only what remains valid, through `Cache.Evict` — the same path preemption and reclaim victims take, with the same events and metrics.
+
+The displaced set is minimal by construction.
+Only pods that genuinely no longer fit are evicted, and background pods on nodes that received nothing are restored trivially, which is the common case: most nodes are untouched in any given session and nothing on them is disrupted.
 
 A background pod is never restored onto a *different* node.
 Relocating them is a non-goal, KAI cannot move a pod it does not own, and many background pods are pinned to their node by design.
 
-The cost is one allocation attempt per background pod per session, each against a single known node.
-That is O(number of background pods) predicate evaluations rather than a scenario search, which is what keeps this within the performance goal.
+### Plugin lifecycle ordering
 
-**Open question — when to compute it.** BindRequests are created during the session, at `Statement.Commit()`, not at session close.
-Two shapes are available:
+Statement operations fire the session's event handlers, and those handlers belong to other plugins.
+This gives the plugin two ordering requirements.
 
-- *Incremental.* At each bind, re-place the target node's background pods against what is committed to it so far, and stamp the failures on that BindRequest.
-  The set only grows over the session, which makes the per-node sets a nested chain.
-  That nesting is what makes concurrent, out-of-order binding safe: for any subset of a node's BindRequests that have bound, the union of their displaced sets equals the set belonging to the latest one, and the demand of those binds is bounded by what that set frees.
-  No coordination between BindRequests is needed.
-- *Deferred.* Compute once at session close, which requires either delaying BindRequest creation until after the last action or creating them in a paused state and patching them afterwards.
-  Both change the timing of binding for every workload, not just this feature.
+It must **open after** any plugin whose handlers should observe the eviction.
+Plugin open order follows `config.Tiers` and is deterministic, and the plugin's low priority already places it last.
+The proportion plugin's `DeallocateFunc` is the one that matters: it is what removes the background pods from their queue's allocated share for the session.
 
-The incremental form appears to produce the same answer at lower cost, but this has not been settled.
+It must **close before** those plugins, because `Unevict` fires `AllocateFunc` and several plugins discard their session state on close.
+Proportion nils its queue map in `OnSessionClose`, and its handler then dereferences a nil queue.
+`CloseSession` originally iterated the plugin map, so the order was random and this crashed intermittently.
+It now closes plugins in reverse open order, which gives the invariant directly: a plugin that opened after another is torn down before it.
 
-Either way, re-placement must not leave a restored pod in the session's node state.
-The session is still running and later actions must continue to see the node as though background pods were not there.
-`Statement.Checkpoint` and `Rollback` already provide this shape: checkpoint, attempt the allocations, record which succeeded, roll back.
+Proportion's two handlers were also hardened to skip a job whose queue is absent, rather than dereferencing it.
+That was reachable without this plugin — `cleanQueueOrphans` drops orphan queues and their children during snapshot — so it is a fix in its own right.
 
-**Open question — ordering.** When several background pods on one node compete for what is left, the order in which they are re-placed decides which of them survives.
-The order must at least be deterministic, so the same session state produces the same decision.
-Per the non-goals, no effort is spent choosing an order that produces a better outcome.
+### Known limitations
 
-**No node scoring.** Background pods do not influence node selection.
-The scheduler will not prefer a node holding none over a node holding three, and will therefore sometimes displace pods it could have avoided by choosing a different node.
-That is accepted deliberately: adding a score term would make background pods affect scheduling decisions, which the non-goals rule out, and it would put a cost on every node evaluation rather than only on nodes that actually receive a workload.
-Re-placement is the only mechanism limiting disruption, and it is enough to guarantee that a background pod is never evicted unless a user's pod genuinely took its place.
+**Predicates are not re-run at re-placement.** The check is resource capacity only.
+An earlier design had re-placement go through the full allocation path, so that constraints which are not resource quantities would be covered for free.
+That does not work while the pod is merely `Releasing`: it is still bound to its node as far as the predicate snapshot is concerned, so it is counted against itself and nothing is ever restored.
+Affinity, anti-affinity, topology spread, and hostPorts are therefore not covered, and neither is intra-node placement such as a specific GPU index or NUMA zone.
 
-### Committing evictions
+The failure mode is conservative rather than silent for the predicate cases: a workload with anti-affinity against a background pod has the node rejected outright, so nothing is misplaced, but the node is not "seen as free" after all.
 
-A user's pod must not be bound to a node before the background pods it displaces are gone.
-A terminating pod still counts against node allocatable until it disappears, so a bind that lands too early is rejected by the kubelet.
-The pod is already bound at that point, so this is not a retryable bind failure — it ends up `Failed`.
+This can probably be fixed with some effort if there's a need for it.
 
-**The scheduler evicts, and the binder waits.**
-Once re-placement has determined the displaced set, the scheduler evicts those pods itself, through the same path it already uses for preemption and reclaim victims.
-The BindRequest for the user's pod carries the displaced set as a gate: the binder does not delete anything, it only refuses to bind until every pod on the list is gone, then binds as usual.
-
-This keeps eviction in one component.
-Events, metrics, PDB handling, and the evictor itself stay in the scheduler, where they already exist, and the binder gains no new decision-making role and no delete permission.
-It also costs no scheduling cycle: the user's pod is allocated normally and binds as soon as the node is actually clear.
-
-What it needs:
-
-- A field on `BindRequestSpec` carrying the displaced pods.
-- A wait-and-requeue path in the BindRequest reconciler, which must not consume the backoff limit while it waits.
-- The binder to distinguish "not ready yet" from "failed".
-
-The window between eviction and bind is a scheduling cycle wide at worst, so another scheduler could take the freed capacity before the binder gets there.
-That is a failed bind and a retry, not a corrupted state, and the next session re-derives from reality.
-
-### Alternatives for committing evictions
-
-Kept for reference in case the chosen approach runs into trouble.
-
-**The binder evicts.** The BindRequest carries the displaced set and the binder deletes those pods itself before binding.
-Eviction and binding become adjacent in one actor, which narrows the race window, at the cost of a second eviction path with its own RBAC, plugin, and metrics.
-
-**The scheduler evicts and the pod is pipelined.** Instead of gating the bind, the user's pod is pipelined rather than allocated, so it binds in a later session once the background pods are gone.
-Needs no API change and no binder change at all, and reuses exactly how KAI resolves this ordering problem for preemption today.
-Costs an extra scheduling cycle for every pod that displaces something, and requires converting an already-committed allocation into a pipeline after the fact (`Statement.ConvertAllAllocatedToPipelined`), which is not a clean seam.
-
-**The binder decides and evicts.** The smallest possible version: the scheduler only ignores background pods in its snapshot, there is no re-placement step and no displaced set, and the binder greedily evicts from the target node's live state until the incoming pod fits.
-Nothing is communicated between the components.
-It gives up modelling anything that is not a plain resource quantity — it cannot tell which background pod holds a conflicting GPU index, MIG slice, NUMA zone, or DRA claim, and it cannot see a predicate-based conflict such as anti-affinity, which the kubelet will not catch either.
-It also needs a per-node lock, since two BindRequests for one node could each conclude they fit and overcommit it.
-Viable for background pods holding whole devices and plain resources, but extending it later is a rewrite rather than an addition.
-
-### Open questions
-
-**Transport.** A typed field on `BindRequestSpec` alongside the other decisions the binder cannot re-derive (`SelectedGPUGroups`, `PredictedNUMAZones`), or an annotation via the existing `BindRequestMutateFn` hook.
-The typed field is clearer and validated; the annotation avoids a CRD change.
-Either way the entry should carry the pod UID as well as its name, so a background pod deleted and recreated under the same name between session start and bind is not mistaken for its predecessor.
-
-**Eviction mechanism.** A direct `DELETE`, as the scheduler's evictor does today, or the `pods/eviction` subresource so PodDisruptionBudgets are honoured.
-
-**Flapping.** A displaced pod's controller may recreate it immediately, possibly onto another node, where it may be displaced again.
-Whether a per-owner cooldown is needed, or whether a metric is enough to find out, is unresolved.
 
 ### What is not yet designed
 
 - Background pods holding DRA resource claims.
-  Deleting the pod does not synchronously free the claim, so "wait until it is gone" is not sufficient.
-- Interaction with consolidation, which will now plan moves against a cluster that looks emptier than it is.
-- Observability: which events to emit on a pod KAI does not own, and how to keep these evictions out of the preemption and reclaim metrics so fairness reporting stays meaningful.
+  Deleting the pod does not synchronously free the claim.
+- Interaction with consolidation, which now plans moves against a cluster that looks emptier than it is.
+- Observability: which events to emit, and how to keep these evictions out of the preemption and reclaim metrics so fairness reporting stays meaningful.
+- Whether background pods should still appear in their queue's externally reported `allocated`, given the goal of keeping them out of queue accounting entirely.
 
 ## Alternatives Considered
 
@@ -237,8 +191,19 @@ This is the workaround made automatic.
 It inherits both of the workaround's scheduling problems: every allocation becomes a reclaim, and naive allocation still runs first, so the topology case above is unchanged.
 It also requires KAI to own the pods, which closes off the deferred external-pod goal permanently rather than leaving room for it.
 
-**Evict at session close from the scheduler.** Simpler in that no information has to reach the binder, but it separates eviction from binding by a full scheduling cycle, widening the window for another scheduler to take the freed capacity, and it risks the workload being bound while victims are still terminating.
+Options for committing the evictions, kept in case the chosen approach runs into trouble.
+All of them replace the pipelining step with something that coordinates with the binder, and all of them cost an API change.
 
-**Binder decides what to displace.** The binder sees live cluster state, so it could compute displacement itself with no scheduler bookkeeping at all.
-Two concurrent reconciles targeting the same node can each conclude they fit without evicting, both bind, and overcommit the node.
-It also cannot reproduce the scheduler's device-level choices for GPU, MIG, or NUMA placement.
+**The scheduler evicts and the binder waits.** The BindRequest carries the displaced set purely as a gate: the binder deletes nothing, it only refuses to bind until every listed pod is gone.
+The workload is allocated normally rather than pipelined, so no scheduling cycle is lost.
+Costs a `BindRequestSpec` field, a wait-and-requeue path in the reconciler that must not consume the backoff limit, and the binder distinguishing "not ready yet" from "failed".
+This was the preferred approach before the implementation showed that pipelining falls out of the existing machinery for free.
+
+**The binder evicts.** The BindRequest carries the displaced set and the binder deletes those pods itself before binding.
+Eviction and binding become adjacent in one actor, which narrows the race window, at the cost of a second eviction path with its own RBAC, plugin, and metrics.
+
+**The binder decides and evicts.** The smallest possible version: the scheduler only ignores background pods in its snapshot, there is no re-placement step and no displaced set, and the binder greedily evicts from the target node's live state until the incoming pod fits.
+Nothing is communicated between the components.
+It gives up modelling anything that is not a plain resource quantity — it cannot tell which background pod holds a conflicting GPU index, MIG slice, NUMA zone, or DRA claim, and it cannot see a predicate-based conflict such as anti-affinity, which the kubelet will not catch either.
+It also needs a per-node lock, since two BindRequests for one node could each conclude they fit and overcommit it.
+Viable for background pods holding whole devices and plain resources, but extending it later is a rewrite rather than an addition.
