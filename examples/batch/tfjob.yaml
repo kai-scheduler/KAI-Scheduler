@@ -1,0 +1,49 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: "kubeflow.org/v1"
+kind: "TFJob"
+metadata:
+  name: "tf-dist-mnist"
+  labels:
+    kai.scheduler/queue: default-queue
+spec:
+  tfReplicaSpecs:
+    Chief:
+      replicas: 1
+      restartPolicy: OnFailure
+      template:
+        spec:
+          schedulerName: kai-scheduler
+          containers:
+            - name: tensorflow
+              image: kubeflow/tf-mnist-with-summaries:latest
+              command:
+                - "python"
+                - "/var/tf_mnist/mnist_with_summaries.py"
+                - "--log_dir=/train/logs"
+                - "--learning_rate=0.01"
+                - "--batch_size=150"
+              resources:
+                requests:
+                  cpu: "500m"
+                  memory: "512Mi"
+    Worker:
+      replicas: 2
+      restartPolicy: OnFailure
+      template:
+        spec:
+          schedulerName: kai-scheduler
+          containers:
+            - name: tensorflow
+              image: kubeflow/tf-mnist-with-summaries:latest
+              command:
+                - "python"
+                - "/var/tf_mnist/mnist_with_summaries.py"
+                - "--log_dir=/train/logs"
+                - "--learning_rate=0.01"
+                - "--batch_size=150"
+              resources:
+                requests:
+                  cpu: "500m"
+                  memory: "512Mi"
