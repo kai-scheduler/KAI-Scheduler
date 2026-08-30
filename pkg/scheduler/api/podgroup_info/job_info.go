@@ -501,21 +501,18 @@ func (pgi *PodGroupInfo) IsStale() bool {
 	if totalActivePods == 0 {
 		return false
 	}
-	for _, podSet := range pgi.PodSets {
-		if !podSet.IsGangSatisfied() {
-			return true
-		}
-	}
-	return false
+	return !pgi.IsGangSatisfied()
 }
 
 func (pgi *PodGroupInfo) IsGangSatisfied() bool {
-	for _, podSet := range pgi.PodSets {
-		if !podSet.IsGangSatisfied() {
-			return false
+	root := pgi.RootSubGroupSet
+	if root == nil {
+		root = subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+		for _, podSet := range pgi.PodSets {
+			root.AddPodSet(podSet)
 		}
 	}
-	return true
+	return root.IsGangSatisfied()
 }
 
 func (pgi *PodGroupInfo) ShouldPipelineJob() bool {

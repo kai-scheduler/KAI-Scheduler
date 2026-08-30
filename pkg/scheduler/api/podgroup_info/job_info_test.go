@@ -1589,12 +1589,14 @@ func TestPodGroupInfo_IsStale(t *testing.T) {
 			name: "activeUsedTasks >= minAvailable, subgroups gang NOT satisfied, stale",
 			job: func() *PodGroupInfo {
 				pgi := NewPodGroupInfo("test-podgroup")
+				root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
 
 				sg1 := subgroup_info.NewPodSet("sg1", 1, nil)
-				pgi.PodSets["sg1"] = sg1
-
 				sg2 := subgroup_info.NewPodSet("sg2", 1, nil)
-				pgi.PodSets["sg2"] = sg2
+				root.AddPodSet(sg1)
+				root.AddPodSet(sg2)
+				pgi.RootSubGroupSet = root
+				pgi.PodSets = root.GetDescendantPodSets()
 
 				task1 := pod_info.NewTaskInfo(&v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
@@ -1628,16 +1630,59 @@ func TestPodGroupInfo_IsStale(t *testing.T) {
 			expected: true,
 		},
 		{
+			name: "minSubGroup satisfied with unready optional subgroup, not stale",
+			job: func() *PodGroupInfo {
+				pgi := NewPodGroupInfo("test-podgroup")
+				root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+				minSubGroup := int32(1)
+				root.SetMinSubGroup(&minSubGroup)
+
+				readyPodSet := subgroup_info.NewPodSet("ready", 1, nil)
+				unreadyPodSet := subgroup_info.NewPodSet("unready", 2, nil)
+				root.AddPodSet(readyPodSet)
+				root.AddPodSet(unreadyPodSet)
+				pgi.RootSubGroupSet = root
+				pgi.PodSets = root.GetDescendantPodSets()
+
+				pgi.AddTaskInfo(pod_info.NewTaskInfo(&v1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						UID:       "1",
+						Namespace: "ns",
+						Name:      "ready-task",
+						Labels: map[string]string{
+							commonconstants.SubGroupLabelKey: "ready",
+						},
+					},
+					Status: v1.PodStatus{Phase: v1.PodRunning},
+				}, resource_info.NewResourceVectorMap()))
+				pgi.AddTaskInfo(pod_info.NewTaskInfo(&v1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						UID:       "2",
+						Namespace: "ns",
+						Name:      "unready-task",
+						Labels: map[string]string{
+							commonconstants.SubGroupLabelKey: "unready",
+						},
+					},
+					Status: v1.PodStatus{Phase: v1.PodPending},
+				}, resource_info.NewResourceVectorMap()))
+
+				return pgi
+			}(),
+			expected: false,
+		},
+		{
 			name: "activeUsedTasks >= minAvailable, subgroups gang satisfied, not stale",
 			job: func() *PodGroupInfo {
 				pgi := NewPodGroupInfo("test-podgroup")
+				root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
 
 				sg1 := subgroup_info.NewPodSet("sg1", 1, nil)
 				sg2 := subgroup_info.NewPodSet("sg2", 1, nil)
-				pgi.PodSets = map[string]*subgroup_info.PodSet{
-					"sg1": sg1,
-					"sg2": sg2,
-				}
+				root.AddPodSet(sg1)
+				root.AddPodSet(sg2)
+				pgi.RootSubGroupSet = root
+				pgi.PodSets = root.GetDescendantPodSets()
 
 				task1 := pod_info.NewTaskInfo(&v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
