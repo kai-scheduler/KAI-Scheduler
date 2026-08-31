@@ -1,0 +1,6 @@
+kind: Added
+body: Added support for configuring queue-controller Pod Disruption Budget via Helm values (`queuecontroller.podDisruptionBudget`) when running multiple replicas
+time: 2026-08-09T22:41:53.380191989+01:00
+custom:
+    Author: dttung2905
+    Issue: "1477"

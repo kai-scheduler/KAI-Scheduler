@@ -49,6 +49,7 @@ func (q *QueueController) DesiredState(
 			return []client.Object{queueSecret[0]}, nil
 		},
 		q.deploymentForKAIConfig,
+		q.podDisruptionBudgetForKAIConfig,
 		q.serviceAccountForKAIConfig,
 		q.serviceForKAIConfig,
 		crdForKAIConfig,

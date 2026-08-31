@@ -228,6 +228,11 @@ queuecontroller:
     pullPolicy: IfNotPresent
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   affinity: {}
+  # PDB is created only when queue-controller replicas > 1 (operator.replicaCount / queueController.replicas).
+  # For HA: set operator.replicaCount: 2 (or override queueController.replicas in Config).
+  podDisruptionBudget:
+    enabled: true
+    maxUnavailable: 1
 
 admission:
   enabled: true

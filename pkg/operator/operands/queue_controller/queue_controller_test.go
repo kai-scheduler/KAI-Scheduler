@@ -9,7 +9,9 @@ import (
 
 	v1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 
 	"golang.org/x/exp/maps"
@@ -18,6 +20,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	test_utils "github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common/test_utils"
 
@@ -170,6 +173,149 @@ var _ = Describe("QueueController", func() {
 				validatingWebhookConfiguration = validatingWebhookConfigurations[0]
 
 				Expect(validatingWebhookConfiguration.Labels).To(HaveKeyWithValue("foo", "bar"))
+			})
+		})
+
+		Context("PodDisruptionBudget", func() {
+			It("includes PDB when HA and enabled with matching deployment selector", func(ctx context.Context) {
+				kaiConfig.Spec.QueueController.Replicas = ptr.To(int32(2))
+				kaiConfig.Spec.QueueController.Service.PodDisruptionBudget = &common.PodDisruptionBudget{
+					Enabled:        ptr.To(true),
+					MaxUnavailable: ptr.To(int32(1)),
+				}
+
+				objects, err := qc.DesiredState(ctx, fakeKubeClient, kaiConfig)
+				Expect(err).To(BeNil())
+
+				pdbs := test_utils.FindTypesInObjects[*policyv1.PodDisruptionBudget](objects)
+				Expect(pdbs).To(HaveLen(1))
+				Expect(pdbs[0].Name).To(Equal(defaultResourceName))
+				Expect(pdbs[0].Namespace).To(Equal(constants.DefaultKAINamespace))
+				Expect(pdbs[0].Spec.MaxUnavailable).NotTo(BeNil())
+				Expect(pdbs[0].Spec.MaxUnavailable.IntVal).To(Equal(int32(1)))
+				Expect(pdbs[0].Spec.Selector.MatchLabels["app"]).To(Equal(defaultResourceName))
+
+				deploymentT := test_utils.FindTypeInObjects[*appsv1.Deployment](objects)
+				Expect(deploymentT).NotTo(BeNil())
+				Expect(pdbs[0].Spec.Selector.MatchLabels["app"]).To(Equal((*deploymentT).Spec.Template.Labels["app"]))
+			})
+
+			It("uses custom maxUnavailable", func(ctx context.Context) {
+				qc.BaseResourceName = defaultResourceName
+				kaiConfig.Spec.QueueController.Replicas = ptr.To(int32(2))
+				kaiConfig.Spec.QueueController.Service.PodDisruptionBudget = &common.PodDisruptionBudget{
+					Enabled:        ptr.To(true),
+					MaxUnavailable: ptr.To(int32(2)),
+				}
+
+				objects, err := qc.podDisruptionBudgetForKAIConfig(ctx, fakeKubeClient, kaiConfig)
+				Expect(err).To(BeNil())
+				Expect(objects).To(HaveLen(1))
+
+				pdb := objects[0].(*policyv1.PodDisruptionBudget)
+				Expect(pdb.Spec.MaxUnavailable).NotTo(BeNil())
+				Expect(pdb.Spec.MaxUnavailable.IntVal).To(Equal(int32(2)))
+			})
+
+			It("preserves resourceVersion from an existing PDB", func(ctx context.Context) {
+				existing := &policyv1.PodDisruptionBudget{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:            defaultResourceName,
+						Namespace:       constants.DefaultKAINamespace,
+						ResourceVersion: "42",
+						Labels: map[string]string{
+							"app": defaultResourceName,
+						},
+					},
+				}
+				fakeKubeClient = fake.NewClientBuilder().WithObjects(existing).Build()
+				qc.BaseResourceName = defaultResourceName
+
+				kaiConfig.Spec.QueueController.Replicas = ptr.To(int32(2))
+				kaiConfig.Spec.QueueController.Service.PodDisruptionBudget = &common.PodDisruptionBudget{
+					Enabled:        ptr.To(true),
+					MaxUnavailable: ptr.To(int32(1)),
+				}
+
+				objects, err := qc.podDisruptionBudgetForKAIConfig(ctx, fakeKubeClient, kaiConfig)
+				Expect(err).To(BeNil())
+				Expect(objects).To(HaveLen(1))
+
+				pdb := objects[0].(*policyv1.PodDisruptionBudget)
+				Expect(pdb.ResourceVersion).To(Equal("42"))
+				Expect(pdb.Spec.MaxUnavailable).NotTo(BeNil())
+				Expect(pdb.Spec.MaxUnavailable.IntVal).To(Equal(int32(1)))
+			})
+
+			It("omits PDB when HA but disabled", func(ctx context.Context) {
+				kaiConfig.Spec.QueueController.Replicas = ptr.To(int32(2))
+				kaiConfig.Spec.QueueController.Service.PodDisruptionBudget = &common.PodDisruptionBudget{
+					Enabled: ptr.To(false),
+				}
+
+				objects, err := qc.DesiredState(ctx, fakeKubeClient, kaiConfig)
+				Expect(err).To(BeNil())
+
+				for _, obj := range objects {
+					Expect(obj).NotTo(BeAssignableToTypeOf(&policyv1.PodDisruptionBudget{}))
+				}
+			})
+
+			It("omits PDB when single replica even if enabled", func(ctx context.Context) {
+				kaiConfig.Spec.QueueController.Replicas = ptr.To(int32(1))
+				kaiConfig.Spec.QueueController.Service.PodDisruptionBudget = &common.PodDisruptionBudget{
+					Enabled: ptr.To(true),
+				}
+
+				objects, err := qc.DesiredState(ctx, fakeKubeClient, kaiConfig)
+				Expect(err).To(BeNil())
+
+				for _, obj := range objects {
+					Expect(obj).NotTo(BeAssignableToTypeOf(&policyv1.PodDisruptionBudget{}))
+				}
+			})
+
+			It("omits PDB when PDB config is missing and defaults apply", func(ctx context.Context) {
+				kaiConfig.Spec.QueueController.Replicas = ptr.To(int32(2))
+				kaiConfig.Spec.QueueController.Service.PodDisruptionBudget = nil
+				kaiConfig.Spec.QueueController.Service.SetDefaultsWhereNeeded("")
+
+				objects, err := qc.DesiredState(ctx, fakeKubeClient, kaiConfig)
+				Expect(err).To(BeNil())
+				Expect(kaiConfig.Spec.QueueController.Service.PodDisruptionBudget).NotTo(BeNil())
+				Expect(*kaiConfig.Spec.QueueController.Service.PodDisruptionBudget.Enabled).To(BeFalse())
+
+				for _, obj := range objects {
+					Expect(obj).NotTo(BeAssignableToTypeOf(&policyv1.PodDisruptionBudget{}))
+				}
+			})
+
+			It("includes PDB when validation webhooks are disabled", func(ctx context.Context) {
+				kaiConfig.Spec.QueueController.Replicas = ptr.To(int32(2))
+				kaiConfig.Spec.QueueController.Webhooks.EnableValidation = ptr.To(false)
+				kaiConfig.Spec.QueueController.Service.PodDisruptionBudget = &common.PodDisruptionBudget{
+					Enabled:        ptr.To(true),
+					MaxUnavailable: ptr.To(int32(1)),
+				}
+
+				objects, err := qc.DesiredState(ctx, fakeKubeClient, kaiConfig)
+				Expect(err).To(BeNil())
+
+				pdbs := test_utils.FindTypesInObjects[*policyv1.PodDisruptionBudget](objects)
+				Expect(pdbs).To(HaveLen(1))
+				Expect(test_utils.FindTypesInObjects[*v1.ValidatingWebhookConfiguration](objects)).To(BeEmpty())
+			})
+
+			It("returns empty desired state when queue controller is disabled", func(ctx context.Context) {
+				kaiConfig.Spec.QueueController.Service.Enabled = ptr.To(false)
+				kaiConfig.Spec.QueueController.Replicas = ptr.To(int32(2))
+				kaiConfig.Spec.QueueController.Service.PodDisruptionBudget = &common.PodDisruptionBudget{
+					Enabled: ptr.To(true),
+				}
+
+				objects, err := qc.DesiredState(ctx, fakeKubeClient, kaiConfig)
+				Expect(err).To(BeNil())
+				Expect(objects).To(BeEmpty())
 			})
 		})
 	})

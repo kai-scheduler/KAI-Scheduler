@@ -250,6 +250,15 @@ spec:
       affinity:
         {{- toYaml .Values.queuecontroller.affinity | nindent 8 }}
       {{- end }}
+      {{- if .Values.queuecontroller.podDisruptionBudget }}
+      podDisruptionBudget:
+        {{- if hasKey .Values.queuecontroller.podDisruptionBudget "enabled" }}
+        enabled: {{ .Values.queuecontroller.podDisruptionBudget.enabled }}
+        {{- end }}
+        {{- if hasKey .Values.queuecontroller.podDisruptionBudget "maxUnavailable" }}
+        maxUnavailable: {{ .Values.queuecontroller.podDisruptionBudget.maxUnavailable }}
+        {{- end }}
+      {{- end }}
 
   admission:
     service:
