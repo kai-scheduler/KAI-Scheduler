@@ -75,6 +75,31 @@ var _ = Describe("DeploymentForKAIConfig", func() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(deployment.Spec.Template.Spec.PriorityClassName).To(Equal("system-cluster-critical"))
 	})
+
+	It("does not set GODEBUG by default", func() {
+		config := &kaiv1.Config{Spec: kaiv1.ConfigSpec{Namespace: "kai-scheduler"}}
+		config.Spec.SetDefaultsWhereNeeded()
+
+		deployment, err := DeploymentForKAIConfig(
+			context.Background(), fake.NewClientBuilder().Build(), config, config.Spec.Binder.Service, "binder",
+		)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(deployment.Spec.Template.Spec.Containers[0].Env).To(BeEmpty())
+	})
+
+	It("sets GODEBUG=fips140=only when global.fipsOnly is enabled", func() {
+		config := &kaiv1.Config{Spec: kaiv1.ConfigSpec{Namespace: "kai-scheduler"}}
+		config.Spec.SetDefaultsWhereNeeded()
+		config.Spec.Global.FIPSOnly = ptr.To(true)
+
+		deployment, err := DeploymentForKAIConfig(
+			context.Background(), fake.NewClientBuilder().Build(), config, config.Spec.Binder.Service, "binder",
+		)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(deployment.Spec.Template.Spec.Containers[0].Env).To(ContainElement(
+			v1.EnvVar{Name: "GODEBUG", Value: "fips140=only,tlsmlkem=0"},
+		))
+	})
 })
 
 var _ = Describe("DaemonSetForKAIConfig", func() {
@@ -89,6 +114,21 @@ var _ = Describe("DaemonSetForKAIConfig", func() {
 		)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(ds.Spec.Template.Spec.PriorityClassName).To(Equal("system-node-critical"))
+	})
+
+	It("sets GODEBUG=fips140=only when global.fipsOnly is enabled", func() {
+		config := &kaiv1.Config{Spec: kaiv1.ConfigSpec{Namespace: "kai-scheduler"}}
+		config.Spec.SetDefaultsWhereNeeded()
+		config.Spec.Global.FIPSOnly = ptr.To(true)
+
+		ds, err := DaemonSetForKAIConfig(
+			context.Background(), fake.NewClientBuilder().Build(), config,
+			config.Spec.NumaPlacementExporter.Service, nil, nil, "numa-placement-exporter",
+		)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(ds.Spec.Template.Spec.Containers[0].Env).To(ContainElement(
+			v1.EnvVar{Name: "GODEBUG", Value: "fips140=only,tlsmlkem=0"},
+		))
 	})
 })
 

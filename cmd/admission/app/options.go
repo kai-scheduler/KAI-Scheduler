@@ -26,6 +26,8 @@ type Options struct {
 	BlockNvidiaVisibleDevices   bool
 	GPUPodRuntimeClassName      string
 	GPUFractionRuntimeClassName string
+	ValidatePodResizeQuota      bool
+	BlockUpsizeOnBoundedQueues  bool
 }
 
 // ResolvedGPUFractionRuntimeClassName returns the effective runtime class name
@@ -91,6 +93,15 @@ func InitOptions() *Options {
 		fmt.Sprintf("Runtime class to be set for GPU fraction pods (defaults to %s). "+
 			"Whole-GPU pods are not affected. Set to empty string to disable.",
 			constants.DefaultRuntimeClassName))
+	fs.BoolVar(&options.ValidatePodResizeQuota,
+		"validate-pod-resize-quota", true,
+		"Enable queue limit/quota checks on pod resize requests. "+
+			"Best-effort: if lookups fail, resize is admitted. "+
+			"Ignored if false, disables --block-upsize-on-bounded-queues.")
+	fs.BoolVar(&options.BlockUpsizeOnBoundedQueues,
+		"block-upsize-on-bounded-queues", false,
+		"Block pod upsize if queue or ancestor has a CPU/memory limit. "+
+			"No effect if --validate-pod-resize-quota is false.")
 
 	utilfeature.DefaultMutableFeatureGate.AddFlag(fs)
 

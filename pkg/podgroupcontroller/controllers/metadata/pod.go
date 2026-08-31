@@ -9,9 +9,11 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
+	resourcehelpers "k8s.io/component-helpers/resource"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	commonpod "github.com/kai-scheduler/KAI-scheduler/pkg/common/pod"
 	commonresources "github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgroupcontroller/controllers/resources"
 )
@@ -49,7 +51,7 @@ func GetPodMetadata(
 	}
 
 	allocatedResources := v1.ResourceList{}
-	if isAllocatedPod(pod) {
+	if commonpod.IsAllocated(pod) {
 		allocatedResources, err = calculatedAllocatedResources(ctx, pod, kubeClient, draClaims)
 		if err != nil {
 			return nil, err
@@ -70,29 +72,15 @@ func isTerminalPod(pod *v1.Pod) bool {
 	return pod.Status.Phase == v1.PodSucceeded || pod.Status.Phase == v1.PodFailed
 }
 
-func isAllocatedPod(pod *v1.Pod) bool {
-	if pod.Status.Phase == v1.PodPending {
-		return isPodScheduled(pod)
-	}
-	return pod.Status.Phase == v1.PodRunning
-}
-
-func isPodScheduled(pod *v1.Pod) bool {
-	for _, condition := range pod.Status.Conditions {
-		if condition.Type == v1.PodScheduled {
-			return condition.Status == v1.ConditionTrue
-		}
-	}
-	return false
-}
-
 func calculatedAllocatedResources(
 	ctx context.Context, pod *v1.Pod, kubeClient client.Client, draClaims []*resourceapi.ResourceClaim,
 ) (v1.ResourceList, error) {
-	allocatedResources := v1.ResourceList{}
-	for _, container := range pod.Spec.Containers {
-		allocatedResources = resources.SumResources(allocatedResources, container.Resources.Requests)
-	}
+	// Same aggregation the scheduler charges internally (KEP-753 sidecar formula,
+	// KEP-1287 effective requests), keeping queue status consistent with the
+	// resize webhook's delta baseline.
+	allocatedResources := resourcehelpers.AggregateContainerRequests(pod, resourcehelpers.PodResourcesOptions{
+		UseStatusResources: true,
+	})
 
 	gpuSharingReceivedResources, err := resources.ExtractGPUSharingReceivedResources(ctx, pod, kubeClient)
 	if err != nil {
@@ -112,10 +100,7 @@ func calculatedAllocatedResources(
 func calculateRequestedResources(
 	ctx context.Context, pod *v1.Pod, kubeClient client.Client, draClaims []*resourceapi.ResourceClaim,
 ) (v1.ResourceList, error) {
-	requestedResources := v1.ResourceList{}
-	for _, container := range pod.Spec.Containers {
-		requestedResources = resources.SumResources(requestedResources, container.Resources.Requests)
-	}
+	requestedResources := resourcehelpers.AggregateContainerRequests(pod, resourcehelpers.PodResourcesOptions{})
 	gpuSharingRequestedResources, err := resources.ExtractGPUSharingRequestedResources(pod)
 	if err != nil {
 		return nil, err

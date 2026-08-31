@@ -1,0 +1,3 @@
+﻿kind: Added
+body: |-
+  Add gpujoborder plugin for configurable GPU-based JobOrderFn tiebreak on priority ties

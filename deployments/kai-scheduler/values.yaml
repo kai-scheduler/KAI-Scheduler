@@ -10,8 +10,11 @@ global:
   registry: registry/local/kai-scheduler
   tag: ""
   # Use FIPS-enabled images: appends "-fips" to every resolved image tag
-  # (whether it comes from a per-service tag, global.tag or the chart version)
-  # Valid values: "on" | "off"
+  # (whether it comes from a per-service tag, global.tag or the chart version).
+  # "only" does everything "on" does, plus sets GODEBUG=fips140=only on every KAI
+  # container, which can panic at runtime if non-approved crypto is used - see
+  # docs/fips/README.md. Setting "only" is the user's responsibility.
+  # Valid values: "on" | "only" | "off"
   fipsMode: "off"
   imagePullPolicy: IfNotPresent
   securityContext: {}

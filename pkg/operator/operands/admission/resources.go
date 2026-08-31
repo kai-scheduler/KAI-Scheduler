@@ -319,6 +319,27 @@ func (a *Admission) validatingWCForKAIConfig(
 			},
 		},
 		{
+			Name:                    fmt.Sprintf("podresize.%s", webhookName),
+			AdmissionReviewVersions: []string{"v1"},
+			SideEffects:             common.PtrFrom(admissionv1.SideEffectClassNone),
+			NamespaceSelector:       namespaceSelector,
+			ObjectSelector:          objectSelector,
+			FailurePolicy:           common.PtrFrom(admissionv1.Ignore),
+			ClientConfig:            a.buildWebhookClientConfig(kaiConfig, secret, "/validate--v1-pod-resize"),
+			MatchConditions:         matchConditions,
+			Rules: []admissionv1.RuleWithOperations{
+				{
+					Operations: []admissionv1.OperationType{admissionv1.Update},
+					Rule: admissionv1.Rule{
+						APIGroups:   []string{""},
+						APIVersions: []string{"v1"},
+						Resources:   []string{"pods/resize"},
+						Scope:       common.PtrFrom(admissionv1.NamespacedScope),
+					},
+				},
+			},
+		},
+		{
 			// Topology is cluster-scoped and unrelated to pods, so it uses neither the pod
 			// namespace/object selectors nor the scheduler-name match conditions.
 			Name:                    fmt.Sprintf("topology.%s", webhookName),
@@ -415,6 +436,15 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1admission.Admission) []
 	}
 	if config.GPUPodRuntimeClassName != nil {
 		args = append(args, "--gpu-pod-runtime-class-name", *config.GPUPodRuntimeClassName)
+	}
+
+	if ippr := config.InPlacePodResize; ippr != nil {
+		if ippr.ValidateQuota != nil && !*ippr.ValidateQuota {
+			args = append(args, "--validate-pod-resize-quota=false")
+		}
+		if ippr.BlockUpsizeOnBoundedQueues != nil && *ippr.BlockUpsizeOnBoundedQueues {
+			args = append(args, "--block-upsize-on-bounded-queues=true")
+		}
 	}
 
 	args = common.AddK8sClientConfigToArgs(config.Service.K8sClientConfig, args)
