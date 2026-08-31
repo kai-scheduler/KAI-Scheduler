@@ -32,8 +32,8 @@ func GetTasksToAllocate(
 	podGroupInfo *PodGroupInfo, subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn,
 	isRealAllocation bool,
 ) []*pod_info.PodInfo {
-	if podGroupInfo.tasksToAllocate != nil {
-		return podGroupInfo.tasksToAllocate
+	if tasks, ok := podGroupInfo.tasksToAllocateByMode[isRealAllocation]; ok {
+		return tasks
 	}
 
 	root := podGroupInfo.RootSubGroupSet
@@ -44,7 +44,10 @@ func GetTasksToAllocate(
 		}
 	}
 	tasks := collectTasksFromSubGroupSet(root, subGroupOrderFn, taskOrderFn, isRealAllocation)
-	podGroupInfo.tasksToAllocate = tasks
+	if podGroupInfo.tasksToAllocateByMode == nil {
+		podGroupInfo.tasksToAllocateByMode = make(map[bool][]*pod_info.PodInfo)
+	}
+	podGroupInfo.tasksToAllocateByMode[isRealAllocation] = tasks
 	return tasks
 }
 
@@ -180,8 +183,8 @@ func GetTasksToAllocateInitResourceVector(
 	if podGroupInfo == nil {
 		return nil
 	}
-	if podGroupInfo.tasksToAllocateInitResourceVector != nil {
-		return podGroupInfo.tasksToAllocateInitResourceVector
+	if result, ok := podGroupInfo.tasksToAllocateInitResourceVectorByMode[isRealAllocation]; ok {
+		return result
 	}
 
 	result := resource_info.NewResourceVector(podGroupInfo.VectorMap)
@@ -195,7 +198,10 @@ func GetTasksToAllocateInitResourceVector(
 		}
 	}
 
-	podGroupInfo.tasksToAllocateInitResourceVector = result
+	if podGroupInfo.tasksToAllocateInitResourceVectorByMode == nil {
+		podGroupInfo.tasksToAllocateInitResourceVectorByMode = make(map[bool]resource_info.ResourceVector)
+	}
+	podGroupInfo.tasksToAllocateInitResourceVectorByMode[isRealAllocation] = result
 	return result
 }
 

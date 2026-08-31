@@ -309,6 +309,62 @@ func Test_GetTasksToAllocate_VirtualAllocationBelowMinAvailable(t *testing.T) {
 	}
 }
 
+func Test_GetTasksToAllocate_CachesByAllocationMode(t *testing.T) {
+	pg := NewPodGroupInfo("pg")
+	pg.GetAllPodSets()[DefaultSubGroup].SetMinAvailable(4)
+	for i := 1; i <= 3; i++ {
+		pg.AddTaskInfo(simpleTask(fmt.Sprintf("task-%d", i), "", pod_status.Pending))
+	}
+
+	virtualTasks := GetTasksToAllocate(pg, subGroupOrderFn, tasksOrderFn, false)
+	if len(virtualTasks) != 3 {
+		t.Fatalf("virtual GetTasksToAllocate() returned %d tasks, want 3", len(virtualTasks))
+	}
+
+	realTasks := GetTasksToAllocate(pg, subGroupOrderFn, tasksOrderFn, true)
+	if len(realTasks) != 0 {
+		t.Fatalf("real GetTasksToAllocate() returned %d tasks after virtual lookup, want 0", len(realTasks))
+	}
+
+	pg = NewPodGroupInfo("pg-reverse")
+	pg.GetAllPodSets()[DefaultSubGroup].SetMinAvailable(1)
+	releasingTask := simpleTask("a-releasing", "", pod_status.Releasing)
+	releasingTask.IsVirtualStatus = true
+	pg.AddTaskInfo(releasingTask)
+	pg.AddTaskInfo(simpleTask("b-pending", "", pod_status.Pending))
+
+	realTasks = GetTasksToAllocate(pg, subGroupOrderFn, tasksOrderFn, true)
+	if len(realTasks) != 1 || realTasks[0].Name != "b-pending" {
+		t.Fatalf("real GetTasksToAllocate() = %v, want b-pending", realTasks)
+	}
+
+	virtualTasks = GetTasksToAllocate(pg, subGroupOrderFn, tasksOrderFn, false)
+	if len(virtualTasks) != 1 || virtualTasks[0].Name != "a-releasing" {
+		t.Fatalf("virtual GetTasksToAllocate() after real lookup = %v, want a-releasing", virtualTasks)
+	}
+}
+
+func Test_GetTasksToAllocateInitResourceVector_CachesByAllocationMode(t *testing.T) {
+	vectorMap := resource_info.NewResourceVectorMap()
+	pg := NewPodGroupInfoWithVectorMap("pg", vectorMap)
+	pg.GetAllPodSets()[DefaultSubGroup].SetMinAvailable(2)
+
+	task := simpleTask("task-1", "", pod_status.Pending)
+	task.ResReqVector = resource_info.NewResourceRequirements(0, 1000, 0).ToVector(vectorMap)
+	task.VectorMap = vectorMap
+	pg.AddTaskInfo(task)
+
+	virtualVector := GetTasksToAllocateInitResourceVector(pg, subGroupOrderFn, tasksOrderFn, false, nil)
+	if got := virtualVector.Get(resource_info.CPUIndex); got != 1000 {
+		t.Fatalf("virtual resource vector CPU = %v, want 1000", got)
+	}
+
+	realVector := GetTasksToAllocateInitResourceVector(pg, subGroupOrderFn, tasksOrderFn, true, nil)
+	if got := realVector.Get(resource_info.CPUIndex); got != 0 {
+		t.Fatalf("real resource vector CPU after virtual lookup = %v, want 0", got)
+	}
+}
+
 func Test_GetTasksToAllocate_MinSubGroupZero(t *testing.T) {
 	tests := []struct {
 		name          string

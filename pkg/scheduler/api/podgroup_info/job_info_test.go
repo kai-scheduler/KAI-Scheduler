@@ -1672,6 +1672,33 @@ func TestPodGroupInfo_IsStale(t *testing.T) {
 			expected: false,
 		},
 		{
+			name: "nested minSubGroup satisfied with optional branch below leaf minimum, not stale",
+			job: func() *PodGroupInfo {
+				pgi := NewPodGroupInfo("test-podgroup")
+
+				readyBranch := subgroup_info.NewSubGroupSet("ready-branch", nil)
+				readyBranch.SetMinSubGroup(ptr.To(int32(1)))
+				readyBranch.AddPodSet(subgroup_info.NewPodSet("ready-leaf", 1, nil))
+				readyBranch.AddPodSet(subgroup_info.NewPodSet("optional-leaf", 2, nil))
+
+				optionalBranch := subgroup_info.NewSubGroupSet("optional-branch", nil)
+				optionalBranch.AddPodSet(subgroup_info.NewPodSet("incomplete-leaf", 2, nil))
+
+				root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+				root.SetMinSubGroup(ptr.To(int32(1)))
+				root.AddSubGroup(readyBranch)
+				root.AddSubGroup(optionalBranch)
+				pgi.RootSubGroupSet = root
+				pgi.PodSets = root.GetDescendantPodSets()
+
+				pgi.AddTaskInfo(simpleTask("ready-task", "ready-leaf", pod_status.Running))
+				pgi.AddTaskInfo(simpleTask("optional-task", "optional-leaf", pod_status.Pending))
+				pgi.AddTaskInfo(simpleTask("incomplete-task", "incomplete-leaf", pod_status.Running))
+				return pgi
+			}(),
+			expected: false,
+		},
+		{
 			name: "activeUsedTasks >= minAvailable, subgroups gang satisfied, not stale",
 			job: func() *PodGroupInfo {
 				pgi := NewPodGroupInfo("test-podgroup")

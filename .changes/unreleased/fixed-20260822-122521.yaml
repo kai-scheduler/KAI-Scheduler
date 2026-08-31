@@ -1,3 +1,3 @@
 kind: Fixed
 body: |-
-  Prevent scheduling incomplete gangs below minAvailable
+  Respect hierarchical gang floors during allocation and stale-gang eviction
