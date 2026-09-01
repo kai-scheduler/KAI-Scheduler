@@ -49,6 +49,7 @@ var (
 	scenariosSimulatedByAction                     *prometheus.CounterVec
 	scenariosFilteredByAction                      *prometheus.CounterVec
 	preemptionAttempts                             prometheus.Counter
+	preemptionFailuresTotal                        *prometheus.CounterVec
 	queueFairShareCPU                              *prometheus.GaugeVec
 	queueFairShareMemory                           *prometheus.GaugeVec
 	queueFairShareGPU                              *prometheus.GaugeVec
@@ -159,9 +160,20 @@ func InitMetrics(namespace string) {
 		prometheus.CounterOpts{
 			Namespace: namespace,
 			Name:      "total_preemption_attempts",
-			Help:      "Total preemption attempts in the cluster till now",
+			Help: "Deprecated: counts successful preemptions, not attempts. " +
+				"Use podgroups_scheduled_by_action{action=\"preempt\"} for successes and " +
+				"podgroups_acted_on_by_action{action=\"preempt\"} for attempts.",
 		},
 	)
+
+	preemptionFailuresTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Name:      "preemption_failures_total",
+			Help: "Count of preemption attempts that did not preempt, by reason. " +
+				"Attempts that reached scenario search are also broken down by " +
+				"scenario_search_jobs_total{action=\"preempt\"}.",
+		}, []string{"reason"})
 
 	queueFairShareCPU = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -363,6 +375,11 @@ func UpdateUsageQueryLatency(latency time.Duration) {
 // RegisterPreemptionAttempts records number of attempts for preemption
 func RegisterPreemptionAttempts() {
 	preemptionAttempts.Inc()
+}
+
+// IncPreemptionFailure records a preemption attempt that ended without preempting.
+func IncPreemptionFailure(reason string) {
+	preemptionFailuresTotal.WithLabelValues(reason).Inc()
 }
 
 // IncPodGroupEvictedPods records a single pod eviction for a pod group.
