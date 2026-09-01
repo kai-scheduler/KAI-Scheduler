@@ -16,9 +16,50 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/scheduler_util"
 )
 
-func HasTasksToAllocate(podGroupInfo *PodGroupInfo, isRealAllocation bool) bool {
+// TaskAllocationMode identifies why tasks are being selected for allocation.
+type TaskAllocationMode int
+
+type taskAllocationCacheMode int
+
+const (
+	// RealTaskAllocation selects pending tasks for binding in the current scheduling cycle.
+	RealTaskAllocation TaskAllocationMode = iota
+	// SimulatedTaskAllocation selects pending tasks while evaluating a scheduling scenario.
+	SimulatedTaskAllocation
+	// PartialTaskAllocation selects partial task sets for internal search and resource accounting.
+	PartialTaskAllocation
+	// VictimReallocation selects tasks from a preempted job while restoring its remaining allocation.
+	VictimReallocation
+)
+
+const (
+	realTaskAllocationCache taskAllocationCacheMode = iota
+	simulatedAdmissionCache
+	partialTaskAllocationCache
+)
+
+func (mode TaskAllocationMode) isRealAllocation() bool {
+	return mode == RealTaskAllocation
+}
+
+func (mode TaskAllocationMode) enforceGangAdmission() bool {
+	return mode == RealTaskAllocation || mode == SimulatedTaskAllocation
+}
+
+func (mode TaskAllocationMode) cacheMode() taskAllocationCacheMode {
+	switch mode {
+	case RealTaskAllocation:
+		return realTaskAllocationCache
+	case SimulatedTaskAllocation:
+		return simulatedAdmissionCache
+	default:
+		return partialTaskAllocationCache
+	}
+}
+
+func HasTasksToAllocate(podGroupInfo *PodGroupInfo, mode TaskAllocationMode) bool {
 	for _, task := range podGroupInfo.GetAllPodsMap() {
-		if task.ShouldAllocate(isRealAllocation) {
+		if task.ShouldAllocate(mode.isRealAllocation()) {
 			return true
 		}
 	}
@@ -30,33 +71,30 @@ func HasTasksToAllocate(podGroupInfo *PodGroupInfo, isRealAllocation bool) bool 
 // For satisfied subgroups, collect tasks only from one direct child (a single subgroup for a minSubgroup or a single pod for a minAvailable).
 func GetTasksToAllocate(
 	podGroupInfo *PodGroupInfo, subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn,
-	isRealAllocation bool,
+	mode TaskAllocationMode,
 ) []*pod_info.PodInfo {
-	if tasks, ok := podGroupInfo.tasksToAllocateByMode[isRealAllocation]; ok {
+	cacheMode := mode.cacheMode()
+	if tasks, ok := podGroupInfo.tasksToAllocateByMode[cacheMode]; ok {
 		return tasks
 	}
 
-	root := podGroupInfo.RootSubGroupSet
-	if root == nil {
-		root = subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
-		for _, ps := range podGroupInfo.PodSets {
-			root.AddPodSet(ps)
-		}
+	if podGroupInfo.RootSubGroupSet == nil {
+		return nil
 	}
-	tasks := collectTasksFromSubGroupSet(root, subGroupOrderFn, taskOrderFn, isRealAllocation)
+	tasks := collectTasksFromSubGroupSet(podGroupInfo.RootSubGroupSet, subGroupOrderFn, taskOrderFn, mode)
 	if podGroupInfo.tasksToAllocateByMode == nil {
-		podGroupInfo.tasksToAllocateByMode = make(map[bool][]*pod_info.PodInfo)
+		podGroupInfo.tasksToAllocateByMode = make(map[taskAllocationCacheMode][]*pod_info.PodInfo)
 	}
-	podGroupInfo.tasksToAllocateByMode[isRealAllocation] = tasks
+	podGroupInfo.tasksToAllocateByMode[cacheMode] = tasks
 	return tasks
 }
 
 // collectTasksFromSubGroupSet walks the SubGroupSet tree and collects tasks to allocate.
 func collectTasksFromSubGroupSet(
 	sgs *subgroup_info.SubGroupSet, subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn,
-	isRealAllocation bool,
+	mode TaskAllocationMode,
 ) []*pod_info.PodInfo {
-	if isRealAllocation && !sgs.IsReadyForScheduling() {
+	if mode.enforceGangAdmission() && !sgs.IsReadyForScheduling() {
 		return nil
 	}
 
@@ -70,7 +108,7 @@ func collectTasksFromSubGroupSet(
 		membersToCollect := K - sgs.GetNumActiveAllocatedDirectSubGroups()
 		var tasks []*pod_info.PodInfo
 		for i := 0; i < len(children) && membersToCollect > 0; i++ {
-			childTasks := collectFromChildInGangPhase(children[i], subGroupOrderFn, taskOrderFn, isRealAllocation)
+			childTasks := collectFromChildInGangPhase(children[i], subGroupOrderFn, taskOrderFn, mode)
 			if len(childTasks) == 0 {
 				continue
 			}
@@ -82,7 +120,7 @@ func collectTasksFromSubGroupSet(
 
 	// Elastic phase: get the most prioritized unsatisfied child, and allocate it
 	for i := 0; i < len(children); i++ {
-		childTasks := collectFromChildSubgroup(children[i], subGroupOrderFn, taskOrderFn, isRealAllocation)
+		childTasks := collectFromChildSubgroup(children[i], subGroupOrderFn, taskOrderFn, mode)
 		if len(childTasks) > 0 {
 			return childTasks
 		}
@@ -95,43 +133,43 @@ func collectTasksFromSubGroupSet(
 // is already met and collecting elastic tasks from them would over-count resource needs.
 func collectFromChildInGangPhase(
 	child subgroup_info.SubGroupMember, subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn,
-	isRealAllocation bool,
+	mode TaskAllocationMode,
 ) []*pod_info.PodInfo {
 	switch c := child.(type) {
 	case *subgroup_info.SubGroupSet:
 		if c.IsMinRequirementSatisfied() {
 			return nil // already satisfied; skip in parent gang phase
 		}
-		return collectTasksFromSubGroupSet(c, subGroupOrderFn, taskOrderFn, isRealAllocation)
+		return collectTasksFromSubGroupSet(c, subGroupOrderFn, taskOrderFn, mode)
 	case *subgroup_info.PodSet:
 		if c.GetNumActiveAllocatedTasks() >= int(c.GetMinAvailable()) {
 			return nil // already satisfied; skip in parent gang phase
 		}
-		return collectTasksFromPodSet(c, taskOrderFn, isRealAllocation)
+		return collectTasksFromPodSet(c, taskOrderFn, mode)
 	}
 	return nil
 }
 
 func collectFromChildSubgroup(
 	child subgroup_info.SubGroupMember, subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn,
-	isRealAllocation bool,
+	mode TaskAllocationMode,
 ) []*pod_info.PodInfo {
 	switch c := child.(type) {
 	case *subgroup_info.SubGroupSet:
-		return collectTasksFromSubGroupSet(c, subGroupOrderFn, taskOrderFn, isRealAllocation)
+		return collectTasksFromSubGroupSet(c, subGroupOrderFn, taskOrderFn, mode)
 	case *subgroup_info.PodSet:
-		return collectTasksFromPodSet(c, taskOrderFn, isRealAllocation)
+		return collectTasksFromPodSet(c, taskOrderFn, mode)
 	}
 	return nil
 }
 
-func collectTasksFromPodSet(ps *subgroup_info.PodSet, taskOrderFn common_info.LessFn, isRealAllocation bool) []*pod_info.PodInfo {
-	taskPriorityQueue := getTasksPriorityQueue(ps, taskOrderFn, isRealAllocation)
+func collectTasksFromPodSet(ps *subgroup_info.PodSet, taskOrderFn common_info.LessFn, mode TaskAllocationMode) []*pod_info.PodInfo {
+	taskPriorityQueue := getTasksPriorityQueue(ps, taskOrderFn, mode.isRealAllocation())
 	if taskPriorityQueue.Empty() {
 		return nil
 	}
-	numTasksToAllocate := getNumTasksToAllocate(ps, isRealAllocation)
-	if isRealAllocation && ps.GetNumActiveAllocatedTasks() < int(ps.GetMinAvailable()) && taskPriorityQueue.Len() < numTasksToAllocate {
+	numTasksToAllocate := getNumTasksToAllocate(ps, mode.isRealAllocation())
+	if mode.enforceGangAdmission() && ps.GetNumActiveAllocatedTasks() < int(ps.GetMinAvailable()) && taskPriorityQueue.Len() < numTasksToAllocate {
 		return nil
 	}
 	return getTasksFromQueue(taskPriorityQueue, numTasksToAllocate)
@@ -139,11 +177,11 @@ func collectTasksFromPodSet(ps *subgroup_info.PodSet, taskOrderFn common_info.Le
 
 func GetTasksToAllocateRequestedGPUs(
 	podGroupInfo *PodGroupInfo, subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn,
-	isRealAllocation bool,
+	mode TaskAllocationMode,
 ) (float64, int64) {
 	tasksTotalRequestedGPUs := float64(0)
 	tasksTotalRequestedGpuMemory := int64(0)
-	for _, task := range GetTasksToAllocate(podGroupInfo, subGroupOrderFn, taskOrderFn, isRealAllocation) {
+	for _, task := range GetTasksToAllocate(podGroupInfo, subGroupOrderFn, taskOrderFn, mode) {
 		tasksTotalRequestedGPUs += task.GpuRequirement.GPUs()
 		tasksTotalRequestedGpuMemory += task.GpuRequirement.GpuMemory()
 
@@ -178,19 +216,20 @@ func GetTasksToAllocateRequestedGPUs(
 // divisor (e.g. capacity_policy's max) must compute its own conversion, not route through here.
 func GetTasksToAllocateInitResourceVector(
 	podGroupInfo *PodGroupInfo, subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn,
-	isRealAllocation bool, minNodeGPUMemory *int64,
+	mode TaskAllocationMode, minNodeGPUMemory *int64,
 ) resource_info.ResourceVector {
 	if podGroupInfo == nil {
 		return nil
 	}
-	if result, ok := podGroupInfo.tasksToAllocateInitResourceVectorByMode[isRealAllocation]; ok {
+	cacheMode := mode.cacheMode()
+	if result, ok := podGroupInfo.tasksToAllocateInitResourceVectorByMode[cacheMode]; ok {
 		return result
 	}
 
 	result := resource_info.NewResourceVector(podGroupInfo.VectorMap)
 	gpuIdx := resource_info.GPUIndex
-	for _, task := range GetTasksToAllocate(podGroupInfo, subGroupOrderFn, taskOrderFn, isRealAllocation) {
-		if task.ShouldAllocate(isRealAllocation) {
+	for _, task := range GetTasksToAllocate(podGroupInfo, subGroupOrderFn, taskOrderFn, mode) {
+		if task.ShouldAllocate(mode.isRealAllocation()) {
 			result.Add(task.ResReqVector)
 			if task.IsGpuMemoryRequest() && minNodeGPUMemory != nil {
 				result.Set(gpuIdx, result.Get(gpuIdx)+task.GpuRequirement.GpuMemoryAsGpuFraction(*minNodeGPUMemory))
@@ -199,9 +238,9 @@ func GetTasksToAllocateInitResourceVector(
 	}
 
 	if podGroupInfo.tasksToAllocateInitResourceVectorByMode == nil {
-		podGroupInfo.tasksToAllocateInitResourceVectorByMode = make(map[bool]resource_info.ResourceVector)
+		podGroupInfo.tasksToAllocateInitResourceVectorByMode = make(map[taskAllocationCacheMode]resource_info.ResourceVector)
 	}
-	podGroupInfo.tasksToAllocateInitResourceVectorByMode[isRealAllocation] = result
+	podGroupInfo.tasksToAllocateInitResourceVectorByMode[cacheMode] = result
 	return result
 }
 

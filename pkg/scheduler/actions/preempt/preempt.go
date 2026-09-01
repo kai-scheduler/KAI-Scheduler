@@ -83,7 +83,8 @@ func (alloc *preemptAction) Execute(ssn *framework.Session) {
 				continue
 			}
 		}
-		tasks := podgroup_info.GetTasksToAllocate(job, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false)
+		tasks := podgroup_info.GetTasksToAllocate(job, ssn.SubGroupOrderFn, ssn.TaskOrderFn,
+			podgroup_info.SimulatedTaskAllocation)
 		if task, failure := common.VictimInvariantPrePredicateFailureForTasks(ssn, tasks); failure != nil {
 			common.RecordVictimInvariantPrePredicateFailure(job, task, failure)
 			continue
@@ -114,12 +115,13 @@ func attemptToPreemptForPreemptor(
 	ssn *framework.Session, preemptor *podgroup_info.PodGroupInfo, actionBudget *solvers.ActionSearchBudget,
 ) (bool, *framework.Statement, []string, *solvers.SearchResult) {
 	resReq := podgroup_info.GetTasksToAllocateInitResourceVector(preemptor, ssn.SubGroupOrderFn, ssn.TaskOrderFn,
-		false, ssn.ClusterInfo.MinNodeGPUMemoryMiB)
+		podgroup_info.SimulatedTaskAllocation, ssn.ClusterInfo.MinNodeGPUMemoryMiB)
 	log.InfraLogger.V(3).Infof(
 		"Attempting to preempt for job: <%v/%v>, priority: <%v>, queue: <%v>, resources: <%v>",
 		preemptor.Namespace, preemptor.Name, preemptor.Priority, preemptor.Queue, resReq)
 
-	preemptorTasks := podgroup_info.GetTasksToAllocate(preemptor, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false)
+	preemptorTasks := podgroup_info.GetTasksToAllocate(preemptor, ssn.SubGroupOrderFn, ssn.TaskOrderFn,
+		podgroup_info.SimulatedTaskAllocation)
 	if result := ssn.IsNonPreemptibleJobOverQueueQuotaFn(preemptor, preemptorTasks); !result.IsSchedulable {
 		log.InfraLogger.V(3).Infof("Job <%v/%v> would have placed the queue resources over quota",
 			preemptor.Namespace, preemptor.Name)

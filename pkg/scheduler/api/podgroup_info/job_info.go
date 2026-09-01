@@ -89,8 +89,8 @@ type PodGroupInfo struct {
 
 	// inner cache
 	allPodsMap                              *pod_info.PodsMap
-	tasksToAllocateByMode                   map[bool][]*pod_info.PodInfo
-	tasksToAllocateInitResourceVectorByMode map[bool]resource_info.ResourceVector
+	tasksToAllocateByMode                   map[taskAllocationCacheMode][]*pod_info.PodInfo
+	tasksToAllocateInitResourceVectorByMode map[taskAllocationCacheMode]resource_info.ResourceVector
 	PodStatusIndex                          map[pod_status.PodStatus]pod_info.PodsMap
 	activeAllocatedCount                    *int
 	aliveTasksRequestedGPUs                 *float64
@@ -509,14 +509,10 @@ func (pgi *PodGroupInfo) IsStale() bool {
 }
 
 func (pgi *PodGroupInfo) IsGangSatisfied() bool {
-	root := pgi.RootSubGroupSet
-	if root == nil {
-		root = subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
-		for _, podSet := range pgi.PodSets {
-			root.AddPodSet(podSet)
-		}
+	if pgi.RootSubGroupSet == nil {
+		return false
 	}
-	return root.IsGangSatisfied()
+	return pgi.RootSubGroupSet.IsGangSatisfied()
 }
 
 func (pgi *PodGroupInfo) ShouldPipelineJob() bool {

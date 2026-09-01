@@ -98,7 +98,8 @@ func (s *JobSolver) SolveWithResult(
 
 	originalNumActiveTasks := pendingJob.GetNumActiveUsedTasks()
 
-	tasksToAllocate := podgroup_info.GetTasksToAllocate(pendingJob, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false)
+	tasksToAllocate := podgroup_info.GetTasksToAllocate(pendingJob, ssn.SubGroupOrderFn, ssn.TaskOrderFn,
+		podgroup_info.SimulatedTaskAllocation)
 	n := len(tasksToAllocate)
 	if n == 0 {
 		searchResult := terminalSearchResult(SearchResultGeneratorsExhausted, false)
