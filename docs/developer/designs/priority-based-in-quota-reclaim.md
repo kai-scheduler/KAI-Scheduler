@@ -39,7 +39,7 @@ Under ideal circumstances, if the sum of all the quotas would have been lower th
 
 ## 3. Reclaim Rules
 
-A candidate victim task is reclaimable via the new path when, for the (leveled) reclaimer queue and victim queue pair:
+A candidate victim task is reclaimable via the new path when, for the reclaimer queue and victim queue pair:
 
 ```
 reclaimerQueue.Priority > victimQueue.Priority
@@ -94,4 +94,4 @@ Follows the existing pattern used for `kValue` / `relcaimerSaturationMultiplier`
 No code change. Consolidation (`pkg/scheduler/actions/consolidation/`) doesn't call into the `proportion` reclaim strategies at all — its victim filter only checks `IsPreemptibleJob()` and active-task count, because its scenario validator (`allPodsReallocated`) requires every evicted victim to be reallocated somewhere; it repacks, it doesn't permanently transfer resources across queues. The quota-protection concern this feature relaxes doesn't apply to consolidation the same way, so today's behavior already covers "applicable to consolidation" without change.
 
 ## 7. Edge Cases & Risks
-- **Non-preemptible**: The weakness of the new approach layes in non-preemptable workloads. Now there is an incentive for the user to fill it's quota with Non-preemtible workloads.
+- **Non-preemptible**: The weakness of the new approach lays in non-preemptable workloads. Now there is an incentive for the user to fill its quota with Non-preemtible workloads.
