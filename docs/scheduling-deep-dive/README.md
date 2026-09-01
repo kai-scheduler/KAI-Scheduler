@@ -88,7 +88,7 @@ Now that both concepts have been introduced, here is how they compare — they a
 | Affects guaranteed quota? | No | No |
 | Affects over-quota distribution? | Yes — order between queues | No |
 | Affects preemption? | No | Yes — determines victims |
-| Affects reclaim? | Indirectly (via fair-share); directly gates in-quota reclaim when `queuePriorityInQuotaReclaim` is enabled | No |
+| Affects reclaim? | Yes - effects the fair share calculations and required for the reclaim strategy `queuePriorityInQuotaReclaim` (which is disabled by default) | No |
 
 ## Reclaim: Recovering Resources Between Queues
 
