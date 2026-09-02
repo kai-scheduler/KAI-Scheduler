@@ -416,8 +416,28 @@ func (ni *NodeInfo) addTask(task *pod_info.PodInfo, allowTaskToExistOnDifferentG
 
 	ni.addTaskResources(task)
 	ni.addTaskStorage(task)
-	ni.PodAffinityInfo.AddPod(task.Pod)
+	if !excludedFromPodAffinity(task.Status) {
+		ni.PodAffinityInfo.AddPod(task.Pod)
+	}
 	return nil
+}
+
+// excludedFromPodAffinity reports whether a task in the given status is left out of
+// the node's inter-pod (anti-)affinity index.
+//
+// A Releasing task is one the scheduler has decided to evict, or that is already
+// terminating. Its resources are already treated as future-free so a pending pod can
+// be Pipelined onto them, and a Pipelined pod is never bound while the releasing pod
+// is still on the node. Indexing it for affinity makes the two views disagree:
+// reclaim and preempt free the resources, but the k8s InterPodAffinity filter still
+// sees the victim, so a pending pod with a required anti-affinity against the victims
+// fails "didn't match pod anti-affinity rules" in every scenario, however many
+// victims are chosen.
+//
+// StuckInReleasing stays indexed: its resources are not pipelinable either, so the
+// pod is treated as present in both views.
+func excludedFromPodAffinity(status pod_status.PodStatus) bool {
+	return status == pod_status.Releasing
 }
 
 func (ni *NodeInfo) AddTasksToNode(podInfos []*pod_info.PodInfo,
@@ -517,9 +537,13 @@ func (ni *NodeInfo) RemoveTask(ti *pod_info.PodInfo) error {
 
 	ni.removeTaskStorage(task)
 	ni.removeTaskResources(task)
-	err := ni.PodAffinityInfo.RemovePod(task.Pod)
-
-	return err
+	// task is the stored copy, so its status is the one addTask indexed under. A task
+	// that was never indexed must not be un-indexed: the k8s NodeInfo.RemovePod
+	// returns "not found" and would fail UpdateTask (and the unevict rollback).
+	if excludedFromPodAffinity(task.Status) {
+		return nil
+	}
+	return ni.PodAffinityInfo.RemovePod(task.Pod)
 }
 
 func (ni *NodeInfo) removeTaskResources(task *pod_info.PodInfo) {
