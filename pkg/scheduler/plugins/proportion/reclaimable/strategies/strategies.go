@@ -141,3 +141,11 @@ func ReclaimeeExceedsDeservedQuota(
 ) bool {
 	return !reclaimeeRemainingShare.LessEqual(reclaimeeQueue.GetDeservedShare())
 }
+
+func ReclaimerFitsReclaimByQueuePriority(
+	queuePriorityInQuotaReclaimEnabled bool,
+	reclaimerQueue *rs.QueueAttributes,
+	reclaimeeQueue *rs.QueueAttributes,
+) bool {
+	return queuePriorityInQuotaReclaimEnabled && reclaimerQueue.Priority > reclaimeeQueue.Priority
+}
