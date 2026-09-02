@@ -625,7 +625,14 @@ func TestAddRemovePods(t *testing.T) {
 
 			controller := NewController(t)
 			nodePodAffinityInfoAdded := pod_affinity.NewMockNodePodAffinityInfo(controller)
-			nodePodAffinityInfoAdded.EXPECT().AddPod(Any()).Times(len(test.podsInfoMetadata))
+			// Releasing tasks are not indexed for pod affinity (see excludedFromPodAffinity).
+			indexedForAffinity := 0
+			for _, m := range test.podsInfoMetadata {
+				if m.status != pod_status.Releasing {
+					indexedForAffinity++
+				}
+			}
+			nodePodAffinityInfoAdded.EXPECT().AddPod(Any()).Times(indexedForAffinity)
 
 			vectorMap := testVectorMapFromNode(test.node)
 			for _, podInfoMetaData := range test.podsInfoMetadata {
@@ -670,7 +677,7 @@ func TestAddRemovePods(t *testing.T) {
 			}
 
 			nodePodAffinityInfoRemoved := pod_affinity.NewMockNodePodAffinityInfo(controller)
-			nodePodAffinityInfoRemoved.EXPECT().RemovePod(Any()).Times(len(test.podsInfoMetadata))
+			nodePodAffinityInfoRemoved.EXPECT().RemovePod(Any()).Times(indexedForAffinity)
 			ni.PodAffinityInfo = nodePodAffinityInfoRemoved
 
 			// This is an important line - the remove code might not work if it won't remove in reverse order
@@ -1269,7 +1276,13 @@ func TestNodeInfo_GetSumOfReleasingGPUs(t *testing.T) {
 
 			controller := NewController(t)
 			nodePodAffinity := pod_affinity.NewMockNodePodAffinityInfo(controller)
-			nodePodAffinity.EXPECT().AddPod(Any()).Times(len(tt.tasks))
+			indexedForAffinity := 0
+			for _, task := range tt.tasks {
+				if task.Status != pod_status.Releasing {
+					indexedForAffinity++
+				}
+			}
+			nodePodAffinity.EXPECT().AddPod(Any()).Times(indexedForAffinity)
 
 			ni := NewNodeInfo(node, nodePodAffinity, testVectorMapFromNode(node))
 			for _, task := range tt.tasks {
@@ -1553,7 +1566,14 @@ func TestResourceReservationPodConsumesMaxPods(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			controller := NewController(t)
 			nodePodAffinityInfo := pod_affinity.NewMockNodePodAffinityInfo(controller)
-			nodePodAffinityInfo.EXPECT().AddPod(Any()).Times(len(tt.pods))
+			// A deletion timestamp makes the task Releasing, which is not indexed for pod affinity.
+			indexedForAffinity := 0
+			for _, pod := range tt.pods {
+				if pod.DeletionTimestamp == nil {
+					indexedForAffinity++
+				}
+			}
+			nodePodAffinityInfo.EXPECT().AddPod(Any()).Times(indexedForAffinity)
 
 			vectorMap := resource_info.NewResourceVectorMap()
 			vectorMap.AddResourceList(tt.node.Status.Allocatable)

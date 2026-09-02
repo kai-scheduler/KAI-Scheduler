@@ -31,6 +31,7 @@ type TestTaskBasic struct {
 	NodeName                   string // Relevant if job is running
 	NodeAffinityNames          []string
 	PodAffinityLabels          map[string]string
+	PodAntiAffinityLabels      map[string]string // anti-affinity selector; defaults to PodAffinityLabels
 	PodAffinityTopologyKey     string
 	PodAntiAffinityTopologyKey string
 	RequiredMigInstances       map[v1.ResourceName]int
@@ -116,7 +117,8 @@ func BuildPod(
 		pod.Spec.Affinity = &v1.Affinity{NodeAffinity: affinity}
 	}
 	pod.Spec.Affinity = applyPodAffinityLabels(
-		pod.Spec.Affinity, task.PodAffinityLabels, task.PodAffinityTopologyKey, task.PodAntiAffinityTopologyKey)
+		pod.Spec.Affinity, task.PodAffinityLabels, task.PodAntiAffinityLabels,
+		task.PodAffinityTopologyKey, task.PodAntiAffinityTopologyKey)
 
 	for migInstance, count := range task.RequiredMigInstances {
 		pod.Annotations[migInstance.String()] = fmt.Sprintf("%d", count)
@@ -163,11 +165,14 @@ func IsTaskStartedStatus(status pod_status.PodStatus) bool {
 }
 
 func applyPodAffinityLabels(
-	affinity *v1.Affinity, podAffinityLabels map[string]string,
+	affinity *v1.Affinity, podAffinityLabels, podAntiAffinityLabels map[string]string,
 	podAffinityTopologyKey, podAntiAffinityTopologyKey string,
 ) *v1.Affinity {
 	if affinity == nil {
 		affinity = &v1.Affinity{}
+	}
+	if podAntiAffinityLabels == nil {
+		podAntiAffinityLabels = podAffinityLabels
 	}
 
 	if podAffinityLabels != nil && len(podAffinityTopologyKey) != 0 {
@@ -185,12 +190,12 @@ func applyPodAffinityLabels(
 		affinity.PodAffinity.RequiredDuringSchedulingIgnoredDuringExecution = terms
 	}
 
-	if podAffinityLabels != nil && len(podAntiAffinityTopologyKey) != 0 {
+	if podAntiAffinityLabels != nil && len(podAntiAffinityTopologyKey) != 0 {
 		terms := []v1.PodAffinityTerm{
 			{
 				TopologyKey: podAntiAffinityTopologyKey,
 				LabelSelector: &metav1.LabelSelector{
-					MatchLabels: podAffinityLabels,
+					MatchLabels: podAntiAffinityLabels,
 				},
 			},
 		}
