@@ -19,11 +19,14 @@ import (
 
 	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
 	kaiv1binder "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/binder"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
 	binderplugins "github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common/test_utils"
 
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -326,6 +329,133 @@ var _ = Describe("Binder", func() {
 				Expect(newReservationSA.ImagePullSecrets).To(HaveLen(2))
 				Expect(newReservationSA.ImagePullSecrets).To(ContainElement(v1.LocalObjectReference{Name: "existing"}))
 				Expect(newReservationSA.ImagePullSecrets).To(ContainElement(v1.LocalObjectReference{Name: "test-secret"}))
+			})
+		})
+
+		Context("PodDisruptionBudget", func() {
+			It("includes PDB when HA and enabled with matching deployment selector", func(ctx context.Context) {
+				kaiConfig.Spec.Binder.Replicas = ptr.To(int32(2))
+				kaiConfig.Spec.Binder.Service.PodDisruptionBudget = &common.PodDisruptionBudget{
+					Enabled:        ptr.To(true),
+					MaxUnavailable: ptr.To(int32(1)),
+				}
+
+				objects, err := b.DesiredState(ctx, fakeKubeClient, kaiConfig)
+				Expect(err).To(BeNil())
+
+				pdbs := test_utils.FindTypesInObjects[*policyv1.PodDisruptionBudget](objects)
+				Expect(pdbs).To(HaveLen(1))
+				Expect(pdbs[0].Name).To(Equal(defaultResourceName))
+				Expect(pdbs[0].Namespace).To(Equal(constants.DefaultKAINamespace))
+				Expect(pdbs[0].Spec.MaxUnavailable).NotTo(BeNil())
+				Expect(pdbs[0].Spec.MaxUnavailable.IntVal).To(Equal(int32(1)))
+				Expect(pdbs[0].Spec.Selector.MatchLabels["app"]).To(Equal(defaultResourceName))
+
+				deploymentT := test_utils.FindTypeInObjects[*appsv1.Deployment](objects)
+				Expect(deploymentT).NotTo(BeNil())
+				Expect(pdbs[0].Spec.Selector.MatchLabels["app"]).To(Equal((*deploymentT).Spec.Template.Labels["app"]))
+			})
+
+			It("uses custom maxUnavailable", func(ctx context.Context) {
+				b.BaseResourceName = defaultResourceName
+				kaiConfig.Spec.Binder.Replicas = ptr.To(int32(2))
+				kaiConfig.Spec.Binder.Service.PodDisruptionBudget = &common.PodDisruptionBudget{
+					Enabled:        ptr.To(true),
+					MaxUnavailable: ptr.To(int32(2)),
+				}
+
+				objects, err := b.podDisruptionBudgetForKAIConfig(ctx, fakeKubeClient, kaiConfig)
+				Expect(err).To(BeNil())
+				Expect(objects).To(HaveLen(1))
+
+				pdb := objects[0].(*policyv1.PodDisruptionBudget)
+				Expect(pdb.Spec.MaxUnavailable).NotTo(BeNil())
+				Expect(pdb.Spec.MaxUnavailable.IntVal).To(Equal(int32(2)))
+			})
+
+			It("preserves resourceVersion from an existing PDB", func(ctx context.Context) {
+				existing := &policyv1.PodDisruptionBudget{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:            defaultResourceName,
+						Namespace:       constants.DefaultKAINamespace,
+						ResourceVersion: "42",
+						Labels: map[string]string{
+							"app": defaultResourceName,
+						},
+					},
+				}
+				fakeKubeClient = fake.NewClientBuilder().WithObjects(existing).Build()
+				b.BaseResourceName = defaultResourceName
+
+				kaiConfig.Spec.Binder.Replicas = ptr.To(int32(2))
+				kaiConfig.Spec.Binder.Service.PodDisruptionBudget = &common.PodDisruptionBudget{
+					Enabled:        ptr.To(true),
+					MaxUnavailable: ptr.To(int32(1)),
+				}
+
+				objects, err := b.podDisruptionBudgetForKAIConfig(ctx, fakeKubeClient, kaiConfig)
+				Expect(err).To(BeNil())
+				Expect(objects).To(HaveLen(1))
+
+				pdb := objects[0].(*policyv1.PodDisruptionBudget)
+				Expect(pdb.ResourceVersion).To(Equal("42"))
+				Expect(pdb.Spec.MaxUnavailable).NotTo(BeNil())
+				Expect(pdb.Spec.MaxUnavailable.IntVal).To(Equal(int32(1)))
+			})
+
+			It("omits PDB when HA but disabled", func(ctx context.Context) {
+				kaiConfig.Spec.Binder.Replicas = ptr.To(int32(2))
+				kaiConfig.Spec.Binder.Service.PodDisruptionBudget = &common.PodDisruptionBudget{
+					Enabled: ptr.To(false),
+				}
+
+				objects, err := b.DesiredState(ctx, fakeKubeClient, kaiConfig)
+				Expect(err).To(BeNil())
+
+				for _, obj := range objects {
+					Expect(obj).NotTo(BeAssignableToTypeOf(&policyv1.PodDisruptionBudget{}))
+				}
+			})
+
+			It("omits PDB when single replica even if enabled", func(ctx context.Context) {
+				kaiConfig.Spec.Binder.Replicas = ptr.To(int32(1))
+				kaiConfig.Spec.Binder.Service.PodDisruptionBudget = &common.PodDisruptionBudget{
+					Enabled: ptr.To(true),
+				}
+
+				objects, err := b.DesiredState(ctx, fakeKubeClient, kaiConfig)
+				Expect(err).To(BeNil())
+
+				for _, obj := range objects {
+					Expect(obj).NotTo(BeAssignableToTypeOf(&policyv1.PodDisruptionBudget{}))
+				}
+			})
+
+			It("omits PDB when PDB config is missing and defaults apply", func(ctx context.Context) {
+				kaiConfig.Spec.Binder.Replicas = ptr.To(int32(2))
+				kaiConfig.Spec.Binder.Service.PodDisruptionBudget = nil
+				kaiConfig.Spec.Binder.Service.SetDefaultsWhereNeeded("")
+
+				objects, err := b.DesiredState(ctx, fakeKubeClient, kaiConfig)
+				Expect(err).To(BeNil())
+				Expect(kaiConfig.Spec.Binder.Service.PodDisruptionBudget).NotTo(BeNil())
+				Expect(*kaiConfig.Spec.Binder.Service.PodDisruptionBudget.Enabled).To(BeFalse())
+
+				for _, obj := range objects {
+					Expect(obj).NotTo(BeAssignableToTypeOf(&policyv1.PodDisruptionBudget{}))
+				}
+			})
+
+			It("returns empty desired state when binder is disabled", func(ctx context.Context) {
+				kaiConfig.Spec.Binder.Service.Enabled = ptr.To(false)
+				kaiConfig.Spec.Binder.Replicas = ptr.To(int32(2))
+				kaiConfig.Spec.Binder.Service.PodDisruptionBudget = &common.PodDisruptionBudget{
+					Enabled: ptr.To(true),
+				}
+
+				objects, err := b.DesiredState(ctx, fakeKubeClient, kaiConfig)
+				Expect(err).To(BeNil())
+				Expect(objects).To(BeEmpty())
 			})
 		})
 	})

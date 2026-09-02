@@ -105,7 +105,10 @@ func New(options *Options, config *rest.Config) (*App, error) {
 	kubeClient := draversionawareclient.NewDRAAwareClient(kubernetes.NewForConfigOrDie(config))
 	informerFactory := informers.NewSharedInformerFactory(kubeClient, 0)
 
-	featuregates.SetDRAFeatureGate(kubeClient.Discovery())
+	if err := featuregates.SetDRAFeatureGate(kubeClient.Discovery()); err != nil {
+		setupLog.Error(err, "unable to determine dynamic resource allocation availability")
+		return nil, err
+	}
 
 	rrs := resourcereservation.NewService(options.FakeGPUNodes, clientWithWatch, options.ResourceReservationPodImage,
 		time.Duration(options.ResourceReservationAllocationTimeout)*time.Second,

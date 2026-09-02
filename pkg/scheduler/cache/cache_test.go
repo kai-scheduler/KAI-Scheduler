@@ -60,12 +60,13 @@ var _ = Describe("Cache", func() {
 		Context("Pod informer filtering", func() {
 			It("should filter failed pods while keeping succeeded pods, without filtering by scheduler name", func() {
 				kubeClient := fake.NewSimpleClientset()
-				cache := New(&SchedulerCacheParams{
+				cache, err := New(&SchedulerCacheParams{
 					KubeClient:         kubeClient,
 					KAISchedulerClient: kubeaischedulerfake.NewSimpleClientset(),
 					NodePoolParams:     &conf.SchedulingNodePoolParams{},
 					DiscoveryClient:    kubeClient.Discovery(),
 				})
+				Expect(err).NotTo(HaveOccurred())
 
 				stopCh := make(chan struct{})
 				defer close(stopCh)
@@ -123,8 +124,9 @@ var _ = Describe("Cache", func() {
 						DiscoveryClient:    fakeClient.Discovery(),
 					}
 
-					cache := New(params)
+					cache, err := New(params)
 
+					Expect(err).NotTo(HaveOccurred())
 					Expect(cache).NotTo(BeNil())
 					Expect(featuregates.DynamicResourcesEnabled()).To(Equal(expectDRAAvailable))
 				},
@@ -515,13 +517,14 @@ func setupCacheWithObjects(snapshot bool, objects []runtime.Object, kaiScheduler
 	kubeClient := fake.NewSimpleClientset(objects...)
 	kubeAiSchedulerClient := kubeaischedulerfake.NewSimpleClientset(kaiSchedulerObjects...)
 
-	cache := New(&SchedulerCacheParams{
+	cache, err := New(&SchedulerCacheParams{
 		KubeClient:            kubeClient,
 		KAISchedulerClient:    kubeAiSchedulerClient,
 		NodePoolParams:        &conf.SchedulingNodePoolParams{},
 		FullHierarchyFairness: true,
 		DiscoveryClient:       kubeClient.Discovery(),
 	})
+	Expect(err).NotTo(HaveOccurred())
 
 	stopCh := make(chan struct{})
 	cache.Run(stopCh)

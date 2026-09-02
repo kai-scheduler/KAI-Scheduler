@@ -118,7 +118,7 @@ func (s *SchedulerForShard) deploymentForShard(
 			Value: strconv.FormatInt(goMemLimit, 10),
 		})
 	}
-	deployment.Spec.Template.Spec.Containers[0].Env = env
+	deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env, env...)
 	deployment.Spec.Template.Spec.Containers[0].Args = containerArgs
 	deployment.Spec.Template.Spec.Volumes = []corev1.Volume{
 		{

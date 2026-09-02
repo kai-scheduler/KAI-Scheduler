@@ -19,6 +19,8 @@ Only leaf queues (queues with no children) can be used for scheduling jobs. Pare
 | **Over-Quota Weight** | Resource distribution weight within priority level | Integer |
 | **Limit** | Hard cap on resource consumption | Same as quota |
 
+Limits and quota are also enforced when running pods are resized in place; see [In-Place Pod Resize](../in-place-resize/README.md).
+
 ## API Reference
 
 ### Queue Specification

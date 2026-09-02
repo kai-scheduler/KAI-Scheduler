@@ -13,7 +13,15 @@ rules:
 - apiGroups:
   - ""
   resources:
-  - configmaps
+  - events
+  - pods/finalizers
+  verbs:
+  - create
+  - patch
+  - update
+- apiGroups:
+  - ""
+  resources:
   - pods
   verbs:
   - create
@@ -23,15 +31,6 @@ rules:
   - patch
   - update
   - watch
-- apiGroups:
-  - ""
-  resources:
-  - events
-  - pods/finalizers
-  verbs:
-  - create
-  - patch
-  - update
 - apiGroups:
   - ""
   resources:

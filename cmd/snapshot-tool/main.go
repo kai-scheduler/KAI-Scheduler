@@ -93,7 +93,10 @@ func main() {
 		DiscoveryClient:             kubeClient.Discovery(),
 	}
 
-	schedulerCache := cache.New(schedulerCacheParams)
+	schedulerCache, err := cache.New(schedulerCacheParams)
+	if err != nil {
+		log.InfraLogger.Fatalf("Failed to create scheduler cache: %v", err)
+	}
 	stopCh := make(chan struct{})
 	schedulerCache.Run(stopCh)
 	schedulerCache.WaitForCacheSync(stopCh)

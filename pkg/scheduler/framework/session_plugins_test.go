@@ -18,10 +18,12 @@ import (
 	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 )
 
@@ -304,4 +306,44 @@ func scenarioSearchDurationForTest(value string) metav1.Duration {
 		panic(err)
 	}
 	return metav1.Duration{Duration: duration}
+}
+
+func TestVictimOrderFn_PreservesExistingJobOrderFnBehavior(t *testing.T) {
+	priorityLikeJobOrderFn := func(l, r interface{}) int {
+		lv := l.(*podgroup_info.PodGroupInfo)
+		rv := r.(*podgroup_info.PodGroupInfo)
+		if lv.Priority > rv.Priority {
+			return -1
+		}
+		if lv.Priority < rv.Priority {
+			return 1
+		}
+		return 0
+	}
+
+	vm := resource_info.NewResourceVectorMap()
+	priorities := []int32{1, 1, 5, 5, 10, 20, 20, 100}
+
+	for i, lp := range priorities {
+		for j, rp := range priorities {
+			if i == j {
+				continue
+			}
+			ssn := &Session{JobOrderFns: []common_info.CompareFn{priorityLikeJobOrderFn}}
+			lJob := podgroup_info.NewPodGroupInfoWithVectorMap(
+				common_info.PodGroupID("l"), vm)
+			lJob.Priority = lp
+			rJob := podgroup_info.NewPodGroupInfoWithVectorMap(
+				common_info.PodGroupID("r"), vm)
+			rJob.Priority = rp
+
+			oldBehavior := !ssn.JobOrderFn(lJob, rJob)
+			newBehavior := ssn.VictimOrderFn(lJob, rJob)
+
+			if oldBehavior != newBehavior {
+				t.Errorf("mismatch for priorities l=%d r=%d: old !JobOrderFn=%v, new VictimOrderFn=%v",
+					lp, rp, oldBehavior, newBehavior)
+			}
+		}
+	}
 }

@@ -10,8 +10,11 @@ global:
   registry: registry/local/kai-scheduler
   tag: ""
   # Use FIPS-enabled images: appends "-fips" to every resolved image tag
-  # (whether it comes from a per-service tag, global.tag or the chart version)
-  # Valid values: "on" | "off"
+  # (whether it comes from a per-service tag, global.tag or the chart version).
+  # "only" does everything "on" does, plus sets GODEBUG=fips140=only on every KAI
+  # container, which can panic at runtime if non-approved crypto is used - see
+  # docs/fips/README.md. Setting "only" is the user's responsibility.
+  # Valid values: "on" | "only" | "off"
   fipsMode: "off"
   imagePullPolicy: IfNotPresent
   securityContext: {}
@@ -25,6 +28,9 @@ global:
   affinity: {}
   requireDefaultPodAntiAffinityTerm: false
   tolerations: []
+  # Additional tolerations for cluster DaemonSets (e.g. NUMA placement exporter).
+  # Merged ahead of each DaemonSet's own tolerations by the operator.
+  daemonsetsTolerations: []
   priorityClassName: ""
   namespaceLabelSelector: {}
   podLabelSelector: {}
@@ -113,6 +119,11 @@ binder:
   ports:
     metricsPort: 8080
   affinity: {}
+  # PDB is created only when binder replicas > 1 (operator.replicaCount / binder.replicas).
+  # For HA: set operator.replicaCount: 2 (or override binder.replicas in Config).
+  podDisruptionBudget:
+    enabled: true
+    maxUnavailable: 1
   # plugins allows overriding binder plugin configuration.
   # Built-in plugins can be disabled, reordered, or have their arguments changed.
   # Default plugins and priorities: volumebinding=300, dynamicresources=200, gpusharing=100.

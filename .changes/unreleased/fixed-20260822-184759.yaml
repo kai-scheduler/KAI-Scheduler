@@ -1,0 +1,3 @@
+kind: Fixed
+body: |-
+  Isolate same-named PodGroups across Kubernetes namespaces
