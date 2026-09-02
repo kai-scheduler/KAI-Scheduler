@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.17.1] - 2026-09-02
+
+### Changed
+- Renamed Helm value global.fips to global.fipsMode with on/off options [#1906](https://github.com/kai-scheduler/KAI-Scheduler/issues/1906)
+
+### Fixed
+- Allow PodGroup minMember and minSubGroup of 0 for workloads with no gang requirement
+- Propagate Kubernetes client QPS and burst settings to operator-managed controllers
+- Count a GPU shared by multiple pods through one DRA ResourceClaim once per node, preventing negative idle GPUs. [#1930](https://github.com/kai-scheduler/KAI-Scheduler/issues/1930) [TensorRaya](https://github.com/TensorRaya)
+- stalegangeviction no longer evicts remaining pods of a gang whose pods complete successfully [#1968](https://github.com/kai-scheduler/KAI-Scheduler/issues/1968) [Thezone-1](https://github.com/Thezone-1)
+
 ## [v0.17.0] - 2026-08-03
 
 ### Added
