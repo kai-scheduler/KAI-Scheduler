@@ -1478,6 +1478,7 @@ func Test_predicatesPlugin_evaluateTaskOnPredicates(t *testing.T) {
 
 			if err := pp.evaluateTaskOnPredicates(
 				task, job, node, tt.args.k8sPredicates,
+				fullAffinityView,
 				tt.args.isNonPreemptableTaskOnNodeOverCapacityFn,
 				tt.clusterData.isRestrictNodeSchedulingEnabled,
 				skipPredicates,

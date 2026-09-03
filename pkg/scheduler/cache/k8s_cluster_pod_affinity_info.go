@@ -17,6 +17,22 @@ type K8sClusterPodAffinityInfo struct {
 	k8sNodesArr              []ksf.NodeInfo
 	nodesWithPodAffinity     map[string]ksf.NodeInfo
 	nodesWithPodAntiAffinity map[string]ksf.NodeInfo
+
+	// pipeline is the sibling list built from the pipeline (post-release) view of
+	// every node: the same nodes, indexed without their Releasing pods. It backs the
+	// InterPodAffinity instance used for placements that will be Pipelined. nil when
+	// the owner did not set one up.
+	pipeline *K8sClusterPodAffinityInfo
+}
+
+// SetPipeline links the pipeline-view sibling list.
+func (ci *K8sClusterPodAffinityInfo) SetPipeline(pipeline *K8sClusterPodAffinityInfo) {
+	ci.pipeline = pipeline
+}
+
+// Pipeline returns the pipeline-view sibling list, or nil.
+func (ci *K8sClusterPodAffinityInfo) Pipeline() *K8sClusterPodAffinityInfo {
+	return ci.pipeline
 }
 
 func NewK8sClusterPodAffinityInfo() *K8sClusterPodAffinityInfo {

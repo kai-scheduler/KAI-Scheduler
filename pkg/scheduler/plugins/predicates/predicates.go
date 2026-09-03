@@ -21,6 +21,7 @@ package predicates
 
 import (
 	"fmt"
+	k8sframework "k8s.io/kubernetes/pkg/scheduler/framework"
 	"slices"
 	"strconv"
 	"strings"
@@ -138,10 +139,34 @@ func (pp *predicatesPlugin) OnSessionOpen(ssn *framework.Session) {
 		return pp.evaluateTaskOnVictimInvariantPrePredicates(task, k8sPredicates)
 	})
 
-	ssn.AddPredicateFn(func(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo) error {
-		return pp.evaluateTaskOnPredicates(task, job, node, k8sPredicates,
+	fullPredicate := func(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo) error {
+		return pp.evaluateTaskOnPredicates(task, job, node, k8sPredicates, fullAffinityView,
 			ssn.IsTaskAllocationOnNodeOverCapacityFn, ssn.IsRestrictNodeSchedulingEnabled, pp.skipPredicates)
-	})
+	}
+	pipelinePredicates, hasPipelineView := predicates.NewSessionPipelinePredicates(ssn, k8sPredicates)
+	if !hasPipelineView {
+		ssn.AddPredicateFn(fullPredicate)
+	} else {
+		ssn.AddPipelinePrePredicateFn(func(task *pod_info.PodInfo, _ *podgroup_info.PodGroupInfo) error {
+			// Only the pipeline PodAffinity pre-filter runs here; every other predicate shares
+			// its cycle state with the full set, whose pre-predicates already ran.
+			predicate := pipelinePredicates[predicates.PodAffinityPipeline]
+			_, status, required := pp.evaluateSinglePrePredicate(task, predicates.PodAffinityPipeline, predicate)
+			if required && status != nil && status.AsError() != nil {
+				fitErrors := common_info.NewFitErrors()
+				fitErrors.SetError(fmt.Sprintf("Scheduling conditions were not met for pod %s/%s:\n%v",
+					task.Namespace, task.Name,
+					generateErrorLog([]prePredicateError{newPrePredicateError(string(predicates.PodAffinityPipeline), *status)})))
+				return fitErrors
+			}
+			return nil
+		})
+		ssn.AddPredicateFnWithPipelineVariant(fullPredicate,
+			func(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo) error {
+				return pp.evaluateTaskOnPredicates(task, job, node, pipelinePredicates, pipelineAffinityView,
+					ssn.IsTaskAllocationOnNodeOverCapacityFn, ssn.IsRestrictNodeSchedulingEnabled, pp.skipPredicates)
+			})
+	}
 }
 
 func (pp *predicatesPlugin) initializeK8sNodeInfos(ssn *framework.Session) {
@@ -153,6 +178,9 @@ func (pp *predicatesPlugin) initializeK8sNodeInfos(ssn *framework.Session) {
 		}
 
 		podAffinityInfo.NodeInfo.SetNode(nodeInfo.Node)
+		if pipelineInfo, ok := nodeInfo.PipelinePodAffinityInfo.(*cluster_info.K8sNodePodAffinityInfo); ok && pipelineInfo != nil {
+			pipelineInfo.NodeInfo.SetNode(nodeInfo.Node)
+		}
 	}
 }
 
@@ -300,9 +328,28 @@ func generateErrorLog(allErrors []prePredicateError) string {
 	return errorsLog
 }
 
+// affinityView selects which inter-pod affinity index of a node the k8s predicates see.
+type affinityView int
+
+const (
+	// fullAffinityView indexes every active pod, including Releasing ones (upstream semantics).
+	fullAffinityView affinityView = iota
+	// pipelineAffinityView omits Releasing pods; valid only for placements that will be Pipelined.
+	pipelineAffinityView
+)
+
+func k8sNodeInfoForView(node *node_info.NodeInfo, view affinityView) *k8sframework.NodeInfo {
+	if view == pipelineAffinityView && node.PipelinePodAffinityInfo != nil {
+		if info, ok := node.PipelinePodAffinityInfo.(*cluster_info.K8sNodePodAffinityInfo); ok && info != nil {
+			return info.NodeInfo
+		}
+	}
+	return node.PodAffinityInfo.(*cluster_info.K8sNodePodAffinityInfo).NodeInfo
+}
+
 func (pp *predicatesPlugin) evaluateTaskOnPredicates(
 	task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo,
-	k8sPredicates k8s_internal.SessionPredicates,
+	k8sPredicates k8s_internal.SessionPredicates, view affinityView,
 	isTaskAllocationOnNodeOverCapacityFn api.IsTaskAllocationOverCapacityFn,
 	isRestrictNodeSchedulingEnabled func() bool,
 	skipPredicates SkipPredicates,
@@ -317,7 +364,7 @@ func (pp *predicatesPlugin) evaluateTaskOnPredicates(
 		task.NodeName = originalPodInfoNodeName
 	}()
 
-	k8sNodeInfo := node.PodAffinityInfo.(*cluster_info.K8sNodePodAffinityInfo).NodeInfo
+	k8sNodeInfo := k8sNodeInfoForView(node, view)
 
 	if result := isTaskAllocationOnNodeOverCapacityFn(task, job, node); !result.IsSchedulable {
 		return common_info.NewFitError(task.Name, task.Namespace, node.Name,

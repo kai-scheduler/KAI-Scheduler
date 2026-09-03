@@ -64,6 +64,21 @@ func (ssn *Session) AddPredicateFn(pf api.PredicateFn) {
 	ssn.PredicateFns = append(ssn.PredicateFns, pf)
 }
 
+// AddPipelinePrePredicateFn registers a pre-predicate for placements that will be Pipelined.
+func (ssn *Session) AddPipelinePrePredicateFn(pf api.PrePredicateFn) {
+	ssn.PipelinePrePredicateFns = append(ssn.PipelinePrePredicateFns, pf)
+}
+
+// AddPredicateFnWithPipelineVariant registers a predicate together with the variant to run
+// instead of it for placements that will be Pipelined (see Session.FittingNode).
+func (ssn *Session) AddPredicateFnWithPipelineVariant(pf, pipelinePf api.PredicateFn) {
+	ssn.PredicateFns = append(ssn.PredicateFns, pf)
+	if ssn.pipelinePredicateOverrides == nil {
+		ssn.pipelinePredicateOverrides = map[int]api.PredicateFn{}
+	}
+	ssn.pipelinePredicateOverrides[len(ssn.PredicateFns)-1] = pipelinePf
+}
+
 func (ssn *Session) AddJobOrderFn(jof common_info.CompareFn) {
 	ssn.JobOrderFns = append(ssn.JobOrderFns, jof)
 }
@@ -481,6 +496,35 @@ func (ssn *Session) PredicateFn(task *pod_info.PodInfo, job *podgroup_info.PodGr
 		if err != nil {
 			log.InfraLogger.V(6).Infof(
 				"Failed to run Predicate on task %s", task.Name)
+			return err
+		}
+	}
+	return nil
+}
+
+// PipelinePrePredicateFn runs the pipeline-view pre-predicates. Without any registered
+// (no pipeline InterPodAffinity instance) it is a no-op: the full pre-predicates already
+// ran and PipelinePredicateFn falls back to the full predicates.
+func (ssn *Session) PipelinePrePredicateFn(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo) error {
+	for _, prePredicate := range ssn.PipelinePrePredicateFns {
+		if err := prePredicate(task, job); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// PipelinePredicateFn evaluates a placement that will be Pipelined: every registered
+// predicate runs, with a predicate's pipeline variant substituted where one exists.
+// Identical to PredicateFn when no variant is registered.
+func (ssn *Session) PipelinePredicateFn(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo, node *node_info.NodeInfo) error {
+	for i, pfn := range ssn.PredicateFns {
+		if pipelinePfn, ok := ssn.pipelinePredicateOverrides[i]; ok {
+			pfn = pipelinePfn
+		}
+		if err := pfn(task, job, node); err != nil {
+			log.InfraLogger.V(6).Infof(
+				"Failed to run pipeline-view Predicate on task %s", task.Name)
 			return err
 		}
 	}
