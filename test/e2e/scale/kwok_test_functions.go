@@ -17,6 +17,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
@@ -52,17 +53,26 @@ const (
 )
 
 var (
-	SingleGPURequirement = v1.ResourceRequirements{
+	SingleGPURequirement   = gpuRequirement(1)
+	FullNodeGPURequirement = gpuRequirement(gpusPerNode)
+
+	// CPUOnlyRequirement sizes the GPU-less pods of mixed workloads (inference front-ends, RL
+	// environments, data preprocessing). KWOK nodes report 32 CPU and 256Gi.
+	CPUOnlyRequirement = v1.ResourceRequirements{
 		Limits: map[v1.ResourceName]resource.Quantity{
-			constants.NvidiaGpuResource: *resource.NewQuantity(1, resource.DecimalSI),
-		},
-	}
-	FullNodeGPURequirement = v1.ResourceRequirements{
-		Limits: map[v1.ResourceName]resource.Quantity{
-			constants.NvidiaGpuResource: *resource.NewQuantity(gpusPerNode, resource.DecimalSI),
+			v1.ResourceCPU:    resource.MustParse("2"),
+			v1.ResourceMemory: resource.MustParse("4Gi"),
 		},
 	}
 )
+
+func gpuRequirement(gpus int) v1.ResourceRequirements {
+	return v1.ResourceRequirements{
+		Limits: map[v1.ResourceName]resource.Quantity{
+			constants.NvidiaGpuResource: *resource.NewQuantity(int64(gpus), resource.DecimalSI),
+		},
+	}
+}
 
 func basicScaleTest(
 	ctx context.Context, testCtx *testcontext.TestContext, testName string,
@@ -169,15 +179,13 @@ func distributedJobsScaleTestInternal(
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			job, err := submitDistributedJobForKwok(
-				ctx, testCtx, testQueue,
-				v1.ResourceRequirements{
-					Limits: map[v1.ResourceName]resource.Quantity{
-						constants.NvidiaGpuResource: *resource.NewQuantity(int64(gpuPerPod), resource.DecimalSI),
-					},
-				}, podsPerDistributedJob,
-				batchLabels, batchLabels, topologyConstraint,
-			)
+			job, err := submitDistributedJobForKwok(ctx, testCtx, testQueue, rd.DistributedBatchJobOptions{
+				Parallelism:        ptr.To(int32(podsPerDistributedJob)),
+				Resources:          gpuRequirement(gpuPerPod),
+				ExtraLabels:        batchLabels,
+				JobLabels:          batchLabels,
+				TopologyConstraint: topologyConstraint,
+			})
 			lock.Lock()
 			defer lock.Unlock()
 			if err != nil {
@@ -327,16 +335,11 @@ func measureUnschedulableDelayInSeconds(
 
 // reclaimForOneLargeJob creates a distributed job with the specified number of pods, each requesting gpusPerNode GPUs
 func reclaimForOneLargeJob(ctx context.Context, testCtx *testcontext.TestContext, reclaimSingleGPUJobsQueue *v2.Queue, numberOfPods int) {
-	result, err := createDistributedJobForKwok(
-		ctx, testCtx, reclaimSingleGPUJobsQueue,
-		v1.ResourceRequirements{
-			Limits: map[v1.ResourceName]resource.Quantity{
-				constants.NvidiaGpuResource: *resource.NewQuantity(int64(gpusPerNode), resource.DecimalSI),
-			},
-		},
-		numberOfPods, map[string]string{},
-		nil,
-	)
+	result, err := createDistributedJobForKwok(ctx, testCtx, reclaimSingleGPUJobsQueue,
+		rd.DistributedBatchJobOptions{
+			Parallelism: ptr.To(int32(numberOfPods)),
+			Resources:   FullNodeGPURequirement,
+		})
 	Expect(err).NotTo(HaveOccurred())
 	podGroup := result.PodGroup
 
@@ -396,10 +399,12 @@ func runNCCLSimulation(
 			break
 		}
 		for range numberOfNCCLJobsPerSize {
-			job, err := submitDistributedJobForKwok(
-				ctx, testCtx, testQueue, FullNodeGPURequirement, jobSize,
-				podLabels, jobLabels, nil,
-			)
+			job, err := submitDistributedJobForKwok(ctx, testCtx, testQueue, rd.DistributedBatchJobOptions{
+				Parallelism: ptr.To(int32(jobSize)),
+				Resources:   FullNodeGPURequirement,
+				ExtraLabels: podLabels,
+				JobLabels:   jobLabels,
+			})
 			if err != nil {
 				creationError = errors.Join(creationError, err)
 				continue

@@ -40,6 +40,9 @@ Tests are organized into contexts:
   - Whole GPU allocation tests
   - Distributed job scheduling
   - Reclaim scenarios
+- **Extended scenarios** (`scale-extended`, excluded from the daily run): customer-shaped workloads —
+  disaggregated inference pod groups with per-sub-group topology constraints, elastic job reclaim, hero jobs
+  under a required topology level, mixed RL/preprocessing workloads across queues, and fractional GPU allocation
 
 
 ## Environment Setup
@@ -64,6 +67,27 @@ ginkgo -v ./test/e2e/scale/
 ```
 
 Node count defaults to 500, override with `NODE_COUNT` env var.
+
+### Selecting scenarios
+
+The suite seeds its own Ginkgo label filter, so the daily run needs no filter flag:
+
+| Label | Meaning |
+|---|---|
+| `scale` | Every spec in the suite |
+| `scale-extended` | Customer-driven scenarios excluded from the daily run: disaggregated inference, elastic reclaim, hero job, mixed workloads, fractions |
+| `fractions` | The fractional-GPU scenarios (also `scale-extended`) |
+| `nccl` | The NCCL simulation |
+
+Without a filter the suite runs everything except `scale-extended`. Select scenarios with the
+`SCALE_LABEL_FILTER` env var, or override entirely with an explicit `--label-filter`:
+
+```bash
+SCALE_LABEL_FILTER=scale-extended ginkgo -v ./test/e2e/scale/            # the extended scenarios
+SCALE_LABEL_FILTER=fractions ginkgo -v ./test/e2e/scale/                 # fractions only
+SCALE_LABEL_FILTER='scale-extended && !fractions' ginkgo -v ./test/e2e/scale/
+ginkgo -v --label-filter '' ./test/e2e/scale/                            # everything
+```
 
 ## Recommended Architecture
 
