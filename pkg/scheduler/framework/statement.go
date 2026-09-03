@@ -31,6 +31,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 )
 
@@ -570,6 +571,16 @@ func (s *Statement) Commit() error {
 	}
 
 	var err error
+	type evictionEventKey struct {
+		podGroup common_info.PodGroupID
+		action   string
+	}
+	committedEvictions := map[evictionEventKey]*podgroup_info.PodGroupInfo{}
+	defer func() {
+		for key, podGroup := range committedEvictions {
+			s.ssn.Cache.RecordPodGroupEvictionEvent(podGroup, key.action)
+		}
+	}()
 
 	log.InfraLogger.V(4).Infof("Committing operations ...")
 	for i, op := range s.operations {
@@ -585,6 +596,9 @@ func (s *Statement) Commit() error {
 			if err = s.commitEvict(taskInfo, evictOp); err != nil {
 				log.InfraLogger.Errorf("Failed to evict task <%v/%v>, error: <%v>",
 					taskInfo.Namespace, taskInfo.Name, err)
+			} else {
+				key := evictionEventKey{podGroup: taskInfo.Job, action: evictOp.evictionMetadata.Action}
+				committedEvictions[key] = s.ssn.ClusterInfo.PodGroupInfos[taskInfo.Job]
 			}
 		case pipeline:
 			log.InfraLogger.V(4).Infof("Pipelining task: %v/%v", taskInfo.Namespace, taskInfo.Name)

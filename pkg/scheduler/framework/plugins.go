@@ -45,12 +45,22 @@ func GetPluginBuilder(name string) (PluginBuilder, bool) {
 
 // Action management
 var actionMap = map[ActionType]Action{}
+var evictionActionNames = map[ActionType]struct{}{}
 
 func RegisterAction(act Action) {
 	pluginMutex.Lock()
 	defer pluginMutex.Unlock()
 
 	actionMap[act.Name()] = act
+	delete(evictionActionNames, act.Name())
+}
+
+func RegisterEvictionAction(act Action) {
+	pluginMutex.Lock()
+	defer pluginMutex.Unlock()
+
+	actionMap[act.Name()] = act
+	evictionActionNames[act.Name()] = struct{}{}
 }
 
 func GetAction(name string) (Action, bool) {
@@ -59,4 +69,12 @@ func GetAction(name string) (Action, bool) {
 
 	act, found := actionMap[ActionType(name)]
 	return act, found
+}
+
+func IsEvictionAction(name ActionType) bool {
+	pluginMutex.Lock()
+	defer pluginMutex.Unlock()
+
+	_, found := evictionActionNames[name]
+	return found
 }

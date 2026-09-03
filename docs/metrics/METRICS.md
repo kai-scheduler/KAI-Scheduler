@@ -58,7 +58,8 @@ Metrics related to the core scheduling algorithm performance, task lifecycle, an
 | `scenarios_simulation_by_action` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `action` | Cumulative count of simulation scenarios run by each action during scheduling decisions. |
 | `scenarios_filtered_by_action` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `action` | Cumulative count of simulation scenarios filtered/rejected by each action. |
 | `total_preemption_attempts` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Cumulative total of preemption attempts across the entire cluster lifetime. |
-| `pod_group_evicted_pods_total` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `podgroup`, `uid`, `nodepool`, `action` | Cumulative count of pods evicted per pod group, tracked by nodepool and action. |
+| `pod_group_evicted_pods_total` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `podgroup`, `nodepool`, `action`, `owner_group`, `owner_kind`, `owner_name`, `owner_uid`, `subgroup` | Cumulative count of pods evicted per pod group, workload, and leaf subgroup. |
+| `pod_group_eviction_events_total` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `podgroup`, `nodepool`, `action`, `owner_group`, `owner_kind`, `owner_name`, `owner_uid` | Cumulative count of committed eviction decisions per affected pod group. |
 | `scenario_search_jobs_total` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `action`, `result`, `reduced_budget` | Cumulative count of jobs considered by bounded scenario search, grouped by scheduling action, terminal search result, and whether the job ran after the action budget was reduced. |
 | `scenario_search_action_budget_configured_seconds` | Gauge | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `action` | Configured scenario-search budget for each scheduling action in seconds. A value of 0 means unlimited. |
 | `scenario_search_job_budget_configured_seconds` | Gauge | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Configured per-job scenario-search budget in seconds. A value of 0 means unlimited. |
@@ -103,4 +104,8 @@ Business/Resource Labels:
 - **`OnSession`**: Session lifecycle phase (`OnSessionOpen` or `OnSessionClose`)
 - **`podgroup`**: PodGroup resource identifier
 - **`nodepool`**: Node pool identifier for resource allocation
-- **`uid`**: Unique identifier (pod group UID)
+- **`owner_group`**: API group of the top-level workload object
+- **`owner_kind`**: Kind of the top-level workload object
+- **`owner_name`**: Name of the top-level workload object
+- **`owner_uid`**: UID of the top-level workload object
+- **`subgroup`**: Leaf SubGroup of an evicted pod; empty for flat PodGroups

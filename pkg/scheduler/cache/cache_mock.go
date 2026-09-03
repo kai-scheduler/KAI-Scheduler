@@ -149,6 +149,18 @@ func (mr *MockCacheMockRecorder) RecordJobStatusEvent(job, resolveDetailedFitErr
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RecordJobStatusEvent", reflect.TypeOf((*MockCache)(nil).RecordJobStatusEvent), job, resolveDetailedFitErrors)
 }
 
+// RecordPodGroupEvictionEvent mocks base method.
+func (m *MockCache) RecordPodGroupEvictionEvent(job *podgroup_info.PodGroupInfo, action string) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "RecordPodGroupEvictionEvent", job, action)
+}
+
+// RecordPodGroupEvictionEvent indicates an expected call of RecordPodGroupEvictionEvent.
+func (mr *MockCacheMockRecorder) RecordPodGroupEvictionEvent(job, action any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RecordPodGroupEvictionEvent", reflect.TypeOf((*MockCache)(nil).RecordPodGroupEvictionEvent), job, action)
+}
+
 // Run mocks base method.
 func (m *MockCache) Run(stopCh <-chan struct{}) {
 	m.ctrl.T.Helper()

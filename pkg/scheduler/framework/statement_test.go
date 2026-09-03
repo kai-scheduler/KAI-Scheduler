@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 	resourceapi "k8s.io/api/resource/v1"
 
 	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
@@ -19,11 +21,58 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	schedulercache "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 )
+
+func TestStatementCommitRecordsOneEvictionEventPerPodGroup(t *testing.T) {
+	vectorMap := resource_info.NewResourceVectorMap()
+	jobs, tasksToNodes, _ := jobs_fake.BuildJobsAndTasksMaps([]*jobs_fake.TestJobBasic{
+		{
+			Name:      "victim-a",
+			QueueName: "queue0",
+			Tasks: []*tasks_fake.TestTaskBasic{
+				{State: pod_status.Running, NodeName: "node0"},
+				{State: pod_status.Running, NodeName: "node0"},
+			},
+		},
+		{
+			Name:      "victim-b",
+			QueueName: "queue0",
+			Tasks: []*tasks_fake.TestTaskBasic{
+				{State: pod_status.Running, NodeName: "node0"},
+			},
+		},
+	}, vectorMap)
+	nodes := nodes_fake.BuildNodesInfoMap(map[string]nodes_fake.TestNodeBasic{
+		"node0": {CPUMillis: 10000},
+	}, tasksToNodes, nil, vectorMap)
+
+	controller := gomock.NewController(t)
+	cache := schedulercache.NewMockCache(controller)
+	cache.EXPECT().Evict(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(3)
+	cache.EXPECT().RecordPodGroupEvictionEvent(jobs["victim-a"], "preempt").Times(1)
+	cache.EXPECT().RecordPodGroupEvictionEvent(jobs["victim-b"], "preempt").Times(1)
+
+	session := &Session{ClusterInfo: &api.ClusterInfo{
+		PodGroupInfos: jobs,
+		Nodes:         nodes,
+	}, Cache: cache}
+	statement := session.Statement()
+	for _, job := range jobs {
+		for _, task := range job.GetAllPodsMap() {
+			require.NoError(t, statement.Evict(task, "evicted", eviction_info.EvictionMetadata{
+				Action:           "preempt",
+				EvictionGangSize: 3,
+			}))
+		}
+	}
+
+	require.NoError(t, statement.Commit())
+}
 
 func TestStatement_Evict_Unevict(t *testing.T) {
 	type args struct {

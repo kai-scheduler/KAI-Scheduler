@@ -25,6 +25,11 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto" // auto-registry collectors in default registry
+	"gopkg.in/yaml.v3"
+
+	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/utils"
 )
 
 const (
@@ -57,6 +62,7 @@ var (
 	queueGPUUsage                                  *prometheus.GaugeVec
 	usageQueryLatency                              *prometheus.HistogramVec
 	podGroupEvictedPodsTotal                       *prometheus.CounterVec
+	podGroupEvictionEventsTotal                    *prometheus.CounterVec
 	scenarioSearchJobsTotal                        *prometheus.CounterVec
 	scenarioSearchActionBudgetConfiguredSeconds    *prometheus.GaugeVec
 	scenarioSearchJobBudgetConfiguredSeconds       prometheus.Gauge
@@ -214,7 +220,20 @@ func InitMetrics(namespace string) {
 			Namespace: namespace,
 			Name:      "pod_group_evicted_pods_total",
 			Help:      "Total number of pods evicted per pod group",
-		}, []string{"podgroup", "namespace", "uid", "nodepool", "action"})
+		}, []string{
+			"podgroup", "namespace", "nodepool", "action",
+			"owner_group", "owner_kind", "owner_name", "owner_uid", "subgroup",
+		})
+
+	podGroupEvictionEventsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Name:      "pod_group_eviction_events_total",
+			Help:      "Total number of committed eviction decisions per pod group",
+		}, []string{
+			"podgroup", "namespace", "nodepool", "action",
+			"owner_group", "owner_kind", "owner_name", "owner_uid",
+		})
 
 	scenarioSearchJobsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
@@ -365,9 +384,115 @@ func RegisterPreemptionAttempts() {
 	preemptionAttempts.Inc()
 }
 
+type topOwnerMetadata struct {
+	Name  string `yaml:"name"`
+	UID   string `yaml:"uid"`
+	Group string `yaml:"group"`
+	Kind  string `yaml:"kind"`
+}
+
+func ownerLabels(podGroup *enginev2alpha2.PodGroup) topOwnerMetadata {
+	var metadata topOwnerMetadata
+	if value := podGroup.Annotations[commonconstants.TopOwnerMetadataKey]; value != "" {
+		if err := yaml.Unmarshal([]byte(value), &metadata); err != nil {
+			return topOwnerMetadata{}
+		}
+	}
+	return metadata
+}
+
+func podGroupEvictionLabels(podGroup *enginev2alpha2.PodGroup, nodepool, action string) []string {
+	owner := ownerLabels(podGroup)
+	return []string{
+		podGroup.Name,
+		podGroup.Namespace,
+		nodepool,
+		action,
+		owner.Group,
+		owner.Kind,
+		owner.Name,
+		owner.UID,
+	}
+}
+
 // IncPodGroupEvictedPods records a single pod eviction for a pod group.
-func IncPodGroupEvictedPods(name, namespace, uid, nodepool, action string) {
-	podGroupEvictedPodsTotal.WithLabelValues(name, namespace, uid, nodepool, action).Inc()
+func IncPodGroupEvictedPods(podGroup *enginev2alpha2.PodGroup, nodepool, action, subgroup string) {
+	labels := append(podGroupEvictionLabels(podGroup, nodepool, action), subgroup)
+	podGroupEvictedPodsTotal.WithLabelValues(labels...).Inc()
+}
+
+// IncPodGroupEvictionEvents records a committed eviction decision for a pod group.
+func IncPodGroupEvictionEvents(podGroup *enginev2alpha2.PodGroup, nodepool, action string) {
+	podGroupEvictionEventsTotal.WithLabelValues(podGroupEvictionLabels(podGroup, nodepool, action)...).Inc()
+}
+
+// InitPodGroupEvictionMetrics creates zero-valued series before the first eviction.
+func InitPodGroupEvictionMetrics(
+	podGroup *enginev2alpha2.PodGroup,
+	nodePoolLabelKey string,
+	evictionActionNames []string,
+) {
+	nodepool := utils.GetNodePoolNameFromLabels(podGroup.Labels, nodePoolLabelKey)
+	subgroups := leafSubgroups(podGroup.Spec.SubGroups)
+	for _, action := range evictionActionNames {
+		eventLabels := podGroupEvictionLabels(podGroup, nodepool, action)
+		podGroupEvictionEventsTotal.WithLabelValues(eventLabels...).Add(0)
+		for _, subgroup := range subgroups {
+			podLabels := append(eventLabels, subgroup)
+			podGroupEvictedPodsTotal.WithLabelValues(podLabels...).Add(0)
+		}
+	}
+}
+
+// InitPodGroupEvictionMetricsOnUpdate creates series for leaf subgroups added after creation.
+func InitPodGroupEvictionMetricsOnUpdate(
+	oldPodGroup, newPodGroup *enginev2alpha2.PodGroup,
+	nodePoolLabelKey string,
+	evictionActionNames []string,
+) {
+	oldLeaves := make(map[string]struct{}, len(oldPodGroup.Spec.SubGroups))
+	for _, subgroup := range leafSubgroups(oldPodGroup.Spec.SubGroups) {
+		oldLeaves[subgroup] = struct{}{}
+	}
+
+	nodepool := utils.GetNodePoolNameFromLabels(newPodGroup.Labels, nodePoolLabelKey)
+	for _, subgroup := range leafSubgroups(newPodGroup.Spec.SubGroups) {
+		if _, exists := oldLeaves[subgroup]; exists {
+			continue
+		}
+		for _, action := range evictionActionNames {
+			labels := append(podGroupEvictionLabels(newPodGroup, nodepool, action), subgroup)
+			podGroupEvictedPodsTotal.WithLabelValues(labels...).Add(0)
+		}
+	}
+}
+
+func leafSubgroups(subgroups []enginev2alpha2.SubGroup) []string {
+	if len(subgroups) == 0 {
+		return []string{""}
+	}
+
+	parents := make(map[string]struct{}, len(subgroups))
+	for _, subgroup := range subgroups {
+		if subgroup.Parent != nil {
+			parents[*subgroup.Parent] = struct{}{}
+		}
+	}
+
+	leaves := make([]string, 0, len(subgroups))
+	for _, subgroup := range subgroups {
+		if _, isParent := parents[subgroup.Name]; !isParent {
+			leaves = append(leaves, subgroup.Name)
+		}
+	}
+	return leaves
+}
+
+// DeletePodGroupEvictionMetrics removes all series for a deleted pod group.
+func DeletePodGroupEvictionMetrics(namespace, podGroup string) {
+	labels := prometheus.Labels{"namespace": namespace, "podgroup": podGroup}
+	podGroupEvictedPodsTotal.DeletePartialMatch(labels)
+	podGroupEvictionEventsTotal.DeletePartialMatch(labels)
 }
 
 func IncScenarioSearchJobs[A ~string](action A, result string, reducedBudget bool) {
