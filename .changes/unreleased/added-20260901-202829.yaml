@@ -1,0 +1,3 @@
+kind: Added
+body: |-
+  Metric preemption_failures_total by reason; deprecated total_preemption_attempts, which counts successes not attempts
