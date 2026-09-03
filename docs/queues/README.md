@@ -15,7 +15,7 @@ Only leaf queues (queues with no children) can be used for scheduling jobs. Pare
 | Attribute | Description | Units |
 |-----------|-------------|-------|
 | **Quota** | Guaranteed resource allocation | CPU: millicores, Memory: MB, GPU: units |
-| **Over-Quota Priority** | Resource allocation order when exceeding quota | Integer (higher = first) |
+| **Queue Priority** | Resource allocation order when exceeding quota; can also affect in-quota reclaim when queuePriorityInQuotaReclaim is enabled, see [Fairness Policies](../fairness/README.md#priority-based-in-quota-reclaim) | Integer (higher = first) |
 | **Over-Quota Weight** | Resource distribution weight within priority level | Integer |
 | **Limit** | Hard cap on resource consumption | Same as quota |
 

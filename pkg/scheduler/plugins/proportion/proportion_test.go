@@ -1025,5 +1025,17 @@ var _ = Describe("New", func() {
 			Expect(plugin.pluginArguments).To(Equal(args))
 			Expect(plugin.relcaimerSaturationMultiplier).To(Equal(1.0))
 		})
+
+		It("should default queuePriorityInQuotaReclaim to false", func() {
+			plugin := New(args).(*proportionPlugin)
+			Expect(plugin.queuePriorityInQuotaReclaim).To(Equal(false))
+		})
+
+		It("should handle queuePriorityInQuotaReclaim arg", func() {
+			args := framework.PluginArguments{"queuePriorityInQuotaReclaim": "true"}
+			plugin := New(args).(*proportionPlugin)
+			Expect(plugin.pluginArguments).To(Equal(args))
+			Expect(plugin.queuePriorityInQuotaReclaim).To(Equal(true))
+		})
 	})
 })

@@ -373,8 +373,153 @@ func TestGetQueueOrderResult(t *testing.T) {
 				return false
 			}
 			result := GetQueueOrderResult(test.lqueue, test.rqueue, test.lJobInfo, test.rJobInfo, nil, nil,
-				session.SubGroupOrderFn, taskOrderFn, test.totalResources, test.minNodeGPUMemory)
+				session.SubGroupOrderFn, taskOrderFn, test.totalResources, test.minNodeGPUMemory, false)
 			assert.Equal(t, test.expectedResult, result)
 		})
 	}
+}
+
+func TestGetQueueOrderResultPriorityInQuotaReclaim(t *testing.T) {
+	tests := []testMetadata{
+		{
+			Name: "both queues in-quota with job: higher priority wins even though it's less starved",
+			lqueue: &resource_share.QueueAttributes{
+				Name:     "lQueue",
+				Priority: 1,
+				QueueResourceShare: resource_share.QueueResourceShare{
+					CPU:    resource_share.ResourceShare{},
+					Memory: resource_share.ResourceShare{},
+					GPU: resource_share.ResourceShare{
+						Deserved:   10,
+						FairShare:  10,
+						MaxAllowed: -1,
+						Allocated:  8,
+					},
+				},
+			},
+			rqueue: &resource_share.QueueAttributes{
+				Name:     "rQueue",
+				Priority: 0,
+				QueueResourceShare: resource_share.QueueResourceShare{
+					CPU:    resource_share.ResourceShare{},
+					Memory: resource_share.ResourceShare{},
+					GPU: resource_share.ResourceShare{
+						Deserved:   10,
+						FairShare:  10,
+						MaxAllowed: -1,
+						Allocated:  0,
+					},
+				},
+			},
+			lJobInfo:       emptyPodGroup("lJob"),
+			rJobInfo:       emptyPodGroup("rJob"),
+			expectedResult: lQueuePrioritized,
+		},
+		{
+			Name: "one queue over-quota with job: priority is not consulted, falls back to starvation order",
+			lqueue: &resource_share.QueueAttributes{
+				Name:     "lQueue",
+				Priority: 1,
+				QueueResourceShare: resource_share.QueueResourceShare{
+					CPU:    resource_share.ResourceShare{},
+					Memory: resource_share.ResourceShare{},
+					GPU: resource_share.ResourceShare{
+						Deserved:   10,
+						FairShare:  10,
+						MaxAllowed: -1,
+						Allocated:  12,
+					},
+				},
+			},
+			rqueue: &resource_share.QueueAttributes{
+				Name:     "rQueue",
+				Priority: 0,
+				QueueResourceShare: resource_share.QueueResourceShare{
+					CPU:    resource_share.ResourceShare{},
+					Memory: resource_share.ResourceShare{},
+					GPU: resource_share.ResourceShare{
+						Deserved:   10,
+						FairShare:  10,
+						MaxAllowed: -1,
+						Allocated:  0,
+					},
+				},
+			},
+			lJobInfo:       emptyPodGroup("lJob"),
+			rJobInfo:       emptyPodGroup("rJob"),
+			expectedResult: rQueuePrioritized,
+		},
+	}
+
+	for i, test := range tests {
+		t.Run(test.Name, func(t *testing.T) {
+			t.Logf("Running test %d/%d: %s", i+1, len(tests), test.Name)
+			session := &framework.Session{
+				SubGroupOrderFns: []common_info.CompareFn{
+					subgrouporder.SubGroupOrderFn,
+				},
+			}
+
+			taskOrderFn := func(l, r interface{}) bool {
+				if comparison := taskorder.TaskOrderFn(l, r); comparison != 0 {
+					return comparison < 0
+				}
+				return false
+			}
+			result := GetQueueOrderResult(test.lqueue, test.rqueue, test.lJobInfo, test.rJobInfo, nil, nil,
+				session.SubGroupOrderFn, taskOrderFn, test.totalResources, test.minNodeGPUMemory, true)
+			assert.Equal(t, test.expectedResult, result)
+		})
+	}
+}
+
+func TestGetQueueOrderResultPriorityInQuotaReclaimDisabledKeepsCurrentOrder(t *testing.T) {
+	lqueue := &resource_share.QueueAttributes{
+		Name:     "lQueue",
+		Priority: 1,
+		QueueResourceShare: resource_share.QueueResourceShare{
+			CPU:    resource_share.ResourceShare{},
+			Memory: resource_share.ResourceShare{},
+			GPU: resource_share.ResourceShare{
+				Deserved:   10,
+				FairShare:  10,
+				MaxAllowed: -1,
+				Allocated:  8,
+			},
+		},
+	}
+	rqueue := &resource_share.QueueAttributes{
+		Name:     "rQueue",
+		Priority: 0,
+		QueueResourceShare: resource_share.QueueResourceShare{
+			CPU:    resource_share.ResourceShare{},
+			Memory: resource_share.ResourceShare{},
+			GPU: resource_share.ResourceShare{
+				Deserved:   10,
+				FairShare:  10,
+				MaxAllowed: -1,
+				Allocated:  0,
+			},
+		},
+	}
+	lJob := emptyPodGroup("lJob")
+	rJob := emptyPodGroup("rJob")
+	session := &framework.Session{
+		SubGroupOrderFns: []common_info.CompareFn{
+			subgrouporder.SubGroupOrderFn,
+		},
+	}
+	taskOrderFn := func(l, r interface{}) bool {
+		if comparison := taskorder.TaskOrderFn(l, r); comparison != 0 {
+			return comparison < 0
+		}
+		return false
+	}
+
+	// With the flag disabled, both queues are equally "under-utilized" and "under-quota", so the
+	// existing tie-breakers decide - priority (equalPrioritization is skipped since dominant
+	// resource shares differ) determines the winner the same way it did before this feature existed.
+	result := GetQueueOrderResult(lqueue, rqueue, lJob, rJob, nil, nil,
+		session.SubGroupOrderFn, taskOrderFn, nil, nil, false)
+	assert.Equal(t, lQueuePrioritized, result)
 }
