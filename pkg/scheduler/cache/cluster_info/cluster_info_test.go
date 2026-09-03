@@ -490,7 +490,7 @@ func TestSnapshotNodes(t *testing.T) {
 
 			allPods, _ := clusterInfo.dataLister.ListPods()
 			vectorMap := resource_info.NewResourceVectorMap()
-			nodes, _, _, err := clusterInfo.snapshotNodes(clusterPodAffinityInfo, vectorMap, extendedresourcecache.NewExtendedResourceCache(klog.Background()))
+			nodes, _, _, err := clusterInfo.snapshotNodes(clusterPodAffinityInfo, nil, vectorMap, extendedresourcecache.NewExtendedResourceCache(klog.Background()))
 			if err != nil {
 				assert.FailNow(t, fmt.Sprintf("SnapshotNode got error in test %s", t.Name()), err)
 			}
@@ -2404,7 +2404,7 @@ func TestNewClusterInfoErrorPartitionSelector(t *testing.T) {
 		NodePoolLabelKey:   "@!A",
 		NodePoolLabelValue: "!@#",
 	}
-	_, err := New(informerFactory, kubeAiSchedulerInformerFactory, nil, nil, params, false, clusterPodAffinityInfo, false, true, nil, 0)
+	_, err := New(informerFactory, kubeAiSchedulerInformerFactory, nil, nil, params, false, clusterPodAffinityInfo, nil, false, true, nil, 0)
 
 	assert.NotNil(t, err)
 }
@@ -2435,7 +2435,7 @@ func TestNewClusterInfoAddIndexerFails(t *testing.T) {
 	clusterPodAffinityInfo.EXPECT().AddNode(gomock.Any(), gomock.Any()).AnyTimes()
 
 	_, err = New(informerFactory, kubeAiSchedulerInformerFactory, nil, nil, nil, false,
-		clusterPodAffinityInfo, false, true, nil, 0)
+		clusterPodAffinityInfo, nil, false, true, nil, 0)
 	assert.NotNil(t, err, "Expected error for conflicting indexers")
 }
 
@@ -2473,7 +2473,7 @@ func newClusterInfoTestsInner(t *testing.T, kubeObjects, kaiSchedulerObjects []r
 	usageLister := usagedb.NewUsageLister(&fakeUsageClient, ptr.To(10*time.Microsecond), ptr.To(10*time.Second), ptr.To(10*time.Second))
 
 	clusterInfo, _ := New(informerFactory, kubeAiSchedulerInformerFactory, nil, usageLister, nodePoolParams, false,
-		clusterPodAffinityInfo, true, fullHierarchyFairness, nil, 0)
+		clusterPodAffinityInfo, nil, true, fullHierarchyFairness, nil, 0)
 
 	stopCh := context.Background().Done()
 	informerFactory.Start(stopCh)
@@ -2664,7 +2664,7 @@ func TestSnapshotNodesWithDRAGPUs(t *testing.T) {
 			}
 
 			vectorMap := resource_info.NewResourceVectorMap()
-			nodes, _, _, err := ci.snapshotNodes(clusterPodAffinityInfo, vectorMap, extendedresourcecache.NewExtendedResourceCache(klog.Background()))
+			nodes, _, _, err := ci.snapshotNodes(clusterPodAffinityInfo, nil, vectorMap, extendedresourcecache.NewExtendedResourceCache(klog.Background()))
 			assert.NoError(t, err)
 
 			for nodeName, expectedGPUs := range test.expectedDRAGPUs {
@@ -2710,7 +2710,7 @@ func TestSnapshotNodesWithNodeResourceTopology(t *testing.T) {
 		clusterPodAffinityInfo: clusterPodAffinityInfo,
 	}
 
-	result, _, _, err := ci.snapshotNodes(clusterPodAffinityInfo, resource_info.NewResourceVectorMap(), extendedresourcecache.NewExtendedResourceCache(klog.Background()))
+	result, _, _, err := ci.snapshotNodes(clusterPodAffinityInfo, nil, resource_info.NewResourceVectorMap(), extendedresourcecache.NewExtendedResourceCache(klog.Background()))
 	assert.NoError(t, err)
 
 	assert.NotNil(t, result["node-a"].NodeResourceTopology, "NRT should be attached to node-a")

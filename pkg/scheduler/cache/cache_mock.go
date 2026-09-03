@@ -176,6 +176,20 @@ func (mr *MockCacheMockRecorder) Snapshot() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Snapshot", reflect.TypeOf((*MockCache)(nil).Snapshot))
 }
 
+// SnapshotPipelineSharedLister mocks base method.
+func (m *MockCache) SnapshotPipelineSharedLister() framework.NodeInfoLister {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SnapshotPipelineSharedLister")
+	ret0, _ := ret[0].(framework.NodeInfoLister)
+	return ret0
+}
+
+// SnapshotPipelineSharedLister indicates an expected call of SnapshotPipelineSharedLister.
+func (mr *MockCacheMockRecorder) SnapshotPipelineSharedLister() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SnapshotPipelineSharedLister", reflect.TypeOf((*MockCache)(nil).SnapshotPipelineSharedLister))
+}
+
 // SnapshotSharedLister mocks base method.
 func (m *MockCache) SnapshotSharedLister() framework.NodeInfoLister {
 	m.ctrl.T.Helper()

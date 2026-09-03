@@ -95,8 +95,22 @@ type NodeInfo struct {
 	NumaTopology *NumaTopology
 
 	PodAffinityInfo pod_affinity.NodePodAffinityInfo
+	// PipelinePodAffinityInfo is the pipeline (post-release) affinity view of this node:
+	// the same pods minus those in Releasing status. It is consulted only for placements
+	// that will be Pipelined, so a pending pod's inter-pod (anti-)affinity is evaluated
+	// against the pods that will still be there when it binds. nil when not maintained.
+	PipelinePodAffinityInfo pod_affinity.NodePodAffinityInfo
 
 	GpuSharingNodeInfo
+}
+
+// NewNodeInfoWithPipelineAffinity is NewNodeInfo with a second, pipeline-view affinity
+// index (see PipelinePodAffinityInfo). pipelinePodAffinityInfo may be nil.
+func NewNodeInfoWithPipelineAffinity(node *v1.Node, podAffinityInfo, pipelinePodAffinityInfo pod_affinity.NodePodAffinityInfo,
+	vectorMap *resource_info.ResourceVectorMap) *NodeInfo {
+	ni := NewNodeInfo(node, podAffinityInfo, vectorMap)
+	ni.PipelinePodAffinityInfo = pipelinePodAffinityInfo
+	return ni
 }
 
 func NewNodeInfo(node *v1.Node, podAffinityInfo pod_affinity.NodePodAffinityInfo, vectorMap *resource_info.ResourceVectorMap) *NodeInfo {
@@ -416,27 +430,30 @@ func (ni *NodeInfo) addTask(task *pod_info.PodInfo, allowTaskToExistOnDifferentG
 
 	ni.addTaskResources(task)
 	ni.addTaskStorage(task)
-	if !excludedFromPodAffinity(task.Status) {
-		ni.PodAffinityInfo.AddPod(task.Pod)
+	ni.PodAffinityInfo.AddPod(task.Pod)
+	if ni.PipelinePodAffinityInfo != nil && !excludedFromPipelineAffinity(task.Status) {
+		ni.PipelinePodAffinityInfo.AddPod(task.Pod)
 	}
 	return nil
 }
 
-// excludedFromPodAffinity reports whether a task in the given status is left out of
-// the node's inter-pod (anti-)affinity index.
+// excludedFromPipelineAffinity reports whether a task in the given status is left out
+// of the node's pipeline (post-release) inter-pod affinity view. The full view
+// (PodAffinityInfo) always indexes every active task, matching upstream kube-scheduler,
+// which keeps a pod until its delete event.
 //
 // A Releasing task is one the scheduler has decided to evict, or that is already
 // terminating. Its resources are already treated as future-free so a pending pod can
-// be Pipelined onto them, and a Pipelined pod is never bound while the releasing pod
-// is still on the node. Indexing it for affinity makes the two views disagree:
-// reclaim and preempt free the resources, but the k8s InterPodAffinity filter still
-// sees the victim, so a pending pod with a required anti-affinity against the victims
-// fails "didn't match pod anti-affinity rules" in every scenario, however many
-// victims are chosen.
+// be Pipelined onto them, and a Pipelined pod is never bound while the releasing pod is
+// still on the node. Evaluating a pipelined placement against the full view therefore
+// makes the resource view and the affinity view disagree: reclaim and preempt free the
+// resources, but the InterPodAffinity filter still sees the victim, and a pending pod
+// with a required anti-affinity against the victims fails "didn't match pod
+// anti-affinity rules" in every scenario. The pipeline view drops exactly those pods.
 //
-// StuckInReleasing stays indexed: its resources are not pipelinable either, so the
-// pod is treated as present in both views.
-func excludedFromPodAffinity(status pod_status.PodStatus) bool {
+// StuckInReleasing stays in both views: its resources are not pipelinable either, so
+// the pod is treated as present everywhere.
+func excludedFromPipelineAffinity(status pod_status.PodStatus) bool {
 	return status == pod_status.Releasing
 }
 
@@ -537,13 +554,17 @@ func (ni *NodeInfo) RemoveTask(ti *pod_info.PodInfo) error {
 
 	ni.removeTaskStorage(task)
 	ni.removeTaskResources(task)
-	// task is the stored copy, so its status is the one addTask indexed under. A task
-	// that was never indexed must not be un-indexed: the k8s NodeInfo.RemovePod
-	// returns "not found" and would fail UpdateTask (and the unevict rollback).
-	if excludedFromPodAffinity(task.Status) {
-		return nil
+	if err := ni.PodAffinityInfo.RemovePod(task.Pod); err != nil {
+		return err
 	}
-	return ni.PodAffinityInfo.RemovePod(task.Pod)
+	// task is the stored copy, so its status is the one addTask indexed under. A task
+	// that was never added to the pipeline view must not be removed from it: the k8s
+	// NodeInfo.RemovePod returns "not found" and would fail UpdateTask (and the
+	// unevict rollback).
+	if ni.PipelinePodAffinityInfo != nil && !excludedFromPipelineAffinity(task.Status) {
+		return ni.PipelinePodAffinityInfo.RemovePod(task.Pod)
+	}
+	return nil
 }
 
 func (ni *NodeInfo) removeTaskResources(task *pod_info.PodInfo) {

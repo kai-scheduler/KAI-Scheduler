@@ -52,6 +52,7 @@ type Cache interface {
 	KubeClient() kubernetes.Interface
 	KubeInformerFactory() informers.SharedInformerFactory
 	SnapshotSharedLister() ksf.NodeInfoLister
+	SnapshotPipelineSharedLister() ksf.NodeInfoLister
 	InternalK8sPlugins() *k8splugins.K8sPlugins
 	WaitForWorkers(stopCh <-chan struct{})
 	GetDataLister() data_lister.DataLister

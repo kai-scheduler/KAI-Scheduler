@@ -34,13 +34,20 @@ type K8sPlugins struct {
 	TaintToleration ksf.Plugin
 	NodeAffinity    ksf.Plugin
 	PodAffinity     ksf.Plugin
-	VolumeBinding   ksf.Plugin
+	// PodAffinityPipeline is a second InterPodAffinity instance whose shared lister is
+	// the pipeline (post-release) node view. Its PreFilter computes the symmetric
+	// "existing pods' anti-affinity" counts from that lister, so it must be a distinct
+	// instance rather than the same plugin fed a different node list. nil when no
+	// pipeline lister was supplied.
+	PodAffinityPipeline ksf.Plugin
+	VolumeBinding       ksf.Plugin
 }
 
 func InitializeInternalPlugins(
 	client kubernetes.Interface,
 	informerFactory informers.SharedInformerFactory,
 	nodeInfoLister ksf.NodeInfoLister,
+	pipelineNodeInfoLister ...ksf.NodeInfoLister,
 ) *K8sPlugins {
 	initiatedPlugins := &K8sPlugins{}
 	k8sFrameworkHandle := k8s_utils.NewFrameworkHandle(
@@ -86,6 +93,15 @@ func InitializeInternalPlugins(
 		initiatedPlugins.PodAffinity = nil
 	} else {
 		initiatedPlugins.PodAffinity = plugin
+	}
+	if len(pipelineNodeInfoLister) > 0 && pipelineNodeInfoLister[0] != nil {
+		pipelineHandle := k8s_utils.NewFrameworkHandle(client, informerFactory, pipelineNodeInfoLister[0])
+		if plugin, err := interpodaffinity.New(context.Background(), &config.InterPodAffinityArgs{}, pipelineHandle, features); err != nil {
+			log.InfraLogger.Errorf("Failed to create pipeline interpodaffinity plugin: %v", err)
+			initiatedPlugins.PodAffinityPipeline = nil
+		} else {
+			initiatedPlugins.PodAffinityPipeline = plugin
+		}
 	}
 
 	if plugin, err := volumebinding.New(context.Background(), &config.VolumeBindingArgs{}, k8sFrameworkHandle, features); err != nil {
