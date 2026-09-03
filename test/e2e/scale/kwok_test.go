@@ -5,6 +5,7 @@ package scale
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -18,6 +19,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
@@ -370,12 +372,11 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 
 			Context("Reclaim", func() {
 				BeforeAll(func(ctx context.Context) {
-					sanityTestQueue.Spec.Resources.GPU = v2.QueueResource{
+					Expect(patchQueueGPU(ctx, testCtx, sanityTestQueue, v2.QueueResource{
 						Quota:           0,
 						OverQuotaWeight: 0,
 						Limit:           -1,
-					}
-					Expect(testCtx.ControllerClient.Patch(ctx, sanityTestQueue, runtimeClient.MergeFrom(&v2.Queue{}))).To(Succeed())
+					})).To(Succeed())
 
 					reclaimSingleGPUJobsQueue = queue.CreateQueueObject("reclaim-single-"+utils.GenerateRandomK8sName(10), parentQueue.Name)
 					testCtx.AddQueues(ctx, []*v2.Queue{reclaimSingleGPUJobsQueue})
@@ -388,18 +389,22 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 
 					Context("measure reclaim failure time", func() {
 						BeforeAll(func(ctx context.Context) {
-							Expect(testCtx.ControllerClient.Get(ctx, runtimeClient.ObjectKeyFromObject(sanityTestQueue), sanityTestQueue)).To(Succeed())
-							sanityTestQueue.Spec.Resources.GPU.Quota = float64((numberOfNodes * gpusPerNode) - (defaultPodsPerDistributedJob * gpusPerNode) + 1)
-							Expect(testCtx.ControllerClient.Update(ctx, sanityTestQueue)).To(Succeed())
+							Expect(patchQueueGPU(ctx, testCtx, sanityTestQueue, v2.QueueResource{
+								Quota:           float64((numberOfNodes * gpusPerNode) - (defaultPodsPerDistributedJob * gpusPerNode) + 1),
+								OverQuotaWeight: 0,
+								Limit:           -1,
+							})).To(Succeed())
 						})
 
 						AfterAll(func(ctx context.Context) {
 							if CurrentSpecReport().Failed() {
 								return
 							}
-							Expect(testCtx.ControllerClient.Get(ctx, runtimeClient.ObjectKeyFromObject(sanityTestQueue), sanityTestQueue)).To(Succeed())
-							sanityTestQueue.Spec.Resources.GPU.Quota = 0
-							Expect(testCtx.ControllerClient.Update(ctx, sanityTestQueue)).To(Succeed())
+							Expect(patchQueueGPU(ctx, testCtx, sanityTestQueue, v2.QueueResource{
+								Quota:           0,
+								OverQuotaWeight: 0,
+								Limit:           -1,
+							})).To(Succeed())
 						})
 
 						It("measure time for reclaim to fail on distributed job last pod", func(ctx context.Context) {
@@ -553,6 +558,20 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 		})
 	})
 })
+
+func patchQueueGPU(ctx context.Context, testCtx *testcontext.TestContext, queue *v2.Queue, gpu v2.QueueResource) error {
+	patch, err := json.Marshal(map[string]interface{}{
+		"spec": map[string]interface{}{
+			"resources": map[string]interface{}{
+				"gpu": gpu,
+			},
+		},
+	})
+	if err != nil {
+		return err
+	}
+	return testCtx.ControllerClient.Patch(ctx, queue, runtimeClient.RawPatch(types.MergePatchType, patch))
+}
 
 func updateFakeGPUOperatorGPUsPerNode(ctx context.Context, testCtx *testcontext.TestContext) {
 	topologyConfig := &v1.ConfigMap{}
