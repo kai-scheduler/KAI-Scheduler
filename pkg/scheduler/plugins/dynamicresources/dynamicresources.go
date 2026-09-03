@@ -15,6 +15,7 @@ import (
 	"k8s.io/dynamic-resource-allocation/deviceclass/extendedresourcecache"
 	"k8s.io/dynamic-resource-allocation/structured"
 	ksf "k8s.io/kube-scheduler/framework"
+	k8splfeature "k8s.io/kubernetes/pkg/scheduler/framework/plugins/feature"
 
 	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
@@ -36,11 +37,26 @@ const (
 type draPlugin struct {
 	manager               ksf.SharedDRAManager
 	celCache              *cel.Cache
+	allocatorFeatures     structured.Features
 	queueLabelKey         string
 	deviceClassByResource *extendedresourcecache.ExtendedResourceCache
 }
 
 // +kubebuilder:rbac:groups="resource.k8s.io",resources=deviceclasses;resourceslices;resourceclaims,verbs=get;list;watch
+
+// allocatorFeatures maps the upstream scheduler feature gates to the
+// structured allocator's Features, mirroring
+// k8s.io/kubernetes/pkg/scheduler/framework/plugins/dynamicresources.AllocatorFeatures.
+func allocatorFeatures(features k8splfeature.Features) structured.Features {
+	return structured.Features{
+		AdminAccess:            features.EnableDRAAdminAccess,
+		PrioritizedList:        features.EnableDRAPrioritizedList,
+		PartitionableDevices:   features.EnableDRAPartitionableDevices,
+		DeviceTaints:           features.EnableDRADeviceTaints,
+		DeviceBindingAndStatus: features.EnableDRADeviceBindingConditions && features.EnableDRAResourceClaimDeviceStatus,
+		ConsumableCapacity:     features.EnableDRAConsumableCapacity,
+	}
+}
 
 func New(pluginArgs framework.PluginArguments) framework.Plugin {
 	maxCelCacheEntries, err := pluginArgs.GetInt(maxCelCacheEntriesKey, defaultMaxCelCacheEntries)
@@ -51,7 +67,8 @@ func New(pluginArgs framework.PluginArguments) framework.Plugin {
 
 	features := k8s_utils.GetK8sFeatures()
 	return &draPlugin{
-		celCache: cel.NewCache(maxCelCacheEntries, cel.Features{EnableConsumableCapacity: features.EnableDRAConsumableCapacity}),
+		celCache:          cel.NewCache(maxCelCacheEntries, cel.Features{EnableConsumableCapacity: features.EnableDRAConsumableCapacity}),
+		allocatorFeatures: allocatorFeatures(features),
 	}
 }
 
@@ -270,7 +287,7 @@ func (drap *draPlugin) filter(task *pod_info.PodInfo, _ *podgroup_info.PodGroupI
 	}
 
 	allocator, err := structured.NewAllocator(
-		context.Background(), structured.Features{},
+		context.Background(), drap.allocatorFeatures,
 		*allocatedState,
 		drap.manager.DeviceClasses(),
 		slices,
@@ -415,7 +432,7 @@ func (drap *draPlugin) allocate(node *v1.Node, claims []*resourceapi.ResourceCla
 		return nil, fmt.Errorf("failed to list resource slices: %v", err)
 	}
 	allocator, err := structured.NewAllocator(
-		context.Background(), structured.Features{},
+		context.Background(), drap.allocatorFeatures,
 		*allocatedState,
 		drap.manager.DeviceClasses(),
 		slices,
