@@ -405,14 +405,9 @@ func GetTestCacheMock(
 
 	cacheMock.EXPECT().KubeInformerFactory().AnyTimes().Return(informerFactory)
 	cacheMock.EXPECT().SnapshotSharedLister().AnyTimes().Return(clusterPodAffinityInfo)
-	if clusterPodAffinityInfo.Pipeline() == nil {
-		clusterPodAffinityInfo.SetPipeline(cache.NewK8sClusterPodAffinityInfo())
-	}
-	cacheMock.EXPECT().SnapshotPipelineSharedLister().AnyTimes().Return(clusterPodAffinityInfo.Pipeline())
 
 	k8sPlugins := k8splugins.InitializeInternalPlugins(
 		cacheMock.KubeClient(), cacheMock.KubeInformerFactory(), cacheMock.SnapshotSharedLister(),
-		cacheMock.SnapshotPipelineSharedLister(),
 	)
 	cacheMock.EXPECT().InternalK8sPlugins().AnyTimes().Return(k8sPlugins)
 

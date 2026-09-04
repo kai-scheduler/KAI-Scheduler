@@ -68,9 +68,6 @@ func BuildNodesInfoMap(
 	if clusterPodAffinityInfo == nil {
 		clusterPodAffinityInfo = cache.NewK8sClusterPodAffinityInfo()
 	}
-	if clusterPodAffinityInfo.Pipeline() == nil {
-		clusterPodAffinityInfo.SetPipeline(cache.NewK8sClusterPodAffinityInfo())
-	}
 	slicesByNode := calcResourceSlicesMap(draClusterObjects)
 
 	for _, nodeMetadata := range Nodes {
@@ -202,8 +199,7 @@ func buildNodeInfo(
 		node.Labels[node_info.GpuMemoryLabel] = strconv.Itoa(nodeMetadata.GPUMemory)
 	}
 	podAffinityInfo := cluster_info.NewK8sNodePodAffinityInfo(node, clusterPodAffinityInfo)
-	pipelinePodAffinityInfo := cluster_info.NewK8sNodePodAffinityInfo(node, clusterPodAffinityInfo.Pipeline())
-	nodeInfo := node_info.NewNodeInfoWithPipelineAffinity(node, podAffinityInfo, pipelinePodAffinityInfo, vectorMap)
+	nodeInfo := node_info.NewNodeInfo(node, podAffinityInfo, vectorMap)
 	nodeInfo.NumaTopology = nodeMetadata.NumaTopology
 
 	// Count GPUs from node-specific slices

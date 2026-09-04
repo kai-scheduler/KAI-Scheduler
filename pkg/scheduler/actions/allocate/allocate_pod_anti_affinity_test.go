@@ -20,10 +20,10 @@ import (
 
 const hostnameTopologyKey = "kubernetes.io/hostname"
 
-// A terminating (Releasing) pod is still on its node. A placement that would bind now
-// must keep honoring inter-pod anti-affinity against it, exactly like upstream
-// kube-scheduler, while a placement that will only be Pipelined onto the releasing
-// resources evaluates against the pods that will remain once it binds.
+// A pod that is terminating independently in the cluster (Releasing, not evicted by this
+// session) stays in the inter-pod affinity index, exactly like upstream kube-scheduler:
+// allocate neither binds beside it nor pipelines onto its resources while a required
+// anti-affinity involves it. Only session-selected victims leave the index (see reclaim).
 func TestAllocateWithRequiredAntiAffinityAgainstReleasingPods(t *testing.T) {
 	test_utils.InitTestingInfrastructure()
 	controller := NewController(t)
@@ -104,19 +104,17 @@ func getAllocatePodAntiAffinityTestsMetadata() []integration_tests_utils.TestTop
 		},
 		{
 			TestTopologyBasic: test_utils.TestTopologyBasic{
-				Name: "Only a releasing pod the pending pod is anti-affine to blocks the node: pipeline onto it",
+				Name: "Only an independently terminating anti-affine pod blocks the node: stay pending (not a session victim)",
 				Jobs: []*jobs_fake.TestJobBasic{
 					releasingJob(&tasks_fake.TestTaskBasic{PodAffinityLabels: preprocessLabels}),
 					pendingJob(antiAffineToPreprocess()),
 				},
 				Nodes:  node(1),
 				Queues: queues,
-				Mocks: &test_utils.TestMock{
-					CacheRequirements: &test_utils.CacheMocking{NumberOfPipelineActions: 1},
-				},
+				Mocks:  &test_utils.TestMock{CacheRequirements: &test_utils.CacheMocking{}},
 				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
 					"releasing_job0": {GPUsRequired: 1, Status: pod_status.Releasing, NodeName: "node0"},
-					"pending_job0":   {GPUsRequired: 1, Status: pod_status.Pipelined, NodeName: "node0"},
+					"pending_job0":   {GPUsRequired: 1, Status: pod_status.Pending},
 				},
 			},
 		},
@@ -138,19 +136,17 @@ func getAllocatePodAntiAffinityTestsMetadata() []integration_tests_utils.TestTop
 		},
 		{
 			TestTopologyBasic: test_utils.TestTopologyBasic{
-				Name: "Only a releasing pod whose own anti-affinity excludes the pending pod blocks the node: pipeline onto it",
+				Name: "Only an independently terminating pod whose own anti-affinity excludes the pending pod blocks the node: stay pending",
 				Jobs: []*jobs_fake.TestJobBasic{
 					releasingJob(preprocessAntiAffineToTrain()),
 					pendingJob(&tasks_fake.TestTaskBasic{PodAffinityLabels: trainLabels}),
 				},
 				Nodes:  node(1),
 				Queues: queues,
-				Mocks: &test_utils.TestMock{
-					CacheRequirements: &test_utils.CacheMocking{NumberOfPipelineActions: 1},
-				},
+				Mocks:  &test_utils.TestMock{CacheRequirements: &test_utils.CacheMocking{}},
 				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
 					"releasing_job0": {GPUsRequired: 1, Status: pod_status.Releasing, NodeName: "node0"},
-					"pending_job0":   {GPUsRequired: 1, Status: pod_status.Pipelined, NodeName: "node0"},
+					"pending_job0":   {GPUsRequired: 1, Status: pod_status.Pending},
 				},
 			},
 		},
