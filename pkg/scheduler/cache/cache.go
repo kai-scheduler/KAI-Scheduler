@@ -162,10 +162,6 @@ type SchedulerCache struct {
 	internalPlugins *k8splugins.K8sPlugins
 
 	K8sClusterPodAffinityInfo
-	// K8sPipelineClusterPodAffinityInfo is the pipeline (post-release) view sibling of
-	// K8sClusterPodAffinityInfo. Kept as a stable field: the second InterPodAffinity
-	// plugin instance holds a pointer to it across snapshots.
-	K8sPipelineClusterPodAffinityInfo K8sClusterPodAffinityInfo
 }
 
 func newSchedulerCache(schedulerCacheParams *SchedulerCacheParams) (*SchedulerCache, error) {
@@ -214,8 +210,7 @@ func newSchedulerCache(schedulerCacheParams *SchedulerCacheParams) (*SchedulerCa
 		sc.nrtInformerFactory = nrtinformers.NewSharedInformerFactory(schedulerCacheParams.NRTClient, 0)
 	}
 
-	sc.internalPlugins = k8splugins.InitializeInternalPlugins(sc.kubeClient, sc.informerFactory, sc.SnapshotSharedLister(),
-		sc.SnapshotPipelineSharedLister())
+	sc.internalPlugins = k8splugins.InitializeInternalPlugins(sc.kubeClient, sc.informerFactory, sc.SnapshotSharedLister())
 
 	sc.podLister = sc.informerFactory.Core().V1().Pods().Lister()
 	sc.podGroupLister = sc.kubeAiSchedulerInformerFactory.Scheduling().V2alpha2().PodGroups().Lister()
@@ -228,8 +223,7 @@ func newSchedulerCache(schedulerCacheParams *SchedulerCacheParams) (*SchedulerCa
 	}
 
 	clusterInfo, err := cluster_info.New(sc.informerFactory, sc.kubeAiSchedulerInformerFactory, sc.nrtInformerFactory, sc.usageLister, sc.schedulingNodePoolParams,
-		sc.restrictNodeScheduling, &sc.K8sClusterPodAffinityInfo, &sc.K8sPipelineClusterPodAffinityInfo, sc.scheduleCSIStorage,
-		sc.fullHierarchyFairness, sc.StatusUpdater, sc.stuckInReleasingThreshold)
+		sc.restrictNodeScheduling, &sc.K8sClusterPodAffinityInfo, sc.scheduleCSIStorage, sc.fullHierarchyFairness, sc.StatusUpdater, sc.stuckInReleasingThreshold)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cluster info object: %w", err)
@@ -240,7 +234,7 @@ func newSchedulerCache(schedulerCacheParams *SchedulerCacheParams) (*SchedulerCa
 }
 
 func (sc *SchedulerCache) Snapshot() (*api.ClusterInfo, error) {
-	sc.resetClusterPodAffinityInfos()
+	sc.K8sClusterPodAffinityInfo = *NewK8sClusterPodAffinityInfo()
 	snapshot, err := sc.clusterInfo.Snapshot()
 	if err != nil {
 		log.InfraLogger.Errorf("Error during snapshot: %v", err)
@@ -516,19 +510,6 @@ func (sc *SchedulerCache) KubeInformerFactory() informers.SharedInformerFactory 
 
 func (sc *SchedulerCache) SnapshotSharedLister() ksf.NodeInfoLister {
 	return &sc.K8sClusterPodAffinityInfo
-}
-
-// SnapshotPipelineSharedLister lists nodes as seen by the pipeline (post-release)
-// affinity view: Releasing pods are absent. Used only for placements that will be
-// Pipelined, which never bind before those pods are gone.
-func (sc *SchedulerCache) SnapshotPipelineSharedLister() ksf.NodeInfoLister {
-	return &sc.K8sPipelineClusterPodAffinityInfo
-}
-
-func (sc *SchedulerCache) resetClusterPodAffinityInfos() {
-	sc.K8sClusterPodAffinityInfo = *NewK8sClusterPodAffinityInfo()
-	sc.K8sPipelineClusterPodAffinityInfo = *NewK8sClusterPodAffinityInfo()
-	sc.K8sClusterPodAffinityInfo.SetPipeline(&sc.K8sPipelineClusterPodAffinityInfo)
 }
 
 func (sc *SchedulerCache) InternalK8sPlugins() *k8splugins.K8sPlugins {

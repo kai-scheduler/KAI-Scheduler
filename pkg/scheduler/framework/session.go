@@ -96,8 +96,6 @@ type Session struct {
 	PrePredicateFns                       []api.PrePredicateFn
 	VictimInvariantPrePredicateFns        []api.VictimInvariantPrePredicateFn
 	PredicateFns                          []api.PredicateFn
-	PipelinePrePredicateFns               []api.PrePredicateFn
-	pipelinePredicateOverrides            map[int]api.PredicateFn
 	BindRequestMutateFns                  []api.BindRequestMutateFn
 	NumaPlacementFn                       api.NumaPlacementFn
 	PreJobAllocationFns                   []api.PreJobAllocationFn
@@ -131,38 +129,6 @@ func (ssn *Session) GetNodes() []ksf.NodeInfo {
 	}
 
 	return nodes
-}
-
-// pipelineStateSuffix namespaces the k8s cycle state of the pipeline-view predicates.
-// The two InterPodAffinity instances write their PreFilter state under the same key, so
-// they must not share a CycleState for the same pod.
-const pipelineStateSuffix = "/pipeline-affinity-view"
-
-type pipelineNodeListProvider struct{ ssn *Session }
-
-func (p pipelineNodeListProvider) GetNodes() []ksf.NodeInfo {
-	nodes, err := p.ssn.Cache.SnapshotPipelineSharedLister().List()
-	if err != nil {
-		log.InfraLogger.Errorf("Failed to list pipeline-view nodes: %v", err)
-		return nil
-	}
-	return nodes
-}
-
-type pipelineStateProvider struct{ ssn *Session }
-
-func (p pipelineStateProvider) GetSessionStateForResource(uid types.UID) k8s_internal.SessionState {
-	return p.ssn.GetSessionStateForResource(types.UID(string(uid) + pipelineStateSuffix))
-}
-
-// PipelineNodeListProvider lists nodes as seen by the pipeline (post-release) affinity view.
-func (ssn *Session) PipelineNodeListProvider() k8s_internal.NodeListProvider {
-	return pipelineNodeListProvider{ssn: ssn}
-}
-
-// PipelineStateProvider returns per-pod cycle state private to the pipeline-view predicates.
-func (ssn *Session) PipelineStateProvider() k8s_internal.SessionStateProvider {
-	return pipelineStateProvider{ssn: ssn}
 }
 
 func (ssn *Session) BindPod(pod *pod_info.PodInfo) error {
@@ -258,14 +224,7 @@ func (ssn *Session) sortGPUs(filteredGPUs []string, pod *pod_info.PodInfo, node 
 	return sortedGPUs
 }
 
-// FittingNode reports whether task can be placed on node. isPipelineOnly mirrors the
-// caller's placement mode: when the placement will be Pipelined -- either because the
-// action only pipelines, or because the task does not fit the node's idle resources --
-// inter-pod (anti-)affinity is evaluated against the pipeline (post-release) view. A
-// placement that would bind now is evaluated against the full view, exactly as upstream
-// kube-scheduler does, so a pod is never bound beside a terminating pod it must avoid.
-func (ssn *Session) FittingNode(task *pod_info.PodInfo, node *node_info.NodeInfo, writeFittingDelta bool,
-	isPipelineOnly bool) bool {
+func (ssn *Session) FittingNode(task *pod_info.PodInfo, node *node_info.NodeInfo, writeFittingDelta bool) bool {
 	var fitErrors *common_info.TasksFitErrors
 	if writeFittingDelta {
 		fitErrors = common_info.NewFitErrors()
@@ -284,13 +243,9 @@ func (ssn *Session) FittingNode(task *pod_info.PodInfo, node *node_info.NodeInfo
 		return false
 	}
 
-	predicate := ssn.PredicateFn
-	if ssn.willPipeline(task, node, isPipelineOnly) {
-		predicate = ssn.PipelinePredicateFn
-	}
 	log.InfraLogger.V(6).Infof("Running predicates for task <%v/%v> on node <%v>",
 		task.Namespace, task.Name, node.Name)
-	if err := predicate(task, job, node); err != nil {
+	if err := ssn.PredicateFn(task, job, node); err != nil {
 		log.InfraLogger.V(6).Infof("Predicates failed for task <%s/%s> on node <%s>: %v",
 			task.Namespace, task.Name, node.Name, err)
 		if writeFittingDelta {
@@ -365,20 +320,6 @@ func (ssn *Session) scoreNodes(nodes []*node_info.NodeInfo, task *pod_info.PodIn
 			node.Name, task.Namespace, task.Name, score)
 	}
 	return workerScores
-}
-
-// willPipeline mirrors the bind-or-pipeline decision made when the task is placed
-// (allocateTaskToNode): bind only if the action allows it and the task fits idle
-// resources. Fractional and GPU-memory tasks decide per shared GPU later, so they use
-// the pipeline view only when the action itself pipelines; that errs on the strict side.
-func (ssn *Session) willPipeline(task *pod_info.PodInfo, node *node_info.NodeInfo, isPipelineOnly bool) bool {
-	if isPipelineOnly {
-		return true
-	}
-	if task.IsFractionRequest() || task.IsGpuMemoryRequest() {
-		return false
-	}
-	return !node.IsTaskAllocatable(task)
 }
 
 func (ssn *Session) isTaskAllocatableOnNode(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo,
@@ -514,8 +455,6 @@ func (ssn *Session) clear() {
 	ssn.PrePredicateFns = nil
 	ssn.VictimInvariantPrePredicateFns = nil
 	ssn.PredicateFns = nil
-	ssn.PipelinePrePredicateFns = nil
-	ssn.pipelinePredicateOverrides = nil
 	ssn.BindRequestMutateFns = nil
 	ssn.NumaPlacementFn = nil
 	ssn.PreJobAllocationFns = nil

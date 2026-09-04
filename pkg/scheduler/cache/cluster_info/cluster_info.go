@@ -59,17 +59,16 @@ import (
 )
 
 type ClusterInfo struct {
-	dataLister                     data_lister.DataLister
-	podGroupSync                   status_updater.PodGroupsSync
-	nodePoolParams                 *conf.SchedulingNodePoolParams
-	restrictNodeScheduling         bool
-	clusterPodAffinityInfo         pod_affinity.ClusterPodAffinityInfo
-	pipelineClusterPodAffinityInfo pod_affinity.ClusterPodAffinityInfo
-	includeCSIStorageObjects       bool
-	nodePoolSelector               labels.Selector
-	fairnessLevelType              FairnessLevelType
-	collectUsageData               bool
-	stuckInReleasingThreshold      time.Duration
+	dataLister                data_lister.DataLister
+	podGroupSync              status_updater.PodGroupsSync
+	nodePoolParams            *conf.SchedulingNodePoolParams
+	restrictNodeScheduling    bool
+	clusterPodAffinityInfo    pod_affinity.ClusterPodAffinityInfo
+	includeCSIStorageObjects  bool
+	nodePoolSelector          labels.Selector
+	fairnessLevelType         FairnessLevelType
+	collectUsageData          bool
+	stuckInReleasingThreshold time.Duration
 }
 
 type FairnessLevelType string
@@ -89,7 +88,6 @@ func New(
 	nodePoolParams *conf.SchedulingNodePoolParams,
 	restrictNodeScheduling bool,
 	clusterPodAffinityInfo pod_affinity.ClusterPodAffinityInfo,
-	pipelineClusterPodAffinityInfo pod_affinity.ClusterPodAffinityInfo,
 	includeCSIStorageObjects bool,
 	fullHierarchyFairness bool,
 	podGroupSync status_updater.PodGroupsSync,
@@ -113,17 +111,16 @@ func New(
 	}
 
 	return &ClusterInfo{
-		dataLister:                     data_lister.New(informerFactory, kubeAiSchedulerInformerFactory, nrtInformerFactory, usageLister, nodePoolSelector),
-		nodePoolParams:                 nodePoolParams,
-		restrictNodeScheduling:         restrictNodeScheduling,
-		clusterPodAffinityInfo:         clusterPodAffinityInfo,
-		pipelineClusterPodAffinityInfo: pipelineClusterPodAffinityInfo,
-		includeCSIStorageObjects:       includeCSIStorageObjects,
-		nodePoolSelector:               nodePoolSelector,
-		fairnessLevelType:              fairnessLevelType,
-		podGroupSync:                   podGroupSync,
-		collectUsageData:               usageLister != nil,
-		stuckInReleasingThreshold:      stuckInReleasingThreshold,
+		dataLister:                data_lister.New(informerFactory, kubeAiSchedulerInformerFactory, nrtInformerFactory, usageLister, nodePoolSelector),
+		nodePoolParams:            nodePoolParams,
+		restrictNodeScheduling:    restrictNodeScheduling,
+		clusterPodAffinityInfo:    clusterPodAffinityInfo,
+		includeCSIStorageObjects:  includeCSIStorageObjects,
+		nodePoolSelector:          nodePoolSelector,
+		fairnessLevelType:         fairnessLevelType,
+		podGroupSync:              podGroupSync,
+		collectUsageData:          usageLister != nil,
+		stuckInReleasingThreshold: stuckInReleasingThreshold,
 	}, nil
 }
 
@@ -155,7 +152,7 @@ func (c *ClusterInfo) Snapshot() (*api.ClusterInfo, error) {
 	snapshot.DeviceClassByResource = erc
 
 	snapshot.Nodes, snapshot.MinNodeGPUMemoryMiB, snapshot.MaxNodeGPUMemoryMiB, err = c.snapshotNodes(
-		c.clusterPodAffinityInfo, c.pipelineClusterPodAffinityInfo, snapshot.ResourceVectorMap, erc)
+		c.clusterPodAffinityInfo, snapshot.ResourceVectorMap, erc)
 	if err != nil {
 		err = errors.WithStack(fmt.Errorf("error snapshotting nodes: %w", err))
 		return nil, err
@@ -268,7 +265,6 @@ func (c *ClusterInfo) Snapshot() (*api.ClusterInfo, error) {
 
 func (c *ClusterInfo) snapshotNodes(
 	clusterPodAffinityInfo pod_affinity.ClusterPodAffinityInfo,
-	pipelineClusterPodAffinityInfo pod_affinity.ClusterPodAffinityInfo,
 	vectorMap *resource_info.ResourceVectorMap,
 	erc *extendedresourcecache.ExtendedResourceCache,
 ) (nodesMap map[string]*node_info.NodeInfo, minimalNodeGPUMemory *int64, maximalNodeGPUMemory *int64, err error) {
@@ -288,11 +284,7 @@ func (c *ClusterInfo) snapshotNodes(
 		vectorMap.AddResourceList(node.Status.Allocatable)
 
 		podAffinityInfo := NewK8sNodePodAffinityInfo(node, clusterPodAffinityInfo)
-		var pipelinePodAffinityInfo pod_affinity.NodePodAffinityInfo
-		if pipelineClusterPodAffinityInfo != nil {
-			pipelinePodAffinityInfo = NewK8sNodePodAffinityInfo(node, pipelineClusterPodAffinityInfo)
-		}
-		ni := node_info.NewNodeInfoWithPipelineAffinity(node, podAffinityInfo, pipelinePodAffinityInfo, vectorMap)
+		ni := node_info.NewNodeInfo(node, podAffinityInfo, vectorMap)
 		ni.DeviceClassByResource = erc
 		resultNodes[node.Name] = ni
 		nodeGPUMemory := resultNodes[node.Name].MemoryOfEveryGpuOnNode

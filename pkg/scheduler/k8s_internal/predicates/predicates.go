@@ -24,7 +24,6 @@ const (
 	PodToleratesNodeTaints = "PodToleratesNodeTaints"
 	NodeAffinity           = "NodeAffinity"
 	PodAffinity            = "PodAffinity"
-	PodAffinityPipeline    = "PodAffinityPipeline"
 	VolumeBinding          = "VolumeBinding"
 	NodeScheduler          = "NodeScheduler"
 	MaxNodePoolResources   = "MaxNodePoolResources"
@@ -65,35 +64,6 @@ func emptyPredicate(predicateName string) k8s_internal.SessionPredicate {
 		Name:                predicateName,
 	}
 	return predicate
-}
-
-// NewSessionPipelinePredicates returns the predicate set used for placements that will
-// be Pipelined: identical to NewSessionPredicates except that PodAffinity is replaced by
-// PodAffinityPipeline, which evaluates inter-pod (anti-)affinity against the pipeline
-// (post-release) view -- its own InterPodAffinity instance, node list and cycle state.
-// ok is false when no pipeline InterPodAffinity instance exists; callers then fall back
-// to the full set.
-func NewSessionPipelinePredicates(ssn *framework.Session, full k8s_internal.SessionPredicates) (k8s_internal.SessionPredicates, bool) {
-	plugin := ssn.InternalK8sPlugins().PodAffinityPipeline
-	if plugin == nil {
-		return nil, false
-	}
-	pipeline := k8s_internal.SessionPredicates{}
-	for name, predicate := range full {
-		if name == PodAffinity {
-			continue
-		}
-		pipeline[name] = predicate
-	}
-	stateProvider := ssn.PipelineStateProvider()
-	pipeline[PodAffinityPipeline] = k8s_internal.SessionPredicate{
-		Name:                PodAffinityPipeline,
-		IsPreFilterRequired: predicateRequired,
-		PreFilter:           k8s_internal.FitPrePredicateConverter(ssn.PipelineNodeListProvider(), stateProvider, plugin.(*interpodaffinity.InterPodAffinity)),
-		IsFilterRequired:    predicateRequired,
-		Filter:              k8s_internal.FitPredicateConverter(stateProvider, plugin.(*interpodaffinity.InterPodAffinity)),
-	}
-	return pipeline, true
 }
 
 func NewSessionPredicates(ssn *framework.Session) k8s_internal.SessionPredicates {

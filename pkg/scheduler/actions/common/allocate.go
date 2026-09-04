@@ -155,11 +155,6 @@ func allocateTask(ssn *framework.Session, stmt *framework.Statement, nodes []*no
 		return false
 	}
 	err := ssn.PrePredicateFn(task, job)
-	if err == nil {
-		// The pipeline-view PodAffinity pre-filter must be ready before any node is
-		// evaluated for a placement that will be Pipelined. No-op without pipeline predicates.
-		err = ssn.PipelinePrePredicateFn(task, job)
-	}
 	if err != nil {
 		log.InfraLogger.V(6).Infof("pre-predicates failed on task %s/%s. Error: %v",
 			task.Namespace, task.Name, err)
@@ -175,7 +170,7 @@ func allocateTask(ssn *framework.Session, stmt *framework.Statement, nodes []*no
 
 	orderedNodes := ssn.OrderedNodesByTask(nodes, task)
 	for _, node := range orderedNodes {
-		if !ssn.FittingNode(task, node, !isPipelineOnly, isPipelineOnly) {
+		if !ssn.FittingNode(task, node, !isPipelineOnly) {
 			continue
 		}
 		success = allocateTaskToNode(ssn, stmt, task, node, isPipelineOnly)
