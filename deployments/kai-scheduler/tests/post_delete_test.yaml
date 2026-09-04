@@ -4,8 +4,13 @@
 suite: test post-delete cleanup hook
 templates:
   - hooks/post/post-delete-job.yaml
+  - services/post-delete-serviceaccount.yaml
+  - rbac/post-delete-clusterrole.yaml
+  - rbac/post-delete-binding.yaml
 tests:
   - it: should delete only operator-managed deployments in the release namespace
+    templates:
+      - hooks/post/post-delete-job.yaml
     release:
       namespace: custom-ns
     asserts:
@@ -17,6 +22,8 @@ tests:
           pattern: delete deployments? --all
 
   - it: should delete kai-config when the config deployer is enabled
+    templates:
+      - hooks/post/post-delete-job.yaml
     set:
       kaiConfigDeployer.enabled: true
     asserts:
@@ -25,6 +32,8 @@ tests:
           pattern: kubectl delete Config kai-config --ignore-not-found
 
   - it: should preserve kai-config when the config deployer is disabled
+    templates:
+      - hooks/post/post-delete-job.yaml
     set:
       kaiConfigDeployer.enabled: false
     asserts:
@@ -33,6 +42,8 @@ tests:
           pattern: kubectl delete Config kai-config
 
   - it: should not delete kai-config in GitOps mode (pruned as a tracked release resource)
+    templates:
+      - hooks/post/post-delete-job.yaml
     set:
       kaiConfigDeployer.enabled: false
       kaiConfig.render: true
@@ -42,6 +53,8 @@ tests:
           pattern: kubectl delete Config kai-config
 
   - it: should carry the ArgoCD PostDelete hook annotations
+    templates:
+      - hooks/post/post-delete-job.yaml
     asserts:
       - equal:
           path: metadata.annotations["argocd.argoproj.io/hook"]
@@ -51,6 +64,8 @@ tests:
           value: BeforeHookCreation,HookSucceeded
 
   - it: should place the cleanup job in the release namespace
+    templates:
+      - hooks/post/post-delete-job.yaml
     release:
       namespace: custom-ns
     asserts:
@@ -64,3 +79,57 @@ tests:
     asserts:
       - hasDocuments:
           count: 0
+
+  - it: should use the default postCleanup.serviceAccountName on the job
+    templates:
+      - hooks/post/post-delete-job.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: post-delete-cleanup
+
+  - it: should name the ServiceAccount from postCleanup.serviceAccountName
+    templates:
+      - services/post-delete-serviceaccount.yaml
+    set:
+      postCleanup.serviceAccountName: custom-cleanup-sa
+    asserts:
+      - equal:
+          path: metadata.name
+          value: custom-cleanup-sa
+
+  - it: should keep ClusterRole name fixed when serviceAccountName changes
+    templates:
+      - rbac/post-delete-clusterrole.yaml
+    set:
+      postCleanup.serviceAccountName: custom-cleanup-sa
+    asserts:
+      - equal:
+          path: metadata.name
+          value: post-delete-cleanup
+
+  - it: should bind the custom ServiceAccount while keeping ClusterRoleBinding and roleRef fixed
+    templates:
+      - rbac/post-delete-binding.yaml
+    set:
+      postCleanup.serviceAccountName: custom-cleanup-sa
+    asserts:
+      - equal:
+          path: metadata.name
+          value: post-delete-cleanup
+      - equal:
+          path: subjects[0].name
+          value: custom-cleanup-sa
+      - equal:
+          path: roleRef.name
+          value: post-delete-cleanup
+
+  - it: should point the Job at the custom ServiceAccount
+    templates:
+      - hooks/post/post-delete-job.yaml
+    set:
+      postCleanup.serviceAccountName: custom-cleanup-sa
+    asserts:
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: custom-cleanup-sa
