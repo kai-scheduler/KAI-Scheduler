@@ -146,10 +146,11 @@ func (app *App) RegisterPlugins(plugins *plugins.BinderPlugins) {
 func (app *App) Run(ctx context.Context) error {
 	var err error
 	go func() {
-		app.manager.GetCache().WaitForCacheSync(context.Background())
+		if !app.manager.GetCache().WaitForCacheSync(ctx) {
+			return
+		}
 		setupLog.Info("syncing resource reservation")
-		err := app.rrs.Sync(context.Background())
-		if err != nil {
+		if err := app.rrs.Sync(ctx); err != nil && ctx.Err() == nil {
 			setupLog.Error(err, "unable to sync resource reservation")
 			panic(err)
 		}
