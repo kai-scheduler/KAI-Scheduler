@@ -86,7 +86,7 @@ The scheduler can perform virtual scheduling decisions in-memory, such as alloca
 
 ### 3. Statement
 
-The Statement object represents a transaction-like grouping of scheduling operations that can be committed or rolled back as a unit. Statement is used to simulate scheduling scenarios, without commiting them to the cluster.
+The Statement object represents a transaction-like grouping of scheduling operations that can be committed or rolled back as a unit. Statement is used to simulate scheduling scenarios, without committing them to the cluster.
 
 **Key capabilities:**
 - **Checkpoint/Rollback**: Create points to roll back to if operations fail
