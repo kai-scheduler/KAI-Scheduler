@@ -22,7 +22,7 @@ spec:
       containers:
       - name: operator
         image: {{ .Values.global.registry }}/{{ .Values.operator.image.name }}:{{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.operator.image.tag) }}
-        imagePullPolicy: {{ .Values.operator.image.pullPolicy }}
+        imagePullPolicy: {{ .Values.operator.image.pullPolicy | default .Values.global.imagePullPolicy }}
         {{- with .Values.operator.resources }}
         resources:
           {{- toYaml . | nindent 12 }}
