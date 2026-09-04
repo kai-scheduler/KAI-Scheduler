@@ -240,8 +240,6 @@ func (s *Statement) Pipeline(task *pod_info.PodInfo, hostname string, updateTask
 
 	previousStatus := task.Status
 	if err := job.UpdateTaskStatus(task, pod_status.Pipelined); err != nil {
-		// UpdateTaskStatus fails only when the task's UID is not in the job's pod map.
-		// Fail the pipeline instead of adding the task to the node.
 		log.InfraLogger.Errorf("Failed to update task <%v/%v> status to %v in Session <%v>: %v",
 			task.Namespace, task.Name, pod_status.Pipelined, s.sessionID, err)
 		return err
@@ -275,7 +273,6 @@ func (s *Statement) Pipeline(task *pod_info.PodInfo, hostname string, updateTask
 		if err := node.UpdateTask(task); err != nil {
 			log.InfraLogger.Errorf("Failed to update task <%v/%v> to node <%v> in Session <%v>: %v",
 				task.Namespace, task.Name, hostname, s.sessionID, err)
-			return err
 		}
 	} else if err := node.AddTask(task); err != nil {
 		log.InfraLogger.Errorf("Failed to pipeline task <%v/%v> to node <%v> in Session <%v>: %v",

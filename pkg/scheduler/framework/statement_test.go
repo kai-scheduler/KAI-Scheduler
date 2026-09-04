@@ -1510,9 +1510,8 @@ func TestStatement_Allocate_Undo_Undo_DRA_ResourceClaimInfo(t *testing.T) {
 }
 
 func TestStatement_Pipeline_TaskNotInJob(t *testing.T) {
-	// UpdateTaskStatus fails when the task's UID is not in its PodGroup's pod map. Pipeline must
-	// then fail instead of adding the task to the node; a caller that treated it as a success
-	// would requeue the job and spin forever without making progress.
+	// Pipeline must stop before mutating the task or node when UpdateTaskStatus detects an
+	// inconsistent session.
 	testMetadata := nodes_fake.TestClusterTopology{
 		Jobs: []*jobs_fake.TestJobBasic{
 			{
