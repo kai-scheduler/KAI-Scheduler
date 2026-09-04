@@ -1,0 +1,14 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# One-level rack topology over the 8 GPU workers: two racks of four nodes.
+apiVersion: kai.scheduler/v1alpha1
+kind: Topology
+metadata:
+  name: network
+spec:
+  levels:
+    - nodeLabel: accelerator.nvidia.com/rack
+      alias: rack
+    - nodeLabel: kubernetes.io/hostname
+      alias: node

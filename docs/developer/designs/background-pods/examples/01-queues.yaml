@@ -1,0 +1,101 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# Queue hierarchy for the background-pod workaround demo.
+#
+#   research-dept (64 GPU)          maintenance (0 GPU, weight 0)
+#   ├── team-a (32 GPU)
+#   └── team-b (32 GPU)
+#
+# `maintenance` is a root queue with no parent and no children - workloads may
+# reference it directly. Keeping it flat also means it never has to track
+# changes in the user hierarchy, which is the operational burden from the issue.
+#
+# The maintenance branch has quota 0 AND overQuotaWeight 0, so its fair share is
+# always 0. Anything it holds is above fair share and therefore reclaimable by
+# any queue that is below its own fair share.
+# limit -1 (unlimited) keeps it unbounded, so background pods are still placed
+# while the cluster is idle.
+#
+# CPU/memory are left at quota 0 / weight 1 / limit -1 on the user queues so GPU
+# is the only contended dimension in this demo.
+
+apiVersion: scheduling.run.ai/v2
+kind: Queue
+metadata:
+  name: research-dept
+spec:
+  resources:
+    gpu:
+      quota: 64
+      overQuotaWeight: 1
+      limit: -1
+    cpu:
+      quota: -1
+      overQuotaWeight: 1
+      limit: -1
+    memory:
+      quota: -1
+      overQuotaWeight: 1
+      limit: -1
+---
+apiVersion: scheduling.run.ai/v2
+kind: Queue
+metadata:
+  name: team-a
+spec:
+  parentQueue: research-dept
+  resources:
+    gpu:
+      quota: 32
+      overQuotaWeight: 1
+      limit: -1
+    cpu:
+      quota: -1
+      overQuotaWeight: 1
+      limit: -1
+    memory:
+      quota: -1
+      overQuotaWeight: 1
+      limit: -1
+---
+apiVersion: scheduling.run.ai/v2
+kind: Queue
+metadata:
+  name: team-b
+spec:
+  parentQueue: research-dept
+  resources:
+    gpu:
+      quota: 32
+      overQuotaWeight: 1
+      limit: -1
+    cpu:
+      quota: -1
+      overQuotaWeight: 1
+      limit: -1
+    memory:
+      quota: -1
+      overQuotaWeight: 1
+      limit: -1
+---
+# The "virtual queue" from the issue discussion: 0 quota, 0 over-quota weight,
+# unlimited limit. Everything it holds is permanently above its fair share.
+apiVersion: scheduling.run.ai/v2
+kind: Queue
+metadata:
+  name: maintenance
+spec:
+  resources:
+    gpu:
+      quota: 0
+      overQuotaWeight: 0
+      limit: -1
+    cpu:
+      quota: -1
+      overQuotaWeight: 0
+      limit: -1
+    memory:
+      quota: -1
+      overQuotaWeight: 0
+      limit: -1

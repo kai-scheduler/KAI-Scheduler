@@ -54,6 +54,7 @@ func OpenSession(cache cache.Cache, config *conf.SchedulerConfiguration,
 
 			plugin := pb(pluginOption.Arguments)
 			ssn.plugins[plugin.Name()] = plugin
+			ssn.pluginsInOrder = append(ssn.pluginsInOrder, plugin)
 
 			onSessionOpenPluginStart := time.Now()
 			plugin.OnSessionOpen(ssn)
@@ -72,11 +73,19 @@ func CloseSession(ssn *Session) {
 	closeSessionStart := time.Now()
 	defer metrics.UpdateCloseSessionDuration(closeSessionStart)
 
-	for _, plugin := range ssn.plugins {
+	ssn.closePlugins()
+
+	closeSession(ssn)
+}
+
+// closePlugins closes plugins in reverse open order, so a plugin that opened after another is torn
+// down before it. Plugins may use session state owned by plugins that opened earlier, such as the
+// event handlers a statement operation triggers.
+func (ssn *Session) closePlugins() {
+	for i := len(ssn.pluginsInOrder) - 1; i >= 0; i-- {
+		plugin := ssn.pluginsInOrder[i]
 		onSessionCloseStart := time.Now()
 		plugin.OnSessionClose(ssn)
 		metrics.UpdatePluginDuration(plugin.Name(), metrics.OnSessionClose, metrics.Duration(onSessionCloseStart))
 	}
-
-	closeSession(ssn)
 }

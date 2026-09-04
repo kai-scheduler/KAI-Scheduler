@@ -454,7 +454,21 @@ func (pp *proportionPlugin) getChildQueues(parentQueue *rs.QueueAttributes) map[
 
 func (pp *proportionPlugin) allocateHandlerFn(ssn *framework.Session) func(event *framework.Event) {
 	return func(event *framework.Event) {
-		job := ssn.ClusterInfo.PodGroupInfos[event.Task.Job]
+		job, found := ssn.ClusterInfo.PodGroupInfos[event.Task.Job]
+		if !found {
+			log.InfraLogger.V(7).Infof("Proportion AllocateFunc: no job <%v> in session, skipping", event.Task.Job)
+			return
+		}
+
+		leafQueue, found := pp.queues[job.Queue]
+		if !found {
+			// The queue is absent once the plugin's session state has been torn down, and for jobs
+			// whose queue was dropped from the snapshot as an orphan.
+			log.InfraLogger.V(7).Infof("Proportion AllocateFunc: no queue <%v> for job <%v/%v>, skipping",
+				job.Queue, job.Namespace, job.Name)
+			return
+		}
+
 		isPreemptibleJob := job.IsPreemptibleJob()
 		taskResources := utils.QuantifyVector(event.Task.AcceptedResourceVector, event.Task.VectorMap)
 
@@ -469,7 +483,6 @@ func (pp *proportionPlugin) allocateHandlerFn(ssn *framework.Session) func(event
 			}
 		}
 
-		leafQueue := pp.queues[job.Queue]
 		log.InfraLogger.V(7).Infof("Proportion AllocateFunc: job <%v/%v>, task resources <%s>, "+
 			"queue: <%v>, queue allocated resources: <%v>",
 			job.Namespace, job.Name, taskResources, leafQueue.Name, leafQueue.GetAllocatedShare())
@@ -478,7 +491,21 @@ func (pp *proportionPlugin) allocateHandlerFn(ssn *framework.Session) func(event
 
 func (pp *proportionPlugin) deallocateHandlerFn(ssn *framework.Session) func(event *framework.Event) {
 	return func(event *framework.Event) {
-		job := ssn.ClusterInfo.PodGroupInfos[event.Task.Job]
+		job, found := ssn.ClusterInfo.PodGroupInfos[event.Task.Job]
+		if !found {
+			log.InfraLogger.V(7).Infof("Proportion DeallocateFunc: no job <%v> in session, skipping", event.Task.Job)
+			return
+		}
+
+		leafQueue, found := pp.queues[job.Queue]
+		if !found {
+			// The queue is absent once the plugin's session state has been torn down, and for jobs
+			// whose queue was dropped from the snapshot as an orphan.
+			log.InfraLogger.V(7).Infof("Proportion DeallocateFunc: no queue <%v> for job <%v/%v>, skipping",
+				job.Queue, job.Namespace, job.Name)
+			return
+		}
+
 		isPreemptibleJob := job.IsPreemptibleJob()
 		taskResources := utils.QuantifyVector(event.Task.AcceptedResourceVector, event.Task.VectorMap)
 
@@ -493,7 +520,6 @@ func (pp *proportionPlugin) deallocateHandlerFn(ssn *framework.Session) func(eve
 			}
 		}
 
-		leafQueue := pp.queues[job.Queue]
 		log.InfraLogger.V(7).Infof("Proportion DeallocateFunc: job <%v/%v>, task resources <%s>, "+
 			"queue: <%v>, queue allocated resources: <%v>",
 			job.Namespace, job.Name, taskResources, leafQueue.Name, leafQueue.GetAllocatedShare())
