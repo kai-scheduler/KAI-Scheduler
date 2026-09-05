@@ -1,0 +1,61 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+suite: test gpu sharing mode configuration
+
+set:
+  kaiConfigDeployer:
+    enabled: false
+  kaiConfig:
+    render: true
+templates:
+  - kai-config.yaml
+tests:
+  - it: should default to NonMemoryEnforced when nothing is set
+    asserts:
+      - equal:
+          path: spec.global.gpuSharingMode
+          value: NonMemoryEnforced
+      - notExists:
+          path: spec.admission.gpuSharing
+
+  - it: should render an explicit gpuSharingMode and omit legacy gpuSharing
+    set:
+      global.gpuSharingMode: NvFractions
+    asserts:
+      - equal:
+          path: spec.global.gpuSharingMode
+          value: NvFractions
+      - notExists:
+          path: spec.admission.gpuSharing
+
+  - it: explicit gpuSharingMode wins over legacy gpuSharing
+    set:
+      global.gpuSharingMode: HamiCore
+      global.gpuSharing: false
+    asserts:
+      - equal:
+          path: spec.global.gpuSharingMode
+          value: HamiCore
+      - notExists:
+          path: spec.admission.gpuSharing
+
+  - it: passes through legacy gpuSharing=false for operator derivation on upgrade
+    set:
+      global.gpuSharing: false
+    asserts:
+      - equal:
+          path: spec.admission.gpuSharing
+          value: false
+      - notExists:
+          path: spec.global.gpuSharingMode
+
+  - it: passes through legacy gpuSharing=true for operator derivation on upgrade
+    set:
+      global.gpuSharing: true
+    asserts:
+      - equal:
+          path: spec.admission.gpuSharing
+          value: true
+      - notExists:
+          path: spec.global.gpuSharingMode

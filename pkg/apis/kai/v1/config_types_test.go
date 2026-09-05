@@ -9,6 +9,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/admission"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/binder"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/numa_placement_exporter"
 )
@@ -82,6 +83,68 @@ var _ = Describe("ConfigSpec", func() {
 			spec.SetDefaultsWhereNeeded()
 
 			Expect(spec.NumaPlacementExporter.NodeSelector).To(Equal(selector))
+		})
+	})
+
+	Describe("GpuSharingMode resolution", func() {
+		It("defaults to NonMemoryEnforced for a fresh config", func() {
+			spec := &ConfigSpec{}
+			spec.SetDefaultsWhereNeeded()
+
+			Expect(*spec.Global.GpuSharingMode).To(Equal(common.GpuSharingModeNonMemoryEnforced))
+			Expect(*spec.Admission.GPUSharing).To(BeTrue())
+			Expect(*spec.Binder.Plugins[binder.GPUSharingPluginName].Enabled).To(BeTrue())
+			Expect(*spec.Binder.Plugins[binder.HamiCorePluginName].Enabled).To(BeFalse())
+			Expect(*spec.Binder.Plugins[binder.NvFractionsPluginName].Enabled).To(BeFalse())
+		})
+
+		It("honors an explicit mode", func() {
+			spec := &ConfigSpec{
+				Global: &GlobalConfig{GpuSharingMode: ptr.To(common.GpuSharingModeNvFractions)},
+			}
+			spec.SetDefaultsWhereNeeded()
+
+			Expect(*spec.Global.GpuSharingMode).To(Equal(common.GpuSharingModeNvFractions))
+			Expect(*spec.Admission.GPUSharing).To(BeFalse())
+			Expect(*spec.Binder.Plugins[binder.NvFractionsPluginName].Enabled).To(BeTrue())
+			Expect(*spec.Binder.Plugins[binder.GPUSharingPluginName].Enabled).To(BeFalse())
+		})
+
+		It("derives Disabled from legacy admission.gpuSharing=false on upgrade", func() {
+			spec := &ConfigSpec{
+				Admission: &admission.Admission{GPUSharing: ptr.To(false)},
+			}
+			spec.SetDefaultsWhereNeeded()
+
+			Expect(*spec.Global.GpuSharingMode).To(Equal(common.GpuSharingModeDisabled))
+			Expect(*spec.Admission.GPUSharing).To(BeFalse())
+			Expect(*spec.Binder.Plugins[binder.GPUSharingPluginName].Enabled).To(BeFalse())
+		})
+
+		It("derives NonMemoryEnforced from legacy admission.gpuSharing=true on upgrade", func() {
+			spec := &ConfigSpec{
+				Admission: &admission.Admission{GPUSharing: ptr.To(true)},
+			}
+			spec.SetDefaultsWhereNeeded()
+
+			Expect(*spec.Global.GpuSharingMode).To(Equal(common.GpuSharingModeNonMemoryEnforced))
+			Expect(*spec.Binder.Plugins[binder.GPUSharingPluginName].Enabled).To(BeTrue())
+		})
+
+		It("derives HamiCore from legacy hamicore plugin enabled on upgrade", func() {
+			spec := &ConfigSpec{
+				Admission: &admission.Admission{GPUSharing: ptr.To(true)},
+				Binder: &binder.Binder{
+					Plugins: map[string]binder.PluginConfig{
+						binder.HamiCorePluginName: {Enabled: ptr.To(true)},
+					},
+				},
+			}
+			spec.SetDefaultsWhereNeeded()
+
+			Expect(*spec.Global.GpuSharingMode).To(Equal(common.GpuSharingModeHamiCore))
+			Expect(*spec.Binder.Plugins[binder.HamiCorePluginName].Enabled).To(BeTrue())
+			Expect(*spec.Binder.Plugins[binder.GPUSharingPluginName].Enabled).To(BeTrue())
 		})
 	})
 })

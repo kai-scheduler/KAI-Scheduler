@@ -107,7 +107,11 @@ func newGPUSharingPlugin(buildContext PluginBuildContext, arguments map[string]s
 	if err != nil {
 		return nil, err
 	}
-	return gpusharing.New(buildContext.KubeClient, cdiEnabled), nil
+	nriPluginEnabled, err := boolArgumentOrDefault(arguments, NRIPluginEnabledArgument, false)
+	if err != nil {
+		return nil, err
+	}
+	return gpusharing.New(buildContext.KubeClient, cdiEnabled, nriPluginEnabled), nil
 }
 
 func newHamiCorePlugin(buildContext PluginBuildContext, _ map[string]string) (Plugin, error) {
@@ -162,6 +166,18 @@ func boolArgument(arguments map[string]string, name string) (bool, error) {
 	value, found := arguments[name]
 	if !found {
 		return false, fmt.Errorf("missing argument %q", name)
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return false, fmt.Errorf("invalid argument %q=%q: %w", name, value, err)
+	}
+	return parsed, nil
+}
+
+func boolArgumentOrDefault(arguments map[string]string, name string, defaultValue bool) (bool, error) {
+	value, found := arguments[name]
+	if !found {
+		return defaultValue, nil
 	}
 	parsed, err := strconv.ParseBool(value)
 	if err != nil {

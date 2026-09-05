@@ -4,6 +4,8 @@
 package runtimeenforcement
 
 import (
+	"context"
+
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
 
@@ -24,7 +26,7 @@ func (p *RuntimeEnforcement) Name() string {
 	return "runtimeenforcement"
 }
 
-func (p *RuntimeEnforcement) Validate(pod *v1.Pod) error {
+func (p *RuntimeEnforcement) Validate(context.Context, *v1.Pod, *v1.Pod) error {
 	return nil
 }
 
