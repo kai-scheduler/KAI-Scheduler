@@ -308,13 +308,13 @@ kubectl apply -f gpu-sharing-non-default-container.yaml
 
 ### Compute sharing mode within a fractional GPU group
 
-Pods that share a GPU must use compatible compute sharing behavior within the same fractional GPU group. Use `kai.scheduler/gpu-compute-sharing-mode` when the workload needs to declare its compute sharing mode explicitly:
+Pods that share a GPU must use compatible compute sharing behavior within the same fractional GPU group. Use `nvidia.com/container.<container-name>.gpu-compute.mode` when the workload needs to declare its compute sharing mode explicitly. The container name must match the container targeted by the pod's other fractional GPU annotations:
 
 ```yaml
 metadata:
   annotations:
     gpu-fraction: "0.5"
-    kai.scheduler/gpu-compute-sharing-mode: time-slicing
+    nvidia.com/container.gpu-workload.gpu-compute.mode: time-slicing
 ```
 
 KAI keeps pods with incompatible compute sharing modes out of the same fractional GPU group.

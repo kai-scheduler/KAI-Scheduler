@@ -1374,7 +1374,7 @@ func TestIsGpuGroupComputeSharingModeCompatible_CurrentTaskNewGroup(t *testing.T
 		Pod: &v1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
 				Annotations: map[string]string{
-					commonconstants.GpuComputeSharingMode: string(schedulingv1alpha2.GPUComputeSharingModeSMSharing),
+					resources.CalcGpuComputeSharingModeAnnotationForContainer("main"): string(schedulingv1alpha2.GPUComputeSharingModeSMSharing),
 				},
 			},
 		},
@@ -1402,7 +1402,7 @@ func TestIsGpuGroupComputeSharingModeCompatible_ReservationPodIsSourceOfTruth(t 
 							commonconstants.GPUGroup: gpuGroup,
 						},
 						Annotations: map[string]string{
-							commonconstants.GpuComputeSharingMode: string(schedulingv1alpha2.GPUComputeSharingModeTimeSlicing),
+							resources.CalcGpuComputeSharingModeAnnotationForContainer("main"): string(schedulingv1alpha2.GPUComputeSharingModeTimeSlicing),
 						},
 					},
 				},
@@ -1411,7 +1411,7 @@ func TestIsGpuGroupComputeSharingModeCompatible_ReservationPodIsSourceOfTruth(t 
 				Pod: &v1.Pod{
 					ObjectMeta: metav1.ObjectMeta{
 						Annotations: map[string]string{
-							commonconstants.GpuComputeSharingMode: string(schedulingv1alpha2.GPUComputeSharingModeSMSharing),
+							resources.CalcGpuComputeSharingModeAnnotationForContainer("main"): string(schedulingv1alpha2.GPUComputeSharingModeSMSharing),
 						},
 					},
 				},
@@ -1428,7 +1428,7 @@ func TestIsGpuGroupComputeSharingModeCompatible_ReservationPodIsSourceOfTruth(t 
 		Pod: &v1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
 				Annotations: map[string]string{
-					commonconstants.GpuComputeSharingMode: string(schedulingv1alpha2.GPUComputeSharingModeSMSharing),
+					resources.CalcGpuComputeSharingModeAnnotationForContainer("main"): string(schedulingv1alpha2.GPUComputeSharingModeSMSharing),
 				},
 			},
 		},

@@ -136,3 +136,100 @@ func TestValidateGpuMemoryPortionLimitAnnotation(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateGPUFractionRequest_ComputeSharingMode(t *testing.T) {
+	tests := []struct {
+		name        string
+		annotations map[string]string
+		containers  []v1.Container
+		expectErr   bool
+	}{
+		{
+			name:        "no compute sharing mode annotation",
+			annotations: map[string]string{},
+			containers:  []v1.Container{{Name: "container-0"}},
+			expectErr:   false,
+		},
+		{
+			name: "container exists, matches NvFractions request container",
+			annotations: map[string]string{
+				CalcGpuFractionAnnotationForContainer("container-0"):           "1Gi",
+				CalcGpuComputeSharingModeAnnotationForContainer("container-0"): "sm-sharing",
+			},
+			containers: []v1.Container{{Name: "container-0"}},
+			expectErr:  false,
+		},
+		{
+			name: "container does not exist in pod spec",
+			annotations: map[string]string{
+				CalcGpuFractionAnnotationForContainer("missing-container"):           "1Gi",
+				CalcGpuComputeSharingModeAnnotationForContainer("missing-container"): "sm-sharing",
+			},
+			containers: []v1.Container{{Name: "container-0"}},
+			expectErr:  true,
+		},
+		{
+			name: "container name mismatches NvFractions request container",
+			annotations: map[string]string{
+				CalcGpuFractionAnnotationForContainer("container-0"):           "1Gi",
+				CalcGpuComputeSharingModeAnnotationForContainer("container-1"): "sm-sharing",
+			},
+			containers: []v1.Container{{Name: "container-0"}, {Name: "container-1"}},
+			expectErr:  true,
+		},
+		{
+			name: "container name matches gpu-fraction-container-name",
+			annotations: map[string]string{
+				CalcGpuFractionAnnotationForContainer("container-1"):           "1Gi",
+				CalcGpuComputeSharingModeAnnotationForContainer("container-1"): "sm-sharing",
+				constants.GpuFractionContainerName:                             "container-1",
+			},
+			containers: []v1.Container{{Name: "container-0"}, {Name: "container-1"}},
+			expectErr:  false,
+		},
+		{
+			name: "container name mismatches gpu-fraction-container-name",
+			annotations: map[string]string{
+				CalcGpuFractionAnnotationForContainer("container-1"):           "1Gi",
+				CalcGpuComputeSharingModeAnnotationForContainer("container-1"): "sm-sharing",
+				constants.GpuFractionContainerName:                             "container-0",
+			},
+			containers: []v1.Container{{Name: "container-0"}, {Name: "container-1"}},
+			expectErr:  true,
+		},
+		{
+			name: "ignored when the pod only has a legacy portion request, not NvFractions",
+			annotations: map[string]string{
+				constants.GpuFraction: "0.5",
+				CalcGpuComputeSharingModeAnnotationForContainer("missing-container"): "sm-sharing",
+			},
+			containers: []v1.Container{{Name: "container-0"}},
+			expectErr:  false,
+		},
+		{
+			name: "ignored when there is no accompanying fraction request at all",
+			annotations: map[string]string{
+				CalcGpuComputeSharingModeAnnotationForContainer("missing-container"): "sm-sharing",
+			},
+			containers: []v1.Container{{Name: "container-0"}},
+			expectErr:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pod := &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Annotations: tt.annotations},
+				Spec:       v1.PodSpec{Containers: tt.containers},
+			}
+
+			err := ValidateGPUFractionRequest(pod)
+
+			if tt.expectErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
