@@ -1,0 +1,3 @@
+kind: Added
+body: |-
+  Enforce fractional GPU compute modes

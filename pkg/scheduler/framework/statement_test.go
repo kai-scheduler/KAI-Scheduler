@@ -142,7 +142,7 @@ func TestStatement_Evict_Unevict(t *testing.T) {
 			assert.Equal(t, actualTask.Status, originalTask.Status)
 			assert.Equal(t, actualTask.GpuRequirement, originalTask.GpuRequirement)
 			assert.Equal(t, actualTask.ResReqVector, originalTask.ResReqVector)
-			assert.Equal(t, actualTask.GPUGroups, originalTask.GPUGroups)
+			assert.Equal(t, actualTask.GPUGroupIDs(), originalTask.GPUGroupIDs())
 
 			actualJob := ssn.ClusterInfo.PodGroupInfos[tt.args.jobName]
 			assert.Equal(t, originalJob.AllocatedVector, actualJob.AllocatedVector)
@@ -637,7 +637,7 @@ func TestStatement_Pipeline_Unpipeline(t *testing.T) {
 			assert.Equal(t, actualTask.Status, originalPipelineTask.Status)
 			assert.Equal(t, actualTask.GpuRequirement, originalPipelineTask.GpuRequirement)
 			assert.Equal(t, actualTask.ResReqVector, originalPipelineTask.ResReqVector)
-			assert.Equal(t, actualTask.GPUGroups, originalPipelineTask.GPUGroups)
+			assert.Equal(t, actualTask.GPUGroupIDs(), originalPipelineTask.GPUGroupIDs())
 
 			actualPipelinedJob := ssn.ClusterInfo.PodGroupInfos[tt.args.jobName]
 			assert.Equal(t, originalPipelineJob.AllocatedVector, actualPipelinedJob.AllocatedVector)
@@ -986,7 +986,7 @@ func TestStatement_Allocate_Unallocate(t *testing.T) {
 			assert.Equal(t, actualAllocatedTask.Status, originalAllocateTask.Status)
 			assert.Equal(t, actualAllocatedTask.GpuRequirement, originalAllocateTask.GpuRequirement)
 			assert.Equal(t, actualAllocatedTask.ResReqVector, originalAllocateTask.ResReqVector)
-			assert.Equal(t, actualAllocatedTask.GPUGroups, originalAllocateTask.GPUGroups)
+			assert.Equal(t, actualAllocatedTask.GPUGroupIDs(), originalAllocateTask.GPUGroupIDs())
 
 			actualAllocatedJob := ssn.ClusterInfo.PodGroupInfos[tt.args.jobName]
 			assert.Equal(t, originalAllocateJob.AllocatedVector, actualAllocatedJob.AllocatedVector)

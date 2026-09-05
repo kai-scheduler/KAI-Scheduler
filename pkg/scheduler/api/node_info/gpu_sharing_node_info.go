@@ -6,7 +6,10 @@ package node_info
 import (
 	"fmt"
 	"math"
+	"strings"
 
+	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
@@ -63,6 +66,53 @@ func (g *GpuSharingNodeInfo) Clone() *GpuSharingNodeInfo {
 	return gpuSharingNodeInfo
 }
 
+func (ni *NodeInfo) IsGpuGroupComputeSharingModeCompatible(gpuGroup string, task *pod_info.PodInfo) bool {
+	requestedMode := task.RequestedGPUComputeSharingMode()
+	if mode, found := ni.getReservationPodGpuGroupComputeSharingMode(gpuGroup); found {
+		return mode == requestedMode
+	}
+	if mode, found := ni.getGpuGroupComputeSharingMode(gpuGroup); found {
+		return mode == requestedMode
+	}
+	for _, fractionalGpuGroup := range task.FractionalGpuGroupsOrDefault() {
+		fractionalGpuGroup = fractionalGpuGroup.WithDefaults()
+		if fractionalGpuGroup.ID == gpuGroup {
+			return fractionalGpuGroup.ComputeSharingMode == requestedMode
+		}
+	}
+	return requestedMode == schedulingv1alpha2.GPUComputeSharingModeTimeSlicing
+}
+
+func (ni *NodeInfo) getReservationPodGpuGroupComputeSharingMode(
+	gpuGroup string,
+) (schedulingv1alpha2.GPUComputeSharingMode, bool) {
+	for _, task := range ni.PodInfos {
+		if task.Pod == nil ||
+			!strings.HasPrefix(task.Pod.Name, commonconstants.GPUReservationPodPrefix) ||
+			task.Pod.Labels[commonconstants.GPUGroup] != gpuGroup {
+			continue
+		}
+		if task.Pod.Annotations == nil {
+			return schedulingv1alpha2.GPUComputeSharingModeTimeSlicing, true
+		}
+		return schedulingv1alpha2.DefaultGPUComputeSharingMode(
+			schedulingv1alpha2.GPUComputeSharingMode(task.Pod.Annotations[commonconstants.GpuComputeSharingMode]),
+		), true
+	}
+	return "", false
+}
+
+func (ni *NodeInfo) getGpuGroupComputeSharingMode(gpuGroup string) (schedulingv1alpha2.GPUComputeSharingMode, bool) {
+	for _, task := range ni.PodInfos {
+		for _, fractionalGpuGroup := range task.FractionalGpuGroupsOrDefault() {
+			if fractionalGpuGroup.ID == gpuGroup {
+				return fractionalGpuGroup.WithDefaults().ComputeSharingMode, true
+			}
+		}
+	}
+	return "", false
+}
+
 /************* All - Shared Tasks *************/
 
 func getAcceptedTaskResourceVectorWithoutSharedGPU(task *pod_info.PodInfo, vectorMap *resource_info.ResourceVectorMap) resource_info.ResourceVector {
@@ -81,7 +131,7 @@ func (ni *NodeInfo) addSharedGPUTaskResources(task *pod_info.PodInfo) {
 	log.InfraLogger.V(7).Infof("About to add shared podsInfo: <%v/%v>, status: <%v>, node: <%+v>",
 		task.Namespace, task.Name, task.Status, ni)
 
-	for _, gpuGroup := range task.GPUGroups {
+	for _, gpuGroup := range task.GPUGroupIDs() {
 		ni.addSharedGPUTaskResourcesPerPodGroup(task, gpuGroup)
 	}
 
@@ -93,7 +143,7 @@ func (ni *NodeInfo) addSharedGPUTaskResourcesPerPodGroup(task *pod_info.PodInfo,
 	log.InfraLogger.V(7).Infof(
 		"About to add shared podsInfo: <%v/%v>, gpuGroup: <%v> "+
 			"releasingSharedGPU: <%v> AllocatedSharedGPUsMemory <%v>, UsedSharedGPUsMemory: <%v>",
-		task.Namespace, task.Name, task.GPUGroups,
+		task.Namespace, task.Name, task.GPUGroupIDs(),
 		ni.ReleasingSharedGPUsMemory[gpuGroup], ni.AllocatedSharedGPUsMemory[gpuGroup],
 		ni.UsedSharedGPUsMemory[gpuGroup])
 
@@ -141,7 +191,7 @@ func (ni *NodeInfo) addSharedGPUTaskResourcesPerPodGroup(task *pod_info.PodInfo,
 	log.InfraLogger.V(8).Infof(
 		"Added shared podsInfo: <%v/%v>, gpuGroup: <%v> "+
 			"releasingSharedGPU: <%v> AllocatedSharedGPUsMemory <%v>, UsedSharedGPUsMemory: <%v>",
-		task.Namespace, task.Name, task.GPUGroups,
+		task.Namespace, task.Name, task.GPUGroupIDs(),
 		ni.ReleasingSharedGPUsMemory[gpuGroup], ni.AllocatedSharedGPUsMemory[gpuGroup],
 		ni.UsedSharedGPUsMemory[gpuGroup])
 }
@@ -153,9 +203,9 @@ func (ni *NodeInfo) removeSharedTaskResources(task *pod_info.PodInfo) {
 
 	log.InfraLogger.V(7).Infof(
 		"About to remove shared podsInfo: <%v/%v>, status: <%v>, node: <%+v>",
-		task.Namespace, task.Name, task.GPUGroups, ni)
+		task.Namespace, task.Name, task.GPUGroupIDs(), ni)
 
-	for _, gpuGroup := range task.GPUGroups {
+	for _, gpuGroup := range task.GPUGroupIDs() {
 		ni.removeSharedTaskResourcesPerPodGroup(task, gpuGroup)
 	}
 
@@ -168,7 +218,7 @@ func (ni *NodeInfo) removeSharedTaskResourcesPerPodGroup(task *pod_info.PodInfo,
 	log.InfraLogger.V(7).Infof(
 		"About to remove shared podsInfo: <%v/%v>, gpuGroup: <%v> "+
 			"releasingSharedGPU: <%v> AllocatedSharedGPUsMemory <%v>, UsedSharedGPUsMemory: <%v>",
-		task.Namespace, task.Name, task.GPUGroups,
+		task.Namespace, task.Name, task.GPUGroupIDs(),
 		ni.ReleasingSharedGPUsMemory[gpuGroup], ni.AllocatedSharedGPUsMemory[gpuGroup],
 		ni.UsedSharedGPUsMemory[gpuGroup])
 
@@ -231,7 +281,7 @@ func (ni *NodeInfo) removeSharedTaskResourcesPerPodGroup(task *pod_info.PodInfo,
 	log.InfraLogger.V(8).Infof(
 		"Removed shared podsInfo: <%v/%v>, gpuGroup: <%v> "+
 			"releasingSharedGPU: <%v> AllocatedSharedGPUsMemory <%v>, UsedSharedGPUsMemory: <%v>",
-		task.Namespace, task.Name, task.GPUGroups,
+		task.Namespace, task.Name, task.GPUGroupIDs(),
 		ni.ReleasingSharedGPUsMemory[gpuGroup], ni.AllocatedSharedGPUsMemory[gpuGroup],
 		ni.UsedSharedGPUsMemory[gpuGroup])
 }

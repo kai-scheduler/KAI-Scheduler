@@ -96,7 +96,7 @@ type PodInfo struct {
 
 	schedulingConstraintsSignature common_info.SchedulingConstraintsSignature
 
-	GPUGroups []string
+	FractionalGpuGroups []schedulingv1alpha2.FractionalGpuGroup
 
 	NUMAPlacement NUMAPlacement
 
@@ -216,7 +216,6 @@ func NewTaskInfo(pod *v1.Pod, vectorMap *resource_info.ResourceVectorMap, opts .
 		ResReqVector:                   initResreq.ToVector(vectorMap),
 		AcceptedResourceVector:         resource_info.NewResourceVector(vectorMap),
 		VectorMap:                      vectorMap,
-		GPUGroups:                      []string{},
 		ResourceRequestType:            RequestTypeRegular,
 		ResourceReceivedType:           ReceivedTypeNone,
 		BindRequest:                    options.BindRequest,
@@ -303,8 +302,8 @@ func (pi *PodInfo) Clone() *PodInfo {
 		ResReqVector:           resReqVectorClone,
 		AcceptedResourceVector: acceptedResourceVectorClone,
 		VectorMap:              pi.VectorMap,
-		GPUGroups:              pi.GPUGroups,
 		NUMAPlacement:          pi.NUMAPlacement.Clone(),
+		FractionalGpuGroups:    pi.FractionalGpuGroups,
 		ResourceClaimInfo:      pi.ResourceClaimInfo.Clone(),
 		ExtendedResourceClaim:  pi.ExtendedResourceClaim,
 		ResourceRequestType:    pi.ResourceRequestType,
@@ -314,6 +313,53 @@ func (pi *PodInfo) Clone() *PodInfo {
 		storageClaims:          pi.storageClaims,
 		ownedStorageClaims:     pi.ownedStorageClaims,
 	}
+}
+
+func (pi *PodInfo) SetFractionalGpuGroups(fractionalGpuGroups []schedulingv1alpha2.FractionalGpuGroup) {
+	if len(fractionalGpuGroups) == 0 {
+		pi.FractionalGpuGroups = nil
+		return
+	}
+	pi.FractionalGpuGroups = fractionalGpuGroups
+}
+
+func (pi *PodInfo) SetGPUGroupIDs(gpuGroups []string) {
+	pi.SetFractionalGpuGroups(schedulingv1alpha2.NewFractionalGpuGroups(
+		gpuGroups,
+		pi.RequestedGPUComputeSharingMode(),
+	))
+}
+
+func (pi *PodInfo) GPUGroupIDs() []string {
+	fractionalGpuGroups := pi.FractionalGpuGroupsOrDefault()
+	if len(fractionalGpuGroups) == 0 {
+		return nil
+	}
+	gpuGroups := make([]string, 0, len(fractionalGpuGroups))
+	for _, fractionalGpuGroup := range fractionalGpuGroups {
+		gpuGroups = append(gpuGroups, fractionalGpuGroup.ID)
+	}
+	return gpuGroups
+}
+
+func (pi *PodInfo) RequestedGPUComputeSharingMode() schedulingv1alpha2.GPUComputeSharingMode {
+	if pi.Pod == nil || pi.Pod.Annotations == nil {
+		return schedulingv1alpha2.GPUComputeSharingModeTimeSlicing
+	}
+	return schedulingv1alpha2.DefaultGPUComputeSharingMode(
+		schedulingv1alpha2.GPUComputeSharingMode(pi.Pod.Annotations[commonconstants.GpuComputeSharingMode]),
+	)
+}
+
+func (pi *PodInfo) FractionalGpuGroupsOrDefault() []schedulingv1alpha2.FractionalGpuGroup {
+	if len(pi.FractionalGpuGroups) > 0 {
+		fractionalGpuGroups := make([]schedulingv1alpha2.FractionalGpuGroup, 0, len(pi.FractionalGpuGroups))
+		for _, fractionalGpuGroup := range pi.FractionalGpuGroups {
+			fractionalGpuGroups = append(fractionalGpuGroups, fractionalGpuGroup.WithDefaults())
+		}
+		return fractionalGpuGroups
+	}
+	return nil
 }
 
 func (pi PodInfo) String() string {
@@ -458,10 +504,13 @@ func getTaskStatus(pod *v1.Pod, bindRequest *bindrequest_info.BindRequestInfo, s
 }
 
 func (pi *PodInfo) updatePodAdditionalFields(bindRequest *bindrequest_info.BindRequestInfo, draPodClaims ...*resourceapi.ResourceClaim) {
-	if bindRequest != nil && len(bindRequest.BindRequest.Spec.SelectedGPUGroups) > 0 {
-		pi.GPUGroups = bindRequest.BindRequest.Spec.SelectedGPUGroups
+	if bindRequest != nil && len(bindRequest.BindRequest.Spec.SelectedFractionalGpuGroupsOrDefault()) > 0 {
+		pi.SetFractionalGpuGroups(bindRequest.BindRequest.Spec.SelectedFractionalGpuGroupsOrDefault())
 	} else {
-		pi.GPUGroups = resources.GetGpuGroups(pi.Pod)
+		pi.SetFractionalGpuGroups(schedulingv1alpha2.NewFractionalGpuGroups(
+			resources.GetGpuGroups(pi.Pod),
+			pi.RequestedGPUComputeSharingMode(),
+		))
 	}
 
 	if bindRequest != nil && len(bindRequest.BindRequest.Spec.ReceivedResourceType) > 0 {
