@@ -72,6 +72,8 @@ In both strategies, the scheduler ensures that the **relative ordering is preser
 The scheduler will prioritize the first strategy.
 > **Note:** because of the hierarchical nature & priority/weight parametes of job queues in KAI, there are scenarios that a queue will have lower resources allocated than its siblings, yet it'll receive no additional resources via reclaim.
 
+Both strategies only ever reclaim over-quota resources — a queue using only its guaranteed quota is normally never a reclaim victim. Enabling the `queuePriorityInQuotaReclaim` plugin argument (see [Configuration](#configuration)) adds a third, opt-in strategy: a queue can reclaim in-quota resources from another queue with strictly lower `Priority`, as long as the reclaimer itself stays within its own deserved quota. See [Scheduling Deep Dive](../scheduling-deep-dive/README.md#the-quota-protection-guarantee) for details.
+
 ## Configuration
 
 ### Reclaim Sensitivity
@@ -88,6 +90,36 @@ pluginArguments:
 | `1.0` | Standard comparison (default) |
 | `> 1.0` | More conservative reclaim |
 | `< 1.0` | Not allowed (prevents infinite cycles) |
+
+### Priority-Based In-Quota Reclaim
+
+Opt in to letting a strictly higher priority queue reclaim in-quota resources from a strictly lower priority queue, using `queuePriorityInQuotaReclaim`. This is a `proportion` plugin argument, set on the `SchedulingShard` this applies to (see [Scheduler Config Customization](../operator/scheduler-config-customization.md)):
+
+```yaml
+# SchedulingShard
+spec:
+  plugins:
+    proportion:
+      arguments:
+        queuePriorityInQuotaReclaim: "true"
+```
+
+```yaml
+# Helm values — templated into the default SchedulingShard's spec.plugins
+scheduler:
+  plugins:
+    proportion:
+      arguments:
+        queuePriorityInQuotaReclaim: "true"
+```
+
+| Value | Behavior |
+|-------|----------|
+| `false` (default) | Only over-quota resources are ever reclaimed — the quota protection guarantee holds for every queue |
+| `true` | A queue can additionally reclaim in-quota resources from any strictly lower priority queue, provided the reclaimer stays within its own deserved quota |
+
+This is alpha functionality, and the exact behavior of this feature might change in future releases. 
+Enable `queuePriorityInQuotaReclaim` per scheduling shard only when queue `Priority` should outrank quota protection for lower-priority queues.
 
 ## See Also
 

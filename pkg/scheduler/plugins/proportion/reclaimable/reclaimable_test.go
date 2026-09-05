@@ -263,7 +263,7 @@ var _ = Describe("Can Reclaim Resources", func() {
 		for _, data := range tests {
 			testData := data
 			It(testData.name, func() {
-				reclaimable := New(1.0)
+				reclaimable := New(1.0, false)
 				queues := map[common_info.QueueID]*rs.QueueAttributes{
 					testData.queue.UID: testData.queue,
 				}
@@ -557,7 +557,7 @@ var _ = Describe("Can Reclaim Resources", func() {
 		for _, data := range tests {
 			testData := data
 			It(testData.name, func() {
-				reclaimable := New(1.0)
+				reclaimable := New(1.0, false)
 				queues := map[common_info.QueueID]*rs.QueueAttributes{
 					testData.queue.UID: testData.queue,
 				}
@@ -639,7 +639,7 @@ var _ = Describe("Reclaimable - Single department", func() {
 				},
 			},
 		}
-		reclaimable = New(1.0)
+		reclaimable = New(1.0, false)
 	})
 	It("Reclaimer is below fair share, reclaimee above fair share", func() {
 		result := reclaimable.Reclaimable(queues, reclaimerInfo, reclaimeeResourcesByQueue(reclaimees))
@@ -792,7 +792,7 @@ var _ = Describe("Reclaimable - Multiple departments", func() {
 				},
 			},
 		}
-		reclaimable = New(1.0)
+		reclaimable = New(1.0, false)
 	})
 	It("Reclaimer is below fair share, reclaimee above fair share - sanity", func() {
 		result := reclaimable.Reclaimable(queues, reclaimerInfo, reclaimeeResourcesByQueue(reclaimees))
@@ -876,7 +876,7 @@ var _ = Describe("Reclaimable - Multiple hierarchy levels", func() {
 			},
 		}
 		queues := buildQueues(queuesData)
-		reclaimable = New(1.0)
+		reclaimable = New(1.0, false)
 		reclaimees := []*podgroup_info.PodGroupInfo{reclaimee}
 		result := reclaimable.Reclaimable(queues, reclaimerInfo, reclaimeeResourcesByQueue(reclaimees))
 		Expect(result).To(Equal(true))
@@ -928,7 +928,7 @@ var _ = Describe("Reclaimable - Multiple hierarchy levels", func() {
 			},
 		}
 		queues := buildQueues(queuesData)
-		reclaimable = New(1.0)
+		reclaimable = New(1.0, false)
 		reclaimees := []*podgroup_info.PodGroupInfo{reclaimee}
 		result := reclaimable.Reclaimable(queues, reclaimerInfo, reclaimeeResourcesByQueue(reclaimees))
 		Expect(result).To(Equal(false))
@@ -973,7 +973,7 @@ var _ = Describe("Reclaimable - Multiple hierarchy levels", func() {
 			},
 		}
 		queues := buildQueues(queuesData)
-		reclaimable = New(1.0)
+		reclaimable = New(1.0, false)
 
 		pod := reclaimee.GetAllPodsMap()["1"]
 		pod.GpuRequirement = *resource_info.NewGpuResourceRequirementWithGpus(1.5, 0)
@@ -1025,7 +1025,7 @@ var _ = Describe("Reclaimable - Multiple hierarchy levels", func() {
 			},
 		}
 		queues := buildQueues(queuesData)
-		reclaimable = New(1.0)
+		reclaimable = New(1.0, false)
 
 		reclaimerInfo.RequiredResources = resource_info.NewResource(0, 0, 1).ToVector(testVectorMap)
 		reclaimerInfo.Queue = "left-leaf1"
@@ -1074,7 +1074,7 @@ var _ = Describe("Reclaimable - Multiple hierarchy levels", func() {
 			},
 		}
 		queues := buildQueues(queuesData)
-		reclaimable = New(1.0)
+		reclaimable = New(1.0, false)
 
 		reclaimerInfo.RequiredResources = resource_info.NewResource(0, 0, 1).ToVector(testVectorMap)
 		reclaimerInfo.Queue = "d1-project-1"
@@ -1120,7 +1120,7 @@ var _ = Describe("Reclaimable - Multiple hierarchy levels", func() {
 		queues["d2"].CPU.Allocated = 1000
 		queues["d2"].CPU.FairShare = 1000 // This creates a 1.0 utilization ratio
 
-		reclaimable = New(1.0)
+		reclaimable = New(1.0, false)
 
 		reclaimerInfo.RequiredResources = resource_info.NewResource(0, 0, 1).ToVector(testVectorMap) // Only requests GPU
 		reclaimerInfo.Queue = "d1-project-1"
@@ -1134,6 +1134,83 @@ var _ = Describe("Reclaimable - Multiple hierarchy levels", func() {
 	})
 })
 
+var _ = Describe("Reclaimable - In-quota queue priority strategy", func() {
+	var (
+		reclaimerInfo *ReclaimerInfo
+		reclaimees    []*podgroup_info.PodGroupInfo
+		queues        map[common_info.QueueID]*rs.QueueAttributes
+	)
+	BeforeEach(func() {
+		reclaimerInfo = &ReclaimerInfo{
+			Name:              "reclaimer",
+			Namespace:         "n1",
+			Queue:             "high-priority",
+			IsPreemptable:     true,
+			RequiredResources: resource_info.NewResource(0, 0, 1).ToVector(testVectorMap),
+			VectorMap:         testVectorMap,
+		}
+
+		reclaimee := testReclaimee("reclaimee", "low-priority", pod_info.PodsMap{
+			"1": testPodInfo("1", 3, pod_status.Running),
+		})
+		reclaimees = []*podgroup_info.PodGroupInfo{reclaimee}
+
+		// Both queues are within their deserved quota, so neither MaintainFairShareStrategy nor
+		// GuaranteeDeservedQuotaStrategy would allow this reclaim.
+		queues = map[common_info.QueueID]*rs.QueueAttributes{
+			"high-priority": {
+				UID:      "high-priority",
+				Name:     "high-priority",
+				Priority: 1,
+				QueueResourceShare: rs.QueueResourceShare{
+					GPU: rs.ResourceShare{
+						Deserved:   5,
+						FairShare:  5,
+						Allocated:  0,
+						MaxAllowed: commonconstants.UnlimitedResourceQuantity,
+					},
+					CPU:    rs.ResourceShare{},
+					Memory: rs.ResourceShare{},
+				},
+			},
+			"low-priority": {
+				UID:      "low-priority",
+				Name:     "low-priority",
+				Priority: 0,
+				QueueResourceShare: rs.QueueResourceShare{
+					GPU: rs.ResourceShare{
+						Deserved:   5,
+						FairShare:  5,
+						Allocated:  3,
+						MaxAllowed: commonconstants.UnlimitedResourceQuantity,
+					},
+					CPU:    rs.ResourceShare{},
+					Memory: rs.ResourceShare{},
+				},
+			},
+		}
+	})
+
+	It("does not reclaim an in-quota victim when the flag is disabled", func() {
+		reclaimable := New(1.0, false)
+		result := reclaimable.Reclaimable(queues, reclaimerInfo, reclaimeeResourcesByQueue(reclaimees))
+		Expect(result).To(Equal(false))
+	})
+
+	It("reclaims an in-quota victim from a strictly lower priority queue when the flag is enabled", func() {
+		reclaimable := New(1.0, true)
+		result := reclaimable.Reclaimable(queues, reclaimerInfo, reclaimeeResourcesByQueue(reclaimees))
+		Expect(result).To(Equal(true))
+	})
+
+	It("does not reclaim when queues have equal priority even if the flag is enabled", func() {
+		queues["low-priority"].Priority = 1
+		reclaimable := New(1.0, true)
+		result := reclaimable.Reclaimable(queues, reclaimerInfo, reclaimeeResourcesByQueue(reclaimees))
+		Expect(result).To(Equal(false))
+	})
+})
+
 var _ = Describe("FilterVictim", func() {
 	reclaimerInfo := &ReclaimerInfo{
 		Queue:             "reclaimer",
@@ -1143,7 +1220,7 @@ var _ = Describe("FilterVictim", func() {
 	}
 
 	It("filters victims whose leveled queue is strictly under deserved quota", func() {
-		reclaimable := New(1)
+		reclaimable := New(1, false)
 		queues := buildQueues(map[common_info.QueueID]queuesTestData{
 			"reclaimer": {deserved: 4, fairShare: 4, allocated: 0},
 			"victim":    {deserved: 4, fairShare: 4, allocated: 2},
@@ -1153,7 +1230,7 @@ var _ = Describe("FilterVictim", func() {
 	})
 
 	It("keeps victims whose leveled queue is over deserved quota", func() {
-		reclaimable := New(1)
+		reclaimable := New(1, false)
 		queues := buildQueues(map[common_info.QueueID]queuesTestData{
 			"reclaimer": {deserved: 4, fairShare: 4, allocated: 0},
 			"victim":    {deserved: 0, fairShare: 4, allocated: 4},
@@ -1163,7 +1240,7 @@ var _ = Describe("FilterVictim", func() {
 	})
 
 	It("keeps victims exactly at deserved quota for consolidation", func() {
-		reclaimable := New(1)
+		reclaimable := New(1, false)
 		queues := buildQueues(map[common_info.QueueID]queuesTestData{
 			"reclaimer": {deserved: 4, fairShare: 4, allocated: 0},
 			"victim":    {deserved: 2, fairShare: 4, allocated: 2},
@@ -1173,7 +1250,7 @@ var _ = Describe("FilterVictim", func() {
 	})
 
 	It("filters victims under allocatable share when the reclaimer cannot use deserved quota", func() {
-		reclaimable := New(1)
+		reclaimable := New(1, false)
 		queues := buildQueues(map[common_info.QueueID]queuesTestData{
 			"reclaimer": {deserved: 1, fairShare: 4, allocated: 0},
 			"victim":    {deserved: 2, fairShare: 4, allocated: 3},
@@ -1183,13 +1260,73 @@ var _ = Describe("FilterVictim", func() {
 	})
 
 	It("keeps victims over allocatable share when the reclaimer cannot use deserved quota", func() {
-		reclaimable := New(1)
+		reclaimable := New(1, false)
 		queues := buildQueues(map[common_info.QueueID]queuesTestData{
 			"reclaimer": {deserved: 1, fairShare: 4, allocated: 0},
 			"victim":    {deserved: 2, fairShare: 4, allocated: 5},
 		})
 
 		Expect(reclaimable.FilterVictim(queues, reclaimerInfo, "victim")).To(BeTrue())
+	})
+
+	It("filters an in-quota victim from a strictly lower priority queue when the flag is disabled", func() {
+		reclaimable := New(1, false)
+		queues := map[common_info.QueueID]*rs.QueueAttributes{
+			"reclaimer": {
+				UID: "reclaimer", Priority: 1,
+				QueueResourceShare: rs.QueueResourceShare{
+					GPU: rs.ResourceShare{Deserved: 4, FairShare: 4, Allocated: 0, MaxAllowed: commonconstants.UnlimitedResourceQuantity},
+				},
+			},
+			"victim": {
+				UID: "victim", Priority: 0,
+				QueueResourceShare: rs.QueueResourceShare{
+					GPU: rs.ResourceShare{Deserved: 4, FairShare: 4, Allocated: 2, MaxAllowed: commonconstants.UnlimitedResourceQuantity},
+				},
+			},
+		}
+
+		Expect(reclaimable.FilterVictim(queues, reclaimerInfo, "victim")).To(BeFalse())
+	})
+
+	It("keeps an in-quota victim from a strictly lower priority queue when the flag is enabled", func() {
+		reclaimable := New(1, true)
+		queues := map[common_info.QueueID]*rs.QueueAttributes{
+			"reclaimer": {
+				UID: "reclaimer", Priority: 1,
+				QueueResourceShare: rs.QueueResourceShare{
+					GPU: rs.ResourceShare{Deserved: 4, FairShare: 4, Allocated: 0, MaxAllowed: commonconstants.UnlimitedResourceQuantity},
+				},
+			},
+			"victim": {
+				UID: "victim", Priority: 0,
+				QueueResourceShare: rs.QueueResourceShare{
+					GPU: rs.ResourceShare{Deserved: 4, FairShare: 4, Allocated: 2, MaxAllowed: commonconstants.UnlimitedResourceQuantity},
+				},
+			},
+		}
+
+		Expect(reclaimable.FilterVictim(queues, reclaimerInfo, "victim")).To(BeTrue())
+	})
+
+	It("still filters an in-quota victim with equal priority even when the flag is enabled", func() {
+		reclaimable := New(1, true)
+		queues := map[common_info.QueueID]*rs.QueueAttributes{
+			"reclaimer": {
+				UID: "reclaimer", Priority: 1,
+				QueueResourceShare: rs.QueueResourceShare{
+					GPU: rs.ResourceShare{Deserved: 4, FairShare: 4, Allocated: 0, MaxAllowed: commonconstants.UnlimitedResourceQuantity},
+				},
+			},
+			"victim": {
+				UID: "victim", Priority: 1,
+				QueueResourceShare: rs.QueueResourceShare{
+					GPU: rs.ResourceShare{Deserved: 4, FairShare: 4, Allocated: 2, MaxAllowed: commonconstants.UnlimitedResourceQuantity},
+				},
+			},
+		}
+
+		Expect(reclaimable.FilterVictim(queues, reclaimerInfo, "victim")).To(BeFalse())
 	})
 })
 

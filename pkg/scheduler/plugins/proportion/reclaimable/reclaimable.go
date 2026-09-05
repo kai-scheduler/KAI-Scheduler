@@ -19,12 +19,14 @@ import (
 )
 
 type Reclaimable struct {
-	saturationMultiplier float64
+	saturationMultiplier        float64
+	queuePriorityInQuotaReclaim bool
 }
 
-func New(multiplier float64) *Reclaimable {
+func New(multiplier float64, queuePriorityInQuotaReclaim bool) *Reclaimable {
 	return &Reclaimable{
-		saturationMultiplier: multiplier,
+		saturationMultiplier:        multiplier,
+		queuePriorityInQuotaReclaim: queuePriorityInQuotaReclaim,
 	}
 }
 
@@ -88,7 +90,7 @@ func (r *Reclaimable) reclaimResourcesFromReclaimees(
 
 		for _, reclaimeeResources := range reclaimeeQueueReclaimedResources {
 			if !strategies.FitsReclaimStrategy(reclaimer.RequiredResources, reclaimer.VectorMap, reclaimerQueue, reclaimeeQueue,
-				remainingResources) {
+				remainingResources, r.queuePriorityInQuotaReclaim) {
 				log.InfraLogger.V(7).Infof("queue <%s>，shouldn't be reclaimed, for %s resources"+
 					" remaining reosurces: <%s>, deserved: <%s>, fairShare: <%s>",
 					reclaimeeQueue.Name, stringVectorArray(reclaimeeQueueReclaimedResources, reclaimer.VectorMap),

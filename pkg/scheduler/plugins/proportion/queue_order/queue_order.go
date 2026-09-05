@@ -47,8 +47,22 @@ func GetQueueOrderResult(
 	lVictims, rVictims []*podgroup_info.PodGroupInfo,
 	subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn,
 	totalResources rs.ResourceQuantities, minNodeGPUMemory *int64,
+	queuePriorityInQuotaReclaim bool,
 ) int {
 	var result int
+
+	if queuePriorityInQuotaReclaim {
+		// When the in-quota queue priority reclaim strategy is enabled and both queues would stay
+		// within their deserved quota with the candidate job, priority decides before the starvation
+		// checks below - otherwise a lower priority queue's in-quota job could keep a higher priority
+		// queue's in-quota job waiting.
+		result := prioritizeBasedOnPriorityIfBothQueuesInQuota(
+			lQueue, lJobInfo, rQueue, rJobInfo, subGroupOrderFn, taskOrderFn, minNodeGPUMemory)
+		if result != equalPrioritization {
+			return result
+		}
+	}
+
 	// queues that are currently utilize more than their fair share will be ordered after queues that are under utilize their fair share (based on api.LessFn)
 	result = prioritizeUnderUtilized(lQueue, rQueue)
 	if result != equalPrioritization {
@@ -143,6 +157,31 @@ func prioritizeUnderQuotaWithJob(lQueue, rQueue *rs.QueueAttributes,
 	}
 
 	return equalPrioritization
+}
+
+// prioritizeBasedOnPriorityIfBothQueuesInQuota returns priority ordering only when both queues
+// would remain within their deserved quota after adding their candidate job; otherwise it defers
+// to the caller's existing starvation-based ordering.
+func prioritizeBasedOnPriorityIfBothQueuesInQuota(
+	lQueue *rs.QueueAttributes, lJobInfo *podgroup_info.PodGroupInfo,
+	rQueue *rs.QueueAttributes, rJobInfo *podgroup_info.PodGroupInfo,
+	subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn, minNodeGPUMemory *int64) int {
+	lInQuota := queuesInQuotaWithJob(lQueue, lJobInfo, subGroupOrderFn, taskOrderFn, minNodeGPUMemory)
+	if !lInQuota {
+		return equalPrioritization
+	}
+	rInQuota := queuesInQuotaWithJob(rQueue, rJobInfo, subGroupOrderFn, taskOrderFn, minNodeGPUMemory)
+	if !rInQuota {
+		return equalPrioritization
+	}
+
+	return prioritizePrioritized(lQueue, rQueue)
+}
+
+// queuesInQuotaWithJob returns true when the queue would remain within its deserved quota after adding its candidate job.
+func queuesInQuotaWithJob(queue *rs.QueueAttributes, jobInfo *podgroup_info.PodGroupInfo, subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn, minNodeGPUMemory *int64) bool {
+	resources := jobInitResources(jobInfo, subGroupOrderFn, taskOrderFn, minNodeGPUMemory)
+	return queue.AllocatedPlusResourcesLessEqualDeserved(resources, jobVectorMap(jobInfo))
 }
 
 func jobVectorMap(jobInfo *podgroup_info.PodGroupInfo) *resource_info.ResourceVectorMap {
