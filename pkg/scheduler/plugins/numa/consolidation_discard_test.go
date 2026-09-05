@@ -108,11 +108,14 @@ func (f *scenarioFixture) runScenario(t *testing.T) {
 	require.Equal(t, int64(4), f.zone(0), "evicting both victims frees zone 0")
 	require.Equal(t, int64(4), f.zone(1), "evicting both victims frees zone 1")
 
-	require.True(t, common.AllocateJob(f.ssn, f.stmt, f.nodes, f.preemptorJob, true), "preemptor pipelines onto freed zone 0")
+	require.True(t, common.AllocateJob(f.ssn, f.stmt, f.nodes, f.preemptorJob,
+		podgroup_info.SimulatedTaskAllocation), "preemptor pipelines onto freed zone 0")
 	// Re-pipeline the evicted victim jobs. victim0 re-homes to the now-only-free zone 1;
 	// victim1 cannot fit and stays evicted — this asymmetry is what the simple hand-trace misses.
-	common.AllocateJob(f.ssn, f.stmt, f.nodes, f.ssn.ClusterInfo.PodGroupInfos["victim0"], true)
-	common.AllocateJob(f.ssn, f.stmt, f.nodes, f.ssn.ClusterInfo.PodGroupInfos["victim1"], true)
+	common.AllocateJob(f.ssn, f.stmt, f.nodes, f.ssn.ClusterInfo.PodGroupInfos["victim0"],
+		podgroup_info.VictimReallocation)
+	common.AllocateJob(f.ssn, f.stmt, f.nodes, f.ssn.ClusterInfo.PodGroupInfos["victim1"],
+		podgroup_info.VictimReallocation)
 
 	// Mid-scenario (before any unwind): the real allocateTaskToNode stamp must have re-homed
 	// victim0 to the free zone 1 so the dedup did NOT restore+recharge its stale zone-0 placement

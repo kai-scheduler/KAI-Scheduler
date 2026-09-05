@@ -134,6 +134,22 @@ func (sgs *SubGroupSet) IsMinRequirementSatisfied() bool {
 	return sgs.GetNumActiveAllocatedDirectSubGroups() >= sgs.GetMinMembersToSatisfy()
 }
 
+// IsGangSatisfied reports whether enough direct children satisfy their own gang requirements.
+func (sgs *SubGroupSet) IsGangSatisfied() bool {
+	satisfiedMembers := 0
+	for _, subGroupSet := range sgs.GetDirectSubgroupsSets() {
+		if subGroupSet.IsGangSatisfied() {
+			satisfiedMembers++
+		}
+	}
+	for _, podSet := range sgs.GetDirectPodSets() {
+		if podSet.IsGangSatisfied() {
+			satisfiedMembers++
+		}
+	}
+	return satisfiedMembers >= sgs.GetMinMembersToSatisfy()
+}
+
 func (sgs *SubGroupSet) GetNumActiveAllocatedMembers() int {
 	return sgs.GetNumActiveAllocatedDirectSubGroups()
 }

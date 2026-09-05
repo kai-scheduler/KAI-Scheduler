@@ -603,7 +603,8 @@ func TestTopologyPlugin_subsetNodesFn(t *testing.T) {
 
 			// Call the function under test
 			subsets, err := plugin.subSetNodesFn(job, &job.RootSubGroupSet.SubGroupInfo,
-				job.RootSubGroupSet.GetDescendantPodSets(), podgroup_info.GetTasksToAllocate(job, nil, nil, true),
+				job.RootSubGroupSet.GetDescendantPodSets(), podgroup_info.GetTasksToAllocate(job, nil, nil,
+					podgroup_info.RealTaskAllocation),
 				maps.Values(nodesInfoMap))
 
 			// Check error
@@ -1540,7 +1541,8 @@ func TestTopologyPlugin_calcTreeAllocatable(t *testing.T) {
 			plugin := &topologyPlugin{}
 
 			// Call the function under test
-			err := plugin.calcTreeAllocatable(podgroup_info.GetTasksToAllocate(job, nil, nil, true), topologyTree.DomainsByLevel[rootLevel][rootDomainId])
+			err := plugin.calcTreeAllocatable(podgroup_info.GetTasksToAllocate(job, nil, nil,
+				podgroup_info.RealTaskAllocation), topologyTree.DomainsByLevel[rootLevel][rootDomainId])
 			if err != nil {
 				t.Errorf("failed to calc tree allocatable. job: %s, error: %v", job.PodGroup.Name, err)
 			}
@@ -2182,7 +2184,7 @@ func TestTopologyPlugin_getJobAllocatableDomains(t *testing.T) {
 				[]*jobs_fake.TestJobBasic{tt.job}, testVectorMap)
 			job := jobsInfoMap[common_info.PodGroupID(tt.job.Name)]
 
-			tasks := podgroup_info.GetTasksToAllocate(job, nil, nil, true)
+			tasks := podgroup_info.GetTasksToAllocate(job, nil, nil, podgroup_info.RealTaskAllocation)
 			tasksResources := resource_info.NewResource(0, 0, 0)
 			for _, task := range tasks {
 				tasksResources.AddVectorAndGpuReq(task.ResReqVector, task.VectorMap, &task.GpuRequirement)

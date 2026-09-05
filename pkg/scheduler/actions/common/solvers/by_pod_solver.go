@@ -164,7 +164,7 @@ func (s *byPodSolver) tryScenarioWithEvictedVictims(ssn *framework.Session, scen
 	jobsToAllocate := common.GetJobsToAllocate(ssn, victimTasks, pendingJob)
 	isSuccessfulAllocations, _ :=
 		common.TryToVirtuallyAllocatePreemptorAndGetVictims(ssn, statement, nodes, pendingJob,
-			jobsToAllocate, victimTasks)
+			jobsToAllocate, victimTasks, podgroup_info.PartialTaskAllocation)
 
 	if !isSuccessfulAllocations {
 		return false, nil
