@@ -1437,6 +1437,47 @@ var _ = Describe("Race condition: reservation pod deleted during concurrent bind
 				"Reservation pod should be deleted when only terminal BindRequests exist")
 		})
 
+		It("should preserve reservation pod when succeeded BindRequest still has a live pod", func() {
+			livePod := &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "fraction-pod-1",
+					Namespace: "team-a",
+				},
+				Status: v1.PodStatus{
+					Phase: v1.PodPending,
+				},
+			}
+			succeededBindRequest := &schedulingv1alpha2.BindRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "bind-request-done",
+					Namespace: "team-a",
+				},
+				Spec: schedulingv1alpha2.BindRequestSpec{
+					PodName:           livePod.Name,
+					SelectedNode:      nodeName,
+					SelectedGPUGroups: []string{gpuGroup},
+				},
+				Status: schedulingv1alpha2.BindRequestStatus{
+					Phase: schedulingv1alpha2.BindRequestPhaseSucceeded,
+				},
+			}
+
+			clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).
+				WithRuntimeObjects(reservationPod.DeepCopy(), livePod, succeededBindRequest).
+				WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
+			rsc := initializeTestService(clientWithObjs)
+
+			err := rsc.SyncForGpuGroup(context.TODO(), gpuGroup)
+			Expect(err).To(Succeed())
+
+			pods := &v1.PodList{}
+			err = clientWithObjs.List(context.Background(), pods,
+				runtimeClient.InNamespace(resourceReservationNameSpace))
+			Expect(err).To(Succeed())
+			Expect(len(pods.Items)).To(Equal(1),
+				"Reservation pod should be preserved while the bound pod may still be missing the gpu-group label")
+		})
+
 		It("should delete reservation pod when only failed BindRequests exist", func() {
 			failedBindRequest := &schedulingv1alpha2.BindRequest{
 				ObjectMeta: metav1.ObjectMeta{

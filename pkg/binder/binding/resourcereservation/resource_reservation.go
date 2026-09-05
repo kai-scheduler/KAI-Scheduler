@@ -226,9 +226,9 @@ func (rsc *service) syncForPods(ctx context.Context, pods []*v1.Pod, gpuGroupToS
 	return nil
 }
 
-// hasActiveBindRequestsForGpuGroup checks if any non-terminal BindRequests reference
-// the given GPU group. This prevents premature reservation pod deletion when the
-// informer cache has not yet propagated GPU group labels on recently-bound fraction pods.
+// hasActiveBindRequestsForGpuGroup checks if BindRequests still protect the GPU group.
+// A succeeded BindRequest also protects the reservation while its pod is still alive:
+// the pod label can lag behind the BindRequest status in the controller cache.
 func (rsc *service) hasActiveBindRequestsForGpuGroup(ctx context.Context, gpuGroup string) (bool, error) {
 	bindRequestList := &schedulingv1alpha2.BindRequestList{}
 	if err := rsc.kubeClient.List(ctx, bindRequestList); err != nil {
@@ -236,15 +236,55 @@ func (rsc *service) hasActiveBindRequestsForGpuGroup(ctx context.Context, gpuGro
 	}
 
 	for _, br := range bindRequestList.Items {
-		if br.Status.Phase == schedulingv1alpha2.BindRequestPhaseSucceeded ||
-			br.Status.Phase == schedulingv1alpha2.BindRequestPhaseFailed {
+		if !slices.Contains(br.Spec.SelectedGPUGroups, gpuGroup) {
 			continue
 		}
-		if slices.Contains(br.Spec.SelectedGPUGroups, gpuGroup) {
+
+		if br.Status.Phase == schedulingv1alpha2.BindRequestPhaseFailed {
+			continue
+		}
+
+		if br.Status.Phase == schedulingv1alpha2.BindRequestPhaseSucceeded {
+			hasLivePod, err := rsc.hasLivePodForBindRequest(ctx, &br)
+			if err != nil {
+				return false, err
+			}
+			if hasLivePod {
+				return true, nil
+			}
+			continue
+		}
+
+		return true, nil
+	}
+	return false, nil
+}
+
+func (rsc *service) hasLivePodForBindRequest(ctx context.Context, bindRequest *schedulingv1alpha2.BindRequest) (bool, error) {
+	pod := &v1.Pod{}
+	err := rsc.kubeClient.Get(ctx, client.ObjectKey{
+		Namespace: bindRequest.Namespace,
+		Name:      bindRequest.Spec.PodName,
+	}, pod)
+	if apierrors.IsNotFound(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("failed to get pod for BindRequest <%s/%s>: %w",
+			bindRequest.Namespace, bindRequest.Name, err)
+	}
+
+	if slices.Contains([]v1.PodPhase{v1.PodSucceeded, v1.PodFailed}, pod.Status.Phase) {
+		return false, nil
+	}
+
+	for _, gpuGroup := range bindRequest.Spec.SelectedGPUGroups {
+		if slices.Contains(resources.GetGpuGroups(pod), gpuGroup) {
 			return true, nil
 		}
 	}
-	return false, nil
+
+	return true, nil
 }
 func (rsc *service) ReserveGpuDevice(ctx context.Context, pod *v1.Pod, nodeName string, gpuGroup string) (string, error) {
 	logger := log.FromContext(ctx)

@@ -14,7 +14,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/nodescaleadjuster/scaler"
 )
@@ -160,7 +159,7 @@ func (sa *ScaleAdjuster) getUnschedulablePods() ([]*corev1.Pod, error) {
 		if pod.Spec.SchedulerName != sa.schedulerName {
 			continue
 		}
-		if !requestFractionalGPU(&pod) {
+		if !resources.RequestsGPUFraction(&pod) {
 			continue
 		}
 		if !isPodAlive(&pod) {
@@ -173,10 +172,6 @@ func (sa *ScaleAdjuster) getUnschedulablePods() ([]*corev1.Pod, error) {
 	}
 
 	return pods, nil
-}
-
-func requestFractionalGPU(pod *corev1.Pod) bool {
-	return pod.Annotations[constants.GpuFraction] != "" || pod.Annotations[constants.GpuMemory] != ""
 }
 
 func isPodAlive(pod *corev1.Pod) bool {

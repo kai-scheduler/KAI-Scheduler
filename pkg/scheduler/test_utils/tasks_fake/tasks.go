@@ -46,7 +46,7 @@ func BuildPod(
 	name, namespace string,
 	task *TestTaskBasic,
 	phase v1.PodPhase, req v1.ResourceList,
-	gpuFraction, gpuMemory string, gpuGroups []string, jobName string,
+	gpuFraction string, gpuMemoryMiB uint64, gpuGroups []string, jobName string,
 ) *v1.Pod {
 	controllerBool := true
 	pod := &v1.Pod{
@@ -68,7 +68,6 @@ func BuildPod(
 			}(),
 			Annotations: map[string]string{
 				commonconstants.GpuFraction:              gpuFraction,
-				commonconstants.GpuMemory:                gpuMemory,
 				commonconstants.PodGroupAnnotationForPod: jobName,
 			},
 		},
@@ -79,6 +78,7 @@ func BuildPod(
 			NodeName: task.NodeName,
 			Containers: []v1.Container{
 				{
+					Name: "main",
 					Resources: v1.ResourceRequirements{
 						Requests: req,
 					},
@@ -86,6 +86,9 @@ func BuildPod(
 			},
 			SchedulerName: "kai-scheduler",
 		},
+	}
+	if gpuMemoryMiB > 0 {
+		pod.Annotations[resources.CalcGpuFractionAnnotationForContainer("main")] = resources.GpuMemoryAnnotationToNvFractionsMemoryRequest(gpuMemoryMiB).String()
 	}
 	if len(gpuGroups) > 1 {
 		for _, gpuGroup := range gpuGroups {
