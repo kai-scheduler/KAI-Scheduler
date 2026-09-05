@@ -26,25 +26,27 @@ import (
 	"k8s.io/apimachinery/pkg/selection"
 
 	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	kaiv1common "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
 	usagedbapi "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache/usagedb/api"
 )
 
 type SchedulerParams struct {
-	SchedulerName                     string                    `json:"schedulerName,omitempty"`
-	RestrictSchedulingNodes           bool                      `json:"restrictSchedulingNodes,omitempty"`
-	PartitionParams                   *SchedulingNodePoolParams `json:"partitionParams,omitempty"`
-	MaxNumberConsolidationPreemptees  int                       `json:"maxNumberConsolidationPreemptees,omitempty"`
-	ScheduleCSIStorage                bool                      `json:"scheduleCSIStorage,omitempty"`
-	UseSchedulingSignatures           bool                      `json:"useSchedulingSignatures,omitempty"`
-	FullHierarchyFairness             bool                      `json:"fullHierarchyFairness,omitempty"`
-	AllowConsolidatingReclaim         bool                      `json:"allowConsolidatingReclaim,omitempty"`
-	NumOfStatusRecordingWorkers       int                       `json:"numOfStatusRecordingWorkers,omitempty"`
-	GlobalDefaultStalenessGracePeriod time.Duration             `json:"globalDefaultStalenessGracePeriod,omitempty"`
-	SchedulePeriod                    time.Duration             `json:"schedulePeriod,omitempty"`
-	StuckInReleasingThreshold         time.Duration             `json:"stuckInReleasingThreshold,omitempty"`
-	DetailedFitErrors                 bool                      `json:"detailedFitErrors,omitempty"`
-	UpdatePodEvictionCondition        bool                      `json:"updatePodEvictionCondition,omitempty"`
-	QueueLabelKey                     string                    `json:"queueLabelKey,omitempty"`
+	SchedulerName                     string                      `json:"schedulerName,omitempty"`
+	RestrictSchedulingNodes           bool                        `json:"restrictSchedulingNodes,omitempty"`
+	PartitionParams                   *SchedulingNodePoolParams   `json:"partitionParams,omitempty"`
+	GpuSharingMode                    *kaiv1common.GpuSharingMode `json:"gpuSharingMode,omitempty"`
+	MaxNumberConsolidationPreemptees  int                         `json:"maxNumberConsolidationPreemptees,omitempty"`
+	ScheduleCSIStorage                bool                        `json:"scheduleCSIStorage,omitempty"`
+	UseSchedulingSignatures           bool                        `json:"useSchedulingSignatures,omitempty"`
+	FullHierarchyFairness             bool                        `json:"fullHierarchyFairness,omitempty"`
+	AllowConsolidatingReclaim         bool                        `json:"allowConsolidatingReclaim,omitempty"`
+	NumOfStatusRecordingWorkers       int                         `json:"numOfStatusRecordingWorkers,omitempty"`
+	GlobalDefaultStalenessGracePeriod time.Duration               `json:"globalDefaultStalenessGracePeriod,omitempty"`
+	SchedulePeriod                    time.Duration               `json:"schedulePeriod,omitempty"`
+	StuckInReleasingThreshold         time.Duration               `json:"stuckInReleasingThreshold,omitempty"`
+	DetailedFitErrors                 bool                        `json:"detailedFitErrors,omitempty"`
+	UpdatePodEvictionCondition        bool                        `json:"updatePodEvictionCondition,omitempty"`
+	QueueLabelKey                     string                      `json:"queueLabelKey,omitempty"`
 }
 
 // SchedulerConfiguration defines the configuration of scheduler.
