@@ -319,32 +319,62 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1binder.Binder, fakeGPU 
 	return args, nil
 }
 
-// resolveCDIEnabled fills the gpusharing cdiEnabled plugin argument when it
-// has not been explicitly supplied. Resolution order (highest priority first):
-// explicit gpusharing plugin arg, explicit Binder.CDIEnabled, ClusterPolicy auto-detect.
+// resolveCDIEnabled fills the cdiEnabled plugin argument on the CDI-aware plugins
+// (gpusharing, nvfractions) when it has not been explicitly supplied. Resolution
+// order (highest priority first): explicit plugin arg, explicit Binder.CDIEnabled,
+// ClusterPolicy auto-detect. The auto-detected value is resolved at most once and
+// shared by both plugins so they agree.
 func resolveCDIEnabled(ctx context.Context, runtimeClient client.Reader, config *kaiv1binder.Binder) error {
-	pluginConfig, ok := config.Plugins[kaiv1binder.GPUSharingPluginName]
-	if !ok {
-		return nil
-	}
-	if _, set := pluginConfig.Arguments[kaiv1binder.CDIEnabledArgument]; set {
+	cdiAwarePlugins := []string{kaiv1binder.GPUSharingPluginName, kaiv1binder.NvFractionsPluginName}
+
+	// Nothing to do unless at least one CDI-aware plugin is present without an
+	// explicit cdiEnabled argument; avoid the ClusterPolicy lookup otherwise.
+	if !needsCDIEnabledResolution(config, cdiAwarePlugins) {
 		return nil
 	}
 
-	cdiEnabled := false
-	if config.CDIEnabled != nil {
-		cdiEnabled = *config.CDIEnabled
-	} else {
-		detected, err := isCdiEnabled(ctx, runtimeClient)
-		if err != nil {
-			return err
+	cdiEnabled, err := detectCDIEnabled(ctx, runtimeClient, config)
+	if err != nil {
+		return err
+	}
+
+	for _, name := range cdiAwarePlugins {
+		pluginConfig, ok := config.Plugins[name]
+		if !ok {
+			continue
 		}
-		cdiEnabled = detected
+		if _, set := pluginConfig.Arguments[kaiv1binder.CDIEnabledArgument]; set {
+			continue
+		}
+		if pluginConfig.Arguments == nil {
+			pluginConfig.Arguments = map[string]string{}
+		}
+		pluginConfig.Arguments[kaiv1binder.CDIEnabledArgument] = strconv.FormatBool(cdiEnabled)
+		config.Plugins[name] = pluginConfig
 	}
-	if pluginConfig.Arguments == nil {
-		pluginConfig.Arguments = map[string]string{}
-	}
-	pluginConfig.Arguments[kaiv1binder.CDIEnabledArgument] = strconv.FormatBool(cdiEnabled)
-	config.Plugins[kaiv1binder.GPUSharingPluginName] = pluginConfig
 	return nil
+}
+
+// needsCDIEnabledResolution reports whether any of the given plugins is
+// configured but missing an explicit cdiEnabled argument.
+func needsCDIEnabledResolution(config *kaiv1binder.Binder, pluginNames []string) bool {
+	for _, name := range pluginNames {
+		pluginConfig, ok := config.Plugins[name]
+		if !ok {
+			continue
+		}
+		if _, set := pluginConfig.Arguments[kaiv1binder.CDIEnabledArgument]; !set {
+			return true
+		}
+	}
+	return false
+}
+
+// detectCDIEnabled returns the effective cdiEnabled value: the explicit
+// Binder.CDIEnabled when set, otherwise the ClusterPolicy auto-detected value.
+func detectCDIEnabled(ctx context.Context, runtimeClient client.Reader, config *kaiv1binder.Binder) (bool, error) {
+	if config.CDIEnabled != nil {
+		return *config.CDIEnabled, nil
+	}
+	return isCdiEnabled(ctx, runtimeClient)
 }

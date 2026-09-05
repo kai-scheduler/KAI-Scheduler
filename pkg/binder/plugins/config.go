@@ -17,6 +17,7 @@ const (
 	DynamicResourcesPluginName = kaiv1binder.DynamicResourcesPluginName
 	GPUSharingPluginName       = kaiv1binder.GPUSharingPluginName
 	HamiCorePluginName         = kaiv1binder.HamiCorePluginName
+	NvFractionsPluginName      = kaiv1binder.NvFractionsPluginName
 
 	BindTimeoutSecondsArgument = kaiv1binder.BindTimeoutSecondsArgument
 	CDIEnabledArgument         = kaiv1binder.CDIEnabledArgument
