@@ -1,0 +1,3 @@
+kind: Added
+body: |-
+  Persist fractional GPU compute mode
