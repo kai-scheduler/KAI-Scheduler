@@ -198,6 +198,7 @@ if [ "$LOCAL_IMAGES_BUILD" = "true" ]; then
     fi
 
     # Package helm chart
+    helm dependency build ./deployments/kai-scheduler
     helm package ./deployments/kai-scheduler -d ./charts --app-version $PACKAGE_VERSION --version $PACKAGE_VERSION
     if [ "$SKIP_KAI_INSTALL" = "true" ]; then
         echo "Skipping KAI install; packaged chart kept at ./charts/kai-scheduler-$PACKAGE_VERSION.tgz"
