@@ -71,7 +71,7 @@ func getAllocatePodAntiAffinityTestsMetadata() []integration_tests_utils.TestTop
 	}
 	antiAffineToPreprocess := func() *tasks_fake.TestTaskBasic {
 		return &tasks_fake.TestTaskBasic{
-			PodAntiAffinityLabels:      preprocessLabels,
+			PodAntiAffinitySelector:    preprocessLabels,
 			PodAntiAffinityTopologyKey: hostnameTopologyKey,
 		}
 	}
@@ -80,7 +80,7 @@ func getAllocatePodAntiAffinityTestsMetadata() []integration_tests_utils.TestTop
 	preprocessAntiAffineToTrain := func() *tasks_fake.TestTaskBasic {
 		return &tasks_fake.TestTaskBasic{
 			PodAffinityLabels:          preprocessLabels,
-			PodAntiAffinityLabels:      trainLabels,
+			PodAntiAffinitySelector:    trainLabels,
 			PodAntiAffinityTopologyKey: hostnameTopologyKey,
 		}
 	}

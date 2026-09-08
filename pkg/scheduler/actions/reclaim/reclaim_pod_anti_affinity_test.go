@@ -64,7 +64,7 @@ func getReclaimPodAntiAffinityTestsMetadata() []integration_tests_utils.TestTopo
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								State:                      pod_status.Pending,
-								PodAntiAffinityLabels:      preprocessLabels,
+								PodAntiAffinitySelector:    preprocessLabels,
 								PodAntiAffinityTopologyKey: hostnameTopologyKey,
 							},
 						},
@@ -132,7 +132,7 @@ func getReclaimPodAntiAffinityTestsMetadata() []integration_tests_utils.TestTopo
 						Tasks: []*tasks_fake.TestTaskBasic{
 							{
 								State:                      pod_status.Pending,
-								PodAntiAffinityLabels:      preprocessLabels,
+								PodAntiAffinitySelector:    preprocessLabels,
 								PodAntiAffinityTopologyKey: hostnameTopologyKey,
 							},
 						},
