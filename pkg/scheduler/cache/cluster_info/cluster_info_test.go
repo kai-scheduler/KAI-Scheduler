@@ -1573,8 +1573,9 @@ func TestSnapshotStorageObjects(t *testing.T) {
 		},
 		&enginev2alpha2.PodGroup{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "podGroup-0",
-				UID:  "ABC",
+				Namespace: testNamespace,
+				Name:      "podGroup-0",
+				UID:       "ABC",
 			},
 			Spec: enginev2alpha2.PodGroupSpec{
 				Queue: "queue-0",
