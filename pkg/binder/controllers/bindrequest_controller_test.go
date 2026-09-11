@@ -304,6 +304,62 @@ var _ = Describe("BindRequest Controller", func() {
 				}
 			})
 		})
+
+		Context("repeated bind failure", func() {
+			It("keeps reporting BindingError instead of a misleading Bound event once the phase stops changing", func() {
+				repeatFailurePod := &v1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "repeat-failure-pod",
+						Namespace: "default",
+					},
+				}
+				repeatFailureNode := &v1.Node{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "repeat-failure-node",
+					},
+				}
+				Expect(fakeClient.Create(context.TODO(), repeatFailureNode)).Should(Succeed())
+				Expect(fakeClient.Create(context.TODO(), repeatFailurePod)).Should(Succeed())
+
+				bindRequest := baseRequest.DeepCopy()
+				bindRequest.Spec.PodName = repeatFailurePod.Name
+				bindRequest.Spec.SelectedNode = repeatFailureNode.Name
+				Expect(fakeClient.Create(context.TODO(), bindRequest)).Should(Succeed())
+
+				mockBinder := mock_binder.NewMockInterface(gomock.NewController(GinkgoT()))
+				mockBinder.EXPECT().Bind(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+					Return(errors.New("admission webhook denied the request")).Times(2)
+				mockBinder.EXPECT().Rollback(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).Times(2)
+				reconciler.binder = mockBinder
+
+				req := ctrl.Request{
+					NamespacedName: client.ObjectKey{
+						Namespace: bindRequest.Namespace,
+						Name:      bindRequest.Name,
+					},
+				}
+
+				// first reconcile: Pending -> Failed, a real phase change
+				_, err := reconciler.Reconcile(context.TODO(), req)
+				Expect(err).Should(HaveOccurred())
+
+				// second reconcile on the same, still-Failed BindRequest: phase does not change,
+				// so UpdateStatus intentionally returns a nil error to avoid a duplicate requeue
+				_, err = reconciler.Reconcile(context.TODO(), req)
+				Expect(err).Should(BeNil())
+
+				close(fakeEventRecorder.Events)
+				var events []string
+				for event := range fakeEventRecorder.Events {
+					events = append(events, event)
+				}
+				Expect(events).To(HaveLen(2))
+				for _, event := range events {
+					Expect(event).NotTo(ContainSubstring("bound successfully"))
+					Expect(event).To(ContainSubstring("BindingError"))
+				}
+			})
+		})
 	})
 
 	Describe("UpdateStatus", func() {
@@ -381,11 +437,15 @@ var _ = Describe("BindRequest Controller", func() {
 			}
 		})
 		Context("success", func() {
+			BeforeEach(func() {
+				bindRequest.Status.Phase = schedulingv1alpha2.BindRequestPhaseSucceeded
+			})
+
 			It("updates pod condition", func() {
 				Expect(fakeClient.Create(context.TODO(), bindRequest)).Should(Succeed())
 				Expect(fakeClient.Create(context.TODO(), pod)).Should(Succeed())
 
-				reconciler.updatePodCondition(context.TODO(), bindRequest, pod, ctrl.Result{}, nil)
+				reconciler.updatePodCondition(context.TODO(), bindRequest, pod)
 
 				updatedPod := &v1.Pod{}
 				Expect(fakeClient.Get(context.TODO(), client.ObjectKeyFromObject(pod), updatedPod)).Should(Succeed())
@@ -401,7 +461,7 @@ var _ = Describe("BindRequest Controller", func() {
 				Expect(fakeClient.Create(context.TODO(), bindRequest)).Should(Succeed())
 				Expect(fakeClient.Create(context.TODO(), pod)).Should(Succeed())
 
-				reconciler.updatePodCondition(context.TODO(), bindRequest, pod, ctrl.Result{}, nil)
+				reconciler.updatePodCondition(context.TODO(), bindRequest, pod)
 
 				close(fakeEventRecorder.Events)
 
@@ -418,6 +478,8 @@ var _ = Describe("BindRequest Controller", func() {
 				expectedFailMsg string
 			)
 			BeforeEach(func() {
+				bindRequest.Status.Phase = schedulingv1alpha2.BindRequestPhaseFailed
+				bindRequest.Status.Reason = "error"
 				expectedFailMsg = fmt.Sprintf("Failed to bind pod %s/%s to node %s: error", pod.Namespace, pod.Name, bindRequest.Spec.SelectedNode)
 			})
 
@@ -425,7 +487,7 @@ var _ = Describe("BindRequest Controller", func() {
 				Expect(fakeClient.Create(context.TODO(), bindRequest)).Should(Succeed())
 				Expect(fakeClient.Create(context.TODO(), pod)).Should(Succeed())
 
-				reconciler.updatePodCondition(context.TODO(), bindRequest, pod, ctrl.Result{}, errors.New("error"))
+				reconciler.updatePodCondition(context.TODO(), bindRequest, pod)
 
 				updatedPod := &v1.Pod{}
 				Expect(fakeClient.Get(context.TODO(), client.ObjectKeyFromObject(pod), updatedPod)).Should(Succeed())
@@ -441,7 +503,7 @@ var _ = Describe("BindRequest Controller", func() {
 				Expect(fakeClient.Create(context.TODO(), bindRequest)).Should(Succeed())
 				Expect(fakeClient.Create(context.TODO(), pod)).Should(Succeed())
 
-				reconciler.updatePodCondition(context.TODO(), bindRequest, pod, ctrl.Result{}, errors.New("error"))
+				reconciler.updatePodCondition(context.TODO(), bindRequest, pod)
 
 				close(fakeEventRecorder.Events)
 
