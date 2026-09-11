@@ -1,0 +1,3 @@
+kind: Fixed
+body: |-
+  Binder no longer logs a misleading bind-success event after a bind failure on the same reconcile
