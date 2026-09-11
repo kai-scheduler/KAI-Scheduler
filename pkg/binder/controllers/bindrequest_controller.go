@@ -119,7 +119,7 @@ func (r *BindRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 		result, err = r.UpdateStatus(ctx, bindRequest, result, err)
 		if pod != nil {
-			r.updatePodCondition(ctx, bindRequest, pod, result, err)
+			r.updatePodCondition(ctx, bindRequest, pod)
 		}
 
 		if finalError != nil {
@@ -256,7 +256,7 @@ func (r *BindRequestReconciler) UpdateStatus(
 }
 
 func (r *BindRequestReconciler) updatePodCondition(
-	ctx context.Context, bindRequest *schedulingv1alpha2.BindRequest, pod *v1.Pod, result ctrl.Result, err error,
+	ctx context.Context, bindRequest *schedulingv1alpha2.BindRequest, pod *v1.Pod,
 ) {
 	logger := log.FromContext(ctx)
 
@@ -265,7 +265,7 @@ func (r *BindRequestReconciler) updatePodCondition(
 	var eventType string
 	var reason string
 
-	if err == nil || result.RequeueAfter != 0 {
+	if bindRequest.Status.Phase == schedulingv1alpha2.BindRequestPhaseSucceeded {
 		message = fmt.Sprintf("Pod bound successfully to node %s", bindRequest.Spec.SelectedNode)
 		condition = &v1.PodCondition{
 			Type:    podBoundCondition,
@@ -278,7 +278,7 @@ func (r *BindRequestReconciler) updatePodCondition(
 	} else {
 		message = fmt.Sprintf(
 			"Failed to bind pod %s/%s to node %s: %s", pod.Namespace, pod.Name,
-			bindRequest.Spec.SelectedNode, err.Error(),
+			bindRequest.Spec.SelectedNode, bindRequest.Status.Reason,
 		)
 		condition = &v1.PodCondition{
 			Type:    podBoundCondition,
