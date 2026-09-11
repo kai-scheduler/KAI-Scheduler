@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Do not grant the GPU-sharing node score to pods that request no GPU
+custom:
+  Issue: "2154"
+  Author: universome

@@ -28,6 +28,11 @@ func (g *gpuSharingOrderPlugin) OnSessionOpen(ssn *framework.Session) {
 
 func (g *gpuSharingOrderPlugin) nodeOrderFn(pod *pod_info.PodInfo, node *node_info.NodeInfo) (float64, error) {
 	score := 0.0
+
+	if !pod.IsSharedGPURequest() {
+		return score, nil
+	}
+
 	for gpuGroup := range node.UsedSharedGPUsMemory {
 		if !node.IsTaskFitOnGpuGroup(&pod.GpuRequirement, gpuGroup) {
 			continue
