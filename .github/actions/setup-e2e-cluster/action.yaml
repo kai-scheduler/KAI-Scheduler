@@ -47,10 +47,13 @@ runs:
 
     - name: Generate kind config
       shell: bash
+      env:
+        FEATURE_CONFIG: ${{ inputs.feature_config }}
+        K8S_VERSION: ${{ inputs.k8s_version }}
       run: |
         hack/generate-kind-config.sh \
-          --feature-config "${{ inputs.feature_config }}" \
-          --k8s-version "${{ inputs.k8s_version }}" \
+          --feature-config $FEATURE_CONFIG \
+          --k8s-version $K8S_VERSION \
           --output /tmp/kind-config.yaml
 
     - name: Create k8s Kind Cluster
@@ -82,9 +85,11 @@ runs:
 
     - name: Deploy fake gpu operator
       shell: bash
+      env:
+        FEATURE_CONFIG: ${{ inputs.feature_config }}
       run: |
         DRA_PLUGIN_ENABLED="false"
-        if [ "${{ inputs.feature_config }}" = "dra-enabled" ]; then
+        if [ $FEATURE_CONFIG = "dra-enabled" ]; then
           DRA_PLUGIN_ENABLED="true"
         fi
         helm upgrade -i gpu-operator oci://ghcr.io/run-ai/fake-gpu-operator/fake-gpu-operator --namespace gpu-operator --create-namespace \
