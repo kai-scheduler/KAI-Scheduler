@@ -77,6 +77,11 @@ const (
 	MigStrategyLabel         = "nvidia.com/mig.strategy"
 	GpuCountLabel            = "nvidia.com/gpu.count"
 	SubGroupLabelKey         = "kai.scheduler/subgroup-name"
+
+	NvFractionsAnnotationPrefix     = "nvidia.com/container."
+	NvFractionsMemoryRequestSuffix  = ".gpu-memory.request"
+	NvFractionsMemoryLimitSuffix    = ".gpu-memory.limit"
+	NvFractionsVisibleDevicesSuffix = ".gpus.devices"
 )
 
 // QueueValidatedVersions returns the list of queue versions that we validate with a webhook. This will be used by the

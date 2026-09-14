@@ -161,6 +161,577 @@ func TestValidate(t *testing.T) {
 			GPUSharingEnabled: true,
 			error:             nil,
 		},
+		{
+			name: "GPU sharing disabled, NvFractions request",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "test-namespace",
+					Annotations: map[string]string{
+						constants.NvFractionsAnnotationPrefix + "main" + constants.NvFractionsMemoryRequestSuffix: "1Gi",
+					},
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Name:      "main",
+							Resources: v1.ResourceRequirements{},
+						},
+					},
+				},
+			},
+			GPUSharingEnabled: false,
+			error: fmt.Errorf("attempting to create a pod test-namespace/test-pod with gpu " +
+				"sharing request, while GPU sharing is disabled"),
+		},
+		{
+			name: "GPU sharing enabled, NvFractions request",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "test-namespace",
+					Annotations: map[string]string{
+						constants.NvFractionsAnnotationPrefix + "main" + constants.NvFractionsMemoryRequestSuffix: "1Gi",
+					},
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Name:      "main",
+							Resources: v1.ResourceRequirements{},
+						},
+					},
+				},
+			},
+			GPUSharingEnabled: true,
+			error:             nil,
+		},
+		{
+			name: "GPU sharing enabled, NvFractions request matching gpu-memory annotation",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "test-namespace",
+					Annotations: map[string]string{
+						constants.GpuMemory: "1024",
+						constants.NvFractionsAnnotationPrefix + "main" + constants.NvFractionsMemoryRequestSuffix: "1Gi",
+					},
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Name:      "main",
+							Resources: v1.ResourceRequirements{},
+						},
+					},
+				},
+			},
+			GPUSharingEnabled: true,
+			error:             nil,
+		},
+		{
+			name: "GPU sharing enabled, NvFractions request with limit",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "test-namespace",
+					Annotations: map[string]string{
+						constants.NvFractionsAnnotationPrefix + "main" + constants.NvFractionsMemoryRequestSuffix: "1Gi",
+						constants.NvFractionsAnnotationPrefix + "main" + constants.NvFractionsMemoryLimitSuffix:   "2Gi",
+					},
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Name:      "main",
+							Resources: v1.ResourceRequirements{},
+						},
+					},
+				},
+			},
+			GPUSharingEnabled: true,
+			error:             nil,
+		},
+		{
+			name: "GPU sharing enabled, NvFractions request not matching gpu-memory annotation",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "test-namespace",
+					Annotations: map[string]string{
+						constants.GpuMemory: "2048",
+						constants.NvFractionsAnnotationPrefix + "main" + constants.NvFractionsMemoryRequestSuffix: "1Gi",
+					},
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Name:      "main",
+							Resources: v1.ResourceRequirements{},
+						},
+					},
+				},
+			},
+			GPUSharingEnabled: true,
+			error: fmt.Errorf(
+				"NvFractions memory request (1Gi) does not match %s annotation value (2048 MiB)",
+				constants.GpuMemory,
+			),
+		},
+		{
+			name: "GPU sharing enabled, NvFractions request with gpu-fraction annotation - NvFractions wins",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "test-namespace",
+					Annotations: map[string]string{
+						constants.GpuFraction: "0.5",
+						constants.NvFractionsAnnotationPrefix + "main" + constants.NvFractionsMemoryRequestSuffix: "1Gi",
+					},
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Name:      "main",
+							Resources: v1.ResourceRequirements{},
+						},
+					},
+				},
+			},
+			GPUSharingEnabled: true,
+			error:             nil,
+		},
+		{
+			name: "GPU sharing enabled, NvFractions limit with gpu-fraction annotation - not allowed",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "test-namespace",
+					Annotations: map[string]string{
+						constants.GpuFraction: "0.5",
+						constants.NvFractionsAnnotationPrefix + "main" + constants.NvFractionsMemoryLimitSuffix: "1Gi",
+					},
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Name:      "main",
+							Resources: v1.ResourceRequirements{},
+						},
+					},
+				},
+			},
+			GPUSharingEnabled: true,
+			error: fmt.Errorf("cannot combine %s limit annotation with %s or %s annotation",
+				constants.NvFractionsAnnotationPrefix, constants.GpuFraction, constants.GpuMemory),
+		},
+		{
+			name: "GPU sharing enabled, NvFractions limit with gpu-memory annotation - not allowed",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "test-namespace",
+					Annotations: map[string]string{
+						constants.GpuMemory: "1024",
+						constants.NvFractionsAnnotationPrefix + "main" + constants.NvFractionsMemoryLimitSuffix: "1Gi",
+					},
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Name:      "main",
+							Resources: v1.ResourceRequirements{},
+						},
+					},
+				},
+			},
+			GPUSharingEnabled: true,
+			error: fmt.Errorf("cannot combine %s limit annotation with %s or %s annotation",
+				constants.NvFractionsAnnotationPrefix, constants.GpuFraction, constants.GpuMemory),
+		},
+		{
+			name: "GPU sharing enabled, invalid NvFractions request value",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "test-namespace",
+					Annotations: map[string]string{
+						constants.NvFractionsAnnotationPrefix + "main" + constants.NvFractionsMemoryRequestSuffix: "0Mi",
+					},
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Name:      "main",
+							Resources: v1.ResourceRequirements{},
+						},
+					},
+				},
+			},
+			GPUSharingEnabled: true,
+			error: fmt.Errorf(
+				"%s annotation value must be a valid Kubernetes memory quantity greater than 0",
+				constants.NvFractionsAnnotationPrefix+"main"+constants.NvFractionsMemoryRequestSuffix,
+			),
+		},
+		{
+			name: "GPU sharing enabled, NvFractions request greater than limit",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "test-namespace",
+					Annotations: map[string]string{
+						constants.NvFractionsAnnotationPrefix + "main" + constants.NvFractionsMemoryRequestSuffix: "4Gi",
+						constants.NvFractionsAnnotationPrefix + "main" + constants.NvFractionsMemoryLimitSuffix:   "2Gi",
+					},
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Name:      "main",
+							Resources: v1.ResourceRequirements{},
+						},
+					},
+				},
+			},
+			GPUSharingEnabled: true,
+			error:             fmt.Errorf("invalid fraction request for container main: request is greater than limit"),
+		},
+		{
+			name: "GPU sharing enabled, NvFractions request references non-existent container",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "test-namespace",
+					Annotations: map[string]string{
+						constants.NvFractionsAnnotationPrefix + "missing-container" + constants.NvFractionsMemoryRequestSuffix: "1Gi",
+					},
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Name:      "main",
+							Resources: v1.ResourceRequirements{},
+						},
+					},
+				},
+			},
+			GPUSharingEnabled: true,
+			error: fmt.Errorf(
+				"container missing-container not found in pod spec, but a fractional annotation referencing it was found",
+			),
+		},
+		{
+			name: "GPU sharing enabled, multiple containers with NvFractions requests",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "test-namespace",
+					Annotations: map[string]string{
+						constants.NvFractionsAnnotationPrefix + "main" + constants.NvFractionsMemoryRequestSuffix:    "1Gi",
+						constants.NvFractionsAnnotationPrefix + "sidecar" + constants.NvFractionsMemoryRequestSuffix: "512Mi",
+					},
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Name:      "main",
+							Resources: v1.ResourceRequirements{},
+						},
+						{
+							Name:      "sidecar",
+							Resources: v1.ResourceRequirements{},
+						},
+					},
+				},
+			},
+			GPUSharingEnabled: true,
+			error:             fmt.Errorf("currently, kai doesn't support multiple containers with fractional GPU requests"),
+		},
+		{
+			name: "GPU sharing enabled, NvFractions request with whole GPU limit",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "test-namespace",
+					Annotations: map[string]string{
+						constants.NvFractionsAnnotationPrefix + "main" + constants.NvFractionsMemoryRequestSuffix: "1Gi",
+					},
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Name: "main",
+							Resources: v1.ResourceRequirements{
+								Limits: v1.ResourceList{
+									constants.NvidiaGpuResource: resource.MustParse("1"),
+								},
+							},
+						},
+					},
+				},
+			},
+			GPUSharingEnabled: true,
+			error:             fmt.Errorf("cannot have both GPU fraction request and whole GPU resource request/limit"),
+		},
+		{
+			name: "GPU sharing enabled, allow whole GPU resource limit of 2",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{},
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Resources: v1.ResourceRequirements{
+								Limits: v1.ResourceList{
+									constants.NvidiaGpuResource: resource.MustParse("2"),
+								},
+							},
+						},
+					},
+				},
+			},
+			GPUSharingEnabled: true,
+			error:             nil,
+		},
+		{
+			name: "GPU sharing enabled, forbid GPU fraction with GPU memory annotation",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						constants.GpuFraction: "0.5",
+						constants.GpuMemory:   "1",
+					},
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Resources: v1.ResourceRequirements{},
+						},
+					},
+				},
+			},
+			GPUSharingEnabled: true,
+			error:             fmt.Errorf("cannot request both gpu-fraction and GPU memory request"),
+		},
+		{
+			name: "GPU sharing enabled, allow multiple containers with whole GPU resource request",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{},
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Resources: v1.ResourceRequirements{
+								Limits: v1.ResourceList{
+									constants.NvidiaGpuResource: resource.MustParse("1"),
+								},
+							},
+						},
+						{
+							Resources: v1.ResourceRequirements{
+								Limits: v1.ResourceList{
+									constants.NvidiaGpuResource: resource.MustParse("2"),
+								},
+							},
+						},
+					},
+				},
+			},
+			GPUSharingEnabled: true,
+			error:             nil,
+		},
+		{
+			name: "GPU sharing enabled, forbid GPU resource limit with GPU memory annotation",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						constants.GpuMemory: "1",
+					},
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Resources: v1.ResourceRequirements{
+								Limits: v1.ResourceList{
+									constants.NvidiaGpuResource: *resource.NewMilliQuantity(1, resource.DecimalSI),
+								},
+							},
+						},
+					},
+				},
+			},
+			GPUSharingEnabled: true,
+			error:             fmt.Errorf("cannot have both GPU fraction request and whole GPU resource request/limit"),
+		},
+		{
+			name: "GPU sharing enabled, forbid GPU resource limit in sidecar with GPU memory annotation",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						constants.GpuMemory: "1",
+					},
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Name:      "DistractionContainer",
+							Resources: v1.ResourceRequirements{},
+						},
+						{
+							Name: "SneakyGPUContainer",
+							Resources: v1.ResourceRequirements{
+								Limits: v1.ResourceList{
+									constants.NvidiaGpuResource: *resource.NewMilliQuantity(1, resource.DecimalSI),
+								},
+							},
+						},
+					},
+				},
+			},
+			GPUSharingEnabled: true,
+			error:             fmt.Errorf("cannot have both GPU fraction request and whole GPU resource request/limit"),
+		},
+		{
+			name: "GPU sharing enabled, forbid negative GPU memory annotation",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						constants.GpuMemory: "-1",
+					},
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Resources: v1.ResourceRequirements{},
+						},
+					},
+				},
+			},
+			GPUSharingEnabled: true,
+			error:             fmt.Errorf("gpu-memory annotation value must be a positive integer greater than 0"),
+		},
+		{
+			name: "GPU sharing enabled, forbid negative GPU fraction annotation",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						constants.GpuFraction: "-1",
+					},
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Resources: v1.ResourceRequirements{},
+						},
+					},
+				},
+			},
+			GPUSharingEnabled: true,
+			error:             fmt.Errorf("gpu-fraction annotation value must be a positive number smaller than 1.0"),
+		},
+		{
+			name: "GPU sharing enabled, forbid GPU fraction greater than 1.0",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						constants.GpuFraction: "1.2",
+					},
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Resources: v1.ResourceRequirements{},
+						},
+					},
+				},
+			},
+			GPUSharingEnabled: true,
+			error:             fmt.Errorf("gpu-fraction annotation value must be a positive number smaller than 1.0"),
+		},
+		{
+			name: "GPU sharing enabled, forbid GPU fraction count without fractions or memory",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						constants.GpuFractionsNumDevices: "1",
+					},
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Resources: v1.ResourceRequirements{},
+						},
+					},
+				},
+			},
+			GPUSharingEnabled: true,
+			error: fmt.Errorf(
+				"cannot request multiple fractional devices without specifying fraction details (portion or memory)",
+			),
+		},
+		{
+			name: "GPU sharing enabled, forbid invalid GPU fraction count with fractions",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						constants.GpuFractionsNumDevices: "1.2",
+						constants.GpuFraction:            "0.2",
+					},
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Resources: v1.ResourceRequirements{},
+						},
+					},
+				},
+			},
+			GPUSharingEnabled: true,
+			error:             fmt.Errorf("fraction count annotation value must be a positive integer greater than 0"),
+		},
+		{
+			name: "GPU sharing enabled, allow GPU fraction count with memory",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						constants.GpuFractionsNumDevices: "2",
+						constants.GpuMemory:              "1000",
+					},
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Resources: v1.ResourceRequirements{},
+						},
+					},
+				},
+			},
+			GPUSharingEnabled: true,
+			error:             nil,
+		},
+		{
+			name: "GPU sharing enabled, allow GPU fraction count with fractions",
+			pod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						constants.GpuFractionsNumDevices: "2",
+						constants.GpuFraction:            "0.3",
+					},
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{
+							Resources: v1.ResourceRequirements{},
+						},
+					},
+				},
+			},
+			GPUSharingEnabled: true,
+			error:             nil,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -348,6 +919,16 @@ func TestMutate(t *testing.T) {
 				container := pod.Spec.Containers[0]
 				if len(container.Env) == 0 {
 					t.Errorf("Expected env vars to be added")
+				}
+
+				// Check that the NvFractions memory request annotation was added
+				expectedAnnotationKey := constants.NvFractionsAnnotationPrefix + "test-container" + constants.NvFractionsMemoryRequestSuffix
+				memoryRequest, found := pod.Annotations[expectedAnnotationKey]
+				if !found {
+					t.Errorf("Expected NvFractions memory request annotation to be added")
+				}
+				if memoryRequest != "4Gi" {
+					t.Errorf("Expected NvFractions memory request annotation to be 4Gi, got %s", memoryRequest)
 				}
 			},
 		},
