@@ -1,0 +1,3 @@
+kind: Fixed
+body: |-
+  Allow the post-delete cleanup job to run on OpenShift
