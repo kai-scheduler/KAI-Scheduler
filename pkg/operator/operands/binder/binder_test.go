@@ -18,8 +18,8 @@ import (
 	. "github.com/onsi/gomega"
 
 	binderplugins "github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common/test_utils"
+	"github.com/kai-scheduler/api/constants"
 	kaiv1 "github.com/kai-scheduler/api/kai/v1"
 	kaiv1binder "github.com/kai-scheduler/api/kai/v1/binder"
 	"github.com/kai-scheduler/api/kai/v1/common"
