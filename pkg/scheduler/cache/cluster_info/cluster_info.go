@@ -34,7 +34,6 @@ import (
 	"k8s.io/dynamic-resource-allocation/deviceclass/extendedresourcecache"
 	klog "k8s.io/klog/v2"
 
-
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
