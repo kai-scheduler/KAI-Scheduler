@@ -30,6 +30,7 @@ type TestTaskBasic struct {
 	State             pod_status.PodStatus
 	NodeName          string // Relevant if job is running
 	NodeAffinityNames []string
+	Annotations       map[string]string
 	PodAffinityLabels map[string]string
 	// PodAffinityLabels are put on the pod and, by default, also select the pods it attracts and
 	// repels (a pod attracting/repelling its own kind). PodAntiAffinitySelector overrides only the
@@ -44,7 +45,6 @@ type TestTaskBasic struct {
 	ResourceClaimTemplates     map[string]string
 	ResourceClaimNames         []string
 	PersistentVolumeClaimNames []string
-	Annotations                map[string]string
 }
 
 func BuildPod(
@@ -92,6 +92,7 @@ func BuildPod(
 			SchedulerName: "kai-scheduler",
 		},
 	}
+	maps.Copy(pod.Annotations, task.Annotations)
 	if gpuMemoryMiB > 0 {
 		pod.Annotations[resources.CalcGpuFractionAnnotationForContainer("main")] = resources.GpuMemoryAnnotationToNvFractionsMemoryRequest(gpuMemoryMiB).String()
 	}

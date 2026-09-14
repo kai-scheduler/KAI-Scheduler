@@ -9,13 +9,20 @@ import (
 	. "go.uber.org/mock/gomock"
 	"gopkg.in/h2non/gock.v1"
 	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
 	kaiv1common "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
+	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/allocate"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/integration_tests_utils"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils"
@@ -39,6 +46,69 @@ func TestHandleFractionalGPUAllocation(t *testing.T) {
 		allocateAction.Execute(ssn)
 
 		test_utils.MatchExpectedAndRealTasks(t, testNumber, testMetadata.TestTopologyBasic, ssn)
+	}
+}
+
+func TestFractionalGPUAllocationDoesNotUseGpuGroupWithDifferentComputeMode(t *testing.T) {
+	test_utils.InitTestingInfrastructure()
+	controller := NewController(t)
+	defer controller.Finish()
+	defer gock.Off()
+
+	const gpuGroup = "time-slicing-group"
+	topology := test_utils.TestTopologyBasic{
+		Name: "sm-sharing pod does not allocate on time-slicing gpu group",
+		Jobs: []*jobs_fake.TestJobBasic{
+			{
+				Name:                "running_job0",
+				RequiredGPUsPerTask: 0.5,
+				Priority:            constants.PriorityTrainNumber,
+				QueueName:           "queue0",
+				Tasks: []*tasks_fake.TestTaskBasic{
+					{
+						NodeName:  "node0",
+						GPUGroups: []string{gpuGroup},
+						State:     pod_status.Running,
+					},
+				},
+			},
+			{
+				Name:                "pending_job0",
+				RequiredGPUsPerTask: 0.5,
+				Priority:            constants.PriorityTrainNumber,
+				QueueName:           "queue0",
+				Tasks: []*tasks_fake.TestTaskBasic{
+					{
+						State: pod_status.Pending,
+						Annotations: map[string]string{
+							commonconstants.GpuComputeSharingMode: string(schedulingv1alpha2.GPUComputeSharingModeSMSharing),
+						},
+					},
+				},
+			},
+		},
+		Nodes: map[string]nodes_fake.TestNodeBasic{
+			"node0": {
+				GPUs: 1,
+			},
+		},
+		Queues: []test_utils.TestQueueBasic{
+			{
+				Name:         "queue0",
+				DeservedGPUs: 1,
+			},
+		},
+	}
+
+	ssn := test_utils.BuildSession(topology, controller)
+	addReservationPodToNodeForTest(ssn.ClusterInfo.Nodes["node0"], gpuGroup, schedulingv1alpha2.GPUComputeSharingModeTimeSlicing)
+
+	allocate.New().Execute(ssn)
+
+	pendingTask := ssn.ClusterInfo.PodGroupInfos["pending_job0"].GetAllPodsMap()[common_info.PodID("pending_job0-0")]
+	if pendingTask.Status != pod_status.Pending {
+		t.Fatalf("expected sm-sharing task to stay pending, got status %s on node %s with groups %v",
+			pendingTask.Status, pendingTask.NodeName, pendingTask.GPUGroupIDs())
 	}
 }
 
@@ -109,6 +179,35 @@ func TestFractionalGPUAllocationUsesNodeConditionOverride(t *testing.T) {
 	allocate.New().Execute(ssn)
 
 	test_utils.MatchExpectedAndRealTasks(t, 0, topology, ssn)
+}
+
+func addReservationPodToNodeForTest(
+	node *node_info.NodeInfo, gpuGroup string, mode schedulingv1alpha2.GPUComputeSharingMode,
+) {
+	pod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			UID:       types.UID("reservation-" + gpuGroup),
+			Name:      commonconstants.GPUReservationPodPrefix + "-node0-test",
+			Namespace: commonconstants.DefaultResourceReservationName,
+			Labels: map[string]string{
+				commonconstants.GPUGroup: gpuGroup,
+			},
+			Annotations: map[string]string{
+				commonconstants.PodGroupAnnotationForPod: "reservation",
+				commonconstants.GpuComputeSharingMode:    string(mode),
+			},
+		},
+		Spec: v1.PodSpec{
+			NodeName: node.Name,
+			Containers: []v1.Container{
+				{Name: "reservation"},
+			},
+		},
+		Status: v1.PodStatus{Phase: v1.PodRunning},
+	}
+	task := pod_info.NewTaskInfo(pod, resource_info.NewResourceVectorMap())
+	task.Status = pod_status.Running
+	node.PodInfos[task.UID] = task
 }
 
 func getFractionalGPUTestsMetadata() []integration_tests_utils.TestTopologyMetadata {

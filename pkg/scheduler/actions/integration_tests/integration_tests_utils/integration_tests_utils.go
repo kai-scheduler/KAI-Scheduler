@@ -110,7 +110,7 @@ func runSchedulerOneRound(testMetadata *TestTopologyMetadata, controller *Contro
 			case pod_status.Releasing:
 				if jobMetadata.DeleteJobInTest {
 					taskMetadata.NodeName = task.NodeName
-					taskMetadata.GPUGroups = task.GPUGroups
+					taskMetadata.GPUGroups = task.GPUGroupIDs()
 					taskMetadata.State = pod_status.Releasing
 				} else {
 					taskMetadata.NodeName = ""
@@ -124,12 +124,12 @@ func runSchedulerOneRound(testMetadata *TestTopologyMetadata, controller *Contro
 			case pod_status.Binding:
 				taskMetadata.State = pod_status.Running
 				taskMetadata.NodeName = task.NodeName
-				taskMetadata.GPUGroups = task.GPUGroups
+				taskMetadata.GPUGroups = task.GPUGroupIDs()
 
 			default:
 				taskMetadata.State = task.Status
 				taskMetadata.NodeName = task.NodeName
-				taskMetadata.GPUGroups = task.GPUGroups
+				taskMetadata.GPUGroups = task.GPUGroupIDs()
 			}
 
 		}

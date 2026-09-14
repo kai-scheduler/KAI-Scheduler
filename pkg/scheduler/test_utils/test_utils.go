@@ -168,10 +168,11 @@ func MatchExpectedAndRealTasks(t *testing.T, testNumber int, testMetadata TestTo
 			sumOfAcceptedGpus += taskInfo.AcceptedGpuRequirement.GPUs()
 
 			// verify fractional GPUs index
+			taskGPUGroups := taskInfo.GPUGroupIDs()
 			if pod_status.IsActiveUsedStatus(taskInfo.Status) &&
 				!jobExpectedResult.DontValidateGPUGroup &&
 				taskInfo.IsSharedGPUAllocation() &&
-				slices.Equal(taskInfo.GPUGroups, jobExpectedResult.GPUGroups) {
+				slices.Equal(taskGPUGroups, jobExpectedResult.GPUGroups) {
 				nodeGPUs, found := tasksToGPUGroup[taskInfo.NodeName]
 				if !found {
 					tasksToGPUGroup[taskInfo.NodeName] = make(map[string]string)
@@ -179,12 +180,12 @@ func MatchExpectedAndRealTasks(t *testing.T, testNumber int, testMetadata TestTo
 				}
 				for gpuGroupIndex, expectedGpuGroup := range jobExpectedResult.GPUGroups {
 					if gpuGroup, found := nodeGPUs[expectedGpuGroup]; !found {
-						nodeGPUs[expectedGpuGroup] = taskInfo.GPUGroups[gpuGroupIndex]
-					} else if gpuGroup != taskInfo.GPUGroups[gpuGroupIndex] {
+						nodeGPUs[expectedGpuGroup] = taskGPUGroups[gpuGroupIndex]
+					} else if gpuGroup != taskGPUGroups[gpuGroupIndex] {
 						t.Errorf(
 							"Test number: %d, name: %v, has failed. Task name: %v, "+
 								"running on GPU: %s, was expecting GPU index: %s",
-							testNumber, testMetadata.Name, taskInfo.Name, taskInfo.GPUGroups, jobExpectedResult.GPUGroups,
+							testNumber, testMetadata.Name, taskInfo.Name, taskGPUGroups, jobExpectedResult.GPUGroups,
 						)
 					}
 				}
@@ -291,10 +292,11 @@ func MatchExpectedAndRealTasks(t *testing.T, testNumber int, testMetadata TestTo
 				}
 
 				// verify fractional GPUs index
+				taskGPUGroups := task.GPUGroupIDs()
 				if pod_status.IsActiveUsedStatus(task.Status) &&
 					!taskExpectedResult.DontValidateGPUGroup &&
 					task.IsSharedGPUAllocation() &&
-					slices.Equal(task.GPUGroups, taskExpectedResult.GPUGroups) {
+					slices.Equal(taskGPUGroups, taskExpectedResult.GPUGroups) {
 					nodeGPUs, found := tasksToGPUGroup[task.NodeName]
 					if !found {
 						tasksToGPUGroup[task.NodeName] = make(map[string]string)
@@ -302,12 +304,12 @@ func MatchExpectedAndRealTasks(t *testing.T, testNumber int, testMetadata TestTo
 					}
 					for gpuGroupIndex, expectedGpuGroup := range taskExpectedResult.GPUGroups {
 						if gpuGroup, found := nodeGPUs[expectedGpuGroup]; !found {
-							nodeGPUs[expectedGpuGroup] = task.GPUGroups[gpuGroupIndex]
-						} else if gpuGroup != task.GPUGroups[gpuGroupIndex] {
+							nodeGPUs[expectedGpuGroup] = taskGPUGroups[gpuGroupIndex]
+						} else if gpuGroup != taskGPUGroups[gpuGroupIndex] {
 							t.Errorf(
 								"Test number: %d, name: %v, has failed. Task name: %v, "+
 									"running on GPU: %s, was expecting GPU index: %s",
-								testNumber, testMetadata.Name, taskId, task.GPUGroups, taskExpectedResult.GPUGroups,
+								testNumber, testMetadata.Name, taskId, taskGPUGroups, taskExpectedResult.GPUGroups,
 							)
 						}
 					}
