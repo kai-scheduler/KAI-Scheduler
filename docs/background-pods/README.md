@@ -121,7 +121,7 @@ A stronger signal overrides that preference: a workload with a topology constrai
 ## Configuring the plugin
 
 The feature is on by default and needs no configuration.
-To change the selector or restrict it to certain namespaces, set arguments on the `backgroundpods` plugin in the SchedulingShard:
+To change which pods it selects, set arguments on the `backgroundpods` plugin in the SchedulingShard:
 
 ```yaml
 apiVersion: kai.scheduler/v1
@@ -133,11 +133,9 @@ spec:
     backgroundpods:
       arguments:
         labelSelector: "workload-type in (healthcheck,diagnostics)"
-        namespaces: "kube-system,monitoring"
 ```
 
 `labelSelector` takes any Kubernetes label selector expression and replaces the default `kai.scheduler/background=true`.
-`namespaces` takes a comma-separated list and restricts the plugin to pods in those namespaces; leaving it unset means all namespaces.
 An unparsable selector disables the plugin and logs an error rather than failing the scheduler.
 
 To turn the feature off:

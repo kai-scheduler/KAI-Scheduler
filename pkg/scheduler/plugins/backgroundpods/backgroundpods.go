@@ -8,7 +8,6 @@ package backgroundpods
 
 import (
 	"sort"
-	"strings"
 
 	"k8s.io/apimachinery/pkg/labels"
 
@@ -24,7 +23,6 @@ const (
 	Name = "backgroundpods"
 
 	labelSelectorArg = "labelSelector"
-	namespacesArg    = "namespaces"
 
 	defaultLabelSelector = "kai.scheduler/background=true"
 
@@ -32,8 +30,7 @@ const (
 )
 
 type backgroundPodsPlugin struct {
-	selector   labels.Selector
-	namespaces map[string]bool
+	selector labels.Selector
 
 	statement     *framework.Statement
 	evictedByNode map[string][]*pod_info.PodInfo
@@ -50,15 +47,6 @@ func New(arguments framework.PluginArguments) framework.Plugin {
 		return plugin
 	}
 	plugin.selector = selector
-
-	if namespaces := arguments.GetString(namespacesArg, ""); namespaces != "" {
-		plugin.namespaces = map[string]bool{}
-		for namespace := range strings.SplitSeq(namespaces, ",") {
-			if trimmed := strings.TrimSpace(namespace); trimmed != "" {
-				plugin.namespaces[trimmed] = true
-			}
-		}
-	}
 
 	return plugin
 }
@@ -211,10 +199,6 @@ func (p *backgroundPodsPlugin) isBackgroundPod(podInfo *pod_info.PodInfo) bool {
 
 	// Anything not currently holding its node's resources has nothing to give back.
 	if !pod_status.AllocatedStatus(podInfo.Status) {
-		return false
-	}
-
-	if p.namespaces != nil && !p.namespaces[podInfo.Namespace] {
 		return false
 	}
 
