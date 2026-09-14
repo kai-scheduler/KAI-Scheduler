@@ -23,14 +23,19 @@ const (
 )
 
 type TestTaskBasic struct {
-	Name                       string
-	GPUGroups                  []string
-	SubGroupName               string
-	RequiredGPUs               *int64
-	State                      pod_status.PodStatus
-	NodeName                   string // Relevant if job is running
-	NodeAffinityNames          []string
-	PodAffinityLabels          map[string]string
+	Name              string
+	GPUGroups         []string
+	SubGroupName      string
+	RequiredGPUs      *int64
+	State             pod_status.PodStatus
+	NodeName          string // Relevant if job is running
+	NodeAffinityNames []string
+	PodAffinityLabels map[string]string
+	// PodAffinityLabels are put on the pod and, by default, also select the pods it attracts and
+	// repels (a pod attracting/repelling its own kind). PodAntiAffinitySelector overrides only the
+	// required anti-affinity term's matchLabels and is never added to the pod's labels, so a task
+	// can repel another set of pods without repelling itself. nil keeps the legacy behaviour.
+	PodAntiAffinitySelector    map[string]string
 	PodAffinityTopologyKey     string
 	PodAntiAffinityTopologyKey string
 	RequiredMigInstances       map[v1.ResourceName]int
@@ -116,7 +121,8 @@ func BuildPod(
 		pod.Spec.Affinity = &v1.Affinity{NodeAffinity: affinity}
 	}
 	pod.Spec.Affinity = applyPodAffinityLabels(
-		pod.Spec.Affinity, task.PodAffinityLabels, task.PodAffinityTopologyKey, task.PodAntiAffinityTopologyKey)
+		pod.Spec.Affinity, task.PodAffinityLabels, task.PodAntiAffinitySelector,
+		task.PodAffinityTopologyKey, task.PodAntiAffinityTopologyKey)
 
 	for migInstance, count := range task.RequiredMigInstances {
 		pod.Annotations[migInstance.String()] = fmt.Sprintf("%d", count)
@@ -163,11 +169,17 @@ func IsTaskStartedStatus(status pod_status.PodStatus) bool {
 }
 
 func applyPodAffinityLabels(
-	affinity *v1.Affinity, podAffinityLabels map[string]string,
+	affinity *v1.Affinity, podAffinityLabels, podAntiAffinitySelector map[string]string,
 	podAffinityTopologyKey, podAntiAffinityTopologyKey string,
 ) *v1.Affinity {
 	if affinity == nil {
 		affinity = &v1.Affinity{}
+	}
+	// Legacy default: a pod repels pods carrying its own PodAffinityLabels. The selector is an
+	// override, not a merge: matchLabels is a conjunction, so merging would narrow it and could
+	// not express two values of the same key (e.g. repel tier=train while being tier=preprocess).
+	if podAntiAffinitySelector == nil {
+		podAntiAffinitySelector = podAffinityLabels
 	}
 
 	if podAffinityLabels != nil && len(podAffinityTopologyKey) != 0 {
@@ -185,12 +197,12 @@ func applyPodAffinityLabels(
 		affinity.PodAffinity.RequiredDuringSchedulingIgnoredDuringExecution = terms
 	}
 
-	if podAffinityLabels != nil && len(podAntiAffinityTopologyKey) != 0 {
+	if podAntiAffinitySelector != nil && len(podAntiAffinityTopologyKey) != 0 {
 		terms := []v1.PodAffinityTerm{
 			{
 				TopologyKey: podAntiAffinityTopologyKey,
 				LabelSelector: &metav1.LabelSelector{
-					MatchLabels: podAffinityLabels,
+					MatchLabels: podAntiAffinitySelector,
 				},
 			},
 		}
