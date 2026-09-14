@@ -14,6 +14,7 @@ import (
 	k8splfeature "k8s.io/kubernetes/pkg/scheduler/framework/plugins/feature"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/interpodaffinity"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/nodeaffinity"
+	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/nodedeclaredfeatures"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/nodeports"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/tainttoleration"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/volumebinding"
@@ -30,11 +31,12 @@ type K8sPlugins struct {
 	ResourceSliceTracker *resourceslicetracker.Tracker
 	SessionDRAManager    ksf.SharedDRAManager
 
-	NodePorts       ksf.Plugin
-	TaintToleration ksf.Plugin
-	NodeAffinity    ksf.Plugin
-	PodAffinity     ksf.Plugin
-	VolumeBinding   ksf.Plugin
+	NodePorts            ksf.Plugin
+	TaintToleration      ksf.Plugin
+	NodeAffinity         ksf.Plugin
+	PodAffinity          ksf.Plugin
+	VolumeBinding        ksf.Plugin
+	NodeDeclaredFeatures ksf.Plugin
 }
 
 func InitializeInternalPlugins(
@@ -59,6 +61,12 @@ func InitializeInternalPlugins(
 
 	features := k8s_utils.GetK8sFeatures()
 	initiatedPlugins.Features = features
+
+	if plugin, err := nodedeclaredfeatures.New(context.Background(), nil, k8sFrameworkHandle, features); err != nil {
+		log.InfraLogger.Errorf("Failed to create nodedeclaredfeatures plugin: %v", err)
+	} else {
+		initiatedPlugins.NodeDeclaredFeatures = plugin
+	}
 
 	if plugin, err := nodeports.New(context.Background(), nil, k8sFrameworkHandle, features); err != nil {
 		log.InfraLogger.Errorf("Failed to create nodeports plugin: %v", err)

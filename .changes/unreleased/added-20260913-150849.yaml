@@ -1,0 +1,3 @@
+kind: Added
+body: |-
+  Support node-declared feature checks through the upstream scheduler feature gate

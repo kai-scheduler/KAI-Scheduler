@@ -10,6 +10,7 @@ import (
 	k8sframework "k8s.io/kubernetes/pkg/scheduler/framework"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/interpodaffinity"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/nodeaffinity"
+	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/nodedeclaredfeatures"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/nodeports"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/tainttoleration"
 	"k8s.io/kubernetes/pkg/scheduler/framework/plugins/volumebinding"
@@ -28,6 +29,7 @@ const (
 	NodeScheduler          = "NodeScheduler"
 	MaxNodePoolResources   = "MaxNodePoolResources"
 	ConfigMap              = "ConfigMap"
+	NodeDeclaredFeatures   = nodedeclaredfeatures.Name
 )
 
 func predicateRequired(_ *v1.Pod) bool {
@@ -69,6 +71,16 @@ func emptyPredicate(predicateName string) k8s_internal.SessionPredicate {
 func NewSessionPredicates(ssn *framework.Session) k8s_internal.SessionPredicates {
 	initiatedPlugins := ssn.InternalK8sPlugins()
 	predicates := k8s_internal.SessionPredicates{}
+
+	if plugin := initiatedPlugins.NodeDeclaredFeatures; plugin != nil {
+		predicates[NodeDeclaredFeatures] = k8s_internal.SessionPredicate{
+			Name:                NodeDeclaredFeatures,
+			IsPreFilterRequired: predicateRequired,
+			PreFilter:           k8s_internal.FitPrePredicateConverter(ssn, ssn, plugin.(*nodedeclaredfeatures.NodeDeclaredFeatures)),
+			IsFilterRequired:    predicateRequired,
+			Filter:              k8s_internal.FitPredicateConverter(ssn, plugin.(*nodedeclaredfeatures.NodeDeclaredFeatures)),
+		}
+	}
 
 	if plugin := initiatedPlugins.NodePorts; plugin == nil {
 		predicates[PodFitsHostPorts] = emptyPredicate(PodFitsHostPorts)

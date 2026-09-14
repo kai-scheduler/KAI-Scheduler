@@ -88,13 +88,14 @@ func compactContainers(containers []v1.Container) []v1.Container {
 	compact := make([]v1.Container, 0, len(containers))
 	for _, container := range containers {
 		compact = append(compact, v1.Container{
-			Name:          container.Name,
-			Ports:         container.Ports,
-			EnvFrom:       compactEnvFromSources(container.EnvFrom),
-			Env:           compactEnvVars(container.Env),
-			Resources:     container.Resources,
-			VolumeMounts:  container.VolumeMounts,
-			RestartPolicy: container.RestartPolicy,
+			Name:               container.Name,
+			Ports:              container.Ports,
+			EnvFrom:            compactEnvFromSources(container.EnvFrom),
+			Env:                compactEnvVars(container.Env),
+			Resources:          container.Resources,
+			VolumeMounts:       container.VolumeMounts,
+			RestartPolicy:      container.RestartPolicy,
+			RestartPolicyRules: container.RestartPolicyRules,
 		})
 	}
 	return compact

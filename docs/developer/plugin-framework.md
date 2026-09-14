@@ -46,6 +46,25 @@ The session object provides the plugins with multiple extension points that the 
 
 #### Predicates
 
+The built-in `predicates` plugin includes Kubernetes' `NodeDeclaredFeatures`
+PreFilter and Filter plugins. Enable these checks with the scheduler argument
+`--feature-gates=NodeDeclaredFeatures=true`. The gate defaults to disabled in
+the Kubernetes 1.35 libraries used by KAI.
+
+Requirements are inferred from each pod's specification using the upstream
+feature registry, rather than from custom pod annotations or a PodGroup field.
+For example, a container restart rule with action `RestartAllContainers` requires
+the node to advertise `RestartAllContainersOnContainerExits` in
+`status.declaredFeatures`. Only features recognized by KAI's linked Kubernetes
+version are checked; this is not a general check for GPU or DRA capabilities.
+
+With the gate enabled, a node with missing declarations cannot host a pod that
+requires a declared feature. Pods without such requirements skip the check.
+Enable the corresponding Kubernetes feature gates on the cluster components
+and kubelets so that nodes publish their capabilities. Node declarations are
+refreshed from the node informer in each scheduling snapshot, allowing pending
+pods to be reconsidered after a node update.
+
 ```go
 // Pre-predicate functions run before main predicates
 type PrePredicateFn func(task *pod_info.PodInfo, job *podgroup_info.PodGroupInfo) error
