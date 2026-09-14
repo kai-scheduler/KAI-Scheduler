@@ -10,6 +10,7 @@ import (
 
 	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
@@ -95,9 +96,8 @@ func (ni *NodeInfo) getReservationPodGpuGroupComputeSharingMode(
 		if task.Pod.Annotations == nil {
 			return schedulingv1alpha2.GPUComputeSharingModeTimeSlicing, true
 		}
-		return schedulingv1alpha2.DefaultGPUComputeSharingMode(
-			schedulingv1alpha2.GPUComputeSharingMode(task.Pod.Annotations[commonconstants.GpuComputeSharingMode]),
-		), true
+		_, rawMode, _ := resources.ExtractGpuComputeSharingModeAnnotation(task.Pod)
+		return schedulingv1alpha2.DefaultGPUComputeSharingMode(schedulingv1alpha2.GPUComputeSharingMode(rawMode)), true
 	}
 	return "", false
 }

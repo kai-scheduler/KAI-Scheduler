@@ -13,6 +13,7 @@ import (
 
 	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/integration_tests_utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/reclaim"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -67,7 +68,7 @@ func TestReclaimCanUseFullyEvictedFractionalGpuForDifferentComputeMode(t *testin
 					{
 						State: pod_status.Pending,
 						Annotations: map[string]string{
-							commonconstants.GpuComputeSharingMode: string(schedulingv1alpha2.GPUComputeSharingModeSMSharing),
+							resources.CalcGpuComputeSharingModeAnnotationForContainer("main"): string(schedulingv1alpha2.GPUComputeSharingModeSMSharing),
 						},
 					},
 				},
@@ -136,8 +137,8 @@ func addReservationPodToNodeForReclaimTest(
 				commonconstants.GPUGroup: gpuGroup,
 			},
 			Annotations: map[string]string{
-				commonconstants.PodGroupAnnotationForPod: "reservation",
-				commonconstants.GpuComputeSharingMode:    string(mode),
+				commonconstants.PodGroupAnnotationForPod:                                 "reservation",
+				resources.CalcGpuComputeSharingModeAnnotationForContainer("reservation"): string(mode),
 			},
 		},
 		Spec: v1.PodSpec{
