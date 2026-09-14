@@ -28,7 +28,7 @@ global:
   # Deprecated: gpuSharing is honored only for upgrades when gpuSharingMode is empty
   # (true -> NonMemoryEnforced, false -> Disabled). Prefer gpuSharingMode.
   # gpuSharing: false
-  # nvFractions.set installs the gpu-sharing operator
+  # nvFractions.set installs kai-gpu-fractioning
   # (oci://ghcr.io/kai-scheduler/gpu-sharing) as a subchart and selects the NvFractions
   # GPU sharing mode. Setting it together with a global.gpuSharingMode other than
   # NvFractions is rejected at render time.

@@ -98,8 +98,10 @@ Follow the instructions [here](docs/developer/building-from-source.md)
 When `gpu-operator` <v25.10.0 is installed, the following flag should be added to the installation command:
 
 ```
---set admission.gpuFractionRuntimeClassName=null
+--set-string admission.gpuFractionRuntimeClassName=""
 ```
+
+Do not set this value to `null`; an unset value is defaulted by the operator to `nvidia`.
 If CDI is enabled, add `--set binder.cdiEnabled=true` to the installation command.
 
 ## Support & Breaking changes

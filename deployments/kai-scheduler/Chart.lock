@@ -1,6 +1,6 @@
 dependencies:
-- name: gpu-sharing
-  repository: oci://ghcr.io/kai-scheduler/gpu-sharing
-  version: v0.1.0-alpha.1
-digest: sha256:c3d7f76c6d2b2fd7b256b7450fb435a82693e8acef1265d10a8d5270fcb028db
-generated: "2026-08-02T20:53:54.374149+03:00"
+- name: gpu-fractioning
+  repository: oci://ghcr.io/kai-scheduler/kai-gpu-fractioning
+  version: v0.1.0
+digest: sha256:03e1d99f5d0ab7225d788ea0a79740ff473577c54df12ae90ecab8d221629f47
+generated: "2026-09-14T13:53:06.262971+03:00"

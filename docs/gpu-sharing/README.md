@@ -29,7 +29,7 @@ Administrators choose one GPU-sharing mode for the cluster. The mode configures 
 | `Disabled` | Reject fractional GPU workloads. | None. | None. |
 | `NonMemoryEnforced` | Schedule fractional GPU workloads without runtime memory isolation. This is the default mode. | Not enforced by KAI. Containers may see and use more GPU memory than requested. | `gpu-fraction`, `gpu-memory` |
 | `HamiCore` | Schedule fractional GPU workloads and use HAMi-core for CUDA memory isolation. | Enforced through HAMi-core. | `gpu-fraction`, `gpu-memory` |
-| `NvFractions` | Schedule fractional GPU workloads using NvFractions annotations and the GPU-sharing operator. | Enforced by the NvFractions runtime path when CDI/NRI is configured. | `nvidia.com/container.<container>.gpu-memory.request`, `nvidia.com/container.<container>.gpu-memory.limit` |
+| `NvFractions` | Schedule fractional GPU workloads using NvFractions annotations and kai-gpu-fractioning. | Enforced by the NvFractions runtime path when CDI/NRI is configured. | `nvidia.com/container.<container>.gpu-memory.request`, `nvidia.com/container.<container>.gpu-memory.limit` |
 
 Set the mode with `global.gpuSharingMode`. The legacy `global.gpuSharing` value is deprecated and should only be used for upgrades that still rely on the old boolean value.
 
@@ -61,7 +61,7 @@ See [HAMi Resource Isolation](hami/README.md) for more details.
 
 ### Install with NvFractions
 
-Use `NvFractions` when the cluster should use the GPU-sharing operator and NvFractions annotations:
+Use `NvFractions` when the cluster should use kai-gpu-fractioning and NvFractions annotations:
 
 ```bash
 helm upgrade -i kai-scheduler oci://ghcr.io/kai-scheduler/kai-scheduler/kai-scheduler \
@@ -111,7 +111,7 @@ gpu-sharing:
       effect: NoSchedule
 ```
 
-For air-gapped environments, mirror both the KAI images and the gpu-sharing operator chart and images, or vendor the dependency before installing.
+For air-gapped environments, mirror both the KAI images and the kai-gpu-fractioning chart and images, or vendor the dependency before installing.
 
 ### Runtime class and CDI
 
@@ -119,7 +119,7 @@ KAI can auto-detect CDI and the CDI NRI plugin from the NVIDIA GPU Operator `Clu
 
 Use that detection to decide whether fractional GPU pods need a runtime class:
 
-- If the cluster uses CDI as the default GPU device injection path, fractional GPU pods usually do not need `runtimeClassName: nvidia`; set `admission.gpuFractionRuntimeClassName=null`.
+- If the cluster uses CDI as the default GPU device injection path, fractional GPU pods usually do not need `runtimeClassName: nvidia`; set `admission.gpuFractionRuntimeClassName` to an empty string.
 - If the cluster does not use CDI as the default path and the default container runtime is not already NVIDIA-enabled, keep the default `admission.gpuFractionRuntimeClassName=nvidia` or set a custom runtime class.
 - If KAI cannot read the NVIDIA `ClusterPolicy`, configure the runtime class and CDI behavior explicitly.
 
@@ -128,8 +128,10 @@ To suppress `runtimeClassName` injection on fractional GPU pods:
 ```bash
 helm upgrade -i kai-scheduler oci://ghcr.io/kai-scheduler/kai-scheduler/kai-scheduler \
   -n kai-scheduler --create-namespace \
-  --set admission.gpuFractionRuntimeClassName=null
+  --set-string admission.gpuFractionRuntimeClassName=""
 ```
+
+Do not set this value to `null`; an unset value is defaulted by the operator to `nvidia`.
 
 KAI also creates GPU reservation pods for fractional GPU workloads. If reservation pods need a runtime class for GPU access, set it separately:
 
@@ -143,7 +145,7 @@ You can also set `binder.cdiEnabled` or the binder plugin `cdiEnabled` argument 
 
 ### NvFractions readiness
 
-In `NvFractions` mode, KAI waits for the GPU-sharing operator before scheduling fractional GPU pods.
+In `NvFractions` mode, KAI waits for kai-gpu-fractioning before scheduling fractional GPU pods.
 
 The operator must create a cluster-scoped `GpuSharingConfig` named `default` with a `Ready=True` condition:
 
@@ -348,7 +350,7 @@ kubectl describe pod <pod-name> -n <namespace>
 
 The events usually show whether the pod is blocked by scheduling, admission, or runtime setup.
 
-Then check the GPU-sharing operator status:
+Then check the kai-gpu-fractioning status:
 
 ```bash
 kubectl get gpusharingconfig default -o yaml
