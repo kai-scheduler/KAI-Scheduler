@@ -171,6 +171,8 @@ Any higher scoring plugin overrides it, since the score constants are spread by 
 
 ## Usage
 
+User-facing documentation is in [`docs/background-pods`](../../../background-pods).
+
 1. All background pods need to be marked with the label. By default `kai.scheduler/background: "true"`.
   a. The label can be overridden by a custom selector in the config
 2. The background pods need to be assigned to a 0-quota, 0-over-quota-weight queue, by labeling the pods / workload. See the example below.
