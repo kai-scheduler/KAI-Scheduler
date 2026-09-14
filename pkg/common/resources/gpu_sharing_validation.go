@@ -143,6 +143,11 @@ func validateContainerExists(pod *v1.Pod, containerName string) error {
 			return nil
 		}
 	}
+	for _, container := range pod.Spec.InitContainers {
+		if container.Name == containerName {
+			return nil
+		}
+	}
 	return fmt.Errorf("container %s not found in pod spec, but a fractional annotation referencing it was found", containerName)
 }
 
