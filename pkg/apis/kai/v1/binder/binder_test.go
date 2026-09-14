@@ -25,7 +25,7 @@ func TestBinder(t *testing.T) {
 var _ = Describe("Binder", func() {
 	It("Set Defaults", func(ctx context.Context) {
 		binder := &Binder{}
-		binder.SetDefaultsWhereNeeded(nil, nil)
+		binder.SetDefaultsWhereNeeded(nil, nil, common.GpuSharingModeNonMemoryEnforced)
 		Expect(*binder.Service.Enabled).To(Equal(true))
 		Expect(*binder.Service.Image.Name).To(Equal("binder"))
 		Expect(binder.Service.Resources.Requests[v1.ResourceCPU]).To(Equal(resource.MustParse("50m")))
@@ -47,9 +47,38 @@ var _ = Describe("Binder", func() {
 		Expect(hasCDIArg).To(BeFalse())
 	})
 
+	DescribeTable("GpuSharingMode drives plugin enablement defaults",
+		func(mode common.GpuSharingMode, gpuSharing, hami, nvFractions bool) {
+			binder := &Binder{}
+			binder.SetDefaultsWhereNeeded(nil, nil, mode)
+			Expect(binder.Plugins).To(HaveLen(5))
+			Expect(*binder.Plugins[GPUSharingPluginName].Enabled).To(Equal(gpuSharing))
+			Expect(*binder.Plugins[HamiCorePluginName].Enabled).To(Equal(hami))
+			Expect(*binder.Plugins[NvFractionsPluginName].Enabled).To(Equal(nvFractions))
+		},
+		Entry("NonMemoryEnforced", common.GpuSharingModeNonMemoryEnforced, true, false, false),
+		Entry("HamiCore", common.GpuSharingModeHamiCore, true, true, false),
+		Entry("NvFractions", common.GpuSharingModeNvFractions, false, false, true),
+		Entry("Disabled", common.GpuSharingModeDisabled, false, false, false),
+	)
+
+	It("user plugin override wins over mode default", func(ctx context.Context) {
+		binder := &Binder{
+			Plugins: map[string]PluginConfig{
+				HamiCorePluginName:    {Enabled: ptr.To(true)},
+				GPUSharingPluginName:  {Enabled: ptr.To(false)},
+				NvFractionsPluginName: {Enabled: ptr.To(true)},
+			},
+		}
+		binder.SetDefaultsWhereNeeded(nil, nil, common.GpuSharingModeDisabled)
+		Expect(*binder.Plugins[HamiCorePluginName].Enabled).To(BeTrue())
+		Expect(*binder.Plugins[GPUSharingPluginName].Enabled).To(BeFalse())
+		Expect(*binder.Plugins[NvFractionsPluginName].Enabled).To(BeTrue())
+	})
+
 	It("Set Defaults bakes CDI flag when Binder.CDIEnabled is set", func(ctx context.Context) {
 		binder := &Binder{CDIEnabled: ptr.To(true)}
-		binder.SetDefaultsWhereNeeded(nil, nil)
+		binder.SetDefaultsWhereNeeded(nil, nil, common.GpuSharingModeNonMemoryEnforced)
 		Expect(binder.Plugins[GPUSharingPluginName].Arguments[CDIEnabledArgument]).
 			To(Equal(strconv.FormatBool(true)))
 		Expect(binder.Plugins[HamiCorePluginName].Enabled).NotTo(BeNil())
@@ -75,7 +104,7 @@ var _ = Describe("Binder", func() {
 			},
 		}
 
-		binder.SetDefaultsWhereNeeded(nil, nil)
+		binder.SetDefaultsWhereNeeded(nil, nil, common.GpuSharingModeNonMemoryEnforced)
 
 		Expect(*binder.Plugins[GPUSharingPluginName].Enabled).To(BeFalse())
 		Expect(*binder.Plugins[VolumeBindingPluginName].Priority).To(Equal(defaultPluginPriorities[VolumeBindingPluginName]))
@@ -89,14 +118,14 @@ var _ = Describe("Binder", func() {
 		binder := &Binder{}
 		var replicaCount int32
 		replicaCount = 3
-		binder.SetDefaultsWhereNeeded(&replicaCount, nil)
+		binder.SetDefaultsWhereNeeded(&replicaCount, nil, common.GpuSharingModeNonMemoryEnforced)
 		Expect(*binder.Replicas).To(Equal(int32(3)))
 	})
 
 	Context("ResourceReservation PodResources configuration", func() {
 		It("should not set default PodResources when not configured", func(ctx context.Context) {
 			binder := &Binder{}
-			binder.SetDefaultsWhereNeeded(nil, nil)
+			binder.SetDefaultsWhereNeeded(nil, nil, common.GpuSharingModeNonMemoryEnforced)
 
 			// PodResources should be nil when not configured
 			Expect(binder.ResourceReservation.PodResources).To(BeNil())
@@ -118,7 +147,7 @@ var _ = Describe("Binder", func() {
 					PodResources: podResources,
 				},
 			}
-			binder.SetDefaultsWhereNeeded(nil, nil)
+			binder.SetDefaultsWhereNeeded(nil, nil, common.GpuSharingModeNonMemoryEnforced)
 
 			// Configured values should be preserved
 			Expect(binder.ResourceReservation.PodResources).NotTo(BeNil())
@@ -142,7 +171,7 @@ var _ = Describe("Binder", func() {
 					PodResources: podResources,
 				},
 			}
-			binder.SetDefaultsWhereNeeded(nil, nil)
+			binder.SetDefaultsWhereNeeded(nil, nil, common.GpuSharingModeNonMemoryEnforced)
 
 			// Only CPU should be set
 			Expect(binder.ResourceReservation.PodResources).NotTo(BeNil())

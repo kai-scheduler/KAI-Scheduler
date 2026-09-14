@@ -26,6 +26,7 @@ import (
 
 const (
 	defaultResourceName           = "admission"
+	defaultBinderServiceAccount   = "binder"
 	kaiAdmissionWebhookSecretName = "kai-admission-webhook-tls-secret"
 	certKey                       = "tls.crt"
 	keyKey                        = "tls.key"
@@ -44,7 +45,11 @@ func (a *Admission) deploymentForKAIConfig(
 	deployment.Spec.Strategy.Type = appsv1.RecreateDeploymentStrategyType
 	deployment.Spec.Strategy.RollingUpdate = nil
 	deployment.Spec.Replicas = config.Replicas
-	deployment.Spec.Template.Spec.Containers[0].Args = buildArgsList(kaiConfig, config)
+	nriPluginEnabled, err := common.IsGPUOperatorNRIPluginEnabled(ctx, runtimeClient)
+	if err != nil {
+		return nil, err
+	}
+	deployment.Spec.Template.Spec.Containers[0].Args = buildArgsList(kaiConfig, config, nriPluginEnabled)
 	deployment.Spec.Template.Spec.Containers[0].VolumeMounts = []v1.VolumeMount{
 		{
 			Name:      "cert",
@@ -403,7 +408,7 @@ func calculateServiceUrl(serviceName, namespace string) string {
 	return fmt.Sprintf("%s.%s.svc", serviceName, namespace)
 }
 
-func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1admission.Admission) []string {
+func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1admission.Admission, nriPluginEnabled bool) []string {
 	args := []string{
 		"--scheduler-name",
 		*kaiConfig.Spec.Global.SchedulerName,
@@ -418,9 +423,20 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1admission.Admission) []
 	if config.GPUSharing != nil && *config.GPUSharing {
 		args = append(args, "--gpu-sharing-enabled=true")
 	}
+	if nriPluginEnabled {
+		args = append(args, "--nri-plugin-enabled=true")
+	}
 
 	if isHamiCoreEnabled(kaiConfig) {
 		args = append(args, "--hami-core-enabled=true")
+	}
+
+	if isNvFractionsEnabled(kaiConfig) {
+		args = append(args,
+			"--nv-fractions-enabled=true",
+			"--binder-service-account-username",
+			binderServiceAccountUsername(kaiConfig.Spec.Namespace),
+		)
 	}
 
 	if config.BlockNvidiaVisibleDevices != nil && *config.BlockNvidiaVisibleDevices {
@@ -451,11 +467,26 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1admission.Admission) []
 	return common.AddControllerRuntimeJSONLogArg(kaiConfig.Spec.Global.JSONLog, args)
 }
 
+func binderServiceAccountUsername(namespace string) string {
+	return fmt.Sprintf("system:serviceaccount:%s:%s", namespace, defaultBinderServiceAccount)
+}
+
 func isHamiCoreEnabled(kaiConfig *kaiv1.Config) bool {
 	if kaiConfig.Spec.Binder == nil {
 		return false
 	}
 	pluginCfg, found := kaiConfig.Spec.Binder.Plugins[kaiv1binder.HamiCorePluginName]
+	if !found {
+		return false
+	}
+	return ptr.Deref(pluginCfg.Enabled, false)
+}
+
+func isNvFractionsEnabled(kaiConfig *kaiv1.Config) bool {
+	if kaiConfig.Spec.Binder == nil {
+		return false
+	}
+	pluginCfg, found := kaiConfig.Spec.Binder.Plugins[kaiv1binder.NvFractionsPluginName]
 	if !found {
 		return false
 	}

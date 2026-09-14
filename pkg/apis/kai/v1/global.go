@@ -96,6 +96,11 @@ type GlobalConfig struct {
 	// https://go.dev/doc/security/fips140#the-fips140-godebug-option.
 	// +kubebuilder:validation:Optional
 	FIPSOnly *bool `json:"fipsOnly,omitempty"`
+
+	// GpuSharingMode selects a preset that sets defaults for GPU-sharing plugins
+	// across the admission and binder components.
+	// +kubebuilder:validation:Optional
+	GpuSharingMode *common.GpuSharingMode `json:"gpuSharingMode,omitempty"`
 }
 
 func (g *GlobalConfig) SetDefaultWhereNeeded() {

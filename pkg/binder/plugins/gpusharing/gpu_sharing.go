@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"golang.org/x/exp/slices"
@@ -19,23 +18,24 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/common"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/common/gpusharingconfigmap"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/state"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 )
 
 const (
-	CdiDeviceNameBase = "k8s.device-plugin.nvidia.com/gpu=%s"
+	CdiDeviceNameBase      = "k8s.device-plugin.nvidia.com/gpu=%s"
+	cdiContainerAnnotation = "nvidia.cdi.k8s.io/container.%s"
 )
 
 type GPUSharing struct {
 	kubeClient             client.Client
 	gpuDevicePluginUsesCdi bool
+	nriPluginEnabled       bool
 }
 
-func New(kubeClient client.Client, gpuDevicePluginUsesCdi bool) *GPUSharing {
+func New(kubeClient client.Client, gpuDevicePluginUsesCdi bool, nriPluginEnabled bool) *GPUSharing {
 	return &GPUSharing{
 		kubeClient:             kubeClient,
 		gpuDevicePluginUsesCdi: gpuDevicePluginUsesCdi,
+		nriPluginEnabled:       nriPluginEnabled,
 	}
 }
 
@@ -44,7 +44,7 @@ func (p *GPUSharing) Name() string {
 }
 
 func (p *GPUSharing) PreBind(
-	ctx context.Context, pod *v1.Pod, node *v1.Node, bindRequest *v1alpha2.BindRequest, state *state.BindingState,
+	ctx context.Context, pod *v1.Pod, _ *v1.Node, bindRequest *v1alpha2.BindRequest, state *state.BindingState,
 ) error {
 	if !common.IsSharedGPUAllocation(bindRequest) {
 		return nil
@@ -62,11 +62,6 @@ func (p *GPUSharing) PreBind(
 		return fmt.Errorf("failed to get fraction container ref: %w", err)
 	}
 
-	err = addNvFractionsAnnotationIfMissing(pod, node, bindRequest, containerRef, state)
-	if err != nil {
-		return fmt.Errorf("failed to add NvFractions annotation: %w", err)
-	}
-
 	err = p.createCapabilitiesConfigMapIfMissing(ctx, pod, containerRef)
 	if err != nil {
 		return fmt.Errorf("failed to create capabilities configmap: %w", err)
@@ -78,49 +73,22 @@ func (p *GPUSharing) PreBind(
 	}
 
 	nVisibleDevicesStr := strings.Join(reservedGPUIds, ",")
-	err = common.SetNvidiaVisibleDevices(ctx, p.kubeClient, pod, containerRef, nVisibleDevicesStr)
-	if err != nil {
+	if err = p.setVisibleDevices(ctx, pod, containerRef, state, nVisibleDevicesStr); err != nil {
 		return err
 	}
 
 	return common.SetGPUPortion(ctx, p.kubeClient, pod, containerRef, bindRequest.Spec.ReceivedGPU.Portion)
 }
 
-func addNvFractionsAnnotationIfMissing(pod *v1.Pod, node *v1.Node, bindRequest *v1alpha2.BindRequest,
-	containerRef *gpusharingconfigmap.PodContainerRef, bindingState *state.BindingState) error {
-	annotationKey := resources.CalcGpuFractionAnnotationForContainer(containerRef.Container.Name)
-	if _, found := pod.Annotations[annotationKey]; found {
-		return nil
+func (p *GPUSharing) setVisibleDevices(ctx context.Context, pod *v1.Pod,
+	containerRef *gpusharingconfigmap.PodContainerRef, state *state.BindingState, visibleDevices string) error {
+	if !p.nriPluginEnabled {
+		return common.SetNvidiaVisibleDevices(ctx, p.kubeClient, pod, containerRef, visibleDevices)
 	}
-
-	if node == nil || bindRequest == nil || bindRequest.Spec.ReceivedGPU == nil {
-		return fmt.Errorf("missing data for NvFractions annotation calculation")
+	if state.BindingPodAnnotations == nil {
+		state.BindingPodAnnotations = map[string]string{}
 	}
-
-	gpuMemoryStr, foundGPUMemory := node.Labels[constants.NvidiaGpuMemory]
-	if !foundGPUMemory {
-		return fmt.Errorf("node does not include %s label - failed to add NvFractions annotation", constants.NvidiaGpuMemory)
-	}
-
-	totalGPUMemoryMiB, err := strconv.ParseFloat(gpuMemoryStr, 64)
-	if err != nil || totalGPUMemoryMiB <= 0 {
-		return fmt.Errorf("invalid %s label value %q - failed to add NvFractions annotation", constants.NvidiaGpuMemory, gpuMemoryStr)
-	}
-
-	gpuPortion, err := strconv.ParseFloat(bindRequest.Spec.ReceivedGPU.Portion, 64)
-	if err != nil || gpuPortion <= 0 {
-		return fmt.Errorf("invalid received gpu portion %q - failed to add NvFractions annotation", bindRequest.Spec.ReceivedGPU.Portion)
-	}
-
-	gpuMemory := uint64(totalGPUMemoryMiB * gpuPortion)
-	if gpuMemory == 0 {
-		return fmt.Errorf("calculated gpu memory request is zero")
-	}
-
-	if bindingState.BindingPodAnnotations == nil {
-		bindingState.BindingPodAnnotations = map[string]string{}
-	}
-	bindingState.BindingPodAnnotations[annotationKey] = resources.GpuMemoryAnnotationToNvFractionsMemoryRequest(gpuMemory).String()
+	state.BindingPodAnnotations[fmt.Sprintf(cdiContainerAnnotation, containerRef.Container.Name)] = visibleDevices
 	return nil
 }
 

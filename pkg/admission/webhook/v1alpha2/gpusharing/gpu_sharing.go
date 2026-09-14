@@ -4,6 +4,7 @@
 package gpusharing
 
 import (
+	"context"
 	"fmt"
 
 	"strconv"
@@ -25,12 +26,14 @@ const (
 type GPUSharing struct {
 	kubeClient        client.Client
 	gpuSharingEnabled bool
+	nriPluginEnabled  bool
 }
 
-func New(kubeClient client.Client, gpuSharingEnabled bool) *GPUSharing {
+func New(kubeClient client.Client, gpuSharingEnabled bool, nriPluginEnabled bool) *GPUSharing {
 	return &GPUSharing{
 		kubeClient:        kubeClient,
 		gpuSharingEnabled: gpuSharingEnabled,
+		nriPluginEnabled:  nriPluginEnabled,
 	}
 }
 
@@ -38,7 +41,7 @@ func (p *GPUSharing) Name() string {
 	return "gpusharing"
 }
 
-func (p *GPUSharing) Validate(pod *v1.Pod) error {
+func (p *GPUSharing) Validate(_ context.Context, _, pod *v1.Pod) error {
 	if !p.gpuSharingEnabled && resources.RequestsGPUFraction(pod) {
 		return fmt.Errorf(
 			"attempting to create a pod %s/%s with gpu sharing request, while GPU sharing is disabled",
@@ -73,9 +76,9 @@ func (p *GPUSharing) Mutate(pod *v1.Pod) error {
 		return err
 	}
 
-	common.AddGPUSharingEnvVars(containerRef.Container, capabilitiesConfigMapName)
-	common.SetConfigMapVolume(pod, capabilitiesConfigMapName)
-	common.AddDirectEnvVarsConfigMapSource(containerRef.Container, directEnvVarsMapName)
+	addGPUSharingEnvVars(containerRef.Container, capabilitiesConfigMapName, !p.nriPluginEnabled)
+	setConfigMapVolume(pod, capabilitiesConfigMapName)
+	addDirectEnvVarsConfigMapSource(containerRef.Container, directEnvVarsMapName)
 
 	return nil
 }

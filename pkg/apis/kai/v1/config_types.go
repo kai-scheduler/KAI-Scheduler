@@ -17,6 +17,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 )
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
@@ -101,11 +102,14 @@ func (c *ConfigSpec) SetDefaultsWhereNeeded() {
 	c.Global = common.SetDefault(c.Global, &GlobalConfig{})
 	c.Global.SetDefaultWhereNeeded()
 
+	gpuSharingMode := resolveGpuSharingMode(c)
+	c.Global.GpuSharingMode = ptr.To(gpuSharingMode)
+
 	c.QueueController = common.SetDefault(c.QueueController, &queue_controller.QueueController{})
 	c.QueueController.SetDefaultsWhereNeeded(c.Global.ReplicaCount, c.Global.VPA)
 
 	c.Binder = common.SetDefault(c.Binder, &binder.Binder{})
-	c.Binder.SetDefaultsWhereNeeded(c.Global.ReplicaCount, c.Global.VPA)
+	c.Binder.SetDefaultsWhereNeeded(c.Global.ReplicaCount, c.Global.VPA, gpuSharingMode)
 
 	c.PodGrouper = common.SetDefault(c.PodGrouper, &pod_grouper.PodGrouper{})
 	c.PodGrouper.SetDefaultsWhereNeeded(c.Global.ReplicaCount, c.Global.VPA)
@@ -117,7 +121,7 @@ func (c *ConfigSpec) SetDefaultsWhereNeeded() {
 	c.PodGroupController.SetDefaultsWhereNeeded(c.Global.ReplicaCount, c.Global.VPA)
 
 	c.Admission = common.SetDefault(c.Admission, &admission.Admission{})
-	c.Admission.SetDefaultsWhereNeeded(c.Global.ReplicaCount, c.Global.VPA)
+	c.Admission.SetDefaultsWhereNeeded(c.Global.ReplicaCount, c.Global.VPA, gpuSharingMode)
 
 	c.NodeScaleAdjuster = common.SetDefault(c.NodeScaleAdjuster, &node_scale_adjuster.NodeScaleAdjuster{})
 	c.NodeScaleAdjuster.SetDefaultsWhereNeeded(c.Global.VPA)
@@ -127,6 +131,34 @@ func (c *ConfigSpec) SetDefaultsWhereNeeded() {
 
 	c.NumaPlacementExporter = common.SetDefault(c.NumaPlacementExporter, &numa_placement_exporter.NumaPlacementExporter{})
 	c.NumaPlacementExporter.SetDefaultsWhereNeeded()
+}
+
+// resolveGpuSharingMode determines the effective GPU-sharing mode. An explicit
+// Global.GpuSharingMode always wins. When unset, the mode is derived from the
+// legacy fields so existing clusters keep their behavior on upgrade: an enabled
+// hamicore plugin maps to HamiCore, an explicit admission.gpuSharing maps to
+// NonMemoryEnforced (true) or Disabled (false). Fresh configs default to NonMemoryEnforced.
+// It reads raw user values before the sub-configs are defaulted.
+func resolveGpuSharingMode(c *ConfigSpec) common.GpuSharingMode {
+	if c.Global != nil && c.Global.GpuSharingMode != nil {
+		return *c.Global.GpuSharingMode
+	}
+
+	if c.Binder != nil {
+		if hamiCfg, found := c.Binder.Plugins[binder.HamiCorePluginName]; found &&
+			ptr.Deref(hamiCfg.Enabled, false) {
+			return common.GpuSharingModeHamiCore
+		}
+	}
+
+	if c.Admission != nil && c.Admission.GPUSharing != nil {
+		if *c.Admission.GPUSharing {
+			return common.GpuSharingModeNonMemoryEnforced
+		}
+		return common.GpuSharingModeDisabled
+	}
+
+	return common.GpuSharingModeNonMemoryEnforced
 }
 
 // ConfigStatus defines the observed state of Config

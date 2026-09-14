@@ -91,7 +91,7 @@ type InPlacePodResize struct {
 	BlockUpsizeOnBoundedQueues *bool `json:"blockUpsizeOnBoundedQueues,omitempty"`
 }
 
-func (b *Admission) SetDefaultsWhereNeeded(replicaCount *int32, globalVPA *common.VPASpec) {
+func (b *Admission) SetDefaultsWhereNeeded(replicaCount *int32, globalVPA *common.VPASpec, gpuSharingMode common.GpuSharingMode) {
 	b.Service = common.SetDefault(b.Service, &common.Service{})
 	b.Service.SetDefaultsWhereNeeded(imageName)
 
@@ -102,7 +102,7 @@ func (b *Admission) SetDefaultsWhereNeeded(replicaCount *int32, globalVPA *commo
 	b.Webhook.SetDefaultsWhereNeeded()
 
 	b.Replicas = common.SetDefault(b.Replicas, ptr.To(ptr.Deref(replicaCount, 1)))
-	b.GPUSharing = common.SetDefault(b.GPUSharing, ptr.To(false))
+	b.GPUSharing = common.SetDefault(b.GPUSharing, ptr.To(gpuSharingEnabledForMode(gpuSharingMode)))
 	b.QueueLabelSelector = common.SetDefault(b.QueueLabelSelector, ptr.To(false))
 	b.BlockNvidiaVisibleDevices = common.SetDefault(b.BlockNvidiaVisibleDevices, ptr.To(false))
 
@@ -123,6 +123,13 @@ func (b *Admission) SetDefaultsWhereNeeded(replicaCount *int32, globalVPA *commo
 	if b.VPA == nil {
 		b.VPA = globalVPA
 	}
+}
+
+// gpuSharingEnabledForMode reports whether the admission gpusharing plugin
+// should accept GPU fraction pods for the given mode. NvFractions is handled by
+// the dedicated nvfractions plugin, and Disabled rejects fraction pods.
+func gpuSharingEnabledForMode(mode common.GpuSharingMode) bool {
+	return mode == common.GpuSharingModeNonMemoryEnforced || mode == common.GpuSharingModeHamiCore
 }
 
 // Webhook defines configuration for the admission webhook

@@ -13,21 +13,24 @@ import (
 )
 
 type Options struct {
-	SchedulerName               string
-	QPS                         float64
-	Burst                       int
-	EnableLeaderElection        bool
-	MetricsAddr                 string
-	ProbeAddr                   string
-	WebhookPort                 int
-	FakeGPUNodes                bool
-	GPUSharingEnabled           bool
-	HamiCoreEnabled             bool
-	BlockNvidiaVisibleDevices   bool
-	GPUPodRuntimeClassName      string
-	GPUFractionRuntimeClassName string
-	ValidatePodResizeQuota      bool
-	BlockUpsizeOnBoundedQueues  bool
+	SchedulerName                string
+	QPS                          float64
+	Burst                        int
+	EnableLeaderElection         bool
+	MetricsAddr                  string
+	ProbeAddr                    string
+	WebhookPort                  int
+	FakeGPUNodes                 bool
+	GPUSharingEnabled            bool
+	NRIPluginEnabled             bool
+	HamiCoreEnabled              bool
+	NvFractionsEnabled           bool
+	BinderServiceAccountUsername string
+	BlockNvidiaVisibleDevices    bool
+	GPUPodRuntimeClassName       string
+	GPUFractionRuntimeClassName  string
+	ValidatePodResizeQuota       bool
+	BlockUpsizeOnBoundedQueues   bool
 }
 
 // ResolvedGPUFractionRuntimeClassName returns the effective runtime class name
@@ -76,9 +79,18 @@ func InitOptions() *Options {
 	fs.BoolVar(&options.GPUSharingEnabled,
 		"gpu-sharing-enabled", false,
 		"Specifies if the GPU sharing is enabled")
+	fs.BoolVar(&options.NRIPluginEnabled,
+		"nri-plugin-enabled", false,
+		"Specifies if the NVIDIA GPU Operator CDI NRI plugin is enabled")
 	fs.BoolVar(&options.HamiCoreEnabled,
 		"hami-core-enabled", false,
 		"Specifies if the HAMI-core GPU memory limit injection is enabled")
+	fs.BoolVar(&options.NvFractionsEnabled,
+		"nv-fractions-enabled", false,
+		"Specifies if the NvFractions GPU-sharing admission plugin is enabled")
+	fs.StringVar(&options.BinderServiceAccountUsername,
+		"binder-service-account-username", "",
+		"The Kubernetes username allowed to write NvFractions device annotations")
 	fs.BoolVar(&options.BlockNvidiaVisibleDevices,
 		"block-nvidia-visible-devices", false,
 		"Reject pods that set the NVIDIA_VISIBLE_DEVICES environment variable to values "+

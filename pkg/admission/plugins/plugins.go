@@ -12,7 +12,7 @@ import (
 
 type Plugin interface {
 	Name() string
-	Validate(*v1.Pod) error
+	Validate(context.Context, *v1.Pod, *v1.Pod) error
 	Mutate(*v1.Pod) error
 }
 
@@ -32,9 +32,9 @@ func (bp *KaiAdmissionPlugins) RegisterPlugin(plugin Plugin) {
 	bp.plugins = append(bp.plugins, plugin)
 }
 
-func (bp *KaiAdmissionPlugins) Validate(pod *v1.Pod) error {
+func (bp *KaiAdmissionPlugins) Validate(ctx context.Context, oldPod, pod *v1.Pod) error {
 	for _, p := range bp.plugins {
-		err := p.Validate(pod)
+		err := p.Validate(ctx, oldPod, pod)
 		if err != nil {
 			logger := log.FromContext(context.Background())
 			logger.Error(err, "pod validation failed for pod",

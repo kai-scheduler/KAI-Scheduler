@@ -20,7 +20,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/common/gpusharingconfigmap"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/state"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 )
 
 func TestGetFractionContainerRef(t *testing.T) {
@@ -259,130 +258,6 @@ func TestGetFractionContainerRef(t *testing.T) {
 	}
 }
 
-func TestAddNvFractionsAnnotationIfMissing(t *testing.T) {
-	annotationKey := resources.CalcGpuFractionAnnotationForContainer("container-0")
-
-	tests := []struct {
-		name                string
-		podAnnotations      map[string]string
-		nodeLabels          map[string]string
-		receivedGPU         *v1alpha2.ReceivedGPU
-		bindingAnnotations  map[string]string
-		wantErrContains     string
-		wantAnnotationValue string
-		wantNoAnnotation    bool
-	}{
-		{
-			name: "adds annotation from node memory and received portion",
-			nodeLabels: map[string]string{
-				constants.NvidiaGpuMemory: "1500",
-			},
-			receivedGPU:         &v1alpha2.ReceivedGPU{Portion: "0.5"},
-			wantAnnotationValue: "750Mi",
-		},
-		{
-			name: "preserves existing pod annotation",
-			podAnnotations: map[string]string{
-				annotationKey: "1Gi",
-			},
-			nodeLabels: map[string]string{
-				constants.NvidiaGpuMemory: "1500",
-			},
-			receivedGPU:      &v1alpha2.ReceivedGPU{Portion: "0.5"},
-			wantNoAnnotation: true,
-		},
-		{
-			name: "keeps existing binding annotations",
-			nodeLabels: map[string]string{
-				constants.NvidiaGpuMemory: "4096",
-			},
-			receivedGPU: &v1alpha2.ReceivedGPU{Portion: "0.25"},
-			bindingAnnotations: map[string]string{
-				constants.ReceivedResourceType: common.ReceivedTypeFraction,
-			},
-			wantAnnotationValue: "1Gi",
-		},
-		{
-			name: "errors when node memory label is missing",
-			nodeLabels: map[string]string{
-				"other-label": "1500",
-			},
-			receivedGPU:     &v1alpha2.ReceivedGPU{Portion: "0.5"},
-			wantErrContains: "node does not include nvidia.com/gpu.memory label",
-		},
-		{
-			name: "errors when node memory label is invalid",
-			nodeLabels: map[string]string{
-				constants.NvidiaGpuMemory: "invalid",
-			},
-			receivedGPU:     &v1alpha2.ReceivedGPU{Portion: "0.5"},
-			wantErrContains: "invalid nvidia.com/gpu.memory label value",
-		},
-		{
-			name: "errors when received portion is invalid",
-			nodeLabels: map[string]string{
-				constants.NvidiaGpuMemory: "1500",
-			},
-			receivedGPU:     &v1alpha2.ReceivedGPU{Portion: "invalid"},
-			wantErrContains: "invalid received gpu portion",
-		},
-		{
-			name: "errors when received gpu is missing",
-			nodeLabels: map[string]string{
-				constants.NvidiaGpuMemory: "1500",
-			},
-			wantErrContains: "missing data for NvFractions annotation calculation",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			pod := &v1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Annotations: tt.podAnnotations,
-				},
-				Spec: v1.PodSpec{
-					Containers: []v1.Container{{Name: "container-0"}},
-				},
-			}
-			node := &v1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: tt.nodeLabels,
-				},
-			}
-			bindRequest := &v1alpha2.BindRequest{
-				Spec: v1alpha2.BindRequestSpec{
-					ReceivedGPU: tt.receivedGPU,
-				},
-			}
-			bindingState := &state.BindingState{
-				BindingPodAnnotations: tt.bindingAnnotations,
-			}
-			containerRef, err := common.GetFractionContainerRef(pod)
-			assert.NoError(t, err)
-
-			err = addNvFractionsAnnotationIfMissing(pod, node, bindRequest, containerRef, bindingState)
-
-			if tt.wantErrContains != "" {
-				assert.ErrorContains(t, err, tt.wantErrContains)
-				return
-			}
-
-			assert.NoError(t, err)
-			if tt.wantNoAnnotation {
-				_, found := bindingState.BindingPodAnnotations[annotationKey]
-				assert.False(t, found)
-				return
-			}
-
-			assert.Equal(t, tt.wantAnnotationValue, bindingState.BindingPodAnnotations[annotationKey])
-			for key, value := range tt.bindingAnnotations {
-				assert.Equal(t, value, bindingState.BindingPodAnnotations[key])
-			}
-		})
-	}
-}
-
 func TestGPUSharingRollback(t *testing.T) {
 	tests := []struct {
 		name                     string
@@ -557,7 +432,7 @@ func TestGPUSharingRollback(t *testing.T) {
 			kubeClient := clientBuilder.Build()
 
 			// Create GPUSharing plugin
-			plugin := New(kubeClient, false)
+			plugin := New(kubeClient, false, false)
 
 			// Execute rollback
 			err := plugin.Rollback(context.Background(), tt.pod, nil, tt.bindRequest, nil)
@@ -621,7 +496,7 @@ func TestGPUSharingRollbackDeleteConfigMap(t *testing.T) {
 			}
 			kubeClient := clientBuilder.Build()
 
-			plugin := New(kubeClient, false)
+			plugin := New(kubeClient, false, false)
 			err := plugin.deleteConfigMap(context.Background(), tt.namespace, tt.cmName)
 
 			if tt.expectError {
@@ -639,4 +514,46 @@ func TestGPUSharingRollbackDeleteConfigMap(t *testing.T) {
 			assert.True(t, client.IgnoreNotFound(err) == nil, "ConfigMap should not exist after deletion")
 		})
 	}
+}
+
+func TestGPUSharingPreBindUsesCDIAnnotationWhenNRIPluginEnabled(t *testing.T) {
+	pod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-pod",
+			Namespace: "test-ns",
+			Annotations: map[string]string{
+				constants.GpuFractionContainerName:      "gpu-container",
+				constants.GpuSharingConfigMapAnnotation: "test-shared-gpu",
+			},
+		},
+		Spec: v1.PodSpec{Containers: []v1.Container{{Name: "gpu-container"}}},
+	}
+	bindRequest := &v1alpha2.BindRequest{
+		Spec: v1alpha2.BindRequestSpec{
+			ReceivedResourceType: common.ReceivedTypeFraction,
+			ReceivedGPU:          &v1alpha2.ReceivedGPU{Portion: "0.5"},
+		},
+	}
+	bindingState := &state.BindingState{ReservedGPUIds: []string{"0", "1"}}
+
+	scheme := runtime.NewScheme()
+	_ = v1.AddToScheme(scheme)
+	kubeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(pod).Build()
+
+	err := New(kubeClient, false, true).PreBind(context.Background(), pod, nil, bindRequest, bindingState)
+	assert.NoError(t, err)
+	assert.Equal(t, "0,1", bindingState.BindingPodAnnotations["nvidia.cdi.k8s.io/container.gpu-container"])
+
+	capabilitiesConfigMapName, err := gpusharingconfigmap.ExtractCapabilitiesConfigMapName(
+		pod,
+		&gpusharingconfigmap.PodContainerRef{Container: &pod.Spec.Containers[0]},
+	)
+	assert.NoError(t, err)
+	configMap := &v1.ConfigMap{}
+	err = kubeClient.Get(context.Background(), types.NamespacedName{
+		Namespace: pod.Namespace,
+		Name:      capabilitiesConfigMapName,
+	}, configMap)
+	assert.NoError(t, err)
+	assert.NotContains(t, configMap.Data, constants.NvidiaVisibleDevices)
 }
