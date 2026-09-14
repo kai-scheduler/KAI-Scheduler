@@ -1,0 +1,30 @@
+# Copyright 2025 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# Demo A - targeted reclaim.
+# One pod asking for a whole node's worth of GPUs. Every node holds a
+# healthcheck pod using 1 of its 8 GPUs, so this pod cannot be placed anywhere
+# until one of them is reclaimed. Expect exactly one background pod to be
+# evicted, and the scheduler to pick which node.
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: team-a-fullnode
+  labels:
+    kai.scheduler/queue: team-a
+    app: user-workload
+spec:
+  schedulerName: kai-scheduler
+  priorityClassName: train
+  containers:
+    - name: main
+      image: ubuntu
+      command: ["bash", "-c"]
+      args: ["trap 'exit 0' TERM; sleep infinity & wait"]
+      resources:
+        limits:
+          nvidia.com/gpu: "8"
+        requests:
+          cpu: 500m
+          memory: 512M

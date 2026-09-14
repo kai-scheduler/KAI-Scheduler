@@ -524,7 +524,8 @@ tiers:
     arguments:
       cpu: binpack
       gpu: binpack
-  - name: gpusharingorder`,
+  - name: gpusharingorder
+  - name: backgroundpods`,
 			},
 		},
 		{
@@ -577,7 +578,8 @@ tiers:
   - name: nodeplacement
     arguments:
       cpu: binpack
-      gpu: spread`,
+      gpu: spread
+  - name: backgroundpods`,
 			},
 		},
 		{
@@ -662,7 +664,8 @@ tiers:
     arguments:
       cpu: binpack
       gpu: binpack
-  - name: gpusharingorder`,
+  - name: gpusharingorder
+  - name: backgroundpods`,
 			},
 		},
 		{
@@ -711,7 +714,8 @@ tiers:
     arguments:
       cpu: binpack
       gpu: binpack
-  - name: gpusharingorder`,
+  - name: gpusharingorder
+  - name: backgroundpods`,
 			},
 		},
 		{
@@ -761,7 +765,8 @@ tiers:
     arguments:
       cpu: binpack
       gpu: binpack
-  - name: gpusharingorder`,
+  - name: gpusharingorder
+  - name: backgroundpods`,
 			},
 		},
 		{
@@ -814,7 +819,8 @@ tiers:
     arguments:
       cpu: binpack
       gpu: binpack
-  - name: gpusharingorder`,
+  - name: gpusharingorder
+  - name: backgroundpods`,
 			},
 		},
 		{
@@ -867,7 +873,8 @@ tiers:
     arguments:
       cpu: binpack
       gpu: binpack
-  - name: gpusharingorder`,
+  - name: gpusharingorder
+  - name: backgroundpods`,
 			},
 		},
 		{
@@ -917,7 +924,8 @@ tiers:
   - name: nodeplacement
     arguments:
       cpu: binpack
-      gpu: spread`,
+      gpu: spread
+  - name: backgroundpods`,
 			},
 		},
 		{
@@ -966,6 +974,7 @@ tiers:
       cpu: binpack
       gpu: binpack
   - name: gpusharingorder
+  - name: backgroundpods
 usageDBConfig:
   clientType: prometheus
   connectionString: http://prometheus-operated.kai-scheduler.svc.cluster.local:9090
@@ -1213,6 +1222,7 @@ tiers:
       cpu: binpack
       gpu: binpack
   - name: gpusharingorder
+  - name: backgroundpods
 usageDBConfig:
   clientType: prometheus
   connectionString: http://prometheus-operated.kai-scheduler.svc.cluster.local:9090
