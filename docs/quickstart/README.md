@@ -49,3 +49,14 @@ To submit a pod that requests a GPU resource, use the following command:
 ```
 kubectl apply -f pods/gpu-pod.yaml
 ```
+
+#### Fractional GPU Pods
+
+KAI Scheduler can also schedule pods that request part of a GPU. Cluster administrators choose the GPU-sharing mode during installation:
+
+* `NonMemoryEnforced` schedules fractional GPU workloads without runtime memory isolation.
+* `HamiCore` is based on the [HAMI project](https://github.com/project-hami/hami) for memory isolation.
+* `NvFractions` uses GPU-sharing operator and CUDA memory limit enforcement.
+* `Disabled` rejects fractional GPU workloads.
+
+For installation, configuration, and examples, see [GPU Sharing](../gpu-sharing/README.md).
