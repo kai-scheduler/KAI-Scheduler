@@ -43,6 +43,7 @@ users:
 - system:serviceaccount:{{ .Release.Namespace }}:node-scale-adjuster
 - system:serviceaccount:{{ .Release.Namespace }}:kai-scheduler-crd-manager
 - system:serviceaccount:{{ .Release.Namespace }}:kai-topology-migration
+- system:serviceaccount:{{ .Release.Namespace }}:{{ .Values.postCleanup.serviceAccountName }}
 - system:serviceaccount:{{ .Values.global.resourceReservation.namespace }}:{{ .Values.global.resourceReservation.serviceAccount }}
 volumes:
 - awsElasticBlockStore
@@ -134,6 +135,9 @@ subjects:
     namespace: {{ .Release.Namespace }}
   - kind: ServiceAccount
     name: kai-topology-migration
+    namespace: {{ .Release.Namespace }}
+  - kind: ServiceAccount
+    name: {{ .Values.postCleanup.serviceAccountName }}
     namespace: {{ .Release.Namespace }}
   - kind: ServiceAccount
     name: {{ .Values.global.resourceReservation.serviceAccount }}
