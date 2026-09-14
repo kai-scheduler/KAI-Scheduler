@@ -23,7 +23,10 @@ import (
 const (
 	backgroundLabel = "kai.scheduler/background"
 	nodeName        = "node-0"
+	otherNodeName   = "node-1"
 	hostnameKey     = "kubernetes.io/hostname"
+	zoneKey         = "topology.kubernetes.io/zone"
+	zoneName        = "zone-0"
 )
 
 var maintenanceLabels = map[string]string{"tier": "maintenance"}
@@ -32,14 +35,29 @@ var maintenanceLabels = map[string]string{"tier": "maintenance"}
 // job name starts with "background" so the plugin's default selector matches it.
 func buildSession(t *testing.T, jobs []*jobs_fake.TestJobBasic) *framework.Session {
 	t.Helper()
+	return buildSessionOnNodes(t, jobs, map[string]nodes_fake.TestNodeBasic{
+		nodeName: nodeInZone(nodeName),
+	})
+}
+
+// nodeInZone is an 8-GPU node labelled for both hostname and zone topology keys.
+func nodeInZone(name string) nodes_fake.TestNodeBasic {
+	return nodes_fake.TestNodeBasic{
+		GPUs:   8,
+		Labels: map[string]string{hostnameKey: name, zoneKey: zoneName},
+	}
+}
+
+func buildSessionOnNodes(
+	t *testing.T, jobs []*jobs_fake.TestJobBasic, nodes map[string]nodes_fake.TestNodeBasic,
+) *framework.Session {
+	t.Helper()
 	test_utils.InitTestingInfrastructure()
 
 	topology := test_utils.TestTopologyBasic{
-		Name: t.Name(),
-		Jobs: jobs,
-		Nodes: map[string]nodes_fake.TestNodeBasic{
-			nodeName: {GPUs: 8, Labels: map[string]string{hostnameKey: nodeName}},
-		},
+		Name:  t.Name(),
+		Jobs:  jobs,
+		Nodes: nodes,
 		Queues: []test_utils.TestQueueBasic{
 			{Name: "queue", DeservedGPUs: 8, GPUOverQuotaWeight: 1},
 		},
@@ -102,25 +120,31 @@ func labelledBackgroundJob(name string, gpus float64, podLabels map[string]strin
 // pendingUserJob is a job that has not been placed yet, so allocating it during the session is an
 // arrival on the node rather than something that was already there when the session opened.
 func pendingUserJob(name string, gpus float64, antiAffineTo map[string]string) *jobs_fake.TestJobBasic {
+	return pendingUserJobAt(name, gpus, antiAffineTo, hostnameKey)
+}
+
+func pendingUserJobAt(
+	name string, gpus float64, antiAffineTo map[string]string, topologyKey string,
+) *jobs_fake.TestJobBasic {
 	job := userJob(name, gpus, pod_status.Pending)
 	job.Tasks[0].NodeName = ""
 	if antiAffineTo != nil {
 		job.Tasks[0].PodAntiAffinitySelector = antiAffineTo
-		job.Tasks[0].PodAntiAffinityTopologyKey = hostnameKey
+		job.Tasks[0].PodAntiAffinityTopologyKey = topologyKey
 	}
 	return job
 }
 
 // allocateOnNode places a pending task on the node the way an action would, so it lands in the
 // node's pod list and inter-pod affinity index.
-func allocateOnNode(t *testing.T, ssn *framework.Session, taskName string) {
+func allocateOnNode(t *testing.T, ssn *framework.Session, taskName, node string) {
 	t.Helper()
 	for _, job := range ssn.ClusterInfo.PodGroupInfos {
 		for _, podInfo := range job.GetAllPodsMap() {
 			if podInfo.Name != taskName {
 				continue
 			}
-			require.NoError(t, ssn.Statement().Allocate(podInfo, nodeName))
+			require.NoError(t, ssn.Statement().Allocate(podInfo, node))
 			return
 		}
 	}
@@ -241,7 +265,7 @@ func TestBackgroundPodEvictedWhenRestoreBreaksAntiAffinity(t *testing.T) {
 
 	plugin := newPlugin()
 	plugin.OnSessionOpen(ssn)
-	allocateOnNode(t, ssn, "user-job-0")
+	allocateOnNode(t, ssn, "user-job-0", nodeName)
 	plugin.OnSessionClose(ssn)
 
 	require.Equal(t, pod_status.Releasing, podByName(t, ssn, "background-job-0").Status,
@@ -258,11 +282,34 @@ func TestBackgroundPodRestoredWhenArrivalHasNoConflict(t *testing.T) {
 
 	plugin := newPlugin()
 	plugin.OnSessionOpen(ssn)
-	allocateOnNode(t, ssn, "user-job-0")
+	allocateOnNode(t, ssn, "user-job-0", nodeName)
 	plugin.OnSessionClose(ssn)
 
 	require.Equal(t, pod_status.Running, podByName(t, ssn, "background-job-0").Status,
 		"nothing on the node conflicts, so the background pod keeps its place")
+}
+
+// TestBackgroundPodEvictedWhenArrivalIsOnAnotherNode covers an anti-affinity term whose topology
+// key is wider than the hostname. The workload lands on a different node in the same zone, so the
+// background pod's own node receives nothing, yet restoring it violates the term.
+func TestBackgroundPodEvictedWhenArrivalIsOnAnotherNode(t *testing.T) {
+	ssn := buildSessionOnNodes(t,
+		[]*jobs_fake.TestJobBasic{
+			labelledBackgroundJob("background-job", 1, maintenanceLabels),
+			pendingUserJobAt("user-job", 2, maintenanceLabels, zoneKey),
+		},
+		map[string]nodes_fake.TestNodeBasic{
+			nodeName:      nodeInZone(nodeName),
+			otherNodeName: nodeInZone(otherNodeName),
+		})
+
+	plugin := newPlugin()
+	plugin.OnSessionOpen(ssn)
+	allocateOnNode(t, ssn, "user-job-0", otherNodeName)
+	plugin.OnSessionClose(ssn)
+
+	require.Equal(t, pod_status.Releasing, podByName(t, ssn, "background-job-0").Status,
+		"the zone-level anti-affinity is violated by restoring, even though the node itself was untouched")
 }
 
 // TestUnlabelledPodsAreIgnored checks that the plugin does not touch pods the selector misses.

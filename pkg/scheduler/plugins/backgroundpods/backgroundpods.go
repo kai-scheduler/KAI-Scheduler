@@ -12,7 +12,6 @@ import (
 
 	"k8s.io/apimachinery/pkg/labels"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -36,10 +35,8 @@ type backgroundPodsPlugin struct {
 	selector   labels.Selector
 	namespaces map[string]bool
 
-	// Session scoped. Rebuilt on every OnSessionOpen, cleared on OnSessionClose.
 	statement     *framework.Statement
 	evictedByNode map[string][]*pod_info.PodInfo
-	podsAtOpen    map[string]map[common_info.PodID]bool
 }
 
 func New(arguments framework.PluginArguments) framework.Plugin {
@@ -70,13 +67,10 @@ func (p *backgroundPodsPlugin) Name() string {
 	return Name
 }
 
-// OnSessionOpen evicts every background pod from the in-memory snapshot. The statement is not
-// committed here, so no eviction request is sent: the pods move to Releasing and the capacity they
-// hold shows up in the nodes' releasing vectors for the session to plan against.
+// OnSessionOpen virtually evicts every background pod from the in-memory session.
 func (p *backgroundPodsPlugin) OnSessionOpen(ssn *framework.Session) {
 	p.statement = nil
 	p.evictedByNode = nil
-	p.podsAtOpen = nil
 
 	if p.selector == nil {
 		return
@@ -84,7 +78,6 @@ func (p *backgroundPodsPlugin) OnSessionOpen(ssn *framework.Session) {
 
 	statement := ssn.Statement()
 	evictedByNode := map[string][]*pod_info.PodInfo{}
-	podsAtOpen := map[string]map[common_info.PodID]bool{}
 
 	for nodeName, node := range ssn.ClusterInfo.Nodes {
 		// Collected before evicting: Statement.Evict mutates node.PodInfos.
@@ -97,33 +90,24 @@ func (p *backgroundPodsPlugin) OnSessionOpen(ssn *framework.Session) {
 			}
 			evictedByNode[nodeName] = append(evictedByNode[nodeName], podInfo)
 		}
-
-		if len(evictedByNode[nodeName]) > 0 {
-			podsAtOpen[nodeName] = podKeys(node)
-		}
 	}
 
 	p.statement = statement
 	p.evictedByNode = evictedByNode
-	p.podsAtOpen = podsAtOpen
 
 	log.InfraLogger.V(4).Infof("Background pods: virtually evicted %d pods across %d nodes",
 		countPods(evictedByNode), len(evictedByNode))
 }
 
-// OnSessionClose offers every virtually evicted pod its place back. Pods that still fit are
-// unevicted, and were never disturbed. The rest stay in the statement, and committing it turns
-// them into real eviction requests.
+// OnSessionClose offers every virtually evicted background pod its place back. Pods that still fit are
+// unevicted, so they stay allocated. The rest remain in the statement, and are actually evicted when the statement
 //
-// This relies on plugins being closed in reverse open order, so that the event handlers a statement
-// operation triggers still belong to plugins that are alive.
+//	is committed.
 func (p *backgroundPodsPlugin) OnSessionClose(ssn *framework.Session) {
 	statement := p.statement
 	evictedByNode := p.evictedByNode
-	podsAtOpen := p.podsAtOpen
 	p.statement = nil
 	p.evictedByNode = nil
-	p.podsAtOpen = nil
 
 	if statement == nil {
 		return
@@ -132,16 +116,13 @@ func (p *backgroundPodsPlugin) OnSessionClose(ssn *framework.Session) {
 	restored, displaced := 0, 0
 	for nodeName, podInfos := range evictedByNode {
 		node, found := ssn.ClusterInfo.Nodes[nodeName]
-		if !found {
+		if !found { // This should never happen, if it does, session data is probably corrupted
+			log.InfraLogger.Errorf("Node <%s> not found in cluster info during background pod restoration", nodeName)
 			continue
 		}
 
-		// Evaluated before restoring anything, so that a pod restored here does not count as an
-		// arrival for the pods after it.
-		received := receivedPods(node, podsAtOpen[nodeName])
-
 		for _, podInfo := range sortedByName(podInfos) {
-			if !p.canRestore(ssn, node, podInfo, received) {
+			if !p.canRestore(ssn, node, podInfo) {
 				displaced++
 				continue
 			}
@@ -162,27 +143,13 @@ func (p *backgroundPodsPlugin) OnSessionClose(ssn *framework.Session) {
 	}
 }
 
-// canRestore asks whether the node still has room for the pod, given everything the session
-// committed there. Capacity is checked against idle plus releasing, because the pod's own resources
-// are in the releasing vector and any pipelined task has already drawn against it. The plain
-// IsTaskAllocatable reads idle alone, so the pod would never fit on the node it is running on.
-//
-// Predicates are re-run when the node received a pod this session. A workload that fit in idle
-// capacity was allocated and bound while this pod was out of the node's inter-pod affinity index
-// (node_info.excludedFromPodAffinity), so restoring it can co-locate two pods that a required
-// anti-affinity forbids, which kubelet does not catch. Evaluating the pod against its own node is
-// meaningful for the same reason: it is no longer indexed there, so it is not counted against
-// itself. Nodes that received nothing cannot have gained a conflict, and skipping them keeps the
-// common case free of predicate evaluation.
+// canRestore asks whether the node still has room for the pod, taking into account the idle and releasing
+// resources, and re-evaluating predicates for the pod against its own node.
 func (p *backgroundPodsPlugin) canRestore(
-	ssn *framework.Session, node *node_info.NodeInfo, podInfo *pod_info.PodInfo, checkPredicates bool,
+	ssn *framework.Session, node *node_info.NodeInfo, podInfo *pod_info.PodInfo,
 ) bool {
 	if !node.IsTaskAllocatableOnReleasingOrIdle(podInfo) {
 		return false
-	}
-
-	if !checkPredicates {
-		return true
 	}
 
 	job, found := ssn.ClusterInfo.PodGroupInfos[podInfo.Job]
@@ -204,24 +171,6 @@ func (p *backgroundPodsPlugin) canRestore(
 	}
 
 	return true
-}
-
-func podKeys(node *node_info.NodeInfo) map[common_info.PodID]bool {
-	keys := make(map[common_info.PodID]bool, len(node.PodInfos))
-	for key := range node.PodInfos {
-		keys[key] = true
-	}
-	return keys
-}
-
-// receivedPods reports whether the node holds a pod it did not hold when the session opened.
-func receivedPods(node *node_info.NodeInfo, atOpen map[common_info.PodID]bool) bool {
-	for key := range node.PodInfos {
-		if !atOpen[key] {
-			return true
-		}
-	}
-	return false
 }
 
 // backgroundPodsOnNode returns the session's own PodInfo for each background pod on the node.

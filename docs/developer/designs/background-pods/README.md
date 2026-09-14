@@ -137,11 +137,6 @@ This is needed because a workload that fit in idle capacity was allocated and bo
 Anti-affinity is the clear case: a user pod with a required anti-affinity term matching a background pod passes the filter while that pod is out of the affinity index, fits in the idle capacity next to it, and binds.
 Nothing downstream catches this, since kubelet does not enforce inter-pod anti-affinity, so the check has to happen here, and a background pod that now conflicts with what the node received is evicted rather than restored.
 
-The predicates run only on nodes that received a pod during the session.
-The plugin records each node's pod keys after the evictions in `OnSessionOpen` and compares them at close, so a node that gained nothing skips the check entirely.
-A node that received nothing cannot have gained a conflict, and this keeps the common case, where most nodes are untouched, free of predicate evaluation.
-That matters for cost: the inter-pod affinity prefilter walks the cluster's nodes for each pod it is called on, so running it for every background pod on every node would scale badly.
-`PrePredicateFn` has to run immediately before `PredicateFn` rather than being reused from earlier in the session, because it is what populates the pod's cycle state and it has to see the arrivals.
 
 A pod that fits is restored with `Statement.Unevict`, which marks its eviction operation undone.
 A pod that does not fit stays in the statement.
