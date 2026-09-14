@@ -81,7 +81,8 @@ func GetTasksToAllocate(
 	if podGroupInfo.RootSubGroupSet == nil {
 		return nil
 	}
-	tasks := collectTasksFromSubGroupSet(podGroupInfo.RootSubGroupSet, subGroupOrderFn, taskOrderFn, mode)
+	tasks := collectTasksFromSubGroupSet(
+		podGroupInfo.RootSubGroupSet, subGroupOrderFn, taskOrderFn, mode, podGroupInfo.IsSemiPreemptibleJob())
 	if podGroupInfo.tasksToAllocateByMode == nil {
 		podGroupInfo.tasksToAllocateByMode = make(map[taskAllocationCacheMode][]*pod_info.PodInfo)
 	}
@@ -92,7 +93,7 @@ func GetTasksToAllocate(
 // collectTasksFromSubGroupSet walks the SubGroupSet tree and collects tasks to allocate.
 func collectTasksFromSubGroupSet(
 	sgs *subgroup_info.SubGroupSet, subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn,
-	mode TaskAllocationMode,
+	mode TaskAllocationMode, semiPreemptible bool,
 ) []*pod_info.PodInfo {
 	if mode.enforceGangAdmission() && !sgs.IsReadyForScheduling() {
 		return nil
@@ -108,7 +109,7 @@ func collectTasksFromSubGroupSet(
 		membersToCollect := K - sgs.GetNumActiveAllocatedDirectSubGroups()
 		var tasks []*pod_info.PodInfo
 		for i := 0; i < len(children) && membersToCollect > 0; i++ {
-			childTasks := collectFromChildInGangPhase(children[i], subGroupOrderFn, taskOrderFn, mode)
+			childTasks := collectFromChildInGangPhase(children[i], subGroupOrderFn, taskOrderFn, mode, semiPreemptible)
 			if len(childTasks) == 0 {
 				continue
 			}
@@ -120,7 +121,7 @@ func collectTasksFromSubGroupSet(
 
 	// Elastic phase: get the most prioritized unsatisfied child, and allocate it
 	for i := 0; i < len(children); i++ {
-		childTasks := collectFromChildSubgroup(children[i], subGroupOrderFn, taskOrderFn, mode)
+		childTasks := collectFromChildSubgroup(children[i], subGroupOrderFn, taskOrderFn, mode, semiPreemptible)
 		if len(childTasks) > 0 {
 			return childTasks
 		}
@@ -133,14 +134,14 @@ func collectTasksFromSubGroupSet(
 // is already met and collecting elastic tasks from them would over-count resource needs.
 func collectFromChildInGangPhase(
 	child subgroup_info.SubGroupMember, subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn,
-	mode TaskAllocationMode,
+	mode TaskAllocationMode, semiPreemptible bool,
 ) []*pod_info.PodInfo {
 	switch c := child.(type) {
 	case *subgroup_info.SubGroupSet:
 		if c.IsMinRequirementSatisfied() {
 			return nil // already satisfied; skip in parent gang phase
 		}
-		return collectTasksFromSubGroupSet(c, subGroupOrderFn, taskOrderFn, mode)
+		return collectTasksFromSubGroupSet(c, subGroupOrderFn, taskOrderFn, mode, semiPreemptible)
 	case *subgroup_info.PodSet:
 		if c.GetNumActiveAllocatedTasks() >= int(c.GetMinAvailable()) {
 			return nil // already satisfied; skip in parent gang phase
@@ -150,14 +151,22 @@ func collectFromChildInGangPhase(
 	return nil
 }
 
+// collectFromChildSubgroup collects a child's contribution during the parent's elastic phase.
+// Only semi-preemptible jobs may pull a PodSet below its own minAvailable here: their core/elastic
+// split relies on an orphaned subgroup (one minSubGroup already lets siblings satisfy without it)
+// still being able to burst as reclaimable surplus. Regular jobs keep the strict gang floor -
+// a subgroup that can never reach its own minAvailable must never be scheduled.
 func collectFromChildSubgroup(
 	child subgroup_info.SubGroupMember, subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn,
-	mode TaskAllocationMode,
+	mode TaskAllocationMode, semiPreemptible bool,
 ) []*pod_info.PodInfo {
 	switch c := child.(type) {
 	case *subgroup_info.SubGroupSet:
-		return collectTasksFromSubGroupSet(c, subGroupOrderFn, taskOrderFn, mode)
+		return collectTasksFromSubGroupSet(c, subGroupOrderFn, taskOrderFn, mode, semiPreemptible)
 	case *subgroup_info.PodSet:
+		if semiPreemptible {
+			return collectElasticTaskFromPodSet(c, taskOrderFn, mode)
+		}
 		return collectTasksFromPodSet(c, taskOrderFn, mode)
 	}
 	return nil
@@ -172,6 +181,19 @@ func collectTasksFromPodSet(ps *subgroup_info.PodSet, taskOrderFn common_info.Le
 	if mode.enforceGangAdmission() && ps.GetNumActiveAllocatedTasks() < int(ps.GetMinAvailable()) && taskPriorityQueue.Len() < numTasksToAllocate {
 		return nil
 	}
+	return getTasksFromQueue(taskPriorityQueue, numTasksToAllocate)
+}
+
+// collectElasticTaskFromPodSet grabs one ready task from ps as extra elastic capacity, regardless
+// of whether ps has met its own minAvailable: the parent's gang requirement is already satisfied by
+// other members by the time this runs, so ps is never required to complete its own gang here. A
+// subgroup that can never reach its minAvailable (a broken/orphaned gang) must still be able to burst.
+func collectElasticTaskFromPodSet(ps *subgroup_info.PodSet, taskOrderFn common_info.LessFn, mode TaskAllocationMode) []*pod_info.PodInfo {
+	taskPriorityQueue := getTasksPriorityQueue(ps, taskOrderFn, mode.isRealAllocation())
+	if taskPriorityQueue.Empty() {
+		return nil
+	}
+	numTasksToAllocate := int(math.Min(float64(getNumAllocatableTasks(ps, mode.isRealAllocation())), 1))
 	return getTasksFromQueue(taskPriorityQueue, numTasksToAllocate)
 }
 

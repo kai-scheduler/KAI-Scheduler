@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -215,35 +216,58 @@ func (su *defaultStatusUpdater) RecordJobStatusEvent(
 		return err
 	}
 
-	updatePodgroupStatus := false
+	updatePodgroupStatus := updateCorePods(job)
 	if job.GetNumPendingTasks() > 0 || job.GetNumGatedTasks() > 0 {
 		if !job.IsReadyForScheduling() {
 			su.recordJobNotReadyEvent(job)
+			su.pushPodGroupUpdate(job, patchData, updatePodgroupStatus)
 			return nil
 		}
 		if err := su.recordUnschedulablePodsEvents(job, resolveDetailedFitErrors); err != nil {
 			return err
 		}
-		updatePodgroupStatus = su.recordUnschedulablePodGroup(job)
+		updatePodgroupStatus = su.recordUnschedulablePodGroup(job) || updatePodgroupStatus
 	} else {
-		updatePodgroupStatus = su.clearPodGroupSchedulingCondition(job)
+		updatePodgroupStatus = su.clearPodGroupSchedulingCondition(job) || updatePodgroupStatus
 	}
 
-	if len(patchData) > 0 || updatePodgroupStatus {
-		su.pushToUpdateQueue(
-			&updatePayload{
-				key:        su.keyForPodGroupPayload(job.PodGroup.Name, job.PodGroup.Namespace, job.PodGroup.UID),
-				objectType: podGroupType,
-			},
-			&inflightUpdate{
-				object:       job.PodGroup,
-				patchData:    patchData,
-				updateStatus: updatePodgroupStatus,
-			},
-		)
-	}
+	su.pushPodGroupUpdate(job, patchData, updatePodgroupStatus)
 
 	return nil
+}
+
+// updateCorePods writes the scheduler-owned core pod set onto the pod group status for
+// semi-preemptible jobs, and reports whether it changed. The status write is a full UpdateStatus of
+// the snapshot object, so it must only fire when core membership actually changed.
+func updateCorePods(job *podgroup_info.PodGroupInfo) bool {
+	if !job.IsSemiPreemptibleJob() {
+		return false
+	}
+	if job.PodGroup.Status.SchedulingState != nil &&
+		slices.Equal(job.PodGroup.Status.SchedulingState.CorePods, job.CorePodNames) {
+		return false
+	}
+	job.PodGroup.Status.SchedulingState = &enginev2alpha2.PodGroupSchedulingState{CorePods: job.CorePodNames}
+	return true
+}
+
+func (su *defaultStatusUpdater) pushPodGroupUpdate(
+	job *podgroup_info.PodGroupInfo, patchData []byte, updateStatus bool,
+) {
+	if len(patchData) == 0 && !updateStatus {
+		return
+	}
+	su.pushToUpdateQueue(
+		&updatePayload{
+			key:        su.keyForPodGroupPayload(job.PodGroup.Name, job.PodGroup.Namespace, job.PodGroup.UID),
+			objectType: podGroupType,
+		},
+		&inflightUpdate{
+			object:       job.PodGroup,
+			patchData:    patchData,
+			updateStatus: updateStatus,
+		},
+	)
 }
 
 func (su *defaultStatusUpdater) markTaskUnschedulable(pod *v1.Pod, message string, updatePodCondition bool) error {
@@ -281,7 +305,15 @@ func (su *defaultStatusUpdater) recordStaleJobEvent(job *podgroup_info.PodGroupI
 		}
 	}
 
-	message := fmt.Sprintf("Job is stale. %d pods are active, minMember is %d", totalActivePods, totalMinAvailable) + subGroupMessages
+	// A minSubGroup job never had to reach the sum of every leaf's minMember, so reporting that sum
+	// names a requirement it does not have. Report the requirement it does.
+	header := fmt.Sprintf("Job is stale. %d pods are active, minMember is %d", totalActivePods, totalMinAvailable)
+	if root := job.RootSubGroupSet; root != nil && root.GetMinSubGroup() != nil {
+		header = fmt.Sprintf("Job is stale. %d pods are active, %d of %d required subGroups are satisfied",
+			totalActivePods, root.GetNumGangSatisfiedMembers(), root.GetMinMembersToSatisfy())
+	}
+
+	message := header + subGroupMessages
 
 	su.recorder.Eventf(job.PodGroup, v1.EventTypeNormal, "StaleJob", message)
 }

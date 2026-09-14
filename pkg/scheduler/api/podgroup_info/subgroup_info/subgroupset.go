@@ -130,6 +130,24 @@ func (sgs *SubGroupSet) IsReadyForScheduling() bool {
 	return membersReadyForScheduling >= sgs.GetMinMembersToSatisfy()
 }
 
+// GetNumGangSatisfiedMembers counts the direct members that have formed their own gang.
+func (sgs *SubGroupSet) GetNumGangSatisfiedMembers() int {
+	satisfied := 0
+	for _, member := range sgs.GetMembers() {
+		switch m := member.(type) {
+		case *SubGroupSet:
+			if m.IsGangSatisfied() {
+				satisfied++
+			}
+		case *PodSet:
+			if m.IsGangSatisfied() {
+				satisfied++
+			}
+		}
+	}
+	return satisfied
+}
+
 func (sgs *SubGroupSet) IsMinRequirementSatisfied() bool {
 	return sgs.GetNumActiveAllocatedDirectSubGroups() >= sgs.GetMinMembersToSatisfy()
 }

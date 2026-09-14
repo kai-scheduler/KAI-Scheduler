@@ -1,0 +1,62 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# A hand-authored multi-subgroup semi-preemptible PodGroup: 4 fully-gang replica subgroups with
+# minSubGroup=2. Two replicas are core (in-quota); the other two burst elastically (over-quota) and
+# are reclaimed a whole replica at a time. Each subgroup is fully gang (minMember == size), so there
+# is no pod-level surplus inside a subgroup — minSubGroup is what creates the elastic tier.
+---
+apiVersion: scheduling.run.ai/v2alpha2
+kind: PodGroup
+metadata:
+  name: elastic-replicas
+  namespace: default
+  labels:
+    kai.scheduler/queue: default-queue
+spec:
+  queue: default-queue
+  preemptibility: "semi-preemptible"
+  minSubGroup: 2
+  subGroups:
+    - name: replica-0   # core
+      minMember: 2
+    - name: replica-1   # core
+      minMember: 2
+    - name: replica-2   # elastic — evicted as a whole subgroup
+      minMember: 2
+    - name: replica-3   # elastic — evicted as a whole subgroup
+      minMember: 2
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: elastic-replicas-workers
+  namespace: default
+  annotations:
+    kai.scheduler/skip-podgrouper: "true"
+spec:
+  parallelism: 8
+  completions: 8
+  template:
+    metadata:
+      annotations:
+        pod-group-name: elastic-replicas
+      labels:
+        kai.scheduler/queue: default-queue
+        # Assign pods to subgroups via the kai.scheduler/subgroup-name label. In a real workload each
+        # replica's 2 pods carry the matching subgroup name (replica-0 .. replica-3). This Job places
+        # all pods in replica-0 for illustration; use per-replica Jobs/pods to populate every subgroup.
+        kai.scheduler/subgroup-name: replica-0
+    spec:
+      schedulerName: kai-scheduler
+      restartPolicy: Never
+      containers:
+        - name: worker
+          image: busybox:1.36
+          command: ["sh", "-c", "sleep 3600"]
+          resources:
+            requests:
+              cpu: "250m"
+            limits:
+              cpu: "250m"
