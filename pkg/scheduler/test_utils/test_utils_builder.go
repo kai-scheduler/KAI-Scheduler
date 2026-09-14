@@ -90,7 +90,12 @@ func CreateFakeSession(schedulerConfig *TestSessionConfig,
 	}
 
 	if schedulerConfig != nil {
-		ssn.Config.ScenarioSearchBudgets = schedulerConfig.ScenarioSearchBudgets
+		if schedulerConfig.Config != nil {
+			ssn.Config = schedulerConfig.Config
+		}
+		if schedulerConfig.ScenarioSearchBudgets != nil {
+			ssn.Config.ScenarioSearchBudgets = schedulerConfig.ScenarioSearchBudgets
+		}
 		addSessionPlugins(&ssn, schedulerConfig.Plugins, createCacheMockIfNotExists, schedulerConfig.CachePlugins)
 	}
 
@@ -248,11 +253,7 @@ func BuildDepartmentInfoMap(testMetadata TestTopologyBasic) map[common_info.Queu
 	return departmentInfoMap
 }
 
-func BuildPlugins(testMetadata TestTopologyBasic) []conf.Tier {
-	return buildSchedulerConfiguration(testMetadata).Tiers
-}
-
-func buildSchedulerConfiguration(testMetadata TestTopologyBasic) *conf.SchedulerConfiguration {
+func BuildSchedulerConfig(testMetadata TestTopologyBasic) *conf.SchedulerConfiguration {
 	plugins.InitDefaultPlugins()
 	confFileName := ""
 
@@ -285,14 +286,19 @@ func buildSchedulerConfiguration(testMetadata TestTopologyBasic) *conf.Scheduler
 	return config
 }
 
+func BuildPlugins(testMetadata TestTopologyBasic) []conf.Tier {
+	return BuildSchedulerConfig(testMetadata).Tiers
+}
+
 func BuildSession(testMetadata TestTopologyBasic, controller *Controller) *framework.Session {
-	config := buildSchedulerConfiguration(testMetadata)
+	schedulerResolvedConfig := BuildSchedulerConfig(testMetadata)
 	schedulerConfig := TestSessionConfig{
-		Plugins: config.Tiers,
+		Config:  schedulerResolvedConfig,
+		Plugins: schedulerResolvedConfig.Tiers,
 		CachePlugins: map[string]bool{
 			"predicates": true,
 		},
-		ScenarioSearchBudgets: config.ScenarioSearchBudgets,
+		ScenarioSearchBudgets: schedulerResolvedConfig.ScenarioSearchBudgets,
 	}
 
 	addDefaultDepartmentIfNeeded(&testMetadata)

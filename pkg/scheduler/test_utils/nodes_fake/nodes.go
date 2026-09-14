@@ -58,6 +58,7 @@ type TestNodeBasic struct {
 	MaxTaskNum      *int
 	Labels          map[string]string
 	NumaTopology    *node_info.NumaTopology
+	Conditions      *[]v1.NodeCondition
 }
 
 func BuildNodesInfoMap(
@@ -194,6 +195,16 @@ func buildNodeInfo(
 	}
 	for labelKey, labelValue := range nodeMetadata.Labels {
 		node.Labels[labelKey] = labelValue
+	}
+	if nodeMetadata.Conditions != nil {
+		node.Status.Conditions = *nodeMetadata.Conditions
+	} else if nodeMetadata.GPUs > 0 {
+		node.Status.Conditions = []v1.NodeCondition{
+			{
+				Type:   v1.NodeConditionType(commonconstants.NvFractionNodeReadyConditionType),
+				Status: v1.ConditionTrue,
+			},
+		}
 	}
 	if nodeMetadata.GPUMemory > 0 {
 		node.Labels[node_info.GpuMemoryLabel] = strconv.Itoa(nodeMetadata.GPUMemory)

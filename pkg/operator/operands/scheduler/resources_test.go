@@ -15,7 +15,7 @@ import (
 
 	"github.com/kai-scheduler/KAI-scheduler/cmd/scheduler/app/options"
 	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
+	kaiv1common "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
 	kaiprometheus "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/prometheus"
 	kaiv1qc "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/queue_controller"
 	kaiv1scheduler "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/scheduler"
@@ -432,6 +432,30 @@ func TestBuildArgsList(t *testing.T) {
 				"scheduler-name": "test-scheduler",
 				"namespace":      "kai-system",
 				"log-json":       "true",
+			},
+		},
+		{
+			name: "with gpu sharing mode from global config",
+			config: &kaiv1.Config{
+				Spec: kaiv1.ConfigSpec{
+					Global: &kaiv1.GlobalConfig{
+						SchedulerName:  ptr.To("test-scheduler"),
+						GpuSharingMode: ptr.To(kaiv1common.GpuSharingModeNvFractions),
+					},
+					Namespace: "kai-system",
+					Scheduler: &kaiv1scheduler.Scheduler{
+						Replicas: ptr.To(int32(1)),
+					},
+				},
+			},
+			shard: &kaiv1.SchedulingShard{
+				Spec: kaiv1.SchedulingShardSpec{},
+			},
+			expected: map[string]string{
+				"scheduler-conf":   "config.yaml",
+				"scheduler-name":   "test-scheduler",
+				"namespace":        "kai-system",
+				"gpu-sharing-mode": "NvFractions",
 			},
 		},
 	}
@@ -1498,7 +1522,7 @@ func TestPodDisruptionBudgetForShard(t *testing.T) {
 			config := &kaiv1.Config{}
 			config.Spec.SetDefaultsWhereNeeded()
 			config.Spec.Scheduler.Replicas = ptr.To(tt.replicas)
-			config.Spec.Scheduler.Service.PodDisruptionBudget = &common.PodDisruptionBudget{
+			config.Spec.Scheduler.Service.PodDisruptionBudget = &kaiv1common.PodDisruptionBudget{
 				Enabled:        ptr.To(tt.pdbEnabled),
 				MaxUnavailable: ptr.To(tt.maxUnavailable),
 			}

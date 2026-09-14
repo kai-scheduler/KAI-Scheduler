@@ -104,6 +104,7 @@ type TestDepartmentBasic struct {
 }
 
 type TestSessionConfig struct {
+	Config                *conf.SchedulerConfiguration
 	Plugins               []conf.Tier
 	CachePlugins          map[string]bool
 	ScenarioSearchBudgets *kaiv1.ScenarioSearchBudgets
