@@ -13,6 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_affinity"
@@ -300,14 +301,15 @@ func createTaskGPUMemory() *pod_info.PodInfo {
 			Name:      "gpu-memory-task",
 			Namespace: "default",
 			Annotations: map[string]string{
-				commonconstants.GpuMemory:   "40000",
-				commonconstants.GpuFraction: "0.5",
+				resources.CalcGpuFractionAnnotationForContainer("main"): "40000Mi",
+				commonconstants.GpuFraction:                             "0.5",
 			},
 		},
 		Spec: v1.PodSpec{
 			NodeName: "",
 			Containers: []v1.Container{
 				{
+					Name: "main",
 					Resources: v1.ResourceRequirements{
 						Requests: common_info.BuildResourceList("1000m", "4G"),
 					},

@@ -77,11 +77,11 @@ func (c *calculator) getGPUFraction(pod *v1.Pod) (float64, error) {
 		}
 		return gpuFraction, nil
 	}
-	if pod.Annotations[constants.GpuMemory] != "" {
-		_, err := resources.GetGPUMemory(pod)
-		if err != nil {
-			return 0, err
-		}
+	gpuMemory, err := resources.GetGPUMemory(pod)
+	if err != nil {
+		return 0, err
+	}
+	if gpuMemory > 0 {
 		return c.gpuMemoryToFractionRatio, nil
 	}
 	return 0, fmt.Errorf("pod %v/%v does not have GPU fraction or memory annotation", pod.Namespace, pod.Name)

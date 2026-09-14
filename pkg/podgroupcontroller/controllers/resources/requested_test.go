@@ -12,6 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 )
 
 func Test_extractRequestedResources(t *testing.T) {
@@ -48,7 +49,16 @@ func Test_extractRequestedResources(t *testing.T) {
 					Annotations: map[string]string{constants.GpuMemory: "2000"},
 				},
 			},
-			v1.ResourceList{gpuMemoryResourceName: resource.MustParse("2000")},
+			v1.ResourceList{gpuMemoryResourceName: resource.MustParse("2000Mi")},
+		},
+		{
+			"Pod with NvFractions request",
+			&v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{resources.CalcGpuFractionAnnotationForContainer(""): "2000Mi"},
+				},
+			},
+			v1.ResourceList{gpuMemoryResourceName: resource.MustParse("2000Mi")},
 		},
 		{
 			"Regular cpu pod",
@@ -92,15 +102,15 @@ func compareResourceLists(rightList, leftList v1.ResourceList) error {
 			" right-list: %v, left-list: %v", rightList, leftList)
 	}
 
-	for resourceName, rightListResourceValue := range rightList {
-		leftListResourceValue, ok := leftList[resourceName]
+	for resourceName, rightListResource := range rightList {
+		leftListResource, ok := leftList[resourceName]
 		if !ok {
 			return fmt.Errorf("the resource %s exists in the rightList but doesn't exist in the leftList",
 				resourceName)
 		}
-		if !rightListResourceValue.Equal(leftListResourceValue) {
+		if rightListResource.Value() != leftListResource.Value() {
 			return fmt.Errorf("for the resource %s, the values differ between the list."+
-				" right-list: %v, left-list: %v", resourceName, rightListResourceValue, leftListResourceValue)
+				" right-list: %v, left-list: %v", resourceName, rightListResource, leftListResource)
 		}
 	}
 
