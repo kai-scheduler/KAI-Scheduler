@@ -214,7 +214,7 @@ func (r *BindRequestReconciler) deleteHandler(ctx context.Context, event event.T
 	}
 
 	if common.IsSharedGPUAllocation(bindRequest) {
-		for _, gpuGroup := range bindRequest.Spec.SelectedGPUGroups {
+		for _, gpuGroup := range bindRequest.Spec.SelectedFractionalGpuGroupIDs() {
 			err := r.resourceReservation.SyncForGpuGroup(ctx, gpuGroup)
 			if err != nil {
 				logger.Error(err, "Failed to sync reservation for GPU Group",
