@@ -130,6 +130,11 @@ func GetReclaimQueueDetailsMessage(queueName string, queueAllocated *resource_in
 		queueName, queueAllocated, queueQuota, queueFairShare, queuePriority)
 }
 
+func GetResizeEvictMessage(preemptorJob *podgroup_info.PodGroupInfo, preempteeTask *pod_info.PodInfo) string {
+	return fmt.Sprintf("Pod %s/%s was preempted to free node capacity for a deferred in-place resize of workload %s/%s",
+		preempteeTask.Namespace, preempteeTask.Name, preemptorJob.Namespace, preemptorJob.Name)
+}
+
 func GetConsolidateMessage(preempteeTask *pod_info.PodInfo) string {
 	return fmt.Sprintf(
 		"Pod %s/%s was preempted and rescheduled due to bin packing (resource consolidation) procedure",
