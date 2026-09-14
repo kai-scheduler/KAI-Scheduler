@@ -85,6 +85,20 @@ func TestParsePodGPUFractionRequest(t *testing.T) {
 			},
 			wantErrContaining: "fraction count annotation value must be a positive integer greater than 0",
 		},
+		{
+			name: "NaN portion request",
+			annotations: map[string]string{
+				constants.GpuFraction: "Nan",
+			},
+			wantErrContaining: "gpu-fraction annotation value must be a positive number smaller than 1.0",
+		},
+		{
+			name: "NaN memory request",
+			annotations: map[string]string{
+				constants.GpuMemory: "Nan",
+			},
+			wantErrContaining: "gpu-memory annotation value must be a positive integer greater than 0",
+		},
 	}
 
 	for _, tt := range tests {

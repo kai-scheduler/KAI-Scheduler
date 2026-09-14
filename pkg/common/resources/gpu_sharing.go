@@ -6,6 +6,7 @@ package resources
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -220,7 +221,7 @@ func parseGpuFractionalPortion(pod *v1.Pod) (float64, bool, error) {
 	}
 
 	portion, err := strconv.ParseFloat(gpuFractionPortionStr, 64)
-	if err != nil || portion <= 0 || portion >= 1 {
+	if err != nil || portion <= 0 || portion >= 1 || math.IsNaN(portion) {
 		return 0, true, fmt.Errorf("gpu-fraction annotation value must be a positive number smaller than 1.0")
 	}
 	return portion, true, nil
