@@ -1,0 +1,38 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+suite: test openshift SCC
+
+templates:
+  - rbac/scc.yaml
+release:
+  namespace: custom-ns
+kubernetesProvider:
+  scheme:
+    "apiextensions.k8s.io/v1/CustomResourceDefinition":
+      gvr:
+        group: apiextensions.k8s.io
+        version: v1
+        resource: customresourcedefinitions
+      namespaced: false
+  objects:
+    - kind: CustomResourceDefinition
+      apiVersion: apiextensions.k8s.io/v1
+      metadata:
+        name: clusterversions.config.openshift.io
+tests:
+  - it: should grant the post-delete cleanup ServiceAccount access to the SCC
+    set:
+      postCleanup.serviceAccountName: custom-cleanup-sa
+    asserts:
+      - contains:
+          path: users
+          content: system:serviceaccount:custom-ns:custom-cleanup-sa
+        documentIndex: 0
+      - contains:
+          path: subjects
+          content:
+            kind: ServiceAccount
+            name: custom-cleanup-sa
+            namespace: custom-ns
+        documentIndex: 2
