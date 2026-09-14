@@ -12,9 +12,9 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/constant"
+	commonconstants "github.com/kai-scheduler/api/constants"
+	v2 "github.com/kai-scheduler/api/scheduling/v2"
 )
 
 const (

@@ -14,11 +14,11 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	commonpodgroup "github.com/kai-scheduler/KAI-scheduler/pkg/common/podgroup"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgroupcontroller/controllers/cluster_relations"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgroupcontroller/controllers/metadata"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgroupcontroller/controllers/patcher"
+	"github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
 func (r *PodGroupReconciler) handlePodGroupStatus(ctx context.Context, podGroup *v2alpha2.PodGroup) (

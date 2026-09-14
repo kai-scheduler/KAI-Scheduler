@@ -15,7 +15,6 @@ import (
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes/fake"
 
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -26,6 +25,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	k8splugins "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal/plugins"
+	commonconstants "github.com/kai-scheduler/api/constants"
 )
 
 func newTestSession(t *testing.T, nodes map[string]*node_info.NodeInfo, podGroups map[common_info.PodGroupID]*podgroup_info.PodGroupInfo) *framework.Session {

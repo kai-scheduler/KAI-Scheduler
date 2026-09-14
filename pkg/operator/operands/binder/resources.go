@@ -22,11 +22,11 @@ import (
 
 	nvidiav1 "github.com/kai-scheduler/KAI-scheduler/third_party/nvidia/gpu-operator/api/nvidia/v1"
 
-	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
-	kaiv1binder "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/binder"
 	binderplugins "github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins"
 	kaiConfigUtils "github.com/kai-scheduler/KAI-scheduler/pkg/operator/config"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands/common"
+	kaiv1 "github.com/kai-scheduler/api/kai/v1"
+	kaiv1binder "github.com/kai-scheduler/api/kai/v1/binder"
 )
 
 const (

@@ -8,7 +8,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/cache"
 
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	commonconstants "github.com/kai-scheduler/api/constants"
 )
 
 func setSchedulerPodTransform(informer cache.SharedIndexInformer) error {

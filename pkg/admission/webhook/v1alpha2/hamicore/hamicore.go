@@ -9,7 +9,7 @@ import (
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/common"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/common/gpusharingconfigmap"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
+	"github.com/kai-scheduler/api/utilities/resources"
 )
 
 type HamiCore struct{}

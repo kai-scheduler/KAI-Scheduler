@@ -15,10 +15,10 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
-	schedulingv2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	v2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	commonconstants "github.com/kai-scheduler/api/constants"
+	v2 "github.com/kai-scheduler/api/scheduling/v2"
+	schedulingv2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
+	v2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
 )
 
 const testSchedulerName = "kai-scheduler"

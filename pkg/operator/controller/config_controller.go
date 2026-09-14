@@ -31,7 +31,7 @@ import (
 
 	nvidiav1 "github.com/kai-scheduler/KAI-scheduler/third_party/nvidia/gpu-operator/api/nvidia/v1"
 
-	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
+	kaiv1 "github.com/kai-scheduler/api/kai/v1"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/controller/status_reconciler"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/operator/operands"

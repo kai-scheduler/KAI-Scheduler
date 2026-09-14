@@ -1,0 +1,6 @@
+kind: Changed
+body: Consume CRDs and public facing APIs from standalone kai-scheduler/api module
+time: 2026-07-19T12:05:59.169251+03:00
+custom:
+    Author: SiorMeir
+    Issue: "1384"

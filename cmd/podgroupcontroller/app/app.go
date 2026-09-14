@@ -6,9 +6,9 @@ package app
 import (
 	"context"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
-	commonresources "github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgroupcontroller/controllers"
+	"github.com/kai-scheduler/api/scheduling/v2alpha2"
+	commonresources "github.com/kai-scheduler/api/utilities/resources"
 
 	v1 "k8s.io/api/core/v1"
 	schedulingv1 "k8s.io/api/scheduling/v1"
