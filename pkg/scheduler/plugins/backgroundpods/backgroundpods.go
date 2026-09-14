@@ -12,6 +12,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/labels"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/eviction_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -38,6 +39,7 @@ type backgroundPodsPlugin struct {
 	// Session scoped. Rebuilt on every OnSessionOpen, cleared on OnSessionClose.
 	statement     *framework.Statement
 	evictedByNode map[string][]*pod_info.PodInfo
+	podsAtOpen    map[string]map[common_info.PodID]bool
 }
 
 func New(arguments framework.PluginArguments) framework.Plugin {
@@ -74,6 +76,7 @@ func (p *backgroundPodsPlugin) Name() string {
 func (p *backgroundPodsPlugin) OnSessionOpen(ssn *framework.Session) {
 	p.statement = nil
 	p.evictedByNode = nil
+	p.podsAtOpen = nil
 
 	if p.selector == nil {
 		return
@@ -81,6 +84,7 @@ func (p *backgroundPodsPlugin) OnSessionOpen(ssn *framework.Session) {
 
 	statement := ssn.Statement()
 	evictedByNode := map[string][]*pod_info.PodInfo{}
+	podsAtOpen := map[string]map[common_info.PodID]bool{}
 
 	for nodeName, node := range ssn.ClusterInfo.Nodes {
 		// Collected before evicting: Statement.Evict mutates node.PodInfos.
@@ -93,10 +97,15 @@ func (p *backgroundPodsPlugin) OnSessionOpen(ssn *framework.Session) {
 			}
 			evictedByNode[nodeName] = append(evictedByNode[nodeName], podInfo)
 		}
+
+		if len(evictedByNode[nodeName]) > 0 {
+			podsAtOpen[nodeName] = podKeys(node)
+		}
 	}
 
 	p.statement = statement
 	p.evictedByNode = evictedByNode
+	p.podsAtOpen = podsAtOpen
 
 	log.InfraLogger.V(4).Infof("Background pods: virtually evicted %d pods across %d nodes",
 		countPods(evictedByNode), len(evictedByNode))
@@ -111,8 +120,10 @@ func (p *backgroundPodsPlugin) OnSessionOpen(ssn *framework.Session) {
 func (p *backgroundPodsPlugin) OnSessionClose(ssn *framework.Session) {
 	statement := p.statement
 	evictedByNode := p.evictedByNode
+	podsAtOpen := p.podsAtOpen
 	p.statement = nil
 	p.evictedByNode = nil
+	p.podsAtOpen = nil
 
 	if statement == nil {
 		return
@@ -125,8 +136,12 @@ func (p *backgroundPodsPlugin) OnSessionClose(ssn *framework.Session) {
 			continue
 		}
 
+		// Evaluated before restoring anything, so that a pod restored here does not count as an
+		// arrival for the pods after it.
+		received := receivedPods(node, podsAtOpen[nodeName])
+
 		for _, podInfo := range sortedByName(podInfos) {
-			if !p.canRestore(node, podInfo) {
+			if !p.canRestore(ssn, node, podInfo, received) {
 				displaced++
 				continue
 			}
@@ -149,17 +164,64 @@ func (p *backgroundPodsPlugin) OnSessionClose(ssn *framework.Session) {
 
 // canRestore asks whether the node still has room for the pod, given everything the session
 // committed there. Capacity is checked against idle plus releasing, because the pod's own resources
-// are in the releasing vector and any pipelined task has already drawn against it.
+// are in the releasing vector and any pipelined task has already drawn against it. The plain
+// IsTaskAllocatable reads idle alone, so the pod would never fit on the node it is running on.
 //
-// Predicates are deliberately not re-run. The pod is still bound to the node as far as the k8s
-// predicate snapshot is concerned, so it would be counted against itself and no pod would ever be
-// restored. Covering constraints that are not resource quantities needs a different approach.
-func (p *backgroundPodsPlugin) canRestore(node *node_info.NodeInfo, podInfo *pod_info.PodInfo) bool {
+// Predicates are re-run when the node received a pod this session. A workload that fit in idle
+// capacity was allocated and bound while this pod was out of the node's inter-pod affinity index
+// (node_info.excludedFromPodAffinity), so restoring it can co-locate two pods that a required
+// anti-affinity forbids, which kubelet does not catch. Evaluating the pod against its own node is
+// meaningful for the same reason: it is no longer indexed there, so it is not counted against
+// itself. Nodes that received nothing cannot have gained a conflict, and skipping them keeps the
+// common case free of predicate evaluation.
+func (p *backgroundPodsPlugin) canRestore(
+	ssn *framework.Session, node *node_info.NodeInfo, podInfo *pod_info.PodInfo, checkPredicates bool,
+) bool {
 	if !node.IsTaskAllocatableOnReleasingOrIdle(podInfo) {
 		return false
 	}
 
+	if !checkPredicates {
+		return true
+	}
+
+	job, found := ssn.ClusterInfo.PodGroupInfos[podInfo.Job]
+	if !found {
+		return false
+	}
+
+	// PrePredicateFn first: the k8s filters read the cycle state their prefilter populates.
+	if err := ssn.PrePredicateFn(podInfo, job); err != nil {
+		log.InfraLogger.V(5).Infof("Background pod <%s/%s> fails pre-predicates, not restoring: %v",
+			podInfo.Namespace, podInfo.Name, err)
+		return false
+	}
+
+	if err := ssn.PredicateFn(podInfo, job, node); err != nil {
+		log.InfraLogger.V(5).Infof("Background pod <%s/%s> no longer fits node <%s>, not restoring: %v",
+			podInfo.Namespace, podInfo.Name, node.Name, err)
+		return false
+	}
+
 	return true
+}
+
+func podKeys(node *node_info.NodeInfo) map[common_info.PodID]bool {
+	keys := make(map[common_info.PodID]bool, len(node.PodInfos))
+	for key := range node.PodInfos {
+		keys[key] = true
+	}
+	return keys
+}
+
+// receivedPods reports whether the node holds a pod it did not hold when the session opened.
+func receivedPods(node *node_info.NodeInfo, atOpen map[common_info.PodID]bool) bool {
+	for key := range node.PodInfos {
+		if !atOpen[key] {
+			return true
+		}
+	}
+	return false
 }
 
 // backgroundPodsOnNode returns the session's own PodInfo for each background pod on the node.

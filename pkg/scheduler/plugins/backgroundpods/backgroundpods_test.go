@@ -23,7 +23,10 @@ import (
 const (
 	backgroundLabel = "kai.scheduler/background"
 	nodeName        = "node-0"
+	hostnameKey     = "kubernetes.io/hostname"
 )
+
+var maintenanceLabels = map[string]string{"tier": "maintenance"}
 
 // buildSession assembles a single 8-GPU node holding the given jobs, and labels every pod whose
 // job name starts with "background" so the plugin's default selector matches it.
@@ -35,7 +38,7 @@ func buildSession(t *testing.T, jobs []*jobs_fake.TestJobBasic) *framework.Sessi
 		Name: t.Name(),
 		Jobs: jobs,
 		Nodes: map[string]nodes_fake.TestNodeBasic{
-			nodeName: {GPUs: 8},
+			nodeName: {GPUs: 8, Labels: map[string]string{hostnameKey: nodeName}},
 		},
 		Queues: []test_utils.TestQueueBasic{
 			{Name: "queue", DeservedGPUs: 8, GPUOverQuotaWeight: 1},
@@ -87,6 +90,41 @@ func userJob(name string, gpus float64, state pod_status.PodStatus) *jobs_fake.T
 			{Name: name + "-0", State: state, NodeName: nodeName},
 		},
 	}
+}
+
+// labelledBackgroundJob is a background job whose pod carries labels another pod can select on.
+func labelledBackgroundJob(name string, gpus float64, podLabels map[string]string) *jobs_fake.TestJobBasic {
+	job := backgroundJob(name, gpus)
+	job.Tasks[0].PodAffinityLabels = podLabels
+	return job
+}
+
+// pendingUserJob is a job that has not been placed yet, so allocating it during the session is an
+// arrival on the node rather than something that was already there when the session opened.
+func pendingUserJob(name string, gpus float64, antiAffineTo map[string]string) *jobs_fake.TestJobBasic {
+	job := userJob(name, gpus, pod_status.Pending)
+	job.Tasks[0].NodeName = ""
+	if antiAffineTo != nil {
+		job.Tasks[0].PodAntiAffinitySelector = antiAffineTo
+		job.Tasks[0].PodAntiAffinityTopologyKey = hostnameKey
+	}
+	return job
+}
+
+// allocateOnNode places a pending task on the node the way an action would, so it lands in the
+// node's pod list and inter-pod affinity index.
+func allocateOnNode(t *testing.T, ssn *framework.Session, taskName string) {
+	t.Helper()
+	for _, job := range ssn.ClusterInfo.PodGroupInfos {
+		for _, podInfo := range job.GetAllPodsMap() {
+			if podInfo.Name != taskName {
+				continue
+			}
+			require.NoError(t, ssn.Statement().Allocate(podInfo, nodeName))
+			return
+		}
+	}
+	t.Fatalf("task %q not found in session", taskName)
 }
 
 func newPlugin() framework.Plugin {
@@ -188,6 +226,43 @@ func TestOnlyDisplacedBackgroundPodsAreEvicted(t *testing.T) {
 		"the first background pod in sort order should keep its place")
 	require.Equal(t, pod_status.Releasing, second.Status,
 		"only the second should be displaced")
+}
+
+// TestBackgroundPodEvictedWhenRestoreBreaksAntiAffinity covers the case the capacity check alone
+// misses. The workload has a required anti-affinity against the background pod, fits in the node's
+// idle capacity, and is allocated while the background pod is out of the node's affinity index, so
+// nothing rejects it. Restoring the background pod would leave the two co-located, which kubelet
+// does not enforce, so it must be evicted instead.
+func TestBackgroundPodEvictedWhenRestoreBreaksAntiAffinity(t *testing.T) {
+	ssn := buildSession(t, []*jobs_fake.TestJobBasic{
+		labelledBackgroundJob("background-job", 1, maintenanceLabels),
+		pendingUserJob("user-job", 2, maintenanceLabels),
+	})
+
+	plugin := newPlugin()
+	plugin.OnSessionOpen(ssn)
+	allocateOnNode(t, ssn, "user-job-0")
+	plugin.OnSessionClose(ssn)
+
+	require.Equal(t, pod_status.Releasing, podByName(t, ssn, "background-job-0").Status,
+		"restoring the background pod would violate the workload's required anti-affinity")
+}
+
+// TestBackgroundPodRestoredWhenArrivalHasNoConflict is the control for the test above: the same
+// arrival without the anti-affinity term leaves the background pod in place.
+func TestBackgroundPodRestoredWhenArrivalHasNoConflict(t *testing.T) {
+	ssn := buildSession(t, []*jobs_fake.TestJobBasic{
+		labelledBackgroundJob("background-job", 1, maintenanceLabels),
+		pendingUserJob("user-job", 2, nil),
+	})
+
+	plugin := newPlugin()
+	plugin.OnSessionOpen(ssn)
+	allocateOnNode(t, ssn, "user-job-0")
+	plugin.OnSessionClose(ssn)
+
+	require.Equal(t, pod_status.Running, podByName(t, ssn, "background-job-0").Status,
+		"nothing on the node conflicts, so the background pod keeps its place")
 }
 
 // TestUnlabelledPodsAreIgnored checks that the plugin does not touch pods the selector misses.
