@@ -119,7 +119,7 @@ KAI can auto-detect CDI and the CDI NRI plugin from the NVIDIA GPU Operator `Clu
 
 Use that detection to decide whether fractional GPU pods need a runtime class:
 
-- If the cluster uses CDI as the default GPU device injection path, fractional GPU pods usually do not need `runtimeClassName: nvidia`; set `admission.gpuFractionRuntimeClassName=null`.
+- If the cluster uses CDI as the default GPU device injection path, fractional GPU pods usually do not need `runtimeClassName: nvidia`; set `admission.gpuFractionRuntimeClassName` to an empty string.
 - If the cluster does not use CDI as the default path and the default container runtime is not already NVIDIA-enabled, keep the default `admission.gpuFractionRuntimeClassName=nvidia` or set a custom runtime class.
 - If KAI cannot read the NVIDIA `ClusterPolicy`, configure the runtime class and CDI behavior explicitly.
 
@@ -128,8 +128,10 @@ To suppress `runtimeClassName` injection on fractional GPU pods:
 ```bash
 helm upgrade -i kai-scheduler oci://ghcr.io/kai-scheduler/kai-scheduler/kai-scheduler \
   -n kai-scheduler --create-namespace \
-  --set admission.gpuFractionRuntimeClassName=null
+  --set-string admission.gpuFractionRuntimeClassName=""
 ```
+
+Do not set this value to `null`; an unset value is defaulted by the operator to `nvidia`.
 
 KAI also creates GPU reservation pods for fractional GPU workloads. If reservation pods need a runtime class for GPU access, set it separately:
 
