@@ -182,6 +182,9 @@ func TestBindApplyResourceReceivedType(t *testing.T) {
 
 	err := binder.Bind(context.TODO(), pod, &v1.Node{ObjectMeta: metav1.ObjectMeta{
 		Name: "my-node",
+		Labels: map[string]string{
+			constants.NvidiaGpuMemory: "1000",
+		},
 	}}, bindRequest)
 
 	assert.Nil(t, err)
