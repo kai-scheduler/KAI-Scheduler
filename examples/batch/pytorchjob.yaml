@@ -4,7 +4,7 @@
 apiVersion: "kubeflow.org/v1"
 kind: "PyTorchJob"
 metadata:
-  name: "pytorch-dist-mnist-nccl"
+  name: "pytorch-dist-mnist"
   labels:
     kai.scheduler/queue: default-queue
 spec:
@@ -19,7 +19,6 @@ spec:
             - name: pytorch
               image: ghcr.io/kubeflow/training-v1/pytorch-dist-mnist:latest
               args: ["--backend", "nccl", "--batch-size", "2048", "--epochs", "900"]
-              # Comment out the below resources to use the CPU.
               resources:
                 limits:
                   nvidia.com/gpu: "1"
@@ -33,7 +32,6 @@ spec:
             - name: pytorch
               image: ghcr.io/kubeflow/training-v1/pytorch-dist-mnist:latest
               args: ["--backend", "nccl", "--batch-size", "2048", "--epochs", "900"]
-              # Comment out the below resources to use the CPU.
               resources:
                 limits:
                   nvidia.com/gpu: "1"
