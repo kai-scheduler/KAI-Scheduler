@@ -100,6 +100,7 @@ func New(
 }
 
 func (su *defaultStatusUpdater) Evicted(
+	evictedPod *v1.Pod,
 	evictedPodGroup *enginev2alpha2.PodGroup,
 	evictionMetadata eviction_info.EvictionMetadata,
 	message string,
@@ -119,11 +120,10 @@ func (su *defaultStatusUpdater) Evicted(
 
 	nodepool := utils.GetNodePoolNameFromLabels(evictedPodGroup.Labels, su.nodePoolLabelKey)
 	metrics.IncPodGroupEvictedPods(
-		evictedPodGroup.Name,
-		evictedPodGroup.Namespace,
-		string(evictedPodGroup.UID),
+		evictedPodGroup,
 		nodepool,
 		evictionMetadata.Action,
+		evictedPod.Labels[commonconstants.SubGroupLabelKey],
 	)
 }
 

@@ -57,6 +57,12 @@ func NewScheduler(
 	schedulerParams *conf.SchedulerParams,
 	mux *http.ServeMux,
 ) (*Scheduler, error) {
+	configuredActions, err := conf_util.GetActionsFromConfig(schedulerConf)
+	if err != nil {
+		return nil, err
+	}
+	evictionActionNames := getEvictionActionNames(configuredActions)
+
 	kubeClient, kubeAiSchedulerClient := newClients(config)
 
 	nrtClient, err := nrtclientset.NewForConfig(config)
@@ -95,6 +101,7 @@ func NewScheduler(
 		UpdatePodEvictionCondition:  schedulerParams.UpdatePodEvictionCondition,
 		StuckInReleasingThreshold:   schedulerParams.StuckInReleasingThreshold,
 		DiscoveryClient:             discoveryClient,
+		EvictionActionNames:         evictionActionNames,
 	}
 
 	schedulerCache, err := schedcache.New(schedulerCacheParams)
@@ -111,6 +118,16 @@ func NewScheduler(
 	}
 
 	return scheduler, nil
+}
+
+func getEvictionActionNames(actions []framework.Action) []string {
+	actionNames := make([]string, 0, len(actions))
+	for _, action := range actions {
+		if framework.IsEvictionAction(action.Name()) {
+			actionNames = append(actionNames, string(action.Name()))
+		}
+	}
+	return actionNames
 }
 
 func (s *Scheduler) Run(stopCh <-chan struct{}) {
