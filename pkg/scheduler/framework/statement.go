@@ -242,6 +242,7 @@ func (s *Statement) Pipeline(task *pod_info.PodInfo, hostname string, updateTask
 	if err := job.UpdateTaskStatus(task, pod_status.Pipelined); err != nil {
 		log.InfraLogger.Errorf("Failed to update task <%v/%v> status to %v in Session <%v>: %v",
 			task.Namespace, task.Name, pod_status.Pipelined, s.sessionID, err)
+		return err
 	}
 
 	previousNode := task.NodeName
