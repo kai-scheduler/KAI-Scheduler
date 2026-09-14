@@ -1336,6 +1336,12 @@ spec:
                 items:
                   properties:
                     computeSharingMode:
+                      description: |-
+                        GPUComputeSharingMode selects how compute is shared between the pods that are
+                        assigned to the same fractional GPU group.
+                      enum:
+                      - time-slicing
+                      - sm-sharing
                       type: string
                     id:
                       type: string

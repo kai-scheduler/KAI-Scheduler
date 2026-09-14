@@ -47,6 +47,9 @@ type BindRequestSpec struct {
 	BackoffLimit *int32 `json:"backoffLimit,omitempty"`
 }
 
+// GPUComputeSharingMode selects how compute is shared between the pods that are
+// assigned to the same fractional GPU group.
+// +kubebuilder:validation:Enum=time-slicing;sm-sharing
 type GPUComputeSharingMode string
 
 const (
