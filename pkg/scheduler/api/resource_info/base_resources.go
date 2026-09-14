@@ -13,11 +13,11 @@ import (
 )
 
 const (
-	minMilliCPU             float64 = 10
-	minMilliScalarResources int64   = 10
-	MinMemory               float64 = 10 * 1024 * 1024
-	MilliCPUToCores         float64 = 1000
-	MemoryToGB              float64 = 1000 * 1000 * 1000
+	minMilliCPU        float64 = 10
+	minScalarResources int64   = 1
+	MinMemory          float64 = 10 * 1024 * 1024
+	MilliCPUToCores    float64 = 1000
+	MemoryToGB         float64 = 1000 * 1000 * 1000
 )
 
 type BaseResource struct {
@@ -110,7 +110,7 @@ func (r *BaseResource) ToResourceList() v1.ResourceList {
 	rl[v1.ResourceCPU] = *resource.NewMilliQuantity(int64(r.milliCpu), resource.DecimalSI)
 	rl[v1.ResourceMemory] = *resource.NewQuantity(int64(r.memory), resource.DecimalSI)
 	for rName, rQuant := range r.scalarResources {
-		rl[rName] = *resource.NewMilliQuantity(int64(rQuant), resource.DecimalSI)
+		rl[rName] = *resource.NewQuantity(int64(rQuant), resource.DecimalSI)
 	}
 
 	return rl
@@ -121,7 +121,7 @@ func (r *BaseResource) IsEmpty() bool {
 		return false
 	}
 	for _, rQuant := range r.scalarResources {
-		if rQuant >= minMilliScalarResources {
+		if rQuant >= minScalarResources {
 			return false
 		}
 	}
