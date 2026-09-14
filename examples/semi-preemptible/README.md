@@ -12,6 +12,9 @@ model and semantics.
 - [`podgroup-subgroups.yaml`](podgroup-subgroups.yaml) — a hand-authored multi-subgroup PodGroup with
   `minSubGroup: 2` over 4 fully-gang replica subgroups: 2 core replicas, 2 elastic (reclaimed a whole
   replica at a time).
+- [`podgroup-min-non-preemptible.yaml`](podgroup-min-non-preemptible.yaml) — the same 4 replica
+  subgroups, but with `minSubGroup: 1` and `minNonPreemptible: 2`: schedulable on one replica,
+  protected at two, bursts to four.
 - [`pytorch-elastic-semi-preemptible.yaml`](pytorch-elastic-semi-preemptible.yaml) — an elastic
   PyTorchJob marked semi-preemptible via the `kai.scheduler/preemptibility` label
   (`minReplicas < replicas`). Requires the training-operator.

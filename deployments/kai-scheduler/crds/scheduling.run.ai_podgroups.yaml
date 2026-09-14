@@ -59,6 +59,17 @@ spec:
                 format: int32
                 minimum: 0
                 type: integer
+              minNonPreemptible:
+                description: |-
+                  MinNonPreemptible defines how much of a semi-preemptible PodGroup is protected from preemption
+                  and charged against the queue's quota: the number of direct child SubGroups when SubGroups are
+                  defined, otherwise the number of pods. Must be at least minMember/minSubGroup - it raises the
+                  protected shape above the scheduling minimum without raising the gang requirement. When unset,
+                  the scheduling minimum is also the protected shape.
+                  Only applicable to semi-preemptible PodGroups.
+                format: int32
+                minimum: 0
+                type: integer
               minSubGroup:
                 description: |-
                   MinSubGroup defines the minimal number of direct child SubGroups required for this PodGroup to be schedulable.

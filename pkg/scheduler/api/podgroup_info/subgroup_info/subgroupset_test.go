@@ -437,3 +437,22 @@ func TestGetNumActiveAllocatedDirectSubGroups(t *testing.T) {
 		}
 	})
 }
+
+// The scheduler snapshots the tree via Clone() for every simulation; a threshold lost here silently
+// reverts the core set to the gang minimum inside preempt and reclaim.
+func TestClone_CarriesMinNonPreemptible(t *testing.T) {
+	root := NewSubGroupSet("root", nil)
+	root.SetMinNonPreemptible(ptr.To(int32(2)))
+	ps := newTestPodSet("a", 1)
+	ps.SetMinNonPreemptible(ptr.To(int32(3)))
+	root.AddPodSet(ps)
+
+	clone := root.Clone()
+
+	if got := clone.GetMinNonPreemptible(); got == nil || *got != 2 {
+		t.Errorf("root minNonPreemptible not cloned: got %v", got)
+	}
+	if got := clone.GetDirectPodSets()[0].GetMinNonPreemptible(); got == nil || *got != 3 {
+		t.Errorf("podset minNonPreemptible not cloned: got %v", got)
+	}
+}

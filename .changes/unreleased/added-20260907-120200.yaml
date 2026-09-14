@@ -1,0 +1,3 @@
+kind: Added
+body: |-
+  minNonPreemptible sets a semi-preemptible PodGroup's protected shape independently of minMember

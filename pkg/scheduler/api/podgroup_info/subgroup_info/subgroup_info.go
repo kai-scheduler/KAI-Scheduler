@@ -11,6 +11,7 @@ type SubGroupInfo struct {
 	parent             *SubGroupSet
 	name               string
 	topologyConstraint *topology_info.TopologyConstraintInfo
+	minNonPreemptible  *int32
 }
 
 func newSubGroupInfo(name string, topologyConstraint *topology_info.TopologyConstraintInfo) *SubGroupInfo {
@@ -35,4 +36,14 @@ func (sgi *SubGroupInfo) SetParent(parent *SubGroupSet) {
 
 func (sgi *SubGroupInfo) GetParent() *SubGroupSet {
 	return sgi.parent
+}
+
+// GetMinNonPreemptible returns the node's explicit non-preemptible threshold, or nil when the node
+// falls back to its gang minimum.
+func (sgi *SubGroupInfo) GetMinNonPreemptible() *int32 {
+	return sgi.minNonPreemptible
+}
+
+func (sgi *SubGroupInfo) SetMinNonPreemptible(minNonPreemptible *int32) {
+	sgi.minNonPreemptible = minNonPreemptible
 }

@@ -107,6 +107,35 @@ var _ = Describe("Semi-Preemptible Capacity Policy", func() {
 		tasks := podgroup_info.GetTasksToAllocate(job, dummyTasksLessThen, dummyTasksLessThen, podgroup_info.PartialTaskAllocation)
 		Expect(cp.IsNonPreemptibleJobOverQuota(job, tasks).IsSchedulable).To(BeFalse())
 	})
+
+	It("keeps charging quota above minMember while minNonPreemptible is unmet", func() {
+		// minMember=1 so the gang is satisfied by the first pod, but minNonPreemptible=3 keeps the
+		// core unsatisfied - the 2nd pod is still core and must be quota-checked. Queue deserved=2
+		// with 2 already allocated non-preemptible leaves no room, so it is rejected.
+		job := semiPreemptibleJob(1, map[common_info.PodID]*pod_info.PodInfo{
+			"t1": oneGpuTask("t1", pod_status.Running),
+			"t2": oneGpuTask("t2", pod_status.Pending),
+		})
+		job.PodSets[podgroup_info.DefaultSubGroup].SetMinNonPreemptible(ptr.To(int32(3)))
+		cp := New(newQueue(2), ptr.To[int64](node_info.DefaultGpuMemory))
+		tasks := podgroup_info.GetTasksToAllocate(job, dummyTasksLessThen, dummyTasksLessThen, podgroup_info.PartialTaskAllocation)
+		Expect(cp.IsNonPreemptibleJobOverQuota(job, tasks).IsSchedulable).To(BeFalse())
+	})
+
+	It("charges nothing once minNonPreemptible is satisfied (elastic burst)", func() {
+		// The same job with its full core running: the 4th pod is elastic and charges 0, so it fits
+		// even though the queue is at its deserved quota.
+		job := semiPreemptibleJob(1, map[common_info.PodID]*pod_info.PodInfo{
+			"t1": oneGpuTask("t1", pod_status.Running),
+			"t2": oneGpuTask("t2", pod_status.Running),
+			"t3": oneGpuTask("t3", pod_status.Running),
+			"t4": oneGpuTask("t4", pod_status.Pending),
+		})
+		job.PodSets[podgroup_info.DefaultSubGroup].SetMinNonPreemptible(ptr.To(int32(3)))
+		cp := New(newQueue(2), ptr.To[int64](node_info.DefaultGpuMemory))
+		tasks := podgroup_info.GetTasksToAllocate(job, dummyTasksLessThen, dummyTasksLessThen, podgroup_info.PartialTaskAllocation)
+		Expect(cp.IsNonPreemptibleJobOverQuota(job, tasks).IsSchedulable).To(BeTrue())
+	})
 })
 
 func commonUnlimited() float64 {

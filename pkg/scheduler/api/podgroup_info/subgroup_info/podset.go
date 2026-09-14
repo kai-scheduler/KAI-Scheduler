@@ -149,7 +149,9 @@ func (ps *PodSet) GetNumPendingTasks() int {
 }
 
 func (ps *PodSet) Clone() *PodSet {
-	return NewPodSet(ps.GetName(), ps.GetMinAvailable(), ps.GetTopologyConstraint())
+	clone := NewPodSet(ps.GetName(), ps.GetMinAvailable(), ps.GetTopologyConstraint())
+	clone.SetMinNonPreemptible(ps.GetMinNonPreemptible())
+	return clone
 }
 
 func (ps *PodSet) GetSchedulingConstraintsSignature() common_info.SchedulingConstraintsSignature {

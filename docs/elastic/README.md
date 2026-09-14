@@ -66,7 +66,29 @@ spec:
       minMember: 8
 ```
 
-The valid, supported cases are elastic workloads (`minReplicas < replicas`) and hand-authored `minSubGroup` trees. Increasing `minMember` or `minSubGroup` on a running semi-preemptible PodGroup is rejected by the admission webhook (it would reclassify running elastic pods/subgroups as core); decreasing is allowed.
+The valid, supported cases are elastic workloads (`minReplicas < replicas`) and hand-authored `minSubGroup` trees. Increasing `minMember`, `minSubGroup` or `minNonPreemptible` on a running semi-preemptible PodGroup is rejected by the admission webhook (it would reclassify running elastic pods/subgroups as core); decreasing is allowed.
+
+### Protecting more than the scheduling minimum
+
+By default the protected shape *is* the scheduling minimum, so guaranteeing 2 subgroups means setting `minSubGroup: 2` — which also stops the job from starting until 2 subgroups fit. `minNonPreemptible` separates the two: the gang requirement stays where it is, and the field names how much is protected and charged to quota — see [`semi-preemptible/podgroup-min-non-preemptible.yaml`](../../examples/semi-preemptible/podgroup-min-non-preemptible.yaml):
+
+```yaml
+spec:
+  preemptibility: "semi-preemptible"
+  minSubGroup: 1            # starts as soon as 1 subgroup fits
+  minNonPreemptible: 2      # 2 subgroups are protected and in-quota
+  subGroups:                # bursts to 4 when there is spare capacity
+    - name: replica-0
+      minMember: 8
+    - name: replica-1
+      minMember: 8
+    - name: replica-2
+      minMember: 8
+    - name: replica-3
+      minMember: 8
+```
+
+The field counts **subgroups** when the PodGroup defines `subGroups`, and **pods** otherwise — matching whichever of `minSubGroup` / `minMember` the PodGroup itself declares. It may only raise the protected shape: a value below `minMember` / `minSubGroup` is rejected, since pods that are required to start the gang are never given up to preemption.
 
 ### Combining with automatic segmentation
 
