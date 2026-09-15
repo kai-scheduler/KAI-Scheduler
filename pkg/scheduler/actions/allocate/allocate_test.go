@@ -25,7 +25,6 @@ import (
 
 	. "go.uber.org/mock/gomock"
 
-	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/allocate"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/integration_tests/integration_tests_utils"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
@@ -38,6 +37,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/nodes_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
+	schedulingv1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
 )
 
 func TestHandleAllocation(t *testing.T) {

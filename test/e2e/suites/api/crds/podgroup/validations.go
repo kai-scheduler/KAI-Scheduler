@@ -10,13 +10,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
-	kubeAiSchedClient "github.com/kai-scheduler/KAI-scheduler/pkg/apis/client/clientset/versioned"
-	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
-	schedulingv2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/pod_group"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/utils"
+	kubeAiSchedClient "github.com/kai-scheduler/api/client/clientset/versioned"
+	v2 "github.com/kai-scheduler/api/scheduling/v2"
+	schedulingv2alpha2 "github.com/kai-scheduler/api/scheduling/v2alpha2"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"

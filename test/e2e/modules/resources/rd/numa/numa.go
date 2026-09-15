@@ -17,10 +17,10 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
-	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
-	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd"
+	commonconstants "github.com/kai-scheduler/api/constants"
+	schedulingv1alpha2 "github.com/kai-scheduler/api/scheduling/v1alpha2"
+	v2 "github.com/kai-scheduler/api/scheduling/v2"
 )
 
 // Topology Manager policy values as reported in NRT (mirror the kubelet policy names).

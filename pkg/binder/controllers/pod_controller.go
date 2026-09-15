@@ -20,7 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding/resourcereservation"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
+	"github.com/kai-scheduler/api/utilities/resources"
 )
 
 // PodReconciler reconciles a Pod object

@@ -13,12 +13,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
-	v2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/configurations/feature_flags"
 	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd"
 	numautil "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/numa"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
+	v2 "github.com/kai-scheduler/api/scheduling/v2"
 )
 
 // DescribeNUMAReclaimSpecs asserts NUMA constraints are honored when a queue reclaims resources: the

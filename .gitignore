@@ -21,3 +21,4 @@ cmd/snapshot-tool/snapshot-tool
 cmd/time-aware-simulator/time-aware-simulator
 cmd/time-aware-simulator/simulation_results.csv
 cmd/time-aware-simulator/venv
+test/e2e/scale/kwok_scale_test.json

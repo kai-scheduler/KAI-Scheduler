@@ -26,9 +26,9 @@ import (
 
 	"sigs.k8s.io/yaml"
 
-	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	kaiv1 "github.com/kai-scheduler/api/kai/v1"
 )
 
 /*

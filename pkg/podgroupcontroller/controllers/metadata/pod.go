@@ -14,8 +14,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	commonpod "github.com/kai-scheduler/KAI-scheduler/pkg/common/pod"
-	commonresources "github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgroupcontroller/controllers/resources"
+	commonresources "github.com/kai-scheduler/api/utilities/resources"
 )
 
 type PodMetadata struct {
