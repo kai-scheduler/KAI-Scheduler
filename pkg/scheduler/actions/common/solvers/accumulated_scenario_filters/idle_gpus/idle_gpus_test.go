@@ -14,6 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	inputfilters "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -896,7 +897,7 @@ func TestAccumulatedIdleGpus_updateStateWithScenario(t *testing.T) {
 				recordedVictimsInCache:  tt.fields.recordedVictimsInCache,
 				potentialVictimsInCache: tt.fields.potentialVictimsInCache,
 			}
-			err := ig.updateStateWithScenario(tt.args.scenario, tt.args.isFirstScenario)
+			err := ig.updateStateWithScenario(inputfilters.NewFullScanScenarioInput(tt.args.scenario), tt.args.isFirstScenario)
 			if err != nil != tt.want.wantErr {
 				t.Errorf("updateStateWithScenario() error = %v, err %v", err, tt.want.wantErr)
 			}
@@ -1367,7 +1368,7 @@ func TestAccumulatedIdleGpus_Filter(t *testing.T) {
 				recordedVictimsInCache:  tt.fields.recordedVictimsInCache,
 				potentialVictimsInCache: tt.fields.potentialVictimsInCache,
 			}
-			validScenario, err := ig.Filter(tt.args.scenario)
+			validScenario, err := ig.Filter(inputfilters.NewFullScanScenarioInput(tt.args.scenario))
 			if (err != nil) != tt.want.err {
 				t.Errorf("Filter() error = %v, err %v", err, tt.want.err)
 				return

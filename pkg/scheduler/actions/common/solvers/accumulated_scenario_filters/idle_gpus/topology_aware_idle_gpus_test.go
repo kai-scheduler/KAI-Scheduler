@@ -15,6 +15,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	inputfilters "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -612,7 +613,7 @@ func buildJob(name string, tasks []*tasks_fake.TestTaskBasic, rootSubGroupSet *s
 // runFilterCheck runs the filter and asserts the expected validity.
 func runFilterCheck(t *testing.T, filter *TopologyAwareIdleGpus, s *scenario.ByNodeScenario, wantValid bool, reason string) {
 	t.Helper()
-	valid, err := filter.Filter(s)
+	valid, err := filter.Filter(inputfilters.NewFullScanScenarioInput(s))
 	if err != nil {
 		t.Fatalf("Filter returned error: %v", err)
 	}
