@@ -264,7 +264,7 @@ Phase 1 drains available generators in normal scheduler plugin order. A later ge
 
 #### Generator Checkpointing Across Scheduling Sessions
 
-A future portfolio can persist per-job generator progress across scheduling sessions so a job that exhausts its current budget can resume near the last tried scenario instead of restarting from the first generator candidate every session. The checkpoint should record enough state to resume safely, such as job/probe identity, generator name, generator cursor or last scenario fingerprint, budget stop reason, and an input fingerprint covering pending tasks, recorded victims, feasible nodes, plugin order, generator configuration, and relevant cluster state. If any fingerprint input changes, the checkpoint must be discarded and the next session should restart from the beginning rather than reuse stale generator state.
+Cross-session reclaim progress is specified in [Resumable Scenario-Generator Checkpoints](./resumable-scenario-generator-checkpoints/README.md). That proposal defines bounded per-job storage, direct generator cursors, safe input invalidation, and large-cluster performance requirements.
 
 #### Possible Future Generators
 
