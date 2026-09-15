@@ -32,6 +32,7 @@ var _ = Describe("Binder", func() {
 		Expect(binder.Service.Resources.Requests[v1.ResourceMemory]).To(Equal(resource.MustParse("200Mi")))
 		Expect(binder.Service.Resources.Limits[v1.ResourceCPU]).To(Equal(resource.MustParse("100m")))
 		Expect(binder.Service.Resources.Limits[v1.ResourceMemory]).To(Equal(resource.MustParse("200Mi")))
+		Expect(*binder.GoMemLimitRatio).To(Equal(0.85))
 		Expect(binder.Plugins).To(HaveLen(4))
 		Expect(*binder.Plugins[VolumeBindingPluginName].Priority).To(Equal(defaultPluginPriorities[VolumeBindingPluginName]))
 		Expect(*binder.Plugins[DynamicResourcesPluginName].Priority).To(Equal(defaultPluginPriorities[DynamicResourcesPluginName]))

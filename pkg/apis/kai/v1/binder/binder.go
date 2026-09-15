@@ -79,6 +79,17 @@ type Binder struct {
 	// MetricsPort specifies the metrics service port
 	MetricsPort *int `json:"metricsPort,omitempty"`
 
+	// GoMemLimitRatio is the fraction of the Binder memory limit applied as GOMEMLIMIT. Defaults to 0.85.
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:ExclusiveMinimum=true
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=1
+	GoMemLimitRatio *float64 `json:"goMemLimitRatio,omitempty"`
+
+	// GoMemLimit overrides automatic cgroup-derived GOMEMLIMIT for Binder.
+	// +kubebuilder:validation:Optional
+	GoMemLimit *resource.Quantity `json:"goMemLimit,omitempty"`
+
 	// CDIEnabled Specifies if the gpu device plugin uses the cdi devices api to set gpu devices to the pods
 	// leave empty if unsure to let the operator auto detect using ClusterPolicy (nvidia gpu-operator only)
 	// +kubebuilder:validation:Optional
@@ -127,6 +138,7 @@ func (b *Binder) SetDefaultsWhereNeeded(replicaCount *int32, globalVPA *common.V
 
 	b.ProbePort = common.SetDefault(b.ProbePort, ptr.To(8081))
 	b.MetricsPort = common.SetDefault(b.MetricsPort, ptr.To(8080))
+	b.GoMemLimitRatio = common.SetDefault(b.GoMemLimitRatio, ptr.To(0.85))
 
 	b.setDefaultPlugins()
 

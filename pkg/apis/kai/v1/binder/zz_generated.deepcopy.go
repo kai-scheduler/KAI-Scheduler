@@ -52,6 +52,16 @@ func (in *Binder) DeepCopyInto(out *Binder) {
 		*out = new(int)
 		**out = **in
 	}
+	if in.GoMemLimitRatio != nil {
+		in, out := &in.GoMemLimitRatio, &out.GoMemLimitRatio
+		*out = new(float64)
+		**out = **in
+	}
+	if in.GoMemLimit != nil {
+		in, out := &in.GoMemLimit, &out.GoMemLimit
+		x := (*in).DeepCopy()
+		*out = &x
+	}
 	if in.CDIEnabled != nil {
 		in, out := &in.CDIEnabled, &out.CDIEnabled
 		*out = new(bool)
