@@ -86,7 +86,7 @@ func (r *ConfigReconciler) SetOperands(ops []operands.Operand) {
 // +kubebuilder:rbac:groups="admissionregistration.k8s.io",resources=mutatingwebhookconfigurations;validatingwebhookconfigurations,verbs=get;list;watch;create
 // +kubebuilder:rbac:groups="apiextensions.k8s.io",resources=customresourcedefinitions,resourceNames=queues.scheduling.run.ai,verbs=delete;update;patch
 // +kubebuilder:rbac:groups="apiextensions.k8s.io",resources=customresourcedefinitions,verbs=get;list;watch;create
-// +kubebuilder:rbac:groups="gpu-sharing.kai.scheduler",resources=gpusharingconfigs,verbs=get;list;watch
+// +kubebuilder:rbac:groups="gpu-fractioning.kai.scheduler",resources=gpufractioningconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups="nvidia.com",resources=clusterpolicies,verbs=get;list;watch
 // +kubebuilder:rbac:groups="monitoring.coreos.com",resources=prometheuses;servicemonitors,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="scheduling.run.ai",resources=queues,verbs=get;list;watch
@@ -174,13 +174,13 @@ func (r *ConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 
 	gpuSharingConfigExists, err := common.CheckCRDsAvailable(
-		context.Background(), mgr.GetAPIReader(), gpu_sharing.GpuSharingConfigCRDName,
+		context.Background(), mgr.GetAPIReader(), gpu_sharing.GpuFractioningConfigCRDName,
 	)
 	if err != nil {
-		logger.Info("Failed to check for GpuSharingConfig CRD existence", "error", err)
+		logger.Info("Failed to check for GpuFractioningConfig CRD existence", "error", err)
 	} else if gpuSharingConfigExists {
 		gpuSharingConfig := &unstructured.Unstructured{}
-		gpuSharingConfig.SetGroupVersionKind(gpu_sharing.GpuSharingConfigGVK)
+		gpuSharingConfig.SetGroupVersionKind(gpu_sharing.GpuFractioningConfigGVK)
 		builder = builder.Watches(gpuSharingConfig, handler.EnqueueRequestsFromMapFunc(enqueueWatched))
 	}
 

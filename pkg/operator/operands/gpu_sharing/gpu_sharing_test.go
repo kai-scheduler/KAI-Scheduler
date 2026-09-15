@@ -46,7 +46,7 @@ func TestHasMissingDependencies(t *testing.T) {
 			gpuSharingConfig: gpuSharingConfigWithReadyCondition("False", "RolloutInProgress", "0 of 2 pods ready"),
 		},
 		{
-			name:             "returns empty when GpuSharingConfig is ready",
+			name:             "returns empty when GpuFractioningConfig is ready",
 			kaiConfig:        nvFractionsConfig(),
 			gpuSharingConfig: gpuSharingConfigWithReadyCondition("True", "AllComponentsReady", "all components are healthy"),
 		},
@@ -54,30 +54,30 @@ func TestHasMissingDependencies(t *testing.T) {
 			name:             "details false ready condition",
 			kaiConfig:        nvFractionsConfig(),
 			gpuSharingConfig: gpuSharingConfigWithReadyCondition("False", "GPUOperatorNotReady", "ClusterPolicy is not ready"),
-			expectedMissing:  "Gpu Sharing is not ready. Ready=False, reason=GPUOperatorNotReady, message=ClusterPolicy is not ready",
+			expectedMissing:  "Gpu Fractioning is not ready. Ready=False, reason=GPUOperatorNotReady, message=ClusterPolicy is not ready",
 		},
 		{
 			name:             "details unknown ready condition",
 			kaiConfig:        nvFractionsConfig(),
 			gpuSharingConfig: gpuSharingConfigWithReadyCondition("Unknown", "ComponentUnknown", "unknown: MpsdReady"),
-			expectedMissing:  "Gpu Sharing is not ready. Ready=Unknown, reason=ComponentUnknown, message=unknown: MpsdReady",
+			expectedMissing:  "Gpu Fractioning is not ready. Ready=Unknown, reason=ComponentUnknown, message=unknown: MpsdReady",
 		},
 		{
-			name:            "reports missing GpuSharingConfig",
+			name:            "reports missing GpuFractioningConfig",
 			kaiConfig:       nvFractionsConfig(),
-			expectedMissing: "Gpu Sharing is not ready. GpuSharingConfig not found",
+			expectedMissing: "Gpu Fractioning is not ready. GpuFractioningConfig not found",
 		},
 		{
 			name:             "reports missing status conditions",
 			kaiConfig:        nvFractionsConfig(),
 			gpuSharingConfig: gpuSharingConfigWithoutStatus(),
-			expectedMissing:  "Gpu Sharing is not ready. GpuSharingConfig conditions not found",
+			expectedMissing:  "Gpu Fractioning is not ready. GpuFractioningConfig conditions not found",
 		},
 		{
 			name:             "reports missing Ready condition",
 			kaiConfig:        nvFractionsConfig(),
 			gpuSharingConfig: gpuSharingConfigWithConditions([]interface{}{}),
-			expectedMissing:  "Gpu Sharing is not ready. Ready condition not found",
+			expectedMissing:  "Gpu Fractioning is not ready. Ready condition not found",
 		},
 	}
 
@@ -120,13 +120,13 @@ func gpuSharingConfigWithConditions(conditions []interface{}) *unstructured.Unst
 func gpuSharingConfigWithoutStatus() *unstructured.Unstructured {
 	obj := &unstructured.Unstructured{
 		Object: map[string]interface{}{
-			"apiVersion": "gpu-sharing.kai.scheduler/v1alpha1",
-			"kind":       "GpuSharingConfig",
+			"apiVersion": "gpu-fractioning.kai.scheduler/v1alpha1",
+			"kind":       "GpuFractioningConfig",
 			"metadata": map[string]interface{}{
 				"name": "default",
 			},
 		},
 	}
-	obj.SetGroupVersionKind(GpuSharingConfigGVK)
+	obj.SetGroupVersionKind(GpuFractioningConfigGVK)
 	return obj
 }

@@ -30,7 +30,7 @@ reference, see [GPU Sharing](../README.md).
 
 An administrator must install KAI in `NvFractions` mode and make the
 kai-gpu-fractioning ready before submitting workloads. In particular, the
-`GpuSharingConfig` named `default` and the target GPU node must report ready.
+`GpuFractioningConfig` named `default` and the target GPU node must report ready.
 See [NvFractions readiness](../README.md#nvfractions-readiness).
 
 ## Submit an NvFractions workload
@@ -110,5 +110,5 @@ kubectl describe pod <pod-name> -n <namespace>
 ```
 
 If the Pod remains pending, check the GPU-sharing configuration and the target
-node's `gpu-sharing.nvidia.com/Ready` condition as described in
+node's `gpu-fractioning.nvidia.com/Ready` condition as described in
 [Troubleshooting](../README.md#fractional-gpu-pod-stays-pending-in-nvfractions-mode).

@@ -162,7 +162,7 @@ func TestFractionalGPUAllocationUsesNodeConditionOverride(t *testing.T) {
 				Status: pod_status.Pending,
 				ExpectedErrorMessage: "\nPodSchedulingErrors.\nResources were not found for pod /pending_job0-0 due to: " +
 					"no nodes with enough resources were found: 2 node is not ready for fractional GPU scheduling. " +
-					"Condition gpu-sharing.nvidia.com/Ready is False. Reason: DevicePluginNotReady. Message: ..",
+					"Condition gpu-fractioning.nvidia.com/Ready is False. Reason: DevicePluginNotReady. Message: ..",
 			},
 		},
 		Mocks: &test_utils.TestMock{

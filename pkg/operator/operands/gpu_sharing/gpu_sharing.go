@@ -18,12 +18,12 @@ import (
 	kaiv1common "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
 )
 
-const GpuSharingConfigCRDName = "gpusharingconfigs.gpu-sharing.kai.scheduler"
+const GpuFractioningConfigCRDName = "gpufractioningconfigs.gpu-fractioning.kai.scheduler"
 
-var GpuSharingConfigGVK = schema.GroupVersionKind{
-	Group:   "gpu-sharing.kai.scheduler",
+var GpuFractioningConfigGVK = schema.GroupVersionKind{
+	Group:   "gpu-fractioning.kai.scheduler",
 	Version: "v1alpha1",
-	Kind:    "GpuSharingConfig",
+	Kind:    "GpuFractioningConfig",
 }
 
 type GpuSharing struct{}
@@ -52,10 +52,10 @@ func (g *GpuSharing) HasMissingDependencies(
 	}
 
 	gpuSharingConfig := &unstructured.Unstructured{}
-	gpuSharingConfig.SetGroupVersionKind(GpuSharingConfigGVK)
+	gpuSharingConfig.SetGroupVersionKind(GpuFractioningConfigGVK)
 	if err := readerClient.Get(ctx, types.NamespacedName{Name: "default"}, gpuSharingConfig); err != nil {
 		if apierrors.IsNotFound(err) || meta.IsNoMatchError(err) {
-			return "Gpu Sharing is not ready. GpuSharingConfig not found", nil
+			return "Gpu Fractioning is not ready. GpuFractioningConfig not found", nil
 		}
 		return "", err
 	}
@@ -76,7 +76,7 @@ func (g *GpuSharing) HasMissingDependencies(
 			return "", nil
 		}
 		return fmt.Sprintf(
-			"Gpu Sharing is not ready. Ready=%s, reason=%s, message=%s",
+			"Gpu Fractioning is not ready. Ready=%s, reason=%s, message=%s",
 			conditionFieldString(conditionMap, "status"),
 			conditionFieldString(conditionMap, "reason"),
 			conditionFieldString(conditionMap, "message"),
@@ -84,13 +84,13 @@ func (g *GpuSharing) HasMissingDependencies(
 	}
 
 	if !found {
-		return "Gpu Sharing is not ready. GpuSharingConfig conditions not found", nil
+		return "Gpu Fractioning is not ready. GpuFractioningConfig conditions not found", nil
 	}
-	return "Gpu Sharing is not ready. Ready condition not found", nil
+	return "Gpu Fractioning is not ready. Ready condition not found", nil
 }
 
 func (g *GpuSharing) Name() string {
-	return "GPU-sharing"
+	return "GPU-fractioning"
 }
 
 func isNvFractionsConfigured(kaiConfig *kaiv1.Config) bool {

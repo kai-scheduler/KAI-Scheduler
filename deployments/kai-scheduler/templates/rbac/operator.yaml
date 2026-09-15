@@ -137,9 +137,9 @@ rules:
   - update
   - watch
 - apiGroups:
-  - gpu-sharing.kai.scheduler
+  - gpu-fractioning.kai.scheduler
   resources:
-  - gpusharingconfigs
+  - gpufractioningconfigs
   verbs:
   - get
   - list

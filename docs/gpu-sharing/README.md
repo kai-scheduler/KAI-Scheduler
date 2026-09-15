@@ -106,7 +106,7 @@ global:
   nvFractions:
     set: true
 
-gpu-sharing:
+gpu-fractioning:
   imagePullSecrets:
     - name: registry-credentials
   nodeSelector:
@@ -153,13 +153,13 @@ You can also set `binder.cdiEnabled` or the binder plugin `cdiEnabled` argument 
 
 In `NvFractions` mode, KAI waits for kai-gpu-fractioning before scheduling fractional GPU pods.
 
-The operator must create a cluster-scoped `GpuSharingConfig` named `default` with a `Ready=True` condition:
+The operator must create a cluster-scoped `GpuFractioningConfig` named `default` with a `Ready=True` condition:
 
 ```bash
-kubectl get gpusharingconfig default -o yaml
+kubectl get gpufractioningconfig default -o yaml
 ```
 
-GPU nodes must also have the node condition `gpu-sharing.nvidia.com/Ready=True`. If the condition is missing or false, KAI reports a fit error that includes the condition status, reason, and message.
+GPU nodes must also have the node condition `gpu-fractioning.nvidia.com/Ready=True`. If the condition is missing or false, KAI reports a fit error that includes the condition status, reason, and message.
 
 ### Admission controls
 
@@ -368,7 +368,7 @@ Then check the target GPU node conditions:
 kubectl describe node <node-name>
 ```
 
-KAI requires `gpu-sharing.nvidia.com/Ready=True` on a node before scheduling NvFractions fractional GPU workloads there.
+KAI requires `gpu-fractioning.nvidia.com/Ready=True` on a node before scheduling NvFractions fractional GPU workloads there.
 
 ### Helm render fails when enabling NvFractions
 
