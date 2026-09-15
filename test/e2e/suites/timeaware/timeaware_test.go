@@ -15,7 +15,6 @@ import (
 	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/capacity"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd"
-	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/pod_group"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/utils"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/wait"
@@ -25,6 +24,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -79,17 +79,15 @@ var _ = Describe("Time Aware Fairness", Label("timeaware", "nightly"), Ordered, 
 				constants.NvidiaGpuResource: resource.MustParse("1"),
 			},
 		}
-		_, queueAPods := pod_group.CreateWithPods(
-			ctx,
-			testCtx.KubeClientset,
-			testCtx.KubeAiSchedClientset,
-			utils.GenerateRandomK8sName(10),
-			queueA,
-			int(idleGPUs),
-			nil,
-			v2alpha2.Preemptible,
-			resources,
-		)
+		_, _, queueAPods, err := rd.CreateDistributedBatchJob(ctx, testCtx.ControllerClient, queueA,
+			rd.DistributedBatchJobOptions{
+				Parallelism:    ptr.To(int32(idleGPUs)),
+				MinMember:      ptr.To(int32(1)),
+				NamePrefix:     utils.GenerateRandomK8sName(10) + "-",
+				Preemptibility: v2alpha2.Preemptible,
+				Resources:      resources,
+			})
+		Expect(err).To(Succeed())
 		namespace := queue.GetConnectedNamespaceToQueue(queueA)
 		wait.ForAtLeastNPodsScheduled(ctx, testCtx.ControllerClient, namespace, queueAPods, 1)
 
@@ -112,17 +110,15 @@ var _ = Describe("Time Aware Fairness", Label("timeaware", "nightly"), Ordered, 
 		}, prometheusUsageTimeout, 5*time.Second).Should(Succeed())
 
 		By("Submitting a competing job from queue-b (requires reclaim to schedule)")
-		_, queueBPods := pod_group.CreateWithPods(
-			ctx,
-			testCtx.KubeClientset,
-			testCtx.KubeAiSchedClientset,
-			utils.GenerateRandomK8sName(10),
-			queueB,
-			1,
-			nil,
-			v2alpha2.Preemptible,
-			resources,
-		)
+		_, _, queueBPods, err := rd.CreateDistributedBatchJob(ctx, testCtx.ControllerClient, queueB,
+			rd.DistributedBatchJobOptions{
+				Parallelism:    ptr.To(int32(1)),
+				MinMember:      ptr.To(int32(1)),
+				NamePrefix:     utils.GenerateRandomK8sName(10) + "-",
+				Preemptibility: v2alpha2.Preemptible,
+				Resources:      resources,
+			})
+		Expect(err).To(Succeed())
 		podB := queueBPods[0]
 
 		By("Verifying queue-b job gets scheduled due to time-aware fairness reclaim")
