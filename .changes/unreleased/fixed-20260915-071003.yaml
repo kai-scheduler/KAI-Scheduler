@@ -1,0 +1,3 @@
+kind: Fixed
+body: |-
+  Queue quota validation sums sibling GPU and memory against the parent and treats -1 as unlimited
