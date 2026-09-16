@@ -9,7 +9,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"text/tabwriter"
 
 	"go.uber.org/zap/zapcore"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -25,41 +24,12 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/helmhooks"
 )
 
-// hook is a chart hook ready to run against the cluster.
-type hook func(context.Context, client.Client) error
-
-type subcommand struct {
-	name        string
-	flagsUsage  string
-	description string
-	// parse validates the subcommand arguments and returns the hook to run.
-	parse func(name string, args []string) (hook, error)
-}
-
-var subcommands = []subcommand{
-	{
-		name:        "apply-crds",
-		description: "server-side apply the KAI CRDs bundled in this binary",
-		parse:       parseApplyCRDs,
-	},
-	{
-		name:        "apply-config",
-		flagsUsage:  "--file=<path>",
-		description: "server-side apply the Config manifest at <path>",
-		parse:       parseApplyConfig,
-	},
-	{
-		name:        "migrate-topologies",
-		description: "copy Kueue Topologies into KAI Topologies",
-		parse:       parseMigrateTopologies,
-	},
-	{
-		name:        "cleanup",
-		flagsUsage:  "--namespace=<ns> [--delete-config=<name>]",
-		description: "delete operator-managed deployments and optionally a Config",
-		parse:       parseCleanup,
-	},
-}
+const (
+	applyCRDsCommand         = "apply-crds"
+	applyConfigCommand       = "apply-config"
+	migrateTopologiesCommand = "migrate-topologies"
+	cleanupCommand           = "cleanup"
+)
 
 var scheme = runtime.NewScheme()
 
@@ -72,80 +42,76 @@ func init() {
 
 // Run executes the subcommand named by args[0] with the remaining args as its flags.
 func Run(args []string) error {
-	run, err := parseArgs(args)
-	if err != nil {
-		return err
+	if len(args) == 0 {
+		printUsage()
+		return errors.New("subcommand required")
 	}
+	command, flags := args[0], args[1:]
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&zap.Options{TimeEncoder: zapcore.ISO8601TimeEncoder})))
+	ctx := ctrl.SetupSignalHandler()
 	c, err := client.New(ctrl.GetConfigOrDie(), client.Options{Scheme: scheme})
 	if err != nil {
 		return fmt.Errorf("failed to create kubernetes client: %w", err)
 	}
-	return run(ctrl.SetupSignalHandler(), c)
-}
 
-func parseArgs(args []string) (hook, error) {
-	if len(args) == 0 {
+	switch command {
+	case applyCRDsCommand:
+		return applyCRDs(ctx, c, flags)
+	case applyConfigCommand:
+		return applyConfig(ctx, c, flags)
+	case migrateTopologiesCommand:
+		return migrateTopologies(ctx, c, flags)
+	case cleanupCommand:
+		return cleanup(ctx, c, flags)
+	default:
 		printUsage()
-		return nil, errors.New("subcommand required")
+		return fmt.Errorf("unknown subcommand %q", command)
 	}
-	for _, sub := range subcommands {
-		if sub.name == args[0] {
-			return sub.parse(sub.name, args[1:])
-		}
+}
+
+func applyCRDs(ctx context.Context, c client.Client, flags []string) error {
+	if err := parseFlags(flag.NewFlagSet(applyCRDsCommand, flag.ContinueOnError), flags); err != nil {
+		return err
 	}
-	printUsage()
-	return nil, fmt.Errorf("unknown subcommand %q", args[0])
+	return helmhooks.ApplyCRDs(ctx, c)
 }
 
-func parseApplyCRDs(name string, args []string) (hook, error) {
-	return parseWithoutFlags(name, args, helmhooks.ApplyCRDs)
-}
-
-func parseMigrateTopologies(name string, args []string) (hook, error) {
-	return parseWithoutFlags(name, args, helmhooks.MigrateTopologies)
-}
-
-func parseApplyConfig(name string, args []string) (hook, error) {
-	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+func applyConfig(ctx context.Context, c client.Client, flags []string) error {
+	fs := flag.NewFlagSet(applyConfigCommand, flag.ContinueOnError)
 	file := fs.String("file", "", "path to the Config manifest to apply")
-	if err := parseFlags(fs, args); err != nil {
-		return nil, err
+	if err := parseFlags(fs, flags); err != nil {
+		return err
 	}
 	if *file == "" {
-		return nil, missingFlagError(name, "file")
+		return missingFlagError(applyConfigCommand, "file")
 	}
-	return func(ctx context.Context, c client.Client) error {
-		return helmhooks.ApplyConfig(ctx, c, *file)
-	}, nil
+	return helmhooks.ApplyConfig(ctx, c, *file)
 }
 
-func parseCleanup(name string, args []string) (hook, error) {
-	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+func migrateTopologies(ctx context.Context, c client.Client, flags []string) error {
+	if err := parseFlags(flag.NewFlagSet(migrateTopologiesCommand, flag.ContinueOnError), flags); err != nil {
+		return err
+	}
+	return helmhooks.MigrateTopologies(ctx, c)
+}
+
+func cleanup(ctx context.Context, c client.Client, flags []string) error {
+	fs := flag.NewFlagSet(cleanupCommand, flag.ContinueOnError)
 	namespace := fs.String("namespace", "", "namespace holding the operator-managed deployments")
 	deleteConfig := fs.String("delete-config", "", "name of the Config to delete; skipped when empty")
-	if err := parseFlags(fs, args); err != nil {
-		return nil, err
+	if err := parseFlags(fs, flags); err != nil {
+		return err
 	}
 	if *namespace == "" {
-		return nil, missingFlagError(name, "namespace")
+		return missingFlagError(cleanupCommand, "namespace")
 	}
-	return func(ctx context.Context, c client.Client) error {
-		return helmhooks.Cleanup(ctx, c, *namespace, *deleteConfig)
-	}, nil
+	return helmhooks.Cleanup(ctx, c, *namespace, *deleteConfig)
 }
 
-func parseWithoutFlags(name string, args []string, run hook) (hook, error) {
-	if err := parseFlags(flag.NewFlagSet(name, flag.ContinueOnError), args); err != nil {
-		return nil, err
-	}
-	return run, nil
-}
-
-// parseFlags rejects leftover positional arguments, which the flag package otherwise ignores.
-func parseFlags(fs *flag.FlagSet, args []string) error {
-	if err := fs.Parse(args); err != nil {
+// parseFlags also rejects leftover positional arguments, which the flag package otherwise ignores.
+func parseFlags(fs *flag.FlagSet, flags []string) error {
+	if err := fs.Parse(flags); err != nil {
 		return err
 	}
 	if fs.NArg() > 0 {
@@ -159,12 +125,13 @@ func missingFlagError(command, flagName string) error {
 }
 
 func printUsage() {
-	w := tabwriter.NewWriter(os.Stderr, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "Usage: helm-hooks <subcommand> [flags]")
-	fmt.Fprintln(w)
-	fmt.Fprintln(w, "Subcommands:")
-	for _, sub := range subcommands {
-		fmt.Fprintf(w, "  %s %s\t%s\n", sub.name, sub.flagsUsage, sub.description)
-	}
-	_ = w.Flush()
+	fmt.Fprintf(os.Stderr, `Usage: helm-hooks <subcommand> [flags]
+
+Subcommands:
+  %s                      server-side apply the KAI CRDs bundled in this binary
+  %s --file=<path>      server-side apply the Config manifest at <path>
+  %s              copy Kueue Topologies into KAI Topologies
+  %s --namespace=<ns> [--delete-config=<name>]
+                                  delete operator-managed deployments and optionally a Config
+`, applyCRDsCommand, applyConfigCommand, migrateTopologiesCommand, cleanupCommand)
 }
