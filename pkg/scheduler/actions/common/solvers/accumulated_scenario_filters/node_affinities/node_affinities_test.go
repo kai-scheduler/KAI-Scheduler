@@ -16,6 +16,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	inputfilters "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/accumulated_scenario_filters"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/actions/common/solvers/scenario"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
@@ -424,7 +425,7 @@ func TestNodeAffinitiesFilter_Filter(t *testing.T) {
 
 			// Create the filter scenario (with victims) and call Filter
 			filterSc := scenario.NewByNodeScenario(ssn, nil, tt.pendingTasks, tt.victimTasks, []*podgroup_info.PodGroupInfo{})
-			got, err := filter.Filter(filterSc)
+			got, err := filter.Filter(inputfilters.NewFullScanScenarioInput(filterSc))
 			assert.NoError(t, err)
 			assert.Equal(t, tt.wantFilterResult, got)
 		})
