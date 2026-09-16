@@ -430,3 +430,22 @@ func TestNodeAffinitiesFilter_Filter(t *testing.T) {
 		})
 	}
 }
+
+func TestNodeAffinitiesFilterCachesEquivalentConstraints(t *testing.T) {
+	node := newNodeInfo(newNode("node-a100", map[string]string{"gpu-type": "A100"}))
+	nodes := map[string]*node_info.NodeInfo{"node-a100": node}
+	pendingTasks := []*pod_info.PodInfo{
+		podWithNodeSelector("uid-1", "pod-1", "job-1", map[string]string{"gpu-type": "A100"}),
+		podWithNodeSelector("uid-2", "pod-2", "job-1", map[string]string{"gpu-type": "A100"}),
+	}
+	pendingPG := podgroup_info.NewPodGroupInfo("job-1", pendingTasks...)
+	ssn := newTestSession(t, nodes, map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{"job-1": pendingPG})
+	sn := scenario.NewByNodeScenario(ssn, nil, pendingTasks, nil, nil)
+	filter := NewNodeAffinitiesFilter(sn, nodes, ssn)
+
+	passed, err := filter.Filter(sn)
+
+	assert.NoError(t, err)
+	assert.True(t, passed)
+	assert.Len(t, filter.matchingNodes, 1)
+}

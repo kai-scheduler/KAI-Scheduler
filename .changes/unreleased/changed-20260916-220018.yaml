@@ -1,0 +1,3 @@
+kind: Changed
+body: |-
+  Cache equivalent node-affinity constraints during reclaim scenario generation
