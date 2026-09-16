@@ -34,9 +34,6 @@ import (
 )
 
 const (
-	scaleTestProfileEnv = "SCALE_TEST_PROFILE"
-	smokeScaleProfile   = "smoke"
-
 	topologyZoneLabel  = "cloud.provider.com/topology-zone"
 	topologyBlockLabel = "cloud.provider.com/topology-block"
 	topologyRackLabel  = "cloud.provider.com/topology-rack"
@@ -64,15 +61,11 @@ type topologyScaleConfig struct {
 	nodesPerRack  int
 }
 
-func topologyConfigForProfile(profile string) (topologyScaleConfig, error) {
-	switch profile {
-	case "":
-		return topologyScaleConfig{zones: 2, blocksPerZone: 8, racksPerBlock: 16, nodesPerRack: 2}, nil
-	case smokeScaleProfile:
-		return topologyScaleConfig{zones: 2, blocksPerZone: 2, racksPerBlock: 2, nodesPerRack: 2}, nil
-	default:
-		return topologyScaleConfig{}, fmt.Errorf("unsupported %s value %q", scaleTestProfileEnv, profile)
-	}
+var scaleTopologyConfig = topologyScaleConfig{
+	zones:         2,
+	blocksPerZone: 8,
+	racksPerBlock: 16,
+	nodesPerRack:  2,
 }
 
 func (config topologyScaleConfig) levels() []topology.TopologyLevel {
@@ -91,11 +84,13 @@ func (config topologyScaleConfig) nodesPerZone() int {
 	return config.totalNodes() / config.zones
 }
 
-func halfClusterSize(nodes int) (int, error) {
-	if nodes <= 0 || nodes%2 != 0 {
-		return 0, fmt.Errorf("node count must be a positive even number, got %d", nodes)
+func splitClusterForElasticReclaim(nodes int) (victimMinMember, reclaimerPods int, err error) {
+	if nodes <= 0 {
+		return 0, 0, fmt.Errorf("node count must be positive, got %d", nodes)
 	}
-	return nodes / 2, nil
+	victimMinMember = nodes / 2
+	reclaimerPods = nodes - victimMinMember
+	return victimMinMember, reclaimerPods, nil
 }
 
 func inferenceNodesPerDeployment() int {
@@ -281,9 +276,8 @@ func elasticJobReclaim(
 	ctx context.Context, testCtx *testcontext.TestContext,
 	victimQueue, reclaimQueue *v2.Queue, numberOfNodes int,
 ) {
-	reclaimerPods, err := halfClusterSize(numberOfNodes)
+	victimMinMember, reclaimerPods, err := splitClusterForElasticReclaim(numberOfNodes)
 	Expect(err).NotTo(HaveOccurred())
-	victimMinMember := reclaimerPods
 	victim, err := createElasticPodGroupForKwok(ctx, testCtx, victimQueue, numberOfNodes, victimMinMember)
 	Expect(err).NotTo(HaveOccurred())
 	victimNamespace := queue.GetConnectedNamespaceToQueue(victimQueue)

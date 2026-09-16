@@ -10,33 +10,16 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func TestTopologyConfigForProfile(t *testing.T) {
-	tests := []struct {
-		profile      string
-		totalNodes   int
-		nodesPerZone int
-	}{
-		{profile: "", totalNodes: 512, nodesPerZone: 256},
-		{profile: smokeScaleProfile, totalNodes: 16, nodesPerZone: 8},
+func TestScaleTopologyConfig(t *testing.T) {
+	if got := scaleTopologyConfig.totalNodes(); got != 512 {
+		t.Fatalf("total nodes: got %d, want 512", got)
 	}
-	for _, test := range tests {
-		config, err := topologyConfigForProfile(test.profile)
-		if err != nil {
-			t.Fatalf("topologyConfigForProfile(%q): %v", test.profile, err)
-		}
-		if got := config.totalNodes(); got != test.totalNodes {
-			t.Fatalf("total nodes for %q: got %d, want %d", test.profile, got, test.totalNodes)
-		}
-		if got := config.nodesPerZone(); got != test.nodesPerZone {
-			t.Fatalf("nodes per zone for %q: got %d, want %d", test.profile, got, test.nodesPerZone)
-		}
-	}
-	if _, err := topologyConfigForProfile("unknown"); err == nil {
-		t.Fatal("expected unsupported profile to fail")
+	if got := scaleTopologyConfig.nodesPerZone(); got != 256 {
+		t.Fatalf("nodes per zone: got %d, want 256", got)
 	}
 }
 
-func TestCoreScenarioSizing(t *testing.T) {
+func TestWorkloadScenarioSizing(t *testing.T) {
 	if got := inferenceNodesPerDeployment(); got != 4 {
 		t.Fatalf("inference nodes per deployment: got %d, want 4", got)
 	}
@@ -47,18 +30,17 @@ func TestCoreScenarioSizing(t *testing.T) {
 	if err != nil || deployments != 128 {
 		t.Fatalf("production inference deployments: got %d, err %v", deployments, err)
 	}
-	deployments, err = inferenceDeploymentCount(16)
-	if err != nil || deployments != 4 {
-		t.Fatalf("smoke inference deployments: got %d, err %v", deployments, err)
-	}
 	if _, err := inferenceDeploymentCount(18); err == nil {
 		t.Fatal("expected non-divisible inference node count to fail")
 	}
-	if half, err := halfClusterSize(500); err != nil || half != 250 {
-		t.Fatalf("half cluster: got %d, err %v", half, err)
+	if victimMinMember, reclaimerPods, err := splitClusterForElasticReclaim(500); err != nil || victimMinMember != 250 || reclaimerPods != 250 {
+		t.Fatalf("even cluster split: got victim minMember %d and %d reclaimers, err %v", victimMinMember, reclaimerPods, err)
 	}
-	if _, err := halfClusterSize(15); err == nil {
-		t.Fatal("expected odd node count to fail")
+	if victimMinMember, reclaimerPods, err := splitClusterForElasticReclaim(15); err != nil || victimMinMember != 7 || reclaimerPods != 8 {
+		t.Fatalf("odd cluster split: got victim minMember %d and %d reclaimers, err %v", victimMinMember, reclaimerPods, err)
+	}
+	if _, _, err := splitClusterForElasticReclaim(0); err == nil {
+		t.Fatal("expected non-positive node count to fail")
 	}
 }
 

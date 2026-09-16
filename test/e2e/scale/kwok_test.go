@@ -143,13 +143,9 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 		)
 		BeforeAll(func(ctx context.Context) {
 			crd.SkipIfCrdIsNotInstalled(ctx, testCtx.KubeConfig, "topologies.kai.scheduler", "v1alpha1")
-			profile := os.Getenv(scaleTestProfileEnv)
-			topologyConfig, err := topologyConfigForProfile(profile)
-			Expect(err).NotTo(HaveOccurred())
-			topologyLevels = topologyConfig.levels()
-			nodesPerDomain = topologyConfig.nodesPerRack
-			totalNodes = topologyConfig.totalNodes()
-			GinkgoLogr.Info("Using topology scale profile", "profile", profile, "nodes", totalNodes)
+			topologyLevels = scaleTopologyConfig.levels()
+			nodesPerDomain = scaleTopologyConfig.nodesPerRack
+			totalNodes = scaleTopologyConfig.totalNodes()
 
 			updateFakeGPUOperatorGPUsPerNode(ctx, testCtx)
 
@@ -238,7 +234,7 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 				nil)
 		})
 
-		Context("Core scale scenarios", Ordered, func() {
+		Context("Workload scale scenarios", Ordered, func() {
 			var topologyReclaimQueue *v2.Queue
 
 			BeforeAll(func(ctx context.Context) {
@@ -268,7 +264,7 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 				cleanupTestQueue(ctx, testCtx, topologyReclaimQueue)
 			})
 
-			It("core scale scenario: disaggregated inference allocation and reclaim", func(ctx context.Context) {
+			It("workload scale scenario: disaggregated inference allocation and reclaim", func(ctx context.Context) {
 				victimBatchLabels := disaggregatedInferenceAllocate(
 					ctx, testCtx, sanityTestQueue, totalNodes, topologyName)
 				disaggregatedInferenceReclaim(
@@ -276,13 +272,11 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 					totalNodes, topologyName, victimBatchLabels)
 			}, SpecTimeout(maxFlowTimeoutMinutes*time.Minute))
 
-			It("core scale scenario: zone-constrained hero job reclaim", func(ctx context.Context) {
-				topologyConfig, err := topologyConfigForProfile(os.Getenv(scaleTestProfileEnv))
-				Expect(err).NotTo(HaveOccurred())
+			It("workload scale scenario: zone-constrained hero job reclaim", func(ctx context.Context) {
 				fillClusterWithJobs(ctx, testCtx, sanityTestQueue, true, totalNodes, SingleGPURequirement)
 				heroJobReclaim(
 					ctx, testCtx, sanityTestQueue, topologyReclaimQueue,
-					topologyConfig.nodesPerZone(), topologyName)
+					scaleTopologyConfig.nodesPerZone(), topologyName)
 			}, SpecTimeout(maxFlowTimeoutMinutes*time.Minute))
 		})
 	})
@@ -593,11 +587,11 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 			})
 		})
 
-		Context("Core scale scenarios", Ordered, func() {
+		Context("Workload scale scenarios", Ordered, func() {
 			var elasticVictimQueue, elasticReclaimQueue *v2.Queue
 
 			BeforeAll(func(ctx context.Context) {
-				reclaimerPods, err := halfClusterSize(numberOfNodes)
+				_, reclaimerPods, err := splitClusterForElasticReclaim(numberOfNodes)
 				Expect(err).NotTo(HaveOccurred())
 
 				elasticVictimQueue = queue.CreateQueueObject(
@@ -619,7 +613,7 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 				cleanupTestQueue(ctx, testCtx, elasticReclaimQueue)
 			})
 
-			It("core scale scenario: elastic distributed job reclaim", func(ctx context.Context) {
+			It("workload scale scenario: elastic distributed job reclaim", func(ctx context.Context) {
 				elasticJobReclaim(ctx, testCtx, elasticVictimQueue, elasticReclaimQueue, numberOfNodes)
 			}, SpecTimeout(maxFlowTimeoutMinutes*time.Minute))
 		})
