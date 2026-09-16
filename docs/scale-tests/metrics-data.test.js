@@ -26,13 +26,13 @@ const payload = JSON.parse(readFileSync(join(__dirname, 'example-results.json'),
 const results = payload.results;
 const meta = { timestamp: '2026-06-29T08:42:33Z', path: 'Public/results.json', commit: 'abc123' };
 
-test('maps every current result into the eleven configured charts', () => {
+test('maps every current result into the fifteen configured charts', () => {
   const run = loadRun(payload, meta);
   const observations = extractChartObservations([run]);
 
-  assert.equal(CHART_CONFIGS.length, 11);
-  assert.equal(observations.length, 13);
-  assert.equal(new Set(observations.map(point => point.chartId)).size, 11);
+  assert.equal(CHART_CONFIGS.length, 15);
+  assert.equal(observations.length, 17);
+  assert.equal(new Set(observations.map(point => point.chartId)).size, 15);
   assert.ok(results.tests.every(result => resolveTestCase('scale-results', result.test_name)));
 });
 
@@ -117,6 +117,31 @@ test('NCCL series identity ignores completed pods but retains the result in poin
   assert.ok(buildTooltipLines(observations[1]).includes(`completed pods: ${laterResult.details['completed pods']}`));
 });
 
+test('inference series identity ignores deployment-specific topology details', () => {
+  const earlierPayload = structuredClone(payload);
+  const laterPayload = structuredClone(payload);
+  const earlierResult = earlierPayload.results.tests.find(
+    result => result.test_name === 'Disaggregated inference allocation',
+  );
+  const laterResult = laterPayload.results.tests.find(
+    result => result.test_name === 'Disaggregated inference allocation',
+  );
+  laterResult.details.duration_seconds = earlierResult.details.duration_seconds + 1;
+  laterResult.details.decode_block_spread_by_deployment = { 'inference-another-run': 2 };
+
+  const earlierRun = loadRun(earlierPayload, { ...meta, timestamp: '2026-07-03T08:39:44Z' });
+  const laterRun = loadRun(laterPayload, { ...meta, timestamp: '2026-07-04T08:39:44Z' });
+  const observations = extractChartObservations([earlierRun, laterRun])
+    .filter(point => point.testId === 'inference-allocation');
+
+  assert.equal(observations.length, 2);
+  assert.equal(observations[0].seriesKey, observations[1].seriesKey);
+  assert.equal(groupCompatibleObservations(observations).length, 1);
+  assert.ok(buildTooltipLines(observations[1]).some(
+    line => line.includes('decode_block_spread_by_deployment'),
+  ));
+});
+
 test('groups pending-task results when newer metadata is a compatible superset', () => {
   const currentRun = loadRun(payload, { ...meta, timestamp: '2026-07-03T08:39:44Z' });
   const earlierRun = loadRun(results, { ...meta, timestamp: '2026-07-01T08:38:52Z' });
@@ -170,7 +195,7 @@ test('marks the first scale-results run only when both formats are loaded', () =
   assert.equal(findMigrationTimestamp([current]), null);
 });
 
-test('extracts all legacy metrics into the same eleven chart IDs', () => {
+test('extracts legacy metrics into the original eleven chart IDs', () => {
   const legacyPayload = JSON.parse(readFileSync(join(__dirname, 'example-report.json'), 'utf8'));
   const legacyRun = {
     kind: 'ginkgo-report',
