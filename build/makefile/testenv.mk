@@ -3,10 +3,11 @@ ENVTEST_VERSION=release-0.23
 
 E2E_TESTS_DIR = "test/e2e/"
 TEST_TARGETS = $(shell go list ./... | grep -v "${E2E_TESTS_DIR}")
+DOCKER_GO_TEST_COMMAND=${DOCKER_GO_BASE_COMMAND} -e GOFLAGS="-buildvcs=false" builder:${GO_IMAGE_VERSION}
 
 envtest-docker-go: builder gocache
 	@ ${ECHO_COMMAND} ${GREEN_CONSOLE} "${CONSOLE_PREFIX} Running unit-tests" ${BASE_CONSOLE}
-	${DOCKER_GO_COMMAND} make envtest-go || ${FAILURE_MESSAGE_HANDLER}
+	${DOCKER_GO_TEST_COMMAND} make envtest-go || ${FAILURE_MESSAGE_HANDLER}
 	${SUCCESS_MESSAGE_HANDLER}
 
 envtest-go: envtest
