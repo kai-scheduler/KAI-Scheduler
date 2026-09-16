@@ -88,6 +88,10 @@ func (p *GPUSharing) PreBind(
 
 func addNvFractionsAnnotationIfMissing(pod *v1.Pod, node *v1.Node, bindRequest *v1alpha2.BindRequest,
 	containerRef *resources.PodContainerRef, bindingState *state.BindingState) error {
+	if containerRef.Container.Name == "" {
+		return nil
+	}
+
 	annotationKey := resources.CalcGpuFractionAnnotationForContainer(containerRef.Container.Name)
 	if _, found := pod.Annotations[annotationKey]; found {
 		return nil

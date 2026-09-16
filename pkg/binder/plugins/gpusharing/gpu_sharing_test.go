@@ -96,6 +96,14 @@ func TestAddNvFractionsAnnotationIfMissing(t *testing.T) {
 			},
 			wantErrContains: "missing data for NvFractions annotation calculation",
 		},
+		{
+			name: "skips annotation for unnamed backward-compatible container",
+			nodeLabels: map[string]string{
+				constants.NvidiaGpuMemory: "1500",
+			},
+			receivedGPU:      &v1alpha2.ReceivedGPU{Portion: "0.5"},
+			wantNoAnnotation: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -107,6 +115,9 @@ func TestAddNvFractionsAnnotationIfMissing(t *testing.T) {
 				Spec: v1.PodSpec{
 					Containers: []v1.Container{{Name: "container-0"}},
 				},
+			}
+			if tt.name == "skips annotation for unnamed backward-compatible container" {
+				pod.Spec.Containers[0].Name = ""
 			}
 			node := &v1.Node{
 				ObjectMeta: metav1.ObjectMeta{
