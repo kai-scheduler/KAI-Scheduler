@@ -16,6 +16,9 @@ spec:
       image: nvidia/cuda:13.0.2-base-ubi8
       command: ["nvidia-smi"]
       args: ["-L"]
+      resources:
+        limits:
+          memory: 1Gi
       volumeMounts:
         - name: mps
           mountPath: /tmp/nvidia-mps

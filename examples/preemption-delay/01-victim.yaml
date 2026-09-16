@@ -33,5 +33,5 @@ spec:
   - name: main
     image: registry.k8s.io/pause:3.9
     resources:
-      limits: {cpu: 500m}
-      requests: {cpu: 500m}
+      limits: {cpu: 500m, memory: 64Mi}
+      requests: {cpu: 500m, memory: 64Mi}

@@ -12,6 +12,9 @@ spec:
     - name: nginx
       image: nginx
       imagePullPolicy: IfNotPresent
+      resources:
+        limits:
+          memory: "64Mi"
   tolerations:
     - key: "example-key"
       operator: "Exists"
