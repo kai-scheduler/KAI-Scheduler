@@ -8,6 +8,7 @@ metadata:
   labels:
     env: test
 spec:
+  automountServiceAccountToken: false
   containers:
     - name: nginx
       image: nginx

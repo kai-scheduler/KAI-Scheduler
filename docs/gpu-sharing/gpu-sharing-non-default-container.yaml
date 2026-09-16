@@ -15,6 +15,7 @@ metadata:
     gpu-fraction-container-name: "gpu-workload"
 spec:
   schedulerName: kai-scheduler
+  automountServiceAccountToken: false
   containers:
     - name: sidecar
       image: busybox

@@ -15,6 +15,7 @@ spec:
     spec:
       schedulerName: kai-scheduler
       restartPolicy: OnFailure
+      automountServiceAccountToken: false
       containers:
         - name: main
           image: ubuntu

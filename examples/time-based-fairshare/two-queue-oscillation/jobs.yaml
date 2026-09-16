@@ -29,6 +29,7 @@ metadata:
 spec:
   schedulerName: kai-scheduler
   restartPolicy: Never
+  automountServiceAccountToken: false
   containers:
     - name: training
       image: ubuntu
@@ -60,6 +61,7 @@ metadata:
 spec:
   schedulerName: kai-scheduler
   restartPolicy: Never
+  automountServiceAccountToken: false
   containers:
     - name: training
       image: ubuntu

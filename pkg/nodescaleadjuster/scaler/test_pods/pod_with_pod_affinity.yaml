@@ -27,6 +27,7 @@ spec:
                   values:
                     - S2
             topologyKey: topology.kubernetes.io/zone
+  automountServiceAccountToken: false
   containers:
     - name: with-pod-affinity
       image: k8s.gcr.io/pause:2.0

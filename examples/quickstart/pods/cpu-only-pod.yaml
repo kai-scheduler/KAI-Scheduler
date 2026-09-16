@@ -10,6 +10,7 @@ metadata:
     kai.scheduler/queue: default-queue   # Required: assigns pod to a queue
 spec:
   schedulerName: kai-scheduler           # Required: use KAI Scheduler
+  automountServiceAccountToken: false
   containers:
     - name: main
       image: ubuntu

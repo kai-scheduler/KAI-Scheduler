@@ -10,6 +10,7 @@ metadata:
     priorityClassName: build
 spec:
   schedulerName: kai-scheduler
+  automountServiceAccountToken: false
   containers:
     - name: main
       image: ubuntu

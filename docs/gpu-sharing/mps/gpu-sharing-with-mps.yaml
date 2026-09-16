@@ -11,6 +11,7 @@ metadata:
     gpu-fraction: "0.5"
 spec:
   schedulerName: kai-scheduler
+  automountServiceAccountToken: false
   containers:
     - name: gpu-workload
       image: nvidia/cuda:13.0.2-base-ubi8

@@ -16,6 +16,7 @@ metadata:
     kai.scheduler/staleness-grace-period: "5s"
 spec:
   schedulerName: kai-scheduler
+  automountServiceAccountToken: false
   containers:
     - name: main
       image: registry.k8s.io/pause:3.9
