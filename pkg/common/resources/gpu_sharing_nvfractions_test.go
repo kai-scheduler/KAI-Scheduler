@@ -131,6 +131,12 @@ func TestParseNvFractionsAnnotationKey(t *testing.T) {
 			wantType:          nvFractionsLimitAnnotation,
 		},
 		{
+			name:              "visible devices annotation",
+			annotationKey:     constants.NvFractionsAnnotationPrefix + "main2" + constants.NvFractionsVisibleDevicesSuffix,
+			wantContainerName: "main2",
+			wantType:          nvFractionsDevicesAnnotation,
+		},
+		{
 			name:              "invalid annotation",
 			annotationKey:     constants.NvFractionsAnnotationPrefix + "main",
 			wantErrContaining: "invalid NvFractions annotation key",

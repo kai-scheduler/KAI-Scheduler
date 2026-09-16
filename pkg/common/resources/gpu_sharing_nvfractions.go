@@ -18,6 +18,7 @@ type nvFractionsAnnotationType int
 const (
 	nvFractionsRequestAnnotation nvFractionsAnnotationType = iota
 	nvFractionsLimitAnnotation
+	nvFractionsDevicesAnnotation
 )
 
 func CalcGpuFractionAnnotationForContainer(containerName string) string {
@@ -46,9 +47,10 @@ func ExtractNvFractionsData(pod *v1.Pod) (map[string]NvFractionsContainerRequest
 		}
 
 		containerData := fractionsData[containerName]
-		if annotationType == nvFractionsRequestAnnotation {
+		switch annotationType {
+		case nvFractionsRequestAnnotation:
 			containerData.Request = &gpuMemory
-		} else {
+		case nvFractionsLimitAnnotation:
 			containerData.Limit = &gpuMemory
 		}
 
@@ -75,11 +77,24 @@ func parseNvFractionsAnnotationKey(annotationKey string) (string, nvFractionsAnn
 	containerNameWithSuffix := strings.TrimPrefix(annotationKey, constants.NvFractionsAnnotationPrefix)
 	if strings.HasSuffix(annotationKey, constants.NvFractionsMemoryRequestSuffix) {
 		containerName := strings.TrimSuffix(containerNameWithSuffix, constants.NvFractionsMemoryRequestSuffix)
+		if containerName == "" {
+			return "", 0, fmt.Errorf("invalid NvFractions annotation key: %s", annotationKey)
+		}
 		return containerName, nvFractionsRequestAnnotation, nil
 	}
 	if strings.HasSuffix(annotationKey, constants.NvFractionsMemoryLimitSuffix) {
 		containerName := strings.TrimSuffix(containerNameWithSuffix, constants.NvFractionsMemoryLimitSuffix)
+		if containerName == "" {
+			return "", 0, fmt.Errorf("invalid NvFractions annotation key: %s", annotationKey)
+		}
 		return containerName, nvFractionsLimitAnnotation, nil
+	}
+	if strings.HasSuffix(annotationKey, constants.NvFractionsVisibleDevicesSuffix) {
+		containerName := strings.TrimSuffix(containerNameWithSuffix, constants.NvFractionsVisibleDevicesSuffix)
+		if containerName == "" {
+			return "", 0, fmt.Errorf("invalid NvFractions annotation key: %s", annotationKey)
+		}
+		return containerName, nvFractionsDevicesAnnotation, nil
 	}
 	return "", 0, fmt.Errorf("invalid NvFractions annotation key: %s", annotationKey)
 }

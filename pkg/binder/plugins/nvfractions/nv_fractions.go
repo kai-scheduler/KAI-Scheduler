@@ -48,7 +48,7 @@ func (p *Plugin) PreBind(
 		return nil
 	}
 
-	containerRef, err := common.GetFractionContainerRef(pod)
+	containerRef, err := resources.GetFractionContainerRef(pod)
 	if err != nil {
 		return fmt.Errorf("failed to get fraction container ref: %w", err)
 	}

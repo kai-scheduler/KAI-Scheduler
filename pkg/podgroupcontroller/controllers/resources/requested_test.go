@@ -52,10 +52,16 @@ func Test_extractRequestedResources(t *testing.T) {
 			v1.ResourceList{gpuMemoryResourceName: resource.MustParse("2000Mi")},
 		},
 		{
-			"Pod with NvFractions request",
+			"Pod with NvFractions request for first container",
 			&v1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
-					Annotations: map[string]string{resources.CalcGpuFractionAnnotationForContainer(""): "2000Mi"},
+					Annotations: map[string]string{resources.CalcGpuFractionAnnotationForContainer("c1"): "2000Mi"},
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
+						{Name: "c1"},
+						{Name: "c2"},
+					},
 				},
 			},
 			v1.ResourceList{gpuMemoryResourceName: resource.MustParse("2000Mi")},

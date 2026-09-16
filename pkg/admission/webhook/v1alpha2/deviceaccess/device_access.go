@@ -9,8 +9,6 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 
-	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/common"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/common/gpusharingconfigmap"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 )
@@ -34,7 +32,7 @@ func (da *DeviceAccess) Validate(pod *v1.Pod) error {
 	}
 
 	for containerIndex := range pod.Spec.InitContainers {
-		if isFractionContainer(containerRef, gpusharingconfigmap.InitContainer, containerIndex) {
+		if isFractionContainer(containerRef, resources.InitContainer, containerIndex) {
 			continue
 		}
 		if err := validateSingleContainer(&pod.Spec.InitContainers[containerIndex]); err != nil {
@@ -43,7 +41,7 @@ func (da *DeviceAccess) Validate(pod *v1.Pod) error {
 	}
 
 	for containerIndex := range pod.Spec.Containers {
-		if isFractionContainer(containerRef, gpusharingconfigmap.RegularContainer, containerIndex) {
+		if isFractionContainer(containerRef, resources.RegularContainer, containerIndex) {
 			continue
 		}
 		if err := validateSingleContainer(&pod.Spec.Containers[containerIndex]); err != nil {
@@ -61,14 +59,14 @@ func (da *DeviceAccess) Mutate(pod *v1.Pod) error {
 	}
 
 	for containerIndex := range pod.Spec.InitContainers {
-		if isFractionContainer(containerRef, gpusharingconfigmap.InitContainer, containerIndex) {
+		if isFractionContainer(containerRef, resources.InitContainer, containerIndex) {
 			continue
 		}
 		blockGPUAccessIfNotRequested(&pod.Spec.InitContainers[containerIndex])
 	}
 
 	for containerIndex := range pod.Spec.Containers {
-		if isFractionContainer(containerRef, gpusharingconfigmap.RegularContainer, containerIndex) {
+		if isFractionContainer(containerRef, resources.RegularContainer, containerIndex) {
 			continue
 		}
 		blockGPUAccessIfNotRequested(&pod.Spec.Containers[containerIndex])
@@ -81,11 +79,11 @@ func (da *DeviceAccess) Mutate(pod *v1.Pod) error {
 // does not request a fraction. It returns nil (instead of calling GetFractionContainerRef, which
 // indexes pod.Spec.Containers[0]) when there are no regular containers, since the mutating
 // webhook can run before the API server enforces containers >= 1.
-func fractionContainerRef(pod *v1.Pod) (*gpusharingconfigmap.PodContainerRef, error) {
+func fractionContainerRef(pod *v1.Pod) (*resources.PodContainerRef, error) {
 	if !resources.RequestsGPUFraction(pod) || len(pod.Spec.Containers) == 0 {
 		return nil, nil
 	}
-	containerRef, err := common.GetFractionContainerRef(pod)
+	containerRef, err := resources.GetFractionContainerRef(pod)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get fraction container ref: %w", err)
 	}
@@ -94,7 +92,7 @@ func fractionContainerRef(pod *v1.Pod) (*gpusharingconfigmap.PodContainerRef, er
 
 // isFractionContainer reports whether the container at the given type+index is the
 // GPU-fraction container that should be exempt from device-access handling.
-func isFractionContainer(ref *gpusharingconfigmap.PodContainerRef, containerType gpusharingconfigmap.ContainerType, index int) bool {
+func isFractionContainer(ref *resources.PodContainerRef, containerType resources.ContainerType, index int) bool {
 	return ref != nil && ref.Type == containerType && index == ref.Index
 }
 

@@ -40,7 +40,7 @@ func (p *HamiCore) Mutate(pod *v1.Pod) error {
 		return nil
 	}
 
-	containerRef, err := common.GetFractionContainerRef(pod)
+	containerRef, err := resources.GetFractionContainerRef(pod)
 	if err != nil {
 		return err
 	}

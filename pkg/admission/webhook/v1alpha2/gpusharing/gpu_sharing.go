@@ -57,7 +57,7 @@ func (p *GPUSharing) Mutate(pod *v1.Pod) error {
 		return nil
 	}
 
-	containerRef, err := common.GetFractionContainerRef(pod)
+	containerRef, err := resources.GetFractionContainerRef(pod)
 	if err != nil {
 		return fmt.Errorf("failed to get fraction container ref: %w", err)
 	}
@@ -81,7 +81,7 @@ func (p *GPUSharing) Mutate(pod *v1.Pod) error {
 }
 
 // adjustFractionalMemoryAnnotations adjusts the old fractional memory annotations to NvFractions format
-func adjustFractionalMemoryAnnotations(pod *v1.Pod, containerRef *gpusharingconfigmap.PodContainerRef) error {
+func adjustFractionalMemoryAnnotations(pod *v1.Pod, containerRef *resources.PodContainerRef) error {
 	gpuMemoryRequestMiB, foundGPUMemory := pod.Annotations[constants.GpuMemory]
 	if foundGPUMemory {
 		gpuMemoryRequestMiB, err := strconv.ParseUint(gpuMemoryRequestMiB, 10, 64)

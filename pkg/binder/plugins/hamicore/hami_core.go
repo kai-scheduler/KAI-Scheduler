@@ -15,6 +15,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/common"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/state"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 )
 
 type Plugin struct {
@@ -41,7 +42,7 @@ func (p *Plugin) PreBind(
 		return nil
 	}
 
-	containerRef, err := common.GetFractionContainerRef(pod)
+	containerRef, err := resources.GetFractionContainerRef(pod)
 	if err != nil {
 		return fmt.Errorf("failed to get fraction container ref: %w", err)
 	}

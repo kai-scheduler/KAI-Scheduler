@@ -57,7 +57,7 @@ func (p *GPUSharing) PreBind(
 		}
 	}
 
-	containerRef, err := common.GetFractionContainerRef(pod)
+	containerRef, err := resources.GetFractionContainerRef(pod)
 	if err != nil {
 		return fmt.Errorf("failed to get fraction container ref: %w", err)
 	}
@@ -87,7 +87,7 @@ func (p *GPUSharing) PreBind(
 }
 
 func addNvFractionsAnnotationIfMissing(pod *v1.Pod, node *v1.Node, bindRequest *v1alpha2.BindRequest,
-	containerRef *gpusharingconfigmap.PodContainerRef, bindingState *state.BindingState) error {
+	containerRef *resources.PodContainerRef, bindingState *state.BindingState) error {
 	annotationKey := resources.CalcGpuFractionAnnotationForContainer(containerRef.Container.Name)
 	if _, found := pod.Annotations[annotationKey]; found {
 		return nil
@@ -125,7 +125,7 @@ func addNvFractionsAnnotationIfMissing(pod *v1.Pod, node *v1.Node, bindRequest *
 }
 
 func (p *GPUSharing) createCapabilitiesConfigMapIfMissing(ctx context.Context, pod *v1.Pod,
-	containerRef *gpusharingconfigmap.PodContainerRef) error {
+	containerRef *resources.PodContainerRef) error {
 	capabilitiesConfigMapName, err := gpusharingconfigmap.ExtractCapabilitiesConfigMapName(pod, containerRef)
 	if err != nil {
 		return fmt.Errorf("failed to get capabilities configmap name: %w", err)
@@ -135,7 +135,7 @@ func (p *GPUSharing) createCapabilitiesConfigMapIfMissing(ctx context.Context, p
 }
 
 func (p *GPUSharing) createDirectEnvMapIfMissing(ctx context.Context, pod *v1.Pod,
-	containerRef *gpusharingconfigmap.PodContainerRef) error {
+	containerRef *resources.PodContainerRef) error {
 	directEnvVarsMapName, err := gpusharingconfigmap.ExtractDirectEnvVarsConfigMapName(pod, containerRef)
 	if err != nil {
 		return err
@@ -160,7 +160,7 @@ func (p *GPUSharing) Rollback(
 
 	var errs []error
 
-	containerRef, err := common.GetFractionContainerRef(pod)
+	containerRef, err := resources.GetFractionContainerRef(pod)
 	if err != nil {
 		logger.V(1).Info("Rollback: could not get fraction container ref, nothing to rollback",
 			"namespace", pod.Namespace, "name", pod.Name, "error", err)
