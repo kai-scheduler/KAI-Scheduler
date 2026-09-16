@@ -66,21 +66,7 @@ spec:
         securityContext:
           {{- toYaml .Values.global.securityContext | nindent 10 }}
         {{- end }}
-        command:
-        - /bin/bash
-        - -c
-        args:
-        - |
-          set -euo pipefail
-          # Strip leftover Helm hook annotations from previous chart versions
-          # where kai-config was managed as a Helm pre-install,pre-upgrade
-          # hook (#1536). No-op when the CR doesn't exist or annotations are
-          # already absent.
-          kubectl annotate config kai-config \
-            helm.sh/hook- helm.sh/hook-weight- 2>/dev/null || true
-          kubectl apply --server-side --force-conflicts \
-            --field-manager=kai-config-deployer \
-            -f /manifest/kai-config.yaml
+        args: ["apply-config", "--file=/manifest/kai-config.yaml"]
         volumeMounts:
         - name: manifest
           mountPath: /manifest

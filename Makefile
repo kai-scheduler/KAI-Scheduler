@@ -18,7 +18,7 @@ CHANGIE ?= $(LOCALBIN)/changie
 
 # Space seperated list of services to build by default
 # SERVICE_NAMES := service1 service2 service3
-SERVICE_NAMES := podgrouper scheduler binder resourcereservation snapshot-tool scalingpod nodescaleadjuster podgroupcontroller queuecontroller fairshare-simulator admission operator time-based-fairshare-simulator numa-placement-exporter
+SERVICE_NAMES := podgrouper scheduler binder resourcereservation snapshot-tool scalingpod nodescaleadjuster podgroupcontroller queuecontroller fairshare-simulator admission operator time-based-fairshare-simulator numa-placement-exporter helm-hooks
 
 # Kubernetes manifest files that require Kubernetes copyright header (space-separated)
 K8S_COPYRIGHTED_MANIFEST_FILES := deployments/kai-scheduler/crds/kai.scheduler_topologies.yaml
@@ -37,7 +37,6 @@ test: test-chart envtest-docker-go
 
 .PHONY: build
 build: $(SERVICE_NAMES)
-	$(MAKE) docker-build-crd-upgrader
 
 $(SERVICE_NAMES):
 	$(MAKE) build-go SERVICE_NAME=$@
@@ -45,7 +44,6 @@ $(SERVICE_NAMES):
 
 .PHONY: push
 push: $(SERVICE_NAMES)
-	docker push $(DOCKER_REPO_BASE)/crd-upgrader:$(VERSION)
 
 .PHONY: validate
 validate: generate manifests clients gen-license generate-mocks lint
@@ -142,7 +140,7 @@ changelog-preview: changie ## Preview the next release section without writing a
 .PHONY: images-manifest
 images-manifest: ## Generate images.yaml for a release. Usage: make images-manifest VERSION=v0.17.0 DOCKER_REPO_BASE=ghcr.io/kai-scheduler/kai-scheduler
 	@test -n "$(VERSION)" || { echo "VERSION is required, e.g. make images-manifest VERSION=v0.17.0"; exit 1; }
-	bash hack/generate-images-manifest.sh "$(VERSION)" "$(DOCKER_REPO_BASE)" "$(SERVICE_NAMES) crd-upgrader" > images.yaml
+	bash hack/generate-images-manifest.sh "$(VERSION)" "$(DOCKER_REPO_BASE)" "$(SERVICE_NAMES)" > images.yaml
 
 
 

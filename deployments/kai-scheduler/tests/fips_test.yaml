@@ -28,7 +28,7 @@ tests:
           value: Deployment
       - equal:
           path: spec.template.spec.containers[0].image
-          value: registry/local/kai-scheduler/crd-upgrader:0.0.0
+          value: registry/local/kai-scheduler/helm-hooks:0.0.0
         template: hooks/pre/crd-upgrader.yaml
 
   - it: should suffix all image tags when global.fipsMode is on
@@ -61,7 +61,7 @@ tests:
           value: Deployment
       - equal:
           path: spec.template.spec.containers[0].image
-          value: registry/local/kai-scheduler/crd-upgrader:0.0.0-fips
+          value: registry/local/kai-scheduler/helm-hooks:0.0.0-fips
         template: hooks/pre/crd-upgrader.yaml
       - notContains:
           path: spec.template.spec.containers[0].env
@@ -121,7 +121,7 @@ tests:
           value: Deployment
       - equal:
           path: spec.template.spec.containers[0].image
-          value: registry/local/kai-scheduler/crd-upgrader:0.0.0-fips
+          value: registry/local/kai-scheduler/helm-hooks:0.0.0-fips
         template: hooks/pre/crd-upgrader.yaml
       - contains:
           path: spec.template.spec.containers[0].env

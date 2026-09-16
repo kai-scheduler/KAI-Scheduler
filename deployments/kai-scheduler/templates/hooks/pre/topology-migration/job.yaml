@@ -58,15 +58,7 @@ spec:
         securityContext:
           {{- toYaml .Values.global.securityContext | nindent 10 }}
         {{- end }}
-        command: ["/bin/bash", "/scripts/migrate-topologies.sh"]
-        volumeMounts:
-        - name: migration-script
-          mountPath: /scripts
-      volumes:
-      - name: migration-script
-        configMap:
-          name: topology-migration-script
-          defaultMode: 0755
+        args: ["migrate-topologies"]
       restartPolicy: OnFailure
       {{- if .Values.global.nodeSelector }}
       nodeSelector:

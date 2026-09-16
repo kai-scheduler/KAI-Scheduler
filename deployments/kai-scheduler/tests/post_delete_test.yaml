@@ -14,12 +14,12 @@ tests:
     release:
       namespace: custom-ns
     asserts:
-      - matchRegex:
-          path: spec.template.spec.containers[0].command[2]
-          pattern: kubectl -n custom-ns delete deployment --selector=app.kubernetes.io/managed-by=kai-operator --ignore-not-found=true
-      - notMatchRegex:
-          path: spec.template.spec.containers[0].command[2]
-          pattern: delete deployments? --all
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: cleanup
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --namespace=custom-ns
 
   - it: should delete kai-config when the config deployer is enabled
     templates:
@@ -27,9 +27,9 @@ tests:
     set:
       kaiConfigDeployer.enabled: true
     asserts:
-      - matchRegex:
-          path: spec.template.spec.containers[0].command[2]
-          pattern: kubectl delete Config kai-config --ignore-not-found
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --delete-config=kai-config
 
   - it: should preserve kai-config when the config deployer is disabled
     templates:
@@ -37,9 +37,9 @@ tests:
     set:
       kaiConfigDeployer.enabled: false
     asserts:
-      - notMatchRegex:
-          path: spec.template.spec.containers[0].command[2]
-          pattern: kubectl delete Config kai-config
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: --delete-config=kai-config
 
   - it: should not delete kai-config in GitOps mode (pruned as a tracked release resource)
     templates:
@@ -48,9 +48,9 @@ tests:
       kaiConfigDeployer.enabled: false
       kaiConfig.render: true
     asserts:
-      - notMatchRegex:
-          path: spec.template.spec.containers[0].command[2]
-          pattern: kubectl delete Config kai-config
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: --delete-config=kai-config
 
   - it: should carry the ArgoCD PostDelete hook annotations
     templates:
