@@ -20,6 +20,7 @@ spec:
       resources:
         limits:
           memory: 1Gi
+          ephemeral-storage: 1Gi
       volumeMounts:
         - name: mps
           mountPath: /tmp/nvidia-mps

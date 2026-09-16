@@ -153,18 +153,13 @@ $(KUSTOMIZE): $(LOCALBIN)
 	test -s $(LOCALBIN)/kustomize || { curl -Ss $(KUSTOMIZE_INSTALL_SCRIPT) --output install_kustomize.sh && bash install_kustomize.sh $(subst v,,$(KUSTOMIZE_VERSION)) $(LOCALBIN); rm install_kustomize.sh; }
 
 # Benchmark targets
-BENCHSTAT ?= $(LOCALBIN)/benchstat
+BENCHSTAT ?= go tool benchstat
 BENCH_OUTPUT ?= benchmark-results.txt
 # pkg/scheduler/actions/reclaim is excluded from the default benchmark sweep
 # because some reclaim benchmarks require -benchtime=1x and only a curated subset
 # should run in CI.
 BENCH_SPECIAL_PACKAGES := ./pkg/scheduler/actions/reclaim
 BENCH_SPECIAL_REGEX := '^BenchmarkReclaim(WithMissingPVCJobs|UnschedulableDistributedJob_((10|50|100)Node|AntiAffinity100Node))$$'
-
-.PHONY: benchstat
-benchstat: $(BENCHSTAT)
-$(BENCHSTAT): $(LOCALBIN)
-	test -s $(LOCALBIN)/benchstat || GOBIN=$(LOCALBIN) go install golang.org/x/perf/cmd/benchstat@latest
 
 .PHONY: benchmark
 benchmark: envtest ## Run benchmarks and output results (use BENCH_OUTPUT=file.txt to customize output)
@@ -181,6 +176,6 @@ benchmark-docker: builder gocache ## Run benchmarks in Docker
 	${DOCKER_GO_COMMAND} make benchmark
 
 .PHONY: benchmark-compare
-benchmark-compare: benchstat ## Compare benchmark results (requires baseline.txt and benchmark-results.txt)
+benchmark-compare: ## Compare benchmark results (requires baseline.txt and benchmark-results.txt)
 	@echo "Comparing benchmarks..."
 	$(BENCHSTAT) baseline.txt benchmark-results.txt

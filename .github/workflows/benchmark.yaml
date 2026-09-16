@@ -36,9 +36,6 @@ jobs:
           go-version: '1.26.3'
           cache: true
 
-      - name: Install benchstat
-        run: go install golang.org/x/perf/cmd/benchstat@v0.0.0-20260209182753-b57e4e371b65
-
       - name: Download envtest binaries
         run: |
           make envtest
@@ -70,7 +67,7 @@ jobs:
           echo "" >> benchmark-report.md
 
           # Run benchstat and capture output
-          if benchstat main-bench.txt pr-bench.txt > benchstat-output.txt 2>&1; then
+          if go tool benchstat main-bench.txt pr-bench.txt > benchstat-output.txt 2>&1; then
             echo '```' >> benchmark-report.md
             cat benchstat-output.txt >> benchmark-report.md
             echo '```' >> benchmark-report.md

@@ -272,7 +272,7 @@ jobs:
 
       - name: Run e2e tests
         run: |
-          ginkgo -r --keep-going --randomize-all --randomize-suites --trace -vv --label-filter '!autoscale && !scale && !upgrade && !gitops && !nightly' --output-dir=. --json-report=e2e-report.json ./test/e2e/suites
+          go tool ginkgo -r --keep-going --randomize-all --randomize-suites --trace -vv --label-filter '!autoscale && !scale && !upgrade && !gitops && !nightly' --output-dir=. --json-report=e2e-report.json ./test/e2e/suites
           echo ""
           echo "=== Skipped Tests ==="
           jq -r '.[].SpecReports[] | select(.State == "skipped") | ([.ContainerHierarchyTexts[], .LeafNodeText] | join(" > "))' e2e-report.json 2>/dev/null || echo "No skipped tests found"
@@ -380,7 +380,7 @@ jobs:
         env:
           UPGRADE_CHART_PATH: /mnt/images/kai-scheduler-${{ needs.build.outputs.package_version }}.tgz
         run: |
-          ginkgo -r --keep-going --trace -vv --label-filter 'upgrade' --output-dir=. --json-report=e2e-upgrade-report.json ./test/e2e/suites/upgrade
+          go tool ginkgo -r --keep-going --trace -vv --label-filter 'upgrade' --output-dir=. --json-report=e2e-upgrade-report.json ./test/e2e/suites/upgrade
 
   e2e-gitops-tests:
     name: Run E2E GitOps Tests
@@ -408,7 +408,7 @@ jobs:
           # CI images are pushed to the in-cluster registry by setup-e2e-cluster
           GITOPS_KAI_REGISTRY: localhost:30100
         run: |
-          ginkgo -r --keep-going --trace -vv --label-filter 'gitops' --output-dir=. --json-report=e2e-gitops-report.json ./test/e2e/suites/gitops
+          go tool ginkgo -r --keep-going --trace -vv --label-filter 'gitops' --output-dir=. --json-report=e2e-gitops-report.json ./test/e2e/suites/gitops
 
   cleanup-images-cache:
     name: Cleanup Images Cache

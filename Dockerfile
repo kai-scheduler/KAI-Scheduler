@@ -7,7 +7,7 @@ ARG SERVICE_NAME
 ENV TARGETARCH=$TARGETARCH
 ENV SERVICE_NAME=$SERVICE_NAME
 
-RUN go install github.com/go-delve/delve/cmd/dlv@latest
+RUN go install github.com/go-delve/delve/cmd/dlv@v1.27.2
 
 WORKDIR /workspace
 ADD bin/$SERVICE_NAME-$TARGETARCH app

@@ -120,11 +120,6 @@ runs:
         go-version: '1.26.1'
         cache: true
 
-    - name: Install ginkgo
-      shell: bash
-      run: |
-        go install github.com/onsi/ginkgo/v2/ginkgo@v2.25.3
-
     - name: Delete images from disk
       shell: bash
       env:

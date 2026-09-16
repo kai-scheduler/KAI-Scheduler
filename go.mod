@@ -88,6 +88,7 @@ require (
 	cyphar.com/go-pathrs v0.2.1 // indirect
 	github.com/Masterminds/semver/v3 v3.4.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
+	github.com/aclements/go-moremath v0.0.0-20210112150236-f10218a38794 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
 	github.com/awslabs/operatorpkg v0.0.0-20241205163410-0fff9f28d115 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -181,6 +182,7 @@ require (
 	golang.org/x/crypto v0.55.0 // indirect
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
+	golang.org/x/perf v0.0.0-20260209182753-b57e4e371b65 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/term v0.45.0 // indirect
@@ -213,3 +215,8 @@ retract (
 replace k8s.io/api => k8s.io/api v0.35.4
 
 replace k8s.io/apimachinery => k8s.io/apimachinery v0.35.4
+
+tool (
+	github.com/onsi/ginkgo/v2/ginkgo
+	golang.org/x/perf/cmd/benchstat
+)
