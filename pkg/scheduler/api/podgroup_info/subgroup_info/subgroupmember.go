@@ -12,5 +12,6 @@ type SubGroupMember interface {
 	GetParent() *SubGroupSet
 	IsReadyForScheduling() bool
 	GetMinMembersToSatisfy() int
+	GetMinNonPreemptible() *int32
 	GetNumActiveAllocatedMembers() int
 }

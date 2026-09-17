@@ -46,6 +46,7 @@ func (sgs *SubGroupSet) GetDirectPodSets() []*PodSet {
 func (sgs *SubGroupSet) Clone() *SubGroupSet {
 	root := NewSubGroupSet(sgs.name, sgs.topologyConstraint)
 	root.SetMinSubGroup(sgs.minSubGroup)
+	root.SetMinNonPreemptible(sgs.minNonPreemptible)
 	for _, podSet := range sgs.podSets {
 		clonePodSet := podSet.Clone()
 		root.AddPodSet(clonePodSet)

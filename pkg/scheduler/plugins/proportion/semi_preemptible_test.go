@@ -95,6 +95,41 @@ var _ = Describe("Semi-Preemptible Quota Accounting", func() {
 			d3 := pp.semiPreemptibleCoreDelta(job)
 			Expect(d3[rs.GpuResource]).To(Equal(float64(0)))
 		})
+
+		It("counts minNonPreemptible core subgroups, not minSubGroup", func() {
+			// The job is schedulable on 1 subgroup but protects 2, so 2 GPUs are non-preemptible even
+			// though the gang minimum would only account for 1.
+			root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+			root.SetMinSubGroup(intPtr(1))
+			root.SetMinNonPreemptible(intPtr(2))
+			for _, n := range []string{"r0", "r1", "r2", "r3"} {
+				ps := subgroup_info.NewPodSet(n, 1, nil)
+				ps.AssignTask(gpuTask(n+"-p", n, pod_status.Running))
+				root.AddPodSet(ps)
+			}
+			job := &podgroup_info.PodGroupInfo{
+				UID: "job-a", Preemptibility: v2alpha2.SemiPreemptible,
+				RootSubGroupSet: root, PodSets: root.GetDescendantPodSets(),
+			}
+
+			pp := newPlugin()
+			Expect(pp.coreResourceQuantities(job)[rs.GpuResource]).To(Equal(float64(2)))
+		})
+
+		It("counts minNonPreemptible core pods on a flat job, not minMember", func() {
+			ps := subgroup_info.NewPodSet(podgroup_info.DefaultSubGroup, 1, nil)
+			ps.SetMinNonPreemptible(intPtr(3))
+			for _, n := range []string{"t1", "t2", "t3", "t4"} {
+				ps.AssignTask(gpuTask(n, "", pod_status.Running))
+			}
+			job := &podgroup_info.PodGroupInfo{
+				UID: "job-a", Preemptibility: v2alpha2.SemiPreemptible,
+				PodSets: map[string]*subgroup_info.PodSet{podgroup_info.DefaultSubGroup: ps},
+			}
+
+			pp := newPlugin()
+			Expect(pp.coreResourceQuantities(job)[rs.GpuResource]).To(Equal(float64(3)))
+		})
 	})
 
 	Describe("splitVictimTasksByCoreSet", func() {

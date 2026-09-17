@@ -9,7 +9,8 @@ We want to add a new 3rd mode, named **semi-preemptible**, where the podgroup is
 ## Goals / Non-Goals
 
 **Goals**
-- Add a third preemptibility mode, `semi-preemptible`, on top of the **existing APIs** (the `preemptibility` field/label, `minMember`, `minSubGroup`) — no new API fields.
+- Add a third preemptibility mode, `semi-preemptible`, on top of the existing `preemptibility` field/label, deriving the protected shape from `minMember` / `minSubGroup`.
+- Let a PodGroup state that shape explicitly with `minNonPreemptible`, so protection can be raised above the scheduling minimum (see [`minNonPreemptible`](#minnonpreemptible-stating-the-protected-shape-explicitly)).
 - Keep a job's **minimum required shape** non-preemptible and in-quota; allow anything beyond it to run elastically (over-quota, reclaimed first).
 - Apply the core/elastic split at **every level** of the subgroup tree, so whole child subgroups burst elastically in the same manner as surplus pods do at a leaf — driven by `minSubGroup` on **hand-authored** subgroup trees.
 - Change nothing for existing workloads — the mode is strictly opt-in.
@@ -17,7 +18,7 @@ We want to add a new 3rd mode, named **semi-preemptible**, where the podgroup is
 **Non-Goals**
 - **Automated segmented subgroups** (the `kai.scheduler/segment-size` annotation path) are not a design target: the core/elastic split is specified against **hand-authored** subgroup trees. The two are not rejected or warned, and the outcome follows from the tree each grouper emits. A LeaderWorkerSet segmented tree is fully gang (every segment's `minAvailable` equals its size), so there is no surplus and semi-preemptible is inert. A segmented `PyTorchJob` with `minReplicas` leaves its trailing segments at `minAvailable: 0`, so those pods are elastic and semi-preemptible behaves as designed.
 - Solving queue **quota scale-down** in general for KAI Scheduler. If a queue's deserved quota drops below a running job's core allocation, the queue stays over-quota until the job releases resources on its own — exactly as a `non-preemptible` job behaves today. No new mitigation is introduced (see [Quota Scale-Down](#quota-scale-down)).
-- The `minNonPreemptible` field that would decouple the scheduling minimum from the non-preemptible threshold (see [Future Work](#future-work-minnonpreemptible-field)).
+- Lowering the protected shape *below* the scheduling minimum (`minNonPreemptible < minMember`). That would create a third pod tier — "required for scheduling but elastic for preemption" — and is rejected by the webhook (see [`minNonPreemptible`](#minnonpreemptible-stating-the-protected-shape-explicitly)).
 
 ## Use Cases
 
@@ -53,7 +54,7 @@ spec:
         kai.scheduler/preemptibility: "semi-preemptible"
 ```
 
-For multi-level trees, `minSubGroup` makes whole subgroups core vs. elastic — see [Subgroups and Multi-Level Trees](#subgroups-and-multi-level-trees).
+For multi-level trees, `minSubGroup` makes whole subgroups core vs. elastic — see [Subgroups and Multi-Level Trees](#subgroups-and-multi-level-trees). To protect more than the scheduling minimum, set [`minNonPreemptible`](#minnonpreemptible-stating-the-protected-shape-explicitly).
 
 ## Quota Requirements
 
@@ -101,7 +102,7 @@ Because each subgroup here is fully gang (`minMember == size`), there is no pod-
 
 ## Immutability Constraint
 
-A validation webhook must **reject increases** to `minMember` or `minSubGroup` on a running semi-preemptible PodGroup (the root spec and every SubGroup entry). Raising either would reclassify already-running over-quota elastic pods/subgroups as core, silently growing the minimal satisfying set and breaking quota invariants without a rescheduling cycle. Decreasing is allowed — it can only widen the elastic tier.
+A validation webhook must **reject increases** to `minMember`, `minSubGroup` or `minNonPreemptible` on a running semi-preemptible PodGroup (the root spec and every SubGroup entry). Raising any of them would reclassify already-running over-quota elastic pods/subgroups as core, silently growing the minimal satisfying set and breaking quota invariants without a rescheduling cycle. Decreasing is allowed — it can only widen the elastic tier.
 
 ## Simulation Considerations
 
@@ -286,6 +287,43 @@ spec:
       minMember: 2
 ```
 
-## Future Work: `minNonPreemptible` field
+## `minNonPreemptible`: stating the protected shape explicitly
 
-This design uses `minMember` as the non-preemptible threshold. A future `minNonPreemptible` field (pod-level only, no subgroup analog) would decouple the scheduling minimum from the non-preemptible threshold — e.g. `minMember=4, minNonPreemptible=2` (needs 4 pods to start, but only 2 are non-preemptible). It introduces a third pod tier — "required for scheduling but elastic for preemption" — between core and extra-elastic, requiring explicit ordering or labeling to identify which pods fall into each tier, plus a new API field, validation (`minNonPreemptible ≤ minMember`), quota accounting decoupled from `minMember`, and matching webhook/solver/status updates.
+Deriving the core from `minMember` / `minSubGroup` conflates two things a user controls separately. To protect 2 of 4 replica subgroups you must set `minSubGroup: 2`, which *also* blocks the job from starting until 2 subgroups fit. There is no way to say "start with 1, guarantee 2, burst to 4".
+
+`minNonPreemptible` is an optional `PodGroupSpec` field naming the protected shape directly. The gang requirement is untouched; only the core/elastic boundary moves. When unset, the scheduling minimum remains the protected shape and behaviour is unchanged.
+
+```yaml
+spec:
+  preemptibility: "semi-preemptible"
+  minSubGroup: 1            # starts as soon as 1 subgroup fits
+  minNonPreemptible: 2      # 2 subgroups are protected and in-quota
+  subGroups: [sg-0, sg-1, sg-2, sg-3]   # bursts to 4 over-quota
+```
+
+### Unit
+
+One podgroup-level field, whose unit follows the minimum the PodGroup itself declares:
+
+| PodGroup shape | `minNonPreemptible: 2` means |
+|---|---|
+| has `subGroups` | 2 of the root's direct child SubGroups are core |
+| flat (no `subGroups`) | 2 pods of the single PodSet are core |
+
+The override binds to that one node. Nested subgroups keep splitting by their own `minMember` / `minSubGroup`, so a raised root core does not reach into a subtree. There is no per-`SubGroup` analog; the node-level storage leaves room for one.
+
+### Raise only
+
+`minNonPreemptible` must be **at least** `minMember` / `minSubGroup`; the webhook rejects a lower value. The comparison uses the *effective* minimum, so leaving the gang field out is not a back door: an unset `minSubGroup` requires every child, and an unset `minMember` means one pod. This keeps the core a superset of the gang, which is what makes the feature nearly free:
+
+- **Eviction** needs no new floor. Phase 1 still offers surplus down to `minAvailable`, and the existing core filter in `GetTasksToEvict` drops anything that turns out to be core — so the effective floor rises to `minNonPreemptible` on its own.
+- **Staleness** cannot fire. Protecting the core always leaves the gang satisfied, so a shrinking job never falls below `minMember` and is never eviction-fodder for stale gang eviction.
+- **Quota** stays an all-or-nothing per-batch charge (`coreRequiredQuota`), keyed on whether the *core* is satisfied rather than the gang.
+
+The opposite direction — `minMember: 4, minNonPreemptible: 2`, "needs 4 pods to start, only 2 protected" — gives up all three. It needs an eviction floor below `minAvailable`, staleness suppression for a job legitimately running under its gang, and a per-task split of the gang-phase quota charge. It is a [non-goal](#goals--non-goals).
+
+### Implementation
+
+`coreMin()` in `core_info.go` is the single read point: `minNonPreemptible` when the node carries it, the node's gang minimum otherwise. It replaces the two threshold reads in `partitionCoreMembers` (which members hold core slots) and `collectCoreFromPodSet` (how many pods a leaf protects), and backs a core-aware `IsMinRequirementSatisfied`, which is what tells `coreRequiredQuota` whether an incoming allocation is core or elastic burst. Everything downstream — the proportion plugin's accounting and victim split, the published `Status.SchedulingState.CorePods`, the controller's `AllocatedNonPreemptible` rollup — already routes through `GetCoreTasks` and is unchanged.
+
+One eviction change is required. Phase 2 of `collectElasticEvictionFromSubGroupSet` drops a whole member ranked by the *allocation* ordering, which knows nothing about core membership. If it picks a core member the batch is filtered away and the job reports **no** victims while real surplus keeps running. With `minNonPreemptible` the core and gang boundaries differ by construction, so phase 2 now skips core members for semi-preemptible jobs. (This also removes a latent stall in the `minMember`-derived case, where equal fully-gang subgroups could lose an eviction cycle to an arbitrary tie-break.)

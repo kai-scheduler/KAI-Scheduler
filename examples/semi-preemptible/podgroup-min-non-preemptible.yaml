@@ -1,0 +1,67 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# minNonPreemptible states the protected shape independently of the scheduling minimum. This PodGroup
+# is schedulable as soon as one replica subgroup fits (minSubGroup: 1), keeps two replicas protected
+# and in-quota (minNonPreemptible: 2), and bursts to all four over-quota when there is spare capacity.
+# Without minNonPreemptible, guaranteeing 2 replicas would mean minSubGroup: 2 — which would also stop
+# the job from starting until 2 replicas fit.
+#
+# The field counts subgroups here because subGroups are defined; on a flat PodGroup it counts pods.
+# It may only raise the protected shape: a value below minSubGroup/minMember is rejected.
+---
+apiVersion: scheduling.run.ai/v2alpha2
+kind: PodGroup
+metadata:
+  name: burst-replicas
+  namespace: default
+  labels:
+    kai.scheduler/queue: default-queue
+spec:
+  queue: default-queue
+  preemptibility: "semi-preemptible"
+  minSubGroup: 1          # gang: one replica is enough to start
+  minNonPreemptible: 2    # protected: two replicas stay in-quota and are never preempted
+  subGroups:
+    - name: replica-0     # core
+      minMember: 2
+    - name: replica-1     # core
+      minMember: 2
+    - name: replica-2     # elastic — evicted as a whole subgroup
+      minMember: 2
+    - name: replica-3     # elastic — evicted as a whole subgroup
+      minMember: 2
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: burst-replicas-workers
+  namespace: default
+  annotations:
+    kai.scheduler/skip-podgrouper: "true"
+spec:
+  parallelism: 8
+  completions: 8
+  template:
+    metadata:
+      annotations:
+        pod-group-name: burst-replicas
+      labels:
+        kai.scheduler/queue: default-queue
+        # Assign pods to subgroups via the kai.scheduler/subgroup-name label. In a real workload each
+        # replica's 2 pods carry the matching subgroup name (replica-0 .. replica-3). This Job places
+        # all pods in replica-0 for illustration; use per-replica Jobs/pods to populate every subgroup.
+        kai.scheduler/subgroup-name: replica-0
+    spec:
+      schedulerName: kai-scheduler
+      restartPolicy: Never
+      containers:
+        - name: worker
+          image: busybox:1.36
+          command: ["sh", "-c", "sleep 3600"]
+          resources:
+            requests:
+              cpu: "250m"
+            limits:
+              cpu: "250m"

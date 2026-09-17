@@ -13,9 +13,9 @@ import (
 )
 
 // GetCoreTasks returns the set of allocated tasks that make up the job's minimal satisfying shape
-// (its "core"): at each SubGroupSet the GetMinMembersToSatisfy() members returned by coreMembers,
-// recursively; at each leaf PodSet the minAvailable highest-priority allocated pods (sorted by
-// taskOrderFn). The remaining allocated tasks are elastic surplus.
+// (its "core"): at each SubGroupSet the coreMin() members returned by coreMembers, recursively; at
+// each leaf PodSet the coreMin() highest-priority allocated pods (sorted by taskOrderFn). The
+// remaining allocated tasks are elastic surplus.
 //
 // Flat jobs (no minSubGroup) reduce to the per-leaf-minMember result and are backward compatible.
 func GetCoreTasks(
@@ -49,11 +49,30 @@ func partitionCoreMembers(sgs *subgroup_info.SubGroupSet) (core, nonCore []subgr
 		return coreMemberLess(members[i], members[j])
 	})
 
-	k := sgs.GetMinMembersToSatisfy()
+	k := coreMin(sgs)
 	if k > len(members) {
 		k = len(members)
 	}
 	return members[:k], members[k:]
+}
+
+// coreMin is the number of m's members that hold core slots: minNonPreemptible when the PodGroup set
+// it on this node, otherwise the node's gang minimum. minNonPreemptible may only raise the count, so
+// the core is always a superset of the gang and protecting it never breaks the gang.
+func coreMin(m subgroup_info.SubGroupMember) int {
+	if minNonPreemptible := m.GetMinNonPreemptible(); minNonPreemptible != nil {
+		return int(*minNonPreemptible)
+	}
+	return m.GetMinMembersToSatisfy()
+}
+
+// coreMemberNames returns the names of the members holding sgs's core slots.
+func coreMemberNames(sgs *subgroup_info.SubGroupSet) map[string]bool {
+	names := map[string]bool{}
+	for _, member := range coreMembers(sgs) {
+		names[member.GetName()] = true
+	}
+	return names
 }
 
 func coreMemberLess(l, r subgroup_info.SubGroupMember) bool {
@@ -116,7 +135,7 @@ func collectCoreFromMember(
 	}
 }
 
-// collectCoreFromPodSet adds the minAvailable highest-priority allocated pods of a leaf PodSet to core.
+// collectCoreFromPodSet adds the coreMin highest-priority allocated pods of a leaf PodSet to core.
 func collectCoreFromPodSet(
 	ps *subgroup_info.PodSet, taskOrderFn common_info.LessFn,
 	core map[common_info.PodID]*pod_info.PodInfo,
@@ -131,14 +150,24 @@ func collectCoreFromPodSet(
 		return taskOrderFn(allocated[i], allocated[j])
 	})
 
-	minMembers := ps.GetMinMembersToSatisfy()
+	minMembers := coreMin(ps)
 	for i := 0; i < minMembers && i < len(allocated); i++ {
 		core[allocated[i].UID] = allocated[i]
 	}
 }
 
-// IsMinRequirementSatisfied reports whether the job's root SubGroupSet has met its minimal shape,
-// i.e. the whole core is allocated and any further allocation is elastic burst.
+// IsMinRequirementSatisfied reports whether the job's core is fully allocated, i.e. any further
+// allocation is elastic burst. Reads the core thresholds, which minNonPreemptible may raise above the
+// gang minimums; with minNonPreemptible unset this is the root's IsMinRequirementSatisfied term for
+// term. The per-member check matters for flat jobs, where the override sits on the default PodSet
+// rather than the root, so comparing root arity alone would report satisfied at the first pod.
 func IsMinRequirementSatisfied(job *PodGroupInfo) bool {
-	return rootSubGroupSet(job).IsMinRequirementSatisfied()
+	root := rootSubGroupSet(job)
+	satisfied := 0
+	for _, member := range root.GetMembers() {
+		if member.GetNumActiveAllocatedMembers() >= coreMin(member) {
+			satisfied++
+		}
+	}
+	return satisfied >= coreMin(root)
 }
