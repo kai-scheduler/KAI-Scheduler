@@ -9,6 +9,10 @@ type PodID types.UID
 
 type PodGroupID types.UID
 
+func NewPodGroupID(namespace, name string) PodGroupID {
+	return PodGroupID(NewObjectKey(namespace, name))
+}
+
 type QueueID types.UID
 
 type StorageClassID types.UID
