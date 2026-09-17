@@ -41,16 +41,19 @@ func ExtractNvFractionsData(pod *v1.Pod) (map[string]NvFractionsContainerRequest
 			return nil, err
 		}
 
-		gpuMemory, err := parseNvFractionsAnnotationValue(annotationKey, annotationValue)
-		if err != nil {
-			return nil, err
-		}
-
 		containerData := fractionsData[containerName]
 		switch annotationType {
 		case nvFractionsRequestAnnotation:
+			gpuMemory, err := parseNvFractionsAnnotationValue(annotationKey, annotationValue)
+			if err != nil {
+				return nil, err
+			}
 			containerData.Request = &gpuMemory
 		case nvFractionsLimitAnnotation:
+			gpuMemory, err := parseNvFractionsAnnotationValue(annotationKey, annotationValue)
+			if err != nil {
+				return nil, err
+			}
 			containerData.Limit = &gpuMemory
 		}
 
