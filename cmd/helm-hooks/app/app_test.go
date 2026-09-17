@@ -5,29 +5,46 @@ package app
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func TestFlagValidation(t *testing.T) {
-	c := fake.NewClientBuilder().Build()
+// noClient fails the test if a subcommand connects before its arguments are valid.
+func noClient(t *testing.T) clientFactory {
+	return func() (client.Client, error) {
+		t.Fatal("client created before argument validation")
+		return nil, errors.New("unreachable")
+	}
+}
+
+func TestFlagValidationHappensBeforeConnecting(t *testing.T) {
+	ctx := context.Background()
 	tests := []struct {
 		name    string
-		err     error
+		run     func(context.Context, clientFactory, []string) error
+		flags   []string
 		wantErr string
 	}{
-		{name: "apply-crds rejects positional args", err: applyCRDs(context.Background(), c, []string{"extra"}), wantErr: "unexpected arguments"},
-		{name: "apply-config requires file", err: applyConfig(context.Background(), c, nil), wantErr: "--file is required"},
-		{name: "migrate-topologies rejects unknown flag", err: migrateTopologies(context.Background(), c, []string{"--bogus"}), wantErr: "flag provided but not defined"},
-		{name: "cleanup requires namespace", err: cleanup(context.Background(), c, []string{"--delete-config=kai-config"}), wantErr: "--namespace is required"},
+		{name: "apply-crds rejects positional args", run: applyCRDs, flags: []string{"extra"}, wantErr: "unexpected arguments"},
+		{name: "apply-config requires file", run: applyConfig, flags: nil, wantErr: "--file is required"},
+		{name: "migrate-topologies rejects unknown flag", run: migrateTopologies, flags: []string{"--bogus"}, wantErr: "flag provided but not defined"},
+		{name: "cleanup requires namespace", run: cleanup, flags: []string{"--delete-config=kai-config"}, wantErr: "--namespace is required"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Error(t, tt.err)
-			assert.Contains(t, tt.err.Error(), tt.wantErr)
+			err := tt.run(ctx, noClient(t), tt.flags)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
 		})
 	}
+}
+
+func TestRun_RejectsUnknownSubcommandWithoutCluster(t *testing.T) {
+	err := Run([]string{"bogus"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), `unknown subcommand "bogus"`)
 }

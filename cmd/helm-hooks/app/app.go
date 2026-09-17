@@ -31,6 +31,9 @@ const (
 	cleanupCommand           = "cleanup"
 )
 
+// clientFactory defers connecting to the cluster until the subcommand arguments are valid.
+type clientFactory func() (client.Client, error)
+
 var scheme = runtime.NewScheme()
 
 func init() {
@@ -50,34 +53,42 @@ func Run(args []string) error {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&zap.Options{TimeEncoder: zapcore.ISO8601TimeEncoder})))
 	ctx := ctrl.SetupSignalHandler()
-	c, err := client.New(ctrl.GetConfigOrDie(), client.Options{Scheme: scheme})
-	if err != nil {
-		return fmt.Errorf("failed to create kubernetes client: %w", err)
-	}
 
 	switch command {
 	case applyCRDsCommand:
-		return applyCRDs(ctx, c, flags)
+		return applyCRDs(ctx, newClusterClient, flags)
 	case applyConfigCommand:
-		return applyConfig(ctx, c, flags)
+		return applyConfig(ctx, newClusterClient, flags)
 	case migrateTopologiesCommand:
-		return migrateTopologies(ctx, c, flags)
+		return migrateTopologies(ctx, newClusterClient, flags)
 	case cleanupCommand:
-		return cleanup(ctx, c, flags)
+		return cleanup(ctx, newClusterClient, flags)
 	default:
 		printUsage()
 		return fmt.Errorf("unknown subcommand %q", command)
 	}
 }
 
-func applyCRDs(ctx context.Context, c client.Client, flags []string) error {
+func newClusterClient() (client.Client, error) {
+	c, err := client.New(ctrl.GetConfigOrDie(), client.Options{Scheme: scheme})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create kubernetes client: %w", err)
+	}
+	return c, nil
+}
+
+func applyCRDs(ctx context.Context, newClient clientFactory, flags []string) error {
 	if err := parseFlags(flag.NewFlagSet(applyCRDsCommand, flag.ContinueOnError), flags); err != nil {
+		return err
+	}
+	c, err := newClient()
+	if err != nil {
 		return err
 	}
 	return helmhooks.ApplyCRDs(ctx, c)
 }
 
-func applyConfig(ctx context.Context, c client.Client, flags []string) error {
+func applyConfig(ctx context.Context, newClient clientFactory, flags []string) error {
 	fs := flag.NewFlagSet(applyConfigCommand, flag.ContinueOnError)
 	file := fs.String("file", "", "path to the Config manifest to apply")
 	if err := parseFlags(fs, flags); err != nil {
@@ -86,17 +97,25 @@ func applyConfig(ctx context.Context, c client.Client, flags []string) error {
 	if *file == "" {
 		return missingFlagError(applyConfigCommand, "file")
 	}
+	c, err := newClient()
+	if err != nil {
+		return err
+	}
 	return helmhooks.ApplyConfig(ctx, c, *file)
 }
 
-func migrateTopologies(ctx context.Context, c client.Client, flags []string) error {
+func migrateTopologies(ctx context.Context, newClient clientFactory, flags []string) error {
 	if err := parseFlags(flag.NewFlagSet(migrateTopologiesCommand, flag.ContinueOnError), flags); err != nil {
+		return err
+	}
+	c, err := newClient()
+	if err != nil {
 		return err
 	}
 	return helmhooks.MigrateTopologies(ctx, c)
 }
 
-func cleanup(ctx context.Context, c client.Client, flags []string) error {
+func cleanup(ctx context.Context, newClient clientFactory, flags []string) error {
 	fs := flag.NewFlagSet(cleanupCommand, flag.ContinueOnError)
 	namespace := fs.String("namespace", "", "namespace holding the operator-managed deployments")
 	deleteConfig := fs.String("delete-config", "", "name of the Config to delete; skipped when empty")
@@ -105,6 +124,10 @@ func cleanup(ctx context.Context, c client.Client, flags []string) error {
 	}
 	if *namespace == "" {
 		return missingFlagError(cleanupCommand, "namespace")
+	}
+	c, err := newClient()
+	if err != nil {
+		return err
 	}
 	return helmhooks.Cleanup(ctx, c, *namespace, *deleteConfig)
 }
