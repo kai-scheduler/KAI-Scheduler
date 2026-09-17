@@ -124,6 +124,11 @@ func TestValidate(t *testing.T) {
 			wantErrContains: "must be a valid Kubernetes memory quantity greater than 0",
 		},
 		{
+			name:            "rejects non-quantity nvfractions request Nan",
+			annotations:     map[string]string{nvFractionsRequestKey("container-0"): "NaN"},
+			wantErrContains: "must be a valid Kubernetes memory quantity greater than 0",
+		},
+		{
 			name:            "rejects empty nvfractions request value",
 			annotations:     map[string]string{nvFractionsRequestKey("container-0"): ""},
 			wantErrContains: "must be a valid Kubernetes memory quantity greater than 0",
@@ -141,6 +146,11 @@ func TestValidate(t *testing.T) {
 		{
 			name:            "rejects non-quantity nvfractions limit value",
 			annotations:     map[string]string{nvFractionsLimitKey("container-0"): "not-a-quantity"},
+			wantErrContains: "must be a valid Kubernetes memory quantity greater than 0",
+		},
+		{
+			name:            "rejects non-quantity nvfractions request Nan",
+			annotations:     map[string]string{nvFractionsLimitKey("container-0"): "NaN"},
 			wantErrContains: "must be a valid Kubernetes memory quantity greater than 0",
 		},
 		{
