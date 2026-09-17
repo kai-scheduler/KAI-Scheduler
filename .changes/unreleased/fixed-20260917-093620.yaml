@@ -1,0 +1,3 @@
+kind: Fixed
+body: |-
+  Topology migration hook now creates KAI Topologies with the served v1alpha1 API version

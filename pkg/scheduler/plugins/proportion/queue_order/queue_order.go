@@ -37,7 +37,7 @@ func jobInitResources(
 		return nil
 	}
 	return podgroup_info.GetTasksToAllocateInitResourceVector(
-		jobInfo, subGroupOrderFn, taskOrderFn, false, minNodeGPUMemory,
+		jobInfo, subGroupOrderFn, taskOrderFn, podgroup_info.PartialTaskAllocation, minNodeGPUMemory,
 	)
 }
 

@@ -8,6 +8,8 @@ import (
 	"reflect"
 	"testing"
 
+	"k8s.io/utils/ptr"
+
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
@@ -252,6 +254,71 @@ func TestSubGroupSet_MinSubGroupZero_AlwaysSatisfied(t *testing.T) {
 			t.Errorf("root.GetNumActiveAllocatedDirectSubGroups() = %d, want 1 (inner is satisfied via minSubGroup=0)", got)
 		}
 	})
+}
+
+func TestSubGroupSet_IsGangSatisfied(t *testing.T) {
+	tests := []struct {
+		name     string
+		root     *SubGroupSet
+		expected bool
+	}{
+		{
+			name: "nested branch satisfied with optional leaf below minimum",
+			root: func() *SubGroupSet {
+				inner := NewSubGroupSet("inner", nil)
+				inner.SetMinSubGroup(ptr.To(int32(1)))
+				inner.AddPodSet(podSetWithRunningPods("ready", 1, 1))
+				inner.AddPodSet(podSetWithRunningPods("optional", 2, 0))
+
+				root := NewSubGroupSet("root", nil)
+				root.AddSubGroup(inner)
+				return root
+			}(),
+			expected: true,
+		},
+		{
+			name: "required nested branch below leaf minimum",
+			root: func() *SubGroupSet {
+				inner := NewSubGroupSet("inner", nil)
+				inner.AddPodSet(podSetWithRunningPods("not-ready", 2, 1))
+
+				root := NewSubGroupSet("root", nil)
+				root.AddSubGroup(inner)
+				return root
+			}(),
+			expected: false,
+		},
+		{
+			name: "minSubGroup zero is satisfied without active leaves",
+			root: func() *SubGroupSet {
+				root := NewSubGroupSet("root", nil)
+				root.SetMinSubGroup(ptr.To(int32(0)))
+				root.AddPodSet(podSetWithRunningPods("optional", 2, 0))
+				return root
+			}(),
+			expected: true,
+		},
+		{
+			name: "releasing leaf remains gang satisfied",
+			root: func() *SubGroupSet {
+				podSet := NewPodSet("releasing", 1, nil)
+				podSet.AssignTask(&pod_info.PodInfo{UID: "releasing-1", Status: pod_status.Releasing})
+
+				root := NewSubGroupSet("root", nil)
+				root.AddPodSet(podSet)
+				return root
+			}(),
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.root.IsGangSatisfied(); got != tt.expected {
+				t.Errorf("IsGangSatisfied() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
 }
 
 func TestGetNumActiveAllocatedDirectSubGroups(t *testing.T) {

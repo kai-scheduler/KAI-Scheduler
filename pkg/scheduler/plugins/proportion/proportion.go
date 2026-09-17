@@ -137,21 +137,23 @@ func (pp *proportionPlugin) OnJobSolutionStartFn() {
 }
 
 func (pp *proportionPlugin) CanReclaimResourcesFn(reclaimer *podgroup_info.PodGroupInfo) bool {
-	reclaimerInfo := pp.buildReclaimerInfo(reclaimer, pp.minNodeGPUMemory)
+	reclaimerInfo := pp.buildReclaimerInfo(reclaimer, pp.minNodeGPUMemory, podgroup_info.PartialTaskAllocation)
 	return pp.reclaimablePlugin.CanReclaimResources(pp.queues, &reclaimerInfo)
 }
 
 func (pp *proportionPlugin) reclaimVictimFilterFn(
 	reclaimer *podgroup_info.PodGroupInfo, victim *podgroup_info.PodGroupInfo,
 ) bool {
-	reclaimerInfo := pp.buildReclaimerInfo(reclaimer, pp.minNodeGPUMemory)
+	reclaimerInfo := pp.buildReclaimerInfo(reclaimer, pp.minNodeGPUMemory, podgroup_info.PartialTaskAllocation)
 	return pp.reclaimablePlugin.FilterVictim(pp.queues, &reclaimerInfo, victim.Queue)
 }
 
 func (pp *proportionPlugin) reclaimableFn(
 	scenario api.ScenarioInfo,
 ) bool {
-	reclaimerInfo := pp.buildReclaimerInfo(scenario.GetPreemptor(), pp.minNodeGPUMemory)
+	reclaimerInfo := pp.buildReclaimerInfo(
+		scenario.GetPreemptor(), pp.minNodeGPUMemory, podgroup_info.PartialTaskAllocation,
+	)
 	totalVictimsResources := make(map[common_info.QueueID][]resource_info.ResourceVector)
 	victims := scenario.GetVictims()
 	for _, victim := range victims {
@@ -303,14 +305,16 @@ func (pp *proportionPlugin) createQueueAttributes(ssn *framework.Session) {
 	pp.setFairShare()
 }
 
-func (pp *proportionPlugin) buildReclaimerInfo(reclaimer *podgroup_info.PodGroupInfo, minNodeGPUMemory *int64) rec.ReclaimerInfo {
+func (pp *proportionPlugin) buildReclaimerInfo(
+	reclaimer *podgroup_info.PodGroupInfo, minNodeGPUMemory *int64, allocationMode podgroup_info.TaskAllocationMode,
+) rec.ReclaimerInfo {
 	return rec.ReclaimerInfo{
 		Name:          reclaimer.Name,
 		Namespace:     reclaimer.Namespace,
 		Queue:         reclaimer.Queue,
 		IsPreemptable: reclaimer.IsPreemptibleJob(),
 		RequiredResources: podgroup_info.GetTasksToAllocateInitResourceVector(reclaimer, pp.subGroupOrderFn, pp.taskOrderFunc,
-			false, minNodeGPUMemory),
+			allocationMode, minNodeGPUMemory),
 		VectorMap: reclaimer.VectorMap,
 	}
 }

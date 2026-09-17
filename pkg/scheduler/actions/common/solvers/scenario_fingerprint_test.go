@@ -205,7 +205,8 @@ func newDedupCacheTestSession(t *testing.T) (*framework.Session, *podgroup_info.
 }
 
 func dedupCacheTestPendingTasks(ssn *framework.Session, pendingJob *podgroup_info.PodGroupInfo) []*pod_info.PodInfo {
-	return podgroup_info.GetTasksToAllocate(pendingJob, ssn.SubGroupOrderFn, ssn.TaskOrderFn, false)
+	return podgroup_info.GetTasksToAllocate(pendingJob, ssn.SubGroupOrderFn, ssn.TaskOrderFn,
+		podgroup_info.SimulatedTaskAllocation)
 }
 
 func reversedTasks(tasks []*pod_info.PodInfo) []*pod_info.PodInfo {
