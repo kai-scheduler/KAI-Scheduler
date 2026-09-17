@@ -44,9 +44,9 @@ func TestShouldUpdatePodGroupStatus(t *testing.T) {
 					},
 				},
 				podGroupMetadata: &metadata.PodGroupMetadata{
-					Preemptible: true,
-					Requested:   map[v1.ResourceName]resource.Quantity{"cpu": resource.MustParse("1")},
-					Allocated:   map[v1.ResourceName]resource.Quantity{"cpu": resource.MustParse("1")},
+					Preemptibility: v2alpha2.Preemptible,
+					Requested:      map[v1.ResourceName]resource.Quantity{"cpu": resource.MustParse("1")},
+					Allocated:      map[v1.ResourceName]resource.Quantity{"cpu": resource.MustParse("1")},
 				},
 			},
 			true,
@@ -68,9 +68,9 @@ func TestShouldUpdatePodGroupStatus(t *testing.T) {
 					},
 				},
 				podGroupMetadata: &metadata.PodGroupMetadata{
-					Preemptible: true,
-					Requested:   map[v1.ResourceName]resource.Quantity{"cpu": resource.MustParse("1")},
-					Allocated:   map[v1.ResourceName]resource.Quantity{"cpu": resource.MustParse("1")},
+					Preemptibility: v2alpha2.Preemptible,
+					Requested:      map[v1.ResourceName]resource.Quantity{"cpu": resource.MustParse("1")},
+					Allocated:      map[v1.ResourceName]resource.Quantity{"cpu": resource.MustParse("1")},
 				},
 			},
 			false,
@@ -93,9 +93,9 @@ func TestShouldUpdatePodGroupStatus(t *testing.T) {
 					},
 				},
 				podGroupMetadata: &metadata.PodGroupMetadata{
-					Preemptible: true,
-					Requested:   map[v1.ResourceName]resource.Quantity{"cpu": resource.MustParse("1")},
-					Allocated:   map[v1.ResourceName]resource.Quantity{"cpu": resource.MustParse("1")},
+					Preemptibility: v2alpha2.Preemptible,
+					Requested:      map[v1.ResourceName]resource.Quantity{"cpu": resource.MustParse("1")},
+					Allocated:      map[v1.ResourceName]resource.Quantity{"cpu": resource.MustParse("1")},
 				},
 			},
 			false,
@@ -162,7 +162,7 @@ func TestUpdatePodGroupStatus(t *testing.T) {
 					},
 				},
 				&metadata.PodGroupMetadata{
-					Preemptible: true,
+					Preemptibility: v2alpha2.Preemptible,
 					Requested: map[v1.ResourceName]resource.Quantity{
 						"cpu": resource.MustParse("1"),
 						"gpu": resource.MustParse("3"),
@@ -199,7 +199,7 @@ func TestUpdatePodGroupStatus(t *testing.T) {
 					},
 				},
 				&metadata.PodGroupMetadata{
-					Preemptible: false,
+					Preemptibility: v2alpha2.NonPreemptible,
 					Requested: map[v1.ResourceName]resource.Quantity{
 						"cpu": resource.MustParse("1"),
 						"gpu": resource.MustParse("3"),
@@ -223,6 +223,70 @@ func TestUpdatePodGroupStatus(t *testing.T) {
 					Allocated: map[v1.ResourceName]resource.Quantity{
 						"cpu": resource.MustParse("500m"),
 					},
+				},
+			},
+		},
+		{
+			"Semi preemptible reports only the core as non preemptible",
+			args{
+				&v2alpha2.PodGroup{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "n1", Name: "m1"},
+				},
+				&metadata.PodGroupMetadata{
+					Preemptibility: v2alpha2.SemiPreemptible,
+					Requested: map[v1.ResourceName]resource.Quantity{
+						"cpu": resource.MustParse("2"),
+					},
+					Allocated: map[v1.ResourceName]resource.Quantity{
+						"cpu": resource.MustParse("2"),
+					},
+					CoreAllocated: map[v1.ResourceName]resource.Quantity{
+						"cpu": resource.MustParse("500m"),
+					},
+				},
+			},
+			false,
+			&v2alpha2.PodGroupStatus{
+				ResourcesStatus: v2alpha2.PodGroupResourcesStatus{
+					Requested: map[v1.ResourceName]resource.Quantity{
+						"cpu": resource.MustParse("2"),
+					},
+					Allocated: map[v1.ResourceName]resource.Quantity{
+						"cpu": resource.MustParse("2"),
+					},
+					AllocatedNonPreemptible: map[v1.ResourceName]resource.Quantity{
+						"cpu": resource.MustParse("500m"),
+					},
+				},
+			},
+		},
+		{
+			"Semi preemptible with no published core reports nothing as non preemptible",
+			args{
+				&v2alpha2.PodGroup{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "n1", Name: "m1"},
+				},
+				&metadata.PodGroupMetadata{
+					Preemptibility: v2alpha2.SemiPreemptible,
+					Requested: map[v1.ResourceName]resource.Quantity{
+						"cpu": resource.MustParse("2"),
+					},
+					Allocated: map[v1.ResourceName]resource.Quantity{
+						"cpu": resource.MustParse("2"),
+					},
+					CoreAllocated: map[v1.ResourceName]resource.Quantity{},
+				},
+			},
+			false,
+			&v2alpha2.PodGroupStatus{
+				ResourcesStatus: v2alpha2.PodGroupResourcesStatus{
+					Requested: map[v1.ResourceName]resource.Quantity{
+						"cpu": resource.MustParse("2"),
+					},
+					Allocated: map[v1.ResourceName]resource.Quantity{
+						"cpu": resource.MustParse("2"),
+					},
+					// An empty core set round-trips through the API server as unset.
 				},
 			},
 		},
