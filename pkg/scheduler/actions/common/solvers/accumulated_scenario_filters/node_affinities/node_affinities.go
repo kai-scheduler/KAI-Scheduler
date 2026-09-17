@@ -38,7 +38,8 @@ type NodeAffinitiesFilter struct {
 }
 
 type nodeAffinityMatches struct {
-	nodes                sets.Set[string]
+	nodes sets.Set[string]
+	// hasExplicitNodeNames allows named nodes that can be freed through preemption.
 	hasExplicitNodeNames bool
 }
 
