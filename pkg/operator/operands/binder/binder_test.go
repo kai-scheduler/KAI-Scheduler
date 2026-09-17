@@ -11,6 +11,7 @@ import (
 
 	nvidiav1 "github.com/kai-scheduler/KAI-scheduler/third_party/nvidia/gpu-operator/api/nvidia/v1"
 	"golang.org/x/exp/maps"
+	"k8s.io/apimachinery/pkg/api/resource"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
 
@@ -66,6 +67,20 @@ var _ = Describe("Binder", func() {
 		})
 
 		Context("Deployment", func() {
+			It("renders Binder Go memory-limit configuration", func(ctx context.Context) {
+				kaiConfig = kaiConfigForBinderWithConfig(&kaiv1binder.Binder{
+					GoMemLimitRatio: ptr.To(0.8),
+					GoMemLimit:      ptr.To(resource.MustParse("6Gi")),
+				})
+				objects, err := b.DesiredState(ctx, fakeKubeClient, kaiConfig)
+				Expect(err).NotTo(HaveOccurred())
+				deployment := *test_utils.FindTypeInObjects[*appsv1.Deployment](objects)
+				Expect(deployment.Spec.Template.Spec.Containers[0].Env).To(ContainElements(
+					v1.EnvVar{Name: "KAI_GOMEMLIMIT_RATIO", Value: "0.8"},
+					v1.EnvVar{Name: "GOMEMLIMIT", Value: "6442450944"},
+				))
+			})
+
 			It("should return a Deployment in the objects list", func(ctx context.Context) {
 				objects, err := b.DesiredState(ctx, fakeKubeClient, kaiConfig)
 				Expect(err).To(BeNil())

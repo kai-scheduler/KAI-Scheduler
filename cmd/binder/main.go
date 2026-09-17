@@ -31,6 +31,11 @@ func main() {
 
 	pflag.Parse()
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+	ctx := ctrl.SetupSignalHandler()
+	if err := app.StartMemoryLimitManager(ctx); err != nil {
+		setupLog.Error(err, "failed to configure Go memory limit")
+		os.Exit(1)
+	}
 
 	app, err := app.New(options, ctrl.GetConfigOrDie())
 	if err != nil {
@@ -44,7 +49,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	ctx := ctrl.SetupSignalHandler()
 	err = app.Run(ctx)
 	if err != nil {
 		setupLog.Error(err, "failed to run app")
