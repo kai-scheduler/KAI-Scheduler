@@ -39,7 +39,7 @@ for TOPO_NAME in $TOPO_NAMES; do
 
   # Extract the levels spec using go-template and create KAI Topology
   kubectl get topologies.kueue.x-k8s.io "$TOPO_NAME" \
-    -o go-template='apiVersion: kai.scheduler/v1
+    -o go-template='apiVersion: kai.scheduler/v1alpha1
 kind: Topology
 metadata:
   name: {{.metadata.name}}
