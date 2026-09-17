@@ -175,6 +175,13 @@ func TestRequestsGPU(t *testing.T) {
 			wantFraction: true,
 		},
 		{
+			// Binder output, not a request: it must not fabricate a fractional request.
+			name: "NvFractions compute portion annotation alone",
+			pod: podWithAnnotations(map[string]string{
+				CalcGpuComputePortionAnnotationForContainer("main"): "0.5",
+			}),
+		},
+		{
 			name: "whole GPU request",
 			pod: &v1.Pod{
 				Spec: v1.PodSpec{

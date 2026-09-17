@@ -84,6 +84,11 @@ const (
 	NvFractionsMemoryLimitSuffix    = ".gpu-memory.limit"
 	NvFractionsVisibleDevicesSuffix = ".gpus.devices"
 	GpuComputeSharingModeSuffix     = ".gpu-compute.mode"
+	// NvFractionsComputePortionSuffix is the per-container GPU compute portion in
+	// (0, 1], written by the binder. kai-gpu-fractioning turns it into the MPS
+	// active-thread percentage capping SM occupancy. Binder-owned like the device
+	// list: a workload able to set its own limit could exempt itself from it.
+	NvFractionsComputePortionSuffix = ".gpu-compute.portion"
 
 	KaiFractionContainerAnnotationPrefix = "kai.scheduler/container."
 	GpuMemoryPortionLimitSuffix          = ".gpu-memory.portion.limit"

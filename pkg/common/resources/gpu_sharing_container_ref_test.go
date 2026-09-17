@@ -356,3 +356,99 @@ func TestGetFractionContainerRef(t *testing.T) {
 		})
 	}
 }
+
+// GetNvFractionsContainerName errors on any unrecognized nvidia.com/container.*
+// key, so a missing parse branch for a binder-written annotation breaks the bind
+// of every pod that already carries it.
+func TestGetNvFractionsContainerNameWithBinderOwnedAnnotations(t *testing.T) {
+	tests := []struct {
+		name              string
+		annotations       map[string]string
+		wantName          string
+		wantFound         bool
+		wantErrContaining string
+	}{
+		{
+			name: "request alongside compute portion",
+			annotations: map[string]string{
+				CalcGpuFractionAnnotationForContainer("container-0"):       "1Gi",
+				CalcGpuComputePortionAnnotationForContainer("container-0"): "0.5",
+			},
+			wantName:  "container-0",
+			wantFound: true,
+		},
+		{
+			name: "every binder-written annotation on the same container",
+			annotations: map[string]string{
+				CalcGpuFractionAnnotationForContainer("container-0"):           "1Gi",
+				CalcGpuFractionLimitAnnotationForContainer("container-0"):      "2Gi",
+				CalcGpuVisibleDevicesAnnotationForContainer("container-0"):     "GPU-0",
+				CalcGpuComputeSharingModeAnnotationForContainer("container-0"): "sm-sharing",
+				CalcGpuComputePortionAnnotationForContainer("container-0"):     "0.5",
+				CalcGpuMemoryPortionLimitAnnotationForContainer("container-0"): "0.8",
+			},
+			wantName:  "container-0",
+			wantFound: true,
+		},
+		{
+			name: "compute portion alone resolves the container",
+			annotations: map[string]string{
+				CalcGpuComputePortionAnnotationForContainer("container-0"): "0.5",
+			},
+			wantName:  "container-0",
+			wantFound: true,
+		},
+		{
+			name: "compute portion on another container than the request",
+			annotations: map[string]string{
+				CalcGpuFractionAnnotationForContainer("container-0"):       "1Gi",
+				CalcGpuComputePortionAnnotationForContainer("container-1"): "0.5",
+			},
+			wantErrContaining: "doesn't support multiple containers",
+		},
+		{
+			name: "compute portion with empty container name",
+			annotations: map[string]string{
+				CalcGpuComputePortionAnnotationForContainer(""): "0.5",
+			},
+			wantErrContaining: "invalid NvFractions annotation key",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotName, gotFound, err := GetNvFractionsContainerName(tt.annotations)
+			assertErrorContains(t, err, tt.wantErrContaining)
+			if tt.wantErrContaining != "" {
+				return
+			}
+			if gotName != tt.wantName || gotFound != tt.wantFound {
+				t.Fatalf("GetNvFractionsContainerName() = %q, %t, want %q, %t",
+					gotName, gotFound, tt.wantName, tt.wantFound)
+			}
+		})
+	}
+}
+
+func TestGetFractionContainerRefWithComputePortionAnnotation(t *testing.T) {
+	pod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Annotations: map[string]string{
+				CalcGpuFractionAnnotationForContainer("container-1"):       "1Gi",
+				CalcGpuComputePortionAnnotationForContainer("container-1"): "0.5",
+			},
+		},
+		Spec: v1.PodSpec{
+			Containers: []v1.Container{{Name: "container-0"}, {Name: "container-1"}},
+		},
+	}
+
+	containerRef, err := GetFractionContainerRef(pod)
+	if err != nil {
+		t.Fatalf("GetFractionContainerRef() error: %v", err)
+	}
+	if containerRef.Container.Name != "container-1" || containerRef.Index != 1 {
+		t.Fatalf("GetFractionContainerRef() = %q at index %d, want container-1 at index 1",
+			containerRef.Container.Name, containerRef.Index)
+	}
+}

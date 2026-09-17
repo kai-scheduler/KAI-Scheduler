@@ -78,12 +78,14 @@ func adjustFractionalMemoryAnnotations(pod *v1.Pod, containerName string) error 
 	return nil
 }
 
-// validateDeviceAnnotation makes sure that only the binder service account can modify the nvfractions device annotations.
-// This is done to prevent malicious actors from modifying the nvfractions device annotations to gain access to the GPU.
+// validateDeviceAnnotation makes sure that only the binder service account can modify the binder-owned
+// nvfractions annotations: the device list, which grants GPU access, and the compute portion, which caps
+// GPU compute. Both are limits a workload is subject to, so a workload able to set them could exempt itself.
 func (p *NvFractions) validateDeviceAnnotation(ctx context.Context, oldPod, pod *v1.Pod) error {
 	hasNvFractionsDeviceAnnotationChange := false
+	changedAnnotationKey := ""
 	for annotationKey := range pod.Annotations {
-		if !isNvFractionsDeviceAnnotation(annotationKey) {
+		if !resources.IsBinderOwnedNvFractionsAnnotation(annotationKey) {
 			continue
 		}
 		if err := validateDeviceAnnotationContainerExists(pod); err != nil {
@@ -97,7 +99,23 @@ func (p *NvFractions) validateDeviceAnnotation(ctx context.Context, oldPod, pod 
 		}
 
 		if hasNvFractionsDeviceAnnotationChange {
+			changedAnnotationKey = annotationKey
 			break
+		}
+	}
+
+	if !hasNvFractionsDeviceAnnotationChange && oldPod != nil {
+		// Removal is a modification too: dropping the compute portion would lift the
+		// workload's own GPU compute cap, and dropping the device list its scoping.
+		for annotationKey := range oldPod.Annotations {
+			if !resources.IsBinderOwnedNvFractionsAnnotation(annotationKey) {
+				continue
+			}
+			if _, found := pod.Annotations[annotationKey]; !found {
+				hasNvFractionsDeviceAnnotationChange = true
+				changedAnnotationKey = annotationKey
+				break
+			}
 		}
 	}
 
@@ -115,7 +133,7 @@ func (p *NvFractions) validateDeviceAnnotation(ctx context.Context, oldPod, pod 
 	}
 	if request.UserInfo.Username != p.binderServiceAccountUsername {
 		return fmt.Errorf("%s annotations may only be modified by %s",
-			constants.NvFractionsVisibleDevicesSuffix, p.binderServiceAccountUsername)
+			binderOwnedSuffix(changedAnnotationKey), p.binderServiceAccountUsername)
 	}
 
 	return nil
@@ -140,16 +158,19 @@ func stripNvFractionsDeviceAnnotations(pod *v1.Pod) *v1.Pod {
 
 	podCopy := pod.DeepCopy()
 	for key := range podCopy.Annotations {
-		if isNvFractionsDeviceAnnotation(key) {
+		if resources.IsBinderOwnedNvFractionsAnnotation(key) {
 			delete(podCopy.Annotations, key)
 		}
 	}
 	return podCopy
 }
 
-func isNvFractionsDeviceAnnotation(annotationKey string) bool {
-	return strings.HasPrefix(annotationKey, constants.NvFractionsAnnotationPrefix) &&
-		strings.HasSuffix(annotationKey, constants.NvFractionsVisibleDevicesSuffix)
+// binderOwnedSuffix names the offending annotation in the rejection message.
+func binderOwnedSuffix(annotationKey string) string {
+	if strings.HasSuffix(annotationKey, constants.NvFractionsComputePortionSuffix) {
+		return constants.NvFractionsComputePortionSuffix
+	}
+	return constants.NvFractionsVisibleDevicesSuffix
 }
 
 func validateDeviceAnnotationContainerExists(pod *v1.Pod) error {

@@ -118,6 +118,29 @@ func TestExtractNvFractionsData(t *testing.T) {
 			},
 		},
 		{
+			name: "skips binder-written compute portion annotation",
+			annotations: map[string]string{
+				constants.NvFractionsAnnotationPrefix + "main" + constants.NvFractionsMemoryRequestSuffix: "1Gi",
+				CalcGpuComputePortionAnnotationForContainer("main"):                                       "0.5",
+				CalcGpuVisibleDevicesAnnotationForContainer("main"):                                       "GPU-0",
+				CalcGpuComputeSharingModeAnnotationForContainer("main"):                                   "sm-sharing",
+			},
+			want: map[string]NvFractionsContainerRequest{
+				"main": {
+					Request:     quantityPtr("1Gi"),
+					ComputeMode: ptr.To(schedulingv1alpha2.GPUComputeSharingModeSMSharing),
+				},
+			},
+		},
+		{
+			// A quantity-shaped portion value must not be mistaken for a memory request.
+			name: "compute portion alone yields no request",
+			annotations: map[string]string{
+				CalcGpuComputePortionAnnotationForContainer("main"): "1Gi",
+			},
+			want: map[string]NvFractionsContainerRequest{},
+		},
+		{
 			name: "rejects invalid annotation key",
 			annotations: map[string]string{
 				constants.NvFractionsAnnotationPrefix + "main.unknown": "1Gi",
@@ -185,6 +208,29 @@ func TestParseNvFractionsAnnotationKey(t *testing.T) {
 			wantType:          nvFractionsComputeModeAnnotation,
 		},
 		{
+			name:              "compute portion annotation",
+			annotationKey:     constants.NvFractionsAnnotationPrefix + "main" + constants.NvFractionsComputePortionSuffix,
+			wantContainerName: "main",
+			wantType:          nvFractionsComputePortionAnnotation,
+		},
+		{
+			// The compute-mode branch is evaluated first; it must not swallow a portion key.
+			name:              "compute portion on a container named after the compute mode suffix",
+			annotationKey:     constants.NvFractionsAnnotationPrefix + "main" + constants.GpuComputeSharingModeSuffix + constants.NvFractionsComputePortionSuffix,
+			wantContainerName: "main" + constants.GpuComputeSharingModeSuffix,
+			wantType:          nvFractionsComputePortionAnnotation,
+		},
+		{
+			name:              "compute portion with empty container name",
+			annotationKey:     constants.NvFractionsAnnotationPrefix + constants.NvFractionsComputePortionSuffix,
+			wantErrContaining: "invalid NvFractions annotation key",
+		},
+		{
+			name:              "unknown gpu-compute suffix",
+			annotationKey:     constants.NvFractionsAnnotationPrefix + "main.gpu-compute.percent",
+			wantErrContaining: "invalid NvFractions annotation key",
+		},
+		{
 			name:              "invalid annotation",
 			annotationKey:     constants.NvFractionsAnnotationPrefix + "main",
 			wantErrContaining: "invalid NvFractions annotation key",
@@ -241,4 +287,73 @@ func quantityString(quantity *resource.Quantity) string {
 		return ""
 	}
 	return quantity.String()
+}
+
+func TestCalcGpuComputePortionAnnotationForContainer(t *testing.T) {
+	got := CalcGpuComputePortionAnnotationForContainer("main")
+	want := constants.NvFractionsAnnotationPrefix + "main" + constants.NvFractionsComputePortionSuffix
+	if got != want {
+		t.Fatalf("CalcGpuComputePortionAnnotationForContainer() = %q, want %q", got, want)
+	}
+	if got == CalcGpuComputeSharingModeAnnotationForContainer("main") {
+		t.Fatalf("compute portion and compute mode annotation keys collide: %q", got)
+	}
+}
+
+func TestIsBinderOwnedNvFractionsAnnotation(t *testing.T) {
+	tests := []struct {
+		name          string
+		annotationKey string
+		want          bool
+	}{
+		{
+			name:          "visible devices",
+			annotationKey: CalcGpuVisibleDevicesAnnotationForContainer("main"),
+			want:          true,
+		},
+		{
+			name:          "compute portion",
+			annotationKey: CalcGpuComputePortionAnnotationForContainer("main"),
+			want:          true,
+		},
+		{
+			// Protection must not depend on the container name being valid.
+			name:          "compute portion with empty container name",
+			annotationKey: CalcGpuComputePortionAnnotationForContainer(""),
+			want:          true,
+		},
+		{
+			name:          "memory request",
+			annotationKey: CalcGpuFractionAnnotationForContainer("main"),
+			want:          false,
+		},
+		{
+			name:          "memory limit",
+			annotationKey: CalcGpuFractionLimitAnnotationForContainer("main"),
+			want:          false,
+		},
+		{
+			name:          "compute mode",
+			annotationKey: CalcGpuComputeSharingModeAnnotationForContainer("main"),
+			want:          false,
+		},
+		{
+			name:          "compute portion suffix under a foreign prefix",
+			annotationKey: constants.KaiFractionContainerAnnotationPrefix + "main" + constants.NvFractionsComputePortionSuffix,
+			want:          false,
+		},
+		{
+			name:          "unrelated annotation",
+			annotationKey: "example.com/other",
+			want:          false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsBinderOwnedNvFractionsAnnotation(tt.annotationKey); got != tt.want {
+				t.Fatalf("IsBinderOwnedNvFractionsAnnotation(%q) = %t, want %t", tt.annotationKey, got, tt.want)
+			}
+		})
+	}
 }

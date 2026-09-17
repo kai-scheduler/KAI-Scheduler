@@ -22,9 +22,11 @@ const (
 	BindTimeoutSecondsArgument = kaiv1binder.BindTimeoutSecondsArgument
 	CDIEnabledArgument         = kaiv1binder.CDIEnabledArgument
 	NRIPluginEnabledArgument   = kaiv1binder.NRIPluginEnabledArgument
+	ReservedGpuMemoryArgument  = kaiv1binder.ReservedGpuMemoryArgument
 
 	DefaultBindTimeoutSeconds = kaiv1binder.DefaultBindTimeoutSeconds
 	DefaultCDIEnabled         = kaiv1binder.DefaultCDIEnabled
+	DefaultReservedGpuMemory  = kaiv1binder.DefaultReservedGpuMemory
 )
 
 type Config map[string]kaiv1binder.PluginConfig

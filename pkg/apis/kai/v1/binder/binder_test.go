@@ -85,6 +85,43 @@ var _ = Describe("Binder", func() {
 		Expect(*binder.Plugins[HamiCorePluginName].Enabled).To(BeFalse())
 	})
 
+	It("Set Defaults bakes the reserved GPU memory argument on nvfractions", func(ctx context.Context) {
+		binder := &Binder{}
+		binder.SetDefaultsWhereNeeded(nil, nil, common.GpuSharingModeNvFractions)
+
+		Expect(binder.Plugins[NvFractionsPluginName].Arguments).
+			To(HaveKeyWithValue(ReservedGpuMemoryArgument, DefaultReservedGpuMemory))
+		defaultReserve := resource.MustParse(DefaultReservedGpuMemory)
+		Expect(defaultReserve.Value()).To(Equal(int64(1024 * 1024 * 1024)))
+
+		// Dropping the unbaked cdiEnabled argument must not take the reserve with it.
+		_, hasCDIArg := binder.Plugins[NvFractionsPluginName].Arguments[CDIEnabledArgument]
+		Expect(hasCDIArg).To(BeFalse())
+	})
+
+	It("user nvfractions arguments replace the defaulted reserve", func(ctx context.Context) {
+		binder := &Binder{
+			Plugins: map[string]PluginConfig{
+				NvFractionsPluginName: {Arguments: map[string]string{CDIEnabledArgument: "true"}},
+			},
+		}
+		binder.SetDefaultsWhereNeeded(nil, nil, common.GpuSharingModeNvFractions)
+
+		// Arguments overrides replace the whole map; the binder plugin factory is
+		// what keeps the reserve alive, through its own default.
+		Expect(binder.Plugins[NvFractionsPluginName].Arguments).To(HaveKeyWithValue(CDIEnabledArgument, "true"))
+		Expect(binder.Plugins[NvFractionsPluginName].Arguments).NotTo(HaveKey(ReservedGpuMemoryArgument))
+	})
+
+	It("reserves GPU memory only for nvfractions", func(ctx context.Context) {
+		pluginsConfig := DefaultPluginsConfig(DefaultBindTimeoutSeconds, false, true, true, true)
+
+		Expect(pluginsConfig[NvFractionsPluginName].Arguments).
+			To(HaveKeyWithValue(ReservedGpuMemoryArgument, "1Gi"))
+		Expect(pluginsConfig[GPUSharingPluginName].Arguments).NotTo(HaveKey(ReservedGpuMemoryArgument))
+		Expect(pluginsConfig[HamiCorePluginName].Arguments).NotTo(HaveKey(ReservedGpuMemoryArgument))
+	})
+
 	It("Set Defaults With Plugin Overrides", func(ctx context.Context) {
 		binder := &Binder{
 			VolumeBindingTimeoutSeconds: ptr.To(45),

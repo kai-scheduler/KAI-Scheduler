@@ -87,6 +87,27 @@ Because of this, KAI keeps workloads that use different compute-sharing modes
 in separate fractional GPU groups. **A pod that requests `sm-sharing` is therefore not
 placed with a `time-slicing` pod, and the reverse is also true.**
 
+### Compute limits
+
+Selecting `sm-sharing` shares the SMs but does not bound them. Two pods run
+concurrently, and either can occupy the whole device.
+
+The bound comes from a compute portion the binder records at bind time, from the
+GPU portion the workload's quota was charged for:
+
+```
+nvidia.com/container.<container-name>.gpu-compute.portion: "0.5"
+```
+
+kai-gpu-fractioning turns it into `CUDA_MPS_ACTIVE_THREAD_PERCENTAGE`, which MPS
+enforces against the container's clients. It applies in both compute modes:
+under `time-slicing` it bounds the container's own MPS server, under
+`sm-sharing` its share of the shared one.
+
+The annotation is written by the binder and rejected from anyone else, the same
+as `.gpus.devices`. It is a limit imposed on the workload, so a workload able to
+set it could exempt itself from it.
+
 ### Choosing the right compute mode
 
 Choose `time-slicing` for workloads that can tolerate an occasional delay and
@@ -98,6 +119,32 @@ throughput. For example, it can provide steadier latency for online inference
 and avoids one participant pausing while other participants in a distributed
 job continue to wait. Configure MPS on the GPU nodes before using this mode;
 see [GPU Sharing with MPS](../mps/README.md).
+
+## Reserved GPU memory
+
+A portion does not resolve against the GPU's full advertised memory. The binder
+subtracts a per-GPU reserve first, so an 81920MiB H100 at `0.5` yields 40448MiB,
+not 40960MiB.
+
+The reserve exists for the MPS servers: each holds a device context of its own,
+and a GPU divided exactly between its tenants leaves nothing for them. The
+server then fails to allocate and takes down every fraction pod on that GPU.
+
+The default is 1Gi. Change it through the nvfractions binder plugin arguments:
+
+```yaml
+spec:
+  binder:
+    plugins:
+      nvfractions:
+        arguments:
+          cdiEnabled: "false"
+          reservedGpuMemory: 2Gi
+```
+
+Supplying `arguments` replaces the defaults for that plugin, so repeat any other
+argument alongside it. Placement is by portion, so the reserve changes only the
+byte value a portion resolves to, not how many workloads fit on a GPU.
 
 ## Verify the allocation
 

@@ -285,6 +285,22 @@ func TestValidateDeviceAnnotationAuthorization(t *testing.T) {
 		err := New(binderUsername).Validate(contextWithUser("alice"), oldPod, newPod)
 		assert.ErrorContains(t, err, ".gpus.devices annotations may only be modified")
 	})
+
+	t.Run("rejects removed device annotation by non-binder", func(t *testing.T) {
+		newPod := podWithDeviceAnnotation("GPU-0")
+		delete(newPod.Annotations, deviceAnnotationKey)
+
+		err := New(binderUsername).Validate(contextWithUser("alice"), podWithDeviceAnnotation("GPU-0"), newPod)
+		assert.ErrorContains(t, err, ".gpus.devices annotations may only be modified")
+	})
+
+	t.Run("allows removed device annotation by binder", func(t *testing.T) {
+		newPod := podWithDeviceAnnotation("GPU-0")
+		delete(newPod.Annotations, deviceAnnotationKey)
+
+		err := New(binderUsername).Validate(contextWithUser(binderUsername), podWithDeviceAnnotation("GPU-0"), newPod)
+		assert.NoError(t, err)
+	})
 }
 
 func TestValidateDeviceAnnotationValues(t *testing.T) {
@@ -308,6 +324,31 @@ func TestValidateDeviceAnnotationValues(t *testing.T) {
 				resources.CalcGpuVisibleDevicesAnnotationForContainer("container-1"): "GPU-0",
 			},
 			wantErrContains: "doesn't support multiple containers",
+		},
+		{
+			name: "compute portion alongside a request on the same container",
+			annotations: map[string]string{
+				nvFractionsRequestKey("container-0"):                                 "1Gi",
+				resources.CalcGpuComputePortionAnnotationForContainer("container-0"): "0.5",
+			},
+		},
+		{
+			name: "rejects compute portion on a container other than the requesting one",
+			annotations: map[string]string{
+				nvFractionsRequestKey("container-0"):                                 "1Gi",
+				resources.CalcGpuComputePortionAnnotationForContainer("container-1"): "0.5",
+			},
+			wantErrContains: "doesn't support multiple containers",
+		},
+		{
+			name:            "rejects compute portion referencing a missing container",
+			annotations:     map[string]string{resources.CalcGpuComputePortionAnnotationForContainer("missing"): "0.5"},
+			wantErrContains: "not found in pod spec",
+		},
+		{
+			name:            "rejects compute portion with empty container name",
+			annotations:     map[string]string{resources.CalcGpuComputePortionAnnotationForContainer(""): "0.5"},
+			wantErrContains: "invalid NvFractions annotation key",
 		},
 		{
 			name:            "rejects device annotation referencing a missing container",
@@ -344,4 +385,178 @@ func contextWithUser(username string) context.Context {
 			UserInfo: authenticationv1.UserInfo{Username: username},
 		},
 	})
+}
+
+// The compute portion caps the GPU compute a workload may use, so a workload
+// able to write it could lift its own cap.
+func TestValidateComputePortionAnnotationAuthorization(t *testing.T) {
+	const binderUsername = "system:serviceaccount:kai-scheduler:binder"
+	portionKey := resources.CalcGpuComputePortionAnnotationForContainer("container-0")
+	podWithComputePortion := func(value string) *v1.Pod {
+		return &v1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{
+				nvFractionsRequestKey("container-0"): "1Gi",
+				portionKey:                           value,
+			}},
+			Spec: v1.PodSpec{Containers: []v1.Container{{Name: "container-0"}}},
+		}
+	}
+
+	t.Run("rejects create by non-binder", func(t *testing.T) {
+		err := New(binderUsername).Validate(contextWithUser("alice"), nil, podWithComputePortion("1"))
+		assert.ErrorContains(t, err, ".gpu-compute.portion annotations may only be modified")
+	})
+
+	t.Run("allows create by binder", func(t *testing.T) {
+		err := New(binderUsername).Validate(contextWithUser(binderUsername), nil, podWithComputePortion("0.5"))
+		assert.NoError(t, err)
+	})
+
+	t.Run("rejects raising the portion by non-binder", func(t *testing.T) {
+		err := New(binderUsername).Validate(contextWithUser("alice"),
+			podWithComputePortion("0.25"), podWithComputePortion("1"))
+		assert.ErrorContains(t, err, ".gpu-compute.portion annotations may only be modified")
+	})
+
+	t.Run("rejects adding the portion by non-binder", func(t *testing.T) {
+		oldPod := podWithComputePortion("0.25")
+		delete(oldPod.Annotations, portionKey)
+
+		err := New(binderUsername).Validate(contextWithUser("alice"), oldPod, podWithComputePortion("1"))
+		assert.ErrorContains(t, err, ".gpu-compute.portion annotations may only be modified")
+	})
+
+	t.Run("rejects removing the portion by non-binder", func(t *testing.T) {
+		newPod := podWithComputePortion("0.25")
+		delete(newPod.Annotations, portionKey)
+
+		err := New(binderUsername).Validate(contextWithUser("alice"), podWithComputePortion("0.25"), newPod)
+		assert.ErrorContains(t, err, ".gpu-compute.portion annotations may only be modified")
+	})
+
+	t.Run("allows unchanged portion by non-binder", func(t *testing.T) {
+		newPod := podWithComputePortion("0.25")
+		newPod.Labels = map[string]string{"foo": "bar"}
+
+		err := New(binderUsername).Validate(contextWithUser("alice"), podWithComputePortion("0.25"), newPod)
+		assert.NoError(t, err)
+	})
+
+	t.Run("rejects portion on a pod with no fraction request", func(t *testing.T) {
+		pod := podWithComputePortion("1")
+		delete(pod.Annotations, nvFractionsRequestKey("container-0"))
+
+		err := New(binderUsername).Validate(contextWithUser("alice"), nil, pod)
+		assert.ErrorContains(t, err, ".gpu-compute.portion annotations may only be modified")
+	})
+
+	t.Run("rejects portion when no binder service account is configured", func(t *testing.T) {
+		err := New("").Validate(contextWithUser("alice"), nil, podWithComputePortion("1"))
+		assert.ErrorContains(t, err, "binder service account username is not configured")
+	})
+
+	// Both binder-owned annotations are present, so the rejection must name the one
+	// that actually changed rather than whichever the annotation map yielded first.
+	t.Run("rejects changing the portion while the device list is unchanged", func(t *testing.T) {
+		deviceKey := resources.CalcGpuVisibleDevicesAnnotationForContainer("container-0")
+		oldPod := podWithComputePortion("0.25")
+		oldPod.Annotations[deviceKey] = "GPU-0"
+		newPod := podWithComputePortion("1")
+		newPod.Annotations[deviceKey] = "GPU-0"
+
+		err := New(binderUsername).Validate(contextWithUser("alice"), oldPod, newPod)
+		assert.ErrorContains(t, err, ".gpu-compute.portion annotations may only be modified")
+	})
+
+	t.Run("rejects changing the device list while the portion is unchanged", func(t *testing.T) {
+		deviceKey := resources.CalcGpuVisibleDevicesAnnotationForContainer("container-0")
+		oldPod := podWithComputePortion("0.25")
+		oldPod.Annotations[deviceKey] = "GPU-0"
+		newPod := podWithComputePortion("0.25")
+		newPod.Annotations[deviceKey] = "GPU-1"
+
+		err := New(binderUsername).Validate(contextWithUser("alice"), oldPod, newPod)
+		assert.ErrorContains(t, err, ".gpus.devices annotations may only be modified")
+	})
+}
+
+// The compute portion is binder output, so its value must never be read as part
+// of the workload's fraction request. These cases pin the end-to-end outcome;
+// TestStripNvFractionsDeviceAnnotations pins the removal that backs it.
+func TestValidateIgnoresComputePortionValueInFractionRequest(t *testing.T) {
+	const binderUsername = "binder"
+	tests := []struct {
+		name        string
+		annotations map[string]string
+	}{
+		{
+			name: "portion value is not a memory quantity",
+			annotations: map[string]string{
+				nvFractionsRequestKey("container-0"):                                 "1Gi",
+				resources.CalcGpuComputePortionAnnotationForContainer("container-0"): "not-a-quantity",
+			},
+		},
+		{
+			name: "portion value larger than the memory limit",
+			annotations: map[string]string{
+				nvFractionsRequestKey("container-0"):                                 "1Gi",
+				nvFractionsLimitKey("container-0"):                                   "2Gi",
+				resources.CalcGpuComputePortionAnnotationForContainer("container-0"): "9999Gi",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pod := &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Annotations: tt.annotations},
+				Spec:       v1.PodSpec{Containers: []v1.Container{{Name: "container-0"}}},
+			}
+
+			err := New(binderUsername).Validate(contextWithUser(binderUsername), nil, pod)
+			assert.NoError(t, err)
+		})
+	}
+}
+
+// stripNvFractionsDeviceAnnotations is what keeps binder output out of the
+// customer's fraction request. Downstream parsing filters the same keys, so an
+// end-to-end Validate case cannot tell the strip apart from that filter; assert
+// on it directly instead.
+func TestStripNvFractionsDeviceAnnotations(t *testing.T) {
+	const container = "container-0"
+	annotations := map[string]string{
+		nvFractionsRequestKey(container):                                     "1Gi",
+		nvFractionsLimitKey(container):                                       "2Gi",
+		resources.CalcGpuComputeSharingModeAnnotationForContainer(container): "sm-sharing",
+		resources.CalcGpuVisibleDevicesAnnotationForContainer(container):     "GPU-0",
+		resources.CalcGpuComputePortionAnnotationForContainer(container):     "0.5",
+		"example.com/unrelated":                                              "keep-me",
+	}
+	pod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Annotations: annotations},
+		Spec:       v1.PodSpec{Containers: []v1.Container{{Name: container}}},
+	}
+
+	stripped := stripNvFractionsDeviceAnnotations(pod)
+
+	assert.Equal(t, map[string]string{
+		nvFractionsRequestKey(container):                                     "1Gi",
+		nvFractionsLimitKey(container):                                       "2Gi",
+		resources.CalcGpuComputeSharingModeAnnotationForContainer(container): "sm-sharing",
+		"example.com/unrelated":                                              "keep-me",
+	}, stripped.Annotations)
+
+	// Validation must not mutate the object under admission; the source pod keeps
+	// every annotation it arrived with.
+	assert.Len(t, pod.Annotations, 6)
+	assert.Equal(t, "GPU-0", pod.Annotations[resources.CalcGpuVisibleDevicesAnnotationForContainer(container)])
+	assert.Equal(t, "0.5", pod.Annotations[resources.CalcGpuComputePortionAnnotationForContainer(container)])
+}
+
+func TestStripNvFractionsDeviceAnnotationsWithoutAnnotations(t *testing.T) {
+	assert.Nil(t, stripNvFractionsDeviceAnnotations(nil))
+
+	pod := &v1.Pod{Spec: v1.PodSpec{Containers: []v1.Container{{Name: "container-0"}}}}
+	assert.Same(t, pod, stripNvFractionsDeviceAnnotations(pod))
 }

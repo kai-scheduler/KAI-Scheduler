@@ -28,9 +28,16 @@ const (
 	BindTimeoutSecondsArgument = "bindTimeoutSeconds"
 	CDIEnabledArgument         = "cdiEnabled"
 	NRIPluginEnabledArgument   = "nriPluginEnabled"
+	// ReservedGpuMemoryArgument is per-GPU memory held back from fractional splits.
+	ReservedGpuMemoryArgument = "reservedGpuMemory"
 
 	DefaultBindTimeoutSeconds = 120
 	DefaultCDIEnabled         = false
+	// DefaultReservedGpuMemory leaves headroom for the MPS server's own device
+	// context. Splitting a GPU's full advertised memory between tenants starves
+	// it, and it takes every fraction pod on that GPU down with it. Placement is
+	// by portion, so this only shrinks the bytes a portion resolves to.
+	DefaultReservedGpuMemory = "1Gi"
 )
 
 var defaultPluginPriorities = map[string]int{
@@ -218,7 +225,8 @@ func DefaultPluginsConfig(bindTimeoutSeconds int, cdiEnabled bool,
 			Enabled:  ptr.To(nvFractionsEnabled),
 			Priority: ptr.To(defaultPluginPriorities[NvFractionsPluginName]),
 			Arguments: map[string]string{
-				CDIEnabledArgument: strconv.FormatBool(cdiEnabled),
+				CDIEnabledArgument:        strconv.FormatBool(cdiEnabled),
+				ReservedGpuMemoryArgument: DefaultReservedGpuMemory,
 			},
 		},
 		HamiCorePluginName: {

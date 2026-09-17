@@ -1,0 +1,3 @@
+kind: Added
+body: |-
+  NvFractions caps per-container GPU compute and reserves per-GPU memory for the MPS server

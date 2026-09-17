@@ -21,6 +21,7 @@ const (
 	nvFractionsLimitAnnotation
 	nvFractionsDevicesAnnotation
 	nvFractionsComputeModeAnnotation
+	nvFractionsComputePortionAnnotation
 )
 
 func CalcGpuFractionAnnotationForContainer(containerName string) string {
@@ -35,13 +36,19 @@ func CalcGpuVisibleDevicesAnnotationForContainer(containerName string) string {
 	return constants.NvFractionsAnnotationPrefix + containerName + constants.NvFractionsVisibleDevicesSuffix
 }
 
+// CalcGpuComputePortionAnnotationForContainer returns the per-container GPU
+// compute-portion annotation key.
+func CalcGpuComputePortionAnnotationForContainer(containerName string) string {
+	return constants.NvFractionsAnnotationPrefix + containerName + constants.NvFractionsComputePortionSuffix
+}
+
 func ExtractNvFractionsData(pod *v1.Pod) (map[string]NvFractionsContainerRequest, error) {
 	fractionsData := make(map[string]NvFractionsContainerRequest)
 	for annotationKey, annotationValue := range pod.Annotations {
 		if !strings.HasPrefix(annotationKey, constants.NvFractionsAnnotationPrefix) {
 			continue
 		}
-		if isNvFractionsDeviceListAnnotation(annotationKey) {
+		if IsBinderOwnedNvFractionsAnnotation(annotationKey) {
 			continue
 		}
 
@@ -94,13 +101,16 @@ func getNvFractionData(pod *v1.Pod) (*NvFractionsContainerRequest, error) {
 	return nil, nil
 }
 
-// isNvFractionsDeviceListAnnotation reports whether annotationKey is the
-// device-list annotation. It shares the NvFractions prefix but, unlike
-// request/limit/compute-mode, isn't part of the customer's fractional GPU
-// request - it's written by the binder after scheduling - so it must be
-// skipped here rather than treated as an invalid key.
-func isNvFractionsDeviceListAnnotation(annotationKey string) bool {
-	return strings.HasSuffix(annotationKey, constants.NvFractionsVisibleDevicesSuffix)
+// IsBinderOwnedNvFractionsAnnotation reports whether annotationKey is written by
+// the binder after scheduling (device list, compute portion) rather than being
+// part of the customer's request. Request parsing skips these instead of
+// rejecting them as invalid keys, and admission only lets the binder set them.
+func IsBinderOwnedNvFractionsAnnotation(annotationKey string) bool {
+	if !strings.HasPrefix(annotationKey, constants.NvFractionsAnnotationPrefix) {
+		return false
+	}
+	return strings.HasSuffix(annotationKey, constants.NvFractionsVisibleDevicesSuffix) ||
+		strings.HasSuffix(annotationKey, constants.NvFractionsComputePortionSuffix)
 }
 
 func parseNvFractionsAnnotationKey(annotationKey string) (string, nvFractionsAnnotationType, error) {
@@ -132,6 +142,13 @@ func parseNvFractionsAnnotationKey(annotationKey string) (string, nvFractionsAnn
 			return "", 0, fmt.Errorf("invalid NvFractions annotation key: %s", annotationKey)
 		}
 		return containerName, nvFractionsComputeModeAnnotation, nil
+	}
+	if strings.HasSuffix(annotationKey, constants.NvFractionsComputePortionSuffix) {
+		containerName := strings.TrimSuffix(containerNameWithSuffix, constants.NvFractionsComputePortionSuffix)
+		if containerName == "" {
+			return "", 0, fmt.Errorf("invalid NvFractions annotation key: %s", annotationKey)
+		}
+		return containerName, nvFractionsComputePortionAnnotation, nil
 	}
 	return "", 0, fmt.Errorf("invalid NvFractions annotation key: %s", annotationKey)
 }

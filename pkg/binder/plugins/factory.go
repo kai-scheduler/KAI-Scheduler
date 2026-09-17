@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"sync"
 
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/utils/ptr"
@@ -123,7 +124,11 @@ func newNvFractionsPlugin(_ PluginBuildContext, arguments map[string]string) (Pl
 	if err != nil {
 		return nil, err
 	}
-	return nvfractions.New(cdiEnabled), nil
+	reservedGpuMemoryMiB, err := quantityMiBArgumentOrDefault(arguments, ReservedGpuMemoryArgument, DefaultReservedGpuMemory)
+	if err != nil {
+		return nil, err
+	}
+	return nvfractions.New(cdiEnabled, reservedGpuMemoryMiB), nil
 }
 
 func validateDependentPlugins(config Config) error {
@@ -172,6 +177,25 @@ func boolArgument(arguments map[string]string, name string) (bool, error) {
 		return false, fmt.Errorf("invalid argument %q=%q: %w", name, value, err)
 	}
 	return parsed, nil
+}
+
+// quantityMiBArgumentOrDefault parses a Kubernetes quantity argument into whole
+// MiB, rounding down. A configuration written before the argument existed falls
+// back to defaultValue.
+func quantityMiBArgumentOrDefault(arguments map[string]string, name, defaultValue string) (uint64, error) {
+	value, found := arguments[name]
+	if !found || value == "" {
+		value = defaultValue
+	}
+
+	quantity, err := resource.ParseQuantity(value)
+	if err != nil {
+		return 0, fmt.Errorf("invalid argument %q=%q: %w", name, value, err)
+	}
+	if quantity.Sign() < 0 {
+		return 0, fmt.Errorf("invalid argument %q=%q: must not be negative", name, value)
+	}
+	return uint64(quantity.Value()) / (1024 * 1024), nil
 }
 
 func boolArgumentOrDefault(arguments map[string]string, name string, defaultValue bool) (bool, error) {
