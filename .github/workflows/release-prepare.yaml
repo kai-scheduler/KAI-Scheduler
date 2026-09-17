@@ -41,7 +41,9 @@ jobs:
           go-version: '1.26.3'
 
       - name: Fold fragments into CHANGELOG.md
-        run: make changelog-release VERSION="${{ inputs.version }}"
+        env:
+          VERSION: ${{ inputs.version }}
+        run: make changelog-release VERSION=$VERSION
 
       - name: Open release PR
         env:

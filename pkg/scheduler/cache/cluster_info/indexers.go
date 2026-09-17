@@ -7,6 +7,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 )
 
@@ -22,5 +23,8 @@ func podByPodGroupIndexer(obj interface{}) ([]string, error) {
 	}
 
 	podGroup := pod.Annotations[commonconstants.PodGroupAnnotationForPod]
-	return []string{podGroup}, nil
+	if podGroup == "" {
+		return []string{""}, nil
+	}
+	return []string{string(common_info.NewPodGroupID(pod.Namespace, podGroup))}, nil
 }
