@@ -1,3 +1,0 @@
-kind: Fixed
-body: |-
-  Kueue topology migration created unserved kai.scheduler/v1 Topologies; now uses v1alpha1
