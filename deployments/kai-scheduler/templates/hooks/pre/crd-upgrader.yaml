@@ -40,7 +40,7 @@ spec:
       containers:
       - name: upgrader
         image: "{{ .Values.crdupgrader.image.registry | default .Values.global.registry }}/{{ .Values.crdupgrader.image.name }}:{{ include "kai-scheduler.imageTag" (dict "root" $ "tag" .Values.crdupgrader.image.tag) }}"
-        imagePullPolicy: {{ .Values.crdupgrader.image.pullPolicy }}
+        imagePullPolicy: {{ .Values.crdupgrader.image.pullPolicy | default .Values.global.imagePullPolicy }}
         {{- with .Values.crdupgrader.resources }}
         resources:
           {{- toYaml . | nindent 10 }}
