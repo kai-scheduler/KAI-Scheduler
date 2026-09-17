@@ -22,6 +22,10 @@ func nvFractionsRequestKey(container string) string {
 	return resources.CalcGpuFractionAnnotationForContainer(container)
 }
 
+func nvFractionsLimitKey(container string) string {
+	return resources.CalcGpuFractionLimitAnnotationForContainer(container)
+}
+
 func TestMutateConvertsLegacyGpuMemoryWithoutConfigmap(t *testing.T) {
 	pod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{constants.GpuMemory: "2000"}},
@@ -114,13 +118,95 @@ func TestValidate(t *testing.T) {
 			name:        "no fraction request",
 			annotations: map[string]string{},
 		},
+		{
+			name:            "rejects non-quantity nvfractions request value",
+			annotations:     map[string]string{nvFractionsRequestKey("container-0"): "not-a-quantity"},
+			wantErrContains: "must be a valid Kubernetes memory quantity greater than 0",
+		},
+		{
+			name:            "rejects empty nvfractions request value",
+			annotations:     map[string]string{nvFractionsRequestKey("container-0"): ""},
+			wantErrContains: "must be a valid Kubernetes memory quantity greater than 0",
+		},
+		{
+			name:            "rejects zero nvfractions request value",
+			annotations:     map[string]string{nvFractionsRequestKey("container-0"): "0"},
+			wantErrContains: "must be a valid Kubernetes memory quantity greater than 0",
+		},
+		{
+			name:            "rejects negative nvfractions request value",
+			annotations:     map[string]string{nvFractionsRequestKey("container-0"): "-1Gi"},
+			wantErrContains: "must be a valid Kubernetes memory quantity greater than 0",
+		},
+		{
+			name:            "rejects non-quantity nvfractions limit value",
+			annotations:     map[string]string{nvFractionsLimitKey("container-0"): "not-a-quantity"},
+			wantErrContains: "must be a valid Kubernetes memory quantity greater than 0",
+		},
+		{
+			name: "rejects nvfractions request greater than limit",
+			annotations: map[string]string{
+				nvFractionsRequestKey("container-0"): "2Gi",
+				nvFractionsLimitKey("container-0"):   "1Gi",
+			},
+			wantErrContains: "request is greater than limit",
+		},
+		{
+			name:            "rejects unknown nvfractions annotation suffix",
+			annotations:     map[string]string{constants.NvFractionsAnnotationPrefix + "container-0.gpu-memory": "1Gi"},
+			wantErrContains: "invalid NvFractions annotation key",
+		},
+		{
+			name:            "rejects nvfractions annotation with empty container name",
+			annotations:     map[string]string{nvFractionsRequestKey(""): "1Gi"},
+			wantErrContains: "invalid NvFractions annotation key",
+		},
+		{
+			name: "rejects nvfractions annotations on multiple containers",
+			annotations: map[string]string{
+				nvFractionsRequestKey("container-0"): "1Gi",
+				nvFractionsRequestKey("container-1"): "1Gi",
+			},
+			wantErrContains: "doesn't support multiple containers",
+		},
+		{
+			name: "rejects nvfractions request mismatching gpu-memory annotation",
+			annotations: map[string]string{
+				nvFractionsRequestKey("container-0"): "1Gi",
+				constants.GpuMemory:                  "2000",
+			},
+			wantErrContains: "does not match",
+		},
+		{
+			name: "rejects nvfractions limit combined with gpu-fraction",
+			annotations: map[string]string{
+				nvFractionsLimitKey("container-0"): "1Gi",
+				constants.GpuFraction:              "0.5",
+			},
+			wantErrContains: "cannot combine",
+		},
+		{
+			name:            "rejects non-numeric gpu-fraction value",
+			annotations:     map[string]string{constants.GpuFraction: "half"},
+			wantErrContains: "gpu-fraction",
+		},
+		{
+			name:            "rejects non-numeric gpu-memory value",
+			annotations:     map[string]string{constants.GpuMemory: "2Gi"},
+			wantErrContains: "gpu-memory",
+		},
+		{
+			name:            "rejects device count without fraction details",
+			annotations:     map[string]string{constants.GpuFractionsNumDevices: "2"},
+			wantErrContains: "cannot request multiple fractional devices",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			pod := &v1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Annotations: tt.annotations},
-				Spec:       v1.PodSpec{Containers: []v1.Container{{Name: "container-0"}}},
+				Spec:       v1.PodSpec{Containers: []v1.Container{{Name: "container-0"}, {Name: "container-1"}}},
 			}
 
 			err := New("").Validate(context.Background(), nil, pod)
@@ -189,6 +275,57 @@ func TestValidateDeviceAnnotationAuthorization(t *testing.T) {
 		err := New(binderUsername).Validate(contextWithUser("alice"), oldPod, newPod)
 		assert.ErrorContains(t, err, ".gpus.devices annotations may only be modified")
 	})
+}
+
+func TestValidateDeviceAnnotationValues(t *testing.T) {
+	const binderUsername = "binder"
+	tests := []struct {
+		name            string
+		annotations     map[string]string
+		wantErrContains string
+	}{
+		{
+			name: "device annotation alongside a request on the same container",
+			annotations: map[string]string{
+				nvFractionsRequestKey("container-0"):                                 "1Gi",
+				resources.CalcGpuVisibleDevicesAnnotationForContainer("container-0"): "GPU-0",
+			},
+		},
+		{
+			name: "rejects device annotation on a container other than the requesting one",
+			annotations: map[string]string{
+				nvFractionsRequestKey("container-0"):                                 "1Gi",
+				resources.CalcGpuVisibleDevicesAnnotationForContainer("container-1"): "GPU-0",
+			},
+			wantErrContains: "doesn't support multiple containers",
+		},
+		{
+			name:            "rejects device annotation referencing a missing container",
+			annotations:     map[string]string{resources.CalcGpuVisibleDevicesAnnotationForContainer("missing"): "GPU-0"},
+			wantErrContains: "not found in pod spec",
+		},
+		{
+			name:            "rejects device annotation with empty container name",
+			annotations:     map[string]string{resources.CalcGpuVisibleDevicesAnnotationForContainer(""): "GPU-0"},
+			wantErrContains: "invalid NvFractions annotation key",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pod := &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Annotations: tt.annotations},
+				Spec:       v1.PodSpec{Containers: []v1.Container{{Name: "container-0"}, {Name: "container-1"}}},
+			}
+
+			err := New(binderUsername).Validate(contextWithUser(binderUsername), nil, pod)
+			if tt.wantErrContains != "" {
+				assert.ErrorContains(t, err, tt.wantErrContains)
+				return
+			}
+			assert.NoError(t, err)
+		})
+	}
 }
 
 func contextWithUser(username string) context.Context {
