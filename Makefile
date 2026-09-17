@@ -23,6 +23,10 @@ SERVICE_NAMES := podgrouper scheduler binder resourcereservation snapshot-tool s
 # Kubernetes manifest files that require Kubernetes copyright header (space-separated)
 K8S_COPYRIGHTED_MANIFEST_FILES := deployments/kai-scheduler/crds/kai.scheduler_topologies.yaml
 
+# Generated chart templates to wrap in a global.clusterAutoscaling guard (space-separated).
+# controller-gen owns the contents of these files, so the guard is re-applied after generation.
+CLUSTER_AUTOSCALING_GUARDED_TEMPLATES := deployments/kai-scheduler/templates/rbac/nodescaleadjuster.yaml
+
 
 lint: fmt-go vet-go lint-go
 .PHONY: lint
@@ -87,6 +91,14 @@ manifests: controller-gen kustomize ## Generate ClusterRole and CustomResourceDe
 	# Add Kubernetes copyright to files derived from Kubernetes projects
 	@for f in $(K8S_COPYRIGHTED_MANIFEST_FILES); do \
 		cat ./hack/boilerplate.yaml.kb.txt $$f > $$f.tmp && mv $$f.tmp $$f; \
+	done
+
+	# Wrap generated templates in a clusterAutoscaling guard, replacing the leading document separator
+	@for f in $(CLUSTER_AUTOSCALING_GUARDED_TEMPLATES); do \
+		awk 'BEGIN { guarded = 0 } \
+			/^---$$/ && !guarded { print "{{- if .Values.global.clusterAutoscaling }}"; guarded = 1; next } \
+			{ print } \
+			END { if (!guarded) { print "no document separator found in " FILENAME > "/dev/stderr"; exit 1 } print "{{- end }}" }' $$f > $$f.tmp && mv $$f.tmp $$f; \
 	done
 
 	$(MAKE) gen-license

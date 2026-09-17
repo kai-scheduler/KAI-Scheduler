@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Skip creating the node-scale-adjuster ClusterRole and ClusterRoleBinding when global.clusterAutoscaling is disabled
+custom:
+    Author: slaupster
+    Issue: "225"

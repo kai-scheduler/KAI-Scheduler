@@ -1,0 +1,51 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+suite: test node scale adjuster RBAC templates
+templates:
+  - rbac/nodescaleadjuster.yaml
+  - rbac/nodescaleadjuster-binding.yaml
+tests:
+  - it: should not render RBAC when clusterAutoscaling is disabled by default
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: should not render RBAC when clusterAutoscaling is explicitly false
+    set:
+      global.clusterAutoscaling: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: should render the ClusterRole when clusterAutoscaling is enabled
+    template: rbac/nodescaleadjuster.yaml
+    set:
+      global.clusterAutoscaling: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: ClusterRole
+      - equal:
+          path: metadata.name
+          value: kai-node-scale-adjuster
+
+  - it: should render the ClusterRoleBinding when clusterAutoscaling is enabled
+    template: rbac/nodescaleadjuster-binding.yaml
+    set:
+      global.clusterAutoscaling: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: ClusterRoleBinding
+      - equal:
+          path: metadata.name
+          value: kai-node-scale-adjuster
+      - equal:
+          path: roleRef.name
+          value: kai-node-scale-adjuster
+      - equal:
+          path: subjects[0].name
+          value: node-scale-adjuster
