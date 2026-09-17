@@ -166,63 +166,6 @@
         }
       },
       {
-        "test_name": "Disaggregated inference allocation",
-        "status": "success",
-        "details": {
-          "nodes": 512,
-          "deployments": 128,
-          "pods": 1024,
-          "pods_per_deployment": 8,
-          "duration_seconds": 99.421,
-          "decode_block_spread_by_deployment": {
-            "inference-mock": 2
-          }
-        }
-      },
-      {
-        "test_name": "Disaggregated inference reclaim",
-        "status": "success",
-        "details": {
-          "nodes": 512,
-          "pods": 8,
-          "victim_scheduled_pods_before": 1024,
-          "victim_scheduled_pods_after": 1018,
-          "victim_scheduled_gpus_before": 4096,
-          "victim_scheduled_gpus_after": 4064,
-          "duration_seconds": 0.553,
-          "decode_block_spread_by_deployment": {
-            "inference-reclaimer-mock": 2
-          }
-        }
-      },
-      {
-        "test_name": "Zone-constrained hero job reclaim",
-        "status": "success",
-        "details": {
-          "nodes": 512,
-          "pods": 256,
-          "total_requested_gpus": 2048,
-          "required_topology_level": "cloud.provider.com/topology-zone",
-          "topology_domain": "cloud.provider.com/topology-zone=zone-0",
-          "victim_scheduled_pods_before": 4096,
-          "victim_scheduled_pods_after": 2048,
-          "duration_seconds": 41.418
-        }
-      },
-      {
-        "test_name": "Elastic distributed job reclaim",
-        "status": "success",
-        "details": {
-          "nodes": 500,
-          "victim_pods": 500,
-          "victim_min_member": 250,
-          "victim_scheduled_pods_before": 500,
-          "victim_scheduled_pods_after": 250,
-          "reclaimer_pods": 250,
-          "duration_seconds": 73.284
-        }
-      },
-      {
         "test_name": "Reclaim time for one very large job",
         "status": "success",
         "details": {

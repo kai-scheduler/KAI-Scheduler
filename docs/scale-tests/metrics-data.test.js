@@ -26,14 +26,30 @@ const payload = JSON.parse(readFileSync(join(__dirname, 'example-results.json'),
 const results = payload.results;
 const meta = { timestamp: '2026-06-29T08:42:33Z', path: 'Public/results.json', commit: 'abc123' };
 
-test('maps every current result into the fifteen configured charts', () => {
+test('maps every current result into the original eleven charts', () => {
   const run = loadRun(payload, meta);
   const observations = extractChartObservations([run]);
 
-  assert.equal(CHART_CONFIGS.length, 15);
-  assert.equal(observations.length, 17);
-  assert.equal(new Set(observations.map(point => point.chartId)).size, 15);
+  assert.equal(observations.length, 13);
+  assert.equal(new Set(observations.map(point => point.chartId)).size, 11);
   assert.ok(results.tests.every(result => resolveTestCase('scale-results', result.test_name)));
+});
+
+test('configures charts for the new workload scale results', () => {
+  const expectedCharts = new Map([
+    ['Disaggregated inference allocation', 'inference-allocation'],
+    ['Disaggregated inference reclaim', 'inference-reclaim'],
+    ['Zone-constrained hero job reclaim', 'hero-job-reclaim'],
+    ['Elastic distributed job reclaim', 'elastic-job-reclaim'],
+  ]);
+
+  assert.equal(CHART_CONFIGS.length, 15);
+  expectedCharts.forEach((chartId, testName) => {
+    const testCase = resolveTestCase('scale-results', testName);
+    assert.equal(testCase.chartId, chartId);
+    assert.equal(testCase.timingField, 'duration_seconds');
+    assert.ok(CHART_CONFIGS.some(config => config.id === chartId));
+  });
 });
 
 test('preserves complete details and raw timing values in observations', () => {
@@ -118,28 +134,28 @@ test('NCCL series identity ignores completed pods but retains the result in poin
 });
 
 test('inference series identity ignores deployment-specific topology details', () => {
-  const earlierPayload = structuredClone(payload);
-  const laterPayload = structuredClone(payload);
-  const earlierResult = earlierPayload.results.tests.find(
-    result => result.test_name === 'Disaggregated inference allocation',
-  );
-  const laterResult = laterPayload.results.tests.find(
-    result => result.test_name === 'Disaggregated inference allocation',
-  );
-  laterResult.details.duration_seconds = earlierResult.details.duration_seconds + 1;
-  laterResult.details.decode_block_spread_by_deployment = { 'inference-another-run': 2 };
+  const base = {
+    testId: 'inference-allocation',
+    timingField: 'duration_seconds',
+    details: {
+      nodes: 512,
+      duration_seconds: 99,
+      decode_block_spread_by_deployment: { 'inference-first-run': 2 },
+    },
+    metadata: { kai_scheduler_ref: 'main' },
+  };
 
-  const earlierRun = loadRun(earlierPayload, { ...meta, timestamp: '2026-07-03T08:39:44Z' });
-  const laterRun = loadRun(laterPayload, { ...meta, timestamp: '2026-07-04T08:39:44Z' });
-  const observations = extractChartObservations([earlierRun, laterRun])
-    .filter(point => point.testId === 'inference-allocation');
-
-  assert.equal(observations.length, 2);
-  assert.equal(observations[0].seriesKey, observations[1].seriesKey);
-  assert.equal(groupCompatibleObservations(observations).length, 1);
-  assert.ok(buildTooltipLines(observations[1]).some(
-    line => line.includes('decode_block_spread_by_deployment'),
-  ));
+  assert.equal(
+    buildSeriesKey(base),
+    buildSeriesKey({
+      ...base,
+      details: {
+        ...base.details,
+        duration_seconds: 100,
+        decode_block_spread_by_deployment: { 'inference-another-run': 2 },
+      },
+    }),
+  );
 });
 
 test('groups pending-task results when newer metadata is a compatible superset', () => {

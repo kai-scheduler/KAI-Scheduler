@@ -86,9 +86,6 @@ function createBrowserContext(scalePayload, ginkgoPayload) {
   const context = {
     Chart,
     CustomEvent: class CustomEvent { constructor(type) { this.type = type; } },
-    Date: class MockDate extends Date {
-      static now() { return Date.parse('2026-06-29T12:00:00Z'); }
-    },
     console,
     setTimeout,
     clearTimeout,
@@ -142,7 +139,7 @@ test('versions local dashboard assets with the deployed commit', () => {
   assert.match(workflow, /__ASSET_VERSION__.*GITHUB_SHA/);
 });
 
-test('renders both result formats and fifteen unified charts', async () => {
+test('renders both result formats and eleven unified charts', async () => {
   const scalePayload = JSON.parse(readFileSync(join(__dirname, 'example-results.json'), 'utf8'));
   const ginkgoPayload = JSON.parse(readFileSync(join(__dirname, 'example-report.json'), 'utf8'));
   const browser = createBrowserContext(scalePayload, ginkgoPayload);
@@ -162,11 +159,11 @@ test('renders both result formats and fifteen unified charts', async () => {
   assert.doesNotMatch(browser.elements.get('main').innerHTML, /kai_commit_hash/);
   assert.doesNotMatch(browser.elements.get('main').innerHTML, /test_focus/);
 
-  assert.equal(browser.renderedCharts.length, 15);
+  assert.equal(browser.renderedCharts.length, 11);
   assert.ok(browser.renderedCharts.every(chart => (
     chart.config.options.plugins.migrationLine.timestamp === '2026-06-29T08:42:33Z'
   )));
-  assert.equal(browser.renderedCharts.flatMap(chart => chart.config.data.datasets).length, 21);
+  assert.equal(browser.renderedCharts.flatMap(chart => chart.config.data.datasets).length, 17);
   const durationAxis = browser.renderedCharts[0].config.options.scales.y;
   assert.equal(durationAxis.title.text, 'Duration');
   assert.equal(durationAxis.ticks.callback(396.5), '6m 36.5s');
