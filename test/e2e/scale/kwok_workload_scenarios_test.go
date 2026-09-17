@@ -8,14 +8,80 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/scale/topology"
 )
 
-func TestScaleTopologyConfig(t *testing.T) {
-	if got := scaleTopologyConfig.totalNodes(); got != 512 {
-		t.Fatalf("total nodes: got %d, want 512", got)
+func TestTopologyNodeCount(t *testing.T) {
+	testCases := []struct {
+		name      string
+		requested int
+		expected  int
+	}{
+		{name: "below minimum", requested: 100, expected: 512},
+		{name: "default scale", requested: 500, expected: 512},
+		{name: "exact power", requested: 512, expected: 512},
+		{name: "one thousand nodes", requested: 1000, expected: 1024},
+		{name: "two thousand nodes", requested: 2000, expected: 2048},
 	}
-	if got := scaleTopologyConfig.nodesPerZone(); got != 256 {
-		t.Fatalf("nodes per zone: got %d, want 256", got)
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			actual, err := topologyNodeCount(testCase.requested)
+			if err != nil {
+				t.Fatalf("topologyNodeCount(%d): %v", testCase.requested, err)
+			}
+			if actual != testCase.expected {
+				t.Fatalf("topologyNodeCount(%d): got %d, want %d", testCase.requested, actual, testCase.expected)
+			}
+		})
+	}
+
+	if _, err := topologyNodeCount(0); err == nil {
+		t.Fatal("expected non-positive node count to fail")
+	}
+	if _, err := topologyNodeCount(int(^uint(0) >> 1)); err == nil {
+		t.Fatal("expected node count overflow to fail")
+	}
+}
+
+func TestTopologyConfigForNodeCount(t *testing.T) {
+	testCases := []struct {
+		nodes         int
+		racksPerBlock int
+		nodePoolCount int
+		nodesPerZone  int
+	}{
+		{nodes: 512, racksPerBlock: 16, nodePoolCount: 256, nodesPerZone: 256},
+		{nodes: 1024, racksPerBlock: 32, nodePoolCount: 512, nodesPerZone: 512},
+		{nodes: 2048, racksPerBlock: 64, nodePoolCount: 1024, nodesPerZone: 1024},
+	}
+
+	for _, testCase := range testCases {
+		config, err := topologyConfigForNodeCount(testCase.nodes)
+		if err != nil {
+			t.Fatalf("topologyConfigForNodeCount(%d): %v", testCase.nodes, err)
+		}
+		if config.totalNodes() != testCase.nodes {
+			t.Errorf("total nodes for %d: got %d", testCase.nodes, config.totalNodes())
+		}
+		if config.racksPerBlock != testCase.racksPerBlock {
+			t.Errorf("racks per block for %d: got %d, want %d", testCase.nodes, config.racksPerBlock, testCase.racksPerBlock)
+		}
+		if config.nodePoolCount() != testCase.nodePoolCount {
+			t.Errorf("node pools for %d: got %d, want %d", testCase.nodes, config.nodePoolCount(), testCase.nodePoolCount)
+		}
+		nodePools := topology.GenerateNodePools(config.levels(), config.nodesPerRack, map[string]string{})
+		if len(nodePools) != testCase.nodePoolCount {
+			t.Errorf("generated node pools for %d: got %d, want %d", testCase.nodes, len(nodePools), testCase.nodePoolCount)
+		}
+		if config.nodesPerZone() != testCase.nodesPerZone {
+			t.Errorf("nodes per zone for %d: got %d, want %d", testCase.nodes, config.nodesPerZone(), testCase.nodesPerZone)
+		}
+	}
+
+	if _, err := topologyConfigForNodeCount(500); err == nil {
+		t.Fatal("expected unsupported topology node count to fail")
 	}
 }
 
@@ -26,9 +92,27 @@ func TestWorkloadScenarioSizing(t *testing.T) {
 	if got := inferencePodsPerDeployment(); got != 8 {
 		t.Fatalf("inference pods per deployment: got %d, want 8", got)
 	}
-	deployments, err := inferenceDeploymentCount(512)
-	if err != nil || deployments != 128 {
-		t.Fatalf("production inference deployments: got %d, err %v", deployments, err)
+	for _, testCase := range []struct {
+		nodes       int
+		deployments int
+		heroPods    int
+	}{
+		{nodes: 512, deployments: 128, heroPods: 256},
+		{nodes: 2048, deployments: 512, heroPods: 1024},
+	} {
+		deployments, err := inferenceDeploymentCount(testCase.nodes)
+		if err != nil || deployments != testCase.deployments {
+			t.Errorf("inference deployments for %d nodes: got %d, want %d, err %v",
+				testCase.nodes, deployments, testCase.deployments, err)
+		}
+		config, err := topologyConfigForNodeCount(testCase.nodes)
+		if err != nil || config.nodesPerZone() != testCase.heroPods {
+			t.Errorf("hero pods for %d nodes: got %d, want %d, err %v",
+				testCase.nodes, config.nodesPerZone(), testCase.heroPods, err)
+		}
+	}
+	if legacyTopologyWorkloadPods != 512 {
+		t.Fatalf("legacy topology workload pods: got %d, want 512", legacyTopologyWorkloadPods)
 	}
 	if _, err := inferenceDeploymentCount(18); err == nil {
 		t.Fatal("expected non-divisible inference node count to fail")

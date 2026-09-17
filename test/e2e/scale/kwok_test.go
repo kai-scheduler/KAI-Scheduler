@@ -136,6 +136,7 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 
 			clusterTopology kaiv1alpha1.Topology
 
+			topologyConfig topologyScaleConfig
 			topologyLevels []topology.TopologyLevel
 			nodesPerDomain int
 			totalNodes     int
@@ -143,9 +144,17 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 		)
 		BeforeAll(func(ctx context.Context) {
 			crd.SkipIfCrdIsNotInstalled(ctx, testCtx.KubeConfig, "topologies.kai.scheduler", "v1alpha1")
-			topologyLevels = scaleTopologyConfig.levels()
-			nodesPerDomain = scaleTopologyConfig.nodesPerRack
-			totalNodes = scaleTopologyConfig.totalNodes()
+			var err error
+			totalNodes, err = topologyNodeCount(numberOfNodes)
+			Expect(err).NotTo(HaveOccurred())
+			topologyConfig, err = topologyConfigForNodeCount(totalNodes)
+			Expect(err).NotTo(HaveOccurred())
+			topologyLevels = topologyConfig.levels()
+			nodesPerDomain = topologyConfig.nodesPerRack
+			GinkgoLogr.Info("Configuring topology scale",
+				"requestedNodeCount", numberOfNodes,
+				"topologyNodeCount", totalNodes,
+			)
 
 			updateFakeGPUOperatorGPUsPerNode(ctx, testCtx)
 
@@ -164,16 +173,8 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 			Expect(testCtx.ControllerClient.Create(ctx, &clusterTopology)).To(Succeed())
 
 			topologyNodePools = topology.GenerateNodePools(topologyLevels, nodesPerDomain, map[string]string{"test": "topology-e2e"})
-			var wg sync.WaitGroup
-			for _, nodePool := range topologyNodePools {
-				wg.Add(1)
-				go func(nodePool kwok.NodePool) {
-					defer wg.Done()
-					defer GinkgoRecover()
-					Expect(testCtx.ControllerClient.Create(ctx, &nodePool)).To(Succeed(), "Failed to create topology node pool", "nodePool", nodePool.Name)
-				}(nodePool)
-			}
-			wg.Wait()
+			Expect(topologyNodePools).To(HaveLen(topologyConfig.nodePoolCount()))
+			Expect(createTopologyNodePools(ctx, testCtx, topologyNodePools)).To(Succeed())
 
 			startTime := time.Now()
 			wait.ForExactlyNKWOKOperatorNodePools(ctx, testCtx.ControllerClient, map[string]string{"test": "topology-e2e"}, len(topologyNodePools))
@@ -181,7 +182,7 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 			GinkgoLogr.Info("Time to create and wait for topology node pools", "duration", duration)
 
 			startTime = time.Now()
-			wait.ForAtLeastNNodes(ctx, testCtx.ControllerClient, map[string]string{"test": "topology-e2e"}, len(topologyNodePools))
+			wait.ForAtLeastNNodes(ctx, testCtx.ControllerClient, map[string]string{"test": "topology-e2e"}, totalNodes)
 			duration = time.Since(startTime)
 			GinkgoLogr.Info("Time to wait for topology nodes to be ready", "duration", duration)
 
@@ -221,7 +222,7 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 
 		It("Allocate single distributed job with preferred topology", func(ctx context.Context) {
 			distributedJobsScaleTestInternal(ctx, testCtx, sanityTestQueue,
-				1, totalNodes, 2, "Allocate with preferred topology", totalNodes,
+				1, legacyTopologyWorkloadPods, 2, "Allocate with preferred topology", totalNodes,
 				&v2alpha2.TopologyConstraint{
 					PreferredTopologyLevel: topologyLevels[2].Name,
 					Topology:               topologyName,
@@ -230,7 +231,7 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 
 		It("Allocate single distributed job without preferred topology", func(ctx context.Context) {
 			distributedJobsScaleTestInternal(ctx, testCtx, sanityTestQueue,
-				1, totalNodes, 2, "Allocate without preferred topology", totalNodes,
+				1, legacyTopologyWorkloadPods, 2, "Allocate without preferred topology", totalNodes,
 				nil)
 		})
 
@@ -276,7 +277,7 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 				fillClusterWithJobs(ctx, testCtx, sanityTestQueue, true, totalNodes, SingleGPURequirement)
 				heroJobReclaim(
 					ctx, testCtx, sanityTestQueue, topologyReclaimQueue,
-					scaleTopologyConfig.nodesPerZone(), topologyName)
+					topologyConfig.nodesPerZone(), topologyName)
 			}, SpecTimeout(maxFlowTimeoutMinutes*time.Minute))
 		})
 	})
@@ -619,6 +620,41 @@ var _ = Describe("Kwok scale test", Ordered, Label(labels.Scale), func() {
 		})
 	})
 })
+
+func createTopologyNodePools(
+	ctx context.Context, testCtx *testcontext.TestContext, nodePools []kwok.NodePool,
+) error {
+	if len(nodePools) == 0 {
+		return nil
+	}
+
+	workerCount := min(topologyNodePoolCreateConcurrency, len(nodePools))
+	nodePoolJobs := make(chan kwok.NodePool)
+	var wg sync.WaitGroup
+	var lock sync.Mutex
+	var creationError error
+	for range workerCount {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for nodePool := range nodePoolJobs {
+				if err := testCtx.ControllerClient.Create(ctx, &nodePool); err != nil {
+					lock.Lock()
+					creationError = errors.Join(creationError,
+						fmt.Errorf("create topology node pool %s: %w", nodePool.Name, err))
+					lock.Unlock()
+				}
+			}
+		}()
+	}
+
+	for _, nodePool := range nodePools {
+		nodePoolJobs <- nodePool
+	}
+	close(nodePoolJobs)
+	wg.Wait()
+	return creationError
+}
 
 func patchQueueGPU(ctx context.Context, testCtx *testcontext.TestContext, queue *v2.Queue, gpu v2.QueueResource) error {
 	patch, err := json.Marshal(map[string]interface{}{

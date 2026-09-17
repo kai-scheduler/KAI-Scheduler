@@ -38,6 +38,13 @@ const (
 	topologyBlockLabel = "cloud.provider.com/topology-block"
 	topologyRackLabel  = "cloud.provider.com/topology-rack"
 
+	minimumTopologyNodeCount          = 512
+	topologyZones                     = 2
+	topologyBlocksPerZone             = 8
+	topologyNodesPerRack              = 2
+	legacyTopologyWorkloadPods        = 512
+	topologyNodePoolCreateConcurrency = 64
+
 	inferenceDeploymentLabel = "scale-test-inference-deployment"
 	inferencePrefillPods     = 2
 	inferenceDecodePods      = 4
@@ -61,11 +68,37 @@ type topologyScaleConfig struct {
 	nodesPerRack  int
 }
 
-var scaleTopologyConfig = topologyScaleConfig{
-	zones:         2,
-	blocksPerZone: 8,
-	racksPerBlock: 16,
-	nodesPerRack:  2,
+func topologyNodeCount(requestedNodes int) (int, error) {
+	if requestedNodes <= 0 {
+		return 0, fmt.Errorf("node count must be positive, got %d", requestedNodes)
+	}
+
+	nodes := minimumTopologyNodeCount
+	maxInt := int(^uint(0) >> 1)
+	for nodes < requestedNodes {
+		if nodes > maxInt/2 {
+			return 0, fmt.Errorf("node count %d is too large to round up to a power of two", requestedNodes)
+		}
+		nodes *= 2
+	}
+	return nodes, nil
+}
+
+func topologyConfigForNodeCount(nodes int) (topologyScaleConfig, error) {
+	nodeCountDivisor := topologyZones * topologyBlocksPerZone * topologyNodesPerRack
+	if nodes < minimumTopologyNodeCount || nodes%nodeCountDivisor != 0 {
+		return topologyScaleConfig{}, fmt.Errorf(
+			"topology node count %d must be at least %d and divisible by %d",
+			nodes, minimumTopologyNodeCount, nodeCountDivisor,
+		)
+	}
+
+	return topologyScaleConfig{
+		zones:         topologyZones,
+		blocksPerZone: topologyBlocksPerZone,
+		racksPerBlock: nodes / nodeCountDivisor,
+		nodesPerRack:  topologyNodesPerRack,
+	}, nil
 }
 
 func (config topologyScaleConfig) levels() []topology.TopologyLevel {
@@ -82,6 +115,10 @@ func (config topologyScaleConfig) totalNodes() int {
 
 func (config topologyScaleConfig) nodesPerZone() int {
 	return config.totalNodes() / config.zones
+}
+
+func (config topologyScaleConfig) nodePoolCount() int {
+	return config.zones * config.blocksPerZone * config.racksPerBlock
 }
 
 func splitClusterForElasticReclaim(nodes int) (victimMinMember, reclaimerPods int, err error) {
