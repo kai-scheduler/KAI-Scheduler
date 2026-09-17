@@ -189,8 +189,15 @@ func convertResourceToFloat64(rName v1.ResourceName, rQuant resource.Quantity) f
 	return float64(rQuant.Value())
 }
 
+// Exact match only. A suffix match also captured unrelated resources such as
+// HAMi's nvidia.com/vgpu (80 slices per 8-GPU node), which then overwrote the
+// node's real GPU capacity and let the scheduler bind pods onto full nodes.
 func isGpuResource(resourceName v1.ResourceName) bool {
-	return strings.HasSuffix(string(resourceName), constants.GpuResource)
+	switch string(resourceName) {
+	case constants.GpuResource, GPUResourceName, amdGpuResourceName:
+		return true
+	}
+	return false
 }
 
 func normalizeResourceName(resourceName v1.ResourceName) v1.ResourceName {

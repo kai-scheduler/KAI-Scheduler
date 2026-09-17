@@ -1,0 +1,7 @@
+kind: Fixed
+body: |-
+  Scheduler no longer counts unrelated extended resources ending in `gpu` (such as HAMi's `nvidia.com/vgpu`) as GPU capacity; only `nvidia.com/gpu` and `amd.com/gpu` map to the GPU slot
+time: 2026-09-17T00:00:00.000000000Z
+custom:
+  Issue: "2194"
+  Author: Abdelsalam-Abbas
