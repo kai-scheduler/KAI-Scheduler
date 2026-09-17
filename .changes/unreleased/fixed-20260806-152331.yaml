@@ -1,0 +1,3 @@
+kind: Fixed
+body: |-
+  Avoid race between ConfigMap create and update in GPU sharing PreBind

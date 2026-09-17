@@ -60,43 +60,14 @@ func (p *GPUSharing) PreBind(
 		return fmt.Errorf("failed to get fraction container ref: %w", err)
 	}
 
-	err = p.createCapabilitiesConfigMapIfMissing(ctx, pod, containerRef)
-	if err != nil {
-		return fmt.Errorf("failed to create capabilities configmap: %w", err)
-	}
-
-	err = p.createDirectEnvMapIfMissing(ctx, pod, containerRef)
-	if err != nil {
-		return fmt.Errorf("failed to create env configmap: %w", err)
-	}
-
 	nVisibleDevicesStr := strings.Join(reservedGPUIds, ",")
-	err = common.SetNvidiaVisibleDevices(ctx, p.kubeClient, pod, containerRef, nVisibleDevicesStr)
-	if err != nil {
-		return err
+
+	if common.NvidiaVisibleDevicesViaConfigMapRef(containerRef.Container) {
+		return common.UpsertCapabilitiesConfigMapData(ctx, p.kubeClient, pod, containerRef, nVisibleDevicesStr, bindRequest.Spec.ReceivedGPU.Portion)
 	}
 
-	return common.SetGPUPortion(ctx, p.kubeClient, pod, containerRef, bindRequest.Spec.ReceivedGPU.Portion)
-}
-
-func (p *GPUSharing) createCapabilitiesConfigMapIfMissing(ctx context.Context, pod *v1.Pod,
-	containerRef *gpusharingconfigmap.PodContainerRef) error {
-	capabilitiesConfigMapName, err := gpusharingconfigmap.ExtractCapabilitiesConfigMapName(pod, containerRef)
-	if err != nil {
-		return fmt.Errorf("failed to get capabilities configmap name: %w", err)
-	}
-	err = gpusharingconfigmap.UpsertJobConfigMap(ctx, p.kubeClient, pod, capabilitiesConfigMapName, map[string]string{})
-	return err
-}
-
-func (p *GPUSharing) createDirectEnvMapIfMissing(ctx context.Context, pod *v1.Pod,
-	containerRef *gpusharingconfigmap.PodContainerRef) error {
-	directEnvVarsMapName, err := gpusharingconfigmap.ExtractDirectEnvVarsConfigMapName(pod, containerRef)
-	if err != nil {
-		return err
-	}
-	directEnvVars := make(map[string]string)
-	return gpusharingconfigmap.UpsertJobConfigMap(ctx, p.kubeClient, pod, directEnvVarsMapName, directEnvVars)
+	// Backward compat: NVIDIA_VISIBLE_DEVICES is served via envFrom from the direct env vars ConfigMap.
+	return common.UpsertBackwardCompatConfigMapData(ctx, p.kubeClient, pod, containerRef, nVisibleDevicesStr, bindRequest.Spec.ReceivedGPU.Portion)
 }
 
 func (p *GPUSharing) PostBind(
