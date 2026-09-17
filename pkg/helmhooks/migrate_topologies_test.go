@@ -112,14 +112,31 @@ func TestMigrateTopologies_NoKueueTopologies(t *testing.T) {
 	assert.Empty(t, topologies.Items)
 }
 
-func TestMigrateTopologies_FailsWithoutStorageVersion(t *testing.T) {
+func TestMigrateTopologies_FallsBackToServedVersionWhenStorageIsUnserved(t *testing.T) {
+	ctx := context.Background()
+	versions := []apiextensionsv1.CustomResourceDefinitionVersion{
+		{Name: "v1alpha1", Served: false, Storage: true},
+		{Name: kueueStorageVersion, Served: true},
+	}
 	c := fake.NewClientBuilder().WithScheme(topologyScheme(t)).
-		WithObjects(kueueTopologyCRD(apiextensionsv1.CustomResourceDefinitionVersion{Name: "v1alpha1", Served: true})).
+		WithObjects(kueueTopologyCRD(versions...), kueueTopology("rack", "cloud/rack")).
+		Build()
+
+	require.NoError(t, MigrateTopologies(ctx, c))
+
+	migrated := &kaiv1alpha1.Topology{}
+	require.NoError(t, c.Get(ctx, client.ObjectKey{Name: "rack"}, migrated))
+	assert.Equal(t, []kaiv1alpha1.TopologyLevel{{NodeLabel: "cloud/rack"}}, migrated.Spec.Levels)
+}
+
+func TestMigrateTopologies_FailsWithoutServedVersion(t *testing.T) {
+	c := fake.NewClientBuilder().WithScheme(topologyScheme(t)).
+		WithObjects(kueueTopologyCRD(apiextensionsv1.CustomResourceDefinitionVersion{Name: "v1alpha1", Storage: true})).
 		Build()
 
 	err := MigrateTopologies(context.Background(), c)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "storage version")
+	assert.Contains(t, err.Error(), "no served version")
 }
 
 func TestKaiTopologyFromKueue_RejectsLevelWithoutNodeLabel(t *testing.T) {

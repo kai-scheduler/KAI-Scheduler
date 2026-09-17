@@ -6,6 +6,7 @@ package helmhooks
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -79,4 +80,45 @@ func TestCleanup_KeepsConfigWhenNameEmpty(t *testing.T) {
 func TestCleanup_ToleratesMissingConfig(t *testing.T) {
 	c := fake.NewClientBuilder().WithScheme(cleanupScheme(t)).Build()
 	require.NoError(t, Cleanup(context.Background(), c, releaseNamespace, "kai-config"))
+}
+
+func TestCleanup_WaitsForFinalizers(t *testing.T) {
+	deletionPollInterval = 10 * time.Millisecond
+	t.Cleanup(func() { deletionPollInterval = time.Second })
+
+	ctx := context.Background()
+	blocked := deployment(releaseNamespace, "scheduler", true)
+	blocked.Finalizers = []string{"test.kai.scheduler/hold"}
+	c := fake.NewClientBuilder().WithScheme(cleanupScheme(t)).WithObjects(blocked).Build()
+
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		current := &appsv1.Deployment{}
+		if err := c.Get(ctx, client.ObjectKeyFromObject(blocked), current); err != nil {
+			return
+		}
+		current.Finalizers = nil
+		_ = c.Update(ctx, current)
+	}()
+
+	start := time.Now()
+	require.NoError(t, Cleanup(ctx, c, releaseNamespace, ""))
+	assert.GreaterOrEqual(t, time.Since(start), 50*time.Millisecond)
+	err := c.Get(ctx, client.ObjectKeyFromObject(blocked), &appsv1.Deployment{})
+	assert.True(t, apierrors.IsNotFound(err))
+}
+
+func TestCleanup_GivesUpWhenContextEnds(t *testing.T) {
+	deletionPollInterval = 10 * time.Millisecond
+	t.Cleanup(func() { deletionPollInterval = time.Second })
+
+	blocked := deployment(releaseNamespace, "scheduler", true)
+	blocked.Finalizers = []string{"test.kai.scheduler/hold"}
+	c := fake.NewClientBuilder().WithScheme(cleanupScheme(t)).WithObjects(blocked).Build()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	err := Cleanup(ctx, c, releaseNamespace, "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "scheduler")
 }

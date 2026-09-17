@@ -39,7 +39,7 @@ func MigrateTopologies(ctx context.Context, c client.Client) error {
 		return fmt.Errorf("failed to get CRD %s: %w", kueueTopologyCRDName, err)
 	}
 
-	version, err := storageVersion(crd)
+	version, err := servedVersion(crd)
 	if err != nil {
 		return err
 	}
@@ -85,13 +85,25 @@ func MigrateTopologies(ctx context.Context, c client.Client) error {
 	return nil
 }
 
-func storageVersion(crd *apiextensionsv1.CustomResourceDefinition) (string, error) {
+// servedVersion prefers the storage version but accepts any served one: a CRD may keep an unserved
+// storage version while a version migration is in progress.
+func servedVersion(crd *apiextensionsv1.CustomResourceDefinition) (string, error) {
+	fallback := ""
 	for _, version := range crd.Spec.Versions {
+		if !version.Served {
+			continue
+		}
 		if version.Storage {
 			return version.Name, nil
 		}
+		if fallback == "" {
+			fallback = version.Name
+		}
 	}
-	return "", fmt.Errorf("CRD %s has no storage version", crd.Name)
+	if fallback == "" {
+		return "", fmt.Errorf("CRD %s has no served version", crd.Name)
+	}
+	return fallback, nil
 }
 
 func kaiTopologyFromKueue(kueueTopology *unstructured.Unstructured) (*kaiv1alpha1.Topology, error) {
