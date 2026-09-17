@@ -35,6 +35,7 @@ const (
 	Allocate          ActionType = "allocate"
 	Consolidation     ActionType = "consolidation"
 	StaleGangEviction ActionType = "stalegangeviction"
+	ResizeEviction    ActionType = "resizeeviction"
 )
 
 // Action is the interface of scheduler action.

@@ -240,6 +240,7 @@ var defaultActionPriorities = map[string]int{
 	"consolidation":     400,
 	"reclaim":           300,
 	"preempt":           200,
+	"resizeeviction":    150,
 	"stalegangeviction": 100,
 }
 
@@ -308,6 +309,9 @@ func (s *SchedulingShardSpec) setDefaultActions() {
 
 	isConsolidationEnabled := *s.PlacementStrategy.GPU != spreadStrategy && *s.PlacementStrategy.CPU != spreadStrategy
 	updateMap(defaults, "consolidation", func(o *ActionConfig) { o.Enabled = ptr.To(isConsolidationEnabled) })
+
+	// Deferred resize eviction is opt-in.
+	updateMap(defaults, "resizeeviction", func(o *ActionConfig) { o.Enabled = ptr.To(false) })
 
 	// Merge user overrides
 	for name, override := range s.Actions {
