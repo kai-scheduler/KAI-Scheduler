@@ -49,6 +49,21 @@ func TestExtractNvFractionsData(t *testing.T) {
 			},
 		},
 		{
+			name: "extracts request and limit by container - ignore visible devices annotation",
+			annotations: map[string]string{
+				constants.NvFractionsAnnotationPrefix + "main" + constants.NvFractionsMemoryRequestSuffix:  "1Gi",
+				constants.NvFractionsAnnotationPrefix + "main" + constants.NvFractionsMemoryLimitSuffix:    "2Gi",
+				constants.NvFractionsAnnotationPrefix + "main" + constants.NvFractionsVisibleDevicesSuffix: "1,2",
+				"other-annotation": "ignored",
+			},
+			want: map[string]NvFractionsContainerRequest{
+				"main": {
+					Request: quantityPtr("1Gi"),
+					Limit:   quantityPtr("2Gi"),
+				},
+			},
+		},
+		{
 			name: "defaults request from limit",
 			annotations: map[string]string{
 				constants.NvFractionsAnnotationPrefix + "main" + constants.NvFractionsMemoryLimitSuffix: "2Gi",
@@ -129,6 +144,12 @@ func TestParseNvFractionsAnnotationKey(t *testing.T) {
 			annotationKey:     constants.NvFractionsAnnotationPrefix + "main" + constants.NvFractionsMemoryLimitSuffix,
 			wantContainerName: "main",
 			wantType:          nvFractionsLimitAnnotation,
+		},
+		{
+			name:              "visible devices annotation",
+			annotationKey:     constants.NvFractionsAnnotationPrefix + "main2" + constants.NvFractionsVisibleDevicesSuffix,
+			wantContainerName: "main2",
+			wantType:          nvFractionsDevicesAnnotation,
 		},
 		{
 			name:              "invalid annotation",

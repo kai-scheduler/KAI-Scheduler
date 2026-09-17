@@ -17,241 +17,141 @@ import (
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/common"
-	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/common/gpusharingconfigmap"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/plugins/state"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 )
 
-func TestGetFractionContainerRef(t *testing.T) {
+func TestAddNvFractionsAnnotationIfMissing(t *testing.T) {
+	annotationKey := resources.CalcGpuFractionAnnotationForContainer("container-0")
+
 	tests := []struct {
-		name        string
-		pod         *v1.Pod
-		wantIndex   int
-		wantType    gpusharingconfigmap.ContainerType
-		wantName    string
-		wantErr     bool
-		errContains string
+		name                string
+		podAnnotations      map[string]string
+		nodeLabels          map[string]string
+		receivedGPU         *v1alpha2.ReceivedGPU
+		bindingAnnotations  map[string]string
+		wantErrContains     string
+		wantAnnotationValue string
+		wantNoAnnotation    bool
 	}{
 		{
-			name: "no annotations - returns default container",
-			pod: &v1.Pod{
-				Spec: v1.PodSpec{
-					Containers: []v1.Container{
-						{Name: "container-0"},
-						{Name: "container-1"},
-					},
-				},
+			name: "adds annotation from node memory and received portion",
+			nodeLabels: map[string]string{
+				constants.NvidiaGpuMemory: "1500",
 			},
-			wantIndex: 0,
-			wantType:  gpusharingconfigmap.RegularContainer,
-			wantName:  "container-0",
-			wantErr:   false,
+			receivedGPU:         &v1alpha2.ReceivedGPU{Portion: "0.5"},
+			wantAnnotationValue: "750Mi",
 		},
 		{
-			name: "annotation points to first regular container",
-			pod: &v1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Annotations: map[string]string{
-						constants.GpuFractionContainerName: "container-0",
-					},
-				},
-				Spec: v1.PodSpec{
-					Containers: []v1.Container{
-						{Name: "container-0"},
-						{Name: "container-1"},
-					},
-				},
+			name: "preserves existing pod annotation",
+			podAnnotations: map[string]string{
+				annotationKey: "1Gi",
 			},
-			wantIndex: 0,
-			wantType:  gpusharingconfigmap.RegularContainer,
-			wantName:  "container-0",
-			wantErr:   false,
+			nodeLabels: map[string]string{
+				constants.NvidiaGpuMemory: "1500",
+			},
+			receivedGPU:      &v1alpha2.ReceivedGPU{Portion: "0.5"},
+			wantNoAnnotation: true,
 		},
 		{
-			name: "annotation points to second regular container",
-			pod: &v1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Annotations: map[string]string{
-						constants.GpuFractionContainerName: "container-1",
-					},
-				},
-				Spec: v1.PodSpec{
-					Containers: []v1.Container{
-						{Name: "container-0"},
-						{Name: "container-1"},
-					},
-				},
+			name: "keeps existing binding annotations",
+			nodeLabels: map[string]string{
+				constants.NvidiaGpuMemory: "4096",
 			},
-			wantIndex: 1,
-			wantType:  gpusharingconfigmap.RegularContainer,
-			wantName:  "container-1",
-			wantErr:   false,
+			receivedGPU: &v1alpha2.ReceivedGPU{Portion: "0.25"},
+			bindingAnnotations: map[string]string{
+				constants.ReceivedResourceType: common.ReceivedTypeFraction,
+			},
+			wantAnnotationValue: "1Gi",
 		},
 		{
-			name: "annotation points to init container",
-			pod: &v1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Annotations: map[string]string{
-						constants.GpuFractionContainerName: "init-container",
-					},
-				},
-				Spec: v1.PodSpec{
-					InitContainers: []v1.Container{
-						{Name: "init-container"},
-					},
-					Containers: []v1.Container{
-						{Name: "container-0"},
-					},
-				},
+			name: "errors when node memory label is missing",
+			nodeLabels: map[string]string{
+				"other-label": "1500",
 			},
-			wantIndex: 0,
-			wantType:  gpusharingconfigmap.InitContainer,
-			wantName:  "init-container",
-			wantErr:   false,
+			receivedGPU:     &v1alpha2.ReceivedGPU{Portion: "0.5"},
+			wantErrContains: "node does not include nvidia.com/gpu.memory label",
 		},
 		{
-			name: "annotation points to second init container",
-			pod: &v1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Annotations: map[string]string{
-						constants.GpuFractionContainerName: "init-container-1",
-					},
-				},
-				Spec: v1.PodSpec{
-					InitContainers: []v1.Container{
-						{Name: "init-container-0"},
-						{Name: "init-container-1"},
-						{Name: "init-container-2"},
-					},
-					Containers: []v1.Container{
-						{Name: "container-0"},
-					},
-				},
+			name: "errors when node memory label is invalid",
+			nodeLabels: map[string]string{
+				constants.NvidiaGpuMemory: "invalid",
 			},
-			wantIndex: 1,
-			wantType:  gpusharingconfigmap.InitContainer,
-			wantName:  "init-container-1",
-			wantErr:   false,
+			receivedGPU:     &v1alpha2.ReceivedGPU{Portion: "0.5"},
+			wantErrContains: "invalid nvidia.com/gpu.memory label value",
 		},
 		{
-			name: "container not found in regular containers",
-			pod: &v1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Annotations: map[string]string{
-						constants.GpuFractionContainerName: "non-existent",
-					},
-				},
-				Spec: v1.PodSpec{
-					Containers: []v1.Container{
-						{Name: "container-0"},
-						{Name: "container-1"},
-					},
-				},
+			name: "errors when received portion is invalid",
+			nodeLabels: map[string]string{
+				constants.NvidiaGpuMemory: "1500",
 			},
-			wantErr:     true,
-			errContains: "container with name non-existent not found for fraction request",
+			receivedGPU:     &v1alpha2.ReceivedGPU{Portion: "invalid"},
+			wantErrContains: "invalid received gpu portion",
 		},
 		{
-			name: "annotation without type defaults to regular containers",
-			pod: &v1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Annotations: map[string]string{
-						constants.GpuFractionContainerName: "container-1",
-					},
-				},
-				Spec: v1.PodSpec{
-					InitContainers: []v1.Container{
-						{Name: "init-container-0"},
-					},
-					Containers: []v1.Container{
-						{Name: "container-0"},
-						{Name: "container-1"},
-					},
-				},
+			name: "errors when received gpu is missing",
+			nodeLabels: map[string]string{
+				constants.NvidiaGpuMemory: "1500",
 			},
-			wantIndex: 1,
-			wantType:  gpusharingconfigmap.RegularContainer,
-			wantName:  "container-1",
-			wantErr:   false,
+			wantErrContains: "missing data for NvFractions annotation calculation",
 		},
 		{
-			name: "single container pod with no annotations",
-			pod: &v1.Pod{
-				Spec: v1.PodSpec{
-					Containers: []v1.Container{
-						{Name: "single-container"},
-					},
-				},
+			name: "skips annotation for unnamed backward-compatible container",
+			nodeLabels: map[string]string{
+				constants.NvidiaGpuMemory: "1500",
 			},
-			wantIndex: 0,
-			wantType:  gpusharingconfigmap.RegularContainer,
-			wantName:  "single-container",
-			wantErr:   false,
-		},
-		{
-			name: "multiple containers with annotation to last one",
-			pod: &v1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Annotations: map[string]string{
-						constants.GpuFractionContainerName: "container-4",
-					},
-				},
-				Spec: v1.PodSpec{
-					Containers: []v1.Container{
-						{Name: "container-0"},
-						{Name: "container-1"},
-						{Name: "container-2"},
-						{Name: "container-3"},
-						{Name: "container-4"},
-					},
-				},
-			},
-			wantIndex: 4,
-			wantType:  gpusharingconfigmap.RegularContainer,
-			wantName:  "container-4",
-			wantErr:   false,
+			receivedGPU:      &v1alpha2.ReceivedGPU{Portion: "0.5"},
+			wantNoAnnotation: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := common.GetFractionContainerRef(tt.pod)
+			pod := &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: tt.podAnnotations,
+				},
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{{Name: "container-0"}},
+				},
+			}
+			if tt.name == "skips annotation for unnamed backward-compatible container" {
+				pod.Spec.Containers[0].Name = ""
+			}
+			node := &v1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: tt.nodeLabels,
+				},
+			}
+			bindRequest := &v1alpha2.BindRequest{
+				Spec: v1alpha2.BindRequestSpec{
+					ReceivedGPU: tt.receivedGPU,
+				},
+			}
+			bindingState := &state.BindingState{
+				BindingPodAnnotations: tt.bindingAnnotations,
+			}
+			containerRef, err := resources.GetFractionContainerRef(pod)
+			assert.NoError(t, err)
 
-			if tt.wantErr {
-				if err == nil {
-					t.Errorf("getFractionContainerRef() expected error but got none")
-					return
-				}
-				if tt.errContains != "" && err.Error() != tt.errContains {
-					t.Errorf("getFractionContainerRef() error = %v, want error containing %v", err.Error(), tt.errContains)
-				}
+			err = addNvFractionsAnnotationIfMissing(pod, node, bindRequest, containerRef, bindingState)
+
+			if tt.wantErrContains != "" {
+				assert.ErrorContains(t, err, tt.wantErrContains)
 				return
 			}
 
-			if err != nil {
-				t.Errorf("getFractionContainerRef() unexpected error = %v", err)
+			assert.NoError(t, err)
+			if tt.wantNoAnnotation {
+				_, found := bindingState.BindingPodAnnotations[annotationKey]
+				assert.False(t, found)
 				return
 			}
 
-			if got == nil {
-				t.Errorf("getFractionContainerRef() returned nil")
-				return
-			}
-
-			if got.Index != tt.wantIndex {
-				t.Errorf("getFractionContainerRef() Index = %v, want %v", got.Index, tt.wantIndex)
-			}
-
-			if got.Type != tt.wantType {
-				t.Errorf("getFractionContainerRef() Type = %v, want %v", got.Type, tt.wantType)
-			}
-
-			if got.Container == nil {
-				t.Errorf("getFractionContainerRef() Container is nil")
-				return
-			}
-
-			if got.Container.Name != tt.wantName {
-				t.Errorf("getFractionContainerRef() Container.Name = %v, want %v", got.Container.Name, tt.wantName)
+			assert.Equal(t, tt.wantAnnotationValue, bindingState.BindingPodAnnotations[annotationKey])
+			for key, value := range tt.bindingAnnotations {
+				assert.Equal(t, value, bindingState.BindingPodAnnotations[key])
 			}
 		})
 	}

@@ -1,0 +1,6 @@
+kind: Added
+body: |-
+  Schedule NvFractions GPU memory requests
+custom:
+    Author: davidLif
+    Issue: "1316"

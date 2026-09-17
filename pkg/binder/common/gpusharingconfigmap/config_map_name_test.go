@@ -6,6 +6,7 @@ package gpusharingconfigmap
 import (
 	"testing"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -64,10 +65,10 @@ func TestGetDesiredConfigMapName(t *testing.T) {
 	}
 	tests = []configMapNameTest{tests[1]}
 	for _, test := range tests {
-		containerRef := &PodContainerRef{
+		containerRef := &resources.PodContainerRef{
 			Container: &test.pod.Spec.Containers[test.containerIndex],
 			Index:     test.containerIndex,
-			Type:      RegularContainer,
+			Type:      resources.RegularContainer,
 		}
 		configMapName, err := ExtractCapabilitiesConfigMapName(test.pod, containerRef)
 		if test.expectedError && err == nil {
@@ -92,10 +93,10 @@ func TestSetGpuCapabilitiesConfigMapNameTrimsTrailingDotAfterTruncation(t *testi
 		},
 	}
 
-	containerRef := &PodContainerRef{
+	containerRef := &resources.PodContainerRef{
 		Container: &pod.Spec.Containers[0],
 		Index:     0,
-		Type:      RegularContainer,
+		Type:      resources.RegularContainer,
 	}
 
 	configMapName := SetGpuCapabilitiesConfigMapName(pod, containerRef)
@@ -118,10 +119,10 @@ func TestSetGpuCapabilitiesConfigMapNameUsesOwnerRefAndTrimsTrailingHyphenAfterT
 		},
 	}
 
-	containerRef := &PodContainerRef{
+	containerRef := &resources.PodContainerRef{
 		Container: &pod.Spec.Containers[0],
 		Index:     0,
-		Type:      RegularContainer,
+		Type:      resources.RegularContainer,
 	}
 
 	configMapName := SetGpuCapabilitiesConfigMapName(pod, containerRef)

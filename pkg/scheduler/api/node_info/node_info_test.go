@@ -36,6 +36,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_affinity"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -924,7 +925,7 @@ func TestGpuOperatorHasMemoryError_MibInput(t *testing.T) {
 	testNode.Labels[GpuMemoryLabel] = "4096"
 	gpuMemoryInMb, ok := getNodeGpuMemory(testNode)
 	assert.Equal(t, true, ok)
-	assert.Equal(t, int64(4000), gpuMemoryInMb)
+	assert.Equal(t, int64(4096), gpuMemoryInMb)
 }
 
 func TestGpuOperatorHasMemoryError_Bytes(t *testing.T) {
@@ -932,7 +933,7 @@ func TestGpuOperatorHasMemoryError_Bytes(t *testing.T) {
 	testNode.Labels[GpuMemoryLabel] = "4295000001"
 	gpuMemoryInMb, ok := getNodeGpuMemory(testNode)
 	assert.Equal(t, true, ok)
-	assert.Equal(t, int64(4000), gpuMemoryInMb)
+	assert.Equal(t, int64(4096), gpuMemoryInMb)
 }
 
 func addJobAnnotation(pod *v1.Pod) {
@@ -992,8 +993,8 @@ func TestNodeInfo_isTaskAllocatableOnNonAllocatedResources(t *testing.T) {
 							Name:      "p1",
 							Namespace: "n1",
 							Annotations: map[string]string{
-								commonconstants.PodGroupAnnotationForPod: "pg1",
-								commonconstants.GpuMemory:                "1500",
+								commonconstants.PodGroupAnnotationForPod:              "pg1",
+								resources.CalcGpuFractionAnnotationForContainer("c1"): "1500Mi",
 							},
 						},
 						Spec: v1.PodSpec{
@@ -1038,8 +1039,8 @@ func TestNodeInfo_isTaskAllocatableOnNonAllocatedResources(t *testing.T) {
 							Name:      "p1",
 							Namespace: "n1",
 							Annotations: map[string]string{
-								commonconstants.PodGroupAnnotationForPod: "pg1",
-								commonconstants.GpuMemory:                "1000",
+								commonconstants.PodGroupAnnotationForPod:              "pg1",
+								resources.CalcGpuFractionAnnotationForContainer("c1"): "1000Mi",
 							},
 						},
 						Spec: v1.PodSpec{
@@ -1092,6 +1093,80 @@ func TestNodeInfo_isTaskAllocatableOnNonAllocatedResources(t *testing.T) {
 				"isTaskAllocatableOnNonAllocatedResources(%v, %v)", tt.args.task, tt.args.nodeNonAllocatedResources)
 		})
 	}
+}
+
+func TestNodeInfo_PortionFractionFitsRuntimeMemoryExactHalf(t *testing.T) {
+	const (
+		gpuMemoryMiB = int64(23028)
+		gpuGroup     = "gpu-group-0"
+	)
+	vectorMap := resource_info.NewResourceVectorMap()
+	controller := NewController(t)
+	nodePodAffinityInfo := pod_affinity.NewMockNodePodAffinityInfo(controller)
+	nodeResources := resource_info.NewResource(0, 0, 1)
+	nodeResources.ScalarResources()[resource_info.PodsResourceName] = 10
+	node := &NodeInfo{
+		Name:                   "node1",
+		Node:                   common_info.BuildNode("node1", common_info.BuildResourceListWithGPU("8000m", "10G", "1")),
+		VectorMap:              vectorMap,
+		PodInfos:               map[common_info.PodID]*pod_info.PodInfo{},
+		MemoryOfEveryGpuOnNode: gpuMemoryMiB,
+		GpuMemorySynced:        true,
+		GpuSharingNodeInfo:     *newGpuSharingNodeInfo(),
+		AllocatableVector:      nodeResources.ToVector(vectorMap),
+		IdleVector:             nodeResources.ToVector(vectorMap),
+		UsedVector:             resource_info.NewResourceVector(vectorMap),
+		ReleasingVector:        resource_info.NewResourceVector(vectorMap),
+		PodAffinityInfo:        nodePodAffinityInfo,
+	}
+
+	runningPod := pod_info.NewTaskInfo(&v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "running-half",
+			Namespace: "default",
+			UID:       "running-half",
+			Labels: map[string]string{
+				commonconstants.GPUGroup: gpuGroup,
+			},
+			Annotations: map[string]string{
+				commonconstants.PodGroupAnnotationForPod:              "pg1",
+				commonconstants.GpuFraction:                           "0.5",
+				pod_info.ReceivedResourceTypeAnnotationName:           string(pod_info.ReceivedTypeFraction),
+				resources.CalcGpuFractionAnnotationForContainer("c1"): "11514Mi",
+			},
+		},
+		Spec: v1.PodSpec{
+			NodeName: "node1",
+			Containers: []v1.Container{
+				{Name: "c1"},
+			},
+		},
+		Status: v1.PodStatus{Phase: v1.PodRunning},
+	}, vectorMap)
+	nodePodAffinityInfo.EXPECT().AddPod(runningPod.Pod).Times(1)
+	assert.NoError(t, node.AddTask(runningPod))
+	assert.Equal(t, gpuMemoryMiB/2, node.UsedSharedGPUsMemory[gpuGroup])
+
+	pendingPod := pod_info.NewTaskInfo(&v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pending-half",
+			Namespace: "default",
+			UID:       "pending-half",
+			Annotations: map[string]string{
+				commonconstants.PodGroupAnnotationForPod: "pg2",
+				commonconstants.GpuFraction:              "0.5",
+			},
+		},
+		Spec: v1.PodSpec{
+			Containers: []v1.Container{
+				{Name: "c1"},
+			},
+		},
+		Status: v1.PodStatus{Phase: v1.PodPending},
+	}, vectorMap)
+
+	assert.True(t, node.IsTaskAllocatable(pendingPod))
+	assert.True(t, node.IsTaskFitOnGpuGroup(&pendingPod.GpuRequirement, gpuGroup))
 }
 
 func TestNodeInfo_GetSumOfIdleGPUs(t *testing.T) {

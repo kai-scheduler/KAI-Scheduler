@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Preserve reservation pods during BindRequest cache lag
+custom:
+    Author: davidLif
+    Issue: "1316"
