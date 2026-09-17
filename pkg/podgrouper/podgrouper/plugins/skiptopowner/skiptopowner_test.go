@@ -19,6 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/defaultgrouper"
 	grouperplugin "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/grouper"
@@ -65,7 +66,7 @@ var _ = Describe("SkipTopOwnerGrouper", func() {
 			supportedTypes = map[metav1.GroupVersionKind]grouperplugin.Grouper{
 				{Group: "", Version: "v1", Kind: "Pod"}: defaultGrouper,
 			}
-			plugin = NewSkipTopOwnerGrouper(client, defaultGrouper, supportedTypes)
+			plugin = NewSkipTopOwnerGrouper(client, defaultGrouper, resolverFromMap(supportedTypes))
 		})
 
 		Context("when last owner is a pod", func() {
@@ -430,6 +431,69 @@ var _ = Describe("SkipTopOwnerGrouper", func() {
 			})
 		})
 
+		Context("chained skip-top-owner delegation", func() {
+			var (
+				groveGrouper   *recordingGrouper
+				workloadRunner *unstructured.Unstructured
+				pod            *v1.Pod
+				otherOwners    []*metav1.PartialObjectMetadata
+			)
+
+			BeforeEach(func() {
+				groveGrouper = &recordingGrouper{name: "Grove Grouper"}
+				supportedTypes[metav1.GroupVersionKind{
+					Group: "grove.io", Version: "v1alpha1", Kind: "PodCliqueSet",
+				}] = groveGrouper
+				supportedTypes[metav1.GroupVersionKind{
+					Group: "nvidia.com", Version: "*", Kind: "DynamoGraphDeployment",
+				}] = plugin
+
+				// Dynamo 1.2.0+ serves the DGD as v1beta1, matched via the wildcard version.
+				dgd := newUnstructured("nvidia.com/v1beta1", "DynamoGraphDeployment", "dgd")
+				podCliqueSet := newUnstructured("grove.io/v1alpha1", "PodCliqueSet", "dgd-pcs")
+				podCliqueSet.SetLabels(map[string]string{queueLabelKey: queueName})
+				podClique := newUnstructured("grove.io/v1alpha1", "PodClique", "dgd-pcs-worker")
+				workloadRunner = newUnstructured("run.ai/v1alpha1", "WorkloadRunner", "runner")
+
+				pod = examplePod.DeepCopy()
+				pod.OwnerReferences = []metav1.OwnerReference{
+					{Kind: "PodClique", APIVersion: "grove.io/v1alpha1", Name: podClique.GetName()},
+				}
+
+				Expect(client.Create(context.TODO(), dgd)).To(Succeed())
+				Expect(client.Create(context.TODO(), podCliqueSet)).To(Succeed())
+				Expect(client.Create(context.TODO(), podClique)).To(Succeed())
+				Expect(client.Create(context.TODO(), pod)).To(Succeed())
+				pod.TypeMeta = metav1.TypeMeta{Kind: examplePod.Kind, APIVersion: examplePod.APIVersion}
+
+				otherOwners = []*metav1.PartialObjectMetadata{
+					objectToPartial(podClique),
+					objectToPartial(podCliqueSet),
+					objectToPartial(dgd),
+					objectToPartial(workloadRunner),
+				}
+			})
+
+			It("skips both WorkloadRunner and DGD and lands on the Grove grouper", func() {
+				metadata, err := plugin.GetPodGroupMetadata(workloadRunner, pod, otherOwners...)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(metadata).NotTo(BeNil())
+				Expect(metadata.Name).To(Equal("Grove Grouper"))
+				Expect(groveGrouper.calledWith).NotTo(BeNil())
+				Expect(groveGrouper.calledWith.GetKind()).To(Equal("PodCliqueSet"))
+			})
+
+			It("propagates the skipped wrappers' labels down to the Grove owner", func() {
+				workloadRunner.SetLabels(map[string]string{"runner-label": "runner-value"})
+
+				_, err := plugin.GetPodGroupMetadata(workloadRunner, pod, otherOwners...)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(groveGrouper.calledWith.GetLabels()).To(HaveKeyWithValue("runner-label", "runner-value"))
+			})
+		})
+
 		Context("default plugin usage", func() {
 			It("uses default plugin when GVK does not have custom plugin", func() {
 				// Use StatefulSet which is not in supportedTypes
@@ -491,6 +555,42 @@ var _ = Describe("SkipTopOwnerGrouper", func() {
 	})
 
 })
+
+type recordingGrouper struct {
+	name       string
+	calledWith *unstructured.Unstructured
+}
+
+func (r *recordingGrouper) Name() string { return r.name }
+
+func (r *recordingGrouper) GetPodGroupMetadata(
+	topOwner *unstructured.Unstructured, _ *v1.Pod, _ ...*metav1.PartialObjectMetadata,
+) (*podgroup.Metadata, error) {
+	r.calledWith = topOwner
+	return &podgroup.Metadata{Name: r.name}, nil
+}
+
+func newUnstructured(apiVersion, kind, name string) *unstructured.Unstructured {
+	obj := &unstructured.Unstructured{}
+	obj.SetAPIVersion(apiVersion)
+	obj.SetKind(kind)
+	obj.SetName(name)
+	obj.SetNamespace("default")
+	return obj
+}
+
+func resolverFromMap(table map[metav1.GroupVersionKind]grouperplugin.Grouper) GrouperResolver {
+	return func(gvk metav1.GroupVersionKind) grouperplugin.Grouper {
+		if g, found := table[gvk]; found {
+			return g
+		}
+		gvk.Version = "*"
+		if g, found := table[gvk]; found {
+			return g
+		}
+		return nil
+	}
+}
 
 func objectToPartial(obj client.Object) *metav1.PartialObjectMetadata {
 	objectMeta := metav1.ObjectMeta{
