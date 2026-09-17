@@ -69,9 +69,10 @@ type TestMock struct {
 }
 
 type CacheMocking struct {
-	NumberOfCacheBinds      int
-	NumberOfCacheEvictions  int
-	NumberOfPipelineActions int
+	NumberOfCacheBinds             int
+	NumberOfCacheEvictions         int
+	NumberOfPodGroupEvictionEvents int
+	NumberOfPipelineActions        int
 }
 
 type GPUMetricMocks struct {
@@ -414,6 +415,13 @@ func GetTestCacheMock(
 	if cacheRequirements.NumberOfCacheEvictions != 0 {
 		cacheMock.EXPECT().Evict(Any(), Any(), Any(), Any()).
 			Return(nil).MaxTimes(cacheRequirements.NumberOfCacheEvictions)
+	}
+
+	if cacheRequirements.NumberOfPodGroupEvictionEvents != 0 {
+		cacheMock.EXPECT().RecordPodGroupEvictionEvent(Any(), Any()).
+			Times(cacheRequirements.NumberOfPodGroupEvictionEvents)
+	} else {
+		cacheMock.EXPECT().RecordPodGroupEvictionEvent(Any(), Any()).AnyTimes()
 	}
 
 	if cacheRequirements.NumberOfPipelineActions != 0 {
