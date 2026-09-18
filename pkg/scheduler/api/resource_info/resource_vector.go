@@ -190,7 +190,11 @@ func convertResourceToFloat64(rName v1.ResourceName, rQuant resource.Quantity) f
 }
 
 func isGpuResource(resourceName v1.ResourceName) bool {
-	return strings.HasSuffix(string(resourceName), constants.GpuResource)
+	switch string(resourceName) {
+	case constants.GpuResource, GPUResourceName, amdGpuResourceName:
+		return true
+	}
+	return false
 }
 
 func normalizeResourceName(resourceName v1.ResourceName) v1.ResourceName {
