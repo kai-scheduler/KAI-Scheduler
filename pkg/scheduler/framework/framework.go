@@ -78,5 +78,29 @@ func CloseSession(ssn *Session) {
 		metrics.UpdatePluginDuration(plugin.Name(), metrics.OnSessionClose, metrics.Duration(onSessionCloseStart))
 	}
 
+	publishSharedGpuMetrics(ssn)
+
 	closeSession(ssn)
+}
+
+// publishSharedGpuMetrics exports the per-GPU memory and compute ledgers the
+// session scheduled against.
+func publishSharedGpuMetrics(ssn *Session) {
+	metrics.ResetSharedGpuUsage()
+	if ssn.ClusterInfo == nil {
+		return
+	}
+	for nodeName, node := range ssn.ClusterInfo.Nodes {
+		for _, status := range node.GpuGroupsStatus() {
+			memoryPortion := float64(0)
+			if status.MemoryCapacity > 0 {
+				memoryPortion = float64(status.MemoryUsed) / float64(status.MemoryCapacity)
+			}
+			computePortion := float64(0)
+			if status.ComputeCapacity > 0 {
+				computePortion = float64(status.ComputeUsed) / float64(status.ComputeCapacity)
+			}
+			metrics.UpdateSharedGpuUsage(nodeName, status.GpuGroup, string(status.Mode), memoryPortion, computePortion)
+		}
+	}
 }

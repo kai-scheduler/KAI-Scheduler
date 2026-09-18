@@ -55,6 +55,8 @@ var (
 	queueCPUUsage                                  *prometheus.GaugeVec
 	queueMemoryUsage                               *prometheus.GaugeVec
 	queueGPUUsage                                  *prometheus.GaugeVec
+	gpuMemoryUsedPortion                           *prometheus.GaugeVec
+	gpuComputeUsedPortion                          *prometheus.GaugeVec
 	usageQueryLatency                              *prometheus.HistogramVec
 	podGroupEvictedPodsTotal                       *prometheus.CounterVec
 	scenarioSearchJobsTotal                        *prometheus.CounterVec
@@ -200,6 +202,19 @@ func InitMetrics(namespace string) {
 			Name:      "queue_gpu_usage",
 			Help:      "GPU usage of queue, as a gauge. Units depend on UsageDB configuration",
 		}, []string{"queue_name", "queue_metadata_name", "queue_display_name"})
+
+	gpuMemoryUsedPortion = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "gpu_memory_used_portion",
+			Help:      "Portion of a shared GPU's memory used by scheduled pods, as a gauge in [0, 1]",
+		}, []string{"node", "gpu_group", "mode"})
+	gpuComputeUsedPortion = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "gpu_compute_used_portion",
+			Help:      "Portion of a shared GPU's compute used by scheduled pods, as a gauge in [0, 1]",
+		}, []string{"node", "gpu_group", "mode"})
 
 	usageQueryLatency = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
@@ -354,6 +369,21 @@ func ResetQueueUsage() {
 	queueCPUUsage.Reset()
 	queueMemoryUsage.Reset()
 	queueGPUUsage.Reset()
+}
+
+// UpdateSharedGpuUsage records what a single shared GPU has used of its memory
+// and compute.
+func UpdateSharedGpuUsage(nodeName, gpuGroup, mode string, memoryPortion, computePortion float64) {
+	gpuMemoryUsedPortion.WithLabelValues(nodeName, gpuGroup, mode).Set(memoryPortion)
+	gpuComputeUsedPortion.WithLabelValues(nodeName, gpuGroup, mode).Set(computePortion)
+}
+
+// ResetSharedGpuUsage drops every shared-GPU series. gpuGroups are minted per
+// whole-GPU claim and churn as pods come and go, so the series have to be
+// rebuilt each session rather than left to accumulate.
+func ResetSharedGpuUsage() {
+	gpuMemoryUsedPortion.Reset()
+	gpuComputeUsedPortion.Reset()
 }
 
 func UpdateUsageQueryLatency(latency time.Duration) {

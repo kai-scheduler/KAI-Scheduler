@@ -236,3 +236,21 @@ func metricHasLabels(metric *dto.Metric, labels map[string]string) bool {
 	}
 	return true
 }
+
+// gpuGroups are minted per whole-GPU claim and churn as pods come and go, so the
+// series have to be dropped each session rather than left to accumulate.
+func TestSharedGpuUsageMetrics(t *testing.T) {
+	labels := prometheus.Labels{
+		"node":      "node1",
+		"gpu_group": "gpu-group-0",
+		"mode":      "sm-sharing",
+	}
+
+	UpdateSharedGpuUsage("node1", "gpu-group-0", "sm-sharing", 0.25, 0.75)
+	assertGauge(t, gpuMemoryUsedPortion, labels, 0.25)
+	assertGauge(t, gpuComputeUsedPortion, labels, 0.75)
+
+	ResetSharedGpuUsage()
+	require.Equal(t, 0, testutil.CollectAndCount(gpuMemoryUsedPortion))
+	require.Equal(t, 0, testutil.CollectAndCount(gpuComputeUsedPortion))
+}
