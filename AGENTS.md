@@ -179,7 +179,7 @@ make changelog-preview VERSION=v0.17.0
 
 **Humans:** `make changelog` with no args runs the interactive prompts.
 
-**Releasing (maintainers):** don't fold the changelog by hand. Dispatch the **Release — Prepare Changelog** workflow with a version (e.g. `v0.17.0`) from the target branch — `main` for a minor/major, a `v*.*` branch for a patch. It folds the pending fragments into `CHANGELOG.md`, clears them, and opens a PR. Merging that PR auto-tags the version and publishes the GitHub Release.
+**Releasing (maintainers):** don't fold the changelog by hand. Dispatch the **Release — Prepare Changelog** workflow from the target branch — `main` for a minor/major, a `v*.*` branch for a patch. The version input (e.g. `v0.17.0`) is required on `main`; on a `v*.*` branch leave it empty to release the next patch of that branch. It folds the pending fragments into `CHANGELOG.md`, clears them, and opens a PR. Merging that PR auto-tags the version and publishes the GitHub Release.
 
 ### CI Checks (on-pr.yaml)
 PRs trigger: `make validate` → `make test` → `make build` → E2E tests
