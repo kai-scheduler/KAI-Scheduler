@@ -728,10 +728,18 @@ func (ni *NodeInfo) GpuComputePortionOnNode(res *resource_info.GpuResourceRequir
 	return float64(ni.GetResourceGpuMemory(res)) / float64(ni.MemoryOfEveryGpuOnNode)
 }
 
+// computeChargeEpsilon absorbs the binary representation of a decimal share:
+// 0.29 of a device is 28.999999999999996 hundredths and must not be charged 28.
+const computeChargeEpsilon = 1e-9
+
 // GetResourceGpuCompute returns the compute a request consumes on this node, in
-// hundredths of a GPU.
+// hundredths of a GPU. The share is rounded DOWN, never up: requests that
+// together fit a device must never be rejected because each was first rounded up
+// past what it asked for. Eight eighth-of-a-device pods want 12.5 hundredths
+// each; charging 13 sums them to 104 and rejects the eighth.
 func (ni *NodeInfo) GetResourceGpuCompute(res *resource_info.GpuResourceRequirement) int64 {
-	return int64(math.Round(ni.GpuComputePortionOnNode(res) * float64(ni.ComputeOfEveryGpuOnNode)))
+	return int64(math.Floor(
+		ni.GpuComputePortionOnNode(res)*float64(ni.ComputeOfEveryGpuOnNode) + computeChargeEpsilon))
 }
 
 func (ni *NodeInfo) getResourceGpuPortion(res *resource_info.GpuResourceRequirement) float64 {
