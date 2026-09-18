@@ -22,6 +22,7 @@ package cache
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -348,6 +349,17 @@ func (sc *SchedulerCache) Bind(taskInfo *pod_info.PodInfo, hostname string, bind
 // +kubebuilder:rbac:groups="scheduling.run.ai",resources=bindrequests,verbs=create;update;patch
 // +kubebuilder:rbac:groups="",resources=pods/finalizers,verbs=create;delete;update;patch;get;list
 
+// receivedComputePortion serializes an explicitly requested GPU compute share.
+// An empty string leaves the binder on its own fallbacks, so pods that never
+// asked for compute keep the cap they get today.
+func receivedComputePortion(podInfo *pod_info.PodInfo) string {
+	computePortion := podInfo.AcceptedGpuRequirement.GpuComputePortion()
+	if computePortion <= 0 {
+		return ""
+	}
+	return strconv.FormatFloat(computePortion, 'f', -1, 64)
+}
+
 func (sc *SchedulerCache) createBindRequest(podInfo *pod_info.PodInfo, nodeName string, bindRequestAnnotations map[string]string, predictedNUMAZones []schedulingv1alpha2.NUMAZonePlacement) error {
 	labels := map[string]string{
 		"selected-node": nodeName,
@@ -378,8 +390,9 @@ func (sc *SchedulerCache) createBindRequest(podInfo *pod_info.PodInfo, nodeName 
 			SelectedFractionalGpuGroups: podInfo.FractionalGpuGroupsOrDefault(),
 			ReceivedResourceType:        string(podInfo.ResourceReceivedType),
 			ReceivedGPU: &schedulingv1alpha2.ReceivedGPU{
-				Count:   int(podInfo.AcceptedGpuRequirement.GetNumOfGpuDevices()),
-				Portion: fmt.Sprintf("%.2f", podInfo.AcceptedGpuRequirement.GpuFractionalPortion()),
+				Count:          int(podInfo.AcceptedGpuRequirement.GetNumOfGpuDevices()),
+				Portion:        fmt.Sprintf("%.2f", podInfo.AcceptedGpuRequirement.GpuFractionalPortion()),
+				ComputePortion: receivedComputePortion(podInfo),
 			},
 			ResourceClaimAllocations:        podInfo.ResourceClaimInfo.ToSlice(),
 			ExtendedResourceClaimAllocation: podInfo.ExtendedResourceClaimAllocation(),

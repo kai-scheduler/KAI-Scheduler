@@ -209,6 +209,12 @@ func (p *Plugin) setGpuComputePortionAnnotation(pod *v1.Pod, node *v1.Node, bind
 func (p *Plugin) resolveComputePortion(pod *v1.Pod, node *v1.Node, bindRequest *v1alpha2.BindRequest,
 	containerName string, bindingState *state.BindingState) (float64, bool) {
 	if bindRequest != nil && bindRequest.Spec.ReceivedGPU != nil {
+		// The scheduler only sets ComputePortion for a pod that asked for compute
+		// explicitly, and it is the share the scheduler actually reserved. An older
+		// scheduler leaves it empty, which falls through to the memory portion.
+		if portion, err := strconv.ParseFloat(bindRequest.Spec.ReceivedGPU.ComputePortion, 64); err == nil && portion > 0 {
+			return math.Min(portion, 1), true
+		}
 		if portion, err := strconv.ParseFloat(bindRequest.Spec.ReceivedGPU.Portion, 64); err == nil && portion > 0 {
 			return math.Min(portion, 1), true
 		}

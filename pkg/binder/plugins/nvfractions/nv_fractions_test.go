@@ -490,3 +490,37 @@ func TestResolvedMemoryRequestMiBFallsBackToPodAnnotation(t *testing.T) {
 	assert.True(t, found)
 	assert.Equal(t, uint64(1900), memoryMiB)
 }
+
+// The scheduler reserved compute against its own ledger, so its decision has to
+// win over the memory portion. An older scheduler leaves ComputePortion empty,
+// which must keep the pre-existing fallbacks working unchanged.
+func TestPreBindComputePortionPrefersReceivedComputePortion(t *testing.T) {
+	tests := []struct {
+		name           string
+		computePortion string
+		wantPortion    string
+	}{
+		{name: "explicit compute request wins over the memory portion", computePortion: "0.25", wantPortion: "0.25"},
+		{name: "above one is clamped", computePortion: "1.5", wantPortion: "1"},
+		{name: "empty falls back to the memory portion", computePortion: "", wantPortion: "0.5"},
+		{name: "unparsable falls back to the memory portion", computePortion: "not-a-number", wantPortion: "0.5"},
+		{name: "zero falls back to the memory portion", computePortion: "0", wantPortion: "0.5"},
+		{name: "negative falls back to the memory portion", computePortion: "-0.25", wantPortion: "0.5"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bindRequest := fractionBindRequest("0.5")
+			bindRequest.Spec.ReceivedGPU.ComputePortion = tt.computePortion
+			bindingState := &state.BindingState{ReservedGPUIds: []string{"0"}}
+
+			err := New(false, noReservedGpuMemory).PreBind(context.Background(), nvFractionsPod(nil),
+				gpuNodeWithMemory("2000"), bindRequest, bindingState)
+			assert.NoError(t, err)
+
+			got := bindingState.BindingPodAnnotations[resources.CalcGpuComputePortionAnnotationForContainer("container-0")]
+			assert.Equal(t, tt.wantPortion, got)
+			assertParseableComputePortion(t, got)
+		})
+	}
+}

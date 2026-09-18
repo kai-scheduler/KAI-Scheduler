@@ -121,6 +121,12 @@ type ReceivedGPU struct {
 	// This is the portion size that the pod will receive from each connected GPU device
 	// This is a serialized float that should be written as a decimal point number.
 	Portion string `json:"portion,omitempty"`
+
+	// ComputePortion is the share of each connected GPU device's compute the pod
+	// was granted, as a serialized decimal float in (0, 1]. Set only when the pod
+	// requested compute explicitly; empty leaves the binder to derive a cap from
+	// the memory request, as it did before this field existed.
+	ComputePortion string `json:"computePortion,omitempty"`
 }
 
 type ResourceClaimAllocation struct {

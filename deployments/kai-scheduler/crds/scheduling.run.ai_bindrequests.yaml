@@ -978,6 +978,13 @@ spec:
               receivedGPU:
                 description: ReceivedGPU is the amount of GPUs that were received
                 properties:
+                  computePortion:
+                    description: |-
+                      ComputePortion is the share of each connected GPU device's compute the pod
+                      was granted, as a serialized decimal float in (0, 1]. Set only when the pod
+                      requested compute explicitly; empty leaves the binder to derive a cap from
+                      the memory request, as it did before this field existed.
+                    type: string
                   count:
                     description: Count is the amount of GPUs devices that were received
                     type: integer
