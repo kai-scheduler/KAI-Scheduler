@@ -6,6 +6,7 @@ package resources
 import (
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -116,9 +117,19 @@ func getNvFractionData(pod *v1.Pod) (*NvFractionsContainerRequest, float64, erro
 		return nil, 0, err
 	}
 
+	// Iterate by container name, not by map order: a pod whose containers disagree
+	// must resolve to the same request on every parse, or the scheduler charges it
+	// a different share on every snapshot rebuild.
+	containerNames := make([]string, 0, len(nvFractionsData))
+	for containerName := range nvFractionsData {
+		containerNames = append(containerNames, containerName)
+	}
+	slices.Sort(containerNames)
+
 	var memoryRequest *NvFractionsContainerRequest
 	computeRequest := float64(0)
-	for _, containerData := range nvFractionsData {
+	for _, containerName := range containerNames {
+		containerData := nvFractionsData[containerName]
 		if memoryRequest == nil && containerData.Request != nil {
 			containerDataCopy := containerData
 			memoryRequest = &containerDataCopy
