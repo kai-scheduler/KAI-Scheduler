@@ -66,9 +66,11 @@ func (pp *podAffinityPlugin) nodeOrderFn(k8sPlugins *k8s_internal.SessionScoreFn
 		k8sNodeInfo := node.PodAffinityInfo.(*cluster_info.K8sNodePodAffinityInfo).NodeInfo
 		score, reasons, err := k8sPlugins.PodAffinity(task.Pod, k8sNodeInfo)
 		if err != nil {
-			log.InfraLogger.V(6).Infof(
-				"Pod Affinity plugin failed to score on Task <%s/%s> on Node <%s>: reasons %v, err %v",
-				task.Namespace, task.Name, node.Name, reasons, err)
+			log.InfraLogger.V(6).Do(func() {
+				log.InfraLogger.Infof(
+					"Pod Affinity plugin failed to score on Task <%s/%s> on Node <%s>: reasons %v, err %v",
+					task.Namespace, task.Name, node.Name, reasons, err)
+			})
 			return 0, err
 		}
 		return scores.K8sPlugins * float64(score), nil

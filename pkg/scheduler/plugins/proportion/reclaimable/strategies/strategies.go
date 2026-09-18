@@ -57,7 +57,7 @@ func (mfss *MaintainFairShareStrategy) Reclaimable(
 	// This strategy allows to reclaim if reclaimee is currently over allowed fair share
 
 	log.InfraLogger.V(6).Do(func() {
-		log.InfraLogger.V(6).Infof("Checking if reclaim is possible for reclaimer <%s> and reclaimee <%s> in order "+
+		log.InfraLogger.Infof("Checking if reclaim is possible for reclaimer <%s> and reclaimee <%s> in order "+
 			"to maintain fair share. Reclaimee requested: <%s>, deserved: <%s>, fairShare: <%s>, "+
 			"reclaimeeRemainingShare: <%s>",
 			reclaimerQueue.Name, reclaimeeQueue.Name, reclaimeeQueue.GetRequestableShare(), reclaimeeQueue.GetDeservedShare(),
@@ -76,7 +76,7 @@ func (gdqs *GuaranteeDeservedQuotaStrategy) Reclaimable(
 	// This strategy allows to reclaim if reclaimer is under deserved quota ("starved") and reclaimer is above quota
 
 	log.InfraLogger.V(6).Do(func() {
-		log.InfraLogger.V(6).Infof("Checking if reclaim is possible for reclaimer <%s> and reclaimee <%s> in order to "+
+		log.InfraLogger.Infof("Checking if reclaim is possible for reclaimer <%s> and reclaimee <%s> in order to "+
 			"Guarantee deserved quota. "+
 			"Reclaimee requested: <%s>, deserved: <%s>, fairShare: <%s>, reclaimeeRemainingShare: <%s> "+
 			"Reclaimer requested: <%s>, deserved: <%s>, fairShare: <%s>",
@@ -108,7 +108,7 @@ func (iqps *InQuotaQueuePriorityStrategy) Reclaimable(
 	// reclaimee, as long as the reclaimer stays within its own deserved quota.
 
 	log.InfraLogger.V(6).Do(func() {
-		log.InfraLogger.V(6).Infof("Checking if reclaim is possible for reclaimer <%s> (priority %d) and "+
+		log.InfraLogger.Infof("Checking if reclaim is possible for reclaimer <%s> (priority %d) and "+
 			"reclaimee <%s> (priority %d) based on queue priority",
 			reclaimerQueue.Name, reclaimerQueue.Priority, reclaimeeQueue.Name, reclaimeeQueue.Priority)
 	})

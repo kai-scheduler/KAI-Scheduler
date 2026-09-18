@@ -198,7 +198,9 @@ func (asb *PodAccumulatedScenarioBuilder) nextFromSubEmitter() *solverscenario.B
 func (asb *PodAccumulatedScenarioBuilder) outerScenarioValid() bool {
 	isValid, failedFilterName := asb.isScenarioValid()
 	if !isValid {
-		log.InfraLogger.V(5).Infof("Filtered by %s for scenario: %s", failedFilterName, asb.lastScenario)
+		log.InfraLogger.V(5).Do(func() {
+			log.InfraLogger.Infof("Filtered by %s for scenario: %s", failedFilterName, asb.lastScenario)
+		})
 		metrics.IncScenarioFilteredByAction()
 	}
 	return isValid

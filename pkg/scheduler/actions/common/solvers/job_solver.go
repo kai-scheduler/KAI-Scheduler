@@ -267,14 +267,18 @@ func (s *JobSolver) tryProbeAndDiscard(
 ) *SearchResult {
 	result := s.probeAtK(ssn, state, pendingJob, tasksToAllocate, k, jobBudget, availableGenerator, generatorBudget)
 	if !resultSolved(result) {
-		log.InfraLogger.V(5).Infof("No solution found for %d tasks out of %d tasks to allocate for %s",
-			k, len(tasksToAllocate), pendingJob.Name)
+		log.InfraLogger.V(5).Do(func() {
+			log.InfraLogger.Infof("No solution found for %d tasks out of %d tasks to allocate for %s",
+				k, len(tasksToAllocate), pendingJob.Name)
+		})
 		return result
 	}
 	solution := result.solution
-	log.InfraLogger.V(5).Infof(
-		"Scenario probed for %d tasks out of %d tasks to allocate for %s. Victims: %s",
-		k, len(tasksToAllocate), pendingJob.Name, victimPrintingStruct{solution.victimsTasks})
+	log.InfraLogger.V(5).Do(func() {
+		log.InfraLogger.Infof(
+			"Scenario probed for %d tasks out of %d tasks to allocate for %s. Victims: %s",
+			k, len(tasksToAllocate), pendingJob.Name, victimPrintingStruct{solution.victimsTasks})
+	})
 	state.recordedVictimsTasks = solution.victimsTasks
 	state.recordedVictimsJobs = solution.victimJobs
 	if solution.statement != nil {
@@ -354,7 +358,9 @@ func (s *JobSolver) solvePartialJob(
 			ssn.AllowConsolidatingReclaim(),
 			s.actionType)
 
-		log.InfraLogger.V(5).Infof("Trying to solve scenario: %s", scenarioToSolve)
+		log.InfraLogger.V(5).Do(func() {
+			log.InfraLogger.Infof("Trying to solve scenario: %s", scenarioToSolve)
+		})
 		metrics.IncScenarioSimulatedByAction()
 		metrics.IncScenarioSearchScenario(s.actionType, generatorName, "simulated")
 

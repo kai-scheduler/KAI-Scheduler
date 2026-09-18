@@ -157,8 +157,10 @@ func allocateTask(ssn *framework.Session, stmt *framework.Statement, nodes []*no
 	}
 	err := ssn.PrePredicateFn(task, job)
 	if err != nil {
-		log.InfraLogger.V(6).Infof("pre-predicates failed on task %s/%s. Error: %v",
-			task.Namespace, task.Name, err)
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof("pre-predicates failed on task %s/%s. Error: %v",
+				task.Namespace, task.Name, err)
+		})
 
 		fitErrors := common_info.NewFitErrors()
 		fitErrors.SetError(err.Error())
@@ -166,8 +168,10 @@ func allocateTask(ssn *framework.Session, stmt *framework.Statement, nodes []*no
 		return false
 	}
 
-	log.InfraLogger.V(6).Infof("Looking for best node for task - Task: <%s/%s>, init requested: <%v>.",
-		task.Namespace, task.Name, task.ResReqVector)
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Looking for best node for task - Task: <%s/%s>, init requested: <%v>.",
+			task.Namespace, task.Name, task.ResReqVector)
+	})
 
 	orderedNodes := ssn.OrderedNodesByTask(nodes, task)
 	for _, node := range orderedNodes {
@@ -179,14 +183,20 @@ func allocateTask(ssn *framework.Session, stmt *framework.Statement, nodes []*no
 			break
 		}
 
-		log.InfraLogger.V(6).Infof("Failed to allocate or pipeline task: <%v/%v> to node: %v",
-			task.Namespace, task.Name, node.Name)
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof("Failed to allocate or pipeline task: <%v/%v> to node: %v",
+				task.Namespace, task.Name, node.Name)
+		})
 	}
 
 	if success {
-		log.InfraLogger.V(6).Infof("Allocation succeeded for task: <%v/%v>", task.Namespace, task.Name)
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof("Allocation succeeded for task: <%v/%v>", task.Namespace, task.Name)
+		})
 	} else {
-		log.InfraLogger.V(6).Infof("Failed statement allocate for task: <%v/%v>", task.Namespace, task.Name)
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof("Failed statement allocate for task: <%v/%v>", task.Namespace, task.Name)
+		})
 	}
 
 	return success
@@ -206,8 +216,10 @@ func allocateTaskToNode(ssn *framework.Session, stmt *framework.Statement, task 
 }
 
 func bindTaskToNode(ssn *framework.Session, stmt *framework.Statement, task *pod_info.PodInfo, node *node_info.NodeInfo) bool {
-	log.InfraLogger.V(6).Infof("Binding Task <%v/%v> to node <%v>, requires resources: %v",
-		task.Namespace, task.Name, node.Name, task.ResReqVector)
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Binding Task <%v/%v> to node <%v>, requires resources: %v",
+			task.Namespace, task.Name, node.Name, task.ResReqVector)
+	})
 
 	if err := stmt.Allocate(task, node.Name); err != nil {
 		log.InfraLogger.Errorf("Failed to bind Task %v on %v in Session %v, err: %v", task.UID, node.Name, ssn.ID, err)
@@ -217,11 +229,15 @@ func bindTaskToNode(ssn *framework.Session, stmt *framework.Statement, task *pod
 }
 
 func pipelineTaskToNode(ssn *framework.Session, stmt *framework.Statement, task *pod_info.PodInfo, node *node_info.NodeInfo, updateTasksIfExistsOnNode bool) bool {
-	log.InfraLogger.V(6).Infof("Pipelining Task <%v/%v> to node <%v>, requires resources: %v",
-		task.Namespace, task.Name, node.Name, task.ResReqVector)
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Pipelining Task <%v/%v> to node <%v>, requires resources: %v",
+			task.Namespace, task.Name, node.Name, task.ResReqVector)
+	})
 
 	if err := stmt.Pipeline(task, node.Name, updateTasksIfExistsOnNode); err != nil {
-		log.InfraLogger.V(6).Infof("Failed to pipeline Task %v on %v in Session %v", task.UID, node.Name, ssn.ID)
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof("Failed to pipeline Task %v on %v in Session %v", task.UID, node.Name, ssn.ID)
+		})
 		return false
 	}
 	return true

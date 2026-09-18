@@ -170,7 +170,9 @@ func (su *defaultStatusUpdater) Pipelined(pod *v1.Pod, message string) {
 }
 
 func (su *defaultStatusUpdater) PatchPodLabels(pod *v1.Pod, labels map[string]any) {
-	log.InfraLogger.V(6).Infof("Patching pod labels for %s/%s", pod.Namespace, pod.Name)
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Patching pod labels for %s/%s", pod.Namespace, pod.Name)
+	})
 
 	patchBytes, err := json.Marshal(map[string]any{
 		"metadata": map[string]any{
@@ -206,7 +208,9 @@ func (su *defaultStatusUpdater) RecordJobStatusEvent(
 	var err error
 	var patchData []byte
 	if patchData, err = su.updatePodGroupAnnotations(job); err != nil {
-		log.InfraLogger.V(7).Warnf("Failed to update podgroup annotations, error: %s", err)
+		log.InfraLogger.V(7).Do(func() {
+			log.InfraLogger.Warningf("Failed to update podgroup annotations, error: %s", err)
+		})
 	}
 	if job.StalenessInfo.Stale {
 		su.recordStaleJobEvent(job)
@@ -247,7 +251,9 @@ func (su *defaultStatusUpdater) RecordJobStatusEvent(
 }
 
 func (su *defaultStatusUpdater) markTaskUnschedulable(pod *v1.Pod, message string, updatePodCondition bool) error {
-	log.InfraLogger.V(6).Infof("setting message for task: %v", pod.Name)
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("setting message for task: %v", pod.Name)
+	})
 	su.recorder.Eventf(pod, v1.EventTypeWarning, v1.PodReasonUnschedulable, message)
 
 	if updatePodCondition {
@@ -327,9 +333,11 @@ func (su *defaultStatusUpdater) markPodGroupUnschedulable(job *podgroup_info.Pod
 }
 
 func (su *defaultStatusUpdater) updatePodCondition(pod *v1.Pod, condition *v1.PodCondition) error {
-	log.InfraLogger.V(6).Infof(
-		"Updating pod condition for %s/%s to (%s==%s)",
-		pod.Namespace, pod.Name, condition.Type, condition.Status)
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof(
+			"Updating pod condition for %s/%s to (%s==%s)",
+			pod.Namespace, pod.Name, condition.Type, condition.Status)
+	})
 	if k8s_internal.UpdatePodCondition(&pod.Status, condition) {
 		statusPatchBaseObject := v1.PodStatus{}
 		statusPatchBaseObject.Conditions = []v1.PodCondition{*condition}
@@ -378,7 +386,9 @@ func (su *defaultStatusUpdater) recordUnschedulablePodsEvents(
 		}
 
 		msg = su.addNodePoolPrefixIfNeeded(job, msg)
-		log.InfraLogger.V(6).Infof("setting message for task: %v, %v", taskInfo.Name, msg)
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof("setting message for task: %v, %v", taskInfo.Name, msg)
+		})
 		updatePodCondition := utils.GetMarkUnschedulableValue(job.PodGroup.Spec.MarkUnschedulable)
 		if err := su.markTaskUnschedulable(taskInfo.Pod, msg, updatePodCondition); err != nil {
 			errs = append(errs, fmt.Errorf("failed to update unschedulable task status <%s/%s>: %v",
@@ -425,7 +435,7 @@ func (su *defaultStatusUpdater) taskFitErrorMessage(
 		if err != nil || len(nodeErrors) == 0 {
 			return
 		}
-		log.InfraLogger.V(6).Infof("Full fit error: %s", fitError.DetailedError(nodeErrors))
+		log.InfraLogger.Infof("Full fit error: %s", fitError.DetailedError(nodeErrors))
 	})
 	return compactMessage
 }
@@ -481,7 +491,9 @@ func (su *defaultStatusUpdater) recordUnschedulablePodGroup(job *podgroup_info.P
 	if su.detailedFitErrors {
 		msg = common_info.JobFitErrorsToDetailedMessage(job.JobFitErrors)
 	} else {
-		log.InfraLogger.V(6).Infof("Full job fit error: %s", common_info.JobFitErrorsToDetailedMessage(job.JobFitErrors))
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof("Full job fit error: %s", common_info.JobFitErrorsToDetailedMessage(job.JobFitErrors))
+		})
 	}
 
 	if len(msg) == 0 {
@@ -495,9 +507,11 @@ func (su *defaultStatusUpdater) recordUnschedulablePodGroup(job *podgroup_info.P
 func (su *defaultStatusUpdater) updatePodGroupSchedulingCondition(
 	podGroup *enginev2alpha2.PodGroup, schedulingCondition *enginev2alpha2.SchedulingCondition,
 ) bool {
-	log.InfraLogger.V(6).Infof(
-		"Updating pod group scheduling condition for %s/%s to (%s,nodepool=%s)",
-		podGroup.Namespace, podGroup.Name, schedulingCondition.Type, schedulingCondition.NodePool)
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof(
+			"Updating pod group scheduling condition for %s/%s to (%s,nodepool=%s)",
+			podGroup.Namespace, podGroup.Name, schedulingCondition.Type, schedulingCondition.NodePool)
+	})
 	return setPodGroupSchedulingCondition(podGroup, schedulingCondition)
 }
 

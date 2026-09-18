@@ -303,8 +303,10 @@ func (sc *SchedulerCache) evict(evictedPod *v1.Pod, evictedPodGroup *enginev2alp
 			sc.StatusUpdater.Evicted(evictedPodGroup, evictionMetadata, message)
 		}
 
-		log.InfraLogger.V(6).Infof("Evicting pod %v/%v, reason: %v, message: %v",
-			evictedPod.Namespace, evictedPod.Name, status.Preempted, message)
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof("Evicting pod %v/%v, reason: %v, message: %v",
+				evictedPod.Namespace, evictedPod.Name, status.Preempted, message)
+		})
 		err := sc.Evictor.Evict(evictedPod, message)
 		if err != nil {
 			log.InfraLogger.Errorf("Failed to evict pod: %v/%v, error: %v", evictedPod.Namespace, evictedPod.Name, err)

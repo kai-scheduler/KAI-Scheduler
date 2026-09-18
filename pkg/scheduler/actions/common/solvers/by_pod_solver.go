@@ -228,10 +228,12 @@ func getVictimTasks(recordedVictimsTasks []*pod_info.PodInfo, potentialVictimsTa
 func handleSolveError(pendingJob *podgroup_info.PodGroupInfo, nextTaskToFindAllocation *pod_info.PodInfo, err error,
 	statement *framework.Statement,
 ) *solutionResult {
-	log.InfraLogger.V(6).Infof("Could not attempt to allocate over victims for pending job <%s/%s> <%v> "+
-		"while simulation pod allocation %v due to error: %v",
-		pendingJob.Namespace, pendingJob.Name, pendingJob.GetAliveTasksRequestedGPUs(), nextTaskToFindAllocation,
-		err)
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Could not attempt to allocate over victims for pending job <%s/%s> <%v> "+
+			"while simulation pod allocation %v due to error: %v",
+			pendingJob.Namespace, pendingJob.Name, pendingJob.GetAliveTasksRequestedGPUs(), nextTaskToFindAllocation,
+			err)
+	})
 	statement.Discard()
 	return &solutionResult{false, nil, nil, nil}
 }

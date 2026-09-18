@@ -60,7 +60,9 @@ func (cp *CapacityPolicy) isJobOverCapacity(requestedShare rs.ResourceQuantities
 	for _, checkFn := range checkFns {
 		result := checkFn(requestedShare, job)
 		if !result.IsSchedulable {
-			log.InfraLogger.V(5).Infof("Job: <%v/%v> is over capacity. Reason: %v", job.Namespace, job.Name, result.Message)
+			log.InfraLogger.V(5).Do(func() {
+				log.InfraLogger.Infof("Job: <%v/%v> is over capacity. Reason: %v", job.Namespace, job.Name, result.Message)
+			})
 			return result
 		}
 	}

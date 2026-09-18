@@ -257,7 +257,9 @@ func getResources(ignoreReallocatedTasks bool, pods ...*pod_info.PodInfo) resour
 }
 
 func (pp *proportionPlugin) calculateResourcesProportion(ssn *framework.Session) {
-	log.InfraLogger.V(6).Infof("Calculating resource proportion")
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Calculating resource proportion")
+	})
 
 	pp.setTotalResources(ssn)
 
@@ -297,8 +299,10 @@ func getNodeResources(ssn *framework.Session, node *node_info.NodeInfo) rs.Resou
 		if podInfo.Pod.Spec.SchedulerName != schedulerName &&
 			pod_status.IsActiveUsedStatus(podInfo.Status) &&
 			!pod_info.IsKaiUtilityPod(podInfo.Pod) {
-			log.InfraLogger.V(7).Infof("Pod %s/%s is scheduled by a different scheduler, marking resources as unallocatable "+
-				"on node %s", podInfo.Namespace, podInfo.Name, node.Name)
+			log.InfraLogger.V(7).Do(func() {
+				log.InfraLogger.Infof("Pod %s/%s is scheduled by a different scheduler, marking resources as unallocatable "+
+					"on node %s", podInfo.Namespace, podInfo.Name, node.Name)
+			})
 			nodeResource.Sub(utils.QuantifyVector(podInfo.ResReqVector, podInfo.VectorMap))
 		}
 	}
@@ -363,14 +367,18 @@ func (pp *proportionPlugin) createQueueResourceAttrs(ssn *framework.Session) {
 		}
 
 		pp.queues[queue.UID] = queueAttributes
-		log.InfraLogger.V(7).Infof("Added queue attributes for queue <%s>", queue.Name)
+		log.InfraLogger.V(7).Do(func() {
+			log.InfraLogger.Infof("Added queue attributes for queue <%s>", queue.Name)
+		})
 	}
 }
 
 func (pp *proportionPlugin) updateQueuesCurrentResourceUsage(ssn *framework.Session) {
 	for _, job := range ssn.ClusterInfo.PodGroupInfos {
-		log.InfraLogger.V(7).Infof("Updateding queue consumed resources based on job <%s/%s>.",
-			job.Namespace, job.Name)
+		log.InfraLogger.V(7).Do(func() {
+			log.InfraLogger.Infof("Updateding queue consumed resources based on job <%s/%s>.",
+				job.Namespace, job.Name)
+		})
 
 		for status, tasks := range job.PodStatusIndex {
 			if pod_status.AllocatedStatus(status) {
@@ -481,9 +489,11 @@ func (pp *proportionPlugin) allocateHandlerFn(ssn *framework.Session) func(event
 		}
 
 		leafQueue := pp.queues[job.Queue]
-		log.InfraLogger.V(7).Infof("Proportion AllocateFunc: job <%v/%v>, task resources <%s>, "+
-			"queue: <%v>, queue allocated resources: <%v>",
-			job.Namespace, job.Name, taskResources, leafQueue.Name, leafQueue.GetAllocatedShare())
+		log.InfraLogger.V(7).Do(func() {
+			log.InfraLogger.Infof("Proportion AllocateFunc: job <%v/%v>, task resources <%s>, "+
+				"queue: <%v>, queue allocated resources: <%v>",
+				job.Namespace, job.Name, taskResources, leafQueue.Name, leafQueue.GetAllocatedShare())
+		})
 	}
 }
 
@@ -505,9 +515,11 @@ func (pp *proportionPlugin) deallocateHandlerFn(ssn *framework.Session) func(eve
 		}
 
 		leafQueue := pp.queues[job.Queue]
-		log.InfraLogger.V(7).Infof("Proportion DeallocateFunc: job <%v/%v>, task resources <%s>, "+
-			"queue: <%v>, queue allocated resources: <%v>",
-			job.Namespace, job.Name, taskResources, leafQueue.Name, leafQueue.GetAllocatedShare())
+		log.InfraLogger.V(7).Do(func() {
+			log.InfraLogger.Infof("Proportion DeallocateFunc: job <%v/%v>, task resources <%s>, "+
+				"queue: <%v>, queue allocated resources: <%v>",
+				job.Namespace, job.Name, taskResources, leafQueue.Name, leafQueue.GetAllocatedShare())
+		})
 	}
 }
 

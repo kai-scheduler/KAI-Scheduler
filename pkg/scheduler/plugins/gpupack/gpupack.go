@@ -39,8 +39,10 @@ func gpuOrderFn(task *pod_info.PodInfo, node *node_info.NodeInfo, gpuIdx string)
 	}
 
 	score := usedGpuPortion
-	log.InfraLogger.V(7).Infof(
-		"Estimating Task: <%v/%v> Job: <%v> for gpuIdx: <%s> on node: <%s>. Score: %f",
-		task.Namespace, task.Name, task.Job, gpuIdx, node.Name, score)
+	log.InfraLogger.V(7).Do(func() {
+		log.InfraLogger.Infof(
+			"Estimating Task: <%v/%v> Job: <%v> for gpuIdx: <%s> on node: <%s>. Score: %f",
+			task.Namespace, task.Name, task.Job, gpuIdx, node.Name, score)
+	})
 	return score, nil
 }

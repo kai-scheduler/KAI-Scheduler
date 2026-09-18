@@ -233,8 +233,10 @@ func (ssn *Session) FittingNode(task *pod_info.PodInfo, node *node_info.NodeInfo
 
 	job := ssn.ClusterInfo.PodGroupInfos[task.Job]
 
-	log.InfraLogger.V(6).Infof("Checking if task <%v/%v> is allocatable on node <%v>: <%v> vs. <%v>",
-		task.Namespace, task.Name, node.Name, task.ResReqVector, node.IdleVector)
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Checking if task <%v/%v> is allocatable on node <%v>: <%v> vs. <%v>",
+			task.Namespace, task.Name, node.Name, task.ResReqVector, node.IdleVector)
+	})
 	allocatable, fitError := ssn.isTaskAllocatableOnNode(task, job, node, writeFittingDelta)
 	if !allocatable {
 		if fitError != nil && writeFittingDelta {
@@ -244,11 +246,15 @@ func (ssn *Session) FittingNode(task *pod_info.PodInfo, node *node_info.NodeInfo
 		return false
 	}
 
-	log.InfraLogger.V(6).Infof("Running predicates for task <%v/%v> on node <%v>",
-		task.Namespace, task.Name, node.Name)
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Running predicates for task <%v/%v> on node <%v>",
+			task.Namespace, task.Name, node.Name)
+	})
 	if err := ssn.PredicateFn(task, job, node); err != nil {
-		log.InfraLogger.V(6).Infof("Predicates failed for task <%s/%s> on node <%s>: %v",
-			task.Namespace, task.Name, node.Name, err)
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof("Predicates failed for task <%s/%s> on node <%s>: %v",
+				task.Namespace, task.Name, node.Name, err)
+		})
 		if writeFittingDelta {
 			fitErrors.AddNodeError(err)
 			job.AddTaskFitErrors(task, fitErrors)
@@ -317,8 +323,10 @@ func (ssn *Session) scoreNodes(nodes []*node_info.NodeInfo, task *pod_info.PodIn
 			continue
 		}
 		workerScores[score] = append(workerScores[score], node)
-		log.InfraLogger.V(5).Infof("Overall priority node score of node <%v> for task <%v/%v> is: %f",
-			node.Name, task.Namespace, task.Name, score)
+		log.InfraLogger.V(5).Do(func() {
+			log.InfraLogger.Infof("Overall priority node score of node <%v> for task <%v/%v> is: %f",
+				node.Name, task.Namespace, task.Name, score)
+		})
 	}
 	return workerScores
 }
@@ -330,9 +338,11 @@ func (ssn *Session) isTaskAllocatableOnNode(task *pod_info.PodInfo, job *podgrou
 
 	if !node.IsTaskAllocatableOnReleasingOrIdle(task) {
 		allocatable = false
-		log.InfraLogger.V(6).Infof("Not enough resources for task: <%s/%s>, init requested: <%v>. "+
-			"Node <%s> with limited resources, releasing: <%v>, idle: <%v>",
-			task.Namespace, task.Name, task.ResReqVector, node.Name, node.ReleasingVector, node.IdleVector)
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof("Not enough resources for task: <%s/%s>, init requested: <%v>. "+
+				"Node <%s> with limited resources, releasing: <%v>, idle: <%v>",
+				task.Namespace, task.Name, task.ResReqVector, node.Name, node.ReleasingVector, node.IdleVector)
+		})
 		if writeFittingDelta {
 			if taskAllocatable := node.IsTaskAllocatable(task); !taskAllocatable {
 				fitError = node.FittingError(task, len(job.GetAllPodsMap()) > 1)
@@ -515,8 +525,10 @@ func openSession(cache cache.Cache, sessionId string, schedulerParams conf.Sched
 }
 
 func closeSession(ssn *Session) {
-	log.InfraLogger.V(6).Infof("Close Session %v with <%d> Jobs and <%d> Queues",
-		ssn.ID, len(ssn.ClusterInfo.PodGroupInfos), len(ssn.ClusterInfo.Queues))
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Close Session %v with <%d> Jobs and <%d> Queues",
+			ssn.ID, len(ssn.ClusterInfo.PodGroupInfos), len(ssn.ClusterInfo.Queues))
+	})
 
 	// Push all jobs for status update into the channel
 	resolveDetailedFitErrors := ssn.RecomputeDetailedFitErrors
@@ -531,7 +543,9 @@ func closeSession(ssn *Session) {
 	stopCh := make(chan struct{})
 	ssn.Cache.WaitForWorkers(stopCh)
 
-	log.InfraLogger.V(6).Infof("Done updating job statuses for session: %v", ssn.ID)
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Done updating job statuses for session: %v", ssn.ID)
+	})
 }
 
 func (ssn *Session) GetMaxNumberConsolidationPreemptees() int {

@@ -28,9 +28,11 @@ func nodeResourceSpread(resourceName v1.ResourceName) api.NodeOrderFn {
 
 		nonAllocated := node.NonAllocatedResource(resourceName)
 		score := nonAllocated / resourceCount
-		log.InfraLogger.V(7).Infof("Estimating Task: <%v/%v> Job: <%v> for node: <%s> "+
-			"that has <%.2f/%f> non allocated %v. Score: %f",
-			task.Namespace, task.Name, task.Job, node.Name, nonAllocated, resourceCount, resourceName, score)
+		log.InfraLogger.V(7).Do(func() {
+			log.InfraLogger.Infof("Estimating Task: <%v/%v> Job: <%v> for node: <%s> "+
+				"that has <%.2f/%f> non allocated %v. Score: %f",
+				task.Namespace, task.Name, task.Job, node.Name, nonAllocated, resourceCount, resourceName, score)
+		})
 		return score, nil
 	}
 }
