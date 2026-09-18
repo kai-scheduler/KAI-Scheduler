@@ -20,6 +20,10 @@
     { id: 'reclaim-distributed', title: 'Multi-Node Distributed Reclaim', label: 'Duration' },
     { id: 'consolidation', title: 'Consolidation for Distributed Jobs', label: 'Duration' },
     { id: 'nccl-empty-cluster', title: 'NCCL Simulation on Empty Cluster', label: 'Duration' },
+    { id: 'inference-allocation', title: 'Disaggregated Inference Allocation', label: 'Duration' },
+    { id: 'inference-reclaim', title: 'Disaggregated Inference Reclaim', label: 'Duration' },
+    { id: 'hero-job-reclaim', title: 'Zone-Constrained Hero Job Reclaim', label: 'Duration' },
+    { id: 'elastic-job-reclaim', title: 'Elastic Distributed Job Reclaim', label: 'Duration' },
   ];
 
   const TEST_CASES = [
@@ -85,6 +89,28 @@
       ignoredSeriesFields: ['completed pods'],
       scale: name => name === 'NCCL Simulation on empty cluster',
       legacy: name => /Runs NCCL Simulation on empty cluster/i.test(name),
+    },
+    {
+      id: 'inference-allocation', chartId: 'inference-allocation', timingField: 'duration_seconds',
+      ignoredSeriesFields: ['decode_block_spread_by_deployment'],
+      scale: name => name === 'Disaggregated inference allocation',
+      legacy: () => false,
+    },
+    {
+      id: 'inference-reclaim', chartId: 'inference-reclaim', timingField: 'duration_seconds',
+      ignoredSeriesFields: ['decode_block_spread_by_deployment'],
+      scale: name => name === 'Disaggregated inference reclaim',
+      legacy: () => false,
+    },
+    {
+      id: 'hero-job-reclaim', chartId: 'hero-job-reclaim', timingField: 'duration_seconds',
+      scale: name => name === 'Zone-constrained hero job reclaim',
+      legacy: () => false,
+    },
+    {
+      id: 'elastic-job-reclaim', chartId: 'elastic-job-reclaim', timingField: 'duration_seconds',
+      scale: name => name === 'Elastic distributed job reclaim',
+      legacy: () => false,
     },
   ];
 
