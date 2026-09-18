@@ -1432,6 +1432,46 @@ func TestNodeInfo_ThreeExactThirdsFitOnCompute(t *testing.T) {
 	assert.True(t, node.EnoughIdleResourcesOnGpu(&thirdPod.GpuRequirement, gpuGroup))
 }
 
+// GpuGroupsStatus is the operator-facing view of what each GPU has left, and it
+// is what backs the per-GPU metrics.
+func TestNodeInfo_GpuGroupsStatus(t *testing.T) {
+	const gpuMemoryMiB = int64(23028)
+	node, vectorMap, nodePodAffinityInfo := sharedGpuComputeTestNode(t, gpuMemoryMiB)
+
+	smSharingPod := sharedGpuComputeTestPod("sm-sharing-pod", "gpu-group-1", v1.PodRunning, map[string]string{
+		commonconstants.GpuFraction:                                 "0.2",
+		resources.CalcGpuComputeRequestAnnotationForContainer("c1"): "0.8",
+	}, vectorMap)
+	nodePodAffinityInfo.EXPECT().AddPod(smSharingPod.Pod).Times(1)
+	assert.NoError(t, node.AddTask(smSharingPod))
+
+	timeSlicingPod := sharedGpuComputeTestPod("time-slicing-pod", "gpu-group-0", v1.PodRunning, map[string]string{
+		commonconstants.GpuFraction:                                     "0.5",
+		resources.CalcGpuComputeSharingModeAnnotationForContainer("c1"): string(schedulingv1alpha2.GPUComputeSharingModeTimeSlicing),
+	}, vectorMap)
+	nodePodAffinityInfo.EXPECT().AddPod(timeSlicingPod.Pod).Times(1)
+	assert.NoError(t, node.AddTask(timeSlicingPod))
+
+	assert.Equal(t, []GpuGroupStatus{
+		{
+			GpuGroup:        "gpu-group-0",
+			MemoryUsed:      gpuMemoryMiB / 2,
+			MemoryCapacity:  gpuMemoryMiB,
+			ComputeUsed:     50,
+			ComputeCapacity: WholeGpuCompute,
+			Mode:            schedulingv1alpha2.GPUComputeSharingModeTimeSlicing,
+		},
+		{
+			GpuGroup:        "gpu-group-1",
+			MemoryUsed:      4605,
+			MemoryCapacity:  gpuMemoryMiB,
+			ComputeUsed:     80,
+			ComputeCapacity: WholeGpuCompute,
+			Mode:            schedulingv1alpha2.GPUComputeSharingModeSMSharing,
+		},
+	}, node.GpuGroupsStatus())
+}
+
 // Omitting a map from Clone would leave the copy silently sharing - or dropping -
 // the ledger, which no other assertion would catch.
 func TestGpuSharingNodeInfo_CloneCopiesComputeLedger(t *testing.T) {
