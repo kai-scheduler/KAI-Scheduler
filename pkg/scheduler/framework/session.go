@@ -101,8 +101,10 @@ type Session struct {
 	PreJobAllocationFns                   []api.PreJobAllocationFn
 	ScenarioGeneratorRegistrations        []ScenarioGeneratorRegistration
 
-	Config          *conf.SchedulerConfiguration
-	plugins         map[string]Plugin
+	Config  *conf.SchedulerConfiguration
+	plugins map[string]Plugin
+	// pluginsInOrder records the order plugins were opened in, so they can be closed in reverse.
+	pluginsInOrder  []Plugin
 	eventHandlers   []*EventHandler
 	SchedulerParams conf.SchedulerParams
 	mux             *http.ServeMux
@@ -431,6 +433,7 @@ func (ssn *Session) updatePodOnSession(pod *pod_info.PodInfo, status pod_status.
 func (ssn *Session) clear() {
 	ssn.ClusterInfo = nil
 	ssn.plugins = nil
+	ssn.pluginsInOrder = nil
 	ssn.eventHandlers = nil
 	ssn.GpuOrderFns = nil
 	ssn.NodePreOrderFns = nil
@@ -490,6 +493,7 @@ func openSession(cache cache.Cache, sessionId string, schedulerParams conf.Sched
 		ClusterInfo: &api.ClusterInfo{},
 
 		plugins:               map[string]Plugin{},
+		pluginsInOrder:        []Plugin{},
 		SchedulerParams:       schedulerParams,
 		mux:                   mux,
 		k8sResourceStateCache: sync.Map{},
