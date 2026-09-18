@@ -165,9 +165,37 @@ func TestNodeInfo_ComputeChargeNeverExceedsRequest(t *testing.T) {
 		requirement := resource_info.NewGpuResourceRequirementWithGpus(0.1, 0)
 		requirement.SetGpuComputePortion(portion)
 		charged := node.GetResourceGpuCompute(requirement)
+
+		// The charge tracks the request downwards, except that anything asking
+		// for compute at all costs at least 1 hundredth. That floor is not a
+		// rounding artefact: the node agent turns the same portion into a whole
+		// MPS active-thread percentage with a minimum of 1, so a sub-1% pod is
+		// genuinely handed 1% of the device and must be billed for it.
+		if want := portion * float64(node.ComputeOfEveryGpuOnNode); want < 1 {
+			assert.Equal(t, int64(1), charged,
+				"a sub-1%% request (%v of a device) must be charged the 1 hundredth it is actually given", portion)
+			continue
+		}
 		assert.LessOrEqual(t, float64(charged), portion*float64(node.ComputeOfEveryGpuOnNode)+1e-9,
 			"a request for %v of a device's compute was charged %d hundredths", portion, charged)
 	}
+}
+
+// TestNodeInfo_SubOnePercentSharesCannotOversubscribe pins the reason for that
+// minimum: charging 0 for a sub-1% share would let an unbounded number of such
+// pods onto one device, each of which the node agent then hands 1% of its SMs.
+func TestNodeInfo_SubOnePercentSharesCannotOversubscribe(t *testing.T) {
+	node, _, _ := sharedComputeNode(t, 81920, 10)
+
+	requirement := resource_info.NewGpuResourceRequirementWithGpus(0.001, 0)
+	requirement.SetGpuComputePortion(0.001)
+
+	charged := node.GetResourceGpuCompute(requirement)
+	assert.Equal(t, int64(1), charged, "a 0.1%% compute request must still be charged 1 hundredth")
+
+	// 100 of them exhaust the device rather than fitting without limit.
+	assert.Equal(t, int64(node.ComputeOfEveryGpuOnNode), charged*100,
+		"100 sub-1%% pods must account for exactly one device's compute")
 }
 
 // modeGatingPod builds a fractional pod whose compute sharing mode is set

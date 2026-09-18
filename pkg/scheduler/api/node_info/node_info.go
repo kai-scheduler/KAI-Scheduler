@@ -737,9 +737,22 @@ const computeChargeEpsilon = 1e-9
 // together fit a device must never be rejected because each was first rounded up
 // past what it asked for. Eight eighth-of-a-device pods want 12.5 hundredths
 // each; charging 13 sums them to 104 and rejects the eighth.
+//
+// A request that asks for compute at all is charged at least 1, so that the
+// ledger mirrors what the node agent actually enforces: it converts the same
+// portion into a whole MPS active-thread percentage with the same floor and the
+// same minimum of 1. Charging 0 for a sub-1% share would let arbitrarily many
+// such pods onto a device that each in fact receive 1% of its SMs.
 func (ni *NodeInfo) GetResourceGpuCompute(res *resource_info.GpuResourceRequirement) int64 {
-	return int64(math.Floor(
-		ni.GpuComputePortionOnNode(res)*float64(ni.ComputeOfEveryGpuOnNode) + computeChargeEpsilon))
+	portion := ni.GpuComputePortionOnNode(res)
+	if portion <= 0 {
+		return 0
+	}
+	charge := int64(math.Floor(portion*float64(ni.ComputeOfEveryGpuOnNode) + computeChargeEpsilon))
+	if charge < 1 {
+		return 1
+	}
+	return charge
 }
 
 func (ni *NodeInfo) getResourceGpuPortion(res *resource_info.GpuResourceRequirement) float64 {
