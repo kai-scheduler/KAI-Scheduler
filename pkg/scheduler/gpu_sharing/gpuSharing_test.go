@@ -10,8 +10,12 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 
+	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
@@ -301,5 +305,73 @@ func Test_getNodePreferableGpuForSharing(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// GetNodePreferableGpuForSharing is handed an already-filtered list, so the
+// compute-exhausted case shows up here as the GPU being marked releasing: the
+// task gets pipelined behind the SMs freeing up rather than allocated onto them.
+func Test_getNodePreferableGpuForSharing_computeExhaustedGpuIsReleasing(t *testing.T) {
+	const (
+		gpuMemoryMiB = int64(23028)
+		gpuGroup     = "gpu-group-0"
+	)
+
+	vectorMap := resource_info.NewResourceVectorMap()
+	// No whole GPU left idle, so the shared device is the only placement option.
+	nodeResources := resource_info.NewResource(0, 0, 0)
+	nodeResources.ScalarResources()[resource_info.PodsResourceName] = 10
+	node := &node_info.NodeInfo{
+		Name:                    "n1",
+		PodInfos:                map[common_info.PodID]*pod_info.PodInfo{},
+		VectorMap:               vectorMap,
+		MemoryOfEveryGpuOnNode:  gpuMemoryMiB,
+		ComputeOfEveryGpuOnNode: node_info.WholeGpuCompute,
+		IdleVector:              nodeResources.ToVector(vectorMap),
+		ReleasingVector:         resource_info.NewResourceVector(vectorMap),
+		AllocatableVector:       nodeResources.ToVector(vectorMap),
+		UsedVector:              resource_info.NewResourceVector(vectorMap),
+		GpuSharingNodeInfo: node_info.GpuSharingNodeInfo{
+			ReleasingSharedGPUs:        map[string]bool{},
+			UsedSharedGPUsMemory:       map[string]int64{gpuGroup: gpuMemoryMiB / 5},
+			ReleasingSharedGPUsMemory:  map[string]int64{},
+			AllocatedSharedGPUsMemory:  map[string]int64{gpuGroup: gpuMemoryMiB / 5},
+			UsedSharedGPUsCompute:      map[string]int64{gpuGroup: 80},
+			ReleasingSharedGPUsCompute: map[string]int64{},
+			AllocatedSharedGPUsCompute: map[string]int64{gpuGroup: 80},
+			DRASharedDeviceRefCount:    map[string]int{},
+		},
+	}
+
+	smSharingPod := func(name, computeRequest string) *pod_info.PodInfo {
+		return pod_info.NewTaskInfo(&v1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: "default",
+				UID:       types.UID(name),
+				Annotations: map[string]string{
+					commonconstants.PodGroupAnnotationForPod:                        "pg-" + name,
+					commonconstants.GpuFraction:                                     "0.2",
+					resources.CalcGpuComputeRequestAnnotationForContainer("c1"):     computeRequest,
+					resources.CalcGpuComputeSharingModeAnnotationForContainer("c1"): string(schedulingv1alpha2.GPUComputeSharingModeSMSharing),
+				},
+			},
+			Spec:   v1.PodSpec{Containers: []v1.Container{{Name: "c1"}}},
+			Status: v1.PodStatus{Phase: v1.PodPending},
+		}, vectorMap)
+	}
+
+	placed := smSharingPod("placed", "0.8")
+	placed.SetGPUGroupIDs([]string{gpuGroup})
+	node.PodInfos[common_info.PodID("default/placed")] = placed
+
+	overCommitting := GetNodePreferableGpuForSharing([]string{gpuGroup}, node, smSharingPod("over-committing", "0.8"), false)
+	if overCommitting == nil || !overCommitting.IsReleasing {
+		t.Errorf("a compute-exhausted GPU must be offered only as releasing, got %+v", overCommitting)
+	}
+
+	fitting := GetNodePreferableGpuForSharing([]string{gpuGroup}, node, smSharingPod("fitting", "0.2"), false)
+	if fitting == nil || fitting.IsReleasing {
+		t.Errorf("a GPU with compute left must be offered for immediate allocation, got %+v", fitting)
 	}
 }

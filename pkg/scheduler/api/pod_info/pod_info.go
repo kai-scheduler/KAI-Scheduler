@@ -542,6 +542,9 @@ func (pi *PodInfo) updatePodAdditionalFields(bindRequest *bindrequest_info.BindR
 			pi.GpuRequirement = *resource_info.NewGpuResourceRequirementWithMultiFraction(
 				gpuFractionReq.NumDevices, gpuFractionReq.Portion, memMiB)
 		}
+		if gpuFractionReq.ComputePortion > 0 {
+			pi.GpuRequirement.SetGpuComputePortion(gpuFractionReq.ComputePortion)
+		}
 	}
 
 	if len(draPodClaims) > 0 {

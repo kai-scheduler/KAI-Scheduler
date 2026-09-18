@@ -47,11 +47,15 @@ import (
 
 const (
 	DefaultGpuMemory = 100 // The default value is 100 because it allows all the calculation of (memory = fractional * GpuMemory) to work, if it was 0 the result will always be zero too
-	GpuMemoryLabel   = "nvidia.com/gpu.memory"
-	GpuCountLabel    = "nvidia.com/gpu.count"
-	MbToBRatio       = 1000000
-	BitToMib         = 1024 * 1024
-	TibInMib         = 1024 * 1024
+	// WholeGpuCompute is a whole GPU's compute capacity in the scheduler's compute
+	// unit, hundredths of a GPU. No node label exposes an SM count today, so a
+	// normalized portion is the only capacity basis available.
+	WholeGpuCompute = 100
+	GpuMemoryLabel  = "nvidia.com/gpu.memory"
+	GpuCountLabel   = "nvidia.com/gpu.count"
+	MbToBRatio      = 1000000
+	BitToMib        = 1024 * 1024
+	TibInMib        = 1024 * 1024
 )
 
 type MigStrategy string
@@ -84,8 +88,12 @@ type NodeInfo struct {
 	PodInfos               map[common_info.PodID]*pod_info.PodInfo
 	MaxTaskNum             int
 	MemoryOfEveryGpuOnNode int64
-	GpuMemorySynced        bool
-	LegacyMIGTasks         map[common_info.PodID]string
+	// ComputeOfEveryGpuOnNode is a single device's compute capacity in hundredths
+	// of a GPU. A field rather than a bare constant so GPU feature discovery can
+	// populate it from a real SM count later without touching call sites.
+	ComputeOfEveryGpuOnNode int64
+	GpuMemorySynced         bool
+	LegacyMIGTasks          map[common_info.PodID]string
 
 	// HasDRAGPUs indicates GPUs were added via DRA ResourceSlices. Temporary fix - remove when device-plugin pods are supported on DRA nodes.
 	HasDRAGPUs bool
@@ -119,10 +127,11 @@ func NewNodeInfo(node *v1.Node, podAffinityInfo pod_affinity.NodePodAffinityInfo
 
 		AccessibleStorageCapacities: map[common_info.StorageClassID][]*sc_info.StorageCapacityInfo{},
 
-		PodInfos:               make(map[common_info.PodID]*pod_info.PodInfo),
-		MemoryOfEveryGpuOnNode: gpuMemory,
-		GpuMemorySynced:        exists,
-		LegacyMIGTasks:         map[common_info.PodID]string{},
+		PodInfos:                make(map[common_info.PodID]*pod_info.PodInfo),
+		MemoryOfEveryGpuOnNode:  gpuMemory,
+		ComputeOfEveryGpuOnNode: WholeGpuCompute,
+		GpuMemorySynced:         exists,
+		LegacyMIGTasks:          map[common_info.PodID]string{},
 
 		GpuSharingNodeInfo: *newGpuSharingNodeInfo(),
 
@@ -263,6 +272,10 @@ func (ni *NodeInfo) isTaskStorageAllocatableOnReleasingOrIdle(task *pod_info.Pod
 }
 
 func (ni *NodeInfo) FittingError(task *pod_info.PodInfo, isGangTask bool) *common_info.TasksFitError {
+	if reason := ni.gpuComputeFitErrorReason(task); reason != "" {
+		return common_info.NewFitError(task.Name, task.Namespace, ni.Name, reason)
+	}
+
 	enoughResources := ni.lessEqualTaskToNodeResources(task, ni.IdleVector)
 	if !enoughResources {
 		totalUsedVector := ni.UsedVector.Clone()
@@ -301,6 +314,44 @@ func (ni *NodeInfo) FittingError(task *pod_info.PodInfo, isGangTask bool) *commo
 	}
 
 	return nil
+}
+
+// gpuComputeFitErrorReason returns a rejection reason when per-GPU compute, and
+// not memory, is what keeps a fractional task off this node. Without it an
+// sm-sharing pod turned away for lack of SMs is reported as short of GPU memory.
+func (ni *NodeInfo) gpuComputeFitErrorReason(task *pod_info.PodInfo) string {
+	if !task.IsSharedGPURequest() {
+		return ""
+	}
+
+	requiredDevices := task.GpuRequirement.GetNumOfGpuDevices()
+	wholeGpus := int64(math.Floor(ni.IdleVector.Get(resource_info.GPUIndex) +
+		ni.ReleasingVector.Get(resource_info.GPUIndex)))
+	if wholeGpus+ni.fractionTaskGpusAllocatableDeviceCount(task) >= requiredDevices {
+		return ""
+	}
+
+	fittingMemoryOnly := int64(0)
+	computeConstrainedGroups := 0
+	for gpuGroup := range ni.UsedSharedGPUsMemory {
+		if ni.UsedSharedGPUsMemory[gpuGroup] == 0 || ni.isAllGpuReleased(gpuGroup) ||
+			!ni.enoughMemoryOnGpu(&task.GpuRequirement, gpuGroup) {
+			continue
+		}
+		fittingMemoryOnly++
+		if ni.isGpuGroupComputeConstrained(gpuGroup) && !ni.enoughComputeOnGpu(&task.GpuRequirement, gpuGroup) {
+			computeConstrainedGroups++
+		}
+	}
+
+	if computeConstrainedGroups == 0 || wholeGpus+fittingMemoryOnly < requiredDevices {
+		return ""
+	}
+
+	return fmt.Sprintf(
+		"node <%s> has enough GPU memory but not enough GPU compute: the task requests %.2f of a GPU's compute, "+
+			"and %d shared GPU(s) with free memory have no compute left under sm-sharing",
+		ni.Name, ni.GpuComputePortionOnNode(&task.GpuRequirement), computeConstrainedGroups)
 }
 
 func (ni *NodeInfo) PredicateByNodeResourcesType(task *pod_info.PodInfo) error {
@@ -661,6 +712,28 @@ func (ni *NodeInfo) GetResourceGpuMemory(res *resource_info.GpuResourceRequireme
 	}
 }
 
+// GpuComputePortionOnNode resolves the share of a single device's compute that a
+// request consumes here. An explicit compute request wins; otherwise compute is
+// assumed to track memory, using the EXACT unrounded memory ratio rather than
+// getResourceGpuPortion. That rounding is a ceil to the next percent, so three
+// pods each asking for a third of a device would round to 0.34 and sum past a
+// whole GPU, rejecting a placement that succeeds today.
+func (ni *NodeInfo) GpuComputePortionOnNode(res *resource_info.GpuResourceRequirement) float64 {
+	if computePortion := res.GpuComputePortion(); computePortion > 0 {
+		return computePortion
+	}
+	if ni.MemoryOfEveryGpuOnNode <= 0 {
+		return 0
+	}
+	return float64(ni.GetResourceGpuMemory(res)) / float64(ni.MemoryOfEveryGpuOnNode)
+}
+
+// GetResourceGpuCompute returns the compute a request consumes on this node, in
+// hundredths of a GPU.
+func (ni *NodeInfo) GetResourceGpuCompute(res *resource_info.GpuResourceRequirement) int64 {
+	return int64(math.Round(ni.GpuComputePortionOnNode(res) * float64(ni.ComputeOfEveryGpuOnNode)))
+}
+
 func (ni *NodeInfo) getResourceGpuPortion(res *resource_info.GpuResourceRequirement) float64 {
 	if res.GpuMemory() > 0 {
 		return ni.getGpuMemoryFractionalOnNode(res.GpuMemory())
@@ -758,6 +831,10 @@ func (ni *NodeInfo) setAcceptedResources(pi *pod_info.PodInfo) {
 		pi.ResourceReceivedType = pod_info.ReceivedTypeFraction
 		pi.AcceptedGpuRequirement = *resource_info.NewGpuResourceRequirementWithMultiFraction(
 			pi.GpuRequirement.GetNumOfGpuDevices(), ni.getResourceGpuPortion(&pi.GpuRequirement), ni.GetResourceGpuMemory(&pi.GpuRequirement))
+		// Only an explicit request is carried to the binder. Propagating the
+		// memory-derived default instead would override the binder's own fallback
+		// and change the MPS cap of workloads that never asked for compute.
+		pi.AcceptedGpuRequirement.SetGpuComputePortion(pi.GpuRequirement.GpuComputePortion())
 	} else {
 		pi.ResourceReceivedType = pod_info.ReceivedTypeRegular
 		pi.AcceptedGpuRequirement = *resource_info.NewGpuResourceRequirementWithGpus(

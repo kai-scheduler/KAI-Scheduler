@@ -25,11 +25,17 @@ const (
 )
 
 type GpuResourceRequirement struct {
-	count        int64
-	portion      float64
-	gpuMemory    int64
-	draGpuCounts map[string]int64
-	migResources map[v1.ResourceName]int64
+	count     int64
+	portion   float64
+	gpuMemory int64
+	// computePortion is the explicitly requested share of each device's compute,
+	// in (0, 1]. Zero means unrequested; the node resolves the effective share
+	// from the memory request in that case. Deliberately absent from Add,
+	// SetMaxResource and LessEqual, which do whole-GPU quota math - gpuMemory is
+	// absent from those for the same reason.
+	computePortion float64
+	draGpuCounts   map[string]int64
+	migResources   map[v1.ResourceName]int64
 }
 
 func NewGpuResourceRequirement() *GpuResourceRequirement {
@@ -106,11 +112,12 @@ func (g *GpuResourceRequirement) IsEmpty() bool {
 
 func (g *GpuResourceRequirement) Clone() *GpuResourceRequirement {
 	return &GpuResourceRequirement{
-		count:        g.count,
-		portion:      g.portion,
-		gpuMemory:    g.gpuMemory,
-		draGpuCounts: maps.Clone(g.draGpuCounts),
-		migResources: maps.Clone(g.migResources),
+		count:          g.count,
+		portion:        g.portion,
+		gpuMemory:      g.gpuMemory,
+		computePortion: g.computePortion,
+		draGpuCounts:   maps.Clone(g.draGpuCounts),
+		migResources:   maps.Clone(g.migResources),
 	}
 }
 
@@ -219,6 +226,16 @@ func (g *GpuResourceRequirement) ClearMigResources() {
 
 func (g *GpuResourceRequirement) GpuMemory() int64 {
 	return g.gpuMemory
+}
+
+// GpuComputePortion returns the explicitly requested compute share per device,
+// or 0 when the request carries none.
+func (g *GpuResourceRequirement) GpuComputePortion() float64 {
+	return g.computePortion
+}
+
+func (g *GpuResourceRequirement) SetGpuComputePortion(computePortion float64) {
+	g.computePortion = computePortion
 }
 
 func (g *GpuResourceRequirement) GPUs() float64 {

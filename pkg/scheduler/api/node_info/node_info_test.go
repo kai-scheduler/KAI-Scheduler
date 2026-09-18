@@ -34,6 +34,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 
 	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
@@ -167,6 +168,9 @@ func nodeInfoEqualExplainable(l, r *NodeInfo) error {
 	}
 	if l.MemoryOfEveryGpuOnNode != r.MemoryOfEveryGpuOnNode {
 		errors = append(errors, fmt.Errorf("MemoryOfEveryGpuOnNode: exp %v, got %v", l.MemoryOfEveryGpuOnNode, r.MemoryOfEveryGpuOnNode))
+	}
+	if l.ComputeOfEveryGpuOnNode != r.ComputeOfEveryGpuOnNode {
+		errors = append(errors, fmt.Errorf("ComputeOfEveryGpuOnNode: exp %v, got %v", l.ComputeOfEveryGpuOnNode, r.ComputeOfEveryGpuOnNode))
 	}
 	if l.GpuMemorySynced != r.GpuMemorySynced {
 		errors = append(errors, fmt.Errorf("GpuMemorySynced: exp %v, got %v", l.GpuMemorySynced, r.GpuMemorySynced))
@@ -422,16 +426,20 @@ func TestAddRemovePods(t *testing.T) {
 				},
 			},
 			addedPodsNodeInfo: &NodeInfo{
-				Name:                   "n1",
-				PodInfos:               map[common_info.PodID]*pod_info.PodInfo{},
-				LegacyMIGTasks:         map[common_info.PodID]string{},
-				MemoryOfEveryGpuOnNode: DefaultGpuMemory,
+				Name:                    "n1",
+				PodInfos:                map[common_info.PodID]*pod_info.PodInfo{},
+				LegacyMIGTasks:          map[common_info.PodID]string{},
+				MemoryOfEveryGpuOnNode:  DefaultGpuMemory,
+				ComputeOfEveryGpuOnNode: WholeGpuCompute,
 				GpuSharingNodeInfo: func() GpuSharingNodeInfo {
 					sharingMaps := *newGpuSharingNodeInfo()
 					sharingMaps.ReleasingSharedGPUs["1"] = true
 					sharingMaps.ReleasingSharedGPUsMemory["1"] = 50
 					sharingMaps.UsedSharedGPUsMemory["1"] = 50
 					sharingMaps.AllocatedSharedGPUsMemory["1"] = 50
+					sharingMaps.ReleasingSharedGPUsCompute["1"] = 50
+					sharingMaps.UsedSharedGPUsCompute["1"] = 50
+					sharingMaps.AllocatedSharedGPUsCompute["1"] = 50
 					return sharingMaps
 				}(),
 				AccessibleStorageCapacities: map[common_info.StorageClassID][]*storagecapacity_info.StorageCapacityInfo{},
@@ -443,15 +451,19 @@ func TestAddRemovePods(t *testing.T) {
 				allocatable: common_info.BuildResourceWithGpu("8000m", "10G", "1", "110"),
 			},
 			removedPodsNodeInfo: &NodeInfo{
-				Name:                   "n1",
-				PodInfos:               map[common_info.PodID]*pod_info.PodInfo{},
-				LegacyMIGTasks:         map[common_info.PodID]string{},
-				MemoryOfEveryGpuOnNode: DefaultGpuMemory,
+				Name:                    "n1",
+				PodInfos:                map[common_info.PodID]*pod_info.PodInfo{},
+				LegacyMIGTasks:          map[common_info.PodID]string{},
+				MemoryOfEveryGpuOnNode:  DefaultGpuMemory,
+				ComputeOfEveryGpuOnNode: WholeGpuCompute,
 				GpuSharingNodeInfo: func() GpuSharingNodeInfo {
 					sharingMaps := *newGpuSharingNodeInfo()
 					sharingMaps.ReleasingSharedGPUsMemory["1"] = 0
 					sharingMaps.UsedSharedGPUsMemory["1"] = 0
 					sharingMaps.AllocatedSharedGPUsMemory["1"] = 0
+					sharingMaps.ReleasingSharedGPUsCompute["1"] = 0
+					sharingMaps.UsedSharedGPUsCompute["1"] = 0
+					sharingMaps.AllocatedSharedGPUsCompute["1"] = 0
 					return sharingMaps
 				}(),
 				AccessibleStorageCapacities: map[common_info.StorageClassID][]*storagecapacity_info.StorageCapacityInfo{},
@@ -490,10 +502,11 @@ func TestAddRemovePods(t *testing.T) {
 				},
 			},
 			addedPodsNodeInfo: &NodeInfo{
-				Name:                   "n1",
-				PodInfos:               map[common_info.PodID]*pod_info.PodInfo{},
-				LegacyMIGTasks:         map[common_info.PodID]string{},
-				MemoryOfEveryGpuOnNode: DefaultGpuMemory,
+				Name:                    "n1",
+				PodInfos:                map[common_info.PodID]*pod_info.PodInfo{},
+				LegacyMIGTasks:          map[common_info.PodID]string{},
+				MemoryOfEveryGpuOnNode:  DefaultGpuMemory,
+				ComputeOfEveryGpuOnNode: WholeGpuCompute,
 				GpuSharingNodeInfo: func() GpuSharingNodeInfo {
 					sharingMaps := *newGpuSharingNodeInfo()
 					sharingMaps.ReleasingSharedGPUs["1"] = true
@@ -502,6 +515,11 @@ func TestAddRemovePods(t *testing.T) {
 					sharingMaps.UsedSharedGPUsMemory["1"] = 50
 					sharingMaps.UsedSharedGPUsMemory["2"] = 50
 					sharingMaps.AllocatedSharedGPUsMemory["1"] = 50
+					sharingMaps.ReleasingSharedGPUsCompute["1"] = 50
+					sharingMaps.ReleasingSharedGPUsCompute["2"] = -50
+					sharingMaps.UsedSharedGPUsCompute["1"] = 50
+					sharingMaps.UsedSharedGPUsCompute["2"] = 50
+					sharingMaps.AllocatedSharedGPUsCompute["1"] = 50
 
 					return sharingMaps
 				}(),
@@ -514,10 +532,11 @@ func TestAddRemovePods(t *testing.T) {
 				allocatable: common_info.BuildResourceWithGpu("8000m", "10G", "1", "110"),
 			},
 			removedPodsNodeInfo: &NodeInfo{
-				Name:                   "n1",
-				PodInfos:               map[common_info.PodID]*pod_info.PodInfo{},
-				LegacyMIGTasks:         map[common_info.PodID]string{},
-				MemoryOfEveryGpuOnNode: DefaultGpuMemory,
+				Name:                    "n1",
+				PodInfos:                map[common_info.PodID]*pod_info.PodInfo{},
+				LegacyMIGTasks:          map[common_info.PodID]string{},
+				MemoryOfEveryGpuOnNode:  DefaultGpuMemory,
+				ComputeOfEveryGpuOnNode: WholeGpuCompute,
 				GpuSharingNodeInfo: func() GpuSharingNodeInfo {
 					sharingMaps := *newGpuSharingNodeInfo()
 					sharingMaps.ReleasingSharedGPUsMemory["1"] = 0
@@ -525,6 +544,11 @@ func TestAddRemovePods(t *testing.T) {
 					sharingMaps.UsedSharedGPUsMemory["1"] = 0
 					sharingMaps.UsedSharedGPUsMemory["2"] = 0
 					sharingMaps.AllocatedSharedGPUsMemory["1"] = 0
+					sharingMaps.ReleasingSharedGPUsCompute["1"] = 0
+					sharingMaps.ReleasingSharedGPUsCompute["2"] = 0
+					sharingMaps.UsedSharedGPUsCompute["1"] = 0
+					sharingMaps.UsedSharedGPUsCompute["2"] = 0
+					sharingMaps.AllocatedSharedGPUsCompute["1"] = 0
 					return sharingMaps
 				}(),
 				AccessibleStorageCapacities: map[common_info.StorageClassID][]*storagecapacity_info.StorageCapacityInfo{},
@@ -573,15 +597,19 @@ func TestAddRemovePods(t *testing.T) {
 				},
 			},
 			addedPodsNodeInfo: &NodeInfo{
-				Name:                   "n1",
-				PodInfos:               map[common_info.PodID]*pod_info.PodInfo{},
-				LegacyMIGTasks:         map[common_info.PodID]string{},
-				MemoryOfEveryGpuOnNode: DefaultGpuMemory,
+				Name:                    "n1",
+				PodInfos:                map[common_info.PodID]*pod_info.PodInfo{},
+				LegacyMIGTasks:          map[common_info.PodID]string{},
+				MemoryOfEveryGpuOnNode:  DefaultGpuMemory,
+				ComputeOfEveryGpuOnNode: WholeGpuCompute,
 				GpuSharingNodeInfo: func() GpuSharingNodeInfo {
 					sharingMaps := *newGpuSharingNodeInfo()
 					sharingMaps.ReleasingSharedGPUsMemory["1"] = 0
 					sharingMaps.UsedSharedGPUsMemory["1"] = 120
 					sharingMaps.AllocatedSharedGPUsMemory["1"] = 70
+					sharingMaps.ReleasingSharedGPUsCompute["1"] = 0
+					sharingMaps.UsedSharedGPUsCompute["1"] = 120
+					sharingMaps.AllocatedSharedGPUsCompute["1"] = 70
 					return sharingMaps
 				}(),
 				AccessibleStorageCapacities: map[common_info.StorageClassID][]*storagecapacity_info.StorageCapacityInfo{},
@@ -593,15 +621,84 @@ func TestAddRemovePods(t *testing.T) {
 				allocatable: common_info.BuildResourceWithGpu("8000m", "10G", "1", "110"),
 			},
 			removedPodsNodeInfo: &NodeInfo{
-				Name:                   "n1",
-				PodInfos:               map[common_info.PodID]*pod_info.PodInfo{},
-				LegacyMIGTasks:         map[common_info.PodID]string{},
-				MemoryOfEveryGpuOnNode: DefaultGpuMemory,
+				Name:                    "n1",
+				PodInfos:                map[common_info.PodID]*pod_info.PodInfo{},
+				LegacyMIGTasks:          map[common_info.PodID]string{},
+				MemoryOfEveryGpuOnNode:  DefaultGpuMemory,
+				ComputeOfEveryGpuOnNode: WholeGpuCompute,
 				GpuSharingNodeInfo: func() GpuSharingNodeInfo {
 					sharingMaps := *newGpuSharingNodeInfo()
 					sharingMaps.ReleasingSharedGPUsMemory["1"] = 0
 					sharingMaps.UsedSharedGPUsMemory["1"] = 0
 					sharingMaps.AllocatedSharedGPUsMemory["1"] = 0
+					sharingMaps.ReleasingSharedGPUsCompute["1"] = 0
+					sharingMaps.UsedSharedGPUsCompute["1"] = 0
+					sharingMaps.AllocatedSharedGPUsCompute["1"] = 0
+					return sharingMaps
+				}(),
+				AccessibleStorageCapacities: map[common_info.StorageClassID][]*storagecapacity_info.StorageCapacityInfo{},
+			},
+			removedExpectedResources: expectedResources{
+				idle:        common_info.BuildResourceWithGpu("8000m", "10G", "1", "110"),
+				used:        resource_info.EmptyResource(),
+				releasing:   resource_info.EmptyResource(),
+				allocatable: common_info.BuildResourceWithGpu("8000m", "10G", "1", "110"),
+			},
+		},
+		{
+			// The compute ledger must stay passive: it diverges from memory here, and
+			// the idle/releasing vectors must still move exactly once per task.
+			name: "running pod with an explicit compute request",
+			node: common_info.BuildNode("n1",
+				common_info.BuildResourceListWithGPUAndPods("8000m", "10G", "1", "110")),
+			podsInfoMetadata: []podInfoMetadata{
+				{
+					pod: common_info.BuildPod("c1", "p1", "n1", v1.PodRunning,
+						common_info.BuildResourceListWithGPU("1000m", "1G", "0.5"), []metav1.OwnerReference{},
+						make(map[string]string), map[string]string{
+							pod_info.ReceivedResourceTypeAnnotationName:                     string(pod_info.ReceivedTypeRegular),
+							commonconstants.PodGroupAnnotationForPod:                        common_info.FakePogGroupId,
+							resources.CalcGpuComputeRequestAnnotationForContainer("c1"):     "0.25",
+							resources.CalcGpuComputeSharingModeAnnotationForContainer("c1"): string(schedulingv1alpha2.GPUComputeSharingModeSMSharing),
+						}),
+					status:    pod_status.Running,
+					gpuGroups: []string{"1"},
+				},
+			},
+			addedPodsNodeInfo: &NodeInfo{
+				Name:                    "n1",
+				PodInfos:                map[common_info.PodID]*pod_info.PodInfo{},
+				LegacyMIGTasks:          map[common_info.PodID]string{},
+				MemoryOfEveryGpuOnNode:  DefaultGpuMemory,
+				ComputeOfEveryGpuOnNode: WholeGpuCompute,
+				GpuSharingNodeInfo: func() GpuSharingNodeInfo {
+					sharingMaps := *newGpuSharingNodeInfo()
+					sharingMaps.UsedSharedGPUsMemory["1"] = 50
+					sharingMaps.AllocatedSharedGPUsMemory["1"] = 50
+					sharingMaps.UsedSharedGPUsCompute["1"] = 25
+					sharingMaps.AllocatedSharedGPUsCompute["1"] = 25
+					return sharingMaps
+				}(),
+				AccessibleStorageCapacities: map[common_info.StorageClassID][]*storagecapacity_info.StorageCapacityInfo{},
+			},
+			addedExpectedResources: expectedResources{
+				idle:        common_info.BuildResourceWithGpu("7000m", "9G", "0", "109"),
+				used:        common_info.BuildResourceWithGpu("1000m", "1G", "0", "1"),
+				releasing:   resource_info.EmptyResource(),
+				allocatable: common_info.BuildResourceWithGpu("8000m", "10G", "1", "110"),
+			},
+			removedPodsNodeInfo: &NodeInfo{
+				Name:                    "n1",
+				PodInfos:                map[common_info.PodID]*pod_info.PodInfo{},
+				LegacyMIGTasks:          map[common_info.PodID]string{},
+				MemoryOfEveryGpuOnNode:  DefaultGpuMemory,
+				ComputeOfEveryGpuOnNode: WholeGpuCompute,
+				GpuSharingNodeInfo: func() GpuSharingNodeInfo {
+					sharingMaps := *newGpuSharingNodeInfo()
+					sharingMaps.UsedSharedGPUsMemory["1"] = 0
+					sharingMaps.AllocatedSharedGPUsMemory["1"] = 0
+					sharingMaps.UsedSharedGPUsCompute["1"] = 0
+					sharingMaps.AllocatedSharedGPUsCompute["1"] = 0
 					return sharingMaps
 				}(),
 				AccessibleStorageCapacities: map[common_info.StorageClassID][]*storagecapacity_info.StorageCapacityInfo{},
@@ -1168,6 +1265,195 @@ func TestNodeInfo_PortionFractionFitsRuntimeMemoryExactHalf(t *testing.T) {
 
 	assert.True(t, node.IsTaskAllocatable(pendingPod))
 	assert.True(t, node.IsTaskFitOnGpuGroup(&pendingPod.GpuRequirement, gpuGroup))
+}
+
+// sharedGpuComputeTestNode builds a single-GPU node ready for fractional pods.
+func sharedGpuComputeTestNode(t *testing.T, gpuMemoryMiB int64) (*NodeInfo, *resource_info.ResourceVectorMap, *pod_affinity.MockNodePodAffinityInfo) {
+	t.Helper()
+
+	vectorMap := resource_info.NewResourceVectorMap()
+	nodePodAffinityInfo := pod_affinity.NewMockNodePodAffinityInfo(NewController(t))
+	nodeResources := resource_info.NewResource(0, 0, 1)
+	nodeResources.ScalarResources()[resource_info.PodsResourceName] = 10
+
+	node := &NodeInfo{
+		Name:                    "node1",
+		Node:                    common_info.BuildNode("node1", common_info.BuildResourceListWithGPU("8000m", "10G", "1")),
+		VectorMap:               vectorMap,
+		PodInfos:                map[common_info.PodID]*pod_info.PodInfo{},
+		MemoryOfEveryGpuOnNode:  gpuMemoryMiB,
+		ComputeOfEveryGpuOnNode: WholeGpuCompute,
+		GpuMemorySynced:         true,
+		GpuSharingNodeInfo:      *newGpuSharingNodeInfo(),
+		AllocatableVector:       nodeResources.ToVector(vectorMap),
+		IdleVector:              nodeResources.ToVector(vectorMap),
+		UsedVector:              resource_info.NewResourceVector(vectorMap),
+		ReleasingVector:         resource_info.NewResourceVector(vectorMap),
+		PodAffinityInfo:         nodePodAffinityInfo,
+	}
+	return node, vectorMap, nodePodAffinityInfo
+}
+
+// sharedGpuComputeTestPod builds a fractional pod. A zero computeRequest leaves
+// the compute request annotation off, so compute defaults to the memory share.
+func sharedGpuComputeTestPod(
+	name, gpuGroup string, phase v1.PodPhase, annotations map[string]string,
+	vectorMap *resource_info.ResourceVectorMap,
+) *pod_info.PodInfo {
+	labels := map[string]string{}
+	nodeName := ""
+	if gpuGroup != "" {
+		labels[commonconstants.GPUGroup] = gpuGroup
+		nodeName = "node1"
+	}
+	podAnnotations := map[string]string{
+		commonconstants.PodGroupAnnotationForPod:                        "pg-" + name,
+		resources.CalcGpuComputeSharingModeAnnotationForContainer("c1"): string(schedulingv1alpha2.GPUComputeSharingModeSMSharing),
+	}
+	for key, value := range annotations {
+		podAnnotations[key] = value
+	}
+
+	return pod_info.NewTaskInfo(&v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        name,
+			Namespace:   "default",
+			UID:         types.UID(name),
+			Labels:      labels,
+			Annotations: podAnnotations,
+		},
+		Spec: v1.PodSpec{
+			NodeName:   nodeName,
+			Containers: []v1.Container{{Name: "c1"}},
+		},
+		Status: v1.PodStatus{Phase: phase},
+	}, vectorMap)
+}
+
+func TestNodeInfo_SmSharingComputeLedgerAndFit(t *testing.T) {
+	const (
+		gpuMemoryMiB = int64(23028)
+		gpuGroup     = "gpu-group-0"
+	)
+	node, vectorMap, nodePodAffinityInfo := sharedGpuComputeTestNode(t, gpuMemoryMiB)
+
+	runningPod := sharedGpuComputeTestPod("running-heavy-compute", gpuGroup, v1.PodRunning, map[string]string{
+		commonconstants.GpuFraction:                                 "0.2",
+		resources.CalcGpuComputeRequestAnnotationForContainer("c1"): "0.8",
+	}, vectorMap)
+	nodePodAffinityInfo.EXPECT().AddPod(runningPod.Pod).Times(1)
+	assert.NoError(t, node.AddTask(runningPod))
+
+	assert.Equal(t, int64(4605), node.UsedSharedGPUsMemory[gpuGroup])
+	assert.Equal(t, int64(80), node.UsedSharedGPUsCompute[gpuGroup])
+	assert.Equal(t, int64(80), node.AllocatedSharedGPUsCompute[gpuGroup])
+
+	computePortion, err := node.GetUsedGpuComputePortion(gpuGroup)
+	assert.NoError(t, err)
+	assert.InDelta(t, 0.8, computePortion, 1e-9)
+
+	// Plenty of memory left, but only 20% of the SMs.
+	overCommittingPod := sharedGpuComputeTestPod("pending-heavy-compute", "", v1.PodPending, map[string]string{
+		commonconstants.GpuFraction:                                 "0.2",
+		resources.CalcGpuComputeRequestAnnotationForContainer("c1"): "0.8",
+	}, vectorMap)
+	assert.True(t, node.enoughMemoryOnGpu(&overCommittingPod.GpuRequirement, gpuGroup))
+	assert.False(t, node.IsTaskFitOnGpuGroup(&overCommittingPod.GpuRequirement, gpuGroup))
+	assert.False(t, node.EnoughIdleResourcesOnGpu(&overCommittingPod.GpuRequirement, gpuGroup))
+
+	fittingPod := sharedGpuComputeTestPod("pending-light-compute", "", v1.PodPending, map[string]string{
+		commonconstants.GpuFraction:                                 "0.2",
+		resources.CalcGpuComputeRequestAnnotationForContainer("c1"): "0.2",
+	}, vectorMap)
+	assert.True(t, node.IsTaskFitOnGpuGroup(&fittingPod.GpuRequirement, gpuGroup))
+	assert.True(t, node.EnoughIdleResourcesOnGpu(&fittingPod.GpuRequirement, gpuGroup))
+
+	assert.Contains(t, node.gpuComputeFitErrorReason(overCommittingPod), "not enough GPU compute")
+	assert.Empty(t, node.gpuComputeFitErrorReason(fittingPod))
+}
+
+// Under time-slicing the SMs are genuinely time-multiplexed and nothing caps
+// them, so the compute ledger must not restrict placement.
+func TestNodeInfo_TimeSlicingIgnoresComputeLedger(t *testing.T) {
+	const (
+		gpuMemoryMiB = int64(23028)
+		gpuGroup     = "gpu-group-0"
+	)
+	node, vectorMap, nodePodAffinityInfo := sharedGpuComputeTestNode(t, gpuMemoryMiB)
+
+	runningPod := sharedGpuComputeTestPod("running-heavy-compute", gpuGroup, v1.PodRunning, map[string]string{
+		commonconstants.GpuFraction:                                     "0.2",
+		resources.CalcGpuComputeRequestAnnotationForContainer("c1"):     "0.8",
+		resources.CalcGpuComputeSharingModeAnnotationForContainer("c1"): string(schedulingv1alpha2.GPUComputeSharingModeTimeSlicing),
+	}, vectorMap)
+	nodePodAffinityInfo.EXPECT().AddPod(runningPod.Pod).Times(1)
+	assert.NoError(t, node.AddTask(runningPod))
+
+	// The ledger is still kept, for visibility.
+	assert.Equal(t, int64(80), node.UsedSharedGPUsCompute[gpuGroup])
+
+	overCommittingPod := sharedGpuComputeTestPod("pending-heavy-compute", "", v1.PodPending, map[string]string{
+		commonconstants.GpuFraction:                                     "0.2",
+		resources.CalcGpuComputeRequestAnnotationForContainer("c1"):     "0.8",
+		resources.CalcGpuComputeSharingModeAnnotationForContainer("c1"): string(schedulingv1alpha2.GPUComputeSharingModeTimeSlicing),
+	}, vectorMap)
+	assert.True(t, node.IsTaskFitOnGpuGroup(&overCommittingPod.GpuRequirement, gpuGroup))
+	assert.Empty(t, node.gpuComputeFitErrorReason(overCommittingPod))
+}
+
+// Three pods each asking for exactly a third of a device must still all fit.
+// Deriving compute from the ceil-rounded memory portion would make each 0.34,
+// summing past a whole GPU and rejecting the third - a capacity regression
+// against what schedules today.
+func TestNodeInfo_ThreeExactThirdsFitOnCompute(t *testing.T) {
+	const (
+		gpuMemoryMiB = int64(23028)
+		thirdMiB     = gpuMemoryMiB / 3
+		gpuGroup     = "gpu-group-0"
+	)
+	node, vectorMap, nodePodAffinityInfo := sharedGpuComputeTestNode(t, gpuMemoryMiB)
+
+	thirdAnnotations := map[string]string{
+		resources.CalcGpuFractionAnnotationForContainer("c1"): fmt.Sprintf("%dMi", thirdMiB),
+	}
+
+	for _, name := range []string{"third-1", "third-2"} {
+		pod := sharedGpuComputeTestPod(name, gpuGroup, v1.PodRunning, thirdAnnotations, vectorMap)
+		nodePodAffinityInfo.EXPECT().AddPod(pod.Pod).Times(1)
+		assert.NoError(t, node.AddTask(pod))
+	}
+
+	assert.Equal(t, 2*thirdMiB, node.UsedSharedGPUsMemory[gpuGroup])
+	assert.Equal(t, int64(66), node.UsedSharedGPUsCompute[gpuGroup])
+
+	thirdPod := sharedGpuComputeTestPod("third-3", "", v1.PodPending, thirdAnnotations, vectorMap)
+	assert.True(t, node.IsTaskFitOnGpuGroup(&thirdPod.GpuRequirement, gpuGroup),
+		"a third of a GPU must still fit on a device holding two other thirds")
+	assert.True(t, node.EnoughIdleResourcesOnGpu(&thirdPod.GpuRequirement, gpuGroup))
+}
+
+// Omitting a map from Clone would leave the copy silently sharing - or dropping -
+// the ledger, which no other assertion would catch.
+func TestGpuSharingNodeInfo_CloneCopiesComputeLedger(t *testing.T) {
+	original := newGpuSharingNodeInfo()
+	original.UsedSharedGPUsMemory["0"] = 50
+	original.ReleasingSharedGPUsMemory["0"] = 10
+	original.AllocatedSharedGPUsMemory["0"] = 40
+	original.UsedSharedGPUsCompute["0"] = 25
+	original.ReleasingSharedGPUsCompute["0"] = 5
+	original.AllocatedSharedGPUsCompute["0"] = 20
+
+	cloned := original.Clone()
+	assert.Equal(t, original.UsedSharedGPUsCompute, cloned.UsedSharedGPUsCompute)
+	assert.Equal(t, original.ReleasingSharedGPUsCompute, cloned.ReleasingSharedGPUsCompute)
+	assert.Equal(t, original.AllocatedSharedGPUsCompute, cloned.AllocatedSharedGPUsCompute)
+
+	cloned.UsedSharedGPUsCompute["0"] = 99
+	cloned.ReleasingSharedGPUsCompute["0"] = 99
+	cloned.AllocatedSharedGPUsCompute["0"] = 99
+	assert.Equal(t, int64(25), original.UsedSharedGPUsCompute["0"])
+	assert.Equal(t, int64(5), original.ReleasingSharedGPUsCompute["0"])
+	assert.Equal(t, int64(20), original.AllocatedSharedGPUsCompute["0"])
 }
 
 func TestNodeInfo_GetSumOfIdleGPUs(t *testing.T) {

@@ -11,11 +11,19 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
+	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 
 	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/bindrequest_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	scheduler_cache "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/cache"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 )
@@ -167,4 +175,65 @@ func newClusterInfoWithBindRequests(count int) *api.ClusterInfo {
 			bindrequest_info.NewBindRequestInfo(bindRequest)
 	}
 	return clusterInfo
+}
+
+// A GPU with room to spare on memory but none on compute must be filtered out,
+// otherwise the scheduler would place an sm-sharing pod on a device whose SMs
+// are already fully claimed.
+func TestFilterGpusByEnoughResourcesSkipsComputeExhaustedGpu(t *testing.T) {
+	const (
+		gpuMemoryMiB = int64(23028)
+		gpuGroup     = "gpu-group-0"
+	)
+
+	vectorMap := resource_info.NewResourceVectorMap()
+	node := &node_info.NodeInfo{
+		Name:                    "node1",
+		PodInfos:                map[common_info.PodID]*pod_info.PodInfo{},
+		VectorMap:               vectorMap,
+		MemoryOfEveryGpuOnNode:  gpuMemoryMiB,
+		ComputeOfEveryGpuOnNode: node_info.WholeGpuCompute,
+		IdleVector:              resource_info.NewResourceVector(vectorMap),
+		ReleasingVector:         resource_info.NewResourceVector(vectorMap),
+		GpuSharingNodeInfo: node_info.GpuSharingNodeInfo{
+			ReleasingSharedGPUs:        map[string]bool{},
+			UsedSharedGPUsMemory:       map[string]int64{gpuGroup: gpuMemoryMiB / 5},
+			ReleasingSharedGPUsMemory:  map[string]int64{},
+			AllocatedSharedGPUsMemory:  map[string]int64{gpuGroup: gpuMemoryMiB / 5},
+			UsedSharedGPUsCompute:      map[string]int64{gpuGroup: 80},
+			ReleasingSharedGPUsCompute: map[string]int64{},
+			AllocatedSharedGPUsCompute: map[string]int64{gpuGroup: 80},
+			DRASharedDeviceRefCount:    map[string]int{},
+		},
+	}
+
+	smSharingPod := func(name, computeRequest string) *pod_info.PodInfo {
+		pod := pod_info.NewTaskInfo(&v1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: "default",
+				UID:       types.UID(name),
+				Annotations: map[string]string{
+					commonconstants.PodGroupAnnotationForPod:                        "pg-" + name,
+					commonconstants.GpuFraction:                                     "0.2",
+					resources.CalcGpuComputeRequestAnnotationForContainer("c1"):     computeRequest,
+					resources.CalcGpuComputeSharingModeAnnotationForContainer("c1"): string(schedulingv1alpha2.GPUComputeSharingModeSMSharing),
+				},
+			},
+			Spec:   v1.PodSpec{Containers: []v1.Container{{Name: "c1"}}},
+			Status: v1.PodStatus{Phase: v1.PodPending},
+		}, vectorMap)
+		return pod
+	}
+
+	// The gpuGroup's mode comes from a pod already placed on it.
+	placed := smSharingPod("placed", "0.8")
+	placed.SetGPUGroupIDs([]string{gpuGroup})
+	node.PodInfos[common_info.PodID("default/placed")] = placed
+
+	assert.Empty(t, filterGpusByEnoughResources(node, smSharingPod("over-committing", "0.8")),
+		"a compute-exhausted GPU must not be offered for sharing")
+	assert.Equal(t, []string{gpuGroup},
+		filterGpusByEnoughResources(node, smSharingPod("fitting", "0.2")),
+		"a GPU with compute left must still be offered")
 }
