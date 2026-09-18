@@ -24,8 +24,13 @@ DOCKER_IMAGE_NAME?=${DOCKER_REPO_FULL}:${VERSION}
 DOCKER_BUILD_PLATFORM?=linux/${ARCH}
 
 # Services that link against cgo (e.g. go-nvml) need a libc at runtime and cannot run on scratch.
+# cgo stays on for repo-wide targets (lint, test) so go-nvml typechecks; it is only disabled when
+# building a specific non-cgo service, so that binary is static and can ship on scratch.
 CGO_SERVICES?=resourcereservation
-ifneq ($(filter $(SERVICE_NAME),$(CGO_SERVICES)),)
+ifeq ($(SERVICE_NAME),)
+CGO_ENABLED?=1
+PROD_TARGET=prod
+else ifneq ($(filter $(SERVICE_NAME),$(CGO_SERVICES)),)
 CGO_ENABLED?=1
 PROD_TARGET=prod-cgo
 else
