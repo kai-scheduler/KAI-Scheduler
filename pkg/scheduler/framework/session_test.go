@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 	v1 "k8s.io/api/core/v1"
@@ -236,4 +237,97 @@ func TestFilterGpusByEnoughResourcesSkipsComputeExhaustedGpu(t *testing.T) {
 	assert.Equal(t, []string{gpuGroup},
 		filterGpusByEnoughResources(node, smSharingPod("fitting", "0.2")),
 		"a GPU with compute left must still be offered")
+}
+
+// sharedGpuMetricSeries returns the label sets currently exported under name.
+func sharedGpuMetricSeries(t *testing.T, name string) map[string]float64 {
+	t.Helper()
+
+	families, err := prometheus.DefaultGatherer.Gather()
+	assert.NoError(t, err)
+
+	series := map[string]float64{}
+	for _, family := range families {
+		if family.GetName() != name {
+			continue
+		}
+		for _, metric := range family.GetMetric() {
+			key := ""
+			for _, label := range metric.GetLabel() {
+				key += label.GetName() + "=" + label.GetValue() + ","
+			}
+			series[key] = metric.GetGauge().GetValue()
+		}
+	}
+	return series
+}
+
+// metricsNode builds a node whose shared-GPU ledgers are set directly, so the
+// published series can be checked against a known state.
+func metricsNode(name string, usedMemory, usedCompute map[string]int64) *node_info.NodeInfo {
+	vectorMap := resource_info.NewResourceVectorMap()
+	return &node_info.NodeInfo{
+		Name:                    name,
+		PodInfos:                map[common_info.PodID]*pod_info.PodInfo{},
+		VectorMap:               vectorMap,
+		MemoryOfEveryGpuOnNode:  1000,
+		ComputeOfEveryGpuOnNode: node_info.WholeGpuCompute,
+		IdleVector:              resource_info.NewResourceVector(vectorMap),
+		ReleasingVector:         resource_info.NewResourceVector(vectorMap),
+		GpuSharingNodeInfo: node_info.GpuSharingNodeInfo{
+			ReleasingSharedGPUs:        map[string]bool{},
+			UsedSharedGPUsMemory:       usedMemory,
+			ReleasingSharedGPUsMemory:  map[string]int64{},
+			AllocatedSharedGPUsMemory:  map[string]int64{},
+			UsedSharedGPUsCompute:      usedCompute,
+			ReleasingSharedGPUsCompute: map[string]int64{},
+			AllocatedSharedGPUsCompute: map[string]int64{},
+			DRASharedDeviceRefCount:    map[string]int{},
+		},
+	}
+}
+
+// gpuGroups are minted per whole-GPU claim, so they churn constantly. A series
+// that outlives its gpuGroup - or its node - reports a device that no longer
+// exists as busy, forever.
+func TestPublishSharedGpuMetricsDropsStaleSeries(t *testing.T) {
+	const (
+		memoryMetric  = "gpu_memory_used_portion"
+		computeMetric = "gpu_compute_used_portion"
+	)
+
+	firstSession := &Session{ClusterInfo: &api.ClusterInfo{Nodes: map[string]*node_info.NodeInfo{
+		"node1": metricsNode("node1",
+			map[string]int64{"group-a": 250, "group-b": 500},
+			map[string]int64{"group-a": 25, "group-b": 75}),
+		"node2": metricsNode("node2",
+			map[string]int64{"group-c": 100},
+			map[string]int64{"group-c": 10}),
+	}}}
+	publishSharedGpuMetrics(firstSession)
+
+	memory := sharedGpuMetricSeries(t, memoryMetric)
+	compute := sharedGpuMetricSeries(t, computeMetric)
+	assert.Len(t, memory, 3)
+	assert.Len(t, compute, 3)
+	assert.Equal(t, 0.25, memory["gpu_group=group-a,mode=time-slicing,node=node1,"])
+	assert.Equal(t, 0.75, compute["gpu_group=group-b,mode=time-slicing,node=node1,"])
+
+	// node2 is gone and node1 lost a gpuGroup: neither may leave a series behind.
+	secondSession := &Session{ClusterInfo: &api.ClusterInfo{Nodes: map[string]*node_info.NodeInfo{
+		"node1": metricsNode("node1",
+			map[string]int64{"group-a": 500},
+			map[string]int64{"group-a": 50}),
+	}}}
+	publishSharedGpuMetrics(secondSession)
+
+	memory = sharedGpuMetricSeries(t, memoryMetric)
+	compute = sharedGpuMetricSeries(t, computeMetric)
+	assert.Equal(t, map[string]float64{"gpu_group=group-a,mode=time-slicing,node=node1,": 0.5}, memory)
+	assert.Equal(t, map[string]float64{"gpu_group=group-a,mode=time-slicing,node=node1,": 0.5}, compute)
+
+	// A session that never got a snapshot must still clear the previous one's.
+	publishSharedGpuMetrics(&Session{})
+	assert.Empty(t, sharedGpuMetricSeries(t, memoryMetric))
+	assert.Empty(t, sharedGpuMetricSeries(t, computeMetric))
 }
