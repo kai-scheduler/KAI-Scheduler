@@ -339,7 +339,7 @@ func (ni *NodeInfo) gpuComputeFitErrorReason(task *pod_info.PodInfo) string {
 			continue
 		}
 		fittingMemoryOnly++
-		if ni.isGpuGroupComputeConstrained(gpuGroup) && !ni.enoughComputeOnGpu(&task.GpuRequirement, gpuGroup) {
+		if !ni.enoughComputeOnGpu(&task.GpuRequirement, gpuGroup) && ni.isGpuGroupComputeConstrained(gpuGroup) {
 			computeConstrainedGroups++
 		}
 	}

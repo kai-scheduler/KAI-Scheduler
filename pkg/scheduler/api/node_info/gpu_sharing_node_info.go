@@ -477,20 +477,22 @@ func (ni *NodeInfo) EnoughIdleResourcesOnGpu(resources *resource_info.GpuResourc
 	if ni.MemoryOfEveryGpuOnNode-ni.AllocatedSharedGPUsMemory[gpuGroup]-ni.GetResourceGpuMemory(resources) < 0 {
 		return false
 	}
-	if !ni.isGpuGroupComputeConstrained(gpuGroup) {
+	if ni.ComputeOfEveryGpuOnNode-ni.AllocatedSharedGPUsCompute[gpuGroup]-ni.GetResourceGpuCompute(resources) >= 0 {
 		return true
 	}
-	return ni.ComputeOfEveryGpuOnNode-ni.AllocatedSharedGPUsCompute[gpuGroup]-ni.GetResourceGpuCompute(resources) >= 0
+	return !ni.isGpuGroupComputeConstrained(gpuGroup)
 }
 
 func (ni *NodeInfo) enoughResourcesOnGpu(resources *resource_info.GpuResourceRequirement, gpuGroup string) bool {
 	if !ni.enoughMemoryOnGpu(resources, gpuGroup) {
 		return false
 	}
-	if !ni.isGpuGroupComputeConstrained(gpuGroup) {
+	// The mode lookup scans the node's pods, and this runs once per gpuGroup per
+	// allocatability check, so it is deferred until compute is what would reject.
+	if ni.enoughComputeOnGpu(resources, gpuGroup) {
 		return true
 	}
-	return ni.enoughComputeOnGpu(resources, gpuGroup)
+	return !ni.isGpuGroupComputeConstrained(gpuGroup)
 }
 
 func (ni *NodeInfo) enoughMemoryOnGpu(resources *resource_info.GpuResourceRequirement, gpuGroup string) bool {
