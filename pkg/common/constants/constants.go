@@ -89,6 +89,12 @@ const (
 	// active-thread percentage capping SM occupancy. Binder-owned like the device
 	// list: a workload able to set its own limit could exempt itself from it.
 	NvFractionsComputePortionSuffix = ".gpu-compute.portion"
+	// NvFractionsComputeRequestSuffix is the per-container GPU compute request in
+	// (0, 1]. Unlike the binder-owned compute portion this is part of the
+	// workload's request, so it must stay user-settable: binder-owned keys are
+	// stripped while parsing a request, which would hide it from the scheduler's
+	// compute ledger on every snapshot rebuild.
+	NvFractionsComputeRequestSuffix = ".gpu-compute.request"
 
 	KaiFractionContainerAnnotationPrefix = "kai.scheduler/container."
 	GpuMemoryPortionLimitSuffix          = ".gpu-memory.portion.limit"

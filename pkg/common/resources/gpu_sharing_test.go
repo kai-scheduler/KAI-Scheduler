@@ -17,15 +17,16 @@ import (
 
 func TestParsePodGPUFractionRequest(t *testing.T) {
 	tests := []struct {
-		name              string
-		annotations       map[string]string
-		wantNil           bool
-		wantFractionType  FractionType
-		wantPortion       float64
-		wantMemory        string
-		wantLimit         string
-		wantNumDevices    int64
-		wantErrContaining string
+		name               string
+		annotations        map[string]string
+		wantNil            bool
+		wantFractionType   FractionType
+		wantPortion        float64
+		wantMemory         string
+		wantLimit          string
+		wantNumDevices     int64
+		wantComputePortion float64
+		wantErrContaining  string
 	}{
 		{
 			name:    "no GPU fraction annotations",
@@ -72,6 +73,49 @@ func TestParsePodGPUFractionRequest(t *testing.T) {
 			wantFractionType: FractionTypeNvFractions,
 			wantMemory:       "1Gi",
 			wantNumDevices:   1,
+		},
+		{
+			name: "compute request alongside an NvFractions memory request",
+			annotations: map[string]string{
+				constants.NvFractionsAnnotationPrefix + "main" + constants.NvFractionsMemoryRequestSuffix: "1Gi",
+				CalcGpuComputeRequestAnnotationForContainer("main"):                                       "0.25",
+			},
+			wantFractionType:   FractionTypeNvFractions,
+			wantMemory:         "1Gi",
+			wantNumDevices:     1,
+			wantComputePortion: 0.25,
+		},
+		{
+			// The compute request refines the legacy fraction annotations too, so it
+			// must survive the branch that never looks at NvFractions memory.
+			name: "compute request alongside a legacy portion request",
+			annotations: map[string]string{
+				constants.GpuFraction:                               "0.5",
+				CalcGpuComputeRequestAnnotationForContainer("main"): "0.25",
+			},
+			wantFractionType:   FractionTypePortion,
+			wantPortion:        0.5,
+			wantNumDevices:     1,
+			wantComputePortion: 0.25,
+		},
+		{
+			name: "compute request alongside a legacy memory request",
+			annotations: map[string]string{
+				constants.GpuMemory: "2048",
+				CalcGpuComputeRequestAnnotationForContainer("main"): "0.75",
+			},
+			wantFractionType:   FractionTypeMemory,
+			wantMemory:         "2Gi",
+			wantNumDevices:     1,
+			wantComputePortion: 0.75,
+		},
+		{
+			name: "invalid compute request",
+			annotations: map[string]string{
+				constants.GpuFraction:                               "0.5",
+				CalcGpuComputeRequestAnnotationForContainer("main"): "2",
+			},
+			wantErrContaining: "must be a positive number no greater than 1.0",
 		},
 		{
 			name: "invalid legacy portion request",
@@ -135,6 +179,9 @@ func TestParsePodGPUFractionRequest(t *testing.T) {
 			}
 			if got.NumDevices != tt.wantNumDevices {
 				t.Errorf("NumDevices = %d, want %d", got.NumDevices, tt.wantNumDevices)
+			}
+			if got.ComputePortion != tt.wantComputePortion {
+				t.Errorf("ComputePortion = %v, want %v", got.ComputePortion, tt.wantComputePortion)
 			}
 			assertQuantityString(t, got.Memory, tt.wantMemory)
 			assertQuantityString(t, got.Limit, tt.wantLimit)

@@ -106,6 +106,60 @@ func TestExtractNvFractionsData(t *testing.T) {
 			},
 		},
 		{
+			name: "extracts compute request",
+			annotations: map[string]string{
+				constants.NvFractionsAnnotationPrefix + "main" + constants.NvFractionsMemoryRequestSuffix: "1Gi",
+				CalcGpuComputeRequestAnnotationForContainer("main"):                                       "0.25",
+			},
+			want: map[string]NvFractionsContainerRequest{
+				"main": {
+					Request:        quantityPtr("1Gi"),
+					ComputeRequest: ptr.To(0.25),
+				},
+			},
+		},
+		{
+			// The binder-owned compute portion is stripped while the user-settable
+			// compute request survives. Confusing the two would drop the request from
+			// every snapshot rebuild and silently drift the scheduler's ledger.
+			name: "keeps compute request while skipping the binder-owned compute portion",
+			annotations: map[string]string{
+				constants.NvFractionsAnnotationPrefix + "main" + constants.NvFractionsMemoryRequestSuffix: "1Gi",
+				CalcGpuComputeRequestAnnotationForContainer("main"):                                       "0.5",
+				CalcGpuComputePortionAnnotationForContainer("main"):                                       "0.9",
+			},
+			want: map[string]NvFractionsContainerRequest{
+				"main": {
+					Request:        quantityPtr("1Gi"),
+					ComputeRequest: ptr.To(0.5),
+				},
+			},
+		},
+		{
+			name: "rejects a compute request above a whole device",
+			annotations: map[string]string{
+				constants.NvFractionsAnnotationPrefix + "main" + constants.NvFractionsMemoryRequestSuffix: "1Gi",
+				CalcGpuComputeRequestAnnotationForContainer("main"):                                       "1.5",
+			},
+			wantErrContaining: "must be a positive number no greater than 1.0",
+		},
+		{
+			name: "rejects a non-numeric compute request",
+			annotations: map[string]string{
+				constants.NvFractionsAnnotationPrefix + "main" + constants.NvFractionsMemoryRequestSuffix: "1Gi",
+				CalcGpuComputeRequestAnnotationForContainer("main"):                                       "half",
+			},
+			wantErrContaining: "must be a positive number no greater than 1.0",
+		},
+		{
+			name: "rejects a zero compute request",
+			annotations: map[string]string{
+				constants.NvFractionsAnnotationPrefix + "main" + constants.NvFractionsMemoryRequestSuffix: "1Gi",
+				CalcGpuComputeRequestAnnotationForContainer("main"):                                       "0",
+			},
+			wantErrContaining: "must be a positive number no greater than 1.0",
+		},
+		{
 			name: "skips device list annotation",
 			annotations: map[string]string{
 				constants.NvFractionsAnnotationPrefix + "main" + constants.NvFractionsMemoryRequestSuffix: "1Gi",
@@ -226,6 +280,24 @@ func TestParseNvFractionsAnnotationKey(t *testing.T) {
 			wantErrContaining: "invalid NvFractions annotation key",
 		},
 		{
+			name:              "compute request annotation",
+			annotationKey:     constants.NvFractionsAnnotationPrefix + "main" + constants.NvFractionsComputeRequestSuffix,
+			wantContainerName: "main",
+			wantType:          nvFractionsComputeRequestAnnotation,
+		},
+		{
+			// The memory-request branch is evaluated first; it must not swallow a compute request.
+			name:              "compute request is not a memory request",
+			annotationKey:     constants.NvFractionsAnnotationPrefix + "main" + constants.NvFractionsComputeRequestSuffix,
+			wantContainerName: "main",
+			wantType:          nvFractionsComputeRequestAnnotation,
+		},
+		{
+			name:              "compute request with empty container name",
+			annotationKey:     constants.NvFractionsAnnotationPrefix + constants.NvFractionsComputeRequestSuffix,
+			wantErrContaining: "invalid NvFractions annotation key",
+		},
+		{
 			name:              "unknown gpu-compute suffix",
 			annotationKey:     constants.NvFractionsAnnotationPrefix + "main.gpu-compute.percent",
 			wantErrContaining: "invalid NvFractions annotation key",
@@ -268,6 +340,10 @@ func assertNvFractionsData(
 		}
 		assertQuantityString(t, gotData.Request, quantityString(wantData.Request))
 		assertQuantityString(t, gotData.Limit, quantityString(wantData.Limit))
+		if (gotData.ComputeRequest == nil) != (wantData.ComputeRequest == nil) ||
+			(gotData.ComputeRequest != nil && *gotData.ComputeRequest != *wantData.ComputeRequest) {
+			t.Fatalf("ComputeRequest = %v, want %v", gotData.ComputeRequest, wantData.ComputeRequest)
+		}
 		if gotData.ComputeMode == nil && wantData.ComputeMode == nil {
 			continue
 		}
@@ -335,6 +411,14 @@ func TestIsBinderOwnedNvFractionsAnnotation(t *testing.T) {
 		{
 			name:          "compute mode",
 			annotationKey: CalcGpuComputeSharingModeAnnotationForContainer("main"),
+			want:          false,
+		},
+		{
+			// The compute request is part of the workload's request, not a limit
+			// imposed on it. Marking it binder-owned would strip it from every parsed
+			// request and drift the scheduler's compute ledger after each restart.
+			name:          "compute request",
+			annotationKey: CalcGpuComputeRequestAnnotationForContainer("main"),
 			want:          false,
 		},
 		{

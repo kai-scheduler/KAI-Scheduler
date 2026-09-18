@@ -41,14 +41,19 @@ type PodGPUFractionRequest struct {
 	Limit *resource.Quantity
 	// NumDevices is the number of fractional GPU devices (>= 1).
 	NumDevices int64
+	// ComputePortion is the share of each device's compute the pod asked for, in
+	// (0, 1]. Zero when unrequested, in which case compute is assumed to track
+	// the memory share.
+	ComputePortion float64
 
 	FractionType FractionType
 }
 
 type NvFractionsContainerRequest struct {
-	Request     *resource.Quantity
-	Limit       *resource.Quantity
-	ComputeMode *schedulingv1alpha2.GPUComputeSharingMode
+	Request        *resource.Quantity
+	Limit          *resource.Quantity
+	ComputeMode    *schedulingv1alpha2.GPUComputeSharingMode
+	ComputeRequest *float64
 }
 
 var (
@@ -166,16 +171,17 @@ func ParsePodGPUFractionRequest(pod *v1.Pod) (*PodGPUFractionRequest, error) {
 		return nil, err
 	}
 
-	nvFractions, err := getNvFractionData(pod)
+	nvFractions, computePortion, err := getNvFractionData(pod)
 	if err != nil {
 		return nil, err
 	}
 	if nvFractions != nil {
 		return &PodGPUFractionRequest{
-			Memory:       nvFractions.Request,
-			Limit:        nvFractions.Limit,
-			NumDevices:   numDevices,
-			FractionType: FractionTypeNvFractions,
+			Memory:         nvFractions.Request,
+			Limit:          nvFractions.Limit,
+			NumDevices:     numDevices,
+			ComputePortion: computePortion,
+			FractionType:   FractionTypeNvFractions,
 		}, nil
 	}
 
@@ -184,9 +190,10 @@ func ParsePodGPUFractionRequest(pod *v1.Pod) (*PodGPUFractionRequest, error) {
 			return nil, err
 		}
 		return &PodGPUFractionRequest{
-			Portion:      portion,
-			NumDevices:   numDevices,
-			FractionType: FractionTypePortion,
+			Portion:        portion,
+			NumDevices:     numDevices,
+			ComputePortion: computePortion,
+			FractionType:   FractionTypePortion,
 		}, nil
 	}
 
@@ -195,9 +202,10 @@ func ParsePodGPUFractionRequest(pod *v1.Pod) (*PodGPUFractionRequest, error) {
 			return nil, err
 		}
 		return &PodGPUFractionRequest{
-			Memory:       memory,
-			NumDevices:   numDevices,
-			FractionType: FractionTypeMemory,
+			Memory:         memory,
+			NumDevices:     numDevices,
+			ComputePortion: computePortion,
+			FractionType:   FractionTypeMemory,
 		}, nil
 	}
 

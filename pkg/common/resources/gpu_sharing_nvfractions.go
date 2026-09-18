@@ -5,6 +5,8 @@ package resources
 
 import (
 	"fmt"
+	"math"
+	"strconv"
 	"strings"
 
 	v1 "k8s.io/api/core/v1"
@@ -22,6 +24,7 @@ const (
 	nvFractionsDevicesAnnotation
 	nvFractionsComputeModeAnnotation
 	nvFractionsComputePortionAnnotation
+	nvFractionsComputeRequestAnnotation
 )
 
 func CalcGpuFractionAnnotationForContainer(containerName string) string {
@@ -40,6 +43,12 @@ func CalcGpuVisibleDevicesAnnotationForContainer(containerName string) string {
 // compute-portion annotation key.
 func CalcGpuComputePortionAnnotationForContainer(containerName string) string {
 	return constants.NvFractionsAnnotationPrefix + containerName + constants.NvFractionsComputePortionSuffix
+}
+
+// CalcGpuComputeRequestAnnotationForContainer returns the per-container GPU
+// compute-request annotation key.
+func CalcGpuComputeRequestAnnotationForContainer(containerName string) string {
+	return constants.NvFractionsAnnotationPrefix + containerName + constants.NvFractionsComputeRequestSuffix
 }
 
 func ExtractNvFractionsData(pod *v1.Pod) (map[string]NvFractionsContainerRequest, error) {
@@ -67,6 +76,15 @@ func ExtractNvFractionsData(pod *v1.Pod) (map[string]NvFractionsContainerRequest
 			fractionsData[containerName] = containerData
 			continue
 		}
+		if annotationType == nvFractionsComputeRequestAnnotation {
+			computeRequest, err := parseNvFractionsComputeValue(annotationKey, annotationValue)
+			if err != nil {
+				return nil, err
+			}
+			containerData.ComputeRequest = &computeRequest
+			fractionsData[containerName] = containerData
+			continue
+		}
 		switch annotationType {
 		case nvFractionsRequestAnnotation:
 			gpuMemory, err := parseNvFractionsAnnotationValue(annotationKey, annotationValue)
@@ -88,17 +106,28 @@ func ExtractNvFractionsData(pod *v1.Pod) (map[string]NvFractionsContainerRequest
 	return fractionsData, nil
 }
 
-func getNvFractionData(pod *v1.Pod) (*NvFractionsContainerRequest, error) {
+// getNvFractionData returns the container request that carries the pod's
+// NvFractions memory request, and the pod's GPU compute request. The compute
+// request is returned separately because it is valid on its own: it refines any
+// fraction source, including the legacy gpu-fraction and gpu-memory annotations.
+func getNvFractionData(pod *v1.Pod) (*NvFractionsContainerRequest, float64, error) {
 	nvFractionsData, err := ExtractNvFractionsData(pod)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
+
+	var memoryRequest *NvFractionsContainerRequest
+	computeRequest := float64(0)
 	for _, containerData := range nvFractionsData {
-		if containerData.Request != nil {
-			return &containerData, nil
+		if memoryRequest == nil && containerData.Request != nil {
+			containerDataCopy := containerData
+			memoryRequest = &containerDataCopy
+		}
+		if computeRequest == 0 && containerData.ComputeRequest != nil {
+			computeRequest = *containerData.ComputeRequest
 		}
 	}
-	return nil, nil
+	return memoryRequest, computeRequest, nil
 }
 
 // IsBinderOwnedNvFractionsAnnotation reports whether annotationKey is written by
@@ -150,6 +179,13 @@ func parseNvFractionsAnnotationKey(annotationKey string) (string, nvFractionsAnn
 		}
 		return containerName, nvFractionsComputePortionAnnotation, nil
 	}
+	if strings.HasSuffix(annotationKey, constants.NvFractionsComputeRequestSuffix) {
+		containerName := strings.TrimSuffix(containerNameWithSuffix, constants.NvFractionsComputeRequestSuffix)
+		if containerName == "" {
+			return "", 0, fmt.Errorf("invalid NvFractions annotation key: %s", annotationKey)
+		}
+		return containerName, nvFractionsComputeRequestAnnotation, nil
+	}
 	return "", 0, fmt.Errorf("invalid NvFractions annotation key: %s", annotationKey)
 }
 
@@ -161,6 +197,18 @@ func parseNvFractionsAnnotationValue(annotationKey, annotationValue string) (res
 		)
 	}
 	return gpuMemory, nil
+}
+
+// parseNvFractionsComputeValue parses a GPU compute request, a share of a single
+// device's compute expressed as a fraction in (0, 1].
+func parseNvFractionsComputeValue(annotationKey, annotationValue string) (float64, error) {
+	computeRequest, err := strconv.ParseFloat(annotationValue, 64)
+	if err != nil || math.IsNaN(computeRequest) || computeRequest <= 0 || computeRequest > 1 {
+		return 0, fmt.Errorf(
+			"%s annotation value must be a positive number no greater than 1.0", annotationKey,
+		)
+	}
+	return computeRequest, nil
 }
 
 func defaultRequestFromLimit(containerData *NvFractionsContainerRequest) {

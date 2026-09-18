@@ -480,6 +480,44 @@ func TestValidateComputePortionAnnotationAuthorization(t *testing.T) {
 	})
 }
 
+// The compute request is part of the workload's request, unlike the binder-owned
+// compute portion, so a normal user must be able to set it. Moving it onto the
+// binder-owned list would have request parsing strip it, leaving the scheduler's
+// compute ledger to drift after every restart.
+func TestValidateAcceptsComputeRequestFromUser(t *testing.T) {
+	const binderUsername = "system:serviceaccount:kai-scheduler:binder"
+	requestKey := resources.CalcGpuComputeRequestAnnotationForContainer("container-0")
+	podWithComputeRequest := func(value string) *v1.Pod {
+		return &v1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{
+				nvFractionsRequestKey("container-0"): "1Gi",
+				requestKey:                           value,
+			}},
+			Spec: v1.PodSpec{Containers: []v1.Container{{Name: "container-0"}}},
+		}
+	}
+
+	t.Run("allows create by a normal user", func(t *testing.T) {
+		err := New(binderUsername).Validate(contextWithUser("alice"), nil, podWithComputeRequest("0.25"))
+		assert.NoError(t, err)
+	})
+
+	t.Run("allows a normal user to change it", func(t *testing.T) {
+		err := New(binderUsername).Validate(contextWithUser("alice"),
+			podWithComputeRequest("0.25"), podWithComputeRequest("0.5"))
+		assert.NoError(t, err)
+	})
+
+	t.Run("is not binder-owned", func(t *testing.T) {
+		assert.False(t, resources.IsBinderOwnedNvFractionsAnnotation(requestKey))
+	})
+
+	t.Run("rejects an out-of-range compute request", func(t *testing.T) {
+		err := New(binderUsername).Validate(contextWithUser("alice"), nil, podWithComputeRequest("1.5"))
+		assert.ErrorContains(t, err, "must be a positive number no greater than 1.0")
+	})
+}
+
 // The compute portion is binder output, so its value must never be read as part
 // of the workload's fraction request. These cases pin the end-to-end outcome;
 // TestStripNvFractionsDeviceAnnotations pins the removal that backs it.
