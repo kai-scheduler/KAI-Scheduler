@@ -23,19 +23,19 @@ DOCKER_REPO_FULL?=${DOCKER_REPO_BASE}/${SERVICE_NAME}
 DOCKER_IMAGE_NAME?=${DOCKER_REPO_FULL}:${VERSION}
 DOCKER_BUILD_PLATFORM?=linux/${ARCH}
 
-# Per-invocation cgo and image base selection:
-# - No SERVICE_NAME (lint, test, benchmark): whole repo compiles, including go-nvml, which requires cgo.
-# - SERVICE_NAME in CGO_SERVICES: needs cgo and a libc at runtime, so the image stays on distroless.
-# - Any other SERVICE_NAME: no C code, so build static and ship on scratch.
+# cgo is off only when building a specific service outside CGO_SERVICES, so it is static and ships on scratch.
+# Repo-wide targets (lint, test) and CGO_SERVICES (go-nvml) keep cgo on; those images need a libc (distroless).
 CGO_SERVICES?=resourcereservation
-ifeq ($(SERVICE_NAME),)
+ifneq ($(SERVICE_NAME),)
+ifeq ($(filter $(SERVICE_NAME),$(CGO_SERVICES)),)
+CGO_ENABLED?=0
+endif
+endif
 CGO_ENABLED?=1
-PROD_TARGET=prod
-else ifneq ($(filter $(SERVICE_NAME),$(CGO_SERVICES)),)
-CGO_ENABLED?=1
+
+ifeq ($(CGO_ENABLED),1)
 PROD_TARGET=prod-cgo
 else
-CGO_ENABLED?=0
 PROD_TARGET=prod
 endif
 
