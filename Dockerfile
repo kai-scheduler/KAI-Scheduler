@@ -17,11 +17,15 @@ USER 65532:65532
 
 ENTRYPOINT ["/go/bin/dlv", "exec", "--headless", "-l", ":10000", "--api-version=2", "/workspace/app", "--"]
 
+FROM golang:1.26.3 AS certs
+
 FROM scratch AS prod
 ARG TARGETARCH
 ARG SERVICE_NAME
 ENV TARGETARCH=$TARGETARCH
 ENV SERVICE_NAME=$SERVICE_NAME
+
+COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
 WORKDIR /workspace
 COPY --chmod=0755 --chown=65532:0 bin/$SERVICE_NAME-$TARGETARCH app
