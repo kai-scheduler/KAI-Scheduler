@@ -23,8 +23,6 @@ DOCKER_REPO_FULL?=${DOCKER_REPO_BASE}/${SERVICE_NAME}
 DOCKER_IMAGE_NAME?=${DOCKER_REPO_FULL}:${VERSION}
 DOCKER_BUILD_PLATFORM?=linux/${ARCH}
 
-# cgo is off only when building a specific service outside CGO_SERVICES, so it is static and ships on scratch.
-# Repo-wide targets (lint, test) and CGO_SERVICES (go-nvml) keep cgo on; those images need a libc (distroless).
 CGO_SERVICES?=resourcereservation
 ifneq ($(SERVICE_NAME),)
 ifeq ($(filter $(SERVICE_NAME),$(CGO_SERVICES)),)
