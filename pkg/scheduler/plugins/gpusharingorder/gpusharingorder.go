@@ -34,7 +34,7 @@ func (g *gpuSharingOrderPlugin) nodeOrderFn(pod *pod_info.PodInfo, node *node_in
 	}
 
 	for gpuGroup := range node.UsedSharedGPUsMemory {
-		if !node.IsTaskFitOnGpuGroup(&pod.GpuRequirement, gpuGroup) {
+		if !node.IsTaskFitOnGpuGroup(pod, gpuGroup) {
 			continue
 		}
 

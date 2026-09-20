@@ -113,6 +113,69 @@ func TestFractionalGPUAllocationDoesNotUseGpuGroupWithDifferentComputeMode(t *te
 	}
 }
 
+func TestFractionalGPUAllocationDefaultsToTimeSlicingAndDoesNotUseSmSharingGpuGroup(t *testing.T) {
+	test_utils.InitTestingInfrastructure()
+	controller := NewController(t)
+	defer controller.Finish()
+	defer gock.Off()
+
+	const gpuGroup = "sm-sharing-group"
+	topology := test_utils.TestTopologyBasic{
+		Name: "unannotated pod does not allocate on sm-sharing gpu group",
+		Jobs: []*jobs_fake.TestJobBasic{
+			{
+				Name:                "running_job0",
+				RequiredGPUsPerTask: 0.5,
+				Priority:            constants.PriorityTrainNumber,
+				QueueName:           "queue0",
+				Tasks: []*tasks_fake.TestTaskBasic{
+					{
+						NodeName:  "node0",
+						GPUGroups: []string{gpuGroup},
+						State:     pod_status.Running,
+						Annotations: map[string]string{
+							resources.CalcGpuComputeSharingModeAnnotationForContainer("main"): string(schedulingv1alpha2.GPUComputeSharingModeSMSharing),
+						},
+					},
+				},
+			},
+			{
+				Name:                "pending_job0",
+				RequiredGPUsPerTask: 0.5,
+				Priority:            constants.PriorityTrainNumber,
+				QueueName:           "queue0",
+				Tasks: []*tasks_fake.TestTaskBasic{
+					{
+						State: pod_status.Pending,
+					},
+				},
+			},
+		},
+		Nodes: map[string]nodes_fake.TestNodeBasic{
+			"node0": {
+				GPUs: 1,
+			},
+		},
+		Queues: []test_utils.TestQueueBasic{
+			{
+				Name:         "queue0",
+				DeservedGPUs: 1,
+			},
+		},
+	}
+
+	ssn := test_utils.BuildSession(topology, controller)
+	addReservationPodToNodeForTest(ssn.ClusterInfo.Nodes["node0"], gpuGroup, schedulingv1alpha2.GPUComputeSharingModeSMSharing)
+
+	allocate.New().Execute(ssn)
+
+	pendingTask := ssn.ClusterInfo.PodGroupInfos["pending_job0"].GetAllPodsMap()[common_info.PodID("pending_job0-0")]
+	if pendingTask.Status != pod_status.Pending {
+		t.Fatalf("expected unannotated time-slicing task to stay pending, got status %s on node %s with groups %v",
+			pendingTask.Status, pendingTask.NodeName, pendingTask.GPUGroupIDs())
+	}
+}
+
 func TestFractionalGPUAllocationUsesNodeConditionOverride(t *testing.T) {
 	test_utils.InitTestingInfrastructure()
 	controller := NewController(t)

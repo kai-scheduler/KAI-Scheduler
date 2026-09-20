@@ -410,7 +410,7 @@ func (ni *NodeInfo) getGpuMemoryFractionalOnNode(memory int64) float64 {
 func (ni *NodeInfo) fractionTaskGpusAllocatableDeviceCount(pod *pod_info.PodInfo) int64 {
 	matchingGpuGroupsCount := int64(0)
 	for gpuGroup := range ni.UsedSharedGPUsMemory {
-		if ni.IsTaskFitOnGpuGroup(&pod.GpuRequirement, gpuGroup) {
+		if ni.IsTaskFitOnGpuGroup(pod, gpuGroup) {
 			matchingGpuGroupsCount += 1
 			if matchingGpuGroupsCount >= pod.GpuRequirement.GetNumOfGpuDevices() {
 				return matchingGpuGroupsCount
@@ -421,10 +421,11 @@ func (ni *NodeInfo) fractionTaskGpusAllocatableDeviceCount(pod *pod_info.PodInfo
 	return matchingGpuGroupsCount
 }
 
-func (ni *NodeInfo) IsTaskFitOnGpuGroup(resourceRequest *resource_info.GpuResourceRequirement, gpuGroup string) bool {
+func (ni *NodeInfo) IsTaskFitOnGpuGroup(task *pod_info.PodInfo, gpuGroup string) bool {
 	return ni.UsedSharedGPUsMemory[gpuGroup] != 0 &&
-		ni.enoughResourcesOnGpu(resourceRequest, gpuGroup) &&
-		!ni.isAllGpuReleased(gpuGroup)
+		ni.enoughResourcesOnGpu(&task.GpuRequirement, gpuGroup) &&
+		!ni.isAllGpuReleased(gpuGroup) &&
+		ni.IsGpuGroupComputeSharingModeCompatible(gpuGroup, task)
 }
 
 func (ni *NodeInfo) EnoughIdleResourcesOnGpu(resources *resource_info.GpuResourceRequirement, gpuGroup string) bool {
