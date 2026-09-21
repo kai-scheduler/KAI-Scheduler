@@ -35,6 +35,21 @@ Help us keep the docs clear and useful by fixing typos, updating outdated inform
 - Approval Policy – PRs from external contributors require approval from 2 trusted reviewers (organization members or collaborators) before merging.
 - Coverage - Please look at the coverage change details and create unit tests, integration tests or end-to-end tests to cover new functionality or changes.
 
+### Logging Practices
+
+Use `log.InfraLogger` for scheduler actions and phases. V(2-3) logs are operational; V(5+) logs are diagnostic and may run in scheduler hot paths.
+
+Guard V(5+) scheduler logs with `VerboseLogger.Do` so disabled verbosity does not construct arguments or perform formatting:
+
+```go
+log.InfraLogger.V(6).Do(func() {
+	log.InfraLogger.Infof("Task <%s/%s> allocatable on node <%s>",
+		task.Namespace, task.Name, node.Name)
+})
+```
+
+Create values used only by a V(5+) message inside the callback, including `fmt.Sprintf`, joins, detailed-error rendering, and stringification. Leave operational V(1-4) logs and controller-runtime contextual logs unchanged.
+
 ### PR Title Guidelines
 
 PR titles must follow the [Conventional Commits](https://www.conventionalcommits.org/) title specification. The format is:

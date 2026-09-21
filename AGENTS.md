@@ -117,11 +117,8 @@ import (
 - **Constants**: PascalCase exported, camelCase unexported
 
 ### Logging
-```go
-log.InfraLogger.V(6).Infof("Task <%s/%s> allocatable on node <%s>", ...)  // V(2-3) operational, V(5-6) debug
-logger := log.FromContext(ctx)  // Controller logging
-logger.Info("Binding pod", "namespace", pod.Namespace, "name", pod.Name)
-```
+
+Follow the [logging practices in CONTRIBUTING.md](CONTRIBUTING.md#logging-practices).
 
 ### Comments
 - Apache 2.0 + NVIDIA copyright headers on all files
