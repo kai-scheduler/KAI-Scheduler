@@ -46,11 +46,13 @@
     },
     {
       id: 'topology-preferred', chartId: 'topology-preferred', timingField: 'time',
+      detailLabels: { nodes: 'topology KWOK nodes' },
       scale: name => name === 'Allocate with preferred topology',
       legacy: name => /Allocate single distributed job with preferred topology/i.test(name),
     },
     {
       id: 'topology-none', chartId: 'topology-none', timingField: 'time',
+      detailLabels: { nodes: 'topology KWOK nodes' },
       scale: name => name === 'Allocate without preferred topology',
       legacy: name => /Allocate single distributed job without preferred topology/i.test(name),
     },
@@ -92,18 +94,21 @@
     },
     {
       id: 'inference-allocation', chartId: 'inference-allocation', timingField: 'duration_seconds',
+      detailLabels: { nodes: 'topology KWOK nodes' },
       ignoredSeriesFields: ['decode_block_spread_by_deployment'],
       scale: name => name === 'Disaggregated inference allocation',
       legacy: () => false,
     },
     {
       id: 'inference-reclaim', chartId: 'inference-reclaim', timingField: 'duration_seconds',
+      detailLabels: { nodes: 'topology KWOK nodes' },
       ignoredSeriesFields: ['decode_block_spread_by_deployment'],
       scale: name => name === 'Disaggregated inference reclaim',
       legacy: () => false,
     },
     {
       id: 'hero-job-reclaim', chartId: 'hero-job-reclaim', timingField: 'duration_seconds',
+      detailLabels: { nodes: 'topology KWOK nodes' },
       scale: name => name === 'Zone-constrained hero job reclaim',
       legacy: () => false,
     },
@@ -284,19 +289,24 @@
 
   function buildSeriesLabel(testCase, details, metadata) {
     const dimensions = seriesDetails(details, testCase.timingField, testCase.ignoredSeriesFields);
-    const suffix = Object.entries(dimensions).map(([key, value]) => `${key}=${formatDetailValue(value)}`).join(' · ');
+    const suffix = Object.entries(dimensions).map(([key, value]) => {
+      const label = testCase.detailLabels?.[key] || key;
+      return `${label}=${formatDetailValue(value)}`;
+    }).join(' · ');
     const detailsLabel = suffix ? `${testCase.id} · ${suffix}` : testCase.id;
     return `${detailsLabel} · ${metadataLabel(metadata)}`;
   }
 
   function buildTooltipLines(observation) {
+    const testCase = TEST_CASES.find(candidate => candidate.id === observation.testId);
     const lines = [
       `test: ${observation.testName}`,
       `source: ${observation.source === 'scale-results' ? 'results' : 'legacy Ginkgo'}`,
     ];
     if (observation.commit) lines.push(`commit: ${observation.commit}`);
     Object.keys(observation.details || {}).sort().forEach(key => {
-      lines.push(`${key}: ${formatDetailValue(observation.details[key])}`);
+      const label = testCase?.detailLabels?.[key] || key;
+      lines.push(`${label}: ${formatDetailValue(observation.details[key])}`);
     });
     Object.keys(observation.metadata || {}).sort().forEach(key => {
       lines.push(`${key}: ${formatDetailValue(observation.metadata[key])}`);

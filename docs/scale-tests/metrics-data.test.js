@@ -52,6 +52,26 @@ test('configures charts for the new workload scale results', () => {
   });
 });
 
+test('labels the actual topology KWOK node count in topology graphs', () => {
+  const topologyPayload = {
+    metadata: { kai_scheduler_ref: 'main', kwok_node_count: 1000 },
+    results: {
+      status: 'success',
+      tests: [{
+        test_name: 'Disaggregated inference allocation',
+        status: 'success',
+        details: { nodes: 1024, duration_seconds: 99 },
+      }],
+    },
+  };
+  const run = loadRun(topologyPayload, meta);
+  const [observation] = extractChartObservations([run]);
+
+  assert.match(observation.seriesLabel, /topology KWOK nodes=1024/);
+  assert.ok(buildTooltipLines(observation).includes('topology KWOK nodes: 1024'));
+  assert.ok(buildTooltipLines(observation).includes('kwok_node_count: 1000'));
+});
+
 test('preserves complete details and raw timing values in observations', () => {
   const run = loadRun(payload, meta);
   const observation = extractChartObservations([run]).find(point => point.testName === 'NCCL Simulation on empty cluster');
