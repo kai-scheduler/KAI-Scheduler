@@ -126,8 +126,10 @@ func (s *Statement) Evict(reclaimeeTask *pod_info.PodInfo, message string,
 			},
 		},
 	)
-	log.InfraLogger.V(6).Infof("Statement evicted task: <%v/%v> from node: <%v>",
-		reclaimeeTask.Namespace, reclaimeeTask.Name, node.Name)
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Statement evicted task: <%v/%v> from node: <%v>",
+			reclaimeeTask.Namespace, reclaimeeTask.Name, node.Name)
+	})
 
 	return nil
 }
@@ -238,7 +240,9 @@ func (s *Statement) Pipeline(task *pod_info.PodInfo, hostname string, updateTask
 	if foundOnNode && !updateTaskIfExistsOnNode && !gpuPlacementChanged && !numaPlacementChanged {
 		task.FractionalGpuGroups = cloneFractionalGpuGroups(taskOnNode.FractionalGpuGroups)
 		task.NUMAPlacement = taskOnNode.NUMAPlacement.Clone()
-		log.InfraLogger.V(6).Infof("Task: <%v/%v> already exists on node: <%v>, unevicting it", task.Namespace, task.Name, hostname)
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof("Task: <%v/%v> already exists on node: <%v>, unevicting it", task.Namespace, task.Name, hostname)
+		})
 		if err := s.Unevict(task); err != nil {
 			log.InfraLogger.Errorf("Failed to unevict task <%v/%v> to node <%v> in Session <%v>: %v",
 				task.Namespace, task.Name, hostname, s.sessionID, err)
@@ -267,9 +271,11 @@ func (s *Statement) Pipeline(task *pod_info.PodInfo, hostname string, updateTask
 	}
 
 	if gpuPlacementChanged {
-		log.InfraLogger.V(6).Infof(
-			"Task: <%v/%v> already exists on node: <%v> on gpu index of: <%v>, moving it to index: <%v>",
-			task.Namespace, task.Name, hostname, taskOnNode.GPUGroupIDs(), task.GPUGroupIDs())
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof(
+				"Task: <%v/%v> already exists on node: <%v> on gpu index of: <%v>, moving it to index: <%v>",
+				task.Namespace, task.Name, hostname, taskOnNode.GPUGroupIDs(), task.GPUGroupIDs())
+		})
 		previousFractionalGpuGroups = cloneFractionalGpuGroups(taskOnNode.FractionalGpuGroups)
 		if err := node.ConsolidateSharedPodInfoToDifferentGPU(task); err != nil {
 			log.InfraLogger.Errorf("Failed to unevict task <%v/%v> to node <%v> in Session <%v>: %v",
@@ -287,8 +293,10 @@ func (s *Statement) Pipeline(task *pod_info.PodInfo, hostname string, updateTask
 		return err
 	}
 
-	log.InfraLogger.V(6).Infof("After pipelined Task <%v/%v> to Node <%v>: idle <%v>, used <%v>, releasing <%v>",
-		task.Namespace, task.Name, node.Name, node.IdleVector, node.UsedVector, node.ReleasingVector)
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("After pipelined Task <%v/%v> to Node <%v>: idle <%v>, used <%v>, releasing <%v>",
+			task.Namespace, task.Name, node.Name, node.IdleVector, node.UsedVector, node.ReleasingVector)
+	})
 
 	for _, eh := range s.ssn.eventHandlers {
 		if eh.AllocateFunc != nil {
@@ -315,9 +323,11 @@ func (s *Statement) Pipeline(task *pod_info.PodInfo, hostname string, updateTask
 	})
 	task.IsVirtualStatus = true
 
-	log.InfraLogger.V(6).Infof(
-		"Statement pipelined task: <%v/%v> to node: <%v>, gpuGroup: <%v>",
-		task.Namespace, task.Name, hostname, task.GPUGroupIDs())
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof(
+			"Statement pipelined task: <%v/%v> to node: <%v>, gpuGroup: <%v>",
+			task.Namespace, task.Name, hostname, task.GPUGroupIDs())
+	})
 
 	return nil
 }
@@ -347,9 +357,11 @@ func (s *Statement) Allocate(task *pod_info.PodInfo, hostname string) error {
 				task.Namespace, task.Name, hostname, s.sessionID, err)
 			return err
 		}
-		log.InfraLogger.V(5).Infof(
-			"After allocated Task <%v/%v> to Node <%v>: idle <%v>, used <%v>, releasing <%v>",
-			task.Namespace, task.Name, node.Name, node.IdleVector, node.UsedVector, node.ReleasingVector)
+		log.InfraLogger.V(5).Do(func() {
+			log.InfraLogger.Infof(
+				"After allocated Task <%v/%v> to Node <%v>: idle <%v>, used <%v>, releasing <%v>",
+				task.Namespace, task.Name, node.Name, node.IdleVector, node.UsedVector, node.ReleasingVector)
+		})
 	} else {
 		log.InfraLogger.Errorf("Failed to find Node <%s> in Session <%s> index when binding.",
 			hostname, s.sessionID)
@@ -382,9 +394,11 @@ func (s *Statement) Allocate(task *pod_info.PodInfo, hostname string) error {
 	)
 	task.IsVirtualStatus = true
 
-	log.InfraLogger.V(6).Infof(
-		"Statement allocated task: <%v/%v> to node: <%v>",
-		task.Namespace, task.Name, hostname)
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof(
+			"Statement allocated task: <%v/%v> to node: <%v>",
+			task.Namespace, task.Name, hostname)
+	})
 
 	return nil
 }
@@ -436,7 +450,9 @@ func (s *Statement) unallocate(task *pod_info.PodInfo, previousNodeName string,
 	}
 
 	if node, found := s.ssn.ClusterInfo.Nodes[task.NodeName]; found {
-		log.InfraLogger.V(6).Infof("Remove Task <%v> from node <%v>", task.Name, task.NodeName)
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof("Remove Task <%v> from node <%v>", task.Name, task.NodeName)
+		})
 		err := node.RemoveTask(task)
 		if err != nil {
 			log.InfraLogger.Errorf("Failed to remove Task <%v> on node <%v>: %s", task.Name, task.NodeName, err.Error())
@@ -515,7 +531,9 @@ func (s *Statement) unpipeline(
 }
 
 func (s *Statement) Unevict(taskToUnevict *pod_info.PodInfo) error {
-	log.InfraLogger.V(6).Infof("Unevicting task: %v", taskToUnevict.Name)
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Unevicting task: %v", taskToUnevict.Name)
+	})
 	return s.undoEarliestValidOperation(taskToUnevict, evict)
 }
 
@@ -566,7 +584,9 @@ func (s *Statement) Discard() {
 		return
 	}
 
-	log.InfraLogger.V(6).Infof("Discarding operations ...")
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Discarding operations ...")
+	})
 	for i := len(s.operations) - 1; i >= 0; i-- {
 		_ = s.undoOperation(i)
 	}

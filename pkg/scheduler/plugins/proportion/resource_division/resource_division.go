@@ -31,7 +31,9 @@ func SetResourcesShare(totalResource rs.ResourceQuantities, kValue float64, queu
 }
 
 func setResourceShare(totalAmount, kValue float64, resourceName rs.ResourceName, queues map[common_info.QueueID]*rs.QueueAttributes) float64 {
-	log.InfraLogger.V(6).Infof("About to start calculating %v fairShare, totalAmount: <%v>", resourceName, totalAmount)
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("About to start calculating %v fairShare, totalAmount: <%v>", resourceName, totalAmount)
+	})
 	remainingAmount := setDeservedResource(totalAmount, queues, resourceName)
 	if remainingAmount > 0 {
 		remainingAmount = divideOverQuotaResource(remainingAmount, kValue, queues, resourceName)
@@ -180,7 +182,9 @@ func divideUpToFairShare(totalResourceAmount, kValue float64, queues map[common_
 
 		for _, queue := range queues {
 			if totalResourceAmount == 0 {
-				log.InfraLogger.V(7).Infof("no more resources, exiting")
+				log.InfraLogger.V(7).Do(func() {
+					log.InfraLogger.Infof("no more resources, exiting")
+				})
 				break
 			}
 
@@ -195,9 +199,11 @@ func divideUpToFairShare(totalResourceAmount, kValue float64, queues map[common_
 				continue
 			}
 
-			log.InfraLogger.V(6).Infof("calculating %v resource fair share for %v: deserved: %v, "+
-				"remaining requested: %v, fairShare: %v",
-				resourceName, queue.Name, resourceShare.Deserved, requested, resourceShare.FairShare)
+			log.InfraLogger.V(6).Do(func() {
+				log.InfraLogger.Infof("calculating %v resource fair share for %v: deserved: %v, "+
+					"remaining requested: %v, fairShare: %v",
+					resourceName, queue.Name, resourceShare.Deserved, requested, resourceShare.FairShare)
+			})
 
 			// normalize queueWeight
 			queueWeight := shareWeightsPerQueue[queue.UID]
@@ -289,14 +295,18 @@ func getResourceToGiveInCurrentRound(fairShare float64, requested float64, queue
 	resourcesToGive := float64(0)
 	if requested <= fairShare {
 		resourcesToGive = requested
-		log.InfraLogger.V(7).Infof("%v received %v resources and is satisfied", queue.Name, resourcesToGive)
+		log.InfraLogger.V(7).Do(func() {
+			log.InfraLogger.Infof("%v received %v resources and is satisfied", queue.Name, resourcesToGive)
+		})
 		delete(remainingRequested, queue.UID)
 	} else {
 		// for better usability, when we limit the fairShare that a project/departments receives, it is always done in round numbers
 		roundFairShare := math.Floor(fairShare)
 		if roundFairShare > 0 {
 			resourcesToGive = roundFairShare
-			log.InfraLogger.V(7).Infof("%v received its' fairShare of %v resources in current round, but still not satisfied", queue.Name, resourcesToGive)
+			log.InfraLogger.V(7).Do(func() {
+				log.InfraLogger.Infof("%v received its' fairShare of %v resources in current round, but still not satisfied", queue.Name, resourcesToGive)
+			})
 		}
 		if fairShare-resourcesToGive > 0 {
 			remainingRequested[queue.UID] = &remainingRequestedResource{

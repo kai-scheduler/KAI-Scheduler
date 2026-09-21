@@ -192,9 +192,11 @@ func IsEnoughGPUsAllocatableForJob(
 		ssn.TaskOrderFn, allocationMode)
 	resReq := podgroup_info.GetTasksToAllocateInitResourceVector(job, ssn.SubGroupOrderFn, ssn.TaskOrderFn, allocationMode,
 		ssn.ClusterInfo.MinNodeGPUMemoryMiB)
-	log.InfraLogger.V(7).Infof(
-		"Task: <%v/%v> resources requires: <%v>, sumOfAllAllocatableGPUs: <%v, %v mb>",
-		job.Namespace, job.Name, resReq, sumOfAllAllocatableGPUs, sumOfAllAllocatableGPUsMemory)
+	log.InfraLogger.V(7).Do(func() {
+		log.InfraLogger.Infof(
+			"Task: <%v/%v> resources requires: <%v>, sumOfAllAllocatableGPUs: <%v, %v mb>",
+			job.Namespace, job.Name, resReq, sumOfAllAllocatableGPUs, sumOfAllAllocatableGPUsMemory)
+	})
 	return sumOfAllAllocatableGPUs >= requestedGPUs && sumOfAllAllocatableGPUsMemory >= requestedGpuMemory
 }
 

@@ -37,6 +37,34 @@ func TestVerboseLoggerDoRunsOnlyWhenEnabled(t *testing.T) {
 	require.Zero(t, disabledCalls)
 }
 
+func TestVerboseLoggerDoDefersInfofArguments(t *testing.T) {
+	logger := newSchedulerLogger(3, zap.NewNop().Sugar())
+	argumentEvaluations := 0
+
+	logger.V(4).Do(func() {
+		argumentEvaluations++
+		logger.Infof("deferred argument: %d", argumentEvaluations)
+	})
+
+	require.Zero(t, argumentEvaluations)
+}
+
+func TestVerboseLoggerDoWritesInfofWithCaller(t *testing.T) {
+	var buf bytes.Buffer
+	baseLogger, err := newBaseLogger(true, zapcore.AddSync(&buf))
+	require.NoError(t, err)
+	logger := newSchedulerLogger(3, baseLogger)
+
+	logger.V(3).Do(func() {
+		logger.Infof("deferred log")
+	})
+
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &payload))
+	require.Equal(t, "deferred log", payload["msg"])
+	require.Contains(t, payload["caller"], "log_test.go")
+}
+
 func TestNewBaseLoggerJSONOutput(t *testing.T) {
 	var buf bytes.Buffer
 

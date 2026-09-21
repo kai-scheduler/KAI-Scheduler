@@ -339,8 +339,10 @@ func (pp *predicatesPlugin) evaluateTaskOnPredicates(
 	}
 
 	fit, reasons, err := scheduler_util.CheckNodeConditionPredicate(node.Node)
-	log.InfraLogger.V(6).Infof("Check node condition predicates Task <%s/%s> on Node <%s>: fit %t, err %v",
-		task.Namespace, task.Name, node.Name, fit, err)
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Check node condition predicates Task <%s/%s> on Node <%s>: fit %t, err %v",
+			task.Namespace, task.Name, node.Name, fit, err)
+	})
 
 	if !fit {
 		return common_info.NewFitErrorByReasons(task.Name, task.Namespace, node.Name, err, reasons...)
@@ -348,12 +350,16 @@ func (pp *predicatesPlugin) evaluateTaskOnPredicates(
 
 	for name, predicate := range k8sPredicates {
 		if !predicate.IsFilterRequired(task.Pod) {
-			log.InfraLogger.V(6).Infof("Predicate %s not required for pod %s/%s", name, task.Namespace, task.Name)
+			log.InfraLogger.V(6).Do(func() {
+				log.InfraLogger.Infof("Predicate %s not required for pod %s/%s", name, task.Namespace, task.Name)
+			})
 			continue
 		}
 
 		if skipPredicates.ShouldSKip(task.UID, name) {
-			log.InfraLogger.V(6).Infof("Skipping predicate %s for pod %s/%s", name, task.Namespace, task.Name)
+			log.InfraLogger.V(6).Do(func() {
+				log.InfraLogger.Infof("Skipping predicate %s for pod %s/%s", name, task.Namespace, task.Name)
+			})
 			continue
 		}
 
@@ -372,14 +378,18 @@ func (pp *predicatesPlugin) evaluateTaskOnPredicates(
 		cpuWorkerLabelKey := conf.GetConfig().CPUWorkerNodeLabelKey
 		if task.IsRequireAnyKindOfGPU() {
 			if _, found := node.Node.Labels[gpuWorkerLabelKey]; !found {
-				log.InfraLogger.V(6).Infof("Task <%s/%s> is a GPU job and will not be allocated to a non GPU <%s>",
-					task.Namespace, task.Name, node.Name)
+				log.InfraLogger.V(6).Do(func() {
+					log.InfraLogger.Infof("Task <%s/%s> is a GPU job and will not be allocated to a non GPU <%s>",
+						task.Namespace, task.Name, node.Name)
+				})
 				return fmt.Errorf("gpu task: <%v/%v> can't run on non gpu nodes, node: <%v>", task.Namespace, task.Name, node.Name)
 			}
 		} else {
 			if _, found := node.Node.Labels[cpuWorkerLabelKey]; !found {
-				log.InfraLogger.V(6).Infof("Task <%s/%s> is a CPU job and will not be allocated to a GPU node <%s>",
-					task.Namespace, task.Name, node.Name)
+				log.InfraLogger.V(6).Do(func() {
+					log.InfraLogger.Infof("Task <%s/%s> is a CPU job and will not be allocated to a GPU node <%s>",
+						task.Namespace, task.Name, node.Name)
+				})
 				return fmt.Errorf("cpu task: <%v/%v> can't run on non cpu nodes, node: <%v>", task.Namespace, task.Name, node.Name)
 			}
 		}

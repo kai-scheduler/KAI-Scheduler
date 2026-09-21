@@ -232,15 +232,19 @@ func (pgi *PodGroupInfo) SetPodGroup(pg *enginev2alpha2.PodGroup) {
 	pgi.PodGroupUID = pg.UID
 	err := pgi.setSubGroups(pg)
 	if err != nil {
-		log.InfraLogger.V(7).Warnf("Failed to set subgroups for podgroup <%s> err: %v",
-			pg.Namespace, pg.Name)
+		log.InfraLogger.V(7).Do(func() {
+			log.InfraLogger.Warningf("Failed to set subgroups for podgroup <%s> err: %v",
+				pg.Namespace, pg.Name)
+		})
 	}
 
 	if pg.Annotations[commonconstants.StalePodgroupTimeStamp] != "" {
 		staleTimeStamp, err := time.Parse(time.RFC3339, pg.Annotations[commonconstants.StalePodgroupTimeStamp])
 		if err != nil {
-			log.InfraLogger.V(7).Warnf("Failed to parse stale timestamp for podgroup <%s> err: %v",
-				pgi.NamespacedName, err)
+			log.InfraLogger.V(7).Do(func() {
+				log.InfraLogger.Warningf("Failed to parse stale timestamp for podgroup <%s> err: %v",
+					pgi.NamespacedName, err)
+			})
 		} else {
 			pgi.StalenessInfo.TimeStamp = &staleTimeStamp
 			pgi.StalenessInfo.Stale = true
@@ -250,8 +254,10 @@ func (pgi *PodGroupInfo) SetPodGroup(pg *enginev2alpha2.PodGroup) {
 	if pg.Annotations[commonconstants.LastStartTimeStamp] != "" {
 		startTime, err := time.Parse(time.RFC3339, pg.Annotations[commonconstants.LastStartTimeStamp])
 		if err != nil {
-			log.InfraLogger.V(7).Warnf("Failed to parse start timestamp for podgroup <%s> err: %v",
-				pgi.NamespacedName, err)
+			log.InfraLogger.V(7).Do(func() {
+				log.InfraLogger.Warningf("Failed to parse start timestamp for podgroup <%s> err: %v",
+					pgi.NamespacedName, err)
+			})
 		} else {
 			pgi.LastStartTimestamp = &startTime
 		}
@@ -260,16 +266,20 @@ func (pgi *PodGroupInfo) SetPodGroup(pg *enginev2alpha2.PodGroup) {
 	if pg.Annotations[commonconstants.LastEvictionTimeStamp] != "" {
 		evictionTime, err := time.Parse(time.RFC3339, pg.Annotations[commonconstants.LastEvictionTimeStamp])
 		if err != nil {
-			log.InfraLogger.V(7).Warnf("Failed to parse eviction timestamp for podgroup <%s> err: %v",
-				pgi.NamespacedName, err)
+			log.InfraLogger.V(7).Do(func() {
+				log.InfraLogger.Warningf("Failed to parse eviction timestamp for podgroup <%s> err: %v",
+					pgi.NamespacedName, err)
+			})
 		} else {
 			pgi.LastEvictionTimestamp = &evictionTime
 		}
 	}
 
-	log.InfraLogger.V(7).Infof(
-		"SetPodGroup. podGroupName=<%s>, PodGroupUID=<%s> pgi.PodGroupIndex=<%d>",
-		pgi.Name, pgi.PodGroupUID)
+	log.InfraLogger.V(7).Do(func() {
+		log.InfraLogger.Infof(
+			"SetPodGroup. podGroupName=<%s>, PodGroupUID=<%s> pgi.PodGroupIndex=<%d>",
+			pgi.Name, pgi.PodGroupUID)
+	})
 }
 
 func (pgi *PodGroupInfo) setSubGroups(podGroup *enginev2alpha2.PodGroup) error {
@@ -521,8 +531,10 @@ func (pgi *PodGroupInfo) ShouldPipelineJob() bool {
 		activeAllocatedTasksCount := 0
 		for _, task := range podSet.GetPodInfos() {
 			if task.Status == pod_status.Pipelined {
-				log.InfraLogger.V(7).Infof("task: <%v/%v> was pipelined to node: <%v>",
-					task.Namespace, task.Name, task.NodeName)
+				log.InfraLogger.V(7).Do(func() {
+					log.InfraLogger.Infof("task: <%v/%v> was pipelined to node: <%v>",
+						task.Namespace, task.Name, task.NodeName)
+				})
 				hasPipelinedTask = true
 			} else if pod_status.IsActiveAllocatedStatus(task.Status) {
 				activeAllocatedTasksCount += 1
@@ -530,8 +542,10 @@ func (pgi *PodGroupInfo) ShouldPipelineJob() bool {
 		}
 
 		if hasPipelinedTask && activeAllocatedTasksCount < int(podSet.GetMinAvailable()) {
-			log.InfraLogger.V(7).Infof("Subgroup: <%v/%v> has pipelined tasks, and not enough allocated pods for minAvailable <%v>. Pipeline all.",
-				pgi.UID, podSet.GetName(), podSet.GetMinAvailable())
+			log.InfraLogger.V(7).Do(func() {
+				log.InfraLogger.Infof("Subgroup: <%v/%v> has pipelined tasks, and not enough allocated pods for minAvailable <%v>. Pipeline all.",
+					pgi.UID, podSet.GetName(), podSet.GetMinAvailable())
+			})
 			return true
 		}
 	}

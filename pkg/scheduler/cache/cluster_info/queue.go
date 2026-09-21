@@ -121,7 +121,9 @@ func deleteQueueAndChildren(queues map[common_info.QueueID]*queue_info.QueueInfo
 		return
 	}
 
-	log.InfraLogger.V(6).Infof("Deleting queue %s and children %s", queueID, queue.ChildQueues)
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Deleting queue %s and children %s", queueID, queue.ChildQueues)
+	})
 	for _, child := range queue.ChildQueues {
 		deleteQueueAndChildren(queues, child)
 	}

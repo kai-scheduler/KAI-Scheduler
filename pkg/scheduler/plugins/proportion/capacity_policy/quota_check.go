@@ -24,8 +24,10 @@ func (cp *CapacityPolicy) resultsWithNonPreemptibleOverQuota(requestedShare rs.R
 	job *podgroup_info.PodGroupInfo) *api.SchedulableResult {
 
 	if job.IsPreemptibleJob() {
-		log.InfraLogger.V(7).Infof("resultsWithNonPreemptibleOverQuota. Job: <%v/%v> is preemptable",
-			job.Namespace, job.Name)
+		log.InfraLogger.V(7).Do(func() {
+			log.InfraLogger.Infof("resultsWithNonPreemptibleOverQuota. Job: <%v/%v> is preemptable",
+				job.Namespace, job.Name)
+		})
 		return Schedulable()
 	}
 

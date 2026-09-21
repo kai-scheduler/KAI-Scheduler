@@ -213,7 +213,9 @@ func (c *ClusterInfo) Snapshot() (*api.ClusterInfo, error) {
 	}
 
 	if c.includeCSIStorageObjects {
-		log.InfraLogger.V(7).Infof("Advanced CSI scheduling enabled - snapshotting CSI storage objects")
+		log.InfraLogger.V(7).Do(func() {
+			log.InfraLogger.Infof("Advanced CSI scheduling enabled - snapshotting CSI storage objects")
+		})
 
 		snapshot.CSIDrivers, err = c.snapshotCSIStorageDrivers()
 		if err != nil {
@@ -241,7 +243,9 @@ func (c *ClusterInfo) Snapshot() (*api.ClusterInfo, error) {
 
 		linkStorageObjects(snapshot.StorageClaims, snapshot.StorageCapacities, existingPods, snapshot.Nodes)
 	} else {
-		log.InfraLogger.V(7).Infof("Advanced CSI scheduling not enabled - not snapshotting CSI storage objects")
+		log.InfraLogger.V(7).Do(func() {
+			log.InfraLogger.Infof("Advanced CSI scheduling not enabled - not snapshotting CSI storage objects")
+		})
 	}
 
 	// Resolve topology-constraint aliases to canonical node labels once, before constraint signatures
@@ -253,8 +257,10 @@ func (c *ClusterInfo) Snapshot() (*api.ClusterInfo, error) {
 	}
 
 	for _, pg := range snapshot.PodGroupInfos {
-		log.InfraLogger.V(6).Infof("Scheduling constraints signature for podgroup %s/%s: %s",
-			pg.Namespace, pg.Name, pg.GetSchedulingConstraintsSignature())
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof("Scheduling constraints signature for podgroup %s/%s: %s",
+				pg.Namespace, pg.Name, pg.GetSchedulingConstraintsSignature())
+		})
 	}
 
 	log.InfraLogger.V(4).Infof("Snapshot info - PodGroupInfos: <%d>, BindRequests: <%d>, Queues: <%d>, "+
@@ -308,7 +314,9 @@ func (c *ClusterInfo) snapshotNodes(
 func (c *ClusterInfo) populateNodeResourceTopologies(nodes map[string]*node_info.NodeInfo) {
 	nrts, err := c.dataLister.ListNodeResourceTopologies()
 	if err != nil {
-		log.InfraLogger.V(6).Infof("Failed to list NodeResourceTopologies: %v", err)
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof("Failed to list NodeResourceTopologies: %v", err)
+		})
 		return
 	}
 
@@ -326,7 +334,9 @@ func (c *ClusterInfo) populateNodeResourceTopologies(nodes map[string]*node_info
 func (c *ClusterInfo) populateDRAGPUs(nodes map[string]*node_info.NodeInfo) {
 	slicesByNode, err := c.dataLister.ListResourceSlicesByNode()
 	if err != nil {
-		log.InfraLogger.V(6).Infof("Failed to list ResourceSlices for DRA GPU counting: %v", err)
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof("Failed to list ResourceSlices for DRA GPU counting: %v", err)
+		})
 		return
 	}
 
@@ -346,7 +356,9 @@ func (c *ClusterInfo) populateDRAGPUs(nodes map[string]*node_info.NodeInfo) {
 		}
 
 		if draGPUCount > 0 {
-			log.InfraLogger.V(6).Infof("Node %s has %d DRA GPUs from ResourceSlices", nodeName, draGPUCount)
+			log.InfraLogger.V(6).Do(func() {
+				log.InfraLogger.Infof("Node %s has %d DRA GPUs from ResourceSlices", nodeName, draGPUCount)
+			})
 			if nodeInfo.AllocatableVector.Get(resource_info.GPUIndex) > 0 {
 				log.InfraLogger.Warningf("Node %s has both device-plugin GPUs and DRA GPUs", nodeName)
 			}
@@ -376,11 +388,13 @@ func (c *ClusterInfo) addTasksToNodes(allPods []*v1.Pod, existingPodsMap map[com
 		result = node.AddTasksToNode(podInfos, existingPodsMap)
 		resultPods = append(resultPods, result...)
 
-		podNames := ""
-		for _, pi := range node.PodInfos {
-			podNames = fmt.Sprintf("%v, %v", podNames, pi.Name)
-		}
-		log.InfraLogger.V(6).Infof("Node: %v, indexed %d pods: %v", node.Name, len(node.PodInfos), podNames)
+		log.InfraLogger.V(6).Do(func() {
+			podNames := ""
+			for _, pi := range node.PodInfos {
+				podNames = fmt.Sprintf("%v, %v", podNames, pi.Name)
+			}
+			log.InfraLogger.Infof("Node: %v, indexed %d pods: %v", node.Name, len(node.PodInfos), podNames)
+		})
 	}
 
 	// Add generated podInfos to existingPodsMap
@@ -445,8 +459,10 @@ func (c *ClusterInfo) snapshotPodGroups(
 		podGroupInfo := podgroup_info.NewPodGroupInfoWithVectorMap(podGroupID, vectorMap)
 
 		if err := validatePodgroupQueue(existingQueues, podGroup); err != nil {
-			log.InfraLogger.V(7).Infof("Queue validation failed for podgroup <%s/%s>: %v",
-				podGroup.Namespace, podGroup.Name, err)
+			log.InfraLogger.V(7).Do(func() {
+				log.InfraLogger.Infof("Queue validation failed for podgroup <%s/%s>: %v",
+					podGroup.Namespace, podGroup.Name, err)
+			})
 			podGroupInfo.AddSimpleJobFitError(enginev2alpha2.QueueDoesNotExist, err.Error())
 		} else {
 			c.setPodGroupPriorityAndPreemptibility(podGroupInfo, podGroup, defaultPriority)
@@ -488,12 +504,16 @@ func (c *ClusterInfo) setPodGroupPriorityAndPreemptibility(
 	defaultPriority int32,
 ) {
 	podGroupInfo.Priority = getPodGroupPriority(podGroup, defaultPriority, c.dataLister)
-	log.InfraLogger.V(7).Infof("The priority of job <%s/%s> is <%s/%d>",
-		podGroup.Namespace, podGroup.Name, podGroup.Spec.PriorityClassName, podGroupInfo.Priority)
+	log.InfraLogger.V(7).Do(func() {
+		log.InfraLogger.Infof("The priority of job <%s/%s> is <%s/%d>",
+			podGroup.Namespace, podGroup.Name, podGroup.Spec.PriorityClassName, podGroupInfo.Priority)
+	})
 
 	podGroupInfo.Preemptibility = pg.CalculatePreemptibility(podGroup.Spec.Preemptibility, podGroupInfo.Priority)
-	log.InfraLogger.V(7).Infof("The preemptibility of job <%s/%s> is <%s>",
-		podGroup.Namespace, podGroup.Name, podGroupInfo.Preemptibility)
+	log.InfraLogger.V(7).Do(func() {
+		log.InfraLogger.Infof("The preemptibility of job <%s/%s> is <%s>",
+			podGroup.Namespace, podGroup.Name, podGroupInfo.Preemptibility)
+	})
 }
 
 func (c *ClusterInfo) getPodInfo(
@@ -501,13 +521,17 @@ func (c *ClusterInfo) getPodInfo(
 	vectorMap *resource_info.ResourceVectorMap,
 ) *pod_info.PodInfo {
 	var podInfo *pod_info.PodInfo
-	log.InfraLogger.V(6).Infof("Looking for pod %s/%s/%s in existing pods", pod.Namespace, pod.Name,
-		pod.UID)
+	log.InfraLogger.V(6).Do(func() {
+		log.InfraLogger.Infof("Looking for pod %s/%s/%s in existing pods", pod.Namespace, pod.Name,
+			pod.UID)
+	})
 
 	podInfo, found := existingPods[common_info.PodID(pod.UID)]
 	if !found {
-		log.InfraLogger.V(6).Infof("Pod %s/%s/%s not found in existing pods, adding", pod.Namespace,
-			pod.Name, pod.UID)
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof("Pod %s/%s/%s not found in existing pods, adding", pod.Namespace,
+				pod.Name, pod.UID)
+		})
 		podInfo = pod_info.NewTaskInfo(pod, vectorMap, pod_info.TaskInfoOptions{
 			StuckInReleasingThreshold: c.stuckInReleasingThreshold,
 		})
@@ -609,14 +633,18 @@ func getDefaultPriority(dataLister data_lister.DataLister) (int32, error) {
 
 	for _, pc := range priorityClasses {
 		if pc.GlobalDefault {
-			log.InfraLogger.V(7).Infof("Found default priority class %s with value %d", pc.Name, pc.Value)
+			log.InfraLogger.V(7).Do(func() {
+				log.InfraLogger.Infof("Found default priority class %s with value %d", pc.Name, pc.Value)
+			})
 			defaultPriority = pc.Value
 			found = true
 			break
 		}
 	}
 	if !found {
-		log.InfraLogger.V(7).Infof("Failed to find a default priorityclass, using %d as default priority", defaultPriority)
+		log.InfraLogger.V(7).Do(func() {
+			log.InfraLogger.Infof("Failed to find a default priorityclass, using %d as default priority", defaultPriority)
+		})
 	}
 
 	return defaultPriority, nil
@@ -627,9 +655,11 @@ func getPodGroupPriority(
 ) int32 {
 	chosenPriorityClass, err := dataLister.GetPriorityClassByName(podGroup.Spec.PriorityClassName)
 	if err != nil {
-		log.InfraLogger.V(6).Infof(
-			"Couldn't find priorityClass %s for podGroup %s/%s, error: %v. Using default priority %d",
-			podGroup.Spec.PriorityClassName, podGroup.Namespace, podGroup.Name, err, defaultPriority)
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof(
+				"Couldn't find priorityClass %s for podGroup %s/%s, error: %v. Using default priority %d",
+				podGroup.Spec.PriorityClassName, podGroup.Namespace, podGroup.Name, err, defaultPriority)
+		})
 		return defaultPriority
 	}
 	return chosenPriorityClass.Value
@@ -644,9 +674,13 @@ func filterUnmarkedNodes(nodes []*v1.Node) []*v1.Node {
 		_, foundCpuNode := node.Labels[cpuWorkerLabelKey]
 		if foundGpuNode || foundCpuNode {
 			markedNodes = append(markedNodes, node)
-			log.InfraLogger.V(6).Infof("Node: <%v> is considered by cpu or gpu label", node.Name)
+			log.InfraLogger.V(6).Do(func() {
+				log.InfraLogger.Infof("Node: <%v> is considered by cpu or gpu label", node.Name)
+			})
 		} else {
-			log.InfraLogger.V(6).Infof("Node: <%v> is filtered out by CPU or GPU Label", node.Name)
+			log.InfraLogger.V(6).Do(func() {
+				log.InfraLogger.Infof("Node: <%v> is filtered out by CPU or GPU Label", node.Name)
+			})
 		}
 	}
 	return markedNodes

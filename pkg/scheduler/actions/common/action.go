@@ -29,8 +29,10 @@ func EvictAllPreemptees(ssn *framework.Session, preempteeTasks []*pod_info.PodIn
 		if !found {
 			return fmt.Errorf("failed to find message for task: %s", task.UID)
 		}
-		log.InfraLogger.V(7).Infof("Statement eviction for task <%s/%s>, message: <%v> ",
-			task.Namespace, task.Name, message)
+		log.InfraLogger.V(7).Do(func() {
+			log.InfraLogger.Infof("Statement eviction for task <%s/%s>, message: <%v> ",
+				task.Namespace, task.Name, message)
+		})
 		err := stmt.Evict(task, message, eviction_info.EvictionMetadata{
 			Action:           string(actionType),
 			EvictionGangSize: len(preempteeTasks),
@@ -97,8 +99,10 @@ func TryToVirtuallyAllocatePreemptorAndGetVictims(
 
 		resReq := podgroup_info.GetTasksToAllocateInitResourceVector(
 			jobToAllocate, ssn.SubGroupOrderFn, ssn.TaskOrderFn, allocationMode, ssn.ClusterInfo.MinNodeGPUMemoryMiB)
-		log.InfraLogger.V(6).Infof("Trying to pipeline job: <%s/%s>. resources required: %v",
-			jobToAllocate.Namespace, jobToAllocate.Name, resReq)
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof("Trying to pipeline job: <%s/%s>. resources required: %v",
+				jobToAllocate.Namespace, jobToAllocate.Name, resReq)
+		})
 
 		if jobToAllocate.UID != preemptor.UID {
 			if !AllocateJob(ssn, stmt, nodes, jobToAllocate, allocationMode) {

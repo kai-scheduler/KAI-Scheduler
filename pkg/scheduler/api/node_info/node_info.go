@@ -163,15 +163,19 @@ func (ni *NodeInfo) IsTaskAllocatable(task *pod_info.PodInfo) bool {
 	}
 
 	if allocatable := ni.isTaskAllocatableOnNonAllocatedResources(task, ni.IdleVector); !allocatable {
-		log.InfraLogger.V(7).Infof("Task GPU %s/%s is not allocatable on node %s",
-			task.Namespace, task.Name, ni.Name)
+		log.InfraLogger.V(7).Do(func() {
+			log.InfraLogger.Infof("Task GPU %s/%s is not allocatable on node %s",
+				task.Namespace, task.Name, ni.Name)
+		})
 		return false
 	}
 
 	storageAllocatable, err := ni.isTaskStorageAllocatable(task)
 	if !storageAllocatable {
-		log.InfraLogger.V(7).Infof("Task storage %s/%s is not allocatable on node %s, error: %v",
-			task.Namespace, task.Name, ni.Name, err)
+		log.InfraLogger.V(7).Do(func() {
+			log.InfraLogger.Infof("Task storage %s/%s is not allocatable on node %s, error: %v",
+				task.Namespace, task.Name, ni.Name, err)
+		})
 		return false
 	}
 
@@ -182,14 +186,18 @@ func (ni *NodeInfo) IsTaskAllocatableOnReleasingOrIdle(task *pod_info.PodInfo) b
 	nodeNonAllocatedVector := ni.nonAllocatedVector()
 
 	if allocatable := ni.isTaskAllocatableOnNonAllocatedResources(task, nodeNonAllocatedVector); !allocatable {
-		log.InfraLogger.V(7).Infof("Task GPU %s/%s is not allocatable on node %s",
-			task.Namespace, task.Name, ni.Name)
+		log.InfraLogger.V(7).Do(func() {
+			log.InfraLogger.Infof("Task GPU %s/%s is not allocatable on node %s",
+				task.Namespace, task.Name, ni.Name)
+		})
 		return false
 	}
 
 	if allocatable, err := ni.isTaskStorageAllocatableOnReleasingOrIdle(task); !allocatable {
-		log.InfraLogger.V(7).Infof("Task storage %s/%s is not allocatable on node %s, error: %v",
-			task.Namespace, task.Name, ni.Name, err)
+		log.InfraLogger.V(7).Do(func() {
+			log.InfraLogger.Infof("Task storage %s/%s is not allocatable on node %s, error: %v",
+				task.Namespace, task.Name, ni.Name, err)
+		})
 		return false
 	}
 
@@ -430,12 +438,16 @@ func (ni *NodeInfo) AddTasksToNode(podInfos []*pod_info.PodInfo,
 		if pod_status.IsActiveUsedStatus(podInfo.Status) {
 			_ = ni.AddTask(podInfo)
 		} else {
-			log.InfraLogger.V(6).Infof(
-				"Pod %s/%s in status %s, not adding to node %s",
-				podInfo.Namespace, podInfo.Name, podInfo.Status, ni.Name)
+			log.InfraLogger.V(6).Do(func() {
+				log.InfraLogger.Infof(
+					"Pod %s/%s in status %s, not adding to node %s",
+					podInfo.Namespace, podInfo.Name, podInfo.Status, ni.Name)
+			})
 		}
-		log.InfraLogger.V(6).Infof("Adding pod %s/%s/%s to existingpods", podInfo.Namespace, podInfo.Name,
-			podInfo.UID)
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof("Adding pod %s/%s/%s to existingpods", podInfo.Namespace, podInfo.Name,
+				podInfo.UID)
+		})
 		existingPodsMap[podInfo.UID] = podInfo
 		resultPods = append(resultPods, podInfo.Pod)
 	}
@@ -449,9 +461,11 @@ func (ni *NodeInfo) addTaskStorage(task *pod_info.PodInfo) {
 		for _, claim := range storageClassClaims {
 			capacities, found := ni.AccessibleStorageCapacities[storageClass]
 			if !found {
-				log.InfraLogger.V(7).Infof(
-					"Could not find accessible storage capacities for storage class %s on "+
-						"node %s for advanced csi scheduling", storageClass, ni.Name)
+				log.InfraLogger.V(7).Do(func() {
+					log.InfraLogger.Infof(
+						"Could not find accessible storage capacities for storage class %s on "+
+							"node %s for advanced csi scheduling", storageClass, ni.Name)
+				})
 				continue
 			}
 
@@ -463,9 +477,13 @@ func (ni *NodeInfo) addTaskStorage(task *pod_info.PodInfo) {
 }
 
 func (ni *NodeInfo) addTaskResources(task *pod_info.PodInfo) {
-	log.InfraLogger.V(7).Infof("About to add podsInfo: <%v/%v>, status: <%v>, node: <%s>",
-		task.Namespace, task.Name, task.Status, ni.Name)
-	log.InfraLogger.V(7).Infof("Node info: %+v", ni)
+	log.InfraLogger.V(7).Do(func() {
+		log.InfraLogger.Infof("About to add podsInfo: <%v/%v>, status: <%v>, node: <%s>",
+			task.Namespace, task.Name, task.Status, ni.Name)
+	})
+	log.InfraLogger.V(7).Do(func() {
+		log.InfraLogger.Infof("Node info: %+v", ni)
+	})
 
 	resourcesToTrackVector := getAcceptedTaskResourceVectorWithoutSharedGPU(task, ni.VectorMap)
 
@@ -500,8 +518,10 @@ func (ni *NodeInfo) addTaskResources(task *pod_info.PodInfo) {
 
 	ni.addSharedGPUTaskResources(task)
 
-	log.InfraLogger.V(8).Infof("Added podsInfo: <%v/%v>, status: <%v>, node: <%+v>",
-		task.Namespace, task.Name, task.Status, ni)
+	log.InfraLogger.V(8).Do(func() {
+		log.InfraLogger.Infof("Added podsInfo: <%v/%v>, status: <%v>, node: <%+v>",
+			task.Namespace, task.Name, task.Status, ni)
+	})
 }
 
 // excludedFromPodAffinity reports whether a task is left out of the node's inter-pod
@@ -539,9 +559,13 @@ func (ni *NodeInfo) RemoveTask(ti *pod_info.PodInfo) error {
 }
 
 func (ni *NodeInfo) removeTaskResources(task *pod_info.PodInfo) {
-	log.InfraLogger.V(7).Infof("About to remove podsInfo: <%v/%v>, status: <%v>, node: <%s>",
-		task.Namespace, task.Name, task.Status, ni.Name)
-	log.InfraLogger.V(7).Infof("NodeInfo: %+v", ni)
+	log.InfraLogger.V(7).Do(func() {
+		log.InfraLogger.Infof("About to remove podsInfo: <%v/%v>, status: <%v>, node: <%s>",
+			task.Namespace, task.Name, task.Status, ni.Name)
+	})
+	log.InfraLogger.V(7).Do(func() {
+		log.InfraLogger.Infof("NodeInfo: %+v", ni)
+	})
 
 	resourcesToTrackVector := getAcceptedTaskResourceVectorWithoutSharedGPU(task, ni.VectorMap)
 
@@ -575,8 +599,10 @@ func (ni *NodeInfo) removeTaskResources(task *pod_info.PodInfo) {
 
 	ni.removeSharedTaskResources(task)
 
-	log.InfraLogger.V(8).Infof("Removed podsInfo: <%v/%v>, status: <%v>, node: <%+v>",
-		task.Namespace, task.Name, task.Status, ni)
+	log.InfraLogger.V(8).Do(func() {
+		log.InfraLogger.Infof("Removed podsInfo: <%v/%v>, status: <%v>, node: <%+v>",
+			task.Namespace, task.Name, task.Status, ni)
+	})
 }
 
 func (ni *NodeInfo) removeTaskStorage(task *pod_info.PodInfo) {
@@ -585,8 +611,10 @@ func (ni *NodeInfo) removeTaskStorage(task *pod_info.PodInfo) {
 		for _, claim := range storageClassClaims {
 			capacities, found := ni.AccessibleStorageCapacities[storageClass]
 			if !found {
-				log.InfraLogger.V(7).Infof("Could not find accessible storage capacities for storage "+
-					"class %s on node %s for advanced csi scheduling", storageClass, ni.Name)
+				log.InfraLogger.V(7).Do(func() {
+					log.InfraLogger.Infof("Could not find accessible storage capacities for storage "+
+						"class %s on node %s for advanced csi scheduling", storageClass, ni.Name)
+				})
 				continue
 			}
 			for _, capacity := range capacities {
@@ -647,7 +675,9 @@ func (ni *NodeInfo) getNodeGpuCountLabelValue() (int, error) {
 func (ni *NodeInfo) GetNumberOfGPUsInNode() int64 {
 	numberOfGPUs, err := ni.getNodeGpuCountLabelValue()
 	if err != nil {
-		log.InfraLogger.V(6).Infof("Node: <%v> had no annotations of nvidia.com/gpu.count", ni.Name)
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof("Node: <%v> had no annotations of nvidia.com/gpu.count", ni.Name)
+		})
 		return int64(ni.AllocatableVector.Get(resource_info.GPUIndex))
 	}
 	return int64(numberOfGPUs)
@@ -676,7 +706,9 @@ func (ni *NodeInfo) isValidGpuPortion(res *resource_info.GpuResourceRequirement)
 func getNodeGpuMemory(node *v1.Node) (int64, bool) {
 	gpuMemoryLabelValue, err := strconv.ParseInt(node.Labels[GpuMemoryLabel], 10, 64)
 	if err != nil {
-		log.InfraLogger.V(6).Infof("Could not find gpu memory label %v on node %v", GpuMemoryLabel, node.Name)
+		log.InfraLogger.V(6).Do(func() {
+			log.InfraLogger.Infof("Could not find gpu memory label %v on node %v", GpuMemoryLabel, node.Name)
+		})
 		return DefaultGpuMemory, false
 	}
 
