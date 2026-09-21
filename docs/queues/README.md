@@ -18,6 +18,7 @@ Only leaf queues (queues with no children) can be used for scheduling jobs. Pare
 | **Queue Priority** | Resource allocation order when exceeding quota; can also affect in-quota reclaim when queuePriorityInQuotaReclaim is enabled, see [Fairness Policies](../fairness/README.md#priority-based-in-quota-reclaim) | Integer (higher = first) |
 | **Over-Quota Weight** | Resource distribution weight within priority level | Integer |
 | **Limit** | Hard cap on resource consumption | Same as quota |
+| **Lending Limit** | Max unused Quota siblings may borrow; unset = unlimited lending | Same as quota |
 
 Limits and quota are also enforced when running pods are resized in place; see [In-Place Pod Resize](../in-place-resize/README.md).
 
@@ -65,6 +66,9 @@ resources:
 | `quota` | `0` or unset | No guaranteed resources (default) |
 | `limit` | `-1` | No limit |
 | `limit` | `0` or unset | No additional resources allowed (default) |
+| `lendingLimit` | unset | No lending limit; all unused Quota may be lent (default) |
+| `lendingLimit` | `0` | Do not lend unused Quota; exclusive reservation while idle |
+| `lendingLimit` | `N` | Lend at most `N` of unused Quota; `quota - N` stays exclusive |
 
 ### Resource Units
 - **CPU**: Millicores (1000 = 1 CPU core)
