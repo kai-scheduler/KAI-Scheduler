@@ -202,6 +202,18 @@ func TestQueueResourceShare_AllocatedPlusResourcesLessEqualDeserved(t *testing.T
 	}
 }
 
+func TestQueueResourceShare_AllocatedPlusFractionalGPUExactlyMatchesDeserved(t *testing.T) {
+	vectorMap := resource_info.NewResourceVectorMap()
+	resources := resource_info.NewResourceVectorWithValues(1, 1, 0.2, vectorMap)
+	share := QueueResourceShare{
+		CPU:    ResourceShare{Allocated: 1, Deserved: 2},
+		Memory: ResourceShare{Allocated: 1, Deserved: 2},
+		GPU:    ResourceShare{Allocated: 0.1, Deserved: 0.3},
+	}
+
+	assert.True(t, share.AllocatedPlusResourcesLessEqualDeserved(resources, vectorMap))
+}
+
 func TestQueueResourceShare_AllocatedPlusNoResourcesLessEqualDeserved(t *testing.T) {
 	share := QueueResourceShare{
 		CPU:    ResourceShare{Allocated: 1, Deserved: 1},
