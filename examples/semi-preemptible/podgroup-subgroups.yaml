@@ -31,23 +31,121 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: elastic-replicas-workers
+  name: elastic-replicas-replica-0
   namespace: default
   annotations:
     kai.scheduler/skip-podgrouper: "true"
 spec:
-  parallelism: 8
-  completions: 8
+  parallelism: 2
+  completions: 2
   template:
     metadata:
       annotations:
         pod-group-name: elastic-replicas
       labels:
         kai.scheduler/queue: default-queue
-        # Assign pods to subgroups via the kai.scheduler/subgroup-name label. In a real workload each
-        # replica's 2 pods carry the matching subgroup name (replica-0 .. replica-3). This Job places
-        # all pods in replica-0 for illustration; use per-replica Jobs/pods to populate every subgroup.
+        # One Job per replica: the subgroup-name label is fixed per pod template, so every subgroup
+        # needs its own Job to be populated.
         kai.scheduler/subgroup-name: replica-0
+    spec:
+      schedulerName: kai-scheduler
+      restartPolicy: Never
+      containers:
+        - name: worker
+          image: busybox:1.36
+          command: ["sh", "-c", "sleep 3600"]
+          resources:
+            requests:
+              cpu: "250m"
+            limits:
+              cpu: "250m"
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: elastic-replicas-replica-1
+  namespace: default
+  annotations:
+    kai.scheduler/skip-podgrouper: "true"
+spec:
+  parallelism: 2
+  completions: 2
+  template:
+    metadata:
+      annotations:
+        pod-group-name: elastic-replicas
+      labels:
+        kai.scheduler/queue: default-queue
+        # One Job per replica: the subgroup-name label is fixed per pod template, so every subgroup
+        # needs its own Job to be populated.
+        kai.scheduler/subgroup-name: replica-1
+    spec:
+      schedulerName: kai-scheduler
+      restartPolicy: Never
+      containers:
+        - name: worker
+          image: busybox:1.36
+          command: ["sh", "-c", "sleep 3600"]
+          resources:
+            requests:
+              cpu: "250m"
+            limits:
+              cpu: "250m"
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: elastic-replicas-replica-2
+  namespace: default
+  annotations:
+    kai.scheduler/skip-podgrouper: "true"
+spec:
+  parallelism: 2
+  completions: 2
+  template:
+    metadata:
+      annotations:
+        pod-group-name: elastic-replicas
+      labels:
+        kai.scheduler/queue: default-queue
+        # One Job per replica: the subgroup-name label is fixed per pod template, so every subgroup
+        # needs its own Job to be populated.
+        kai.scheduler/subgroup-name: replica-2
+    spec:
+      schedulerName: kai-scheduler
+      restartPolicy: Never
+      containers:
+        - name: worker
+          image: busybox:1.36
+          command: ["sh", "-c", "sleep 3600"]
+          resources:
+            requests:
+              cpu: "250m"
+            limits:
+              cpu: "250m"
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: elastic-replicas-replica-3
+  namespace: default
+  annotations:
+    kai.scheduler/skip-podgrouper: "true"
+spec:
+  parallelism: 2
+  completions: 2
+  template:
+    metadata:
+      annotations:
+        pod-group-name: elastic-replicas
+      labels:
+        kai.scheduler/queue: default-queue
+        # One Job per replica: the subgroup-name label is fixed per pod template, so every subgroup
+        # needs its own Job to be populated.
+        kai.scheduler/subgroup-name: replica-3
     spec:
       schedulerName: kai-scheduler
       restartPolicy: Never

@@ -29,7 +29,7 @@ Semi-preemptible reuses the **existing preemptibility API** introduced in [prior
 
 **On the PodGroup spec** — a single elastic group (3 core pods, bursts beyond):
 ```yaml
-apiVersion: scheduling.kai.nvidia.com/v2alpha2
+apiVersion: scheduling.run.ai/v2alpha2
 kind: PodGroup
 metadata:
   name: elastic-inference

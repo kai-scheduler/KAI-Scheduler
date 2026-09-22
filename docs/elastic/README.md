@@ -38,7 +38,7 @@ Set the `preemptibility` field on the PodGroup, or the `kai.scheduler/preemptibi
 
 **Elastic single group** (3 core pods, bursts beyond) — see [`semi-preemptible/podgroup-elastic.yaml`](../../examples/semi-preemptible/podgroup-elastic.yaml):
 ```yaml
-apiVersion: scheduling.kai.nvidia.com/v2alpha2
+apiVersion: scheduling.run.ai/v2alpha2
 kind: PodGroup
 spec:
   preemptibility: "semi-preemptible"
@@ -59,16 +59,16 @@ spec:
   minSubGroup: 2          # 2 of 4 replica subgroups are core; the rest are elastic
   subGroups:
     - name: replica-0     # core
-      minMember: 8
+      minMember: 2
     - name: replica-1     # core
-      minMember: 8
+      minMember: 2
     - name: replica-2     # elastic — evicted as a whole subgroup
-      minMember: 8
+      minMember: 2
     - name: replica-3     # elastic — evicted as a whole subgroup
-      minMember: 8
+      minMember: 2
 ```
 
-The valid, supported cases are elastic workloads (`minReplicas < replicas`) and hand-authored `minSubGroup` trees. Increasing `minMember` or `minSubGroup` on a running semi-preemptible PodGroup is rejected by the admission webhook (it would reclassify running elastic pods/subgroups as core); decreasing is allowed.
+The supported cases are a flat PodGroup whose pod count exceeds its `minMember`, elastic workloads (`minReplicas < replicas`), and hand-authored `minSubGroup` trees. Increasing `minMember` or `minSubGroup` on a running semi-preemptible PodGroup is rejected by the admission webhook (it would reclassify running elastic pods/subgroups as core); decreasing is allowed.
 
 ### Combining with automatic segmentation
 
