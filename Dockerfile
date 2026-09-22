@@ -17,7 +17,7 @@ USER 65532:65532
 
 ENTRYPOINT ["/go/bin/dlv", "exec", "--headless", "-l", ":10000", "--api-version=2", "/workspace/app", "--"]
 
-FROM golang:1.26.3 AS certs
+FROM golang:1.26.3-bookworm AS certs
 
 FROM scratch AS prod
 ARG TARGETARCH
