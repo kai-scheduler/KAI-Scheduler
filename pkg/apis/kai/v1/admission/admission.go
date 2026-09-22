@@ -20,6 +20,14 @@ const (
 type Admission struct {
 	Service *common.Service `json:"service,omitempty"`
 
+	// ServiceName overrides the webhook Service name and certificate DNS identity.
+	// Defaults to the admission operand's resource name when omitted.
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=`^[a-z]([-a-z0-9]*[a-z0-9])?$`
+	ServiceName *string `json:"serviceName,omitempty"`
+
 	// Webhook defines configuration for the admission service
 	// +kubebuilder:validation:Optional
 	Webhook *Webhook `json:"webhook,omitempty"`
