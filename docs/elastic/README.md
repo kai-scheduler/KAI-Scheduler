@@ -26,7 +26,9 @@ A **semi-preemptible** workload keeps its **minimal required shape** non-preempt
 
 The core (non-preemptible) set is the tree's minimal satisfying set, computed recursively:
 - at a leaf PodSet, the `minMember` highest-priority pods are core; pods beyond `minMember` are elastic;
-- at a mid-level SubGroupSet, the `minSubGroup` highest-priority child subgroups are core; additional scheduled subgroups are elastic and reclaimed **as a whole subgroup** (never split).
+- at a mid-level SubGroupSet, the `minSubGroup` highest-priority child subgroups are core; additional scheduled subgroups are elastic.
+
+An elastic subgroup is itself elastic in the usual way: reclaim shrinks it towards its own `minMember` one pod at a time, and only once it sits at that floor is it dropped as a whole subgroup. Core subgroups shrink to their `minMember` the same way — that surplus is elastic too — but are never dropped.
 
 Two edge cases follow directly: a semi-preemptible PodGroup whose total pod count equals `minMember` behaves like a **non-preemptible** job (no elastic tier), and one with `minMember: 0` behaves like a fully **preemptible** job.
 

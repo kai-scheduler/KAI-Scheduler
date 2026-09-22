@@ -154,20 +154,8 @@ remains the single source of truth for *how much those pods cost*. The scheduler
 pod names at the PodGroup level, and the controller sums exactly that set through its existing
 per-pod accounting path. This removes the divergence and the flip by construction.
 
-The scheduler deliberately does **not** publish a resource amount, even though it has one
-(`coreResourceQuantities` in the proportion plugin). That vector is `rs.ResourceQuantities` — CPU in
-millicores, memory in MB, GPU as fractions, and only those three dimensions — whereas
-`ResourcesStatus.Allocated` is a `v1.ResourceList` in native pod-request units, built by
-`metadata.calculatedAllocatedResources`, carrying GPU-sharing and DRA extras the scheduler's vector
-does not model. Publishing the scheduler's vector into `AllocatedNonPreemptible` would place two
-incompatible unit systems in sibling fields of the same struct, and `queuecontroller` **sums** both
-into the queue rollup — so the mismatch would not merely lose fidelity, it would produce a wrong
-rollup. Naming pods keeps the resource math in the one component that owns the units.
-
-Pod *names* are not pod *markers*: nothing is written to the pods themselves, so the feature stays
-Pod-agnostic (pod-level labels or annotations remain an anti-pattern here). The published set is
-also directly debuggable — `kubectl get podgroup -o yaml` shows which pods are protected, which a
-resource vector never could.
+Having the scheduler compute and publish the core's resource *amount* is out of scope for this
+change; it is deferred together with unifying core calculation across preemptibility modes.
 
 ### API shape
 
