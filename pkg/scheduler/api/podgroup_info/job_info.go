@@ -303,6 +303,17 @@ func (pgi *PodGroupInfo) setSubGroups(podGroup *enginev2alpha2.PodGroup) error {
 			rootSubGroupSet.AddPodSet(defaultPodSet)
 		}
 	}
+
+	// The podgroup-level minNonPreemptible governs whichever minimum the PodGroup itself declares:
+	// the root's child count when SubGroups are defined, the default PodSet's pod count when flat.
+	if podGroup.Spec.MinNonPreemptible != nil {
+		if len(podGroup.Spec.SubGroups) > 0 {
+			rootSubGroupSet.SetMinNonPreemptible(podGroup.Spec.MinNonPreemptible)
+		} else if defaultPodSet, found := pgi.PodSets[DefaultSubGroup]; found {
+			defaultPodSet.SetMinNonPreemptible(podGroup.Spec.MinNonPreemptible)
+		}
+	}
+
 	pgi.invalidateTasksCache()
 	return nil
 }

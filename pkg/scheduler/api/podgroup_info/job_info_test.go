@@ -1933,3 +1933,52 @@ func TestSetPodGroupLastEvictionTimestamp(t *testing.T) {
 		})
 	}
 }
+
+// The podgroup-level minNonPreemptible lands on whichever node carries the PodGroup's own minimum:
+// the root for a tree, the default PodSet for a flat group. Landing it on the wrong node makes the
+// field either inert or off by a whole level.
+func TestSetPodGroupMinNonPreemptible(t *testing.T) {
+	tests := []struct {
+		name              string
+		spec              enginev2alpha2.PodGroupSpec
+		expectedRoot      *int32
+		expectedDefaultPS *int32
+	}{
+		{
+			name: "flat lands on the default PodSet",
+			spec: enginev2alpha2.PodGroupSpec{
+				MinMember:         ptr.To(int32(1)),
+				MinNonPreemptible: ptr.To(int32(3)),
+			},
+			expectedDefaultPS: ptr.To(int32(3)),
+		},
+		{
+			name: "with subGroups lands on the root",
+			spec: enginev2alpha2.PodGroupSpec{
+				MinSubGroup:       ptr.To(int32(1)),
+				MinNonPreemptible: ptr.To(int32(2)),
+				SubGroups: []enginev2alpha2.SubGroup{
+					{Name: "sg-0", MinMember: ptr.To(int32(1))},
+					{Name: "sg-1", MinMember: ptr.To(int32(1))},
+				},
+			},
+			expectedRoot: ptr.To(int32(2)),
+		},
+		{
+			name: "unset leaves every node on its gang minimum",
+			spec: enginev2alpha2.PodGroupSpec{MinMember: ptr.To(int32(2))},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pgi := NewPodGroupInfo("test-uid")
+			pgi.SetPodGroup(&enginev2alpha2.PodGroup{Spec: tt.spec})
+
+			assert.Equal(t, tt.expectedRoot, pgi.RootSubGroupSet.GetMinNonPreemptible())
+			if defaultPodSet, found := pgi.PodSets[DefaultSubGroup]; found {
+				assert.Equal(t, tt.expectedDefaultPS, defaultPodSet.GetMinNonPreemptible())
+			}
+		})
+	}
+}

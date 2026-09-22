@@ -31,7 +31,7 @@ func GetTasksToEvict(job *PodGroupInfo, subGroupOrderFn, taskOrderFn common_info
 		// Orphans go first: they are neither surplus nor core, so no elastic phase can reach them.
 		tasks = collectOrphanEviction(root, reverseTaskOrderFn)
 		if len(tasks) == 0 {
-			tasks = collectElasticEvictionFromSubGroupSet(root, reverseSubGroupOrderFn, reverseTaskOrderFn)
+			tasks = collectElasticEvictionFromSubGroupSet(root, reverseSubGroupOrderFn, reverseTaskOrderFn, true)
 		}
 
 		// The collection above ranks members by the allocation ordering, which is not the ordering
@@ -88,7 +88,7 @@ func collectOrphanEviction(
 func collectTasksToEvictFromSubGroupSet(
 	sgs *subgroup_info.SubGroupSet, reverseSubGroupOrderFn, reverseTaskOrderFn common_info.LessFn,
 ) []*pod_info.PodInfo {
-	tasks := collectElasticEvictionFromSubGroupSet(sgs, reverseSubGroupOrderFn, reverseTaskOrderFn)
+	tasks := collectElasticEvictionFromSubGroupSet(sgs, reverseSubGroupOrderFn, reverseTaskOrderFn, false)
 	if len(tasks) > 0 {
 		return tasks
 	}
@@ -98,6 +98,7 @@ func collectTasksToEvictFromSubGroupSet(
 // collectElasticEvictionFromSubGroupSet runs phases 1+2 only, returns nil if no elastic surplus.
 func collectElasticEvictionFromSubGroupSet(
 	sgs *subgroup_info.SubGroupSet, reverseSubGroupOrderFn, reverseTaskOrderFn common_info.LessFn,
+	semiPreemptible bool,
 ) []*pod_info.PodInfo {
 	numSatisfied := sgs.GetNumActiveAllocatedDirectSubGroups()
 	if numSatisfied == 0 {
@@ -112,7 +113,8 @@ func collectElasticEvictionFromSubGroupSet(
 	// Phase 1 — Elastic recursive: look for elastic surplus deeper in the tree.
 	if hasElasticSurplusInSubGroupSet(sgs) {
 		for _, member := range members {
-			tasks := collectElasticEvictionFromMember(member, reverseSubGroupOrderFn, reverseTaskOrderFn)
+			tasks := collectElasticEvictionFromMember(
+				member, reverseSubGroupOrderFn, reverseTaskOrderFn, semiPreemptible)
 			if len(tasks) > 0 {
 				return tasks
 			}
@@ -121,7 +123,19 @@ func collectElasticEvictionFromSubGroupSet(
 
 	// Phase 2 — Elastic direct: drop least-prioritized member entirely if sgs has surplus members.
 	if sgs.GetMinMembersToSatisfy() < numSatisfied {
+		// Members are ranked here by the allocation ordering, which knows nothing about core
+		// membership. A core member's tasks are filtered out of the result anyway, so offering one
+		// spends the whole batch and reports no victims while real surplus keeps running. Skipping
+		// them is what makes a semi-preemptible job shrink to its core instead of stalling - and with
+		// minNonPreemptible the two boundaries differ by construction, so this is now the common case.
+		var core map[string]bool
+		if semiPreemptible {
+			core = coreMemberNames(sgs)
+		}
 		for _, member := range members {
+			if core[member.GetName()] {
+				continue
+			}
 			tasks := collectGangEvictionFromMember(member, reverseTaskOrderFn)
 			if len(tasks) > 0 {
 				return tasks
@@ -134,10 +148,11 @@ func collectElasticEvictionFromSubGroupSet(
 
 func collectElasticEvictionFromMember(
 	member subgroup_info.SubGroupMember, reverseSubGroupOrderFn, reverseTaskOrderFn common_info.LessFn,
+	semiPreemptible bool,
 ) []*pod_info.PodInfo {
 	switch m := member.(type) {
 	case *subgroup_info.SubGroupSet:
-		return collectElasticEvictionFromSubGroupSet(m, reverseSubGroupOrderFn, reverseTaskOrderFn)
+		return collectElasticEvictionFromSubGroupSet(m, reverseSubGroupOrderFn, reverseTaskOrderFn, semiPreemptible)
 	case *subgroup_info.PodSet:
 		return collectElasticEvictionFromPodSet(m, reverseTaskOrderFn)
 	}

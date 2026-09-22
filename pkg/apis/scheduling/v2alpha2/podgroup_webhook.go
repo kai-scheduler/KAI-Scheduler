@@ -79,6 +79,7 @@ func validateSemiPreemptibleImmutability(old, updated *PodGroupSpec) error {
 	checks := []minCheck{
 		{"minMember", "a", old.MinMember, updated.MinMember},
 		{"minSubGroup", "a", old.MinSubGroup, updated.MinSubGroup},
+		{"minNonPreemptible", "a", old.MinNonPreemptible, updated.MinNonPreemptible},
 	}
 
 	oldSubGroups := map[string]*SubGroup{}
@@ -173,6 +174,10 @@ func validatePodGroupSpec(spec *PodGroupSpec) *validationErrors {
 			*spec.MinMember)}}
 	}
 
+	if err := validateMinNonPreemptible(spec); err != nil {
+		return &validationErrors{structuralError: err}
+	}
+
 	validationErrors := validateSubGroups(spec.SubGroups)
 	if validationErrors.structuralError != nil {
 		return validationErrors
@@ -188,7 +193,60 @@ func validatePodGroupSpec(spec *PodGroupSpec) *validationErrors {
 		}
 	}
 
+	// Warn rather than reject, matching minSubGroup: the extra slots are simply never filled, and the
+	// pod-shaped case cannot be checked at all since the pod count is not in the spec.
+	if spec.MinNonPreemptible != nil && len(spec.SubGroups) > 0 {
+		rootCount := countRootSubGroups(spec.SubGroups)
+		if int(*spec.MinNonPreemptible) > rootCount {
+			validationErrors.minDefinitionErrors = append(validationErrors.minDefinitionErrors,
+				&minSubGroupExceedsChildCountError{msg: fmt.Sprintf(
+					"minNonPreemptible (%d) exceeds the number of direct child SubGroups (%d)",
+					*spec.MinNonPreemptible, rootCount)})
+		}
+	}
+
 	return validationErrors
+}
+
+// validateMinNonPreemptible enforces that minNonPreemptible is only used to raise the protected shape
+// of a semi-preemptible PodGroup above its scheduling minimum. Lowering it would leave pods that are
+// required to start the gang but not protected from preemption - a tier the scheduler does not model.
+func validateMinNonPreemptible(spec *PodGroupSpec) error {
+	if spec.MinNonPreemptible == nil {
+		return nil
+	}
+
+	if spec.Preemptibility != SemiPreemptible {
+		return &invalidMinNonPreemptibleError{msg: fmt.Sprintf(
+			"minNonPreemptible is only applicable to semi-preemptible PodGroups (preemptibility is %q)",
+			spec.Preemptibility)}
+	}
+
+	gangMin, field := effectiveGangMinimum(spec)
+	if *spec.MinNonPreemptible < gangMin {
+		return &invalidMinNonPreemptibleError{msg: fmt.Sprintf(
+			"minNonPreemptible (%d) is below %s (%d): it may only raise the protected shape above the scheduling minimum",
+			*spec.MinNonPreemptible, field, gangMin)}
+	}
+
+	return nil
+}
+
+// effectiveGangMinimum is what the PodGroup must reach to be schedulable, expressed in the unit
+// minNonPreemptible counts: direct child SubGroups when SubGroups are defined, pods otherwise. The
+// defaults matter - an unset minSubGroup requires every child and an unset minMember means one pod,
+// so leaving either out does not become a back door to a protected shape below the gang.
+func effectiveGangMinimum(spec *PodGroupSpec) (int32, string) {
+	if len(spec.SubGroups) > 0 {
+		if spec.MinSubGroup != nil {
+			return *spec.MinSubGroup, "minSubGroup"
+		}
+		return int32(countRootSubGroups(spec.SubGroups)), "the number of direct child SubGroups"
+	}
+	if spec.MinMember != nil {
+		return *spec.MinMember, "minMember"
+	}
+	return 1, "minMember"
 }
 
 // validateSubGroups validates the subgroup list.

@@ -318,6 +318,87 @@ func DescribePreemptSemiPreemptibleSpecs() bool {
 					}).WithTimeout(time.Minute).WithPolling(time.Second).Should(Succeed())
 				})
 		}
+
+		// minNonPreemptible decouples the protected shape from the gang minimum: this job starts as soon
+		// as one subgroup fits, but keeps two once it has them. Under minSubGroup alone the same job
+		// would be squeezed all the way down to a single subgroup.
+		It("minNonPreemptible: bursts over-quota then scales down to minNonPreemptible, not minSubGroup", func(ctx context.Context) {
+			testCtx = testcontext.GetConnectivity(ctx, Default)
+			// The parent is capped at the burst size so the elastic tier is the only place the
+			// higher-priority job can get capacity from.
+			parentQueue := queue.CreateQueueObject(utils.GenerateRandomK8sName(10), "")
+			parentQueue.Spec.Resources.CPU.Quota = 400
+			parentQueue.Spec.Resources.CPU.Limit = 400
+			// low queue quota sized for the 2 protected subgroups only (2 * 100m).
+			lowQueue := queue.CreateQueueObject(utils.GenerateRandomK8sName(10), parentQueue.Name)
+			lowQueue.Spec.Resources.CPU.Quota = 200
+			lowQueue.Spec.Resources.CPU.Limit = 400
+			highQueue := queue.CreateQueueObject(utils.GenerateRandomK8sName(10), parentQueue.Name)
+			highQueue.Spec.Resources.CPU.Quota = 200
+			highQueue.Spec.Resources.CPU.Limit = 400
+			testCtx.InitQueues([]*v2.Queue{lowQueue, highQueue, parentQueue})
+
+			lowNamespace := queue.GetConnectedNamespaceToQueue(lowQueue)
+			cpuPerPod := v1.ResourceRequirements{
+				Limits: map[v1.ResourceName]resource.Quantity{
+					v1.ResourceCPU: resource.MustParse("100m"),
+				},
+			}
+
+			// 4 fully-gang leaf subgroups; schedulable on 1, protected at 2, bursts to 4.
+			pgName := utils.GenerateRandomK8sName(10)
+			h := pod_group.BuildHierarchy(ctx, testCtx.KubeClientset, lowQueue, pgName,
+				flatLeaves("sg", 4, 1), cpuPerPod)
+			pg := pod_group.Create(lowNamespace, pgName, lowQueue.Name)
+			pg.Spec.MinMember = nil
+			pg.Spec.MinSubGroup = ptr.To[int32](1)
+			pg.Spec.MinNonPreemptible = ptr.To[int32](2)
+			pg.Spec.SubGroups = h.SubGroups
+			pg.Spec.Preemptibility = v2alpha2.SemiPreemptible
+			pg, err := testCtx.KubeAiSchedClientset.SchedulingV2alpha2().PodGroups(lowNamespace).
+				Create(ctx, pg, metav1.CreateOptions{})
+			Expect(err).To(Succeed())
+
+			// Step 1 — expands well beyond its minimum: all 4 subgroups scheduled.
+			wait.ForAtLeastNPodsScheduled(ctx, testCtx.ControllerClient, lowNamespace, h.AllPods, 4)
+
+			// Accounting follows minNonPreemptible, not minSubGroup: 2 of the 4 running pods are core.
+			Eventually(func(g Gomega) {
+				updated, err := testCtx.KubeAiSchedClientset.SchedulingV2alpha2().PodGroups(lowNamespace).
+					Get(ctx, pg.Name, metav1.GetOptions{})
+				g.Expect(err).To(Succeed())
+				g.Expect(updated.Status.SchedulingState).NotTo(BeNil())
+				g.Expect(updated.Status.SchedulingState.CorePods).To(HaveLen(2))
+				g.Expect(updated.Status.ResourcesStatus.Allocated.Cpu().MilliValue()).To(Equal(int64(400)))
+				g.Expect(updated.Status.ResourcesStatus.AllocatedNonPreemptible.Cpu().MilliValue()).
+					To(Equal(int64(200)))
+			}).WithTimeout(time.Minute).WithPolling(time.Second).Should(Succeed())
+
+			// Step 2 — a higher-priority job arrives and needs the elastic capacity.
+			highPod := rd.CreatePodObject(highQueue, v1.ResourceRequirements{
+				Limits: map[v1.ResourceName]resource.Quantity{
+					v1.ResourceCPU: resource.MustParse("200m"),
+				},
+			})
+			highPod, err = rd.CreatePod(ctx, testCtx.KubeClientset, highPod)
+			Expect(err).To(Succeed())
+			wait.ForPodScheduled(ctx, testCtx.ControllerClient, highPod)
+
+			// Scales down to exactly 2 subgroups - the protected shape, not the minSubGroup floor of 1.
+			wait.ForPodsWithCondition(ctx, testCtx.ControllerClient, func(watch.Event) bool {
+				return len(runningPodNames(ctx, testCtx, lowNamespace, pg.Name)) == 2
+			})
+
+			// The survivors are exactly the set the scheduler published as core.
+			Eventually(func(g Gomega) {
+				updated, err := testCtx.KubeAiSchedClientset.SchedulingV2alpha2().PodGroups(lowNamespace).
+					Get(ctx, pg.Name, metav1.GetOptions{})
+				g.Expect(err).To(Succeed())
+				g.Expect(updated.Status.SchedulingState).NotTo(BeNil())
+				g.Expect(runningPodNames(ctx, testCtx, lowNamespace, pg.Name)).
+					To(Equal(updated.Status.SchedulingState.CorePods))
+			}).WithTimeout(time.Minute).WithPolling(time.Second).Should(Succeed())
+		})
 	})
 }
 

@@ -36,6 +36,12 @@ func (e *parentMinMemberError) Is(target error) bool {
 	return ok
 }
 
+// invalidMinNonPreemptibleError is returned when minNonPreemptible is set on a PodGroup that is not
+// semi-preemptible, or below the PodGroup's own scheduling minimum.
+type invalidMinNonPreemptibleError struct{ msg string }
+
+func (e *invalidMinNonPreemptibleError) Error() string { return e.msg }
+
 // missingMinMemberError is returned when a leaf SubGroup does not define minMember.
 type missingMinMemberError struct{ msg string }
 

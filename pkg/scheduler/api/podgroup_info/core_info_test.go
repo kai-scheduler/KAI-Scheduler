@@ -209,6 +209,106 @@ func TestGetCoreTasks(t *testing.T) {
 			expectedCoreNames: []string{"x0-p0", "x1-p0", "y-p0"},
 			expectedMinSat:    true,
 		},
+		{
+			// minNonPreemptible protects more pods than the gang needs: the job starts at 1 pod but
+			// keeps 3 once it has them.
+			name: "FlatJob_MinNonPreemptibleRaisesPodCore",
+			job: func() *PodGroupInfo {
+				ps := subgroup_info.NewPodSet(DefaultSubGroup, 1, nil).WithPodInfos(pod_info.PodsMap{
+					"pod-a": simpleTask("pod-a", "", pod_status.Running),
+					"pod-b": simpleTask("pod-b", "", pod_status.Running),
+					"pod-c": simpleTask("pod-c", "", pod_status.Running),
+					"pod-d": simpleTask("pod-d", "", pod_status.Running),
+				})
+				ps.SetMinNonPreemptible(ptr.To(int32(3)))
+				return &PodGroupInfo{PodSets: map[string]*subgroup_info.PodSet{DefaultSubGroup: ps}}
+			}(),
+			expectedCoreNames: []string{"pod-a", "pod-b", "pod-c"},
+			expectedMinSat:    true,
+		},
+		{
+			// The gang is satisfied at 1 pod, but the core is not until 3 are allocated - which is what
+			// keeps the 2nd and 3rd pod charged to the queue's non-preemptible quota.
+			name: "FlatJob_MinNonPreemptibleNotYetSatisfied",
+			job: func() *PodGroupInfo {
+				ps := subgroup_info.NewPodSet(DefaultSubGroup, 1, nil).WithPodInfos(pod_info.PodsMap{
+					"pod-a": simpleTask("pod-a", "", pod_status.Running),
+					"pod-b": simpleTask("pod-b", "", pod_status.Running),
+				})
+				ps.SetMinNonPreemptible(ptr.To(int32(3)))
+				return &PodGroupInfo{PodSets: map[string]*subgroup_info.PodSet{DefaultSubGroup: ps}}
+			}(),
+			expectedCoreNames: []string{"pod-a", "pod-b"},
+			expectedMinSat:    false,
+		},
+		{
+			// The subgroup shape: starts as soon as 1 subgroup fits, protects 2, bursts to 4.
+			name: "SubGroupShape_MinNonPreemptibleRaisesSubGroupCore",
+			job: func() *PodGroupInfo {
+				root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+				root.SetMinSubGroup(ptr.To(int32(1)))
+				root.SetMinNonPreemptible(ptr.To(int32(2)))
+				for _, name := range []string{"sg0", "sg1", "sg2", "sg3"} {
+					ps := subgroup_info.NewPodSet(name, 1, nil)
+					ps.AssignTask(simpleTask(name+"-p0", name, pod_status.Running))
+					root.AddPodSet(ps)
+				}
+				return &PodGroupInfo{RootSubGroupSet: root, PodSets: root.GetDescendantPodSets()}
+			}(),
+			expectedCoreNames: []string{"sg0-p0", "sg1-p0"},
+			expectedMinSat:    true,
+		},
+		{
+			// Only 2 of the 3 required core subgroups have landed, so further allocation is still core.
+			name: "SubGroupShape_MinNonPreemptibleNotYetSatisfied",
+			job: func() *PodGroupInfo {
+				root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+				root.SetMinSubGroup(ptr.To(int32(1)))
+				root.SetMinNonPreemptible(ptr.To(int32(3)))
+				for _, sg := range []struct {
+					name      string
+					allocated int
+				}{{"sg0", 1}, {"sg1", 1}, {"sg2", 0}} {
+					ps := subgroup_info.NewPodSet(sg.name, 1, nil)
+					for i := 0; i < sg.allocated; i++ {
+						ps.AssignTask(simpleTask(fmt.Sprintf("%s-p%d", sg.name, i), sg.name, pod_status.Running))
+					}
+					root.AddPodSet(ps)
+				}
+				return &PodGroupInfo{RootSubGroupSet: root, PodSets: root.GetDescendantPodSets()}
+			}(),
+			expectedCoreNames: []string{"sg0-p0", "sg1-p0"},
+			expectedMinSat:    false,
+		},
+		{
+			// The podgroup-level override applies only at the node it is set on: nested subgroups keep
+			// splitting by their own minSubGroup/minMember.
+			name: "MinNonPreemptible_DoesNotLeakIntoNestedSubGroups",
+			job: func() *PodGroupInfo {
+				root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+				root.SetMinSubGroup(ptr.To(int32(1)))
+				root.SetMinNonPreemptible(ptr.To(int32(2)))
+
+				x := subgroup_info.NewSubGroupSet("x", nil)
+				x.SetMinSubGroup(ptr.To(int32(2)))
+				for _, name := range []string{"x0", "x1", "x2", "x3"} {
+					ps := subgroup_info.NewPodSet(name, 1, nil)
+					ps.AssignTask(simpleTask(name+"-p0", name, pod_status.Running))
+					x.AddPodSet(ps)
+				}
+				root.AddSubGroup(x)
+
+				for _, name := range []string{"y", "z"} {
+					ps := subgroup_info.NewPodSet(name, 1, nil)
+					ps.AssignTask(simpleTask(name+"-p0", name, pod_status.Running))
+					root.AddPodSet(ps)
+				}
+				return &PodGroupInfo{RootSubGroupSet: root, PodSets: root.GetDescendantPodSets()}
+			}(),
+			// Root core = x, y (minNonPreemptible=2, not minSubGroup=1); inside x, still x0 and x1.
+			expectedCoreNames: []string{"x0-p0", "x1-p0", "y-p0"},
+			expectedMinSat:    true,
+		},
 	}
 
 	t.Run("GetCorePodNames_SortedForStableComparison", func(t *testing.T) {

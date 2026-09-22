@@ -12,6 +12,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
@@ -666,5 +667,106 @@ func TestGetTasksToEvict_NeverEvictsCore(t *testing.T) {
 			assert.GreaterOrEqual(t, satisfiedAfter, floor,
 				"eviction left %d satisfied subgroups, below the %d it must keep", satisfiedAfter, floor)
 		})
+	}
+}
+
+// A semi-preemptible job with minNonPreemptible must shrink to exactly that shape and then stop -
+// not to its gang minimum, which is lower.
+func TestGetTasksToEvict_MinNonPreemptibleFloor(t *testing.T) {
+	t.Run("SubGroupShape_ShrinksToMinNonPreemptibleNotMinSubGroup", func(t *testing.T) {
+		// Rebuilds the tree from live state, as the next scheduling session would.
+		buildJob := func(allocated map[string]int) *PodGroupInfo {
+			root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+			root.SetMinSubGroup(ptr.To(int32(1)))
+			root.SetMinNonPreemptible(ptr.To(int32(2)))
+			for _, name := range []string{"sg0", "sg1", "sg2", "sg3"} {
+				ps := subgroup_info.NewPodSet(name, 1, nil)
+				for i := 0; i < allocated[name]; i++ {
+					ps.AssignTask(simpleTask(fmt.Sprintf("%s-p%d", name, i), name, pod_status.Running))
+				}
+				root.AddPodSet(ps)
+			}
+			return &PodGroupInfo{
+				Preemptibility:  enginev2alpha2.SemiPreemptible,
+				RootSubGroupSet: root,
+				PodSets:         root.GetDescendantPodSets(),
+			}
+		}
+
+		allocated := map[string]int{"sg0": 1, "sg1": 1, "sg2": 1, "sg3": 1}
+		for range 10 {
+			tasksToEvict, _ := GetTasksToEvict(buildJob(allocated), subGroupMemberOrderFn, tasksOrderFn)
+			if len(tasksToEvict) == 0 {
+				break
+			}
+			for _, task := range tasksToEvict {
+				allocated[task.SubGroupName]--
+			}
+		}
+
+		// minSubGroup is 1, but the job is protected down to 2 subgroups.
+		assert.Equal(t, map[string]int{"sg0": 1, "sg1": 1, "sg2": 0, "sg3": 0}, allocated)
+	})
+
+	t.Run("PodShape_ShrinksToMinNonPreemptibleNotMinMember", func(t *testing.T) {
+		buildJob := func(numPods int) *PodGroupInfo {
+			pods := pod_info.PodsMap{}
+			for i := range numPods {
+				name := fmt.Sprintf("pod-%d", i)
+				pods[common_info.PodID(name)] = simpleTask(name, "", pod_status.Running)
+			}
+			ps := subgroup_info.NewPodSet(DefaultSubGroup, 1, nil).WithPodInfos(pods)
+			ps.SetMinNonPreemptible(ptr.To(int32(3)))
+			return &PodGroupInfo{
+				Preemptibility: enginev2alpha2.SemiPreemptible,
+				PodSets:        map[string]*subgroup_info.PodSet{DefaultSubGroup: ps},
+			}
+		}
+
+		numPods := 5
+		for range 10 {
+			tasksToEvict, _ := GetTasksToEvict(buildJob(numPods), subGroupMemberOrderFn, tasksOrderFn)
+			if len(tasksToEvict) == 0 {
+				break
+			}
+			numPods -= len(tasksToEvict)
+		}
+
+		// minMember is 1, but the job is protected down to 3 pods.
+		assert.Equal(t, 3, numPods)
+	})
+}
+
+// Phase 2 ranks members by the allocation ordering, which knows nothing about core membership. When
+// that ordering puts a core member first, offering it spends the whole batch on tasks the core filter
+// then removes - the job would report no victims while real surplus keeps running.
+func TestGetTasksToEvict_Phase2SkipsCoreMembers(t *testing.T) {
+	// Reversed against coreMemberLess's name ordering, so the reversed ordering used for eviction
+	// hands back the core members (sg0, sg1) first.
+	descendingByName := func(l, r interface{}) bool {
+		return l.(subgroup_info.SubGroupMember).GetName() > r.(subgroup_info.SubGroupMember).GetName()
+	}
+
+	root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+	root.SetMinSubGroup(ptr.To(int32(1)))
+	root.SetMinNonPreemptible(ptr.To(int32(2)))
+	for _, name := range []string{"sg0", "sg1", "sg2", "sg3"} {
+		ps := subgroup_info.NewPodSet(name, 1, nil)
+		ps.AssignTask(simpleTask(name+"-p0", name, pod_status.Running))
+		root.AddPodSet(ps)
+	}
+	job := &PodGroupInfo{
+		Preemptibility:  enginev2alpha2.SemiPreemptible,
+		RootSubGroupSet: root,
+		PodSets:         root.GetDescendantPodSets(),
+	}
+
+	tasksToEvict, _ := GetTasksToEvict(job, descendingByName, tasksOrderFn)
+
+	assert.NotEmpty(t, tasksToEvict, "no victims offered - phase 2 spent the batch on a core member")
+	core := GetCoreTasks(job, tasksOrderFn)
+	for _, task := range tasksToEvict {
+		_, isCore := core[task.UID]
+		assert.False(t, isCore, "eviction offered core task %s", task.Name)
 	}
 }

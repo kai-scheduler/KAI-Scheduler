@@ -90,6 +90,16 @@ type PodGroupSpec struct {
 	// eviction for this PodGroup. Defaults to the scheduler's global staleness grace period.
 	// +optional
 	StalenessGracePeriod *metav1.Duration `json:"stalenessGracePeriod,omitempty" protobuf:"bytes,10,opt,name=stalenessGracePeriod"`
+
+	// MinNonPreemptible defines how much of a semi-preemptible PodGroup is protected from preemption
+	// and charged against the queue's quota: the number of direct child SubGroups when SubGroups are
+	// defined, otherwise the number of pods. Must be at least minMember/minSubGroup - it raises the
+	// protected shape above the scheduling minimum without raising the gang requirement. When unset,
+	// the scheduling minimum is also the protected shape.
+	// Only applicable to semi-preemptible PodGroups.
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:Minimum=0
+	MinNonPreemptible *int32 `json:"minNonPreemptible,omitempty" protobuf:"varint,11,opt,name=minNonPreemptible"`
 }
 
 // Preemptibility defines whether this PodGroup can be preempted
@@ -97,8 +107,9 @@ type PodGroupSpec struct {
 // Supported values are:
 //   - `preemptible` - PodGroup can be preempted by higher-priority workloads
 //   - `non-preemptible` - PodGroup runs to completion once scheduled
-//   - `semi-preemptible` - PodGroup's minimal required shape (minMember pods per leaf, minSubGroup children per node)
-//     is non-preemptible and in-quota; anything beyond that minimum is elastic (over-quota, reclaimed first)
+//   - `semi-preemptible` - PodGroup's minimal required shape (minMember pods per leaf, minSubGroup children per node,
+//     or minNonPreemptible when set) is non-preemptible and in-quota; anything beyond that minimum is elastic
+//     (over-quota, reclaimed first)
 //
 // Defaults to priority-based preemptibility determination (preemptible if priority < 100)
 //

@@ -438,6 +438,29 @@ func TestValidateSemiPreemptibleImmutability(t *testing.T) {
 			updated:   PodGroupSpec{Preemptibility: SemiPreemptible, MinMember: ptr.To(int32(2))},
 			expectErr: false,
 		},
+		{
+			name: "increase minNonPreemptible rejected",
+			old: PodGroupSpec{Preemptibility: SemiPreemptible, MinMember: ptr.To(int32(1)),
+				MinNonPreemptible: ptr.To(int32(2))},
+			updated: PodGroupSpec{Preemptibility: SemiPreemptible, MinMember: ptr.To(int32(1)),
+				MinNonPreemptible: ptr.To(int32(3))},
+			expectErr: true,
+		},
+		{
+			name: "decrease minNonPreemptible allowed",
+			old: PodGroupSpec{Preemptibility: SemiPreemptible, MinMember: ptr.To(int32(1)),
+				MinNonPreemptible: ptr.To(int32(3))},
+			updated: PodGroupSpec{Preemptibility: SemiPreemptible, MinMember: ptr.To(int32(1)),
+				MinNonPreemptible: ptr.To(int32(2))},
+			expectErr: false,
+		},
+		{
+			name: "setting minNonPreemptible on a running group rejected",
+			old:  PodGroupSpec{Preemptibility: SemiPreemptible, MinMember: ptr.To(int32(1))},
+			updated: PodGroupSpec{Preemptibility: SemiPreemptible, MinMember: ptr.To(int32(1)),
+				MinNonPreemptible: ptr.To(int32(2))},
+			expectErr: true,
+		},
 	}
 
 	validator := &PodGroup{}
@@ -475,4 +498,102 @@ func errorsListEqual(want, got []error) bool {
 		}
 	}
 	return true
+}
+
+func TestValidateMinNonPreemptible(t *testing.T) {
+	tests := []struct {
+		name        string
+		spec        PodGroupSpec
+		expectErr   bool
+		expectWarns int
+	}{
+		{
+			name: "raises the protected shape above minSubGroup",
+			spec: PodGroupSpec{Preemptibility: SemiPreemptible, MinSubGroup: ptr.To(int32(1)),
+				MinNonPreemptible: ptr.To(int32(2)),
+				SubGroups: []SubGroup{
+					{Name: "sg-0", MinMember: ptr.To(int32(1))},
+					{Name: "sg-1", MinMember: ptr.To(int32(1))},
+				}},
+		},
+		{
+			name: "raises the protected shape above minMember",
+			spec: PodGroupSpec{Preemptibility: SemiPreemptible, MinMember: ptr.To(int32(1)),
+				MinNonPreemptible: ptr.To(int32(3))},
+		},
+		{
+			name: "equal to the scheduling minimum is allowed",
+			spec: PodGroupSpec{Preemptibility: SemiPreemptible, MinMember: ptr.To(int32(2)),
+				MinNonPreemptible: ptr.To(int32(2))},
+		},
+		{
+			name: "below minMember rejected",
+			spec: PodGroupSpec{Preemptibility: SemiPreemptible, MinMember: ptr.To(int32(4)),
+				MinNonPreemptible: ptr.To(int32(2))},
+			expectErr: true,
+		},
+		{
+			name: "below minSubGroup rejected",
+			spec: PodGroupSpec{Preemptibility: SemiPreemptible, MinSubGroup: ptr.To(int32(3)),
+				MinNonPreemptible: ptr.To(int32(2)),
+				SubGroups: []SubGroup{
+					{Name: "sg-0", MinMember: ptr.To(int32(1))},
+					{Name: "sg-1", MinMember: ptr.To(int32(1))},
+					{Name: "sg-2", MinMember: ptr.To(int32(1))},
+				}},
+			expectErr: true,
+		},
+		{
+			name: "rejected on a preemptible PodGroup",
+			spec: PodGroupSpec{Preemptibility: Preemptible, MinMember: ptr.To(int32(1)),
+				MinNonPreemptible: ptr.To(int32(2))},
+			expectErr: true,
+		},
+		{
+			name:      "rejected when preemptibility is left to the priority default",
+			spec:      PodGroupSpec{MinMember: ptr.To(int32(1)), MinNonPreemptible: ptr.To(int32(2))},
+			expectErr: true,
+		},
+		{
+			// An unset minSubGroup requires every child, so a lower protected shape is still a lowering.
+			name: "below an implicit all-children gang rejected",
+			spec: PodGroupSpec{Preemptibility: SemiPreemptible, MinNonPreemptible: ptr.To(int32(2)),
+				SubGroups: []SubGroup{
+					{Name: "sg-0", MinMember: ptr.To(int32(1))},
+					{Name: "sg-1", MinMember: ptr.To(int32(1))},
+					{Name: "sg-2", MinMember: ptr.To(int32(1))},
+				}},
+			expectErr: true,
+		},
+		{
+			// An unset minMember means one pod, so a zero protected shape is a lowering.
+			name:      "below an implicit single-pod gang rejected",
+			spec:      PodGroupSpec{Preemptibility: SemiPreemptible, MinNonPreemptible: ptr.To(int32(0))},
+			expectErr: true,
+		},
+		{
+			name: "exceeding the child count only warns",
+			spec: PodGroupSpec{Preemptibility: SemiPreemptible, MinSubGroup: ptr.To(int32(1)),
+				MinNonPreemptible: ptr.To(int32(4)),
+				SubGroups: []SubGroup{
+					{Name: "sg-0", MinMember: ptr.To(int32(1))},
+					{Name: "sg-1", MinMember: ptr.To(int32(1))},
+				}},
+			expectWarns: 1,
+		},
+	}
+
+	validator := &PodGroup{}
+	ctx := context.Background()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			warnings, err := validator.ValidateCreate(ctx, &PodGroup{Spec: tt.spec})
+			if (err != nil) != tt.expectErr {
+				t.Fatalf("ValidateCreate: got err=%v, expectErr=%v", err, tt.expectErr)
+			}
+			if len(warnings) != tt.expectWarns {
+				t.Fatalf("ValidateCreate: got warnings=%v, want %d", warnings, tt.expectWarns)
+			}
+		})
+	}
 }
