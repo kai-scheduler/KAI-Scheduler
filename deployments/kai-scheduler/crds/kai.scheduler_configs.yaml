@@ -1118,6 +1118,14 @@ spec:
                             type: object
                         type: object
                     type: object
+                  serviceName:
+                    description: |-
+                      ServiceName overrides the webhook Service name and certificate DNS identity.
+                      Defaults to the admission operand's resource name when omitted.
+                    maxLength: 63
+                    minLength: 1
+                    pattern: ^[a-z]([-a-z0-9]*[a-z0-9])?$
+                    type: string
                   validatingWebhookConfigurationName:
                     description: ValidatingWebhookConfigurationName is the name of
                       the ValidatingWebhookConfiguration for the admission service
