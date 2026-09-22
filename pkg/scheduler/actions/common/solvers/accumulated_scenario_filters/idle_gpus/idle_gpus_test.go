@@ -175,6 +175,15 @@ func Test_greedyMatchRequirements(t *testing.T) {
 			want: true,
 		},
 		{
+			name: "fractional requirements exactly fit holder capacity",
+			args: args{
+				requirements: []float64{0.2, 0.1},
+				holders:      []string{"n1"},
+				capacity:     map[string]float64{"n1": 0.3},
+			},
+			want: true,
+		},
+		{
 			name: "second holder used after first is saturated",
 			args: args{
 				requirements: []float64{1.0, 1.0},
