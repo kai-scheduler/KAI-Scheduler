@@ -102,8 +102,9 @@ func TestDeploymentForKAIConfig(t *testing.T) {
 						SchedulerName: ptr.To(constants.DefaultSchedulerName),
 					},
 					Admission: &admission.Admission{
-						Replicas:   ptr.To(int32(1)),
-						GPUSharing: ptr.To(true),
+						Replicas:                    ptr.To(int32(1)),
+						GPUSharing:                  ptr.To(true),
+						GPUFractionRuntimeClassName: ptr.To("custom-runtime-class"),
 						Webhook: &admission.Webhook{
 							TargetPort:  ptr.To(9443),
 							ProbePort:   ptr.To(8081),
@@ -121,6 +122,11 @@ func TestDeploymentForKAIConfig(t *testing.T) {
 			expectedArgs: []string{
 				"--gpu-sharing-enabled=true",
 				"--nri-plugin-enabled=true",
+				"--gpu-fraction-runtime-class-name",
+				"",
+			},
+			notExpectedArgs: []string{
+				"custom-runtime-class",
 			},
 		},
 		{

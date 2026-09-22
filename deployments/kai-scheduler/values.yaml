@@ -266,6 +266,7 @@ admission:
     metricsPort: 8080
     probePort: 8081
   cdi: false
+  # Ignored when the GPU Operator ClusterPolicy enables the NRI plugin.
   gpuFractionRuntimeClassName: nvidia
   affinity: {}
   podDisruptionBudget:
