@@ -28,8 +28,9 @@ func GetTasksToEvict(job *PodGroupInfo, subGroupOrderFn, taskOrderFn common_info
 	if job.IsSemiPreemptibleJob() {
 		// Semi-preemptible jobs offer only their elastic surplus as victims; the core (minimal
 		// satisfying shape) is never evicted, so the phase-3 full-eviction fallback is skipped.
-		// Orphans go first: they are neither surplus nor core, so no elastic phase can reach them.
-		tasks = collectOrphanEviction(root, reverseTaskOrderFn)
+		// Stale members go first: they are neither surplus nor core, so no elastic phase can reach them.
+		pinned := pinnedCoreMembers(job)
+		tasks = collectStaleEviction(root, reverseTaskOrderFn, pinned)
 		if len(tasks) == 0 {
 			tasks = collectElasticEvictionFromSubGroupSet(root, reverseSubGroupOrderFn, reverseTaskOrderFn)
 		}
@@ -52,20 +53,21 @@ func GetTasksToEvict(job *PodGroupInfo, subGroupOrderFn, taskOrderFn common_info
 	return tasks, jobHasMoreActiveTasksAfterEviction
 }
 
-// collectOrphanEviction returns the allocated tasks of a member that holds no core slot and has not
-// formed its gang. Those pods deliver nothing - no gang of their own, no core slot - so a
-// semi-preemptible job gives them up before any real surplus. Recurses into core SubGroupSets, where
-// the same rule applies one level down.
-func collectOrphanEviction(
-	sgs *subgroup_info.SubGroupSet, reverseTaskOrderFn common_info.LessFn,
+// collectStaleEviction returns the allocated tasks of a member that holds no core slot and has not
+// formed its gang - the member-level counterpart of the stale job the stalegangeviction action
+// reaps. Those pods deliver nothing - no gang of their own, no core slot - so a semi-preemptible job
+// gives them up before any real surplus. Recurses into core SubGroupSets, where the same rule
+// applies one level down.
+func collectStaleEviction(
+	sgs *subgroup_info.SubGroupSet, reverseTaskOrderFn common_info.LessFn, pinned map[string]bool,
 ) []*pod_info.PodInfo {
 	// A job still reaching its minimum has its partial members filling core slots by name, and any
-	// beyond that fill are still growing towards it. Nothing is an orphan until the gang has formed.
+	// beyond that fill are still growing towards it. Nothing is stale until the gang has formed.
 	if !sgs.IsMinRequirementSatisfied() {
 		return nil
 	}
 
-	core, nonCore := partitionCoreMembers(sgs)
+	core, nonCore := partitionCoreMembers(sgs, pinned)
 	for _, member := range nonCore {
 		if isMemberSatisfied(member) {
 			continue // real surplus - phases 1 and 2 own it
@@ -76,7 +78,7 @@ func collectOrphanEviction(
 	}
 	for _, member := range core {
 		if sub, ok := member.(*subgroup_info.SubGroupSet); ok {
-			if tasks := collectOrphanEviction(sub, reverseTaskOrderFn); len(tasks) > 0 {
+			if tasks := collectStaleEviction(sub, reverseTaskOrderFn, pinned); len(tasks) > 0 {
 				return tasks
 			}
 		}

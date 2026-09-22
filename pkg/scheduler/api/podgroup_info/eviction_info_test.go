@@ -127,6 +127,7 @@ func TestGetTasksToEvict_SemiPreemptible(t *testing.T) {
 		job                  *PodGroupInfo
 		expectedHasMoreTasks bool
 		numExpectTasks       int
+		expectedTaskNames    []string
 	}{
 		{
 			name: "SubgroupSurplus_EvictsWholeElasticSubgroupOnly",
@@ -146,9 +147,10 @@ func TestGetTasksToEvict_SemiPreemptible(t *testing.T) {
 					PodSets:         root.GetDescendantPodSets(),
 				}
 			}(),
-			// One whole elastic subgroup (2 pods) offered; core (2 subgroups) protected.
+			// One whole elastic subgroup (2 pods) offered; core (r0, r1) protected.
 			expectedHasMoreTasks: true,
 			numExpectTasks:       2,
+			expectedTaskNames:    []string{"r3-p0", "r3-p1"},
 		},
 		{
 			name: "NoSurplus_CoreProtected_NoVictims",
@@ -183,9 +185,10 @@ func TestGetTasksToEvict_SemiPreemptible(t *testing.T) {
 					}),
 				},
 			},
-			// minMember=2, 3 allocated → 1 elastic pod evictable, 2 core protected.
+			// minMember=2, 3 allocated → 1 elastic pod evictable, pod-a and pod-b are core.
 			expectedHasMoreTasks: true,
 			numExpectTasks:       1,
+			expectedTaskNames:    []string{"pod-c"},
 		},
 	}
 
@@ -194,6 +197,13 @@ func TestGetTasksToEvict_SemiPreemptible(t *testing.T) {
 			tasksToEvict, hasMoreTasks := GetTasksToEvict(tt.job, subGroupMemberOrderFn, tasksOrderFn)
 			assert.Equal(t, tt.expectedHasMoreTasks, hasMoreTasks)
 			assert.Equal(t, tt.numExpectTasks, len(tasksToEvict))
+
+			// Count alone would pass a regression that evicts core pods instead of elastic ones.
+			gotNames := make([]string, 0, len(tasksToEvict))
+			for _, task := range tasksToEvict {
+				gotNames = append(gotNames, task.Name)
+			}
+			assert.ElementsMatch(t, tt.expectedTaskNames, gotNames)
 		})
 	}
 }
