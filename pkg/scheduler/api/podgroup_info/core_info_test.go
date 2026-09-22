@@ -122,7 +122,7 @@ func TestGetCoreTasks(t *testing.T) {
 		},
 		{
 			// A partially-filled subgroup must not take a core slot ahead of a complete one. The
-			// allocation ordering ranks the unsatisfied A first, which would protect A's orphan pod
+			// allocation ordering ranks the unsatisfied A first, which would protect A's stale pod
 			// (useless on its own) and leave the complete C evictable.
 			name: "PartialSubGroupDoesNotStealCoreSlot",
 			job: func() *PodGroupInfo {

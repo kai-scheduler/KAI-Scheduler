@@ -23,11 +23,11 @@ import (
 // that never reached its own minMember. That pod belongs to no gang and holds no core slot, so quota
 // accounting counts it as reclaimable - this drives a real session end to end to prove eviction
 // agrees, and that the preemptor actually lands on it.
-func TestSemiPreemptibleOrphanEvictionIntegrationTest(t *testing.T) {
+func TestSemiPreemptibleStaleEvictionIntegrationTest(t *testing.T) {
 	integration_tests_utils.RunTests(t, []integration_tests_utils.TestTopologyMetadata{
 		{
 			TestTopologyBasic: test_utils.TestTopologyBasic{
-				Name: "orphan pod in an unformed subgroup is the preemption victim",
+				Name: "stale pod in an unformed subgroup is the preemption victim",
 				Jobs: []*jobs_fake.TestJobBasic{
 					{
 						Name:                "job0",

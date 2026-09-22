@@ -121,17 +121,18 @@ func DescribePreemptSemiPreemptibleSpecs() bool {
 			})
 		})
 
-		// A subgroup that can never form its own gang must not hold a core slot, must not stop the rest
-		// of the job from running, and must be the first thing given back under contention. minSubGroup
+		// A subgroup that can never form its own gang is never admitted: a partial gang does no work,
+		// so its pods would hold capacity for nothing. It takes no core slot, does not stop the rest of
+		// the job from running, and leaves the capacity it never claimed for other queues. minSubGroup
 		// makes the group whole without it.
-		It("broken gang: cores the subgroups that can form, and reclaims the orphan first", func(ctx context.Context) {
+		It("broken gang: cores the subgroups that can form and never admits the one that cannot", func(ctx context.Context) {
 			testCtx = testcontext.GetConnectivity(ctx, Default)
 			// The parent is capped at the burst size so the elastic tier is the only place the second
 			// job can get capacity from.
 			parentQueue := queue.CreateQueueObject(utils.GenerateRandomK8sName(10), "")
 			parentQueue.Spec.Resources.CPU.Quota = 500
 			parentQueue.Spec.Resources.CPU.Limit = 500
-			// Quota covers the 4 core pods; the limit leaves room for the orphan to burst into.
+			// Quota covers the 4 core pods; the limit leaves headroom the broken subgroup never uses.
 			testQueue := queue.CreateQueueObject(utils.GenerateRandomK8sName(10), parentQueue.Name)
 			testQueue.Spec.Resources.CPU.Quota = 400
 			testQueue.Spec.Resources.CPU.Limit = 500
@@ -158,15 +159,22 @@ func DescribePreemptSemiPreemptibleSpecs() bool {
 
 			pgClient := testCtx.KubeAiSchedClientset.SchedulingV2alpha2().PodGroups(namespace)
 
-			// All 5 pods land: the orphan bursts into the elastic tier like any other surplus pod.
-			wait.ForAtLeastNPodsScheduled(ctx, testCtx.ControllerClient, namespace, h.AllPods, 5)
-
+			var formedPods []*v1.Pod
 			var formedPodNames []string
 			for _, leaf := range []string{"sg-0", "sg-1"} {
 				for _, pod := range h.Pods[leaf] {
+					formedPods = append(formedPods, pod)
 					formedPodNames = append(formedPodNames, pod.Name)
 				}
 			}
+
+			// Only the two subgroups that can complete their gang are admitted. sg-2's lone pod stays
+			// pending for good - the queue has room for it under its limit, so nothing but the gang
+			// requirement is holding it back.
+			wait.ForPodsScheduled(ctx, testCtx.ControllerClient, namespace, formedPods)
+			Consistently(func() []string {
+				return scheduledPodNames(ctx, testCtx, namespace, pg.Name)
+			}).WithTimeout(30 * time.Second).WithPolling(2 * time.Second).Should(ConsistOf(formedPodNames))
 
 			// The core is exactly the two formed subgroups, and only they are charged to quota - the
 			// broken subgroup contributes neither a core slot nor non-preemptible resources.
@@ -179,16 +187,15 @@ func DescribePreemptSemiPreemptibleSpecs() bool {
 					To(Equal(int64(400)))
 			}).WithTimeout(time.Minute).WithPolling(time.Second).Should(Succeed())
 
-			// A job in a sibling queue now needs capacity the parent no longer has. The orphan is the
-			// only pod that delivers nothing - no gang of its own, no core slot - so it goes first and
-			// the four core pods keep running.
+			// A job in a sibling queue takes the capacity the broken subgroup never claimed. Nothing has
+			// to be reclaimed from the semi-preemptible job - its four core pods keep running.
 			otherPod := rd.CreatePodObject(otherQueue, cpuPerPod)
 			otherPod, err := rd.CreatePod(ctx, testCtx.KubeClientset, otherPod)
 			Expect(err).To(Succeed())
 			wait.ForPodScheduled(ctx, testCtx.ControllerClient, otherPod)
 
 			Eventually(func() []string {
-				return runningPodNames(ctx, testCtx, namespace, pg.Name)
+				return scheduledPodNames(ctx, testCtx, namespace, pg.Name)
 			}).WithTimeout(time.Minute).WithPolling(time.Second).Should(ConsistOf(formedPodNames))
 		})
 
@@ -365,6 +372,26 @@ func createPriorityClass(ctx context.Context, testCtx *testcontext.TestContext, 
 
 // runningPodNames lists the names of the pods still present for a PodGroup. Evicted pods are deleted,
 // so this is the post-preemption survivor set.
+// scheduledPodNames returns the names of the pod group's pods that landed on a node. Unlike
+// runningPodNames it ignores pods that exist but were never admitted.
+func scheduledPodNames(
+	ctx context.Context, testCtx *testcontext.TestContext, namespace, podGroupName string,
+) []string {
+	pods, err := testCtx.KubeClientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: fmt.Sprintf("%s=%s", rd.PodGroupLabelName, podGroupName),
+	})
+	Expect(err).To(Succeed())
+
+	names := make([]string, 0, len(pods.Items))
+	for _, pod := range pods.Items {
+		if pod.Spec.NodeName != "" {
+			names = append(names, pod.Name)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
 func runningPodNames(
 	ctx context.Context, testCtx *testcontext.TestContext, namespace, podGroupName string,
 ) []string {

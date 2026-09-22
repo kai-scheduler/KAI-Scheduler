@@ -504,10 +504,10 @@ func TestGetTasksToEvict_HierarchicalTree(t *testing.T) {
 	}
 }
 
-// TestGetTasksToEvict_Orphans covers phase 0: a member that holds no core slot and has not formed its
+// TestGetTasksToEvict_Stale covers phase 0: a member that holds no core slot and has not formed its
 // gang is neither surplus nor core, so no elastic phase can reach it - yet the quota accounting
 // already counts it as reclaimable.
-func TestGetTasksToEvict_Orphans(t *testing.T) {
+func TestGetTasksToEvict_Stale(t *testing.T) {
 	// flatJob lays out leaf subgroups of minMember=2 with the given allocated pod counts.
 	flatJob := func(preemptibility enginev2alpha2.Preemptibility, minSubGroup int32, allocated map[string]int) *PodGroupInfo {
 		root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
@@ -545,26 +545,26 @@ func TestGetTasksToEvict_Orphans(t *testing.T) {
 		{
 			// Only "b" is satisfied, so "a" takes the second core slot by name and "z" is non-core
 			// while still growing. Without the min-requirement gate, z-p0 would be evicted.
-			name:              "RampUp_NothingIsAnOrphanYet",
+			name:              "RampUp_NothingIsStaleYet",
 			job:               flatJob(enginev2alpha2.SemiPreemptible, 2, map[string]int{"a": 0, "b": 2, "z": 1}),
 			expectedTaskNames: []string{},
 		},
 		{
-			// The orphan delivers nothing; b-p2 is real surplus doing work. Orphan goes first.
-			name:              "OrphanOutranksSurplus",
+			// The stale member delivers nothing; b-p2 is real surplus doing work. Stale goes first.
+			name:              "StaleOutranksSurplus",
 			job:               flatJob(enginev2alpha2.SemiPreemptible, 2, map[string]int{"a": 1, "b": 3, "c": 2}),
 			expectedTaskNames: []string{"a-p0"},
 		},
 		{
-			// Preemptible jobs still reach orphans through the phase-3 fallback, unchanged.
+			// Preemptible jobs still reach stale members through the phase-3 fallback, unchanged.
 			name:              "Preemptible_StillFullyEvicts",
 			job:               flatJob(enginev2alpha2.Preemptible, 2, map[string]int{"a": 1, "b": 2, "c": 2}),
 			expectedTaskNames: []string{"a-p0", "b-p0", "b-p1", "c-p0", "c-p1"},
 		},
 		{
-			name: "NestedOrphanUnderCoreSubGroup",
+			name: "NestedStaleUnderCoreSubGroup",
 			job: func() *PodGroupInfo {
-				// Core subgroup "x" is satisfied on x0+x1, so its own x2 is an orphan one level down.
+				// Core subgroup "x" is satisfied on x0+x1, so its own x2 is stale one level down.
 				x := subgroup_info.NewSubGroupSet("x", nil)
 				x.SetMinSubGroup(ptr.To(int32(2)))
 				for name, count := range map[string]int{"x0": 2, "x1": 2, "x2": 1} {
