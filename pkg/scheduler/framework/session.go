@@ -194,8 +194,7 @@ func (ssn *Session) FittingGPUs(node *node_info.NodeInfo, pod *pod_info.PodInfo)
 func filterGpusByEnoughResources(node *node_info.NodeInfo, pod *pod_info.PodInfo) []string {
 	filteredGPUs := []string{}
 	for gpuIdx := range node.UsedSharedGPUsMemory {
-		if node.IsTaskFitOnGpuGroup(&pod.GpuRequirement, gpuIdx) &&
-			node.IsGpuGroupComputeSharingModeCompatible(gpuIdx, pod) {
+		if node.IsTaskFitOnGpuGroup(pod, gpuIdx) {
 			filteredGPUs = append(filteredGPUs, gpuIdx)
 		}
 	}

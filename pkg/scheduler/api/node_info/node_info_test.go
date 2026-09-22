@@ -1167,7 +1167,7 @@ func TestNodeInfo_PortionFractionFitsRuntimeMemoryExactHalf(t *testing.T) {
 	}, vectorMap)
 
 	assert.True(t, node.IsTaskAllocatable(pendingPod))
-	assert.True(t, node.IsTaskFitOnGpuGroup(&pendingPod.GpuRequirement, gpuGroup))
+	assert.True(t, node.IsTaskFitOnGpuGroup(pendingPod, gpuGroup))
 }
 
 func TestNodeInfo_GetSumOfIdleGPUs(t *testing.T) {
@@ -1441,6 +1441,43 @@ func TestIsGpuGroupComputeSharingModeCompatible_ReservationPodIsSourceOfTruth(t 
 	}
 
 	assert.False(t, node.IsGpuGroupComputeSharingModeCompatible(gpuGroup, task))
+}
+
+func TestIsTaskFitOnGpuGroupRequiresCompatibleComputeSharingMode(t *testing.T) {
+	gpuGroup := "sm-sharing-group"
+	node := &NodeInfo{
+		MemoryOfEveryGpuOnNode: 100,
+		PodInfos: map[common_info.PodID]*pod_info.PodInfo{
+			"sm-sharing-workload": {
+				FractionalGpuGroups: []schedulingv1alpha2.FractionalGpuGroup{
+					{
+						ID:                 gpuGroup,
+						ComputeSharingMode: schedulingv1alpha2.GPUComputeSharingModeSMSharing,
+					},
+				},
+			},
+		},
+		GpuSharingNodeInfo: GpuSharingNodeInfo{
+			UsedSharedGPUsMemory: map[string]int64{
+				gpuGroup: 50,
+			},
+			AllocatedSharedGPUsMemory: map[string]int64{
+				gpuGroup: 50,
+			},
+			ReleasingSharedGPUsMemory: map[string]int64{},
+		},
+	}
+	task := &pod_info.PodInfo{
+		Pod:            &v1.Pod{},
+		GpuRequirement: *resource_info.NewGpuResourceRequirementWithGpus(0.5, 0),
+	}
+
+	assert.False(t, node.IsTaskFitOnGpuGroup(task, gpuGroup))
+
+	task.Pod.Annotations = map[string]string{
+		resources.CalcGpuComputeSharingModeAnnotationForContainer("main"): string(schedulingv1alpha2.GPUComputeSharingModeSMSharing),
+	}
+	assert.True(t, node.IsTaskFitOnGpuGroup(task, gpuGroup))
 }
 
 func createPod(namespace, name string, options podCreationOptions) *pod_info.PodInfo {

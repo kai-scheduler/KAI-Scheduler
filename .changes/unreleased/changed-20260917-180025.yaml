@@ -1,0 +1,3 @@
+kind: Changed
+body: |-
+  Images use scratch as base instead of distroless; resource-reservation stays on distroless for NVML
