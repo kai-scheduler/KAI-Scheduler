@@ -1,0 +1,40 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gpu-memory-allocator-request-equal-limit-3
+  labels:
+    kai.scheduler/queue: default-queue
+  annotations:
+    nvidia.com/container.allocator.gpu-memory.request: 5120Mi
+    #nvidia.com/container.allocator.gpu-compute.mode: sm-sharing
+    #nvidia.com/container.allocator.gpu-memory.limit: 10680Mi
+spec:
+  restartPolicy: Never
+  schedulerName: kai-scheduler
+  automountServiceAccountToken: false
+  containers:
+    - name: allocator
+      image: nvidia/cuda:13.0.2-base-ubi8
+      imagePullPolicy: IfNotPresent
+      command:
+        - /bin/bash
+        - -ceu
+        - --
+      args:
+        - |
+          dnf -q install -y python3 >/dev/null
+          dnf -q clean all >/dev/null
+          exec python3 /scripts/allocate_gpu_memory.py "${GPU_MEMORY}"
+          sleep infinity
+      env:
+        - name: GPU_MEMORY
+          value: 5120Mi
+      volumeMounts:
+        - name: allocator-script
+          mountPath: /scripts
+          readOnly: true
+  volumes:
+    - name: allocator-script
+      configMap:
+        name: gpu-memory-allocator
+        defaultMode: 0555
