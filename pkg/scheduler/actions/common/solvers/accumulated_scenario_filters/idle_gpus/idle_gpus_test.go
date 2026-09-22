@@ -184,6 +184,15 @@ func Test_greedyMatchRequirements(t *testing.T) {
 			want: true,
 		},
 		{
+			name: "dedicated holders satisfy all requirements",
+			args: args{
+				requirements: []float64{6, 5, 4},
+				holders:      []string{"n1", "n2", "n3"},
+				capacity:     map[string]float64{"n1": 8, "n2": 8, "n3": 8},
+			},
+			want: true,
+		},
+		{
 			name: "early termination: best holder below requirement",
 			args: args{
 				requirements: []float64{2.0},

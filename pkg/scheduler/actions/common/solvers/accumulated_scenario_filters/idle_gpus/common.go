@@ -41,6 +41,10 @@ func greedyMatchRequirements[K comparable](
 	if len(requirements) == 0 || requirements[0] == 0 {
 		return true
 	}
+	if len(holders) >= len(requirements) &&
+		capacity(holders[len(requirements)-1]) >= requirements[0] {
+		return true
+	}
 
 	totals := make([]float64, len(holders))
 	for i, holder := range holders {
