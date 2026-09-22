@@ -9,6 +9,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 )
 
 func nodeIdleOrReleasingGpuCapacity(ni *node_info.NodeInfo) float64 {
@@ -94,13 +95,13 @@ func newMaxSegmentTree(values []float64) maxSegmentTree {
 }
 
 func (tree maxSegmentTree) firstAtLeast(required float64) (int, bool) {
-	if tree.values[1] < required {
+	if !resource_info.LessOrEqualWithTolerance(required, tree.values[1]) {
 		return 0, false
 	}
 	index := 1
 	for index < tree.base {
 		left := 2 * index
-		if tree.values[left] >= required {
+		if resource_info.LessOrEqualWithTolerance(required, tree.values[left]) {
 			index = left
 		} else {
 			index = left + 1
