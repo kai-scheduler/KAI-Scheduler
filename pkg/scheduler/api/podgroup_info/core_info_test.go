@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"k8s.io/utils/ptr"
 
+	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
@@ -274,4 +275,56 @@ func TestGetCoreTasks(t *testing.T) {
 			assert.Equal(t, tt.expectedMinSat, IsMinRequirementSatisfied(tt.job))
 		})
 	}
+}
+
+// Core membership is pinned to the set last published on the PodGroup status. Without the pin,
+// coreMemberLess ranks satisfied members first and breaks ties by name, so a subgroup that fills up
+// only after the gang formed can displace the incumbent. That silently moves the job's
+// not-preemptible charge to a different minimum, even though admission approved those pods as
+// elastic burst and charged them nothing.
+func TestGetCoreTasks_PinnedMembership(t *testing.T) {
+	// Root minSubGroup=1 over "a-big" (minMember 3) and "b-small" (minMember 1). "a-big" sorts first
+	// by name, so it wins the tie the moment it becomes satisfied.
+	buildJob := func(aAllocated, bAllocated int, publishedCore []string) *PodGroupInfo {
+		root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+		root.SetMinSubGroup(ptr.To(int32(1)))
+		for name, spec := range map[string]struct{ min, allocated int }{
+			"a-big":   {3, aAllocated},
+			"b-small": {1, bAllocated},
+		} {
+			ps := subgroup_info.NewPodSet(name, int32(spec.min), nil)
+			for i := 0; i < spec.allocated; i++ {
+				ps.AssignTask(simpleTask(fmt.Sprintf("%s-p%d", name, i), name, pod_status.Running))
+			}
+			root.AddPodSet(ps)
+		}
+		job := &PodGroupInfo{RootSubGroupSet: root, PodSets: root.GetDescendantPodSets()}
+		job.PodGroup = &enginev2alpha2.PodGroup{}
+		if publishedCore != nil {
+			job.PodGroup.Status.SchedulingState = &enginev2alpha2.PodGroupSchedulingState{
+				CorePods: publishedCore,
+			}
+		}
+		return job
+	}
+
+	t.Run("first session picks the only satisfied member", func(t *testing.T) {
+		job := buildJob(0, 1, nil)
+		assert.Equal(t, []string{"b-small-p0"}, GetCorePodNames(job, tasksOrderFn))
+	})
+
+	t.Run("elastic burst does not steal the core slot", func(t *testing.T) {
+		// "a-big" burst to 3 pods over-quota; it is now satisfied and sorts first by name, but
+		// "b-small" holds the published core slot.
+		job := buildJob(3, 1, []string{"b-small-p0"})
+		assert.Equal(t, []string{"b-small-p0"}, GetCorePodNames(job, tasksOrderFn),
+			"core moved onto the elastic burst, recharging the queue for 3 pods it never approved")
+	})
+
+	t.Run("slot is released when the pinned member has nothing allocated", func(t *testing.T) {
+		// b-small lost its pod; keeping the slot pinned to an empty member would leave every
+		// remaining pod elastic and let eviction unravel the gang.
+		job := buildJob(3, 0, []string{"b-small-p0"})
+		assert.Equal(t, []string{"a-big-p0", "a-big-p1", "a-big-p2"}, GetCorePodNames(job, tasksOrderFn))
+	})
 }

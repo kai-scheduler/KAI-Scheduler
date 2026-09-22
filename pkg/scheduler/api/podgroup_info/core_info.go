@@ -22,31 +22,85 @@ func GetCoreTasks(
 	job *PodGroupInfo, taskOrderFn common_info.LessFn,
 ) map[common_info.PodID]*pod_info.PodInfo {
 	core := map[common_info.PodID]*pod_info.PodInfo{}
-	collectCoreFromSubGroupSet(rootSubGroupSet(job), taskOrderFn, core)
+	collectCoreFromSubGroupSet(rootSubGroupSet(job), taskOrderFn, pinnedCoreMembers(job), core)
 	return core
 }
 
-// coreMembers returns the members occupying sgs's core slots: satisfied members first, then by name.
+// pinnedCoreMembers returns the names of the members that already hold a core slot, derived from the
+// core pod set the scheduler last published to the PodGroup status.
+//
+// Core membership must not move once established. coreMemberLess ranks satisfied members first, so
+// without a pin a subgroup that only fills up later can displace the incumbent: the job's
+// not-preemptible charge then jumps to the new member's minimum, even though admission approved that
+// allocation as elastic burst and charged it nothing (see coreRequiredQuota). Returns nil before the
+// first status write, where recomputation is the only available answer.
+func pinnedCoreMembers(job *PodGroupInfo) map[string]bool {
+	if job.PodGroup == nil || job.PodGroup.Status.SchedulingState == nil {
+		return nil
+	}
+	corePodNames := map[string]bool{}
+	for _, name := range job.PodGroup.Status.SchedulingState.CorePods {
+		corePodNames[name] = true
+	}
+	if len(corePodNames) == 0 {
+		return nil
+	}
+	pinned := map[string]bool{}
+	markPinnedMembers(rootSubGroupSet(job), corePodNames, pinned)
+	return pinned
+}
+
+// markPinnedMembers records every member holding at least one published core pod, and reports
+// whether sgs itself holds one so ancestors are pinned along with their descendants.
+func markPinnedMembers(sgs *subgroup_info.SubGroupSet, corePodNames, pinned map[string]bool) bool {
+	holdsCorePod := false
+	for _, member := range sgs.GetMembers() {
+		memberHolds := false
+		switch m := member.(type) {
+		case *subgroup_info.SubGroupSet:
+			memberHolds = markPinnedMembers(m, corePodNames, pinned)
+		case *subgroup_info.PodSet:
+			for _, task := range m.GetPodInfos() {
+				if corePodNames[task.Name] {
+					memberHolds = true
+					break
+				}
+			}
+		}
+		if memberHolds {
+			pinned[member.GetName()] = true
+			holdsCorePod = true
+		}
+	}
+	return holdsCorePod
+}
+
+// coreMembers returns the members occupying sgs's core slots: members already pinned by the last
+// published core set first, then satisfied members, then by name.
 // Single source of truth for core membership — core collection recurses into these, and the
 // semi-preemptible eviction path refuses to evict them.
 //
 // This is deliberately NOT the session's SubGroupOrderFn. That function answers "which subgroup
 // should get the next pod?" and so ranks unsatisfied members first, which is exactly inverted for
 // protection: it would hand a core slot to a half-filled or even empty subgroup while leaving a
-// complete one elastic. Name, not allocation, breaks ties so the core set is sticky across sessions;
-// if it moved as pods came and went, eviction would chase it and unravel the gang one subgroup at a
-// time. See the design doc's "Core Selection Ordering".
-func coreMembers(sgs *subgroup_info.SubGroupSet) []subgroup_info.SubGroupMember {
-	core, _ := partitionCoreMembers(sgs)
+// complete one elastic. The pin, not the name, is what makes the set sticky across sessions: name
+// ordering alone still lets a member that becomes satisfied later jump ahead of the incumbent. If
+// membership moved as pods came and went, eviction would chase it and unravel the gang one subgroup
+// at a time, and quota accounting would recharge a different minimum each session. See the design
+// doc's "Core Selection Ordering".
+func coreMembers(sgs *subgroup_info.SubGroupSet, pinned map[string]bool) []subgroup_info.SubGroupMember {
+	core, _ := partitionCoreMembers(sgs, pinned)
 	return core
 }
 
 // partitionCoreMembers splits sgs's members into those holding core slots and the rest, both sorted
 // by coreMemberLess.
-func partitionCoreMembers(sgs *subgroup_info.SubGroupSet) (core, nonCore []subgroup_info.SubGroupMember) {
+func partitionCoreMembers(
+	sgs *subgroup_info.SubGroupSet, pinned map[string]bool,
+) (core, nonCore []subgroup_info.SubGroupMember) {
 	members := sgs.GetMembers()
 	sort.Slice(members, func(i, j int) bool {
-		return coreMemberLess(members[i], members[j])
+		return coreMemberLess(members[i], members[j], pinned)
 	})
 
 	k := sgs.GetMinMembersToSatisfy()
@@ -56,12 +110,23 @@ func partitionCoreMembers(sgs *subgroup_info.SubGroupSet) (core, nonCore []subgr
 	return members[:k], members[k:]
 }
 
-func coreMemberLess(l, r subgroup_info.SubGroupMember) bool {
+func coreMemberLess(l, r subgroup_info.SubGroupMember, pinned map[string]bool) bool {
+	lPinned, rPinned := holdsPinnedCoreSlot(l, pinned), holdsPinnedCoreSlot(r, pinned)
+	if lPinned != rPinned {
+		return lPinned
+	}
 	lSatisfied, rSatisfied := isMemberSatisfied(l), isMemberSatisfied(r)
 	if lSatisfied != rSatisfied {
 		return lSatisfied
 	}
 	return l.GetName() < r.GetName()
+}
+
+// holdsPinnedCoreSlot reports whether member keeps the core slot it held last session. The slot is
+// released once the member has nothing allocated, so a core member that loses every pod stops
+// shielding the rest of the job's surplus from eviction.
+func holdsPinnedCoreSlot(member subgroup_info.SubGroupMember, pinned map[string]bool) bool {
+	return pinned[member.GetName()] && member.GetNumActiveAllocatedMembers() > 0
 }
 
 func isMemberSatisfied(member subgroup_info.SubGroupMember) bool {
@@ -96,21 +161,21 @@ func GetCorePodNames(job *PodGroupInfo, taskOrderFn common_info.LessFn) []string
 // level: a core subgroup protects only its own core children, so surplus nested inside a protected
 // subtree stays elastic.
 func collectCoreFromSubGroupSet(
-	sgs *subgroup_info.SubGroupSet, taskOrderFn common_info.LessFn,
+	sgs *subgroup_info.SubGroupSet, taskOrderFn common_info.LessFn, pinned map[string]bool,
 	core map[common_info.PodID]*pod_info.PodInfo,
 ) {
-	for _, member := range coreMembers(sgs) {
-		collectCoreFromMember(member, taskOrderFn, core)
+	for _, member := range coreMembers(sgs, pinned) {
+		collectCoreFromMember(member, taskOrderFn, pinned, core)
 	}
 }
 
 func collectCoreFromMember(
-	member subgroup_info.SubGroupMember, taskOrderFn common_info.LessFn,
+	member subgroup_info.SubGroupMember, taskOrderFn common_info.LessFn, pinned map[string]bool,
 	core map[common_info.PodID]*pod_info.PodInfo,
 ) {
 	switch m := member.(type) {
 	case *subgroup_info.SubGroupSet:
-		collectCoreFromSubGroupSet(m, taskOrderFn, core)
+		collectCoreFromSubGroupSet(m, taskOrderFn, pinned, core)
 	case *subgroup_info.PodSet:
 		collectCoreFromPodSet(m, taskOrderFn, core)
 	}
