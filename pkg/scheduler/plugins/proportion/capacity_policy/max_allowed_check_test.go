@@ -98,6 +98,19 @@ var _ = Describe("Max Allowed Policy Check", func() {
 					isOverMaxAllowed: false,
 					resourceName:     "",
 				},
+				"fractional GPU allocation exactly matches max allowed": {
+					maxAllowed: rs.ResourceQuantities{
+						rs.GpuResource: 0.3,
+					},
+					allocated: rs.ResourceQuantities{
+						rs.GpuResource: 0.1,
+					},
+					requestedQuota: rs.ResourceQuantities{
+						rs.GpuResource: 0.2,
+					},
+					isOverMaxAllowed: false,
+					resourceName:     "",
+				},
 				"over max allowed in all recources": {
 					maxAllowed: rs.ResourceQuantities{
 						rs.CpuResource:    1000,
