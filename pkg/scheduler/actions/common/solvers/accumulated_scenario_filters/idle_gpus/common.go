@@ -7,6 +7,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 )
 
 func nodeIdleOrReleasingGpuCapacity(ni *node_info.NodeInfo) float64 {
@@ -46,11 +47,11 @@ func greedyMatchRequirements[K comparable](
 			totalCapacity := capacity(holder)
 			// Early termination: holders are sorted descending by capacity.
 			// If the best total capacity is below required, no holder can satisfy it.
-			if totalCapacity < required {
+			if !resource_info.LessOrEqualWithTolerance(required, totalCapacity) {
 				break
 			}
 			available := totalCapacity - virtuallyAllocated[holder]
-			if available >= required {
+			if resource_info.LessOrEqualWithTolerance(required, available) {
 				virtuallyAllocated[holder] += required
 				matched = true
 				break

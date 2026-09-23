@@ -87,10 +87,10 @@ func compareQuantities(quantity, other float64) int {
 		return -1
 	}
 
-	if quantity > other {
+	if !resource_info.LessOrEqualWithTolerance(quantity, other) {
 		return 1
 	}
-	if quantity < other {
+	if !resource_info.LessOrEqualWithTolerance(other, quantity) {
 		return -1
 	}
 	return 0

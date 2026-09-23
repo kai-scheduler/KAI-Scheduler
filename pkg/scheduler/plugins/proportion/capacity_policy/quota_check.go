@@ -70,7 +70,8 @@ func isAllocatedNonPreemptibleOverQuota(
 		if !found || requestedQty == 0 {
 			continue
 		}
-		if resourceShare.Deserved < resourceShare.AllocatedNotPreemptible+requestedQty {
+		if !resource_info.LessOrEqualWithTolerance(resourceShare.AllocatedNotPreemptible+requestedQty,
+			resourceShare.Deserved) {
 			return true, resource
 		}
 	}
