@@ -88,11 +88,11 @@ type PodGroupInfo struct {
 	schedulingConstraintsSignature common_info.SchedulingConstraintsSignature
 
 	// inner cache
-	allPodsMap                        *pod_info.PodsMap
-	tasksToAllocate                   []*pod_info.PodInfo
-	tasksToAllocateInitResourceVector resource_info.ResourceVector
-	PodStatusIndex                    map[pod_status.PodStatus]pod_info.PodsMap
-	activeAllocatedCount              *int
+	allPodsMap                              *pod_info.PodsMap
+	tasksToAllocateByMode                   map[taskAllocationCacheMode][]*pod_info.PodInfo
+	tasksToAllocateInitResourceVectorByMode map[taskAllocationCacheMode]resource_info.ResourceVector
+	PodStatusIndex                          map[pod_status.PodStatus]pod_info.PodsMap
+	activeAllocatedCount                    *int
 }
 
 func NewPodGroupInfo(uid common_info.PodGroupID, tasks ...*pod_info.PodInfo) *PodGroupInfo {
@@ -363,8 +363,8 @@ func (pgi *PodGroupInfo) deleteTaskIndex(ti *pod_info.PodInfo) {
 
 func (pgi *PodGroupInfo) invalidateTasksCache() {
 	pgi.allPodsMap = nil
-	pgi.tasksToAllocate = nil
-	pgi.tasksToAllocateInitResourceVector = nil
+	pgi.tasksToAllocateByMode = nil
+	pgi.tasksToAllocateInitResourceVectorByMode = nil
 }
 
 func (pgi *PodGroupInfo) GetActiveAllocatedTasksCount() int {
@@ -501,21 +501,14 @@ func (pgi *PodGroupInfo) IsStale() bool {
 	if totalActivePods == 0 {
 		return false
 	}
-	for _, podSet := range pgi.PodSets {
-		if !podSet.IsGangSatisfied() {
-			return true
-		}
-	}
-	return false
+	return !pgi.IsGangSatisfied()
 }
 
 func (pgi *PodGroupInfo) IsGangSatisfied() bool {
-	for _, podSet := range pgi.PodSets {
-		if !podSet.IsGangSatisfied() {
-			return false
-		}
+	if pgi.RootSubGroupSet == nil {
+		return false
 	}
-	return true
+	return pgi.RootSubGroupSet.IsGangSatisfied()
 }
 
 func (pgi *PodGroupInfo) ShouldPipelineJob() bool {

@@ -18,13 +18,14 @@ import (
 )
 
 func AllocateJob(ssn *framework.Session, stmt *framework.Statement, nodes []*node_info.NodeInfo,
-	job *podgroup_info.PodGroupInfo, isPipelineOnly bool) bool {
+	job *podgroup_info.PodGroupInfo, allocationMode podgroup_info.TaskAllocationMode) bool {
 	ssn.PreJobAllocation(job)
 
-	tasksToAllocate := podgroup_info.GetTasksToAllocate(job, ssn.SubGroupOrderFn, ssn.TaskOrderFn, !isPipelineOnly)
+	tasksToAllocate := podgroup_info.GetTasksToAllocate(job, ssn.SubGroupOrderFn, ssn.TaskOrderFn, allocationMode)
 	if len(tasksToAllocate) == 0 {
 		return false
 	}
+	isPipelineOnly := allocationMode != podgroup_info.RealTaskAllocation
 
 	result := ssn.IsJobOverQueueCapacityFn(job, tasksToAllocate)
 	if !result.IsSchedulable {

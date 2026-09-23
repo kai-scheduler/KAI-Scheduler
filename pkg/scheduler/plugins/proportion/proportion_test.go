@@ -52,7 +52,7 @@ func TestBuildReclaimerInfoDoesNotAllocate(t *testing.T) {
 	var info rec.ReclaimerInfo
 
 	allocations := testing.AllocsPerRun(100, func() {
-		info = plugin.buildReclaimerInfo(reclaimer, nil)
+		info = plugin.buildReclaimerInfo(reclaimer, nil, podgroup_info.PartialTaskAllocation)
 	})
 
 	if info.Name != reclaimer.Name || info.Namespace != reclaimer.Namespace || info.Queue != reclaimer.Queue {

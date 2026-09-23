@@ -5,6 +5,7 @@
 language: "en-US"
 
 reviews:
+  review_status: false
   auto_review:
     enabled: false
   finishing_touches:
