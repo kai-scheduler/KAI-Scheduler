@@ -22,6 +22,12 @@ If resources are requested by more prioritized workload, KAI Scheduler will be a
 
 ## Semi-Preemptible Workloads
 
+> **Alpha.** Semi-preemptible is alpha functionality: the exact behavior may change in future
+> releases, and it is not recommended for production workloads yet. Known limitation — the core set
+> is recomputed every scheduling cycle, so a subgroup that reaches its own minimum only after the
+> gang formed can take a core slot from an incumbent, changing how much of the job is charged to the
+> non-preemptible quota.
+
 A **semi-preemptible** workload keeps its **minimal required shape** non-preemptible and in-quota, while everything above that minimum runs **elastically** — allocated over-quota and reclaimed/preempted first. This lets inference and elastic-training workloads guarantee a minimum while bursting opportunistically when spare capacity exists.
 
 The core (non-preemptible) set is the tree's minimal satisfying set, computed recursively:

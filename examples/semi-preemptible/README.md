@@ -5,6 +5,8 @@ everything above that minimum runs elastically (allocated over-quota, reclaimed/
 the [Elastic Workloads guide](../../docs/elastic/README.md#semi-preemptible-workloads) for the full
 model and semantics.
 
+> **Alpha.** The exact behavior of this mode may change in future releases.
+
 ## Examples
 
 - [`podgroup-elastic.yaml`](podgroup-elastic.yaml) — a semi-preemptible PodGroup with a single elastic
