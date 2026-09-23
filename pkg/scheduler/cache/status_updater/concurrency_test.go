@@ -49,7 +49,7 @@ var _ = Describe("Status Updater Concurrency - large scale: increase queue size"
 		kubeAiSchedClient = kubeaischedfake.NewSimpleClientset()
 		recorder := record.NewFakeRecorder(100)
 		statusUpdater = New(kubeClient, kubeAiSchedClient, recorder, 4, false,
-			nodePoolLabelKey)
+			nodePoolLabelKey, newTestEvictionMetrics())
 	})
 
 	It("should increase queue size", func() {

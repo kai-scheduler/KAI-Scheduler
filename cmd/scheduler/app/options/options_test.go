@@ -39,6 +39,7 @@ func TestAddFlags(t *testing.T) {
 
 	args := []string{
 		"--schedule-period=5m",
+		"--enable-workload-eviction-metrics=true",
 		"--feature-gates=DynamicResourceAllocation=true,VolumeCapacityPriority=false",
 	}
 	fs.Parse(args)
@@ -60,6 +61,7 @@ func TestAddFlags(t *testing.T) {
 		Burst:                             300,
 		DetailedFitErrors:                 false,
 		UpdatePodEvictionCondition:        false,
+		EnableWorkloadEvictionMetrics:     true,
 		UseSchedulingSignatures:           true,
 		AllowConsolidatingReclaim:         true,
 		PyroscopeBlockProfilerRate:        DefaultPyroscopeBlockProfilerRate,

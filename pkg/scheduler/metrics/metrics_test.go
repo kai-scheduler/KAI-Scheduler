@@ -4,6 +4,7 @@
 package metrics
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -11,6 +12,14 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/require"
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/utils/ptr"
+
+	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
+	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 )
 
 // TestQueueLabels exercises the three queue identification labels emitted on
@@ -60,6 +69,253 @@ func TestQueueLabels(t *testing.T) {
 			ResetQueueUsage()
 		})
 	}
+}
+
+func TestPodGroupEvictionMetricLifecycle(t *testing.T) {
+	tag := fmt.Sprintf("%s-%d", t.Name(), time.Now().UnixNano())
+	podGroup := &enginev2alpha2.PodGroup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pg-" + tag,
+			Namespace: "ns-" + tag,
+			Labels:    map[string]string{"node-pool": "gpu"},
+			Annotations: map[string]string{
+				commonconstants.TopOwnerMetadataKey: "group: jobset.x-k8s.io\nkind: JobSet\nname: train-x\nuid: owner-uid\n",
+			},
+		},
+		Spec: enginev2alpha2.PodGroupSpec{
+			SubGroups: []enginev2alpha2.SubGroup{
+				{Name: "pipeline", MinSubGroup: ptr.To(int32(2))},
+				{Name: "prefill", Parent: ptr.To("pipeline"), MinMember: ptr.To(int32(1))},
+				{Name: "decode", Parent: ptr.To("pipeline"), MinMember: ptr.To(int32(1))},
+			},
+		},
+		Status: enginev2alpha2.PodGroupStatus{
+			ResourcesStatus: enginev2alpha2.PodGroupResourcesStatus{
+				Allocated: v1.ResourceList{
+					commonconstants.NvidiaGpuResource: resource.MustParse("1"),
+				},
+			},
+		},
+	}
+	evictionActionNames := []string{"preempt"}
+	recorder := NewPodGroupEvictionRecorder(
+		"",
+		true,
+		labels.Everything(),
+		"node-pool",
+		evictionActionNames,
+	)
+
+	recorder.OnAdd(podGroup)
+	require.Equal(t, 2, countMetricsForPodGroup(t, "pod_group_evicted_pods_total", podGroup))
+	require.Equal(t, 1, countMetricsForPodGroup(t, "pod_group_eviction_events_total", podGroup))
+	require.Zero(t, metricValueForLabels(t, "pod_group_evicted_pods_total", map[string]string{
+		"podgroup":  podGroup.Name,
+		"namespace": podGroup.Namespace,
+		"action":    "preempt",
+		"subgroup":  "prefill",
+	}))
+
+	recorder.IncEvictedPods(podGroup, "gpu", "preempt", "prefill")
+	recorder.OnAdd(podGroup)
+	require.Equal(t, float64(1), metricValueForLabels(t, "pod_group_evicted_pods_total", map[string]string{
+		"podgroup":  podGroup.Name,
+		"namespace": podGroup.Namespace,
+		"action":    "preempt",
+		"subgroup":  "prefill",
+	}))
+
+	oldPodGroup := podGroup.DeepCopy()
+	podGroup.Spec.SubGroups = append(podGroup.Spec.SubGroups,
+		enginev2alpha2.SubGroup{Name: "postprocessor", Parent: ptr.To("pipeline"), MinMember: ptr.To(int32(1))})
+	recorder.OnUpdate(oldPodGroup, podGroup)
+	require.Equal(t, 3, countMetricsForPodGroup(t, "pod_group_evicted_pods_total", podGroup))
+	require.Equal(t, float64(1), metricValueForLabels(t, "pod_group_evicted_pods_total", map[string]string{
+		"podgroup":  podGroup.Name,
+		"namespace": podGroup.Namespace,
+		"action":    "preempt",
+		"subgroup":  "prefill",
+	}))
+
+	recorder.OnDelete(podGroup)
+	require.Zero(t, countMetricsForPodGroup(t, "pod_group_evicted_pods_total", podGroup))
+	require.Zero(t, countMetricsForPodGroup(t, "pod_group_eviction_events_total", podGroup))
+}
+
+func TestLegacyPodGroupEvictionMetrics(t *testing.T) {
+	registry := prometheus.NewRegistry()
+	recorder := newPodGroupEvictionRecorder(
+		"",
+		false,
+		labels.Everything(),
+		"node-pool",
+		nil,
+		registry,
+	)
+	require.False(t, recorder.RecordsPodGroupLifecycle())
+	podGroup := &enginev2alpha2.PodGroup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "legacy-pg",
+			Namespace: "legacy-ns",
+			UID:       "legacy-uid",
+		},
+	}
+
+	recorder.OnAdd(podGroup)
+	require.Empty(t, gatherMetricFamilies(t, registry))
+
+	recorder.IncEvictedPods(podGroup, "gpu", "preempt", "ignored")
+	families := gatherMetricFamilies(t, registry)
+	require.Contains(t, families, "pod_group_evicted_pods_total")
+	require.NotContains(t, families, "pod_group_eviction_events_total")
+	require.Equal(t, map[string]string{
+		"action":    "preempt",
+		"namespace": "legacy-ns",
+		"nodepool":  "gpu",
+		"podgroup":  "legacy-pg",
+		"uid":       "legacy-uid",
+	}, labelsForMetric(families["pod_group_evicted_pods_total"].GetMetric()[0]))
+}
+
+func TestWorkloadPodGroupEvictionMetricsSkipOtherPartitions(t *testing.T) {
+	registry := prometheus.NewRegistry()
+	recorder := newPodGroupEvictionRecorder(
+		"",
+		true,
+		labels.SelectorFromSet(map[string]string{"node-pool": "gpu-a"}),
+		"node-pool",
+		[]string{"preempt"},
+		registry,
+	)
+	require.True(t, recorder.RecordsPodGroupLifecycle())
+	foreignPodGroup := &enginev2alpha2.PodGroup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "foreign",
+			Namespace: "ns",
+			Labels:    map[string]string{"node-pool": "gpu-b"},
+		},
+	}
+
+	recorder.OnAdd(foreignPodGroup)
+	recorder.OnUpdate(foreignPodGroup.DeepCopy(), foreignPodGroup)
+	recorder.OnDelete(foreignPodGroup)
+	require.Empty(t, gatherMetricFamilies(t, registry))
+
+	localPodGroup := foreignPodGroup.DeepCopy()
+	localPodGroup.Name = "local"
+	localPodGroup.Labels["node-pool"] = "gpu-a"
+	localPodGroup.Status.ResourcesStatus.Allocated = v1.ResourceList{
+		commonconstants.NvidiaGpuResource: resource.MustParse("1"),
+	}
+	recorder.OnAdd(localPodGroup)
+
+	families := gatherMetricFamilies(t, registry)
+	require.Len(t, families["pod_group_evicted_pods_total"].GetMetric(), 1)
+	require.Len(t, families["pod_group_eviction_events_total"].GetMetric(), 1)
+}
+
+func TestWorkloadPodGroupEvictionMetricsSkipPendingPodGroups(t *testing.T) {
+	registry := prometheus.NewRegistry()
+	recorder := newPodGroupEvictionRecorder(
+		"",
+		true,
+		labels.Everything(),
+		"node-pool",
+		[]string{"preempt"},
+		registry,
+	)
+	pending := &enginev2alpha2.PodGroup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pending",
+			Namespace: "ns",
+			Labels:    map[string]string{"node-pool": "gpu"},
+		},
+	}
+
+	recorder.OnAdd(pending)
+	recorder.OnUpdate(pending.DeepCopy(), pending)
+	require.Empty(t, gatherMetricFamilies(t, registry))
+
+	allocated := pending.DeepCopy()
+	allocated.Status.ResourcesStatus.Allocated = v1.ResourceList{
+		commonconstants.NvidiaGpuResource: resource.MustParse("1"),
+	}
+	recorder.OnUpdate(pending, allocated)
+
+	families := gatherMetricFamilies(t, registry)
+	require.Len(t, families["pod_group_evicted_pods_total"].GetMetric(), 1)
+	require.Len(t, families["pod_group_eviction_events_total"].GetMetric(), 1)
+}
+
+func gatherMetricFamilies(t *testing.T, gatherer prometheus.Gatherer) map[string]*dto.MetricFamily {
+	t.Helper()
+	families, err := gatherer.Gather()
+	require.NoError(t, err)
+	result := make(map[string]*dto.MetricFamily, len(families))
+	for _, family := range families {
+		result[family.GetName()] = family
+	}
+	return result
+}
+
+func countMetricsForPodGroup(t *testing.T, familyName string, podGroup *enginev2alpha2.PodGroup) int {
+	t.Helper()
+	families, err := prometheus.DefaultGatherer.Gather()
+	require.NoError(t, err)
+	count := 0
+	for _, family := range families {
+		if family.GetName() != familyName {
+			continue
+		}
+		for _, metric := range family.GetMetric() {
+			labels := labelsForMetric(metric)
+			if labels["podgroup"] == podGroup.Name && labels["namespace"] == podGroup.Namespace {
+				count++
+			}
+		}
+	}
+	return count
+}
+
+func metricValueForLabels(t *testing.T, familyName string, expected map[string]string) float64 {
+	t.Helper()
+	family := metricFamily(t, familyName)
+	for _, metric := range family.GetMetric() {
+		labels := labelsForMetric(metric)
+		matches := true
+		for name, value := range expected {
+			if labels[name] != value {
+				matches = false
+				break
+			}
+		}
+		if matches {
+			return metric.GetCounter().GetValue()
+		}
+	}
+	t.Fatalf("metric %s with labels %v not found", familyName, expected)
+	return 0
+}
+
+func metricFamily(t *testing.T, name string) *dto.MetricFamily {
+	t.Helper()
+	families, err := prometheus.DefaultGatherer.Gather()
+	require.NoError(t, err)
+	for _, family := range families {
+		if family.GetName() == name {
+			return family
+		}
+	}
+	t.Fatalf("metric family %s not found", name)
+	return nil
+}
+
+func labelsForMetric(metric *dto.Metric) map[string]string {
+	labels := map[string]string{}
+	for _, pair := range metric.GetLabel() {
+		labels[pair.GetName()] = pair.GetValue()
+	}
+	return labels
 }
 
 func TestScenarioSearchMetricWrappersUseExpectedLabels(t *testing.T) {

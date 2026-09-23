@@ -46,6 +46,8 @@ type SchedulerParams struct {
 	StuckInReleasingThreshold         time.Duration               `json:"stuckInReleasingThreshold,omitempty"`
 	DetailedFitErrors                 bool                        `json:"detailedFitErrors,omitempty"`
 	UpdatePodEvictionCondition        bool                        `json:"updatePodEvictionCondition,omitempty"`
+	EnableWorkloadEvictionMetrics     bool                        `json:"enableWorkloadEvictionMetrics,omitempty"`
+	MetricsNamespace                  string                      `json:"metricsNamespace,omitempty"`
 	QueueLabelKey                     string                      `json:"queueLabelKey,omitempty"`
 }
 

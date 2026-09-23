@@ -41,6 +41,7 @@ type Cache interface {
 	WaitForCacheSync(stopCh <-chan struct{})
 	Bind(podInfo *pod_info.PodInfo, hostname string, bindRequestAnnotations map[string]string, predictedNUMAZones []schedulingv1alpha2.NUMAZonePlacement) error
 	Evict(ssnPod *v1.Pod, job *podgroup_info.PodGroupInfo, evictionMetadata eviction_info.EvictionMetadata, message string) error
+	RecordPodGroupEvictionEvent(job *podgroup_info.PodGroupInfo, action string)
 	RecordJobStatusEvent(
 		job *podgroup_info.PodGroupInfo,
 		resolveDetailedFitErrors func(

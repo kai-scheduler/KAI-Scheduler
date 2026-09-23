@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
@@ -34,6 +35,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info/subgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/jobs_fake"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/test_utils/tasks_fake"
 )
@@ -730,7 +732,9 @@ func TestDefaultStatusUpdater_RecordJobStatusEvent(t *testing.T) {
 			kubeClient := fake.NewSimpleClientset()
 			kubeAiSchedClient := kubeaischedfake.NewSimpleClientset(podGroups...)
 			recorder := record.NewFakeRecorder(100)
-			statusUpdater := New(kubeClient, kubeAiSchedClient, recorder, 1, false, nodePoolLabelKey)
+			statusUpdater := New(
+				kubeClient, kubeAiSchedClient, recorder, 1, false, nodePoolLabelKey, newTestEvictionMetrics(),
+			)
 			wg := sync.WaitGroup{}
 			if test.numPodGroupStatusUpdateCalled > 0 {
 				wg.Add(test.numPodGroupStatusUpdateCalled)
@@ -835,7 +839,9 @@ func TestDefaultStatusUpdater_RecordStaleJobEvent(t *testing.T) {
 			kubeClient := fake.NewSimpleClientset()
 			kubeAiSchedClient := kubeaischedfake.NewSimpleClientset()
 			recorder := record.NewFakeRecorder(100)
-			statusUpdater := New(kubeClient, kubeAiSchedClient, recorder, 1, false, nodePoolLabelKey)
+			statusUpdater := New(
+				kubeClient, kubeAiSchedClient, recorder, 1, false, nodePoolLabelKey, newTestEvictionMetrics(),
+			)
 
 			stopCh := make(chan struct{})
 			statusUpdater.Run(stopCh)
@@ -861,7 +867,9 @@ func TestDefaultStatusUpdater_RetryAfterError(t *testing.T) {
 	kubeClient := fake.NewSimpleClientset()
 	kubeAiSchedClient := kubeaischedfake.NewSimpleClientset()
 	recorder := record.NewFakeRecorder(100)
-	statusUpdater := New(kubeClient, kubeAiSchedClient, recorder, 1, false, nodePoolLabelKey)
+	statusUpdater := New(
+		kubeClient, kubeAiSchedClient, recorder, 1, false, nodePoolLabelKey, newTestEvictionMetrics(),
+	)
 
 	updateCalls := 0
 	// Return a transient error so the update is retried.
@@ -1072,7 +1080,13 @@ func newEvictionTestStatusUpdater() *defaultStatusUpdater {
 	kubeClient := fake.NewSimpleClientset()
 	kubeAiSchedClient := kubeaischedfake.NewSimpleClientset()
 	recorder := record.NewFakeRecorder(100)
-	return New(kubeClient, kubeAiSchedClient, recorder, 1, false, nodePoolLabelKey)
+	return New(
+		kubeClient, kubeAiSchedClient, recorder, 1, false, nodePoolLabelKey, newTestEvictionMetrics(),
+	)
+}
+
+func newTestEvictionMetrics() metrics.PodGroupEvictionRecorder {
+	return metrics.NewPodGroupEvictionRecorder("", true, labels.Everything(), nodePoolLabelKey, nil)
 }
 
 func makeEvictionPodGroup(t *testing.T, suffix string) *enginev2alpha2.PodGroup {
@@ -1086,7 +1100,7 @@ func makeEvictionPodGroup(t *testing.T, suffix string) *enginev2alpha2.PodGroup 
 	}
 }
 
-func getEvictedPodsCounterValue(t *testing.T, name, namespace, uid, nodepool, action string) (float64, bool) {
+func getEvictedPodsCounterValue(t *testing.T, expectedLabels map[string]string) (float64, bool) {
 	families, err := prometheus.DefaultGatherer.Gather()
 	require.NoError(t, err)
 	for _, family := range families {
@@ -1098,8 +1112,7 @@ func getEvictedPodsCounterValue(t *testing.T, name, namespace, uid, nodepool, ac
 			for _, lp := range m.GetLabel() {
 				labels[lp.GetName()] = lp.GetValue()
 			}
-			if labels["podgroup"] == name && labels["namespace"] == namespace &&
-				labels["uid"] == uid && labels["nodepool"] == nodepool && labels["action"] == action {
+			if assert.ObjectsAreEqualValues(expectedLabels, labels) {
 				return m.GetCounter().GetValue(), true
 			}
 		}
@@ -1122,20 +1135,57 @@ func TestEvicted_IncrementsCounterByOnePerCall(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			pg := makeEvictionPodGroup(t, tc.name)
+			pg.Annotations = map[string]string{
+				commonconstants.TopOwnerMetadataKey: "group: jobset.x-k8s.io\nkind: JobSet\nname: train-x\nuid: owner-uid\n",
+			}
+			pod := &v1.Pod{ObjectMeta: metav1.ObjectMeta{
+				Labels: map[string]string{commonconstants.SubGroupLabelKey: "workers"},
+			}}
 			statusUpdater := newEvictionTestStatusUpdater()
 
 			for i := 0; i < tc.callCount; i++ {
-				statusUpdater.Evicted(pg, eviction_info.EvictionMetadata{
+				statusUpdater.Evicted(pod, pg, eviction_info.EvictionMetadata{
 					Action:           "preempt",
 					EvictionGangSize: tc.evictionGangSize,
 				}, "evicted")
 			}
 
-			value, found := getEvictedPodsCounterValue(t, pg.Name, pg.Namespace, string(pg.UID), "default", "preempt")
+			value, found := getEvictedPodsCounterValue(t, map[string]string{
+				"action":      "preempt",
+				"namespace":   pg.Namespace,
+				"nodepool":    "default",
+				"owner_group": "jobset.x-k8s.io",
+				"owner_kind":  "JobSet",
+				"owner_name":  "train-x",
+				"owner_uid":   "owner-uid",
+				"podgroup":    pg.Name,
+				"subgroup":    "workers",
+			})
 			require.True(t, found, "counter sample was not emitted")
 			assert.Equal(t, float64(tc.callCount), value)
 		})
 	}
+}
+
+func TestEvicted_UsesEmptyWorkloadLabelsWhenOwnerMetadataIsMissing(t *testing.T) {
+	pg := makeEvictionPodGroup(t, "no-owner")
+	statusUpdater := newEvictionTestStatusUpdater()
+
+	statusUpdater.Evicted(&v1.Pod{}, pg, eviction_info.EvictionMetadata{Action: "reclaim"}, "evicted")
+
+	value, found := getEvictedPodsCounterValue(t, map[string]string{
+		"action":      "reclaim",
+		"namespace":   pg.Namespace,
+		"nodepool":    "default",
+		"owner_group": "",
+		"owner_kind":  "",
+		"owner_name":  "",
+		"owner_uid":   "",
+		"podgroup":    pg.Name,
+		"subgroup":    "",
+	})
+	require.True(t, found, "counter sample was not emitted")
+	assert.Equal(t, float64(1), value)
 }
 
 func TestEvicted_EmitsAnnotatedEventWithMetadata(t *testing.T) {
@@ -1143,9 +1193,11 @@ func TestEvicted_EmitsAnnotatedEventWithMetadata(t *testing.T) {
 	recorder := &annotationCapturingRecorder{}
 	kubeClient := fake.NewSimpleClientset()
 	kubeAiSchedClient := kubeaischedfake.NewSimpleClientset()
-	statusUpdater := New(kubeClient, kubeAiSchedClient, recorder, 1, false, nodePoolLabelKey)
+	statusUpdater := New(
+		kubeClient, kubeAiSchedClient, recorder, 1, false, nodePoolLabelKey, newTestEvictionMetrics(),
+	)
 
-	statusUpdater.Evicted(pg, eviction_info.EvictionMetadata{
+	statusUpdater.Evicted(&v1.Pod{}, pg, eviction_info.EvictionMetadata{
 		Action:           "preempt",
 		EvictionGangSize: 5,
 		Preemptor:        &types.NamespacedName{Namespace: "preemptor-ns", Name: "preemptor"},

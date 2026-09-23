@@ -58,7 +58,7 @@ Metrics related to the core scheduling algorithm performance, task lifecycle, an
 | `scenarios_simulation_by_action` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `action` | Cumulative count of simulation scenarios run by each action during scheduling decisions. |
 | `scenarios_filtered_by_action` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `action` | Cumulative count of simulation scenarios filtered/rejected by each action. |
 | `total_preemption_attempts` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Cumulative total of preemption attempts across the entire cluster lifetime. |
-| `pod_group_evicted_pods_total` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `podgroup`, `uid`, `nodepool`, `action` | Cumulative count of pods evicted per pod group, tracked by nodepool and action. |
+| `pod_group_evicted_pods_total` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `podgroup`, `uid`, `nodepool`, `action` | Cumulative count of pods evicted per pod group. |
 | `scenario_search_jobs_total` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `action`, `result`, `reduced_budget` | Cumulative count of jobs considered by bounded scenario search, grouped by scheduling action, terminal search result, and whether the job ran after the action budget was reduced. |
 | `scenario_search_action_budget_configured_seconds` | Gauge | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `action` | Configured scenario-search budget for each scheduling action in seconds. A value of 0 means unlimited. |
 | `scenario_search_job_budget_configured_seconds` | Gauge | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Configured per-job scenario-search budget in seconds. A value of 0 means unlimited. |
@@ -66,6 +66,13 @@ Metrics related to the core scheduling algorithm performance, task lifecycle, an
 | `scenario_search_action_budget_exhausted_total` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `action` | Cumulative count of action-level scenario-search budget exhaustion events. |
 | `scenario_search_duration_seconds` | Histogram | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `action`, `generator`, `result` | Duration in seconds of generator scenario-search attempts. Buckets: [1ms, 2ms, 4ms, ..., 32.768s] (exponential). |
 | `scenario_search_scenarios_total` | Counter | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `action`, `generator`, `state` | Cumulative count of bounded-search scenarios emitted by generators, simulated by the solver, rejected by validation, or skipped as duplicates of already-failed scenarios. |
+
+Set the scheduler argument `enable-workload-eviction-metrics` to `"true"` to replace the default pod-group eviction metric with workload-centric metrics:
+
+- `pod_group_evicted_pods_total` uses `podgroup`, `namespace`, `nodepool`, `action`, `owner_group`, `owner_kind`, `owner_name`, `owner_uid`, and `subgroup`.
+- `pod_group_eviction_events_total` counts committed eviction decisions using the same labels except `subgroup`.
+
+The option is disabled by default. When enabled, zero-valued series are created for PodGroups on this scheduler shard after they hold allocated resources, and removed when those PodGroups are deleted. Pending PodGroups do not create series.
 
 ### Queue Fair-Share & Usage Metrics
 
@@ -103,4 +110,8 @@ Business/Resource Labels:
 - **`OnSession`**: Session lifecycle phase (`OnSessionOpen` or `OnSessionClose`)
 - **`podgroup`**: PodGroup resource identifier
 - **`nodepool`**: Node pool identifier for resource allocation
-- **`uid`**: Unique identifier (pod group UID)
+- **`owner_group`**: API group of the top-level workload object
+- **`owner_kind`**: Kind of the top-level workload object
+- **`owner_name`**: Name of the top-level workload object
+- **`owner_uid`**: UID of the top-level workload object
+- **`subgroup`**: Leaf SubGroup of an evicted pod; empty for flat PodGroups

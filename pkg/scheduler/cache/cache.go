@@ -68,6 +68,7 @@ import (
 	k8splugins "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal/plugins"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/metrics"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/utils"
 )
 
 func init() {
@@ -112,28 +113,66 @@ func registerSchedulerPodInformer(informerFactory informers.SharedInformerFactor
 	})
 }
 
+func registerPodGroupEvictionMetricHandlers(
+	informer k8scache.SharedIndexInformer,
+	recorder metrics.PodGroupEvictionRecorder,
+) error {
+	_, err := informer.AddEventHandler(k8scache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			if podGroup, ok := obj.(*enginev2alpha2.PodGroup); ok {
+				recorder.OnAdd(podGroup)
+			}
+		},
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			oldPodGroup, oldOK := oldObj.(*enginev2alpha2.PodGroup)
+			newPodGroup, newOK := newObj.(*enginev2alpha2.PodGroup)
+			if oldOK && newOK {
+				recorder.OnUpdate(oldPodGroup, newPodGroup)
+			}
+		},
+		DeleteFunc: func(obj interface{}) {
+			podGroup, ok := obj.(*enginev2alpha2.PodGroup)
+			if !ok {
+				tombstone, tombstoneOK := obj.(k8scache.DeletedFinalStateUnknown)
+				if !tombstoneOK {
+					return
+				}
+				podGroup, ok = tombstone.Obj.(*enginev2alpha2.PodGroup)
+				if !ok {
+					return
+				}
+			}
+			recorder.OnDelete(podGroup)
+		},
+	})
+	return err
+}
+
 // New returns a Cache implementation.
 func New(schedulerCacheParams *SchedulerCacheParams) (Cache, error) {
 	return newSchedulerCache(schedulerCacheParams)
 }
 
 type SchedulerCacheParams struct {
-	SchedulerName               string
-	NodePoolParams              *conf.SchedulingNodePoolParams
-	RestrictNodeScheduling      bool
-	KubeClient                  kubernetes.Interface
-	KAISchedulerClient          kubeaischedulerver.Interface
-	NRTClient                   nrtclientset.Interface
-	UsageDBParams               *usageapi.UsageParams
-	UsageDBClient               usageapi.Interface
-	DetailedFitErrors           bool
-	ScheduleCSIStorage          bool
-	FullHierarchyFairness       bool
-	AllowConsolidatingReclaim   bool
-	NumOfStatusRecordingWorkers int
-	UpdatePodEvictionCondition  bool
-	StuckInReleasingThreshold   time.Duration
-	DiscoveryClient             discovery.DiscoveryInterface
+	SchedulerName                 string
+	NodePoolParams                *conf.SchedulingNodePoolParams
+	RestrictNodeScheduling        bool
+	KubeClient                    kubernetes.Interface
+	KAISchedulerClient            kubeaischedulerver.Interface
+	NRTClient                     nrtclientset.Interface
+	UsageDBParams                 *usageapi.UsageParams
+	UsageDBClient                 usageapi.Interface
+	DetailedFitErrors             bool
+	ScheduleCSIStorage            bool
+	FullHierarchyFairness         bool
+	AllowConsolidatingReclaim     bool
+	NumOfStatusRecordingWorkers   int
+	UpdatePodEvictionCondition    bool
+	StuckInReleasingThreshold     time.Duration
+	DiscoveryClient               discovery.DiscoveryInterface
+	EvictionActionNames           []string
+	MetricsNamespace              string
+	EnableWorkloadEvictionMetrics bool
 }
 
 type SchedulerCache struct {
@@ -149,6 +188,7 @@ type SchedulerCache struct {
 	usageLister                    *usagedb.UsageLister
 
 	schedulingNodePoolParams *conf.SchedulingNodePoolParams
+	podGroupEvictionRecorder metrics.PodGroupEvictionRecorder
 
 	Evictor       evictor.Interface
 	StatusUpdater status_updater.Interface
@@ -165,8 +205,21 @@ type SchedulerCache struct {
 }
 
 func newSchedulerCache(schedulerCacheParams *SchedulerCacheParams) (*SchedulerCache, error) {
+	partitionSelector, err := schedulerCacheParams.NodePoolParams.GetLabelSelector()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create scheduling partition selector: %w", err)
+	}
+	podGroupEvictionRecorder := metrics.NewPodGroupEvictionRecorder(
+		schedulerCacheParams.MetricsNamespace,
+		schedulerCacheParams.EnableWorkloadEvictionMetrics,
+		partitionSelector,
+		schedulerCacheParams.NodePoolParams.NodePoolLabelKey,
+		schedulerCacheParams.EvictionActionNames,
+	)
+
 	sc := &SchedulerCache{
 		schedulingNodePoolParams:  schedulerCacheParams.NodePoolParams,
+		podGroupEvictionRecorder:  podGroupEvictionRecorder,
 		restrictNodeScheduling:    schedulerCacheParams.RestrictNodeScheduling,
 		detailedFitErrors:         schedulerCacheParams.DetailedFitErrors,
 		scheduleCSIStorage:        schedulerCacheParams.ScheduleCSIStorage,
@@ -190,7 +243,7 @@ func newSchedulerCache(schedulerCacheParams *SchedulerCacheParams) (*SchedulerCa
 
 	sc.StatusUpdater = status_updater.New(
 		sc.kubeClient, sc.kubeAiSchedulerClient, recorder, schedulerCacheParams.NumOfStatusRecordingWorkers,
-		sc.detailedFitErrors, sc.schedulingNodePoolParams.NodePoolLabelKey,
+		sc.detailedFitErrors, sc.schedulingNodePoolParams.NodePoolLabelKey, sc.podGroupEvictionRecorder,
 	)
 
 	sc.informerFactory = informers.NewSharedInformerFactory(sc.kubeClient, 0)
@@ -199,6 +252,14 @@ func newSchedulerCache(schedulerCacheParams *SchedulerCacheParams) (*SchedulerCa
 		return nil, fmt.Errorf("failed to set scheduler pod transform: %w", err)
 	}
 	sc.kubeAiSchedulerInformerFactory = kubeaischedulerinfo.NewSharedInformerFactory(sc.kubeAiSchedulerClient, 0)
+	if sc.podGroupEvictionRecorder.RecordsPodGroupLifecycle() {
+		if err := registerPodGroupEvictionMetricHandlers(
+			sc.kubeAiSchedulerInformerFactory.Scheduling().V2alpha2().PodGroups().Informer(),
+			sc.podGroupEvictionRecorder,
+		); err != nil {
+			return nil, fmt.Errorf("failed to register PodGroup eviction metric handlers: %w", err)
+		}
+	}
 
 	if err := featuregates.SetDRAFeatureGate(schedulerCacheParams.DiscoveryClient); err != nil {
 		return nil, fmt.Errorf("failed to determine dynamic resource allocation availability: %w", err)
@@ -295,12 +356,20 @@ func (sc *SchedulerCache) Evict(evictedPod *v1.Pod, evictedPodGroup *podgroup_in
 	return nil
 }
 
+func (sc *SchedulerCache) RecordPodGroupEvictionEvent(podGroup *podgroup_info.PodGroupInfo, action string) {
+	nodepool := utils.GetNodePoolNameFromLabels(
+		podGroup.PodGroup.Labels,
+		sc.schedulingNodePoolParams.NodePoolLabelKey,
+	)
+	sc.podGroupEvictionRecorder.IncEvictionEvent(podGroup.PodGroup, nodepool, action)
+}
+
 func (sc *SchedulerCache) evict(evictedPod *v1.Pod, evictedPodGroup *enginev2alpha2.PodGroup, evictionMetadata eviction_info.EvictionMetadata, message string) {
 	sc.workersWaitGroup.Add(1)
 	go func() {
 		defer sc.workersWaitGroup.Done()
 		if len(message) > 0 {
-			sc.StatusUpdater.Evicted(evictedPodGroup, evictionMetadata, message)
+			sc.StatusUpdater.Evicted(evictedPod, evictedPodGroup, evictionMetadata, message)
 		}
 
 		log.InfraLogger.V(6).Do(func() {
