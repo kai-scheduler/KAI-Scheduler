@@ -352,6 +352,40 @@ var _ = Describe("Can Reclaim Resources", func() {
 				canReclaim: true,
 			},
 			{
+				name: "Fractional GPU allocation exactly matches quota",
+				reclaimerInfo: &ReclaimerInfo{
+					Queue:             "queue1",
+					RequiredResources: resource_info.NewResource(1, 1, 0.2).ToVector(testVectorMap),
+					VectorMap:         testVectorMap,
+					IsPreemptable:     false,
+				},
+				queue: &rs.QueueAttributes{
+					UID:         "queue1",
+					ParentQueue: "",
+					QueueResourceShare: rs.QueueResourceShare{
+						GPU: rs.ResourceShare{
+							Deserved:                0.3,
+							FairShare:               0.3,
+							Allocated:               0.1,
+							AllocatedNotPreemptible: 0.1,
+						},
+						CPU: rs.ResourceShare{
+							Deserved:                2,
+							FairShare:               2,
+							Allocated:               1,
+							AllocatedNotPreemptible: 1,
+						},
+						Memory: rs.ResourceShare{
+							Deserved:                2,
+							FairShare:               2,
+							Allocated:               1,
+							AllocatedNotPreemptible: 1,
+						},
+					},
+				},
+				canReclaim: true,
+			},
+			{
 				name: "No allocated resources, partially above quota",
 				reclaimerInfo: &ReclaimerInfo{
 					Queue:             "queue1",
