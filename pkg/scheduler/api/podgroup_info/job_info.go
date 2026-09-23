@@ -232,8 +232,6 @@ func (pgi *PodGroupInfo) IsSemiPreemptibleJob() bool {
 	return pgi.Preemptibility == enginev2alpha2.SemiPreemptible
 }
 
-// HasEvictableTasks reports whether any of the job's allocated tasks may be offered as victims.
-// False only for non-preemptible jobs, where the whole allocation is protected.
 func (pgi *PodGroupInfo) HasEvictableTasks() bool {
 	return pgi.IsPreemptibleJob() || pgi.IsSemiPreemptibleJob()
 }

@@ -29,8 +29,7 @@ func GetTasksToEvict(job *PodGroupInfo, subGroupOrderFn, taskOrderFn common_info
 		// Semi-preemptible jobs offer only their elastic surplus as victims; the core (minimal
 		// satisfying shape) is never evicted, so the phase-3 full-eviction fallback is skipped.
 		// Stale members go first: they are neither surplus nor core, so no elastic phase can reach them.
-		pinned := pinnedCoreMembers(job)
-		tasks = collectStaleEviction(root, reverseTaskOrderFn, pinned)
+		tasks = collectStaleEviction(root, reverseTaskOrderFn)
 		if len(tasks) == 0 {
 			tasks = collectElasticEvictionFromSubGroupSet(root, reverseSubGroupOrderFn, reverseTaskOrderFn)
 		}
@@ -59,7 +58,7 @@ func GetTasksToEvict(job *PodGroupInfo, subGroupOrderFn, taskOrderFn common_info
 // gives them up before any real surplus. Recurses into core SubGroupSets, where the same rule
 // applies one level down.
 func collectStaleEviction(
-	sgs *subgroup_info.SubGroupSet, reverseTaskOrderFn common_info.LessFn, pinned map[string]bool,
+	sgs *subgroup_info.SubGroupSet, reverseTaskOrderFn common_info.LessFn,
 ) []*pod_info.PodInfo {
 	// A job still reaching its minimum has its partial members filling core slots by name, and any
 	// beyond that fill are still growing towards it. Nothing is stale until the gang has formed.
@@ -67,7 +66,7 @@ func collectStaleEviction(
 		return nil
 	}
 
-	core, nonCore := partitionCoreMembers(sgs, pinned)
+	core, nonCore := partitionCoreMembers(sgs)
 	for _, member := range nonCore {
 		if isMemberSatisfied(member) {
 			continue // real surplus - phases 1 and 2 own it
@@ -78,7 +77,7 @@ func collectStaleEviction(
 	}
 	for _, member := range core {
 		if sub, ok := member.(*subgroup_info.SubGroupSet); ok {
-			if tasks := collectStaleEviction(sub, reverseTaskOrderFn, pinned); len(tasks) > 0 {
+			if tasks := collectStaleEviction(sub, reverseTaskOrderFn); len(tasks) > 0 {
 				return tasks
 			}
 		}

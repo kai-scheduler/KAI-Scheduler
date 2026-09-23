@@ -64,9 +64,11 @@ func (cp *CapacityPolicy) IsTaskAllocationOnNodeOverCapacity(task *pod_info.PodI
 //
 // All-or-nothing is sound because a batch is never mixed: collectTasksFromSubGroupSet runs either its
 // gang phase or its elastic phase, never both, and the gang phase skips children that already meet
-// their minimum. Charging nothing for the elastic case is sound only because core membership is
-// pinned (see pinnedCoreMembers) - if it could still drift, a later session would recharge the job
-// against a different member's minimum that no admission check ever approved.
+// their minimum.
+//
+// Alpha limitation: core membership is recomputed every session, so a member that becomes satisfied
+// only later can take a core slot and recharge the job against its own, larger minimum - a charge no
+// admission check approved. See coreMembers.
 func coreRequiredQuota(requestedShare rs.ResourceQuantities, job *podgroup_info.PodGroupInfo) rs.ResourceQuantities {
 	if job.IsSemiPreemptibleJob() && podgroup_info.IsMinRequirementSatisfied(job) {
 		return rs.EmptyResourceQuantities()

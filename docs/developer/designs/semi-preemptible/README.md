@@ -119,6 +119,8 @@ Two properties matter:
 
 **Name breaks ties, not allocation.** The core set has to be *sticky*: recomputing it each session must not move it, or eviction chases it and unravels the gang. Four fully-gang replicas with `minSubGroup: 2` make this concrete. Core is replica-0 and replica-1; replica-3 is evicted as a unit, correctly. Under a neediness ordering replica-3 is now 0/2 — maximally unsatisfied — so the next session ranks it *first* and hands it a core slot holding zero pods, pushing replica-1 out to elastic. Evict again and the job walks itself down to a "core" of empty subgroups while every live pod sits in the elastic tier.
 
+Stickiness is not absolute in the alpha: because the set is recomputed every session, a member that becomes satisfied only later still ranks ahead of an incumbent that was core while unsatisfied. Pinning membership to the published `CorePods` set was prototyped and pulled back — it makes the result depend on prior status writes rather than on the tree alone — and is deferred to a broader review.
+
 Because a `SubGroupSet` counts as satisfied when enough of its *children* are, protection composes upward: eviction never touches a core member at any depth, so a core subtree keeps enough satisfied children to stay satisfied itself, so it keeps its slot in its parent's core. Note that being core does not protect a subgroup's own surplus — a core subgroup still exposes its non-core children as elastic, which is what makes the mode useful in deep trees.
 
 When fewer than `minSubGroup` children are satisfied the remaining slots are filled from the unsatisfied ones by name, so a job still assembling its gang protects what it has already landed. A satisfied member can never be displaced this way.
