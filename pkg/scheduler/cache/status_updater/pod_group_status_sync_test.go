@@ -273,4 +273,38 @@ var _ = Describe("Status Updater - Pod Groups Syncing", func() {
 			Expect(podGroup.Status.SchedulingConditions).To(BeEmpty())
 		}
 	})
+
+	It("should drop applied updates once the cluster moved past the written object", func() {
+		close(finishUpdatesChan)
+		wg.Wait()
+		Eventually(func() int {
+			appliedPodGroupUpdatesCount := 0
+			statusUpdater.appliedPodGroupUpdates.Range(func(key any, value any) bool {
+				appliedPodGroupUpdatesCount += 1
+				return true
+			})
+			return appliedPodGroupUpdatesCount
+		}, 5*time.Second).Should(Equal(len(podGroupsOriginals)))
+
+		// An external writer (e.g. pod-group-assigner) cleared the scheduling conditions after our update landed.
+		podGroupsFromCluster := make([]*schedulingv2alpha2.PodGroup, 0, len(podGroupsOriginals))
+		for _, podGroup := range podGroupsOriginals {
+			podGroupCopy := podGroup.DeepCopy()
+			podGroupCopy.ResourceVersion = "external-write"
+			podGroupCopy.Status.SchedulingConditions = nil
+			podGroupsFromCluster = append(podGroupsFromCluster, podGroupCopy)
+		}
+
+		statusUpdater.SyncPodGroupsWithPendingUpdates(podGroupsFromCluster)
+
+		for _, podGroup := range podGroupsFromCluster {
+			Expect(podGroup.Status.SchedulingConditions).To(BeEmpty())
+		}
+		appliedPodGroupUpdatesCount := 0
+		statusUpdater.appliedPodGroupUpdates.Range(func(key any, value any) bool {
+			appliedPodGroupUpdatesCount += 1
+			return true
+		})
+		Expect(appliedPodGroupUpdatesCount).To(Equal(0))
+	})
 })
