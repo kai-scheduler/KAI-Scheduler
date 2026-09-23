@@ -103,7 +103,7 @@ func (a *Admission) serviceAccountForKAIConfig(
 func (a *Admission) serviceForKAIConfig(
 	ctx context.Context, runtimeClient client.Reader, kaiConfig *kaiv1.Config,
 ) ([]client.Object, error) {
-	serviceObj, err := common.ObjectForKAIConfig(ctx, runtimeClient, &v1.Service{}, a.BaseResourceName,
+	serviceObj, err := common.ObjectForKAIConfig(ctx, runtimeClient, &v1.Service{}, a.serviceName(kaiConfig),
 		kaiConfig.Spec.Namespace)
 	if err != nil {
 		return nil, err
@@ -218,7 +218,7 @@ func (a *Admission) buildWebhookClientConfig(kaiConfig *kaiv1.Config, secret *v1
 	return admissionv1.WebhookClientConfig{
 		Service: &admissionv1.ServiceReference{
 			Namespace: kaiConfig.Spec.Namespace,
-			Name:      a.BaseResourceName,
+			Name:      a.serviceName(kaiConfig),
 			Path:      ptr.To(webhookPath),
 		},
 		CABundle: secret.Data[certKey],
@@ -356,7 +356,7 @@ func (a *Admission) upsertKAIAdmissionCertSecret(ctx context.Context, runtimeCli
 		Kind:       "Secret",
 		APIVersion: "v1",
 	}
-	webhookName := calculateServiceUrl(a.BaseResourceName, kaiConfig.Spec.Namespace)
+	webhookName := calculateServiceUrl(a.serviceName(kaiConfig), kaiConfig.Spec.Namespace)
 	if err = updateSelfSigned(secret, webhookName); err != nil {
 		return err, nil, ""
 	}
@@ -376,6 +376,10 @@ func updateSelfSigned(secret *v1.Secret, serviceUrl string) error {
 		keyKey:  key,
 	}
 	return nil
+}
+
+func (a *Admission) serviceName(kaiConfig *kaiv1.Config) string {
+	return ptr.Deref(kaiConfig.Spec.Admission.ServiceName, a.BaseResourceName)
 }
 
 func calculateServiceUrl(serviceName, namespace string) string {

@@ -21,6 +21,11 @@ func (in *Admission) DeepCopyInto(out *Admission) {
 		*out = new(common.Service)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.ServiceName != nil {
+		in, out := &in.ServiceName, &out.ServiceName
+		*out = new(string)
+		**out = **in
+	}
 	if in.Webhook != nil {
 		in, out := &in.Webhook, &out.Webhook
 		*out = new(Webhook)
