@@ -247,11 +247,310 @@ jobs:
         run: |
           echo "Skipping build and test since only documentation files (.md or docs/) were changed."
 
-  e2e-tests:
-    name: Run E2E Tests
-    needs: [ build, check-build-and-test-required ]
+  prepare-e2e-shards:
+    name: Prepare E2E Shards
+    needs: [ check-build-and-test-required ]
     if: needs.check-build-and-test-required.outputs.code == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      matrix: ${{ steps.shards.outputs.matrix }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Find E2E timing history
+        id: history
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -o pipefail
+
+          mapfile -t report_runs < <(
+            gh api "repos/$GH_REPO/actions/artifacts?per_page=100&page=1" \
+              --jq '[.artifacts[] |
+                select(.expired == false and (.name | startswith("e2e-report-")))] |
+                group_by(.workflow_run.id) |
+                map(max_by(.created_at)) |
+                sort_by(.created_at) |
+                reverse |
+                .[].workflow_run.id' || true
+          )
+          history_index=0
+          for run_id in "${report_runs[@]}"; do
+            conclusion=$(gh api "repos/$GH_REPO/actions/runs/$run_id" --jq '.conclusion' 2>/dev/null || true)
+            if [[ "$conclusion" != "success" ]]; then
+              continue
+            fi
+
+            history_index=$(( history_index + 1 ))
+            echo "run_$history_index=$run_id" >> "$GITHUB_OUTPUT"
+            echo "Using E2E timing history from run $run_id"
+            if (( history_index == 3 )); then
+              break
+            fi
+          done
+          echo "Found $history_index prior E2E runs with timing reports"
+
+      - name: Download E2E timing history 1
+        if: steps.history.outputs.run_1 != ''
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          pattern: e2e-report-*
+          path: ${{ runner.temp }}/e2e-history/1
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.history.outputs.run_1 }}
+
+      - name: Download E2E timing history 2
+        if: steps.history.outputs.run_2 != ''
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          pattern: e2e-report-*
+          path: ${{ runner.temp }}/e2e-history/2
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.history.outputs.run_2 }}
+
+      - name: Download E2E timing history 3
+        if: steps.history.outputs.run_3 != ''
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          pattern: e2e-report-*
+          path: ${{ runner.temp }}/e2e-history/3
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.history.outputs.run_3 }}
+
+      - name: Discover and prepare E2E shards
+        id: shards
+        run: |
+          set -o pipefail
+
+          mapfile -t discovered < <(
+            git grep -l 'RunSpecs(' -- 'test/e2e/suites/**/*_test.go' |
+              xargs -n1 dirname |
+              sort -u
+          )
+
+          declare -A dedicated=(
+            ["test/e2e/suites/gitops"]=1
+            ["test/e2e/suites/upgrade"]=1
+          )
+          declare -A discovered_packages=()
+          main_packages=()
+          for package in "${discovered[@]}"; do
+            discovered_packages["$package"]=1
+            if [[ -z "${dedicated[$package]:-}" ]]; then
+              main_packages+=("$package")
+            fi
+          done
+
+          for package in "${!dedicated[@]}"; do
+            if [[ -z "${discovered_packages[$package]:-}" ]]; then
+              echo "Dedicated E2E package was not discovered: $package"
+              exit 1
+            fi
+          done
+          if (( ${#main_packages[@]} < 3 )); then
+            echo "At least three main E2E packages are required"
+            exit 1
+          fi
+
+          seed=$(( (GITHUB_RUN_ID * 100 + GITHUB_RUN_ATTEMPT) % 2147483647 ))
+          if (( seed == 0 )); then
+            seed=1
+          fi
+
+          history_root="$RUNNER_TEMP/e2e-history"
+          downloaded_runs=0
+          for history_index in 1 2 3; do
+            mapfile -t run_reports < <(
+              find "$history_root/$history_index" -type f -name 'e2e-report-*.json' 2>/dev/null | sort
+            )
+            if (( ${#run_reports[@]} == 0 )); then
+              continue
+            fi
+            downloaded_runs=$(( downloaded_runs + 1 ))
+          done
+
+          declare -A duration_sum=()
+          declare -A duration_count=()
+          mapfile -t historical_reports < <(find "$history_root" -type f -name 'e2e-report-*.json' | sort)
+          for report in "${historical_reports[@]}"; do
+            while IFS=$'\t' read -r package seconds; do
+              if [[ -z "${discovered_packages[$package]:-}" || -n "${dedicated[$package]:-}" ]]; then
+                continue
+              fi
+              duration_sum["$package"]=$(( ${duration_sum[$package]:-0} + seconds ))
+              duration_count["$package"]=$(( ${duration_count[$package]:-0} + 1 ))
+            done < <(
+              jq -r '.[] |
+                select(.SuitePath | contains("test/e2e/suites/")) |
+                [
+                  (.SuitePath | capture(".*/(?<path>test/e2e/suites/.*)$").path),
+                  ((.RunTime / 1000000000) | ceil)
+                ] | @tsv' "$report" 2>/dev/null || true
+            )
+          done
+
+          declare -A weights=()
+          observed_weights=()
+          for package in "${main_packages[@]}"; do
+            if [[ -n "${duration_count[$package]:-}" ]]; then
+              weight=$((
+                (duration_sum[$package] + duration_count[$package] - 1) /
+                duration_count[$package] + 1
+              ))
+              weights["$package"]="$weight"
+              observed_weights+=("$weight")
+            fi
+          done
+
+          default_weight=1
+          if (( ${#observed_weights[@]} > 0 )); then
+            mapfile -t observed_weights < <(printf '%s\n' "${observed_weights[@]}" | sort -n)
+            default_weight=${observed_weights[$(( ${#observed_weights[@]} / 2 ))]}
+          fi
+          for package in "${main_packages[@]}"; do
+            if [[ -z "${weights[$package]:-}" ]]; then
+              weights["$package"]=$(( default_weight * 2 ))
+              echo "No historical duration for $package; using conservative weight ${weights[$package]}"
+            fi
+          done
+
+          total_weight=0
+          largest_weight=0
+          for package in "${main_packages[@]}"; do
+            total_weight=$(( total_weight + weights[$package] ))
+            if (( weights[$package] > largest_weight )); then
+              largest_weight=${weights[$package]}
+            fi
+          done
+          ideal_load=$(( (total_weight + 2) / 3 ))
+          target_load=$(( (ideal_load * 110 + 99) / 100 ))
+          if (( largest_weight > target_load )); then
+            target_load=$largest_weight
+          fi
+
+          best_load=$total_weight
+          best_candidate=-1
+          best_shard_1=()
+          best_shard_2=()
+          best_shard_3=()
+          selected_candidate=-1
+          for candidate in $(seq 0 199); do
+            mapfile -t shuffled < <(
+              for package in "${main_packages[@]}"; do
+                digest=$(printf '%s:%s:%s' "$seed" "$candidate" "$package" | git hash-object --stdin)
+                printf '%s\t%s\n' "$digest" "$package"
+              done | sort | cut -f2-
+            )
+
+            candidate_loads=(0 0 0)
+            candidate_shard_1=()
+            candidate_shard_2=()
+            candidate_shard_3=()
+            package_index=0
+            for package in "${shuffled[@]}"; do
+              target=$(( (seed + candidate + package_index) % 3 ))
+              for shard_index in 0 1 2; do
+                if (( candidate_loads[shard_index] < candidate_loads[target] )); then
+                  target=$shard_index
+                fi
+              done
+
+              case "$target" in
+                0) candidate_shard_1+=("$package") ;;
+                1) candidate_shard_2+=("$package") ;;
+                2) candidate_shard_3+=("$package") ;;
+              esac
+              candidate_loads[target]=$(( candidate_loads[target] + weights[$package] ))
+              package_index=$(( package_index + 1 ))
+            done
+
+            candidate_max=${candidate_loads[0]}
+            for shard_index in 1 2; do
+              if (( candidate_loads[shard_index] > candidate_max )); then
+                candidate_max=${candidate_loads[shard_index]}
+              fi
+            done
+
+            if (( candidate_max < best_load )); then
+              best_load=$candidate_max
+              best_candidate=$candidate
+              best_loads=("${candidate_loads[@]}")
+              best_shard_1=("${candidate_shard_1[@]}")
+              best_shard_2=("${candidate_shard_2[@]}")
+              best_shard_3=("${candidate_shard_3[@]}")
+            fi
+            if (( candidate_max <= target_load )); then
+              selected_candidate=$candidate
+              loads=("${candidate_loads[@]}")
+              shard_1=("${candidate_shard_1[@]}")
+              shard_2=("${candidate_shard_2[@]}")
+              shard_3=("${candidate_shard_3[@]}")
+              break
+            fi
+          done
+
+          if (( selected_candidate == -1 )); then
+            selected_candidate=$best_candidate
+            loads=("${best_loads[@]}")
+            shard_1=("${best_shard_1[@]}")
+            shard_2=("${best_shard_2[@]}")
+            shard_3=("${best_shard_3[@]}")
+          fi
+
+          declare -A assignment_count=()
+          for package in "${shard_1[@]}" "${shard_2[@]}" "${shard_3[@]}"; do
+            assignment_count["$package"]=$(( ${assignment_count[$package]:-0} + 1 ))
+          done
+          for package in "${main_packages[@]}"; do
+            if [[ "${assignment_count[$package]:-0}" != 1 ]]; then
+              echo "E2E package must be assigned exactly once: $package"
+              exit 1
+            fi
+          done
+
+          printf 'E2E shard seed: %s; candidate: %s; historical runs: %s\n' \
+            "$seed" "$selected_candidate" "$downloaded_runs"
+          printf 'shard-1 (weight %s):\n' "${loads[0]}"
+          printf '  %s\n' "${shard_1[@]}"
+          printf 'shard-2 (weight %s):\n' "${loads[1]}"
+          printf '  %s\n' "${shard_2[@]}"
+          printf 'shard-3 (weight %s):\n' "${loads[2]}"
+          printf '  %s\n' "${shard_3[@]}"
+
+          shard_1_json=$(printf '%s\n' "${shard_1[@]}" | jq -R . | jq -s .)
+          shard_2_json=$(printf '%s\n' "${shard_2[@]}" | jq -R . | jq -s .)
+          shard_3_json=$(printf '%s\n' "${shard_3[@]}" | jq -R . | jq -s .)
+          matrix=$(jq -cn \
+            --arg seed "$seed" \
+            --argjson shard_1 "$shard_1_json" \
+            --argjson shard_2 "$shard_2_json" \
+            --argjson shard_3 "$shard_3_json" \
+            '{include: [
+              {shard: "shard-1", seed: $seed, packages: ($shard_1 | map("./" + .) | join(" "))},
+              {shard: "shard-2", seed: $seed, packages: ($shard_2 | map("./" + .) | join(" "))},
+              {shard: "shard-3", seed: $seed, packages: ($shard_3 | map("./" + .) | join(" "))}
+            ]}')
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+  e2e-tests:
+    name: Run E2E Tests (${{ matrix.shard }})
+    needs: [ build, check-build-and-test-required, prepare-e2e-shards ]
+    if: needs.check-build-and-test-required.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare-e2e-shards.outputs.matrix) }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -260,6 +559,7 @@ jobs:
         uses: ./.github/actions/setup-e2e-cluster
         with:
           package_version: ${{ needs.build.outputs.package_version }}
+          deploy_prometheus: 'false'
 
       - name: Install KAI-scheduler
         env:
@@ -267,30 +567,63 @@ jobs:
         run: |
           helm upgrade -i kai-scheduler /mnt/images/kai-scheduler-$PACKAGE_VERSION.tgz -n kai-scheduler --create-namespace \
             --values ./hack/kai-scheduler-fake-npe-values.yaml \
-            --set "global.gpuSharing=true" --set "global.registry=localhost:30100" --set "prometheus.enabled=true" --debug --wait
+            --set "global.gpuSharing=true" --set "global.registry=localhost:30100" --set "prometheus.enabled=false" --debug --wait
           kubectl create clusterrole pods-patcher --verb=patch --resource=pods
           kubectl create rolebinding fake-status-updater --clusterrole=pods-patcher --serviceaccount=gpu-operator:status-updater -n kai-resource-reservation
 
       - name: Run e2e tests
+        env:
+          E2E_PACKAGES: ${{ matrix.packages }}
+          E2E_REPORT: e2e-report-${{ matrix.shard }}.json
+          E2E_SEED: ${{ matrix.seed }}
         run: |
-          go tool ginkgo -r --keep-going --randomize-all --randomize-suites --trace -vv --label-filter '!autoscale && !scale && !upgrade && !gitops && !nightly' --output-dir=. --json-report=e2e-report.json ./test/e2e/suites
-          echo ""
+          read -r -a packages <<< "$E2E_PACKAGES"
+          go tool ginkgo -r --keep-going --randomize-all --randomize-suites --seed="$E2E_SEED" --trace -vv --label-filter '!autoscale && !scale && !upgrade && !gitops && !nightly' --output-dir=. --json-report="$E2E_REPORT" "${packages[@]}"
+
+      - name: Report skipped tests
+        if: always()
+        env:
+          E2E_REPORT: e2e-report-${{ matrix.shard }}.json
+        run: |
           echo "=== Skipped Tests ==="
-          jq -r '.[].SpecReports[] | select(.State == "skipped") | ([.ContainerHierarchyTexts[], .LeafNodeText] | join(" > "))' e2e-report.json 2>/dev/null || echo "No skipped tests found"
+          if [[ ! -f "$E2E_REPORT" ]]; then
+            echo "No E2E report was produced"
+            exit 0
+          fi
+          jq -r '.[].SpecReports[] | select(.State == "skipped") | ([.ContainerHierarchyTexts[], .LeafNodeText] | join(" > "))' "$E2E_REPORT" || echo "No skipped tests found"
+
+      - name: Upload E2E report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-report-${{ matrix.shard }}
+          path: e2e-report-${{ matrix.shard }}.json
+          if-no-files-found: warn
 
       - name: Uninstall KAI-scheduler
+        if: always()
         run: |
+          if ! kubectl cluster-info >/dev/null 2>&1; then
+            echo "The cluster is unavailable; the Kind post-step will remove any remaining resources."
+            exit 0
+          fi
+          if ! helm status kai-scheduler -n kai-scheduler >/dev/null 2>&1; then
+            echo "KAI-scheduler is not installed; the Kind post-step will remove the cluster."
+            exit 0
+          fi
+
           helm uninstall kai-scheduler -n kai-scheduler
           echo "Waiting up to 60 seconds for pods to terminate..."
-          EXCLUDED_PODS="prometheus"
+          if ! kubectl get namespace kai-scheduler >/dev/null 2>&1; then
+            exit 0
+          fi
           for i in {1..12}; do
-            EXCLUDE_PATTERN=$(echo "$EXCLUDED_PODS" | tr ' ' '|')
-            NON_TERM=$(kubectl get pods -n kai-scheduler --no-headers 2>/dev/null | grep -v Terminating | grep -vE "$EXCLUDE_PATTERN" | wc -l)
+            NON_TERM=$(kubectl get pods -n kai-scheduler --no-headers | awk '!/Terminating/ && !/prometheus/ { count++ } END { print count + 0 }')
             if [ "$NON_TERM" -eq 0 ]; then
-              echo "Only Terminating pods remain or no pods left (excluding: $EXCLUDED_PODS). Safe to proceed."
+              echo "Only Terminating pods remain or no pods are left. Safe to proceed."
               exit 0
             fi
-            echo "Found $NON_TERM non-terminating pods (excluding: $EXCLUDED_PODS)... waiting (attempt $i/12)"
+            echo "Found $NON_TERM non-terminating pods... waiting (attempt $i/12)"
             sleep 5
           done
           echo "Pods did not terminate within 60 seconds. Uninstall incomplete."
@@ -410,6 +743,77 @@ jobs:
           GITOPS_KAI_REGISTRY: localhost:30100
         run: |
           go tool ginkgo -r --keep-going --trace -vv --label-filter 'gitops' --output-dir=. --json-report=e2e-gitops-report.json ./test/e2e/suites/gitops
+
+  e2e-gate:
+    name: E2E Gate
+    needs:
+      - check-build-and-test-required
+      - prepare-e2e-shards
+      - e2e-tests
+      - e2e-upgrade-tests
+      - e2e-gitops-tests
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check E2E results
+        env:
+          CHECK_RESULT: ${{ needs.check-build-and-test-required.result }}
+          CODE_REQUIRED: ${{ needs.check-build-and-test-required.outputs.code }}
+          PREPARE_RESULT: ${{ needs.prepare-e2e-shards.result }}
+          MAIN_RESULT: ${{ needs.e2e-tests.result }}
+          UPGRADE_RESULT: ${{ needs.e2e-upgrade-tests.result }}
+          GITOPS_RESULT: ${{ needs.e2e-gitops-tests.result }}
+        run: |
+          if [[ "$CHECK_RESULT" != "success" ]]; then
+            echo "The change-detection job did not succeed."
+            exit 1
+          fi
+          if [[ "$CODE_REQUIRED" == "false" ]]; then
+            echo "E2E tests are not required for this documentation-only change."
+            exit 0
+          fi
+          if [[ "$CODE_REQUIRED" != "true" ]]; then
+            echo "The change-detection job returned an unexpected code result: $CODE_REQUIRED"
+            exit 1
+          fi
+
+          failures=0
+          results=(
+            "Prepare E2E Shards:$PREPARE_RESULT"
+            "Main E2E Shards:$MAIN_RESULT"
+            "Upgrade E2E:$UPGRADE_RESULT"
+            "GitOps E2E:$GITOPS_RESULT"
+          )
+          for result_entry in "${results[@]}"; do
+            job_name=${result_entry%%:*}
+            job_result=${result_entry#*:}
+            if [[ "$job_result" != "success" ]]; then
+              echo "$job_name did not succeed: $job_result"
+              failures=$((failures + 1))
+            fi
+          done
+
+          if [[ "$failures" -ne 0 ]]; then
+            exit 1
+          fi
+          echo "All E2E jobs passed."
+
+  # Keep the existing required check available until the ruleset uses E2E Gate.
+  e2e-legacy-required-check:
+    name: Run E2E Tests
+    needs: [ e2e-gate ]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check E2E gate
+        env:
+          E2E_GATE_RESULT: ${{ needs.e2e-gate.result }}
+        run: |
+          if [[ "$E2E_GATE_RESULT" != "success" ]]; then
+            echo "E2E Gate did not succeed: $E2E_GATE_RESULT"
+            exit 1
+          fi
+          echo "E2E Gate passed."
 
   cleanup-images-cache:
     name: Cleanup Images Cache
