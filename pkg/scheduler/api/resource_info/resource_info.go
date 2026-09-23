@@ -71,7 +71,7 @@ func ResourceFromResourceList(rList v1.ResourceList) *Resource {
 			} else if rName == v1.ResourceEphemeralStorage || rName == v1.ResourceStorage {
 				r.scalarResources[rName] += rQuant.Value()
 			} else if k8s_internal.IsScalarResourceName(rName) {
-				r.scalarResources[rName] += rQuant.MilliValue()
+				r.scalarResources[rName] += rQuant.Value()
 			}
 		}
 	}

@@ -23,22 +23,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 )
 
-func buildTestNodes(nodesResourceLists map[string]v1.ResourceList) map[string]*node_info.NodeInfo {
-	var allLists []v1.ResourceList
-	for _, rl := range nodesResourceLists {
-		allLists = append(allLists, rl)
-	}
-	vm := resource_info.BuildResourceVectorMap(allLists)
-	result := make(map[string]*node_info.NodeInfo, len(nodesResourceLists))
-	for name, rl := range nodesResourceLists {
-		result[name] = &node_info.NodeInfo{
-			AllocatableVector: resource_info.NewResourceVectorFromResourceList(rl, vm),
-			VectorMap:         vm,
-		}
-	}
-	return result
-}
-
 func Test_podToMaxNodeResourcesFiltering(t *testing.T) {
 	type args struct {
 		nodePoolName       string
@@ -349,6 +333,65 @@ func Test_podToMaxNodeResourcesFiltering(t *testing.T) {
 	}
 }
 
+// Test_extendedResourcesAreNotScaledByThousand reproduces
+// https://github.com/kai-scheduler/KAI-Scheduler/issues/2122: a pod requesting 4
+// units of an extended resource is accounted as 4000 (MilliValue), so a node
+// advertising 8 units is rejected.
+func Test_extendedResourcesAreNotScaledByThousand(t *testing.T) {
+	const rdmaResourceName = v1.ResourceName("intel.com/mlnx_sriov_rdma")
+
+	nodesMap := buildTestNodes(map[string]v1.ResourceList{
+		"n1": {
+			v1.ResourceCPU:                resource.MustParse("96"),
+			v1.ResourceMemory:             resource.MustParse("1000Gi"),
+			resource_info.GPUResourceName: resource.MustParse("8"),
+			v1.ResourcePods:               resource.MustParse("110"),
+			rdmaResourceName:              resource.MustParse("8"),
+		},
+	})
+
+	pod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "name1", Namespace: "n1"},
+		Spec: v1.PodSpec{
+			Containers: []v1.Container{
+				{
+					Name: "c1",
+					Resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{rdmaResourceName: resource.MustParse("4")},
+						Limits:   v1.ResourceList{rdmaResourceName: resource.MustParse("4")},
+					},
+				},
+			},
+		},
+	}
+
+	mnr := NewMaxNodeResourcesPredicate(nodesMap, []*resourceapi.ResourceClaim{}, "")
+	_, status := mnr.PreFilter(context.TODO(), nil, pod, nil)
+	if status != nil {
+		t.Fatalf("PreFilter() rejected a pod requesting 4 %s on a node with 8: %v", rdmaResourceName, status.Message())
+	}
+}
+
+func buildTestNodes(nodesResourceLists map[string]v1.ResourceList) map[string]*node_info.NodeInfo {
+	var allLists []v1.ResourceList
+	for _, rl := range nodesResourceLists {
+		allLists = append(allLists, rl)
+	}
+	vm := resource_info.BuildResourceVectorMap(allLists)
+	result := make(map[string]*node_info.NodeInfo, len(nodesResourceLists))
+	for name, rl := range nodesResourceLists {
+		node := &v1.Node{
+			ObjectMeta: metav1.ObjectMeta{Name: name},
+			Status: v1.NodeStatus{
+				Allocatable: rl,
+				Capacity:    rl,
+			},
+		}
+		result[name] = node_info.NewNodeInfo(node, nil, vm)
+	}
+	return result
+}
+
 func makeDRAResourceSlice(name, nodeName, driver string, deviceCount int) *resourceapi.ResourceSlice {
 	devices := make([]resourceapi.Device, deviceCount)
 	for i := 0; i < deviceCount; i++ {
@@ -378,15 +421,14 @@ func buildNodesFromResourceSlices(slices []*resourceapi.ResourceSlice, nodeBases
 	vm := resource_info.BuildResourceVectorMap(allLists)
 	nodesMap := make(map[string]*node_info.NodeInfo)
 	for nodeName, baseList := range nodeBases {
-		allocVec := resource_info.NewResourceVectorFromResourceList(baseList, vm)
-		ni := &node_info.NodeInfo{
-			Name:              nodeName,
-			AllocatableVector: allocVec,
-			IdleVector:        allocVec.Clone(),
-			ReleasingVector:   resource_info.NewResourceVector(vm),
-			UsedVector:        resource_info.NewResourceVector(vm),
-			VectorMap:         vm,
+		node := &v1.Node{
+			ObjectMeta: metav1.ObjectMeta{Name: nodeName},
+			Status: v1.NodeStatus{
+				Allocatable: baseList,
+				Capacity:    baseList,
+			},
 		}
+		ni := node_info.NewNodeInfo(node, nil, vm)
 		var draGPUCount int64
 		for _, slice := range slicesByNode[nodeName] {
 			if resources.IsGPUDeviceClass(slice.Spec.Driver) {
@@ -569,11 +611,14 @@ func buildTestNodesIncremental(scanOrder []string, nodesResourceLists map[string
 	for _, name := range scanOrder {
 		rl := nodesResourceLists[name]
 		vm.AddResourceList(rl)
-		result[name] = &node_info.NodeInfo{
-			Name:              name,
-			AllocatableVector: resource_info.ResourceFromResourceList(rl).ToVector(vm),
-			VectorMap:         vm,
+		node := &v1.Node{
+			ObjectMeta: metav1.ObjectMeta{Name: name},
+			Status: v1.NodeStatus{
+				Allocatable: rl,
+				Capacity:    rl,
+			},
 		}
+		result[name] = node_info.NewNodeInfo(node, nil, vm)
 	}
 	return result, vm
 }
@@ -658,8 +703,8 @@ func Test_maxNodeResourcesExtendedResourceOnSubsetOfNodes(t *testing.T) {
 			if fooIdx < 0 {
 				t.Fatalf("iteration %d: %s not registered in vector map", i, fooResource)
 			}
-			if got := mnr.maxResources.Get(fooIdx); got != 5000 {
-				t.Fatalf("iteration %d: maxResources[%s] = %v, want 5000", i, fooResource, got)
+			if got := mnr.maxResources.Get(fooIdx); got != 5 {
+				t.Fatalf("iteration %d: maxResources[%s] = %v, want 5", i, fooResource, got)
 			}
 		}
 	})
