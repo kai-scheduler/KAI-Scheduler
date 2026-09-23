@@ -338,7 +338,7 @@ func (pp *predicatesPlugin) evaluateTaskOnPredicates(
 		return err
 	}
 
-	fit, reasons, err := scheduler_util.CheckNodeConditionPredicate(node.Node)
+	fit, reasons, err := scheduler_util.CheckNodeConditionPredicate(node.Node, task.Pod.Spec.Tolerations)
 	log.InfraLogger.V(6).Do(func() {
 		log.InfraLogger.Infof("Check node condition predicates Task <%s/%s> on Node <%s>: fit %t, err %v",
 			task.Namespace, task.Name, node.Name, fit, err)
