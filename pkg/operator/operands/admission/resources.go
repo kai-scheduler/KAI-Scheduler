@@ -451,7 +451,9 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1admission.Admission, nr
 		args = append(args, "--leader-elect")
 	}
 
-	if config.GPUFractionRuntimeClassName != nil {
+	if nriPluginEnabled {
+		args = append(args, "--gpu-fraction-runtime-class-name", "")
+	} else if config.GPUFractionRuntimeClassName != nil {
 		args = append(args, "--gpu-fraction-runtime-class-name", *config.GPUFractionRuntimeClassName)
 	}
 	if config.GPUPodRuntimeClassName != nil {

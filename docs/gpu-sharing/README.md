@@ -121,11 +121,12 @@ For air-gapped environments, mirror both the KAI images and the kai-gpu-fraction
 
 ### Runtime class and CDI
 
-KAI can auto-detect CDI and the CDI NRI plugin from the NVIDIA GPU Operator `ClusterPolicy`. When the `ClusterPolicy` indicates that CDI is enabled and selected as the default device injection path, KAI configures its CDI-aware binder plugins automatically. When NRI is enabled, KAI also enables the admission behavior that avoids injecting the legacy GPU-sharing environment variables.
+KAI can auto-detect CDI and the CDI NRI plugin from the NVIDIA GPU Operator `ClusterPolicy`. When the `ClusterPolicy` indicates that CDI is enabled and selected as the default device injection path, KAI configures its CDI-aware binder plugins automatically. When NRI is enabled, KAI also avoids injecting the legacy GPU-sharing environment variables and suppresses `runtimeClassName` injection for fractional GPU pods.
 
 Use that detection to decide whether fractional GPU pods need a runtime class:
 
-- If the cluster uses CDI as the default GPU device injection path, fractional GPU pods usually do not need `runtimeClassName: nvidia`; set `admission.gpuFractionRuntimeClassName` to an empty string.
+- If the GPU Operator NRI plugin is enabled, KAI ignores `admission.gpuFractionRuntimeClassName` and does not inject a runtime class.
+- If the cluster uses CDI as the default GPU device injection path without NRI, fractional GPU pods usually do not need `runtimeClassName: nvidia`; set `admission.gpuFractionRuntimeClassName` to an empty string.
 - If the cluster does not use CDI as the default path and the default container runtime is not already NVIDIA-enabled, keep the default `admission.gpuFractionRuntimeClassName=nvidia` or set a custom runtime class.
 - If KAI cannot read the NVIDIA `ClusterPolicy`, configure the runtime class and CDI behavior explicitly.
 
