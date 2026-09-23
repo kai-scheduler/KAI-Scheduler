@@ -37,7 +37,7 @@ func Validate(task *pod_info.PodInfo, node *node_info.NodeInfo, ssn *framework.S
 	return nil
 }
 
-// Check if kai-gpu-fractioning set this node as ready. This is relevant only for NvFractions mode.
+// Check if gpu-fractioning set this node as ready. This is relevant only for NvFractions mode.
 func checkNvFractionalGPUReadyCondition(task *pod_info.PodInfo, node *node_info.NodeInfo, nvFractionsMode bool) error {
 	if !nvFractionsMode || !task.IsSharedGPURequest() {
 		return nil
