@@ -53,6 +53,8 @@ type inflightUpdate struct {
 	patchData    []byte
 	updateStatus bool
 	subResources []string
+
+	writtenResourceVersions []string
 }
 
 type defaultStatusUpdater struct {
