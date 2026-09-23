@@ -1,0 +1,129 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# Low-priority semi-preemptible job: 4 leaf subgroups, minSubGroup=2.
+#
+#   core    = 2 subgroups = 200m -> in-quota, non-preemptible, never evicted
+#   elastic = 2 subgroups = 200m -> over-quota, reclaimed first
+#
+# Every leaf has minMember 1 and gets exactly 1 pod, so all four subgroups form their own gang and
+# all four are schedulable. That is what makes the elastic half visible: the job runs at 400m while
+# only 200m of it is ever charged as non-preemptible.
+apiVersion: scheduling.run.ai/v2alpha2
+kind: PodGroup
+metadata:
+  name: low-job
+  namespace: kai-demo-low
+  labels:
+    app: demo-semi-preemptible
+    kai.scheduler/queue: demo-low
+spec:
+  queue: demo-low
+  minSubGroup: 2
+  preemptibility: semi-preemptible
+  priorityClassName: demo-low-priority
+  subGroups:
+    - name: sg-0
+      minMember: 1
+    - name: sg-1
+      minMember: 1
+    - name: sg-2
+      minMember: 1
+    - name: sg-3
+      minMember: 1
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: low-sg-0
+  namespace: kai-demo-low
+  labels:
+    app: demo-semi-preemptible
+    kai.scheduler/queue: demo-low
+    kai.scheduler/subgroup-name: sg-0
+    pod-group-name: low-job
+  annotations:
+    pod-group-name: low-job
+spec:
+  schedulerName: kai-scheduler
+  terminationGracePeriodSeconds: 0
+  containers:
+    - name: ubuntu-container
+      image: ubuntu
+      imagePullPolicy: IfNotPresent
+      args: ["sleep", "infinity"]
+      resources:
+        limits:
+          cpu: 100m
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: low-sg-1
+  namespace: kai-demo-low
+  labels:
+    app: demo-semi-preemptible
+    kai.scheduler/queue: demo-low
+    kai.scheduler/subgroup-name: sg-1
+    pod-group-name: low-job
+  annotations:
+    pod-group-name: low-job
+spec:
+  schedulerName: kai-scheduler
+  terminationGracePeriodSeconds: 0
+  containers:
+    - name: ubuntu-container
+      image: ubuntu
+      imagePullPolicy: IfNotPresent
+      args: ["sleep", "infinity"]
+      resources:
+        limits:
+          cpu: 100m
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: low-sg-2
+  namespace: kai-demo-low
+  labels:
+    app: demo-semi-preemptible
+    kai.scheduler/queue: demo-low
+    kai.scheduler/subgroup-name: sg-2
+    pod-group-name: low-job
+  annotations:
+    pod-group-name: low-job
+spec:
+  schedulerName: kai-scheduler
+  terminationGracePeriodSeconds: 0
+  containers:
+    - name: ubuntu-container
+      image: ubuntu
+      imagePullPolicy: IfNotPresent
+      args: ["sleep", "infinity"]
+      resources:
+        limits:
+          cpu: 100m
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: low-sg-3
+  namespace: kai-demo-low
+  labels:
+    app: demo-semi-preemptible
+    kai.scheduler/queue: demo-low
+    kai.scheduler/subgroup-name: sg-3
+    pod-group-name: low-job
+  annotations:
+    pod-group-name: low-job
+spec:
+  schedulerName: kai-scheduler
+  terminationGracePeriodSeconds: 0
+  containers:
+    - name: ubuntu-container
+      image: ubuntu
+      imagePullPolicy: IfNotPresent
+      args: ["sleep", "infinity"]
+      resources:
+        limits:
+          cpu: 100m

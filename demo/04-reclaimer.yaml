@@ -1,0 +1,46 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# A single 100m pod in the sibling queue. The low job holds 400m of the parent's 500m and never
+# claimed the last 100m, because sg-2 was never admitted. The reclaimer takes that headroom
+# directly: nothing is reclaimed, and the 4 core pods keep running untouched.
+#
+# That is the point. Capacity a partial gang cannot use is left for a workload that can use it,
+# instead of being held by pods that deliver nothing.
+apiVersion: scheduling.run.ai/v2alpha2
+kind: PodGroup
+metadata:
+  name: reclaimer-job
+  namespace: kai-demo-high
+  labels:
+    app: demo-semi-preemptible
+    kai.scheduler/queue: demo-high
+spec:
+  queue: demo-high
+  minMember: 1
+  preemptibility: non-preemptible
+  priorityClassName: demo-high-priority
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: reclaimer-0
+  namespace: kai-demo-high
+  labels:
+    app: demo-semi-preemptible
+    kai.scheduler/queue: demo-high
+    pod-group-name: reclaimer-job
+  annotations:
+    pod-group-name: reclaimer-job
+spec:
+  schedulerName: kai-scheduler
+  priorityClassName: demo-high-priority
+  terminationGracePeriodSeconds: 0
+  containers:
+    - name: ubuntu-container
+      image: ubuntu
+      imagePullPolicy: IfNotPresent
+      args: ["sleep", "infinity"]
+      resources:
+        limits:
+          cpu: 100m

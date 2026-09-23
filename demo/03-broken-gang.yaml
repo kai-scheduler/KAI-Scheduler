@@ -1,0 +1,227 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# Broken-gang demo: a subgroup that can never form its own gang.
+#
+#   sg-0  minMember 2, 2 pods  -> forms, takes a core slot
+#   sg-1  minMember 2, 2 pods  -> forms, takes a core slot
+#   sg-2  minMember 2, 1 pod   -> never admitted; the pod stays Pending
+#
+# minSubGroup 2 of 3 means sg-0 and sg-1 alone satisfy the job. A subgroup below its own minMember
+# is never allocated: a partial gang does no work, so its pods would hold capacity for nothing. The
+# lone sg-2 pod is neither core (its subgroup holds no core slot) nor surplus (its subgroup is BELOW
+# minMember, not above), so it never reaches a node.
+#
+# The second thing this shows is that the job is NOT stale. Gang staleness honours minSubGroup, so a
+# job meeting its 2-of-3 requirement keeps running instead of being evicted wholesale once the
+# staleness grace period elapses.
+#
+# Quotas are re-cut for this shape: parent capped at 500m, low quota 400m covers the 4 core pods,
+# and 100m of headroom is left unclaimed because sg-2 is never admitted.
+apiVersion: scheduling.run.ai/v2
+kind: Queue
+metadata:
+  name: demo-parent
+  labels:
+    app: demo-semi-preemptible
+spec:
+  resources:
+    cpu:
+      quota: 500
+      limit: 500
+      overQuotaWeight: 1
+    gpu:
+      quota: -1
+      limit: -1
+      overQuotaWeight: 1
+    memory:
+      quota: -1
+      limit: -1
+      overQuotaWeight: 1
+---
+apiVersion: scheduling.run.ai/v2
+kind: Queue
+metadata:
+  name: demo-low
+  labels:
+    app: demo-semi-preemptible
+spec:
+  parentQueue: demo-parent
+  resources:
+    cpu:
+      quota: 400
+      limit: 500
+      overQuotaWeight: 1
+    gpu:
+      quota: -1
+      limit: -1
+      overQuotaWeight: 1
+    memory:
+      quota: -1
+      limit: -1
+      overQuotaWeight: 1
+---
+apiVersion: scheduling.run.ai/v2
+kind: Queue
+metadata:
+  name: demo-high
+  labels:
+    app: demo-semi-preemptible
+spec:
+  parentQueue: demo-parent
+  resources:
+    cpu:
+      quota: 100
+      limit: 100
+      overQuotaWeight: 1
+    gpu:
+      quota: -1
+      limit: -1
+      overQuotaWeight: 1
+    memory:
+      quota: -1
+      limit: -1
+      overQuotaWeight: 1
+---
+apiVersion: scheduling.run.ai/v2alpha2
+kind: PodGroup
+metadata:
+  name: broken-job
+  namespace: kai-demo-low
+  labels:
+    app: demo-semi-preemptible
+    kai.scheduler/queue: demo-low
+spec:
+  queue: demo-low
+  minSubGroup: 2
+  preemptibility: semi-preemptible
+  priorityClassName: demo-low-priority
+  subGroups:
+    - name: sg-0
+      minMember: 2
+    - name: sg-1
+      minMember: 2
+    - name: sg-2
+      minMember: 2
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: broken-sg-0-a
+  namespace: kai-demo-low
+  labels:
+    app: demo-semi-preemptible
+    kai.scheduler/queue: demo-low
+    kai.scheduler/subgroup-name: sg-0
+    pod-group-name: broken-job
+  annotations:
+    pod-group-name: broken-job
+spec:
+  schedulerName: kai-scheduler
+  terminationGracePeriodSeconds: 0
+  containers:
+    - name: ubuntu-container
+      image: ubuntu
+      imagePullPolicy: IfNotPresent
+      args: ["sleep", "infinity"]
+      resources:
+        limits:
+          cpu: 100m
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: broken-sg-0-b
+  namespace: kai-demo-low
+  labels:
+    app: demo-semi-preemptible
+    kai.scheduler/queue: demo-low
+    kai.scheduler/subgroup-name: sg-0
+    pod-group-name: broken-job
+  annotations:
+    pod-group-name: broken-job
+spec:
+  schedulerName: kai-scheduler
+  terminationGracePeriodSeconds: 0
+  containers:
+    - name: ubuntu-container
+      image: ubuntu
+      imagePullPolicy: IfNotPresent
+      args: ["sleep", "infinity"]
+      resources:
+        limits:
+          cpu: 100m
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: broken-sg-1-a
+  namespace: kai-demo-low
+  labels:
+    app: demo-semi-preemptible
+    kai.scheduler/queue: demo-low
+    kai.scheduler/subgroup-name: sg-1
+    pod-group-name: broken-job
+  annotations:
+    pod-group-name: broken-job
+spec:
+  schedulerName: kai-scheduler
+  terminationGracePeriodSeconds: 0
+  containers:
+    - name: ubuntu-container
+      image: ubuntu
+      imagePullPolicy: IfNotPresent
+      args: ["sleep", "infinity"]
+      resources:
+        limits:
+          cpu: 100m
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: broken-sg-1-b
+  namespace: kai-demo-low
+  labels:
+    app: demo-semi-preemptible
+    kai.scheduler/queue: demo-low
+    kai.scheduler/subgroup-name: sg-1
+    pod-group-name: broken-job
+  annotations:
+    pod-group-name: broken-job
+spec:
+  schedulerName: kai-scheduler
+  terminationGracePeriodSeconds: 0
+  containers:
+    - name: ubuntu-container
+      image: ubuntu
+      imagePullPolicy: IfNotPresent
+      args: ["sleep", "infinity"]
+      resources:
+        limits:
+          cpu: 100m
+---
+# The broken subgroup: sg-2 needs 2 pods, gets 1. No second pod is ever created, so this one stays
+# Pending for the life of the job.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: broken-sg-2-orphan
+  namespace: kai-demo-low
+  labels:
+    app: demo-semi-preemptible
+    kai.scheduler/queue: demo-low
+    kai.scheduler/subgroup-name: sg-2
+    pod-group-name: broken-job
+  annotations:
+    pod-group-name: broken-job
+spec:
+  schedulerName: kai-scheduler
+  terminationGracePeriodSeconds: 0
+  containers:
+    - name: ubuntu-container
+      image: ubuntu
+      imagePullPolicy: IfNotPresent
+      args: ["sleep", "infinity"]
+      resources:
+        limits:
+          cpu: 100m

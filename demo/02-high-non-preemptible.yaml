@@ -1,0 +1,68 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# High-priority non-preemptible job: 2 pods, 200m, gang of 2.
+#
+# Fits inside demo-high's own 200m quota, but the parent is already fully consumed by the low job's
+# 400m. The 200m has to come from the low job's elastic tier - exactly the size of it.
+apiVersion: scheduling.run.ai/v2alpha2
+kind: PodGroup
+metadata:
+  name: high-job
+  namespace: kai-demo-high
+  labels:
+    app: demo-semi-preemptible
+    kai.scheduler/queue: demo-high
+spec:
+  queue: demo-high
+  minMember: 2
+  preemptibility: non-preemptible
+  priorityClassName: demo-high-priority
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: high-0
+  namespace: kai-demo-high
+  labels:
+    app: demo-semi-preemptible
+    kai.scheduler/queue: demo-high
+    pod-group-name: high-job
+  annotations:
+    pod-group-name: high-job
+spec:
+  schedulerName: kai-scheduler
+  priorityClassName: demo-high-priority
+  terminationGracePeriodSeconds: 0
+  containers:
+    - name: ubuntu-container
+      image: ubuntu
+      imagePullPolicy: IfNotPresent
+      args: ["sleep", "infinity"]
+      resources:
+        limits:
+          cpu: 100m
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: high-1
+  namespace: kai-demo-high
+  labels:
+    app: demo-semi-preemptible
+    kai.scheduler/queue: demo-high
+    pod-group-name: high-job
+  annotations:
+    pod-group-name: high-job
+spec:
+  schedulerName: kai-scheduler
+  priorityClassName: demo-high-priority
+  terminationGracePeriodSeconds: 0
+  containers:
+    - name: ubuntu-container
+      image: ubuntu
+      imagePullPolicy: IfNotPresent
+      args: ["sleep", "infinity"]
+      resources:
+        limits:
+          cpu: 100m

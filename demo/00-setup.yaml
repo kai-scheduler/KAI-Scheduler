@@ -1,0 +1,109 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# Queue hierarchy for the semi-preemptible demo.
+#
+# The parent cap is the whole point: 400m total. The low job bursts to fill it, so when the high
+# job arrives the ONLY place its capacity can come from is the low job's elastic tier. Without the
+# cap the kind cluster has spare CPU, the high job simply allocates, and nothing is ever reclaimed.
+apiVersion: scheduling.run.ai/v2
+kind: Queue
+metadata:
+  name: demo-parent
+  labels:
+    app: demo-semi-preemptible
+spec:
+  resources:
+    cpu:
+      quota: 400
+      limit: 400
+      overQuotaWeight: 1
+    gpu:
+      quota: -1
+      limit: -1
+      overQuotaWeight: 1
+    memory:
+      quota: -1
+      limit: -1
+      overQuotaWeight: 1
+---
+# Quota 200m covers exactly the 2 core subgroups. Limit 400m is the room to burst into.
+apiVersion: scheduling.run.ai/v2
+kind: Queue
+metadata:
+  name: demo-low
+  labels:
+    app: demo-semi-preemptible
+spec:
+  parentQueue: demo-parent
+  resources:
+    cpu:
+      quota: 200
+      limit: 400
+      overQuotaWeight: 1
+    gpu:
+      quota: -1
+      limit: -1
+      overQuotaWeight: 1
+    memory:
+      quota: -1
+      limit: -1
+      overQuotaWeight: 1
+---
+apiVersion: scheduling.run.ai/v2
+kind: Queue
+metadata:
+  name: demo-high
+  labels:
+    app: demo-semi-preemptible
+spec:
+  parentQueue: demo-parent
+  resources:
+    cpu:
+      quota: 200
+      limit: 400
+      overQuotaWeight: 1
+    gpu:
+      quota: -1
+      limit: -1
+      overQuotaWeight: 1
+    memory:
+      quota: -1
+      limit: -1
+      overQuotaWeight: 1
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kai-demo-low
+  labels:
+    app: demo-semi-preemptible
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kai-demo-high
+  labels:
+    app: demo-semi-preemptible
+---
+# Below the non-preemptible threshold of 100.
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: demo-low-priority
+  labels:
+    app: demo-semi-preemptible
+value: 10
+globalDefault: false
+description: "Low priority for the semi-preemptible demo job"
+---
+# At or above 100.
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: demo-high-priority
+  labels:
+    app: demo-semi-preemptible
+value: 150
+globalDefault: false
+description: "High priority for the non-preemptible demo job"
