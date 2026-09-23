@@ -96,7 +96,7 @@ tests:
   # helm-unittest treats a conditioned-out subchart template as "not exists or not selected"
   # and errors instead of rendering zero documents. The off state is covered by Helm's
   # condition: semantics and by the NonMemoryEnforced default asserted above.
-  - it: renders the kai-gpu-fractioning deployment when nvFractions.set is true
+  - it: renders the gpu-fractioning deployment when nvFractions.set is true
     templates:
       - charts/gpu-fractioning/templates/deployment.yaml
     set:

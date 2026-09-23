@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"sort"
 
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -40,7 +41,7 @@ func (_ *PodGroup) ValidateCreate(ctx context.Context, podGroup *PodGroup) (admi
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
-func (_ *PodGroup) ValidateUpdate(ctx context.Context, _ *PodGroup, podGroup *PodGroup) (admission.Warnings, error) {
+func (_ *PodGroup) ValidateUpdate(ctx context.Context, oldPodGroup *PodGroup, podGroup *PodGroup) (admission.Warnings, error) {
 	logger := log.FromContext(ctx)
 	logger.Info("validate update", "namespace", podGroup.Namespace, "name", podGroup.Name)
 
@@ -51,12 +52,72 @@ func (_ *PodGroup) ValidateUpdate(ctx context.Context, _ *PodGroup, podGroup *Po
 			"namespace", podGroup.Namespace, "name", podGroup.Name, "error", validationErrors.structuralError)
 		return nil, validationErrors.structuralError
 	}
+
+	if oldPodGroup != nil && oldPodGroup.Spec.Preemptibility == SemiPreemptible {
+		if err := validateSemiPreemptibleImmutability(&oldPodGroup.Spec, &podGroup.Spec); err != nil {
+			logger.Info("PodGroup spec validation failed on semi-preemptible immutability",
+				"namespace", podGroup.Namespace, "name", podGroup.Name, "error", err)
+			return nil, err
+		}
+	}
+
 	if len(validationErrors.minDefinitionErrors) > 0 {
 		return handleMinDefinitionErrors(ctx, validationErrors.minDefinitionErrors, podGroup,
 			[]error{&parentMinMemberError{}, &minSubGroupExceedsChildCountError{}})
 	}
 
 	return nil, nil
+}
+
+// validateSemiPreemptibleImmutability rejects increases to minMember or minSubGroup at the root spec and
+// at every matching SubGroup entry (matched by name) on a semi-preemptible PodGroup. Decreases are allowed
+// (they only widen the elastic tier). Unset fields are compared as the value the scheduler applies, so
+// unsetting minSubGroup - which then requires every child - is an increase, not a decrease.
+func validateSemiPreemptibleImmutability(old, updated *PodGroupSpec) error {
+	type minCheck struct {
+		field, scope string
+		old, updated int32 // effective values; unset already resolved
+	}
+
+	oldChildren, updatedChildren := directChildCounts(old.SubGroups), directChildCounts(updated.SubGroups)
+
+	// An unset root minMember schedules a single pod, and only applies to flat groups since minMember
+	// and minSubGroup are mutually exclusive. An unset minSubGroup requires every direct child.
+	checks := []minCheck{
+		{"minMember", "a", ptr.Deref(old.MinMember, 1), ptr.Deref(updated.MinMember, 1)},
+		{"minSubGroup", "a",
+			ptr.Deref(old.MinSubGroup, int32(oldChildren[rootParentKey])),
+			ptr.Deref(updated.MinSubGroup, int32(updatedChildren[rootParentKey]))},
+	}
+
+	oldSubGroups := map[string]*SubGroup{}
+	for i := range old.SubGroups {
+		oldSubGroups[old.SubGroups[i].Name] = &old.SubGroups[i]
+	}
+	for i := range updated.SubGroups {
+		newSG := &updated.SubGroups[i]
+		oldSG, found := oldSubGroups[newSG.Name]
+		if !found {
+			continue
+		}
+		scope := fmt.Sprintf("subgroup %q of a", newSG.Name)
+		checks = append(checks,
+			minCheck{"minMember", scope,
+				ptr.Deref(oldSG.MinMember, 0), ptr.Deref(newSG.MinMember, 0)},
+			minCheck{"minSubGroup", scope,
+				ptr.Deref(oldSG.MinSubGroup, int32(oldChildren[newSG.Name])),
+				ptr.Deref(newSG.MinSubGroup, int32(updatedChildren[newSG.Name]))})
+	}
+
+	for _, c := range checks {
+		if c.updated > c.old {
+			return fmt.Errorf(
+				"cannot increase %s (%d -> %d) on %s semi-preemptible PodGroup: it would reclassify running elastic pods or subgroups as core",
+				c.field, c.old, c.updated, c.scope)
+		}
+	}
+
+	return nil
 }
 
 func handleMinDefinitionErrors(ctx context.Context,
@@ -217,15 +278,22 @@ func buildChildrenMap(subGroupMap map[string]*SubGroup) map[string][]string {
 	return childrenMap
 }
 
+// rootParentKey keys the PodGroup root in directChildCounts: SubGroups with no parent.
+const rootParentKey = ""
+
+// directChildCounts maps a SubGroup name to its number of direct child SubGroups. SubGroups with no
+// parent are direct children of the PodGroup and counted under rootParentKey.
+func directChildCounts(subGroups []SubGroup) map[string]int {
+	counts := map[string]int{}
+	for _, sg := range subGroups {
+		counts[ptr.Deref(sg.Parent, rootParentKey)]++
+	}
+	return counts
+}
+
 // countRootSubGroups returns the number of SubGroups with no parent (direct children of the PodGroup).
 func countRootSubGroups(subGroups []SubGroup) int {
-	count := 0
-	for _, sg := range subGroups {
-		if sg.Parent == nil {
-			count++
-		}
-	}
-	return count
+	return directChildCounts(subGroups)[rootParentKey]
 }
 
 func validateParent(subGroupMap map[string]*SubGroup) error {

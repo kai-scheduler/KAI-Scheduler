@@ -88,7 +88,7 @@ const (
 	KaiFractionContainerAnnotationPrefix = "kai.scheduler/container."
 	GpuMemoryPortionLimitSuffix          = ".gpu-memory.portion.limit"
 
-	// kai-gpu-fractioning statuses
+	// gpu-fractioning statuses
 	NvFractionNodeReadyConditionType = "gpu-fractioning.nvidia.com/Ready"
 )
 

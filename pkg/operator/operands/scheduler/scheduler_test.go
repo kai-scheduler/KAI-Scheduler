@@ -249,6 +249,7 @@ tiers:
             cpu: binpack
             gpu: binpack
         - name: gpusharingorder
+        - name: backgroundpods
 `))
 		})
 
@@ -305,6 +306,7 @@ tiers:
           arguments:
             cpu: spread
             gpu: spread
+        - name: backgroundpods
 `))
 		})
 	})

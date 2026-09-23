@@ -1,3 +1,0 @@
-kind: Changed
-body: |-
-  Hook image crd-upgrader replaced by helm-hooks: a Go binary on distroless, no shell or kubectl

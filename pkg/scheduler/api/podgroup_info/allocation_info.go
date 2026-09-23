@@ -150,6 +150,10 @@ func collectFromChildInGangPhase(
 	return nil
 }
 
+// collectFromChildSubgroup collects a child's contribution during the parent's elastic phase.
+// A PodSet below its own minAvailable is completed in one batch rather than grown pod by pod: a
+// partial gang does no work, so dribbling into it holds resources for nothing. Above minAvailable
+// the PodSet grows opportunistically, one pod at a time.
 func collectFromChildSubgroup(
 	child subgroup_info.SubGroupMember, subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn,
 	mode TaskAllocationMode,

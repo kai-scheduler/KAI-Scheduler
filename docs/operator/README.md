@@ -81,20 +81,20 @@ The KAI operator reports installation health on `Config.status.conditions`. The 
 - `DependenciesFulfilled`: external dependencies required by the selected configuration are present and healthy.
 - `Ready`: the KAI services are available.
 
-When `global.gpuSharingMode` is `NvFractions`, the KAI operator also checks the cluster-scoped `GpuFractioningConfig` resource from kai-gpu-fractioning, as running fractional GPU pods depends on it.
+When `global.gpuSharingMode` is `NvFractions`, the KAI operator also checks the cluster-scoped `GpuFractioningConfig` resource from gpu-fractioning, as running fractional GPU pods depends on it.
 
-### Installing kai-gpu-fractioning
+### Installing gpu-fractioning
 
-kai-gpu-fractioning is required only for `NvFractions`; every other `gpuSharingMode` runs without it. It also raises the cluster's requirements: [NVIDIA GPU Operator](https://github.com/NVIDIA/gpu-operator) **v26.7.1 or newer** and an **`r615` or newer driver (CUDA 13.4)** on the GPU nodes. `r615` is not the GPU Operator default, so it must be requested explicitly via `driver.version`; on an older driver the `GpuFractioningConfig` `Ready` condition reports `GPUDriverVersionUnsupported` and the node-level daemons are not rolled out. See the [gpu-fractioning prerequisites](https://github.com/kai-scheduler/kai-gpu-fractioning#prerequisites) for the full list, including containerd 2.0+ with NRI enabled.
+gpu-fractioning is required only for `NvFractions`; every other `gpuSharingMode` runs without it. It also raises the cluster's requirements: [NVIDIA GPU Operator](https://github.com/NVIDIA/gpu-operator) **v26.7.1 or newer** and an **`r615` or newer driver (CUDA 13.4)** on the GPU nodes. `r615` is not the GPU Operator default, so it must be requested explicitly via `driver.version`; on an older driver the `GpuFractioningConfig` `Ready` condition reports `GPUDriverVersionUnsupported` and the node-level daemons are not rolled out. See the [gpu-fractioning prerequisites](https://github.com/kai-scheduler/gpu-fractioning#prerequisites) for the full list, including containerd 2.0+ with NRI enabled.
 
-Set `global.nvFractions.set=true` to install [kai-gpu-fractioning](https://github.com/kai-scheduler/kai-gpu-fractioning) as a subchart and select the `NvFractions` mode in one step:
+Set `global.nvFractions.set=true` to install [gpu-fractioning](https://github.com/kai-scheduler/gpu-fractioning) as a subchart and select the `NvFractions` mode in one step:
 
 ```bash
 helm upgrade -i kai-scheduler oci://ghcr.io/kai-scheduler/kai-scheduler/kai-scheduler \
   -n kai-scheduler --create-namespace --set global.nvFractions.set=true
 ```
 
-Leaving `global.gpuSharingMode` empty is enough — `nvFractions.set` selects `NvFractions`. Setting it to any other mode at the same time fails the install at render time. To run `NvFractions` against a kai-gpu-fractioning installation out-of-band, leave `global.nvFractions.set` at its `false` default and set `global.gpuSharingMode: NvFractions` instead.
+Leaving `global.gpuSharingMode` empty is enough — `nvFractions.set` selects `NvFractions`. Setting it to any other mode at the same time fails the install at render time. To run `NvFractions` against a gpu-fractioning installation out-of-band, leave `global.nvFractions.set` at its `false` default and set `global.gpuSharingMode: NvFractions` instead.
 
 KAI's `global.imagePullSecrets`, `global.nodeSelector`, `global.affinity` and `global.tolerations` are **not** propagated to the subchart, because the gpu-fractioning chart reads those keys at its own top level rather than under `global`. Set them explicitly under the `gpu-fractioning:` key — relevant for private-registry and air-gapped installs:
 
@@ -109,7 +109,7 @@ gpu-fractioning:
     nvidia.com/gpu.present: "true"
 ```
 
-If all KAI services are deployed and available, but kai-gpu-fractioning reports a dependency failure, the KAI `Config` can look like this:
+If all KAI services are deployed and available, but gpu-fractioning reports a dependency failure, the KAI `Config` can look like this:
 
 ```yaml
 apiVersion: kai.scheduler/v1
@@ -139,7 +139,7 @@ status:
       message: System is ready
 ```
 
-In this state the KAI pods are healthy, but NvFractions should not be considered fully operational until `DependenciesFulfilled=True`. The dependency message carries the kai-gpu-fractioning's config-level status reason and message so the failing external dependency is visible directly from the KAI `Config`.
+In this state the KAI pods are healthy, but NvFractions should not be considered fully operational until `DependenciesFulfilled=True`. The dependency message carries the gpu-fractioning's config-level status reason and message so the failing external dependency is visible directly from the KAI `Config`.
 
 ## Logging
 

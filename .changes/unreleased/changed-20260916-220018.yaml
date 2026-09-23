@@ -1,3 +1,0 @@
-kind: Added
-body: |-
-  Improve simulation performance by caching equivalent node-affinity constraints

@@ -1,6 +1,0 @@
-kind: Added
-body: |-
-  Configure NvFractions GPU sharing mode
-custom:
-    Author: davidLif
-    Issue: "1316"

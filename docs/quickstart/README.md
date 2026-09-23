@@ -56,7 +56,7 @@ KAI Scheduler can also schedule pods that request part of a GPU. Cluster adminis
 
 * `NonMemoryEnforced` schedules fractional GPU workloads without runtime memory isolation.
 * `HamiCore` is based on the [HAMI project](https://github.com/project-hami/hami) for memory isolation.
-* `NvFractions` uses kai-gpu-fractioning and CUDA memory limit enforcement.
+* `NvFractions` uses gpu-fractioning and CUDA memory limit enforcement.
 * `Disabled` rejects fractional GPU workloads.
 
 For installation, configuration, and examples, see [GPU Sharing](../gpu-sharing/README.md).

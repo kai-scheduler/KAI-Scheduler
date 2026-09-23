@@ -101,8 +101,10 @@ type Session struct {
 	PreJobAllocationFns                   []api.PreJobAllocationFn
 	ScenarioGeneratorRegistrations        []ScenarioGeneratorRegistration
 
-	Config          *conf.SchedulerConfiguration
-	plugins         map[string]Plugin
+	Config  *conf.SchedulerConfiguration
+	plugins map[string]Plugin
+	// pluginsInOrder records the order plugins were opened in, so they can be closed in reverse.
+	pluginsInOrder  []Plugin
 	eventHandlers   []*EventHandler
 	SchedulerParams conf.SchedulerParams
 	mux             *http.ServeMux
@@ -440,6 +442,7 @@ func (ssn *Session) updatePodOnSession(pod *pod_info.PodInfo, status pod_status.
 func (ssn *Session) clear() {
 	ssn.ClusterInfo = nil
 	ssn.plugins = nil
+	ssn.pluginsInOrder = nil
 	ssn.eventHandlers = nil
 	ssn.GpuOrderFns = nil
 	ssn.NodePreOrderFns = nil
@@ -499,6 +502,7 @@ func openSession(cache cache.Cache, sessionId string, schedulerParams conf.Sched
 		ClusterInfo: &api.ClusterInfo{},
 
 		plugins:               map[string]Plugin{},
+		pluginsInOrder:        []Plugin{},
 		SchedulerParams:       schedulerParams,
 		mux:                   mux,
 		k8sResourceStateCache: sync.Map{},
@@ -532,6 +536,9 @@ func closeSession(ssn *Session) {
 	// Push all jobs for status update into the channel
 	resolveDetailedFitErrors := ssn.RecomputeDetailedFitErrors
 	for _, job := range ssn.ClusterInfo.PodGroupInfos {
+		if job.IsSemiPreemptibleJob() {
+			job.CorePodNames = podgroup_info.GetCorePodNames(job, ssn.TaskOrderFn)
+		}
 		if err := ssn.Cache.RecordJobStatusEvent(job, resolveDetailedFitErrors); err != nil {
 			log.InfraLogger.Errorf("Failed to record job status event for job <%s>: %v", job.Name, err)
 		}

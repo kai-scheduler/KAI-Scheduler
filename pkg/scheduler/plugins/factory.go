@@ -21,6 +21,7 @@ package plugins
 
 import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/backgroundpods"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/dynamicresources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/elastic"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/gpujoborder"
@@ -76,6 +77,7 @@ func InitDefaultPlugins() {
 
 	// Other Plugins
 	framework.RegisterPluginBuilder("snapshot", snapshot.New)
+	framework.RegisterPluginBuilder(backgroundpods.Name, backgroundpods.New)
 	framework.RegisterPluginBuilder(nodelocalgreedy.Name, nodelocalgreedy.New)
 	framework.RegisterPluginBuilder(multinodegang.Name, multinodegang.New)
 

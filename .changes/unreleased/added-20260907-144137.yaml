@@ -1,3 +1,0 @@
-kind: Added
-body: |-
-  Publish images.yaml manifest with per-platform image digests as a release asset

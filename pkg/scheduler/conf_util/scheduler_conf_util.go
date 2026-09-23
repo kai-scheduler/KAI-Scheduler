@@ -61,6 +61,7 @@ tiers:
   - name: snapshot
   - name: sg-nodelocalgreedy
   - name: sg-multinodegang
+  - name: backgroundpods
 `
 
 func ResolveConfigurationFromFile(confPath string) (*conf.SchedulerConfiguration, error) {
