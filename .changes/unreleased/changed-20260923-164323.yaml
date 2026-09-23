@@ -1,0 +1,3 @@
+kind: Changed
+body: |-
+  Allow pods that tolerate node.kubernetes.io/unschedulable to schedule on cordoned nodes
