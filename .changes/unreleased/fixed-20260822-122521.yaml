@@ -1,3 +1,0 @@
-kind: Fixed
-body: |-
-  Respect hierarchical gang floors during allocation and stale-gang eviction

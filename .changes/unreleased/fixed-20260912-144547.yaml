@@ -1,3 +1,0 @@
-kind: Fixed
-body: |-
-  Binder hamicore plugin fails closed instead of admitting pods uncapped when GPU memory limit calc fails

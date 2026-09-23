@@ -1,3 +1,0 @@
-kind: Added
-body: |-
-  Configurable admission Service name preserves webhook DNS and certificate identity during migrations

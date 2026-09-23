@@ -1,6 +1,0 @@
-kind: Added
-body: |-
-  Persist fractional GPU compute mode
-custom:
-    Author: davidLif
-    Issue: "1316"

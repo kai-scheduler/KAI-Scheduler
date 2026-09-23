@@ -1,3 +1,0 @@
-kind: Added
-body: |-
-  Semi-preemptible mode (alpha): minimal shape is non-preemptible and in-quota, surplus is elastic; gang staleness now respects minSubGroup

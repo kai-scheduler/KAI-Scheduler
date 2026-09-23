@@ -1,6 +1,0 @@
-kind: Added
-body: |-
-  Support kai.scheduler gpu-memory.portion.limit annotation for per-container GPU memory limits
-custom:
-    Author: davidLif
-    Issue: "1316"

@@ -1,3 +1,0 @@
-kind: Fixed
-body: |-
-  Scheduler status-updater no longer keeps re-applying a cached PodGroup status update after another writer (e.g. pod-group-assigner clearing scheduling conditions) modified the PodGroup. Previously the stale condition was overlaid on every snapshot, so the PodGroup was skipped as "not assigned to current scheduler" until the scheduler restarted.

@@ -1,3 +1,0 @@
-kind: Fixed
-body: |-
-  Releasing pods no longer block required inter-pod anti-affinity, so reclaim and preempt can place such pods

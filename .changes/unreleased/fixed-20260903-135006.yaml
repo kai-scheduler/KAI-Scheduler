@@ -1,3 +1,0 @@
-kind: Fixed
-body: |-
-  Prevent the scheduler from getting stuck when a pod cannot be marked as pipelined.
