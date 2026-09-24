@@ -261,6 +261,41 @@ func TestUpdatePodGroupStatus(t *testing.T) {
 			},
 		},
 		{
+			"Becoming preemptible clears a previously reported non preemptible allocation",
+			args{
+				&v2alpha2.PodGroup{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "n1", Name: "m1"},
+					Status: v2alpha2.PodGroupStatus{
+						ResourcesStatus: v2alpha2.PodGroupResourcesStatus{
+							AllocatedNonPreemptible: map[v1.ResourceName]resource.Quantity{
+								"cpu": resource.MustParse("2"),
+							},
+						},
+					},
+				},
+				&metadata.PodGroupMetadata{
+					Preemptibility: v2alpha2.Preemptible,
+					Requested: map[v1.ResourceName]resource.Quantity{
+						"cpu": resource.MustParse("2"),
+					},
+					Allocated: map[v1.ResourceName]resource.Quantity{
+						"cpu": resource.MustParse("2"),
+					},
+				},
+			},
+			false,
+			&v2alpha2.PodGroupStatus{
+				ResourcesStatus: v2alpha2.PodGroupResourcesStatus{
+					Requested: map[v1.ResourceName]resource.Quantity{
+						"cpu": resource.MustParse("2"),
+					},
+					Allocated: map[v1.ResourceName]resource.Quantity{
+						"cpu": resource.MustParse("2"),
+					},
+				},
+			},
+		},
+		{
 			"Semi preemptible with no published core reports nothing as non preemptible",
 			args{
 				&v2alpha2.PodGroup{
