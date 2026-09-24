@@ -11,25 +11,14 @@ solutions; the generator only changes which scenarios are proposed and in what o
 
 ## Motivation
 
-The default portfolio runs `NodeLocalGreedy` then `MultiNodeGang`. For a whole-node job on a
-packed cluster, `NodeLocalGreedy` cannot free a single node (all of its per-node scenarios come
-back unsolved), so reclaim falls through to `MultiNodeGang`, which accumulates victims in
-node-agnostic priority order until the job fits somewhere. This produces two costs that both
-grow with cluster size:
+`FullNodeFirst` was proposed in #1790 on the hypothesis that whole-node reclaim on a packed
+cluster over-evicts and does `O(N)` scenario search: `NodeLocalGreedy` supposedly cannot cheaply
+assemble a whole node's victims, so reclaim falls through to the wide `MultiNodeGang` search.
 
-1. **Scenario-search blow-up.** The portfolio simulates `~9*N` scenarios (plus thousands of
-   fingerprint-deduplicated duplicates) to place one job. This is the scalability concern
-   #1790 targets.
-2. **Eviction/restart churn.** The winning reclaim decision evicts a broad, cluster-wide set of
-   running consumers (`8*(N-1)` in the fixture below) rather than the one node's worth actually
-   required.
-
-> [!NOTE]
-> This is **not** permanent over-eviction. Most of those victims are pipelined (their freed
-> capacity is reserved for them to reschedule), so the net *permanent* displacement is bounded
-> by the single node the job lands on. The real harm is that many running consumers are evicted
-> and must restart/rebind, plus the wasted search. See
-> [Gross vs net eviction](#gross-vs-net-eviction).
+Measuring it on a **correctly configured** cluster does not bear that out. With a sane queue
+quota, the current portfolio already handles the packed single-GPU case optimally: it evicts
+exactly one node's worth and solves in a small, flat number of scenarios, and `MultiNodeGang`
+never runs.
 
 ### Scope
 
@@ -39,104 +28,49 @@ training job arrives and must reclaim. Multi-node gang consumers behave differen
 node can cascade across nodes, see the [warning below](#known-drawback-addressed-in-phase-2))
 and are out of primary scope.
 
-### Proof at scale
+### Measured behavior (real values)
 
 `kind` + `kwok`, `N` nodes of 8 GPU each, packed with reclaimable single-GPU borrowers (8 per
-node). One reclaimer requests 8 GPUs on a single node. The minimal solution evicts exactly 8.
-Default config (both generators), `main` scheduler:
+node). One reclaimer requests 8 GPUs on a single node; the minimal solution evicts exactly 8.
+Default config (both generators), `main` scheduler, with a correctly sized parent quota:
 
-| Nodes | Borrowers | NodeLocalGreedy | MultiNodeGang | Scenarios | Evicted (gross) | Minimal | Evicted ÷ minimal |
+| Nodes | Borrowers | NodeLocalGreedy | MultiNodeGang | Scenarios | Evicted | Minimal | Evicted ÷ minimal |
 |------:|------:|--:|--:|--:|--:|--:|--:|
-| 2   | 16   | 15   | 0   | 15   | 8    | 8 | 1× |
-| 4   | 32   | 32   | 4   | 36   | 24   | 8 | 3× |
-| 8   | 64   | 64   | 8   | 72   | 56   | 8 | 7× |
-| 16  | 128  | 128  | 19  | 147  | 120  | 8 | 15× |
-| 32  | 256  | 256  | 33  | 289  | 248  | 8 | 31× |
-| 64  | 512  | 512  | 64  | 576  | 504  | 8 | 63× |
-| 128 | 1024 | 1024 | 128 | 1152 | 1016 | 8 | **127×** |
+| 2   | 16   | 15 | 0 | 15 | 8 | 8 | 1× |
+| 4   | 32   | 16 | 0 | 16 | 8 | 8 | 1× |
+| 8   | 64   | 9  | 0 | 9  | 8 | 8 | 1× |
+| 16  | 128  | 9  | 0 | 9  | 8 | 8 | 1× |
+| 32  | 256  | 9  | 0 | 9  | 8 | 8 | 1× |
+| 64  | 512  | 9  | 0 | 9  | 8 | 8 | 1× |
+| 128 | 1024 | 9  | 0 | 9  | 8 | 8 | 1× |
 
-NodeLocalGreedy and MultiNodeGang are the `state="simulated"` counts per generator; Scenarios is
-their sum. NodeLocalGreedy grows as `8*N`, MultiNodeGang as `~N`. At N=2 MultiNodeGang is 0 and
-eviction is the minimal 8: NodeLocalGreedy solves that case alone. From N=4 onward MultiNodeGang
-activates, and gross eviction follows `8*(N-1)`.
+`NodeLocalGreedy` and `MultiNodeGang` are the `state="simulated"` counts per generator; Scenarios
+is their sum. `NodeLocalGreedy` solves every case with a small, cluster-size-independent number
+of scenarios (~9), evicting exactly one node's worth (8). `MultiNodeGang` never runs. There is
+**no over-eviction and no scenario blow-up** in this fixture.
 
-### Root cause
+### Correction: the earlier "over-eviction" was a quota artifact
 
-1. **Node-agnostic victim order.** `JobsOrderByQueues.PopNextJob` pops victims by queue/priority,
-   not by node, so `MultiNodeGang`'s accumulator frees ~1 GPU per node; no node reaches full-free
-   until nearly the whole victim queue is consumed.
-2. **Broad accumulated victim set.** `byPodSolver.solve` evicts the accumulated set
-   (`EvictAllPreemptees`), then re-allocates the victims the preemptor does not need (they become
-   pipelined). The committed set is `preempted + pipelined`; the pipelined majority reschedule,
-   but every one of them is evicted first, which is the churn.
-
-`FullNodeFirst` scopes each scenario to a single node, so the winning scenario evicts one node's
-worth instead of a cluster-wide set, cutting both the search and the churn.
-
-### Gross vs net eviction
-
-The Evicted column is **gross** eviction (pods actually evicted at commit), confirmed by the
-metric and log below. It is not net permanent displacement:
-
-- Submitting fresh borrowers onto the "freed" capacity after a reclaim leaves them **Pending**:
-  the capacity is reserved for the pipelined victims, not released. So most of the 504 are
-  reschedules, and net permanent displacement is bounded by the one node the job takes.
-- The fixture uses bare pods with a fixed `nodeName`, so pipelined victims cannot recreate to
-  claim their reserved slots; that is why the fixture's running count stays low and the gross
-  number looks permanent. A managed (reschedulable) workload would restart and rebind.
-- Toggling `allowConsolidatingReclaim` (off by default) does not change the gross count: N=64
-  evicts 504 with the flag both off and on.
-
-The point stands for both costs that scale: `~9*N` wasted scenarios, and `8*(N-1)` running
-consumers evicted and restarted to place a single whole-node job.
-
-### Live evidence (single controlled run, N=64)
-
-One reclaimer (8 GPU, single node) submitted against 64 nodes of 8 GPU packed with 512
-single-GPU borrowers. Scheduler counters were zeroed immediately before submission; the snapshot
-is taken at the moment the reclaimer schedules.
-
-Metrics (`/metrics`, verbatim):
+An earlier version of this document reported `8*(N-1)` evictions and `~9*N` scenarios growing
+with cluster size. That was wrong. The borrowers were pre-bound directly to nodes (via
+`nodeName`), which bypasses KAI admission, so the `exp-parent` queue sat far above its GPU limit.
+Reclaim was then correctly enforcing the parent quota by shedding borrowers back under the cap.
+The scheduler log makes the real reason explicit:
 
 ```
-kai_scenario_search_scenarios_total{action="reclaim",generator="NodeLocalGreedy",state="emitted"} 512
-kai_scenario_search_scenarios_total{action="reclaim",generator="NodeLocalGreedy",state="simulated"} 512
-kai_scenario_search_scenarios_total{action="reclaim",generator="MultiNodeGang",state="emitted"} 3073
-kai_scenario_search_scenarios_total{action="reclaim",generator="MultiNodeGang",state="simulated"} 64
-kai_scenario_search_scenarios_total{action="reclaim",generator="MultiNodeGang",state="duplicate"} 3009
-kai_scenario_search_duration_seconds_count{action="reclaim",generator="NodeLocalGreedy",result="unsolved"} 512
-kai_scenario_search_duration_seconds_count{action="reclaim",generator="NodeLocalGreedy",result="generators_exhausted"} 1
-kai_scenario_search_duration_seconds_count{action="reclaim",generator="MultiNodeGang",result="solved"} 2
-kai_scenario_search_duration_seconds_count{action="reclaim",generator="MultiNodeGang",result="unsolved"} 62
-kai_scenario_search_duration_seconds_count{action="reclaim",generator="MultiNodeGang",result="duplicate"} 3009
+[reclaim] Job: <exp/recl100> is over capacity. Reason: exp-parent quota has reached the
+allowable limit of GPUs. Limit is 16 GPUs, currently 32 GPUs allocated and workload requested 8 GPUs
 ```
 
-`kai_pod_group_evicted_pods_total{action="reclaim",...}` emitted 504 series (one per evicted pod
-group), each with value 1. NodeLocalGreedy simulated 512 scenarios (`8*N`) and solved none
-(`unsolved=512`, then `generators_exhausted`); MultiNodeGang solved the placement but at the cost
-of 3009 fingerprint-deduplicated duplicates.
-
-The Scenarios column counts `state="simulated"` (512 + 64 = 576 for the N=64 row). The `emitted`
-and `duplicate` states are proposed-but-skipped and are not in the table. Evicted (504) appears
-in both the metric and the scheduler log line below (its victim list is 504 entries). The
-reclaimer's 8-GPU request appears as the resource vector `<[0 2.68435456e+08 8 1 0 0 0 0 0]>`.
-Per-scenario log lines require `V(5)`; the scenario counts are metric-only at this verbosity.
-
-Scheduler logs (verbatim; the reclaim line's victim list is 504 entries, truncated here for
-length):
-
-```
-2026-09-24T01:33:47.377Z	INFO	reclaim/reclaim.go:122	[RGCSvL] [reclaim] Attempting to reclaim for job: <exp/recl100> of queue <reclaimer-q>, resources: <[0 2.68435456e+08 8 1 0 0 0 0 0]>
-2026-09-24T01:33:48.806Z	INFO	reclaim/reclaim.go:99	[RGCSvL] [reclaim] Reclaimed resources for job <exp/recl100>, evicting reclaimee tasks: <[<exp/bb70> <exp/bb352> <exp/bb408> <exp/bb236> <exp/bb24> <exp/bb228> <exp/bb34> <exp/bb511> ... ]>
-2026-09-24T01:33:53.920Z	INFO	allocate/allocate.go:108	[yV7MUv] [allocate] Succesfully allocated resources for job: <exp/recl100>
-2026-09-24T01:33:53.920Z	INFO	cache/cache.go:335	[yV7MUv] [allocate] Creating bind request for task <exp/recl100> to node <kwok-1> gpuGroup: <[]>, requires: <[0 2.68435456e+08 8 1 0 0 0 0 0]> GPUs
-```
+With a parent quota that actually allows the borrowing, the numbers collapse to the table above:
+evict 8, ~9 scenarios, flat in `N`. This also confirms the review feedback on #2231 that there is
+no actual over-eviction here.
 
 ### Goals
 
 - Emit per-node whole-node victim scenarios, best-first, for full-node pending tasks.
-- Reduce solved-scenario count for this shape to O(1) in cluster size.
-- Reduce eviction churn to the occupants of the one node the job lands on.
+- Keep the solved-scenario count for this shape small and independent of cluster size, should a
+  fixture be found where node-local reclaim degrades (see the open question below).
 - Keep every accepted solution validator-approved and whole victim gangs intact (#1537).
 
 ### Non-Goals
@@ -145,9 +79,33 @@ length):
 - No general disruption budget (that is the separate `DisruptionBounded` generator).
 - No runtime generator-selection policy (#1757).
 
+## Open question: where does whole-node reclaim actually blow up?
+
+> [!WARNING]
+> **This design is not yet justified by a reproduced problem.** On a correctly configured
+> cluster the existing portfolio already solves whole-node reclaim in ~9 flat scenarios with
+> minimal (one node) eviction, so `FullNodeFirst` shows no measurable benefit in the fixture
+> above. Before implementing it, we need a fixture where node-local reclaim genuinely degrades
+> for a whole-node job. Candidate scenarios to investigate (all currently unproven):
+>
+> - **Fragmented / interleaved victims.** When a node's occupants are far apart in the victim
+>   priority order, `NodeLocalGreedy`'s accumulator must drain a longer prefix before any single
+>   node is fully covered. Round-robin borrower placement (a node's victims interleaved across
+>   the queue) raised the count from ~9 to ~58 scenarios at N=8, but it still solved and still
+>   evicted 8. That is a mild increase, not a blow-up.
+> - **Heterogeneous victim sizes / partial-node usage,** where the whole-node victim set is a
+>   specific mix the priority-ordered accumulator reaches at different times.
+> - **Multi-node gang victims,** where freeing one node cascades across nodes. This is arguably
+>   the `TopologyFirst` / gang generators' territory rather than `FullNodeFirst`.
+> - **The maintainers' scale tests** (e.g. the `unschedulable-distributed-job` benchmark), which
+>   target distributed gangs, not whole-node consumers.
+>
+> The design below stands on its own, but the motivating measurement is still open: if none of
+> these scenarios make node-local reclaim degrade, `FullNodeFirst` may not be worth adding.
+
 ## Design
 
-The generator ships in two phases: Phase 1 delivers the search-and-churn reduction; Phase 2 adds
+The generator ships in two phases: Phase 1 emits node-scoped whole-node scenarios; Phase 2 adds
 node scoring to pick the cheapest node among valid candidates.
 
 ### Phase 1: Whole-node scenarios
@@ -167,8 +125,11 @@ On each solve attempt:
 
 In Phase 1, candidate nodes are ordered by reusing the existing priority-based victim ordering,
 no new scoring. The solver accepts the first solved scenario. Because each scenario is scoped to
-one node, the committed victims are that node's occupants (8 in the fixture) instead of the
-`8*(N-1)` cluster-wide set, and the search terminates in O(1) solved scenarios instead of `~9*N`.
+one node, the committed victims are exactly that node's occupants, and the generator proposes
+these node-scoped sets directly rather than accumulating them from the victim queue. Whether that
+is cheaper than `NodeLocalGreedy`'s accumulation depends on the fixture (see the
+[open question](#open-question-where-does-whole-node-reclaim-actually-blow-up) above); in the
+packed single-GPU case measured, both reach the same minimal solution.
 
 > [!WARNING]
 > **Known drawback (addressed in Phase 2).** Phase 1 bounds *how many* victims free the target
@@ -234,7 +195,8 @@ primitives where practical.
 
 ## Alternatives
 
-- **Rely on `MultiNodeGang`:** rejected; demonstrated `~9*N` search and `8*(N-1)` eviction churn
-  for a common single-GPU-consumer shape.
+- **Rely on the current portfolio (`NodeLocalGreedy` + `MultiNodeGang`):** the default path
+  already solves the packed single-GPU case optimally (see [Measured behavior](#measured-behavior-real-values)),
+  so this remains the baseline unless a fixture is found where node-local reclaim degrades.
 - **`DisruptionBounded` instead:** complementary; bounds victim-set size generally but does not
   exploit whole-node structure to find a node-scoped solution directly.
