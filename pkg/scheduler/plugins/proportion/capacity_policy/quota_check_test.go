@@ -55,6 +55,18 @@ var _ = Describe("Quota Policy Check", func() {
 					},
 					expectedResult: false,
 				},
+				"fractional GPU allocation exactly matches deserved quota": {
+					deserved: rs.ResourceQuantities{
+						rs.GpuResource: 0.3,
+					},
+					allocatedNonPreemptible: rs.ResourceQuantities{
+						rs.GpuResource: 0.1,
+					},
+					requestedQuota: rs.ResourceQuantities{
+						rs.GpuResource: 0.2,
+					},
+					expectedResult: false,
+				},
 				"lower than deserved in some resources": {
 					deserved: rs.ResourceQuantities{
 						rs.CpuResource:    5,
@@ -137,6 +149,30 @@ var _ = Describe("Quota Policy Check", func() {
 				requestedShare rs.ResourceQuantities
 				expectedResult bool
 			}{
+				"single queue - non preemptible fractional GPU allocation exactly matches quota": {
+					queues: map[common_info.QueueID]*rs.QueueAttributes{
+						"queue1": {
+							UID:         "queue1",
+							Name:        "queue1",
+							ParentQueue: "",
+							QueueResourceShare: rs.QueueResourceShare{
+								GPU: rs.ResourceShare{
+									Deserved:                0.3,
+									AllocatedNotPreemptible: 0.1,
+								},
+							},
+						},
+					},
+					job: &podgroup_info.PodGroupInfo{
+						Name:      "job-a",
+						Namespace: "team-a",
+						Queue:     "queue1",
+					},
+					requestedShare: rs.ResourceQuantities{
+						rs.GpuResource: 0.2,
+					},
+					expectedResult: true,
+				},
 				"single queue - **preemptible** job - allocated non preemptible below quota": {
 					queues: map[common_info.QueueID]*rs.QueueAttributes{
 						"queue1": {
