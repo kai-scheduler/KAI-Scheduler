@@ -6,7 +6,6 @@ package watcher
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -57,11 +56,8 @@ func ForEventCustomTimeout(ctx context.Context, client runtimeClient.WithWatch, 
 	for {
 		select {
 		case <-ctx.Done():
-			if errors.Is(ctx.Err(), context.Canceled) {
-				logger.Error(ctx.Err(), "WaitForEvent has been canceled")
-				utils.LogClusterState(client, logger)
-				return true
-			}
+			logger.Error(ctx.Err(), "WaitForEvent has been canceled")
+			utils.LogClusterState(client, logger)
 			return false
 		case <-timer.C:
 			eventWatcher.sync(ctx)
@@ -92,9 +88,8 @@ func ForEventCustomTimeout(ctx context.Context, client runtimeClient.WithWatch, 
 				if err != nil {
 					logger.Error(err, "Error event received for WaitForEvent function")
 					utils.LogClusterState(client, logger)
-					return false
 				}
-				return true
+				return false
 			}
 
 			eventWatcher.processEvent(ctx, event)
