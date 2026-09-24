@@ -266,6 +266,10 @@ admission:
     metricsPort: 8080
     probePort: 8081
   cdi: false
+  # When true, admission webhooks only run in namespaces labeled with
+  # global.queueLabelKey (default kai.scheduler/queue). When false (default),
+  # webhooks apply to all namespaces except kube-system and the KAI install ns.
+  queueLabelSelector: false
   gpuFractionRuntimeClassName: nvidia
   affinity: {}
   podDisruptionBudget:
