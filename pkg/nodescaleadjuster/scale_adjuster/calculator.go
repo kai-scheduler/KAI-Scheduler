@@ -50,15 +50,9 @@ func (c *calculator) calculateNumNeededDevices(unschedulablePods []*v1.Pod) (int
 	numNeededDevices := float64(0)
 	podsToScale := make([]*v1.Pod, 0)
 	for _, pod := range unschedulablePods {
-		gpuFraction, err := c.getGPUFraction(pod)
+		gpuFraction, numDevices, err := c.getGPUFractionRequest(pod)
 		if err != nil {
 			log.Printf("could not get GPU fraction for pod %v/%v. err: %v",
-				pod.Namespace, pod.Name, err)
-			continue
-		}
-		numDevices, err := resources.GetNumGPUFractionDevices(pod)
-		if err != nil {
-			log.Printf("could not get num GPU devices for pod %v/%v. err: %v",
 				pod.Namespace, pod.Name, err)
 			continue
 		}
@@ -69,20 +63,25 @@ func (c *calculator) calculateNumNeededDevices(unschedulablePods []*v1.Pod) (int
 	return int64(math.Ceil(numNeededDevices)), podsToScale
 }
 
-func (c *calculator) getGPUFraction(pod *v1.Pod) (float64, error) {
-	if pod.Annotations[constants.GpuFraction] != "" {
-		gpuFraction, err := resources.GetGPUFraction(pod)
-		if err != nil {
-			return 0, err
-		}
-		return gpuFraction, nil
-	}
-	gpuMemory, err := resources.GetGPUMemory(pod)
+func (c *calculator) getGPUFractionRequest(pod *v1.Pod) (float64, int64, error) {
+	req, err := resources.ParsePodGPUFractionRequest(pod)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
-	if gpuMemory > 0 {
-		return c.gpuMemoryToFractionRatio, nil
+	if req == nil {
+		return 0, 0, fmt.Errorf("pod %v/%v does not have GPU fraction or memory annotation",
+			pod.Namespace, pod.Name)
 	}
-	return 0, fmt.Errorf("pod %v/%v does not have GPU fraction or memory annotation", pod.Namespace, pod.Name)
+
+	switch req.FractionType {
+	case resources.FractionTypePortion:
+		return req.Portion, req.NumDevices, nil
+	case resources.FractionTypeMemory, resources.FractionTypeNvFractions:
+		// Memory-based forms (legacy gpu-memory and NvFractions) use the configured
+		// ratio, matching the previous gpu-memory path.
+		return c.gpuMemoryToFractionRatio, req.NumDevices, nil
+	default:
+		return 0, 0, fmt.Errorf("pod %v/%v has unsupported GPU fraction type %q",
+			pod.Namespace, pod.Name, req.FractionType)
+	}
 }

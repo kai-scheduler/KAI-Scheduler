@@ -1,0 +1,6 @@
+kind: Added
+body: Make nodescaleadjuster count NvFractions requests when calculating scale-up demand
+time: 2026-09-24T22:09:27.769610044+01:00
+custom:
+    Author: dttung2905
+    Issue: "2213"

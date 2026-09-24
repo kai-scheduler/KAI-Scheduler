@@ -233,6 +233,51 @@ func Test_calculateNumNeededDevices(t *testing.T) {
 			3,
 		},
 		{
+			"Single pod requires NvFractions memory",
+			[]*v1.Pod{
+				testutils.CreateUnschedulablePodWithNvFractions("ns1", "pod1", "main", "1Gi", 1),
+			},
+			1,
+			1,
+		},
+		{
+			"Multiple pods require NvFractions memory",
+			[]*v1.Pod{
+				testutils.CreateUnschedulablePodWithNvFractions("ns1", "pod1", "main", "1Gi", 1),
+				testutils.CreateUnschedulablePodWithNvFractions("ns1", "pod2", "main", "1Gi", 1),
+				testutils.CreateUnschedulablePodWithNvFractions("ns1", "pod3", "main", "1Gi", 1),
+				testutils.CreateUnschedulablePodWithNvFractions("ns1", "pod4", "main", "1Gi", 1),
+				testutils.CreateUnschedulablePodWithNvFractions("ns1", "pod5", "main", "1Gi", 1),
+				testutils.CreateUnschedulablePodWithNvFractions("ns1", "pod6", "main", "1Gi", 1),
+				testutils.CreateUnschedulablePodWithNvFractions("ns1", "pod7", "main", "1Gi", 1),
+				testutils.CreateUnschedulablePodWithNvFractions("ns1", "pod8", "main", "1Gi", 1),
+				testutils.CreateUnschedulablePodWithNvFractions("ns1", "pod9", "main", "1Gi", 1),
+				testutils.CreateUnschedulablePodWithNvFractions("ns1", "pod10", "main", "1Gi", 1),
+				testutils.CreateUnschedulablePodWithNvFractions("ns1", "pod11", "main", "1Gi", 1),
+			},
+			11,
+			2,
+		},
+		{
+			"NvFractions pod with multiple devices",
+			[]*v1.Pod{
+				testutils.CreateUnschedulablePodWithNvFractions("ns1", "pod1", "main", "512Mi", 2),
+			},
+			1,
+			1,
+		},
+		{
+			"Mixture of GPU fraction, GPU memory, and NvFractions pods",
+			[]*v1.Pod{
+				testutils.CreateUnschedulableFractionPod("ns1", "fraction-pod1", "0.9", 2),
+				testutils.CreateUnschedulablePodWithGpuMemory("ns1", "mem-pod1", "1024", 1),
+				testutils.CreateUnschedulablePodWithNvFractions("ns1", "nv-pod1", "main", "1Gi", 1),
+				testutils.CreateUnschedulablePodWithNvFractions("ns1", "nv-pod2", "main", "1Gi", 1),
+			},
+			4,
+			3,
+		},
+		{
 			"Pod Without GPU Fraction annotation",
 			[]*v1.Pod{
 				{

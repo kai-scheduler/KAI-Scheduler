@@ -56,6 +56,18 @@ func CreateUnschedulablePodWithGpuMemory(name, namespace string, gpuMemory strin
 	return CreateUnschedulablePod(name, namespace, annotations)
 }
 
+func CreateUnschedulablePodWithNvFractions(
+	name, namespace, containerName, gpuMemoryRequest string, numDevices int,
+) *corev1.Pod {
+	annotations := map[string]string{
+		constants.NvFractionsAnnotationPrefix + containerName + constants.NvFractionsMemoryRequestSuffix: gpuMemoryRequest,
+	}
+	if numDevices > 1 {
+		annotations[constants.GpuFractionsNumDevices] = strconv.Itoa(numDevices)
+	}
+	return CreateUnschedulablePod(name, namespace, annotations)
+}
+
 func CreateUnschedulablePod(name, namespace string, annotations map[string]string) *corev1.Pod {
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
