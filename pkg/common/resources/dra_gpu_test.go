@@ -212,6 +212,91 @@ var _ = Describe("DRA GPU Extraction", func() {
 				Expect(count).To(Equal(int64(0))) // Unknown mode skipped
 			})
 		})
+
+		Context("when GPU requests use admin access", func() {
+			adminRequest := func(name string, mode resourceapi.DeviceAllocationMode, count int64) resourceapi.DeviceRequest {
+				return resourceapi.DeviceRequest{
+					Name: name,
+					Exactly: &resourceapi.ExactDeviceRequest{
+						DeviceClassName: constants.NvidiaGpuResource,
+						AllocationMode:  mode,
+						Count:           count,
+						AdminAccess:     ptr.To(true),
+					},
+				}
+			}
+
+			It("should not count an ExactCount admin access request", func() {
+				claim := &resourceapi.ResourceClaim{
+					Spec: resourceapi.ResourceClaimSpec{
+						Devices: resourceapi.DeviceClaim{
+							Requests: []resourceapi.DeviceRequest{
+								adminRequest("validation-gpu", resourceapi.DeviceAllocationModeExactCount, 1),
+							},
+						},
+					},
+				}
+
+				Expect(countGPUDevicesFromClaim(claim)).To(Equal(int64(0)))
+			})
+
+			It("should not count an All admin access request", func() {
+				claim := &resourceapi.ResourceClaim{
+					Spec: resourceapi.ResourceClaimSpec{
+						Devices: resourceapi.DeviceClaim{
+							Requests: []resourceapi.DeviceRequest{
+								adminRequest("admin-gpus", resourceapi.DeviceAllocationModeAll, 0),
+							},
+						},
+					},
+				}
+
+				Expect(countGPUDevicesFromClaim(claim)).To(Equal(int64(0)))
+			})
+
+			It("should count only the non-admin requests of a mixed claim", func() {
+				claim := &resourceapi.ResourceClaim{
+					Spec: resourceapi.ResourceClaimSpec{
+						Devices: resourceapi.DeviceClaim{
+							Requests: []resourceapi.DeviceRequest{
+								adminRequest("admin-gpus", resourceapi.DeviceAllocationModeAll, 0),
+								{
+									Name: "gpu",
+									Exactly: &resourceapi.ExactDeviceRequest{
+										DeviceClassName: constants.NvidiaGpuResource,
+										AllocationMode:  resourceapi.DeviceAllocationModeExactCount,
+										Count:           2,
+										AdminAccess:     ptr.To(false),
+									},
+								},
+							},
+						},
+					},
+				}
+
+				Expect(countGPUDevicesFromClaim(claim)).To(Equal(int64(2)))
+			})
+
+			It("should leave admin access claims out of the per device class totals", func() {
+				adminClaim := func(name string, mode resourceapi.DeviceAllocationMode, count int64) *resourceapi.ResourceClaim {
+					return &resourceapi.ResourceClaim{
+						ObjectMeta: metav1.ObjectMeta{Name: name},
+						Spec: resourceapi.ResourceClaimSpec{
+							Devices: resourceapi.DeviceClaim{
+								Requests: []resourceapi.DeviceRequest{adminRequest(name, mode, count)},
+							},
+						},
+					}
+				}
+				claims := []*resourceapi.ResourceClaim{
+					adminClaim("validator", resourceapi.DeviceAllocationModeExactCount, 1),
+					adminClaim("dcgm-exporter", resourceapi.DeviceAllocationModeAll, 0),
+				}
+
+				Expect(ExtractDRAGPUResourcesFromClaims(claims)).To(BeEmpty())
+				Expect(DRAGPUResourceListFromClaims(claims)).To(BeEmpty())
+			})
+		})
 	})
 
 	Describe("ExtractDRAGPUResources", func() {
