@@ -21,6 +21,7 @@ package pod_info
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -96,6 +97,8 @@ type PodInfo struct {
 	Status          pod_status.PodStatus
 	IsVirtualStatus bool
 	IsLegacyMIGtask bool
+	// HasDRAGPUClaim marks a pod that references a GPU ResourceClaim, admin access claims included.
+	HasDRAGPUClaim bool
 
 	BindRequest *bindrequest_info.BindRequestInfo
 
@@ -295,6 +298,7 @@ func (pi *PodInfo) Clone() *PodInfo {
 		ResourceReceivedType:   pi.ResourceReceivedType,
 		IsVirtualStatus:        pi.IsVirtualStatus,
 		IsLegacyMIGtask:        pi.IsLegacyMIGtask,
+		HasDRAGPUClaim:         pi.HasDRAGPUClaim,
 		storageClaims:          pi.storageClaims,
 		ownedStorageClaims:     pi.ownedStorageClaims,
 	}
@@ -347,6 +351,12 @@ func (pi *PodInfo) IsSharedGPUAllocation() bool {
 
 func (pi *PodInfo) IsCPUOnlyRequest() bool {
 	return !pi.IsRequireAnyKindOfGPU()
+}
+
+// RequiresGPUNode is true for GPU requests and for pods holding a GPU claim that requests no GPU,
+// such as an admin access claim, whose device can still only be on a GPU node.
+func (pi *PodInfo) RequiresGPUNode() bool {
+	return pi.IsRequireAnyKindOfGPU() || pi.HasDRAGPUClaim
 }
 
 func (pi *PodInfo) IsRequireAnyKindOfGPU() bool {
@@ -518,6 +528,7 @@ func (pi *PodInfo) updatePodAdditionalFields(bindRequest *bindrequest_info.BindR
 		}
 	}
 
+	pi.HasDRAGPUClaim = slices.ContainsFunc(draPodClaims, resources.IsGpuResourceClaim)
 	if len(draPodClaims) > 0 {
 		draGpus := resources.ExtractDRAGPUResourcesFromClaims(draPodClaims)
 		pi.ResReq.GpuResourceRequirement.SetDraGpus(draGpus)
