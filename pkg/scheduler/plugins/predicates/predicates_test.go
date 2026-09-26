@@ -28,6 +28,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/conf"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/k8s_internal/predicates"
@@ -1483,6 +1484,46 @@ func Test_predicatesPlugin_evaluateTaskOnPredicates(t *testing.T) {
 				skipPredicates,
 			); !reflect.DeepEqual(err, tt.err) {
 				t.Errorf("evaluateTaskOnPredicates() error:\n%v\nExpected: %v", err, tt.err)
+			}
+		})
+	}
+}
+
+func Test_predicatesPlugin_evaluateTaskOnPredicates_restrictNodeSchedulingGPUClaim(t *testing.T) {
+	gpuWorker := conf.GetConfig().GPUWorkerNodeLabelKey
+	cpuWorker := conf.GetConfig().CPUWorkerNodeLabelKey
+	tests := []struct {
+		name           string
+		hasDRAGPUClaim bool
+		nodeLabel      string
+		wantErr        bool
+	}{
+		{"GPU claim without GPU request on gpu node", true, gpuWorker, false},
+		{"GPU claim without GPU request on cpu node", true, cpuWorker, true},
+		{"cpu task on gpu node", false, gpuWorker, true},
+		{"cpu task on cpu node", false, cpuWorker, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			vectorMap := resource_info.NewResourceVectorMap()
+			jobsMap, tasksMap, _ := jobs_fake.BuildJobsAndTasksMaps([]*jobs_fake.TestJobBasic{
+				{Name: "j1", Tasks: []*tasks_fake.TestTaskBasic{{NodeName: "n1"}}},
+			}, vectorMap)
+			nodesMap := nodes_fake.BuildNodesInfoMap(map[string]nodes_fake.TestNodeBasic{
+				"n1": {Labels: map[string]string{tt.nodeLabel: "true"}},
+			}, tasksMap, nil, vectorMap)
+			pp := &predicatesPlugin{ssn: &framework.Session{
+				ClusterInfo: &api.ClusterInfo{Nodes: nodesMap, PodGroupInfos: jobsMap},
+			}}
+
+			job := jobsMap["j1"]
+			task := job.GetAllPodsMap()["j1-0"]
+			task.HasDRAGPUClaim = tt.hasDRAGPUClaim
+
+			err := pp.evaluateTaskOnPredicates(task, job, nodesMap["n1"], k8s_internal.SessionPredicates{},
+				isNonPreemptableTaskOnNodeOverCapacityFnAlwaysSchedulable, func() bool { return true }, SkipPredicates{})
+			if (err != nil) != tt.wantErr {
+				t.Errorf("evaluateTaskOnPredicates() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
 	}
