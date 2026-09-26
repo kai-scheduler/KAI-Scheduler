@@ -5,6 +5,7 @@ package node_info
 
 import (
 	resourceapi "k8s.io/api/resource/v1"
+	"k8s.io/utils/ptr"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -17,8 +18,8 @@ func draDeviceKey(result resourceapi.DeviceRequestAllocationResult) string {
 }
 
 // allocatedGPUDeviceKeys returns the keys of all GPU devices allocated to the
-// task via DRA ResourceClaims. Non-GPU devices are ignored: they are not part
-// of the GPU accounting that this dedup protects.
+// task via DRA ResourceClaims. Non-GPU devices and admin access allocations are
+// ignored: they are not part of the GPU accounting that this dedup protects.
 func (ni *NodeInfo) allocatedGPUDeviceKeys(task *pod_info.PodInfo) []string {
 	var keys []string
 	for _, claimAllocation := range task.ResourceClaimInfo {
@@ -26,7 +27,7 @@ func (ni *NodeInfo) allocatedGPUDeviceKeys(task *pod_info.PodInfo) []string {
 			continue
 		}
 		for _, result := range claimAllocation.Allocation.Devices.Results {
-			if !resources.IsGPUDeviceClass(result.Driver) {
+			if !resources.IsGPUDeviceClass(result.Driver) || ptr.Deref(result.AdminAccess, false) {
 				continue
 			}
 			keys = append(keys, draDeviceKey(result))
