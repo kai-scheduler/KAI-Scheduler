@@ -123,9 +123,9 @@ func getGvkOfKarta(kt *kartav1alpha1.Karta) *metav1.GroupVersionKind {
 func getKartaPerGvkLabelSelectors(gvk metav1.GroupVersionKind) *client.ListOptions {
 	listOpts := &client.ListOptions{}
 	client.MatchingLabels{
-		KartaGroupLabel:   gvk.Group,
-		KartaVersionLabel: gvk.Version,
-		KartaKindLabel:    gvk.Kind,
+		kartav1alpha1.LabelRootGroup:   gvk.Group,
+		kartav1alpha1.LabelRootVersion: gvk.Version,
+		kartav1alpha1.LabelRootKind:    gvk.Kind,
 	}.ApplyToList(listOpts)
 	return listOpts
 }
