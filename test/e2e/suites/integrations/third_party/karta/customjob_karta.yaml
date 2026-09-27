@@ -6,9 +6,9 @@ kind: Karta
 metadata:
   name: e2e-example-com-v1-customjob
   labels:
-    run.ai/karta-group: e2e.example.com
-    run.ai/karta-version: v1
-    run.ai/karta-kind: CustomJob
+    karta.run.ai/group: e2e.example.com
+    karta.run.ai/version: v1
+    karta.run.ai/kind: CustomJob
 spec:
   structureDefinition:
     rootComponent:

@@ -19,8 +19,6 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-
-	kartaplugin "github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/karta"
 )
 
 const (
@@ -299,9 +297,9 @@ func createHubTestKarta(gvk metav1.GroupVersionKind) *kartav1alpha1.Karta {
 			Name: "test-ri-" + string(uid),
 			UID:  uid,
 			Labels: map[string]string{
-				kartaplugin.KartaGroupLabel:   gvk.Group,
-				kartaplugin.KartaVersionLabel: gvk.Version,
-				kartaplugin.KartaKindLabel:    gvk.Kind,
+				kartav1alpha1.LabelRootGroup:   gvk.Group,
+				kartav1alpha1.LabelRootVersion: gvk.Version,
+				kartav1alpha1.LabelRootKind:    gvk.Kind,
 			},
 		},
 		Spec: kartav1alpha1.KartaSpec{

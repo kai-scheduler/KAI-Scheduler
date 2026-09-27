@@ -21,12 +21,6 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/grouper"
 )
 
-const (
-	KartaGroupLabel   = "run.ai/karta-group"
-	KartaKindLabel    = "run.ai/karta-kind"
-	KartaVersionLabel = "run.ai/karta-version"
-)
-
 type KartaGrouper struct {
 	kartaSummary   *instructions.StructureSummary
 	defaultGrouper grouper.Grouper
