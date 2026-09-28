@@ -1,6 +1,6 @@
 module github.com/kai-scheduler/KAI-scheduler
 
-go 1.26.3
+go 1.26.8
 
 require (
 	github.com/KimMachineGun/automemlimit v0.7.5
