@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
@@ -199,6 +200,14 @@ func Test_calculateNumNeededDevices(t *testing.T) {
 			"Single pod requires GPU memory",
 			[]*v1.Pod{
 				testutils.CreateUnschedulablePodWithGpuMemory("ns1", "pod1", "1024", 1),
+			},
+			1,
+			1,
+		},
+		{
+			"Single pod requires GPU memory - NvFraction",
+			[]*v1.Pod{
+				testutils.CreateUnschedulablePodWithNvFraction("ns1", "pod1", resource.MustParse("1Gi"), 1),
 			},
 			1,
 			1,
