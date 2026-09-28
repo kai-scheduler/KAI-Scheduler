@@ -1,3 +1,0 @@
-kind: Fixed
-body: |-
-  Improve greedy GPU matching performance by avoiding repeated scans

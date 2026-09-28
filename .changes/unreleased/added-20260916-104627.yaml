@@ -1,3 +1,0 @@
-kind: Added
-body: |-
-  Default memory limits and CPU/memory requests for the operator and chart hook jobs

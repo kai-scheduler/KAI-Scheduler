@@ -1,6 +1,0 @@
-kind: Added
-body: |-
-  Add typed fractional GPU group API
-custom:
-    Author: davidLif
-    Issue: "1316"

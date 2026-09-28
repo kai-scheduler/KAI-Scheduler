@@ -1,6 +1,0 @@
-kind: Added
-body: |-
-  Config to group all pods of a deployment under a single podgroup. From now on, this will be the grouping behavior for deployments by default.
-custom:
-    Author: davidLif
-    Issue: "2109"

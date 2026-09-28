@@ -1,6 +1,0 @@
-kind: Added
-body: |-
-  Install gpu-sharing as an OCI subchart
-custom:
-    Author: davidLif
-    Issue: "1316"

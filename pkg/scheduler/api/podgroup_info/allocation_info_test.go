@@ -11,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
+	enginev2alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v2alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
@@ -292,6 +293,64 @@ func Test_GetTasksToAllocate_SkipsUnreadyChildInGangPhase(t *testing.T) {
 	tasks := GetTasksToAllocate(pg, subGroupOrderFn, tasksOrderFn, RealTaskAllocation)
 	if len(tasks) != 1 || tasks[0].Pod.Name != "task-b" {
 		t.Fatalf("GetTasksToAllocate() = %v, want task-b", tasks)
+	}
+}
+
+// Semi-preemptible jobs grow an elastic subgroup exactly like every other mode: a subgroup below its
+// own minMember is completed in one batch or not at all, and only above that floor does it grow one
+// pod at a time. Dribbling into a partial gang would hold resources for work that cannot run.
+func Test_GetTasksToAllocate_SemiPreemptibleElasticSubGroup(t *testing.T) {
+	// Root minSubGroup 1 over leaves "a" and "b", both minMember 3. "a" is always satisfied with no
+	// spare pods, so the elastic phase falls through to "b".
+	newJob := func(bAllocated, bPending int) *PodGroupInfo {
+		pg := NewPodGroupInfo("pg")
+		pg.Preemptibility = enginev2alpha2.SemiPreemptible
+		root := subgroup_info.NewSubGroupSet(subgroup_info.RootSubGroupSetName, nil)
+		root.SetMinSubGroup(ptr.To(int32(1)))
+		pg.RootSubGroupSet = root
+		pg.PodSets = make(map[string]*subgroup_info.PodSet)
+		for _, name := range []string{"a", "b"} {
+			podSet := subgroup_info.NewPodSet(name, 3, nil)
+			root.AddPodSet(podSet)
+			pg.PodSets[name] = podSet
+		}
+		for i := 0; i < 3; i++ {
+			pg.AddTaskInfo(simpleTask(fmt.Sprintf("a-%d", i), "a", pod_status.Running))
+		}
+		for i := 0; i < bAllocated; i++ {
+			pg.AddTaskInfo(simpleTask(fmt.Sprintf("b-%d", i), "b", pod_status.Running))
+		}
+		for i := 0; i < bPending; i++ {
+			pg.AddTaskInfo(simpleTask(fmt.Sprintf("b-pending-%d", i), "b", pod_status.Pending))
+		}
+		return pg
+	}
+
+	tests := []struct {
+		name       string
+		bAllocated int
+		bPending   int
+		wantTasks  int
+	}{
+		{name: "empty subgroup takes its whole gang at once", bAllocated: 0, bPending: 3, wantTasks: 3},
+		{name: "empty subgroup that cannot complete takes nothing", bAllocated: 0, bPending: 2, wantTasks: 0},
+		{name: "satisfied subgroup grows one pod at a time", bAllocated: 3, bPending: 2, wantTasks: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tasks := GetTasksToAllocate(newJob(tt.bAllocated, tt.bPending), subGroupOrderFn, tasksOrderFn,
+				RealTaskAllocation)
+			if len(tasks) != tt.wantTasks {
+				t.Fatalf("GetTasksToAllocate() returned %d tasks, want %d", len(tasks), tt.wantTasks)
+			}
+			for _, task := range tasks {
+				if task.SubGroupName != "b" {
+					t.Fatalf("GetTasksToAllocate() returned task %q from subgroup %q, want b",
+						task.Pod.Name, task.SubGroupName)
+				}
+			}
+		})
 	}
 }
 

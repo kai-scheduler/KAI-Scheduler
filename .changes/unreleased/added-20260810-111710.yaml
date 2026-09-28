@@ -1,6 +1,0 @@
-kind: Added
-body: |-
-  Gate NvFractions on GPU sharing readiness
-custom:
-    Author: davidLif
-    Issue: "1316"

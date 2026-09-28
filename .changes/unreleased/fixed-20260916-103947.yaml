@@ -1,3 +1,0 @@
-kind: Fixed
-body: |-
-  Reduce scheduler allocations from disabled verbose logs

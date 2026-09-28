@@ -1,6 +1,0 @@
-kind: Added
-body: |-
-  Enforce fractional GPU compute modes
-custom:
-    Author: davidLif
-    Issue: "1316"

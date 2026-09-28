@@ -1,3 +1,0 @@
-kind: Added
-body: |-
-  Background pods plugin: ignore maintenance pods when scheduling, evict them when displaced

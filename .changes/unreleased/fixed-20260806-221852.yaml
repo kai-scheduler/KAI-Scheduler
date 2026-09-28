@@ -1,3 +1,0 @@
-kind: Fixed
-body: |-
-  Propagate Kubernetes client QPS and burst settings to operator-managed controllers

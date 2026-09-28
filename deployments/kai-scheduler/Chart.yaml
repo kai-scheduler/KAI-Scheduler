@@ -10,6 +10,6 @@ appVersion: 0.0.0
 
 dependencies:
   - name: gpu-fractioning
-    version: v0.1.1
-    repository: oci://ghcr.io/kai-scheduler/kai-gpu-fractioning
+    version: v0.1.3
+    repository: oci://ghcr.io/kai-scheduler
     condition: global.nvFractions.set
