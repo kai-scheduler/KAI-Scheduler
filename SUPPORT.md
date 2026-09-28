@@ -42,7 +42,8 @@ Historical support additions are listed after the table.
 
 | KAI Release Line | Kubernetes Versions Validated | Notes |
 | :--- | :--- | :--- |
-| `v0.14.x` and `v0.15.x` tags | `v1.31.6`, `v1.32.3` (`default`, `dra-enabled`), `v1.33.4` (`default`, `dra-enabled`), `v1.34.0`, `v1.35.0` | This matrix landed in `5f09d6dc` and is present through tag `v0.15.2`. |
+| `v0.14.0`–`v0.14.5`, `v0.15.0`–`v0.15.2` | `v1.31.6`, `v1.32.3` (`default`, `dra-enabled`), `v1.33.4` (`default`, `dra-enabled`), `v1.34.0`, `v1.35.0` | This matrix landed in `5f09d6dc`. |
+| `v0.14.6`+, `v0.15.3`+ | `v1.28.13`, `v1.29.8`, `v1.30.4`, `v1.31.6`, `v1.32.3` (`default`, `dra-enabled`), `v1.33.4` (`default`, `dra-enabled`), `v1.34.0`, `v1.35.0` | `v1.28`–`v1.30` backported in `1638ca51` (v0.14) and `2fa9bd53` (v0.15). |
 | `v0.16.x`, `v0.17.x`, and `v0.18.x` tags | `v1.28.13`, `v1.29.8`, `v1.30.4`, `v1.31.6`, `v1.32.3` (`default`, `dra-enabled`), `v1.33.4` (`default`, `dra-enabled`), `v1.34.0`, `v1.35.0`, `v1.36.1` | Release workflow validation for the v0.16 through v0.18 lines. |
 | `main` / next unreleased line | `v1.28.13`, `v1.29.8`, `v1.30.4`, `v1.31.6`, `v1.32.3` (`default`, `dra-enabled`), `v1.33.4` (`default`, `dra-enabled`), `v1.34.0`, `v1.35.0`, `v1.36.1` | Release workflow validation for the main line. |
 
