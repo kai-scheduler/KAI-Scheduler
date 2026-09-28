@@ -35,7 +35,7 @@ USER 65532:65532
 
 ENTRYPOINT ["/workspace/app"]
 
-FROM nvcr.io/nvidia/distroless/go:v3.2.1 AS prod-cgo
+FROM nvcr.io/nvidia/distroless/go:v4.1.4 AS prod-cgo
 ARG TARGETARCH
 ARG SERVICE_NAME
 ENV TARGETARCH=$TARGETARCH
