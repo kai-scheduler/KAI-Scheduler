@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.18.1] - 2026-09-28
+
+### Fixed
+- Binder no longer logs a misleading bind-success event after a bind failure on the same reconcile
+- Accept exact fractional GPU quota matches
+- fipsMode=only now sets GODEBUG on resource-reservation pods, scaling pods and all Helm hook jobs [#2240](https://github.com/kai-scheduler/KAI-Scheduler/issues/2240) [gshaibi](https://github.com/gshaibi)
+- Bump go-openapi/swag, golang.org/x/crypto and golang.org/x/mod to fix known CVEs [#2247](https://github.com/kai-scheduler/KAI-Scheduler/issues/2247) [SiorMeir](https://github.com/SiorMeir)
+- Scheduler no longer counts unrelated extended resources ending in `gpu` (such as HAMi's `nvidia.com/vgpu`) as GPU capacity; only `nvidia.com/gpu` and `amd.com/gpu` map to the GPU slot [#2194](https://github.com/kai-scheduler/KAI-Scheduler/issues/2194) [Abdelsalam-Abbas](https://github.com/Abdelsalam-Abbas)
+
 ## [v0.18.0] - 2026-09-23
 
 ### Added
