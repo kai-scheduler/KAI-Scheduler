@@ -8,6 +8,7 @@ import (
 	commonconstants "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/log"
 	rs "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/utils"
@@ -69,8 +70,9 @@ func isAllocatedNonPreemptibleOverQuota(
 		if !found || requestedQty == 0 {
 			continue
 		}
-		if !resource_info.LessOrEqualWithTolerance(resourceShare.AllocatedNotPreemptible+requestedQty,
-			resourceShare.Deserved) {
+		allocatedWithRequest := resourceShare.AllocatedNotPreemptible + requestedQty
+		if allocatedWithRequest > resourceShare.Deserved &&
+			!resource_info.LessOrEqualWithTolerance(allocatedWithRequest, resourceShare.Deserved) {
 			return true, resource
 		}
 	}
