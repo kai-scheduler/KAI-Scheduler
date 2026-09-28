@@ -1,0 +1,9 @@
+kind: Added
+body: |-
+  New `gangcascadeorder` victim-order plugin: among equally-preemptible reclaim/preempt
+  victims, it evicts the gang with the smaller cross-node footprint first (fewest spanned
+  nodes, then fewest pods), reducing collateral gang cascades when freeing a node. It only
+  breaks ties, so priority and fairness ordering are unchanged.
+custom:
+  Issue: "1790"
+  Author: mohitvinchoo
