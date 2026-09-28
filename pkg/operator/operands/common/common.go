@@ -245,8 +245,6 @@ func DaemonSetForKAIConfig(
 	return ds, nil
 }
 
-// FIPSOnlyEnv returns the GODEBUG env var that enforces FIPS 140-3 mode at runtime when
-// global.FIPSOnly is set, or nil otherwise.
 func FIPSOnlyEnv(global *kaiv1.GlobalConfig) []v1.EnvVar {
 	return fips.OnlyEnv(IsFIPSOnly(global))
 }
