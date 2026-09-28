@@ -1,3 +1,0 @@
-kind: Fixed
-body: |-
-  Bug fix: consistent resourceList parsing for resourceInfo and node vector

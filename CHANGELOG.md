@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.12.25] - 2026-09-28
+
+### Fixed
+- Scheduler status-updater no longer keeps re-applying a cached PodGroup status update after another writer (e.g. pod-group-assigner clearing scheduling conditions) modified the PodGroup. Previously the stale condition was overlaid on every snapshot, so the PodGroup was skipped as "not assigned to current scheduler" until the scheduler restarted.
+- Isolate same-named PodGroups across Kubernetes namespaces
+- Bug fix: consistent resourceList parsing for resourceInfo and node vector
+- Topology migration hook now creates KAI Topologies with the served v1alpha1 API version
+
 ## [v0.12.24] - 2026-08-19
 
 ### Fixed
