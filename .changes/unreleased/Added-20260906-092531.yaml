@@ -1,0 +1,6 @@
+kind: Added
+body: Wire admission.queueLabelSelector Helm value into kai-config (was hardcoded false)
+time: 2026-09-06T09:25:31.739155259+01:00
+custom:
+    Author: dttung2905
+    Issue: ""

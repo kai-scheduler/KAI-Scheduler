@@ -301,7 +301,7 @@ spec:
     gpuSharing: {{ .Values.global.gpuSharing }}
     {{- end }}
     blockNvidiaVisibleDevices: {{ .Values.global.blockNvidiaVisibleDevices | default false }}
-    queueLabelSelector: false
+    queueLabelSelector: {{ .Values.admission.queueLabelSelector | default false }}
     webhook:
       port: 443
       targetPort: {{ .Values.admission.ports.webhookPort | default 9443 }}
