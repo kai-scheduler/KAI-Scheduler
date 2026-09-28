@@ -59,6 +59,10 @@ spec:
           {{- toYaml .Values.global.securityContext | nindent 10 }}
         {{- end }}
         args: ["migrate-topologies"]
+        {{- if eq .Values.global.fipsMode "only" }}
+        env:
+        {{- include "kai-scheduler.fipsOnlyEnv" . | nindent 8 }}
+        {{- end }}
       restartPolicy: OnFailure
       {{- if .Values.global.nodeSelector }}
       nodeSelector:

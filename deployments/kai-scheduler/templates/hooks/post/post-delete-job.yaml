@@ -55,6 +55,10 @@ spec:
           securityContext:
             {{- toYaml .Values.global.securityContext | nindent 12 }}
           {{- end }}
+          {{- if eq .Values.global.fipsMode "only" }}
+          env:
+          {{- include "kai-scheduler.fipsOnlyEnv" . | nindent 10 }}
+          {{- end }}
           args:
             - cleanup
             - --namespace={{ .Release.Namespace }}

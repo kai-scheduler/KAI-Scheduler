@@ -23,6 +23,7 @@ import (
 
 	kaiv1 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1"
 	kaiv1common "github.com/kai-scheduler/KAI-scheduler/pkg/apis/kai/v1/common"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/fips"
 	kaiConfigUtils "github.com/kai-scheduler/KAI-scheduler/pkg/operator/config"
 )
 
@@ -244,18 +245,14 @@ func DaemonSetForKAIConfig(
 	return ds, nil
 }
 
-// FIPSOnlyEnv returns the GODEBUG env var that forces FIPS 140-3 mode at runtime when
-// global.FIPSOnly is set, or nil otherwise. See GlobalConfig.FIPSOnly for the runtime panic
-// risk this carries. tlsmlkem=0 works around a crypto/tls gap where its default,
-// FIPS-allowed X25519MLKEM768 curve preference internally calls the plain X25519
-// primitive, which unconditionally errors under fips140=only - breaking every
-// outbound TLS handshake (e.g. to the API server via client-go) unless the hybrid
-// curve is disabled. See https://github.com/kubernetes/kubernetes/issues/133743.
+// FIPSOnlyEnv returns the GODEBUG env var that enforces FIPS 140-3 mode at runtime when
+// global.FIPSOnly is set, or nil otherwise.
 func FIPSOnlyEnv(global *kaiv1.GlobalConfig) []v1.EnvVar {
-	if global == nil || !ptr.Deref(global.FIPSOnly, false) {
-		return nil
-	}
-	return []v1.EnvVar{{Name: "GODEBUG", Value: "fips140=only,tlsmlkem=0"}}
+	return fips.OnlyEnv(IsFIPSOnly(global))
+}
+
+func IsFIPSOnly(global *kaiv1.GlobalConfig) bool {
+	return global != nil && ptr.Deref(global.FIPSOnly, false)
 }
 
 func ShouldCreatePodDisruptionBudget(replicas *int32, service *kaiv1common.Service) bool {

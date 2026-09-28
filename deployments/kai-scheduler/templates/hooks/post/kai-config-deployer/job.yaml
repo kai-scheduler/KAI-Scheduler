@@ -67,6 +67,10 @@ spec:
           {{- toYaml .Values.global.securityContext | nindent 10 }}
         {{- end }}
         args: ["apply-config", "--file=/manifest/kai-config.yaml"]
+        {{- if eq .Values.global.fipsMode "only" }}
+        env:
+        {{- include "kai-scheduler.fipsOnlyEnv" . | nindent 8 }}
+        {{- end }}
         volumeMounts:
         - name: manifest
           mountPath: /manifest

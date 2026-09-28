@@ -127,6 +127,21 @@ var _ = Describe("Binder", func() {
 				Expect(*pluginConfig[binderplugins.HamiCorePluginName].Enabled).To(BeFalse())
 			})
 
+			It("passes --fips-only only when global.fipsOnly is set", func(ctx context.Context) {
+				objects, err := b.DesiredState(ctx, fakeKubeClient, kaiConfig)
+				Expect(err).To(BeNil())
+				deploymentT := test_utils.FindTypeInObjects[*appsv1.Deployment](objects)
+				Expect(deploymentT).NotTo(BeNil())
+				Expect((*deploymentT).Spec.Template.Spec.Containers[0].Args).NotTo(ContainElement("--fips-only"))
+
+				kaiConfig.Spec.Global.FIPSOnly = ptr.To(true)
+				objects, err = b.DesiredState(ctx, fakeKubeClient, kaiConfig)
+				Expect(err).To(BeNil())
+				deploymentT = test_utils.FindTypeInObjects[*appsv1.Deployment](objects)
+				Expect(deploymentT).NotTo(BeNil())
+				Expect((*deploymentT).Spec.Template.Spec.Containers[0].Args).To(ContainElement("--fips-only"))
+			})
+
 			It("passes volume binding timeout through plugin arguments", func(ctx context.Context) {
 				kaiConfig = kaiConfigForBinderWithConfig(&kaiv1binder.Binder{
 					VolumeBindingTimeoutSeconds: ptr.To(45),

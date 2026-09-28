@@ -112,7 +112,7 @@ var _ = BeforeSuite(func() {
 
 	rrs = resourcereservation.NewService(false, clientWithWatch, "", 40*time.Second,
 		resourceReservationNameSpace, resourceReservationServiceAccount, resourceReservationAppLabelValue, scalingPodsNamespace, "",
-		nil, nil, nil)
+		nil, nil, nil, false)
 	podBinder := binding.NewBinder(k8sManager.GetClient(), rrs, binderPlugins)
 
 	err = controllers.NewBindRequestReconciler(

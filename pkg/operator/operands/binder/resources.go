@@ -227,6 +227,10 @@ func buildArgsList(kaiConfig *kaiv1.Config, config *kaiv1binder.Binder, fakeGPU 
 		args = append(args, "--fake-gpu-nodes")
 	}
 
+	if common.IsFIPSOnly(kaiConfig.Spec.Global) {
+		args = append(args, "--fips-only")
+	}
+
 	if config.Replicas != nil && *config.Replicas > 1 {
 		args = append(args, "--leader-elect")
 	}

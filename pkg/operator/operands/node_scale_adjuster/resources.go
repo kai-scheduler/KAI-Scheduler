@@ -37,6 +37,7 @@ func deploymentForKAIConfig(
 		kaiConfig.Spec.NodeScaleAdjuster,
 		*kaiConfig.Spec.Global.SchedulerName,
 		kaiConfig.Spec.Global.JSONLog,
+		common.IsFIPSOnly(kaiConfig.Spec.Global),
 	)
 
 	return deployment, nil
@@ -80,7 +81,9 @@ func scalingPodServiceAccountForKAIConfig(
 	return sa, err
 }
 
-func argsForKAIConfig(config *node_scale_adjuster.NodeScaleAdjuster, schedulerName string, jsonLog *bool) []string {
+func argsForKAIConfig(
+	config *node_scale_adjuster.NodeScaleAdjuster, schedulerName string, jsonLog *bool, fipsOnly bool,
+) []string {
 	args := []string{
 		"--scheduler-name", schedulerName,
 	}
@@ -100,6 +103,10 @@ func argsForKAIConfig(config *node_scale_adjuster.NodeScaleAdjuster, schedulerNa
 	if config.Args.GPUMemoryToFractionRatio != nil {
 		args = append(args, "--gpu-memory-to-fraction-ratio",
 			fmt.Sprintf("%f", *config.Args.GPUMemoryToFractionRatio))
+	}
+
+	if fipsOnly {
+		args = append(args, "--fips-only")
 	}
 
 	return common.AddControllerRuntimeJSONLogArg(jsonLog, args)

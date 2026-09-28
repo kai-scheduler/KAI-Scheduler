@@ -116,7 +116,8 @@ func New(options *Options, config *rest.Config) (*App, error) {
 		options.ResourceReservationAppLabel, options.ScalingPodNamespace, options.RuntimeClassName,
 		options.ResourceReservationPodResources.Value,
 		options.ResourceReservationPodSecurityContext.Value,
-		options.ResourceReservationContainerSecurityContext.Value)
+		options.ResourceReservationContainerSecurityContext.Value,
+		options.FIPSOnly)
 
 	reconcilerParams := &controllers.ReconcilerParams{
 		MaxConcurrentReconciles:     options.MaxConcurrentReconciles,
