@@ -1,3 +1,6 @@
 kind: Fixed
 body: |-
   fipsMode=only now sets GODEBUG on resource-reservation pods, scaling pods and all Helm hook jobs
+custom:
+  Issue: "2240"
+  Author: gshaibi
