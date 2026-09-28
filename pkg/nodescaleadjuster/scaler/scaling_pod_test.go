@@ -15,6 +15,7 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/fips"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/nodescaleadjuster/consts"
 	testutils "github.com/kai-scheduler/KAI-scheduler/pkg/nodescaleadjuster/test-utils"
 )
@@ -40,7 +41,7 @@ func TestCreateScalingPodSpec(t *testing.T) {
 	}
 
 	scalingPod := createScalingPodSpec(testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount,
-		unschedulablePod, consts.DefaultScalingPodImage, testutils.ScalingPodNamespace, 3)
+		unschedulablePod, consts.DefaultScalingPodImage, testutils.ScalingPodNamespace, 3, false)
 	expectedName := scalingPodName(PodNamespace, PodName)
 	if scalingPod.Name != expectedName {
 		t.Errorf("Pod names was expected to be %v, actual %v", expectedName, scalingPod.Name)
@@ -55,10 +56,32 @@ func TestCreateScalingPodSpec(t *testing.T) {
 	}
 }
 
+func TestCreateScalingPodSpecFIPSOnly(t *testing.T) {
+	unschedulablePod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      PodName,
+			Namespace: PodNamespace,
+		},
+	}
+
+	scalingPod := createScalingPodSpec(testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount,
+		unschedulablePod, consts.DefaultScalingPodImage, testutils.ScalingPodNamespace, 3, true)
+	expectedEnv := []corev1.EnvVar{{Name: fips.GODEBUGEnvName, Value: fips.OnlyGODEBUGValue}}
+	if !reflect.DeepEqual(scalingPod.Spec.Containers[0].Env, expectedEnv) {
+		t.Errorf("Expected env %v, actual %v", expectedEnv, scalingPod.Spec.Containers[0].Env)
+	}
+
+	scalingPod = createScalingPodSpec(testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount,
+		unschedulablePod, consts.DefaultScalingPodImage, testutils.ScalingPodNamespace, 3, false)
+	if len(scalingPod.Spec.Containers[0].Env) != 0 {
+		t.Errorf("Expected no env, actual %v", scalingPod.Spec.Containers[0].Env)
+	}
+}
+
 func TestCreateScalingPodWithPodAffinity(t *testing.T) {
 	pod := loadTestPodFromYaml("test_pods/pod_with_pod_affinity.yaml")
 	scalingPod := createScalingPodSpec(testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount,
-		pod, consts.DefaultScalingPodImage, testutils.ScalingPodNamespace, 3)
+		pod, consts.DefaultScalingPodImage, testutils.ScalingPodNamespace, 3, false)
 	if !reflect.DeepEqual(scalingPod.Spec.Affinity, pod.Spec.Affinity) {
 		t.Errorf("Scaling pod did not inherrit pod affinity")
 	}
@@ -67,7 +90,7 @@ func TestCreateScalingPodWithPodAffinity(t *testing.T) {
 func TestCreateScalingPodWithNodeAffinity(t *testing.T) {
 	pod := loadTestPodFromYaml("test_pods/pod_with_node_affinity.yaml")
 	scalingPod := createScalingPodSpec(testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount,
-		pod, consts.DefaultScalingPodImage, testutils.ScalingPodNamespace, 3)
+		pod, consts.DefaultScalingPodImage, testutils.ScalingPodNamespace, 3, false)
 	if !reflect.DeepEqual(scalingPod.Spec.Affinity, pod.Spec.Affinity) {
 		t.Errorf("Scaling pod did not inherrit node affinity")
 	}
@@ -76,7 +99,7 @@ func TestCreateScalingPodWithNodeAffinity(t *testing.T) {
 func TestCreateScalingPodWithNodeSelector(t *testing.T) {
 	pod := loadTestPodFromYaml("test_pods/pod_with_node_selector.yaml")
 	scalingPod := createScalingPodSpec(testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount,
-		pod, consts.DefaultScalingPodImage, testutils.ScalingPodNamespace, 3)
+		pod, consts.DefaultScalingPodImage, testutils.ScalingPodNamespace, 3, false)
 	if !reflect.DeepEqual(scalingPod.Spec.NodeSelector, pod.Spec.NodeSelector) {
 		t.Errorf("Scaling pod did not inherrit node selector")
 	}
@@ -85,7 +108,7 @@ func TestCreateScalingPodWithNodeSelector(t *testing.T) {
 func TestCreateScalingPodWithToleration(t *testing.T) {
 	pod := loadTestPodFromYaml("test_pods/pod_with_toleration.yaml")
 	scalingPod := createScalingPodSpec(testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount,
-		pod, consts.DefaultScalingPodImage, testutils.ScalingPodNamespace, 3)
+		pod, consts.DefaultScalingPodImage, testutils.ScalingPodNamespace, 3, false)
 	if !reflect.DeepEqual(scalingPod.Spec.Tolerations, pod.Spec.Tolerations) {
 		t.Errorf("Scaling pod did not inherrit tolerations")
 	}
@@ -94,7 +117,7 @@ func TestCreateScalingPodWithToleration(t *testing.T) {
 func TestRequestedResources(t *testing.T) {
 	pod := loadTestPodFromYaml("test_pods/pod_with_multiple_containers.yaml")
 	scalingPod := createScalingPodSpec(testutils.ScalingPodAppLabel, testutils.ScalingPodServiceAccount,
-		pod, consts.DefaultScalingPodImage, testutils.ScalingPodNamespace, 3)
+		pod, consts.DefaultScalingPodImage, testutils.ScalingPodNamespace, 3, false)
 	if len(scalingPod.Spec.Containers) != 1 {
 		t.Errorf("Failed to aggregate container resource requests")
 	}

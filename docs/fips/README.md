@@ -22,7 +22,7 @@ The flag appends `-fips` to every resolved image tag — whether the tag comes f
 
 ### Enforcing FIPS mode at runtime (`fipsMode=only`)
 
-Set `global.fipsMode=only` to do everything `on` does, plus set `GODEBUG=fips140=on` on every KAI container (scheduler, binder, admission, podgrouper, queue-controller, podgroup-controller, resource-reservation, node-scale-adjuster, numa-placement-exporter, operator, and the crd-upgrader hook):
+Set `global.fipsMode=only` to do everything `on` does, plus set `GODEBUG=fips140=on` on every KAI container (operator, scheduler, binder, admission, podgrouper, queue-controller, podgroup-controller, node-scale-adjuster, numa-placement-exporter, the resource-reservation and scaling pods, and all Helm hook jobs):
 
 ```sh
 helm upgrade --install kai-scheduler oci://ghcr.io/kai-scheduler/kai-scheduler/kai-scheduler \

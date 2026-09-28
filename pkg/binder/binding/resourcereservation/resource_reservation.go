@@ -27,6 +27,7 @@ import (
 	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/binder/binding/resourcereservation/group_mutex"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/fips"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 )
 
@@ -62,6 +63,7 @@ type service struct {
 	podResources                        *v1.ResourceRequirements
 	reservationPodSecurityContext       *v1.PodSecurityContext
 	reservationContainerSecurityContext *v1.SecurityContext
+	fipsOnly                            bool
 }
 
 func NewService(
@@ -77,6 +79,7 @@ func NewService(
 	podResources *v1.ResourceRequirements,
 	reservationPodSecurityContext *v1.PodSecurityContext,
 	reservationContainerSecurityContext *v1.SecurityContext,
+	fipsOnly bool,
 ) *service {
 	return &service{
 		fakeGPuNodes:                        fakeGPuNodes,
@@ -92,6 +95,7 @@ func NewService(
 		podResources:                        podResources,
 		reservationPodSecurityContext:       reservationPodSecurityContext,
 		reservationContainerSecurityContext: reservationContainerSecurityContext,
+		fipsOnly:                            fipsOnly,
 	}
 }
 
@@ -620,7 +624,7 @@ func (rsc *service) createResourceReservationPod(
 					ImagePullPolicy: v1.PullIfNotPresent,
 					Resources:       containerResources,
 					SecurityContext: rsc.reservationContainerSecurityContext,
-					Env: []v1.EnvVar{
+					Env: append([]v1.EnvVar{
 						{
 							Name: "POD_NAME",
 							ValueFrom: &v1.EnvVarSource{
@@ -637,7 +641,7 @@ func (rsc *service) createResourceReservationPod(
 								},
 							},
 						},
-					},
+					}, fips.OnlyEnv(rsc.fipsOnly)...),
 				},
 			},
 		},

@@ -84,6 +84,21 @@ var _ = Describe("NodeScaleAdjuster", func() {
 				Expect(deployment.Labels).To(HaveKeyWithValue("foo", "bar"))
 				Expect(deployment.Spec.Template.Labels).To(HaveKeyWithValue("kai", "scheduler"))
 			})
+
+			It("passes --fips-only only when global.fipsOnly is set", func(ctx context.Context) {
+				objects, err := nsa.DesiredState(ctx, fakeKubeClient, kaiConfig)
+				Expect(err).To(BeNil())
+				deploymentT := test_utils.FindTypeInObjects[*appsv1.Deployment](objects)
+				Expect(deploymentT).NotTo(BeNil())
+				Expect((*deploymentT).Spec.Template.Spec.Containers[0].Args).NotTo(ContainElement("--fips-only"))
+
+				kaiConfig.Spec.Global.FIPSOnly = ptr.To(true)
+				objects, err = nsa.DesiredState(ctx, fakeKubeClient, kaiConfig)
+				Expect(err).To(BeNil())
+				deploymentT = test_utils.FindTypeInObjects[*appsv1.Deployment](objects)
+				Expect(deploymentT).NotTo(BeNil())
+				Expect((*deploymentT).Spec.Template.Spec.Containers[0].Args).To(ContainElement("--fips-only"))
+			})
 		})
 	})
 })

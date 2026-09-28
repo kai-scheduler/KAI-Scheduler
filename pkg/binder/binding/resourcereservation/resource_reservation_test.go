@@ -26,6 +26,7 @@ import (
 
 	schedulingv1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/fips"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 )
 
@@ -58,7 +59,7 @@ func initializeTestService(
 ) *service {
 	service := NewService(false, client, "", 40*time.Millisecond,
 		resourceReservationNameSpace, resourceReservationServiceAccount, resourceReservationAppLabelValue, scalingPodsNamespace, "",
-		nil, nil, nil)
+		nil, nil, nil, false)
 
 	return service
 }
@@ -1623,7 +1624,7 @@ var _ = Describe("Race condition: reservation pod deleted during concurrent bind
 			svc := NewService(false, clientWithObjs, "test-image", 40*time.Millisecond,
 				resourceReservationNameSpace, resourceReservationServiceAccount,
 				resourceReservationAppLabelValue, scalingPodsNamespace, "",
-				nil, podSecCtx, containerSecCtx)
+				nil, podSecCtx, containerSecCtx, false)
 
 			pod, err := svc.createResourceReservationPod(
 				nil,
@@ -1648,7 +1649,7 @@ var _ = Describe("Race condition: reservation pod deleted during concurrent bind
 			svc := NewService(false, clientWithObjs, "test-image", 40*time.Millisecond,
 				resourceReservationNameSpace, resourceReservationServiceAccount,
 				resourceReservationAppLabelValue, scalingPodsNamespace, "",
-				nil, nil, nil)
+				nil, nil, nil, false)
 
 			pod, err := svc.createResourceReservationPod(
 				nil,
@@ -1665,6 +1666,45 @@ var _ = Describe("Race condition: reservation pod deleted during concurrent bind
 			Expect(err).To(Succeed())
 			Expect(pod.Spec.SecurityContext).To(BeNil())
 			Expect(pod.Spec.Containers[0].SecurityContext).To(BeNil())
+		})
+	})
+
+	Context("FIPS only", func() {
+		createPod := func(fipsOnly bool) *v1.Pod {
+			clientWithObjs := fake.NewClientBuilder().WithScheme(testScheme).
+				WithIndex(&v1.Pod{}, "spec.nodeName", nodeNameIndexer).Build()
+			svc := NewService(false, clientWithObjs, "test-image", 40*time.Millisecond,
+				resourceReservationNameSpace, resourceReservationServiceAccount,
+				resourceReservationAppLabelValue, scalingPodsNamespace, "",
+				nil, nil, nil, fipsOnly)
+
+			pod, err := svc.createResourceReservationPod(
+				nil,
+				nodeName, schedulingv1alpha2.FractionalGpuGroup{
+					ID:                 gpuGroup,
+					ComputeSharingMode: schedulingv1alpha2.GPUComputeSharingModeTimeSlicing,
+				},
+				"test-reservation-pod",
+				v1.ResourceRequirements{
+					Limits:   v1.ResourceList{constants.NvidiaGpuResource: *resource.NewQuantity(1, resource.DecimalSI)},
+					Requests: v1.ResourceList{constants.NvidiaGpuResource: *resource.NewQuantity(1, resource.DecimalSI)},
+				},
+			)
+			Expect(err).To(Succeed())
+			return pod
+		}
+
+		It("should set GODEBUG=fips140=only on reservation pods when enabled", func() {
+			pod := createPod(true)
+			Expect(pod.Spec.Containers[0].Env).To(ContainElement(
+				v1.EnvVar{Name: fips.GODEBUGEnvName, Value: fips.OnlyGODEBUGValue}))
+		})
+
+		It("should not set GODEBUG on reservation pods when disabled", func() {
+			pod := createPod(false)
+			for _, env := range pod.Spec.Containers[0].Env {
+				Expect(env.Name).NotTo(Equal(fips.GODEBUGEnvName))
+			}
 		})
 	})
 })

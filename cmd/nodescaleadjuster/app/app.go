@@ -65,7 +65,7 @@ func Run() error {
 	}
 
 	nodeScaler := scaler.NewScaler(mgr.GetClient(), options.ScalingPodImage, options.ScalingPodNamespace,
-		options.ScalingPodAppLabel, options.ScalingPodServiceAccount)
+		options.ScalingPodAppLabel, options.ScalingPodServiceAccount, options.FIPSOnly)
 
 	scaleAdjuster := scale_adjuster.NewScaleAdjuster(
 		mgr.GetClient(),
