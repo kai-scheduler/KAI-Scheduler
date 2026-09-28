@@ -8,6 +8,8 @@ const (
 	Operated       = "operated"
 	ReservationPod = "reservationPod"
 	Scale          = "scale"
+	ScaleExtended  = "scale-extended"
+	Fractions      = "fractions"
 	Autoscale      = "autoscale"
 	NCCL           = "nccl"
 	Upgrade        = "upgrade"
