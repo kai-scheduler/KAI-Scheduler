@@ -245,6 +245,13 @@ func DaemonSetForKAIConfig(
 	return ds, nil
 }
 
+// FIPSOnlyEnv returns the GODEBUG env var that forces FIPS 140-3 mode at runtime when
+// global.FIPSOnly is set, or nil otherwise. See GlobalConfig.FIPSOnly for the runtime panic
+// risk this carries. tlsmlkem=0 works around a crypto/tls gap where its default,
+// FIPS-allowed X25519MLKEM768 curve preference internally calls the plain X25519
+// primitive, which unconditionally errors under fips140=only - breaking every
+// outbound TLS handshake (e.g. to the API server via client-go) unless the hybrid
+// curve is disabled. See https://github.com/kubernetes/kubernetes/issues/133743.
 func FIPSOnlyEnv(global *kaiv1.GlobalConfig) []v1.EnvVar {
 	return fips.OnlyEnv(IsFIPSOnly(global))
 }
