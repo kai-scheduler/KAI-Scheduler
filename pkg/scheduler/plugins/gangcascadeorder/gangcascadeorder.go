@@ -23,11 +23,14 @@
 package gangcascadeorder
 
 import (
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 )
 
-type gangCascadeOrderPlugin struct{}
+type gangCascadeOrderPlugin struct {
+	ssn *framework.Session
+}
 
 func New(_ framework.PluginArguments) framework.Plugin {
 	return &gangCascadeOrderPlugin{}
@@ -38,13 +41,14 @@ func (p *gangCascadeOrderPlugin) Name() string {
 }
 
 func (p *gangCascadeOrderPlugin) OnSessionOpen(ssn *framework.Session) {
+	p.ssn = ssn
 	ssn.AddVictimOrderFn(p.VictimOrderFn)
 }
 
 // VictimOrderFn returns <0 when l should be evicted before r. It engages only for
 // equal-priority victims (returning 0 otherwise so higher-priority protections are
 // preserved), preferring the smaller cross-node footprint: fewer spanned nodes first,
-// then fewer total gang pods.
+// then fewer evicted pods.
 func (p *gangCascadeOrderPlugin) VictimOrderFn(l, r interface{}) int {
 	lv := l.(*podgroup_info.PodGroupInfo)
 	rv := r.(*podgroup_info.PodGroupInfo)
@@ -53,8 +57,8 @@ func (p *gangCascadeOrderPlugin) VictimOrderFn(l, r interface{}) int {
 		return 0
 	}
 
-	lSpan, lPods := gangFootprint(lv)
-	rSpan, rPods := gangFootprint(rv)
+	lSpan, lPods := p.gangFootprint(lv)
+	rSpan, rPods := p.gangFootprint(rv)
 
 	if lSpan != rSpan {
 		if lSpan < rSpan {
@@ -73,16 +77,29 @@ func (p *gangCascadeOrderPlugin) VictimOrderFn(l, r interface{}) int {
 
 func (p *gangCascadeOrderPlugin) OnSessionClose(_ *framework.Session) {}
 
-// gangFootprint reports how many distinct nodes the gang's allocated pods occupy (its
-// cross-node cascade span) and the number of allocated pods.
-func gangFootprint(pg *podgroup_info.PodGroupInfo) (span int, pods int) {
+// gangFootprint reports the cross-node cascade cost of reclaiming from this gang: how
+// many distinct nodes the eviction touches (its span) and how many pods it removes.
+//
+// It scores the tasks that would *actually* be evicted, not the whole gang. For an
+// elastic gang running above minMember, GetTasksToEvict returns only the surplus tasks
+// that can be shed while the gang stays gang-satisfied, so a wide elastic gang with one
+// surplus pod is correctly scored as a one-pod, one-node eviction rather than a full
+// teardown. For a gang at minMember it returns the whole gang, since dropping any member
+// cascades every pod across every node the gang occupies.
+func (p *gangCascadeOrderPlugin) gangFootprint(pg *podgroup_info.PodGroupInfo) (span int, pods int) {
+	var evicted []*pod_info.PodInfo
+	if p.ssn != nil {
+		evicted, _ = podgroup_info.GetTasksToEvict(pg, p.ssn.SubGroupOrderFn, p.ssn.TaskOrderFn)
+	}
+	if len(evicted) == 0 {
+		evicted = pg.GetAllAllocatedPods()
+	}
 	nodes := map[string]struct{}{}
-	allocated := pg.GetAllAllocatedPods()
-	for _, task := range allocated {
+	for _, task := range evicted {
 		if task.NodeName == "" {
 			continue
 		}
 		nodes[task.NodeName] = struct{}{}
 	}
-	return len(nodes), len(allocated)
+	return len(nodes), len(evicted)
 }
