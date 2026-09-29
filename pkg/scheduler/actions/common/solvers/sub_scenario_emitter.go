@@ -26,9 +26,10 @@ import (
 // half — which the OLD per-node iteration in the solver enforced implicitly via
 // VictimsTasksFromNodes.
 //
-// Sort order: fewest gangs destroyed, then pod cascade, then capacity, then first-seen index.
-// Cross-node gangs are the only case where the first two terms change the outcome; otherwise
-// this degenerates to the previous capacity-ascending behavior.
+// Sort order: per-node capacity ascending (prefer the smallest viable node so we minimize
+// the number of victims actually evicted/pipelined). Ties broken by the index at which
+// the node's first victim task appeared in the accumulator, so insertion order from the
+// outer priority queue is preserved when capacities tie.
 
 // victimBatch corresponds to one call into the accumulator's addNextPotentialVictims:
 // for a non-elastic gang job that's all its tasks at once; for an elastic job that's
@@ -58,8 +59,7 @@ func newSubScenarioEmitter(
 	recordedFreed := recordedFreedByNode(base)
 	batches, nodeBatches, nodeFirstSeenAt := buildVictimBatches(base)
 	nodeCap := nodeCapacities(session, batches, nodeBatches, recordedFreed)
-	nodeCascadeCost := nodeCascades(batches, nodeBatches)
-	candidates := sortViableCandidates(nodeBatches, nodeCap, nodeCascadeCost, nodeFirstSeenAt, minPendingTask)
+	candidates := sortViableCandidates(nodeBatches, nodeCap, nodeFirstSeenAt, minPendingTask)
 	baseline := baselineCapacity(baseNodes, nodeBatches, recordedFreed)
 
 	remaining := pendingDemand - baseline
@@ -213,33 +213,13 @@ func nodeCapacities(
 	return out
 }
 
-// nodeCascade is the per-node reclaim cost: distinct victim gangs destroyed by freeing
-// the node, and the pods that removes (including those gangs' pods on other nodes).
-type nodeCascade struct {
-	gangs int
-	pods  int
-}
-
-// nodeCascades computes each node's gangs-destroyed and pod cascade. Freeing a node tears
-// down every gang (batch) with a member on it, so its pods on other nodes go too.
-func nodeCascades(batches []victimBatch, nodeBatches map[string][]int) map[string]nodeCascade {
-	out := map[string]nodeCascade{}
-	for nodeName, batchIdxs := range nodeBatches {
-		c := nodeCascade{gangs: len(batchIdxs)}
-		for _, bi := range batchIdxs {
-			c.pods += len(batches[bi].tasks)
-		}
-		out[nodeName] = c
-	}
-	return out
-}
-
-// sortViableCandidates drops nodes that can't host the smallest pending task, then orders
-// by fewest gangs destroyed, then pod cascade, then capacity, then first-seen index.
+// sortViableCandidates filters out nodes whose post-eviction capacity is below the
+// smallest pending-task GPU requirement (they can't host any pending task) and
+// returns the survivors sorted ascending by capacity, with ties broken by
+// insertion order so equal-capacity candidates are tried in queue order.
 func sortViableCandidates(
 	nodeBatches map[string][]int,
 	nodeCap map[string]float64,
-	nodeCascadeCost map[string]nodeCascade,
 	nodeFirstSeenAt map[string]int,
 	minPendingTask float64,
 ) []string {
@@ -251,16 +231,9 @@ func sortViableCandidates(
 		out = append(out, nodeName)
 	}
 	sort.Slice(out, func(i, j int) bool {
-		ci, cj := nodeCascadeCost[out[i]], nodeCascadeCost[out[j]]
-		if ci.gangs != cj.gangs {
-			return ci.gangs < cj.gangs
-		}
-		if ci.pods != cj.pods {
-			return ci.pods < cj.pods
-		}
-		capi, capj := nodeCap[out[i]], nodeCap[out[j]]
-		if capi != capj {
-			return capi < capj
+		ci, cj := nodeCap[out[i]], nodeCap[out[j]]
+		if ci != cj {
+			return ci < cj
 		}
 		return nodeFirstSeenAt[out[i]] < nodeFirstSeenAt[out[j]]
 	})
