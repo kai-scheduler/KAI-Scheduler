@@ -147,13 +147,40 @@ func TestVictimOrderFn_SurplusAwareElasticIsCheaper(t *testing.T) {
 	// At minimum: 3 pods across 3 nodes, min 3 -> evicting cascades the whole gang.
 	atMin := makeGangWithMin("at-min", 10, []string{"n4", "n5", "n6"}, 3)
 
-	if span, pods := p.gangFootprint(wideElastic); span != 1 || pods != 1 {
-		t.Fatalf("elastic surplus footprint = (span %d, pods %d), want (1, 1)", span, pods)
+	if span, pods, survives := p.gangFootprint(wideElastic); span != 1 || pods != 1 || !survives {
+		t.Fatalf("elastic surplus footprint = (span %d, pods %d, survives %v), want (1, 1, true)", span, pods, survives)
 	}
-	if span, pods := p.gangFootprint(atMin); span != 3 || pods != 3 {
-		t.Fatalf("at-min footprint = (span %d, pods %d), want (3, 3)", span, pods)
+	if span, pods, survives := p.gangFootprint(atMin); span != 3 || pods != 3 || survives {
+		t.Fatalf("at-min footprint = (span %d, pods %d, survives %v), want (3, 3, false)", span, pods, survives)
 	}
 	if got := p.VictimOrderFn(wideElastic, atMin); got != -1 {
 		t.Errorf("expected wide elastic gang (sheds 1 surplus pod) evicted before at-min gang: got %d", got)
+	}
+}
+
+// A and C both cost one pod on one node, but evicting C sheds an elastic spare and its
+// gang survives, while evicting A tears its gang down. The surviving eviction must be
+// preferred, so a workload is never destroyed when a spare shed frees the same capacity.
+func TestVictimOrderFn_PrefersSurvivingEvictionOverTeardown(t *testing.T) {
+	ssn := &framework.Session{}
+	p := &gangCascadeOrderPlugin{ssn: ssn}
+
+	rigidA := makeGangWithMin("A-rigid", 10, []string{"n0"}, 1) // 1 pod, at min: dies
+	// Elastic C: 2 running pods, min 1, so shedding 1 spare keeps it gang-satisfied.
+	elasticC := makeGangWithMin("C-elastic", 10, []string{"n1", "n2"}, 1)
+
+	_, _, aSurvives := p.gangFootprint(rigidA)
+	_, _, cSurvives := p.gangFootprint(elasticC)
+	if aSurvives {
+		t.Fatalf("rigid A at minimum should not survive eviction")
+	}
+	if !cSurvives {
+		t.Fatalf("elastic C above minimum should survive shedding a spare")
+	}
+	if got := p.VictimOrderFn(elasticC, rigidA); got != -1 {
+		t.Errorf("expected surviving elastic C evicted before teardown A: got %d", got)
+	}
+	if got := p.VictimOrderFn(rigidA, elasticC); got != 1 {
+		t.Errorf("expected teardown A evicted after surviving elastic C: got %d", got)
 	}
 }
