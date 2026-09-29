@@ -23,17 +23,33 @@
 package gangcascadeorder
 
 import (
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/framework"
 )
 
+// footprint is the cross-node cascade cost of reclaiming from a gang.
+type footprint struct {
+	span int
+	pods int
+}
+
+// footprintKey memoizes a gang's footprint for the duration of a session. It includes
+// the active-allocated count so the entry is invalidated whenever the gang gains or loses
+// allocated tasks (which is exactly what changes the eviction set).
+type footprintKey struct {
+	uid    common_info.PodGroupID
+	active int
+}
+
 type gangCascadeOrderPlugin struct {
-	ssn *framework.Session
+	ssn   *framework.Session
+	cache map[footprintKey]footprint
 }
 
 func New(_ framework.PluginArguments) framework.Plugin {
-	return &gangCascadeOrderPlugin{}
+	return &gangCascadeOrderPlugin{cache: map[footprintKey]footprint{}}
 }
 
 func (p *gangCascadeOrderPlugin) Name() string {
@@ -42,6 +58,7 @@ func (p *gangCascadeOrderPlugin) Name() string {
 
 func (p *gangCascadeOrderPlugin) OnSessionOpen(ssn *framework.Session) {
 	p.ssn = ssn
+	p.cache = map[footprintKey]footprint{}
 	ssn.AddVictimOrderFn(p.VictimOrderFn)
 }
 
@@ -87,6 +104,13 @@ func (p *gangCascadeOrderPlugin) OnSessionClose(_ *framework.Session) {}
 // teardown. For a gang at minMember it returns the whole gang, since dropping any member
 // cascades every pod across every node the gang occupies.
 func (p *gangCascadeOrderPlugin) gangFootprint(pg *podgroup_info.PodGroupInfo) (span int, pods int) {
+	key := footprintKey{uid: pg.UID, active: pg.GetActiveAllocatedTasksCount()}
+	if p.cache != nil {
+		if f, ok := p.cache[key]; ok {
+			return f.span, f.pods
+		}
+	}
+
 	var evicted []*pod_info.PodInfo
 	if p.ssn != nil {
 		evicted, _ = podgroup_info.GetTasksToEvict(pg, p.ssn.SubGroupOrderFn, p.ssn.TaskOrderFn)
@@ -101,5 +125,10 @@ func (p *gangCascadeOrderPlugin) gangFootprint(pg *podgroup_info.PodGroupInfo) (
 		}
 		nodes[task.NodeName] = struct{}{}
 	}
-	return len(nodes), len(evicted)
+	span, pods = len(nodes), len(evicted)
+
+	if p.cache != nil {
+		p.cache[key] = footprint{span: span, pods: pods}
+	}
+	return span, pods
 }
