@@ -1,8 +1,8 @@
 kind: Changed
 body: |-
-  Reclaim/preempt scenario search now ranks candidate nodes by cross-node gang cascade
-  cost before local capacity when multiple freeable nodes are accumulated, preferring the
-  node whose eviction disrupts the fewest gangs. Single-node-gang workloads are unaffected.
+  Reclaim/preempt scenario search now ranks candidate freeable nodes by the number of gangs
+  their eviction destroys, then the pod cascade, then capacity, preferring the node that
+  disrupts the fewest workloads. Single-node-gang workloads are unaffected.
 custom:
   Issue: "1790"
   Author: mohitvinchoo
