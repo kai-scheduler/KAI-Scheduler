@@ -1,8 +1,0 @@
-kind: Changed
-body: |-
-  Reclaim/preempt scenario search now ranks candidate freeable nodes by the number of gangs
-  their eviction destroys, then the pod cascade, then capacity, preferring the node that
-  disrupts the fewest workloads. Single-node-gang workloads are unaffected.
-custom:
-  Issue: "1790"
-  Author: mohitvinchoo
