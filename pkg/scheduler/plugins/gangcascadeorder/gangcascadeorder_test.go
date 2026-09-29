@@ -71,8 +71,8 @@ func TestVictimOrderFn_PrefersSmallerNodeSpan(t *testing.T) {
 	}
 }
 
-// A large self-contained gang must be preferred over a small cross-node gang — the case
-// GPU/pod-size tiebreaks get wrong. Freeing the single-node gang cascades nothing.
+// A large self-contained gang must be preferred over a small cross-node gang (the case
+// GPU/pod-size tiebreaks get wrong): freeing the single-node gang cascades nothing.
 func TestVictimOrderFn_LargeSingleNodeBeatsSmallCrossNode(t *testing.T) {
 	vm := resource_info.NewResourceVectorMap()
 	bigLocal := makeGang("bigLocal", 10, []string{"n0", "n0", "n0", "n0", "n0", "n0", "n0", "n0"}, vm) // span 1, 8 pods
@@ -134,10 +134,8 @@ func makeGangWithMin(uid string, priority int32, nodes []string, minAvailable in
 	return pg
 }
 
-// A wide gang running above minMember can shed a single surplus pod without cascading, so
-// its true cost is one pod on one node, not its full span. The plugin must score it by the
-// tasks GetTasksToEvict would actually remove and prefer it over tearing down a smaller
-// gang that sits at its minimum.
+// A wide elastic gang is scored by the surplus it sheds (1 pod, 1 node), so it is
+// preferred over tearing down a smaller at-minimum gang.
 func TestVictimOrderFn_SurplusAwareElasticIsCheaper(t *testing.T) {
 	ssn := &framework.Session{}
 	p := &gangCascadeOrderPlugin{ssn: ssn}
@@ -158,9 +156,8 @@ func TestVictimOrderFn_SurplusAwareElasticIsCheaper(t *testing.T) {
 	}
 }
 
-// A and C both cost one pod on one node, but evicting C sheds an elastic spare and its
-// gang survives, while evicting A tears its gang down. The surviving eviction must be
-// preferred, so a workload is never destroyed when a spare shed frees the same capacity.
+// C sheds an elastic spare (gang survives) while A is a teardown; both cost one pod on one
+// node, so the surviving eviction must win.
 func TestVictimOrderFn_PrefersSurvivingEvictionOverTeardown(t *testing.T) {
 	ssn := &framework.Session{}
 	p := &gangCascadeOrderPlugin{ssn: ssn}

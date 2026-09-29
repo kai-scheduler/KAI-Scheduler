@@ -36,11 +36,8 @@ func TestNodeCascades_CountsGangsAndPods(t *testing.T) {
 	require.Equal(t, 5, cascade["node-1"].pods)
 }
 
-// TestSortViableCandidates_PrefersLeastDisruptiveNode reproduces the cross-node-gang
-// cascade shape: every wide node backs 8 gangs that each span 8 nodes (64 cascaded pods),
-// while the narrow node backs 8 single-node gangs (8 pods). Both destroy the same 8 gangs
-// and look identical on local capacity, and the wide nodes are even seen FIRST in queue
-// order. The pod-cascade tiebreak must still surface the narrow node first.
+// TestSortViableCandidates_PrefersLeastDisruptiveNode: wide and narrow nodes both destroy
+// 8 gangs and tie on capacity, but the narrow node cascades 8 pods vs 64, so it wins.
 func TestSortViableCandidates_PrefersLeastDisruptiveNode(t *testing.T) {
 	const wideGangs = 8
 	wideNodes := []string{"node-0", "node-1", "node-2", "node-3", "node-4", "node-5", "node-6", "node-7"}
@@ -90,9 +87,8 @@ func TestSortViableCandidates_PrefersLeastDisruptiveNode(t *testing.T) {
 		"least-disruptive node must be tried first despite equal gangs, equal capacity, and later queue position")
 }
 
-// TestSortViableCandidates_SingleNodeGangsUnchanged proves no behavioral regression for
-// the common case: with only single-node gangs, gangs-killed is equal, so ordering falls
-// to pod cascade then capacity then queue order.
+// TestSortViableCandidates_SingleNodeGangsUnchanged: with only single-node gangs, gangs
+// tie, so ordering falls to pod cascade then capacity then queue order (no regression).
 func TestSortViableCandidates_SingleNodeGangsUnchanged(t *testing.T) {
 	// node-a: one 1-task gang (cap 1); node-b: one 3-task gang (cap 3);
 	// node-c: one 3-task gang (cap 3) seen after node-b.

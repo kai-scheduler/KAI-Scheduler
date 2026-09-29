@@ -26,26 +26,9 @@ import (
 // half — which the OLD per-node iteration in the solver enforced implicitly via
 // VictimsTasksFromNodes.
 //
-// Sort order: fewest gangs destroyed ascending, then pod cascade ascending, then per-node
-// capacity ascending, then the index at which the node's first victim task appeared in the
-// accumulator.
-//
-//   - Gangs destroyed is how many distinct victim gangs get torn down by freeing a node.
-//     Losing a whole workload is the biggest disruption, so the emitter prefers the node
-//     that destroys the fewest gangs first.
-//   - Pod cascade is the total pods those gangs drag down, counting the FULL cross-node
-//     cascade: because picking a node pulls in every gang with a member on it, and a gang
-//     evicts atomically, freeing a node whose victims belong to wide cross-node gangs can
-//     cascade far beyond that node's local pods. Two nodes can destroy the same number of
-//     gangs while one detonates 8 single-node gangs (8 pods) and the other 8 gangs that
-//     each span 8 nodes (64 pods); the pod cascade separates them.
-//   - Capacity ascending is the next key (prefer the smallest viable node).
-//   - First-seen index is the final tiebreaker, preserving outer priority-queue order.
-//
-// For the common single-node-gang case every candidate destroys one gang and the pod
-// cascade equals the node's local victims, so this ordering degenerates to the previous
-// capacity-ascending behavior; the gangs-destroyed and cross-node cascade terms only change
-// decisions when cross-node gangs are actually present.
+// Sort order: fewest gangs destroyed, then pod cascade, then capacity, then first-seen index.
+// Cross-node gangs are the only case where the first two terms change the outcome; otherwise
+// this degenerates to the previous capacity-ascending behavior.
 
 // victimBatch corresponds to one call into the accumulator's addNextPotentialVictims:
 // for a non-elastic gang job that's all its tasks at once; for an elastic job that's
@@ -230,21 +213,15 @@ func nodeCapacities(
 	return out
 }
 
-// nodeCascade is the per-node reclaim cost: how many distinct victim gangs get torn
-// down if this node is freed, and how many pods that removes (the cross-node cascade,
-// including pods those gangs hold on other nodes).
+// nodeCascade is the per-node reclaim cost: distinct victim gangs destroyed by freeing
+// the node, and the pods that removes (including those gangs' pods on other nodes).
 type nodeCascade struct {
 	gangs int
 	pods  int
 }
 
-// nodeCascades computes, per node, the number of distinct victim gangs destroyed by
-// freeing it and the total pods that removes. Picking a node pulls in every gang (batch)
-// with a member on it, and gangs evict atomically, so each such gang is destroyed and
-// its pods on OTHER nodes go too. Ranking by gangs first (then pods) prefers freeing the
-// node that destroys the fewest workloads, with the pod cascade breaking ties — a node
-// backing wide gangs has few local pods but a large cascade. Each batch is counted once
-// per node (nodeBatches already deduplicates batch indexes per node).
+// nodeCascades computes each node's gangs-destroyed and pod cascade. Freeing a node tears
+// down every gang (batch) with a member on it, so its pods on other nodes go too.
 func nodeCascades(batches []victimBatch, nodeBatches map[string][]int) map[string]nodeCascade {
 	out := map[string]nodeCascade{}
 	for nodeName, batchIdxs := range nodeBatches {
@@ -257,11 +234,8 @@ func nodeCascades(batches []victimBatch, nodeBatches map[string][]int) map[strin
 	return out
 }
 
-// sortViableCandidates filters out nodes whose post-eviction capacity is below the
-// smallest pending-task GPU requirement (they can't host any pending task) and
-// returns the survivors ordered by fewest gangs destroyed, then smallest pod cascade,
-// then ascending capacity (smallest viable node), then insertion order so remaining
-// ties are tried in queue order.
+// sortViableCandidates drops nodes that can't host the smallest pending task, then orders
+// by fewest gangs destroyed, then pod cascade, then capacity, then first-seen index.
 func sortViableCandidates(
 	nodeBatches map[string][]int,
 	nodeCap map[string]float64,
