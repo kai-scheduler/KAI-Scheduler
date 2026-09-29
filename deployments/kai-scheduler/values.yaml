@@ -99,8 +99,6 @@ podgrouper:
     pullPolicy: IfNotPresent
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   queueLabelKey: "kai.scheduler/queue"
-  # Passed through to spec.podGrouper.args. Omitted keys keep the operator default.
-  # Set gangScheduleDeployment: false for pre-v0.18 per-pod Deployment PodGroups.
   # Flat podgrouper.genericKartaFallback overrides this map.
   args:
     genericKartaFallback: true
