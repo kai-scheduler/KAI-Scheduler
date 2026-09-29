@@ -23,6 +23,7 @@ import (
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgrouper/plugins/minmember"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/topowner"
 )
 
@@ -88,7 +89,42 @@ func (dg *DefaultGrouper) GetPodGroupMetadata(topOwner *unstructured.Unstructure
 	podGroupMetadata.RequiredTopologyLevel = annotations["kai.scheduler/topology-required-placement"]
 	podGroupMetadata.Topology = annotations["kai.scheduler/topology"]
 
+	minAvailable, err := minmember.FromAnnotations(topOwner, topOwner.GetKind(), 1)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateMinAvailable(topOwner, minAvailable); err != nil {
+		return nil, err
+	}
+	podGroupMetadata.MinAvailable = minAvailable
+
 	return &podGroupMetadata, nil
+}
+
+// validateMinAvailable enforces workload-specific constraints on minAvailable > 1.
+// apps/v1 StatefulSets require podManagementPolicy: Parallel for gang scheduling to be safe;
+// OrderedReady creates pods sequentially and would deadlock waiting for a gang that can never form.
+func validateMinAvailable(topOwner *unstructured.Unstructured, minAvailable int32) error {
+	if minAvailable <= 1 ||
+		topOwner.GetKind() != "StatefulSet" ||
+		topOwner.GetAPIVersion() != "apps/v1" {
+		return nil
+	}
+	policy, _, _ := unstructured.NestedString(topOwner.Object, "spec", "podManagementPolicy")
+	displayPolicy := policy
+	if displayPolicy == "" {
+		displayPolicy = "OrderedReady (default)"
+	}
+	if policy != "Parallel" {
+		return fmt.Errorf(
+			"%s annotation requires podManagementPolicy: Parallel on StatefulSet %s/%s "+
+				"(current policy %q creates pods sequentially, which deadlocks gang scheduling)",
+			constants.MinMemberOverrideKey,
+			topOwner.GetNamespace(), topOwner.GetName(),
+			displayPolicy,
+		)
+	}
+	return nil
 }
 
 func (dg *DefaultGrouper) CalcPodGroupName(topOwner *unstructured.Unstructured) string {
