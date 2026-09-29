@@ -51,9 +51,9 @@ resources:
     overQuotaWeight: 1
     limit: 8192                          # Max 8GB
   gpu:
-    quota: 2                             # 2 GPUs guaranteed
+    quota: 2                             # 2 GPU units guaranteed
     overQuotaWeight: 1
-    limit: 4                             # Max 4 GPUs
+    limit: 4                             # Max 4 GPU units
 ```
 
 ## Resource Configuration
@@ -69,9 +69,13 @@ resources:
 ### Resource Units
 - **CPU**: Millicores (1000 = 1 CPU core)
 - **Memory**: Megabytes (MB = 10⁶ bytes)
-- **GPU**: Units (1 = full GPU device)
+- **GPU**: Queue quota and limit use aggregate GPU units. Each requested whole GPU (`nvidia.com/gpu`) counts as 1 unit. Each requested MIG device (`nvidia.com/mig-Xg.Ygb`) counts as X units, where X is the number before `g` in the profile name. Whole GPUs and MIG devices share the same queue quota and limit; these fields do not reserve a particular MIG profile or guarantee that a matching device is available. GPU units are not physical GPU equivalents: a whole GPU counts as 1, while a `mig-7g.*` device counts as 7.
 
 ## Examples
+
+### MIG GPU Quota
+
+For a queue with `gpu.quota: 2` and `gpu.limit: 2`, two `mig-1g.*` devices, one `mig-2g.*` device, or two whole GPUs each consume 2 GPU units and reach the limit. One `mig-3g.*` device consumes 3 units and exceeds the limit. Requests within the limit still require suitable devices to be available.
 
 ### Basic Queue
 ```yaml
