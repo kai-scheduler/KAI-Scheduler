@@ -55,8 +55,7 @@ func BenchmarkVictimOrdering(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			if resetCache {
-				// Model one reclaim solve: order from a cold cache that warms as the pass
-				// runs (each gang costed once, reused across comparisons).
+				// Cold cache per pass, as in one reclaim solve.
 				p.cache = map[footprintKey]footprint{}
 			}
 			work := make([]*podgroup_info.PodGroupInfo, n)
