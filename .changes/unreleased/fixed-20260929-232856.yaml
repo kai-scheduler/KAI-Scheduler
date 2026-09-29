@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  PodGrouper uses default grouping when a Karta lacks gang scheduling instructions
+custom:
+  Author: "enoodle"
+  Issue: "2276"
