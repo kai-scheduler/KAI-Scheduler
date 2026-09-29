@@ -15,6 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/common/resources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/nodescaleadjuster/consts"
 )
 
@@ -56,6 +57,16 @@ func CreateUnschedulablePodWithGpuMemory(name, namespace string, gpuMemory strin
 	return CreateUnschedulablePod(name, namespace, annotations)
 }
 
+func CreateUnschedulablePodWithNvFraction(name, namespace string, gpuMemory resource.Quantity, numDevices int) *corev1.Pod {
+	annotations := map[string]string{
+		resources.CalcGpuFractionAnnotationForContainer("c1"): gpuMemory.String(),
+	}
+	if numDevices > 1 {
+		annotations[constants.GpuFractionsNumDevices] = strconv.Itoa(numDevices)
+	}
+	return CreateUnschedulablePod(name, namespace, annotations)
+}
+
 func CreateUnschedulablePod(name, namespace string, annotations map[string]string) *corev1.Pod {
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -65,6 +76,11 @@ func CreateUnschedulablePod(name, namespace string, annotations map[string]strin
 		},
 		Spec: corev1.PodSpec{
 			SchedulerName: SchedulerName,
+			Containers: []corev1.Container{
+				{
+					Name: "c1",
+				},
+			},
 		},
 		Status: corev1.PodStatus{
 			Phase: corev1.PodPending,
