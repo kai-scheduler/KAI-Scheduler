@@ -4,7 +4,13 @@
 package gangcascadeorder
 
 import (
+	"strconv"
 	"testing"
+
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
@@ -95,5 +101,59 @@ func TestVictimOrderFn_Identical_Zero(t *testing.T) {
 	p := newPlugin(t)
 	if got := p.VictimOrderFn(a, b); got != 0 {
 		t.Errorf("expected 0 for equal span and pod count, got %d", got)
+	}
+}
+
+// runningPodOnNode builds a running 1-GPU pod bound to node.
+func runningPodOnNode(uid, node string) *v1.Pod {
+	return &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: uid, Namespace: "ns", UID: types.UID(uid)},
+		Spec: v1.PodSpec{
+			NodeName: node,
+			Containers: []v1.Container{{Resources: v1.ResourceRequirements{
+				Limits: v1.ResourceList{resource_info.GPUResourceName: resource.MustParse("1")},
+			}}},
+		},
+		Status: v1.PodStatus{Phase: v1.PodRunning},
+	}
+}
+
+// makeGangWithMin builds a running gang across nodes[i] with the given per podset
+// minAvailable, so a gang with minAvailable below len(nodes) is elastic with surplus.
+func makeGangWithMin(uid string, priority int32, nodes []string, minAvailable int32) *podgroup_info.PodGroupInfo {
+	vm := resource_info.NewResourceVectorMap()
+	tasks := make([]*pod_info.PodInfo, 0, len(nodes))
+	for i, node := range nodes {
+		tasks = append(tasks, pod_info.NewTaskInfo(runningPodOnNode(uid+"-"+strconv.Itoa(i), node), vm))
+	}
+	pg := podgroup_info.NewPodGroupInfoWithVectorMap(common_info.PodGroupID(uid), vm, tasks...)
+	for _, ps := range pg.GetAllPodSets() {
+		ps.SetMinAvailable(minAvailable)
+	}
+	pg.Priority = priority
+	return pg
+}
+
+// A wide gang running above minMember can shed a single surplus pod without cascading, so
+// its true cost is one pod on one node, not its full span. The plugin must score it by the
+// tasks GetTasksToEvict would actually remove and prefer it over tearing down a smaller
+// gang that sits at its minimum.
+func TestVictimOrderFn_SurplusAwareElasticIsCheaper(t *testing.T) {
+	ssn := &framework.Session{}
+	p := &gangCascadeOrderPlugin{ssn: ssn}
+
+	// Elastic: 4 pods across 4 nodes, min 1 -> shedding surplus costs 1 pod on 1 node.
+	wideElastic := makeGangWithMin("wide-elastic", 10, []string{"n0", "n1", "n2", "n3"}, 1)
+	// At minimum: 3 pods across 3 nodes, min 3 -> evicting cascades the whole gang.
+	atMin := makeGangWithMin("at-min", 10, []string{"n4", "n5", "n6"}, 3)
+
+	if span, pods := p.gangFootprint(wideElastic); span != 1 || pods != 1 {
+		t.Fatalf("elastic surplus footprint = (span %d, pods %d), want (1, 1)", span, pods)
+	}
+	if span, pods := p.gangFootprint(atMin); span != 3 || pods != 3 {
+		t.Fatalf("at-min footprint = (span %d, pods %d), want (3, 3)", span, pods)
+	}
+	if got := p.VictimOrderFn(wideElastic, atMin); got != -1 {
+		t.Errorf("expected wide elastic gang (sheds 1 surplus pod) evicted before at-min gang: got %d", got)
 	}
 }
