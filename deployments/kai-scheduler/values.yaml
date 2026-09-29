@@ -99,7 +99,11 @@ podgrouper:
     pullPolicy: IfNotPresent
     # tag: ""  # Optional: Override global.tag or Chart.AppVersion
   queueLabelKey: "kai.scheduler/queue"
-  genericKartaFallback: true
+  # Passed through to spec.podGrouper.args. Omitted keys keep the operator default.
+  # Set gangScheduleDeployment: false for pre-v0.18 per-pod Deployment PodGroups.
+  # Flat podgrouper.genericKartaFallback overrides this map.
+  args:
+    genericKartaFallback: true
   affinity: {}
   # PDB is created only when pod-grouper replicas > 1 (operator.replicaCount / podGrouper.replicas).
   # For HA: set operator.replicaCount: 2 (or override podGrouper.replicas in Config).
