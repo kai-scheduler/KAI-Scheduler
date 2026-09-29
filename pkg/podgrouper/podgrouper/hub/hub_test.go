@@ -176,6 +176,24 @@ var _ = Describe("SupportedTypes", func() {
 			Expect(plugin).NotTo(BeNil())
 			Expect(plugin.Name()).To(BeEquivalentTo("Default Grouper"))
 		})
+
+		DescribeTable("NIMService Karta grouper selection", func(withGangScheduling bool, expectedName string) {
+			gvk := metav1.GroupVersionKind{Group: "apps.nvidia.com", Version: "v1alpha1", Kind: "NIMService"}
+			kt := createHubTestKarta(gvk)
+			if !withGangScheduling {
+				kt.Spec.Instructions.GangScheduling = nil
+			}
+			kubeClient = newHubFakeClientWithScheme(kt)
+			hub := NewDefaultPluginsHub(
+				kubeClient, false, false, false, true, queueLabelKey, nodePoolLabelKey, "", "",
+			)
+
+			plugin := hub.GetPodGrouperPlugin(gvk)
+			Expect(plugin.Name()).To(Equal(expectedName))
+		},
+			Entry("without gang scheduling", false, "Default Grouper"),
+			Entry("with gang scheduling", true, "Karta Grouper"),
+		)
 	})
 
 	Context("Skip Top Owner Resolution Tests", func() {
