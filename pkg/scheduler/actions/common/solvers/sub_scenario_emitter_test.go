@@ -17,7 +17,7 @@ func batchOfSize(n int) victimBatch {
 	return victimBatch{tasks: make([]*pod_info.PodInfo, n)}
 }
 
-func TestNodeDisruptions_CountsFullGangCascade(t *testing.T) {
+func TestNodeCascades_CountsGangsAndPods(t *testing.T) {
 	// b0 spans node-0 and node-1 (a 2-node gang of 4 tasks total);
 	// b1 lives entirely on node-1 (a single-node gang of 1 task).
 	batches := []victimBatch{batchOfSize(4), batchOfSize(1)}
@@ -26,20 +26,21 @@ func TestNodeDisruptions_CountsFullGangCascade(t *testing.T) {
 		"node-1": {0, 1}, // wide gang + local gang touch node-1
 	}
 
-	disruption := nodeDisruptions(batches, nodeBatches)
+	cascade := nodeCascades(batches, nodeBatches)
 
-	// Picking node-0 drags the whole 4-task wide gang: cost 4.
-	require.Equal(t, 4.0, disruption["node-0"])
-	// Picking node-1 drags the wide gang (4) plus the local gang (1): cost 5.
-	require.Equal(t, 5.0, disruption["node-1"])
+	// Freeing node-0 destroys 1 gang (4 pods).
+	require.Equal(t, 1, cascade["node-0"].gangs)
+	require.Equal(t, 4, cascade["node-0"].pods)
+	// Freeing node-1 destroys 2 gangs (4 + 1 = 5 pods).
+	require.Equal(t, 2, cascade["node-1"].gangs)
+	require.Equal(t, 5, cascade["node-1"].pods)
 }
 
 // TestSortViableCandidates_PrefersLeastDisruptiveNode reproduces the cross-node-gang
-// cascade shape: every wide node backs 8 gangs that each span 8 nodes (64 cascaded
-// victims), while the narrow node backs 8 single-node gangs (8 victims). All nodes look
-// identical on local capacity, and the wide nodes are even seen FIRST in queue order, so
-// the pre-cascade capacity-only ordering would pick a wide node by tiebreak. The
-// disruption term must instead surface the narrow node first.
+// cascade shape: every wide node backs 8 gangs that each span 8 nodes (64 cascaded pods),
+// while the narrow node backs 8 single-node gangs (8 pods). Both destroy the same 8 gangs
+// and look identical on local capacity, and the wide nodes are even seen FIRST in queue
+// order. The pod-cascade tiebreak must still surface the narrow node first.
 func TestSortViableCandidates_PrefersLeastDisruptiveNode(t *testing.T) {
 	const wideGangs = 8
 	wideNodes := []string{"node-0", "node-1", "node-2", "node-3", "node-4", "node-5", "node-6", "node-7"}
@@ -76,19 +77,22 @@ func TestSortViableCandidates_PrefersLeastDisruptiveNode(t *testing.T) {
 	}
 	nodeFirstSeenAt[narrowNode] = len(wideNodes)
 
-	disruption := nodeDisruptions(batches, nodeBatches)
-	require.Equal(t, 8.0, disruption[narrowNode], "narrow node cascades 8 victims")
-	require.Equal(t, float64(wideGangs*len(wideNodes)), disruption[wideNodes[0]], "wide node cascades 64 victims")
+	cascade := nodeCascades(batches, nodeBatches)
+	// Both destroy 8 gangs; the pod cascade separates them (8 vs 64).
+	require.Equal(t, 8, cascade[narrowNode].gangs)
+	require.Equal(t, 8, cascade[wideNodes[0]].gangs)
+	require.Equal(t, 8, cascade[narrowNode].pods, "narrow node cascades 8 pods")
+	require.Equal(t, wideGangs*len(wideNodes), cascade[wideNodes[0]].pods, "wide node cascades 64 pods")
 
-	ordered := sortViableCandidates(nodeBatches, nodeCap, disruption, nodeFirstSeenAt, 1)
+	ordered := sortViableCandidates(nodeBatches, nodeCap, cascade, nodeFirstSeenAt, 1)
 
 	require.Equal(t, narrowNode, ordered[0],
-		"least-disruptive node must be tried first despite equal capacity and later queue position")
+		"least-disruptive node must be tried first despite equal gangs, equal capacity, and later queue position")
 }
 
 // TestSortViableCandidates_SingleNodeGangsUnchanged proves no behavioral regression for
-// the common case: with only single-node gangs, disruption is monotonic with local
-// victim count, so ordering degenerates to capacity-ascending then queue order.
+// the common case: with only single-node gangs, gangs-killed is equal, so ordering falls
+// to pod cascade then capacity then queue order.
 func TestSortViableCandidates_SingleNodeGangsUnchanged(t *testing.T) {
 	// node-a: one 1-task gang (cap 1); node-b: one 3-task gang (cap 3);
 	// node-c: one 3-task gang (cap 3) seen after node-b.
@@ -101,9 +105,9 @@ func TestSortViableCandidates_SingleNodeGangsUnchanged(t *testing.T) {
 	nodeCap := map[string]float64{"node-a": 1, "node-b": 3, "node-c": 3}
 	nodeFirstSeenAt := map[string]int{"node-a": 0, "node-b": 1, "node-c": 2}
 
-	disruption := nodeDisruptions(batches, nodeBatches)
-	ordered := sortViableCandidates(nodeBatches, nodeCap, disruption, nodeFirstSeenAt, 1)
+	cascade := nodeCascades(batches, nodeBatches)
+	ordered := sortViableCandidates(nodeBatches, nodeCap, cascade, nodeFirstSeenAt, 1)
 
-	// Smallest capacity first, then queue order for the equal-capacity pair.
+	// Fewest pods first, then queue order for the equal-cost pair.
 	require.Equal(t, []string{"node-a", "node-b", "node-c"}, ordered)
 }

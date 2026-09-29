@@ -26,26 +26,26 @@ import (
 // half — which the OLD per-node iteration in the solver enforced implicitly via
 // VictimsTasksFromNodes.
 //
-// Sort order: per-node disruption cost ascending, then per-node capacity ascending, then
-// the index at which the node's first victim task appeared in the accumulator.
+// Sort order: fewest gangs destroyed ascending, then pod cascade ascending, then per-node
+// capacity ascending, then the index at which the node's first victim task appeared in the
+// accumulator.
 //
-//   - Disruption cost is the total number of victim tasks that evicting a node actually
-//     drags down, counting the FULL gang cascade: because picking a node pulls in every
-//     gang with a member on it, and a gang evicts atomically, freeing a node whose victims
-//     belong to wide cross-node gangs can cascade far beyond that node's local pods. The
-//     node-local capacity heuristic alone is blind to this — two nodes can look identical
-//     locally (say 8 GPUs each) while one detonates 8 single-node gangs (8 pods) and the
-//     other detonates 8 gangs that each span 8 nodes (64 pods). Ranking by cascade size
-//     first makes the emitter prefer the genuinely least-disruptive node instead of relying
-//     on victim-queue insertion order to break the tie by luck.
-//   - Capacity ascending is the secondary key (prefer the smallest viable node so we still
-//     minimize victims among equally-disruptive candidates).
-//   - First-seen index is the final tiebreaker, preserving outer priority-queue order when
-//     both disruption and capacity tie.
+//   - Gangs destroyed is how many distinct victim gangs get torn down by freeing a node.
+//     Losing a whole workload is the biggest disruption, so the emitter prefers the node
+//     that destroys the fewest gangs first.
+//   - Pod cascade is the total pods those gangs drag down, counting the FULL cross-node
+//     cascade: because picking a node pulls in every gang with a member on it, and a gang
+//     evicts atomically, freeing a node whose victims belong to wide cross-node gangs can
+//     cascade far beyond that node's local pods. Two nodes can destroy the same number of
+//     gangs while one detonates 8 single-node gangs (8 pods) and the other 8 gangs that
+//     each span 8 nodes (64 pods); the pod cascade separates them.
+//   - Capacity ascending is the next key (prefer the smallest viable node).
+//   - First-seen index is the final tiebreaker, preserving outer priority-queue order.
 //
-// For the common single-node-gang case, disruption cost is monotonic with local victim
-// count, so this ordering degenerates to the previous capacity-ascending behavior — the
-// cascade term only changes decisions when cross-node gangs are actually present.
+// For the common single-node-gang case every candidate destroys one gang and the pod
+// cascade equals the node's local victims, so this ordering degenerates to the previous
+// capacity-ascending behavior; the gangs-destroyed and cross-node cascade terms only change
+// decisions when cross-node gangs are actually present.
 
 // victimBatch corresponds to one call into the accumulator's addNextPotentialVictims:
 // for a non-elastic gang job that's all its tasks at once; for an elastic job that's
@@ -75,8 +75,8 @@ func newSubScenarioEmitter(
 	recordedFreed := recordedFreedByNode(base)
 	batches, nodeBatches, nodeFirstSeenAt := buildVictimBatches(base)
 	nodeCap := nodeCapacities(session, batches, nodeBatches, recordedFreed)
-	nodeDisruption := nodeDisruptions(batches, nodeBatches)
-	candidates := sortViableCandidates(nodeBatches, nodeCap, nodeDisruption, nodeFirstSeenAt, minPendingTask)
+	nodeCascadeCost := nodeCascades(batches, nodeBatches)
+	candidates := sortViableCandidates(nodeBatches, nodeCap, nodeCascadeCost, nodeFirstSeenAt, minPendingTask)
 	baseline := baselineCapacity(baseNodes, nodeBatches, recordedFreed)
 
 	remaining := pendingDemand - baseline
@@ -230,34 +230,42 @@ func nodeCapacities(
 	return out
 }
 
-// nodeDisruptions computes the per-node cascade cost: the total number of victim
-// tasks that get evicted if this node is picked. Picking a node pulls in every gang
-// (batch) with a member on it, and gangs evict atomically, so the cost is the sum of
-// ALL tasks across those batches — including tasks on OTHER nodes. This is precisely
-// the cross-node cascade that per-node local capacity is blind to: a node backing wide
-// gangs has a small local footprint but a large disruption cost. Each batch is counted
-// once per node (nodeBatches already deduplicates batch indexes per node).
-func nodeDisruptions(batches []victimBatch, nodeBatches map[string][]int) map[string]float64 {
-	out := map[string]float64{}
+// nodeCascade is the per-node reclaim cost: how many distinct victim gangs get torn
+// down if this node is freed, and how many pods that removes (the cross-node cascade,
+// including pods those gangs hold on other nodes).
+type nodeCascade struct {
+	gangs int
+	pods  int
+}
+
+// nodeCascades computes, per node, the number of distinct victim gangs destroyed by
+// freeing it and the total pods that removes. Picking a node pulls in every gang (batch)
+// with a member on it, and gangs evict atomically, so each such gang is destroyed and
+// its pods on OTHER nodes go too. Ranking by gangs first (then pods) prefers freeing the
+// node that destroys the fewest workloads, with the pod cascade breaking ties — a node
+// backing wide gangs has few local pods but a large cascade. Each batch is counted once
+// per node (nodeBatches already deduplicates batch indexes per node).
+func nodeCascades(batches []victimBatch, nodeBatches map[string][]int) map[string]nodeCascade {
+	out := map[string]nodeCascade{}
 	for nodeName, batchIdxs := range nodeBatches {
-		d := 0.0
+		c := nodeCascade{gangs: len(batchIdxs)}
 		for _, bi := range batchIdxs {
-			d += float64(len(batches[bi].tasks))
+			c.pods += len(batches[bi].tasks)
 		}
-		out[nodeName] = d
+		out[nodeName] = c
 	}
 	return out
 }
 
 // sortViableCandidates filters out nodes whose post-eviction capacity is below the
 // smallest pending-task GPU requirement (they can't host any pending task) and
-// returns the survivors ordered by ascending disruption cost (fewest cascaded
-// victims first), then ascending capacity (smallest viable node), then insertion
-// order so remaining ties are tried in queue order.
+// returns the survivors ordered by fewest gangs destroyed, then smallest pod cascade,
+// then ascending capacity (smallest viable node), then insertion order so remaining
+// ties are tried in queue order.
 func sortViableCandidates(
 	nodeBatches map[string][]int,
 	nodeCap map[string]float64,
-	nodeDisruption map[string]float64,
+	nodeCascadeCost map[string]nodeCascade,
 	nodeFirstSeenAt map[string]int,
 	minPendingTask float64,
 ) []string {
@@ -269,13 +277,16 @@ func sortViableCandidates(
 		out = append(out, nodeName)
 	}
 	sort.Slice(out, func(i, j int) bool {
-		di, dj := nodeDisruption[out[i]], nodeDisruption[out[j]]
-		if di != dj {
-			return di < dj
+		ci, cj := nodeCascadeCost[out[i]], nodeCascadeCost[out[j]]
+		if ci.gangs != cj.gangs {
+			return ci.gangs < cj.gangs
 		}
-		ci, cj := nodeCap[out[i]], nodeCap[out[j]]
-		if ci != cj {
-			return ci < cj
+		if ci.pods != cj.pods {
+			return ci.pods < cj.pods
+		}
+		capi, capj := nodeCap[out[i]], nodeCap[out[j]]
+		if capi != capj {
+			return capi < capj
 		}
 		return nodeFirstSeenAt[out[i]] < nodeFirstSeenAt[out[j]]
 	})
