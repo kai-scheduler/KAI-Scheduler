@@ -226,8 +226,17 @@ spec:
         maxUnavailable: {{ .Values.podgrouper.podDisruptionBudget.maxUnavailable }}
         {{- end }}
       {{- end }}
+    {{- $pgArgs := dict }}
+    {{- range $k, $v := (.Values.podgrouper.args | default dict) }}
+    {{- $_ := set $pgArgs $k $v }}
+    {{- end }}
+    {{- if hasKey .Values.podgrouper "genericKartaFallback" }}
+    {{- $_ := set $pgArgs "genericKartaFallback" .Values.podgrouper.genericKartaFallback }}
+    {{- end }}
+    {{- if $pgArgs }}
     args:
-      genericKartaFallback: {{ .Values.podgrouper.genericKartaFallback }}
+      {{- toYaml $pgArgs | nindent 6 }}
+    {{- end }}
 
   podGroupController:
     service:
