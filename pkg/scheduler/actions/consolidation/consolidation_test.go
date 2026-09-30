@@ -2070,5 +2070,245 @@ func getTestsMetadata() []integration_tests_utils.TestTopologyMetadata {
 			},
 			RoundsUntilMatch: 1,
 		},
+		{
+			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Name: "Running jobs that are not safe to consolidate are not moved",
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:                "running_job0",
+						RequiredGPUsPerTask: 2,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "queue0",
+						SafeToConsolidate:   ptr.To(false),
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								NodeName: "node0",
+								State:    pod_status.Running,
+							},
+						},
+					},
+					{
+						Name:                "running_job1",
+						RequiredGPUsPerTask: 2,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "queue0",
+						SafeToConsolidate:   ptr.To(false),
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								NodeName: "node1",
+								State:    pod_status.Running,
+							},
+						},
+					},
+					{
+						Name:                "pending_job0",
+						RequiredGPUsPerTask: 3,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "queue0",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								State: pod_status.Pending,
+							},
+						},
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node0": {
+						GPUs: 4,
+					},
+					"node1": {
+						GPUs: 4,
+					},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{
+						Name:         "queue0",
+						DeservedGPUs: 2,
+					},
+				},
+				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"running_job0": {
+						NodeName:     "node0",
+						GPUsRequired: 2,
+						Status:       pod_status.Running,
+					},
+					"running_job1": {
+						NodeName:     "node1",
+						GPUsRequired: 2,
+						Status:       pod_status.Running,
+					},
+					"pending_job0": {
+						GPUsRequired: 3,
+						Status:       pod_status.Pending,
+					},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{
+						NumberOfCacheEvictions:  0,
+						NumberOfPipelineActions: 0,
+					},
+				},
+			},
+		},
+		{
+			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Name: "Consolidation moves the job that is safe to consolidate instead of the one that is not",
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:                "running_job0",
+						RequiredGPUsPerTask: 2,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "queue0",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								NodeName: "node0",
+								State:    pod_status.Running,
+							},
+						},
+					},
+					{
+						Name:                "running_job1",
+						RequiredGPUsPerTask: 2,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "queue0",
+						SafeToConsolidate:   ptr.To(false),
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								NodeName: "node1",
+								State:    pod_status.Running,
+							},
+						},
+					},
+					{
+						Name:                "pending_job0",
+						RequiredGPUsPerTask: 3,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "queue0",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								State: pod_status.Pending,
+							},
+						},
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node0": {
+						GPUs: 4,
+					},
+					"node1": {
+						GPUs: 4,
+					},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{
+						Name:         "queue0",
+						DeservedGPUs: 2,
+					},
+				},
+				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"running_job0": {
+						NodeName:     "node1",
+						GPUsRequired: 2,
+						Status:       pod_status.Pipelined,
+					},
+					"running_job1": {
+						NodeName:     "node1",
+						GPUsRequired: 2,
+						Status:       pod_status.Running,
+					},
+					"pending_job0": {
+						NodeName:     "node0",
+						GPUsRequired: 3,
+						Status:       pod_status.Pipelined,
+					},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{
+						NumberOfCacheEvictions:  1,
+						NumberOfPipelineActions: 2,
+					},
+				},
+			},
+		},
+		{
+			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Name: "A pending job that is not safe to consolidate still consolidates others",
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:                "running_job0",
+						RequiredGPUsPerTask: 2,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "queue0",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								NodeName: "node0",
+								State:    pod_status.Running,
+							},
+						},
+					},
+					{
+						Name:                "running_job1",
+						RequiredGPUsPerTask: 2,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "queue0",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								NodeName: "node1",
+								State:    pod_status.Running,
+							},
+						},
+					},
+					{
+						Name:                "pending_job0",
+						RequiredGPUsPerTask: 3,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "queue0",
+						SafeToConsolidate:   ptr.To(false),
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								State: pod_status.Pending,
+							},
+						},
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node0": {
+						GPUs: 4,
+					},
+					"node1": {
+						GPUs: 4,
+					},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{
+						Name:         "queue0",
+						DeservedGPUs: 2,
+					},
+				},
+				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"running_job0": {
+						NodeName:     "node0",
+						GPUsRequired: 2,
+						Status:       pod_status.Running,
+					},
+					"running_job1": {
+						NodeName:     "node0",
+						GPUsRequired: 2,
+						Status:       pod_status.Pipelined,
+					},
+					"pending_job0": {
+						NodeName:     "node1",
+						GPUsRequired: 3,
+						Status:       pod_status.Pipelined,
+					},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{
+						NumberOfCacheEvictions:  1,
+						NumberOfPipelineActions: 2,
+					},
+				},
+			},
+		},
 	}
 }

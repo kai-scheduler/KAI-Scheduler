@@ -206,6 +206,14 @@ func (pgi *PodGroupInfo) IsPreemptibleJob() bool {
 	return pgi.Preemptibility == enginev2alpha2.Preemptible
 }
 
+// IsSafeToConsolidate reports whether the consolidation action may move the podgroup's pods.
+func (pgi *PodGroupInfo) IsSafeToConsolidate() bool {
+	if pgi.PodGroup == nil || pgi.PodGroup.Spec.SafeToConsolidate == nil {
+		return true
+	}
+	return *pgi.PodGroup.Spec.SafeToConsolidate
+}
+
 // PreemptionDelayEnd returns the earliest time this podgroup may trigger eviction
 // of other workloads, or nil when no preemption delay is configured.
 func (pgi *PodGroupInfo) PreemptionDelayEnd() *time.Time {

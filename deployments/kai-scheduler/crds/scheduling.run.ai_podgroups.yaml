@@ -98,6 +98,13 @@ spec:
                   Queue defines the queue to allocate resource for PodGroup; if queue does not exist,
                   the PodGroup will not be scheduled.
                 type: string
+              safeToConsolidate:
+                description: |-
+                  SafeToConsolidate is whether the consolidation action may move this PodGroup's pods to other
+                  nodes to make room for a pending workload. Consolidation evicts the pods it moves, so a workload
+                  that does not survive a restart (for example replicas with restartPolicy Never, or bare pods)
+                  can set it to false. It does not affect preempt or reclaim. Defaults to true.
+                type: boolean
               schedulingBackoff:
                 description: The number of scheduling cycles to try before marking
                   the pod group as UnschedulableOnNodePool. Currently only supporting

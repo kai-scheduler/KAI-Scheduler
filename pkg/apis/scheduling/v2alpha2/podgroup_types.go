@@ -21,6 +21,7 @@ package v2alpha2
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -90,6 +91,13 @@ type PodGroupSpec struct {
 	// eviction for this PodGroup. Defaults to the scheduler's global staleness grace period.
 	// +optional
 	StalenessGracePeriod *metav1.Duration `json:"stalenessGracePeriod,omitempty" protobuf:"bytes,10,opt,name=stalenessGracePeriod"`
+
+	// SafeToConsolidate is whether the consolidation action may move this PodGroup's pods to other
+	// nodes to make room for a pending workload. Consolidation evicts the pods it moves, so a workload
+	// that does not survive a restart (for example replicas with restartPolicy Never, or bare pods)
+	// can set it to false. It does not affect preempt or reclaim. Defaults to true.
+	// +optional
+	SafeToConsolidate *bool `json:"safeToConsolidate,omitempty" protobuf:"varint,11,opt,name=safeToConsolidate"`
 }
 
 // Preemptibility defines whether this PodGroup can be preempted
@@ -149,6 +157,16 @@ func ParseStalenessGracePeriod(value string) (*metav1.Duration, error) {
 		return nil, err
 	}
 	return &metav1.Duration{Duration: stale}, nil
+}
+
+// ParseSafeToConsolidate parses a safe-to-consolidate value ("true" or "false").
+// Returns an error for anything strconv.ParseBool does not accept.
+func ParseSafeToConsolidate(value string) (*bool, error) {
+	safe, err := strconv.ParseBool(value)
+	if err != nil {
+		return nil, err
+	}
+	return &safe, nil
 }
 
 type SubGroup struct {
