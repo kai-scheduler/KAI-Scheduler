@@ -103,7 +103,7 @@ func validateFractionLimitShorthand(pod *v1.Pod) error {
 	}
 	limit, err := strconv.ParseFloat(rawLimit, 64)
 	if err != nil || limit <= 0 || limit >= 1 || math.IsNaN(limit) {
-		return fmt.Errorf("%s annotation value must be a positive number smaller than 1.0", constants.GpuFractionLimit)
+		return fmt.Errorf("%s annotation value must be a positive number smaller than 1.0. Got %s", constants.GpuFractionLimit, rawLimit)
 	}
 	if limit <= fraction {
 		return fmt.Errorf("%s annotation value (%s) must be greater than %s annotation value (%s)",
