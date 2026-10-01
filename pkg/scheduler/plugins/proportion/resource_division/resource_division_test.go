@@ -468,6 +468,84 @@ var _ = Describe("Proportion", func() {
 				Expect(queues[uuid].GPU.FairShare).To(Equal(expectedShare), "Expected share for queue %s to equal %.2f, but got %.2f", uuid, expectedShare, queues[uuid].GPU.FairShare)
 			}
 		})
+
+		It("does not give rounding remainder to lower-priority queues while higher-priority queues are unsatisfied", func() {
+			queues := map[common_info.QueueID]*rs.QueueAttributes{
+				"high-1": {
+					UID:               "high-1",
+					Name:              "high-queue-1",
+					CreationTimestamp: v1.Now(),
+					Priority:          2,
+					QueueResourceShare: rs.QueueResourceShare{
+						GPU: rs.ResourceShare{
+							Deserved:        1,
+							FairShare:       1,
+							OverQuotaWeight: 1,
+							MaxAllowed:      commonconstants.UnlimitedResourceQuantity,
+							Allocated:       0,
+							Request:         5,
+						},
+						CPU:    rs.EmptyResource(),
+						Memory: rs.EmptyResource(),
+					},
+				},
+				"high-2": {
+					UID:               "high-2",
+					Name:              "high-queue-2",
+					CreationTimestamp: v1.Now(),
+					Priority:          2,
+					QueueResourceShare: rs.QueueResourceShare{
+						GPU: rs.ResourceShare{
+							Deserved:        1,
+							FairShare:       1,
+							OverQuotaWeight: 1,
+							MaxAllowed:      commonconstants.UnlimitedResourceQuantity,
+							Allocated:       0,
+							Request:         5,
+						},
+						CPU:    rs.EmptyResource(),
+						Memory: rs.EmptyResource(),
+					},
+				},
+				"low-1": {
+					UID:               "low-1",
+					Name:              "low-queue-1",
+					CreationTimestamp: v1.Now(),
+					Priority:          1,
+					QueueResourceShare: rs.QueueResourceShare{
+						GPU: rs.ResourceShare{
+							Deserved:        1,
+							FairShare:       1,
+							OverQuotaWeight: 1,
+							MaxAllowed:      commonconstants.UnlimitedResourceQuantity,
+							Allocated:       0,
+							Request:         5,
+						},
+						CPU:    rs.EmptyResource(),
+						Memory: rs.EmptyResource(),
+					},
+				},
+			}
+
+			remaining := divideOverQuotaResource(3, 0, queues, rs.GpuResource)
+
+			Expect(remaining).To(Equal(0.0))
+
+			highShare1 := queues["high-1"].GPU.FairShare
+			highShare2 := queues["high-2"].GPU.FairShare
+			lowShare := queues["low-1"].GPU.FairShare
+
+			Expect(lowShare).To(Equal(1.0),
+				"low-priority queue should keep its deserved share of 1 GPU and receive no over-quota GPUs, got %.2f", lowShare)
+
+			Expect(highShare1+highShare2).To(Equal(5.0),
+				"high-priority queues must absorb all 3 over-quota GPUs combined, got %.2f+%.2f", highShare1, highShare2)
+
+			Expect(highShare1).To(BeNumerically(">=", 2.0),
+				"high-priority queue 1 must receive at least its floored fair-share, got %.2f", highShare1)
+			Expect(highShare2).To(BeNumerically(">=", 2.0),
+				"high-priority queue 2 must receive at least its floored fair-share, got %.2f", highShare2)
+		})
 	})
 
 	Describe("setResourceShare - CPU", func() {
