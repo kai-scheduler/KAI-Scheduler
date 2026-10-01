@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Honor zero minimum workers in autoscaling Ray clusters
+custom:
+  Author: "Pranjulcr7"
+  Issue: "2242"
