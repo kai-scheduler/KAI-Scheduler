@@ -1298,3 +1298,222 @@ func TestCalcPodGroupPreemptionDelay(t *testing.T) {
 		})
 	}
 }
+
+func TestGetPodGroupMetadata_MinMember_NoAnnotation(t *testing.T) {
+	owner := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"kind":       "ReplicaSet",
+			"apiVersion": "apps/v1",
+			"metadata": map[string]interface{}{
+				"name":        "workers",
+				"namespace":   "test_namespace",
+				"uid":         "1",
+				"annotations": map[string]interface{}{},
+			},
+		},
+	}
+	pod := &v1.Pod{}
+
+	dg := NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, fake.NewFakeClient())
+	pg, err := dg.GetPodGroupMetadata(owner, pod)
+
+	assert.NoError(t, err)
+	assert.Equal(t, int32(1), pg.MinAvailable)
+}
+
+func TestGetPodGroupMetadata_MinMember_ValidAnnotation(t *testing.T) {
+	tests := []struct {
+		annotation string
+		want       int32
+	}{
+		{"4", 4},
+		{"8", 8},
+		{"1", 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.annotation, func(t *testing.T) {
+			owner := &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "ReplicaSet",
+					"apiVersion": "apps/v1",
+					"metadata": map[string]interface{}{
+						"name":      "workers",
+						"namespace": "test_namespace",
+						"uid":       "1",
+						"annotations": map[string]interface{}{
+							"kai.scheduler/batch-min-member": tt.annotation,
+						},
+					},
+				},
+			}
+			pod := &v1.Pod{}
+
+			dg := NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, fake.NewFakeClient())
+			pg, err := dg.GetPodGroupMetadata(owner, pod)
+
+			assert.NoError(t, err)
+			assert.Equal(t, tt.want, pg.MinAvailable)
+		})
+	}
+}
+
+func TestGetPodGroupMetadata_MinMember_InvalidAnnotation(t *testing.T) {
+	tests := []struct {
+		name       string
+		annotation string
+	}{
+		{"non-numeric", "abc"},
+		{"non-int", "1.5"},
+		{"zero", "0"},
+		{"negative", "-1"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			owner := &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "ReplicaSet",
+					"apiVersion": "apps/v1",
+					"metadata": map[string]interface{}{
+						"name":      "workers",
+						"namespace": "test_namespace",
+						"uid":       "1",
+						"annotations": map[string]interface{}{
+							"kai.scheduler/batch-min-member": tt.annotation,
+						},
+					},
+				},
+			}
+			pod := &v1.Pod{}
+
+			dg := NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, fake.NewFakeClient())
+			pg, err := dg.GetPodGroupMetadata(owner, pod)
+
+			assert.Error(t, err)
+			assert.Nil(t, pg)
+		})
+	}
+}
+
+func TestGetPodGroupMetadata_MinMember_StatefulSet_Parallel(t *testing.T) {
+	owner := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"kind":       "StatefulSet",
+			"apiVersion": "apps/v1",
+			"metadata": map[string]interface{}{
+				"name":      "inference-workers",
+				"namespace": "test_namespace",
+				"uid":       "1",
+				"annotations": map[string]interface{}{
+					"kai.scheduler/batch-min-member": "4",
+				},
+			},
+			"spec": map[string]interface{}{
+				"podManagementPolicy": "Parallel",
+			},
+		},
+	}
+	pod := &v1.Pod{}
+
+	dg := NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, fake.NewFakeClient())
+	pg, err := dg.GetPodGroupMetadata(owner, pod)
+
+	assert.NoError(t, err)
+	assert.Equal(t, int32(4), pg.MinAvailable)
+}
+
+func TestGetPodGroupMetadata_MinMember_StatefulSet_OrderedReady(t *testing.T) {
+	tests := []struct {
+		name            string
+		policy          string // "" means field is absent (Kubernetes default: OrderedReady)
+		wantErrContains string
+	}{
+		{"explicit OrderedReady", "OrderedReady", "podManagementPolicy: Parallel"},
+		{"default policy (absent)", "", "OrderedReady (default)"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spec := map[string]interface{}{}
+			if tt.policy != "" {
+				spec["podManagementPolicy"] = tt.policy
+			}
+			owner := &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"kind":       "StatefulSet",
+					"apiVersion": "apps/v1",
+					"metadata": map[string]interface{}{
+						"name":      "inference-workers",
+						"namespace": "test_namespace",
+						"uid":       "1",
+						"annotations": map[string]interface{}{
+							"kai.scheduler/batch-min-member": "4",
+						},
+					},
+					"spec": spec,
+				},
+			}
+			pod := &v1.Pod{}
+
+			dg := NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, fake.NewFakeClient())
+			pg, err := dg.GetPodGroupMetadata(owner, pod)
+
+			assert.Error(t, err)
+			assert.Nil(t, pg)
+			assert.Contains(t, err.Error(), tt.wantErrContains)
+		})
+	}
+}
+
+func TestGetPodGroupMetadata_MinMember_NonAppsV1_StatefulSet_NotValidated(t *testing.T) {
+	// A resource that happens to have kind=StatefulSet but a different apiVersion
+	// must not be subject to the apps/v1-specific podManagementPolicy check.
+	owner := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"kind":       "StatefulSet",
+			"apiVersion": "custom.example.com/v1",
+			"metadata": map[string]interface{}{
+				"name":      "custom-workers",
+				"namespace": "test_namespace",
+				"uid":       "1",
+				"annotations": map[string]interface{}{
+					"kai.scheduler/batch-min-member": "4",
+				},
+			},
+			"spec": map[string]interface{}{
+				"podManagementPolicy": "OrderedReady",
+			},
+		},
+	}
+	pod := &v1.Pod{}
+
+	dg := NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, fake.NewFakeClient())
+	pg, err := dg.GetPodGroupMetadata(owner, pod)
+
+	assert.NoError(t, err)
+	assert.Equal(t, int32(4), pg.MinAvailable)
+}
+
+func TestGetPodGroupMetadata_MinMember_StatefulSet_NoAnnotation_OrderedReady(t *testing.T) {
+	// minMember == 1 (default) must never trigger the Parallel check, even for StatefulSet.
+	owner := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"kind":       "StatefulSet",
+			"apiVersion": "apps/v1",
+			"metadata": map[string]interface{}{
+				"name":        "workers",
+				"namespace":   "test_namespace",
+				"uid":         "1",
+				"annotations": map[string]interface{}{},
+			},
+			"spec": map[string]interface{}{
+				"podManagementPolicy": "OrderedReady",
+			},
+		},
+	}
+	pod := &v1.Pod{}
+
+	dg := NewDefaultGrouper(queueLabelKey, nodePoolLabelKey, fake.NewFakeClient())
+	pg, err := dg.GetPodGroupMetadata(owner, pod)
+
+	assert.NoError(t, err)
+	assert.Equal(t, int32(1), pg.MinAvailable)
+}

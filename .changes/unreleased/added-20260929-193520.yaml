@@ -1,0 +1,6 @@
+kind: Added
+body: |-
+  DefaultGrouper honors batch-min-member annotation for gang scheduling on StatefulSet and other workloads
+custom:
+  Author: "karangupta982"
+  Issue: "2098"
