@@ -1,0 +1,110 @@
+# Copyright 2026 NVIDIA CORPORATION
+# SPDX-License-Identifier: Apache-2.0
+
+# Workload: Disaggregated Inference - PCS with PCSG and multiple cliques
+# Test scenario: PCS (block) with 2 PCSGs (rack) containing disaggregated inference components
+---
+apiVersion: grove.io/v1alpha1
+kind: PodCliqueSet
+metadata:
+  name: tas-disagg-inference
+  labels:
+    app: tas-disagg-inference
+spec:
+  replicas: 1
+  template:
+    topologyConstraint:
+      packDomain: block
+    podCliqueScalingGroups:
+      - name: decoder
+        replicas: 2
+        minAvailable: 1
+        topologyConstraint:
+          packDomain: rack
+        cliqueNames:
+          - dworker
+          - dleader
+      - name: prefill
+        replicas: 2
+        minAvailable: 1
+        topologyConstraint:
+          packDomain: rack
+        cliqueNames:
+          - pworker
+          - pleader
+    cliques:
+      - name: dworker
+        labels:
+          kai.scheduler/queue: default-queue
+        spec:
+          roleName: dworker
+          replicas: 1
+          minAvailable: 1
+          podSpec:
+            schedulerName: kai-scheduler
+            containers:
+              - name: worker
+                image: registry:5001/nginx:alpine-slim
+                resources:
+                  requests:
+                    memory: 30Mi
+      - name: dleader
+        labels:
+          kai.scheduler/queue: default-queue
+        spec:
+          roleName: dleader
+          replicas: 1
+          minAvailable: 1
+          podSpec:
+            schedulerName: kai-scheduler
+            containers:
+              - name: leader
+                image: registry:5001/nginx:alpine-slim
+                resources:
+                  requests:
+                    memory: 30Mi
+      - name: pworker
+        labels:
+          kai.scheduler/queue: default-queue
+        spec:
+          roleName: pworker
+          replicas: 1
+          minAvailable: 1
+          podSpec:
+            schedulerName: kai-scheduler
+            containers:
+              - name: worker
+                image: registry:5001/nginx:alpine-slim
+                resources:
+                  requests:
+                    memory: 30Mi
+      - name: pleader
+        labels:
+          kai.scheduler/queue: default-queue
+        spec:
+          roleName: pleader
+          replicas: 1
+          minAvailable: 1
+          podSpec:
+            schedulerName: kai-scheduler
+            containers:
+              - name: leader
+                image: registry:5001/nginx:alpine-slim
+                resources:
+                  requests:
+                    memory: 30Mi
+      - name: router
+        labels:
+          kai.scheduler/queue: default-queue
+        spec:
+          roleName: router
+          replicas: 2
+          minAvailable: 2
+          podSpec:
+            schedulerName: kai-scheduler
+            containers:
+              - name: router
+                image: registry:5001/nginx:alpine-slim
+                resources:
+                  requests:
+                    memory: 30Mi
