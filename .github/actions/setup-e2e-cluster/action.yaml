@@ -20,6 +20,10 @@ inputs:
     description: Named feature configuration (default, dra-enabled, or numa-full)
     required: false
     default: 'default'
+  deploy_prometheus:
+    description: Deploy the Prometheus Operator prerequisites
+    required: false
+    default: 'true'
 
 runs:
   using: composite
@@ -96,6 +100,7 @@ runs:
             --version 0.2.0 --values ./hack/fake-gpu-operator-values.yaml --set "draPlugin.enabled=$DRA_PLUGIN_ENABLED" --wait
 
     - name: Deploy Prometheus Operator
+      if: inputs.deploy_prometheus == 'true'
       shell: bash
       run: |
         helm repo add prometheus-community https://prometheus-community.github.io/helm-charts --force-update
