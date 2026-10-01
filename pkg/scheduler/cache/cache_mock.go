@@ -11,6 +11,7 @@ package cache
 
 import (
 	reflect "reflect"
+	time "time"
 
 	v1alpha2 "github.com/kai-scheduler/KAI-scheduler/pkg/apis/scheduling/v1alpha2"
 	api "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api"
@@ -63,6 +64,18 @@ func (m *MockCache) Bind(podInfo *pod_info.PodInfo, hostname string, bindRequest
 func (mr *MockCacheMockRecorder) Bind(podInfo, hostname, bindRequestAnnotations, predictedNUMAZones any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Bind", reflect.TypeOf((*MockCache)(nil).Bind), podInfo, hostname, bindRequestAnnotations, predictedNUMAZones)
+}
+
+// ClearFailedSearch mocks base method.
+func (m *MockCache) ClearFailedSearch(action string, job *podgroup_info.PodGroupInfo) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "ClearFailedSearch", action, job)
+}
+
+// ClearFailedSearch indicates an expected call of ClearFailedSearch.
+func (mr *MockCacheMockRecorder) ClearFailedSearch(action, job any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClearFailedSearch", reflect.TypeOf((*MockCache)(nil).ClearFailedSearch), action, job)
 }
 
 // Evict mocks base method.
@@ -133,6 +146,18 @@ func (m *MockCache) KubeInformerFactory() informers.SharedInformerFactory {
 func (mr *MockCacheMockRecorder) KubeInformerFactory() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "KubeInformerFactory", reflect.TypeOf((*MockCache)(nil).KubeInformerFactory))
+}
+
+// RecordFailedSearch mocks base method.
+func (m *MockCache) RecordFailedSearch(action string, job *podgroup_info.PodGroupInfo, minBackoff, maxBackoff time.Duration) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "RecordFailedSearch", action, job, minBackoff, maxBackoff)
+}
+
+// RecordFailedSearch indicates an expected call of RecordFailedSearch.
+func (mr *MockCacheMockRecorder) RecordFailedSearch(action, job, minBackoff, maxBackoff any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RecordFailedSearch", reflect.TypeOf((*MockCache)(nil).RecordFailedSearch), action, job, minBackoff, maxBackoff)
 }
 
 // RecordJobStatusEvent mocks base method.

@@ -57,6 +57,7 @@ func (ra *reclaimAction) Execute(ssn *framework.Session) {
 		FilterNonPending:            true,
 		FilterUnready:               true,
 		FilterWithinPreemptionDelay: true,
+		FilterInSearchBackoffFor:    framework.Reclaim,
 		MaxJobsQueueDepth:           ssn.GetJobsDepth(framework.Reclaim),
 	})
 	jobsOrderByQueues.InitializeWithJobs(ssn.ClusterInfo.PodGroupInfos)
@@ -94,6 +95,7 @@ func (ra *reclaimAction) Execute(ssn *framework.Session) {
 		}
 		metrics.IncPodgroupsConsideredByAction()
 		succeeded, statement, reclaimeeTasksNames, searchResult := ra.attemptToReclaimForSpecificJob(ssn, job, actionBudget)
+		solvers.RecordSearchOutcome(ssn, framework.Reclaim, job, searchResult)
 		if succeeded {
 			metrics.IncPodgroupScheduledByAction()
 			log.InfraLogger.V(3).Infof(

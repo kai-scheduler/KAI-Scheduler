@@ -326,6 +326,118 @@ func getTestsMetadata() []integration_tests_utils.TestTopologyMetadata {
 		},
 		{
 			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Name: "pending job in its failed search backoff for preempt - don't preempt",
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:                "running_job0",
+						RequiredGPUsPerTask: 1,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "queue0",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								NodeName: "node0",
+								State:    pod_status.Running,
+							},
+						},
+					}, {
+						Name:                "pending_job0",
+						RequiredGPUsPerTask: 1,
+						Priority:            constants.PriorityBuildNumber,
+						QueueName:           "queue0",
+						SearchBackoffFor:    []string{"preempt"},
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								State: pod_status.Pending,
+							},
+						},
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node0": {
+						GPUs: 1,
+					},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{
+						Name:         "queue0",
+						DeservedGPUs: 1,
+					},
+				},
+				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"running_job0": {
+						NodeName:     "node0",
+						GPUsRequired: 1,
+						Status:       pod_status.Running,
+					},
+					"pending_job0": {
+						GPUsRequired: 1,
+						Status:       pod_status.Pending,
+					},
+				},
+			},
+		},
+		{
+			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Name: "pending job in a failed search backoff for reclaim only - preempt",
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:                "running_job0",
+						RequiredGPUsPerTask: 1,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "queue0",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								NodeName: "node0",
+								State:    pod_status.Running,
+							},
+						},
+					}, {
+						Name:                "pending_job0",
+						RequiredGPUsPerTask: 1,
+						Priority:            constants.PriorityBuildNumber,
+						QueueName:           "queue0",
+						SearchBackoffFor:    []string{"reclaim"},
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								State: pod_status.Pending,
+							},
+						},
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node0": {
+						GPUs: 1,
+					},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{
+						Name:         "queue0",
+						DeservedGPUs: 1,
+					},
+				},
+				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"running_job0": {
+						NodeName:     "node0",
+						GPUsRequired: 1,
+						Status:       pod_status.Releasing,
+					},
+					"pending_job0": {
+						NodeName:     "node0",
+						GPUsRequired: 1,
+						Status:       pod_status.Pipelined,
+					},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{
+						NumberOfCacheBinds:      5,
+						NumberOfCacheEvictions:  1,
+						NumberOfPipelineActions: 1,
+					},
+				},
+			},
+		},
+		{
+			TestTopologyBasic: test_utils.TestTopologyBasic{
 				Name: "running job with preemption delay is still evictable as victim - preempt",
 				Jobs: []*jobs_fake.TestJobBasic{
 					{

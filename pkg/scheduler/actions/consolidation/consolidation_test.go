@@ -2070,5 +2070,158 @@ func getTestsMetadata() []integration_tests_utils.TestTopologyMetadata {
 			},
 			RoundsUntilMatch: 1,
 		},
+		{
+			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Name: "pending job in its failed search backoff for consolidation - don't consolidate",
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:                "running_job0",
+						RequiredGPUsPerTask: 2,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "queue0",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								NodeName: "node0",
+								State:    pod_status.Running,
+							},
+						},
+					},
+					{
+						Name:                "running_job1",
+						RequiredGPUsPerTask: 2,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "queue0",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								NodeName: "node1",
+								State:    pod_status.Running,
+							},
+						},
+					},
+					{
+						Name:                "pending_job0",
+						RequiredGPUsPerTask: 3,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "queue0",
+						SearchBackoffFor:    []string{"consolidation"},
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								State: pod_status.Pending,
+							},
+						},
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node0": {
+						GPUs: 4,
+					},
+					"node1": {
+						GPUs: 4,
+					},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{
+						Name:         "queue0",
+						DeservedGPUs: 2,
+					},
+				},
+				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"running_job0": {
+						NodeName:     "node0",
+						GPUsRequired: 2,
+						Status:       pod_status.Running,
+					},
+					"running_job1": {
+						NodeName:     "node1",
+						GPUsRequired: 2,
+						Status:       pod_status.Running,
+					},
+					"pending_job0": {
+						GPUsRequired: 3,
+						Status:       pod_status.Pending,
+					},
+				},
+			},
+		},
+		{
+			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Name: "pending job in a failed search backoff for reclaim only - consolidate",
+				Jobs: []*jobs_fake.TestJobBasic{
+					{
+						Name:                "running_job0",
+						RequiredGPUsPerTask: 2,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "queue0",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								NodeName: "node0",
+								State:    pod_status.Running,
+							},
+						},
+					},
+					{
+						Name:                "running_job1",
+						RequiredGPUsPerTask: 2,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "queue0",
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								NodeName: "node1",
+								State:    pod_status.Running,
+							},
+						},
+					},
+					{
+						Name:                "pending_job0",
+						RequiredGPUsPerTask: 3,
+						Priority:            constants.PriorityTrainNumber,
+						QueueName:           "queue0",
+						SearchBackoffFor:    []string{"reclaim"},
+						Tasks: []*tasks_fake.TestTaskBasic{
+							{
+								State: pod_status.Pending,
+							},
+						},
+					},
+				},
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node0": {
+						GPUs: 4,
+					},
+					"node1": {
+						GPUs: 4,
+					},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{
+						Name:         "queue0",
+						DeservedGPUs: 2,
+					},
+				},
+				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"running_job0": {
+						NodeName:     "node0",
+						GPUsRequired: 2,
+						Status:       pod_status.Running,
+					},
+					"running_job1": {
+						NodeName:     "node0",
+						GPUsRequired: 2,
+						Status:       pod_status.Pipelined,
+					},
+					"pending_job0": {
+						GPUsRequired: 3,
+						NodeName:     "node1",
+						Status:       pod_status.Pipelined,
+					},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{
+						NumberOfCacheEvictions:  1,
+						NumberOfPipelineActions: 2,
+					},
+				},
+			},
+		},
 	}
 }

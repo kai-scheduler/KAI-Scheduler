@@ -40,6 +40,7 @@ type TestJobBasic struct {
 	Priority                            int32
 	Preemptibility                      enginev2alpha2.Preemptibility
 	PreemptionDelay                     *metav1.Duration
+	SearchBackoffFor                    []string
 	Name                                string
 	Namespace                           string
 	QueueName                           string
@@ -96,6 +97,12 @@ func BuildJobsAndTasksMaps(Jobs []*TestJobBasic, vectorMap *resource_info.Resour
 			job.Priority, job.Preemptibility, queueUID, jobCreationTime, job.StaleDuration, job.PerJobStalenessGracePeriod, vectorMap,
 		)
 		jobInfo.PodGroup.Spec.PreemptionDelay = job.PreemptionDelay
+		for _, action := range job.SearchBackoffFor {
+			if jobInfo.SearchBackoffUntil == nil {
+				jobInfo.SearchBackoffUntil = map[string]time.Time{}
+			}
+			jobInfo.SearchBackoffUntil[action] = time.Now().Add(time.Hour)
+		}
 		jobsInfoMap[common_info.PodGroupID(job.Name)] = jobInfo
 	}
 

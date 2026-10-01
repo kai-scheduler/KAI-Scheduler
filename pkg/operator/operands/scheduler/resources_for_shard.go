@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/pflag"
 	"golang.org/x/exp/slices"
@@ -215,7 +216,40 @@ func validateScenarioSearchBudgets(config *kaiv1.ScenarioSearchBudgets) error {
 	if err := validateDurationMap("maxGeneratorSearchDuration", config.MaxGeneratorSearchDuration, nil, nil); err != nil {
 		return err
 	}
+	if err := validateFailedSearchBackoff(config.MinFailedSearchBackoff, config.MaxFailedSearchBackoff); err != nil {
+		return err
+	}
 	return validateMinJobBudget(config.MinJobSearchDuration, config.MaxJobSearchDuration)
+}
+
+func validateFailedSearchBackoff(minBackoff, maxBackoff map[string]metav1.Duration) error {
+	for fieldName, durations := range map[string]map[string]metav1.Duration{
+		"minFailedSearchBackoff": minBackoff,
+		"maxFailedSearchBackoff": maxBackoff,
+	} {
+		if err := validateDurationMap(
+			fieldName, durations, validScenarioSearchActionKeySet(), validScenarioSearchActionKeys,
+		); err != nil {
+			return err
+		}
+	}
+	for _, action := range validScenarioSearchActionKeys {
+		minDuration, minFound := actionDuration(minBackoff, action)
+		maxDuration, maxFound := actionDuration(maxBackoff, action)
+		if minFound && maxFound && maxDuration < minDuration {
+			return fmt.Errorf("maxFailedSearchBackoff for %q must not be less than minFailedSearchBackoff", action)
+		}
+	}
+	return nil
+}
+
+// actionDuration returns the duration set for action, or else the default one.
+func actionDuration(durations map[string]metav1.Duration, action string) (time.Duration, bool) {
+	if duration, found := durations[action]; found {
+		return duration.Duration, true
+	}
+	duration, found := durations[constants.ActionDefault]
+	return duration.Duration, found
 }
 
 func validScenarioSearchActionKeySet() map[string]struct{} {
