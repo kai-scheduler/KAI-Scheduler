@@ -1,0 +1,6 @@
+kind: Changed
+body: |-
+  Shard pull request E2E tests into balanced parallel jobs with a configurable shard count
+custom:
+  Author: "SiorMeir"
+  Issue: "2277"

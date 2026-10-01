@@ -38,6 +38,17 @@ jobs:
           echo "PACKAGE_VERSION=$PACKAGE_VERSION" >> $GITHUB_ENV
           echo $PACKAGE_VERSION
 
+      # Same key as the PR Build job; PRs can only read caches saved on their own ref or on main.
+      - name: Cache Go build cache (Docker-mounted)
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cache/go-build-docker-gocache
+            ~/.cache/go-build-docker-gopath
+          key: go-docker-${{ runner.os }}-${{ hashFiles('go.sum') }}
+          restore-keys: |
+            go-docker-${{ runner.os }}-
+
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
