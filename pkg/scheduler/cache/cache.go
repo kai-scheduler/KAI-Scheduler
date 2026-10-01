@@ -174,7 +174,7 @@ func newSchedulerCache(schedulerCacheParams *SchedulerCacheParams) *SchedulerCac
 	schedulerName := schedulerCacheParams.SchedulerName
 
 	// Prepare event clients.
-	broadcaster := record.NewBroadcaster()
+	broadcaster := newEventBroadcaster()
 	// The new broadcaster objects uses watch.NewLongQueueBroadcaster(maxQueuedEvents, watch.DropIfChannelFull) under the hood.
 	// This means that we need to be careful when writing events using the recorder.
 	// If the broadcaster will have more then maxQueuedEvents waiting to be published, he will drop all incoming recording requests.
@@ -510,4 +510,14 @@ func (sc *SchedulerCache) GetDataLister() data_lister.DataLister {
 		return nil
 	}
 	return data_lister.New(sc.informerFactory, sc.kubeAiSchedulerInformerFactory, sc.nrtInformerFactory, sc.usageLister, selector)
+}
+
+// newEventBroadcaster keys client-go's per-object event budget on reason too, so status events
+// re-sent every cycle cannot starve Evict events.
+func newEventBroadcaster() record.EventBroadcaster {
+	return record.NewBroadcaster(record.WithCorrelatorOptions(record.CorrelatorOptions{
+		SpamKeyFunc: func(e *v1.Event) string {
+			return string(e.InvolvedObject.UID) + "/" + e.Type + "/" + e.Reason
+		},
+	}))
 }
