@@ -101,10 +101,13 @@ func DescribePreemptDistributedSpecs() bool {
 				preemptorResources.Requests[constants.NvidiaGpuResource] = resource.MustParse(fmt.Sprintf("%d", preemptorGpu))
 				preemptorResources.Limits[constants.NvidiaGpuResource] = resource.MustParse(fmt.Sprintf("%d", preemptorGpu))
 
-				_, pods := pod_group.CreateDistributedJob(
-					ctx, testCtx.KubeClientset, testCtx.ControllerClient,
-					testQueue, 2, *preemptorResources, highPriority,
-				)
+				_, _, pods, err := rd.CreateDistributedBatchJob(ctx, testCtx.ControllerClient, testQueue,
+					rd.DistributedBatchJobOptions{
+						Parallelism:       ptr.To(int32(2)),
+						Resources:         *preemptorResources,
+						PriorityClassName: highPriority,
+					})
+				Expect(err).To(Succeed())
 
 				namespace := queue.GetConnectedNamespaceToQueue(testQueue)
 				wait.ForAtLeastNPodsScheduled(ctx, testCtx.ControllerClient, namespace, pods, 2)
