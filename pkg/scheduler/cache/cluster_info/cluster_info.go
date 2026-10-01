@@ -21,6 +21,7 @@ package cluster_info
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	nrtinformers "github.com/k8stopologyawareschedwg/noderesourcetopology-api/pkg/generated/informers/externalversions"
@@ -28,6 +29,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
 
@@ -47,6 +49,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/node_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_affinity"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/pod_status"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/queue_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
@@ -69,6 +72,11 @@ type ClusterInfo struct {
 	fairnessLevelType         FairnessLevelType
 	collectUsageData          bool
 	stuckInReleasingThreshold time.Duration
+
+	// victims maps the pods this scheduler evicted, until they leave the cluster, to the job they
+	// were evicted for.
+	victims      map[types.UID]types.NamespacedName
+	victimsMutex sync.Mutex
 }
 
 type FairnessLevelType string
@@ -201,6 +209,7 @@ func (c *ClusterInfo) Snapshot() (*api.ClusterInfo, error) {
 	if err != nil {
 		return nil, err
 	}
+	c.markJobsWithTerminatingVictims(existingPods, snapshot.PodGroupInfos)
 
 	snapshot.ConfigMaps, err = c.snapshotConfigMaps()
 	if err != nil {
@@ -402,6 +411,37 @@ func (c *ClusterInfo) addTasksToNodes(allPods []*v1.Pod, existingPodsMap map[com
 		existingPodsMap[podInfo.UID] = podInfo
 	}
 	return resultPods, nil
+}
+
+// RecordEviction remembers that this scheduler evicted the victim pod for the preemptor job, so that
+// later snapshots can tell the job is waiting for the pod to terminate.
+func (c *ClusterInfo) RecordEviction(victim types.UID, preemptor types.NamespacedName) {
+	c.victimsMutex.Lock()
+	defer c.victimsMutex.Unlock()
+	if c.victims == nil {
+		c.victims = map[types.UID]types.NamespacedName{}
+	}
+	c.victims[victim] = preemptor
+}
+
+// markJobsWithTerminatingVictims flags the jobs whose victims, evicted by this scheduler, are still
+// terminating, and forgets the victims that have left the cluster. A victim stuck in releasing no
+// longer counts, as its resources are no longer treated as about to be released.
+func (c *ClusterInfo) markJobsWithTerminatingVictims(pods map[common_info.PodID]*pod_info.PodInfo,
+	podGroups map[common_info.PodGroupID]*podgroup_info.PodGroupInfo) {
+	c.victimsMutex.Lock()
+	defer c.victimsMutex.Unlock()
+	for uid, preemptor := range c.victims {
+		victim, found := pods[common_info.PodID(uid)]
+		if !found {
+			delete(c.victims, uid)
+			continue
+		}
+		job, found := podGroups[common_info.NewPodGroupID(preemptor.Namespace, preemptor.Name)]
+		if found && victim.Status == pod_status.Releasing {
+			job.HasTerminatingVictims = true
+		}
+	}
 }
 
 func (c *ClusterInfo) snapshotBindRequests(nodes map[string]*node_info.NodeInfo) (

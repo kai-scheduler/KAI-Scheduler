@@ -57,6 +57,7 @@ func (ra *reclaimAction) Execute(ssn *framework.Session) {
 		FilterNonPending:            true,
 		FilterUnready:               true,
 		FilterWithinPreemptionDelay: true,
+		FilterWaitingForVictims:     true,
 		MaxJobsQueueDepth:           ssn.GetJobsDepth(framework.Reclaim),
 	})
 	jobsOrderByQueues.InitializeWithJobs(ssn.ClusterInfo.PodGroupInfos)

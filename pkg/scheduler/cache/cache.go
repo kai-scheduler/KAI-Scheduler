@@ -291,6 +291,9 @@ func (sc *SchedulerCache) Evict(evictedPod *v1.Pod, evictedPodGroup *podgroup_in
 		return fmt.Errorf("received an eviction attempt for a terminated task: <%v/%v>", pod.Namespace, pod.Name)
 	}
 
+	if evictionMetadata.Preemptor != nil {
+		sc.clusterInfo.RecordEviction(pod.UID, *evictionMetadata.Preemptor)
+	}
 	sc.evict(pod, podGroup, evictionMetadata, message)
 	return nil
 }

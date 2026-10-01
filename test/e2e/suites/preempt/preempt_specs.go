@@ -17,6 +17,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/constant"
 	testcontext "github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/context"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/capacity"
+	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/fillers"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/resources/rd/queue"
 	"github.com/kai-scheduler/KAI-scheduler/test/e2e/modules/utils"
@@ -259,6 +260,23 @@ func DescribePreemptSpecs() bool {
 			pod2, err = rd.CreatePod(ctx, testCtx.KubeClientset, pod2)
 			Expect(err).To(Succeed())
 			wait.ForPodUnschedulable(ctx, testCtx.ControllerClient, pod2)
+		})
+
+		It("Preempts one pod for a job anti-affine to it, and no other while it terminates", func(ctx context.Context) {
+			capacity.SkipIfInsufficientClusterTopologyResources(testCtx.KubeClientset, []capacity.ResourceList{
+				{Gpu: resource.MustParse("8"), PodCount: 2},
+				{Gpu: resource.MustParse("8"), PodCount: 2},
+			})
+
+			tierLabels := map[string]string{"tier": utils.GenerateRandomK8sName(10)}
+			// A 2-GPU pod fits beside a 6-GPU victim but for its anti-affinity.
+			victims := fillers.FillGPUNodesWithSlowTerminatingPods(ctx, testCtx, testCtx.Queues[0], tierLabels,
+				lowPreemptiblePriorityClass, 6)
+			preemptor := rd.CreatePodObject(testCtx.Queues[0], fillers.GPURequirements(2))
+			preemptor.Spec.PriorityClassName = highPreemptiblePriorityClass
+			preemptor = fillers.CreatePodRepellingVictims(ctx, testCtx, preemptor, tierLabels,
+				queue.GetConnectedNamespaceToQueue(testCtx.Queues[0]))
+			fillers.ExpectEvictionsUntilScheduled(ctx, testCtx, victims, 1, preemptor)
 		})
 	})
 }

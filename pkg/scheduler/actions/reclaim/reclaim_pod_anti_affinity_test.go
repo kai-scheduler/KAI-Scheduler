@@ -162,5 +162,93 @@ func getReclaimPodAntiAffinityTestsMetadata() []integration_tests_utils.TestTopo
 				},
 			},
 		},
+		{
+			// The cycle after a reclaim: the victim still terminates on node0 and, being indexed
+			// again, blocks the job it was evicted for. Until the victim is gone the job must not
+			// evict more matching pods elsewhere.
+			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Name: "Do not reclaim more for a job whose earlier victims are still terminating",
+				Jobs: terminatingVictimTopology(true, preprocessLabels),
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node0": {GPUs: 2, Labels: map[string]string{hostnameTopologyKey: "node0"}},
+					"node1": {GPUs: 2, Labels: map[string]string{hostnameTopologyKey: "node1"}},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{Name: "queue0", DeservedGPUs: 0, GPUOverQuotaWeight: 0},
+					{Name: "queue1", DeservedGPUs: 2, GPUOverQuotaWeight: 2},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{},
+				},
+				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"terminating_victim0": {GPUsRequired: 2, Status: pod_status.Releasing, NodeName: "node0"},
+					"running_job1":        {GPUsRequired: 2, Status: pod_status.Running, NodeName: "node1"},
+					"pending_job0":        {GPUsRequired: 2, Status: pod_status.Pending},
+				},
+			},
+		},
+		{
+			// Control: the same state, but nothing was evicted for the pending job, so it may
+			// reclaim the other matching pod, which moves onto the releasing node.
+			TestTopologyBasic: test_utils.TestTopologyBasic{
+				Name: "Reclaim beside an independently terminating pod the job is anti-affine to",
+				Jobs: terminatingVictimTopology(false, preprocessLabels),
+				Nodes: map[string]nodes_fake.TestNodeBasic{
+					"node0": {GPUs: 2, Labels: map[string]string{hostnameTopologyKey: "node0"}},
+					"node1": {GPUs: 2, Labels: map[string]string{hostnameTopologyKey: "node1"}},
+				},
+				Queues: []test_utils.TestQueueBasic{
+					{Name: "queue0", DeservedGPUs: 0, GPUOverQuotaWeight: 0},
+					{Name: "queue1", DeservedGPUs: 2, GPUOverQuotaWeight: 2},
+				},
+				Mocks: &test_utils.TestMock{
+					CacheRequirements: &test_utils.CacheMocking{
+						NumberOfCacheEvictions:  1,
+						NumberOfPipelineActions: 2,
+					},
+				},
+				JobExpectedResults: map[string]test_utils.TestExpectedResultBasic{
+					"terminating_victim0": {GPUsRequired: 2, Status: pod_status.Releasing, NodeName: "node0"},
+					"running_job1":        {GPUsRequired: 2, Status: pod_status.Pipelined, NodeName: "node0"},
+					"pending_job0":        {GPUsRequired: 2, Status: pod_status.Pipelined, NodeName: "node1"},
+				},
+			},
+		},
+	}
+}
+
+// terminatingVictimTopology is a pod terminating on node0 and a running pod on node1, both over
+// quota and matching the pending job's required anti-affinity.
+func terminatingVictimTopology(hasTerminatingVictims bool, labels map[string]string) []*jobs_fake.TestJobBasic {
+	return []*jobs_fake.TestJobBasic{
+		{
+			Name:                "terminating_victim0",
+			RequiredGPUsPerTask: 2,
+			Priority:            constants.PriorityTrainNumber,
+			QueueName:           "queue0",
+			DeleteJobInTest:     true,
+			Tasks: []*tasks_fake.TestTaskBasic{
+				{NodeName: "node0", State: pod_status.Releasing, PodAffinityLabels: labels},
+			},
+		},
+		{
+			Name:                "running_job1",
+			RequiredGPUsPerTask: 2,
+			Priority:            constants.PriorityTrainNumber,
+			QueueName:           "queue0",
+			Tasks: []*tasks_fake.TestTaskBasic{
+				{NodeName: "node1", State: pod_status.Running, PodAffinityLabels: labels},
+			},
+		},
+		{
+			Name:                  "pending_job0",
+			RequiredGPUsPerTask:   2,
+			Priority:              constants.PriorityBuildNumber,
+			QueueName:             "queue1",
+			HasTerminatingVictims: hasTerminatingVictims,
+			Tasks: []*tasks_fake.TestTaskBasic{
+				{State: pod_status.Pending, PodAntiAffinitySelector: labels, PodAntiAffinityTopologyKey: hostnameTopologyKey},
+			},
+		},
 	}
 }
