@@ -12,6 +12,7 @@ const (
 	SearchResultGeneratorsExhausted SearchResultReason = "generators_exhausted"
 	SearchResultNoGenerator         SearchResultReason = "no_generator"
 	SearchResultNotAttempted        SearchResultReason = "not_attempted"
+	SearchResultPreemptorOverQuota  SearchResultReason = "preemptor_over_quota"
 )
 
 // SearchResult records the outcome and budget state of a scenario search attempt.
@@ -49,6 +50,11 @@ func (r *SearchResult) scenarioSearchMetricResult() string {
 // NewNotAttemptedSearchResult returns a terminal result for callers that skip solver entry.
 func NewNotAttemptedSearchResult() *SearchResult {
 	return terminalSearchResult(SearchResultNotAttempted, false)
+}
+
+// NewPreemptorOverQuotaSearchResult returns a terminal result for a preemptor that is over quota.
+func NewPreemptorOverQuotaSearchResult() *SearchResult {
+	return terminalSearchResult(SearchResultPreemptorOverQuota, false)
 }
 
 func solvedSearchResult(solution *solutionResult, reducedBudget bool) *SearchResult {

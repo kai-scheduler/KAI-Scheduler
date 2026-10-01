@@ -93,6 +93,15 @@ func TestScenarioSearchMetricWrappersUseExpectedLabels(t *testing.T) {
 	require.Equal(t, scenariosBefore+1, counterValue(t, "scenario_search_scenarios_total", scenariosLabels))
 }
 
+func TestPreemptionFailureMetricUsesReasonLabel(t *testing.T) {
+	labels := map[string]string{"reason": "preemptor_over_quota"}
+	before := counterValueOrZero(t, "preemption_failures_total", labels)
+
+	IncPreemptionFailure("preemptor_over_quota")
+
+	require.Equal(t, before+1, counterValue(t, "preemption_failures_total", labels))
+}
+
 func TestScenarioSearchDurationMetricObservesSeconds(t *testing.T) {
 	labels := map[string]string{
 		"action":    "test-action-duration",
