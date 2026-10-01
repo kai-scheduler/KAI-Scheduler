@@ -24,6 +24,9 @@ type JobsOrderInitOptions struct {
 	FilterWithinPreemptionDelay bool
 	VictimQueue                 bool
 	MaxJobsQueueDepth           int
+	// FilterWaitingForVictims skips jobs that wait for the pods evicted for them to
+	// terminate, so they do not trigger more evictions. Set only by eviction-triggering actions.
+	FilterWaitingForVictims bool
 }
 
 func (jobsOrder *JobsOrderByQueues) InitializeWithJobs(
@@ -75,6 +78,12 @@ func (jobsOrder *JobsOrderByQueues) InitializeWithJobs(
 		if jobsOrder.options.FilterWithinPreemptionDelay && job.IsWithinPreemptionDelay(now) {
 			recordPreemptionDelayFitError(job)
 			log.InfraLogger.V(3).Infof("Job <%s> is within its preemption delay window, skipping as eviction trigger",
+				job.NamespacedName)
+			continue
+		}
+
+		if jobsOrder.options.FilterWaitingForVictims && job.HasTerminatingVictims {
+			log.InfraLogger.V(3).Infof("Job <%s> waits for the pods evicted for it to terminate, skipping as eviction trigger",
 				job.NamespacedName)
 			continue
 		}

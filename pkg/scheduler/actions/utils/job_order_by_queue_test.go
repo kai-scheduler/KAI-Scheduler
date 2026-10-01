@@ -859,3 +859,46 @@ func TestInitializeWithJobs_PreemptionDelayFilter(t *testing.T) {
 	popped := []string{jobsOrder.PopNextJob().Name, jobsOrder.PopNextJob().Name}
 	assert.ElementsMatch(t, []string{"delayed", "regular"}, popped)
 }
+
+func TestInitializeWithJobs_WaitingForVictimsFilter(t *testing.T) {
+	ssn := newPrioritySession(t)
+
+	ssn.ClusterInfo.Queues = map[common_info.QueueID]*queue_info.QueueInfo{
+		testQueue: {
+			UID:         testQueue,
+			ParentQueue: testParentQueue,
+		},
+		testParentQueue: {
+			UID:         testParentQueue,
+			ChildQueues: []common_info.QueueID{testQueue},
+		},
+	}
+
+	waitingJob := podGroupForJobOrderTest("waiting", "waiting", 100)
+	waitingJob.HasTerminatingVictims = true
+	regularJob := podGroupForJobOrderTest("regular", "regular", 100)
+	jobs := map[common_info.PodGroupID]*podgroup_info.PodGroupInfo{
+		"waiting": waitingJob,
+		"regular": regularJob,
+	}
+	ssn.ClusterInfo.PodGroupInfos = jobs
+
+	// Eviction-triggering actions set the filter: the job waiting for its victims is skipped.
+	jobsOrder := NewJobsOrderByQueues(ssn, JobsOrderInitOptions{
+		FilterNonPending:        true,
+		FilterWaitingForVictims: true,
+		MaxJobsQueueDepth:       scheduler_util.QueueCapacityInfinite,
+	})
+	jobsOrder.InitializeWithJobs(jobs)
+	assert.Equal(t, "regular", jobsOrder.PopNextJob().Name)
+	assert.True(t, jobsOrder.IsEmpty())
+
+	// Without the filter (allocate path), it is included.
+	jobsOrder = NewJobsOrderByQueues(ssn, JobsOrderInitOptions{
+		FilterNonPending:  true,
+		MaxJobsQueueDepth: scheduler_util.QueueCapacityInfinite,
+	})
+	jobsOrder.InitializeWithJobs(jobs)
+	popped := []string{jobsOrder.PopNextJob().Name, jobsOrder.PopNextJob().Name}
+	assert.ElementsMatch(t, []string{"waiting", "regular"}, popped)
+}
