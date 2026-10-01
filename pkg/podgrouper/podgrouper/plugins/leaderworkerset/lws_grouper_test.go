@@ -610,3 +610,65 @@ func TestBuildSubGroups_SegmentSizeFromWorkerTemplateAnnotation(t *testing.T) {
 	assert.Nil(t, workersSG.TopologyConstraints)
 	assert.Equal(t, []string{"lws-seg-0-1"}, workersSG.PodsReferences)
 }
+
+func TestGetPodGroupMetadata_LeaderReady_Segmentation_UnscheduledLeader(t *testing.T) {
+	owner := lwsOwner("lws-ready-seg", "LeaderReady", 8, ptr.To(int64(4)), nil, nil)
+	pod := makeLwsPod("lws-ready-seg-0", "0")
+
+	lwsGrouper := NewLwsGrouper(defaultgrouper.NewDefaultGrouper("", "", fake.NewFakeClient()))
+	podGroupMetadata, err := lwsGrouper.GetPodGroupMetadata(owner, pod)
+
+	assert.NoError(t, err)
+	if assert.NotNil(t, podGroupMetadata) {
+		assert.Equal(t, int32(1), podGroupMetadata.MinAvailable)
+		assert.Len(t, podGroupMetadata.SubGroups, 1)
+		leaderSubGroup := findSubGroupByName(podGroupMetadata.SubGroups, "leader")
+		if assert.NotNil(t, leaderSubGroup) {
+			assert.Equal(t, int32(1), leaderSubGroup.MinAvailable)
+			assert.Equal(t, []string{"lws-ready-seg-0"}, leaderSubGroup.PodsReferences)
+		}
+	}
+}
+
+func TestGetPodGroupMetadata_LeaderReady_Segmentation_WorkerPod(t *testing.T) {
+	owner := lwsOwner("lws-ready-seg", "LeaderReady", 9, ptr.To(int64(4)), nil, nil)
+	pod := makeLwsPod("lws-ready-seg-1", "1")
+
+	lwsGrouper := NewLwsGrouper(defaultgrouper.NewDefaultGrouper("", "", fake.NewFakeClient()))
+	podGroupMetadata, err := lwsGrouper.GetPodGroupMetadata(owner, pod)
+
+	assert.NoError(t, err)
+	if assert.NotNil(t, podGroupMetadata) {
+		assert.Equal(t, int32(9), podGroupMetadata.MinAvailable)
+		assert.NotNil(t, findSubGroupByName(podGroupMetadata.SubGroups, "segment-0"))
+		assert.NotNil(t, findSubGroupByName(podGroupMetadata.SubGroups, "segment-1"))
+	}
+}
+
+func TestGetPodGroupMetadata_LeaderReady_Segmentation_ScheduledLeader(t *testing.T) {
+	owner := lwsOwner("lws-ready-seg", "LeaderReady", 9, ptr.To(int64(4)), nil, nil)
+	pod := makeLwsPod("lws-ready-seg-0", "0")
+	pod.Spec.NodeName = "node-1"
+
+	lwsGrouper := NewLwsGrouper(defaultgrouper.NewDefaultGrouper("", "", fake.NewFakeClient()))
+	podGroupMetadata, err := lwsGrouper.GetPodGroupMetadata(owner, pod)
+
+	assert.NoError(t, err)
+	if assert.NotNil(t, podGroupMetadata) {
+		assert.Equal(t, int32(9), podGroupMetadata.MinAvailable)
+		leaderSubGroup := findSubGroupByName(podGroupMetadata.SubGroups, "leader")
+		if assert.NotNil(t, leaderSubGroup) {
+			assert.Equal(t, []string{"lws-ready-seg-0"}, leaderSubGroup.PodsReferences)
+		}
+	}
+}
+
+func TestGetPodGroupMetadata_LeaderReady_Segmentation_InvalidSegmentSize(t *testing.T) {
+	owner := lwsOwner("lws-ready-seg", "LeaderReady", 3, ptr.To(int64(4)), nil, nil)
+	pod := makeLwsPod("lws-ready-seg-1", "1")
+
+	lwsGrouper := NewLwsGrouper(defaultgrouper.NewDefaultGrouper("", "", fake.NewFakeClient()))
+	_, err := lwsGrouper.GetPodGroupMetadata(owner, pod)
+
+	assert.ErrorContains(t, err, "greater than replicasSize")
+}
