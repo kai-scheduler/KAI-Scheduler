@@ -112,6 +112,8 @@ func BuildSchedulerParams(opt *options.ServerOption) *conf.SchedulerParams {
 		StuckInReleasingThreshold:         opt.StuckInReleasingThreshold,
 		DetailedFitErrors:                 opt.DetailedFitErrors,
 		UpdatePodEvictionCondition:        opt.UpdatePodEvictionCondition,
+		EnableWorkloadEvictionMetrics:     opt.EnableWorkloadEvictionMetrics,
+		MetricsNamespace:                  opt.MetricsNamespace,
 		QueueLabelKey:                     opt.QueueLabelKey,
 	}
 	if opt.GpuSharingMode != "" {

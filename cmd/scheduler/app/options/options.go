@@ -64,6 +64,7 @@ type ServerOption struct {
 	MaxNumberConsolidationPreemptees  int
 	DetailedFitErrors                 bool
 	UpdatePodEvictionCondition        bool
+	EnableWorkloadEvictionMetrics     bool
 	ScheduleCSIStorage                bool
 	UseSchedulingSignatures           bool
 	FullHierarchyFairness             bool
@@ -122,6 +123,7 @@ func (s *ServerOption) AddFlags(fs *pflag.FlagSet) {
 	fs.IntVar(&s.Burst, "burst", 300, "Burst to the K8s API server")
 	fs.BoolVar(&s.DetailedFitErrors, "detailed-fit-errors", defaultDetailedFitError, "Write detailed fit errors for every node on every podgroup")
 	fs.BoolVar(&s.UpdatePodEvictionCondition, "update-pod-eviction-condition", false, "Update pod eviction condition to reflect the pod's eviction status")
+	fs.BoolVar(&s.EnableWorkloadEvictionMetrics, "enable-workload-eviction-metrics", false, "Enable workload-centric pod group eviction metrics")
 	fs.BoolVar(&s.ScheduleCSIStorage, "schedule-csi-storage", false, "Enables advanced scheduling (preempt, reclaim) for csi storage objects")
 	fs.BoolVar(&s.UseSchedulingSignatures, "use-scheduling-signatures", true, "Use scheduling signatures to avoid duplicate scheduling attempts for identical jobs")
 	fs.BoolVar(&s.FullHierarchyFairness, "full-hierarchy-fairness", true, "Fairness across project and department levels")

@@ -315,7 +315,8 @@ func TestStaleGangEviction(t *testing.T) {
 				},
 				Mocks: &test_utils.TestMock{
 					CacheRequirements: &test_utils.CacheMocking{
-						NumberOfCacheEvictions: 3,
+						NumberOfCacheEvictions:         3,
+						NumberOfPodGroupEvictionEvents: 1,
 					},
 				},
 			},

@@ -1,0 +1,3 @@
+kind: Changed
+body: |-
+  Gate workload-centric eviction metrics behind --enable-workload-eviction-metrics

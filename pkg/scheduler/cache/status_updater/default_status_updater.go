@@ -66,6 +66,7 @@ type defaultStatusUpdater struct {
 	recorder          record.EventRecorder
 	detailedFitErrors bool
 	nodePoolLabelKey  string
+	evictionMetrics   metrics.PodGroupEvictionRecorder
 
 	numberOfWorkers   int
 	updateQueueIn     chan *updatePayload
@@ -87,6 +88,7 @@ func New(
 	numberOfWorkers int,
 	detailedFitErrors bool,
 	nodePoolLabelKey string,
+	evictionMetrics metrics.PodGroupEvictionRecorder,
 ) *defaultStatusUpdater {
 	return &defaultStatusUpdater{
 		kubeClient:        kubeClient,
@@ -94,6 +96,7 @@ func New(
 		recorder:          recorder,
 		detailedFitErrors: detailedFitErrors,
 		nodePoolLabelKey:  nodePoolLabelKey,
+		evictionMetrics:   evictionMetrics,
 
 		numberOfWorkers:   numberOfWorkers,
 		updateQueueIn:     make(chan *updatePayload),
@@ -103,6 +106,7 @@ func New(
 }
 
 func (su *defaultStatusUpdater) Evicted(
+	evictedPod *v1.Pod,
 	evictedPodGroup *enginev2alpha2.PodGroup,
 	evictionMetadata eviction_info.EvictionMetadata,
 	message string,
@@ -121,12 +125,11 @@ func (su *defaultStatusUpdater) Evicted(
 		message)
 
 	nodepool := utils.GetNodePoolNameFromLabels(evictedPodGroup.Labels, su.nodePoolLabelKey)
-	metrics.IncPodGroupEvictedPods(
-		evictedPodGroup.Name,
-		evictedPodGroup.Namespace,
-		string(evictedPodGroup.UID),
+	su.evictionMetrics.IncEvictedPods(
+		evictedPodGroup,
 		nodepool,
 		evictionMetadata.Action,
+		evictedPod.Labels[commonconstants.SubGroupLabelKey],
 	)
 }
 

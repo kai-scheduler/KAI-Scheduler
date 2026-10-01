@@ -48,7 +48,7 @@ var _ = Describe("Status Updater - Pod Groups Syncing", func() {
 		kubeAiSchedClient = kubeaischedfake.NewSimpleClientset()
 		recorder := record.NewFakeRecorder(100)
 		statusUpdater = New(kubeClient, kubeAiSchedClient, recorder, 4, false,
-			nodePoolLabelKey)
+			nodePoolLabelKey, newTestEvictionMetrics())
 
 		wg = sync.WaitGroup{}
 		finishUpdatesChan = make(chan struct{})

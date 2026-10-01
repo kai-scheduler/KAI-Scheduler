@@ -19,7 +19,7 @@ type PodGroupsSync interface {
 
 type Interface interface {
 	PodGroupsSync
-	Evicted(evictedPodGroup *enginev2alpha2.PodGroup, evictionMetadata eviction_info.EvictionMetadata, message string)
+	Evicted(evictedPod *v1.Pod, evictedPodGroup *enginev2alpha2.PodGroup, evictionMetadata eviction_info.EvictionMetadata, message string)
 	PreBind(pod *v1.Pod)
 	Bound(pod *v1.Pod, hostname string, bindError error, nodePoolName string) error
 	Pipelined(pod *v1.Pod, message string)

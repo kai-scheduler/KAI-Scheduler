@@ -29,9 +29,9 @@ import (
 )
 
 func InitDefaultActions() {
-	framework.RegisterAction(reclaim.New())
+	framework.RegisterEvictionAction(reclaim.New())
 	framework.RegisterAction(allocate.New())
-	framework.RegisterAction(preempt.New())
-	framework.RegisterAction(consolidation.New())
-	framework.RegisterAction(stalegangeviction.New())
+	framework.RegisterEvictionAction(preempt.New())
+	framework.RegisterEvictionAction(consolidation.New())
+	framework.RegisterEvictionAction(stalegangeviction.New())
 }
