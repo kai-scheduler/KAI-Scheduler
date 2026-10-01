@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [v0.18.2] - 2026-10-01
+
+### Added
+- Adds support for gpu-memory.limit and gpu-fraction.limit for fractions when NvFraction mode is used. [davidLif](https://github.com/davidLif)
+
+### Changed
+- Updated gpu-fractioning chart dependency to v0.1.5 [#2280](https://github.com/kai-scheduler/KAI-Scheduler/issues/2280) [davidLif](https://github.com/davidLif)
+
+### Fixed
+- Disable fractional GPU RuntimeClass injection when GPU Operator NRI is enabled
+- Find Kartas under the GVK label keys the Karta operator stamps
+- Node scale adjuster now accounts for nvFraction annotations when calculating needed GPU devices [#2213](https://github.com/kai-scheduler/KAI-Scheduler/issues/2213) [davidLif](https://github.com/davidLif)
+- PodGrouper uses default grouping when a Karta lacks gang scheduling instructions [#2276](https://github.com/kai-scheduler/KAI-Scheduler/issues/2276) [enoodle](https://github.com/enoodle)
+
 ## [v0.18.1] - 2026-09-28
 
 ### Fixed
