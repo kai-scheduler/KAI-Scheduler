@@ -124,6 +124,14 @@ func computePodGroupMinSubGroup(jobSet *unstructured.Unstructured, replicatedJob
 		return numReplicatedJobs, nil
 	}
 
+	// dependsOn and startupPolicy are mutually exclusive in the JobSet API.
+	// Gated replicated jobs have no pods until their dependency is Ready, so
+	// requiring all replicatedJobs (AnyOrder default) makes the gang
+	// permanently unschedulable. Collapse to 1 like InOrder.
+	if jobSetUsesDependsOn(replicatedJobs) {
+		return 1, nil
+	}
+
 	orderPolicy, err := getStartupPolicyOrder(jobSet)
 	if err != nil {
 		return 0, err
@@ -284,6 +292,19 @@ func getReplicatedJobs(jobSet *unstructured.Unstructured) ([]map[string]any, err
 		out = append(out, rj)
 	}
 	return out, nil
+}
+
+// jobSetUsesDependsOn reports whether any replicatedJob declares dependsOn.
+// The JobSet API treats dependsOn and startupPolicy as mutually exclusive.
+func jobSetUsesDependsOn(replicatedJobs []map[string]any) bool {
+	for _, rj := range replicatedJobs {
+		raw, found, err := unstructured.NestedSlice(rj, "dependsOn")
+		if err != nil || !found || len(raw) == 0 {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 // getStartupPolicyOrder returns spec.startupPolicy.startupPolicyOrder, defaulting to AnyOrder.
