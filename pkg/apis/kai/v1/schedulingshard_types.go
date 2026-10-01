@@ -78,6 +78,19 @@ type ScenarioSearchBudgets struct {
 	// MaxGeneratorSearchDuration limits scenario search time per generator attempt.
 	// Keys are generator names, with "default" used as the fallback budget.
 	MaxGeneratorSearchDuration map[string]metav1.Duration `json:"maxGeneratorSearchDuration,omitempty"`
+
+	// MinFailedSearchBackoff makes an action skip a pending job for this long after a scenario
+	// search for the job exhausted its scenarios without a solution. The interval doubles with each
+	// such search, up to MaxFailedSearchBackoff. The job is searched again at once when its PodGroup
+	// spec or queue, its pods waiting for a node, or their scheduling constraints or resource requests
+	// change.
+	// Keys are action names, with "default" used as the fallback. Disabled unless set.
+	MinFailedSearchBackoff map[string]metav1.Duration `json:"minFailedSearchBackoff,omitempty"`
+
+	// MaxFailedSearchBackoff caps the interval of MinFailedSearchBackoff.
+	// Keys are action names, with "default" used as the fallback. Defaults to the action's
+	// MinFailedSearchBackoff, which keeps the interval fixed.
+	MaxFailedSearchBackoff map[string]metav1.Duration `json:"maxFailedSearchBackoff,omitempty"`
 }
 
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.

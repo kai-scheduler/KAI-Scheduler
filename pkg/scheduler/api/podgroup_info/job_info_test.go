@@ -27,6 +27,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
@@ -1932,4 +1933,95 @@ func TestSetPodGroupLastEvictionTimestamp(t *testing.T) {
 			assert.Equal(t, tt.expected, pgi.LastEvictionTimestamp)
 		})
 	}
+}
+
+func TestPodGroupInfo_GetSearchShapeKey(t *testing.T) {
+	task := func(name string, phase v1.PodPhase, gpus string, modify ...func(*v1.Pod)) *pod_info.PodInfo {
+		pod := &v1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        name,
+				Namespace:   "ns",
+				UID:         types.UID(name),
+				Annotations: map[string]string{commonconstants.PodGroupAnnotationForPod: "pg"},
+			},
+			Spec: v1.PodSpec{Containers: []v1.Container{{Resources: v1.ResourceRequirements{
+				Requests: v1.ResourceList{resource_info.GPUResourceName: resource.MustParse(gpus)},
+			}}}},
+			Status: v1.PodStatus{Phase: phase},
+		}
+		if phase == v1.PodRunning {
+			pod.Spec.NodeName = "node"
+		}
+		for _, m := range modify {
+			m(pod)
+		}
+		return pod_info.NewTaskInfo(pod, resource_info.NewResourceVectorMap())
+	}
+	job := func(podGroupUID, queue string, tasks ...*pod_info.PodInfo) *PodGroupInfo {
+		pgi := NewPodGroupInfo("pg", tasks...)
+		pgi.PodGroupUID = types.UID(podGroupUID)
+		pgi.Queue = common_info.QueueID(queue)
+		return pgi
+	}
+	pendingA := func() *pod_info.PodInfo { return task("a", v1.PodPending, "1") }
+	pendingB := func() *pod_info.PodInfo { return task("b", v1.PodPending, "2") }
+	withNodeSelector := func(pod *v1.Pod) { pod.Spec.NodeSelector = map[string]string{"zone": "a"} }
+	withNodeName := func(pod *v1.Pod) { pod.Spec.NodeName = "node" }
+	withGate := func(pod *v1.Pod) { pod.Spec.SchedulingGates = []v1.PodSchedulingGate{{Name: "gate"}} }
+	withDeletion := func(pod *v1.Pod) { pod.DeletionTimestamp = &metav1.Time{} }
+	withCPU := func(pod *v1.Pod) { pod.Spec.Containers[0].Resources.Requests[v1.ResourceCPU] = resource.MustParse("2") }
+	base := job("uid", "queue", pendingA(), pendingB())
+
+	tests := []struct {
+		name  string
+		other *PodGroupInfo
+		equal bool
+	}{
+		{"the same job, rebuilt", job("uid", "queue", pendingA(), pendingB()), true},
+		{"pending pods added in another order", job("uid", "queue", pendingB(), pendingA()), true},
+		{"a pod that is not pending", job("uid", "queue", pendingA(), pendingB(), task("c", v1.PodRunning, "4")), true},
+		{"a pod that failed unbound", job("uid", "queue", pendingA(), pendingB(), task("c", v1.PodFailed, "4")), true},
+		{"a bound pod that is not running yet", job("uid", "queue", pendingA(), pendingB(),
+			task("c", v1.PodPending, "4", withNodeName)), true},
+		{"a gated pod", job("uid", "queue", pendingA(), pendingB(), task("c", v1.PodPending, "4", withGate)), true},
+		{"a pending pod being deleted", job("uid", "queue", pendingA(), pendingB(),
+			task("c", v1.PodPending, "4", withDeletion)), true},
+		{"another PodGroup", job("other-uid", "queue", pendingA(), pendingB()), false},
+		{"another queue", job("uid", "other-queue", pendingA(), pendingB()), false},
+		{"one more pending pod", job("uid", "queue", pendingA(), pendingB(), task("c", v1.PodPending, "1")), false},
+		{"a pending pod requesting more GPUs", job("uid", "queue", pendingA(), task("b", v1.PodPending, "3")), false},
+		{"a pending pod requesting more CPU", job("uid", "queue", pendingA(), task("b", v1.PodPending, "2", withCPU)), false},
+		{"a pending pod with a node selector", job("uid", "queue", pendingA(),
+			task("b", v1.PodPending, "2", withNodeSelector)), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.equal, base.GetSearchShapeKey() == tt.other.GetSearchShapeKey())
+		})
+	}
+
+	t.Run("a pending pod requesting more GPU memory", func(t *testing.T) {
+		withGPUMemory := func(mib string) func(*v1.Pod) {
+			return func(pod *v1.Pod) { pod.Annotations[commonconstants.GpuMemory] = mib }
+		}
+		less := job("uid", "queue", task("a", v1.PodPending, "0", withGPUMemory("1024")))
+		more := job("uid", "queue", task("a", v1.PodPending, "0", withGPUMemory("2048")))
+		assert.NotEqual(t, less.GetSearchShapeKey(), more.GetSearchShapeKey())
+	})
+
+	t.Run("a new PodGroup generation", func(t *testing.T) {
+		other := job("uid", "queue", pendingA(), pendingB())
+		other.PodGroup = &enginev2alpha2.PodGroup{ObjectMeta: metav1.ObjectMeta{Generation: 2}}
+		assert.NotEqual(t, base.GetSearchShapeKey(), other.GetSearchShapeKey())
+	})
+
+	t.Run("the session's own placements", func(t *testing.T) {
+		placed := job("uid", "queue", pendingA(), pendingB())
+		before := placed.GetSearchShapeKey()
+		for _, task := range placed.GetAllPodsMap() {
+			task.NodeName = "node"
+			assert.NoError(t, placed.UpdateTaskStatus(task, pod_status.Pipelined))
+		}
+		assert.Equal(t, before, placed.GetSearchShapeKey())
+	})
 }

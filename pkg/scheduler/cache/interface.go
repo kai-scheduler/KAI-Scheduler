@@ -20,6 +20,8 @@ limitations under the License.
 package cache
 
 import (
+	"time"
+
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
@@ -49,6 +51,11 @@ type Cache interface {
 		) ([]*common_info.TasksFitError, error),
 	) error
 	TaskPipelined(task *pod_info.PodInfo, message string)
+	// RecordFailedSearch makes action skip job, after a scenario search for it found no solution, for
+	// a backoff starting at minBackoff and doubling with each failed search, up to maxBackoff.
+	RecordFailedSearch(action string, job *podgroup_info.PodGroupInfo, minBackoff, maxBackoff time.Duration)
+	// ClearFailedSearch ends the backoff of job for action.
+	ClearFailedSearch(action string, job *podgroup_info.PodGroupInfo)
 	KubeClient() kubernetes.Interface
 	KubeInformerFactory() informers.SharedInformerFactory
 	SnapshotSharedLister() ksf.NodeInfoLister

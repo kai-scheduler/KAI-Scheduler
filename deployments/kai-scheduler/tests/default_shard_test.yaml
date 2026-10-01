@@ -42,6 +42,10 @@ tests:
           minJobSearchDuration: "0s"
           maxGeneratorSearchDuration:
             NodeLocalGreedy: "50ms"
+          minFailedSearchBackoff:
+            default: "10s"
+          maxFailedSearchBackoff:
+            reclaim: "2m"
     asserts:
       - equal:
           path: spec.scenarioSearchBudgets.maxActionSearchDuration.reclaim
@@ -55,6 +59,12 @@ tests:
       - equal:
           path: spec.scenarioSearchBudgets.maxGeneratorSearchDuration.NodeLocalGreedy
           value: 50ms
+      - equal:
+          path: spec.scenarioSearchBudgets.minFailedSearchBackoff.default
+          value: 10s
+      - equal:
+          path: spec.scenarioSearchBudgets.maxFailedSearchBackoff.reclaim
+          value: 2m
 
   - it: should render Go memory limit configuration
     set:
