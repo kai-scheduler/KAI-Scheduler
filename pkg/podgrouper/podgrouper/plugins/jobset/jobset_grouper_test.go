@@ -75,6 +75,16 @@ func replicatedJobWithTemplateAnnotation(name string, replicas, parallelism int6
 	return rj
 }
 
+func replicatedJobWithDependsOn(name string, replicas, parallelism int64, dependsOn []map[string]interface{}) map[string]interface{} {
+	rj := replicatedJob(name, replicas, parallelism)
+	deps := make([]interface{}, len(dependsOn))
+	for i, d := range dependsOn {
+		deps[i] = d
+	}
+	rj["dependsOn"] = deps
+	return rj
+}
+
 func setStartupPolicy(js *unstructured.Unstructured, order string) {
 	js.Object["spec"].(map[string]interface{})["startupPolicy"] = map[string]interface{}{
 		"startupPolicyOrder": order,
@@ -436,6 +446,84 @@ func TestDistinctTopologiesAtJobSetAndReplicatedJobLevels(t *testing.T) {
 		assert.Equal(t, "rack", leaf.TopologyConstraints.RequiredTopologyLevel)
 		assert.Equal(t, "zone", leaf.TopologyConstraints.PreferredTopologyLevel)
 	}
+}
+
+func TestDependsOnRootMinSubGroupCollapsed(t *testing.T) {
+	// Kubeflow Trainer MPI shape: workers + dependsOn-gated launcher.
+	// Without this, default AnyOrder sets MinSubGroup=2 while launcher has
+	// no pods yet → permanently unschedulable (issue #2271).
+	js := baseJobSet("js", "default", "uid", []map[string]interface{}{
+		replicatedJob("node", 1, 2),
+		replicatedJobWithDependsOn("launcher", 1, 1, []map[string]interface{}{
+			{"name": "node", "status": "Ready"},
+		}),
+	})
+	pod := podWithJobSetLabels("p", "default", "node", "0")
+
+	meta, err := newJobSetGrouper(t).GetPodGroupMetadata(js, pod)
+	require.NoError(t, err)
+	require.NotNil(t, meta.MinSubGroup)
+	assert.Equal(t, int32(1), *meta.MinSubGroup, "dependsOn should collapse root MinSubGroup like InOrder")
+
+	// Sub-groups still exist for both replicated jobs.
+	require.NotNil(t, findSubGroup(meta, "node"))
+	require.NotNil(t, findSubGroup(meta, "launcher"))
+	require.NotNil(t, findSubGroup(meta, "node-replica-0"))
+	require.NotNil(t, findSubGroup(meta, "launcher-replica-0"))
+}
+
+func TestDependsOnWithoutStartupPolicy(t *testing.T) {
+	// dependsOn JobSets must not carry startupPolicy; ensure we do not rely
+	// on it being present and still collapse MinSubGroup.
+	js := baseJobSet("js", "default", "uid", []map[string]interface{}{
+		replicatedJob("a", 1, 1),
+		replicatedJob("b", 1, 1),
+		replicatedJobWithDependsOn("c", 1, 1, []map[string]interface{}{
+			{"name": "a", "status": "Ready"},
+			{"name": "b", "status": "Ready"},
+		}),
+	})
+	_, found, err := unstructured.NestedMap(js.Object, "spec", "startupPolicy")
+	require.NoError(t, err)
+	assert.False(t, found, "fixture must not set startupPolicy")
+
+	pod := podWithJobSetLabels("p", "default", "a", "0")
+	meta, err := newJobSetGrouper(t).GetPodGroupMetadata(js, pod)
+	require.NoError(t, err)
+	require.NotNil(t, meta.MinSubGroup)
+	assert.Equal(t, int32(1), *meta.MinSubGroup)
+}
+
+func TestJobSetAnnotationWinsOverDependsOn(t *testing.T) {
+	js := baseJobSet("js", "default", "uid", []map[string]interface{}{
+		replicatedJob("a", 1, 1),
+		replicatedJobWithDependsOn("b", 1, 1, []map[string]interface{}{
+			{"name": "a", "status": "Ready"},
+		}),
+	})
+	js.SetAnnotations(map[string]string{constants.MinMemberOverrideKey: "2"})
+	pod := podWithJobSetLabels("p", "default", "a", "0")
+
+	meta, err := newJobSetGrouper(t).GetPodGroupMetadata(js, pod)
+	require.NoError(t, err)
+	require.NotNil(t, meta.MinSubGroup)
+	assert.Equal(t, int32(2), *meta.MinSubGroup)
+}
+
+func TestEmptyDependsOnIgnored(t *testing.T) {
+	// Empty dependsOn slice should not trigger collapse; AnyOrder applies.
+	rj := replicatedJob("b", 1, 1)
+	rj["dependsOn"] = []interface{}{}
+	js := baseJobSet("js", "default", "uid", []map[string]interface{}{
+		replicatedJob("a", 1, 1),
+		rj,
+	})
+	pod := podWithJobSetLabels("p", "default", "a", "0")
+
+	meta, err := newJobSetGrouper(t).GetPodGroupMetadata(js, pod)
+	require.NoError(t, err)
+	require.NotNil(t, meta.MinSubGroup)
+	assert.Equal(t, int32(2), *meta.MinSubGroup, "empty dependsOn should keep AnyOrder default")
 }
 
 func TestReplicasDefaultsToOne(t *testing.T) {

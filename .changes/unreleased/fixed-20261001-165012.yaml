@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  JobSet dependsOn collapses root MinSubGroup like InOrder so gated sub-groups without pods do not block scheduling
+custom:
+  Author: "asivanadi0"
+  Issue: "2271"
