@@ -30,6 +30,7 @@ type Metadata struct {
 	Preemptibility       v2alpha2.Preemptibility
 	PreemptionDelay      *metav1.Duration
 	StalenessGracePeriod *metav1.Duration
+	SafeToConsolidate    *bool
 	Queue                string
 	Namespace            string
 	Name                 string

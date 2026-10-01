@@ -182,7 +182,7 @@ All the rules described in this guide apply **independently within each shard**.
 Each scheduling cycle executes these actions in order:
 
 1. **Allocate** — Schedule workloads to available resources. No evictions.
-2. **Consolidate** — Repack workloads to reduce fragmentation. Temporary eviction only if the workload can be relocated.
+2. **Consolidate** — Repack workloads to reduce fragmentation. Temporary eviction only if the workload can be relocated. Workloads can opt out of being moved (see [Safe to Consolidate](../safe-to-consolidate/README.md)).
 3. **Reclaim** — Inter-queue resource recovery. Evicts over-quota preemptible workloads from other queues.
 4. **Preempt** — Intra-queue priority enforcement. Evicts lower-priority preemptible workloads in the same queue.
 5. **StaleGangEviction** — Enforce gang scheduling requirements. Evict jobs that violate their minMember count.

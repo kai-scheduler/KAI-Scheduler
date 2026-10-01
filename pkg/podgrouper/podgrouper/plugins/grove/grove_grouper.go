@@ -291,6 +291,14 @@ func (gg *GroveGrouper) parseMetadataFromTopOwner(metadata *podgroup.Metadata) (
 				"namespace", metadata.Namespace, "name", metadata.Name, "preemptionDelay", delayStr)
 		}
 	}
+	if safeStr, ok := metadata.Annotations[constants.SafeToConsolidateAnnotationKey]; ok {
+		if safe, err := v2alpha2.ParseSafeToConsolidate(safeStr); err == nil {
+			metadata.SafeToConsolidate = safe
+		} else {
+			log.FromContext(context.Background()).Error(err, "Invalid safe-to-consolidate annotation found on top owner",
+				"namespace", metadata.Namespace, "name", metadata.Name, "safeToConsolidate", safeStr)
+		}
+	}
 
 	// get Topology data from annotations similar to applyTopologyConstraints
 	topologyConstraint := podgroup.TopologyConstraintMetadata{
