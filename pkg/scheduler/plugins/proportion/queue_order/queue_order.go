@@ -7,6 +7,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/common_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/podgroup_info"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/api/resource_info"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/reclaimable/strategies"
 	rs "github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/resource_share"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/proportion/utils"
 )
@@ -109,6 +110,38 @@ func GetQueueOrderResult(
 
 	// Last resort, give Priority to the queue who was created first as a tie-breaker
 	return prioritizeBasedOnCreationTime(lQueue, rQueue)
+}
+
+// PrioritizeBelowSteadyFairShare orders a queue whose candidate job may reclaim by steady fair share
+// before a queue whose candidate job may not, when both candidate jobs request GPUs, so that what is
+// reclaimed for a queue goes to it rather than back to the queues it was reclaimed from.
+func PrioritizeBelowSteadyFairShare(
+	lQueue, rQueue *rs.QueueAttributes,
+	lJobInfo, rJobInfo *podgroup_info.PodGroupInfo,
+	subGroupOrderFn common_info.LessFn, taskOrderFn common_info.LessFn, minNodeGPUMemory *int64,
+) int {
+	lResources := jobInitResources(lJobInfo, subGroupOrderFn, taskOrderFn, minNodeGPUMemory)
+	rResources := jobInitResources(rJobInfo, subGroupOrderFn, taskOrderFn, minNodeGPUMemory)
+	if !requestsGPUs(lResources, lJobInfo) || !requestsGPUs(rResources, rJobInfo) {
+		return equalPrioritization
+	}
+
+	lBelow := strategies.ReclaimerBelowSteadyFairShare(lResources, lJobInfo.VectorMap, lQueue)
+	rBelow := strategies.ReclaimerBelowSteadyFairShare(rResources, rJobInfo.VectorMap, rQueue)
+
+	if lBelow && !rBelow {
+		return lQueuePrioritized
+	}
+
+	if rBelow && !lBelow {
+		return rQueuePrioritized
+	}
+
+	return equalPrioritization
+}
+
+func requestsGPUs(resources resource_info.ResourceVector, jobInfo *podgroup_info.PodGroupInfo) bool {
+	return jobInfo != nil && rs.ResourceQuantityFromVector(rs.GpuResource, resources, jobInfo.VectorMap) > 0
 }
 
 func prioritizePrioritized(lQueue *rs.QueueAttributes, rQueue *rs.QueueAttributes) int {

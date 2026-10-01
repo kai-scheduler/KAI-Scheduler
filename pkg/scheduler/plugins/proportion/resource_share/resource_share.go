@@ -18,6 +18,9 @@ type ResourceShare struct {
 	AllocatedNotPreemptible float64
 	Request                 float64
 	Usage                   float64
+	// SteadyFairShare is the fair share if every queue with an over-quota weight requested the whole
+	// cluster; it is set only when steady fair-share reclaim is enabled.
+	SteadyFairShare float64
 }
 
 func EmptyResource() ResourceShare {
@@ -34,6 +37,7 @@ func (rs *ResourceShare) Clone() *ResourceShare {
 		AllocatedNotPreemptible: rs.AllocatedNotPreemptible,
 		Request:                 rs.Request,
 		Usage:                   rs.Usage,
+		SteadyFairShare:         rs.SteadyFairShare,
 	}
 }
 
@@ -49,11 +53,21 @@ func (rs *ResourceShare) GetRequestShare() float64 {
 }
 
 func (rs *ResourceShare) GetAllocatableShare() float64 {
+	return rs.allocatableShare(rs.FairShare)
+}
+
+// GetSteadyAllocatableShare is what the queue may keep under steady fair-share reclaim:
+// GetAllocatableShare with the steady fair share in place of the fair share.
+func (rs *ResourceShare) GetSteadyAllocatableShare() float64 {
+	return rs.allocatableShare(rs.SteadyFairShare)
+}
+
+func (rs *ResourceShare) allocatableShare(fairShare float64) float64 {
 	if rs.Deserved == commonconstants.UnlimitedResourceQuantity {
 		return rs.MaxAllowed
 	}
 
-	allocatable := math.Max(rs.Deserved, rs.FairShare)
+	allocatable := math.Max(rs.Deserved, fairShare)
 	if rs.MaxAllowed != commonconstants.UnlimitedResourceQuantity {
 		allocatable = math.Min(rs.MaxAllowed, allocatable)
 	}

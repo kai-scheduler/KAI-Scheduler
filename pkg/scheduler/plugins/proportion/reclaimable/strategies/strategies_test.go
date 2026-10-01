@@ -1077,3 +1077,52 @@ var _ = Describe("Reclaim strategies", func() {
 		}
 	})
 })
+
+func TestSteadyFairSharePredicates(t *testing.T) {
+	queue := func(gpuAllocated, cpuAllocated float64) *rs.QueueAttributes {
+		return &rs.QueueAttributes{Name: "q", QueueResourceShare: rs.QueueResourceShare{
+			GPU: rs.ResourceShare{SteadyFairShare: 100, Allocated: gpuAllocated, MaxAllowed: commonconstants.UnlimitedResourceQuantity},
+			CPU: rs.ResourceShare{SteadyFairShare: 1000, Allocated: cpuAllocated, MaxAllowed: commonconstants.UnlimitedResourceQuantity},
+		}}
+	}
+	quantities := func(gpu, cpu float64) rs.ResourceQuantities {
+		return rs.ResourceQuantities{rs.GpuResource: gpu, rs.CpuResource: cpu}
+	}
+	gpuJob := resource_info.NewResource(100, 2e9, 8).ToVector(testVectorMap)
+	fractionalGPUJob := resource_info.NewResource(100, 2e9, 0.5).ToVector(testVectorMap)
+	cpuJob := resource_info.NewResource(100, 2e9, 0).ToVector(testVectorMap)
+	assert := func(got bool, want bool, msg string) {
+		t.Helper()
+		if got != want {
+			t.Error(msg)
+		}
+	}
+
+	assert(ReclaimerBelowSteadyFairShare(gpuJob, testVectorMap, queue(90, 1200)), true,
+		"a queue below its GPU steady fair share may reclaim for a GPU job, whatever its CPU")
+	assert(ReclaimerBelowSteadyFairShare(fractionalGPUJob, testVectorMap, queue(90, 0)), true,
+		"a fractional GPU job is a GPU job")
+	assert(ReclaimerBelowSteadyFairShare(gpuJob, testVectorMap, queue(100, 0)), false,
+		"a queue at its GPU steady fair share may not reclaim")
+	assert(ReclaimerBelowSteadyFairShare(cpuJob, testVectorMap, queue(0, 0)), false,
+		"a job that requests no GPUs does not reclaim by steady fair share")
+
+	assert(ReclaimeeKeepsSteadyFairShare(queue(90, 1200), quantities(90, 1100)), false,
+		"a queue above its steady fair share only in CPU gives nothing")
+	assert(ReclaimeeKeepsSteadyFairShare(queue(120, 1200), quantities(100, 500)), true,
+		"a queue above its GPU steady fair share gives down to it, whatever its CPU")
+	assert(ReclaimeeKeepsSteadyFairShare(queue(120, 0), quantities(99, 0)), false,
+		"ending below the GPU steady fair share breaks the floor")
+
+	limited := queue(85, 0)
+	limited.GPU.MaxAllowed = 80
+	assert(ReclaimeeKeepsSteadyFairShare(limited, quantities(80, 0)), true,
+		"what a queue may keep is capped at its limit")
+	unlimited := &rs.QueueAttributes{Name: "unlimited", QueueResourceShare: rs.QueueResourceShare{
+		GPU: rs.ResourceShare{Deserved: commonconstants.UnlimitedResourceQuantity, MaxAllowed: commonconstants.UnlimitedResourceQuantity, Allocated: 1000},
+	}}
+	assert(ReclaimeeKeepsSteadyFairShare(unlimited, quantities(900, 0)), false,
+		"a queue with unlimited quota is never above what it may keep")
+	assert(ReclaimerBelowSteadyFairShare(gpuJob, testVectorMap, unlimited), true,
+		"a queue with unlimited quota is always below what it may keep")
+}
