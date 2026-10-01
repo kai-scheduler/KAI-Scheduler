@@ -73,7 +73,7 @@ func draConsumerPod(name, namespace, nodeName, claimName string) *v1.Pod {
 // wired with a mock pod-affinity that expects addPods AddPod and rmPods
 // RemovePod calls, and a vectorMap that knows the DRA GPU device class.
 func newGPUNodeInfo(t *testing.T, name, gpuCount string, addPods, rmPods int) (*NodeInfo, *resource_info.ResourceVectorMap) {
-	node := common_info.BuildNode(name, common_info.BuildResourceListWithGPU("8000m", "16G", gpuCount))
+	node := common_info.BuildNode(name, common_info.BuildResourceListWithGPUAndPods("8000m", "16G", gpuCount, "110"))
 
 	ctrl := gomock.NewController(t)
 	affinity := pod_affinity.NewMockNodePodAffinityInfo(ctrl)
@@ -223,4 +223,93 @@ func TestAddRemoveTask_ReservationPodDoesNotCorruptSharedDRAAccounting(t *testin
 	assert.NoError(t, ni.RemoveTask(consumerTask))
 	assert.Equal(t, 0.0, ni.UsedVector.Get(resource_info.GPUIndex),
 		"removing the last real consumer must release the shared device")
+}
+
+// adminGPUClaim builds an allocated admin access GPU claim, the shape GPU
+// monitoring DaemonSets (DCGM exporter, DRA validator) keep on every node.
+func adminGPUClaim(name, namespace string, mode resourceapi.DeviceAllocationMode, pool, device string) *resourceapi.ResourceClaim {
+	claim := sharedGPUClaim(name, namespace, gpuDeviceClass, pool, device)
+	request := claim.Spec.Devices.Requests[0].Exactly
+	request.AllocationMode = mode
+	if mode == resourceapi.DeviceAllocationModeAll {
+		request.Count = 0
+	}
+	request.AdminAccess = ptr.To(true)
+	claim.Status.Allocation.Devices.Results[0].AdminAccess = ptr.To(true)
+	return claim
+}
+
+// TestAddTask_DRAAdminAccessClaimsDoNotConsumeGPUs covers a 1-GPU node that
+// carries the admin access claims of a DRA validator and two DCGM exporters.
+// Admin access does not consume the device, so the GPU must stay idle and a
+// pod requesting it must fit.
+func TestAddTask_DRAAdminAccessClaimsDoNotConsumeGPUs(t *testing.T) {
+	ni, vectorMap := newGPUNodeInfo(t, "gpu-node-1", "1", 4, 0)
+
+	adminClaims := []*resourceapi.ResourceClaim{
+		adminGPUClaim("validator", "gpu-operator", resourceapi.DeviceAllocationModeExactCount, "gpu-node-1", "gpu-0"),
+		adminGPUClaim("dcgm-exporter", "gpu-operator", resourceapi.DeviceAllocationModeAll, "gpu-node-1", "gpu-0"),
+		adminGPUClaim("dcgm-exporter-2", "monitoring", resourceapi.DeviceAllocationModeAll, "gpu-node-1", "gpu-0"),
+	}
+	for _, claim := range adminClaims {
+		pod := draConsumerPod(claim.Name, claim.Namespace, "gpu-node-1", claim.Name)
+		task := pod_info.NewTaskInfo(pod, vectorMap, pod_info.TaskInfoOptions{
+			DraPodClaims: []*resourceapi.ResourceClaim{claim},
+		})
+		assert.Equal(t, 0.0, task.ResReqVector.Get(resource_info.GPUIndex),
+			"admin access claim %s must not request a GPU", claim.Name)
+		assert.NoError(t, ni.AddTask(task))
+	}
+	assert.Equal(t, 0.0, ni.UsedVector.Get(resource_info.GPUIndex))
+	idleGPUs, _ := ni.GetSumOfIdleGPUs()
+	assert.Equal(t, 1.0, idleGPUs)
+
+	pendingClaim := sharedGPUClaim("train-gpu", "ml-team", gpuDeviceClass, "", "")
+	pendingClaim.Status.Allocation = nil
+	pendingPod := draConsumerPod("train", "ml-team", "", "train-gpu")
+	pendingPod.Status.Phase = v1.PodPending
+	pendingTask := pod_info.NewTaskInfo(pendingPod, vectorMap, pod_info.TaskInfoOptions{
+		DraPodClaims: []*resourceapi.ResourceClaim{pendingClaim},
+	})
+	assert.Equal(t, 1.0, pendingTask.ResReqVector.Get(resource_info.GPUIndex))
+	assert.True(t, ni.IsTaskAllocatable(pendingTask), "a 1-GPU pod must fit next to admin access claims")
+
+	consumer := draConsumerPod("train-running", "ml-team", "gpu-node-1", "train-running-gpu")
+	consumerTask := pod_info.NewTaskInfo(consumer, vectorMap, pod_info.TaskInfoOptions{
+		DraPodClaims: []*resourceapi.ResourceClaim{
+			sharedGPUClaim("train-running-gpu", "ml-team", gpuDeviceClass, "gpu-node-1", "gpu-0"),
+		},
+	})
+	assert.NoError(t, ni.AddTask(consumerTask))
+	assert.Equal(t, 1.0, ni.UsedVector.Get(resource_info.GPUIndex),
+		"a regular consumer of a device held by admin access claims must still be counted")
+}
+
+// TestAddTask_DRAAdminAccessResultNotTreatedAsSharedDevice guards the shared
+// device dedup: a device a pod holds only through admin access must not make
+// a regular consumer of that device look already counted.
+func TestAddTask_DRAAdminAccessResultNotTreatedAsSharedDevice(t *testing.T) {
+	ni, vectorMap := newGPUNodeInfo(t, "gpu-node-1", "2", 2, 0)
+
+	monitorPod := draConsumerPod("monitor", "ml-team", "gpu-node-1", "monitor-admin")
+	monitorPod.Spec.ResourceClaims = append(monitorPod.Spec.ResourceClaims,
+		v1.PodResourceClaim{Name: "monitor-gpu", ResourceClaimName: ptr.To("monitor-gpu")})
+	monitorTask := pod_info.NewTaskInfo(monitorPod, vectorMap, pod_info.TaskInfoOptions{
+		DraPodClaims: []*resourceapi.ResourceClaim{
+			adminGPUClaim("monitor-admin", "ml-team", resourceapi.DeviceAllocationModeExactCount, "gpu-node-1", "gpu-0"),
+			sharedGPUClaim("monitor-gpu", "ml-team", gpuDeviceClass, "gpu-node-1", "gpu-1"),
+		},
+	})
+	trainPod := draConsumerPod("train", "ml-team", "gpu-node-1", "train-gpu")
+	trainTask := pod_info.NewTaskInfo(trainPod, vectorMap, pod_info.TaskInfoOptions{
+		DraPodClaims: []*resourceapi.ResourceClaim{
+			sharedGPUClaim("train-gpu", "ml-team", gpuDeviceClass, "gpu-node-1", "gpu-0"),
+		},
+	})
+
+	assert.NoError(t, ni.AddTask(monitorTask))
+	assert.Equal(t, 1.0, ni.UsedVector.Get(resource_info.GPUIndex))
+	assert.NoError(t, ni.AddTask(trainTask))
+	assert.Equal(t, 2.0, ni.UsedVector.Get(resource_info.GPUIndex),
+		"gpu-0 is used by train only and must be counted")
 }
