@@ -1,0 +1,6 @@
+kind: Added
+body: Queue resource lendingLimit field to cap unused quota siblings may borrow
+time: 2026-09-21T10:11:31-07:00
+custom:
+    Author: amitaekbote
+    Issue: "2202"
