@@ -111,33 +111,21 @@ func setDeservedResource(
 func divideOverQuotaResource(totalResourceAmount, kValue float64, queues map[common_info.QueueID]*rs.QueueAttributes,
 	resourceName rs.ResourceName) (remainingAmount float64) {
 	queuesByPriority, priorities := getQueuesByPriority(queues)
-	remainingRequested := make(map[int]map[common_info.QueueID]*remainingRequestedResource)
 	remainingAmount = totalResourceAmount
-
-	for _, priority := range priorities {
-		var newRemainingRequested map[common_info.QueueID]*remainingRequestedResource
-		remainingAmount, newRemainingRequested = divideUpToFairShare(remainingAmount, kValue, queuesByPriority[priority], resourceName)
-		if remainingRequested[priority] == nil {
-			remainingRequested[priority] = make(map[common_info.QueueID]*remainingRequestedResource)
-		}
-		maps.Copy(remainingRequested[priority], newRemainingRequested)
-	}
 
 	for _, priority := range priorities {
 		if remainingAmount <= 0 {
 			break
 		}
 
-		remaining, ok := remainingRequested[priority]
-		if !ok {
+		var remainingRequested map[common_info.QueueID]*remainingRequestedResource
+		remainingAmount, remainingRequested = divideUpToFairShare(remainingAmount, kValue, queuesByPriority[priority], resourceName)
+
+		if remainingAmount <= 0 || len(remainingRequested) == 0 {
 			continue
 		}
 
-		if remaining == nil || len(remaining) == 0 {
-			continue
-		}
-
-		remainingAmount = divideRemainingResource(remainingAmount, remainingRequested[priority], resourceName)
+		remainingAmount = divideRemainingResource(remainingAmount, remainingRequested, resourceName)
 	}
 
 	return remainingAmount
