@@ -24,6 +24,7 @@ import (
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/backgroundpods"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/dynamicresources"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/elastic"
+	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/fullnodefirst"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/gpujoborder"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/gpupack"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/scheduler/plugins/gpusharingorder"
@@ -80,6 +81,7 @@ func InitDefaultPlugins() {
 	framework.RegisterPluginBuilder(backgroundpods.Name, backgroundpods.New)
 	framework.RegisterPluginBuilder(nodelocalgreedy.Name, nodelocalgreedy.New)
 	framework.RegisterPluginBuilder(multinodegang.Name, multinodegang.New)
+	framework.RegisterPluginBuilder(fullnodefirst.Name, fullnodefirst.New)
 
 	// Always register the Job Order Plugin last.
 	framework.RegisterPluginBuilder("reflectjoborder", reflectjoborder.New)
