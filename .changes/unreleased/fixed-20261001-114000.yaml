@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  Fix fair-share distribution of over-quota resources to prioritize higher-priority queues
+custom:
+  Author: "karangupta982"
+  Issue: "2278"
