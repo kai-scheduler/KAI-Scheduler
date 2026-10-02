@@ -17,6 +17,15 @@ Metrics related to Queue resource management and resource quota tracking.
 | `queue_allocated_gpus` | Gauge | `queue_name`, `queue_metadata_name`, `queue_display_name`, `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Currently allocated GPUs in the queue (actual resource consumption). |
 | `queue_allocated_cpu_cores` | Gauge | `queue_name`, `queue_metadata_name`, `queue_display_name`, `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Currently allocated CPU in cores (actual resource consumption). |
 | `queue_allocated_memory_bytes` | Gauge | `queue_name`, `queue_metadata_name`, `queue_display_name`, `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Currently allocated memory in bytes (actual resource consumption). |
+| `queue_allocated_non_preemptible_gpus` | Gauge | `queue_name`, `queue_metadata_name`, `queue_display_name`, `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | GPUs allocated to the queue's non-preemptible workloads. |
+| `queue_allocated_non_preemptible_cpu_cores` | Gauge | `queue_name`, `queue_metadata_name`, `queue_display_name`, `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | CPU in cores allocated to the queue's non-preemptible workloads. |
+| `queue_allocated_non_preemptible_memory_bytes` | Gauge | `queue_name`, `queue_metadata_name`, `queue_display_name`, `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Memory in bytes allocated to the queue's non-preemptible workloads. |
+| `queue_requested_gpus` | Gauge | `queue_name`, `queue_metadata_name`, `queue_display_name`, `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | GPUs requested by the queue's running and pending workloads. `queue_requested_gpus - queue_allocated_gpus` is the queue's pending demand. |
+| `queue_requested_cpu_cores` | Gauge | `queue_name`, `queue_metadata_name`, `queue_display_name`, `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | CPU in cores requested by the queue's running and pending workloads. |
+| `queue_requested_memory_bytes` | Gauge | `queue_name`, `queue_metadata_name`, `queue_display_name`, `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Memory in bytes requested by the queue's running and pending workloads. |
+| `queue_limit_gpus` | Gauge | `queue_name`, `queue_metadata_name`, `queue_display_name`, `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | GPU limit of the queue. Value of -1 indicates no limit. |
+| `queue_limit_cpu_cores` | Gauge | `queue_name`, `queue_metadata_name`, `queue_display_name`, `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | CPU limit of the queue in cores. Value of -1 indicates no limit. |
+| `queue_limit_memory_bytes` | Gauge | `queue_name`, `queue_metadata_name`, `queue_display_name`, `endpoint`, `instance`, `job`, `namespace`, `pod`, `service` | Memory limit of the queue in bytes. Value of -1 indicates no limit. |
 
 ### Label Definitions
 
@@ -77,6 +86,7 @@ Metrics related to the core scheduling algorithm performance, task lifecycle, an
 | `queue_cpu_usage` | Gauge | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `queue_name`, `queue_metadata_name`, `queue_display_name` | CPU usage of the queue. Units depend on configured UsageDB (typically cores or cost units). |
 | `queue_memory_usage` | Gauge | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `queue_name`, `queue_metadata_name`, `queue_display_name` | Memory usage of the queue. Units depend on configured UsageDB (typically GB or cost units). |
 | `queue_gpu_usage` | Gauge | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `queue_name`, `queue_metadata_name`, `queue_display_name` | GPU usage of the queue. Units depend on configured UsageDB (typically device count or cost units). |
+| `pod_group_first_start_wait_seconds` | Histogram | `endpoint`, `instance`, `job`, `namespace`, `pod`, `service`, `queue_name`, `queue_metadata_name`, `queue_display_name` | Seconds from PodGroup creation until the scheduler first started it (the first allocation that commits). Later starts, such as after an eviction, are not observed. Buckets: [1s, 2s, 4s, ..., 131072s] (exponential). |
 
 ---
 

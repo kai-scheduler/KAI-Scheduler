@@ -275,7 +275,7 @@ var _ = Describe("QueueController", Ordered, func() {
 						"memory":         resource.MustParse("4Gi"),
 					},
 					Requested: v1.ResourceList{
-						"nvidia.com/gpu": resource.MustParse("2"),
+						"nvidia.com/gpu": resource.MustParse("3"),
 						"cpu":            resource.MustParse("3"),
 						"memory":         resource.MustParse("6Gi"),
 					},
@@ -300,7 +300,7 @@ var _ = Describe("QueueController", Ordered, func() {
 
 				q.Expect(updatedQueue.Status.Requested["cpu"]).To(Equal(resource.MustParse("5")))
 				q.Expect(updatedQueue.Status.Requested["memory"]).To(Equal(resource.MustParse("10Gi")))
-				q.Expect(updatedQueue.Status.Requested["nvidia.com/gpu"]).To(Equal(resource.MustParse("2")))
+				q.Expect(updatedQueue.Status.Requested["nvidia.com/gpu"]).To(Equal(resource.MustParse("3")))
 
 				labels := prometheus.Labels{
 					"queue_name":          "resource-queue",
@@ -312,6 +312,12 @@ var _ = Describe("QueueController", Ordered, func() {
 				expectMetricValue(q, metrics.GetQueueAllocatedGPUsMetric(), labels, 2)
 				expectMetricValue(q, metrics.GetQueueAllocatedCPUMetric(), labels, 5)
 				expectMetricValue(q, metrics.GetQueueAllocatedMemoryMetric(), labels, 10737418240)
+				expectMetricValue(q, metrics.GetQueueAllocatedNonPreemptibleGPUsMetric(), labels, 1)
+				expectMetricValue(q, metrics.GetQueueAllocatedNonPreemptibleCPUMetric(), labels, 3)
+				expectMetricValue(q, metrics.GetQueueAllocatedNonPreemptibleMemoryMetric(), labels, 6442450944)
+				expectMetricValue(q, metrics.GetQueueRequestedGPUsMetric(), labels, 3)
+				expectMetricValue(q, metrics.GetQueueRequestedCPUMetric(), labels, 5)
+				expectMetricValue(q, metrics.GetQueueRequestedMemoryMetric(), labels, 10737418240)
 				return true
 			}, timeout, interval).Should(BeTrue())
 		})
