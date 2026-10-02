@@ -210,6 +210,26 @@ var _ = Describe("ResourceVector", func() {
 		})
 	})
 
+	Describe("Equal", func() {
+		It("should be true only when all dimensions match", func() {
+			vec1 := ResourceVector{vecValMedium, vecValMemMedium, gpuTwo}
+			vec2 := ResourceVector{vecValMedium, vecValMemMedium, gpuTwo}
+			vec3 := ResourceVector{vecValMedium, vecValMemMedium, gpuThree}
+
+			Expect(vec1.Equal(vec2)).To(BeTrue())
+			Expect(vec1.Equal(vec3)).To(BeFalse())
+			// A strict subset-fit is not equality.
+			Expect(ResourceVector{vecValSmall, vecValMemMedium, gpuTwo}.Equal(vec1)).To(BeFalse())
+		})
+
+		It("should treat trailing zeros as equal across mismatched lengths", func() {
+			Expect(ResourceVector{vecValMedium, vecValMemMedium}.Equal(
+				ResourceVector{vecValMedium, vecValMemMedium, 0})).To(BeTrue())
+			Expect(ResourceVector{vecValMedium, vecValMemMedium}.Equal(
+				ResourceVector{vecValMedium, vecValMemMedium, gpuOne})).To(BeFalse())
+		})
+	})
+
 	Describe("Get", func() {
 		It("should return the value at the specified index", func() {
 			vec := ResourceVector{vecValDecimal, vecValMemDecimal, vecValGPUDecimal}
