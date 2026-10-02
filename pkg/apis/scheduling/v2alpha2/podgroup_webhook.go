@@ -43,7 +43,7 @@ func (_ *PodGroup) ValidateCreate(ctx context.Context, podGroup *PodGroup) (admi
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
 func (_ *PodGroup) ValidateUpdate(ctx context.Context, oldPodGroup *PodGroup, podGroup *PodGroup) (admission.Warnings, error) {
 	logger := log.FromContext(ctx)
-	logger.Info("validate update", "namespace", podGroup.Namespace, "name", podGroup.Name)
+	logger.V(4).Info("validate update", "namespace", podGroup.Namespace, "name", podGroup.Name)
 
 	validationErrors := validatePodGroupSpec(&podGroup.Spec)
 

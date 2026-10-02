@@ -7,9 +7,11 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 
 	argov1alpha1 "github.com/argoproj/argo-workflows/v3/pkg/apis/workflow/v1alpha1"
+	"github.com/go-logr/logr/funcr"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/multierr"
 	v1 "k8s.io/api/core/v1"
@@ -17,6 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	commonconsts "github.com/kai-scheduler/KAI-scheduler/pkg/common/constants"
 	"github.com/kai-scheduler/KAI-scheduler/pkg/podgrouper/podgroup"
@@ -375,4 +378,28 @@ func compareMetadata(expected, got *podgroup.Metadata) error {
 	}
 
 	return err
+}
+
+func TestGetPGMetadataLogsTopOwnerIdentityOnly(t *testing.T) {
+	scheme := runtime.NewScheme()
+	assert.NoError(t, v1.AddToScheme(scheme))
+	resources := append(nativeK8sTestResources, testResources...)
+	client := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(resources...).Build()
+	pluginsHub := pluginshub.NewDefaultPluginsHub(client, false, true, false, false,
+		queueLabelKey, nodePoolLabelKey, "", "")
+	grouper := podgrouper.NewPodgrouper(client, client, pluginsHub)
+
+	topOwner, owners, err := grouper.GetPodOwners(context.Background(), &pod)
+	assert.Nil(t, err)
+	topOwner.SetAnnotations(map[string]string{"kubectl.kubernetes.io/last-applied-configuration": "owner-manifest"})
+
+	var logs strings.Builder
+	ctx := log.IntoContext(context.Background(), funcr.New(func(_, args string) {
+		logs.WriteString(args + "\n")
+	}, funcr.Options{Verbosity: 1}))
+	_, err = grouper.GetPGMetadata(ctx, &pod, topOwner, owners)
+	assert.Nil(t, err)
+
+	assert.Contains(t, logs.String(), `"topOwner"="RunaiJob namespace/job"`)
+	assert.NotContains(t, logs.String(), "owner-manifest")
 }

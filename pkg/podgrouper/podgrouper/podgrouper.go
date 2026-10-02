@@ -80,7 +80,8 @@ func (pg *podGrouper) GetPGMetadata(ctx context.Context, pod *v1.Pod, topOwner *
 	ownerKind := metav1.GroupVersionKind(topOwner.GroupVersionKind())
 	plugin := pg.pluginsHub.GetPodGrouperPlugin(ownerKind)
 	logger.V(1).Info(fmt.Sprintf("Using %v plugin for pod.", plugin.Name()),
-		"pod", fmt.Sprintf("%s/%s", pod.Namespace, pod.Name), "topOwner", topOwner)
+		"pod", fmt.Sprintf("%s/%s", pod.Namespace, pod.Name),
+		"topOwner", fmt.Sprintf("%s %s/%s", topOwner.GetKind(), topOwner.GetNamespace(), topOwner.GetName()))
 	return plugin.GetPodGroupMetadata(topOwner, pod, allOwners...)
 }
 
