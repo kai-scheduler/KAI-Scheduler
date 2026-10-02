@@ -35,6 +35,7 @@ const (
 
 	GeneratorNodeLocalGreedy = "NodeLocalGreedy"
 	GeneratorMultiNodeGang   = "MultiNodeGang"
+	GeneratorFullNodeFirst   = "FullNodeFirst"
 
 	DefaultActionBudget    = "5m"
 	DefaultJobBudget       = "4m"
