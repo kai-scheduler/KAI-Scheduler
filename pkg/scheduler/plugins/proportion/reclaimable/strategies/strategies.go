@@ -149,3 +149,24 @@ func ReclaimerFitsReclaimByQueuePriority(
 ) bool {
 	return queuePriorityInQuotaReclaimEnabled && reclaimerQueue.Priority > reclaimeeQueue.Priority
 }
+
+// ReclaimerBelowSteadyFairShare reports whether the reclaimer requests GPUs and its queue holds fewer
+// GPUs than it may keep under steady fair-share reclaim. Steady fair-share reclaim compares GPUs only: a
+// steady fair share is a fixed split rather than capped by demand, so comparing CPU or memory would let
+// a plentiful resource decide, and a CPU-only job could evict GPU jobs from a queue above its split of
+// CPU.
+func ReclaimerBelowSteadyFairShare(
+	reclaimerResources resource_info.ResourceVector,
+	vectorMap *resource_info.ResourceVectorMap,
+	reclaimerQueue *rs.QueueAttributes,
+) bool {
+	return rs.ResourceQuantityFromVector(rs.GpuResource, reclaimerResources, vectorMap) > 0 &&
+		reclaimerQueue.CompareSteadyAllocatable(rs.GpuResource, reclaimerQueue.GPU.Allocated) < 0
+}
+
+// ReclaimeeKeepsSteadyFairShare reports whether the reclaimee's queue holds more GPUs than it may keep
+// under steady fair-share reclaim and would still hold at least that many with remaining.
+func ReclaimeeKeepsSteadyFairShare(reclaimeeQueue *rs.QueueAttributes, remaining rs.ResourceQuantities) bool {
+	return reclaimeeQueue.CompareSteadyAllocatable(rs.GpuResource, reclaimeeQueue.GPU.Allocated) > 0 &&
+		reclaimeeQueue.CompareSteadyAllocatable(rs.GpuResource, remaining[rs.GpuResource]) >= 0
+}

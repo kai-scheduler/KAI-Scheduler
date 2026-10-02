@@ -21,6 +21,7 @@ import (
 type Reclaimable struct {
 	saturationMultiplier        float64
 	queuePriorityInQuotaReclaim bool
+	steadyFairShareReclaim      bool
 }
 
 func New(multiplier float64, queuePriorityInQuotaReclaim bool) *Reclaimable {
@@ -30,6 +31,14 @@ func New(multiplier float64, queuePriorityInQuotaReclaim bool) *Reclaimable {
 	}
 }
 
+// WithSteadyFairShareReclaim adds the steady fair-share reclaim path: a queue below its steady fair
+// share may reclaim from queues above theirs, never taking them below it
+// (docs/developer/designs/steady-fair-share-reclaim.md).
+func (r *Reclaimable) WithSteadyFairShareReclaim(enabled bool) *Reclaimable {
+	r.steadyFairShareReclaim = enabled
+	return r
+}
+
 func (r *Reclaimable) CanReclaimResources(
 	queues map[common_info.QueueID]*rs.QueueAttributes,
 	reclaimer *ReclaimerInfo,
@@ -37,9 +46,8 @@ func (r *Reclaimable) CanReclaimResources(
 	reclaimerQueue := queues[reclaimer.Queue]
 	requestedResources := utils.QuantifyVector(reclaimer.RequiredResources, reclaimer.VectorMap)
 
-	allocatedResources := reclaimerQueue.GetAllocatedShare()
-	allocatedResources.Add(requestedResources)
-	if !allocatedResources.LessEqual(reclaimerQueue.GetFairShare()) {
+	if !reclaimerFitsFairShare(reclaimerQueue, requestedResources) &&
+		!r.reclaimerBelowSteadyFairShare(reclaimerQueue, reclaimer) {
 		return false
 	}
 
@@ -56,17 +64,82 @@ func (r *Reclaimable) CanReclaimResources(
 	return true
 }
 
+func reclaimerFitsFairShare(reclaimerQueue *rs.QueueAttributes, requestedResources rs.ResourceQuantities) bool {
+	if reclaimerQueue == nil {
+		return false
+	}
+	allocatedResources := reclaimerQueue.GetAllocatedShare()
+	allocatedResources.Add(requestedResources)
+	return allocatedResources.LessEqual(reclaimerQueue.GetFairShare())
+}
+
+// reclaimerBelowSteadyFairShare is the steady fair-share path's condition on the reclaimer, which then
+// may reclaim even if its job takes its queue above its fair share.
+func (r *Reclaimable) reclaimerBelowSteadyFairShare(reclaimerQueue *rs.QueueAttributes, reclaimer *ReclaimerInfo) bool {
+	return r.steadyFairShareReclaim && reclaimerQueue != nil &&
+		strategies.ReclaimerBelowSteadyFairShare(reclaimer.RequiredResources, reclaimer.VectorMap, reclaimerQueue)
+}
+
 func (r *Reclaimable) Reclaimable(
 	queues map[common_info.QueueID]*rs.QueueAttributes,
 	reclaimer *ReclaimerInfo,
 	reclaimeeResourcesByQueue map[common_info.QueueID][]resource_info.ResourceVector,
 ) bool {
-	reclaimable, reclaimedQueuesRemainingResources, involvedResources :=
-		r.reclaimResourcesFromReclaimees(queues, reclaimer, reclaimeeResourcesByQueue)
-	if !reclaimable {
-		return false
+	reclaimerQueue := queues[reclaimer.Queue]
+	// With steady fair-share reclaim, a reclaimer may pass CanReclaimResources by its steady fair share
+	// alone; the existing strategies then do not apply to it, as they would not have before.
+	if !r.steadyFairShareReclaim || reclaimerFitsFairShare(reclaimerQueue,
+		utils.QuantifyVector(reclaimer.RequiredResources, reclaimer.VectorMap)) {
+		reclaimable, reclaimedQueuesRemainingResources, involvedResources :=
+			r.reclaimResourcesFromReclaimees(queues, reclaimer, reclaimeeResourcesByQueue)
+		if reclaimable && r.reclaimingQueuesRemainWithinBoundaries(queues, reclaimer,
+			reclaimedQueuesRemainingResources, involvedResources,
+			getInvolvedResourcesNames([]resource_info.ResourceVector{reclaimer.RequiredResources}, reclaimer.VectorMap),
+			(*rs.QueueAttributes).GetFairShare) {
+			return true
+		}
 	}
-	return r.reclaimingQueuesRemainWithinBoundaries(queues, reclaimer, reclaimedQueuesRemainingResources, involvedResources)
+	return r.reclaimerBelowSteadyFairShare(reclaimerQueue, reclaimer) &&
+		r.reclaimableBySteadyFairShare(queues, reclaimer, reclaimeeResourcesByQueue)
+}
+
+// reclaimableBySteadyFairShare is the steady fair-share path: compared with the reclaimer at the
+// children of their lowest common ancestor, the reclaimer is below its steady fair share and every
+// queue the victims come from is above its own and stays at or above it, and the reclaimer, even
+// above its steady fair share, stays less saturated than them.
+func (r *Reclaimable) reclaimableBySteadyFairShare(
+	queues map[common_info.QueueID]*rs.QueueAttributes,
+	reclaimer *ReclaimerInfo,
+	reclaimeeResourcesByQueue map[common_info.QueueID][]resource_info.ResourceVector,
+) bool {
+	involvedResources := map[rs.ResourceName]any{rs.GpuResource: nil}
+	involvedResourcesByQueue := map[common_info.QueueID]map[rs.ResourceName]any{}
+	remainingResourcesMap := map[common_info.QueueID]rs.ResourceQuantities{}
+	reclaimees := map[common_info.QueueID]*rs.QueueAttributes{}
+	for reclaimeeQueueID, reclaimeeQueueReclaimedResources := range reclaimeeResourcesByQueue {
+		reclaimerQueue, reclaimeeQueue := r.getLeveledQueues(queues, reclaimer.Queue, reclaimeeQueueID)
+		if reclaimerQueue == nil || reclaimeeQueue == nil ||
+			!strategies.ReclaimerBelowSteadyFairShare(reclaimer.RequiredResources, reclaimer.VectorMap, reclaimerQueue) {
+			return false
+		}
+		reclaimees[reclaimeeQueue.UID] = reclaimeeQueue
+		involvedResourcesByQueue[reclaimeeQueueID] = maps.Clone(involvedResources)
+		for _, reclaimeeResources := range reclaimeeQueueReclaimedResources {
+			r.subtractReclaimedResources(queues, remainingResourcesMap, reclaimeeQueueID, reclaimeeResources, reclaimer.VectorMap, involvedResourcesByQueue)
+		}
+	}
+	for _, reclaimeeQueue := range reclaimees {
+		if !strategies.ReclaimeeKeepsSteadyFairShare(reclaimeeQueue, remainingResourcesMap[reclaimeeQueue.UID]) {
+			log.InfraLogger.V(6).Do(func() {
+				log.InfraLogger.Infof("Steady fair-share reclaim for <%s/%s> would leave queue <%s> with <%s>, "+
+					"below its steady fair share <%s>", reclaimer.Namespace, reclaimer.Name, reclaimeeQueue.Name,
+					remainingResourcesMap[reclaimeeQueue.UID], reclaimeeQueue.GetSteadyFairShare())
+			})
+			return false
+		}
+	}
+	return r.reclaimingQueuesRemainWithinBoundaries(queues, reclaimer, remainingResourcesMap, involvedResourcesByQueue,
+		involvedResources, (*rs.QueueAttributes).GetSteadyFairShare)
 }
 
 func (r *Reclaimable) reclaimResourcesFromReclaimees(
@@ -139,10 +212,11 @@ func (r *Reclaimable) reclaimingQueuesRemainWithinBoundaries(
 	reclaimer *ReclaimerInfo,
 	remainingResourcesMap map[common_info.QueueID]rs.ResourceQuantities,
 	involvedResourcesByQueue map[common_info.QueueID]map[rs.ResourceName]any,
+	reclaimerInvolvedResources map[rs.ResourceName]any,
+	fairShare func(*rs.QueueAttributes) rs.ResourceQuantities,
 ) bool {
 
 	requestedQuota := utils.QuantifyVector(reclaimer.RequiredResources, reclaimer.VectorMap)
-	reclaimerInvolvedResources := getInvolvedResourcesNames([]resource_info.ResourceVector{reclaimer.RequiredResources}, reclaimer.VectorMap)
 
 	for reclaimingQueue, found := queues[reclaimer.Queue]; found; reclaimingQueue, found = queues[reclaimingQueue.ParentQueue] {
 		remainingResources, foundRemaining := remainingResourcesMap[reclaimingQueue.UID]
@@ -166,8 +240,8 @@ func (r *Reclaimable) reclaimingQueuesRemainWithinBoundaries(
 			maps.Copy(involvedResources, reclaimerInvolvedResources)
 			if !r.isFairShareSaturationLowerPerResource(
 				involvedResources,
-				remainingResources, reclaimingQueue.GetFairShare(),
-				siblingQueueRemainingResources, sibling.GetFairShare(),
+				remainingResources, fairShare(reclaimingQueue),
+				siblingQueueRemainingResources, fairShare(sibling),
 			) {
 				log.InfraLogger.V(5).Do(func() {
 					log.InfraLogger.Infof("Failed to reclaim resources for job: <%s/%s>. "+

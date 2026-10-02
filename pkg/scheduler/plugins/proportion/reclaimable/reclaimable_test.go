@@ -1245,6 +1245,211 @@ var _ = Describe("Reclaimable - In-quota queue priority strategy", func() {
 	})
 })
 
+// The design's example: weight 1 each, steady fair share 100. The reclaimer holds 90 and asks for 16;
+// the victim's queue holds 180. Fair shares equal demand (106 and 180), so no queue is above its fair
+// share.
+var _ = Describe("Reclaimable - Steady fair-share reclaim", func() {
+	var (
+		reclaimerInfo *ReclaimerInfo
+		queues        map[common_info.QueueID]*rs.QueueAttributes
+	)
+	queue := func(name, parent common_info.QueueID, deserved, fairShare, steadyFairShare, allocated float64) *rs.QueueAttributes {
+		return &rs.QueueAttributes{
+			UID: name, Name: string(name), ParentQueue: parent,
+			QueueResourceShare: rs.QueueResourceShare{
+				GPU: rs.ResourceShare{Deserved: deserved, FairShare: fairShare, SteadyFairShare: steadyFairShare,
+					Allocated: allocated, MaxAllowed: commonconstants.UnlimitedResourceQuantity},
+			},
+		}
+	}
+	victims := func(gpus ...float64) map[common_info.QueueID][]resource_info.ResourceVector {
+		var batches []resource_info.ResourceVector
+		for _, g := range gpus {
+			batches = append(batches, resource_info.NewResource(0, 0, g).ToVector(testVectorMap))
+		}
+		return map[common_info.QueueID][]resource_info.ResourceVector{"victim": batches}
+	}
+	steady := func() *Reclaimable { return New(1.0, false).WithSteadyFairShareReclaim(true) }
+	batch := func(gpus float64) func() rs.ResourceQuantities {
+		return func() rs.ResourceQuantities { return rs.ResourceQuantities{rs.GpuResource: gpus} }
+	}
+	unexpectedBatch := func() rs.ResourceQuantities {
+		Fail("the victim's batch should not be computed")
+		return nil
+	}
+
+	BeforeEach(func() {
+		reclaimerInfo = &ReclaimerInfo{
+			Name:              "reclaimer",
+			Namespace:         "n1",
+			Queue:             "reclaimer",
+			IsPreemptable:     true,
+			RequiredResources: resource_info.NewResource(0, 0, 16).ToVector(testVectorMap),
+			VectorMap:         testVectorMap,
+		}
+		queues = map[common_info.QueueID]*rs.QueueAttributes{
+			"root":      queue("root", "", commonconstants.UnlimitedResourceQuantity, 300, 300, 270),
+			"reclaimer": queue("reclaimer", "root", 0, 106, 100, 90),
+			"victim":    queue("victim", "root", 0, 180, 100, 180),
+		}
+	})
+
+	It("finds no victim without it, as no queue is above its fair share", func() {
+		Expect(New(1.0, false).Reclaimable(queues, reclaimerInfo, victims(16))).To(BeFalse())
+	})
+
+	It("reclaims from a queue above its steady fair share", func() {
+		Expect(steady().CanReclaimResources(queues, reclaimerInfo)).To(BeTrue())
+		Expect(steady().Reclaimable(queues, reclaimerInfo, victims(16))).To(BeTrue())
+	})
+
+	It("never takes the victim's queue below its steady fair share", func() {
+		queues["reclaimer"].GPU.Allocated, queues["reclaimer"].GPU.FairShare = 80, 96 // ends within its own
+		queues["victim"].GPU.Allocated, queues["victim"].GPU.FairShare = 110, 110
+		Expect(steady().Reclaimable(queues, reclaimerInfo, victims(16))).To(BeFalse())  // 94 left
+		Expect(steady().Reclaimable(queues, reclaimerInfo, victims(6, 4))).To(BeTrue()) // 100 left
+	})
+
+	It("needs the reclaimer's queue below its steady fair share", func() {
+		queues["reclaimer"].GPU.Allocated, queues["reclaimer"].GPU.FairShare = 100, 116
+		Expect(steady().Reclaimable(queues, reclaimerInfo, victims(16))).To(BeFalse())
+	})
+
+	It("lets the reclaimer end above its steady fair share only while less saturated than the victim's queue", func() {
+		queues["reclaimer"].GPU.Allocated, queues["reclaimer"].GPU.FairShare = 98, 114 // ends at 114: 1.14
+		queues["victim"].GPU.Allocated, queues["victim"].GPU.FairShare = 140, 140      // 124 left: 1.24
+		Expect(steady().Reclaimable(queues, reclaimerInfo, victims(16))).To(BeTrue())
+		queues["victim"].GPU.Allocated, queues["victim"].GPU.FairShare = 120, 120 // 104 left: 1.04
+		Expect(steady().Reclaimable(queues, reclaimerInfo, victims(16))).To(BeFalse())
+	})
+
+	It("compares queues in GPUs for a job that requests GPUs, whatever their CPU", func() {
+		reclaimerInfo.RequiredResources = resource_info.NewResource(100, 0, 16).ToVector(testVectorMap)
+		queues["reclaimer"].CPU = rs.ResourceShare{SteadyFairShare: 1000, FairShare: 1050, Allocated: 950,
+			MaxAllowed: commonconstants.UnlimitedResourceQuantity} // ends at 1050: 1.05
+		queues["victim"].CPU = rs.ResourceShare{SteadyFairShare: 1000, FairShare: 500, Allocated: 500,
+			MaxAllowed: commonconstants.UnlimitedResourceQuantity} // 400 left: 0.4
+		batch := map[common_info.QueueID][]resource_info.ResourceVector{
+			"victim": {resource_info.NewResource(100, 0, 16).ToVector(testVectorMap)},
+		}
+		Expect(steady().Reclaimable(queues, reclaimerInfo, batch)).To(BeTrue())
+		queues["reclaimer"].CPU.Allocated = 1500
+		Expect(steady().Reclaimable(queues, reclaimerInfo, batch)).To(BeTrue())
+	})
+
+	It("does not apply the existing strategies to a reclaimer only the steady path admits", func() {
+		queues["reclaimer"].GPU.FairShare = 100 // 106 does not fit
+		victim := &queues["victim"].GPU
+		victim.Allocated, victim.FairShare, victim.SteadyFairShare = 150, 100, 140
+		Expect(steady().Reclaimable(queues, reclaimerInfo, victims(16))).To(BeFalse()) // 134 left < 140
+		Expect(New(1.0, false).Reclaimable(queues, reclaimerInfo, victims(16))).To(BeTrue())
+	})
+
+	It("admits the victims it cannot judge, as FilterVictim does, and rejects scenarios it cannot judge", func() {
+		Expect(steady().FilterVictimWithSteadyFairShare(queues, nil, "victim", unexpectedBatch)).To(BeTrue())
+		Expect(steady().FilterVictimWithSteadyFairShare(queues, reclaimerInfo, "unknown", unexpectedBatch)).To(BeTrue())
+		unknownVictims := map[common_info.QueueID][]resource_info.ResourceVector{
+			"unknown": {resource_info.NewResource(0, 0, 16).ToVector(testVectorMap)},
+		}
+		queues["reclaimer"].GPU.FairShare = 100 // only the steady path applies
+		Expect(steady().Reclaimable(queues, reclaimerInfo, unknownVictims)).To(BeFalse())
+		reclaimerInfo.Queue = "unknown"
+		Expect(steady().CanReclaimResources(queues, reclaimerInfo)).To(BeFalse())
+		Expect(steady().Reclaimable(queues, reclaimerInfo, victims(16))).To(BeFalse())
+	})
+
+	It("does not bind quota-based reclaim by the floor", func() {
+		queues["reclaimer"].GPU.Deserved = 200
+		queues["victim"].GPU.Allocated, queues["victim"].GPU.FairShare = 110, 110
+		Expect(steady().Reclaimable(queues, reclaimerInfo, victims(16))).To(BeTrue())
+	})
+
+	It("keeps a non-preemptible reclaimer within its quota", func() {
+		reclaimerInfo.IsPreemptable = false
+		Expect(steady().CanReclaimResources(queues, reclaimerInfo)).To(BeFalse())
+		Expect(steady().Reclaimable(queues, reclaimerInfo, victims(16))).To(BeFalse())
+	})
+
+	It("leaves out a victim whose first eviction batch would take its queue below its steady fair share", func() {
+		queues["victim"].GPU.Allocated, queues["victim"].GPU.FairShare = 110, 110
+		Expect(steady().FilterVictimWithSteadyFairShare(queues, reclaimerInfo, "victim", batch(16))).To(BeFalse())
+		Expect(steady().FilterVictimWithSteadyFairShare(queues, reclaimerInfo, "victim", batch(8))).To(BeTrue())
+	})
+
+	It("keeps the victims the existing strategies may take, without computing their batch", func() {
+		queues["victim"].GPU.Allocated, queues["victim"].GPU.FairShare = 110, 100
+		Expect(steady().FilterVictimWithSteadyFairShare(queues, reclaimerInfo, "victim", unexpectedBatch)).To(BeTrue())
+	})
+
+	It("does not compute the batch of a victim for a reclaimer the path does not apply to", func() {
+		queues["reclaimer"].GPU.Allocated, queues["reclaimer"].GPU.FairShare = 100, 100
+		Expect(steady().FilterVictimWithSteadyFairShare(queues, reclaimerInfo, "victim", unexpectedBatch)).To(BeFalse())
+	})
+
+	It("does not let a job that requests no GPUs reclaim by steady fair share", func() {
+		reclaimerInfo.RequiredResources = resource_info.NewResource(100, 0, 0).ToVector(testVectorMap)
+		queues["reclaimer"].CPU = rs.ResourceShare{SteadyFairShare: 1000, FairShare: 100, Allocated: 500,
+			MaxAllowed: commonconstants.UnlimitedResourceQuantity}
+		queues["victim"].CPU = rs.ResourceShare{SteadyFairShare: 1000, FairShare: 2000, Allocated: 2000,
+			MaxAllowed: commonconstants.UnlimitedResourceQuantity}
+		cpuVictim := map[common_info.QueueID][]resource_info.ResourceVector{
+			"victim": {resource_info.NewResource(100, 0, 0).ToVector(testVectorMap)},
+		}
+		Expect(steady().CanReclaimResources(queues, reclaimerInfo)).To(BeFalse())
+		Expect(steady().Reclaimable(queues, reclaimerInfo, cpuVictim)).To(BeFalse())
+	})
+
+	Context("in a queue hierarchy", func() {
+		victimsIn := func(queueID common_info.QueueID, gpus float64) map[common_info.QueueID][]resource_info.ResourceVector {
+			return map[common_info.QueueID][]resource_info.ResourceVector{
+				queueID: {resource_info.NewResource(0, 0, gpus).ToVector(testVectorMap)},
+			}
+		}
+
+		BeforeEach(func() {
+			reclaimerInfo.Queue = "r"
+			queues = map[common_info.QueueID]*rs.QueueAttributes{
+				"p":  queue("p", "", 0, 110, 150, 110),
+				"r":  queue("r", "p", 0, 50, 75, 50),
+				"r2": queue("r2", "p", 0, 60, 75, 60),
+				"q":  queue("q", "", 0, 180, 150, 180),
+				"v":  queue("v", "q", 0, 120, 75, 120),
+				"v2": queue("v2", "q", 0, 60, 75, 60),
+			}
+		})
+
+		It("reclaims from another department when the reclaimer's is below its steady fair share and the victim's above", func() {
+			Expect(steady().Reclaimable(queues, reclaimerInfo, victimsIn("v", 16))).To(BeTrue())
+			Expect(steady().FilterVictimWithSteadyFairShare(queues, reclaimerInfo, "v", batch(16))).To(BeTrue())
+		})
+
+		It("does not reclaim from another department when the reclaimer's is not below its steady fair share", func() {
+			queues["r2"].GPU.Allocated, queues["p"].GPU.Allocated = 100, 150 // would end at 166: 1.11
+			queues["v"].GPU.Allocated, queues["q"].GPU.Allocated = 140, 200  // 184 left: 1.23
+			Expect(steady().Reclaimable(queues, reclaimerInfo, victimsIn("v", 16))).To(BeFalse())
+			Expect(steady().FilterVictimWithSteadyFairShare(queues, reclaimerInfo, "v", batch(16))).To(BeFalse())
+		})
+
+		It("does not take from a queue above its steady fair share when its department is not", func() {
+			queues["v2"].GPU.Allocated, queues["q"].GPU.Allocated = 0, 120
+			Expect(steady().Reclaimable(queues, reclaimerInfo, victimsIn("v", 16))).To(BeFalse())
+			Expect(steady().FilterVictimWithSteadyFairShare(queues, reclaimerInfo, "v", batch(16))).To(BeFalse())
+		})
+
+		It("reclaims from a sibling above its steady fair share whatever their department holds", func() {
+			queues["r2"].GPU.Allocated, queues["p"].GPU.Allocated = 110, 160
+			Expect(steady().Reclaimable(queues, reclaimerInfo, victimsIn("r2", 16))).To(BeTrue())
+		})
+
+		It("keeps the victim's department at its steady fair share", func() {
+			queues["v"].GPU.Allocated, queues["q"].GPU.Allocated = 100, 160
+			Expect(steady().Reclaimable(queues, reclaimerInfo, victimsIn("v", 16))).To(BeFalse())
+			Expect(steady().FilterVictimWithSteadyFairShare(queues, reclaimerInfo, "v", batch(16))).To(BeFalse())
+			Expect(steady().Reclaimable(queues, reclaimerInfo, victimsIn("v", 8))).To(BeTrue())
+		})
+	})
+})
+
 var _ = Describe("FilterVictim", func() {
 	reclaimerInfo := &ReclaimerInfo{
 		Queue:             "reclaimer",
