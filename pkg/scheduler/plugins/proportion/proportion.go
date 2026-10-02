@@ -583,8 +583,10 @@ func (pp *proportionPlugin) setSteadyFairShare() {
 		for _, resource := range rs.AllResources {
 			pp.queues[id].ResourceShare(resource).SteadyFairShare = queue.ResourceShare(resource).FairShare
 		}
-		log.InfraLogger.V(3).Infof("Steady fair share for queue <%v>: GPU: <%v>", queue.Name,
-			resource_info.HumanizeResource(queue.GPU.FairShare, 1))
+		log.InfraLogger.V(5).Do(func() {
+			log.InfraLogger.Infof("Steady fair share for queue <%v>: GPU: <%v>", queue.Name,
+				resource_info.HumanizeResource(queue.GPU.FairShare, 1))
+		})
 	}
 }
 
