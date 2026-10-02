@@ -50,6 +50,12 @@ func getStatusWithMetadata(
 		updatedStatus.ResourcesStatus.AllocatedNonPreemptible = metaData.CoreAllocated
 	case v2alpha2.NonPreemptible:
 		updatedStatus.ResourcesStatus.AllocatedNonPreemptible = metaData.Allocated
+	default:
+		// The status is copied, so a pod group that has become preemptible would otherwise keep the
+		// non-preemptible allocation of its former mode.
+		if len(updatedStatus.ResourcesStatus.AllocatedNonPreemptible) > 0 {
+			updatedStatus.ResourcesStatus.AllocatedNonPreemptible = nil
+		}
 	}
 
 	return updatedStatus

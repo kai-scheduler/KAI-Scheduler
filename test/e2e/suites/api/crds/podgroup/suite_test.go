@@ -14,6 +14,7 @@ import (
 )
 
 var _ = DescribeConditionsSpecs()
+var _ = DescribeAllocatedNonPreemptibleSpecs()
 
 func TestPodGroups(t *testing.T) {
 	utils.SetLogger()

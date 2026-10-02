@@ -100,6 +100,55 @@ func TestShouldUpdatePodGroupStatus(t *testing.T) {
 			},
 			false,
 		},
+		{
+			"Should update - preemptible with a non preemptible allocation left from a former mode",
+			args{
+				podGroup: &v2alpha2.PodGroup{
+					Status: v2alpha2.PodGroupStatus{
+						ResourcesStatus: v2alpha2.PodGroupResourcesStatus{
+							Requested: map[v1.ResourceName]resource.Quantity{
+								"cpu": resource.MustParse("1"),
+							},
+							Allocated: map[v1.ResourceName]resource.Quantity{
+								"cpu": resource.MustParse("1"),
+							},
+							AllocatedNonPreemptible: map[v1.ResourceName]resource.Quantity{
+								"cpu": resource.MustParse("1"),
+							},
+						},
+					},
+				},
+				podGroupMetadata: &metadata.PodGroupMetadata{
+					Preemptibility: v2alpha2.Preemptible,
+					Requested:      map[v1.ResourceName]resource.Quantity{"cpu": resource.MustParse("1")},
+					Allocated:      map[v1.ResourceName]resource.Quantity{"cpu": resource.MustParse("1")},
+				},
+			},
+			true,
+		},
+		{
+			"Should not update - preemptible without a non preemptible allocation",
+			args{
+				podGroup: &v2alpha2.PodGroup{
+					Status: v2alpha2.PodGroupStatus{
+						ResourcesStatus: v2alpha2.PodGroupResourcesStatus{
+							Requested: map[v1.ResourceName]resource.Quantity{
+								"cpu": resource.MustParse("1"),
+							},
+							Allocated: map[v1.ResourceName]resource.Quantity{
+								"cpu": resource.MustParse("1"),
+							},
+						},
+					},
+				},
+				podGroupMetadata: &metadata.PodGroupMetadata{
+					Preemptibility: v2alpha2.Preemptible,
+					Requested:      map[v1.ResourceName]resource.Quantity{"cpu": resource.MustParse("1")},
+					Allocated:      map[v1.ResourceName]resource.Quantity{"cpu": resource.MustParse("1")},
+				},
+			},
+			false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -222,6 +271,47 @@ func TestUpdatePodGroupStatus(t *testing.T) {
 					},
 					Allocated: map[v1.ResourceName]resource.Quantity{
 						"cpu": resource.MustParse("500m"),
+					},
+				},
+			},
+		},
+		{
+			"Preemptible clears the non preemptible allocation of a former mode",
+			args{
+				&v2alpha2.PodGroup{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "n1", Name: "m1"},
+					Status: v2alpha2.PodGroupStatus{
+						ResourcesStatus: v2alpha2.PodGroupResourcesStatus{
+							Requested: map[v1.ResourceName]resource.Quantity{
+								"cpu": resource.MustParse("1"),
+							},
+							Allocated: map[v1.ResourceName]resource.Quantity{
+								"cpu": resource.MustParse("1"),
+							},
+							AllocatedNonPreemptible: map[v1.ResourceName]resource.Quantity{
+								"cpu": resource.MustParse("1"),
+							},
+						},
+					},
+				},
+				&metadata.PodGroupMetadata{
+					Preemptibility: v2alpha2.Preemptible,
+					Requested: map[v1.ResourceName]resource.Quantity{
+						"cpu": resource.MustParse("1"),
+					},
+					Allocated: map[v1.ResourceName]resource.Quantity{
+						"cpu": resource.MustParse("1"),
+					},
+				},
+			},
+			false,
+			&v2alpha2.PodGroupStatus{
+				ResourcesStatus: v2alpha2.PodGroupResourcesStatus{
+					Requested: map[v1.ResourceName]resource.Quantity{
+						"cpu": resource.MustParse("1"),
+					},
+					Allocated: map[v1.ResourceName]resource.Quantity{
+						"cpu": resource.MustParse("1"),
 					},
 				},
 			},

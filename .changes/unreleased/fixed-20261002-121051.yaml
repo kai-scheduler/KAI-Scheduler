@@ -1,0 +1,6 @@
+kind: Fixed
+body: |-
+  PodGroup status clears allocatedNonPreemptible once the pod group becomes preemptible
+custom:
+  Author: "sam-huang1223"
+  Issue: "2305"

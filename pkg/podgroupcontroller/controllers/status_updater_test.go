@@ -228,6 +228,80 @@ func Test_handlePodGroupStatus(t *testing.T) {
 			false,
 		},
 		{
+			"Pod group that has become preemptible drops its former non preemptible allocation",
+			Configs{},
+			clusterData{
+				&v2alpha2.PodGroup{
+					TypeMeta: metav1.TypeMeta{
+						APIVersion: "scheduling.run.ai/v2alpha2",
+						Kind:       "PodGroup",
+					},
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace:       "n1",
+						Name:            "pg1",
+						ResourceVersion: "999",
+					},
+					Spec: v2alpha2.PodGroupSpec{
+						PriorityClassName: "c1",
+					},
+					Status: v2alpha2.PodGroupStatus{
+						ResourcesStatus: v2alpha2.PodGroupResourcesStatus{
+							Allocated: map[v1.ResourceName]resource.Quantity{
+								v1.ResourceCPU: resource.MustParse("1")},
+							AllocatedNonPreemptible: map[v1.ResourceName]resource.Quantity{
+								v1.ResourceCPU: resource.MustParse("1")},
+							Requested: map[v1.ResourceName]resource.Quantity{
+								v1.ResourceCPU: resource.MustParse("1")},
+						},
+					},
+				},
+				[]client.Object{
+					&v1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Namespace:   "n1",
+							Name:        "pod1",
+							Annotations: map[string]string{"pod-group-name": "pg1"},
+						},
+						Spec: v1.PodSpec{
+							Containers: []v1.Container{
+								{
+									Resources: v1.ResourceRequirements{
+										Requests: v1.ResourceList{v1.ResourceCPU: resource.MustParse("1")},
+									},
+								},
+							},
+						},
+						Status: v1.PodStatus{
+							Phase: v1.PodPending,
+							Conditions: []v1.PodCondition{
+								{
+									Type:   v1.PodScheduled,
+									Status: v1.ConditionTrue,
+								},
+							},
+						},
+					},
+				},
+				[]client.Object{
+					&schedulingv1.PriorityClass{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "c1",
+						},
+						Value: 75,
+					},
+				},
+			},
+			v2alpha2.PodGroupStatus{
+				ResourcesStatus: v2alpha2.PodGroupResourcesStatus{
+					Allocated: map[v1.ResourceName]resource.Quantity{
+						v1.ResourceCPU: resource.MustParse("1")},
+					Requested: map[v1.ResourceName]resource.Quantity{
+						v1.ResourceCPU: resource.MustParse("1")},
+				},
+			},
+			false,
+		},
+		{
 			"Single pending pod",
 			Configs{},
 			clusterData{
